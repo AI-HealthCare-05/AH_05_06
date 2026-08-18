@@ -1,46 +1,14 @@
-# Environment
-.env
-.env.*
-!.env.example
-
-# Python
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-
-# Virtual environments
-venv/
-.venv/
-env/
-ENV/
-
-# Distribution / packaging
-dist/
+*.py[oc]
 build/
-*.egg-info/
-*.egg
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# IDE
-.vscode/
+dist/
+wheels/
+*.egg-info
+.venv
+.*.env
+.env
 .idea/
-*.swp
-*.swo
-
-# macOS
-.DS_Store
-
-# Alembic
-alembic/versions/*.pyc
-
-# SQLite local DB (Alembic migrations manage schema; do not commit local DB files)
-*.db
-
-# Media uploads (user-uploaded files should not be committed)
-media/xray/
+.vscode
+.coverage
+*.coverage
+.coverage.*
