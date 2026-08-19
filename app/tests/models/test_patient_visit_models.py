@@ -6,7 +6,7 @@ import pytest
 from tortoise import Tortoise
 from tortoise.fields import OnDelete
 
-from app.core.db.databases import TORTOISE_APP_MODELS
+from app.core.db.databases import TORTOISE_APP_MODELS, TORTOISE_ORM
 from app.models.patients import Patient, PatientGender
 from app.models.visits import Visit, VisitStatus
 
@@ -58,11 +58,14 @@ def test_visit_model_keeps_patient_one_to_many_relation() -> None:
         VisitStatus.CANCELED,
     }
     assert Visit._meta.fields_map["planned_stop"].default is False
+    assert Visit._meta.fields_map["status"].default is VisitStatus.COMPLETED
 
 
 def test_models_are_registered_for_aerich() -> None:
     assert "app.models.patients" in TORTOISE_APP_MODELS
     assert "app.models.visits" in TORTOISE_APP_MODELS
+    assert TORTOISE_ORM["use_tz"] is True
+    assert TORTOISE_ORM["timezone"] == "Asia/Seoul"
 
 
 @pytest.mark.asyncio
@@ -75,6 +78,10 @@ async def test_migration_creates_and_rolls_back_in_dependency_order() -> None:
         "CREATE TABLE IF NOT EXISTS `visit`"
     )
     assert "FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`) ON DELETE RESTRICT" in upgrade_sql
+    assert "UNIQUE KEY `uid_patient_scope` (`patient_id`, `hospital_id`)" in upgrade_sql
+    assert "FOREIGN KEY (`patient_id`, `hospital_id`) REFERENCES `patient` (`patient_id`, `hospital_id`)" in upgrade_sql
+    assert "DATE(DATE_ADD(`visited_at`, INTERVAL 9 HOUR))" in upgrade_sql
+    assert "UNIQUE KEY `uid_visit_patient_day` (`hospital_id`, `patient_id`, `visited_on`)" in upgrade_sql
     assert "`planned_stop` BOOL NOT NULL DEFAULT 0" in upgrade_sql
     assert "UNIQUE KEY" in upgrade_sql
     assert "(`hospital_id`, `hospital_patient_no`)" in upgrade_sql

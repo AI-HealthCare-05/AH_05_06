@@ -20,6 +20,7 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
     `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     UNIQUE KEY `uid_patient_hospita_41e3cd` (`hospital_id`, `hospital_patient_no`),
+    UNIQUE KEY `uid_patient_scope` (`patient_id`, `hospital_id`),
     KEY `idx_patient_hospita_eb6e76` (`hospital_id`, `name`, `birth_date`),
     KEY `idx_patient_hospita_720b1e` (`hospital_id`, `phone`)
 ) CHARACTER SET utf8mb4 COMMENT='A clinic-scoped patient identity shared by all visits.';
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS `visit` (
     `doctor_id` BIGINT,
     `department` VARCHAR(100),
     `visited_at` DATETIME(6) NOT NULL,
+    `visited_on` DATE GENERATED ALWAYS AS (DATE(DATE_ADD(`visited_at`, INTERVAL 9 HOUR))) STORED,
     `visit_summary` LONGTEXT,
     `doctor_note` LONGTEXT,
     `status` VARCHAR(9) NOT NULL COMMENT 'SCHEDULED: SCHEDULED\nCOMPLETED: COMPLETED\nCANCELED: CANCELED' DEFAULT 'COMPLETED',
@@ -37,8 +39,11 @@ CREATE TABLE IF NOT EXISTS `visit` (
     `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     `patient_id` BIGINT NOT NULL,
     CONSTRAINT `fk_visit_patient_1f676882` FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_visit_patient_scope` FOREIGN KEY (`patient_id`, `hospital_id`) REFERENCES `patient` (`patient_id`, `hospital_id`) ON DELETE RESTRICT,
+    UNIQUE KEY `uid_visit_patient_day` (`hospital_id`, `patient_id`, `visited_on`),
     KEY `idx_visit_hospita_edff6d` (`hospital_id`, `visited_at`),
-    KEY `idx_visit_patient_98c974` (`patient_id`, `visited_at`)
+    KEY `idx_visit_patient_98c974` (`patient_id`, `visited_at`),
+    KEY `idx_visit_patient_scope` (`patient_id`, `hospital_id`)
 ) CHARACTER SET utf8mb4 COMMENT='One clinic-scoped encounter belonging to exactly one patient.';
         """
 
