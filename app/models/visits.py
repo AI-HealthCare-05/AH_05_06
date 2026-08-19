@@ -27,6 +27,7 @@ class Visit(models.Model):
     visit_summary = fields.TextField(null=True)
     doctor_note = fields.TextField(null=True)
     status = fields.CharEnumField(enum_type=VisitStatus, default=VisitStatus.COMPLETED)
+    planned_stop = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

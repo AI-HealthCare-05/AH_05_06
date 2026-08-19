@@ -6,6 +6,8 @@ from tortoise import fields, models
 class PatientGender(StrEnum):
     FEMALE = "FEMALE"
     MALE = "MALE"
+    OTHER = "OTHER"
+    UNKNOWN = "UNKNOWN"
 
 
 class Patient(models.Model):
@@ -16,7 +18,7 @@ class Patient(models.Model):
     hospital_patient_no = fields.CharField(max_length=50)
     name = fields.CharField(max_length=50)
     birth_date = fields.DateField()
-    gender = fields.CharEnumField(enum_type=PatientGender)
+    gender = fields.CharEnumField(enum_type=PatientGender, default=PatientGender.UNKNOWN)
     phone = fields.CharField(max_length=20)
     sms_consent = fields.BooleanField(default=False)
     sms_consented_at = fields.DatetimeField(null=True)

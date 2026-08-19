@@ -30,7 +30,13 @@ def load_migration() -> ModuleType:
 def test_patient_model_matches_frozen_contract() -> None:
     assert Patient._meta.db_table == "patient"
     assert Patient._meta.pk_attr == "patient_id"
-    assert set(PatientGender) == {PatientGender.FEMALE, PatientGender.MALE}
+    assert set(PatientGender) == {
+        PatientGender.FEMALE,
+        PatientGender.MALE,
+        PatientGender.OTHER,
+        PatientGender.UNKNOWN,
+    }
+    assert Patient._meta.fields_map["gender"].default is PatientGender.UNKNOWN
     assert "age" not in Patient._meta.fields_map
     assert Patient._meta.unique_together == (("hospital_id", "hospital_patient_no"),)
     assert ("hospital_id", "name", "birth_date") in Patient._meta.indexes
@@ -51,6 +57,7 @@ def test_visit_model_keeps_patient_one_to_many_relation() -> None:
         VisitStatus.COMPLETED,
         VisitStatus.CANCELED,
     }
+    assert Visit._meta.fields_map["planned_stop"].default is False
 
 
 def test_models_are_registered_for_aerich() -> None:
@@ -68,6 +75,7 @@ async def test_migration_creates_and_rolls_back_in_dependency_order() -> None:
         "CREATE TABLE IF NOT EXISTS `visit`"
     )
     assert "FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`) ON DELETE RESTRICT" in upgrade_sql
+    assert "`planned_stop` BOOL NOT NULL DEFAULT 0" in upgrade_sql
     assert "UNIQUE KEY" in upgrade_sql
     assert "(`hospital_id`, `hospital_patient_no`)" in upgrade_sql
     assert downgrade_sql.index("DROP TABLE IF EXISTS `visit`") < downgrade_sql.index("DROP TABLE IF EXISTS `patient`")

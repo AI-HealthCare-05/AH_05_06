@@ -11,7 +11,7 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
     `hospital_patient_no` VARCHAR(50) NOT NULL,
     `name` VARCHAR(50) NOT NULL,
     `birth_date` DATE NOT NULL,
-    `gender` VARCHAR(6) NOT NULL COMMENT 'FEMALE: FEMALE\nMALE: MALE',
+    `gender` VARCHAR(7) NOT NULL COMMENT 'FEMALE: FEMALE\nMALE: MALE\nOTHER: OTHER\nUNKNOWN: UNKNOWN' DEFAULT 'UNKNOWN',
     `phone` VARCHAR(20) NOT NULL,
     `sms_consent` BOOL NOT NULL DEFAULT 0,
     `sms_consented_at` DATETIME(6),
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS `visit` (
     `visit_summary` LONGTEXT,
     `doctor_note` LONGTEXT,
     `status` VARCHAR(9) NOT NULL COMMENT 'SCHEDULED: SCHEDULED\nCOMPLETED: COMPLETED\nCANCELED: CANCELED' DEFAULT 'COMPLETED',
+    `planned_stop` BOOL NOT NULL DEFAULT 0,
     `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     `patient_id` BIGINT NOT NULL,
@@ -50,35 +51,37 @@ async def downgrade(db: BaseDBAsyncClient) -> str:
 
 
 MODELS_STATE = (
-    "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"
+    "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"
+    "kQ=="
 )
