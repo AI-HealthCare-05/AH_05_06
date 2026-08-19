@@ -1,5 +1,7 @@
 # KEY-34 환자·진료 API 구현 기록
 
+> 상위 일감: KEY-16
+
 ## 구현 범위
 
 - `POST/GET /api/v1/patients`
