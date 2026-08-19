@@ -60,7 +60,7 @@ function stateClass(state) {
 /* ── 오른쪽 칸 ─────────────────────────────────────────
    화면 셋이 같은 자리에 번갈아 선다. 어느 것이 서 있는지 한 곳에서만 정한다 —
    두 곳에서 정하면 등록 도중에 목록을 눌렀을 때 둘 다 뜨거나 둘 다 사라진다. */
-var VIEWS = ["view-none", "view-register", "view-upload"];
+var VIEWS = ["view-none", "view-register", "view-card"];
 
 function showView(id) {
   VIEWS.forEach(function (name) {
@@ -213,7 +213,7 @@ function renderRows(keepVisitId) {
 function syncPane() {
   if (!document.getElementById("view-register").hidden) return;
   if (!visibleRows().length) return showView("view-none");
-  showView("view-upload");
+  showView("view-card");
   var visit = selectedVisit();
   if (visit) document.dispatchEvent(new CustomEvent("visit:selected", { detail: visit }));
 }
@@ -248,14 +248,26 @@ function moveDay(days) {
   loadDay();
 }
 
-/* 화면 어디서든 「지금 고른 진료 건」을 같은 모양으로 읽는다. */
+/* 화면 어디서든 「지금 고른 진료 건」을 같은 모양으로 읽는다.
+
+   DOM 에서 되읽지 않고 목록이 들고 있는 원본을 준다. 줄에 띄우는 것은 이름 ·
+   차트 · 나이 · 담당뿐이라, DOM 에서 꺼내면 진료과 · 진료 시각 · 계획 중단이
+   사라지고 남은 것도 「 · 」로 잘라야 한다. 상병에 ` · ` 가 하나 들어가면 그날
+   담당의사가 어긋난다.
+
+   사본을 주는 이유는, 받는 쪽이 고쳐도 목록이 저절로 바뀌지 않게 하려는 것이다 —
+   목록은 renderRows 로만 바뀐다. */
 function readRow(row) {
+  var id = Number(row.dataset.visitId);
+  var found = rows.find(function (r) {
+    return r.visit_id === id;
+  });
+  if (found) return Object.assign({}, found);
   return {
-    visit_id: Number(row.dataset.visitId),
+    visit_id: id,
     patient_id: Number(row.dataset.patientId),
     hospital_patient_no: row.dataset.chartNo,
     name: row.querySelector(".row__name").textContent,
-    meta: row.querySelector(".row__meta").textContent,
   };
 }
 
@@ -269,8 +281,13 @@ function addVisit(visit) {
   rows.unshift(visit);
   renderChipCounts();
   renderRows(visit.visit_id);
-  showView("view-upload");
-  document.dispatchEvent(new CustomEvent("visit:selected", { detail: selectedVisit() }));
+  showView("view-card");
+  /* 방금 등록한 사람은 기본정보를 다시 볼 이유가 없다 — 진료기록 올리러 간다.
+     줄을 눌러 들어올 때(기본정보)와 다른 자리라 어느 탭을 열지 실어 보낸다.
+     `tab` 은 목록의 상태 묶음(작성 중 · 보완 …)이 이미 쓰고 있어서 이름을 달리한다. */
+  var picked = selectedVisit();
+  picked.open_tab = "record";
+  document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
 }
 
 /* ── 손짓 ─────────────────────────────────────────────── */
@@ -315,7 +332,7 @@ document.getElementById("rows").addEventListener("click", function (event) {
   this.querySelectorAll("[data-visit-id]").forEach(function (r) {
     r.setAttribute("aria-current", String(r === row));
   });
-  showView("view-upload");
+  showView("view-card");
   document.dispatchEvent(new CustomEvent("visit:selected", { detail: readRow(row) }));
 });
 

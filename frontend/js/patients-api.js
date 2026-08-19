@@ -35,7 +35,31 @@ var patientsApi = {
   createVisit: function (patientId, visit) {
     return patientsRequest("/patients/" + patientId + "/visits", { method: "POST", body: visit });
   },
+
+  /* ── 환자 카드 (KEY-50) ─────────────────────────────
+     계약 §5 의 네 리소스. 수정 가능한 것과 아닌 것이 갈려 있고,
+     그 경계가 화면의 잠금과 그대로 같다. */
+  get: function (patientId) {
+    return patientsRequest("/patients/" + patientId);
+  },
+  /* 차트번호는 못 고친다 — 생성 후 변경 불가(계약 §4·§6).
+     보낼 수 있는 것은 name · birth_date · gender · phone · sms_consent 뿐이다. */
+  update: function (patientId, patch) {
+    return patientsRequest("/patients/" + patientId, { method: "PATCH", body: patch });
+  },
+  visits: function (patientId) {
+    return patientsRequest("/patients/" + patientId + "/visits");
+  },
+  updateVisit: function (visitId, patch) {
+    return patientsRequest("/visits/" + visitId, { method: "PATCH", body: patch });
+  },
 };
+
+/* 계약 §6 이 정한 수정 가능 필드. 화면이 이 목록 밖을 보내면 400 이다.
+   목록을 코드에 두는 이유는, 폼에 칸을 하나 늘렸을 때 여기도 같이 늘려야
+   한다는 것이 눈에 보이게 하려는 것이다. */
+var PATIENT_EDITABLE = ["name", "birth_date", "gender", "phone", "sms_consent"];
+var VISIT_EDITABLE = ["doctor_name", "department", "visited_at", "status", "planned_stop"];
 
 /* 등록 화면에서 고르는 진료과 · 담당의사.
    TODO(KEY-33) 직원 API 가 생기면 GET /api/v1/staff?role=doctor 로 갈아 끼운다.
@@ -59,6 +83,14 @@ var MOCK_PATIENTS = [
   { patient_id: 1007, hospital_patient_no: "09871", name: "박수빈", birth_date: "1992-09-18", phone: "01077129871", last_visited_on: "2026-08-11", last_dx: "자궁내막증", last_drug: "비잔" },
 ];
 
+/* 성별과 동의는 합성 CSV 에 칸이 없다 — KEY-30 매핑표의 `CSV_CANNOT_SUPPLY` 와 같은 자리다.
+   부인과라 성별은 상수로 채우고, 동의 시각은 마지막 방문일로 둔다. */
+MOCK_PATIENTS.forEach(function (p) {
+  p.gender = "FEMALE";
+  p.sms_consent = true;
+  p.sms_consented_at = p.last_visited_on;
+});
+
 var MOCK_NEXT_ID = { patient: 2000, visit: 9000 };
 
 /* 오늘 목록. 등록하면 여기에 쌓인다 — 화면이 실제로 늘어나는지 봐야 한다.
@@ -68,12 +100,28 @@ var MOCK_TODAY = (function () {
   if (q !== null) sessionStorage.setItem("mockToday", q);
   if (sessionStorage.getItem("mockToday") === "empty") return [];
   return [
-    { patient_id: 1003, visit_id: 8842, hospital_patient_no: "12345", name: "김서연", dx: "자궁내막증", age: 36, doctor: "박연 원장", state: "진료기록 없음", tab: "draft" },
-    { patient_id: 1006, visit_id: 8843, hospital_patient_no: "11204", name: "이지우", dx: "다낭성", age: 31, doctor: "김연우 원장", state: "생성 중", tab: "draft" },
+    { patient_id: 1003, visit_id: 8842, hospital_patient_no: "12345", name: "김서연", dx: "자궁내막증", age: 36, department: "산부인과", doctor: "박연 원장", visited_at: "2026-08-19T10:32:00+09:00", status: "COMPLETED", planned_stop: false, state: "진료기록 없음", tab: "draft" },
+    { patient_id: 1006, visit_id: 8843, hospital_patient_no: "11204", name: "이지우", dx: "다낭성", age: 31, department: "산부인과", doctor: "김연우 원장", visited_at: "2026-08-19T09:14:00+09:00", status: "COMPLETED", planned_stop: false, state: "생성 중", tab: "draft" },
     /* 08-11 건인데 오늘 목록에 있다 — 보완 탭만은 날짜와 무관하게 해결될 때까지 남는다 */
-    { patient_id: 1007, visit_id: 8798, hospital_patient_no: "09871", name: "박수빈", dx: "자궁내막증", age: 34, doctor: "박연 원장", state: "번호 오류", tab: "fix" },
+    { patient_id: 1007, visit_id: 8798, hospital_patient_no: "09871", name: "박수빈", dx: "자궁내막증", age: 34, department: "산부인과", doctor: "박연 원장", visited_at: "2026-08-11T16:05:00+09:00", status: "COMPLETED", planned_stop: false, state: "번호 오류", tab: "fix" },
   ];
 })();
+
+/* 지난 방문. 「전에 뭐라고 안내했지?」를 관리 화면에서 찾지 않게 하려고
+   환자 카드 안에 둔다(S1-4).
+
+   약과 처방일수는 PRESCRIPTION 도메인 소유다 — KEY-26 §9 「처방 계약 경계」가
+   `PRESCRIPTION_ITEM.duration_days` 로 정했고 아직 구현이 없다.
+   TODO(KEY-41 이후) 그 API 가 생기면 여기 두 칸을 거기서 받는다. */
+var MOCK_HISTORY = {
+  1003: [
+    { visit_id: 8201, visited_at: "2026-05-20", dx: "자궁내막증", drug: "비잔 2mg", days: 90, has_guide: true },
+    { visit_id: 7714, visited_at: "2025-11-02", dx: "자궁내막증", drug: "비잔 2mg", days: 90, has_guide: true },
+    { visit_id: 7302, visited_at: "2025-08-11", dx: "자궁내막증 (초진)", drug: "비잔 2mg", days: 30, has_guide: true },
+  ],
+  1006: [{ visit_id: 8155, visited_at: "2026-08-01", dx: "다낭성", drug: "메트포르민 500mg", days: 60, has_guide: true }],
+  1007: [{ visit_id: 8102, visited_at: "2026-08-11", dx: "자궁내막증", drug: "비잔 2mg", days: 84, has_guide: false }],
+};
 
 function mockPatientsRequest(path, options) {
   var body = options.body || {};
@@ -110,10 +158,67 @@ function mockPatientsRequest(path, options) {
           name: body.name,
           birth_date: body.birth_date,
           phone: (body.phone || "").replace(/\D/g, ""),
+          gender: body.gender || "FEMALE",
+          sms_consent: !!body.sms_consent,
+          sms_consented_at: body.sms_consent ? toIsoDate(new Date()) : null,
           last_visited_on: null,
         };
         MOCK_PATIENTS.push(created);
         return resolve(created);
+      }
+
+      /* 환자 한 명 (S1-4 ① 환자 정보) */
+      var onePatient = path.match(/^\/patients\/(\d+)$/);
+      if (onePatient && !options.method) {
+        var found = MOCK_PATIENTS.find(function (p) {
+          return p.patient_id === Number(onePatient[1]);
+        });
+        if (!found) return reject(new ApiError("PATIENT_NOT_FOUND", 404, {}));
+        return resolve(found);
+      }
+
+      if (onePatient && options.method === "PATCH") {
+        var target = MOCK_PATIENTS.find(function (p) {
+          return p.patient_id === Number(onePatient[1]);
+        });
+        if (!target) return reject(new ApiError("PATIENT_NOT_FOUND", 404, {}));
+        if (!Object.keys(body).length) return reject(new ApiError("EMPTY_UPDATE_FIELDS", 400, {}));
+        /* 서버가 거부하는 것을 목업도 거부한다 — 화면이 못 보낼 것을 보내고 있으면
+           목업에서 통과해 버리면 서버에 붙는 날 처음 알게 된다. */
+        var illegal = Object.keys(body).filter(function (k) {
+          return PATIENT_EDITABLE.indexOf(k) === -1;
+        });
+        if (illegal.length) {
+          return reject(new ApiError("INVALID_REQUEST", 400, { field_errors: illegal }));
+        }
+        Object.keys(body).forEach(function (k) {
+          target[k] = k === "phone" ? String(body[k]).replace(/\D/g, "") : body[k];
+        });
+        return resolve(target);
+      }
+
+      /* 지난 방문 — visited_at DESC, visit_id DESC 안정 정렬(계약 §6) */
+      var visitList = path.match(/^\/patients\/(\d+)\/visits$/);
+      if (visitList && !options.method) {
+        var history = (MOCK_HISTORY[Number(visitList[1])] || []).slice().sort(function (a, b) {
+          if (a.visited_at === b.visited_at) return b.visit_id - a.visit_id;
+          return a.visited_at < b.visited_at ? 1 : -1;
+        });
+        return resolve({ items: history, page: { next_cursor: null, has_next: false } });
+      }
+
+      var oneVisit = path.match(/^\/visits\/(\d+)$/);
+      if (oneVisit && options.method === "PATCH") {
+        var row = MOCK_TODAY.find(function (v) {
+          return v.visit_id === Number(oneVisit[1]);
+        });
+        if (!row) return reject(new ApiError("VISIT_NOT_FOUND", 404, {}));
+        if (!Object.keys(body).length) return reject(new ApiError("EMPTY_UPDATE_FIELDS", 400, {}));
+        Object.keys(body).forEach(function (k) {
+          if (k === "doctor_name") row.doctor = body[k];
+          else row[k] = body[k];
+        });
+        return resolve(row);
       }
 
       var visitPath = path.match(/^\/patients\/(\d+)\/visits$/);
@@ -131,7 +236,11 @@ function mockPatientsRequest(path, options) {
           name: who.name,
           dx: who.last_dx || "",
           age: ageOf(who.birth_date),
+          department: body.department || "",
           doctor: body.doctor_name || "",
+          visited_at: body.visited_at || new Date().toISOString(),
+          status: "COMPLETED",
+          planned_stop: false,
           state: "진료기록 없음",
           tab: "draft",
         };
