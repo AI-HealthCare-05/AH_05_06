@@ -1,0 +1,387 @@
+/* S1-7 · S1-8 판독 결과 확인 — KEY-62
+ *
+ * 왼쪽이 원문, 오른쪽이 뽑아낸 값이다. 둘을 나란히 두는 것이 이 화면의 전부라
+ * 가로를 반씩 쓰고, 각각 따로 스크롤한다 — 한쪽을 내려도 다른 쪽은 그대로다.
+ *
+ * 강조는 세 가지뿐이다.
+ *   점선 + ?  못 읽음    — 비어 있다는 것을 비어 보이게 한다
+ *   노랑 왼선  확인 필요  — 읽었지만 흔들린 값
+ *   회색 왼선  값 2개    — 위험이 아니라 선택이라 색을 쓰지 않는다
+ * 색을 더 늘리면 무엇이 급한지가 사라진다.
+ */
+
+.review {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-16);
+  align-items: start;
+  min-height: 0;
+}
+
+@media (max-width: 1100px) {
+  .review {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── 왼쪽 · 원문 ─────────────────────────────────────────────── */
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel__head {
+  padding: var(--s-12) var(--s-16);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.doc-tabs {
+  display: flex;
+  gap: var(--s-4);
+  padding: var(--s-8) var(--s-12);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.doc-tab {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.doc-tab:hover {
+  border-color: var(--line-strong);
+}
+
+.doc-tab.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.raw {
+  padding: var(--s-12) var(--s-16);
+  overflow: auto;
+  max-height: 420px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink-2);
+}
+
+.raw__line {
+  padding: 0 6px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+
+/* 눌러서 찾아온 줄. 색이 아니라 배경으로 짚는다 —
+   원문은 그대로 읽혀야 하고, 글자색을 바꾸면 읽는 흐름이 끊긴다. */
+.raw__line.is-hit {
+  background: var(--warn-bg);
+  box-shadow: inset 2px 0 0 var(--warn);
+  color: var(--ink);
+}
+
+.purge-note {
+  margin: 0;
+  padding: var(--s-12) var(--s-16);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* ── 오른쪽 · 값 ─────────────────────────────────────────────── */
+
+.summary {
+  padding: var(--s-12) var(--s-16);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summary--warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.summary--ok {
+  background: var(--done-bg);
+  color: var(--done);
+}
+
+.fields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  max-height: 420px;
+}
+
+.field {
+  padding: var(--s-12) var(--s-16);
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+}
+
+.field:last-child {
+  border-bottom: 0;
+}
+
+.field--low {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.field--missing {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.field--candidates {
+  border-left-color: var(--line-strong);
+}
+
+.field__name {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: var(--s-4);
+}
+
+.field__tag {
+  font-weight: 700;
+}
+
+.field__tag--missing {
+  color: var(--danger);
+}
+
+.field__tag--low {
+  color: var(--warn);
+}
+
+.field__tag--candidates {
+  color: var(--ink-2);
+}
+
+.field__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+
+.field__value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* 못 읽은 값. 점선 네모를 그려서 「여기 값이 들어와야 한다」를 보인다. */
+.field__value--missing {
+  min-width: 64px;
+  padding: 2px 10px;
+  border: 1px dashed var(--danger-line);
+  border-radius: 6px;
+  color: var(--danger);
+  text-align: center;
+}
+
+.field__value--pending {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.field__unit,
+.field__date {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+.field__hint {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.chip--src {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip--src:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.field__act {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.field__act:hover {
+  border-color: var(--accent);
+}
+
+.field__more {
+  margin-top: var(--s-8);
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cands {
+  margin-top: var(--s-8);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  padding: var(--s-8) var(--s-12);
+  border-bottom: 1px solid var(--line);
+}
+
+.cand:last-of-type {
+  border-bottom: 0;
+}
+
+.cand.is-on {
+  background: var(--done-bg);
+}
+
+.cand__value {
+  font-weight: 700;
+  color: var(--ink);
+  margin-left: auto;
+}
+
+.cand__now {
+  font-size: 12px;
+  color: var(--done);
+  font-weight: 600;
+}
+
+.cand__use {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cands__note {
+  margin: 0;
+  padding: var(--s-8) var(--s-12);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-3);
+  background: var(--bg);
+}
+
+/* ── 예외 · 바닥 ─────────────────────────────────────────────── */
+
+.state {
+  padding: var(--s-32);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  text-align: center;
+}
+
+.state__title {
+  margin: 0 0 var(--s-8);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.state__body {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.state__acts {
+  margin-top: var(--s-16);
+  display: flex;
+  gap: var(--s-8);
+  justify-content: center;
+}
+
+.button {
+  height: 40px;
+  padding: 0 var(--s-16);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button--ghost {
+  background: var(--card);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.footbar {
+  margin-top: var(--s-16);
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  flex-wrap: wrap;
+}
+
+.save-note {
+  font-size: 12px;
+  color: var(--warn);
+}
