@@ -16,15 +16,33 @@ jobs:
         with:
           script: |
             const body = context.payload.pull_request.body || "";
-            const author = context.payload.pull_request.user.login;
-            const section = body.split(/##\s*👀?\s*리뷰어/i)[1] || "";
-            const handles = [...section.matchAll(/@([\w-]+)/g)]
-              .map(m => m[1])
-              .filter(h => h !== author);
-            if (handles.length === 0) return;
-            await github.rest.pulls.requestReviewers({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              reviewers: [...new Set(handles)],
-            });
+            const author = context.payload.pull_request.user.login.toLowerCase();
+
+            // "## 👀 리뷰어" 섹션만 잘라낸다 — 다음 "## " 제목이 나오면 거기서 멈춘다.
+            const chunks = body.split(/\n(?=##\s)/);
+            const reviewerChunk = chunks.find(c => /^##\s*👀?\s*리뷰어/i.test(c.trim()));
+            const section = reviewerChunk ? reviewerChunk.replace(/^##[^\n]*\n?/, "") : "";
+
+            const seen = new Set();
+            const handles = [];
+            for (const m of section.matchAll(/@([\w-]+)/g)) {
+              const handle = m[1];
+              const key = handle.toLowerCase();
+              if (key === author || seen.has(key)) continue;
+              seen.add(key);
+              handles.push(handle);
+            }
+
+            // 계정 하나가 유효하지 않아도 나머지는 계속 등록되도록 개별 요청한다.
+            for (const reviewer of handles) {
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  reviewers: [reviewer],
+                });
+              } catch (error) {
+                core.warning(`리뷰어 ${reviewer} 등록 실패: ${error.message}`);
+              }
+            }
