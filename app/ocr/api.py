@@ -1,10 +1,6 @@
-from collections.abc import Callable, Coroutine
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.ocr.schemas import (
     OcrFieldResponse,
@@ -16,24 +12,7 @@ from app.ocr.schemas import (
 from app.ocr.security import OcrActor, get_ocr_actor
 from app.ocr.service import OcrService, TortoiseOcrRepository
 
-
-class OcrRoute(APIRoute):
-    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
-        handler = super().get_route_handler()
-
-        async def validation_safe_handler(request: Request) -> Response:
-            try:
-                return await handler(request)
-            except RequestValidationError:
-                return JSONResponse(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    content={"code": "INVALID_REQUEST", "detail": "요청 형식 또는 필수값을 확인해 주세요."},
-                )
-
-        return validation_safe_handler
-
-
-ocr_router = APIRouter(tags=["ocr"], route_class=OcrRoute)
+ocr_router = APIRouter(tags=["ocr"])
 service = OcrService(TortoiseOcrRepository())
 
 

@@ -5,6 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.core.error_handlers import register_error_handlers
 from app.models.ocr import OcrDocumentType, OcrJobStatus
 from app.ocr.api import get_ocr_service, ocr_router
 from app.ocr.errors import OcrApiError
@@ -107,6 +108,7 @@ class FakeOcrService:
 def api() -> tuple[TestClient, FakeOcrService]:
     app = FastAPI()
     fake = FakeOcrService()
+    register_error_handlers(app)
     app.include_router(ocr_router, prefix="/api/v1")
     app.dependency_overrides[get_ocr_actor] = lambda: STAFF
     app.dependency_overrides[get_ocr_service] = lambda: fake
@@ -115,7 +117,10 @@ def api() -> tuple[TestClient, FakeOcrService]:
     async def handle_ocr_error(_, exc: OcrApiError):
         from fastapi.responses import JSONResponse
 
-        return JSONResponse(status_code=exc.status_code, content={"code": exc.code, "detail": exc.message})
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"code": exc.code, "message": exc.message, "field_errors": None},
+        )
 
     return TestClient(app), fake
 
@@ -138,7 +143,11 @@ def test_other_hospital_resource_is_hidden_as_not_found(api: tuple[TestClient, F
     response = client.get("/api/v1/ocr/jobs/ocr_other_hospital")
 
     assert response.status_code == 404
-    assert response.json() == {"code": "NOT_FOUND", "detail": "OCR 리소스를 찾을 수 없습니다."}
+    assert response.json() == {
+        "code": "NOT_FOUND",
+        "message": "OCR 리소스를 찾을 수 없습니다.",
+        "field_errors": None,
+    }
 
 
 def test_result_and_structured_fields_are_returned(api: tuple[TestClient, FakeOcrService]) -> None:
@@ -194,11 +203,11 @@ def test_field_update_rejects_empty_or_ambiguous_value(api: tuple[TestClient, Fa
         json={"base_version": 1, "corrected_value": "합성값", "candidate_id": 7},
     )
 
-    assert empty.status_code == 400
-    assert empty.json()["code"] == "INVALID_REQUEST"
+    assert empty.status_code == 422
+    assert "input" not in empty.text
     assert "합성" not in empty.text
-    assert ambiguous.status_code == 400
-    assert ambiguous.json()["code"] == "INVALID_REQUEST"
+    assert ambiguous.status_code == 422
+    assert "input" not in ambiguous.text
     assert "합성값" not in ambiguous.text
 
 
