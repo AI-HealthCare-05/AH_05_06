@@ -103,14 +103,29 @@ uv sync --group ai   # AI 워커용
 
 모든 서비스(API, Worker, DB, Redis, Nginx)를 한 번에 실행합니다.
 
+> **⚠️ 기존 팀원 주의**: `.env`의 DB 비밀번호가 변경되었거나 `test` DB가 없어 pytest가 실패하는 경우, MySQL은 볼륨이 비어 있을 때만 새 비밀번호와 초기 DB 설정이 적용됩니다. 기존 볼륨이 있으면 아래 명령으로 먼저 제거하세요.
+> ```bash
+> docker compose down -v   # 기존 볼륨 삭제 (DB 데이터 초기화됨)
+> ```
+
 ```bash
 docker-compose up -d --build
 ```
+
+컨테이너가 뜬 후 최초 1회(또는 마이그레이션 파일이 추가된 경우) 테이블을 생성합니다.
+
+```bash
+uv run aerich upgrade
+```
+
+> **참고**: 이 단계를 건너뛰면 API 호출 시 `OperationalError: Table 'ai_health.users' doesn't exist` 오류가 발생합니다.
 
 실행 후 다음 주소로 접속 가능합니다:
 - **FE**: [http://localhost](http://localhost) (정적 HTML·CSS·JS)
 - **API 서버**: [http://localhost/api/docs](http://localhost/api/docs) (Swagger UI)
 - **Nginx**: 80 포트를 통해 FE 정적 파일 서빙 및 API 서버 프록시를 처리합니다.
+
+> **참고**: `ai-worker`는 현재 스텁 상태(실행 후 즉시 종료)입니다. `restart: always` 설정으로 인해 `docker compose ps`에서 `Restarting`으로 표시될 수 있으나 정상입니다.
 
 #### 로컬에서 개별 실행 (개발용)
 

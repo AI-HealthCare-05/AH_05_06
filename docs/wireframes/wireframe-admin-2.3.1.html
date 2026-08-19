@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  body { margin:0; background:#E5E7EB; font-family:Pretendard,-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif; color:#111827; }
+  a { color:#111827; }
+  a:hover { color:#374151; }
+  * { scrollbar-width: thin; scrollbar-color: #9CA3AF transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: #9CA3AF; border-radius: 4px; }
+  *::-webkit-scrollbar-thumb:hover { background: #6B7280; }
+  *::-webkit-scrollbar-corner { background: transparent; }
+</style>
+</helmet>
+<div style="display:flex;flex-direction:column;gap:72px;padding:64px;background:#E5E7EB;min-width:max-content">
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div style="font-size:30px;font-weight:700">어드민 · Mid-Fi 와이어프레임</div>
+      <div style="font-size:13px;color:#6B7280">7프레임 · 데스크톱 1280 × 800 · A1 어드민 — 의원 운영에 관한 것. D2 설정(진료에 관한 것) 3프레임은 의료진 화면으로 옮겼다. 의료진 화면은 「의료진 화면 (wireframe-medic)」, 환자 화면은 「환자 화면 (wireframe-patient)」에 있다.</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:17px;font-weight:700">A1. 어드민 — 왼쪽 목록: 직원 / 의원 정보 / 문자 / 기록 · 7프레임</div><div style="font-size:13px;color:#6B7280">D2 설정은 진료에 관한 것, A1 어드민은 의원 운영에 관한 것이다. 관리자 역할이 있는 분에게만 상단바에 「어드민」이 보인다 — 눌렀다가 「권한이 없습니다」로 막지 않는다. 문자가 떨어지면 자동 발송이 전부 멈추므로 A1-5는 다른 화면보다 먼저 만든다.</div></div>
+    <div style="display:flex;gap:48px;align-items:flex-start;flex-wrap:nowrap">
+      <div style="display:flex;flex-direction:column;gap:10px;width:1280px">
+        <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:700">A1-1 · 직원 ★</span><span style="font-size:12px;color:#6B7280">1280 × 800 · 줄을 누르면 오른쪽이 A1-2로 바뀐다 · 화면을 옮기지 않는다</span></div>
+        <div data-screen-label="A1-1" style="width:1280px;height:800px;background:#FFFFFF;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;position:relative"><div style="height:56px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;justify-content:space-between;padding:0 32px;flex:none"><div style="display:flex;align-items:center;gap:10px"><div style="width:24px;height:24px;border:1px solid #D1D5DB;background:#F3F4F6;border-radius:4px"></div><span style="font-size:15px;font-weight:600">복약 안내 도우미</span></div><div style="display:flex;gap:26px;align-items:center;height:56px"><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">현황<span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#111827;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">4</span></span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">관리</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">설정</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;font-weight:700;box-shadow:inset 0 -2px 0 #111827">어드민</span></div><div style="display:flex;align-items:center;gap:14px"><span style="font-size:13px;color:#374151">서지현 <b>관리자 · 스탭</b> ▾</span><div style="position:relative;width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">🔔<div style="position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#111827;color:#FFFFFF;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">1</div></div><div style="width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">⏻</div></div></div><div style="flex:1;display:flex;overflow:hidden"><div style="width:320px;border-right:1px solid #D1D5DB;display:flex;flex-direction:column;flex:none;overflow:hidden">
+            <div style="padding:14px;display:flex;flex-direction:column;gap:8px;flex:none">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:700;flex:1">어드민</span><div style="width:28px;height:28px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#374151">◀</div></div>
+            </div>
+            <div style="flex:1;overflow:hidden">
+              <div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;background:#F3F4F6;font-weight:700;box-shadow:inset 3px 0 0 #111827;"><span style="width:10px;color:#111827">▸</span><span style="flex:1">직원</span><span style="color:#6B7280;font-size:12px">6명</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">의원 정보</span><span style="color:#6B7280;font-size:12px"></span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">문자</span><span style="color:#6B7280;font-size:12px">⚠ 320통</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">전체 로그</span><span style="color:#6B7280;font-size:12px"></span></div>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:9px 14px;flex:none"><span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 관리자 권한 보유자에게만 표시되는 메뉴입니다</span></div>
+          </div><div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="padding:14px 26px 12px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;gap:12px;flex:none"><span style="font-size:17px;font-weight:700;flex:1">직원</span></div>
+            <div style="flex:1;padding:16px 26px;display:flex;flex-direction:column;gap:14px;overflow:hidden">
+              <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:14px;font-weight:700">재직 중</span><span style="font-size:13px;color:#6B7280">6명</span></div>
+              <div style="border:1px solid #D1D5DB;border-radius:8px;overflow:hidden">
+                <div style="padding:8px 14px;background:#F3F4F6;display:flex;align-items:center;gap:14px;font-size:11px;font-weight:700;color:#6B7280"><span style="width:10px"></span><span style="width:96px">이름</span><span style="width:150px">역할</span><span style="width:110px">아이디</span><span style="flex:1">마지막 로그인</span><span style="width:48px;flex:none"></span></div>
+                <div style="padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;border-top:1px solid #D1D5DB;background:#F3F4F6;box-shadow:inset 3px 0 0 #111827;font-weight:700;"><span style="width:10px;color:#111827">▸</span><span style="width:96px">서지현</span><span style="width:150px;color:#374151">관리자 · 스탭</span><span style="width:110px;color:#374151">seojh</span><span style="flex:1;color:#6B7280">오늘 09:12</span><div style="height:28px;padding:0 10px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:12px;white-space:nowrap;flex:none">수정</div></div>
+                <div style="padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;border-top:1px solid #D1D5DB;"><span style="width:10px;color:#111827"></span><span style="width:96px">표민경</span><span style="width:150px;color:#374151">스탭</span><span style="width:110px;color:#374151">pyomk</span><span style="flex:1;color:#6B7280">오늘 08:40</span><div style="height:28px;padding:0 10px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:12px;white-space:nowrap;flex:none">수정</div></div>
+                <div style="padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;border-top:1px solid #D1D5DB;"><span style="width:10px;color:#111827"></span><span style="width:96px">박연 원장</span><span style="width:150px;color:#374151">관리자 · 의사</span><span style="width:110px;color:#374151">parkyn</span><span style="flex:1;color:#6B7280">오늘 09:05</span><div style="height:28px;padding:0 10px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:12px;white-space:nowrap;flex:none">수정</div></div>
+                <div style="padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;border-top:1px solid #D1D5DB;"><span style="width:10px;color:#111827"></span><span style="width:96px">우가람</span><span style="width:150px;color:#374151">스탭</span><span style="width:110px;color:#374151">woogr</span><span style="flex:1;color:#6B7280">08-11</span><div style="height:28px;padding:0 10px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:12px;white-space:nowrap;flex:none">수정</div></div>
+                <div style="padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;border-top:1px solid #D1D5DB;"><span style="width:10px;color:#111827"></span><span style="width:96px">하수민</span><span style="width:150px;color:#374151">스탭</span><span style="width:110px;color:#374151">hasm</span><span style="flex:1;color:#6B7280">08-08</span><div style="height:28px;padding:0 10px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:12px;white-space:nowrap;flex:none">수정</div></div>
+                <div style="padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;border-top:1px solid #D1D5DB;"><span style="width:10px;color:#111827"></span><span style="width:96px">김연우</span><span style="width:150px;color:#374151">의사</span><span style="width:110px;color:#374151">kimyw</span><span style="flex:1;color:#6B7280">07-30</span><div style="height:28px;padding:0 10px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:12px;white-space:nowrap;flex:none">수정</div></div>
+              </div>
+              <div style="display:flex;justify-content:flex-end"><div style="height:34px;padding:0 14px;border:2px solid #111827;border-radius:6px;display:flex;align-items:center;font-size:13px;font-weight:700">+ 직원 추가</div></div>
+              <div style="border:1px solid #D1D5DB;border-radius:8px;padding:11px 14px;display:flex;align-items:center;gap:10px"><span style="font-size:13px;font-weight:700;flex:1">퇴사자 <span style="font-weight:400;color:#6B7280">2명</span></span><span style="font-size:12px;color:#374151">▾ 펼치기</span></div>
+              <div style="border:1px solid #D1D5DB;border-radius:8px;overflow:hidden">
+                <div style="padding:9px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #D1D5DB"><span style="font-size:13px;flex:1">진예린 <span style="color:#6B7280">스탭 · jinyr</span></span><span style="font-size:12px;color:#6B7280">06-30 퇴사</span><div style="height:28px;padding:0 10px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:12px;white-space:nowrap">재직 처리</div></div>
+                <div style="padding:9px 14px;display:flex;align-items:center;gap:10px"><span style="font-size:13px;flex:1">오세영 <span style="color:#6B7280">스탭 · ohsy</span></span><span style="font-size:12px;color:#6B7280">03-14 퇴사</span><div style="height:28px;padding:0 10px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:12px;white-space:nowrap">재직 처리</div></div>
+              </div>
+              <div style="flex:1;min-height:0"></div>
+              <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ <b>역할 변경 · 퇴사 처리는 [ 수정 ]에서 합니다</b> — 직원 추가 · 수정은 관리자 권한 보유자만 가능합니다(서지현 · 박연 원장)</span>
+            </div>
+          </div></div></div>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">──([ + 직원 추가 ])──▶ 우측 = <b>A1-2</b> 추가 · ──([ 수정 ])──▶ 우측 = <b>A1-2</b> 수정 — 아이디가 잠기고 <b>역할 체크박스 · [ 퇴사 처리 ] · [ 비밀번호 재설정 ]</b>이 열린다 · ──([ 재직 처리 ])──▶ 퇴사자를 재직 중 목록으로 되돌린다</div></sc-if>
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="border:1px dashed #6B7280;border-radius:8px;padding:12px 16px;font-size:12px;color:#374151;line-height:18px">계정을 만드는 화면이 없으면 도입 첫날 스탭 계정을 누가 어디서 만드는지가 비어 있다. 직원은 지우지 않고 「퇴사자」으로 내린다 — 지난 기록이 그 이름을 가리키고 있기 때문이다(「10:32 서지현 님이 등록했어요」). 역할은 스탭 · 의사 둘뿐이고, 어드민은 역할이 아니라 권한 하나다.</div></sc-if>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;width:1280px">
+        <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:700">A1-2 · 직원 추가</span><span style="font-size:12px;color:#6B7280">1280 × 800 · 아이디는 만든 뒤 못 바꾼다 · 첫 비밀번호는 본인이 바꾼다</span></div>
+        <div data-screen-label="A1-2" style="width:1280px;height:800px;background:#FFFFFF;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;position:relative"><div style="height:56px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;justify-content:space-between;padding:0 32px;flex:none"><div style="display:flex;align-items:center;gap:10px"><div style="width:24px;height:24px;border:1px solid #D1D5DB;background:#F3F4F6;border-radius:4px"></div><span style="font-size:15px;font-weight:600">복약 안내 도우미</span></div><div style="display:flex;gap:26px;align-items:center;height:56px"><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">현황<span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#111827;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">4</span></span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">관리</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">설정</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;font-weight:700;box-shadow:inset 0 -2px 0 #111827">어드민</span></div><div style="display:flex;align-items:center;gap:14px"><span style="font-size:13px;color:#374151">서지현 <b>관리자 · 스탭</b> ▾</span><div style="position:relative;width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">🔔<div style="position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#111827;color:#FFFFFF;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">1</div></div><div style="width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">⏻</div></div></div><div style="flex:1;display:flex;overflow:hidden"><div style="width:320px;border-right:1px solid #D1D5DB;display:flex;flex-direction:column;flex:none;overflow:hidden">
+            <div style="padding:14px;display:flex;flex-direction:column;gap:8px;flex:none">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:700;flex:1">어드민</span><div style="width:28px;height:28px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#374151">◀</div></div>
+            </div>
+            <div style="flex:1;overflow:hidden">
+              <div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;background:#F3F4F6;font-weight:700;box-shadow:inset 3px 0 0 #111827;"><span style="width:10px;color:#111827">▸</span><span style="flex:1">직원</span><span style="color:#6B7280;font-size:12px">6명</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">의원 정보</span><span style="color:#6B7280;font-size:12px"></span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">문자</span><span style="color:#6B7280;font-size:12px">⚠ 320통</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">전체 로그</span><span style="color:#6B7280;font-size:12px"></span></div>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:9px 14px;flex:none"><span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 관리자 권한 보유자에게만 표시되는 메뉴입니다</span></div>
+          </div><div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="padding:14px 26px 12px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;gap:12px;flex:none"><span style="font-size:17px;font-weight:700;flex:1">직원 추가</span><div style="height:38px;padding:0 14px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px;font-weight:600;white-space:nowrap">취소</div></div>
+            <div style="flex:1;padding:16px 26px;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">이름 *</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:300px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;">이하람</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 화면에 그대로 표시됩니다 — 「이하람 업로드」</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">아이디 *</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:300px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;">leehr</div><div style="height:38px;padding:0 14px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px;font-weight:600;white-space:nowrap">중복 확인</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">영문 소문자와 숫자를 섞어 4자 이상</span><span style="font-size:11px;color:#6B7280;line-height:16px">⚠ 생성 후 변경할 수 없습니다</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">첫 비밀번호 *</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:300px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;">●●●●●●●●</div><div style="height:38px;padding:0 14px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px;font-weight:600;white-space:nowrap">보기</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">영문 · 숫자 · 기호를 섞어 8자 이상</span><span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 최초 로그인 시 본인이 직접 변경합니다</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:8px">역할</span>
+                <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;gap:22px;font-size:13px"><span style="color:#6B7280">☐ 의사</span><span style="font-weight:700">☑ 스탭</span></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px"><b>역할과 권한을 합쳐 하나 이상 · 중복 선택 가능</b><br>의사 — 안내문을 확인하고 승인합니다<br>스탭 — 환자를 등록하고 진료기록을 올립니다</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:8px">권한</span>
+                <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;gap:22px;font-size:13px"><span style="font-weight:700">☑ 관리자</span></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">관리자 — 직원 · 의원 정보 · 문자 · 기록을 관리합니다<br><b>역할과 다른 축입니다</b> — 관리자만으로는 진료 화면이 열리지 않습니다</span>
+                </div>
+              </div>
+              <div style="height:1px;background:#D1D5DB"></div>
+              <div style="display:flex;flex-direction:column;gap:5px"><span style="font-size:13px;font-weight:700">생성될 계정</span><span style="font-size:14px;color:#374151">이하람 · leehr · <b>관리자 · 스탭</b></span></div>
+              <div style="flex:1;min-height:0"></div>
+              <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 수정 모드에서는 아이디가 잠기고 [ 비밀번호 재설정 ]이 표시됩니다 · 하단 왼쪽에 [ 퇴사 처리 ]</span>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:12px 26px;display:flex;align-items:center;gap:12px;flex:none"><div style="flex:1"></div><div style="height:40px;padding:0 20px;border-radius:6px;background:#111827;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;white-space:nowrap">추가</div></div>
+          </div></div></div>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">──([ 추가 ])──▶ 우측 = <b>A1-1</b>, 새 줄이 맨 위에 · 본인 첫 로그인 ──▶ <b>L-3</b></div></sc-if>
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="border:1px dashed #6B7280;border-radius:8px;padding:12px 16px;font-size:12px;color:#374151;line-height:18px"><b>「관리자」는 역할이 아니라 권한이다.</b> 명세 전체가 스탭과 의사 둘로 짜여 있고, 관리자는 「무엇을 하는 사람인가」가 아니라 「의원 운영을 관리할 수 있는가」라는 <b>다른 축</b>이다 — 진료 권한을 주지도 뺏지도 않는다. 그래서 화면에서도 <b>「역할」과 「권한」 두 줄로 나눈다</b>. 셋을 나란히 두면 「관리자만 켜면 스탭 일을 할 수 있나」가 읽히지 않는다. 검사는 배열 하나로 한다 — <b>staff / doctor / admin이 roles에 있는가</b>. (KEY-9 결정 · 2026-08-19) 아이디가 겹치면 「이미 쓰는 아이디예요. 다른 것으로 해주세요」. 아예 막는 것 셋 — 마지막 어드민 권한을 끄려 하면 「직원을 관리할 사람이 아무도 없게 돼요」, 마지막 의사 계정을 그만둔 것으로 하려 하면 「안내문을 승인할 분이 없어지면 문자가 나가지 않아요」, 자기 계정을 자기가 그만둔 것으로 하려 하면 「본인 계정은 다른 어드민이 처리해 주셔야 해요」.</div></sc-if>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;width:1280px">
+        <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:700">A1-3 · 직원 수정 ★ 신설</span><span style="font-size:12px;color:#6B7280">1280 × 800 · A1-2와 같은 화면의 다른 상태 · 역할 변경 · 퇴사 처리 · 비밀번호 재설정</span></div>
+        <div data-screen-label="A1-3" style="width:1280px;height:800px;background:#FFFFFF;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;position:relative"><div style="height:56px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;justify-content:space-between;padding:0 32px;flex:none"><div style="display:flex;align-items:center;gap:10px"><div style="width:24px;height:24px;border:1px solid #D1D5DB;background:#F3F4F6;border-radius:4px"></div><span style="font-size:15px;font-weight:600">복약 안내 도우미</span></div><div style="display:flex;gap:26px;align-items:center;height:56px"><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">현황<span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#111827;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">4</span></span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">관리</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">설정</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;font-weight:700;box-shadow:inset 0 -2px 0 #111827">어드민</span></div><div style="display:flex;align-items:center;gap:14px"><span style="font-size:13px;color:#374151">서지현 <b>관리자 · 스탭</b> ▾</span><div style="position:relative;width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">🔔<div style="position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#111827;color:#FFFFFF;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">1</div></div><div style="width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">⏻</div></div></div><div style="flex:1;display:flex;overflow:hidden"><div style="width:320px;border-right:1px solid #D1D5DB;display:flex;flex-direction:column;flex:none;overflow:hidden">
+            <div style="padding:14px;display:flex;flex-direction:column;gap:8px;flex:none">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:700;flex:1">어드민</span><div style="width:28px;height:28px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#374151">◀</div></div>
+            </div>
+            <div style="flex:1;overflow:hidden">
+              <div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;background:#F3F4F6;font-weight:700;box-shadow:inset 3px 0 0 #111827;"><span style="width:10px;color:#111827">▸</span><span style="flex:1">직원</span><span style="color:#6B7280;font-size:12px">6명</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">의원 정보</span><span style="color:#6B7280;font-size:12px"></span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">문자</span><span style="color:#6B7280;font-size:12px">⚠ 320통</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">전체 로그</span><span style="color:#6B7280;font-size:12px"></span></div>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:9px 14px;flex:none"><span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 관리자 권한 보유자에게만 표시되는 메뉴입니다</span></div>
+          </div><div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="padding:14px 26px 12px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;gap:12px;flex:none"><span style="font-size:17px;font-weight:700;flex:1">직원 수정</span><div style="height:38px;padding:0 14px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px;font-weight:600;white-space:nowrap">취소</div></div>
+            <div style="flex:1;padding:16px 26px;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">이름 *</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:300px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;">표민경</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 화면에 그대로 표시됩니다 — 「표민경 업로드」</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">아이디 *</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:300px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;background:#F3F4F6;color:#6B7280">pyomk</div><div style="height:38px;display:flex;align-items:center;font-size:12px;color:#6B7280;white-space:nowrap">🔒 잠김</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px"><b>아이디는 생성 후 바꿀 수 없습니다</b> — 지난 기록이 이 아이디를 가리키고 있습니다</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">비밀번호</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="height:38px;padding:0 16px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px;font-weight:600;white-space:nowrap">비밀번호 재설정</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">누르면 임시 비밀번호가 나옵니다 — <b>본인이 다음 로그인에서 직접 바꿉니다</b></span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:8px">역할</span>
+                <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;gap:22px;font-size:13px"><span style="color:#6B7280">☐ 의사</span><span style="font-weight:700">☑ 스탭</span></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px"><b>역할과 권한을 합쳐 하나 이상 · 중복 선택 가능</b><br>의사 — 안내문을 확인하고 승인합니다<br>스탭 — 환자를 등록하고 진료기록을 올립니다</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:8px">권한</span>
+                <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;gap:22px;font-size:13px"><span style="color:#6B7280">☐ 관리자</span></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">관리자 — 직원 · 의원 정보 · 문자 · 기록을 관리합니다<br><b>역할과 다른 축입니다</b> — 관리자만으로는 진료 화면이 열리지 않습니다</span>
+                </div>
+              </div>
+              <div style="height:1px;background:#D1D5DB"></div>
+              <div style="display:flex;flex-direction:column;gap:5px"><span style="font-size:13px;font-weight:700">지금 계정</span><span style="font-size:14px;color:#374151">표민경 · pyomk · <b>스탭</b> <span style="font-size:12px;color:#6B7280">· 마지막 로그인 오늘 08:40</span></span></div>
+              <div style="border:1px solid #D1D5DB;border-radius:8px;padding:11px 14px;display:flex;flex-direction:column;gap:5px"><span style="font-size:12.5px;font-weight:700">서버가 막는 것 셋</span><span style="font-size:11.5px;color:#6B7280;line-height:1.7">· <b>마지막 관리자</b>의 관리자 권한 끄기<br>· <b>마지막 의사 계정</b> 퇴사 처리 — 안내문을 영영 승인할 수 없게 된다<br>· <b>자기 계정</b>을 자기가 퇴사 처리</span></div><div style="flex:1;min-height:0"></div>
+              <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 수정 모드에서는 아이디가 잠기고 [ 비밀번호 재설정 ]이 표시됩니다 · 하단 왼쪽에 [ 퇴사 처리 ]</span>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:12px 26px;display:flex;align-items:center;gap:12px;flex:none"><div style="height:40px;padding:0 16px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px;font-weight:600;white-space:nowrap">퇴사 처리</div><span style="font-size:11px;color:#6B7280;flex:1">퇴사 처리해도 <b>계정과 지난 기록은 지우지 않습니다</b> — 목록의 「퇴사자」로 옮겨집니다</span><div style="height:40px;padding:0 20px;border-radius:6px;background:#111827;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;white-space:nowrap">저장</div></div>
+          </div></div></div>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">──([ 저장 ])──▶ <b>A1-1</b> 목록으로 · 바뀐 역할이 바로 선다 · ──([ 퇴사 처리 ])──▶ <b>A1-1</b>의 「퇴사자」로 옮겨진다 — 되돌리려면 거기서 [ 재직 처리 ] · ──([ 비밀번호 재설정 ])──▶ 임시 비밀번호를 내고 <code>must_change_password</code>를 세운다 ──▶ 본인이 <b>L-3</b>에서 바꾼다</div></sc-if>
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="border:1px dashed #6B7280;border-radius:8px;padding:12px 16px;font-size:12px;color:#374151;line-height:18px"><b>지우지 않는다.</b> 퇴사 처리는 <code>staff.status</code>와 <code>left_at</code>을 바꿀 뿐 계정을 없애지 않는다 — 지난 안내문과 로그가 그 이름을 가리키고 있어서다. 아이디도 같은 이유로 잠근다.<br><br><b>역할은 중복 선택이다.</b> 「관리자 + 스탭」이 정상이고, 관리자만 있는 사람은 진료 화면을 못 연다. 체크를 끄고 켜는 것이 곧 권한 변경이라 따로 화면을 두지 않는다.<br><br><b>서버가 셋을 막는다</b> — 마지막 관리자의 권한 끄기 · 마지막 의사 계정 퇴사 · 자기 계정 자기가 퇴사. 앞의 둘은 의원이 멈추고, 뒤엣것은 실수가 잦다. 화면에서도 막고 API에서도 막는다.</div></sc-if>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;width:1280px">
+        <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:700">A1-4 · 의원 정보</span><span style="font-size:12px;color:#6B7280">1280 × 800 · D2 설정에 있던 것을 그대로 옮겼다</span></div>
+        <div data-screen-label="A1-4" style="width:1280px;height:800px;background:#FFFFFF;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;position:relative"><div style="height:56px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;justify-content:space-between;padding:0 32px;flex:none"><div style="display:flex;align-items:center;gap:10px"><div style="width:24px;height:24px;border:1px solid #D1D5DB;background:#F3F4F6;border-radius:4px"></div><span style="font-size:15px;font-weight:600">복약 안내 도우미</span></div><div style="display:flex;gap:26px;align-items:center;height:56px"><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">현황<span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#111827;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">4</span></span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">관리</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">설정</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;font-weight:700;box-shadow:inset 0 -2px 0 #111827">어드민</span></div><div style="display:flex;align-items:center;gap:14px"><span style="font-size:13px;color:#374151">서지현 <b>관리자 · 스탭</b> ▾</span><div style="position:relative;width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">🔔<div style="position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#111827;color:#FFFFFF;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">1</div></div><div style="width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">⏻</div></div></div><div style="flex:1;display:flex;overflow:hidden"><div style="width:320px;border-right:1px solid #D1D5DB;display:flex;flex-direction:column;flex:none;overflow:hidden">
+            <div style="padding:14px;display:flex;flex-direction:column;gap:8px;flex:none">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:700;flex:1">어드민</span><div style="width:28px;height:28px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#374151">◀</div></div>
+            </div>
+            <div style="flex:1;overflow:hidden">
+              <div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">직원</span><span style="color:#6B7280;font-size:12px">6명</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;background:#F3F4F6;font-weight:700;box-shadow:inset 3px 0 0 #111827;"><span style="width:10px;color:#111827">▸</span><span style="flex:1">의원 정보</span><span style="color:#6B7280;font-size:12px"></span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">문자</span><span style="color:#6B7280;font-size:12px">⚠ 320통</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">전체 로그</span><span style="color:#6B7280;font-size:12px"></span></div>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:9px 14px;flex:none"><span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 관리자 권한 보유자에게만 표시되는 메뉴입니다</span></div>
+          </div><div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="padding:14px 26px 12px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;gap:12px;flex:none"><span style="font-size:17px;font-weight:700;flex:1">의원 정보</span></div>
+            <div style="flex:1;padding:16px 26px;display:flex;flex-direction:column;gap:14px;overflow:hidden">
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">의원 이름 *</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:420px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;">〇〇여성의원</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 안내문 머리말과 환자 화면에 표시됩니다</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">문의하기 링크 *</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:320px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;">http://pf.kakao.com/_abcdEF</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 환자 화면 「문의하기」가 열리는 카카오톡 채널 주소입니다</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">예약하기 링크</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:420px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;">https://booking.naver.com/...</div></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 환자 화면 「예약하기」가 열리는 주소입니다 · 비워 두면 예약 버튼이 표시되지 않습니다</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:10px">로고</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:8px"><div style="width:200px;height:38px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:14px;">파일 선택 <span style="color:#6B7280">(선택)</span></div></div>
+                </div>
+              </div>
+              <div style="height:1px;background:#D1D5DB"></div>
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <span style="width:110px;flex:none;font-size:13px;color:#374151;padding-top:6px">문자 발송 시각</span>
+                <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;gap:18px;font-size:13px"><span>◉ 오늘 18:00</span><span style="color:#374151">○ 지금 바로</span><span style="color:#374151">○ 내일 오전 10시</span></div>
+                  <span style="font-size:11px;color:#6B7280">ⓘ 의사가 환자별로 변경할 수 있습니다</span>
+                </div>
+              </div>
+              <div style="flex:1;min-height:0"></div>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:12px 26px;display:flex;align-items:center;gap:12px;flex:none"><div style="flex:1"></div><div style="height:40px;padding:0 20px;border-radius:6px;background:#111827;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;white-space:nowrap">저장</div></div>
+          </div></div></div>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">──([ 저장 ])──▶ 안내문 머리말 · 환자 화면 P1~P8에 바로 반영</div></sc-if>
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="border:1px dashed #6B7280;border-radius:8px;padding:12px 16px;font-size:12px;color:#374151;line-height:18px">진료에 관한 설정(D2)과 의원 운영에 관한 것(A1)을 나눈다. 의원 이름 · 문의하기 링크 · 예약하기 링크는 원장님이 아니라 의원을 운영하는 사람이 정한다. 문자에 관한 것만 A1-5로 뺐다.</div></sc-if>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;width:1280px">
+        <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:700">A1-5 · 문자 ★ 이 프로그램이 멈추는 유일한 자리</span><span style="font-size:12px;color:#6B7280">1280 × 800 · 0통이면 실패로 처리하지 않고 기다린다</span></div>
+        <div data-screen-label="A1-5" style="width:1280px;height:800px;background:#FFFFFF;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;position:relative"><div style="height:56px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;justify-content:space-between;padding:0 32px;flex:none"><div style="display:flex;align-items:center;gap:10px"><div style="width:24px;height:24px;border:1px solid #D1D5DB;background:#F3F4F6;border-radius:4px"></div><span style="font-size:15px;font-weight:600">복약 안내 도우미</span></div><div style="display:flex;gap:26px;align-items:center;height:56px"><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">현황<span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#111827;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">4</span></span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">관리</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">설정</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;font-weight:700;box-shadow:inset 0 -2px 0 #111827">어드민</span></div><div style="display:flex;align-items:center;gap:14px"><span style="font-size:13px;color:#374151">서지현 <b>관리자 · 스탭</b> ▾</span><div style="position:relative;width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">🔔<div style="position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#111827;color:#FFFFFF;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">1</div></div><div style="width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">⏻</div></div></div><div style="flex:1;display:flex;overflow:hidden"><div style="width:320px;border-right:1px solid #D1D5DB;display:flex;flex-direction:column;flex:none;overflow:hidden">
+            <div style="padding:14px;display:flex;flex-direction:column;gap:8px;flex:none">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:700;flex:1">어드민</span><div style="width:28px;height:28px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#374151">◀</div></div>
+            </div>
+            <div style="flex:1;overflow:hidden">
+              <div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">직원</span><span style="color:#6B7280;font-size:12px">6명</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">의원 정보</span><span style="color:#6B7280;font-size:12px"></span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;background:#F3F4F6;font-weight:700;box-shadow:inset 3px 0 0 #111827;"><span style="width:10px;color:#111827">▸</span><span style="flex:1">문자</span><span style="color:#6B7280;font-size:12px">⚠ 320통</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">전체 로그</span><span style="color:#6B7280;font-size:12px"></span></div>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:9px 14px;flex:none"><span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 관리자 권한 보유자에게만 표시되는 메뉴입니다</span></div>
+          </div><div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="padding:14px 26px 12px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;gap:12px;flex:none"><span style="font-size:17px;font-weight:700;flex:1">문자</span></div>
+            <div style="flex:1;padding:16px 26px;display:flex;flex-direction:column;gap:14px;overflow:hidden">
+              <div style="border:2px solid #111827;border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:16px">
+                <span style="font-size:16px">⚠</span>
+                <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                  <span style="font-size:15px;font-weight:700">남은 문자 320통</span>
+                  <span style="font-size:13px;color:#374151;line-height:19px">현재 추세로 9월 3일경 소진 예정 · 소진 시 예약 문자가 발송되지 않습니다</span>
+                </div>
+                <div style="height:40px;padding:0 20px;border-radius:6px;background:#111827;color:#FFFFFF;display:flex;align-items:center;font-size:14px;font-weight:600;white-space:nowrap">문자 충전</div>
+              </div>
+              <div style="display:flex;gap:22px">
+                <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;font-weight:700;"><span style="flex:1;color:#111827">이번 달 발송량</span><span style="width:70px;text-align:right;color:#111827">1,000통</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;"><span style="flex:1;color:#374151">진료 안내문</span><span style="width:70px;text-align:right;color:#374151">210통</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;"><span style="flex:1;color:#374151">일주일 뒤 확인</span><span style="width:70px;text-align:right;color:#374151">198통</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;"><span style="flex:1;color:#374151">보름 뒤 확인</span><span style="width:70px;text-align:right;color:#374151">121통</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;"><span style="flex:1;color:#374151">한 달 뒤 확인</span><span style="width:70px;text-align:right;color:#374151">96통</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;"><span style="flex:1;color:#374151">소진 임박 안내</span><span style="width:70px;text-align:right;color:#374151">142통</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;"><span style="flex:1;color:#374151">재발송</span><span style="width:70px;text-align:right;color:#374151">93통</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;"><span style="flex:1;color:#374151">인증번호</span><span style="width:70px;text-align:right;color:#374151">96통</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0;"><span style="flex:1;color:#374151">재진 안내</span><span style="width:70px;text-align:right;color:#374151">44통</span></div>
+                  <span style="font-size:11px;color:#6B7280;padding-top:4px">ⓘ 환자 1인당 3~5통이 발송됩니다</span>
+                  <div style="height:1px;background:#D1D5DB;margin:8px 0"></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0"><span style="flex:1;color:#374151">단문(SMS)</span><span style="width:96px;text-align:right;color:#374151">1,000통 · 전부</span></div>
+                  <div style="display:flex;align-items:baseline;gap:12px;font-size:13px;padding:3px 0"><span style="flex:1;color:#374151">장문(LMS)</span><span style="width:96px;text-align:right;color:#374151">0통</span></div>
+                  <span style="font-size:11px;color:#6B7280;padding-top:4px;line-height:16px">ⓘ 장문은 단가가 높습니다 · 90바이트 초과 시 장문으로 집계됩니다</span>
+                </div>
+                <div style="width:1px;background:#D1D5DB"></div>
+                <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+                  <div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:13px;color:#6B7280;width:70px">발신번호</span><span style="font-size:14px;font-weight:700">064-000-0000</span><span style="font-size:12px;color:#374151">✓ 사전등록 완료</span></div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 사전등록이 해제되면 문자가 발송되지 않습니다</span>
+                  <div style="height:1px;background:#D1D5DB"></div>
+                  <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:13px;font-weight:700;flex:1">수신 거부 <span style="font-weight:400;color:#6B7280">4명</span></span><span style="font-size:12px;color:#374151">▾ 펼치기</span></div>
+                  <div style="border:1px solid #D1D5DB;border-radius:8px;overflow:hidden">
+                    <div style="padding:9px 12px;display:flex;align-items:center;gap:12px;font-size:13px"><span style="width:56px">한소영</span><span style="width:86px;color:#374151">차트 11550</span><span style="flex:1;color:#6B7280;font-size:12px">07-28부터</span><span style="font-size:11px;font-weight:600;border:1px solid #D1D5DB;border-radius:5px;padding:3px 8px">수신 재동의</span></div>
+                    <div style="padding:9px 12px;display:flex;align-items:center;gap:12px;font-size:13px;border-top:1px solid #D1D5DB"><span style="width:56px">임채원</span><span style="width:86px;color:#374151">차트 10221</span><span style="flex:1;color:#6B7280;font-size:12px">06-14부터</span><span style="font-size:11px;font-weight:600;border:1px solid #D1D5DB;border-radius:5px;padding:3px 8px">수신 재동의</span></div>
+                    <div style="padding:9px 12px;display:flex;align-items:center;gap:12px;font-size:13px;border-top:1px solid #D1D5DB"><span style="width:56px">정유진</span><span style="width:86px;color:#374151">차트 09877</span><span style="flex:1;color:#6B7280;font-size:12px">05-02부터</span><span style="font-size:11px;font-weight:600;border:1px solid #D1D5DB;border-radius:5px;padding:3px 8px">수신 재동의</span></div>
+                    <div style="padding:9px 12px;display:flex;align-items:center;gap:12px;font-size:13px;border-top:1px solid #D1D5DB"><span style="width:56px">김민지</span><span style="width:86px;color:#374151">차트 12010</span><span style="flex:1;color:#6B7280;font-size:12px">04-11부터</span><span style="font-size:11px;font-weight:600;border:1px solid #D1D5DB;border-radius:5px;padding:3px 8px">수신 재동의</span></div>
+                  </div>
+                  <span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 자동 발송 대상에서 제외됩니다 · [ 수신 재동의 ]는 환자가 직접 요청한 경우에만 처리해 주세요</span>
+                </div>
+              </div>
+              <div style="flex:1;min-height:0"></div>
+              <div style="border:1px dashed #6B7280;border-radius:8px;padding:10px 14px;display:flex;gap:18px;font-size:12px;color:#374151"><span style="font-weight:700">소진 전 3회 알림</span><span>1,000통 — 왼쪽 목록에 숫자</span><span>500통 — ⚠ + 어드민 로그인 배너</span><span>200통 — 스탭 화면(S1) 목록 상단 배너</span></div>
+            </div>
+          </div></div></div>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">──([ 문자 충전 ])──▶ 대행사로 이동 · 0통이면 <b>S2</b> 맨 위에 「문자가 떨어져 12건이 기다리고 있어요」</div></sc-if>
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="border:1px dashed #6B7280;border-radius:8px;padding:12px 16px;font-size:12px;color:#374151;line-height:18px">이 프로그램의 본체는 자동 발송이다(환자 한 명당 3~5통). 남은 건수를 볼 곳이 없으면 떨어졌을 때 예약된 문자가 전부 실패하고, 스탭은 원인도 모른 채 「보완」이 쌓이는 것만 본다. 0통일 때 실패로 처리하면 보완에 수십 건이 한꺼번에 쌓이고 스탭은 번호를 하나씩 고치려 든다 — 원인은 번호가 아니다. 기다리게 두고, 채우면 밀린 것부터 나간다.</div></sc-if>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;width:1280px">
+        <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:700">A1-6 · 전체 로그 ★ 신설</span><span style="font-size:12px;color:#6B7280">1280 × 800 · 사람이 한 일과 시스템이 한 일이 한 곳에</span></div>
+        <div data-screen-label="A1-6" style="width:1280px;height:800px;background:#FFFFFF;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;position:relative"><div style="height:56px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;justify-content:space-between;padding:0 32px;flex:none"><div style="display:flex;align-items:center;gap:10px"><div style="width:24px;height:24px;border:1px solid #D1D5DB;background:#F3F4F6;border-radius:4px"></div><span style="font-size:15px;font-weight:600">복약 안내 도우미</span></div><div style="display:flex;gap:26px;align-items:center;height:56px"><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">현황<span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#111827;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">4</span></span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">관리</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">설정</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;font-weight:700;box-shadow:inset 0 -2px 0 #111827">어드민</span></div><div style="display:flex;align-items:center;gap:14px"><span style="font-size:13px;color:#374151">서지현 <b>관리자 · 스탭</b> ▾</span><div style="position:relative;width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">🔔<div style="position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#111827;color:#FFFFFF;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">1</div></div><div style="width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">⏻</div></div></div><div style="flex:1;display:flex;overflow:hidden"><div style="width:320px;border-right:1px solid #D1D5DB;display:flex;flex-direction:column;flex:none;overflow:hidden">
+            <div style="padding:14px;display:flex;flex-direction:column;gap:8px;flex:none">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:700;flex:1">어드민</span><div style="width:28px;height:28px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#374151">◀</div></div>
+            </div>
+            <div style="flex:1;overflow:hidden"><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">직원</span><span style="color:#6B7280;font-size:12px">6명</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">의원 정보</span><span style="color:#6B7280;font-size:12px"></span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">문자</span><span style="color:#6B7280;font-size:12px">⚠ 320통</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;background:#F3F4F6;font-weight:700;box-shadow:inset 3px 0 0 #111827;"><span style="width:10px;color:#111827">▸</span><span style="flex:1">전체 로그</span><span style="color:#6B7280;font-size:12px"></span></div></div>
+            <div style="border-top:1px solid #D1D5DB;padding:9px 14px;flex:none"><span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 기록은 고칠 수도 지울 수도 없습니다</span></div>
+          </div><div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="padding:16px 26px 12px;border-bottom:1px solid #D1D5DB;display:flex;flex-direction:column;gap:10px;flex:none">
+              <span style="font-size:17px;font-weight:700">전체 로그</span>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span style="font-size:12px;color:#374151">기간</span>
+                <div style="height:32px;padding:0 12px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px">2026-05-01</div>
+                <span style="font-size:13px;color:#6B7280">~</span>
+                <div style="height:32px;padding:0 12px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px">2026-08-16</div>
+                <span style="font-size:12px;color:#374151;padding-left:6px">누가</span>
+                <div style="height:32px;padding:0 12px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;gap:8px;font-size:13px">전체 <span style="color:#6B7280;font-size:12px">▾</span></div>
+                <span style="font-size:12px;color:#374151;padding-left:6px">무엇을</span>
+                <div style="height:32px;padding:0 12px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;gap:8px;font-size:13px">주요 작업만 <span style="color:#6B7280;font-size:12px">▾</span></div>
+                <div style="flex:1"></div>
+                <div style="height:32px;padding:0 12px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:13px;color:#6B7280;width:180px">환자 이름 · 차트번호</div>
+                <div style="height:32px;padding:0 14px;border-radius:6px;background:#111827;color:#FFFFFF;display:flex;align-items:center;font-size:13px;font-weight:600">검색</div>
+              </div>
+            </div>
+            <div style="flex:1;padding:6px 26px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="display:grid;grid-template-columns:132px 116px 1fr 190px 16px;gap:12px;font-size:12px;color:#6B7280;padding:8px 0"><span>언제</span><span>누가</span><span>무엇을</span><span>대상 · 진료</span><span></span></div>
+              <div style="display:grid;grid-template-columns:132px 116px 1fr 190px 16px;gap:12px;align-items:center;font-size:13px;padding:9px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">08-15 11:02</span><span style="color:#111827">박연 원장</span><span style="font-weight:600">안내문 승인</span><span style="color:#374151">김서연 · 08-13 진료</span><span style="color:#6B7280">›</span></div>
+              <div style="display:grid;grid-template-columns:132px 116px 1fr 190px 16px;gap:12px;align-items:center;font-size:13px;padding:9px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">08-15 11:02</span><span style="color:#6B7280">시스템</span><span style="font-weight:600">진료기록 원본 삭제 · 3장</span><span style="color:#374151">김서연 · 08-13 진료</span><span style="color:#6B7280">›</span></div>
+              <div style="display:grid;grid-template-columns:132px 116px 1fr 190px 16px;gap:12px;align-items:center;font-size:13px;padding:9px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">08-15 10:45</span><span style="color:#111827">서지현</span><span style="font-weight:600">의사 승인 요청</span><span style="color:#374151">김서연 · 08-13 진료</span><span style="color:#6B7280">›</span></div>
+              <div style="display:grid;grid-template-columns:132px 116px 1fr 190px 16px;gap:12px;align-items:center;font-size:13px;padding:9px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">08-14 18:00</span><span style="color:#6B7280">시스템</span><span style="font-weight:600">발송 · 진료 안내문</span><span style="color:#374151">정민아 · 08-12 진료</span><span style="color:#6B7280">›</span></div>
+              <div style="display:grid;grid-template-columns:132px 116px 1fr 190px 16px;gap:12px;align-items:center;font-size:13px;padding:9px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">08-14 15:31</span><span style="color:#111827">서지현</span><span style="font-weight:600">링크 무효화</span><span style="color:#374151">한소영 · 08-14 진료</span><span style="color:#6B7280">›</span></div>
+              <div style="display:grid;grid-template-columns:132px 116px 1fr 190px 16px;gap:12px;align-items:center;font-size:13px;padding:9px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">08-13 17:40</span><span style="color:#111827">표민경</span><span style="font-weight:600">환자 정보 수정 · 번호</span><span style="color:#374151">한소영</span><span style="color:#6B7280">›</span></div>
+              <div style="display:grid;grid-template-columns:132px 116px 1fr 190px 16px;gap:12px;align-items:center;font-size:13px;padding:9px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">08-13 09:02</span><span style="color:#6B7280">시스템</span><span style="font-weight:600">인증번호 발송</span><span style="color:#374151">강예린 · 08-13 진료</span><span style="color:#6B7280">›</span></div>
+              <div style="flex:1"></div>
+              <div style="display:flex;align-items:center;padding:10px 0;border-top:1px solid #D1D5DB"><span style="font-size:12px;color:#6B7280">1,284건 중 1–50</span><div style="flex:1"></div><span style="font-size:13px;color:#374151">‹ 1 2 3 … 26 ›</span></div>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:12px 26px;display:flex;align-items:center;flex:none"><span style="font-size:11px;color:#6B7280">ⓘ 내려받기도 기록에 남습니다 · 시스템 처리 내역을 포함합니다 — 발송과 삭제가 여기 표시됩니다</span><div style="flex:1"></div><div style="height:38px;padding:0 16px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:14px;font-weight:600">내려받기</div></div></div></div></div>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">──(행의 › 누름)──▶ <b>A1-7</b> 한 건 시간 흐름</div></sc-if>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;width:1280px">
+        <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:700">A1-7 · 한 건 시간 흐름 ★ 신설</span><span style="font-size:12px;color:#6B7280">1280 × 800 · 환자 한 명의 한 진료를 시간순으로</span></div>
+        <div data-screen-label="A1-7" style="width:1280px;height:800px;background:#FFFFFF;border:1px solid #D1D5DB;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;position:relative"><div style="height:56px;border-bottom:1px solid #D1D5DB;display:flex;align-items:center;justify-content:space-between;padding:0 32px;flex:none"><div style="display:flex;align-items:center;gap:10px"><div style="width:24px;height:24px;border:1px solid #D1D5DB;background:#F3F4F6;border-radius:4px"></div><span style="font-size:15px;font-weight:600">복약 안내 도우미</span></div><div style="display:flex;gap:26px;align-items:center;height:56px"><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">현황<span style="min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#111827;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">4</span></span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">관리</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;color:#6B7280">설정</span><span style="font-size:14px;height:56px;display:flex;align-items:center;gap:6px;font-weight:700;box-shadow:inset 0 -2px 0 #111827">어드민</span></div><div style="display:flex;align-items:center;gap:14px"><span style="font-size:13px;color:#374151">서지현 <b>관리자 · 스탭</b> ▾</span><div style="position:relative;width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">🔔<div style="position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#111827;color:#FFFFFF;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">1</div></div><div style="width:32px;height:32px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px">⏻</div></div></div><div style="flex:1;display:flex;overflow:hidden"><div style="width:320px;border-right:1px solid #D1D5DB;display:flex;flex-direction:column;flex:none;overflow:hidden">
+            <div style="padding:14px;display:flex;flex-direction:column;gap:8px;flex:none">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:700;flex:1">어드민</span><div style="width:28px;height:28px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#374151">◀</div></div>
+            </div>
+            <div style="flex:1;overflow:hidden"><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">직원</span><span style="color:#6B7280;font-size:12px">6명</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">의원 정보</span><span style="color:#6B7280;font-size:12px"></span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;"><span style="width:10px;color:#111827"></span><span style="flex:1">문자</span><span style="color:#6B7280;font-size:12px">⚠ 320통</span></div><div style="padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;background:#F3F4F6;font-weight:700;box-shadow:inset 3px 0 0 #111827;"><span style="width:10px;color:#111827">▸</span><span style="flex:1">전체 로그</span><span style="color:#6B7280;font-size:12px"></span></div></div>
+            <div style="border-top:1px solid #D1D5DB;padding:9px 14px;flex:none"><span style="font-size:11px;color:#6B7280;line-height:16px">ⓘ 기록은 고칠 수도 지울 수도 없습니다</span></div>
+          </div><div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="padding:16px 26px 12px;border-bottom:1px solid #D1D5DB;display:flex;flex-direction:column;gap:8px;flex:none">
+              <span style="font-size:13px;color:#374151">‹ 전체 로그</span>
+              <div style="display:flex;align-items:baseline;gap:12px"><span style="font-size:17px;font-weight:700">김서연</span><span style="font-size:13px;color:#374151">차트 12345</span><div style="flex:1"></div><span style="font-size:12px;color:#374151">진료</span><div style="height:30px;padding:0 12px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;gap:8px;font-size:13px">2026-08-13 <span style="color:#6B7280;font-size:12px">▾</span></div><span style="font-size:12px;color:#6B7280">진료 4건</span></div>
+            </div>
+            <div style="flex:1;padding:6px 26px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">10:32</span><span style="color:#111827">등록</span><span style="color:#111827;text-align:right">서지현</span></div><div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">10:41</span><span style="color:#111827">진료기록 업로드 · 3장</span><span style="color:#111827;text-align:right">서지현</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">10:41</span><span style="color:#111827">판독 완료 · CA-125 인식 실패</span><span style="color:#6B7280;text-align:right">시스템</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">10:43</span><span style="color:#111827">값 수정 · Hb 10.2 → 10.4</span><span style="color:#111827;text-align:right">서지현</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">10:45</span><span style="color:#111827">의사 승인 요청</span><span style="color:#111827;text-align:right">서지현</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">11:02</span><span style="color:#111827"><b>안내문 승인</b> · 문구 v3 · 프롬프트 v1.4</span><span style="color:#111827;text-align:right">박연 원장</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">11:02</span><span style="color:#111827">진료기록 원본 삭제 · 3장</span><span style="color:#6B7280;text-align:right">시스템</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">11:02</span><span style="color:#111827">링크 발급 · 만료 08-16 18:00</span><span style="color:#6B7280;text-align:right">시스템</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">18:00</span><span style="color:#111827">발송 · 진료 안내문</span><span style="color:#6B7280;text-align:right">시스템</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">18:02</span><span style="color:#111827">인증번호 발송</span><span style="color:#6B7280;text-align:right">시스템</span></div>
+              <div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">19:14</span><span style="color:#111827"><b>열람</b> · 5장 중 2장 · 주의사항까지</span><span style="color:#111827;text-align:right">환자</span></div><div style="display:grid;grid-template-columns:74px 1fr 116px;gap:14px;align-items:baseline;font-size:13px;padding:8px 0;border-top:1px solid #D1D5DB"><span style="color:#6B7280">08-16</span><span style="color:#111827">링크 만료</span><span style="color:#6B7280;text-align:right">시스템</span></div>
+              <div style="flex:1"></div>
+            </div>
+            <div style="border-top:1px solid #D1D5DB;padding:12px 26px;display:flex;align-items:center;flex:none"><span style="font-size:11px;color:#6B7280">ⓘ 버전 · 발송/열람 시각 · 토큰 이력을 한 화면에서 확인합니다</span><div style="flex:1"></div><div style="height:38px;padding:0 16px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:14px;font-weight:600">내려받기</div></div></div></div></div>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">──(‹ 전체 로그)──▶ <b>A1-6</b></div></sc-if>
+      </div>
+    </div>
+  </div>
+
+</x-dc>
+<script type="application/dc-logic" data-dc-script data-props='{"showFlow":{"editor":"boolean","default":true,"tsType":"boolean","section":"주석"},"showNotes":{"editor":"boolean","default":true,"tsType":"boolean","section":"주석"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      showFlow: this.props.showFlow ?? true,
+      showNotes: this.props.showNotes ?? true
+    };
+  }
+}
+</script>
+</body></html>
