@@ -56,7 +56,7 @@ git pull origin develop
 git checkout -b feat/기능명
 
 # 작업 후
-git commit -m "[#12] feat: 기능 설명"
+git commit -m "feat: [KEY-12] 기능 설명"
 git push origin feat/기능명
 # → develop 대상으로 PR 생성 → 리뷰 1인 승인 → merge
 ```
