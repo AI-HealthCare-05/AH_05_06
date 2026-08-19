@@ -3,6 +3,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from aerich.utils import decompress_dict
 from tortoise import Tortoise
 from tortoise.fields import OnDelete
 
@@ -17,9 +18,10 @@ def initialize_models() -> None:
 
 
 def load_migration() -> ModuleType:
-    migration_path = (
-        Path(__file__).parents[2] / "core" / "db" / "migrations" / "models" / "1_20260819150000_add_patient_visit.py"
-    )
+    migration_dir = Path(__file__).parents[2] / "core" / "db" / "migrations" / "models"
+    migration_paths = list(migration_dir.glob("1_*_add_patient_visit.py"))
+    assert len(migration_paths) == 1
+    migration_path = migration_paths[0]
     spec = importlib.util.spec_from_file_location("patient_visit_migration", migration_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -71,12 +73,14 @@ def test_models_are_registered_for_aerich() -> None:
 @pytest.mark.asyncio
 async def test_migration_creates_and_rolls_back_in_dependency_order() -> None:
     migration = load_migration()
+    models_state = decompress_dict(migration.MODELS_STATE)
     upgrade_sql = await migration.upgrade(None)
     downgrade_sql = await migration.downgrade(None)
 
     assert upgrade_sql.index("CREATE TABLE IF NOT EXISTS `patient`") < upgrade_sql.index(
         "CREATE TABLE IF NOT EXISTS `visit`"
     )
+    assert models_state
     assert "FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`) ON DELETE RESTRICT" in upgrade_sql
     assert "`planned_stop` BOOL NOT NULL DEFAULT 0" in upgrade_sql
     assert "UNIQUE KEY" in upgrade_sql

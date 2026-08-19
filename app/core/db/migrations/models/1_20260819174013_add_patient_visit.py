@@ -23,7 +23,7 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
     KEY `idx_patient_hospita_eb6e76` (`hospital_id`, `name`, `birth_date`),
     KEY `idx_patient_hospita_720b1e` (`hospital_id`, `phone`)
 ) CHARACTER SET utf8mb4 COMMENT='A clinic-scoped patient identity shared by all visits.';
-CREATE TABLE IF NOT EXISTS `visit` (
+        CREATE TABLE IF NOT EXISTS `visit` (
     `visit_id` BIGINT NOT NULL PRIMARY KEY AUTO_INCREMENT,
     `hospital_id` BIGINT NOT NULL,
     `doctor_id` BIGINT,
@@ -39,15 +39,13 @@ CREATE TABLE IF NOT EXISTS `visit` (
     CONSTRAINT `fk_visit_patient_1f676882` FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`) ON DELETE RESTRICT,
     KEY `idx_visit_hospita_edff6d` (`hospital_id`, `visited_at`),
     KEY `idx_visit_patient_98c974` (`patient_id`, `visited_at`)
-) CHARACTER SET utf8mb4 COMMENT='One clinic-scoped encounter belonging to exactly one patient.';
-        """
+) CHARACTER SET utf8mb4 COMMENT='One clinic-scoped encounter belonging to exactly one patient.';"""
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
     return """
         DROP TABLE IF EXISTS `visit`;
-        DROP TABLE IF EXISTS `patient`;
-        """
+        DROP TABLE IF EXISTS `patient`;"""
 
 
 MODELS_STATE = (
@@ -58,7 +56,7 @@ MODELS_STATE = (
     "1A/48PnoIj9jj8KRLlTCIaZsLHgHAoem3K2IwQQjjh8bDREOTvld3unN1mHraP+gdcRUxE"
     "gSyeFT6N7C99BQIDAYNZ5EO6Ag1BAwLnC7hz7hQ8qB15sBX41eykSCkA1chjAGrAzDWLAA"
     "cZE4L4SiCx5NB6Ip5Qmut9slmH3uXPfOO9dvmNY/3BvMkjnM8UHUpIdtHNgFkPzRWALESH"
-    "03AWzu7VUAkGkVAojasgCyO1IYPoNZEP/9NByoQUyZSEDeIObgd8ue0LeaYxP6YzthLUGR"
+    "03AWzu7VUAkGkVAijasgCyO1IYPoNZEP/9NByoQUyZSEDeIObgd8ue0LeaYxP6YzthLUGR"
     "e80H7RLyy0mD9+ay81XGtXcx7AoUMKFTX/QiOugyjHnJvPuZevi5YAwmPx+Ab5m5FqzjIt"
     "18k6u7sgQgMBVYcY+5f9EkckNEQc9NLkJeOrUETINs18zStaevaHI51vX9/UN9b//gqN06"
     "PGwf7SWzTL6pbLrp9j/wGSeTm89PQdAFtrNM7UwMdrN6tqoUz1Zx7WzlSucMkBm0TA8Q8o"
