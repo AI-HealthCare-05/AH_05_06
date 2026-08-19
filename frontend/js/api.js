@@ -1,12 +1,16 @@
 /* API 호출 한 겹 — KEY-22
  *
- * 계약은 docs/auth-contract.md 4·5절을 따른다.
- *   POST /api/v1/auth/login     { login_id, password, remember }
- *   GET  /api/v1/auth/me
- *   POST /api/v1/auth/logout
- *   POST /api/v1/auth/password  { current_password, new_password }
+ * 계약은 docs/auth-contract.md 4·5절 — KEY-8 v1 확정본을 따른다.
+ *   POST  /api/v1/auth/login     { login_id, password, remember }
+ *   GET   /api/v1/auth/me
+ *   POST  /api/v1/auth/refresh   본문 없음. 쿠키만 본다
+ *   POST  /api/v1/auth/logout
+ *   PATCH /api/v1/auth/password  최초 로그인이면 new_password 만
  *
- * 서버는 아직 이 넷을 갖고 있지 않다(지금은 email 로그인뿐이다).
+ * 리프레시 토큰은 HttpOnly 쿠키로만 오간다 — 이 파일이 만지지 않는다.
+ * 그래서 모든 요청에 credentials: "include" 를 붙인다.
+ *
+ * 서버는 아직 이 다섯을 갖고 있지 않다(지금은 email 로그인뿐이다).
  * 계약대로 짜 두고, 서버가 붙기 전까지는 아래 목업으로 화면을 확인한다.
  */
 
@@ -17,7 +21,7 @@ var API_BASE = "/api/v1";
  * 사용자가 해야 할 일이 다르다 — 다시 입력할 것인가, 다시 로그인할 것인가. */
 var ERROR = {
   INVALID_CREDENTIALS: "invalid_credentials",
-  ACCOUNT_LOCKED: "account_locked",
+  ACCOUNT_LOCKED: "ACCOUNT_LOCKED",
   TOKEN_EXPIRED: "token_expired",
   PASSWORD_CHANGE_REQUIRED: "password_change_required",
 };
@@ -51,6 +55,8 @@ function request(path, options) {
   return fetch(API_BASE + path, {
     method: options.method || "GET",
     headers: headers,
+    // 리프레시 토큰이 HttpOnly 쿠키라 이게 없으면 재발급이 통째로 안 된다
+    credentials: "include",
     body: options.body ? JSON.stringify(options.body) : undefined,
   }).then(function (res) {
     return res
@@ -60,6 +66,10 @@ function request(path, options) {
       })
       .then(function (data) {
         if (res.ok) return data;
+        /* Retry-After 는 표준 헤더라 서버가 본문에 안 담아도 여기서 읽힌다.
+           본문 값이 있으면 그쪽을 쓴다 — 서버가 초 단위를 더 정확히 안다. */
+        var retry = Number(res.headers.get("Retry-After"));
+        if (retry && !data.retry_after_seconds) data.retry_after_seconds = retry;
         throw new ApiError(data.code || data.detail || "unknown", res.status, data);
       });
   });
@@ -75,15 +85,19 @@ var api = {
   me: function (token) {
     return request("/auth/me", { token: token });
   },
+  refresh: function () {
+    // 본문도 헤더도 없다. 쿠키만으로 돈다.
+    return request("/auth/refresh", { method: "POST" });
+  },
   logout: function (token) {
     return request("/auth/logout", { method: "POST", token: token });
   },
-  changePassword: function (token, currentPassword, newPassword) {
-    return request("/auth/password", {
-      method: "POST",
-      token: token,
-      body: { current_password: currentPassword, new_password: newPassword },
-    });
+  /* 최초 로그인(L-3)은 current_password 를 보내지 않는다.
+     방금 그 비밀번호로 로그인했는데 한 화면에서 또 넣게 하면 거기서부터 막힌다. */
+  changePassword: function (token, newPassword, currentPassword) {
+    var body = { new_password: newPassword };
+    if (currentPassword) body.current_password = currentPassword;
+    return request("/auth/password", { method: "PATCH", token: token, body: body });
   },
 };
 
@@ -122,14 +136,14 @@ function mockRequest(path, options) {
       if (path === "/auth/login") {
         var id = body.login_id;
         if (mockFailures(id) >= MOCK_MAX_FAILURES) {
-          return reject(new ApiError(ERROR.ACCOUNT_LOCKED, 423, { retry_after_seconds: MOCK_LOCK_SECONDS }));
+          return reject(new ApiError(ERROR.ACCOUNT_LOCKED, 429, { retry_after_seconds: MOCK_LOCK_SECONDS }));
         }
         var staff = MOCK_STAFF[id];
         var wrong = !staff || staff.status === "left" || /^wrong/.test(body.password || "");
         if (wrong) {
           var n = mockFailures(id, true);
           if (n >= MOCK_MAX_FAILURES) {
-            return reject(new ApiError(ERROR.ACCOUNT_LOCKED, 423, { retry_after_seconds: MOCK_LOCK_SECONDS }));
+            return reject(new ApiError(ERROR.ACCOUNT_LOCKED, 429, { retry_after_seconds: MOCK_LOCK_SECONDS }));
           }
           return reject(new ApiError(ERROR.INVALID_CREDENTIALS, 401, { fail_count: n, max_failures: MOCK_MAX_FAILURES }));
         }
@@ -147,6 +161,13 @@ function mockRequest(path, options) {
           must_change_password: !!who.must_change_password,
           clinic_name: "여성의원",
         });
+      }
+
+      if (path === "/auth/refresh") {
+        /* 실제로는 HttpOnly 쿠키를 본다. 목업은 그 자리를 mockUser 로 대신한다. */
+        var who = sessionStorage.getItem("mockUser");
+        if (!who) return reject(new ApiError(ERROR.TOKEN_EXPIRED, 401, {}));
+        return resolve({ access_token: "mock." + who });
       }
 
       if (path === "/auth/logout") {

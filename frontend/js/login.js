@@ -103,7 +103,7 @@
 
     api.login(loginId, password, remember.checked).then(
       function (res) {
-        session.save(res.access_token, remember.checked);
+        session.save(res.access_token);
         /* 첫 로그인은 L-3을 지나야 한다. 건너뛸 수 없다. */
         if (res.must_change_password) return location.replace("/password.html");
         return api.me(res.access_token).then(function (me) {

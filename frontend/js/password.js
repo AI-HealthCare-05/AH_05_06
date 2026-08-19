@@ -70,9 +70,10 @@
     submit.disabled = true;
     submit.textContent = "설정 중…";
 
-    /* 첫 비밀번호는 방금 로그인에 쓴 것이다. 다시 묻지 않는다 —
-       한 화면에서 같은 값을 두 번 넣게 하면 그것부터 막힌다. */
-    api.changePassword(session.token(), null, value).then(
+    /* 첫 비밀번호는 방금 로그인에 쓴 것이다. current_password 를 보내지 않는다 —
+       한 화면에서 같은 값을 두 번 넣게 하면 그것부터 막힌다.
+       일반 비밀번호 변경 화면은 세 번째 인자로 현재 비밀번호를 함께 보낸다. */
+    api.changePassword(session.token(), value).then(
       function () {
         /* 비밀번호를 바꾸면 서버가 기존 토큰을 끊는다.
            바꾼 이유가 「남이 알고 있다」이므로 그 남의 세션도 함께 끊어야 한다.
