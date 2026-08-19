@@ -1,8 +1,9 @@
-/* 의료진 화면 골격 — 상단바 · 왼쪽 목록 · 로그아웃
+/* 의료진 화면 골격 — 상단바 · 왼쪽 목록 · 오른쪽 칸 전환
  *
- * KEY-53 은 오른쪽 칸(S1-5 업로드)을 만든다. 왼쪽 목록의 검색·등록·필터
- * 동작은 KEY-35 몫이라 여기서는 **자리와 모양만** 잡는다.
- * 목록 데이터도 임시다 — 환자 API 가 생기면 KEY-35 가 갈아 끼운다.
+ * KEY-53 이 오른쪽 칸(S1-5 업로드)을 만들고,
+ * KEY-35 가 왼쪽 목록의 검색 · 등록 · 필터와 오른쪽 칸의 등록 화면을 붙였다.
+ *
+ * 목록은 환자 API 로 그린다(KEY-26 계약). 등록 화면은 patients.js 가 갖는다.
  */
 
 /* 상태 탭 다섯. 두 역할이 같은 탭을 쓰고 기본 선택만 다르다 —
@@ -20,9 +21,7 @@ var DEFAULT_TABS = {
   doctor: ["review"],
 };
 
-/* 임시 목록 — KEY-35 가 API 로 갈아 끼운다.
-   합성 데이터(docs/data/synthetic-patients.csv)의 시나리오를 따른다.
-
+/* 목록이 들고 있는 것.
    식별자 셋을 처음부터 갈라 둔다 (KEY-26 계약 v1).
 
      patient_id           환자 리소스 식별자. 사람을 가리킨다
@@ -31,41 +30,17 @@ var DEFAULT_TABS = {
 
    셋을 하나로 뭉쳐 두면 나중에 갈라내기 어렵다. 차트번호로 업로드를 걸어 두면
    같은 환자의 지난 진료에 이번 기록이 붙는 사고가 난다. */
-var SAMPLE_ROWS = [
-  {
-    patient_id: 1001,
-    visit_id: 8842,
-    hospital_patient_no: "12345",
-    name: "김서연",
-    dx: "자궁내막증",
-    age: 36,
-    doctor: "박연 원장",
-    state: "진료기록 없음",
-    tab: "draft",
-  },
-  {
-    patient_id: 1002,
-    visit_id: 8843,
-    hospital_patient_no: "11204",
-    name: "이지우",
-    dx: "다낭성",
-    age: 31,
-    doctor: "김연우 원장",
-    state: "생성 중",
-    tab: "draft",
-  },
-  {
-    patient_id: 1003,
-    visit_id: 8798,
-    hospital_patient_no: "09871",
-    name: "박수빈",
-    dx: "자궁내막증",
-    age: 34,
-    doctor: "박연 원장",
-    state: "번호 오류",
-    tab: "fix",
-  },
-];
+var rows = [];
+var listDay = new Date();
+var listQuery = "";
+
+/* 이름 · 상병 · 차트번호는 사람이 넣은 값이다. 화면을 innerHTML 로 그리므로
+   여기를 지나지 않은 값은 태그로 읽힌다. */
+function esc(text) {
+  return String(text == null ? "" : text).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
 
 function roleLabel(roles) {
   var names = { staff: "스탭", doctor: "의사", admin: "관리자" };
@@ -82,12 +57,43 @@ function stateClass(state) {
   return "row__state";
 }
 
+/* ── 오른쪽 칸 ─────────────────────────────────────────
+   화면 셋이 같은 자리에 번갈아 선다. 어느 것이 서 있는지 한 곳에서만 정한다 —
+   두 곳에서 정하면 등록 도중에 목록을 눌렀을 때 둘 다 뜨거나 둘 다 사라진다. */
+var VIEWS = ["view-none", "view-register", "view-upload"];
+
+function showView(id) {
+  VIEWS.forEach(function (name) {
+    document.getElementById(name).hidden = name !== id;
+  });
+}
+
+/* ── 목록 ─────────────────────────────────────────────── */
+
+function activeTabs() {
+  return Array.prototype.slice
+    .call(document.querySelectorAll(".chip[aria-pressed='true']"))
+    .map(function (chip) {
+      return chip.dataset.tab;
+    });
+}
+
+/* 목록 검색은 오늘 서 있는 줄만 좁힌다 — 등록된 환자 전체를 뒤지는 것은
+   등록 화면의 ① 환자 찾기다. 둘을 한 칸으로 합치면 「지금 목록에 없는 사람」과
+   「아직 등록 안 된 사람」이 같은 결과로 보인다. */
+function visibleRows() {
+  var on = activeTabs();
+  var q = listQuery.trim();
+  return rows.filter(function (r) {
+    if (on.length && on.indexOf(r.tab) === -1) return false;
+    if (!q) return true;
+    return r.name.indexOf(q) !== -1 || r.hospital_patient_no.indexOf(q) !== -1;
+  });
+}
+
 function renderChips(roles) {
   var on = (roles || []).indexOf("staff") !== -1 ? DEFAULT_TABS.staff : DEFAULT_TABS.doctor;
   document.getElementById("chips").innerHTML = STATUS_TABS.map(function (t) {
-    var count = SAMPLE_ROWS.filter(function (r) {
-      return r.tab === t.key;
-    }).length;
     return (
       '<button class="chip' +
       (t.warn ? " chip--warn" : "") +
@@ -95,78 +101,152 @@ function renderChips(roles) {
       (on.indexOf(t.key) !== -1) +
       '" data-tab="' +
       t.key +
-      '">' +
-      (t.warn && count ? "⚠ " : "") +
+      '"><span data-label>' +
       t.label +
-      (count ? " " + count : "") +
-      "</button>"
-    );
-  }).join("");
-}
-
-function renderRows() {
-  document.getElementById("rows").innerHTML = SAMPLE_ROWS.map(function (r, i) {
-    return (
-      /* 행이 들고 가는 것은 **visit_id** 다 — 업로드 · 판독 · 안내가 붙는 자리.
-         화면에 보이는 것은 hospital_patient_no 이고 둘은 다르다. */
-      '<button class="row" type="button" aria-current="' +
-      (i === 0) +
-      '" data-visit-id="' +
-      r.visit_id +
-      '" data-patient-id="' +
-      r.patient_id +
-      '" data-chart-no="' +
-      r.hospital_patient_no +
-      '">' +
-      '<span class="row__top"><span class="row__name">' +
-      r.name +
-      '</span><span class="row__dx">' +
-      r.dx +
-      "</span></span>" +
-      '<span class="row__meta">차트 ' +
-      r.hospital_patient_no +
-      " · " +
-      r.age +
-      "세 · " +
-      r.doctor +
-      "</span><br>" +
-      '<span class="' +
-      stateClass(r.state) +
-      '">' +
-      r.state +
       "</span></button>"
     );
   }).join("");
+  renderChipCounts();
 }
 
-/* 오늘 날짜. 목록의 축이 하루 단위다. */
-function renderDay() {
-  var d = new Date();
-  var week = ["일", "월", "화", "수", "목", "금", "토"];
-  document.getElementById("day").textContent =
-    d.getMonth() + 1 + "월 " + d.getDate() + "일 (" + week[d.getDay()] + ") · 오늘";
-}
-
-document.getElementById("logout").addEventListener("click", function () {
-  session.logout();
-});
-
-/* 탭은 다중 선택 토글이다 — 켠 탭들의 행이 함께 보인다.
-   거르기 자체는 KEY-35 가 붙인다. */
-document.getElementById("chips").addEventListener("click", function (event) {
-  var chip = event.target.closest("[data-tab]");
-  if (!chip) return;
-  chip.setAttribute("aria-pressed", String(chip.getAttribute("aria-pressed") !== "true"));
-});
-
-document.getElementById("rows").addEventListener("click", function (event) {
-  var row = event.target.closest("[data-visit-id]");
-  if (!row) return;
-  this.querySelectorAll("[data-visit-id]").forEach(function (r) {
-    r.setAttribute("aria-current", String(r === row));
+/* 개수는 행이 바뀔 때마다 다시 센다. 등록하면 「작성 중」이 하나 늘어야 한다.
+   탭 이름만 다시 그리면 켜고 끈 상태가 지워지므로 안쪽 라벨만 갈아 끼운다. */
+function renderChipCounts() {
+  document.querySelectorAll(".chip").forEach(function (chip) {
+    var tab = STATUS_TABS.find(function (t) {
+      return t.key === chip.dataset.tab;
+    });
+    var count = rows.filter(function (r) {
+      return r.tab === chip.dataset.tab;
+    }).length;
+    chip.querySelector("[data-label]").textContent =
+      (tab.warn && count ? "⚠ " : "") + tab.label + (count ? " " + count : "");
   });
-  document.dispatchEvent(new CustomEvent("visit:selected", { detail: readRow(row) }));
-});
+}
+
+/* 0명에는 세 가지가 있고, 사람이 해야 할 일이 저마다 다르다.
+   ① 찾는 이름이 오늘 목록에 없다 → 그 이름으로 바로 등록하러 간다
+   ② 탭을 다 꺼서 안 보인다      → 탭을 켠다
+   ③ 오늘 아무도 등록되지 않았다  → 등록하거나 지난 날짜로 간다
+   「환자가 없습니다」 하나로 뭉치면 무엇을 해야 하는지가 사라진다. */
+function blankHtml() {
+  var q = listQuery.trim();
+  if (q) {
+    return (
+      '<p class="rows-blank__title">「' +
+      esc(q) +
+      '」로<br>오늘 등록된 환자가 없습니다</p>' +
+      '<button class="rows-blank__act" type="button" data-register-with="' +
+      esc(q) +
+      '">+ 「' +
+      esc(q) +
+      "」 등록하기</button>"
+    );
+  }
+  if (rows.length) {
+    return (
+      '<p class="rows-blank__title">선택한 상태에 해당하는<br>환자가 없습니다</p>' +
+      '<p class="rows-blank__lead">위 상태 탭을 켜 보세요</p>'
+    );
+  }
+  return (
+    '<p class="rows-blank__title">오늘 등록된<br>환자가 없습니다</p>' +
+    '<p class="rows-blank__lead">지난 날짜는 ‹ 로 이동합니다</p>'
+  );
+}
+
+function renderRows(keepVisitId) {
+  var shown = visibleRows();
+  var box = document.getElementById("rows");
+
+  if (!shown.length) {
+    box.innerHTML = '<div class="rows-blank">' + blankHtml() + "</div>";
+    return;
+  }
+
+  var current = keepVisitId || (selectedVisit() ? selectedVisit().visit_id : null);
+  if (
+    !shown.some(function (r) {
+      return r.visit_id === current;
+    })
+  ) {
+    current = shown[0].visit_id;
+  }
+
+  box.innerHTML = shown
+    .map(function (r) {
+      /* 행이 들고 가는 것은 **visit_id** 다 — 업로드 · 판독 · 안내가 붙는 자리.
+         화면에 보이는 것은 hospital_patient_no 이고 둘은 다르다. */
+      return (
+        '<button class="row" type="button" aria-current="' +
+        (r.visit_id === current) +
+        '" data-visit-id="' +
+        r.visit_id +
+        '" data-patient-id="' +
+        r.patient_id +
+        '" data-chart-no="' +
+        esc(r.hospital_patient_no) +
+        '">' +
+        '<span class="row__top"><span class="row__name">' +
+        esc(r.name) +
+        '</span><span class="row__dx">' +
+        esc(r.dx) +
+        "</span></span>" +
+        '<span class="row__meta">차트 ' +
+        esc(r.hospital_patient_no) +
+        (r.age == null ? "" : " · " + r.age + "세") +
+        " · " +
+        esc(r.doctor) +
+        "</span><br>" +
+        '<span class="' +
+        stateClass(r.state) +
+        '">' +
+        esc(r.state) +
+        "</span></button>"
+      );
+    })
+    .join("");
+}
+
+/* 목록이 비면 오른쪽도 「할 일 없음」이어야 한다.
+   등록 화면을 열어 둔 채로는 밀어내지 않는다 — 쓰던 것을 빼앗기 때문이다. */
+function syncPane() {
+  if (!document.getElementById("view-register").hidden) return;
+  if (!visibleRows().length) return showView("view-none");
+  showView("view-upload");
+  var visit = selectedVisit();
+  if (visit) document.dispatchEvent(new CustomEvent("visit:selected", { detail: visit }));
+}
+
+function loadDay() {
+  return patientsApi
+    .onDay(toIsoDate(listDay))
+    .then(function (page) {
+      rows = page.items;
+      renderChipCounts();
+      renderRows();
+      syncPane();
+    })
+    .catch(function () {
+      rows = [];
+      renderRows();
+      syncPane();
+    });
+}
+
+/* 목록의 축은 하루다. 「오늘」인지 아닌지가 붙어야 지난 날짜를 보고 있다는 것을 안다. */
+function renderDay() {
+  var week = ["일", "월", "화", "수", "목", "금", "토"];
+  var today = toIsoDate(new Date()) === toIsoDate(listDay);
+  document.getElementById("day").textContent =
+    listDay.getMonth() + 1 + "월 " + listDay.getDate() + "일 (" + week[listDay.getDay()] + ")" + (today ? " · 오늘" : "");
+}
+
+function moveDay(days) {
+  listDay = new Date(listDay.getTime() + days * 86400000);
+  renderDay();
+  loadDay();
+}
 
 /* 화면 어디서든 「지금 고른 진료 건」을 같은 모양으로 읽는다. */
 function readRow(row) {
@@ -184,6 +264,61 @@ function selectedVisit() {
   return row ? readRow(row) : null;
 }
 
+/* 방금 만든 진료 건을 목록에 세우고 고른다. 등록이 끝났다는 것을 목록이 보여 준다. */
+function addVisit(visit) {
+  rows.unshift(visit);
+  renderChipCounts();
+  renderRows(visit.visit_id);
+  showView("view-upload");
+  document.dispatchEvent(new CustomEvent("visit:selected", { detail: selectedVisit() }));
+}
+
+/* ── 손짓 ─────────────────────────────────────────────── */
+
+document.getElementById("logout").addEventListener("click", function () {
+  session.logout();
+});
+
+/* 치는 대로 좁힌다 — [찾기]를 눌러야 움직이면 오늘 목록에서 한 명 고르는 데
+   손이 두 번 간다. 등록 화면의 ① 은 서버에 묻기 때문에 그쪽만 버튼을 둔다. */
+document.getElementById("quick-search").addEventListener("input", function () {
+  listQuery = this.value;
+  renderRows();
+  syncPane();
+});
+
+document.getElementById("day-prev").addEventListener("click", function () {
+  moveDay(-1);
+});
+document.getElementById("day-next").addEventListener("click", function () {
+  moveDay(1);
+});
+
+/* 탭은 다중 선택 토글이다 — 켠 탭들의 행이 함께 보인다 */
+document.getElementById("chips").addEventListener("click", function (event) {
+  var chip = event.target.closest("[data-tab]");
+  if (!chip) return;
+  chip.setAttribute("aria-pressed", String(chip.getAttribute("aria-pressed") !== "true"));
+  renderRows();
+  syncPane();
+});
+
+document.getElementById("rows").addEventListener("click", function (event) {
+  var row = event.target.closest("[data-visit-id]");
+  if (!row) return;
+
+  /* 등록 도중에 목록을 눌러도 잃는 것이 없어야 한다.
+     막을 수 있는 쪽(등록 화면)이 스스로 되묻고 preventDefault 로 세운다. */
+  var asking = new CustomEvent("visit:selecting", { cancelable: true, detail: readRow(row) });
+  if (!document.dispatchEvent(asking)) return;
+
+  this.querySelectorAll("[data-visit-id]").forEach(function (r) {
+    r.setAttribute("aria-current", String(r === row));
+  });
+  showView("view-upload");
+  document.dispatchEvent(new CustomEvent("visit:selected", { detail: readRow(row) }));
+});
+
 /* 세션이 없거나 첫 로그인이면 여기서 되돌린다.
    화면에서 막는 것은 편의일 뿐이고 실제 차단은 서버가 한다(KEY-9). */
 requireSession()
@@ -192,7 +327,7 @@ requireSession()
     document.getElementById("who-roles").textContent = roleLabel(me.roles);
     renderDay();
     renderChips(me.roles);
-    renderRows();
     document.dispatchEvent(new CustomEvent("session:ready", { detail: me }));
+    return loadDay();
   })
   .catch(function () {});
