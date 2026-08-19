@@ -31,3 +31,6 @@ alembic/versions/*.pyc
 
 # DB
 *.db
+
+# PyCharm 이 프로젝트를 열 때 만드는 샘플 스크립트
+main.py
