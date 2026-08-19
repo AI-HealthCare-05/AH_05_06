@@ -31,6 +31,7 @@ class Config(BaseSettings):
     DB_CONNECTION_POOL_MAXSIZE: int = 10
 
     COOKIE_DOMAIN: str = "localhost"
+    PATIENT_PUBLIC_URL: str = "http://localhost/patient/"
 
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
