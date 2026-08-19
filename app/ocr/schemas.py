@@ -1,0 +1,82 @@
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.models.ocr import OcrDocumentType, OcrJobStatus
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class StartOcrRequest(StrictModel):
+    visit_id: int = Field(gt=0)
+    document_type: OcrDocumentType
+
+
+class OcrJobResponse(StrictModel):
+    ocr_job_id: str
+    status: OcrJobStatus
+    progress: int = Field(ge=0, le=100)
+    started_at: datetime
+    completed_at: datetime | None = None
+    failure_code: str | None = None
+
+
+class OcrCandidateResponse(StrictModel):
+    ocr_field_candidate_id: int
+    value: str
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    rank: int = Field(ge=1)
+    source_date: date | None = None
+    is_selected: bool
+
+
+class OcrFieldResponse(StrictModel):
+    ocr_field_id: int
+    field_type: str
+    extracted_value: str | None
+    corrected_value: str | None
+    value: str | None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    version: int = Field(ge=1)
+    is_confirmed: bool
+    modified_by: int | None = None
+    modified_at: datetime | None = None
+    confirmed_by: int | None = None
+    confirmed_at: datetime | None = None
+    candidates: list[OcrCandidateResponse] = Field(default_factory=list)
+
+
+class OcrDocumentResponse(StrictModel):
+    document_id: int
+    document_type: OcrDocumentType
+    raw_text: str | None
+    raw_text_purged_at: datetime | None = None
+
+
+class OcrResultResponse(StrictModel):
+    ocr_result_id: int
+    ocr_job_id: str
+    model_name: str
+    model_version: str | None
+    version: int = Field(ge=1)
+    confirmed_by: int | None = None
+    confirmed_at: datetime | None = None
+    documents: list[OcrDocumentResponse]
+    fields: list[OcrFieldResponse]
+
+
+class UpdateOcrFieldRequest(StrictModel):
+    base_version: int = Field(ge=1)
+    corrected_value: str | None = Field(default=None, max_length=10000)
+    candidate_id: int | None = Field(default=None, gt=0)
+    confirm: bool = False
+
+    @model_validator(mode="after")
+    def require_one_value_source(self) -> "UpdateOcrFieldRequest":
+        if (self.corrected_value is None) == (self.candidate_id is None):
+            raise ValueError("corrected_value 또는 candidate_id 중 하나만 입력해야 합니다")
+        if self.corrected_value is not None and not self.corrected_value.strip():
+            raise ValueError("corrected_value는 공백일 수 없습니다")
+        return self
