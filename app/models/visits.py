@@ -3,6 +3,8 @@ from enum import StrEnum
 from tortoise import fields, models
 from tortoise.fields import OnDelete
 
+from app.models.patients import Patient
+
 
 class VisitStatus(StrEnum):
     SCHEDULED = "SCHEDULED"
@@ -15,7 +17,7 @@ class Visit(models.Model):
 
     visit_id = fields.BigIntField(primary_key=True)
     hospital_id = fields.BigIntField()
-    patient = fields.ForeignKeyField(
+    patient: fields.ForeignKeyRelation[Patient] = fields.ForeignKeyField(
         "models.Patient",
         related_name="visits",
         on_delete=OnDelete.RESTRICT,
