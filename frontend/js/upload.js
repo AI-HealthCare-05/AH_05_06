@@ -300,6 +300,9 @@
       if (f.thumb) URL.revokeObjectURL(f.thumb);
     });
     files = [];
+    /* 앞 환자에게 한 말도 같이 지운다 — 남겨 두면 새 환자 이름 아래에 붙어서
+       이 사람 것을 올렸다는 뜻으로 읽힌다. 파일을 비우는 것과 같은 이유다. */
+    say("");
     showVisit(event.detail);
     render();
   });
