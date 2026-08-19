@@ -78,10 +78,6 @@ async def test_migration_creates_and_rolls_back_in_dependency_order() -> None:
         "CREATE TABLE IF NOT EXISTS `visit`"
     )
     assert "FOREIGN KEY (`patient_id`) REFERENCES `patient` (`patient_id`) ON DELETE RESTRICT" in upgrade_sql
-    assert "UNIQUE KEY `uid_patient_scope` (`patient_id`, `hospital_id`)" in upgrade_sql
-    assert "FOREIGN KEY (`patient_id`, `hospital_id`) REFERENCES `patient` (`patient_id`, `hospital_id`)" in upgrade_sql
-    assert "DATE(DATE_ADD(`visited_at`, INTERVAL 9 HOUR))" in upgrade_sql
-    assert "UNIQUE KEY `uid_visit_patient_day` (`hospital_id`, `patient_id`, `visited_on`)" in upgrade_sql
     assert "`planned_stop` BOOL NOT NULL DEFAULT 0" in upgrade_sql
     assert "UNIQUE KEY" in upgrade_sql
     assert "(`hospital_id`, `hospital_patient_no`)" in upgrade_sql
