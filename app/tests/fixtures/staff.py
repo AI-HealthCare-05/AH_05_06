@@ -24,6 +24,7 @@ ROLE_SEPARATOR = "|"  # 쉼표는 CSV 구분자와 겹친다
 
 COLUMNS = (
     "시나리오ID",
+    "병원",
     "login_id",
     "이름",
     "roles",
@@ -36,6 +37,19 @@ COLUMNS = (
 
 KNOWN_STATUSES = frozenset({"active", "left"})
 YES_NO = frozenset({"Y", "N"})
+
+#: 의원 둘. 실제 `hospital_id` 는 bigint 라 DB 가 넣을 때 발급한다 —
+#: 여기서는 어느 의원 소속인지만 표시한다.
+#:
+#:   H1  기준 의원. 환자 CSV 도 전부 여기다
+#:   H2  격리 확인용. **H1 자료가 보이면 안 되는** 쪽
+#:
+#: 병원 격리는 이 서비스에서 제일 중요한 경계인데(`patient-visit-api-v1.md` 5절)
+#: 의원이 하나뿐이면 「타 병원 404」를 검사할 상대가 없다.
+KNOWN_HOSPITALS = frozenset({"H1", "H2"})
+
+#: 병원을 말하지 않은 검사가 뜻하는 곳. 기존 시나리오는 전부 여기 있다.
+DEFAULT_HOSPITAL = "H1"
 
 #: 이름을 대고 불러야만 오는 계정.
 #:
@@ -57,6 +71,7 @@ class StaffDataError(ValueError):
 @dataclass(frozen=True)
 class Staff:
     scenario_id: str
+    hospital: str
     login_id: str
     name: str
     roles: frozenset[str]
@@ -105,12 +120,19 @@ def _row_to_staff(line: int, row: dict[str | None, str | list[str] | None]) -> S
         # 평범한 계정이 된다 — L-3 시험이 아무것도 안 보고 통과한다.
         raise StaffDataError(f"{line}행: must_change_password 는 Y 나 N 이어야 한다 (받은 값 {flag!r})")
 
+    hospital = text("병원")
+    if hospital not in KNOWN_HOSPITALS:
+        # 오타가 나면 그 계정이 어느 의원에도 안 붙어서, 격리 검사가
+        # 「안 보인다」를 통과시킨다 — 격리가 되는지 안 되는지 알 수 없다.
+        raise StaffDataError(f"{line}행: 병원 은 {sorted(KNOWN_HOSPITALS)} 중 하나여야 한다 (받은 값 {hospital!r})")
+
     status = text("status")
     if status not in KNOWN_STATUSES:
         raise StaffDataError(f"{line}행: status 는 {sorted(KNOWN_STATUSES)} 중 하나여야 한다 (받은 값 {status!r})")
 
     return Staff(
         scenario_id=text("시나리오ID"),
+        hospital=hospital,
         login_id=text("login_id"),
         name=text("이름"),
         roles=frozenset(text("roles").split(ROLE_SEPARATOR)),
@@ -148,17 +170,31 @@ def by_login(login_id: str) -> Staff:
     raise KeyError(f"그런 아이디가 없다: {login_id}")
 
 
-def with_roles(*roles: str) -> Staff:
-    """역할 조합이 정확히 일치하는 **평범한** 계정 하나.
+def in_hospital(hospital: str) -> tuple[Staff, ...]:
+    """그 의원 사람들.
+
+    격리 검사는 **양쪽이 다 있어야** 성립한다 — 한쪽만 있으면 「안 보인다」가
+    격리 때문인지 자료가 없어서인지 구분되지 않는다.
+    """
+    if hospital not in KNOWN_HOSPITALS:
+        raise KeyError(f"그런 의원이 없다: {hospital}")
+    return tuple(s for s in all_staff() if s.hospital == hospital)
+
+
+def with_roles(*roles: str, hospital: str = DEFAULT_HOSPITAL) -> Staff:
+    """그 의원에서 역할 조합이 정확히 일치하는 **평범한** 계정 하나.
 
     예약 계정은 건너뛴다. 예전에는 `lock01` 이 목록 뒤쪽에 있어서 우연히
     안 걸렸을 뿐이라, 앞 행이 바뀌면 조용히 집혀 왔다.
+
+    의원을 안 적으면 기준 의원(`H1`)에서 찾는다. 대부분의 검사는 의원이
+    하나라고 여기고 짜여 있고, 그 계정들이 전부 `H1` 이다.
     """
     want = frozenset(roles)
-    for s in all_staff():
+    for s in in_hospital(hospital):
         if s.roles == want and s.is_ordinary and not s.is_reserved:
             return s
-    raise KeyError(f"그 조합의 평범한 계정이 없다: {sorted(want)}")
+    raise KeyError(f"{hospital} 에 그 조합의 평범한 계정이 없다: {sorted(want)}")
 
 
 def admins_besides(login_id: str) -> tuple[Staff, ...]:
@@ -168,5 +204,9 @@ def admins_besides(login_id: str) -> tuple[Staff, ...]:
     운영·겸직 admin 이 여럿 있어서, 그냥 `lastadmin01` 에서 admin 을 빼는
     저장은 아무 규칙에도 안 걸린다. 그 상태를 만들려면 무엇을 먼저 치워야
     하는지 여기서 내준다.
+
+    **같은 의원 사람만 센다.** 「마지막 관리자」는 의원 단위 규칙이다 —
+    옆 의원에 관리자가 있다고 이 의원이 관리자 없이 남아도 되는 것이 아니다.
     """
-    return tuple(s for s in all_staff() if "admin" in s.roles and s.is_active and s.login_id != login_id)
+    who = by_login(login_id)
+    return tuple(s for s in in_hospital(who.hospital) if "admin" in s.roles and s.is_active and s.login_id != login_id)

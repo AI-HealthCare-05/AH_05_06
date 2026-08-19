@@ -14,6 +14,8 @@ import pytest
 
 from app.tests.fixtures.staff import (
     CSV_PATH,
+    DEFAULT_HOSPITAL,
+    KNOWN_HOSPITALS,
     RESERVED_LOGIN_IDS,
     ROLE_SEPARATOR,
     Staff,
@@ -22,6 +24,7 @@ from app.tests.fixtures.staff import (
     all_staff,
     by_id,
     by_login,
+    in_hospital,
     with_roles,
 )
 from app.tests.rbac.matrix import VALID_COMBINATIONS, Role
@@ -67,7 +70,10 @@ def only(login_id: str) -> str:
     안 걸리는 것을 「가드가 있다」로 잘못 읽는다.
     """
     lines = SOURCE.splitlines()
-    picked = [line for line in lines[1:] if line.split(",")[1] == login_id]
+    # 칸 번호를 박아 두면 칸이 하나 늘 때마다 조용히 엉뚱한 칸을 본다.
+    # 실제로 「병원」 칸이 앞에 들어오면서 한 번 깨졌다 — 머리글에서 찾는다.
+    where = lines[0].split(",").index("login_id")
+    picked = [line for line in lines[1:] if line.split(",")[where] == login_id]
     assert picked, f"그런 아이디가 CSV 에 없다: {login_id}"
     return "\n".join([lines[0], *picked]) + "\n"
 
@@ -127,6 +133,10 @@ class TestBrokenRowsAreCaught:
         L-3 검사가 아무것도 안 보고 통과한다."""
         broken = SOURCE.replace(",Y,active,,,★ 첫 로그인", ",y,active,,,★ 첫 로그인")
         assert "must_change_password" in load_broken(tmp_path, broken)
+
+    def test_a_typo_in_hospital(self, tmp_path: Path) -> None:
+        broken = SOURCE.replace(",H1,staff01,", ",h1,staff01,")
+        assert "병원" in load_broken(tmp_path, broken)
 
     def test_a_typo_in_status(self, tmp_path: Path) -> None:
         """`Left` 가 재직으로 읽히면 퇴사자 차단 검사가 산 사람을 본다."""
@@ -289,3 +299,60 @@ class TestLookups:
     def test_role_separator_is_not_a_comma(self) -> None:
         """쉼표를 쓰면 CSV 칸이 쪼개진다."""
         assert ROLE_SEPARATOR != ","
+
+
+class TestHospitalIsolation:
+    """의원이 둘 있어야 「타 병원 자료가 안 보인다」를 검사할 수 있다.
+
+    `docs/contracts/patient-visit-api-v1.md` 5절 — 타 병원 리소스는 `403` 이
+    아니라 `404` 다. 존재 여부 자체를 감춘다. 그걸 확인하려면 **남의 의원
+    사람**이 있어야 하는데, 예전에는 이 픽스처에 의원이 하나뿐이었다.
+    """
+
+    def test_both_hospitals_have_people(self) -> None:
+        for hospital in KNOWN_HOSPITALS:
+            assert in_hospital(hospital), f"{hospital} 에 아무도 없다 — 격리 검사의 한쪽이 빈다"
+
+    def test_the_other_hospital_has_all_three_roles(self) -> None:
+        """스탭 · 의사 · 관리자가 다 있어야 역할별로 막히는지 볼 수 있다."""
+        others = in_hospital("H2")
+        covered = {role for s in others for role in s.roles}
+        assert covered == {"staff", "doctor", "admin"}, f"H2 에 없는 역할이 있다: {covered}"
+
+    def test_with_roles_stays_in_the_asked_hospital(self) -> None:
+        assert with_roles("staff").hospital == DEFAULT_HOSPITAL
+        assert with_roles("staff", hospital="H2").hospital == "H2"
+        assert with_roles("staff").login_id != with_roles("staff", hospital="H2").login_id
+
+    def test_asking_for_an_unknown_hospital_raises(self) -> None:
+        with pytest.raises(KeyError):
+            in_hospital("H9")
+
+    def test_a_name_is_not_enough_to_find_a_doctor(self) -> None:
+        """두 의원에 같은 이름의 의사가 있다.
+
+        `app/tests/fixtures/mapping.py` 는 담당의를 「이름 → 직원 픽스처로
+        푼다」고 적어 두었다. 이름만 보고 풀면 **남의 의원 의사**를 집는다.
+        그 상황을 실제로 만들 수 있어야 그 코드를 검사할 수 있다.
+        """
+        same_name = [s for s in all_staff() if s.name == "박연"]
+        assert len(same_name) == 2, "동명이인 의사가 사라졌다 — 이름만으로 푸는 코드를 못 잡는다"
+        assert {s.hospital for s in same_name} == {"H1", "H2"}
+        assert len({s.login_id for s in same_name}) == 2
+
+
+class TestLastAdminIsPerHospital:
+    """「마지막 관리자」는 의원 단위 규칙이다.
+
+    옆 의원에 관리자가 있다고 이 의원이 관리자 없이 남아도 되는 것이 아니다.
+    """
+
+    def test_it_does_not_count_the_other_hospital(self) -> None:
+        others = admins_besides("lastadmin01")
+        assert others, "H1 에 다른 관리자가 없으면 이 검사가 뜻이 없다"
+        assert all(s.hospital == "H1" for s in others), [s.login_id for s in others]
+
+    def test_the_other_hospital_admin_exists_but_is_not_counted(self) -> None:
+        elsewhere = [s for s in in_hospital("H2") if "admin" in s.roles]
+        assert elsewhere, "H2 에 관리자가 없으면 이 검사가 헛돈다"
+        assert not {s.login_id for s in elsewhere} & {s.login_id for s in admins_besides("lastadmin01")}
