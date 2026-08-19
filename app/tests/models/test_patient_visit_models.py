@@ -1,10 +1,12 @@
 from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 import pytest
 from aerich.utils import decompress_dict, import_py_file
 from tortoise import Tortoise
 from tortoise.fields import OnDelete
+from tortoise.fields.relational import BackwardFKRelation, ForeignKeyFieldInstance
 
 from app.core.db.databases import TORTOISE_APP_MODELS, TORTOISE_ORM
 from app.models.patients import Patient, PatientGender
@@ -40,14 +42,15 @@ def test_patient_model_matches_frozen_contract() -> None:
 
 
 def test_visit_model_keeps_patient_one_to_many_relation() -> None:
-    relation = Visit._meta.fields_map["patient"]
+    relation = cast(ForeignKeyFieldInstance, Visit._meta.fields_map["patient"])
 
     assert Visit._meta.db_table == "visit"
     assert Visit._meta.pk_attr == "visit_id"
     assert relation.related_model is Patient
     assert relation.source_field == "patient_id"
     assert relation.on_delete is OnDelete.RESTRICT
-    assert Patient._meta.fields_map["visits"].related_model is Visit
+    reverse = cast(BackwardFKRelation, Patient._meta.fields_map["visits"])
+    assert reverse.related_model is Visit
     assert set(VisitStatus) == {
         VisitStatus.SCHEDULED,
         VisitStatus.COMPLETED,
