@@ -5,10 +5,13 @@
   ① 데이터 생성자가 추가 해석 없이 fixture 를 만들 수 있음
      → 칸이 하나도 빠지지 않았는가 · 적어 둔 타입대로 읽히는가. **지금 돈다.**
 
-  ② 필드명과 타입이 API 계약과 일치
+  ② 필드명이 API 계약과 일치
      → FastAPI 가 코드에서 뽑는 OpenAPI 와 대조한다.
         환자·진료 API 가 아직 없어 지금은 skip 되고, 생기는 순간 켜진다.
         **손으로 관리하는 명세서를 따로 두지 않는다.**
+
+     여기서 보는 것은 **이름뿐이다.** 타입(`string` / `integer` / `date-time` …)까지
+     맞추는 자동 검증은 `KEY-32` 몫이다 — 이 파일이 그것까지 한다고 읽히면 안 된다.
 """
 
 import csv
@@ -143,11 +146,15 @@ class TestEnumListsAreUsed:
         assert len(unused) <= len(MAPPING[column].choices) / 2, f"{column} 의 값 절반 이상이 안 쓰인다: {unused}"
 
 
-class TestAgainstOpenApi:
-    """② 필드명과 타입이 API 계약과 일치 — FastAPI 가 코드에서 뽑는 것과 대조한다.
+class TestFieldNamesAgainstOpenApi:
+    """② 필드 **이름**이 API 계약에 있는가 — FastAPI 가 코드에서 뽑는 것과 대조한다.
 
     손으로 관리하는 명세서를 두지 않는다. 코드가 곧 계약이고, 이 검사가 그 계약과
     합성 데이터를 이어 준다. 환자·진료 API 가 생기면 저절로 켜진다.
+
+    **타입은 보지 않는다.** OpenAPI 스키마의 `type` · `format` 까지 맞추는 자동 검증은
+    `KEY-32` 에서 한다. 여기서 이름만 보는 이유는, 이름이 어긋나면 타입을 볼
+    필요도 없이 시드가 깨지기 때문이다 — 먼저 걸러 내는 자리다.
     """
 
     @staticmethod
@@ -166,7 +173,8 @@ class TestAgainstOpenApi:
         assert spec.get("components", {}).get("schemas"), "OpenAPI 에 스키마가 없다"
 
     @pytest.mark.parametrize("where", sorted(API_SCHEMA_FOR), ids=lambda w: w.value)
-    def test_mapped_fields_exist_in_the_api_schema(self, where: Where) -> None:
+    def test_mapped_field_names_exist_in_the_api_schema(self, where: Where) -> None:
+        """이름이 있는지만 본다. 타입 일치는 KEY-32."""
         schemas = self.load().get("components", {}).get("schemas", {})
         found = next((schemas[n] for n in API_SCHEMA_FOR[where] if n in schemas), None)
         if found is None:
