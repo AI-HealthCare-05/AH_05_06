@@ -255,13 +255,22 @@
     render();
   });
 
+  /* 두 버튼이 갈 곳은 아직 없다.
+     없는 주소로 보내면 404 가 뜨고, 스탭은 그것을 「내가 뭘 잘못했나」로 읽는다 —
+     그래서 여기 세워 두고 무슨 일이 일어났는지만 말한다.
+     왼쪽 목록은 늘 있으니 다음 환자로 가는 길이 막히지도 않는다. */
+  function say(text) {
+    document.getElementById("say").textContent = text;
+  }
+
   /* 여기서 그만둬도 환자는 남는다. 「작성 중 · 진료기록 없음」으로 목록에 있다. */
   later.addEventListener("click", function () {
-    location.href = "/patients.html";
+    say("나중에 올려도 됩니다 — 목록에 「작성 중 · 진료기록 없음」으로 남아 있습니다.");
   });
 
   next.addEventListener("click", function () {
-    location.href = "/guide.html"; // S1-6 판독 결과 — 아직 없다
+    /* TODO(KEY-62) 판독 확인(S1-6)으로 넘어간다. 그 화면이 만들어지면 이 자리를 바꾼다. */
+    say("올렸습니다. 판독 확인 화면(S1-6)은 준비 중입니다 — 올린 진료기록은 그대로 남아 있습니다.");
   });
 
   /* 지금 고른 진료 건. **업로드가 붙는 자리는 visit_id 다.**
