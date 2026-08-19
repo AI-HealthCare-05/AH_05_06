@@ -1,0 +1,356 @@
+/* 의료진 화면 골격 — 상단바 + 왼쪽 목록 320 + 오른쪽 내용
+ *
+ * 와이어프레임 S1·S2·D1·D2 가 전부 이 골격 하나를 공유한다.
+ * 왼쪽 목록은 로그인해 있는 동안 사라지지 않는다 — 다음 환자로 넘어가는 길이
+ * 늘 손에 닿아야 한다.
+ *
+ * KEY-53 은 오른쪽 칸의 「② 진료기록 업로드」(S1-5)를 만든다.
+ * 왼쪽 목록의 검색·등록·필터는 KEY-35 가 채운다. 여기서는 자리만 잡는다.
+ */
+
+body.shell {
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 상단바 ─────────────────────────────────────────── */
+
+.topbar {
+  flex: 0 0 auto;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-24);
+  padding: 0 var(--s-24);
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar__brand {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.topbar__nav {
+  display: flex;
+  gap: var(--s-4);
+}
+
+.topbar__tab {
+  height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.topbar__tab:hover {
+  background: var(--bg);
+}
+
+.topbar__tab[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--bg);
+}
+
+.topbar__right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+}
+
+/* 이름 옆에 역할을 붙인다 — 관리자+스탭처럼 겸직이면 둘 다 보여야
+   「지금 무엇으로 일하고 있는가」가 화면에서 읽힌다 */
+.who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.who__name {
+  font-weight: 600;
+}
+
+.who__roles {
+  color: var(--ink-3);
+}
+
+.icon-button {
+  position: relative;
+  width: var(--field-h);
+  height: var(--field-h);
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink-2);
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--bg);
+}
+
+.icon-button__count {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 17px;
+  color: #ffffff;
+  background: var(--danger);
+  border-radius: 9px;
+}
+
+/* ── 본문 두 칸 ─────────────────────────────────────── */
+
+.main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.list {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-right: 1px solid var(--line);
+}
+
+.list__head {
+  padding: var(--s-12);
+  border-bottom: 1px solid var(--line);
+}
+
+.list__search {
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.list__day {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  padding: var(--s-8) var(--s-12);
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+
+.list__day .grow {
+  flex: 1;
+}
+
+/* 상태 탭 — 다중 선택 토글. 역할마다 봐야 할 묶음이 다르다.
+   놓치면 안 되는 탭(보완)은 ⚠ 와 개수로 표시한다. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: var(--s-8) var(--s-12);
+  border-bottom: 1px solid var(--line);
+}
+
+/* 32px — 320px 폭에 다섯이 들어가야 해서 44px 은 못 쓴다.
+   폭은 그대로 두고 높이만 올려 줄바꿈을 늘리지 않는다. */
+.chip {
+  height: 32px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip[aria-pressed="true"] {
+  color: #ffffff;
+  font-weight: 600;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.chip--warn[aria-pressed="false"] {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+}
+
+.list__rows {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.row {
+  width: 100%;
+  display: block;
+  padding: var(--s-12);
+  text-align: left;
+  font: inherit;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--bg);
+}
+
+.row[aria-current="true"] {
+  background: var(--bg);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.row__top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-8);
+}
+
+.row__name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.row__dx {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.row__meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.row__state {
+  margin-top: 6px;
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+
+.row__state--warn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+}
+
+.row__state--done {
+  color: var(--done);
+  background: var(--done-bg);
+  border-color: #cfe4d8;
+}
+
+.list__note {
+  padding: var(--s-8) var(--s-12);
+  font-size: 12px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--line);
+}
+
+/* ── 오른쪽 내용 ────────────────────────────────────── */
+
+.pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--s-24);
+}
+
+/* 누구의 기록을 다루는 중인지 늘 붙어 있어야 다른 환자에게 잘못 넣지 않는다 */
+.patient-head {
+  padding-bottom: var(--s-16);
+  border-bottom: 1px solid var(--line);
+}
+
+.patient-head__name {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.patient-head__id {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.patient-head__visit {
+  margin-top: var(--s-8);
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* 단계 — 어디까지 왔는지. 지금 단계만 진하게 둔다.
+   순서가 있으니 ol 로 적되 번호는 지운다 — ✓ ● ○ 가 이미 어디까지 왔는지 말한다. */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: var(--s-24);
+  margin: var(--s-16) 0 var(--s-24);
+  padding-bottom: var(--s-12);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.step__mark {
+  margin-right: 6px;
+}
+
+.step--done {
+  color: var(--ink-2);
+}
+
+.step--now {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pane__title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.pane__lead {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
