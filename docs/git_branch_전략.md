@@ -35,7 +35,7 @@
 
 기존 규칙은 그대로 유지됩니다:
 
-- 커밋 메시지 규칙: `[#이슈번호] 타입: 내용`
+- 커밋 메시지 규칙: `<이모지> <타입>: [KEY-번호] 내용`
 - PR 리뷰 규칙: 최소 1인 승인
 
 ---
@@ -56,7 +56,7 @@ git pull origin develop
 git checkout -b feat/기능명
 
 # 작업 후
-git commit -m "[#12] feat: 기능 설명"
+git commit -m "✨ feat: [KEY-12] 기능 설명"
 git push origin feat/기능명
 # → develop 대상으로 PR 생성 → 리뷰 1인 승인 → merge
 ```
