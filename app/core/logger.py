@@ -1,5 +1,6 @@
 import logging
 import sys
+import traceback
 
 from app.core.masking import scrub
 
@@ -24,12 +25,17 @@ class MaskingFilter(logging.Filter):
             record.msg = scrub(record.getMessage())
             record.args = ()
 
-        # exc_info=e 로 붙는 예외의 인자도 로그에 그대로 찍힌다.
-        # 여기서 손대지 않으면 DBConnectionError 처럼 접속 정보를 담은 예외가 새어 나간다.
-        if record.exc_info and record.exc_info[1] is not None:
-            exc = record.exc_info[1]
-            if exc.args:
-                exc.args = tuple(scrub(a) if isinstance(a, str) else a for a in exc.args)
+        # exc_info=e 로 붙는 예외도 트레이스백째 찍힌다. DBConnectionError 처럼
+        # 접속 정보를 담은 예외가 그대로 새어 나간다.
+        #
+        # **예외 객체 자체는 건드리지 않는다.** `exc.args` 를 고치면 그 예외가 다시
+        # 던져질 때도, API 응답에 쓰일 때도 바뀐 값이 나간다 — 로그를 가리려다
+        # 애플리케이션 동작을 바꾸는 셈이다.
+        #
+        # 대신 **렌더링 결과만** 미리 채운다. `logging.Formatter` 는 `exc_text` 가
+        # 이미 있으면 그걸 그대로 쓰므로, 핸들러가 몇 개든 같은 결과를 본다.
+        if record.exc_info and record.exc_info[0] is not None and not record.exc_text:
+            record.exc_text = scrub("".join(traceback.format_exception(*record.exc_info)).rstrip())
 
         return True
 

@@ -24,6 +24,10 @@ REDACTED = "[REDACTED]"
 
 #: 값이 어떤 이름으로 불리든 가린다. JSON · 쿼리스트링 · 파이썬 repr 을 함께 훑는다.
 #: `password` 하나만 잡으면 `hashed_password` · `current_password` 를 놓친다.
+#:
+#: `code` 는 여기 없다 — 접두사를 허용하는 구조라 `status_code` · `error_code` ·
+#: **`diagnosis_code`** 까지 삼킨다. 진단 코드가 로그에서 사라지면 추적이 안 된다.
+#: OTP 의 `code` 는 아래 `OTP_CODE` 가 **여섯 자리 숫자일 때만** 따로 잡는다.
 SECRET_KEYS = (
     "password",
     "passwd",
@@ -33,7 +37,6 @@ SECRET_KEYS = (
     "api_key",
     "apikey",
     "otp",
-    "code",  # OTP 응답의 `code`
     "refresh_token",
     "access_token",
 )
@@ -56,9 +59,17 @@ KEYED_SECRET = re.compile(
 #: JWT — 헤더.페이로드.서명. 셋 다 base64url 이고 헤더는 늘 `eyJ` 로 시작한다.
 JWT = re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+")
 
-#: 환자 링크 토큰 — `secrets.token_urlsafe(32)` 는 43자 base64url 이다.
-#: 32자 이상만 잡아 평범한 단어나 해시 아닌 식별자를 건드리지 않는다.
-URLSAFE_TOKEN = re.compile(r"\b[A-Za-z0-9_-]{32,}\b")
+#: `code` 라는 이름은 흔하다. OTP 일 때만 가린다 — **값이 정확히 여섯 자리 숫자**.
+#: 그러면 `status_code=200`(세 자리) · `error_code=OTP_LOCKED`(문자) 는 남는다.
+OTP_CODE = re.compile(r"""(?P<key>["']?\w*code["']?\s*[:=]\s*)(?P<quote>["']?)\d{6}(?P=quote)""", re.IGNORECASE)
+
+#: 환자 링크 토큰 — `secrets.token_urlsafe(32)` 는 **정확히 43자** base64url 이다.
+#:
+#: 32자로 잡았더니 커밋 SHA(40자 hex) 와 요청 ID 까지 삼켰다. 그래서
+#:   · 길이를 43자 이상으로 올리고
+#:   · **hex 로만 된 것은 제외한다** — 커밋 SHA · MD5 · SHA-256 이 전부 hex 다
+#: 실제 토큰은 대소문자와 `-` `_` 가 섞여 hex 가 될 수 없다.
+URLSAFE_TOKEN = re.compile(r"\b(?![0-9a-fA-F]+\b)[A-Za-z0-9_-]{43,}\b")
 
 #: 휴대폰 — 하이픈이 있든 없든. 가운데 넷만 가리고 뒤 넷은 남긴다.
 PHONE = re.compile(r"\b(01[016-9])[-.\s]?(\d{3,4})[-.\s]?(\d{4})\b")
@@ -85,11 +96,13 @@ def scrub(text: str) -> str:
 
     순서가 중요하다.
     1. 키가 붙은 값(`password=...`)을 먼저 — 값이 짧아도 키를 보고 안다
-    2. JWT · 주민번호처럼 모양이 뚜렷한 것
-    3. 긴 base64url 토큰 — 가장 넓게 걸리므로 마지막
-    4. 전화번호는 지우지 않고 가운데만 덮는다
+    2. `code` 는 여섯 자리 숫자일 때만 — OTP 와 상태·진단 코드를 가른다
+    3. JWT · 주민번호처럼 모양이 뚜렷한 것
+    4. 긴 base64url 토큰 — 가장 넓게 걸리므로 마지막
+    5. 전화번호는 지우지 않고 가운데만 덮는다
     """
     text = KEYED_SECRET.sub(_mask_keyed, text)
+    text = OTP_CODE.sub(lambda m: f"{m.group('key')}{m.group('quote')}{REDACTED}{m.group('quote')}", text)
     text = JWT.sub(REDACTED, text)
     text = RRN.sub(lambda m: f"{m.group(1)}-{'*' * 7}", text)
     text = URLSAFE_TOKEN.sub(REDACTED, text)

@@ -106,6 +106,44 @@ class TestFalsePositives:
     def test_ordinary_words_survive(self) -> None:
         assert "안내문 생성 실패" in scrub("안내문 생성 실패 visit 8842")
 
+    @pytest.mark.parametrize(
+        ("line", "must_keep"),
+        [
+            ("status_code=200 ok", "200"),
+            ("error_code=OTP_LOCKED retry_after=600", "OTP_LOCKED"),
+            ("diagnosis_code=N80.0 자궁내막증", "N80.0"),
+            ('{"error_code": "visit_locked"}', "visit_locked"),
+        ],
+        ids=["status", "error", "diagnosis", "json"],
+    )
+    def test_code_named_fields_are_not_otp(self, line: str, must_keep: str) -> None:
+        """`code` 로 끝나는 이름은 흔하다 — 상태 · 오류 · **진단** 코드.
+
+        이것까지 가리면 장애를 추적할 수 없다. OTP 는 **여섯 자리 숫자일 때만** 가린다.
+        """
+        assert must_keep in scrub(line), f"가리면 안 되는 코드가 사라졌다: {scrub(line)}"
+
+    @pytest.mark.parametrize(
+        "identifier",
+        [
+            "3d49809aab1c4f2e7b9d05c8e6f1a2b3c4d5e6f7",  # 커밋 SHA (40자 hex)
+            "550e8400-e29b-41d4-a716-446655440000",  # UUID 요청 ID
+            "d41d8cd98f00b204e9800998ecf8427e",  # MD5
+        ],
+        ids=["commit-sha", "uuid", "md5"],
+    )
+    def test_long_hex_identifiers_are_not_tokens(self, identifier: str) -> None:
+        """32자로 잡았더니 커밋 SHA 와 요청 ID 까지 삼켰다.
+
+        실제 링크 토큰은 `secrets.token_urlsafe(32)` = 43자이고 대소문자와
+        `-` `_` 가 섞여 **hex 가 될 수 없다.**
+        """
+        assert identifier in scrub(f"request {identifier} handled"), "추적 식별자가 사라졌다"
+
+    def test_real_link_token_still_disappears(self) -> None:
+        """오탐을 줄이면서 진짜는 놓치면 안 된다."""
+        assert LINK_TOKEN not in scrub(f"link {LINK_TOKEN} issued")
+
 
 class TestLoggerAppliesItAutomatically:
     """호출부가 잊어도 걸려야 한다 — 그것이 이 방식을 고른 이유다."""
@@ -172,6 +210,48 @@ class TestLoggerAppliesItAutomatically:
         joined = "".join(written)
         assert password not in joined
         assert LINK_TOKEN not in joined
+
+
+class TestMaskingDoesNotChangeBehaviour:
+    """가리는 일이 애플리케이션 동작을 바꾸면 안 된다.
+
+    처음에는 `exc.args` 를 직접 고쳤는데, 그러면 그 예외가 **다시 던져질 때도
+    API 응답에 쓰일 때도** 바뀐 값이 나간다. 로그를 가리려다 동작을 바꾸는 셈이다.
+    지금은 렌더링 결과(`record.exc_text`)만 채운다.
+    """
+
+    def test_the_exception_object_survives_untouched(self) -> None:
+        logger, _ = TestLoggerAppliesItAutomatically._capture("mask-test-immutable")
+        error = ValueError(f"connect failed: password=pw1234 token={LINK_TOKEN}")
+        before = str(error), error.args
+
+        try:
+            raise error
+        except ValueError as exc:
+            logger.warning("db check failed", exc_info=exc)
+
+        assert (str(error), error.args) == before, (
+            "로그를 찍었더니 예외 객체가 바뀌었다 — 재발생·API 응답까지 영향을 받는다"
+        )
+        assert "pw1234" in str(error), "예외 자체는 원래 값을 그대로 들고 있어야 한다"
+
+    def test_the_record_still_carries_exc_info(self) -> None:
+        """`exc_info` 를 지우지 않는다 — 다른 핸들러가 예외 종류로 분기할 수 있다."""
+        logger = setup_logger("mask-test-excinfo")
+        seen: list[logging.LogRecord] = []
+
+        class Sink(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                seen.append(record)
+
+        logger.addHandler(Sink())
+        try:
+            raise ValueError("boom")
+        except ValueError as exc:
+            logger.warning("failed", exc_info=exc)
+
+        assert seen[0].exc_info is not None
+        assert seen[0].exc_info[0] is ValueError
 
 
 class TestWhereMaskingCannotReach:
