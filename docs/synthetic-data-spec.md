@@ -157,31 +157,55 @@ SYN-{질환}-{번호}
 
 ## 8. 필드 매핑 (`KEY-30`)
 
-CSV **33칸** → `patient` · `visit` · `visit_flag` · `lab_result`
+CSV **33칸** → `patient` · `visit` · `prescription` · `visit_flag` · `lab_result`
 
+**필드명은 [`docs/contracts/patient-visit-api-v1.md`](contracts/patient-visit-api-v1.md)(`KEY-26`)를 따른다.**
+그 문서는 지금 **`v1.0-rc1`**이고, `v1.0-frozen`이 되면 여기도 다시 맞춘다.
 정본은 **`app/tests/fixtures/mapping.py`**다. 아래는 사람이 읽으라고 옮겨 적은 것이다.
 
 | CSV 칸 | 표 · 필드 | 타입 | 필수 | 비고 |
 |---|---|---|---|---|
-| 차트번호 | `patient.chart_no` | text | ● | EMR 차트번호와 같게 |
-| 이름 | `patient.name` | text | ● | |
-| 생년월일 | `patient.birth_date` | date | ● | **환자 본인확인에 그대로 쓰인다** |
-| 휴대폰 | `patient.phone` | text | ● | 화면에는 뒤 4자리만 |
-| 문자수신동의 | `patient.sms_consent` | bool | ● | `Y`→true · `N`→false. `N`이면 `sms_opt_out=true` |
-| 진료일 | `visit.visit_date` | date | ● | 목록의 하루 단위 축 |
-| 담당의 | `visit.doctor_id` | uuid | ● | 이름 → 직원 픽스처의 uuid로 푼다 |
-| 진단 | (처방 세트로 표현) | — | | `visit.prescription_set_id`가 질환을 담는다 |
-| 처방세트 | `visit.prescription_set_id` | uuid | ● | `SET-EMS-01`~`04` · `SET-PCOS-01`~`05` |
-| 약 · 용법 · 처방일수 | `visit.drugs` jsonb | jsonb | ● | `[{name, dose, freq, days, note}]` |
-| 처방일수 | `visit.days` | int | ● | **소진일 계산의 근거.** `28` 미만이면 확인을 여쭙는다 |
+| 차트번호 | `patient.hospital_patient_no` | string(50) | ● | **병원 내 유일 · 생성 후 변경 불가** |
+| 이름 | `patient.name` | string(50) | ● | trim 후 1~50자 · 한 글자 검색 허용 |
+| 생년월일 | `patient.birth_date` | date | ● | **본인확인에 그대로 쓰인다** · 나이는 여기서 파생 |
+| 휴대폰 | `patient.phone` | string(20) | ● | 숫자로 정규화 · 화면에는 뒤 4자리만 |
+| 문자수신동의 | `patient.sms_consent` | bool | ● | `Y`→true. `N`이면 서버가 `sms_opted_out_at`을 남긴다 |
+| 진료일 | `visit.visited_at` | **datetime** | ● | 계약은 일시다 — 목록은 `visited_on` 질의로 하루씩 묶는다 |
+| 담당의 | `visit.doctor_id` | bigint | ● | 이름 → 직원 픽스처의 id로 푼다 · **`doctor` 역할 보유자만** |
+| 진단 | (파생) | — | | 처방 세트가 질환을 담는다 |
+| 초진재진 | (파생) | — | | 지난 방문이 있는지로 정한다 |
+| **처방세트 · 약 · 용법 · 처방일수** | ⚠ **계약 대기** | — | | 아래 「계약이 아직 안 정한 것」 |
 | 총투원문 · 총투단위 | (판독 입력) | — | | **DB에 넣지 않는다** — OCR이 읽어야 할 원문이다 |
-| 소진예정일 | (파생) | — | | `visit_date + days` |
+| 소진예정일 | (파생) | — | | 진료일 + 처방일수 |
 | 혈색소 · 자궁내막종 · 내막두께 · AST/ALT · 월경주기 · 총테스토스테론 · DHEA-S · LH/FSH · AMH · 기타검사 | `lab_result` | — | | 항목당 한 줄 |
 | 특이사항 | `visit_flag.code` | enum | | `DEPRESSION` `HTN` `SMOKING` `DM` `PREGNANCY_PLAN` 등 |
-| 진료상태 | **저장하지 않는다** | — | | **`event_log`에서 파생한다** (v2.2 결정) |
+| 진료상태 | **저장하지 않는다** | — | | `event_log`에서 파생. `visit.status`(`SCHEDULED`/`COMPLETED`/`CANCELED`)는 **방문 자체 상태라 다른 값이다** |
 | 확인문자회차 · 열람여부 | `message` · `message.read_sections` | — | | 발송·열람 이벤트로 만든다 |
 | 이탈표시 | **저장하지 않는다** | — | | 이벤트에서 파생하는 플래그 넷 |
-| 케이스의도 | (문서용) | — | | 이 명세의 「목적」 칸 |
+| 시나리오ID · 케이스의도 | (문서용) | — | ● | 어디에도 안 들어간다 |
+
+### ⚠ 계약이 아직 안 정한 것 — 처방 네 칸
+
+`KEY-26`이 **`PRESCRIPTION`을 `VISIT` 밖으로 뺐는데**(`VISIT 1 ── N PRESCRIPTION`) 필드 계약이 아직 없다.
+그래서 **처방세트 · 약 · 용법 · 처방일수**를 넣을 곳을 시드가 모른다.
+
+**`처방일수`가 특히 급하다.** 소진예정일 = 진료일 + 처방일수이고, **「소진 후 7일 경과」 이탈 판정**이 여기서 나온다.
+이 칸이 비면 `SYN-PCOS-05`(소진 후 7일) · `SYN-PCOS-02`(총투 통수→84일) 같은 시나리오를 구현할 수 없다.
+
+`mapping.py`의 `BLOCKED_ON_CONTRACT`가 이 넷을 들고 있고, 검사가 **이유 없이 비워 두는 것**을 막는다.
+
+### ⚠ 계약이 요구하는데 CSV가 못 주는 것
+
+시드가 어딘가에서 채워야 한다. 안 적어 두면 환자 생성이 `422`로 막히고 **그때서야 원인을 찾게 된다.**
+
+| 필드 | 어떻게 채우나 |
+|---|---|
+| `patient.gender` | 계약은 `FEMALE`/`MALE` 필수인데 CSV에 성별 칸이 없다. **부인과라 `FEMALE` 상수** — 남성 환자를 쓸 일이 생기면 CSV에 칸을 만든다 |
+| `patient.hospital_id` | **서버가 로그인 직원의 병원으로 정한다.** 본문에 보내면 `422` |
+| `visit.status` | `COMPLETED` 상수 — 합성 데이터의 진료는 모두 끝난 방문이다 |
+| `visit.department` | `산부인과` 상수 |
+
+`mapping.py`의 `CSV_CANNOT_SUPPLY`가 갖고 있고, 검사가 **채우는 법이 적혀 있는지** 확인한다.
 
 ### 이 표는 사람이 지키는 것이 아니라 검사가 지킨다
 

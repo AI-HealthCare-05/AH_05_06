@@ -5,6 +5,13 @@
 
 세 칸은 **저장하지 않는다.** 무엇을 안 넣는지도 적어야
 시드가 「이건 왜 빠졌지」 하며 억지로 컬럼을 만들지 않는다.
+
+기준
+----
+필드명은 **`docs/contracts/patient-visit-api-v1.md`**(KEY-26)를 따른다.
+그 문서는 지금 **`v1.0-rc1`** 이고 `v1.0-frozen` 이 되면 여기도 다시 맞춘다.
+계약이 아직 정하지 않은 자리는 `Where.UNDECIDED` 로 두고 무엇이 막혀 있는지 적는다 —
+비워 두면 시드가 알아서 이름을 짓는다.
 """
 
 from dataclasses import dataclass
@@ -36,12 +43,14 @@ class Where(StrEnum):
 
     PATIENT = "patient"
     VISIT = "visit"
+    PRESCRIPTION = "prescription"  # KEY-26 에서 VISIT 밖으로 나왔다
     VISIT_FLAG = "visit_flag"
     LAB_RESULT = "lab_result"
     OCR_INPUT = "ocr_input"  # DB 가 아니라 판독이 읽어야 할 원문
     DERIVED = "derived"  # 다른 값에서 계산한다
     EVENT = "event"  # event_log · message 에서 파생한다
     DOC_ONLY = "doc_only"  # 문서용. 어디에도 안 들어간다
+    UNDECIDED = "undecided"  # 계약이 아직 정하지 않았다. 시드가 이 칸을 못 넣는다
 
 
 @dataclass(frozen=True)
@@ -57,21 +66,27 @@ class Field:
 #: 정본은 docs/data/synthetic-patients.csv 다. 이 표는 그 칸을 어디에 넣을지만 정한다.
 MAPPING: dict[str, Field] = {
     "시나리오ID": Field(Where.DOC_ONLY, "", Kind.TEXT, True, "팀이 서로에게 쓰는 이름"),
-    "차트번호": Field(Where.PATIENT, "chart_no", Kind.TEXT, True, "EMR 차트번호"),
+    "차트번호": Field(Where.PATIENT, "hospital_patient_no", Kind.TEXT, True, "병원 내 유일 · 생성 후 변경 불가"),
     "이름": Field(Where.PATIENT, "name", Kind.TEXT, True),
     "생년월일": Field(Where.PATIENT, "birth_date", Kind.DATE, True, "환자 본인확인에 그대로 쓴다"),
     "휴대폰": Field(Where.PATIENT, "phone", Kind.TEXT, True, "화면에는 뒤 4자리만"),
-    "문자수신동의": Field(Where.PATIENT, "sms_consent", Kind.BOOL, True, "N 이면 sms_opt_out 도 참"),
-    "진료일": Field(Where.VISIT, "visit_date", Kind.DATE, note="목록의 하루 단위 축"),
-    "담당의": Field(Where.VISIT, "doctor_id", Kind.TEXT, note="이름 → 직원 픽스처의 uuid 로 푼다"),
+    "문자수신동의": Field(Where.PATIENT, "sms_consent", Kind.BOOL, True, "N 이면 sms_opted_out_at 을 서버가 남긴다"),
+    "진료일": Field(
+        Where.VISIT, "visited_at", Kind.DATE, note="계약은 datetime — 화면은 하루 단위로 묶는다(visited_on 질의)"
+    ),
+    "담당의": Field(Where.VISIT, "doctor_id", Kind.TEXT, note="이름 → 직원 픽스처의 id 로 푼다 · doctor 역할 보유자만"),
     "진단": Field(Where.DERIVED, "", Kind.FREE, note="처방 세트가 질환을 담는다. 별도 컬럼이 아니다"),
     "초진재진": Field(Where.DERIVED, "", Kind.ENUM, choices=("초진", "재진"), note="지난 방문이 있는지로 정한다"),
-    "처방세트": Field(Where.VISIT, "prescription_set_id", Kind.TEXT, note="SET-EMS-* · SET-PCOS-*"),
-    "약": Field(Where.VISIT, "drugs", Kind.FREE, note="drugs jsonb 의 name"),
-    "용법": Field(Where.VISIT, "drugs", Kind.FREE, note="drugs jsonb 의 freq"),
+    "처방세트": Field(
+        Where.UNDECIDED, "", Kind.TEXT, note="PRESCRIPTION 이 VISIT 밖으로 나왔는데 필드 계약이 아직 없다(KEY-26 리뷰)"
+    ),
+    "약": Field(Where.UNDECIDED, "", Kind.FREE, note="PRESCRIPTION 계약 대기"),
+    "용법": Field(Where.UNDECIDED, "", Kind.FREE, note="PRESCRIPTION 계약 대기"),
     "총투원문": Field(Where.OCR_INPUT, "", Kind.TEXT, note="판독이 읽어야 할 원문. DB 에 넣지 않는다"),
     "총투단위": Field(Where.OCR_INPUT, "", Kind.ENUM, choices=("일수", "통수"), note="통수면 × 28 일"),
-    "처방일수": Field(Where.VISIT, "days", Kind.INT, note="소진일 계산의 근거"),
+    "처방일수": Field(
+        Where.UNDECIDED, "", Kind.INT, note="PRESCRIPTION 계약 대기 — 소진일과 「소진 후 7일」 이탈 판정의 근거다"
+    ),
     "소진예정일": Field(Where.DERIVED, "", Kind.DATE, note="진료일 + 처방일수"),
     "혈색소": Field(Where.LAB_RESULT, "value", Kind.LAB, note="g/dL"),
     "자궁내막종": Field(Where.LAB_RESULT, "value", Kind.LAB, note="cm"),
@@ -115,8 +130,28 @@ MAPPING: dict[str, Field] = {
 #: 저장하지 않는 자리. 시드가 억지로 컬럼을 만들지 않게 한다.
 NOT_STORED = frozenset({Where.OCR_INPUT, Where.DERIVED, Where.EVENT, Where.DOC_ONLY})
 
+#: 계약이 요구하는데 **CSV 가 주지 못하는** 값. 시드가 어디선가 채워야 한다.
+#: 비워 두면 환자 생성이 422 로 막히고, 그때서야 「왜 안 되지」를 찾게 된다.
+CSV_CANNOT_SUPPLY: dict[str, str] = {
+    "patient.gender": (
+        "계약은 FEMALE/MALE 필수. CSV 에 성별 칸이 없다. "
+        "부인과라 시드가 FEMALE 상수로 채운다 — 남성 환자를 쓸 일이 생기면 CSV 에 칸을 만든다"
+    ),
+    "patient.hospital_id": "서버가 로그인 직원의 병원으로 정한다. 본문에 보내면 422",
+    "visit.status": (
+        "방문 자체 상태(SCHEDULED/COMPLETED/CANCELED). CSV 의 「진료상태」는 업무 진행 상태라 다른 값이다. "
+        "시드가 COMPLETED 로 채운다 — 합성 데이터의 진료는 모두 끝난 방문이다"
+    ),
+    "visit.department": "CSV 에 진료과 칸이 없다. 「산부인과」 상수",
+}
+
+#: 계약이 아직 정하지 않아 시드가 넣을 곳을 모르는 칸.
+#: KEY-26 이 PRESCRIPTION 을 VISIT 밖으로 뺐는데 필드 계약이 아직 없다.
+BLOCKED_ON_CONTRACT = ("처방세트", "약", "용법", "처방일수")
+
 #: OpenAPI 스키마에서 찾을 이름 → 우리 표. API 가 생기면 대조가 켜진다.
+#: KEY-31 구현이 어떤 모델명을 쓸지 아직 모르므로 흔한 후보를 늘어놓는다.
 API_SCHEMA_FOR = {
-    Where.PATIENT: ("Patient", "PatientResponse", "PatientInfoResponse"),
-    Where.VISIT: ("Visit", "VisitResponse", "VisitInfoResponse"),
+    Where.PATIENT: ("Patient", "PatientResponse", "PatientInfoResponse", "PatientCreateRequest"),
+    Where.VISIT: ("Visit", "VisitResponse", "VisitInfoResponse", "VisitCreateRequest"),
 }

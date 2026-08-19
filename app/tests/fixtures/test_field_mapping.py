@@ -23,7 +23,17 @@ from typing import Any
 
 import pytest
 
-from app.tests.fixtures.mapping import API_SCHEMA_FOR, MAPPING, NOT_STORED, PENDING, Field, Kind, Where
+from app.tests.fixtures.mapping import (
+    API_SCHEMA_FOR,
+    BLOCKED_ON_CONTRACT,
+    CSV_CANNOT_SUPPLY,
+    MAPPING,
+    NOT_STORED,
+    PENDING,
+    Field,
+    Kind,
+    Where,
+)
 
 CSV_PATH = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-patients.csv"
 
@@ -49,14 +59,55 @@ class TestNothingIsMissing:
         assert not ghosts, f"CSV 에 없는데 매핑표에만 있는 칸: {ghosts}"
 
     def test_stored_fields_have_a_name(self) -> None:
-        """어딘가에 저장한다면 필드명이 있어야 한다. 없으면 넣을 곳이 없다."""
-        nameless = [c for c, f in MAPPING.items() if f.where not in NOT_STORED and not f.name]
+        """어딘가에 저장한다면 필드명이 있어야 한다. 없으면 넣을 곳이 없다.
+
+        계약이 아직 안 정한 칸(UNDECIDED)은 이름이 없어도 된다 — 대신 아래에서
+        이유를 요구한다.
+        """
+        nameless = [
+            c for c, f in MAPPING.items() if f.where not in NOT_STORED and f.where is not Where.UNDECIDED and not f.name
+        ]
         assert not nameless, f"저장한다면서 필드명이 없다: {nameless}"
 
     def test_unstored_fields_have_a_reason(self) -> None:
         """왜 저장하지 않는지 적혀 있어야 나중에 컬럼을 억지로 만들지 않는다."""
         silent = [c for c, f in MAPPING.items() if f.where in NOT_STORED and not f.note]
         assert not silent, f"저장하지 않는 이유가 안 적힌 칸: {silent}"
+
+
+class TestContractGaps:
+    """계약과 CSV 사이에 벌어진 자리. 비워 두면 시드가 알아서 메운다."""
+
+    def test_blocked_columns_are_marked_undecided(self) -> None:
+        marked = {c for c, f in MAPPING.items() if f.where is Where.UNDECIDED}
+        assert marked == set(BLOCKED_ON_CONTRACT), (
+            f"계약 대기 표시가 어긋난다 — 표시됨 {sorted(marked)} vs 목록 {sorted(BLOCKED_ON_CONTRACT)}"
+        )
+
+    def test_every_undecided_column_says_why(self) -> None:
+        """무엇이 막혀 있는지 적혀 있어야 계약이 풀렸을 때 여기부터 고친다."""
+        silent = [c for c, f in MAPPING.items() if f.where is Where.UNDECIDED and not f.note]
+        assert not silent, f"계약 대기인데 이유가 없다: {silent}"
+
+    def test_prescription_columns_are_the_blocked_ones(self) -> None:
+        """소진일 계산이 처방일수에 달려 있다.
+
+        「소진 후 7일 경과」 이탈 판정도 여기서 나오므로, 이 칸들이 계약 없이
+        방치되면 KEY-13 시나리오 절반이 구현되지 않는다.
+        """
+        assert "처방일수" in BLOCKED_ON_CONTRACT
+
+    def test_csv_gaps_say_how_to_fill_them(self) -> None:
+        """CSV 가 못 주는 값은 시드가 어디선가 채워야 한다. 채우는 법이 적혀 있어야 한다."""
+        silent = [k for k, why in CSV_CANNOT_SUPPLY.items() if not why.strip()]
+        assert not silent, f"채우는 법이 안 적힌 것: {silent}"
+
+    def test_gender_gap_is_recorded(self) -> None:
+        """계약은 gender 를 필수로 받는데 CSV 에 성별 칸이 없다.
+
+        적어 두지 않으면 시드가 환자 생성에서 422 를 맞고 그때서야 찾게 된다.
+        """
+        assert "patient.gender" in CSV_CANNOT_SUPPLY
 
 
 @pytest.mark.parametrize("column", COLUMNS)
