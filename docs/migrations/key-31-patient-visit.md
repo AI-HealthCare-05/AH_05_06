@@ -42,4 +42,4 @@ uv run ruff check app/core/db/databases.py app/models app/tests/models
 uv run ruff format --check app/core/db/databases.py app/models app/tests/models
 ```
 
-테스트는 모델 등록, 환자 1:N 진료 관계, 병원 범위 인덱스, UTC 저장 설정, 마이그레이션 생성·롤백 순서를 확인한다. 리뷰어는 수정 전 버전을 로컬 MySQL에서 전체 테스트 160개와 함께 검증했다. 실제 마이그레이션 적용·롤백은 로컬 MySQL과 통합 환경에서 추가 확인한다.
+테스트는 모델 등록, 환자 1:N 진료 관계, 병원 범위 인덱스, UTC 저장 설정, 마이그레이션 생성·롤백 순서를 확인한다. MySQL 8.0 임시 환경에서 전체 테스트 `160 passed, 3 skipped`, 마이그레이션 적용, 환자 1:N 진료, 병원 범위 차트번호 유일성, 환자 삭제 제한, 롤백 후 테이블 제거, 재적용을 확인했다.
