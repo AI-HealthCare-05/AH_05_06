@@ -15,7 +15,7 @@
 파일을 브라우저로 열기만 하면 된다. **빌드도 서버도 필요 없다** — HTML 한 장에 CSS가 들어 있다.
 
 ```bash
-open docs/wireframe/wireframe-medic-2.3.1.html
+open docs/wireframes/wireframe-medic-2.3.1.html
 ```
 
 프레임마다 **설계 주석**이 함께 있다. 「왜 이렇게 생겼는가」가 화면 옆에 적혀 있으니, 구현 전에 그 문단을 읽어 주세요. 화면만 보고 만들면 의도가 빠집니다.
