@@ -4,8 +4,12 @@ from redis.asyncio import Redis
 from tortoise import Tortoise
 
 from app.core import config
+from app.core.config import Env
+from app.core.logger import setup_logger
 
 health_router = APIRouter(prefix="/health", tags=["health"])
+
+logger = setup_logger("health")
 
 
 async def _check_db() -> dict:
@@ -14,7 +18,11 @@ async def _check_db() -> dict:
         await conn.execute_query("SELECT 1")
         return {"status": "ok"}
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        logger.warning("health: db check failed", exc_info=e)
+        result: dict = {"status": "error", "reason": "connection_failed"}
+        if config.ENV == Env.LOCAL:
+            result["detail"] = str(e)
+        return result
 
 
 async def _check_redis() -> dict:
@@ -24,7 +32,11 @@ async def _check_redis() -> dict:
         await client.aclose()
         return {"status": "ok"}
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        logger.warning("health: redis check failed", exc_info=e)
+        result: dict = {"status": "error", "reason": "connection_failed"}
+        if config.ENV == Env.LOCAL:
+            result["detail"] = str(e)
+        return result
 
 
 @health_router.get("", summary="헬스체크")
