@@ -112,6 +112,8 @@ docker-compose up -d --build
 - **API 서버**: [http://localhost/api/docs](http://localhost/api/docs) (Swagger UI)
 - **Nginx**: 80 포트를 통해 FE 정적 파일 서빙 및 API 서버 프록시를 처리합니다.
 
+> **참고**: `ai-worker`는 현재 스텁 상태(실행 후 즉시 종료)입니다. `restart: always` 설정으로 인해 `docker compose ps`에서 `Restarting`으로 표시될 수 있으나 정상입니다.
+
 #### 로컬에서 개별 실행 (개발용)
 
 **FastAPI 서버 실행:**

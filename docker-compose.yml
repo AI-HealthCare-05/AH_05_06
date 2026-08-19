@@ -98,7 +98,7 @@ services:
     volumes:
       - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf
       - static_volume:/vol/web/static
-      - ./frontend:/vol/web/frontend
+      - ./frontend:/vol/web/frontend:ro
     ports:
       - "80:80"
     networks:
