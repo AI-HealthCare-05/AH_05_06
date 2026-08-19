@@ -21,11 +21,50 @@ var DEFAULT_TABS = {
 };
 
 /* 임시 목록 — KEY-35 가 API 로 갈아 끼운다.
-   합성 데이터(docs/data/synthetic-patients.csv)의 시나리오를 따른다. */
+   합성 데이터(docs/data/synthetic-patients.csv)의 시나리오를 따른다.
+
+   식별자 셋을 처음부터 갈라 둔다 (KEY-26 계약 v1).
+
+     patient_id           환자 리소스 식별자. 사람을 가리킨다
+     visit_id             그 환자의 **한 진료 건**. OCR · 안내 · 업로드가 여기에 붙는다
+     hospital_patient_no  병원 내 차트번호. **화면에 보이는 값**이고 검색에 쓴다
+
+   셋을 하나로 뭉쳐 두면 나중에 갈라내기 어렵다. 차트번호로 업로드를 걸어 두면
+   같은 환자의 지난 진료에 이번 기록이 붙는 사고가 난다. */
 var SAMPLE_ROWS = [
-  { id: "12345", name: "김서연", dx: "자궁내막증", age: 36, doctor: "박연 원장", state: "진료기록 없음", tab: "draft" },
-  { id: "11204", name: "이지우", dx: "다낭성", age: 31, doctor: "김연우 원장", state: "생성 중", tab: "draft" },
-  { id: "09871", name: "박수빈", dx: "자궁내막증", age: 34, doctor: "박연 원장", state: "번호 오류", tab: "fix" },
+  {
+    patient_id: 1001,
+    visit_id: 8842,
+    hospital_patient_no: "12345",
+    name: "김서연",
+    dx: "자궁내막증",
+    age: 36,
+    doctor: "박연 원장",
+    state: "진료기록 없음",
+    tab: "draft",
+  },
+  {
+    patient_id: 1002,
+    visit_id: 8843,
+    hospital_patient_no: "11204",
+    name: "이지우",
+    dx: "다낭성",
+    age: 31,
+    doctor: "김연우 원장",
+    state: "생성 중",
+    tab: "draft",
+  },
+  {
+    patient_id: 1003,
+    visit_id: 8798,
+    hospital_patient_no: "09871",
+    name: "박수빈",
+    dx: "자궁내막증",
+    age: 34,
+    doctor: "박연 원장",
+    state: "번호 오류",
+    tab: "fix",
+  },
 ];
 
 function roleLabel(roles) {
@@ -68,10 +107,16 @@ function renderChips(roles) {
 function renderRows() {
   document.getElementById("rows").innerHTML = SAMPLE_ROWS.map(function (r, i) {
     return (
+      /* 행이 들고 가는 것은 **visit_id** 다 — 업로드 · 판독 · 안내가 붙는 자리.
+         화면에 보이는 것은 hospital_patient_no 이고 둘은 다르다. */
       '<button class="row" type="button" aria-current="' +
       (i === 0) +
-      '" data-chart="' +
-      r.id +
+      '" data-visit-id="' +
+      r.visit_id +
+      '" data-patient-id="' +
+      r.patient_id +
+      '" data-chart-no="' +
+      r.hospital_patient_no +
       '">' +
       '<span class="row__top"><span class="row__name">' +
       r.name +
@@ -79,7 +124,7 @@ function renderRows() {
       r.dx +
       "</span></span>" +
       '<span class="row__meta">차트 ' +
-      r.id +
+      r.hospital_patient_no +
       " · " +
       r.age +
       "세 · " +
@@ -115,12 +160,29 @@ document.getElementById("chips").addEventListener("click", function (event) {
 });
 
 document.getElementById("rows").addEventListener("click", function (event) {
-  var row = event.target.closest("[data-chart]");
+  var row = event.target.closest("[data-visit-id]");
   if (!row) return;
-  this.querySelectorAll("[data-chart]").forEach(function (r) {
+  this.querySelectorAll("[data-visit-id]").forEach(function (r) {
     r.setAttribute("aria-current", String(r === row));
   });
+  document.dispatchEvent(new CustomEvent("visit:selected", { detail: readRow(row) }));
 });
+
+/* 화면 어디서든 「지금 고른 진료 건」을 같은 모양으로 읽는다. */
+function readRow(row) {
+  return {
+    visit_id: Number(row.dataset.visitId),
+    patient_id: Number(row.dataset.patientId),
+    hospital_patient_no: row.dataset.chartNo,
+    name: row.querySelector(".row__name").textContent,
+    meta: row.querySelector(".row__meta").textContent,
+  };
+}
+
+function selectedVisit() {
+  var row = document.querySelector(".row[aria-current='true']");
+  return row ? readRow(row) : null;
+}
 
 /* 세션이 없거나 첫 로그인이면 여기서 되돌린다.
    화면에서 막는 것은 편의일 뿐이고 실제 차단은 서버가 한다(KEY-9). */

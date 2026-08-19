@@ -128,7 +128,11 @@
   }
 
   /* 임시 업로드. 서버 계약이 정해지면 여기만 갈아 끼운다.
-     이름에 "fail" 이 들어가면 실패시킨다 — 재시도 UI 를 눈으로 보려는 것이다. */
+     이름에 "fail" 이 들어가면 실패시킨다 — 재시도 UI 를 눈으로 보려는 것이다.
+
+     TODO(KEY-39) 실제 업로드는 **선택된 visit_id 에 붙인다.** 차트번호가 아니다.
+         POST /api/v1/visits/{visit.visit_id}/documents   (multipart)
+     경로에 visit_id 가 들어가므로 본문에 다시 넣지 않는다(KEY-26 6절). */
   function uploadOne(item) {
     item.state = "uploading";
     item.progress = 0;
@@ -260,15 +264,35 @@
     location.href = "/guide.html"; // S1-6 판독 결과 — 아직 없다
   });
 
-  /* 환자 머리 — 지금은 목록의 첫 행을 따른다. KEY-35 가 실제 선택과 잇는다. */
+  /* 지금 고른 진료 건. **업로드가 붙는 자리는 visit_id 다.**
+     화면에 보이는 것은 hospital_patient_no(차트번호)이고 둘은 다르다.
+
+     차트번호로 걸어 두면 같은 환자의 **지난 진료에 이번 기록이 붙는다.**
+     화면 위에 누구의 기록인지 늘 붙어 있어야 하는 이유와 같은 이야기다. */
+  var visit = null;
+
+  function showVisit(next) {
+    if (!next) return;
+    visit = next;
+    document.getElementById("p-name").textContent = visit.name;
+    document.getElementById("p-id").textContent = "차트 " + visit.hospital_patient_no;
+    document.getElementById("p-visit").textContent = visit.meta.split(" · ").pop() + " · 오늘 진료";
+  }
+
   document.addEventListener("session:ready", function () {
-    var row = document.querySelector(".row[aria-current='true']");
-    if (!row) return;
-    var name = row.querySelector(".row__name").textContent;
-    document.getElementById("p-name").textContent = name;
-    document.getElementById("p-id").textContent = "차트 " + row.dataset.chart;
-    document.getElementById("p-visit").textContent =
-      row.querySelector(".row__meta").textContent.split(" · ").pop() + " · 오늘 진료";
+    showVisit(selectedVisit());
+  });
+
+  /* 다른 환자를 고르면 올리던 것을 따라가면 안 된다.
+     KEY-35 가 목록을 실제 API 와 이으면 이 자리가 그대로 쓰인다. */
+  document.addEventListener("visit:selected", function (event) {
+    if (visit && event.detail.visit_id === visit.visit_id) return;
+    files.forEach(function (f) {
+      if (f.thumb) URL.revokeObjectURL(f.thumb);
+    });
+    files = [];
+    showVisit(event.detail);
+    render();
   });
 
   render();
