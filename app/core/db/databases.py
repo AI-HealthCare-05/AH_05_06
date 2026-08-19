@@ -33,6 +33,7 @@ TORTOISE_ORM = {
             "models": TORTOISE_APP_MODELS,
         },
     },
+    "use_tz": True,
     "timezone": "Asia/Seoul",
 }
 
