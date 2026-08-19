@@ -1,0 +1,268 @@
+/* 로그인 화면 — L-1 · L-2 · L-3
+ *
+ * 와이어프레임(docs/wireframes/wireframe-medic-2.3.1.html)의 L 화면을 옮긴 것이다.
+ * 상단바 없이 중앙 카드 하나. 로그인하기 전에는 갈 곳이 하나뿐이므로 고를 것을 늘리지 않는다.
+ *
+ * 쓰지 않는 것
+ *   보라 · 네온 계열 / 반투명 카드 / 그라데이션 글자 / 장식용 이모지
+ *   뜻 없는 등장 애니메이션 / 넓은 자간 + 초경량 폰트
+ * 위계는 크기가 아니라 굵기와 색으로 만든다.
+ */
+
+:root {
+  --bg: #f4f5f6;
+  --card: #ffffff;
+  --line: #dde0e3;
+  --line-strong: #b9bec4;
+
+  /* 대비는 카드 안(흰색)과 카드 밖(--bg) 양쪽에서 재야 한다.
+     판권 줄처럼 카드 밖에 있는 글자는 흰 배경에서만 재면 AA를 놓친다. */
+  --ink: #1c1f23; /* 흰 15.8 · 회색 14.5 */
+  --ink-2: #5a6068; /* 흰 6.35 · 회색 5.82 — AA */
+  --ink-3: #666c75; /* 흰 5.29 · 회색 4.85 — AA */
+
+  --accent: #23303a; /* 주 버튼 · 초점 */
+  --accent-hover: #16202a;
+
+  --danger: #b02a20; /* 흰 배경 대비 6.0 — AA */
+  --danger-bg: #fdf2f1;
+  --danger-line: #f0cfcb;
+
+  --s-8: 8px;
+  --s-16: 16px;
+  --s-24: 24px;
+  --s-32: 32px;
+
+  --radius: 10px;
+  --field-h: 44px; /* 손가락과 초점이 닿는 최소 크기 */
+  --button-h: 50px;
+}
+
+body.auth {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-32) var(--s-16);
+  background: var(--bg);
+  color: var(--ink);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px; /* 와이어프레임의 카드 폭 400 */
+}
+
+.card__head {
+  margin-bottom: var(--s-24);
+}
+
+.card__title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.card__lead {
+  margin-top: var(--s-8);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.card__body {
+  padding: var(--s-32) var(--s-24);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* ── 입력 ───────────────────────────────────────────── */
+
+.field + .field {
+  margin-top: var(--s-16);
+}
+
+.field__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.field__input {
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.field__input::placeholder {
+  color: #9aa0a7;
+}
+
+.field__input:focus-visible,
+.check input:focus-visible,
+.button:focus-visible,
+.reveal:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.field__input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.field__hint {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* 비밀번호 보기 — 칸 안에 겹치지 않게 옆에 둔다.
+   겹쳐 두면 긴 비밀번호가 아이콘 밑으로 들어간다. */
+.field__row {
+  display: flex;
+  gap: var(--s-8);
+}
+
+.field__row .field__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.reveal {
+  flex: 0 0 var(--field-h);
+  height: var(--field-h);
+  font-size: 13px;
+  color: var(--ink-2);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.reveal:hover {
+  background: #f7f8f9;
+}
+
+/* ── 로그인 유지 ────────────────────────────────────── */
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: var(--s-24);
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.check input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.check__note {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+}
+
+/* ── 단추 ───────────────────────────────────────────── */
+
+.button {
+  width: 100%;
+  height: var(--button-h);
+  margin-top: var(--s-24);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.button:disabled {
+  background: #9aa0a7;
+  cursor: default;
+}
+
+.button:focus-visible {
+  outline-color: var(--ink);
+}
+
+/* ── 오류 (L-2) ─────────────────────────────────────── */
+
+.alert {
+  margin-top: var(--s-16);
+  padding: 12px 14px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.alert[hidden] {
+  display: none;
+}
+
+/* 알림 — 잘못된 것이 없을 때. 빨간 상자면 방금 뭘 틀린 것처럼 읽힌다. */
+.alert--notice {
+  background: #f4f6f7;
+  border-color: var(--line);
+  color: var(--ink-2);
+}
+
+.alert__line {
+  font-weight: 600;
+}
+
+/* 시도 횟수 — 아이디가 있는지 없는지는 알려주지 않되,
+   몇 번 틀렸는지는 알려준다. 잠기기 전에 멈출 수 있어야 한다. */
+.alert__count {
+  margin-top: 4px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+/* ── 바닥 ───────────────────────────────────────────── */
+
+.clinic {
+  margin-top: var(--s-24);
+  font-size: 13px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* 낭독기에만 읽히는 안내 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
