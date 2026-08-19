@@ -67,9 +67,11 @@ async def get_ocr_status(
 @ocr_router.get("/ocr/jobs/{ocr_job_id}/result", response_model=OcrResultResponse)
 async def get_ocr_result(
     ocr_job_id: Annotated[str, Path(min_length=1, max_length=64)],
+    response: Response,
     actor: Annotated[OcrActor, Depends(get_ocr_actor)],
     ocr: Annotated[OcrService, Depends(get_ocr_service)],
 ) -> OcrResultResponse:
+    response.headers["Cache-Control"] = "no-store"
     return await ocr.result(ocr_job_id, actor)
 
 

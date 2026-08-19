@@ -33,7 +33,7 @@ class FakeOcrService:
             ocr_job_id="ocr_synthetic_501",
             status=OcrJobStatus.PROCESSING,
             progress=0,
-            started_at=NOW,
+            started_at=None,
         )
 
     async def status(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
@@ -92,7 +92,7 @@ class FakeOcrService:
             field_type="DIAGNOSIS",
             extracted_value="합성 추출값",
             corrected_value=request.corrected_value,
-            value=request.corrected_value,
+            value=request.corrected_value or "합성 추출값",
             confidence=0.83,
             version=request.base_version + 1,
             is_confirmed=request.confirm,
@@ -130,6 +130,7 @@ def test_start_ocr_returns_processing_job(api: tuple[TestClient, FakeOcrService]
     assert response.status_code == 202
     assert response.json()["ocr_job_id"] == "ocr_synthetic_501"
     assert response.json()["status"] == "PROCESSING"
+    assert response.json()["started_at"] is None
 
 
 def test_other_hospital_resource_is_hidden_as_not_found(api: tuple[TestClient, FakeOcrService]) -> None:
@@ -147,6 +148,7 @@ def test_result_and_structured_fields_are_returned(api: tuple[TestClient, FakeOc
     fields = client.get("/api/v1/ocr/jobs/ocr_synthetic_501/fields", params={"field_type": "DIAGNOSIS"})
 
     assert result.status_code == 200
+    assert result.headers["cache-control"] == "no-store"
     assert result.json()["documents"][0]["raw_text"] == "합성 OCR 원문"
     assert result.json()["fields"][0]["confidence"] == 0.83
     assert fields.status_code == 200
@@ -165,6 +167,22 @@ def test_field_update_keeps_version_and_audit_actor(api: tuple[TestClient, FakeO
     assert response.json()["confirmed_by"] == STAFF.user_id
     assert fake.updated is not None
     assert fake.updated[2] == STAFF
+
+
+def test_field_can_be_confirmed_without_rewriting_extracted_value(api: tuple[TestClient, FakeOcrService]) -> None:
+    client, fake = api
+
+    response = client.patch(
+        "/api/v1/ocr/fields/91",
+        json={"base_version": 1, "confirm": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["corrected_value"] is None
+    assert response.json()["value"] == "합성 추출값"
+    assert response.json()["is_confirmed"] is True
+    assert fake.updated is not None
+    assert fake.updated[1].corrected_value is None
 
 
 def test_field_update_rejects_empty_or_ambiguous_value(api: tuple[TestClient, FakeOcrService]) -> None:
@@ -200,11 +218,12 @@ async def test_admin_only_and_missing_hospital_are_denied_by_default() -> None:
 
 @pytest.mark.asyncio
 async def test_staff_or_doctor_actor_is_allowed() -> None:
-    staff_user = SimpleNamespace(id=3, hospital_id=9, roles=["staff"])
+    staff_user = SimpleNamespace(staff_id=3, hospital_id=9, roles=["staff"])
     doctor_user = SimpleNamespace(id=4, hospital_id=9, roles=["doctor", "admin"])
 
     staff = await get_ocr_actor(staff_user)
     doctor = await get_ocr_actor(doctor_user)
 
     assert staff.roles == frozenset({"staff"})
+    assert staff.user_id == 3
     assert doctor.roles == frozenset({"doctor", "admin"})

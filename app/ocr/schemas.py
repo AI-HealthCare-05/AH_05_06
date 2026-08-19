@@ -18,7 +18,7 @@ class OcrJobResponse(StrictModel):
     ocr_job_id: str
     status: OcrJobStatus
     progress: int = Field(ge=0, le=100)
-    started_at: datetime
+    started_at: datetime | None = None
     completed_at: datetime | None = None
     failure_code: str | None = None
 
@@ -75,8 +75,10 @@ class UpdateOcrFieldRequest(StrictModel):
 
     @model_validator(mode="after")
     def require_one_value_source(self) -> "UpdateOcrFieldRequest":
-        if (self.corrected_value is None) == (self.candidate_id is None):
-            raise ValueError("corrected_value 또는 candidate_id 중 하나만 입력해야 합니다")
+        if self.corrected_value is not None and self.candidate_id is not None:
+            raise ValueError("corrected_value와 candidate_id는 함께 보낼 수 없습니다")
+        if not self.confirm and self.corrected_value is None and self.candidate_id is None:
+            raise ValueError("수정값 또는 후보를 선택해 주세요")
         if self.corrected_value is not None and not self.corrected_value.strip():
             raise ValueError("corrected_value는 공백일 수 없습니다")
         return self
