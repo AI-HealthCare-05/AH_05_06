@@ -91,8 +91,13 @@ function requireSession(options) {
           return bounce(reason);
         });
       },
-      function () {
-        return bounce(reason);
+      function (err) {
+        /* 쿠키가 만료됐거나 유휴 30분이 지났다는 뜻이다.
+           처음 오는 사람과 구분해 「시간이 지났다」고 알려 준다 —
+           점심 먹고 와서 아무 말 없이 로그인 화면을 만나면
+           자기가 로그아웃한 줄 안다. */
+        var why = reason || (err && err.code === ERROR.TOKEN_EXPIRED ? "?expired=1" : "");
+        return bounce(why);
       }
     );
   }
