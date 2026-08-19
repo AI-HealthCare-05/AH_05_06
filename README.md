@@ -32,7 +32,10 @@
 │   ├── models/         # DB 테이블 정의
 │   ├── services/       # 비즈니스 로직
 │   └── main.py         # FastAPI 애플리케이션 진입점
-├── envs/               # 환경 변수 설정 파일 (.env)
+├── envs/               # 환경 변수 파일 관리
+│   ├── example.local.env   # 로컬 환경변수 예시 (버전 관리됨)
+│   └── example.prod.env    # 운영 환경변수 예시 (버전 관리됨)
+├── frontend/           # FE 정적 파일 (HTML·CSS·JS)
 ├── infra/              # 인프라 설정 관련 디렉터리
 │   ├── docker/         # Docker Compose 설정 (운영용)
 │   └── nginx/          # Nginx 설정 파일 (리버스 프록시)
@@ -68,17 +71,27 @@ uv sync --group ai   # AI 워커용
 
 ### 2. 환경 변수 설정
 
-`envs/` 디렉토리에 있는 예시 파일을 복사하여 `.env` 파일을 생성합니다.
-- 로컬용 
+`envs/` 디렉토리의 예시 파일을 복사한 뒤 루트의 `.env`에 심볼릭 링크로 연결합니다.
+
+- 로컬용
     ```bash
     cp envs/example.local.env envs/.local.env
+    ln -s envs/.local.env .env
     ```
-- 배포용 
+- 배포용
     ```bash
     cp envs/example.prod.env envs/.prod.env
+    ln -s envs/.prod.env .env
     ```
 
-생성된 `env` 파일 내의 환경변수들은 프로젝트 상황에 맞게 수정하세요.
+> `envs/.local.env`, `envs/.prod.env`, `.env`는 `.gitignore`에 의해 버전 관리에서 제외됩니다. 실제 비밀값은 절대 커밋하지 마세요.
+
+복사된 파일의 환경변수를 프로젝트 상황에 맞게 수정하세요.
+
+| 변수 | 설명 | Docker 실행 | 로컬 직접 실행 |
+|---|---|---|---|
+| `DB_HOST` | DB 접속 호스트 | `mysql` | `localhost` |
+| `REDIS_HOST` | Redis 접속 호스트 | `redis` | `localhost` |
 
 ---
 
@@ -90,13 +103,29 @@ uv sync --group ai   # AI 워커용
 
 모든 서비스(API, Worker, DB, Redis, Nginx)를 한 번에 실행합니다.
 
+> **⚠️ 기존 팀원 주의**: `.env`의 DB 비밀번호가 변경되었거나 `test` DB가 없어 pytest가 실패하는 경우, MySQL은 볼륨이 비어 있을 때만 새 비밀번호와 초기 DB 설정이 적용됩니다. 기존 볼륨이 있으면 아래 명령으로 먼저 제거하세요.
+> ```bash
+> docker compose down -v   # 기존 볼륨 삭제 (DB 데이터 초기화됨)
+> ```
+
 ```bash
 docker-compose up -d --build
 ```
 
+컨테이너가 뜬 후 최초 1회(또는 마이그레이션 파일이 추가된 경우) 테이블을 생성합니다.
+
+```bash
+uv run aerich upgrade
+```
+
+> **참고**: 이 단계를 건너뛰면 API 호출 시 `OperationalError: Table 'ai_health.users' doesn't exist` 오류가 발생합니다.
+
 실행 후 다음 주소로 접속 가능합니다:
+- **FE**: [http://localhost](http://localhost) (정적 HTML·CSS·JS)
 - **API 서버**: [http://localhost/api/docs](http://localhost/api/docs) (Swagger UI)
-- **Nginx**: 80 포트를 통해 API 서버로 요청을 전달합니다.
+- **Nginx**: 80 포트를 통해 FE 정적 파일 서빙 및 API 서버 프록시를 처리합니다.
+
+> **참고**: `ai-worker`는 현재 스텁 상태(실행 후 즉시 종료)입니다. `restart: always` 설정으로 인해 `docker compose ps`에서 `Restarting`으로 표시될 수 있으나 정상입니다.
 
 #### 로컬에서 개별 실행 (개발용)
 
