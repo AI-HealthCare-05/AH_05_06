@@ -1,9 +1,8 @@
-import importlib.util
 from pathlib import Path
 from types import ModuleType
 
 import pytest
-from aerich.utils import decompress_dict
+from aerich.utils import decompress_dict, import_py_file
 from tortoise import Tortoise
 from tortoise.fields import OnDelete
 
@@ -21,12 +20,7 @@ def load_migration() -> ModuleType:
     migration_dir = Path(__file__).parents[2] / "core" / "db" / "migrations" / "models"
     migration_paths = list(migration_dir.glob("1_*_add_patient_visit.py"))
     assert len(migration_paths) == 1
-    migration_path = migration_paths[0]
-    spec = importlib.util.spec_from_file_location("patient_visit_migration", migration_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return import_py_file(migration_paths[0])
 
 
 def test_patient_model_matches_frozen_contract() -> None:
