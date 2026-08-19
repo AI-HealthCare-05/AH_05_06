@@ -3,6 +3,19 @@ from starlette import status
 from tortoise.contrib.test import TestCase
 
 from app.main import app
+from app.models.users import User
+from app.services.jwt import JwtService
+
+
+async def token_for(email: str) -> str:
+    """로그인을 거치지 않고 토큰을 만든다.
+
+    이 검사가 보려는 것은 `/users/me` 이지 로그인이 아니다. 로그인은 계약이
+    바뀌면(KEY-73: email → login_id) 같이 바뀌는데, 그때마다 상관없는 검사가
+    함께 깨지면 무엇이 진짜 고장인지 안 보인다.
+    """
+    user = await User.get(email=email)
+    return str(JwtService().issue_jwt_pair(user)["access_token"])
 
 
 class TestUserMeApis(TestCase):
@@ -20,8 +33,7 @@ class TestUserMeApis(TestCase):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             await client.post("/api/v1/auth/signup", json=signup_data)
 
-            login_response = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
-            access_token = login_response.json()["access_token"]
+            access_token = await token_for(email)
 
             # 내 정보 조회
             headers = {"Authorization": f"Bearer {access_token}"}
@@ -45,8 +57,7 @@ class TestUserMeApis(TestCase):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             await client.post("/api/v1/auth/signup", json=signup_data)
 
-            login_response = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
-            access_token = login_response.json()["access_token"]
+            access_token = await token_for(email)
 
             # 내 정보 수정
             headers = {"Authorization": f"Bearer {access_token}"}

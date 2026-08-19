@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
 
 from app.apis.v1 import v1_routers
+from app.core.auth_errors import AuthError, auth_error_handler
 from app.core.config import Config, Env
 from app.core.db.databases import initialize_tortoise
 
@@ -16,4 +17,5 @@ app = FastAPI(
 )
 initialize_tortoise(app)
 
+app.add_exception_handler(AuthError, auth_error_handler)
 app.include_router(v1_routers)
