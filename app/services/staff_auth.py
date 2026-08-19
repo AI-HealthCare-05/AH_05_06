@@ -14,18 +14,22 @@
 from redis.asyncio import Redis
 from tortoise.timezone import now
 
-from app.core.auth_errors import ACCOUNT_LOCKED, INVALID_CREDENTIALS, AuthError
+from app.core.auth_errors import ACCOUNT_LOCKED, INVALID_CREDENTIALS, TOKEN_EXPIRED, AuthError
+from app.core.jwt.exceptions import TokenError
 from app.core.jwt.tokens import AccessToken, RefreshToken
 from app.core.utils.security import verify_password
 from app.models.staffs import Staff, StaffStatus
 from app.services.login_attempts import MAX_FAILURES, LoginAttempts
+from app.services.session_store import SessionStore
 
 
 class StaffAuthService:
     def __init__(self, redis: Redis) -> None:
         self.attempts = LoginAttempts(redis)
 
-    async def login(self, login_id: str, password: str) -> tuple[Staff, AccessToken, RefreshToken]:
+    async def login(self, login_id: str, password: str) -> Staff:
+        """누구인지만 가려낸다. 토큰 발급과 세션 등록은 StaffSessionService 가 한다 —
+        로그인과 refresh 가 같은 자리에서 세션을 열어야 규칙이 갈라지지 않는다."""
         # 잠긴 아이디는 비밀번호를 맞춰도 들어오지 못한다. 맞았을 때만 통과시키면
         # 잠금이 「비밀번호 맞추기 게임」의 속도만 늦추는 장치가 된다.
         if await self.attempts.is_locked(login_id):
@@ -44,10 +48,7 @@ class StaffAuthService:
         await self.attempts.clear(login_id)
         staff.last_login_at = now()
         await staff.save(update_fields=["last_login_at", "updated_at"])
-
-        refresh = RefreshToken()
-        refresh["staff_id"] = staff.staff_id
-        return staff, refresh.access_token, refresh
+        return staff
 
     async def _failed(self, login_id: str) -> AuthError:
         count = await self.attempts.record_failure(login_id)
@@ -77,3 +78,88 @@ class StaffAuthService:
 # 계정이 없을 때도 해시 검증을 한 번 돌리기 위한 값이다.
 # 어떤 비밀번호와도 맞지 않는다.
 _DUMMY_HASH = "$2b$12$" + "." * 53
+
+
+class StaffSessionService:
+    """refresh · logout — KEY-73 (계약 4·5절)."""
+
+    def __init__(self, redis: Redis) -> None:
+        self.sessions = SessionStore(redis)
+
+    async def start(self, staff: Staff, remember: bool) -> tuple[AccessToken, RefreshToken]:
+        refresh = RefreshToken()
+        refresh["staff_id"] = staff.staff_id
+        # rotation 때도 쿠키 수명을 그대로 이어가려면 remember 를 토큰이 들고 가야 한다.
+        # 서버가 따로 기억하면 세션마다 한 칸씩 더 들고 있어야 한다.
+        refresh["remember"] = remember
+        await self.sessions.open(refresh["jti"], staff.staff_id)
+        return refresh.access_token, refresh
+
+    async def rotate(self, raw_token: str) -> tuple[Staff, AccessToken, RefreshToken]:
+        """쓴 토큰을 폐기하고 새것을 준다.
+
+        확인 순서가 곧 답이 갈리는 순서다.
+          ① 서명·만료      → 아니면 401
+          ② 이미 쓰인 토큰 → **도난**이므로 그 계정의 세션을 전부 끊는다
+          ③ 살아 있는가    → 아니면 유휴로 끊긴 것. 그 토큰만 폐기한다
+        ②와 ③을 뒤집으면 도난이 유휴 만료로 묻힌다.
+        """
+        try:
+            token = RefreshToken(token=raw_token)
+        except TokenError as err:
+            raise _expired() from err
+
+        staff_id = token.payload.get("staff_id")
+        jti = token.payload.get("jti")
+        if not staff_id or not jti:
+            # 옛 계약(user_id)으로 만든 토큰이 오면 여기 걸린다.
+            raise _expired()
+
+        if await self.sessions.was_used(jti):
+            killed = await self.sessions.revoke_all(int(staff_id))
+            raise AuthError(
+                TOKEN_EXPIRED,
+                401,
+                "다시 로그인해 주세요.",
+                extra={"revoked_sessions": killed},
+            )
+
+        if not await self.sessions.is_alive(jti):
+            # 유휴 30분이 지난 것. 그 토큰만 폐기하고 다른 세션은 건드리지 않는다.
+            await self.sessions.retire(jti, int(staff_id))
+            raise _expired()
+
+        staff = await Staff.get_or_none(staff_id=int(staff_id))
+        if staff is None or staff.status is not StaffStatus.ACTIVE:
+            # 로그인한 뒤에 그만둔 사람. 세션이 살아 있어도 더는 못 들어온다.
+            await self.sessions.revoke_all(int(staff_id))
+            raise _expired()
+
+        await self.sessions.retire(jti, staff.staff_id)
+        access, refresh = await self.start(staff, bool(token.payload.get("remember")))
+        return staff, access, refresh
+
+    async def logout(self, raw_refresh: str | None, access_jti: str | None, staff_id: int | None) -> None:
+        """액세스와 리프레시를 함께 무효로 만든다.
+
+        쿠키가 없어도(이미 지워졌어도) 조용히 끝낸다 — 로그아웃이 실패해서
+        로그인 상태로 남는 것이 제일 나쁘다.
+        """
+        if access_jti:
+            await self.sessions.revoke_access(access_jti)
+        if not raw_refresh:
+            return
+        try:
+            token = RefreshToken(token=raw_refresh)
+        except TokenError:
+            return
+        jti = token.payload.get("jti")
+        owner = token.payload.get("staff_id") or staff_id
+        if jti and owner:
+            await self.sessions.retire(jti, int(owner))
+
+
+def _expired() -> AuthError:
+    """만료·폐기된 토큰. 「인증정보가 틀렸다」와 다른 코드여야 한다 —
+    사용자가 해야 할 일이 다르다(다시 입력 vs 다시 로그인)."""
+    return AuthError(TOKEN_EXPIRED, 401, "세션이 만료되었습니다. 다시 로그인해 주세요.")

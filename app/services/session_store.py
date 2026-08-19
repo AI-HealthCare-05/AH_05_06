@@ -1,0 +1,104 @@
+"""세션 상태 — KEY-73 (`docs/auth-contract.md` 4·5절).
+
+리프레시 토큰은 JWT 라 서명만 보면 만료 전까지 늘 유효하다. 그런데 계약은
+세 가지를 더 요구한다.
+
+    유휴 30분      가만히 있으면 끊긴다
+    Rotation       쓴 토큰은 즉시 폐기하고 새것을 준다
+    재사용 감지    폐기된 토큰이 다시 오면 훔친 것이 쓰였다는 뜻이다
+
+셋 다 「이 토큰이 지금 살아 있는가」를 서명 밖에서 알아야 해서 Redis 가 필요하다.
+
+키 셋이 각각 다른 질문에 답한다.
+
+    idle:{jti}          살아 있는가 · 최근 활동이 있었는가   TTL 30분
+    used:{jti}          이미 쓰인 토큰인가                   TTL 리프레시 수명
+    sessions:{staff_id} 이 사람의 세션이 무엇무엇인가        전부 끊을 때 쓴다
+
+`used:` 를 따로 두는 이유가 중요하다. `idle:` 만 두면 **유휴로 끊긴 토큰**과
+**훔쳐서 재사용된 토큰**이 똑같이 「키가 없음」으로 보인다. 앞은 그 토큰만
+폐기하면 되지만 뒤는 **그 계정의 세션을 전부 끊어야 한다.** 둘을 못 가르면
+도난을 조용히 넘긴다.
+"""
+
+from redis.asyncio import Redis
+
+from app.core import config
+
+IDLE_SECONDS = 30 * 60
+REFRESH_SECONDS = config.REFRESH_TOKEN_EXPIRE_MINUTES * 60
+ACCESS_SECONDS = config.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+
+class SessionStore:
+    def __init__(self, redis: Redis) -> None:
+        self.redis = redis
+
+    # ── 키 ──────────────────────────────────────────────
+    @staticmethod
+    def _idle(jti: str) -> str:
+        return f"idle:{jti}"
+
+    @staticmethod
+    def _used(jti: str) -> str:
+        return f"used:{jti}"
+
+    @staticmethod
+    def _sessions(staff_id: int) -> str:
+        return f"sessions:{staff_id}"
+
+    @staticmethod
+    def _revoked_access(jti: str) -> str:
+        return f"revoked_access:{jti}"
+
+    # ── 세션 ────────────────────────────────────────────
+    async def open(self, jti: str, staff_id: int) -> None:
+        """로그인 · rotation 성공 자리. 유휴 시계를 30분으로 되감는다."""
+        await self.redis.setex(self._idle(jti), IDLE_SECONDS, staff_id)
+        await self.redis.sadd(self._sessions(staff_id), jti)  # type: ignore[misc]
+        # 세션 묶음이 영원히 남지 않게. 가장 오래 살 수 있는 토큰만큼만 둔다.
+        await self.redis.expire(self._sessions(staff_id), REFRESH_SECONDS)
+
+    async def is_alive(self, jti: str) -> bool:
+        return await self.redis.exists(self._idle(jti)) == 1  # type: ignore[misc]
+
+    async def was_used(self, jti: str) -> bool:
+        return await self.redis.exists(self._used(jti)) == 1  # type: ignore[misc]
+
+    async def retire(self, jti: str, staff_id: int) -> None:
+        """이 토큰 하나를 폐기한다.
+
+        `used:` 를 남기는 것이 핵심이다 — 나중에 같은 토큰이 오면 그것이
+        **도난**인지 그냥 만료인지 여기서 갈린다.
+        """
+        await self.redis.delete(self._idle(jti))
+        await self.redis.setex(self._used(jti), REFRESH_SECONDS, 1)
+        await self.redis.srem(self._sessions(staff_id), jti)  # type: ignore[misc]
+
+    async def revoke_all(self, staff_id: int) -> int:
+        """이 사람의 세션을 전부 끊는다.
+
+        훔친 토큰이 쓰였을 때, 그리고 비밀번호를 바꿨을 때 부른다.
+        비밀번호를 바꾸는 이유가 「남이 알고 있다」이므로 그 남의 세션도
+        같이 끊어야 한다.
+        """
+        key = self._sessions(staff_id)
+        jtis: set[str] = await self.redis.smembers(key)  # type: ignore[misc]
+        for jti in jtis:
+            await self.redis.delete(self._idle(jti))
+            await self.redis.setex(self._used(jti), REFRESH_SECONDS, 1)
+        await self.redis.delete(key)
+        return len(jtis)
+
+    # ── 액세스 토큰 ─────────────────────────────────────
+    async def revoke_access(self, jti: str) -> None:
+        """로그아웃한 액세스 토큰을 못 쓰게 한다.
+
+        액세스 토큰은 서명만으로 도는 것이 원칙이지만, 「로그아웃 뒤 보호 API 에
+        접근할 수 없다」는 계약이라 이것만은 매 요청 확인한다. 남은 수명만큼만
+        들고 있으면 되므로 목록이 무한히 자라지 않는다.
+        """
+        await self.redis.setex(self._revoked_access(jti), ACCESS_SECONDS, 1)
+
+    async def is_access_revoked(self, jti: str) -> bool:
+        return await self.redis.exists(self._revoked_access(jti)) == 1  # type: ignore[misc]

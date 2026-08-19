@@ -14,44 +14,10 @@ from app.core.utils.security import hash_password
 from app.main import app
 from app.models.staffs import Hospital, Staff, StaffStatus
 from app.services.login_attempts import LOCK_SECONDS, MAX_FAILURES
+from app.tests.fakes import FakeRedis
 
 PASSWORD = "Password123!"
 LOGIN_URL = "/api/v1/auth/login"
-
-
-class FakeRedis:
-    """실패 카운터가 쓰는 것만 흉내낸다.
-
-    진짜 Redis 를 띄우면 검사가 남의 사정(컨테이너가 떠 있는가)에 흔들린다.
-    TTL 은 초를 세지 않고 「걸렸는지」만 본다 — 잠금 시간이 정확히 600초인지는
-    `retry_after` 가 그 값을 그대로 내는지로 확인하면 된다.
-    """
-
-    def __init__(self) -> None:
-        self.values: dict[str, int] = {}
-        self.ttls: dict[str, int] = {}
-        # 몇 번 걸었는지도 센다. 값만 보면 다시 걸어도 600 그대로라
-        # 「첫 실패에서만 건다」가 지켜지는지 알 수 없다.
-        self.expire_calls: dict[str, int] = {}
-
-    async def get(self, key: str) -> str | None:
-        return str(self.values[key]) if key in self.values else None
-
-    async def incr(self, key: str) -> int:
-        self.values[key] = self.values.get(key, 0) + 1
-        return self.values[key]
-
-    async def expire(self, key: str, seconds: int) -> None:
-        self.ttls[key] = seconds
-        self.expire_calls[key] = self.expire_calls.get(key, 0) + 1
-
-    async def ttl(self, key: str) -> int:
-        return self.ttls.get(key, -2)
-
-    async def delete(self, key: str) -> None:
-        self.values.pop(key, None)
-        self.ttls.pop(key, None)
-        self.expire_calls.pop(key, None)
 
 
 async def make_staff(
