@@ -1,6 +1,13 @@
 from datetime import date
 
-from app.patient.models import FollowUpResponse, OtpChallenge, PatientLink, PatientSession, PendingDelivery
+from app.patient.models import (
+    FollowUpAlert,
+    FollowUpResponse,
+    OtpChallenge,
+    PatientLink,
+    PatientSession,
+    PendingDelivery,
+)
 
 
 class PatientFlowStore:
@@ -12,6 +19,7 @@ class PatientFlowStore:
         self.challenges: dict[str, OtpChallenge] = {}
         self.sessions_by_digest: dict[str, PatientSession] = {}
         self.follow_ups: dict[str, FollowUpResponse] = {}
+        self.follow_up_alerts: dict[tuple[str, str], FollowUpAlert] = {}
         self.pending_deliveries: dict[str, PendingDelivery] = {}
         self.reissues_by_episode_and_date: dict[tuple[str, date], int] = {}
 

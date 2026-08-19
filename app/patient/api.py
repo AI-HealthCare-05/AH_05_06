@@ -11,6 +11,7 @@ from app.models.users import User
 from app.patient.chatbot import ApprovedKnowledgeChatbot
 from app.patient.container import chatbot, service
 from app.patient.schemas import (
+    AdherenceSelectionRequest,
     ChatRequest,
     FollowUpResponseSchema,
     FollowUpSubmitRequest,
@@ -81,6 +82,18 @@ async def get_follow_up_for_staff(
 ) -> FollowUpResponseSchema:
     saved = flow.get_follow_up_for_staff(link_id)
     return FollowUpResponseSchema.model_validate(saved, from_attributes=True)
+
+
+@patient_management_router.get("/{link_id}/follow-up-alerts")
+async def get_follow_up_alerts_for_staff(
+    link_id: str,
+    _: Annotated[User, Depends(get_request_user)],
+    flow: Annotated[PatientFlowService, Depends(get_patient_service)],
+) -> list[dict[str, object]]:
+    return [
+        {"id": item.id, "adherence": item.adherence, "created_at": item.created_at}
+        for item in flow.get_follow_up_alerts_for_staff(link_id)
+    ]
 
 
 @patient_router.post("/auth/link", response_model=LinkInspectionResponse)
@@ -178,6 +191,24 @@ async def get_follow_up(
     patient_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
 ) -> dict[str, object]:
     return flow.follow_up_status(patient_session)
+
+
+@patient_router.get("/medication-status")
+async def get_medication_status(
+    flow: Annotated[PatientFlowService, Depends(get_patient_service)],
+    patient_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+) -> dict[str, object]:
+    return flow.medication_status(patient_session)
+
+
+@patient_router.post("/follow-up/adherence-selection")
+async def record_adherence_selection(
+    request: AdherenceSelectionRequest,
+    flow: Annotated[PatientFlowService, Depends(get_patient_service)],
+    patient_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+) -> dict[str, bool]:
+    alert = flow.record_adherence_selection(patient_session, request.adherence)
+    return {"medical_staff_notified": alert is not None}
 
 
 @patient_router.post("/follow-up", response_model=FollowUpResponseSchema, status_code=status.HTTP_201_CREATED)

@@ -20,8 +20,10 @@ class KnowledgeKind(StrEnum):
 class Medication(StrictModel):
     name: str
     ingredient: str | None = None
+    strength: str | None = None
     dosage: str
     purpose: str
+    duration_days: int = Field(gt=0)
     instructions: list[str] = Field(default_factory=list)
 
 

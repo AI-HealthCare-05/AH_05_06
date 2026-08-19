@@ -93,3 +93,11 @@ class FollowUpResponse:
     pain_types: tuple[PainType, ...]
     memo: str | None
     created_at: datetime
+
+
+@dataclass
+class FollowUpAlert:
+    id: str
+    link_id: str
+    adherence: AdherenceStatus
+    created_at: datetime

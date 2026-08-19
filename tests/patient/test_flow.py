@@ -40,7 +40,15 @@ def approved_bundle(encounter_date: date = date(2026, 8, 12)) -> ApprovedGuidanc
         clinic_name="여성의원",
         encounter_date=encounter_date,
         patient_display_name="김환자",
-        medications=[Medication(name="비잔정", dosage="하루 한 번", purpose="통증 관리")],
+        medications=[
+            Medication(
+                name="비잔정",
+                strength="2mg",
+                dosage="하루 한 번",
+                purpose="통증 관리",
+                duration_days=84,
+            )
+        ],
         medication_guidance=[
             GuidanceSection(id="med-1", title="복용 방법", body="매일 같은 시간에 드세요.", source_label="승인 안내")
         ],
@@ -125,7 +133,7 @@ async def test_revoked_link_can_be_reissued_and_old_sessions_are_revoked(flow_pa
     with pytest.raises(PatientFlowError) as error:
         flow.authenticate(raw_session)
     assert error.value.code == "reauthentication_required"
-    new_link = await flow.reissue_link(token, "01012345678", date(1990, 1, 1))
+    new_link = await flow.reissue_link(token, "01012345678", "900101")
     assert new_link.id != old_link.id
     assert new_link.state is LinkState.SENT
 
@@ -143,6 +151,7 @@ async def test_otp_locks_after_five_failures(flow_parts):
     with pytest.raises(PatientFlowError) as error:
         flow.verify_otp(challenge.id, wrong_code)
     assert error.value.code == "otp_locked"
+    assert error.value.status_code == 429
 
 
 @pytest.mark.asyncio
@@ -151,11 +160,13 @@ async def test_reissue_identity_fallback_locks_after_five_failures(flow_parts):
     _, token = await issue_and_get_token(flow, gateway)
     for _ in range(4):
         with pytest.raises(PatientFlowError) as error:
-            await flow.reissue_link(token, "01099998888", date(1990, 1, 1))
+            await flow.reissue_link(token, "01099998888", "900101")
         assert error.value.code == "identity_mismatch"
     with pytest.raises(PatientFlowError) as error:
-        await flow.reissue_link(token, "01099998888", date(1990, 1, 1))
+        await flow.reissue_link(token, "01099998888", "900101")
     assert error.value.code == "fallback_locked"
+    assert error.value.status_code == 429
+    assert error.value.retry_after_seconds == 600
 
 
 @pytest.mark.asyncio
@@ -214,3 +225,42 @@ async def test_d_plus_seven_follow_up_validates_and_saves_structured_response(fl
     assert store.follow_ups[link.id] == saved
     assert flow.get_follow_up_for_staff(link.id) == saved
     assert not hasattr(store, "chat_messages")
+
+
+@pytest.mark.asyncio
+async def test_medication_status_is_separate_from_d_plus_seven(flow_parts):
+    flow, _, gateway, _ = flow_parts
+    _, token = await issue_and_get_token(flow, gateway)
+    challenge = await flow.request_otp(token)
+    _, raw_session = flow.verify_otp(challenge.id, gateway.messages[-1].content)
+
+    status = flow.medication_status(raw_session)
+
+    assert status["prescription_date"] == date(2026, 8, 12)
+    assert status["medications"][0] == {
+        "name": "비잔정",
+        "strength": "2mg",
+        "total_days": 84,
+        "elapsed_days": 7,
+        "remaining_days": 77,
+        "progress_percent": 8,
+        "depletion_date": date(2026, 11, 4),
+        "purpose": "통증 관리",
+    }
+
+
+@pytest.mark.asyncio
+async def test_stopped_selection_notifies_staff_immediately_and_is_idempotent(flow_parts):
+    flow, _, gateway, store = flow_parts
+    link, token = await issue_and_get_token(flow, gateway)
+    challenge = await flow.request_otp(token)
+    _, raw_session = flow.verify_otp(challenge.id, gateway.messages[-1].content)
+
+    first = flow.record_adherence_selection(raw_session, AdherenceStatus.STOPPED_BETTER)
+    second = flow.record_adherence_selection(raw_session, AdherenceStatus.STOPPED_BETTER)
+    missed = flow.record_adherence_selection(raw_session, AdherenceStatus.SOMETIMES_MISSED)
+
+    assert first is second
+    assert missed is None
+    assert len(store.follow_up_alerts) == 1
+    assert first is not None and first.link_id == link.id

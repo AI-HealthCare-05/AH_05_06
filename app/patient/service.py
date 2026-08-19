@@ -8,6 +8,7 @@ from app.patient.messaging import MessageKind, PatientMessageGateway, SentMessag
 from app.patient.models import (
     AccessPurpose,
     AdherenceStatus,
+    FollowUpAlert,
     FollowUpResponse,
     LinkState,
     OtpChallenge,
@@ -84,15 +85,20 @@ class PatientFlowService:
         self,
         bundle: ApprovedGuidanceBundle,
         phone_number: str,
-        birth_date: date,
+        birth_date: date | None,
         send_at: datetime | None,
         purpose: AccessPurpose,
+        birth_date_digest: str | None = None,
     ) -> PatientLink:
         now = self.now()
         normalized_phone = self.normalize_phone(phone_number)
         scheduled = send_at or now
         if scheduled.tzinfo is None:
             scheduled = scheduled.replace(tzinfo=UTC)
+        if birth_date_digest is None:
+            if birth_date is None:
+                raise ValueError("birth_date or birth_date_digest is required")
+            birth_date_digest = self.codec.digest(birth_date.strftime("%y%m%d"))
         raw_token = self.codec.random_token()
         link = PatientLink(
             id=str(uuid.uuid4()),
@@ -102,7 +108,7 @@ class PatientFlowService:
             token_digest=self.codec.digest(raw_token),
             phone_ciphertext=self.codec.encrypt(normalized_phone),
             phone_last4=normalized_phone[-4:],
-            birth_date_digest=self.codec.digest(birth_date.isoformat()),
+            birth_date_digest=birth_date_digest,
             encounter_date=bundle.encounter_date,
             created_at=now,
             send_at=scheduled,
@@ -165,7 +171,7 @@ class PatientFlowService:
         now = self.now()
         previous = self._latest_challenge(link.id)
         if previous and previous.locked_at:
-            raise PatientFlowError("otp_locked", "인증번호를 5회 잘못 입력해 링크가 잠겼어요.", 423)
+            raise PatientFlowError("otp_locked", "인증번호를 5회 잘못 입력해 링크가 잠겼어요.", 429)
         resend_count = 0
         if previous:
             elapsed = now - previous.created_at
@@ -196,14 +202,14 @@ class PatientFlowService:
         self._assert_link_open(link)
         now = self.now()
         if challenge.locked_at:
-            raise PatientFlowError("otp_locked", "인증번호를 5회 잘못 입력해 링크가 잠겼어요.", 423)
+            raise PatientFlowError("otp_locked", "인증번호를 5회 잘못 입력해 링크가 잠겼어요.", 429)
         if now >= challenge.expires_at:
             raise PatientFlowError("otp_expired", "인증번호 유효시간 3분이 지났어요.", 410)
         if not re.fullmatch(r"\d{6}", code) or not self.codec.matches(code, challenge.code_digest):
             challenge.failures += 1
             if challenge.failures >= 5:
                 challenge.locked_at = now
-                raise PatientFlowError("otp_locked", "인증번호를 5회 잘못 입력해 링크가 잠겼어요.", 423)
+                raise PatientFlowError("otp_locked", "인증번호를 5회 잘못 입력해 링크가 잠겼어요.", 429)
             raise PatientFlowError("otp_mismatch", "인증번호가 맞지 않아요.", 401)
         challenge.verified_at = now
         raw_session = self.codec.random_token()
@@ -230,27 +236,27 @@ class PatientFlowService:
         self._assert_link_open(link)
         return session, link
 
-    async def reissue_link(self, raw_token: str, phone_number: str, birth_date: date) -> PatientLink:
+    async def reissue_link(self, raw_token: str, phone_number: str, birth_date: str) -> PatientLink:
         old_link = self.store.find_link_by_digest(self.codec.digest(raw_token))
         if old_link is None:
             raise PatientFlowError("identity_mismatch", "번호나 생년월일이 맞지 않아요.", 401)
         now = self.now()
         if old_link.fallback_locked_until and now < old_link.fallback_locked_until:
             retry = int((old_link.fallback_locked_until - now).total_seconds()) + 1
-            raise PatientFlowError("fallback_locked", "10분 동안 잠깁니다.", 423, retry)
+            raise PatientFlowError("fallback_locked", "10분 동안 잠깁니다.", 429, retry)
         try:
             normalized_phone = self.normalize_phone(phone_number)
         except PatientFlowError:
             normalized_phone = ""
         identity_matches = normalized_phone == self.codec.decrypt(old_link.phone_ciphertext) and self.codec.matches(
-            birth_date.isoformat(), old_link.birth_date_digest
+            birth_date, old_link.birth_date_digest
         )
         if not identity_matches:
             old_link.fallback_failures += 1
             if old_link.fallback_failures >= 5:
                 old_link.fallback_locked_until = now + FALLBACK_LOCK_TIME
                 old_link.fallback_failures = 0
-                raise PatientFlowError("fallback_locked", "10분 동안 잠깁니다.", 423, 600)
+                raise PatientFlowError("fallback_locked", "10분 동안 잠깁니다.", 429, 600)
             raise PatientFlowError("identity_mismatch", "번호나 생년월일이 맞지 않아요.", 401)
         reissue_key = (old_link.care_episode_id, now.date())
         today_count = self.store.reissues_by_episode_and_date.get(reissue_key, 0)
@@ -261,7 +267,14 @@ class PatientFlowService:
         old_link.state = LinkState.REVOKED
         old_link.revoked_at = now
         self._revoke_sessions(old_link.id)
-        return await self._issue_from_bundle(old_link.bundle, normalized_phone, birth_date, now, old_link.purpose)
+        return await self._issue_from_bundle(
+            old_link.bundle,
+            normalized_phone,
+            None,
+            now,
+            old_link.purpose,
+            birth_date_digest=old_link.birth_date_digest,
+        )
 
     def guidance(self, raw_session: str | None) -> ApprovedGuidanceBundle:
         _, link = self.authenticate(raw_session)
@@ -275,6 +288,51 @@ class PatientFlowService:
             "due_date": due_date,
             "submitted": link.id in self.store.follow_ups,
         }
+
+    def medication_status(self, raw_session: str | None) -> dict[str, object]:
+        _, link = self.authenticate(raw_session)
+        elapsed_days = max((self.now().date() - link.encounter_date).days, 0)
+        medications = []
+        for medication in link.bundle.medications:
+            remaining_days = max(medication.duration_days - elapsed_days, 0)
+            medications.append(
+                {
+                    "name": medication.name,
+                    "strength": medication.strength,
+                    "total_days": medication.duration_days,
+                    "elapsed_days": elapsed_days,
+                    "remaining_days": remaining_days,
+                    "progress_percent": min(round(elapsed_days / medication.duration_days * 100), 100),
+                    "depletion_date": link.encounter_date + timedelta(days=medication.duration_days),
+                    "purpose": medication.purpose,
+                }
+            )
+        return {
+            "prescription_date": link.encounter_date,
+            "clinic_name": link.bundle.clinic_name,
+            "medications": medications,
+        }
+
+    def record_adherence_selection(
+        self,
+        raw_session: str | None,
+        adherence: AdherenceStatus,
+    ) -> FollowUpAlert | None:
+        _, link = self.authenticate(raw_session)
+        if adherence not in {AdherenceStatus.STOPPED_SIDE_EFFECTS, AdherenceStatus.STOPPED_BETTER}:
+            return None
+        key = (link.id, adherence.value)
+        existing = self.store.follow_up_alerts.get(key)
+        if existing:
+            return existing
+        alert = FollowUpAlert(
+            id=str(uuid.uuid4()),
+            link_id=link.id,
+            adherence=adherence,
+            created_at=self.now(),
+        )
+        self.store.follow_up_alerts[key] = alert
+        return alert
 
     def submit_follow_up(
         self,
@@ -315,6 +373,11 @@ class PatientFlowService:
         if response is None:
             raise PatientFlowError("follow_up_not_found", "저장된 복약 확인이 없습니다.", 404)
         return response
+
+    def get_follow_up_alerts_for_staff(self, link_id: str) -> list[FollowUpAlert]:
+        if link_id not in self.store.links:
+            raise PatientFlowError("link_not_found", "링크를 찾을 수 없습니다.", 404)
+        return [item for item in self.store.follow_up_alerts.values() if item.link_id == link_id]
 
     def _latest_challenge(self, link_id: str) -> OtpChallenge | None:
         matches = [item for item in self.store.challenges.values() if item.link_id == link_id]

@@ -61,6 +61,7 @@ src_folder = "./."
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
+pythonpath = ["."]
 
 [tool.ruff]
 # 기본 라인 길이 설정

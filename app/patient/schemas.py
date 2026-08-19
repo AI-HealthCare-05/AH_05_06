@@ -45,7 +45,7 @@ class VerifyOtpRequest(BaseModel):
 
 class ReissueLinkRequest(LinkTokenRequest):
     phone_number: str
-    birth_date: date
+    birth_date: str = Field(pattern=r"^\d{6}$")
 
 
 class GuidanceResponse(BaseModel):
@@ -69,6 +69,10 @@ class FollowUpSubmitRequest(BaseModel):
     pain_score: int | None = Field(default=None, ge=0, le=10)
     pain_types: tuple[PainType, ...] = ()
     memo: str | None = Field(default=None, max_length=500)
+
+
+class AdherenceSelectionRequest(BaseModel):
+    adherence: AdherenceStatus
 
 
 class FollowUpResponseSchema(BaseModel):
