@@ -29,7 +29,7 @@ MySQL이 실행 중이고 저장소 환경변수가 설정된 상태에서 실�
 
 ```bash
 uv run python -m aerich.cli upgrade
-uv run python -m aerich.cli downgrade -v 0_20260204142014_init
+uv run python -m aerich.cli downgrade --version 1 --yes
 ```
 
 운영 또는 공유 DB에서는 롤백이 `visit`, `patient` 테이블과 데이터를 삭제하므로 백업과 변경 승인 후 수행한다.
