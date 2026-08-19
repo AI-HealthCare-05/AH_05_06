@@ -161,9 +161,3 @@ function maskPhone(digits) {
   if (d.length < 8) return d;
   return d.slice(0, 3) + "-****-" + d.slice(-4);
 }
-
-function toIsoDate(date) {
-  var m = String(date.getMonth() + 1).padStart(2, "0");
-  var d = String(date.getDate()).padStart(2, "0");
-  return date.getFullYear() + "-" + m + "-" + d;
-}

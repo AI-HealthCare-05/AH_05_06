@@ -16,6 +16,15 @@
 
 var API_BASE = "/api/v1";
 
+/* 날짜 하나를 「2026-08-19」로. 화면 여러 곳이 쓴다 —
+   골격(shell.js)의 날짜 축도 여기에 기댄다. 환자 전용 파일에 두면
+   shell.js 만 부르는 화면(관리자 A1 등)에서 그대로 깨진다. */
+function toIsoDate(date) {
+  var m = String(date.getMonth() + 1).padStart(2, "0");
+  var d = String(date.getDate()).padStart(2, "0");
+  return date.getFullYear() + "-" + m + "-" + d;
+}
+
 /* 서버가 코드로 구분해 준다. 화면 문구가 코드마다 다르기 때문이다.
  * 특히 「인증정보가 틀렸다」와 「세션이 만료됐다」는 둘 다 401이지만
  * 사용자가 해야 할 일이 다르다 — 다시 입력할 것인가, 다시 로그인할 것인가. */

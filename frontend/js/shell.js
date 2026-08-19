@@ -164,13 +164,19 @@ function renderRows(keepVisitId) {
     return;
   }
 
-  var current = keepVisitId || (selectedVisit() ? selectedVisit().visit_id : null);
+  var chosen = selectedVisit();
+  var current = keepVisitId || (chosen ? chosen.visit_id : null);
+
   if (
     !shown.some(function (r) {
       return r.visit_id === current;
     })
   ) {
-    current = shown[0].visit_id;
+    /* 고른 줄이 지금 필터에 안 걸린다.
+       아직 아무도 안 골랐을 때만 맨 위를 고르고, 이미 고른 것이 있으면 놓지 않는다 —
+       검색어를 한 글자 칠 때마다 오른쪽이 다른 환자로 넘어가면, 누르지도 않은
+       환자에게 진료기록이 붙는다. 안 보이는 것과 안 고른 것은 다르다. */
+    current = chosen ? null : shown[0].visit_id;
   }
 
   box.innerHTML = shown
@@ -210,8 +216,10 @@ function renderRows(keepVisitId) {
 
 /* 목록이 비면 오른쪽도 「할 일 없음」이어야 한다.
    등록 화면을 열어 둔 채로는 밀어내지 않는다 — 쓰던 것을 빼앗기 때문이다. */
-function syncPane() {
-  if (!document.getElementById("view-register").hidden) return;
+function syncPane(force) {
+  /* 등록 화면은 스스로 닫을 때(force)만 밀어낸다. 탭을 켜고 끄거나 목록을
+     다시 그릴 때 빼앗으면 쓰던 것이 날아간다. */
+  if (!force && !document.getElementById("view-register").hidden) return;
   if (!visibleRows().length) return showView("view-none");
   showView("view-upload");
   var visit = selectedVisit();
@@ -229,6 +237,7 @@ function loadDay() {
     })
     .catch(function () {
       rows = [];
+      renderChipCounts(); // 목록은 비었는데 배지만 옛 숫자로 남지 않게
       renderRows();
       syncPane();
     });
@@ -267,10 +276,30 @@ function selectedVisit() {
 /* 방금 만든 진료 건을 목록에 세우고 고른다. 등록이 끝났다는 것을 목록이 보여 준다. */
 function addVisit(visit) {
   rows.unshift(visit);
+
+  /* 방금 등록한 줄이 꺼진 탭에 속하면 목록에서 걸러진다. 등록했는데 안 보이면
+     「등록이 안 됐나」가 되고, 고를 줄이 없어 엉뚱한 환자가 대신 서기도 한다.
+     그 탭을 켜서 방금 만든 것이 반드시 보이게 한다. */
+  var chip = document.querySelector('.chip[data-tab="' + visit.tab + '"]');
+  if (chip) chip.setAttribute("aria-pressed", "true");
+
   renderChipCounts();
   renderRows(visit.visit_id);
   showView("view-upload");
-  document.dispatchEvent(new CustomEvent("visit:selected", { detail: selectedVisit() }));
+
+  var picked = selectedVisit();
+  if (!picked) return; // 그래도 못 고르면 빈 것을 실어 보내지 않는다
+  document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
+}
+
+/* 오늘 목록에 이 환자의 진료가 이미 서 있는가.
+   등록 화면이 rows 를 직접 뒤지지 않게 여기서 내준다 — 목록의 모양은 이 파일 것이다. */
+function visitToday(patientId) {
+  return (
+    rows.find(function (r) {
+      return r.patient_id === patientId;
+    }) || null
+  );
 }
 
 /* ── 손짓 ─────────────────────────────────────────────── */
@@ -284,7 +313,9 @@ document.getElementById("logout").addEventListener("click", function () {
 document.getElementById("quick-search").addEventListener("input", function () {
   listQuery = this.value;
   renderRows();
-  syncPane();
+  /* syncPane 을 부르지 않는다 — 검색은 **목록만** 좁힌다.
+     오른쪽 칸을 따라 바꾸면, 찾는 이름을 치는 동안 클릭 한 번 없이 다른 환자의
+     화면이 열린다. 화면을 바꾸는 것은 줄을 누를 때뿐이다. */
 });
 
 document.getElementById("day-prev").addEventListener("click", function () {

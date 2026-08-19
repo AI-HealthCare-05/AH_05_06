@@ -38,6 +38,10 @@
   var tiedDates = []; // 이번 결과에서 생년월일이 겹친 값들
   var checking = false; // 중복을 서버에 묻는 중
   var lookupTimer = null;
+  /* 보낸 순서와 도착 순서는 다르다. 「1」로 보낸 답이 「123」으로 보낸 답보다
+     늦게 오면, 최신 입력에 대한 판정이 옛 판정으로 되돌아간다 — 중복인데
+     경고가 사라지거나 그 반대가 된다. 마지막으로 보낸 것의 답만 받는다. */
+  var lookupSeq = 0;
 
   function el(id) {
     return document.getElementById(id);
@@ -95,7 +99,10 @@
 
   function close() {
     reset();
-    syncPane();
+    /* syncPane 은 등록 화면이 서 있으면 그냥 되돌아간다 — 탭을 켜고 끌 때
+       쓰던 화면을 빼앗지 않으려는 가드다. 스스로 닫을 때는 그 가드를 넘어야
+       한다. 안 그러면 취소를 눌러도 등록 화면에 그대로 머문다. */
+    syncPane(true);
   }
 
   /* 등록 도중이라도 아직 아무것도 안 건드렸으면 되물을 것이 없다 */
@@ -280,6 +287,7 @@
     render();
 
     lookupTimer = setTimeout(function () {
+      var mine = ++lookupSeq;
       var chart = value("f-chart");
       var phone = value("f-phone").replace(/\D/g, "");
 
@@ -290,6 +298,7 @@
 
       Promise.all(jobs)
         .then(function (pages) {
+          if (mine !== lookupSeq) return; // 늦게 온 옛 답은 버린다
           dupChart =
             pages[0].items.find(function (p) {
               return p.hospital_patient_no === chart;
@@ -302,6 +311,7 @@
           render();
         })
         .catch(function () {
+          if (mine !== lookupSeq) return;
           /* 확인하지 못했으면 막지 않는다. 최종 판정은 서버가 한다(409). */
           dupChart = null;
           dupPhone = null;
@@ -328,11 +338,7 @@
   /* 오늘 이미 서 있는 줄인가. 있으면 또 만들지 않고 그 줄로 보낸다. */
   function todayVisit() {
     if (!picked) return null;
-    return (
-      rows.find(function (r) {
-        return r.patient_id === picked.patient_id;
-      }) || null
-    );
+    return visitToday(picked.patient_id);
   }
 
   function problems() {
@@ -405,7 +411,10 @@
       ["이름", value("f-name")],
       ["차트번호", value("f-chart")],
       ["생년월일", value("f-birth")],
-      ["휴대폰", picked ? value("f-phone") : maskPhone(value("f-phone")) || value("f-phone")],
+      /* 고른 환자의 칸에는 이미 가려진 값이 들어 있다. 신규는 스탭이 방금 친
+         실제 번호라 **가리지 않는다** — 가릴 대상이 없고, 등록 직전 마지막으로
+         자릿수 오타를 눈으로 잡을 자리를 없앤다. 안내 문자가 갈 번호다. */
+      ["휴대폰", value("f-phone")],
       ["진료과 · 담당", el("f-dept").value + " · " + el("f-doctor").value],
       ["진료일", toIsoDate(new Date()) + " (오늘)"],
     ]
