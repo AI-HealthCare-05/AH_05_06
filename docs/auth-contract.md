@@ -253,4 +253,5 @@ FE는 로그인 화면으로 돌아가 새 비밀번호로 다시 들어온다.
 | 화면 정본 | `docs/wireframes/wireframe-medic-2.3.1.html` — `L-1` `L-2` `L-3` |
 | `staff` 표 | 기획 저장소 `spec-medical.md` |
 | 권한 매트릭스 | `app/tests/rbac/matrix.py` (`KEY-23`) |
-| 테스트 계정 | `docs/data/synthetic-patients.csv`는 **환자**다. 직원 계정 픽스처는 아직 없다 |
+| 직원 계정 픽스처 | `docs/data/synthetic-staff.csv` — 14계정 (`KEY-10` · PR #12) |
+| 로그인 화면 | `frontend/login.html` · `password.html` (`KEY-22` · PR #14) |
