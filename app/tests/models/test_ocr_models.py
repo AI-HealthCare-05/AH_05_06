@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
@@ -6,7 +6,8 @@ from types import ModuleType
 import pytest
 from aerich.utils import decompress_dict, import_py_file
 from tortoise import Tortoise
-from tortoise.exceptions import ValidationError
+from tortoise.contrib import test as tortoise_test
+from tortoise.exceptions import IntegrityError, ValidationError
 from tortoise.fields import OnDelete
 
 from app.core.db.databases import TORTOISE_APP_MODELS
@@ -19,6 +20,7 @@ from app.models.ocr import (
     OcrJobStatus,
     OcrResult,
 )
+from app.models.patients import Patient
 from app.models.visits import Visit
 
 
@@ -66,7 +68,7 @@ def test_relation_names_generate_expected_source_columns() -> None:
     assert OcrFieldCandidate._meta.fields_map["ocr_field"].source_field == "ocr_field_id"
     assert OcrJobDocument._meta.unique_together == (("ocr_job", "document_id"),)
     assert OcrDocumentText._meta.unique_together == (("ocr_result", "document_id"),)
-    assert OcrField._meta.indexes == (("ocr_result", "field_type"),)
+    assert OcrField._meta.unique_together == (("ocr_result", "field_type"),)
     assert OcrFieldCandidate._meta.unique_together == (("ocr_field", "rank"),)
 
 
@@ -88,6 +90,56 @@ def test_unread_expected_field_keeps_an_explicit_row() -> None:
 
     assert field.field_type == "synthetic_required_field"
     assert field.value is None
+
+
+def test_unread_field_round_trips_and_rejects_duplicates() -> None:
+    # The session initializer creates the schema and then detaches its connection
+    # registry. Reuse that initializer's loop because the MySQL pool is bound to it.
+    tortoise_test._restore_default()
+    test_loop = tortoise_test._LOOP
+    assert test_loop is not None
+    test_loop.run_until_complete(assert_unread_field_round_trip())
+
+
+async def assert_unread_field_round_trip() -> None:
+    patient = await Patient.create(
+        patient_id=590001,
+        hospital_id=5900,
+        hospital_patient_no="SYNTHETIC-KEY59-001",
+        name="Synthetic OCR Patient",
+        birth_date=date(2000, 1, 1),
+        phone="01000000000",
+    )
+    visit = await Visit.create(
+        visit_id=590001,
+        hospital_id=5900,
+        patient=patient,
+        visited_at=datetime(2026, 8, 20, 9, 0, tzinfo=UTC),
+    )
+    job = await OcrJob.create(
+        ocr_job_id="synthetic-key59-round-trip",
+        hospital_id=5900,
+        visit=visit,
+        requested_by=590001,
+    )
+    result = await OcrResult.create(ocr_job=job, model_name="synthetic-test-model")
+
+    field = await OcrField.create(
+        ocr_result=result,
+        field_type="synthetic_required_field",
+        extracted_value=None,
+    )
+    stored_field = await OcrField.get(ocr_field_id=field.ocr_field_id)
+
+    assert stored_field.extracted_value is None
+    assert stored_field.value is None
+
+    with pytest.raises(IntegrityError):
+        await OcrField.create(
+            ocr_result=result,
+            field_type="synthetic_required_field",
+            extracted_value="retry-value",
+        )
 
 
 def test_raw_text_uses_tortoise_clock(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -120,10 +172,13 @@ def test_models_are_registered_for_aerich() -> None:
 @pytest.mark.asyncio
 async def test_migration_has_safe_relations_and_rollback_order() -> None:
     migrations = load_migrations()
+    migration_states = [decompress_dict(migration.MODELS_STATE) for migration in migrations]
     upgrade_sql = "\n".join([await migration.upgrade(None) for migration in migrations])
     downgrade_sql = "\n".join([await migration.downgrade(None) for migration in reversed(migrations)])
 
-    assert all(decompress_dict(migration.MODELS_STATE) for migration in migrations)
+    assert all(migration_states)
+    assert migration_states[-1]["models.OcrField"]["unique_together"] == [["ocr_result", "field_type"]]
+    assert migration_states[-1]["models.OcrField"]["indexes"] == []
     assert upgrade_sql.index("CREATE TABLE IF NOT EXISTS `ocr_job`") < upgrade_sql.index(
         "CREATE TABLE IF NOT EXISTS `ocr_result`"
     )
@@ -132,6 +187,8 @@ async def test_migration_has_safe_relations_and_rollback_order() -> None:
     )
     assert "ON DELETE SET NULL" in upgrade_sql
     assert "(`ocr_job_id`, `document_id`)" in upgrade_sql
+    assert "UNIQUE KEY `uid_ocr_field_ocr_res_b32ce7` (`ocr_result_id`, `field_type`)" in upgrade_sql
+    assert "`extracted_value` LONGTEXT NOT NULL" not in upgrade_sql
     assert "`started_at` DATETIME(6)" in upgrade_sql
     assert "`started_at` DATETIME(6) NOT NULL" not in upgrade_sql
     assert downgrade_sql.index("DROP TABLE IF EXISTS `ocr_field_candidate`") < downgrade_sql.index(

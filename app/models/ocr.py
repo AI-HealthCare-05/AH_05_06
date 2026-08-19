@@ -157,7 +157,7 @@ class OcrField(models.Model):
 
     class Meta:
         table = "ocr_field"
-        indexes = (("ocr_result", "field_type"),)
+        unique_together = (("ocr_result", "field_type"),)
 
     @property
     def value(self) -> str | None:
