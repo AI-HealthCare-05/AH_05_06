@@ -35,7 +35,7 @@ Notion 원본은 [API 명세서](https://app.notion.com/p/API-da8e237b905d829d90
 | 환자 PK | `patient_id: bigint` | ERD v11 및 현재 `User` PK와 정합 |
 | 진료 PK | `visit_id: bigint` | ERD v11 |
 | 병원 범위 | `hospital_id: bigint`, 클라이언트 입력 금지 | 모든 접근에서 로그인 직원의 병원으로 서버가 결정 |
-| 차트번호 | `hospital_patient_no`, `(hospital_id, hospital_patient_no)` 유일 | S1-2·S1-3, ERD v11 |
+| 차트번호 | `hospital_patient_no`, `(hospital_id, hospital_patient_no)` 유일. 진료 전에는 감사 사유를 남기는 제한적 정정 허용 | S1-2·S1-3, ERD v11 |
 | 환자 나이 | 저장하지 않고 `birth_date`로 계산 | 본인확인 및 시간이 지나면 변하는 `age` 제거 |
 | 성별 | `gender`를 PATIENT에 추가, `FEMALE/MALE/OTHER/UNKNOWN`, 기본 `UNKNOWN` | Notion S2-1 응답에는 네 값이 있으나 ERD v11에서 누락됨. 합성 데이터는 `FEMALE`을 명시 |
 | 진료 리소스명 | `visits` | 환자 1:N 진료 관계와 OCR·안내·발송 연결 기준 |
@@ -70,7 +70,7 @@ HOSPITAL 1 ── N PATIENT 1 ── N VISIT
 |---|---|---|---:|---|
 | `patient_id` | `patient_id` | bigint | 응답 | PK |
 | — | `hospital_id` | bigint | 서버 | 로그인 직원의 병원, 요청 본문에서 거부 |
-| `hospital_patient_no` | `hospital_patient_no` | string(50) | 요청 | 병원 내 유일, 생성 후 변경 불가 |
+| `hospital_patient_no` | `hospital_patient_no` | string(50) | 요청 | 병원 내 유일. 일반 수정 불가; 진료가 없는 환자에 한해 `admin`과 임상 역할을 함께 가진 사용자가 정정 가능 |
 | `name` | `name` | string(50) | 요청 | trim 후 1~50자, 한 글자 검색 허용 |
 | `birth_date` | `birth_date` | date | 요청 | 나이 및 본인확인 원천 |
 | `gender` | `gender` | `FEMALE/MALE/OTHER/UNKNOWN` | 선택 | 미입력은 `UNKNOWN`. 합성 산부인과 데이터는 `FEMALE`을 명시 |
@@ -92,7 +92,8 @@ HOSPITAL 1 ── N PATIENT 1 ── N VISIT
 | — | `hospital_id` | bigint | 서버 | 환자 병원과 로그인 직원 병원이 모두 같아야 함 |
 | `patient_id` | `patient_id` | bigint | 경로/응답 | POST에서는 경로로만 입력 |
 | `doctor_id` | `doctor_id` | bigint/null | 요청 | 같은 병원, `doctor` 역할 보유자만 |
-| `department` | `department` | string(100)/null | 요청 | 진료 당시 스냅샷 |
+| `department_id` | — | bigint/null | 요청 | 같은 병원의 활성 진료과. 저장 전 담당 의사의 소속을 검증하는 명령 필드 |
+| `department` | `department` | string(100)/null | 응답 | 검증된 진료과 명칭을 저장한 진료 당시 스냅샷. 클라이언트가 직접 입력하지 않음 |
 | `visited_at` | `visited_at` | datetime | 요청 | 오늘 진료와 시간순 이력의 정렬 기준 |
 | `visit_summary` | `visit_summary` | string/null | 요청·응답 | 환자용 승인 안내와 분리된 진료 요약 원천 |
 | `doctor_note` | `doctor_note` | string/null | 요청·응답 | 승인 데이터 생성의 선택 입력, 환자 API에는 원문 노출 금지 |
@@ -101,7 +102,7 @@ HOSPITAL 1 ── N PATIENT 1 ── N VISIT
 | `created_at` | `created_at` | datetime | 응답 | UTC 저장 |
 | `updated_at` | `updated_at` | datetime | 응답 | UTC 저장 |
 
-동일 병원·환자·진료일의 중복 등록은 서비스 계층에서 `409 VISIT_ALREADY_REGISTERED`로 막는다.
+날짜 기반 규칙의 기준은 병원 표시 시간대다. v1은 `Asia/Seoul`로 고정하고, `visited_at`은 UTC로 저장한 뒤 표시 시간대로 변환한다. 동일 병원·환자·현지 진료일의 중복 등록은 서비스 계층에서 `409 VISIT_ALREADY_REGISTERED`로 막는다. 향후 병원별 시간대 설정을 추가하더라도 저장 형식은 UTC로 유지한다.
 
 ## 5. 엔드포인트
 
@@ -115,6 +116,7 @@ HOSPITAL 1 ── N PATIENT 1 ── N VISIT
 | GET | `/api/v1/patients/{patient_id}/visits` | 지난 방문 시간순 조회 | `patient:read` |
 | GET | `/api/v1/visits/{visit_id}` | 진료 건 상세 및 후속 기능 연결 | `patient:read` |
 | PATCH | `/api/v1/visits/{visit_id}` | 진료 기본정보 수정 | `patient:write` |
+| GET | `/api/v1/front-desk/visits` | S1-1 날짜별 업무 목록 읽기 모델 | `patient:read` |
 
 `patient:read`와 `patient:write`는 `staff` 또는 `doctor` 역할이 연다. `admin`만 가진 사용자는 진료 데이터에 접근할 수 없다.
 
@@ -158,12 +160,69 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 - `limit` 기본 20, 최대 100.
 - 응답은 `{counts, selected_category, items, page: {next_cursor, has_next}}`다.
 - 목록 항목은 환자 기본정보와 `latest_visit` 요약을 포함한다. 동명이인 구분을 위해 생년월일, 차트번호, 전화번호 뒤 4자리, 최근 진료일을 모두 제공한다.
-- S1 날짜별 업무 목록은 기존 `GET /front-desk/visits?date=YYYY-MM-DD`가 담당하며 `visit.visited_at`을 날짜로 묶고 업무 상태를 파생한다.
+
+### S1-1 날짜별 업무 목록
+
+```text
+GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTENTION&cursor=visit_501&limit=50
+```
+
+- `date`는 필수 `YYYY-MM-DD`이며 v1 병원 표시 시간대인 `Asia/Seoul`의 현지 날짜다.
+- `categories`는 쉼표로 구분한 업무 카테고리다. 미입력 시 전체 카테고리를 조회한다.
+- `cursor`는 서버가 발급한 불투명 커서다. `limit`은 기본 50, 최대 100인 cursor pagination을 사용한다.
+- `NEEDS_ATTENTION`은 해결될 때까지 날짜와 무관하게 포함한다. 나머지 카테고리는 `visited_at`을 `Asia/Seoul`로 변환한 날짜가 요청한 `date`와 같은 진료만 포함한다.
+- `age`는 저장값이 아니라 요청한 현지 날짜와 `birth_date`로 계산한다. 동명이인 확인과 계산 근거를 위해 응답에 두 값을 함께 제공한다.
+- `diagnosis_name`은 확정된 구조화 진단명이 있을 때만 제공하며 미확정이면 `null`이다. 원문 의료문서는 포함하지 않는다.
+
+업무 카테고리는 서버가 OCR·안내·승인·발송의 최신 이벤트를 읽어 다음 값으로 파생한다.
+
+| 화면 탭 | `work_category` | 포함하는 `detail_status` |
+|---|---|---|
+| 작성 중 | `IN_PROGRESS` | `NO_DOCUMENT`, `OCR_REVIEW`, `GUIDE_GENERATING`, `STAFF_REVIEW` |
+| 보완 | `NEEDS_ATTENTION` | `GENERATION_FAILED`, `INVALID_PHONE`, `SMS_OPT_OUT`, `APPROVAL_RETURNED` |
+| 승인 요청 | `APPROVAL_REQUESTED` | `APPROVAL_PENDING` |
+| 발송 대기 | `SEND_PENDING` | `SCHEDULED_TO_SEND` |
+| 완료 | `COMPLETED` | `SENT`, `VIEWED` |
+
+여러 이벤트가 동시에 존재하면 `NEEDS_ATTENTION → APPROVAL_REQUESTED → SEND_PENDING → IN_PROGRESS → COMPLETED` 순으로 하나의 `work_category`를 선택한다. `detail_status`는 해당 카테고리에서 가장 최근에 발생한 미해결 상태다.
+
+```json
+{
+  "date": "2026-08-13",
+  "timezone": "Asia/Seoul",
+  "counts": {
+    "IN_PROGRESS": 2,
+    "NEEDS_ATTENTION": 1,
+    "APPROVAL_REQUESTED": 1,
+    "SEND_PENDING": 0,
+    "COMPLETED": 3
+  },
+  "selected_categories": ["IN_PROGRESS", "NEEDS_ATTENTION"],
+  "items": [
+    {
+      "visit_id": 501,
+      "patient_id": 101,
+      "name": "김서연",
+      "hospital_patient_no": "12345",
+      "birth_date": "1990-01-01",
+      "age": 36,
+      "diagnosis_name": null,
+      "doctor": {"doctor_id": 12, "name": "박연"},
+      "visited_at": "2026-08-13T10:32:00+09:00",
+      "work_category": "IN_PROGRESS",
+      "detail_status": "OCR_REVIEW"
+    }
+  ],
+  "page": {"next_cursor": null, "has_next": false}
+}
+```
 
 ### 환자 수정
 
 - 수정 가능: `name`, `birth_date`, `gender`, `phone`, `sms_consent`.
-- 수정 불가: `patient_id`, `hospital_id`, `hospital_patient_no`, 생성·수정 메타데이터.
+- 일반 수정 불가: `patient_id`, `hospital_id`, `hospital_patient_no`, 생성·수정 메타데이터.
+- 차트번호 오타 정정은 같은 `PATCH`에서 `hospital_patient_no`와 필수 `correction_reason`을 함께 보낸다. 요청자는 `admin`과 `staff` 또는 `doctor` 역할을 함께 가져야 하며, 해당 환자에게 진료가 한 건도 없어야 한다. 성공 시 변경 전후 값, 사유, 수행자, 시각을 감사 이벤트로 남긴다.
+- 진료가 이미 있으면 `409 PATIENT_NUMBER_LOCKED`, 중복 번호면 `409 DUPLICATE_HOSPITAL_PATIENT_NO`다. 진료 이후의 정정·병합은 v1에서 제공하지 않는다.
 - 빈 본문은 `400 EMPTY_UPDATE_FIELDS`다.
 - 전화번호 또는 동의 변경은 예정 발송에 반영하고 감사 이벤트를 남기는 서비스 계층 작업이다.
 
@@ -172,7 +231,7 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 ```json
 {
   "doctor_id": 12,
-  "department": "산부인과",
+  "department_id": 7,
   "visited_at": "2026-08-13T10:32:00+09:00",
   "visit_summary": null,
   "doctor_note": null,
@@ -181,7 +240,7 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 }
 ```
 
-`patient_id`, `hospital_id`, `visit_id`를 본문에 중복 입력하지 않는다.
+`patient_id`, `hospital_id`, `visit_id`, `department`를 본문에 입력하지 않는다. 서버는 `department_id`가 같은 병원의 활성 진료과인지, 지정 의사가 그 진료과 소속인지 검증한 뒤 현재 명칭을 `visit.department`에 스냅샷으로 저장한다.
 
 ### 진료 목록
 
@@ -195,8 +254,9 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 ### 진료 수정
 
-- 수정 가능: `doctor_id`, `department`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
-- OCR 또는 승인 안내가 이미 연결된 뒤 식별 관계를 바꾸는 수정은 `409 visit_locked`다.
+- 수정 가능: `doctor_id`, `department_id`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
+- `department_id` 변경에도 생성과 같은 활성 진료과·의사 소속 검증을 적용하고 `department` 스냅샷을 갱신한다.
+- OCR 또는 승인 안내가 이미 연결된 뒤 식별 관계를 바꾸는 수정은 `409 VISIT_LOCKED`다.
 - `patient_id`, `hospital_id`, `visit_id`는 수정할 수 없다.
 
 ## 7. 오류 계약
@@ -218,16 +278,21 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 | 404 | `PATIENT_NOT_FOUND` | 환자 없음 또는 타 병원 환자 |
 | 404 | `VISIT_NOT_FOUND` | 진료 없음 또는 타 병원 진료 |
 | 409 | `DUPLICATE_HOSPITAL_PATIENT_NO` | 같은 병원 차트번호 중복 |
+| 409 | `PATIENT_NUMBER_LOCKED` | 진료가 연결된 환자의 차트번호 정정 시도 |
 | 409 | `VISIT_ALREADY_REGISTERED` | 같은 환자의 같은 날짜 진료 중복 |
 | 409 | `VISIT_LOCKED` | 후속 데이터 연결 뒤 관계 변경 시도 |
+| 400 | `INVALID_DEPARTMENT` | 진료과가 없거나 비활성 또는 타 병원 소속 |
+| 400 | `DOCTOR_DEPARTMENT_MISMATCH` | 담당 의사가 선택한 진료과 소속이 아님 |
 | 400 | `INVALID_REQUEST` | 필드 형식·enum·범위 오류 |
 | 400 | `EMPTY_UPDATE_FIELDS` | PATCH 본문에 수정 가능 필드 없음 |
+
+v1의 오류 `code` 표기는 `UPPER_SNAKE_CASE`로 고정한다. 현재 `docs/auth-contract.md`의 일부 소문자 코드는 동결 전 공통 계약 정합성 작업에서 이 규칙으로 이전해야 한다. 클라이언트는 대·소문자 두 규칙을 장기 병행하지 않으며, 한금준의 공통 오류 계약 최종 검수 후 한 번에 전환한다.
 
 ## 8. 화면 데이터 추적
 
 | 화면 | 계약 필드 |
 |---|---|
-| S1-1 | `/front-desk/visits?date`, `visit_id/visited_at/doctor`, 이벤트에서 파생한 업무 상태 |
+| S1-1 | `/front-desk/visits?date`, 이름·차트번호·생년월일·파생 나이·확정 진단명·담당의·업무 카테고리, cursor pagination |
 | S1-2 | `name`, `birth_date`, `phone`, `hospital_patient_no`, `latest_visit.visited_at` |
 | S1-3 | 환자 생성 필드 + 생성 후 반환된 `patient_id` |
 | S1-4 | 환자 상세 + 오늘 진료 + `GET /patients/{id}/visits` |
@@ -248,7 +313,7 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 | Notion `chart_no` | 리소스 API는 `hospital_patient_no`; 화면 조합 응답도 같은 이름으로 수정 | 수정 |
 | Notion `sms_consent_at` | `sms_consented_at`으로 수정 | 수정 |
 | Notion `visit_date` | 저장·리소스 API는 `visited_at`; 화면 표시에서는 날짜를 파생 | 수정 |
-| Notion `department_id`, ERD `department` | 화면 명령은 `department_id`를 받아 활성·의사 소속을 검증하고, VISIT에는 당시 명칭을 `department` 스냅샷으로 저장 | 매핑 확정 |
+| Notion `department_id`, ERD `department` | 화면·리소스 명령 모두 `department_id`를 받아 활성·의사 소속을 검증하고, VISIT에는 당시 명칭을 `department` 스냅샷으로 저장 | 매핑 확정 |
 | Notion 화면 API의 `RECORD_MISSING` 등 업무 상태 | `visit.status`에 저장하지 않고 OCR·안내·발송 이벤트에서 파생 | 매핑 확정 |
 | Notion offset/cursor 혼재, rc1 offset | 기존 명세의 cursor+limit로 통일 | 수정 |
 | Notion 오류 코드 대문자·400, rc1 소문자·422 | 전체 기존 API 규칙에 맞춰 대문자 코드와 400 사용 | 수정 |
@@ -260,6 +325,9 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 | 환자 목록 name/gender/age 필터 | `category`, `keyword`, cursor/limit로 통일 | 수정 |
 | ERD `visit.status`와 이벤트 파생 상태 충돌 | 방문 상태만 저장, 업무 진행 상태는 이벤트 파생 | 구분 확정 |
 | ERD v11의 `STAFF_USER_ROLE`·`HOSPITAL.super_admin_user_id` | v1에서는 `staff.roles jsonb`와 미사용 `is_owner` 유지 | 사용자 확정사항 우선 |
+| S1-1 탭 이름만 있고 서버 상태값·응답·페이지네이션 없음 | 다섯 `work_category`, 상세 상태 매핑, 응답 필드, cursor pagination 확정 | 수정 |
+| UTC 저장과 날짜별 화면·중복 판정의 시간대 불명확 | v1 병원 표시 시간대 `Asia/Seoul` 기준으로 날짜 그룹화·중복 판정 | 수정 |
+| 차트번호 생성 후 영구 불변 | 진료가 없고 `admin`+임상 역할인 경우 감사 사유를 남겨 제한 정정 | 수정 |
 
 ### 처방 계약 경계
 
@@ -272,7 +340,8 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 ## 10. 동결 절차와 변경 규칙
 
-- 한금준이 전체 API 규칙, 공통 오류 모양, ID 타입, 페이지네이션을 검수한다.
+- 한금준이 전체 API 규칙, 공통 오류 모양과 `UPPER_SNAKE_CASE` 전환, ID 타입, 페이지네이션을 검수한다.
+- S1-1 구현은 이 문서의 `work_category/detail_status` 매핑과 `Asia/Seoul` 날짜 규칙을 공통 상태 파생 모듈로 한 번만 구현한다.
 - 승인 전 상태는 `v1.0-rc1`이며 KEY-31은 필드명·관계를 이 문서와 다르게 구현하지 않는다.
 - 승인 시 이 문서의 상태를 `v1.0-frozen`으로 바꾸고 승인자·승인일을 기록한다.
 - 동결 뒤 변경은 같은 PR에서 이 문서, 관련 모델·마이그레이션, 화면 영향 ID를 함께 수정한다.
