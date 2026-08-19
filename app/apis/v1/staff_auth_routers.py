@@ -16,9 +16,15 @@ from app.core.config import Env
 from app.core.jwt.tokens import AccessToken, RefreshToken
 from app.core.redis_client import get_redis
 from app.dependencies.staff_auth import get_access_token, get_current_staff
-from app.dtos.auth import StaffLoginRequest, StaffLoginResponse, TokenRefreshResponse
+from app.dtos.auth import (
+    PasswordChangeRequest,
+    StaffLoginRequest,
+    StaffLoginResponse,
+    StaffMeResponse,
+    TokenRefreshResponse,
+)
 from app.models.staffs import Staff
-from app.services.staff_auth import StaffAuthService, StaffSessionService
+from app.services.staff_auth import PasswordService, StaffAuthService, StaffSessionService
 
 staff_auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -34,6 +40,10 @@ def _auth(redis: Annotated[Redis, Depends(get_redis)]) -> StaffAuthService:
 
 def _session(redis: Annotated[Redis, Depends(get_redis)]) -> StaffSessionService:
     return StaffSessionService(redis)
+
+
+def _passwords(redis: Annotated[Redis, Depends(get_redis)]) -> PasswordService:
+    return PasswordService(redis)
 
 
 def _set_refresh_cookie(response: Response, refresh: RefreshToken) -> None:
@@ -98,6 +108,43 @@ async def logout(
     `get_current_staff` 도 같은 의존성을 거치므로 토큰은 한 번만 검증된다.
     """
     await session.logout(refresh_token, token.payload.get("jti"), staff.staff_id)
+
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        domain=config.COOKIE_DOMAIN or None,
+    )
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
+
+
+@staff_auth_router.get("/me", response_model=StaffMeResponse, status_code=status.HTTP_200_OK)
+async def me(staff: Annotated[Staff, Depends(get_current_staff)]) -> StaffMeResponse:
+    """세션 복원과 화면 분기의 근거. 새로고침할 때마다 부른다."""
+    await staff.fetch_related("hospital")
+    return StaffMeResponse(
+        id=staff.staff_id,
+        name=staff.name,
+        login_id=staff.login_id,
+        roles=list(staff.roles or []),
+        must_change_password=staff.must_change_password,
+        clinic_name=staff.hospital.name,
+    )
+
+
+@staff_auth_router.patch("/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: PasswordChangeRequest,
+    response: Response,
+    staff: Annotated[Staff, Depends(get_current_staff)],
+    passwords: Annotated[PasswordService, Depends(_passwords)],
+) -> Response:
+    """성공하면 기존 세션을 전부 폐기한다 — 자기 것까지.
+
+    화면은 로그인으로 돌아가 새 비밀번호로 다시 들어온다. 쿠키를 남겨 두면
+    죽은 토큰을 계속 들고 다니게 된다.
+    """
+    await passwords.change(staff, body.new_password, body.current_password)
 
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,

@@ -14,10 +14,16 @@
 from redis.asyncio import Redis
 from tortoise.timezone import now
 
-from app.core.auth_errors import ACCOUNT_LOCKED, INVALID_CREDENTIALS, TOKEN_EXPIRED, AuthError
+from app.core.auth_errors import (
+    ACCOUNT_LOCKED,
+    INVALID_CREDENTIALS,
+    INVALID_REQUEST,
+    TOKEN_EXPIRED,
+    AuthError,
+)
 from app.core.jwt.exceptions import TokenError
 from app.core.jwt.tokens import AccessToken, RefreshToken
-from app.core.utils.security import verify_password
+from app.core.utils.security import hash_password, verify_password
 from app.models.staffs import Staff, StaffStatus
 from app.services.login_attempts import MAX_FAILURES, LoginAttempts
 from app.services.session_store import SessionStore
@@ -163,3 +169,42 @@ def _expired() -> AuthError:
     """만료·폐기된 토큰. 「인증정보가 틀렸다」와 다른 코드여야 한다 —
     사용자가 해야 할 일이 다르다(다시 입력 vs 다시 로그인)."""
     return AuthError(TOKEN_EXPIRED, 401, "세션이 만료되었습니다. 다시 로그인해 주세요.")
+
+
+class PasswordService:
+    """비밀번호 변경 — KEY-73 (계약 4절)."""
+
+    def __init__(self, redis: Redis) -> None:
+        self.sessions = SessionStore(redis)
+
+    async def change(self, staff: Staff, new_password: str, current_password: str | None) -> None:
+        """어느 갈래인지는 **서버가** `must_change_password` 로 정한다.
+
+        요청이 정하게 두면, 최초 로그인이 아닌 사람도 `current_password` 를
+        빼고 보내면 확인 없이 바꿀 수 있다.
+        """
+        if not staff.must_change_password:
+            if current_password is None:
+                raise AuthError(
+                    INVALID_REQUEST,
+                    422,
+                    "지금 쓰시는 비밀번호를 함께 입력해 주세요.",
+                )
+            if not verify_password(current_password, staff.password_hash):
+                raise AuthError(INVALID_REQUEST, 422, "지금 쓰시는 비밀번호가 맞지 않습니다.")
+        # 최초 로그인이면 current_password 가 와도 무시한다 — 방금 그 비밀번호로
+        # 로그인했으므로 한 번 더 받을 이유가 없다.
+
+        if verify_password(new_password, staff.password_hash):
+            # 최초 로그인의 이유가 「정해준 사람이 계속 알고 있다」라, 같은 값으로
+            # 바꾸면 아무것도 달라지지 않는다.
+            raise AuthError(INVALID_REQUEST, 422, "지금 쓰시는 것과 다른 비밀번호로 만들어 주세요.")
+
+        staff.password_hash = hash_password(new_password)
+        staff.must_change_password = False
+        staff.password_changed_at = now()
+        await staff.save(update_fields=["password_hash", "must_change_password", "password_changed_at", "updated_at"])
+
+        # 바꾸는 이유가 「남이 알고 있다」이므로 그 남의 세션도 같이 끊는다.
+        # 자기 세션도 함께 끊긴다 — 화면은 로그인으로 돌아가 새 비밀번호로 들어온다.
+        await self.sessions.revoke_all(staff.staff_id)

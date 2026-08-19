@@ -54,3 +54,25 @@ def validate_birthday(birthday: date | str) -> date:
         raise ValueError("서비스 약관에 따라 만14세 미만은 회원가입이 불가합니다.")
 
     return birthday
+
+
+def validate_staff_password(password: str) -> str:
+    """직원 비밀번호 — 계약(`docs/auth-contract.md` 2절)의 `L-3` 규칙.
+
+    화면이 약속하는 것은 「영문 · 숫자 · 기호를 섞어 8자 이상」이다.
+    위의 `validate_password` 는 **대문자를 따로 요구**해서, 화면 문구대로 만든
+    비밀번호(`abcd1234!`)가 서버에서 거부된다. 화면과 서버가 다른 약속을 하면
+    사용자는 무엇이 틀렸는지 알 수 없다.
+
+    `validate_password` 는 회원가입(`/auth/signup`)이 쓰고 있고, 그 정리는
+    계정 관리(A1-2) 몫이라 여기서 건드리지 않는다.
+    """
+    if len(password) < 8:
+        raise ValueError("비밀번호는 8자 이상이어야 합니다.")
+    if not re.search(r"[A-Za-z]", password):
+        raise ValueError("영문 · 숫자 · 기호를 섞어 8자 이상으로 만들어 주세요.")
+    if not re.search(r"[0-9]", password):
+        raise ValueError("영문 · 숫자 · 기호를 섞어 8자 이상으로 만들어 주세요.")
+    if not re.search(r"[^A-Za-z0-9]", password):
+        raise ValueError("영문 · 숫자 · 기호를 섞어 8자 이상으로 만들어 주세요.")
+    return password
