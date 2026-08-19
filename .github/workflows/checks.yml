@@ -15,6 +15,7 @@ on:
       - develop
       - 'release/*'
       - 'hotfix/*'
+      - 'feat/**'
 
 jobs:
   lint:

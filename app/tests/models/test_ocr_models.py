@@ -29,7 +29,11 @@ def initialize_models() -> None:
 
 def load_migrations() -> list[ModuleType]:
     migration_dir = Path(__file__).parents[2] / "core" / "db" / "migrations" / "models"
-    migration_paths = [next(migration_dir.glob(f"{version}_*_add_ocr_*.py")) for version in range(2, 7)]
+    migration_paths = sorted(
+        migration_dir.glob("*_add_ocr_*.py"),
+        key=lambda path: int(path.name.split("_", maxsplit=1)[0]),
+    )
+    assert len(migration_paths) == 5
     return [import_py_file(path) for path in migration_paths]
 
 
