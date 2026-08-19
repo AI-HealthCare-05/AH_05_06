@@ -7,6 +7,7 @@ on:
       - develop
       - 'release/*'
       - 'hotfix/*'
+      - 'feat/**'
   pull_request:
     # feature 브랜치는 보통 develop으로 PR을 생성하기 때문에 develop이 target 브랜치에 포함되어 있다면 별도로 적지 않아도 됩니다.
     branches:
