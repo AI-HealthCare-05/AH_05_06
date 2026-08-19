@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>로그인 · 복약 안내 도우미</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/auth.css" />
+  </head>
+  <body class="auth">
+    <!-- L-1 로그인 · L-2 오류는 같은 화면의 다른 상태다.
+         역할을 고르게 하지 않는다 — 「의사로 로그인 / 스탭으로 로그인」을 두면
+         처음 쓰는 사람이 멈춘다. 계정에 역할이 붙어 있다. -->
+    <main class="card">
+      <div class="card__head">
+        <h1 class="card__title">복약 안내 도우미</h1>
+      </div>
+
+      <form class="card__body" id="login-form" novalidate>
+        <div class="field">
+          <label class="field__label" for="login-id">아이디</label>
+          <!-- autofocus — 화면이 열리면 여기에 커서가 있고, Tab → 비밀번호 → Enter로 끝난다 -->
+          <input
+            class="field__input"
+            id="login-id"
+            name="login_id"
+            type="text"
+            inputmode="latin"
+            autocomplete="username"
+            placeholder="staff01"
+            autofocus
+            required
+          />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="password">비밀번호</label>
+          <input
+            class="field__input"
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+
+        <!-- 어느 쪽이 틀렸는지 쓰지 않는다. 아이디가 있는지 없는지가 드러나면 안 된다. -->
+        <div class="alert" id="error" role="alert" aria-live="assertive" hidden>
+          <div class="alert__line" id="error-line"></div>
+          <div class="alert__count" id="error-count" hidden></div>
+        </div>
+
+        <label class="check" for="remember">
+          <input type="checkbox" id="remember" name="remember" />
+          <span>
+            이 컴퓨터에서 로그인 유지
+            <span class="check__note">공용 컴퓨터에서는 켜지 마세요</span>
+          </span>
+        </label>
+
+        <button class="button" type="submit" id="submit">로그인</button>
+      </form>
+
+      <p class="clinic">여성의원</p>
+    </main>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/session.js"></script>
+    <script src="/js/login.js"></script>
+  </body>
+</html>
