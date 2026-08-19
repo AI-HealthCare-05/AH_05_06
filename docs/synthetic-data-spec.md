@@ -237,4 +237,4 @@ CSV **32칸** → `patient` · `visit` · `visit_flag` · `lab_result`
 | 환자 데이터 | `docs/data/synthetic-patients.csv` (**100명** · 33칸) |
 | 처방 세트 9종 | 기획 저장소 `content/prescription-sets.md` |
 | 안내 문구 원문 | 기획 저장소 `content/guidance-components.md` |
-| 화면 정의 | 와이어프레임 v2.3.1 (의료진 33 · 어드민 7 · 환자 24) |
+| 화면 정의 | 와이어프레임 v2.3.1 — `docs/wireframes/` (의료진 33 · 어드민 7 · 환자 24) |
