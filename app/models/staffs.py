@@ -58,6 +58,8 @@ class Staff(models.Model):
         on_delete=OnDelete.RESTRICT,
         source_field="hospital_id",
     )
+    #: Tortoise 가 만들어 주는 FK 컬럼. 선언해 두지 않으면 타입 검사가 못 본다.
+    hospital_id: int
 
     # 로그인은 병원을 알기 전에 일어난다. 그래서 아이디는 병원 안이 아니라
     # 전체에서 유일해야 한다 — 두 병원에 같은 `staff01`이 있으면 누구인지 모른다.
