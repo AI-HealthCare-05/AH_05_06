@@ -12,12 +12,15 @@ from pathlib import Path
 
 import pytest
 
+from app.core import config
+from app.core.config import Env
 from app.tests.fixtures.staff import (
     CSV_PATH,
     DEFAULT_HOSPITAL,
     KNOWN_HOSPITALS,
     RESERVED_LOGIN_IDS,
     ROLE_SEPARATOR,
+    ProductionFixtureError,
     Staff,
     StaffDataError,
     admins_besides,
@@ -47,12 +50,12 @@ def using_csv(tmp_path: Path, text: str) -> Iterator[None]:
 
     original = module.CSV_PATH
     module.CSV_PATH = path
-    module.all_staff.cache_clear()
+    module.forget_cached_staff()
     try:
         yield
     finally:
         module.CSV_PATH = original
-        module.all_staff.cache_clear()
+        module.forget_cached_staff()
 
 
 def load_broken(tmp_path: Path, text: str) -> str:
@@ -356,3 +359,95 @@ class TestLastAdminIsPerHospital:
         elsewhere = [s for s in in_hospital("H2") if "admin" in s.roles]
         assert elsewhere, "H2 에 관리자가 없으면 이 검사가 헛돈다"
         assert not {s.login_id for s in elsewhere} & {s.login_id for s in admins_besides("lastadmin01")}
+
+
+class TestNeverRunsInProduction:
+    """합성 계정을 운영에서 읽으려 하면 멈춘다.
+
+    이 CSV 에는 비밀번호가 없어서 읽는 것만으로는 로그인이 생기지 않는다.
+    막으려는 것은 이것을 읽어 DB 에 넣는 **시드**다 — 합성 계정이 운영 DB 에
+    들어가면 `SEED_STAFF_PASSWORD` 를 아는 사람이 실제로 들어올 수 있다.
+
+    `#33`(KEY-36) 이 같은 가드를 먼저 만들었는데 `APP_ENV` 를 보고 있었다.
+    저장소가 쓰는 이름은 `ENV` 라, 운영에서 값이 비어 기본값 `local` 로 읽혀
+    **가드가 있는 채로 아무것도 막지 않았다.** 이름을 맞추는 것이 이 검사의 핵심이다.
+    """
+
+    def _with_env(self, env: Env):
+        import contextlib
+
+        @contextlib.contextmanager
+        def ctx():
+            import app.tests.fixtures.staff as module
+
+            before = config.ENV
+            config.ENV = env
+            module.forget_cached_staff()
+            try:
+                yield
+            finally:
+                config.ENV = before
+                module.forget_cached_staff()
+
+        return ctx()
+
+    def test_production_is_refused(self) -> None:
+        with self._with_env(Env.PROD), pytest.raises(ProductionFixtureError):
+            all_staff()
+
+    def test_local_and_dev_still_work(self) -> None:
+        for env in (Env.LOCAL, Env.DEV):
+            with self._with_env(env):
+                assert all_staff(), f"{env} 에서 픽스처를 못 읽는다"
+
+    def test_it_reads_the_name_the_repository_actually_uses(self) -> None:
+        """`ENV` 가 아니라 `APP_ENV` 같은 다른 이름을 보면, 운영에서 값이
+        비어 기본값으로 읽히고 가드가 조용히 통과한다."""
+        import os
+
+        before = os.environ.get("APP_ENV")
+        os.environ["APP_ENV"] = "prod"
+        try:
+            with self._with_env(Env.LOCAL):
+                assert all_staff(), "APP_ENV 를 보고 있다 — 저장소가 쓰는 이름은 ENV 다"
+        finally:
+            if before is None:
+                os.environ.pop("APP_ENV", None)
+            else:
+                os.environ["APP_ENV"] = before
+
+    def test_config_really_reads_env_not_app_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """위 검사는 `config.ENV` 를 직접 넣어 확인한다 — pydantic 이 환경변수를
+        어떻게 읽는지는 안 거친다. 그래서 `ENV` 필드에 `APP_ENV` alias 가
+        붙는 식으로 같은 실수가 아래층에서 나도 위 검사는 계속 통과한다(`#45` 리뷰).
+
+        여기서는 `Config()` 를 실제로 새로 만들어, **읽는 이름 자체**를 잰다.
+        """
+        from app.core.config import Config
+
+        monkeypatch.setenv("ENV", "prod")
+        monkeypatch.delenv("APP_ENV", raising=False)
+        assert Config().ENV is Env.PROD, "`ENV` 를 안 읽는다 — 운영에서 기본값 local 로 통과한다"
+
+        monkeypatch.delenv("ENV", raising=False)
+        monkeypatch.setenv("APP_ENV", "prod")
+        assert Config().ENV is Env.LOCAL, "`APP_ENV` 를 읽고 있다 — 저장소가 쓰는 이름이 아니다"
+
+    def test_guard_still_bites_after_the_csv_was_already_read(self) -> None:
+        """**이 검사가 이 PR 의 이유다.**
+
+        가드가 `@cache` 안에 있으면 한 번 성공한 뒤로는 본문이 아예 안 돌아서,
+        `ENV` 가 `prod` 로 바뀌어도 읽어 둔 계정이 그대로 나온다. 캐시를 비우는
+        `_with_env` 를 안 쓰고 **실제로 그 상황을 만들어** 잰다 —
+        `cache_clear()` 를 챙기는 검사만 있으면 이 갈래는 영원히 안 지나간다.
+        """
+        before = config.ENV
+        try:
+            config.ENV = Env.LOCAL
+            assert all_staff(), "먼저 한 번 읽어 캐시를 채운다"
+
+            config.ENV = Env.PROD  # 캐시는 그대로 둔다
+            with pytest.raises(ProductionFixtureError):
+                all_staff()
+        finally:
+            config.ENV = before
