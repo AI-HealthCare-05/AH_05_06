@@ -88,7 +88,7 @@ SYN-{질환}-{번호}
 
 | 화면 묶음 | 덮는 시나리오 | 비고 |
 |---|---|---|
-| `L-1`~`L-3` 인증 | **`SYN-STAFF-01~14`** | **환자 데이터와 무관하다** — 9절 직원 계정 |
+| `L-1`~`L-3` 인증 | **`SYN-STAFF-01~17`** | **환자 데이터와 무관하다** — 9절 직원 계정 |
 | `S1-1` 환자 0명 | (빈 상태) | 데이터를 **적재하지 않은** 상태가 곧 `S1-1`이다 |
 | `S1-2`·`S1-3` 등록 | 전원 + **`SYN-DUP-01~11`** | 아래 「동명이인」 절 — 난이도 네 무리 |
 | `S1-4` 환자 카드 | `SYN-EMS-01` `SYN-PCOS-01` | |
@@ -233,33 +233,55 @@ GET /api/docs             ← 사람이 보는 화면
 
 `AGENTS.md` — 「비밀번호를 코드 · 화면 · 로그 · 커밋에 남기지 않는다」.
 
-시드가 **환경변수 `SEED_STAFF_PASSWORD`에서 받아** 14개 계정에 같은 값을 넣는다.
+시드가 **환경변수 `SEED_STAFF_PASSWORD`에서 받아** 17개 계정에 같은 값을 넣는다.
 **기본값을 두지 않는다** — 값이 없으면 시드가 실패한다.
 
 이러면 합성 계정이 실수로 운영 DB에 들어가도 **아무도 로그인할 수 없다.**
 저장소에 비밀번호가 없으니 새어 나갈 것도 없다.
 
-### 14개 계정
+### 17개 계정
 
-| ID | login_id | roles | 무엇을 보는가 |
-|---|---|---|---|
-| `SYN-STAFF-01` | `staff01` | staff | **기준 스탭** — 다른 시험의 기본값 |
-| `SYN-STAFF-02` | `doctor01` | doctor | **기준 의사** — 환자 CSV 담당의 대부분(박연) |
-| `SYN-STAFF-03` | `doctor02` | doctor | 두 번째 의사 — `D2-3` 본인 소유 검사에 둘이 필요하다 |
-| `SYN-STAFF-04` | `admin01` | admin | **운영만** — 진료 화면이 열리지 않아야 한다 |
-| `SYN-STAFF-05` | `both01` | staff·doctor | 겸직 |
-| **`SYN-STAFF-06`** | `adminstaff01` | **staff·admin** | ★ **의료 승인 차단의 그 계정** |
-| `SYN-STAFF-07` | `admindoc01` | doctor·admin | admin이 승인을 방해하지 않는다 |
-| `SYN-STAFF-08` | `allthree01` | staff·doctor·admin | 합집합이 제대로 도는가 |
-| **`SYN-STAFF-09`** | `newbie01` | staff | ★ **첫 로그인** — `L-3` 없이는 아무 데도 못 간다 |
-| `SYN-STAFF-10` | `newdoc01` | doctor | 첫 로그인 의사 — 역할이 있어도 `L-3`이 먼저다 |
-| **`SYN-STAFF-11`** | `left01` | staff | ★ **퇴사자** — `roles`가 남아 있어도 거부된다 |
-| `SYN-STAFF-12` | `leftdoc01` | doctor | 퇴사한 의사 — 지난 진료의 담당의로는 이름이 남는다 |
-| **`SYN-STAFF-13`** | `lock01` | staff | ★ **5회 실패 잠금 전용** |
-| `SYN-STAFF-14` | `lastadmin01` | admin | 마지막 관리자 — admin을 빼는 저장은 거부돼야 한다 |
+| ID | 병원 | login_id | roles | 무엇을 보는가 |
+|---|---|---|---|---|
+| `SYN-STAFF-01` | H1 | `staff01` | staff | **기준 스탭** — 다른 시험의 기본값 |
+| `SYN-STAFF-02` | H1 | `doctor01` | doctor | **기준 의사** — 환자 CSV 담당의 대부분(박연) |
+| `SYN-STAFF-03` | H1 | `doctor02` | doctor | 두 번째 의사 — `D2-3` 본인 소유 검사에 둘이 필요하다 |
+| `SYN-STAFF-04` | H1 | `admin01` | admin | **운영만** — 진료 화면이 열리지 않아야 한다 |
+| `SYN-STAFF-05` | H1 | `both01` | staff·doctor | 겸직 |
+| **`SYN-STAFF-06`** | H1 | `adminstaff01` | **staff·admin** | ★ **의료 승인 차단의 그 계정** |
+| `SYN-STAFF-07` | H1 | `admindoc01` | doctor·admin | admin이 승인을 방해하지 않는다 |
+| `SYN-STAFF-08` | H1 | `allthree01` | staff·doctor·admin | 합집합이 제대로 도는가 |
+| **`SYN-STAFF-09`** | H1 | `newbie01` | staff | ★ **첫 로그인** — `L-3` 없이는 아무 데도 못 간다 |
+| `SYN-STAFF-10` | H1 | `newdoc01` | doctor | 첫 로그인 의사 — 역할이 있어도 `L-3`이 먼저다 |
+| **`SYN-STAFF-11`** | H1 | `left01` | staff | ★ **퇴사자** — `roles`가 남아 있어도 거부된다 |
+| `SYN-STAFF-12` | H1 | `leftdoc01` | doctor | 퇴사한 의사 — 지난 진료의 담당의로는 이름이 남는다 |
+| **`SYN-STAFF-13`** | H1 | `lock01` | staff | ★ **5회 실패 잠금 전용** |
+| `SYN-STAFF-14` | H1 | `lastadmin01` | admin | 마지막 관리자 — 그 **의원의** admin을 빼는 저장은 거부돼야 한다 |
+| `SYN-STAFF-15` | **H2** | `staff21` | staff | 다른 의원 스탭 — `H1` 환자·진료가 보이면 안 된다 |
+| **`SYN-STAFF-16`** | **H2** | `doctor21` | doctor | ★ **다른 의원의 동명이인 의사(박연)** — 이름으로만 풀면 `H1` 박연과 섞인다 |
+| `SYN-STAFF-17` | **H2** | `admin21` | admin | 다른 의원 관리자 — `H1` 직원 목록에 닿으면 안 된다 |
 
 `roles`는 CSV 한 칸에 `|`로 이어 적는다(`staff|admin`). 쉼표는 CSV 구분자와 겹친다.
 **역할 조합 7가지가 모두 들어 있다** — `KEY-23` 매트릭스의 `VALID_COMBINATIONS`와 같다.
+
+### 의원이 둘이다 — `H1` · `H2`
+
+`H1`이 기준 의원이고 환자 CSV도 전부 여기다. `H2`는 **격리 확인용**이다.
+
+병원 격리는 이 서비스에서 제일 중요한 경계인데(`docs/contracts/patient-visit-api-v1.md` 5절
+— 타 병원 리소스는 `403`이 아니라 **존재를 감추는 `404`**), 의원이 하나뿐이면
+「안 보인다」가 격리 때문인지 자료가 없어서인지 구분되지 않는다. 그래서 `H2`에
+**스탭·의사·관리자 셋 다** 둔다.
+
+`SYN-STAFF-16`은 **`H1`의 박연(`doctor01`)과 이름이 같다.** `app/tests/fixtures/mapping.py`가
+담당의를 「이름 → 직원 픽스처로 푼다」고 적어 두었는데, 이름만 보고 풀면 남의 의원 의사를
+집는다. 그 상황을 실제로 만들 수 있어야 그 코드를 검사할 수 있다.
+
+「마지막 관리자」도 **의원 단위 규칙**이다 — 옆 의원에 관리자가 있다고 이 의원이
+관리자 없이 남아도 되는 것이 아니다. `admins_besides()`가 같은 의원만 센다.
+
+실제 `hospital_id`는 bigint라(`patient-visit-api-v1.md` 2절) DB가 넣을 때 발급한다.
+CSV의 `H1`·`H2`는 **어느 의원 소속인지만** 나타내는 표식이다.
 
 ### `lock01`을 다른 시험이 쓰면 안 된다
 
