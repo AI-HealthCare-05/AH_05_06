@@ -32,7 +32,18 @@ class LoginAttempts:
         self.redis = redis
 
     def _key(self, login_id: str) -> str:
-        return _KEY.format(login_id=login_id)
+        """대소문자를 접어서 센다.
+
+        DB 는 `utf8mb4_unicode_ci` 라 `Staff01` 과 `staff01` 이 **같은 계정**을
+        찾는데, 예전에는 이 키가 입력 문자열 그대로라 **다른 카운터**가 생겼다.
+        대소문자를 바꿔 가며 두드리면 계정 하나에 사실상 무제한 시도가 생겨
+        5회 잠금이 무력해진다.
+
+        아이디 규칙(`^[a-z0-9]{4,}$` · `docs/auth-contract.md`)이 소문자뿐이라
+        접어도 서로 다른 계정이 한 칸에 섞이지 않는다. 없는 아이디도 그대로
+        자기 칸을 가지므로 「횟수가 안 오른다」로 존재가 새는 일도 없다.
+        """
+        return _KEY.format(login_id=login_id.strip().lower())
 
     async def failures(self, login_id: str) -> int:
         raw = await self.redis.get(self._key(login_id))

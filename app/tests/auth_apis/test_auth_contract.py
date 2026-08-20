@@ -65,7 +65,6 @@ def implemented_endpoints() -> set[tuple[str, str]]:
 # 「계약에 없는 인증 경로」가 조용히 늘어난다.
 KNOWN_LEGACY = {
     ("POST", "/api/v1/auth/signup"),
-    ("GET", "/api/v1/auth/token/refresh"),
 }
 
 

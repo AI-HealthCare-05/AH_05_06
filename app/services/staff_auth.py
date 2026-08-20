@@ -99,7 +99,11 @@ class StaffSessionService:
         # 서버가 따로 기억하면 세션마다 한 칸씩 더 들고 있어야 한다.
         refresh["remember"] = remember
         await self.sessions.open(refresh["jti"], staff.staff_id)
-        return refresh.access_token, refresh
+        access = refresh.access_token
+        # 발급한 액세스도 기억해 둔다 — 나중에 세션을 전부 끊을 때
+        # 리프레시만 죽이면 이 토큰이 남은 수명만큼 계속 살아 있다.
+        await self.sessions.track_access(access["jti"], staff.staff_id)
+        return access, refresh
 
     async def rotate(self, raw_token: str) -> tuple[Staff, AccessToken, RefreshToken]:
         """쓴 토큰을 폐기하고 새것을 준다.

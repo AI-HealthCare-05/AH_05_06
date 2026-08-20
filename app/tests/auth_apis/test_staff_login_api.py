@@ -242,3 +242,34 @@ class TestRequestShape(StaffLoginTestCase):
 
         assert response.status_code == 401
         assert response.json()["code"] == "invalid_credentials"
+
+
+class TestLockoutFoldsCase(StaffLoginTestCase):
+    """대소문자를 바꿔 가며 두드려도 잠금이 풀리지 않는다.
+
+    DB 는 `utf8mb4_unicode_ci` 라 `Staff01` 과 `staff01` 이 **같은 계정**을
+    찾는다. 그런데 실패 횟수를 입력 문자열 그대로 세면 대소문자마다 별개
+    카운터가 생겨서, `staff01` · `Staff01` · `STAFF01` … 로 돌려 가며
+    사실상 무제한으로 시도할 수 있다 — 5회 잠금이 무력해진다.
+    """
+
+    async def test_mixed_case_shares_one_counter(self) -> None:
+        await make_staff()
+
+        for spelling in ("staff01", "Staff01", "STAFF01", "sTaFf01", "staFF01"):
+            await self.post(login_id=spelling, password="wrong")
+
+        # 다섯 번 틀렸으니 잠겨 있어야 한다 — 철자를 어떻게 바꿔 왔든.
+        response = await self.post()
+
+        assert response.status_code == 429, "대소문자를 바꾸면 잠금을 우회할 수 있다"
+
+    async def test_the_lock_applies_to_the_other_spellings_too(self) -> None:
+        await make_staff()
+
+        for _ in range(MAX_FAILURES):
+            await self.post(password="wrong")
+
+        response = await self.post(login_id="STAFF01")
+
+        assert response.status_code == 429

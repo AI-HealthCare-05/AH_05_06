@@ -10,6 +10,7 @@ from typing import Any
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
 
+from app.core import config
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password, verify_password
 from app.main import app
@@ -37,8 +38,16 @@ class PasswordTestCase(TestCase):
         super().setUp()
         self.redis = FakeRedis()
         app.dependency_overrides[get_redis] = lambda: self.redis
+        # 쿠키 도메인을 비워 둔다. `.env` 에 COOKIE_DOMAIN 이 박혀 있으면
+        # 테스트 클라이언트의 호스트(`test`)와 안 맞아 **쿠키가 통째로 버려지고**,
+        # rotation·로그아웃 검사가 전부 「쿠키가 없다」로 깨진다.
+        # config.py 의 주석이 경고하는 그 상황이고, 실제로 로컬에서 났다.
+        # 검사가 개발자 `.env` 에 좌우되면 안 된다.
+        self._cookie_domain = config.COOKIE_DOMAIN
+        config.COOKIE_DOMAIN = ""
 
     def tearDown(self) -> None:
+        config.COOKIE_DOMAIN = self._cookie_domain
         app.dependency_overrides.clear()
         super().tearDown()
 

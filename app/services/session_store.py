@@ -11,9 +11,10 @@
 
 키 셋이 각각 다른 질문에 답한다.
 
-    idle:{jti}          살아 있는가 · 최근 활동이 있었는가   TTL 30분
-    used:{jti}          이미 쓰인 토큰인가                   TTL 리프레시 수명
-    sessions:{staff_id} 이 사람의 세션이 무엇무엇인가        전부 끊을 때 쓴다
+    idle:{jti}              살아 있는가 · 최근 활동이 있었는가   TTL 30분
+    used:{jti}              이미 쓰인 토큰인가                   TTL 리프레시 수명
+    sessions:{staff_id}        이 사람의 리프레시 세션 목록      전부 끊을 때 쓴다
+    access_sessions:{staff_id} 이 사람의 살아 있는 액세스 jti     전부 끊을 때 쓴다
 
 `used:` 를 따로 두는 이유가 중요하다. `idle:` 만 두면 **유휴로 끊긴 토큰**과
 **훔쳐서 재사용된 토큰**이 똑같이 「키가 없음」으로 보인다. 앞은 그 토큰만
@@ -51,6 +52,10 @@ class SessionStore:
     def _revoked_access(jti: str) -> str:
         return f"revoked_access:{jti}"
 
+    @staticmethod
+    def _access_sessions(staff_id: int) -> str:
+        return f"access_sessions:{staff_id}"
+
     # ── 세션 ────────────────────────────────────────────
     async def open(self, jti: str, staff_id: int) -> None:
         """로그인 · rotation 성공 자리. 유휴 시계를 30분으로 되감는다."""
@@ -81,6 +86,16 @@ class SessionStore:
         훔친 토큰이 쓰였을 때, 그리고 비밀번호를 바꿨을 때 부른다.
         비밀번호를 바꾸는 이유가 「남이 알고 있다」이므로 그 남의 세션도
         같이 끊어야 한다.
+
+        **액세스 토큰도 함께 끊는다.** `sessions:` 에는 리프레시 jti 만 들어
+        있어서 예전에는 이 함수가 리프레시만 죽였다. 그러면 비밀번호를 바꾸거나
+        도난이 감지돼도 **이미 발급된 액세스 토큰이 최대 60분 더 살아 있다** —
+        훔친 쪽이 그동안 계속 들어올 수 있다.
+
+        발급 시각(`iat`)으로 「이 시각 이전 것은 무효」라고 끊는 방법도 있는데,
+        `iat` 는 **초 단위**라 비밀번호를 바꾼 같은 초에 벌어진 일을 가르지
+        못한다. 그래서 액세스도 리프레시처럼 jti 를 들고 있다가 하나씩 끊는다.
+        수명이 60분이라 목록이 오래 자라지 않는다.
         """
         key = self._sessions(staff_id)
         jtis: set[str] = await self.redis.smembers(key)  # type: ignore[misc]
@@ -88,9 +103,25 @@ class SessionStore:
             await self.redis.delete(self._idle(jti))
             await self.redis.setex(self._used(jti), REFRESH_SECONDS, 1)
         await self.redis.delete(key)
+
+        access_key = self._access_sessions(staff_id)
+        access_jtis: set[str] = await self.redis.smembers(access_key)  # type: ignore[misc]
+        for jti in access_jtis:
+            await self.redis.setex(self._revoked_access(jti), ACCESS_SECONDS, 1)
+        await self.redis.delete(access_key)
+
         return len(jtis)
 
     # ── 액세스 토큰 ─────────────────────────────────────
+    async def track_access(self, jti: str, staff_id: int) -> None:
+        """발급한 액세스 토큰을 기억해 둔다.
+
+        `revoke_all` 이 이 목록을 보고 하나씩 끊는다. 기억해 두지 않으면
+        리프레시만 죽고 **이미 발급된 액세스는 남은 수명만큼 계속 산다.**
+        """
+        await self.redis.sadd(self._access_sessions(staff_id), jti)  # type: ignore[misc]
+        await self.redis.expire(self._access_sessions(staff_id), ACCESS_SECONDS)
+
     async def revoke_access(self, jti: str) -> None:
         """로그아웃한 액세스 토큰을 못 쓰게 한다.
 

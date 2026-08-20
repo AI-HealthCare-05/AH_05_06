@@ -2,9 +2,12 @@
 
 세 가지를 순서대로 본다.
 
-    ① 서명·만료          아니면 401 token_expired
-    ② 로그아웃했는가     아니면 401 token_expired
+    ① 서명·만료·**종류**   아니면 401 token_expired
+    ② 로그아웃했거나 세션이 전부 끊겼는가   아니면 401 token_expired
     ③ 비밀번호를 바꿔야 하는가   그러면 403 password_change_required
+
+①의 「종류」가 중요하다 — 이것이 없으면 리프레시 토큰을 Bearer 로 보내
+액세스처럼 쓸 수 있다(`app/core/jwt/tokens.py`).
 
 ③의 예외는 **자기 자신을 벗어나지 않는 것뿐**이다 — `/auth/me` ·
 `PATCH /auth/password` · `POST /auth/logout` 셋만 통과시킨다. 그 셋까지 막으면
@@ -53,8 +56,10 @@ async def get_access_token(
     except TokenError as err:
         raise AuthError(TOKEN_EXPIRED, 401, "세션이 만료되었습니다. 다시 로그인해 주세요.") from err
 
+    sessions = SessionStore(redis)
+
     jti = token.payload.get("jti")
-    if jti and await SessionStore(redis).is_access_revoked(jti):
+    if jti and await sessions.is_access_revoked(jti):
         raise AuthError(TOKEN_EXPIRED, 401, "세션이 만료되었습니다. 다시 로그인해 주세요.")
 
     return token

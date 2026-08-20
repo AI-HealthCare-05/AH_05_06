@@ -9,6 +9,7 @@ from typing import Any
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
 
+from app.core import config
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
@@ -17,6 +18,7 @@ from app.tests.fakes import FakeRedis
 
 PASSWORD = "Password123!"
 BASE = "/api/v1/auth"
+REFRESH_PATH = "/api/v1/auth"
 
 
 async def make_staff(login_id: str = "staff01", **kwargs: Any) -> Staff:
@@ -36,8 +38,16 @@ class SessionTestCase(TestCase):
         super().setUp()
         self.redis = FakeRedis()
         app.dependency_overrides[get_redis] = lambda: self.redis
+        # 쿠키 도메인을 비워 둔다. `.env` 에 COOKIE_DOMAIN 이 박혀 있으면
+        # 테스트 클라이언트의 호스트(`test`)와 안 맞아 **쿠키가 통째로 버려지고**,
+        # rotation·로그아웃 검사가 전부 「쿠키가 없다」로 깨진다.
+        # config.py 의 주석이 경고하는 그 상황이고, 실제로 로컬에서 났다.
+        # 검사가 개발자 `.env` 에 좌우되면 안 된다.
+        self._cookie_domain = config.COOKIE_DOMAIN
+        config.COOKIE_DOMAIN = ""
 
     def tearDown(self) -> None:
+        config.COOKIE_DOMAIN = self._cookie_domain
         app.dependency_overrides.clear()
         super().tearDown()
 
@@ -262,3 +272,78 @@ class TestPasswordGate(SessionTestCase):
             response = await client.post(f"{BASE}/logout", headers={"Authorization": f"Bearer {token}"})
 
         assert response.status_code == 204
+
+
+class TestTokenKindIsChecked(SessionTestCase):
+    """리프레시 토큰을 액세스 토큰처럼 쓸 수 없다.
+
+    서명은 같은 열쇠로 하므로 **종류를 안 보면 그대로 통과한다.** 그러면
+    리프레시(14일)가 액세스처럼 쓰이는데, 그 jti 는 `revoked_access:` 에
+    들어간 적이 없어 로그아웃도 유휴 30분도 걸리지 않는다.
+    """
+
+    async def test_refresh_token_is_not_accepted_as_bearer(self) -> None:
+        await make_staff()
+
+        async with self.client() as client:
+            await self.sign_in(client)
+            refresh = client.cookies["refresh_token"]
+
+            response = await client.get(f"{BASE}/me", headers={"Authorization": f"Bearer {refresh}"})
+
+        assert response.status_code == 401
+
+    async def test_access_token_is_not_accepted_as_refresh(self) -> None:
+        """반대쪽도 막는다 — 액세스를 쿠키에 넣어 갱신을 시도하는 경우."""
+        await make_staff()
+
+        async with self.client() as client:
+            access = await self.sign_in(client)
+            client.cookies.set("refresh_token", access, path=REFRESH_PATH)
+
+            response = await client.post(f"{BASE}/refresh")
+
+        assert response.status_code == 401
+
+
+class TestRevokeAllKillsAccessToo(SessionTestCase):
+    """세션을 전부 끊으면 **이미 발급된 액세스 토큰도** 죽어야 한다.
+
+    `sessions:{staff_id}` 에는 리프레시 jti 만 들어 있어서, 예전에는 이 함수가
+    리프레시만 죽였다. 그러면 도난이 감지되거나 비밀번호를 바꿔도 액세스
+    토큰이 최대 60분 더 살아서, 훔친 쪽이 그동안 계속 들어온다.
+    """
+
+    async def test_stolen_refresh_kills_the_access_token_in_hand(self) -> None:
+        staff = await make_staff()
+
+        async with self.client() as client:
+            access = await self.sign_in(client)
+            stolen = client.cookies["refresh_token"]
+            await client.post(f"{BASE}/refresh")  # 정상 갱신 — 훔친 것은 이제 폐기됨
+
+            # 도난 감지: 폐기된 토큰이 다시 왔다 → 이 계정 세션 전부 폐기
+            client.cookies.set("refresh_token", stolen, path=REFRESH_PATH)
+            theft = await client.post(f"{BASE}/refresh")
+
+            # 그 사이 손에 들고 있던 액세스 토큰도 더는 못 쓴다
+            after = await client.get(f"{BASE}/me", headers={"Authorization": f"Bearer {access}"})
+
+        assert theft.status_code == 401
+        assert after.status_code == 401, "도난 감지 뒤에도 액세스 토큰이 살아 있다"
+        assert staff.staff_id
+
+    async def test_password_change_kills_the_access_token_in_hand(self) -> None:
+        await make_staff()
+
+        async with self.client() as client:
+            access = await self.sign_in(client)
+            changed = await client.patch(
+                f"{BASE}/password",
+                json={"new_password": "NewPassword123!", "current_password": PASSWORD},
+                headers={"Authorization": f"Bearer {access}"},
+            )
+            after = await client.get(f"{BASE}/me", headers={"Authorization": f"Bearer {access}"})
+
+        assert changed.status_code == 204
+        assert after.status_code == 401, "비밀번호를 바꿨는데 옛 액세스 토큰이 살아 있다"
