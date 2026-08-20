@@ -38,6 +38,17 @@ var ocrApi = {
   result: function (jobId) {
     return ocrRequest("/ocr/jobs/" + encodeURIComponent(jobId) + "/result");
   },
+  fields: function (jobId) {
+    return ocrRequest("/ocr/jobs/" + encodeURIComponent(jobId) + "/fields");
+  },
+
+  /* KEY-63. base_version 은 「내가 보고 있던 판」이다 — 서버가 그 사이
+     달라졌으면 409 로 막는다. 접수대는 한 컴퓨터를 여럿이 쓰기 때문에
+     이 확인이 없으면 나중에 저장한 사람이 앞사람 수정을 조용히 지운다.
+     계약: PATCH /api/v1/ocr/fields/{id} — #32 */
+  updateField: function (fieldId, body) {
+    return ocrRequest("/ocr/fields/" + encodeURIComponent(fieldId), { method: "PATCH", body: body });
+  },
 };
 
 /* 필드 하나가 넷 중 어느 상태인지. 화면 전체가 이 함수 하나로 갈린다.
@@ -71,6 +82,8 @@ function fieldState(field, threshold) {
  *   processing  아직 판독 중        — 409 OCR_RESULT_NOT_READY
  *   failed      판독이 실패로 끝남  — 직접 입력으로 넘어가야 한다
  *   clean       다 읽혔을 때        — 강조가 하나도 없는 화면
+ *   conflict    옆자리가 먼저 고침   — 409 VERSION_CONFLICT (KEY-63)
+ *   confirmed   이미 확정된 항목     — 409 OCR_FIELD_CONFIRMED (KEY-63)
  */
 var MOCK_CASE = (function () {
   var q = new URLSearchParams(location.search).get("case");
@@ -240,20 +253,114 @@ function mockResult() {
         raw_text_purged_at: null,
       };
     }),
-    fields: MOCK_CASE === "clean" ? mockCleanFields() : mockFields(),
+    fields: (function () {
+      if (MOCK_CASE === "clean") return mockCleanFields();
+      var fields = mockFields();
+      /* 확정된 항목은 고칠 수 없다(#32). 그 상태를 눌러 볼 수 있어야
+         화면이 409 를 제대로 말하는지 확인할 수 있다. */
+      if (MOCK_CASE === "confirmed") {
+        fields.forEach(function (field) {
+          if (field.ocr_field_id !== 9106) return;
+          field.is_confirmed = true;
+          field.confirmed_by = 902;
+          field.confirmed_at = "2026-08-13T10:40:00+09:00";
+        });
+      }
+      return fields;
+    })(),
   };
 }
 
-function mockOcrRequest(path) {
+/* 저장을 붙이면서 목업도 상태를 갖게 됐다. 매번 새로 만들면
+   저장한 값이 다음 조회에서 사라져 「저장이 되긴 했나」를 볼 수 없다. */
+var mockStore = null;
+
+function mockState() {
+  if (!mockStore) mockStore = mockResult();
+  return mockStore;
+}
+
+/* 내보낼 때는 반드시 복사한다. 그냥 넘기면 화면이 목업의 속을 그대로 쥐게 되어,
+   옆자리가 고친 값이 저장도 하기 전에 화면에 나타난다 — 서버라면 있을 수 없는 일이다. */
+function mockCopy(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function mockFieldById(id) {
+  var fields = mockState().fields;
+  for (var i = 0; i < fields.length; i++) {
+    if (fields[i].ocr_field_id === id) return fields[i];
+  }
+  return null;
+}
+
+/* ?case=conflict — 옆자리에서 같은 항목을 먼저 고친 상황을 만든다.
+   결과를 한 번 내준 뒤 서버 쪽 판만 올려 둔다. 그러면 이 화면이 들고 있는
+   base_version 이 낡아서, 저장할 때 409 VERSION_CONFLICT 가 난다.
+   동시 수정은 말로만 설명하면 안 되고 눌러 봐야 하는 화면이라 넣었다. */
+function mockGhostEdit() {
+  var field = mockFieldById(9104);
+  if (!field || field._ghosted) return;
+  field._ghosted = true;
+  field.corrected_value = "24";
+  field.value = "24";
+  field.version = 2;
+  field.modified_by = 902;
+  field.modified_at = "2026-08-13T10:41:00+09:00";
+}
+
+function mockPatch(fieldId, body) {
+  var field = mockFieldById(fieldId);
+  if (!field) return new ApiError("NOT_FOUND", 404, {});
+  if (field.is_confirmed) return new ApiError("OCR_FIELD_CONFIRMED", 409, {});
+  if (field.version !== body.base_version) return new ApiError("VERSION_CONFLICT", 409, {});
+
+  if (body.candidate_id !== undefined && body.candidate_id !== null) {
+    var picked = null;
+    field.candidates.forEach(function (item) {
+      item.is_selected = item.ocr_field_candidate_id === body.candidate_id;
+      if (item.is_selected) picked = item;
+    });
+    if (!picked) return new ApiError("INVALID_CANDIDATE", 400, {});
+    field.corrected_value = picked.value;
+  } else {
+    field.corrected_value = String(body.corrected_value).trim();
+  }
+
+  field.value = field.corrected_value;
+  field.version += 1;
+  field.modified_by = 101;
+  field.modified_at = "2026-08-13T10:42:00+09:00";
+  if (body.confirm) {
+    field.is_confirmed = true;
+    field.confirmed_by = 101;
+    field.confirmed_at = field.modified_at;
+  }
+  return field;
+}
+
+function mockOcrRequest(path, options) {
+  var body = (options && options.body) || {};
   return new Promise(function (resolve, reject) {
     setTimeout(function () {
+      var patch = path.match(/^\/ocr\/fields\/(\d+)$/);
+      if (patch) {
+        var out = mockPatch(Number(patch[1]), body);
+        return out instanceof ApiError ? reject(out) : resolve(mockCopy(out));
+      }
+
       var job = mockJob();
-      if (/\/result$/.test(path)) {
+      if (/\/(result|fields)$/.test(path)) {
         if (job.status !== "COMPLETED") {
           /* #32 계약 그대로. 화면은 이 코드를 보고 「아직」과 「실패」를 가른다. */
           return reject(new ApiError("OCR_RESULT_NOT_READY", 409, {}));
         }
-        return resolve(mockResult());
+        var state = mockState();
+        if (/\/fields$/.test(path)) return resolve(mockCopy(state.fields));
+        var first = !state._served;
+        state._served = true;
+        if (first && MOCK_CASE === "conflict") setTimeout(mockGhostEdit, 0);
+        return resolve(mockCopy(state));
       }
       return resolve(job);
     }, 200);
