@@ -362,14 +362,14 @@
       return;
     }
 
-    /* 항목 수정은 KEY-87 이 붙인다 — 지금은 어디까지 됐는지 말한다. */
+    /* 항목 수정은 서버가 붙은 뒤다(KEY-111) — 지금은 어디까지 됐는지 말한다. */
     var edit = target.closest("[data-edit]");
     if (edit) {
       openModal(
         '<h2 class="modal__title">' +
           esc(edit.getAttribute("data-edit")) +
           " 수정</h2>" +
-          '<p class="modal__lead">항목 편집은 아직 붙지 않았습니다 (KEY-87).</p>' +
+          '<p class="modal__lead">항목 편집은 승인 API 가 붙은 뒤입니다 (KEY-111).</p>' +
           '<p class="modal__note">지금은 읽고 승인하거나 되돌리는 것까지 됩니다.</p>' +
           '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>',
       );
