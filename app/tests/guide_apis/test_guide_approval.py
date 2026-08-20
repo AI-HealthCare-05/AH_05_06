@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
 
+from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
 from app.models.patients import Patient
@@ -28,6 +29,9 @@ from app.models.visits import (
     Visit,
 )
 from app.services.guides import GuideService
+from app.services.session_store import SessionStore
+from app.services.staff_auth import StaffSessionService
+from app.tests.fakes import FakeRedis
 
 #: 병원 표시 시간대. 발송 시각은 이 시간대로 재야 뜻이 맞는다(계약 §4).
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -86,16 +90,35 @@ async def make_guide(hospital: Hospital, status: GuideStatus = GuideStatus.APPRO
 
 
 class GuideTestCase(TestCase):
+    """토큰을 만드는 쪽과 앱이 보는 쪽이 **같은 Redis** 여야 한다.
+
+    처음에는 `sign_in()` 안에서만 `FakeRedis()` 를 새로 만들었다. 그러면 토큰의
+    `jti` 는 그 일회용 저장소에만 남고, 앱은 `get_redis` 로 **진짜 Redis** 에
+    붙는다. 결과가 둘이었다.
+
+      * CI 에는 Redis 서비스가 없어서 15건이 통째로 연결 오류로 죽었다.
+      * 로컬은 도커 Redis 가 떠 있어 통과했는데, 폐기 여부를 **다른 저장소에서**
+        확인하고 있었다 — 초록불인데 아무것도 안 보는 상태였다.
+
+    그래서 인스턴스 하나를 만들어 토큰 발급과 앱 양쪽에 물린다.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.redis = FakeRedis()
+        app.dependency_overrides[get_redis] = lambda: self.redis
+
+    def tearDown(self) -> None:
+        app.dependency_overrides.clear()
+        super().tearDown()
+
     async def sign_in(self, staff: Staff) -> dict[str, str]:
         """로그인을 거치지 않고 토큰을 만든다.
 
         이 검사가 보려는 것은 **승인 규칙**이지 로그인이 아니다. 로그인 계약이
         바뀔 때마다 상관없는 검사가 함께 깨지면 무엇이 진짜 고장인지 안 보인다.
         """
-        from app.services.staff_auth import StaffSessionService
-        from app.tests.fakes import FakeRedis
-
-        access, _ = await StaffSessionService(FakeRedis()).start(staff, False)  # type: ignore[arg-type]
+        access, _ = await StaffSessionService(self.redis).start(staff, False)  # type: ignore[arg-type]
         return {"Authorization": f"Bearer {access}"}
 
     def client(self) -> AsyncClient:
@@ -350,3 +373,28 @@ class TestReadingTheGuide(GuideTestCase):
         medication = body["sections"][0]
         assert medication["warn"] == "합성 확인 부탁 문구", "⚠ 는 서버가 판정한다 — 화면이 알 수 없다"
         assert body["sections"][1]["locked"] is True
+
+
+class TestRevokedSessionCannotReachTheGuide(GuideTestCase):
+    """세션을 끊으면 안내문에도 못 닿는다.
+
+    이 검사가 여기 있는 이유는 승인 규칙이 아니라 **배선**이다. 토큰을 만든
+    Redis 와 앱이 보는 Redis 가 다르면 폐기해도 통과한다 — 실제로 그랬다.
+    여기가 빨간불이면 `get_redis` 재정의가 풀린 것이다.
+    """
+
+    async def test_it_is_refused_after_the_session_is_revoked(self) -> None:
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+        guide = await make_guide(clinic)
+        headers = await self.sign_in(doctor)
+
+        async with self.client() as client:
+            before = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=headers)
+
+            await SessionStore(self.redis).revoke_all(doctor.staff_id)  # type: ignore[arg-type]
+
+            after = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=headers)
+
+        assert before.status_code == 200, "끊기 전에는 열려야 한다"
+        assert after.status_code == 401, "세션을 끊었는데 통과했다 — 토큰을 만든 Redis 와 앱이 보는 Redis 가 다르다"
