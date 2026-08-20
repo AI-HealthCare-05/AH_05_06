@@ -27,8 +27,10 @@ import asyncio
 import csv
 import os
 import sys
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 ROOT = Path(__file__).resolve().parent.parent
 STAFF_CSV = ROOT / "docs" / "data" / "synthetic-staff.csv"
@@ -41,6 +43,7 @@ from tortoise import Tortoise  # noqa: E402
 
 from app.core.config import Config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
+from app.core.utils.common import normalize_phone_number  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
@@ -57,6 +60,62 @@ _HOSPITAL_NAMES: dict[str, str] = {
     "H1": "기준의원",
     "H2": "격리의원",
 }
+
+
+class SeedDataError(ValueError):
+    """합성 데이터 관계나 값이 계약과 맞지 않을 때 발생한다."""
+
+
+class SeedStaffRow(Protocol):
+    staff_id: int
+    name: str
+    roles: list[str]
+
+
+def _patient_values(row: dict[str, str]) -> dict[str, object]:
+    """CSV 환자 값을 API 저장 계약과 같은 형식으로 정규화한다."""
+    phone = normalize_phone_number(row["휴대폰"].strip())
+    if not 10 <= len(phone) <= 11:
+        raise SeedDataError(f"휴대폰 형식이 올바르지 않음 (시나리오 {row['시나리오ID']})")
+    return {
+        "name": row["이름"].strip(),
+        "birth_date": row["생년월일"].strip(),
+        "phone": phone,
+        "sms_consent": row["문자수신동의"].strip() == "Y",
+    }
+
+
+def _doctor_ids_by_name(staff_rows: Iterable[SeedStaffRow]) -> dict[str, int]:
+    """의사 역할만 이름으로 연결하고, 같은 병원 내 동명이인은 거부한다."""
+    result: dict[str, int] = {}
+    for staff in staff_rows:
+        if "doctor" not in (staff.roles or []):
+            continue
+        if staff.name in result:
+            raise SeedDataError(f"같은 병원에 동명이인 의사가 있어 이름만으로 연결할 수 없음: {staff.name}")
+        result[staff.name] = staff.staff_id
+    return result
+
+
+def _validate_patient_rows(
+    rows: list[dict[str, str]],
+    doctor_map: dict[str, int],
+) -> dict[str, dict[str, object]]:
+    """DB 쓰기 전에 환자 값과 진료 담당의 관계를 모두 검증한다."""
+    patient_values_by_chart: dict[str, dict[str, object]] = {}
+    for row in rows:
+        chart_no = row["차트번호"].strip()
+        patient_values = _patient_values(row)
+        previous = patient_values_by_chart.setdefault(chart_no, patient_values)
+        if previous != patient_values:
+            raise SeedDataError(f"같은 차트번호의 환자 정보가 서로 다름: {chart_no}")
+
+        if not row["진료일"].strip():
+            continue
+        doctor_name = row["담당의"].strip()
+        if doctor_name and doctor_name not in doctor_map:
+            raise SeedDataError(f"담당의 {doctor_name!r} 를 H1 의사에서 찾을 수 없음 (시나리오 {row['시나리오ID']})")
+    return patient_values_by_chart
 
 
 def _guard_environment() -> None:
@@ -191,12 +250,15 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
 
     h1 = hospitals["H1"]
 
-    # H1 소속 직원 이름 → staff_id 매핑
+    # H1 소속 의사 이름 → staff_id 매핑
     h1_staff = await Staff.filter(hospital_id=h1.hospital_id).all()
-    doctor_map: dict[str, int] = {s.name: s.staff_id for s in h1_staff if "doctor" in (s.roles or [])}
+    doctor_map = _doctor_ids_by_name(h1_staff)
 
     with PATIENTS_CSV.open(encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
+
+    # 검증 오류가 나도 DB 가 일부 적재된 상태로 남지 않게 전체 행을 먼저 확인한다.
+    patient_values_by_chart = _validate_patient_rows(rows, doctor_map)
 
     # 1단계: 환자 upsert
     # 동일 차트번호가 여러 진료 행에 반복될 수 있으므로 첫 행만 처리한다.
@@ -208,16 +270,11 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         if chart_no in patient_map:
             continue
 
-        sms_consent = row["문자수신동의"].strip() == "Y"
+        patient_values = patient_values_by_chart[chart_no]
         patient, was_created = await Patient.get_or_create(
             hospital_id=h1.hospital_id,
             hospital_patient_no=chart_no,
-            defaults={
-                "name": row["이름"].strip(),
-                "birth_date": row["생년월일"].strip(),
-                "phone": row["휴대폰"].strip(),
-                "sms_consent": sms_consent,
-            },
+            defaults=patient_values,
         )
         patient_map[chart_no] = patient
         if was_created:
@@ -226,12 +283,7 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
             await Patient.filter(
                 hospital_id=h1.hospital_id,
                 hospital_patient_no=chart_no,
-            ).update(
-                name=row["이름"].strip(),
-                birth_date=row["생년월일"].strip(),
-                phone=row["휴대폰"].strip(),
-                sms_consent=sms_consent,
-            )
+            ).update(**patient_values)
             updated_p += 1
 
     print(f"[patients] created={created_p} updated={updated_p} total={len(patient_map)}")
@@ -265,11 +317,6 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
 
         doctor_name = row["담당의"].strip()
         doctor_id = doctor_map.get(doctor_name)
-        if doctor_name and doctor_id is None:
-            print(
-                f"[visits] 경고: 담당의 {doctor_name!r} 를 H1 직원에서 찾을 수 없음 (시나리오 {row['시나리오ID']})",
-                file=sys.stderr,
-            )
 
         planned_stop = row["진료상태"].strip() == "계획된 중단"
 
