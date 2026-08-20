@@ -6,8 +6,10 @@ from starlette import status
 from tortoise.contrib.test import TestCase
 
 from app.dependencies.patient_access import ClinicalActor, get_clinical_actor
+from app.dependencies.staff_auth import get_current_staff
 from app.main import app
 from app.models.patients import Patient
+from app.models.staffs import Hospital, Staff
 from app.models.visits import Visit
 
 BASE_URL = "http://test"
@@ -35,7 +37,30 @@ async def client_for(actor: ClinicalActor) -> AsyncIterator[AsyncClient]:
 
 
 class TestPatientVisitApis(TestCase):
-    staff = ClinicalActor(user_id=101, hospital_id=1, roles=frozenset({"staff"}))
+    staff = ClinicalActor(staff_id=101, hospital_id=1, roles=frozenset({"staff"}))
+
+    async def test_patient_routes_use_current_staff_authentication(self) -> None:
+        hospital = await Hospital.create(name="합성테스트병원")
+        authenticated_staff = await Staff.create(
+            hospital=hospital,
+            login_id="syn-key34-staff",
+            password_hash="synthetic-not-a-real-password-hash",
+            name="합성직원",
+            roles=["staff"],
+            must_change_password=False,
+        )
+
+        async def override_current_staff() -> Staff:
+            return authenticated_staff
+
+        app.dependency_overrides[get_current_staff] = override_current_staff
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL) as client:
+                response = await client.get("/api/v1/patients")
+        finally:
+            app.dependency_overrides.pop(get_current_staff, None)
+
+        assert response.status_code == status.HTTP_200_OK
 
     async def test_patient_create_search_get_and_update_flow(self) -> None:
         async with client_for(self.staff) as client:
@@ -110,7 +135,7 @@ class TestPatientVisitApis(TestCase):
         assert response.json()["code"] == "VISIT_NOT_FOUND"
 
     async def test_admin_only_actor_is_forbidden(self) -> None:
-        admin = ClinicalActor(user_id=201, hospital_id=1, roles=frozenset({"admin"}))
+        admin = ClinicalActor(staff_id=201, hospital_id=1, roles=frozenset({"admin"}))
 
         async with client_for(admin) as client:
             response = await client.get("/api/v1/patients")

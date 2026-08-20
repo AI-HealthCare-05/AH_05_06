@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from tortoise.expressions import Q
 
@@ -6,7 +7,7 @@ from app.models.visits import Visit
 
 
 class VisitRepository:
-    async def create(self, data: dict[str, object]) -> Visit:
+    async def create(self, data: dict[str, Any]) -> Visit:
         return await Visit.create(**data)
 
     async def get_scoped(self, visit_id: int, hospital_id: int) -> Visit | None:

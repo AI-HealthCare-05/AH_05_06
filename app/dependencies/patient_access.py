@@ -4,23 +4,23 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.api_errors import ApiError
-from app.dependencies.security import get_request_user
-from app.models.users import User
+from app.dependencies.staff_auth import get_current_staff
+from app.models.staffs import Staff
 
 
 @dataclass(frozen=True)
 class ClinicalActor:
-    user_id: int
+    staff_id: int
     hospital_id: int | None
     roles: frozenset[str]
 
 
-async def get_clinical_actor(user: Annotated[User, Depends(get_request_user)]) -> ClinicalActor:
-    """Adapt the authenticated staff contract without trusting request-supplied scope."""
+async def get_clinical_actor(staff: Annotated[Staff, Depends(get_current_staff)]) -> ClinicalActor:
+    """Adapt the authenticated Staff without trusting request-supplied scope."""
     return ClinicalActor(
-        user_id=user.id,
-        hospital_id=getattr(user, "hospital_id", None),
-        roles=frozenset(getattr(user, "roles", [])),
+        staff_id=staff.staff_id,
+        hospital_id=getattr(staff, "hospital_id", None),
+        roles=frozenset(staff.roles or []),
     )
 
 

@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import ORJSONResponse, Response
 from fastapi.routing import APIRoute
 
 
@@ -30,10 +30,10 @@ def error_response(error: ApiError) -> ORJSONResponse:
 class ContractRoute(APIRoute):
     """Apply the frozen v1 error envelope only to routers that opt in."""
 
-    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, ORJSONResponse]]:
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         original_handler = super().get_route_handler()
 
-        async def contract_handler(request: Request) -> ORJSONResponse:
+        async def contract_handler(request: Request) -> Response:
             try:
                 return await original_handler(request)
             except ApiError as error:

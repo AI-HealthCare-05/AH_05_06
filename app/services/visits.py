@@ -94,7 +94,7 @@ class VisitService:
         for field in update_fields:
             setattr(visit, field, getattr(data, field))
         if "department_id" in supplied:
-            visit.department = None
+            visit.department = None  # type: ignore[assignment]  # Tortoise CharField nullability typing gap
             update_fields.add("department")
         visit.updated_at = now()
         update_fields.add("updated_at")

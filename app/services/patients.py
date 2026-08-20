@@ -25,7 +25,7 @@ class PatientService:
             hospital_id=hospital_id,
             sms_consented_at=timestamp if data.sms_consent else None,
             sms_opted_out_at=None if data.sms_consent else timestamp,
-            sms_consent_updated_by=actor.user_id,
+            sms_consent_updated_by=actor.staff_id,
         )
         try:
             return await self.repo.create(values)
@@ -87,7 +87,7 @@ class PatientService:
             timestamp = now()
             patient.sms_consented_at = timestamp if patient.sms_consent else None
             patient.sms_opted_out_at = None if patient.sms_consent else timestamp
-            patient.sms_consent_updated_by = actor.user_id
+            patient.sms_consent_updated_by = actor.staff_id
             update_fields.update({"sms_consented_at", "sms_opted_out_at", "sms_consent_updated_by"})
 
         patient.updated_at = now()

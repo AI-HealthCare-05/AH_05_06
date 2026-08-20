@@ -1,3 +1,5 @@
+from typing import Any
+
 from tortoise.expressions import Q
 
 from app.core.utils.common import normalize_phone_number
@@ -6,7 +8,7 @@ from app.models.visits import Visit
 
 
 class PatientRepository:
-    async def create(self, data: dict[str, object]) -> Patient:
+    async def create(self, data: dict[str, Any]) -> Patient:
         return await Patient.create(**data)
 
     async def get_scoped(self, patient_id: int, hospital_id: int) -> Patient | None:
