@@ -26,6 +26,8 @@
 
 - 정상 응답이 요청의 비밀번호·OTP를 되돌려 주지 않음
 - 로그인·갱신 응답 모델에 계약 외 필드가 추가되지 않음
+- 실제 `/api/v1/auth/refresh` 응답 본문에는 Access Token만 있고, 새 Refresh Token은
+  HttpOnly 쿠키로만 전달됨
 - `422` 응답에 Pydantic의 요청 원문 `input`이 포함되지 않음
 - HTTP 오류의 비밀번호·OTP·JWT·링크 토큰·전체 전화번호·주민번호가 제거됨
 - 일반 로그와 예외 traceback 렌더링에 동일한 차단 규칙이 적용됨

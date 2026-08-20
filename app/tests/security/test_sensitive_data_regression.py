@@ -11,9 +11,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
+from app.apis.v1.staff_auth_routers import _session, staff_auth_router
 from app.core.error_handlers import register_error_handlers
 from app.core.logger import setup_logger
-from app.dtos.auth import StaffLoginResponse, TokenRefreshResponse
+from app.dtos.auth import StaffLoginResponse
 
 PASSWORD = "Synthetic12!"
 OTP = "483920"
@@ -21,6 +22,9 @@ JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdGFmZl9pZCI6MX0.syntheticSignature"
 PATIENT_LINK_TOKEN = "kQ7bXm2pR9tLvN4wZ8cA1dF6gH3jK5nP0qS7uY2eB4x"
 PHONE = "010-1234-5678"
 RRN = "900101-2345678"
+RAW_REFRESH_TOKEN = f"old-{PATIENT_LINK_TOKEN}"
+ROTATED_REFRESH_TOKEN = f"new-{PATIENT_LINK_TOKEN}"
+ACCESS_TOKEN = "access-for-response-only"
 
 
 class SensitiveRequest(BaseModel):
@@ -49,6 +53,29 @@ def _client() -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
+class FakeToken:
+    def __init__(self, value: str) -> None:
+        self.value = value
+        self.payload = {"remember": False}
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class FakeSession:
+    async def rotate(self, raw_token: str) -> tuple[None, FakeToken, FakeToken]:
+        assert raw_token == RAW_REFRESH_TOKEN
+        return None, FakeToken(ACCESS_TOKEN), FakeToken(ROTATED_REFRESH_TOKEN)
+
+
+def _refresh_client() -> TestClient:
+    """DB 대신 세션 서비스만 대체하고 실제 인증 라우터를 호출한다."""
+    app = FastAPI()
+    app.include_router(staff_auth_router, prefix="/api/v1")
+    app.dependency_overrides[_session] = FakeSession
+    return TestClient(app, raise_server_exceptions=False)
+
+
 def _assert_secrets_absent(text: str) -> None:
     for secret in (PASSWORD, OTP, JWT, PATIENT_LINK_TOKEN, "1234-5678", "2345678"):
         assert secret not in text
@@ -62,10 +89,23 @@ class TestNormalResponses:
         assert response.json() == {"ok": True}
         _assert_secrets_absent(response.text)
 
-    def test_auth_success_models_only_expose_contract_fields(self) -> None:
-        """액세스 토큰은 로그인·갱신 성공 응답에서만 허용된 계약 필드다."""
+    def test_login_success_model_only_exposes_contract_fields(self) -> None:
         assert set(StaffLoginResponse.model_fields) == {"access_token", "must_change_password"}
-        assert set(TokenRefreshResponse.model_fields) == {"access_token"}
+
+    def test_real_refresh_route_returns_token_only_in_http_only_cookie(self) -> None:
+        """DTO가 아니라 실제 라우터의 HTTP 응답 경계를 검증한다."""
+        client = _refresh_client()
+        client.cookies.set("refresh_token", RAW_REFRESH_TOKEN, path="/api/v1/auth")
+
+        response = client.post("/api/v1/auth/refresh")
+        cookie = next(h for h in response.headers.get_list("set-cookie") if "refresh_token=" in h)
+
+        assert response.status_code == 200
+        assert response.json() == {"access_token": ACCESS_TOKEN}
+        assert RAW_REFRESH_TOKEN not in response.text
+        assert ROTATED_REFRESH_TOKEN not in response.text
+        assert f"refresh_token={ROTATED_REFRESH_TOKEN}" in cookie
+        assert "HttpOnly" in cookie
 
 
 class TestErrorResponses:
