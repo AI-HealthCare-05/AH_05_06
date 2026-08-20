@@ -250,6 +250,96 @@
   border-color: var(--accent);
 }
 
+/* ── 수정·저장 (KEY-63) ──────────────────────────────────────── */
+
+.field__input {
+  flex: 1;
+  min-width: 120px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--card);
+}
+
+.field__act--go {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.field__save {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.field__save--ok {
+  color: var(--done);
+  font-weight: 600;
+}
+
+.field__save--bad {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* 사람이 고친 값에는 판독값이 함께 남는다.
+   무엇을 무엇으로 바꿨는지가 보여야 나중에 되짚을 수 있다. */
+.field__edited {
+  font-size: 11px;
+  color: var(--ink-3);
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.field__tag--locked {
+  color: var(--ink-3);
+}
+
+/* 옆자리가 먼저 고쳤을 때. 위험(빨강)이 아니라 갈림길이라 주의색을 쓴다 —
+   잘못된 것이 아니라 둘 중 하나를 골라야 하는 상황이다. */
+.field--clash {
+  border-left-color: var(--warn);
+}
+
+.clash {
+  margin-top: var(--s-8);
+  border: 1px solid var(--warn-line);
+  border-radius: 8px;
+  background: var(--warn-bg);
+  overflow: hidden;
+}
+
+.clash__title {
+  margin: 0;
+  padding: var(--s-8) var(--s-12);
+  border-bottom: 1px solid var(--warn-line);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.clash__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  padding: var(--s-8) var(--s-12);
+}
+
+.clash__row b {
+  margin-left: auto;
+  color: var(--ink);
+}
+
+.clash__who {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
 .field__more {
   margin-top: var(--s-8);
   border: 0;
