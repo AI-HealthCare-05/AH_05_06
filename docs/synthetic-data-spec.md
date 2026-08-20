@@ -67,7 +67,7 @@ SYN-{질환}-{번호}
 | ID | 차트 | 화면 | 목적 | 무엇이 다른가 | 기대 결과 |
 |---|---|---|---|---|---|
 | **`SYN-PCOS-01`** | 12442 | `S1-4` `P2-2`~`P6-2` | **PCOS 기준 케이스** | 야즈 84일분 · 검사 전부 있음 | 목표 항목이 `LH/FSH` · `DHEA-S` · `생리 주기`. 안내문 정상 |
-| `SYN-PCOS-02` | 12409 | **`S1-6`** | **총투 단위 오판** ★★ | 원문 `1/1/3` · 단위 **통수** → 84일 | **일수로 읽으면 3일이 된다.** 판독이 통수를 일수로 바꿔야 한다. `days < 28`이면 확인을 여쭙는다 |
+| `SYN-PCOS-02` | 12409 | **`S1-6`** | **총투 단위 오판** ★★ | 원문 `1/1/3` · 단위 **통수** → 84일 | **일수로 읽으면 3일이 된다.** 판독이 통수를 일수로 바꿔야 한다. `duration_days < 28`이면 확인을 여쭙는다 |
 | `SYN-PCOS-03` | 11784 | `S1-11` `P2-2` | **야즈가 아닌 경로 — 대사 지표가 주인공** | 메트포르민 단독 · HbA1c 6.1 · 당뇨 | 안내문의 「이 약을 왜」가 혈당 쪽으로 간다. 야즈 🚨(혈전)는 **붙지 않는다** |
 | `SYN-PCOS-04` | 12277 | **`P7-5`** `D1-7` | **이탈 징후 ② 가장 위험한 시점** ★ | 「좋아져서 그만뒀어요」 응답 | 펼침에 「지금 끊으면 다시 자랄 수 있어요」 + `[문의하기]` · ⚠ 복약 중단 응답 플래그 |
 | `SYN-PCOS-05` | 12130 | `S2-1` | **이탈 징후 ③ 약 떨어졌는데 안 오심** | 소진 후 7일 경과 | `⚠ 소진 후 7일 경과` 플래그 · 재진 안내 발송 대상 |
@@ -157,25 +157,25 @@ SYN-{질환}-{번호}
 
 ## 8. 필드 매핑 (`KEY-30`)
 
-CSV **33칸** → `patient` · `visit` · `visit_flag` · `lab_result`
+CSV **33칸** → `patient` · `visit` · `prescription` · `prescription_item` · `visit_flag` · `lab_result`
 
 정본은 **`app/tests/fixtures/mapping.py`**다. 아래는 사람이 읽으라고 옮겨 적은 것이다.
 
 | CSV 칸 | 표 · 필드 | 타입 | 필수 | 비고 |
 |---|---|---|---|---|
-| 차트번호 | `patient.chart_no` | text | ● | EMR 차트번호와 같게 |
+| 차트번호 | `patient.hospital_patient_no` | text | ● | 병원 내 환자번호. EMR 차트번호와 같게 |
 | 이름 | `patient.name` | text | ● | |
 | 생년월일 | `patient.birth_date` | date | ● | **환자 본인확인에 그대로 쓰인다** |
 | 휴대폰 | `patient.phone` | text | ● | 화면에는 뒤 4자리만 |
 | 문자수신동의 | `patient.sms_consent` | bool | ● | `Y`→true · `N`→false. `N`이면 `sms_opt_out=true` |
-| 진료일 | `visit.visit_date` | date | ● | 목록의 하루 단위 축 |
+| 진료일 | `visit.visited_at` | date→datetime | ● | `Asia/Seoul` 현지 시각으로 변환해 UTC 저장 |
 | 담당의 | `visit.doctor_id` | uuid | ● | 이름 → 직원 픽스처의 uuid로 푼다 |
-| 진단 | (처방 세트로 표현) | — | | `visit.prescription_set_id`가 질환을 담는다 |
-| 처방세트 | `visit.prescription_set_id` | uuid | ● | `SET-EMS-01`~`04` · `SET-PCOS-01`~`05` |
-| 약 · 용법 · 처방일수 | `visit.drugs` jsonb | jsonb | ● | `[{name, dose, freq, days, note}]` |
-| 처방일수 | `visit.days` | int | ● | **소진일 계산의 근거.** `28` 미만이면 확인을 여쭙는다 |
+| 진단 | (처방 세트로 표현) | — | | 확정된 처방 세트 버전이 질환 문맥을 제공한다 |
+| 처방세트 | `prescription.prescription_set_version_id` | bigint | ● | 템플릿 출처. Visit JSON에 넣지 않는다 |
+| 약 · 용법 | `prescription_item.name` · `frequency` | text | ● | 실제 처방 항목을 한 줄씩 저장한다 |
+| 처방일수 | `prescription_item.duration_days` | int | ● | **소진일 계산의 근거.** `28` 미만이면 확인을 여쭙는다 |
 | 총투원문 · 총투단위 | (판독 입력) | — | | **DB에 넣지 않는다** — OCR이 읽어야 할 원문이다 |
-| 소진예정일 | (파생) | — | | `visit_date + days` |
+| 소진예정일 | (파생) | — | | `visited_at` 현지 날짜 + `duration_days` |
 | 혈색소 · 자궁내막종 · 내막두께 · AST/ALT · 월경주기 · 총테스토스테론 · DHEA-S · LH/FSH · AMH · 기타검사 | `lab_result` | — | | 항목당 한 줄 |
 | 특이사항 | `visit_flag.code` | enum | | `DEPRESSION` `HTN` `SMOKING` `DM` `PREGNANCY_PLAN` 등 |
 | 진료상태 | **저장하지 않는다** | — | | **`event_log`에서 파생한다** (v2.2 결정) |

@@ -17,13 +17,14 @@ class Visit(models.Model):
 
     visit_id = fields.BigIntField(primary_key=True)
     hospital_id = fields.BigIntField()
+    patient_id: int
     patient: fields.ForeignKeyRelation[Patient] = fields.ForeignKeyField(
         "models.Patient",
         related_name="visits",
         on_delete=OnDelete.RESTRICT,
         source_field="patient_id",
     )
-    doctor_id = fields.BigIntField(null=True)
+    doctor_id: int | None = fields.BigIntField(null=True)
     department = fields.CharField(max_length=100, null=True)
     visited_at = fields.DatetimeField()
     visit_summary = fields.TextField(null=True)
