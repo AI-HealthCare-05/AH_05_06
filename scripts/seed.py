@@ -45,6 +45,7 @@ from app.core.utils.security import hash_password  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
 from app.models.visits import Visit, VisitStatus  # noqa: E402
+from app.tests.fixtures.staff import StaffDataError, all_staff  # noqa: E402
 
 SEED_PASSWORD_ENV = "SEED_STAFF_PASSWORD"
 
@@ -116,45 +117,46 @@ async def seed_staff(password: str) -> dict[str, Hospital]:
         hint="저장소를 최신화하세요.",
     )
 
+    try:
+        staff_rows = all_staff()
+    except StaffDataError as exc:
+        print(f"오류: CSV 검증 실패 — {exc}", file=sys.stderr)
+        sys.exit(1)
+
     hashed = hash_password(password)
     hospitals = await _seed_hospitals()
     created = updated = 0
 
-    with STAFF_CSV.open(encoding="utf-8-sig") as f:
-        rows = list(csv.DictReader(f))
-
-    for row in rows:
-        label = row["병원"].strip()
-        hospital = hospitals[label]
-        roles = [r.strip() for r in row["roles"].split("|") if r.strip()]
-        status = StaffStatus.LEFT if row["status"].strip() == "left" else StaffStatus.ACTIVE
+    for s in staff_rows:
+        hospital = hospitals[s.hospital]
+        status = StaffStatus.LEFT if s.status == "left" else StaffStatus.ACTIVE
 
         _, was_created = await Staff.get_or_create(
-            login_id=row["login_id"].strip(),
+            login_id=s.login_id,
             defaults={
                 "hospital_id": hospital.hospital_id,
                 "password_hash": hashed,
-                "name": row["이름"].strip(),
-                "roles": roles,
-                "must_change_password": row["must_change_password"].strip() == "Y",
+                "name": s.name,
+                "roles": list(s.roles),
+                "must_change_password": s.must_change_password,
                 "status": status,
-                "left_at": _parse_dt(row["left_at"]),
-                "last_login_at": _parse_dt(row["last_login_at"]),
+                "left_at": _parse_dt(s.left_at),
+                "last_login_at": _parse_dt(s.last_login_at),
             },
         )
 
         if was_created:
             created += 1
         else:
-            await Staff.filter(login_id=row["login_id"].strip()).update(
+            await Staff.filter(login_id=s.login_id).update(
                 password_hash=hashed,
-                roles=roles,
-                must_change_password=row["must_change_password"].strip() == "Y",
+                roles=list(s.roles),
+                must_change_password=s.must_change_password,
                 status=status,
             )
             updated += 1
 
-    print(f"[staff] created={created} updated={updated} total={len(rows)}")
+    print(f"[staff] created={created} updated={updated} total={len(staff_rows)}")
     return hospitals
 
 
