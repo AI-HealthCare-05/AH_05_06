@@ -79,10 +79,6 @@ body.auth {
   border-radius: var(--radius);
 }
 
-.field__input::placeholder {
-  color: var(--ink-3);
-}
-
 .field__input:focus-visible,
 .check input:focus-visible,
 .button:focus-visible,
