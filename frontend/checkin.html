@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>오늘 확인 · 복약 안내 도우미</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/checkin.css" />
+  </head>
+  <body>
+    <!-- P7-1~P7-6 오늘 확인 (KEY-98)
+         환자가 문자로 받은 링크로 들어온다 — 로그인하지 않는다.
+         링크 토큰 발급·검증은 P1 몫이라 여기서는 ?t= 로 받는다. -->
+    <main class="sheet">
+      <header class="sheet__head">
+        <button class="sheet__back" type="button" aria-label="뒤로">‹</button>
+        <h1 class="sheet__title">오늘 확인</h1>
+        <span class="sheet__round" id="round">—</span>
+      </header>
+
+      <div id="form">
+        <p class="ask">약은 잘 드시고<br />계신가요?</p>
+        <div id="meds"></div>
+
+        <p class="ask ask--sub">통증이 있었나요?</p>
+        <div id="pain"></div>
+
+        <p class="ask ask--sub">메모 (선택)</p>
+        <textarea class="note" id="note" rows="3" aria-label="메모"></textarea>
+
+        <button class="save" type="button" id="save" disabled>저장</button>
+        <p class="error" id="error" hidden></p>
+        <p class="foot">ⓘ 담당 의료진이 요청한 기록이에요</p>
+      </div>
+
+      <div id="state" hidden></div>
+    </main>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/checkin-api.js"></script>
+    <script src="/js/checkin.js"></script>
+  </body>
+</html>

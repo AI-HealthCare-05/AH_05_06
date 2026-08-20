@@ -1,0 +1,344 @@
+/* P7 오늘 확인 — D+7 복약·통증 응답 (KEY-98)
+ *
+ * 375 폭 모바일. 환자가 문자로 받은 링크를 눌러 한 손으로 답하는 화면이라
+ * 누르는 것은 전부 44px 이상으로 둔다.
+ *
+ * 강조는 하나뿐이다 — **고른 것**. 나머지는 평평하다.
+ * 「가끔 놓쳐요」를 골랐을 때 화면이 붉어지면 그것이 곧 책망이다.
+ *
+ * (`guide.css`(KEY-93 · #38)와 겹치는 값이 있다. 둘 다 병합되면
+ *  KEY-104 공통 컴포넌트 정리에서 합친다 — 지금 합치려고 스택을 만들면
+ *  브랜치가 서로를 기다린다.)
+ */
+
+.sheet {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: var(--s-16);
+  background: var(--card);
+  min-height: 100vh;
+}
+
+.sheet__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  padding: var(--s-8) 0 var(--s-16);
+}
+
+.sheet__back {
+  border: 0;
+  background: none;
+  font-size: 20px;
+  color: var(--ink-2);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.sheet__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.sheet__round {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-left: auto;
+}
+
+.ask {
+  margin: 0 0 var(--s-12);
+  font-size: 21px;
+  line-height: 1.45;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ask--sub {
+  font-size: 16px;
+  margin-top: var(--s-24);
+}
+
+/* ── 고르는 것 ───────────────────────────────────────────── */
+
+.pick {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  padding: 14px 16px;
+  margin-bottom: var(--s-8);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pick:hover {
+  border-color: var(--line-strong);
+}
+
+/* 고른 것만 진해진다. 색으로 잘잘못을 말하지 않는다 —
+   「가끔 놓쳐요」와 「잘 먹고 있어요」가 같은 모양이어야 솔직하게 답한다. */
+.pick.is-on {
+  border-color: var(--ink);
+  border-width: 2px;
+  padding: 13px 15px;
+  font-weight: 700;
+}
+
+.two {
+  display: flex;
+  gap: var(--s-8);
+}
+
+.pick--half {
+  flex: 1;
+  text-align: center;
+}
+
+/* ── 펼침 ────────────────────────────────────────────────── */
+
+.fold {
+  margin: -4px 0 var(--s-12);
+  padding: var(--s-16);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.fold__lead {
+  margin: 0 0 var(--s-8);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.fold__body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+
+.fold__sub {
+  margin: var(--s-12) 0 var(--s-4);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.fold__tips {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--ink-2);
+}
+
+.fold__note {
+  margin: var(--s-12) 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.fold__ask {
+  margin-top: var(--s-12);
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* 🚨 는 환자에게 하는 응급 안내다. 의료진 화면의 ⚠ 와 기호를 나눠 쓴다 —
+   같은 기호를 쓰면 「누구에게 하는 경고인가」가 섞인다. */
+.urgent {
+  margin-top: var(--s-12);
+  padding: var(--s-12);
+  border: 1px solid var(--danger-line);
+  border-radius: 10px;
+  background: var(--danger-bg);
+}
+
+.urgent__title {
+  margin: 0 0 var(--s-4);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.urgent ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+/* ── 통증 ────────────────────────────────────────────────── */
+
+.score {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  margin: var(--s-16) 0 var(--s-12);
+}
+
+.score__label {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.score__range {
+  flex: 1;
+  height: 44px;
+}
+
+.score__value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  min-width: 62px;
+  text-align: right;
+}
+
+.chips2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-8);
+}
+
+.chip2 {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.chip2.is-on {
+  border-color: var(--ink);
+  border-width: 2px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* ── 메모 · 저장 ─────────────────────────────────────────── */
+
+.note {
+  width: 100%;
+  margin-top: var(--s-8);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.save {
+  width: 100%;
+  min-height: 54px;
+  margin-top: var(--s-16);
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.save:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.foot {
+  margin: var(--s-12) 0 var(--s-24);
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.error {
+  margin: var(--s-8) 0 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* ── 완료 ────────────────────────────────────────────────── */
+
+.done {
+  padding: var(--s-32) var(--s-16);
+  text-align: center;
+}
+
+.done__mark {
+  margin: 0 0 var(--s-8);
+  font-size: 40px;
+  color: var(--done);
+}
+
+.done__title {
+  margin: 0 0 var(--s-24);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.done__list {
+  margin: 0 0 var(--s-24);
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: var(--s-16);
+}
+
+.done__list dt {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: var(--s-12);
+}
+
+.done__list dt:first-child {
+  margin-top: 0;
+}
+
+.done__list dd {
+  margin: 2px 0 0;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.done__link {
+  display: inline-block;
+  min-height: 44px;
+  line-height: 44px;
+  padding: 0 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.done__note {
+  margin: var(--s-16) 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
