@@ -1,10 +1,14 @@
 # Sprint 3 검수 증적 — KEY-71
 
-> 작성 2026-08-19 · 담당 권일준 · 리뷰어 유가은
-> 기준 커밋 `e78c448` (`develop`)
+> 작성 2026-08-19 · **갱신 2026-08-20** · 담당 권일준 · 리뷰어 유가은
+> 기준 커밋 `a6a9005` (`develop`)
 
 이 문서는 **무엇이 통과했는가**보다 **무엇이 검사를 빠져나갔는가**를 남긴다.
 통과한 숫자는 다음 스프린트에 쓸모가 없지만, 검사가 못 보는 자리는 그대로 남는다.
+
+> **2026-08-20 갱신** — 3절에 적었던 CI 구멍 둘이 `KEY-102`(PR `#43`)로 막혔다.
+> 「열린 구멍」으로 적어 둔 문서가 사실과 달라지면 그 자체가 문제라 바로 고친다.
+> **막혔다는 주장도 실측으로 남긴다** — 3-1 · 3-2 를 보라.
 
 ---
 
@@ -26,11 +30,11 @@ E2E·회귀 QA)가 요구하는 **OCR 흐름이 아직 한 번도 끝까지 돌�
 
 ## 2. 자동 검사 — 실측
 
-`develop` `e78c448` 에서 그대로 돌린 결과다.
+`develop` `a6a9005` 에서 그대로 돌린 결과다. (2026-08-20)
 
 ```
 $ DB_HOST=127.0.0.1 uv run pytest app -q
-217 passed, 3 skipped in 2.35s
+217 passed, 3 skipped in 2.29s
 
 $ uv run ruff check .
 All checks passed!
@@ -38,8 +42,11 @@ All checks passed!
 $ uv run ruff format . --check
 73 files already formatted
 
+$ uv run mypy app                       # ← 2026-08-20 부터 CI 에서도 돈다
+Success: no issues found in 66 source files
+
 $ uv run coverage run -m pytest app && uv run coverage report
-TOTAL   1462   133   91%
+TOTAL   1468   133   91%
 ```
 
 ### 건너뛴 3건 — 의도된 대기
@@ -56,26 +63,32 @@ test_field_mapping.py:181    visit API 가 아직 없다
 
 ---
 
-## 3. 검사가 못 보는 곳 — 세 군데
+## 3. 검사가 못 보던 곳 — 세 군데 중 둘은 막혔다
 
-숫자보다 이쪽이 중요하다. **초록불이 초록불을 뜻하지 않는 구간**이다.
+숫자보다 이쪽이 중요하다. **초록불이 초록불을 뜻하지 않는 구간**이었다.
 
-### 3-1. 🔴 스택형 PR 에는 CI 가 아예 안 돈다
+| | | |
+|---|---|---|
+| 3-1 | 스택형 PR 에 CI 가 안 돈다 | ✅ **막힘** — `KEY-102` (PR `#43`, 2026-08-19 병합) |
+| 3-2 | mypy 가 CI 에 없다 | ✅ **막힘** — 같은 PR |
+| 3-3 | 프런트에 자동 검사가 0 이다 | 🔴 **열려 있다** |
 
-`.github/workflows/checks.yml` 의 트리거가 `main` · `develop` · `release/*` ·
-`hotfix/*` 뿐이라, **feature 브랜치를 base 로 하는 PR 은 검사가 하나도 안 돈다.**
-그런데 `mergeStateStatus` 는 `CLEAN` 이라 화면에서는 초록불로 보인다.
+아래에 **무엇이 문제였고 무엇으로 막혔는지**를 함께 남긴다. 고친 뒤에 문제를
+지워 버리면 다음에 같은 자리가 다시 열렸을 때 알아보지 못한다.
 
-지금 열린 PR 중 두 개가 그 상태다.
+### 3-1. ✅ 스택형 PR 에 CI 가 안 돌던 것 — 막힘
 
-```
-#32  base = feat/KEY-59-ocr-models          test 검사 없음
-#35  base = feat/KEY-35-patient-registration test 검사 없음
-```
+**무엇이 문제였나.** `.github/workflows/checks.yml` 의 `pull_request` 트리거가
+`main` · `develop` · `release/*` · `hotfix/*` 뿐이라, **feature 브랜치를 base 로 하는
+PR 은 lint 도 test 도 돌지 않았다.** 그런데 `mergeStateStatus` 는 `CLEAN` 이라
+화면에서는 초록불로 보였다 — **검사를 안 받은 것과 통과한 것이 같아 보였다.**
 
-이 구멍으로 **실제 사고가 한 번 났다** — 3절의 `OCR-1` 을 보라.
+이 구멍으로 **실제 사고가 한 번 났다** — 4절의 `OCR-1` 을 보라. `#31` 이 그때
+CI 를 받은 것은 워크플로가 고쳐져서가 아니라 **base 를 `develop` 으로 되돌려
+피해 간 것**이었다.
 
-한 줄이면 막힌다.
+**무엇으로 막았나.** `KEY-102`(PR `#43`, 2026-08-19 병합) — 브랜치 규칙의 네
+접두어를 트리거에 넣었다.
 
 ```yaml
   pull_request:
@@ -84,15 +97,35 @@ test_field_mapping.py:181    visit API 가 아직 없다
       - develop
       - 'release/*'
       - 'hotfix/*'
-      - 'feat/**'     # 스택형 PR 도 검사한다
+      - 'feat/**'
+      - 'fix/**'
+      - 'docs/**'
+      - 'test/**'
 ```
 
-> `#31` 은 base 를 `develop` 으로 되돌려서 CI 를 받았다. **워크플로가 고쳐진 것이 아니라
-> 그 PR 하나가 피해 간 것이다.**
+**막혔다는 증거.** 어제 이 구멍에 있던 `#32` 가 오늘은 검사를 받는다.
 
-### 3-2. 🟠 mypy 가 CI 에 없다
+```
+2026-08-19  #32  base=feat/KEY-59-ocr-models  checks=[]                                 ← 검사 없음
+2026-08-20  #32  base=feat/KEY-59-ocr-models  checks=[lint:SUCCESS, test:SUCCESS]       ← 돈다
+```
 
-`develop` 에 지금 5건이 있고 아무도 못 본다.
+같은 질의로 다시 확인할 수 있다.
+
+```
+$ gh pr list --state open --json number,statusCheckRollup \
+    --jq '.[]|select([.statusCheckRollup[]?|select(.name=="test")]|length==0)|"#\(.number)"'
+```
+
+> **주의 — 이미 열려 있던 PR 은 새 푸시가 있어야 켜진다.** `pull_request` 는
+> `opened` · `synchronize` 에 반응하므로, 워크플로가 바뀌어도 **가만히 있는 PR 은
+> 그대로 검사 없이 남는다.** 위 질의에 오래된 PR 이 잡히면 고장이 아니라
+> 「아직 밀지 않은 것」이다 — `develop` 을 한 번 당겨 올리면 돈다.
+
+### 3-2. ✅ mypy 가 CI 에 없던 것 — 막힘
+
+**무엇이 문제였나.** `develop` 에 5건이 있었고 아무도 못 봤다.
+`health_routers.py:31` 은 `KEY-19`(PR `#17`) 병합분이라 **8월 19일부터 계속 있었다.**
 
 ```
 app/models/visits.py:18                     Need type annotation for "patient"
@@ -100,7 +133,29 @@ app/apis/v1/health_routers.py:31            Incompatible types in "await"
 app/tests/models/test_patient_visit_models.py:47,49,50   "Field[Any]" has no attribute ...
 ```
 
-`health_routers.py:31` 은 `KEY-19`(PR `#17`) 병합분이라 **8월 19일부터 계속 있었다.**
+**무엇으로 막았나.** 같은 PR 에서 **5건을 먼저 고치고** `lint` 잡에 mypy 를 넣었다.
+순서를 바꿨다면 켜는 순간 `develop` 이 빨간불이 된다.
+
+**같이 걸린 것 하나.** `lint` 잡은 `uv sync --frozen` 만 했는데 `mypy` 는 `dev`
+그룹이고 `tortoise` · `fastapi` 는 `app` 그룹이다. 워크트리로 CI 환경을 재현해
+확인했다.
+
+```
+uv sync --frozen             → Found 58 errors in 26 files   ← 전부 import-not-found
+uv sync --group app --frozen → Found 5 errors in 3 files     ← 진짜 오류만
+```
+
+**mypy 만 켜고 이 줄을 빠뜨렸으면 켠 그날 되돌렸을 것이다.** 도구를 켜는 일은
+도구를 고르는 것 반, **그 도구가 볼 수 있게 환경을 맞추는 것 반**이다.
+
+**막혔다는 증거.**
+
+```
+$ grep -c mypy .github/workflows/checks.yml
+2
+$ uv run mypy app
+Success: no issues found in 66 source files
+```
 
 ### 3-3. 🟠 프런트는 자동 검사가 0 이다
 
@@ -163,8 +218,8 @@ app/tests/models/test_patient_visit_models.py:47,49,50   "Field[Any]" has no att
 |---|---|---|
 | 🔴 | `#32` (KEY-60) | 변경 요청 상태 — OCR API |
 | 🔴 | `#39` (KEY-34) | `API-1` 전화번호 검색 · `API-2` `doctor_id` |
-| 🔴 | 워크플로 | 3-1 스택형 PR CI 구멍 |
-| 🟠 | `develop` | 3-2 mypy 5건 |
+| ~~🔴~~ | ~~워크플로~~ | ~~3-1 스택형 PR CI 구멍~~ → ✅ `KEY-102` (`#43`) |
+| ~~🟠~~ | ~~`develop`~~ | ~~3-2 mypy 5건~~ → ✅ 같은 PR |
 | 🟠 | 계약 | `GET /front-desk/visits?date=` 가 **계약에도 구현에도 없다** — `S1-1` 왼쪽 목록이 붙을 곳이 없다 |
 | 🟠 | `#31` 리뷰 | 「못 읽은 항목도 행을 만드는가」·「저신뢰 임계값을 서버가 주는가」 미답 — `KEY-62`·`KEY-63` 이 이 답에 걸려 있다 |
 | 🟡 | 문서 | `is_owner` 를 `spec-medical.md` 는 만들지 말라 하고 `KEY-26 §9` 는 유지하라 한다 |
@@ -197,12 +252,13 @@ app/tests/models/test_patient_visit_models.py:47,49,50   "Field[Any]" has no att
 
 | 순서 | 무엇 | 왜 먼저인가 |
 |---|---|---|
-| 1 | 스택형 PR CI (3-1) | **한 줄**이고, 이미 사고가 한 번 났다 |
-| 2 | `#39` 의 `API-1`·`API-2` | `API-1` 은 한 줄, `API-2` 는 결정만 필요 |
-| 3 | `#31` 리뷰 질문 두 개에 답 | `KEY-62`·`KEY-63` 이 여기 걸려 있다 |
-| 4 | `front-desk/visits` 계약 | `S1-1` 이 매일 처음 부르는 API |
-| 5 | mypy 를 CI 에 (3-2) | 지금 5건이 보이지 않는다 |
-| 6 | 병원 격리 외래키 | `#37` 병합 직후가 제일 싸다 |
+| ~~1~~ | ~~스택형 PR CI (3-1)~~ | ✅ `KEY-102` (`#43`) — 2026-08-19 병합 |
+| ~~5~~ | ~~mypy 를 CI 에 (3-2)~~ | ✅ 같은 PR |
+| **1** | `#39` 의 `API-1`·`API-2` | `API-1` 은 한 줄, `API-2` 는 결정만 필요 |
+| **2** | `#31` 리뷰 질문 두 개에 답 | `KEY-62`·`KEY-63` 이 여기 걸려 있다 |
+| **3** | `front-desk/visits` 계약 | `S1-1` 이 매일 처음 부르는 API |
+| **4** | 병원 격리 외래키 | `#37` 병합 직후가 제일 싸다 |
+| **5** | 프런트 자동 검사 (3-3) | 이번 결함 절반이 이 영역인데 전부 사람이 찾았다 |
 
 ---
 
@@ -212,11 +268,12 @@ app/tests/models/test_patient_visit_models.py:47,49,50   "Field[Any]" has no att
 git checkout develop && git pull
 DB_HOST=127.0.0.1 uv run pytest app -q -rs          # 통과·건너뜀
 uv run ruff check . && uv run ruff format . --check
-uv run mypy app                                      # CI 는 안 돈다
+uv run mypy app                                      # 2026-08-20 부터 CI 에서도 돈다
 DB_HOST=127.0.0.1 uv run coverage run -m pytest app && uv run coverage report
 
 gh pr list --state open  --json number,title,author,reviewDecision,statusCheckRollup
 gh pr list --state merged --limit 30 --json number,title,mergedAt
 ```
 
-`statusCheckRollup` 에 `test` 가 **없는** PR 이 3-1 의 구멍에 빠진 것이다.
+`statusCheckRollup` 에 `test` 가 **없는** PR 은, 3-1 이 막힌 지금은 **워크플로가
+바뀐 뒤로 아직 한 번도 밀지 않은 PR** 이다. `develop` 을 당겨 올리면 검사가 돈다.
