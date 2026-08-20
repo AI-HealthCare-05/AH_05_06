@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.core.error_handlers import register_error_handlers
 from app.models.ocr import OcrDocumentType, OcrJobStatus
+from app.models.users import User
 from app.ocr.api import get_ocr_service, ocr_router
 from app.ocr.errors import OcrApiError
 from app.ocr.schemas import (
@@ -217,9 +219,9 @@ async def test_admin_only_and_missing_hospital_are_denied_by_default() -> None:
     missing_hospital = SimpleNamespace(id=2, roles=["staff"])
 
     with pytest.raises(OcrApiError, match="OCR 접근 권한") as admin_error:
-        await get_ocr_actor(admin_only)
+        await get_ocr_actor(cast(User, admin_only))
     with pytest.raises(OcrApiError, match="OCR 접근 권한") as hospital_error:
-        await get_ocr_actor(missing_hospital)
+        await get_ocr_actor(cast(User, missing_hospital))
 
     assert admin_error.value.status_code == 403
     assert hospital_error.value.status_code == 403
@@ -230,8 +232,8 @@ async def test_staff_or_doctor_actor_is_allowed() -> None:
     staff_user = SimpleNamespace(staff_id=3, hospital_id=9, roles=["staff"])
     doctor_user = SimpleNamespace(id=4, hospital_id=9, roles=["doctor", "admin"])
 
-    staff = await get_ocr_actor(staff_user)
-    doctor = await get_ocr_actor(doctor_user)
+    staff = await get_ocr_actor(cast(User, staff_user))
+    doctor = await get_ocr_actor(cast(User, doctor_user))
 
     assert staff.roles == frozenset({"staff"})
     assert staff.user_id == 3
