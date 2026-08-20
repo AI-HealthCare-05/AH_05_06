@@ -7,18 +7,16 @@
  */
 
 /* 상태 탭 다섯. 두 역할이 같은 탭을 쓰고 기본 선택만 다르다 —
-   스탭은 「작성 중 + 보완」(오늘 할 일과 고칠 일), 의사는 「승인 요청」. */
-var STATUS_TABS = [
-  { key: "draft", label: "작성 중" },
-  { key: "fix", label: "보완", warn: true },
-  { key: "review", label: "승인 요청" },
-  { key: "queued", label: "발송 대기" },
-  { key: "done", label: "완료" },
-];
+   스탭은 「작성 중 + 보완」(오늘 할 일과 고칠 일), 의사는 「승인 요청」.
+
+   탭 값은 계약(KEY-26 §6)의 `work_category` 다. 서버가 OCR · 안내 · 승인 · 발송의
+   최신 이벤트를 읽어 파생해 준다 — **화면은 파생하지 않는다.** 화면이 파생하면
+   화면마다 규칙이 갈리고, 규칙이 바뀔 때 어디를 고쳐야 하는지 알 수 없다. */
+var STATUS_TABS = WORK_CATEGORIES;
 
 var DEFAULT_TABS = {
-  staff: ["draft", "fix"],
-  doctor: ["review"],
+  staff: ["IN_PROGRESS", "NEEDS_ATTENTION"],
+  doctor: ["APPROVAL_REQUESTED"],
 };
 
 /* 목록이 들고 있는 것.
@@ -51,9 +49,11 @@ function roleLabel(roles) {
     .join(" · ");
 }
 
-function stateClass(state) {
-  if (state === "번호 오류" || state === "보완") return "row__state row__state--warn";
-  if (state === "발송 완료" || state === "완료") return "row__state row__state--done";
+function stateClass(workCategory) {
+  /* 색을 한글 문자열로 정하면 문구가 바뀔 때마다 색이 조용히 빠진다.
+     계약이 준 카테고리로 정한다. */
+  if (workCategory === "NEEDS_ATTENTION") return "row__state row__state--warn";
+  if (workCategory === "COMPLETED") return "row__state row__state--done";
   return "row__state";
 }
 
@@ -71,11 +71,9 @@ function showView(id) {
 /* ── 목록 ─────────────────────────────────────────────── */
 
 function activeTabs() {
-  return Array.prototype.slice
-    .call(document.querySelectorAll(".chip[aria-pressed='true']"))
-    .map(function (chip) {
-      return chip.dataset.tab;
-    });
+  return Array.prototype.slice.call(document.querySelectorAll(".chip[aria-pressed='true']")).map(function (chip) {
+    return chip.dataset.tab;
+  });
 }
 
 /* 목록 검색은 오늘 서 있는 줄만 좁힌다 — 등록된 환자 전체를 뒤지는 것은
@@ -85,7 +83,7 @@ function visibleRows() {
   var on = activeTabs();
   var q = listQuery.trim();
   return rows.filter(function (r) {
-    if (on.length && on.indexOf(r.tab) === -1) return false;
+    if (on.length && on.indexOf(r.work_category) === -1) return false;
     if (!q) return true;
     return r.name.indexOf(q) !== -1 || r.hospital_patient_no.indexOf(q) !== -1;
   });
@@ -117,7 +115,7 @@ function renderChipCounts() {
       return t.key === chip.dataset.tab;
     });
     var count = rows.filter(function (r) {
-      return r.tab === chip.dataset.tab;
+      return r.work_category === chip.dataset.tab;
     }).length;
     chip.querySelector("[data-label]").textContent =
       (tab.warn && count ? "⚠ " : "") + tab.label + (count ? " " + count : "");
@@ -135,7 +133,7 @@ function blankHtml() {
     return (
       '<p class="rows-blank__title">「' +
       esc(q) +
-      '」로<br>오늘 등록된 환자가 없습니다</p>' +
+      "」로<br>오늘 등록된 환자가 없습니다</p>" +
       '<button class="rows-blank__act" type="button" data-register-with="' +
       esc(q) +
       '">+ 「' +
@@ -196,18 +194,18 @@ function renderRows(keepVisitId) {
         '<span class="row__top"><span class="row__name">' +
         esc(r.name) +
         '</span><span class="row__dx">' +
-        esc(r.dx) +
+        esc(r.diagnosis_name || "") +
         "</span></span>" +
         '<span class="row__meta">차트 ' +
         esc(r.hospital_patient_no) +
         (r.age == null ? "" : " · " + r.age + "세") +
         " · " +
-        esc(r.doctor) +
+        esc(r.doctor ? r.doctor.name : "") +
         "</span><br>" +
         '<span class="' +
-        stateClass(r.state) +
+        stateClass(r.work_category) +
         '">' +
-        esc(r.state) +
+        esc(statusLabel(r.detail_status)) +
         "</span></button>"
       );
     })
@@ -248,7 +246,14 @@ function renderDay() {
   var week = ["일", "월", "화", "수", "목", "금", "토"];
   var today = toIsoDate(new Date()) === toIsoDate(listDay);
   document.getElementById("day").textContent =
-    listDay.getMonth() + 1 + "월 " + listDay.getDate() + "일 (" + week[listDay.getDay()] + ")" + (today ? " · 오늘" : "");
+    listDay.getMonth() +
+    1 +
+    "월 " +
+    listDay.getDate() +
+    "일 (" +
+    week[listDay.getDay()] +
+    ")" +
+    (today ? " · 오늘" : "");
 }
 
 function moveDay(days) {
@@ -292,7 +297,7 @@ function addVisit(visit) {
   /* 방금 등록한 줄이 꺼진 탭에 속하면 목록에서 걸러진다. 등록했는데 안 보이면
      「등록이 안 됐나」가 되고, 고를 줄이 없어 엉뚱한 환자가 대신 서기도 한다.
      그 탭을 켜서 방금 만든 것이 반드시 보이게 한다. */
-  var chip = document.querySelector('.chip[data-tab="' + visit.tab + '"]');
+  var chip = document.querySelector('.chip[data-tab="' + visit.work_category + '"]');
   if (chip) chip.setAttribute("aria-pressed", "true");
 
   renderChipCounts();

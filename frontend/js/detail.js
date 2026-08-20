@@ -6,15 +6,22 @@
  *
  * 수정은 계약이 정한 칸만 연다(KEY-26 §6).
  *   환자 — name · birth_date · gender · phone · sms_consent
- *   진료 — doctor · department · visited_at · status · planned_stop
+ *   진료 — doctor_id · department_id · visited_at · status · planned_stop
  * 차트번호는 생성 후 변경 불가라 폼에 넣지 않는다. 「고칠 수 있어 보이는데
  * 저장이 안 되는 칸」이 제일 나쁘다.
+ *
+ * **목록 줄과 진료 상세는 다른 계약이다.** 오늘 목록(§6 S1-1)은 「무엇을 해야
+ * 하는가」만 준다 — 이름 · 진단명 · 담당의 · 업무 상태. 진료과 스냅샷 ·
+ * `status` · `planned_stop` 은 `GET /visits/{visit_id}` 에만 있다. 그래서 줄을
+ * 누르면 그 리소스를 따로 불러온다. 줄 하나로 상세를 그리면 목업에서는 돌고
+ * 서버가 붙는 날 빈칸이 된다.
  */
 
 (function () {
   var TABS = ["basic", "record"];
 
-  var visit = null; // 목록에서 고른 진료 건
+  var row = null; // 오늘 목록에서 고른 줄 (front-desk 읽기 모델)
+  var visit = null; // 그 줄의 진료 상세 (GET /visits/{id})
   var patient = null; // 그 진료 건의 환자
   var history = []; // 지난 방문
 
@@ -47,17 +54,33 @@
      누구의 기록을 다루는 중인지 늘 붙어 있어야 다른 환자에게 잘못 넣지 않는다.
      탭을 옮겨도 이 줄은 그대로 있다. */
   function renderHead() {
-    el("p-name").textContent = visit.name;
-    el("p-id").textContent = "차트 " + visit.hospital_patient_no + (patient ? " · " + patient.birth_date : "");
+    el("p-name").textContent = row.name;
+    el("p-id").textContent = "차트 " + row.hospital_patient_no + (patient ? " · " + patient.birth_date : "");
 
+    /* 배지는 목록 줄이 준 상태 그대로다 — 화면이 파생하지 않는다(계약 §6).
+       색은 한글 문구가 아니라 업무 카테고리로 정한다. */
     var state = el("p-state");
-    state.hidden = !visit.state;
-    state.textContent = visit.state || "";
-    state.className = stateClass(visit.state);
+    state.hidden = !row.detail_status;
+    state.textContent = statusLabel(row.detail_status);
+    state.className = stateClass(row.work_category);
 
-    el("p-visit").textContent = [visit.department, visit.doctor, dayLabel(visit.visited_at) + " 진료"]
+    /* 진료과는 상세를 받아야 안다 — 그때까지는 담당의와 날짜만 붙인다. */
+    el("p-visit").textContent = [visit && visit.department, doctorName(), dayLabel(row.visited_at) + " 진료"]
       .filter(Boolean)
       .join(" · ");
+  }
+
+  /* 상세는 `doctor_id` 만 준다. 이름은 목록 줄이 들고 온 것을 쓰고, 수정으로
+     바뀐 뒤에는 DOCTORS 에서 찾는다.
+     TODO(KEY-33) 직원 API 가 생기면 이름을 거기서 받는다. */
+  function doctorName() {
+    if (visit && visit.doctor_id) {
+      var found = DOCTORS.find(function (d) {
+        return d.doctor_id === visit.doctor_id;
+      });
+      if (found) return found.name;
+    }
+    return row.doctor ? row.doctor.name : "";
   }
 
   /* 「2026-08-19 (오늘)」 — 오늘인지가 붙어야 지난 진료를 보고 있다는 것을 안다 */
@@ -104,14 +127,16 @@
   }
 
   function renderVisit() {
-    el("visit-facts").innerHTML = facts([
-      ["진료과 · 담당", [visit.department, visit.doctor].filter(Boolean).join(" · ")],
-      ["진료일", [dayLabel(visit.visited_at), timeLabel(visit.visited_at)].filter(Boolean).join(" · ")],
-      ["현재 상태", visit.state],
-      /* 계획 중단은 문자를 멈추는 스위치다(계약 §4). 켜져 있으면 그 사실이 보여야
+    el("visit-facts").innerHTML = facts(
+      [
+        ["진료과 · 담당", [visit.department, doctorName()].filter(Boolean).join(" · ")],
+        ["진료일", [dayLabel(visit.visited_at), timeLabel(visit.visited_at)].filter(Boolean).join(" · ")],
+        ["현재 상태", statusLabel(row.detail_status)],
+        /* 계획 중단은 문자를 멈추는 스위치다(계약 §4). 켜져 있으면 그 사실이 보여야
          「왜 안내가 안 나가지」를 다른 데서 찾지 않는다. */
-      visit.planned_stop ? ["계획 중단", "켜짐", "확인 · 소진 · 재진 문자를 보내지 않습니다"] : null,
-    ].filter(Boolean));
+        visit.planned_stop ? ["계획 중단", "켜짐", "확인 · 소진 · 재진 문자를 보내지 않습니다"] : null,
+      ].filter(Boolean),
+    );
   }
 
   function renderHistory() {
@@ -125,12 +150,14 @@
           "<tr><td>" +
           esc(v.visited_at) +
           "</td><td>" +
-          esc(v.dx) +
+          esc(v.diagnosis_name) +
           "</td><td>" +
           esc([v.drug, v.days ? v.days + "일" : ""].filter(Boolean).join(" · ")) +
           "</td><td>" +
           /* TODO(KEY-64) 안내문 화면이 생기면 여기서 그 안내문으로 간다 */
-          (v.has_guide ? '<span class="past__guide">안내문 있음</span>' : '<span class="past__none">안내문 없음</span>') +
+          (v.has_guide
+            ? '<span class="past__guide">안내문 있음</span>'
+            : '<span class="past__none">안내문 없음</span>') +
           "</td></tr>"
         );
       })
@@ -162,7 +189,10 @@
     );
   }
 
-  function select(name, label, value, options, hint) {
+  /* 값은 id, 보이는 것은 이름이다 — 계약이 `department_id` · `doctor_id` 를 받고,
+     이름을 보내면 폐지된 진료과인지 그 의사가 거기 소속인지 서버가 볼 수 없다.
+     사람에게 id 를 보일 이유는 없으므로 두 층을 갈라 둔다. */
+  function select(name, label, selectedId, options, idKey, hint) {
     return (
       '<label class="field"><span class="field__label">' +
       esc(label) +
@@ -171,7 +201,15 @@
       '">' +
       options
         .map(function (o) {
-          return '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(o) + "</option>";
+          return (
+            '<option value="' +
+            esc(o[idKey]) +
+            '"' +
+            (o[idKey] === selectedId ? " selected" : "") +
+            ">" +
+            esc(o.name) +
+            "</option>"
+          );
         })
         .join("") +
       "</select>" +
@@ -207,11 +245,21 @@
     el("patient-edit").querySelector("[name=name]").focus();
   }
 
+  /* 상세가 주는 것은 진료과 **이름 스냅샷**이다(계약 §4) — id 는 명령 필드라
+     응답에 없다. 고르는 칸을 채우려면 이름으로 되찾는 수밖에 없다.
+     TODO(KEY-33) 진료과 API 가 생기면 그 목록에서 찾는다. */
+  function currentDepartmentId() {
+    var found = DEPARTMENTS.find(function (d) {
+      return d.name === visit.department;
+    });
+    return found ? found.department_id : DEPARTMENTS[0].department_id;
+  }
+
   function openVisitEdit() {
     el("visit-edit").innerHTML =
       '<div class="grid2">' +
-      select("department", "진료과 *", visit.department, DEPARTMENTS) +
-      select("doctor_name", "담당의사 *", visit.doctor, DOCTORS, "해당 의사에게 승인 요청이 전달됩니다") +
+      select("department_id", "진료과 *", currentDepartmentId(), DEPARTMENTS, "department_id") +
+      select("doctor_id", "담당의사 *", visit.doctor_id, DOCTORS, "doctor_id", "해당 의사에게 승인 요청이 전달됩니다") +
       "</div>" +
       '<label class="check"><input type="checkbox" name="planned_stop"' +
       (visit.planned_stop ? " checked" : "") +
@@ -246,6 +294,14 @@
     if (error.status === 403) return "이 환자를 수정할 권한이 없습니다 — 스탭 또는 의사 계정으로 로그인해 주세요.";
     if (error.status === 404) return "이 환자를 찾을 수 없습니다. 목록을 새로 고쳐 주세요.";
     if (error.code === "EMPTY_UPDATE_FIELDS") return "바뀐 내용이 없습니다.";
+    /* 진료과·의사는 서버가 검증한다(계약 §7). 「입력을 다시 보라」로 뭉뜽그리면
+       고를 수 있는 것만 고른 사람은 무엇을 고쳐야 할지 알 수 없다. */
+    if (error.code === "INVALID_DEPARTMENT") return "선택한 진료과를 쓸 수 없습니다 — 목록을 새로 고쳐 주세요.";
+    if (error.code === "DOCTOR_DEPARTMENT_MISMATCH") return "그 의사는 선택한 진료과 소속이 아닙니다.";
+    /* 판독·안내가 이미 붙은 뒤에는 담당을 못 바꾼다. 「저장 실패」로 두면
+       될 때까지 다시 누른다 — 왜 잠겼는지와 누구를 불러야 하는지를 적는다. */
+    if (error.code === "VISIT_LOCKED")
+      return "안내문 작업이 시작되어 담당을 바꿀 수 없습니다 — 관리자에게 알려 주세요.";
     if (error.code === "INVALID_REQUEST") return "입력한 값을 다시 확인해 주세요.";
     return "저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
   }
@@ -293,7 +349,7 @@
         patient = saved;
         /* 이름이 바뀌면 목록 줄과 머리도 같이 바뀌어야 한다 — 한 화면 안에서
            같은 사람이 두 이름으로 보이면 그때부터 아무것도 못 믿는다. */
-        visit.name = saved.name;
+        row.name = saved.name;
         renderPatient();
         renderHead();
         refreshRow();
@@ -309,12 +365,12 @@
     event.preventDefault();
     var form = this;
     var patch = changed(
-      { department: visit.department, doctor_name: visit.doctor, planned_stop: visit.planned_stop },
+      { department_id: currentDepartmentId(), doctor_id: visit.doctor_id, planned_stop: visit.planned_stop },
       {
-        department: form.department.value,
-        doctor_name: form.doctor_name.value,
+        department_id: Number(form.department_id.value),
+        doctor_id: Number(form.doctor_id.value),
         planned_stop: form.planned_stop.checked,
-      }
+      },
     );
     if (!Object.keys(patch).length) return closeEdit("visit");
 
@@ -322,9 +378,7 @@
     patientsApi
       .updateVisit(visit.visit_id, patch)
       .then(function (saved) {
-        visit.department = saved.department;
-        visit.doctor = saved.doctor;
-        visit.planned_stop = saved.planned_stop;
+        visit = saved;
         renderVisit();
         renderHead();
         refreshRow();
@@ -338,13 +392,15 @@
 
   /* 목록 줄도 같이 고친다. 다시 불러오면 고른 줄과 스크롤이 튀므로 그 줄만 손본다. */
   function refreshRow() {
-    var row = rows.find(function (r) {
-      return r.visit_id === visit.visit_id;
+    var listed = rows.find(function (r) {
+      return r.visit_id === row.visit_id;
     });
-    if (!row) return;
-    row.name = visit.name;
-    row.doctor = visit.doctor;
-    renderRows(visit.visit_id);
+    if (!listed) return;
+    listed.name = row.name;
+    /* 줄은 front-desk 모델이라 담당의가 객체다. 상세는 id 만 주므로
+       이름을 붙여 넣어야 목록 줄이 옛 이름으로 남지 않는다. */
+    listed.doctor = { doctor_id: visit.doctor_id, name: doctorName() };
+    renderRows(row.visit_id);
   }
 
   function formatPhone(digits) {
@@ -357,7 +413,8 @@
   /* ── 들어오기 ────────────────────────────────────────── */
 
   function load(next) {
-    visit = next;
+    row = next;
+    visit = null;
     patient = null;
     history = [];
 
@@ -366,28 +423,33 @@
     renderHead();
     /* 불러오는 중에 앞사람 값이 남아 있으면 안 된다 — 잠깐이라도 다른 사람의
        생년월일이 이 이름 아래 붙는다. */
-    el("patient-facts").innerHTML = '<dt>불러오는 중…</dt><dd></dd>';
+    el("patient-facts").innerHTML = "<dt>불러오는 중…</dt><dd></dd>";
     el("visit-facts").innerHTML = "";
     el("past").innerHTML = "";
     renderSends();
 
-    var mine = visit.visit_id; // 늦게 온 응답이 새 환자를 덮어쓰지 않게 한다
+    var mine = row.visit_id; // 늦게 온 응답이 새 환자를 덮어쓰지 않게 한다
 
-    Promise.all([patientsApi.get(visit.patient_id), patientsApi.visits(visit.patient_id)])
-      .then(function (both) {
-        if (mine !== visit.visit_id) return;
-        patient = both[0];
-        history = both[1].items.filter(function (v) {
-          return v.visit_id !== visit.visit_id; // 오늘 것은 위 칸에 이미 있다
+    Promise.all([
+      patientsApi.get(row.patient_id),
+      patientsApi.visits(row.patient_id),
+      patientsApi.getVisit(row.visit_id),
+    ])
+      .then(function (all) {
+        if (mine !== row.visit_id) return;
+        patient = all[0];
+        history = all[1].items.filter(function (v) {
+          return v.visit_id !== row.visit_id; // 오늘 것은 위 칸에 이미 있다
         });
+        visit = all[2];
         renderPatient();
         renderVisit();
         renderHistory();
-        renderHead(); // 생년월일은 환자를 받은 뒤에야 머리에 붙는다
+        renderHead(); // 생년월일과 진료과는 응답을 받은 뒤에야 머리에 붙는다
       })
       .catch(function (error) {
-        if (mine !== visit.visit_id) return;
-        el("patient-facts").innerHTML = '<dt>—</dt><dd>' + esc(messageFor(error)) + "</dd>";
+        if (mine !== row.visit_id) return;
+        el("patient-facts").innerHTML = "<dt>—</dt><dd>" + esc(messageFor(error)) + "</dd>";
       });
   }
 
