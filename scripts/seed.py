@@ -40,14 +40,14 @@ if str(ROOT) not in sys.path:
 from tortoise import Tortoise  # noqa: E402
 
 from app.core.config import Config  # noqa: E402
-
-_CONFIG = Config()
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
 from app.models.visits import Visit, VisitStatus  # noqa: E402
 from app.tests.fixtures.staff import StaffDataError, all_staff  # noqa: E402
+
+_CONFIG = Config()
 
 SEED_PASSWORD_ENV = "SEED_STAFF_PASSWORD"
 
