@@ -15,10 +15,12 @@
 버튼을 잠그는 것은 편의일 뿐이고, 잠긴 버튼을 우회한 요청도 여기서 막힌다.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
+
+from app.core import config
 
 # `AuthError` 는 이름이 인증처럼 보이지만 **계약이 정한 오류 봉투**다 —
 # `{code, message}` 를 평평하게 내보내는 하나뿐인 길이라 여기서도 그대로 쓴다.
@@ -192,11 +194,26 @@ class GuideService:
         raise ApiError("GUIDE_NOT_PENDING", 409, "아직 승인 요청된 안내문이 아닙니다.")
 
     @staticmethod
-    def _send_at(moment):
-        """오늘 18:00. 이미 지났으면 내일 같은 시각이다.
+    def _send_at(moment: datetime) -> datetime:
+        """**병원 시간으로** 오늘 18:00. 이미 지났으면 내일 같은 시각이다.
+
+        시간대를 옮기지 않으면 18시가 아니라 **받은 값의 시간대에서** 18시가
+        된다. 운영은 `databases.py` 가 `use_tz: True` 라 `now()` 가 UTC 를
+        돌려주므로 UTC 18시 — 한국에서는 **다음 날 새벽 3시**다. 환자가 복약
+        안내를 자다가 받는다.
+
+        **검사에서는 안 보이던 버그다.** `conftest` 의 `generate_config(...,
+        testing=True)` 가 `use_tz=False` 로 두는데, 그러면 `now()` 가 이미
+        병원 시간이라 `replace(hour=18)` 이 우연히 맞는다. 두 환경이 서로 다른
+        답을 주고 있었다.
+
+        그래서 **받은 값이 어느 시간대든** 병원 시간으로 옮겨 판단한다.
+        돌려주는 값도 병원 시간대를 달고 나간다 — 시각이 무슨 뜻인지가 값 안에
+        남아야 저장이 어느 모드든 같은 순간을 가리킨다.
 
         지난 시각으로 예약하면 「예약됨」인데 영영 안 나가거나, 발송기가
         지난 것을 몰아서 한꺼번에 보낸다.
         """
-        today = moment.replace(hour=SEND_HOUR, minute=0, second=0, microsecond=0)
-        return today if today > moment else today + timedelta(days=1)
+        local = moment.astimezone(config.TIMEZONE)
+        today = local.replace(hour=SEND_HOUR, minute=0, second=0, microsecond=0)
+        return today if today > local else today + timedelta(days=1)

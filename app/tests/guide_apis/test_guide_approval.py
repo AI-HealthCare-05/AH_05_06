@@ -7,7 +7,9 @@
 이 파일은 **API 단위의 정상·예외까지만** 본다.
 """
 
+from datetime import UTC, date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -25,6 +27,10 @@ from app.models.visits import (
     GuideStatus,
     Visit,
 )
+from app.services.guides import GuideService
+
+#: 병원 표시 시간대. 발송 시각은 이 시간대로 재야 뜻이 맞는다(계약 §4).
+SEOUL = ZoneInfo("Asia/Seoul")
 
 BASE = "/api/v1/visits"
 
@@ -149,6 +155,36 @@ class TestApprovalSchedulesTheSend(GuideTestCase):
 
         saved = await GuideDocument.get(guide_document_id=guide.guide_document_id)
         assert saved.approved_by == doctor.staff_id
+
+        # 있는지가 아니라 **몇 시인지**를 잰다. 이걸 안 재서 예약이 UTC 18시로
+        # 잡히던 것을 놓쳤다 — 한국에서는 다음 날 새벽 3시였다(`#50` 리뷰).
+        assert saved.scheduled_at is not None
+        local = saved.scheduled_at.astimezone(SEOUL)
+        assert local.hour == 18, f"병원 시간으로 18시여야 한다 (받은 값 {local})"
+        assert (local.minute, local.second) == (0, 0), f"정각이어야 한다 (받은 값 {local})"
+
+    async def test_the_send_time_is_measured_in_clinic_time(self) -> None:
+        """UTC 로 재면 18시가 아니다.
+
+        `use_tz: True` 라 `tortoise.timezone.now()` 는 늘 UTC 를 돌려준다.
+        시간대를 안 옮기고 `replace(hour=18)` 하면 UTC 18시가 되고, 한국에서는
+        **다음 날 새벽 3시**다. 환자가 복약 안내를 자다가 받는다.
+        """
+        morning = datetime(2026, 8, 20, 4, 50, tzinfo=UTC)  # 한국 13:50
+        evening = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)  # 한국 19:00 — 이미 지났다
+        midnightish = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)  # 한국 23:30
+
+        picked = {
+            label: GuideService._send_at(m).astimezone(SEOUL)
+            for label, m in (("낮", morning), ("저녁", evening), ("밤", midnightish))
+        }
+
+        for label, at in picked.items():
+            assert at.hour == 18, f"{label}에 승인했는데 {at.hour}시로 잡혔다 ({at})"
+
+        assert picked["낮"].date() == date(2026, 8, 20), "낮에 승인하면 그날 저녁이다"
+        assert picked["저녁"].date() == date(2026, 8, 21), "18시가 지난 뒤면 다음 날이어야 한다"
+        assert picked["밤"].date() == date(2026, 8, 21), "밤도 다음 날이다"
 
     async def test_approving_twice_is_refused(self) -> None:
         """두 번 승인을 조용히 넘기면 발송 예정 시각이 밀린다."""
