@@ -12,12 +12,15 @@ from pathlib import Path
 
 import pytest
 
+from app.core import config
+from app.core.config import Env
 from app.tests.fixtures.staff import (
     CSV_PATH,
     DEFAULT_HOSPITAL,
     KNOWN_HOSPITALS,
     RESERVED_LOGIN_IDS,
     ROLE_SEPARATOR,
+    ProductionFixtureError,
     Staff,
     StaffDataError,
     admins_besides,
@@ -356,3 +359,59 @@ class TestLastAdminIsPerHospital:
         elsewhere = [s for s in in_hospital("H2") if "admin" in s.roles]
         assert elsewhere, "H2 에 관리자가 없으면 이 검사가 헛돈다"
         assert not {s.login_id for s in elsewhere} & {s.login_id for s in admins_besides("lastadmin01")}
+
+
+class TestNeverRunsInProduction:
+    """합성 계정을 운영에서 읽으려 하면 멈춘다.
+
+    이 CSV 에는 비밀번호가 없어서 읽는 것만으로는 로그인이 생기지 않는다.
+    막으려는 것은 이것을 읽어 DB 에 넣는 **시드**다 — 합성 계정이 운영 DB 에
+    들어가면 `SEED_STAFF_PASSWORD` 를 아는 사람이 실제로 들어올 수 있다.
+
+    `#33`(KEY-36) 이 같은 가드를 먼저 만들었는데 `APP_ENV` 를 보고 있었다.
+    저장소가 쓰는 이름은 `ENV` 라, 운영에서 값이 비어 기본값 `local` 로 읽혀
+    **가드가 있는 채로 아무것도 막지 않았다.** 이름을 맞추는 것이 이 검사의 핵심이다.
+    """
+
+    def _with_env(self, env: Env):
+        import contextlib
+
+        @contextlib.contextmanager
+        def ctx():
+            import app.tests.fixtures.staff as module
+
+            before = config.ENV
+            config.ENV = env
+            module.all_staff.cache_clear()
+            try:
+                yield
+            finally:
+                config.ENV = before
+                module.all_staff.cache_clear()
+
+        return ctx()
+
+    def test_production_is_refused(self) -> None:
+        with self._with_env(Env.PROD), pytest.raises(ProductionFixtureError):
+            all_staff()
+
+    def test_local_and_dev_still_work(self) -> None:
+        for env in (Env.LOCAL, Env.DEV):
+            with self._with_env(env):
+                assert all_staff(), f"{env} 에서 픽스처를 못 읽는다"
+
+    def test_it_reads_the_name_the_repository_actually_uses(self) -> None:
+        """`ENV` 가 아니라 `APP_ENV` 같은 다른 이름을 보면, 운영에서 값이
+        비어 기본값으로 읽히고 가드가 조용히 통과한다."""
+        import os
+
+        before = os.environ.get("APP_ENV")
+        os.environ["APP_ENV"] = "prod"
+        try:
+            with self._with_env(Env.LOCAL):
+                assert all_staff(), "APP_ENV 를 보고 있다 — 저장소가 쓰는 이름은 ENV 다"
+        finally:
+            if before is None:
+                os.environ.pop("APP_ENV", None)
+            else:
+                os.environ["APP_ENV"] = before

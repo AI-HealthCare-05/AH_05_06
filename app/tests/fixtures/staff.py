@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
+from app.core import config
+from app.core.config import Env
+
 CSV_PATH = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-staff.csv"
 
 ROLE_SEPARATOR = "|"  # 쉼표는 CSV 구분자와 겹친다
@@ -64,8 +67,25 @@ DEFAULT_HOSPITAL = "H1"
 RESERVED_LOGIN_IDS = frozenset({"lock01", "lastadmin01"})
 
 
+#: 이 환경에서는 합성 계정을 읽지 않는다.
+#:
+#: 이 CSV 자체에는 비밀번호가 없어서 읽는 것만으로 로그인이 생기지는 않는다.
+#: 위험한 쪽은 이것을 읽어 DB 에 넣는 시드다 — 합성 계정이 운영 DB 에 들어가면
+#: `SEED_STAFF_PASSWORD` 를 아는 사람이 실제로 들어올 수 있는 계정이 생긴다.
+#: 그래서 **읽는 자리에서** 막는다. 시드가 어디서 무엇을 부르든 여기를 지난다.
+PRODUCTION_ENVS = frozenset({Env.PROD})
+
+
 class StaffDataError(ValueError):
     """CSV 가 앞뒤가 안 맞을 때. 무엇이 어디서 틀렸는지 적어 준다."""
+
+
+class ProductionFixtureError(RuntimeError):
+    """운영 환경에서 합성 계정을 읽으려 했을 때.
+
+    `StaffDataError` 와 가른다 — 저쪽은 「데이터가 틀렸다」라 고치면 되지만
+    이쪽은 **여기서 실행하면 안 되는 것을 실행했다**는 뜻이라 할 일이 다르다.
+    """
 
 
 @dataclass(frozen=True)
@@ -152,8 +172,27 @@ def all_staff() -> tuple[Staff, ...]:
     이걸 import 하는 다른 검사까지 수집 단계에서 통째로 죽어서, 실패 목록에
     「무엇이 틀렸는지」가 안 남는다.
     """
+    _refuse_in_production()
     with CSV_PATH.open(encoding="utf-8-sig") as f:
         return tuple(_row_to_staff(i, dict(r)) for i, r in enumerate(csv.DictReader(f), start=2))
+
+
+def _refuse_in_production() -> None:
+    """운영이면 여기서 멈춘다.
+
+    `ENV` 를 본다 — 저장소가 실제로 쓰는 이름이다(`app/core/config.py`,
+    `envs/example.prod.env`). 다른 이름을 보면 운영에서 값이 비어 기본값
+    `local` 로 읽혀, 가드가 있는 것처럼 보이면서 아무것도 막지 않는다.
+
+    한계는 적어 둔다 — 운영 컨테이너에서 환경파일이 통째로 빠지면 `ENV` 가
+    기본값 `local` 이 되어 이 가드도 통과한다. 그때는 DB 접속 정보도 함께
+    빠지므로 시드가 그 앞에서 실패하지만, 이 가드 하나에 기대지는 않는다.
+    """
+    if config.ENV in PRODUCTION_ENVS:
+        raise ProductionFixtureError(
+            f"합성 직원 계정은 운영 환경에서 읽지 않는다 (ENV={config.ENV}). "
+            "이 계정들은 시험용이며, 운영 DB 에 들어가면 로그인 가능한 계정이 생긴다."
+        )
 
 
 def by_id(scenario_id: str) -> Staff:
