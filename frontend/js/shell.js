@@ -288,6 +288,17 @@ function addVisit(visit) {
   var chip = document.querySelector('.chip[data-tab="' + visit.work_category + '"]');
   if (chip) chip.setAttribute("aria-pressed", "true");
 
+  /* 검색어도 같은 이유로 지운다. 탭만 켜서는 부족하다 — 「이서윤」을 찾다가
+     못 찾아 김서연을 등록하면, 남아 있는 검색어가 방금 만든 줄을 그대로
+     가린다. 그때 화면은 **「이서윤」로 오늘 등록된 환자가 없습니다** 라고
+     말한다. 등록한 직후에 등록된 사람이 없다고 하는 셈이다.
+
+     찾던 이름을 지우는 것이 아깝지 않은 이유는, 등록을 마친 순간 그 검색의
+     용무가 끝났기 때문이다 — 이제 봐야 할 것은 방금 만든 줄이다. */
+  listQuery = "";
+  var search = document.getElementById("quick-search");
+  if (search) search.value = "";
+
   renderChipCounts();
   renderRows(visit.visit_id);
   showView("view-upload");
