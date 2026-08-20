@@ -32,5 +32,9 @@ alembic/versions/*.pyc
 # DB
 *.db
 
-# PyCharm 이 프로젝트를 열 때 만드는 샘플 스크립트
-main.py
+# PyCharm 이 프로젝트를 열 때 만드는 샘플 스크립트.
+# 앞의 `/` 는 **루트만** 가리킨다 — 없으면 모든 하위 디렉터리의 main.py 가
+# 걸린다. 이 저장소는 main.py 를 엔트리포인트 이름으로 반복해 쓰므로
+# (app/main.py · ai_worker/main.py), 새 서비스를 만들면 그 진입점이
+# `git add .` 에도 안 잡히고 조용히 커밋에서 빠진다.
+/main.py
