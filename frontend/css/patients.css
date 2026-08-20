@@ -38,7 +38,7 @@
   color: var(--ink);
   background: var(--bg);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -83,7 +83,7 @@
   color: var(--warn);
   background: var(--card);
   border: 1px solid var(--warn-line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -113,10 +113,10 @@
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--accent);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -219,7 +219,7 @@
   color: var(--ink);
   background: var(--card);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .field__input:focus-visible {
@@ -318,7 +318,7 @@
   color: var(--ink-2);
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .found b {
@@ -335,7 +335,7 @@
   margin-top: var(--s-12);
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .hits {
@@ -400,12 +400,12 @@
 }
 
 .hit--on .hit__pick:focus-visible {
-  outline-color: #ffffff;
+  outline-color: var(--on-accent);
 }
 
 /* 고른 줄은 검게 남긴다 — 무엇을 골랐는지 눈에서 사라지지 않게 */
 .hit--on td {
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--accent);
 }
 

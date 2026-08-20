@@ -65,7 +65,7 @@ class SessionTestCase(TestCase):
 
 class TestRotation(SessionTestCase):
     async def test_refresh_swaps_the_cookie(self) -> None:
-        """쓸 때마다 새 리프레시 토큰을 준다."""
+        """쓸 때마다 새 리프레시 토큰을 HttpOnly 쿠키로만 준다."""
         await make_staff()
 
         async with self.client() as client:
@@ -73,10 +73,17 @@ class TestRotation(SessionTestCase):
             before = client.cookies["refresh_token"]
 
             response = await client.post(f"{BASE}/refresh")
+            after = client.cookies["refresh_token"]
 
-            assert response.status_code == 200
-            assert "access_token" in response.json()
-            assert client.cookies["refresh_token"] != before
+        refresh_cookie = next(h for h in response.headers.get_list("set-cookie") if "refresh_token=" in h)
+
+        assert response.status_code == 200
+        assert set(response.json()) == {"access_token"}
+        assert before not in response.text
+        assert after not in response.text
+        assert after != before
+        assert "HttpOnly" in refresh_cookie
+        assert f"refresh_token={after}" in refresh_cookie
 
     async def test_used_token_is_dead_immediately(self) -> None:
         """쓴 것은 즉시 폐기한다 — 같은 토큰으로 두 번 갱신할 수 없다."""

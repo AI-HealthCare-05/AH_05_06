@@ -76,7 +76,7 @@
   min-height: 36px;
   padding: 0 var(--s-12);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--card);
   color: var(--ink-2);
   font-family: inherit;
@@ -88,7 +88,7 @@
 .tab--on {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -268,7 +268,7 @@
 .chip {
   padding: 2px var(--s-8);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--card);
   color: var(--ink-2);
   font-size: 12px;
