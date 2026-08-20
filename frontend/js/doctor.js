@@ -397,7 +397,11 @@
           openModal(approvedModal(result));
         })
         .catch(function (error) {
-          target.disabled = false;
+          /* target.disabled = false 로 그냥 되살리면 안 된다. 요청이 실패로
+             돌아오는 사이 다른(이미 처리된) 진료로 넘어가 있을 수 있는데, 그 경우
+             무조건 풀어 버리면 재승인 경합이 그대로 재현된다(위 markDone 과 같은
+             이유). 항상 지금 화면의 상태를 다시 물어야 한다. */
+          renderRole();
           openModal(failedModal("승인하지 못했습니다", error));
         });
       return;
