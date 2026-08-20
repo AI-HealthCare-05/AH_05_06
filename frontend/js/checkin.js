@@ -79,7 +79,7 @@
     }
 
     // 「가끔 놓쳐요」에는 문의하기를 두지 않는다 — 위 ③
-    if (info.ask) html += '<button class="fold__ask" type="button">💬 문의하기</button>';
+    if (info.ask) html += '<button class="fold__ask" type="button" id="ask">💬 문의하기</button>';
     if (info.note) html += '<p class="fold__note">ⓘ ' + esc(info.note) + "</p>";
 
     html += "</div>";
@@ -194,7 +194,10 @@
       "<dt>다음 진료</dt><dd>" +
       esc(result.next_visit) +
       "</dd></dl>" +
-      '<a class="done__link" href="/guide.html">복약지도 다시 보기</a>' +
+      /* 예전에는 `/guide.html` 로만 보내서 식별자가 비었다 — 그 화면은
+         `?visit=` 으로 `/api/v1/guides/{visit_id}` 를 부른다. 링크는 서버가
+         내려준 것을 쓴다. 안 주면 **깨진 링크를 그리지 않는다** (`#55` 리뷰). */
+      (result.guide_url ? '<a class="done__link" href="' + esc(result.guide_url) + '">복약지도 다시 보기</a>' : "") +
       '<p class="done__note">이 화면은 저절로 넘어가지 않아요 · 다 보시고 닫으셔도 됩니다</p>' +
       "</div>"
     );
@@ -206,9 +209,32 @@
     el("state").hidden = false;
   }
 
+  /* 서버가 선택지마다 내려준 `notify` 를 그대로 읽는다. 화면이 판단하지
+     않는다 — 무엇이 알릴 일인지는 승인된 주의사항이 정한다. */
+  function notifyFor(key) {
+    var info = data && data.answers && data.answers[key];
+    return info ? !!info.notify : false;
+  }
+
   /* ── 이벤트 ─────────────────────────────────────────── */
 
   document.addEventListener("click", function (event) {
+    /* 눌러도 아무 일이 없었다 (`#55` 리뷰). 환자 안전과 닿은 버튼이라
+       가만히 있는 것이 가장 나쁘다.
+
+       문의 창구(P6 챗봇)는 아직 없다. 없는 것을 있는 척하지 않고, **지금
+       할 수 있는 일**을 알려 준다 — 적어 둔 답은 이미 남았고, 급하면 의원에
+       전화하는 길이 있다. */
+    if (event.target.id === "ask") {
+      var box = el("ask-note");
+      if (box) {
+        box.hidden = false;
+        box.textContent = "문의 창구는 준비 중이에요. 급하시면 진료받으신 의원으로 전화해 주세요 — 여기 적으신 답은 그대로 전달돼요.";
+        box.focus();
+      }
+      return;
+    }
+
     var med = event.target.closest("[data-med]");
     if (med) {
       picked = med.getAttribute("data-med");
@@ -242,6 +268,13 @@
           medication: picked,
           pain: painHad === null ? null : { had: painHad, score: painHad ? painScore : null, types: painTypes },
           note: el("note").value.trim() || null,
+          /* 이 답이 의료진 알림을 만들어야 하는가. 서버가 정하는 값이지만
+             화면이 **받은 그대로 되돌려** 준다 — 화면이 「원장님께 전해
+             드릴게요」라고 말해 놓고 서버는 모르는 상태를 막는다 (`#55` 리뷰).
+
+             다만 이건 **저장할 때**다. 와이어프레임은 고르는 즉시 알리라고
+             하는데, 그러려면 계약이 하나 더 필요하다 — 아래 주석 참고. */
+          notify: notifyFor(picked),
         })
         .then(function (result) {
           showOnly(doneHtml(result));

@@ -128,6 +128,10 @@ function mockCheckinRequest(path, options) {
           return reject(new ApiError("MEDICATION_REQUIRED", 422, {}));
         }
         return resolve({
+          /* 저장 뒤 「복약지도 다시 보기」가 갈 곳. 화면은 `visit_id` 를 모르고
+             토큰만 안다 — 어느 진료인지는 서버가 안다. 그래서 **서버가 주소를
+             만들어 준다**. 안 주면 화면이 링크를 안 그린다 (`#55` 리뷰). */
+          guide_url: "/guide.html?visit=8801",
           saved: true,
           medication: body.medication,
           pain: body.pain,

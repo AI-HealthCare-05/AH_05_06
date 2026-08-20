@@ -342,3 +342,14 @@
   line-height: 1.7;
   color: var(--ink-3);
 }
+
+/* 문의하기를 눌렀을 때 나오는 안내. 오류가 아니라 안내라 붉게 하지 않는다. */
+.ask-note {
+  margin-top: var(--s-12);
+  padding: var(--s-12);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  background: var(--bg);
+  border-radius: var(--radius);
+}
