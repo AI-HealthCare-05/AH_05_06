@@ -36,6 +36,8 @@ class Where(StrEnum):
 
     PATIENT = "patient"
     VISIT = "visit"
+    PRESCRIPTION = "prescription"
+    PRESCRIPTION_ITEM = "prescription_item"
     VISIT_FLAG = "visit_flag"
     LAB_RESULT = "lab_result"
     OCR_INPUT = "ocr_input"  # DB 가 아니라 판독이 읽어야 할 원문
@@ -57,22 +59,27 @@ class Field:
 #: 정본은 docs/data/synthetic-patients.csv 다. 이 표는 그 칸을 어디에 넣을지만 정한다.
 MAPPING: dict[str, Field] = {
     "시나리오ID": Field(Where.DOC_ONLY, "", Kind.TEXT, True, "팀이 서로에게 쓰는 이름"),
-    "차트번호": Field(Where.PATIENT, "chart_no", Kind.TEXT, True, "EMR 차트번호"),
+    "차트번호": Field(Where.PATIENT, "hospital_patient_no", Kind.TEXT, True, "병원 내 환자번호"),
     "이름": Field(Where.PATIENT, "name", Kind.TEXT, True),
     "생년월일": Field(Where.PATIENT, "birth_date", Kind.DATE, True, "환자 본인확인에 그대로 쓴다"),
     "휴대폰": Field(Where.PATIENT, "phone", Kind.TEXT, True, "화면에는 뒤 4자리만"),
     "문자수신동의": Field(Where.PATIENT, "sms_consent", Kind.BOOL, True, "N 이면 sms_opt_out 도 참"),
-    "진료일": Field(Where.VISIT, "visit_date", Kind.DATE, note="목록의 하루 단위 축"),
+    "진료일": Field(Where.VISIT, "visited_at", Kind.DATE, note="Asia/Seoul 현지 시각으로 변환해 저장"),
     "담당의": Field(Where.VISIT, "doctor_id", Kind.TEXT, note="이름 → 직원 픽스처의 uuid 로 푼다"),
     "진단": Field(Where.DERIVED, "", Kind.FREE, note="처방 세트가 질환을 담는다. 별도 컬럼이 아니다"),
     "초진재진": Field(Where.DERIVED, "", Kind.ENUM, choices=("초진", "재진"), note="지난 방문이 있는지로 정한다"),
-    "처방세트": Field(Where.VISIT, "prescription_set_id", Kind.TEXT, note="SET-EMS-* · SET-PCOS-*"),
-    "약": Field(Where.VISIT, "drugs", Kind.FREE, note="drugs jsonb 의 name"),
-    "용법": Field(Where.VISIT, "drugs", Kind.FREE, note="drugs jsonb 의 freq"),
+    "처방세트": Field(
+        Where.PRESCRIPTION,
+        "prescription_set_version_id",
+        Kind.TEXT,
+        note="템플릿 출처. Visit JSON에 저장하지 않는다",
+    ),
+    "약": Field(Where.PRESCRIPTION_ITEM, "name", Kind.FREE, note="실제 처방 항목의 약 이름"),
+    "용법": Field(Where.PRESCRIPTION_ITEM, "frequency", Kind.FREE, note="실제 처방 항목의 용법"),
     "총투원문": Field(Where.OCR_INPUT, "", Kind.TEXT, note="판독이 읽어야 할 원문. DB 에 넣지 않는다"),
     "총투단위": Field(Where.OCR_INPUT, "", Kind.ENUM, choices=("일수", "통수"), note="통수면 × 28 일"),
-    "처방일수": Field(Where.VISIT, "days", Kind.INT, note="소진일 계산의 근거"),
-    "소진예정일": Field(Where.DERIVED, "", Kind.DATE, note="진료일 + 처방일수"),
+    "처방일수": Field(Where.PRESCRIPTION_ITEM, "duration_days", Kind.INT, note="소진일 계산의 근거"),
+    "소진예정일": Field(Where.DERIVED, "", Kind.DATE, note="visited_at 현지 날짜 + duration_days"),
     "혈색소": Field(Where.LAB_RESULT, "value", Kind.LAB, note="g/dL"),
     "자궁내막종": Field(Where.LAB_RESULT, "value", Kind.LAB, note="cm"),
     "내막두께": Field(Where.LAB_RESULT, "value", Kind.LAB, note="cm"),

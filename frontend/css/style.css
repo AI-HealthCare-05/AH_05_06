@@ -8,3 +8,16 @@ body {
   font-family: sans-serif;
   line-height: 1.6;
 }
+
+/* 안내 글자(placeholder)는 브라우저 기본이 흐려서 AA 를 못 넘긴다.
+   예전에는 `auth.css` 의 `.field__input::placeholder` 에만 규칙이 있어
+   **로그인 화면에서만** 대비가 맞았다 — 환자 등록 화면의 생년월일·전화번호는
+   브라우저 기본 그대로였다 (`#49` 리뷰).
+
+   클래스가 아니라 요소로 한 번만 정한다. 그래야 새 화면이 생겨도 따라온다.
+   Firefox 는 placeholder 에 기본 `opacity` 를 깔아 색을 정해도 흐려진다 —
+   그래서 함께 되돌린다. */
+::placeholder {
+  color: var(--ink-3);
+  opacity: 1;
+}

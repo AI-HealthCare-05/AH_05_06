@@ -36,8 +36,8 @@
   }
 
   function reject(file) {
-    if (!ACCEPT.test(file.type)) return "이미지나 PDF만 올릴 수 있어요";
-    if (file.size > MAX_BYTES) return "파일이 너무 커요 (" + human(MAX_BYTES) + " 까지)";
+    if (!ACCEPT.test(file.type)) return "이미지나 PDF만 올릴 수 있습니다.";
+    if (file.size > MAX_BYTES) return "파일이 너무 큽니다 (" + human(MAX_BYTES) + " 까지).";
     return null;
   }
 
@@ -144,7 +144,7 @@
       clearInterval(timer);
       if (/fail/i.test(item.name)) {
         item.state = "failed";
-        item.error = "업로드하지 못했어요. 다시 시도해 주세요";
+        item.error = "업로드하지 못했습니다. 다시 시도해 주세요.";
       } else {
         item.state = "done";
         item.kind = guessKind(item.name);
@@ -166,7 +166,7 @@
     var room = MAX_FILES - files.length;
     if (incoming.length > room) {
       incoming = incoming.slice(0, Math.max(0, room));
-      alert("한 번에 " + MAX_FILES + "장까지 올릴 수 있어요");
+      alert("한 번에 " + MAX_FILES + "장까지 올릴 수 있습니다.");
     }
 
     incoming.forEach(function (file) {
@@ -280,12 +280,12 @@
      화면 위에 누구의 기록인지 늘 붙어 있어야 하는 이유와 같은 이야기다. */
   var visit = null;
 
+  /* 화면 위의 「누구의 기록인가」 줄은 환자 카드가 갖는다(KEY-50 detail.js) —
+     기본정보 탭과 진료기록 탭이 같은 머리를 쓰기 때문이다. 여기서는 어느
+     진료 건에 붙이는지만 들고 있으면 된다. */
   function showVisit(next) {
     if (!next) return;
     visit = next;
-    document.getElementById("p-name").textContent = visit.name;
-    document.getElementById("p-id").textContent = "차트 " + visit.hospital_patient_no;
-    document.getElementById("p-visit").textContent = visit.meta.split(" · ").pop() + " · 오늘 진료";
   }
 
   document.addEventListener("session:ready", function () {
