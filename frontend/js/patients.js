@@ -578,7 +578,7 @@
   /* 등록 도중에 목록을 눌러도 잃는 것이 없어야 한다 */
   document.addEventListener("visit:selecting", function (event) {
     if (!dirty()) return;
-    var ok = confirm("아직 저장하지 않았어요. 그만두고 " + event.detail.name + " 님으로 갈까요?");
+    var ok = confirm("아직 저장하지 않았습니다. 그만두고 " + event.detail.name + " 님으로 가시겠습니까?");
     if (ok) return reset();
     event.preventDefault();
   });
