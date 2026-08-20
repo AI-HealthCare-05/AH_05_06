@@ -11,7 +11,13 @@ from fastapi import APIRouter, Cookie, Depends, Response, status
 from redis.asyncio import Redis
 
 from app.core import config
-from app.core.auth_errors import TOKEN_EXPIRED, AuthError
+from app.core.auth_errors import (
+    RESPONSE_LOGIN_FAILURE,
+    RESPONSE_PASSWORD_CHANGE_ERROR,
+    RESPONSE_TOKEN_EXPIRED,
+    TOKEN_EXPIRED,
+    AuthError,
+)
 from app.core.config import Env
 from app.core.jwt.tokens import AccessToken, RefreshToken
 from app.core.redis_client import get_redis
@@ -68,7 +74,12 @@ def _set_refresh_cookie(response: Response, refresh: RefreshToken) -> None:
     )
 
 
-@staff_auth_router.post("/login", response_model=StaffLoginResponse, status_code=status.HTTP_200_OK)
+@staff_auth_router.post(
+    "/login",
+    response_model=StaffLoginResponse,
+    status_code=status.HTTP_200_OK,
+    responses=RESPONSE_LOGIN_FAILURE,
+)
 async def login(
     body: StaffLoginRequest,
     response: Response,
@@ -85,7 +96,12 @@ async def login(
     )
 
 
-@staff_auth_router.post("/refresh", response_model=TokenRefreshResponse, status_code=status.HTTP_200_OK)
+@staff_auth_router.post(
+    "/refresh",
+    response_model=TokenRefreshResponse,
+    status_code=status.HTTP_200_OK,
+    responses=RESPONSE_TOKEN_EXPIRED,
+)
 async def refresh(
     response: Response,
     session: Annotated[StaffSessionService, Depends(_session)],
@@ -101,7 +117,12 @@ async def refresh(
     return TokenRefreshResponse(access_token=str(access))
 
 
-@staff_auth_router.post("/logout", openapi_extra=PASSWORD_GATE_EXEMPT, status_code=status.HTTP_204_NO_CONTENT)
+@staff_auth_router.post(
+    "/logout",
+    openapi_extra=PASSWORD_GATE_EXEMPT,
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=RESPONSE_TOKEN_EXPIRED,
+)
 async def logout(
     response: Response,
     session: Annotated[StaffSessionService, Depends(_session)],
@@ -125,7 +146,11 @@ async def logout(
 
 
 @staff_auth_router.get(
-    "/me", openapi_extra=PASSWORD_GATE_EXEMPT, response_model=StaffMeResponse, status_code=status.HTTP_200_OK
+    "/me",
+    openapi_extra=PASSWORD_GATE_EXEMPT,
+    response_model=StaffMeResponse,
+    status_code=status.HTTP_200_OK,
+    responses=RESPONSE_TOKEN_EXPIRED,
 )
 async def me(staff: Annotated[Staff, Depends(get_current_staff)]) -> StaffMeResponse:
     """세션 복원과 화면 분기의 근거. 새로고침할 때마다 부른다."""
@@ -140,7 +165,12 @@ async def me(staff: Annotated[Staff, Depends(get_current_staff)]) -> StaffMeResp
     )
 
 
-@staff_auth_router.patch("/password", openapi_extra=PASSWORD_GATE_EXEMPT, status_code=status.HTTP_204_NO_CONTENT)
+@staff_auth_router.patch(
+    "/password",
+    openapi_extra=PASSWORD_GATE_EXEMPT,
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**RESPONSE_TOKEN_EXPIRED, **RESPONSE_PASSWORD_CHANGE_ERROR},
+)
 async def change_password(
     body: PasswordChangeRequest,
     response: Response,

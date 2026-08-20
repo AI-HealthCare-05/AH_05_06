@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 
 from tortoise import fields, models
@@ -21,8 +22,8 @@ class Patient(models.Model):
     gender = fields.CharEnumField(enum_type=PatientGender, default=PatientGender.UNKNOWN)
     phone = fields.CharField(max_length=20)
     sms_consent = fields.BooleanField(default=False)
-    sms_consented_at = fields.DatetimeField(null=True)
-    sms_opted_out_at = fields.DatetimeField(null=True)
+    sms_consented_at: datetime | None = fields.DatetimeField(null=True)
+    sms_opted_out_at: datetime | None = fields.DatetimeField(null=True)
     sms_consent_updated_by = fields.BigIntField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
