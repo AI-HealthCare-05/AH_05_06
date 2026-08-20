@@ -40,6 +40,8 @@ if str(ROOT) not in sys.path:
 from tortoise import Tortoise  # noqa: E402
 
 from app.core.config import Config  # noqa: E402
+
+_CONFIG = Config()
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
@@ -57,8 +59,7 @@ _HOSPITAL_NAMES: dict[str, str] = {
 
 
 def _guard_environment() -> None:
-    config = Config()
-    if str(config.ENV).lower() == "prod":
+    if str(_CONFIG.ENV).lower() == "prod":
         print("오류: 운영 환경(ENV=prod)에서는 seed 를 실행할 수 없습니다.", file=sys.stderr)
         sys.exit(1)
 
@@ -84,7 +85,7 @@ def _require_csv(path: Path, hint: str) -> None:
         sys.exit(1)
 
 
-def _parse_dt(value: str) -> datetime | None:
+def _parse_dt(value: str, label: str = "") -> datetime | None:
     """'YYYY-MM-DD HH:MM' 문자열을 UTC timezone-aware datetime 으로 변환한다."""
     stripped = value.strip()
     if not stripped:
@@ -92,6 +93,7 @@ def _parse_dt(value: str) -> datetime | None:
     try:
         return datetime.strptime(stripped, "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
     except ValueError:
+        print(f"[seed] 경고: 날짜 파싱 실패 {label!r} = {stripped!r}", file=sys.stderr)
         return None
 
 
@@ -142,24 +144,24 @@ async def seed_staff(password: str) -> dict[str, Hospital]:
                 "roles": list(s.roles),
                 "must_change_password": s.must_change_password,
                 "status": status,
-                "left_at": _parse_dt(s.left_at),
-                "last_login_at": _parse_dt(s.last_login_at),
+                "left_at": _parse_dt(s.left_at, f"{s.login_id}.left_at"),
+                "last_login_at": _parse_dt(s.last_login_at, f"{s.login_id}.last_login_at"),
             },
         )
 
         if was_created:
             created += 1
         else:
-            await Staff.filter(login_id=s.login_id).update(
-                hospital_id=hospital.hospital_id,
-                password_hash=hashed,
-                name=s.name,
-                roles=list(s.roles),
-                must_change_password=s.must_change_password,
-                status=status,
-                left_at=_parse_dt(s.left_at),
-                last_login_at=_parse_dt(s.last_login_at),
-            )
+            staff_obj = await Staff.get(login_id=s.login_id)
+            staff_obj.hospital_id = hospital.hospital_id  # type: ignore[assignment]
+            staff_obj.password_hash = hashed
+            staff_obj.name = s.name
+            staff_obj.roles = list(s.roles)
+            staff_obj.must_change_password = s.must_change_password
+            staff_obj.status = status
+            staff_obj.left_at = _parse_dt(s.left_at, f"{s.login_id}.left_at")
+            staff_obj.last_login_at = _parse_dt(s.last_login_at, f"{s.login_id}.last_login_at")
+            await staff_obj.save()
             updated += 1
 
     print(f"[staff] created={created} updated={updated} total={len(staff_rows)}")
@@ -233,7 +235,7 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
     print(f"[patients] created={created_p} updated={updated_p} total={len(patient_map)}")
 
     # 2단계: 진료 upsert
-    created_v = skipped_v = 0
+    created_v = skipped_v = error_v = 0
 
     for row in rows:
         visit_date_str = row["진료일"].strip()
@@ -245,13 +247,18 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         patient = patient_map[chart_no]
 
         try:
-            visited_at = datetime.strptime(visit_date_str, "%Y-%m-%d").replace(hour=12, minute=0, second=0, tzinfo=UTC)
+            # 병원 시간(KST)으로 생성해야 get_or_create 조회와 저장 값이 일치한다.
+            # UTC로 만들면 Tortoise use_tz=True가 저장 시 KST로 변환하는데,
+            # 조회는 UTC로 해서 매 실행마다 새 행이 쌓인다.
+            visited_at = datetime.strptime(visit_date_str, "%Y-%m-%d").replace(
+                hour=12, minute=0, second=0, tzinfo=_CONFIG.TIMEZONE
+            )
         except ValueError:
             print(
                 f"[visits] 날짜 파싱 실패: {visit_date_str!r} (시나리오 {row['시나리오ID']})",
                 file=sys.stderr,
             )
-            skipped_v += 1
+            error_v += 1
             continue
 
         doctor_name = row["담당의"].strip()
@@ -277,7 +284,7 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         if was_created:
             created_v += 1
 
-    print(f"[visits] created={created_v} skipped={skipped_v} total={len(rows)}")
+    print(f"[visits] created={created_v} skipped={skipped_v} error={error_v} total={len(rows)}")
 
 
 async def main(mode: str) -> None:
