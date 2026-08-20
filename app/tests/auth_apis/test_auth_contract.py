@@ -20,6 +20,7 @@ from app.core import auth_errors
 from app.core.auth_errors import (
     ACCOUNT_LOCKED,
     INVALID_CREDENTIALS,
+    INVALID_REQUEST,
     PASSWORD_CHANGE_REQUIRED,
     TOKEN_EXPIRED,
 )
@@ -175,3 +176,24 @@ class TestOpenApiShowsTheContract(TestCase):
         schema = self.schema()["components"]["schemas"]["PasswordChangeRequest"]
 
         assert schema.get("required") == ["new_password"]
+
+    def _example_code(self, path: str, method: str, status_code: str) -> str:
+        responses = self.schema()["paths"][path][method]["responses"]
+        return responses[status_code]["content"]["application/json"]["example"]["code"]
+
+    async def test_login_shows_error_examples(self) -> None:
+        """DTO 만으로는 「몇 번 틀리면 잠기는지」가 안 보인다 — 오류도 계약이다."""
+        assert self._example_code("/api/v1/auth/login", "post", "401") == INVALID_CREDENTIALS
+        assert self._example_code("/api/v1/auth/login", "post", "429") == ACCOUNT_LOCKED
+
+    async def test_protected_endpoints_show_token_expired(self) -> None:
+        for method, path in [
+            ("post", "/api/v1/auth/refresh"),
+            ("post", "/api/v1/auth/logout"),
+            ("get", "/api/v1/auth/me"),
+            ("patch", "/api/v1/auth/password"),
+        ]:
+            assert self._example_code(path, method, "401") == TOKEN_EXPIRED, f"{method} {path}"
+
+    async def test_password_change_shows_validation_error_example(self) -> None:
+        assert self._example_code("/api/v1/auth/password", "patch", "422") == INVALID_REQUEST
