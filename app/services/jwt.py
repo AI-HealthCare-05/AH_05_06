@@ -46,9 +46,9 @@ class JwtService:
         except TokenError as err:
             raise HTTPException(status_code=400, detail="Provided invalid token.") from err
 
-    def refresh_jwt(self, refresh_token: str) -> AccessToken:
-        verified_rt = self.verify_jwt(token=refresh_token, token_type="refresh")
-        return verified_rt.access_token
+    # refresh_jwt() 는 지웠다. 서명만 보고 액세스 토큰을 찍어 주는 지름길이라,
+    # 어디서 다시 부르면 세션 확인(로그아웃 · 재사용 감지 · 유휴 · 퇴사자)을
+    # 통째로 건너뛴다. 갱신은 `StaffSessionService.rotate()` 하나로 간다.
 
     def issue_jwt_pair(self, user: User) -> dict[str, AccessToken | RefreshToken]:
         rt = self.create_refresh_token(user)
