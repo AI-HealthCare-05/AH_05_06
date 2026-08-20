@@ -251,12 +251,17 @@ body.auth {
 /* ── 눌렀다는 신호 ──────────────────────────────────
    로그인은 응답이 늦을 수 있는 자리다(서버 왕복 + 해시 검증). 누른 순간
    버튼이 반응하지 않으면 두 번 누르게 되고, 실패 횟수가 두 번 오른다. */
+/* 요소마다 **실제로 바뀌는 것만** 감싼다. 안 바뀌는 속성을 목록에 넣으면
+   아무것도 애니메이션하지 않으면서 「여기 뭔가 움직인다」고 읽히는 죽은 CSS 가 된다. */
 .button,
-.reveal,
+.reveal {
+  transition: background-color var(--motion) var(--ease);
+}
+
+/* 배경은 안 바뀐다. 바뀌는 것은 오류 테두리뿐이다 —
+   `[aria-invalid="true"]` 를 `login.js` · `password.js` 가 토글한다. */
 .field__input {
-  transition:
-    background-color var(--motion) var(--ease),
-    border-color var(--motion) var(--ease);
+  transition: border-color var(--motion) var(--ease);
 }
 
 .button:active:not(:disabled) {

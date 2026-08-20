@@ -311,11 +311,18 @@
 }
 
 /* ── 눌렀다는 신호 ────────────────────────────────── */
+/* `.file__kind` 는 여기 없다. `<select>` 라 눌림 반응이 없고, 배경·테두리를
+   바꾸는 규칙이 코드베이스 어디에도 없다 — 목록에 넣어 봐야 아무것도
+   애니메이션하지 않는다. 눌림 반응을 주려고 `:active` 를 새로 만들지도
+   않았다. 드롭다운은 눌러서 열리는 것이지 눌린 티를 내는 것이 아니다. */
 .button-primary,
 .button-ghost,
 .drop__pick,
-.file__act,
-.file__kind,
+.file__act {
+  transition: background-color var(--motion) var(--ease);
+}
+
+/* 끌어다 놓는 자리만 배경과 테두리를 함께 바꾼다(`.drop.is-over`). */
 .drop {
   transition:
     background-color var(--motion) var(--ease),

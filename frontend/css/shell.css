@@ -401,12 +401,30 @@ body.shell {
    하루에 수십 번 지난다. */
 .topbar__tab,
 .icon-button,
-.row,
-.chip,
-.list__search {
-  transition:
-    background-color var(--motion) var(--ease),
-    border-color var(--motion) var(--ease);
+.row {
+  transition: background-color var(--motion) var(--ease);
+}
+
+/* 칩은 **테두리만** 감싼다. `:active` 가 바꾸는 것이 테두리뿐이고,
+   배경까지 넣으면 선택 상태로 넘어갈 때 글자가 사라진다.
+
+   `.chip[aria-pressed="true"]` 는 글자와 배경이 밝기를 서로 맞바꾼다 —
+   회색 글자·밝은 배경에서 흰 글자·어두운 배경으로. 배경만 120ms 에 걸쳐
+   따라오면 그동안 **흰 글자가 밝은 배경 위에** 놓인다.
+
+       0ms   흰 글자 on #f4f5f6   대비 1.09   ← 안 보인다
+      60ms   흰 글자 on #8c9298   대비 3.14   ← AA 미달
+     120ms   흰 글자 on #23303a   대비 13.50
+
+   `color` 를 목록에 넣어도 안 낫는다. 나쁜 순간이 없어지는 게 아니라
+   가운데로 옮겨갈 뿐이다(최저 1.07 @48ms). 글자와 배경이 서로를 지나가기
+   때문에 어떻게 보간해도 겹치는 지점이 생긴다.
+
+   그래서 **선택 전환은 한 번에 바꾼다.** 지나는 순간이 없으면 안 보이는
+   순간도 없다 — 5.82 에서 13.50 으로 바로 간다. `.topbar__tab` 은 어두운
+   글자에서 어두운 글자로 가서(최저 6.35) 이 문제가 없다. */
+.chip {
+  transition: border-color var(--motion) var(--ease);
 }
 
 .topbar__tab:active,
