@@ -36,8 +36,8 @@
   }
 
   function reject(file) {
-    if (!ACCEPT.test(file.type)) return "이미지나 PDF만 올릴 수 있어요";
-    if (file.size > MAX_BYTES) return "파일이 너무 커요 (" + human(MAX_BYTES) + " 까지)";
+    if (!ACCEPT.test(file.type)) return "이미지나 PDF만 올릴 수 있습니다.";
+    if (file.size > MAX_BYTES) return "파일이 너무 큽니다 (" + human(MAX_BYTES) + " 까지).";
     return null;
   }
 
@@ -144,7 +144,7 @@
       clearInterval(timer);
       if (/fail/i.test(item.name)) {
         item.state = "failed";
-        item.error = "업로드하지 못했어요. 다시 시도해 주세요";
+        item.error = "업로드하지 못했습니다. 다시 시도해 주세요.";
       } else {
         item.state = "done";
         item.kind = guessKind(item.name);
@@ -166,7 +166,7 @@
     var room = MAX_FILES - files.length;
     if (incoming.length > room) {
       incoming = incoming.slice(0, Math.max(0, room));
-      alert("한 번에 " + MAX_FILES + "장까지 올릴 수 있어요");
+      alert("한 번에 " + MAX_FILES + "장까지 올릴 수 있습니다.");
     }
 
     incoming.forEach(function (file) {

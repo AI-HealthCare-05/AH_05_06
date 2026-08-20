@@ -49,7 +49,7 @@
   /* 영문 · 숫자 · 기호를 섞어 8자 이상 — 화면에 적힌 그대로 검사한다.
      적어 놓고 다르게 검사하면 왜 막히는지 알 수 없다. */
   function tooWeak(value) {
-    if (value.length < MIN_LENGTH) return "비밀번호는 " + MIN_LENGTH + "자 이상이어야 해요";
+    if (value.length < MIN_LENGTH) return "비밀번호는 " + MIN_LENGTH + "자 이상이어야 합니다";
     var kinds = [/[A-Za-z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(function (re) {
       return re.test(value);
     }).length;
@@ -64,7 +64,7 @@
 
     var weak = tooWeak(value);
     if (weak) return show(weak, next);
-    if (value !== again) return show("두 번 넣으신 비밀번호가 달라요", confirm);
+    if (value !== again) return show("두 번 넣으신 비밀번호가 다릅니다", confirm);
 
     hide();
     submit.disabled = true;
@@ -88,7 +88,7 @@
           session.clear();
           return location.replace("/login.html?expired=1");
         }
-        show("비밀번호를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요");
+        show("비밀번호를 바꾸지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
       }
     );
   });
