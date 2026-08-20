@@ -230,10 +230,15 @@
 
   /* 승인·되돌리기가 끝나면 왼쪽 줄도 그 사실을 말해야 한다. 목록이 「승인
      대기」인 채로 남으면 원장님은 안 나간 것으로 읽고 한 번 더 누른다. */
-  function markDone(patch) {
-    if (!visit) return;
-    Object.assign(visit, patch);
-    if (typeof updateRow === "function") updateRow(visit.visit_id, patch);
+  /* 응답이 오는 사이에 의사가 다른 환자를 고를 수 있다. 그때 전역 `visit` 은
+     이미 다른 사람이라, 그걸 고치면 **승인한 적 없는 환자가 발송 대기로
+     바뀌고** 정작 승인한 환자는 목록에 남아 다시 승인된다.
+
+     그래서 줄은 언제나 **요청을 보낼 때 잡아 둔 id** 로 찾는다. 전역은 그것이
+     아직 같은 사람일 때만 손댄다. `load()` 가 `loadSeq` 로 하는 것과 같은 이유다. */
+  function markDone(visitId, patch) {
+    if (typeof updateRow === "function") updateRow(visitId, patch);
+    if (visit && visit.visit_id === visitId) Object.assign(visit, patch);
     if (typeof renderChipCounts === "function") renderChipCounts();
     renderRole();
   }
@@ -354,12 +359,13 @@
 
     if (target.id === "approve" && guide) {
       target.disabled = true;
+      var approvingId = visit.visit_id; // 지금 누른 그 환자. 전역은 곧 바뀔 수 있다
       doctorApi
-        .approve(visit.visit_id)
+        .approve(approvingId)
         .then(function (result) {
           /* 승인했으면 그 진료는 발송 대기다. 줄을 먼저 고치고 모달을 연다 —
              모달을 닫았을 때 목록이 이미 사실을 말하고 있어야 한다. */
-          markDone({ work_category: "SEND_PENDING", detail_status: "SCHEDULED_TO_SEND" });
+          markDone(approvingId, { work_category: "SEND_PENDING", detail_status: "SCHEDULED_TO_SEND" });
           openModal(approvedModal(result));
         })
         .catch(function (error) {
@@ -382,10 +388,11 @@
         return;
       }
       target.disabled = true;
+      var returningId = visit.visit_id; // 승인과 같은 이유로 지금 잡아 둔다
       doctorApi
-        .returnToStaff(visit.visit_id, text)
+        .returnToStaff(returningId, text)
         .then(function () {
-          markDone({ work_category: "NEEDS_ATTENTION", detail_status: "APPROVAL_RETURNED" });
+          markDone(returningId, { work_category: "NEEDS_ATTENTION", detail_status: "APPROVAL_RETURNED" });
           openModal(
             '<h2 class="modal__title">스탭에 되돌렸습니다</h2>' +
               '<p class="modal__lead">「' +
