@@ -7,7 +7,8 @@ from app.core.api_errors import ApiError
 from app.core.pagination import decode_cursor, encode_cursor
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import VisitCreateRequest, VisitUpdateRequest
-from app.models.visits import Visit
+from app.models.ocr import OcrJob
+from app.models.visits import GuideDocument, GuideStatus, Visit
 from app.repositories.patient_repository import PatientRepository
 from app.repositories.visit_repository import VisitRepository
 
@@ -75,6 +76,7 @@ class VisitService:
             raise ApiError(400, "EMPTY_UPDATE_FIELDS", "수정할 필드가 없습니다.")
 
         if "department_id" in supplied:
+            await self._refuse_if_locked(visit)
             self._validate_department(data.department_id)
 
         if "visited_at" in supplied:
@@ -121,6 +123,33 @@ class VisitService:
             exclude_visit_id=exclude_visit_id,
         ):
             raise ApiError(409, "VISIT_ALREADY_REGISTERED", "같은 날짜의 진료가 이미 등록되어 있습니다.")
+
+    #: 진료의 **식별 관계**가 굳는 시점. 안내문이 이 상태에 들어서면 본문이 이미
+    #: 이 환자의 검사값·처방으로 쓰여 있고, 곧 나간다.
+    #:
+    #: `STAFF_REVIEW` 와 `APPROVAL_RETURNED` 는 뺀다 — 둘 다 스탭이 아직 **쓰고
+    #: 있는** 상태라, 진료과가 잘못 잡힌 것을 그때 고칠 수 있어야 한다.
+    LOCKING_GUIDE_STATUSES = (GuideStatus.APPROVAL_PENDING, GuideStatus.SCHEDULED_TO_SEND)
+
+    async def _refuse_if_locked(self, visit: Visit) -> None:
+        """OCR 이나 승인 안내가 붙은 뒤에는 진료과를 바꿀 수 없다 (계약 §6).
+
+        왜 막느냐 — 안내문 본문은 **이 진료의 맥락으로** 쓰인다. 승인해서 발송을
+        기다리는 안내가 달린 진료의 진료과를 바꾸면, 나가는 글과 기록이 가리키는
+        곳이 갈라진다. `guide_event` 에는 「승인했다」만 남아 있어 나중에 무엇을
+        승인한 것이었는지 되짚을 수 없다. 의무기록이라 조용히 어긋나면 복구할
+        근거가 없다.
+
+        판단은 **진료를 타고** 한다 — `GuideService.get()` 이 병원을 진료를 타고
+        보는 것과 같은 이유다. 같은 값을 두 곳에 두면 어긋날 자리도 함께 생긴다.
+        """
+        if await OcrJob.filter(visit_id=visit.visit_id).exists():
+            raise ApiError(409, "VISIT_LOCKED", "판독이 시작된 진료는 진료과를 바꿀 수 없습니다.")
+        locked_guide = await GuideDocument.filter(
+            visit_id=visit.visit_id, status__in=self.LOCKING_GUIDE_STATUSES
+        ).exists()
+        if locked_guide:
+            raise ApiError(409, "VISIT_LOCKED", "안내문이 승인 요청된 진료는 진료과를 바꿀 수 없습니다.")
 
     @staticmethod
     def _validate_department(department_id: int | None) -> None:
