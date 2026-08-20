@@ -40,7 +40,7 @@ def build_app() -> TestClient:
 
     @app.get("/boom")
     def boom() -> None:
-        raise ValueError(f"Can't connect: password=pw1234 token={LINK_TOKEN}")
+        raise ValueError(f"Can't connect: password=n0t-a-real-pw token={LINK_TOKEN}")
 
     return TestClient(app, raise_server_exceptions=False)
 
@@ -135,7 +135,7 @@ class TestUnhandledErrorsStaySilent:
         """FastAPI 기본이 이미 안전하다. 바뀌면 여기서 걸린다."""
         response = build_app().get("/boom")
         assert response.status_code == 500
-        assert "pw1234" not in response.text
+        assert "n0t-a-real-pw" not in response.text
         assert LINK_TOKEN not in response.text
         assert "MySQL" not in response.text
 

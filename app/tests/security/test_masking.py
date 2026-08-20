@@ -211,7 +211,7 @@ class TestLoggerAppliesItAutomatically:
         logger, written = self._capture("mask-test-exc")
         # 실제로 그렇듯 값은 변수에 담겨 온다. 소스에 박아 두면 트레이스백이
         # 소스 줄을 그대로 읽어 와서, 마스킹과 무관하게 남는다 — 아래 테스트 참고.
-        password = "pw1234"
+        password = "n0t-a-real-pw"
         try:
             raise ValueError(f"Can't connect: password={password} token={LINK_TOKEN}")
         except ValueError as exc:
@@ -231,7 +231,7 @@ class TestMaskingDoesNotChangeBehaviour:
 
     def test_the_exception_object_survives_untouched(self) -> None:
         logger, _ = TestLoggerAppliesItAutomatically._capture("mask-test-immutable")
-        error = ValueError(f"connect failed: password=pw1234 token={LINK_TOKEN}")
+        error = ValueError(f"connect failed: password=n0t-a-real-pw token={LINK_TOKEN}")
         before = str(error), error.args
 
         try:
@@ -242,7 +242,7 @@ class TestMaskingDoesNotChangeBehaviour:
         assert (str(error), error.args) == before, (
             "로그를 찍었더니 예외 객체가 바뀌었다 — 재발생·API 응답까지 영향을 받는다"
         )
-        assert "pw1234" in str(error), "예외 자체는 원래 값을 그대로 들고 있어야 한다"
+        assert "n0t-a-real-pw" in str(error), "예외 자체는 원래 값을 그대로 들고 있어야 한다"
 
     def test_the_record_still_carries_exc_info(self) -> None:
         """`exc_info` 를 지우지 않는다 — 다른 핸들러가 예외 종류로 분기할 수 있다."""

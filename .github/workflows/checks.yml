@@ -62,7 +62,9 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: pw1234
+          # 잡 안에서만 사는 일회용 컨테이너다. 비밀이 아니라는 것을
+          # 이름으로 못박는다 — 예전 값은 저장소 이력에 새어 나간 것이었다.
+          MYSQL_ROOT_PASSWORD: ci-throwaway-not-a-secret
           MYSQL_DATABASE: ai_health
         ports:
           - 3306:3306
@@ -113,6 +115,13 @@ jobs:
 
       - name: Run Tests with Coverage
         if: steps.check_tests.outputs.has_tests == 'true'
+        # `DB_PASSWORD` 는 코드 기본값이 없다(KEY-110). 위 서비스 컨테이너와
+        # 같은 값을 여기서 명시한다 — 기본값에 기대면 그 값이 곧 공유 비밀이 된다.
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: ci-throwaway-not-a-secret
+          DB_NAME: ai_health
         run: |
           uv run coverage run -m pytest app
           uv run coverage report -m
