@@ -51,6 +51,37 @@
     return el(id).value.trim();
   }
 
+  /* 고른 항목의 보이는 글자. select 의 value 는 id 라 그대로 쓰면 숫자가 뜬다. */
+  function chosenName(id) {
+    var select = el(id);
+    var option = select.options[select.selectedIndex];
+    return option ? option.textContent : "";
+  }
+
+  /* 「2026-08-20T10:32:00+09:00」 — 계약이 받는 모양.
+     Z(UTC)로 보내면 서버가 Asia/Seoul 로 옮길 때 자정 근처에서 날이 갈린다. */
+  function nowWithOffset() {
+    var now = new Date();
+    var offset = -now.getTimezoneOffset();
+    var sign = offset >= 0 ? "+" : "-";
+    var pad = function (n) {
+      return String(Math.floor(Math.abs(n))).padStart(2, "0");
+    };
+    return (
+      toIsoDate(now) +
+      "T" +
+      pad(now.getHours()) +
+      ":" +
+      pad(now.getMinutes()) +
+      ":" +
+      pad(now.getSeconds()) +
+      sign +
+      pad(offset / 60) +
+      ":" +
+      pad(offset % 60)
+    );
+  }
+
   /* ── 열고 닫기 ───────────────────────────────────────── */
 
   function open(prefill) {
@@ -91,8 +122,8 @@
     hitsWrap.hidden = true;
     hits.innerHTML = "";
     clearForm();
-    el("f-dept").value = DEPARTMENTS[0];
-    el("f-doctor").value = DOCTORS[0];
+    el("f-dept").value = DEPARTMENTS[0].department_id;
+    el("f-doctor").value = DOCTORS[0].doctor_id;
     unlock();
     render();
   }
@@ -136,7 +167,9 @@
         hits.innerHTML = "";
         found.className = "found found--none";
         found.innerHTML =
-          "「<b>" + esc(q) + "</b>」로 <b>등록된 환자가 없습니다.</b><br>이 프로그램을 처음 쓰시는 분입니다 — 아래에서 새로 등록합니다.";
+          "「<b>" +
+          esc(q) +
+          "</b>」로 <b>등록된 환자가 없습니다.</b><br>이 프로그램을 처음 쓰시는 분입니다 — 아래에서 새로 등록합니다.";
         found.hidden = false;
 
         if (/^\d+$/.test(q)) {
@@ -246,7 +279,7 @@
     /* 기존 환자는 동의를 다시 받지 않는다 — 이미 받은 것을 그대로 쓴다 */
     consent.checked = true;
     consent.disabled = true;
-    consentLabel.innerHTML = "안내 문자 수신에 동의하셨습니다 * <span class=\"check__note\">기존 동의 유지 · 🔒</span>";
+    consentLabel.innerHTML = '안내 문자 수신에 동의하셨습니다 * <span class="check__note">기존 동의 유지 · 🔒</span>';
     lockedNote.hidden = false;
     /* TODO(KEY-50) 잠긴 값이 틀렸을 때 가는 [ 정보 수정 ] 버튼은 환자 카드 화면이
        생기면 여기에 붙인다. 지금은 갈 곳이 없어 문구로만 알린다. */
@@ -346,7 +379,8 @@
 
     if (picked) {
       var already = todayVisit();
-      if (already) out.push({ ok: false, block: true, text: "오늘 이미 등록되어 있습니다 — 왼쪽 목록에서 그 줄을 고르세요" });
+      if (already)
+        out.push({ ok: false, block: true, text: "오늘 이미 등록되어 있습니다 — 왼쪽 목록에서 그 줄을 고르세요" });
       else out.push({ ok: true, text: "오늘 이미 등록된 기록은 없습니다" });
 
       /* 생년월일까지 같은 분이 결과에 있었다면 「동명이인이 아닙니다」는 거짓이다.
@@ -355,7 +389,8 @@
         out.unshift({
           ok: false,
           block: false,
-          text: "생년월일이 같은 분이 또 있습니다 — 휴대폰 " + maskPhone(picked.phone).slice(-4) + " 가 맞는지 확인하세요",
+          text:
+            "생년월일이 같은 분이 또 있습니다 — 휴대폰 " + maskPhone(picked.phone).slice(-4) + " 가 맞는지 확인하세요",
         });
       } else {
         out.unshift({ ok: true, text: "생년월일 일치 — 동명이인이 아닙니다" });
@@ -381,7 +416,8 @@
     if (!value("f-name")) out.push({ ok: false, block: true, quiet: true, text: "이름을 입력해 주세요" });
 
     if (!chart) out.push({ ok: false, block: true, quiet: true, text: "차트번호를 입력해 주세요" });
-    else if (checking) out.push({ ok: false, block: true, wait: true, text: "차트번호가 이미 있는지 확인하는 중입니다" });
+    else if (checking)
+      out.push({ ok: false, block: true, wait: true, text: "차트번호가 이미 있는지 확인하는 중입니다" });
     else if (dupChart)
       out.push({
         ok: false,
@@ -396,7 +432,11 @@
     if (!phone) out.push({ ok: false, block: true, quiet: true, text: "휴대폰 번호를 입력해 주세요" });
     else if (!phoneOk(phone)) out.push({ ok: false, block: true, text: "휴대폰 번호를 다시 확인해 주세요" });
     else if (dupPhone)
-      out.push({ ok: false, block: false, text: "같은 번호로 " + dupPhone.name + " 님이 등록되어 있습니다 — 가족이 함께 쓰는 번호일 수 있습니다" });
+      out.push({
+        ok: false,
+        block: false,
+        text: "같은 번호로 " + dupPhone.name + " 님이 등록되어 있습니다 — 가족이 함께 쓰는 번호일 수 있습니다",
+      });
 
     if (!consent.checked)
       out.push({ ok: false, block: true, text: "문자 수신 동의가 체크되지 않았습니다 — 동의해야 등록됩니다" });
@@ -415,7 +455,8 @@
          실제 번호라 **가리지 않는다** — 가릴 대상이 없고, 등록 직전 마지막으로
          자릿수 오타를 눈으로 잡을 자리를 없앤다. 안내 문자가 갈 번호다. */
       ["휴대폰", value("f-phone")],
-      ["진료과 · 담당", el("f-dept").value + " · " + el("f-doctor").value],
+      /* 확인 화면에는 **사람이 읽는 이름**이 떠야 한다. 칸의 값은 id 다. */
+      ["진료과 · 담당", chosenName("f-dept") + " · " + chosenName("f-doctor")],
       ["진료일", toIsoDate(new Date()) + " (오늘)"],
     ]
       .map(function (pair) {
@@ -454,9 +495,11 @@
 
     var makeVisit = function (patientId) {
       return patientsApi.createVisit(patientId, {
-        department: el("f-dept").value,
-        doctor_name: el("f-doctor").value,
-        visited_on: toIsoDate(new Date()),
+        department_id: Number(el("f-dept").value),
+        doctor_id: Number(el("f-doctor").value),
+        /* 계약은 datetime 을 받는다. 오프셋을 붙여 보내야 서버가 어느 날의
+           진료인지 시간대를 헤아리지 않아도 된다. */
+        visited_at: nowWithOffset(),
       });
     };
 
@@ -482,7 +525,7 @@
       .catch(function (error) {
         /* 화면에서 막는 것은 편의일 뿐이고 판정은 서버가 한다.
            그래서 화면이 통과시킨 뒤에도 409 가 올 수 있다 — 그때도 갈 곳을 알려 준다. */
-        if (error && error.code === "duplicate_hospital_patient_no") {
+        if (error && error.code === "DUPLICATE_HOSPITAL_PATIENT_NO") {
           dupChart = { hospital_patient_no: value("f-chart") };
           render();
           return;
@@ -541,11 +584,14 @@
   });
 
   document.addEventListener("session:ready", function () {
+    /* 사람에게는 이름을 보이고 서버에는 id 를 보낸다.
+       계약이 `department_id` · `doctor_id` 를 받는다 — 이름을 보내면 폐지된
+       진료과인지, 그 의사가 거기 소속인지 서버가 볼 수 없다. */
     el("f-dept").innerHTML = DEPARTMENTS.map(function (d) {
-      return '<option value="' + esc(d) + '">' + esc(d) + "</option>";
+      return '<option value="' + d.department_id + '">' + esc(d.name) + "</option>";
     }).join("");
     el("f-doctor").innerHTML = DOCTORS.map(function (d) {
-      return '<option value="' + esc(d) + '">' + esc(d) + "</option>";
+      return '<option value="' + d.doctor_id + '">' + esc(d.name) + "</option>";
     }).join("");
 
     /* 문자가 나가지 않는 상태면 목록 위에 붙인다. 등록은 되지만 발송이 밀린다.
