@@ -51,7 +51,7 @@
 
 - 비밀번호 원문은 fixture 파일에 넣지 않는다.
 - 직원 시드는 `SEED_STAFF_PASSWORD` 환경변수에서 개발용 값을 받으며 fixture 객체에는 비밀번호를 싣지 않는다.
-- KEY-36 팩토리는 `KEY36_TEST_PASSWORD` 개발값의 존재만 확인하며, 반환 객체에 저장하거나 노출하지 않는다.
+- KEY-36 팩토리는 비밀번호를 생성·요구·저장하지 않는다.
 - 공통 직원 로더(`staff.py`, PR #45)는 저장소의 `ENV` 설정이 운영(`prod`)이면
   `ProductionFixtureError`를 발생시켜 합성 직원 fixture 사용을 차단한다.
 - JWT, Refresh Token, OTP, 환자 링크 토큰은 테스트 실행 중 발급한다.
@@ -180,14 +180,13 @@ app/tests/
 
 ### 실행 방법
 
-비밀번호는 저장소에 커밋하지 않고 테스트 프로세스에만 주입한다.
+KEY-36 fixture 자체는 비밀번호를 사용하지 않으며, 저장소에서 허용하는 로컬 환경값으로 실행한다.
 
 ```bash
-ENV=test KEY36_TEST_PASSWORD='<개발 전용 값>' uv run pytest app/tests/fixtures/test_key36_fixtures.py -q
+ENV=local uv run pytest app/tests/fixtures/test_key36_fixtures.py -q
 ```
 
 - 운영 실행 차단은 직원 정본 로더의 PR #45 테스트에서 검증하며 KEY-36에서 중복 구현하지 않는다.
-- `KEY36_TEST_PASSWORD`가 없으면 KEY-36 팩토리 생성을 거부하지만, 해당 값은 반환 객체에 포함하지 않는다.
 - 실제 직원 시드가 필요할 때는 정본 규칙에 따라 `SEED_STAFF_PASSWORD`를 별도로 주입한다.
 
 ## 10. 단계별 적용
@@ -195,7 +194,8 @@ ENV=test KEY36_TEST_PASSWORD='<개발 전용 값>' uv run pytest app/tests/fixtu
 ### 1단계 — 현재
 
 - 병원, 역할별 직원, 합성 환자와 진료 연결 fixture를 제공한다.
-- bigint 호환 ID, 복수 역할, 병원 격리, 퇴사·최초 로그인 계정과 운영 실행 차단을 계약 테스트로 검증한다.
+- bigint 호환 ID, 복수 역할, 병원 격리, 퇴사·최초 로그인 계정을 계약 테스트로 검증한다.
+- 운영 실행 차단은 공통 직원 로더의 검증을 재사용한다.
 - 미확정 API 권한과 운영 모델을 임의로 구현하지 않는다.
 
 ### 2단계 — 직원·환자 모델 병합 후

@@ -1,4 +1,3 @@
-import os
 from datetime import date, datetime
 
 from app.tests.fixtures.models import (
@@ -7,14 +6,6 @@ from app.tests.fixtures.models import (
     PatientFixture,
     VisitFixture,
 )
-
-TEST_PASSWORD_ENV = "KEY36_TEST_PASSWORD"
-
-
-def _require_test_password() -> None:
-    """Require a development-only seed password without returning or storing it."""
-    if not os.getenv(TEST_PASSWORD_ENV):
-        raise RuntimeError(f"Set {TEST_PASSWORD_ENV} to a development-only value before creating KEY-36 fixtures")
 
 
 def build_key36_fixture_set() -> Key36FixtureSet:
@@ -25,10 +16,7 @@ def build_key36_fixture_set() -> Key36FixtureSet:
     ``docs/data/synthetic-staff.csv``. Database identifiers use the frozen
     bigint contract; the deterministic values here are test-only IDs.
     """
-    _require_test_password()
-
-    # KEY-10(PR #12)가 직원 계정의 유일한 정본이다. 모듈 수준에서
-    # import하지 않아 PR #12 병합 전에도 다른 fixture 테스트 수집은 막지 않는다.
+    # KEY-10(PR #12)가 직원 계정의 유일한 정본이다.
     from app.tests.fixtures.staff import by_id
 
     hospitals = {
