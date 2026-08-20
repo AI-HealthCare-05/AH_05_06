@@ -232,6 +232,19 @@ var MOCK_PATIENTS = [
     last_dx: "자궁내막증",
     last_drug: "비잔",
   },
+  {
+    /* D1 의사 화면이 「남의 환자」로 여는 사람(KEY-86). 오늘 목록에만 넣고
+       여기 빠뜨려서, 그 줄을 누르면 환자 카드가 「찾을 수 없습니다 — 목록을
+       새로 고쳐 주세요」로 떴다. 새로 고쳐도 없으니 안내까지 틀렸다. */
+    patient_id: 1008,
+    hospital_patient_no: "10982",
+    name: "최다인",
+    birth_date: "1997-03-11",
+    phone: "01033910982",
+    last_visited_on: "2026-05-14",
+    last_dx: "다낭성",
+    last_drug: "메트포르민",
+  },
 ];
 
 /* 성별과 동의는 합성 CSV 에 칸이 없다 — KEY-30 매핑표의 `CSV_CANNOT_SUPPLY` 와 같은 자리다.
@@ -486,6 +499,16 @@ var MOCK_HISTORY = {
       drug: "비잔 2mg",
       days: 84,
       has_guide: false,
+    },
+  ],
+  1008: [
+    {
+      visit_id: 8090,
+      visited_at: "2026-05-14",
+      diagnosis_name: "다낭성",
+      drug: "메트포르민 500mg",
+      days: 90,
+      has_guide: true,
     },
   ],
 };

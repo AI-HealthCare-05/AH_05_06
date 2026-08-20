@@ -210,11 +210,32 @@
 
   /* ── 권한 ───────────────────────────────────────────── */
 
+  /* 이미 승인한 진료는 다시 승인하지 않는다.
+
+     예전에는 승인 직후에만 버튼을 잠갔는데(`target.disabled = true`), 다른 줄에
+     갔다 돌아오면 `renderRole()` 이 되살려서 **같은 진료를 두 번 승인할 수
+     있었다.** 환자에게 문자가 나가는 자리라 두 번 승인은 두 번 발송이 된다.
+
+     화면 상태가 아니라 **그 진료의 상태**를 본다 — 목록 줄이 곧 사실이다. */
+  function alreadyDone() {
+    return !!(visit && visit.work_category && visit.work_category !== "APPROVAL_REQUESTED");
+  }
+
   function renderRole() {
-    var can = isDoctor();
+    var can = isDoctor() && !alreadyDone();
     el("approve").disabled = !can;
     el("return").disabled = !can;
-    el("role-note").hidden = can;
+    el("role-note").hidden = isDoctor();
+  }
+
+  /* 승인·되돌리기가 끝나면 왼쪽 줄도 그 사실을 말해야 한다. 목록이 「승인
+     대기」인 채로 남으면 원장님은 안 나간 것으로 읽고 한 번 더 누른다. */
+  function markDone(patch) {
+    if (!visit) return;
+    Object.assign(visit, patch);
+    if (typeof updateRow === "function") updateRow(visit.visit_id, patch);
+    if (typeof renderChipCounts === "function") renderChipCounts();
+    renderRole();
   }
 
   /* ── 모달 ───────────────────────────────────────────── */
@@ -226,6 +247,26 @@
 
   function closeModal() {
     el("modal").hidden = true;
+  }
+
+  /* 권한 문제와 그 밖을 가른다.
+
+     예전에는 `catch` 가 모든 오류를 받아 늘 「의사 계정으로 로그인했는지
+     확인해 주세요」라고 했다. 서버가 500 을 줘도 그렇게 말하니, 원장님은 멀쩡한
+     계정을 의심해 로그아웃했다 들어오고 그래도 안 되면 사람을 부른다 —
+     **고칠 수 없는 것을 고치려 시간을 쓴다.** */
+  function failedModal(title, error) {
+    var lead =
+      error && error.status === 403 ? "의사 계정으로 로그인했는지 확인해 주세요." : "잠시 뒤 다시 시도해 주세요.";
+    return (
+      '<h2 class="modal__title">' +
+      esc(title) +
+      "</h2>" +
+      '<p class="modal__lead">' +
+      lead +
+      "</p>" +
+      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'
+    );
   }
 
   function approvedModal(result) {
@@ -316,15 +357,14 @@
       doctorApi
         .approve(visit.visit_id)
         .then(function (result) {
+          /* 승인했으면 그 진료는 발송 대기다. 줄을 먼저 고치고 모달을 연다 —
+             모달을 닫았을 때 목록이 이미 사실을 말하고 있어야 한다. */
+          markDone({ work_category: "SEND_PENDING", detail_status: "SCHEDULED_TO_SEND" });
           openModal(approvedModal(result));
         })
-        .catch(function () {
+        .catch(function (error) {
           target.disabled = false;
-          openModal(
-            '<h2 class="modal__title">승인하지 못했습니다</h2>' +
-              '<p class="modal__lead">의사 계정으로 로그인했는지 확인해 주세요.</p>' +
-              '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>',
-          );
+          openModal(failedModal("승인하지 못했습니다", error));
         });
       return;
     }
@@ -345,6 +385,7 @@
       doctorApi
         .returnToStaff(visit.visit_id, text)
         .then(function () {
+          markDone({ work_category: "NEEDS_ATTENTION", detail_status: "APPROVAL_RETURNED" });
           openModal(
             '<h2 class="modal__title">스탭에 되돌렸습니다</h2>' +
               '<p class="modal__lead">「' +
