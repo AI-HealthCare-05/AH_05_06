@@ -71,6 +71,19 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+      # 세션은 Redis 에 산다(KEY-73). 이것이 없으면 **토큰을 들고 앱을 지나는**
+      # 검사가 전부 죽는다 — 로그인 자체가 아니라 그 뒤 모든 보호 경로다.
+      # 지금까지 안 걸린 것은 auth 검사가 `FakeRedis` 로 우회했기 때문인데,
+      # 그 우회가 실제 동작을 가린 적이 있다(`#37` 의 TTL 건). 진짜를 띄운다.
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
