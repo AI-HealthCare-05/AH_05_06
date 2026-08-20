@@ -8,6 +8,7 @@
 정리는 계정 관리(A1-2) 몫이다.
 """
 
+from datetime import datetime
 from enum import StrEnum
 
 from tortoise import fields, models
@@ -78,8 +79,11 @@ class Staff(models.Model):
     password_changed_at = fields.DatetimeField(null=True)
 
     status = fields.CharEnumField(enum_type=StaffStatus, default=StaffStatus.ACTIVE)
-    left_at = fields.DatetimeField(null=True)
-    last_login_at = fields.DatetimeField(null=True)
+    # `null=True` 인데 Tortoise 스텁은 `datetime` 으로 준다. 실제로 None 이 들어가는
+    # 칸이니 여기에 적어 둔다 — 안 그러면 None 을 넣는 쪽마다 억제를 달게 된다
+    # (`scripts/seed.py` 가 그랬다 · KEY-114).
+    left_at: datetime | None = fields.DatetimeField(null=True)
+    last_login_at: datetime | None = fields.DatetimeField(null=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
