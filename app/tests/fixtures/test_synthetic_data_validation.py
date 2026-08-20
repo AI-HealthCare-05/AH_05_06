@@ -56,8 +56,8 @@ class TestBrokenCsvShapeFailsClearly:
     [
         ({"이름": ""}, "REQUIRED", "이름"),
         ({"시나리오ID": "patient-1"}, "SCENARIO_FORMAT", "시나리오ID"),
-        ({"차트번호": "12A"}, "CHART_FORMAT", "차트번호"),
-        ({"휴대폰": "010-123-4567"}, "PHONE_FORMAT", "휴대폰"),
+        ({"차트번호": "P" * 51}, "CHART_FORMAT", "차트번호"),
+        ({"휴대폰": "123"}, "PHONE_FORMAT", "휴대폰"),
         ({"문자수신동의": "true"}, "CODE_RANGE", "문자수신동의"),
         ({"생년월일": "1989/03/12"}, "DATE_FORMAT", "생년월일"),
         ({"진료일": "1988-01-01"}, "DATE_ORDER", "생년월일"),
@@ -94,6 +94,29 @@ def test_an_intentional_error_reports_its_code_and_field(changes: dict[str, str]
 
 
 class TestRelationshipsFailClearly:
+    def test_missing_dosage_unit_does_not_skip_days_check(self) -> None:
+        message = error_text(changed_row(총투원문="1/1/84", 총투단위="", 처방일수="100"))
+        assert "[DOSAGE_DAYS]" in message
+
+    def test_invalid_visit_date_does_not_report_patient_only(self) -> None:
+        message = error_text(changed_row(진료일="not-a-date"))
+        assert "[DATE_FORMAT]" in message
+        assert "[PATIENT_ONLY]" not in message
+
+    @pytest.mark.parametrize("value", ["19890312", "2026-W31-3"])
+    def test_only_calendar_date_format_is_allowed(self, value: str) -> None:
+        message = error_text(changed_row(생년월일=value))
+        assert "[DATE_FORMAT]" in message
+
+    @pytest.mark.parametrize("value", ["nan", "inf", "1e2"])
+    def test_non_plain_lab_numbers_are_rejected(self, value: str) -> None:
+        message = error_text(changed_row(혈색소=value))
+        assert "[LAB_FORMAT]" in message
+
+    def test_api_compatible_international_phone_is_allowed(self) -> None:
+        rows = changed_row(휴대폰="+82 10-1234-5678")
+        validate_patient_rows(rows)
+
     def test_a_duplicate_scenario_points_to_the_original_line(self) -> None:
         rows = read_patient_rows()
         rows[1]["시나리오ID"] = rows[0]["시나리오ID"]

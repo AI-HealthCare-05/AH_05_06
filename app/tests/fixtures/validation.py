@@ -12,7 +12,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.tests.fixtures.mapping import MAPPING, PENDING, Kind
+from app.core.masking import JWT, SECRET_KEYS
+from app.core.utils.common import normalize_phone_number
+from app.tests.fixtures.mapping import MAPPING, PENDING, Kind, Where
 from app.tests.fixtures.staff import DEFAULT_HOSPITAL, Staff, all_staff
 
 PATIENT_CSV_PATH = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-patients.csv"
@@ -22,37 +24,28 @@ PATIENT_CSV_PATH = Path(__file__).resolve().parents[3] / "docs" / "data" / "synt
 DATASET_AS_OF = dt.date(2026, 8, 20)
 
 SCENARIO_ID_PATTERN = re.compile(r"SYN-(?:EMS|PCOS|BOTH|DUP)-\d{2}|SYN-BULK-\d{3}")
-CHART_NO_PATTERN = re.compile(r"\d{5}")
-PHONE_PATTERN = re.compile(r"010-\d{4}-\d{4}")
+DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
 DOSAGE_PATTERN = re.compile(r"\d+/\d+/(\d+)")
 MESSAGE_ROUND_PATTERN = re.compile(r"D\+(\d+)")
 
-FORBIDDEN_COLUMN_PATTERN = re.compile(r"password|passwd|secret|api[_-]?key|jwt|otp|token", re.IGNORECASE)
+SECRET_KEY_PATTERN = "|".join(re.escape(key) for key in (*SECRET_KEYS, "jwt"))
+FORBIDDEN_COLUMN_PATTERN = re.compile(SECRET_KEY_PATTERN, re.IGNORECASE)
 FORBIDDEN_VALUE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
     ("AWS access key", re.compile(r"AKIA[0-9A-Z]{16}")),
-    ("JWT", re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")),
+    ("JWT", JWT),
     ("API key", re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b")),
     (
         "credential assignment",
-        re.compile(r"(?:password|passwd|secret|api[_-]?key|jwt|otp|token)\s*[:=]\s*\S+", re.IGNORECASE),
+        re.compile(rf"(?:{SECRET_KEY_PATTERN})\s*[:=]\s*\S+", re.IGNORECASE),
     ),
 )
 
 VISIT_FIELDS = tuple(
     column
-    for column in MAPPING
-    if column
-    not in {
-        "시나리오ID",
-        "차트번호",
-        "이름",
-        "생년월일",
-        "휴대폰",
-        "문자수신동의",
-        "진료일",
-        "케이스의도",
-    }
+    for column, field in MAPPING.items()
+    if field.where not in {Where.PATIENT, Where.DOC_ONLY} and column != "진료일"
 )
 
 MESSAGE_ALLOWED_STATUSES = frozenset({"발송 완료", "보완", "계획된 중단"})
@@ -137,15 +130,24 @@ def _add_issue(
     )
 
 
-def _parse_date(issues: list[ValidationIssue], index: int, row: PatientRow, field: str) -> dt.date | None:
-    value = row.get(field, "")
+def _parse_iso_date(value: str) -> dt.date | None:
+    """오직 YYYY-MM-DD 달력 날짜만 파싱한다."""
     if not value:
+        return None
+    if DATE_PATTERN.fullmatch(value) is None:
         return None
     try:
         return dt.date.fromisoformat(value)
     except ValueError:
-        _add_issue(issues, "DATE_FORMAT", index, row, field, f"YYYY-MM-DD 형식이 아니다: {value!r}")
         return None
+
+
+def _parse_date(issues: list[ValidationIssue], index: int, row: PatientRow, field: str) -> dt.date | None:
+    value = row.get(field, "")
+    parsed = _parse_iso_date(value)
+    if value and parsed is None:
+        _add_issue(issues, "DATE_FORMAT", index, row, field, f"YYYY-MM-DD 형식이 아니다: {value!r}")
+    return parsed
 
 
 def _parse_int(issues: list[ValidationIssue], index: int, row: PatientRow, field: str) -> int | None:
@@ -161,13 +163,7 @@ def _parse_int(issues: list[ValidationIssue], index: int, row: PatientRow, field
 
 def _date_or_none(row: PatientRow, field: str) -> dt.date | None:
     """이미 오류가 보고된 날짜를 관계 검사에서 조용히 건너뛴다."""
-    value = row.get(field, "")
-    if not value:
-        return None
-    try:
-        return dt.date.fromisoformat(value)
-    except ValueError:
-        return None
+    return _parse_iso_date(row.get(field, ""))
 
 
 def _validate_declared_value(issues: list[ValidationIssue], index: int, row: PatientRow, column: str) -> None:
@@ -195,16 +191,12 @@ def _validate_declared_value(issues: list[ValidationIssue], index: int, row: Pat
 
 
 def _validate_decimal(issues: list[ValidationIssue], index: int, row: PatientRow, column: str, value: str) -> None:
-    try:
-        float(value)
-    except ValueError:
+    if NUMBER_PATTERN.fullmatch(value) is None:
         _add_issue(issues, "NUMBER_FORMAT", index, row, column, f"숫자가 아니다: {value!r}")
 
 
 def _validate_lab_value(issues: list[ValidationIssue], index: int, row: PatientRow, column: str, value: str) -> None:
-    try:
-        float(value)
-    except ValueError:
+    if NUMBER_PATTERN.fullmatch(value) is None:
         _add_issue(
             issues,
             "LAB_FORMAT",
@@ -239,12 +231,14 @@ def _validate_patterns(issues: list[ValidationIssue], index: int, row: PatientRo
         _add_issue(issues, "SCENARIO_FORMAT", index, row, "시나리오ID", f"정해진 형식이 아니다: {scenario_id!r}")
 
     chart_no = row.get("차트번호", "")
-    if chart_no and CHART_NO_PATTERN.fullmatch(chart_no) is None:
-        _add_issue(issues, "CHART_FORMAT", index, row, "차트번호", f"숫자 5자리여야 한다: {chart_no!r}")
+    if chart_no and len(chart_no) > 50:
+        _add_issue(issues, "CHART_FORMAT", index, row, "차트번호", f"1~50자 범위여야 한다: {chart_no!r}")
 
     phone = row.get("휴대폰", "")
-    if phone and PHONE_PATTERN.fullmatch(phone) is None:
-        _add_issue(issues, "PHONE_FORMAT", index, row, "휴대폰", f"010-0000-0000 형식이어야 한다: {phone!r}")
+    if phone:
+        normalized_phone = normalize_phone_number(phone)
+        if not 10 <= len(normalized_phone) <= 11:
+            _add_issue(issues, "PHONE_FORMAT", index, row, "휴대폰", "정규화 후 숫자 10~11자리여야 한다")
 
     for column, value in row.items():
         for label, pattern in FORBIDDEN_VALUE_PATTERNS:
@@ -273,7 +267,7 @@ def _validate_dosage(issues: list[ValidationIssue], index: int, row: PatientRow,
         match = DOSAGE_PATTERN.fullmatch(dosage)
         if match is None:
             _add_issue(issues, "DOSAGE_FORMAT", index, row, "총투원문", f"a/b/c 형식이 아니다: {dosage!r}")
-        elif unit in {"일수", "통수"} and days is not None:
+        elif unit in {"", "일수", "통수"} and days is not None:
             expected_days = int(match.group(1)) * (28 if unit == "통수" else 1)
             if days != expected_days:
                 _add_issue(
@@ -313,7 +307,7 @@ def _validate_dates_and_dosage(issues: list[ValidationIssue], index: int, row: P
     exhaustion_date = _parse_date(issues, index, row, "소진예정일")
     days = _parse_int(issues, index, row, "처방일수")
 
-    if visit_date is None:
+    if not row.get("진료일"):
         filled = [field for field in VISIT_FIELDS if row.get(field)]
         if filled:
             _add_issue(
@@ -324,6 +318,9 @@ def _validate_dates_and_dosage(issues: list[ValidationIssue], index: int, row: P
                 "진료일",
                 f"진료일 없는 환자-only 행에 진료값이 있다: {filled}",
             )
+        return
+
+    if visit_date is None:
         return
 
     _validate_visit_date(issues, index, row, birth_date, visit_date)
