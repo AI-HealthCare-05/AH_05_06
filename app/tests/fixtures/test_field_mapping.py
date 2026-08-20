@@ -16,6 +16,7 @@
 
 import csv
 import datetime as dt
+import importlib
 import json
 import re
 from pathlib import Path
@@ -23,7 +24,16 @@ from typing import Any
 
 import pytest
 
-from app.tests.fixtures.mapping import API_SCHEMA_FOR, MAPPING, NOT_STORED, PENDING, Field, Kind, Where
+from app.tests.fixtures.mapping import (
+    API_SCHEMA_FOR,
+    MAPPING,
+    NOT_STORED,
+    PENDING,
+    PLANNED_TABLES,
+    Field,
+    Kind,
+    Where,
+)
 
 CSV_PATH = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-patients.csv"
 
@@ -57,6 +67,78 @@ class TestNothingIsMissing:
         """왜 저장하지 않는지 적혀 있어야 나중에 컬럼을 억지로 만들지 않는다."""
         silent = [c for c, f in MAPPING.items() if f.where in NOT_STORED and not f.note]
         assert not silent, f"저장하지 않는 이유가 안 적힌 칸: {silent}"
+
+
+class TestPlannedTablesStayHonest:
+    """정본이 규정한 표가 **실제로 있는가** — KEY-136.
+
+    이 파일은 자리를 셋으로 가른다.
+
+        저장한다 · 표가 있다   patient · visit
+        저장한다 · 표가 없다   PLANNED_TABLES 에 이유와 함께 (4개)
+        저장 안 한다          NOT_STORED
+
+    가운데 자리가 이번에 생겼다. 그 전에는 「있는 표」와 「언젠가 만들 표」가
+    파일에서 같아 보였고, 읽는 사람은 `lab_result` 를 `patient` 처럼 이미 있는
+    표로 알고 시드를 짜게 됐다.
+
+    검사는 **양쪽으로** 잡는다. 없어야 할 표가 생겨도 죽는다 — 표를 만든 사람이
+    이 파일 고치는 것을 잊어도 그때 알려 준다.
+    """
+
+    @staticmethod
+    def real_tables() -> set[str]:
+        """모델이 실제로 만드는 표 이름."""
+        from app.core.db.databases import TORTOISE_APP_MODELS
+
+        names: set[str] = set()
+        for module_path in TORTOISE_APP_MODELS:
+            if not module_path.startswith("app."):
+                continue
+            module = importlib.import_module(module_path)
+            for obj in vars(module).values():
+                meta = getattr(obj, "Meta", None)
+                table = getattr(meta, "table", None)
+                if isinstance(table, str):
+                    names.add(table)
+        return names
+
+    def test_stored_destinations_that_are_not_planned_really_exist(self) -> None:
+        """계획으로 표시하지 않았으면 **표가 있어야 한다.**"""
+        tables = self.real_tables()
+        missing = sorted(
+            w.value
+            for w in {f.where for f in MAPPING.values()}
+            if w not in NOT_STORED and w not in PLANNED_TABLES and w.value not in tables
+        )
+        assert not missing, f"정본이 보내라는 표가 없다: {missing}. 만들거나, 이유를 달아 PLANNED_TABLES 로 옮겨라"
+
+    def test_planned_tables_do_not_exist_yet(self) -> None:
+        """계획이라고 해 놓고 표가 생겼으면 **여기서 빼라고 알려 준다.**
+
+        이 방향이 없으면 파일이 조용히 낡는다 — 표는 생겼는데 정본은 계속
+        「아직 없다」고 말하는 상태가 유지된다.
+        """
+        tables = self.real_tables()
+        arrived = sorted(w.value for w in PLANNED_TABLES if w.value in tables)
+        assert not arrived, f"표가 생겼다: {arrived}. mapping.py 의 PLANNED_TABLES 에서 빼라"
+
+    def test_planned_only_holds_storage_destinations(self) -> None:
+        """저장 안 하는 자리를 계획에 넣으면 뜻이 겹친다."""
+        overlap = sorted(w.value for w in PLANNED_TABLES if w in NOT_STORED)
+        assert not overlap, f"NOT_STORED 와 겹친다: {overlap}"
+
+    def test_every_planned_table_says_why(self) -> None:
+        """근거 없는 계획은 다음 사람에게 「그냥 없다」로만 보인다."""
+        silent = sorted(w.value for w, why in PLANNED_TABLES.items() if not why.strip())
+        assert not silent, f"왜 아직 없는지 안 적힌 표: {silent}"
+
+    def test_tables_we_decided_to_build_carry_a_ticket(self) -> None:
+        """「만든다」로 가른 것은 **후속 일감 번호가 있어야** 잊히지 않는다."""
+        undecided = sorted(
+            w.value for w, why in PLANNED_TABLES.items() if why.startswith("만든다") and "KEY-" not in why
+        )
+        assert not undecided, f"만들기로 했는데 일감 번호가 없다: {undecided}"
 
 
 @pytest.mark.parametrize("column", COLUMNS)
