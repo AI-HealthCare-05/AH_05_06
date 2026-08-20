@@ -280,20 +280,29 @@
 }
 
 .button-primary:disabled {
-  background: #9aa0a7;
+  /* 흰 글자에 #9aa0a7 이면 대비 2.64 로 안 읽혔다. 「지금은 왜 안 되는가」를
+     말해 주는 버튼이라 읽히지 않으면 존재 이유가 없다.
+
+     옅은 채움 + 흐린 글자도 재 봤는데, 옆에 선 흰 고스트 버튼(「나중에
+     업로드」)과 구별되지 않았다 — 눌리는 것과 안 눌리는 것이 같아 보이면
+     더 나쁘다. 중간 회색으로 두어 셋을 가른다.
+
+       눌리는 주 버튼   near-black  흰 글자  13.50
+       잠긴 주 버튼     중간 회색    흰 글자   5.29
+       고스트 버튼      흰색        검은 글자 13.50 + 테두리 */
+  background: var(--ink-3);
   cursor: default;
 }
 
+/* 골격(.chip · .row · .icon-button · .topbar__tab · .list__search)의 초점은
+   shell.css 로 옮겼다 — 그 요소들은 shell.css 가 그리는데 초점만 여기 있어서,
+   upload.css 를 안 싣는 화면(ocr-review · doctor)에서는 브라우저 기본 링으로
+   떨어졌다. 같은 줄이 화면마다 다르게 보이던 자리다. */
 .button-ghost:focus-visible,
 .button-primary:focus-visible,
 .drop__pick:focus-visible,
 .file__act:focus-visible,
-.file__kind:focus-visible,
-.chip:focus-visible,
-.row:focus-visible,
-.icon-button:focus-visible,
-.topbar__tab:focus-visible,
-.list__search:focus-visible {
+.file__kind:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
