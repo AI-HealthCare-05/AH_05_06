@@ -72,7 +72,45 @@ var patientsApi = {
       body: visit,
     });
   },
+
+  /* ── 환자 카드 (KEY-50) ─────────────────────────────
+     계약 §5 의 네 리소스. 수정 가능한 것과 아닌 것이 갈려 있고,
+     그 경계가 화면의 잠금과 그대로 같다. */
+  get: function (patientId) {
+    return patientsRequest("/patients/" + patientId);
+  },
+  /* 차트번호는 못 고친다 — 생성 후 변경 불가(계약 §4·§6).
+     보낼 수 있는 것은 name · birth_date · gender · phone · sms_consent 뿐이다. */
+  update: function (patientId, patch) {
+    return patientsRequest("/patients/" + patientId, { method: "PATCH", body: patch });
+  },
+  visits: function (patientId) {
+    return patientsRequest("/patients/" + patientId + "/visits");
+  },
+  /* 오늘 목록은 진료 상세 칸을 주지 않는다 — `department` 스냅샷 · `status` ·
+     `planned_stop` 은 이 리소스에만 있다(계약 §4). 목록 줄로 상세를 그리면
+     목업에서는 돌고 서버에서는 빈다. */
+  getVisit: function (visitId) {
+    return patientsRequest("/visits/" + visitId);
+  },
+  updateVisit: function (visitId, patch) {
+    return patientsRequest("/visits/" + visitId, { method: "PATCH", body: patch });
+  },
 };
+
+/* 계약 §6 이 정한 수정 가능 필드. 화면이 이 목록 밖을 보내면 400 이다.
+   목록을 코드에 두는 이유는, 폼에 칸을 하나 늘렸을 때 여기도 같이 늘려야
+   한다는 것이 눈에 보이게 하려는 것이다. */
+var PATIENT_EDITABLE = ["name", "birth_date", "gender", "phone", "sms_consent"];
+var VISIT_EDITABLE = [
+  "doctor_id",
+  "department_id",
+  "visited_at",
+  "visit_summary",
+  "doctor_note",
+  "status",
+  "planned_stop",
+];
 
 /* 등록 화면에서 고르는 진료과 · 담당의사.
    계약은 `department_id` · `doctor_id` 를 받는다 — 화면이 이름을 보내면 진료과가
@@ -196,6 +234,14 @@ var MOCK_PATIENTS = [
   },
 ];
 
+/* 성별과 동의는 합성 CSV 에 칸이 없다 — KEY-30 매핑표의 `CSV_CANNOT_SUPPLY` 와 같은 자리다.
+   부인과라 성별은 상수로 채우고, 동의 시각은 마지막 방문일로 둔다. */
+MOCK_PATIENTS.forEach(function (p) {
+  p.gender = "FEMALE";
+  p.sms_consent = true;
+  p.sms_consented_at = p.last_visited_on;
+});
+
 var MOCK_NEXT_ID = { patient: 2000, visit: 9000 };
 
 /* 오늘 목록. 등록하면 여기에 쌓인다 — 화면이 실제로 늘어나는지 봐야 한다.
@@ -252,9 +298,66 @@ var MOCK_TODAY = (function () {
   ];
 })();
 
+/* 진료 상세에만 있는 칸. 오늘 목록(§6 S1-1)은 이것들을 주지 않는다 —
+   목업 저장소는 하나지만, 아래 두 투영이 각각 자기 계약의 칸만 내보낸다. */
+MOCK_TODAY.forEach(function (v) {
+  v.department = "산부인과";
+  v.status = "COMPLETED";
+  v.planned_stop = false;
+  v.visit_summary = null;
+  v.doctor_note = null;
+});
+
 /* ── 계약이 정한 응답 봉투 ──────────────────────────────────────
    화면이 `items` 만 꺼내 쓰더라도 목업이 봉투를 갖춰야, 서버가 붙는 날
    「그런 키가 없다」로 처음 알게 되는 일이 없다. */
+
+/* 저장소 한 줄을 두 계약으로 갈라 내보낸다.
+
+   오늘 목록은 「무엇을 해야 하는가」를 읽는 곳이고, 진료 상세는 「이 진료가
+   무엇인가」를 읽는 곳이다. 둘은 칸이 다르다 — 목록에 `planned_stop` 이 없고,
+   상세에 `work_category` 가 없다. 목업이 한 줄을 통째로 돌려주면 화면이 없는
+   칸을 읽고도 목업에서는 잘 도는 상태가 되고, 서버가 붙는 날 처음 빈다.
+
+   TODO(KEY-26 확인) 상세의 `doctor_id` 만으로는 이름을 못 띄운다. 목록은
+   `doctor: {doctor_id, name}` 을 주는데 상세 계약에는 그 대응이 없다. */
+function deskItem(row) {
+  return {
+    visit_id: row.visit_id,
+    patient_id: row.patient_id,
+    name: row.name,
+    hospital_patient_no: row.hospital_patient_no,
+    birth_date: row.birth_date,
+    age: row.age,
+    diagnosis_name: row.diagnosis_name,
+    doctor: row.doctor,
+    visited_at: row.visited_at,
+    work_category: row.work_category,
+    detail_status: row.detail_status,
+  };
+}
+
+function visitResource(row) {
+  return {
+    visit_id: row.visit_id,
+    patient_id: row.patient_id,
+    doctor_id: row.doctor ? row.doctor.doctor_id : null,
+    department: row.department,
+    visited_at: row.visited_at,
+    visit_summary: row.visit_summary,
+    doctor_note: row.doctor_note,
+    status: row.status,
+    planned_stop: row.planned_stop,
+  };
+}
+
+/* 진료과 이름은 서버가 붙인다 — 화면은 id 만 보낸다(계약 §4). */
+function departmentOf(departmentId) {
+  var found = DEPARTMENTS.find(function (d) {
+    return d.department_id === Number(departmentId);
+  });
+  return found ? found.name : null;
+}
 
 function patientPage(items) {
   return {
@@ -291,14 +394,70 @@ function deskPage(isoDate, categories) {
       : WORK_CATEGORIES.map(function (c) {
           return c.key;
         }),
-    items: wanted.length
+    items: (wanted.length
       ? rows.filter(function (v) {
           return wanted.indexOf(v.work_category) !== -1;
         })
-      : rows,
+      : rows
+    ).map(deskItem),
     page: { next_cursor: null, has_next: false },
   };
 }
+
+/* 지난 방문. 「전에 뭐라고 안내했지?」를 관리 화면에서 찾지 않게 하려고
+   환자 카드 안에 둔다(S1-4).
+
+   약과 처방일수는 PRESCRIPTION 도메인 소유다 — KEY-26 §9 「처방 계약 경계」가
+   `PRESCRIPTION_ITEM.duration_days` 로 정했고 아직 구현이 없다.
+   TODO(KEY-41 이후) 그 API 가 생기면 여기 두 칸을 거기서 받는다. */
+var MOCK_HISTORY = {
+  1003: [
+    {
+      visit_id: 8201,
+      visited_at: "2026-05-20",
+      diagnosis_name: "자궁내막증",
+      drug: "비잔 2mg",
+      days: 90,
+      has_guide: true,
+    },
+    {
+      visit_id: 7714,
+      visited_at: "2025-11-02",
+      diagnosis_name: "자궁내막증",
+      drug: "비잔 2mg",
+      days: 90,
+      has_guide: true,
+    },
+    {
+      visit_id: 7302,
+      visited_at: "2025-08-11",
+      diagnosis_name: "자궁내막증 (초진)",
+      drug: "비잔 2mg",
+      days: 30,
+      has_guide: true,
+    },
+  ],
+  1006: [
+    {
+      visit_id: 8155,
+      visited_at: "2026-08-01",
+      diagnosis_name: "다낭성",
+      drug: "메트포르민 500mg",
+      days: 60,
+      has_guide: true,
+    },
+  ],
+  1007: [
+    {
+      visit_id: 8102,
+      visited_at: "2026-08-11",
+      diagnosis_name: "자궁내막증",
+      drug: "비잔 2mg",
+      days: 84,
+      has_guide: false,
+    },
+  ],
+};
 
 function mockPatientsRequest(path, options) {
   var body = options.body || {};
@@ -340,10 +499,101 @@ function mockPatientsRequest(path, options) {
           name: body.name,
           birth_date: body.birth_date,
           phone: (body.phone || "").replace(/\D/g, ""),
+          gender: body.gender || "FEMALE",
+          sms_consent: !!body.sms_consent,
+          sms_consented_at: body.sms_consent ? toIsoDate(new Date()) : null,
           last_visited_on: null,
         };
         MOCK_PATIENTS.push(created);
         return resolve(created);
+      }
+
+      /* 환자 한 명 (S1-4 ① 환자 정보) */
+      var onePatient = path.match(/^\/patients\/(\d+)$/);
+      if (onePatient && !options.method) {
+        var found = MOCK_PATIENTS.find(function (p) {
+          return p.patient_id === Number(onePatient[1]);
+        });
+        if (!found) return reject(new ApiError("PATIENT_NOT_FOUND", 404, {}));
+        return resolve(found);
+      }
+
+      if (onePatient && options.method === "PATCH") {
+        var target = MOCK_PATIENTS.find(function (p) {
+          return p.patient_id === Number(onePatient[1]);
+        });
+        if (!target) return reject(new ApiError("PATIENT_NOT_FOUND", 404, {}));
+        if (!Object.keys(body).length) return reject(new ApiError("EMPTY_UPDATE_FIELDS", 400, {}));
+        /* 서버가 거부하는 것을 목업도 거부한다 — 화면이 못 보낼 것을 보내고 있으면
+           목업에서 통과해 버리면 서버에 붙는 날 처음 알게 된다. */
+        var illegal = Object.keys(body).filter(function (k) {
+          return PATIENT_EDITABLE.indexOf(k) === -1;
+        });
+        if (illegal.length) {
+          return reject(new ApiError("INVALID_REQUEST", 400, { field_errors: illegal }));
+        }
+        Object.keys(body).forEach(function (k) {
+          target[k] = k === "phone" ? String(body[k]).replace(/\D/g, "") : body[k];
+        });
+        return resolve(target);
+      }
+
+      /* 지난 방문 — visited_at DESC, visit_id DESC 안정 정렬(계약 §6) */
+      var visitList = path.match(/^\/patients\/(\d+)\/visits$/);
+      if (visitList && !options.method) {
+        var history = (MOCK_HISTORY[Number(visitList[1])] || []).slice().sort(function (a, b) {
+          if (a.visited_at === b.visited_at) return b.visit_id - a.visit_id;
+          return a.visited_at < b.visited_at ? 1 : -1;
+        });
+        return resolve({ items: history, page: { next_cursor: null, has_next: false } });
+      }
+
+      var oneVisit = path.match(/^\/visits\/(\d+)$/);
+      var visitRow = oneVisit
+        ? MOCK_TODAY.find(function (v) {
+            return v.visit_id === Number(oneVisit[1]);
+          })
+        : null;
+
+      if (oneVisit && !options.method) {
+        if (!visitRow) return reject(new ApiError("VISIT_NOT_FOUND", 404, {}));
+        return resolve(visitResource(visitRow));
+      }
+
+      if (oneVisit && options.method === "PATCH") {
+        if (!visitRow) return reject(new ApiError("VISIT_NOT_FOUND", 404, {}));
+        if (!Object.keys(body).length) return reject(new ApiError("EMPTY_UPDATE_FIELDS", 400, {}));
+
+        var offLimits = Object.keys(body).filter(function (k) {
+          return VISIT_EDITABLE.indexOf(k) === -1;
+        });
+        if (offLimits.length) {
+          return reject(new ApiError("INVALID_REQUEST", 400, { field_errors: offLimits }));
+        }
+
+        /* 서버가 진료과·의사를 검증한 뒤 이름을 스냅샷으로 저장한다(계약 §6).
+           그 두 갈래를 목업도 갈라 놓는다 — 화면이 오류 문구를 코드마다
+           다르게 띄우는지 여기서 밖에 볼 데가 없다. */
+        if ("department_id" in body) {
+          var deptName = departmentOf(body.department_id);
+          if (!deptName) return reject(new ApiError("INVALID_DEPARTMENT", 400, {}));
+          visitRow.department = deptName;
+        }
+        if ("doctor_id" in body) {
+          var picked = DOCTORS.find(function (d) {
+            return d.doctor_id === Number(body.doctor_id);
+          });
+          if (!picked) return reject(new ApiError("INVALID_REQUEST", 400, {}));
+          var wantDept = "department_id" in body ? Number(body.department_id) : picked.department_id;
+          if (picked.department_id !== wantDept) {
+            return reject(new ApiError("DOCTOR_DEPARTMENT_MISMATCH", 400, {}));
+          }
+          visitRow.doctor = { doctor_id: picked.doctor_id, name: picked.name };
+        }
+        ["visited_at", "visit_summary", "doctor_note", "status", "planned_stop"].forEach(function (k) {
+          if (k in body) visitRow[k] = body[k];
+        });
+        return resolve(visitResource(visitRow));
       }
 
       var visitPath = path.match(/^\/patients\/(\d+)\/visits$/);
@@ -366,7 +616,13 @@ function mockPatientsRequest(path, options) {
           age: ageOf(who.birth_date),
           diagnosis_name: who.last_dx || null,
           doctor: doctor ? { doctor_id: doctor.doctor_id, name: doctor.name } : null,
+          /* 화면은 department_id 를 보내고 이름은 서버가 붙인다 — 계약 §4 「검증된
+             진료과 명칭을 저장한 진료 당시 스냅샷」. 진료과 이름이 나중에 바뀌어도
+             지난 진료는 그날의 이름으로 남아야 한다. */
+          department: departmentOf(body.department_id),
           visited_at: body.visited_at || new Date().toISOString(),
+          status: body.status || "COMPLETED",
+          planned_stop: body.planned_stop || false,
           /* 새 진료는 아직 아무 이벤트도 없다 — 계약의 파생 규칙대로 IN_PROGRESS · NO_DOCUMENT */
           work_category: "IN_PROGRESS",
           detail_status: "NO_DOCUMENT",
