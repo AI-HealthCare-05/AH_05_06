@@ -50,12 +50,12 @@ def using_csv(tmp_path: Path, text: str) -> Iterator[None]:
 
     original = module.CSV_PATH
     module.CSV_PATH = path
-    module.all_staff.cache_clear()
+    module.forget_cached_staff()
     try:
         yield
     finally:
         module.CSV_PATH = original
-        module.all_staff.cache_clear()
+        module.forget_cached_staff()
 
 
 def load_broken(tmp_path: Path, text: str) -> str:
@@ -382,12 +382,12 @@ class TestNeverRunsInProduction:
 
             before = config.ENV
             config.ENV = env
-            module.all_staff.cache_clear()
+            module.forget_cached_staff()
             try:
                 yield
             finally:
                 config.ENV = before
-                module.all_staff.cache_clear()
+                module.forget_cached_staff()
 
         return ctx()
 
@@ -415,3 +415,39 @@ class TestNeverRunsInProduction:
                 os.environ.pop("APP_ENV", None)
             else:
                 os.environ["APP_ENV"] = before
+
+    def test_config_really_reads_env_not_app_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """위 검사는 `config.ENV` 를 직접 넣어 확인한다 — pydantic 이 환경변수를
+        어떻게 읽는지는 안 거친다. 그래서 `ENV` 필드에 `APP_ENV` alias 가
+        붙는 식으로 같은 실수가 아래층에서 나도 위 검사는 계속 통과한다(`#45` 리뷰).
+
+        여기서는 `Config()` 를 실제로 새로 만들어, **읽는 이름 자체**를 잰다.
+        """
+        from app.core.config import Config
+
+        monkeypatch.setenv("ENV", "prod")
+        monkeypatch.delenv("APP_ENV", raising=False)
+        assert Config().ENV is Env.PROD, "`ENV` 를 안 읽는다 — 운영에서 기본값 local 로 통과한다"
+
+        monkeypatch.delenv("ENV", raising=False)
+        monkeypatch.setenv("APP_ENV", "prod")
+        assert Config().ENV is Env.LOCAL, "`APP_ENV` 를 읽고 있다 — 저장소가 쓰는 이름이 아니다"
+
+    def test_guard_still_bites_after_the_csv_was_already_read(self) -> None:
+        """**이 검사가 이 PR 의 이유다.**
+
+        가드가 `@cache` 안에 있으면 한 번 성공한 뒤로는 본문이 아예 안 돌아서,
+        `ENV` 가 `prod` 로 바뀌어도 읽어 둔 계정이 그대로 나온다. 캐시를 비우는
+        `_with_env` 를 안 쓰고 **실제로 그 상황을 만들어** 잰다 —
+        `cache_clear()` 를 챙기는 검사만 있으면 이 갈래는 영원히 안 지나간다.
+        """
+        before = config.ENV
+        try:
+            config.ENV = Env.LOCAL
+            assert all_staff(), "먼저 한 번 읽어 캐시를 채운다"
+
+            config.ENV = Env.PROD  # 캐시는 그대로 둔다
+            with pytest.raises(ProductionFixtureError):
+                all_staff()
+        finally:
+            config.ENV = before

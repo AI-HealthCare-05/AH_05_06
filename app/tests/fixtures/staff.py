@@ -165,16 +165,36 @@ def _row_to_staff(line: int, row: dict[str | None, str | list[str] | None]) -> S
 
 
 @cache
+def _read_csv() -> tuple[Staff, ...]:
+    """CSV 를 읽어 둔다. 값이 안 바뀌므로 한 번만 읽는다.
+
+    **가드는 여기 두지 않는다.** 캐시 안에 두면 한 번 성공한 뒤로는 본문이
+    아예 안 돌아서, `ENV` 가 `prod` 로 바뀌어도 읽어 둔 계정이 그대로 나온다.
+    실제로 그랬다 — `#45` 리뷰(2heej).
+    """
+    with CSV_PATH.open(encoding="utf-8-sig") as f:
+        return tuple(_row_to_staff(i, dict(r)) for i, r in enumerate(csv.DictReader(f), start=2))
+
+
 def all_staff() -> tuple[Staff, ...]:
     """CSV 를 읽는다. **부를 때** 읽는다.
 
     예전에는 import 시점에 읽었다. 그러면 CSV 가 깨졌을 때 이 파일뿐 아니라
     이걸 import 하는 다른 검사까지 수집 단계에서 통째로 죽어서, 실패 목록에
     「무엇이 틀렸는지」가 안 남는다.
+
+    운영 차단은 **캐시 바깥에서 매 호출마다** 본다. 이러면 `cache_clear()` 를
+    안 챙기는 호출부가 새로 생겨도 가드가 헛돌지 않는다 — 캐시를 잊었을 때
+    생기는 문제가 「옛 CSV 를 본다」로 끝나고, 「운영에서 통과한다」로는
+    번지지 않는다.
     """
     _refuse_in_production()
-    with CSV_PATH.open(encoding="utf-8-sig") as f:
-        return tuple(_row_to_staff(i, dict(r)) for i, r in enumerate(csv.DictReader(f), start=2))
+    return _read_csv()
+
+
+def forget_cached_staff() -> None:
+    """읽어 둔 CSV 를 버린다. `CSV_PATH` 를 바꿔치기하는 검사에서 쓴다."""
+    _read_csv.cache_clear()
 
 
 def _refuse_in_production() -> None:
