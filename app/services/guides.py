@@ -70,35 +70,63 @@ class GuideService:
             raise _not_found()
         return guide
 
+    async def _lock(self, actor, visit_id: int, connection) -> GuideDocument:
+        """**트랜잭션 안에서** 이 안내문을 잠그고 읽는다.
+
+        예전에는 `get()` 으로 읽고 상태를 확인한 **뒤에** 트랜잭션을 열었다.
+        그 사이가 비어 있어서, 승인과 반려가 동시에 들어오면 **둘 다**
+        `APPROVAL_PENDING` 을 읽고 둘 다 통과했다. 그러면 승인 이벤트와 반려
+        이벤트가 함께 남고, 최종 상태와 기록이 어긋난다 — 의사가 승인한 것과
+        실제로 나가는 것이 달라진다 (`#50` 리뷰).
+
+        드문 일이지만 의료 안내문이라 드문 것도 막는다. 읽기·확인·쓰기를
+        한 트랜잭션 안에 두고, 행을 잠근 채로 본다.
+
+        병원 울타리도 여기서 함께 친다 — 잠글 자격이 없는 사람은 잠그지도
+        못해야 한다. 다른 병원 것은 없는 것처럼 404 다(계약 §3).
+        """
+        guide = (
+            await GuideDocument.filter(visit_id=visit_id, visit__hospital_id=actor.hospital_id)
+            .select_for_update()
+            .using_db(connection)
+            .first()
+        )
+        if guide is None:
+            raise _not_found()
+        return guide
+
     async def edit_section(self, actor, visit_id: int, key: str, body: str) -> GuideSection:
         """한 갈래만 고친다. 생성 원문은 지우지 않는다."""
         self._require_doctor(actor)
-        guide = await self.get(actor, visit_id)
 
         try:
             section_key = GuideSectionKey(key)
         except ValueError as err:
             raise ApiError("SECTION_NOT_FOUND", 404, "그런 항목이 없습니다.") from err
 
-        section = await GuideSection.filter(guide_document=guide, section_key=section_key).first()
-        if section is None:
-            raise ApiError("SECTION_NOT_FOUND", 404, "그런 항목이 없습니다.")
-
-        if section.locked:
-            # 🚨 응급 문장. 식약처 의약품정보를 근거로 미리 써 둔 것이라
-            # 약이 바뀌면 문장도 함께 바뀐다 — 사람이 고칠 자리가 아니다.
-            raise ApiError("SECTION_LOCKED", 409, "응급 안내 문장은 고칠 수 없습니다.")
-
-        if guide.status is not GuideStatus.APPROVAL_PENDING:
-            # 이미 승인해 발송을 기다리는 글을 조용히 바꾸면, 환자가 받는 것과
-            # 승인한 것이 달라진다.
-            raise ApiError("GUIDE_NOT_PENDING", 409, "승인 요청 상태에서만 고칠 수 있습니다.")
-
         text = (body or "").strip()
         if not text:
             raise ApiError("EMPTY_BODY", 422, "내용을 입력해 주세요.")
 
         async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+
+            section = (
+                await GuideSection.filter(guide_document=guide, section_key=section_key).using_db(connection).first()
+            )
+            if section is None:
+                raise ApiError("SECTION_NOT_FOUND", 404, "그런 항목이 없습니다.")
+
+            if section.locked:
+                # 🚨 응급 문장. 식약처 의약품정보를 근거로 미리 써 둔 것이라
+                # 약이 바뀌면 문장도 함께 바뀐다 — 사람이 고칠 자리가 아니다.
+                raise ApiError("SECTION_LOCKED", 409, "응급 안내 문장은 고칠 수 없습니다.")
+
+            if guide.status is not GuideStatus.APPROVAL_PENDING:
+                # 이미 승인해 발송을 기다리는 글을 조용히 바꾸면, 환자가 받는 것과
+                # 승인한 것이 달라진다. 잠근 채로 보므로 승인과 겹치지 않는다.
+                raise ApiError("GUIDE_NOT_PENDING", 409, "승인 요청 상태에서만 고칠 수 있습니다.")
+
             section.edited_body = text
             await section.save(update_fields=["edited_body", "updated_at"], using_db=connection)
             guide.version += 1
@@ -119,11 +147,12 @@ class GuideService:
         그 자리를 메우려고 스탭이 발송 버튼을 누르게 된다(D1-5 가 없애려던 것).
         """
         self._require_doctor(actor)
-        guide = await self.get(actor, visit_id)
-        self._require_pending(guide)
 
         moment = now()
         async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+            self._require_pending(guide)
+
             guide.status = GuideStatus.SCHEDULED_TO_SEND
             guide.approved_by = actor.user_id
             guide.approved_at = moment
@@ -149,8 +178,6 @@ class GuideService:
         그러면 되돌리는 일 자체가 왕복만 늘린다.
         """
         self._require_doctor(actor)
-        guide = await self.get(actor, visit_id)
-        self._require_pending(guide)
 
         text = (reason or "").strip()
         if not text:
@@ -159,6 +186,9 @@ class GuideService:
             raise ApiError("REASON_TOO_LONG", 422, f"사유는 {REASON_MAX}자까지 입력할 수 있습니다.")
 
         async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+            self._require_pending(guide)
+
             guide.status = GuideStatus.APPROVAL_RETURNED
             guide.returned_reason = text
             await guide.save(update_fields=["status", "returned_reason", "updated_at"], using_db=connection)

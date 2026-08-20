@@ -7,6 +7,7 @@
 이 파일은 **API 단위의 정상·예외까지만** 본다.
 """
 
+import asyncio
 from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -398,3 +399,79 @@ class TestRevokedSessionCannotReachTheGuide(GuideTestCase):
 
         assert before.status_code == 200, "끊기 전에는 열려야 한다"
         assert after.status_code == 401, "세션을 끊었는데 통과했다 — 토큰을 만든 Redis 와 앱이 보는 Redis 가 다르다"
+
+
+class TestTheDecisionIsReadUnderALock(GuideTestCase):
+    """승인·반려·수정이 **잠근 채로** 상태를 읽는지 본다 — `#50` 리뷰.
+
+    예전에는 `get()` 으로 읽고 확인한 **뒤에** 트랜잭션을 열었다. 그 사이가
+    비어 있어서 승인과 반려가 동시에 들어오면 둘 다 `APPROVAL_PENDING` 을
+    읽고 둘 다 통과할 수 있었다 — 승인 이벤트와 반려 이벤트가 함께 남고,
+    **의사가 승인한 것과 실제로 나가는 것이 달라진다.**
+
+    ⚠️ **진짜 동시 요청은 이 하네스에서 못 만든다.** `tortoise.contrib.test.
+    TestCase` 가 검사 하나를 트랜잭션으로 감싸고 커넥션 하나를 공유해서,
+    두 요청을 `asyncio.gather` 로 보내면 MySQL 소켓에서 먼저 깨진다
+    (`readexactly() called while another coroutine is already waiting`).
+
+    그래서 **경합을 재현하는 대신 잠금이 걸리는지를 잰다.** 두 가지다.
+      ① 읽는 질의에 `FOR UPDATE` 가 붙는가
+      ② 결정을 두 번 하면 두 번째가 409 인가 (순차)
+
+    ①이 빠지면 ②는 통과하면서도 동시 요청은 뚫린다 — 그래서 둘 다 본다.
+    """
+
+    async def test_the_read_takes_a_row_lock(self) -> None:
+        """`_lock()` 이 실제로 행을 잠그는지 본다.
+
+        직접 만든 질의에 `.select_for_update()` 를 붙여 SQL 을 보는 것으로는
+        모자란다 — 그건 Tortoise 를 시험하는 것이지 이 서비스를 시험하는 게
+        아니다. `_lock()` 에서 그 호출이 빠져도 통과해 버린다.
+        """
+        import inspect
+
+        source = inspect.getsource(GuideService._lock)
+        assert "select_for_update()" in source, "`_lock()` 이 행을 잠그지 않고 읽는다"
+
+        # 그 호출이 만드는 SQL 이 정말 `FOR UPDATE` 인지도 함께 확인한다.
+        sql = GuideDocument.filter(visit_id=1).select_for_update().sql()
+        assert "FOR UPDATE" in sql.upper(), f"select_for_update() 가 잠금을 만들지 않는다 — {sql}"
+
+    async def test_the_service_reads_inside_the_transaction(self) -> None:
+        """읽는 자리가 트랜잭션 밖으로 나가면 잠금이 의미를 잃는다.
+
+        `approve` · `return_to_staff` · `edit_section` 이 모두 `_lock()` 을
+        `in_transaction()` 블록 **안에서** 부르는지 원문으로 확인한다.
+        """
+        import inspect
+
+        for name in ("approve", "return_to_staff", "edit_section"):
+            body = inspect.getsource(getattr(GuideService, name))
+            assert "self._lock(" in body, f"{name} 이 잠그지 않고 읽는다"
+            opened = body.index("in_transaction()")
+            locked = body.index("self._lock(")
+            assert opened < locked, f"{name} 이 트랜잭션을 열기 전에 읽는다 — 그 사이가 비어 있다"
+
+    async def test_a_second_decision_is_refused(self) -> None:
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+        guide = await make_guide(clinic)
+        headers = await self.sign_in(doctor)
+
+        async with self.client() as client:
+            first = await client.post(f"{BASE}/{guide.visit_id}/guide/approve", headers=headers)
+            second = await client.post(
+                f"{BASE}/{guide.visit_id}/guide/return",
+                headers=headers,
+                json={"reason": "검사 수치를 다시 확인해 주세요"},
+            )
+
+        decisions = [
+            event
+            for event in await GuideEvent.filter(guide_document=guide).all()
+            if event.event_type in (GuideEventType.APPROVED, GuideEventType.RETURNED)
+        ]
+
+        assert first.status_code == 200
+        assert second.status_code == 409
+        assert len(decisions) == 1, "결정 기록이 둘 남았다 — 상태와 기록이 어긋난다"
