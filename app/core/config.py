@@ -33,7 +33,11 @@ class Config(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
 
-    COOKIE_DOMAIN: str = "localhost"
+    # 비워 두면 쿠키가 **그 호스트에만** 붙는다(host-only). 이게 안전한 기본값이다.
+    # 값을 박아 두면 다른 호스트에서 브라우저가 쿠키를 통째로 버려서
+    # refresh 가 조용히 안 된다 — 로그인은 되는데 30분 뒤 끊긴다.
+    # 하위 도메인끼리 나눠 써야 할 때만 채운다.
+    COOKIE_DOMAIN: str = ""
 
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
