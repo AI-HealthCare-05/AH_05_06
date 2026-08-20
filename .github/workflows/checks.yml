@@ -54,7 +54,7 @@ jobs:
       - name: Run Mypy (Type Check)
         # `app` 만 주면 `ai_worker/` 7파일이 통째로 빠진다 — docker compose 가 띄우는
         # 정식 서비스인데 타입 검사를 한 번도 안 받게 된다. ruff 는 이미 `.` 이다.
-        run: uv run mypy .
+        run: uv run mypy . --explicit-package-bases
 
   test:
     runs-on: ubuntu-latest
