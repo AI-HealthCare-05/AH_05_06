@@ -24,7 +24,7 @@ class VisitService:
         patient = await self.patient_repo.get_scoped(patient_id, hospital_id)
         if patient is None:
             raise ApiError(404, "PATIENT_NOT_FOUND", "환자를 찾을 수 없습니다.")
-        self._validate_directory_fields(data.doctor_id, data.department_id)
+        self._validate_department(data.department_id)
         await self._ensure_unique_day(patient_id, hospital_id, data.visited_at)
 
         values = data.model_dump(exclude={"department_id"})
@@ -74,8 +74,8 @@ class VisitService:
         if not supplied:
             raise ApiError(400, "EMPTY_UPDATE_FIELDS", "수정할 필드가 없습니다.")
 
-        if "doctor_id" in supplied or "department_id" in supplied:
-            self._validate_directory_fields(data.doctor_id, data.department_id)
+        if "department_id" in supplied:
+            self._validate_department(data.department_id)
 
         if "visited_at" in supplied:
             if data.visited_at is None:
@@ -123,12 +123,26 @@ class VisitService:
             raise ApiError(409, "VISIT_ALREADY_REGISTERED", "같은 날짜의 진료가 이미 등록되어 있습니다.")
 
     @staticmethod
-    def _validate_directory_fields(doctor_id: int | None, department_id: int | None) -> None:
-        if doctor_id is not None or department_id is not None:
+    def _validate_department(department_id: int | None) -> None:
+        """진료과만 막는다.
+
+        `department` 는 「검증된 진료과 명칭의 진료 당시 스냅샷」이라(계약 §4)
+        진료과 표 없이는 저장할 이름 자체가 없다. 그래서 여기는 계속 막는다.
+
+        `doctor_id` 는 사정이 다르다 — 이미 있는 nullable bigint 라 저장할 자리가
+        있고, 막았던 이유는 소속을 **검증할** 표가 없어서였다. 저장까지 막으면
+        `visit.doctor_id` 가 영원히 NULL 이라 목록의 「담당」이 전부 비고, 의사가
+        자기 환자만 보는 D1-1 이 성립하지 않는다. 검증은 KEY-73 의 `Staff` 가
+        develop 에 올라간 뒤 붙인다.
+
+        `INVALID_DEPARTMENT` 는 계약 §7 에서 진료과 전용 코드다. 담당의만 보냈는데
+        이 코드가 오면 화면은 없는 진료과를 고쳐 보내려 한다.
+        """
+        if department_id is not None:
             raise ApiError(
                 400,
                 "INVALID_DEPARTMENT",
-                "진료과·담당의 검증 기준 데이터가 준비되지 않았습니다.",
+                "진료과 검증 기준 데이터가 준비되지 않았습니다.",
             )
 
     @staticmethod
