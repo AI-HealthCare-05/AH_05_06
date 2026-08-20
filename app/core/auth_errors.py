@@ -62,7 +62,7 @@ def _example(code: str, message: str, **extra: Any) -> dict[str, Any]:
 # 성공 응답은 `response_model` 이 자동으로 채우지만, `AuthError` 는 커스텀
 # 예외 핸들러로 나가서 `responses=` 로 직접 붙이지 않으면 문서에 안 뜬다.
 
-RESPONSE_TOKEN_EXPIRED = {
+RESPONSE_TOKEN_EXPIRED: dict[int | str, dict[str, Any]] = {
     401: {
         "description": "인증이 없거나, 만료·로그아웃·폐기된 토큰입니다. 다시 로그인해야 합니다.",
         "content": {
@@ -71,7 +71,7 @@ RESPONSE_TOKEN_EXPIRED = {
     }
 }
 
-RESPONSE_LOGIN_FAILURE = {
+RESPONSE_LOGIN_FAILURE: dict[int | str, dict[str, Any]] = {
     401: {
         "description": "아이디 또는 비밀번호가 올바르지 않습니다. 어느 쪽이 틀렸는지는 구분하지 않습니다.",
         "content": {
@@ -102,7 +102,7 @@ RESPONSE_LOGIN_FAILURE = {
     },
 }
 
-RESPONSE_PASSWORD_CHANGE_ERROR = {
+RESPONSE_PASSWORD_CHANGE_ERROR: dict[int | str, dict[str, Any]] = {
     422: {
         "description": "현재 비밀번호가 빠졌거나 맞지 않거나, 새 비밀번호가 지금 것과 같습니다.",
         "content": {
