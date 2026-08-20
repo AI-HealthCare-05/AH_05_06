@@ -144,6 +144,15 @@ class TestFalsePositives:
         """오탐을 줄이면서 진짜는 놓치면 안 된다."""
         assert LINK_TOKEN not in scrub(f"link {LINK_TOKEN} issued")
 
+    def test_hex_prefixed_token_is_still_redacted(self) -> None:
+        """hex처럼 시작하는 43자 이상 실제 링크 토큰도 마스킹된다.
+
+        PR #26 수정 당시 추가된 룩어헤드가 앞부분이 hex처럼 보이는 토큰을
+        매칭 실패시키는 버그(KEY-28)의 회귀 방지 케이스.
+        """
+        token = "abcdef1234567890-XyZ_ghijklmnopqrstuvwxyzQWERTY12345"  # 52자
+        assert token not in scrub(f"link {token} issued")
+
 
 class TestLoggerAppliesItAutomatically:
     """호출부가 잊어도 걸려야 한다 — 그것이 이 방식을 고른 이유다."""

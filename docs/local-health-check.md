@@ -89,7 +89,8 @@ docker exec -it redis redis-cli ping
 
 ```bash
 # mock 기반 — MySQL·Redis 없이 항상 실행 가능
-uv run pytest app/tests/test_smoke.py -v
+# 호스트에서 실행할 때는 DB_HOST·REDIS_HOST를 localhost로 지정한다 (.env 값 mysql·redis는 컨테이너 내부 기준이라 호스트에서 해석되지 않는다)
+DB_HOST=localhost REDIS_HOST=localhost uv run pytest app/tests/test_smoke.py -v
 ```
 
 정상 출력 예시:

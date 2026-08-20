@@ -73,14 +73,29 @@ var DOCTOR_CASE = (function () {
   return sessionStorage.getItem("mockDoctorCase") || "";
 })();
 
+/* 목록의 두 줄이 각각 다른 안내문을 갖는다.
+   하나만 돌려주면 줄을 눌러도 오른쪽이 안 바뀌어, **고르기가 고장난 것처럼**
+   보인다. 실제 서버는 visit_id 로 갈라 주므로 목업도 그렇게 한다. */
+var MOCK_PATIENTS = {
+  8801: {
+    patient: { name: "김서연", age: 36, gender: "여", hospital_patient_no: "12345" },
+    summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 05-20",
+  },
+  8802: {
+    patient: { name: "최다인", age: 29, gender: "여", hospital_patient_no: "10982" },
+    summary: "다낭성 · 야즈 (계속) · 84일 · 지난 방문 06-02",
+  },
+};
+
 function mockGuide(visitId) {
   var warn = DOCTOR_CASE !== "clean";
+  var who = MOCK_PATIENTS[visitId] || MOCK_PATIENTS[8801];
   return {
     visit_id: visitId,
     status: DOCTOR_CASE === "returned" ? "APPROVAL_RETURNED" : "APPROVAL_PENDING",
     version: 3,
-    patient: { name: "김서연", age: 36, gender: "여", hospital_patient_no: "12345" },
-    summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 05-20",
+    patient: who.patient,
+    summary: who.summary,
     sections: [
       {
         key: "medication",
@@ -166,10 +181,10 @@ function mockGuide(visitId) {
       send_at: "오전 10:00",
       template_name: "일주일 뒤 확인 · 기본 템플릿",
       body: "{환자명}님, 복약 {일차}일째 확인입니다. 잘 드시고 계신가요? {링크}",
-      preview: "김서연님, 복약 7일째 확인입니다. 잘 드시고 계신가요? mg.kr/a3F9x2",
+      preview: who.patient.name + "님, 복약 7일째 확인입니다. 잘 드시고 계신가요? mg.kr/a3F9x2",
       preview_meta: "010-5678-1234 · 08-20 (목) 10:00 · 발신 064-000-0000 · 76바이트 · 단문(SMS)",
     },
-    approve_preview: { send_at: "오늘 18:00", to: "김서연 님" },
+    approve_preview: { send_at: "오늘 18:00", to: who.patient.name + " 님" },
   };
 }
 
@@ -185,7 +200,8 @@ function mockDoctorRequest(path, options) {
         /* 서버가 역할을 판단한다(`docs/models-layout.md` — 「[승인]은 의사 계정만」).
            화면에서 버튼을 잠그는 것은 편의일 뿐이다. */
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
-        return resolve({ status: "APPROVED", send_at: "오늘 18:00", to: "김서연 님" });
+        var target = MOCK_PATIENTS[visitId] || MOCK_PATIENTS[8801];
+        return resolve({ status: "APPROVED", send_at: "오늘 18:00", to: target.patient.name + " 님" });
       }
 
       if (options.method === "POST" && /\/return$/.test(path)) {
