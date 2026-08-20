@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from starlette import status
 from tortoise.contrib.test import TestCase
 
@@ -71,7 +71,7 @@ async def attach_guide(visit: Visit, guide_status: GuideStatus) -> None:
 class VisitLockTestCase(TestCase):
     staff = ClinicalActor(staff_id=101, hospital_id=HOSPITAL_ID, roles=frozenset({"staff"}))
 
-    async def patch(self, visit_id: int, body: dict) -> object:
+    async def patch(self, visit_id: int, body: dict[str, object]) -> Response:
         async with client_for(self.staff) as client:
             return await client.patch(f"/api/v1/visits/{visit_id}", json=body)
 
