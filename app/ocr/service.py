@@ -1,0 +1,296 @@
+from collections.abc import Sequence
+from decimal import Decimal
+from typing import Protocol
+from uuid import uuid4
+
+from fastapi import status
+from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.timezone import now
+from tortoise.transactions import in_transaction
+
+from app.models.ocr import (
+    OcrDocumentType,
+    OcrField,
+    OcrFieldCandidate,
+    OcrJob,
+    OcrJobDocument,
+    OcrJobStatus,
+    OcrResult,
+)
+from app.models.visits import Visit
+from app.ocr.errors import OcrApiError
+from app.ocr.schemas import (
+    OcrCandidateResponse,
+    OcrDocumentResponse,
+    OcrFieldResponse,
+    OcrJobResponse,
+    OcrResultResponse,
+    UpdateOcrFieldRequest,
+)
+from app.ocr.security import OcrActor
+
+
+class OcrRepository(Protocol):
+    async def create_job(
+        self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
+    ) -> OcrJob: ...
+
+    async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
+
+    async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult: ...
+
+    async def get_fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> Sequence[OcrField]: ...
+
+    async def update_field(self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor) -> OcrField: ...
+
+
+class DocumentOwnershipVerifier(Protocol):
+    async def assert_owned(
+        self,
+        document_id: int,
+        visit_id: int,
+        hospital_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> None: ...
+
+
+def _not_found() -> OcrApiError:
+    return OcrApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
+
+
+class FailClosedDocumentOwnershipVerifier:
+    """Block OCR creation until the authoritative upload model is connected."""
+
+    async def assert_owned(
+        self,
+        document_id: int,
+        visit_id: int,
+        hospital_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        raise _not_found()
+
+
+class TortoiseOcrRepository:
+    def __init__(self, document_ownership: DocumentOwnershipVerifier | None = None) -> None:
+        self.document_ownership = document_ownership or FailClosedDocumentOwnershipVerifier()
+
+    async def create_job(
+        self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
+    ) -> OcrJob:
+        async with in_transaction() as connection:
+            # Locking the visit serializes starts for documents owned by that visit.
+            # The authoritative document verifier must validate the same visit/hospital.
+            visit = (
+                await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if visit is None:
+                raise _not_found()
+            await self.document_ownership.assert_owned(
+                document_id,
+                visit_id,
+                actor.hospital_id,
+                connection,
+            )
+            active = await (
+                OcrJobDocument.filter(
+                    document_id=document_id,
+                    ocr_job__hospital_id=actor.hospital_id,
+                    ocr_job__status=OcrJobStatus.PROCESSING,
+                )
+                .using_db(connection)
+                .select_for_update()
+                .exists()
+            )
+            if active:
+                raise OcrApiError(
+                    status.HTTP_409_CONFLICT,
+                    "OCR_ALREADY_PROCESSING",
+                    "이미 처리 중인 문서입니다.",
+                )
+            job = await OcrJob.create(
+                ocr_job_id=f"ocr_{uuid4().hex}",
+                hospital_id=actor.hospital_id,
+                visit=visit,
+                requested_by=actor.user_id,
+                using_db=connection,
+            )
+            await OcrJobDocument.create(
+                ocr_job=job,
+                document_id=document_id,
+                document_type=document_type,
+                using_db=connection,
+            )
+        return job
+
+    async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob:
+        job = await OcrJob.filter(ocr_job_id=ocr_job_id, hospital_id=actor.hospital_id).first()
+        if job is None:
+            raise _not_found()
+        return job
+
+    async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult:
+        job = await self.get_job(ocr_job_id, actor)
+        if job.status == OcrJobStatus.FAILED:
+            raise OcrApiError(status.HTTP_409_CONFLICT, "OCR_FAILED", "OCR 처리가 실패했습니다.")
+        if job.status != OcrJobStatus.COMPLETED:
+            raise OcrApiError(status.HTTP_409_CONFLICT, "OCR_RESULT_NOT_READY", "OCR 결과가 아직 준비되지 않았습니다.")
+        result = (
+            await OcrResult.filter(ocr_job_id=ocr_job_id)
+            .prefetch_related("documents", "fields", "fields__candidates")
+            .first()
+        )
+        if result is None:
+            raise _not_found()
+        return result
+
+    async def get_fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> Sequence[OcrField]:
+        result = await self.get_result(ocr_job_id, actor)
+        fields = [field for field in result.fields if field_type is None or field.field_type == field_type]
+        return sorted(fields, key=lambda field: field.ocr_field_id)
+
+    async def update_field(self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor) -> OcrField:
+        async with in_transaction() as connection:
+            field = (
+                await OcrField.filter(
+                    ocr_field_id=ocr_field_id,
+                    ocr_result__ocr_job__hospital_id=actor.hospital_id,
+                )
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if field is None:
+                raise _not_found()
+            if field.is_confirmed:
+                raise OcrApiError(status.HTTP_409_CONFLICT, "OCR_FIELD_CONFIRMED", "이미 확정된 필드입니다.")
+            if field.version != request.base_version:
+                raise OcrApiError(status.HTTP_409_CONFLICT, "VERSION_CONFLICT", "필드 버전이 변경되었습니다.")
+
+            corrected_value = request.corrected_value.strip() if request.corrected_value is not None else None
+            selected_candidate: OcrFieldCandidate | None = None
+            if request.candidate_id is not None:
+                selected_candidate = (
+                    await OcrFieldCandidate.filter(
+                        ocr_field_candidate_id=request.candidate_id,
+                        ocr_field_id=field.ocr_field_id,
+                    )
+                    .using_db(connection)
+                    .first()
+                )
+                if selected_candidate is None:
+                    raise OcrApiError(
+                        status.HTTP_400_BAD_REQUEST,
+                        "INVALID_CANDIDATE",
+                        "해당 필드의 후보값이 아닙니다.",
+                    )
+                corrected_value = selected_candidate.candidate_value
+                await (
+                    OcrFieldCandidate.filter(ocr_field_id=field.ocr_field_id)
+                    .using_db(connection)
+                    .update(is_selected=False)
+                )
+                selected_candidate.is_selected = True
+                await selected_candidate.save(update_fields=("is_selected",), using_db=connection)
+
+            changed_at = now()
+            if request.corrected_value is not None or selected_candidate is not None:
+                field.corrected_value = corrected_value
+                field.modified_by = actor.user_id
+                field.modified_at = changed_at
+            field.version += 1
+            if request.confirm:
+                field.is_confirmed = True
+                field.confirmed_by = actor.user_id
+                field.confirmed_at = changed_at
+            await field.save(using_db=connection)
+        await field.fetch_related("candidates")
+        return field
+
+
+def serialize_job(job: OcrJob) -> OcrJobResponse:
+    return OcrJobResponse(
+        ocr_job_id=job.ocr_job_id,
+        status=job.status,
+        progress=job.progress,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        failure_code=job.failure_code,
+    )
+
+
+def serialize_candidate(candidate: OcrFieldCandidate) -> OcrCandidateResponse:
+    confidence = float(candidate.confidence) if isinstance(candidate.confidence, Decimal) else candidate.confidence
+    return OcrCandidateResponse(
+        ocr_field_candidate_id=candidate.ocr_field_candidate_id,
+        value=candidate.candidate_value,
+        confidence=confidence,
+        rank=candidate.rank,
+        source_date=candidate.source_date,
+        is_selected=candidate.is_selected,
+    )
+
+
+def serialize_field(field: OcrField) -> OcrFieldResponse:
+    confidence = float(field.confidence) if isinstance(field.confidence, Decimal) else field.confidence
+    return OcrFieldResponse(
+        ocr_field_id=field.ocr_field_id,
+        field_type=field.field_type,
+        extracted_value=field.extracted_value,
+        corrected_value=field.corrected_value,
+        value=field.value,
+        confidence=confidence,
+        version=field.version,
+        is_confirmed=field.is_confirmed,
+        modified_by=field.modified_by,
+        modified_at=field.modified_at,
+        confirmed_by=field.confirmed_by,
+        confirmed_at=field.confirmed_at,
+        candidates=[serialize_candidate(item) for item in getattr(field, "candidates", ())],
+    )
+
+
+class OcrService:
+    def __init__(self, repository: OcrRepository) -> None:
+        self.repository = repository
+
+    async def start(
+        self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
+    ) -> OcrJobResponse:
+        return serialize_job(await self.repository.create_job(document_id, visit_id, document_type, actor))
+
+    async def status(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
+        return serialize_job(await self.repository.get_job(ocr_job_id, actor))
+
+    async def result(self, ocr_job_id: str, actor: OcrActor) -> OcrResultResponse:
+        result = await self.repository.get_result(ocr_job_id, actor)
+        return OcrResultResponse(
+            ocr_result_id=result.ocr_result_id,
+            ocr_job_id=result.ocr_job_id,
+            model_name=result.model_name,
+            model_version=result.model_version,
+            version=result.version,
+            confirmed_by=result.confirmed_by,
+            confirmed_at=result.confirmed_at,
+            documents=[
+                OcrDocumentResponse(
+                    document_id=item.document_id,
+                    document_type=item.document_type,
+                    raw_text=item.raw_text,
+                    raw_text_purged_at=item.raw_text_purged_at,
+                )
+                for item in result.documents
+            ],
+            fields=[serialize_field(item) for item in result.fields],
+        )
+
+    async def fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> list[OcrFieldResponse]:
+        return [serialize_field(item) for item in await self.repository.get_fields(ocr_job_id, actor, field_type)]
+
+    async def update_field(
+        self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
+    ) -> OcrFieldResponse:
+        return serialize_field(await self.repository.update_field(ocr_field_id, request, actor))

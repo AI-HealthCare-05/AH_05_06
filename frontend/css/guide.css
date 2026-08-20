@@ -1,0 +1,307 @@
+/* 환자 안내 화면 — P2 복약지도 · P3 주의사항 · P4 생활관리 (KEY-93)
+ *
+ * 375 폭 모바일 전용이다. 환자는 문자 링크로 들어와 한 번 보고 나간다.
+ * 의료진 화면(shell.css)과 컴포넌트를 공유하지 않는다 — 뷰포트도 쓰는 사람도 다르다.
+ *
+ * 강조는 색이 아니라 테두리 굵기로 한다. 색만으로 구분하면 색각 이상이 있는 분에게
+ * 사라진다(2px 강조 · 3px 응급).
+ */
+
+.guide {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-text-size-adjust: 100%;
+}
+
+.guide__head {
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  padding: var(--s-16);
+}
+
+.guide__head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-8);
+}
+
+.guide__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.guide__meta {
+  margin: var(--s-4) 0 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.guide__pdf,
+.guide__report {
+  min-height: 36px;
+  padding: 0 var(--s-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 탭 다섯이 375 폭에 들어가야 한다. 줄바꿈 대신 가로 스크롤을 쓴다 —
+   두 줄이 되면 본문이 그만큼 밀려 첫 화면에서 읽을 것이 줄어든다. */
+.tabs {
+  display: flex;
+  gap: var(--s-4);
+  overflow-x: auto;
+  padding: var(--s-8) var(--s-12);
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: none;
+  min-height: 36px;
+  padding: 0 var(--s-12);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.tab:focus-visible,
+.guide__pdf:focus-visible,
+.guide__report:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.guide__body {
+  padding: var(--s-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+.guide__loading {
+  color: var(--ink-2);
+}
+
+.guide__disease {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s-16);
+}
+
+/* 2px — 「이 약을 왜 드시나요」·「흔하고 괜찮은 반응」·챌린지.
+   좋아져서 끊는 것을 막는 문장들이라 다른 카드와 무게가 달라야 한다. */
+.card--strong {
+  border-width: 2px;
+  border-color: var(--ink);
+}
+
+/* 3px — 응급. 이 블록은 지우거나 고칠 수 없다. */
+.card--danger {
+  border: 3px solid var(--danger);
+  background: var(--danger-bg);
+}
+
+.card__title {
+  margin: 0 0 var(--s-8);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.card__text {
+  margin: 0 0 var(--s-8);
+}
+
+.card__text:last-child {
+  margin-bottom: 0;
+}
+
+.card__note {
+  margin: var(--s-4) 0 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.card__badge {
+  margin: 0 0 var(--s-4);
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.card__badge-line {
+  margin: 0 0 var(--s-4);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.goals {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.goals th,
+.goals td {
+  padding: var(--s-8) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.goals tr:first-child th {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.goals__name {
+  text-align: left;
+  font-weight: 400;
+}
+
+.goals__now {
+  font-weight: 700;
+}
+
+.drug + .drug {
+  margin-top: var(--s-12);
+  padding-top: var(--s-12);
+  border-top: 1px solid var(--line);
+}
+
+.drug__name {
+  margin: 0;
+  font-weight: 700;
+}
+
+.drug__sub {
+  margin: var(--s-4) 0 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.danger__list {
+  margin: 0 0 var(--s-12);
+  padding-left: 1.1em;
+}
+
+.danger__list li {
+  margin-bottom: var(--s-4);
+}
+
+.button {
+  width: 100%;
+  min-height: var(--field-h);
+  border-radius: var(--radius);
+  border: 1px solid var(--danger);
+  background: var(--card);
+  color: var(--danger);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* 체크박스를 두지 않는다 — 의사가 주는 한 방향 권고라 되묻지 않는다 */
+.challenge {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.challenge li,
+.challenge__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-8);
+  margin: 0 0 var(--s-4);
+}
+
+.challenge__freq {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+}
+
+.chip {
+  padding: 2px var(--s-8);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.chip--on {
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.notice {
+  margin: 0;
+  padding: var(--s-8) var(--s-12);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.guide__foot {
+  padding: var(--s-16);
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  align-items: flex-start;
+}
+
+.guide__note,
+.guide__source {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+}
