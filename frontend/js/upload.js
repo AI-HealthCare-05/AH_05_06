@@ -280,12 +280,12 @@
      화면 위에 누구의 기록인지 늘 붙어 있어야 하는 이유와 같은 이야기다. */
   var visit = null;
 
+  /* 화면 위의 「누구의 기록인가」 줄은 환자 카드가 갖는다(KEY-50 detail.js) —
+     기본정보 탭과 진료기록 탭이 같은 머리를 쓰기 때문이다. 여기서는 어느
+     진료 건에 붙이는지만 들고 있으면 된다. */
   function showVisit(next) {
     if (!next) return;
     visit = next;
-    document.getElementById("p-name").textContent = visit.name;
-    document.getElementById("p-id").textContent = "차트 " + visit.hospital_patient_no;
-    document.getElementById("p-visit").textContent = visit.meta.split(" · ").pop() + " · 오늘 진료";
   }
 
   document.addEventListener("session:ready", function () {

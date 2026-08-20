@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>진료 안내 · 복약 안내 도우미</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/guide.css" />
+  </head>
+  <body class="guide">
+    <!-- P2 복약지도 · P3 주의사항 · P4 생활관리 — 한 화면의 세 탭이다 (KEY-93).
+         환자는 문자 링크로 들어와 한 번 보고 나간다. 로그인이 없고,
+         탭을 옮겨도 주소가 바뀌지 않는다 — 뒤로가기로 링크 밖으로 나가면
+         다시 인증해야 하기 때문이다. -->
+    <header class="guide__head">
+      <div class="guide__head-row">
+        <h1 class="guide__title">진료 안내</h1>
+        <button class="guide__pdf" type="button" id="pdf-button">PDF 저장</button>
+      </div>
+      <p class="guide__meta" id="visit-meta"></p>
+    </header>
+
+    <nav class="tabs" id="tabs" aria-label="안내 항목"></nav>
+
+    <main class="guide__body" id="guide-body" aria-live="polite">
+      <p class="guide__loading">안내를 불러오는 중이에요…</p>
+    </main>
+
+    <footer class="guide__foot">
+      <p class="guide__note">ⓘ 이 안내는 담당 의료진이 확인한 내용입니다</p>
+      <p class="guide__source" id="guide-source"></p>
+      <button class="guide__report" type="button" id="report-button">오류 신고</button>
+    </footer>
+
+    <script src="/js/guide-api.js"></script>
+    <script src="/js/guide.js"></script>
+  </body>
+</html>
