@@ -47,3 +47,37 @@ class TestLifetimeIsSane:
 
     def test_access_is_short(self) -> None:
         assert AccessToken.lifetime <= timedelta(hours=24)
+
+
+class TestIssuedLifetimeMatchesConfig:
+    """**발급된** 토큰의 `exp` 가 설정과 맞는가.
+
+    위 검사들은 `Token.lifetime`(선언된 수명)만 본다. 그런데 실제로 박히는
+    `exp` 는 `set_exp()` 가 계산하는데, 여기서 `timegm(dt.timetuple())` 로
+    **KST 벽시계를 UTC 로 읽어 9시간이 더 붙고 있었다** — 60분짜리 액세스
+    토큰이 실제로는 600분을 살았다.
+
+    선언된 수명만 보면 이 어긋남이 안 보인다. 그래서 진짜 시계와 견준다.
+    """
+
+    def _skew_seconds(self, token: AccessToken | RefreshToken) -> float:
+        import time
+
+        expected = time.time() + token.lifetime.total_seconds()
+        return abs(token.payload["exp"] - expected)
+
+    def test_access_expires_when_config_says(self) -> None:
+        assert self._skew_seconds(AccessToken()) < 60
+
+    def test_refresh_expires_when_config_says(self) -> None:
+        assert self._skew_seconds(RefreshToken()) < 60
+
+    def test_issued_at_is_not_in_the_future(self) -> None:
+        """`iat` 가 미래면 JWT 라이브러리가 토큰을 통째로 거절한다.
+
+        같은 시간대 실수가 `iat` 에서는 조용히 넘어가지 않고 여기서 터진다 —
+        `exp` 쪽 9시간 어긋남을 처음 드러낸 것도 이 값이었다.
+        """
+        import time
+
+        assert AccessToken().payload["iat"] <= time.time() + 5
