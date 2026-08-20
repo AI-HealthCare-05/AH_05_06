@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 import pytest
 from aerich.utils import decompress_dict, import_py_file
@@ -9,6 +10,8 @@ from tortoise import Tortoise
 from tortoise.contrib import test as tortoise_test
 from tortoise.exceptions import IntegrityError, ValidationError
 from tortoise.fields import OnDelete
+from tortoise.fields.data import DecimalField
+from tortoise.fields.relational import ForeignKeyFieldInstance
 
 from app.core.db.databases import TORTOISE_APP_MODELS
 from app.models.ocr import (
@@ -40,7 +43,7 @@ def load_migrations() -> list[ModuleType]:
 
 
 def test_ocr_job_is_scoped_to_hospital_and_visit() -> None:
-    relation = OcrJob._meta.fields_map["visit"]
+    relation = cast(ForeignKeyFieldInstance, OcrJob._meta.fields_map["visit"])
 
     assert OcrJob._meta.pk_attr == "ocr_job_id"
     assert relation.related_model is Visit
@@ -55,7 +58,7 @@ def test_result_keeps_raw_text_fields_candidates_and_audit_metadata() -> None:
     assert OcrResult._meta.fields_map["ocr_job"].unique is True
     assert OcrDocumentText._meta.fields_map["raw_text"].null is True
     assert OcrDocumentText._meta.fields_map["raw_text_purged_at"].null is True
-    assert OcrField._meta.fields_map["confidence"].decimal_places == 4
+    assert cast(DecimalField, OcrField._meta.fields_map["confidence"]).decimal_places == 4
     assert OcrField._meta.fields_map["modified_by"].null is True
     assert OcrField._meta.fields_map["confirmed_by"].null is True
     assert OcrFieldCandidate._meta.unique_together == (("ocr_field", "rank"),)
@@ -73,7 +76,7 @@ def test_relation_names_generate_expected_source_columns() -> None:
 
 
 def test_job_supports_multiple_source_documents_without_duplicates() -> None:
-    relation = OcrJobDocument._meta.fields_map["ocr_job"]
+    relation = cast(ForeignKeyFieldInstance, OcrJobDocument._meta.fields_map["ocr_job"])
 
     assert relation.related_model is OcrJob
     assert relation.on_delete is OnDelete.CASCADE
