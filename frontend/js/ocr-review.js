@@ -35,11 +35,19 @@
 
   /* 필드별 저장 상태. 화면 전체를 잠그지 않는다 — 한 항목을 저장하는 동안
      다른 항목은 계속 보고 고칠 수 있어야 한다. */
-  var editing = {}; // 직접 입력 칸을 열어 둔 필드
+  var editing = {}; // 직접 입력 칸을 열어 둔 필드 — 값은 **지금 쳐 넣은 글자**다
   var saving = {}; // 저장 요청이 나가 있는 필드
   var saved = {}; // 방금 저장에 성공한 필드
   var failed = {}; // 저장이 실패한 필드 — { code, mine }
   var conflict = {}; // 409 — { mine, theirs }
+  var focusOn = null; // 방금 연 입력칸. 다시 그린 뒤 여기로 커서를 돌려준다
+
+  /* 칸이 열려 있는지는 **키가 있는지**로 본다. 값으로 보면 칸을 비웠을 때
+     ""(falsy)가 되어 입력칸이 저 혼자 닫힌다 — 지우고 다시 치는 것이 값
+     고치기의 절반이다. */
+  function isEditing(id) {
+    return Object.prototype.hasOwnProperty.call(editing, id);
+  }
 
   function escapeHtml(text) {
     return String(text).replace(/[&<>"]/g, function (ch) {
@@ -59,6 +67,14 @@
       if (result.fields[i].ocr_field_id === id) return result.fields[i];
     }
     return null;
+  }
+
+  /* `source_line` 은 계약에 없어서 목업이 얹은 값이다(PR 본문 §2) — 서버가
+     무엇을 줄지 아직 안 정해졌다. 숫자로 못 읽히면 빈 칸으로 두고, 속성 안에
+     날것으로 흘려보내지 않는다. */
+  function lineAttr(value) {
+    var n = Number(value);
+    return value === null || value === undefined || value === "" || isNaN(n) ? "" : String(n);
   }
 
   function shortDate(iso) {
@@ -130,7 +146,7 @@
       '<button class="chip chip--src" type="button" data-jump="' +
       field.document_id +
       '" data-line="' +
-      (field.source_line === undefined ? "" : field.source_line) +
+      lineAttr(field.source_line) +
       '">' +
       escapeHtml(doc.label || doc.document_type) +
       "</button>"
@@ -158,7 +174,7 @@
           '<button class="chip chip--src" type="button" data-jump="' +
           item.document_id +
           '" data-line="' +
-          item.source_line +
+          lineAttr(item.source_line) +
           '">' +
           escapeHtml(where) +
           " · " +
@@ -185,14 +201,14 @@
       '<div class="clash">' +
       '<p class="clash__title">다른 사람이 먼저 고쳤습니다</p>' +
       '<div class="clash__row"><span class="clash__who">지금 저장된 값</span>' +
-      '<b>' +
+      "<b>" +
       escapeHtml(clash.theirs) +
       "</b>" +
       '<button class="field__act" type="button" data-drop="' +
       field.ocr_field_id +
       '">이 값 두기</button></div>' +
       '<div class="clash__row"><span class="clash__who">내가 쓴 값</span>' +
-      '<b>' +
+      "<b>" +
       escapeHtml(clash.mine) +
       "</b>" +
       '<button class="field__act" type="button" data-force="' +
@@ -208,17 +224,19 @@
     var head =
       '<div class="field__name">' +
       escapeHtml(field.field_type) +
-      (STATE_TEXT[state] ? ' <span class="field__tag field__tag--' + state + '">' + STATE_TEXT[state] + "</span>" : "") +
+      (STATE_TEXT[state]
+        ? ' <span class="field__tag field__tag--' + state + '">' + STATE_TEXT[state] + "</span>"
+        : "") +
       (field.is_confirmed ? ' <span class="field__tag field__tag--locked">🔒 확정</span>' : "") +
       "</div>";
 
     var body;
-    if (editing[id]) {
+    if (isEditing(id)) {
       body =
         '<input class="field__input" type="text" data-input="' +
         id +
         '" value="' +
-        escapeHtml(editing[id] === true ? "" : editing[id]) +
+        escapeHtml(editing[id]) +
         '" aria-label="' +
         escapeHtml(field.field_type) +
         ' 값 입력" />' +
@@ -236,17 +254,26 @@
         id +
         '">직접 입력</button>';
     } else if (state === "pending") {
+      /* 「이전 값 유지」·「이번 미시행」 버튼이 있었는데 처리기가 없어서 눌러도
+         아무 일이 없었다. 둘 다 지금 계약으로는 못 짠다 — 앞 진료 값은 이
+         화면에 없고, 「미시행」을 담을 칸이 PATCH 에 없다(KEY-109).
+
+         눌러도 안 되는 버튼을 두느니 지운다. 대신 결과지를 손에 들고 있으면
+         바로 넣을 수 있게 「직접 입력」은 남긴다 — 이건 실제로 저장된다. */
       body =
         '<div class="field__value field__value--pending">' +
         escapeHtml(field.value) +
         "</div>" +
-        '<span class="field__hint">별도 보고 검사</span>' +
-        '<button class="field__act" type="button" data-keep="' +
+        /* 값을 넣은 뒤에도 「결과가 나오면 넣으라」고 하면 이미 한 일을 또
+           하라는 말이 된다. 넣기 전에만 안내한다. */
+        '<span class="field__hint">' +
+        (field.corrected_value === null || field.corrected_value === undefined
+          ? "별도 보고 검사 — 결과가 나오면 여기에 넣습니다"
+          : "별도 보고 검사") +
+        "</span>" +
+        '<button class="field__act" type="button" data-fill="' +
         id +
-        '">이전 값 유지</button>' +
-        '<button class="field__act" type="button" data-skip="' +
-        id +
-        '">이번 미시행</button>';
+        '">직접 입력</button>';
     } else {
       body =
         '<div class="field__value">' +
@@ -259,8 +286,8 @@
       }
     }
 
-    var tail = editing[id] ? "" : sourceChip(field);
-    if (field.source_date && !editing[id]) {
+    var tail = isEditing(id) ? "" : sourceChip(field);
+    if (field.source_date && !isEditing(id)) {
       tail += '<span class="field__date">' + escapeHtml(shortDate(field.source_date)) + "</span>";
     }
     /* 사람이 고친 값에는 그 사실이 남아야 한다. 판독값과 구별되지 않으면
@@ -278,7 +305,7 @@
     }
 
     var more = "";
-    if (state === "candidates" && !editing[id]) {
+    if (state === "candidates" && !isEditing(id)) {
       var open = !!openCandidates[id];
       more =
         '<button class="field__more" type="button" data-more="' +
@@ -309,14 +336,36 @@
     );
   }
 
+  /* 다시 그리면 `innerHTML` 이 통째로 바뀌어 커서와 캐럿이 사라진다. 저장
+     타이머(2.5초)처럼 사람이 아무것도 안 눌러도 도는 길이 있어서, 치던
+     자리를 안 챙기면 입력 도중에 커서가 튄다.
+
+     첫 번째 입력칸을 잡으면 안 된다 — 두 칸이 열려 있을 때 나중에 연 칸에
+     쓰려던 값이 먼저 연 칸에 들어간다. */
   function renderFields() {
+    var active = document.activeElement;
+    var typingIn =
+      active && active.getAttribute && active.getAttribute("data-input") !== null
+        ? Number(active.getAttribute("data-input"))
+        : null;
+    var caret = typingIn === null ? null : [active.selectionStart, active.selectionEnd];
+
     fieldsBox.innerHTML = result.fields
       .map(function (field) {
         return renderField(field);
       })
       .join("");
-    var open = fieldsBox.querySelector(".field__input");
-    if (open) open.focus();
+
+    /* 방금 「고치기」를 누른 칸이 먼저다. 치던 칸을 지키는 것보다 앞서야
+       하는 이유는, 두 칸이 열려 있을 때 새로 연 칸으로 커서가 안 가면
+       거기 쓰려던 숫자가 먼저 연 칸에 들어가기 때문이다. */
+    var wanted = focusOn !== null ? focusOn : typingIn;
+    focusOn = null;
+    if (wanted === null) return;
+    var box = fieldsBox.querySelector('[data-input="' + wanted + '"]');
+    if (!box) return;
+    box.focus();
+    if (caret && typingIn === wanted) box.setSelectionRange(caret[0], caret[1]);
   }
 
   /* 위에 몇 개를 봐야 하는지 먼저 말한다. 목록을 훑기 전에 알아야
@@ -444,7 +493,7 @@
         '<p class="state__title">판독 중입니다</p>' +
           '<p class="state__body">' +
           job.progress +
-          "% · 끝나면 이 화면이 저절로 바뀝니다</p>"
+          "% · 끝나면 이 화면이 저절로 바뀝니다</p>",
       );
       return false;
     }
@@ -457,7 +506,7 @@
           escapeHtml(job.failure_code || "알 수 없음") +
           " · 값을 직접 입력하거나 다시 올릴 수 있습니다</p>" +
           '<div class="state__acts"><button class="button" type="button">직접 입력</button>' +
-          '<button class="button button--ghost" type="button">재업로드</button></div>'
+          '<button class="button button--ghost" type="button">재업로드</button></div>',
       );
       return false;
     }
@@ -500,8 +549,12 @@
     if (fill) {
       var fillId = Number(fill.getAttribute("data-fill"));
       var current = fieldById(fillId);
-      editing[fillId] = current && current.value !== null ? current.value : true;
+      /* 별도 보고 검사의 `value` 는 값이 아니라 「추후 보고 예정」이라는 안내다.
+         그걸 채워 두면 결과지를 보고 치려는 사람이 먼저 지워야 한다. */
+      var seed = current && !current.pending_report && current.value !== null && current.value !== undefined;
+      editing[fillId] = seed ? String(current.value) : "";
       delete failed[fillId];
+      focusOn = fillId; // 방금 연 칸으로 커서를 보낸다 — 첫 칸이 아니라
       return redraw();
     }
 
@@ -554,6 +607,17 @@
     }
   });
 
+  /* 친 글자를 `editing` 에 바로 옮겨 둔다.
+     이게 없으면 `editing[id]` 는 「고치기를 누른 순간의 값」에 머무는데,
+     다시 그릴 때 화면은 그 값으로 되돌아간다. 저장 타이머는 사람이
+     아무것도 안 눌러도 도니까, 친 값이 저 혼자 사라지는 길이 된다.
+     검사값 화면에서 제일 나쁜 것은 틀린 값이 조용히 저장되는 쪽이다. */
+  document.addEventListener("input", function (event) {
+    var box = event.target.getAttribute && event.target.getAttribute("data-input");
+    if (box === null || box === undefined) return;
+    editing[Number(box)] = event.target.value;
+  });
+
   /* 값 하나 고치는 데 마우스를 두 번 쓰게 하지 않는다 */
   document.addEventListener("keydown", function (event) {
     var box = event.target.closest ? event.target.closest("[data-input]") : null;
@@ -596,7 +660,7 @@
         return showState('<p class="state__title">판독 결과가 아직 없습니다</p>');
       }
       showState(
-        '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요</p>'
+        '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요</p>',
       );
     });
 })();
