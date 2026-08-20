@@ -17,9 +17,12 @@
     - SEED_STAFF_PASSWORD 환경변수가 없으면 실행을 거부한다.
     - 운영 환경(ENV=prod)에서는 실행을 거부한다.
 
-건너뛰는 항목 (미구현 모델):
-    - lab_result, visit_flag 테이블 — KEY-1, KEY-2 이후 활성화
+건너뛰는 항목 (표가 아직 없다):
+    - lab_result, visit_flag — KEY-136 이 「계획」으로 가른 것들.
+      왜 아직 없는지는 mapping.py 의 PLANNED_TABLES 에 이유와 함께 있다.
     - DERIVED·EVENT·OCR_INPUT·DOC_ONLY 칸 (mapping.py 참조)
+
+처방(prescription · prescription_item)은 KEY-137 에서 적재하기 시작했다.
 """
 
 import argparse
@@ -43,8 +46,10 @@ from app.core.config import Config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
+from app.models.prescriptions import Prescription, PrescriptionItem  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
 from app.models.visits import Visit, VisitStatus  # noqa: E402
+from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
 from app.tests.fixtures.staff import StaffDataError, all_staff  # noqa: E402
 
 _CONFIG = Config()
@@ -179,8 +184,12 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         H1 소속 Staff.name 으로 조회한다.
         H2 에 동명이인(SYN-STAFF-16 박연)이 있으므로 반드시 hospital 로 필터한다.
 
+    처방:
+        prescription: (visit) 기준 get_or_create — 진료당 한 묶음
+        prescription_item: 처방이 새로 생길 때만 함께 만든다
+
     건너뜀:
-        lab_result, visit_flag 모델 미구현 → KEY-1, KEY-2 이후 활성화
+        lab_result, visit_flag — 표가 없다. KEY-136 이 「계획」으로 가른 것들
     """
     _require_csv(
         PATIENTS_CSV,
@@ -236,6 +245,7 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
 
     # 2단계: 진료 upsert
     created_v = skipped_v = error_v = 0
+    created_presc = created_item = 0
 
     for row in rows:
         visit_date_str = row["진료일"].strip()
@@ -271,7 +281,7 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
 
         planned_stop = row["진료상태"].strip() == "계획된 중단"
 
-        _, was_created = await Visit.get_or_create(
+        visit, was_created = await Visit.get_or_create(
             hospital_id=h1.hospital_id,
             patient=patient,
             visited_at=visited_at,
@@ -284,7 +294,48 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         if was_created:
             created_v += 1
 
+        created_p, created_i = await _seed_prescription(visit, row)
+        created_presc += created_p
+        created_item += created_i
+
     print(f"[visits] created={created_v} skipped={skipped_v} error={error_v} total={len(rows)}")
+    print(f"[prescriptions] created={created_presc} items={created_item}")
+
+
+async def _seed_prescription(visit: Visit, row: dict[str, str]) -> tuple[int, int]:
+    """한 진료의 처방을 적재한다 — KEY-137.
+
+    행을 어떻게 가르는지는 `app/tests/fixtures/prescriptions.py` 가 안다.
+    거기 두는 이유는 **검사가 닿아야 하기 때문**이다 — 규칙이 이 함수 안에 있으면
+    DB 를 띄우고 스크립트를 통째로 돌려야만 확인할 수 있다.
+    """
+    prescription_set = row["처방세트"].strip()
+    if not prescription_set:
+        return 0, 0
+
+    try:
+        items = items_from_row(row["약"], row["용법"], row["처방일수"])
+    except PrescriptionRowError as error:
+        print(f"[prescriptions] {error} (시나리오 {row['시나리오ID']}) — 건너뛴다", file=sys.stderr)
+        return 0, 0
+    if not items:
+        return 0, 0
+
+    prescription, was_created = await Prescription.get_or_create(
+        visit=visit,
+        defaults={"prescription_set": prescription_set},
+    )
+    if not was_created:
+        return 0, 0  # 이미 넣은 진료다. 다시 실행해도 쌓이지 않는다
+
+    for item in items:
+        await PrescriptionItem.create(
+            prescription=prescription,
+            name=item.name,
+            frequency=item.frequency,
+            duration_days=item.duration_days,
+        )
+    return 1, len(items)
 
 
 async def main(mode: str) -> None:

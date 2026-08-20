@@ -70,15 +70,33 @@ MAPPING: dict[str, Field] = {
     "초진재진": Field(Where.DERIVED, "", Kind.ENUM, choices=("초진", "재진"), note="지난 방문이 있는지로 정한다"),
     "처방세트": Field(
         Where.PRESCRIPTION,
-        "prescription_set_version_id",
+        # `prescription_set_version_id` 였는데 KEY-137 에서 고쳤다. 실제 값이
+        # "자궁내막증 · 비잔 (계속)" 같은 **사람이 읽는 이름**이고 세트 템플릿
+        # 표는 없다. `..._id` 로 부르면 다음 사람이 조인할 표를 찾게 된다.
+        "prescription_set",
         Kind.TEXT,
-        note="템플릿 출처. Visit JSON에 저장하지 않는다",
+        note="진료 당시 세트 이름의 스냅샷. 템플릿 표가 생기면 FK 를 따로 더한다",
     ),
-    "약": Field(Where.PRESCRIPTION_ITEM, "name", Kind.FREE, note="실제 처방 항목의 약 이름"),
-    "용법": Field(Where.PRESCRIPTION_ITEM, "frequency", Kind.FREE, note="실제 처방 항목의 용법"),
+    "약": Field(
+        Where.PRESCRIPTION_ITEM,
+        "name",
+        Kind.FREE,
+        note="한 줄에 ` + ` 로 여럿일 수 있다 — 항목별로 갈라 넣는다",
+    ),
+    "용법": Field(
+        Where.PRESCRIPTION_ITEM,
+        "frequency",
+        Kind.FREE,
+        note="`약` 과 ` + ` 개수가 같다(전수 확인). 같은 순서로 짝짓는다",
+    ),
     "총투원문": Field(Where.OCR_INPUT, "", Kind.TEXT, note="판독이 읽어야 할 원문. DB 에 넣지 않는다"),
     "총투단위": Field(Where.OCR_INPUT, "", Kind.ENUM, choices=("일수", "통수"), note="통수면 × 28 일"),
-    "처방일수": Field(Where.PRESCRIPTION_ITEM, "duration_days", Kind.INT, note="소진일 계산의 근거"),
+    "처방일수": Field(
+        Where.PRESCRIPTION_ITEM,
+        "duration_days",
+        Kind.INT,
+        note="소진일 계산의 근거. 행에 하나뿐이라 `필요시` 약에는 넣지 않는다(KEY-137)",
+    ),
     "소진예정일": Field(Where.DERIVED, "", Kind.DATE, note="visited_at 현지 날짜 + duration_days"),
     "혈색소": Field(Where.LAB_RESULT, "value", Kind.LAB, note="g/dL"),
     "자궁내막종": Field(Where.LAB_RESULT, "value", Kind.LAB, note="cm"),
@@ -138,13 +156,8 @@ NOT_STORED = frozenset({Where.OCR_INPUT, Where.DERIVED, Where.EVENT, Where.DOC_O
 #:
 #: 뒤쪽이 중요하다. 표를 만든 사람이 이 파일을 고치는 것을 잊어도 검사가 잡는다.
 PLANNED_TABLES: dict[Where, str] = {
-    Where.PRESCRIPTION: (
-        "만든다 — KEY-137. 합성 100행 중 99행에 처방이 있는데 넣을 표가 없다. 복약지도 프로그램의 중심 데이터다."
-    ),
-    Where.PRESCRIPTION_ITEM: (
-        "만든다 — KEY-137. `소진예정일`이 `visited_at + duration_days` 파생인데 "
-        "그 `duration_days` 가 저장될 자리가 여기다. 지금은 파생의 근거가 없다."
-    ),
+    # `prescription` · `prescription_item` 은 KEY-137 에서 만들어 여기서 뺐다.
+    # 표가 생기면 이 목록에 남아 있는 것 자체가 검사를 죽인다.
     Where.LAB_RESULT: (
         "계획 — `ocr_field` 와 겹친다. 그 표가 이미 `field_type` + `value` + "
         "`is_confirmed` 로 진료별 검사값을 담는다. 별도 표가 필요한지는 「환자의 "
