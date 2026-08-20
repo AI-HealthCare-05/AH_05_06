@@ -1,0 +1,51 @@
+/* 화면 공통 토큰 — 로그인(L)과 의료진 화면(S·D·A)이 함께 쓴다.
+ *
+ * 대비는 카드 안(흰색)과 카드 밖(--bg) 양쪽에서 재야 한다.
+ * 판권 줄처럼 카드 밖에 있는 글자는 흰 배경에서만 재면 AA 를 놓친다.
+ *
+ * 쓰지 않는 것
+ *   보라 · 네온 계열 / 반투명 카드 / 그라데이션 글자 / 장식용 이모지
+ *   뜻 없는 등장 애니메이션 / 넓은 자간 + 초경량 폰트
+ * 위계는 크기가 아니라 굵기와 색으로 만든다.
+ */
+
+:root {
+  --bg: #f4f5f6;
+  --card: #ffffff;
+  --line: #dde0e3;
+  --line-strong: #b9bec4;
+
+  --ink: #1c1f23; /* 흰 15.8 · 회색 14.5 */
+  --ink-2: #5a6068; /* 흰 6.35 · 회색 5.82 — AA */
+  --ink-3: #666c75; /* 흰 5.29 · 회색 4.85 — AA */
+
+  --accent: #23303a; /* 주 버튼 · 초점 */
+  --accent-hover: #16202a;
+
+  --danger: #b02a20; /* 흰 배경 대비 6.0 — AA */
+  --danger-bg: #fdf2f1;
+  --danger-line: #f0cfcb;
+
+  /* 주의를 끌되 위험은 아닌 것 — ⚠ 보완 · 확인 필요 */
+  --warn: #8a5a10; /* 흰 배경 대비 5.4 — AA */
+  --warn-bg: #fdf7ec;
+  --warn-line: #eeddbc;
+
+  /* 끝난 것 */
+  --done: #1f6b45; /* 흰 배경 대비 5.6 — AA */
+  --done-bg: #eef6f1;
+
+  --s-4: 4px;
+  --s-8: 8px;
+  --s-12: 12px;
+  --s-16: 16px;
+  --s-24: 24px;
+  --s-32: 32px;
+
+  --radius: 10px;
+  --field-h: 44px; /* 손가락과 초점이 닿는 최소 크기 */
+  --button-h: 50px;
+
+  --font:
+    -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", "Segoe UI", sans-serif;
+}

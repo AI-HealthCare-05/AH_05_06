@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>진료기록 업로드 · 복약 안내 도우미</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/shell.css" />
+    <link rel="stylesheet" href="/css/upload.css" />
+  </head>
+  <body class="shell">
+    <!-- 의료진 화면 골격 + S1-5 진료기록 업로드 (KEY-53)
+         왼쪽 목록의 검색·등록·필터 동작은 KEY-35 가 채운다. 여기서는 자리만 잡는다. -->
+
+    <header class="topbar">
+      <span class="topbar__brand">복약 안내 도우미</span>
+      <nav class="topbar__nav">
+        <button class="topbar__tab" type="button" aria-current="page">현황</button>
+        <button class="topbar__tab" type="button">관리</button>
+        <button class="topbar__tab" type="button">설정</button>
+      </nav>
+      <div class="topbar__right">
+        <span class="who">
+          <span class="who__name" id="who-name">—</span>
+          <span class="who__roles" id="who-roles"></span>
+        </span>
+        <button class="icon-button" type="button" aria-label="알림">
+          🔔<span class="icon-button__count" id="alert-count" hidden></span>
+        </button>
+        <button class="icon-button" type="button" id="logout" aria-label="로그아웃">⏻</button>
+      </div>
+    </header>
+
+    <div class="main">
+      <!-- 왼쪽 목록은 로그인해 있는 동안 사라지지 않는다 -->
+      <aside class="list" aria-label="환자 목록">
+        <div class="list__head">
+          <input class="list__search" type="search" placeholder="이름 · 차트번호 검색" aria-label="환자 검색" />
+        </div>
+        <div class="list__day">
+          <button class="icon-button" type="button" aria-label="이전 날짜">‹</button>
+          <span class="grow" id="day">—</span>
+          <button class="icon-button" type="button" aria-label="다음 날짜">›</button>
+        </div>
+        <div class="chips" id="chips" role="group" aria-label="상태로 거르기"></div>
+        <div class="list__rows" id="rows"></div>
+        <p class="list__note">하루 단위로 표시합니다 · 지난 날짜는 ‹ 로 이동합니다</p>
+      </aside>
+
+      <main class="pane">
+        <div class="patient-head">
+          <div class="patient-head__name" id="p-name">—</div>
+          <div class="patient-head__id" id="p-id"></div>
+          <div class="patient-head__visit" id="p-visit"></div>
+        </div>
+
+        <ol class="steps">
+          <li class="step step--done"><span class="step__mark">✓</span>기본정보</li>
+          <li class="step step--now"><span class="step__mark">●</span>진료기록</li>
+          <li class="step"><span class="step__mark">○</span>안내문</li>
+          <li class="step"><span class="step__mark">○</span>최종 확인</li>
+        </ol>
+
+        <h1 class="pane__title">② 진료기록 업로드</h1>
+        <p class="pane__lead">환자를 먼저 등록하고 진료기록은 나중에 업로드할 수 있습니다</p>
+
+        <!-- 한 버튼으로 받는다. 종류는 프로그램이 가려낸다. -->
+        <div class="drop" id="drop">
+          <div class="drop__icon" aria-hidden="true">🖼</div>
+          <div class="drop__title">진료기록 업로드</div>
+          <p class="drop__lead">파일을 끌어다 놓을 수 있습니다</p>
+          <p class="drop__hint">여러 장 동시 업로드 · 순서 무관</p>
+          <button class="drop__pick" type="button" id="pick">파일 고르기</button>
+          <input type="file" id="file" multiple accept="image/*,application/pdf" hidden />
+        </div>
+
+        <div class="kinds">
+          <div class="kind">
+            <div class="kind__name">EMR 과거기록</div>
+            <p class="kind__desc">상병 · 처방 · 검사 수치가 함께 보이는 화면 — 이 화면만으로 충분합니다</p>
+            <p class="kind__when kind__when--must">★ 안내문 생성 필수</p>
+          </div>
+          <div class="kind">
+            <div class="kind__name">소견 · 메모</div>
+            <p class="kind__desc">초음파 소견 · 특이사항이 표시된 화면</p>
+            <p class="kind__when">안내문 생성에 사용</p>
+          </div>
+          <div class="kind">
+            <div class="kind__name">검사 결과지</div>
+            <p class="kind__desc">과거기록에 포함되지 않는 항목만 — AMH는 별도 서식이라 추가 업로드가 필요할 수 있습니다</p>
+            <p class="kind__when">검사 시행일에만</p>
+          </div>
+        </div>
+
+        <p class="note">진료기록 종류를 자동으로 분류합니다 · 종류별로 나누어 업로드하지 않아도 됩니다</p>
+
+        <section class="files" id="files" aria-live="polite"></section>
+
+        <p class="note note--warn">⚠ 다른 환자의 정보가 함께 촬영되지 않도록 주의해 주세요</p>
+        <p class="note">업로드하지 않으면 「작성 중 · 진료기록 없음」 상태로 유지됩니다</p>
+
+        <div class="actions">
+          <button class="button-ghost" type="button" id="later">나중에 업로드</button>
+          <span class="grow"></span>
+          <button class="button-primary" type="button" id="next" disabled>업로드 후 안내문 생성</button>
+        </div>
+
+        <!-- 누른 뒤에 무슨 일이 일어났는지. 작아서 화면낭독기가 읽어도 시끄럽지 않다 -->
+        <p class="note" id="say" role="status"></p>
+      </main>
+    </div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/session.js"></script>
+    <script src="/js/shell.js"></script>
+    <script src="/js/upload.js"></script>
+  </body>
+</html>
