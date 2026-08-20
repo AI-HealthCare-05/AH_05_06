@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 
+from app.documents.service import TortoiseDocumentOwnershipVerifier
 from app.ocr.schemas import (
     OcrFieldResponse,
     OcrJobResponse,
@@ -13,7 +14,7 @@ from app.ocr.security import OcrActor, get_ocr_actor
 from app.ocr.service import OcrService, TortoiseOcrRepository
 
 ocr_router = APIRouter(tags=["ocr"])
-service = OcrService(TortoiseOcrRepository())
+service = OcrService(TortoiseOcrRepository(TortoiseDocumentOwnershipVerifier()))
 
 
 def get_ocr_service() -> OcrService:
