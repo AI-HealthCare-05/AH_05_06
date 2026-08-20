@@ -149,10 +149,14 @@ async def seed_staff(password: str) -> dict[str, Hospital]:
             created += 1
         else:
             await Staff.filter(login_id=s.login_id).update(
+                hospital_id=hospital.hospital_id,
                 password_hash=hashed,
+                name=s.name,
                 roles=list(s.roles),
                 must_change_password=s.must_change_password,
                 status=status,
+                left_at=_parse_dt(s.left_at),
+                last_login_at=_parse_dt(s.last_login_at),
             )
             updated += 1
 
@@ -213,6 +217,15 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         if was_created:
             created_p += 1
         else:
+            await Patient.filter(
+                hospital_id=h1.hospital_id,
+                hospital_patient_no=chart_no,
+            ).update(
+                name=row["이름"].strip(),
+                birth_date=row["생년월일"].strip(),
+                phone=row["휴대폰"].strip(),
+                sms_consent=sms_consent,
+            )
             updated_p += 1
 
     print(f"[patients] created={created_p} updated={updated_p} total={len(patient_map)}")
@@ -241,6 +254,11 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
 
         doctor_name = row["담당의"].strip()
         doctor_id = doctor_map.get(doctor_name)
+        if doctor_name and doctor_id is None:
+            print(
+                f"[visits] 경고: 담당의 {doctor_name!r} 를 H1 직원에서 찾을 수 없음 (시나리오 {row['시나리오ID']})",
+                file=sys.stderr,
+            )
 
         planned_stop = row["진료상태"].strip() == "계획된 중단"
 
