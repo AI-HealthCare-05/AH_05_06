@@ -27,7 +27,7 @@ async def make_staff(
     status: StaffStatus = StaffStatus.ACTIVE,
     must_change_password: bool = False,
 ) -> Staff:
-    hospital = await Hospital.create(name="여성의원")
+    hospital, _ = await Hospital.get_or_create(name="여성의원")
     return await Staff.create(
         hospital=hospital,
         login_id=login_id,
