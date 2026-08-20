@@ -76,11 +76,11 @@ body.auth {
   color: var(--ink);
   background: var(--card);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .field__input::placeholder {
-  color: #9aa0a7;
+  color: var(--ink-3);
 }
 
 .field__input:focus-visible,
@@ -120,12 +120,12 @@ body.auth {
   color: var(--ink-2);
   background: var(--card);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
 .reveal:hover {
-  background: #f7f8f9;
+  background: var(--bg);
 }
 
 /* ── 로그인 유지 ────────────────────────────────────── */
@@ -163,10 +163,10 @@ body.auth {
   font: inherit;
   font-size: 15px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--accent);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -175,7 +175,7 @@ body.auth {
 }
 
 .button:disabled {
-  background: #9aa0a7;
+  background: var(--disabled);
   cursor: default;
 }
 
@@ -190,7 +190,7 @@ body.auth {
   padding: 12px 14px;
   background: var(--danger-bg);
   border: 1px solid var(--danger-line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 13px;
   color: var(--danger);
 }
@@ -201,7 +201,7 @@ body.auth {
 
 /* 알림 — 잘못된 것이 없을 때. 빨간 상자면 방금 뭘 틀린 것처럼 읽힌다. */
 .alert--notice {
-  background: #f4f6f7;
+  background: var(--bg);
   border-color: var(--line);
   color: var(--ink-2);
 }
