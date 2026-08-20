@@ -660,7 +660,7 @@
         return showState('<p class="state__title">판독 결과가 아직 없습니다</p>');
       }
       showState(
-        '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요</p>',
+        '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
       );
     });
 })();
