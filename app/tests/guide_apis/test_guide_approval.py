@@ -7,7 +7,6 @@
 이 파일은 **API 단위의 정상·예외까지만** 본다.
 """
 
-import asyncio
 from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
