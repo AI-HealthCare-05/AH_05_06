@@ -52,6 +52,20 @@ jobs:
       - name: Run Mypy (Type Check)
         run: uv run mypy app
 
+      # 프런트는 빌드가 없어서 `node --test` 하나로 끝난다 — package.json 도
+      # node_modules 도 잠금파일도 없다. 새 의존성 없이 계약 규칙을 붙잡는다.
+      #
+      # 이번 스프린트에 프런트에서 나온 결함 다섯이 **전부 사람이 눌러서**
+      # 나왔다. 사람이 브라우저를 열어야만 드러나는 상태를 그대로 두면
+      # 다음 스프린트에도 같은 종류가 같은 방식으로 나온다.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Frontend Contract Tests
+        run: node --test frontend/tests/
+
   test:
     runs-on: ubuntu-latest
     services:
