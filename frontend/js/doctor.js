@@ -201,7 +201,17 @@
       : "확인 부탁드릴 곳이 없습니다 — 그대로 승인하셔도 됩니다";
   }
 
+  /* 안내문이 없으면 **앞 환자의 이름을 지운다.** 안내문을 불러오는 동안 이름만
+     남아 있으면, 화면은 앞 사람을 말하는데 `visit` 은 뒷사람이라 원장님이 읽는
+     대상과 누를 대상이 어긋난다. 환자 식별이 걸린 자리라 비워 두는 편이 낫다. */
   function renderHead() {
+    if (guide === null) {
+      el("p-name").textContent = "—";
+      el("p-id").textContent = "";
+      el("p-visit").textContent = "";
+      return;
+    }
+
     var p = guide.patient;
     el("p-name").textContent = p.name;
     el("p-id").textContent = p.gender + " " + p.age + "세 · 차트 " + p.hospital_patient_no;
@@ -221,8 +231,19 @@
     return !!(visit && visit.work_category && visit.work_category !== "APPROVAL_REQUESTED");
   }
 
+  /* `guide` 가 조건에 들어간 이유.
+
+     `load()` 는 `visit` 을 **즉시** 새 환자로 바꾸는데 안내문은 응답이 와야
+     온다. 그 사이 버튼이 살아 있으면 이렇게 된다.
+
+         화면에 보이는 것   앞 환자의 안내문
+         approve() 가 보내는 것   뒷 환자의 visit_id
+
+     원장님은 **읽지 않은 안내문을 승인**하게 되고, 승인은 곧 환자에게 발송이다.
+     그래서 「안내문이 화면에 있는가」를 최상위 조건으로 둔다 — 없으면 승인할
+     대상도 없다. 실패했을 때도 `guide` 가 `null` 이라 그대로 잠긴다. */
   function renderRole() {
-    var can = isDoctor() && !alreadyDone();
+    var can = isDoctor() && !alreadyDone() && guide !== null;
     el("approve").disabled = !can;
     el("return").disabled = !can;
     el("role-note").hidden = isDoctor();
@@ -313,6 +334,12 @@
     visit = next;
     var mine = ++loadSeq;
 
+    /* 앞 환자의 것을 먼저 거둔다. `visit` 만 바뀌고 나머지가 남아 있는 순간이
+       생기면 안 된다 — 그 틈이 곧 「읽은 것과 누른 것이 다른」 구간이다. */
+    guide = null;
+    renderHead();
+    renderRole();
+
     el("panel").innerHTML = '<p class="block__hint">불러오는 중…</p>';
     el("warn-line").textContent = "";
 
@@ -331,6 +358,7 @@
       .catch(function () {
         if (mine !== loadSeq) return;
         el("panel").innerHTML = '<p class="block__hint">안내문을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.</p>';
+        renderRole(); // guide 가 null 이라 잠긴 채로 남는다
       });
   }
 
