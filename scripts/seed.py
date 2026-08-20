@@ -46,6 +46,7 @@ from app.models.patients import Patient  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
 from app.models.visits import Visit, VisitStatus  # noqa: E402
 from app.tests.fixtures.staff import StaffDataError, all_staff  # noqa: E402
+from app.tests.fixtures.validation import validate_canonical_patient_data  # noqa: E402
 
 _CONFIG = Config()
 
@@ -186,12 +187,13 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         PATIENTS_CSV,
         hint="저장소를 최신화하세요.",
     )
+    validate_canonical_patient_data()
 
     h1 = hospitals["H1"]
 
     # H1 소속 직원 이름 → staff_id 매핑
     h1_staff = await Staff.filter(hospital_id=h1.hospital_id).all()
-    doctor_map: dict[str, int] = {s.name: s.staff_id for s in h1_staff}
+    doctor_map: dict[str, int] = {s.name: s.staff_id for s in h1_staff if "doctor" in (s.roles or [])}
 
     with PATIENTS_CSV.open(encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
