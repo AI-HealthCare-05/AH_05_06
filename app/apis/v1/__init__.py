@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.apis.v1.health_routers import health_router
 from app.apis.v1.staff_auth_routers import staff_auth_router
 from app.apis.v1.user_routers import user_router
+from app.ocr.api import ocr_router
 
 # `auth_routers.py` 는 지웠다. 남아 있던 `POST /auth/signup` 은 email·password 로
 # `User` 를 만드는데, 로그인은 이제 `login_id` 로 `Staff` 를 찾는다 — 그래서
@@ -14,3 +15,4 @@ v1_routers = APIRouter(prefix="/api/v1")
 v1_routers.include_router(health_router)
 v1_routers.include_router(staff_auth_router)
 v1_routers.include_router(user_router)
+v1_routers.include_router(ocr_router)
