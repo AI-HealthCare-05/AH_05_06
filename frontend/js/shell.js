@@ -179,37 +179,59 @@ function renderRows(keepVisitId) {
 
   box.innerHTML = shown
     .map(function (r) {
-      /* 행이 들고 가는 것은 **visit_id** 다 — 업로드 · 판독 · 안내가 붙는 자리.
-         화면에 보이는 것은 hospital_patient_no 이고 둘은 다르다. */
-      return (
-        '<button class="row" type="button" aria-current="' +
-        (r.visit_id === current) +
-        '" data-visit-id="' +
-        r.visit_id +
-        '" data-patient-id="' +
-        r.patient_id +
-        '" data-chart-no="' +
-        esc(r.hospital_patient_no) +
-        '">' +
-        '<span class="row__top"><span class="row__name">' +
-        esc(r.name) +
-        '</span><span class="row__dx">' +
-        esc(r.diagnosis_name || "") +
-        "</span></span>" +
-        '<span class="row__meta">차트 ' +
-        esc(r.hospital_patient_no) +
-        (r.age == null ? "" : " · " + r.age + "세") +
-        " · " +
-        esc(r.doctor ? r.doctor.name : "") +
-        "</span><br>" +
-        '<span class="' +
-        stateClass(r.work_category) +
-        '">' +
-        esc(statusLabel(r.detail_status)) +
-        "</span></button>"
-      );
+      return rowHtml(r, r.visit_id === current);
     })
     .join("");
+}
+
+/* 줄 하나의 markup. 목록 전체와 한 줄 갱신이 **같은 함수**를 쓴다 —
+   갈라 두면 한쪽만 고쳐져서 수정한 줄만 옛 모양으로 남는다. */
+function rowHtml(r, current) {
+  /* 행이 들고 가는 것은 **visit_id** 다 — 업로드 · 판독 · 안내가 붙는 자리.
+     화면에 보이는 것은 hospital_patient_no 이고 둘은 다르다. */
+  return (
+    '<button class="row" type="button" aria-current="' +
+    current +
+    '" data-visit-id="' +
+    r.visit_id +
+    '" data-patient-id="' +
+    r.patient_id +
+    '" data-chart-no="' +
+    esc(r.hospital_patient_no) +
+    '">' +
+    '<span class="row__top"><span class="row__name">' +
+    esc(r.name) +
+    '</span><span class="row__dx">' +
+    esc(r.diagnosis_name || "") +
+    "</span></span>" +
+    '<span class="row__meta">차트 ' +
+    esc(r.hospital_patient_no) +
+    (r.age == null ? "" : " · " + r.age + "세") +
+    " · " +
+    esc(r.doctor ? r.doctor.name : "") +
+    "</span><br>" +
+    '<span class="' +
+    stateClass(r.work_category) +
+    '">' +
+    esc(statusLabel(r.detail_status)) +
+    "</span></button>"
+  );
+}
+
+/* 목록의 한 줄만 고친다.
+   전체를 다시 그리면 바쁜 날 50~100줄을 이름 한 글자 바꿀 때마다 다시 만든다.
+   `rows` 를 밖에서 직접 뒤지지 않게 하는 자리이기도 하다 — 목록의 원본은
+   이 파일이 갖고, 고치는 길도 여기 하나로 둔다. */
+function updateRow(visitId, patch) {
+  var found = rows.find(function (r) {
+    return r.visit_id === visitId;
+  });
+  if (!found) return false;
+  Object.assign(found, patch);
+
+  var node = document.querySelector('.row[data-visit-id="' + visitId + '"]');
+  if (node) node.outerHTML = rowHtml(found, node.getAttribute("aria-current") === "true");
+  return true;
 }
 
 /* 목록이 비면 오른쪽도 「할 일 없음」이어야 한다.
@@ -276,13 +298,11 @@ function readRow(row) {
   var found = rows.find(function (r) {
     return r.visit_id === id;
   });
-  if (found) return Object.assign({}, found);
-  return {
-    visit_id: id,
-    patient_id: Number(row.dataset.patientId),
-    hospital_patient_no: row.dataset.chartNo,
-    name: row.querySelector(".row__name").textContent,
-  };
+  /* 못 찾으면 **없는 것으로 답한다.**
+     예전에는 DOM 에서 긁어 얇은 객체를 만들어 돌려줬는데, 진료과 · 진료 시각 ·
+     계획 중단이 빠진 채로 상세 화면까지 흘러가 「· 진료」 같은 조각이 남았다.
+     목록과 DOM 이 어긋난 상태를 **정상인 척** 넘기면 무엇이 틀렸는지 안 보인다. */
+  return found ? Object.assign({}, found) : null;
 }
 
 function selectedVisit() {
@@ -359,16 +379,21 @@ document.getElementById("rows").addEventListener("click", function (event) {
   var row = event.target.closest("[data-visit-id]");
   if (!row) return;
 
+  /* 목록에 없는 줄은 누른 것으로 치지 않는다. 목록과 DOM 이 어긋난 상태인데,
+     반쪽짜리 값으로 상세를 열면 다른 환자의 화면처럼 보인다. */
+  var picked = readRow(row);
+  if (!picked) return;
+
   /* 등록 도중에 목록을 눌러도 잃는 것이 없어야 한다.
      막을 수 있는 쪽(등록 화면)이 스스로 되묻고 preventDefault 로 세운다. */
-  var asking = new CustomEvent("visit:selecting", { cancelable: true, detail: readRow(row) });
+  var asking = new CustomEvent("visit:selecting", { cancelable: true, detail: picked });
   if (!document.dispatchEvent(asking)) return;
 
   this.querySelectorAll("[data-visit-id]").forEach(function (r) {
     r.setAttribute("aria-current", String(r === row));
   });
   showView("view-card");
-  document.dispatchEvent(new CustomEvent("visit:selected", { detail: readRow(row) }));
+  document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
 });
 
 /* 세션이 없거나 첫 로그인이면 여기서 되돌린다.

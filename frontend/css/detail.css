@@ -148,18 +148,6 @@
   display: none;
 }
 
-/* 못 고치는 값은 입력칸처럼 보이지 않게 둔다 — 눌러도 안 되는 칸이 제일 나쁘다 */
-.field__locked-value {
-  height: var(--field-h);
-  padding: 0 12px;
-  font-size: 15px;
-  line-height: var(--field-h);
-  color: var(--ink-2);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-
 .field__hint--bad {
   color: var(--danger);
   font-weight: 600;

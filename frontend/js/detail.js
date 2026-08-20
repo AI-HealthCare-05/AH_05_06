@@ -20,6 +20,11 @@
 (function () {
   var TABS = ["basic", "record"];
 
+  /* 늦게 온 응답이 지금 보고 있는 환자를 덮어쓰지 않게 하는 번호.
+     `visit_id` 를 쓰면 같은 환자를 빠르게 다시 고를 때(A→B→A) 값이 그대로라
+     구분이 안 된다. `patients.js` 의 `lookupSeq` 와 같은 방식이다. */
+  var loadSeq = 0;
+
   var row = null; // 오늘 목록에서 고른 줄 (front-desk 읽기 모델)
   var visit = null; // 그 줄의 진료 상세 (GET /visits/{id})
   var patient = null; // 그 진료 건의 환자
@@ -152,7 +157,9 @@
           "</td><td>" +
           esc(v.diagnosis_name) +
           "</td><td>" +
-          esc([v.drug, v.days ? v.days + "일" : ""].filter(Boolean).join(" · ")) +
+          /* `v.days` 가 0 이면 falsy 라 「아직 못 가져왔다」와 같아진다.
+             단회 처방(0일)이 오기 시작하면 둘을 구분할 수 없다. */
+          esc([v.drug, v.days == null ? "" : v.days + "일"].filter(Boolean).join(" · ")) +
           "</td><td>" +
           /* TODO(KEY-64) 안내문 화면이 생기면 여기서 그 안내문으로 간다 */
           (v.has_guide
@@ -189,6 +196,19 @@
     );
   }
 
+  function lockedField(label, value, hint) {
+    return (
+      '<label class="field field--locked"><span class="field__label">' +
+      esc(label) +
+      '</span><input class="field__input" type="text" value="' +
+      esc(value == null ? "" : value) +
+      '" readonly />' +
+      '<span class="field__hint">' +
+      esc(hint) +
+      "</span></label>"
+    );
+  }
+
   /* 값은 id, 보이는 것은 이름이다 — 계약이 `department_id` · `doctor_id` 를 받고,
      이름을 보내면 폐지된 진료과인지 그 의사가 거기 소속인지 서버가 볼 수 없다.
      사람에게 id 를 보일 이유는 없으므로 두 층을 갈라 둔다. */
@@ -222,13 +242,13 @@
     el("patient-edit").innerHTML =
       '<div class="grid2">' +
       field("name", "이름 *", patient.name) +
-      /* 차트번호는 폼에 넣지 않는다 — 계약이 생성 후 변경 불가로 정했다.
-         왜 못 고치는지는 적어 둔다. 안 그러면 「고장났다」로 읽힌다. */
-      '<div class="field"><span class="field__label">차트번호</span>' +
-      '<div class="field__locked-value">' +
-      esc(patient.hospital_patient_no) +
-      " 🔒</div>" +
-      '<span class="field__hint">차트번호는 등록 후 바꿀 수 없습니다 — 잘못 등록되었다면 관리자에게 알려 주세요</span></div>' +
+      /* 차트번호는 고칠 수 없다 — 계약이 생성 후 변경 불가로 정했다.
+         왜 못 고치는지는 적어 둔다. 안 그러면 「고장났다」로 읽힌다.
+
+         등록 화면(`patients.js`)이 쓰는 `.field--locked` 를 그대로 쓴다.
+         같은 화면 안에 「잠긴 칸」이 두 모양으로 있으면 어느 쪽이 맞는지
+         다음 사람이 고르게 된다. `<label>` 이라 이름과 값도 이어진다. */
+      lockedField("차트번호", patient.hospital_patient_no, "차트번호는 등록 후 바꿀 수 없습니다 — 잘못 등록되었다면 관리자에게 알려 주세요") +
       field("birth_date", "생년월일 *", patient.birth_date, "text", "1994-07-22 처럼 적어 주세요") +
       field("phone", "휴대폰 *", formatPhone(patient.phone), "text", "이 번호로 안내 문자가 발송됩니다") +
       "</div>" +
@@ -343,9 +363,13 @@
     if (!Object.keys(patch).length) return closeEdit("patient");
 
     form.querySelector("[type=submit]").disabled = true;
+    /* 저장이 도는 사이 다른 환자로 넘어갈 수 있다. 그때 이 응답을 그대로
+       적용하면 **지금 보고 있는 환자에게 앞사람 값이 덮어써진다.** */
+    var mine = loadSeq;
     patientsApi
       .update(patient.patient_id, patch)
       .then(function (saved) {
+        if (mine !== loadSeq) return;
         patient = saved;
         /* 이름이 바뀌면 목록 줄과 머리도 같이 바뀌어야 한다 — 한 화면 안에서
            같은 사람이 두 이름으로 보이면 그때부터 아무것도 못 믿는다. */
@@ -356,6 +380,7 @@
         closeEdit("patient");
       })
       .catch(function (error) {
+        if (mine !== loadSeq) return;
         form.querySelector("[type=submit]").disabled = false;
         showError(form, messageFor(error));
       });
@@ -375,9 +400,13 @@
     if (!Object.keys(patch).length) return closeEdit("visit");
 
     form.querySelector("[type=submit]").disabled = true;
+    /* 진료 쪽은 더 위험하다 — 계획 중단은 문자를 멈추는 스위치라,
+       엉뚱한 환자에게 켜진 것으로 보이면 안내가 왜 안 나가는지 못 찾는다. */
+    var mine = loadSeq;
     patientsApi
       .updateVisit(visit.visit_id, patch)
       .then(function (saved) {
+        if (mine !== loadSeq) return;
         visit = saved;
         renderVisit();
         renderHead();
@@ -385,22 +414,39 @@
         closeEdit("visit");
       })
       .catch(function (error) {
+        if (mine !== loadSeq) return;
         form.querySelector("[type=submit]").disabled = false;
         showError(form, messageFor(error));
       });
   });
 
-  /* 목록 줄도 같이 고친다. 다시 불러오면 고른 줄과 스크롤이 튀므로 그 줄만 손본다. */
+  /* 목록 줄도 같이 고친다.
+     `rows` 를 직접 뒤지지 않고 `shell.js` 가 낸 `updateRow()` 로 간다 —
+     목록의 원본은 그 파일이 갖는다는 원칙이 코드에 적혀 있는데 여기서만
+     어기고 있었다. 그 함수가 그 줄 하나만 다시 그린다.
+
+     **다섯 칸을 다 넘긴다.** 예전에는 이름과 담당만 넘겨서 진료과와 계획
+     중단이 목록에 안 남았다. 지금은 목업이 같은 객체를 가리켜 우연히 맞아
+     보이지만, 서버가 붙어 응답이 독립된 객체로 오면 이 환자에서 나갔다
+     돌아왔을 때 저장 전 값이 보인다. */
   function refreshRow() {
-    var listed = rows.find(function (r) {
-      return r.visit_id === row.visit_id;
+    if (!visit) return;
+    updateRow(row.visit_id, {
+      name: row.name,
+      /* 줄은 front-desk 모델이라 담당의가 객체다. 상세는 id 만 주므로
+         이름을 붙여 넣어야 목록 줄이 옛 이름으로 남지 않는다. */
+      doctor: { doctor_id: visit.doctor_id, name: doctorName() },
+      department: visit.department,
+      planned_stop: visit.planned_stop,
     });
-    if (!listed) return;
-    listed.name = row.name;
-    /* 줄은 front-desk 모델이라 담당의가 객체다. 상세는 id 만 주므로
-       이름을 붙여 넣어야 목록 줄이 옛 이름으로 남지 않는다. */
-    listed.doctor = { doctor_id: visit.doctor_id, name: doctorName() };
-    renderRows(row.visit_id);
+  }
+
+  /* 불러오는 동안에는 수정을 열 수 없다. 숨기지 않고 **끈다** —
+     사라졌다 나타나면 화면이 흔들리고, 눌러 보고서야 안 되는 것을 안다. */
+  function setEditable(on) {
+    ["edit-patient", "edit-visit"].forEach(function (id) {
+      el(id).disabled = !on;
+    });
   }
 
   function formatPhone(digits) {
@@ -420,6 +466,9 @@
 
     closeEdit("patient");
     closeEdit("visit");
+    /* 아직 값이 없다. 이 사이에 [수정]을 누르면 `patient.name` 에서 죽는다 —
+       `visit` 은 줄에서 바로 오지만 `patient` 은 응답을 기다려야 하기 때문이다. */
+    setEditable(false);
     renderHead();
     /* 불러오는 중에 앞사람 값이 남아 있으면 안 된다 — 잠깐이라도 다른 사람의
        생년월일이 이 이름 아래 붙는다. */
@@ -428,7 +477,7 @@
     el("past").innerHTML = "";
     renderSends();
 
-    var mine = row.visit_id; // 늦게 온 응답이 새 환자를 덮어쓰지 않게 한다
+    var mine = ++loadSeq;
 
     Promise.all([
       patientsApi.get(row.patient_id),
@@ -436,19 +485,20 @@
       patientsApi.getVisit(row.visit_id),
     ])
       .then(function (all) {
-        if (mine !== row.visit_id) return;
+        if (mine !== loadSeq) return;
         patient = all[0];
         history = all[1].items.filter(function (v) {
           return v.visit_id !== row.visit_id; // 오늘 것은 위 칸에 이미 있다
         });
         visit = all[2];
+        setEditable(true);
         renderPatient();
         renderVisit();
         renderHistory();
         renderHead(); // 생년월일과 진료과는 응답을 받은 뒤에야 머리에 붙는다
       })
       .catch(function (error) {
-        if (mine !== row.visit_id) return;
+        if (mine !== loadSeq) return;
         el("patient-facts").innerHTML = "<dt>—</dt><dd>" + esc(messageFor(error)) + "</dd>";
       });
   }
