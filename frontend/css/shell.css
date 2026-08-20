@@ -381,9 +381,7 @@ body.shell {
   padding: var(--s-8) var(--s-12);
   font-size: 13px;
   font-weight: 600;
-  /* `--on-accent` 는 KEY-104(#49)가 들여오는 토큰이라 여기서는 아직 없다.
-     그 PR 이 병합되면 var(--on-accent) 로 바꾼다. */
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--accent);
   border: 0;
   border-radius: var(--radius);
