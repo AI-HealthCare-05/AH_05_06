@@ -60,6 +60,7 @@ class OcrResult(models.Model):
     """Versioned OCR output and its review/confirmation audit metadata."""
 
     ocr_result_id = fields.BigIntField(primary_key=True)
+    ocr_job_id: str
     ocr_job: fields.OneToOneRelation[OcrJob] = fields.OneToOneField(
         "models.OcrJob",
         related_name="result",
@@ -74,6 +75,10 @@ class OcrResult(models.Model):
     confirmed_at = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
+    # 역참조 어노테이션은 클래스 마지막에 둔다 — 위에 두면 이후의 `fields.XField(...)`가
+    # 이 어노테이션의 `fields` 속성으로 가려져 mypy가 tortoise fields 모듈을 못 찾는다.
+    documents: fields.ReverseRelation["OcrDocumentText"]
+    fields: fields.ReverseRelation["OcrField"]
 
     class Meta:
         table = "ocr_result"
@@ -141,7 +146,7 @@ class OcrField(models.Model):
     )
     field_type = fields.CharField(max_length=64)
     extracted_value = fields.TextField(null=True)
-    corrected_value = fields.TextField(null=True)
+    corrected_value: str | None = fields.TextField(null=True)
     confidence = fields.DecimalField(
         max_digits=5,
         decimal_places=4,
