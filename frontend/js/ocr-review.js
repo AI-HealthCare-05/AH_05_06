@@ -397,7 +397,10 @@
   function renderSummary() {
     var counts = { missing: 0, low: 0, candidates: 0 };
     result.fields.forEach(function (field) {
-      if (field.pending_report) return;
+      /* 확정된 항목은 더 볼 것이 없다 — 못 읽었든 후보가 여럿이든, 이미
+         끝난 항목을 「확인할 항목」에 넣으면 고칠 방법이 없는데도 생성이
+         막힌 채로 남는다 (`renderField()` 의 `locked` 와 같은 이유). */
+      if (field.is_confirmed || field.pending_report) return;
       var state = fieldState(field, threshold);
       if (counts[state] !== undefined) counts[state]++;
     });
@@ -448,10 +451,16 @@
     saving[fieldId] = true;
     redraw();
 
+    /* 저장이 오가는 동안 진료를 바꾸면 `resetState()` 가 `result` 를 지운다.
+       그 뒤에 이 응답이 와도 그리면 안 된다 — 다른 진료의 화면에 이 필드를
+       끼워 넣거나, `result` 가 비어 있어 그 자리에서 죽는다. 로드와 같은
+       세대(`loadSeq`)를 찍어 두고 늦게 와도 버린다. */
+    var seq = loadSeq;
     body.base_version = field.version;
     ocrApi
       .updateField(fieldId, body)
       .then(function (updated) {
+        if (seq !== loadSeq) return;
         delete saving[fieldId];
         delete editing[fieldId];
         replaceField(updated);
@@ -460,11 +469,13 @@
         /* 「저장됨」은 잠깐만 둔다. 계속 붙어 있으면 다음에 볼 때
            방금 저장한 것인지 예전에 저장한 것인지 알 수 없다. */
         setTimeout(function () {
+          if (seq !== loadSeq) return;
           delete saved[fieldId];
           redraw();
         }, 2500);
       })
       .catch(function (error) {
+        if (seq !== loadSeq) return;
         delete saving[fieldId];
         var code = error && error.code;
         if (code === "VERSION_CONFLICT") return onConflict(fieldId, mine);
@@ -476,9 +487,11 @@
   /* 409 를 받으면 서버의 지금 값을 다시 읽어 와 내 값과 나란히 놓는다.
      계약에 단건 조회(GET /ocr/fields/{id})가 없어 목록을 다시 부른다. */
   function onConflict(fieldId, mine) {
+    var seq = loadSeq;
     ocrApi
       .fields(jobId)
       .then(function (fields) {
+        if (seq !== loadSeq) return;
         var theirs = null;
         fields.forEach(function (item) {
           if (item.ocr_field_id === fieldId) theirs = item;
@@ -493,6 +506,7 @@
         redraw();
       })
       .catch(function () {
+        if (seq !== loadSeq) return;
         failed[fieldId] = "unknown";
         redraw();
       });
