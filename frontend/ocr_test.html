@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>[임시] OCR 테스트 · 복약 안내 도우미</title>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      /* KEY-56 임시 테스트 페이지 — KEY-40 완료 후 삭제한다 */
+      body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 2rem 1rem; }
+      .banner {
+        background: var(--warning, #fff3cd);
+        border: 1px solid var(--warning-border, #ffc107);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.875rem;
+      }
+      h1 { font-size: 1.25rem; margin-bottom: 0.25rem; }
+      .sub { color: #666; font-size: 0.875rem; margin-bottom: 1.5rem; }
+      .drop {
+        border: 2px dashed #ccc;
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.15s;
+      }
+      .drop:hover, .drop.is-over { border-color: var(--primary, #4f8ef7); }
+      .drop__title { font-weight: 600; margin-bottom: 0.5rem; }
+      .drop__hint { color: #888; font-size: 0.8rem; }
+      button.pick {
+        margin-top: 1rem;
+        padding: 0.4rem 1rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+      }
+      button.pick:hover { background: #f5f5f5; }
+
+      #result { margin-top: 1.5rem; display: none; }
+      .result__section { margin-bottom: 1rem; }
+      .result__label { font-size: 0.75rem; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+      .badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        background: var(--primary, #4f8ef7);
+        color: #fff;
+      }
+      .badge--unclassified { background: #888; }
+      .badge--emr { background: #4f8ef7; }
+      .badge--lab { background: #28a745; }
+      .badge--prescription { background: #fd7e14; }
+      .badge--clinical-note { background: #6f42c1; }
+      .badge--drug-label { background: #e83e8c; }
+      .raw-text {
+        white-space: pre-wrap;
+        font-family: monospace;
+        font-size: 0.8rem;
+        background: #f8f8f8;
+        border: 1px solid #eee;
+        border-radius: 4px;
+        padding: 0.75rem;
+        max-height: 320px;
+        overflow-y: auto;
+      }
+      .notice {
+        background: #e8f4fd;
+        border: 1px solid #bee3f8;
+        border-radius: 4px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.85rem;
+        color: #2c5282;
+      }
+      .error-box {
+        background: #fff5f5;
+        border: 1px solid #feb2b2;
+        border-radius: 4px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.85rem;
+        color: #c53030;
+      }
+      .spinner { display: none; }
+      .spinner.is-loading { display: inline-block; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .spinner::after {
+        content: "";
+        display: inline-block;
+        width: 1em; height: 1em;
+        border: 2px solid #ccc;
+        border-top-color: #555;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        vertical-align: middle;
+        margin-left: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="banner">
+      ⚠ <strong>[임시 테스트 페이지 · KEY-56]</strong> 이 페이지는 개발 환경에서만 활성화됩니다.
+      CLOVA OCR 클라이언트와 문서 자동분류를 직접 확인하기 위한 목적으로 만들었으며,
+      KEY-40 구현이 완료되면 삭제합니다.
+    </div>
+
+    <h1>OCR 분류·추출 테스트</h1>
+    <p class="sub">
+      파일을 업로드하면 문서 유형을 자동 분류하고,
+      <code>CLOVA_OCR_INVOKE_URL</code>이 설정된 경우 OCR 텍스트도 추출합니다.
+    </p>
+
+    <div class="drop" id="drop">
+      <div class="drop__title">🖼 파일을 끌어다 놓거나 버튼을 눌러 선택하세요</div>
+      <p class="drop__hint">이미지(JPG·PNG·BMP·WebP) 또는 PDF · 최대 20 MB</p>
+      <button class="pick" type="button" id="pick">파일 고르기</button>
+      <input type="file" id="file" accept="image/*,application/pdf" hidden />
+    </div>
+
+    <div id="status" style="margin-top:1rem; font-size:0.875rem; color:#555;">
+      <span class="spinner" id="spinner"></span>
+      <span id="status-text"></span>
+    </div>
+
+    <div id="result">
+      <div class="result__section">
+        <div class="result__label">파일</div>
+        <span id="res-filename">—</span>
+        <span style="color:#888; font-size:0.8rem;" id="res-mime"></span>
+      </div>
+
+      <div class="result__section">
+        <div class="result__label">자동 분류 결과</div>
+        <span class="badge" id="res-type">—</span>
+        <span style="color:#888; font-size:0.8rem; margin-left:0.4rem;" id="res-classified-by"></span>
+      </div>
+
+      <div class="result__section" id="res-notice-wrap" style="display:none;">
+        <div class="notice" id="res-notice"></div>
+      </div>
+
+      <div class="result__section" id="res-ocr-wrap" style="display:none;">
+        <div class="result__label">OCR 추출 텍스트 <span id="res-ocr-status" style="font-weight:normal; color:#888;"></span></div>
+        <div class="raw-text" id="res-raw-text"></div>
+      </div>
+
+      <div class="result__section" id="res-error-wrap" style="display:none;">
+        <div class="error-box" id="res-error"></div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var drop = document.getElementById("drop");
+        var input = document.getElementById("file");
+        var spinner = document.getElementById("spinner");
+        var statusText = document.getElementById("status-text");
+        var result = document.getElementById("result");
+
+        var TYPE_CLASS = {
+          EMR: "badge--emr",
+          LAB_RESULT: "badge--lab",
+          PRESCRIPTION: "badge--prescription",
+          CLINICAL_NOTE: "badge--clinical-note",
+          DRUG_LABEL: "badge--drug-label",
+          UNCLASSIFIED: "badge--unclassified",
+        };
+        var TYPE_LABEL = {
+          EMR: "EMR 과거기록",
+          LAB_RESULT: "검사 결과지",
+          PRESCRIPTION: "처방전",
+          CLINICAL_NOTE: "소견·메모",
+          DRUG_LABEL: "약봉투",
+          UNCLASSIFIED: "미분류",
+        };
+
+        function setLoading(on) {
+          spinner.classList.toggle("is-loading", on);
+          statusText.textContent = on ? "처리 중..." : "";
+        }
+
+        function showResult(data) {
+          result.style.display = "block";
+          document.getElementById("res-filename").textContent = data.filename;
+          document.getElementById("res-mime").textContent = " (" + data.mime_type + ")";
+
+          var badge = document.getElementById("res-type");
+          badge.textContent = TYPE_LABEL[data.document_type] || data.document_type;
+          Object.values(TYPE_CLASS).forEach(function (c) { badge.classList.remove(c); });
+          if (TYPE_CLASS[data.document_type]) badge.classList.add(TYPE_CLASS[data.document_type]);
+          document.getElementById("res-classified-by").textContent =
+            data.classified_by === "AUTO" ? "(자동 분류)" : "(수동 지정)";
+
+          var noticeWrap = document.getElementById("res-notice-wrap");
+          var notice = document.getElementById("res-notice");
+          if (data.notice) {
+            notice.textContent = "ℹ " + data.notice;
+            noticeWrap.style.display = "";
+          } else {
+            noticeWrap.style.display = "none";
+          }
+
+          var ocrWrap = document.getElementById("res-ocr-wrap");
+          if (data.raw_text) {
+            document.getElementById("res-ocr-status").textContent =
+              data.ocr_status ? "(" + data.ocr_status + ")" : "";
+            document.getElementById("res-raw-text").textContent = data.raw_text;
+            ocrWrap.style.display = "";
+          } else {
+            ocrWrap.style.display = "none";
+          }
+
+          document.getElementById("res-error-wrap").style.display = "none";
+        }
+
+        function showError(msg) {
+          result.style.display = "block";
+          document.getElementById("res-error").textContent = "오류: " + msg;
+          document.getElementById("res-error-wrap").style.display = "";
+          document.getElementById("res-ocr-wrap").style.display = "none";
+          document.getElementById("res-notice-wrap").style.display = "none";
+        }
+
+        function upload(file) {
+          setLoading(true);
+          result.style.display = "none";
+          statusText.textContent = "처리 중...";
+
+          var fd = new FormData();
+          fd.append("file", file);
+
+          fetch("/api/v1/dev/ocr-test", { method: "POST", body: fd })
+            .then(function (res) {
+              return res.json().then(function (data) {
+                if (!res.ok) {
+                  var detail = (data && data.detail) || {};
+                  throw new Error(detail.detail || detail.code || res.status);
+                }
+                return data;
+              });
+            })
+            .then(function (data) {
+              setLoading(false);
+              showResult(data);
+            })
+            .catch(function (err) {
+              setLoading(false);
+              showError(err.message || String(err));
+            });
+        }
+
+        document.getElementById("pick").addEventListener("click", function () {
+          input.click();
+        });
+
+        input.addEventListener("change", function () {
+          if (this.files.length) upload(this.files[0]);
+          this.value = "";
+        });
+
+        ["dragenter", "dragover", "dragleave", "drop"].forEach(function (name) {
+          window.addEventListener(name, function (e) { e.preventDefault(); });
+        });
+        drop.addEventListener("dragenter", function () { drop.classList.add("is-over"); });
+        drop.addEventListener("dragover", function () { drop.classList.add("is-over"); });
+        drop.addEventListener("dragleave", function (e) {
+          if (!drop.contains(e.relatedTarget)) drop.classList.remove("is-over");
+        });
+        drop.addEventListener("drop", function (e) {
+          drop.classList.remove("is-over");
+          var files = e.dataTransfer && e.dataTransfer.files;
+          if (files && files.length) upload(files[0]);
+        });
+      })();
+    </script>
+  </body>
+</html>
