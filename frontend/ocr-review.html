@@ -37,12 +37,18 @@
     <div class="main">
       <aside class="list" aria-label="환자 목록">
         <div class="list__head">
-          <input class="list__search" type="search" placeholder="이름 · 차트번호 검색" aria-label="환자 검색" />
+          <input
+            class="list__search"
+            type="search"
+            id="quick-search"
+            placeholder="이름 · 차트번호 검색"
+            aria-label="환자 검색"
+          />
         </div>
         <div class="list__day">
-          <button class="icon-button" type="button" aria-label="이전 날짜">‹</button>
+          <button class="icon-button" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
           <span class="grow" id="day">—</span>
-          <button class="icon-button" type="button" aria-label="다음 날짜">›</button>
+          <button class="icon-button" type="button" id="day-next" aria-label="다음 날짜">›</button>
         </div>
         <div class="chips" id="chips" role="group" aria-label="상태로 거르기"></div>
         <div class="list__rows" id="rows"></div>
@@ -50,6 +56,17 @@
       </aside>
 
       <main class="pane">
+        <!-- 골격(KEY-35)이 화면 셋을 번갈아 세운다. 이 화면은 환자를 고른 뒤에만
+             뜻이 있으므로 `view-card` 안에서 산다. 등록 칸은 골격이 채운다. -->
+        <section class="view" id="view-none" hidden>
+          <p class="blank__mark">🗂</p>
+          <p class="blank__title">왼쪽에서 환자를 고르세요</p>
+          <p class="blank__lead">고른 진료의 판독 결과를 여기서 확인합니다.</p>
+        </section>
+
+        <section class="view" id="view-register" hidden></section>
+
+        <section class="view" id="view-card" hidden>
         <div class="patient-head">
           <div class="patient-head__name" id="p-name">김서연</div>
           <div class="patient-head__id" id="p-id">차트 12345 · 1990-01-01</div>
@@ -97,10 +114,12 @@
             </span>
           </div>
         </div>
+        </section>
       </main>
     </div>
 
     <script src="/js/api.js"></script>
+    <script src="/js/patients-api.js"></script>
     <script src="/js/session.js"></script>
     <script src="/js/shell.js"></script>
     <script src="/js/ocr-api.js"></script>

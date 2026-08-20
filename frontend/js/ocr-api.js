@@ -32,6 +32,20 @@ function ocrRequest(path, options) {
 }
 
 var ocrApi = {
+  /* 이 진료의 판독 작업이 무엇인지 묻는다.
+
+     **계약에 이 자리가 비어 있다.** `#32`(KEY-60)에는 `POST /documents/{id}/ocr`
+     로 만들고 `GET /ocr/jobs/{id}` 로 보는 길만 있고, 「이 진료의 작업」을 찾는
+     길이 없다. 화면은 왼쪽에서 고른 진료로 시작하므로 반드시 필요하다.
+
+     서버가 붙을 때는 진료 응답이 `ocr_job_id` 를 들고 오는 편이 낫다 —
+     왕복이 하나 줄고, 「작업이 아직 없다」도 같은 응답으로 말할 수 있다.
+     그때까지 목업이 진료 번호로 만들어 준다 (KEY-109 에 적어 둔다). */
+  jobForVisit: function (visitId) {
+    if (MOCK) return mockJobForVisit(visitId);
+    return request("/visits/" + visitId + "/ocr-job");
+  },
+
   job: function (jobId) {
     return ocrRequest("/ocr/jobs/" + encodeURIComponent(jobId));
   },
@@ -209,13 +223,27 @@ function mockCleanFields() {
     });
 }
 
-function mockJob() {
+/* `?case=processing` 은 되물을 때마다 진행률이 오르고 결국 끝난다.
+   화면이 「끝나면 저절로 바뀝니다」라고 말하므로, 목업도 실제로 끝나야
+   그 약속을 눈으로 확인할 수 있다 (`#40` 리뷰). */
+var mockPolls = 0;
+
+function mockJob(jobId) {
+  var id = jobId || "ocr_synthetic_501";
   if (MOCK_CASE === "processing") {
-    return { ocr_job_id: "ocr_synthetic_501", status: "PROCESSING", progress: 40, started_at: "2026-08-13T10:33:00+09:00" };
+    mockPolls += 1;
+    if (mockPolls <= 3) {
+      return {
+        ocr_job_id: id,
+        status: "PROCESSING",
+        progress: 25 * mockPolls,
+        started_at: "2026-08-13T10:33:00+09:00",
+      };
+    }
   }
   if (MOCK_CASE === "failed") {
     return {
-      ocr_job_id: "ocr_synthetic_501",
+      ocr_job_id: id,
       status: "FAILED",
       progress: 100,
       started_at: "2026-08-13T10:33:00+09:00",
@@ -224,7 +252,7 @@ function mockJob() {
     };
   }
   return {
-    ocr_job_id: "ocr_synthetic_501",
+    ocr_job_id: id,
     status: "COMPLETED",
     progress: 100,
     started_at: "2026-08-13T10:33:00+09:00",
@@ -259,8 +287,12 @@ function mockResult() {
       /* 확정된 항목은 고칠 수 없다(#32). 그 상태를 눌러 볼 수 있어야
          화면이 409 를 제대로 말하는지 확인할 수 있다. */
       if (MOCK_CASE === "confirmed") {
+        /* 확정을 **정상 상태 하나에만** 걸면 「확정인데 못 읽은 항목」과
+           「확정인데 후보가 여럿인 항목」을 못 본다. `#40` 리뷰에서 걸린 것이
+           정확히 그 둘이라, 세 모양을 다 만들어 둔다. */
+        var confirmIds = [9106, 9103, 9102, 9105]; // 정상 · 못 읽음 · 후보 여럿 · 별도 보고
         fields.forEach(function (field) {
-          if (field.ocr_field_id !== 9106) return;
+          if (confirmIds.indexOf(field.ocr_field_id) === -1) return;
           field.is_confirmed = true;
           field.confirmed_by = 902;
           field.confirmed_at = "2026-08-13T10:40:00+09:00";
@@ -339,6 +371,17 @@ function mockPatch(fieldId, body) {
   return field;
 }
 
+/* 진료마다 다른 작업 번호를 준다. 고정값을 쓰면 어느 환자를 골라도 같은
+   판독 결과가 나온다 — 실제로 그랬다(`#40` 리뷰). */
+function mockJobForVisit(visitId) {
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+      resolve({ ocr_job_id: "ocr_synthetic_" + visitId });
+    }, 80);
+  });
+}
+
 function mockOcrRequest(path, options) {
   var body = (options && options.body) || {};
   return new Promise(function (resolve, reject) {
@@ -349,7 +392,9 @@ function mockOcrRequest(path, options) {
         return out instanceof ApiError ? reject(out) : resolve(mockCopy(out));
       }
 
-      var job = mockJob();
+      /* `/ocr/jobs/{id}` · `.../result` · `.../fields` 셋 다 여기서 id 를 얻는다. */
+      var onJob = path.match(/^\/ocr\/jobs\/([^/]+)/);
+      var job = mockJob(onJob && onJob[1]);
       if (/\/(result|fields)$/.test(path)) {
         if (job.status !== "COMPLETED") {
           /* #32 계약 그대로. 화면은 이 코드를 보고 「아직」과 「실패」를 가른다. */

@@ -26,7 +26,20 @@
   var submit = document.getElementById("submit");
   var saveNote = document.getElementById("save-note");
 
-  var JOB_ID = "ocr_synthetic_501";
+  /* 왼쪽에서 고른 진료가 이 화면의 주인이다. 예전에는 `JOB_ID` 가 고정값이라
+     어느 환자를 골라도 같은 판독 결과가 떴다 — **다른 환자의 의료정보를
+     고칠 수 있는 상태**였다 (`#40` 리뷰). */
+  /* 판독은 보통 수십 초다. 1.5초는 사람이 「멈췄나」 싶기 전이고 서버에도 가볍다. */
+  var POLL_MS = 1500;
+
+  var visit = null;
+  var jobId = null;
+
+  /* 진료를 바꾸면 앞의 요청이 아직 날아오고 있다. 그 응답이 새 화면을 덮으면
+     또 남의 값이 뜬다. 세대를 세어 **지금 것만** 그린다 —
+     `doctor.js` 의 `loadSeq` 와 같은 장치다. */
+  var loadSeq = 0;
+  var pollTimer = null;
 
   var result = null;
   var threshold = LOW_CONFIDENCE_FALLBACK;
@@ -230,8 +243,21 @@
       (field.is_confirmed ? ' <span class="field__tag field__tag--locked">🔒 확정</span>' : "") +
       "</div>";
 
+    /* 확정된 값은 아무 데서도 못 고친다. 예전에는 이 검사가 **정상 상태의
+       「고치기」에만** 걸려 있어서, 확정됐는데 못 읽은 항목이면 「직접 입력」이,
+       후보가 여럿이면 「이 값 사용」이 그대로 떴다 (`#40` 리뷰).
+       상태별로 다시 챙기면 또 빠뜨린다 — 맨 위에서 한 번에 가른다. */
+    var locked = !!field.is_confirmed;
+
     var body;
-    if (isEditing(id)) {
+    if (locked) {
+      body =
+        '<div class="field__value">' +
+        escapeHtml(field.value === null || field.value === undefined ? "?" : field.value) +
+        ' <span class="field__unit">' +
+        escapeHtml(field.unit || "") +
+        "</span></div>";
+    } else if (isEditing(id)) {
       body =
         '<input class="field__input" type="text" data-input="' +
         id +
@@ -281,9 +307,7 @@
         ' <span class="field__unit">' +
         escapeHtml(field.unit || "") +
         "</span></div>";
-      if (!field.is_confirmed) {
-        body += '<button class="field__act" type="button" data-fill="' + id + '">고치기</button>';
-      }
+      body += '<button class="field__act" type="button" data-fill="' + id + '">고치기</button>';
     }
 
     var tail = isEditing(id) ? "" : sourceChip(field);
@@ -305,7 +329,7 @@
     }
 
     var more = "";
-    if (state === "candidates" && !isEditing(id)) {
+    if (state === "candidates" && !isEditing(id) && !locked) {
       var open = !!openCandidates[id];
       more =
         '<button class="field__more" type="button" data-more="' +
@@ -453,7 +477,7 @@
      계약에 단건 조회(GET /ocr/fields/{id})가 없어 목록을 다시 부른다. */
   function onConflict(fieldId, mine) {
     ocrApi
-      .fields(JOB_ID)
+      .fields(jobId)
       .then(function (fields) {
         var theirs = null;
         fields.forEach(function (item) {
@@ -500,13 +524,22 @@
     if (job.status === "FAILED") {
       /* 실패했다고 화면을 막지 않는다. 판독은 거들 뿐이고
          값은 사람이 직접 넣어도 진행할 수 있어야 한다. */
+      /* 예전에는 「직접 입력」·「재업로드」 둘 다 식별자도 처리기도 없어서
+         눌러도 아무 일이 없었다 (`#40` 리뷰).
+
+         「직접 입력」은 지금 계약으로 못 짠다 — 작업이 FAILED 면 결과가 없고,
+         결과가 없으면 채워 넣을 항목 목록 자체가 없다. 빈 항목을 만들어 주는
+         길이 계약에 없다(KEY-109 에 적는다). 눌러도 안 되는 버튼을 두느니
+         지운다 — 이 파일이 「이전 값 유지」·「이번 미시행」에 한 것과 같다.
+
+         「재업로드」는 지금 된다. 이 진료의 진료기록 칸으로 돌려보낸다. */
       showState(
         '<p class="state__title">판독하지 못했습니다</p>' +
           '<p class="state__body">사유 ' +
           escapeHtml(job.failure_code || "알 수 없음") +
-          " · 값을 직접 입력하거나 다시 올릴 수 있습니다</p>" +
-          '<div class="state__acts"><button class="button" type="button">직접 입력</button>' +
-          '<button class="button button--ghost" type="button">재업로드</button></div>',
+          " · 진료기록을 다시 올리면 판독을 다시 시작합니다</p>" +
+          '<div class="state__acts">' +
+          '<button class="button" type="button" id="reupload">재업로드</button></div>',
       );
       return false;
     }
@@ -522,6 +555,14 @@
 
   document.addEventListener("click", function (event) {
     var target = event.target;
+
+    /* 판독 실패에서 빠져나가는 유일한 길. 이 진료의 진료기록 칸으로 보낸다. */
+    if (target.id === "reupload") {
+      if (!visit) return;
+      location.href = "/patients.html?visit=" + encodeURIComponent(visit.visit_id) + "&tab=record";
+      return;
+    }
+
 
     if (target.id === "submit") {
       saveNote.textContent = "안내문 생성 연동은 KEY-64 입니다 — 이 화면에서는 값 확인까지만 합니다";
@@ -637,30 +678,151 @@
     }
   });
 
+  /* ── 진료 갈아 끼우기 ─────────────────────────────────────── */
+
+  /* 화면에 남아 있던 것을 전부 버린다. 하나라도 남으면 앞 환자의 편집·충돌·
+     저장 표시가 새 환자 줄에 붙는다. */
+  function resetState() {
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+    result = null;
+    activeDoc = null;
+    threshold = LOW_CONFIDENCE_FALLBACK;
+    openCandidates = {};
+    editing = {};
+    saving = {};
+    saved = {};
+    failed = {};
+    conflict = {};
+    focusOn = null;
+    fieldsBox.innerHTML = "";
+    rawBox.innerHTML = "";
+    docTabs.innerHTML = "";
+    summary.textContent = "—";
+    if (saveNote) saveNote.textContent = "";
+    if (submit) submit.disabled = true;
+  }
+
+  /* 진료 객체는 평평하다 — 목록이 내주는 그 모양 그대로 쓴다
+     (`patients-api.js`: name · hospital_patient_no · birth_date · doctor …). */
+  function renderPatientHead(next) {
+    var name = document.getElementById("p-name");
+    var chart = document.getElementById("p-id");
+    var line = document.getElementById("p-visit");
+    if (name) name.textContent = next.name || "—";
+    if (chart) {
+      chart.textContent = [
+        next.hospital_patient_no ? "차트 " + next.hospital_patient_no : "",
+        next.birth_date || "",
+        next.age ? next.age + "세" : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+    if (line) {
+      line.textContent = [
+        next.diagnosis_name,
+        next.doctor && next.doctor.name,
+        next.visited_at ? shortDate(next.visited_at) : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+  }
+
+  /* 판독 중이면 끝날 때까지 되묻는다. 화면이 「저절로 바뀝니다」라고 말하는데
+     아무것도 안 하고 있었다 (`#40` 리뷰). 진료를 바꾸면 `resetState()` 가 끈다. */
+  function pollJob(mine) {
+    pollTimer = setTimeout(function () {
+      if (mine !== loadSeq) return;
+      ocrApi
+        .job(jobId)
+        .then(function (job) {
+          if (mine !== loadSeq) return;
+          if (job.status === "PROCESSING") {
+            renderJobState(job);
+            return pollJob(mine);
+          }
+          if (!renderJobState(job)) return;
+          return loadResult(mine);
+        })
+        .catch(function () {
+          if (mine !== loadSeq) return;
+          showState(
+            '<p class="state__title">판독 상태를 확인하지 못했습니다</p>' +
+              '<p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
+          );
+        });
+    }, POLL_MS);
+  }
+
+  function loadResult(mine) {
+    return ocrApi
+      .result(jobId)
+      .then(function (data) {
+        if (mine !== loadSeq) return;
+        result = data;
+        if (typeof result.low_confidence_threshold === "number") threshold = result.low_confidence_threshold;
+        activeDoc = result.documents.length ? result.documents[0].document_id : null;
+        showWork();
+        renderDocTabs();
+        renderRaw(null);
+        redraw();
+      })
+      .catch(function (error) {
+        if (mine !== loadSeq) return;
+        if (error && error.code === "OCR_RESULT_NOT_READY") {
+          return showState('<p class="state__title">판독 결과가 아직 없습니다</p>');
+        }
+        showState(
+          '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
+        );
+      });
+  }
+
+  function loadVisit(next) {
+    resetState();
+    visit = next;
+    jobId = null;
+    var mine = ++loadSeq;
+    renderPatientHead(next);
+    showState('<p class="state__title">판독 결과를 불러오는 중…</p>');
+
+    ocrApi
+      .jobForVisit(next.visit_id)
+      .then(function (link) {
+        if (mine !== loadSeq) return null;
+        jobId = link.ocr_job_id;
+        return ocrApi.job(jobId);
+      })
+      .then(function (job) {
+        if (mine !== loadSeq || !job) return null;
+        if (job.status === "PROCESSING") {
+          renderJobState(job);
+          return pollJob(mine);
+        }
+        if (!renderJobState(job)) return null;
+        return loadResult(mine);
+      })
+      .catch(function (error) {
+        if (mine !== loadSeq) return;
+        if (error && error.code === "NOT_FOUND") {
+          return showState(
+            '<p class="state__title">판독한 기록이 없습니다</p>' +
+              '<p class="state__body">진료기록을 올리면 판독이 시작됩니다.</p>',
+          );
+        }
+        showState(
+          '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
+        );
+      });
+  }
+
   /* ── 시작 ─────────────────────────────────────────────────── */
 
-  ocrApi
-    .job(JOB_ID)
-    .then(function (job) {
-      if (!renderJobState(job)) return null;
-      return ocrApi.result(JOB_ID);
-    })
-    .then(function (data) {
-      if (!data) return;
-      result = data;
-      if (typeof result.low_confidence_threshold === "number") threshold = result.low_confidence_threshold;
-      activeDoc = result.documents.length ? result.documents[0].document_id : null;
-      showWork();
-      renderDocTabs();
-      renderRaw(null);
-      redraw();
-    })
-    .catch(function (error) {
-      if (error && error.code === "OCR_RESULT_NOT_READY") {
-        return showState('<p class="state__title">판독 결과가 아직 없습니다</p>');
-      }
-      showState(
-        '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
-      );
-    });
+  document.addEventListener("visit:selected", function (event) {
+    if (event.detail) loadVisit(event.detail);
+  });
 })();
