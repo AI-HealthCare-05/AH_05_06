@@ -88,7 +88,7 @@
           session.clear();
           return location.replace("/login.html?expired=1");
         }
-        show("비밀번호를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요");
+        show("비밀번호를 바꾸지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
       }
     );
   });
