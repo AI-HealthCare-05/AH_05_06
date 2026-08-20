@@ -238,3 +238,22 @@ body.auth {
   white-space: nowrap;
   border: 0;
 }
+
+/* ── 눌렀다는 신호 ──────────────────────────────────
+   로그인은 응답이 늦을 수 있는 자리다(서버 왕복 + 해시 검증). 누른 순간
+   버튼이 반응하지 않으면 두 번 누르게 되고, 실패 횟수가 두 번 오른다. */
+.button,
+.reveal,
+.field__input {
+  transition:
+    background-color var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
+}
+
+.button:active:not(:disabled) {
+  background: var(--accent-active);
+}
+
+.reveal:active {
+  background: var(--line);
+}

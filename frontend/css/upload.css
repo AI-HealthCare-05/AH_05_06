@@ -297,3 +297,25 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ── 눌렀다는 신호 ────────────────────────────────── */
+.button-primary,
+.button-ghost,
+.drop__pick,
+.file__act,
+.file__kind,
+.drop {
+  transition:
+    background-color var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
+}
+
+.button-primary:active:not(:disabled) {
+  background: var(--accent-active);
+}
+
+.button-ghost:active,
+.drop__pick:active,
+.file__act:active {
+  background: var(--line);
+}
