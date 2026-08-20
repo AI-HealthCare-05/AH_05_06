@@ -14,7 +14,7 @@ from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
 from app.models.staffs import Hospital, Staff, StaffStatus
-from app.tests.fakes import FakeRedis
+from app.tests.fakes import FakeRedis, InterleavingRedis
 
 PASSWORD = "Password123!"
 BASE = "/api/v1/auth"
@@ -347,3 +347,38 @@ class TestRevokeAllKillsAccessToo(SessionTestCase):
 
         assert changed.status_code == 204
         assert after.status_code == 401, "비밀번호를 바꿨는데 옛 액세스 토큰이 살아 있다"
+
+
+class TestRotationIsAtomic(SessionTestCase):
+    """같은 리프레시 토큰으로 **동시에** 두 번 갱신하면 하나만 성공한다.
+
+    예전에는 `was_used()` · `is_alive()` 로 보고 나서 `retire()` 했다. 보는 것과
+    없애는 것이 갈라져 있으면 두 요청이 **둘 다 「아직 안 쓰였다」를 보고**
+    통과해 각각 새 세션을 받는다 — 훔친 토큰과 정상 클라이언트가 겹치는
+    순간이 정확히 그 경우라, 재사용 감지가 조용히 안 걸린다.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        # 명령마다 양보하는 가짜로 바꾼다 — 안 그러면 각 호출이 끝까지 붙어서
+        # 돌아 경합 자체가 재현되지 않고, 낡은 코드에서도 이 검사가 통과한다.
+        self.redis = InterleavingRedis()
+        app.dependency_overrides[get_redis] = lambda: self.redis
+
+    async def test_only_one_of_two_concurrent_refreshes_wins(self) -> None:
+        import asyncio
+
+        await make_staff()
+
+        async with self.client() as client:
+            await self.sign_in(client)
+            token = client.cookies["refresh_token"]
+
+            async def refresh() -> int:
+                async with self.client() as other:
+                    other.cookies.set("refresh_token", token, path=REFRESH_PATH)
+                    return (await other.post(f"{BASE}/refresh")).status_code
+
+            first, second = await asyncio.gather(refresh(), refresh())
+
+        assert sorted([first, second]) == [200, 401], f"둘 다 통과했다: {first}, {second}"

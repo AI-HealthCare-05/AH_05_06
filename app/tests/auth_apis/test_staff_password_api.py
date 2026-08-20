@@ -312,3 +312,60 @@ class TestPasswordGateBlocksEverythingElse(PasswordTestCase):
             response = await client.get(f"{BASE}/me", headers=fresh)
 
         assert response.json()["must_change_password"] is False
+
+
+class TestGateExemptionLivesWithTheRoute(PasswordTestCase):
+    """관문 예외를 **경로가 스스로** 밝힌다.
+
+    예전에는 예외 경로 목록이 `dependencies/staff_auth.py` 에 문자열로 박혀
+    있었다. 경로를 옮기거나 이름을 바꾸면 목록만 옛것으로 남는데, 그러면 둘 중
+    하나가 조용히 일어난다 — 비밀번호를 바꿀 길이 막혀 계정이 잠기거나,
+    반대로 관문이 뚫린다.
+    """
+
+    def _exempt_paths(self) -> set[str]:
+        from app.dependencies.staff_auth import PASSWORD_GATE_EXEMPT_KEY
+
+        return {
+            str(getattr(route, "path", ""))
+            for route in app.routes
+            if (getattr(route, "openapi_extra", None) or {}).get(PASSWORD_GATE_EXEMPT_KEY)
+        }
+
+    async def test_exactly_the_three_paths_are_marked(self) -> None:
+        assert self._exempt_paths() == {
+            "/api/v1/auth/me",
+            "/api/v1/auth/password",
+            "/api/v1/auth/logout",
+        }
+
+    async def test_the_marked_paths_are_reachable_before_the_change(self) -> None:
+        """표시가 실제로 읽히는가 — 세 곳 다 첫 로그인 상태에서 열려야 한다."""
+        await make_staff(must_change_password=True)
+
+        async with self.client() as client:
+            headers = await self.sign_in(client)
+            me = await client.get(f"{BASE}/me", headers=headers)
+            out = await client.post(f"{BASE}/logout", headers=headers)
+
+        assert me.status_code == 200
+        assert out.status_code == 204
+
+    async def test_a_route_without_the_mark_is_not_exempt(self) -> None:
+        """표시가 없으면 예외가 아니다.
+
+        이 브랜치에는 관문을 쓰면서 표시가 없는 경로가 아직 없어서(보호 API 가
+        `KEY-34`·`KEY-60` 쪽에 있다) 판정 자체를 본다. 표시를 안 읽고 늘 통과시키면
+        여기서 걸린다.
+        """
+        from types import SimpleNamespace
+
+        from app.dependencies.staff_auth import _is_password_gate_exempt
+
+        plain = SimpleNamespace(scope={"route": SimpleNamespace(openapi_extra=None)})
+        other = SimpleNamespace(scope={"route": SimpleNamespace(openapi_extra={"x-something-else": True})})
+        nothing = SimpleNamespace(scope={})
+
+        assert not _is_password_gate_exempt(plain)  # type: ignore[arg-type]
+        assert not _is_password_gate_exempt(other)  # type: ignore[arg-type]
+        assert not _is_password_gate_exempt(nothing)  # type: ignore[arg-type]

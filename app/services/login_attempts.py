@@ -59,6 +59,22 @@ class LoginAttempts:
         # 왔을 때 0 을 주면 화면이 「지금 다시 해 보세요」라고 거짓말한다.
         return ttl if ttl > 0 else LOCK_SECONDS
 
+    async def begin(self, login_id: str) -> int:
+        """시도를 하나 세고 지금까지의 횟수를 준다. **비밀번호를 보기 전에** 부른다.
+
+        예전에는 `is_locked()` 로 보고 나서 실패했을 때만 셌다. 보는 것과 세는
+        것이 갈라져 있으면 동시에 들어온 요청들이 **전부 같은 숫자를 보고**
+        통과한다 — 한 번에 여러 개를 보내면 5회 제한을 넘겨 검증까지 간다.
+
+        `INCR` 은 원자적이라 동시에 와도 번호가 겹치지 않는다. 들어오는 데
+        성공하면 `clear()` 가 지우므로 평소 사용에는 남지 않는다.
+        """
+        key = self._key(login_id)
+        count = await self.redis.incr(key)
+        if count == 1:
+            await self.redis.expire(key, LOCK_SECONDS)
+        return int(count)
+
     async def record_failure(self, login_id: str) -> int:
         """실패를 하나 세고 지금까지의 횟수를 준다.
 

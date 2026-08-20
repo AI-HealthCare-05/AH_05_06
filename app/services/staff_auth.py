@@ -38,7 +38,11 @@ class StaffAuthService:
         로그인과 refresh 가 같은 자리에서 세션을 열어야 규칙이 갈라지지 않는다."""
         # 잠긴 아이디는 비밀번호를 맞춰도 들어오지 못한다. 맞았을 때만 통과시키면
         # 잠금이 「비밀번호 맞추기 게임」의 속도만 늦추는 장치가 된다.
-        if await self.attempts.is_locked(login_id):
+        #
+        # 세는 것을 **비밀번호를 보기 전에** 한다. 보고 나서 세면 동시에 들어온
+        # 요청들이 전부 같은 숫자를 보고 통과해 5회를 넘긴다(`begin()` 참고).
+        attempt = await self.attempts.begin(login_id)
+        if attempt > MAX_FAILURES:
             raise await self._locked(login_id)
 
         staff = await Staff.get_or_none(login_id=login_id)
@@ -49,15 +53,16 @@ class StaffAuthService:
         ok = verify_password(password, stored)
 
         if staff is None or not ok or staff.status is not StaffStatus.ACTIVE:
-            raise await self._failed(login_id)
+            raise await self._failed(login_id, attempt)
 
         await self.attempts.clear(login_id)
         staff.last_login_at = now()
         await staff.save(update_fields=["last_login_at", "updated_at"])
         return staff
 
-    async def _failed(self, login_id: str) -> AuthError:
-        count = await self.attempts.record_failure(login_id)
+    async def _failed(self, login_id: str, count: int) -> AuthError:
+        # 세는 것은 `begin()` 이 이미 했다. 여기서 또 세면 한 번 틀릴 때마다
+        # 둘씩 올라간다.
         if count >= MAX_FAILURES:
             return await self._locked(login_id)
         return AuthError(
@@ -110,9 +115,12 @@ class StaffSessionService:
 
         확인 순서가 곧 답이 갈리는 순서다.
           ① 서명·만료      → 아니면 401
-          ② 이미 쓰인 토큰 → **도난**이므로 그 계정의 세션을 전부 끊는다
-          ③ 살아 있는가    → 아니면 유휴로 끊긴 것. 그 토큰만 폐기한다
-        ②와 ③을 뒤집으면 도난이 유휴 만료로 묻힌다.
+          ② 이 토큰을 차지한다 → 못 차지했으면 이미 쓰였거나 유휴로 끊긴 것
+          ③ 이미 쓰인 것   → **도난**이므로 그 계정의 세션을 전부 끊는다
+
+        ②가 원자적이어야 한다. 「보고 나서 없애면」 같은 토큰으로 거의 동시에
+        온 두 요청이 **둘 다 통과해** 각각 새 세션을 받는다 — 훔친 토큰과
+        정상 클라이언트가 겹치는 순간이 정확히 그 경우다(`SessionStore.claim`).
         """
         try:
             token = RefreshToken(token=raw_token)
@@ -125,18 +133,17 @@ class StaffSessionService:
             # 옛 계약(user_id)으로 만든 토큰이 오면 여기 걸린다.
             raise _expired()
 
-        if await self.sessions.was_used(jti):
-            killed = await self.sessions.revoke_all(int(staff_id))
-            raise AuthError(
-                TOKEN_EXPIRED,
-                401,
-                "다시 로그인해 주세요.",
-                extra={"revoked_sessions": killed},
-            )
-
-        if not await self.sessions.is_alive(jti):
-            # 유휴 30분이 지난 것. 그 토큰만 폐기하고 다른 세션은 건드리지 않는다.
-            await self.sessions.retire(jti, int(staff_id))
+        if not await self.sessions.claim(jti, int(staff_id)):
+            if await self.sessions.was_used(jti):
+                # 폐기된 토큰이 다시 왔다 — 훔친 것이 쓰였다는 뜻이다.
+                killed = await self.sessions.revoke_all(int(staff_id))
+                raise AuthError(
+                    TOKEN_EXPIRED,
+                    401,
+                    "다시 로그인해 주세요.",
+                    extra={"revoked_sessions": killed},
+                )
+            # 유휴 30분이 지난 것. 다른 세션은 건드리지 않는다.
             raise _expired()
 
         staff = await Staff.get_or_none(staff_id=int(staff_id))
@@ -145,7 +152,7 @@ class StaffSessionService:
             await self.sessions.revoke_all(int(staff_id))
             raise _expired()
 
-        await self.sessions.retire(jti, staff.staff_id)
+        # 폐기는 claim() 이 이미 했다.
         access, refresh = await self.start(staff, bool(token.payload.get("remember")))
         return staff, access, refresh
 

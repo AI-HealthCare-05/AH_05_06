@@ -13,6 +13,9 @@
 `PATCH /auth/password` · `POST /auth/logout` 셋만 통과시킨다. 그 셋까지 막으면
 비밀번호를 바꿀 방법이 없어 계정이 영영 잠긴다.
 
+예외 목록을 여기 적어 두지 않는다. **경로가 스스로 표시를 달고**, 여기서는
+그 표시만 읽는다 — 목록과 경로가 따로 놀면 어긋난 것을 아무도 모른다.
+
 401 과 403 을 섞지 않는다. 화면이 「다시 로그인하세요」와 「권한이 없습니다」
 중 무엇을 낼지 정하지 못한다.
 """
@@ -34,14 +37,19 @@ from app.services.session_store import SessionStore
 # 인증이 아예 없는 것은 401 이다 — 로그인하면 되는 상황이기 때문이다.
 bearer = HTTPBearer(auto_error=False)
 
-# 비밀번호를 바꾸기 전에도 지날 수 있는 길.
-PASSWORD_GATE_EXEMPT = frozenset(
-    {
-        "/api/v1/auth/me",
-        "/api/v1/auth/password",
-        "/api/v1/auth/logout",
-    }
-)
+#: 라우터가 `openapi_extra` 에 이 표시를 달아 두면 관문을 지난다.
+#:
+#: 예전에는 경로 문자열 목록을 여기 박아 두었다. 경로를 옮기거나 이름을 바꾸면
+#: 이 목록만 옛것으로 남는데, 그러면 둘 중 하나가 된다 — 비밀번호를 바꿀 길이
+#: 막혀 계정이 잠기거나, 반대로 관문이 뚫린다. 어느 쪽이든 조용히 일어난다.
+#: 표시를 경로 옆에 두면 함께 움직인다.
+PASSWORD_GATE_EXEMPT_KEY = "x-password-gate-exempt"
+
+
+def _is_password_gate_exempt(request: Request) -> bool:
+    route = request.scope.get("route")
+    extra = getattr(route, "openapi_extra", None) or {}
+    return bool(extra.get(PASSWORD_GATE_EXEMPT_KEY))
 
 
 async def get_access_token(
@@ -79,7 +87,7 @@ async def get_current_staff(
         # 로그인한 뒤 그만둔 사람. 토큰이 안 만료됐어도 더는 못 들어온다.
         raise AuthError(TOKEN_EXPIRED, 401, "세션이 만료되었습니다. 다시 로그인해 주세요.")
 
-    if staff.must_change_password and request.url.path not in PASSWORD_GATE_EXEMPT:
+    if staff.must_change_password and not _is_password_gate_exempt(request):
         raise AuthError(
             PASSWORD_CHANGE_REQUIRED,
             403,

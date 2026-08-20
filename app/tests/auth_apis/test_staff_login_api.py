@@ -4,9 +4,10 @@
 **무엇을 알려주지 않는가**라, 눈으로 확인하기 어렵다. 그래서 검사로 못 박는다.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 from tortoise.contrib.test import TestCase
 
 from app.core.redis_client import get_redis
@@ -14,7 +15,7 @@ from app.core.utils.security import hash_password
 from app.main import app
 from app.models.staffs import Hospital, Staff, StaffStatus
 from app.services.login_attempts import LOCK_SECONDS, MAX_FAILURES
-from app.tests.fakes import FakeRedis
+from app.tests.fakes import FakeRedis, InterleavingRedis
 
 PASSWORD = "Password123!"
 LOGIN_URL = "/api/v1/auth/login"
@@ -273,3 +274,46 @@ class TestLockoutFoldsCase(StaffLoginTestCase):
         response = await self.post(login_id="STAFF01")
 
         assert response.status_code == 429
+
+
+class TestLockoutCountsBeforeChecking(StaffLoginTestCase):
+    """시도를 **비밀번호를 보기 전에** 센다.
+
+    예전에는 `is_locked()` 로 보고 나서 실패했을 때만 셌다. 보는 것과 세는 것이
+    갈라져 있으면 동시에 온 요청들이 전부 같은 숫자를 보고 통과해, 한 번에
+    여러 개를 보내는 것만으로 제한을 넘겨 비밀번호를 더 시험할 수 있다.
+
+    API 로는 이 경합을 여기서 재현할 수 없다 — 비밀번호 해시 검증이 동기라
+    이벤트 루프를 붙잡고 있어 요청들이 사실상 줄을 선다. 그래서 **세는 자리
+    자체**를 본다. `INCR` 은 원자적이라 동시에 불러도 번호가 겹치지 않는다.
+    """
+
+    async def test_concurrent_attempts_get_distinct_numbers(self) -> None:
+        import asyncio
+
+        from app.services.login_attempts import LoginAttempts
+
+        attempts = LoginAttempts(cast("Redis", InterleavingRedis()))
+        numbers = await asyncio.gather(*(attempts.begin("staff01") for _ in range(12)))
+
+        assert sorted(numbers) == list(range(1, 13)), f"번호가 겹친다: {sorted(numbers)}"
+
+    async def test_a_successful_login_does_not_leave_a_count(self) -> None:
+        """맞혀서 들어가면 세어 둔 것을 지운다 — 어제 오타가 오늘 따라오지 않게."""
+        await make_staff()
+
+        await self.post(password="wrong")
+        await self.post()
+
+        assert await self.redis.get("login_fail:staff01") is None
+
+    async def test_the_limit_still_holds_under_a_burst(self) -> None:
+        """한꺼번에 밀어 넣어도 비밀번호를 본 횟수가 제한을 넘지 않는다."""
+        import asyncio
+
+        await make_staff()
+
+        results = await asyncio.gather(*(self.post(password="wrong") for _ in range(12)))
+        codes = [r.status_code for r in results]
+
+        assert codes.count(401) <= MAX_FAILURES, f"{codes.count(401)}회까지 시험할 수 있다"

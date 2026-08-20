@@ -58,11 +58,17 @@ class SessionStore:
 
     # ── 세션 ────────────────────────────────────────────
     async def open(self, jti: str, staff_id: int) -> None:
-        """로그인 · rotation 성공 자리. 유휴 시계를 30분으로 되감는다."""
-        await self.redis.setex(self._idle(jti), IDLE_SECONDS, staff_id)
-        await self.redis.sadd(self._sessions(staff_id), jti)  # type: ignore[misc]
-        # 세션 묶음이 영원히 남지 않게. 가장 오래 살 수 있는 토큰만큼만 둔다.
-        await self.redis.expire(self._sessions(staff_id), REFRESH_SECONDS)
+        """로그인 · rotation 성공 자리. 유휴 시계를 30분으로 되감는다.
+
+        셋을 한 번에 보낸다. 따로 보내면 접수대에서 자주 도는 refresh 경로가
+        왕복 수만큼 느려진다 — 서로 기다릴 이유가 없는 명령들이다.
+        """
+        async with self.redis.pipeline(transaction=False) as pipe:
+            pipe.setex(self._idle(jti), IDLE_SECONDS, staff_id)
+            pipe.sadd(self._sessions(staff_id), jti)
+            # 세션 묶음이 영원히 남지 않게. 가장 오래 살 수 있는 토큰만큼만 둔다.
+            pipe.expire(self._sessions(staff_id), REFRESH_SECONDS)
+            await pipe.execute()
 
     async def is_alive(self, jti: str) -> bool:
         return await self.redis.exists(self._idle(jti)) == 1  # type: ignore[misc]
@@ -76,9 +82,33 @@ class SessionStore:
         `used:` 를 남기는 것이 핵심이다 — 나중에 같은 토큰이 오면 그것이
         **도난**인지 그냥 만료인지 여기서 갈린다.
         """
-        await self.redis.delete(self._idle(jti))
-        await self.redis.setex(self._used(jti), REFRESH_SECONDS, 1)
-        await self.redis.srem(self._sessions(staff_id), jti)  # type: ignore[misc]
+        async with self.redis.pipeline(transaction=False) as pipe:
+            pipe.delete(self._idle(jti))
+            pipe.setex(self._used(jti), REFRESH_SECONDS, 1)
+            pipe.srem(self._sessions(staff_id), jti)
+            await pipe.execute()
+
+    async def claim(self, jti: str, staff_id: int) -> bool:
+        """이 리프레시 토큰을 **내가** 차지한다. 차지했으면 True.
+
+        예전에는 `was_used()` · `is_alive()` 로 보고 나서 `retire()` 했다.
+        보는 것과 없애는 것이 갈라져 있으면, 같은 토큰으로 거의 동시에 두
+        요청이 오면 **둘 다 「아직 안 쓰였다」를 보고 통과한다** — 훔친 토큰과
+        정상 클라이언트가 겹칠 때가 정확히 그 경우다.
+
+        `DELETE` 는 없앤 개수를 돌려주는 원자적 명령이다. 1 을 받은 쪽만
+        그 토큰의 주인이 된다. 진 쪽은 0 을 받고, `used:` 를 보고 도난인지
+        유휴 만료인지 가린다.
+        """
+        deleted = await self.redis.delete(self._idle(jti))
+        if not deleted:
+            return False
+        # 이긴 즉시 「썼음」을 남긴다 — 진 쪽이 이것을 보고 도난을 알아챈다.
+        async with self.redis.pipeline(transaction=False) as pipe:
+            pipe.setex(self._used(jti), REFRESH_SECONDS, 1)
+            pipe.srem(self._sessions(staff_id), jti)
+            await pipe.execute()
+        return True
 
     async def revoke_all(self, staff_id: int) -> int:
         """이 사람의 세션을 전부 끊는다.

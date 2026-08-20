@@ -60,12 +60,12 @@ def implemented_endpoints() -> set[tuple[str, str]]:
     return found
 
 
-# 계약 밖이지만 아직 살아 있는 것들. 정리는 계정 관리(A1-2) 몫이라
-# 여기서 지우지 않되, **무엇이 남아 있는지는 적어 둔다** — 적어 두지 않으면
-# 「계약에 없는 인증 경로」가 조용히 늘어난다.
-KNOWN_LEGACY = {
-    ("POST", "/api/v1/auth/signup"),
-}
+# 계약 밖이지만 아직 살아 있는 것들. **지금은 비어 있다.**
+#
+# `GET /auth/token/refresh` 는 세션을 안 보고 액세스 토큰을 찍어 줘서 지웠고,
+# `POST /auth/signup` 은 로그인할 수 없는 계정을 만들어서 지웠다.
+# 비워 둔 채로 두면 「계약에 없는 인증 경로」가 조용히 늘어나는 것을 막는다.
+KNOWN_LEGACY: set[tuple[str, str]] = set()
 
 
 class TestEndpointsMatchTheDocument(TestCase):

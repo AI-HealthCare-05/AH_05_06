@@ -33,6 +33,12 @@ staff_auth_router = APIRouter(prefix="/auth", tags=["auth"])
 REFRESH_COOKIE_PATH = "/api/v1/auth"
 REFRESH_COOKIE_NAME = "refresh_token"
 
+# 비밀번호를 바꾸기 전에도 지날 수 있는 길임을 **경로 자신이** 밝힌다.
+# 예전에는 목록이 `dependencies/staff_auth.py` 에 문자열로 박혀 있었다 —
+# 경로를 옮기거나 이름을 바꾸면 목록만 옛것으로 남아, 비밀번호를 못 바꾸는
+# 계정이 생기거나(막혀서) 반대로 관문이 뚫린다.
+PASSWORD_GATE_EXEMPT = {"x-password-gate-exempt": True}
+
 
 def _auth(redis: Annotated[Redis, Depends(get_redis)]) -> StaffAuthService:
     return StaffAuthService(redis)
@@ -95,7 +101,7 @@ async def refresh(
     return TokenRefreshResponse(access_token=str(access))
 
 
-@staff_auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@staff_auth_router.post("/logout", openapi_extra=PASSWORD_GATE_EXEMPT, status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     response: Response,
     session: Annotated[StaffSessionService, Depends(_session)],
@@ -118,7 +124,9 @@ async def logout(
     return response
 
 
-@staff_auth_router.get("/me", response_model=StaffMeResponse, status_code=status.HTTP_200_OK)
+@staff_auth_router.get(
+    "/me", openapi_extra=PASSWORD_GATE_EXEMPT, response_model=StaffMeResponse, status_code=status.HTTP_200_OK
+)
 async def me(staff: Annotated[Staff, Depends(get_current_staff)]) -> StaffMeResponse:
     """세션 복원과 화면 분기의 근거. 새로고침할 때마다 부른다."""
     await staff.fetch_related("hospital")
@@ -132,7 +140,7 @@ async def me(staff: Annotated[Staff, Depends(get_current_staff)]) -> StaffMeResp
     )
 
 
-@staff_auth_router.patch("/password", status_code=status.HTTP_204_NO_CONTENT)
+@staff_auth_router.patch("/password", openapi_extra=PASSWORD_GATE_EXEMPT, status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
     body: PasswordChangeRequest,
     response: Response,
