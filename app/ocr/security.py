@@ -12,11 +12,7 @@ OCR_ROLES = frozenset({"staff", "doctor"})
 
 @dataclass(frozen=True)
 class OcrActor:
-    #: 로그인한 **직원**의 `staff_id` 다. 이름이 `user_id` 인 것은 처음 배선이
-    #: `users` 표를 보던 흔적이고, 감사 칸(`requested_by` · `modified_by` ·
-    #: `confirmed_by`)에 그대로 들어간다. 그 칸들은 FK 가 아닌 BigInt 라
-    #: 값은 안전하지만, 이름은 `staff_id` 가 정확하다 (KEY-116 후속).
-    user_id: int
+    staff_id: int
     hospital_id: int
     roles: frozenset[str]
 
@@ -43,4 +39,4 @@ async def get_ocr_actor(staff: Annotated[Staff, Depends(get_current_staff)]) -> 
         # `admin` 은 역할이 아니라 권한이다 — 혼자서는 진료 화면을 열지 못한다
         # (`app/tests/rbac/matrix.py`).
         raise OcrApiError(status.HTTP_403_FORBIDDEN, "FORBIDDEN", "OCR 접근 권한이 없습니다.")
-    return OcrActor(user_id=staff.staff_id, hospital_id=staff.hospital_id, roles=roles)
+    return OcrActor(staff_id=staff.staff_id, hospital_id=staff.hospital_id, roles=roles)

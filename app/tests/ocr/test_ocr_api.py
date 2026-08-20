@@ -21,7 +21,7 @@ from app.ocr.schemas import (
 from app.ocr.security import OcrActor, get_ocr_actor
 
 NOW = datetime(2026, 8, 19, 8, 0, tzinfo=UTC)
-STAFF = OcrActor(user_id=17, hospital_id=3, roles=frozenset({"staff"}))
+STAFF = OcrActor(staff_id=17, hospital_id=3, roles=frozenset({"staff"}))
 
 
 class FakeOcrService:
@@ -99,9 +99,9 @@ class FakeOcrService:
             confidence=0.83,
             version=request.base_version + 1,
             is_confirmed=request.confirm,
-            modified_by=actor.user_id,
+            modified_by=actor.staff_id,
             modified_at=NOW,
-            confirmed_by=actor.user_id if request.confirm else None,
+            confirmed_by=actor.staff_id if request.confirm else None,
             confirmed_at=NOW if request.confirm else None,
         )
 
@@ -175,7 +175,7 @@ def test_field_update_keeps_version_and_audit_actor(api: tuple[TestClient, FakeO
 
     assert response.status_code == 200
     assert response.json()["version"] == 3
-    assert response.json()["confirmed_by"] == STAFF.user_id
+    assert response.json()["confirmed_by"] == STAFF.staff_id
     assert fake.updated is not None
     assert fake.updated[2] == STAFF
 
@@ -233,7 +233,7 @@ async def test_staff_or_doctor_actor_is_allowed() -> None:
     doctor = await get_ocr_actor(cast(Staff, doctor_user))
 
     assert staff.roles == frozenset({"staff"})
-    assert staff.user_id == 3
+    assert staff.staff_id == 3
     assert staff.hospital_id == 9
     assert doctor.roles == frozenset({"doctor", "admin"})
-    assert doctor.user_id == 4
+    assert doctor.staff_id == 4
