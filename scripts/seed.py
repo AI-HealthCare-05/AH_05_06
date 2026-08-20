@@ -98,11 +98,13 @@ def _parse_dt(value: str) -> datetime | None:
 async def _seed_hospitals() -> dict[str, Hospital]:
     """H1/H2 두 병원을 생성(또는 조회)하고 레이블 → Hospital 매핑을 반환한다."""
     result: dict[str, Hospital] = {}
+    created = 0
     for label, name in _HOSPITAL_NAMES.items():
-        hospital, _ = await Hospital.get_or_create(name=name)
+        hospital, was_created = await Hospital.get_or_create(name=name)
         result[label] = hospital
-    created = sum(1 for h in result.values())
-    print(f"[hospitals] 확인 완료 {created}개 (H1·H2)")
+        if was_created:
+            created += 1
+    print(f"[hospitals] created={created} existing={len(result) - created} total={len(result)}")
     return result
 
 
