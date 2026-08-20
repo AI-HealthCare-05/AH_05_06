@@ -69,7 +69,7 @@ OTP_CODE = re.compile(r"""(?P<key>["']?\w*code["']?\s*[:=]\s*)(?P<quote>["']?)\d
 #:   · 길이를 43자 이상으로 올리고
 #:   · **hex 로만 된 것은 제외한다** — 커밋 SHA · MD5 · SHA-256 이 전부 hex 다
 #: 실제 토큰은 대소문자와 `-` `_` 가 섞여 hex 가 될 수 없다.
-URLSAFE_TOKEN = re.compile(r"\b(?![0-9a-fA-F]+\b)[A-Za-z0-9_-]{43,}\b")
+URLSAFE_TOKEN = re.compile(r"\b(?![0-9a-fA-F]{43,}\b)[A-Za-z0-9_-]{43,}\b")
 
 #: 휴대폰 — 하이픈이 있든 없든. 가운데 넷만 가리고 뒤 넷은 남긴다.
 PHONE = re.compile(r"\b(01[016-9])[-.\s]?(\d{3,4})[-.\s]?(\d{4})\b")
