@@ -11,11 +11,11 @@ CI 가 매번 돌게 해서, 빠뜨리면 병합 전에 걸린다.
 
 import re
 import subprocess
-from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[3]
+from app.tests.security._shared import REPO_ROOT as REPO
+from app.tests.security._shared import tracked_files
 
 #: 실제 값이 들어 있는 파일들. 예시(`example.*.env`)는 추적해도 된다.
 MUST_BE_IGNORED = (".env", "envs/.local.env", "envs/.prod.env")
@@ -40,11 +40,6 @@ def is_secret_value(key: str, value: str) -> bool:
     if not stripped or stripped.isdigit():  # 숫자만이면 설정값이다
         return False
     return not PLACEHOLDER.match(stripped)
-
-
-def tracked_files() -> list[str]:
-    out = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True)
-    return out.stdout.splitlines()
 
 
 class TestRealSecretFilesAreNotTracked:

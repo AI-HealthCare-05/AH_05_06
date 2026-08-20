@@ -13,10 +13,10 @@
 
 import hashlib
 import re
-import subprocess
-from pathlib import Path
+from functools import lru_cache
 
-ROOT = Path(__file__).resolve().parents[3]
+from app.tests.security._shared import REPO_ROOT as ROOT
+from app.tests.security._shared import tracked_files
 
 #: `b8ee2a9` 의 `SECRET_KEY` · `DB_PASSWORD` · `DB_ROOT_PASSWORD` (local · prod)
 EXPOSED_DIGESTS = frozenset(
@@ -32,22 +32,24 @@ EXPOSED_DIGESTS = frozenset(
 #: 이 파일 자신은 해시를 들고 있으므로 검사 대상에서 뺀다.
 SKIP = frozenset({"app/tests/security/test_exposed_secrets_not_reused.py"})
 
-#: 값이 나타날 만한 자리 — `KEY=값` · 따옴표 문자열 · YAML `키: 값`
+#: 값이 나타날 만한 자리 — `KEY=값` · 따옴표 문자열 · YAML `키: 값`.
+#: 줄 끝 인라인 주석(`# ...`)이 붙어도 값은 여전히 잡아야 하고, 따옴표 문자열은
+#: 이스케이프된 인용부호(`\'`, `\"`) 때문에 엉뚱한 자리에서 끝나면 안 된다.
 _CANDIDATES = (
-    re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*\s*[:=]\s*[\"']?([^\"'\n#]+?)[\"']?\s*$", re.M),
-    re.compile(r"[\"']([^\"'\n]{4,128})[\"']"),
+    re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*\s*[:=]\s*[\"']?([^\"'\n#]+?)[\"']?\s*(?:#.*)?$", re.M),
+    re.compile(r"[\"']((?:\\.|[^\"'\\\n]){4,128})[\"']"),
 )
 
 
-def _tracked_files() -> list[str]:
-    out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
-    return [p for p in out.split("\n") if p and p not in SKIP]
+@lru_cache(maxsize=1)
+def _digest_index() -> dict[str, list[tuple[str, str]]]:
+    """추적 파일 전체를 한 번만 훑어, 나온 값마다 sha256 을 인덱싱한다.
 
-
-def _scan(digests: frozenset[str]) -> list[tuple[str, str]]:
-    """추적 파일에서 주어진 해시에 걸리는 값을 찾는다."""
-    found: list[tuple[str, str]] = []
-    for rel in _tracked_files():
+    `_scan()` 이 매번 다른 digest 집합으로 불려도(가드 · 자가진단) 파일을
+    다시 읽고 다시 정규식을 돌리지 않도록 훑기 자체를 한 번만 한다.
+    """
+    index: dict[str, list[tuple[str, str]]] = {}
+    for rel in tracked_files(skip=SKIP):
         try:
             body = (ROOT / rel).read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError, IsADirectoryError):
@@ -55,8 +57,14 @@ def _scan(digests: frozenset[str]) -> list[tuple[str, str]]:
         for pattern in _CANDIDATES:
             for value in pattern.findall(body):
                 digest = hashlib.sha256(value.strip().encode()).hexdigest()
-                if digest in digests:
-                    found.append((rel, digest[:12]))
+                index.setdefault(digest, []).append((rel, digest[:12]))
+    return index
+
+
+def _scan(digests: frozenset[str]) -> list[tuple[str, str]]:
+    """주어진 해시 중 추적 파일에서 걸리는 것을 찾는다."""
+    index = _digest_index()
+    found = [hit for digest in digests for hit in index.get(digest, [])]
     return sorted(set(found))
 
 
@@ -74,7 +82,7 @@ def test_the_scanner_actually_finds_things() -> None:
     비밀이 아닌 값 하나를 일부러 찾게 해서 훑기가 도는지 확인한다.
     `JWT_ALGORITHM` 은 `app/core/config.py` 에 있고 비밀이 아니다.
     """
-    assert _tracked_files(), "추적 파일을 하나도 못 읽었다 — 검사가 헛돌고 있다"
+    assert tracked_files(skip=SKIP), "추적 파일을 하나도 못 읽었다 — 검사가 헛돌고 있다"
     assert len(EXPOSED_DIGESTS) == 5, "b8ee2a9 에서 새어 나간 값은 다섯이다"
 
     harmless = hashlib.sha256(b"HS256").hexdigest()
