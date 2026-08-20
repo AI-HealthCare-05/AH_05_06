@@ -35,7 +35,7 @@ class Hospital(models.Model):
     """
 
     hospital_id = fields.BigIntField(primary_key=True)
-    name = fields.CharField(max_length=100)
+    name = fields.CharField(max_length=100, unique=True)
 
     staffs: fields.ReverseRelation["Staff"]
     created_at = fields.DatetimeField(auto_now_add=True)

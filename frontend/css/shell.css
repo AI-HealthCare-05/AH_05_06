@@ -52,7 +52,7 @@ body.shell {
   color: var(--ink-2);
   background: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -99,7 +99,7 @@ body.shell {
   color: var(--ink-2);
   background: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -117,9 +117,10 @@ body.shell {
   font-size: 11px;
   font-weight: 600;
   line-height: 17px;
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--danger);
-  border-radius: 9px;
+  /* 높이 17px 이라 브라우저가 8.5px 로 자른다 — 알약이다 */
+  border-radius: var(--radius-pill);
 }
 
 /* ── 본문 두 칸 ─────────────────────────────────────── */
@@ -151,7 +152,7 @@ body.shell {
   font-size: 13px;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .list__day {
@@ -188,12 +189,12 @@ body.shell {
   color: var(--ink-2);
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 
 .chip[aria-pressed="true"] {
-  color: #ffffff;
+  color: var(--on-accent);
   font-weight: 600;
   background: var(--accent);
   border-color: var(--accent);
@@ -258,7 +259,7 @@ body.shell {
   display: inline-block;
   padding: 2px 8px;
   font-size: 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg);
   border: 1px solid var(--line);
   color: var(--ink-2);
@@ -273,7 +274,7 @@ body.shell {
 .row__state--done {
   color: var(--done);
   background: var(--done-bg);
-  border-color: #cfe4d8;
+  border-color: var(--done-line);
 }
 
 .list__note {
