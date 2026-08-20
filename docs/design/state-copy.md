@@ -76,10 +76,14 @@ KEY-105. Sprint 2~4 에서 각자 만든 화면의 세 상태를 와이어프레
 | `login.js` | develop | ✅ 「후」 3곳 → 「뒤」 · 마침표 |
 | `password.js` | develop | ✅ 〃 1곳 |
 | `upload.js` | develop | ✅ 해요체 4곳 → 합쇼체 |
-| `patients.js` | `#27` | 해요체 1곳 |
-| `detail.js` | `#35` | 해요체 1곳 |
-| `ocr-review.js` | `#40` | 마침표 1곳 |
-| `doctor.js` | `#48` | 이미 맞음 — 이게 기준형이다 |
+| `patients.js` | `#27` → develop | ✅ 해요체 1곳 |
+| `detail.js` | `#35` → develop | ✅ 해요체 2곳 |
+| `ocr-review.js` | `#40` 열림 | 마침표 1곳 — 그 브랜치에서 |
+| `doctor.js` | `#48` 열림 | 이미 맞음 — 이게 기준형이다 |
+
+처음에는 `patients.js` · `detail.js` 를 「열린 PR 안이라 나중에」로 미뤘는데,
+그 사이 `#27` · `#35` 가 병합돼 develop 으로 왔다. 그래서 이 PR 에서 마저
+고쳤다 — `detail.js` 는 세어 보니 한 곳이 아니라 **두 곳**이었다.
 
 ## 남은 것
 
