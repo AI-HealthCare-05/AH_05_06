@@ -8,13 +8,18 @@
 
 옵션:
     --mode empty   아무것도 적재하지 않음 (S1-1 빈 화면 확인용)
-    --mode staff   직원 계정 14개만 적재 (기본값)
+    --mode staff   직원 계정 17개와 병원 2개만 적재 (기본값)
     --mode full    직원 + 환자·진료 데이터 전체 적재
 
 전제:
-    - docs/data/synthetic-staff.csv 가 있어야 한다 (PR #12, KEY-10).
+    - docs/data/synthetic-staff.csv 가 있어야 한다.
+    - docs/data/synthetic-patients.csv 가 있어야 한다 (--mode full 시).
     - SEED_STAFF_PASSWORD 환경변수가 없으면 실행을 거부한다.
     - 운영 환경(ENV=prod)에서는 실행을 거부한다.
+
+건너뛰는 항목 (미구현 모델):
+    - lab_result, visit_flag 테이블 — KEY-1, KEY-2 이후 활성화
+    - DERIVED·EVENT·OCR_INPUT·DOC_ONLY 칸 (mapping.py 참조)
 """
 
 import argparse
@@ -22,11 +27,12 @@ import asyncio
 import csv
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STAFF_CSV = ROOT / "docs" / "data" / "synthetic-staff.csv"
-PATIENTS_CSV = ROOT / "docs" / "data" / "synthetic-patients.csv"  # noqa: F841
+PATIENTS_CSV = ROOT / "docs" / "data" / "synthetic-patients.csv"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -36,9 +42,17 @@ from tortoise import Tortoise  # noqa: E402
 from app.core.config import Config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
-from app.models.users import Gender, User  # noqa: E402
+from app.models.patients import Patient  # noqa: E402
+from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
+from app.models.visits import Visit, VisitStatus  # noqa: E402
 
 SEED_PASSWORD_ENV = "SEED_STAFF_PASSWORD"
+
+# CSV 의 H1/H2 레이블 → seed 전용 병원 이름
+_HOSPITAL_NAMES: dict[str, str] = {
+    "H1": "기준의원",
+    "H2": "격리의원",
+}
 
 
 def _guard_environment() -> None:
@@ -69,74 +83,179 @@ def _require_csv(path: Path, hint: str) -> None:
         sys.exit(1)
 
 
-async def seed_staff(password: str) -> None:
-    """직원 14개 계정을 User 테이블에 적재한다.
+def _parse_dt(value: str) -> datetime | None:
+    """'YYYY-MM-DD HH:MM' 문자열을 UTC timezone-aware datetime 으로 변환한다."""
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        return datetime.strptime(stripped, "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
+    except ValueError:
+        return None
 
-    멱등성: email(= login_id@seed.local) 기준 upsert.
 
-    NOTE: 현재 User 모델은 부트캠프 예시 골격(email·is_admin bool)이다.
-          auth-contract.md 가 지적한 대로 login_id·roles jsonb 로 교체되면
-          이 함수의 필드 매핑을 함께 업데이트해야 한다.
+async def _seed_hospitals() -> dict[str, Hospital]:
+    """H1/H2 두 병원을 생성(또는 조회)하고 레이블 → Hospital 매핑을 반환한다."""
+    result: dict[str, Hospital] = {}
+    for label, name in _HOSPITAL_NAMES.items():
+        hospital, _ = await Hospital.get_or_create(name=name)
+        result[label] = hospital
+    created = sum(1 for h in result.values())
+    print(f"[hospitals] 확인 완료 {created}개 (H1·H2)")
+    return result
+
+
+async def seed_staff(password: str) -> dict[str, Hospital]:
+    """직원 계정을 Staff 테이블에 적재한다.
+
+    멱등성: login_id 기준 upsert.
+    반환:   H1/H2 레이블 → Hospital 매핑 (seed_patients 가 이어받는다).
     """
     _require_csv(
         STAFF_CSV,
-        hint="docs/data/synthetic-staff.csv 는 PR #12(KEY-10) 이 만든다. 해당 PR 을 merge 한 뒤 다시 실행하세요.",
+        hint="저장소를 최신화하세요.",
     )
 
     hashed = hash_password(password)
+    hospitals = await _seed_hospitals()
     created = updated = 0
 
     with STAFF_CSV.open(encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
 
-    for idx, row in enumerate(rows):
-        login_id = row["login_id"]
-        roles = frozenset(r.strip() for r in row["roles"].split("|") if r.strip())
-        is_active = row["status"] == "active"
-        is_admin = "admin" in roles
+    for row in rows:
+        label = row["병원"].strip()
+        hospital = hospitals[label]
+        roles = [r.strip() for r in row["roles"].split("|") if r.strip()]
+        status = StaffStatus.LEFT if row["status"].strip() == "left" else StaffStatus.ACTIVE
 
-        # login_id → email: staff 모델로 교체되기 전 임시 매핑
-        email = f"{login_id}@seed.local"
-
-        # staff 모델에는 gender·birthday·phone_number 가 없다.
-        # 현재 User 모델이 필수로 요구하므로 의미 없는 플레이스홀더를 넣는다.
-        phone = f"0100000{idx + 1:04d}"  # 01000000001 ~ 01000000014, 11자리
-
-        _, was_created = await User.get_or_create(
-            email=email,
+        _, was_created = await Staff.get_or_create(
+            login_id=row["login_id"].strip(),
             defaults={
-                "hashed_password": hashed,
-                "name": row["이름"],
-                "gender": Gender.FEMALE,
-                "birthday": "1990-01-01",
-                "phone_number": phone,
-                "is_active": is_active,
-                "is_admin": is_admin,
+                "hospital_id": hospital.hospital_id,
+                "password_hash": hashed,
+                "name": row["이름"].strip(),
+                "roles": roles,
+                "must_change_password": row["must_change_password"].strip() == "Y",
+                "status": status,
+                "left_at": _parse_dt(row["left_at"]),
+                "last_login_at": _parse_dt(row["last_login_at"]),
             },
         )
 
         if was_created:
             created += 1
         else:
-            await User.filter(email=email).update(
-                hashed_password=hashed,
-                is_active=is_active,
-                is_admin=is_admin,
+            await Staff.filter(login_id=row["login_id"].strip()).update(
+                password_hash=hashed,
+                roles=roles,
+                must_change_password=row["must_change_password"].strip() == "Y",
+                status=status,
             )
             updated += 1
 
     print(f"[staff] created={created} updated={updated} total={len(rows)}")
+    return hospitals
 
 
-async def seed_patients() -> None:
-    """환자·진료 데이터 적재 — patient/visit 모델 구현 후 활성화.
+async def seed_patients(hospitals: dict[str, Hospital]) -> None:
+    """환자·진료 데이터를 patient·visit 테이블에 적재한다.
 
-    TODO: KEY-1(환자·진료 모델), KEY-2(OCR·안내) 가 완성되면 구현한다.
-          docs/data/synthetic-patients.csv → patient·visit·lab_result·visit_flag 테이블
-          멱등성 키: patient.chart_no (자연 키)
-          결정론적 UUID: uuid5(NAMESPACE_DNS, row["시나리오ID"]) 등
+    멱등성:
+        patient: (hospital_id, hospital_patient_no) 기준 get_or_create
+        visit:   (hospital_id, patient_id, visited_at) 기준 get_or_create
+
+    담당의 이름 해석:
+        H1 소속 Staff.name 으로 조회한다.
+        H2 에 동명이인(SYN-STAFF-16 박연)이 있으므로 반드시 hospital 로 필터한다.
+
+    건너뜀:
+        lab_result, visit_flag 모델 미구현 → KEY-1, KEY-2 이후 활성화
     """
-    print("[patients] 건너뜀 — patient/visit 모델 미구현 (KEY-1, KEY-2 이후 활성화)")
+    _require_csv(
+        PATIENTS_CSV,
+        hint="저장소를 최신화하세요.",
+    )
+
+    h1 = hospitals["H1"]
+
+    # H1 소속 직원 이름 → staff_id 매핑
+    h1_staff = await Staff.filter(hospital_id=h1.hospital_id).all()
+    doctor_map: dict[str, int] = {s.name: s.staff_id for s in h1_staff}
+
+    with PATIENTS_CSV.open(encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+
+    # 1단계: 환자 upsert
+    # 동일 차트번호가 여러 진료 행에 반복될 수 있으므로 첫 행만 처리한다.
+    patient_map: dict[str, Patient] = {}
+    created_p = updated_p = 0
+
+    for row in rows:
+        chart_no = row["차트번호"].strip()
+        if chart_no in patient_map:
+            continue
+
+        sms_consent = row["문자수신동의"].strip() == "Y"
+        patient, was_created = await Patient.get_or_create(
+            hospital_id=h1.hospital_id,
+            hospital_patient_no=chart_no,
+            defaults={
+                "name": row["이름"].strip(),
+                "birth_date": row["생년월일"].strip(),
+                "phone": row["휴대폰"].strip(),
+                "sms_consent": sms_consent,
+            },
+        )
+        patient_map[chart_no] = patient
+        if was_created:
+            created_p += 1
+        else:
+            updated_p += 1
+
+    print(f"[patients] created={created_p} updated={updated_p} total={len(patient_map)}")
+
+    # 2단계: 진료 upsert
+    created_v = skipped_v = 0
+
+    for row in rows:
+        visit_date_str = row["진료일"].strip()
+        if not visit_date_str:
+            skipped_v += 1
+            continue
+
+        chart_no = row["차트번호"].strip()
+        patient = patient_map[chart_no]
+
+        try:
+            visited_at = datetime.strptime(visit_date_str, "%Y-%m-%d").replace(hour=12, minute=0, second=0, tzinfo=UTC)
+        except ValueError:
+            print(
+                f"[visits] 날짜 파싱 실패: {visit_date_str!r} (시나리오 {row['시나리오ID']})",
+                file=sys.stderr,
+            )
+            skipped_v += 1
+            continue
+
+        doctor_name = row["담당의"].strip()
+        doctor_id = doctor_map.get(doctor_name)
+
+        planned_stop = row["진료상태"].strip() == "계획된 중단"
+
+        _, was_created = await Visit.get_or_create(
+            hospital_id=h1.hospital_id,
+            patient=patient,
+            visited_at=visited_at,
+            defaults={
+                "doctor_id": doctor_id,
+                "planned_stop": planned_stop,
+                "status": VisitStatus.COMPLETED,
+            },
+        )
+        if was_created:
+            created_v += 1
+
+    print(f"[visits] created={created_v} skipped={skipped_v} total={len(rows)}")
 
 
 async def main(mode: str) -> None:
@@ -151,8 +270,8 @@ async def main(mode: str) -> None:
             await seed_staff(password)
         case "full":
             password = _require_password()
-            await seed_staff(password)
-            await seed_patients()
+            hospitals = await seed_staff(password)
+            await seed_patients(hospitals)
         case _:
             print(f"알 수 없는 mode: {mode}", file=sys.stderr)
             await Tortoise.close_connections()
