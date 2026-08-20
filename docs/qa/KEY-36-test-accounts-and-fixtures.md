@@ -1,6 +1,6 @@
 # KEY-36 테스트 계정·역할·환자 fixture 명세
 
-> 상태: 구현 초안
+> 상태: 리뷰 반영 초안
 > 적용 범위: QA용 합성 데이터와 권한 테스트 계약
 > 주의: 이 문서는 테스트 계약이며 현재 모델·API 구현 완료를 의미하지 않는다.
 
@@ -12,9 +12,9 @@
 
 ## 2. 확정된 인증·계정 계약
 
-- `ADMIN`, `DOCTOR`, `STAFF`는 모두 role이다.
+- `admin`, `doctor`, `staff`는 모두 role이다.
 - 한 직원은 두 개 이상의 role을 가질 수 있다.
-- 직원 ID와 환자 ID를 포함한 주요 식별자는 UUID를 사용한다.
+- 병원·직원·환자·진료의 DB 식별자는 확정된 API·모델 계약에 따라 `bigint`를 사용한다.
 - `login_id`는 직원 생성 후 변경할 수 없다.
 - 공개 회원가입 API인 `/api/v1/auth/signup`은 사용하지 않는다.
 - 직원 계정은 권한 있는 관리자가 생성한다.
@@ -26,15 +26,13 @@
 
 ## 3. 구현 전제와 현재 차이
 
-현재 저장소의 `User` 모델과 인증 API는 이메일·정수 ID·`is_admin`을 사용하는 초기 템플릿이다. KEY-36은 다른 인증·환자 기능 티켓의 운영 모델을 선행 구현하지 않고, 해당 모델이 병합될 때 바로 연결할 수 있는 독립 테스트 데이터 팩토리로 제공한다.
+직원 계정의 정본은 KEY-10(PR #12)의 `docs/data/synthetic-staff.csv`와 `app/tests/fixtures/staff.py`다. KEY-36은 직원 계정을 다시 정의하지 않고 `by_id()`로 H1·H2 계정을 불러와 환자·진료 fixture와 연결한다.
 
-- 직원 UUID 모델
-- `login_id` 기반 로그인
-- 복수 role 저장과 서버 측 권한 판정
-- 관리자 전용 직원 생성 API
-- 최초 비밀번호 변경
-- HttpOnly Refresh Token 쿠키
-- 공개 `/auth/signup` 제거
+- 직원 역할 값은 RBAC·Staff 모델과 같은 소문자다.
+- `login_id`는 정본 CSV의 `^[a-z0-9]{4,}$` 값을 그대로 사용한다.
+- 직원 DB PK는 시드 적재 시 발급되는 `bigint`이며 별도 UUID 매핑표를 만들지 않는다.
+- 환자·진료 테스트 ID도 `bigint`에 적재 가능한 양의 정수다.
+- 인증 API가 필요한 Refresh Token·최초 비밀번호 변경 검증은 해당 API 병합 후 추가한다.
 
 ## 4. 테스트 환경 원칙
 
@@ -42,43 +40,46 @@
 
 최소 두 병원을 생성한다.
 
-| fixture | UUID 예시 | 용도 |
+| fixture | bigint 예시 / 직원 정본 코드 | 용도 |
 |---|---|---|
-| `clinic_alpha` | `10000000-0000-4000-8000-000000000001` | 정상 기능 테스트의 기본 병원 |
-| `clinic_beta` | `20000000-0000-4000-8000-000000000001` | 타 병원 접근 차단 테스트 |
+| `clinic_alpha` | `1` / `H1` | 정상 기능 테스트의 기본 병원 |
+| `clinic_beta` | `2` / `H2` | 타 병원 접근 차단 테스트 |
 
-UUID 예시는 테스트에서만 사용하는 고정값이다. 운영 데이터에는 사용하지 않는다.
+정수 ID는 테스트에서만 사용하는 결정적 예시다. 실제 DB에서는 마이그레이션과 시드가 `bigint` 값을 발급한다.
 
 ### 비밀번호와 토큰
 
 - 비밀번호 원문은 fixture 파일에 넣지 않는다.
-- 테스트 비밀번호는 환경변수 또는 테스트 실행 중 생성한다.
-- 예: `TEST_STAFF_PASSWORD`, `TEST_ADMIN_PASSWORD`
+- 직원 시드는 `SEED_STAFF_PASSWORD` 환경변수에서 개발용 값을 받으며 fixture 객체에는 비밀번호를 싣지 않는다.
+- KEY-36 팩토리는 `KEY36_TEST_PASSWORD` 개발값의 존재만 확인하며, 반환 객체에 저장하거나 노출하지 않는다.
+- 공통 직원 로더(`staff.py`, PR #45)는 저장소의 `ENV` 설정이 운영(`prod`)이면
+  `ProductionFixtureError`를 발생시켜 합성 직원 fixture 사용을 차단한다.
 - JWT, Refresh Token, OTP, 환자 링크 토큰은 테스트 실행 중 발급한다.
 - 실패 로그와 assertion 메시지에 토큰 원문을 출력하지 않는다.
 
 ## 5. 직원 계정 fixture
 
-| fixture | 소속 | roles | 상태 | 주 검증 목적 |
+| KEY-36 이름 | 정본 ID | 병원 | roles·상태 | 주 검증 목적 |
 |---|---|---|---|---|
-| `alpha_admin` | Alpha | `ADMIN` | active | 직원 생성·수정과 병원 설정 |
-| `alpha_doctor` | Alpha | `DOCTOR` | active | 안내문 검토·최종 승인 |
-| `alpha_staff` | Alpha | `STAFF` | active | 환자·진료 등록과 문서 업로드 |
-| `alpha_admin_staff` | Alpha | `ADMIN`, `STAFF` | active | 복수 role 합집합 권한 |
-| `alpha_doctor_staff` | Alpha | `DOCTOR`, `STAFF` | active | OCR 확인 후 의사 승인 흐름 |
-| `alpha_left_staff` | Alpha | `STAFF` | left | 퇴사 계정 로그인 차단과 기록 보존 |
-| `beta_admin` | Beta | `ADMIN` | active | 타 병원 관리자 접근 차단 |
-| `beta_doctor` | Beta | `DOCTOR` | active | 타 병원 의사 접근 차단 |
-| `beta_staff` | Beta | `STAFF` | active | 타 병원 스탭 접근 차단 |
+| `alpha_admin` | `SYN-STAFF-04` | H1 | `admin` · active | 직원 생성·수정과 병원 설정 |
+| `alpha_doctor` | `SYN-STAFF-02` | H1 | `doctor` · active | 안내문 검토·최종 승인 |
+| `alpha_staff` | `SYN-STAFF-01` | H1 | `staff` · active | 환자·진료 등록과 문서 업로드 |
+| `alpha_admin_staff` | `SYN-STAFF-06` | H1 | `admin`, `staff` · active | 복수 role 합집합과 의료 승인 차단 |
+| `alpha_doctor_staff` | `SYN-STAFF-05` | H1 | `doctor`, `staff` · active | OCR 확인 후 의사 승인 흐름 |
+| `alpha_left_staff` | `SYN-STAFF-11` | H1 | `staff` · left | 퇴사 계정 로그인 차단과 기록 보존 |
+| `alpha_new_staff` | `SYN-STAFF-09` | H1 | `staff` · first login | 최초 비밀번호 변경 흐름 |
+| `beta_admin` | `SYN-STAFF-17` | H2 | `admin` · active | 타 병원 관리자 접근 차단 |
+| `beta_doctor` | `SYN-STAFF-16` | H2 | `doctor` · active | 타 병원 의사 접근 차단 |
+| `beta_staff` | `SYN-STAFF-15` | H2 | `staff` · active | 타 병원 스탭 접근 차단 |
 
 ### 직원 공통 필드
 
 ```text
-id: UUID
-clinic_id: UUID
+scenario_id: SYN-STAFF-xx
+hospital: H1 | H2
 login_id: 영문 소문자와 숫자로 구성된 테스트 전용 값
 name: 명백한 가상 이름
-roles: ADMIN | DOCTOR | STAFF 중 하나 이상
+roles: admin | doctor | staff 중 하나 이상
 status: active | left
 must_change_password: boolean
 ```
@@ -98,12 +99,10 @@ must_change_password: boolean
 |---|---|---|---|
 | `alpha_patient_pcos` | Alpha | PCOS 정상 흐름 | OCR 판독 가능, 처방·안내 생성 가능 |
 | `alpha_patient_ems` | Alpha | 자궁내막증 정상 흐름 | 복수 처방과 주의 문구 포함 |
-| `alpha_patient_unreadable` | Alpha | 일부 OCR 판독 불가 | 최소 한 필드가 `unreadable` |
-| `alpha_patient_conflict` | Alpha | 동일 항목 값 충돌 | 서로 다른 문서에서 같은 항목의 다른 값 |
 | `alpha_patient_unconfirmed` | Alpha | 미확정 OCR | 확정 전 안내 생성 차단 검증 |
-| `alpha_patient_no_drug` | Alpha | 약 이름·일수 누락 | 안내 생성 실패·fallback 검증 |
-| `alpha_patient_deleted_source` | Alpha | 승인 후 원본 삭제 | 삭제 뒤 원본 URL 접근 차단 |
 | `beta_patient_isolation` | Beta | 병원 격리 | Alpha 직원의 조회·수정·다운로드 차단 |
+
+`unreadable`, 값 충돌, 약 누락, 원본 삭제 시나리오는 현재 KEY-36 코드에 없는 후속 OCR·삭제 API 검증 항목이다. 구현된 fixture 이름처럼 사용하지 않으며 관련 기능 티켓 병합 후 별도 추가한다.
 
 ### 합성 데이터 작성 규칙
 
@@ -165,16 +164,16 @@ app/tests/
 ├── fixtures/
 │   ├── __init__.py
 │   ├── models.py
-│   └── key36.py
-├── auth_apis/
-├── permission_apis/
-└── security_apis/
-tests/
-└── test_key36_fixtures.py
+│   ├── staff.py                 # KEY-10 정본 CSV 로더
+│   ├── key36.py                 # 직원 참조 + 환자·진료 연결
+│   └── test_key36_fixtures.py   # CI의 pytest app 수집 대상
+└── rbac/
+    ├── matrix.py
+    └── test_matrix_integrity.py
 ```
 
-- `build_key36_fixture_set()`이 결정적인 UUID를 가진 병원·직원·환자·진료 데이터를 반환한다.
-- 현재 운영 모델과 분리된 dataclass이므로 인증·환자 모델 변경 전에도 계약 테스트에서 사용할 수 있다.
+- `build_key36_fixture_set()`이 bigint 호환 정수 ID를 가진 병원·환자·진료와 KEY-10 직원 참조를 반환한다.
+- 직원 계정은 `staff.py`의 `by_id()`를 사용하므로 정본이 둘 생기지 않는다.
 - 실제 모델 병합 후에는 반환된 fixture를 DB 모델로 저장하는 어댑터만 추가한다.
 - 테스트 간 데이터가 누출되지 않도록 테스트별 트랜잭션 또는 초기화를 적용한다.
 - 외부 OCR, 문자 발송, S3는 실제 서비스 대신 mock/fake를 사용한다.
@@ -184,25 +183,25 @@ tests/
 비밀번호는 저장소에 커밋하지 않고 테스트 프로세스에만 주입한다.
 
 ```bash
-APP_ENV=test KEY36_TEST_PASSWORD='<개발 전용 값>' uv run python -m pytest tests/test_key36_fixtures.py
+ENV=test KEY36_TEST_PASSWORD='<개발 전용 값>' uv run pytest app/tests/fixtures/test_key36_fixtures.py -q
 ```
 
-- `KEY36_TEST_PASSWORD`가 없으면 fixture 생성을 거부한다.
-- `APP_ENV=prod` 또는 `APP_ENV=production`이면 fixture 생성을 거부한다.
-- 반환된 `test_password`는 로그인 요청용 테스트 어댑터에서만 사용하고 로그나 assertion 메시지에 출력하지 않는다.
+- 운영 실행 차단은 직원 정본 로더의 PR #45 테스트에서 검증하며 KEY-36에서 중복 구현하지 않는다.
+- `KEY36_TEST_PASSWORD`가 없으면 KEY-36 팩토리 생성을 거부하지만, 해당 값은 반환 객체에 포함하지 않는다.
+- 실제 직원 시드가 필요할 때는 정본 규칙에 따라 `SEED_STAFF_PASSWORD`를 별도로 주입한다.
 
 ## 10. 단계별 적용
 
 ### 1단계 — 현재
 
 - 병원, 역할별 직원, 합성 환자와 진료 연결 fixture를 제공한다.
-- UUID, 복수 역할, 병원 격리, 퇴사·최초 로그인 계정과 운영 실행 차단을 계약 테스트로 검증한다.
+- bigint 호환 ID, 복수 역할, 병원 격리, 퇴사·최초 로그인 계정과 운영 실행 차단을 계약 테스트로 검증한다.
 - 미확정 API 권한과 운영 모델을 임의로 구현하지 않는다.
 
 ### 2단계 — 직원·환자 모델 병합 후
 
 - 병원과 직원 fixture를 구현한다.
-- UUID, 복수 role, 퇴사 상태 테스트를 작성한다.
+- bigint PK, 복수 role, 퇴사 상태 테스트를 작성한다.
 - 공개 `/auth/signup`이 제거됐는지 확인한다.
 
 ### 3단계 — 인증 API 병합 후
@@ -221,7 +220,7 @@ APP_ENV=test KEY36_TEST_PASSWORD='<개발 전용 값>' uv run python -m pytest t
 - [x] 두 병원을 사용하는 데이터 격리 시나리오가 포함됐다.
 - [ ] 정상·예외 OCR 합성 환자 시나리오가 포함됐다.
 - [x] 실제 개인정보와 비밀값을 사용하지 않는다.
-- [x] UUID와 복수 role 정책이 반영됐다.
+- [x] bigint 식별자와 복수 role 정책이 반영됐다.
 - [ ] HttpOnly Refresh Token 검증 방법이 포함됐다.
 - [ ] 공개 `/auth/signup` 제거 검증이 포함됐다.
 - [ ] 담당자와 리뷰어가 미확정 권한 항목을 결정했다.
