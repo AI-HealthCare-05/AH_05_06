@@ -27,7 +27,7 @@ import asyncio
 import csv
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -86,12 +86,12 @@ def _require_csv(path: Path, hint: str) -> None:
 
 
 def _parse_dt(value: str, label: str = "") -> datetime | None:
-    """'YYYY-MM-DD HH:MM' 문자열을 UTC timezone-aware datetime 으로 변환한다."""
+    """'YYYY-MM-DD HH:MM' 문자열을 KST timezone-aware datetime 으로 변환한다."""
     stripped = value.strip()
     if not stripped:
         return None
     try:
-        return datetime.strptime(stripped, "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
+        return datetime.strptime(stripped, "%Y-%m-%d %H:%M").replace(tzinfo=_CONFIG.TIMEZONE)
     except ValueError:
         print(f"[seed] 경고: 날짜 파싱 실패 {label!r} = {stripped!r}", file=sys.stderr)
         return None
