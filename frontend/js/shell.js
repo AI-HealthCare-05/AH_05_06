@@ -65,6 +65,43 @@ var SAMPLE_ROWS = [
     state: "번호 오류",
     tab: "fix",
   },
+  /* 승인 대기 셋 — 의사 화면(D1)이 기본으로 여는 묶음이다.
+     의사 기본 탭이 「승인 요청」인데 그 탭에 행이 하나도 없으면,
+     화면이 비어 있는 것이 「할 일이 없어서」인지 「아직 안 붙어서」인지
+     구분되지 않는다. KEY-35 가 API 로 갈아 끼울 때 함께 사라진다. */
+  {
+    patient_id: 1003,
+    visit_id: 8801,
+    hospital_patient_no: "12345",
+    name: "김서연",
+    dx: "자궁내막증",
+    age: 36,
+    doctor: "박연 원장",
+    state: "승인 대기",
+    tab: "review",
+  },
+  {
+    patient_id: 1008,
+    visit_id: 8802,
+    hospital_patient_no: "10982",
+    name: "최다인",
+    dx: "다낭성",
+    age: 29,
+    doctor: "김연우 원장",
+    state: "승인 대기",
+    tab: "review",
+  },
+  {
+    patient_id: 1009,
+    visit_id: 8803,
+    hospital_patient_no: "12008",
+    name: "정민아",
+    dx: "자궁내막증",
+    age: 38,
+    doctor: "박연 원장",
+    state: "승인 대기",
+    tab: "review",
+  },
 ];
 
 function roleLabel(roles) {
