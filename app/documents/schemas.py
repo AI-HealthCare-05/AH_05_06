@@ -1,10 +1,5 @@
-from pydantic import BaseModel, ConfigDict
-
+from app.dtos.base import StrictModel
 from app.models.ocr import OcrJobStatus
-
-
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
 
 
 class DocumentUploadResponse(StrictModel):

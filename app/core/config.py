@@ -53,7 +53,6 @@ class Config(BaseSettings):
     UPLOAD_DIR: str = "/tmp/medical_uploads"
     MAX_UPLOAD_SIZE_MB: int = 20
 
-    
     @field_validator("DB_PASSWORD")
     @classmethod
     def _db_password_must_be_set(cls, value: str) -> str:

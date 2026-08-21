@@ -8,6 +8,7 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
+from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentType,
     OcrField,
@@ -69,6 +70,27 @@ class FailClosedDocumentOwnershipVerifier:
         connection: BaseDBAsyncClient,
     ) -> None:
         raise _not_found()
+
+
+class TortoiseDocumentOwnershipVerifier:
+    async def assert_owned(
+        self,
+        document_id: int,
+        visit_id: int,
+        hospital_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        exists = await (
+            MedicalDocument.filter(
+                document_id=document_id,
+                visit_id=visit_id,
+                hospital_id=hospital_id,
+            )
+            .using_db(connection)
+            .exists()
+        )
+        if not exists:
+            raise _not_found()
 
 
 class TortoiseOcrRepository:

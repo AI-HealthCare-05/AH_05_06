@@ -1,7 +1,7 @@
+import contextlib
 from uuid import uuid4
 
 from fastapi import UploadFile, status
-from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
 from app.core.api_errors import ApiError
@@ -10,30 +10,6 @@ from app.documents.schemas import DocumentUploadResponse
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType, OcrJob, OcrJobDocument, OcrJobStatus
 from app.models.visits import Visit
-from app.ocr.errors import OcrApiError
-
-
-class TortoiseDocumentOwnershipVerifier:
-    """Connects the upload model to the OCR ownership contract."""
-
-    async def assert_owned(
-        self,
-        document_id: int,
-        visit_id: int,
-        hospital_id: int,
-        connection: BaseDBAsyncClient,
-    ) -> None:
-        exists = await (
-            MedicalDocument.filter(
-                document_id=document_id,
-                visit_id=visit_id,
-                hospital_id=hospital_id,
-            )
-            .using_db(connection)
-            .exists()
-        )
-        if not exists:
-            raise OcrApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
 
 
 class DocumentUploadService:
@@ -51,6 +27,7 @@ class DocumentUploadService:
         staff_id: int,
     ) -> DocumentUploadResponse:
         validated = await self._read_and_validate(files)
+        await self._verify_visit_access(visit_id=visit_id, hospital_id=hospital_id)
         effective_type = document_type or OcrDocumentType.EMR
 
         saved_paths: list[str] = []
@@ -60,7 +37,8 @@ class DocumentUploadService:
                 saved_paths.append(path)
         except Exception:
             for path in saved_paths:
-                await self._storage.delete(path)
+                with contextlib.suppress(Exception):
+                    await self._storage.delete(path)
             raise
 
         try:
@@ -74,7 +52,8 @@ class DocumentUploadService:
             )
         except Exception:
             for path in saved_paths:
-                await self._storage.delete(path)
+                with contextlib.suppress(Exception):
+                    await self._storage.delete(path)
             raise
 
         return DocumentUploadResponse(
@@ -133,6 +112,11 @@ class DocumentUploadService:
                 )
 
         return [doc.document_id for doc in documents], ocr_job.ocr_job_id
+
+    async def _verify_visit_access(self, *, visit_id: int, hospital_id: int) -> None:
+        exists = await Visit.filter(visit_id=visit_id, hospital_id=hospital_id).exists()
+        if not exists:
+            raise ApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "진료 건을 찾을 수 없습니다.")
 
     async def _read_and_validate(self, files: list[UploadFile]) -> list[tuple[bytes, str]]:
         if not files:
