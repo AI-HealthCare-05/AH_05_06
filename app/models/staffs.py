@@ -59,7 +59,8 @@ class Staff(models.Model):
         on_delete=OnDelete.RESTRICT,
         source_field="hospital_id",
     )
-    #: Tortoise 가 만들어 주는 FK 컬럼. 선언해 두지 않으면 타입 검사가 못 본다.
+    # Tortoise 가 `source_field` 로 만들어 주는 칸이라 런타임에는 있지만
+    # 검사기 눈에는 안 보인다. 병원 울타리를 이 값으로 치므로 적어 둔다.
     hospital_id: int
 
     # 로그인은 병원을 알기 전에 일어난다. 그래서 아이디는 병원 안이 아니라
