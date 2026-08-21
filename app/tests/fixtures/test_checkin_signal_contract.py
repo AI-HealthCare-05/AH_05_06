@@ -137,20 +137,41 @@ class TestTheScreenActuallySignals:
         """
         assert ".catch(" in _send_signal_body(), "신호 실패를 삼키지 않으면 화면이 깨진다"
 
-    def test_the_screen_never_signals_a_quiet_answer(self) -> None:
-        """계약 §4 의 1번 — 「가끔 놓쳐요」는 어디서도 알림이 되지 않는다.
+    def test_the_screen_sends_every_pick_so_a_change_can_supersede(self) -> None:
+        """계약 §4 의 1번 — 화면이 알림 대상만 걸러 보내면 **철회가 안 된다.**
 
-        화면이 걸러 내고, 목업 서버도 `NOT_A_SIGNAL` 로 막는다. 두 겹인
-        것은 화면이 계약을 잘못 읽어도 환자에게 연락이 가지 않게 하려는
-        것이다.
+        「불편해서 중단했어요」를 골랐다가 「잘 먹고 있어요」로 바꿔도 뒤엣것을
+        안 보내면 서버에는 중단 신호가 남는다. 저장하지 않고 창을 닫으면 의원이
+        없는 문제를 쫓는다 — **저장을 안 했으니 옆에 놓고 볼 답도 없다.**
+        저장하지 않는 환자가 이 계약이 존재하는 이유다.
         """
-        assert "notifyFor(" in _send_signal_body(), "화면이 알림 대상을 가리지 않는다 — 「가끔 놓쳐요」에도 연락이 간다"
-        assert "NOT_A_SIGNAL" in CHECKIN_API_JS.read_text(encoding="utf-8"), "목업 서버가 조용한 답을 막지 않는다"
+        assert "notifyFor(" not in _send_signal_body(), (
+            "화면이 알림 대상을 스스로 걸러 낸다 — 답을 바꿔도 앞 신호가 안 덮인다"
+        )
 
-    def test_the_same_answer_signals_only_once(self) -> None:
-        """계약 §4 의 2번 — 같은 `(checkin, answer_key)` 는 한 번만.
+    def test_the_quiet_answer_is_silenced_by_the_server_not_the_screen(self) -> None:
+        """조용한 답도 서버까지는 간다. **기록은 남고 연락만 안 간다.**
+
+        목업이 `notify` 를 내려주는 것이 그 판단 자리다. 화면이 아니라
+        여기서 갈려야 「가끔 놓쳐요」로 바꾼 것도 앞 신호를 덮을 수 있다.
+        """
+        source = CHECKIN_API_JS.read_text(encoding="utf-8")
+        block = source[source.index("/\\/signals$/") :]
+        block = block[: block.index("\n      }")]
+        assert "notify:" in block, "목업이 알림 여부를 내려주지 않는다 — 판단이 화면에 남는다"
+        assert "NOT_A_SIGNAL" not in block, "목업이 조용한 답을 거부한다 — 그러면 답을 바꿔도 안 덮인다"
+
+    def test_pressing_the_same_answer_twice_signals_once(self) -> None:
+        """계약 §4 의 2번 — 연달아 같은 답을 다시 눌러도 보내지 않는다.
 
         `P7-2`~`P7-5` 는 펼침 화면이라 환자가 설명을 **읽어 보려고** 눌렀다
         되돌릴 수 있다. 누를 때마다 알리면 의료진 화면이 같은 환자로 찬다.
+
+        **다만 「연달아」다.** 다른 답을 거쳐 돌아온 것은 새 신호여야 한다 —
+        그러지 않으면 마지막 신호가 실제로 고른 답과 어긋난다.
         """
-        assert "signalled[key]" in _send_signal_body(), "같은 답을 두 번 눌러도 두 번 알린다"
+        body = _send_signal_body()
+        assert "key === lastSignal" in body, "같은 답을 연달아 눌러도 두 번 알린다"
+        assert "signalled[key]" not in body, (
+            "답마다 한 번씩만 보낸다 — 중단→복용중→중단 이면 마지막 신호가 「복용중」으로 남는다"
+        )

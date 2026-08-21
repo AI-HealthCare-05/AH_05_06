@@ -129,7 +129,7 @@ function mockCheckin() {
   };
 }
 
-/* 이번 화면에서 이미 보낸 신호. 서버의 `(checkin, answer_key)` 유일 규칙을 흉내 낸다. */
+/* 이번 화면에서 쌓인 신호. append-only 라 지우지 않는다 — **마지막 것이 지금 답이다.** */
 var MOCK_SIGNALS = [];
 
 function mockCheckinRequest(path, options) {
@@ -140,18 +140,21 @@ function mockCheckinRequest(path, options) {
         // 링크는 3일 뒤 닫힌다(P8 노트). 만료는 오류가 아니라 안내다.
         return reject(new ApiError("LINK_EXPIRED", 410, {}));
       }
-      /* 신호는 저장보다 먼저 온다. 같은 답으로 두 번 눌러도 한 번만 만든다 —
-         환자가 설명을 읽으려고 왔다 갔다 눌러도 의료진에게 두 번 뜨지 않는다. */
+      /* 신호는 저장보다 먼저 온다. 화면은 **고른 것을 그대로** 보내고, 알릴지는
+         여기서 정한다 — 그래야 답을 바꿨을 때 앞 신호가 덮인다. */
       if (options.method === "POST" && /\/signals$/.test(path)) {
         var key = body.answer_key;
-        var info = mockCheckin().answers[key];
-        if (!info || !info.notify) {
-          // 알림이 아닌 답(`missing`)은 애초에 화면이 부르지 않는다. 서버도 막는다.
-          return reject(new ApiError("NOT_A_SIGNAL", 400, {}));
+        if (MEDICATION_ANSWERS.indexOf(key) === -1) {
+          return reject(new ApiError("UNKNOWN_ANSWER", 400, {}));
         }
-        var seen = MOCK_SIGNALS.indexOf(key) !== -1;
-        if (!seen) MOCK_SIGNALS.push(key);
-        return resolve({ signal_id: 8800 + MOCK_SIGNALS.length, answer_key: key, deduped: seen });
+        var info = mockCheckin().answers[key];
+        MOCK_SIGNALS.push(key);
+        return resolve({
+          signal_id: 8800 + MOCK_SIGNALS.length,
+          answer_key: key,
+          // `missing`(가끔 놓쳐요)은 여기서 조용해진다. 기록은 남고 연락은 안 간다.
+          notify: !!(info && info.notify),
+        });
       }
 
       if (options.method === "POST") {
