@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.core.error_handlers import register_error_handlers
 from app.models.ocr import OcrDocumentType, OcrJobStatus
-from app.models.users import User
+from app.models.staffs import Staff
 from app.ocr.api import get_ocr_service, ocr_router
 from app.ocr.errors import OcrApiError
 from app.ocr.schemas import (
@@ -21,7 +21,7 @@ from app.ocr.schemas import (
 from app.ocr.security import OcrActor, get_ocr_actor
 
 NOW = datetime(2026, 8, 19, 8, 0, tzinfo=UTC)
-STAFF = OcrActor(user_id=17, hospital_id=3, roles=frozenset({"staff"}))
+STAFF = OcrActor(staff_id=17, hospital_id=3, roles=frozenset({"staff"}))
 
 
 class FakeOcrService:
@@ -99,9 +99,9 @@ class FakeOcrService:
             confidence=0.83,
             version=request.base_version + 1,
             is_confirmed=request.confirm,
-            modified_by=actor.user_id,
+            modified_by=actor.staff_id,
             modified_at=NOW,
-            confirmed_by=actor.user_id if request.confirm else None,
+            confirmed_by=actor.staff_id if request.confirm else None,
             confirmed_at=NOW if request.confirm else None,
         )
 
@@ -175,7 +175,7 @@ def test_field_update_keeps_version_and_audit_actor(api: tuple[TestClient, FakeO
 
     assert response.status_code == 200
     assert response.json()["version"] == 3
-    assert response.json()["confirmed_by"] == STAFF.user_id
+    assert response.json()["confirmed_by"] == STAFF.staff_id
     assert fake.updated is not None
     assert fake.updated[2] == STAFF
 
@@ -214,27 +214,26 @@ def test_field_update_rejects_empty_or_ambiguous_value(api: tuple[TestClient, Fa
 
 
 @pytest.mark.asyncio
-async def test_admin_only_and_missing_hospital_are_denied_by_default() -> None:
-    admin_only = SimpleNamespace(id=1, hospital_id=3, roles=["admin"])
-    missing_hospital = SimpleNamespace(id=2, roles=["staff"])
+async def test_admin_alone_is_denied() -> None:
+    """`admin` 은 역할이 아니라 권한이다 — 혼자서는 진료 화면을 열지 못한다."""
+    admin_only = SimpleNamespace(staff_id=1, hospital_id=3, roles=["admin"])
 
     with pytest.raises(OcrApiError, match="OCR 접근 권한") as admin_error:
-        await get_ocr_actor(cast(User, admin_only))
-    with pytest.raises(OcrApiError, match="OCR 접근 권한") as hospital_error:
-        await get_ocr_actor(cast(User, missing_hospital))
+        await get_ocr_actor(cast(Staff, admin_only))
 
     assert admin_error.value.status_code == 403
-    assert hospital_error.value.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_staff_or_doctor_actor_is_allowed() -> None:
     staff_user = SimpleNamespace(staff_id=3, hospital_id=9, roles=["staff"])
-    doctor_user = SimpleNamespace(id=4, hospital_id=9, roles=["doctor", "admin"])
+    doctor_user = SimpleNamespace(staff_id=4, hospital_id=9, roles=["doctor", "admin"])
 
-    staff = await get_ocr_actor(cast(User, staff_user))
-    doctor = await get_ocr_actor(cast(User, doctor_user))
+    staff = await get_ocr_actor(cast(Staff, staff_user))
+    doctor = await get_ocr_actor(cast(Staff, doctor_user))
 
     assert staff.roles == frozenset({"staff"})
-    assert staff.user_id == 3
+    assert staff.staff_id == 3
+    assert staff.hospital_id == 9
     assert doctor.roles == frozenset({"doctor", "admin"})
+    assert doctor.staff_id == 4
