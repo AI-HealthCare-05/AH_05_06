@@ -74,7 +74,7 @@
 | 2 | 환자·진료 등록 | `patients.html` | `POST /patients`, `POST /patients/{patient_id}/visits` | (신규 생성) | `patient_id`, `visit_id` | 스탭/의사 | 이후 모든 단계의 FK | **구현완료** | — |
 | 3 | 문서 업로드 | `patients.html`(upload) | `POST /front-desk/visits/{visit_id}/documents` | `visit_id` | `document_id`(`medical_document`) | 스탭 | 4단계 소유권 검증 대상 | **구현완료** | — |
 | 4 | OCR 작업 생성 | `patients.html`(upload) | `POST /documents/{document_id}/ocr` | `document_id`, `visit_id` | `ocr_job_id`(`PROCESSING`) | 스탭 | 판독을 끝낼 워커 | **확인 필요** — 작업 생성은 구현완료, 완료 처리자 없음(§6) | `KEY-149` |
-| 4' | OCR 수정·확정 | `ocr-review.html` | `GET/PATCH /ocr/jobs/{ocr_job_id}`, `PATCH /ocr/fields/{ocr_field_id}` | `ocr_job_id`, `ocr_field_id` | `ocr_field.corrected_value`, `is_confirmed` | 스탭/의사 | 5단계 안내 생성 입력(게이트 A) | 코드 **구현완료** / 입력 데이터 **확인 필요** | `KEY-149` |
+| 4' | OCR 수정·확정 | `ocr-review.html` | `GET /ocr/jobs/{ocr_job_id}`, `/fields`, `/result`, `PATCH /ocr/fields/{ocr_field_id}` | `ocr_job_id`, `ocr_field_id` | `ocr_field.corrected_value`, `is_confirmed`(`confirm: bool` 플래그) | 스탭/의사 | 5단계 안내 생성 입력(게이트 A) | 코드 **구현완료** / 입력 데이터 **확인 필요** | `KEY-149` |
 | 5 | 안내 생성 | — | 없음 | `visit_id`, 확정 `ocr_field` 값들 | `guide_document_id`, `guide_section` | (설계상 서버) | 6단계 검토·승인 대상 | **미구현**(§6) | `KEY-150` |
 | 6 | 의사 승인·반려 | `doctor.html` | `POST /visits/{visit_id}/guide/approve`, `/return` | `visit_id` | `guide_document.status→SCHEDULED_TO_SEND`, `guide_event` | 의사 | 7단계 발송 대상(게이트 B) | **구현완료** — 입력 행이 있으면 정상 동작 | — |
 | 7 | 환자 링크·OTP 발급/조회 | `guide.html` | 없음 | `guide_document_id` | (설계) 링크 토큰, `patient_session` | (설계) | 8단계 인증 컨텍스트 | **미구현** | `KEY-90` |
