@@ -12,7 +12,7 @@
  * `?mock=0` 이 안 됐습니다. 정본은 `app/dtos/guides.py` 입니다.
  *
  * 상태 이름은 이미 얼어 있는 것을 그대로 씁니다 —
- * `docs/contracts/patient-visit-api-v1.md` §6 의 `APPROVAL_PENDING`(승인 요청) ·
+ * `docs/api/hospital.md` §6 의 `APPROVAL_PENDING`(승인 요청) ·
  * `APPROVAL_RETURNED`(보완). 화면이 새 이름을 만들지 않습니다.
  */
 

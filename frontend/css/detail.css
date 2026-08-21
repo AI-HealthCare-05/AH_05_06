@@ -52,7 +52,7 @@
   padding: 0;
   font: inherit;
   font-size: 13px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   background: none;
   border: 0;
   cursor: pointer;
@@ -77,9 +77,14 @@
 }
 
 /* 아직 오지 않은 단계. 흐리게 두되 지우지는 않는다 — 앞으로 무엇이 남았는지가
-   보여야 「여기서 끝인가」를 묻지 않는다. */
+   보여야 「여기서 끝인가」를 묻지 않는다.
+
+   #9aa0a7 은 이 바탕(#f4f5f6)에서 대비 2.42 라 읽히지 않았다. 밝기로는 더
+   내릴 여지가 없어서, 단계 셋을 토큰 사다리로 갈랐다 — 지금 단계 --ink(15.15)
+   · 갈 수 있는 단계 --ink-2(5.82) · 아직인 단계 --ink-3(4.85). 셋 다 AA 를
+   넘고 서로 구별된다 (KEY-106). */
 .tab--later {
-  color: #9aa0a7;
+  color: var(--ink-3);
   cursor: default;
 }
 
@@ -162,7 +167,7 @@
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .past {

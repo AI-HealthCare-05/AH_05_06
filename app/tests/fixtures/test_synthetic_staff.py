@@ -237,7 +237,7 @@ class TestReservedAccounts:
     """이름을 대고 불러야만 오는 계정들.
 
     `lock01` 은 로그인 실패 카운터가 **입력된 아이디 문자열**에 붙어서
-    (`docs/auth-contract.md` 3절), 다른 시험과 나눠 쓰면 순서에 따라 결과가 달라진다.
+    (`docs/api/hospital.md` 3절), 다른 시험과 나눠 쓰면 순서에 따라 결과가 달라진다.
     `lastadmin01` 은 「마지막 관리자」 시나리오 전용이다.
     """
 
@@ -307,7 +307,7 @@ class TestLookups:
 class TestHospitalIsolation:
     """의원이 둘 있어야 「타 병원 자료가 안 보인다」를 검사할 수 있다.
 
-    `docs/contracts/patient-visit-api-v1.md` 5절 — 타 병원 리소스는 `403` 이
+    `docs/api/hospital.md` 환자·진료 5절 — 타 병원 리소스는 `403` 이
     아니라 `404` 다. 존재 여부 자체를 감춘다. 그걸 확인하려면 **남의 의원
     사람**이 있어야 하는데, 예전에는 이 픽스처에 의원이 하나뿐이었다.
     """

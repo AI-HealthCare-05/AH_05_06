@@ -14,7 +14,7 @@
 
 /* 끌어다 놓는 중 — 손을 놓아도 되는 자리인지 알려주는 것뿐이다 */
 .drop.is-over {
-  background: #f7f9fb;
+  background: var(--bg);
   border-color: var(--accent);
 }
 
@@ -52,7 +52,7 @@
   color: var(--ink);
   background: var(--card);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -73,7 +73,7 @@
   padding: var(--s-12);
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .kind__name {
@@ -111,7 +111,7 @@
   color: var(--warn);
   background: var(--warn-bg);
   border: 1px solid var(--warn-line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 /* ── 올린 것 ────────────────────────────────────────── */
@@ -133,7 +133,7 @@
   padding: var(--s-12);
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .file--failed {
@@ -149,7 +149,7 @@
   font-size: 17px;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -187,7 +187,7 @@
   height: 4px;
   margin-top: 6px;
   background: var(--line);
-  border-radius: 2px;
+  border-radius: var(--radius-pill); /* 높이 4px — 절반으로 잘려 알약이 된다 */
   overflow: hidden;
 }
 
@@ -207,7 +207,7 @@
   color: var(--ink-2);
   background: var(--card);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .file__act {
@@ -219,7 +219,7 @@
   color: var(--ink-2);
   background: none;
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -254,7 +254,7 @@
   color: var(--ink);
   background: var(--card);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -268,10 +268,10 @@
   font: inherit;
   font-size: 15px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--accent);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -280,20 +280,61 @@
 }
 
 .button-primary:disabled {
-  background: #9aa0a7;
+  /* 흰 글자에 #9aa0a7 이면 대비 2.64 로 안 읽혔다. 「지금은 왜 안 되는가」를
+     말해 주는 버튼이라 읽히지 않으면 존재 이유가 없다.
+
+     옅은 채움 + 흐린 글자도 재 봤는데, 옆에 선 흰 고스트 버튼(「나중에
+     업로드」)과 구별되지 않았다 — 눌리는 것과 안 눌리는 것이 같아 보이면
+     더 나쁘다. 중간 회색으로 두어 셋을 가른다.
+
+       눌리는 주 버튼   near-black  흰 글자  13.50
+       잠긴 주 버튼     중간 회색    흰 글자   5.29
+       고스트 버튼      흰색        검은 글자 13.50 + 테두리
+
+     `--disabled` 라는 이름은 `#49`(KEY-104)가 붙였다. 이름은 그쪽이 맞고
+     값은 여기서 잰 것이 맞아, **이름을 쓰고 토큰 값을 고쳤다.** */
+  background: var(--disabled);
   cursor: default;
 }
 
+/* 골격(.chip · .row · .icon-button · .topbar__tab · .list__search)의 초점은
+   shell.css 로 옮겼다 — 그 요소들은 shell.css 가 그리는데 초점만 여기 있어서,
+   upload.css 를 안 싣는 화면(ocr-review · doctor)에서는 브라우저 기본 링으로
+   떨어졌다. 같은 줄이 화면마다 다르게 보이던 자리다. */
 .button-ghost:focus-visible,
 .button-primary:focus-visible,
 .drop__pick:focus-visible,
 .file__act:focus-visible,
-.file__kind:focus-visible,
-.chip:focus-visible,
-.row:focus-visible,
-.icon-button:focus-visible,
-.topbar__tab:focus-visible,
-.list__search:focus-visible {
+.file__kind:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ── 눌렀다는 신호 ────────────────────────────────── */
+/* `.file__kind` 는 여기 없다. `<select>` 라 눌림 반응이 없고, 배경·테두리를
+   바꾸는 규칙이 코드베이스 어디에도 없다 — 목록에 넣어 봐야 아무것도
+   애니메이션하지 않는다. 눌림 반응을 주려고 `:active` 를 새로 만들지도
+   않았다. 드롭다운은 눌러서 열리는 것이지 눌린 티를 내는 것이 아니다. */
+.button-primary,
+.button-ghost,
+.drop__pick,
+.file__act {
+  transition: background-color var(--motion) var(--ease);
+}
+
+/* 끌어다 놓는 자리만 배경과 테두리를 함께 바꾼다(`.drop.is-over`). */
+.drop {
+  transition:
+    background-color var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
+}
+
+.button-primary:active:not(:disabled) {
+  background: var(--accent-active);
+}
+
+.button-ghost:active,
+.drop__pick:active,
+.file__act:active {
+  background: var(--line);
 }

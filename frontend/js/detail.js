@@ -310,7 +310,7 @@
   /* 서버가 코드로 답한다. 화면 문구는 코드마다 다르다 — 사용자가 해야 할 일이
      다르기 때문이다(다시 입력할 것인가, 사람을 부를 것인가). */
   function messageFor(error) {
-    if (!error) return "저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+    if (!error) return "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
     if (error.status === 403) return "이 환자를 수정할 권한이 없습니다 — 스탭 또는 의사 계정으로 로그인해 주세요.";
     if (error.status === 404) return "이 환자를 찾을 수 없습니다. 목록을 새로 고쳐 주세요.";
     if (error.code === "EMPTY_UPDATE_FIELDS") return "바뀐 내용이 없습니다.";
@@ -323,7 +323,7 @@
     if (error.code === "VISIT_LOCKED")
       return "안내문 작업이 시작되어 담당을 바꿀 수 없습니다 — 관리자에게 알려 주세요.";
     if (error.code === "INVALID_REQUEST") return "입력한 값을 다시 확인해 주세요.";
-    return "저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+    return "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
   }
 
   /* 바뀐 것만 보낸다 — 계약의 PATCH 는 부분 수정이고, 안 바뀐 값을 같이 보내면

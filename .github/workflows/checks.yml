@@ -20,6 +20,8 @@ on:
       - 'fix/**'
       - 'docs/**'
       - 'test/**'
+      - 'chore/**'
+      - 'refactor/**'
 
 jobs:
   lint:
@@ -50,7 +52,44 @@ jobs:
         run: uv run ruff format . --check
 
       - name: Run Mypy (Type Check)
-        run: uv run mypy app
+        # `app` 만 주면 `ai_worker/` 7파일이 통째로 빠진다 — docker compose 가 띄우는
+        # 정식 서비스인데 타입 검사를 한 번도 안 받게 된다. ruff 는 이미 `.` 이다.
+        run: uv run mypy . --explicit-package-bases
+
+      # 프런트는 빌드가 없어서 `node --test` 하나로 끝난다 — package.json 도
+      # node_modules 도 잠금파일도 없다. 새 의존성 없이 계약 규칙을 붙잡는다.
+      #
+      # 이번 스프린트에 프런트에서 나온 결함 다섯이 **전부 사람이 눌러서**
+      # 나왔다. 사람이 브라우저를 열어야만 드러나는 상태를 그대로 두면
+      # 다음 스프린트에도 같은 종류가 같은 방식으로 나온다.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Frontend Contract Tests
+        # 러너 기본값은 `TZ=UTC` 다. 그대로 두면 현지 getter 와 UTC getter 가
+        # 같은 값을 내서 **「오늘 날짜는 현지 기준이다」 검사가 아무것도 확인하지
+        # 못한다** — 이희진 님이 `#64` 리뷰에서 짚어 주셨다. 병원 시간대로 고정한다.
+        env:
+          TZ: Asia/Seoul
+        # 폴더가 아니라 **파일들**을 넘긴다. Node 22 부터 `--test` 의 위치 인자를
+        # 훑을 폴더가 아니라 불러올 모듈로 보기 때문이다 — 폴더를 주면
+        # `MODULE_NOT_FOUND` 로 죽는다. CI 는 20 으로 고정돼 있어 안 걸리지만
+        # 최신 Node 를 쓰는 로컬에서는 검사를 아예 못 돌린다.
+        #
+        #                              node:20  node:22  node:24
+        #   --test frontend/tests/       통과     ✖       ✖
+        #   --test frontend/tests        통과     ✖       ✖
+        #   --test frontend/tests/*.test.js  통과   통과    통과
+        #
+        # 다만 글롭이 **아무것도 못 찾으면 종료코드가 0** 이다. 검사 파일 이름이
+        # 바뀌거나 사라진 날 CI 가 조용히 초록불이 된다 — node 자체 글롭
+        # (`"**/*.test.js"`) 도, 인자 없는 자동탐색도 마찬가지다. 이 PR 이
+        # 막으려는 것이 바로 「검사가 헛도는데 초록불인 상태」라 여기서 막는다.
+        run: |
+          shopt -s failglob
+          node --test frontend/tests/*.test.js
 
   test:
     runs-on: ubuntu-latest
@@ -58,12 +97,27 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: pw1234
+          # 잡 안에서만 사는 일회용 컨테이너다. 비밀이 아니라는 것을
+          # 이름으로 못박는다 — 예전 값은 저장소 이력에 새어 나간 것이었다.
+          MYSQL_ROOT_PASSWORD: ci-throwaway-not-a-secret
           MYSQL_DATABASE: ai_health
         ports:
           - 3306:3306
         options: >-
           --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      # 세션은 Redis 에 산다(KEY-73). 이것이 없으면 **토큰을 들고 앱을 지나는**
+      # 검사가 전부 죽는다 — 로그인 자체가 아니라 그 뒤 모든 보호 경로다.
+      # 지금까지 안 걸린 것은 auth 검사가 `FakeRedis` 로 우회했기 때문인데,
+      # 그 우회가 실제 동작을 가린 적이 있다(`#37` 의 TTL 건). 진짜를 띄운다.
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -96,6 +150,13 @@ jobs:
 
       - name: Run Tests with Coverage
         if: steps.check_tests.outputs.has_tests == 'true'
+        # `DB_PASSWORD` 는 코드 기본값이 없다(KEY-110). 위 서비스 컨테이너와
+        # 같은 값을 여기서 명시한다 — 기본값에 기대면 그 값이 곧 공유 비밀이 된다.
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: ci-throwaway-not-a-secret
+          DB_NAME: ai_health
         run: |
           uv run coverage run -m pytest app
           uv run coverage report -m
