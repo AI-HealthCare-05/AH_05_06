@@ -372,6 +372,29 @@ function mockPatch(fieldId, body) {
     return field;
   }
 
+  /* **보낼 값이 없으면 거절한다.** 서버의 `require_one_value_source`
+     (`app/ocr/schemas.py`)가 「수정값 또는 후보를 선택해 주세요」로 막는 자리다.
+
+     목업만 이것이 없어서, 값 없는 요청이 오면 `String(undefined)` 가 **문자열
+     `"undefined"` 를 필드 값으로 저장**했다. `mockFieldById()` 가 저장소의 원본
+     참조를 주므로 재조회해도 남는다 — 검사값 화면에서 가장 나쁜 종류의 실패다
+     (이희진 님 `#81` 리뷰).
+
+     진짜 서버로는 `JSON.stringify` 가 `undefined` 키를 버려 `422` 로 거절되는데,
+     목업만 조용히 삼켰다. **틀리는 방식이 다르면 목업으로 잡을 수 없다.** */
+  if (
+    (body.corrected_value === undefined || body.corrected_value === null) &&
+    (body.candidate_id === undefined || body.candidate_id === null) &&
+    !body.confirm
+  ) {
+    return new ApiError("INVALID_REQUEST", 400, {});
+  }
+
+  /* **값이 왔을 때만 값을 건드린다.** 서버가 그렇게 한다
+     (`app/ocr/service.py` — `if request.corrected_value is not None or
+     selected_candidate is not None`). 예전에는 `else` 가 무조건 돌아서,
+     값 없는 요청이 오면 `String(undefined)` 가 값 자리에 앉았다. */
+  var changed = false;
   if (body.candidate_id !== undefined && body.candidate_id !== null) {
     var picked = null;
     field.candidates.forEach(function (item) {
@@ -380,18 +403,24 @@ function mockPatch(fieldId, body) {
     });
     if (!picked) return new ApiError("INVALID_CANDIDATE", 400, {});
     field.corrected_value = picked.value;
-  } else {
+    changed = true;
+  } else if (body.corrected_value !== undefined && body.corrected_value !== null) {
     field.corrected_value = String(body.corrected_value).trim();
+    changed = true;
   }
 
-  field.value = field.corrected_value;
+  if (changed) {
+    field.value = field.corrected_value;
+    field.modified_by = 101;
+    field.modified_at = "2026-08-13T10:42:00+09:00";
+  }
   field.version += 1;
-  field.modified_by = 101;
-  field.modified_at = "2026-08-13T10:42:00+09:00";
   if (body.confirm) {
     field.is_confirmed = true;
     field.confirmed_by = 101;
-    field.confirmed_at = field.modified_at;
+    /* 값을 안 바꾸고 확정만 하면 `modified_at` 은 예전 값(또는 없음)이다.
+       서버는 확정 시각을 따로 찍는다 — `confirmed_at = changed_at`. */
+    field.confirmed_at = "2026-08-13T10:42:00+09:00";
   }
   return field;
 }

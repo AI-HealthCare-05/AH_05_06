@@ -518,7 +518,7 @@
         if (seq !== loadSeq) return;
         delete saving[fieldId];
         var code = error && error.code;
-        if (code === "VERSION_CONFLICT") return onConflict(fieldId, mine);
+        if (code === "VERSION_CONFLICT") return onConflict(fieldId, mine, body);
         failed[fieldId] = code || "unknown";
         redraw();
       });
@@ -526,7 +526,11 @@
 
   /* 409 를 받으면 서버의 지금 값을 다시 읽어 와 내 값과 나란히 놓는다.
      계약에 단건 조회(GET /ocr/fields/{id})가 없어 목록을 다시 부른다. */
-  function onConflict(fieldId, mine) {
+  /* `body` 를 함께 들고 있는 이유 — 「내 값으로 덮기」가 **원래 보낸 것과 같은
+     종류**로 다시 보내야 하기 때문이다. 예전에는 무조건 `corrected_value` 로
+     다시 보냈는데, 「이번 미시행」처럼 값이 아니라 상태를 바꾸는 요청이 충돌하면
+     보낼 값이 없어 `undefined` 가 그대로 나갔다(이희진 님 `#81` 리뷰). */
+  function onConflict(fieldId, mine, body) {
     var seq = loadSeq;
     ocrApi
       .fields(jobId)
@@ -541,7 +545,7 @@
           return redraw();
         }
         replaceField(theirs);
-        conflict[fieldId] = { mine: mine, theirs: theirs.value };
+        conflict[fieldId] = { mine: mine, theirs: theirs.value, body: body };
         delete editing[fieldId];
         redraw();
       })
@@ -647,13 +651,13 @@
     if (skip) {
       var skipId = Number(skip.getAttribute("data-skip"));
       delete editing[skipId]; // 열어 두고 눌렀으면 그 칸은 닫는다
-      saveField(skipId, { field_status: "NOT_PERFORMED" });
+      saveField(skipId, { field_status: "NOT_PERFORMED" }, "이번 미시행");
       return;
     }
 
     var unskip = target.closest("[data-unskip]");
     if (unskip) {
-      saveField(Number(unskip.getAttribute("data-unskip")), { field_status: "READ" });
+      saveField(Number(unskip.getAttribute("data-unskip")), { field_status: "READ" }, "되돌리기");
       return;
     }
 
@@ -713,9 +717,12 @@
     var force = target.closest("[data-force]");
     if (force) {
       var forceId = Number(force.getAttribute("data-force"));
-      var mine = conflict[forceId] ? conflict[forceId].mine : "";
+      var clash = conflict[forceId];
+      /* 충돌 기록이 없으면 보낼 것도 없다. 예전에는 이때 `corrected_value: ""`
+         가 나갔다 — 빈 값으로 덮어쓰는 셈이다. */
+      if (!clash) return;
       delete conflict[forceId];
-      return saveField(forceId, { corrected_value: mine }, mine);
+      return saveField(forceId, clash.body, clash.mine);
     }
   });
 
