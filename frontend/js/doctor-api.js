@@ -197,6 +197,20 @@ function mockDoctorRequest(path, options) {
       if (options.method === "PATCH") {
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
         if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+        /* **잠긴 섹션은 목업도 막는다.** 🚨 응급 문장은 식약처 정보를 근거로
+           미리 써 둔 것이라 사람이 고칠 자리가 아니다 — 서버가
+           `SECTION_LOCKED` 409 로 막는다(`app/services/guides.py`).
+
+           목업이 서버보다 헐거우면 **화면 버그를 목업으로는 못 잡는다.**
+           잠긴 섹션에 [수정]이 열리는 회귀가 나도 목업에서는 저장까지
+           성공해 버린다 (이희진 님 `#76` 리뷰). */
+        var target = null;
+        mockGuide(visitId).sections.forEach(function (item) {
+          if (item.key === sec[2]) target = item;
+        });
+        if (target && target.locked) return reject(new ApiError("SECTION_LOCKED", 409, {}));
+
         /* 서버는 고친 그 섹션 하나만 돌려준다(`SectionResponse`). */
         return resolve({ key: sec[2], body: String(body.body || ""), edited: true, locked: false, warn: null });
       }
