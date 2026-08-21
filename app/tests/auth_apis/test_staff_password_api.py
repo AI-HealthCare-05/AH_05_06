@@ -1,4 +1,4 @@
-"""`/auth/me` 와 비밀번호 변경 — KEY-73 (`docs/auth-contract.md` 2·4·5절).
+"""`/auth/me` 와 비밀번호 변경 — KEY-73 (`docs/api/hospital.md` 2·4·5절).
 
 비밀번호 변경은 **두 경우가 요청 조건이 다르고, 어느 쪽인지는 서버가 정한다.**
 요청이 정하게 두면 최초 로그인이 아닌 사람도 `current_password` 를 빼고 보내면

@@ -12,7 +12,7 @@
  * 붙일 때 맞춰야 할 것을 PR 본문에 적었습니다.
  *
  * 상태 이름은 이미 얼어 있는 것을 그대로 씁니다 —
- * `docs/contracts/patient-visit-api-v1.md` §6 의 `APPROVAL_PENDING`(승인 요청) ·
+ * `docs/api/hospital.md` §6 의 `APPROVAL_PENDING`(승인 요청) ·
  * `APPROVAL_RETURNED`(보완). 화면이 새 이름을 만들지 않습니다.
  */
 
