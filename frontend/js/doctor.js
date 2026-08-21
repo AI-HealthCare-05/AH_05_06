@@ -335,8 +335,13 @@
     var mine = ++loadSeq;
 
     /* 앞 환자의 것을 먼저 거둔다. `visit` 만 바뀌고 나머지가 남아 있는 순간이
-       생기면 안 된다 — 그 틈이 곧 「읽은 것과 누른 것이 다른」 구간이다. */
+       생기면 안 된다 — 그 틈이 곧 「읽은 것과 누른 것이 다른」 구간이다.
+
+       창도 함께 닫는다. 반려 사유 창이 열린 채로 환자를 바꾸면, 앞 환자에게
+       쓰던 사유가 뒷 환자의 이름 아래 남는다. 이름·버튼을 거두는 것과 같은
+       이유다 — 화면이 말하는 사람과 눌렀을 때 가는 사람이 달라진다. */
     guide = null;
+    closeModal();
     renderHead();
     renderRole();
 
@@ -435,7 +440,15 @@
           );
         })
         .catch(function () {
-          target.disabled = false;
+          /* 승인 쪽과 같은 이유다(이희진 님 `f184e4f`) — 응답이 실패로 돌아오는
+             사이 다른 진료로 넘어가 있을 수 있다.
+
+             다만 여기 `target` 은 **사유 창 안의 버튼**이라 `renderRole()` 이
+             닿지 않는다. 그래서 「되돌리려던 그 진료가 아직 화면에 있을 때만」
+             되살린다. 넘어갔으면 잠긴 채로 두고, `load()` 가 창을 닫는다. */
+          if (visit && returningId === visit.visit_id) {
+            target.disabled = false;
+          }
           el("reason-error").textContent = "되돌리지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
           el("reason-error").hidden = false;
         });
