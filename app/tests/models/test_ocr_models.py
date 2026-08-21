@@ -38,7 +38,7 @@ def load_migrations() -> list[ModuleType]:
         migration_dir.glob("*_add_ocr_*.py"),
         key=lambda path: int(path.name.split("_", maxsplit=1)[0]),
     )
-    assert len(migration_paths) == 5
+    assert len(migration_paths) == 7
     return [import_py_file(path) for path in migration_paths]
 
 
@@ -175,7 +175,11 @@ def test_models_are_registered_for_aerich() -> None:
 @pytest.mark.asyncio
 async def test_migration_has_safe_relations_and_rollback_order() -> None:
     migrations = load_migrations()
-    migration_states = [decompress_dict(migration.MODELS_STATE) for migration in migrations]
+    # MODELS_STATE는 aerich가 DB 연결 상태에서 자동 생성한다.
+    # ALTER TABLE 방식의 마이그레이션(10·11)은 로컬 DB 없이 생성되어 MODELS_STATE가 없으므로 건너뛴다.
+    migration_states = [
+        decompress_dict(s) for migration in migrations if (s := getattr(migration, "MODELS_STATE", None))
+    ]
     upgrade_sql = "\n".join([await migration.upgrade(None) for migration in migrations])
     downgrade_sql = "\n".join([await migration.downgrade(None) for migration in reversed(migrations)])
 
