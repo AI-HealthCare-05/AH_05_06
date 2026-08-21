@@ -133,8 +133,8 @@ test("③ 마지막 신호가 실패해도 저장이 최종 답으로 바로잡�
 
   // 마음을 바꿨지만 그 신호는 못 갔다 — 화면은 조용히 접고 표시를 되돌린다.
   const previous = tracker.lastSent();
-  tracker.next("taking");
-  tracker.failed("taking", previous);
+  const rollback = tracker.next("taking");
+  tracker.failed(rollback, previous);
   assert.equal(tracker.lastSent(), "stopped_side_effect", "실패한 신호가 보낸 것으로 남아 있다");
 
   // 이 시점에 서버의 「지금 답」은 여전히 중단이다.
@@ -285,5 +285,81 @@ test("⑥ 다른 기기에서 고른 나중 답이 앞 기기의 큰 순번에 �
     result.current_answer_key,
     "taking",
     "기기 B 의 나중 답이 기기 A 의 큰 순번에 막혔다 — 지금 답이 중단으로 남는다"
+  );
+});
+
+/* 이희진 님이 짚어 주신 것 A-1.
+   저장은 **환자가 확정한 답**이라 늘 가장 나중이어야 한다. 예전에는 서버가
+   `sequence` 에 고정값(`Number.MAX_SAFE_INTEGER`)을 박아 그것을 표현했는데,
+   그러면 저장을 두 번 했을 때 두 값이 같아진다.
+
+   지금까지 안 깨진 것은 비교가 `from_save` 를 만나면 도착 차례로 새 버려
+   **그 고정값을 아무도 안 읽었기** 때문이다 — 죽은 값이 옳은 것처럼 보이던
+   자리다. 저장이 자기 순번을 들고 오게 고쳤으니, 여기서 그것을 지킨다. */
+test("⑦ 저장을 두 번 하면 뒤엣것이 앞엣것을 덮는다", async () => {
+  const api = loadApi();
+  const device = api.createSignalTracker(undefined, memoryBox(), memoryBox());
+
+  const stamp = (t) => {
+    const s = t.mark();
+    return { client_id: s.clientId, client_session_id: s.session, client_sequence: s.sequence };
+  };
+
+  const first = await api.checkinApi.save("t", { medication: "taking", notify: false, ...stamp(device) });
+  assert.equal(first.signal_answer_key, "taking");
+
+  const second = await api.checkinApi.save("t", {
+    medication: "stopped_side_effect",
+    notify: true,
+    ...stamp(device),
+  });
+  assert.equal(
+    second.signal_answer_key,
+    "stopped_side_effect",
+    "두 번째 저장이 첫 번째를 못 덮었다 — 저장이 확정한 답이 지금 답이 되지 않는다"
+  );
+});
+
+test("⑦-b 저장 순번은 그 기기의 신호보다 뒤다", async () => {
+  const api = loadApi();
+  const device = api.createSignalTracker(undefined, memoryBox(), memoryBox());
+
+  const danger = device.next("stopped_side_effect");
+  await api.checkinApi.signal("t", "stopped_side_effect", danger);
+
+  const mark = device.mark();
+  assert.ok(mark.sequence > danger.sequence, "저장이 신호보다 앞 번호를 받았다");
+
+  const saved = await api.checkinApi.save("t", {
+    medication: "taking",
+    notify: false,
+    client_id: mark.clientId,
+    client_session_id: mark.session,
+    client_sequence: mark.sequence,
+  });
+  assert.equal(saved.signal_answer_key, "taking", "저장이 앞 신호를 못 덮었다");
+});
+
+/* 이희진 님이 짚어 주신 것 B.
+   되돌리기를 **값**으로 판정하면, 늦게 실패한 옛 요청이 그 사이 되살아난
+   같은 값을 지운다. 그 호출이 아직 마지막인지로 판정해야 한다. */
+test("⑧ 늦게 실패한 옛 요청이 그 사이 되살아난 같은 값을 지우지 않는다", async () => {
+  const api = loadApi();
+  const tracker = api.createSignalTracker(undefined, memoryBox(), memoryBox());
+
+  const first = tracker.next("taking"); // 순번 1 — 출발했지만 느리다
+  const beforeSecond = tracker.lastSent();
+  const second = tracker.next("stopped_side_effect"); // 순번 2
+
+  // 2 번이 먼저 실패한다 → 표시는 1 번 답으로 되돌아간다.
+  tracker.failed(second, beforeSecond);
+  assert.equal(tracker.lastSent(), "taking", "즉시 실패가 앞 답으로 안 되돌렸다");
+
+  // 그 뒤 1 번이 늦게 실패한다. **이미 마지막 호출이 아니다.**
+  tracker.failed(first, null);
+  assert.equal(
+    tracker.lastSent(),
+    "taking",
+    "늦게 실패한 옛 요청이 지금 표시를 지웠다 — 값이 아니라 호출로 판정해야 한다"
   );
 });

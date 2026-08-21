@@ -244,7 +244,9 @@
     var stamp = signals.next(key);
     if (!stamp) return; // 연달아 같은 답 — 보내지 않는다
     checkinApi.signal(token, key, stamp).catch(function () {
-      signals.failed(key, previous);
+      /* **값이 아니라 이 호출을 넘긴다.** 늦게 실패한 옛 요청이 그 사이
+         되살아난 같은 값을 지우지 않도록 (`#79` 리뷰). */
+      signals.failed(stamp, previous);
     });
   }
 
@@ -296,6 +298,7 @@
 
     if (event.target.id === "save" && picked) {
       event.target.disabled = true;
+      var saveStamp = signals.mark();
       checkinApi
         .save(token, {
           medication: picked,
@@ -308,6 +311,17 @@
              다만 이건 **저장할 때**다. 와이어프레임은 고르는 즉시 알리라고
              하는데, 그러려면 계약이 하나 더 필요하다 — 아래 주석 참고. */
           notify: notifyFor(picked),
+          /* **저장도 신호와 같은 규칙으로 순번을 받는다.** 예전에는 서버가
+             저장에 고정값(「늘 가장 나중」)을 박았는데, 그러면 저장을 두 번
+             했을 때 둘이 같아져 뒤엣것이 앞엣것을 못 덮는다 — 지금은 도착
+             차례가 받쳐 주고 있었을 뿐이라, 망이 뒤집히면 그대로 어긋난다
+             (이희진 님 `#79` 리뷰). 순번은 **이 호출 시점에** 뗀다.
+
+             답을 접지 않는 `mark()` 를 쓴다. 같은 답을 다시 저장해도 그것은
+             새 저장이다. */
+          client_id: saveStamp.clientId,
+          client_session_id: saveStamp.session,
+          client_sequence: saveStamp.sequence,
         })
         .then(function (result) {
           showOnly(doneHtml(result));

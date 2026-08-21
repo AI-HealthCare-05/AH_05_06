@@ -111,16 +111,17 @@ function createSignalTracker(newId, deviceBox, tabBox) {
      다시 고르는데, 그것을 「연달아 같은 답」으로 접으면 아무 신호도 안 간다. */
   var lastSent = null;
 
+  /* **마지막으로 나간 호출의 순번.** 실패 되돌리기를 값이 아니라 이것으로
+     판정한다 — 아래 `failed()` 주석 참고. */
+  var lastCall = null;
+
   return {
     clientId: clientId,
     session: session,
 
-    next: function (answerKey) {
-      /* **연달아** 같은 답을 다시 눌렀을 때만 접는다. `P7-2`~`P7-5` 는 펼침
-         화면이라 설명을 읽으려고 눌렀다 되돌릴 수 있다. 다만 다른 답을 거쳐
-         돌아온 것은 새 신호다. */
-      if (!answerKey || answerKey === lastSent) return null;
-      lastSent = answerKey;
+    /* 순번 하나를 뗀다. **답을 접지 않는다** — 저장처럼 「무조건 지금이 마지막」
+       이어야 하는 호출이 쓴다. */
+    mark: function () {
       /* 저장소를 매번 다시 읽는다. 다른 탭이 그 사이에 올려 뒀을 수 있다. */
       var shared = Number((device && device.getItem(SIGNAL_SEQUENCE_KEY)) || 0) || 0;
       sequence = Math.max(sequence, shared) + 1;
@@ -128,9 +129,31 @@ function createSignalTracker(newId, deviceBox, tabBox) {
       return { clientId: clientId, session: session, sequence: sequence };
     },
 
-    /* 못 갔으면 되돌린다. 순번은 되돌리지 않는다 — 이미 나간 번호다. */
-    failed: function (answerKey, previous) {
-      if (lastSent === answerKey) lastSent = previous;
+    next: function (answerKey) {
+      /* **연달아** 같은 답을 다시 눌렀을 때만 접는다. `P7-2`~`P7-5` 는 펼침
+         화면이라 설명을 읽으려고 눌렀다 되돌릴 수 있다. 다만 다른 답을 거쳐
+         돌아온 것은 새 신호다. */
+      if (!answerKey || answerKey === lastSent) return null;
+      lastSent = answerKey;
+      var stamp = this.mark();
+      lastCall = stamp.sequence;
+      return stamp;
+    },
+
+    /* 못 갔으면 되돌린다. 순번은 되돌리지 않는다 — 이미 나간 번호다.
+
+       **값이 아니라 그 호출이 아직 마지막인지로 판정한다.** 값으로 보면 늦게
+       실패한 옛 요청이 그 사이 되살아난 같은 값을 지운다 (이희진 님 `#79` 리뷰).
+
+           taking/1 출발 → stopped/2 출발 → stopped/2 즉시 실패 → 지금 답 taking
+           그 뒤 taking/1 이 늦게 실패 → 값만 보면 taking 을 지운다
+
+       `1` 은 이미 마지막 호출이 아니므로 되돌리지 않는다. */
+    failed: function (stamp, previous) {
+      if (stamp && stamp.sequence === lastCall) {
+        lastSent = previous;
+        lastCall = null;
+      }
     },
 
     lastSent: function () {
@@ -243,8 +266,13 @@ var MOCK_SIGNALS = [];
    떠난 지연 요청도 순번으로 제대로 밀린다. */
 function mockSignalIsNewer(candidate, current) {
   if (!current) return true;
-  if (candidate.from_save || current.from_save) return candidate.received > current.received;
-  if (candidate.client_id === current.client_id) return candidate.sequence > current.sequence;
+  /* **저장에도 같은 규칙을 쓴다.** 예전에는 `from_save` 면 무조건 도착 차례로
+     갈랐는데, 그러면 저장이 든 순번을 아무도 안 읽어 「늘 가장 나중」이 실제로는
+     도착 차례에 기대는 상태가 됐다 (이희진 님 `#79` 리뷰). 저장이 자기 순번을
+     들고 오면 특례가 필요 없다 — 같은 기기면 순번, 다른 기기면 도착 차례. */
+  if (candidate.client_id && candidate.client_id === current.client_id) {
+    return candidate.sequence > current.sequence;
+  }
   return candidate.received > current.received;
 }
 
@@ -301,13 +329,25 @@ function mockCheckinRequest(path, options) {
            환자가 확정한 답이라, 그것으로 신호 상태를 맞춘다.
 
            신호를 지우지는 않는다 — 눌렀던 사실은 그대로 두고 판정만 옮긴다. */
+        /* **저장도 신호와 같은 규칙으로 판정한다.**
+
+           예전에는 `sequence` 에 고정값(`Number.MAX_SAFE_INTEGER`)을 박아
+           「늘 가장 나중」을 표현했다. 그러면 저장을 두 번 했을 때 두 값이
+           같아져 뒤엣것이 앞엣것을 못 덮는다 — 지금까지는 아래 비교가
+           `from_save` 를 만나면 도착 차례로 새 버리고 있어서 **그 고정값을
+           아무도 안 읽었다.** 죽은 값이 옳은 것처럼 보이던 자리다
+           (이희진 님 `#79` 리뷰).
+
+           화면이 저장 시점에 뗀 순번을 그대로 쓴다. 같은 기기에서는 저장이
+           늘 마지막에 뗀 번호라 자연히 가장 나중이고, 다른 기기면 신호와
+           똑같이 도착 차례로 견준다. 특례가 필요 없다. */
         MOCK_SIGNALS.push({
           answer_key: body.medication,
-          session: "save",
-          /* 저장은 환자가 확정한 답이라 **늘 가장 나중**이다. */
-          from_save: true,
+          client_id: body.client_id || null,
+          session: body.client_session_id || "save",
+          sequence: body.client_sequence || 0,
           received: MOCK_SIGNALS.length,
-          sequence: Number.MAX_SAFE_INTEGER,
+          /* 판정에는 안 쓴다. 「이건 저장이 바로잡은 것」이라는 표시일 뿐이다. */
           from_save: true,
         });
         return resolve({
