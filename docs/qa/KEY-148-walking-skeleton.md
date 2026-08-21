@@ -74,21 +74,24 @@ visit    = await Visit.filter(patient_id=patient.patient_id).order_by("-visited_
 
 ## 3. 진짜와 fallback 경계 — 여정 9단계
 
-기준은 `develop`(2026-08-21 아침). **「없음」은 코드가 아직 없다는 뜻이고, 「막힘」은 코드는 있는데 지금 상태로는 안 돈다는 뜻이다.**
+기준은 `develop`(`54693c4`). **「없음」은 코드가 아직 없다는 뜻이고, 「막힘」은 코드는 있는데 지금 상태로는 안 돈다는 뜻이다.**
+
+> **2026-08-21 저녁 갱신.** `#82`(KEY-54)가 업로드 표·경로를 붙이면서 3·4단계가 **열렸다.** 아래 표와 §4 는 그 뒤 기준이다. 직접 서버를 띄워 걸어 본 결과를 적는다.
 
 | # | 단계 | 화면 | API | 지금 | 이번 주 |
 |---|---|---|---|---|---|
 | 1 | 병원 로그인 | `login.html` | `POST /api/v1/auth/login` | **진짜** | 그대로 |
 | 2 | 환자·진료 선택 | `patients.html` | `GET /api/v1/patients` · `/api/v1/visits/{visit_id}` | **진짜** | 그대로 |
-| 3 | 문서 업로드 | `patients.html`(upload) | **없음** | ❌ | **fixture** |
-| 4 | OCR 수정·확정 | `ocr-review.html` | `/api/v1/ocr/jobs/{ocr_job_id}` · `/api/v1/ocr/fields/{ocr_field_id}` | ⚠️ **막힘** | **fixture** — 아래 §4 |
+| 3 | 문서 업로드 | `patients.html`(upload) | `POST /api/v1/front-desk/visits/{visit_id}/documents` | **진짜** — `#82` | 그대로 |
+| 4 | OCR 작업 생성 | `patients.html`(upload) | 위 업로드가 **함께 만든다** · `POST /api/v1/documents/{document_id}/ocr` | **진짜** — `#82` | 그대로 |
+| 4' | OCR 수정·확정 | `ocr-review.html` | `/api/v1/ocr/jobs/{ocr_job_id}` · `/api/v1/ocr/fields/{ocr_field_id}` | ⚠️ **막힘** — 판독을 끝낼 워커가 없다. 아래 §4 | **fixture** |
 | 5 | 안내 생성 | — | 없음 | ❌ | **fixture** (고정 템플릿) |
 | 6 | 의사 승인 | `doctor.html` | `POST /api/v1/visits/{visit_id}/guide/approve` | **진짜** — `#50` 머지됨 | 그대로 |
 | 7 | 환자 링크 조회 | `guide.html` | `/guides/{token}` 없음 | ❌ | 개발용 링크 (`KEY-90`) |
 | 8 | D+7 응답 | `checkin.html` | `/checkins/{token}` 없음 | ❌ | **fixture 또는 진짜** (`KEY-151`) |
 | 9 | 병원 확인 | — | 없음 | ❌ | (`KEY-99`) |
 
-**진짜인 구간은 1·2·6 셋이다.**
+**진짜인 구간은 1·2·3·4·6 다섯이다.** 아침에는 셋이었다.
 
 ### 화면은 이미 다 있다
 
@@ -98,36 +101,60 @@ visit    = await Visit.filter(patient_id=patient.patient_id).order_by("-visited_
 
 ---
 
-## 4. ⚠️ 지금 막혀 있는 것 — 3·4단계
+## 4. ⚠️ 막힌 자리가 옮겨 갔다 — 이제 「판독을 끝내는 것」이다
 
-**`POST /api/v1/documents/{document_id}/ocr` 는 지금 무엇을 보내도 `404` 를 준다.**
+> **이 절은 2026-08-21 저녁에 다시 썼다.** 아침에는 「`POST /documents/{document_id}/ocr` 가 무엇을 보내도 `404` 를 준다」였다. `#82`(KEY-54)가 병합되면서 **그 봉쇄가 풀렸다.**
+>
+> ```python
+> # app/ocr/api.py:16 — 지금
+> service = OcrService(TortoiseOcrRepository(TortoiseDocumentOwnershipVerifier()))
+> ```
+>
+> `FailClosedDocumentOwnershipVerifier` 를 명시적으로 덮어쓴다. 문서 표(`medical_document`)도 업로드 경로도 생겼다.
 
-```python
-# app/ocr/api.py:16
-service = OcrService(TortoiseOcrRepository())        # 기본 검증기를 그대로 쓴다
+### 직접 걸어 본 결과
 
-# app/ocr/service.py
-class TortoiseOcrRepository:
-    def __init__(self, document_ownership=None):
-        self.document_ownership = document_ownership or FailClosedDocumentOwnershipVerifier()
+서버를 띄우고 `staff01` 로 로그인해 합성 JPEG 한 장을 올렸다.
 
-class FailClosedDocumentOwnershipVerifier:
-    """Block OCR creation until the authoritative upload model is connected."""
-    async def assert_owned(self, ...):
-        raise _not_found()                            # 항상 404
+```text
+POST /api/v1/auth/login                          200
+GET  /api/v1/patients                            200
+GET  /api/v1/patients/{id}/visits                200
+POST /api/v1/front-desk/visits/{id}/documents    201
+     { "document_ids": [2],
+       "ocr_job_id": "ocr_9f281a…",
+       "status": "PROCESSING" }
+GET  /api/v1/ocr/jobs/{job}                      200   PROCESSING · progress 0
+GET  /api/v1/ocr/jobs/{job}/fields               409   OCR_RESULT_NOT_READY
 ```
 
-문서를 만드는 표도 경로도 없어서 **의도적으로 닫아 둔 것**이다. 안전 쪽으로 닫은 판단 자체는 맞다 — 소유를 확인할 수 없는 문서로 OCR 을 돌리면 남의 진료에 붙을 수 있다.
+**업로드 한 번이 문서와 OCR 작업을 함께 만든다.** 3단계와 4단계 작업 생성이 한 요청이다 — 아침에 「API 로 OCR 작업을 만들지 않는다」고 적어 둔 그 자리가 이미 열려 있었다.
 
-**검사는 통과한다.** `app/tests/ocr/test_ocr_repository.py` 가 `SyntheticDocumentOwnershipVerifier` 를 주입하기 때문이다. 초록불이지만 실제 앱에서는 이 경로가 한 번도 성공한 적이 없다.
+### 그래서 이번 주에 막는 것
 
-### 그래서 이번 주에는
+**작업이 `PROCESSING` 에서 벗어나지 못한다.** 그 작업을 `COMPLETED` 로 옮기고 `ocr_result`·`ocr_field` 를 채우는 코드가 없다 — `ai_worker/tasks/` 가 `__init__.py` 하나뿐이다. 그래서 필드 조회가 `409 OCR_RESULT_NOT_READY` 로 막히고, **4' 단계(수정·확정) 화면이 받을 데이터가 없다.**
 
-**API 로 OCR 작업을 만들지 않는다.** fixture 가 `OcrJob` · `OcrResult` · `OcrField` 행을 **직접 넣는다.** 4단계의 수정·확정(`PATCH /ocr/fields/{id}` · `POST /ocr/jobs/{id}`)은 그 행 위에서 **진짜로** 돈다.
+**fixture 가 채울 자리가 바뀌었다.**
 
-업로드 모델을 이번 주에 만들지 않는다 — 8/26까지 코드 완료라는 일정에 표가 하나 더 들어가면 여정이 안 끝난다.
+```text
+아침  OcrJob · OcrResult · OcrField 를 전부 직접 넣는다
+지금  OcrJob 은 업로드가 만든다. fixture 는 그 작업을 COMPLETED 로 옮기고
+      OcrResult · OcrField 를 채운다
+```
 
-> 담당(`KEY-149` 한금준)이 다르게 보시면 알려 주세요. 업로드 표를 만드는 쪽이 낫다고 판단되면 이 문단만 바꾸면 됩니다.
+수정·확정(`PATCH /ocr/fields/{id}`)은 그 행 위에서 **진짜로** 돈다. 이 부분은 아침과 같다.
+
+### ⚠️ 이 경로를 타는 검사가 아직 없다
+
+아침에 「**검사는 통과한다.** 초록불이지만 실제 앱에서는 이 경로가 한 번도 성공한 적이 없다」고 적었다. **봉쇄는 풀렸지만 그 문장은 아직 참이다** — 이유만 바뀌었다.
+
+```text
+app/tests/ocr/test_ocr_api.py         get_ocr_service 를 FakeOcrService 로 덮는다
+app/tests/ocr/test_ocr_repository.py  SyntheticDocumentOwnershipVerifier 를 주입한다
+app/tests/document_apis/…             업로드까지만 보고 OCR 작업은 안 본다
+```
+
+**실제로 붙어 있는 `TortoiseDocumentOwnershipVerifier` 를 타는 검사가 하나도 없다.** 위 「직접 걸어 본 결과」가 이 경로의 성공을 확인한 **처음이자 유일한 기록**이다. `KEY-149`(한금준) 나 `KEY-152` 에서 이 자리를 검사로 덮는 것이 좋겠다.
 
 ---
 
@@ -138,7 +165,7 @@ class FailClosedDocumentOwnershipVerifier:
 | 환자·진료·처방 | `docs/data/synthetic-patients.csv` | 정본. **이미 있다** |
 | 직원 | `docs/data/synthetic-staff.csv` | 정본. **이미 있다** |
 | 적재 | `scripts/seed.py --mode full` | **이미 있다** |
-| OCR 판독 결과 | `app/tests/fixtures/ocr/SYN-EMS-01.json` | **새로 만든다** (`KEY-149`) |
+| OCR 판독 결과 | `app/tests/fixtures/ocr/SYN-EMS-01.json` | **새로 만든다** (`KEY-149`). §4 참고 — `OcrJob` 은 업로드가 만드니 **그 작업을 `COMPLETED` 로 옮기고 결과를 채우는** 몫이다 |
 | 안내 본문 템플릿 | `app/tests/fixtures/guide/SYN-EMS-01.json` | **새로 만든다** (`KEY-150`) |
 | SMS | 보내지 않는다. 콘솔 출력으로 대체 | `docs/synthetic-data-spec.md` §1 |
 
@@ -177,6 +204,8 @@ class FailClosedDocumentOwnershipVerifier:
 | 무엇 | 왜 여기서 안 정하나 | 누가 |
 |---|---|---|
 | 환자 링크 토큰 모양 | 링크·OTP 계약이 `KEY-78` 범위 | 김고은 (`KEY-90`) |
-| D+7 응답 저장 시점 | `KEY-138` 이 「선택 즉시 vs 저장 시」를 정하는 중 | 권일준 |
+| ~~D+7 응답 저장 시점~~ | **정해졌다** — 고르는 즉시 신호를 보내고 저장이 마지막으로 바로잡는다. `docs/api/patient.md` §3 (`KEY-138`) | 권일준 |
 | 안내 본문 문구 | 식약처 근거 문장이라 임의로 못 쓴다 | `KEY-150` |
-| 업로드 표 스키마 | 이번 주 범위 밖 (§4) | — |
+| ~~업로드 표 스키마~~ | **생겼다** — `medical_document` (`#82` · `KEY-54`). §4 참고 | 한금준 |
+| OCR 작업을 끝내는 것 | `ai_worker/tasks/` 가 비어 있어 작업이 `PROCESSING` 에 머문다. 이번 주는 fixture 로 넘긴다 | `KEY-149` |
+| 실제 붙어 있는 OCR 경로의 검사 | API 검사는 `FakeOcrService`, 저장소 검사는 합성 검증기를 쓴다. §4 끝 참고 | `KEY-149` · `KEY-152` |
