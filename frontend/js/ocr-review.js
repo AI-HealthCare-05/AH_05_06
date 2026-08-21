@@ -236,7 +236,7 @@
     var id = field.ocr_field_id;
     /* 사람이 「이번엔 안 했다」고 한 것이 맨 앞이다. 기계가 못 읽었든 문서가
        「추후 보고 예정」이라 했든, **사람이 그 위에서 판정한 것**이라 그 말이
-       이긴다 — `docs/contracts/ocr-field-status-v1.md`. */
+       이긴다 — `docs/api/hospital.md` §4 (판독 항목의 상태 어휘). */
     var state =
       field.field_status === "NOT_PERFORMED"
         ? "skipped"

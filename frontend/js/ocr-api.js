@@ -356,7 +356,7 @@ function mockPatch(fieldId, body) {
 
   /* 사람이 보낼 수 있는 상태는 둘뿐이다 — 「이번엔 안 했다」와 그 되돌리기.
      `UNREADABLE` · `PENDING_REPORT` 은 기계가 판정한 것이라 사람이 덮어쓰면
-     「못 읽었다」가 사라진다 (`docs/contracts/ocr-field-status-v1.md` §5). */
+     「못 읽었다」가 사라진다 (`docs/api/hospital.md` §4 — 판독 항목의 상태 어휘). */
   if (body.field_status !== undefined) {
     if (["NOT_PERFORMED", "READ"].indexOf(body.field_status) === -1) {
       return new ApiError("INVALID_FIELD_STATUS", 400, {});
