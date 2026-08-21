@@ -1,6 +1,6 @@
 """병원과 직원 — KEY-73 인증 백엔드의 바닥.
 
-`docs/auth-contract.md`(KEY-8 v1)와 기획의 `staff` 표를 그대로 옮긴 것이다.
+`docs/api/hospital.md`(KEY-8 v1)와 기획의 `staff` 표를 그대로 옮긴 것이다.
 지금 `app/models/users.py`는 `email` 로그인 · `is_admin` bool 인 예시 골격이라
 계약이 붙을 자리가 없다. 그 자리를 여기서 만든다.
 

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-CONTRACT_PATH = Path(__file__).parents[3] / "docs" / "contracts" / "patient-visit-api-v1.md"
+CONTRACT_PATH = Path(__file__).parents[3] / "docs" / "api" / "hospital.md"
 
 
 def test_front_desk_visit_contract_has_complete_read_model() -> None:
