@@ -1,6 +1,6 @@
 """직원·병원 모델이 계약과 같은 모양인지 본다 — KEY-73.
 
-계약은 `docs/auth-contract.md`(KEY-8 v1)와 기획의 `staff` 표다.
+계약은 `docs/api/hospital.md`(KEY-8 v1)와 기획의 `staff` 표다.
 사람이 기억해서 지키는 대신 여기서 잡는다.
 """
 

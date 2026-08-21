@@ -1,6 +1,6 @@
 """8/27 종단간 최소 동작본이 무는 데이터가 실제로 있는가 — KEY-148.
 
-`docs/contracts/walking-skeleton-v1.md` 가 네 사람에게 「이 환자·이 진료를 쓰라」고
+`docs/qa/KEY-148-walking-skeleton.md` 가 네 사람에게 「이 환자·이 진료를 쓰라」고
 말한다. 그 문서가 가리키는 값이 CSV 에서 사라지거나 바뀌면 **다음 주 월요일에
 네 사람이 각자 다른 곳에서 막힌다.** 그때 원인을 찾는 것보다 지금 죽는 편이 낫다.
 
@@ -18,7 +18,7 @@ from pathlib import Path
 DOCS = Path(__file__).resolve().parents[3] / "docs"
 PATIENTS_CSV = DOCS / "data" / "synthetic-patients.csv"
 STAFF_CSV = DOCS / "data" / "synthetic-staff.csv"
-CONTRACT = DOCS / "contracts" / "walking-skeleton-v1.md"
+CONTRACT = DOCS / "qa" / "KEY-148-walking-skeleton.md"
 
 with PATIENTS_CSV.open(encoding="utf-8-sig") as _f:
     PATIENTS: list[dict[str, str]] = list(csv.DictReader(_f))
