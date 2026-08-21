@@ -3,7 +3,7 @@
 ②③④ 는 「이 규칙이 지켜지는가」를 본다. 여기는 다른 것을 본다 —
 **문서가 바뀌었는데 코드가 안 바뀐 것**, 그리고 그 반대.
 
-계약은 사람이 읽는 문서(`docs/auth-contract.md`)이고 구현은 코드다. 둘이 갈리면
+계약은 사람이 읽는 문서(`docs/api/hospital.md`)이고 구현은 코드다. 둘이 갈리면
 한동안 아무도 모른다. 로그인 화면(`#14`)도, 목업(`frontend/js/api.js`)도 이
 문서를 근거로 만들었기 때문에, 문서가 근거로서 살아 있는지 검사가 지켜야 한다.
 
@@ -28,11 +28,17 @@ from app.main import app
 from app.services.login_attempts import LOCK_SECONDS, MAX_FAILURES
 from app.services.session_store import IDLE_SECONDS
 
-CONTRACT = Path(__file__).parents[3] / "docs" / "auth-contract.md"
+CONTRACT = Path(__file__).parents[3] / "docs" / "api" / "hospital.md"
 
 
 def contract_text() -> str:
     return CONTRACT.read_text(encoding="utf-8")
+
+
+def auth_contract_text() -> str:
+    """통합 문서에서 직원 인증 계약 절만 읽는다."""
+    text = contract_text()
+    return text.split("## 2. 직원 인증", 1)[1].split("## 3. 환자·진료", 1)[0]
 
 
 def documented_endpoints() -> set[tuple[str, str]]:
@@ -95,7 +101,7 @@ class TestEndpointsMatchTheDocument(TestCase):
 class TestErrorCodesMatchTheDocument(TestCase):
     def documented_codes(self) -> set[str]:
         """5절 규칙 표의 `401 invalid_credentials` 같은 칸에서 코드만 뽑는다."""
-        return set(re.findall(r"`(?:4\d\d) ([A-Za-z_]+)`", contract_text()))
+        return set(re.findall(r"`(?:4\d\d) ([A-Za-z_]+)`", auth_contract_text()))
 
     async def test_every_documented_code_is_defined(self) -> None:
         defined = {

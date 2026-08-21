@@ -28,7 +28,7 @@
 ## 남은 제한사항
 
 - `patient.hospital_id`, `visit.hospital_id`, `visit.doctor_id`는 현재 계약에 따라 bigint 경계 필드이며 서비스 계층이 병원 범위를 검사한다. DB 직접 쓰기 방지는 후속 FK 계약 범위다.
-- Notion API 명세 상세 하위 페이지는 현재 연결 계정에서 404로 접근되지 않았다. 필드·타입 정본인 저장소의 `docs/contracts/patient-visit-api-v1.md`와 자동 생성 OpenAPI로 교차 검수했으며 KEY-47 완료 판정의 차단 사유로 보지 않는다.
+- Notion API 명세 상세 하위 페이지는 현재 연결 계정에서 404로 접근되지 않았다. 필드·타입 정본인 저장소의 `docs/api/hospital.md`와 자동 생성 OpenAPI로 교차 검수했으며 KEY-47 완료 판정의 차단 사유로 보지 않는다.
 - 전화번호는 합성값이어도 실제 가입자와 우연히 겹칠 수 있다. 실제 SMS 공급자 호출 차단은 발송 기능의 별도 실행 검수 대상이며 KEY-47 데이터 무결성 완료를 차단하지 않는다.
 
 ## 개인정보 출처 근거
