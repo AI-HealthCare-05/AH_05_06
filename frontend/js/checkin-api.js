@@ -34,6 +34,18 @@ var checkinApi = {
   save: function (token, answer) {
     return checkinRequest("/checkins/" + encodeURIComponent(token), { method: "POST", body: answer });
   },
+  /* 「지금 이걸 골랐다」 — 저장이 아니라 **신호**다 (KEY-138).
+     와이어프레임 P7-2·P7-4·P7-5 가 「선택 즉시 의료진 화면에 알림이 전송된다」로
+     못박아 두었는데, 저장할 때만 보내면 고르고 창을 닫은 환자를 놓친다.
+     **끊은 환자가 폼을 끝까지 채울 가능성이 가장 낮다.**
+
+     토큰 하나에 신호는 하나다. 다시 고르면 덮어쓴다 — 이력이 아니라 지금 고른
+     것이다. 저장이 오면 저장이 최종이다.
+     계약: docs/contracts/checkin-api-v1.md */
+  signal: function (token, medication) {
+    var path = "/checkins/" + encodeURIComponent(token) + "/signals";
+    return checkinRequest(path, { method: "POST", body: { medication: medication } });
+  },
 };
 
 /* 복약 답 다섯. **순서가 뜻을 만든다** — 잘 되는 쪽에서 안 되는 쪽으로 간다.
@@ -122,6 +134,15 @@ function mockCheckinRequest(path, options) {
       if (CHECKIN_CASE === "expired") {
         // 링크는 3일 뒤 닫힌다(P8 노트). 만료는 오류가 아니라 안내다.
         return reject(new ApiError("LINK_EXPIRED", 410, {}));
+      }
+      if (options.method === "POST" && /\/signals$/.test(path)) {
+        /* 신호. 저장이 아니다 — 답을 담지 않고 「무엇을 골랐나」만 받는다.
+           알림 여부는 **서버가 자기 표로 정한다.** 화면이 정하지 않는다. */
+        if (MEDICATION_ANSWERS.indexOf(body.medication) === -1) {
+          return reject(new ApiError("MEDICATION_REQUIRED", 422, {}));
+        }
+        var info = mockCheckin().answers[body.medication];
+        return resolve({ signaled: !!(info && info.notify) });
       }
       if (options.method === "POST") {
         if (MEDICATION_ANSWERS.indexOf(body.medication) === -1) {
