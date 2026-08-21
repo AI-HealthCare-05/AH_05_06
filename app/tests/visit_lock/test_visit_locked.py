@@ -129,8 +129,14 @@ class TestTheLockIsNotTooWide(VisitLockTestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["visit_summary"] == "승인 뒤에 적은 메모"
 
-    async def test_a_draft_guide_does_not_lock(self) -> None:
-        """스탭이 아직 쓰고 있는 중이다 — 진료과가 잘못 잡힌 것을 그때 고쳐야 한다."""
+    async def test_a_draft_guide_alone_does_not_lock(self) -> None:
+        """안내문 상태만 놓고 보면 「작성 중」은 잠그지 않는다.
+
+        **이것은 안내문 가지만 따로 재는 검사다.** 실제 운영에서 이 조합은
+        일어나지 않는다 — 안내문은 늘 OCR 확정 뒤에 생기므로 그 진료에는
+        `OcrJob` 이 이미 있고, OCR 가지에서 먼저 409 가 난다.
+        진짜 조합은 `test_ocr_wins_over_a_draft_guide` 가 잰다.
+        """
         visit = await make_visit()
         await attach_guide(visit, GuideStatus.STAFF_REVIEW)
 
@@ -138,14 +144,68 @@ class TestTheLockIsNotTooWide(VisitLockTestCase):
 
         assert response.status_code != status.HTTP_409_CONFLICT
 
-    async def test_a_returned_guide_does_not_lock(self) -> None:
-        """되돌려진 안내는 스탭이 고치는 중이다. 여기서 잠그면 고칠 방법이 없다."""
+    async def test_a_returned_guide_alone_does_not_lock(self) -> None:
+        """되돌려진 안내도 안내문 가지에서는 잠그지 않는다.
+
+        위와 같다 — 안내문 가지만 따로 재는 검사다.
+        """
         visit = await make_visit()
         await attach_guide(visit, GuideStatus.APPROVAL_RETURNED)
 
         response = await self.patch(visit.visit_id, {"department_id": 7})
 
         assert response.status_code != status.HTTP_409_CONFLICT
+
+
+class TestOcrDecidesFirst(VisitLockTestCase):
+    """**OCR 이 있으면 안내문 상태와 무관하게 잠긴다** — 이희진 님 `#69` 리뷰.
+
+    계약 §6 은 「OCR **또는** 승인 안내가 이미 연결된 뒤」라고 적는다. **또는**
+    이므로 OCR 하나만으로 충분하고, 안내문 상태는 그다음에야 본다.
+
+    그런데 안내문은 늘 OCR 확정 뒤에 생긴다. 그래서 **스탭이 실제로 마주치는
+    조합은 언제나 「OCR 있음 + 안내문 어떤 상태」** 이고, 그 경우 답은 항상
+    409 다. 「스탭이 쓰고 있는 중이면 진료과를 고칠 수 있다」는 길은
+    **운영에서는 열리지 않는다.**
+
+    이 검사들은 그 사실을 못 박는다. 나중에 규칙을 「OCR 이 `COMPLETED` 일
+    때만 잠근다」처럼 잘게 나누기로 하면 여기가 먼저 죽어서 알려 준다.
+    """
+
+    async def test_ocr_wins_over_a_draft_guide(self) -> None:
+        visit = await make_visit()
+        await attach_ocr(visit)
+        await attach_guide(visit, GuideStatus.STAFF_REVIEW)
+
+        response = await self.patch(visit.visit_id, {"department_id": 7})
+
+        assert response.status_code == status.HTTP_409_CONFLICT, "OCR 이 붙었는데 안 잠겼다"
+        assert response.json()["code"] == "VISIT_LOCKED"
+
+    async def test_ocr_wins_over_a_returned_guide(self) -> None:
+        visit = await make_visit()
+        await attach_ocr(visit)
+        await attach_guide(visit, GuideStatus.APPROVAL_RETURNED)
+
+        response = await self.patch(visit.visit_id, {"department_id": 7})
+
+        assert response.status_code == status.HTTP_409_CONFLICT, "OCR 이 붙었는데 안 잠겼다"
+        assert response.json()["code"] == "VISIT_LOCKED"
+
+    async def test_clearing_the_department_is_also_refused(self) -> None:
+        """`department_id: null` 은 아무것도 안 하는 요청이 아니다.
+
+        받으면 `visit.department` 를 **비운다** — 진료 당시 진료과 이름의
+        스냅샷이 사라지는 것이라 식별 관계 변경이 맞다. 그래서 잠긴 진료에서는
+        이것도 409 다.
+        """
+        visit = await make_visit()
+        await attach_ocr(visit)
+
+        response = await self.patch(visit.visit_id, {"department_id": None})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["code"] == "VISIT_LOCKED"
 
     async def test_another_hospital_visit_is_still_not_found(self) -> None:
         """잠금 여부로 남의 병원 진료의 존재가 새면 안 된다 — 409 가 아니라 404 다."""
