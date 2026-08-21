@@ -36,6 +36,18 @@
     });
   }
 
+  /* 서버는 `key` 와 `gender` 를 계약대로 주고, **한국어로 옮기는 것은 화면
+     몫이다.** 서버가 한국어를 주면 화면마다 다른 말이 섞이고, 나중에 문구를
+     바꿀 때 서버와 화면 두 곳을 고쳐야 한다. */
+  var SECTION_LABEL = {
+    medication: "복약지도",
+    caution: "주의사항",
+    life: "생활 안내",
+    messages: "문자 설정",
+  };
+
+  var GENDER_LABEL = { FEMALE: "여", MALE: "남", UNKNOWN: "—" };
+
   /* ── 안내문 ──────────────────────────────────────────── */
 
   function currentSection() {
@@ -48,147 +60,70 @@
   function renderTabs() {
     var tabs = guide.sections
       .map(function (s) {
-        var warn = s.blocks.filter(function (b) {
-          return b.warn;
-        }).length;
         return (
           '<button class="vtab' +
           (s.key === section ? " is-on" : "") +
           '" type="button" data-section="' +
           s.key +
           '">' +
-          esc(s.label) +
-          (warn ? ' <span class="vtab__warn">⚠ ' + warn + "</span>" : "") +
+          esc(SECTION_LABEL[s.key] || s.key) +
+          (s.warn ? ' <span class="vtab__warn">⚠</span>' : "") +
           "</button>"
         );
       })
       .join("");
-    tabs +=
-      '<button class="vtab' +
-      (section === "messages" ? " is-on" : "") +
-      '" type="button" data-section="messages">문자 설정</button>';
+    /* 예전에는 「문자 설정」을 화면이 따로 붙였다. 서버의 `GuideSectionKey` 에
+       `messages` 가 있으므로 그것도 섹션 하나다 — 화면이 목록을 만들지 않는다. */
     el("vtabs").innerHTML = tabs;
   }
 
-  function blockHtml(block) {
-    var body = "";
-    if (block.body) body += '<p class="block__body">' + esc(block.body) + "</p>";
-    if (block.list) {
-      body +=
-        '<ul class="block__list">' +
-        block.list
-          .map(function (item) {
-            return "<li>" + esc(item) + "</li>";
-          })
-          .join("") +
-        "</ul>";
-    }
-    if (block.table) {
-      body +=
-        '<table class="block__table"><thead><tr>' +
-        block.table.head
-          .map(function (h) {
-            return "<th>" + esc(h) + "</th>";
-          })
-          .join("") +
-        "</tr></thead><tbody>" +
-        block.table.rows
-          .map(function (row) {
-            return (
-              "<tr>" +
-              row
-                .map(function (cell, i) {
-                  return (i === 0 ? "<th>" : "<td>") + esc(cell) + (i === 0 ? "</th>" : "</td>");
-                })
-                .join("") +
-              "</tr>"
-            );
-          })
-          .join("") +
-        "</tbody></table>";
-    }
+  /* 서버는 섹션마다 **본문 한 덩이**(`body`)를 준다. 예전 목업은 제목·표·목록으로
+     쪼갠 `blocks` 를 그렸는데, 그건 렌더 편의로 만든 모양이지 계약이 아니었다.
 
-    /* 잠긴 블록은 왜 잠겼는지를 함께 적는다. 이유 없이 안 눌리는 버튼은
+     8/27 여정에서 안내문은 고정 텍스트다(KEY-150 — 「확정 OCR→고정 안내→의사
+     승인」). 채울 것이 없는 표 구조를 먼저 굳히지 않는다. 실제 생성이 붙을 때
+     「어느 확정값이 어느 칸에 들어갔는가」와 함께 다시 정한다. */
+  function sectionHtml(s) {
+    var title = SECTION_LABEL[s.key] || s.key;
+
+    /* 잠긴 섹션은 왜 잠겼는지를 함께 적는다. 이유 없이 안 눌리는 버튼은
        「고장났다」로 읽히고, 원장님은 그것을 확인하느라 시간을 쓴다. */
-    var tail = block.locked
-      ? '<p class="block__locked">🔒 ' + esc(block.locked) + "</p>"
-      : '<button class="block__edit" type="button" data-edit="' + esc(block.title) + '">수정</button>';
+    var tail = s.locked
+      ? '<p class="block__locked">🔒 식약처 기준 문장이라 고칠 수 없습니다 — 약이 바뀌면 문장도 바뀝니다</p>'
+      : '<button class="block__edit" type="button" data-edit="' + esc(title) + '">수정</button>';
 
     return (
       '<section class="block' +
-      (block.warn ? " block--warn" : "") +
-      (block.locked ? " block--locked" : "") +
+      (s.warn ? " block--warn" : "") +
+      (s.locked ? " block--locked" : "") +
       '">' +
       '<h3 class="block__title">' +
-      esc(block.title) +
+      esc(title) +
       "</h3>" +
-      (block.warn ? '<p class="block__warnline">⚠ ' + esc(block.warn) + "</p>" : "") +
-      body +
+      (s.warn ? '<p class="block__warnline">⚠ ' + esc(s.warn) + "</p>" : "") +
+      '<p class="block__body">' +
+      esc(s.body) +
+      "</p>" +
+      (s.edited ? '<p class="block__hint">이 항목은 수정되었습니다</p>' : "") +
       tail +
       "</section>"
     );
   }
 
-  function renderMessages() {
-    var m = guide.messages;
-    var rows = m.schedule
-      .map(function (s) {
-        return (
-          '<label class="sched' +
-          (s.fixed ? " sched--fixed" : "") +
-          '"><input type="checkbox"' +
-          (s.on ? " checked" : "") +
-          (s.fixed || !isDoctor() ? " disabled" : "") +
-          ' data-sched="' +
-          s.key +
-          '" /><span class="sched__label">' +
-          esc(s.label) +
-          (s.fixed ? ' <span class="sched__fixed">고정</span>' : "") +
-          '</span><span class="sched__when">' +
-          esc(s.when) +
-          "</span></label>"
-        );
-      })
-      .join("");
+  /* 「문자 설정」도 서버가 주는 섹션 하나라, 다른 셋과 같은 길로 그린다.
 
-    el("panel").innerHTML =
-      '<section class="block"><h3 class="block__title">확인 문자</h3>' +
-      '<p class="block__hint">처방 세트 기본값 · 이 환자만 바꿉니다</p>' +
-      rows +
-      '<p class="block__hint">ⓘ 일주일 뒤는 어느 쪽에서도 끌 수 없습니다 · 발송 시각 ' +
-      esc(m.send_at) +
-      "</p></section>" +
-      '<section class="block"><h3 class="block__title">문구 · ' +
-      esc(m.template_name) +
-      "</h3>" +
-      '<pre class="block__tpl">' +
-      esc(m.body) +
-      "</pre>" +
-      '<p class="block__hint">ⓘ {링크}는 지울 수 없습니다</p>' +
-      '<button class="block__edit" type="button" data-edit="문자 문구">수정</button></section>' +
-      '<section class="block"><h3 class="block__title">미리보기</h3>' +
-      '<p class="block__preview">' +
-      esc(m.preview) +
-      "</p>" +
-      '<p class="block__hint">' +
-      esc(m.preview_meta) +
-      "</p></section>";
-  }
-
+     예전에는 이 탭만 체크박스·미리보기가 붙은 별도 화면이었는데 **그것을 받아
+     주는 서버가 없었다.** 목업을 끄면 눌러도 저장되지 않는 칸이 되는데, 이
+     저장소가 「고칠 수 있어 보이는데 저장이 안 되는 칸이 제일 나쁘다」로 정해
+     둔 그것이다. 알림 일정 계약은 KEY-138 에서 정한 뒤 다시 붙인다. */
   function renderPanel() {
-    if (section === "messages") return renderMessages();
-    el("panel").innerHTML = currentSection().blocks.map(blockHtml).join("");
+    el("panel").innerHTML = sectionHtml(currentSection());
   }
 
   function warnCount() {
-    return guide.sections.reduce(function (n, s) {
-      return (
-        n +
-        s.blocks.filter(function (b) {
-          return b.warn;
-        }).length
-      );
-    }, 0);
+    return guide.sections.filter(function (s) {
+      return !!s.warn;
+    }).length;
   }
 
   /* 위에 몇 개를 봐야 하는지 먼저 말한다. 없으면 「없다」고 분명히 말한다 —
@@ -214,8 +149,12 @@
 
     var p = guide.patient;
     el("p-name").textContent = p.name;
-    el("p-id").textContent = p.gender + " " + p.age + "세 · 차트 " + p.hospital_patient_no;
-    el("p-visit").textContent = guide.summary;
+    /* 서버는 `FEMALE` 을 주고 화면이 「여」로 옮긴다. `age` 는 서버가 조회
+       시점의 현지 날짜로 센 값이고, `birth_date` 는 동명이인을 가릴 근거로
+       함께 온다(계약 §4). 화면에는 나이만 쓰지만 받는 것은 둘 다다. */
+    el("p-id").textContent =
+      (GENDER_LABEL[p.gender] || "—") + " " + p.age + "세 · 차트 " + p.hospital_patient_no;
+    el("p-visit").textContent = guide.summary || "";
   }
 
   /* ── 권한 ───────────────────────────────────────────── */
@@ -264,6 +203,18 @@
     renderRole();
   }
 
+  /* 서버는 ISO 시각을 준다. 그대로 찍으면 `2026-08-21T18:00:00+09:00` 이 뜬다.
+
+     **수신번호(`to`)는 받지 않는다.** 이 화면은 「누구 것인가」만 알면 되고
+     발송 번호는 서버가 안다. 응답에 실으면 승인할 때마다 환자 전화번호가
+     화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
+  function whenText(iso) {
+    if (!iso) return "곧";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.getMonth() + 1 + "월 " + d.getDate() + "일 " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
   /* ── 모달 ───────────────────────────────────────────── */
 
   function openModal(html) {
@@ -300,10 +251,8 @@
       '<p class="modal__mark">✓</p>' +
       '<h2 class="modal__title">승인 완료</h2>' +
       '<p class="modal__lead">' +
-      esc(result.send_at) +
-      " · " +
-      esc(result.to) +
-      "께 발송 예정</p>" +
+      esc(whenText(result.scheduled_at)) +
+      " 발송 예정</p>" +
       '<p class="modal__note">확인 문자(일주일 뒤 · 보름 뒤)와 소진 임박 안내는 자동 발송됩니다.<br />' +
       "발송 실패 시 알림 창에서 확인할 수 있습니다.</p>" +
       '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'

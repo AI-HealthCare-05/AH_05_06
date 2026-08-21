@@ -2,14 +2,14 @@
  *
  * 안내문을 읽고, 고치고, 승인하거나 스탭에게 되돌린다.
  *
- *   GET   /api/v1/visits/{visit_id}/guide            안내문 네 갈래 + ⚠ 표시
- *   PATCH /api/v1/visits/{visit_id}/guide/{section}  그 항목만 고친다
- *   POST  /api/v1/visits/{visit_id}/guide/approve    승인 — 발송 예약
- *   POST  /api/v1/visits/{visit_id}/guide/return     스탭에 되돌린다 (사유 필수)
+ *   GET   /api/v1/visits/{visit_id}/guide                안내문 네 갈래 + ⚠ 표시
+ *   PATCH /api/v1/visits/{visit_id}/guide/sections/{key}  그 항목만 고친다
+ *   POST  /api/v1/visits/{visit_id}/guide/approve         승인 — 발송 예약
+ *   POST  /api/v1/visits/{visit_id}/guide/return          스탭에 되돌린다 (사유 필수)
  *
- * **이 계약은 아직 서버에 없습니다.** `KEY-76` 의 API 몫이고 문서도 없어서,
- * 화면이 필요로 하는 모양을 여기 적어 두고 `?mock=1` 로 확인합니다.
- * 붙일 때 맞춰야 할 것을 PR 본문에 적었습니다.
+ * **서버가 생겼습니다(KEY-111).** 이 파일은 이제 그 응답 모양을 그대로 흉내
+ * 냅니다 — 예전에는 화면이 바라는 모양을 적어 두었는데 서버와 달라서
+ * `?mock=0` 이 안 됐습니다. 정본은 `app/dtos/guides.py` 입니다.
  *
  * 상태 이름은 이미 얼어 있는 것을 그대로 씁니다 —
  * `docs/contracts/patient-visit-api-v1.md` §6 의 `APPROVAL_PENDING`(승인 요청) ·
@@ -27,7 +27,7 @@ var doctorApi = {
     return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide");
   },
   editSection: function (visitId, section, body) {
-    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/" + section, {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/sections/" + section, {
       method: "PATCH",
       body: body,
     });
@@ -78,121 +78,96 @@ var DOCTOR_CASE = (function () {
    보인다. 실제 서버는 visit_id 로 갈라 주므로 목업도 그렇게 한다. */
 var MOCK_PATIENTS = {
   8801: {
-    patient: { name: "김서연", age: 36, gender: "여", hospital_patient_no: "12345" },
+    patient: { name: "김서연", birth_date: "1990-03-14", age: 36, gender: "FEMALE", hospital_patient_no: "SYN-12345" },
     summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 05-20",
   },
   8802: {
-    patient: { name: "최다인", age: 29, gender: "여", hospital_patient_no: "10982" },
+    patient: { name: "최다인", birth_date: "1997-06-02", age: 29, gender: "FEMALE", hospital_patient_no: "SYN-10982" },
     summary: "다낭성 · 야즈 (계속) · 84일 · 지난 방문 06-02",
   },
 };
 
+/* 서버 `GuideResponse` 를 그대로 흉내 낸다 — `app/dtos/guides.py`.
+
+   섹션은 **본문 한 덩이**(`body`)다. 제목·표·목록으로 쪼갠 예전 모양은 렌더
+   편의였지 계약이 아니었고, 8/27 여정에서 안내문은 고정 텍스트다(KEY-150).
+
+   `warn` 은 **서버가 판정한다.** 「AI 가 자신 없는 곳」을 화면이 알 수 없다. */
 function mockGuide(visitId) {
   var warn = DOCTOR_CASE !== "clean";
   var who = MOCK_PATIENTS[visitId] || MOCK_PATIENTS[8801];
   return {
     visit_id: visitId,
-    status: DOCTOR_CASE === "returned" ? "APPROVAL_RETURNED" : "APPROVAL_PENDING",
-    version: 3,
     patient: who.patient,
     summary: who.summary,
+    status: DOCTOR_CASE === "returned" ? "APPROVAL_RETURNED" : "APPROVAL_PENDING",
+    version: 3,
+    approved_at: null,
+    scheduled_at: null,
+    returned_reason: DOCTOR_CASE === "returned" ? "검사 결과지를 다시 올려 주세요" : null,
     sections: [
       {
         key: "medication",
-        label: "복약지도",
-        editable: true,
-        blocks: [
-          { title: "오늘 진료 요약", body: "자궁내막증으로 진료받으셨고, 통증 관리를 위한 약을 처방받으셨어요." },
-          {
-            title: "나의 목표",
-            table: {
-              head: ["", "시작", "지금", "목표"],
-              rows: [
-                ["빈혈 Hb", "10.2", "10.4", "12"],
-                ["자궁내막종", "2.8", "2.4", "─"],
-                /* ⚠ 는 「확인 부탁」이다 — AI 가 스스로 자신 없는 곳,
-                   지난번과 달라진 곳, 값이 빠진 곳에만 붙는다. */
-                ["AMH", "곧 나와요", "─", "─"],
-              ],
-            },
-            warn: warn ? "AMH 결과가 아직 안 나왔습니다 — 값이 빠진 자리입니다" : null,
-          },
-          { title: "처방받은 약", body: "비잔정 2mg · 성분 디에노게스트 · 1일 1회 · 84일분" },
-          {
-            title: "이 약을 왜 드시나요",
-            body:
-              "지난번 8점이던 생리통이 오늘 4점까지 내려왔어요. 약이 잘 듣고 있다는 뜻이에요. " +
-              "다만 통증이 줄었다고 병변까지 없어진 것은 아니에요. 끊을 시기는 진료 때 함께 정해요.",
-            warn: warn ? "지난 진료와 통증 점수가 달라졌습니다 (8 → 4)" : null,
-          },
-          { title: "다음 방문 계획", body: "3개월 뒤 재진 예정이에요." },
-        ],
+        body:
+          "자궁내막증으로 진료받으셨고, 통증 관리를 위한 약을 처방받으셨어요.\n\n" +
+          "처방받은 약 — 비잔정 2mg · 성분 디에노게스트 · 1일 1회 · 84일분\n" +
+          "빈혈 Hb 10.2 → 10.4 (목표 12) · 자궁내막종 2.8 → 2.4",
+        edited: false,
+        locked: false,
+        warn: warn ? "AMH 결과가 아직 안 나왔습니다 — 값이 빠진 자리입니다" : null,
       },
       {
         key: "caution",
-        label: "주의사항",
-        editable: true,
-        blocks: [
-          {
-            title: "흔하고 괜찮은 반응",
-            body: "피가 조금씩 비치는 것이 가장 흔해요. 특히 처음 3개월에 그래요. 생리가 없어지는 것은 폐경이 아니에요.",
-          },
-          {
-            title: "함께 드시면 안 되는 것",
-            body: "세인트존스워트(성요한풀)가 든 건강기능식품이나 허브차는 약효를 떨어뜨릴 수 있어요.",
-          },
-          /* 🚨 는 식약처 의약품정보를 근거로 미리 써 둔 문장이다.
-             약이 바뀌면 문장도 함께 바뀐다 — 사람이 고치지 않는다. */
-          {
-            title: "🚨 바로 병원에 연락하세요",
-            locked: "비잔 · 식약처 의약품정보 기준 문장이라 고칠 수 없습니다 — 약이 바뀌면 문장도 바뀝니다",
-            list: [
-              "기분이 심하게 가라앉아 일상생활이 어려울 때",
-              "스스로를 해치고 싶은 생각이 들 때",
-              "생리가 아닌데 출혈이 많아 어지럽거나 힘이 빠질 때",
-            ],
-          },
-        ],
+        body:
+          "비잔 복용 중에는 부정출혈이 있을 수 있어요. 대부분 3개월 안에 줄어듭니다.\n" +
+          "다리가 붓고 아프거나 갑자기 숨이 차면 바로 병원에 연락해 주세요.",
+        edited: false,
+        locked: true,
+        warn: null,
       },
       {
         key: "life",
-        label: "생활지도",
-        editable: true,
-        blocks: [
-          {
-            title: "이번 4주 챌린지",
-            list: ["밤 11시 전에 잠들기 · 주 5일", "칼슘 음식 챙겨 먹기 · 주 5일", "주 3회 30분 걷기 · 주 3회"],
-          },
-          { title: "수면", body: "밤 10시~새벽 2시 사이에 잠들어 있는 것이 좋아요. 자기 전 2시간은 휴대폰을 보지 않으시면 더 좋아요." },
-          { title: "뼈 건강", body: "우유 · 요거트 · 치즈 · 두부 · 녹색 잎채소를 매일 챙겨 드세요." },
-          { title: "운동", body: "걷기 · 계단 오르기처럼 뼈에 체중이 실리는 운동이 특히 좋아요." },
-        ],
+        body:
+          "밤 10시~새벽 2시 사이에 잠들어 있는 것이 좋아요. 자기 전 2시간은 휴대폰을 보지 않으시면 더 좋아요.\n" +
+          "우유 · 요거트 · 치즈 · 두부 · 녹색 잎채소를 매일 챙겨 드세요.\n" +
+          "걷기 · 계단 오르기처럼 뼈에 체중이 실리는 운동이 특히 좋아요.",
+        edited: false,
+        locked: false,
+        warn: null,
+      },
+      {
+        key: "messages",
+        body:
+          "일주일 뒤 · 보름 뒤 확인 문자와 소진 3일 전 안내가 자동 발송됩니다.\n" +
+          "「{환자명}님, 복약 {일차}일째 확인입니다. 잘 드시고 계신가요? {링크}」",
+        edited: false,
+        locked: false,
+        warn: null,
       },
     ],
-    /* 문자 설정은 스탭이 S1-14 에서 맞춰 놓은 것을 원장이 보고 필요하면 고친다.
-       같은 화면을 두 역할이 보는 것이지 값이 두 자리에 있는 것이 아니다. */
-    messages: {
-      schedule: [
-        { key: "d7", label: "일주일 뒤", on: true, fixed: true, when: "08-20 (목) 예정" },
-        { key: "d15", label: "보름 뒤", on: true, when: "08-28 (금) 예정" },
-        { key: "d30", label: "한 달 뒤", on: false, when: "꺼짐 · 켜면 09-12 (토)" },
-        { key: "refill", label: "소진 3일 전", on: true, when: "11-02 (월) 예정 · 소진 11-05" },
-      ],
-      send_at: "오전 10:00",
-      template_name: "일주일 뒤 확인 · 기본 템플릿",
-      body: "{환자명}님, 복약 {일차}일째 확인입니다. 잘 드시고 계신가요? {링크}",
-      preview: who.patient.name + "님, 복약 7일째 확인입니다. 잘 드시고 계신가요? mg.kr/a3F9x2",
-      preview_meta: "010-5678-1234 · 08-20 (목) 10:00 · 발신 064-000-0000 · 76바이트 · 단문(SMS)",
-    },
-    approve_preview: { send_at: "오늘 18:00", to: who.patient.name + " 님" },
   };
+}
+
+/* 서버는 진료 시각 기준 그날 18:00 을 잡고, 지났으면 다음 날로 민다
+   (`GuideService` 의 `SEND_HOUR`). 목업도 ISO 로 준다 — 화면이 옮긴다. */
+function mockScheduledAt() {
+  var d = new Date();
+  d.setHours(18, 0, 0, 0);
+  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+  return d.toISOString();
 }
 
 function mockDoctorRequest(path, options) {
   var body = options.body || {};
   return new Promise(function (resolve, reject) {
     setTimeout(function () {
-      var m = path.match(/^\/visits\/(\d+)\/guide(?:\/(\w+))?$/);
+      /* **목업이 서버보다 헐거우면 경로 오류를 못 잡는다.** 예전 정규식은
+         `/guide/{무엇이든}` 을 다 받아서, 화면이 없는 주소를 불러도 `?mock=1`
+         에서는 멀쩡해 보였다. 서버가 실제로 가진 넷만 받는다. */
+      var get = path.match(/^\/visits\/(\d+)\/guide$/);
+      var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/(\w+)$/);
+      var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return)$/);
+      var m = get || sec || act;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
 
@@ -200,8 +175,12 @@ function mockDoctorRequest(path, options) {
         /* 서버가 역할을 판단한다(`docs/models-layout.md` — 「[승인]은 의사 계정만」).
            화면에서 버튼을 잠그는 것은 편의일 뿐이다. */
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
-        var target = MOCK_PATIENTS[visitId] || MOCK_PATIENTS[8801];
-        return resolve({ status: "APPROVED", send_at: "오늘 18:00", to: target.patient.name + " 님" });
+        /* 서버는 승인 결과로도 `GuideResponse` 를 통째로 준다. 수신번호는
+           싣지 않는다 — 승인할 때마다 전화번호가 화면과 로그를 지난다. */
+        var approved = mockGuide(visitId);
+        approved.status = "APPROVED";
+        approved.scheduled_at = mockScheduledAt();
+        return resolve(approved);
       }
 
       if (options.method === "POST" && /\/return$/.test(path)) {
@@ -209,12 +188,17 @@ function mockDoctorRequest(path, options) {
         if (!body.reason || !String(body.reason).trim()) {
           return reject(new ApiError("REASON_REQUIRED", 422, {}));
         }
-        return resolve({ status: "APPROVAL_RETURNED", reason: body.reason });
+        var returned = mockGuide(visitId);
+        returned.status = "APPROVAL_RETURNED";
+        returned.returned_reason = body.reason;
+        return resolve(returned);
       }
 
       if (options.method === "PATCH") {
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
-        return resolve({ section: m[2], version: 4 });
+        if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
+        /* 서버는 고친 그 섹션 하나만 돌려준다(`SectionResponse`). */
+        return resolve({ key: sec[2], body: String(body.body || ""), edited: true, locked: false, warn: null });
       }
 
       return resolve(mockGuide(visitId));
