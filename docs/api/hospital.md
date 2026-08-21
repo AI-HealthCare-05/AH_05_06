@@ -692,7 +692,125 @@ OCR 엔진 실행은 AI worker가 `ocr_job`의 `PROCESSING` 작업을 가져가 
 최신 Notion에서 삭제 상태인 재판독 API와 일괄 결과 수정 API는 구현하지 않았습니다.
 KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 
-## 5. 환자·진료 구현 기록
+## 5. 안내 생성·승인·반려
+
+> 상위 일감: `KEY-111`(`KEY-76` 인수조건, 와이어프레임 D1-1~D1-5)
+
+### 엔드포인트
+
+| Method | Path | 용도 | 권한 |
+|---|---|---|---|
+| GET | `/api/v1/visits/{visit_id}/guide` | 안내문 조회 — 네 갈래 + ⚠ 표시 | `staff`·`doctor` |
+| PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | `doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/approve` | 승인 — 발송 예약 | `doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/return` | 스탭에 되돌림 (사유 필수) | `doctor` |
+
+`admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
+
+### 상태값
+
+| 상태 | 의미 | 화면 탭 |
+|---|---|---|
+| `STAFF_REVIEW` | 스탭 확인 중 | 작성 중 |
+| `APPROVAL_PENDING` | 승인 요청 | 승인 요청 |
+| `SCHEDULED_TO_SEND` | 발송 예약됨 | 발송 대기 |
+| `APPROVAL_RETURNED` | 승인 반려 | 보완 |
+
+새 이름을 만들지 않는다 — 위 값은 `docs/contracts/patient-visit-api-v1.md` §6의 `detail_status`와 같은 어휘다. **승인의 결과는 `APPROVED`가 아니라 `SCHEDULED_TO_SEND`다** — 승인이 곧 발송 예약이며, 승인과 발송 사이에 사람이 다시 손대는 자리를 두지 않는다(D1-5).
+
+### 안내문 조회 응답
+
+```json
+{
+  "visit_id": 501,
+  "patient": {
+    "name": "김서연",
+    "birth_date": "1990-01-01",
+    "age": 36,
+    "gender": "FEMALE",
+    "hospital_patient_no": "SYN-12345"
+  },
+  "summary": "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 05-20",
+  "status": "APPROVAL_PENDING",
+  "version": 3,
+  "approved_at": null,
+  "scheduled_at": null,
+  "returned_reason": null,
+  "sections": [
+    {"key": "medication", "body": "...", "edited": false, "locked": false, "warn": "AMH 결과가 아직 안 나왔습니다 — 값이 빠진 자리입니다"},
+    {"key": "caution", "body": "...", "edited": false, "locked": true, "warn": null},
+    {"key": "life", "body": "...", "edited": false, "locked": false, "warn": null},
+    {"key": "messages", "body": "...", "edited": false, "locked": false, "warn": null}
+  ]
+}
+```
+
+- `patient`·`summary`는 승인 화면이 「누구 것인지」를 알아야 하므로 응답에 포함한다. `phone`은 포함하지 않는다 — 승인할 때마다 전화번호가 화면과 로그를 지날 이유가 없다.
+- `age`는 저장값이 아니라 조회 시점의 현지 날짜와 `birth_date`로 계산한다. 동명이인 확인과 계산 근거를 위해 `birth_date`와 `age`를 함께 제공한다(계약 §4).
+- `sections[]`은 네 갈래(`medication`/`caution`/`life`/`messages`) 고정이며 각 항목은 `body` 문자열 하나다. 8/27 여정에서 안내문은 고정 텍스트라(`KEY-150` — 「확정 OCR→고정 안내→의사 승인」), 제목·표·목록으로 나눈 구조화 콘텐츠 모델(`blocks`)은 이번 계약에 포함하지 않는다. 실제 LLM 생성이 붙을 때 다시 정한다.
+- `warn`·`locked`는 섹션 단위다. `warn`은 AI가 자신 없는 곳·지난 진료와 달라진 곳·값이 빠진 곳에만 서버가 판정해 채운다 — 화면은 판정하지 않는다. `locked`는 🚨 응급 문장(식약처 의약품정보 기준)이라는 뜻의, 이유 문자열이 없는 boolean이다. 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
+- `edited`는 사람이 고쳤는지를 말한다. 생성 원문은 서버에 별도로 보관하며 이 응답에는 포함하지 않는다.
+
+### 섹션 수정
+
+```text
+PATCH /api/v1/visits/{visit_id}/guide/sections/{key}
+{"body": "..."}
+```
+
+- `doctor` 역할만 호출할 수 있다.
+- `locked`인 섹션은 `409 SECTION_LOCKED`다.
+- 안내문이 `APPROVAL_PENDING` 상태가 아니면 `409 GUIDE_NOT_PENDING`이다 — 승인 요청 상태에서만 고칠 수 있다.
+- 응답은 수정된 섹션 하나(`{key, body, edited, locked, warn}`)만 돌려준다.
+
+### 승인
+
+```text
+POST /api/v1/visits/{visit_id}/guide/approve
+```
+
+- `doctor` 역할만 호출할 수 있다.
+- 승인은 상태를 `SCHEDULED_TO_SEND`로 바꾸고 `scheduled_at`을 함께 채운다 — 두 동작을 나누지 않는다.
+- `scheduled_at`은 병원 표시 시간대(`Asia/Seoul`) 기준 그날 18:00이며, 이미 지났으면 다음 날 18:00이다. 계산은 받은 시각이 어느 시간대든 `Asia/Seoul`로 옮긴 뒤 판단한다 — 저장 모드(`use_tz`)와 무관하게 같은 순간을 가리켜야 한다.
+- 이미 `SCHEDULED_TO_SEND`면 `409 ALREADY_APPROVED`, `APPROVAL_PENDING`이 아니면 `409 GUIDE_NOT_PENDING`이다.
+- 응답은 안내문 조회와 같은 전체 모양이다. 수신번호(`phone`)는 포함하지 않는다 — 이 화면은 「누구인지」만 알면 되고 발송 번호는 서버가 안다.
+
+### 반려
+
+```text
+POST /api/v1/visits/{visit_id}/guide/return
+{"reason": "검사 결과지를 다시 올려 주세요"}
+```
+
+- `doctor` 역할만 호출할 수 있다.
+- `reason`은 필수이며 최대 200자다. 비어 있으면 `422 REASON_REQUIRED`, 초과하면 `422 REASON_TOO_LONG`이다.
+- 이 문장은 스탭 알림에 그대로 뜬다(D1-7 「승인 반려 — 진료기록 재업로드 필요」). **최신 상태 표시는 `GuideDocument.returned_reason`을 쓰고, 감사 이력 조회는 `GuideEvent.reason`을 쓴다** — 같은 문장을 각자의 용도로 보관하며, 알림 API는 이 역할 구분을 따른다.
+
+### 동시성·격리
+
+- 상태 확인·변경과 이력 기록은 한 트랜잭션 안에서 행을 잠그고(`select_for_update`) 수행한다. 동시에 들어온 승인·반려·수정 요청이 모두 `APPROVAL_PENDING`을 읽고 함께 통과하는 경합을 막는다 — 의사가 승인한 내용과 실제 발송 내용이 달라지면 안 된다.
+- 병원 격리는 `visit.hospital_id`를 타고 판단한다. `guide_document.hospital_id`는 목록 조회용 인덱스 사본이라 격리 판정에는 쓰지 않는다. 타 병원 안내문은 존재 여부를 감추기 위해 `404 GUIDE_NOT_FOUND`다.
+
+### 오류 계약
+
+| HTTP | code | 조건 |
+|---:|---|---|
+| 403 | `FORBIDDEN` | 승인·반려·수정에 `doctor` 역할 없음 |
+| 404 | `GUIDE_NOT_FOUND` | 안내문 없음 또는 타 병원 안내문 |
+| 404 | `SECTION_NOT_FOUND` | 없는 섹션 키 |
+| 409 | `SECTION_LOCKED` | 잠긴(🚨 응급) 섹션 수정 시도 |
+| 409 | `GUIDE_NOT_PENDING` | 승인 요청 상태가 아닌데 수정·승인·반려 시도 |
+| 409 | `ALREADY_APPROVED` | 이미 승인된 안내문 재승인 시도 |
+| 422 | `EMPTY_BODY` | 섹션 수정 본문 빈 값 |
+| 422 | `REASON_REQUIRED` | 반려 사유 빈 값 |
+| 422 | `REASON_TOO_LONG` | 반려 사유 200자 초과 |
+
+### 남은 결정
+
+- 스탭이 `STAFF_REVIEW` 단계에서 안내문을 고치는 경로는 이번 계약에 포함하지 않는다. 범위와 API는 후속 티켓에서 정한다.
+- `locked`가 이유 문자열 없는 boolean인 것은 지금 유일하게 잠기는 `caution` 섹션(🚨 응급 문장)에는 맞지만, 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
+
+## 6. 환자·진료 구현 기록
 
 
 > 상위 일감: KEY-16
@@ -726,12 +844,11 @@ Department·Staff 기준 테이블도 아직 없으므로 `doctor_id` 또는 `de
 필수 정정 사유 조건까지 검사합니다. 감사 이벤트 테이블이 병합되기 전에는 실제 운영
 활성화 대상에서 제외하며, 이벤트 기록 연결은 감사로그 담당 일감의 선행 조건입니다.
 
-## 6. 아직 연결 중인 영역
+## 7. 아직 연결 중인 영역
 
 아래 영역은 관련 Jira 인수조건과 병합된 구현을 기준으로 엔드포인트와 DTO가 확정될 때 이 문서에 추가한다.
 
 - 의료문서 업로드·임시 저장
-- 안내 생성·승인·반려
 - 환자 링크 발급 관리
 - D+7 응답 병원 조회
 - 관리자·감사로그
