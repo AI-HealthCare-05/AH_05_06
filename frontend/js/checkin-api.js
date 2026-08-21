@@ -39,7 +39,7 @@ var checkinApi = {
 
      **이것은 기록이 아니다.** 의무기록은 [저장] 이 남기는 답이고, 이 신호는
      「14:23 에 환자가 중단을 눌렀다」는 사실일 뿐이다. 나중에 답을 바꿔도 그
-     사실은 참이라 철회하지 않는다 — `docs/contracts/checkin-signal-v1.md`.
+     사실은 참이라 철회하지 않는다 — `docs/api/patient.md` 3절.
 
      실패해도 화면을 막지 않는다. 환자는 자기가 알림을 보내는 줄 모른다. */
   signal: function (token, answerKey) {

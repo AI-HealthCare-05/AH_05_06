@@ -4,7 +4,7 @@
 드릴게요」를 읽었는데 의원은 모르는 상태**가 되거나, 반대로 「가끔 놓쳐요」에
 연락이 가서 다음 회차부터 솔직한 답을 못 받게 된다.
 
-    docs/contracts/checkin-signal-v1.md     계약 §4 의 규칙
+    docs/api/patient.md                     계약 3절 — 규칙과 판단표
     docs/wireframes/wireframe-patient-...   화면이 환자에게 약속하는 문장
     frontend/js/checkin-api.js              목업의 notify 값
 
@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-CONTRACT = ROOT / "docs" / "contracts" / "checkin-signal-v1.md"
+CONTRACT = ROOT / "docs" / "api" / "patient.md"
 WIREFRAME = ROOT / "docs" / "wireframes" / "wireframe-patient-2.3.1.html"
 CHECKIN_API_JS = ROOT / "frontend" / "js" / "checkin-api.js"
 CHECKIN_JS = ROOT / "frontend" / "js" / "checkin.js"
