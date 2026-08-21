@@ -59,14 +59,14 @@ class FakeOcrService:
             field_type="DIAGNOSIS",
             extracted_value="합성 추출값",
             corrected_value=None,
-            value=None if pending else "합성 추출값",
+            value="합성 추출값",
             unit="mg/dL",
             confidence=0.83,
             is_low_confidence=False,
             version=1,
             is_confirmed=False,
             is_pending_report=pending,
-            document_id=None if pending else 801,
+            document_id=801,
             source_line=12,
         )
 
@@ -298,16 +298,31 @@ def test_document_id_is_hidden_after_raw_text_purge() -> None:
 
 
 def test_pending_report_field_is_exposed_in_api_response(api: tuple[TestClient, FakeOcrService]) -> None:
-    """is_pending_report=True 필드가 API 응답에 정확히 노출된다."""
+    """is_pending_report=True 플래그가 API 응답에 노출된다."""
     client, fake = api
 
     fake.pending = True
     try:
         response = client.get("/api/v1/ocr/jobs/ocr_synthetic_501/fields", params={"field_type": "DIAGNOSIS"})
         assert response.status_code == 200
-        field = response.json()[0]
-        assert field["is_pending_report"] is True
-        assert field["value"] is None
-        assert field["document_id"] is None
+        assert response.json()[0]["is_pending_report"] is True
     finally:
         fake.pending = False
+
+
+def test_pending_report_flag_does_not_null_value_or_document_id() -> None:
+    """is_pending_report=True여도 서버는 value·document_id를 지우지 않는다.
+
+    is_pending_report는 "추후 보고 예정"을 나타내는 상태 플래그이며,
+    값 표시 방식은 화면이 플래그를 보고 결정한다. OCR이 수치를 추출했다면
+    서버는 그대로 내려주고, document_id도 raw_text_purged_at만 본다.
+    """
+    field = OcrField(ocr_field_id=1, field_type="AMH", extracted_value="1.2", is_pending_report=True)
+    field.document_text_id = 1
+    doc = OcrDocumentText(ocr_document_text_id=1, document_id=801, raw_text_purged_at=None)
+
+    result = serialize_field(field, {1: doc})
+
+    assert result.is_pending_report is True
+    assert result.value == "1.2"
+    assert result.document_id == 801
