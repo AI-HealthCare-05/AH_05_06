@@ -50,7 +50,7 @@ var session = {
 function landingFor(roles) {
   roles = roles || [];
   if (roles.indexOf("staff") !== -1) return "/patients.html"; // S1
-  if (roles.indexOf("doctor") !== -1) return "/approvals.html"; // D1
+  if (roles.indexOf("doctor") !== -1) return "/doctor.html"; // D1
   if (roles.indexOf("admin") !== -1) return "/admin.html"; // A1 — 관리자 권한만 가진 계정
   return "/login.html";
 }
