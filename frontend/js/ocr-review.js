@@ -619,7 +619,10 @@
 
 
     if (target.id === "submit") {
-      saveNote.textContent = "안내문 생성 연동은 KEY-64 입니다 — 이 화면에서는 값 확인까지만 합니다";
+      /* 티켓 번호를 화면에 쓰지 않는다. 접수대에게 `KEY-75` 는 아무것도 알려
+         주지 않는다 — 알아야 하는 것은 「지금 되는가」와 「그럼 뭘 하면 되는가」다.
+         (예전에 KEY-64 라고 적혀 있었는데 그건 다른 일감이었다.) */
+      saveNote.textContent = "안내문 생성은 아직 연결되지 않았습니다 — 여기서는 값 확인까지 하시면 됩니다";
       saveNote.hidden = false;
       return;
     }
