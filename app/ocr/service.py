@@ -284,6 +284,13 @@ def serialize_candidate(
     )
 
 
+def _serialize_candidates(field: OcrField, doc_text_map: dict[int, OcrDocumentText]) -> list[OcrCandidateResponse]:
+    rel = getattr(field, "candidates", None)
+    if rel is None or not getattr(rel, "_fetched", False):
+        return []
+    return [serialize_candidate(item, doc_text_map) for item in rel]
+
+
 def serialize_field(field: OcrField, doc_text_map: dict[int, OcrDocumentText] | None = None) -> OcrFieldResponse:
     doc_text_map = doc_text_map or {}
     confidence = float(field.confidence) if isinstance(field.confidence, Decimal) else field.confidence
@@ -305,7 +312,7 @@ def serialize_field(field: OcrField, doc_text_map: dict[int, OcrDocumentText] | 
         modified_at=field.modified_at,
         confirmed_by=field.confirmed_by,
         confirmed_at=field.confirmed_at,
-        candidates=[serialize_candidate(item, doc_text_map) for item in getattr(field, "candidates", ())],
+        candidates=_serialize_candidates(field, doc_text_map),
     )
 
 

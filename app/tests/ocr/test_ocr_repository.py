@@ -120,7 +120,7 @@ async def assert_repository_round_trip() -> None:
     purged_serialized = serialize_field(stored_fields[0], purged_map)
     assert purged_serialized.document_id is None
 
-    confirmed = await repository.update_field(
+    confirmed, _ = await repository.update_field(
         field.ocr_field_id,
         UpdateOcrFieldRequest(base_version=1, confirm=True),
         ACTOR,
