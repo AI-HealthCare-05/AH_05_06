@@ -673,17 +673,17 @@ OCR 도메인 오류는 동결 계약의 `code`, `message`, `field_errors` 응�
 - 테스트 데이터는 `합성 추출값`, `합성 수정값`만 사용합니다.
 - 승인 이후 원문 파기는 KEY-59의 `purge_raw_text`와 승인 트랜잭션을 연결해야 합니다.
 
-### 현재 통합 제한
+### 현재 통합 상태
 
-현재 `develop`의 `User` 모델에는 KEY-9/KEY-21의 `hospital_id`와 `roles`가 아직
-병합되지 않았습니다. 이 값이 없으면 서버는 기본 차단합니다. 직원 모델이 병합될
-때 `get_ocr_actor`를 실제 직원 컨텍스트에 연결해야 합니다. KEY-73의 직원 PK인
-`staff_id`와 기존 `User.id`를 모두 인식하되 최종 통합 후 직원 컨텍스트 하나로
-고정합니다.
+KEY-116(`#61`)이 병합되어 `get_ocr_actor`는 `get_current_staff`를 거쳐 실제
+`Staff.hospital_id`·`roles`를 사용합니다. `User` 모델을 경유하던 기본 차단은
+더 이상 해당하지 않습니다.
 
-KEY-53의 권위 있는 문서 모델·저장소가 아직 없으므로 기본 소유권 검증기는 작업
-생성을 `404`로 차단합니다. KEY-53 통합 시 문서의 `document_id`, `visit_id`,
-`hospital_id`를 같은 트랜잭션에서 검증하고 잠그는 구현을 주입해야 합니다.
+KEY-54(`#82`)가 병합되어 `TortoiseDocumentOwnershipVerifier`가 `MedicalDocument`
+행으로 문서·진료·병원 일치를 실제로 검증합니다. `POST /documents/{document_id}/ocr`는
+더 이상 기본값으로 `404`를 반환하지 않습니다. 문서 생성은
+`POST /api/v1/front-desk/visits/{visit_id}/documents`(§7 — 정식 계약 등재 전)가
+담당합니다.
 
 OCR 엔진 실행은 AI worker가 `ocr_job`의 `PROCESSING` 작업을 가져가 결과를 쓰는
 경계입니다. 본 API는 작업 생성과 결과 검수 계약을 담당하며 OCR 추론 구현이나
