@@ -63,7 +63,7 @@ class GuideService:
         """
         guide = (
             await GuideDocument.filter(visit_id=visit_id, visit__hospital_id=actor.hospital_id)
-            .prefetch_related("sections")
+            .prefetch_related("sections", "visit__patient")
             .first()
         )
         if guide is None:

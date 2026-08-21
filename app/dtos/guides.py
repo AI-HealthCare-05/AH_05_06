@@ -6,10 +6,11 @@
 같은 것을 보는 것이 이 파일의 목적이다.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.patients import PatientGender
 from app.models.visits import GuideSectionKey, GuideStatus
 
 
@@ -28,8 +29,33 @@ class SectionResponse(StrictModel):
     warn: str | None = None
 
 
+class PatientHead(StrictModel):
+    """승인 화면 머리에 서는 환자. **누구의 안내문인지**를 말한다.
+
+    이것이 없으면 원장님은 화면에 이름 없이 뜬 본문을 승인하게 된다. 승인은
+    곧 그 환자에게 발송이라, 누구인지 모르고 누르는 자리를 만들면 안 된다.
+
+    `birth_date` 와 `age` 를 **함께** 준다 — 계약 §4 가 「동명이인 확인과 계산
+    근거를 위해 두 값을 함께 제공한다」로 정해 둔 그대로다. `age` 는 저장값이
+    아니라 조회 시점의 현지 날짜로 계산한 읽기 전용 값이다.
+
+    `phone` 은 넣지 않는다. 이 화면은 「누구인지」만 알면 되고, 발송 번호는
+    서버가 안다. 응답에 실으면 승인할 때마다 전화번호가 화면과 로그를 지난다.
+    """
+
+    name: str
+    birth_date: date
+    age: int
+    gender: PatientGender
+    hospital_patient_no: str
+
+
 class GuideResponse(StrictModel):
     visit_id: int
+    #: 이 안내문이 누구 것인가. 화면 머리가 이 값으로 산다.
+    patient: PatientHead
+    #: 진료 한 줄 요약(`visit.visit_summary`). 없을 수 있다.
+    summary: str | None = None
     status: GuideStatus
     version: int
     sections: list[SectionResponse]
