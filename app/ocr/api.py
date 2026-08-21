@@ -10,10 +10,10 @@ from app.ocr.schemas import (
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor, get_ocr_actor
-from app.ocr.service import OcrService, TortoiseOcrRepository
+from app.ocr.service import OcrService, TortoiseDocumentOwnershipVerifier, TortoiseOcrRepository
 
 ocr_router = APIRouter(tags=["ocr"])
-service = OcrService(TortoiseOcrRepository())
+service = OcrService(TortoiseOcrRepository(TortoiseDocumentOwnershipVerifier()))
 
 
 def get_ocr_service() -> OcrService:

@@ -6,6 +6,7 @@ from app.apis.v1.patient_routers import patient_router
 from app.apis.v1.staff_auth_routers import staff_auth_router
 from app.apis.v1.user_routers import user_router
 from app.apis.v1.visit_routers import visit_router
+from app.documents.api import document_router
 from app.ocr.api import ocr_router
 
 # `auth_routers.py` 는 지웠다. 남아 있던 `POST /auth/signup` 은 email·password 로
@@ -20,5 +21,6 @@ v1_routers.include_router(staff_auth_router)
 v1_routers.include_router(user_router)
 v1_routers.include_router(patient_router)
 v1_routers.include_router(visit_router)
+v1_routers.include_router(document_router)
 v1_routers.include_router(ocr_router)
 v1_routers.include_router(guide_router)
