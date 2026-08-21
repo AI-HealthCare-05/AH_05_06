@@ -57,7 +57,7 @@ def validate_birthday(birthday: date | str) -> date:
 
 
 def validate_staff_password(password: str) -> str:
-    """직원 비밀번호 — 계약(`docs/auth-contract.md` 2절)의 `L-3` 규칙.
+    """직원 비밀번호 — 계약(`docs/api/hospital.md` 2절)의 `L-3` 규칙.
 
     화면이 약속하는 것은 「영문 · 숫자 · 기호를 섞어 8자 이상」이다.
     위의 `validate_password` 는 **대문자를 따로 요구**해서, 화면 문구대로 만든

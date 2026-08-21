@@ -4,15 +4,19 @@
 넘긴다. 「승인은 의사만」은 규칙이고, 규칙은 서비스에 있다(`docs/models-layout.md`).
 """
 
+from datetime import date, datetime
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, status
 
 from app.dependencies.staff_auth import get_current_staff
-from app.dtos.guides import GuideResponse, ReturnRequest, SectionEditRequest, SectionResponse
+from app.dtos.guides import GuideResponse, PatientHead, ReturnRequest, SectionEditRequest, SectionResponse
 from app.models.staffs import Staff
 from app.models.visits import GuideDocument, GuideSection
 from app.services.guides import GuideService
+
+SEOUL = ZoneInfo("Asia/Seoul")
 
 guide_router = APIRouter(prefix="/visits", tags=["guides"])
 
@@ -38,9 +42,30 @@ def _actor(staff: Annotated[Staff, Depends(get_current_staff)]) -> _Actor:
     return _Actor(staff)
 
 
+def _age_on(birth_date: date, today: date) -> int:
+    """만 나이. 생일이 아직 안 지났으면 한 살 뺀다.
+
+    계약 §4 — 「`age` 는 저장값이 아니라 **요청한 현지 날짜**와 `birth_date` 로
+    계산한다」. 저장해 두면 시간이 지나면서 조용히 틀린 값이 된다.
+    """
+    before_birthday = (today.month, today.day) < (birth_date.month, birth_date.day)
+    return today.year - birth_date.year - (1 if before_birthday else 0)
+
+
 def _to_response(guide: GuideDocument) -> GuideResponse:
+    visit = guide.visit
+    patient = visit.patient
+    today = datetime.now(SEOUL).date()
     return GuideResponse(
         visit_id=guide.visit_id,
+        patient=PatientHead(
+            name=patient.name,
+            birth_date=patient.birth_date,
+            age=_age_on(patient.birth_date, today),
+            gender=patient.gender,
+            hospital_patient_no=patient.hospital_patient_no,
+        ),
+        summary=visit.visit_summary,
         status=guide.status,
         version=guide.version,
         approved_at=guide.approved_at,
@@ -87,7 +112,7 @@ async def approve_guide(
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
     guide = await service.approve(actor, visit_id)
-    await guide.fetch_related("sections")
+    await guide.fetch_related("sections", "visit__patient")
     return _to_response(guide)
 
 
@@ -99,5 +124,5 @@ async def return_guide(
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
     guide = await service.return_to_staff(actor, visit_id, body.reason)
-    await guide.fetch_related("sections")
+    await guide.fetch_related("sections", "visit__patient")
     return _to_response(guide)

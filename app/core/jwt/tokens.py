@@ -83,7 +83,7 @@ class Token:
         # utctimetuple() 로 UTC 로 옮긴 뒤 epoch 으로 만든다.
         # timetuple() 을 쓰면 KST 벽시계를 UTC 로 읽어 **9시간이 더 붙는다** —
         # 60분짜리 액세스 토큰이 실제로는 600분을 살았다. 설정과 계약
-        # (docs/auth-contract.md 4절)이 말하는 수명과 어긋난다.
+        # (docs/api/hospital.md 4절)이 말하는 수명과 어긋난다.
         self.payload["exp"] = timegm(dt.utctimetuple())
 
     def set_iat(self, from_time: datetime | None = None) -> None:

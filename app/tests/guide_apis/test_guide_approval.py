@@ -7,7 +7,7 @@
 이 파일은 **API 단위의 정상·예외까지만** 본다.
 """
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -373,6 +373,63 @@ class TestReadingTheGuide(GuideTestCase):
         medication = body["sections"][0]
         assert medication["warn"] == "합성 확인 부탁 문구", "⚠ 는 서버가 판정한다 — 화면이 알 수 없다"
         assert body["sections"][1]["locked"] is True
+
+
+class TestTheScreenKnowsWhoseGuideItIs(GuideTestCase):
+    """머리에 환자가 서야 한다.
+
+    승인은 곧 그 환자에게 발송이다. 화면에 이름 없이 본문만 뜨면 원장님은
+    **누구 것인지 모르고 누르게 된다.** `#48` 화면이 목업으로 이 자리를 채우고
+    있었는데 서버가 주지 않아, 목업을 끄면 머리가 빈다.
+    """
+
+    async def test_the_head_carries_the_patient(self) -> None:
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(doctor))
+
+        head = response.json()["patient"]
+        assert head["name"] == "합성환자"
+        assert head["hospital_patient_no"] == "SYN-12345"
+        assert head["birth_date"] == "1990-01-01"
+
+    async def test_the_phone_never_rides_along(self) -> None:
+        """발송 번호는 서버가 안다. 승인할 때마다 화면과 로그를 지날 이유가 없다."""
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(doctor))
+
+        assert "01044524085" not in response.text, "안내문 응답에 환자 전화번호가 실렸다"
+
+    async def test_age_is_counted_not_stored(self) -> None:
+        """계약 §4 — `age` 는 저장값이 아니라 **조회 시점의 현지 날짜**로 센다.
+
+        생일이 아직 안 지난 환자를 하나 만들어, 한 살을 빼는지까지 본다. 여기서
+        구현과 같은 식을 다시 쓰면 검사가 자기 자신을 확인하게 되므로, **날짜를
+        오늘에서 만들어** 기대값을 사람이 셀 수 있게 둔다.
+        """
+        today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        tomorrow = today + timedelta(days=1)
+
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        # 생일이 내일인 서른 살 — 오늘 기준으로는 아직 스물아홉이다.
+        not_yet = tomorrow.replace(year=tomorrow.year - 30)
+        visit = await Visit.get(visit_id=guide.visit_id).prefetch_related("patient")
+        visit.patient.birth_date = not_yet
+        await visit.patient.save(update_fields=["birth_date"])
+
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(doctor))
+
+        assert response.json()["patient"]["age"] == 29, "생일이 안 지났으면 한 살 뺀다"
 
 
 class TestRevokedSessionCannotReachTheGuide(GuideTestCase):

@@ -24,7 +24,7 @@ HOSPITAL_ID = 6000
 PATIENT_ID = 600001
 VISIT_ID = 600001
 DOCUMENT_ID = 600801
-ACTOR = OcrActor(user_id=600101, hospital_id=HOSPITAL_ID, roles=frozenset({"staff"}))
+ACTOR = OcrActor(staff_id=600101, hospital_id=HOSPITAL_ID, roles=frozenset({"staff"}))
 
 
 class SyntheticDocumentOwnershipVerifier:
@@ -111,13 +111,13 @@ async def assert_repository_round_trip() -> None:
     assert confirmed.corrected_value is None
     assert confirmed.modified_by is None
     assert confirmed.is_confirmed is True
-    assert confirmed.confirmed_by == ACTOR.user_id
+    assert confirmed.confirmed_by == ACTOR.staff_id
 
     failed_job = await OcrJob.create(
         ocr_job_id="synthetic-key60-failed",
         hospital_id=HOSPITAL_ID,
         visit_id=VISIT_ID,
-        requested_by=ACTOR.user_id,
+        requested_by=ACTOR.staff_id,
         status=OcrJobStatus.FAILED,
         failure_code="SYNTHETIC_FAILURE",
     )
