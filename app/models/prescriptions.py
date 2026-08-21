@@ -37,9 +37,22 @@ class Prescription(models.Model):
 
     prescription_id = fields.BigIntField(primary_key=True)
     visit_id: int
-    visit: fields.ForeignKeyRelation[Visit] = fields.ForeignKeyField(
+    #: **진료 하나에 처방 묶음 하나.** DB 가 지키게 한다.
+    #:
+    #: 지금까지는 `_seed_prescription` 의 `get_or_create(visit=visit, ...)` 라는
+    #: 애플리케이션 약속뿐이었고, DB 는 한 `visit_id` 에 여러 행이 생기는 것을
+    #: 막지 않았다(이희진 님 `#70` 리뷰).
+    #:
+    #: **막아야 하는 이유는 읽는 쪽에 있다.** 안내 생성도 소진예정일도 「이 진료의
+    #: 처방」을 묻는데, 여러 개가 허용되면 그 물음에 답이 없다 — 어느 것이 지금
+    #: 처방인지 정하는 규칙이 저장소 어디에도 없다. 규칙 없이 여러 개를 허용하는
+    #: 것이 하나로 막는 것보다 위험하다.
+    #:
+    #: 나중에 「한 진료의 처방을 개정해 남긴다」가 필요해지면, 행을 여러 개 두는
+    #: 것이 아니라 개정 번호를 두고 어느 것이 지금인지 말하게 해야 한다.
+    visit: fields.ForeignKeyRelation[Visit] = fields.OneToOneField(
         "models.Visit",
-        related_name="prescriptions",
+        related_name="prescription",
         on_delete=OnDelete.CASCADE,
         source_field="visit_id",
     )

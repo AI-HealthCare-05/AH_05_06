@@ -10,7 +10,7 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
     `prescription_set` VARCHAR(100) NOT NULL COMMENT '진료 당시 처방 세트 이름의 **스냅샷**이다 — \"자궁내막증 · 비잔 (계속)\".',
     `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    `visit_id` BIGINT NOT NULL,
+    `visit_id` BIGINT NOT NULL UNIQUE,
     CONSTRAINT `fk_prescrip_visit_44f5913c` FOREIGN KEY (`visit_id`) REFERENCES `visit` (`visit_id`) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COMMENT='한 진료의 처방 묶음.';
         CREATE TABLE IF NOT EXISTS `prescription_item` (
@@ -27,8 +27,8 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
     return """
-        DROP TABLE IF EXISTS `prescription`;
-        DROP TABLE IF EXISTS `prescription_item`;"""
+        DROP TABLE IF EXISTS `prescription_item`;
+        DROP TABLE IF EXISTS `prescription`;"""
 
 
 MODELS_STATE = (

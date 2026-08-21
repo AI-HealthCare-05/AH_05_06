@@ -623,7 +623,11 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 #### 처방 계약 경계
 
-처방을 VISIT의 JSON 필드로 추가하지 않는다. ERD v11의 `PRESCRIPTION(visit_id)` 1:N `PRESCRIPTION_ITEM(duration_days 포함)`이 실제 처방과 약·용법·처방일수를 소유한다. `PRESCRIPTION_SET_VERSION`은 템플릿 출처이고 `GUIDE_DOCUMENT.prescription_id/prescription_set_version_id`가 승인 스냅샷을 연결한다. KEY-26/31은 이 테이블의 상세 구현 범위가 아니지만, 소진 예정일과 D+7 판정은 확정된 `PRESCRIPTION_ITEM.duration_days`만 사용한다.
+처방을 VISIT의 JSON 필드로 추가하지 않는다. `PRESCRIPTION(visit_id)` 1:N `PRESCRIPTION_ITEM(duration_days 포함)`이 실제 처방과 약·용법·처방일수를 소유한다. 소진 예정일과 D+7 판정은 확정된 `PRESCRIPTION_ITEM.duration_days`만 사용한다.
+
+**세트 출처는 표가 아니라 스냅샷 문자열이다** — [KEY-137](https://leehee.atlassian.net/browse/KEY-137)에서 확정했다. ERD v11이 적어 둔 `PRESCRIPTION_SET_VERSION` 템플릿 표는 저장소 어디에도 없고, 합성 정본이 그 자리에 담고 있는 값은 id가 아니라 **사람이 읽는 이름**이다(8종 · 최대 17자). 그래서 칸 이름도 담고 있는 것대로 `prescription.prescription_set`(`varchar(100)`)이다. `..._id`라는 이름을 두면 다음 사람이 조인할 표를 찾게 된다.
+
+세트가 개정돼도 그 진료가 무엇을 근거로 했는지는 바뀌면 안 되므로, 템플릿 표가 생기더라도 이 칸은 `visit.department`처럼 **그때의 이름을 남기는 스냅샷**으로 유지하고 FK를 따로 더한다.
 
 #### 별도 확인 항목
 
