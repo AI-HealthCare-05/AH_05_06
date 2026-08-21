@@ -115,7 +115,7 @@ class TortoiseOcrRepository:
                 ocr_job_id=f"ocr_{uuid4().hex}",
                 hospital_id=actor.hospital_id,
                 visit=visit,
-                requested_by=actor.user_id,
+                requested_by=actor.staff_id,
                 using_db=connection,
             )
             await OcrJobDocument.create(
@@ -199,12 +199,12 @@ class TortoiseOcrRepository:
             changed_at = now()
             if request.corrected_value is not None or selected_candidate is not None:
                 field.corrected_value = corrected_value
-                field.modified_by = actor.user_id
+                field.modified_by = actor.staff_id
                 field.modified_at = changed_at
             field.version += 1
             if request.confirm:
                 field.is_confirmed = True
-                field.confirmed_by = actor.user_id
+                field.confirmed_by = actor.staff_id
                 field.confirmed_at = changed_at
             await field.save(using_db=connection)
         await field.fetch_related("candidates")

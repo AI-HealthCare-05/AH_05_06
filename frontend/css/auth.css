@@ -171,6 +171,19 @@ body.auth {
 }
 
 .button:disabled {
+  /* 흰 글자에 #9aa0a7 이면 대비 2.64 로 안 읽혔다. 「지금은 왜 안 되는가」를
+     말해 주는 버튼이라 읽히지 않으면 존재 이유가 없다.
+
+     옅은 채움 + 흐린 글자도 재 봤는데, 옆에 선 흰 고스트 버튼(「나중에
+     업로드」)과 구별되지 않았다 — 눌리는 것과 안 눌리는 것이 같아 보이면
+     더 나쁘다. 중간 회색으로 두어 셋을 가른다.
+
+       눌리는 주 버튼   near-black  흰 글자  13.50
+       잠긴 주 버튼     중간 회색    흰 글자   5.29
+       고스트 버튼      흰색        검은 글자 13.50 + 테두리
+
+     `--disabled` 라는 이름은 `#49`(KEY-104)가 붙였다. 이름은 그쪽이 맞고
+     값은 여기서 잰 것이 맞아, **이름을 쓰고 토큰 값을 고쳤다.** */
   background: var(--disabled);
   cursor: default;
 }
@@ -233,4 +246,28 @@ body.auth {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ── 눌렀다는 신호 ──────────────────────────────────
+   로그인은 응답이 늦을 수 있는 자리다(서버 왕복 + 해시 검증). 누른 순간
+   버튼이 반응하지 않으면 두 번 누르게 되고, 실패 횟수가 두 번 오른다. */
+/* 요소마다 **실제로 바뀌는 것만** 감싼다. 안 바뀌는 속성을 목록에 넣으면
+   아무것도 애니메이션하지 않으면서 「여기 뭔가 움직인다」고 읽히는 죽은 CSS 가 된다. */
+.button,
+.reveal {
+  transition: background-color var(--motion) var(--ease);
+}
+
+/* 배경은 안 바뀐다. 바뀌는 것은 오류 테두리뿐이다 —
+   `[aria-invalid="true"]` 를 `login.js` · `password.js` 가 토글한다. */
+.field__input {
+  transition: border-color var(--motion) var(--ease);
+}
+
+.button:active:not(:disabled) {
+  background: var(--accent-active);
+}
+
+.reveal:active {
+  background: var(--line);
 }

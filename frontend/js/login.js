@@ -63,7 +63,7 @@
   }
 
   function explain(err) {
-    if (!err || !err.code) return show("잠시 후 다시 시도해 주세요");
+    if (!err || !err.code) return show("잠시 뒤 다시 시도해 주세요.");
 
     if (err.code === ERROR.ACCOUNT_LOCKED) {
       /* 몇 번 틀렸는지는 이제 의미가 없다. 언제 풀리는지만 알려준다. */
@@ -79,9 +79,9 @@
     }
 
     if (err.status === 0 || err.status >= 500) {
-      return show("서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요");
+      return show("서버에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
     }
-    return show("로그인하지 못했습니다. 잠시 후 다시 시도해 주세요");
+    return show("로그인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
   }
 
   form.addEventListener("submit", function (event) {
