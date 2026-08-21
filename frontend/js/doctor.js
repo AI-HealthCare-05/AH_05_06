@@ -203,16 +203,25 @@
     renderRole();
   }
 
-  /* 서버는 ISO 시각을 준다. 그대로 찍으면 `2026-08-21T18:00:00+09:00` 이 뜬다.
+  /* 서버는 `2026-08-21T18:00:00+09:00` 처럼 **병원 시간대를 달아서** 준다
+     (`GuideService._send_at` 이 `astimezone(Asia/Seoul)` 로 만든다).
+
+     `new Date(iso)` 로 옮기면 **브라우저 시간대**로 다시 그려진다. KST 가 아닌
+     자리에서 열면 18:00 이 09:00 으로 뜬다 — 서버에서 이미 잡았던 「18시가 새벽
+     3시로 나가는」 버그가 표시 쪽에서 되살아나는 것이다. 예약 시각은 스탭이
+     환자에게 「몇 시에 갑니다」라고 말하는 근거라 틀리면 그대로 전달된다.
+
+     그래서 `detail.js` 의 `dayLabel`·`timeLabel` 처럼 **문자열을 그대로 자른다.**
+     값에 이미 병원 시간대가 박혀 있어 옮길 이유가 없다.
 
      **수신번호(`to`)는 받지 않는다.** 이 화면은 「누구 것인가」만 알면 되고
      발송 번호는 서버가 안다. 응답에 실으면 승인할 때마다 환자 전화번호가
      화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
   function whenText(iso) {
     if (!iso) return "곧";
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) return String(iso);
-    return d.getMonth() + 1 + "월 " + d.getDate() + "일 " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    var m = String(iso).match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
+    if (!m) return String(iso);
+    return Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3];
   }
 
   /* ── 모달 ───────────────────────────────────────────── */
