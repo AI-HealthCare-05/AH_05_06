@@ -443,7 +443,7 @@
               <div style="height:52px;border-radius:10px;background:#111827;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600">저장</div>
               <span style="font-size:13px;line-height:18px;color:#6B7280">ⓘ 담당 의료진이 요청한 기록이에요</span>
             </div></div></div>
-        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151;width:375px">선택 즉시 의료진 화면에 알림이 전송된다</div></sc-if>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151;width:375px">선택해도 의료진 알림을 만들지 않는다 — 기록만 남는다</div></sc-if>
         <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="border:1px dashed #6B7280;border-radius:8px;padding:12px;font-size:12px;color:#374151;line-height:18px;width:375px"><b>책망하지 않는다.</b> 「가끔 놓쳐요」는 <b>솔직하게 답한 것</b>이고, 그 자리에서 「잘 챙기셔야 합니다」가 나오면 다음 회차부터는 「잘 먹고 있어요」를 고른다. 그러면 우리가 보는 숫자가 거짓이 된다.<br><br><b>새 의학 정보를 만들지 않는다.</b> 「생각난 즉시 드시고 다음 약은 원래 시간에」는 주의사항(<code>component</code> <code>kind=CAU</code>)에 이미 승인된 문장을 그대로 다시 인용한 것이다. <b>약마다 다르므로 그 약의 문구를 가져온다</b> — 피임 효과가 걸린 약은 규칙이 다르다.<br><br><b>🚨도 [ 문의하기 ]도 두지 않는다.</b> 응급이 아니고, 문의를 권하면 「이건 문제다」로 읽혀 다음엔 말하지 않게 된다 — <code>P7-2</code>와 같은 이유다.<br><br>의료진에게는 <b>기록만</b> 남는다.</div></sc-if>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;width:375px">
