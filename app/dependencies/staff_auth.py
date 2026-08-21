@@ -1,4 +1,4 @@
-"""보호 API 의 문지기 — KEY-73 (`docs/auth-contract.md` 5절).
+"""보호 API 의 문지기 — KEY-73 (`docs/api/hospital.md` 5절).
 
 세 가지를 순서대로 본다.
 

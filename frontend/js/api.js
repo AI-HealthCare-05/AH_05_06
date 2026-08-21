@@ -1,6 +1,6 @@
 /* API 호출 한 겹 — KEY-22
  *
- * 계약은 docs/auth-contract.md 4·5절 — KEY-8 v1 확정본을 따른다.
+ * 계약은 docs/api/hospital.md 4·5절 — KEY-8 v1 확정본을 따른다.
  *   POST  /api/v1/auth/login     { login_id, password, remember }
  *   GET   /api/v1/auth/me
  *   POST  /api/v1/auth/refresh   본문 없음. 쿠키만 본다
