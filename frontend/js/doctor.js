@@ -48,6 +48,19 @@
 
   var GENDER_LABEL = { FEMALE: "여", MALE: "남", UNKNOWN: "—" };
 
+  /* **아직 받아 줄 서버가 없는 섹션.**
+
+     `messages` 는 본문 자체는 서버가 주지만, 회차·문구를 **저장할 자리가
+     없다**(구조화된 문자 설정은 `GuideResponse` 에 없고 `S1-14` 후속 계약이다).
+     그래서 [수정] 을 열지 않는다 — 이 저장소가 「고칠 수 있어 보이는데 저장이
+     안 되는 칸이 제일 나쁘다」로 정해 둔 자리다.
+
+     `locked` 로 표현하지 않는다. `locked` 는 「식약처 기준 문장이라 사람이
+     고칠 자리가 아니다」라는 뜻이고, 여기는 「아직 안 만들었다」라서 이유가
+     다르다. 섞으면 나중에 문자 설정이 붙었을 때 무엇을 풀어야 하는지 알 수
+     없다 (`KEY-160`). */
+  var NOT_IMPLEMENTED = { messages: "회차·문구를 저장할 자리가 아직 없습니다 — S1-14 후속 계약입니다" };
+
   /* ── 안내문 ──────────────────────────────────────────── */
 
   function currentSection() {
@@ -88,9 +101,12 @@
 
     /* 잠긴 섹션은 왜 잠겼는지를 함께 적는다. 이유 없이 안 눌리는 버튼은
        「고장났다」로 읽히고, 원장님은 그것을 확인하느라 시간을 쓴다. */
+    var pending = NOT_IMPLEMENTED[s.key];
     var tail = s.locked
       ? '<p class="block__locked">🔒 식약처 기준 문장이라 고칠 수 없습니다 — 약이 바뀌면 문장도 바뀝니다</p>'
-      : '<button class="block__edit" type="button" data-edit="' + esc(title) + '">수정</button>';
+      : pending
+        ? '<p class="block__locked">[demo] ' + esc(pending) + "</p>"
+        : '<button class="block__edit" type="button" data-edit="' + esc(title) + '">수정</button>';
 
     return (
       '<section class="block' +
@@ -261,9 +277,20 @@
       '<h2 class="modal__title">승인 완료</h2>' +
       '<p class="modal__lead">' +
       esc(whenText(result.scheduled_at)) +
-      " 발송 예정</p>" +
-      '<p class="modal__note">확인 문자(일주일 뒤 · 보름 뒤)와 소진 임박 안내는 자동 발송됩니다.<br />' +
-      "발송 실패 시 알림 창에서 확인할 수 있습니다.</p>" +
+      " 발송 예약</p>" +
+      /* **없는 발송을 약속하지 않는다.**
+
+         예전에는 「발송 예정」 + 「확인 문자와 소진 임박 안내는 자동
+         발송됩니다」였다. 승인이 `scheduled_at` 을 채우는 것은 진짜지만
+         **문자를 보내는 것은 아무것도 없다** — 발송기도 SMS 연동도 아직
+         없다. 원장님이 그 문장을 읽고 「환자에게 갔다」고 믿으면, 안 간 것을
+         갔다고 아는 상태가 된다.
+
+         `KEY-148` §6 이 정한 대로 fallback 을 숨기지 않고 그 자리에 적는다.
+         승인 자체의 뜻(= 발송 예약)은 그대로 두고 **무엇이 아직 없는지만**
+         덧붙인다 (`KEY-160`). */
+      '<p class="modal__note">[demo] 문자 발송은 아직 붙지 않았습니다 — 승인은 <b>발송 예약까지</b>입니다.<br />' +
+      "확인 문자·소진 임박 안내의 실제 발송과 실패 알림은 S1-14 후속 계약입니다.</p>" +
       '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'
     );
   }

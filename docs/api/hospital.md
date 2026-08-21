@@ -810,6 +810,20 @@ POST /api/v1/visits/{visit_id}/guide/return
 - 스탭이 `STAFF_REVIEW` 단계에서 안내문을 고치는 경로는 이번 계약에 포함하지 않는다. 범위와 API는 후속 티켓에서 정한다.
 - `locked`가 이유 문자열 없는 boolean인 것은 지금 유일하게 잠기는 `caution` 섹션(🚨 응급 문장)에는 맞지만, 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
 
+#### 구조화된 문자 설정은 이 계약의 범위가 아니다
+
+`messages`는 다른 섹션과 **같은 평문 `body`**다. 와이어프레임 `S1-14`·`D1-4`가 그리는 회차 체크박스(D+7·D+15·D+30·소진 임박), 템플릿 이름, 미리보기 같은 **구조화된 설정은 `GuideResponse`에 없다.**
+
+```text
+있는 것   sections[] 안의 { key: "messages", body: "…" } 평문 한 덩이
+없는 것   schedule · send_at · template_name · preview · preview_meta
+          그 설정을 저장할 자리 · 실제 SMS 발송 · 예약 실행기 · 발송 이력
+```
+
+**승인은 `scheduled_at`을 채우는 데까지다.** 그 뒤에 문자를 보내는 것은 아무것도 없다. 화면이 「자동 발송됩니다」라고 말하면 안 되는 이유이고, 의사 승인 화면은 그 자리에 `[demo]` 표시를 둔다([KEY-160](https://leehee.atlassian.net/browse/KEY-160) · `docs/qa/KEY-148-walking-skeleton.md` §6).
+
+구조화된 문자 설정은 **스탭과 의사가 같은 설정을 공유하는 별도 메시지 자원**으로 `S1-14` 후속 계약에서 다룬다. 신규 엔드포인트·DTO·권한·모델이 KEY-2(안내 승인)와 KEY-4(환자 전달)에 걸치는 계약 변경이라, 구현 전에 합의하고 별도 일감으로 만든다.
+
 ## 6. 환자·진료 구현 기록
 
 
