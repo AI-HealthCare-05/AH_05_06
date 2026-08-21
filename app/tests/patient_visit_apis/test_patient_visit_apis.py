@@ -143,6 +143,16 @@ class TestPatientVisitApis(TestCase):
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert response.json()["code"] == "FORBIDDEN"
 
+    async def test_admin_plus_staff_keeps_patient_access(self) -> None:
+        """복수 역할은 OR 규칙이다 — admin이 staff의 진료 권한을 빼앗지 않는다."""
+        admin_staff = ClinicalActor(staff_id=202, hospital_id=1, roles=frozenset({"admin", "staff"}))
+
+        async with client_for(admin_staff) as client:
+            response = await client.get("/api/v1/patients")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"] == []
+
     async def test_visit_create_list_get_update_and_duplicate_flow(self) -> None:
         async with client_for(self.staff) as client:
             patient = await client.post("/api/v1/patients", json=PATIENT_PAYLOAD)
