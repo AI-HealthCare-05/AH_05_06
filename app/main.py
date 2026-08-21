@@ -6,6 +6,7 @@ from app.core.auth_errors import AuthError, auth_error_handler
 from app.core.config import Config, Env
 from app.core.db.databases import initialize_tortoise
 from app.core.error_handlers import register_error_handlers
+from app.core.masking import scrub
 from app.ocr.errors import OcrApiError
 
 _config = Config()
@@ -32,7 +33,11 @@ app.include_router(v1_routers)
 
 @app.exception_handler(OcrApiError)
 async def ocr_api_error_handler(_, exc: OcrApiError) -> JSONResponse:
+    # 다른 예외는 register_error_handlers()가 scrub() 한다 (KEY-11).
+    # 이 핸들러는 그 경로를 안 거치므로 여기서 직접 가린다 — 지금은 모든
+    # OcrApiError.message 가 고정 문구지만, 벤더 원문을 그대로 실어 던지는
+    # 코드가 나중에 생겨도 이 자리에서 걸리게 해 둔다 (KEY-48).
     return JSONResponse(
         status_code=exc.status_code,
-        content={"code": exc.code, "message": exc.message, "field_errors": None},
+        content={"code": exc.code, "message": scrub(exc.message), "field_errors": None},
     )

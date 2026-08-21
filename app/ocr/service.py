@@ -8,6 +8,7 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
+from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentType,
     OcrField,
@@ -71,6 +72,27 @@ class FailClosedDocumentOwnershipVerifier:
         raise _not_found()
 
 
+class TortoiseDocumentOwnershipVerifier:
+    async def assert_owned(
+        self,
+        document_id: int,
+        visit_id: int,
+        hospital_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        exists = await (
+            MedicalDocument.filter(
+                document_id=document_id,
+                visit_id=visit_id,
+                hospital_id=hospital_id,
+            )
+            .using_db(connection)
+            .exists()
+        )
+        if not exists:
+            raise _not_found()
+
+
 class TortoiseOcrRepository:
     def __init__(self, document_ownership: DocumentOwnershipVerifier | None = None) -> None:
         self.document_ownership = document_ownership or FailClosedDocumentOwnershipVerifier()
@@ -115,7 +137,7 @@ class TortoiseOcrRepository:
                 ocr_job_id=f"ocr_{uuid4().hex}",
                 hospital_id=actor.hospital_id,
                 visit=visit,
-                requested_by=actor.user_id,
+                requested_by=actor.staff_id,
                 using_db=connection,
             )
             await OcrJobDocument.create(
@@ -199,12 +221,12 @@ class TortoiseOcrRepository:
             changed_at = now()
             if request.corrected_value is not None or selected_candidate is not None:
                 field.corrected_value = corrected_value
-                field.modified_by = actor.user_id
+                field.modified_by = actor.staff_id
                 field.modified_at = changed_at
             field.version += 1
             if request.confirm:
                 field.is_confirmed = True
-                field.confirmed_by = actor.user_id
+                field.confirmed_by = actor.staff_id
                 field.confirmed_at = changed_at
             await field.save(using_db=connection)
         await field.fetch_related("candidates")

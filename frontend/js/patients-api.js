@@ -1,6 +1,6 @@
 /* 환자·진료 API — KEY-35 · KEY-50
  *
- * 계약은 `docs/contracts/patient-visit-api-v1.md` (KEY-26) 를 따른다.
+ * 계약은 `docs/api/hospital.md` (KEY-26) 를 따른다.
  *
  *   GET   /api/v1/patients?keyword=&category=&cursor=&limit=
  *   POST  /api/v1/patients
