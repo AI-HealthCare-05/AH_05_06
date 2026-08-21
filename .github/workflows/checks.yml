@@ -56,6 +56,41 @@ jobs:
         # 정식 서비스인데 타입 검사를 한 번도 안 받게 된다. ruff 는 이미 `.` 이다.
         run: uv run mypy . --explicit-package-bases
 
+      # 프런트는 빌드가 없어서 `node --test` 하나로 끝난다 — package.json 도
+      # node_modules 도 잠금파일도 없다. 새 의존성 없이 계약 규칙을 붙잡는다.
+      #
+      # 이번 스프린트에 프런트에서 나온 결함 다섯이 **전부 사람이 눌러서**
+      # 나왔다. 사람이 브라우저를 열어야만 드러나는 상태를 그대로 두면
+      # 다음 스프린트에도 같은 종류가 같은 방식으로 나온다.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Frontend Contract Tests
+        # 러너 기본값은 `TZ=UTC` 다. 그대로 두면 현지 getter 와 UTC getter 가
+        # 같은 값을 내서 **「오늘 날짜는 현지 기준이다」 검사가 아무것도 확인하지
+        # 못한다** — 이희진 님이 `#64` 리뷰에서 짚어 주셨다. 병원 시간대로 고정한다.
+        env:
+          TZ: Asia/Seoul
+        # 폴더가 아니라 **파일들**을 넘긴다. Node 22 부터 `--test` 의 위치 인자를
+        # 훑을 폴더가 아니라 불러올 모듈로 보기 때문이다 — 폴더를 주면
+        # `MODULE_NOT_FOUND` 로 죽는다. CI 는 20 으로 고정돼 있어 안 걸리지만
+        # 최신 Node 를 쓰는 로컬에서는 검사를 아예 못 돌린다.
+        #
+        #                              node:20  node:22  node:24
+        #   --test frontend/tests/       통과     ✖       ✖
+        #   --test frontend/tests        통과     ✖       ✖
+        #   --test frontend/tests/*.test.js  통과   통과    통과
+        #
+        # 다만 글롭이 **아무것도 못 찾으면 종료코드가 0** 이다. 검사 파일 이름이
+        # 바뀌거나 사라진 날 CI 가 조용히 초록불이 된다 — node 자체 글롭
+        # (`"**/*.test.js"`) 도, 인자 없는 자동탐색도 마찬가지다. 이 PR 이
+        # 막으려는 것이 바로 「검사가 헛도는데 초록불인 상태」라 여기서 막는다.
+        run: |
+          shopt -s failglob
+          node --test frontend/tests/*.test.js
+
   test:
     runs-on: ubuntu-latest
     services:
