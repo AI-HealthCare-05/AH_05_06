@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.error_handlers import register_error_handlers
-from app.models.ocr import OcrDocumentType, OcrJobStatus
+from app.models.ocr import OcrDocumentText, OcrDocumentType, OcrField, OcrJobStatus
 from app.models.staffs import Staff
 from app.ocr.api import get_ocr_service, ocr_router
 from app.ocr.errors import OcrApiError
@@ -19,6 +19,7 @@ from app.ocr.schemas import (
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor, get_ocr_actor
+from app.ocr.service import LOW_CONFIDENCE_THRESHOLD, serialize_field
 
 NOW = datetime(2026, 8, 19, 8, 0, tzinfo=UTC)
 STAFF = OcrActor(staff_id=17, hospital_id=3, roles=frozenset({"staff"}))
@@ -58,9 +59,14 @@ class FakeOcrService:
             extracted_value="합성 추출값",
             corrected_value=None,
             value="합성 추출값",
+            unit="mg/dL",
             confidence=0.83,
+            is_low_confidence=False,
             version=1,
             is_confirmed=False,
+            is_pending_report=False,
+            document_id=801,
+            source_line=12,
         )
 
     async def result(self, ocr_job_id: str, actor: OcrActor) -> OcrResultResponse:
@@ -96,9 +102,14 @@ class FakeOcrService:
             extracted_value="합성 추출값",
             corrected_value=request.corrected_value,
             value=request.corrected_value or "합성 추출값",
+            unit="mg/dL",
             confidence=0.83,
+            is_low_confidence=False,
             version=request.base_version + 1,
             is_confirmed=request.confirm,
+            is_pending_report=False,
+            document_id=801,
+            source_line=12,
             modified_by=actor.staff_id,
             modified_at=NOW,
             confirmed_by=actor.staff_id if request.confirm else None,
@@ -237,3 +248,71 @@ async def test_staff_or_doctor_actor_is_allowed() -> None:
     assert staff.hospital_id == 9
     assert doctor.roles == frozenset({"doctor", "admin"})
     assert doctor.staff_id == 4
+
+
+def test_field_contract_fields_are_present_in_response(api: tuple[TestClient, FakeOcrService]) -> None:
+    client, _ = api
+    response = client.get("/api/v1/ocr/jobs/ocr_synthetic_501/fields", params={"field_type": "DIAGNOSIS"})
+
+    assert response.status_code == 200
+    field = response.json()[0]
+    assert field["unit"] == "mg/dL"
+    assert field["is_low_confidence"] is False
+    assert field["is_pending_report"] is False
+    assert field["document_id"] == 801
+    assert field["source_line"] == 12
+
+
+def test_low_confidence_flag_is_set_by_server(api: tuple[TestClient, FakeOcrService]) -> None:
+    """confidence < 0.75이면 is_low_confidence=True — 화면이 임계값을 임의로 정하지 않는다."""
+    low = OcrField(ocr_field_id=1, field_type="X", confidence=LOW_CONFIDENCE_THRESHOLD - 0.01)
+    high = OcrField(ocr_field_id=2, field_type="Y", confidence=LOW_CONFIDENCE_THRESHOLD)
+    null_conf = OcrField(ocr_field_id=3, field_type="Z", confidence=None)
+
+    assert serialize_field(low).is_low_confidence is True
+    assert serialize_field(high).is_low_confidence is False
+    assert serialize_field(null_conf).is_low_confidence is False
+
+
+def test_document_id_is_hidden_after_raw_text_purge(api: tuple[TestClient, FakeOcrService]) -> None:
+    """원문 파기 후에는 document_id를 None으로 반환해 우회 노출을 막는다."""
+    active_doc = OcrDocumentText(ocr_document_text_id=1, document_id=801, raw_text_purged_at=None)
+    purged_doc = OcrDocumentText(
+        ocr_document_text_id=2, document_id=801, raw_text_purged_at=datetime(2026, 8, 21, tzinfo=UTC)
+    )
+
+    field_with_active = OcrField(ocr_field_id=10, field_type="DIAGNOSIS")
+    field_with_active.document_text_id = 1
+
+    field_with_purged = OcrField(ocr_field_id=11, field_type="DIAGNOSIS")
+    field_with_purged.document_text_id = 2
+
+    field_no_doc = OcrField(ocr_field_id=12, field_type="DIAGNOSIS")
+
+    doc_map = {1: active_doc, 2: purged_doc}
+
+    assert serialize_field(field_with_active, doc_map).document_id == 801
+    assert serialize_field(field_with_purged, doc_map).document_id is None
+    assert serialize_field(field_no_doc, doc_map).document_id is None
+
+
+def test_pending_report_field_is_exposed_in_api_response(api: tuple[TestClient, FakeOcrService]) -> None:
+    """is_pending_report=True 필드가 API 응답에 정확히 노출된다."""
+    client, fake = api
+
+    original_field = fake.field.__func__
+
+    def pending_field() -> OcrFieldResponse:
+        f = original_field(fake)
+        return OcrFieldResponse(**{**f.model_dump(), "is_pending_report": True, "value": None, "document_id": None})
+
+    fake.__class__.field = staticmethod(pending_field)
+    try:
+        response = client.get("/api/v1/ocr/jobs/ocr_synthetic_501/fields", params={"field_type": "DIAGNOSIS"})
+        assert response.status_code == 200
+        field = response.json()[0]
+        assert field["is_pending_report"] is True
+        assert field["value"] is None
+        assert field["document_id"] is None
+    finally:
+        fake.__class__.field = staticmethod(original_field)

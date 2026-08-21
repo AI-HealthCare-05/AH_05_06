@@ -10,6 +10,7 @@ from tortoise.transactions import in_transaction
 
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
+    OcrDocumentText,
     OcrDocumentType,
     OcrField,
     OcrFieldCandidate,
@@ -40,7 +41,9 @@ class OcrRepository(Protocol):
 
     async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult: ...
 
-    async def get_fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> Sequence[OcrField]: ...
+    async def get_fields(
+        self, ocr_job_id: str, actor: OcrActor, field_type: str | None
+    ) -> tuple[Sequence[OcrField], Sequence[OcrDocumentText]]: ...
 
     async def update_field(self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor) -> OcrField: ...
 
@@ -169,10 +172,12 @@ class TortoiseOcrRepository:
             raise _not_found()
         return result
 
-    async def get_fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> Sequence[OcrField]:
+    async def get_fields(
+        self, ocr_job_id: str, actor: OcrActor, field_type: str | None
+    ) -> tuple[Sequence[OcrField], Sequence[OcrDocumentText]]:
         result = await self.get_result(ocr_job_id, actor)
         fields = [field for field in result.fields if field_type is None or field.field_type == field_type]
-        return sorted(fields, key=lambda field: field.ocr_field_id)
+        return sorted(fields, key=lambda field: field.ocr_field_id), list(result.documents)
 
     async def update_field(self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor) -> OcrField:
         async with in_transaction() as connection:
@@ -244,19 +249,33 @@ def serialize_job(job: OcrJob) -> OcrJobResponse:
     )
 
 
-def serialize_candidate(candidate: OcrFieldCandidate) -> OcrCandidateResponse:
+LOW_CONFIDENCE_THRESHOLD = 0.75
+
+
+def _resolve_document_id(doc_text: OcrDocumentText | None) -> int | None:
+    """원문 파기 후에는 None — document_id·source_line으로 원문 우회 노출 방지."""
+    return doc_text.document_id if (doc_text is not None and doc_text.raw_text_purged_at is None) else None
+
+
+def serialize_candidate(
+    candidate: OcrFieldCandidate, doc_text_map: dict[int, OcrDocumentText] | None = None
+) -> OcrCandidateResponse:
     confidence = float(candidate.confidence) if isinstance(candidate.confidence, Decimal) else candidate.confidence
+    doc_text_map = doc_text_map or {}
     return OcrCandidateResponse(
         ocr_field_candidate_id=candidate.ocr_field_candidate_id,
         value=candidate.candidate_value,
         confidence=confidence,
         rank=candidate.rank,
         source_date=candidate.source_date,
+        source_line=candidate.source_line,
+        document_id=_resolve_document_id(doc_text_map.get(candidate.document_text_id)),
         is_selected=candidate.is_selected,
     )
 
 
-def serialize_field(field: OcrField) -> OcrFieldResponse:
+def serialize_field(field: OcrField, doc_text_map: dict[int, OcrDocumentText] | None = None) -> OcrFieldResponse:
+    doc_text_map = doc_text_map or {}
     confidence = float(field.confidence) if isinstance(field.confidence, Decimal) else field.confidence
     return OcrFieldResponse(
         ocr_field_id=field.ocr_field_id,
@@ -264,14 +283,19 @@ def serialize_field(field: OcrField) -> OcrFieldResponse:
         extracted_value=field.extracted_value,
         corrected_value=field.corrected_value,
         value=field.value,
+        unit=field.unit,
         confidence=confidence,
+        is_low_confidence=confidence is not None and confidence < LOW_CONFIDENCE_THRESHOLD,
         version=field.version,
         is_confirmed=field.is_confirmed,
+        is_pending_report=field.is_pending_report,
+        document_id=_resolve_document_id(doc_text_map.get(field.document_text_id)),
+        source_line=field.source_line,
         modified_by=field.modified_by,
         modified_at=field.modified_at,
         confirmed_by=field.confirmed_by,
         confirmed_at=field.confirmed_at,
-        candidates=[serialize_candidate(item) for item in getattr(field, "candidates", ())],
+        candidates=[serialize_candidate(item, doc_text_map) for item in getattr(field, "candidates", ())],
     )
 
 
@@ -289,6 +313,7 @@ class OcrService:
 
     async def result(self, ocr_job_id: str, actor: OcrActor) -> OcrResultResponse:
         result = await self.repository.get_result(ocr_job_id, actor)
+        doc_text_map = {d.ocr_document_text_id: d for d in result.documents}
         return OcrResultResponse(
             ocr_result_id=result.ocr_result_id,
             ocr_job_id=result.ocr_job_id,
@@ -306,11 +331,13 @@ class OcrService:
                 )
                 for item in result.documents
             ],
-            fields=[serialize_field(item) for item in result.fields],
+            fields=[serialize_field(item, doc_text_map) for item in result.fields],
         )
 
     async def fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> list[OcrFieldResponse]:
-        return [serialize_field(item) for item in await self.repository.get_fields(ocr_job_id, actor, field_type)]
+        fields, doc_texts = await self.repository.get_fields(ocr_job_id, actor, field_type)
+        doc_text_map = {d.ocr_document_text_id: d for d in doc_texts}
+        return [serialize_field(item, doc_text_map) for item in fields]
 
     async def update_field(
         self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor

@@ -145,8 +145,11 @@ class OcrField(models.Model):
         null=True,
     )
     field_type = fields.CharField(max_length=64)
+    unit = fields.CharField(max_length=32, null=True)
     extracted_value = fields.TextField(null=True)
     corrected_value: str | None = fields.TextField(null=True)
+    source_line = fields.IntField(null=True)
+    is_pending_report = fields.BooleanField(default=False)
     confidence = fields.DecimalField(
         max_digits=5,
         decimal_places=4,
@@ -180,6 +183,13 @@ class OcrFieldCandidate(models.Model):
         related_name="candidates",
         on_delete=OnDelete.CASCADE,
     )
+    document_text: fields.ForeignKeyNullableRelation[OcrDocumentText] = fields.ForeignKeyField(
+        "models.OcrDocumentText",
+        related_name="candidate_fields",
+        on_delete=OnDelete.SET_NULL,
+        source_field="ocr_document_text_id",
+        null=True,
+    )
     candidate_value = fields.TextField()
     confidence = fields.DecimalField(
         max_digits=5,
@@ -189,6 +199,7 @@ class OcrFieldCandidate(models.Model):
     )
     rank = fields.SmallIntField(validators=[MinValueValidator(1)])
     source_date = fields.DateField(null=True)
+    source_line = fields.IntField(null=True)
     is_selected = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
 
