@@ -307,7 +307,7 @@ class TestLookups:
 class TestHospitalIsolation:
     """의원이 둘 있어야 「타 병원 자료가 안 보인다」를 검사할 수 있다.
 
-    `docs/api/hospital.md` 5절 — 타 병원 리소스는 `403` 이
+    `docs/api/hospital.md` 환자·진료 5절 — 타 병원 리소스는 `403` 이
     아니라 `404` 다. 존재 여부 자체를 감춘다. 그걸 확인하려면 **남의 의원
     사람**이 있어야 하는데, 예전에는 이 픽스처에 의원이 하나뿐이었다.
     """
