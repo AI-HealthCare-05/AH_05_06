@@ -39,16 +39,72 @@ var checkinApi = {
 
      **이것은 기록이 아니다.** 의무기록은 [저장] 이 남기는 답이고, 이 신호는
      「14:23 에 환자가 중단을 눌렀다」는 사실일 뿐이다. 나중에 답을 바꿔도 그
-     사실은 참이라 철회하지 않는다 — `docs/api/patient.md` 3절.
+     사실은 참이라 앞 신호를 지우지 않는다 — `docs/api/patient.md` 3절.
+
+     `session` · `sequence` 를 함께 싣는다. **보낸 순서와 닿는 순서가 다르기
+     때문이다** — 첫 요청이 느리면 나중에 고른 답이 먼저 도착해서, 서버가
+     받은 차례대로 믿으면 「지금 답」이 뒤집힌다.
 
      실패해도 화면을 막지 않는다. 환자는 자기가 알림을 보내는 줄 모른다. */
-  signal: function (token, answerKey) {
+  signal: function (token, answerKey, session, sequence) {
     return checkinRequest("/checkins/" + encodeURIComponent(token) + "/signals", {
       method: "POST",
-      body: { answer_key: answerKey },
+      body: {
+        answer_key: answerKey,
+        client_session_id: session,
+        client_sequence: sequence,
+      },
     });
   },
 };
+
+/* 한 화면이 신호를 언제 보낼지 정하는 자리 — KEY-138.
+
+   **`checkin.js` 밖에 두는 이유가 있다.** 그 파일은 IIFE 로 감싸여 있어 검사가
+   안을 부를 수 없다(`KEY-158` 이 다루는 문제다). 그런데 유가은 님이 요청한
+   검사 넷은 전부 **이 판단**을 재는 것이다 — 순서 역전 · 연속 선택 · 실패 후
+   정정 · 새로고침. 그래서 판단만 여기로 꺼내 검사가 닿게 한다.
+
+   `checkin.js` 는 이것을 부르기만 한다. */
+function createSignalTracker(newId) {
+  /* 새로고침하거나 탭을 새로 열면 **다른 화면**이다. 순번은 1 부터 다시
+     시작하므로, 그것만으로는 어느 쪽이 나중인지 알 수 없다. 화면마다 다른
+     식별값을 함께 실어 서버가 둘을 구별하게 한다. */
+  var session = (newId || defaultSessionId)();
+  var sequence = 0;
+  var lastSent = null;
+
+  return {
+    session: session,
+
+    /* 보낼 것이면 `{ session, sequence }` 를, 안 보낼 것이면 `null` 을 준다. */
+    next: function (answerKey) {
+      /* **연달아** 같은 답을 다시 눌렀을 때만 접는다. `P7-2`~`P7-5` 는 펼침
+         화면이라 설명을 읽으려고 눌렀다 되돌릴 수 있다. 다만 다른 답을 거쳐
+         돌아온 것은 새 신호다 — 아니면 마지막 신호가 실제로 고른 답과
+         어긋난다. */
+      if (!answerKey || answerKey === lastSent) return null;
+      lastSent = answerKey;
+      sequence += 1;
+      return { session: session, sequence: sequence };
+    },
+
+    /* 못 갔으면 되돌린다. 다시 누르면 한 번 더 가야 한다. */
+    failed: function (answerKey, previous) {
+      if (lastSent === answerKey) lastSent = previous;
+    },
+
+    lastSent: function () {
+      return lastSent;
+    },
+  };
+}
+
+function defaultSessionId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  // 구형 브라우저용. 신호 짝짓기에만 쓰므로 추측 불가성이 필요 없다.
+  return "s-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
 
 /* 복약 답 다섯. **순서가 뜻을 만든다** — 잘 되는 쪽에서 안 되는 쪽으로 간다.
    「중단」을 둘로 나눈 것이 이 화면의 핵심이다. 같은 중단이라도
@@ -129,8 +185,32 @@ function mockCheckin() {
   };
 }
 
-/* 이번 화면에서 쌓인 신호. append-only 라 지우지 않는다 — **마지막 것이 지금 답이다.** */
+/* 쌓인 신호. append-only 라 지우지 않는다 — **지금 답은 「가장 나중 것」이다.**
+
+   「가장 나중」을 받은 차례로 정하면 안 된다. 첫 요청이 느리면 나중에 고른 답이
+   먼저 닿아서 순서가 뒤집힌다. 그래서 `(session, sequence)` 로 판정한다. */
 var MOCK_SIGNALS = [];
+
+/* 두 신호 중 어느 쪽이 나중인가.
+
+   같은 화면(`session`)이면 **`sequence` 가 큰 쪽**이다. 화면이 매긴 번호라
+   망 사정에 흔들리지 않는다.
+
+   다른 화면이면 비교할 수가 없다 — 새로고침하면 번호가 1 부터 다시 시작한다.
+   이때는 **서버에 닿은 차례**로 정한다. 새로고침은 사람 손 속도라 두 화면의
+   요청이 겹칠 일이 없다. 좁은 창에서만 순번을 쓰고, 넓은 창에서는 도착 순서를
+   쓰는 것이다. */
+function mockSignalIsNewer(candidate, current) {
+  if (!current) return true;
+  if (candidate.session === current.session) return candidate.sequence > current.sequence;
+  return candidate.received >= current.received;
+}
+
+function mockCurrentSignal() {
+  return MOCK_SIGNALS.reduce(function (best, one) {
+    return mockSignalIsNewer(one, best) ? one : best;
+  }, null);
+}
 
 function mockCheckinRequest(path, options) {
   var body = options.body || {};
@@ -148,12 +228,24 @@ function mockCheckinRequest(path, options) {
           return reject(new ApiError("UNKNOWN_ANSWER", 400, {}));
         }
         var info = mockCheckin().answers[key];
-        MOCK_SIGNALS.push(key);
+        var record = {
+          answer_key: key,
+          session: body.client_session_id,
+          sequence: body.client_sequence,
+          received: MOCK_SIGNALS.length, // 닿은 차례
+        };
+        /* **늦게 닿은 옛 신호도 버리지 않는다.** 「14:23 에 중단을 눌렀다」는
+           그것대로 참이라 이력에 남는다. 다만 「지금 답」 판정에서 밀릴 뿐이다. */
+        MOCK_SIGNALS.push(record);
+        var current = mockCurrentSignal();
         return resolve({
           signal_id: 8800 + MOCK_SIGNALS.length,
           answer_key: key,
           // `missing`(가끔 놓쳐요)은 여기서 조용해진다. 기록은 남고 연락은 안 간다.
           notify: !!(info && info.notify),
+          // 이 신호가 「지금 답」이 됐는지. 늦게 닿은 옛 신호면 false 다.
+          current: current === record,
+          current_answer_key: current ? current.answer_key : null,
         });
       }
 
@@ -161,6 +253,18 @@ function mockCheckinRequest(path, options) {
         if (MEDICATION_ANSWERS.indexOf(body.medication) === -1) {
           return reject(new ApiError("MEDICATION_REQUIRED", 422, {}));
         }
+        /* **저장이 마지막으로 바로잡는다.** 신호가 하나도 못 갔거나 마지막
+           것만 실패했으면 서버에는 옛 답이 「지금 답」으로 남아 있다. 저장은
+           환자가 확정한 답이라, 그것으로 신호 상태를 맞춘다.
+
+           신호를 지우지는 않는다 — 눌렀던 사실은 그대로 두고 판정만 옮긴다. */
+        MOCK_SIGNALS.push({
+          answer_key: body.medication,
+          session: "save",
+          sequence: 0,
+          received: MOCK_SIGNALS.length,
+          from_save: true,
+        });
         return resolve({
           /* 저장 뒤 「복약지도 다시 보기」가 갈 곳. 화면은 `visit_id` 를 모르고
              토큰만 안다 — 어느 진료인지는 서버가 안다. 그래서 **서버가 주소를
@@ -169,6 +273,10 @@ function mockCheckinRequest(path, options) {
           saved: true,
           medication: body.medication,
           pain: body.pain,
+          /* 정정한 결과를 돌려준다. 이것이 없으면 **저장이 신호를 맞췄는지
+             밖에서 확인할 방법이 없다** — 확인하려고 신호를 하나 더 보내면
+             그것이 지금 답이 돼 버려서 정작 재려던 것을 가린다. */
+          signal_answer_key: (mockCurrentSignal() || {}).answer_key || null,
           next_checkin: mockCheckin().next_checkin,
           next_visit: mockCheckin().next_visit,
         });

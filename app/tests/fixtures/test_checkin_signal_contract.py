@@ -161,17 +161,41 @@ class TestTheScreenActuallySignals:
         assert "notify:" in block, "목업이 알림 여부를 내려주지 않는다 — 판단이 화면에 남는다"
         assert "NOT_A_SIGNAL" not in block, "목업이 조용한 답을 거부한다 — 그러면 답을 바꿔도 안 덮인다"
 
-    def test_pressing_the_same_answer_twice_signals_once(self) -> None:
-        """계약 §4 의 2번 — 연달아 같은 답을 다시 눌러도 보내지 않는다.
+    def test_the_screen_leaves_the_judgement_to_a_testable_place(self) -> None:
+        """**언제 보낼지의 판단이 이 파일 밖에 있어야 한다.**
 
-        `P7-2`~`P7-5` 는 펼침 화면이라 환자가 설명을 **읽어 보려고** 눌렀다
-        되돌릴 수 있다. 누를 때마다 알리면 의료진 화면이 같은 환자로 찬다.
+        `checkin.js` 는 IIFE 라 검사가 안을 부를 수 없다(`KEY-158`). 그런데
+        연속 중복·순번·실패 되돌리기는 전부 그 판단이라, 안에 두면 소스를
+        grep 하는 수밖에 없다. 그 방식으로는 못 잡는다는 것을 `#79` 리뷰가
+        보여 줬다 — 요청 도착 순서가 뒤집혀 「지금 답」이 어긋나는데 이 파일의
+        검사 13개가 전부 통과했다.
 
-        **다만 「연달아」다.** 다른 답을 거쳐 돌아온 것은 새 신호여야 한다 —
-        그러지 않으면 마지막 신호가 실제로 고른 답과 어긋난다.
+        그래서 판단은 `checkin-api.js` 의 `createSignalTracker` 로 꺼냈고,
+        **실제 동작은 `frontend/tests/checkin-signal.test.js` 가 돌려서 잰다.**
+        여기서는 그 자리가 유지되는지만 본다.
         """
         body = _send_signal_body()
-        assert "key === lastSignal" in body, "같은 답을 연달아 눌러도 두 번 알린다"
-        assert "signalled[key]" not in body, (
-            "답마다 한 번씩만 보낸다 — 중단→복용중→중단 이면 마지막 신호가 「복용중」으로 남는다"
-        )
+        assert "signals.next(" in body, "판단이 다시 화면 안으로 들어왔다 — 검사가 닿지 않는다"
+        assert "createSignalTracker" in CHECKIN_API_JS.read_text(encoding="utf-8")
+
+    def test_the_signal_carries_what_orders_it(self) -> None:
+        """순서를 값으로 정한다 — 계약 3.2.
+
+        받은 차례로 정하면 첫 요청이 느릴 때 「지금 답」이 뒤집힌다.
+        """
+        source = CHECKIN_API_JS.read_text(encoding="utf-8")
+        for field in ("client_session_id", "client_sequence"):
+            assert field in source, f"신호가 {field} 를 안 싣는다 — 순서를 값으로 정할 수 없다"
+
+    def test_the_real_behaviour_tests_exist(self) -> None:
+        """소스를 읽는 검사만 두지 않는다.
+
+        이 파일이 재는 것은 **세 곳이 같은 말을 하는가**이고, 실제로 그렇게
+        도는가는 Node 검사가 잰다. 그것이 사라지면 여기만 남아 다시 거짓
+        초록이 된다.
+        """
+        node_test = ROOT / "frontend" / "tests" / "checkin-signal.test.js"
+        assert node_test.exists(), "실제 동작을 재는 검사가 사라졌다"
+        text = node_test.read_text(encoding="utf-8")
+        for scenario in ("도착 순서", "연달아", "저장이 최종", "새로고침"):
+            assert scenario in text, f"요청받은 시나리오가 빠졌다: {scenario}"

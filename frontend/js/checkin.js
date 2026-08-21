@@ -25,7 +25,10 @@
   var token = new URLSearchParams(location.search).get("t") || "synthetic-link-token";
 
   var picked = null; // 복약 답
-  var lastSignal = null; // 마지막으로 보낸 답. 연달아 같은 답을 눌러도 두 번 알리지 않는다.
+  /* 신호를 언제 보낼지 정하는 것은 `checkin-api.js` 의 `createSignalTracker` 다.
+     이 파일은 IIFE 라 검사가 안을 못 부르는데, 그 판단이야말로 재야 하는
+     자리라서 밖으로 꺼내 두었다 (`KEY-158` 참고). */
+  var signals = createSignalTracker();
   var painHad = null; // true · false · null(아직 안 고름)
   var painScore = 4;
   var painTypes = [];
@@ -235,14 +238,13 @@
 
      **실패해도 아무 말 하지 않는다.** 환자는 자기가 알림을 보내는 줄 모른다.
      여기서 오류를 띄우면 무엇을 잘못했는지 알 수 없는 사람에게 사과를 시킨다.
-     못 간 신호는 [저장] 때 실려 가는 `notify` 가 받쳐 준다. */
+     못 간 것은 [저장] 이 받쳐 준다 — 서버가 저장된 답으로 신호 상태를 맞춘다. */
   function sendSignal(key) {
-    if (!key || key === lastSignal) return;
-    var previous = lastSignal;
-    lastSignal = key;
-    checkinApi.signal(token, key).catch(function () {
-      /* 조용히 접는다. 못 갔으니 되돌려서 다시 누르면 한 번 더 가게 한다. */
-      if (lastSignal === key) lastSignal = previous;
+    var previous = signals.lastSent();
+    var stamp = signals.next(key);
+    if (!stamp) return; // 연달아 같은 답 — 보내지 않는다
+    checkinApi.signal(token, key, stamp.session, stamp.sequence).catch(function () {
+      signals.failed(key, previous);
     });
   }
 
