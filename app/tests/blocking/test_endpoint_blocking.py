@@ -26,7 +26,6 @@
 구현이 만점을 받는다.
 """
 
-import pytest
 from tortoise.contrib.test import TestCase
 
 from app.core.redis_client import get_redis
@@ -57,11 +56,6 @@ OCR_ROUTES: list[tuple[str, str, dict | None]] = [
     ("GET", "/api/v1/ocr/jobs/synthetic-job/fields", None),
     ("PATCH", "/api/v1/ocr/fields/1", {"corrected_value": "1"}),
 ]
-
-KEY_116 = (
-    "KEY-116 — `get_ocr_actor` 가 아무도 행을 만들지 않는 `users` 표에 걸려 있어 "
-    "실제 직원 토큰으로 401 이 난다. `#61` 이 병합되면 이 표시를 지운다."
-)
 
 
 class BlockingTestCase(TestCase):
@@ -190,15 +184,19 @@ class TestTheAllowedPathStillOpens(BlockingTestCase):
                 )
 
 
-class TestOcrIsUnreachableToday(BlockingTestCase):
-    """OCR 다섯은 오늘 실제 토큰으로 부를 수 없다 — `KEY-116`.
+class TestOcrIsReachableAndStillGuarded(BlockingTestCase):
+    """OCR 다섯이 이제 실제로 열린다 — `KEY-116`(`#61`)이 병합됐다.
 
-    아래 검사는 **고쳐졌을 때의 모습**을 적어 둔 것이다. `#61` 이 병합되면
-    통과로 바뀌고, `strict` 라 CI 가 표시를 지우라고 알려 준다.
+    이 자리는 얼마 전까지 `xfail(strict)` 이었다. `get_ocr_actor` 가 아무도 행을
+    만들지 않는 `users` 표에 걸려 있어 **실제 직원 토큰으로 다섯이 전부 401** 이
+    었기 때문이다. 검사는 초록인데 아무도 못 쓰는 상태였다.
+
+    `#61` 이 들어오면서 통과로 바뀌었고 `strict` 가 그것을 알려 줬다. 이제
+    「열린다」와 「그래도 막을 것은 막는다」를 함께 잰다.
     """
 
-    @pytest.mark.xfail(strict=True, reason=KEY_116)
-    async def test_a_valid_staff_token_is_not_rejected_as_unauthenticated(self) -> None:
+    async def test_a_valid_staff_token_gets_past_authentication(self) -> None:
+        """401 이 아니어야 한다. 무엇을 받든 **인증은 지나야** 한다."""
         world = await build_two_hospitals()
         for method, template, body in OCR_ROUTES:
             response = await self.call(method, template, world["h1"], world["staff1"].auth, body)
@@ -206,6 +204,71 @@ class TestOcrIsUnreachableToday(BlockingTestCase):
                 f"{method} {template} 이 실제 직원 토큰을 401 로 되돌린다 — 아무도 이 경로를 쓸 수 없다"
             )
 
+    async def test_admin_only_cannot_touch_ocr(self) -> None:
+        """`admin` 은 권한이지 역할이 아니다 — 권한표의 `OCR_UPLOAD` 가 막는다."""
+        world = await build_two_hospitals()
+        for method, template, body in OCR_ROUTES:
+            response = await self.call(method, template, world["h1"], world["admin1"].auth, body)
+            assert response.status_code == 403, f"{method} {template} 이 관리자에게 {response.status_code} 로 열렸다"
+
+    async def test_first_login_is_held_at_the_door_here_too(self) -> None:
+        """비밀번호를 바꾸기 전에는 OCR 도 못 쓴다."""
+        world = await build_two_hospitals()
+        for method, template, body in OCR_ROUTES:
+            response = await self.call(method, template, world["h1"], world["newbie1"].auth, body)
+            assert response.status_code == 403, f"{method} {template} 이 최초 로그인 상태로 열렸다"
+
+
+class TestUploadIsGuarded(BlockingTestCase):
+    """문서 업로드 — `KEY-54`(`#82`)가 develop 에 들어왔다.
+
+    8/27 골격의 3단계다. 여기가 뚫리면 남의 의원 진료에 문서가 붙는다.
+    """
+
+    UPLOAD = "/api/v1/front-desk/visits/{v}/documents"
+
+    async def upload(self, fence, headers):
+        files = {"files": ("synthetic.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 64, "image/jpeg")}
+        async with client() as http:
+            return await http.post(
+                self.UPLOAD.format(v=fence.visit_id),
+                headers=headers or {},
+                files=files,
+            )
+
+    async def test_no_token_is_401(self) -> None:
+        world = await build_two_hospitals()
+        assert (await self.upload(world["h1"], None)).status_code == 401
+
+    async def test_admin_only_is_forbidden(self) -> None:
+        world = await build_two_hospitals()
+        assert (await self.upload(world["h1"], world["admin1"].auth)).status_code == 403
+
+    async def test_first_login_is_held_at_the_door(self) -> None:
+        world = await build_two_hospitals()
+        response = await self.upload(world["h1"], world["newbie1"].auth)
+        assert response.status_code == 403
+        assert response.json()["code"] == "password_change_required"
+
+    async def test_other_hospital_visit_is_not_found(self) -> None:
+        """**남의 의원 진료에 문서를 붙일 수 없다.**
+
+        `#82` 리뷰에서 이 차단을 지우는 돌연변이를 심어도 그쪽 검사 8개가 전부
+        통과하는 것을 확인했다 — 구현은 맞는데 지켜 줄 것이 없었다. 여기서 잰다.
+        """
+        world = await build_two_hospitals()
+        response = await self.upload(world["h1"], world["staff2"].auth)
+        assert response.status_code == 404, "남의 의원 진료에 문서가 붙었다"
+
+    async def test_staff_and_doctor_can_upload_to_their_own_hospital(self) -> None:
+        """차단만 재면 전부 막는 구현이 만점을 받는다."""
+        world = await build_two_hospitals()
+        for who in ("staff1", "doctor1"):
+            response = await self.upload(world["h1"], world[who].auth)
+            assert response.status_code == 201, f"{who} 가 자기 의원 진료에 못 올린다 — {response.status_code}"
+
+
+class TestOcrStillRejectsAnonymous(BlockingTestCase):
     async def test_it_at_least_rejects_anonymous_callers(self) -> None:
         """막혀 있는 동안에도 이것만은 참이어야 한다."""
         world = await build_two_hospitals()
