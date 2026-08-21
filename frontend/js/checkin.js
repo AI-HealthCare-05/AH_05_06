@@ -25,6 +25,7 @@
   var token = new URLSearchParams(location.search).get("t") || "synthetic-link-token";
 
   var picked = null; // 복약 답
+  var signalled = {}; // 이미 「봐 주세요」를 보낸 답. 같은 답으로 두 번 알리지 않는다.
   var painHad = null; // true · false · null(아직 안 고름)
   var painScore = 4;
   var painTypes = [];
@@ -216,6 +217,28 @@
     return info ? !!info.notify : false;
   }
 
+  /* 고르는 즉시 의료진 화면에 「이 환자를 봐 주세요」를 보낸다 (KEY-138).
+
+     **이것은 기록이 아니다.** 의무기록은 [저장] 이 남기는 답이다. 이 신호는
+     「지금 이 환자가 중단을 눌렀다」는 사실일 뿐이라, 나중에 답을 바꿔도
+     철회하지 않는다 — `docs/contracts/checkin-signal-v1.md`.
+
+     저장 전에 화면을 닫아도 의료진이 알 수 있게 하는 것이 전부다. 임의 중단은
+     치료가 잘 듣는 2~3개월 차에 가장 많고(P7-5 노트), 그때 놓치면 다음 진료
+     때까지 아무도 모른다.
+
+     **실패해도 아무 말 하지 않는다.** 환자는 자기가 알림을 보내는 줄 모른다.
+     여기서 오류를 띄우면 무엇을 잘못했는지 알 수 없는 사람에게 사과를 시킨다.
+     못 간 신호는 [저장] 때 실려 가는 `notify` 가 받쳐 준다. */
+  function sendSignal(key) {
+    if (!key || signalled[key] || !notifyFor(key)) return;
+    signalled[key] = true;
+    checkinApi.signal(token, key).catch(function () {
+      /* 조용히 접는다. 다시 눌렀을 때 한 번 더 가도록 표시를 되돌린다. */
+      signalled[key] = false;
+    });
+  }
+
   /* ── 이벤트 ─────────────────────────────────────────── */
 
   document.addEventListener("click", function (event) {
@@ -240,6 +263,7 @@
       picked = med.getAttribute("data-med");
       renderMedication();
       renderSave();
+      sendSignal(picked);
       return;
     }
 

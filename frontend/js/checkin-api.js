@@ -34,6 +34,20 @@ var checkinApi = {
   save: function (token, answer) {
     return checkinRequest("/checkins/" + encodeURIComponent(token), { method: "POST", body: answer });
   },
+
+  /* 고르는 즉시 의료진 화면에 「이 환자를 봐 주세요」를 보낸다.
+
+     **이것은 기록이 아니다.** 의무기록은 [저장] 이 남기는 답이고, 이 신호는
+     「14:23 에 환자가 중단을 눌렀다」는 사실일 뿐이다. 나중에 답을 바꿔도 그
+     사실은 참이라 철회하지 않는다 — `docs/contracts/checkin-signal-v1.md`.
+
+     실패해도 화면을 막지 않는다. 환자는 자기가 알림을 보내는 줄 모른다. */
+  signal: function (token, answerKey) {
+    return checkinRequest("/checkins/" + encodeURIComponent(token) + "/signals", {
+      method: "POST",
+      body: { answer_key: answerKey },
+    });
+  },
 };
 
 /* 복약 답 다섯. **순서가 뜻을 만든다** — 잘 되는 쪽에서 안 되는 쪽으로 간다.
@@ -115,6 +129,9 @@ function mockCheckin() {
   };
 }
 
+/* 이번 화면에서 이미 보낸 신호. 서버의 `(checkin, answer_key)` 유일 규칙을 흉내 낸다. */
+var MOCK_SIGNALS = [];
+
 function mockCheckinRequest(path, options) {
   var body = options.body || {};
   return new Promise(function (resolve, reject) {
@@ -123,6 +140,20 @@ function mockCheckinRequest(path, options) {
         // 링크는 3일 뒤 닫힌다(P8 노트). 만료는 오류가 아니라 안내다.
         return reject(new ApiError("LINK_EXPIRED", 410, {}));
       }
+      /* 신호는 저장보다 먼저 온다. 같은 답으로 두 번 눌러도 한 번만 만든다 —
+         환자가 설명을 읽으려고 왔다 갔다 눌러도 의료진에게 두 번 뜨지 않는다. */
+      if (options.method === "POST" && /\/signals$/.test(path)) {
+        var key = body.answer_key;
+        var info = mockCheckin().answers[key];
+        if (!info || !info.notify) {
+          // 알림이 아닌 답(`missing`)은 애초에 화면이 부르지 않는다. 서버도 막는다.
+          return reject(new ApiError("NOT_A_SIGNAL", 400, {}));
+        }
+        var seen = MOCK_SIGNALS.indexOf(key) !== -1;
+        if (!seen) MOCK_SIGNALS.push(key);
+        return resolve({ signal_id: 8800 + MOCK_SIGNALS.length, answer_key: key, deduped: seen });
+      }
+
       if (options.method === "POST") {
         if (MEDICATION_ANSWERS.indexOf(body.medication) === -1) {
           return reject(new ApiError("MEDICATION_REQUIRED", 422, {}));
