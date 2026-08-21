@@ -78,17 +78,17 @@ visit    = await Visit.filter(patient_id=patient.patient_id).order_by("-visited_
 
 | # | 단계 | 화면 | API | 지금 | 이번 주 |
 |---|---|---|---|---|---|
-| 1 | 병원 로그인 | `login.html` | `POST /auth/login` | **진짜** | 그대로 |
-| 2 | 환자·진료 선택 | `patients.html` | `GET /patients` · `/visits` | **진짜** | 그대로 |
+| 1 | 병원 로그인 | `login.html` | `POST /api/v1/auth/login` | **진짜** | 그대로 |
+| 2 | 환자·진료 선택 | `patients.html` | `GET /api/v1/patients` · `/api/v1/visits/{visit_id}` | **진짜** | 그대로 |
 | 3 | 문서 업로드 | `patients.html`(upload) | **없음** | ❌ | **fixture** |
-| 4 | OCR 수정·확정 | `ocr-review.html` | `/ocr/jobs/*` · `/ocr/fields/*` | ⚠️ **막힘** | **fixture** — 아래 §4 |
+| 4 | OCR 수정·확정 | `ocr-review.html` | `/api/v1/ocr/jobs/{ocr_job_id}` · `/api/v1/ocr/fields/{ocr_field_id}` | ⚠️ **막힘** | **fixture** — 아래 §4 |
 | 5 | 안내 생성 | — | 없음 | ❌ | **fixture** (고정 템플릿) |
-| 6 | 의사 승인 | `doctor.html` | `/visits/{id}/guide/approve` | 🟡 **`#50` 미병합** | 진짜 — 병합되면 |
+| 6 | 의사 승인 | `doctor.html` | `POST /api/v1/visits/{visit_id}/guide/approve` | **진짜** — `#50` 머지됨 | 그대로 |
 | 7 | 환자 링크 조회 | `guide.html` | `/guides/{token}` 없음 | ❌ | 개발용 링크 (`KEY-90`) |
 | 8 | D+7 응답 | `checkin.html` | `/checkins/{token}` 없음 | ❌ | **fixture 또는 진짜** (`KEY-151`) |
 | 9 | 병원 확인 | — | 없음 | ❌ | (`KEY-99`) |
 
-**진짜인 구간은 1·2 둘뿐이다.** 6은 병합만 하면 진짜가 된다.
+**진짜인 구간은 1·2·6 셋이다.**
 
 ### 화면은 이미 다 있다
 
