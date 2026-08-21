@@ -1,6 +1,6 @@
 """인증 오류의 모양 — KEY-73.
 
-계약(`docs/auth-contract.md` 5절)이 코드로 구분하라고 정한 이유는,
+계약(`docs/api/hospital.md` 5절)이 코드로 구분하라고 정한 이유는,
 **같은 상태 코드라도 사용자가 해야 할 일이 다르기 때문**이다.
 
     401 invalid_credentials  다시 입력해야 한다
