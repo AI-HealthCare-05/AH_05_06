@@ -52,7 +52,7 @@ body.shell {
   color: var(--ink-2);
   background: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -99,7 +99,7 @@ body.shell {
   color: var(--ink-2);
   background: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -117,9 +117,10 @@ body.shell {
   font-size: 11px;
   font-weight: 600;
   line-height: 17px;
-  color: #ffffff;
+  color: var(--on-accent);
   background: var(--danger);
-  border-radius: 9px;
+  /* 높이 17px 이라 브라우저가 8.5px 로 자른다 — 알약이다 */
+  border-radius: var(--radius-pill);
 }
 
 /* ── 본문 두 칸 ─────────────────────────────────────── */
@@ -151,7 +152,7 @@ body.shell {
   font-size: 13px;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .list__day {
@@ -188,12 +189,12 @@ body.shell {
   color: var(--ink-2);
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 
 .chip[aria-pressed="true"] {
-  color: #ffffff;
+  color: var(--on-accent);
   font-weight: 600;
   background: var(--accent);
   border-color: var(--accent);
@@ -258,7 +259,7 @@ body.shell {
   display: inline-block;
   padding: 2px 8px;
   font-size: 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg);
   border: 1px solid var(--line);
   color: var(--ink-2);
@@ -273,7 +274,7 @@ body.shell {
 .row__state--done {
   color: var(--done);
   background: var(--done-bg);
-  border-color: #cfe4d8;
+  border-color: var(--done-line);
 }
 
 .list__note {
@@ -353,4 +354,85 @@ body.shell {
   margin-top: 6px;
   font-size: 13px;
   color: var(--ink-2);
+}
+
+/* ── 초점 ───────────────────────────────────────────
+   키보드로 다니는 사람은 이 링 하나로 지금 어디 있는지 안다. 골격을 그리는
+   파일이 초점도 함께 가져야 한다 — 예전에는 upload.css 에 있어서 그 파일을
+   안 싣는 화면에서 브라우저 기본 링(1px)으로 떨어졌다. */
+.chip:focus-visible,
+.row:focus-visible,
+.icon-button:focus-visible,
+.topbar__tab:focus-visible,
+.list__search:focus-visible,
+.skip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 본문 건너뛰기 — 평소에는 안 보이고 Tab 을 누르면 첫 번째로 나온다.
+   왼쪽 목록이 하루치 환자만큼 길어서, 이것이 없으면 오른쪽 작업칸에 닿는 데
+   서른 번 넘게 눌러야 한다(WCAG 2.4.1). */
+.skip {
+  position: absolute;
+  top: var(--s-8);
+  left: var(--s-8);
+  z-index: 10;
+  padding: var(--s-8) var(--s-12);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius);
+  transform: translateY(-200%);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+/* ── 눌렀다는 신호 ──────────────────────────────────
+   지금까지 `:hover` 만 있고 `:active` 가 하나도 없었다. 마우스를 올리면
+   반응하는데 **누르면 아무 일도 안 일어난다** — 느린 회선에서 응답이 늦으면
+   눌렀는지 안 눌렀는지 알 수 없어 한 번 더 누르게 된다.
+
+   바뀌는 것은 배경 하나뿐이다. 움직이거나 커지지 않는다 — 접수대는 이 화면을
+   하루에 수십 번 지난다. */
+.topbar__tab,
+.icon-button,
+.row {
+  transition: background-color var(--motion) var(--ease);
+}
+
+/* 칩은 **테두리만** 감싼다. `:active` 가 바꾸는 것이 테두리뿐이고,
+   배경까지 넣으면 선택 상태로 넘어갈 때 글자가 사라진다.
+
+   `.chip[aria-pressed="true"]` 는 글자와 배경이 밝기를 서로 맞바꾼다 —
+   회색 글자·밝은 배경에서 흰 글자·어두운 배경으로. 배경만 120ms 에 걸쳐
+   따라오면 그동안 **흰 글자가 밝은 배경 위에** 놓인다.
+
+       0ms   흰 글자 on #f4f5f6   대비 1.09   ← 안 보인다
+      60ms   흰 글자 on #8c9298   대비 3.14   ← AA 미달
+     120ms   흰 글자 on #23303a   대비 13.50
+
+   `color` 를 목록에 넣어도 안 낫는다. 나쁜 순간이 없어지는 게 아니라
+   가운데로 옮겨갈 뿐이다(최저 1.07 @48ms). 글자와 배경이 서로를 지나가기
+   때문에 어떻게 보간해도 겹치는 지점이 생긴다.
+
+   그래서 **선택 전환은 한 번에 바꾼다.** 지나는 순간이 없으면 안 보이는
+   순간도 없다 — 5.82 에서 13.50 으로 바로 간다. `.topbar__tab` 은 어두운
+   글자에서 어두운 글자로 가서(최저 6.35) 이 문제가 없다. */
+.chip {
+  transition: border-color var(--motion) var(--ease);
+}
+
+.topbar__tab:active,
+.icon-button:active,
+.row:active {
+  background: var(--line);
+}
+
+.chip:active {
+  border-color: var(--line-strong);
 }

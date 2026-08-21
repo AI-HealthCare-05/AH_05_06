@@ -1,6 +1,6 @@
 """병원과 직원 — KEY-73 인증 백엔드의 바닥.
 
-`docs/auth-contract.md`(KEY-8 v1)와 기획의 `staff` 표를 그대로 옮긴 것이다.
+`docs/api/hospital.md`(KEY-8 v1)와 기획의 `staff` 표를 그대로 옮긴 것이다.
 지금 `app/models/users.py`는 `email` 로그인 · `is_admin` bool 인 예시 골격이라
 계약이 붙을 자리가 없다. 그 자리를 여기서 만든다.
 
@@ -8,6 +8,7 @@
 정리는 계정 관리(A1-2) 몫이다.
 """
 
+from datetime import datetime
 from enum import StrEnum
 
 from tortoise import fields, models
@@ -81,8 +82,11 @@ class Staff(models.Model):
     password_changed_at = fields.DatetimeField(null=True)
 
     status = fields.CharEnumField(enum_type=StaffStatus, default=StaffStatus.ACTIVE)
-    left_at = fields.DatetimeField(null=True)
-    last_login_at = fields.DatetimeField(null=True)
+    # `null=True` 인데 Tortoise 스텁은 `datetime` 으로 준다. 실제로 None 이 들어가는
+    # 칸이니 여기에 적어 둔다 — 안 그러면 None 을 넣는 쪽마다 억제를 달게 된다
+    # (`scripts/seed.py` 가 그랬다 · KEY-114).
+    left_at: datetime | None = fields.DatetimeField(null=True)
+    last_login_at: datetime | None = fields.DatetimeField(null=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)

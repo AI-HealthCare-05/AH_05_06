@@ -40,7 +40,7 @@ def build_app() -> TestClient:
 
     @app.get("/boom")
     def boom() -> None:
-        raise ValueError(f"Can't connect: password=pw1234 token={LINK_TOKEN}")
+        raise ValueError(f"Can't connect: password=n0t-a-real-pw token={LINK_TOKEN}")
 
     return TestClient(app, raise_server_exceptions=False)
 
@@ -135,7 +135,7 @@ class TestUnhandledErrorsStaySilent:
         """FastAPI 기본이 이미 안전하다. 바뀌면 여기서 걸린다."""
         response = build_app().get("/boom")
         assert response.status_code == 500
-        assert "pw1234" not in response.text
+        assert "n0t-a-real-pw" not in response.text
         assert LINK_TOKEN not in response.text
         assert "MySQL" not in response.text
 
@@ -151,3 +151,20 @@ class TestRealAppHasThemRegistered:
 
         assert RequestValidationError in app.exception_handlers
         assert StarletteHTTPException in app.exception_handlers
+
+
+class TestOcrErrorHandlerIsAlsoScrubbed:
+    """OCR 오류 핸들러는 `register_error_handlers()` 경로를 안 거친다 — KEY-48.
+
+    지금은 `OcrApiError.message` 가 전부 고정 문구지만, 벤더 원문을 그대로
+    실어 던지는 코드가 나중에 생겨도 여기서 걸려야 한다.
+    """
+
+    async def test_message_is_scrubbed(self) -> None:
+        from app.main import ocr_api_error_handler
+        from app.ocr.errors import OcrApiError
+
+        exc = OcrApiError(502, "VENDOR_ERROR", f"upstream said token={LINK_TOKEN}")
+        response = await ocr_api_error_handler(None, exc)
+
+        assert LINK_TOKEN not in bytes(response.body).decode()

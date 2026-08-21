@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 
 from app.core.api_errors import ContractRoute
-from app.dependencies.patient_access import ClinicalActor, require_patient_access
+from app.dependencies.patient_access import ClinicalActor, require_patient_read, require_patient_write
 from app.dtos.patients import (
     CursorPage,
     LatestVisitResponse,
@@ -21,7 +21,7 @@ patient_router = APIRouter(prefix="/patients", tags=["patients"], route_class=Co
 @patient_router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
 async def create_patient(
     data: PatientCreateRequest,
-    actor: Annotated[ClinicalActor, Depends(require_patient_access)],
+    actor: Annotated[ClinicalActor, Depends(require_patient_write)],
     service: Annotated[PatientService, Depends(PatientService)],
 ) -> PatientResponse:
     return PatientResponse.model_validate(await service.create(actor, data))
@@ -29,7 +29,7 @@ async def create_patient(
 
 @patient_router.get("", response_model=PatientListResponse)
 async def list_patients(
-    actor: Annotated[ClinicalActor, Depends(require_patient_access)],
+    actor: Annotated[ClinicalActor, Depends(require_patient_read)],
     service: Annotated[PatientService, Depends(PatientService)],
     keyword: str | None = None,
     cursor: str | None = None,
@@ -53,7 +53,7 @@ async def list_patients(
 @patient_router.get("/{patient_id}", response_model=PatientResponse)
 async def get_patient(
     patient_id: int,
-    actor: Annotated[ClinicalActor, Depends(require_patient_access)],
+    actor: Annotated[ClinicalActor, Depends(require_patient_read)],
     service: Annotated[PatientService, Depends(PatientService)],
 ) -> PatientResponse:
     return PatientResponse.model_validate(await service.get(actor, patient_id))
@@ -63,7 +63,7 @@ async def get_patient(
 async def update_patient(
     patient_id: int,
     data: PatientUpdateRequest,
-    actor: Annotated[ClinicalActor, Depends(require_patient_access)],
+    actor: Annotated[ClinicalActor, Depends(require_patient_write)],
     service: Annotated[PatientService, Depends(PatientService)],
 ) -> PatientResponse:
     return PatientResponse.model_validate(await service.update(actor, patient_id, data))

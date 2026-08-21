@@ -1,6 +1,6 @@
 /* 환자·진료 API — KEY-35 · KEY-50
  *
- * 계약은 `docs/contracts/patient-visit-api-v1.md` (KEY-26) 를 따른다.
+ * 계약은 `docs/api/hospital.md` (KEY-26) 를 따른다.
  *
  *   GET   /api/v1/patients?keyword=&category=&cursor=&limit=
  *   POST  /api/v1/patients
@@ -232,6 +232,19 @@ var MOCK_PATIENTS = [
     last_dx: "자궁내막증",
     last_drug: "비잔",
   },
+  {
+    /* D1 의사 화면이 「남의 환자」로 여는 사람(KEY-86). 오늘 목록에만 넣고
+       여기 빠뜨려서, 그 줄을 누르면 환자 카드가 「찾을 수 없습니다 — 목록을
+       새로 고쳐 주세요」로 떴다. 새로 고쳐도 없으니 안내까지 틀렸다. */
+    patient_id: 1008,
+    hospital_patient_no: "10982",
+    name: "최다인",
+    birth_date: "1997-03-11",
+    phone: "01033910982",
+    last_visited_on: "2026-05-14",
+    last_dx: "다낭성",
+    last_drug: "메트포르민",
+  },
 ];
 
 /* 성별과 동의는 합성 CSV 에 칸이 없다 — KEY-30 매핑표의 `CSV_CANNOT_SUPPLY` 와 같은 자리다.
@@ -294,6 +307,37 @@ var MOCK_TODAY = (function () {
       visited_at: "2026-08-11T16:05:00+09:00",
       work_category: "NEEDS_ATTENTION",
       detail_status: "INVALID_PHONE",
+    },
+    /* 승인 대기 둘 — 의사 화면(D1)이 기본으로 여는 묶음이다.
+       의사 기본 탭이 「승인 요청」인데(shell.js DEFAULT_TABS) 그 탭에 행이
+       하나도 없으면, 화면이 빈 것이 **할 일이 없어서인지 아직 안 붙어서인지**
+       구분되지 않는다. 담당의를 둘로 나눈 것은 D1-1 이 「내 환자」와 「남의
+       환자」를 함께 보여 주기 때문이다 — 원장님은 남의 것도 볼 수 있다. */
+    {
+      visit_id: 8801,
+      patient_id: 1003,
+      name: "김서연",
+      hospital_patient_no: "12345",
+      birth_date: "1990-01-01",
+      age: 36,
+      diagnosis_name: "자궁내막증",
+      doctor: { doctor_id: 12, name: "박연 원장" },
+      visited_at: "2026-08-20T10:32:00+09:00",
+      work_category: "APPROVAL_REQUESTED",
+      detail_status: "APPROVAL_PENDING",
+    },
+    {
+      visit_id: 8802,
+      patient_id: 1008,
+      name: "최다인",
+      hospital_patient_no: "10982",
+      birth_date: "1997-03-11",
+      age: 29,
+      diagnosis_name: "다낭성",
+      doctor: { doctor_id: 13, name: "김연우 원장" },
+      visited_at: "2026-08-20T11:05:00+09:00",
+      work_category: "APPROVAL_REQUESTED",
+      detail_status: "APPROVAL_PENDING",
     },
   ];
 })();
@@ -455,6 +499,16 @@ var MOCK_HISTORY = {
       drug: "비잔 2mg",
       days: 84,
       has_guide: false,
+    },
+  ],
+  1008: [
+    {
+      visit_id: 8090,
+      visited_at: "2026-05-14",
+      diagnosis_name: "다낭성",
+      drug: "메트포르민 500mg",
+      days: 90,
+      has_guide: true,
     },
   ],
 };
