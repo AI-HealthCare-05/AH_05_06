@@ -45,7 +45,9 @@ class OcrRepository(Protocol):
         self, ocr_job_id: str, actor: OcrActor, field_type: str | None
     ) -> tuple[Sequence[OcrField], Sequence[OcrDocumentText]]: ...
 
-    async def update_field(self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor) -> OcrField: ...
+    async def update_field(
+        self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
+    ) -> tuple[OcrField, Sequence[OcrDocumentText]]: ...
 
 
 class DocumentOwnershipVerifier(Protocol):
@@ -179,7 +181,9 @@ class TortoiseOcrRepository:
         fields = [field for field in result.fields if field_type is None or field.field_type == field_type]
         return sorted(fields, key=lambda field: field.ocr_field_id), list(result.documents)
 
-    async def update_field(self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor) -> OcrField:
+    async def update_field(
+        self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
+    ) -> tuple[OcrField, Sequence[OcrDocumentText]]:
         async with in_transaction() as connection:
             field = (
                 await OcrField.filter(
@@ -235,7 +239,13 @@ class TortoiseOcrRepository:
                 field.confirmed_at = changed_at
             await field.save(using_db=connection)
         await field.fetch_related("candidates")
-        return field
+
+        doc_text_ids = {field.document_text_id} if field.document_text_id is not None else set()
+        doc_text_ids.update(c.document_text_id for c in field.candidates if c.document_text_id is not None)
+        doc_texts = (
+            await OcrDocumentText.filter(ocr_document_text_id__in=list(doc_text_ids)).all() if doc_text_ids else []
+        )
+        return field, doc_texts
 
 
 def serialize_job(job: OcrJob) -> OcrJobResponse:
@@ -342,4 +352,6 @@ class OcrService:
     async def update_field(
         self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
     ) -> OcrFieldResponse:
-        return serialize_field(await self.repository.update_field(ocr_field_id, request, actor))
+        field, doc_texts = await self.repository.update_field(ocr_field_id, request, actor)
+        doc_text_map = {d.ocr_document_text_id: d for d in doc_texts}
+        return serialize_field(field, doc_text_map)
