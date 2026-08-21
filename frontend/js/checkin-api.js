@@ -46,13 +46,14 @@ var checkinApi = {
      받은 차례대로 믿으면 「지금 답」이 뒤집힌다.
 
      실패해도 화면을 막지 않는다. 환자는 자기가 알림을 보내는 줄 모른다. */
-  signal: function (token, answerKey, session, sequence) {
+  signal: function (token, answerKey, stamp) {
     return checkinRequest("/checkins/" + encodeURIComponent(token) + "/signals", {
       method: "POST",
       body: {
         answer_key: answerKey,
-        client_session_id: session,
-        client_sequence: sequence,
+        client_id: stamp.clientId,
+        client_session_id: stamp.session,
+        client_sequence: stamp.sequence,
       },
     });
   },
@@ -66,57 +67,68 @@ var checkinApi = {
    정정 · 새로고침. 그래서 판단만 여기로 꺼내 검사가 닿게 한다.
 
    `checkin.js` 는 이것을 부르기만 한다. */
-const SIGNAL_SESSION_KEY = "checkinSignalSession";
+const SIGNAL_CLIENT_KEY = "checkinSignalClient";
 const SIGNAL_SEQUENCE_KEY = "checkinSignalSequence";
+const SIGNAL_SESSION_KEY = "checkinSignalSession";
 
-function createSignalTracker(newId, box) {
-  /* **순번을 기기 하나에서 이어 간다.** 새로고침해도, 탭을 새로 열어도, 다음
-     번호를 받는다.
+function createSignalTracker(newId, deviceBox, tabBox) {
+  /* 식별값이 셋인 이유 — 각각 다른 것을 가리킨다.
 
-     화면마다 1 부터 다시 시작하면 두 화면을 견줄 수가 없다. 서버가 「먼저 본
-     쪽이 앞」으로 정해도 안 된다 — 새로고침 직전에 **이미 출발해 지연 중이던**
-     요청은 나중에 닿으므로 오히려 늦게 본 것이 된다. 유가은 님이 `#79`
-     재검토에서 그 경우를 재현해 주셨다.
+       client_id           기기 하나 (`localStorage`)   순번이 통하는 범위
+       client_sequence     그 기기 안에서 단조증가        같은 기기 안의 앞뒤
+       client_session_id   탭 하나 (`sessionStorage`)   어느 화면이 보냈나
 
-     그래서 **누가 앞인지를 화면 쪽에서 정한다.** 순번은 기기에 남는 저장소
-     (`localStorage`)에 두어 탭과 새로고침을 넘어 단조증가한다. 망이 어떻게
-     흔들려도 순서는 뒤집히지 않는다.
+     **순번은 기기 안에서만 뜻이 있다.** 다른 기기는 1 부터 시작하므로 큰
+     번호가 나중이라는 보장이 없다 — 나중에 켠 기기의 답이 앞 기기의 큰
+     번호에 막힌다. 그래서 서버는 `client_id` 가 같을 때만 순번으로 견주고,
+     다르면 닿은 차례로 정한다. 기기가 다르면 사람이 옮겨 앉은 것이라
+     사이가 벌어져 있어 도착 순서가 맞다.
 
-     `session` 은 어느 화면이 보냈는지 되짚을 때만 쓴다 — 판정에는 안 들어간다. */
-  var store = box || (typeof localStorage !== "undefined" ? localStorage : null);
-  var session = store && store.getItem(SIGNAL_SESSION_KEY);
-  if (!session) {
-    session = (newId || defaultSessionId)();
-    if (store) store.setItem(SIGNAL_SESSION_KEY, session);
+     같은 기기 안에서는 새로고침·새 탭을 넘어 순번이 이어지므로, 새로고침
+     직전에 떠난 지연 요청도 제대로 밀린다(유가은 님 `#79` 재검토).
+
+     `client_session_id` 는 **탭마다 다르다.** 어느 화면이 보냈는지 되짚을
+     때만 쓰고 판정에는 들어가지 않는다. */
+  var device = deviceBox || (typeof localStorage !== "undefined" ? localStorage : null);
+  var tab = tabBox || (typeof sessionStorage !== "undefined" ? sessionStorage : null);
+  var mint = newId || defaultSessionId;
+
+  var clientId = device && device.getItem(SIGNAL_CLIENT_KEY);
+  if (!clientId) {
+    clientId = mint();
+    if (device) device.setItem(SIGNAL_CLIENT_KEY, clientId);
   }
-  var sequence = Number((store && store.getItem(SIGNAL_SEQUENCE_KEY)) || 0) || 0;
+
+  var session = tab && tab.getItem(SIGNAL_SESSION_KEY);
+  if (!session) {
+    session = mint();
+    if (tab) tab.setItem(SIGNAL_SESSION_KEY, session);
+  }
+
+  var sequence = Number((device && device.getItem(SIGNAL_SEQUENCE_KEY)) || 0) || 0;
 
   /* `lastSent` 는 이어 가지 않는다. 새로고침하면 화면이 비어 있어 환자가
      다시 고르는데, 그것을 「연달아 같은 답」으로 접으면 아무 신호도 안 간다. */
   var lastSent = null;
 
   return {
+    clientId: clientId,
     session: session,
 
-    /* 보낼 것이면 `{ session, sequence }` 를, 안 보낼 것이면 `null` 을 준다. */
     next: function (answerKey) {
       /* **연달아** 같은 답을 다시 눌렀을 때만 접는다. `P7-2`~`P7-5` 는 펼침
          화면이라 설명을 읽으려고 눌렀다 되돌릴 수 있다. 다만 다른 답을 거쳐
-         돌아온 것은 새 신호다 — 아니면 마지막 신호가 실제로 고른 답과
-         어긋난다. */
+         돌아온 것은 새 신호다. */
       if (!answerKey || answerKey === lastSent) return null;
       lastSent = answerKey;
       /* 저장소를 매번 다시 읽는다. 다른 탭이 그 사이에 올려 뒀을 수 있다. */
-      var shared = Number((store && store.getItem(SIGNAL_SEQUENCE_KEY)) || 0) || 0;
+      var shared = Number((device && device.getItem(SIGNAL_SEQUENCE_KEY)) || 0) || 0;
       sequence = Math.max(sequence, shared) + 1;
-      if (store) store.setItem(SIGNAL_SEQUENCE_KEY, String(sequence));
-      return { session: session, sequence: sequence };
+      if (device) device.setItem(SIGNAL_SEQUENCE_KEY, String(sequence));
+      return { clientId: clientId, session: session, sequence: sequence };
     },
 
-    /* 못 갔으면 되돌린다. 다시 누르면 한 번 더 가야 한다.
-
-       순번은 **되돌리지 않는다.** 이미 나간 번호이고, 서버는 큰 쪽을 나중으로
-       보므로 비워 두는 편이 안전하다. */
+    /* 못 갔으면 되돌린다. 순번은 되돌리지 않는다 — 이미 나간 번호다. */
     failed: function (answerKey, previous) {
       if (lastSent === answerKey) lastSent = previous;
     },
@@ -218,14 +230,22 @@ function mockCheckin() {
    먼저 닿아서 순서가 뒤집힌다. 그래서 `(session, sequence)` 로 판정한다. */
 var MOCK_SIGNALS = [];
 
-/* 두 신호 중 어느 쪽이 나중인가 — **`sequence` 하나로 정한다.**
+/* 두 신호 중 어느 쪽이 나중인가.
 
-   순번은 화면이 매기고 기기 하나에서 단조증가한다. 그래서 새로고침이든 새 탭이든
-   비교가 선다. 도착 순서는 보지 않는다 — 그것으로 정하면 지연된 옛 요청이 새
-   답을 덮는다(유가은 님 `#79` 재검토). */
+   **같은 기기면 `sequence`, 다른 기기면 닿은 차례.**
+
+   순번은 기기 안에서만 뜻이 있다. 다른 기기는 1 부터 시작하므로 큰 번호가
+   나중이라는 보장이 없다 — 나중에 켠 기기의 답이 앞 기기의 큰 번호에 막힌다
+   (유가은 님 `#79` 재검토). 기기가 다르면 사람이 옮겨 앉은 것이라 사이가
+   벌어져 있어 도착 순서가 맞다.
+
+   같은 기기 안에서는 새로고침·새 탭을 넘어 순번이 이어지므로, 새로고침 직전에
+   떠난 지연 요청도 순번으로 제대로 밀린다. */
 function mockSignalIsNewer(candidate, current) {
   if (!current) return true;
-  return candidate.sequence > current.sequence;
+  if (candidate.from_save || current.from_save) return candidate.received > current.received;
+  if (candidate.client_id === current.client_id) return candidate.sequence > current.sequence;
+  return candidate.received > current.received;
 }
 
 function mockCurrentSignal() {
@@ -252,8 +272,10 @@ function mockCheckinRequest(path, options) {
         var info = mockCheckin().answers[key];
         var record = {
           answer_key: key,
+          client_id: body.client_id,
           session: body.client_session_id,
           sequence: body.client_sequence,
+          received: MOCK_SIGNALS.length, // 닿은 차례 — 기기가 다를 때만 쓴다
         };
         /* **늦게 닿은 옛 신호도 버리지 않는다.** 「14:23 에 중단을 눌렀다」는
            그것대로 참이라 이력에 남는다. 다만 「지금 답」 판정에서 밀릴 뿐이다. */
@@ -282,8 +304,9 @@ function mockCheckinRequest(path, options) {
         MOCK_SIGNALS.push({
           answer_key: body.medication,
           session: "save",
-          /* 저장은 환자가 확정한 답이라 **늘 가장 나중**이다. 지연 중이던
-             신호가 뒤에 닿아도 이것을 못 덮게 가장 큰 번호를 준다. */
+          /* 저장은 환자가 확정한 답이라 **늘 가장 나중**이다. */
+          from_save: true,
+          received: MOCK_SIGNALS.length,
           sequence: Number.MAX_SAFE_INTEGER,
           from_save: true,
         });

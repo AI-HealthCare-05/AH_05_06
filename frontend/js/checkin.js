@@ -243,7 +243,7 @@
     var previous = signals.lastSent();
     var stamp = signals.next(key);
     if (!stamp) return; // 연달아 같은 답 — 보내지 않는다
-    checkinApi.signal(token, key, stamp.session, stamp.sequence).catch(function () {
+    checkinApi.signal(token, key, stamp).catch(function () {
       signals.failed(key, previous);
     });
   }

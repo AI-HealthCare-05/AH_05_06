@@ -79,13 +79,13 @@ function memoryBox() {
    느린 것(첫 연결·재시도·혼잡)을 재현하는 유일한 방법이다. */
 function sendAfter(api, token, key, stamp, latency) {
   return new Promise((resolve) => setTimeout(resolve, latency)).then(() =>
-    api.checkinApi.signal(token, key, stamp.session, stamp.sequence)
+    api.checkinApi.signal(token, key, stamp)
   );
 }
 
 test("① 빠른 연속 선택 — 요청이 뒤집혀 닿아도 마지막에 고른 답이 지금 답이다", async () => {
   const api = loadApi();
-  const tracker = api.createSignalTracker(undefined, memoryBox());
+  const tracker = api.createSignalTracker(undefined, memoryBox(), memoryBox());
 
   const first = tracker.next("stopped_side_effect");
   const second = tracker.next("taking");
@@ -108,7 +108,7 @@ test("① 빠른 연속 선택 — 요청이 뒤집혀 닿아도 마지막에 �
 
 test("② 연달아 같은 답은 안 보내고, 다른 답을 거쳐 돌아오면 새 신호다", async () => {
   const api = loadApi();
-  const tracker = api.createSignalTracker(undefined, memoryBox());
+  const tracker = api.createSignalTracker(undefined, memoryBox(), memoryBox());
 
   assert.ok(tracker.next("stopped_side_effect"), "첫 선택은 보내야 한다");
   assert.equal(tracker.next("stopped_side_effect"), null, "연달아 같은 답을 두 번 보냈다");
@@ -125,11 +125,11 @@ test("② 연달아 같은 답은 안 보내고, 다른 답을 거쳐 돌아오�
 
 test("③ 마지막 신호가 실패해도 저장이 최종 답으로 바로잡는다", async () => {
   const api = loadApi();
-  const tracker = api.createSignalTracker(undefined, memoryBox());
+  const tracker = api.createSignalTracker(undefined, memoryBox(), memoryBox());
 
   // 위험한 답은 닿았다.
   const danger = tracker.next("stopped_side_effect");
-  await api.checkinApi.signal("t", "stopped_side_effect", danger.session, danger.sequence);
+  await api.checkinApi.signal("t", "stopped_side_effect", danger);
 
   // 마음을 바꿨지만 그 신호는 못 갔다 — 화면은 조용히 접고 표시를 되돌린다.
   const previous = tracker.lastSent();
@@ -155,12 +155,12 @@ test("④ 새로고침해도 순번이 이어진다 — 1 로 되돌아가지 �
   const api = loadApi();
   const box = memoryBox(); // 기기에 남는 저장소. 새로고침·새 탭을 넘어 산다.
 
-  const before = api.createSignalTracker(undefined, box);
+  const before = api.createSignalTracker(undefined, box, memoryBox());
   assert.equal(before.next("stopped_side_effect").sequence, 1);
   assert.equal(before.next("taking").sequence, 2);
 
   // 새로고침.
-  const after = api.createSignalTracker(undefined, box);
+  const after = api.createSignalTracker(undefined, box, memoryBox());
   const fresh = after.next("stopped_improved");
   assert.equal(
     fresh.sequence,
@@ -168,7 +168,7 @@ test("④ 새로고침해도 순번이 이어진다 — 1 로 되돌아가지 �
     "순번이 1 로 되돌아갔다 — 새로고침 직전에 떠난 요청과 견줄 수 없다"
   );
 
-  const result = await api.checkinApi.signal("t", "stopped_improved", fresh.session, fresh.sequence);
+  const result = await api.checkinApi.signal("t", "stopped_improved", fresh);
   assert.equal(result.current_answer_key, "stopped_improved");
 });
 
@@ -185,18 +185,18 @@ test("④-c 새로고침 전에 출발한 지연 요청이 새 화면의 답을 
   const api = loadApi();
   const box = memoryBox();
 
-  const before = api.createSignalTracker(undefined, box);
+  const before = api.createSignalTracker(undefined, box, memoryBox());
   const danger = before.next("stopped_side_effect");
 
   // 위험 답변은 출발만 했다 — 아래에서 늦게 닿는다.
   const inFlight = sendAfter(api, "t", "stopped_side_effect", danger, 80);
 
   // 새로고침. 순번은 이어지므로 이 답이 더 큰 번호를 받는다.
-  const after = api.createSignalTracker(undefined, box);
+  const after = api.createSignalTracker(undefined, box, memoryBox());
   const fresh = after.next("taking");
   assert.ok(fresh.sequence > danger.sequence, "새 화면의 순번이 앞 요청보다 커야 한다");
 
-  const settled = await api.checkinApi.signal("t", "taking", fresh.session, fresh.sequence);
+  const settled = await api.checkinApi.signal("t", "taking", fresh);
   assert.equal(settled.current_answer_key, "taking");
 
   // 이제 지연됐던 옛 요청이 닿는다.
@@ -209,31 +209,81 @@ test("④-d 탭을 새로 열어도 같은 순번을 이어 간다", async () =>
   const api = loadApi();
   const box = memoryBox(); // 같은 기기 = 같은 저장소
 
-  const tab1 = api.createSignalTracker(undefined, box);
+  const tab1 = api.createSignalTracker(undefined, box, memoryBox());
   const a = tab1.next("stopped_side_effect");
 
-  const tab2 = api.createSignalTracker(undefined, box);
+  const tab2 = api.createSignalTracker(undefined, box, memoryBox());
   const b = tab2.next("taking");
   assert.ok(b.sequence > a.sequence, "다른 탭이 앞 탭의 순번을 이어받지 않았다");
 
   // 두 탭의 요청이 뒤집혀 닿아도 나중에 고른 것이 이긴다.
-  await api.checkinApi.signal("t", "taking", b.session, b.sequence);
-  const late = await api.checkinApi.signal("t", "stopped_side_effect", a.session, a.sequence);
+  await api.checkinApi.signal("t", "taking", b);
+  const late = await api.checkinApi.signal("t", "stopped_side_effect", a);
   assert.equal(late.current, false);
   assert.equal(late.current_answer_key, "taking");
 });
 
 test("④-b 같은 화면 안에서는 순번이 도착 순서를 이긴다", async () => {
   const api = loadApi();
-  const tracker = api.createSignalTracker(undefined, memoryBox());
+  const tracker = api.createSignalTracker(undefined, memoryBox(), memoryBox());
 
   const a = tracker.next("taking");
   const b = tracker.next("stopped_side_effect");
 
   // 일부러 뒤집어 보낸다 — 2번을 먼저, 1번을 나중에.
-  await api.checkinApi.signal("t", "stopped_side_effect", b.session, b.sequence);
-  const late = await api.checkinApi.signal("t", "taking", a.session, a.sequence);
+  await api.checkinApi.signal("t", "stopped_side_effect", b);
+  const late = await api.checkinApi.signal("t", "taking", a);
 
   assert.equal(late.current, false);
   assert.equal(late.current_answer_key, "stopped_side_effect", "같은 화면인데 도착 순서가 순번을 이겼다");
+});
+
+/* 유가은 님이 `#79` 두 번째 재검토에서 짚어 주신 것 ①.
+   `client_session_id` 는 **탭 하나**를 가리켜야 한다. 기기 저장소에 두면 모든
+   탭이 같은 값을 받아, 계약이 말하는 「화면 하나」와 실제가 어긋난다. */
+test("⑤ 새 탭은 다른 session 을 갖는다 — 기기는 같아도", () => {
+  const api = loadApi();
+  const device = memoryBox(); // 같은 기기
+
+  const tab1 = api.createSignalTracker(undefined, device, memoryBox());
+  const tab2 = api.createSignalTracker(undefined, device, memoryBox());
+
+  assert.equal(tab1.clientId, tab2.clientId, "같은 기기인데 client_id 가 다르다");
+  assert.notEqual(
+    tab1.session,
+    tab2.session,
+    "client_session_id 가 기기 저장소에 공유돼 새 탭도 같은 화면으로 기록된다"
+  );
+
+  // 순번은 기기에서 이어 가므로 탭이 달라도 앞뒤가 선다.
+  const a = tab1.next("stopped_side_effect");
+  const b = tab2.next("taking");
+  assert.ok(b.sequence > a.sequence);
+});
+
+/* 유가은 님이 짚어 주신 것 ②.
+   순번은 **기기 안에서만** 뜻이 있다. 다른 기기는 1 부터 시작하므로, 순번만
+   비교하면 나중에 켠 기기의 답이 앞 기기의 큰 번호에 막힌다. */
+test("⑥ 다른 기기에서 고른 나중 답이 앞 기기의 큰 순번에 막히지 않는다", async () => {
+  const api = loadApi();
+
+  // 기기 A — 두 번 골랐다.
+  const deviceA = api.createSignalTracker(undefined, memoryBox(), memoryBox());
+  await api.checkinApi.signal("t", "taking", deviceA.next("taking"));
+  const danger = deviceA.next("stopped_side_effect");
+  await api.checkinApi.signal("t", "stopped_side_effect", danger);
+  assert.equal(danger.sequence, 2);
+
+  // 기기 B — 나중에 켰지만 순번은 1 부터다.
+  const deviceB = api.createSignalTracker(undefined, memoryBox(), memoryBox());
+  const later = deviceB.next("taking");
+  assert.equal(later.sequence, 1, "다른 기기는 1 부터 시작한다");
+  assert.notEqual(deviceB.clientId, deviceA.clientId);
+
+  const result = await api.checkinApi.signal("t", "taking", later);
+  assert.equal(
+    result.current_answer_key,
+    "taking",
+    "기기 B 의 나중 답이 기기 A 의 큰 순번에 막혔다 — 지금 답이 중단으로 남는다"
+  );
 });
