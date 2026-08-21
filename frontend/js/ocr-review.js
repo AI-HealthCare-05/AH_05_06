@@ -143,6 +143,7 @@
     missing: "⚠ 인식 실패",
     low: "⚠ 확인 필요",
     candidates: "값 2개",
+    skipped: "이번 미시행",
   };
 
   var ERROR_TEXT = {
@@ -233,7 +234,15 @@
 
   function renderField(field) {
     var id = field.ocr_field_id;
-    var state = field.pending_report ? "pending" : fieldState(field, threshold);
+    /* 사람이 「이번엔 안 했다」고 한 것이 맨 앞이다. 기계가 못 읽었든 문서가
+       「추후 보고 예정」이라 했든, **사람이 그 위에서 판정한 것**이라 그 말이
+       이긴다 — `docs/contracts/ocr-field-status-v1.md`. */
+    var state =
+      field.field_status === "NOT_PERFORMED"
+        ? "skipped"
+        : field.pending_report
+          ? "pending"
+          : fieldState(field, threshold);
     var head =
       '<div class="field__name">' +
       escapeHtml(field.field_type) +
@@ -278,7 +287,18 @@
         '<div class="field__value field__value--missing">?</div>' +
         '<button class="field__act" type="button" data-fill="' +
         id +
-        '">직접 입력</button>';
+        '">직접 입력</button>' +
+        /* **여기가 「이번 미시행」이 가장 필요한 자리다.**
+
+           기계는 「못 읽었다」와 「그 줄이 아예 없다」를 구별하지 못한다. 문서를
+           눈으로 보는 사람만 안다. 구별이 없으면 이 항목이 「확인할 항목」에
+           남아 **안내문 생성이 영영 막힌다** — 안 한 검사를 채울 방법은 없다.
+
+           별도 보고 검사(`pending`)에도 같은 버튼을 두지만 그쪽은 이미 셈에서
+           빠져 있어 표시만 바뀐다. 막힌 것을 푸는 것은 이 자리다. */
+        '<button class="field__act field__act--quiet" type="button" data-skip="' +
+        id +
+        '">이번 미시행</button>';
     } else if (state === "pending") {
       /* 「이전 값 유지」·「이번 미시행」 버튼이 있었는데 처리기가 없어서 눌러도
          아무 일이 없었다. 둘 다 지금 계약으로는 못 짠다 — 앞 진료 값은 이
@@ -299,7 +319,25 @@
         "</span>" +
         '<button class="field__act" type="button" data-fill="' +
         id +
-        '">직접 입력</button>';
+        '">직접 입력</button>' +
+        /* 「이번 미시행」을 되살린다. **「값이 없다」와 「안 했다」는 다르다** —
+           앞은 채워야 하고 뒤는 비어 있는 게 맞다. 구별이 없으면 이 항목이
+           「확인할 항목」에 영원히 남아 안내문 생성이 막힌다.
+
+           「이전 값 유지」는 되살리지 않는다. 앞 진료 값을 이번 자리에 복사하면
+           **옛 측정치가 이번 측정치로 읽힌다** — 안내문이 그 자리를 「지금」이라
+           말한다. 안 하기로 정했다(계약 §3). */
+        '<button class="field__act field__act--quiet" type="button" data-skip="' +
+        id +
+        '">이번 미시행</button>';
+    } else if (state === "skipped") {
+      body =
+        '<div class="field__value field__value--pending">이번엔 검사하지 않았습니다</div>' +
+        '<span class="field__hint">안내문에서 빠집니다</span>' +
+        /* 잘못 눌렀을 때 빠져나갈 길을 둔다. 없으면 스탭은 판독을 새로 올린다. */
+        '<button class="field__act field__act--quiet" type="button" data-unskip="' +
+        id +
+        '">되돌리기</button>';
     } else {
       body =
         '<div class="field__value">' +
@@ -400,7 +438,9 @@
       /* 확정된 항목은 더 볼 것이 없다 — 못 읽었든 후보가 여럿이든, 이미
          끝난 항목을 「확인할 항목」에 넣으면 고칠 방법이 없는데도 생성이
          막힌 채로 남는다 (`renderField()` 의 `locked` 와 같은 이유). */
-      if (field.is_confirmed || field.pending_report) return;
+      /* 「안 했다」고 표시한 항목도 뺀다. 비어 있는 게 맞는 것을 세면 스탭이
+         할 일이 없는데도 생성이 막힌 채로 남는다 (`pending_report` 와 같은 이유). */
+      if (field.is_confirmed || field.pending_report || field.field_status === "NOT_PERFORMED") return;
       var state = fieldState(field, threshold);
       if (counts[state] !== undefined) counts[state]++;
     });
@@ -598,6 +638,20 @@
       var moreId = Number(more.getAttribute("data-more"));
       openCandidates[moreId] = !openCandidates[moreId];
       return redraw();
+    }
+
+    var skip = target.closest("[data-skip]");
+    if (skip) {
+      var skipId = Number(skip.getAttribute("data-skip"));
+      delete editing[skipId]; // 열어 두고 눌렀으면 그 칸은 닫는다
+      saveField(skipId, { field_status: "NOT_PERFORMED" });
+      return;
+    }
+
+    var unskip = target.closest("[data-unskip]");
+    if (unskip) {
+      saveField(Number(unskip.getAttribute("data-unskip")), { field_status: "READ" });
+      return;
     }
 
     var fill = target.closest("[data-fill]");

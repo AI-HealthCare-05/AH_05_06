@@ -354,6 +354,24 @@ function mockPatch(fieldId, body) {
   if (field.is_confirmed) return new ApiError("OCR_FIELD_CONFIRMED", 409, {});
   if (field.version !== body.base_version) return new ApiError("VERSION_CONFLICT", 409, {});
 
+  /* 사람이 보낼 수 있는 상태는 둘뿐이다 — 「이번엔 안 했다」와 그 되돌리기.
+     `UNREADABLE` · `PENDING_REPORT` 은 기계가 판정한 것이라 사람이 덮어쓰면
+     「못 읽었다」가 사라진다 (`docs/contracts/ocr-field-status-v1.md` §5). */
+  if (body.field_status !== undefined) {
+    if (["NOT_PERFORMED", "READ"].indexOf(body.field_status) === -1) {
+      return new ApiError("INVALID_FIELD_STATUS", 400, {});
+    }
+    /* 「안 했다」면서 값을 함께 적는 것은 앞뒤가 맞지 않는다. */
+    if (body.corrected_value !== undefined || body.candidate_id !== undefined) {
+      return new ApiError("INVALID_REQUEST", 400, {});
+    }
+    field.field_status = body.field_status;
+    field.version += 1;
+    field.modified_by = 101;
+    field.modified_at = "2026-08-13T10:42:00+09:00";
+    return field;
+  }
+
   if (body.candidate_id !== undefined && body.candidate_id !== null) {
     var picked = null;
     field.candidates.forEach(function (item) {
