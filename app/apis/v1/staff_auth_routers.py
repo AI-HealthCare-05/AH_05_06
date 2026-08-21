@@ -1,4 +1,4 @@
-"""직원 인증 — KEY-73 (`docs/auth-contract.md` 4절).
+"""직원 인증 — KEY-73 (`docs/api/hospital.md` 4절).
 
 기존 `/auth/login` 은 `email` 로 받는 예시 골격이고 이 라우터가 계약본이다.
 둘이 같은 경로를 쓸 수 없으므로 `auth_routers.py` 의 로그인은 걷어냈다.

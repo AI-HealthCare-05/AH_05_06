@@ -1,4 +1,4 @@
-"""직원 로그인 — KEY-73 (`docs/auth-contract.md` 4·5절).
+"""직원 로그인 — KEY-73 (`docs/api/hospital.md` 4·5절).
 
 무엇을 하느냐보다 **무엇을 알려주지 않느냐**가 이 파일의 요점이다.
 

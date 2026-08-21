@@ -1,12 +1,9 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
 
+from app.dtos.base import StrictModel
 from app.models.ocr import OcrDocumentType, OcrJobStatus
-
-
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
 
 
 class StartOcrRequest(StrictModel):

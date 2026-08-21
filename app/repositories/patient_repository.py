@@ -1,5 +1,7 @@
+from collections.abc import Sequence
 from typing import Any
 
+from tortoise import BaseDBAsyncClient
 from tortoise.expressions import Q
 
 from app.core.utils.common import normalize_phone_number
@@ -54,5 +56,14 @@ class PatientRepository:
     async def has_visits(self, patient_id: int, hospital_id: int) -> bool:
         return await Visit.filter(patient_id=patient_id, hospital_id=hospital_id).exists()
 
-    async def save(self, patient: Patient, fields: list[str]) -> None:
-        await patient.save(update_fields=fields)
+    async def save(
+        self,
+        patient: Patient,
+        fields: Sequence[str],
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> None:
+        # `using_db` 를 받는 이유는 환자번호 정정 때문이다 — 번호를 바꾸는 것과
+        # 감사 기록을 남기는 것이 **한 트랜잭션**이어야 한다(KEY-121). 갈라 두면
+        # 번호만 바뀌고 「왜 바꿨나」가 비는 행이 생기고, 그러면 의무기록 정정을
+        # 되짚을 수 없다.
+        await patient.save(update_fields=fields, using_db=using_db)

@@ -1,4 +1,4 @@
-"""세션 상태 — KEY-73 (`docs/auth-contract.md` 4·5절).
+"""세션 상태 — KEY-73 (`docs/api/hospital.md` 4·5절).
 
 리프레시 토큰은 JWT 라 서명만 보면 만료 전까지 늘 유효하다. 그런데 계약은
 세 가지를 더 요구한다.
