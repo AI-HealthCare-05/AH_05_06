@@ -137,6 +137,7 @@ class OcrField(models.Model):
         related_name="fields",
         on_delete=OnDelete.CASCADE,
     )
+    document_text_id: int | None
     document_text: fields.ForeignKeyNullableRelation[OcrDocumentText] = fields.ForeignKeyField(
         "models.OcrDocumentText",
         related_name="fields",
@@ -173,6 +174,10 @@ class OcrField(models.Model):
     def value(self) -> str | None:
         return self.corrected_value if self.corrected_value is not None else self.extracted_value
 
+    # 역참조 어노테이션은 클래스 마지막에 둔다 — 위에 두면 이후의 `fields.XField(...)`가
+    # 이 어노테이션의 `fields` 속성으로 가려져 mypy가 tortoise fields 모듈을 못 찾는다.
+    candidates: fields.ReverseRelation["OcrFieldCandidate"]
+
 
 class OcrFieldCandidate(models.Model):
     """A ranked alternative retained when one field has multiple readings."""
@@ -183,6 +188,7 @@ class OcrFieldCandidate(models.Model):
         related_name="candidates",
         on_delete=OnDelete.CASCADE,
     )
+    document_text_id: int | None
     document_text: fields.ForeignKeyNullableRelation[OcrDocumentText] = fields.ForeignKeyField(
         "models.OcrDocumentText",
         related_name="candidate_fields",

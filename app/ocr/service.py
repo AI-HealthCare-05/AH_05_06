@@ -279,7 +279,9 @@ def serialize_candidate(
         rank=candidate.rank,
         source_date=candidate.source_date,
         source_line=candidate.source_line,
-        document_id=_resolve_document_id(doc_text_map.get(candidate.document_text_id)),
+        document_id=_resolve_document_id(
+            doc_text_map.get(candidate.document_text_id) if candidate.document_text_id is not None else None
+        ),
         is_selected=candidate.is_selected,
     )
 
@@ -306,7 +308,9 @@ def serialize_field(field: OcrField, doc_text_map: dict[int, OcrDocumentText] | 
         version=field.version,
         is_confirmed=field.is_confirmed,
         is_pending_report=field.is_pending_report,
-        document_id=_resolve_document_id(doc_text_map.get(field.document_text_id)),
+        document_id=_resolve_document_id(
+            doc_text_map.get(field.document_text_id) if field.document_text_id is not None else None
+        ),
         source_line=field.source_line,
         modified_by=field.modified_by,
         modified_at=field.modified_at,
