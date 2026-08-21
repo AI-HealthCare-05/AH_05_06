@@ -1,6 +1,6 @@
 /* 세션 유지 · 복원 · 로그아웃 — KEY-22
  *
- * 토큰 둘이 사는 곳이 다르다 (docs/auth-contract.md 4절 · KEY-8 v1 확정).
+ * 토큰 둘이 사는 곳이 다르다 (docs/api/hospital.md 4절 · KEY-8 v1 확정).
  *
  *   리프레시 토큰 — HttpOnly 쿠키. **이 파일이 만지지 않는다.**
  *                   스크립트가 못 읽으므로 XSS 로도 훔쳐 갈 수 없다.
@@ -50,7 +50,7 @@ var session = {
 function landingFor(roles) {
   roles = roles || [];
   if (roles.indexOf("staff") !== -1) return "/patients.html"; // S1
-  if (roles.indexOf("doctor") !== -1) return "/approvals.html"; // D1
+  if (roles.indexOf("doctor") !== -1) return "/doctor.html"; // D1
   if (roles.indexOf("admin") !== -1) return "/admin.html"; // A1 — 관리자 권한만 가진 계정
   return "/login.html";
 }

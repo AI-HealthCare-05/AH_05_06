@@ -20,6 +20,8 @@ on:
       - 'fix/**'
       - 'docs/**'
       - 'test/**'
+      - 'chore/**'
+      - 'refactor/**'
 
 jobs:
   lint:
@@ -50,7 +52,9 @@ jobs:
         run: uv run ruff format . --check
 
       - name: Run Mypy (Type Check)
-        run: uv run mypy app
+        # `app` 만 주면 `ai_worker/` 7파일이 통째로 빠진다 — docker compose 가 띄우는
+        # 정식 서비스인데 타입 검사를 한 번도 안 받게 된다. ruff 는 이미 `.` 이다.
+        run: uv run mypy . --explicit-package-bases
 
   test:
     runs-on: ubuntu-latest
@@ -58,12 +62,27 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: pw1234
+          # 잡 안에서만 사는 일회용 컨테이너다. 비밀이 아니라는 것을
+          # 이름으로 못박는다 — 예전 값은 저장소 이력에 새어 나간 것이었다.
+          MYSQL_ROOT_PASSWORD: ci-throwaway-not-a-secret
           MYSQL_DATABASE: ai_health
         ports:
           - 3306:3306
         options: >-
           --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      # 세션은 Redis 에 산다(KEY-73). 이것이 없으면 **토큰을 들고 앱을 지나는**
+      # 검사가 전부 죽는다 — 로그인 자체가 아니라 그 뒤 모든 보호 경로다.
+      # 지금까지 안 걸린 것은 auth 검사가 `FakeRedis` 로 우회했기 때문인데,
+      # 그 우회가 실제 동작을 가린 적이 있다(`#37` 의 TTL 건). 진짜를 띄운다.
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -96,6 +115,13 @@ jobs:
 
       - name: Run Tests with Coverage
         if: steps.check_tests.outputs.has_tests == 'true'
+        # `DB_PASSWORD` 는 코드 기본값이 없다(KEY-110). 위 서비스 컨테이너와
+        # 같은 값을 여기서 명시한다 — 기본값에 기대면 그 값이 곧 공유 비밀이 된다.
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: ci-throwaway-not-a-secret
+          DB_NAME: ai_health
         run: |
           uv run coverage run -m pytest app
           uv run coverage report -m
