@@ -149,12 +149,36 @@ function mockGuide(visitId) {
 }
 
 /* 서버는 진료 시각 기준 그날 18:00 을 잡고, 지났으면 다음 날로 민다
-   (`GuideService` 의 `SEND_HOUR`). 목업도 ISO 로 준다 — 화면이 옮긴다. */
+   (`GuideService` 의 `SEND_HOUR`). 값에는 **병원 시간대가 붙어 나간다** —
+   `_send_at` 이 `astimezone(Asia/Seoul)` 로 만들기 때문이다.
+
+   예전에는 `toISOString()` 으로 **UTC** 를 줬다. 화면이 `new Date()` 로 되돌려
+   찍고 있어서 KST 브라우저에서는 18:00 으로 맞아 보였지만, **두 오류가 서로
+   상쇄된 것**이라 다른 시간대에서 열면 둘 다 틀렸다. 목업이 서버보다 헐거우면
+   `?mock=1` 에서 멀쩡해 보이는 것을 이 파일이 이미 한 번 겪었다. */
 function mockScheduledAt() {
-  var d = new Date();
-  d.setHours(18, 0, 0, 0);
-  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
-  return d.toISOString();
+  var now = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(new Date())
+    .reduce(function (acc, part) {
+      acc[part.type] = part.value;
+      return acc;
+    }, {});
+
+  var day = now.year + "-" + now.month + "-" + now.day;
+  if (Number(now.hour) >= 18) {
+    // 정오 UTC 를 딛고 하루를 민다 — 날짜 경계에서 시간대가 끼어들지 않는다.
+    var next = new Date(day + "T12:00:00Z");
+    next.setUTCDate(next.getUTCDate() + 1);
+    day = next.toISOString().slice(0, 10);
+  }
+  return day + "T18:00:00+09:00";
 }
 
 function mockDoctorRequest(path, options) {
@@ -178,7 +202,9 @@ function mockDoctorRequest(path, options) {
         /* 서버는 승인 결과로도 `GuideResponse` 를 통째로 준다. 수신번호는
            싣지 않는다 — 승인할 때마다 전화번호가 화면과 로그를 지난다. */
         var approved = mockGuide(visitId);
-        approved.status = "APPROVED";
+        /* 계약 §6 의 어휘를 그대로 쓴다. 서버도 `GuideStatus.SCHEDULED_TO_SEND` 를
+           넣는다 — **승인이 곧 발송 예약**이라 「승인됨」이라는 상태는 없다(`D1-5`). */
+        approved.status = "SCHEDULED_TO_SEND";
         approved.scheduled_at = mockScheduledAt();
         return resolve(approved);
       }
@@ -198,6 +224,11 @@ function mockDoctorRequest(path, options) {
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
         if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
 
+        var target = mockGuide(visitId).sections.filter(function (s) {
+          return s.key === sec[2];
+        })[0];
+        if (!target) return reject(new ApiError("NOT_FOUND", 404, {}));
+
         /* **잠긴 섹션은 목업도 막는다.** 🚨 응급 문장은 식약처 정보를 근거로
            미리 써 둔 것이라 사람이 고칠 자리가 아니다 — 서버가
            `SECTION_LOCKED` 409 로 막는다(`app/services/guides.py`).
@@ -205,14 +236,20 @@ function mockDoctorRequest(path, options) {
            목업이 서버보다 헐거우면 **화면 버그를 목업으로는 못 잡는다.**
            잠긴 섹션에 [수정]이 열리는 회귀가 나도 목업에서는 저장까지
            성공해 버린다 (이희진 님 `#76` 리뷰). */
-        var target = null;
-        mockGuide(visitId).sections.forEach(function (item) {
-          if (item.key === sec[2]) target = item;
-        });
-        if (target && target.locked) return reject(new ApiError("SECTION_LOCKED", 409, {}));
+        if (target.locked) return reject(new ApiError("SECTION_LOCKED", 409, {}));
 
-        /* 서버는 고친 그 섹션 하나만 돌려준다(`SectionResponse`). */
-        return resolve({ key: sec[2], body: String(body.body || ""), edited: true, locked: false, warn: null });
+        /* 서버는 고친 그 섹션 하나만 돌려준다(`SectionResponse`).
+
+           `locked`·`warn` 은 **이 섹션의 값을 그대로** 실어야 한다. 예전처럼
+           늘 `false`/`null` 로 주면 자기 데이터(`mockGuide`)와 어긋나서, 편집
+           기능이 붙는 순간 **잠긴 섹션이 풀린 것처럼** 보인다. */
+        return resolve({
+          key: target.key,
+          body: String(body.body || ""),
+          edited: true,
+          locked: target.locked,
+          warn: target.warn,
+        });
       }
 
       return resolve(mockGuide(visitId));
