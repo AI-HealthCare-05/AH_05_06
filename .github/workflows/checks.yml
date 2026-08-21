@@ -78,7 +78,14 @@ jobs:
         #   --test frontend/tests/       통과     ✖       ✖
         #   --test frontend/tests        통과     ✖       ✖
         #   --test frontend/tests/*.test.js  통과   통과    통과
-        run: node --test frontend/tests/*.test.js
+        #
+        # 다만 글롭이 **아무것도 못 찾으면 종료코드가 0** 이다. 검사 파일 이름이
+        # 바뀌거나 사라진 날 CI 가 조용히 초록불이 된다 — node 자체 글롭
+        # (`"**/*.test.js"`) 도, 인자 없는 자동탐색도 마찬가지다. 이 PR 이
+        # 막으려는 것이 바로 「검사가 헛도는데 초록불인 상태」라 여기서 막는다.
+        run: |
+          shopt -s failglob
+          node --test frontend/tests/*.test.js
 
   test:
     runs-on: ubuntu-latest
