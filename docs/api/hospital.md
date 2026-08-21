@@ -661,6 +661,61 @@ OCR 도메인 오류는 동결 계약의 `code`, `message`, `field_errors` 응�
 그대로 사용하며 OCR 라우터가 별도로 가로채지 않습니다. 공통 검증 오류를 동결
 계약의 400 응답으로 전환하는 작업은 전체 API 계약 변경에서 일괄 적용합니다.
 
+### 판독 항목의 상태 어휘 — `field_status`
+
+> 결정 2026-08-21 · [KEY-109](https://leehee.atlassian.net/browse/KEY-109) · 담당 권일준 · 리뷰어 이희진
+> 근거: `#40`(KEY-62) 검수 · 와이어프레임 `S1-7`
+>
+> **결정 완료 · 서버 미구현.** 모델·마이그레이션·`PATCH` 구현 전까지 화면은 목업으로 돕니다.
+
+지금은 「값이 없다」가 한 덩이라 스탭이 무엇을 해야 하는지 알 수 없습니다. 넷으로 가릅니다.
+
+| 상태 | 뜻 | 누가 판정하나 | 스탭이 할 일 |
+|---|---|---|---|
+| `READ` | 읽었고 값이 있다 | 기계 | 맞는지 본다 |
+| `UNREADABLE` | 문서에 있는데 못 읽었다 | 기계 | **채워야 한다** |
+| `PENDING_REPORT` | 문서가 「추후 보고 예정」이라 한다 | 기계 | 없다 — 기다린다 |
+| `NOT_PERFORMED` | 이번엔 검사를 안 했다 | **사람** | 표시하고 넘어간다 |
+
+`OcrJob.status = FAILED`는 **작업 전체**의 상태입니다. 항목 상태와 층이 다르므로 같은 목록에 넣지 않습니다 — 섞으면 「한 항목이 실패」와 「판독이 실패」가 구별되지 않습니다.
+
+**「누가 말했는지」를 위한 칸은 새로 두지 않습니다.** `OcrField`가 이미 `extracted_value`·`confidence`(기계)와 `corrected_value`·`modified_by`(사람)를 갖고 있습니다. 두 곳에 같은 뜻을 두면 어긋날 자리도 함께 생깁니다.
+
+#### 「확인할 항목」 계수
+
+```text
+UNREADABLE       센다     값이 있는데 못 읽었다 — 사람이 넣어야 한다
+PENDING_REPORT   뺀다     기다리는 것 말고 할 일이 없다
+NOT_PERFORMED    뺀다     비어 있는 게 맞다
+```
+
+`PENDING_REPORT`를 세면 스탭이 영원히 막힙니다 — AMH 결과가 두 주 뒤에 나오는데 그때까지 안내문을 못 만듭니다. `submit` 잠금은 `UNREADABLE`과 값 충돌만 막습니다.
+
+#### 계약 변경
+
+```text
+OcrField
+  + field_status  READ | UNREADABLE | PENDING_REPORT | NOT_PERFORMED   기본 READ
+
+PATCH /api/v1/ocr/fields/{ocr_field_id}
+  + field_status  선택. 사람이 보낼 수 있는 값은 NOT_PERFORMED 와 READ 뿐이다.
+                  UNREADABLE · PENDING_REPORT 은 기계가 판정한다 — 사람이 보내면 400.
+  기존 규칙 유지 — corrected_value 와 candidate_id 는 함께 못 보낸다.
+                  field_status=NOT_PERFORMED 이면 값도 함께 보낼 수 없다.
+```
+
+되돌리기는 `field_status: "READ"`로 보냅니다. 빠져나갈 길이 없으면 스탭은 새 판독을 올립니다.
+
+#### 하지 않기로 한 것
+
+- **「이전 값 유지」** — 앞 진료의 검사값을 이번 판독에 복사하지 않습니다. 옛 측정치가 이번 측정치의 자리에 앉고, 안내문은 그 자리를 「지금」이라고 말합니다. 의무기록이라 되짚을 근거도 남지 않습니다. 대신 안내문이 출처와 날짜를 함께 말합니다(「지난 검사 (05-20) 10.2」) — [KEY-75](https://leehee.atlassian.net/browse/KEY-75) 몫이고, 지난 값을 담을 `lab_result` 표는 [KEY-136](https://leehee.atlassian.net/browse/KEY-136)이 계획으로 두었습니다.
+- **OCR 전체 실패 뒤 직접 입력** — v1 범위 밖입니다. 작업이 `FAILED`면 결과가 없고, 결과가 없으면 채워 넣을 항목 목록 자체가 없습니다. 재업로드가 1순위입니다 — 실패는 대개 사진이 흐리거나 잘린 것이고, 손으로 넣은 오타는 그대로 의무기록이 됩니다.
+
+#### 남은 몫
+
+- `PENDING_REPORT`를 **서버가 내려주는 것** — [KEY-134](https://leehee.atlassian.net/browse/KEY-134). 지금은 목업만 `pending_report`를 줍니다.
+- `field_status` **모델·마이그레이션·`PATCH` 구현** — 서버 몫.
+
 ### 권한·개인정보
 
 - `staff` 또는 `doctor` 역할만 접근할 수 있습니다. `admin` 단독 사용자는 차단합니다.
