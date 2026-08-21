@@ -35,6 +35,7 @@ function stubElement() {
 /** 화면 파일들을 한 상자에 실어서 그 상자를 돌려준다. */
 function load(...files) {
   const store = new Map();
+  const persistent = new Map();
 
   const box = {
     console,
@@ -43,7 +44,14 @@ function load(...files) {
     Math,
     JSON,
     Promise,
-    setTimeout,
+    /* 목업 API 가 호출마다 실제로 180ms 를 기다린다. 검사가 늘수록 CI 시간이
+       그만큼 선형으로 는다 — 지금 재는 것은 **계약 규칙이지 타이밍이 아니다.**
+       (이희진 님 `#64` 리뷰)
+
+       기다림만 없앤다. **동기로 바꾸지는 않는다** — 즉시 실행으로 만들면
+       `setTimeout` 으로 다음 순번을 잡는 코드(`ocr-review.js` 의 폴링 같은)가
+       그 자리에서 무한히 돈다. 0ms 로 미루면 비동기 차례는 그대로 지킨다. */
+    setTimeout: (fn, _ms, ...rest) => setTimeout(fn, 0, ...rest),
     clearTimeout,
     setInterval,
     clearInterval,
@@ -60,6 +68,17 @@ function load(...files) {
       search: "?mock=1",
       href: "http://test/patients.html?mock=1",
       pathname: "/patients.html",
+
+      /* `session.js` 의 `bounce()` 가 부른다. 없으면 `TypeError` 가 나는데,
+         `requireSession().catch(function(){})` 가 조용히 삼켜서 **검사는 그냥
+         통과한다**. 나중에 로그아웃·세션만료 경로를 검사로 덮을 때 뜬금없는
+         오류로 죽거나 또 삼켜져 거짓 통과가 된다 — 이희진 님이 `#64` 리뷰에서
+         짚어 주신 자리다.
+
+         던지지 않고 **어디로 보내려 했는지 적어 둔다.** 검사가 「만료되면
+         /login.html 로 보낸다」를 확인할 수 있게. */
+      replace: (url) => box.location.replaced.push(String(url)),
+      replaced: [],
     },
 
     sessionStorage: {
@@ -67,6 +86,17 @@ function load(...files) {
       setItem: (k, v) => store.set(k, String(v)),
       removeItem: (k) => store.delete(k),
       clear: () => store.clear(),
+    },
+
+    /* `session.js` 의 `clear()` 가 「예전 판이 남겨 둔 것」을 걷어내려고
+       부른다(`localStorage.removeItem`). **`sessionStorage` 와 다른 저장소라
+       같은 `store` 를 쓰면 안 된다** — 하나를 지웠는데 다른 쪽도 지워지면
+       「토큰을 세션에만 둔다」는 규칙을 검사가 확인할 수 없게 된다. */
+    localStorage: {
+      getItem: (k) => (persistent.has(k) ? persistent.get(k) : null),
+      setItem: (k, v) => persistent.set(k, String(v)),
+      removeItem: (k) => persistent.delete(k),
+      clear: () => persistent.clear(),
     },
 
     /* 리스너는 걸리되 **그리기는 터지는** 문서.

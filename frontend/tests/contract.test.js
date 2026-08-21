@@ -15,8 +15,13 @@ const { load } = require("./browser-shim");
 
 /* `vm` 안에서 만든 배열·객체는 **realm 이 달라** `deepEqual` 이 구조가 같아도
    실패한다("same structure but are not reference-equal"). 값만 보고 싶으므로
-   내 realm 으로 한 번 옮긴다. */
-const plain = (v) => JSON.parse(JSON.stringify(v));
+   내 realm 으로 한 번 옮긴다.
+
+   JSON 왕복이 아니라 `structuredClone` 을 쓴다. JSON 은 **`undefined` 인 칸을
+   통째로 지우고** `Date` 를 문자열로 바꾼다 — 아래 「칸이 안 샌다」 검사들이
+   새어 나온 칸의 값이 `undefined` 이면 그 키가 사라져 **조용히 통과**한다.
+   이희진 님이 `#64` 리뷰에서 짚어 주신 자리다. */
+const plain = (v) => structuredClone(v);
 
 /* 실리는 순서가 브라우저의 <script> 순서와 같다 — shell.js 가 session·patients-api 를 쓴다. */
 const api = load("api", "session", "patients-api", "shell");
@@ -159,8 +164,31 @@ test("휴대폰은 뒤 네 자리만 남긴다", () => {
 });
 
 test("오늘 날짜는 현지 기준이다 — UTC 로 재면 자정 근처에서 날이 갈린다", () => {
-  const d = new Date(2026, 7, 20, 23, 30); // 현지 8월 20일 밤 11시 반
-  assert.equal(api.toIsoDate(d), "2026-08-20");
+  /* **이 검사는 두 조건이 맞아야 뜻이 있다.** 이희진 님이 `#64` 리뷰에서
+     첫째를 짚어 주셨고, 확인해 보니 둘째도 어긋나 있었다.
+
+     ① 현지 시간대가 UTC 와 달라야 한다. 같으면 현지 getter 와 UTC getter 가
+        같은 값을 내서 **무엇으로 고쳐도 통과한다.**
+     ② 고른 시각이 실제로 날을 가르는 구간이어야 한다. 앞서 쓰던 「현지 23:30」
+        은 KST 로도 UTC 로도 같은 날이라 `TZ=Asia/Seoul` 에서조차 안 잡혔다.
+        KST(+9)에서 날이 갈리는 것은 **00:00~08:59** 다.
+
+     ①은 검사가 스스로 확인한다. 아니면 여기서 죽는다 — 조용히 무력해지느니
+     시끄럽게 죽는 편이 낫다. CI 는 `checks.yml` 에서 `TZ` 를 고정한다. */
+  const local = new Date(2026, 7, 21, 0, 30); // 현지 8월 21일 새벽 0시 반
+  assert.notEqual(
+    local.getTimezoneOffset(),
+    0,
+    "TZ 가 UTC 라 이 검사는 아무것도 확인하지 못한다 — TZ=Asia/Seoul 로 돌려라",
+  );
+
+  /* 현지로 재면 21일, UTC 로 재면 20일이다. 둘이 같게 나오면 UTC 로 재고 있다. */
+  assert.notEqual(
+    api.toIsoDate(local),
+    local.toISOString().slice(0, 10),
+    "현지 날짜와 UTC 날짜가 갈리는 시각인데 같게 나왔다 — UTC 로 재고 있다",
+  );
+  assert.equal(api.toIsoDate(local), "2026-08-21");
 });
 
 /* ── 진료과·담당의는 id 로 보낸다 (계약 §4) ─────────────── */

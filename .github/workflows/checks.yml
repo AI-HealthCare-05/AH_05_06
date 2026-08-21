@@ -64,6 +64,11 @@ jobs:
           node-version: '20'
 
       - name: Run Frontend Contract Tests
+        # 러너 기본값은 `TZ=UTC` 다. 그대로 두면 현지 getter 와 UTC getter 가
+        # 같은 값을 내서 **「오늘 날짜는 현지 기준이다」 검사가 아무것도 확인하지
+        # 못한다** — 이희진 님이 `#64` 리뷰에서 짚어 주셨다. 병원 시간대로 고정한다.
+        env:
+          TZ: Asia/Seoul
         run: node --test frontend/tests/
 
   test:
