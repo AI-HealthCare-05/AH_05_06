@@ -20,6 +20,15 @@ def get_ocr_service() -> OcrService:
     return service
 
 
+@ocr_router.get("/visits/{visit_id}/ocr-job", response_model=OcrJobResponse)
+async def get_visit_ocr_job(
+    visit_id: Annotated[int, Path(gt=0)],
+    actor: Annotated[OcrActor, Depends(get_ocr_actor)],
+    ocr: Annotated[OcrService, Depends(get_ocr_service)],
+) -> OcrJobResponse:
+    return await ocr.job_for_visit(visit_id, actor)
+
+
 @ocr_router.post(
     "/documents/{document_id}/ocr",
     response_model=OcrJobResponse,

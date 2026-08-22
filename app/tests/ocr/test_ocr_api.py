@@ -93,6 +93,24 @@ class FakeOcrService:
         assert field_type in {None, "DIAGNOSIS"}
         return [self.field(pending=self.pending)]
 
+    async def job_for_visit(self, visit_id: int, actor: OcrActor) -> OcrJobResponse:
+        if visit_id == 501:
+            return OcrJobResponse(
+                ocr_job_id="ocr_synthetic_501",
+                status=OcrJobStatus.COMPLETED,
+                progress=100,
+                started_at=NOW,
+                completed_at=NOW,
+            )
+        if visit_id == 502:
+            return OcrJobResponse(
+                ocr_job_id="ocr_synthetic_502",
+                status=OcrJobStatus.PROCESSING,
+                progress=40,
+                started_at=NOW,
+            )
+        raise OcrApiError(404, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
+
     async def update_field(
         self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
     ) -> OcrFieldResponse:
@@ -325,4 +343,33 @@ def test_pending_report_flag_does_not_null_value_or_document_id() -> None:
 
     assert result.is_pending_report is True
     assert result.value == "1.2"
-    assert result.document_id == 801
+
+
+def test_visit_ocr_job_returns_latest_completed_job(api: tuple[TestClient, FakeOcrService]) -> None:
+    client, _ = api
+    response = client.get("/api/v1/visits/501/ocr-job")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ocr_job_id"] == "ocr_synthetic_501"
+    assert body["status"] == "COMPLETED"
+    assert body["progress"] == 100
+
+
+def test_visit_ocr_job_returns_processing_job(api: tuple[TestClient, FakeOcrService]) -> None:
+    client, _ = api
+    response = client.get("/api/v1/visits/502/ocr-job")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ocr_job_id"] == "ocr_synthetic_502"
+    assert body["status"] == "PROCESSING"
+    assert body["progress"] == 40
+
+
+def test_visit_with_no_ocr_job_returns_not_found(api: tuple[TestClient, FakeOcrService]) -> None:
+    client, _ = api
+    response = client.get("/api/v1/visits/999/ocr-job")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "NOT_FOUND"

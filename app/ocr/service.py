@@ -39,6 +39,8 @@ class OcrRepository(Protocol):
 
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
 
+    async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None: ...
+
     async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult: ...
 
     async def get_fields(
@@ -158,6 +160,25 @@ class TortoiseOcrRepository:
         if job is None:
             raise _not_found()
         return job
+
+    async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None:
+        # 진행 중인 작업이 있으면 그것이 현재 작업이다.
+        # 없으면 같은 진료의 가장 최근 작업을 반환한다.
+        job = await OcrJob.filter(
+            visit_id=visit_id,
+            hospital_id=actor.hospital_id,
+            status=OcrJobStatus.PROCESSING,
+        ).first()
+        if job is not None:
+            return job
+        return (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                hospital_id=actor.hospital_id,
+            )
+            .order_by("-created_at")
+            .first()
+        )
 
     async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult:
         job = await self.get_job(ocr_job_id, actor)
@@ -328,6 +349,12 @@ class OcrService:
         self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
     ) -> OcrJobResponse:
         return serialize_job(await self.repository.create_job(document_id, visit_id, document_type, actor))
+
+    async def job_for_visit(self, visit_id: int, actor: OcrActor) -> OcrJobResponse:
+        job = await self.repository.get_latest_job_by_visit(visit_id, actor)
+        if job is None:
+            raise _not_found()
+        return serialize_job(job)
 
     async def status(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
         return serialize_job(await self.repository.get_job(ocr_job_id, actor))
