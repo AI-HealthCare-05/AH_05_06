@@ -25,6 +25,10 @@
   var token = new URLSearchParams(location.search).get("t") || "synthetic-link-token";
 
   var picked = null; // 복약 답
+  /* 신호를 언제 보낼지 정하는 것은 `checkin-api.js` 의 `createSignalTracker` 다.
+     이 파일은 IIFE 라 검사가 안을 못 부르는데, 그 판단이야말로 재야 하는
+     자리라서 밖으로 꺼내 두었다 (`KEY-158` 참고). */
+  var signals = createSignalTracker();
   var painHad = null; // true · false · null(아직 안 고름)
   var painScore = 4;
   var painTypes = [];
@@ -216,6 +220,36 @@
     return info ? !!info.notify : false;
   }
 
+  /* 고르는 즉시 의료진 화면에 「이 환자를 봐 주세요」를 보낸다 (KEY-138).
+
+     **이것은 기록이 아니다.** 의무기록은 [저장] 이 남기는 답이다. 이 신호는
+     「지금 이 환자가 중단을 눌렀다」는 사실일 뿐이라, 앞 신호를 지우지 않는다
+     — `docs/api/patient.md` 3절.
+
+     저장 전에 화면을 닫아도 의료진이 알 수 있게 하는 것이 전부다. 임의 중단은
+     치료가 잘 듣는 2~3개월 차에 가장 많고(P7-5 노트), 그때 놓치면 다음 진료
+     때까지 아무도 모른다.
+
+     **고른 것을 그대로 보낸다 — 알릴지는 서버가 정한다.** 알림 대상만 걸러
+     보내면 답을 바꿔도 앞 신호가 그대로 남는다. 「불편해서 중단했어요」를
+     골랐다가 「잘 먹고 있어요」로 바꾸고 저장 없이 닫으면, 의원은 없는 문제를
+     쫓는다. 옆에 저장된 답을 함께 보이는 것으로는 못 막는다 — **저장을 안 했으니
+     옆에 놓일 답이 없다.** 마지막 신호가 지금 환자의 답이다.
+
+     **실패해도 아무 말 하지 않는다.** 환자는 자기가 알림을 보내는 줄 모른다.
+     여기서 오류를 띄우면 무엇을 잘못했는지 알 수 없는 사람에게 사과를 시킨다.
+     못 간 것은 [저장] 이 받쳐 준다 — 서버가 저장된 답으로 신호 상태를 맞춘다. */
+  function sendSignal(key) {
+    var previous = signals.lastSent();
+    var stamp = signals.next(key);
+    if (!stamp) return; // 연달아 같은 답 — 보내지 않는다
+    checkinApi.signal(token, key, stamp).catch(function () {
+      /* **값이 아니라 이 호출을 넘긴다.** 늦게 실패한 옛 요청이 그 사이
+         되살아난 같은 값을 지우지 않도록 (`#79` 리뷰). */
+      signals.failed(stamp, previous);
+    });
+  }
+
   /* ── 이벤트 ─────────────────────────────────────────── */
 
   document.addEventListener("click", function (event) {
@@ -240,6 +274,7 @@
       picked = med.getAttribute("data-med");
       renderMedication();
       renderSave();
+      sendSignal(picked);
       return;
     }
 
@@ -263,6 +298,7 @@
 
     if (event.target.id === "save" && picked) {
       event.target.disabled = true;
+      var saveStamp = signals.mark();
       checkinApi
         .save(token, {
           medication: picked,
@@ -275,6 +311,17 @@
              다만 이건 **저장할 때**다. 와이어프레임은 고르는 즉시 알리라고
              하는데, 그러려면 계약이 하나 더 필요하다 — 아래 주석 참고. */
           notify: notifyFor(picked),
+          /* **저장도 신호와 같은 규칙으로 순번을 받는다.** 예전에는 서버가
+             저장에 고정값(「늘 가장 나중」)을 박았는데, 그러면 저장을 두 번
+             했을 때 둘이 같아져 뒤엣것이 앞엣것을 못 덮는다 — 지금은 도착
+             차례가 받쳐 주고 있었을 뿐이라, 망이 뒤집히면 그대로 어긋난다
+             (이희진 님 `#79` 리뷰). 순번은 **이 호출 시점에** 뗀다.
+
+             답을 접지 않는 `mark()` 를 쓴다. 같은 답을 다시 저장해도 그것은
+             새 저장이다. */
+          client_id: saveStamp.clientId,
+          client_session_id: saveStamp.session,
+          client_sequence: saveStamp.sequence,
         })
         .then(function (result) {
           showOnly(doneHtml(result));

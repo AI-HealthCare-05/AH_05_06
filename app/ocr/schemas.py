@@ -26,6 +26,8 @@ class OcrCandidateResponse(StrictModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
     rank: int = Field(ge=1)
     source_date: date | None = None
+    source_line: int | None = None
+    document_id: int | None = None
     is_selected: bool
 
 
@@ -35,9 +37,14 @@ class OcrFieldResponse(StrictModel):
     extracted_value: str | None
     corrected_value: str | None
     value: str | None
+    unit: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
+    is_low_confidence: bool = False
     version: int = Field(ge=1)
     is_confirmed: bool
+    is_pending_report: bool = False
+    document_id: int | None = None
+    source_line: int | None = None
     modified_by: int | None = None
     modified_at: datetime | None = None
     confirmed_by: int | None = None

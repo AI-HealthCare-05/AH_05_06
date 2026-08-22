@@ -623,7 +623,11 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 #### 처방 계약 경계
 
-처방을 VISIT의 JSON 필드로 추가하지 않는다. ERD v11의 `PRESCRIPTION(visit_id)` 1:N `PRESCRIPTION_ITEM(duration_days 포함)`이 실제 처방과 약·용법·처방일수를 소유한다. `PRESCRIPTION_SET_VERSION`은 템플릿 출처이고 `GUIDE_DOCUMENT.prescription_id/prescription_set_version_id`가 승인 스냅샷을 연결한다. KEY-26/31은 이 테이블의 상세 구현 범위가 아니지만, 소진 예정일과 D+7 판정은 확정된 `PRESCRIPTION_ITEM.duration_days`만 사용한다.
+처방을 VISIT의 JSON 필드로 추가하지 않는다. `PRESCRIPTION(visit_id)` 1:N `PRESCRIPTION_ITEM(duration_days 포함)`이 실제 처방과 약·용법·처방일수를 소유한다. 소진 예정일과 D+7 판정은 확정된 `PRESCRIPTION_ITEM.duration_days`만 사용한다.
+
+**세트 출처는 표가 아니라 스냅샷 문자열이다** — [KEY-137](https://leehee.atlassian.net/browse/KEY-137)에서 확정했다. ERD v11이 적어 둔 `PRESCRIPTION_SET_VERSION` 템플릿 표는 저장소 어디에도 없고, 합성 정본이 그 자리에 담고 있는 값은 id가 아니라 **사람이 읽는 이름**이다(8종 · 최대 17자). 그래서 칸 이름도 담고 있는 것대로 `prescription.prescription_set`(`varchar(100)`)이다. `..._id`라는 이름을 두면 다음 사람이 조인할 표를 찾게 된다.
+
+세트가 개정돼도 그 진료가 무엇을 근거로 했는지는 바뀌면 안 되므로, 템플릿 표가 생기더라도 이 칸은 `visit.department`처럼 **그때의 이름을 남기는 스냅샷**으로 유지하고 FK를 따로 더한다.
 
 #### 별도 확인 항목
 
@@ -661,6 +665,61 @@ OCR 도메인 오류는 동결 계약의 `code`, `message`, `field_errors` 응�
 그대로 사용하며 OCR 라우터가 별도로 가로채지 않습니다. 공통 검증 오류를 동결
 계약의 400 응답으로 전환하는 작업은 전체 API 계약 변경에서 일괄 적용합니다.
 
+### 판독 항목의 상태 어휘 — `field_status`
+
+> 결정 2026-08-21 · [KEY-109](https://leehee.atlassian.net/browse/KEY-109) · 담당 권일준 · 리뷰어 이희진
+> 근거: `#40`(KEY-62) 검수 · 와이어프레임 `S1-7`
+>
+> **결정 완료 · 서버 미구현.** 모델·마이그레이션·`PATCH` 구현 전까지 화면은 목업으로 돕니다.
+
+지금은 「값이 없다」가 한 덩이라 스탭이 무엇을 해야 하는지 알 수 없습니다. 넷으로 가릅니다.
+
+| 상태 | 뜻 | 누가 판정하나 | 스탭이 할 일 |
+|---|---|---|---|
+| `READ` | 읽었고 값이 있다 | 기계 | 맞는지 본다 |
+| `UNREADABLE` | 문서에 있는데 못 읽었다 | 기계 | **채워야 한다** |
+| `PENDING_REPORT` | 문서가 「추후 보고 예정」이라 한다 | 기계 | 없다 — 기다린다 |
+| `NOT_PERFORMED` | 이번엔 검사를 안 했다 | **사람** | 표시하고 넘어간다 |
+
+`OcrJob.status = FAILED`는 **작업 전체**의 상태입니다. 항목 상태와 층이 다르므로 같은 목록에 넣지 않습니다 — 섞으면 「한 항목이 실패」와 「판독이 실패」가 구별되지 않습니다.
+
+**「누가 말했는지」를 위한 칸은 새로 두지 않습니다.** `OcrField`가 이미 `extracted_value`·`confidence`(기계)와 `corrected_value`·`modified_by`(사람)를 갖고 있습니다. 두 곳에 같은 뜻을 두면 어긋날 자리도 함께 생깁니다.
+
+#### 「확인할 항목」 계수
+
+```text
+UNREADABLE       센다     값이 있는데 못 읽었다 — 사람이 넣어야 한다
+PENDING_REPORT   뺀다     기다리는 것 말고 할 일이 없다
+NOT_PERFORMED    뺀다     비어 있는 게 맞다
+```
+
+`PENDING_REPORT`를 세면 스탭이 영원히 막힙니다 — AMH 결과가 두 주 뒤에 나오는데 그때까지 안내문을 못 만듭니다. `submit` 잠금은 `UNREADABLE`과 값 충돌만 막습니다.
+
+#### 계약 변경
+
+```text
+OcrField
+  + field_status  READ | UNREADABLE | PENDING_REPORT | NOT_PERFORMED   기본 READ
+
+PATCH /api/v1/ocr/fields/{ocr_field_id}
+  + field_status  선택. 사람이 보낼 수 있는 값은 NOT_PERFORMED 와 READ 뿐이다.
+                  UNREADABLE · PENDING_REPORT 은 기계가 판정한다 — 사람이 보내면 400.
+  기존 규칙 유지 — corrected_value 와 candidate_id 는 함께 못 보낸다.
+                  field_status=NOT_PERFORMED 이면 값도 함께 보낼 수 없다.
+```
+
+되돌리기는 `field_status: "READ"`로 보냅니다. 빠져나갈 길이 없으면 스탭은 새 판독을 올립니다.
+
+#### 하지 않기로 한 것
+
+- **「이전 값 유지」** — 앞 진료의 검사값을 이번 판독에 복사하지 않습니다. 옛 측정치가 이번 측정치의 자리에 앉고, 안내문은 그 자리를 「지금」이라고 말합니다. 의무기록이라 되짚을 근거도 남지 않습니다. 대신 안내문이 출처와 날짜를 함께 말합니다(「지난 검사 (05-20) 10.2」) — [KEY-75](https://leehee.atlassian.net/browse/KEY-75) 몫이고, 지난 값을 담을 `lab_result` 표는 [KEY-136](https://leehee.atlassian.net/browse/KEY-136)이 계획으로 두었습니다.
+- **OCR 전체 실패 뒤 직접 입력** — v1 범위 밖입니다. 작업이 `FAILED`면 결과가 없고, 결과가 없으면 채워 넣을 항목 목록 자체가 없습니다. 재업로드가 1순위입니다 — 실패는 대개 사진이 흐리거나 잘린 것이고, 손으로 넣은 오타는 그대로 의무기록이 됩니다.
+
+#### 남은 몫
+
+- `PENDING_REPORT`를 **서버가 내려주는 것** — [KEY-134](https://leehee.atlassian.net/browse/KEY-134). 지금은 목업만 `pending_report`를 줍니다.
+- `field_status` **모델·마이그레이션·`PATCH` 구현** — 서버 몫.
+
 ### 권한·개인정보
 
 - `staff` 또는 `doctor` 역할만 접근할 수 있습니다. `admin` 단독 사용자는 차단합니다.
@@ -691,6 +750,49 @@ OCR 엔진 실행은 AI worker가 `ocr_job`의 `PROCESSING` 작업을 가져가 
 
 최신 Notion에서 삭제 상태인 재판독 API와 일괄 결과 수정 API는 구현하지 않았습니다.
 KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
+
+### 응답 스키마 — OcrFieldResponse
+
+`GET /ocr/jobs/{id}/result` · `GET /ocr/jobs/{id}/fields` · `PATCH /ocr/fields/{id}` 의 필드 항목.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `ocr_field_id` | `int` | 필드 PK |
+| `field_type` | `string` | 필드 구분자 (예: `DIAGNOSIS`, `HB`) |
+| `extracted_value` | `string \| null` | OCR 엔진 추출값 |
+| `corrected_value` | `string \| null` | 사람이 수정한 값 |
+| `value` | `string \| null` | 표시값 — `corrected_value` 우선, 없으면 `extracted_value` |
+| `unit` | `string \| null` | 검사값 단위 (예: `mg/dL`, `cm`) |
+| `confidence` | `float \| null` | OCR 신뢰도 0–1 |
+| `is_low_confidence` | `bool` | 서버 판정 저신뢰 여부 — 임계값 0.75, 화면이 임의로 정하지 않는다 |
+| `version` | `int` | 낙관적 잠금 버전 — PATCH 요청 시 `base_version`으로 전달 |
+| `is_confirmed` | `bool` | 확정 여부 — `true`이면 수정 불가 |
+| `is_pending_report` | `bool` | "별도 보고 예정" 상태 (예: AMH 추후 보고) |
+| `document_id` | `int \| null` | 출처 문서 ID — 원문 파기 후에는 `null` |
+| `source_line` | `int \| null` | 출처 줄 번호 — 원문 해당 줄 이동에 사용 |
+| `modified_by` | `int \| null` | 수정한 직원 PK |
+| `modified_at` | `datetime \| null` | 수정 시각 |
+| `confirmed_by` | `int \| null` | 확정한 직원 PK |
+| `confirmed_at` | `datetime \| null` | 확정 시각 |
+| `candidates` | `OcrCandidateResponse[]` | 복수 후보 목록 (없으면 빈 배열) |
+
+### 응답 스키마 — OcrCandidateResponse
+
+같은 필드에 복수 판독값이 있을 때 `candidates` 배열 항목.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `ocr_field_candidate_id` | `int` | 후보 PK |
+| `value` | `string` | 후보값 |
+| `confidence` | `float \| null` | 후보 신뢰도 0–1 |
+| `rank` | `int` | 순위 (1이 기본 선택) |
+| `source_date` | `date \| null` | 후보값의 검사일 |
+| `source_line` | `int \| null` | 후보값 출처 줄 번호 |
+| `document_id` | `int \| null` | 후보값 출처 문서 ID — 원문 파기 후에는 `null` |
+| `is_selected` | `bool` | 현재 선택된 후보 여부 |
+
+> `document_id`·`source_line`은 원문 파기 후 항상 `null`을 반환합니다.
+> 줄 번호만으로는 원문에 접근할 수 없으므로 `document_id=null`이면 출처 이동 버튼을 비활성화합니다.
 
 ## 5. 안내 생성·승인·반려
 
