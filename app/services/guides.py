@@ -28,6 +28,7 @@ from app.core import config
 # 병합되면 이 import 만 갈아 끼우면 된다. 지금 같은 파일을 새로 만들면
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
+from app.models.ocr import OcrField
 from app.models.visits import (
     GuideDocument,
     GuideEvent,
@@ -35,6 +36,7 @@ from app.models.visits import (
     GuideSection,
     GuideSectionKey,
     GuideStatus,
+    Visit,
 )
 
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
@@ -51,6 +53,70 @@ def _not_found() -> ApiError:
 
 
 class GuideService:
+    async def generate(self, actor, visit_id: int) -> GuideDocument:
+        """확정 OCR 필드가 있어야 고정 템플릿 안내를 만들 수 있다.
+
+        LLM·RAG 없이 출처가 고정된 합성 템플릿을 사용한다 — KEY-150 W1 범위.
+        미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고,
+        의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
+        """
+        visit = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
+        if visit is None:
+            raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
+
+        if await GuideDocument.filter(visit_id=visit_id).exists():
+            raise ApiError("GUIDE_ALREADY_EXISTS", 409, "이미 안내문이 생성되어 있습니다.")
+
+        confirmed = await OcrField.filter(
+            ocr_result__ocr_job__visit_id=visit_id,
+            ocr_result__ocr_job__hospital_id=actor.hospital_id,
+            is_confirmed=True,
+        ).first()
+        if confirmed is None:
+            raise ApiError(
+                "OCR_NOT_CONFIRMED",
+                422,
+                "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
+            )
+
+        field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else confirmed.field_type
+        async with in_transaction() as connection:
+            guide = await GuideDocument.create(
+                hospital_id=actor.hospital_id,
+                visit_id=visit_id,
+                status=GuideStatus.APPROVAL_PENDING,
+                using_db=connection,
+            )
+            await GuideSection.create(
+                guide_document=guide,
+                section_key=GuideSectionKey.MEDICATION,
+                generated_body=f"[합성 복약 안내]\n확정된 항목: {field_label}\n복약 지시에 따라 정해진 시간에 복용해 주세요.",
+                using_db=connection,
+            )
+            await GuideSection.create(
+                guide_document=guide,
+                section_key=GuideSectionKey.CAUTION,
+                # 🚨 식약처 근거 응급 문장 — 사람이 고칠 수 없다(D1-2, KEY-150 이희진 코멘트).
+                generated_body="처방약 복용 중 두드러기, 호흡 곤란, 심한 복통이 생기면 즉시 복용을 중단하고 응급실을 방문하세요.",
+                locked=True,
+                using_db=connection,
+            )
+            await GuideSection.create(
+                guide_document=guide,
+                section_key=GuideSectionKey.LIFE,
+                generated_body="처방 기간 중 음주는 피해 주세요. 충분한 수분 섭취와 규칙적인 수면을 유지해 주세요.",
+                using_db=connection,
+            )
+            await GuideSection.create(
+                guide_document=guide,
+                section_key=GuideSectionKey.MESSAGES,
+                generated_body="복약 안내가 발송될 예정입니다. 궁금한 점은 진료실로 문의해 주세요.",
+                using_db=connection,
+            )
+
+        await guide.fetch_related("sections", "visit__patient")
+        return guide
+
     async def get(self, actor, visit_id: int) -> GuideDocument:
         """병원은 **진료를 타고** 판단한다.
 
