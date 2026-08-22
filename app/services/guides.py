@@ -127,7 +127,6 @@ class GuideService:
                 using_db=connection,
             )
 
-        await guide.fetch_related("sections", "visit__patient")
         return guide
 
     async def get(self, actor, visit_id: int) -> GuideDocument:

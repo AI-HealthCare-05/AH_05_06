@@ -91,7 +91,9 @@ async def generate_guide(
     actor: Annotated[_Actor, Depends(_actor)],
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
-    return _to_response(await service.generate(actor, visit_id))
+    guide = await service.generate(actor, visit_id)
+    await guide.fetch_related("sections", "visit__patient")
+    return _to_response(guide)
 
 
 @guide_router.get("/{visit_id}/guide", response_model=GuideResponse)
