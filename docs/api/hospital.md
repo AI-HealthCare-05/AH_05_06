@@ -747,6 +747,49 @@ OCR 엔진 실행은 AI worker가 `ocr_job`의 `PROCESSING` 작업을 가져가 
 최신 Notion에서 삭제 상태인 재판독 API와 일괄 결과 수정 API는 구현하지 않았습니다.
 KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 
+### 응답 스키마 — OcrFieldResponse
+
+`GET /ocr/jobs/{id}/result` · `GET /ocr/jobs/{id}/fields` · `PATCH /ocr/fields/{id}` 의 필드 항목.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `ocr_field_id` | `int` | 필드 PK |
+| `field_type` | `string` | 필드 구분자 (예: `DIAGNOSIS`, `HB`) |
+| `extracted_value` | `string \| null` | OCR 엔진 추출값 |
+| `corrected_value` | `string \| null` | 사람이 수정한 값 |
+| `value` | `string \| null` | 표시값 — `corrected_value` 우선, 없으면 `extracted_value` |
+| `unit` | `string \| null` | 검사값 단위 (예: `mg/dL`, `cm`) |
+| `confidence` | `float \| null` | OCR 신뢰도 0–1 |
+| `is_low_confidence` | `bool` | 서버 판정 저신뢰 여부 — 임계값 0.75, 화면이 임의로 정하지 않는다 |
+| `version` | `int` | 낙관적 잠금 버전 — PATCH 요청 시 `base_version`으로 전달 |
+| `is_confirmed` | `bool` | 확정 여부 — `true`이면 수정 불가 |
+| `is_pending_report` | `bool` | "별도 보고 예정" 상태 (예: AMH 추후 보고) |
+| `document_id` | `int \| null` | 출처 문서 ID — 원문 파기 후에는 `null` |
+| `source_line` | `int \| null` | 출처 줄 번호 — 원문 해당 줄 이동에 사용 |
+| `modified_by` | `int \| null` | 수정한 직원 PK |
+| `modified_at` | `datetime \| null` | 수정 시각 |
+| `confirmed_by` | `int \| null` | 확정한 직원 PK |
+| `confirmed_at` | `datetime \| null` | 확정 시각 |
+| `candidates` | `OcrCandidateResponse[]` | 복수 후보 목록 (없으면 빈 배열) |
+
+### 응답 스키마 — OcrCandidateResponse
+
+같은 필드에 복수 판독값이 있을 때 `candidates` 배열 항목.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `ocr_field_candidate_id` | `int` | 후보 PK |
+| `value` | `string` | 후보값 |
+| `confidence` | `float \| null` | 후보 신뢰도 0–1 |
+| `rank` | `int` | 순위 (1이 기본 선택) |
+| `source_date` | `date \| null` | 후보값의 검사일 |
+| `source_line` | `int \| null` | 후보값 출처 줄 번호 |
+| `document_id` | `int \| null` | 후보값 출처 문서 ID — 원문 파기 후에는 `null` |
+| `is_selected` | `bool` | 현재 선택된 후보 여부 |
+
+> `document_id`·`source_line`은 원문 파기 후 항상 `null`을 반환합니다.
+> 줄 번호만으로는 원문에 접근할 수 없으므로 `document_id=null`이면 출처 이동 버튼을 비활성화합니다.
+
 ## 5. 안내 생성·승인·반려
 
 > 상위 일감: `KEY-111`(`KEY-76` 인수조건, 와이어프레임 D1-1~D1-5)

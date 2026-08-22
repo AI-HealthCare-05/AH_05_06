@@ -137,6 +137,7 @@ class OcrField(models.Model):
         related_name="fields",
         on_delete=OnDelete.CASCADE,
     )
+    document_text_id: int | None
     document_text: fields.ForeignKeyNullableRelation[OcrDocumentText] = fields.ForeignKeyField(
         "models.OcrDocumentText",
         related_name="fields",
@@ -145,8 +146,11 @@ class OcrField(models.Model):
         null=True,
     )
     field_type = fields.CharField(max_length=64)
+    unit = fields.CharField(max_length=32, null=True)
     extracted_value = fields.TextField(null=True)
     corrected_value: str | None = fields.TextField(null=True)
+    source_line = fields.IntField(null=True)
+    is_pending_report = fields.BooleanField(default=False)
     confidence = fields.DecimalField(
         max_digits=5,
         decimal_places=4,
@@ -170,6 +174,10 @@ class OcrField(models.Model):
     def value(self) -> str | None:
         return self.corrected_value if self.corrected_value is not None else self.extracted_value
 
+    # 역참조 어노테이션은 클래스 마지막에 둔다 — 위에 두면 이후의 `fields.XField(...)`가
+    # 이 어노테이션의 `fields` 속성으로 가려져 mypy가 tortoise fields 모듈을 못 찾는다.
+    candidates: fields.ReverseRelation["OcrFieldCandidate"]
+
 
 class OcrFieldCandidate(models.Model):
     """A ranked alternative retained when one field has multiple readings."""
@@ -180,6 +188,14 @@ class OcrFieldCandidate(models.Model):
         related_name="candidates",
         on_delete=OnDelete.CASCADE,
     )
+    document_text_id: int | None
+    document_text: fields.ForeignKeyNullableRelation[OcrDocumentText] = fields.ForeignKeyField(
+        "models.OcrDocumentText",
+        related_name="candidate_fields",
+        on_delete=OnDelete.SET_NULL,
+        source_field="ocr_document_text_id",
+        null=True,
+    )
     candidate_value = fields.TextField()
     confidence = fields.DecimalField(
         max_digits=5,
@@ -189,6 +205,7 @@ class OcrFieldCandidate(models.Model):
     )
     rank = fields.SmallIntField(validators=[MinValueValidator(1)])
     source_date = fields.DateField(null=True)
+    source_line = fields.IntField(null=True)
     is_selected = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
 
