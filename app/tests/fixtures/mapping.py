@@ -9,6 +9,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal, NamedTuple
 
 
 class Kind(StrEnum):
@@ -121,6 +122,62 @@ MAPPING: dict[str, Field] = {
 
 #: 저장하지 않는 자리. 시드가 억지로 컬럼을 만들지 않게 한다.
 NOT_STORED = frozenset({Where.OCR_INPUT, Where.DERIVED, Where.EVENT, Where.DOC_ONLY})
+
+
+#: **저장 대상인데 표가 아직 없다** — KEY-136.
+#:
+#: 이 파일은 지금까지 자리를 둘로만 갈랐다. 「저장한다」와 「저장 안 한다」다.
+#: 그런데 저장 대상 여섯 중 **넷은 갈 표가 실제로 없다.** 그 상태가 파일에
+#: 안 보여서, 읽는 사람은 `patient` 처럼 이미 있는 표인 줄 알고 시드를 짜게 된다.
+#:
+#: 그래서 세 번째 자리를 만든다. 여기 있는 것은 「언젠가 만들 표」이고,
+#: **왜 아직 없는지가 값으로 붙어 있다.**
+#:
+#: 검사가 양방향으로 지킨다(`test_field_mapping.py`).
+#:
+#:     여기 없는 저장 대상 → 표가 **있어야** 한다. 없으면 죽는다
+#:     여기 있는 것       → 표가 **없어야** 한다. 생기면 죽어서 「빼라」고 한다
+#:
+#: 뒤쪽이 중요하다. 표를 만든 사람이 이 파일을 고치는 것을 잊어도 검사가 잡는다.
+#: 「만든다」인가 「계획」인가를 **문자열에서 읽지 않는다.**
+#:
+#: 예전에는 판정·티켓·근거를 자유 문장 하나에 담고 `why.startswith("만든다")` 로
+#: 갈랐다. 문구를 조금만 다듬어도(마커 앞에 수식어 하나) 그 항목이 **조용히 검사
+#: 대상에서 빠진다** — 검사는 계속 통과하는데 아무것도 안 잡는 상태가 된다
+#: (이희진 님 `#68` 리뷰). 판정을 칸으로 분리하면 그 실수가 타입에서 막힌다.
+class Planned(NamedTuple):
+    """아직 표가 없는 자리. 판정과 근거를 따로 둔다."""
+
+    status: Literal["만든다", "계획"]
+    why: str
+
+
+PLANNED_TABLES: dict[Where, Planned] = {
+    Where.PRESCRIPTION: Planned(
+        "만든다", "KEY-137. 합성 100행 중 99행에 처방이 있는데 넣을 표가 없다. 복약지도 프로그램의 중심 데이터다."
+    ),
+    Where.PRESCRIPTION_ITEM: Planned(
+        "만든다",
+        "KEY-137. `소진예정일`이 `visited_at + duration_days` 파생인데 "
+        "그 `duration_days` 가 저장될 자리가 여기다. 지금은 파생의 근거가 없다.",
+    ),
+    Where.LAB_RESULT: Planned(
+        "계획",
+        "`ocr_field` 와 겹친다. 그 표가 이미 `field_type` + `value` + "
+        "`is_confirmed` 로 진료별 검사값을 담는다. 별도 표가 필요한지는 「환자의 "
+        "**지난** 검사값을 읽어야 하는가」에 달렸고, 그것이 KEY-109 의 미결 항목이다. "
+        "여기서 정하면 그 결정을 앞지른다.",
+    ),
+    Where.VISIT_FLAG: Planned(
+        "계획",
+        "**코드 집합이 아직 안 닫혔다.** `docs/synthetic-data-spec.md` §8 이 "
+        "`DEPRESSION`·`HTN`·`SMOKING`·`DM`·`PREGNANCY_PLAN` 「등」으로 열어 두었고, "
+        "이 파일은 같은 칸을 `Kind.FREE` 로 적어 두 정본이 어긋나 있다(문서는 `enum`). "
+        "실제 값은 '임신 계획'·'우울증 병력'·'당뇨'(28/100행)이고, 임신부 금기 약물 같은 "
+        "**안전 차단의 근거**가 된다 — 코드를 임의로 닫으면 안 되는 자리라 "
+        "표보다 그 결정이 먼저다.",
+    ),
+}
 
 #: OpenAPI 스키마에서 찾을 이름 → 우리 표. API 가 생기면 대조가 켜진다.
 API_SCHEMA_FOR = {
