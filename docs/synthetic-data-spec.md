@@ -192,7 +192,7 @@ CSV **33칸** → `patient` · `visit` · `prescription` · `prescription_item` 
 | 진료일 | `visit.visited_at` | date→datetime | ● | `Asia/Seoul` 현지 시각으로 변환해 UTC 저장 |
 | 담당의 | `visit.doctor_id` | uuid | ● | 이름 → 직원 픽스처의 uuid로 푼다 |
 | 진단 | (처방 세트로 표현) | — | | 확정된 처방 세트 버전이 질환 문맥을 제공한다 |
-| 처방세트 | `prescription.prescription_set_version_id` | bigint | ● | 템플릿 출처. Visit JSON에 넣지 않는다 |
+| 처방세트 | `prescription.prescription_set` | varchar(100) | ● | 진료 당시 세트 **이름의 스냅샷**("자궁내막증 · 비잔 (계속)"). Visit JSON에 넣지 않는다 |
 | 약 · 용법 | `prescription_item.name` · `frequency` | text | ● | 실제 처방 항목을 한 줄씩 저장한다 |
 | 처방일수 | `prescription_item.duration_days` | int | ● | **소진일 계산의 근거.** `28` 미만이면 확인을 여쭙는다 |
 | 총투원문 · 총투단위 | (판독 입력) | — | | **DB에 넣지 않는다** — OCR이 읽어야 할 원문이다 |
