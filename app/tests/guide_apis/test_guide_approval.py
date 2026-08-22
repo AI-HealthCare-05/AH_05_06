@@ -531,3 +531,21 @@ class TestTheDecisionIsReadUnderALock(GuideTestCase):
         assert first.status_code == 200
         assert second.status_code == 409
         assert len(decisions) == 1, "결정 기록이 둘 남았다 — 상태와 기록이 어긋난다"
+
+
+class TestCautionEmergencySeparation(GuideTestCase):
+    """시드 경로에서 caution/emergency 분리가 유지되는가 — KEY-150 이희진 코멘트.
+
+    `make_guide()` 는 DB를 직접 심는 경로다. 이 경로에서도
+    caution 은 잠겨 있고(🚨 응급 문장) 나머지는 잠겨 있지 않아야 한다.
+    generate() API 경로 검증은 test_guide_generate.py 에 있다.
+    """
+
+    async def test_seed_caution_is_locked_medication_is_not(self) -> None:
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        await guide.fetch_related("sections")
+
+        sections = {s.section_key: s for s in guide.sections}
+        assert sections[GuideSectionKey.CAUTION].locked is True
+        assert sections[GuideSectionKey.MEDICATION].locked is False
