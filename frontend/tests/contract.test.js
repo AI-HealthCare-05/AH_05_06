@@ -156,7 +156,14 @@ test("나이는 저장하지 않고 생년월일에서 계산한다", () => {
   const soon = new Date();
   soon.setFullYear(soon.getFullYear() - 30);
   soon.setDate(soon.getDate() + 1);
-  assert.equal(api.ageOf(soon.toISOString().slice(0, 10)), 29);
+  // toISOString()은 UTC를 돌려줘 한국(UTC+9) 새벽에는 날짜가 하루 밀린다.
+  // 로컬 게터로 직접 만든다.
+  const soonIso = [
+    soon.getFullYear(),
+    String(soon.getMonth() + 1).padStart(2, "0"),
+    String(soon.getDate()).padStart(2, "0"),
+  ].join("-");
+  assert.equal(api.ageOf(soonIso), 29);
 });
 
 test("휴대폰은 뒤 네 자리만 남긴다", () => {
