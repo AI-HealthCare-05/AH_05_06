@@ -60,12 +60,10 @@ class GuideService:
         미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고,
         의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
         """
+        # 진료 소유권·OCR 확정 여부는 경합 대상이 아니라 트랜잭션 밖에서 먼저 확인한다.
         visit = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
         if visit is None:
             raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
-
-        if await GuideDocument.filter(visit_id=visit_id).exists():
-            raise ApiError("GUIDE_ALREADY_EXISTS", 409, "이미 안내문이 생성되어 있습니다.")
 
         confirmed = await OcrField.filter(
             ocr_result__ocr_job__visit_id=visit_id,
@@ -81,6 +79,21 @@ class GuideService:
 
         field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else confirmed.field_type
         async with in_transaction() as connection:
+            # Visit 행을 잠근 채로 중복을 확인하고 생성한다.
+            # 잠금 밖에서 exists()→create() 하면 동시 요청이 둘 다 통과해
+            # GuideDocument.visit 의 OneToOneField 제약에서 IntegrityError(500) 가 된다.
+            # approve() 가 PR #50 에서 같은 이유로 고쳐진 패턴이다.
+            if (
+                await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
+                .select_for_update()
+                .using_db(connection)
+                .first()
+            ) is None:
+                raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
+
+            if await GuideDocument.filter(visit_id=visit_id).using_db(connection).exists():
+                raise ApiError("GUIDE_ALREADY_EXISTS", 409, "이미 안내문이 생성되어 있습니다.")
+
             guide = await GuideDocument.create(
                 hospital_id=actor.hospital_id,
                 visit_id=visit_id,
