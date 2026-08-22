@@ -17,19 +17,14 @@ CI 도 못 잡았다. 검사는 `tortoise.contrib.test.initializer` 가 모델�
 
 import re
 from collections import defaultdict
-from pathlib import Path
 
-MIGRATIONS = Path(__file__).resolve().parents[2] / "core" / "db" / "migrations" / "models"
+from app.tests.migrations.conftest import MIGRATIONS, migration_files
 
 #: 앞자리 정수와 그 뒤 이름. `aerich` 가 정렬에 쓰는 것은 앞의 정수뿐이다.
 _NUMBERED = re.compile(r"^(\d+)_(.+)\.py$")
 
 #: 이 아래로 떨어지면 파일을 못 찾고 있는 것이다 — 아래 검사 참고.
 MINIMUM_EXPECTED = 10
-
-
-def _files() -> list[Path]:
-    return sorted(p for p in MIGRATIONS.glob("*.py") if p.name[0].isdigit())
 
 
 def test_the_guard_actually_sees_the_migrations() -> None:
@@ -39,7 +34,7 @@ def test_the_guard_actually_sees_the_migrations() -> None:
     통과한다 — 「번호가 안 겹친다」가 아니라 「볼 게 없다」인데 초록불이 된다.
     그 상태를 여기서 막는다.
     """
-    files = _files()
+    files = migration_files()
     assert MIGRATIONS.is_dir(), f"마이그레이션 폴더를 못 찾았다: {MIGRATIONS}"
     assert len(files) >= MINIMUM_EXPECTED, (
         f"마이그레이션 파일을 {len(files)} 개밖에 못 찾았다 (최소 {MINIMUM_EXPECTED}). "
@@ -53,7 +48,7 @@ def test_no_two_migrations_share_a_version_number() -> None:
     by_number: dict[int, list[str]] = defaultdict(list)
     unnamed: list[str] = []
 
-    for path in _files():
+    for path in migration_files():
         match = _NUMBERED.match(path.name)
         if not match:
             unnamed.append(path.name)
