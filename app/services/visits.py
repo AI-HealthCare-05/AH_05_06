@@ -129,6 +129,11 @@ class VisitService:
     #:
     #: `STAFF_REVIEW` 와 `APPROVAL_RETURNED` 는 뺀다 — 둘 다 스탭이 아직 **쓰고
     #: 있는** 상태라, 진료과가 잘못 잡힌 것을 그때 고칠 수 있어야 한다.
+    #:
+    #: **다만 이 예외는 안내문 상태만 놓고 볼 때의 이야기다.** 안내문은 늘 OCR
+    #: 확정 뒤에 생기므로, 스탭이 실제로 마주치는 조합은 언제나 「OCR 이미 있음
+    #: + 안내문 어떤 상태」다. 그 경우 아래 OCR 검사가 먼저 걸려 이 예외까지
+    #: 가지 않는다 — `test_visit_locked.py::TestOcrDecidesFirst` 참고.
     LOCKING_GUIDE_STATUSES = (GuideStatus.APPROVAL_PENDING, GuideStatus.SCHEDULED_TO_SEND)
 
     async def _refuse_if_locked(self, visit: Visit) -> None:
@@ -142,6 +147,13 @@ class VisitService:
 
         판단은 **진료를 타고** 한다 — `GuideService.get()` 이 병원을 진료를 타고
         보는 것과 같은 이유다. 같은 값을 두 곳에 두면 어긋날 자리도 함께 생긴다.
+
+        **두 검사의 순서가 결과를 정한다.** OCR 검사를 먼저 두었기 때문에,
+        `LOCKING_GUIDE_STATUSES` 가 `STAFF_REVIEW`·`APPROVAL_RETURNED` 를 빼
+        두어도 실제로는 거의 항상 OCR 쪽에서 먼저 막힌다 — 안내문이 그 상태에
+        있다는 것 자체가 이미 OCR 이 끝났다는 뜻이기 때문이다. 이 예외가
+        실제로 열리는 경우는 「OCR 없이 안내문만 있는」 것뿐인데, 지금 흐름상
+        그런 진료는 생기지 않는다.
         """
         if await OcrJob.filter(visit_id=visit.visit_id).exists():
             raise ApiError(409, "VISIT_LOCKED", "판독이 시작된 진료는 진료과를 바꿀 수 없습니다.")
