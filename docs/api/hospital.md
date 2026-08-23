@@ -534,6 +534,8 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 
 `patient_id`, `hospital_id`, `visit_id`, `department`를 본문에 입력하지 않는다. 서버는 `department_id`가 같은 병원의 활성 진료과인지, 지정 의사가 그 진료과 소속인지 검증한 뒤 현재 명칭을 `visit.department`에 스냅샷으로 저장한다.
 
+`doctor_id`는 같은 병원의 재직 중인 `doctor` 역할 직원만 허용한다. `null`은 담당의 미지정이며 수정에서는 담당의 해제로 해석한다. 존재하지 않음·타 병원·퇴사·비의사 조건은 직원 정보 노출을 피하기 위해 모두 `400 INVALID_REQUEST`로 응답한다.
+
 #### 진료 목록
 
 ```text
