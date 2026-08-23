@@ -623,7 +623,11 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 #### 처방 계약 경계
 
-처방을 VISIT의 JSON 필드로 추가하지 않는다. ERD v11의 `PRESCRIPTION(visit_id)` 1:N `PRESCRIPTION_ITEM(duration_days 포함)`이 실제 처방과 약·용법·처방일수를 소유한다. `PRESCRIPTION_SET_VERSION`은 템플릿 출처이고 `GUIDE_DOCUMENT.prescription_id/prescription_set_version_id`가 승인 스냅샷을 연결한다. KEY-26/31은 이 테이블의 상세 구현 범위가 아니지만, 소진 예정일과 D+7 판정은 확정된 `PRESCRIPTION_ITEM.duration_days`만 사용한다.
+처방을 VISIT의 JSON 필드로 추가하지 않는다. `PRESCRIPTION(visit_id)` 1:N `PRESCRIPTION_ITEM(duration_days 포함)`이 실제 처방과 약·용법·처방일수를 소유한다. 소진 예정일과 D+7 판정은 확정된 `PRESCRIPTION_ITEM.duration_days`만 사용한다.
+
+**세트 출처는 표가 아니라 스냅샷 문자열이다** — [KEY-137](https://leehee.atlassian.net/browse/KEY-137)에서 확정했다. ERD v11이 적어 둔 `PRESCRIPTION_SET_VERSION` 템플릿 표는 저장소 어디에도 없고, 합성 정본이 그 자리에 담고 있는 값은 id가 아니라 **사람이 읽는 이름**이다(8종 · 최대 17자). 그래서 칸 이름도 담고 있는 것대로 `prescription.prescription_set`(`varchar(100)`)이다. `..._id`라는 이름을 두면 다음 사람이 조인할 표를 찾게 된다.
+
+세트가 개정돼도 그 진료가 무엇을 근거로 했는지는 바뀌면 안 되므로, 템플릿 표가 생기더라도 이 칸은 `visit.department`처럼 **그때의 이름을 남기는 스냅샷**으로 유지하고 FK를 따로 더한다.
 
 #### 별도 확인 항목
 
@@ -746,6 +750,49 @@ OCR 엔진 실행은 AI worker가 `ocr_job`의 `PROCESSING` 작업을 가져가 
 
 최신 Notion에서 삭제 상태인 재판독 API와 일괄 결과 수정 API는 구현하지 않았습니다.
 KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
+
+### 응답 스키마 — OcrFieldResponse
+
+`GET /ocr/jobs/{id}/result` · `GET /ocr/jobs/{id}/fields` · `PATCH /ocr/fields/{id}` 의 필드 항목.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `ocr_field_id` | `int` | 필드 PK |
+| `field_type` | `string` | 필드 구분자 (예: `DIAGNOSIS`, `HB`) |
+| `extracted_value` | `string \| null` | OCR 엔진 추출값 |
+| `corrected_value` | `string \| null` | 사람이 수정한 값 |
+| `value` | `string \| null` | 표시값 — `corrected_value` 우선, 없으면 `extracted_value` |
+| `unit` | `string \| null` | 검사값 단위 (예: `mg/dL`, `cm`) |
+| `confidence` | `float \| null` | OCR 신뢰도 0–1 |
+| `is_low_confidence` | `bool` | 서버 판정 저신뢰 여부 — 임계값 0.75, 화면이 임의로 정하지 않는다 |
+| `version` | `int` | 낙관적 잠금 버전 — PATCH 요청 시 `base_version`으로 전달 |
+| `is_confirmed` | `bool` | 확정 여부 — `true`이면 수정 불가 |
+| `is_pending_report` | `bool` | "별도 보고 예정" 상태 (예: AMH 추후 보고) |
+| `document_id` | `int \| null` | 출처 문서 ID — 원문 파기 후에는 `null` |
+| `source_line` | `int \| null` | 출처 줄 번호 — 원문 해당 줄 이동에 사용 |
+| `modified_by` | `int \| null` | 수정한 직원 PK |
+| `modified_at` | `datetime \| null` | 수정 시각 |
+| `confirmed_by` | `int \| null` | 확정한 직원 PK |
+| `confirmed_at` | `datetime \| null` | 확정 시각 |
+| `candidates` | `OcrCandidateResponse[]` | 복수 후보 목록 (없으면 빈 배열) |
+
+### 응답 스키마 — OcrCandidateResponse
+
+같은 필드에 복수 판독값이 있을 때 `candidates` 배열 항목.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `ocr_field_candidate_id` | `int` | 후보 PK |
+| `value` | `string` | 후보값 |
+| `confidence` | `float \| null` | 후보 신뢰도 0–1 |
+| `rank` | `int` | 순위 (1이 기본 선택) |
+| `source_date` | `date \| null` | 후보값의 검사일 |
+| `source_line` | `int \| null` | 후보값 출처 줄 번호 |
+| `document_id` | `int \| null` | 후보값 출처 문서 ID — 원문 파기 후에는 `null` |
+| `is_selected` | `bool` | 현재 선택된 후보 여부 |
+
+> `document_id`·`source_line`은 원문 파기 후 항상 `null`을 반환합니다.
+> 줄 번호만으로는 원문에 접근할 수 없으므로 `document_id=null`이면 출처 이동 버튼을 비활성화합니다.
 
 ## 5. 안내 생성·승인·반려
 
