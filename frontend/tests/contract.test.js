@@ -147,16 +147,22 @@ test("차트번호로도 찾힌다", async () => {
 /* ── 값 다루기 ──────────────────────────────────────────── */
 
 test("나이는 저장하지 않고 생년월일에서 계산한다", () => {
+  // `toISOString()`은 UTC 날짜다. KST 자정~08:59에 현지 날짜보다 하루 전을
+  // 돌려주므로 이 검사는 실행 시각에 따라 생일을 하루 당겼다.
+  const localIso = (value) =>
+    [value.getFullYear(), String(value.getMonth() + 1).padStart(2, "0"), String(value.getDate()).padStart(2, "0")].join(
+      "-",
+    );
   const born = new Date();
   born.setFullYear(born.getFullYear() - 30);
-  const iso = born.toISOString().slice(0, 10);
+  const iso = localIso(born);
   assert.equal(api.ageOf(iso), 30);
 
   // 생일이 아직 안 지났으면 한 살 적다
   const soon = new Date();
   soon.setFullYear(soon.getFullYear() - 30);
   soon.setDate(soon.getDate() + 1);
-  assert.equal(api.ageOf(soon.toISOString().slice(0, 10)), 29);
+  assert.equal(api.ageOf(localIso(soon)), 29);
 });
 
 test("휴대폰은 뒤 네 자리만 남긴다", () => {
