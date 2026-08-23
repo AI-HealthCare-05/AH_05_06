@@ -548,6 +548,7 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 - 수정 가능: `doctor_id`, `department_id`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
 - `department_id` 변경에도 생성과 같은 활성 진료과·의사 소속 검증을 적용하고 `department` 스냅샷을 갱신한다.
+- `department_id: null`은 담당 진료과 해제로 해석하여 `department` 스냅샷을 삭제한다. 단, OCR 또는 승인 안내가 연결되어 `VISIT_LOCKED`가 된 진료에는 같은 잠금 규칙을 적용해 삭제도 차단한다.
 - OCR 또는 승인 안내가 이미 연결된 뒤 식별 관계를 바꾸는 수정은 `409 VISIT_LOCKED`다.
 - `patient_id`, `hospital_id`, `visit_id`는 수정할 수 없다.
 

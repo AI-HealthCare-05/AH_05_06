@@ -1,3 +1,4 @@
+import builtins
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -6,8 +7,9 @@ from tortoise.timezone import now
 from app.core.api_errors import ApiError
 from app.core.pagination import decode_cursor, encode_cursor
 from app.dependencies.patient_access import ClinicalActor
-from app.dtos.visits import VisitCreateRequest, VisitUpdateRequest
+from app.dtos.visits import DoctorResponse, VisitCreateRequest, VisitResponse, VisitUpdateRequest
 from app.models.ocr import OcrJob
+from app.models.staffs import Staff
 from app.models.visits import GuideDocument, GuideStatus, Visit
 from app.repositories.patient_repository import PatientRepository
 from app.repositories.visit_repository import VisitRepository
@@ -103,6 +105,21 @@ class VisitService:
         await self.repo.save(visit, sorted(update_fields))
         return visit
 
+    async def responses(self, actor: ClinicalActor, visits: builtins.list[Visit]) -> builtins.list[VisitResponse]:
+        """담당의 이름을 한 번에 읽어 상세·목록 응답을 같은 모양으로 만든다."""
+        hospital_id = self._hospital_id(actor)
+        doctor_ids = {visit.doctor_id for visit in visits if visit.doctor_id is not None}
+        doctors = {
+            staff.staff_id: staff for staff in await Staff.filter(hospital_id=hospital_id, staff_id__in=doctor_ids)
+        }
+        responses: builtins.list[VisitResponse] = []
+        for visit in visits:
+            response = VisitResponse.model_validate(visit)
+            if visit.doctor_id is not None and (staff := doctors.get(visit.doctor_id)) is not None:
+                response.doctor = DoctorResponse(doctor_id=staff.staff_id, name=staff.name)
+            responses.append(response)
+        return responses
+
     async def _ensure_unique_day(
         self,
         patient_id: int,
@@ -194,7 +211,8 @@ class VisitService:
 
     @staticmethod
     def _hospital_id(actor: ClinicalActor) -> int:
-        assert actor.hospital_id is not None
+        if actor.hospital_id is None:
+            raise ApiError(403, "FORBIDDEN", "병원 소속 직원만 접근할 수 있습니다.")
         return actor.hospital_id
 
     @staticmethod

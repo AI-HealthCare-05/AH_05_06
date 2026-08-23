@@ -27,8 +27,6 @@ class PatientRepository:
         hospital_id: int,
         *,
         keyword: str | None,
-        after_id: int | None,
-        limit: int,
     ) -> list[Patient]:
         query = Patient.filter(hospital_id=hospital_id)
         if keyword:
@@ -42,16 +40,19 @@ class PatientRepository:
             if digits:
                 conditions |= Q(phone__contains=digits)
             query = query.filter(conditions)
-        if after_id is not None:
-            query = query.filter(patient_id__gt=after_id)
-        return await query.order_by("patient_id").limit(limit)
+        return await query.order_by("patient_id")
 
-    async def latest_visit(self, patient_id: int, hospital_id: int) -> Visit | None:
-        return (
-            await Visit.filter(patient_id=patient_id, hospital_id=hospital_id)
-            .order_by("-visited_at", "-visit_id")
-            .first()
+    async def latest_visits(self, patient_ids: list[int], hospital_id: int) -> dict[int, Visit]:
+        """환자 수와 무관하게 한 번의 질의로 최신 진료를 모은다."""
+        if not patient_ids:
+            return {}
+        rows = await Visit.filter(patient_id__in=patient_ids, hospital_id=hospital_id).order_by(
+            "patient_id", "-visited_at", "-visit_id"
         )
+        latest: dict[int, Visit] = {}
+        for visit in rows:
+            latest.setdefault(visit.patient_id, visit)
+        return latest
 
     async def has_visits(self, patient_id: int, hospital_id: int) -> bool:
         return await Visit.filter(patient_id=patient_id, hospital_id=hospital_id).exists()

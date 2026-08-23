@@ -32,10 +32,16 @@ class VisitUpdateRequest(BaseModel):
     planned_stop: bool | None = None
 
 
+class DoctorResponse(BaseModel):
+    doctor_id: int
+    name: str
+
+
 class VisitResponse(BaseSerializerModel):
     visit_id: int
     patient_id: int
     doctor_id: int | None
+    doctor: DoctorResponse | None = None
     department: str | None
     visited_at: datetime
     visit_summary: str | None

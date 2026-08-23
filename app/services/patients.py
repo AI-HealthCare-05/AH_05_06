@@ -1,4 +1,6 @@
+import calendar
 from collections.abc import Sequence
+from datetime import date
 
 from tortoise.exceptions import IntegrityError
 from tortoise.timezone import now
@@ -7,7 +9,7 @@ from tortoise.transactions import in_transaction
 from app.core.api_errors import ApiError
 from app.core.pagination import decode_cursor, encode_cursor
 from app.dependencies.patient_access import ClinicalActor
-from app.dtos.patients import PatientCreateRequest, PatientUpdateRequest
+from app.dtos.patients import SEOUL, PatientCategory, PatientCreateRequest, PatientUpdateRequest
 from app.models.patients import Patient, PatientNumberCorrection
 from app.models.visits import Visit
 from app.repositories.patient_repository import PatientRepository
@@ -50,22 +52,40 @@ class PatientService:
         actor: ClinicalActor,
         *,
         keyword: str | None,
+        category: PatientCategory,
         cursor: str | None,
         limit: int,
-    ) -> tuple[list[tuple[Patient, Visit | None]], str | None, bool]:
+    ) -> tuple[list[tuple[Patient, Visit | None]], dict[PatientCategory, int], str | None, bool]:
         after_id = self._patient_cursor(cursor)
         hospital_id = self._hospital_id(actor)
         rows = await self.repo.list_scoped(
             hospital_id,
             keyword=keyword.strip() if keyword else None,
-            after_id=after_id,
-            limit=limit + 1,
         )
-        has_next = len(rows) > limit
-        rows = rows[:limit]
-        items = [(patient, await self.repo.latest_visit(patient.patient_id, hospital_id)) for patient in rows]
-        next_cursor = encode_cursor({"patient_id": rows[-1].patient_id}) if has_next and rows else None
-        return items, next_cursor, has_next
+        latest = await self.repo.latest_visits([patient.patient_id for patient in rows], hospital_id)
+        cutoff = self._months_before(now().date(), 6)
+        groups: dict[PatientCategory, list[Patient]] = {selected: [] for selected in PatientCategory}
+        groups[PatientCategory.ALL] = rows
+        groups[PatientCategory.SMS_OPT_OUT] = [patient for patient in rows if patient.sms_opted_out_at is not None]
+        groups[PatientCategory.INACTIVE_6_MONTHS] = [
+            patient
+            for patient in rows
+            if (last := latest.get(patient.patient_id)) is not None
+            and last.visited_at.astimezone(SEOUL).date() < cutoff
+        ]
+        # IN_TREATMENT와 NEEDS_ATTENTION은 환자 단위 이벤트 계약이 확정되는
+        # 후속 일감에서 연결한다. 계산할 수 없는 값을 추측해 넣지 않는다.
+        counts = {selected: len(groups[selected]) for selected in PatientCategory}
+        selected_rows = groups[category]
+        if after_id is not None:
+            selected_rows = [patient for patient in selected_rows if patient.patient_id > after_id]
+        has_next = len(selected_rows) > limit
+        selected_rows = selected_rows[:limit]
+        items = [(patient, latest.get(patient.patient_id)) for patient in selected_rows]
+        next_cursor = (
+            encode_cursor({"patient_id": selected_rows[-1].patient_id}) if has_next and selected_rows else None
+        )
+        return items, counts, next_cursor, has_next
 
     async def update(self, actor: ClinicalActor, patient_id: int, data: PatientUpdateRequest) -> Patient:
         patient = await self.get(actor, patient_id)
@@ -165,7 +185,8 @@ class PatientService:
             raise ApiError(403, "FORBIDDEN", "환자번호를 정정할 권한이 없습니다.")
         if await self.repo.has_visits(patient.patient_id, hospital_id):
             raise ApiError(409, "PATIENT_NUMBER_LOCKED", "진료가 등록된 환자번호는 수정할 수 없습니다.")
-        assert data.hospital_patient_no is not None
+        if data.hospital_patient_no is None:
+            raise ApiError(422, "CORRECTION_REASON_REQUIRED", "환자번호와 정정 사유를 함께 입력해 주세요.")
         duplicate = await self.repo.get_by_number(hospital_id, data.hospital_patient_no)
         if duplicate is not None and duplicate.patient_id != patient.patient_id:
             self._raise_duplicate()
@@ -173,8 +194,16 @@ class PatientService:
 
     @staticmethod
     def _hospital_id(actor: ClinicalActor) -> int:
-        assert actor.hospital_id is not None
+        if actor.hospital_id is None:
+            raise ApiError(403, "FORBIDDEN", "병원 소속 직원만 접근할 수 있습니다.")
         return actor.hospital_id
+
+    @staticmethod
+    def _months_before(value: date, months: int) -> date:
+        index = value.year * 12 + value.month - 1 - months
+        year, month_index = divmod(index, 12)
+        month = month_index + 1
+        return value.replace(year=year, month=month, day=min(value.day, calendar.monthrange(year, month)[1]))
 
     @staticmethod
     def _patient_cursor(cursor: str | None) -> int | None:

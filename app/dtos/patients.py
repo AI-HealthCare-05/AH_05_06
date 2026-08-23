@@ -1,11 +1,28 @@
 from datetime import date, datetime
+from enum import StrEnum
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.core.utils.common import normalize_phone_number
 from app.dtos.base import BaseSerializerModel
 from app.models.patients import PatientGender
+
+SEOUL = ZoneInfo("Asia/Seoul")
+
+
+class PatientCategory(StrEnum):
+    ALL = "ALL"
+    IN_TREATMENT = "IN_TREATMENT"
+    NEEDS_ATTENTION = "NEEDS_ATTENTION"
+    SMS_OPT_OUT = "SMS_OPT_OUT"
+    INACTIVE_6_MONTHS = "INACTIVE_6_MONTHS"
+
+
+def calculate_age(birth_date: date, *, as_of: date | None = None) -> int:
+    reference = as_of or datetime.now(SEOUL).date()
+    return reference.year - birth_date.year - ((reference.month, reference.day) < (birth_date.month, birth_date.day))
 
 
 class PatientCreateRequest(BaseModel):
@@ -84,6 +101,10 @@ class PatientResponse(BaseSerializerModel):
     created_at: datetime
     updated_at: datetime
 
+    @computed_field
+    def age(self) -> int:
+        return calculate_age(self.birth_date)
+
 
 class PatientListItem(PatientResponse):
     latest_visit: LatestVisitResponse | None = None
@@ -95,5 +116,7 @@ class CursorPage(BaseModel):
 
 
 class PatientListResponse(BaseModel):
+    counts: dict[PatientCategory, int]
+    selected_category: PatientCategory
     items: list[PatientListItem]
     page: CursorPage
