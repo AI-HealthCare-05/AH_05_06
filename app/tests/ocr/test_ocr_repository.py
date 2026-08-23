@@ -152,3 +152,67 @@ async def assert_repository_round_trip() -> None:
         assert exc.status_code == 404
     else:
         raise AssertionError("OCR creation bypassed missing document ownership validation")
+
+
+# KEY-133 — get_latest_job_by_visit 선택 규칙 검증
+# 기존 테스트와 ID 충돌을 피하기 위해 별도 병원·환자·진료 ID를 사용한다.
+_JOB_VISIT_HOSPITAL_ID = 6100
+_JOB_VISIT_PATIENT_ID = 610001
+_JOB_VISIT_ID = 610001
+_JOB_VISIT_ACTOR = OcrActor(staff_id=610101, hospital_id=_JOB_VISIT_HOSPITAL_ID, roles=frozenset({"staff"}))
+_OTHER_HOSPITAL_ACTOR = OcrActor(staff_id=610102, hospital_id=6101, roles=frozenset({"staff"}))
+
+
+def test_get_latest_job_by_visit_selection_rules() -> None:
+    tortoise_test._restore_default()
+    test_loop = tortoise_test._LOOP
+    assert test_loop is not None
+    test_loop.run_until_complete(_assert_get_latest_job_by_visit())
+
+
+async def _assert_get_latest_job_by_visit() -> None:
+    patient = await Patient.create(
+        patient_id=_JOB_VISIT_PATIENT_ID,
+        hospital_id=_JOB_VISIT_HOSPITAL_ID,
+        hospital_patient_no="SYNTHETIC-KEY133-001",
+        name="Synthetic Job Visit Patient",
+        birth_date=date(2000, 1, 1),
+        phone="01000000001",
+    )
+    visit = await Visit.create(
+        visit_id=_JOB_VISIT_ID,
+        hospital_id=_JOB_VISIT_HOSPITAL_ID,
+        patient=patient,
+        visited_at=datetime(2026, 8, 23, 9, 0, tzinfo=UTC),
+    )
+    repository = TortoiseOcrRepository()
+
+    # 작업 없음 → None
+    assert await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _JOB_VISIT_ACTOR) is None
+
+    # 타 병원 actor → 작업이 있어도 None
+    completed = await OcrJob.create(
+        ocr_job_id="synthetic-key133-completed",
+        hospital_id=_JOB_VISIT_HOSPITAL_ID,
+        visit=visit,
+        requested_by=_JOB_VISIT_ACTOR.staff_id,
+        status=OcrJobStatus.COMPLETED,
+    )
+    assert await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _OTHER_HOSPITAL_ACTOR) is None
+
+    # COMPLETED만 있을 때 → 해당 작업 반환
+    result = await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _JOB_VISIT_ACTOR)
+    assert result is not None
+    assert result.ocr_job_id == completed.ocr_job_id
+
+    # PROCESSING 추가 → created_at 무관하게 PROCESSING 우선 반환
+    processing = await OcrJob.create(
+        ocr_job_id="synthetic-key133-processing",
+        hospital_id=_JOB_VISIT_HOSPITAL_ID,
+        visit=visit,
+        requested_by=_JOB_VISIT_ACTOR.staff_id,
+        status=OcrJobStatus.PROCESSING,
+    )
+    result = await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _JOB_VISIT_ACTOR)
+    assert result is not None
+    assert result.ocr_job_id == processing.ocr_job_id
