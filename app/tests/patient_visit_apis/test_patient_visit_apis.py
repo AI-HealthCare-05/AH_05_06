@@ -225,7 +225,9 @@ class TestPatientVisitApis(TestCase):
         환자만 보는 D1-1 이 성립하지 않는다. `department_id` 는 진료과 표가
         진짜로 없어서 계속 막히는 것이고, 둘은 사정이 다르다.
         """
-        hospital = await Hospital.create(name="KEY-118 합성병원")
+        # MySQL의 AUTO_INCREMENT는 TestCase 트랜잭션이 롤백되어도 되돌아가지
+        # 않는다. actor의 병원 범위와 무관한 순번에 기대지 않도록 명시한다.
+        hospital = await Hospital.create(hospital_id=1, name="KEY-118 합성병원")
         doctor = await Staff.create(
             hospital=hospital,
             login_id="key118-doctor-a",
@@ -248,6 +250,7 @@ class TestPatientVisitApis(TestCase):
                 f"/api/v1/patients/{patient_id}/visits",
                 json={"doctor_id": doctor.staff_id, "visited_at": "2026-08-19T10:30:00+09:00"},
             )
+            assert created.status_code == status.HTTP_201_CREATED, created.json()
             visit_id = created.json()["visit_id"]
             fetched = await client.get(f"/api/v1/visits/{visit_id}")
             reassigned = await client.patch(f"/api/v1/visits/{visit_id}", json={"doctor_id": replacement.staff_id})
@@ -272,8 +275,8 @@ class TestPatientVisitApis(TestCase):
         assert patched_department.json()["code"] == "INVALID_DEPARTMENT"
 
     async def test_invalid_doctors_are_rejected_without_leaking_the_reason(self) -> None:
-        hospital = await Hospital.create(name="KEY-118 검증병원")
-        other_hospital = await Hospital.create(name="KEY-118 타병원")
+        hospital = await Hospital.create(hospital_id=1, name="KEY-118 검증병원")
+        other_hospital = await Hospital.create(hospital_id=2, name="KEY-118 타병원")
         non_doctor = await Staff.create(
             hospital=hospital,
             login_id="key118-staff",
@@ -313,6 +316,7 @@ class TestPatientVisitApis(TestCase):
                 f"/api/v1/patients/{patient_id}/visits",
                 json={"doctor_id": None, "visited_at": "2026-08-24T10:30:00+09:00"},
             )
+            assert valid.status_code == status.HTTP_201_CREATED, valid.json()
             visit_id = valid.json()["visit_id"]
             rejected_patch = await client.patch(f"/api/v1/visits/{visit_id}", json={"doctor_id": other_doctor.staff_id})
             cleared = await client.patch(f"/api/v1/visits/{visit_id}", json={"doctor_id": None})
