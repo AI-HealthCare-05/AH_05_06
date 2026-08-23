@@ -23,7 +23,16 @@ from typing import Any
 
 import pytest
 
-from app.tests.fixtures.mapping import API_SCHEMA_FOR, MAPPING, NOT_STORED, PENDING, Field, Kind, Where
+from app.tests.fixtures.mapping import (
+    API_SCHEMA_FOR,
+    MAPPING,
+    NOT_STORED,
+    PENDING,
+    PLANNED_TABLES,
+    Field,
+    Kind,
+    Where,
+)
 
 CSV_PATH = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-patients.csv"
 
@@ -57,6 +66,131 @@ class TestNothingIsMissing:
         """왜 저장하지 않는지 적혀 있어야 나중에 컬럼을 억지로 만들지 않는다."""
         silent = [c for c, f in MAPPING.items() if f.where in NOT_STORED and not f.note]
         assert not silent, f"저장하지 않는 이유가 안 적힌 칸: {silent}"
+
+
+class TestPlannedTablesStayHonest:
+    """정본이 규정한 표가 **실제로 있는가** — KEY-136.
+
+    이 파일은 자리를 셋으로 가른다.
+
+        저장한다 · 표가 있다   patient · visit
+        저장한다 · 표가 없다   PLANNED_TABLES 에 이유와 함께 (4개)
+        저장 안 한다          NOT_STORED
+
+    가운데 자리가 이번에 생겼다. 그 전에는 「있는 표」와 「언젠가 만들 표」가
+    파일에서 같아 보였고, 읽는 사람은 `lab_result` 를 `patient` 처럼 이미 있는
+    표로 알고 시드를 짜게 됐다.
+
+    검사는 **양쪽으로** 잡는다. 없어야 할 표가 생겨도 죽는다 — 표를 만든 사람이
+    이 파일 고치는 것을 잊어도 그때 알려 준다.
+    """
+
+    @staticmethod
+    def real_tables() -> set[str]:
+        """모델이 실제로 만드는 표 이름.
+
+        **Tortoise 레지스트리를 읽는다.** 예전에는 모듈을 임포트해 `vars()` 로
+        훑고 `class Meta: table` 이 **명시된 것만** 봤는데, 그 방식은 두 곳에서
+        틀린다(이희진 님 `#68` 리뷰).
+
+        1. `Meta.table` 을 안 쓰면 Tortoise 는 클래스명을 소문자화해 표를 만드는데,
+           그 표를 **영영 못 본다.** 그러면 `test_planned_tables_do_not_exist_yet`
+           이 계속 통과해 「표는 생겼는데 정본은 아직 없다고 말하는」 상태가
+           유지된다 — 그 검사가 막겠다고 한 바로 그 실패다.
+        2. `vars(module)` 은 그 모듈이 **임포트한** 이름까지 훑는다. 같은 파일에
+           `Meta.table` 을 가진 무관한 클래스가 있으면 가짜 표 이름이 섞인다.
+
+        레지스트리는 `_meta.db_table` 로 **Tortoise 가 실제로 쓰는 이름**을 주고,
+        정의된 모델만 담고 있어 둘 다 없다. `conftest` 의 세션 `initializer` 가
+        이미 채워 둔다.
+        """
+        from tortoise import Tortoise
+
+        from app.core.db.databases import TORTOISE_APP_MODELS
+
+        # 이 검사는 정본과 코드를 맞대는 것이라 **DB 가 필요 없다.**
+        # `init_models` 는 접속 없이 레지스트리만 채운다.
+        Tortoise.init_models(TORTOISE_APP_MODELS, "models")
+        return {model._meta.db_table for model in Tortoise.apps["models"].values()}
+
+    def test_stored_destinations_that_are_not_planned_really_exist(self) -> None:
+        """계획으로 표시하지 않았으면 **표가 있어야 한다.**"""
+        tables = self.real_tables()
+        missing = sorted(
+            w.value
+            for w in {f.where for f in MAPPING.values()}
+            if w not in NOT_STORED and w not in PLANNED_TABLES and w.value not in tables
+        )
+        assert not missing, f"정본이 보내라는 표가 없다: {missing}. 만들거나, 이유를 달아 PLANNED_TABLES 로 옮겨라"
+
+    def test_planned_tables_do_not_exist_yet(self) -> None:
+        """계획이라고 해 놓고 표가 생겼으면 **여기서 빼라고 알려 준다.**
+
+        이 방향이 없으면 파일이 조용히 낡는다 — 표는 생겼는데 정본은 계속
+        「아직 없다」고 말하는 상태가 유지된다.
+        """
+        tables = self.real_tables()
+        arrived = sorted(w.value for w in PLANNED_TABLES if w.value in tables)
+        assert not arrived, f"표가 생겼다: {arrived}. mapping.py 의 PLANNED_TABLES 에서 빼라"
+
+    def test_planned_only_holds_storage_destinations(self) -> None:
+        """저장 안 하는 자리를 계획에 넣으면 뜻이 겹친다."""
+        overlap = sorted(w.value for w in PLANNED_TABLES if w in NOT_STORED)
+        assert not overlap, f"NOT_STORED 와 겹친다: {overlap}"
+
+    def test_every_planned_table_says_why(self) -> None:
+        """근거 없는 계획은 다음 사람에게 「그냥 없다」로만 보인다."""
+        silent = sorted(w.value for w, plan in PLANNED_TABLES.items() if not plan.why.strip())
+        assert not silent, f"왜 아직 없는지 안 적힌 표: {silent}"
+
+    def test_the_two_canons_agree_on_visit_flag_code(self) -> None:
+        """`visit_flag.code` 의 타입을 두 정본이 다르게 말한다 — 그 어긋남을 붙잡는다.
+
+        `mapping.py` 는 `Kind.FREE`(파싱하지 않는 자유 문자열), 문서 §8 은 `enum`
+        이라고 적어 두었다. **이 파일은 그 사실을 문장으로만 적어 두고 아무것도
+        강제하지 않았다** — 문서만 보고 「닫힌 코드 집합」이라 오해한 채 구현이
+        진행될 수 있다(이희진 님 `#68` 리뷰).
+
+        어느 쪽이 맞는지는 **아직 정해지지 않았다.** 문서가 값 목록을 「등」으로
+        열어 두었기 때문이다. 임신부 금기 약물 같은 안전 차단의 근거가 되는 값이라
+        임의로 닫으면 안 된다.
+
+        그래서 검사는 **지금의 어긋남을 그대로 고정한다.**
+
+            문서가 「등」으로 열려 있다   →  `Kind.FREE` 여야 한다 (지금)
+            문서가 목록을 닫았다          →  이 검사가 죽는다. 그때 `Kind.ENUM` 으로
+                                            옮기고 이 검사를 지워라
+
+        결정이 내려지는 순간 여기서 알려 준다. 지금처럼 문장으로만 적어 두면
+        결정이 나도 아무도 이 파일을 고치러 오지 않는다.
+        """
+        spec = (Path(__file__).resolve().parents[3] / "docs" / "synthetic-data-spec.md").read_text(encoding="utf-8")
+        rows = [line for line in spec.splitlines() if "`visit_flag.code`" in line and line.startswith("|")]
+        assert len(rows) == 1, f"문서에서 `visit_flag.code` 행을 하나로 못 찾았다: {len(rows)} 개"
+
+        cells = [c.strip() for c in rows[0].strip("|").split("|")]
+        examples = cells[-1]
+        set_is_open = examples.rstrip().endswith("등")
+
+        field = next(f for f in MAPPING.values() if f.where is Where.VISIT_FLAG and f.name == "code")
+        if set_is_open:
+            assert field.kind is Kind.FREE, (
+                f"문서 §8 이 코드 집합을 「등」으로 열어 두었는데 `mapping.py` 는 {field.kind} 다. "
+                "집합이 안 닫힌 동안에는 `Kind.FREE` 가 맞다"
+            )
+        else:
+            raise AssertionError(
+                "문서 §8 이 `visit_flag.code` 값 목록을 닫았다. "
+                "`mapping.py` 를 `Kind.ENUM` 으로 옮기고 이 검사를 지워라 — "
+                f"닫힌 목록: {examples}"
+            )
+
+    def test_tables_we_decided_to_build_carry_a_ticket(self) -> None:
+        """「만든다」로 가른 것은 **후속 일감 번호가 있어야** 잊히지 않는다."""
+        undecided = sorted(
+            w.value for w, plan in PLANNED_TABLES.items() if plan.status == "만든다" and "KEY-" not in plan.why
+        )
+        assert not undecided, f"만들기로 했는데 일감 번호가 없다: {undecided}"
 
 
 @pytest.mark.parametrize("column", COLUMNS)

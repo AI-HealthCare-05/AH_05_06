@@ -18,7 +18,7 @@ from app.models.visits import Visit
 from app.ocr.errors import OcrApiError
 from app.ocr.schemas import UpdateOcrFieldRequest
 from app.ocr.security import OcrActor
-from app.ocr.service import TortoiseOcrRepository, serialize_job
+from app.ocr.service import TortoiseOcrRepository, serialize_field, serialize_job
 
 HOSPITAL_ID = 6000
 PATIENT_ID = 600001
@@ -91,6 +91,9 @@ async def assert_repository_round_trip() -> None:
         document_text=document,
         field_type="DIAGNOSIS",
         extracted_value="synthetic extracted value",
+        unit="mg/dL",
+        source_line=5,
+        is_pending_report=False,
     )
     await OcrFieldCandidate.create(
         ocr_field=field,
@@ -99,11 +102,25 @@ async def assert_repository_round_trip() -> None:
     )
 
     stored_result = await repository.get_result(job.ocr_job_id, ACTOR)
-    stored_fields = await repository.get_fields(job.ocr_job_id, ACTOR, "DIAGNOSIS")
+    stored_fields, stored_docs = await repository.get_fields(job.ocr_job_id, ACTOR, "DIAGNOSIS")
     assert stored_result.ocr_job_id == job.ocr_job_id
     assert [item.ocr_field_id for item in stored_fields] == [field.ocr_field_id]
 
-    confirmed = await repository.update_field(
+    doc_text_map = {d.ocr_document_text_id: d for d in stored_docs}
+    serialized = serialize_field(stored_fields[0], doc_text_map)
+    assert serialized.unit == "mg/dL"
+    assert serialized.source_line == 5
+    assert serialized.is_pending_report is False
+    assert serialized.document_id == DOCUMENT_ID
+
+    document.raw_text_purged_at = datetime(2026, 8, 21, 10, 0, tzinfo=UTC)
+    await document.save(update_fields=("raw_text_purged_at",))
+    await document.refresh_from_db()
+    purged_map = {document.ocr_document_text_id: document}
+    purged_serialized = serialize_field(stored_fields[0], purged_map)
+    assert purged_serialized.document_id is None
+
+    confirmed, _ = await repository.update_field(
         field.ocr_field_id,
         UpdateOcrFieldRequest(base_version=1, confirm=True),
         ACTOR,

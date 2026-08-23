@@ -161,7 +161,7 @@
              단회 처방(0일)이 오기 시작하면 둘을 구분할 수 없다. */
           esc([v.drug, v.days == null ? "" : v.days + "일"].filter(Boolean).join(" · ")) +
           "</td><td>" +
-          /* TODO(KEY-64) 안내문 화면이 생기면 여기서 그 안내문으로 간다 */
+          /* TODO(KEY-75) 안내문 화면이 생기면 여기서 그 안내문으로 간다 */
           (v.has_guide
             ? '<span class="past__guide">안내문 있음</span>'
             : '<span class="past__none">안내문 없음</span>') +
