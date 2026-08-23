@@ -93,7 +93,15 @@ var MOCK_PATIENTS = {
    편의였지 계약이 아니었고, 8/27 여정에서 안내문은 고정 텍스트다(KEY-150).
 
    `warn` 은 **서버가 판정한다.** 「AI 가 자신 없는 곳」을 화면이 알 수 없다. */
-function mockGuide(visitId) {
+/* 승인·반려가 남긴 상태. **진료 번호마다 하나.**
+
+   예전에는 `mockGuide()` 가 매번 새로 만들고 승인 핸들러가 그 사본을 고쳐
+   돌려줬다. 즉 **승인해도 다음 조회는 다시 「승인 요청」이었다.** 목업만 보면
+   승인이 아무 일도 안 한 것처럼 보이고, 상태에 걸리는 규칙(아래
+   `GUIDE_NOT_PENDING`)은 아예 잴 수가 없다 (이희진 님 `#76` 리뷰). */
+var MOCK_GUIDE_STATE = {};
+
+function mockGuideBase(visitId) {
   var warn = DOCTOR_CASE !== "clean";
   var who = MOCK_PATIENTS[visitId] || MOCK_PATIENTS[8801];
   return {
@@ -146,6 +154,19 @@ function mockGuide(visitId) {
       },
     ],
   };
+}
+
+
+/* 저장된 상태가 있으면 그것이 이긴다. 없으면 `DOCTOR_CASE` 가 정한 기본값이다. */
+function mockGuide(visitId) {
+  var guide = mockGuideBase(visitId);
+  var saved = MOCK_GUIDE_STATE[visitId];
+  if (saved) {
+    guide.status = saved.status;
+    guide.scheduled_at = saved.scheduled_at;
+    guide.returned_reason = saved.returned_reason;
+  }
+  return guide;
 }
 
 /* 서버는 진료 시각 기준 그날 18:00 을 잡고, 지났으면 다음 날로 민다
@@ -206,6 +227,11 @@ function mockDoctorRequest(path, options) {
            넣는다 — **승인이 곧 발송 예약**이라 「승인됨」이라는 상태는 없다(`D1-5`). */
         approved.status = "SCHEDULED_TO_SEND";
         approved.scheduled_at = mockScheduledAt();
+        MOCK_GUIDE_STATE[visitId] = {
+          status: approved.status,
+          scheduled_at: approved.scheduled_at,
+          returned_reason: null,
+        };
         return resolve(approved);
       }
 
@@ -217,6 +243,11 @@ function mockDoctorRequest(path, options) {
         var returned = mockGuide(visitId);
         returned.status = "APPROVAL_RETURNED";
         returned.returned_reason = body.reason;
+        MOCK_GUIDE_STATE[visitId] = {
+          status: returned.status,
+          scheduled_at: null,
+          returned_reason: returned.returned_reason,
+        };
         return resolve(returned);
       }
 
@@ -224,7 +255,20 @@ function mockDoctorRequest(path, options) {
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
         if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
 
-        var target = mockGuide(visitId).sections.filter(function (s) {
+        var guide = mockGuide(visitId);
+
+        /* **승인 요청 상태에서만 고칠 수 있다.** 이미 승인해 발송을 기다리는
+           글을 조용히 바꾸면 **환자가 받는 것과 의사가 승인한 것이 달라진다.**
+           반려된 글도 스탭 손에 있어 의사가 고칠 자리가 아니다 — 서버가
+           `GUIDE_NOT_PENDING` 409 로 막는다(`app/services/guides.py`).
+
+           `SECTION_LOCKED` 와 같은 기준이다. 목업이 서버보다 헐거우면 화면
+           버그를 목업으로 못 잡는다 (이희진 님 `#76` 리뷰). */
+        if (guide.status !== "APPROVAL_PENDING") {
+          return reject(new ApiError("GUIDE_NOT_PENDING", 409, {}));
+        }
+
+        var target = guide.sections.filter(function (s) {
           return s.key === sec[2];
         })[0];
         if (!target) return reject(new ApiError("NOT_FOUND", 404, {}));
