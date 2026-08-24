@@ -11,6 +11,18 @@ ALLOWED_MIME_TYPES: frozenset[str] = frozenset(
     }
 )
 
+ALLOWED_EXTENSIONS_BY_MIME: dict[str, frozenset[str]] = {
+    "image/jpeg": frozenset({".jpg", ".jpeg"}),
+    "image/png": frozenset({".png"}),
+    "application/pdf": frozenset({".pdf"}),
+}
+
+FILE_SIGNATURES_BY_MIME: dict[str, tuple[bytes, ...]] = {
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "application/pdf": (b"%PDF-",),
+}
+
 _MIME_TO_EXT: dict[str, str] = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
