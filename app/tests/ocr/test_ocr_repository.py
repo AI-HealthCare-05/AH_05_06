@@ -11,6 +11,7 @@ from app.models.ocr import (
     OcrField,
     OcrFieldCandidate,
     OcrJob,
+    OcrJobDocument,
     OcrJobStatus,
     OcrResult,
 )
@@ -330,3 +331,74 @@ async def _assert_fixture_ocr_round_trip() -> None:
         assert exc.status_code == 404
     else:
         raise AssertionError("타 병원이 다른 병원의 문서로 OCR 작업을 시작할 수 있었습니다.")
+
+
+class FailingFixtureOcrRepository(FixtureOcrRepository):
+    async def _after_job_created(
+        self,
+        job: OcrJob,
+        document_id: int,
+        document_type: OcrDocumentType,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        await OcrResult.create(ocr_job=job, model_name="fixture-failure", using_db=connection)
+        raise RuntimeError("synthetic fixture seeding failure")
+
+
+def test_fixture_seed_failure_rolls_back_job_and_allows_retry() -> None:
+    tortoise_test._restore_default()
+    test_loop = tortoise_test._LOOP
+    assert test_loop is not None
+    test_loop.run_until_complete(_assert_fixture_seed_failure_rolls_back_job_and_allows_retry())
+
+
+async def _assert_fixture_seed_failure_rolls_back_job_and_allows_retry() -> None:
+    patient = await Patient.create(
+        patient_id=_FIXTURE_PATIENT_ID + 1,
+        hospital_id=_FIXTURE_HOSPITAL_ID,
+        hospital_patient_no="SYNTHETIC-KEY149-002",
+        name="Synthetic Fixture Retry Patient",
+        birth_date=date(2000, 1, 2),
+        phone="01000000003",
+    )
+    visit = await Visit.create(
+        visit_id=_FIXTURE_VISIT_ID + 1,
+        hospital_id=_FIXTURE_HOSPITAL_ID,
+        patient=patient,
+        visited_at=datetime(2026, 8, 24, 10, 0, tzinfo=UTC),
+    )
+    document = await MedicalDocument.create(
+        hospital_id=_FIXTURE_HOSPITAL_ID,
+        visit=visit,
+        document_type=OcrDocumentType.EMR,
+        file_path="/tmp/synthetic-key149-retry.pdf",
+        file_size=1024,
+        mime_type="application/pdf",
+        uploaded_by=_FIXTURE_ACTOR.staff_id,
+    )
+
+    failing_repository = FailingFixtureOcrRepository(TortoiseDocumentOwnershipVerifier())
+    try:
+        await failing_repository.create_job(
+            document.document_id,
+            visit.visit_id,
+            OcrDocumentType.EMR,
+            _FIXTURE_ACTOR,
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "synthetic fixture seeding failure"
+    else:
+        raise AssertionError("fixture 시딩 실패가 호출자에게 전달되지 않았습니다.")
+
+    assert not await OcrJob.filter(visit_id=visit.visit_id).exists()
+    assert not await OcrJobDocument.filter(document_id=document.document_id).exists()
+    assert not await OcrResult.filter(model_name="fixture-failure").exists()
+
+    repository = FixtureOcrRepository(TortoiseDocumentOwnershipVerifier())
+    retried_job = await repository.create_job(
+        document.document_id,
+        visit.visit_id,
+        OcrDocumentType.EMR,
+        _FIXTURE_ACTOR,
+    )
+    assert retried_job.status == OcrJobStatus.COMPLETED
