@@ -8,7 +8,7 @@ from app.core.pagination import encode_cursor
 from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import DoctorResponse, VisitCreateRequest, VisitResponse, VisitUpdateRequest
-from app.models.ocr import OcrJob
+from app.models.ocr import OcrJob, OcrJobStatus
 from app.models.staffs import Staff, StaffRole
 from app.models.visits import GuideDocument, GuideStatus, Visit
 from app.repositories.patient_repository import PatientRepository
@@ -79,18 +79,16 @@ class VisitService:
         if not supplied:
             raise ApiError(400, "EMPTY_UPDATE_FIELDS", "수정할 필드가 없습니다.")
 
+        await self._validate_relation_update(visit, data, supplied)
+
         if "department_id" in supplied:
-            await self._refuse_if_locked(visit)
             self._validate_department(data.department_id)
 
         if "doctor_id" in supplied:
-            # 담당의 무결성 검증(KEY-118)과 후속 데이터 연결 뒤 관계 잠금(KEY-119)은
-            # 서로 다른 정책이다. 잠금 대상 합의 전에는 여기서 선행 구현하지 않는다.
             await self._validate_doctor(data.doctor_id, hospital_id_of(actor))
 
         if "visited_at" in supplied:
-            if data.visited_at is None:
-                raise ApiError(400, "INVALID_REQUEST", "visited_at에는 null을 입력할 수 없습니다.")
+            assert data.visited_at is not None
             await self._ensure_unique_day(
                 visit.patient_id,
                 hospital_id_of(actor),
@@ -162,8 +160,38 @@ class VisitService:
     #: 가지 않는다 — `test_visit_locked.py::TestOcrDecidesFirst` 참고.
     LOCKING_GUIDE_STATUSES = (GuideStatus.APPROVAL_PENDING, GuideStatus.SCHEDULED_TO_SEND)
 
+    async def _validate_relation_update(
+        self,
+        visit: Visit,
+        data: VisitUpdateRequest,
+        supplied: set[str],
+    ) -> None:
+        if "visited_at" in supplied and data.visited_at is None:
+            raise ApiError(400, "INVALID_REQUEST", "visited_at에는 null을 입력할 수 없습니다.")
+        if self._changed_relation_fields(visit, data, supplied):
+            await self._refuse_if_locked(visit)
+
+    @staticmethod
+    def _changed_relation_fields(
+        visit: Visit,
+        data: VisitUpdateRequest,
+        supplied: set[str],
+    ) -> set[str]:
+        """본문에 포함됐다는 이유가 아니라 실제 식별 관계 변경만 골라낸다."""
+        changed: set[str] = set()
+        if "doctor_id" in supplied and data.doctor_id != visit.doctor_id:
+            changed.add("doctor_id")
+        if "visited_at" in supplied and data.visited_at != visit.visited_at:
+            changed.add("visited_at")
+        if "department_id" in supplied:
+            # v1에는 진료과 기준 테이블과 ID 저장 칸이 아직 없다. non-null ID는
+            # 언제나 스냅샷 변경 시도이고, null은 스냅샷이 있을 때만 삭제다.
+            if data.department_id is not None or visit.department is not None:
+                changed.add("department_id")
+        return changed
+
     async def _refuse_if_locked(self, visit: Visit) -> None:
-        """OCR 이나 승인 안내가 붙은 뒤에는 진료과를 바꿀 수 없다 (계약 §6).
+        """OCR 이나 승인 안내가 붙은 뒤에는 식별 관계를 바꿀 수 없다 (계약 §6).
 
         왜 막느냐 — 안내문 본문은 **이 진료의 맥락으로** 쓰인다. 승인해서 발송을
         기다리는 안내가 달린 진료의 진료과를 바꾸면, 나가는 글과 기록이 가리키는
@@ -181,13 +209,17 @@ class VisitService:
         실제로 열리는 경우는 「OCR 없이 안내문만 있는」 것뿐인데, 지금 흐름상
         그런 진료는 생기지 않는다.
         """
-        if await OcrJob.filter(visit_id=visit.visit_id).exists():
-            raise ApiError(409, "VISIT_LOCKED", "판독이 시작된 진료는 진료과를 바꿀 수 없습니다.")
+        active_ocr = await OcrJob.filter(
+            visit_id=visit.visit_id,
+            status__in=(OcrJobStatus.PROCESSING, OcrJobStatus.COMPLETED),
+        ).exists()
+        if active_ocr:
+            raise ApiError(409, "VISIT_LOCKED", "판독이 시작된 진료는 식별 관계를 바꿀 수 없습니다.")
         locked_guide = await GuideDocument.filter(
             visit_id=visit.visit_id, status__in=self.LOCKING_GUIDE_STATUSES
         ).exists()
         if locked_guide:
-            raise ApiError(409, "VISIT_LOCKED", "안내문이 승인 요청된 진료는 진료과를 바꿀 수 없습니다.")
+            raise ApiError(409, "VISIT_LOCKED", "승인 안내가 연결된 진료는 식별 관계를 바꿀 수 없습니다.")
 
     @staticmethod
     async def _validate_doctor(doctor_id: int | None, hospital_id: int) -> None:
