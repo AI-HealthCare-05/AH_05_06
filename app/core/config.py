@@ -53,6 +53,9 @@ class Config(BaseSettings):
     UPLOAD_DIR: str = "/tmp/medical_uploads"
     MAX_UPLOAD_SIZE_MB: int = 20
 
+    # 실제 OCR 워커 없이 fixture 결과를 즉시 DB에 기록한다 — Walking Skeleton 데모 전용.
+    OCR_FIXTURE_FALLBACK: bool = False
+
     @field_validator("DB_PASSWORD")
     @classmethod
     def _db_password_must_be_set(cls, value: str) -> str:

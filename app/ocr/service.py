@@ -304,6 +304,42 @@ def serialize_job(job: OcrJob) -> OcrJobResponse:
 
 
 LOW_CONFIDENCE_THRESHOLD = 0.75
+FIXTURE_MODEL_NAME = "fixture-v0"
+
+
+async def _seed_fixture_result(job: OcrJob, document_id: int, document_type: OcrDocumentType) -> None:
+    """fixture 결과 한 건을 DB에 기록하고 job을 COMPLETED로 전환한다 — 데모 전용."""
+    completed_at = now()
+    result = await OcrResult.create(ocr_job=job, model_name=FIXTURE_MODEL_NAME)
+    doc_text = await OcrDocumentText.create(
+        ocr_result=result,
+        document_id=document_id,
+        document_type=document_type,
+        raw_text="[fixture] 합성 OCR 텍스트 — 실제 OCR 워커 연결 전 데모용 데이터",
+    )
+    await OcrField.create(
+        ocr_result=result,
+        document_text=doc_text,
+        field_type="DIAGNOSIS",
+        extracted_value="[fixture] 진단명",
+        confidence=Decimal("0.85"),
+    )
+    job.status = OcrJobStatus.COMPLETED
+    job.progress = 100
+    job.started_at = completed_at
+    job.completed_at = completed_at
+    await job.save(update_fields=("status", "progress", "started_at", "completed_at"))
+
+
+class FixtureOcrRepository(TortoiseOcrRepository):
+    """OCR 시작 즉시 fixture 결과를 기록한다 — 실제 워커 없이 Walking Skeleton 흐름을 완주하기 위한 데모 fallback."""
+
+    async def create_job(
+        self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
+    ) -> OcrJob:
+        job = await super().create_job(document_id, visit_id, document_type, actor)
+        await _seed_fixture_result(job, document_id, document_type)
+        return job
 
 
 def _resolve_document_id(doc_text: OcrDocumentText | None) -> int | None:
