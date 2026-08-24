@@ -190,22 +190,29 @@ async def _assert_get_latest_job_by_visit() -> None:
     # 작업 없음 → None
     assert await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _JOB_VISIT_ACTOR) is None
 
-    # 타 병원 actor → 작업이 있어도 None
-    completed = await OcrJob.create(
-        ocr_job_id="synthetic-key133-completed",
+    # COMPLETED 두 개: 정렬 방향(-created_at) 검증
+    # older가 먼저 생성되므로 newer가 반드시 반환되어야 한다.
+    _ = await OcrJob.create(
+        ocr_job_id="synthetic-key133-completed-older",
         hospital_id=_JOB_VISIT_HOSPITAL_ID,
         visit=visit,
         requested_by=_JOB_VISIT_ACTOR.staff_id,
         status=OcrJobStatus.COMPLETED,
     )
-    assert await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _OTHER_HOSPITAL_ACTOR) is None
-
-    # COMPLETED만 있을 때 → 해당 작업 반환
+    newer_completed = await OcrJob.create(
+        ocr_job_id="synthetic-key133-completed-newer",
+        hospital_id=_JOB_VISIT_HOSPITAL_ID,
+        visit=visit,
+        requested_by=_JOB_VISIT_ACTOR.staff_id,
+        status=OcrJobStatus.COMPLETED,
+    )
     result = await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _JOB_VISIT_ACTOR)
     assert result is not None
-    assert result.ocr_job_id == completed.ocr_job_id
+    assert result.ocr_job_id == newer_completed.ocr_job_id
 
-    # PROCESSING 추가 → created_at 무관하게 PROCESSING 우선 반환
+    # PROCESSING 추가: created_at을 두 COMPLETED보다 과거로 설정해
+    # "최신 우선"과 "PROCESSING 우선" 규칙이 서로 다른 작업을 가리키도록 만든다.
+    # auto_now_add 필드는 create() 후 update()로 덮어써야 한다.
     processing = await OcrJob.create(
         ocr_job_id="synthetic-key133-processing",
         hospital_id=_JOB_VISIT_HOSPITAL_ID,
@@ -213,6 +220,15 @@ async def _assert_get_latest_job_by_visit() -> None:
         requested_by=_JOB_VISIT_ACTOR.staff_id,
         status=OcrJobStatus.PROCESSING,
     )
+    await OcrJob.filter(ocr_job_id=processing.ocr_job_id).update(
+        created_at=datetime(2026, 8, 23, 8, 0, tzinfo=UTC),
+    )
+    await processing.refresh_from_db()
+
+    # PROCESSING 분기에서도 타 병원 actor는 None
+    assert await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _OTHER_HOSPITAL_ACTOR) is None
+
+    # PROCESSING이 오래된 작업이어도 COMPLETED보다 우선 반환
     result = await repository.get_latest_job_by_visit(_JOB_VISIT_ID, _JOB_VISIT_ACTOR)
     assert result is not None
     assert result.ocr_job_id == processing.ocr_job_id
