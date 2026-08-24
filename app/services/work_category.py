@@ -149,11 +149,23 @@ class VisitSignals:
     #: 백 건을 그리는 자리라 질의 수가 곧 화면 속도다 — 이미 읽는 열로 푼다.
     guide_changed_at: datetime | None = None
 
-    #: 환자 정보가 마지막으로 바뀐 시각(`patient.updated_at`).
+    #: **`INVALID_PHONE` 에는 시각이 없다.** 「번호가 틀리다」는 사건이 아니라
+    #: 상태라, 언제 그렇게 됐는지를 아무도 적어 두지 않는다.
     #:
-    #: `INVALID_PHONE` 은 「사건」이 아니라 **상태**라 자기 시각이 없다. 번호가
-    #: 틀리게 된 순간은 번호를 마지막으로 고친 때이므로 이것을 쓴다.
-    patient_changed_at: datetime | None = None
+    #: 한때 `patient.updated_at` 으로 근사했는데 틀렸다. 그 칸은 `auto_now=True`
+    #: 라 **번호와 무관한 저장에도 밀린다** — `PatientService.update()` 의
+    #: `mutable_fields` 는 이름·생년월일·성별·번호·수신동의 다섯이고 어느 것을
+    #: 고쳐도 갱신된다. 그러면 이런 일이 난다.
+    #:
+    #:     반려         2주 전    ← 실제로 더 최근인 사건
+    #:     번호 무효화   한 달 전
+    #:     어제 이름만 정정 → patient.updated_at = 어제
+    #:     → INVALID_PHONE 이 「가장 최근」으로 뽑힌다
+    #:
+    #: 이름 정정이 조용히 순서를 뒤집는 것이라 계약(§S1-1)과 어긋난다. 그래서
+    #: **근사하지 않고 모른다고 말한다** — `_latest()` 가 시각 없는 후보를 가장
+    #: 오래된 것으로 두므로, 시각을 아는 후보에게 자리를 내준다. 틀린 값을 대는
+    #: 것보다 낫다 (이희진 님 `#105` 리뷰).
 
 
 #: 안내문 상태 하나에 상세 상태 하나. **`if/elif` 사슬이 아니라 표다.**
@@ -232,7 +244,8 @@ def _candidates(signals: VisitSignals) -> list[Candidate]:
     if signals.sms_opted_out_at is not None:
         found.append(Candidate(DetailStatus.SMS_OPT_OUT, signals.sms_opted_out_at))
     elif not sms_reachable(signals.phone):
-        found.append(Candidate(DetailStatus.INVALID_PHONE, signals.patient_changed_at))
+        # 시각이 `None` 인 것이 이 줄의 요점이다 — 위 `VisitSignals` 주석 참고.
+        found.append(Candidate(DetailStatus.INVALID_PHONE, None))
 
     # ── 판독이 어디까지 왔나 ──────────────────────────────
     #
@@ -324,12 +337,7 @@ async def load_signals(visit_ids: list[int], hospital_id: int) -> dict[int, Visi
         patient_rows = (
             await Visit.filter(visit_id__in=visit_ids, hospital_id=hospital_id)
             .using_db(connection)
-            .values_list(
-                "visit_id",
-                "patient__phone",
-                "patient__sms_opted_out_at",
-                "patient__updated_at",
-            )
+            .values_list("visit_id", "patient__phone", "patient__sms_opted_out_at")
         )
 
     # 같은 진료에 판독이 여러 번 돌 수 있다. **가장 최근 것만** 본다 —
@@ -345,7 +353,7 @@ async def load_signals(visit_ids: list[int], hospital_id: int) -> dict[int, Visi
         # 원문 status를 오류나 로그에 싣지 않는다. 레거시 값이 있어도 공통 오류
         # 봉투를 유지해 내부 enum/데이터를 응답으로 노출하지 않는다.
         raise ApiError(500, "WORK_CATEGORY_DATA_INVALID", "업무 상태 데이터를 처리할 수 없습니다.") from error
-    patients = {visit_id: (phone, opted_out, changed_at) for visit_id, phone, opted_out, changed_at in patient_rows}
+    patients = {visit_id: (phone, opted_out) for visit_id, phone, opted_out in patient_rows}
 
     # **이 병원에서 읽을 수 있는 진료만 돌려준다.**
     #
@@ -357,7 +365,7 @@ async def load_signals(visit_ids: list[int], hospital_id: int) -> dict[int, Visi
     for visit_id in visit_ids:
         if visit_id not in patients:
             continue
-        phone, opted_out, patient_changed_at = patients[visit_id]
+        phone, opted_out = patients[visit_id]
         guide_status, guide_changed_at = guides.get(visit_id, (None, None))
         signals[visit_id] = VisitSignals(
             has_document=visit_id in documented,
@@ -366,7 +374,6 @@ async def load_signals(visit_ids: list[int], hospital_id: int) -> dict[int, Visi
             phone=phone,
             sms_opted_out_at=opted_out,
             guide_changed_at=guide_changed_at,
-            patient_changed_at=patient_changed_at,
         )
     return signals
 

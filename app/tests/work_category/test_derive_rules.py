@@ -366,25 +366,52 @@ def test_recent_return_wins_over_an_old_opt_out() -> None:
     assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.APPROVAL_RETURNED)
 
 
-def test_a_recent_bad_number_wins_over_an_old_return() -> None:
-    """`INVALID_PHONE` 도 같은 규칙을 탄다 — 번호를 마지막으로 고친 때가 그 시각이다."""
+def test_a_bad_number_never_claims_to_be_the_recent_one() -> None:
+    """**`INVALID_PHONE` 은 시각을 모른다.** 그래서 시각을 아는 쪽에 자리를 내준다.
+
+    한때 `patient.updated_at` 으로 근사했다. 그 칸은 `auto_now=True` 라 번호와
+    무관한 저장(이름 정정 같은)에도 밀린다 — 그러면 **이름을 고친 것이 조용히
+    순서를 뒤집는다** (이희진 님 `#105` 리뷰).
+
+    반려가 2주 전이든 어제든, 번호 쪽은 「모른다」이므로 결과가 같아야 한다.
+    두 방향을 함께 재는 것이 요점이다 — 한쪽만 두면 근사를 되살려도 통과한다.
+    """
+    for when in (TWO_WEEKS_AGO, YESTERDAY):
+        both = signals(
+            has_document=True,
+            guide_status=GuideStatus.APPROVAL_RETURNED,
+            guide_changed_at=when,
+            phone="0212345678",
+        )
+        assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.APPROVAL_RETURNED)
+
+
+def test_a_bad_number_still_shows_when_nothing_else_is_in_that_tab() -> None:
+    """자리를 내주는 것이지 사라지는 것이 아니다."""
+    only = signals(has_document=True, phone="0212345678")
+    assert derive(only) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.INVALID_PHONE)
+
+
+def test_an_unrelated_patient_edit_cannot_flip_the_choice() -> None:
+    """**리뷰가 짚은 바로 그 조합.**
+
+    번호는 한 달 전부터 틀렸고, 반려는 2주 전이고, 어제 스탭이 이름만 정정했다.
+    실제로 가장 최근에 일어난 사건은 **반려**다. 환자 행이 어제 저장됐다는
+    사실이 그것을 뒤집으면 안 된다.
+
+    `VisitSignals` 에 환자 수정 시각이 아예 없으므로 이 검사는 **그 칸이
+    되살아나는 순간** 깨진다 — 되살리려면 이 검사를 함께 고쳐야 하고,
+    그때 이 주석을 읽게 된다.
+    """
+    assert not hasattr(signals(), "patient_changed_at"), (
+        "환자 수정 시각이 되살아났다 — `auto_now` 칸으로 순서를 정하면 안 된다"
+    )
+
     both = signals(
         has_document=True,
         guide_status=GuideStatus.APPROVAL_RETURNED,
         guide_changed_at=TWO_WEEKS_AGO,
         phone="0212345678",
-        patient_changed_at=YESTERDAY,
-    )
-    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.INVALID_PHONE)
-
-
-def test_an_old_bad_number_loses_to_a_recent_return() -> None:
-    both = signals(
-        has_document=True,
-        guide_status=GuideStatus.APPROVAL_RETURNED,
-        guide_changed_at=YESTERDAY,
-        phone="0212345678",
-        patient_changed_at=TWO_WEEKS_AGO,
     )
     assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.APPROVAL_RETURNED)
 

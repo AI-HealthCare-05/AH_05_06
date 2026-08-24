@@ -483,7 +483,7 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 - 「발생 시각」은 상태마다 이렇게 읽는다.
   - `APPROVAL_RETURNED` 등 안내문 상태 — 안내문이 마지막으로 움직인 시각
   - `SMS_OPT_OUT` — 환자가 수신을 거부한 시각
-  - `INVALID_PHONE` — 사건이 아니라 상태라 자기 시각이 없다. 번호를 마지막으로 고친 시각으로 본다
+  - `INVALID_PHONE` — **시각이 없다.** 사건이 아니라 상태라 언제 그렇게 됐는지를 남기지 않는다. 시각을 아는 상태가 같은 카테고리에 있으면 그쪽을 보여 준다
 - 같은 시각이면 위 표의 차례를 따른다. 같은 데이터에 화면이 흔들리지 않게 하기 위한 것이다.
 
 ```json

@@ -236,16 +236,14 @@ class TestItReadsTheTimesTooWithoutAskingMore(TestCase):
     열만 늘렸는지 여기서 붙잡는다.
     """
 
-    async def test_it_reads_when_the_guide_and_the_patient_last_moved(self) -> None:
+    async def test_it_reads_when_the_guide_last_moved(self) -> None:
         visit = await make_visit("SYN-WC-T1", opted_out=datetime(2026, 8, 20, tzinfo=UTC))
         await attach_guide(visit, GuideStatus.APPROVAL_RETURNED)
 
         signals = (await load_signals([visit.visit_id], HOSPITAL_ID))[visit.visit_id]
 
         guide = await GuideDocument.get(visit_id=visit.visit_id)
-        patient = await Patient.get(patient_id=visit.patient_id)
         assert signals.guide_changed_at == guide.updated_at
-        assert signals.patient_changed_at == patient.updated_at
 
     async def test_a_visit_without_a_guide_has_no_guide_time(self) -> None:
         """안내문이 없으면 시각도 없다 — 없는 사건에 시각을 지어내지 않는다."""
@@ -255,7 +253,6 @@ class TestItReadsTheTimesTooWithoutAskingMore(TestCase):
 
         assert signals.guide_status is None
         assert signals.guide_changed_at is None
-        assert signals.patient_changed_at is not None, "환자는 늘 있으므로 시각도 있어야 한다"
 
     async def test_reading_the_times_did_not_add_a_query(self) -> None:
         """**질의 수를 못 박는다.**
