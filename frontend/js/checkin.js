@@ -201,9 +201,8 @@ function esc(text) {
       esc(pain) +
       "</dd>" +
       next +
-      "<dt>다음 진료</dt><dd>" +
-      esc(result.next_visit) +
-      "</dd></dl>" +
+      (result.next_visit ? "<dt>다음 진료</dt><dd>" + esc(result.next_visit) + "</dd>" : "") +
+      "</dl>" +
       /* 예전에는 `/guide.html` 로만 보내서 식별자가 비었다 — 그 화면은
          `?visit=` 으로 `/api/v1/guides/{visit_id}` 를 부른다. 링크는 서버가
          내려준 것을 쓴다. 안 주면 **깨진 링크를 그리지 않는다** (`#55` 리뷰). */

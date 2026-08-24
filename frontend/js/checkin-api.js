@@ -4,8 +4,8 @@
  *   POST /api/v1/checkins/{token}   답을 저장한다
  *
  * 주소가 `visit_id` 가 아니라 **링크 토큰**인 것이 중요하다. 환자는 로그인하지
- * 않고 문자로 받은 주소로 들어온다. 토큰 발급·검증은 `P1` 몫이라 아직 없다 —
- * 여기서는 계약만 적어 두고 `?mock=1` 로 확인한다.
+ * 않고 개발용 환자 링크로 들어온다. KEY-151은 KEY-90의 승인 안내 링크 검증을
+ * 그대로 재사용하며, 실제 SMS와 운영용 OTP는 구현하지 않는다.
  *
  * ── 화면이 문구를 만들지 않는다 ─────────────────────────────
  *
@@ -32,7 +32,10 @@ var checkinApi = {
     return checkinRequest("/checkins/" + encodeURIComponent(token));
   },
   save: function (token, answer) {
-    return checkinRequest("/checkins/" + encodeURIComponent(token), { method: "POST", body: answer });
+    /* KEY-151 최소 저장 계약은 복약·통증뿐이다. 목업은 KEY-138 신호 순번을
+       계속 검증해야 하므로 전체 값을 쓰고, 실제 API에는 확정된 두 필드만 보낸다. */
+    var body = MOCK ? answer : { medication: answer.medication, pain: answer.pain };
+    return checkinRequest("/checkins/" + encodeURIComponent(token), { method: "POST", body: body });
   },
 
   /* 고르는 즉시 의료진 화면에 「이 환자를 봐 주세요」를 보낸다.
