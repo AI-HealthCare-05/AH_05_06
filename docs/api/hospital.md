@@ -479,6 +479,13 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 
 여러 이벤트가 동시에 존재하면 `NEEDS_ATTENTION → APPROVAL_REQUESTED → SEND_PENDING → IN_PROGRESS → COMPLETED` 순으로 하나의 `work_category`를 선택한다. `detail_status`는 해당 카테고리에서 가장 최근에 발생한 미해결 상태다.
 
+- **카테고리 사이 우선순위가 먼저다.** 더 최근에 생긴 일이라도 위 순서를 뒤집지 않는다. 방금 승인 요청이 걸린 진료라도 보낼 곳이 없으면 `NEEDS_ATTENTION`이다.
+- 「발생 시각」은 상태마다 이렇게 읽는다.
+  - `APPROVAL_RETURNED` 등 안내문 상태 — 안내문이 마지막으로 움직인 시각
+  - `SMS_OPT_OUT` — 환자가 수신을 거부한 시각
+  - `INVALID_PHONE` — 사건이 아니라 상태라 자기 시각이 없다. 번호를 마지막으로 고친 시각으로 본다
+- 같은 시각이면 위 표의 차례를 따른다. 같은 데이터에 화면이 흔들리지 않게 하기 위한 것이다.
+
 ```json
 {
   "date": "2026-08-13",

@@ -24,9 +24,11 @@ from app.services.work_category import (
     CATEGORY_OF,
     CATEGORY_PRIORITY,
     NOT_YET_DERIVABLE,
+    Candidate,
     DetailStatus,
     VisitSignals,
     WorkCategory,
+    _latest,
     count_by_category,
     derive,
     sms_reachable,
@@ -322,3 +324,103 @@ def test_unknown_derivation_rule_uses_the_contract_error() -> None:
     assert captured.value.status_code == 500
     assert captured.value.code == "WORK_CATEGORY_DATA_INVALID"
     assert "NO_DOCUMENT" not in captured.value.message
+
+
+# ────────────────────────────────────────────────────────────
+#  같은 탭 안에서는 **가장 최근**을 말한다 — KEY-166
+#
+#  계약: 「동일 카테고리에서는 가장 최근에 발생한 미해결 상태를 선택」.
+#
+#  예전에는 `_candidates()` 가 담은 차례대로 첫 번째를 골랐다. 안내문 가지가
+#  늘 먼저 담기므로, 2주 전 반려와 어제 수신거부가 함께 걸린 진료에서
+#  **2주 전 반려**가 떴다. 둘 다 「보완」 탭이지만 스탭이 먼저 볼 것은 어제
+#  것이다 (이희진 님 `#93` 리뷰).
+
+TWO_WEEKS_AGO = datetime(2026, 8, 10, 9, 0, tzinfo=UTC)
+YESTERDAY = datetime(2026, 8, 23, 9, 0, tzinfo=UTC)
+
+
+def test_recent_opt_out_wins_over_an_old_return() -> None:
+    """2주 전 반려 · 어제 수신거부 → **어제 것**을 말한다."""
+    both = signals(
+        has_document=True,
+        guide_status=GuideStatus.APPROVAL_RETURNED,
+        guide_changed_at=TWO_WEEKS_AGO,
+        sms_opted_out_at=YESTERDAY,
+    )
+    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.SMS_OPT_OUT)
+
+
+def test_recent_return_wins_over_an_old_opt_out() -> None:
+    """차례를 뒤집어도 규칙이 같다 — **시각**이 고르지 담긴 순서가 아니다.
+
+    이 검사가 짝으로 있어야 한다. 하나만 두면 「늘 수신거부가 이긴다」로
+    고쳐도 통과한다.
+    """
+    both = signals(
+        has_document=True,
+        guide_status=GuideStatus.APPROVAL_RETURNED,
+        guide_changed_at=YESTERDAY,
+        sms_opted_out_at=TWO_WEEKS_AGO,
+    )
+    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.APPROVAL_RETURNED)
+
+
+def test_a_recent_bad_number_wins_over_an_old_return() -> None:
+    """`INVALID_PHONE` 도 같은 규칙을 탄다 — 번호를 마지막으로 고친 때가 그 시각이다."""
+    both = signals(
+        has_document=True,
+        guide_status=GuideStatus.APPROVAL_RETURNED,
+        guide_changed_at=TWO_WEEKS_AGO,
+        phone="0212345678",
+        patient_changed_at=YESTERDAY,
+    )
+    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.INVALID_PHONE)
+
+
+def test_an_old_bad_number_loses_to_a_recent_return() -> None:
+    both = signals(
+        has_document=True,
+        guide_status=GuideStatus.APPROVAL_RETURNED,
+        guide_changed_at=YESTERDAY,
+        phone="0212345678",
+        patient_changed_at=TWO_WEEKS_AGO,
+    )
+    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.APPROVAL_RETURNED)
+
+
+def test_category_priority_still_beats_recency() -> None:
+    """**탭 사이 우선순위는 시각이 못 뒤집는다.**
+
+    승인 요청이 방금 걸렸어도, 보낼 곳이 없는 진료는 「보완」이다. 시각으로
+    탭까지 고르기 시작하면 계약의 `CATEGORY_PRIORITY` 가 무의미해진다.
+    """
+    both = signals(
+        has_document=True,
+        guide_status=GuideStatus.APPROVAL_PENDING,
+        guide_changed_at=YESTERDAY,
+        sms_opted_out_at=TWO_WEEKS_AGO,
+    )
+    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.SMS_OPT_OUT)
+
+
+def test_a_known_time_beats_an_unknown_one() -> None:
+    """시각을 모르는 후보를 「최신」으로 읽지 않는다.
+
+    지금은 시각 없는 후보가 자기 탭에 혼자 있어 겨루지 않지만, 겹치는 날
+    조용히 뒤집히면 안 된다. `_latest()` 를 직접 재는 유일한 자리다.
+    """
+    known = Candidate(DetailStatus.SMS_OPT_OUT, TWO_WEEKS_AGO)
+    unknown = Candidate(DetailStatus.APPROVAL_RETURNED, None)
+
+    assert _latest([unknown, known]) is known
+    assert _latest([known, unknown]) is known
+
+
+def test_a_tie_keeps_the_documented_order() -> None:
+    """같은 시각이면 흔들리지 않는다 — 같은 데이터에 화면이 달라지면 안 된다."""
+    first = Candidate(DetailStatus.APPROVAL_RETURNED, YESTERDAY)
+    second = Candidate(DetailStatus.SMS_OPT_OUT, YESTERDAY)
+
+    assert _latest([first, second]) is first
+    assert _latest([second, first]) is second
