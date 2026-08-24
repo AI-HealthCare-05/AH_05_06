@@ -109,6 +109,15 @@ class TortoiseOcrRepository:
     def __init__(self, document_ownership: DocumentOwnershipVerifier | None = None) -> None:
         self.document_ownership = document_ownership or FailClosedDocumentOwnershipVerifier()
 
+    async def _after_job_created(
+        self,
+        job: OcrJob,
+        document_id: int,
+        document_type: OcrDocumentType,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        """Extend job creation while keeping every write in the same transaction."""
+
     async def create_job(
         self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
     ) -> OcrJob:
@@ -158,6 +167,7 @@ class TortoiseOcrRepository:
                 document_type=document_type,
                 using_db=connection,
             )
+            await self._after_job_created(job, document_id, document_type, connection)
         return job
 
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob:
@@ -304,6 +314,54 @@ def serialize_job(job: OcrJob) -> OcrJobResponse:
 
 
 LOW_CONFIDENCE_THRESHOLD = 0.75
+FIXTURE_MODEL_NAME = "fixture-v0"
+
+
+async def _seed_fixture_result(
+    job: OcrJob,
+    document_id: int,
+    document_type: OcrDocumentType,
+    connection: BaseDBAsyncClient,
+) -> None:
+    """fixture 결과 한 건을 DB에 기록하고 job을 COMPLETED로 전환한다 — 데모 전용."""
+    completed_at = now()
+    result = await OcrResult.create(ocr_job=job, model_name=FIXTURE_MODEL_NAME, using_db=connection)
+    doc_text = await OcrDocumentText.create(
+        ocr_result=result,
+        document_id=document_id,
+        document_type=document_type,
+        raw_text="[fixture] 합성 OCR 텍스트 — 실제 OCR 워커 연결 전 데모용 데이터",
+        using_db=connection,
+    )
+    await OcrField.create(
+        ocr_result=result,
+        document_text=doc_text,
+        field_type="DIAGNOSIS",
+        extracted_value="[fixture] 진단명",
+        confidence=Decimal("0.85"),
+        using_db=connection,
+    )
+    job.status = OcrJobStatus.COMPLETED
+    job.progress = 100
+    job.started_at = completed_at
+    job.completed_at = completed_at
+    await job.save(
+        update_fields=("status", "progress", "started_at", "completed_at"),
+        using_db=connection,
+    )
+
+
+class FixtureOcrRepository(TortoiseOcrRepository):
+    """OCR 시작 즉시 fixture 결과를 기록한다 — 실제 워커 없이 Walking Skeleton 흐름을 완주하기 위한 데모 fallback."""
+
+    async def _after_job_created(
+        self,
+        job: OcrJob,
+        document_id: int,
+        document_type: OcrDocumentType,
+        connection: BaseDBAsyncClient,
+    ) -> None:
+        await _seed_fixture_result(job, document_id, document_type, connection)
 
 
 def _resolve_document_id(doc_text: OcrDocumentText | None) -> int | None:
