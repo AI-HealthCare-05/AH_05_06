@@ -33,14 +33,14 @@ DOCUMENT_ID = 600801
 ACTOR = OcrActor(staff_id=600101, hospital_id=HOSPITAL_ID, roles=frozenset({"staff"}))
 
 
-def test_repository_scoping_concurrency_and_field_update_round_trip() -> None:
+def test_repository_result_and_field_update_round_trip() -> None:
     tortoise_test._restore_default()
     test_loop = tortoise_test._LOOP
     assert test_loop is not None
-    test_loop.run_until_complete(assert_repository_round_trip())
+    test_loop.run_until_complete(_assert_result_and_field_update_round_trip())
 
 
-async def assert_repository_round_trip() -> None:
+async def _assert_result_and_field_update_round_trip() -> None:
     patient = await Patient.create(
         patient_id=PATIENT_ID,
         hospital_id=HOSPITAL_ID,
