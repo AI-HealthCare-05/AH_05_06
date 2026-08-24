@@ -93,13 +93,23 @@ var MOCK_PATIENTS = {
    편의였지 계약이 아니었고, 8/27 여정에서 안내문은 고정 텍스트다(KEY-150).
 
    `warn` 은 **서버가 판정한다.** 「AI 가 자신 없는 곳」을 화면이 알 수 없다. */
-/* 승인·반려가 남긴 상태. **진료 번호마다 하나.**
+/* 승인·반려·섹션 수정이 남긴 상태. **진료 번호마다 하나**, 필드를 부분
+   갱신한다(승인이 반려로 남긴 사유를 지우지 않는 식).
 
    예전에는 `mockGuide()` 가 매번 새로 만들고 승인 핸들러가 그 사본을 고쳐
-   돌려줬다. 즉 **승인해도 다음 조회는 다시 「승인 요청」이었다.** 목업만 보면
-   승인이 아무 일도 안 한 것처럼 보이고, 상태에 걸리는 규칙(아래
-   `GUIDE_NOT_PENDING`)은 아예 잴 수가 없다 (이희진 님 `#76` 리뷰). */
+   돌려줬다 — 승인해도 다음 조회는 다시 「승인 요청」이라 목업으로는
+   `GUIDE_NOT_PENDING` 같은 상태 규칙을 아예 잴 수 없었다. */
 var MOCK_GUIDE_STATE = {};
+
+/* 이 진료의 저장 칸을 돌려준다. 없으면 만들어서 돌려준다 — 승인·반려·PATCH가
+   같은 객체를 부분 갱신하므로, 한쪽이 통째로 덮어써 다른 쪽 값을 지우는 일이
+   없다(예: 섹션을 고친 뒤 승인해도 그 수정은 남는다). */
+function mockGuideState(visitId) {
+  return (
+    MOCK_GUIDE_STATE[visitId] ||
+    (MOCK_GUIDE_STATE[visitId] = { status: null, scheduled_at: null, returned_reason: null, sections: {} })
+  );
+}
 
 function mockGuideBase(visitId) {
   var warn = DOCTOR_CASE !== "clean";
@@ -157,15 +167,22 @@ function mockGuideBase(visitId) {
 }
 
 
-/* 저장된 상태가 있으면 그것이 이긴다. 없으면 `DOCTOR_CASE` 가 정한 기본값이다. */
+/* 저장된 상태가 있으면 그것이 이긴다. 없으면 `DOCTOR_CASE` 가 정한 기본값이다.
+   섹션 본문도 같은 방식이다 — PATCH 로 고친 적이 있으면 그 값을, 없으면
+   `mockGuideBase()` 의 원문을 쓴다. 그래야 고치고 다시 조회해도 그대로다. */
 function mockGuide(visitId) {
   var guide = mockGuideBase(visitId);
   var saved = MOCK_GUIDE_STATE[visitId];
-  if (saved) {
-    guide.status = saved.status;
-    guide.scheduled_at = saved.scheduled_at;
-    guide.returned_reason = saved.returned_reason;
-  }
+  if (!saved) return guide;
+  if (saved.status !== null) guide.status = saved.status;
+  guide.scheduled_at = saved.scheduled_at;
+  guide.returned_reason = saved.returned_reason;
+  guide.sections.forEach(function (s) {
+    if (Object.prototype.hasOwnProperty.call(saved.sections, s.key)) {
+      s.body = saved.sections[s.key];
+      s.edited = true;
+    }
+  });
   return guide;
 }
 
@@ -250,11 +267,10 @@ function mockDoctorRequest(path, options) {
            넣는다 — **승인이 곧 발송 예약**이라 「승인됨」이라는 상태는 없다(`D1-5`). */
         approved.status = "SCHEDULED_TO_SEND";
         approved.scheduled_at = mockScheduledAt();
-        MOCK_GUIDE_STATE[visitId] = {
-          status: approved.status,
-          scheduled_at: approved.scheduled_at,
-          returned_reason: null,
-        };
+        var approvedState = mockGuideState(visitId);
+        approvedState.status = approved.status;
+        approvedState.scheduled_at = approved.scheduled_at;
+        approvedState.returned_reason = null;
         return resolve(approved);
       }
 
@@ -271,11 +287,10 @@ function mockDoctorRequest(path, options) {
         if (blockedReturn) return reject(blockedReturn);
         returned.status = "APPROVAL_RETURNED";
         returned.returned_reason = body.reason;
-        MOCK_GUIDE_STATE[visitId] = {
-          status: returned.status,
-          scheduled_at: null,
-          returned_reason: returned.returned_reason,
-        };
+        var returnedState = mockGuideState(visitId);
+        returnedState.status = returned.status;
+        returnedState.scheduled_at = null;
+        returnedState.returned_reason = returned.returned_reason;
         return resolve(returned);
       }
 
@@ -301,38 +316,33 @@ function mockDoctorRequest(path, options) {
 
         /* **빈 본문은 저장 자체가 안 된다.** 서버 `edit_section()` 은 받은 값을
            `strip()` 한 뒤 비어 있으면 `EMPTY_BODY` 422 로 막는다. 공백만 넣은
-           것도 빈 것이다 — 화면에서 [저장]을 잘못 눌러 **문장이 통째로 비는
-           것**을 막는 자리다. 승인된 안내문의 한 갈래가 빈 채로 환자에게 가면
-           그 갈래는 없느니만 못하다 (이희진 님 `#76` 리뷰). */
+           것도 빈 것이다 — 승인된 안내문의 한 갈래가 빈 채로 환자에게 가면
+           그 갈래는 없느니만 못하다. */
         var text = String(body.body === undefined || body.body === null ? "" : body.body).trim();
         if (!text) return reject(new ApiError("EMPTY_BODY", 422, {}));
 
-        /* **잠긴 섹션은 목업도 막는다.** 🚨 응급 문장은 식약처 정보를 근거로
-           미리 써 둔 것이라 사람이 고칠 자리가 아니다 — 서버가
-           `SECTION_LOCKED` 409 로 막는다(`app/services/guides.py`).
-
-           목업이 서버보다 헐거우면 **화면 버그를 목업으로는 못 잡는다.**
-           잠긴 섹션에 [수정]이 열리는 회귀가 나도 목업에서는 저장까지
-           성공해 버린다 (이희진 님 `#76` 리뷰). */
+        /* 🚨 응급 문장은 식약처 정보를 근거로 미리 써 둔 것이라 사람이 고칠
+           자리가 아니다 — 서버가 `SECTION_LOCKED` 409 로 막는다
+           (`app/services/guides.py`). */
         if (target.locked) return reject(new ApiError("SECTION_LOCKED", 409, {}));
 
         /* **승인 요청 상태에서만 고칠 수 있다.** 이미 승인해 발송을 기다리는
-           글을 조용히 바꾸면 **환자가 받는 것과 의사가 승인한 것이 달라진다.**
+           글을 조용히 바꾸면 환자가 받는 것과 의사가 승인한 것이 달라진다.
            반려된 글도 스탭 손에 있어 의사가 고칠 자리가 아니다 — 서버가
-           `GUIDE_NOT_PENDING` 409 로 막는다(`app/services/guides.py`).
+           `GUIDE_NOT_PENDING` 409 로 막는다.
 
-           **순서가 서버와 같아야 한다.** `edit_section()` 은 잠금을 먼저 보므로,
-           승인된 글의 잠긴 섹션은 `SECTION_LOCKED` 다. 목업이 먼저 상태를 보면
-           같은 요청에 다른 코드를 돌려주고, 화면은 목업에서만 통하는 분기를
-           갖게 된다.
-
-           여기서는 `mockPendingBlock()` 을 쓰지 않는다 — 서버 `edit_section()`
-           은 `_require_pending()` 을 부르지 않고, 승인된 글도 `ALREADY_APPROVED`
-           가 아니라 `GUIDE_NOT_PENDING` 으로 막는다. 목업이 서버보다 헐거우면
-           화면 버그를 목업으로 못 잡는다 (이희진 님 `#76` 리뷰). */
+           `mockPendingBlock()` 을 쓰지 않는 이유: 서버 `edit_section()` 은
+           `_require_pending()` 을 부르지 않고, 승인된 글도 `ALREADY_APPROVED`
+           가 아니라 `GUIDE_NOT_PENDING` 으로 막는다 — 그리고 잠금을 상태보다
+           먼저 보므로 위 `SECTION_LOCKED` 검사가 이 검사보다 앞서야 한다. */
         if (guide.status !== "APPROVAL_PENDING") {
           return reject(new ApiError("GUIDE_NOT_PENDING", 409, {}));
         }
+
+        /* 저장한다 — 안 해두면 다음 `GET /guide` 가 고치기 전 본문을 다시
+           준다. 승인·반려처럼 `mockGuideState()` 로 부분 갱신하므로, 이미
+           승인·반려 상태로 저장된 값(`status`·`scheduled_at`)은 그대로다. */
+        mockGuideState(visitId).sections[target.key] = text;
 
         /* 서버는 고친 그 섹션 하나만 돌려준다(`SectionResponse`).
 
@@ -348,7 +358,14 @@ function mockDoctorRequest(path, options) {
         });
       }
 
-      return resolve(mockGuide(visitId));
+      /* `get` 이 아닌 길로 여기 닿았다는 것은 approve·return·PATCH 중 어느
+         분기도 아니라는 뜻이다 — 예를 들어 `/guide/sections/{key}` 에 GET을
+         보낸 경우다. 그런 라우트는 서버에 없으므로 조용히 전체 guide 를
+         돌려주지 않고 404 다. */
+      if (get && (!options.method || options.method === "GET")) {
+        return resolve(mockGuide(visitId));
+      }
+      return reject(new ApiError("NOT_FOUND", 404, {}));
     }, 200);
   });
 }

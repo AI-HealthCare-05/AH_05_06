@@ -229,3 +229,54 @@ test("저장되는 본문은 앞뒤 공백이 잘린다 — 서버가 다듬은 
   const updated = await api.doctorApi.editSection(VISIT, open.key, { body: "  고친 문장  " });
   assert.strictEqual(updated.body, "고친 문장");
 });
+
+/* ── 수정이 남는가 — `mockGuideState()` 부분 갱신 ─────────────────────────
+ *
+ * 예전에는 PATCH 가 고친 본문을 응답에만 실어 보내고 저장하지 않았다.
+ * `mockGuide()` 가 매번 `mockGuideBase()` 로 새로 만들어서, 고치고 다시
+ * 조회하면 고치기 전 문장이 다시 나왔다 — 편집 UI 가 붙는 날 「저장했는데
+ * 새로고침하면 원래대로 돌아온다」가 재현될 자리였다.
+ */
+
+test("섹션을 고치고 다시 조회해도 고친 본문이 남는다", async () => {
+  const api = box();
+  const guide = await api.doctorApi.guide(VISIT);
+  const open = guide.sections.find((s) => !s.locked);
+
+  await api.doctorApi.editSection(VISIT, open.key, { body: "다시 조회해도 남아야 한다" });
+
+  const again = await api.doctorApi.guide(VISIT);
+  const target = again.sections.find((s) => s.key === open.key);
+  assert.strictEqual(target.body, "다시 조회해도 남아야 한다");
+  assert.strictEqual(target.edited, true);
+});
+
+test("섹션 수정 뒤 승인해도 그 수정은 지워지지 않는다 — 부분 갱신이다", async () => {
+  const api = box();
+  const guide = await api.doctorApi.guide(VISIT);
+  const open = guide.sections.find((s) => !s.locked);
+
+  await api.doctorApi.editSection(VISIT, open.key, { body: "승인 전에 고친 문장" });
+  await api.doctorApi.approve(VISIT, {});
+
+  const after = await api.doctorApi.guide(VISIT);
+  const target = after.sections.find((s) => s.key === open.key);
+  assert.strictEqual(after.status, "SCHEDULED_TO_SEND");
+  assert.strictEqual(target.body, "승인 전에 고친 문장", "승인이 이전 수정을 통째로 덮어썼다");
+});
+
+/* ── `/guide/sections/{key}` 에 잘못된 메서드 ──────────────────────────
+ *
+ * `sec` 정규식이 이 경로를 「안다」고만 표시하고, PATCH 가 아닌 메서드는
+ * 따로 막지 않았다. 그래서 GET 같은, 서버에는 없는 라우트가 조용히 200 과
+ * 전체 guide 를 돌려주고 있었다 — 실제로는 404/405 여야 한다.
+ */
+
+test("섹션 경로에 GET 을 보내면 404 다 — 그런 라우트는 서버에 없다", async () => {
+  const api = box();
+  await assert.rejects(
+    () => api.mockDoctorRequest("/visits/" + VISIT + "/guide/sections/medication", {}),
+    (error) => error.status === 404,
+    "섹션 경로에 대한 GET 이 통과했다",
+  );
+});
