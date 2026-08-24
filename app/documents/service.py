@@ -1,11 +1,17 @@
 import contextlib
+from pathlib import PurePath
 from uuid import uuid4
 
 from fastapi import UploadFile, status
 from tortoise.transactions import in_transaction
 
 from app.core.api_errors import ApiError
-from app.core.storage import ALLOWED_MIME_TYPES, StorageBackend
+from app.core.storage import (
+    ALLOWED_EXTENSIONS_BY_MIME,
+    ALLOWED_MIME_TYPES,
+    FILE_SIGNATURES_BY_MIME,
+    StorageBackend,
+)
 from app.documents.schemas import DocumentUploadResponse
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType, OcrJob, OcrJobDocument, OcrJobStatus
@@ -125,20 +131,36 @@ class DocumentUploadService:
         result: list[tuple[bytes, str]] = []
         for upload in files:
             mime = upload.content_type or ""
-            if mime not in ALLOWED_MIME_TYPES:
+            filename = upload.filename or ""
+            suffix = PurePath(filename).suffix.lower()
+            has_path_component = "/" in filename or "\\" in filename or "\x00" in filename
+            if (
+                mime not in ALLOWED_MIME_TYPES
+                or suffix not in ALLOWED_EXTENSIONS_BY_MIME.get(mime, frozenset())
+                or has_path_component
+            ):
                 raise ApiError(
                     status.HTTP_400_BAD_REQUEST,
                     "INVALID_FILE_TYPE",
                     "지원하지 않는 파일 형식입니다. (허용: JPEG, PNG, PDF)",
                 )
-            content = await upload.read()
+            # 제한을 넘겼는지만 판단할 만큼만 읽어, 초대형 요청이 애플리케이션
+            # 메모리를 파일 크기만큼 점유하지 못하게 한다.
+            content = await upload.read(self._max_bytes + 1)
             if len(content) == 0:
                 raise ApiError(status.HTTP_400_BAD_REQUEST, "INVALID_REQUEST", "빈 파일은 업로드할 수 없습니다.")
             if len(content) > self._max_bytes:
                 raise ApiError(
-                    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status.HTTP_413_CONTENT_TOO_LARGE,
                     "FILE_TOO_LARGE",
                     f"파일 크기가 제한을 초과합니다. (최대 {self._max_bytes // 1024 // 1024}MB)",
+                )
+            signatures = FILE_SIGNATURES_BY_MIME[mime]
+            if not any(content.startswith(signature) for signature in signatures):
+                raise ApiError(
+                    status.HTTP_400_BAD_REQUEST,
+                    "INVALID_FILE_TYPE",
+                    "파일 내용과 형식이 일치하지 않습니다.",
                 )
             result.append((content, mime))
         return result

@@ -47,9 +47,33 @@
   var SECTION_LABEL = {
     medication: "복약지도",
     caution: "주의사항",
+    emergency: "🚨 바로 병원에 연락하세요",
     life: "생활 안내",
     messages: "문자 설정",
   };
+
+  /* **응급 문장은 탭을 갖지 않는다.** 서버가 주는 다섯 갈래 중 `emergency` 만
+     탭에서 빼고, 「주의사항」 탭 본문 안에 이어 붙인다(와이어프레임 D1-2).
+
+     따로 탭을 만들면 원장님이 그 탭을 안 열고 승인할 수 있다. 열지 않아도
+     되는 문장이 아니다 — 일반 주의 문구를 읽으러 들어온 자리에서 함께 보인다.
+
+     서버에서 나눈 까닭은 **잠금 단위**다. `locked` 는 섹션 단위라, 한 칸에
+     두면 응급 문장을 지키려다 일반 문구까지 잠긴다 (KEY-161). */
+  var TUCKED_UNDER = { emergency: "caution" };
+
+  function tabSections() {
+    return guide.sections.filter(function (s) {
+      return !TUCKED_UNDER[s.key];
+    });
+  }
+
+  /* 이 탭에서 함께 보여 줄 섹션들 — 차례는 서버가 준 그대로다. */
+  function sectionsOf(key) {
+    return guide.sections.filter(function (s) {
+      return s.key === key || TUCKED_UNDER[s.key] === key;
+    });
+  }
 
   var GENDER_LABEL = { FEMALE: "여", MALE: "남", OTHER: "기타", UNKNOWN: "—" };
 
@@ -69,14 +93,15 @@
   /* ── 안내문 ──────────────────────────────────────────── */
 
   function currentSection() {
-    for (var i = 0; i < guide.sections.length; i++) {
-      if (guide.sections[i].key === section) return guide.sections[i];
+    var tabs = tabSections();
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].key === section) return tabs[i];
     }
-    return guide.sections[0];
+    return tabs[0];
   }
 
   function renderTabs() {
-    var tabs = guide.sections
+    var tabs = tabSections()
       .map(function (s) {
         return (
           '<button class="vtab' +
@@ -138,7 +163,7 @@
      저장소가 「고칠 수 있어 보이는데 저장이 안 되는 칸이 제일 나쁘다」로 정해
      둔 그것이다. 알림 일정 계약은 KEY-138 에서 정한 뒤 다시 붙인다. */
   function renderPanel() {
-    el("panel").innerHTML = sectionHtml(currentSection());
+    el("panel").innerHTML = sectionsOf(currentSection().key).map(sectionHtml).join("");
   }
 
   function warnCount() {
