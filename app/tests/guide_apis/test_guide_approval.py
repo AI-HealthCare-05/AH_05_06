@@ -508,6 +508,22 @@ class TestTheDecisionIsReadUnderALock(GuideTestCase):
             locked = body.index("self._lock(")
             assert opened < locked, f"{name} 이 트랜잭션을 열기 전에 읽는다 — 그 사이가 비어 있다"
 
+    async def test_generate_reads_under_a_lock(self) -> None:
+        """`generate` 도 잠근 채로 중복을 확인하는지 본다.
+
+        `generate` 는 `_lock()` 대신 `select_for_update()` 를 인라인으로 쓴다.
+        순차 중복(409)만으로는 모자라다 — 위 클래스 docstring 참고.
+          ① `in_transaction()` 블록 **안에서** `select_for_update()` 를 부르는가
+          ② 그 순서가 바뀌면(트랜잭션 밖에서 잠금) 잠금이 의미를 잃는다
+        """
+        import inspect
+
+        body = inspect.getsource(GuideService.generate)
+        assert "select_for_update()" in body, "generate 가 잠그지 않고 중복을 확인한다"
+        opened = body.index("in_transaction()")
+        locked = body.index("select_for_update()")
+        assert opened < locked, "generate 가 트랜잭션을 열기 전에 잠근다 — 그 사이가 비어 있다"
+
     async def test_a_second_decision_is_refused(self) -> None:
         clinic = await make_clinic()
         doctor = await make_staff(clinic, "doctor01", ["doctor"])
