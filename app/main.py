@@ -6,11 +6,18 @@ from app.core.auth_errors import AuthError, auth_error_handler
 from app.core.config import Config, Env
 from app.core.db.databases import initialize_tortoise
 from app.core.error_handlers import register_error_handlers
+from app.core.logger import mask_server_logs
 from app.core.masking import scrub
 from app.ocr.errors import OcrApiError
 
 _config = Config()
 _is_prod = _config.ENV == Env.PROD
+
+# uvicorn 의 access 로그에도 가리개를 붙인다 (KEY-155).
+#
+# **앱을 만들기 전에 부른다.** uvicorn 은 자기 로깅 설정을 먼저 끝내고 그다음
+# 이 모듈을 임포트하므로, 여기서 붙이면 첫 요청 전에 걸린다.
+mask_server_logs()
 
 app = FastAPI(
     default_response_class=ORJSONResponse,

@@ -20,6 +20,7 @@
 중 무엇을 낼지 정하지 못한다.
 """
 
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -95,3 +96,21 @@ async def get_current_staff(
         )
 
     return staff
+
+
+@dataclass(frozen=True, slots=True)
+class StaffActor:
+    """서비스 계층에 전달하는 인증 직원의 최소 불변 값."""
+
+    user_id: int
+    hospital_id: int
+    roles: frozenset[str]
+
+
+def get_staff_actor(staff: Annotated[Staff, Depends(get_current_staff)]) -> StaffActor:
+    """라우터마다 Staff 변환 규칙을 복제하지 않도록 한 곳에서 적응한다."""
+    return StaffActor(
+        user_id=staff.staff_id,
+        hospital_id=staff.hospital_id,
+        roles=frozenset(staff.roles or []),
+    )

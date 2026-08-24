@@ -166,6 +166,22 @@ CSV **33칸** → `patient` · `visit` · `prescription` · `prescription_item` 
 
 정본은 **`app/tests/fixtures/mapping.py`**다. 아래는 사람이 읽으라고 옮겨 적은 것이다.
 
+### 저장 대상 여섯 중 **넷은 표가 아직 없다** (`KEY-136`)
+
+이 절을 읽고 시드를 짜려는 사람이 제일 먼저 알아야 할 것이다. 위 여섯 중 실제로
+존재하는 표는 **`patient` · `visit` 둘뿐**이다.
+
+| 표 | 지금 | 판정 | 왜 |
+|---|---|---|---|
+| `patient` · `visit` | **있다** | — | |
+| `prescription` · `prescription_item` | 없다 | **만든다** — `KEY-137` | 합성 100행 중 **99행에 처방이 있다.** `소진예정일`이 `duration_days` 파생인데 그 근거가 저장될 자리가 없어 **파생이 성립하지 않는다** |
+| `lab_result` | 없다 | **계획** | `ocr_field`가 이미 `field_type`+`value`+`is_confirmed`로 진료별 검사값을 담아 겹친다. 별도 표가 필요한지는 「환자의 **지난** 검사값을 읽어야 하는가」에 달렸고 그것이 `KEY-109`의 미결 항목이다 |
+| `visit_flag` | 없다 | **계획** | 코드 집합이 아직 안 닫혔다(아래 표에서 「등」). 게다가 `mapping.py`는 같은 칸을 `FREE`로, 이 문서는 `enum`으로 적어 **두 정본이 어긋나 있다**. 안전 차단의 근거가 되는 값이라 임의로 닫으면 안 된다 |
+
+「계획」인 것을 향해 시드를 짜지 마라. 어느 것이 계획인지는 `mapping.py`의
+`PLANNED_TABLES`에 이유와 함께 있고, **검사가 양방향으로 지킨다** — 계획이 아닌데
+표가 없으면 죽고, 계획인데 표가 생겨도 죽어서 「여기서 빼라」고 알려 준다.
+
 | CSV 칸 | 표 · 필드 | 타입 | 필수 | 비고 |
 |---|---|---|---|---|
 | 차트번호 | `patient.hospital_patient_no` | text | ● | 병원 내 환자번호. EMR 차트번호와 같게 |
@@ -176,7 +192,7 @@ CSV **33칸** → `patient` · `visit` · `prescription` · `prescription_item` 
 | 진료일 | `visit.visited_at` | date→datetime | ● | `Asia/Seoul` 현지 시각으로 변환해 UTC 저장 |
 | 담당의 | `visit.doctor_id` | uuid | ● | 이름 → 직원 픽스처의 uuid로 푼다 |
 | 진단 | (처방 세트로 표현) | — | | 확정된 처방 세트 버전이 질환 문맥을 제공한다 |
-| 처방세트 | `prescription.prescription_set_version_id` | bigint | ● | 템플릿 출처. Visit JSON에 넣지 않는다 |
+| 처방세트 | `prescription.prescription_set` | varchar(100) | ● | 진료 당시 세트 **이름의 스냅샷**("자궁내막증 · 비잔 (계속)"). Visit JSON에 넣지 않는다 |
 | 약 · 용법 | `prescription_item.name` · `frequency` | text | ● | 실제 처방 항목을 한 줄씩 저장한다 |
 | 처방일수 | `prescription_item.duration_days` | int | ● | **소진일 계산의 근거.** `28` 미만이면 확인을 여쭙는다 |
 | 총투원문 · 총투단위 | (판독 입력) | — | | **DB에 넣지 않는다** — OCR이 읽어야 할 원문이다 |

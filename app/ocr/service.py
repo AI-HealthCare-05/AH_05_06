@@ -10,6 +10,7 @@ from tortoise.transactions import in_transaction
 
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
+    OcrDocumentText,
     OcrDocumentType,
     OcrField,
     OcrFieldCandidate,
@@ -24,6 +25,7 @@ from app.ocr.schemas import (
     OcrCandidateResponse,
     OcrDocumentResponse,
     OcrFieldResponse,
+    OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
     UpdateOcrFieldRequest,
@@ -38,11 +40,21 @@ class OcrRepository(Protocol):
 
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
 
+    async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None: ...
+
+    async def get_latest_jobs_by_document(
+        self, visit_id: int, actor: OcrActor
+    ) -> list[tuple[OcrJobDocument, OcrJob]]: ...
+
     async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult: ...
 
-    async def get_fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> Sequence[OcrField]: ...
+    async def get_fields(
+        self, ocr_job_id: str, actor: OcrActor, field_type: str | None
+    ) -> tuple[Sequence[OcrField], Sequence[OcrDocumentText]]: ...
 
-    async def update_field(self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor) -> OcrField: ...
+    async def update_field(
+        self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
+    ) -> tuple[OcrField, Sequence[OcrDocumentText]]: ...
 
 
 class DocumentOwnershipVerifier(Protocol):
@@ -154,6 +166,43 @@ class TortoiseOcrRepository:
             raise _not_found()
         return job
 
+    async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None:
+        # 진행 중인 작업이 있으면 그것이 현재 작업이다.
+        # 없으면 같은 진료의 가장 최근 작업을 반환한다.
+        job = (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                hospital_id=actor.hospital_id,
+                status=OcrJobStatus.PROCESSING,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if job is not None:
+            return job
+        return (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                hospital_id=actor.hospital_id,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+    async def get_latest_jobs_by_document(self, visit_id: int, actor: OcrActor) -> list[tuple[OcrJobDocument, OcrJob]]:
+        # Jobs ordered newest-first; first occurrence per document_id is the latest job.
+        jobs = await (
+            OcrJob.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
+            .order_by("-created_at")
+            .prefetch_related("source_documents")
+        )
+        seen: dict[int, tuple[OcrJobDocument, OcrJob]] = {}
+        for job in jobs:
+            for jd in job.source_documents:
+                if jd.document_id not in seen:
+                    seen[jd.document_id] = (jd, job)
+        return list(seen.values())
+
     async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult:
         job = await self.get_job(ocr_job_id, actor)
         if job.status == OcrJobStatus.FAILED:
@@ -169,12 +218,16 @@ class TortoiseOcrRepository:
             raise _not_found()
         return result
 
-    async def get_fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> Sequence[OcrField]:
+    async def get_fields(
+        self, ocr_job_id: str, actor: OcrActor, field_type: str | None
+    ) -> tuple[Sequence[OcrField], Sequence[OcrDocumentText]]:
         result = await self.get_result(ocr_job_id, actor)
         fields = [field for field in result.fields if field_type is None or field.field_type == field_type]
-        return sorted(fields, key=lambda field: field.ocr_field_id)
+        return sorted(fields, key=lambda field: field.ocr_field_id), list(result.documents)
 
-    async def update_field(self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor) -> OcrField:
+    async def update_field(
+        self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
+    ) -> tuple[OcrField, Sequence[OcrDocumentText]]:
         async with in_transaction() as connection:
             field = (
                 await OcrField.filter(
@@ -230,7 +283,13 @@ class TortoiseOcrRepository:
                 field.confirmed_at = changed_at
             await field.save(using_db=connection)
         await field.fetch_related("candidates")
-        return field
+
+        doc_text_ids = {field.document_text_id} if field.document_text_id is not None else set()
+        doc_text_ids.update(c.document_text_id for c in field.candidates if c.document_text_id is not None)
+        doc_texts = (
+            await OcrDocumentText.filter(ocr_document_text_id__in=list(doc_text_ids)).all() if doc_text_ids else []
+        )
+        return field, doc_texts
 
 
 def serialize_job(job: OcrJob) -> OcrJobResponse:
@@ -244,19 +303,42 @@ def serialize_job(job: OcrJob) -> OcrJobResponse:
     )
 
 
-def serialize_candidate(candidate: OcrFieldCandidate) -> OcrCandidateResponse:
+LOW_CONFIDENCE_THRESHOLD = 0.75
+
+
+def _resolve_document_id(doc_text: OcrDocumentText | None) -> int | None:
+    """원문 파기 후에는 None — document_id·source_line으로 원문 우회 노출 방지."""
+    return doc_text.document_id if (doc_text is not None and doc_text.raw_text_purged_at is None) else None
+
+
+def serialize_candidate(
+    candidate: OcrFieldCandidate, doc_text_map: dict[int, OcrDocumentText] | None = None
+) -> OcrCandidateResponse:
     confidence = float(candidate.confidence) if isinstance(candidate.confidence, Decimal) else candidate.confidence
+    doc_text_map = doc_text_map or {}
     return OcrCandidateResponse(
         ocr_field_candidate_id=candidate.ocr_field_candidate_id,
         value=candidate.candidate_value,
         confidence=confidence,
         rank=candidate.rank,
         source_date=candidate.source_date,
+        source_line=candidate.source_line,
+        document_id=_resolve_document_id(
+            doc_text_map.get(candidate.document_text_id) if candidate.document_text_id is not None else None
+        ),
         is_selected=candidate.is_selected,
     )
 
 
-def serialize_field(field: OcrField) -> OcrFieldResponse:
+def _serialize_candidates(field: OcrField, doc_text_map: dict[int, OcrDocumentText]) -> list[OcrCandidateResponse]:
+    rel = getattr(field, "candidates", None)
+    if rel is None or not getattr(rel, "_fetched", False):
+        return []
+    return [serialize_candidate(item, doc_text_map) for item in rel]
+
+
+def serialize_field(field: OcrField, doc_text_map: dict[int, OcrDocumentText] | None = None) -> OcrFieldResponse:
+    doc_text_map = doc_text_map or {}
     confidence = float(field.confidence) if isinstance(field.confidence, Decimal) else field.confidence
     return OcrFieldResponse(
         ocr_field_id=field.ocr_field_id,
@@ -264,14 +346,21 @@ def serialize_field(field: OcrField) -> OcrFieldResponse:
         extracted_value=field.extracted_value,
         corrected_value=field.corrected_value,
         value=field.value,
+        unit=field.unit,
         confidence=confidence,
+        is_low_confidence=confidence is not None and confidence < LOW_CONFIDENCE_THRESHOLD,
         version=field.version,
         is_confirmed=field.is_confirmed,
+        is_pending_report=field.is_pending_report,
+        document_id=_resolve_document_id(
+            doc_text_map.get(field.document_text_id) if field.document_text_id is not None else None
+        ),
+        source_line=field.source_line,
         modified_by=field.modified_by,
         modified_at=field.modified_at,
         confirmed_by=field.confirmed_by,
         confirmed_at=field.confirmed_at,
-        candidates=[serialize_candidate(item) for item in getattr(field, "candidates", ())],
+        candidates=_serialize_candidates(field, doc_text_map),
     )
 
 
@@ -284,11 +373,34 @@ class OcrService:
     ) -> OcrJobResponse:
         return serialize_job(await self.repository.create_job(document_id, visit_id, document_type, actor))
 
+    async def job_for_visit(self, visit_id: int, actor: OcrActor) -> OcrJobResponse:
+        job = await self.repository.get_latest_job_by_visit(visit_id, actor)
+        if job is None:
+            raise _not_found()
+        return serialize_job(job)
+
+    async def jobs_for_visit(self, visit_id: int, actor: OcrActor) -> list[OcrJobByDocumentResponse]:
+        pairs = await self.repository.get_latest_jobs_by_document(visit_id, actor)
+        return [
+            OcrJobByDocumentResponse(
+                document_id=jd.document_id,
+                document_type=jd.document_type,
+                ocr_job_id=job.ocr_job_id,
+                status=job.status,
+                progress=job.progress,
+                started_at=job.started_at,
+                completed_at=job.completed_at,
+                failure_code=job.failure_code,
+            )
+            for jd, job in pairs
+        ]
+
     async def status(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
         return serialize_job(await self.repository.get_job(ocr_job_id, actor))
 
     async def result(self, ocr_job_id: str, actor: OcrActor) -> OcrResultResponse:
         result = await self.repository.get_result(ocr_job_id, actor)
+        doc_text_map = {d.ocr_document_text_id: d for d in result.documents}
         return OcrResultResponse(
             ocr_result_id=result.ocr_result_id,
             ocr_job_id=result.ocr_job_id,
@@ -306,13 +418,17 @@ class OcrService:
                 )
                 for item in result.documents
             ],
-            fields=[serialize_field(item) for item in result.fields],
+            fields=[serialize_field(item, doc_text_map) for item in result.fields],
         )
 
     async def fields(self, ocr_job_id: str, actor: OcrActor, field_type: str | None) -> list[OcrFieldResponse]:
-        return [serialize_field(item) for item in await self.repository.get_fields(ocr_job_id, actor, field_type)]
+        fields, doc_texts = await self.repository.get_fields(ocr_job_id, actor, field_type)
+        doc_text_map = {d.ocr_document_text_id: d for d in doc_texts}
+        return [serialize_field(item, doc_text_map) for item in fields]
 
     async def update_field(
         self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
     ) -> OcrFieldResponse:
-        return serialize_field(await self.repository.update_field(ocr_field_id, request, actor))
+        field, doc_texts = await self.repository.update_field(ocr_field_id, request, actor)
+        doc_text_map = {d.ocr_document_text_id: d for d in doc_texts}
+        return serialize_field(field, doc_text_map)

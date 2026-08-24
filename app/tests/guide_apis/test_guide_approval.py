@@ -82,8 +82,14 @@ async def make_guide(hospital: Hospital, status: GuideStatus = GuideStatus.APPRO
     await GuideSection.create(
         guide_document=guide,
         section_key=GuideSectionKey.CAUTION,
+        # 일반 주의 문구. **잠그지 않는다** — 원장님이 환자에 맞춰 고치는 자리다.
         generated_body="합성 주의사항 본문",
+    )
+    await GuideSection.create(
+        guide_document=guide,
+        section_key=GuideSectionKey.EMERGENCY,
         # 🚨 응급 문장. 식약처 정보 기준이라 사람이 고칠 수 없다.
+        generated_body="합성 응급 연락 문장",
         locked=True,
     )
     return guide
@@ -319,9 +325,29 @@ class TestHistoryIsKept(GuideTestCase):
 
 
 class TestLockedSectionStaysLocked(GuideTestCase):
-    """🚨 응급 문장은 식약처 정보 기준이라 사람이 고칠 수 없다(D1-2)."""
+    """🚨 응급 문장은 식약처 정보 기준이라 사람이 고칠 수 없다(D1-2).
 
-    async def test_editing_it_is_refused(self) -> None:
+    KEY-161 로 잠금이 `caution` 에서 `emergency` 로 옮겨 갔다. **두 검사를 함께
+    둔다** — 응급이 막히는 것만 보면, 실수로 `caution` 까지 잠근 코드도 통과한다.
+    """
+
+    async def test_editing_the_emergency_line_is_refused(self) -> None:
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+
+        async with self.client() as client:
+            response = await client.patch(
+                f"{BASE}/{guide.visit_id}/guide/sections/emergency",
+                json={"body": "고쳐 보겠습니다"},
+                headers=await self.sign_in(doctor),
+            )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "SECTION_LOCKED"
+
+    async def test_the_general_caution_is_still_editable(self) -> None:
+        """일반 주의 문구는 고쳐진다 — 잠금이 옆칸으로 번지지 않았다."""
         clinic = await make_clinic()
         guide = await make_guide(clinic)
         doctor = await make_staff(clinic, "doctor01", ["doctor"])
@@ -329,12 +355,35 @@ class TestLockedSectionStaysLocked(GuideTestCase):
         async with self.client() as client:
             response = await client.patch(
                 f"{BASE}/{guide.visit_id}/guide/sections/caution",
-                json={"body": "고쳐 보겠습니다"},
+                json={"body": "환자분께 맞춰 고친 주의 문구"},
                 headers=await self.sign_in(doctor),
             )
 
-        assert response.status_code == 409
-        assert response.json()["code"] == "SECTION_LOCKED"
+        assert response.status_code == 200, "일반 주의 문구가 막혔다 — KEY-161 이 풀려던 자리다"
+        assert response.json()["body"] == "환자분께 맞춰 고친 주의 문구"
+        assert response.json()["locked"] is False
+
+    async def test_the_emergency_body_survives_an_edit_attempt(self) -> None:
+        """막은 뒤에도 **원문이 그대로**다.
+
+        409 만 재면, 거절하면서 본문을 덮어쓰는 코드를 못 잡는다. 응급 문장은
+        완화·누락되면 안 되는 문장이라 값 자체를 확인한다.
+        """
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+
+        async with self.client() as client:
+            await client.patch(
+                f"{BASE}/{guide.visit_id}/guide/sections/emergency",
+                json={"body": "덮어써 보겠습니다"},
+                headers=await self.sign_in(doctor),
+            )
+            read = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(doctor))
+
+        sections = {s["key"]: s for s in read.json()["sections"]}
+        assert sections[GuideSectionKey.EMERGENCY]["body"] == "합성 응급 연락 문장"
+        assert sections[GuideSectionKey.EMERGENCY]["edited"] is False
 
 
 class TestOtherClinicIsHidden(GuideTestCase):
@@ -368,11 +417,16 @@ class TestReadingTheGuide(GuideTestCase):
         assert response.status_code == 200
         assert body["status"] == GuideStatus.APPROVAL_PENDING
         keys = [s["key"] for s in body["sections"]]
-        assert keys == [GuideSectionKey.MEDICATION, GuideSectionKey.CAUTION]
+        assert keys == [
+            GuideSectionKey.MEDICATION,
+            GuideSectionKey.CAUTION,
+            GuideSectionKey.EMERGENCY,
+        ], "차례까지 계약이다 — 응급 문장은 주의 문구 **바로 뒤**에 온다"
 
         medication = body["sections"][0]
         assert medication["warn"] == "합성 확인 부탁 문구", "⚠ 는 서버가 판정한다 — 화면이 알 수 없다"
-        assert body["sections"][1]["locked"] is True
+        assert body["sections"][1]["locked"] is False, "일반 주의 문구는 잠기지 않는다"
+        assert body["sections"][2]["locked"] is True
 
 
 class TestTheScreenKnowsWhoseGuideItIs(GuideTestCase):
@@ -508,6 +562,22 @@ class TestTheDecisionIsReadUnderALock(GuideTestCase):
             locked = body.index("self._lock(")
             assert opened < locked, f"{name} 이 트랜잭션을 열기 전에 읽는다 — 그 사이가 비어 있다"
 
+    async def test_generate_reads_under_a_lock(self) -> None:
+        """`generate` 도 잠근 채로 중복을 확인하는지 본다.
+
+        `generate` 는 `_lock()` 대신 `select_for_update()` 를 인라인으로 쓴다.
+        순차 중복(409)만으로는 모자라다 — 위 클래스 docstring 참고.
+          ① `in_transaction()` 블록 **안에서** `select_for_update()` 를 부르는가
+          ② 그 순서가 바뀌면(트랜잭션 밖에서 잠금) 잠금이 의미를 잃는다
+        """
+        import inspect
+
+        body = inspect.getsource(GuideService.generate)
+        assert "select_for_update()" in body, "generate 가 잠그지 않고 중복을 확인한다"
+        opened = body.index("in_transaction()")
+        locked = body.index("select_for_update()")
+        assert opened < locked, "generate 가 트랜잭션을 열기 전에 잠근다 — 그 사이가 비어 있다"
+
     async def test_a_second_decision_is_refused(self) -> None:
         clinic = await make_clinic()
         doctor = await make_staff(clinic, "doctor01", ["doctor"])
@@ -531,3 +601,64 @@ class TestTheDecisionIsReadUnderALock(GuideTestCase):
         assert first.status_code == 200
         assert second.status_code == 409
         assert len(decisions) == 1, "결정 기록이 둘 남았다 — 상태와 기록이 어긋난다"
+
+
+class TestTheOrderComesFromTheContract(GuideTestCase):
+    """차례를 **삽입 순서에 맡기지 않는다** — KEY-161.
+
+    예전에는 `guide_section_id` 로 정렬했다. 지금 생성 경로가 계약 순서대로
+    넣으니 결과가 같아서 **우연히 맞는 것**을 계약이라 착각하기 쉽다.
+
+    행 하나를 나중에 끼워 넣으면(기존 안내문에 `emergency` 를 채워 넣는
+    backfill 이 그렇다) 그 행의 `id` 가 가장 커서 **응급 문장이 문자 설정
+    뒤로 밀린다.** 그래서 일부러 거꾸로 심고 잰다.
+    """
+
+    async def test_a_late_inserted_section_still_lands_in_its_place(self) -> None:
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+
+        # `make_guide()` 는 medication · caution · emergency 를 심는다.
+        # 나머지 둘을 **뒤에** 붙여도 차례는 계약을 따라야 한다.
+        await GuideSection.create(
+            guide_document=guide,
+            section_key=GuideSectionKey.MESSAGES,
+            generated_body="합성 문자 설정 본문",
+        )
+        await GuideSection.create(
+            guide_document=guide,
+            section_key=GuideSectionKey.LIFE,
+            generated_body="합성 생활 안내 본문",
+        )
+
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(doctor))
+
+        assert [s["key"] for s in response.json()["sections"]] == [
+            GuideSectionKey.MEDICATION,
+            GuideSectionKey.CAUTION,
+            GuideSectionKey.EMERGENCY,
+            GuideSectionKey.LIFE,
+            GuideSectionKey.MESSAGES,
+        ], "심은 순서가 그대로 나왔다 — 차례를 DB 가 정하고 있다"
+
+
+class TestCautionEmergencySeparation(GuideTestCase):
+    """시드 경로에서도 주의/응급이 **두 행**인가 — KEY-150 이희진 코멘트, KEY-161.
+
+    `make_guide()` 는 DB 를 직접 심는 경로다. 여기서 한 행으로 뭉쳐 두면
+    잠금 회귀 검사들이 실제와 다른 데이터를 보게 된다.
+    generate() API 경로 검증은 test_guide_generate.py 에 있다.
+    """
+
+    async def test_seed_keeps_them_apart(self) -> None:
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        await guide.fetch_related("sections")
+
+        sections = {s.section_key: s for s in guide.sections}
+        assert GuideSectionKey.EMERGENCY in sections, "응급 문장이 별도 행으로 심기지 않았다"
+        assert sections[GuideSectionKey.EMERGENCY].locked is True
+        assert sections[GuideSectionKey.CAUTION].locked is False
+        assert sections[GuideSectionKey.MEDICATION].locked is False

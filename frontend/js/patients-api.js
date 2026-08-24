@@ -658,9 +658,13 @@ function mockPatientsRequest(path, options) {
         });
         if (!who) return reject(new ApiError("PATIENT_NOT_FOUND", 404, {}));
 
-        var doctor = DOCTORS.find(function (d) {
-          return d.doctor_id === body.doctor_id;
-        });
+        var doctor = null;
+        if ("doctor_id" in body && body.doctor_id !== null) {
+          doctor = DOCTORS.find(function (d) {
+            return d.doctor_id === Number(body.doctor_id);
+          });
+          if (!doctor) return reject(new ApiError("INVALID_REQUEST", 400, {}));
+        }
         var visit = {
           visit_id: ++MOCK_NEXT_ID.visit,
           patient_id: patientId,

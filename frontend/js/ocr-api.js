@@ -354,6 +354,47 @@ function mockPatch(fieldId, body) {
   if (field.is_confirmed) return new ApiError("OCR_FIELD_CONFIRMED", 409, {});
   if (field.version !== body.base_version) return new ApiError("VERSION_CONFLICT", 409, {});
 
+  /* 사람이 보낼 수 있는 상태는 둘뿐이다 — 「이번엔 안 했다」와 그 되돌리기.
+     `UNREADABLE` · `PENDING_REPORT` 은 기계가 판정한 것이라 사람이 덮어쓰면
+     「못 읽었다」가 사라진다 (`docs/api/hospital.md` §4 — 판독 항목의 상태 어휘). */
+  if (body.field_status !== undefined) {
+    if (["NOT_PERFORMED", "READ"].indexOf(body.field_status) === -1) {
+      return new ApiError("INVALID_FIELD_STATUS", 400, {});
+    }
+    /* 「안 했다」면서 값을 함께 적는 것은 앞뒤가 맞지 않는다. */
+    if (body.corrected_value !== undefined || body.candidate_id !== undefined) {
+      return new ApiError("INVALID_REQUEST", 400, {});
+    }
+    field.field_status = body.field_status;
+    field.version += 1;
+    field.modified_by = 101;
+    field.modified_at = "2026-08-13T10:42:00+09:00";
+    return field;
+  }
+
+  /* **보낼 값이 없으면 거절한다.** 서버의 `require_one_value_source`
+     (`app/ocr/schemas.py`)가 「수정값 또는 후보를 선택해 주세요」로 막는 자리다.
+
+     목업만 이것이 없어서, 값 없는 요청이 오면 `String(undefined)` 가 **문자열
+     `"undefined"` 를 필드 값으로 저장**했다. `mockFieldById()` 가 저장소의 원본
+     참조를 주므로 재조회해도 남는다 — 검사값 화면에서 가장 나쁜 종류의 실패다
+     (이희진 님 `#81` 리뷰).
+
+     진짜 서버로는 `JSON.stringify` 가 `undefined` 키를 버려 `422` 로 거절되는데,
+     목업만 조용히 삼켰다. **틀리는 방식이 다르면 목업으로 잡을 수 없다.** */
+  if (
+    (body.corrected_value === undefined || body.corrected_value === null) &&
+    (body.candidate_id === undefined || body.candidate_id === null) &&
+    !body.confirm
+  ) {
+    return new ApiError("INVALID_REQUEST", 400, {});
+  }
+
+  /* **값이 왔을 때만 값을 건드린다.** 서버가 그렇게 한다
+     (`app/ocr/service.py` — `if request.corrected_value is not None or
+     selected_candidate is not None`). 예전에는 `else` 가 무조건 돌아서,
+     값 없는 요청이 오면 `String(undefined)` 가 값 자리에 앉았다. */
+  var changed = false;
   if (body.candidate_id !== undefined && body.candidate_id !== null) {
     var picked = null;
     field.candidates.forEach(function (item) {
@@ -362,18 +403,24 @@ function mockPatch(fieldId, body) {
     });
     if (!picked) return new ApiError("INVALID_CANDIDATE", 400, {});
     field.corrected_value = picked.value;
-  } else {
+    changed = true;
+  } else if (body.corrected_value !== undefined && body.corrected_value !== null) {
     field.corrected_value = String(body.corrected_value).trim();
+    changed = true;
   }
 
-  field.value = field.corrected_value;
+  if (changed) {
+    field.value = field.corrected_value;
+    field.modified_by = 101;
+    field.modified_at = "2026-08-13T10:42:00+09:00";
+  }
   field.version += 1;
-  field.modified_by = 101;
-  field.modified_at = "2026-08-13T10:42:00+09:00";
   if (body.confirm) {
     field.is_confirmed = true;
     field.confirmed_by = 101;
-    field.confirmed_at = field.modified_at;
+    /* 값을 안 바꾸고 확정만 하면 `modified_at` 은 예전 값(또는 없음)이다.
+       서버는 확정 시각을 따로 찍는다 — `confirmed_at = changed_at`. */
+    field.confirmed_at = "2026-08-13T10:42:00+09:00";
   }
   return field;
 }
