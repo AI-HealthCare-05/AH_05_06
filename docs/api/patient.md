@@ -25,6 +25,31 @@
 | D+7 응답 | 복약·통증 응답 한 건을 `visit_id`에 연결 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
 | D+7 복약 신호 | **확정** — 아래 3절 | [KEY-138](https://leehee.atlassian.net/browse/KEY-138) |
 
+### 2.1 개발용 환자 링크 — KEY-90 최소 계약
+
+> 2026-08-24 · 8/27 Walking Skeleton 한정. 응답의 `demo_only: true`는
+> 합성데이터 시연용이며 운영 발송 계약이 아님을 뜻한다.
+
+```text
+POST /api/v1/visits/{visit_id}/guide/link   직원 인증 필요
+201 { "path": "/api/v1/guides/{token}",
+      "expires_at": "…", "demo_only": true }
+
+GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증명
+200 { "version": 1, "approved_at": "…", "expires_at": "…",
+      "sections": [{ "key": "medication", "body": "…" }],
+      "demo_only": true }
+```
+
+- 링크는 승인 완료 상태(`SCHEDULED_TO_SEND`)인 안내에만 발급하며 72시간 유효하다.
+- 발급은 같은 병원의 `staff` 또는 `doctor`만 가능하고, 타 병원 안내는 404로 감춘다.
+- 원문 토큰은 발급 응답에서 한 번만 제공하고 DB에는 SHA-256 digest만 저장한다.
+- 한 안내에 개발용 링크 하나만 허용한다. 반복 발급은 `409 LINK_ALREADY_ISSUED`다.
+- 조회 응답에는 승인된 섹션의 최종 문구만 포함한다. 환자정보, OCR·의료문서 원문,
+  생성 원문, 내부 경고와 승인자 식별자는 포함하지 않는다.
+- 없는 토큰은 `404 LINK_NOT_FOUND`, 만료 토큰은 `410 LINK_EXPIRED`다.
+- 실제 SMS·예약 발송·운영 OTP·폐기·재발급 전체 흐름은 이번 계약 범위 밖이다.
+
 ## 3. D+7 복약 신호 — `POST /checkins/{token}/signals`
 
 > 결정 2026-08-21 · 담당 권일준 · 리뷰어 유가은
@@ -147,7 +172,7 @@ POST /checkins/{token}
 - **기기를 넘나드는 순서 보장.** 3.2 의 순번 비교는 같은 기기 안에서만 유효하다. 서버 쪽 authoritative 시각으로 정하는 것은 [KEY-151](https://leehee.atlassian.net/browse/KEY-151)에서 별도로 처리한다.
 - **신호·저장이 둘 다 실패하면 이 계약만으로는 놓칠 수 있다.** 재전송 강화가 아니라, [KEY-99](https://leehee.atlassian.net/browse/KEY-99) 이후 의료진 화면에서 「이 환자가 D+7 응답을 아예 안 남겼다」를 감지하는 기능으로 닫는다. **신호 전달 자체를 보강하는 방향이 아님을 분명히 한다** — 다음에 이 항목을 다시 열 때 혼동하지 않도록.
 
-## 4. 확정 전 작성 금지 항목
+## 4. 그 밖의 확정 전 작성 금지 항목
 
 환자용 엔드포인트 경로, 요청·응답 DTO와 오류 코드는 관련 Jira의 인수조건과 구현 리뷰에서 확정한다. 확정 전 임의 경로를 추가하지 않는다.
 
