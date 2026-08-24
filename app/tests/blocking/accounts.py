@@ -21,12 +21,13 @@ from datetime import date
 from typing import Any
 
 from httpx import ASGITransport, AsyncClient
+from tortoise.timezone import now
 
 from app.core.utils.security import hash_password
 from app.main import app
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff, StaffStatus
-from app.models.visits import Visit
+from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideStatus, Visit
 
 #: 합성 계정의 비밀번호. 운영 값과 겹치지 않게 한 곳에만 둔다.
 PASSWORD = "Blocking-Test-1!"
@@ -91,6 +92,24 @@ async def make_staff(
     )
 
 
+async def make_staff_in(
+    hospital_id: int,
+    login_id: str,
+    roles: list[str],
+    *,
+    must_change_password: bool = False,
+) -> Actor:
+    """이미 만들어 둔 의원에 사람을 하나 더 들인다.
+
+    `build_two_hospitals()` 가 깐 다섯 말고 **한 명 더** 필요한 검사가 있다
+    (남의 의원 의사 · 최초 로그인 상태의 의사). 세계를 통째로 다시 깔면
+    검사가 무엇을 더했는지 읽기 어려워진다.
+    """
+    hospital = await Hospital.get(hospital_id=hospital_id)
+    staff = await make_staff(hospital, login_id, roles, must_change_password=must_change_password)
+    return await actor(login_id, hospital_id, staff.staff_id)
+
+
 async def make_patient_and_visit(hospital_id: int, chart_no: str) -> tuple[int, int]:
     """그 의원 안의 환자 한 명과 진료 한 건. 격리 검사의 과녁이다."""
     patient = await Patient.create(
@@ -106,6 +125,30 @@ async def make_patient_and_visit(hospital_id: int, chart_no: str) -> tuple[int, 
         visited_at="2026-08-21T10:00:00+09:00",
     )
     return patient.patient_id, visit.visit_id
+
+
+async def make_guide(hospital_id: int, visit_id: int, status: GuideStatus) -> int:
+    """그 진료의 안내문 한 건.
+
+    **생성 경로(`/guide/generate`)를 타지 않는다.** 그 경로는 확정 OCR 을
+    요구해서 여기 필요한 것보다 훨씬 많은 것을 깔아야 한다. 이 파일이 재는
+    것은 「누가 승인·조회할 수 있는가」이지 「어떻게 만들어지는가」가 아니다.
+
+    다만 **토큰만은 여전히 라우트로 받는다** — 이 파일의 규칙은 그것이다.
+    """
+    guide = await GuideDocument.create(
+        hospital_id=hospital_id,
+        visit_id=visit_id,
+        status=status,
+        approved_at=now() if status is GuideStatus.SCHEDULED_TO_SEND else None,
+        approved_by=1 if status is GuideStatus.SCHEDULED_TO_SEND else None,
+    )
+    await GuideSection.create(
+        guide_document=guide,
+        section_key=GuideSectionKey.MEDICATION,
+        generated_body="합성 복약 안내",
+    )
+    return guide.guide_document_id
 
 
 def client() -> AsyncClient:

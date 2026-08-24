@@ -30,7 +30,13 @@ from tortoise.contrib.test import TestCase
 
 from app.core.redis_client import get_redis
 from app.main import app
-from app.tests.blocking.accounts import build_two_hospitals, client
+from app.models.visits import GuideDocument, GuideStatus, PatientGuideLink
+from app.tests.blocking.accounts import (
+    build_two_hospitals,
+    client,
+    make_guide,
+    make_staff_in,
+)
 from app.tests.fakes import FakeRedis
 
 #: 진료 자료를 다루는 보호 엔드포인트. `{p}` `{v}` 는 그 의원의 환자·진료다.
@@ -275,3 +281,160 @@ class TestOcrStillRejectsAnonymous(BlockingTestCase):
         for method, template, body in OCR_ROUTES:
             response = await self.call(method, template, world["h1"], None, body)
             assert response.status_code == 401
+
+
+# ────────────────────────────────────────────────────────────
+#  의사 외에는 승인하지 못한다 — KEY-153 범위
+#
+#  「의사 외 안내 승인을 차단」. 이것이 뚫리면 **의사가 보지 않은 글이 환자에게
+#  간다** — 이 제품이 존재하는 이유가 무너지는 자리다(D1-5).
+#
+#  역할 검사가 안내문 조회보다 **앞**이라(`GuideService._require_doctor`),
+#  안내문이 없어도 403 이 나와야 한다. 그것까지 함께 잰다.
+
+GUIDE_DOCTOR_ONLY_ROUTES = [
+    ("POST", "/api/v1/visits/{v}/guide/approve", {}),
+    ("POST", "/api/v1/visits/{v}/guide/return", {"reason": "합성 반려 사유"}),
+    ("PATCH", "/api/v1/visits/{v}/guide/sections/medication", {"body": "합성 수정 본문"}),
+]
+
+
+class TestOnlyDoctorsDecideOnGuides(BlockingTestCase):
+    async def test_no_token_is_401(self) -> None:
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+        for method, template, body in GUIDE_DOCTOR_ONLY_ROUTES:
+            response = await self.call(method, template, world["h1"], None, body)
+            assert response.status_code == 401, f"{method} {template} 이 토큰 없이 {response.status_code} 를 냈다"
+
+    async def test_staff_cannot_approve_or_return(self) -> None:
+        """접수 직원은 승인·반려·수정을 못 한다. **`staff` 는 의사가 아니다.**"""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+        for method, template, body in GUIDE_DOCTOR_ONLY_ROUTES:
+            response = await self.call(method, template, world["h1"], world["staff1"].auth, body)
+            assert response.status_code == 403, f"{method} {template} 이 접수 직원에게 {response.status_code} 로 열렸다"
+
+    async def test_admin_only_cannot_approve(self) -> None:
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+        for method, template, body in GUIDE_DOCTOR_ONLY_ROUTES:
+            response = await self.call(method, template, world["h1"], world["admin1"].auth, body)
+            assert response.status_code == 403, f"{method} {template} 이 관리자에게 {response.status_code} 로 열렸다"
+
+    async def test_role_is_checked_before_the_guide_is_looked_up(self) -> None:
+        """**안내문이 없어도 403 이다.**
+
+        먼저 찾고 나중에 역할을 보면, 없는 진료에 404 를 주면서 「그 의원에
+        그런 진료가 없다」를 권한 없는 사람에게 알려 준다.
+        """
+        world = await build_two_hospitals()  # 안내문을 심지 않는다
+        for method, template, body in GUIDE_DOCTOR_ONLY_ROUTES:
+            response = await self.call(method, template, world["h1"], world["staff1"].auth, body)
+            assert response.status_code == 403, f"{method} {template} 이 역할보다 안내문을 먼저 봤다"
+
+    async def test_another_hospitals_guide_is_not_found(self) -> None:
+        """남의 의원 안내문은 **의사라도** 없는 것이다."""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+        doctor2 = await make_staff_in(world["h2"].hospital_id, "blk_doctor2", ["doctor"])
+        for method, template, body in GUIDE_DOCTOR_ONLY_ROUTES:
+            response = await self.call(method, template, world["h1"], doctor2.auth, body)
+            assert response.status_code == 404, (
+                f"{method} {template} 이 남의 의원 의사에게 {response.status_code} 를 냈다 — 존재가 샌다"
+            )
+
+    async def test_first_login_is_held_at_the_door(self) -> None:
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+        newbie_doctor = await make_staff_in(
+            world["h1"].hospital_id, "blk_newdoc1", ["doctor"], must_change_password=True
+        )
+        for method, template, body in GUIDE_DOCTOR_ONLY_ROUTES:
+            response = await self.call(method, template, world["h1"], newbie_doctor.auth, body)
+            assert response.status_code == 403, f"{method} {template} 이 최초 로그인 상태로 열렸다"
+
+    async def test_the_doctor_of_that_hospital_can_approve(self) -> None:
+        """**막는 것만 재면 전부 막아 둔 코드도 통과한다.** 열려야 하는 길을 함께 잰다."""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+
+        response = await self.call("POST", "/api/v1/visits/{v}/guide/approve", world["h1"], world["doctor1"].auth, {})
+        assert response.status_code == 200, (
+            f"그 의원 의사가 승인하지 못한다: {response.status_code} {response.text[:120]}"
+        )
+
+
+# ────────────────────────────────────────────────────────────
+#  승인 전에는 환자에게 가지 않는다 — KEY-153 범위
+#
+#  「승인 전 환자 안내 조회를 차단」. 개발용 환자 링크(KEY-90 / `#99`)가
+#  들어오면서 **직원 인증 없이 열리는 경로**가 처음 생겼다. 여기가 뚫리면
+#  의사가 승인하지 않은 글이 환자 화면에 뜬다.
+
+PATIENT_LINK_ISSUE = "/api/v1/visits/{v}/guide/link"
+
+
+class TestUnapprovedGuidesNeverReachThePatient(BlockingTestCase):
+    async def test_no_token_cannot_issue_a_link(self) -> None:
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.SCHEDULED_TO_SEND)
+        response = await self.call("POST", PATIENT_LINK_ISSUE, world["h1"], None, {})
+        assert response.status_code == 401
+
+    async def test_admin_only_cannot_issue_a_link(self) -> None:
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.SCHEDULED_TO_SEND)
+        response = await self.call("POST", PATIENT_LINK_ISSUE, world["h1"], world["admin1"].auth, {})
+        assert response.status_code == 403
+
+    async def test_another_hospital_cannot_issue_a_link(self) -> None:
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.SCHEDULED_TO_SEND)
+        response = await self.call("POST", PATIENT_LINK_ISSUE, world["h1"], world["staff2"].auth, {})
+        assert response.status_code == 404, "남의 의원 안내문에 링크가 발급됐거나 존재가 샜다"
+
+    async def test_an_unapproved_guide_gets_no_link_at_all(self) -> None:
+        """승인 전에는 **링크 자체가 생기지 않는다.**"""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+
+        response = await self.call("POST", PATIENT_LINK_ISSUE, world["h1"], world["staff1"].auth, {})
+        assert response.status_code == 409
+        assert response.json()["code"] == "GUIDE_NOT_APPROVED"
+        assert await PatientGuideLink.all().count() == 0, "막았다면서 링크 행이 남았다"
+
+    async def test_a_link_stops_working_when_the_guide_leaves_approval(self) -> None:
+        """발급 뒤에 되돌려도 **그 순간부터 안 열린다.**
+
+        승인이 취소된 글을 환자가 계속 볼 수 있으면, 되돌리는 동작 자체가
+        환자에게는 아무 의미가 없다.
+        """
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.SCHEDULED_TO_SEND)
+
+        issued = await self.call("POST", PATIENT_LINK_ISSUE, world["h1"], world["staff1"].auth, {})
+        assert issued.status_code == 201, issued.text[:200]
+        path = issued.json()["path"]
+
+        async with client() as http:
+            opened = await http.get(path)
+        assert opened.status_code == 200, "승인된 안내문이 환자 링크로 안 열린다"
+
+        guide = await GuideDocument.get(visit_id=world["h1"].visit_id)
+        guide.status = GuideStatus.APPROVAL_RETURNED
+        await guide.save(update_fields=["status"])
+
+        async with client() as http:
+            after = await http.get(path)
+        assert after.status_code == 404, f"되돌린 안내문이 환자 링크로 계속 열린다: {after.status_code}"
+        assert "합성 복약 안내" not in after.text, "막았다면서 본문이 새어 나갔다"
+
+    async def test_a_made_up_token_reveals_nothing(self) -> None:
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.SCHEDULED_TO_SEND)
+
+        async with client() as http:
+            response = await http.get("/api/v1/guides/" + "z" * 43)
+        assert response.status_code == 404
+        assert "합성 복약 안내" not in response.text
