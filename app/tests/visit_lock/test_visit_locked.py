@@ -200,18 +200,20 @@ class TestTheLockIsNotTooWide(VisitLockTestCase):
         visit.doctor_id = doctor.staff_id
         visit.visited_at = visited_at
         await visit.save(update_fields=["doctor_id", "visited_at"])
+        await visit.refresh_from_db()
         await attach_ocr(visit, OcrJobStatus.COMPLETED)
 
-        response = await self.patch(
-            visit.visit_id,
-            {
-                "doctor_id": doctor.staff_id,
-                "department_id": None,
-                "visited_at": visited_at.isoformat(),
-            },
-        )
+        responses = [
+            await self.patch(visit.visit_id, {"doctor_id": doctor.staff_id}),
+            await self.patch(visit.visit_id, {"department_id": None}),
+            await self.patch(visit.visit_id, {"visited_at": visit.visited_at.isoformat()}),
+        ]
 
-        assert response.status_code == status.HTTP_200_OK
+        assert [response.status_code for response in responses] == [
+            status.HTTP_200_OK,
+            status.HTTP_200_OK,
+            status.HTTP_200_OK,
+        ]
 
     async def test_a_draft_guide_alone_does_not_lock(self) -> None:
         """안내문 상태만 놓고 보면 「작성 중」은 잠그지 않는다.
