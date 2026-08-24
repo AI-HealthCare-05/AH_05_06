@@ -46,7 +46,7 @@
     messages: "문자 설정",
   };
 
-  var GENDER_LABEL = { FEMALE: "여", MALE: "남", UNKNOWN: "—" };
+  var GENDER_LABEL = { FEMALE: "여", MALE: "남", OTHER: "기타", UNKNOWN: "—" };
 
   /* ── 안내문 ──────────────────────────────────────────── */
 
