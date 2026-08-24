@@ -77,9 +77,14 @@ test("목록 목업과 이름·차트가 어긋나면 죽는다", () => {
   const listSource = fs.readFileSync(PATIENTS_API, "utf8");
 
   for (const row of DOCTOR_VISIBLE) {
-    const block = listSource.slice(listSource.indexOf(`visit_id: ${row.visit_id},`));
-    assert.ok(block, `목록에 진료 ${row.visit_id} 가 없다`);
-    const chunk = block.slice(0, 500);
+    /* `indexOf` 가 못 찾으면 `-1` 이고, `slice(-1)` 은 빈 문자열이 아니라
+       **파일의 마지막 한 글자**다. 1 글자는 늘 truthy 라 `assert.ok(block)`
+       가드는 **절대 걸리지 않았다** — 진료가 목록에서 빠져도 조용히 지나가고,
+       뒤이은 이름 대조가 「이름이 다르다」로 엉뚱하게 죽는다
+       (이희진 님 `#106` 리뷰). 찾았는지를 **자리로** 확인한다. */
+    const at = listSource.indexOf(`visit_id: ${row.visit_id},`);
+    assert.notEqual(at, -1, `목록에 진료 ${row.visit_id} 가 없다`);
+    const chunk = listSource.slice(at, at + 500);
     assert.match(chunk, new RegExp(`name: "${row.name}"`), `목록의 ${row.visit_id} 이름이 다르다`);
     assert.match(
       chunk,
