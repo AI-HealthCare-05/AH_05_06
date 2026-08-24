@@ -3,13 +3,8 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
-
+from app.dtos.base import StrictModel
 from app.models.visits import GuideSectionKey
-
-
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
 
 
 class PatientLinkIssueResponse(StrictModel):

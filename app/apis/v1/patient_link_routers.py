@@ -4,13 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from app.dependencies.staff_auth import get_current_staff
+from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.patient_links import (
     PatientGuideResponse,
     PatientGuideSectionResponse,
     PatientLinkIssueResponse,
 )
-from app.models.staffs import Staff
 from app.models.visits import GuideDocument, PatientGuideLink
 from app.services.patient_links import PatientLinkService
 
@@ -22,17 +21,6 @@ def _service() -> PatientLinkService:
     return PatientLinkService()
 
 
-class _Actor:
-    def __init__(self, staff: Staff) -> None:
-        self.user_id = staff.staff_id
-        self.hospital_id = staff.hospital_id
-        self.roles = frozenset(staff.roles or [])
-
-
-def _actor(staff: Annotated[Staff, Depends(get_current_staff)]) -> _Actor:
-    return _Actor(staff)
-
-
 @patient_link_management_router.post(
     "/{visit_id}/guide/link",
     response_model=PatientLinkIssueResponse,
@@ -40,7 +28,7 @@ def _actor(staff: Annotated[Staff, Depends(get_current_staff)]) -> _Actor:
 )
 async def issue_patient_guide_link(
     visit_id: int,
-    actor: Annotated[_Actor, Depends(_actor)],
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[PatientLinkService, Depends(_service)],
 ) -> PatientLinkIssueResponse:
     link, raw_token = await service.issue(actor, visit_id)
