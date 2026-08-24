@@ -447,6 +447,7 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 ```
 
 - `category`: `ALL/IN_TREATMENT/NEEDS_ATTENTION/SMS_OPT_OUT/INACTIVE_6_MONTHS`, 기본 `ALL`.
+- 현재 계산 가능한 `ALL`, `SMS_OPT_OUT`, `INACTIVE_6_MONTHS`만 조회할 수 있다. 이벤트 기반 `IN_TREATMENT`, `NEEDS_ATTENTION`을 선택하면 후속 계약이 연결되기 전까지 `400 INVALID_REQUEST`로 명시적으로 거부하며, 빈 검색 결과처럼 응답하지 않는다.
 - `keyword`: 이름, 차트번호, 정규화된 휴대폰에서 검색한다. 이름은 한 글자부터 허용한다.
 - `cursor`: 서버가 발급한 불투명 다음 페이지 커서. 임의 조립하지 않는다.
 - `limit` 기본 20, 최대 100.
@@ -550,6 +551,7 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 - 수정 가능: `doctor_id`, `department_id`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
 - 현재 `department_id` 변경은 진료과 기준 모델이 없어 `400 INVALID_DEPARTMENT`로 거부한다. 기준 모델 연결 뒤 생성과 같은 활성 진료과·의사 소속 검증 및 `department` 스냅샷 갱신을 적용한다.
+- `department_id: null`은 담당 진료과 해제로 해석하여 `department` 스냅샷을 삭제한다. 단, OCR 또는 승인 안내가 연결되어 `VISIT_LOCKED`가 된 진료에는 같은 잠금 규칙을 적용해 삭제도 차단한다.
 - 현재 OCR 또는 승인 안내 연결 뒤 `department_id` 변경은 `409 VISIT_LOCKED`다. `doctor_id`와 `visited_at`의 잠금 여부는 KEY-119에서 리뷰어 합의 후 확정하며, KEY-118은 잠금 범위를 선행 변경하지 않고 담당의 유효성만 검증한다.
 - `patient_id`, `hospital_id`, `visit_id`는 수정할 수 없다.
 

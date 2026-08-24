@@ -6,21 +6,14 @@
 
 from datetime import date, datetime
 from typing import Annotated
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, status
 
+from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.guides import GuideResponse, PatientHead, ReturnRequest, SectionEditRequest, SectionResponse
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey
 from app.services.guides import GuideService
-
-SEOUL = ZoneInfo("Asia/Seoul")
-
-# develop에서 추가된 generate 라우트가 병합될 때도 공통 인증 의존성을
-# 사용하도록 이전 내부 이름을 구현 복제 없이 연결한다.
-_Actor = StaffActor
-_actor = get_staff_actor
 
 guide_router = APIRouter(prefix="/visits", tags=["guides"])
 
@@ -42,7 +35,7 @@ def _age_on(birth_date: date, today: date) -> int:
 def _to_response(guide: GuideDocument) -> GuideResponse:
     visit = guide.visit
     patient = visit.patient
-    today = datetime.now(SEOUL).date()
+    today = datetime.now(DISPLAY_TIMEZONE).date()
     return GuideResponse(
         visit_id=guide.visit_id,
         patient=PatientHead(
@@ -94,7 +87,7 @@ def _section(section: GuideSection) -> SectionResponse:
 @guide_router.post("/{visit_id}/guide/generate", response_model=GuideResponse, status_code=status.HTTP_201_CREATED)
 async def generate_guide(
     visit_id: int,
-    actor: Annotated[_Actor, Depends(_actor)],
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
     guide = await service.generate(actor, visit_id)

@@ -1,19 +1,20 @@
+import builtins
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from tortoise.timezone import now
 
 from app.core.api_errors import ApiError
-from app.core.pagination import decode_cursor, encode_cursor
+from app.core.pagination import encode_cursor
+from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.patient_access import ClinicalActor
-from app.dtos.visits import VisitCreateRequest, VisitUpdateRequest
+from app.dtos.visits import DoctorResponse, VisitCreateRequest, VisitResponse, VisitUpdateRequest
 from app.models.ocr import OcrJob
 from app.models.staffs import Staff, StaffRole
 from app.models.visits import GuideDocument, GuideStatus, Visit
 from app.repositories.patient_repository import PatientRepository
 from app.repositories.visit_repository import VisitRepository
+from app.services.patient_visit_scope import hospital_id_of, visit_cursor
 
-SEOUL = ZoneInfo("Asia/Seoul")
 SIGNED_BIGINT_MAX = (1 << 63) - 1
 
 
@@ -23,7 +24,7 @@ class VisitService:
         self.patient_repo = PatientRepository()
 
     async def create(self, actor: ClinicalActor, patient_id: int, data: VisitCreateRequest) -> Visit:
-        hospital_id = self._hospital_id(actor)
+        hospital_id = hospital_id_of(actor)
         patient = await self.patient_repo.get_scoped(patient_id, hospital_id)
         if patient is None:
             raise ApiError(404, "PATIENT_NOT_FOUND", "환자를 찾을 수 없습니다.")
@@ -36,7 +37,7 @@ class VisitService:
         return await self.repo.create(values)
 
     async def get(self, actor: ClinicalActor, visit_id: int) -> Visit:
-        visit = await self.repo.get_scoped(visit_id, self._hospital_id(actor))
+        visit = await self.repo.get_scoped(visit_id, hospital_id_of(actor))
         if visit is None:
             raise ApiError(404, "VISIT_NOT_FOUND", "진료를 찾을 수 없습니다.")
         return visit
@@ -49,10 +50,10 @@ class VisitService:
         cursor: str | None,
         limit: int,
     ) -> tuple[list[Visit], str | None, bool]:
-        hospital_id = self._hospital_id(actor)
+        hospital_id = hospital_id_of(actor)
         if await self.patient_repo.get_scoped(patient_id, hospital_id) is None:
             raise ApiError(404, "PATIENT_NOT_FOUND", "환자를 찾을 수 없습니다.")
-        before_at, before_id = self._visit_cursor(cursor)
+        before_at, before_id = visit_cursor(cursor)
         rows = await self.repo.list_scoped(
             patient_id,
             hospital_id,
@@ -85,14 +86,14 @@ class VisitService:
         if "doctor_id" in supplied:
             # 담당의 무결성 검증(KEY-118)과 후속 데이터 연결 뒤 관계 잠금(KEY-119)은
             # 서로 다른 정책이다. 잠금 대상 합의 전에는 여기서 선행 구현하지 않는다.
-            await self._validate_doctor(data.doctor_id, self._hospital_id(actor))
+            await self._validate_doctor(data.doctor_id, hospital_id_of(actor))
 
         if "visited_at" in supplied:
             if data.visited_at is None:
                 raise ApiError(400, "INVALID_REQUEST", "visited_at에는 null을 입력할 수 없습니다.")
             await self._ensure_unique_day(
                 visit.patient_id,
-                self._hospital_id(actor),
+                hospital_id_of(actor),
                 data.visited_at,
                 exclude_visit_id=visit.visit_id,
             )
@@ -111,6 +112,23 @@ class VisitService:
         await self.repo.save(visit, sorted(update_fields))
         return visit
 
+    async def responses(self, actor: ClinicalActor, visits: builtins.list[Visit]) -> builtins.list[VisitResponse]:
+        """담당의 이름을 한 번에 읽어 상세·목록 응답을 같은 모양으로 만든다."""
+        hospital_id = hospital_id_of(actor)
+        doctor_ids = {visit.doctor_id for visit in visits if visit.doctor_id is not None}
+        doctors = (
+            {staff.staff_id: staff for staff in await Staff.filter(hospital_id=hospital_id, staff_id__in=doctor_ids)}
+            if doctor_ids
+            else {}
+        )
+        responses: builtins.list[VisitResponse] = []
+        for visit in visits:
+            response = VisitResponse.model_validate(visit)
+            if visit.doctor_id is not None and (staff := doctors.get(visit.doctor_id)) is not None:
+                response.doctor = DoctorResponse(doctor_id=staff.staff_id, name=staff.name)
+            responses.append(response)
+        return responses
+
     async def _ensure_unique_day(
         self,
         patient_id: int,
@@ -120,7 +138,7 @@ class VisitService:
         exclude_visit_id: int | None = None,
     ) -> None:
         localized = self._localized(visited_at)
-        start_local = datetime.combine(localized.date(), datetime.min.time(), tzinfo=SEOUL)
+        start_local = datetime.combine(localized.date(), datetime.min.time(), tzinfo=DISPLAY_TIMEZONE)
         start_utc = start_local.astimezone(UTC)
         end_utc = (start_local + timedelta(days=1)).astimezone(UTC)
         if await self.repo.exists_on_day(
@@ -215,27 +233,4 @@ class VisitService:
     def _localized(value: datetime) -> datetime:
         if value.tzinfo is None:
             raise ApiError(400, "INVALID_REQUEST", "visited_at에는 시간대가 필요합니다.")
-        return value.astimezone(SEOUL)
-
-    @staticmethod
-    def _hospital_id(actor: ClinicalActor) -> int:
-        if actor.hospital_id is None:
-            raise ApiError(403, "FORBIDDEN", "병원 소속 직원만 접근할 수 있습니다.")
-        return actor.hospital_id
-
-    @staticmethod
-    def _visit_cursor(cursor: str | None) -> tuple[datetime | None, int | None]:
-        try:
-            payload = decode_cursor(cursor)
-            if payload is None:
-                return None, None
-            visit_id = payload.get("visit_id")
-            visited_at = payload.get("visited_at")
-            if not isinstance(visit_id, int) or not isinstance(visited_at, str):
-                raise ValueError
-            parsed = datetime.fromisoformat(visited_at)
-            if parsed.tzinfo is None:
-                raise ValueError
-            return parsed, visit_id
-        except ValueError as error:
-            raise ApiError(400, "INVALID_REQUEST", "페이지 커서가 올바르지 않습니다.") from error
+        return value.astimezone(DISPLAY_TIMEZONE)

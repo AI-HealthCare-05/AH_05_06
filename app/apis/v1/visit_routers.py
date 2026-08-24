@@ -22,7 +22,8 @@ async def create_visit(
     actor: Annotated[ClinicalActor, Depends(require_patient_write)],
     service: Annotated[VisitService, Depends(VisitService)],
 ) -> VisitResponse:
-    return VisitResponse.model_validate(await service.create(actor, patient_id, data))
+    visit = await service.create(actor, patient_id, data)
+    return (await service.responses(actor, [visit]))[0]
 
 
 @visit_router.get("/patients/{patient_id}/visits", response_model=VisitListResponse)
@@ -40,7 +41,7 @@ async def list_visits(
         limit=limit,
     )
     return VisitListResponse(
-        items=[VisitResponse.model_validate(visit) for visit in visits],
+        items=await service.responses(actor, visits),
         page=CursorPage(next_cursor=next_cursor, has_next=has_next),
     )
 
@@ -51,7 +52,8 @@ async def get_visit(
     actor: Annotated[ClinicalActor, Depends(require_patient_read)],
     service: Annotated[VisitService, Depends(VisitService)],
 ) -> VisitResponse:
-    return VisitResponse.model_validate(await service.get(actor, visit_id))
+    visit = await service.get(actor, visit_id)
+    return (await service.responses(actor, [visit]))[0]
 
 
 @visit_router.patch("/visits/{visit_id}", response_model=VisitResponse)
@@ -61,4 +63,5 @@ async def update_visit(
     actor: Annotated[ClinicalActor, Depends(require_patient_write)],
     service: Annotated[VisitService, Depends(VisitService)],
 ) -> VisitResponse:
-    return VisitResponse.model_validate(await service.update(actor, visit_id, data))
+    visit = await service.update(actor, visit_id, data)
+    return (await service.responses(actor, [visit]))[0]

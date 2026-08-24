@@ -13,9 +13,11 @@
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from app.core.api_errors import ApiError
 from app.models.ocr import OcrJobStatus
 from app.models.visits import GuideStatus
 from app.services.work_category import (
@@ -308,3 +310,15 @@ def test_counts_match_the_derived_categories() -> None:
     assert counts["IN_PROGRESS"] == 2
     assert counts["NEEDS_ATTENTION"] == 1
     assert counts["COMPLETED"] == 0
+
+
+def test_unknown_derivation_rule_uses_the_contract_error() -> None:
+    with (
+        patch.dict(CATEGORY_OF, {}, clear=True),
+        pytest.raises(ApiError) as captured,
+    ):
+        derive(signals())
+
+    assert captured.value.status_code == 500
+    assert captured.value.code == "WORK_CATEGORY_DATA_INVALID"
+    assert "NO_DOCUMENT" not in captured.value.message
