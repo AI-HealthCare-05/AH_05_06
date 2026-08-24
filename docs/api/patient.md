@@ -50,6 +50,41 @@ GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증�
 - 없는 토큰은 `404 LINK_NOT_FOUND`, 만료 토큰은 `410 LINK_EXPIRED`다.
 - 실제 SMS·예약 발송·운영 OTP·폐기·재발급 전체 흐름은 이번 계약 범위 밖이다.
 
+### 2.2 D+7 복약·통증 응답 — KEY-151 최소 계약
+
+> 2026-08-24 · 8/27 Walking Skeleton 한정. KEY-90 개발용 링크의 같은 원문
+> 토큰을 사용하며 실제 SMS·운영 OTP·실시간 신호 API는 이번 구현 범위 밖이다.
+
+```text
+GET  /api/v1/checkins/{token}
+200  { "round_label": "복약 7일째 · 첫 확인",
+       "answers": { "taking": null, "missing": { "lead": "…" } },
+       "pain_types": [{ "key": "menstrual", "label": "월경통" }],
+       "answered": false, "demo_only": true }
+
+POST /api/v1/checkins/{token}
+     { "medication": "taking",
+       "pain": { "had": true, "score": 4, "types": ["menstrual"] } }
+201  { "check_in_id": 1, "saved": true, "medication": "taking",
+       "pain": { "had": true, "score": 4, "types": ["menstrual"] },
+       "demo_only": true }
+
+GET  /api/v1/visits/{visit_id}/checkin       직원 인증 필요
+200  { "check_in_id": 1, "visit_id": 10, "medication": "taking",
+       "pain": { "had": true, "score": 4, "types": ["menstrual"] },
+       "submitted_at": "…", "demo_only": true }
+```
+
+- 환자 조회·저장은 KEY-90과 같은 링크 만료 및 승인 완료 검증을 거친다.
+- 선택지별 안내 문구는 승인된 `medication` 섹션과, 있으면 `caution` 섹션의
+  최종 문구만 재사용한다. 생성 원문·OCR·의료문서 원문·환자정보는 응답하지 않는다.
+- `check_in.guide_document_id`를 통해 `GuideDocument.visit_id`에 연결하며
+  `visit_id`를 응답 테이블에 중복 저장하지 않는다.
+- 한 안내에는 D+7 응답 한 건만 저장한다. 반복 제출은
+  `409 CHECKIN_ALREADY_ANSWERED`다.
+- 병원 조회는 같은 병원의 `staff` 또는 `doctor`만 가능하다. 없는 응답과 타
+  병원 응답은 모두 `404 CHECKIN_NOT_FOUND`로 감춘다.
+
 ## 3. D+7 복약 신호 — `POST /checkins/{token}/signals`
 
 > 결정 2026-08-21 · 담당 권일준 · 리뷰어 유가은
@@ -168,7 +203,9 @@ POST /checkins/{token}
 
 - 의료진 화면이 신호를 어떻게 보여 줄지 — [KEY-99](https://leehee.atlassian.net/browse/KEY-99). **마지막 신호를 지금 답으로 읽어야** 철회가 성립한다.
 - 신호 보관 기간과 해소 표시
-- `checkin` 표 자체 — **아직 없다.** `GET /checkins/{token}`도 `404`다. 서버 구현은 [KEY-151](https://leehee.atlassian.net/browse/KEY-151) 범위다.
+- D+7 복약·통증 응답 표와 `GET/POST /checkins/{token}`은 KEY-151 최소 범위로
+  구현됐다. 실시간 신호 저장 표와 `POST /checkins/{token}/signals` 서버 구현은
+  이번 범위에 포함하지 않는다.
 - **기기를 넘나드는 순서 보장.** 3.2 의 순번 비교는 같은 기기 안에서만 유효하다. 서버 쪽 authoritative 시각으로 정하는 것은 [KEY-151](https://leehee.atlassian.net/browse/KEY-151)에서 별도로 처리한다.
 - **신호·저장이 둘 다 실패하면 이 계약만으로는 놓칠 수 있다.** 재전송 강화가 아니라, [KEY-99](https://leehee.atlassian.net/browse/KEY-99) 이후 의료진 화면에서 「이 환자가 D+7 응답을 아예 안 남겼다」를 감지하는 기능으로 닫는다. **신호 전달 자체를 보강하는 방향이 아님을 분명히 한다** — 다음에 이 항목을 다시 열 때 혼동하지 않도록.
 
