@@ -17,7 +17,7 @@
 from datetime import UTC, date, datetime
 from typing import Any
 
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from tortoise.contrib.test import TestCase
 
 from app.core import config
@@ -75,10 +75,20 @@ class OcrAuthWiringTestCase(TestCase):
         assert response.status_code == 200, response.text
         return str(response.json()["access_token"])
 
-    async def get(self, path: str, token: str | None = None) -> Any:
+    async def request(
+        self,
+        method: str,
+        path: str,
+        token: str | None = None,
+        *,
+        json: dict[str, Any] | None = None,
+    ) -> Response:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            return await client.get(f"/api/v1{path}", headers=headers)
+            return await client.request(method, f"/api/v1{path}", headers=headers, json=json)
+
+    async def get(self, path: str, token: str | None = None) -> Response:
+        return await self.request("GET", path, token)
 
 
 class TestStaffTokenOpensOcr(OcrAuthWiringTestCase):
