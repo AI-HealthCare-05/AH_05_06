@@ -655,10 +655,15 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 | Method | Path | 용도 |
 | --- | --- | --- |
 | `POST` | `/api/v1/documents/{document_id}/ocr` | 문서 OCR 작업 생성 |
+| `GET` | `/api/v1/visits/{visit_id}/ocr-job` | 진료의 현재 OCR 작업 조회 (KEY-133) |
 | `GET` | `/api/v1/ocr/jobs/{ocr_job_id}` | 처리 상태·진행률 조회 |
 | `GET` | `/api/v1/ocr/jobs/{ocr_job_id}/result` | 전체 텍스트와 구조화 결과 조회 |
 | `GET` | `/api/v1/ocr/jobs/{ocr_job_id}/fields` | 구조화 필드·신뢰도·후보 조회 |
 | `PATCH` | `/api/v1/ocr/fields/{ocr_field_id}` | 수정값 또는 후보 선택과 확정 |
+
+`GET /visits/{visit_id}/ocr-job`은 해당 진료의 현재 OCR 작업을 반환합니다.
+`PROCESSING` 상태 작업이 있으면 그것을 우선 반환하고, 없으면 `created_at` 내림차순
+최신 작업을 반환합니다. 작업이 없으면 `404 NOT_FOUND`를 반환합니다.
 
 수정 API는 `base_version`을 요구하고 버전이 달라지면 `409 VERSION_CONFLICT`를
 반환합니다. 이미 확정된 필드는 다시 수정하지 않습니다. 타 병원 식별자는 존재
@@ -811,6 +816,7 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/approve` | 승인 — 발송 예약 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/return` | 스탭에 되돌림 (사유 필수) | `doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/link` | 72시간 개발용 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
 
 `admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
 
