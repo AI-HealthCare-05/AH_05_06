@@ -19,8 +19,15 @@ jobs:
             const author = context.payload.pull_request.user.login.toLowerCase();
 
             // "## 👀 리뷰어" 섹션만 잘라낸다 — 다음 "## " 제목이 나오면 거기서 멈춘다.
+            //
+            // 이모지는 **있어도 되고 없어도 된다.** 예전 정규식은 `/👀?/` 였는데,
+            // `u` 플래그가 없으면 👀 가 서로게이트 쌍(👀)으로 쪼개져
+            // `?` 가 뒤쪽 하나에만 걸린다 — 앞쪽 \uD83D 가 **필수**가 되어
+            // 「## 리뷰어」는 영영 안 맞았다. 그런데 등록 실패는 core.warning 이라
+            // 검사는 초록불이었다. 리뷰어가 아무도 안 붙은 채로 PR 이 하루씩
+            // 서 있었다 (`#90` · `#91` · `#92`).
             const chunks = body.split(/\n(?=##\s)/);
-            const reviewerChunk = chunks.find(c => /^##\s*👀?\s*리뷰어/i.test(c.trim()));
+            const reviewerChunk = chunks.find(c => /^##\s*(?:👀\s*)?리뷰어/iu.test(c.trim()));
             const section = reviewerChunk ? reviewerChunk.replace(/^##[^\n]*\n?/, "") : "";
 
             const seen = new Set();

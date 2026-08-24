@@ -7,11 +7,14 @@ from app.core.api_errors import ApiError
 from app.core.pagination import decode_cursor, encode_cursor
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import VisitCreateRequest, VisitUpdateRequest
-from app.models.visits import Visit
+from app.models.ocr import OcrJob
+from app.models.staffs import Staff, StaffRole
+from app.models.visits import GuideDocument, GuideStatus, Visit
 from app.repositories.patient_repository import PatientRepository
 from app.repositories.visit_repository import VisitRepository
 
 SEOUL = ZoneInfo("Asia/Seoul")
+SIGNED_BIGINT_MAX = (1 << 63) - 1
 
 
 class VisitService:
@@ -24,6 +27,7 @@ class VisitService:
         patient = await self.patient_repo.get_scoped(patient_id, hospital_id)
         if patient is None:
             raise ApiError(404, "PATIENT_NOT_FOUND", "환자를 찾을 수 없습니다.")
+        await self._validate_doctor(data.doctor_id, hospital_id)
         self._validate_department(data.department_id)
         await self._ensure_unique_day(patient_id, hospital_id, data.visited_at)
 
@@ -75,7 +79,13 @@ class VisitService:
             raise ApiError(400, "EMPTY_UPDATE_FIELDS", "수정할 필드가 없습니다.")
 
         if "department_id" in supplied:
+            await self._refuse_if_locked(visit)
             self._validate_department(data.department_id)
+
+        if "doctor_id" in supplied:
+            # 담당의 무결성 검증(KEY-118)과 후속 데이터 연결 뒤 관계 잠금(KEY-119)은
+            # 서로 다른 정책이다. 잠금 대상 합의 전에는 여기서 선행 구현하지 않는다.
+            await self._validate_doctor(data.doctor_id, self._hospital_id(actor))
 
         if "visited_at" in supplied:
             if data.visited_at is None:
@@ -122,6 +132,62 @@ class VisitService:
         ):
             raise ApiError(409, "VISIT_ALREADY_REGISTERED", "같은 날짜의 진료가 이미 등록되어 있습니다.")
 
+    #: 진료의 **식별 관계**가 굳는 시점. 안내문이 이 상태에 들어서면 본문이 이미
+    #: 이 환자의 검사값·처방으로 쓰여 있고, 곧 나간다.
+    #:
+    #: `STAFF_REVIEW` 와 `APPROVAL_RETURNED` 는 뺀다 — 둘 다 스탭이 아직 **쓰고
+    #: 있는** 상태라, 진료과가 잘못 잡힌 것을 그때 고칠 수 있어야 한다.
+    #:
+    #: **다만 이 예외는 안내문 상태만 놓고 볼 때의 이야기다.** 안내문은 늘 OCR
+    #: 확정 뒤에 생기므로, 스탭이 실제로 마주치는 조합은 언제나 「OCR 이미 있음
+    #: + 안내문 어떤 상태」다. 그 경우 아래 OCR 검사가 먼저 걸려 이 예외까지
+    #: 가지 않는다 — `test_visit_locked.py::TestOcrDecidesFirst` 참고.
+    LOCKING_GUIDE_STATUSES = (GuideStatus.APPROVAL_PENDING, GuideStatus.SCHEDULED_TO_SEND)
+
+    async def _refuse_if_locked(self, visit: Visit) -> None:
+        """OCR 이나 승인 안내가 붙은 뒤에는 진료과를 바꿀 수 없다 (계약 §6).
+
+        왜 막느냐 — 안내문 본문은 **이 진료의 맥락으로** 쓰인다. 승인해서 발송을
+        기다리는 안내가 달린 진료의 진료과를 바꾸면, 나가는 글과 기록이 가리키는
+        곳이 갈라진다. `guide_event` 에는 「승인했다」만 남아 있어 나중에 무엇을
+        승인한 것이었는지 되짚을 수 없다. 의무기록이라 조용히 어긋나면 복구할
+        근거가 없다.
+
+        판단은 **진료를 타고** 한다 — `GuideService.get()` 이 병원을 진료를 타고
+        보는 것과 같은 이유다. 같은 값을 두 곳에 두면 어긋날 자리도 함께 생긴다.
+
+        **두 검사의 순서가 결과를 정한다.** OCR 검사를 먼저 두었기 때문에,
+        `LOCKING_GUIDE_STATUSES` 가 `STAFF_REVIEW`·`APPROVAL_RETURNED` 를 빼
+        두어도 실제로는 거의 항상 OCR 쪽에서 먼저 막힌다 — 안내문이 그 상태에
+        있다는 것 자체가 이미 OCR 이 끝났다는 뜻이기 때문이다. 이 예외가
+        실제로 열리는 경우는 「OCR 없이 안내문만 있는」 것뿐인데, 지금 흐름상
+        그런 진료는 생기지 않는다.
+        """
+        if await OcrJob.filter(visit_id=visit.visit_id).exists():
+            raise ApiError(409, "VISIT_LOCKED", "판독이 시작된 진료는 진료과를 바꿀 수 없습니다.")
+        locked_guide = await GuideDocument.filter(
+            visit_id=visit.visit_id, status__in=self.LOCKING_GUIDE_STATUSES
+        ).exists()
+        if locked_guide:
+            raise ApiError(409, "VISIT_LOCKED", "안내문이 승인 요청된 진료는 진료과를 바꿀 수 없습니다.")
+
+    @staticmethod
+    async def _validate_doctor(doctor_id: int | None, hospital_id: int) -> None:
+        """같은 병원의 재직 중인 의사만 담당의가 될 수 있다.
+
+        모든 거부 조건을 같은 오류로 답해 직원 ID의 존재 여부나 다른 병원의
+        인력 정보를 응답으로 구분해 노출하지 않는다. `null`은 미지정·해제다.
+        """
+        if doctor_id is None:
+            return
+        # MySQL BIGINT 범위를 벗어난 값은 ORM 질의까지 보내면 OverflowError로 500이
+        # 된다. 필드 범위 오류도 v1 계약의 400 INVALID_REQUEST로 정규화한다.
+        if doctor_id < 1 or doctor_id > SIGNED_BIGINT_MAX:
+            raise ApiError(400, "INVALID_REQUEST", "담당의를 확인해 주세요.")
+        doctor = await Staff.get_or_none(staff_id=doctor_id, hospital_id=hospital_id)
+        if doctor is None or not doctor.has_role(StaffRole.DOCTOR):
+            raise ApiError(400, "INVALID_REQUEST", "담당의를 확인해 주세요.")
+
     @staticmethod
     def _validate_department(department_id: int | None) -> None:
         """진료과만 막는다.
@@ -153,7 +219,8 @@ class VisitService:
 
     @staticmethod
     def _hospital_id(actor: ClinicalActor) -> int:
-        assert actor.hospital_id is not None
+        if actor.hospital_id is None:
+            raise ApiError(403, "FORBIDDEN", "병원 소속 직원만 접근할 수 있습니다.")
         return actor.hospital_id
 
     @staticmethod
