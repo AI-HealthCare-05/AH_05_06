@@ -72,6 +72,17 @@ def _section(section: GuideSection) -> SectionResponse:
     )
 
 
+@guide_router.post("/{visit_id}/guide/generate", response_model=GuideResponse, status_code=status.HTTP_201_CREATED)
+async def generate_guide(
+    visit_id: int,
+    actor: Annotated[_Actor, Depends(_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> GuideResponse:
+    guide = await service.generate(actor, visit_id)
+    await guide.fetch_related("sections", "visit__patient")
+    return _to_response(guide)
+
+
 @guide_router.get("/{visit_id}/guide", response_model=GuideResponse)
 async def read_guide(
     visit_id: int,

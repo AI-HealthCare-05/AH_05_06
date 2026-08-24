@@ -8,11 +8,13 @@ from app.core.pagination import decode_cursor, encode_cursor
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import VisitCreateRequest, VisitUpdateRequest
 from app.models.ocr import OcrJob
+from app.models.staffs import Staff, StaffRole
 from app.models.visits import GuideDocument, GuideStatus, Visit
 from app.repositories.patient_repository import PatientRepository
 from app.repositories.visit_repository import VisitRepository
 
 SEOUL = ZoneInfo("Asia/Seoul")
+SIGNED_BIGINT_MAX = (1 << 63) - 1
 
 
 class VisitService:
@@ -25,6 +27,7 @@ class VisitService:
         patient = await self.patient_repo.get_scoped(patient_id, hospital_id)
         if patient is None:
             raise ApiError(404, "PATIENT_NOT_FOUND", "환자를 찾을 수 없습니다.")
+        await self._validate_doctor(data.doctor_id, hospital_id)
         self._validate_department(data.department_id)
         await self._ensure_unique_day(patient_id, hospital_id, data.visited_at)
 
@@ -78,6 +81,11 @@ class VisitService:
         if "department_id" in supplied:
             await self._refuse_if_locked(visit)
             self._validate_department(data.department_id)
+
+        if "doctor_id" in supplied:
+            # 담당의 무결성 검증(KEY-118)과 후속 데이터 연결 뒤 관계 잠금(KEY-119)은
+            # 서로 다른 정책이다. 잠금 대상 합의 전에는 여기서 선행 구현하지 않는다.
+            await self._validate_doctor(data.doctor_id, self._hospital_id(actor))
 
         if "visited_at" in supplied:
             if data.visited_at is None:
@@ -164,6 +172,23 @@ class VisitService:
             raise ApiError(409, "VISIT_LOCKED", "안내문이 승인 요청된 진료는 진료과를 바꿀 수 없습니다.")
 
     @staticmethod
+    async def _validate_doctor(doctor_id: int | None, hospital_id: int) -> None:
+        """같은 병원의 재직 중인 의사만 담당의가 될 수 있다.
+
+        모든 거부 조건을 같은 오류로 답해 직원 ID의 존재 여부나 다른 병원의
+        인력 정보를 응답으로 구분해 노출하지 않는다. `null`은 미지정·해제다.
+        """
+        if doctor_id is None:
+            return
+        # MySQL BIGINT 범위를 벗어난 값은 ORM 질의까지 보내면 OverflowError로 500이
+        # 된다. 필드 범위 오류도 v1 계약의 400 INVALID_REQUEST로 정규화한다.
+        if doctor_id < 1 or doctor_id > SIGNED_BIGINT_MAX:
+            raise ApiError(400, "INVALID_REQUEST", "담당의를 확인해 주세요.")
+        doctor = await Staff.get_or_none(staff_id=doctor_id, hospital_id=hospital_id)
+        if doctor is None or not doctor.has_role(StaffRole.DOCTOR):
+            raise ApiError(400, "INVALID_REQUEST", "담당의를 확인해 주세요.")
+
+    @staticmethod
     def _validate_department(department_id: int | None) -> None:
         """진료과만 막는다.
 
@@ -194,7 +219,8 @@ class VisitService:
 
     @staticmethod
     def _hospital_id(actor: ClinicalActor) -> int:
-        assert actor.hospital_id is not None
+        if actor.hospital_id is None:
+            raise ApiError(403, "FORBIDDEN", "병원 소속 직원만 접근할 수 있습니다.")
         return actor.hospital_id
 
     @staticmethod
