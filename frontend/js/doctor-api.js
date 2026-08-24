@@ -225,7 +225,13 @@ function mockDoctorRequest(path, options) {
          `/guide/{무엇이든}` 을 다 받아서, 화면이 없는 주소를 불러도 `?mock=1`
          에서는 멀쩡해 보였다. 서버가 실제로 가진 넷만 받는다. */
       var get = path.match(/^\/visits\/(\d+)\/guide$/);
-      var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/(\w+)$/);
+      /* 키의 **모양**은 여기서 보지 않는다. 서버 경로도 `{key}: str` 이라
+         무엇이든 받고, 그 키가 실제로 있는지는 핸들러가 판정해
+         `SECTION_NOT_FOUND` 를 준다. 예전 `\w+` 는 한글 키를 아예 못 받아
+         라우터 단에서 뭉뚱그린 `NOT_FOUND` 로 떨어졌다 — 서버와 코드가 갈리고,
+         **「없는 섹션」 검사가 섹션 조회에 닿지도 못했다.**
+         `/sections/` 를 요구하므로 approve·return 경로를 삼키지는 않는다. */
+      var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
       var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return)$/);
       var m = get || sec || act;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
@@ -277,12 +283,27 @@ function mockDoctorRequest(path, options) {
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
         if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
 
+        /* **빈 본문은 저장 자체가 안 된다.** 서버 `edit_section()` 은 받은 값을
+           `strip()` 한 뒤 비어 있으면 `EMPTY_BODY` 422 로 막는다. 공백만 넣은
+           것도 빈 것이다 — 화면에서 [저장]을 잘못 눌러 **문장이 통째로 비는
+           것**을 막는 자리다. 승인된 안내문의 한 갈래가 빈 채로 환자에게 가면
+           그 갈래는 없느니만 못하다.
+
+           **섹션을 찾기 전에 본다.** 서버도 잠그기 전에 먼저 보므로, 없는
+           섹션에 빈 본문을 보내면 404 가 아니라 `EMPTY_BODY` 다. 목업이 순서를
+           바꾸면 같은 요청에 서버와 다른 코드를 준다 (이희진 님 `#76` 리뷰). */
+        var text = String(body.body === undefined || body.body === null ? "" : body.body).trim();
+        if (!text) return reject(new ApiError("EMPTY_BODY", 422, {}));
+
         var guide = mockGuide(visitId);
 
         var target = guide.sections.filter(function (s) {
           return s.key === sec[2];
         })[0];
-        if (!target) return reject(new ApiError("NOT_FOUND", 404, {}));
+        /* 계약(`docs/api/hospital.md` §918)이 정한 이름은 `SECTION_NOT_FOUND`
+           이고 서버도 그 코드를 준다. 목업만 뭉뚱그린 `NOT_FOUND` 를 주고
+           있었다 — 화면이 코드로 분기하는 날 목업에서만 갈린다. */
+        if (!target) return reject(new ApiError("SECTION_NOT_FOUND", 404, {}));
 
         /* **잠긴 섹션은 목업도 막는다.** 🚨 응급 문장은 식약처 정보를 근거로
            미리 써 둔 것이라 사람이 고칠 자리가 아니다 — 서버가
@@ -318,7 +339,7 @@ function mockDoctorRequest(path, options) {
            기능이 붙는 순간 **잠긴 섹션이 풀린 것처럼** 보인다. */
         return resolve({
           key: target.key,
-          body: String(body.body || ""),
+          body: text,
           edited: true,
           locked: target.locked,
           warn: target.warn,

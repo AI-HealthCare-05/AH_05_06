@@ -42,11 +42,13 @@ test("안 잠긴 섹션은 그대로 고쳐진다 — 가드가 길을 막지 �
   assert.strictEqual(updated.edited, true);
 });
 
-test("없는 섹션은 404 다 — 잠금 판정이 그 앞을 가리지 않는다", async () => {
+test("없는 섹션은 404 SECTION_NOT_FOUND 다 — 잠금 판정이 그 앞을 가리지 않는다", async () => {
   const api = box();
   await assert.rejects(
     () => api.doctorApi.editSection(VISIT, "그런키없음", { body: "x" }),
-    (error) => error.status === 404,
+    /* 계약(`docs/api/hospital.md` §918)이 정한 이름이다. 상태만 재면 목업이
+       뭉뚱그린 `NOT_FOUND` 를 줘도 통과한다. */
+    (error) => error.code === "SECTION_NOT_FOUND" && error.status === 404,
   );
 });
 
@@ -170,4 +172,58 @@ test("승인된 글의 잠긴 섹션은 SECTION_LOCKED 다 — 서버와 검사 
     (error) => error.code === "SECTION_LOCKED" && error.status === 409,
     "승인 뒤 잠긴 섹션의 오류 코드가 서버와 다르다",
   );
+});
+
+/* ── 빈 본문 — `EMPTY_BODY` 422 (이희진 님 `#76` 리뷰) ────────────────────
+ *
+ * 「여기서 마저 함께 막아주시면 좋겠습니다.」
+ *
+ * 서버 `edit_section()` 은 받은 값을 `strip()` 한 뒤 비어 있으면 422 로 막는다.
+ * 목업은 빈 문자열을 그대로 저장했다 — 승인된 안내문의 한 갈래가 빈 채로
+ * 환자에게 갈 수 있는데, 화면 회귀를 목업으로는 못 잡았다.
+ */
+
+test("빈 본문은 422 EMPTY_BODY 다 — 문장이 통째로 비지 않는다", async () => {
+  const api = box();
+  const guide = await api.doctorApi.guide(VISIT);
+  const open = guide.sections.find((s) => !s.locked);
+
+  await assert.rejects(
+    () => api.doctorApi.editSection(VISIT, open.key, { body: "" }),
+    (error) => error.code === "EMPTY_BODY" && error.status === 422,
+    "빈 본문 저장이 통과했다",
+  );
+});
+
+test("공백만 있는 본문도 빈 것이다 — 서버가 다듬은 뒤 판정한다", async () => {
+  const api = box();
+  const guide = await api.doctorApi.guide(VISIT);
+  const open = guide.sections.find((s) => !s.locked);
+
+  await assert.rejects(
+    () => api.doctorApi.editSection(VISIT, open.key, { body: "   \n\t  " }),
+    (error) => error.code === "EMPTY_BODY" && error.status === 422,
+    "공백만 있는 본문이 통과했다 — 다듬지 않고 판정한 것이다",
+  );
+});
+
+test("없는 섹션에 빈 본문이면 EMPTY_BODY 다 — 서버와 검사 순서가 같다", async () => {
+  const api = box();
+
+  /* 서버 `edit_section()` 은 섹션을 찾기 **전에** 본문을 본다. 목업이 순서를
+     바꾸면 같은 요청에 404 가 나와 서버와 갈린다. */
+  await assert.rejects(
+    () => api.doctorApi.editSection(VISIT, "그런키없음", { body: "" }),
+    (error) => error.code === "EMPTY_BODY" && error.status === 422,
+    "빈 본문보다 섹션 조회가 앞서 있다",
+  );
+});
+
+test("저장되는 본문은 앞뒤 공백이 잘린다 — 서버가 다듬은 값을 넣는다", async () => {
+  const api = box();
+  const guide = await api.doctorApi.guide(VISIT);
+  const open = guide.sections.find((s) => !s.locked);
+
+  const updated = await api.doctorApi.editSection(VISIT, open.key, { body: "  고친 문장  " });
+  assert.strictEqual(updated.body, "고친 문장");
 });
