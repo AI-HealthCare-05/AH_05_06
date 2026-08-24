@@ -50,6 +50,8 @@ class TestSecretsInTheUrlDisappear:
         [
             # P1-1~P1-5 환자 링크 — 토큰이 경로에 있다. 키 이름이 없어 값 모양으로 잡는다.
             ("/api/v1/guides/kQ7bXm2pR9tLvN4wZ8cA1dF6gH3jK5nP0qS7uY2eB4x", "kQ7bXm2pR9"),
+            # KEY-151 D+7도 같은 원문 토큰을 경로에 쓰므로 같은 가리개를 반드시 지난다.
+            ("/api/v1/checkins/kQ7bXm2pR9tLvN4wZ8cA1dF6gH3jK5nP0qS7uY2eB4x", "kQ7bXm2pR9"),
             # OTP 는 여섯 자리 숫자일 때만 잡는다 — `status_code` 같은 이름을 삼키지 않도록
             ("/api/v1/links/verify?code=482913", "482913"),
             ("/api/v1/auth/login?password=Str0ng%21Pass", "Str0ng"),

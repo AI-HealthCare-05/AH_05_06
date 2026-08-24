@@ -40,6 +40,24 @@ function paragraphs(parent, lines) {
   return parent;
 }
 
+function renderEmergency(lines) {
+  var danger = el("section", "card card--danger");
+  danger.appendChild(el("p", "card__badge", "⚠"));
+  danger.appendChild(el("h2", "card__title", "🚨 바로 병원에 연락하세요"));
+  var list = el("ul", "danger__list");
+  (lines || []).forEach(function (line) {
+    list.appendChild(el("li", null, line));
+  });
+  danger.appendChild(list);
+  var contact = el("button", "button button--contact", "💬 문의하기");
+  contact.type = "button";
+  contact.addEventListener("click", function () {
+    notice("문의 주소는 병원 설정에서 정합니다 — 서버가 붙으면 열립니다.");
+  });
+  danger.appendChild(contact);
+  return danger;
+}
+
 /* ── P2 복약지도 ─────────────────────────────── */
 function renderGuideTab(g) {
   var frag = document.createDocumentFragment();
@@ -102,21 +120,7 @@ function renderCautionTab(g) {
 
   /* 🚨 응급 블록 — 테두리 3px. 이 문구는 어떤 화면에서도 지우거나 고치지 않는다.
      119 안내는 넣지 않는다 — 응급 판단을 화면이 대신하는 꼴이 된다. */
-  var danger = el("section", "card card--danger");
-  danger.appendChild(el("p", "card__badge", "⚠"));
-  danger.appendChild(el("h2", "card__title", "🚨 바로 병원에 연락하세요"));
-  var list = el("ul", "danger__list");
-  (c.emergency || []).forEach(function (line) {
-    list.appendChild(el("li", null, line));
-  });
-  danger.appendChild(list);
-  var contact = el("button", "button button--contact", "💬 문의하기");
-  contact.type = "button";
-  contact.addEventListener("click", function () {
-    notice("문의 주소는 병원 설정에서 정합니다 — 서버가 붙으면 열립니다.");
-  });
-  danger.appendChild(contact);
-  frag.appendChild(danger);
+  frag.appendChild(renderEmergency(c.emergency));
 
   frag.appendChild(paragraphs(section("문의할 사항"), [c.ask]));
   return frag;
@@ -199,6 +203,32 @@ function renderBody() {
   body.textContent = "";
   var g = state.guide;
   if (!g) return;
+  if (g.sections) {
+    var keys =
+      state.tab === "guide"
+        ? ["medication"]
+        : state.tab === "caution"
+          ? ["caution", "emergency"]
+          : state.tab === "life"
+            ? ["life"]
+            : [];
+    if (!keys.length) {
+      body.appendChild(renderPending(state.tab === "status" ? "복약 현황" : "챗봇"));
+      return;
+    }
+    var titles = { medication: "복약지도", caution: "주의사항", emergency: "응급 안내", life: "생활관리" };
+    g.sections
+      .filter(function (item) {
+        return keys.indexOf(item.key) !== -1;
+      })
+      .forEach(function (item) {
+        var lines = String(item.body || "").split("\n");
+        body.appendChild(
+          item.key === "emergency" ? renderEmergency(lines) : paragraphs(section(titles[item.key]), lines),
+        );
+      });
+    return;
+  }
   if (state.tab === "guide") body.appendChild(renderGuideTab(g));
   else if (state.tab === "caution") body.appendChild(renderCautionTab(g));
   else if (state.tab === "life") body.appendChild(renderLifeTab(g));
@@ -222,14 +252,15 @@ function renderError(code) {
 
 function start() {
   var params = new URLSearchParams(window.location.search);
-  var visitId = params.get("visit") || "";
+  var token = params.get("t") || params.get("visit") || "";
 
-  fetchGuide(visitId)
+  fetchGuide(token)
     .then(function (guide) {
       state.guide = guide;
-      document.getElementById("visit-meta").textContent = guide.visit_date + " · " + guide.clinic_name;
-      document.getElementById("guide-source").textContent =
-        "출처 · 식약처 의약품정보 · 생성 " + guide.generated_at;
+      document.getElementById("visit-meta").textContent = guide.sections ? "" : guide.visit_date + " · " + guide.clinic_name;
+      document.getElementById("guide-source").textContent = guide.sections
+        ? ""
+        : "출처 · 식약처 의약품정보 · 생성 " + guide.generated_at;
       renderTabs();
       renderBody();
     })
