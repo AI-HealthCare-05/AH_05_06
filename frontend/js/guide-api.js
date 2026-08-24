@@ -1,9 +1,9 @@
 /* 안내문 조회 한 겹 — KEY-93
  *
- *   GET /api/v1/guides/{visit_id}   승인 완료된 안내문만 내려온다
+ *   GET /api/v1/guides/{token}   승인 완료된 안내문만 내려온다
  *
- * 서버는 아직 이 엔드포인트를 갖고 있지 않다(안내 생성은 Sprint 4 · KEY-2).
- * 계약 모양대로 짜 두고, 붙기 전까지는 아래 목업으로 화면을 확인한다.
+ * 실제 경로는 KEY-90 개발용 링크 토큰을 사용한다. 아래 목업은 화면 정본을
+ * 서버 없이 확인할 때만 사용한다.
  * 주소에 ?mock=1 을 붙이면 켜지고 한 번 켜면 그 탭에서 유지된다 — js/api.js 와 같은 방식이다.
  *
  * 환자는 원문 의료문서를 볼 수 없다. 이 응답에는 승인된 안내 문구와
@@ -13,9 +13,9 @@
 var GUIDE_API_BASE = "/api/v1";
 
 var GUIDE_ERROR = {
-  NOT_APPROVED: "guide_not_approved",
-  NOT_FOUND: "guide_not_found",
-  LINK_EXPIRED: "link_expired",
+  NOT_APPROVED: "GUIDE_NOT_APPROVED",
+  NOT_FOUND: "LINK_NOT_FOUND",
+  LINK_EXPIRED: "LINK_EXPIRED",
 };
 
 var GUIDE_MOCK = (function () {
@@ -190,7 +190,7 @@ GuideError.prototype = Object.create(Error.prototype);
 
 /* 승인 완료된 안내문 하나를 가져온다.
    목업에서는 ?case=pcos 로 두 번째 묶음, ?case=none 으로 예외(미승인)를 본다. */
-function fetchGuide(visitId) {
+function fetchGuide(token) {
   if (GUIDE_MOCK) {
     var q = new URLSearchParams(window.location.search);
     var key = q.get("case") || "endo";
@@ -210,7 +210,7 @@ function fetchGuide(visitId) {
     });
   }
 
-  return fetch(GUIDE_API_BASE + "/guides/" + encodeURIComponent(visitId), {
+  return fetch(GUIDE_API_BASE + "/guides/" + encodeURIComponent(token), {
     credentials: "include",
     headers: { Accept: "application/json" },
   }).then(function (res) {
