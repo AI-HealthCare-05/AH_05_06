@@ -168,7 +168,7 @@ class TortoiseOcrRepository:
             visit_id=visit_id,
             hospital_id=actor.hospital_id,
             status=OcrJobStatus.PROCESSING,
-        ).first()
+        ).order_by("-created_at").first()
         if job is not None:
             return job
         return (

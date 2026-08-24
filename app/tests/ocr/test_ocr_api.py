@@ -343,6 +343,7 @@ def test_pending_report_flag_does_not_null_value_or_document_id() -> None:
 
     assert result.is_pending_report is True
     assert result.value == "1.2"
+    assert result.document_id == 801
 
 
 def test_visit_ocr_job_returns_latest_completed_job(api: tuple[TestClient, FakeOcrService]) -> None:
