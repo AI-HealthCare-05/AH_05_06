@@ -169,11 +169,15 @@ class TortoiseOcrRepository:
     async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None:
         # 진행 중인 작업이 있으면 그것이 현재 작업이다.
         # 없으면 같은 진료의 가장 최근 작업을 반환한다.
-        job = await OcrJob.filter(
-            visit_id=visit_id,
-            hospital_id=actor.hospital_id,
-            status=OcrJobStatus.PROCESSING,
-        ).order_by("-created_at").first()
+        job = (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                hospital_id=actor.hospital_id,
+                status=OcrJobStatus.PROCESSING,
+            )
+            .order_by("-created_at")
+            .first()
+        )
         if job is not None:
             return job
         return (
@@ -185,9 +189,7 @@ class TortoiseOcrRepository:
             .first()
         )
 
-    async def get_latest_jobs_by_document(
-        self, visit_id: int, actor: OcrActor
-    ) -> list[tuple[OcrJobDocument, OcrJob]]:
+    async def get_latest_jobs_by_document(self, visit_id: int, actor: OcrActor) -> list[tuple[OcrJobDocument, OcrJob]]:
         # Jobs ordered newest-first; first occurrence per document_id is the latest job.
         jobs = await (
             OcrJob.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
