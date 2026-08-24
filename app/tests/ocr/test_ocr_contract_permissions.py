@@ -1,11 +1,7 @@
 """OCR API의 응답 계약과 병원 경계를 실제 로그인·DB 경로로 검증한다 — KEY-61."""
 
 from datetime import UTC, date, datetime
-from typing import Any
 
-from httpx import ASGITransport, AsyncClient, Response
-
-from app.main import app
 from app.models.ocr import (
     OcrDocumentText,
     OcrDocumentType,
@@ -22,22 +18,6 @@ from app.tests.ocr.test_ocr_auth_wiring import OcrAuthWiringTestCase
 
 
 class OcrContractTestCase(OcrAuthWiringTestCase):
-    async def request(
-        self,
-        method: str,
-        path: str,
-        token: str,
-        *,
-        json: dict[str, Any] | None = None,
-    ) -> Response:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            return await client.request(
-                method,
-                f"/api/v1{path}",
-                headers={"Authorization": f"Bearer {token}"},
-                json=json,
-            )
-
     async def make_visit(self, staff: Staff, suffix: str) -> Visit:
         patient = await Patient.create(
             hospital_id=staff.hospital_id,
@@ -199,18 +179,26 @@ class TestOcrSuccessAndUpdateContracts(OcrContractTestCase):
         _, field, _ = await self.make_completed_result(staff, job_id="syn-key61-conflict")
         token = await self.login(staff.login_id)
 
+        first_update = await self.request(
+            "PATCH",
+            f"/ocr/fields/{field.ocr_field_id}",
+            token,
+            json={"base_version": 1, "corrected_value": "102"},
+        )
         response = await self.request(
             "PATCH",
             f"/ocr/fields/{field.ocr_field_id}",
             token,
-            json={"base_version": 2, "corrected_value": "999"},
+            json={"base_version": 1, "corrected_value": "999"},
         )
 
+        assert first_update.status_code == 200
+        assert first_update.json()["version"] == 2
         assert response.status_code == 409
         assert response.json()["code"] == "VERSION_CONFLICT"
         await field.refresh_from_db()
-        assert field.corrected_value is None
-        assert field.version == 1
+        assert field.corrected_value == "102"
+        assert field.version == 2
 
 
 class TestOcrHospitalBoundary(OcrContractTestCase):
