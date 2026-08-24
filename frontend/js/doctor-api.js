@@ -169,6 +169,21 @@ function mockGuide(visitId) {
   return guide;
 }
 
+/* 승인·반려가 걸리는 **상태 문**. 서버 `GuideService._require_pending()` 을
+   그대로 옮긴 것이다 — 두 갈래인 것까지 같다.
+
+   `SCHEDULED_TO_SEND` 를 따로 세는 까닭: 두 번 승인을 조용히 통과시키면
+   **발송 예정 시각이 뒤로 밀린다.** 「승인했는데 왜 늦게 갔지」가 여기서 난다.
+   목업이 한 덩어리로 뭉뚱그리면, 이 PR 이 고치려는 **승인 경합 자체를
+   목업으로 잴 수가 없다** (이희진 님 `#76` 리뷰).
+
+   반환값은 막을 `ApiError` 이거나 `null`(통과) 이다. */
+function mockPendingBlock(guide) {
+  if (guide.status === "APPROVAL_PENDING") return null;
+  if (guide.status === "SCHEDULED_TO_SEND") return new ApiError("ALREADY_APPROVED", 409, {});
+  return new ApiError("GUIDE_NOT_PENDING", 409, {});
+}
+
 /* 서버는 진료 시각 기준 그날 18:00 을 잡고, 지났으면 다음 날로 민다
    (`GuideService` 의 `SEND_HOUR`). 값에는 **병원 시간대가 붙어 나간다** —
    `_send_at` 이 `astimezone(Asia/Seoul)` 로 만들기 때문이다.
@@ -223,6 +238,8 @@ function mockDoctorRequest(path, options) {
         /* 서버는 승인 결과로도 `GuideResponse` 를 통째로 준다. 수신번호는
            싣지 않는다 — 승인할 때마다 전화번호가 화면과 로그를 지난다. */
         var approved = mockGuide(visitId);
+        var blocked = mockPendingBlock(approved);
+        if (blocked) return reject(blocked);
         /* 계약 §6 의 어휘를 그대로 쓴다. 서버도 `GuideStatus.SCHEDULED_TO_SEND` 를
            넣는다 — **승인이 곧 발송 예약**이라 「승인됨」이라는 상태는 없다(`D1-5`). */
         approved.status = "SCHEDULED_TO_SEND";
@@ -241,6 +258,11 @@ function mockDoctorRequest(path, options) {
           return reject(new ApiError("REASON_REQUIRED", 422, {}));
         }
         var returned = mockGuide(visitId);
+        /* 반려도 같은 문을 지난다 — 서버 `return_to_staff()` 가 `approve()` 와
+           **같은 `_require_pending()`** 을 부른다. 이미 발송을 기다리는 글을
+           반려로 되돌리면 승인 기록만 남고 글은 스탭에게 가 버린다. */
+        var blockedReturn = mockPendingBlock(returned);
+        if (blockedReturn) return reject(blockedReturn);
         returned.status = "APPROVAL_RETURNED";
         returned.returned_reason = body.reason;
         MOCK_GUIDE_STATE[visitId] = {
@@ -257,17 +279,6 @@ function mockDoctorRequest(path, options) {
 
         var guide = mockGuide(visitId);
 
-        /* **승인 요청 상태에서만 고칠 수 있다.** 이미 승인해 발송을 기다리는
-           글을 조용히 바꾸면 **환자가 받는 것과 의사가 승인한 것이 달라진다.**
-           반려된 글도 스탭 손에 있어 의사가 고칠 자리가 아니다 — 서버가
-           `GUIDE_NOT_PENDING` 409 로 막는다(`app/services/guides.py`).
-
-           `SECTION_LOCKED` 와 같은 기준이다. 목업이 서버보다 헐거우면 화면
-           버그를 목업으로 못 잡는다 (이희진 님 `#76` 리뷰). */
-        if (guide.status !== "APPROVAL_PENDING") {
-          return reject(new ApiError("GUIDE_NOT_PENDING", 409, {}));
-        }
-
         var target = guide.sections.filter(function (s) {
           return s.key === sec[2];
         })[0];
@@ -281,6 +292,24 @@ function mockDoctorRequest(path, options) {
            잠긴 섹션에 [수정]이 열리는 회귀가 나도 목업에서는 저장까지
            성공해 버린다 (이희진 님 `#76` 리뷰). */
         if (target.locked) return reject(new ApiError("SECTION_LOCKED", 409, {}));
+
+        /* **승인 요청 상태에서만 고칠 수 있다.** 이미 승인해 발송을 기다리는
+           글을 조용히 바꾸면 **환자가 받는 것과 의사가 승인한 것이 달라진다.**
+           반려된 글도 스탭 손에 있어 의사가 고칠 자리가 아니다 — 서버가
+           `GUIDE_NOT_PENDING` 409 로 막는다(`app/services/guides.py`).
+
+           **순서가 서버와 같아야 한다.** `edit_section()` 은 잠금을 먼저 보므로,
+           승인된 글의 잠긴 섹션은 `SECTION_LOCKED` 다. 목업이 먼저 상태를 보면
+           같은 요청에 다른 코드를 돌려주고, 화면은 목업에서만 통하는 분기를
+           갖게 된다.
+
+           여기서는 `mockPendingBlock()` 을 쓰지 않는다 — 서버 `edit_section()`
+           은 `_require_pending()` 을 부르지 않고, 승인된 글도 `ALREADY_APPROVED`
+           가 아니라 `GUIDE_NOT_PENDING` 으로 막는다. 목업이 서버보다 헐거우면
+           화면 버그를 목업으로 못 잡는다 (이희진 님 `#76` 리뷰). */
+        if (guide.status !== "APPROVAL_PENDING") {
+          return reject(new ApiError("GUIDE_NOT_PENDING", 409, {}));
+        }
 
         /* 서버는 고친 그 섹션 하나만 돌려준다(`SectionResponse`).
 

@@ -97,3 +97,77 @@ test("반려 뒤에도 섹션을 못 고친다 — 스탭 손에 있는 글이�
     "반려된 안내문의 섹션 수정이 통과했다",
   );
 });
+
+/* ── 두 번 승인 — `ALREADY_APPROVED` (이희진 님 `#76` 리뷰) ───────────────
+ *
+ * 「이 PR 의 주제가 승인 경합인데, 정작 이중 승인을 목업으로 검증할 방법이
+ * 없으면 이 PR 이 고치려는 것 자체를 못 재는 셈입니다.」
+ *
+ * 서버 `_require_pending()` 은 상태를 **두 갈래**로 센다. 뭉뚱그리면 두 번
+ * 승인이 조용히 통과하고 **발송 예정 시각이 뒤로 밀린다.**
+ */
+
+test("두 번 승인은 409 ALREADY_APPROVED 다 — 발송 시각이 밀리지 않는다", async () => {
+  const api = box();
+  const first = await api.doctorApi.approve(VISIT, {});
+  assert.strictEqual(first.status, "SCHEDULED_TO_SEND");
+
+  await assert.rejects(
+    () => api.doctorApi.approve(VISIT, {}),
+    (error) => error.code === "ALREADY_APPROVED" && error.status === 409,
+    "두 번째 승인이 통과했다",
+  );
+
+  /* 막혔으니 **예약 시각도 그대로**여야 한다. 코드만 맞고 상태가 덮여
+     쓰이면 승인 경합을 막은 것이 아니다. */
+  const again = await api.doctorApi.guide(VISIT);
+  assert.strictEqual(again.scheduled_at, first.scheduled_at);
+});
+
+test("첫 승인은 막히지 않는다 — 가드가 길을 막지 않는다", async () => {
+  const api = box();
+  const guide = await api.doctorApi.guide(VISIT);
+  assert.strictEqual(guide.status, "APPROVAL_PENDING");
+
+  const approved = await api.doctorApi.approve(VISIT, {});
+  assert.strictEqual(approved.status, "SCHEDULED_TO_SEND");
+  assert.ok(approved.scheduled_at, "예약 시각이 실려야 한다");
+});
+
+test("승인된 글은 반려도 못 한다 — 서버와 같은 문을 지난다", async () => {
+  const api = box();
+  await api.doctorApi.approve(VISIT, {});
+
+  await assert.rejects(
+    () => api.doctorApi.returnToStaff(VISIT, "역시 다시 보겠습니다"),
+    (error) => error.code === "ALREADY_APPROVED" && error.status === 409,
+    "승인된 글의 반려가 통과했다",
+  );
+});
+
+test("반려된 글의 재승인은 GUIDE_NOT_PENDING 이다 — ALREADY_APPROVED 가 아니다", async () => {
+  const api = box();
+  await api.doctorApi.returnToStaff(VISIT, "검사지를 다시 올려 주세요");
+
+  await assert.rejects(
+    () => api.doctorApi.approve(VISIT, {}),
+    (error) => error.code === "GUIDE_NOT_PENDING" && error.status === 409,
+    "반려 상태의 승인이 통과했거나 코드가 뒤바뀌었다",
+  );
+});
+
+test("승인된 글의 잠긴 섹션은 SECTION_LOCKED 다 — 서버와 검사 순서가 같다", async () => {
+  const api = box();
+  const guide = await api.doctorApi.guide(VISIT);
+  const locked = guide.sections.find((s) => s.locked);
+  assert.ok(locked, "잠긴 섹션이 하나는 있어야 이 검사가 성립한다");
+  await api.doctorApi.approve(VISIT, {});
+
+  /* 서버 `edit_section()` 은 잠금을 먼저 본다. 목업이 상태를 먼저 보면
+     같은 요청에 `GUIDE_NOT_PENDING` 이 나와 서버와 갈린다. */
+  await assert.rejects(
+    () => api.doctorApi.editSection(VISIT, locked.key, { body: "사람이 고쳐 본다" }),
+    (error) => error.code === "SECTION_LOCKED" && error.status === 409,
+    "승인 뒤 잠긴 섹션의 오류 코드가 서버와 다르다",
+  );
+});
