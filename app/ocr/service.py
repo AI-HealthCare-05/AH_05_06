@@ -25,6 +25,7 @@ from app.ocr.schemas import (
     OcrCandidateResponse,
     OcrDocumentResponse,
     OcrFieldResponse,
+    OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
     UpdateOcrFieldRequest,
@@ -40,6 +41,10 @@ class OcrRepository(Protocol):
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
 
     async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None: ...
+
+    async def get_latest_jobs_by_document(
+        self, visit_id: int, actor: OcrActor
+    ) -> list[tuple[OcrJobDocument, OcrJob]]: ...
 
     async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult: ...
 
@@ -179,6 +184,22 @@ class TortoiseOcrRepository:
             .order_by("-created_at")
             .first()
         )
+
+    async def get_latest_jobs_by_document(
+        self, visit_id: int, actor: OcrActor
+    ) -> list[tuple[OcrJobDocument, OcrJob]]:
+        # Jobs ordered newest-first; first occurrence per document_id is the latest job.
+        jobs = await (
+            OcrJob.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
+            .order_by("-created_at")
+            .prefetch_related("source_documents")
+        )
+        seen: dict[int, tuple[OcrJobDocument, OcrJob]] = {}
+        for job in jobs:
+            for jd in job.source_documents:
+                if jd.document_id not in seen:
+                    seen[jd.document_id] = (jd, job)
+        return list(seen.values())
 
     async def get_result(self, ocr_job_id: str, actor: OcrActor) -> OcrResult:
         job = await self.get_job(ocr_job_id, actor)
@@ -355,6 +376,22 @@ class OcrService:
         if job is None:
             raise _not_found()
         return serialize_job(job)
+
+    async def jobs_for_visit(self, visit_id: int, actor: OcrActor) -> list[OcrJobByDocumentResponse]:
+        pairs = await self.repository.get_latest_jobs_by_document(visit_id, actor)
+        return [
+            OcrJobByDocumentResponse(
+                document_id=jd.document_id,
+                document_type=jd.document_type,
+                ocr_job_id=job.ocr_job_id,
+                status=job.status,
+                progress=job.progress,
+                started_at=job.started_at,
+                completed_at=job.completed_at,
+                failure_code=job.failure_code,
+            )
+            for jd, job in pairs
+        ]
 
     async def status(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
         return serialize_job(await self.repository.get_job(ocr_job_id, actor))

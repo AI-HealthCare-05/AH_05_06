@@ -14,6 +14,7 @@ from app.ocr.errors import OcrApiError
 from app.ocr.schemas import (
     OcrDocumentResponse,
     OcrFieldResponse,
+    OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
     UpdateOcrFieldRequest,
@@ -110,6 +111,30 @@ class FakeOcrService:
                 started_at=NOW,
             )
         raise OcrApiError(404, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
+
+    async def jobs_for_visit(self, visit_id: int, actor: OcrActor) -> list[OcrJobByDocumentResponse]:
+        if visit_id == 503:
+            return [
+                OcrJobByDocumentResponse(
+                    document_id=801,
+                    document_type=OcrDocumentType.EMR,
+                    ocr_job_id="ocr_synthetic_503_emr",
+                    status=OcrJobStatus.COMPLETED,
+                    progress=100,
+                    started_at=NOW,
+                    completed_at=NOW,
+                ),
+                OcrJobByDocumentResponse(
+                    document_id=802,
+                    document_type=OcrDocumentType.LAB_RESULT,
+                    ocr_job_id="ocr_synthetic_503_lab",
+                    status=OcrJobStatus.FAILED,
+                    progress=0,
+                    started_at=NOW,
+                    failure_code="OCR_ENGINE_ERROR",
+                ),
+            ]
+        return []
 
     async def update_field(
         self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
@@ -374,3 +399,31 @@ def test_visit_with_no_ocr_job_returns_not_found(api: tuple[TestClient, FakeOcrS
 
     assert response.status_code == 404
     assert response.json()["code"] == "NOT_FOUND"
+
+
+def test_visit_ocr_jobs_returns_per_document_list(api: tuple[TestClient, FakeOcrService]) -> None:
+    client, _ = api
+    response = client.get("/api/v1/visits/503/ocr-jobs")
+
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 2
+
+    emr = next(i for i in items if i["document_type"] == "EMR")
+    assert emr["ocr_job_id"] == "ocr_synthetic_503_emr"
+    assert emr["status"] == "COMPLETED"
+    assert emr["document_id"] == 801
+
+    lab = next(i for i in items if i["document_type"] == "LAB_RESULT")
+    assert lab["ocr_job_id"] == "ocr_synthetic_503_lab"
+    assert lab["status"] == "FAILED"
+    assert lab["failure_code"] == "OCR_ENGINE_ERROR"
+    assert lab["document_id"] == 802
+
+
+def test_visit_ocr_jobs_returns_empty_list_when_no_documents(api: tuple[TestClient, FakeOcrService]) -> None:
+    client, _ = api
+    response = client.get("/api/v1/visits/999/ocr-jobs")
+
+    assert response.status_code == 200
+    assert response.json() == []

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.ocr.schemas import (
     OcrFieldResponse,
+    OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
     StartOcrRequest,
@@ -18,6 +19,15 @@ service = OcrService(TortoiseOcrRepository(TortoiseDocumentOwnershipVerifier()))
 
 def get_ocr_service() -> OcrService:
     return service
+
+
+@ocr_router.get("/visits/{visit_id}/ocr-jobs", response_model=list[OcrJobByDocumentResponse])
+async def get_visit_ocr_jobs(
+    visit_id: Annotated[int, Path(gt=0)],
+    actor: Annotated[OcrActor, Depends(get_ocr_actor)],
+    ocr: Annotated[OcrService, Depends(get_ocr_service)],
+) -> list[OcrJobByDocumentResponse]:
+    return await ocr.jobs_for_visit(visit_id, actor)
 
 
 @ocr_router.get("/visits/{visit_id}/ocr-job", response_model=OcrJobResponse)
