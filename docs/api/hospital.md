@@ -490,6 +490,13 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 
 여러 이벤트가 동시에 존재하면 `NEEDS_ATTENTION → APPROVAL_REQUESTED → SEND_PENDING → IN_PROGRESS → COMPLETED` 순으로 하나의 `work_category`를 선택한다. `detail_status`는 해당 카테고리에서 가장 최근에 발생한 미해결 상태다.
 
+- **카테고리 사이 우선순위가 먼저다.** 더 최근에 생긴 일이라도 위 순서를 뒤집지 않는다. 방금 승인 요청이 걸린 진료라도 보낼 곳이 없으면 `NEEDS_ATTENTION`이다.
+- 「발생 시각」은 상태마다 이렇게 읽는다.
+  - `APPROVAL_RETURNED` 등 안내문 상태 — 안내문이 마지막으로 움직인 시각
+  - `SMS_OPT_OUT` — 환자가 수신을 거부한 시각
+  - `INVALID_PHONE` — **시각이 없다.** 사건이 아니라 상태라 언제 그렇게 됐는지를 남기지 않는다. 시각을 아는 상태가 같은 카테고리에 있으면 그쪽을 보여 준다
+- 같은 시각이면 위 표의 차례를 따른다. 같은 데이터에 화면이 흔들리지 않게 하기 위한 것이다.
+
 ```json
 {
   "date": "2026-08-13",
@@ -563,8 +570,9 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 - 수정 가능: `doctor_id`, `department_id`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
 - 현재 `department_id` 변경은 진료과 기준 모델이 없어 `400 INVALID_DEPARTMENT`로 거부한다. 기준 모델 연결 뒤 생성과 같은 활성 진료과·의사 소속 검증 및 `department` 스냅샷 갱신을 적용한다.
 - `department_id: null`은 담당 진료과 해제로 해석하여 `department` 스냅샷을 삭제한다. 단, OCR 또는 승인 안내가 연결되어 `VISIT_LOCKED`가 된 진료에는 같은 잠금 규칙을 적용해 삭제도 차단한다.
-- 현재 OCR 또는 승인 안내 연결 뒤 `department_id` 변경은 `409 VISIT_LOCKED`다. `doctor_id`와 `visited_at`의 잠금 여부는 KEY-119에서 리뷰어 합의 후 확정하며, KEY-118은 잠금 범위를 선행 변경하지 않고 담당의 유효성만 검증한다.
-- `patient_id`, `hospital_id`, `visit_id`는 수정할 수 없다.
+- OCR 처리(`PROCESSING`·`COMPLETED`) 또는 승인 안내(`APPROVAL_PENDING`·`SCHEDULED_TO_SEND`) 연결 뒤 `department_id`, `doctor_id`, `visited_at`의 실제 변경은 `409 VISIT_LOCKED`다. `FAILED` OCR만 연결된 진료는 잠그지 않는다.
+- 잠금된 진료에도 `visit_summary`, `doctor_note`, `status`, `planned_stop`은 수정할 수 있다. 잠금 대상 필드를 본문에 포함하더라도 저장된 값과 같으면 관계 변경이 아니므로 허용한다.
+- `patient_id`, `hospital_id`, `visit_id`는 수정할 수 없다. 특히 `patient_id`는 요청 DTO에 없고 추가 필드 입력이 금지되어 공통 `400 INVALID_REQUEST`로 거부된다.
 
 ### 7. 오류 계약
 

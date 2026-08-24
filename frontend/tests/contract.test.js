@@ -147,8 +147,8 @@ test("차트번호로도 찾힌다", async () => {
 /* ── 값 다루기 ──────────────────────────────────────────── */
 
 test("나이는 저장하지 않고 생년월일에서 계산한다", () => {
-  // `toISOString()`은 UTC 날짜다. KST 자정~08:59에 현지 날짜보다 하루 전을
-  // 돌려주므로 이 검사는 실행 시각에 따라 생일을 하루 당겼다.
+  // `toISOString()`은 UTC 날짜라 KST 자정~08:59엔 현지 날짜보다 하루 전을
+  // 돌려준다. 로컬 getter로 만드는 `api.toIsoDate()`를 써서 이 문제를 피한다.
   const born = new Date();
   born.setFullYear(born.getFullYear() - 30);
   const iso = api.toIsoDate(born);
