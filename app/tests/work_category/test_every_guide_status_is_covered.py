@@ -16,8 +16,8 @@ import pytest
 
 from app.models.visits import GuideStatus
 from app.services.work_category import (
-    DETAIL_OF_GUIDE_STATUS,
     CATEGORY_OF,
+    DETAIL_OF_GUIDE_STATUS,
     VisitSignals,
     _require_every_guide_status_is_mapped,
     derive,
