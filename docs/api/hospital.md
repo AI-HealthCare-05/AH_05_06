@@ -447,6 +447,7 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 ```
 
 - `category`: `ALL/IN_TREATMENT/NEEDS_ATTENTION/SMS_OPT_OUT/INACTIVE_6_MONTHS`, 기본 `ALL`.
+- 현재 계산 가능한 `ALL`, `SMS_OPT_OUT`, `INACTIVE_6_MONTHS`만 조회할 수 있다. 이벤트 기반 `IN_TREATMENT`, `NEEDS_ATTENTION`을 선택하면 후속 계약이 연결되기 전까지 `400 INVALID_REQUEST`로 명시적으로 거부하며, 빈 검색 결과처럼 응답하지 않는다.
 - `keyword`: 이름, 차트번호, 정규화된 휴대폰에서 검색한다. 이름은 한 글자부터 허용한다.
 - `cursor`: 서버가 발급한 불투명 다음 페이지 커서. 임의 조립하지 않는다.
 - `limit` 기본 20, 최대 100.
@@ -550,6 +551,7 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 - 수정 가능: `doctor_id`, `department_id`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
 - 현재 `department_id` 변경은 진료과 기준 모델이 없어 `400 INVALID_DEPARTMENT`로 거부한다. 기준 모델 연결 뒤 생성과 같은 활성 진료과·의사 소속 검증 및 `department` 스냅샷 갱신을 적용한다.
+- `department_id: null`은 담당 진료과 해제로 해석하여 `department` 스냅샷을 삭제한다. 단, OCR 또는 승인 안내가 연결되어 `VISIT_LOCKED`가 된 진료에는 같은 잠금 규칙을 적용해 삭제도 차단한다.
 - 현재 OCR 또는 승인 안내 연결 뒤 `department_id` 변경은 `409 VISIT_LOCKED`다. `doctor_id`와 `visited_at`의 잠금 여부는 KEY-119에서 리뷰어 합의 후 확정하며, KEY-118은 잠금 범위를 선행 변경하지 않고 담당의 유효성만 검증한다.
 - `patient_id`, `hospital_id`, `visit_id`는 수정할 수 없다.
 
@@ -653,10 +655,15 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 | Method | Path | 용도 |
 | --- | --- | --- |
 | `POST` | `/api/v1/documents/{document_id}/ocr` | 문서 OCR 작업 생성 |
+| `GET` | `/api/v1/visits/{visit_id}/ocr-job` | 진료의 현재 OCR 작업 조회 (KEY-133) |
 | `GET` | `/api/v1/ocr/jobs/{ocr_job_id}` | 처리 상태·진행률 조회 |
 | `GET` | `/api/v1/ocr/jobs/{ocr_job_id}/result` | 전체 텍스트와 구조화 결과 조회 |
 | `GET` | `/api/v1/ocr/jobs/{ocr_job_id}/fields` | 구조화 필드·신뢰도·후보 조회 |
 | `PATCH` | `/api/v1/ocr/fields/{ocr_field_id}` | 수정값 또는 후보 선택과 확정 |
+
+`GET /visits/{visit_id}/ocr-job`은 해당 진료의 현재 OCR 작업을 반환합니다.
+`PROCESSING` 상태 작업이 있으면 그것을 우선 반환하고, 없으면 `created_at` 내림차순
+최신 작업을 반환합니다. 작업이 없으면 `404 NOT_FOUND`를 반환합니다.
 
 수정 API는 `base_version`을 요구하고 버전이 달라지면 `409 VERSION_CONFLICT`를
 반환합니다. 이미 확정된 필드는 다시 수정하지 않습니다. 타 병원 식별자는 존재
@@ -805,10 +812,11 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | Method | Path | 용도 | 권한 |
 |---|---|---|---|
 | POST | `/api/v1/visits/{visit_id}/guide/generate` | 확정 OCR로 고정 안내 생성 — 201 | `staff`·`doctor` |
-| GET | `/api/v1/visits/{visit_id}/guide` | 안내문 조회 — 네 갈래 + ⚠ 표시 | `staff`·`doctor` |
+| GET | `/api/v1/visits/{visit_id}/guide` | 안내문 조회 — 다섯 갈래 + ⚠ 표시 | `staff`·`doctor` |
 | PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/approve` | 승인 — 발송 예약 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/return` | 스탭에 되돌림 (사유 필수) | `doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/link` | 72시간 개발용 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
 
 `admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
 
@@ -843,7 +851,8 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
   "returned_reason": null,
   "sections": [
     {"key": "medication", "body": "...", "edited": false, "locked": false, "warn": "AMH 결과가 아직 안 나왔습니다 — 값이 빠진 자리입니다"},
-    {"key": "caution", "body": "...", "edited": false, "locked": true, "warn": null},
+    {"key": "caution", "body": "...", "edited": false, "locked": false, "warn": null},
+    {"key": "emergency", "body": "...", "edited": false, "locked": true, "warn": null},
     {"key": "life", "body": "...", "edited": false, "locked": false, "warn": null},
     {"key": "messages", "body": "...", "edited": false, "locked": false, "warn": null}
   ]
@@ -852,7 +861,7 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 
 - `patient`·`summary`는 승인 화면이 「누구 것인지」를 알아야 하므로 응답에 포함한다. `phone`은 포함하지 않는다 — 승인할 때마다 전화번호가 화면과 로그를 지날 이유가 없다.
 - `age`는 저장값이 아니라 조회 시점의 현지 날짜와 `birth_date`로 계산한다. 동명이인 확인과 계산 근거를 위해 `birth_date`와 `age`를 함께 제공한다(계약 §4).
-- `sections[]`은 네 갈래(`medication`/`caution`/`life`/`messages`) 고정이며 각 항목은 `body` 문자열 하나다. 8/27 여정에서 안내문은 고정 텍스트라(`KEY-150` — 「확정 OCR→고정 안내→의사 승인」), 제목·표·목록으로 나눈 구조화 콘텐츠 모델(`blocks`)은 이번 계약에 포함하지 않는다. 실제 LLM 생성이 붙을 때 다시 정한다.
+- `sections[]`은 다섯 갈래(`medication`/`caution`/`emergency`/`life`/`messages`) 고정이며 각 항목은 `body` 문자열 하나다. 8/27 여정에서 안내문은 고정 텍스트라(`KEY-150` — 「확정 OCR→고정 안내→의사 승인」), 제목·표·목록으로 나눈 구조화 콘텐츠 모델(`blocks`)은 이번 계약에 포함하지 않는다. 실제 LLM 생성이 붙을 때 다시 정한다.
 - `warn`·`locked`는 섹션 단위다. `warn`은 AI가 자신 없는 곳·지난 진료와 달라진 곳·값이 빠진 곳에만 서버가 판정해 채운다 — 화면은 판정하지 않는다. `locked`는 🚨 응급 문장(식약처 의약품정보 기준)이라는 뜻의, 이유 문자열이 없는 boolean이다. 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
 - `edited`는 사람이 고쳤는지를 말한다. 생성 원문은 서버에 별도로 보관하며 이 응답에는 포함하지 않는다.
 
@@ -866,7 +875,10 @@ POST /api/v1/visits/{visit_id}/guide/generate
 - `staff`·`doctor` 역할 모두 호출할 수 있다.
 - 진료에 연결된 OCR 필드 중 `is_confirmed=True`인 것이 하나 이상 있어야 한다 — 미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고, 의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
 - 안내는 `APPROVAL_PENDING` 상태로 생성된다 — W1 고정 안내 경로는 스탭 검토(`STAFF_REVIEW`) 단계를 거치지 않는다. LLM 생성 안내가 붙는 시점에 이 흐름을 다시 정한다.
-- 섹션은 `medication`·`caution`·`life`·`messages` 4개 고정이다. `caution`은 식약처 의약품정보 기준 응급 문장으로 `locked=true`다 — 사람이 고칠 수 없다(D1-2).
+- 섹션은 `medication`·`caution`·`emergency`·`life`·`messages` 5개 고정이며, **응답 차례가 곧 화면 차례**다(`emergency`는 `caution` 바로 뒤).
+- **`emergency`만 `locked=true`다.** 식약처 의약품정보 기준 응급 문장이라 사람이 고칠 수 없다(D1-2). `caution`은 일반 주의 문구이고 `locked=false`이므로 의사가 환자에 맞춰 고칠 수 있다.
+  - 나눈 까닭은 잠금 단위 때문이다. `locked`는 섹션 단위라 한 갈래에 두면 응급 문장을 지키려다 일반 문구까지 잠긴다(`KEY-161`).
+  - **화면은 새 탭을 만들지 않는다.** 두 갈래를 같은 「주의사항」 탭 안에 이어서 그린다 — 따로 탭이면 열지 않고 승인할 수 있다.
 - 같은 진료에 안내가 이미 있으면 `409 GUIDE_ALREADY_EXISTS`다.
 - 응답은 안내문 조회와 같은 전체 모양이다.
 
@@ -931,7 +943,21 @@ POST /api/v1/visits/{visit_id}/guide/return
 
 - `generate`는 W1 고정 안내 경로로 `STAFF_REVIEW` 단계 없이 바로 `APPROVAL_PENDING`으로 만든다. LLM 생성 안내가 붙을 때 `STAFF_REVIEW` 단계와 스탭 편집 경로를 다시 정한다.
 - 승인 전 환자 조회 차단(`APPROVAL_PENDING` 상태에서 환자 모바일 API 접근 불가)은 환자 링크·OTP·모바일 영역(KEY-4)에서 구현한다. `generate`는 DB 상태를 `APPROVAL_PENDING`으로 설정하는 것으로 이 게이트의 전제를 만든다.
-- `locked`가 이유 문자열 없는 boolean인 것은 지금 유일하게 잠기는 `caution` 섹션(🚨 응급 문장)에는 맞지만, 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
+- `locked`가 이유 문자열 없는 boolean인 것은 지금 유일하게 잠기는 `emergency` 섹션(🚨 응급 문장)에는 맞지만, 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
+
+#### 구조화된 문자 설정은 이 계약의 범위가 아니다
+
+`messages`는 다른 섹션과 **같은 평문 `body`**다. 와이어프레임 `S1-14`·`D1-4`가 그리는 회차 체크박스(D+7·D+15·D+30·소진 임박), 템플릿 이름, 미리보기 같은 **구조화된 설정은 `GuideResponse`에 없다.**
+
+```text
+있는 것   sections[] 안의 { key: "messages", body: "…" } 평문 한 덩이
+없는 것   schedule · send_at · template_name · preview · preview_meta
+          그 설정을 저장할 자리 · 실제 SMS 발송 · 예약 실행기 · 발송 이력
+```
+
+**승인은 `scheduled_at`을 채우는 데까지다.** 그 뒤에 문자를 보내는 것은 아무것도 없다. 화면이 「자동 발송됩니다」라고 말하면 안 되는 이유이고, 의사 승인 화면은 그 자리에 `[demo]` 표시를 둔다([KEY-160](https://leehee.atlassian.net/browse/KEY-160) · `docs/qa/KEY-148-walking-skeleton.md` §6).
+
+구조화된 문자 설정은 **스탭과 의사가 같은 설정을 공유하는 별도 메시지 자원**으로 `S1-14` 후속 계약에서 다룬다. 신규 엔드포인트·DTO·권한·모델이 KEY-2(안내 승인)와 KEY-4(환자 전달)에 걸치는 계약 변경이라, 구현 전에 합의하고 별도 일감으로 만든다.
 
 ## 6. 환자·진료 구현 기록
 

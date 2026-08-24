@@ -3,7 +3,7 @@
 이 검사가 보려는 것은 **생성 게이트**다.
   · OCR 확정 전에는 안내를 만들 수 없다
   · 확정 후에는 승인 대기 안내 한 건이 만들어진다
-  · caution 섹션은 locked=True — 식약처 근거 응급 문장
+  · emergency 섹션만 locked=True — 식약처 근거 응급 문장 (caution 은 고칠 수 있다)
   · 생성 후 승인은 의사만 할 수 있다 (기존 규칙 유지)
 """
 
@@ -152,7 +152,7 @@ class TestGenerateCreatesApprovalPendingGuide(GenerateGuideTestCase):
         assert body["status"] == GuideStatus.APPROVAL_PENDING
         assert body["visit_id"] == visit.visit_id
 
-    async def test_all_four_sections_are_created(self) -> None:
+    async def test_all_five_sections_are_created_in_order(self) -> None:
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
         visit = await make_visit(clinic)
@@ -161,21 +161,24 @@ class TestGenerateCreatesApprovalPendingGuide(GenerateGuideTestCase):
         async with self.client() as client:
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
-        keys = {s["key"] for s in response.json()["sections"]}
-        assert keys == {
+        sections = response.json()["sections"]
+        assert [s["key"] for s in sections] == [
             GuideSectionKey.MEDICATION,
             GuideSectionKey.CAUTION,
+            GuideSectionKey.EMERGENCY,
             GuideSectionKey.LIFE,
             GuideSectionKey.MESSAGES,
-        }
+        ], "차례까지 계약이다 — 응답 순서가 곧 환자 화면의 차례다(P2·P3·P4)"
 
-    async def test_caution_is_locked_and_others_are_not(self) -> None:
-        """caution만 응급 잠금이다 — 나머지는 의사가 고칠 수 있어야 한다.
+    async def test_only_emergency_is_locked(self) -> None:
+        """**응급 갈래만** 잠긴다 — caution 을 포함해 나머지는 고칠 수 있다.
 
-        이희진 코멘트 「고정 안내 생성 경로에서 caution/emergency 분리를
-        함께 확인해야 합니다」의 생성 경로 검증.
-        caution이 잠겨 있다는 것만으로는 부족하다 — 다른 섹션이 함께
-        잠겨 있으면 의사가 아무것도 고칠 수 없는 안내가 된다.
+        KEY-161. 예전에는 `caution` 이 잠겨 있었다. 응급 문장을 지키려던
+        것인데, 그러면 원장님이 환자에 맞춰 고쳐야 할 일반 주의 문구까지
+        함께 잠긴다(와이어프레임 D1-2 — 「🚨 응급 문장만 수정 불가」).
+
+        `caution` 이 풀렸는지를 함께 재는 것이 요점이다. `emergency` 가
+        잠긴 것만 보면, 실수로 둘 다 잠가 둔 코드도 통과한다.
         """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
@@ -186,7 +189,10 @@ class TestGenerateCreatesApprovalPendingGuide(GenerateGuideTestCase):
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
         sections = {s["key"]: s for s in response.json()["sections"]}
-        assert sections[GuideSectionKey.CAUTION]["locked"] is True
+        assert sections[GuideSectionKey.EMERGENCY]["locked"] is True
+        assert sections[GuideSectionKey.CAUTION]["locked"] is False, (
+            "일반 주의 문구가 잠겼다 — KEY-161 이 풀려던 바로 그 자리다"
+        )
         assert sections[GuideSectionKey.MEDICATION]["locked"] is False
         assert sections[GuideSectionKey.LIFE]["locked"] is False
         assert sections[GuideSectionKey.MESSAGES]["locked"] is False
