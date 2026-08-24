@@ -17,6 +17,11 @@ from app.services.guides import GuideService
 
 SEOUL = ZoneInfo("Asia/Seoul")
 
+# develop에서 추가된 generate 라우트가 병합될 때도 공통 인증 의존성을
+# 사용하도록 이전 내부 이름을 구현 복제 없이 연결한다.
+_Actor = StaffActor
+_actor = get_staff_actor
+
 guide_router = APIRouter(prefix="/visits", tags=["guides"])
 
 
