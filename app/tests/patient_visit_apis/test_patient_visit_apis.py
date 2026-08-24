@@ -225,17 +225,35 @@ class TestPatientVisitApis(TestCase):
         환자만 보는 D1-1 이 성립하지 않는다. `department_id` 는 진료과 표가
         진짜로 없어서 계속 막히는 것이고, 둘은 사정이 다르다.
         """
+        # MySQL의 AUTO_INCREMENT는 TestCase 트랜잭션이 롤백되어도 되돌아가지
+        # 않는다. actor의 병원 범위와 무관한 순번에 기대지 않도록 명시한다.
+        hospital = await Hospital.create(hospital_id=1, name="KEY-118 합성병원")
+        doctor = await Staff.create(
+            hospital=hospital,
+            login_id="key118-doctor-a",
+            password_hash="synthetic-not-a-real-hash",
+            name="합성의사A",
+            roles=["doctor"],
+        )
+        replacement = await Staff.create(
+            hospital=hospital,
+            login_id="key118-doctor-b",
+            password_hash="synthetic-not-a-real-hash",
+            name="합성의사B",
+            roles=["doctor"],
+        )
         async with client_for(self.staff) as client:
             patient = await client.post("/api/v1/patients", json=PATIENT_PAYLOAD)
             patient_id = patient.json()["patient_id"]
 
             created = await client.post(
                 f"/api/v1/patients/{patient_id}/visits",
-                json={"doctor_id": 12, "visited_at": "2026-08-19T10:30:00+09:00"},
+                json={"doctor_id": doctor.staff_id, "visited_at": "2026-08-19T10:30:00+09:00"},
             )
+            assert created.status_code == status.HTTP_201_CREATED, created.json()
             visit_id = created.json()["visit_id"]
             fetched = await client.get(f"/api/v1/visits/{visit_id}")
-            reassigned = await client.patch(f"/api/v1/visits/{visit_id}", json={"doctor_id": 13})
+            reassigned = await client.patch(f"/api/v1/visits/{visit_id}", json={"doctor_id": replacement.staff_id})
             cleared = await client.patch(f"/api/v1/visits/{visit_id}", json={"doctor_id": None})
 
             # 진료과는 저장할 이름 자체가 없다 — 여기는 계속 막혀 있어야 한다
@@ -246,15 +264,103 @@ class TestPatientVisitApis(TestCase):
             patched_department = await client.patch(f"/api/v1/visits/{visit_id}", json={"department_id": 7})
 
         assert created.status_code == status.HTTP_201_CREATED
-        assert created.json()["doctor_id"] == 12
-        assert fetched.json()["doctor_id"] == 12  # 저장까지 갔는지 — 응답에만 실렸을 수 있다
-        assert reassigned.json()["doctor_id"] == 13
+        assert created.json()["doctor_id"] == doctor.staff_id
+        assert fetched.json()["doctor_id"] == doctor.staff_id  # 저장까지 갔는지 — 응답에만 실렸을 수 있다
+        assert reassigned.json()["doctor_id"] == replacement.staff_id
         assert cleared.json()["doctor_id"] is None
 
         assert with_department.status_code == status.HTTP_400_BAD_REQUEST
         assert with_department.json()["code"] == "INVALID_DEPARTMENT"
         assert patched_department.status_code == status.HTTP_400_BAD_REQUEST
         assert patched_department.json()["code"] == "INVALID_DEPARTMENT"
+
+    async def test_invalid_doctors_are_rejected_without_leaking_the_reason(self) -> None:
+        hospital = await Hospital.create(hospital_id=1, name="KEY-118 검증병원")
+        other_hospital = await Hospital.create(hospital_id=2, name="KEY-118 타병원")
+        non_doctor = await Staff.create(
+            hospital=hospital,
+            login_id="key118-staff",
+            password_hash="synthetic-not-a-real-hash",
+            name="합성스탭",
+            roles=["staff"],
+        )
+        left_doctor = await Staff.create(
+            hospital=hospital,
+            login_id="key118-left-doctor",
+            password_hash="synthetic-not-a-real-hash",
+            name="퇴사합성의사",
+            roles=["doctor"],
+            status="left",
+        )
+        other_doctor = await Staff.create(
+            hospital=other_hospital,
+            login_id="key118-other-doctor",
+            password_hash="synthetic-not-a-real-hash",
+            name="타병원합성의사",
+            roles=["doctor"],
+        )
+        invalid_ids = [999999, non_doctor.staff_id, left_doctor.staff_id, other_doctor.staff_id]
+
+        async with client_for(self.staff) as client:
+            patient = await client.post("/api/v1/patients", json=PATIENT_PAYLOAD)
+            patient_id = patient.json()["patient_id"]
+            responses = [
+                await client.post(
+                    f"/api/v1/patients/{patient_id}/visits",
+                    json={"doctor_id": doctor_id, "visited_at": f"2026-08-{day:02}T10:30:00+09:00"},
+                )
+                for day, doctor_id in enumerate(invalid_ids, start=20)
+            ]
+
+            valid = await client.post(
+                f"/api/v1/patients/{patient_id}/visits",
+                json={"doctor_id": None, "visited_at": "2026-08-24T10:30:00+09:00"},
+            )
+            assert valid.status_code == status.HTTP_201_CREATED, valid.json()
+            visit_id = valid.json()["visit_id"]
+            rejected_patch = await client.patch(f"/api/v1/visits/{visit_id}", json={"doctor_id": other_doctor.staff_id})
+            cleared = await client.patch(f"/api/v1/visits/{visit_id}", json={"doctor_id": None})
+
+        for response in [*responses, rejected_patch]:
+            assert response.status_code == status.HTTP_400_BAD_REQUEST
+            assert response.json() == {
+                "code": "INVALID_REQUEST",
+                "message": "담당의를 확인해 주세요.",
+                "field_errors": None,
+            }
+        assert valid.status_code == status.HTTP_201_CREATED
+        assert cleared.status_code == status.HTTP_200_OK
+        assert cleared.json()["doctor_id"] is None
+
+    async def test_doctor_id_outside_signed_bigint_is_a_contract_error(self) -> None:
+        """DB 정수 범위를 벗어난 ID도 500이나 직원 존재 단서 없이 거부한다."""
+        async with client_for(self.staff) as client:
+            patient = await client.post("/api/v1/patients", json=PATIENT_PAYLOAD)
+            patient_id = patient.json()["patient_id"]
+            visit = await client.post(
+                f"/api/v1/patients/{patient_id}/visits",
+                json={"doctor_id": None, "visited_at": "2026-08-25T10:30:00+09:00"},
+            )
+            assert visit.status_code == status.HTTP_201_CREATED, visit.json()
+
+            too_large = await client.post(
+                f"/api/v1/patients/{patient_id}/visits",
+                json={"doctor_id": 1 << 63, "visited_at": "2026-08-26T10:30:00+09:00"},
+            )
+            negative = await client.patch(
+                f"/api/v1/visits/{visit.json()['visit_id']}",
+                json={"doctor_id": -1},
+            )
+
+        expected = {
+            "code": "INVALID_REQUEST",
+            "message": "담당의를 확인해 주세요.",
+            "field_errors": None,
+        }
+        assert too_large.status_code == status.HTTP_400_BAD_REQUEST
+        assert too_large.json() == expected
+        assert negative.status_code == status.HTTP_400_BAD_REQUEST
+        assert negative.json() == expected
 
     async def test_request_scope_fields_are_rejected(self) -> None:
         async with client_for(self.staff) as client:
