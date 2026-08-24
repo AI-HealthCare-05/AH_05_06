@@ -5,7 +5,7 @@ from dataclasses import field
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +55,12 @@ class Config(BaseSettings):
 
     # 실제 OCR 워커 없이 fixture 결과를 즉시 DB에 기록한다 — Walking Skeleton 데모 전용.
     OCR_FIXTURE_FALLBACK: bool = False
+
+    @model_validator(mode="after")
+    def _fixture_fallback_is_local_only(self) -> "Config":
+        if self.OCR_FIXTURE_FALLBACK and self.ENV is not Env.LOCAL:
+            raise ValueError(f"OCR_FIXTURE_FALLBACK은 로컬 환경에서만 사용할 수 있습니다. (ENV={self.ENV.value})")
+        return self
 
     @field_validator("DB_PASSWORD")
     @classmethod
