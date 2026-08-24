@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -13,6 +13,7 @@ from app.models.visits import Visit
 from app.services.front_desk import FrontDeskService
 from app.services.patients import PatientService
 from app.services.visits import VisitService
+from app.services.work_category import VisitSignals
 from app.tests.work_category.test_load_signals import CountingQueries
 
 BASE_URL = "http://test"
@@ -248,6 +249,119 @@ class TestFrontDeskContract(TestCase):
         returned = {item.visit_id for item in result.items}
         assert irrelevant.visit_id not in returned
         assert returned == {attention.visit_id, today.visit_id}
+
+    async def test_missing_signal_visit_is_excluded_without_losing_the_remaining_counts(self) -> None:
+        """`load_signals()`가 돌려주지 않은 ID는 조회 불가능한 진료로 제외한다."""
+        visible_patient = await create_patient("SYN-KEY51-SIGNAL-A")
+        missing_patient = await create_patient("SYN-KEY51-SIGNAL-B")
+        visible = await Visit.create(
+            hospital_id=1,
+            patient=visible_patient,
+            visited_at=datetime(2026, 8, 23, 1, 30, tzinfo=UTC),
+        )
+        missing = await Visit.create(
+            hospital_id=1,
+            patient=missing_patient,
+            visited_at=datetime(2026, 8, 23, 2, 30, tzinfo=UTC),
+        )
+
+        async def actor_override() -> ClinicalActor:
+            return ACTOR
+
+        app.dependency_overrides[get_clinical_actor] = actor_override
+        try:
+            with patch(
+                "app.services.front_desk.load_signals",
+                new_callable=AsyncMock,
+                return_value={
+                    visible.visit_id: VisitSignals(
+                        has_document=False,
+                        ocr_status=None,
+                        guide_status=None,
+                        phone=visible_patient.phone,
+                        sms_opted_out_at=None,
+                    )
+                },
+            ):
+                async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL) as client:
+                    response = await client.get(
+                        "/api/v1/front-desk/visits",
+                        params={"date": "2026-08-23"},
+                    )
+        finally:
+            app.dependency_overrides.pop(get_clinical_actor, None)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [item["visit_id"] for item in body["items"]] == [visible.visit_id]
+        assert missing.visit_id not in {item["visit_id"] for item in body["items"]}
+        assert body["counts"] == {
+            "IN_PROGRESS": 1,
+            "NEEDS_ATTENTION": 0,
+            "APPROVAL_REQUESTED": 0,
+            "SEND_PENDING": 0,
+            "COMPLETED": 0,
+        }
+
+    async def test_same_date_other_hospital_is_excluded_from_items_and_counts(self) -> None:
+        mine_hospital = await Hospital.create(name="KEY-51 병원 격리 A")
+        other_hospital = await Hospital.create(name="KEY-51 병원 격리 B")
+        mine_patient = await Patient.create(
+            hospital_id=mine_hospital.hospital_id,
+            hospital_patient_no="SYN-KEY51-SCOPE-A",
+            name="합성환자A",
+            birth_date=date(1990, 1, 1),
+            phone="01039457702",
+            sms_consent=True,
+        )
+        other_patient = await Patient.create(
+            hospital_id=other_hospital.hospital_id,
+            hospital_patient_no="SYN-KEY51-SCOPE-B",
+            name="합성환자B",
+            birth_date=date(1990, 1, 1),
+            phone="01039457702",
+            sms_consent=True,
+        )
+        mine = await Visit.create(
+            hospital_id=mine_hospital.hospital_id,
+            patient=mine_patient,
+            visited_at=datetime(2026, 8, 23, 1, 30, tzinfo=UTC),
+        )
+        other = await Visit.create(
+            hospital_id=other_hospital.hospital_id,
+            patient=other_patient,
+            visited_at=datetime(2026, 8, 23, 2, 30, tzinfo=UTC),
+        )
+        actor = ClinicalActor(
+            staff_id=7002,
+            hospital_id=mine_hospital.hospital_id,
+            roles=frozenset({"staff"}),
+        )
+
+        async def actor_override() -> ClinicalActor:
+            return actor
+
+        app.dependency_overrides[get_clinical_actor] = actor_override
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL) as client:
+                response = await client.get(
+                    "/api/v1/front-desk/visits",
+                    params={"date": "2026-08-23"},
+                )
+        finally:
+            app.dependency_overrides.pop(get_clinical_actor, None)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [item["visit_id"] for item in body["items"]] == [mine.visit_id]
+        assert other.visit_id not in {item["visit_id"] for item in body["items"]}
+        assert body["counts"] == {
+            "IN_PROGRESS": 1,
+            "NEEDS_ATTENTION": 0,
+            "APPROVAL_REQUESTED": 0,
+            "SEND_PENDING": 0,
+            "COMPLETED": 0,
+        }
 
     async def test_visit_response_with_no_doctor_does_not_query_staff(self) -> None:
         patient = await create_patient("SYN-KEY51-NODOCTOR")
