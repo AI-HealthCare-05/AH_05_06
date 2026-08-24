@@ -15,6 +15,53 @@
  * 편의일 뿐이고, 스탭 계정으로 요청이 가면 서버가 403 으로 막는다.
  */
 
+/* ── 화면과 무관한 규칙 ─────────────────────────────────────────────────
+ *
+ * IIFE **밖**에 두는 것은 검사가 부를 수 있게 하려는 것이다 (KEY-158).
+ * 그리는 함수는 옮기지 않는다 — 그건 브라우저가 할 일이다.
+ *
+ * `warnCount` · `alreadyDone` 은 닫힌 값(`guide` · `visit`)을 읽고 있어서
+ * **인자를 받도록 바꿨다.** 그래야 검사가 조합을 표처럼 채울 수 있다.
+ */
+
+/* 서버는 `2026-08-21T18:00:00+09:00` 처럼 **병원 시간대를 달아서** 준다
+   (`GuideService._send_at` 이 `astimezone(Asia/Seoul)` 로 만든다).
+
+   `new Date(iso)` 로 옮기면 **브라우저 시간대**로 다시 그려진다. KST 가 아닌
+   자리에서 열면 18:00 이 09:00 으로 뜬다 — 서버에서 이미 잡았던 「18시가 새벽
+   3시로 나가는」 버그가 표시 쪽에서 되살아나는 것이다. 예약 시각은 스탭이
+   환자에게 「몇 시에 갑니다」라고 말하는 근거라 틀리면 그대로 전달된다.
+
+   그래서 `detail.js` 의 `dayLabel`·`timeLabel` 처럼 **문자열을 그대로 자른다.**
+   값에 이미 병원 시간대가 박혀 있어 옮길 이유가 없다.
+
+   **수신번호(`to`)는 받지 않는다.** 이 화면은 「누구 것인가」만 알면 되고
+   발송 번호는 서버가 안다. 응답에 실으면 승인할 때마다 환자 전화번호가
+   화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
+function whenText(iso) {
+  if (!iso) return "곧";
+  var m = String(iso).match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
+  if (!m) return String(iso);
+  return Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3];
+}
+
+function warnCount(sections) {
+  return sections.filter(function (s) {
+    return !!s.warn;
+  }).length;
+}
+
+/* 이미 승인한 진료는 다시 승인하지 않는다.
+
+   예전에는 승인 직후에만 버튼을 잠갔는데(`target.disabled = true`), 다른 줄에
+   갔다 돌아오면 `renderRole()` 이 되살려서 **같은 진료를 두 번 승인할 수
+   있었다.** 환자에게 문자가 나가는 자리라 두 번 승인은 두 번 발송이 된다.
+
+   화면 상태가 아니라 **그 진료의 상태**를 본다 — 목록 줄이 곧 사실이다. */
+function alreadyDone(visit) {
+  return !!(visit && visit.work_category && visit.work_category !== "APPROVAL_REQUESTED");
+}
+
 (function () {
   /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
      이 파일은 `doctor.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
@@ -35,11 +82,6 @@
     return !!(me && (me.roles || []).indexOf("doctor") !== -1);
   }
 
-  function esc(text) {
-    return String(text == null ? "" : text).replace(/[&<>"]/g, function (ch) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch];
-    });
-  }
 
   /* 서버는 `key` 와 `gender` 를 계약대로 주고, **한국어로 옮기는 것은 화면
      몫이다.** 서버가 한국어를 주면 화면마다 다른 말이 섞이고, 나중에 문구를
@@ -166,16 +208,11 @@
     el("panel").innerHTML = sectionsOf(currentSection().key).map(sectionHtml).join("");
   }
 
-  function warnCount() {
-    return guide.sections.filter(function (s) {
-      return !!s.warn;
-    }).length;
-  }
 
   /* 위에 몇 개를 봐야 하는지 먼저 말한다. 없으면 「없다」고 분명히 말한다 —
      그래야 읽지 않고 승인해도 된다는 것이 전해진다. */
   function renderSummary() {
-    var n = warnCount();
+    var n = warnCount(guide.sections);
     el("warn-line").className = "warnline" + (n ? " warnline--warn" : " warnline--ok");
     el("warn-line").textContent = n
       ? "확인 부탁드리는 곳 " + n + "군데 — ⚠ 표시만 보시면 됩니다"
@@ -205,16 +242,6 @@
 
   /* ── 권한 ───────────────────────────────────────────── */
 
-  /* 이미 승인한 진료는 다시 승인하지 않는다.
-
-     예전에는 승인 직후에만 버튼을 잠갔는데(`target.disabled = true`), 다른 줄에
-     갔다 돌아오면 `renderRole()` 이 되살려서 **같은 진료를 두 번 승인할 수
-     있었다.** 환자에게 문자가 나가는 자리라 두 번 승인은 두 번 발송이 된다.
-
-     화면 상태가 아니라 **그 진료의 상태**를 본다 — 목록 줄이 곧 사실이다. */
-  function alreadyDone() {
-    return !!(visit && visit.work_category && visit.work_category !== "APPROVAL_REQUESTED");
-  }
 
   /* `guide` 가 조건에 들어간 이유.
 
@@ -228,7 +255,7 @@
      그래서 「안내문이 화면에 있는가」를 최상위 조건으로 둔다 — 없으면 승인할
      대상도 없다. 실패했을 때도 `guide` 가 `null` 이라 그대로 잠긴다. */
   function renderRole() {
-    var can = isDoctor() && !alreadyDone() && guide !== null;
+    var can = isDoctor() && !alreadyDone(visit) && guide !== null;
     el("approve").disabled = !can;
     el("return").disabled = !can;
     el("role-note").hidden = isDoctor();
@@ -249,26 +276,6 @@
     renderRole();
   }
 
-  /* 서버는 `2026-08-21T18:00:00+09:00` 처럼 **병원 시간대를 달아서** 준다
-     (`GuideService._send_at` 이 `astimezone(Asia/Seoul)` 로 만든다).
-
-     `new Date(iso)` 로 옮기면 **브라우저 시간대**로 다시 그려진다. KST 가 아닌
-     자리에서 열면 18:00 이 09:00 으로 뜬다 — 서버에서 이미 잡았던 「18시가 새벽
-     3시로 나가는」 버그가 표시 쪽에서 되살아나는 것이다. 예약 시각은 스탭이
-     환자에게 「몇 시에 갑니다」라고 말하는 근거라 틀리면 그대로 전달된다.
-
-     그래서 `detail.js` 의 `dayLabel`·`timeLabel` 처럼 **문자열을 그대로 자른다.**
-     값에 이미 병원 시간대가 박혀 있어 옮길 이유가 없다.
-
-     **수신번호(`to`)는 받지 않는다.** 이 화면은 「누구 것인가」만 알면 되고
-     발송 번호는 서버가 안다. 응답에 실으면 승인할 때마다 환자 전화번호가
-     화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
-  function whenText(iso) {
-    if (!iso) return "곧";
-    var m = String(iso).match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
-    if (!m) return String(iso);
-    return Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3];
-  }
 
   /* ── 모달 ───────────────────────────────────────────── */
 

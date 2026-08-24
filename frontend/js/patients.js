@@ -25,7 +25,7 @@ function tiedBirthDates(items) {
   /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
      이 파일은 `patients.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
      위 순수 규칙은 그대로 남아서 다른 파일도, 검사도 부를 수 있다 (KEY-158). */
-  if (!document.getElementById("view-register")) return;
+  if (!document.getElementById("find-form")) return;
 
   var view = document.getElementById("view-register");
   var findForm = document.getElementById("find-form");

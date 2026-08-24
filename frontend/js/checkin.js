@@ -16,10 +16,19 @@
  * 가져온 문장이라야 하고, 약마다 다르다(`checkin-api.js` 참고).
  */
 
-function esc(text) {
-  return String(text == null ? "" : text).replace(/[&<>"]/g, function (ch) {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch];
-  });
+
+/* 이 답이 **병원에 알림을 보내야 하는 것인가.**
+ *
+ * 계약이 답마다 `notify` 를 정해 준다 — 화면이 판정하지 않는다. 모르는 답이
+ * 오면 **안 보낸다**(`false`) — 알림은 사람을 부르는 일이라, 확실할 때만 한다.
+ *
+ * 닫힌 `data` 를 읽던 것을 인자로 바꿔 IIFE 밖으로 꺼냈다 (KEY-158).
+ */
+/* 서버가 선택지마다 내려준 `notify` 를 그대로 읽는다. 화면이 판단하지
+   않는다 — 무엇이 알릴 일인지는 승인된 주의사항이 정한다. */
+function notifyFor(answers, key) {
+  var info = answers && answers[key];
+  return info ? !!info.notify : false;
 }
 
 (function () {
@@ -218,12 +227,6 @@ function esc(text) {
     el("state").hidden = false;
   }
 
-  /* 서버가 선택지마다 내려준 `notify` 를 그대로 읽는다. 화면이 판단하지
-     않는다 — 무엇이 알릴 일인지는 승인된 주의사항이 정한다. */
-  function notifyFor(key) {
-    var info = data && data.answers && data.answers[key];
-    return info ? !!info.notify : false;
-  }
 
   /* 고르는 즉시 의료진 화면에 「이 환자를 봐 주세요」를 보낸다 (KEY-138).
 
@@ -315,7 +318,7 @@ function esc(text) {
 
              다만 이건 **저장할 때**다. 와이어프레임은 고르는 즉시 알리라고
              하는데, 그러려면 계약이 하나 더 필요하다 — 아래 주석 참고. */
-          notify: notifyFor(picked),
+          notify: notifyFor(data && data.answers, picked),
           /* **저장도 신호와 같은 규칙으로 순번을 받는다.** 예전에는 서버가
              저장에 고정값(「늘 가장 나중」)을 박았는데, 그러면 저장을 두 번
              했을 때 둘이 같아져 뒤엣것이 앞엣것을 못 덮는다 — 지금은 도착

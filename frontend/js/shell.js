@@ -32,13 +32,6 @@ var rows = [];
 var listDay = new Date();
 var listQuery = "";
 
-/* 이름 · 상병 · 차트번호는 사람이 넣은 값이다. 화면을 innerHTML 로 그리므로
-   여기를 지나지 않은 값은 태그로 읽힌다. */
-function esc(text) {
-  return String(text == null ? "" : text).replace(/[&<>"']/g, function (c) {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-  });
-}
 
 function roleLabel(roles) {
   var names = { staff: "스탭", doctor: "의사", admin: "관리자" };

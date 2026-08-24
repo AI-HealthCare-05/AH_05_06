@@ -50,6 +50,72 @@ test("여섯 모두 자기 뿌리가 없으면 돌아간다", () => {
   }
 });
 
+/* 가드가 있어도 **그 id 가 다른 화면에도 있으면** 가드가 아니다.
+   앞 검사는 가드의 **존재**만 본다 — 판별력은 id 가 고유해야 생긴다.
+
+   실제로 `patients.js` 가 `view-register` 로 막고 있었는데, 그 id 는
+   `doctor.html` · `ocr-review.html` 에도 `shell.js` 뷰 전환용 빈 스텁으로
+   있었다. 그 두 화면에서 `patients.js` 를 부르면 가드가 통과해 초기화된다
+   (이희진 님 `#103` 리뷰). */
+const GUARD_ID = {
+  "detail.js": "patient-facts",
+  "patients.js": "find-form",
+  "upload.js": "drop",
+  "doctor.js": "approve",
+  "ocr-review.js": "fields",
+  "checkin.js": "form",
+};
+
+test("가드 id 는 그 화면에만 있다", () => {
+  const htmlDir = path.join(__dirname, "..");
+  const pages = fs.readdirSync(htmlDir).filter((name) => name.endsWith(".html"));
+  assert.ok(pages.length >= 5, `화면 파일을 못 읽었다: ${pages.length}개`);
+
+  for (const [file, id] of Object.entries(GUARD_ID)) {
+    const found = pages.filter((page) =>
+      fs.readFileSync(path.join(htmlDir, page), "utf8").includes(`id="${id}"`),
+    );
+    assert.deepStrictEqual(
+      found.length,
+      1,
+      `${file} 의 가드 id "${id}" 가 ${found.length}개 화면에 있다: ${found.join(", ")}`,
+    );
+  }
+});
+
+test("검사에 적힌 가드 id 가 파일에 실제로 박혀 있다", () => {
+  /* 위 표가 코드와 어긋나면 「고유한 id」를 재면서 **아무도 안 쓰는 id** 를
+     재게 된다. 원문에서 확인한다. */
+  const jsDir = path.join(__dirname, "..", "js");
+  for (const [file, id] of Object.entries(GUARD_ID)) {
+    const source = fs.readFileSync(path.join(jsDir, file), "utf8");
+    assert.match(
+      source,
+      new RegExp(`if \\(!document\\.getElementById\\("${id}"\\)\\) return;`),
+      `${file} 이 "${id}" 로 막지 않는다 — 위 표가 낡았다`,
+    );
+  }
+});
+
+test("여섯 파일 모두 꺼낼 수 있는 규칙을 하나 이상 갖는다", () => {
+  /* `doctor.js` 는 가드만 붙고 순수 규칙이 **0개**였다. 파일은 불려도
+     검사기가 아무것도 못 부르니, 인수조건(「분리된 순수 규칙을 vm 테스트에서
+     불러올 수 있음」)을 형식적으로만 만족했다 (이희진 님 `#103` 리뷰). */
+  const empty = [];
+  for (const [file, files] of Object.entries(SCREENS)) {
+    /* **그 파일이 더한 것만 센다.** 함께 실리는 `shell.js` · `*-api.js` 도
+       전역에 함수를 얹으므로, 통째로 세면 화면 파일이 아무것도 안 내놔도
+       목록이 비지 않는다 — 검사가 헛돈다. 빼고 한 번, 넣고 한 번 불러
+       **차이**를 본다. */
+    const without = new Set(Object.keys(load(...files.slice(0, -1))));
+    const added = Object.keys(load(...files)).filter(
+      (name) => !without.has(name) && typeof load(...files)[name] === "function",
+    );
+    if (added.length === 0) empty.push(file);
+  }
+  assert.deepStrictEqual(empty, [], `순수 규칙을 하나도 안 내놓는 파일: ${empty.join(", ")}`);
+});
+
 test("shell.js 도 같은 규칙을 따른다", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "js", "shell.js"), "utf8");
   assert.match(source, /function bindShell\(\)/);
