@@ -47,6 +47,7 @@ class OcrJob(models.Model):
     failure_code = fields.CharField(max_length=64, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
+    source_documents: fields.ReverseRelation["OcrJobDocument"]
 
     class Meta:
         table = "ocr_job"
