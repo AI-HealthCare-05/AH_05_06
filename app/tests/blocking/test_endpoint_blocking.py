@@ -35,6 +35,7 @@ from app.tests.blocking.accounts import (
     build_two_hospitals,
     client,
     make_guide,
+    make_ocr,
     make_staff_in,
 )
 from app.tests.fakes import FakeRedis
@@ -60,7 +61,9 @@ OCR_ROUTES: list[tuple[str, str, dict | None]] = [
     ("GET", "/api/v1/ocr/jobs/synthetic-job", None),
     ("GET", "/api/v1/ocr/jobs/synthetic-job/result", None),
     ("GET", "/api/v1/ocr/jobs/synthetic-job/fields", None),
-    ("PATCH", "/api/v1/ocr/fields/1", {"corrected_value": "1"}),
+    # `base_version` 을 반드시 싣는다. 빠지면 **422 로 먼저 튕겨 인가에 닿지도
+    # 못한다** — 권한이 깨져도 이 줄로는 못 잡는다 (이희진 님 `#87` 리뷰).
+    ("PATCH", "/api/v1/ocr/fields/1", {"corrected_value": "1", "base_version": 1}),
 ]
 
 
@@ -144,12 +147,22 @@ class TestOtherHospitalIsHiddenAsNotFound(BlockingTestCase):
         assert theirs.status_code == nobody.status_code == 404
         assert theirs.json() == nobody.json(), "남의 의원 환자와 없는 환자의 응답이 다르다 — 그 차이가 존재를 알려 준다"
 
-    async def test_the_list_never_carries_another_hospital(self) -> None:
+    async def test_the_list_carries_mine_and_only_mine(self) -> None:
+        """**부재만 재면 빈 목록도 통과한다.**
+
+        예전에는 「남의 의원 환자가 없다」만 봤다. 목록이 통째로 비어도, 필터가
+        모든 것을 걸러내도 초록이었다 — 격리가 아니라 고장도 통과한다
+        (이희진 님 `#87` 리뷰).
+
+        자기 것이 **있고** 남의 것이 **없는** 것을 함께 잰다.
+        """
         world = await build_two_hospitals()
         async with client() as http:
             response = await http.get("/api/v1/patients?limit=100", headers=world["staff2"].auth)
+
         assert response.status_code == 200
         charts = [item["hospital_patient_no"] for item in response.json()["items"]]
+        assert "BLK-H2-001" in charts, f"자기 의원 환자가 목록에 없다 — 목록이 고장났다: {charts}"
         assert "BLK-H1-001" not in charts, "목록에 남의 의원 환자가 실렸다"
 
 
@@ -201,13 +214,25 @@ class TestOcrIsReachableAndStillGuarded(BlockingTestCase):
     「열린다」와 「그래도 막을 것은 막는다」를 함께 잰다.
     """
 
-    async def test_a_valid_staff_token_gets_past_authentication(self) -> None:
-        """401 이 아니어야 한다. 무엇을 받든 **인증은 지나야** 한다."""
+    async def test_a_valid_staff_token_gets_past_authentication_and_authorisation(self) -> None:
+        """인증**과 인가**를 함께 지난다.
+
+        예전에는 `!= 401` 만 봤다. 그러면 **정상 직원의 OCR 권한이 깨져 403 이
+        나와도 통과한다** — 인증만 지키고 인가는 놓치는 검사였다
+        (유가은 님 `#87` 리뷰).
+
+        지금은 401·403 을 **둘 다** 실패로 본다. 없는 식별자를 두드리므로
+        정상 응답은 「못 찾음」 계열이고, 그 값만 허용한다.
+        """
         world = await build_two_hospitals()
         for method, template, body in OCR_ROUTES:
             response = await self.call(method, template, world["h1"], world["staff1"].auth, body)
-            assert response.status_code != 401, (
-                f"{method} {template} 이 실제 직원 토큰을 401 로 되돌린다 — 아무도 이 경로를 쓸 수 없다"
+            assert response.status_code not in (401, 403), (
+                f"{method} {template} 이 정상 직원에게 {response.status_code} 다 — "
+                "인증이 막혔거나(401) 권한이 깨졌다(403)"
+            )
+            assert response.status_code in (404, 422), (
+                f"{method} {template} 이 뜻밖의 {response.status_code} 를 냈다 — 없는 식별자이므로 404·422 여야 한다"
             )
 
     async def test_admin_only_cannot_touch_ocr(self) -> None:
@@ -438,3 +463,81 @@ class TestUnapprovedGuidesNeverReachThePatient(BlockingTestCase):
             response = await http.get("/api/v1/guides/" + "z" * 43)
         assert response.status_code == 404
         assert "합성 복약 안내" not in response.text
+
+
+class TestOcrIsIsolatedByHospital(BlockingTestCase):
+    """OCR 도 병원으로 갈린다 — 유가은 님 · 이희진 님 `#87` 리뷰.
+
+    두 분이 같은 곳을 짚으셨다. 위 `OCR_ROUTES` 는 `synthetic-job` · `fields/1`
+    처럼 **없는 식별자**를 두드린다. 그래서 타 병원 직원이 `404` 를 받아도
+    「격리됐다」가 아니라 「원래 없다」일 수 있다 — 격리가 실제로 깨져도 이
+    묶음으로는 못 잡는다.
+
+    그래서 **H1 에 진짜 판독 자료를 만들고, 같은 식별자로** 잰다.
+    주인은 열고 남은 못 여는 것이 격리다.
+    """
+
+    async def world_with_ocr(self):
+        world = await build_two_hospitals()
+        fixture = await make_ocr(
+            hospital_id=world["h1"].hospital_id,
+            visit_id=world["h1"].visit_id,
+            job_id="blk-h1-job",
+            requested_by=1,
+        )
+        return world, fixture
+
+    async def test_the_owning_hospital_can_read_its_own_job(self) -> None:
+        """**주인은 열려야 한다.** 아래 404 가 격리 때문임을 이 검사가 보증한다."""
+        world, fx = await self.world_with_ocr()
+        async with client() as http:
+            for path in (
+                f"/api/v1/ocr/jobs/{fx.job_id}",
+                f"/api/v1/ocr/jobs/{fx.job_id}/result",
+                f"/api/v1/ocr/jobs/{fx.job_id}/fields",
+            ):
+                response = await http.get(path, headers=world["staff1"].auth)
+                assert response.status_code == 200, (
+                    f"{path} 이 주인에게 {response.status_code} 다 — 아래 격리 검사가 헛돈다"
+                )
+
+    async def test_another_hospital_cannot_read_the_same_job(self) -> None:
+        """**같은 식별자**로 남의 의원 직원은 404 다."""
+        world, fx = await self.world_with_ocr()
+        async with client() as http:
+            for path in (
+                f"/api/v1/ocr/jobs/{fx.job_id}",
+                f"/api/v1/ocr/jobs/{fx.job_id}/result",
+                f"/api/v1/ocr/jobs/{fx.job_id}/fields",
+            ):
+                response = await http.get(path, headers=world["staff2"].auth)
+                assert response.status_code == 404, (
+                    f"{path} 이 남의 의원 직원에게 {response.status_code} 다 — 격리가 뚫렸거나 존재가 샌다"
+                )
+
+    async def test_another_hospital_cannot_touch_the_same_field(self) -> None:
+        """읽기만이 아니라 **쓰기도** 갈린다."""
+        world, fx = await self.world_with_ocr()
+        async with client() as http:
+            response = await http.patch(
+                f"/api/v1/ocr/fields/{fx.field_id}",
+                json={"corrected_value": "남의 의원이 고쳐 본다", "base_version": 1},
+                headers=world["staff2"].auth,
+            )
+        assert response.status_code == 404, f"남의 의원이 필드를 고쳤거나 존재가 샜다: {response.status_code}"
+
+    async def test_the_answer_is_the_same_as_for_a_job_that_never_existed(self) -> None:
+        """있는 것을 감출 때와 없는 것을 말할 때가 **같아야** 한다.
+
+        코드나 문구가 다르면 그 차이만으로 「그 의원에 그 작업이 있다」를
+        알 수 있다.
+        """
+        world, fx = await self.world_with_ocr()
+        async with client() as http:
+            hidden = await http.get(f"/api/v1/ocr/jobs/{fx.job_id}", headers=world["staff2"].auth)
+            absent = await http.get("/api/v1/ocr/jobs/blk-no-such-job", headers=world["staff2"].auth)
+
+        assert hidden.status_code == absent.status_code == 404
+        assert hidden.json() == absent.json(), (
+            f"감출 때와 없을 때의 응답이 다르다 — 존재가 샌다\n  감춤: {hidden.text[:120]}\n  없음: {absent.text[:120]}"
+        )

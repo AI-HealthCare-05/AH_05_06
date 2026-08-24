@@ -25,6 +25,7 @@ from tortoise.timezone import now
 
 from app.core.utils.security import hash_password
 from app.main import app
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff, StaffStatus
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideStatus, Visit
@@ -149,6 +150,38 @@ async def make_guide(hospital_id: int, visit_id: int, status: GuideStatus) -> in
         generated_body="합성 복약 안내",
     )
     return guide.guide_document_id
+
+
+@dataclass(frozen=True)
+class OcrFixture:
+    """그 의원에 **실제로 있는** 판독 자료. 격리 검사의 과녁이다.
+
+    타 병원 접근이 `404` 인 것만으로는 「격리됐다」를 못 보인다 — 그냥 그런
+    리소스가 없어서 `404` 일 수도 있다. **같은 식별자로 주인은 열고 남은 못
+    여는 것**을 보여야 격리다 (유가은 님 · 이희진 님 `#87` 리뷰).
+    """
+
+    job_id: str
+    field_id: int
+    document_id: int
+
+
+async def make_ocr(hospital_id: int, visit_id: int, job_id: str, requested_by: int) -> OcrFixture:
+    job = await OcrJob.create(
+        ocr_job_id=job_id,
+        hospital_id=hospital_id,
+        visit_id=visit_id,
+        status=OcrJobStatus.COMPLETED,
+        progress=100,
+        requested_by=requested_by,
+    )
+    result = await OcrResult.create(ocr_job=job, model_name="합성-판독기", version=1)
+    field = await OcrField.create(
+        ocr_result=result,
+        field_type="DIAGNOSIS",
+        extracted_value="합성 진단명",
+    )
+    return OcrFixture(job_id=job.ocr_job_id, field_id=field.ocr_field_id, document_id=0)
 
 
 def client() -> AsyncClient:
