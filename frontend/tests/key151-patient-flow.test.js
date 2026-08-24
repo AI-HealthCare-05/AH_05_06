@@ -74,3 +74,43 @@ test("D+7 실제 저장은 확정 범위인 복약·통증만 서버에 보낸�
     pain: { had: false, score: null, types: [] },
   });
 });
+
+test("실제 승인 안내의 응급 섹션은 기존 위험 강조 블록을 재사용한다", () => {
+  function node(tag) {
+    return {
+      tag,
+      children: [],
+      appendChild(child) {
+        this.children.push(child);
+        return child;
+      },
+      addEventListener() {},
+    };
+  }
+  const context = vm.createContext({
+    document: {
+      addEventListener() {},
+      createElement: node,
+      createDocumentFragment: () => node("fragment"),
+    },
+  });
+  vm.runInContext(fs.readFileSync(path.join(JS_DIR, "guide.js"), "utf8"), context);
+
+  const danger = context.renderEmergency(["합성 응급 문구"]);
+
+  assert.equal(danger.className, "card card--danger");
+  assert.equal(danger.children[0].textContent, "⚠");
+  assert.equal(danger.children[1].textContent, "🚨 바로 병원에 연락하세요");
+  assert.equal(danger.children[2].children[0].textContent, "합성 응급 문구");
+  assert.equal(danger.children[3].textContent, "💬 문의하기");
+});
+
+test("D+7 결과에 다음 진료 값이 없으면 빈 항목을 만들지 않는다", () => {
+  const source = fs.readFileSync(path.join(JS_DIR, "checkin.js"), "utf8");
+
+  assert.match(
+    source,
+    /result\.next_visit\s*\?\s*"<dt>다음 진료<\/dt><dd>"[\s\S]*?:\s*""/,
+    "next_visit null 가드가 없어 빈 다음 진료 행이 노출된다",
+  );
+});
