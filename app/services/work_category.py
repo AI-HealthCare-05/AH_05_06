@@ -140,6 +140,45 @@ class VisitSignals:
     sms_opted_out_at: datetime | None
 
 
+#: 안내문 상태 하나에 상세 상태 하나. **`if/elif` 사슬이 아니라 표다.**
+#:
+#: 사슬이었을 때는 `GuideStatus` 에 멤버가 하나 늘면 어느 가지에도 안 걸려
+#: 후보가 비고, `derive()` 가 `AssertionError` 를 던졌다. 그 자리는 환자 목록
+#: 한 줄이라, **목록 전체가 raw 500** 이 된다 — `ContractRoute` 는 `ApiError` 와
+#: `RequestValidationError` 만 다룬다.
+#:
+#: 표로 두면 아래 `_require_every_guide_status_is_mapped()` 가 **임포트할 때**
+#: 빠진 것을 잡는다. 요청이 들어오기 전에, 검사를 한 번이라도 돌리면 죽는다.
+#: (이희진 님 `#93` 리뷰 — 「`ARCHIVED` 를 임의로 하나 더해 재 봤을 때 KEY-120
+#: 검사 40개가 전부 통과했습니다」)
+DETAIL_OF_GUIDE_STATUS: dict[GuideStatus, DetailStatus] = {
+    GuideStatus.STAFF_REVIEW: DetailStatus.STAFF_REVIEW,
+    GuideStatus.APPROVAL_PENDING: DetailStatus.APPROVAL_PENDING,
+    GuideStatus.SCHEDULED_TO_SEND: DetailStatus.SCHEDULED_TO_SEND,
+    GuideStatus.APPROVAL_RETURNED: DetailStatus.APPROVAL_RETURNED,
+}
+
+
+def _require_every_guide_status_is_mapped() -> None:
+    """`GuideStatus` 멤버가 늘면 **여기서 죽는다.**
+
+    늦게 죽을수록 비싸다. 요청 시점에 죽으면 환자 목록이 통째로 500 이고,
+    화면은 「불러오지 못했습니다」만 말한다 — 무엇이 빠졌는지는 로그를 파야
+    안다. 임포트 시점에 죽으면 이름을 대고 죽는다.
+    """
+    missing = set(GuideStatus) - set(DETAIL_OF_GUIDE_STATUS)
+    if missing:
+        raise RuntimeError(
+            "GuideStatus 에 새 멤버가 생겼는데 파생 규칙이 없다: "
+            + ", ".join(sorted(m.value for m in missing))
+            + " — app/services/work_category.py 의 DETAIL_OF_GUIDE_STATUS 와 "
+            "docs/api/hospital.md S1-1 표를 함께 채워야 한다."
+        )
+
+
+_require_every_guide_status_is_mapped()
+
+
 def _candidates(signals: VisitSignals) -> list[DetailStatus]:
     """지금 이 진료에 **동시에 참인** 상태를 전부 모은다.
 
@@ -150,14 +189,8 @@ def _candidates(signals: VisitSignals) -> list[DetailStatus]:
     found: list[DetailStatus] = []
 
     # ── 안내문이 말하는 것 ────────────────────────────────
-    if signals.guide_status is GuideStatus.APPROVAL_RETURNED:
-        found.append(DetailStatus.APPROVAL_RETURNED)
-    elif signals.guide_status is GuideStatus.APPROVAL_PENDING:
-        found.append(DetailStatus.APPROVAL_PENDING)
-    elif signals.guide_status is GuideStatus.SCHEDULED_TO_SEND:
-        found.append(DetailStatus.SCHEDULED_TO_SEND)
-    elif signals.guide_status is GuideStatus.STAFF_REVIEW:
-        found.append(DetailStatus.STAFF_REVIEW)
+    if signals.guide_status is not None:
+        found.append(DETAIL_OF_GUIDE_STATUS[signals.guide_status])
 
     # ── 환자에게 닿을 수 있는가 ───────────────────────────
     #
