@@ -186,3 +186,31 @@ class GuideEvent(models.Model):
     class Meta:
         table = "guide_event"
         indexes = (("guide_document", "created_at"),)
+
+
+class PatientGuideLink(models.Model):
+    """승인 안내 한 건을 여는 개발용 링크 — KEY-90 최소 범위.
+
+    원문 토큰은 발급 응답에서 한 번만 전달하고 저장하지 않는다. DB에는
+    SHA-256 digest만 남겨 DB 덤프만으로 환자 화면을 열 수 없게 한다.
+
+    한 안내에 링크를 하나만 허용한다. 폐기·재발급 정책이 확정되기 전에
+    발급 API를 반복 호출해 유효 링크가 여러 개 생기는 일을 막기 위해서다.
+    """
+
+    patient_guide_link_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.OneToOneRelation[GuideDocument] = fields.OneToOneField(
+        "models.GuideDocument",
+        related_name="patient_link",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    guide_document_id: int
+    token_digest = fields.CharField(max_length=64, unique=True)
+    expires_at = fields.DatetimeField()
+    issued_by = fields.BigIntField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "patient_guide_link"
+        indexes = (("expires_at",),)

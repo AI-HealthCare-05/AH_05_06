@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.apis.v1.guide_routers import guide_router
 from app.apis.v1.health_routers import health_router
+from app.apis.v1.patient_link_routers import patient_guide_router, patient_link_management_router
 from app.apis.v1.patient_routers import patient_router
 from app.apis.v1.staff_auth_routers import staff_auth_router
 from app.apis.v1.user_routers import user_router
@@ -24,3 +25,5 @@ v1_routers.include_router(visit_router)
 v1_routers.include_router(document_router)
 v1_routers.include_router(ocr_router)
 v1_routers.include_router(guide_router)
+v1_routers.include_router(patient_link_management_router)
+v1_routers.include_router(patient_guide_router)

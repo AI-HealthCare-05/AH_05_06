@@ -10,36 +10,23 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, status
 
-from app.dependencies.staff_auth import get_current_staff
+from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.guides import GuideResponse, PatientHead, ReturnRequest, SectionEditRequest, SectionResponse
-from app.models.staffs import Staff
 from app.models.visits import GuideDocument, GuideSection
 from app.services.guides import GuideService
 
 SEOUL = ZoneInfo("Asia/Seoul")
+
+# develop에서 추가된 generate 라우트가 병합될 때도 공통 인증 의존성을
+# 사용하도록 이전 내부 이름을 구현 복제 없이 연결한다.
+_Actor = StaffActor
+_actor = get_staff_actor
 
 guide_router = APIRouter(prefix="/visits", tags=["guides"])
 
 
 def _service() -> GuideService:
     return GuideService()
-
-
-class _Actor:
-    """서비스가 보는 것은 「누구인가」뿐이다.
-
-    `Staff` 를 그대로 넘기지 않는 이유는, 서비스가 모델에 매이면 나중에
-    다른 인증 경로(어드민 · 배치)가 같은 규칙을 못 쓰기 때문이다.
-    """
-
-    def __init__(self, staff: Staff) -> None:
-        self.user_id = staff.staff_id
-        self.hospital_id = staff.hospital_id
-        self.roles = frozenset(staff.roles or [])
-
-
-def _actor(staff: Annotated[Staff, Depends(get_current_staff)]) -> _Actor:
-    return _Actor(staff)
 
 
 def _age_on(birth_date: date, today: date) -> int:
@@ -99,7 +86,7 @@ async def generate_guide(
 @guide_router.get("/{visit_id}/guide", response_model=GuideResponse)
 async def read_guide(
     visit_id: int,
-    actor: Annotated[_Actor, Depends(_actor)],
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
     return _to_response(await service.get(actor, visit_id))
@@ -110,7 +97,7 @@ async def edit_section(
     visit_id: int,
     key: str,
     body: SectionEditRequest,
-    actor: Annotated[_Actor, Depends(_actor)],
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
 ) -> SectionResponse:
     return _section(await service.edit_section(actor, visit_id, key, body.body))
@@ -119,7 +106,7 @@ async def edit_section(
 @guide_router.post("/{visit_id}/guide/approve", response_model=GuideResponse, status_code=status.HTTP_200_OK)
 async def approve_guide(
     visit_id: int,
-    actor: Annotated[_Actor, Depends(_actor)],
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
     guide = await service.approve(actor, visit_id)
@@ -131,7 +118,7 @@ async def approve_guide(
 async def return_guide(
     visit_id: int,
     body: ReturnRequest,
-    actor: Annotated[_Actor, Depends(_actor)],
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
     guide = await service.return_to_staff(actor, visit_id, body.reason)

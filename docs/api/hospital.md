@@ -814,6 +814,7 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/approve` | 승인 — 발송 예약 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/return` | 스탭에 되돌림 (사유 필수) | `doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/link` | 72시간 개발용 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
 
 `admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
 
