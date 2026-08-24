@@ -665,7 +665,6 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 
 | Method | Path | 용도 |
 | --- | --- | --- |
-| `POST` | `/api/v1/documents/{document_id}/ocr` | 문서 OCR 작업 생성 |
 | `GET` | `/api/v1/visits/{visit_id}/ocr-job` | 진료의 현재 OCR 작업 조회 (KEY-133) |
 | `GET` | `/api/v1/ocr/jobs/{ocr_job_id}` | 처리 상태·진행률 조회 |
 | `GET` | `/api/v1/ocr/jobs/{ocr_job_id}/result` | 전체 텍스트와 구조화 결과 조회 |
