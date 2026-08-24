@@ -1,15 +1,13 @@
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
+from app.core.time import DISPLAY_TIMEZONE
 from app.core.utils.common import normalize_phone_number
 from app.dtos.base import BaseSerializerModel
 from app.models.patients import PatientGender
-
-SEOUL = ZoneInfo("Asia/Seoul")
 
 
 class PatientCategory(StrEnum):
@@ -21,7 +19,7 @@ class PatientCategory(StrEnum):
 
 
 def calculate_age(birth_date: date, *, as_of: date | None = None) -> int:
-    reference = as_of or datetime.now(SEOUL).date()
+    reference = as_of or datetime.now(DISPLAY_TIMEZONE).date()
     return reference.year - birth_date.year - ((reference.month, reference.day) < (birth_date.month, birth_date.day))
 
 

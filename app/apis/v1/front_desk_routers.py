@@ -21,7 +21,7 @@ async def list_front_desk_visits(
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> FrontDeskVisitListResponse:
-    items, counts, selected, next_cursor, has_next = await service.list_visits(
+    result = await service.list_visits(
         actor,
         target_date=date_,
         categories=categories,
@@ -30,8 +30,8 @@ async def list_front_desk_visits(
     )
     return FrontDeskVisitListResponse(
         date=date_,
-        counts=counts,
-        selected_categories=selected,
-        items=items,
-        page=CursorPage(next_cursor=next_cursor, has_next=has_next),
+        counts=result.counts,
+        selected_categories=result.selected,
+        items=result.items,
+        page=CursorPage(next_cursor=result.next_cursor, has_next=result.has_next),
     )

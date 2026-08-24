@@ -447,6 +447,7 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 ```
 
 - `category`: `ALL/IN_TREATMENT/NEEDS_ATTENTION/SMS_OPT_OUT/INACTIVE_6_MONTHS`, 기본 `ALL`.
+- 현재 계산 가능한 `ALL`, `SMS_OPT_OUT`, `INACTIVE_6_MONTHS`만 조회할 수 있다. 이벤트 기반 `IN_TREATMENT`, `NEEDS_ATTENTION`을 선택하면 후속 계약이 연결되기 전까지 `400 INVALID_REQUEST`로 명시적으로 거부하며, 빈 검색 결과처럼 응답하지 않는다.
 - `keyword`: 이름, 차트번호, 정규화된 휴대폰에서 검색한다. 이름은 한 글자부터 허용한다.
 - `cursor`: 서버가 발급한 불투명 다음 페이지 커서. 임의 조립하지 않는다.
 - `limit` 기본 20, 최대 100.

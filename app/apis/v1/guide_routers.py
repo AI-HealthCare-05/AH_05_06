@@ -6,17 +6,15 @@
 
 from datetime import date, datetime
 from typing import Annotated
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, status
 
+from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.staff_auth import get_current_staff
 from app.dtos.guides import GuideResponse, PatientHead, ReturnRequest, SectionEditRequest, SectionResponse
 from app.models.staffs import Staff
 from app.models.visits import GuideDocument, GuideSection
 from app.services.guides import GuideService
-
-SEOUL = ZoneInfo("Asia/Seoul")
 
 guide_router = APIRouter(prefix="/visits", tags=["guides"])
 
@@ -55,7 +53,7 @@ def _age_on(birth_date: date, today: date) -> int:
 def _to_response(guide: GuideDocument) -> GuideResponse:
     visit = guide.visit
     patient = visit.patient
-    today = datetime.now(SEOUL).date()
+    today = datetime.now(DISPLAY_TIMEZONE).date()
     return GuideResponse(
         visit_id=guide.visit_id,
         patient=PatientHead(

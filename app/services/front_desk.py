@@ -1,21 +1,33 @@
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
 
 from app.core.api_errors import ApiError
-from app.core.pagination import decode_cursor, encode_cursor
+from app.core.pagination import encode_cursor
+from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.front_desk import FrontDeskVisitItem
 from app.dtos.patients import calculate_age
 from app.dtos.visits import DoctorResponse
 from app.models.ocr import OcrField
 from app.models.staffs import Staff
-from app.models.visits import Visit
+from app.repositories.visit_repository import VisitRepository
+from app.services.patient_visit_scope import hospital_id_of, visit_cursor
 from app.services.work_category import WorkCategory, count_by_category, derive, load_signals
 
-SEOUL = ZoneInfo("Asia/Seoul")
+
+@dataclass(frozen=True, slots=True)
+class FrontDeskVisitPage:
+    items: list[FrontDeskVisitItem]
+    counts: dict[WorkCategory, int]
+    selected: list[WorkCategory]
+    next_cursor: str | None
+    has_next: bool
 
 
 class FrontDeskService:
+    def __init__(self) -> None:
+        self.repo = VisitRepository()
+
     async def list_visits(
         self,
         actor: ClinicalActor,
@@ -24,21 +36,16 @@ class FrontDeskService:
         categories: str | None,
         cursor: str | None,
         limit: int,
-    ) -> tuple[
-        list[FrontDeskVisitItem],
-        dict[WorkCategory, int],
-        list[WorkCategory],
-        str | None,
-        bool,
-    ]:
-        hospital_id = self._hospital_id(actor)
+    ) -> FrontDeskVisitPage:
+        hospital_id = hospital_id_of(actor)
         selected = self._categories(categories)
-        before_at, before_id = self._cursor(cursor)
+        before_at, before_id = visit_cursor(cursor)
 
-        # NEEDS_ATTENTION은 선택 날짜와 무관하게 해결 전까지 보여야 하므로 병원
-        # 범위 전체에서 파생한다. 환자·담당의·진단은 아래 일괄 질의로 읽는다.
-        visits = (
-            await Visit.filter(hospital_id=hospital_id).prefetch_related("patient").order_by("-visited_at", "-visit_id")
+        start_local = datetime.combine(target_date, time.min, tzinfo=DISPLAY_TIMEZONE)
+        visits = await self.repo.front_desk_candidates(
+            hospital_id,
+            start_utc=start_local.astimezone(UTC),
+            end_utc=(start_local + timedelta(days=1)).astimezone(UTC),
         )
         signals = await load_signals([visit.visit_id for visit in visits], hospital_id)
         derived = {visit_id: derive(value) for visit_id, value in signals.items()}
@@ -47,7 +54,7 @@ class FrontDeskService:
             for visit in visits
             if visit.visit_id in derived
             and (
-                visit.visited_at.astimezone(SEOUL).date() == target_date
+                visit.visited_at.astimezone(DISPLAY_TIMEZONE).date() == target_date
                 or derived[visit.visit_id][0] is WorkCategory.NEEDS_ATTENTION
             )
         ]
@@ -60,9 +67,11 @@ class FrontDeskService:
         page_rows = filtered[:limit]
 
         doctor_ids = {visit.doctor_id for visit in page_rows if visit.doctor_id is not None}
-        doctors = {
-            staff.staff_id: staff for staff in await Staff.filter(hospital_id=hospital_id, staff_id__in=doctor_ids)
-        }
+        doctors = (
+            {staff.staff_id: staff for staff in await Staff.filter(hospital_id=hospital_id, staff_id__in=doctor_ids)}
+            if doctor_ids
+            else {}
+        )
         diagnoses = await self._diagnoses([visit.visit_id for visit in page_rows], hospital_id)
         items: list[FrontDeskVisitItem] = []
         for visit in page_rows:
@@ -90,7 +99,7 @@ class FrontDeskService:
             next_cursor = encode_cursor(
                 {"visited_at": page_rows[-1].visited_at.isoformat(), "visit_id": page_rows[-1].visit_id}
             )
-        return items, counts, selected, next_cursor, has_next
+        return FrontDeskVisitPage(items, counts, selected, next_cursor, has_next)
 
     @staticmethod
     async def _diagnoses(visit_ids: list[int], hospital_id: int) -> dict[int, str]:
@@ -119,26 +128,3 @@ class FrontDeskService:
         if not selected:
             raise ApiError(400, "INVALID_REQUEST", "업무 카테고리를 하나 이상 선택해 주세요.")
         return selected
-
-    @staticmethod
-    def _cursor(cursor: str | None) -> tuple[datetime | None, int | None]:
-        try:
-            payload = decode_cursor(cursor)
-            if payload is None:
-                return None, None
-            visited_at = payload.get("visited_at")
-            visit_id = payload.get("visit_id")
-            if not isinstance(visited_at, str) or not isinstance(visit_id, int):
-                raise ValueError
-            parsed = datetime.fromisoformat(visited_at)
-            if parsed.tzinfo is None:
-                raise ValueError
-            return parsed, visit_id
-        except ValueError as error:
-            raise ApiError(400, "INVALID_REQUEST", "페이지 커서가 올바르지 않습니다.") from error
-
-    @staticmethod
-    def _hospital_id(actor: ClinicalActor) -> int:
-        if actor.hospital_id is None:
-            raise ApiError(403, "FORBIDDEN", "병원 소속 직원만 접근할 수 있습니다.")
-        return actor.hospital_id
