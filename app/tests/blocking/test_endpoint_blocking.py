@@ -526,6 +526,48 @@ class TestOcrIsIsolatedByHospital(BlockingTestCase):
             )
         assert response.status_code == 404, f"남의 의원이 필드를 고쳤거나 존재가 샜다: {response.status_code}"
 
+    async def test_another_hospital_cannot_start_ocr_on_the_same_document(self) -> None:
+        """**문서 단위도 갈린다** — 이희진 님 `#87` 리뷰.
+
+        job·result·field 셋만 실제 자료로 재고 있었고, `OcrFixture.document_id`
+        는 `0` 을 넣어 둔 채 아무 데서도 안 썼다. fixture 는 스스로를 「격리
+        검사의 과녁」이라 적어 뒀는데 **그 말과 코드가 어긋나 있었다.**
+
+        여기도 같은 방식이다 — 주인은 되고, 남은 같은 식별자로 404 다.
+        """
+        world, fx = await self.world_with_ocr()
+        body = {"visit_id": world["h1"].visit_id, "document_type": "EMR"}
+        path = f"/api/v1/documents/{fx.document_id}/ocr"
+
+        async with client() as http:
+            theirs = await http.post(path, json=body, headers=world["staff2"].auth)
+
+        assert theirs.status_code == 404, f"남의 의원 문서로 판독을 걸었다: {theirs.status_code}"
+
+    async def test_the_owner_can_start_ocr_on_that_document(self) -> None:
+        """**주인은 되어야 한다.** 위 404 가 격리 때문임을 이 검사가 보증한다."""
+        world, fx = await self.world_with_ocr()
+        body = {"visit_id": world["h1"].visit_id, "document_type": "EMR"}
+
+        async with client() as http:
+            mine = await http.post(f"/api/v1/documents/{fx.document_id}/ocr", json=body, headers=world["staff1"].auth)
+
+        assert mine.status_code == 202, f"주인이 자기 문서로 판독을 못 건다: {mine.status_code} {mine.text[:120]}"
+
+    async def test_a_hidden_document_answers_like_one_that_never_existed(self) -> None:
+        """문서도 **감출 때와 없을 때가 같아야** 한다."""
+        world, fx = await self.world_with_ocr()
+        body = {"visit_id": world["h1"].visit_id, "document_type": "EMR"}
+
+        async with client() as http:
+            hidden = await http.post(f"/api/v1/documents/{fx.document_id}/ocr", json=body, headers=world["staff2"].auth)
+            absent = await http.post("/api/v1/documents/999999/ocr", json=body, headers=world["staff2"].auth)
+
+        assert hidden.status_code == absent.status_code == 404
+        assert hidden.json() == absent.json(), (
+            f"감출 때와 없을 때의 응답이 다르다 — 존재가 샌다\n  감춤: {hidden.text[:120]}\n  없음: {absent.text[:120]}"
+        )
+
     async def test_the_answer_is_the_same_as_for_a_job_that_never_existed(self) -> None:
         """있는 것을 감출 때와 없는 것을 말할 때가 **같아야** 한다.
 

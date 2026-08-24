@@ -25,7 +25,8 @@ from tortoise.timezone import now
 
 from app.core.utils.security import hash_password
 from app.main import app
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
+from app.models.documents import MedicalDocument
+from app.models.ocr import OcrDocumentType, OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff, StaffStatus
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideStatus, Visit
@@ -163,10 +164,22 @@ class OcrFixture:
 
     job_id: str
     field_id: int
+    #: **실제로 만든 문서다.** 한때 `0` 을 넣어 두고 아무 데서도 안 썼는데,
+    #: docstring 은 「격리 검사의 과녁」이라 적혀 있어 말과 코드가 어긋났다
+    #: (이희진 님 `#87` 리뷰).
     document_id: int
 
 
 async def make_ocr(hospital_id: int, visit_id: int, job_id: str, requested_by: int) -> OcrFixture:
+    document = await MedicalDocument.create(
+        hospital_id=hospital_id,
+        visit_id=visit_id,
+        document_type=OcrDocumentType.EMR,
+        file_path=f"synthetic/{job_id}.pdf",
+        file_size=1024,
+        mime_type="application/pdf",
+        uploaded_by=requested_by,
+    )
     job = await OcrJob.create(
         ocr_job_id=job_id,
         hospital_id=hospital_id,
@@ -181,7 +194,11 @@ async def make_ocr(hospital_id: int, visit_id: int, job_id: str, requested_by: i
         field_type="DIAGNOSIS",
         extracted_value="합성 진단명",
     )
-    return OcrFixture(job_id=job.ocr_job_id, field_id=field.ocr_field_id, document_id=0)
+    return OcrFixture(
+        job_id=job.ocr_job_id,
+        field_id=field.ocr_field_id,
+        document_id=document.document_id,
+    )
 
 
 def client() -> AsyncClient:
