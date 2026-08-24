@@ -603,6 +603,47 @@ class TestTheDecisionIsReadUnderALock(GuideTestCase):
         assert len(decisions) == 1, "결정 기록이 둘 남았다 — 상태와 기록이 어긋난다"
 
 
+class TestTheOrderComesFromTheContract(GuideTestCase):
+    """차례를 **삽입 순서에 맡기지 않는다** — KEY-161.
+
+    예전에는 `guide_section_id` 로 정렬했다. 지금 생성 경로가 계약 순서대로
+    넣으니 결과가 같아서 **우연히 맞는 것**을 계약이라 착각하기 쉽다.
+
+    행 하나를 나중에 끼워 넣으면(기존 안내문에 `emergency` 를 채워 넣는
+    backfill 이 그렇다) 그 행의 `id` 가 가장 커서 **응급 문장이 문자 설정
+    뒤로 밀린다.** 그래서 일부러 거꾸로 심고 잰다.
+    """
+
+    async def test_a_late_inserted_section_still_lands_in_its_place(self) -> None:
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+
+        # `make_guide()` 는 medication · caution · emergency 를 심는다.
+        # 나머지 둘을 **뒤에** 붙여도 차례는 계약을 따라야 한다.
+        await GuideSection.create(
+            guide_document=guide,
+            section_key=GuideSectionKey.MESSAGES,
+            generated_body="합성 문자 설정 본문",
+        )
+        await GuideSection.create(
+            guide_document=guide,
+            section_key=GuideSectionKey.LIFE,
+            generated_body="합성 생활 안내 본문",
+        )
+
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(doctor))
+
+        assert [s["key"] for s in response.json()["sections"]] == [
+            GuideSectionKey.MEDICATION,
+            GuideSectionKey.CAUTION,
+            GuideSectionKey.EMERGENCY,
+            GuideSectionKey.LIFE,
+            GuideSectionKey.MESSAGES,
+        ], "심은 순서가 그대로 나왔다 — 차례를 DB 가 정하고 있다"
+
+
 class TestCautionEmergencySeparation(GuideTestCase):
     """시드 경로에서도 주의/응급이 **두 행**인가 — KEY-150 이희진 코멘트, KEY-161.
 

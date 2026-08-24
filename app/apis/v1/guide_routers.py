@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.guides import GuideResponse, PatientHead, ReturnRequest, SectionEditRequest, SectionResponse
-from app.models.visits import GuideDocument, GuideSection
+from app.models.visits import GuideDocument, GuideSection, GuideSectionKey
 from app.services.guides import GuideService
 
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -58,8 +58,27 @@ def _to_response(guide: GuideDocument) -> GuideResponse:
         approved_at=guide.approved_at,
         scheduled_at=guide.scheduled_at,
         returned_reason=guide.returned_reason,
-        sections=[_section(s) for s in sorted(guide.sections, key=lambda s: s.guide_section_id)],
+        sections=[_section(s) for s in sorted(guide.sections, key=_section_order)],
     )
+
+
+#: 계약이 정한 차례 — `GuideSectionKey` 에 적힌 순서 그대로다(P2 · P3 · P4, 그리고
+#: 문자 설정). `emergency` 는 `caution` 바로 뒤다.
+_SECTION_ORDER: dict[GuideSectionKey, int] = {key: i for i, key in enumerate(GuideSectionKey)}
+
+
+def _section_order(section: GuideSection) -> int:
+    """**차례를 삽입 순서에 맡기지 않는다.**
+
+    예전에는 `guide_section_id` 로 정렬했다. 지금 생성 경로가 계약 순서대로
+    넣으니 결과는 같지만, 그건 **우연히 같은 것**이다. 행 하나를 나중에
+    끼워 넣으면(예: 기존 안내문에 `emergency` 를 채워 넣는 backfill) 그 행이
+    맨 뒤로 가고, 응급 문장이 문자 설정 뒤에 붙는다.
+
+    계약(`docs/api/hospital.md` §5)은 **차례까지** 정한다. 그러면 차례는
+    계약에서 읽어야지 DB 가 준 순서에서 읽을 것이 아니다 (KEY-161).
+    """
+    return _SECTION_ORDER[GuideSectionKey(section.section_key)]
 
 
 def _section(section: GuideSection) -> SectionResponse:
