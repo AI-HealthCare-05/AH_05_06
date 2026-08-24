@@ -6,7 +6,14 @@ from typing import Any
 
 from app.core.config import Config
 
-_CURSOR_SECRET = Config().SECRET_KEY.encode()
+# JWT와 같은 설정값을 입력으로 쓰더라도 HMAC 키는 용도별로 파생한다. 커서
+# 서명을 JWT 서명에 그대로 재사용하면 한 기능의 키 사용 방식이 다른 기능까지
+# 결합시킨다.
+_CURSOR_SECRET = hmac.new(
+    Config().SECRET_KEY.encode(),
+    b"patient-visit-cursor-v1",
+    hashlib.sha256,
+).digest()
 
 
 def encode_cursor(payload: dict[str, Any]) -> str:

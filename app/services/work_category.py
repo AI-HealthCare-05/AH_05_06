@@ -37,6 +37,7 @@ from enum import StrEnum
 
 from tortoise.transactions import in_transaction
 
+from app.core.api_errors import ApiError
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrJob, OcrJobStatus
 from app.models.visits import GuideDocument, GuideStatus, Visit
@@ -229,12 +230,12 @@ def derive(signals: VisitSignals) -> tuple[WorkCategory, DetailStatus]:
     found = _candidates(signals)
     for category in CATEGORY_PRIORITY:
         for detail in found:
-            if CATEGORY_OF[detail] is category:
+            if CATEGORY_OF.get(detail) is category:
                 return category, detail
 
     # 아무것도 안 걸리는 조합은 없다 — 판독 가지가 늘 하나를 넣는다.
     # 그래도 조용히 틀린 값을 주지 않는다.
-    raise AssertionError(f"파생할 상태가 없다: {signals}")
+    raise ApiError(500, "WORK_CATEGORY_DATA_INVALID", "업무 상태 데이터를 처리할 수 없습니다.")
 
 
 async def load_signals(visit_ids: list[int], hospital_id: int) -> dict[int, VisitSignals]:
@@ -275,11 +276,15 @@ async def load_signals(visit_ids: list[int], hospital_id: int) -> dict[int, Visi
 
     # 같은 진료에 판독이 여러 번 돌 수 있다. **가장 최근 것만** 본다 —
     # 위 `order_by` 가 최신을 먼저 주므로 처음 만난 것을 쓴다.
-    latest_ocr: dict[int, OcrJobStatus] = {}
-    for visit_id, status in ocr_rows:
-        latest_ocr.setdefault(visit_id, OcrJobStatus(status))
-
-    guides = {visit_id: GuideStatus(status) for visit_id, status in guide_rows}
+    try:
+        latest_ocr: dict[int, OcrJobStatus] = {}
+        for visit_id, status in ocr_rows:
+            latest_ocr.setdefault(visit_id, OcrJobStatus(status))
+        guides = {visit_id: GuideStatus(status) for visit_id, status in guide_rows}
+    except ValueError as error:
+        # 원문 status를 오류나 로그에 싣지 않는다. 레거시 값이 있어도 공통 오류
+        # 봉투를 유지해 내부 enum/데이터를 응답으로 노출하지 않는다.
+        raise ApiError(500, "WORK_CATEGORY_DATA_INVALID", "업무 상태 데이터를 처리할 수 없습니다.") from error
     patients = {visit_id: (phone, opted_out) for visit_id, phone, opted_out in patient_rows}
 
     # **이 병원에서 읽을 수 있는 진료만 돌려준다.**

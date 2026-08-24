@@ -7,6 +7,7 @@ from app.dependencies.patient_access import ClinicalActor, require_patient_read,
 from app.dtos.patients import (
     CursorPage,
     LatestVisitResponse,
+    PatientCategory,
     PatientCreateRequest,
     PatientListItem,
     PatientListResponse,
@@ -32,12 +33,14 @@ async def list_patients(
     actor: Annotated[ClinicalActor, Depends(require_patient_read)],
     service: Annotated[PatientService, Depends(PatientService)],
     keyword: str | None = None,
+    category: PatientCategory = PatientCategory.ALL,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> PatientListResponse:
-    rows, next_cursor, has_next = await service.list(
+    rows, counts, next_cursor, has_next = await service.list(
         actor,
         keyword=keyword,
+        category=category,
         cursor=cursor,
         limit=limit,
     )
@@ -47,7 +50,12 @@ async def list_patients(
         if latest_visit is not None:
             response.latest_visit = LatestVisitResponse.model_validate(latest_visit)
         items.append(response)
-    return PatientListResponse(items=items, page=CursorPage(next_cursor=next_cursor, has_next=has_next))
+    return PatientListResponse(
+        counts=counts,
+        selected_category=category,
+        items=items,
+        page=CursorPage(next_cursor=next_cursor, has_next=has_next),
+    )
 
 
 @patient_router.get("/{patient_id}", response_model=PatientResponse)
