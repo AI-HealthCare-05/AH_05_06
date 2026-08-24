@@ -532,7 +532,9 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 }
 ```
 
-`patient_id`, `hospital_id`, `visit_id`, `department`를 본문에 입력하지 않는다. 서버는 `department_id`가 같은 병원의 활성 진료과인지, 지정 의사가 그 진료과 소속인지 검증한 뒤 현재 명칭을 `visit.department`에 스냅샷으로 저장한다.
+`patient_id`, `hospital_id`, `visit_id`, `department`를 본문에 입력하지 않는다. v1 목표 계약은 `department_id`가 같은 병원의 활성 진료과인지, 지정 의사가 그 진료과 소속인지 검증한 뒤 현재 명칭을 `visit.department`에 스냅샷으로 저장하는 것이다. 현재는 진료과 기준 모델과 직원-진료과 관계가 없어 `department_id`의 non-null 입력을 `400 INVALID_DEPARTMENT`로 거부하며, 미검증 스냅샷을 저장하지 않는다.
+
+`doctor_id`는 같은 병원의 재직 중인 `doctor` 역할 직원만 허용한다. `null`은 담당의 미지정이며 수정에서는 담당의 해제로 해석한다. 존재하지 않음·타 병원·퇴사·비의사 조건은 직원 정보 노출을 피하기 위해 모두 `400 INVALID_REQUEST`로 응답한다.
 
 #### 진료 목록
 
@@ -547,8 +549,8 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 #### 진료 수정
 
 - 수정 가능: `doctor_id`, `department_id`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
-- `department_id` 변경에도 생성과 같은 활성 진료과·의사 소속 검증을 적용하고 `department` 스냅샷을 갱신한다.
-- OCR 또는 승인 안내가 이미 연결된 뒤 식별 관계를 바꾸는 수정은 `409 VISIT_LOCKED`다.
+- 현재 `department_id` 변경은 진료과 기준 모델이 없어 `400 INVALID_DEPARTMENT`로 거부한다. 기준 모델 연결 뒤 생성과 같은 활성 진료과·의사 소속 검증 및 `department` 스냅샷 갱신을 적용한다.
+- 현재 OCR 또는 승인 안내 연결 뒤 `department_id` 변경은 `409 VISIT_LOCKED`다. `doctor_id`와 `visited_at`의 잠금 여부는 KEY-119에서 리뷰어 합의 후 확정하며, KEY-118은 잠금 범위를 선행 변경하지 않고 담당의 유효성만 검증한다.
 - `patient_id`, `hospital_id`, `visit_id`는 수정할 수 없다.
 
 ### 7. 오류 계약
@@ -574,7 +576,7 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 | 409 | `VISIT_ALREADY_REGISTERED` | 같은 환자의 같은 날짜 진료 중복 |
 | 409 | `VISIT_LOCKED` | 후속 데이터 연결 뒤 관계 변경 시도 |
 | 400 | `INVALID_DEPARTMENT` | 진료과가 없거나 비활성 또는 타 병원 소속 |
-| 400 | `DOCTOR_DEPARTMENT_MISMATCH` | 담당 의사가 선택한 진료과 소속이 아님 |
+| 400 | `DOCTOR_DEPARTMENT_MISMATCH` | 직원-진료과 관계 연결 뒤 적용할 예약 코드. 현재 구현은 반환하지 않음 |
 | 400 | `INVALID_REQUEST` | 필드 형식·enum·범위 오류 |
 | 400 | `EMPTY_UPDATE_FIELDS` | PATCH 본문에 수정 가능 필드 없음 |
 
@@ -801,12 +803,13 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 
 ## 5. 안내 생성·승인·반려
 
-> 상위 일감: `KEY-111`(`KEY-76` 인수조건, 와이어프레임 D1-1~D1-5)
+> 상위 일감: `KEY-111`(`KEY-76` 인수조건, 와이어프레임 D1-1~D1-5), `KEY-150`(확정 OCR→고정 안내→의사 승인 연결)
 
 ### 엔드포인트
 
 | Method | Path | 용도 | 권한 |
 |---|---|---|---|
+| POST | `/api/v1/visits/{visit_id}/guide/generate` | 확정 OCR로 고정 안내 생성 — 201 | `staff`·`doctor` |
 | GET | `/api/v1/visits/{visit_id}/guide` | 안내문 조회 — 네 갈래 + ⚠ 표시 | `staff`·`doctor` |
 | PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/approve` | 승인 — 발송 예약 | `doctor` |
@@ -858,6 +861,20 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 - `warn`·`locked`는 섹션 단위다. `warn`은 AI가 자신 없는 곳·지난 진료와 달라진 곳·값이 빠진 곳에만 서버가 판정해 채운다 — 화면은 판정하지 않는다. `locked`는 🚨 응급 문장(식약처 의약품정보 기준)이라는 뜻의, 이유 문자열이 없는 boolean이다. 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
 - `edited`는 사람이 고쳤는지를 말한다. 생성 원문은 서버에 별도로 보관하며 이 응답에는 포함하지 않는다.
 
+### 안내 생성
+
+```text
+POST /api/v1/visits/{visit_id}/guide/generate
+→ 201 Created
+```
+
+- `staff`·`doctor` 역할 모두 호출할 수 있다.
+- 진료에 연결된 OCR 필드 중 `is_confirmed=True`인 것이 하나 이상 있어야 한다 — 미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고, 의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
+- 안내는 `APPROVAL_PENDING` 상태로 생성된다 — W1 고정 안내 경로는 스탭 검토(`STAFF_REVIEW`) 단계를 거치지 않는다. LLM 생성 안내가 붙는 시점에 이 흐름을 다시 정한다.
+- 섹션은 `medication`·`caution`·`life`·`messages` 4개 고정이다. `caution`은 식약처 의약품정보 기준 응급 문장으로 `locked=true`다 — 사람이 고칠 수 없다(D1-2).
+- 같은 진료에 안내가 이미 있으면 `409 GUIDE_ALREADY_EXISTS`다.
+- 응답은 안내문 조회와 같은 전체 모양이다.
+
 ### 섹션 수정
 
 ```text
@@ -903,18 +920,22 @@ POST /api/v1/visits/{visit_id}/guide/return
 | HTTP | code | 조건 |
 |---:|---|---|
 | 403 | `FORBIDDEN` | 승인·반려·수정에 `doctor` 역할 없음 |
+| 404 | `VISIT_NOT_FOUND` | 진료 없음 또는 타 병원 진료 (generate) |
 | 404 | `GUIDE_NOT_FOUND` | 안내문 없음 또는 타 병원 안내문 |
 | 404 | `SECTION_NOT_FOUND` | 없는 섹션 키 |
+| 409 | `GUIDE_ALREADY_EXISTS` | 같은 진료에 안내가 이미 있는데 generate 재시도 |
 | 409 | `SECTION_LOCKED` | 잠긴(🚨 응급) 섹션 수정 시도 |
 | 409 | `GUIDE_NOT_PENDING` | 승인 요청 상태가 아닌데 수정·승인·반려 시도 |
 | 409 | `ALREADY_APPROVED` | 이미 승인된 안내문 재승인 시도 |
+| 422 | `OCR_NOT_CONFIRMED` | 확정된 OCR 항목 없이 generate 시도 |
 | 422 | `EMPTY_BODY` | 섹션 수정 본문 빈 값 |
 | 422 | `REASON_REQUIRED` | 반려 사유 빈 값 |
 | 422 | `REASON_TOO_LONG` | 반려 사유 200자 초과 |
 
 ### 남은 결정
 
-- 스탭이 `STAFF_REVIEW` 단계에서 안내문을 고치는 경로는 이번 계약에 포함하지 않는다. 범위와 API는 후속 티켓에서 정한다.
+- `generate`는 W1 고정 안내 경로로 `STAFF_REVIEW` 단계 없이 바로 `APPROVAL_PENDING`으로 만든다. LLM 생성 안내가 붙을 때 `STAFF_REVIEW` 단계와 스탭 편집 경로를 다시 정한다.
+- 승인 전 환자 조회 차단(`APPROVAL_PENDING` 상태에서 환자 모바일 API 접근 불가)은 환자 링크·OTP·모바일 영역(KEY-4)에서 구현한다. `generate`는 DB 상태를 `APPROVAL_PENDING`으로 설정하는 것으로 이 게이트의 전제를 만든다.
 - `locked`가 이유 문자열 없는 boolean인 것은 지금 유일하게 잠기는 `caution` 섹션(🚨 응급 문장)에는 맞지만, 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
 
 ## 6. 환자·진료 구현 기록
@@ -942,10 +963,10 @@ POST /api/v1/visits/{visit_id}/guide/return
 차단합니다. KEY-73의 Staff·Hospital 관계가 병합되면 같은 의존성이 인증 컨텍스트의
 값을 사용하며, 클라이언트가 병원 값을 지정하는 우회 경로는 생기지 않습니다.
 
-Department·Staff 기준 테이블도 아직 없으므로 `doctor_id` 또는 `department_id`가
-포함된 진료 생성·수정은 `INVALID_DEPARTMENT`로 안전하게 실패합니다. 두 값을 검증 없이
-저장하지 않으며, KEY-73 병합 뒤 같은 병원의 활성 진료과와 의사 소속 검증을 연결해야
-합니다. 환자·진료 기본 흐름은 담당의 미지정 상태로 통합 테스트합니다.
+KEY-73의 Staff 기준 테이블이 병합되어 `doctor_id`는 같은 병원의 재직 중인 `doctor`
+역할 직원인지 검증한 뒤 저장합니다. 진료과 기준 테이블과 직원-진료과 관계는 아직
+없으므로 non-null `department_id`는 `INVALID_DEPARTMENT`로 안전하게 실패합니다.
+직원-진료과 관계가 연결되기 전에는 `DOCTOR_DEPARTMENT_MISMATCH`를 반환하지 않습니다.
 
 환자번호 제한 정정은 `admin`과 임상 역할을 함께 가진 사용자, 진료가 없는 환자,
 필수 정정 사유 조건까지 검사합니다. 감사 이벤트 테이블이 병합되기 전에는 실제 운영
