@@ -199,6 +199,29 @@ function renderBody() {
   body.textContent = "";
   var g = state.guide;
   if (!g) return;
+  if (g.sections) {
+    var keys =
+      state.tab === "guide"
+        ? ["medication"]
+        : state.tab === "caution"
+          ? ["caution", "emergency"]
+          : state.tab === "life"
+            ? ["life"]
+            : [];
+    if (!keys.length) {
+      body.appendChild(renderPending(state.tab === "status" ? "복약 현황" : "챗봇"));
+      return;
+    }
+    var titles = { medication: "복약지도", caution: "주의사항", emergency: "응급 안내", life: "생활관리" };
+    g.sections
+      .filter(function (item) {
+        return keys.indexOf(item.key) !== -1;
+      })
+      .forEach(function (item) {
+        body.appendChild(paragraphs(section(titles[item.key]), String(item.body || "").split("\n")));
+      });
+    return;
+  }
   if (state.tab === "guide") body.appendChild(renderGuideTab(g));
   else if (state.tab === "caution") body.appendChild(renderCautionTab(g));
   else if (state.tab === "life") body.appendChild(renderLifeTab(g));
@@ -222,14 +245,15 @@ function renderError(code) {
 
 function start() {
   var params = new URLSearchParams(window.location.search);
-  var visitId = params.get("visit") || "";
+  var token = params.get("t") || params.get("visit") || "";
 
-  fetchGuide(visitId)
+  fetchGuide(token)
     .then(function (guide) {
       state.guide = guide;
-      document.getElementById("visit-meta").textContent = guide.visit_date + " · " + guide.clinic_name;
-      document.getElementById("guide-source").textContent =
-        "출처 · 식약처 의약품정보 · 생성 " + guide.generated_at;
+      document.getElementById("visit-meta").textContent = guide.sections ? "" : guide.visit_date + " · " + guide.clinic_name;
+      document.getElementById("guide-source").textContent = guide.sections
+        ? ""
+        : "출처 · 식약처 의약품정보 · 생성 " + guide.generated_at;
       renderTabs();
       renderBody();
     })

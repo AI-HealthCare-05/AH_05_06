@@ -224,3 +224,38 @@ class PatientGuideLink(models.Model):
     class Meta:
         table = "patient_guide_link"
         indexes = (("expires_at",),)
+
+
+class CheckInMedication(StrEnum):
+    TAKING = "taking"
+    UNCOMFORTABLE = "uncomfortable"
+    MISSING = "missing"
+    STOPPED_SIDE_EFFECT = "stopped_side_effect"
+    STOPPED_IMPROVED = "stopped_improved"
+
+
+class CheckIn(models.Model):
+    """승인 안내 한 건에 연결된 D+7 복약·통증 응답 — KEY-151.
+
+    `visit_id`를 다시 저장하지 않는다. 응답은 `guide_document_id`를 거쳐
+    `GuideDocument.visit_id`로 추적하므로 진료 관계가 두 곳에서 어긋나지 않는다.
+    Walking Skeleton은 한 안내에 응답 한 건만 허용한다.
+    """
+
+    check_in_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.OneToOneRelation[GuideDocument] = fields.OneToOneField(
+        "models.GuideDocument",
+        related_name="check_in",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    guide_document_id: int
+    medication = fields.CharEnumField(enum_type=CheckInMedication)
+    pain_had = fields.BooleanField(null=True)
+    pain_score = fields.SmallIntField(null=True)
+    pain_types: fields.Field[list[str]] = fields.JSONField(default=list)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "check_in"
+        indexes = (("created_at",),)
