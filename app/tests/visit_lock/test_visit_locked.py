@@ -21,6 +21,7 @@ from app.dependencies.patient_access import ClinicalActor, get_clinical_actor
 from app.main import app
 from app.models.ocr import OcrJob, OcrJobStatus
 from app.models.patients import Patient
+from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideDocument, GuideStatus, Visit
 
 BASE = "http://test"
@@ -54,18 +55,29 @@ async def make_visit(hospital_id: int = HOSPITAL_ID, chart: str = "SYN-LOCK-01")
     )
 
 
-async def attach_ocr(visit: Visit) -> None:
+async def attach_ocr(visit: Visit, status_value: OcrJobStatus = OcrJobStatus.PROCESSING) -> None:
     await OcrJob.create(
         ocr_job_id=f"syn-lock-{visit.visit_id}",
         hospital_id=visit.hospital_id,
         visit_id=visit.visit_id,
         requested_by=101,
-        status=OcrJobStatus.PROCESSING,
+        status=status_value,
     )
 
 
 async def attach_guide(visit: Visit, guide_status: GuideStatus) -> None:
     await GuideDocument.create(hospital_id=visit.hospital_id, visit_id=visit.visit_id, status=guide_status)
+
+
+async def make_doctor(hospital_id: int = HOSPITAL_ID, suffix: str = "01") -> Staff:
+    hospital, _ = await Hospital.get_or_create(hospital_id=hospital_id, defaults={"name": f"합성병원-{hospital_id}"})
+    return await Staff.create(
+        hospital=hospital,
+        login_id=f"syn-lock-doctor-{hospital_id}-{suffix}",
+        password_hash="synthetic-not-a-real-hash",
+        name=f"합성의사-{suffix}",
+        roles=["doctor"],
+    )
 
 
 class VisitLockTestCase(TestCase):
@@ -77,57 +89,129 @@ class VisitLockTestCase(TestCase):
 
 
 class TestLockedAfterFollowUpData(VisitLockTestCase):
-    async def test_ocr_locks_the_department(self) -> None:
-        visit = await make_visit()
-        await attach_ocr(visit)
+    async def test_processing_and_completed_ocr_lock_all_identity_relations(self) -> None:
+        cases: tuple[tuple[str, dict[str, object]], ...] = (
+            ("department_id", {"department_id": None}),
+            ("doctor_id", {"doctor_id": 9001}),
+            ("visited_at", {"visited_at": "2026-08-20T10:30:00+09:00"}),
+        )
+        for ocr_status in (OcrJobStatus.PROCESSING, OcrJobStatus.COMPLETED):
+            for index, (field, body) in enumerate(cases):
+                with self.subTest(status=ocr_status, field=field):
+                    visit = await make_visit(chart=f"SYN-OCR-{ocr_status}-{index}")
+                    if field == "department_id":
+                        visit.department = "합성진료과"
+                        await visit.save(update_fields=["department"])
+                    await attach_ocr(visit, ocr_status)
 
-        response = await self.patch(visit.visit_id, {"department_id": 7})
+                    response = await self.patch(visit.visit_id, body)
 
-        assert response.status_code == status.HTTP_409_CONFLICT
-        assert response.json()["code"] == "VISIT_LOCKED"
+                    assert response.status_code == status.HTTP_409_CONFLICT
+                    assert response.json()["code"] == "VISIT_LOCKED"
 
-    async def test_a_guide_waiting_for_approval_locks_the_department(self) -> None:
-        visit = await make_visit()
-        await attach_guide(visit, GuideStatus.APPROVAL_PENDING)
+    async def test_pending_and_approved_guides_lock_all_identity_relations(self) -> None:
+        cases: tuple[tuple[str, dict[str, object]], ...] = (
+            ("department_id", {"department_id": None}),
+            ("doctor_id", {"doctor_id": 9001}),
+            ("visited_at", {"visited_at": "2026-08-20T10:30:00+09:00"}),
+        )
+        for guide_status in (GuideStatus.APPROVAL_PENDING, GuideStatus.SCHEDULED_TO_SEND):
+            for index, (field, body) in enumerate(cases):
+                with self.subTest(status=guide_status, field=field):
+                    visit = await make_visit(chart=f"SYN-GUIDE-{guide_status}-{index}")
+                    if field == "department_id":
+                        visit.department = "합성진료과"
+                        await visit.save(update_fields=["department"])
+                    await attach_guide(visit, guide_status)
 
-        response = await self.patch(visit.visit_id, {"department_id": 7})
+                    response = await self.patch(visit.visit_id, body)
 
-        assert response.status_code == status.HTTP_409_CONFLICT
-        assert response.json()["code"] == "VISIT_LOCKED"
-
-    async def test_an_approved_guide_locks_the_department(self) -> None:
-        """이것이 가장 위험한 자리 — 이미 나갈 준비가 된 글이다."""
-        visit = await make_visit()
-        await attach_guide(visit, GuideStatus.SCHEDULED_TO_SEND)
-
-        response = await self.patch(visit.visit_id, {"department_id": 7})
-
-        assert response.status_code == status.HTTP_409_CONFLICT
-        assert response.json()["code"] == "VISIT_LOCKED"
+                    assert response.status_code == status.HTTP_409_CONFLICT
+                    assert response.json()["code"] == "VISIT_LOCKED"
 
 
 class TestTheLockIsNotTooWide(VisitLockTestCase):
     """붙이기는 쉽고 걷어내기는 어렵다. 안 걸려야 할 것을 함께 못 박는다."""
 
-    async def test_a_bare_visit_still_changes(self) -> None:
-        visit = await make_visit()
+    async def test_a_bare_visit_still_changes_all_supported_identity_relations(self) -> None:
+        doctor = await make_doctor()
+        doctor_visit = await make_visit(chart="SYN-BARE-DOCTOR")
+        doctor_response = await self.patch(doctor_visit.visit_id, {"doctor_id": doctor.staff_id})
+        assert doctor_response.status_code == status.HTTP_200_OK
 
-        response = await self.patch(visit.visit_id, {"department_id": 7})
+        date_visit = await make_visit(chart="SYN-BARE-DATE")
+        date_response = await self.patch(date_visit.visit_id, {"visited_at": "2026-08-20T10:30:00+09:00"})
+        assert date_response.status_code == status.HTTP_200_OK
 
-        assert response.status_code != status.HTTP_409_CONFLICT, "아무것도 안 붙은 진료가 잠겼다"
+        department_visit = await make_visit(chart="SYN-BARE-DEPARTMENT")
+        department_visit.department = "합성진료과"
+        await department_visit.save(update_fields=["department"])
+        department_response = await self.patch(department_visit.visit_id, {"department_id": None})
+        assert department_response.status_code == status.HTTP_200_OK
+        assert department_response.json()["department"] is None
 
     async def test_content_fields_stay_editable_on_a_locked_visit(self) -> None:
         """진료 내용은 식별 관계가 아니다 — 잠긴 진료에서도 계속 적을 수 있어야 한다."""
         visit = await make_visit()
-        await attach_guide(visit, GuideStatus.SCHEDULED_TO_SEND)
+        await attach_ocr(visit)
 
         response = await self.patch(
             visit.visit_id,
-            {"visit_summary": "승인 뒤에 적은 메모", "doctor_note": "환자가 전화로 알려온 것", "planned_stop": True},
+            {
+                "visit_summary": "승인 뒤에 적은 합성 메모",
+                "doctor_note": "합성 후속 기록",
+                "status": "SCHEDULED",
+                "planned_stop": True,
+            },
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json()["visit_summary"] == "승인 뒤에 적은 메모"
+        assert response.json()["visit_summary"] == "승인 뒤에 적은 합성 메모"
+
+    async def test_failed_ocr_alone_does_not_lock(self) -> None:
+        doctor = await make_doctor()
+        visit = await make_visit(chart="SYN-FAILED-OCR")
+        await attach_ocr(visit, OcrJobStatus.FAILED)
+
+        response = await self.patch(visit.visit_id, {"doctor_id": doctor.staff_id})
+
+        assert response.status_code == status.HTTP_200_OK
+
+    async def test_a_processing_retry_still_locks_after_a_failed_job(self) -> None:
+        visit = await make_visit(chart="SYN-FAILED-RETRY")
+        await attach_ocr(visit, OcrJobStatus.FAILED)
+        await OcrJob.create(
+            ocr_job_id=f"syn-lock-retry-{visit.visit_id}",
+            hospital_id=visit.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=101,
+            status=OcrJobStatus.PROCESSING,
+        )
+
+        response = await self.patch(visit.visit_id, {"visited_at": "2026-08-20T10:30:00+09:00"})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["code"] == "VISIT_LOCKED"
+
+    async def test_resending_the_same_identity_values_is_allowed_while_locked(self) -> None:
+        doctor = await make_doctor()
+        visited_at = datetime(2026, 8, 19, 1, 30, tzinfo=UTC)
+        visit = await make_visit(chart="SYN-SAME-VALUES")
+        visit.doctor_id = doctor.staff_id
+        visit.visited_at = visited_at
+        await visit.save(update_fields=["doctor_id", "visited_at"])
+        await attach_ocr(visit, OcrJobStatus.COMPLETED)
+
+        response = await self.patch(
+            visit.visit_id,
+            {
+                "doctor_id": doctor.staff_id,
+                "department_id": None,
+                "visited_at": visited_at.isoformat(),
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
 
     async def test_a_draft_guide_alone_does_not_lock(self) -> None:
         """안내문 상태만 놓고 보면 「작성 중」은 잠그지 않는다.
@@ -158,7 +242,7 @@ class TestTheLockIsNotTooWide(VisitLockTestCase):
 
 
 class TestOcrDecidesFirst(VisitLockTestCase):
-    """**OCR 이 있으면 안내문 상태와 무관하게 잠긴다** — 이희진 님 `#69` 리뷰.
+    """**진행·완료 OCR이 있으면 안내문 상태와 무관하게 잠긴다.**
 
     계약 §6 은 「OCR **또는** 승인 안내가 이미 연결된 뒤」라고 적는다. **또는**
     이므로 OCR 하나만으로 충분하고, 안내문 상태는 그다음에야 본다.
@@ -200,6 +284,8 @@ class TestOcrDecidesFirst(VisitLockTestCase):
         이것도 409 다.
         """
         visit = await make_visit()
+        visit.department = "합성진료과"
+        await visit.save(update_fields=["department"])
         await attach_ocr(visit)
 
         response = await self.patch(visit.visit_id, {"department_id": None})
@@ -216,3 +302,12 @@ class TestOcrDecidesFirst(VisitLockTestCase):
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["code"] == "VISIT_NOT_FOUND"
+
+    async def test_patient_id_is_not_an_update_field(self) -> None:
+        """환자 관계는 DTO에 없으므로 잠금 이전에 공통 요청 오류로 거부된다."""
+        visit = await make_visit(chart="SYN-PATIENT-ID")
+
+        response = await self.patch(visit.visit_id, {"patient_id": 9999})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["code"] == "INVALID_REQUEST"
