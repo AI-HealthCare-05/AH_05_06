@@ -14,6 +14,7 @@ from app.repositories.patient_repository import PatientRepository
 from app.repositories.visit_repository import VisitRepository
 
 SEOUL = ZoneInfo("Asia/Seoul")
+SIGNED_BIGINT_MAX = (1 << 63) - 1
 
 
 class VisitService:
@@ -82,6 +83,8 @@ class VisitService:
             self._validate_department(data.department_id)
 
         if "doctor_id" in supplied:
+            # 담당의 무결성 검증(KEY-118)과 후속 데이터 연결 뒤 관계 잠금(KEY-119)은
+            # 서로 다른 정책이다. 잠금 대상 합의 전에는 여기서 선행 구현하지 않는다.
             await self._validate_doctor(data.doctor_id, self._hospital_id(actor))
 
         if "visited_at" in supplied:
@@ -177,6 +180,10 @@ class VisitService:
         """
         if doctor_id is None:
             return
+        # MySQL BIGINT 범위를 벗어난 값은 ORM 질의까지 보내면 OverflowError로 500이
+        # 된다. 필드 범위 오류도 v1 계약의 400 INVALID_REQUEST로 정규화한다.
+        if doctor_id < 1 or doctor_id > SIGNED_BIGINT_MAX:
+            raise ApiError(400, "INVALID_REQUEST", "담당의를 확인해 주세요.")
         doctor = await Staff.get_or_none(staff_id=doctor_id, hospital_id=hospital_id)
         if doctor is None or not doctor.has_role(StaffRole.DOCTOR):
             raise ApiError(400, "INVALID_REQUEST", "담당의를 확인해 주세요.")

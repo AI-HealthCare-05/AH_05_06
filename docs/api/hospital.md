@@ -532,7 +532,7 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 }
 ```
 
-`patient_id`, `hospital_id`, `visit_id`, `department`를 본문에 입력하지 않는다. 서버는 `department_id`가 같은 병원의 활성 진료과인지, 지정 의사가 그 진료과 소속인지 검증한 뒤 현재 명칭을 `visit.department`에 스냅샷으로 저장한다.
+`patient_id`, `hospital_id`, `visit_id`, `department`를 본문에 입력하지 않는다. v1 목표 계약은 `department_id`가 같은 병원의 활성 진료과인지, 지정 의사가 그 진료과 소속인지 검증한 뒤 현재 명칭을 `visit.department`에 스냅샷으로 저장하는 것이다. 현재는 진료과 기준 모델과 직원-진료과 관계가 없어 `department_id`의 non-null 입력을 `400 INVALID_DEPARTMENT`로 거부하며, 미검증 스냅샷을 저장하지 않는다.
 
 `doctor_id`는 같은 병원의 재직 중인 `doctor` 역할 직원만 허용한다. `null`은 담당의 미지정이며 수정에서는 담당의 해제로 해석한다. 존재하지 않음·타 병원·퇴사·비의사 조건은 직원 정보 노출을 피하기 위해 모두 `400 INVALID_REQUEST`로 응답한다.
 
@@ -549,8 +549,8 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 #### 진료 수정
 
 - 수정 가능: `doctor_id`, `department_id`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
-- `department_id` 변경에도 생성과 같은 활성 진료과·의사 소속 검증을 적용하고 `department` 스냅샷을 갱신한다.
-- OCR 또는 승인 안내가 이미 연결된 뒤 식별 관계를 바꾸는 수정은 `409 VISIT_LOCKED`다.
+- 현재 `department_id` 변경은 진료과 기준 모델이 없어 `400 INVALID_DEPARTMENT`로 거부한다. 기준 모델 연결 뒤 생성과 같은 활성 진료과·의사 소속 검증 및 `department` 스냅샷 갱신을 적용한다.
+- 현재 OCR 또는 승인 안내 연결 뒤 `department_id` 변경은 `409 VISIT_LOCKED`다. `doctor_id`와 `visited_at`의 잠금 여부는 KEY-119에서 리뷰어 합의 후 확정하며, KEY-118은 잠금 범위를 선행 변경하지 않고 담당의 유효성만 검증한다.
 - `patient_id`, `hospital_id`, `visit_id`는 수정할 수 없다.
 
 ### 7. 오류 계약
@@ -576,7 +576,7 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 | 409 | `VISIT_ALREADY_REGISTERED` | 같은 환자의 같은 날짜 진료 중복 |
 | 409 | `VISIT_LOCKED` | 후속 데이터 연결 뒤 관계 변경 시도 |
 | 400 | `INVALID_DEPARTMENT` | 진료과가 없거나 비활성 또는 타 병원 소속 |
-| 400 | `DOCTOR_DEPARTMENT_MISMATCH` | 담당 의사가 선택한 진료과 소속이 아님 |
+| 400 | `DOCTOR_DEPARTMENT_MISMATCH` | 직원-진료과 관계 연결 뒤 적용할 예약 코드. 현재 구현은 반환하지 않음 |
 | 400 | `INVALID_REQUEST` | 필드 형식·enum·범위 오류 |
 | 400 | `EMPTY_UPDATE_FIELDS` | PATCH 본문에 수정 가능 필드 없음 |
 
@@ -939,10 +939,10 @@ POST /api/v1/visits/{visit_id}/guide/return
 차단합니다. KEY-73의 Staff·Hospital 관계가 병합되면 같은 의존성이 인증 컨텍스트의
 값을 사용하며, 클라이언트가 병원 값을 지정하는 우회 경로는 생기지 않습니다.
 
-Department·Staff 기준 테이블도 아직 없으므로 `doctor_id` 또는 `department_id`가
-포함된 진료 생성·수정은 `INVALID_DEPARTMENT`로 안전하게 실패합니다. 두 값을 검증 없이
-저장하지 않으며, KEY-73 병합 뒤 같은 병원의 활성 진료과와 의사 소속 검증을 연결해야
-합니다. 환자·진료 기본 흐름은 담당의 미지정 상태로 통합 테스트합니다.
+KEY-73의 Staff 기준 테이블이 병합되어 `doctor_id`는 같은 병원의 재직 중인 `doctor`
+역할 직원인지 검증한 뒤 저장합니다. 진료과 기준 테이블과 직원-진료과 관계는 아직
+없으므로 non-null `department_id`는 `INVALID_DEPARTMENT`로 안전하게 실패합니다.
+직원-진료과 관계가 연결되기 전에는 `DOCTOR_DEPARTMENT_MISMATCH`를 반환하지 않습니다.
 
 환자번호 제한 정정은 `admin`과 임상 역할을 함께 가진 사용자, 진료가 없는 환자,
 필수 정정 사유 조건까지 검사합니다. 감사 이벤트 테이블이 병합되기 전에는 실제 운영

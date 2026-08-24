@@ -332,6 +332,36 @@ class TestPatientVisitApis(TestCase):
         assert cleared.status_code == status.HTTP_200_OK
         assert cleared.json()["doctor_id"] is None
 
+    async def test_doctor_id_outside_signed_bigint_is_a_contract_error(self) -> None:
+        """DB 정수 범위를 벗어난 ID도 500이나 직원 존재 단서 없이 거부한다."""
+        async with client_for(self.staff) as client:
+            patient = await client.post("/api/v1/patients", json=PATIENT_PAYLOAD)
+            patient_id = patient.json()["patient_id"]
+            visit = await client.post(
+                f"/api/v1/patients/{patient_id}/visits",
+                json={"doctor_id": None, "visited_at": "2026-08-25T10:30:00+09:00"},
+            )
+            assert visit.status_code == status.HTTP_201_CREATED, visit.json()
+
+            too_large = await client.post(
+                f"/api/v1/patients/{patient_id}/visits",
+                json={"doctor_id": 1 << 63, "visited_at": "2026-08-26T10:30:00+09:00"},
+            )
+            negative = await client.patch(
+                f"/api/v1/visits/{visit.json()['visit_id']}",
+                json={"doctor_id": -1},
+            )
+
+        expected = {
+            "code": "INVALID_REQUEST",
+            "message": "담당의를 확인해 주세요.",
+            "field_errors": None,
+        }
+        assert too_large.status_code == status.HTTP_400_BAD_REQUEST
+        assert too_large.json() == expected
+        assert negative.status_code == status.HTTP_400_BAD_REQUEST
+        assert negative.json() == expected
+
     async def test_request_scope_fields_are_rejected(self) -> None:
         async with client_for(self.staff) as client:
             response = await client.post(
