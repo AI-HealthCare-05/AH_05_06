@@ -60,6 +60,7 @@ class GuideService:
         미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고,
         의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
         """
+        self._require_staff_or_doctor(actor)
         # 진료 소유권·OCR 확정 여부는 경합 대상이 아니라 트랜잭션 밖에서 먼저 확인한다.
         visit = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
         if visit is None:
@@ -280,6 +281,16 @@ class GuideService:
         return guide
 
     # ── 규칙 ────────────────────────────────────────────
+
+    @staticmethod
+    def _require_staff_or_doctor(actor) -> None:
+        """`admin` 단독은 안내를 생성하지 못한다.
+
+        `GUIDE_DRAFT` 는 staff·doctor 에게만 열려 있다(`app/tests/rbac/matrix.py`).
+        `admin` 은 의원 운영 권한이지 진료 화면을 여는 역할이 아니다.
+        """
+        if not ({"staff", "doctor"} & set(actor.roles)):
+            raise ApiError("FORBIDDEN", 403, "안내 생성은 스탭 또는 의사 계정만 할 수 있습니다.")
 
     @staticmethod
     def _require_doctor(actor) -> None:

@@ -225,6 +225,49 @@ class TestGenerateDuplicateIsRefused(GenerateGuideTestCase):
         assert second.json()["code"] == "GUIDE_ALREADY_EXISTS"
 
 
+class TestGenerateRoleGuard(GenerateGuideTestCase):
+    """generate()의 역할 가드 — GUIDE_DRAFT 는 staff·doctor 에게만 열린다."""
+
+    async def test_admin_only_is_blocked(self) -> None:
+        """admin 단독 계정은 안내를 생성할 수 없다."""
+        clinic = await make_clinic()
+        admin = await make_staff(clinic, "admin01", ["admin"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, admin.staff_id)
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(admin))
+
+        assert response.status_code == 403
+        assert response.json()["code"] == "FORBIDDEN"
+
+    async def test_doctor_can_generate(self) -> None:
+        """doctor 역할 단독도 안내를 생성할 수 있다."""
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "doctor01", ["doctor"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, doctor.staff_id)
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(doctor))
+
+        assert response.status_code == 201
+
+    async def test_doctor_admin_combo_can_generate(self) -> None:
+        """doctor+admin 조합은 doctor 역할을 포함하므로 생성할 수 있다."""
+        clinic = await make_clinic()
+        doctor_admin = await make_staff(clinic, "docadmin01", ["doctor", "admin"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, doctor_admin.staff_id)
+
+        async with self.client() as client:
+            response = await client.post(
+                f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(doctor_admin)
+            )
+
+        assert response.status_code == 201
+
+
 class TestGenerateHospitalIsolation(GenerateGuideTestCase):
     """타 병원 진료는 없는 것처럼 보인다 — 존재 여부를 감춘다(계약 §5)."""
 
