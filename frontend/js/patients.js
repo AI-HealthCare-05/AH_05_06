@@ -10,7 +10,23 @@
  * 신규로 가는 길이 닫히지 않는다. 같은 이름이어도 다른 분일 수 있기 때문이다.
  */
 
+/* 결과 안에서 생년월일이 겹치는 값들 */
+function tiedBirthDates(items) {
+  var seen = {};
+  var tied = {};
+  items.forEach(function (p) {
+    if (seen[p.birth_date]) tied[p.birth_date] = true;
+    seen[p.birth_date] = true;
+  });
+  return Object.keys(tied);
+}
+
 (function () {
+  /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
+     이 파일은 `patients.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
+     위 순수 규칙은 그대로 남아서 다른 파일도, 검사도 부를 수 있다 (KEY-158). */
+  if (!document.getElementById("view-register")) return;
+
   var view = document.getElementById("view-register");
   var findForm = document.getElementById("find-form");
   var findQ = document.getElementById("find-q");
@@ -205,16 +221,6 @@
     });
   }
 
-  /* 결과 안에서 생년월일이 겹치는 값들 */
-  function tiedBirthDates(items) {
-    var seen = {};
-    var tied = {};
-    items.forEach(function (p) {
-      if (seen[p.birth_date]) tied[p.birth_date] = true;
-      seen[p.birth_date] = true;
-    });
-    return Object.keys(tied);
-  }
 
   function renderHits(items, tied) {
     hits.innerHTML = items

@@ -17,7 +17,24 @@
  * 서버가 붙는 날 빈칸이 된다.
  */
 
+/* 「2026-08-19 (오늘)」 — 오늘인지가 붙어야 지난 진료를 보고 있다는 것을 안다 */
+function dayLabel(isoDatetime) {
+  if (!isoDatetime) return "";
+  var day = isoDatetime.slice(0, 10);
+  return day + (day === toIsoDate(new Date()) ? " (오늘)" : "");
+}
+
+function timeLabel(isoDatetime) {
+  var m = String(isoDatetime || "").match(/T(\d{2}:\d{2})/);
+  return m ? m[1] + " 등록" : "";
+}
+
 (function () {
+  /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
+     이 파일은 `patients.html` 의 오른쪽 상세 칸에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
+     위 순수 규칙은 그대로 남아서 다른 파일도, 검사도 부를 수 있다 (KEY-158). */
+  if (!document.getElementById("patient-facts")) return;
+
   var TABS = ["basic", "record"];
 
   /* 늦게 온 응답이 지금 보고 있는 환자를 덮어쓰지 않게 하는 번호.
@@ -88,17 +105,7 @@
     return row.doctor ? row.doctor.name : "";
   }
 
-  /* 「2026-08-19 (오늘)」 — 오늘인지가 붙어야 지난 진료를 보고 있다는 것을 안다 */
-  function dayLabel(isoDatetime) {
-    if (!isoDatetime) return "";
-    var day = isoDatetime.slice(0, 10);
-    return day + (day === toIsoDate(new Date()) ? " (오늘)" : "");
-  }
 
-  function timeLabel(isoDatetime) {
-    var m = String(isoDatetime || "").match(/T(\d{2}:\d{2})/);
-    return m ? m[1] + " 등록" : "";
-  }
 
   /* ── 보여 주기 ───────────────────────────────────────── */
 

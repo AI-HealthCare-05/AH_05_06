@@ -17,7 +17,58 @@
  * 내가 쓴 값을 지우지 않는 것이 이 처리의 핵심이다.
  */
 
+/* ── 화면과 무관한 규칙 ─────────────────────────────────────────────────
+ *
+ * 아래 둘은 DOM 을 모른다. IIFE **밖**에 두는 것은 검사가 부를 수 있게 하려는
+ * 것이다 — 안에 두면 파일을 불러도 꺼낼 방법이 없다 (KEY-158).
+ *
+ * 그리는 함수는 옮기지 않는다. 그건 브라우저가 할 일이고, 껍데기로 흉내내면
+ * 「검사에서는 되는데 화면에서는 안 되는」 거리가 벌어진다.
+ */
+
+/* 진료를 바꿀 때 **버려야 하는 것 전부**.
+ *
+ * 하나라도 남으면 앞 환자의 편집·충돌·저장 표시가 새 환자 줄에 붙는다.
+ * 값을 세는 자리를 **한 곳**으로 모아 둔 것이 요점이다 — 상태 칸이 늘어날 때
+ * 초기화를 잊는 것이 이 화면에서 제일 흔한 사고다(`#40` 리뷰).
+ */
+function blankReviewState() {
+  return {
+    result: null,
+    activeDoc: null,
+    threshold: LOW_CONFIDENCE_FALLBACK,
+    openCandidates: {},
+    editing: {}, // 직접 입력 칸을 열어 둔 필드 — 값은 **지금 쳐 넣은 글자**다
+    saving: {}, // 저장 요청이 나가 있는 필드
+    saved: {}, // 방금 저장에 성공한 필드
+    failed: {}, // 저장이 실패한 필드 — { code, mine }
+    conflict: {}, // 409 — { mine, theirs }
+    focusOn: null, // 방금 연 입력칸. 다시 그린 뒤 여기로 커서를 돌려준다
+  };
+}
+
+/* 판독 작업 하나가 화면을 어디로 보내는가.
+ *
+ *   processing  아직이다. 기다리는 화면을 두고 다시 묻는다
+ *   failed      못 읽었다. **막지 않는다** — 판독은 거들 뿐이고 재업로드로 푼다
+ *   ready       읽었다. 결과 화면으로 넘어간다
+ *
+ * 「실패해도 막지 않는다」가 규칙의 핵심이라 `retryByReupload` 를 함께 준다.
+ * 예전에는 눌러도 아무 일 없는 버튼이 둘 있었다(`#40` 리뷰).
+ */
+function jobPhase(job) {
+  if (!job || !job.status) return { phase: "ready", showsWork: true, retryByReupload: false };
+  if (job.status === "PROCESSING") return { phase: "processing", showsWork: false, retryByReupload: false };
+  if (job.status === "FAILED") return { phase: "failed", showsWork: false, retryByReupload: true };
+  return { phase: "ready", showsWork: true, retryByReupload: false };
+}
+
 (function () {
+  /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.** 이 파일은
+     `ocr-review.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 — 위 순수
+     규칙은 그대로 남아서 검사가 부를 수 있다 (KEY-158). */
+  if (!document.getElementById("fields")) return;
+
   var docTabs = document.getElementById("doc-tabs");
   var rawBox = document.getElementById("raw");
   var fieldsBox = document.getElementById("fields");
@@ -41,19 +92,22 @@
   var loadSeq = 0;
   var pollTimer = null;
 
-  var result = null;
-  var threshold = LOW_CONFIDENCE_FALLBACK;
-  var activeDoc = null;
-  var openCandidates = {};
+  /* 상태 칸의 **처음 값도** `blankReviewState()` 에서 받는다. 선언과 초기화가
+     따로 놀면 「새로 열었을 때」와 「환자를 바꿨을 때」가 달라진다. */
+  var view = blankReviewState();
+  var result = view.result;
+  var threshold = view.threshold;
+  var activeDoc = view.activeDoc;
+  var openCandidates = view.openCandidates;
 
   /* 필드별 저장 상태. 화면 전체를 잠그지 않는다 — 한 항목을 저장하는 동안
      다른 항목은 계속 보고 고칠 수 있어야 한다. */
-  var editing = {}; // 직접 입력 칸을 열어 둔 필드 — 값은 **지금 쳐 넣은 글자**다
-  var saving = {}; // 저장 요청이 나가 있는 필드
-  var saved = {}; // 방금 저장에 성공한 필드
-  var failed = {}; // 저장이 실패한 필드 — { code, mine }
-  var conflict = {}; // 409 — { mine, theirs }
-  var focusOn = null; // 방금 연 입력칸. 다시 그린 뒤 여기로 커서를 돌려준다
+  var editing = view.editing;
+  var saving = view.saving;
+  var saved = view.saved;
+  var failed = view.failed;
+  var conflict = view.conflict;
+  var focusOn = view.focusOn;
 
   /* 칸이 열려 있는지는 **키가 있는지**로 본다. 값으로 보면 칸을 비웠을 때
      ""(falsy)가 되어 입력칸이 저 혼자 닫힌다 — 지우고 다시 치는 것이 값
@@ -570,7 +624,8 @@
   }
 
   function renderJobState(job) {
-    if (job.status === "PROCESSING") {
+    var phase = jobPhase(job).phase;
+    if (phase === "processing") {
       showState(
         '<p class="state__title">판독 중입니다</p>' +
           '<p class="state__body">' +
@@ -579,7 +634,7 @@
       );
       return false;
     }
-    if (job.status === "FAILED") {
+    if (phase === "failed") {
       /* 실패했다고 화면을 막지 않는다. 판독은 거들 뿐이고
          값은 사람이 직접 넣어도 진행할 수 있어야 한다. */
       /* 예전에는 「직접 입력」·「재업로드」 둘 다 식별자도 처리기도 없어서
@@ -765,16 +820,19 @@
       clearTimeout(pollTimer);
       pollTimer = null;
     }
-    result = null;
-    activeDoc = null;
-    threshold = LOW_CONFIDENCE_FALLBACK;
-    openCandidates = {};
-    editing = {};
-    saving = {};
-    saved = {};
-    failed = {};
-    conflict = {};
-    focusOn = null;
+    /* **한 곳에서 받아 온다.** 여기에 손으로 나열하면 상태 칸이 늘 때
+       하나를 빠뜨리고, 그 하나가 앞 환자의 표시로 남는다. */
+    var blank = blankReviewState();
+    result = blank.result;
+    activeDoc = blank.activeDoc;
+    threshold = blank.threshold;
+    openCandidates = blank.openCandidates;
+    editing = blank.editing;
+    saving = blank.saving;
+    saved = blank.saved;
+    failed = blank.failed;
+    conflict = blank.conflict;
+    focusOn = blank.focusOn;
     fieldsBox.innerHTML = "";
     rawBox.innerHTML = "";
     docTabs.innerHTML = "";

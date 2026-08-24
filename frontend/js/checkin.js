@@ -16,7 +16,18 @@
  * 가져온 문장이라야 하고, 약마다 다르다(`checkin-api.js` 참고).
  */
 
+function esc(text) {
+  return String(text == null ? "" : text).replace(/[&<>"]/g, function (ch) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch];
+  });
+}
+
 (function () {
+  /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
+     이 파일은 `checkin.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
+     위 순수 규칙은 그대로 남아서 다른 파일도, 검사도 부를 수 있다 (KEY-158). */
+  if (!document.getElementById("form")) return;
+
   var el = function (id) {
     return document.getElementById(id);
   };
@@ -33,11 +44,6 @@
   var painScore = 4;
   var painTypes = [];
 
-  function esc(text) {
-    return String(text == null ? "" : text).replace(/[&<>"]/g, function (ch) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch];
-    });
-  }
 
   var LABELS = {
     taking: "잘 먹고 있어요",
