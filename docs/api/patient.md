@@ -19,7 +19,8 @@
 | 영역 | 현재 최소 계약 | 관련 Jira |
 |---|---|---|
 | 환자 링크 | 개발용 링크 한 건으로 승인 안내 조회. 실제 SMS·예약 발송은 후속 범위 | [KEY-90](https://leehee.atlassian.net/browse/KEY-90) |
-| OTP·환자 세션 | 운영용 OTP·세션 계약 확정 필요 | [KEY-78](https://leehee.atlassian.net/browse/KEY-78) |
+| OTP | 6자리·3분 유효, 5회 실패 시 10분 잠금 | [KEY-91](https://leehee.atlassian.net/browse/KEY-91) |
+| 환자 세션 | 30분 세션 계약·구현은 후속 범위 | [KEY-78](https://leehee.atlassian.net/browse/KEY-78) |
 | 승인 안내 조회 | 승인 완료 안내만 제공하고 원본·미승인 안내는 차단 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
 | 챗봇 | 승인된 구조화 데이터와 지식만 컨텍스트로 사용 | [KEY-77](https://leehee.atlassian.net/browse/KEY-77) |
 | D+7 응답 | 복약·통증 응답 한 건을 `visit_id`에 연결 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
@@ -48,9 +49,37 @@ GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증�
 - 조회 응답에는 승인된 섹션의 최종 문구만 포함한다. 환자정보, OCR·의료문서 원문,
   생성 원문, 내부 경고와 승인자 식별자는 포함하지 않는다.
 - 없는 토큰은 `404 LINK_NOT_FOUND`, 만료 토큰은 `410 LINK_EXPIRED`다.
-- 실제 SMS·예약 발송·운영 OTP·폐기·재발급 전체 흐름은 이번 계약 범위 밖이다.
+- 실제 SMS·예약 발송·폐기·재발급 전체 흐름은 이번 계약 범위 밖이다. OTP는
+  아래 KEY-91 계약을 사용하며, 환자 세션이 연결되기 전까지 개발 링크 조회
+  자체를 OTP로 차단하지 않는다.
 
-### 2.2 D+7 복약·통증 응답 — KEY-151 최소 계약
+### 2.2 환자 OTP — KEY-91
+
+```text
+POST /api/v1/patient-auth/otp/issue
+     { "link_token": "…" }
+200  { "expires_at": "…", "retry_after_seconds": 180 }
+
+POST /api/v1/patient-auth/otp/verify
+     { "link_token": "…", "code": "123456" }
+200  { "verified": true }
+```
+
+- OTP는 숫자 6자리이며 발급 시점부터 3분간 유효하다.
+- 연속 5회 실패하면 링크 단위로 10분간 잠근다. 재발급해도 실패 횟수와
+  잠금은 초기화되지 않으며, 잠금 중 발급·검증은 모두 `429 OTP_LOCKED`다.
+- 재발급하면 이전 OTP는 즉시 무효화한다. 성공한 OTP는 다시 사용할 수 없다.
+- OTP 원문은 저장하지 않는다. 서버 비밀키·무작위 salt를 사용한 HMAC digest만
+  저장하며 API 응답과 로그에도 원문을 포함하지 않는다.
+- 실제 SMS 공급자는 이번 일감에 포함하지 않는다. 공급자가 연결되지 않은
+  환경은 성공을 가장하지 않고 `503 OTP_DELIVERY_UNAVAILABLE`을 반환한다.
+- 검증 성공은 OTP 확인만 뜻한다. 30분 환자 세션 발급과 승인 안내 조회 차단은
+  KEY-78의 후속 일감에서 연결한다.
+- 주요 오류는 `404 LINK_NOT_FOUND`, `410 LINK_EXPIRED`, `409 OTP_NOT_ISSUED`,
+  `401 OTP_INVALID`, `410 OTP_EXPIRED`, `409 OTP_ALREADY_USED`,
+  `429 OTP_LOCKED`다.
+
+### 2.3 D+7 복약·통증 응답 — KEY-151 최소 계약
 
 > 2026-08-24 · 8/27 Walking Skeleton 한정. KEY-90 개발용 링크의 같은 원문
 > 토큰을 사용하며 실제 SMS·운영 OTP·실시간 신호 API는 이번 구현 범위 밖이다.

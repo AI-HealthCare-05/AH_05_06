@@ -1,0 +1,214 @@
+"""환자 OTP 3분·5회 실패·10분 잠금 계약 — KEY-91."""
+
+import hashlib
+from datetime import timedelta
+from unittest.mock import patch
+
+from httpx import ASGITransport, AsyncClient
+from tortoise.contrib.test import TestCase
+from tortoise.timezone import now
+
+from app.apis.v1.patient_otp_routers import _otp_service
+from app.main import app
+from app.models.patients import Patient
+from app.models.staffs import Hospital
+from app.models.visits import GuideDocument, GuideStatus, PatientGuideLink, PatientOtpChallenge, Visit
+from app.services.patient_links import digest_link_token
+from app.services.patient_otp import OTP_LOCK_DURATION, OTP_TTL, PatientOtpService
+
+LINK_TOKEN = "SYN-key91-link-token-not-a-real-patient-token"
+OTP = "042731"
+SECRET = "synthetic-key91-test-secret-never-used-outside-tests"
+
+
+class RecordingDelivery:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+
+    async def send(self, phone: str, code: str) -> None:
+        self.sent.append((phone, code))
+
+
+class FailingDelivery:
+    async def send(self, phone: str, code: str) -> None:
+        raise RuntimeError("synthetic delivery failure without sensitive values")
+
+
+async def make_link() -> PatientGuideLink:
+    hospital = await Hospital.create(name="KEY-91 합성의원")
+    patient = await Patient.create(
+        hospital_id=hospital.hospital_id,
+        hospital_patient_no="SYN-KEY91-01",
+        name="합성환자",
+        birth_date="1990-01-02",
+        phone="01000009100",
+        sms_consent=True,
+    )
+    visit = await Visit.create(
+        hospital_id=hospital.hospital_id,
+        patient=patient,
+        visited_at="2026-08-24T09:00:00+09:00",
+    )
+    guide = await GuideDocument.create(
+        hospital_id=hospital.hospital_id,
+        visit=visit,
+        status=GuideStatus.SCHEDULED_TO_SEND,
+        approved_by=1,
+        approved_at=now(),
+    )
+    return await PatientGuideLink.create(
+        guide_document=guide,
+        token_digest=digest_link_token(LINK_TOKEN),
+        expires_at=now() + timedelta(hours=72),
+        issued_by=1,
+    )
+
+
+class PatientOtpTestCase(TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.delivery = RecordingDelivery()
+        self.service = PatientOtpService(self.delivery, secret_key=SECRET)
+        app.dependency_overrides[_otp_service] = lambda: self.service
+
+    def tearDown(self) -> None:
+        app.dependency_overrides.clear()
+        super().tearDown()
+
+    def client(self) -> AsyncClient:
+        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+    async def issue(self):
+        with patch("app.services.patient_otp.secrets.randbelow", return_value=int(OTP)):
+            async with self.client() as client:
+                return await client.post("/api/v1/patient-auth/otp/issue", json={"link_token": LINK_TOKEN})
+
+    async def verify(self, code: str):
+        async with self.client() as client:
+            return await client.post(
+                "/api/v1/patient-auth/otp/verify",
+                json={"link_token": LINK_TOKEN, "code": code},
+            )
+
+
+class TestPatientOtpHappyPath(PatientOtpTestCase):
+    async def test_six_digit_otp_expires_in_three_minutes_and_raw_value_is_not_persisted_or_returned(self) -> None:
+        await make_link()
+        before = now()
+
+        issued = await self.issue()
+
+        assert issued.status_code == 200
+        assert issued.json()["retry_after_seconds"] == int(OTP_TTL.total_seconds())
+        assert OTP not in issued.text
+        assert self.delivery.sent == [("01000009100", OTP)]
+
+        challenge = await PatientOtpChallenge.get()
+        assert before + OTP_TTL <= challenge.expires_at <= now() + OTP_TTL
+        assert challenge.otp_digest != OTP
+        assert challenge.otp_salt != OTP
+        assert OTP not in repr(challenge.__dict__)
+        assert len(challenge.otp_digest) == hashlib.sha256().digest_size * 2
+
+        verified = await self.verify(OTP)
+        assert verified.status_code == 200
+        assert verified.json() == {"verified": True}
+        assert OTP not in verified.text
+
+        reused = await self.verify(OTP)
+        assert reused.status_code == 409
+        assert reused.json()["code"] == "OTP_ALREADY_USED"
+        assert OTP not in reused.text
+
+
+class TestPatientOtpFailurePolicy(PatientOtpTestCase):
+    async def test_fifth_failure_locks_issue_and_verify_for_ten_minutes(self) -> None:
+        await make_link()
+        assert (await self.issue()).status_code == 200
+
+        for remaining in (4, 3, 2, 1):
+            failed = await self.verify("000000")
+            assert failed.status_code == 401
+            assert failed.json() == {
+                "code": "OTP_INVALID",
+                "message": "인증번호가 올바르지 않습니다.",
+                "remaining_attempts": remaining,
+            }
+            assert "000000" not in failed.text
+
+        locked = await self.verify("000000")
+        assert locked.status_code == 429
+        assert locked.json()["code"] == "OTP_LOCKED"
+        assert 599 <= locked.json()["retry_after_seconds"] <= int(OTP_LOCK_DURATION.total_seconds())
+        assert locked.headers["retry-after"] == str(locked.json()["retry_after_seconds"])
+
+        issue_while_locked = await self.issue()
+        correct_while_locked = await self.verify(OTP)
+        assert issue_while_locked.status_code == 429
+        assert correct_while_locked.status_code == 429
+        assert len(self.delivery.sent) == 1
+
+    async def test_reissue_invalidates_old_code_but_does_not_reset_failures(self) -> None:
+        await make_link()
+        assert (await self.issue()).status_code == 200
+        assert (await self.verify("000000")).json()["remaining_attempts"] == 4
+
+        replacement = "654321"
+        with patch("app.services.patient_otp.secrets.randbelow", return_value=int(replacement)):
+            async with self.client() as client:
+                reissued = await client.post(
+                    "/api/v1/patient-auth/otp/issue",
+                    json={"link_token": LINK_TOKEN},
+                )
+        assert reissued.status_code == 200
+        assert (await self.verify(OTP)).json()["remaining_attempts"] == 3
+        assert (await self.verify(replacement)).status_code == 200
+
+    async def test_expired_otp_is_rejected(self) -> None:
+        await make_link()
+        assert (await self.issue()).status_code == 200
+        challenge = await PatientOtpChallenge.get()
+        challenge.expires_at = now() - timedelta(seconds=1)
+        await challenge.save(update_fields=["expires_at"])
+
+        expired = await self.verify(OTP)
+
+        assert expired.status_code == 410
+        assert expired.json()["code"] == "OTP_EXPIRED"
+
+    async def test_delivery_failure_rolls_back_the_challenge(self) -> None:
+        await make_link()
+        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(FailingDelivery(), secret_key=SECRET)
+
+        failed = await self.issue()
+
+        assert failed.status_code == 503
+        assert failed.json()["code"] == "OTP_DELIVERY_UNAVAILABLE"
+        assert OTP not in failed.text
+        assert await PatientOtpChallenge.all().count() == 0
+
+    async def test_missing_expired_and_unapproved_links_do_not_issue_an_otp(self) -> None:
+        link = await make_link()
+
+        async with self.client() as client:
+            missing = await client.post(
+                "/api/v1/patient-auth/otp/issue",
+                json={"link_token": "not-a-real-link"},
+            )
+        assert missing.status_code == 404
+        assert missing.json()["code"] == "LINK_NOT_FOUND"
+
+        link.expires_at = now() - timedelta(seconds=1)
+        await link.save(update_fields=["expires_at"])
+        expired = await self.issue()
+        assert expired.status_code == 410
+        assert expired.json()["code"] == "LINK_EXPIRED"
+
+        link.expires_at = now() + timedelta(hours=1)
+        await link.save(update_fields=["expires_at"])
+        guide = await GuideDocument.get(guide_document_id=link.guide_document_id)
+        guide.status = GuideStatus.APPROVAL_PENDING
+        await guide.save(update_fields=["status"])
+        unapproved = await self.issue()
+        assert unapproved.status_code == 404
+        assert unapproved.json()["code"] == "LINK_NOT_FOUND"
