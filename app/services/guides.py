@@ -107,9 +107,22 @@ class GuideService:
                 generated_body=f"[합성 복약 안내]\n확정된 항목: {field_label}\n복약 지시에 따라 정해진 시간에 복용해 주세요.",
                 using_db=connection,
             )
+            # 주의사항은 **두 갈래로 저장한다.** 예전에는 `caution` 한 줄에 응급
+            # 문장만 담고 통째로 잠갔는데, 그러면 고칠 수 있어야 할 일반 주의
+            # 문구를 넣을 자리가 없다 — 넣는 순간 그것까지 잠긴다(KEY-161).
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.CAUTION,
+                # 일반 주의 문구 — 원장님이 환자에 맞춰 고치는 자리다. 잠그지 않는다.
+                generated_body=(
+                    "[합성 주의 안내]\n복용 초기에는 가벼운 불편감이 있을 수 있고 대개 시간이 지나면서 "
+                    "좋아집니다.\n평소와 다르게 느껴지는 점이 있으면 참지 마시고 진료 때 말씀해 주세요."
+                ),
+                using_db=connection,
+            )
+            await GuideSection.create(
+                guide_document=guide,
+                section_key=GuideSectionKey.EMERGENCY,
                 # 🚨 식약처 근거 응급 문장 — 사람이 고칠 수 없다(D1-2, KEY-150 이희진 코멘트).
                 generated_body="처방약 복용 중 두드러기, 호흡 곤란, 심한 복통이 생기면 즉시 복용을 중단하고 응급실을 방문하세요.",
                 locked=True,
