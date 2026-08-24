@@ -798,12 +798,13 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 
 ## 5. 안내 생성·승인·반려
 
-> 상위 일감: `KEY-111`(`KEY-76` 인수조건, 와이어프레임 D1-1~D1-5)
+> 상위 일감: `KEY-111`(`KEY-76` 인수조건, 와이어프레임 D1-1~D1-5), `KEY-150`(확정 OCR→고정 안내→의사 승인 연결)
 
 ### 엔드포인트
 
 | Method | Path | 용도 | 권한 |
 |---|---|---|---|
+| POST | `/api/v1/visits/{visit_id}/guide/generate` | 확정 OCR로 고정 안내 생성 — 201 | `staff`·`doctor` |
 | GET | `/api/v1/visits/{visit_id}/guide` | 안내문 조회 — 네 갈래 + ⚠ 표시 | `staff`·`doctor` |
 | PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/approve` | 승인 — 발송 예약 | `doctor` |
@@ -855,6 +856,20 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 - `warn`·`locked`는 섹션 단위다. `warn`은 AI가 자신 없는 곳·지난 진료와 달라진 곳·값이 빠진 곳에만 서버가 판정해 채운다 — 화면은 판정하지 않는다. `locked`는 🚨 응급 문장(식약처 의약품정보 기준)이라는 뜻의, 이유 문자열이 없는 boolean이다. 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
 - `edited`는 사람이 고쳤는지를 말한다. 생성 원문은 서버에 별도로 보관하며 이 응답에는 포함하지 않는다.
 
+### 안내 생성
+
+```text
+POST /api/v1/visits/{visit_id}/guide/generate
+→ 201 Created
+```
+
+- `staff`·`doctor` 역할 모두 호출할 수 있다.
+- 진료에 연결된 OCR 필드 중 `is_confirmed=True`인 것이 하나 이상 있어야 한다 — 미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고, 의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
+- 안내는 `APPROVAL_PENDING` 상태로 생성된다 — W1 고정 안내 경로는 스탭 검토(`STAFF_REVIEW`) 단계를 거치지 않는다. LLM 생성 안내가 붙는 시점에 이 흐름을 다시 정한다.
+- 섹션은 `medication`·`caution`·`life`·`messages` 4개 고정이다. `caution`은 식약처 의약품정보 기준 응급 문장으로 `locked=true`다 — 사람이 고칠 수 없다(D1-2).
+- 같은 진료에 안내가 이미 있으면 `409 GUIDE_ALREADY_EXISTS`다.
+- 응답은 안내문 조회와 같은 전체 모양이다.
+
 ### 섹션 수정
 
 ```text
@@ -900,18 +915,22 @@ POST /api/v1/visits/{visit_id}/guide/return
 | HTTP | code | 조건 |
 |---:|---|---|
 | 403 | `FORBIDDEN` | 승인·반려·수정에 `doctor` 역할 없음 |
+| 404 | `VISIT_NOT_FOUND` | 진료 없음 또는 타 병원 진료 (generate) |
 | 404 | `GUIDE_NOT_FOUND` | 안내문 없음 또는 타 병원 안내문 |
 | 404 | `SECTION_NOT_FOUND` | 없는 섹션 키 |
+| 409 | `GUIDE_ALREADY_EXISTS` | 같은 진료에 안내가 이미 있는데 generate 재시도 |
 | 409 | `SECTION_LOCKED` | 잠긴(🚨 응급) 섹션 수정 시도 |
 | 409 | `GUIDE_NOT_PENDING` | 승인 요청 상태가 아닌데 수정·승인·반려 시도 |
 | 409 | `ALREADY_APPROVED` | 이미 승인된 안내문 재승인 시도 |
+| 422 | `OCR_NOT_CONFIRMED` | 확정된 OCR 항목 없이 generate 시도 |
 | 422 | `EMPTY_BODY` | 섹션 수정 본문 빈 값 |
 | 422 | `REASON_REQUIRED` | 반려 사유 빈 값 |
 | 422 | `REASON_TOO_LONG` | 반려 사유 200자 초과 |
 
 ### 남은 결정
 
-- 스탭이 `STAFF_REVIEW` 단계에서 안내문을 고치는 경로는 이번 계약에 포함하지 않는다. 범위와 API는 후속 티켓에서 정한다.
+- `generate`는 W1 고정 안내 경로로 `STAFF_REVIEW` 단계 없이 바로 `APPROVAL_PENDING`으로 만든다. LLM 생성 안내가 붙을 때 `STAFF_REVIEW` 단계와 스탭 편집 경로를 다시 정한다.
+- 승인 전 환자 조회 차단(`APPROVAL_PENDING` 상태에서 환자 모바일 API 접근 불가)은 환자 링크·OTP·모바일 영역(KEY-4)에서 구현한다. `generate`는 DB 상태를 `APPROVAL_PENDING`으로 설정하는 것으로 이 게이트의 전제를 만든다.
 - `locked`가 이유 문자열 없는 boolean인 것은 지금 유일하게 잠기는 `caution` 섹션(🚨 응급 문장)에는 맞지만, 다른 이유로 잠기는 섹션이 생기면 이유 필드를 추가하는 계약 변경이 필요하다.
 
 ## 6. 환자·진료 구현 기록

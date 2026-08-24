@@ -17,9 +17,8 @@
 """
 
 import re
-from pathlib import Path
 
-MIGRATIONS = Path(__file__).resolve().parents[2] / "core" / "db" / "migrations" / "models"
+from app.tests.migrations.conftest import migration_files
 
 _CREATE = re.compile(r"CREATE TABLE(?:\s+IF NOT EXISTS)?\s+`([a-z_]+)`", re.I)
 _DROP = re.compile(r"DROP TABLE(?:\s+IF EXISTS)?\s+`([a-z_]+)`", re.I)
@@ -36,13 +35,9 @@ def _body(text: str, func: str) -> str:
     return rest
 
 
-def _files() -> list[Path]:
-    return sorted(p for p in MIGRATIONS.glob("*.py") if p.name[0].isdigit())
-
-
 def test_downgrade_never_drops_a_table_it_did_not_create() -> None:
     offenders: list[str] = []
-    for path in _files():
+    for path in migration_files():
         text = path.read_text(encoding="utf-8")
         created = set(_CREATE.findall(_body(text, "upgrade")))
         dropped = set(_DROP.findall(_body(text, "downgrade")))
@@ -62,7 +57,7 @@ def test_children_are_dropped_before_their_parents() -> None:
     반쯤 지워진 DB 가 남는다.
     """
     offenders: list[str] = []
-    for path in _files():
+    for path in migration_files():
         text = path.read_text(encoding="utf-8")
         up = _body(text, "upgrade")
         order = _DROP.findall(_body(text, "downgrade"))
@@ -88,7 +83,7 @@ def test_no_migration_recreates_a_table_an_earlier_one_owns() -> None:
     """
     owner: dict[str, str] = {}
     offenders: list[str] = []
-    for path in _files():
+    for path in migration_files():
         up = _body(path.read_text(encoding="utf-8"), "upgrade")
         for table in _CREATE.findall(up):
             if table in owner:
@@ -103,7 +98,7 @@ def test_no_migration_recreates_a_table_an_earlier_one_owns() -> None:
 
 def test_the_guard_actually_reads_something() -> None:
     """통과하는 이유가 「파일을 못 읽어서」면 안 된다."""
-    files = _files()
+    files = migration_files()
     assert len(files) >= 9, f"마이그레이션을 {len(files)}개만 찾았다"
     created = {t for p in files for t in _CREATE.findall(_body(p.read_text(encoding="utf-8"), "upgrade"))}
     assert {"visit", "patient", "guide_document"} <= created, f"표를 제대로 못 읽었다: {sorted(created)}"
