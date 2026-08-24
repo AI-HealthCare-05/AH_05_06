@@ -207,15 +207,17 @@ test("공백만 있는 본문도 빈 것이다 — 서버가 다듬은 뒤 판�
   );
 });
 
-test("없는 섹션에 빈 본문이면 EMPTY_BODY 다 — 서버와 검사 순서가 같다", async () => {
+test("없는 섹션에 빈 본문이면 SECTION_NOT_FOUND 다 — 서버와 검사 순서가 같다", async () => {
   const api = box();
 
-  /* 서버 `edit_section()` 은 섹션을 찾기 **전에** 본문을 본다. 목업이 순서를
-     바꾸면 같은 요청에 404 가 나와 서버와 갈린다. */
+  /* 서버 `edit_section()` 은 `GuideSectionKey(key)` 파싱을 doctor 권한 검사
+     바로 다음, `strip()` 검사보다 앞에서 한다. 키가 유효하지 않으면 본문을
+     보기도 전에 `SECTION_NOT_FOUND` 다 — 목업이 순서를 바꾸면 같은 요청에
+     `EMPTY_BODY` 가 나와 서버와 갈린다. */
   await assert.rejects(
     () => api.doctorApi.editSection(VISIT, "그런키없음", { body: "" }),
-    (error) => error.code === "EMPTY_BODY" && error.status === 422,
-    "빈 본문보다 섹션 조회가 앞서 있다",
+    (error) => error.code === "SECTION_NOT_FOUND" && error.status === 404,
+    "섹션 조회보다 빈 본문 검사가 앞서 있다",
   );
 });
 

@@ -283,18 +283,6 @@ function mockDoctorRequest(path, options) {
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
         if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
 
-        /* **빈 본문은 저장 자체가 안 된다.** 서버 `edit_section()` 은 받은 값을
-           `strip()` 한 뒤 비어 있으면 `EMPTY_BODY` 422 로 막는다. 공백만 넣은
-           것도 빈 것이다 — 화면에서 [저장]을 잘못 눌러 **문장이 통째로 비는
-           것**을 막는 자리다. 승인된 안내문의 한 갈래가 빈 채로 환자에게 가면
-           그 갈래는 없느니만 못하다.
-
-           **섹션을 찾기 전에 본다.** 서버도 잠그기 전에 먼저 보므로, 없는
-           섹션에 빈 본문을 보내면 404 가 아니라 `EMPTY_BODY` 다. 목업이 순서를
-           바꾸면 같은 요청에 서버와 다른 코드를 준다 (이희진 님 `#76` 리뷰). */
-        var text = String(body.body === undefined || body.body === null ? "" : body.body).trim();
-        if (!text) return reject(new ApiError("EMPTY_BODY", 422, {}));
-
         var guide = mockGuide(visitId);
 
         var target = guide.sections.filter(function (s) {
@@ -302,8 +290,22 @@ function mockDoctorRequest(path, options) {
         })[0];
         /* 계약(`docs/api/hospital.md` §918)이 정한 이름은 `SECTION_NOT_FOUND`
            이고 서버도 그 코드를 준다. 목업만 뭉뚱그린 `NOT_FOUND` 를 주고
-           있었다 — 화면이 코드로 분기하는 날 목업에서만 갈린다. */
+           있었다 — 화면이 코드로 분기하는 날 목업에서만 갈린다.
+
+           **빈 본문 검사보다 먼저 본다.** 서버 `edit_section()` 은
+           `GuideSectionKey(key)` 파싱을 doctor 권한 검사 바로 다음, `strip()`
+           검사보다 앞에서 한다 — 키가 유효하지 않으면 본문을 보기도 전에
+           `SECTION_NOT_FOUND` 다. 목업이 순서를 바꾸면 같은 요청(없는 섹션 +
+           빈 본문)에 서버와 다른 코드를 준다. */
         if (!target) return reject(new ApiError("SECTION_NOT_FOUND", 404, {}));
+
+        /* **빈 본문은 저장 자체가 안 된다.** 서버 `edit_section()` 은 받은 값을
+           `strip()` 한 뒤 비어 있으면 `EMPTY_BODY` 422 로 막는다. 공백만 넣은
+           것도 빈 것이다 — 화면에서 [저장]을 잘못 눌러 **문장이 통째로 비는
+           것**을 막는 자리다. 승인된 안내문의 한 갈래가 빈 채로 환자에게 가면
+           그 갈래는 없느니만 못하다 (이희진 님 `#76` 리뷰). */
+        var text = String(body.body === undefined || body.body === null ? "" : body.body).trim();
+        if (!text) return reject(new ApiError("EMPTY_BODY", 422, {}));
 
         /* **잠긴 섹션은 목업도 막는다.** 🚨 응급 문장은 식약처 정보를 근거로
            미리 써 둔 것이라 사람이 고칠 자리가 아니다 — 서버가
