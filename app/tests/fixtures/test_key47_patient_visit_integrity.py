@@ -3,10 +3,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from scripts.seed import SeedDataError, _doctor_ids_by_name, _patient_values, _validate_patient_rows
 
 from app.repositories.visit_repository import VisitRepository
 from app.tests.fixtures.staff import all_staff
-from scripts.seed import SeedDataError, _doctor_ids_by_name, _patient_values, _validate_patient_rows
 
 PATIENT_CSV = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-patients.csv"
 
