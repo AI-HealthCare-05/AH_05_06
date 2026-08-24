@@ -71,6 +71,17 @@ class OcrResultResponse(StrictModel):
     fields: list[OcrFieldResponse]
 
 
+class OcrJobByDocumentResponse(StrictModel):
+    document_id: int
+    document_type: OcrDocumentType
+    ocr_job_id: str
+    status: OcrJobStatus
+    progress: int = Field(ge=0, le=100)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    failure_code: str | None = None
+
+
 class UpdateOcrFieldRequest(StrictModel):
     base_version: int = Field(ge=1)
     corrected_value: str | None = Field(default=None, max_length=10000)
