@@ -25,11 +25,10 @@ from tortoise.timezone import now
 
 from app.core.utils.security import hash_password
 from app.main import app
-from app.models.documents import MedicalDocument
-from app.models.ocr import OcrDocumentType, OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff, StaffStatus
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideStatus, Visit
+from app.tests.ocr_fixture import complete_ocr
 
 #: 합성 계정의 비밀번호. 운영 값과 겹치지 않게 한 곳에만 둔다.
 PASSWORD = "Blocking-Test-1!"
@@ -171,34 +170,19 @@ class OcrFixture:
 
 
 async def make_ocr(hospital_id: int, visit_id: int, job_id: str, requested_by: int) -> OcrFixture:
-    document = await MedicalDocument.create(
+    """끝난 판독 한 건. 만드는 일은 `app/tests/ocr_fixture.py` 가 한다.
+
+    예전에는 여기서 `OcrJob` · `OcrResult` · `OcrField` 를 손으로 만들었다.
+    그래서 운영이 실제로 만드는 모양(`OcrDocumentText`, `completed_at` …)과
+    조금씩 달랐다 (KEY-172).
+    """
+    done = await complete_ocr(
         hospital_id=hospital_id,
         visit_id=visit_id,
-        document_type=OcrDocumentType.EMR,
-        file_path=f"synthetic/{job_id}.pdf",
-        file_size=1024,
-        mime_type="application/pdf",
-        uploaded_by=requested_by,
-    )
-    job = await OcrJob.create(
-        ocr_job_id=job_id,
-        hospital_id=hospital_id,
-        visit_id=visit_id,
-        status=OcrJobStatus.COMPLETED,
-        progress=100,
+        job_id=job_id,
         requested_by=requested_by,
     )
-    result = await OcrResult.create(ocr_job=job, model_name="합성-판독기", version=1)
-    field = await OcrField.create(
-        ocr_result=result,
-        field_type="DIAGNOSIS",
-        extracted_value="합성 진단명",
-    )
-    return OcrFixture(
-        job_id=job.ocr_job_id,
-        field_id=field.ocr_field_id,
-        document_id=document.document_id,
-    )
+    return OcrFixture(job_id=done.job_id, field_id=done.field_id, document_id=done.document_id)
 
 
 def client() -> AsyncClient:
