@@ -451,3 +451,61 @@
   color: var(--ink-3);
   font-size: 12px;
 }
+
+/* ── 챗봇 응답 상태 ─────────────────────────────────────────────────
+ * KEY-130. 예전에는 상태 신호가 **전송 버튼 라벨 하나**뿐이었다. 답변이
+ * 오는 중인지, 멈춘 것인지, 실패한 것인지가 글자를 읽어야만 갈렸다. */
+
+/* 답변을 받는 중. `.bar--pulse`(style.css)와 같은 맥동이라 화면 사이에
+   같은 뜻이 같은 모양으로 간다 — 판독 화면도 이 맥동을 쓴다. */
+.chat__answer--streaming {
+  border-style: dashed;
+}
+
+.chat__answer--streaming .chat__answer-text::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--ink-2);
+  animation: chat-caret 1s steps(2, start) infinite;
+}
+
+@keyframes chat-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 움직임을 줄여 달라고 한 사람에게는 주지 않는다(WCAG 2.3.3). 점선 테두리는
+   남으므로 **상태는 여전히 눈에 보인다** — 움직임만 뺀다. */
+@media (prefers-reduced-motion: reduce) {
+  .chat__answer--streaming .chat__answer-text::after {
+    animation: none;
+  }
+}
+
+/* 중단한 답변. 실패가 아니라 **사용자가 그만 받은 것**이라 경고색을 안 쓴다. */
+.chat__answer--aborted {
+  border-style: dotted;
+  color: var(--ink-2);
+}
+
+/* 「중단」은 지금 할 수 있는 행동이라 전송 옆에 둔다. 다만 주 행동이 아니라
+   테두리만 있는 모양으로 무게를 낮춘다. */
+.chat__stop {
+  min-height: 52px;
+  padding: 0 var(--s-12);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chat__retry {
+  margin-right: var(--s-8);
+}
