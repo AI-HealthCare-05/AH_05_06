@@ -1,0 +1,81 @@
+# SYN-EMS-01 · EMR 판독 기대값 — KEY-68
+#
+# 이 파일이 **갖는 것**   EMR 화면에만 있는 것. ICD 코드와 「어느 표 어느 칸에서
+#                        읽는가」다. CSV 에는 없는 정보다.
+# 이 파일이 **안 갖는 것** 환자·처방 값 자체. 그것의 정본은
+#                        `docs/data/synthetic-patients.csv` 한 곳이다
+#                        (`docs/synthetic-data-spec.md` 1절 「한 곳에서만 고친다」).
+#
+# 그래서 아래 `csv_column` 은 값을 적지 않고 **열 이름을 가리킨다.** CSV 가 바뀌면
+# 이 파일을 안 고쳐도 따라온다. 값을 여기 박으면 기준이 두 곳이 된다.
+#
+# TOML 인 이유 — `tomllib` 가 표준 라이브러리라 **의존성을 안 늘린다.** YAML 은
+# `torchvision` 경유 전이 의존성이라 `app`·`dev` 에 없다. 주석은 그대로 살린다.
+
+scenario = "SYN-EMS-01"
+document_type = "EMR"
+version = "v1"
+
+# 이 샘플이 무엇을 위한 것인가 — 판독 4상태 중 ①(모두 읽힘)의 정상 기준선.
+# 저신뢰·누락·복수 후보·환자 불일치는 이 v1 을 비틀어 만든다.
+intent = "정상 — 필수 필드가 전부 읽히고 fallback 에 안 들어간다"
+
+# 판독이 성공으로 판정되려면 이 셋이 다 있어야 한다 (KEY-163 §4).
+# 하나라도 비면 fallback 이다.
+success_requires = ["DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"]
+
+[patient]
+# 신원은 CSV 가 정본이다. 여기서는 어느 행인지만 고른다.
+csv_scenario = "SYN-EMS-01"
+
+[patient.columns]
+name = "이름"
+chart_no = "차트번호"
+birth_date = "생년월일"
+doctor = "담당의"
+visited_at = "진료일"
+
+# `OcrField.field_type` 으로 저장될 값들. 필수·권장 분류는 KEY-163 §2 를 따른다.
+
+[fields.DIAGNOSIS]
+required = true
+# ICD 코드는 CSV 에 없다 — EMR 진단 표에만 있는 값이라 여기가 정본이다.
+icd_code = "N809"
+csv_column = "진단"
+emr_location = "진단 표 · 주상병 행 · 상병명/ICD코드 컬럼"
+note = "부상병이 여럿이어도 이번 범위는 주상병 1개만 읽는다 (KEY-163 §2)"
+
+[fields.MEDICATION_NAME]
+required = true
+csv_column = "약"
+emr_location = "처방 표 · 약품명 컬럼"
+
+[fields.DURATION_DAYS]
+required = true
+csv_column = "처방일수"
+emr_location = "처방 표 · 처방일수 컬럼"
+note = "소진예정일 계산 근거. 28 미만이면 사람 확인 권고 (KEY-163 §2)"
+
+[fields.DOSAGE]
+required = false
+# 총투원문 `1/1/84` 의 첫 칸이 1회량이다. CSV 가 한 열에 셋을 담고 있다.
+csv_column = "총투원문"
+csv_part = 0
+emr_location = "처방 표 · 1회량 컬럼"
+
+[fields.FREQUENCY]
+required = false
+csv_column = "총투원문"
+csv_part = 1
+emr_location = "처방 표 · 일일횟수 컬럼"
+
+# 아직 못 박지 못한 것. 8/27 멘토링 확정 뒤 v2 로 올린다.
+["확장"]
+"저신뢰" = "같은 v1 에서 처방 표만 흐리게 — SYN-EMS-02 계열"
+"필수값_누락" = "처방일수 칸을 비움"
+"복수_후보" = "부상병 행을 늘려 주상병 판정을 재게 함"
+"환자_불일치" = "patient 만 다른 시나리오로 바꿔 KEY-65 를 재게 함"
+
+["미확정"]
+"대상_병원_EMR" = "시스템 이름·버전 미기입 (KEY-163 §8)"
+"레이아웃" = "지금 렌더러는 KEY-163 §2 가 적은 표 구조만 따른다"

@@ -38,3 +38,7 @@ alembic/versions/*.pyc
 # (app/main.py · ai_worker/main.py), 새 서비스를 만들면 그 진입점이
 # `git add .` 에도 안 잡히고 조용히 커밋에서 빠진다.
 /main.py
+
+# KEY-68 — 합성 판독 샘플은 만들어 쓰고 커밋하지 않는다.
+#   만드는 법: scripts/make_ocr_fixture.py · 기대값: docs/data/ocr-fixtures/
+build/ocr-fixtures/
