@@ -171,6 +171,8 @@ class TestPatientVisitApis(TestCase):
             hospital_id=2,
             patient=patient,
             visited_at="2026-08-19T01:30:00+00:00",
+            status="SCHEDULED",
+            planned_stop=False,
         )
 
         async with client_for(self.staff) as client:
@@ -182,7 +184,7 @@ class TestPatientVisitApis(TestCase):
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["code"] == "VISIT_NOT_FOUND"
         await visit.refresh_from_db()
-        assert visit.status == "COMPLETED"
+        assert visit.status == "SCHEDULED"
         assert visit.planned_stop is False
 
     async def test_other_hospital_patient_is_excluded_from_search(self) -> None:
