@@ -76,11 +76,17 @@ POST /api/v1/patient-auth/otp/verify
   저장하며 API 응답과 로그에도 원문을 포함하지 않는다.
 - 실제 SMS 공급자는 이번 일감에 포함하지 않는다. 공급자가 연결되지 않은
   환경은 성공을 가장하지 않고 `503 OTP_DELIVERY_UNAVAILABLE`을 반환한다.
+- `patient.sms_consent=false`인 수신 거부 환자는 OTP 상태를 만들거나 전송하지
+  않고 `409 SMS_OPT_OUT`으로 차단한다.
+- OTP 상태는 행 잠금 트랜잭션에서 먼저 반영한 뒤 잠금을 해제하고 외부
+  전송을 호출한다. 전송 실패 시 동일한 최신 digest가 아직 소비되지 않은
+  경우에만 신규 발급을 삭제하거나 이전 OTP 상태를 복원하여 동시 변경을
+  덮어쓰지 않는다.
 - 검증 성공은 OTP 확인만 뜻한다. 30분 환자 세션 발급과 승인 안내 조회 차단은
   KEY-78의 후속 일감에서 연결한다.
 - 주요 오류는 `404 LINK_NOT_FOUND`, `410 LINK_EXPIRED`, `409 OTP_NOT_ISSUED`,
   `401 OTP_INVALID`, `410 OTP_EXPIRED`, `409 OTP_ALREADY_USED`,
-  `429 OTP_RESEND_TOO_SOON`, `429 OTP_LOCKED`다.
+  `409 SMS_OPT_OUT`, `429 OTP_RESEND_TOO_SOON`, `429 OTP_LOCKED`다.
 
 ### 2.3 D+7 복약·통증 응답 — KEY-151 최소 계약
 

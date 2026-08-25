@@ -34,6 +34,15 @@ class FailingDelivery:
         raise RuntimeError("synthetic delivery failure without sensitive values")
 
 
+class PersistedStateDelivery:
+    def __init__(self) -> None:
+        self.persisted_before_send = False
+
+    async def send(self, phone: str, code: str) -> None:
+        challenge = await PatientOtpChallenge.get()
+        self.persisted_before_send = challenge.otp_digest != code and challenge.issued_at is not None
+
+
 async def make_link() -> PatientGuideLink:
     hospital = await Hospital.create(name="KEY-91 합성의원")
     patient = await Patient.create(
@@ -122,6 +131,29 @@ class TestPatientOtpHappyPath(PatientOtpTestCase):
 
 
 class TestPatientOtpFailurePolicy(PatientOtpTestCase):
+    async def test_sms_opt_out_blocks_issue_without_creating_or_sending_an_otp(self) -> None:
+        link = await make_link()
+        patient = await Patient.get(patient_id=link.guide_document.visit.patient_id)
+        patient.sms_consent = False
+        await patient.save(update_fields=["sms_consent"])
+
+        blocked = await self.issue()
+
+        assert blocked.status_code == 409
+        assert blocked.json()["code"] == "SMS_OPT_OUT"
+        assert self.delivery.sent == []
+        assert await PatientOtpChallenge.all().count() == 0
+
+    async def test_issue_persists_challenge_before_calling_the_delivery_provider(self) -> None:
+        await make_link()
+        delivery = PersistedStateDelivery()
+        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(delivery, secret_key=SECRET)
+
+        issued = await self.issue()
+
+        assert issued.status_code == 200
+        assert delivery.persisted_before_send is True
+
     async def test_reissue_is_limited_for_sixty_seconds_without_sending_or_rotating_the_code(self) -> None:
         await make_link()
         assert (await self.issue()).status_code == 200
@@ -216,6 +248,27 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         assert expired.status_code == 410
         assert expired.json()["code"] == "OTP_EXPIRED"
 
+    async def test_issue_and_verify_use_the_time_after_row_locks_are_acquired(self) -> None:
+        await make_link()
+        before_lock = now()
+        after_lock = before_lock + timedelta(seconds=4)
+        with patch("app.services.patient_otp.now", side_effect=[before_lock, after_lock]):
+            issued = await self.issue()
+        assert issued.status_code == 200
+        challenge = await PatientOtpChallenge.get()
+        assert challenge.issued_at == after_lock
+        assert challenge.expires_at == after_lock + OTP_TTL
+
+        challenge.expires_at = after_lock + timedelta(seconds=2)
+        await challenge.save(update_fields=["expires_at"])
+        with patch(
+            "app.services.patient_otp.now",
+            side_effect=[after_lock + timedelta(seconds=1), after_lock + timedelta(seconds=3)],
+        ):
+            expired = await self.verify(OTP)
+        assert expired.status_code == 410
+        assert expired.json()["code"] == "OTP_EXPIRED"
+
     async def test_delivery_failure_rolls_back_the_challenge(self) -> None:
         await make_link()
         app.dependency_overrides[_otp_service] = lambda: PatientOtpService(FailingDelivery(), secret_key=SECRET)
@@ -226,6 +279,33 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         assert failed.json()["code"] == "OTP_DELIVERY_UNAVAILABLE"
         assert OTP not in failed.text
         assert await PatientOtpChallenge.all().count() == 0
+
+    async def test_failed_reissue_restores_the_previous_otp_without_resetting_failures(self) -> None:
+        await make_link()
+        assert (await self.issue()).status_code == 200
+        challenge = await PatientOtpChallenge.get()
+        challenge.failed_attempts = 1
+        challenge.issued_at = now() - OTP_RESEND_COOLDOWN - timedelta(seconds=1)
+        await challenge.save(update_fields=["failed_attempts", "issued_at"])
+        previous = (
+            challenge.otp_digest,
+            challenge.otp_salt,
+            challenge.expires_at,
+            challenge.issued_at,
+        )
+        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(FailingDelivery(), secret_key=SECRET)
+
+        failed = await self.issue()
+
+        assert failed.status_code == 503
+        restored = await PatientOtpChallenge.get()
+        assert (
+            restored.otp_digest,
+            restored.otp_salt,
+            restored.expires_at,
+            restored.issued_at,
+        ) == previous
+        assert restored.failed_attempts == 1
 
     async def test_missing_expired_and_unapproved_links_do_not_issue_an_otp(self) -> None:
         link = await make_link()

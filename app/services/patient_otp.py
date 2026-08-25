@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -67,6 +68,15 @@ def _resend_too_soon(challenge: PatientOtpChallenge, timestamp: datetime) -> Api
     )
 
 
+@dataclass(frozen=True)
+class _PreviousOtp:
+    otp_digest: str
+    otp_salt: str
+    expires_at: datetime
+    consumed_at: datetime | None
+    issued_at: datetime
+
+
 class PatientOtpService:
     def __init__(self, delivery: OtpDelivery, *, secret_key: str | None = None) -> None:
         self.delivery = delivery
@@ -76,14 +86,16 @@ class PatientOtpService:
         self,
         raw_link_token: str,
         connection: BaseDBAsyncClient,
+        *,
+        include_patient: bool,
     ) -> PatientGuideLink:
-        link = (
-            await PatientGuideLink.filter(token_digest=digest_link_token(raw_link_token))
+        query = (
+            PatientGuideLink.filter(token_digest=digest_link_token(raw_link_token))
             .using_db(connection)
             .select_for_update()
-            .prefetch_related("guide_document__visit__patient")
-            .first()
         )
+        relation = "guide_document__visit__patient" if include_patient else "guide_document"
+        link = await query.prefetch_related(relation).first()
         if link is None:
             raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
         timestamp = now()
@@ -93,6 +105,18 @@ class PatientOtpService:
         if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:
             raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
         return link
+
+    @staticmethod
+    async def _locked_challenge(
+        patient_guide_link_id: int,
+        connection: BaseDBAsyncClient,
+    ) -> PatientOtpChallenge | None:
+        return (
+            await PatientOtpChallenge.filter(patient_guide_link_id=patient_guide_link_id)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
 
     @staticmethod
     async def _release_elapsed_lock(
@@ -108,17 +132,52 @@ class PatientOtpService:
                 update_fields=["locked_until", "failed_attempts", "updated_at"],
             )
 
-    async def issue(self, raw_link_token: str) -> PatientOtpChallenge:
-        timestamp = now()
-
+    async def _compensate_failed_delivery(
+        self,
+        patient_guide_link_id: int,
+        issued_digest: str,
+        previous: _PreviousOtp | None,
+    ) -> None:
+        """발송 실패가 뒤따른 발급 상태만 되돌리고 동시 변경은 보존한다."""
         async with in_transaction() as connection:
-            link = await self._active_link(raw_link_token, connection)
-            challenge = (
-                await PatientOtpChallenge.filter(patient_guide_link_id=link.patient_guide_link_id)
-                .using_db(connection)
-                .select_for_update()
-                .first()
+            challenge = await self._locked_challenge(patient_guide_link_id, connection)
+            if challenge is None or challenge.otp_digest != issued_digest or challenge.consumed_at is not None:
+                return
+            if previous is None:
+                await challenge.delete(using_db=connection)
+                return
+            challenge.otp_digest = previous.otp_digest
+            challenge.otp_salt = previous.otp_salt
+            challenge.expires_at = previous.expires_at
+            challenge.consumed_at = previous.consumed_at
+            challenge.issued_at = previous.issued_at
+            await challenge.save(
+                using_db=connection,
+                update_fields=[
+                    "otp_digest",
+                    "otp_salt",
+                    "expires_at",
+                    "consumed_at",
+                    "issued_at",
+                    "updated_at",
+                ],
             )
+
+    async def issue(self, raw_link_token: str) -> PatientOtpChallenge:
+        previous: _PreviousOtp | None = None
+        async with in_transaction() as connection:
+            link = await self._active_link(raw_link_token, connection, include_patient=True)
+            patient = link.guide_document.visit.patient
+            if not patient.sms_consent:
+                raise ApiError(
+                    "SMS_OPT_OUT",
+                    409,
+                    "문자 수신에 동의하지 않아 인증번호를 전송할 수 없습니다.",
+                )
+            challenge = await self._locked_challenge(link.patient_guide_link_id, connection)
+            # 행 잠금 대기 시간이 만료·잠금·재발급 계산에 섞이지 않게
+            # 필요한 잠금을 모두 획득한 뒤 판정 기준 시각을 읽는다.
+            timestamp = now()
             if challenge is not None:
                 await self._release_elapsed_lock(challenge, timestamp, connection)
                 if challenge.locked_until is not None:
@@ -126,6 +185,13 @@ class PatientOtpService:
                 if challenge.issued_at + OTP_RESEND_COOLDOWN > timestamp:
                     raise _resend_too_soon(challenge, timestamp)
 
+                previous = _PreviousOtp(
+                    otp_digest=challenge.otp_digest,
+                    otp_salt=challenge.otp_salt,
+                    expires_at=challenge.expires_at,
+                    consumed_at=challenge.consumed_at,
+                    issued_at=challenge.issued_at,
+                )
                 code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
                 salt = secrets.token_hex(16)
                 challenge.otp_digest = _otp_digest(code, salt, self.secret_key)
@@ -155,30 +221,26 @@ class PatientOtpService:
                     issued_at=timestamp,
                     using_db=connection,
                 )
-
-            patient = link.guide_document.visit.patient
-            try:
-                await self.delivery.send(patient.phone, code)
-            except ApiError:
-                # 예외가 트랜잭션을 롤백하므로 기존 challenge와 실패 횟수도
-                # 발급 시도 전 상태로 돌아간다. 직접 삭제하면 재발급 실패만으로
-                # 기존 잠금 이력을 없앨 수 있다.
+        # 외부 공급자 지연 중 DB 행 잠금과 커넥션을 점유하지 않는다.
+        try:
+            await self.delivery.send(patient.phone, code)
+        except Exception as exc:
+            await self._compensate_failed_delivery(
+                link.patient_guide_link_id,
+                challenge.otp_digest,
+                previous,
+            )
+            if isinstance(exc, ApiError):
                 raise
-            except Exception as exc:
-                raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.") from exc
+            raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.") from exc
         return challenge
 
     async def verify(self, raw_link_token: str, code: str) -> None:
-        timestamp = now()
         failure: ApiError | None = None
         async with in_transaction() as connection:
-            link = await self._active_link(raw_link_token, connection)
-            challenge = (
-                await PatientOtpChallenge.filter(patient_guide_link_id=link.patient_guide_link_id)
-                .using_db(connection)
-                .select_for_update()
-                .first()
-            )
+            link = await self._active_link(raw_link_token, connection, include_patient=False)
+            challenge = await self._locked_challenge(link.patient_guide_link_id, connection)
+            timestamp = now()
             if challenge is None:
                 raise ApiError("OTP_NOT_ISSUED", 409, "인증번호를 먼저 요청해 주세요.")
 
