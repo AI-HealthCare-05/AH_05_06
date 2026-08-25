@@ -45,6 +45,15 @@ function paragraphs(parent, lines) {
   return parent;
 }
 
+function renderContactButton(className) {
+  var contact = el("button", className, "💬 문의하기");
+  contact.type = "button";
+  contact.addEventListener("click", function () {
+    notice("문의 주소는 병원 설정에서 정합니다 — 서버가 붙으면 열립니다.");
+  });
+  return contact;
+}
+
 function renderEmergency(lines) {
   var danger = el("section", "card card--danger");
   danger.appendChild(el("p", "card__badge", "⚠"));
@@ -54,12 +63,7 @@ function renderEmergency(lines) {
     list.appendChild(el("li", null, line));
   });
   danger.appendChild(list);
-  var contact = el("button", "button button--contact", "💬 문의하기");
-  contact.type = "button";
-  contact.addEventListener("click", function () {
-    notice("문의 주소는 병원 설정에서 정합니다 — 서버가 붙으면 열립니다.");
-  });
-  danger.appendChild(contact);
+  danger.appendChild(renderContactButton("button button--contact"));
   return danger;
 }
 
@@ -172,6 +176,18 @@ function renderLifeTab(g) {
 }
 
 /* ── P6 챗봇 ─────────────────────────────────── */
+function chatbotAnswerText(message) {
+  if (message.error) return message.error;
+  return message.text || "답변을 준비하고 있어요…";
+}
+
+function updateStreamingAnswer(message) {
+  var text = document.getElementById("chat-stream-answer");
+  if (!text) return false;
+  text.textContent = chatbotAnswerText(message);
+  return true;
+}
+
 function renderChatMessage(message) {
   if (message.role === "user") {
     var row = el("div", "chat__row chat__row--user");
@@ -180,19 +196,14 @@ function renderChatMessage(message) {
   }
   var answer = el("section", "chat__answer" + (message.urgent ? " chat__answer--urgent" : ""));
   if (message.urgent) answer.appendChild(el("p", "chat__urgent", "⚠ 긴급 안내"));
-  answer.appendChild(
-    el("p", "chat__answer-text", message.text || (message.error ? message.error : "답변을 준비하고 있어요…")),
-  );
+  var answerText = el("p", "chat__answer-text", chatbotAnswerText(message));
+  if (message.streaming) answerText.id = "chat-stream-answer";
+  answer.appendChild(answerText);
   if (message.evidence) answer.appendChild(el("p", "chat__evidence", "📎 " + message.evidence));
   if (message.source) answer.appendChild(el("p", "chat__meta", "출처 · " + message.source));
   if (message.limitation) answer.appendChild(el("p", "chat__meta", "한계 · " + message.limitation));
-  if (!message.streaming && !message.error) {
-    var contact = el("button", "button chat__contact", "💬 문의하기");
-    contact.type = "button";
-    contact.addEventListener("click", function () {
-      notice("문의 주소는 병원 설정에서 정합니다 — 서버가 붙으면 열립니다.");
-    });
-    answer.appendChild(contact);
+  if (!message.streaming) {
+    answer.appendChild(renderContactButton("button chat__contact"));
   }
   return answer;
 }
@@ -257,12 +268,12 @@ function sendChatQuestion(question) {
   state.chat.messages.push(answer);
   renderBody();
 
-  streamChatbotAnswer(
+  return streamChatbotAnswer(
     { link_token: state.token, question: question },
     {
       onDelta: function (chunk) {
         answer.text += chunk;
-        renderBody();
+        if (!updateStreamingAnswer(answer)) renderBody();
       },
       onComplete: function (result) {
         answer.streaming = false;
