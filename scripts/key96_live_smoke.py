@@ -15,8 +15,8 @@ os.environ.setdefault("DB_PASSWORD", "synthetic-key96-smoke-not-used")
 
 from app.models.visits import GuideSectionKey
 from app.services.chatbot import (
+    ApprovedContext,
     OpenAIResponsesModel,
-    RetrievedSection,
     _instructions,
     _is_extractively_grounded,
     _prompt,
@@ -39,7 +39,7 @@ async def main() -> int:
         base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
         timeout_seconds=float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "20")),
     )
-    section = RetrievedSection(GuideSectionKey.MEDICATION, SYNTHETIC_CONTEXT)
+    section = ApprovedContext(GuideSectionKey.MEDICATION, SYNTHETIC_CONTEXT)
     started = perf_counter()
     try:
         answer = await model.generate(

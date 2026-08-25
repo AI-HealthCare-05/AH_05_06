@@ -1,4 +1,4 @@
-"""승인 안내만 사용하는 환자 챗봇 최소 LLM·RAG 경로 — KEY-96."""
+"""승인 안내 컨텍스트만 사용하는 환자 챗봇 최소 LLM 경로 — KEY-96."""
 
 import logging
 import re
@@ -135,7 +135,7 @@ def _usage_value(usage: object, key: str) -> int | None:
 
 
 @dataclass(frozen=True)
-class RetrievedSection:
+class ApprovedContext:
     key: GuideSectionKey
     body: str
 
@@ -164,8 +164,8 @@ def classify_question(question: str) -> PatientQuestionKind:
     return PatientQuestionKind.OTHER
 
 
-def retrieve_approved_section(question: str, sections: list[GuideSection]) -> RetrievedSection | None:
-    """승인 안내 섹션 안에서만 가장 가까운 한 갈래를 고른다."""
+def select_approved_context(question: str, sections: list[GuideSection]) -> ApprovedContext | None:
+    """외부 검색 없이 승인 안내 섹션 중 질문 갈래에 맞는 한 건을 고른다."""
 
     kind = classify_question(question)
     preferences = {
@@ -195,10 +195,10 @@ def retrieve_approved_section(question: str, sections: list[GuideSection]) -> Re
     preference, overlap, selected = max(ranked, key=lambda item: (item[0], item[1], -item[2].guide_section_id))
     if preference == 0 and overlap == 0:
         return None
-    return RetrievedSection(key=selected.section_key, body=selected.body.strip())
+    return ApprovedContext(key=selected.section_key, body=selected.body.strip())
 
 
-def _evidence(section: RetrievedSection | None) -> str:
+def _evidence(section: ApprovedContext | None) -> str:
     if section is None:
         return "승인 안내에서 근거를 찾지 못함"
     labels = {
@@ -223,11 +223,11 @@ def _instructions() -> str:
     )
 
 
-def _prompt(question: str, section: RetrievedSection) -> str:
+def _prompt(question: str, section: ApprovedContext) -> str:
     return f"APPROVED_CONTEXT[{section.key.value}]\n{section.body}\n\nPATIENT_QUESTION\n{question}"
 
 
-def _is_extractively_grounded(answer: str, section: RetrievedSection) -> bool:
+def _is_extractively_grounded(answer: str, section: ApprovedContext) -> bool:
     """모델이 승인 문구 밖의 내용을 한 글자라도 보태면 환자에게 내보내지 않는다."""
 
     compact_answer = " ".join(answer.split())
@@ -253,7 +253,7 @@ class ChatbotService:
 
     async def answer(self, *, link_token: str, question: str) -> ChatbotResult:
         _, guide = await self._links.get_approved_guide(link_token)
-        section = retrieve_approved_section(question, list(guide.sections))
+        section = select_approved_context(question, list(guide.sections))
         question_kind = classify_question(question)
 
         if section is None:
@@ -311,7 +311,7 @@ class ChatbotService:
         )
         return result
 
-    def _fallback(self, answer: str, section: RetrievedSection) -> ChatbotResult:
+    def _fallback(self, answer: str, section: ApprovedContext) -> ChatbotResult:
         return ChatbotResult(
             answer=answer,
             evidence=_evidence(section),

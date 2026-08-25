@@ -22,7 +22,7 @@
 | OTP | 6자리·3분 유효, 5회 실패 시 10분 잠금 | [KEY-91](https://leehee.atlassian.net/browse/KEY-91) |
 | 환자 세션 | 30분 세션 계약·구현은 후속 범위 | [KEY-78](https://leehee.atlassian.net/browse/KEY-78) |
 | 승인 안내 조회 | 승인 완료 안내만 제공하고 원본·미승인 안내는 차단 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
-| 챗봇 | 승인 안내 섹션만 검색하고 실제 모델 1회 호출, 실패 시 안전한 고정 응답 | [KEY-96](https://leehee.atlassian.net/browse/KEY-96) |
+| 챗봇 | 승인 안내 섹션에서 컨텍스트를 선택하고 실제 모델 1회 호출, 실패 시 안전한 고정 응답 | [KEY-96](https://leehee.atlassian.net/browse/KEY-96) |
 | D+7 응답 | 복약·통증 응답 한 건을 `visit_id`에 연결 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
 | D+7 복약 신호 | **확정** — 아래 3절 | [KEY-138](https://leehee.atlassian.net/browse/KEY-138) |
 
@@ -163,7 +163,7 @@ await PatientUsageService().record_chatbot_answer(
 |---|---|---|
 | `GET /api/v1/guides/{token}` | `record_guide_view()` | **연결 완료** — KEY-170 |
 | 챗봇 스트리밍 UI (KEY-95) | KEY-96 응답 API 호출 | **연결 완료** — 단일 완성 응답을 기존 어댑터로 전달 |
-| LLM·RAG 응답 경로 (KEY-96) | `record_chatbot_answer()` | **연결 완료** — 질문 갈래·답변 결과·근거 섹션만 기록 |
+| 승인 컨텍스트 기반 LLM 응답 경로 (KEY-96) | `record_chatbot_answer()` | **연결 완료** — 질문 갈래·답변 결과·근거 섹션만 기록 |
 
 ### 2.5 챗봇 단일 LLM 응답 — KEY-96 최소 계약
 
@@ -183,17 +183,18 @@ POST /api/v1/chatbot/responses
 
 - 링크 토큰은 URL·로그에 노출하지 않고 요청 본문으로만 받는다. 기존 KEY-90의
   만료 검증과 승인 완료 게이트를 그대로 통과해야 한다.
-- 검색 대상은 해당 링크의 승인 완료 `GuideSection.body`뿐이다. 환자정보,
+- 컨텍스트 선택 대상은 해당 링크의 승인 완료 `GuideSection.body`뿐이다. 환자정보,
   다른 병원 안내, 미승인 안내, OCR·의료문서 원문은 컨텍스트에 넣지 않는다.
 - 모델에는 응답 저장을 끈 단일 요청을 보내며, 모델명·성공 여부·지연시간과
   환경에 단가가 설정된 경우의 추정 비용만 기록한다. 질문·답변·프롬프트·토큰
   원문은 애플리케이션 로그나 이용 이벤트에 남기지 않는다.
-- 모델 출력은 승인 섹션에서 그대로 인용한 문장인지 서버가 확인한다. 검색 근거가
+- 모델 출력은 승인 섹션에서 그대로 인용한 문장인지 서버가 확인한다. 선택 가능한 승인 컨텍스트가
   없거나 모델 설정·호출에 실패하거나 승인 문구 밖의 표현·안전 규칙 위반이 있으면
   진단·약물 변경 권고가 없는 고정 안내로 대체하고 `fallback: true`로 표시한다.
 - 답변 결과는 KEY-170의 `record_chatbot_answer()`로 갈래·결과·근거 섹션만
   기록하며 대화 원문을 조회하는 병원 API는 만들지 않는다.
-- 실제 모델의 정량 성능·질환 일반화·비용 최적화와 SSE 스트리밍은 범위 밖이다.
+- 외부 지식 검색·벡터 DB 기반 RAG는 MVP 범위에서 제외하고 Post-MVP KEY-82로
+  이관한다. 실제 모델의 정량 성능·질환 일반화·비용 최적화와 SSE 스트리밍도 범위 밖이다.
 
 ## 3. D+7 복약 신호 — `POST /checkins/{token}/signals`
 
