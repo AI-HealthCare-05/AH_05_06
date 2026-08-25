@@ -218,11 +218,13 @@ class TestTheReadPathRecordsTheView(PatientUsageTestCase):
     def setUp(self) -> None:
         super().setUp()
         from app.core.redis_client import get_redis
+        from app.dependencies.patient_auth import require_patient_session
         from app.main import app
         from app.tests.fakes import FakeRedis
 
         self.app = app
         app.dependency_overrides[get_redis] = lambda: FakeRedis()
+        app.dependency_overrides[require_patient_session] = lambda: None
         self.addCleanup(app.dependency_overrides.clear)
 
     async def read(self, token: str):

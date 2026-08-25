@@ -16,8 +16,9 @@
 `404` 다 — 존재 여부 자체를 감춘다.
 """
 
+import itertools
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from httpx import ASGITransport, AsyncClient
@@ -25,11 +26,10 @@ from tortoise.timezone import now
 
 from app.core.utils.security import hash_password
 from app.main import app
-from app.models.documents import MedicalDocument
-from app.models.ocr import OcrDocumentType, OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff, StaffStatus
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideStatus, Visit
+from app.tests.ocr_fixture import complete_ocr
 
 #: 합성 계정의 비밀번호. 운영 값과 겹치지 않게 한 곳에만 둔다.
 PASSWORD = "Blocking-Test-1!"
@@ -129,6 +129,41 @@ async def make_patient_and_visit(hospital_id: int, chart_no: str) -> tuple[int, 
     return patient.patient_id, visit.visit_id
 
 
+#: 생성 경로에 보낼 **요청 본문**. 위 `make_patient_and_visit` 이 ORM 으로 심는
+#: 것과 짝이다 — 한쪽은 행을 만들고 한쪽은 API 에 보낸다. 다른 일이지만 **같은
+#: 합성 환자·진료의 모양**이라 한 파일에 둔다. 필수 필드가 늘면 여기 둘을 함께
+#: 본다 (이희진 님 `#122` 리뷰).
+#:
+#: 부를 때마다 새 값을 준다. 같은 몸을 두 번 보내면 차트번호 유니크 제약이나
+#: 「한 환자에게 같은 날 진료 한 건」 제약에 걸려 `409` 가 난다 — 차단이 아니라
+#: 중복이라 「정상 경로가 막혔다」로 잘못 읽힌다.
+_serial = itertools.count(1)
+
+#: 픽스처가 심는 진료가 `2026-08-21` 이라 그 뒤로 잡는다.
+_VISIT_BASE = date(2026, 9, 1)
+
+
+def new_patient_body() -> dict:
+    return {
+        "hospital_patient_no": f"SYN-BLOCK-{next(_serial)}",
+        "name": "합성차단환자",
+        "birth_date": "1990-01-01",
+        "phone": "010-0000-1111",
+        "sms_consent": False,
+    }
+
+
+def new_visit_body() -> dict:
+    """진료일을 **한 방향으로만** 민다.
+
+    예전에는 `% 28` 로 한 달 안에 감쌌다. 그런데 이 팩토리는 요청이 거부되는
+    검사(401·403·404)에서도 불려서 번호를 소모한다. 라우트가 늘수록 여유가
+    줄어 언젠가 같은 날이 두 번 나오고, 그때 `409` 로 **우연히** 실패한다.
+    감싸지 않으면 그 자리가 없다 (이희진 님 `#122` 리뷰).
+    """
+    return {"visited_at": f"{_VISIT_BASE + timedelta(days=next(_serial))}T10:30:00+09:00"}
+
+
 async def make_guide(hospital_id: int, visit_id: int, status: GuideStatus) -> int:
     """그 진료의 안내문 한 건.
 
@@ -171,34 +206,19 @@ class OcrFixture:
 
 
 async def make_ocr(hospital_id: int, visit_id: int, job_id: str, requested_by: int) -> OcrFixture:
-    document = await MedicalDocument.create(
+    """끝난 판독 한 건. 만드는 일은 `app/tests/ocr_fixture.py` 가 한다.
+
+    예전에는 여기서 `OcrJob` · `OcrResult` · `OcrField` 를 손으로 만들었다.
+    그래서 운영이 실제로 만드는 모양(`OcrDocumentText`, `completed_at` …)과
+    조금씩 달랐다 (KEY-172).
+    """
+    done = await complete_ocr(
         hospital_id=hospital_id,
         visit_id=visit_id,
-        document_type=OcrDocumentType.EMR,
-        file_path=f"synthetic/{job_id}.pdf",
-        file_size=1024,
-        mime_type="application/pdf",
-        uploaded_by=requested_by,
-    )
-    job = await OcrJob.create(
-        ocr_job_id=job_id,
-        hospital_id=hospital_id,
-        visit_id=visit_id,
-        status=OcrJobStatus.COMPLETED,
-        progress=100,
+        job_id=job_id,
         requested_by=requested_by,
     )
-    result = await OcrResult.create(ocr_job=job, model_name="합성-판독기", version=1)
-    field = await OcrField.create(
-        ocr_result=result,
-        field_type="DIAGNOSIS",
-        extracted_value="합성 진단명",
-    )
-    return OcrFixture(
-        job_id=job.ocr_job_id,
-        field_id=field.ocr_field_id,
-        document_id=document.document_id,
-    )
+    return OcrFixture(job_id=done.job_id, field_id=done.field_id, document_id=done.document_id)
 
 
 def client() -> AsyncClient:
