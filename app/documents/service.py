@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi import UploadFile, status
 from tortoise.transactions import in_transaction
 
+from app.core import config
 from app.core.api_errors import ApiError
 from app.core.storage import (
     ALLOWED_EXTENSIONS_BY_MIME,
@@ -16,6 +17,7 @@ from app.documents.schemas import DocumentUploadResponse
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType, OcrJob, OcrJobDocument, OcrJobStatus
 from app.models.visits import Visit
+from app.ocr.service import seed_fixture_result
 
 
 class DocumentUploadService:
@@ -115,6 +117,13 @@ class DocumentUploadService:
                     document_id=doc.document_id,
                     document_type=document_type,
                     using_db=conn,
+                )
+
+            if config.OCR_FIXTURE_FALLBACK:
+                await seed_fixture_result(
+                    ocr_job,
+                    [(doc.document_id, document_type) for doc in documents],
+                    conn,
                 )
 
         return [doc.document_id for doc in documents], ocr_job.ocr_job_id
