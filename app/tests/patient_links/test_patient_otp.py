@@ -43,6 +43,32 @@ class PersistedStateDelivery:
         self.persisted_before_send = challenge.otp_digest != code and challenge.issued_at is not None
 
 
+class ConsumeThenFailDelivery:
+    """발송 완료 응답 전에 환자가 OTP를 소비하는 동시성 창을 재현한다."""
+
+    def __init__(self) -> None:
+        self.service: PatientOtpService | None = None
+
+    async def send(self, phone: str, code: str) -> None:
+        service = self.service
+        assert service is not None
+        await service.verify(LINK_TOKEN, code)
+        raise RuntimeError("synthetic delivery failure after OTP consumption")
+
+
+class ReplaceThenFailDelivery:
+    """발송 실패 보상 전에 다른 발급이 digest를 교체한 상태를 재현한다."""
+
+    def __init__(self) -> None:
+        self.replacement_digest = hashlib.sha256(b"synthetic concurrent OTP replacement").hexdigest()
+
+    async def send(self, phone: str, code: str) -> None:
+        challenge = await PatientOtpChallenge.get()
+        challenge.otp_digest = self.replacement_digest
+        await challenge.save(update_fields=["otp_digest", "updated_at"])
+        raise RuntimeError("synthetic delivery failure after concurrent replacement")
+
+
 async def make_link() -> PatientGuideLink:
     hospital = await Hospital.create(name="KEY-91 합성의원")
     patient = await Patient.create(
@@ -279,6 +305,38 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         assert failed.json()["code"] == "OTP_DELIVERY_UNAVAILABLE"
         assert OTP not in failed.text
         assert await PatientOtpChallenge.all().count() == 0
+
+    async def test_consumed_otp_stays_consumed_when_delivery_reports_failure(self) -> None:
+        """실패 보상이 발송 중 완료된 인증을 되돌려 OTP 재사용을 열면 안 된다."""
+        await make_link()
+        delivery = ConsumeThenFailDelivery()
+        service = PatientOtpService(delivery, secret_key=SECRET)
+        delivery.service = service
+        app.dependency_overrides[_otp_service] = lambda: service
+
+        failed = await self.issue()
+
+        assert failed.status_code == 503
+        assert failed.json()["code"] == "OTP_DELIVERY_UNAVAILABLE"
+        challenge = await PatientOtpChallenge.get()
+        assert challenge.consumed_at is not None
+
+        reused = await self.verify(OTP)
+        assert reused.status_code == 409
+        assert reused.json()["code"] == "OTP_ALREADY_USED"
+
+    async def test_failed_delivery_does_not_overwrite_a_concurrently_replaced_digest(self) -> None:
+        """실패 보상은 그 사이 재발급된 challenge를 삭제하거나 복원하면 안 된다."""
+        await make_link()
+        delivery = ReplaceThenFailDelivery()
+        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(delivery, secret_key=SECRET)
+
+        failed = await self.issue()
+
+        assert failed.status_code == 503
+        assert failed.json()["code"] == "OTP_DELIVERY_UNAVAILABLE"
+        challenge = await PatientOtpChallenge.get()
+        assert challenge.otp_digest == delivery.replacement_digest
 
     async def test_failed_reissue_restores_the_previous_otp_without_resetting_failures(self) -> None:
         await make_link()
