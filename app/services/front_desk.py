@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from app.core.api_errors import ApiError
 from app.core.pagination import encode_cursor
@@ -41,11 +41,16 @@ class FrontDeskService:
         selected = self._categories(categories)
         before_at, before_id = visit_cursor(cursor)
 
+        # **의원 시간대 그대로 넘긴다** — KEY-181.
+        # `visited_at` 열이 KST 벽시계를 담고 있어서, 여기서 UTC 로 바꾸면 창이
+        # 아홉 시간 밀린다. 그러면 15:00 KST 이후 진료가 이 창에서 빠지고, 아래
+        # `astimezone(DISPLAY_TIMEZONE).date()` 재확인이 다음 날 목록에서도
+        # 걸러 내 **어느 날짜에도 안 뜨게** 된다.
         start_local = datetime.combine(target_date, time.min, tzinfo=DISPLAY_TIMEZONE)
         visits = await self.repo.front_desk_candidates(
             hospital_id,
-            start_utc=start_local.astimezone(UTC),
-            end_utc=(start_local + timedelta(days=1)).astimezone(UTC),
+            day_start=start_local,
+            day_end=start_local + timedelta(days=1),
         )
         signals = await load_signals([visit.visit_id for visit in visits], hospital_id)
         derived = {visit_id: derive(value) for visit_id, value in signals.items()}

@@ -1,5 +1,5 @@
 import builtins
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from tortoise.timezone import now
 
@@ -136,14 +136,15 @@ class VisitService:
         exclude_visit_id: int | None = None,
     ) -> None:
         localized = self._localized(visited_at)
+        # **의원 시간대 그대로 넘긴다** — KEY-181. UTC 로 바꾸면 「하루」가
+        # 15:00 ~ 다음날 15:00 이 되어, 저녁 진료 뒤 다음 날 아침 재진이
+        # 「같은 날 이미 등록」으로 막힌다.
         start_local = datetime.combine(localized.date(), datetime.min.time(), tzinfo=DISPLAY_TIMEZONE)
-        start_utc = start_local.astimezone(UTC)
-        end_utc = (start_local + timedelta(days=1)).astimezone(UTC)
         if await self.repo.exists_on_day(
             patient_id,
             hospital_id,
-            start_utc,
-            end_utc,
+            start_local,
+            start_local + timedelta(days=1),
             exclude_visit_id=exclude_visit_id,
         ):
             raise ApiError(409, "VISIT_ALREADY_REGISTERED", "같은 날짜의 진료가 이미 등록되어 있습니다.")
