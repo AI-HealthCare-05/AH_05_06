@@ -8,7 +8,6 @@ from typing import Any
 
 from httpx import ASGITransport, AsyncClient
 
-from app.core import config
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
@@ -34,10 +33,10 @@ async def make_staff(login_id: str = "staff01", **kwargs: Any) -> Staff:
 
 
 class SessionTestCase(AuthTestCase):
-    async def sign_in(self, client: AsyncClient, login_id: str = "staff01", remember: bool = False) -> str:
+    async def sign_in(self, client: AsyncClient, login_id: str = "staff01") -> str:
         response = await client.post(
             f"{BASE}/login",
-            json={"login_id": login_id, "password": PASSWORD, "remember": remember},
+            json={"login_id": login_id, "password": PASSWORD},
         )
         assert response.status_code == 200
         return str(response.json()["access_token"])
@@ -82,18 +81,25 @@ class TestRotation(SessionTestCase):
 
         assert response.status_code == 401
 
-    async def test_remember_survives_rotation(self) -> None:
-        """로그인 유지를 켜고 갱신했는데 세션 쿠키로 바뀌면, 브라우저를 닫는
-        순간 「유지」가 거짓말이 된다."""
+    async def test_rotation_keeps_it_a_session_cookie(self) -> None:
+        """**갱신이 수명을 되살리지 않는다** — KEY-179.
 
+        이 검사는 뒤집힌 것이다. 예전에는 「로그인 유지를 켜고 갱신했는데 세션
+        쿠키로 바뀌면 유지가 거짓말이 된다」를 쟀다. 이제 유지 자체가 없으므로
+        **갱신을 몇 번 하든 세션 쿠키여야 한다.**
+
+        쿠키를 굽는 곳이 로그인과 갱신 두 자리라(`_set_refresh_cookie`) 한쪽만
+        고치고 지나갈 수 있어서 갱신 쪽을 따로 잰다.
+        """
         await make_staff()
 
         async with self.client() as client:
-            await self.sign_in(client, remember=True)
+            await self.sign_in(client)
             response = await client.post(f"{BASE}/refresh")
 
         cookie = next(h for h in response.headers.get_list("set-cookie") if "refresh_token=" in h)
-        assert f"Max-Age={config.REFRESH_TOKEN_EXPIRE_MINUTES * 60}" in cookie
+        assert "Max-Age" not in cookie, f"갱신이 수명을 붙였다: {cookie}"
+        assert "Expires" not in cookie, f"갱신이 만료 날짜를 붙였다: {cookie}"
 
     async def test_missing_cookie_is_401(self) -> None:
         async with self.client() as client:

@@ -37,7 +37,7 @@ class TokenRefreshResponse(LoginResponse): ...
 
 
 class StaffLoginRequest(BaseModel):
-    """계약 4절 — `{ "login_id": "staff01", "password": "…", "remember": false }`
+    """계약 4절 — `{ "login_id": "staff01", "password": "…" }`
 
     `login_id` 규칙은 `^[a-z0-9]{4,}$` 이지만 **로그인에서는 검사하지 않는다.**
     형식으로 걸러 422 를 주면, 규칙에 안 맞는 문자열이 「없는 아이디」와 다른
@@ -46,7 +46,6 @@ class StaffLoginRequest(BaseModel):
 
     login_id: Annotated[str, Field(min_length=1, max_length=50)]
     password: Annotated[str, Field(min_length=1, max_length=128)]
-    remember: bool = False
 
 
 class StaffLoginResponse(BaseModel):

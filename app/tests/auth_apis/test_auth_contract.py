@@ -168,7 +168,9 @@ class TestOpenApiShowsTheContract(TestCase):
         components = self.schema()["components"]["schemas"]
         fields = components["StaffLoginRequest"]["properties"]
 
-        assert set(fields) == {"login_id", "password", "remember"}
+        # `remember` 는 KEY-179 로 계약에서 빠졌다 — 공용 접수 PC 라 「로그인 유지」
+        # 선택지 자체를 없앴다.
+        assert set(fields) == {"login_id", "password"}
         assert "email" not in fields
 
     async def test_me_shows_what_the_screen_branches_on(self) -> None:

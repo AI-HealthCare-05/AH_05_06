@@ -97,12 +97,13 @@ class StaffSessionService:
     def __init__(self, redis: Redis) -> None:
         self.sessions = SessionStore(redis)
 
-    async def start(self, staff: Staff, remember: bool) -> tuple[AccessToken, RefreshToken]:
+    async def start(self, staff: Staff) -> tuple[AccessToken, RefreshToken]:
         refresh = RefreshToken()
         refresh["staff_id"] = staff.staff_id
-        # rotation 때도 쿠키 수명을 그대로 이어가려면 remember 를 토큰이 들고 가야 한다.
-        # 서버가 따로 기억하면 세션마다 한 칸씩 더 들고 있어야 한다.
-        refresh["remember"] = remember
+        # **쿠키 수명을 토큰이 들고 다니지 않는다** (KEY-179).
+        # 예전에는 `remember` 를 claim 에 실어 rotation 때 이어받았다. 접수 PC 는
+        # 공용이라 그 선택지 자체를 없앴고, 이제 쿠키는 언제나 세션 쿠키다 —
+        # 브라우저를 닫으면 사라진다. 이어받을 것이 없으니 claim 도 없앤다.
         await self.sessions.open(refresh["jti"], staff.staff_id)
         access = refresh.access_token
         # 발급한 액세스도 기억해 둔다 — 나중에 세션을 전부 끊을 때
@@ -153,7 +154,7 @@ class StaffSessionService:
             raise _expired()
 
         # 폐기는 claim() 이 이미 했다.
-        access, refresh = await self.start(staff, bool(token.payload.get("remember")))
+        access, refresh = await self.start(staff)
         return staff, access, refresh
 
     async def logout(self, raw_refresh: str | None, access_jti: str | None, staff_id: int | None) -> None:
