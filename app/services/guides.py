@@ -154,6 +154,15 @@ class GuideService:
     async def get(self, actor, visit_id: int) -> GuideDocument:
         """병원은 **진료를 타고** 판단한다.
 
+        역할을 **먼저** 본다. 병원 범위만 보고 역할을 안 보면 `admin` 단독
+        계정이 남의 진료가 아닌 **자기 의원 환자의** 이름·차트번호·생년월일과
+        안내문 전문을 읽는다. 같은 계정이 `GET /patients` 에서는 403 인데
+        여기만 열려 있었다 — KEY-111 때부터 있던 구멍이고 KEY-90 QA 에서
+        드러났다 (KEY-168).
+
+        찾기 전에 보는 것도 중요하다. 먼저 찾고 나중에 역할을 보면, 권한 없는
+        사람에게 404 를 주면서 「그 의원에 그런 진료가 없다」를 알려 준다.
+
         `guide_document` 에도 `hospital_id` 가 있지만 그것은 목록을 거르는
         인덱스용 사본이다. 격리를 그 사본으로 판정하면, 사본이 진료와 어긋난
         순간 남의 의원 것이 열린다 — 두 곳에 같은 값을 두면 어긋날 자리도
@@ -161,6 +170,8 @@ class GuideService:
 
         근거를 하나로 두면 질의도 하나로 준다.
         """
+        self._require_staff_or_doctor(actor, "안내문 조회는")
+
         guide = (
             await GuideDocument.filter(visit_id=visit_id, visit__hospital_id=actor.hospital_id)
             .prefetch_related("sections", "visit__patient")
@@ -304,14 +315,18 @@ class GuideService:
     # ── 규칙 ────────────────────────────────────────────
 
     @staticmethod
-    def _require_staff_or_doctor(actor) -> None:
-        """`admin` 단독은 안내를 생성하지 못한다.
+    def _require_staff_or_doctor(actor, subject: str = "안내 생성은") -> None:
+        """`admin` 단독은 진료 자료에 손대지 못한다.
 
-        `GUIDE_DRAFT` 는 staff·doctor 에게만 열려 있다(`app/tests/rbac/matrix.py`).
-        `admin` 은 의원 운영 권한이지 진료 화면을 여는 역할이 아니다.
+        `GUIDE_DRAFT` · `PATIENT_READ` 모두 staff·doctor 에게만 열려 있다
+        (`app/tests/rbac/matrix.py`). `admin` 은 의원 운영 권한이지 진료 화면을
+        여는 역할이 아니다.
+
+        **읽기에도 건다.** 안내문 응답에는 환자 이름·차트번호·생년월일과 네
+        갈래 전문이 실린다 — 「보기만 하는 것」이 아니다 (KEY-168).
         """
         if not ({"staff", "doctor"} & set(actor.roles)):
-            raise ApiError("FORBIDDEN", 403, "안내 생성은 스탭 또는 의사 계정만 할 수 있습니다.")
+            raise ApiError("FORBIDDEN", 403, f"{subject} 스탭 또는 의사 계정만 할 수 있습니다.")
 
     @staticmethod
     def _require_doctor(actor) -> None:
