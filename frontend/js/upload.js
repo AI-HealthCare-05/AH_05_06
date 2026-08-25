@@ -6,7 +6,26 @@
  * 서버에 업로드 API 가 아직 없다(KEY-39). 계약이 정해지면 uploadOne 만 갈아 끼운다.
  */
 
+function human(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+  return (bytes / 1024 / 1024).toFixed(1) + " MB";
+}
+
+/* 서버가 판독으로 가려내기 전, 화면에서 미리 어림잡는다.
+   맞히려는 것이 아니라 고르는 수고를 줄이려는 것이다 — 사람이 고칠 수 있다. */
+function guessKind(name) {
+  if (/lab|검사|결과지|result/i.test(name)) return "lab";
+  if (/note|소견|메모|초음파/i.test(name)) return "note";
+  return "emr";
+}
+
 (function () {
+  /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
+     이 파일은 `patients.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
+     위 순수 규칙은 그대로 남아서 다른 파일도, 검사도 부를 수 있다 (KEY-158). */
+  if (!document.getElementById("drop")) return;
+
   var drop = document.getElementById("drop");
   var input = document.getElementById("file");
   var list = document.getElementById("files");
@@ -29,11 +48,6 @@
   var files = [];
   var seq = 0;
 
-  function human(bytes) {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
-    return (bytes / 1024 / 1024).toFixed(1) + " MB";
-  }
 
   function reject(file) {
     if (!ACCEPT.test(file.type)) return "이미지나 PDF만 올릴 수 있습니다.";
@@ -153,13 +167,6 @@
     }, 120);
   }
 
-  /* 서버가 판독으로 가려내기 전, 화면에서 미리 어림잡는다.
-     맞히려는 것이 아니라 고르는 수고를 줄이려는 것이다 — 사람이 고칠 수 있다. */
-  function guessKind(name) {
-    if (/lab|검사|결과지|result/i.test(name)) return "lab";
-    if (/note|소견|메모|초음파/i.test(name)) return "note";
-    return "emr";
-  }
 
   function add(fileList) {
     var incoming = Array.prototype.slice.call(fileList);
