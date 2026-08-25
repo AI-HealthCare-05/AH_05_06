@@ -204,26 +204,30 @@ FIXTURE_MODEL_NAME = "fixture-v0"
 
 async def seed_fixture_result(
     job: OcrJob,
-    document_id: int,
-    document_type: OcrDocumentType,
+    documents: list[tuple[int, OcrDocumentType]],
     connection: BaseDBAsyncClient,
 ) -> None:
-    """fixture 결과 한 건을 DB에 기록하고 job을 COMPLETED로 전환한다 — 업로드 경로에서 호출, 데모 전용."""
+    """fixture 결과를 DB에 기록하고 job을 COMPLETED로 전환한다 — 업로드 경로에서 job당 한 번 호출, 데모 전용.
+
+    OcrResult.ocr_job 은 OneToOneField, OcrField 는 (ocr_result, field_type) unique 제약이 있으므로
+    OcrDocumentText 는 문서마다 생성하고 OcrField 는 결과 전체에 하나만 만든다.
+    """
     completed_at = now()
-    existing = await OcrResult.filter(ocr_job_id=job.ocr_job_id).using_db(connection).first()
-    result = existing if existing is not None else await OcrResult.create(
-        ocr_job=job, model_name=FIXTURE_MODEL_NAME, using_db=connection
-    )
-    doc_text = await OcrDocumentText.create(
-        ocr_result=result,
-        document_id=document_id,
-        document_type=document_type,
-        raw_text="[fixture] 합성 OCR 텍스트 — 실제 OCR 워커 연결 전 데모용 데이터",
-        using_db=connection,
-    )
+    result = await OcrResult.create(ocr_job=job, model_name=FIXTURE_MODEL_NAME, using_db=connection)
+    first_doc_text = None
+    for document_id, document_type in documents:
+        doc_text = await OcrDocumentText.create(
+            ocr_result=result,
+            document_id=document_id,
+            document_type=document_type,
+            raw_text="[fixture] 합성 OCR 텍스트 — 실제 OCR 워커 연결 전 데모용 데이터",
+            using_db=connection,
+        )
+        if first_doc_text is None:
+            first_doc_text = doc_text
     await OcrField.create(
         ocr_result=result,
-        document_text=doc_text,
+        document_text=first_doc_text,
         field_type="DIAGNOSIS",
         extracted_value="[fixture] 진단명",
         confidence=Decimal("0.85"),

@@ -120,8 +120,11 @@ class DocumentUploadService:
                 )
 
             if config.OCR_FIXTURE_FALLBACK:
-                for doc in documents:
-                    await seed_fixture_result(ocr_job, doc.document_id, document_type, conn)
+                await seed_fixture_result(
+                    ocr_job,
+                    [(doc.document_id, document_type) for doc in documents],
+                    conn,
+                )
 
         return [doc.document_id for doc in documents], ocr_job.ocr_job_id
 

@@ -268,7 +268,7 @@ async def _assert_fixture_ocr_round_trip() -> None:
             document_type=OcrDocumentType.EMR,
             using_db=connection,
         )
-        await seed_fixture_result(job, document.document_id, OcrDocumentType.EMR, connection)
+        await seed_fixture_result(job, [(document.document_id, OcrDocumentType.EMR)], connection)
     await job.refresh_from_db()
 
     assert job.status == OcrJobStatus.COMPLETED
@@ -381,10 +381,11 @@ async def _assert_fixture_seed_multiple_documents() -> None:
                 document_type=OcrDocumentType.EMR,
                 using_db=connection,
             )
-        # OcrResult.ocr_job 이 OneToOneField이므로 두 번째 호출에서 IntegrityError가
-        # 발생하지 않아야 한다.
-        await seed_fixture_result(job, doc1.document_id, OcrDocumentType.EMR, connection)
-        await seed_fixture_result(job, doc2.document_id, OcrDocumentType.EMR, connection)
+        await seed_fixture_result(
+            job,
+            [(doc1.document_id, OcrDocumentType.EMR), (doc2.document_id, OcrDocumentType.EMR)],
+            connection,
+        )
 
     await job.refresh_from_db()
     assert job.status == OcrJobStatus.COMPLETED
@@ -398,5 +399,6 @@ async def _assert_fixture_seed_multiple_documents() -> None:
     assert doc1.document_id in doc_ids
     assert doc2.document_id in doc_ids
 
+    # OcrField 는 (ocr_result, field_type) unique 제약으로 결과 전체에 하나만 생성된다
     fields = await OcrField.filter(ocr_result=result).all()
-    assert len(fields) == 2
+    assert len(fields) == 1
