@@ -127,6 +127,7 @@
 | 리프레시 토큰 | 응답 본문에 넣지 않고 `HttpOnly` 쿠키로만 | `docs/api/hospital.md` §2 | 구현완료 |
 | 환자 링크·OTP 토큰 원문 | 쿼리스트링·로그·커밋에 남기지 않음 | `docs/api/common.md` §3 | 대상 기능 자체 미구현 |
 | 챗봇 대화 원문 | 조회·다운로드 기능 제공 안 함, 예외 추출만 `event_log.action=chat_export`로 감사 | `docs/api/hospital.md` §9 | 원칙 확정, 챗봇 자체가 별도 범위(`KEY-2`) |
+| 환자 이용 이벤트 | 질문 갈래·응답 결과·근거 섹션만 남기고 **원문 칸을 두지 않음**. 돌려주는 API도 없음 | `PatientUsageEvent`(`app/models/visits.py`), `docs/api/patient.md` §2.3 | 구현완료(`KEY-170`) — 챗봇 호출 지점은 `KEY-95`·`KEY-96` 대기 |
 | 승인 전 안내·미확정 OCR | 환자 API에 제공 금지 (게이트 B) | `docs/api/common.md` §3 | 대상 API 미구현 |
 
 ---

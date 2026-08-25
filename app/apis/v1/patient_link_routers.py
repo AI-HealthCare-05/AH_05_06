@@ -23,6 +23,7 @@ from app.dtos.patient_links import (
 from app.models.visits import CheckIn, CheckInMedication, GuideDocument, PatientGuideLink
 from app.services.checkins import CheckInService, approved_answer_bodies
 from app.services.patient_links import PatientLinkService
+from app.services.patient_usage import PatientUsageService
 
 patient_link_management_router = APIRouter(prefix="/visits", tags=["patient-links"])
 patient_guide_router = APIRouter(prefix="/guides", tags=["patient-guides"])
@@ -31,6 +32,10 @@ patient_checkin_router = APIRouter(prefix="/checkins", tags=["patient-checkins"]
 
 def _service() -> PatientLinkService:
     return PatientLinkService()
+
+
+def _usage_service() -> PatientUsageService:
+    return PatientUsageService()
 
 
 def _checkin_service() -> CheckInService:
@@ -74,8 +79,14 @@ def _patient_response(link: PatientGuideLink, guide: GuideDocument) -> PatientGu
 async def read_patient_guide(
     token: str,
     service: Annotated[PatientLinkService, Depends(_service)],
+    usage: Annotated[PatientUsageService, Depends(_usage_service)],
 ) -> PatientGuideResponse:
     link, guide = await service.get_approved_guide(token)
+    # 승인 확인을 통과한 뒤에 남긴다 (KEY-170).
+    # 지금은 **같은 요청 안에서** 남기므로, 기록이 실패하면 열람도 실패한다.
+    # 통계가 환자의 안내 열람을 막는 모양이라 KEY-95·KEY-96 에서 챗봇 호출부가
+    # 붙을 때 분리 여부를 다시 본다.
+    await usage.record_guide_view(guide.guide_document_id)
     return _patient_response(link, guide)
 
 
