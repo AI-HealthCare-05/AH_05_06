@@ -26,6 +26,9 @@
 구현이 만점을 받는다.
 """
 
+import itertools
+from collections.abc import Callable
+
 from tortoise.contrib.test import TestCase
 
 from app.core.redis_client import get_redis
@@ -42,22 +45,66 @@ from app.tests.blocking.accounts import (
 from app.tests.fakes import FakeRedis
 
 #: 진료 자료를 다루는 보호 엔드포인트. `{p}` `{v}` 는 그 의원의 환자·진료다.
-CLINICAL_ROUTES: list[tuple[str, str, dict | None]] = [
+#:
+#: **여기 없는 경로는 아무도 안 잰다.** 이 목록의 값은 「덮은 것」이 아니라
+#: 「덮었다고 믿는 것」이라, 빠지면 조용하다. 실제로 셋이 빠져 있었다.
+#:
+#:   `GET /visits/{v}/guide`     KEY-153 QA 에서 발견. 역할 검사를 통째로
+#:                               무력화해도 40 개가 전부 통과했다
+#:   `POST /patients`            `#115`(KEY-52) 리뷰에서 발견 — 읽기·수정은
+#:   `POST /patients/{p}/visits` 있는데 **생성이 하나도 없었다**
+#:
+#: 셋 다 구멍이 아니라 **매트릭스가 그 자리를 모르던 것**이었다. 새 보호
+#: 경로를 만들면 여기 한 줄을 함께 더한다.
+#: 부를 때마다 **새 값**이 필요한 본문. 생성 경로는 같은 몸을 두 번 보내면
+#: 유니크 제약에 걸려 `409` 가 난다 — 차단이 아니라 중복이라, 그대로 두면
+#: 「정상 경로가 막혔다」로 잘못 읽힌다.
+#:
+#: `TestTheAllowedPathStillOpens` 가 staff1 · doctor1 로 같은 목록을 두 번
+#: 도는 것이 그 자리다 (이희진 님 KEY-153 답).
+Payload = dict | Callable[[], dict] | None
+
+_serial = itertools.count(1)
+
+
+def new_patient_body() -> dict:
+    """차트번호를 부를 때마다 바꾼다 — 같은 의원 안에서 유일해야 한다."""
+    return {
+        "hospital_patient_no": f"SYN-BLOCK-{next(_serial)}",
+        "name": "합성차단환자",
+        "birth_date": "1990-01-01",
+        "phone": "010-0000-1111",
+        "sms_consent": False,
+    }
+
+
+def new_visit_body() -> dict:
+    """진료일을 하루씩 민다 — 한 환자에게 같은 날 진료는 한 건뿐이다.
+
+    픽스처가 심는 진료가 `2026-08-21` 이라(`accounts.py`) 그 뒤로 잡는다.
+    """
+    return {"visited_at": f"2026-09-{next(_serial) % 28 + 1:02d}T10:30:00+09:00"}
+
+
+CLINICAL_ROUTES: list[tuple[str, str, Payload]] = [
     ("GET", "/api/v1/patients", None),
     ("GET", "/api/v1/patients/{p}", None),
     ("PATCH", "/api/v1/patients/{p}", {"name": "고친이름"}),
     ("GET", "/api/v1/patients/{p}/visits", None),
     ("GET", "/api/v1/visits/{v}", None),
     ("PATCH", "/api/v1/visits/{v}", {"visit_summary": "메모"}),
+    ("GET", "/api/v1/visits/{v}/guide", None),
+    ("POST", "/api/v1/patients", new_patient_body),
+    ("POST", "/api/v1/patients/{p}/visits", new_visit_body),
 ]
 
 #: 자기 자신에 대한 것 — 최초 로그인 상태에서도 열려 있어야 한다.
-SELF_SCOPED_ROUTES: list[tuple[str, str, dict | None]] = [
+SELF_SCOPED_ROUTES: list[tuple[str, str, Payload]] = [
     ("GET", "/api/v1/auth/me", None),
 ]
 
 #: OCR 다섯. `KEY-116` 때문에 오늘은 실제 토큰으로 부를 수 없다.
-OCR_ROUTES: list[tuple[str, str, dict | None]] = [
+OCR_ROUTES: list[tuple[str, str, Payload]] = [
     ("GET", "/api/v1/ocr/jobs/synthetic-job", None),
     ("GET", "/api/v1/ocr/jobs/synthetic-job/result", None),
     ("GET", "/api/v1/ocr/jobs/synthetic-job/fields", None),
@@ -81,13 +128,14 @@ class BlockingTestCase(TestCase):
         app.dependency_overrides.clear()
         super().tearDown()
 
-    async def call(self, method: str, template: str, fence, headers: dict | None, body: dict | None):
+    async def call(self, method: str, template: str, fence, headers: dict | None, body: "Payload"):
         path = template.format(p=fence.patient_id, v=fence.visit_id)
         kwargs: dict = {}
         if headers:
             kwargs["headers"] = headers
-        if body is not None:
-            kwargs["json"] = body
+        payload = body() if callable(body) else body
+        if payload is not None:
+            kwargs["json"] = payload
         async with client() as http:
             return await http.request(method, path, **kwargs)
 
@@ -198,10 +246,18 @@ class TestTheAllowedPathStillOpens(BlockingTestCase):
 
     async def test_staff_and_doctor_can_read_their_own_hospital(self) -> None:
         world = await build_two_hospitals()
+        # `GET /visits/{v}/guide` 는 **안내문이 있어야** 200 이다. 공용 픽스처는
+        # 안내문을 안 심으므로 여기서만 한 건 깐다 — 차단 쪽 검사는 안내문
+        # 존재와 무관하게 돌지만(역할 검사가 먼저다) 정상 경로는 아니다.
+        # `TestOnlyDoctorsDecideOnGuides` 가 이미 쓰는 방식이다 (이희진 님 KEY-153 답).
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
         for who in ("staff1", "doctor1"):
             for method, template, body in CLINICAL_ROUTES:
                 response = await self.call(method, template, world["h1"], world[who].auth, body)
-                assert response.status_code == 200, (
+                # 만드는 것은 `201`, 그 밖은 `200` 이다. 한 숫자로 뭉뚱그리면
+                # 생성 경로를 이 검사에 못 넣는다.
+                expected = 201 if method == "POST" else 200
+                assert response.status_code == expected, (
                     f"{who} 가 {method} {template} 에서 {response.status_code} 를 받았다 — 정상 경로가 막혔다"
                 )
 
