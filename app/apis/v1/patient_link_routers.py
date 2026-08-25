@@ -79,7 +79,6 @@ def _patient_response(link: PatientGuideLink, guide: GuideDocument) -> PatientGu
 @patient_guide_router.get("/{token}", response_model=PatientGuideResponse)
 async def read_patient_guide(
     token: str,
-    _: Annotated[None, Depends(require_patient_session)],
     service: Annotated[PatientLinkService, Depends(_service)],
     usage: Annotated[PatientUsageService, Depends(_usage_service)],
 ) -> PatientGuideResponse:
@@ -105,7 +104,6 @@ def _pain_response(check_in: CheckIn) -> CheckInPainResponse | None:
 @patient_checkin_router.get("/{token}", response_model=CheckInReadResponse)
 async def read_patient_checkin(
     token: str,
-    _: Annotated[None, Depends(require_patient_session)],
     service: Annotated[CheckInService, Depends(_checkin_service)],
 ) -> CheckInReadResponse:
     guide, answered = await service.read_form(token)

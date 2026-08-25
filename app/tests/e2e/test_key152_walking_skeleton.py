@@ -3,11 +3,13 @@
 import hashlib
 from datetime import UTC, date, datetime
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
 from tortoise.transactions import in_transaction
 
+from app.apis.v1.patient_otp_routers import _otp_service
 from app.core import config
 from app.core.redis_client import get_redis
 from app.core.storage import LocalFileStorage
@@ -20,10 +22,14 @@ from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import CheckIn, GuideDocument, GuideStatus, PatientGuideLink, Visit
 from app.ocr.service import seed_fixture_result
+from app.services.patient_otp import PatientOtpService
 from app.tests.fakes import FakeRedis
+from app.tests.patient_links.test_patient_otp import RecordingDelivery
 
 PASSWORD = "Synthetic-KEY152-only-1!"
 LOGIN = "/api/v1/auth/login"
+PATIENT_OTP = "152027"
+PATIENT_OTP_SECRET = "synthetic-key152-test-secret-never-used-outside-tests"
 
 
 class TestKey152WalkingSkeleton(TestCase):
@@ -40,6 +46,10 @@ class TestKey152WalkingSkeleton(TestCase):
         self.cookie_domain = config.COOKIE_DOMAIN
         config.COOKIE_DOMAIN = ""
         app.dependency_overrides[get_redis] = lambda: self.redis
+        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(
+            RecordingDelivery(),
+            secret_key=PATIENT_OTP_SECRET,
+        )
         app.dependency_overrides[get_document_service] = lambda: DocumentUploadService(
             LocalFileStorage(self.upload_dir.name),
             max_upload_bytes=1024 * 1024,
@@ -158,6 +168,18 @@ class TestKey152WalkingSkeleton(TestCase):
             assert edited_text in [section["body"] for section in sections]
 
             checkin_path = f"/api/v1/checkins/{raw_token}"
+            with patch("app.services.patient_otp.secrets.randbelow", return_value=int(PATIENT_OTP)):
+                otp_issued = await client.post(
+                    "/api/v1/patient-auth/otp/issue",
+                    json={"link_token": raw_token},
+                )
+            assert otp_issued.status_code == 200, otp_issued.text
+            otp_verified = await client.post(
+                "/api/v1/patient-auth/otp/verify",
+                json={"link_token": raw_token, "code": PATIENT_OTP},
+            )
+            assert otp_verified.status_code == 200, otp_verified.text
+
             submitted = await client.post(
                 checkin_path,
                 json={"medication": "taking", "pain": {"had": True, "score": 3, "types": ["menstrual"]}},
