@@ -12,6 +12,7 @@ opt-in 이라(`route_class=ContractRoute`), 봉투 없는 라우터에 `ApiError
 """
 
 import inspect
+import re
 from enum import Enum
 
 from fastapi import APIRouter, FastAPI
@@ -99,7 +100,7 @@ def test_no_two_routes_claim_the_same_method_and_path() -> None:
     for route in api_routes():
         module = inspect.getmodule(route.endpoint)
         where = module.__name__ if module else "?"
-        for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
+        for method in sorted(contract_methods(route)):
             key = (method, route.path)
             if key in seen:
                 duplicates.append(f"{method} {route.path} — {seen[key]} · {where}")
@@ -287,6 +288,9 @@ class TestHeadAndOptionsAreNotContract:
     """
 
     def test_head_and_options_are_dropped(self) -> None:
+        # 여기 리터럴은 **재는 기준이 아니라 만들어 넣는 입력값**이다.
+        # `NON_CONTRACT_METHODS` 로 바꾸면 같은 상수로 만들고 같은 상수로 재게 되어
+        # 무엇을 바꾸든 통과한다 — 검사가 자기 자신을 재는 자리가 된다.
         route = _probe(["health"], envelope=False, methods=["GET", "HEAD", "OPTIONS"])
 
         assert contract_methods(route) == {"GET"}
@@ -305,3 +309,35 @@ class TestHeadAndOptionsAreNotContract:
         live = {method for route in api_routes() for method in route.methods}
 
         assert live == {"GET", "PATCH", "POST"}, f"메서드 구성이 바뀌었다: {sorted(live)}"
+
+
+def test_the_method_criterion_lives_in_exactly_one_place() -> None:
+    """**기준을 한 곳에 둔다**는 이 일감의 요점을 스스로 지킨다 — KEY-169.
+
+    처음 올린 판에서 이 파일 안에 리터럴이 하나 남아 있었다(이희진 님 `#117`
+    리뷰). 값이 같아 통과하고 있어서 아무도 못 잡았다. 지금은 같지만 `TRACE`
+    같은 것이 늘면 **그 검사만 조용히 옛 기준으로 남는다** — KEY-169 가 막으려던
+    바로 그 재발이다.
+
+    그래서 「고쳤다」로 끝내지 않고 **다시 생기면 죽게** 걸어 둔다.
+
+    재는 것은 두 이름을 담은 **집합 리터럴**이다. 가짜 라우트를 만들 때 쓰는
+    것은 리스트라 여기 안 걸린다 — 그쪽은 재는 기준이 아니라 만들어 넣는
+    입력값이다.
+
+    이 설명에 그 집합 표기를 그대로 쓰지 않는 것도 그래서다. 처음엔 썼다가
+    **검사가 자기 독스트링을 잡았다** — 이 파일까지 훑는다는 증거이기도 하다.
+    실제로 이번에 걸린 리터럴이 바로 이 파일 안에 있었다.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    literal = re.compile(r"\{\s*\"HEAD\"\s*,\s*\"OPTIONS\"\s*\}")
+
+    owners = sorted(
+        {str(path.relative_to(root)) for path in root.rglob("*.py") if literal.search(path.read_text(encoding="utf-8"))}
+    )
+
+    assert owners == ["routes.py"], (
+        f"HEAD·OPTIONS 제외 기준이 두 곳이 됐다 — `contract_methods()` 를 써라.\n  지금 기준을 적고 있는 파일: {owners}"
+    )
