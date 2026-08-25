@@ -10,6 +10,7 @@ from tortoise.timezone import now
 
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
+from app.dependencies.patient_auth import require_patient_session
 from app.main import app
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
@@ -79,6 +80,7 @@ class PatientLinkTestCase(TestCase):
         super().setUp()
         self.redis = FakeRedis()
         app.dependency_overrides[get_redis] = lambda: self.redis
+        app.dependency_overrides[require_patient_session] = lambda: None
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
