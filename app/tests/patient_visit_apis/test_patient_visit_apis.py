@@ -134,6 +134,111 @@ class TestPatientVisitApis(TestCase):
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["code"] == "VISIT_NOT_FOUND"
 
+    async def test_other_hospital_patient_update_is_hidden_as_not_found(self) -> None:
+        """상세뿐 아니라 수정도 같은 병원 스코프를 타야 한다 — GET만 막고 PATCH가
+        열려 있으면 존재 여부는 물론 값까지 바꿔 쓸 수 있는 훨씬 심각한 구멍이다.
+        """
+        patient = await Patient.create(
+            hospital_id=2,
+            hospital_patient_no="SYN-OTHER-3",
+            name="다른병원수정대상환자",
+            birth_date="1990-01-01",
+            phone="01033334444",
+            sms_consent=False,
+        )
+
+        async with client_for(self.staff) as client:
+            response = await client.patch(
+                f"/api/v1/patients/{patient.patient_id}",
+                json={"phone": "010-9999-0000"},
+            )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["code"] == "PATIENT_NOT_FOUND"
+        await patient.refresh_from_db()
+        assert patient.phone == "01033334444"
+
+    async def test_other_hospital_visit_update_is_hidden_as_not_found(self) -> None:
+        patient = await Patient.create(
+            hospital_id=2,
+            hospital_patient_no="SYN-OTHER-4",
+            name="다른병원진료수정환자",
+            birth_date="1990-01-01",
+            phone="01044445555",
+            sms_consent=False,
+        )
+        visit = await Visit.create(
+            hospital_id=2,
+            patient=patient,
+            visited_at="2026-08-19T01:30:00+00:00",
+        )
+
+        async with client_for(self.staff) as client:
+            response = await client.patch(
+                f"/api/v1/visits/{visit.visit_id}",
+                json={"status": "CANCELED", "planned_stop": True},
+            )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["code"] == "VISIT_NOT_FOUND"
+        await visit.refresh_from_db()
+        assert visit.status == "COMPLETED"
+        assert visit.planned_stop is False
+
+    async def test_other_hospital_patient_is_excluded_from_search(self) -> None:
+        """검색어가 겹쳐도 병원 스코프가 이긴다 — 상세 조회만 막고 목록 검색이
+        새면 직원이 검색 결과만 보고 다른 병원 환자를 자기 병원 환자로 착각할 수 있다.
+        """
+        await Patient.create(
+            hospital_id=2,
+            hospital_patient_no="SYN-OTHER-SEARCH",
+            name="합성외부병원환자",
+            birth_date="1990-01-01",
+            phone="01055556666",
+            sms_consent=False,
+        )
+
+        async with client_for(self.staff) as client:
+            mine = await client.post("/api/v1/patients", json=PATIENT_PAYLOAD)
+            patient_id = mine.json()["patient_id"]
+
+            by_name = await client.get("/api/v1/patients", params={"keyword": "합"})
+            by_phone = await client.get("/api/v1/patients", params={"keyword": "010-5555-6666"})
+
+        assert by_name.status_code == status.HTTP_200_OK
+        assert [item["patient_id"] for item in by_name.json()["items"]] == [patient_id]
+        assert by_phone.json()["items"] == []
+
+    async def test_other_hospital_patient_blocks_visit_list_and_creation(self) -> None:
+        """진료 목록·생성도 환자 소속 병원을 먼저 확인한다 — patient_id만
+        알면 다른 병원 환자 밑에 진료를 만들거나 이력을 들여다볼 수 있으면 안 된다.
+        """
+        patient = await Patient.create(
+            hospital_id=2,
+            hospital_patient_no="SYN-OTHER-VISIT",
+            name="다른병원진료대상환자",
+            birth_date="1990-01-01",
+            phone="01066667777",
+            sms_consent=False,
+        )
+        await Visit.create(
+            hospital_id=2,
+            patient=patient,
+            visited_at="2026-08-19T01:30:00+00:00",
+        )
+
+        async with client_for(self.staff) as client:
+            listed = await client.get(f"/api/v1/patients/{patient.patient_id}/visits")
+            created = await client.post(
+                f"/api/v1/patients/{patient.patient_id}/visits",
+                json={"visited_at": "2026-08-20T10:30:00+09:00"},
+            )
+
+        assert listed.status_code == status.HTTP_404_NOT_FOUND
+        assert listed.json()["code"] == "PATIENT_NOT_FOUND"
+        assert created.status_code == status.HTTP_404_NOT_FOUND
+        assert created.json()["code"] == "PATIENT_NOT_FOUND"
+
     async def test_admin_only_actor_is_forbidden(self) -> None:
         admin = ClinicalActor(staff_id=201, hospital_id=1, roles=frozenset({"admin"}))
 
