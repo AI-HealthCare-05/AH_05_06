@@ -119,8 +119,8 @@ var VISIT_EDITABLE = [
    지금 값은 docs/data/synthetic-staff.csv 의 의사 계정을 따른다. */
 var DEPARTMENTS = [{ department_id: 7, name: "산부인과" }];
 var DOCTORS = [
-  { doctor_id: 12, name: "박연 원장", department_id: 7 },
-  { doctor_id: 13, name: "김연우 원장", department_id: 7 },
+  { doctor_id: 2, name: "박연 원장", department_id: 7 },
+  { doctor_id: 3, name: "김연우 원장", department_id: 7 },
 ];
 
 /* 업무 카테고리 — 계약 §6 「S1-1 날짜별 업무 목록」.
