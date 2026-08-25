@@ -12,9 +12,14 @@ opt-in 이라(`route_class=ContractRoute`), 봉투 없는 라우터에 `ApiError
 """
 
 import inspect
+from enum import Enum
+
+from fastapi import APIRouter, FastAPI
+from fastapi.routing import APIRoute
 
 from app.core.api_errors import ApiError, ContractRoute
 from app.main import app
+from app.tests.routes import api_routes, contract_methods
 
 #: 오류 봉투 없이도 되는 라우터. `AuthError` 만 던지고, 그것은 전역 처리기가 받는다.
 #: 여기 이름을 더하는 것은 **결정**이다 — 그 라우터에서 `ApiError` 를 쓰면 샌다.
@@ -36,11 +41,43 @@ ENVELOPE_EXEMPT_TAGS = frozenset(
 )
 
 
-def _api_routes():
-    for route in app.routes:
-        path = getattr(route, "path", "")
-        if path.startswith("/api/v1") and getattr(route, "methods", None):
-            yield route
+def route_tags(route: object) -> set[str]:
+    return set(getattr(route, "tags", []) or [])
+
+
+def wears_envelope(route: object) -> bool:
+    return isinstance(route, ContractRoute)
+
+
+def naked_routes(source: FastAPI = app) -> list[str]:
+    """봉투도 없고 예외도 아닌 라우트 — `ApiError` 가 raw 500 으로 샐 자리.
+
+    본 검사와 아래 가짜 앱 검사가 **이 함수 하나**를 쓴다. 정책 함수만 맞고
+    본 검사가 그것을 안 쓰면 아무 소용이 없기 때문이다.
+    """
+    return sorted(
+        f"{sorted(contract_methods(route))} {route.path} [{sorted(route_tags(route))}]"
+        for route in api_routes(source)
+        if not wears_envelope(route) and not envelope_exempt(route)
+    )
+
+
+def envelope_exempt(route: object) -> bool:
+    """**전부 예외일 때만 예외다** — 하나라도 걸치면 봉투를 입어야 한다.
+
+    태그 교집합(`tags & ENVELOPE_EXEMPT_TAGS`)으로 재면 예외 태그 **하나만**
+    붙어도 통째로 빠진다. `tags=["patient-auth", "visits"]` 같은 라우터가
+    생기면 봉투 없이도 조용히 검사를 지나가고, 그 자리에서 `ApiError` 는
+    raw 500 으로 샌다 (이희진 님 `#110` 리뷰, KEY-169).
+
+    지금 태그가 둘인 라우터는 하나도 없다. **그래서 지금 정한다** — 생긴
+    뒤에는 이미 새고 있는 상태에서 정하게 된다.
+
+    태그가 아예 없는 라우트도 예외가 아니다. 「어느 라우터인지 모르겠으니
+    봐 준다」는 가장 위험한 쪽으로 틀리는 판정이다.
+    """
+    tags = route_tags(route)
+    return bool(tags) and tags <= ENVELOPE_EXEMPT_TAGS
 
 
 def test_the_registry_is_not_empty() -> None:
@@ -48,7 +85,7 @@ def test_the_registry_is_not_empty() -> None:
 
     앱을 못 불러오거나 접두사가 바뀌면 아래가 전부 빈 목록을 돌게 된다.
     """
-    routes = list(_api_routes())
+    routes = list(api_routes())
     assert len(routes) >= 25, f"등록 라우트가 {len(routes)}개다 — 라우터를 못 읽고 있다"
 
 
@@ -59,7 +96,7 @@ def test_no_two_routes_claim_the_same_method_and_path() -> None:
     """
     seen: dict[tuple[str, str], str] = {}
     duplicates = []
-    for route in _api_routes():
+    for route in api_routes():
         module = inspect.getmodule(route.endpoint)
         where = module.__name__ if module else "?"
         for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
@@ -106,7 +143,7 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
     }
 
     actual: dict[str, str] = {}
-    for route in _api_routes():
+    for route in api_routes():
         if "/visits" not in route.path:
             continue
         module = inspect.getmodule(route.endpoint)
@@ -128,14 +165,7 @@ def test_every_router_that_can_raise_api_error_wears_the_envelope() -> None:
 
     지금은 짝이 맞다. 맞춰 주는 것이 아무것도 없어서 이 검사를 둔다.
     """
-    naked = []
-    for route in _api_routes():
-        if isinstance(route, ContractRoute):
-            continue
-        tags = set(getattr(route, "tags", []) or [])
-        if tags & ENVELOPE_EXEMPT_TAGS:
-            continue
-        naked.append(f"{sorted(route.methods - {'HEAD', 'OPTIONS'})} {route.path} [{sorted(tags)}]")
+    naked = naked_routes()
 
     #: 지금은 **하나도 없다.** KEY-167 이 마지막 둘(`/users/me`)을 지웠다(`#109`).
     #:
@@ -173,3 +203,105 @@ def test_the_two_error_types_still_disagree_on_argument_order() -> None:
     assert api_args == ["status_code", "code", "message"], f"api_errors 쪽이 바뀌었다: {api_args}"
     assert auth_args == ["code", "status_code", "message"], f"auth_errors 쪽이 바뀌었다: {auth_args}"
     assert api_args != auth_args, "둘이 같아졌다 — `AuthError as ApiError` 별칭을 걷을 때다"
+
+
+def _probe_app(tags: list[str | Enum], *, envelope: bool, methods: list[str] | None = None) -> FastAPI:
+    """그 태그 조합을 가진 라우트 하나짜리 **가짜 앱**.
+
+    실제 라우터로만 규칙을 재면 「지금 없는 조합」은 영영 못 잰다. 태그가 둘인
+    라우터는 지금 하나도 없고, 그래서 사각지대가 조용했다.
+    """
+    router = APIRouter(route_class=ContractRoute) if envelope else APIRouter()
+
+    @router.api_route("/probe", methods=methods or ["GET"], tags=tags)
+    async def _endpoint() -> dict[str, str]:  # pragma: no cover - 부르지 않는다
+        return {}
+
+    probe = FastAPI()
+    probe.include_router(router, prefix="/api/v1")
+    return probe
+
+
+def _probe(tags: list[str | Enum], *, envelope: bool, methods: list[str] | None = None) -> APIRoute:
+    return next(iter(api_routes(_probe_app(tags, envelope=envelope, methods=methods))))
+
+
+class TestTheEnvelopeExemptionIsAllOrNothing:
+    """예외 태그 **하나만** 걸쳐도 빠져나가지 않는가 — KEY-169.
+
+    `#110` 리뷰에서 이희진 님이 짚은 자리다. 교집합으로 재면
+    `tags=["patient-auth", "visits"]` 인 라우터가 봉투 없이도 통과한다.
+    """
+
+    def test_a_wholly_exempt_route_is_exempt(self) -> None:
+        assert envelope_exempt(_probe(["health"], envelope=False))
+
+    def test_a_route_with_one_exempt_tag_among_others_is_not_exempt(self) -> None:
+        """**이것이 사각지대였다.**
+
+        `patient-auth` 는 예외지만 `visits` 는 아니다. 섞이면 봉투가 필요하다.
+        """
+        mixed = _probe(["patient-auth", "visits"], envelope=False)
+
+        assert not envelope_exempt(mixed), "예외 태그 하나로 통째로 빠져나갔다"
+        assert not wears_envelope(mixed)
+
+    def test_an_untagged_route_is_not_exempt(self) -> None:
+        """모르면 봐 주는 것이 아니라 **봉투를 요구한다.**"""
+        assert not envelope_exempt(_probe([], envelope=False))
+
+    def test_the_check_itself_reports_a_mixed_tag_route(self) -> None:
+        """정책이 **검사 결과로 이어지는지**까지 본다.
+
+        `envelope_exempt()` 가 맞아도 본 검사가 그것을 안 쓰면 소용이 없다.
+        그래서 본 검사가 부르는 `naked_routes()` 를 그대로 부른다.
+        """
+        mixed = _probe_app(["patient-auth", "visits"], envelope=False)
+
+        assert naked_routes(mixed) == ["['GET'] /api/v1/probe [['patient-auth', 'visits']]"]
+
+    def test_a_mixed_tag_route_with_the_envelope_is_fine(self) -> None:
+        """섞였어도 **봉투를 입었으면 문제가 아니다.**
+
+        정책이 태그를 트집 잡는 것이 아니라 「샐 자리인가」를 재는 것임을
+        못 박는다. 이것까지 걸리면 규칙이 너무 넓은 것이다.
+        """
+        mixed = _probe_app(["patient-auth", "visits"], envelope=True)
+
+        assert naked_routes(mixed) == []
+
+
+class TestHeadAndOptionsAreNotContract:
+    """HEAD·OPTIONS 제외가 **헛돌지 않는가** — KEY-169.
+
+    돌연변이로 재 보니 `contract_methods()` 에서 제외를 걷어내도 아무 검사도
+    죽지 않았다. 지금 앱의 라우트에는 HEAD·OPTIONS 가 **아예 안 붙기**
+    때문이다 — FastAPI 의 `APIRoute` 는 Starlette 의 `Route` 와 달리 GET 에
+    HEAD 를 자동으로 얹지 않는다. 실측했다: 등장하는 메서드는 GET·PATCH·POST뿐.
+
+    그러니 이 제외는 지금 **방어일 뿐 아무것도 막고 있지 않다.** 그렇다고
+    지우면, 나중에 `methods=[...]` 로 직접 얹는 라우트가 생겼을 때 계약 문서에
+    없는 `HEAD /auth/me` 같은 것이 「구현된 엔드포인트」로 세어진다.
+
+    남겨 두되 **재는 검사를 붙인다.** 안 재는 방어는 방어가 아니다.
+    """
+
+    def test_head_and_options_are_dropped(self) -> None:
+        route = _probe(["health"], envelope=False, methods=["GET", "HEAD", "OPTIONS"])
+
+        assert contract_methods(route) == {"GET"}
+
+    def test_a_route_with_only_head_and_options_is_not_an_api_route(self) -> None:
+        """계약이 없는 라우트는 **세지 않는다.**"""
+        probe = _probe_app(["health"], envelope=False, methods=["HEAD", "OPTIONS"])
+
+        assert list(api_routes(probe)) == []
+
+    def test_the_live_app_has_no_head_or_options_today(self) -> None:
+        """**지금은 하나도 없다** — 위 둘이 가상의 상황을 재고 있음을 못 박는다.
+
+        생기는 날 이 검사가 죽고, 그때 제외가 진짜로 일하기 시작한 것이다.
+        """
+        live = {method for route in api_routes() for method in route.methods}
+
+        assert live == {"GET", "PATCH", "POST"}, f"메서드 구성이 바뀌었다: {sorted(live)}"

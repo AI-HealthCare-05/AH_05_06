@@ -56,6 +56,40 @@ URL 기준으로 모으면 `visit_routers.py` 가 안내문·판독·문서·링
 `app/dependencies/patient_access.py` 의 `require_patient_*` 는 `ApiError` 를 던진다.
 **그 의존성을 쓰는 라우터는 반드시 봉투를 입어야 한다.**
 
+### 태그가 둘 이상이면 — **전부 예외일 때만 예외다** (KEY-169)
+
+봉투 예외는 라우터 태그로 판정한다(`ENVELOPE_EXEMPT_TAGS`). 태그가 하나면
+간단한데, **둘이 붙으면 갈린다.**
+
+```python
+APIRouter(tags=["patient-auth", "visits"])   # 하나는 예외, 하나는 아님
+```
+
+교집합으로 재면 예외 태그 **하나만** 걸쳐도 통째로 빠져나간다. 그 라우터는
+봉투 없이 검사를 지나가고, 그 자리에서 `ApiError` 는 raw 500 으로 샌다.
+
+그래서 정책은 이렇다.
+
+| 태그 | 봉투 없이 통과하는가 |
+|---|---|
+| 전부 예외 목록 안 (`["health"]`) | 통과 |
+| 섞임 (`["patient-auth", "visits"]`) | **안 됨 — 봉투를 입어야 한다** |
+| 태그 없음 (`[]`) | **안 됨** — 모르면 봐 주지 않는다 |
+
+지금 태그가 둘인 라우터는 **하나도 없다.** 그래서 지금 정한다 — 생긴 뒤에는
+이미 새고 있는 상태에서 정하게 된다.
+
+`app/tests/routing/test_route_ownership.py::TestTheEnvelopeExemptionIsAllOrNothing`
+이 가짜 앱으로 이 표를 그대로 잰다. 실제 라우터로만 재면 「지금 없는 조합」은
+영영 못 잰다.
+
+### 라우트를 훑는 기준은 한 곳에 있다 (KEY-169)
+
+`app/tests/routes.py` 가 「`/api/v1` 로 시작하는가」와 「HEAD·OPTIONS 는
+계약이 아니다」를 정의한다. `test_route_ownership.py` 와
+`test_auth_contract.py` 가 **같은 것**을 쓴다 — 각자 적어 두면 한쪽만
+고쳐지고, 그때 두 검사가 다른 세상을 본다.
+
 ## ⚠ 알려진 함정 — `ApiError` 라는 이름이 두 뜻이다
 
 ```python
