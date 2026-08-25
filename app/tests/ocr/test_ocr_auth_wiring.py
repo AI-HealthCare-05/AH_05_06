@@ -18,36 +18,20 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from httpx import ASGITransport, AsyncClient, Response
-from tortoise.contrib.test import TestCase
 
-from app.core import config
-from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
 from app.models.ocr import OcrJob, OcrJobStatus
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import Visit
-from app.tests.fakes import FakeRedis
+from app.tests.auth_base import AuthTestCase
 
 PASSWORD = "Password123!"
 LOGIN_URL = "/api/v1/auth/login"
 
 
-class OcrAuthWiringTestCase(TestCase):
-    def setUp(self) -> None:
-        super().setUp()
-        self.redis = FakeRedis()
-        app.dependency_overrides[get_redis] = lambda: self.redis
-        # `.env` 에 COOKIE_DOMAIN 이 박혀 있으면 httpx 가 host `test` 에서
-        # 쿠키를 버린다. 로그인 응답 자체는 본문으로 오지만 맞춰 둔다.
-        self._cookie_domain = config.COOKIE_DOMAIN
-        config.COOKIE_DOMAIN = ""
-
-    def tearDown(self) -> None:
-        config.COOKIE_DOMAIN = self._cookie_domain
-        app.dependency_overrides.clear()
-        super().tearDown()
+class OcrAuthWiringTestCase(AuthTestCase):
 
     async def make_staff(
         self,
