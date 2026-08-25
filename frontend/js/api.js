@@ -194,3 +194,22 @@ function mockRequest(path, options) {
     }, 180);
   });
 }
+
+/* HTML 로 나갈 글자를 막는다. **한 곳에만 둔다.**
+ *
+ * 예전에는 `shell.js` · `checkin.js` · `doctor.js` 셋에 같은 이름이 각각 있었고
+ * 구현이 조금씩 달랐다 — `shell.js` 만 홑따옴표까지 막았다. KEY-158 이
+ * `checkin.js` 의 것을 전역으로 꺼내면서 **같은 이름이 부딪히게** 됐다.
+ * 함께 실리면 나중 선언이 조용히 이긴다 (이희진 님 `#103` 리뷰).
+ *
+ * 가장 엄한 것(`shell.js` 판)을 남긴다. 홑따옴표 속성에 쓰는 자리가 지금은
+ * 없지만, 생기는 날 덜 엄한 판이 남아 있으면 그때는 구멍이다.
+ *
+ * `api.js` 에 두는 까닭은 **`esc()` 를 쓰는 다섯 파일이 실리는 화면이 모두
+ * 이 파일을 먼저 부르기** 때문이다. `shell.js` 는 `checkin.html` 이 안 부른다.
+ */
+function esc(text) {
+  return String(text == null ? "" : text).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
