@@ -19,7 +19,7 @@ from app.models.ocr import OcrDocumentType, OcrField, OcrJob, OcrJobStatus
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import CheckIn, GuideDocument, GuideStatus, PatientGuideLink, Visit
-from app.ocr.service import _seed_fixture_result
+from app.ocr.service import seed_fixture_result
 from app.tests.fakes import FakeRedis
 
 PASSWORD = "Synthetic-KEY152-only-1!"
@@ -103,10 +103,9 @@ class TestKey152WalkingSkeleton(TestCase):
             # KEY-149의 W1 fixture 경계: 운영 코드와 같은 fixture 완료 경로를 실행한다.
             job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_id"])
             async with in_transaction() as connection:
-                await _seed_fixture_result(
+                await seed_fixture_result(
                     job,
-                    upload_body["document_ids"][0],
-                    OcrDocumentType.EMR,
+                    [(upload_body["document_ids"][0], OcrDocumentType.EMR)],
                     connection,
                 )
             field = await OcrField.get(ocr_result__ocr_job=job)
