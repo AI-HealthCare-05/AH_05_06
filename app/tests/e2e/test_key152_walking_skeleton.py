@@ -1,11 +1,12 @@
 """SYN-EMS-01이 로그인부터 D+7 병원 조회까지 한 번에 이어지는가 — KEY-152."""
 
+import hashlib
 from datetime import UTC, date, datetime
 from tempfile import TemporaryDirectory
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
-from tortoise.timezone import now
+from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.core.redis_client import get_redis
@@ -14,10 +15,11 @@ from app.core.utils.security import hash_password
 from app.documents.api import get_document_service
 from app.documents.service import DocumentUploadService
 from app.main import app
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
+from app.models.ocr import OcrDocumentType, OcrField, OcrJob, OcrJobStatus
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import CheckIn, GuideDocument, GuideStatus, PatientGuideLink, Visit
+from app.ocr.service import _seed_fixture_result
 from app.tests.fakes import FakeRedis
 
 PASSWORD = "Synthetic-KEY152-only-1!"
@@ -25,6 +27,12 @@ LOGIN = "/api/v1/auth/login"
 
 
 class TestKey152WalkingSkeleton(TestCase):
+    """단일 병원의 정상 여정만 연결한다.
+
+    병원 간 격리와 역할별 거부는 각 API의 권한 테스트가 담당하고, 여기서는
+    동일한 ``visit_id``가 업로드부터 D+7 조회까지 끊기지 않는지만 검증한다.
+    """
+
     def setUp(self) -> None:
         super().setUp()
         self.redis = FakeRedis()
@@ -92,20 +100,16 @@ class TestKey152WalkingSkeleton(TestCase):
             upload_body = uploaded.json()
             assert upload_body["status"] == OcrJobStatus.PROCESSING
 
-            # KEY-149의 W1 fixture 경계: 업로드가 만든 작업을 완료시키고 합성 판독값을 채운다.
+            # KEY-149의 W1 fixture 경계: 운영 코드와 같은 fixture 완료 경로를 실행한다.
             job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_id"])
-            job.status = OcrJobStatus.COMPLETED
-            job.progress = 100
-            job.started_at = now()
-            job.completed_at = now()
-            await job.save(update_fields=("status", "progress", "started_at", "completed_at"))
-            result = await OcrResult.create(ocr_job=job, model_name="synthetic-fixture-key152")
-            field = await OcrField.create(
-                ocr_result=result,
-                field_type="DIAGNOSIS",
-                extracted_value="자궁내막증",
-                confidence=0.99,
-            )
+            async with in_transaction() as connection:
+                await _seed_fixture_result(
+                    job,
+                    upload_body["document_ids"][0],
+                    OcrDocumentType.EMR,
+                    connection,
+                )
+            field = await OcrField.get(ocr_result__ocr_job=job)
 
             confirmed = await client.patch(
                 f"/api/v1/ocr/fields/{field.ocr_field_id}",
@@ -122,6 +126,15 @@ class TestKey152WalkingSkeleton(TestCase):
             assert generated.status_code == 201, generated.text
             assert generated.json()["visit_id"] == visit.visit_id
             assert generated.json()["status"] == GuideStatus.APPROVAL_PENDING
+
+            edited_text = "[합성 최종 승인 문구] 처방에 따라 복용하고 이상 증상이 있으면 병원에 문의하세요."
+            edited = await client.patch(
+                f"/api/v1/visits/{visit.visit_id}/guide/sections/medication",
+                headers=doctor_headers,
+                json={"body": edited_text},
+            )
+            assert edited.status_code == 200, edited.text
+            assert edited.json()["body"] == edited_text
 
             approved = await client.post(
                 f"/api/v1/visits/{visit.visit_id}/guide/approve",
@@ -140,7 +153,10 @@ class TestKey152WalkingSkeleton(TestCase):
 
             patient_guide = await client.get(guide_path)
             assert patient_guide.status_code == 200, patient_guide.text
-            assert patient_guide.json()["sections"]
+            sections = patient_guide.json()["sections"]
+            assert sections
+            assert all(section["body"].strip() for section in sections)
+            assert edited_text in [section["body"] for section in sections]
 
             checkin_path = f"/api/v1/checkins/{raw_token}"
             submitted = await client.post(
@@ -162,5 +178,5 @@ class TestKey152WalkingSkeleton(TestCase):
         check_in = await CheckIn.get(guide_document=guide)
         assert guide.status == GuideStatus.SCHEDULED_TO_SEND
         assert check_in.guide_document_id == guide.guide_document_id
-        assert raw_token not in repr(link.__dict__)
+        assert link.token_digest == hashlib.sha256(raw_token.encode()).hexdigest()
         assert raw_token not in hospital_read.text
