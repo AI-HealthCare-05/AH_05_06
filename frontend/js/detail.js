@@ -316,21 +316,25 @@ function timeLabel(isoDatetime) {
 
   /* 서버가 코드로 답한다. 화면 문구는 코드마다 다르다 — 사용자가 해야 할 일이
      다르기 때문이다(다시 입력할 것인가, 사람을 부를 것인가). */
-  function messageFor(error) {
-    if (!error) return "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
-    if (error.status === 403) return "이 환자를 수정할 권한이 없습니다 — 스탭 또는 의사 계정으로 로그인해 주세요.";
-    if (error.status === 404) return "이 환자를 찾을 수 없습니다. 목록을 새로 고쳐 주세요.";
-    if (error.code === "EMPTY_UPDATE_FIELDS") return "바뀐 내용이 없습니다.";
+  /* 규칙은 **적은 순서대로** 본다 — 좁은 것을 먼저. 문장을 고르는 방식은
+     `api.js` 의 `errorMessage()` 가 갖는다. 같은 모양을 세 파일이 각자 적고
+     있어서 기본 문구를 바꿀 때 세 곳을 고쳐야 했다 (이희진 님 `#121` 리뷰). */
+  var SAVE_SAYINGS = [
+    { status: 403, say: "이 환자를 수정할 권한이 없습니다 — 스탭 또는 의사 계정으로 로그인해 주세요." },
+    { status: 404, say: "이 환자를 찾을 수 없습니다. 목록을 새로 고쳐 주세요." },
+    { code: "EMPTY_UPDATE_FIELDS", say: "바뀐 내용이 없습니다." },
     /* 진료과·의사는 서버가 검증한다(계약 §7). 「입력을 다시 보라」로 뭉뜽그리면
        고를 수 있는 것만 고른 사람은 무엇을 고쳐야 할지 알 수 없다. */
-    if (error.code === "INVALID_DEPARTMENT") return "선택한 진료과를 쓸 수 없습니다 — 목록을 새로 고쳐 주세요.";
-    if (error.code === "DOCTOR_DEPARTMENT_MISMATCH") return "그 의사는 선택한 진료과 소속이 아닙니다.";
+    { code: "INVALID_DEPARTMENT", say: "선택한 진료과를 쓸 수 없습니다 — 목록을 새로 고쳐 주세요." },
+    { code: "DOCTOR_DEPARTMENT_MISMATCH", say: "그 의사는 선택한 진료과 소속이 아닙니다." },
     /* 판독·안내가 이미 붙은 뒤에는 담당을 못 바꾼다. 「저장 실패」로 두면
        될 때까지 다시 누른다 — 왜 잠겼는지와 누구를 불러야 하는지를 적는다. */
-    if (error.code === "VISIT_LOCKED")
-      return "안내문 작업이 시작되어 담당을 바꿀 수 없습니다 — 관리자에게 알려 주세요.";
-    if (error.code === "INVALID_REQUEST") return "입력한 값을 다시 확인해 주세요.";
-    return "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
+    { code: "VISIT_LOCKED", say: "안내문 작업이 시작되어 담당을 바꿀 수 없습니다 — 관리자에게 알려 주세요." },
+    { code: "INVALID_REQUEST", say: "입력한 값을 다시 확인해 주세요." },
+  ];
+
+  function messageFor(error) {
+    return errorMessage(error, SAVE_SAYINGS, "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
   }
 
   /* 바뀐 것만 보낸다 — 계약의 PATCH 는 부분 수정이고, 안 바뀐 값을 같이 보내면
