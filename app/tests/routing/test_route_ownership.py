@@ -137,14 +137,12 @@ def test_every_router_that_can_raise_api_error_wears_the_envelope() -> None:
             continue
         naked.append(f"{sorted(route.methods - {'HEAD', 'OPTIONS'})} {route.path} [{sorted(tags)}]")
 
-    #: 지금 벗고 있는 것 — **KEY-167 이 지우는 중이다**(`#109`).
+    #: 지금은 **하나도 없다.** KEY-167 이 마지막 둘(`/users/me`)을 지웠다(`#109`).
     #:
-    #: 「없어야 한다」가 아니라 「이만큼만 있다」로 적는다. 늘면 새 구멍이고,
-    #: 줄면 KEY-167 이 병합된 것이라 이 목록을 비울 때다 — **양쪽으로 잡는다.**
-    known_naked = [
-        "['GET'] /api/v1/users/me [['users']]",
-        "['PATCH'] /api/v1/users/me [['users']]",
-    ]
+    #: 그래도 「없어야 한다」가 아니라 「이만큼만 있다」로 적는다. 비어 있는
+    #: 목록은 늘어나는 것만 잡지만, 목록으로 두면 나중에 봉투 없는 라우트를
+    #: 일부러 허용할 때 **여기에 적고 사유를 남기는** 자리가 된다.
+    known_naked: list[str] = []
     assert sorted(naked) == sorted(known_naked), (
         "봉투(`ContractRoute`) 없이 등록된 라우트 목록이 바뀌었다.\n"
         f"  지금: {sorted(naked)}\n"
