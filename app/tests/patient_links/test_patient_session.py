@@ -11,13 +11,13 @@ from tortoise.timezone import now
 
 from app.apis.v1.patient_otp_routers import _otp_service
 from app.core.auth_errors import AuthError
-from app.core.redis_client import get_redis
 from app.main import app
 from app.models.visits import CheckIn, GuideSection, GuideSectionKey, GuideStatus, PatientGuideLink, PatientOtpChallenge
 from app.services.patient_links import digest_link_token
 from app.services.patient_otp import OTP_RESEND_COOLDOWN, PatientOtpService
 from app.services.patient_sessions import PATIENT_SESSION_SECONDS, PatientSessionStore, digest_session_token
-from app.tests.fakes import FakeRedis, InterleavingRedis
+from app.tests.auth_base import AuthTestCase
+from app.tests.fakes import InterleavingRedis
 from app.tests.patient_links.test_patient_links import make_guide, make_hospital
 from app.tests.patient_links.test_patient_otp import LINK_TOKEN, OTP, SECRET, RecordingDelivery, make_link
 
@@ -40,18 +40,19 @@ async def make_other_link() -> PatientGuideLink:
     )
 
 
-class PatientSessionTestCase(TestCase):
+class PatientSessionTestCase(AuthTestCase):
+    """`AuthTestCase` 가 `COOKIE_DOMAIN` 과 `FakeRedis` 를 맡는다.
+
+    이 파일은 그 규약을 빠뜨린 채 들어왔었다(`#119`). `.env` 에
+    `COOKIE_DOMAIN` 이 있는 로컬에서 쿠키가 통째로 버려져 두 검사가 깨졌고,
+    CI 에는 `.env` 가 없어 초록불이었다 — 상속으로 따라온다 (KEY-173).
+    """
+
     def setUp(self) -> None:
         super().setUp()
-        self.redis = FakeRedis()
         self.delivery = RecordingDelivery()
         self.otp = PatientOtpService(self.delivery, secret_key=SECRET)
-        app.dependency_overrides[get_redis] = lambda: self.redis
         app.dependency_overrides[_otp_service] = lambda: self.otp
-
-    def tearDown(self) -> None:
-        app.dependency_overrides.clear()
-        super().tearDown()
 
     def client(self) -> AsyncClient:
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
