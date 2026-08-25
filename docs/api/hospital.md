@@ -53,7 +53,7 @@
 | **첫 로그인 비밀번호 변경 강제** | 없음 | `L-3` |
 | **5회 실패 → 10분 잠금** · 시도 횟수 표시 | 없음 | `L-2` |
 | 퇴사자(`status='left'`)는 못 들어온다 | 없음 | `A1-3` |
-| `GET /auth/me` · `POST /auth/logout` · `POST /auth/refresh` · `PATCH /auth/password` | `GET /users/me`만 있다 | `KEY-22` |
+| `GET /auth/me` · `POST /auth/logout` · `POST /auth/refresh` · `PATCH /auth/password` | 넷 다 있다 | `KEY-22` |
 | 리프레시 토큰을 **`HttpOnly` 쿠키**로 | 본문에 담아 준다 | 4절 |
 
 `spec-medical.md`의 `staff` 표에는 **이미 다 있다** — `login_id` · `must_change_password` ·

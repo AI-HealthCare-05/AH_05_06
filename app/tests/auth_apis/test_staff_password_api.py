@@ -289,16 +289,38 @@ class TestPasswordGateBlocksEverythingElse(PasswordTestCase):
         """「최초 로그인 사용자는 L-3 완료 전 다른 보호 화면에 접근할 수 없음」.
 
         예외는 자기 자신을 벗어나지 않는 셋뿐이다.
+
+        예전에는 `/users/me` 로 쟀는데, 그 경로는 옛 `User` 계약이라 **관문이
+        아니라 그 앞에서** 막혔다. 검사 자신이 「통과되지 않는다만 본다」고
+        적어 둔 그대로, 관문을 통째로 들어내도 통과하는 검사였다.
+
+        `/users/me` 를 지우면서(KEY-167) **실제 보호 경로**로 옮긴다. 이제
+        관문이 내는 `password_change_required` 를 직접 확인한다.
         """
         await make_staff(must_change_password=True)
 
         async with self.client() as client:
             headers = await self.sign_in(client)
-            blocked = await client.get("/api/v1/users/me", headers=headers)
+            blocked = await client.get("/api/v1/patients", headers=headers)
 
-        # /users/me 는 옛 계약(User)이라 staff 토큰을 아예 못 읽는다.
-        # 관문이 아니라 그 앞에서 막히므로 여기서는 「통과되지 않는다」만 본다.
-        assert blocked.status_code in (401, 403)
+        assert blocked.status_code == 403, f"관문이 열려 있다: {blocked.status_code}"
+        assert blocked.json()["code"] == "password_change_required"
+
+    async def test_the_way_out_stays_open(self) -> None:
+        """**막기만 하면 갇힌다.** 비밀번호를 바꾸러 갈 길은 열려 있어야 한다.
+
+        관문을 「전부 403」으로 만들면 이 검사가 죽는다 — 그러면 최초 로그인
+        사용자는 아무것도 못 하고 로그인만 반복하게 된다.
+        """
+        await make_staff(must_change_password=True)
+
+        async with self.client() as client:
+            headers = await self.sign_in(client)
+            me = await client.get(f"{BASE}/me", headers=headers)
+            change = await client.patch(f"{BASE}/password", json={"new_password": NEW_PASSWORD}, headers=headers)
+
+        assert me.status_code == 200, "자기 정보 조회가 막히면 화면이 이름조차 못 띄운다"
+        assert change.status_code == 204, "비밀번호를 바꿀 길이 막혔다 — 나갈 수 없다"
 
     async def test_gate_lifts_after_the_change(self) -> None:
         await make_staff(must_change_password=True)

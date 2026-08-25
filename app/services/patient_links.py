@@ -18,7 +18,7 @@ LINK_TTL = timedelta(hours=72)
 ISSUER_ROLES = frozenset({"staff", "doctor"})
 
 
-def _digest(raw_token: str) -> str:
+def digest_link_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
@@ -47,7 +47,7 @@ class PatientLinkService:
         try:
             link = await PatientGuideLink.create(
                 guide_document=guide,
-                token_digest=_digest(raw_token),
+                token_digest=digest_link_token(raw_token),
                 expires_at=now() + LINK_TTL,
                 issued_by=actor.user_id,
             )
@@ -58,7 +58,7 @@ class PatientLinkService:
 
     async def get_approved_guide(self, raw_token: str) -> tuple[PatientGuideLink, GuideDocument]:
         link = (
-            await PatientGuideLink.filter(token_digest=_digest(raw_token))
+            await PatientGuideLink.filter(token_digest=digest_link_token(raw_token))
             .prefetch_related("guide_document__sections")
             .first()
         )
