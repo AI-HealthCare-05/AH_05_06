@@ -73,15 +73,13 @@ function alreadyDone(visit) {
  * 라고 하지 않는다 — **없는 버튼을 가리키지 않는다.** 지금 무슨 상태인지만
  * 정확히 말한다.
  */
+var GUIDE_LOAD_SAYINGS = [
+  { status: 404, say: "아직 안내문이 없습니다. 판독 결과 확인이 끝나고 안내문이 만들어지면 여기에 보입니다." },
+  { status: 403, say: "안내문을 볼 수 없습니다. 의사 계정으로 로그인했는지 확인해 주세요." },
+];
+
 function guideLoadSaying(error) {
-  var status = error && error.status;
-  if (status === 404) {
-    return "아직 안내문이 없습니다. 판독 결과 확인이 끝나고 안내문이 만들어지면 여기에 보입니다.";
-  }
-  if (status === 403) {
-    return "안내문을 볼 수 없습니다. 의사 계정으로 로그인했는지 확인해 주세요.";
-  }
-  return "안내문을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
+  return errorMessage(error, GUIDE_LOAD_SAYINGS, "안내문을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
 }
 
 (function () {
@@ -93,6 +91,13 @@ function guideLoadSaying(error) {
   var el = function (id) {
     return document.getElementById(id);
   };
+
+  /* 눈에는 안 보이고 소리로만 읽히는 한 줄. 패널 전체를 라이브 리전으로 두는
+     대신 **알릴 만한 일이 있을 때만** 여기에 적는다. */
+  function sayPanel(text) {
+    var box = el("panel-say");
+    if (box) box.textContent = text;
+  }
 
   var guide = null;
   var visit = null;
@@ -403,10 +408,15 @@ function guideLoadSaying(error) {
         renderPanel();
         renderSummary();
         renderRole();
+        /* **환자가 바뀐 것만** 알린다. `renderPanel()` 은 탭을 누를 때도 불리므로
+           패널 자체를 라이브 리전으로 두면 정상 탐색까지 읽힌다. */
+        sayPanel((visit && visit.name ? visit.name + " · " : "") + "안내문을 불러왔습니다.");
       })
       .catch(function (error) {
         if (mine !== loadSeq) return;
-        el("panel").innerHTML = '<p class="block__hint">' + esc(guideLoadSaying(error)) + "</p>";
+        var saying = guideLoadSaying(error);
+        el("panel").innerHTML = '<p class="block__hint">' + esc(saying) + "</p>";
+        sayPanel(saying);
         renderRole(); // guide 가 null 이라 잠긴 채로 남는다
       });
   }

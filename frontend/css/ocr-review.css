@@ -488,38 +488,12 @@
   color: var(--ink-3);
 }
 
-/* 숫자만으로는 **멈춘 건지 도는 건지** 알 수 없다. */
-.state__bar {
+/* 진행 막대는 `style.css` 의 `.bar` 를 쓴다 — `upload.css` 에 이미 있던 것을
+   공용으로 올렸다. 여기서 또 만들면 두 벌을 유지하게 된다 (이희진 님 `#121`
+   리뷰). 이 화면에서는 위아래로 조금 띄운다. */
+.state .bar {
   margin: var(--s-8) 0;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--line);
-  overflow: hidden;
 }
-
-.state__bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-  transition: width var(--motion) var(--ease);
-  animation: state-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes state-pulse {
-  50% {
-    opacity: 0.45;
-  }
-}
-
-/* 움직임을 줄여 달라고 한 사람에게는 주지 않는다. `--motion` 은 0 이 되지만
-   `animation` 은 그 토큰을 안 타므로 여기서 따로 끈다 (tokens.css 와 같은 뜻). */
-@media (prefers-reduced-motion: reduce) {
-  .state__bar-fill {
-    animation: none;
-  }
-}
-
 .button {
   height: 40px;
   padding: 0 var(--s-16);

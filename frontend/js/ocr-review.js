@@ -73,39 +73,61 @@ function jobPhase(job) {
  * 것만 옮기고 나머지를 코드로 흘리면 결국 원문이 보이는 화면이 남는다 —
  * **모르는 코드에도 사람 말을 준다.**
  *
- * 코드 자체는 버리지 않고 화면 아래 작게 남긴다. 스탭이 문의할 때 그 한 줄이
- * 필요하다. 다만 그것은 머리말이 아니라 꼬리말이다.
+ * 프런트가 이 표를 들고 있는 것이 근본은 아니다. 서버가 사유 문구를 함께 주는
+ * 편이 맞고, 그건 판독기를 붙이는 KEY-56 이 정할 일이다 (이희진 님 `#121`
+ * 리뷰). 그때까지의 임시 표다.
  */
-var FAILURE_SAYINGS = {
-  OCR_ENGINE_TIMEOUT: "판독이 정해진 시간 안에 끝나지 않았습니다.",
-  OCR_ENGINE_ERROR: "판독기가 문서를 처리하지 못했습니다.",
-  UNREADABLE: "문서의 글자를 알아볼 수 없었습니다.",
-};
+var FAILURE_SAYINGS = [
+  { code: "OCR_ENGINE_TIMEOUT", say: "판독이 정해진 시간 안에 끝나지 않았습니다." },
+  { code: "OCR_ENGINE_ERROR", say: "판독기가 문서를 처리하지 못했습니다." },
+  { code: "UNREADABLE", say: "문서의 글자를 알아볼 수 없었습니다." },
+];
 
+/* 왜 실패했는지와, 문의할 때 쓸 코드. **그것뿐이다.**
+ *
+ * 예전에는 title·next 까지 담아 매번 네 칸짜리 객체를 만들었는데, 그 둘은 어떤
+ * 코드가 와도 같은 상수였다 (이희진 님 `#121` 리뷰). 부르는 쪽에 상수로 둔다. */
 function failureSaying(code) {
   return {
-    title: "판독하지 못했습니다",
-    why: FAILURE_SAYINGS[code] || "판독기가 문서를 읽지 못했습니다.",
-    next: "진료기록을 다시 올리면 판독을 다시 시작합니다.",
+    why: errorMessage({ code: code }, FAILURE_SAYINGS, "판독기가 문서를 읽지 못했습니다."),
     code: code || null,
   };
 }
 
-/* 화면 전체 상태의 **무게**. 오른쪽 항목 목록은 빨강·노랑으로 우선순위를
- * 나누는데 전체 상태만 그 규칙 밖에 있었다 — 「처리 중」과 「실패」가 똑같이
- * 가운데 정렬한 흰 박스였다(KEY-126 진단 ②).
+/* 화면 전체 상태의 **갈래**. 무게와 「다음 행동」이 여기서 함께 정해진다.
  *
  *   busy   도는 중이다. 기다리면 된다 — 사람이 할 일이 없다
  *   warn   멈췄다. **사람이 손대야 다음이 있다**
  *   info   그냥 알림
  *
- * `warn` 일 때만 초점을 옮긴다. 저절로 풀리는 상태까지 커서를 뺏으면
- * 키보드로 일하던 사람이 자리를 잃는다.
+ * `#121` 리뷰에서 이 둘이 어긋나 있던 것이 잡혔다.
+ *
+ *   `not_ready`   busy 로 그렸는데 폴링이 재시작되지 않아 **영영 기다린다**
+ *   `poll_failed` warn 인데 누를 것이 없어 **화면에 갇힌다**
+ *
+ * 그래서 규칙을 하나로 못 박는다 — **warn 이면 반드시 다음 행동이 있다.**
+ * 아래 `stateRules()` 를 검사가 그 불변식으로 잰다.
+ *
+ * 자동 재시도는 넣지 않았다. 지금 판독 작업은 AI 워커가 안 붙어 `PROCESSING`
+ * 에서 못 벗어나는데(KEY-148 검수 문서), 자동으로 계속 돌면 **영원히 돌면서
+ * 문제를 감춘다.** 「다시 확인」을 사람이 누르는 편이 정직하다.
  */
-function stateTone(phase) {
-  if (phase === "processing") return "busy";
-  if (phase === "failed") return "warn";
-  return "info";
+var STATE_RULES = {
+  loading: { tone: "busy", action: null },
+  processing: { tone: "busy", action: null },
+  no_job: { tone: "info", action: null },
+  job_failed: { tone: "warn", action: "reupload" },
+  not_ready: { tone: "warn", action: "recheck" },
+  poll_failed: { tone: "warn", action: "recheck" },
+  result_failed: { tone: "warn", action: "recheck" },
+};
+
+function stateRules() {
+  return STATE_RULES;
+}
+
+function stateRule(kind) {
+  return STATE_RULES[kind] || { tone: "info", action: null };
 }
 
 function stateTakesFocus(tone) {
@@ -661,30 +683,56 @@ function stateTakesFocus(tone) {
 
   /* ── 예외 ─────────────────────────────────────────────────── */
 
-  /* 방금 그린 상태. 같은 상태를 다시 그릴 때 초점을 또 뺏지 않으려고 둔다 —
-     판독 중에는 되묻기가 반복해서 이 함수를 부른다. */
-  var shownState = null;
+  /* 방금 그린 **갈래**. 같은 갈래를 다시 그릴 때 초점을 또 뺏지 않으려고 둔다 —
+     판독 중에는 되묻기가 반복해서 이 함수를 부른다.
 
-  function showState(html, tone) {
-    var weight = tone || "info";
-    stateBox.className = "state state--" + weight;
-    stateBox.innerHTML = html;
+     예전에는 `무게 + "|" + html` 을 통째로 키로 썼다. 그런데 그건 「같은 warn 이
+     연달아 두 번 그려지는 경로가 지금 없다」는 **우연**에 기댄 것이지 코드가
+     보장하는 불변식이 아니었다 (이희진 님 `#121` 리뷰). 갈래로 비교한다. */
+  var shownKind = null;
+
+  function actionHtml(action) {
+    if (action === "reupload") return '<button class="button" type="button" id="reupload">재업로드</button>';
+    /* 「다시 확인」은 `loadVisit()` 을 다시 탄다 — 환자를 다시 고른 것과 같은
+       길이다. 작업을 다시 묻고, 아직 도는 중이면 폴링에 다시 들어간다. */
+    if (action === "recheck") return '<button class="button" type="button" id="recheck">다시 확인</button>';
+    return "";
+  }
+
+  /* 갈래 하나를 그린다. **무게와 다음 행동은 규칙이 정한다** — 부르는 쪽이
+     고르지 않는다. 그래야 「warn 인데 누를 것이 없는」 화면이 안 생긴다. */
+  function showState(kind, body) {
+    var rule = stateRule(kind);
+    var acts = actionHtml(rule.action);
+
+    stateBox.className = "state state--" + rule.tone;
+    stateBox.innerHTML = body + (acts ? '<div class="state__acts">' + acts + "</div>" : "");
     stateBox.hidden = false;
     document.getElementById("work").hidden = true;
 
-    var signature = weight + "|" + html;
-    if (stateTakesFocus(weight) && shownState !== signature) {
-      /* 손대야 다음이 있는 상태다. 키보드로 일하는 사람을 여기로 데려온다 —
-         화면 가운데가 통째로 바뀌었는데 커서가 사라진 표에 남아 있으면
-         무슨 일이 일어났는지 알 길이 없다. */
-      stateBox.focus();
+    if (shownKind !== kind) {
+      /* 진행률이 바뀔 때마다 읽어 주면 수십 초짜리 판독에서 20~40 번을 연달아
+         듣는다 — 이 화면이 고치려던 것과 반대다 (이희진 님 `#121` 리뷰).
+         그래서 소리로 알리는 것은 **갈래가 바뀔 때뿐**이다. */
+      say(stateBox.querySelector(".state__title"));
+      if (stateTakesFocus(rule.tone)) {
+        /* 손대야 다음이 있는 상태다. 키보드로 일하는 사람을 여기로 데려온다. */
+        stateBox.focus();
+      }
     }
-    shownState = signature;
+    shownKind = kind;
+  }
+
+  /* 소리로만 읽히는 한 줄. 화면 전체를 라이브 리전으로 두면 진행률·탭 이동까지
+     전부 읽힌다. */
+  function say(titleNode) {
+    var box = document.getElementById("state-say");
+    if (box) box.textContent = titleNode ? titleNode.textContent : "";
   }
 
   function showWork() {
     stateBox.hidden = true;
-    shownState = null;
+    shownKind = null;
     document.getElementById("work").hidden = false;
   }
 
@@ -695,14 +743,14 @@ function stateTakesFocus(tone) {
          움직임은 `--motion` 을 타므로 「움직임 줄이기」를 켠 사람에게는
          멈춰 있는 막대만 남는다 (tokens.css). */
       showState(
+        "processing",
         '<p class="state__title">판독 중입니다</p>' +
-          '<div class="state__bar"><span class="state__bar-fill" style="width:' +
+          '<div class="bar bar--pulse"><div class="bar__fill" style="width:' +
           Math.max(0, Math.min(100, Number(job.progress) || 0)) +
-          '%"></span></div>' +
+          '%"></div></div>' +
           '<p class="state__body">' +
           escapeHtml(String(job.progress)) +
           "% · 끝나면 이 화면이 저절로 바뀝니다</p>",
-        stateTone("processing"),
       );
       return false;
     }
@@ -720,20 +768,14 @@ function stateTakesFocus(tone) {
          「재업로드」는 지금 된다. 이 진료의 진료기록 칸으로 돌려보낸다. */
       var saying = failureSaying(job.failure_code);
       showState(
-        '<p class="state__title">' +
-          escapeHtml(saying.title) +
-          "</p>" +
+        "job_failed",
+        '<p class="state__title">판독하지 못했습니다</p>' +
           '<p class="state__body">' +
           escapeHtml(saying.why) +
-          " " +
-          escapeHtml(saying.next) +
-          "</p>" +
-          '<div class="state__acts">' +
-          '<button class="button" type="button" id="reupload">재업로드</button></div>' +
+          " 진료기록을 다시 올리면 판독을 다시 시작합니다.</p>" +
           (saying.code
             ? '<p class="state__code">문의할 때 알려 주세요 · ' + escapeHtml(saying.code) + "</p>"
             : ""),
-        stateTone("failed"),
       );
       return false;
     }
@@ -751,6 +793,13 @@ function stateTakesFocus(tone) {
     var target = event.target;
 
     /* 판독 실패에서 빠져나가는 유일한 길. 이 진료의 진료기록 칸으로 보낸다. */
+    /* 막다른 상태에서 빠져나오는 길. 환자를 다시 고른 것과 같은 경로다 —
+       작업을 다시 묻고, 아직 도는 중이면 폴링에 다시 들어간다. */
+    if (target.id === "recheck") {
+      if (visit) loadVisit(visit);
+      return;
+    }
+
     if (target.id === "reupload") {
       if (!visit) return;
       location.href = "/patients.html?visit=" + encodeURIComponent(visit.visit_id) + "&tab=record";
@@ -968,9 +1017,9 @@ function stateTakesFocus(tone) {
         .catch(function () {
           if (mine !== loadSeq) return;
           showState(
+            "poll_failed",
             '<p class="state__title">판독 상태를 확인하지 못했습니다</p>' +
-              '<p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
-            "warn",
+              '<p class="state__body">연결이 끊겼을 수 있습니다. 다시 확인해 주세요.</p>',
           );
         });
     }, POLL_MS);
@@ -992,11 +1041,15 @@ function stateTakesFocus(tone) {
       .catch(function (error) {
         if (mine !== loadSeq) return;
         if (error && error.code === "OCR_RESULT_NOT_READY") {
-          return showState('<p class="state__title">판독 결과가 아직 없습니다</p>', "busy");
+          return showState(
+            "not_ready",
+            '<p class="state__title">판독 결과가 아직 없습니다</p>' +
+              '<p class="state__body">판독은 끝났다고 하는데 결과가 아직 안 왔습니다. 다시 확인해 주세요.</p>',
+          );
         }
         showState(
-          '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
-          "warn",
+          "result_failed",
+          '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">다시 확인해 주세요.</p>',
         );
       });
   }
@@ -1007,7 +1060,7 @@ function stateTakesFocus(tone) {
     jobId = null;
     var mine = ++loadSeq;
     renderPatientHead(next);
-    showState('<p class="state__title">판독 결과를 불러오는 중…</p>', "busy");
+    showState("loading", '<p class="state__title">판독 결과를 불러오는 중…</p>');
 
     ocrApi
       .jobForVisit(next.visit_id)
@@ -1029,14 +1082,14 @@ function stateTakesFocus(tone) {
         if (mine !== loadSeq) return;
         if (error && error.code === "NOT_FOUND") {
           return showState(
+            "no_job",
             '<p class="state__title">판독한 기록이 없습니다</p>' +
               '<p class="state__body">진료기록을 올리면 판독이 시작됩니다.</p>',
-            "info",
           );
         }
         showState(
-          '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
-          "warn",
+          "result_failed",
+          '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">다시 확인해 주세요.</p>',
         );
       });
   }

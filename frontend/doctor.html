@@ -88,9 +88,12 @@
         <p class="warnline" id="warn-line"></p>
 
         <div class="vtabs" id="vtabs" role="group" aria-label="안내문 항목"></div>
-        <!-- 환자를 바꾸면 이 안이 통째로 바뀐다. 화면을 못 보는 사람에게는
-             아무 일도 안 일어난 것과 같았다 (KEY-126). -->
-        <div id="panel" role="status" aria-live="polite"></div>
+        <!-- **라이브 리전이 아니다.** `renderPanel()` 은 탭을 누를 때도 불리는데,
+             통째로 실어 두면 복약지도↔주의사항을 오갈 때마다 섹션 본문 전체가
+             다시 읽힌다 — 정상적인 탐색이 시끄러워진다 (이희진 님 `#121` 리뷰).
+             환자가 바뀐 것만 아래 `#panel-say` 가 한 줄로 알린다. -->
+        <div id="panel"></div>
+        <p class="sr-only" id="panel-say" role="status" aria-live="polite"></p>
 
         <div class="footbar">
           <button class="button-ghost" type="button" id="return" disabled>스탭에 되돌리기</button>
