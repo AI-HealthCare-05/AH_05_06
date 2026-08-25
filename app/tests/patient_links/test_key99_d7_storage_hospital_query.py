@@ -2,7 +2,8 @@
 
 from datetime import datetime
 
-from app.models.visits import CheckIn
+from app.models.patients import Patient
+from app.models.visits import CheckIn, Visit
 from app.tests.patient_links.test_key151_checkins import TOKEN, CheckInTestCase, make_linked_guide
 from app.tests.patient_links.test_patient_links import make_hospital, make_staff
 
@@ -114,3 +115,42 @@ class TestD7StorageAndHospitalQuery(CheckInTestCase):
             assert TOKEN not in response.text
 
         assert private_visit.text == missing_visit.text
+
+    async def test_a_visit_cannot_read_another_visit_answer_in_the_same_hospital(self) -> None:
+        hospital = await make_hospital("KEY-99 두 진료 합성의원")
+        answered_guide = await make_linked_guide(hospital)
+        staff = await make_staff(hospital, "key99-two-visits", ["staff"])
+        other_patient = await Patient.create(
+            hospital_id=hospital.hospital_id,
+            hospital_patient_no="SYN-KEY99-02",
+            name="합성환자 둘",
+            birth_date="1992-03-04",
+            phone="01000009902",
+            sms_consent=True,
+        )
+        unanswered_visit = await Visit.create(
+            hospital_id=hospital.hospital_id,
+            patient=other_patient,
+            visited_at="2026-08-25T09:00:00+09:00",
+        )
+
+        async with self.client() as client:
+            saved = await client.post(
+                f"/api/v1/checkins/{TOKEN}",
+                json={"medication": "taking", "pain": None},
+            )
+            answered = await client.get(
+                f"/api/v1/visits/{answered_guide.visit_id}/checkin",
+                headers=await self.headers(staff),
+            )
+            unanswered = await client.get(
+                f"/api/v1/visits/{unanswered_visit.visit_id}/checkin",
+                headers=await self.headers(staff),
+            )
+
+        assert saved.status_code == 201
+        assert answered.status_code == 200
+        assert answered.json()["visit_id"] == answered_guide.visit_id
+        assert answered.json()["medication"] == "taking"
+        assert unanswered.status_code == 404
+        assert unanswered.json()["code"] == "CHECKIN_NOT_FOUND"
