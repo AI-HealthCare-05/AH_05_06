@@ -20,7 +20,7 @@
 |---|---|---|
 | 환자 링크 | 개발용 링크 한 건으로 승인 안내 조회. 실제 SMS·예약 발송은 후속 범위 | [KEY-90](https://leehee.atlassian.net/browse/KEY-90) |
 | OTP | 6자리·3분 유효, 5회 실패 시 10분 잠금 | [KEY-91](https://leehee.atlassian.net/browse/KEY-91) |
-| 환자 세션 | 30분 세션 계약·구현은 후속 범위 | [KEY-78](https://leehee.atlassian.net/browse/KEY-78) |
+| 환자 세션 | OTP 성공 뒤 HttpOnly 쿠키로 30분 유지, 로그아웃·재인증 시 폐기·회전 | [KEY-92](https://leehee.atlassian.net/browse/KEY-92) |
 | 승인 안내 조회 | 승인 완료 안내만 제공하고 원본·미승인 안내는 차단 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
 | 챗봇 | 승인된 구조화 데이터와 지식만 컨텍스트로 사용 | [KEY-77](https://leehee.atlassian.net/browse/KEY-77) |
 | D+7 응답 | 복약·통증 응답 한 건을 `visit_id`에 연결 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
@@ -82,13 +82,39 @@ POST /api/v1/patient-auth/otp/verify
   전송을 호출한다. 전송 실패 시 동일한 최신 digest가 아직 소비되지 않은
   경우에만 신규 발급을 삭제하거나 이전 OTP 상태를 복원하여 동시 변경을
   덮어쓰지 않는다.
-- 검증 성공은 OTP 확인만 뜻한다. 30분 환자 세션 발급과 승인 안내 조회 차단은
-  KEY-78의 후속 일감에서 연결한다.
+- 검증 성공 시 아래 KEY-92 환자 세션을 발급한다. 응답 본문에는 세션 원문을
+  넣지 않고 브라우저의 HttpOnly 쿠키로만 전달한다.
 - 주요 오류는 `404 LINK_NOT_FOUND`, `410 LINK_EXPIRED`, `409 OTP_NOT_ISSUED`,
   `401 OTP_INVALID`, `410 OTP_EXPIRED`, `409 OTP_ALREADY_USED`,
   `409 SMS_OPT_OUT`, `429 OTP_RESEND_TOO_SOON`, `429 OTP_LOCKED`다.
 
-### 2.3 D+7 복약·통증 응답 — KEY-151 최소 계약
+### 2.3 환자 인증 세션 — KEY-92
+
+```text
+POST /api/v1/patient-auth/otp/verify
+     { "link_token": "…", "code": "123456" }
+200  { "verified": true, "session_expires_in_seconds": 1800 }
+Set-Cookie: patient_session=…; HttpOnly; SameSite=Lax; Max-Age=1800; Path=/api/v1
+
+DELETE /api/v1/patient-auth/otp/session
+204  Set-Cookie: patient_session=; Max-Age=0; Path=/api/v1
+```
+
+- 환자 세션은 직원 JWT·Refresh Token과 분리된 임의의 원문 토큰이다.
+- 원문은 브라우저의 `patient_session` HttpOnly 쿠키에만 전달한다. Redis에는
+  SHA-256 digest와 링크 digest만 30분 TTL로 저장한다.
+- 쿠키가 없는 새 브라우저·시크릿 창·다른 기기는 OTP를 다시 확인해야 한다.
+- 세션은 발급 후 30분이 지나면 만료된다. 환자 안내 조회와 D+7 조회·저장은
+  모두 유효한 세션이 필요하며, 없거나 만료·폐기된 세션은
+  `401 PATIENT_SESSION_EXPIRED`다.
+- 세션은 인증한 링크 하나에만 묶인다. 같은 쿠키로 다른 환자 링크를 열 수 없다.
+- 로그아웃은 서버 세션을 폐기하고 쿠키를 삭제한다.
+- 같은 링크에서 OTP를 다시 확인하면 새 세션으로 회전하며 이전 브라우저의
+  세션은 즉시 폐기한다.
+- 세션이 남아 있어도 연결된 환자 링크가 만료되거나 안내 승인이 취소되면 기존
+  링크 오류 계약에 따라 접근을 차단한다.
+
+### 2.4 D+7 복약·통증 응답 — KEY-151 최소 계약
 
 > 2026-08-24 · 8/27 Walking Skeleton 한정. KEY-90 개발용 링크의 같은 원문
 > 토큰을 사용하며 실제 SMS·운영 OTP·실시간 신호 API는 이번 구현 범위 밖이다.

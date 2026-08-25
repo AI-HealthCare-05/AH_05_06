@@ -4,6 +4,7 @@ from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, status
 
+from app.dependencies.patient_auth import require_patient_session
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.checkins import (
     CheckInAnswerContent,
@@ -78,6 +79,7 @@ def _patient_response(link: PatientGuideLink, guide: GuideDocument) -> PatientGu
 @patient_guide_router.get("/{token}", response_model=PatientGuideResponse)
 async def read_patient_guide(
     token: str,
+    _: Annotated[None, Depends(require_patient_session)],
     service: Annotated[PatientLinkService, Depends(_service)],
     usage: Annotated[PatientUsageService, Depends(_usage_service)],
 ) -> PatientGuideResponse:
@@ -103,6 +105,7 @@ def _pain_response(check_in: CheckIn) -> CheckInPainResponse | None:
 @patient_checkin_router.get("/{token}", response_model=CheckInReadResponse)
 async def read_patient_checkin(
     token: str,
+    _: Annotated[None, Depends(require_patient_session)],
     service: Annotated[CheckInService, Depends(_checkin_service)],
 ) -> CheckInReadResponse:
     guide, answered = await service.read_form(token)
@@ -129,6 +132,7 @@ async def read_patient_checkin(
 async def save_patient_checkin(
     token: str,
     payload: CheckInCreateRequest,
+    _: Annotated[None, Depends(require_patient_session)],
     service: Annotated[CheckInService, Depends(_checkin_service)],
 ) -> CheckInSaveResponse:
     check_in = await service.save(token, payload)

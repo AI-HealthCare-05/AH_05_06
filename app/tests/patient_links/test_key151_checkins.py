@@ -7,6 +7,7 @@ from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
 
 from app.core.redis_client import get_redis
+from app.dependencies.patient_auth import require_patient_session
 from app.main import app
 from app.models.staffs import Hospital
 from app.models.visits import (
@@ -45,6 +46,7 @@ class CheckInTestCase(TestCase):
         super().setUp()
         self.redis = FakeRedis()
         app.dependency_overrides[get_redis] = lambda: self.redis
+        app.dependency_overrides[require_patient_session] = lambda: None
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()

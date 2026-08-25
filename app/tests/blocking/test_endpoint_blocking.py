@@ -75,7 +75,10 @@ class BlockingTestCase(TestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        from app.dependencies.patient_auth import require_patient_session
+
         app.dependency_overrides[get_redis] = lambda: FakeRedis()
+        app.dependency_overrides[require_patient_session] = lambda: None
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()

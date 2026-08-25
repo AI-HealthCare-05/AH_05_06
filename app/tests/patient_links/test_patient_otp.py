@@ -9,12 +9,15 @@ from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
 
 from app.apis.v1.patient_otp_routers import _otp_service
+from app.core.redis_client import get_redis
 from app.main import app
 from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import GuideDocument, GuideStatus, PatientGuideLink, PatientOtpChallenge, Visit
 from app.services.patient_links import digest_link_token
 from app.services.patient_otp import OTP_LOCK_DURATION, OTP_RESEND_COOLDOWN, OTP_TTL, PatientOtpService
+from app.services.patient_sessions import PATIENT_SESSION_SECONDS
+from app.tests.fakes import FakeRedis
 
 LINK_TOKEN = "SYN-key91-link-token-not-a-real-patient-token"
 OTP = "042731"
@@ -78,7 +81,9 @@ class PatientOtpTestCase(TestCase):
         super().setUp()
         self.delivery = RecordingDelivery()
         self.service = PatientOtpService(self.delivery, secret_key=SECRET)
+        self.redis = FakeRedis()
         app.dependency_overrides[_otp_service] = lambda: self.service
+        app.dependency_overrides[get_redis] = lambda: self.redis
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
@@ -121,7 +126,14 @@ class TestPatientOtpHappyPath(PatientOtpTestCase):
 
         verified = await self.verify(OTP)
         assert verified.status_code == 200
-        assert verified.json() == {"verified": True}
+        assert verified.json() == {
+            "verified": True,
+            "session_expires_in_seconds": PATIENT_SESSION_SECONDS,
+        }
+        cookie = verified.headers["set-cookie"]
+        assert "patient_session=" in cookie
+        assert "HttpOnly" in cookie
+        assert "Max-Age=1800" in cookie
         assert OTP not in verified.text
 
         reused = await self.verify(OTP)

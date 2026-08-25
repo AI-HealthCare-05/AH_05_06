@@ -235,7 +235,7 @@ class PatientOtpService:
             raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.") from exc
         return challenge
 
-    async def verify(self, raw_link_token: str, code: str) -> None:
+    async def verify(self, raw_link_token: str, code: str) -> PatientGuideLink:
         failure: ApiError | None = None
         async with in_transaction() as connection:
             link = await self._active_link(raw_link_token, connection, include_patient=False)
@@ -283,3 +283,4 @@ class PatientOtpService:
         # 예외를 던지면 보안 상태까지 롤백되어 무제한 재시도가 가능해진다.
         if failure is not None:
             raise failure
+        return link
