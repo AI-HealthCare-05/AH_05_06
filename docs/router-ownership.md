@@ -82,5 +82,8 @@ from app.core.auth_errors import AuthError as ApiError
 때문이다. 그래서 「KEY-159 병합 뒤 재배치」라는 선행 조건이 이 결론에서는
 성립하지 않는다 — 옮길 것이 없다.
 
-KEY-159 가 `POST /documents/{id}/ocr` 를 지우면 `ocr_router` 의 라우트가 하나
-줄고, 위 표와 검사의 소유 목록이 그만큼 짧아진다. 그때 검사가 알려 준다.
+**검사가 그것까지 알려 주지는 않는다.** 위 소유 표는 경로에 `/visits` 가
+들어간 것만 세므로(`test_a_sub_resource_owns_its_own_routes`), KEY-159 가
+`POST /documents/{id}/ocr` 를 지워도 표도 검사도 움직이지 않는다.
+
+실제로 그랬다 — `#112` 가 그 라우트를 지웠고, 소유 표와 검사는 그대로다.
