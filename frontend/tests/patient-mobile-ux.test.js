@@ -115,3 +115,42 @@ test("소프트 키보드가 올라와도 저장 버튼이 안 밀린다", () =>
 
   assert.deepStrictEqual(order, ["vh", "dvh"], `폴백이 먼저, dvh 가 뒤여야 덮인다: ${order}`);
 });
+
+test("안내 배너도 소리로 난다 — 라이브 리전을 걷은 자리의 회귀", () => {
+  /* `notice()` 는 `#guide-body` 의 첫 자식으로 배너를 넣는다. 본문이 라이브
+     리전이던 때는 그것만으로 소리가 났는데, 속성을 걷으면서 **조용해졌다.**
+     문의하기·PDF 저장·오류 신고 셋이 그 경로다 (이희진 님 `#131` 리뷰).
+
+     부르는 쪽 셋에 각각 붙이지 않고 `notice()` 안에서 알린다 — 새 호출부가
+     생겨도 따라온다. 이 검사가 그 자리를 지킨다. */
+  const js = read("js/guide.js");
+  const at = js.indexOf("function notice(");
+  assert.notStrictEqual(at, -1, "배너 함수를 못 찾았다 — 검사가 헛돈다");
+
+  const fn = js.slice(at, js.indexOf("\n}", at));
+  assert.match(fn, /sayGuide\(message\)/, "배너가 화면에만 뜨고 소리로는 안 난다");
+});
+
+test("배너를 부르는 자리가 늘어도 따라온다", () => {
+  /* 부르는 쪽마다 붙였다면 새 호출부에서 또 빠진다. 한 곳에서 알리는지 본다. */
+  const js = read("js/guide.js");
+  const callers = (js.match(/\n\s*notice\(/g) || []).length;
+
+  assert.ok(callers >= 3, `배너 호출부가 ${callers}곳 — 셋 이상이어야 이 검사가 뜻이 있다`);
+  /* 부르는 쪽 **바로 다음 줄**에 알림이 붙었는지 본다. 처음에는 `[^)]*` 로
+     인자를 잡으려 했는데 문구에 괄호가 들어 있어 안 맞았다 — 호출부 뒤
+     한 토막을 잘라서 본다. */
+  const nearby = [];
+  let at = 0;
+  for (;;) {
+    at = js.indexOf("notice(", at);
+    if (at === -1) break;
+    if (js.slice(at - 9, at) !== "function ") {
+      const after = js.slice(js.indexOf(";", at) + 1, js.indexOf(";", at) + 60);
+      if (after.includes("sayGuide")) nearby.push(js.slice(at, at + 40).split("\n")[0]);
+    }
+    at += 1;
+  }
+
+  assert.deepStrictEqual(nearby, [], "부르는 쪽에서 따로 알린다 — 새 호출부에서 또 빠진다");
+});

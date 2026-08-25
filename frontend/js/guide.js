@@ -307,6 +307,13 @@ function notice(message) {
   bar.id = "notice";
   bar.textContent = message;
   body.insertBefore(bar, body.firstChild);
+  /* **이 배너는 본문이 라이브 리전이라 소리로도 났었다.** 그 속성을 걷으면서
+     문의하기·PDF 저장·오류 신고 셋이 조용해졌다 — 고치려던 병을 다른 자리로
+     옮긴 셈이었다 (이희진 님 `#131` 리뷰).
+
+     부르는 쪽 셋에 각각 붙이지 않고 **여기 한 곳**에서 알린다. 새 호출부가
+     생겨도 따라온다. */
+  sayGuide(message);
 }
 
 /* 눈에는 안 보이고 **소리로만** 읽히는 한 줄 — KEY-129.
