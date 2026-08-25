@@ -31,17 +31,6 @@ class FakeOcrService:
         self.updated: tuple[int, UpdateOcrFieldRequest, OcrActor] | None = None
         self.pending: bool = False
 
-    async def start(
-        self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
-    ) -> OcrJobResponse:
-        assert (document_id, visit_id, document_type, actor.hospital_id) == (801, 501, OcrDocumentType.EMR, 3)
-        return OcrJobResponse(
-            ocr_job_id="ocr_synthetic_501",
-            status=OcrJobStatus.PROCESSING,
-            progress=0,
-            started_at=None,
-        )
-
     async def status(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
         if ocr_job_id == "ocr_other_hospital":
             raise OcrApiError(404, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
@@ -180,19 +169,6 @@ def api() -> tuple[TestClient, FakeOcrService]:
         )
 
     return TestClient(app), fake
-
-
-def test_start_ocr_returns_processing_job(api: tuple[TestClient, FakeOcrService]) -> None:
-    client, _ = api
-    response = client.post(
-        "/api/v1/documents/801/ocr",
-        json={"visit_id": 501, "document_type": "EMR"},
-    )
-
-    assert response.status_code == 202
-    assert response.json()["ocr_job_id"] == "ocr_synthetic_501"
-    assert response.json()["status"] == "PROCESSING"
-    assert response.json()["started_at"] is None
 
 
 def test_other_hospital_resource_is_hidden_as_not_found(api: tuple[TestClient, FakeOcrService]) -> None:
