@@ -26,7 +26,6 @@
 구현이 만점을 받는다.
 """
 
-import itertools
 from collections.abc import Callable
 
 from tortoise.contrib.test import TestCase
@@ -41,6 +40,8 @@ from app.tests.blocking.accounts import (
     make_ocr,
     make_patient_and_visit,
     make_staff_in,
+    new_patient_body,
+    new_visit_body,
 )
 from app.tests.fakes import FakeRedis
 
@@ -56,35 +57,9 @@ from app.tests.fakes import FakeRedis
 #:
 #: 셋 다 구멍이 아니라 **매트릭스가 그 자리를 모르던 것**이었다. 새 보호
 #: 경로를 만들면 여기 한 줄을 함께 더한다.
-#: 부를 때마다 **새 값**이 필요한 본문. 생성 경로는 같은 몸을 두 번 보내면
-#: 유니크 제약에 걸려 `409` 가 난다 — 차단이 아니라 중복이라, 그대로 두면
-#: 「정상 경로가 막혔다」로 잘못 읽힌다.
-#:
-#: `TestTheAllowedPathStillOpens` 가 staff1 · doctor1 로 같은 목록을 두 번
-#: 도는 것이 그 자리다 (이희진 님 KEY-153 답).
+#: 생성 경로에 보낼 본문은 부를 때마다 달라야 한다. 그 모양은 합성 환자·진료를
+#: 아는 `accounts.py` 가 갖는다 — 이 파일은 「무엇을 어디에 보내는가」만 적는다.
 Payload = dict | Callable[[], dict] | None
-
-_serial = itertools.count(1)
-
-
-def new_patient_body() -> dict:
-    """차트번호를 부를 때마다 바꾼다 — 같은 의원 안에서 유일해야 한다."""
-    return {
-        "hospital_patient_no": f"SYN-BLOCK-{next(_serial)}",
-        "name": "합성차단환자",
-        "birth_date": "1990-01-01",
-        "phone": "010-0000-1111",
-        "sms_consent": False,
-    }
-
-
-def new_visit_body() -> dict:
-    """진료일을 하루씩 민다 — 한 환자에게 같은 날 진료는 한 건뿐이다.
-
-    픽스처가 심는 진료가 `2026-08-21` 이라(`accounts.py`) 그 뒤로 잡는다.
-    """
-    return {"visited_at": f"2026-09-{next(_serial) % 28 + 1:02d}T10:30:00+09:00"}
-
 
 CLINICAL_ROUTES: list[tuple[str, str, Payload]] = [
     ("GET", "/api/v1/patients", None),
@@ -180,9 +155,25 @@ class TestOtherHospitalIsHiddenAsNotFound(BlockingTestCase):
 
     async def test_other_hospital_clinical_data_is_not_found(self) -> None:
         world = await build_two_hospitals()
+        # **주인 것이 실제로 있어야 격리를 잰다.** 안내문을 안 심으면
+        # `GET /visits/{v}/guide` 의 404 가 「남의 것이라 막혔다」인지 「애초에
+        # 없다」인지 갈리지 않는다. 병원 필터가 통째로 빠져도 그대로 통과한다 —
+        # 실측했더니 40 개가 전부 초록이었다 (이희진 님 `#122` 리뷰).
+        #
+        # `accounts.py` 의 `OcrFixture` 가 적어 둔 원칙이 이것이다:
+        # 「같은 식별자로 주인은 열고 남은 못 여는 것을 보여야 격리다.」
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
         for method, template, body in CLINICAL_ROUTES:
             if template == "/api/v1/patients":
-                continue  # 목록은 자기 의원만 담으므로 아래에서 따로 잰다
+                # **경로에 남의 것을 가리킬 자리가 없는 둘**이다. 템플릿 문자열이
+                # 같아 GET·POST 가 함께 걸린다.
+                #   GET  목록은 자기 의원만 담는다 — 아래에서 따로 잰다
+                #   POST 병원이 본문이 아니라 actor 에서만 정해진다
+                #        (`PatientCreateRequest` 에 `hospital_id` 가 없다)
+                # 그래서 「남의 의원 자원」 케이스가 성립하지 않는다.
+                # 같은 템플릿을 쓰는 라우트가 또 생기면 **여기 이유를 함께 적는다**
+                # (이희진 님 `#122` 리뷰).
+                continue
             response = await self.call(method, template, world["h1"], world["staff2"].auth, body)
             assert response.status_code == 404, (
                 f"{method} {template} 이 남의 의원 사람에게 {response.status_code} 를 냈다"
@@ -254,10 +245,15 @@ class TestTheAllowedPathStillOpens(BlockingTestCase):
         for who in ("staff1", "doctor1"):
             for method, template, body in CLINICAL_ROUTES:
                 response = await self.call(method, template, world["h1"], world[who].auth, body)
-                # 만드는 것은 `201`, 그 밖은 `200` 이다. 한 숫자로 뭉뚱그리면
-                # 생성 경로를 이 검사에 못 넣는다.
-                expected = 201 if method == "POST" else 200
-                assert response.status_code == expected, (
+                # **막혔는가**만 잰다. 성공 코드가 `200` 인지 `201` 인지는 계약
+                # 검사의 몫이다.
+                #
+                # 예전에는 `201 if method == "POST"` 로 갈랐는데, 그건 「POST 면
+                # 생성」이라는 가정이다. 200 을 주는 액션성 POST(`…/actions/lock`
+                # 같은)가 목록에 들어오면 엉뚱한 기댓값을 재고, 실패 메시지가
+                # 「정상 경로가 막혔다」라 **권한 회귀처럼 오해된다**
+                # (이희진 님 `#122` 리뷰).
+                assert 200 <= response.status_code < 300, (
                     f"{who} 가 {method} {template} 에서 {response.status_code} 를 받았다 — 정상 경로가 막혔다"
                 )
 
