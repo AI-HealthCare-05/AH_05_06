@@ -26,6 +26,8 @@
 구현이 만점을 받는다.
 """
 
+from collections.abc import Callable
+
 from tortoise.contrib.test import TestCase
 
 from app.core.redis_client import get_redis
@@ -38,26 +40,46 @@ from app.tests.blocking.accounts import (
     make_ocr,
     make_patient_and_visit,
     make_staff_in,
+    new_patient_body,
+    new_visit_body,
 )
 from app.tests.fakes import FakeRedis
 
 #: 진료 자료를 다루는 보호 엔드포인트. `{p}` `{v}` 는 그 의원의 환자·진료다.
-CLINICAL_ROUTES: list[tuple[str, str, dict | None]] = [
+#:
+#: **여기 없는 경로는 아무도 안 잰다.** 이 목록의 값은 「덮은 것」이 아니라
+#: 「덮었다고 믿는 것」이라, 빠지면 조용하다. 실제로 셋이 빠져 있었다.
+#:
+#:   `GET /visits/{v}/guide`     KEY-153 QA 에서 발견. 역할 검사를 통째로
+#:                               무력화해도 40 개가 전부 통과했다
+#:   `POST /patients`            `#115`(KEY-52) 리뷰에서 발견 — 읽기·수정은
+#:   `POST /patients/{p}/visits` 있는데 **생성이 하나도 없었다**
+#:
+#: 셋 다 구멍이 아니라 **매트릭스가 그 자리를 모르던 것**이었다. 새 보호
+#: 경로를 만들면 여기 한 줄을 함께 더한다.
+#: 생성 경로에 보낼 본문은 부를 때마다 달라야 한다. 그 모양은 합성 환자·진료를
+#: 아는 `accounts.py` 가 갖는다 — 이 파일은 「무엇을 어디에 보내는가」만 적는다.
+Payload = dict | Callable[[], dict] | None
+
+CLINICAL_ROUTES: list[tuple[str, str, Payload]] = [
     ("GET", "/api/v1/patients", None),
     ("GET", "/api/v1/patients/{p}", None),
     ("PATCH", "/api/v1/patients/{p}", {"name": "고친이름"}),
     ("GET", "/api/v1/patients/{p}/visits", None),
     ("GET", "/api/v1/visits/{v}", None),
     ("PATCH", "/api/v1/visits/{v}", {"visit_summary": "메모"}),
+    ("GET", "/api/v1/visits/{v}/guide", None),
+    ("POST", "/api/v1/patients", new_patient_body),
+    ("POST", "/api/v1/patients/{p}/visits", new_visit_body),
 ]
 
 #: 자기 자신에 대한 것 — 최초 로그인 상태에서도 열려 있어야 한다.
-SELF_SCOPED_ROUTES: list[tuple[str, str, dict | None]] = [
+SELF_SCOPED_ROUTES: list[tuple[str, str, Payload]] = [
     ("GET", "/api/v1/auth/me", None),
 ]
 
 #: OCR 다섯. `KEY-116` 때문에 오늘은 실제 토큰으로 부를 수 없다.
-OCR_ROUTES: list[tuple[str, str, dict | None]] = [
+OCR_ROUTES: list[tuple[str, str, Payload]] = [
     ("GET", "/api/v1/ocr/jobs/synthetic-job", None),
     ("GET", "/api/v1/ocr/jobs/synthetic-job/result", None),
     ("GET", "/api/v1/ocr/jobs/synthetic-job/fields", None),
@@ -84,13 +106,14 @@ class BlockingTestCase(TestCase):
         app.dependency_overrides.clear()
         super().tearDown()
 
-    async def call(self, method: str, template: str, fence, headers: dict | None, body: dict | None):
+    async def call(self, method: str, template: str, fence, headers: dict | None, body: "Payload"):
         path = template.format(p=fence.patient_id, v=fence.visit_id)
         kwargs: dict = {}
         if headers:
             kwargs["headers"] = headers
-        if body is not None:
-            kwargs["json"] = body
+        payload = body() if callable(body) else body
+        if payload is not None:
+            kwargs["json"] = payload
         async with client() as http:
             return await http.request(method, path, **kwargs)
 
@@ -135,9 +158,25 @@ class TestOtherHospitalIsHiddenAsNotFound(BlockingTestCase):
 
     async def test_other_hospital_clinical_data_is_not_found(self) -> None:
         world = await build_two_hospitals()
+        # **주인 것이 실제로 있어야 격리를 잰다.** 안내문을 안 심으면
+        # `GET /visits/{v}/guide` 의 404 가 「남의 것이라 막혔다」인지 「애초에
+        # 없다」인지 갈리지 않는다. 병원 필터가 통째로 빠져도 그대로 통과한다 —
+        # 실측했더니 40 개가 전부 초록이었다 (이희진 님 `#122` 리뷰).
+        #
+        # `accounts.py` 의 `OcrFixture` 가 적어 둔 원칙이 이것이다:
+        # 「같은 식별자로 주인은 열고 남은 못 여는 것을 보여야 격리다.」
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
         for method, template, body in CLINICAL_ROUTES:
             if template == "/api/v1/patients":
-                continue  # 목록은 자기 의원만 담으므로 아래에서 따로 잰다
+                # **경로에 남의 것을 가리킬 자리가 없는 둘**이다. 템플릿 문자열이
+                # 같아 GET·POST 가 함께 걸린다.
+                #   GET  목록은 자기 의원만 담는다 — 아래에서 따로 잰다
+                #   POST 병원이 본문이 아니라 actor 에서만 정해진다
+                #        (`PatientCreateRequest` 에 `hospital_id` 가 없다)
+                # 그래서 「남의 의원 자원」 케이스가 성립하지 않는다.
+                # 같은 템플릿을 쓰는 라우트가 또 생기면 **여기 이유를 함께 적는다**
+                # (이희진 님 `#122` 리뷰).
+                continue
             response = await self.call(method, template, world["h1"], world["staff2"].auth, body)
             assert response.status_code == 404, (
                 f"{method} {template} 이 남의 의원 사람에게 {response.status_code} 를 냈다"
@@ -201,10 +240,23 @@ class TestTheAllowedPathStillOpens(BlockingTestCase):
 
     async def test_staff_and_doctor_can_read_their_own_hospital(self) -> None:
         world = await build_two_hospitals()
+        # `GET /visits/{v}/guide` 는 **안내문이 있어야** 200 이다. 공용 픽스처는
+        # 안내문을 안 심으므로 여기서만 한 건 깐다 — 차단 쪽 검사는 안내문
+        # 존재와 무관하게 돌지만(역할 검사가 먼저다) 정상 경로는 아니다.
+        # `TestOnlyDoctorsDecideOnGuides` 가 이미 쓰는 방식이다 (이희진 님 KEY-153 답).
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
         for who in ("staff1", "doctor1"):
             for method, template, body in CLINICAL_ROUTES:
                 response = await self.call(method, template, world["h1"], world[who].auth, body)
-                assert response.status_code == 200, (
+                # **막혔는가**만 잰다. 성공 코드가 `200` 인지 `201` 인지는 계약
+                # 검사의 몫이다.
+                #
+                # 예전에는 `201 if method == "POST"` 로 갈랐는데, 그건 「POST 면
+                # 생성」이라는 가정이다. 200 을 주는 액션성 POST(`…/actions/lock`
+                # 같은)가 목록에 들어오면 엉뚱한 기댓값을 재고, 실패 메시지가
+                # 「정상 경로가 막혔다」라 **권한 회귀처럼 오해된다**
+                # (이희진 님 `#122` 리뷰).
+                assert 200 <= response.status_code < 300, (
                     f"{who} 가 {method} {template} 에서 {response.status_code} 를 받았다 — 정상 경로가 막혔다"
                 )
 
