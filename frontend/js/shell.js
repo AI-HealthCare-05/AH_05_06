@@ -32,13 +32,6 @@ var rows = [];
 var listDay = new Date();
 var listQuery = "";
 
-/* 이름 · 상병 · 차트번호는 사람이 넣은 값이다. 화면을 innerHTML 로 그리므로
-   여기를 지나지 않은 값은 태그로 읽힌다. */
-function esc(text) {
-  return String(text == null ? "" : text).replace(/[&<>"']/g, function (c) {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-  });
-}
 
 function roleLabel(roles) {
   var names = { staff: "스탭", doctor: "의사", admin: "관리자" };
@@ -356,66 +349,84 @@ function visitToday(patientId) {
 
 /* ── 손짓 ─────────────────────────────────────────────── */
 
-document.getElementById("logout").addEventListener("click", function () {
-  session.logout();
-});
+/* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
 
-/* 치는 대로 좁힌다 — [찾기]를 눌러야 움직이면 오늘 목록에서 한 명 고르는 데
-   손이 두 번 간다. 등록 화면의 ① 은 서버에 묻기 때문에 그쪽만 버튼을 둔다. */
-document.getElementById("quick-search").addEventListener("input", function () {
-  listQuery = this.value;
-  renderRows();
-  /* syncPane 을 부르지 않는다 — 검색은 **목록만** 좁힌다.
-     오른쪽 칸을 따라 바꾸면, 찾는 이름을 치는 동안 클릭 한 번 없이 다른 환자의
-     화면이 열린다. 화면을 바꾸는 것은 줄을 누를 때뿐이다. */
-});
+   이 파일은 의료진 골격(상단바 · 왼쪽 목록 · 오른쪽 칸)을 가진 쪽에만 실린다.
+   그런데 예전에는 최상위에서 곧장 `getElementById("logout").addEventListener`
+   를 불렀다 — 그 칸이 없는 페이지에 실리면 **파일 전체가 그 줄에서 죽고**,
+   위에 있는 순수 규칙(`roleLabel` · `readRow` 같은)도 함께 사라졌다.
 
-document.getElementById("day-prev").addEventListener("click", function () {
-  moveDay(-1);
-});
-document.getElementById("day-next").addEventListener("click", function () {
-  moveDay(1);
-});
+   그래서 걸기 전에 뿌리를 한 번 본다. 없으면 조용히 돌아간다 — 규칙은 그대로
+   남아서 다른 파일도, 검사도 부를 수 있다 (KEY-158). */
+function bindShell() {
+  if (!document.getElementById("logout")) return false;
 
-/* 탭은 다중 선택 토글이다 — 켠 탭들의 행이 함께 보인다 */
-document.getElementById("chips").addEventListener("click", function (event) {
-  var chip = event.target.closest("[data-tab]");
-  if (!chip) return;
-  chip.setAttribute("aria-pressed", String(chip.getAttribute("aria-pressed") !== "true"));
-  renderRows();
-  syncPane();
-});
 
-document.getElementById("rows").addEventListener("click", function (event) {
-  var row = event.target.closest("[data-visit-id]");
-  if (!row) return;
-
-  /* 목록에 없는 줄은 누른 것으로 치지 않는다. 목록과 DOM 이 어긋난 상태인데,
-     반쪽짜리 값으로 상세를 열면 다른 환자의 화면처럼 보인다. */
-  var picked = readRow(row);
-  if (!picked) return;
-
-  /* 등록 도중에 목록을 눌러도 잃는 것이 없어야 한다.
-     막을 수 있는 쪽(등록 화면)이 스스로 되묻고 preventDefault 로 세운다. */
-  var asking = new CustomEvent("visit:selecting", { cancelable: true, detail: picked });
-  if (!document.dispatchEvent(asking)) return;
-
-  this.querySelectorAll("[data-visit-id]").forEach(function (r) {
-    r.setAttribute("aria-current", String(r === row));
+  document.getElementById("logout").addEventListener("click", function () {
+    session.logout();
   });
-  showView("view-card");
-  document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
-});
 
-/* 세션이 없거나 첫 로그인이면 여기서 되돌린다.
-   화면에서 막는 것은 편의일 뿐이고 실제 차단은 서버가 한다(KEY-9). */
-requireSession()
-  .then(function (me) {
-    document.getElementById("who-name").textContent = me.name;
-    document.getElementById("who-roles").textContent = roleLabel(me.roles);
-    renderDay();
-    renderChips(me.roles);
-    document.dispatchEvent(new CustomEvent("session:ready", { detail: me }));
-    return loadDay();
-  })
-  .catch(function () {});
+  /* 치는 대로 좁힌다 — [찾기]를 눌러야 움직이면 오늘 목록에서 한 명 고르는 데
+     손이 두 번 간다. 등록 화면의 ① 은 서버에 묻기 때문에 그쪽만 버튼을 둔다. */
+  document.getElementById("quick-search").addEventListener("input", function () {
+    listQuery = this.value;
+    renderRows();
+    /* syncPane 을 부르지 않는다 — 검색은 **목록만** 좁힌다.
+       오른쪽 칸을 따라 바꾸면, 찾는 이름을 치는 동안 클릭 한 번 없이 다른 환자의
+       화면이 열린다. 화면을 바꾸는 것은 줄을 누를 때뿐이다. */
+  });
+
+  document.getElementById("day-prev").addEventListener("click", function () {
+    moveDay(-1);
+  });
+  document.getElementById("day-next").addEventListener("click", function () {
+    moveDay(1);
+  });
+
+  /* 탭은 다중 선택 토글이다 — 켠 탭들의 행이 함께 보인다 */
+  document.getElementById("chips").addEventListener("click", function (event) {
+    var chip = event.target.closest("[data-tab]");
+    if (!chip) return;
+    chip.setAttribute("aria-pressed", String(chip.getAttribute("aria-pressed") !== "true"));
+    renderRows();
+    syncPane();
+  });
+
+  document.getElementById("rows").addEventListener("click", function (event) {
+    var row = event.target.closest("[data-visit-id]");
+    if (!row) return;
+
+    /* 목록에 없는 줄은 누른 것으로 치지 않는다. 목록과 DOM 이 어긋난 상태인데,
+       반쪽짜리 값으로 상세를 열면 다른 환자의 화면처럼 보인다. */
+    var picked = readRow(row);
+    if (!picked) return;
+
+    /* 등록 도중에 목록을 눌러도 잃는 것이 없어야 한다.
+       막을 수 있는 쪽(등록 화면)이 스스로 되묻고 preventDefault 로 세운다. */
+    var asking = new CustomEvent("visit:selecting", { cancelable: true, detail: picked });
+    if (!document.dispatchEvent(asking)) return;
+
+    this.querySelectorAll("[data-visit-id]").forEach(function (r) {
+      r.setAttribute("aria-current", String(r === row));
+    });
+    showView("view-card");
+    document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
+  });
+
+  /* 세션이 없거나 첫 로그인이면 여기서 되돌린다.
+     화면에서 막는 것은 편의일 뿐이고 실제 차단은 서버가 한다(KEY-9). */
+  requireSession()
+    .then(function (me) {
+      document.getElementById("who-name").textContent = me.name;
+      document.getElementById("who-roles").textContent = roleLabel(me.roles);
+      renderDay();
+      renderChips(me.roles);
+      document.dispatchEvent(new CustomEvent("session:ready", { detail: me }));
+      return loadDay();
+    })
+    .catch(function () {});
+
+  return true;
+}
+
+bindShell();
