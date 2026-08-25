@@ -124,6 +124,58 @@ def test_the_generator_runs_and_writes_nothing_into_the_repo(tmp_path: Path) -> 
     assert after == before, f"저장소 안에 산출물이 생겼다: {sorted(p.name for p in after - before)}"
 
 
+def test_the_default_output_place_is_ignored_by_git() -> None:
+    """**`--out` 을 안 줬을 때** 나가는 자리가 실제로 막혀 있는가.
+
+    위 검사는 `--out` 으로 자리를 지정해 돌린다. 그래서 `DEFAULT_OUT` 이 어디를
+    가리키든 안 죽는다 — 돌연변이로 확인했다(`DEFAULT_OUT` 을 `docs/` 로 바꿔도
+    전부 초록이었다). 기본값이 곧 사람이 실제로 쓰는 값인데 아무도 안 재고 있었다.
+
+    여기서는 git 에게 직접 묻는다. `.gitignore` 에서 그 줄을 지워도 이 검사가 죽는다.
+    """
+    from scripts.make_ocr_fixture import DEFAULT_OUT
+
+    assert ROOT in DEFAULT_OUT.parents, f"기본 출력 자리가 저장소 밖이다: {DEFAULT_OUT}"
+
+    probe = DEFAULT_OUT / "probe.svg"
+    ignored = subprocess.run(["git", "check-ignore", "-q", str(probe)], cwd=ROOT, capture_output=True)
+    assert ignored.returncode == 0, (
+        f"기본 출력 자리가 `.gitignore` 에 안 걸린다: {probe.relative_to(ROOT)}\n"
+        "  산출물이 커밋될 수 있다 — KEY-68 범위 밖 첫 줄이 그것이다."
+    )
+
+
+def test_the_recommended_fields_are_split_out_of_the_combined_column(tmp_path: Path) -> None:
+    """`총투원문` 한 열에 든 셋을 제대로 갈라 내는가.
+
+    CSV 는 `1/1/84` 처럼 1회량·일일횟수·처방일수를 한 칸에 담는다. 쪼개기가
+    망가지면 `DOSAGE` 가 `1/1/84` 통째가 되는데, 권장 필드라 다른 검사들이 값을
+    안 봐서 조용히 지나간다 — 돌연변이로 확인했다.
+
+    권장이라고 안 재면 안 재는 것이다.
+    """
+    import json
+
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "make_ocr_fixture.py"), "--out", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=ROOT,
+    )
+    made = json.loads((tmp_path / "SYN-EMS-01.emr.v1.expected.json").read_text(encoding="utf-8"))
+    row = next(r for r in csv_rows() if r["시나리오ID"] == "SYN-EMS-01")
+    dose, freq, _ = row["총투원문"].split("/")
+
+    assert made["fields"]["DOSAGE"]["value"] == dose, (
+        f"1회량이 안 갈렸다: {made['fields']['DOSAGE']['value']!r} (CSV 총투원문 {row['총투원문']!r})"
+    )
+    assert made["fields"]["FREQUENCY"]["value"] == freq, (
+        f"일일횟수가 안 갈렸다: {made['fields']['FREQUENCY']['value']!r}"
+    )
+    assert made["fields"]["DURATION_DAYS"]["value"] == row["처방일수"]
+
+
 #: 결정 문서와 정본 CSV 가 **지금 다르게 적고 있는 것.** 알고 두는 것이지 봐 주는
 #: 것이 아니다 — 하나씩 사라져야 하고, 사라지면 이 검사가 죽어 그때 걷는다.
 #:
