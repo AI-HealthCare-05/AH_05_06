@@ -308,7 +308,7 @@ class TestHeadAndOptionsAreNotContract:
         """
         live = {method for route in api_routes() for method in route.methods}
 
-        assert live == {"GET", "PATCH", "POST"}, f"메서드 구성이 바뀌었다: {sorted(live)}"
+        assert live == {"DELETE", "GET", "PATCH", "POST"}, f"메서드 구성이 바뀌었다: {sorted(live)}"
 
 
 def test_the_method_criterion_lives_in_exactly_one_place() -> None:
