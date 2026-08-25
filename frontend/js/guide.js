@@ -1,6 +1,6 @@
 /* 진료 안내 화면 — P2 복약지도 · P3 주의사항 · P4 생활관리 (KEY-93)
  *
- * 탭 다섯 중 셋을 그린다. 「현황」·「챗봇」은 자리만 두고 다른 일감에서 채운다 —
+ * 탭 다섯 중 복약·주의·생활·챗봇을 그린다. 「현황」은 다른 일감에서 채운다 —
  * 탭을 지우면 환자가 「다섯 중 셋만 있다」는 것을 알 수 없고, 나중에 넣을 때
  * 자리가 달라져 익숙해진 순서가 깨진다.
  *
@@ -15,10 +15,15 @@ var TABS = [
   { key: "caution", label: "주의사항" },
   { key: "life", label: "생활관리" },
   { key: "status", label: "현황", pending: true },
-  { key: "chat", label: "챗봇", pending: true },
+  { key: "chat", label: "챗봇" },
 ];
 
-var state = { guide: null, tab: "guide" };
+var state = {
+  guide: null,
+  tab: "guide",
+  token: "",
+  chat: { busy: false, messages: [] },
+};
 
 function el(tag, className, text) {
   var node = document.createElement(tag);
@@ -40,6 +45,15 @@ function paragraphs(parent, lines) {
   return parent;
 }
 
+function renderContactButton(className) {
+  var contact = el("button", className, "💬 문의하기");
+  contact.type = "button";
+  contact.addEventListener("click", function () {
+    notice("문의 주소는 병원 설정에서 정합니다 — 서버가 붙으면 열립니다.");
+  });
+  return contact;
+}
+
 function renderEmergency(lines) {
   var danger = el("section", "card card--danger");
   danger.appendChild(el("p", "card__badge", "⚠"));
@@ -49,12 +63,7 @@ function renderEmergency(lines) {
     list.appendChild(el("li", null, line));
   });
   danger.appendChild(list);
-  var contact = el("button", "button button--contact", "💬 문의하기");
-  contact.type = "button";
-  contact.addEventListener("click", function () {
-    notice("문의 주소는 병원 설정에서 정합니다 — 서버가 붙으면 열립니다.");
-  });
-  danger.appendChild(contact);
+  danger.appendChild(renderContactButton("button button--contact"));
   return danger;
 }
 
@@ -166,6 +175,125 @@ function renderLifeTab(g) {
   return frag;
 }
 
+/* ── P6 챗봇 ─────────────────────────────────── */
+function chatbotAnswerText(message) {
+  if (message.error) return message.error;
+  return message.text || "답변을 준비하고 있어요…";
+}
+
+function updateStreamingAnswer(message) {
+  var text = document.getElementById("chat-stream-answer");
+  if (!text) return false;
+  text.textContent = chatbotAnswerText(message);
+  return true;
+}
+
+function renderChatMessage(message) {
+  if (message.role === "user") {
+    var row = el("div", "chat__row chat__row--user");
+    row.appendChild(el("div", "chat__bubble chat__bubble--user", message.text));
+    return row;
+  }
+  var answer = el("section", "chat__answer" + (message.urgent ? " chat__answer--urgent" : ""));
+  if (message.urgent) answer.appendChild(el("p", "chat__urgent", "⚠ 긴급 안내"));
+  var answerText = el("p", "chat__answer-text", chatbotAnswerText(message));
+  if (message.streaming) answerText.id = "chat-stream-answer";
+  answer.appendChild(answerText);
+  if (message.evidence) answer.appendChild(el("p", "chat__evidence", "📎 " + message.evidence));
+  if (message.source) answer.appendChild(el("p", "chat__meta", "출처 · " + message.source));
+  if (message.limitation) answer.appendChild(el("p", "chat__meta", "한계 · " + message.limitation));
+  if (!message.streaming) {
+    answer.appendChild(renderContactButton("button chat__contact"));
+  }
+  return answer;
+}
+
+function renderChatTab() {
+  var wrap = el("section", "chat");
+  var intro = el("div", "chat__intro");
+  intro.appendChild(
+    el("p", "chat__intro-text", "받으신 진료 안내를 바탕으로 답변해 드려요. 진단이나 처방 변경은 안내할 수 없어요."),
+  );
+  var prompts = el("div", "chat__prompts");
+  ["내 약이 뭐였죠?", "출혈이 계속돼요", "언제까지 먹나요?"].forEach(function (text) {
+    var prompt = el("button", "chat__prompt", text);
+    prompt.type = "button";
+    prompt.disabled = state.chat.busy;
+    prompt.addEventListener("click", function () {
+      sendChatQuestion(text);
+    });
+    prompts.appendChild(prompt);
+  });
+  intro.appendChild(prompts);
+  wrap.appendChild(intro);
+
+  var thread = el("div", "chat__thread");
+  thread.setAttribute("aria-live", "polite");
+  if (!state.chat.messages.length) {
+    thread.appendChild(el("p", "chat__empty", "궁금한 내용을 아래에 입력하거나 질문 예시를 선택해 주세요."));
+  }
+  state.chat.messages.forEach(function (message) {
+    thread.appendChild(renderChatMessage(message));
+  });
+  wrap.appendChild(thread);
+
+  var form = el("form", "chat__form");
+  var input = el("input", "chat__input");
+  input.type = "text";
+  input.name = "question";
+  input.placeholder = "메시지를 입력하세요";
+  input.setAttribute("aria-label", "챗봇 질문");
+  input.maxLength = 500;
+  input.disabled = state.chat.busy;
+  var submit = el("button", "chat__send", state.chat.busy ? "답변 중…" : "전송");
+  submit.type = "submit";
+  submit.disabled = state.chat.busy;
+  form.appendChild(input);
+  form.appendChild(submit);
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var question = input.value.trim();
+    if (question) sendChatQuestion(question);
+  });
+  wrap.appendChild(form);
+  wrap.appendChild(el("p", "chat__feedback", "이 안내가 도움이 되었나요?　👍　👎　오류 신고"));
+  return wrap;
+}
+
+function sendChatQuestion(question) {
+  if (state.chat.busy) return;
+  state.chat.busy = true;
+  state.chat.messages.push({ role: "user", text: question });
+  var answer = { role: "assistant", text: "", streaming: true };
+  state.chat.messages.push(answer);
+  renderBody();
+
+  return streamChatbotAnswer(
+    { link_token: state.token, question: question },
+    {
+      onDelta: function (chunk) {
+        answer.text += chunk;
+        if (!updateStreamingAnswer(answer)) renderBody();
+      },
+      onComplete: function (result) {
+        answer.streaming = false;
+        answer.urgent = !!result.urgent;
+        answer.evidence = result.evidence;
+        answer.source = result.source;
+        answer.limitation = result.limitation;
+      },
+    },
+  )
+    .catch(function (err) {
+      answer.streaming = false;
+      answer.error = chatbotErrorMessage(err && err.code);
+    })
+    .finally(function () {
+      state.chat.busy = false;
+      renderBody();
+    });
+}
+
 /* 아직 안 만든 탭 — 무엇이 없는지 말한다. 빈 화면은 고장으로 읽힌다. */
 function renderPending(label) {
   var box = section(label);
@@ -213,7 +341,7 @@ function renderBody() {
             ? ["life"]
             : [];
     if (!keys.length) {
-      body.appendChild(renderPending(state.tab === "status" ? "복약 현황" : "챗봇"));
+      body.appendChild(state.tab === "chat" ? renderChatTab() : renderPending("복약 현황"));
       return;
     }
     var titles = { medication: "복약지도", caution: "주의사항", emergency: "응급 안내", life: "생활관리" };
@@ -232,7 +360,8 @@ function renderBody() {
   if (state.tab === "guide") body.appendChild(renderGuideTab(g));
   else if (state.tab === "caution") body.appendChild(renderCautionTab(g));
   else if (state.tab === "life") body.appendChild(renderLifeTab(g));
-  else body.appendChild(renderPending(state.tab === "status" ? "복약 현황" : "챗봇"));
+  else if (state.tab === "chat") body.appendChild(renderChatTab());
+  else body.appendChild(renderPending("복약 현황"));
 }
 
 /* 안내문이 없을 때 — 승인 전이거나 링크가 닫힌 경우다.
@@ -253,6 +382,7 @@ function renderError(code) {
 function start() {
   var params = new URLSearchParams(window.location.search);
   var token = params.get("t") || params.get("visit") || "";
+  state.token = token;
 
   fetchGuide(token)
     .then(function (guide) {
