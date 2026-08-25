@@ -24,6 +24,7 @@ _MIME_TO_FORMAT: dict[str, str] = {
     "application/pdf": "pdf",
 }
 
+# 기본값은 config.CLOVA_OCR_TIMEOUT_SECONDS로 덮어쓴다 — .env에서 조정 가능
 _TIMEOUT_SECONDS = 30.0
 
 
@@ -79,10 +80,11 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
         ],
     }
 
+    timeout = config.CLOVA_OCR_TIMEOUT_SECONDS or _TIMEOUT_SECONDS
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
-                config.CLOVA_OCR_API_URL,
+                config.CLOVA_OCR_INVOKE_URL,
                 json=payload,
                 headers={"X-OCR-SECRET": config.CLOVA_OCR_SECRET_KEY},
             )

@@ -58,12 +58,13 @@ class Config(BaseSettings):
 
     # CLOVA OCR 연동 — 비어 있으면 Worker가 fixture fallback으로 동작한다.
     # 실제 키는 .env에만 기록하고 코드·로그에 남기지 않는다.
-    CLOVA_OCR_API_URL: str = ""
+    CLOVA_OCR_INVOKE_URL: str = ""
     CLOVA_OCR_SECRET_KEY: str = ""
+    CLOVA_OCR_TIMEOUT_SECONDS: float = 30.0
 
     @property
     def clova_enabled(self) -> bool:
-        return bool(self.CLOVA_OCR_API_URL and self.CLOVA_OCR_SECRET_KEY)
+        return bool(self.CLOVA_OCR_INVOKE_URL and self.CLOVA_OCR_SECRET_KEY)
 
     @model_validator(mode="after")
     def _fixture_fallback_is_local_only(self) -> "Config":
