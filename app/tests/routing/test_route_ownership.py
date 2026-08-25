@@ -19,7 +19,20 @@ from app.main import app
 #: 오류 봉투 없이도 되는 라우터. `AuthError` 만 던지고, 그것은 전역 처리기가 받는다.
 #: 여기 이름을 더하는 것은 **결정**이다 — 그 라우터에서 `ApiError` 를 쓰면 샌다.
 ENVELOPE_EXEMPT_TAGS = frozenset(
-    {"health", "auth", "guides", "patient-links", "patient-guides", "patient-checkins", "ocr"}
+    {
+        "health",
+        "auth",
+        "guides",
+        "patient-links",
+        "patient-guides",
+        "patient-checkins",
+        "ocr",
+        # `#113`(KEY-91) 이 붙일 자리. `app/services/patient_otp.py` 는
+        # `AuthError` 만 던지므로 봉투가 없어도 전역 처리기가 받는다 — 실측했다.
+        # 병합을 기다리지 않고 먼저 적어 두면, 그 PR 이 들어올 때 이 검사가
+        # **새 라우터를 벗은 것으로 잘못 세지 않는다** (이희진 님 `#110` 리뷰).
+        "patient-auth",
+    }
 )
 
 
