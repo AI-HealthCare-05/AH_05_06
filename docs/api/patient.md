@@ -19,7 +19,8 @@
 | 영역 | 현재 최소 계약 | 관련 Jira |
 |---|---|---|
 | 환자 링크 | 개발용 링크 한 건으로 승인 안내 조회. 실제 SMS·예약 발송은 후속 범위 | [KEY-90](https://leehee.atlassian.net/browse/KEY-90) |
-| OTP·환자 세션 | 운영용 OTP·세션 계약 확정 필요 | [KEY-78](https://leehee.atlassian.net/browse/KEY-78) |
+| OTP | 6자리·3분 유효, 5회 실패 시 10분 잠금 | [KEY-91](https://leehee.atlassian.net/browse/KEY-91) |
+| 환자 세션 | 30분 세션 계약·구현은 후속 범위 | [KEY-78](https://leehee.atlassian.net/browse/KEY-78) |
 | 승인 안내 조회 | 승인 완료 안내만 제공하고 원본·미승인 안내는 차단 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
 | 챗봇 | 승인된 구조화 데이터와 지식만 컨텍스트로 사용 | [KEY-77](https://leehee.atlassian.net/browse/KEY-77) |
 | D+7 응답 | 복약·통증 응답 한 건을 `visit_id`에 연결 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
@@ -48,9 +49,46 @@ GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증�
 - 조회 응답에는 승인된 섹션의 최종 문구만 포함한다. 환자정보, OCR·의료문서 원문,
   생성 원문, 내부 경고와 승인자 식별자는 포함하지 않는다.
 - 없는 토큰은 `404 LINK_NOT_FOUND`, 만료 토큰은 `410 LINK_EXPIRED`다.
-- 실제 SMS·예약 발송·운영 OTP·폐기·재발급 전체 흐름은 이번 계약 범위 밖이다.
+- 실제 SMS·예약 발송·폐기·재발급 전체 흐름은 이번 계약 범위 밖이다. OTP는
+  아래 KEY-91 계약을 사용하며, 환자 세션이 연결되기 전까지 개발 링크 조회
+  자체를 OTP로 차단하지 않는다.
 
-### 2.2 D+7 복약·통증 응답 — KEY-151 최소 계약
+### 2.2 환자 OTP — KEY-91
+
+```text
+POST /api/v1/patient-auth/otp/issue
+     { "link_token": "…" }
+200  { "expires_at": "…", "retry_after_seconds": 60 }
+
+POST /api/v1/patient-auth/otp/verify
+     { "link_token": "…", "code": "123456" }
+200  { "verified": true }
+```
+
+- OTP는 숫자 6자리이며 발급 시점부터 3분간 유효하다.
+- 같은 링크의 재발급은 마지막 발급부터 60초 뒤 허용한다. 그 전에는
+  `429 OTP_RESEND_TOO_SOON`과 동일한 초 단위 `Retry-After`·`retry_after_seconds`를
+  반환하며 OTP를 교체하거나 전송하지 않는다.
+- 연속 5회 실패하면 링크 단위로 10분간 잠근다. 재발급해도 실패 횟수와
+  잠금은 초기화되지 않으며, 잠금 중 발급·검증은 모두 `429 OTP_LOCKED`다.
+- 재발급하면 이전 OTP는 즉시 무효화한다. 성공한 OTP는 다시 사용할 수 없다.
+- OTP 원문은 저장하지 않는다. 서버 비밀키·무작위 salt를 사용한 HMAC digest만
+  저장하며 API 응답과 로그에도 원문을 포함하지 않는다.
+- 실제 SMS 공급자는 이번 일감에 포함하지 않는다. 공급자가 연결되지 않은
+  환경은 성공을 가장하지 않고 `503 OTP_DELIVERY_UNAVAILABLE`을 반환한다.
+- `patient.sms_consent=false`인 수신 거부 환자는 OTP 상태를 만들거나 전송하지
+  않고 `409 SMS_OPT_OUT`으로 차단한다.
+- OTP 상태는 행 잠금 트랜잭션에서 먼저 반영한 뒤 잠금을 해제하고 외부
+  전송을 호출한다. 전송 실패 시 동일한 최신 digest가 아직 소비되지 않은
+  경우에만 신규 발급을 삭제하거나 이전 OTP 상태를 복원하여 동시 변경을
+  덮어쓰지 않는다.
+- 검증 성공은 OTP 확인만 뜻한다. 30분 환자 세션 발급과 승인 안내 조회 차단은
+  KEY-78의 후속 일감에서 연결한다.
+- 주요 오류는 `404 LINK_NOT_FOUND`, `410 LINK_EXPIRED`, `409 OTP_NOT_ISSUED`,
+  `401 OTP_INVALID`, `410 OTP_EXPIRED`, `409 OTP_ALREADY_USED`,
+  `409 SMS_OPT_OUT`, `429 OTP_RESEND_TOO_SOON`, `429 OTP_LOCKED`다.
+
+### 2.3 D+7 복약·통증 응답 — KEY-151 최소 계약
 
 > 2026-08-24 · 8/27 Walking Skeleton 한정. KEY-90 개발용 링크의 같은 원문
 > 토큰을 사용하며 실제 SMS·운영 OTP·실시간 신호 API는 이번 구현 범위 밖이다.
@@ -84,6 +122,48 @@ GET  /api/v1/visits/{visit_id}/checkin       직원 인증 필요
   `409 CHECKIN_ALREADY_ANSWERED`다.
 - 병원 조회는 같은 병원의 `staff` 또는 `doctor`만 가능하다. 없는 응답과 타
   병원 응답은 모두 `404 CHECKIN_NOT_FOUND`로 감춘다.
+
+### 2.3 환자 이용 이벤트 — KEY-170 기록 계약
+
+> 2026-08-25 · **API가 아니라 기록 인터페이스다.** 이 절은 새 엔드포인트를
+> 정의하지 않는다. 환자가 안내를 열거나 챗봇을 쓴 **결과의 모양**만 남기는
+> 내부 계약이며, KEY-95·KEY-96이 같은 인터페이스를 부른다.
+
+```python
+from app.services.patient_usage import PatientUsageService
+
+await PatientUsageService().record_guide_view(guide_document_id)
+
+await PatientUsageService().record_chatbot_answer(
+    guide_document_id,
+    question_kind=PatientQuestionKind.MEDICATION,   # 갈래만
+    outcome=PatientAnswerOutcome.BLOCKED,           # 답함·막음·못함
+    grounded_section=GuideSectionKey.CAUTION,       # 어느 승인 섹션을 근거로 삼았나
+)
+```
+
+- 남기는 것은 **여섯 가지뿐**이다. 안내문 식별자, 이벤트 유형, 질문 갈래,
+  응답 결과, 근거 섹션, 발생 시각.
+- **질문·답변·프롬프트 원문과 링크 토큰 원문은 남기지 않는다.** 값을 비우는
+  것이 아니라 `patient_usage_event` 표에 **담을 칸을 두지 않는다.**
+  칸이 생기면 `app/tests/patient_usage/` 의 칸 목록 검사가 죽는다.
+- `visit_id`를 사본으로 두지 않고 `guide_document_id`를 통해 도달한다.
+  두 값이 어긋날 자리를 만들지 않기 위해서다.
+- 승인 완료(`SCHEDULED_TO_SEND`) 안내에만 남는다. 미승인 안내와 없는 안내는
+  **똑같이** `404 GUIDE_NOT_FOUND`다. 답이 다르면 그 차이만으로 진료의 존재를
+  알 수 있다.
+- 병원이 붙는 자리는 **환자 링크 토큰이 정한다.** 기록 인터페이스는 병원
+  번호를 받지 않으므로 타 병원 안내에 이벤트가 붙을 경로가 없다.
+- **이 이벤트를 돌려주는 조회 API는 만들지 않는다.** 병원 사용자가 환자 챗봇
+  원문을 열람할 창구를 두지 않기 위해서다(`docs/api/hospital.md` §9와 같은 결).
+
+#### 아직 연결되지 않은 호출 지점
+
+| 부르는 쪽 | 부를 것 | 상태 |
+|---|---|---|
+| `GET /api/v1/guides/{token}` | `record_guide_view()` | **연결 완료** — KEY-170 |
+| 챗봇 스트리밍 UI (KEY-95) | `record_chatbot_answer()` | 미연결 — 챗봇 화면 자체가 미구현 |
+| LLM·RAG 응답 경로 (KEY-96) | `record_chatbot_answer()` | 미연결 — 질문 갈래 분류와 차단 판정이 KEY-96 범위 |
 
 ## 3. D+7 복약 신호 — `POST /checkins/{token}/signals`
 

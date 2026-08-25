@@ -32,22 +32,7 @@ function ocrRequest(path, options) {
 }
 
 var ocrApi = {
-  /* 이 진료의 판독 작업이 무엇인지 묻는다.
-
-     **계약에 이 자리가 비어 있다.** `#32`(KEY-60)에는 `POST /documents/{id}/ocr`
-     로 만들고 `GET /ocr/jobs/{id}` 로 보는 길만 있고, 「이 진료의 작업」을 찾는
-     길이 없다. 화면은 왼쪽에서 고른 진료로 시작하므로 반드시 필요하다.
-
-     서버가 붙을 때는 진료 응답이 `ocr_job_id` 를 들고 오는 편이 낫다 —
-     왕복이 하나 줄고, 「작업이 아직 없다」도 같은 응답으로 말할 수 있다.
-
-     이 자리를 채우는 것은 **KEY-133** 이다 — 「`visit_id` 로 접근 가능한 OCR
-     작업을 조회하는 공식 계약」이 그 일감의 범위이고, 아래 임시 호출을 실제
-     계약으로 교체하는 것까지 적혀 있다. 그때까지 목업이 진료 번호로 만든다.
-
-     처음에는 KEY-109 로 적어 뒀는데 그건 「이전 값 유지·이번 미시행」의 뜻을
-     정하는 일감이다. 성격이 다른 계약을 한 일감에 쌓으면 어느 것이 끝나야
-     무엇이 풀리는지 알 수 없게 된다. */
+  /* GET /visits/{visitId}/ocr-job — KEY-133 */
   jobForVisit: function (visitId) {
     if (MOCK) return mockJobForVisit(visitId);
     return request("/visits/" + visitId + "/ocr-job");

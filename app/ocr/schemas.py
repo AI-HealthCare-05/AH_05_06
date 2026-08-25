@@ -6,11 +6,6 @@ from app.dtos.base import StrictModel
 from app.models.ocr import OcrDocumentType, OcrJobStatus
 
 
-class StartOcrRequest(StrictModel):
-    visit_id: int = Field(gt=0)
-    document_type: OcrDocumentType
-
-
 class OcrJobResponse(StrictModel):
     ocr_job_id: str
     status: OcrJobStatus
