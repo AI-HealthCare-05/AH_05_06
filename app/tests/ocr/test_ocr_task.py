@@ -119,7 +119,10 @@ class TestProcessOcrJob(TestCase):
         assert result.model_name == _CLOVA_MODEL_NAME
 
         fields = await OcrField.filter(ocr_result=result).all()
-        assert len(fields) >= 1
+        field_types = {f.field_type for f in fields}
+        # raw_text "CA-125 : 48 U/mL\nAMH : 2.8 ng/mL" 에서 두 필드 모두 추출되어야 한다
+        assert "CA_125" in field_types
+        assert "AMH" in field_types
 
     # ── CLOVA 실패 → fixture fallback ────────────────────────────────────────
 

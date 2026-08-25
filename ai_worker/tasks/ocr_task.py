@@ -6,9 +6,9 @@
   CLOVA 비활성: fixture fallback → COMPLETED
   파일/DB 오류 : OcrJob.status → FAILED
 
-필드 파싱 현황:
-  현재는 CLOVA raw_text 전체를 단일 RAW_TEXT 필드로 저장한다.
-  8/27 멘토링 후 문서 유형·핵심 필드 확정 시 _extract_fields() 함수를 교체한다 (step 6).
+필드 파싱:
+  와이어프레임 S1-6~9 근거로 문서 유형별 핵심 필드를 추출한다 (field_extractor.py).
+  패턴 정확도는 8/27 멘토링 후 실제 CLOVA 출력을 확인하고 보정한다.
 """
 
 import asyncio
@@ -21,6 +21,7 @@ from tortoise.transactions import in_transaction
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, call_clova_ocr
 from ai_worker.core import config, default_logger
+from ai_worker.tasks.field_extractor import extract_fields
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentText,
@@ -115,7 +116,7 @@ async def _save_clova_result(
             model_name=_CLOVA_MODEL_NAME,
             using_db=conn,
         )
-        first_doc_text: OcrDocumentText | None = None
+        doc_text_map: dict[int, OcrDocumentText] = {}
         for jd in job_documents:
             clova_result = clova_results.get(jd.document_id)
             doc_text = await OcrDocumentText.create(
@@ -125,12 +126,9 @@ async def _save_clova_result(
                 raw_text=clova_result.raw_text if clova_result else None,
                 using_db=conn,
             )
-            if first_doc_text is None:
-                first_doc_text = doc_text
+            doc_text_map[jd.document_id] = doc_text
 
-        # TODO(KEY-56 step6): 8/27 멘토링 후 field_type별 파싱 로직으로 교체한다.
-        # 현재는 첫 번째 문서의 텍스트를 RAW_TEXT 필드 하나로 저장해 수정·확정 계약을 유지한다.
-        await _extract_fields(ocr_result, first_doc_text, job_documents, clova_results, conn)
+        await _extract_fields(ocr_result, doc_text_map, job_documents, clova_results, conn)
 
         completed_at = now()
         job.status = OcrJobStatus.COMPLETED
@@ -144,29 +142,36 @@ async def _save_clova_result(
 
 async def _extract_fields(
     ocr_result: OcrResult,
-    first_doc_text: OcrDocumentText | None,
+    doc_text_map: dict[int, OcrDocumentText],
     job_documents: list[OcrJobDocument],
     clova_results: dict[int, ClovaOcrResult],
     conn: BaseDBAsyncClient,
 ) -> None:
-    """CLOVA 결과에서 OcrField를 생성한다.
+    """CLOVA 결과에서 문서 유형별 핵심 필드를 추출해 OcrField로 저장한다.
 
-    현재 구현: 첫 번째 문서의 raw_text를 RAW_TEXT 필드 하나로 저장한다.
-    step 6에서 문서 유형별 핵심 필드 추출 로직으로 교체한다.
+    와이어프레임 S1-6~9 근거 (2026-08-25).
+    패턴 정확도는 8/27 멘토링 후 실제 CLOVA 출력으로 보정한다.
+    동일 field_type은 첫 번째 문서 기준으로 저장하고 나머지는 스킵한다.
     """
-    if not first_doc_text or not job_documents:
-        return
-    first_clova = clova_results.get(job_documents[0].document_id)
-    if first_clova is None:
-        return
-    await OcrField.create(
-        ocr_result=ocr_result,
-        document_text=first_doc_text,
-        field_type="RAW_TEXT",
-        extracted_value=first_clova.raw_text[:500] if first_clova.raw_text else None,
-        confidence=None,
-        using_db=conn,
-    )
+    seen_types: set[str] = set()
+    for jd in job_documents:
+        clova_result = clova_results.get(jd.document_id)
+        doc_text = doc_text_map.get(jd.document_id)
+        if clova_result is None or doc_text is None:
+            continue
+
+        for field in extract_fields(clova_result, OcrDocumentType(jd.document_type)):
+            if field.field_type in seen_types:
+                continue
+            seen_types.add(field.field_type)
+            await OcrField.create(
+                ocr_result=ocr_result,
+                document_text=doc_text,
+                field_type=field.field_type,
+                extracted_value=field.extracted_value,
+                confidence=field.confidence,
+                using_db=conn,
+            )
 
 
 async def _fallback_or_fail(
