@@ -62,6 +62,28 @@ function alreadyDone(visit) {
   return !!(visit && visit.work_category && visit.work_category !== "APPROVAL_REQUESTED");
 }
 
+/* 안내문을 못 불러왔을 때 **무엇 때문인지**를 원장님 말로 옮긴다 — KEY-126.
+ *
+ * 예전에는 무엇이 오든 「잠시 뒤 다시 시도해 주세요」였다. 그런데 `404
+ * GUIDE_NOT_FOUND` 는 **기다린다고 생기지 않는다** — 아직 아무도 안 만든
+ * 것이다. 그 화면에서 원장님은 없는 것을 기다리며 새로고침을 반복한다
+ * (`#106` 이 남긴 제한사항).
+ *
+ * 의사 화면에는 안내문을 만드는 길이 없다(승인·되돌리기뿐). 그래서 「만드세요」
+ * 라고 하지 않는다 — **없는 버튼을 가리키지 않는다.** 지금 무슨 상태인지만
+ * 정확히 말한다.
+ */
+function guideLoadSaying(error) {
+  var status = error && error.status;
+  if (status === 404) {
+    return "아직 안내문이 없습니다. 판독 결과 확인이 끝나고 안내문이 만들어지면 여기에 보입니다.";
+  }
+  if (status === 403) {
+    return "안내문을 볼 수 없습니다. 의사 계정으로 로그인했는지 확인해 주세요.";
+  }
+  return "안내문을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
+}
+
 (function () {
   /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
      이 파일은 `doctor.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
@@ -382,9 +404,9 @@ function alreadyDone(visit) {
         renderSummary();
         renderRole();
       })
-      .catch(function () {
+      .catch(function (error) {
         if (mine !== loadSeq) return;
-        el("panel").innerHTML = '<p class="block__hint">안내문을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.</p>';
+        el("panel").innerHTML = '<p class="block__hint">' + esc(guideLoadSaying(error)) + "</p>";
         renderRole(); // guide 가 null 이라 잠긴 채로 남는다
       });
   }

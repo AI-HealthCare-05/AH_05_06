@@ -84,7 +84,9 @@
         <h1 class="pane__title">③ 판독 결과 확인</h1>
 
         <!-- 판독 중 · 판독 실패 · 결과 없음이 여기로 온다 -->
-        <section class="state" id="state" hidden></section>
+        <!-- 판독 상태는 화면 가운데가 통째로 바뀌는 자리다. 소리로도 알리고,
+             손대야 하는 상태면 커서가 여기로 온다 (KEY-126). -->
+        <section class="state" id="state" role="status" aria-live="polite" tabindex="-1" hidden></section>
 
         <div id="work">
           <div class="review">

@@ -63,6 +63,55 @@ function jobPhase(job) {
   return { phase: "ready", showsWork: true, retryByReupload: false };
 }
 
+/* 판독이 왜 실패했는지를 **스탭의 말**로 옮긴다 — KEY-126.
+ *
+ * 예전에는 `OCR_ENGINE_TIMEOUT` 을 그대로 보여 줬다. 기계 말이라 스탭이 이걸
+ * 보고 내릴 수 있는 판단이 없고, 「내가 뭘 잘못했나」로 읽힌다.
+ *
+ * **코드 목록은 닫혀 있지 않다.** 서버의 `failure_code` 는 `CharField(64)` 라
+ * 아무 값이나 올 수 있고, 실제 판독기는 아직 안 붙었다(KEY-56). 그래서 아는
+ * 것만 옮기고 나머지를 코드로 흘리면 결국 원문이 보이는 화면이 남는다 —
+ * **모르는 코드에도 사람 말을 준다.**
+ *
+ * 코드 자체는 버리지 않고 화면 아래 작게 남긴다. 스탭이 문의할 때 그 한 줄이
+ * 필요하다. 다만 그것은 머리말이 아니라 꼬리말이다.
+ */
+var FAILURE_SAYINGS = {
+  OCR_ENGINE_TIMEOUT: "판독이 정해진 시간 안에 끝나지 않았습니다.",
+  OCR_ENGINE_ERROR: "판독기가 문서를 처리하지 못했습니다.",
+  UNREADABLE: "문서의 글자를 알아볼 수 없었습니다.",
+};
+
+function failureSaying(code) {
+  return {
+    title: "판독하지 못했습니다",
+    why: FAILURE_SAYINGS[code] || "판독기가 문서를 읽지 못했습니다.",
+    next: "진료기록을 다시 올리면 판독을 다시 시작합니다.",
+    code: code || null,
+  };
+}
+
+/* 화면 전체 상태의 **무게**. 오른쪽 항목 목록은 빨강·노랑으로 우선순위를
+ * 나누는데 전체 상태만 그 규칙 밖에 있었다 — 「처리 중」과 「실패」가 똑같이
+ * 가운데 정렬한 흰 박스였다(KEY-126 진단 ②).
+ *
+ *   busy   도는 중이다. 기다리면 된다 — 사람이 할 일이 없다
+ *   warn   멈췄다. **사람이 손대야 다음이 있다**
+ *   info   그냥 알림
+ *
+ * `warn` 일 때만 초점을 옮긴다. 저절로 풀리는 상태까지 커서를 뺏으면
+ * 키보드로 일하던 사람이 자리를 잃는다.
+ */
+function stateTone(phase) {
+  if (phase === "processing") return "busy";
+  if (phase === "failed") return "warn";
+  return "info";
+}
+
+function stateTakesFocus(tone) {
+  return tone === "warn";
+}
+
 (function () {
   /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.** 이 파일은
      `ocr-review.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 — 위 순수
@@ -612,25 +661,48 @@ function jobPhase(job) {
 
   /* ── 예외 ─────────────────────────────────────────────────── */
 
-  function showState(html) {
+  /* 방금 그린 상태. 같은 상태를 다시 그릴 때 초점을 또 뺏지 않으려고 둔다 —
+     판독 중에는 되묻기가 반복해서 이 함수를 부른다. */
+  var shownState = null;
+
+  function showState(html, tone) {
+    var weight = tone || "info";
+    stateBox.className = "state state--" + weight;
     stateBox.innerHTML = html;
     stateBox.hidden = false;
     document.getElementById("work").hidden = true;
+
+    var signature = weight + "|" + html;
+    if (stateTakesFocus(weight) && shownState !== signature) {
+      /* 손대야 다음이 있는 상태다. 키보드로 일하는 사람을 여기로 데려온다 —
+         화면 가운데가 통째로 바뀌었는데 커서가 사라진 표에 남아 있으면
+         무슨 일이 일어났는지 알 길이 없다. */
+      stateBox.focus();
+    }
+    shownState = signature;
   }
 
   function showWork() {
     stateBox.hidden = true;
+    shownState = null;
     document.getElementById("work").hidden = false;
   }
 
   function renderJobState(job) {
     var phase = jobPhase(job).phase;
     if (phase === "processing") {
+      /* 숫자만 있으면 **멈춘 건지 도는 건지** 알 수 없다. 막대를 함께 준다.
+         움직임은 `--motion` 을 타므로 「움직임 줄이기」를 켠 사람에게는
+         멈춰 있는 막대만 남는다 (tokens.css). */
       showState(
         '<p class="state__title">판독 중입니다</p>' +
+          '<div class="state__bar"><span class="state__bar-fill" style="width:' +
+          Math.max(0, Math.min(100, Number(job.progress) || 0)) +
+          '%"></span></div>' +
           '<p class="state__body">' +
-          job.progress +
+          escapeHtml(String(job.progress)) +
           "% · 끝나면 이 화면이 저절로 바뀝니다</p>",
+        stateTone("processing"),
       );
       return false;
     }
@@ -646,13 +718,22 @@ function jobPhase(job) {
          지운다 — 이 파일이 「이전 값 유지」·「이번 미시행」에 한 것과 같다.
 
          「재업로드」는 지금 된다. 이 진료의 진료기록 칸으로 돌려보낸다. */
+      var saying = failureSaying(job.failure_code);
       showState(
-        '<p class="state__title">판독하지 못했습니다</p>' +
-          '<p class="state__body">사유 ' +
-          escapeHtml(job.failure_code || "알 수 없음") +
-          " · 진료기록을 다시 올리면 판독을 다시 시작합니다</p>" +
+        '<p class="state__title">' +
+          escapeHtml(saying.title) +
+          "</p>" +
+          '<p class="state__body">' +
+          escapeHtml(saying.why) +
+          " " +
+          escapeHtml(saying.next) +
+          "</p>" +
           '<div class="state__acts">' +
-          '<button class="button" type="button" id="reupload">재업로드</button></div>',
+          '<button class="button" type="button" id="reupload">재업로드</button></div>' +
+          (saying.code
+            ? '<p class="state__code">문의할 때 알려 주세요 · ' + escapeHtml(saying.code) + "</p>"
+            : ""),
+        stateTone("failed"),
       );
       return false;
     }
@@ -889,6 +970,7 @@ function jobPhase(job) {
           showState(
             '<p class="state__title">판독 상태를 확인하지 못했습니다</p>' +
               '<p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
+            "warn",
           );
         });
     }, POLL_MS);
@@ -910,10 +992,11 @@ function jobPhase(job) {
       .catch(function (error) {
         if (mine !== loadSeq) return;
         if (error && error.code === "OCR_RESULT_NOT_READY") {
-          return showState('<p class="state__title">판독 결과가 아직 없습니다</p>');
+          return showState('<p class="state__title">판독 결과가 아직 없습니다</p>', "busy");
         }
         showState(
           '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
+          "warn",
         );
       });
   }
@@ -924,7 +1007,7 @@ function jobPhase(job) {
     jobId = null;
     var mine = ++loadSeq;
     renderPatientHead(next);
-    showState('<p class="state__title">판독 결과를 불러오는 중…</p>');
+    showState('<p class="state__title">판독 결과를 불러오는 중…</p>', "busy");
 
     ocrApi
       .jobForVisit(next.visit_id)
@@ -948,10 +1031,12 @@ function jobPhase(job) {
           return showState(
             '<p class="state__title">판독한 기록이 없습니다</p>' +
               '<p class="state__body">진료기록을 올리면 판독이 시작됩니다.</p>',
+            "info",
           );
         }
         showState(
           '<p class="state__title">결과를 불러오지 못했습니다</p><p class="state__body">잠시 뒤 다시 시도해 주세요.</p>',
+          "warn",
         );
       });
   }
