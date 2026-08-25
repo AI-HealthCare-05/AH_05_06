@@ -109,8 +109,17 @@ function load(...files) {
      * 값을 넣으려 하면 던진다. 화면을 그리는 함수를 검사에서 부르면 조용히
      * 통과하는 대신 그 자리에서 죽는다 — 「검사가 화면까지 본다」는 착각이
      * 제일 비싸다. 화면은 브라우저에서 눈으로 본다. */
+    /* `upload.js` 가 최상위에서 `window.addEventListener` 를 부른다 — 끌어다
+       놓기를 창 전체에서 막는 자리다. 없으면 파일이 아예 안 실려서 순수
+       규칙도 못 꺼낸다. **등록만 받고 아무것도 하지 않는다** — 여기서 이벤트를
+       흉내내기 시작하면 껍데기가 브라우저 흉내로 자라난다. */
+    window: {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+
     document: {
-      getElementById: () => stubElement(),
+      getElementById: () => null,
       querySelector: () => null,
       querySelectorAll: () => [],
       addEventListener: () => {},
