@@ -9,7 +9,6 @@ from httpx import ASGITransport, AsyncClient
 from tortoise.transactions import in_transaction
 
 from app.apis.v1.patient_otp_routers import _otp_service
-from app.core.redis_client import get_redis
 from app.core.storage import LocalFileStorage
 from app.documents.api import get_document_service
 from app.documents.service import DocumentUploadService
@@ -23,8 +22,6 @@ from app.services.patient_otp import PatientOtpService
 from app.tests.auth_base import AuthTestCase, login_headers, make_staff_account
 from app.tests.patient_links.test_patient_otp import RecordingDelivery
 
-PASSWORD = "Synthetic-KEY152-only-1!"
-LOGIN = "/api/v1/auth/login"
 PATIENT_OTP = "152027"
 PATIENT_OTP_SECRET = "synthetic-key152-test-secret-never-used-outside-tests"
 
@@ -39,7 +36,6 @@ class TestKey152WalkingSkeleton(AuthTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.upload_dir = TemporaryDirectory(prefix="key152-")
-        app.dependency_overrides[get_redis] = lambda: self.redis
         app.dependency_overrides[_otp_service] = lambda: PatientOtpService(
             RecordingDelivery(),
             secret_key=PATIENT_OTP_SECRET,
