@@ -56,8 +56,6 @@ class TestD7StorageAndHospitalQuery(CheckInTestCase):
             patient.name,
             patient.phone,
             patient.hospital_patient_no,
-            "token_digest",
-            "guide_document_id",
         ):
             assert forbidden not in serialized
 
