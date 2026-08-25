@@ -24,3 +24,4 @@ class PatientOtpVerifyRequest(StrictModel):
 
 class PatientOtpVerifyResponse(StrictModel):
     verified: Literal[True] = True
+    session_expires_in_seconds: int

@@ -449,6 +449,51 @@
   justify-content: center;
 }
 
+/* 화면 전체 상태에도 **항목 목록과 같은 무게**를 준다 — KEY-126.
+ *
+ * 오른쪽 항목은 빨강·노랑으로 우선순위를 나누는데 전체 상태만 그 규칙 밖에
+ * 있었다. 「판독 중」과 「판독하지 못했습니다」가 똑같이 가운데 정렬한 흰
+ * 박스라, 스탭이 기다려야 하는지 손대야 하는지를 글자를 읽어야만 알았다.
+ *
+ * 색만으로 나누지 않는다 — 왼쪽 굵은 띠로 모양도 함께 다르게 한다(WCAG 1.4.1). */
+.state--warn {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+  box-shadow: inset 3px 0 0 var(--danger);
+  text-align: left;
+}
+
+.state--warn .state__title {
+  color: var(--danger);
+}
+
+.state--warn .state__acts {
+  justify-content: flex-start;
+}
+
+.state--busy {
+  text-align: left;
+}
+
+/* 초점을 받는 상태 박스. 커서를 여기로 옮기므로 어디인지 보여야 한다. */
+.state:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 문의할 때 쓰라고 남기는 코드 원문. **머리말이 아니라 꼬리말이다.** */
+.state__code {
+  margin: var(--s-16) 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* 진행 막대는 `style.css` 의 `.bar` 를 쓴다 — `upload.css` 에 이미 있던 것을
+   공용으로 올렸다. 여기서 또 만들면 두 벌을 유지하게 된다 (이희진 님 `#121`
+   리뷰). 이 화면에서는 위아래로 조금 띄운다. */
+.state .bar {
+  margin: var(--s-8) 0;
+}
 .button {
   height: 40px;
   padding: 0 var(--s-16);

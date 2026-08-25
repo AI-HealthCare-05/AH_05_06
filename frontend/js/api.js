@@ -208,6 +208,31 @@ function mockRequest(path, options) {
  * `api.js` 에 두는 까닭은 **`esc()` 를 쓰는 다섯 파일이 실리는 화면이 모두
  * 이 파일을 먼저 부르기** 때문이다. `shell.js` 는 `checkin.html` 이 안 부른다.
  */
+/* 오류 하나를 **사람 말 한 줄**로 옮긴다 — KEY-126.
+ *
+ * `detail.js` 의 `messageFor()`, `doctor.js` 의 `guideLoadSaying()`,
+ * `ocr-review.js` 의 실패 사유가 셋 다 「status·code 를 보고 문장을 고르고,
+ * 못 고르면 기본 문구」라는 같은 모양을 각자 적고 있었다. 기본 문구를 바꾸거나
+ * 상태코드를 더할 때 세 곳을 따로 고쳐야 하고, 조용히 어긋난다
+ * (이희진 님 `#121` 리뷰).
+ *
+ * 규칙은 **적은 순서대로** 본다. 좁은 것을 먼저 적는다.
+ *
+ *     errorMessage(error, [
+ *       { status: 404, say: "…" },
+ *       { code: "VISIT_LOCKED", say: "…" },
+ *     ], "기본 문구")
+ */
+function errorMessage(error, rules, fallback) {
+  if (!error) return fallback;
+  for (var i = 0; i < rules.length; i += 1) {
+    var rule = rules[i];
+    if (rule.status !== undefined && error.status === rule.status) return rule.say;
+    if (rule.code !== undefined && error.code === rule.code) return rule.say;
+  }
+  return fallback;
+}
+
 function esc(text) {
   return String(text == null ? "" : text).replace(/[&<>"']/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
