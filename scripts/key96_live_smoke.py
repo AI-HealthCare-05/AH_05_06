@@ -16,6 +16,7 @@ os.environ.setdefault("DB_PASSWORD", "synthetic-key96-smoke-not-used")
 from app.models.visits import GuideSectionKey
 from app.services.chatbot import (
     ApprovedContext,
+    ChatModelError,
     OpenAIResponsesModel,
     _instructions,
     _is_extractively_grounded,
@@ -32,7 +33,7 @@ async def main() -> int:
         print(json.dumps({"success": False, "reason": "OPENAI_API_KEY_NOT_SET"}))
         return 2
 
-    model_name = os.environ.get("OPENAI_MODEL", "gpt-5.6")
+    model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
     model = OpenAIResponsesModel(
         api_key=api_key,
         model_name=model_name,
@@ -46,6 +47,18 @@ async def main() -> int:
             instructions=_instructions(),
             prompt=_prompt(SYNTHETIC_QUESTION, section),
         )
+    except ChatModelError as error:
+        print(
+            json.dumps(
+                {
+                    "model": model_name,
+                    "success": False,
+                    "latency_ms": round((perf_counter() - started) * 1000),
+                    "reason": error.reason,
+                }
+            )
+        )
+        return 1
     except Exception:
         print(
             json.dumps(

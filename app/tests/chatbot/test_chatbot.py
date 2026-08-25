@@ -239,3 +239,34 @@ async def test_openai_responses_adapter_disables_storage_and_reads_usage() -> No
 
     assert answer == ModelAnswer("합성 모델 응답", input_tokens=12, output_tokens=3)
     assert '"store":false' in str(captured["body"])
+
+
+async def test_openai_adapter_exposes_only_safe_http_status() -> None:
+    secret_provider_body = "응답 본문에 포함된 노출되면 안 되는 합성 문자열"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            json={
+                "error": {
+                    "message": secret_provider_body,
+                    "type": "insufficient_permissions",
+                    "code": "model_not_allowed",
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        model = OpenAIResponsesModel(
+            api_key="synthetic-not-a-real-key",
+            model_name="synthetic-one-model",
+            base_url="https://synthetic.invalid/v1",
+            client=client,
+        )
+        try:
+            await model.generate(instructions="합성 지시", prompt="합성 질문")
+        except ChatModelError as error:
+            assert error.reason == "provider_http_403_model_not_allowed"
+            assert secret_provider_body not in str(error)
+        else:
+            raise AssertionError("공급자 404가 성공으로 처리됐다")

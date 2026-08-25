@@ -60,7 +60,7 @@ class Config(BaseSettings):
     # KEY-96 환자 챗봇의 단일 실제 모델 경로. 키가 없거나 호출이 실패하면
     # 승인 안내 화면 전체를 멈추지 않고 안전한 고정 응답으로 대체한다.
     OPENAI_API_KEY: SecretStr | None = None
-    OPENAI_MODEL: str = "gpt-5.6"
+    OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_TIMEOUT_SECONDS: float = 20.0
 

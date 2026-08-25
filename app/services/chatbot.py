@@ -28,6 +28,7 @@ MODEL_FAILURE_ANSWER = "지금은 답변을 불러오지 못했어요. 복용을
 UNSAFE_ANSWER = "안전하게 답변할 수 없는 내용이에요. 복용을 중단하거나 변경하지 마시고 담당 병원에 문의해 주세요."
 
 _TOKEN = re.compile(r"[0-9A-Za-z가-힣]+")
+_SAFE_PROVIDER_ERROR = re.compile(r"[a-z0-9_.-]{1,64}")
 _UNSAFE_OUTPUT = re.compile(
     r"(?:진단(?:입니다|으로|받)|(?:약|복용|처방).{0,16}(?:중단|끊으|증량|감량|변경|바꾸|추가)|"
     r"(?:중단|끊으|증량|감량).{0,16}(?:하세요|하십시오|해도))",
@@ -38,6 +39,10 @@ _EMERGENCY_QUESTION = re.compile(r"숨.{0,4}(?:차|쉬기)|가슴.{0,4}(?:아|�
 
 class ChatModelError(RuntimeError):
     """공급자 오류 원문을 환자 응답이나 상위 로그로 전달하지 않는다."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__("chat model request failed")
 
 
 @dataclass(frozen=True)
@@ -92,15 +97,23 @@ class OpenAIResponsesModel:
             )
             response.raise_for_status()
             payload = response.json()
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
-            raise ChatModelError("chat model request failed") from exc
+        except httpx.HTTPStatusError as exc:
+            # 상태 코드와 기계 판독용 code/type만 허용한다. 사람용 message와
+            # 공급자 응답 본문은 예외·로그에 복사하지 않는다.
+            raise ChatModelError(_provider_http_reason(exc.response)) from exc
+        except httpx.TimeoutException as exc:
+            raise ChatModelError("provider_timeout") from exc
+        except httpx.HTTPError as exc:
+            raise ChatModelError("provider_transport_error") from exc
+        except (ValueError, TypeError) as exc:
+            raise ChatModelError("provider_invalid_response") from exc
         finally:
             if owns_client:
                 await client.aclose()
 
         text = _response_text(payload)
         if not text:
-            raise ChatModelError("chat model returned no text")
+            raise ChatModelError("provider_empty_response")
         usage = payload.get("usage") if isinstance(payload, dict) else None
         return ModelAnswer(
             text=text,
@@ -125,6 +138,22 @@ def _response_text(payload: object) -> str:
             if isinstance(part, dict) and part.get("type") == "output_text" and isinstance(part.get("text"), str):
                 return part["text"].strip()
     return ""
+
+
+def _provider_http_reason(response: httpx.Response) -> str:
+    reason = f"provider_http_{response.status_code}"
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        return reason
+    if not isinstance(payload, dict) or not isinstance(payload.get("error"), dict):
+        return reason
+    error = payload["error"]
+    for field in ("code", "type"):
+        value = error.get(field)
+        if isinstance(value, str) and _SAFE_PROVIDER_ERROR.fullmatch(value):
+            return f"{reason}_{value}"
+    return reason
 
 
 def _usage_value(usage: object, key: str) -> int | None:
