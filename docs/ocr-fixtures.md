@@ -15,9 +15,11 @@
 KEY-68 범위 밖 첫 줄이 「합성 이미지의 Git 저장소 커밋」이다. 그래서 **만드는 법만 두고
 만든 것은 안 둔다.** 부를 때마다 같은 값에서 같은 것이 나오므로 보관할 이유가 없다.
 
-`.gitignore` 가 기본 출력 자리(`build/ocr-fixtures/`)를 막는다. 막고 있다는 것은
+기본 출력 자리는 `build/ocr-fixtures/` 이고, `.gitignore` 3행의 `build/` 가 이미 막는다.
+규칙을 새로 더하지 않았다 — 같은 것을 두 곳에 적을 이유가 없다. 막고 있다는 것은
 `app/tests/ocr/test_key68_fixture_spec.py` 의
-`test_the_generator_runs_and_writes_nothing_into_the_repo` 가 **실제로 세어서** 확인한다.
+`test_the_default_output_place_is_ignored_by_git` 이 `git check-ignore` 로 **직접 물어서** 확인하고,
+`test_the_generator_runs_and_writes_nothing_into_the_repo` 가 저장소를 **세어서** 확인한다.
 
 ## 2. 값은 어디서 오는가
 

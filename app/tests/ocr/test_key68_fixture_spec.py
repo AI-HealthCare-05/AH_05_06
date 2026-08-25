@@ -131,7 +131,9 @@ def test_the_default_output_place_is_ignored_by_git() -> None:
     가리키든 안 죽는다 — 돌연변이로 확인했다(`DEFAULT_OUT` 을 `docs/` 로 바꿔도
     전부 초록이었다). 기본값이 곧 사람이 실제로 쓰는 값인데 아무도 안 재고 있었다.
 
-    여기서는 git 에게 직접 묻는다. `.gitignore` 에서 그 줄을 지워도 이 검사가 죽는다.
+    여기서는 git 에게 직접 묻는다 — 어느 줄이 막는지는 상관없다. 지금은
+    `.gitignore` 3행의 `build/` 가 막고 있어서 규칙을 새로 더하지 않았다.
+    그 줄이 사라지거나 기본 출력 자리가 추적되는 곳으로 옮겨지면 여기서 운다.
     """
     from scripts.make_ocr_fixture import DEFAULT_OUT
 
@@ -174,6 +176,33 @@ def test_the_recommended_fields_are_split_out_of_the_combined_column(tmp_path: P
         f"일일횟수가 안 갈렸다: {made['fields']['FREQUENCY']['value']!r}"
     )
     assert made["fields"]["DURATION_DAYS"]["value"] == row["처방일수"]
+
+
+def test_the_expected_json_carries_what_consumers_loop_over(tmp_path: Path) -> None:
+    """`docs/ocr-fixtures.md` §7 이 KEY-56·KEY-69 에게 시킨 것이 실제로 들어 있는가.
+
+    소비자는 `success_requires` 를 돌며 필드를 맞댄다. 그것이 빈 목록이면 **아무것도
+    안 재면서 초록**이 된다. 생성기에서 그 자리를 `[]` 로 바꿔도 검사가 하나도 안
+    죽는 것을 돌연변이로 확인했다 — 문서가 시킨 것을 문서만 알고 있었다.
+    """
+    import json
+
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "make_ocr_fixture.py"), "--out", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=ROOT,
+    )
+    made = json.loads((tmp_path / "SYN-EMS-01.emr.v1.expected.json").read_text(encoding="utf-8"))
+
+    assert set(made["success_requires"]) == REQUIRED_FIELDS, (
+        f"기대값 JSON 의 success_requires 가 필수 셋과 다르다: {made['success_requires']}\n"
+        "  소비자는 이 목록을 돌며 판독 결과를 맞댄다 — 비면 아무것도 안 잰다."
+    )
+    for name in made["success_requires"]:
+        assert made["fields"][name]["value"], f"{name} 값이 비었다"
+        assert made["fields"][name]["required"] is True, f"{name} 이 필수로 안 실렸다"
 
 
 #: 결정 문서와 정본 CSV 가 **지금 다르게 적고 있는 것.** 알고 두는 것이지 봐 주는
