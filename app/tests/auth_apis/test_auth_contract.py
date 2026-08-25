@@ -27,6 +27,7 @@ from app.core.auth_errors import (
 from app.main import app
 from app.services.login_attempts import LOCK_SECONDS, MAX_FAILURES
 from app.services.session_store import IDLE_SECONDS
+from app.tests.routes import API_PREFIX, method_path_pairs
 
 CONTRACT = Path(__file__).parents[3] / "docs" / "api" / "hospital.md"
 
@@ -56,15 +57,13 @@ def documented_endpoints() -> set[tuple[str, str]]:
 
 
 def implemented_endpoints() -> set[tuple[str, str]]:
-    found: set[tuple[str, str]] = set()
-    for route in app.routes:
-        path = getattr(route, "path", "")
-        if not path.startswith("/api/v1/auth"):
-            continue
-        methods: set[str] = getattr(route, "methods", set())
-        for method in methods - {"HEAD", "OPTIONS"}:
-            found.add((method, path))
-    return found
+    """`/auth` 아래 실제로 등록된 (메서드, 경로).
+
+    접두사 판정과 HEAD·OPTIONS 제외는 `app/tests/routes.py` 에 있다.
+    `test_route_ownership.py` 와 **같은 기준**을 써야 하기 때문이다 —
+    각자 적어 두면 한쪽만 고쳐지고, 그때 둘이 다른 세상을 본다 (KEY-169).
+    """
+    return method_path_pairs(prefix=f"{API_PREFIX}/auth")
 
 
 # 계약 밖이지만 아직 살아 있는 것들. **지금은 비어 있다.**
