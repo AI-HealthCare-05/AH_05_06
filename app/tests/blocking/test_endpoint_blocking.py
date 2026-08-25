@@ -36,6 +36,7 @@ from app.tests.blocking.accounts import (
     client,
     make_guide,
     make_ocr,
+    make_patient_and_visit,
     make_staff_in,
 )
 from app.tests.fakes import FakeRedis
@@ -57,13 +58,15 @@ SELF_SCOPED_ROUTES: list[tuple[str, str, dict | None]] = [
 
 #: OCR 다섯. `KEY-116` 때문에 오늘은 실제 토큰으로 부를 수 없다.
 OCR_ROUTES: list[tuple[str, str, dict | None]] = [
-    ("POST", "/api/v1/documents/1/ocr", {"visit_id": 1, "document_type": "EMR"}),
     ("GET", "/api/v1/ocr/jobs/synthetic-job", None),
     ("GET", "/api/v1/ocr/jobs/synthetic-job/result", None),
     ("GET", "/api/v1/ocr/jobs/synthetic-job/fields", None),
     # `base_version` 을 반드시 싣는다. 빠지면 **422 로 먼저 튕겨 인가에 닿지도
     # 못한다** — 권한이 깨져도 이 줄로는 못 잡는다 (이희진 님 `#87` 리뷰).
     ("PATCH", "/api/v1/ocr/fields/1", {"corrected_value": "1", "base_version": 1}),
+    # `POST /documents/{id}/ocr` 는 여기 없다. 업로드가 판독을 함께 시작하므로
+    # 그 수동 경로는 레거시이고 `#112`(KEY-159)가 지운다. 지워질 경로로 인가를
+    # 재면 그 PR 이 이 검사를 만나 죽는다 (이희진 님 `#87` 리뷰).
 ]
 
 
@@ -526,48 +529,6 @@ class TestOcrIsIsolatedByHospital(BlockingTestCase):
             )
         assert response.status_code == 404, f"남의 의원이 필드를 고쳤거나 존재가 샜다: {response.status_code}"
 
-    async def test_another_hospital_cannot_start_ocr_on_the_same_document(self) -> None:
-        """**문서 단위도 갈린다** — 이희진 님 `#87` 리뷰.
-
-        job·result·field 셋만 실제 자료로 재고 있었고, `OcrFixture.document_id`
-        는 `0` 을 넣어 둔 채 아무 데서도 안 썼다. fixture 는 스스로를 「격리
-        검사의 과녁」이라 적어 뒀는데 **그 말과 코드가 어긋나 있었다.**
-
-        여기도 같은 방식이다 — 주인은 되고, 남은 같은 식별자로 404 다.
-        """
-        world, fx = await self.world_with_ocr()
-        body = {"visit_id": world["h1"].visit_id, "document_type": "EMR"}
-        path = f"/api/v1/documents/{fx.document_id}/ocr"
-
-        async with client() as http:
-            theirs = await http.post(path, json=body, headers=world["staff2"].auth)
-
-        assert theirs.status_code == 404, f"남의 의원 문서로 판독을 걸었다: {theirs.status_code}"
-
-    async def test_the_owner_can_start_ocr_on_that_document(self) -> None:
-        """**주인은 되어야 한다.** 위 404 가 격리 때문임을 이 검사가 보증한다."""
-        world, fx = await self.world_with_ocr()
-        body = {"visit_id": world["h1"].visit_id, "document_type": "EMR"}
-
-        async with client() as http:
-            mine = await http.post(f"/api/v1/documents/{fx.document_id}/ocr", json=body, headers=world["staff1"].auth)
-
-        assert mine.status_code == 202, f"주인이 자기 문서로 판독을 못 건다: {mine.status_code} {mine.text[:120]}"
-
-    async def test_a_hidden_document_answers_like_one_that_never_existed(self) -> None:
-        """문서도 **감출 때와 없을 때가 같아야** 한다."""
-        world, fx = await self.world_with_ocr()
-        body = {"visit_id": world["h1"].visit_id, "document_type": "EMR"}
-
-        async with client() as http:
-            hidden = await http.post(f"/api/v1/documents/{fx.document_id}/ocr", json=body, headers=world["staff2"].auth)
-            absent = await http.post("/api/v1/documents/999999/ocr", json=body, headers=world["staff2"].auth)
-
-        assert hidden.status_code == absent.status_code == 404
-        assert hidden.json() == absent.json(), (
-            f"감출 때와 없을 때의 응답이 다르다 — 존재가 샌다\n  감춤: {hidden.text[:120]}\n  없음: {absent.text[:120]}"
-        )
-
     async def test_the_answer_is_the_same_as_for_a_job_that_never_existed(self) -> None:
         """있는 것을 감출 때와 없는 것을 말할 때가 **같아야** 한다.
 
@@ -583,3 +544,96 @@ class TestOcrIsIsolatedByHospital(BlockingTestCase):
         assert hidden.json() == absent.json(), (
             f"감출 때와 없을 때의 응답이 다르다 — 존재가 샌다\n  감춤: {hidden.text[:120]}\n  없음: {absent.text[:120]}"
         )
+
+
+class TestDocumentsDoNotLeakAcrossVisits(BlockingTestCase):
+    """문서가 **진료와 병원 양쪽으로** 갈리는가 — 이희진 님 `#87` 리뷰.
+
+    한때 `POST /documents/{id}/ocr` 로 쟀는데, 업로드가 판독을 함께 시작하므로
+    그 수동 경로는 레거시이고 `#112`(KEY-159)가 지운다. 지워질 경로로 격리를
+    재면 그 PR 이 이 검사를 만나 죽는다.
+
+    그래서 **업로드로 문서를 만들고 `GET /visits/{id}/ocr-jobs` 응답에서**
+    잰다. 그 응답이 `document_id` 를 실어 주므로(`OcrJobByDocumentResponse`)
+    무엇이 보이는지를 그대로 확인할 수 있다.
+
+    이 목록 경로는 남의 것을 `404` 가 아니라 **`200 []`** 로 감춘다. 없는
+    진료도 `200 []` 라 **감출 때와 없을 때가 구별되지 않는다** — 존재가 새지
+    않는다는 뜻이라 그대로 둔다(아래에서 함께 잰다).
+    """
+
+    UPLOAD = "/api/v1/front-desk/visits/{v}/documents"
+    JOBS = "/api/v1/visits/{v}/ocr-jobs"
+
+    async def upload_to(self, visit_id: int, headers: dict) -> int:
+        files = {"files": ("synthetic.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 64, "image/jpeg")}
+        async with client() as http:
+            response = await http.post(self.UPLOAD.format(v=visit_id), headers=headers, files=files)
+        assert response.status_code == 201, f"업로드가 안 된다: {response.status_code} {response.text[:120]}"
+        return response.json()["document_ids"][0]
+
+    async def documents_seen(self, visit_id: int, headers: dict) -> tuple[int, list[int]]:
+        async with client() as http:
+            response = await http.get(self.JOBS.format(v=visit_id), headers=headers)
+        if response.status_code != 200:
+            return response.status_code, []
+        return 200, [row["document_id"] for row in response.json()]
+
+    async def test_the_owner_sees_the_document_they_uploaded(self) -> None:
+        """**주인은 보여야 한다.** 아래 「안 보인다」들이 격리 때문임을 이것이 보증한다."""
+        world = await build_two_hospitals()
+        document_id = await self.upload_to(world["h1"].visit_id, world["staff1"].auth)
+
+        status_code, seen = await self.documents_seen(world["h1"].visit_id, world["staff1"].auth)
+
+        assert status_code == 200
+        assert document_id in seen, f"올린 문서가 자기 목록에 없다: {seen}"
+
+    async def test_another_hospital_does_not_see_it(self) -> None:
+        """남의 의원 직원에게는 **한 건도** 안 보인다."""
+        world = await build_two_hospitals()
+        document_id = await self.upload_to(world["h1"].visit_id, world["staff1"].auth)
+
+        _, seen = await self.documents_seen(world["h1"].visit_id, world["staff2"].auth)
+
+        assert document_id not in seen, "남의 의원 직원에게 문서가 샜다"
+        assert seen == [], f"남의 의원 진료에서 무언가 보인다: {seen}"
+
+    async def test_a_document_does_not_cross_to_another_visit_of_the_same_hospital(self) -> None:
+        """**같은 의원이라도 진료가 다르면 안 섞인다** (이희진 님 `#87` 리뷰).
+
+        병원만 맞으면 통과하는 구현이면 여기서 걸린다. 한 환자의 지난 진료
+        문서가 오늘 진료에 붙으면 스탭은 **다른 날 기록을 오늘 것으로 읽는다.**
+        """
+        world = await build_two_hospitals()
+        _, other_visit = await make_patient_and_visit(world["h1"].hospital_id, "BLK-H1-002")
+
+        mine = await self.upload_to(world["h1"].visit_id, world["staff1"].auth)
+        theirs = await self.upload_to(other_visit, world["staff1"].auth)
+
+        _, seen_here = await self.documents_seen(world["h1"].visit_id, world["staff1"].auth)
+        _, seen_there = await self.documents_seen(other_visit, world["staff1"].auth)
+
+        assert seen_here == [mine], f"이 진료에 다른 진료 문서가 섞였다: {seen_here}"
+        assert seen_there == [theirs], f"저 진료에 다른 진료 문서가 섞였다: {seen_there}"
+
+    async def test_hiding_and_not_existing_look_the_same(self) -> None:
+        """감출 때와 없을 때가 **같아야** 한다.
+
+        다르면 그 차이만으로 「그 의원에 그런 진료가 있다」를 알 수 있다.
+        이 경로는 둘 다 `200 []` 다 — 404 를 쓰는 다른 OCR 경로와 다르지만,
+        구별되지 않는다는 목적은 같다.
+        """
+        world = await build_two_hospitals()
+        await self.upload_to(world["h1"].visit_id, world["staff1"].auth)
+
+        hidden = await self.documents_seen(world["h1"].visit_id, world["staff2"].auth)
+        absent = await self.documents_seen(999_999, world["staff2"].auth)
+
+        assert hidden == absent, f"감출 때와 없을 때가 다르다 — 존재가 샌다\n  감춤: {hidden}\n  없음: {absent}"
+
+    async def test_no_token_cannot_read_the_list(self) -> None:
+        world = await build_two_hospitals()
+        async with client() as http:
+            response = await http.get(self.JOBS.format(v=world["h1"].visit_id))
+        assert response.status_code == 401
