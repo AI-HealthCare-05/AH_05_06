@@ -58,7 +58,7 @@ GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증�
 ```text
 POST /api/v1/patient-auth/otp/issue
      { "link_token": "…" }
-200  { "expires_at": "…", "retry_after_seconds": 180 }
+200  { "expires_at": "…", "retry_after_seconds": 60 }
 
 POST /api/v1/patient-auth/otp/verify
      { "link_token": "…", "code": "123456" }
@@ -66,6 +66,9 @@ POST /api/v1/patient-auth/otp/verify
 ```
 
 - OTP는 숫자 6자리이며 발급 시점부터 3분간 유효하다.
+- 같은 링크의 재발급은 마지막 발급부터 60초 뒤 허용한다. 그 전에는
+  `429 OTP_RESEND_TOO_SOON`과 동일한 초 단위 `Retry-After`·`retry_after_seconds`를
+  반환하며 OTP를 교체하거나 전송하지 않는다.
 - 연속 5회 실패하면 링크 단위로 10분간 잠근다. 재발급해도 실패 횟수와
   잠금은 초기화되지 않으며, 잠금 중 발급·검증은 모두 `429 OTP_LOCKED`다.
 - 재발급하면 이전 OTP는 즉시 무효화한다. 성공한 OTP는 다시 사용할 수 없다.
@@ -77,7 +80,7 @@ POST /api/v1/patient-auth/otp/verify
   KEY-78의 후속 일감에서 연결한다.
 - 주요 오류는 `404 LINK_NOT_FOUND`, `410 LINK_EXPIRED`, `409 OTP_NOT_ISSUED`,
   `401 OTP_INVALID`, `410 OTP_EXPIRED`, `409 OTP_ALREADY_USED`,
-  `429 OTP_LOCKED`다.
+  `429 OTP_RESEND_TOO_SOON`, `429 OTP_LOCKED`다.
 
 ### 2.3 D+7 복약·통증 응답 — KEY-151 최소 계약
 

@@ -14,7 +14,7 @@ from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import GuideDocument, GuideStatus, PatientGuideLink, PatientOtpChallenge, Visit
 from app.services.patient_links import digest_link_token
-from app.services.patient_otp import OTP_LOCK_DURATION, OTP_TTL, PatientOtpService
+from app.services.patient_otp import OTP_LOCK_DURATION, OTP_RESEND_COOLDOWN, OTP_TTL, PatientOtpService
 
 LINK_TOKEN = "SYN-key91-link-token-not-a-real-patient-token"
 OTP = "042731"
@@ -99,7 +99,7 @@ class TestPatientOtpHappyPath(PatientOtpTestCase):
         issued = await self.issue()
 
         assert issued.status_code == 200
-        assert issued.json()["retry_after_seconds"] == int(OTP_TTL.total_seconds())
+        assert issued.json()["retry_after_seconds"] == int(OTP_RESEND_COOLDOWN.total_seconds())
         assert OTP not in issued.text
         assert self.delivery.sent == [("01000009100", OTP)]
 
@@ -122,6 +122,22 @@ class TestPatientOtpHappyPath(PatientOtpTestCase):
 
 
 class TestPatientOtpFailurePolicy(PatientOtpTestCase):
+    async def test_reissue_is_limited_for_sixty_seconds_without_sending_or_rotating_the_code(self) -> None:
+        await make_link()
+        assert (await self.issue()).status_code == 200
+        original = await PatientOtpChallenge.get()
+        original_digest = original.otp_digest
+
+        repeated = await self.issue()
+
+        assert repeated.status_code == 429
+        assert repeated.json()["code"] == "OTP_RESEND_TOO_SOON"
+        assert 59 <= repeated.json()["retry_after_seconds"] <= int(OTP_RESEND_COOLDOWN.total_seconds())
+        assert repeated.headers["retry-after"] == str(repeated.json()["retry_after_seconds"])
+        assert len(self.delivery.sent) == 1
+        saved = await PatientOtpChallenge.get()
+        assert saved.otp_digest == original_digest
+
     async def test_fifth_failure_locks_issue_and_verify_for_ten_minutes(self) -> None:
         await make_link()
         assert (await self.issue()).status_code == 200
@@ -152,6 +168,9 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         await make_link()
         assert (await self.issue()).status_code == 200
         assert (await self.verify("000000")).json()["remaining_attempts"] == 4
+        challenge = await PatientOtpChallenge.get()
+        challenge.issued_at = now() - OTP_RESEND_COOLDOWN - timedelta(seconds=1)
+        await challenge.save(update_fields=["issued_at"])
 
         replacement = "654321"
         with patch("app.services.patient_otp.secrets.randbelow", return_value=int(replacement)):
@@ -163,6 +182,27 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         assert reissued.status_code == 200
         assert (await self.verify(OTP)).json()["remaining_attempts"] == 3
         assert (await self.verify(replacement)).status_code == 200
+
+    async def test_elapsed_lock_is_released_and_failure_count_starts_again(self) -> None:
+        await make_link()
+        assert (await self.issue()).status_code == 200
+        challenge = await PatientOtpChallenge.get()
+        challenge.failed_attempts = 5
+        challenge.locked_until = now() - timedelta(seconds=1)
+        challenge.issued_at = now() - OTP_RESEND_COOLDOWN - timedelta(seconds=1)
+        await challenge.save(update_fields=["failed_attempts", "locked_until", "issued_at"])
+
+        failed_after_unlock = await self.verify("000000")
+
+        assert failed_after_unlock.status_code == 401
+        assert failed_after_unlock.json()["remaining_attempts"] == 4
+        released = await PatientOtpChallenge.get()
+        assert released.locked_until is None
+        assert released.failed_attempts == 1
+
+        reissued = await self.issue()
+        assert reissued.status_code == 200
+        assert len(self.delivery.sent) == 2
 
     async def test_expired_otp_is_rejected(self) -> None:
         await make_link()

@@ -17,6 +17,7 @@ from app.services.patient_links import digest_link_token
 
 OTP_TTL = timedelta(minutes=3)
 OTP_LOCK_DURATION = timedelta(minutes=10)
+OTP_RESEND_COOLDOWN = timedelta(seconds=60)
 OTP_MAX_FAILURES = 5
 OTP_LENGTH = 6
 
@@ -55,6 +56,17 @@ def _locked(challenge: PatientOtpChallenge, timestamp: datetime) -> ApiError:
     )
 
 
+def _resend_too_soon(challenge: PatientOtpChallenge, timestamp: datetime) -> ApiError:
+    retry_after = _seconds_until(challenge.issued_at + OTP_RESEND_COOLDOWN, timestamp)
+    return ApiError(
+        "OTP_RESEND_TOO_SOON",
+        429,
+        "인증번호는 잠시 뒤 다시 요청해 주세요.",
+        extra={"retry_after_seconds": retry_after},
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 class PatientOtpService:
     def __init__(self, delivery: OtpDelivery, *, secret_key: str | None = None) -> None:
         self.delivery = delivery
@@ -83,15 +95,20 @@ class PatientOtpService:
         return link
 
     @staticmethod
-    async def _release_elapsed_lock(challenge: PatientOtpChallenge, timestamp: datetime) -> None:
+    async def _release_elapsed_lock(
+        challenge: PatientOtpChallenge,
+        timestamp: datetime,
+        connection: BaseDBAsyncClient,
+    ) -> None:
         if challenge.locked_until is not None and challenge.locked_until <= timestamp:
             challenge.locked_until = None
             challenge.failed_attempts = 0
-            await challenge.save(update_fields=["locked_until", "failed_attempts", "updated_at"])
+            await challenge.save(
+                using_db=connection,
+                update_fields=["locked_until", "failed_attempts", "updated_at"],
+            )
 
     async def issue(self, raw_link_token: str) -> PatientOtpChallenge:
-        code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
-        salt = secrets.token_hex(16)
         timestamp = now()
 
         async with in_transaction() as connection:
@@ -103,10 +120,14 @@ class PatientOtpService:
                 .first()
             )
             if challenge is not None:
-                await self._release_elapsed_lock(challenge, timestamp)
+                await self._release_elapsed_lock(challenge, timestamp, connection)
                 if challenge.locked_until is not None:
                     raise _locked(challenge, timestamp)
+                if challenge.issued_at + OTP_RESEND_COOLDOWN > timestamp:
+                    raise _resend_too_soon(challenge, timestamp)
 
+                code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
+                salt = secrets.token_hex(16)
                 challenge.otp_digest = _otp_digest(code, salt, self.secret_key)
                 challenge.otp_salt = salt
                 challenge.expires_at = timestamp + OTP_TTL
@@ -124,6 +145,8 @@ class PatientOtpService:
                     ],
                 )
             else:
+                code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
+                salt = secrets.token_hex(16)
                 challenge = await PatientOtpChallenge.create(
                     patient_guide_link=link,
                     otp_digest=_otp_digest(code, salt, self.secret_key),
@@ -159,7 +182,7 @@ class PatientOtpService:
             if challenge is None:
                 raise ApiError("OTP_NOT_ISSUED", 409, "인증번호를 먼저 요청해 주세요.")
 
-            await self._release_elapsed_lock(challenge, timestamp)
+            await self._release_elapsed_lock(challenge, timestamp, connection)
             if challenge.locked_until is not None:
                 raise _locked(challenge, timestamp)
             if challenge.consumed_at is not None:

@@ -10,7 +10,7 @@ from app.dtos.patient_otp import (
     PatientOtpVerifyRequest,
     PatientOtpVerifyResponse,
 )
-from app.services.patient_otp import OTP_TTL, PatientOtpService, UnavailableOtpDelivery
+from app.services.patient_otp import OTP_RESEND_COOLDOWN, PatientOtpService, UnavailableOtpDelivery
 
 patient_otp_router = APIRouter(prefix="/patient-auth/otp", tags=["patient-auth"])
 
@@ -27,7 +27,7 @@ async def issue_patient_otp(
     challenge = await service.issue(payload.link_token)
     return PatientOtpIssueResponse(
         expires_at=challenge.expires_at,
-        retry_after_seconds=int(OTP_TTL.total_seconds()),
+        retry_after_seconds=int(OTP_RESEND_COOLDOWN.total_seconds()),
     )
 
 
