@@ -259,3 +259,78 @@ class CheckIn(models.Model):
     class Meta:
         table = "check_in"
         indexes = (("created_at",),)
+
+
+class PatientUsageEventType(StrEnum):
+    """환자가 한 일. **무엇을 했는지만 남기고 무엇을 말했는지는 남기지 않는다.**"""
+
+    GUIDE_VIEWED = "GUIDE_VIEWED"
+    CHATBOT_ANSWERED = "CHATBOT_ANSWERED"
+
+
+class PatientQuestionKind(StrEnum):
+    """물음의 **갈래**. 물음 자체가 아니다.
+
+    「비잔 먹고 머리가 아픈데 계속 먹어도 되나요」를 `MEDICATION` 으로만
+    남긴다. 원문을 남기면 그것이 곧 의료 상담 기록이 되고, 병원이 열람할 수
+    있게 되는 순간 KEY-5 의 「환자 대화 원문은 병원이 못 본다」가 깨진다.
+    """
+
+    MEDICATION = "MEDICATION"
+    LIFESTYLE = "LIFESTYLE"
+    SYMPTOM = "SYMPTOM"
+    ADMINISTRATIVE = "ADMINISTRATIVE"
+    OTHER = "OTHER"
+
+
+class PatientAnswerOutcome(StrEnum):
+    """물음에 무엇으로 답했나.
+
+    `BLOCKED` 와 `FALLBACK` 을 가른다 — 둘 다 「제대로 못 답했다」지만
+    **막은 것과 못 한 것은 다른 문제**다. 막은 것이 늘면 규칙을 손봐야 하고,
+    못 한 것이 늘면 지식이나 연동을 손봐야 한다.
+    """
+
+    ANSWERED = "ANSWERED"
+    BLOCKED = "BLOCKED"
+    FALLBACK = "FALLBACK"
+
+
+class PatientUsageEvent(models.Model):
+    """환자가 안내를 열람하고 챗봇을 쓴 **결과**만 남기는 이벤트 — KEY-170.
+
+    KEY-143 의 환류 기반이다. 「몇 명이 열었나 · 무엇을 주로 묻나 · 얼마나
+    막히나」를 세려면 이 표가 있어야 한다.
+
+    **원문을 담지 않는다.** 질문·프롬프트·답변·링크 토큰 어느 것도 칸이 없다 —
+    담을 자리를 만들지 않는 것이 담지 않겠다는 약속을 지키는 가장 확실한
+    방법이다. 나중에 누가 「분석하려면 원문이 필요하다」고 할 때, 칸이 없으면
+    그 이야기가 계약 변경으로 올라온다.
+
+    `guide_document` 에 건다 — 안내문이 진료를 알고 진료가 병원을 안다.
+    `visit_id` 를 사본으로 두면 두 값이 어긋날 자리가 생긴다(`#25` 리뷰).
+    """
+
+    patient_usage_event_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="usage_events",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    guide_document_id: int
+    event_type = fields.CharEnumField(enum_type=PatientUsageEventType)
+    #: 챗봇 답이면 어느 갈래의 물음이었나. 열람 이벤트면 비어 있다.
+    question_kind = fields.CharEnumField(enum_type=PatientQuestionKind, null=True)
+    #: 챗봇 답이면 무엇으로 답했나. 열람 이벤트면 비어 있다.
+    answer_outcome = fields.CharEnumField(enum_type=PatientAnswerOutcome, null=True)
+    #: 답의 근거가 된 안내 갈래. **원문이 아니라 어디를 봤는지**만 남긴다.
+    grounded_section = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "patient_usage_event"
+        indexes = (
+            ("guide_document", "created_at"),
+            ("event_type", "created_at"),
+        )

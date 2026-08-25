@@ -85,6 +85,48 @@ GET  /api/v1/visits/{visit_id}/checkin       직원 인증 필요
 - 병원 조회는 같은 병원의 `staff` 또는 `doctor`만 가능하다. 없는 응답과 타
   병원 응답은 모두 `404 CHECKIN_NOT_FOUND`로 감춘다.
 
+### 2.3 환자 이용 이벤트 — KEY-170 기록 계약
+
+> 2026-08-25 · **API가 아니라 기록 인터페이스다.** 이 절은 새 엔드포인트를
+> 정의하지 않는다. 환자가 안내를 열거나 챗봇을 쓴 **결과의 모양**만 남기는
+> 내부 계약이며, KEY-95·KEY-96이 같은 인터페이스를 부른다.
+
+```python
+from app.services.patient_usage import PatientUsageService
+
+await PatientUsageService().record_guide_view(guide_document_id)
+
+await PatientUsageService().record_chatbot_answer(
+    guide_document_id,
+    question_kind=PatientQuestionKind.MEDICATION,   # 갈래만
+    outcome=PatientAnswerOutcome.BLOCKED,           # 답함·막음·못함
+    grounded_section=GuideSectionKey.CAUTION,       # 어느 승인 섹션을 근거로 삼았나
+)
+```
+
+- 남기는 것은 **여섯 가지뿐**이다. 안내문 식별자, 이벤트 유형, 질문 갈래,
+  응답 결과, 근거 섹션, 발생 시각.
+- **질문·답변·프롬프트 원문과 링크 토큰 원문은 남기지 않는다.** 값을 비우는
+  것이 아니라 `patient_usage_event` 표에 **담을 칸을 두지 않는다.**
+  칸이 생기면 `app/tests/patient_usage/` 의 칸 목록 검사가 죽는다.
+- `visit_id`를 사본으로 두지 않고 `guide_document_id`를 통해 도달한다.
+  두 값이 어긋날 자리를 만들지 않기 위해서다.
+- 승인 완료(`SCHEDULED_TO_SEND`) 안내에만 남는다. 미승인 안내와 없는 안내는
+  **똑같이** `404 GUIDE_NOT_FOUND`다. 답이 다르면 그 차이만으로 진료의 존재를
+  알 수 있다.
+- 병원이 붙는 자리는 **환자 링크 토큰이 정한다.** 기록 인터페이스는 병원
+  번호를 받지 않으므로 타 병원 안내에 이벤트가 붙을 경로가 없다.
+- **이 이벤트를 돌려주는 조회 API는 만들지 않는다.** 병원 사용자가 환자 챗봇
+  원문을 열람할 창구를 두지 않기 위해서다(`docs/api/hospital.md` §9와 같은 결).
+
+#### 아직 연결되지 않은 호출 지점
+
+| 부르는 쪽 | 부를 것 | 상태 |
+|---|---|---|
+| `GET /api/v1/guides/{token}` | `record_guide_view()` | **연결 완료** — KEY-170 |
+| 챗봇 스트리밍 UI (KEY-95) | `record_chatbot_answer()` | 미연결 — 챗봇 화면 자체가 미구현 |
+| LLM·RAG 응답 경로 (KEY-96) | `record_chatbot_answer()` | 미연결 — 질문 갈래 분류와 차단 판정이 KEY-96 범위 |
+
 ## 3. D+7 복약 신호 — `POST /checkins/{token}/signals`
 
 > 결정 2026-08-21 · 담당 권일준 · 리뷰어 유가은
