@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 
 from tortoise import fields, models
@@ -224,6 +225,36 @@ class PatientGuideLink(models.Model):
     class Meta:
         table = "patient_guide_link"
         indexes = (("expires_at",),)
+
+
+class PatientOtpChallenge(models.Model):
+    """환자 링크 한 건의 현재 OTP 상태 — KEY-91.
+
+    OTP 원문은 저장하지 않는다. 링크마다 행을 하나만 두고 재발급 때 digest를
+    교체해 이전 OTP를 즉시 무효화한다. 실패 횟수와 잠금은 같은 행에 남기므로
+    재발급으로 실패 제한을 우회할 수 없다.
+    """
+
+    patient_otp_challenge_id = fields.BigIntField(primary_key=True)
+    patient_guide_link: fields.OneToOneRelation[PatientGuideLink] = fields.OneToOneField(
+        "models.PatientGuideLink",
+        related_name="otp_challenge",
+        on_delete=OnDelete.CASCADE,
+        source_field="patient_guide_link_id",
+    )
+    patient_guide_link_id: int
+    otp_digest = fields.CharField(max_length=64)
+    otp_salt = fields.CharField(max_length=32)
+    expires_at = fields.DatetimeField()
+    failed_attempts = fields.SmallIntField(default=0)
+    locked_until: datetime | None = fields.DatetimeField(null=True)
+    consumed_at: datetime | None = fields.DatetimeField(null=True)
+    issued_at = fields.DatetimeField()
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "patient_otp_challenge"
+        indexes = (("expires_at",), ("locked_until",))
 
 
 class CheckInMedication(StrEnum):
