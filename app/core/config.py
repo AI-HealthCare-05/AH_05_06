@@ -56,6 +56,15 @@ class Config(BaseSettings):
     # 실제 OCR 워커 없이 fixture 결과를 즉시 DB에 기록한다 — Walking Skeleton 데모 전용.
     OCR_FIXTURE_FALLBACK: bool = False
 
+    # CLOVA OCR 연동 — 비어 있으면 Worker가 fixture fallback으로 동작한다.
+    # 실제 키는 .env에만 기록하고 코드·로그에 남기지 않는다.
+    CLOVA_OCR_API_URL: str = ""
+    CLOVA_OCR_SECRET_KEY: str = ""
+
+    @property
+    def clova_enabled(self) -> bool:
+        return bool(self.CLOVA_OCR_API_URL and self.CLOVA_OCR_SECRET_KEY)
+
     @model_validator(mode="after")
     def _fixture_fallback_is_local_only(self) -> "Config":
         if self.OCR_FIXTURE_FALLBACK and self.ENV is not Env.LOCAL:
