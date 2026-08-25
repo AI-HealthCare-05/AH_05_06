@@ -4,8 +4,8 @@
 지금 `app/models/users.py`는 `email` 로그인 · `is_admin` bool 인 예시 골격이라
 계약이 붙을 자리가 없다. 그 자리를 여기서 만든다.
 
-`users.User`는 이 티켓에서 지우지 않는다 — 아직 `/users/me`가 쓰고 있고,
-정리는 계정 관리(A1-2) 몫이다.
+`users.User`는 여전히 지우지 않는다. `/users/me`는 KEY-167에서 지웠지만
+(부를 수 없는 죽은 API였다), 모델과 JWT 경로 정리는 계정 관리(A1-2) 몫이다.
 """
 
 from datetime import datetime
