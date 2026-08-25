@@ -16,7 +16,12 @@
   margin: 0 auto;
   padding: var(--s-16);
   background: var(--card);
+  /* 모바일에서 소프트 키보드가 올라와도 `100vh` 는 줄지 않는다 — 메모 칸에
+     커서를 두면 저장 버튼이 키보드 아래로 밀려 안 보인다.
+     `100dvh` 는 키보드만큼 줄어든다. 모르는 브라우저를 위해 앞줄을 남긴다
+     (KEY-129). */
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .sheet__head {

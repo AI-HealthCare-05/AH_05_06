@@ -309,6 +309,18 @@ function notice(message) {
   body.insertBefore(bar, body.firstChild);
 }
 
+/* 눈에는 안 보이고 **소리로만** 읽히는 한 줄 — KEY-129.
+ *
+ * 본문(`#guide-body`)을 통째로 라이브 리전으로 두면 탭을 옮길 때마다 안내문
+ * 전체가 다시 낭독된다. 실측했더니 탭 3 번에 6 번 읽혔다.
+ *
+ * 그래서 **무엇으로 바뀌었는지만** 말한다. 내용은 화면이 보여 준다.
+ */
+function sayGuide(text) {
+  var box = document.getElementById("guide-say");
+  if (box) box.textContent = text;
+}
+
 function renderTabs() {
   var nav = document.getElementById("tabs");
   nav.textContent = "";
@@ -321,6 +333,8 @@ function renderTabs() {
       renderTabs();
       renderBody();
       window.scrollTo(0, 0);
+      /* **바뀐 것만** 알린다 — 어느 탭으로 왔는지 한 줄. */
+      sayGuide(tab.label);
     });
     nav.appendChild(button);
   });
@@ -369,6 +383,9 @@ function renderBody() {
 function renderError(code) {
   var body = document.getElementById("guide-body");
   body.textContent = "";
+  /* 안내를 못 여는 것은 **알려야 하는 일**이다 — 화면에만 뜨면 못 보는 사람은
+     계속 기다린다. */
+  sayGuide("아직 안내를 보실 수 없어요");
   var box = section("아직 안내를 보실 수 없어요");
   var message =
     code === GUIDE_ERROR.LINK_EXPIRED
