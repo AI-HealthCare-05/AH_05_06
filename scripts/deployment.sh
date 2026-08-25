@@ -1,6 +1,17 @@
 #!/bin/bash
 set -eo pipefail
 
+# `sed -i` 는 GNU 와 BSD(macOS)가 인자를 다르게 받는다. 예전 판은 `sed -i ''`
+# 라 **맥에서만 돌았다** — 「새 환경에서 문서화된 절차로 재현」이 인수조건인데
+# 사실상 특정인의 노트북 전용이었다 (KEY-174).
+sed_inplace() {
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$@"        # GNU
+  else
+    sed_inplace "$@"     # BSD / macOS
+  fi
+}
+
 COLOR_GREEN=$(tput setaf 2)
 COLOR_BLUE=$(tput setaf 4)
 COLOR_RED=$(tput setaf 1)
@@ -34,17 +45,27 @@ build_and_push () {
   echo ""
 }
 
-# ---------- Docker login Prompt ----------
-echo "${COLOR_BLUE}도커 유저네임과 비밀번호(PAT)을 입력해주세요.${COLOR_NC}"
-read -p "username: " docker_user
-read -p "password: " docker_pw
-echo ""
-
-
-# ---------- Docker Login ----------
+# ---------- Docker login ----------
+#
+# **PAT 를 화면에 찍지 않는다** (KEY-174).
+#   · `read -s` — 입력이 안 보인다. 예전에는 -p 만 있어 그대로 찍혔다
+#   · `--password-stdin` — 예전 `docker login -p` 는 경고를 내고 프로세스
+#     목록(`ps`)에 값이 남는다
+#   · 환경변수로 미리 주면 묻지 않는다 — CI 에서 비대화형으로 돌릴 수 있다
 echo "${COLOR_BLUE}Docker login${COLOR_NC}"
-if ! docker login -u ${docker_user} -p ${docker_pw} ; then
-  echo "${COLOR_RED}도커 로그인에 실패했습니다. 도커 유저네임과 비밀번호를 확인해주세요.${COLOR_NC}"
+if [ -z "${DOCKER_USERNAME:-}" ]; then
+  read -r -p "username: " DOCKER_USERNAME
+fi
+if [ -z "${DOCKER_PAT:-}" ]; then
+  read -r -s -p "password (PAT, 화면에 안 보입니다): " DOCKER_PAT
+  echo ""
+fi
+docker_user="${DOCKER_USERNAME}"
+docker_pw="${DOCKER_PAT}"
+
+if ! printf '%s' "${docker_pw}" | docker login -u "${docker_user}" --password-stdin ; then
+  echo "${COLOR_RED}도커 로그인에 실패했습니다. 유저네임과 PAT 을 확인해주세요.${COLOR_NC}"
+  exit 1
 fi
 echo "${COLOR_GREEN}도커 로그인 성공!${COLOR_NC}"
 echo ""
@@ -110,35 +131,41 @@ scp -i ~/.ssh/${ssh_key_file} envs/.prod.env ubuntu@${ec2_ip}:~/project/.env
 scp -i ~/.ssh/${ssh_key_file} infra/docker/docker-compose.prod.yml ubuntu@${ec2_ip}:~/project/docker-compose.yml
 if [[ "$is_https" == "1" ]] ; then
   # ---------- prod_http.conf 파일의 server_name 자동 수정 ----------
-  sed -i '' "s/server_name .*/server_name ${ec2_ip};/g" infra/nginx/prod_http.conf
+  sed_inplace "s/server_name .*/server_name ${ec2_ip};/g" infra/nginx/prod_http.conf
   scp -i ~/.ssh/${ssh_key_file} infra/nginx/prod_http.conf ubuntu@${ec2_ip}:~/project/nginx/default.conf
 else
   echo "${COLOR_BLUE} 사용중인 도메인을 입력하세요. (ex. api.ozcoding.site)${COLOR_NC}"
   read -p "Domain: " domain
   # ---------- prod_https.conf 파일의 server_name, ssl_certificate 자동 수정 ----------
-  sed -i '' "s/server_name .*/server_name ${domain};/g" infra/nginx/prod_https.conf
-  sed -i '' "s|/etc/letsencrypt/live/[^/]*|/etc/letsencrypt/live/${domain}|g" infra/nginx/prod_https.conf
+  sed_inplace "s/server_name .*/server_name ${domain};/g" infra/nginx/prod_https.conf
+  sed_inplace "s|/etc/letsencrypt/live/[^/]*|/etc/letsencrypt/live/${domain}|g" infra/nginx/prod_https.conf
   scp -i ~/.ssh/${ssh_key_file} infra/nginx/prod_https.conf ubuntu@${ec2_ip}:~/project/nginx/default.conf
 fi
 
 # ---------- EC2 배포 자동화  ----------
 echo "${COLOR_BLUE}EC2 인스턴스에 SSH 접속을 시도합니다.${COLOR_NC}"
 chmod 400 ~/.ssh/${ssh_key_file}
+# **PAT 를 ssh 명령줄에 싣지 않는다** — 원격의 `ps` 에 그대로 남는다.
+# 첫 줄로 흘려보내고 원격 스크립트가 `read` 로 받는다 (KEY-174).
 ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} \
   "DOCKER_USERNAME=${docker_user} \
-   DOCKER_PAT=${docker_pw} \
    DEPLOY_SERVICES='${DEPLOY_SERVICES[*]}' \
-   bash -s" << 'EOF'
+   bash -s" << EOF
+$(printf '%s\n' "${docker_pw}")
+$(cat <<'REMOTE'
   set -e
+  read -r DOCKER_PAT
   cd project
 
   echo "Docker login"
-  docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PAT"
+  printf '%s' "$DOCKER_PAT" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
   echo "Deploying services: $DEPLOY_SERVICES"
   docker compose up -d --pull always --no-deps $DEPLOY_SERVICES
 
   docker image prune -af
+REMOTE
+)
 EOF
 
 echo "✅ Deployment finished."

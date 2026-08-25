@@ -86,6 +86,26 @@ class Config(BaseSettings):
             raise ValueError(f"OCR_FIXTURE_FALLBACK은 로컬 환경에서만 사용할 수 있습니다. (ENV={self.ENV.value})")
         return self
 
+    @model_validator(mode="after")
+    def _secret_key_must_be_set_outside_local(self) -> "Config":
+        """**운영에서 기본값으로 뜨는 길을 막는다** — KEY-174.
+
+        기본값이 `f"default-secret-key{uuid4().hex}"` 라 설정을 안 해도 서버가
+        뜬다. 그런데 그 값은 **프로세스마다 다르다.** 재배포하거나 컨테이너가
+        재시작될 때마다 바뀌어서, 그 전에 발급한 액세스·리프레시 토큰이 전부
+        한꺼번에 죽는다. 사용자에게는 「갑자기 로그아웃됐다」로 보인다.
+
+        `DB_PASSWORD` 에 이미 같은 규칙이 있다(KEY-110). 이름을 대며 멈추는
+        편이 조용히 뜨는 것보다 낫다.
+        """
+        if self.ENV is not Env.LOCAL and self.SECRET_KEY.startswith("default-secret-key"):
+            raise ValueError(
+                f"SECRET_KEY 가 설정되지 않았다 (ENV={self.ENV.value}). "
+                "기본값은 프로세스마다 달라서 재시작하면 발급한 토큰이 전부 죽는다 — "
+                "환경변수나 `.env` 로 넘겨라 (KEY-174)."
+            )
+        return self
+
     @field_validator("DB_PASSWORD")
     @classmethod
     def _db_password_must_be_set(cls, value: str) -> str:

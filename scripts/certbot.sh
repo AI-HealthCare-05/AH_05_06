@@ -1,6 +1,17 @@
 #!/bin/bash
 set -eo pipefail
 
+# `sed -i` 는 GNU 와 BSD(macOS)가 인자를 다르게 받는다. 예전 판은 `sed -i ''`
+# 라 **맥에서만 돌았다** — 「새 환경에서 문서화된 절차로 재현」이 인수조건인데
+# 사실상 특정인의 노트북 전용이었다 (KEY-174).
+sed_inplace() {
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$@"        # GNU
+  else
+    sed_inplace "$@"     # BSD / macOS
+  fi
+}
+
 COLOR_GREEN=$(tput setaf 2)
 COLOR_BLUE=$(tput setaf 4)
 COLOR_RED=$(tput setaf 1)
@@ -26,7 +37,7 @@ read -p "EC2-IP: " ec2_ip
 echo ""
 
 # ---------- default.conf 파일의 server_name 자동 수정 ----------
-sed -i '' "s/server_name .*/server_name ${domain};/g" infra/nginx/prod_http.conf
+sed_inplace "s/server_name .*/server_name ${domain};/g" infra/nginx/prod_http.conf
 
 # ---------- 수정된 prod_http.conf 파일을 EC2 인스턴스 내로 복사 ----------
 scp -i ~/.ssh/${ssh_key_file} infra/nginx/prod_http.conf ubuntu@${ec2_ip}:~/project/nginx/default.conf
@@ -64,8 +75,8 @@ apply_https=$(echo "$apply_https" | tr '[:upper:]' '[:lower:]')
 
 if [[ "$apply_https" == "y" || "$apply_https" == "yes" ]]; then
   # ---------- prod_https.conf 파일의 server_name, ssl_certificate 자동 수정 ----------
-  sed -i '' "s/server_name .*/server_name ${domain};/g" infra/nginx/prod_https.conf
-  sed -i '' "s|/etc/letsencrypt/live/[^/]*|/etc/letsencrypt/live/${domain}|g" infra/nginx/prod_https.conf
+  sed_inplace "s/server_name .*/server_name ${domain};/g" infra/nginx/prod_https.conf
+  sed_inplace "s|/etc/letsencrypt/live/[^/]*|/etc/letsencrypt/live/${domain}|g" infra/nginx/prod_https.conf
 
   # ---------- 수정된 prod_http.conf 파일을 EC2 인스턴스 내로 복사 ----------
   scp -i ~/.ssh/${ssh_key_file} infra/nginx/prod_https.conf ubuntu@${ec2_ip}:~/project/nginx/default.conf
