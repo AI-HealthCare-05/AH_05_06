@@ -73,16 +73,33 @@ var DOCTOR_CASE = (function () {
   return sessionStorage.getItem("mockDoctorCase") || "";
 })();
 
-/* 목록의 두 줄이 각각 다른 안내문을 갖는다.
+/* 목록의 줄마다 다른 안내문을 갖는다.
    하나만 돌려주면 줄을 눌러도 오른쪽이 안 바뀌어, **고르기가 고장난 것처럼**
-   보인다. 실제 서버는 visit_id 로 갈라 주므로 목업도 그렇게 한다. */
+   보인다. 실제 서버는 visit_id 로 갈라 주므로 목업도 그렇게 한다.
+
+   **여기 없는 진료는 없는 것으로 답한다** (`mockGuideBase` 참고). 예전에는
+   `|| MOCK_PATIENTS[8801]` 로 김서연을 대신 돌려줬는데, 목록에서 박수빈
+   (`8798`)을 눌러도 오른쪽에 김서연이 떴다 — **의무기록 화면이 다른 사람을
+   보여 주는 것**이라 「고르기가 고장난 것처럼」보다 나쁘다.
+
+   목록(`patients-api.js`)에서 의사 화면에 닿을 수 있는 줄은 셋이다.
+     8798  박수빈  NEEDS_ATTENTION       보완 탭
+     8801  김서연  APPROVAL_REQUESTED    승인 요청 탭
+     8802  최다인  APPROVAL_REQUESTED    승인 요청 탭
+   값은 목록 쪽과 같은 것을 쓴다 — 두 곳이 다르면 그 자체가 또 어긋남이다. */
 var MOCK_PATIENTS = {
+  8798: {
+    patient: { name: "박수빈", birth_date: "1992-09-18", age: 34, gender: "FEMALE", hospital_patient_no: "09871" },
+    summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 08-11",
+    /* 목록이 `INVALID_PHONE` 로 보완에 올린 줄이다. 안내문 자체는 승인을
+       기다리는 중이고, 막힌 것은 **보낼 곳**이라 상태는 그대로 둔다. */
+  },
   8801: {
-    patient: { name: "김서연", birth_date: "1990-03-14", age: 36, gender: "FEMALE", hospital_patient_no: "SYN-12345" },
+    patient: { name: "김서연", birth_date: "1990-03-14", age: 36, gender: "FEMALE", hospital_patient_no: "12345" },
     summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 05-20",
   },
   8802: {
-    patient: { name: "최다인", birth_date: "1997-06-02", age: 29, gender: "FEMALE", hospital_patient_no: "SYN-10982" },
+    patient: { name: "최다인", birth_date: "1997-06-02", age: 29, gender: "FEMALE", hospital_patient_no: "10982" },
     summary: "다낭성 · 야즈 (계속) · 84일 · 지난 방문 06-02",
   },
 };
@@ -111,9 +128,16 @@ function mockGuideState(visitId) {
   );
 }
 
+/* 모르는 진료는 **없다고 답한다.** 서버(`app/services/guides.py`)가 그 자리에서
+   `404 GUIDE_NOT_FOUND` 를 주므로 목업도 같게 한다.
+
+   예전에는 `|| MOCK_PATIENTS[8801]` 로 김서연을 대신 돌려줬다. 조용히 남의
+   이름을 그리는 쪽이라 **화면은 멀쩡해 보이는데 다른 사람의 안내문**이 된다 —
+   의무기록에서 제일 나쁜 실패다. 없으면 없다고 하는 편이 낫다. */
 function mockGuideBase(visitId) {
   var warn = DOCTOR_CASE !== "clean";
-  var who = MOCK_PATIENTS[visitId] || MOCK_PATIENTS[8801];
+  var who = MOCK_PATIENTS[visitId];
+  if (!who) return null;
   return {
     visit_id: visitId,
     patient: who.patient,
@@ -181,11 +205,18 @@ function mockGuideBase(visitId) {
 }
 
 
+/* 서버가 없는 진료·안내문에 주는 것과 같은 오류다 (`app/services/guides.py`).
+   조회·승인·반려·섹션 수정 네 갈래가 같은 말을 하도록 한 곳에 둔다. */
+function mockNoGuide() {
+  return new ApiError("GUIDE_NOT_FOUND", 404, {});
+}
+
 /* 저장된 상태가 있으면 그것이 이긴다. 없으면 `DOCTOR_CASE` 가 정한 기본값이다.
    섹션 본문도 같은 방식이다 — PATCH 로 고친 적이 있으면 그 값을, 없으면
    `mockGuideBase()` 의 원문을 쓴다. 그래야 고치고 다시 조회해도 그대로다. */
 function mockGuide(visitId) {
   var guide = mockGuideBase(visitId);
+  if (!guide) return null; // 모르는 진료 — 부르는 쪽이 404 로 바꾼다
   var saved = MOCK_GUIDE_STATE[visitId];
   if (!saved) return guide;
   if (saved.status !== null) guide.status = saved.status;
@@ -275,6 +306,7 @@ function mockDoctorRequest(path, options) {
         /* 서버는 승인 결과로도 `GuideResponse` 를 통째로 준다. 수신번호는
            싣지 않는다 — 승인할 때마다 전화번호가 화면과 로그를 지난다. */
         var approved = mockGuide(visitId);
+        if (!approved) return reject(mockNoGuide());
         var blocked = mockPendingBlock(approved);
         if (blocked) return reject(blocked);
         /* 계약 §6 의 어휘를 그대로 쓴다. 서버도 `GuideStatus.SCHEDULED_TO_SEND` 를
@@ -294,6 +326,7 @@ function mockDoctorRequest(path, options) {
           return reject(new ApiError("REASON_REQUIRED", 422, {}));
         }
         var returned = mockGuide(visitId);
+        if (!returned) return reject(mockNoGuide());
         /* 반려도 같은 문을 지난다 — 서버 `return_to_staff()` 가 `approve()` 와
            **같은 `_require_pending()`** 을 부른다. 이미 발송을 기다리는 글을
            반려로 되돌리면 승인 기록만 남고 글은 스탭에게 가 버린다. */
@@ -313,6 +346,7 @@ function mockDoctorRequest(path, options) {
         if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
 
         var guide = mockGuide(visitId);
+        if (!guide) return reject(mockNoGuide());
 
         var target = guide.sections.filter(function (s) {
           return s.key === sec[2];
@@ -377,7 +411,8 @@ function mockDoctorRequest(path, options) {
          보낸 경우다. 그런 라우트는 서버에 없으므로 조용히 전체 guide 를
          돌려주지 않고 404 다. */
       if (get && (!options.method || options.method === "GET")) {
-        return resolve(mockGuide(visitId));
+          var found = mockGuide(visitId);
+          return found ? resolve(found) : reject(mockNoGuide());
       }
       return reject(new ApiError("NOT_FOUND", 404, {}));
     }, 200);
