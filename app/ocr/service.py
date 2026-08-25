@@ -202,15 +202,18 @@ LOW_CONFIDENCE_THRESHOLD = 0.75
 FIXTURE_MODEL_NAME = "fixture-v0"
 
 
-async def _seed_fixture_result(
+async def seed_fixture_result(
     job: OcrJob,
     document_id: int,
     document_type: OcrDocumentType,
     connection: BaseDBAsyncClient,
 ) -> None:
-    """fixture 결과 한 건을 DB에 기록하고 job을 COMPLETED로 전환한다 — 데모 전용."""
+    """fixture 결과 한 건을 DB에 기록하고 job을 COMPLETED로 전환한다 — 업로드 경로에서 호출, 데모 전용."""
     completed_at = now()
-    result = await OcrResult.create(ocr_job=job, model_name=FIXTURE_MODEL_NAME, using_db=connection)
+    existing = await OcrResult.filter(ocr_job_id=job.ocr_job_id).using_db(connection).first()
+    result = existing if existing is not None else await OcrResult.create(
+        ocr_job=job, model_name=FIXTURE_MODEL_NAME, using_db=connection
+    )
     doc_text = await OcrDocumentText.create(
         ocr_result=result,
         document_id=document_id,

@@ -22,7 +22,7 @@ from app.ocr.security import OcrActor
 from app.ocr.service import (
     FIXTURE_MODEL_NAME,
     TortoiseOcrRepository,
-    _seed_fixture_result,
+    seed_fixture_result,
     serialize_field,
 )
 
@@ -268,7 +268,7 @@ async def _assert_fixture_ocr_round_trip() -> None:
             document_type=OcrDocumentType.EMR,
             using_db=connection,
         )
-        await _seed_fixture_result(job, document.document_id, OcrDocumentType.EMR, connection)
+        await seed_fixture_result(job, document.document_id, OcrDocumentType.EMR, connection)
     await job.refresh_from_db()
 
     assert job.status == OcrJobStatus.COMPLETED
@@ -316,3 +316,87 @@ async def _assert_fixture_ocr_round_trip() -> None:
         assert exc.status_code == 404
     else:
         raise AssertionError("타 병원이 다른 병원의 OCR 결과를 조회할 수 있었습니다.")
+
+
+# KEY-159 — 다중 파일 업로드 시 fixture 시딩 회귀 테스트
+_FIXTURE_MULTI_HOSPITAL_ID = 6300
+_FIXTURE_MULTI_PATIENT_ID = 630001
+_FIXTURE_MULTI_VISIT_ID = 630001
+_FIXTURE_MULTI_ACTOR = OcrActor(staff_id=630101, hospital_id=_FIXTURE_MULTI_HOSPITAL_ID, roles=frozenset({"staff"}))
+
+
+def test_fixture_seed_multiple_documents_no_integrity_error() -> None:
+    tortoise_test._restore_default()
+    test_loop = tortoise_test._LOOP
+    assert test_loop is not None
+    test_loop.run_until_complete(_assert_fixture_seed_multiple_documents())
+
+
+async def _assert_fixture_seed_multiple_documents() -> None:
+    patient = await Patient.create(
+        patient_id=_FIXTURE_MULTI_PATIENT_ID,
+        hospital_id=_FIXTURE_MULTI_HOSPITAL_ID,
+        hospital_patient_no="SYNTHETIC-KEY159-001",
+        name="Synthetic Multi Patient",
+        birth_date=date(2000, 1, 1),
+        phone="01000000003",
+    )
+    visit = await Visit.create(
+        visit_id=_FIXTURE_MULTI_VISIT_ID,
+        hospital_id=_FIXTURE_MULTI_HOSPITAL_ID,
+        patient=patient,
+        visited_at=datetime(2026, 8, 25, 9, 0, tzinfo=UTC),
+    )
+    doc1 = await MedicalDocument.create(
+        hospital_id=_FIXTURE_MULTI_HOSPITAL_ID,
+        visit=visit,
+        document_type=OcrDocumentType.EMR,
+        file_path="/tmp/synthetic-key159-page1.pdf",
+        file_size=1024,
+        mime_type="application/pdf",
+        uploaded_by=_FIXTURE_MULTI_ACTOR.staff_id,
+    )
+    doc2 = await MedicalDocument.create(
+        hospital_id=_FIXTURE_MULTI_HOSPITAL_ID,
+        visit=visit,
+        document_type=OcrDocumentType.EMR,
+        file_path="/tmp/synthetic-key159-page2.pdf",
+        file_size=1024,
+        mime_type="application/pdf",
+        uploaded_by=_FIXTURE_MULTI_ACTOR.staff_id,
+    )
+
+    async with in_transaction() as connection:
+        job = await OcrJob.create(
+            ocr_job_id=f"ocr_fixture_multi_{_FIXTURE_MULTI_VISIT_ID}",
+            hospital_id=_FIXTURE_MULTI_HOSPITAL_ID,
+            visit_id=_FIXTURE_MULTI_VISIT_ID,
+            requested_by=_FIXTURE_MULTI_ACTOR.staff_id,
+            using_db=connection,
+        )
+        for doc in (doc1, doc2):
+            await OcrJobDocument.create(
+                ocr_job=job,
+                document_id=doc.document_id,
+                document_type=OcrDocumentType.EMR,
+                using_db=connection,
+            )
+        # OcrResult.ocr_job 이 OneToOneField이므로 두 번째 호출에서 IntegrityError가
+        # 발생하지 않아야 한다.
+        await seed_fixture_result(job, doc1.document_id, OcrDocumentType.EMR, connection)
+        await seed_fixture_result(job, doc2.document_id, OcrDocumentType.EMR, connection)
+
+    await job.refresh_from_db()
+    assert job.status == OcrJobStatus.COMPLETED
+
+    result = await OcrResult.filter(ocr_job_id=job.ocr_job_id).first()
+    assert result is not None
+
+    doc_texts = await OcrDocumentText.filter(ocr_result=result).all()
+    assert len(doc_texts) == 2
+    doc_ids = {dt.document_id for dt in doc_texts}
+    assert doc1.document_id in doc_ids
+    assert doc2.document_id in doc_ids
+
+    fields = await OcrField.filter(ocr_result=result).all()
+    assert len(fields) == 2

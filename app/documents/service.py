@@ -17,7 +17,7 @@ from app.documents.schemas import DocumentUploadResponse
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType, OcrJob, OcrJobDocument, OcrJobStatus
 from app.models.visits import Visit
-from app.ocr.service import _seed_fixture_result
+from app.ocr.service import seed_fixture_result
 
 
 class DocumentUploadService:
@@ -121,7 +121,7 @@ class DocumentUploadService:
 
             if config.OCR_FIXTURE_FALLBACK:
                 for doc in documents:
-                    await _seed_fixture_result(ocr_job, doc.document_id, document_type, conn)
+                    await seed_fixture_result(ocr_job, doc.document_id, document_type, conn)
 
         return [doc.document_id for doc in documents], ocr_job.ocr_job_id
 
