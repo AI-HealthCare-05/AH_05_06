@@ -32,7 +32,6 @@ LOGIN_URL = "/api/v1/auth/login"
 
 
 class OcrAuthWiringTestCase(AuthTestCase):
-
     async def make_staff(
         self,
         *,

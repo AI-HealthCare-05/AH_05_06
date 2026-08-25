@@ -31,7 +31,6 @@ async def make_staff(login_id: str = "staff01", **kwargs: Any) -> Staff:
 
 
 class PasswordTestCase(AuthTestCase):
-
     def client(self) -> AsyncClient:
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 

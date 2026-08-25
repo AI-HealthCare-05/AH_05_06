@@ -34,7 +34,6 @@ async def make_staff(login_id: str = "staff01", **kwargs: Any) -> Staff:
 
 
 class SessionTestCase(AuthTestCase):
-
     async def sign_in(self, client: AsyncClient, login_id: str = "staff01", remember: bool = False) -> str:
         response = await client.post(
             f"{BASE}/login",
