@@ -1,29 +1,22 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Response
 
-from app.core import config as _app_config
 from app.ocr.schemas import (
     OcrFieldResponse,
     OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
-    StartOcrRequest,
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor, get_ocr_actor
 from app.ocr.service import (
-    FixtureOcrRepository,
     OcrService,
-    TortoiseDocumentOwnershipVerifier,
     TortoiseOcrRepository,
 )
 
 ocr_router = APIRouter(tags=["ocr"])
-_ownership = TortoiseDocumentOwnershipVerifier()
-service = OcrService(
-    FixtureOcrRepository(_ownership) if _app_config.OCR_FIXTURE_FALLBACK else TortoiseOcrRepository(_ownership)
-)
+service = OcrService(TortoiseOcrRepository())
 
 
 def get_ocr_service() -> OcrService:
@@ -46,20 +39,6 @@ async def get_visit_ocr_job(
     ocr: Annotated[OcrService, Depends(get_ocr_service)],
 ) -> OcrJobResponse:
     return await ocr.job_for_visit(visit_id, actor)
-
-
-@ocr_router.post(
-    "/documents/{document_id}/ocr",
-    response_model=OcrJobResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def start_ocr(
-    document_id: Annotated[int, Path(gt=0)],
-    request: StartOcrRequest,
-    actor: Annotated[OcrActor, Depends(get_ocr_actor)],
-    ocr: Annotated[OcrService, Depends(get_ocr_service)],
-) -> OcrJobResponse:
-    return await ocr.start(document_id, request.visit_id, request.document_type, actor)
 
 
 @ocr_router.get("/ocr/jobs/{ocr_job_id}", response_model=OcrJobResponse)

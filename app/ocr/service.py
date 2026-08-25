@@ -1,14 +1,12 @@
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Protocol
-from uuid import uuid4
 
 from fastapi import status
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
-from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentText,
     OcrDocumentType,
@@ -19,7 +17,6 @@ from app.models.ocr import (
     OcrJobStatus,
     OcrResult,
 )
-from app.models.visits import Visit
 from app.ocr.errors import OcrApiError
 from app.ocr.schemas import (
     OcrCandidateResponse,
@@ -34,10 +31,6 @@ from app.ocr.security import OcrActor
 
 
 class OcrRepository(Protocol):
-    async def create_job(
-        self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
-    ) -> OcrJob: ...
-
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
 
     async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None: ...
@@ -57,119 +50,11 @@ class OcrRepository(Protocol):
     ) -> tuple[OcrField, Sequence[OcrDocumentText]]: ...
 
 
-class DocumentOwnershipVerifier(Protocol):
-    async def assert_owned(
-        self,
-        document_id: int,
-        visit_id: int,
-        hospital_id: int,
-        connection: BaseDBAsyncClient,
-    ) -> None: ...
-
-
 def _not_found() -> OcrApiError:
     return OcrApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
 
 
-class FailClosedDocumentOwnershipVerifier:
-    """Block OCR creation until the authoritative upload model is connected."""
-
-    async def assert_owned(
-        self,
-        document_id: int,
-        visit_id: int,
-        hospital_id: int,
-        connection: BaseDBAsyncClient,
-    ) -> None:
-        raise _not_found()
-
-
-class TortoiseDocumentOwnershipVerifier:
-    async def assert_owned(
-        self,
-        document_id: int,
-        visit_id: int,
-        hospital_id: int,
-        connection: BaseDBAsyncClient,
-    ) -> None:
-        exists = await (
-            MedicalDocument.filter(
-                document_id=document_id,
-                visit_id=visit_id,
-                hospital_id=hospital_id,
-            )
-            .using_db(connection)
-            .exists()
-        )
-        if not exists:
-            raise _not_found()
-
-
 class TortoiseOcrRepository:
-    def __init__(self, document_ownership: DocumentOwnershipVerifier | None = None) -> None:
-        self.document_ownership = document_ownership or FailClosedDocumentOwnershipVerifier()
-
-    async def _after_job_created(
-        self,
-        job: OcrJob,
-        document_id: int,
-        document_type: OcrDocumentType,
-        connection: BaseDBAsyncClient,
-    ) -> None:
-        """Extend job creation while keeping every write in the same transaction."""
-
-    async def create_job(
-        self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
-    ) -> OcrJob:
-        async with in_transaction() as connection:
-            # Locking the visit serializes starts for documents owned by that visit.
-            # The authoritative document verifier must validate the same visit/hospital.
-            visit = (
-                await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
-                .using_db(connection)
-                .select_for_update()
-                .first()
-            )
-            if visit is None:
-                raise _not_found()
-            await self.document_ownership.assert_owned(
-                document_id,
-                visit_id,
-                actor.hospital_id,
-                connection,
-            )
-            active = await (
-                OcrJobDocument.filter(
-                    document_id=document_id,
-                    ocr_job__hospital_id=actor.hospital_id,
-                    ocr_job__status=OcrJobStatus.PROCESSING,
-                )
-                .using_db(connection)
-                .select_for_update()
-                .exists()
-            )
-            if active:
-                raise OcrApiError(
-                    status.HTTP_409_CONFLICT,
-                    "OCR_ALREADY_PROCESSING",
-                    "이미 처리 중인 문서입니다.",
-                )
-            job = await OcrJob.create(
-                ocr_job_id=f"ocr_{uuid4().hex}",
-                hospital_id=actor.hospital_id,
-                visit=visit,
-                requested_by=actor.staff_id,
-                using_db=connection,
-            )
-            await OcrJobDocument.create(
-                ocr_job=job,
-                document_id=document_id,
-                document_type=document_type,
-                using_db=connection,
-            )
-            await self._after_job_created(job, document_id, document_type, connection)
-        return job
-
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob:
         job = await OcrJob.filter(ocr_job_id=ocr_job_id, hospital_id=actor.hospital_id).first()
         if job is None:
@@ -317,25 +202,32 @@ LOW_CONFIDENCE_THRESHOLD = 0.75
 FIXTURE_MODEL_NAME = "fixture-v0"
 
 
-async def _seed_fixture_result(
+async def seed_fixture_result(
     job: OcrJob,
-    document_id: int,
-    document_type: OcrDocumentType,
+    documents: list[tuple[int, OcrDocumentType]],
     connection: BaseDBAsyncClient,
 ) -> None:
-    """fixture 결과 한 건을 DB에 기록하고 job을 COMPLETED로 전환한다 — 데모 전용."""
+    """fixture 결과를 DB에 기록하고 job을 COMPLETED로 전환한다 — 업로드 경로에서 job당 한 번 호출, 데모 전용.
+
+    OcrResult.ocr_job 은 OneToOneField, OcrField 는 (ocr_result, field_type) unique 제약이 있으므로
+    OcrDocumentText 는 문서마다 생성하고 OcrField 는 결과 전체에 하나만 만든다.
+    """
     completed_at = now()
     result = await OcrResult.create(ocr_job=job, model_name=FIXTURE_MODEL_NAME, using_db=connection)
-    doc_text = await OcrDocumentText.create(
-        ocr_result=result,
-        document_id=document_id,
-        document_type=document_type,
-        raw_text="[fixture] 합성 OCR 텍스트 — 실제 OCR 워커 연결 전 데모용 데이터",
-        using_db=connection,
-    )
+    first_doc_text = None
+    for document_id, document_type in documents:
+        doc_text = await OcrDocumentText.create(
+            ocr_result=result,
+            document_id=document_id,
+            document_type=document_type,
+            raw_text="[fixture] 합성 OCR 텍스트 — 실제 OCR 워커 연결 전 데모용 데이터",
+            using_db=connection,
+        )
+        if first_doc_text is None:
+            first_doc_text = doc_text
     await OcrField.create(
         ocr_result=result,
-        document_text=doc_text,
+        document_text=first_doc_text,
         field_type="DIAGNOSIS",
         extracted_value="[fixture] 진단명",
         confidence=Decimal("0.85"),
@@ -349,19 +241,6 @@ async def _seed_fixture_result(
         update_fields=("status", "progress", "started_at", "completed_at"),
         using_db=connection,
     )
-
-
-class FixtureOcrRepository(TortoiseOcrRepository):
-    """OCR 시작 즉시 fixture 결과를 기록한다 — 실제 워커 없이 Walking Skeleton 흐름을 완주하기 위한 데모 fallback."""
-
-    async def _after_job_created(
-        self,
-        job: OcrJob,
-        document_id: int,
-        document_type: OcrDocumentType,
-        connection: BaseDBAsyncClient,
-    ) -> None:
-        await _seed_fixture_result(job, document_id, document_type, connection)
 
 
 def _resolve_document_id(doc_text: OcrDocumentText | None) -> int | None:
@@ -425,11 +304,6 @@ def serialize_field(field: OcrField, doc_text_map: dict[int, OcrDocumentText] | 
 class OcrService:
     def __init__(self, repository: OcrRepository) -> None:
         self.repository = repository
-
-    async def start(
-        self, document_id: int, visit_id: int, document_type: OcrDocumentType, actor: OcrActor
-    ) -> OcrJobResponse:
-        return serialize_job(await self.repository.create_job(document_id, visit_id, document_type, actor))
 
     async def job_for_visit(self, visit_id: int, actor: OcrActor) -> OcrJobResponse:
         job = await self.repository.get_latest_job_by_visit(visit_id, actor)
