@@ -45,12 +45,12 @@ def load_patient(scenario: str) -> dict[str, str]:
     raise SystemExit(f"{PATIENTS_CSV.name} 에 {scenario} 행이 없다 — 시나리오 ID 를 확인해라")
 
 
-def resolve(spec: dict, patient: dict[str, str]) -> dict[str, object]:
+def resolve(spec: dict, patient: dict[str, str]) -> dict[str, dict[str, object]]:
     """YAML 이 가리키는 열을 실제 값으로 바꾼다.
 
     값을 YAML 에 안 박는 이유가 여기 있다 — CSV 가 바뀌면 여기서 따라온다.
     """
-    out: dict[str, object] = {}
+    out: dict[str, dict[str, object]] = {}
     for name, rule in spec["fields"].items():
         raw = patient.get(rule["csv_column"], "")
         if "csv_part" in rule:
@@ -76,7 +76,7 @@ def cell(x: int, y: int, text: str, *, bold: bool = False, size: int = 13) -> st
     )
 
 
-def render_svg(spec: dict, patient: dict[str, str], fields: dict[str, object]) -> str:
+def render_svg(spec: dict, patient: dict[str, str], fields: dict[str, dict[str, object]]) -> str:
     """KEY-163 §2 가 적은 표 구조를 따른다.
 
     실제 병원 EMR 화면 레이아웃은 아직 미확정이다(KEY-163 §8 「대상 병원 EMR
