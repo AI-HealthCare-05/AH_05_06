@@ -662,3 +662,85 @@ class TestCautionEmergencySeparation(GuideTestCase):
         assert sections[GuideSectionKey.EMERGENCY].locked is True
         assert sections[GuideSectionKey.CAUTION].locked is False
         assert sections[GuideSectionKey.MEDICATION].locked is False
+
+
+class TestAdminOnlyCannotReadTheGuide(GuideTestCase):
+    """`admin` 단독 계정은 안내문을 읽지 못한다 — KEY-168.
+
+    KEY-90 QA 에서 나온 차단 결함이다. 같은 계정이 `GET /patients` 에서는
+    403 인데 여기만 200 이었다. 그 200 이 실어 오는 것이 문제였다 —
+    환자 이름·차트번호·생년월일과 안내문 네 갈래 전문이다.
+
+    권한표(`app/tests/rbac/matrix.py`)의 `PATIENT_READ` 는 staff·doctor 뿐이다.
+    `admin` 은 의원 운영 권한이지 진료 화면을 여는 역할이 아니다.
+
+    KEY-111(`#50`) 때부터 있던 구멍이고, KEY-90 이 공통 `StaffActor` 로
+    바꾸면서 드러났다 — 그 PR 의 회귀는 아니다.
+    """
+
+    async def test_an_admin_only_account_is_refused(self) -> None:
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        admin = await make_staff(clinic, "admin01", ["admin"])
+
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(admin))
+
+        assert response.status_code == 403, f"admin 단독 계정에 안내문이 열렸다: {response.status_code}"
+        assert response.json()["code"] == "FORBIDDEN"
+
+    async def test_nothing_about_the_patient_leaks_in_the_refusal(self) -> None:
+        """**막으면서 흘리지 않는다.** 403 본문에 환자가 들어 있으면 막은 뜻이 없다."""
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        admin = await make_staff(clinic, "admin02", ["admin"])
+
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(admin))
+
+        body = response.text
+        for leaked in ("합성환자", "SYN-12345", "1990-01-01", "합성 복약지도 본문"):
+            assert leaked not in body, f"거절 응답에 {leaked!r} 이 실렸다"
+
+    async def test_staff_and_doctor_still_read_it(self) -> None:
+        """**막는 것만 재면 전부 막아 둔 코드도 통과한다.**"""
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        staff = await make_staff(clinic, "staff09", ["staff"])
+        doctor = await make_staff(clinic, "doctor09", ["doctor"])
+
+        async with self.client() as client:
+            for who in (staff, doctor):
+                response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(who))
+                assert response.status_code == 200, (
+                    f"{who.login_id} 이 안내문을 못 읽는다: {response.status_code} {response.text[:120]}"
+                )
+
+    async def test_admin_added_on_top_of_a_clinical_role_still_reads_it(self) -> None:
+        """`admin` 을 **얹은** 것과 `admin` **뿐인** 것은 다르다.
+
+        의원 운영을 겸하는 의사가 자기 환자 안내문을 못 읽으면 그것도 사고다.
+        역할은 OR 로 본다(`matrix.py` — 「하나라도 가지고 있으면 통과」).
+        """
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        both = await make_staff(clinic, "doctor_admin01", ["doctor", "admin"])
+
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/{guide.visit_id}/guide", headers=await self.sign_in(both))
+
+        assert response.status_code == 200, f"doctor+admin 이 막혔다: {response.status_code}"
+
+    async def test_the_role_is_checked_before_the_guide_is_looked_up(self) -> None:
+        """**안내문이 없어도 403 이다.**
+
+        먼저 찾고 나중에 역할을 보면, 권한 없는 사람에게 404 를 주면서
+        「그 의원에 그런 진료가 없다」를 알려 준다.
+        """
+        clinic = await make_clinic()
+        admin = await make_staff(clinic, "admin03", ["admin"])
+
+        async with self.client() as client:
+            response = await client.get(f"{BASE}/99999/guide", headers=await self.sign_in(admin))
+
+        assert response.status_code == 403, f"역할보다 안내문을 먼저 봤다: {response.status_code}"
