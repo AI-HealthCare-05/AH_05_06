@@ -219,39 +219,39 @@ curl -fsS https://<도메인>/api/v1/health | jq .
 
 ## 6. 🔴 아직 못 하는 것
 
-`KEY-174` 인수조건 중 **「공유 가능한 Pilot URL 또는 동등한 실행 환경 제공」**
-은 지금 구성으로 만들면 **빈 화면이 나온다.**
+**프런트가 안 뜨던 것은 해결됐다** — 아래 7절 참고 (KEY-189).
 
-```text
-infra/nginx/prod_http.conf:25-27    location / { return 404; }
-infra/nginx/prod_https.conf:46-48   location / { return 404; }
-infra/docker/docker-compose.prod.yml   nginx 에 frontend 볼륨이 없다
-app/main.py                         StaticFiles 마운트가 없다
-```
-
-로컬은 `infra/nginx/default.conf:25-29` 가 `/vol/web/frontend` 를 서빙하고
-`docker-compose.yml:102` 가 `./frontend` 를 거기 마운트한다. **운영에는 그 둘이
-다 없다.** 게다가 운영에서는 `/api/docs`·`/redoc`·`/openapi.json` 도 꺼져 있어
-API 문서로 대신 보여 줄 수도 없다.
-
-즉 **URL 을 공유해도 볼 것이 없다.** 고치려면 결정이 하나 필요하다.
-
-| 길 | 무엇을 해야 하나 |
-|---|---|
-| ① 이미지에 프런트를 굽는다 | `Dockerfile` 에 `frontend/` 를 COPY, nginx 가 그 볼륨을 본다 |
-| ② 볼륨으로 마운트한다 | 배포 때 `frontend/` 를 EC2 로 `scp`, compose 에 마운트 추가 |
-| ③ 프런트를 따로 띄운다 | 정적 호스팅(S3·Netlify 등)에 올리고 API 만 EC2 |
-
-**어느 쪽인지는 배포·비용 결정이라 이 문서가 정하지 않는다.** 셋 다 nginx
-설정과 compose 를 함께 고쳐야 하고, ③은 CORS·쿠키 도메인까지 걸린다.
-
-그 밖에 남은 것:
+남은 것:
 
 - **원격 대상 전 구간 E2E** — 5절의 smoke 는 「API 가 살아 있는가」까지다(KEY-184).
   `scripts/run_key152_e2e.sh` 가 도는 전 구간 여정은 여전히 로컬 전용이다
 - **CI 배포** — 지금은 사람이 로컬에서 스크립트를 돌린다
 - **EC2 인스턴스·도메인·Docker Hub 계정** — 실제로 확보돼 있는지 저장소만으로는
   알 수 없다
+
+## 7. 프런트는 이미지에 구워서 나간다
+
+`KEY-174` 때는 운영 nginx 가 `/` 를 404 로 막고 있어 URL 을 공유해도 볼 것이
+없었다. 셋 중 **①이미지에 굽기**로 정했다(한금준 님) — **이미지 태그로 어떤
+화면이 떴는지 고정**되기 때문이다. QA 가 「그때 그 화면」을 다시 띄울 수 있어야
+한다.
+
+```text
+infra/nginx/Dockerfile        FROM nginx:latest + COPY frontend/ /vol/web/frontend/
+docker-compose.prod.yml       nginx 이미지를 web-${WEB_VERSION} 으로
+prod_http · prod_https        location / 이 /vol/web/frontend 를 준다
+```
+
+배포 때 메뉴에서 **3) frontend(nginx)** 를 고르면 굽고 올린다. 되돌리는 것도
+`APP_VERSION` 과 같다 — `.env` 의 `WEB_VERSION` 을 직전 값으로 내린다.
+
+프런트는 빌드 단계가 없다(npm·번들러 없는 ES5). `frontend/` 를 그대로 굽는다.
+
+**nginx 설정은 안 굽는다.** `deployment.sh` 가 http/https 중 고른 것을 올리고,
+certbot 이 갱신하면서 바꾸기도 한다 — 이미지에 넣으면 그때마다 다시 구워야 한다.
+
+**https 판의 80 포트는 아무것도 안 준다.** 전부 https 로 넘긴다 — 거기서
+프런트를 주면 환자가 평문으로 안내를 본다.
 
 ## 관련
 

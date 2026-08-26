@@ -359,21 +359,50 @@ class TestTheExampleEnvActuallyBoots:
 class TestTheRunbookTellsTheTruth:
     """문서가 주장하는 것 중 **코드로 잴 수 있는 것**을 잰다."""
 
-    def test_it_admits_the_frontend_is_not_served_in_prod(self) -> None:
-        """**아직 못 하는 것을 못 한다고 적었는가.**
+    def test_the_frontend_is_actually_served_in_prod(self) -> None:
+        """**운영에서 `/` 가 화면을 주는가** — KEY-189.
 
-        이게 이 검사의 핵심이다. 운영 nginx 가 `/` 를 404 로 막고 있어서
-        「공유 가능한 URL」을 줘도 볼 화면이 없다. 문서가 그걸 감추면 형제
-        일감들이 없는 환경 위에 계획을 세운다.
+        예전 판은 그 반대를 쟀다. `/` 가 404 라서 「공유 가능한 URL」을 줘도 볼
+        것이 없었고, 문서가 그걸 감추지 않는지를 봤다. **이 검사가 「이제 `/` 를
+        준다 — 런북을 고칠 때다」로 죽어서** 그때가 온 것을 알았다.
+
+        이제는 반대를 잰다 — 다시 404 로 돌아가면 여기서 운다.
         """
         for conf in ("infra/nginx/prod_http.conf", "infra/nginx/prod_https.conf"):
-            assert re.search(r"location\s+/\s*\{\s*return\s+404", read(conf)), (
-                f"{conf} 가 이제 `/` 를 준다 — 런북의 「아직 못 하는 것」을 고칠 때다"
-            )
+            body = read(conf)
+            assert "root /vol/web/frontend;" in body, f"{conf} 가 프런트를 안 준다"
+            assert not re.search(r"location\s+/\s*\{\s*return\s+404", body), f"{conf} 가 다시 `/` 를 404 로 막았다"
 
-        runbook = read("docs/deploy-runbook.md")
-        assert "아직 못 하는 것" in runbook
-        assert "return 404" in runbook, "런북이 이 제약을 안 적었다"
+        # 굽는 자리와 서빙하는 자리가 **같은 경로**를 가리켜야 한다.
+        assert "/vol/web/frontend" in read("infra/nginx/Dockerfile"), "이미지가 다른 곳에 굽는다"
+
+    def test_the_plain_http_port_does_not_serve_it(self) -> None:
+        """https 판에서 **80 포트는 아무것도 안 준다** — 전부 넘긴다.
+
+        여기서 프런트를 주면 환자가 평문으로 안내를 본다. 실제로 이 PR 을
+        만들다 두 서버 블록을 한꺼번에 바꿔서 그렇게 될 뻔했다.
+        """
+        http_block = read("infra/nginx/prod_https.conf").split("# https")[0]
+
+        assert "root /vol/web/frontend;" not in http_block, "80 포트가 평문으로 화면을 준다"
+        assert "return 301 https://" in http_block, "80 포트가 https 로 안 넘긴다"
+
+    @pytest.mark.parametrize(
+        "conf", ["infra/nginx/default.conf", "infra/nginx/prod_http.conf", "infra/nginx/prod_https.conf"]
+    )
+    def test_the_upload_size_matches_what_the_app_accepts(self, conf: str) -> None:
+        """nginx 가 안 적으면 기본 1m 다 — 앱은 20MB 로 알고 있다.
+
+        검사지 사진 한 장(보통 2~5MB)이 FastAPI 에 닿기 전에 413 으로 잘리고,
+        그 HTML 응답을 프런트의 `res.json()` 이 파싱하려다 파서 오류를 화면에
+        띄운다 (이희진 님 `#137` 요청).
+        """
+        from app.core.config import Config
+
+        wanted = Config.model_fields["MAX_UPLOAD_SIZE_MB"].default
+        assert f"client_max_body_size {wanted}m;" in read(conf), (
+            f"{conf} 의 크기 제한이 앱의 MAX_UPLOAD_SIZE_MB({wanted}) 와 다르다"
+        )
 
     def test_it_names_the_rollback_precondition(self) -> None:
         """되돌림은 **Hub 에 옛 태그가 남아 있을 때만** 된다.
