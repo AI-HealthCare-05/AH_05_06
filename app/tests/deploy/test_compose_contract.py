@@ -18,15 +18,26 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-COMPOSE = ROOT / "docker-compose.yml"
-EXAMPLES = ("envs/example.local.env", "envs/example.prod.env")
+
+#: compose 파일과 **그 짝인 예시**. 둘을 싸잡아 보면 안 된다 — 로컬 compose 는
+#: `WEB_VERSION` 을 안 쓰고, 운영 compose 는 빌드 컨텍스트를 안 쓴다. 짝을
+#: 잘못 맞추면 「없어도 되는 것」을 넣으라고 우긴다.
+#:
+#: `deployment.sh` 가 `envs/.prod.env` → 원격 `.env`,
+#: `infra/docker/docker-compose.prod.yml` → 원격 `docker-compose.yml` 로 올린다.
+PAIRS = (
+    ("docker-compose.yml", "envs/example.local.env"),
+    ("infra/docker/docker-compose.prod.yml", "envs/example.prod.env"),
+)
+COMPOSES = tuple(c for c, _ in PAIRS)
+EXAMPLES = tuple(e for _, e in PAIRS)
 
 #: `${NAME}` · `${NAME:-기본값}` 둘 다.
 COMPOSE_VAR = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)")
 
 
-def compose_text() -> str:
-    return COMPOSE.read_text(encoding="utf-8")
+def compose_text(rel: str) -> str:
+    return (ROOT / rel).read_text(encoding="utf-8")
 
 
 def names_in(rel: str) -> set[str]:
@@ -43,19 +54,20 @@ def names_in(rel: str) -> set[str]:
     }
 
 
-def test_the_compose_file_actually_asks_for_things() -> None:
+@pytest.mark.parametrize("compose", COMPOSES)
+def test_the_compose_file_actually_asks_for_things(compose: str) -> None:
     """**아래 검사가 조용히 통과하지 않게 한다.**"""
-    found = set(COMPOSE_VAR.findall(compose_text()))
+    found = set(COMPOSE_VAR.findall(compose_text(compose)))
 
-    assert len(found) > 5, f"compose 에서 변수를 거의 못 찾았다 — 검사가 헛돈다: {sorted(found)}"
+    assert len(found) > 5, f"{compose} 에서 변수를 거의 못 찾았다 — 검사가 헛돈다: {sorted(found)}"
 
 
-@pytest.mark.parametrize("example", EXAMPLES)
-def test_every_compose_variable_is_named_in_the_example(example: str) -> None:
+@pytest.mark.parametrize(("compose", "example"), PAIRS)
+def test_every_compose_variable_is_named_in_its_example(compose: str, example: str) -> None:
     """compose 가 부르는데 예시엔 없는 이름이 있으면 여기서 운다."""
-    missing = sorted(set(COMPOSE_VAR.findall(compose_text())) - names_in(example))
+    missing = sorted(set(COMPOSE_VAR.findall(compose_text(compose))) - names_in(example))
 
-    assert not missing, f"{example} 에 이름조차 없다 — 베껴 쓰면 빈 값으로 뜬다: {missing}"
+    assert not missing, f"{compose} 가 부르는데 {example} 에 이름조차 없다: {missing}"
 
 
 @pytest.mark.parametrize("example", EXAMPLES)
@@ -70,23 +82,48 @@ def test_the_examples_carry_no_minio_value(example: str) -> None:
     assert not filled, f"{example} 에 MinIO 실값이 적혀 있다: {filled}"
 
 
-class TestTheImageIsPinned:
-    """**같은 바이트를 나눠 갖는 자리**라 판이 흔들리면 안 된다 (KEY-190 방식)."""
+class TestMinioIsInBothPlaces:
+    """**팀 서버는 운영 compose 로 돈다.**
 
-    def test_minio_is_pinned_by_digest(self) -> None:
-        line = [ln.strip() for ln in compose_text().splitlines() if "minio/minio" in ln]
+    처음 판은 루트 `docker-compose.yml` 에만 넣고 이 검사도 거기만 봤다.
+    그러면 로컬에서만 돌고 정작 「팀이 나눠 갖는 자리」는 안 생긴다 —
+    KEY-191 목적 첫 줄이 「팀 서버에 … 추가」다.
+    """
 
-        assert line, "minio 이미지 줄을 못 찾았다"
-        assert "@sha256:" in line[0], f"digest 가 없다 — 같은 태그가 다른 것을 가리킬 수 있다: {line[0]}"
+    @pytest.mark.parametrize("compose", COMPOSES)
+    def test_minio_is_declared(self, compose: str) -> None:
+        assert "minio/minio" in compose_text(compose), f"{compose} 에 MinIO 가 없다"
 
-    def test_the_data_survives_a_restart(self) -> None:
+    @pytest.mark.parametrize("compose", COMPOSES)
+    def test_it_is_pinned_by_digest(self, compose: str) -> None:
+        """같은 바이트를 나눠 갖는 자리라 판이 흔들리면 안 된다 (KEY-190 방식)."""
+        line = [ln.strip() for ln in compose_text(compose).splitlines() if "minio/minio" in ln]
+
+        assert line, f"{compose}: minio 이미지 줄을 못 찾았다"
+        assert "@sha256:" in line[0], f"{compose}: digest 가 없다 — 같은 태그가 다른 것을 가리킬 수 있다"
+
+    @pytest.mark.parametrize("compose", COMPOSES)
+    def test_the_data_survives_a_restart(self, compose: str) -> None:
         """이름 붙은 볼륨이 없으면 `docker compose down` 에 올린 것이 사라진다."""
-        body = compose_text()
+        body = compose_text(compose)
 
-        assert "minio_data:/data" in body, "MinIO 가 볼륨 없이 돈다 — 재시작하면 다 날아간다"
-        assert re.search(r"^volumes:$.*^  minio_data:$", body, re.MULTILINE | re.DOTALL), (
-            "minio_data 볼륨이 선언돼 있지 않다"
+        assert "minio_data:/data" in body, f"{compose}: MinIO 가 볼륨 없이 돈다"
+        assert re.search(r"^volumes:$.*^  minio_data:", body, re.MULTILINE | re.DOTALL), (
+            f"{compose}: minio_data 볼륨이 선언돼 있지 않다"
         )
+
+    def test_production_does_not_open_it_to_the_internet(self) -> None:
+        """**「팀 6인만」이 자격증명 하나에만 걸려 있으면 안 된다.**
+
+        9000(S3 API)·9001(콘솔)이 공개로 붙으면 보안 그룹 한 번 잘못 열린
+        것으로 끝난다. `127.0.0.1` 에 묶어 두면 SSH 터널을 지나야 한다.
+        """
+        block = compose_text("infra/docker/docker-compose.prod.yml").split("minio:", 1)[1].split("volumes:")[0]
+        published = re.findall(r'^\s+- "([^"]+)"', block, re.MULTILINE)
+
+        assert published, "운영 MinIO 의 포트 줄을 못 찾았다 — 검사가 헛돈다"
+        wide_open = [p for p in published if not p.startswith("127.0.0.1:")]
+        assert not wide_open, f"운영 MinIO 포트가 밖으로 열려 있다: {wide_open}"
 
 
 class TestTheDocsSayWhereItLives:
