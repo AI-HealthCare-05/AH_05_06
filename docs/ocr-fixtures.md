@@ -70,8 +70,52 @@ qlmanage -t -s 1600 -o . build/ocr-fixtures/SYN-EMS-01.emr.v1.svg
 rsvg-convert -w 1600 build/ocr-fixtures/SYN-EMS-01.emr.v1.svg -o emr.png
 ```
 
-> **글꼴 주의** — SVG 의 한글은 **바꾸는 쪽 환경의 글꼴**로 그려진다. 판독 결과를 비교할
-> 때는 어느 글꼴로 래스터했는지 함께 적는다. 같은 SVG 라도 글꼴이 다르면 인식률이 달라진다.
+> **글꼴 주의** — SVG 의 한글은 **바꾸는 쪽 환경의 글꼴**로 그려진다. 같은 SVG 라도 글꼴이
+> 다르면 픽셀이 달라지고 **판독 결과도 달라진다.** 손으로 바꾸지 말고 아래 4-1 을 쓴다.
+
+## 4-1. 시연용 고정 이미지 — 누가 돌려도 같은 바이트 (KEY-190)
+
+```bash
+./scripts/render_ocr_fixture.sh            # 기본 build/ocr-fixtures
+```
+
+그리는 환경을 컨테이너에 가둔다. 이 셋이 고정하는 것이 전부다.
+
+```text
+알파인          alpine:3.20
+              sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+래스터          rsvg-convert 2.58.5-r0
+글꼴            font-noto-cjk 0_git20220127-r1   (SVG 의 애플 글꼴은 컨테이너에 없어
+                                                 스택이 여기로 떨어진다)
+해상도          150 dpi · 원본 900×520 → 1875×1083
+```
+
+### 지금 값
+
+| 항목 | sha256 |
+|---|---|
+| `SYN-EMS-01.emr.v1.png` | `29458d8bf82cd901d1f5abacbd1d435530cf4d9bc0eae2aa3caf0e3893bcc983` |
+| `SYN-EMS-01.emr.v1.svg` | `cbd590f056384c830927453796d57d55a9710f25a08c89155d0102c61c681ae0` |
+| `docs/data/synthetic-patients.csv` | `88143d5a32440a25ec8f9b7e571f9acd6c6f13ab78cfee5f1936ad3a42fdb43c` |
+
+`develop` `136f5ec` 기준. **셋을 함께 적는 이유가 있다** — 이미지 해시만 두면
+값이 달라졌을 때 「렌더가 흔들린 것」인지 「정본 CSV 가 바뀐 것」인지 모른다.
+CSV 해시가 다르면 뒤쪽이다.
+
+### PDF 는 해시를 고정하지 않는다
+
+`rsvg-convert -f pdf` 도 되지만 **매번 다른 바이트가 나온다.** 압축된 객체
+스트림 안에 만든 시각이 들어가서다 — 두 번 돌려 71283 / 71284 바이트로 갈렸고
+70701 번째 바이트부터 달랐다.
+
+그래서 **못 박는 것은 PNG 하나다.** PDF 가 필요하면 같은 스크립트가 함께 내지만
+해시로 같은 것임을 주장하지 않는다.
+
+### KEY-69 가 쓰는 법
+
+E2E 는 이 스크립트를 먼저 부르고 `build/ocr-fixtures/SYN-EMS-01.emr.v1.png` 를
+업로드한다. 기대값은 옆의 `SYN-EMS-01.emr.v1.expected.json` 이다 — 같은 실행에서
+같이 나오므로 둘이 어긋날 일이 없다.
 
 ## 5. 외부 보관 — **MinIO** (KEY-191)
 

@@ -307,3 +307,47 @@ def test_an_unknown_document_type_is_refused_with_a_reason() -> None:
 
     assert "렌더러가 없다" in str(caught.value), str(caught.value)
     assert "PRESCRIPTION" in str(caught.value)
+
+
+# ── 시연용 고정 이미지 — KEY-190 ──────────────────────────────────────────────
+
+
+def test_the_render_script_exists_and_is_runnable() -> None:
+    """문서가 가리키는 스크립트가 실제로 있어야 한다."""
+    script = ROOT / "scripts" / "render_ocr_fixture.sh"
+
+    assert script.exists(), "docs/ocr-fixtures.md 4-1 이 없는 스크립트를 가리킨다"
+    assert script.stat().st_mode & 0o111, "실행 권한이 없다"
+
+
+def test_the_document_pins_the_whole_render_environment() -> None:
+    """**셋 다 적혀 있어야 한다** — 하나라도 빠지면 재현이 안 된다.
+
+    글꼴이 빠지면 한글이 다른 모양으로 그려지고, 해상도가 빠지면 픽셀 수가
+    달라지고, 베이스 이미지가 빠지면 래스터 판이 달라진다 (KEY-190).
+    """
+    doc = (ROOT / "docs" / "ocr-fixtures.md").read_text(encoding="utf-8")
+
+    for pinned in ("alpine:3.20", "rsvg-convert 2.58.5-r0", "font-noto-cjk", "150 dpi"):
+        assert pinned in doc, f"렌더 환경에서 {pinned} 가 안 적혔다"
+
+
+def test_the_document_records_the_csv_hash_next_to_the_image_hash() -> None:
+    """이미지 해시만 두면 **왜 달라졌는지**를 모른다.
+
+    정본 CSV 가 바뀌어도, 렌더가 흔들려도 이미지 해시는 달라진다. 둘을 나란히
+    적어야 어느 쪽인지 가른다 — 실제로 `#142`(KEY-183)가 약품명을 바꾸면
+    이미지 해시가 달라진다.
+    """
+    doc = (ROOT / "docs" / "ocr-fixtures.md").read_text(encoding="utf-8")
+    pinned = doc[doc.index("### 지금 값") :]
+
+    assert "synthetic-patients.csv" in pinned, "정본 CSV 해시를 함께 안 적었다"
+    assert pinned.count("`") >= 6, "해시가 셋 다 안 적혔다"
+
+
+def test_the_document_admits_the_pdf_is_not_reproducible() -> None:
+    """PDF 는 만든 시각을 품어 매번 다른 바이트가 나온다 — 감추면 안 된다."""
+    doc = (ROOT / "docs" / "ocr-fixtures.md").read_text(encoding="utf-8")
+
+    assert "PDF 는 해시를 고정하지 않는다" in doc, "PDF 가 재현되는 것처럼 읽힌다"
