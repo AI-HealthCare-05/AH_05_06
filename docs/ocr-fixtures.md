@@ -243,6 +243,48 @@ for name in expected["success_requires"]:
 
 `success_requires` 가 KEY-163 §4 의 성공 판정 기준이다. 이 셋 중 하나라도 비면 fallback 이다.
 
+## 7-1. 실제 CLOVA 판독 — **아직 못 돌렸다** (KEY-190)
+
+KEY-190 인수조건에 「KEY-56 경로에서 실제 CLOVA OCR 1회 실행 결과가 기록됨」이
+있는데, **차단됐다.** 같은 일감이 그 경우를 미리 적어 뒀다 — 「외부 의존성이
+기한 내 제공되지 않으면 이미지·해시·공유까지 완료하고 실제 판독만 차단 사유와
+함께 명시」.
+
+| | |
+|---|---|
+| **차단 사유** | CLOVA 개발 계정 키를 못 받았다 |
+| **확인한 자리** | 로컬 `.env`(CLOVA 칸 없음) · 노션 검색 · Jira KEY-56/KEY-190(코멘트 0건) |
+| **선행 담당** | KEY-190 「실제 CLOVA 판독 기술 확인: 한금준」 |
+| **되면 걸리는 시간** | `.env` 두 줄 + 명령 한 줄 |
+
+키가 오면 이렇게 돈다.
+
+```bash
+# .env 에 두 줄 (값은 여기에도 커밋에도 안 적는다)
+#   CLOVA_OCR_INVOKE_URL=...
+#   CLOVA_OCR_SECRET_KEY=...
+uv run python scripts/make_ocr_fixture.py --out build/ocr-fixtures
+DB_HOST=127.0.0.1 uv run python scripts/test_clova_ocr.py \
+    build/ocr-fixtures/SYN-EMS-01.emr.v1.png EMR
+```
+
+출력은 `raw_text` · 텍스트 블록별 신뢰도 · `field_extractor` 매칭 결과다.
+§7 의 `success_requires` 셋과 맞대면 「차이」가 나온다.
+
+### 출력을 그대로 PR 에 붙여도 되는가 — 이제 된다
+
+이 저장소는 **공개**고 KEY-190 인수조건에 「저장소·PR·로그에 운영 자격증명이나
+토큰이 남지 않음」이 있다. 붙이기 전에 두 자리를 막았다.
+
+| 새던 자리 | 지금 |
+|---|---|
+| `Config` 의 `repr`·`str`·`model_dump`·`model_dump_json` | `SecretStr` 이라 `'**********'` |
+| 러너가 찍던 invoke URL 전체 | 호스트까지만 (`…(경로 가림)`) |
+
+첫째 줄이 실제로 새고 있었다 — 같은 파일 세 줄 차이로 `OPENAI_API_KEY` 는
+가려지고 `CLOVA_OCR_SECRET_KEY` 만 평문이었다 (이희진 님 `#137` ③).
+`app/tests/security/test_clova_secret_does_not_leak.py` 가 지킨다.
+
 ## 8. 둘을 헷갈리지 않는다
 
 | | 무엇을 재는가 | 어디 |

@@ -70,13 +70,22 @@ class Config(BaseSettings):
     # CLOVA OCR 연동 — 비어 있으면 Worker가 fixture fallback으로 동작한다.
     # 실제 키는 .env에만 기록하고 코드·로그에 남기지 않는다.
     CLOVA_OCR_INVOKE_URL: str = ""
-    CLOVA_OCR_SECRET_KEY: str = ""
+    # **`SecretStr` 이다** — 이희진 님 `#137` ③. 바로 아래 `OPENAI_API_KEY` 는
+    # 이미 그랬는데 이 칸만 맨 `str` 이었고, 그 차이가 실제로 드러났다:
+    #
+    #     CLOVA_OCR_SECRET_KEY='...'          ← 평문으로 찍혔다
+    #     OPENAI_API_KEY=SecretStr('*****')
+    #
+    # `repr` · `str` · `model_dump` · `model_dump_json` 넷 다 값을 내놨다.
+    # 설정 객체는 디버깅할 때 통째로 찍기 쉬운 물건이라 (`#137` 검토 때
+    # 한금준 님이 짚은 자리) 타입으로 막는다. 읽을 때는 `.get_secret_value()`.
+    CLOVA_OCR_SECRET_KEY: SecretStr = SecretStr("")
     # KEY-163 §8 기준값 10초. 실제 응답 시간은 8/27 멘토링 후 확인 예정.
     CLOVA_OCR_TIMEOUT_SECONDS: float = 10.0
 
     @property
     def clova_enabled(self) -> bool:
-        return bool(self.CLOVA_OCR_INVOKE_URL and self.CLOVA_OCR_SECRET_KEY)
+        return bool(self.CLOVA_OCR_INVOKE_URL and self.CLOVA_OCR_SECRET_KEY.get_secret_value())
 
     # KEY-96 환자 챗봇의 단일 실제 모델 경로. 키가 없거나 호출이 실패하면
     # 승인 안내 화면 전체를 멈추지 않고 안전한 고정 응답으로 대체한다.
