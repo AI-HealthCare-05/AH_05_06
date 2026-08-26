@@ -61,7 +61,8 @@ class Config(BaseSettings):
     # 실제 키는 .env에만 기록하고 코드·로그에 남기지 않는다.
     CLOVA_OCR_INVOKE_URL: str = ""
     CLOVA_OCR_SECRET_KEY: str = ""
-    CLOVA_OCR_TIMEOUT_SECONDS: float = 30.0
+    # KEY-163 §8 기준값 10초. 실제 응답 시간은 8/27 멘토링 후 확인 예정.
+    CLOVA_OCR_TIMEOUT_SECONDS: float = 10.0
 
     @property
     def clova_enabled(self) -> bool:
