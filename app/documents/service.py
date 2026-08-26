@@ -5,8 +5,9 @@ from uuid import uuid4
 from fastapi import UploadFile, status
 from tortoise.transactions import in_transaction
 
-from app.core import config
+from app.core import config, default_logger
 from app.core.api_errors import ApiError
+from app.core.redis_client import get_redis
 from app.core.storage import (
     ALLOWED_EXTENSIONS_BY_MIME,
     ALLOWED_MIME_TYPES,
@@ -18,6 +19,9 @@ from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType, OcrJob, OcrJobDocument, OcrJobStatus
 from app.models.visits import Visit
 from app.ocr.service import seed_fixture_result
+
+# Worker가 동일한 키를 구독한다. 변경 시 ai_worker/tasks/ocr_task.py와 함께 수정한다.
+OCR_JOB_QUEUE = "ocr:jobs"
 
 
 class DocumentUploadService:
@@ -63,6 +67,14 @@ class DocumentUploadService:
                 with contextlib.suppress(Exception):
                     await self._storage.delete(path)
             raise
+
+        if not config.OCR_FIXTURE_FALLBACK:
+            try:
+                await get_redis().rpush(OCR_JOB_QUEUE, ocr_job_id)  # type: ignore[misc]
+            except Exception:
+                # 큐 push 실패는 업로드 응답을 막지 않는다 — job은 PROCESSING으로 남고
+                # Worker 재시작 또는 재시도 정책이 복구한다.
+                default_logger.exception("OCR 큐 enqueue 실패 — ocr_job_id=%s", ocr_job_id)
 
         return DocumentUploadResponse(
             document_ids=document_ids,

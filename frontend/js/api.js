@@ -58,7 +58,7 @@ function request(path, options) {
 
   var headers = { Accept: "application/json" };
   if (options.body) headers["Content-Type"] = "application/json";
-  var token = options.token;
+  var token = options.token || session.token();
   if (token) headers["Authorization"] = "Bearer " + token;
 
   return fetch(API_BASE + path, {
