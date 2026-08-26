@@ -9,7 +9,9 @@
     <link rel="stylesheet" href="/css/guide.css" />
   </head>
   <body class="guide">
-    <!-- P2 복약지도 · P3 주의사항 · P4 생활관리 — 한 화면의 세 탭이다 (KEY-93).
+    <!-- P2 복약지도 · P3 주의사항 · P4 생활관리 · 현황(미구현) · P6 챗봇 —
+         한 화면의 **다섯 탭**이다 (KEY-93, 챗봇은 KEY-95 가 더했다).
+         「세 탭」이라고 적혀 있었는데 실제와 달랐다 (KEY-129).
          환자는 문자 링크로 들어와 한 번 보고 나간다. 로그인이 없고,
          탭을 옮겨도 주소가 바뀌지 않는다 — 뒤로가기로 링크 밖으로 나가면
          다시 인증해야 하기 때문이다. -->
@@ -23,9 +25,14 @@
 
     <nav class="tabs" id="tabs" aria-label="안내 항목"></nav>
 
-    <main class="guide__body" id="guide-body" aria-live="polite">
+    <!-- **라이브 리전이 아니다.** `renderBody()` 가 탭을 누를 때마다 본문을
+         통째로 갈아 끼우는데, 여기 실어 두면 탭을 옮길 때마다 안내문 전체가
+         다시 낭독된다. 실측했더니 탭 3 번에 6 번 읽혔다 (KEY-129).
+         바뀐 것만 아래 `#guide-say` 가 한 줄로 알린다. -->
+    <main class="guide__body" id="guide-body">
       <p class="guide__loading">안내를 불러오는 중이에요…</p>
     </main>
+    <p class="sr-only" id="guide-say" role="status" aria-live="polite"></p>
 
     <footer class="guide__foot">
       <p class="guide__note">ⓘ 이 안내는 담당 의료진이 확인한 내용입니다</p>

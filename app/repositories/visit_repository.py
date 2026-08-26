@@ -22,16 +22,22 @@ class VisitRepository:
         self,
         patient_id: int,
         hospital_id: int,
-        start_utc: datetime,
-        end_utc: datetime,
+        day_start: datetime,
+        day_end: datetime,
         *,
         exclude_visit_id: int | None = None,
     ) -> bool:
+        """`day_start`·`day_end` 는 **의원 시간대(KST) 로 준다** — KEY-181.
+
+        `visited_at` 열이 KST 벽시계를 담고 있어서, 여기 UTC 로 바꿔 넘기면
+        아홉 시간 밀린 창으로 재게 된다. 예전 이름이 `start_utc` 였고 실제로
+        UTC 를 넘기고 있었다.
+        """
         query = Visit.filter(
             patient_id=patient_id,
             hospital_id=hospital_id,
-            visited_at__gte=start_utc,
-            visited_at__lt=end_utc,
+            visited_at__gte=day_start,
+            visited_at__lt=day_end,
         )
         if exclude_visit_id is not None:
             query = query.exclude(visit_id=exclude_visit_id)
@@ -57,10 +63,14 @@ class VisitRepository:
         self,
         hospital_id: int,
         *,
-        start_utc: datetime,
-        end_utc: datetime,
+        day_start: datetime,
+        day_end: datetime,
     ) -> list[Visit]:
-        """선택 날짜와 아직 해결되지 않은 보완 후보만 DB에서 읽는다."""
+        """선택 날짜와 아직 해결되지 않은 보완 후보만 DB에서 읽는다.
+
+        `day_start`·`day_end` 는 **의원 시간대(KST) 로 준다** — KEY-181.
+        `exists_on_day` 와 같은 이유다.
+        """
         returned_visit_ids = await GuideDocument.filter(
             hospital_id=hospital_id,
             status=GuideStatus.APPROVAL_RETURNED,
@@ -78,7 +88,7 @@ class VisitRepository:
             attention |= Q(visit_id__in=returned_visit_ids)
         return await (
             Visit.filter(hospital_id=hospital_id)
-            .filter(Q(visited_at__gte=start_utc, visited_at__lt=end_utc) | attention)
+            .filter(Q(visited_at__gte=day_start, visited_at__lt=day_end) | attention)
             .prefetch_related("patient")
             .order_by("-visited_at", "-visit_id")
             .distinct()

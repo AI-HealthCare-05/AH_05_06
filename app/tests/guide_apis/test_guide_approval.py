@@ -124,7 +124,7 @@ class GuideTestCase(TestCase):
         이 검사가 보려는 것은 **승인 규칙**이지 로그인이 아니다. 로그인 계약이
         바뀔 때마다 상관없는 검사가 함께 깨지면 무엇이 진짜 고장인지 안 보인다.
         """
-        access, _ = await StaffSessionService(self.redis).start(staff, False)  # type: ignore[arg-type]
+        access, _ = await StaffSessionService(self.redis).start(staff)  # type: ignore[arg-type]
         return {"Authorization": f"Bearer {access}"}
 
     def client(self) -> AsyncClient:

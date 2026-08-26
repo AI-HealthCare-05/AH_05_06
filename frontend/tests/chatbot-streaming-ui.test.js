@@ -1,4 +1,4 @@
-/* KEY-95 챗봇 스트리밍 UI 계약 — 실제 API 계약은 KEY-77·KEY-96 대기. */
+/* KEY-95 UI와 KEY-96 단일 응답 API 어댑터 계약. */
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -116,4 +116,50 @@ test("delta 뒤 스트림이 실패하면 잘린 답변 대신 오류를 표시�
   assert.deepEqual(Array.from(streamedTexts), ["전송 중 잘린 답변"]);
   assert.equal(renderCount, 2, "최초 렌더와 종료 렌더만 허용해 입력 노드를 청크마다 교체하지 않는다");
   assert.equal(ui.state.chat.busy, false);
+});
+
+test("실제 전송은 토큰을 URL이 아닌 JSON 본문에 넣고 완성 답변을 UI 어댑터로 전달한다", async () => {
+  let request = null;
+  const response = {
+    answer: "합성 승인 안내 기반 답변",
+    evidence: "복약 안내 · 합성 승인 문구",
+    source: "담당 의료진이 승인한 진료 안내",
+    limitation: "승인된 안내 범위에서만 답합니다.",
+    urgent: false,
+    fallback: false,
+    grounded_section: "medication",
+  };
+  const context = vm.createContext({
+    URLSearchParams,
+    Promise,
+    String,
+    fetch: async (url, options) => {
+      request = { url, options };
+      return { ok: true, json: async () => response };
+    },
+    window: { location: { search: "" } },
+    setTimeout,
+  });
+  vm.runInContext(fs.readFileSync(path.join(JS_DIR, "chatbot-api.js"), "utf8"), context);
+  const deltas = [];
+  let completed = null;
+
+  const result = await context.streamChatbotAnswer(
+    { link_token: "synthetic-link-token", question: "약은 언제 먹나요?" },
+    {
+      onDelta: (chunk) => deltas.push(chunk),
+      onComplete: (value) => {
+        completed = value;
+      },
+    },
+  );
+
+  assert.equal(request.url, "/api/v1/chatbot/responses");
+  assert.equal(request.url.includes("synthetic-link-token"), false);
+  assert.deepEqual(JSON.parse(request.options.body), {
+    link_token: "synthetic-link-token",
+    question: "약은 언제 먹나요?",
+  });
+  assert.deepEqual(deltas, [response.answer]);
+  assert.equal(completed, result);
 });
