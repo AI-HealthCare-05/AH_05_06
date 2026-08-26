@@ -126,3 +126,80 @@ test("중단하지 않았으면 조각이 **그대로 붙는다** — 검사가 
   assert.strictEqual(box.answer().text, "첫 조각 둘째 조각");
   assert.notStrictEqual(box.answer().aborted, true);
 });
+
+/* ── 중단한 뒤 **다음 질문이 시작된 다음**에 늦은 것이 도착하면 ────────────────
+ *
+ * 위 다섯은 전부 중단하고 그 자리에서 끝난다. 그래서 `stale()` 을
+ *
+ *     mine !== state.chat.generation   →   !state.chat.busy
+ *
+ * 로 바꿔도 **다섯도 프런트 전체 176 개도 전부 통과한다**(김고은 님 `#144`
+ * 지적, 실측 확인). 중단 직후에는 `busy` 가 거짓이라 두 판정이 같은 답을
+ * 내기 때문이다. 갈리는 것은 **다음 질문이 시작된 뒤**다 — 그때 `busy` 가
+ * 다시 참이 되어 늦은 콜백이 「신선한 것」으로 통과하고, 중단한 답이
+ * 되살아난다.
+ *
+ * 세대 카운터가 지키는 뜻이 바로 그것이라, 여기서 잰다. */
+test("중단하고 **새 질문을 시작한 뒤** 온 늦은 조각은 옛 답을 되살리지 않는다", () => {
+  const app = boot();
+
+  const first = app.ask("첫 질문");
+  first.onDelta("앞부분");
+  const firstAnswer = app.answer();
+
+  app.ctx.abortChatAnswer();
+  const textAtAbort = firstAnswer.text;
+
+  app.ask("둘째 질문");
+
+  /* 첫 스트림이 이제야 도착한다 — 완성본까지 통째로. */
+  first.onDelta("늦게 온 뒷부분");
+  first.onComplete({
+    urgent: true,
+    evidence: "늦게 온 근거",
+    source: "늦게 온 출처",
+    limitation: "늦게 온 한계",
+  });
+
+  assert.equal(firstAnswer.text, textAtAbort, "중단한 답에 늦은 조각이 붙었다");
+  assert.equal(firstAnswer.aborted, true, "중단 표시가 지워졌다");
+  assert.equal(firstAnswer.streaming, false, "중단한 답이 다시 스트리밍 중이 됐다");
+  assert.equal(firstAnswer.evidence, undefined, "중단한 답에 근거가 되살아났다");
+  assert.equal(firstAnswer.source, undefined, "중단한 답에 출처가 되살아났다");
+  assert.equal(firstAnswer.limitation, undefined, "중단한 답에 한계가 되살아났다");
+  assert.ok(!firstAnswer.urgent, "중단한 답이 응급으로 바뀌었다");
+});
+
+test("늦은 것이 **새 답변을 오염시키지도 않는다**", () => {
+  const app = boot();
+
+  const first = app.ask("첫 질문");
+  first.onDelta("앞부분");
+  app.ctx.abortChatAnswer();
+
+  app.ask("둘째 질문");
+  const secondAnswer = app.answer();
+
+  first.onDelta("남의 조각");
+  first.onComplete({ urgent: true, evidence: "남의 근거", source: "x", limitation: "y" });
+
+  assert.equal(secondAnswer.text, "", "첫 스트림의 조각이 새 답변에 붙었다");
+  assert.equal(secondAnswer.streaming, true, "남의 완성 신호가 새 답변을 끝냈다");
+  assert.equal(secondAnswer.evidence, undefined, "남의 근거가 새 답변에 붙었다");
+});
+
+test("**새 스트림 자신의 조각은 제대로 붙는다** — 위 둘이 늘 통과하지 않게", () => {
+  const app = boot();
+
+  app.ask("첫 질문");
+  app.ctx.abortChatAnswer();
+
+  const second = app.ask("둘째 질문");
+  const secondAnswer = app.answer();
+  second.onDelta("제 조각");
+  second.onComplete({ urgent: false, evidence: "제 근거", source: "s", limitation: "l" });
+
+  assert.equal(secondAnswer.text, "제 조각", "새 스트림이 자기 답에도 못 쓴다");
+  assert.equal(secondAnswer.streaming, false, "새 스트림의 완성 신호가 무시됐다");
+  assert.equal(secondAnswer.evidence, "제 근거");
+});
