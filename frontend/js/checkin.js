@@ -54,7 +54,7 @@ function notifyFor(answers, key) {
   var painHad = null; // true · false · null(아직 안 고름)
   var painScore = 4;
   var painTypes = [];
-  var pendingAnswer = null;
+  var authRecovery = createPatientAuthRecovery();
   var authTimer = null;
   var otpResendAvailableAt = 0;
 
@@ -346,9 +346,7 @@ function notifyFor(answers, key) {
       .verifyOtp(token, code)
       .then(function () {
         clearAuthTimer();
-        var answer = pendingAnswer;
-        pendingAnswer = null;
-        if (answer) submitAnswer(answer);
+        authRecovery.retryAfterVerification(submitAnswer);
       })
       .catch(function (error) {
         var guide = patientAuthGuidance(error);
@@ -364,16 +362,15 @@ function notifyFor(answers, key) {
     checkinApi
       .save(token, answer)
       .then(function (result) {
-        pendingAnswer = null;
+        authRecovery.complete();
         showOnly(doneHtml(result));
       })
       .catch(function (error) {
-        if (error && error.code === "PATIENT_SESSION_EXPIRED") {
-          pendingAnswer = answer;
+        var recoveryAction = authRecovery.onSaveFailed(error, answer);
+        if (recoveryAction === "reauth") {
           return renderAuthGuidance(error);
         }
-        if (error && (error.code === "LINK_EXPIRED" || error.code === "LINK_NOT_FOUND")) {
-          pendingAnswer = null;
+        if (recoveryAction === "link-closed") {
           return renderAuthGuidance(error);
         }
         el("state").hidden = true;

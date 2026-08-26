@@ -74,6 +74,27 @@ test("세션 만료는 작성값 유지와 OTP 재인증을 다음 행동으로 
   assert.equal(guidance.kind, "session");
   assert.equal(guidance.action, "issue");
   assert.match(guidance.message, /작성한 답.*그대로/);
+  assert.match(guidance.message, /새로고침.*다시 입력/);
+});
+
+test("화면 복구 상태는 세션 만료 답을 재전송하고 죽은 링크에서는 즉시 버린다", () => {
+  const { context } = loadApi();
+  const recovery = context.createPatientAuthRecovery();
+  const answer = plain({ medication: "uncomfortable", pain: { had: true, score: 4 }, note: "합성 메모" });
+  let retried = null;
+
+  assert.equal(recovery.onSaveFailed({ code: "PATIENT_SESSION_EXPIRED" }, answer), "reauth");
+  assert.equal(
+    recovery.retryAfterVerification((saved) => {
+      retried = plain(saved);
+    }),
+    true,
+  );
+  assert.deepEqual(retried, answer, "재인증 뒤 같은 작성값을 다시 저장하지 않는다");
+
+  recovery.onSaveFailed({ code: "PATIENT_SESSION_EXPIRED" }, answer);
+  assert.equal(recovery.onSaveFailed({ code: "LINK_EXPIRED" }, answer), "link-closed");
+  assert.equal(recovery.retryAfterVerification(() => assert.fail("죽은 링크의 답을 다시 보내면 안 된다")), false);
 });
 
 test("만료 링크와 폐기·교체 가능 링크는 우회 동작 없이 서로 다른 안전 문구를 쓴다", () => {
@@ -140,8 +161,12 @@ test("새로고침 때 인증 성공을 브라우저 저장소에서 추측하�
     /(?:localStorage|sessionStorage)\.setItem\([^\n]*(?:auth|session|otp)/i,
     "인증 성공을 화면 저장소에 남겨 서버 세션과 어긋날 수 있다",
   );
-  assert.match(source, /pendingAnswer = answer;[\s\S]*renderAuthGuidance\(error\)/);
-  assert.match(source, /if \(answer\) submitAnswer\(answer\)/, "재인증 뒤 보존한 답을 저장하지 않는다");
+  assert.match(source, /authRecovery\.onSaveFailed\(error, answer\)/, "화면이 검증된 복구 상태 전이를 사용하지 않는다");
+  assert.match(
+    source,
+    /authRecovery\.retryAfterVerification\(submitAnswer\)/,
+    "재인증 뒤 보존한 답을 저장하지 않는다",
+  );
 });
 
 test("OTP 입력은 원문을 화면에 다시 출력하지 않고 숫자 6자리에서만 확인할 수 있다", () => {

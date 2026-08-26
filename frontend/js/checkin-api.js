@@ -93,7 +93,8 @@ function patientAuthGuidance(error) {
     return {
       kind: "session",
       title: "본인 확인이 다시 필요해요",
-      message: "인증 시간이 끝났거나 새로 접속했어요. 작성한 답은 이 화면에 그대로 두고 인증 후 저장할게요.",
+      message:
+        "인증 시간이 끝났거나 새로 접속했어요. 작성한 답은 이 화면에 그대로 두고 인증 후 저장할게요. 새로고침하거나 창을 닫으면 작성한 답이 사라져 다시 입력해야 해요.",
       action: "issue",
     };
   }
@@ -171,6 +172,45 @@ function patientAuthGuidance(error) {
     title: "잠시 연결하지 못했어요",
     message: "인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
     action: "retry",
+  };
+}
+
+/* D+7 저장과 재인증 사이의 상태 전이만 떼어 낸다.
+
+   DOM 을 흉내 낸 검사는 실제 브라우저 동작을 보장하지 못한다. 대신 환자 답을
+   언제 들고 있고, 언제 다시 보내며, 언제 버리는지는 화면과 무관한 이 작은
+   컨트롤러가 맡는다. `checkin.js`도 이 경로를 그대로 사용하므로 세션 만료 때
+   답을 버리거나 재인증 뒤 저장을 빼거나 죽은 링크에서 답을 남기는 회귀가
+   자동 검사에 걸린다. 답은 메모리에만 있고 브라우저 저장소에는 넣지 않는다. */
+function createPatientAuthRecovery() {
+  var pendingAnswer = null;
+
+  return {
+    onSaveFailed: function (error, answer) {
+      var code = error && error.code;
+      if (code === "PATIENT_SESSION_EXPIRED") {
+        pendingAnswer = answer;
+        return "reauth";
+      }
+      pendingAnswer = null;
+      if (
+        code === "LINK_EXPIRED" ||
+        code === "LINK_NOT_FOUND" ||
+        code === "LINK_REVOKED" ||
+        code === "LINK_REISSUED"
+      ) {
+        return "link-closed";
+      }
+      return "form";
+    },
+    retryAfterVerification: function (retry) {
+      if (pendingAnswer === null) return false;
+      retry(pendingAnswer);
+      return true;
+    },
+    complete: function () {
+      pendingAnswer = null;
+    },
   };
 }
 
