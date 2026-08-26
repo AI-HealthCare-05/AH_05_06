@@ -167,7 +167,9 @@ class TestApprovedChatbotContext(TestCase):
             phone="01099998888",
             sms_consent=True,
         )
-        # KST 00:30 = UTC 전날 15:30 → .date() 직접 호출 시 2026-08-19 (버그)
+        # KST 00:30 — UTC 로 옮기면 전날이 되는 시각이다. 지금은 ORM 이 Asia/Seoul 을
+        # 붙여 돌려주므로 어느 쪽으로 뽑아도 08-20 이지만, 저장을 UTC 로 정규화하는
+        # 날 이 케이스가 먼저 운다.
         visit = await Visit.create(
             hospital_id=hospital.hospital_id,
             patient=patient,

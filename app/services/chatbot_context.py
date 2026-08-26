@@ -52,13 +52,16 @@ class ChatbotContextService:
 
     승인·만료·토큰 검증은 PatientLinkService 에 위임한다.
     sections 는 get_approved_guide 내부의 prefetch_related 로 이미 로드된다.
+
+    KEY-88 필드 합의(이희진·김고은) 전까지는 프로덕션에서 아직 호출되지 않는다.
     """
 
     async def get_context(self, raw_token: str) -> ApprovedChatbotContext:
         _, guide = await PatientLinkService().get_approved_guide(raw_token)
         hospital = await Hospital.get(hospital_id=guide.hospital_id)
         await guide.fetch_related("visit")
-        assert guide.approved_at is not None
+        if guide.approved_at is None:
+            raise RuntimeError("approved guide has no approved_at")
         return _to_context(guide, hospital.name, guide.visit.visited_at.astimezone(DISPLAY_TIMEZONE).date())
 
 
