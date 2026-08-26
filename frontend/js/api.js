@@ -1,7 +1,7 @@
 /* API 호출 한 겹 — KEY-22
  *
  * 계약은 docs/api/hospital.md 4·5절 — KEY-8 v1 확정본을 따른다.
- *   POST  /api/v1/auth/login     { login_id, password, remember }
+ *   POST  /api/v1/auth/login     { login_id, password }
  *   GET   /api/v1/auth/me
  *   POST  /api/v1/auth/refresh   본문 없음. 쿠키만 본다
  *   POST  /api/v1/auth/logout
@@ -85,10 +85,10 @@ function request(path, options) {
 }
 
 var api = {
-  login: function (loginId, password, remember) {
+  login: function (loginId, password) {
     return request("/auth/login", {
       method: "POST",
-      body: { login_id: loginId, password: password, remember: !!remember },
+      body: { login_id: loginId, password: password },
     });
   },
   me: function (token) {

@@ -5,7 +5,6 @@
   var submit = document.getElementById("submit");
   var idInput = document.getElementById("login-id");
   var pwInput = document.getElementById("password");
-  var remember = document.getElementById("remember");
   var box = document.getElementById("error");
   var line = document.getElementById("error-line");
   var count = document.getElementById("error-count");
@@ -101,7 +100,7 @@
     submit.disabled = true;
     submit.textContent = "확인 중…";
 
-    api.login(loginId, password, remember.checked).then(
+    api.login(loginId, password).then(
       function (res) {
         session.save(res.access_token);
         /* 첫 로그인은 L-3을 지나야 한다. 건너뛸 수 없다. */
