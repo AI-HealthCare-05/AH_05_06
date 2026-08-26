@@ -104,13 +104,12 @@ function renderGuideTab(g) {
   var drugs = section("처방받은 약");
   (g.drugs || []).forEach(function (d) {
     var item = el("div", "drug");
-    item.appendChild(el("p", "drug__name", d.name));
     /* 성분은 **이름 줄에 괄호로 함께** 적는다 — `브랜드명(성분명) 용량`(KEY-183).
-       따로 한 줄을 더 두면 같은 말이 두 번 나온다. 빈 값이 오면 그 줄을 아예
-       안 만든다 — 예전에는 빈 `<p>` 가 남아 줄 간격만 벌어졌다. */
-    [d.ingredient, d.dosage].forEach(function (line) {
-      if (line) item.appendChild(el("p", "drug__sub", line));
-    });
+       따로 한 줄을 더 두면 같은 말이 두 번 나온다. 그래서 `ingredient` 를 아예
+       안 쓴다 — 아무도 안 채우는 분기를 남겨 두면 다음 사람이 「채워야 하나」로
+       읽는다 (이희진 님 `#142` 리뷰). */
+    item.appendChild(el("p", "drug__name", d.name));
+    if (d.dosage) item.appendChild(el("p", "drug__sub", d.dosage));
     drugs.appendChild(item);
   });
   frag.appendChild(drugs);
