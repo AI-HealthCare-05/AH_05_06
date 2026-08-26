@@ -3,7 +3,7 @@
 
 **만든 것을 커밋하지 않는다.** KEY-68 범위 밖 첫 줄이 「합성 이미지의 Git 저장소
 커밋」이다. 그래서 저장소에는 **만드는 법**만 둔다 — 이 스크립트와 기대값
-YAML 이다. 그림은 부를 때마다 새로 나온다.
+TOML 이다. 그림은 부를 때마다 새로 나온다.
 
 값은 어디서 오는가
     환자·처방      docs/data/synthetic-patients.csv   ← 정본
@@ -45,14 +45,28 @@ def load_patient(scenario: str) -> dict[str, str]:
     raise SystemExit(f"{PATIENTS_CSV.name} 에 {scenario} 행이 없다 — 시나리오 ID 를 확인해라")
 
 
-def resolve(spec: dict, patient: dict[str, str]) -> dict[str, dict[str, object]]:
-    """YAML 이 가리키는 열을 실제 값으로 바꾼다.
+def column(patient: dict[str, str], name: str) -> str:
+    """CSV 의 한 칸을 **반드시 문자열로** 꺼낸다.
 
-    값을 YAML 에 안 박는 이유가 여기 있다 — CSV 가 바뀌면 여기서 따라온다.
+    `patient.get(name, "")` 로는 모자란다. `csv.DictReader` 는 헤더보다 짧은
+    행을 만나면 **키는 둔 채 값을 `None`** 으로 채우기 때문이다. 그러면 기본값이
+    안 먹고, 뒤이은 `.strip()`·`.split()` 이 `AttributeError` 로 터지면서
+    아래 「비었다」 안내를 **지나쳐 버린다** (이희진 님 `#129` 리뷰).
+
+        SYN-A      처방일수='84'   .get(col,"") → '84'
+        SYN-SHORT  처방일수=None   .get(col,"") → None   ← 기본값이 안 먹는다
+    """
+    return patient.get(name) or ""
+
+
+def resolve(spec: dict, patient: dict[str, str]) -> dict[str, dict[str, object]]:
+    """기대값이 가리키는 열을 실제 값으로 바꾼다.
+
+    값을 기대값 파일에 안 박는 이유가 여기 있다 — CSV 가 바뀌면 여기서 따라온다.
     """
     out: dict[str, dict[str, object]] = {}
     for name, rule in spec["fields"].items():
-        raw = patient.get(rule["csv_column"], "")
+        raw = column(patient, rule["csv_column"])
         if "csv_part" in rule:
             # 총투원문 `1/1/84` 처럼 한 열에 여럿이 든 경우
             parts = raw.split("/")
@@ -76,18 +90,49 @@ def cell(x: int, y: int, text: str, *, bold: bool = False, size: int = 13) -> st
     )
 
 
+#: 이 렌더러가 그릴 줄 아는 문서 유형. **EMR 진단·처방 표 구조 하나뿐**이다.
+#: 처방전·검사결과지는 표가 다르므로 여기서 그리면 EMR 모양의 가짜가 나온다.
+RENDERABLE = {"EMR"}
+
+
+def value_of(fields: dict[str, dict[str, object]], name: str) -> str:
+    """없는 필드는 **빈 칸**으로 그린다.
+
+    `fields[name]` 로 바로 꺼내면 권장 필드(`DOSAGE`·`FREQUENCY`)를 정의하지 않은
+    기대값이 들어오는 순간 안내 없는 `KeyError` 로 죽는다 — 이 스크립트의 다른
+    실패는 전부 이유를 적은 `SystemExit` 인데 여기만 달랐다 (이희진 님 `#129` 리뷰).
+
+    권장 필드는 없어도 되는 것이므로(KEY-163 §2) 빈 칸이 맞는 그림이다. 필수
+    필드는 `resolve()` 가 앞에서 이미 막는다.
+    """
+    entry = fields.get(name)
+    return str(entry["value"]) if entry else ""
+
+
 def render_svg(spec: dict, patient: dict[str, str], fields: dict[str, dict[str, object]]) -> str:
-    """KEY-163 §2 가 적은 표 구조를 따른다.
+    """KEY-163 §2 가 적은 **EMR** 표 구조를 따른다.
 
     실제 병원 EMR 화면 레이아웃은 아직 미확정이다(KEY-163 §8 「대상 병원 EMR
     시스템 이름·버전 — 미기입」). 그래서 **화면을 흉내 내지 않고** 문서가 못 박은
     표 구조만 그린다. 확정되면 이 함수만 갈아 끼우고 기대값은 그대로 쓴다.
     """
+    kind = spec["document_type"]
+    if kind not in RENDERABLE:
+        raise SystemExit(
+            f"{kind} 를 그릴 렌더러가 없다 — 이 스크립트는 EMR 표 구조만 안다.\n"
+            f"  그대로 그리면 {kind} 가 EMR 모양으로 나온다. 유형에 맞는 렌더러를 먼저 더해라\n"
+            "  (`docs/ocr-fixtures.md` §9 · 8/27 멘토링 확정 뒤)."
+        )
+
     p = patient
     rows: list[str] = ['<rect width="900" height="520" fill="#ffffff"/>']
     rows.append(cell(40, 46, "진료기록 (합성 · 실제 환자 아님)", bold=True, size=17))
-    rows.append(cell(40, 74, f"차트번호 {p['차트번호']}    이름 {p['이름']}    생년월일 {p['생년월일']}"))
-    rows.append(cell(40, 98, f"진료일 {p['진료일']}    담당의 {p['담당의']}"))
+    rows.append(
+        cell(
+            40, 74, f"차트번호 {column(p, '차트번호')}    이름 {column(p, '이름')}    생년월일 {column(p, '생년월일')}"
+        )
+    )
+    rows.append(cell(40, 98, f"진료일 {column(p, '진료일')}    담당의 {column(p, '담당의')}"))
 
     rows.append(cell(40, 146, "[진단]", bold=True))
     rows.append('<line x1="40" y1="158" x2="860" y2="158" stroke="#333"/>')
@@ -95,7 +140,7 @@ def render_svg(spec: dict, patient: dict[str, str], fields: dict[str, dict[str, 
     rows.append(cell(140, 180, "상병명", bold=True))
     rows.append(cell(420, 180, "주/부상병", bold=True))
     diagnosis = fields["DIAGNOSIS"]
-    rows.append(cell(40, 208, str(diagnosis["icd_code"])))
+    rows.append(cell(40, 208, str(diagnosis.get("icd_code", ""))))
     rows.append(cell(140, 208, str(diagnosis["value"])))
     rows.append(cell(420, 208, "주상병"))
 
@@ -103,10 +148,10 @@ def render_svg(spec: dict, patient: dict[str, str], fields: dict[str, dict[str, 
     rows.append('<line x1="40" y1="280" x2="860" y2="280" stroke="#333"/>')
     for x, head in ((40, "약품명"), (300, "1회량"), (400, "일일횟수"), (520, "처방일수")):
         rows.append(cell(x, 302, head, bold=True))
-    rows.append(cell(40, 330, str(fields["MEDICATION_NAME"]["value"])))
-    rows.append(cell(300, 330, str(fields["DOSAGE"]["value"])))
-    rows.append(cell(400, 330, str(fields["FREQUENCY"]["value"])))
-    rows.append(cell(520, 330, str(fields["DURATION_DAYS"]["value"])))
+    rows.append(cell(40, 330, value_of(fields, "MEDICATION_NAME")))
+    rows.append(cell(300, 330, value_of(fields, "DOSAGE")))
+    rows.append(cell(400, 330, value_of(fields, "FREQUENCY")))
+    rows.append(cell(520, 330, value_of(fields, "DURATION_DAYS")))
 
     rows.append(cell(40, 470, f"합성 자료 · {spec['scenario']} · {spec['version']} · 실제 환자정보 없음", size=11))
     body = "\n  ".join(rows)
@@ -129,7 +174,7 @@ def build(spec_path: Path, out_dir: Path) -> None:
         "scenario": spec["scenario"],
         "document_type": spec["document_type"],
         "version": spec["version"],
-        "patient": {k: patient[v] for k, v in spec["patient"]["columns"].items()},
+        "patient": {k: column(patient, v) for k, v in spec["patient"]["columns"].items()},
         "fields": fields,
         "success_requires": spec["success_requires"],
         "source": {

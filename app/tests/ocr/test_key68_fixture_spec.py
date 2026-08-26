@@ -248,3 +248,61 @@ def test_the_generated_values_match_the_decision_table(tmp_path: Path) -> None:
         "  줄었다면 `KNOWN_DIVERGENCE` 에서 빼라. 늘었다면 무엇이 갈렸는지 먼저 본다.\n"
         f"  생성값: { {k: v for k, v in checks.items()} }"
     )
+
+
+#: 아래 둘은 **지금 안 터지지만 다음 확장에서 바로 부딪히는** 자리다
+#: (이희진 님 `#129` 리뷰). 재현해서 고쳤고, 여기서 못 박는다.
+
+
+def test_a_short_csv_row_reaches_the_guided_error_not_an_attribute_error() -> None:
+    """`csv.DictReader` 는 짧은 행의 값을 **키는 둔 채 `None`** 으로 채운다.
+
+    그래서 `patient.get(col, "")` 의 기본값이 안 먹고, 뒤이은 `.strip()` 이
+    `AttributeError` 로 터지면서 「비었다」 안내를 **지나쳐 버렸다.**
+
+        SYN-A      처방일수='84'   .get(col,"") → '84'
+        SYN-SHORT  처방일수=None   .get(col,"") → None
+    """
+    import csv as _csv
+    import io
+
+    from scripts.make_ocr_fixture import column
+
+    rows = list(_csv.DictReader(io.StringIO("시나리오ID,처방일수\nSYN-SHORT\n")))
+    assert rows[0]["처방일수"] is None, "DictReader 가 더 이상 None 을 안 넣는다 — 이 검사의 전제가 사라졌다"
+
+    assert column(rows[0], "처방일수") == "", "짧은 행이 문자열로 안 나온다 — AttributeError 로 새는 자리다"
+    assert column(rows[0], "없는열") == ""
+    assert column({"진단": "자궁내막증"}, "진단") == "자궁내막증"
+
+
+def test_a_missing_recommended_field_draws_a_blank_not_a_key_error() -> None:
+    """권장 필드(`DOSAGE`·`FREQUENCY`)를 안 정의한 기대값이 와도 죽지 않는다.
+
+    KEY-163 §2 가 권장으로 분류한 것들이라 **없어도 되는 값**이다. 필수 필드는
+    `resolve()` 가 앞에서 막으므로 여기까지 안 온다.
+    """
+    from scripts.make_ocr_fixture import value_of
+
+    assert value_of({}, "DOSAGE") == ""
+    assert value_of({"DOSAGE": {"value": "1"}}, "DOSAGE") == "1"
+
+
+def test_an_unknown_document_type_is_refused_with_a_reason() -> None:
+    """**EMR 표 구조만 그릴 줄 안다.**
+
+    처방전·검사결과지는 표가 달라서, 그대로 그리면 EMR 모양의 가짜가 나온다.
+    안내 없는 `KeyError` 로 죽는 대신 이유를 대고 멈춘다 — 이 스크립트의 다른
+    실패가 전부 그러하듯이.
+    """
+    import pytest as _pytest
+
+    from scripts.make_ocr_fixture import render_svg
+
+    spec = {"document_type": "PRESCRIPTION", "scenario": "SYN-EMS-01", "version": "v1"}
+
+    with _pytest.raises(SystemExit) as caught:
+        render_svg(spec, {}, {})
+
+    assert "렌더러가 없다" in str(caught.value), str(caught.value)
+    assert "PRESCRIPTION" in str(caught.value)
