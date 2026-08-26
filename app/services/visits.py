@@ -1,11 +1,11 @@
 import builtins
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 
 from tortoise.timezone import now
 
 from app.core.api_errors import ApiError
 from app.core.pagination import encode_cursor
-from app.core.time import DISPLAY_TIMEZONE
+from app.core.time import DISPLAY_TIMEZONE, clinic_day_window
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import DoctorResponse, VisitCreateRequest, VisitResponse, VisitUpdateRequest
 from app.models.ocr import OcrJob, OcrJobStatus
@@ -136,14 +136,15 @@ class VisitService:
         exclude_visit_id: int | None = None,
     ) -> None:
         localized = self._localized(visited_at)
-        start_local = datetime.combine(localized.date(), datetime.min.time(), tzinfo=DISPLAY_TIMEZONE)
-        start_utc = start_local.astimezone(UTC)
-        end_utc = (start_local + timedelta(days=1)).astimezone(UTC)
+        # 접수대 목록과 **같은 경계**를 쓴다. UTC 로 바꾸면 「하루」가 15:00 ~
+        # 다음날 15:00 이 되어, 저녁 진료 뒤 다음 날 아침 재진이 「같은 날 이미
+        # 등록」으로 막힌다 (KEY-181).
+        day_start, day_end = clinic_day_window(localized.date())
         if await self.repo.exists_on_day(
             patient_id,
             hospital_id,
-            start_utc,
-            end_utc,
+            day_start,
+            day_end,
             exclude_visit_id=exclude_visit_id,
         ):
             raise ApiError(409, "VISIT_ALREADY_REGISTERED", "같은 날짜의 진료가 이미 등록되어 있습니다.")
