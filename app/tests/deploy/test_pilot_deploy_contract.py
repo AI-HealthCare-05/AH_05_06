@@ -387,6 +387,21 @@ class TestTheRunbookTellsTheTruth:
         assert "prune" in runbook, "롤백 전제를 안 적었다"
         assert "APP_VERSION" in runbook
 
+    def test_the_runbook_carries_the_smoke_command(self) -> None:
+        """「런북에서 실행 명령을 찾을 수 있음」이 KEY-184 인수조건이다.
+
+        실행기만 있고 문서에 없으면, 배포하는 사람이 그것이 있는 줄 모른다.
+        **게이트로 쓰는 법까지** 적혀 있어야 배포·CI 가 그대로 붙인다.
+        """
+        runbook = read("docs/deploy-runbook.md")
+
+        assert "scripts/smoke.py" in runbook, "실행기를 가리키지 않는다"
+        for name in ("SMOKE_LOGIN_ID", "SMOKE_PASSWORD"):
+            assert name in runbook, f"{name} 를 어디서 주는지 안 적었다"
+        assert re.search(r"scripts/smoke\.py[^\n]*(\|\||\$\?)", runbook), (
+            "실패했을 때 멈추는 법이 없다 — 게이트로 못 쓴다"
+        )
+
     def test_every_referenced_file_exists(self) -> None:
         """런북이 가리키는 파일이 실제로 있어야 한다."""
         runbook = read("docs/deploy-runbook.md")
