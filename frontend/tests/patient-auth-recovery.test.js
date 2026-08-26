@@ -173,7 +173,16 @@ test("새로고침 때 인증 성공을 브라우저 저장소에서 추측하�
     /authRecovery\.retryAfterVerification\(submitAnswer\)/,
     "재인증 뒤 보존한 답을 저장하지 않는다",
   );
-  assert.match(source, /authRecovery\.complete\(\)/, "저장 성공 뒤 보류 답을 비우지 않는다");
+  assert.match(
+    source,
+    /\.save\(token, answer\)\s*\.then\(function \(result\) \{\s*authRecovery\.complete\(\);/,
+    "저장 성공 블록에서 보류 답을 비우지 않는다",
+  );
+  assert.equal(
+    source.match(/authRecovery\.complete\(\)/g)?.length,
+    1,
+    "저장 성공 외의 갈래에서 보류 답을 지우면 안 된다",
+  );
 });
 
 test("OTP 입력은 원문을 화면에 다시 출력하지 않고 숫자 6자리에서만 확인할 수 있다", () => {
