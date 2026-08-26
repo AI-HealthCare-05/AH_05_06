@@ -33,7 +33,7 @@ from app.models.ocr import (
 from app.models.patients import Patient
 from app.models.visits import Visit
 
-_LOGGER = "AI Worker"
+_LOGGER = "ai_worker"
 
 HOSPITAL_ID = 9175
 PATIENT_ID = 917501
@@ -153,16 +153,18 @@ class TestOcrObservabilityIntegration(TestCase):
             mime_type="image/jpeg",
             original_filename="lab.jpg",
             file_size=len(JPEG_BYTES),
+            uploaded_by=1,
         )
         job = await OcrJob.create(
             ocr_job_id=ocr_job_id,
             hospital_id=HOSPITAL_ID,
             visit=visit,
             status=OcrJobStatus.PROCESSING,
+            requested_by=1,
         )
         await OcrJobDocument.create(
             ocr_job=job,
-            document=med_doc,
+            document_id=med_doc.document_id,
             document_type=OcrDocumentType.LAB_RESULT,
         )
         return job
