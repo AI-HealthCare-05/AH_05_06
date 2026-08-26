@@ -9,8 +9,9 @@ KEY-143 의 환류 기반이다. 「몇 명이 안내를 열었나 · 무엇을 
 넣을 수 있게 두면 언젠가 누가 넣고, 그때는 이미 DB 에 쌓인 뒤다. 갈래
 (`PatientQuestionKind`)와 결과(`PatientAnswerOutcome`)만 받는다.
 
-KEY-95(챗봇 UI)·KEY-96(LLM·RAG)이 이 인터페이스를 그대로 부른다. **아직
-호출부는 없다** — 이 일감은 저장 쪽까지다.
+KEY-96(승인 컨텍스트 기반 LLM)의 `ChatbotService._record()`가 이
+인터페이스를 호출한다. 챗봇 질문·답변 원문 대신 아래에서 제한한 갈래와
+결과만 저장한다.
 """
 
 from app.core.auth_errors import AuthError as ApiError

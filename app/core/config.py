@@ -6,6 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from pydantic import field_validator, model_validator
+from pydantic.types import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +56,29 @@ class Config(BaseSettings):
 
     # 실제 OCR 워커 없이 fixture 결과를 즉시 DB에 기록한다 — Walking Skeleton 데모 전용.
     OCR_FIXTURE_FALLBACK: bool = False
+
+    # CLOVA OCR 연동 — 비어 있으면 Worker가 fixture fallback으로 동작한다.
+    # 실제 키는 .env에만 기록하고 코드·로그에 남기지 않는다.
+    CLOVA_OCR_INVOKE_URL: str = ""
+    CLOVA_OCR_SECRET_KEY: str = ""
+    # KEY-163 §8 기준값 10초. 실제 응답 시간은 8/27 멘토링 후 확인 예정.
+    CLOVA_OCR_TIMEOUT_SECONDS: float = 10.0
+
+    @property
+    def clova_enabled(self) -> bool:
+        return bool(self.CLOVA_OCR_INVOKE_URL and self.CLOVA_OCR_SECRET_KEY)
+
+    # KEY-96 환자 챗봇의 단일 실제 모델 경로. 키가 없거나 호출이 실패하면
+    # 승인 안내 화면 전체를 멈추지 않고 안전한 고정 응답으로 대체한다.
+    OPENAI_API_KEY: SecretStr | None = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_TIMEOUT_SECONDS: float = 20.0
+
+    # 공급자 가격은 바뀔 수 있으므로 코드에 고정하지 않는다. 배포 환경에서
+    # 단가를 넣은 경우에만 토큰 사용량으로 추정 비용을 기록한다.
+    LLM_INPUT_USD_PER_1M_TOKENS: float | None = None
+    LLM_OUTPUT_USD_PER_1M_TOKENS: float | None = None
 
     @model_validator(mode="after")
     def _fixture_fallback_is_local_only(self) -> "Config":

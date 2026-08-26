@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date
 
 from app.core.api_errors import ApiError
 from app.core.pagination import encode_cursor
-from app.core.time import DISPLAY_TIMEZONE
+from app.core.time import DISPLAY_TIMEZONE, clinic_day_window
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.front_desk import FrontDeskVisitItem
 from app.dtos.patients import calculate_age
@@ -41,12 +41,12 @@ class FrontDeskService:
         selected = self._categories(categories)
         before_at, before_id = visit_cursor(cursor)
 
-        start_local = datetime.combine(target_date, time.min, tzinfo=DISPLAY_TIMEZONE)
-        visits = await self.repo.front_desk_candidates(
-            hospital_id,
-            start_utc=start_local.astimezone(UTC),
-            end_utc=(start_local + timedelta(days=1)).astimezone(UTC),
-        )
+        # 경계는 `clinic_day_window()` 가 만든다 — 두 자리가 같은 것을 쓰게
+        # 하려고 모았다. UTC 로 바꾸면 15:00 이후 진료가 이 창에서 빠지고,
+        # 아래 `astimezone(DISPLAY_TIMEZONE).date()` 재확인이 다음 날 목록에서도
+        # 걸러 내 **어느 날짜에도 안 뜨게** 된다 (KEY-181).
+        day_start, day_end = clinic_day_window(target_date)
+        visits = await self.repo.front_desk_candidates(hospital_id, day_start=day_start, day_end=day_end)
         signals = await load_signals([visit.visit_id for visit in visits], hospital_id)
         derived = {visit_id: derive(value) for visit_id, value in signals.items()}
         eligible = [

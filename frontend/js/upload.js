@@ -3,7 +3,9 @@
  * 한 버튼으로 여러 장을 받고, 무엇이 찍혔는지는 프로그램이 가려낸다.
  * 종류별로 나눠 올리게 하면 스탭이 매번 어느 칸인지 고민한다.
  *
- * 서버에 업로드 API 가 아직 없다(KEY-39). 계약이 정해지면 uploadOne 만 갈아 끼운다.
+ * KEY-56: uploadOne 을 실제 서버 호출로 교체했다.
+ *   POST /api/v1/front-desk/visits/{visit_id}/documents  (multipart)
+ *   완료 후 ocr-review.html 로 이동 — KEY-62 TODO 처리.
  */
 
 function human(bytes) {
@@ -141,30 +143,56 @@ function guessKind(name) {
     next.title = hasEmr ? "" : "EMR 과거기록을 한 장 이상 올려 주세요";
   }
 
-  /* 임시 업로드. 서버 계약이 정해지면 여기만 갈아 끼운다.
-     이름에 "fail" 이 들어가면 실패시킨다 — 재시도 UI 를 눈으로 보려는 것이다.
+  /* 화면 kind → 서버 OcrDocumentType 매핑 (KEY-56) */
+  var KIND_TO_TYPE = { emr: "EMR", note: "EMR", lab: "LAB_RESULT" };
 
-     TODO(KEY-39) 실제 업로드는 **선택된 visit_id 에 붙인다.** 차트번호가 아니다.
-         POST /api/v1/visits/{visit.visit_id}/documents   (multipart)
-     경로에 visit_id 가 들어가므로 본문에 다시 넣지 않는다(KEY-26 6절). */
+  /* 실제 업로드 — POST /api/v1/front-desk/visits/{visit_id}/documents
+     request() 는 Content-Type: application/json 을 고정으로 붙이므로
+     multipart 에는 fetch() 를 직접 쓴다. 브라우저가 boundary 를 포함한
+     Content-Type 을 자동으로 설정한다. */
   function uploadOne(item) {
+    if (!visit) {
+      item.state = "failed";
+      item.error = "진료 건을 먼저 선택해 주세요.";
+      render();
+      return;
+    }
+
     item.state = "uploading";
     item.progress = 0;
     render();
 
-    var timer = setInterval(function () {
-      item.progress += 20;
-      if (item.progress < 100) return render();
-      clearInterval(timer);
-      if (/fail/i.test(item.name)) {
-        item.state = "failed";
-        item.error = "업로드하지 못했습니다. 다시 시도해 주세요.";
-      } else {
+    var form = new FormData();
+    form.append("files", item.file);
+    var docType = KIND_TO_TYPE[item.kind];
+    if (docType) form.append("document_type", docType);
+
+    var headers = { Accept: "application/json" };
+    var token = session.token();
+    if (token) headers["Authorization"] = "Bearer " + token;
+
+    fetch(API_BASE + "/front-desk/visits/" + visit.visit_id + "/documents", {
+      method: "POST",
+      headers: headers,
+      credentials: "include",
+      body: form,
+    })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.message || "업로드 실패");
+          return data;
+        });
+      })
+      .then(function (data) {
         item.state = "done";
-        item.kind = guessKind(item.name);
-      }
-      render();
-    }, 120);
+        item.ocr_job_id = data.ocr_job_id;
+        render();
+      })
+      .catch(function (err) {
+        item.state = "failed";
+        item.error = err.message || "업로드하지 못했습니다. 다시 시도해 주세요.";
+        render();
+      });
   }
 
 
@@ -182,10 +210,11 @@ function guessKind(name) {
         name: file.name,
         size: file.size,
         type: file.type,
+        file: file, // uploadOne 이 FormData 에 실을 실제 File 객체
         state: "uploading",
         progress: 0,
         thumb: null,
-        kind: "emr",
+        kind: guessKind(file.name),
       };
       var bad = reject(file);
       files.push(item);
@@ -276,8 +305,10 @@ function guessKind(name) {
   });
 
   next.addEventListener("click", function () {
-    /* TODO(KEY-62) 판독 확인(S1-6)으로 넘어간다. 그 화면이 만들어지면 이 자리를 바꾼다. */
-    say("올렸습니다. 판독 확인 화면(S1-6)은 준비 중입니다 — 올린 진료기록은 그대로 남아 있습니다.");
+    /* KEY-56: ocr-review.html 이 완성됐으므로 바로 이동한다 (KEY-62 TODO 처리).
+       shell.js 가 현재 진료 건을 자동 선택하고 visit:selected 를 발생시키면
+       ocr-review.js 가 jobForVisit 으로 OCR 결과를 불러온다. */
+    location.href = "/ocr-review.html";
   });
 
   /* 지금 고른 진료 건. **업로드가 붙는 자리는 visit_id 다.**

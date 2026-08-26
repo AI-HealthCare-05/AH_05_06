@@ -1,8 +1,8 @@
 /* KEY-95 챗봇 UI가 사용하는 스트림 어댑터.
  *
- * KEY-77·KEY-96의 API 계약이 저장소에 아직 동결되지 않았으므로 엔드포인트나
- * SSE 필드를 여기서 새로 정하지 않는다. KEY-96은 window.chatbotStreamTransport
- * 한 곳을 구현하면 된다. 목업은 P6 화면 검증용 합성 승인 안내만 사용한다.
+ * KEY-96은 실제 모델을 한 번 호출하는 최소 JSON 응답 API를 사용한다. 서버가
+ * 완성한 답변 한 건을 UI의 기존 스트림 어댑터에 한 조각으로 전달한다. SSE는
+ * 이번 일감에서 새로 동결하지 않는다. 목업은 P6 화면 검증용 합성 승인 안내만 사용한다.
  */
 
 var CHATBOT_MOCK = (function () {
@@ -78,6 +78,32 @@ function streamChatbotAnswer(request, observer) {
     return window.chatbotStreamTransport(request, observer);
   }
   return Promise.reject(new ChatbotUiError("CHATBOT_API_NOT_READY"));
+}
+
+function apiChatbotStreamTransport(request, observer) {
+  observer = observer || {};
+  return fetch("/api/v1/chatbot/responses", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ link_token: request.link_token, question: request.question }),
+  }).then(function (response) {
+    return response
+      .json()
+      .catch(function () {
+        return {};
+      })
+      .then(function (result) {
+        if (!response.ok) throw new ChatbotUiError(result.code || "CHATBOT_STREAM_FAILED");
+        if (observer.onDelta) observer.onDelta(result.answer || "");
+        if (observer.onComplete) observer.onComplete(result);
+        return result;
+      });
+  });
+}
+
+if (!CHATBOT_MOCK && typeof window.chatbotStreamTransport !== "function") {
+  window.chatbotStreamTransport = apiChatbotStreamTransport;
 }
 
 function chatbotErrorMessage(code) {
