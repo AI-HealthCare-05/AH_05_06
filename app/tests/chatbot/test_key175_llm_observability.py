@@ -187,6 +187,21 @@ class TestLlmObservabilityIntegration(TestCase):
         assert "latency_ms=" in log
         assert "cost_usd=" in log
 
+    async def test_success_latency_ms_is_non_negative_integer(self) -> None:
+        """성공 경로에서 latency_ms가 음수가 아닌 정수로 기록된다."""
+        import re
+
+        await _setup_guide("KEY-175 LLM latency값 합성의원")
+        svc = ChatbotService(model=FakeModel())
+
+        with self.assertLogs(_LOGGER, level="INFO") as cap:
+            await svc.answer(link_token=TOKEN, question="약은 언제 먹나요?")
+
+        log = "\n".join(cap.output)
+        m = re.search(r"latency_ms=(\d+)", log)
+        assert m is not None, "latency_ms 필드 없음"
+        assert int(m.group(1)) >= 0
+
     # --- context_missing ---
 
     async def test_context_missing_logs_success_false_and_zero_latency(self) -> None:
@@ -276,18 +291,33 @@ class TestLlmObservabilityIntegration(TestCase):
     # --- 민감정보 비노출 (통합 경로) ---
 
     async def test_no_question_or_answer_text_in_success_log(self) -> None:
-        """성공 경로 로그에 질문 원문·응답 원문이 남지 않는다."""
-        await _setup_guide("KEY-175 LLM 민감정보 합성의원")
-        question = "로그에_남으면_안_되는_합성_질문_약복용"
-        answer = "매일 저녁 같은 시간에 복용하세요."
-        svc = ChatbotService(model=FakeModel(answer=answer))
+        """성공 경로에서 app.chatbot 로거에 질문·LLM 응답 원문이 기록되지 않는다.
+
+        고유 문자열을 LLM 답변으로 사용한다. _observe()나 다른 경로에서
+        실수로 answer를 로깅하는 코드가 추가될 경우 이 테스트가 잡아낸다.
+        """
+        hospital = await make_hospital("KEY-175 LLM 민감정보 합성의원")
+        guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        # extractive grounding 통과 조건: unique_answer가 edited_body의 부분 문자열이어야 한다.
+        unique_answer = "합성LLM답변_로그비노출_검증대상"
+        medication = await GuideSection.get(guide_document=guide, section_key=GuideSectionKey.MEDICATION)
+        medication.edited_body = f"복약 안내: {unique_answer} 복용 후 물 한 컵."
+        await medication.save(update_fields=["edited_body"])
+        await PatientGuideLink.create(
+            guide_document=guide,
+            token_digest=hashlib.sha256(TOKEN.encode()).hexdigest(),
+            expires_at=now().replace(year=now().year + 1),
+            issued_by=1,
+        )
+        question = "합성질문_로그비노출_약복용"
+        svc = ChatbotService(model=FakeModel(answer=unique_answer))
 
         with self.assertLogs(_LOGGER, level="INFO") as cap:
             await svc.answer(link_token=TOKEN, question=question)
 
         log = "\n".join(cap.output)
-        assert question not in log
-        assert answer not in log
+        assert question not in log, "질문 원문이 로그에 포함됨"
+        assert unique_answer not in log, "LLM 응답 원문이 로그에 포함됨"
 
     async def test_no_link_token_in_any_log_path(self) -> None:
         """어떤 경로에서도 link_token 원문이 로그에 남지 않는다."""
