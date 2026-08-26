@@ -112,7 +112,7 @@ FAIL이면 아래를 반드시 함께 남긴다.
 
 ```bash
 uv run pytest -q --confcutdir=app/tests/rbac app/tests/rbac
-KEY34_SQLITE_TEST=1 uv run pytest -q --confcutdir=app/tests/blocking app/tests/blocking
+uv run pytest -q app/tests/blocking/
 uv run pytest -q --confcutdir=app/tests/security app/tests/security
 uv run pytest -q --confcutdir=app/tests app/tests/patient_links
 ```
