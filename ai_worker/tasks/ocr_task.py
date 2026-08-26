@@ -73,6 +73,8 @@ async def process_ocr_job(ocr_job_id: str) -> None:
                 exc.code,
                 exc,
             )
+            job.failure_code = "CLOVA_API_ERROR"
+            await job.save(update_fields=("failure_code",))
             await _fallback_or_fail(job, job_documents, ocr_job_id)
             _log_elapsed(ocr_job_id, "fixture(CLOVA 실패 후)", started_at)
         except Exception:
@@ -179,7 +181,19 @@ async def _fallback_or_fail(
     job_documents: list[OcrJobDocument],
     ocr_job_id: str,
 ) -> None:
-    """fixture fallback을 시도하고, 실패하면 FAILED로 전환한다."""
+    """fixture fallback을 시도하고, 실패하면 FAILED로 전환한다.
+
+    OCR_FIXTURE_FALLBACK이 비활성(로컬 외 환경 또는 명시적으로 꺼진 경우)이면
+    fixture를 심지 않고 즉시 FAILED로 전환한다.
+    """
+    if not config.OCR_FIXTURE_FALLBACK:
+        default_logger.warning(
+            "fixture fallback 비활성 → FAILED 처리 — ocr_job_id=%s, ENV=%s",
+            ocr_job_id,
+            config.ENV,
+        )
+        await _mark_failed(job, job.failure_code or "PROCESSING_ERROR")
+        return
     try:
         async with in_transaction() as conn:
             await seed_fixture_result(
