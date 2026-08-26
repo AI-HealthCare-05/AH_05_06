@@ -22,13 +22,13 @@ build_and_push () {
   local tag=$4
   local dockerfile=$5
   local context=$6
-  local tag_base=""
-
-  if [[ "$name" == "FastAPI" ]]; then
-    tag_base="app"
-  else
-    tag_base="ai"
-  fi
+  # **태그 앞머리를 인자로 받는다** — 예전에는 「FastAPI 아니면 ai」였다.
+  # 세 번째가 생기는 순간 nginx 이미지가 `ai-` 로 밀려 올라간다 (KEY-189).
+  local tag_base=$7
+  # 빠뜨리면 **조용히 `:-v1.0.0` 이 올라간다** — 태그 앞머리가 빈 문자열이 되고
+  # 아무도 안 운다 (이희진 님 `#145` ②). 이 PR 이 고치려던 실수가 한 칸 옆으로
+  # 옮겨간 자리라 여기서 죽인다.
+  : "${tag_base:?build_and_push: tag_base(7번째 인자)가 없다 — api|ai|web 중 하나를 넘겨라}"
   echo "${COLOR_BLUE}${name} Docker Image Build Start.${COLOR_NC}"
   docker build --platform linux/amd64 -t ${docker_user}/${docker_repo}:${tag_base}-${tag} -f ${dockerfile} ${context}
 
@@ -73,6 +73,7 @@ echo ""
 echo "${COLOR_BLUE}배포 전 빌드 & 푸시할 이미지를 선택하세요(복수선택 가능, 띄어쓰기로 구분)${COLOR_NC}"
 echo "1) fastapi"
 echo "2) ai_worker"
+echo "3) frontend(nginx)"
 read -p "선택 (예: 1 2): " selections
 echo ""
 
@@ -85,14 +86,22 @@ for choice in $selections; do
     1)
       echo "${COLOR_BLUE}FastAPI 앱의 배포 버젼을 입력하세요(ex. v1.0.0)${COLOR_NC}"
       read -p "FastAPI 앱 버젼: " fastapi_version
-      build_and_push ${docker_user} ${docker_repo} "FastAPI" ${fastapi_version} "app/Dockerfile" "."
+      build_and_push ${docker_user} ${docker_repo} "FastAPI" ${fastapi_version} "app/Dockerfile" "." "app"
       DEPLOY_SERVICES+=("fastapi")
       ;;
     2)
       echo "${COLOR_BLUE}AI-worker 앱의 배포 버젼을 입력하세요(ex. v1.0.0)${COLOR_NC}"
       read -p "AI-worker 앱 버젼: " ai_version
-      build_and_push ${docker_user} ${docker_repo} "AI Worker" ${ai_version} "ai_worker/Dockerfile" "."
+      build_and_push ${docker_user} ${docker_repo} "AI Worker" ${ai_version} "ai_worker/Dockerfile" "." "ai"
       DEPLOY_SERVICES+=("ai-worker")
+      ;;
+    3)
+      # 프런트를 구운 nginx 이미지. 설정 파일은 안 굽는다 — 아래 `scp` 가
+      # http/https 중 고른 것을 올린다 (KEY-189).
+      echo "${COLOR_BLUE}프런트(nginx) 이미지의 배포 버젼을 입력하세요(ex. v1.0.0)${COLOR_NC}"
+      read -p "프런트 버젼: " web_version
+      build_and_push ${docker_user} ${docker_repo} "Frontend(nginx)" ${web_version} "infra/nginx/Dockerfile" "." "web"
+      DEPLOY_SERVICES+=("nginx")
       ;;
     *)
       echo "${COLOR_RED}잘못된 선택입니다: $choice${COLOR_NC}"

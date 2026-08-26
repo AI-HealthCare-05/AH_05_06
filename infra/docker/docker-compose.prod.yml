@@ -80,7 +80,8 @@ services:
   # 5. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
   nginx:
     container_name: nginx
-    image: nginx:latest
+    # 프런트를 구운 우리 이미지다 — 태그로 어떤 화면이 떴는지 특정한다 (KEY-189).
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:web-${WEB_VERSION}
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - static_volume:/vol/web/static

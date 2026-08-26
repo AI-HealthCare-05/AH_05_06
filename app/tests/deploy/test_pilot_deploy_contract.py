@@ -57,6 +57,36 @@ def read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+#: `COPY <src> <dst>` 한 줄. 칸이 여러 개여도 잡는다.
+COPY_LINE = re.compile(r"^COPY\s+(?P<src>\S+)\s+\S+\s*$", re.MULTILINE)
+
+
+def shipped_frontend_files() -> set[str]:
+    """이미지에 **실제로 실리는** 프런트 파일 목록.
+
+    Dockerfile 을 문자열로 훑지 않고 `COPY` 의 글롭을 **디스크에 펼친다.**
+    문자열 검사는 「`tests` 라는 낱말이 없다」까지밖에 못 재는데, 정작 알고
+    싶은 것은 「`frontend/tests/contract.test.js` 가 나가느냐」다.
+    """
+    out: set[str] = set()
+    for match in COPY_LINE.finditer(read("infra/nginx/Dockerfile")):
+        src = match.group("src")
+        if not src.startswith("frontend"):
+            continue
+        for hit in ROOT.glob(src):
+            if hit.is_dir():
+                out |= {f.relative_to(ROOT).as_posix() for f in hit.rglob("*") if f.is_file()}
+            elif hit.is_file():
+                out.add(hit.relative_to(ROOT).as_posix())
+    return out
+
+
+def build_and_push_source() -> str:
+    """`deployment.sh` 에서 함수만 떼 온다 — 통째로 `source` 하면 프롬프트가 뜬다."""
+    body = read("scripts/deployment.sh").split("build_and_push () {", 1)[1].split("\n}\n", 1)[0]
+    return "build_and_push () {" + body + "\n}\n"
+
+
 def test_the_runbook_exists() -> None:
     """**이 파일의 다른 검사가 조용히 통과하지 않게 한다.**"""
     assert RUNBOOK.exists(), "런북이 없다 — 아래 검사가 전부 헛돈다"
@@ -329,6 +359,49 @@ echo "docker $*"
         assert self.PAT not in done.stdout, "PAT 이 stdout 으로 샜다"
 
 
+class TestTheBuildRefusesAMissingTagBase:
+    """7번째 인자를 빠뜨리면 **조용히 잘못된 태그가 올라간다** — 이희진 님 `#145` ②.
+
+    문자열로 `:?` 가 있는지만 보면 「썼다」까지밖에 못 잰다. 여기서는 함수를
+    떼어다 **진짜로 돌려서** 죽는지, 그리고 죽기 전에 `docker build` 를
+    안 부르는지를 본다.
+    """
+
+    def _run(self, tmp_path: Path, args: str) -> subprocess.CompletedProcess[str]:
+        called = tmp_path / "docker-was-called.txt"
+        write_stub(tmp_path / "bin", "docker", f'echo "$*" >> "{called}"\n')
+        self.called = called
+        return run_bash(f"{build_and_push_source()}\nbuild_and_push {args}", cwd=tmp_path, stub_dir=tmp_path / "bin")
+
+    def test_a_missing_tag_base_stops_the_build(self, tmp_path: Path) -> None:
+        done = self._run(tmp_path, 'u repo "Frontend(nginx)" v1.0.0 infra/nginx/Dockerfile .')
+
+        assert done.returncode != 0, f"인자가 없는데 그냥 지나갔다 — {done.stdout}"
+        assert "tag_base" in done.stderr, f"왜 죽었는지 안 알려준다 — {done.stderr.strip()[:200]}"
+        assert not self.called.exists(), "죽기 전에 이미 이미지를 굽고 있었다"
+
+    def test_a_blank_tag_base_stops_it_too(self, tmp_path: Path) -> None:
+        """빈 문자열로 넘어오는 쪽이 더 흔하다 — `${web_version}` 오타 한 번이면 된다."""
+        done = self._run(tmp_path, 'u repo "Frontend(nginx)" v1.0.0 infra/nginx/Dockerfile . ""')
+
+        assert done.returncode != 0, "빈 문자열은 그냥 통과한다 — `:-` 태그가 올라간다"
+
+    def test_a_real_call_still_goes_through(self, tmp_path: Path) -> None:
+        """가드가 **멀쩡한 호출까지 막으면** 배포가 아예 안 된다."""
+        done = self._run(tmp_path, 'u repo "Frontend(nginx)" v1.0.0 infra/nginx/Dockerfile . web')
+
+        assert done.returncode == 0, f"정상 호출이 막혔다 — {done.stderr.strip()[:200]}"
+        assert "u/repo:web-v1.0.0" in self.called.read_text(encoding="utf-8"), "태그가 틀렸다"
+
+    def test_every_call_site_passes_it(self) -> None:
+        """호출부가 하나 늘 때 여기서 먼저 운다."""
+        for line in read("scripts/deployment.sh").splitlines():
+            call = line.strip()
+            if not call.startswith("build_and_push ") or call.endswith("() {"):
+                continue
+            assert len(call.split()) >= 8, f"7번째 인자가 없다 — {call}"
+
+
 class TestTheExampleEnvActuallyBoots:
     """런북 0단계를 **그대로 따라 하면 뜨는가.**
 
@@ -359,21 +432,80 @@ class TestTheExampleEnvActuallyBoots:
 class TestTheRunbookTellsTheTruth:
     """문서가 주장하는 것 중 **코드로 잴 수 있는 것**을 잰다."""
 
-    def test_it_admits_the_frontend_is_not_served_in_prod(self) -> None:
-        """**아직 못 하는 것을 못 한다고 적었는가.**
+    def test_the_frontend_is_actually_served_in_prod(self) -> None:
+        """**운영에서 `/` 가 화면을 주는가** — KEY-189.
 
-        이게 이 검사의 핵심이다. 운영 nginx 가 `/` 를 404 로 막고 있어서
-        「공유 가능한 URL」을 줘도 볼 화면이 없다. 문서가 그걸 감추면 형제
-        일감들이 없는 환경 위에 계획을 세운다.
+        예전 판은 그 반대를 쟀다. `/` 가 404 라서 「공유 가능한 URL」을 줘도 볼
+        것이 없었고, 문서가 그걸 감추지 않는지를 봤다. **이 검사가 「이제 `/` 를
+        준다 — 런북을 고칠 때다」로 죽어서** 그때가 온 것을 알았다.
+
+        이제는 반대를 잰다 — 다시 404 로 돌아가면 여기서 운다.
         """
         for conf in ("infra/nginx/prod_http.conf", "infra/nginx/prod_https.conf"):
-            assert re.search(r"location\s+/\s*\{\s*return\s+404", read(conf)), (
-                f"{conf} 가 이제 `/` 를 준다 — 런북의 「아직 못 하는 것」을 고칠 때다"
-            )
+            body = read(conf)
+            assert "root /vol/web/frontend;" in body, f"{conf} 가 프런트를 안 준다"
+            assert not re.search(r"location\s+/\s*\{\s*return\s+404", body), f"{conf} 가 다시 `/` 를 404 로 막았다"
 
-        runbook = read("docs/deploy-runbook.md")
-        assert "아직 못 하는 것" in runbook
-        assert "return 404" in runbook, "런북이 이 제약을 안 적었다"
+        # 굽는 자리와 서빙하는 자리가 **같은 경로**를 가리켜야 한다.
+        assert "/vol/web/frontend" in read("infra/nginx/Dockerfile"), "이미지가 다른 곳에 굽는다"
+
+    def test_the_expansion_actually_finds_something(self) -> None:
+        """**아래 두 검사가 조용히 통과하지 않게 한다.**
+
+        글롭이 하나도 안 맞으면 목록이 비고, 「테스트 파일이 없다」가 공짜로
+        참이 된다. 이 저장소에서 여러 번 밟은 자리다.
+        """
+        assert len(shipped_frontend_files()) > 10, "COPY 를 못 펼쳤다 — 아래 검사가 헛돈다"
+        assert list((ROOT / "frontend" / "tests").glob("*.test.js")), "잴 대상이 애초에 없다"
+
+    def test_the_image_does_not_ship_the_test_files(self) -> None:
+        """**운영 도메인에서 검사 파일이 열리면 안 된다** — 이희진 님 `#145` ①.
+
+        예전 판은 `COPY frontend/ …` 였다. `try_files $uri` 가 그대로 주기
+        때문에 `https://<운영도메인>/tests/contract.test.js` 가 열렸다 —
+        계약 가정과 목 데이터가 밖에서 읽힌다.
+        """
+        leaked = sorted(f for f in shipped_frontend_files() if "/tests/" in f)
+
+        assert not leaked, f"검사 파일 {len(leaked)} 개가 운영에 실린다 — 예: {leaked[:3]}"
+
+    def test_it_still_ships_every_screen(self) -> None:
+        """줄이다가 **화면을 같이 빼면** 운영이 다시 404 다."""
+        shipped = shipped_frontend_files()
+        screens = {f.relative_to(ROOT).as_posix() for f in (ROOT / "frontend").glob("*.html")}
+
+        assert screens, "화면 파일을 못 찾았다"
+        assert screens <= shipped, f"화면이 안 실린다 — {sorted(screens - shipped)}"
+        for kind in ("css", "js"):
+            assert any(f.startswith(f"frontend/{kind}/") for f in shipped), f"{kind} 가 안 실린다"
+
+    def test_the_plain_http_port_does_not_serve_it(self) -> None:
+        """https 판에서 **80 포트는 아무것도 안 준다** — 전부 넘긴다.
+
+        여기서 프런트를 주면 환자가 평문으로 안내를 본다. 실제로 이 PR 을
+        만들다 두 서버 블록을 한꺼번에 바꿔서 그렇게 될 뻔했다.
+        """
+        http_block = read("infra/nginx/prod_https.conf").split("# https")[0]
+
+        assert "root /vol/web/frontend;" not in http_block, "80 포트가 평문으로 화면을 준다"
+        assert "return 301 https://" in http_block, "80 포트가 https 로 안 넘긴다"
+
+    @pytest.mark.parametrize(
+        "conf", ["infra/nginx/default.conf", "infra/nginx/prod_http.conf", "infra/nginx/prod_https.conf"]
+    )
+    def test_the_upload_size_matches_what_the_app_accepts(self, conf: str) -> None:
+        """nginx 가 안 적으면 기본 1m 다 — 앱은 20MB 로 알고 있다.
+
+        검사지 사진 한 장(보통 2~5MB)이 FastAPI 에 닿기 전에 413 으로 잘리고,
+        그 HTML 응답을 프런트의 `res.json()` 이 파싱하려다 파서 오류를 화면에
+        띄운다 (이희진 님 `#137` 요청).
+        """
+        from app.core.config import Config
+
+        wanted = Config.model_fields["MAX_UPLOAD_SIZE_MB"].default
+        assert f"client_max_body_size {wanted}m;" in read(conf), (
+            f"{conf} 의 크기 제한이 앱의 MAX_UPLOAD_SIZE_MB({wanted}) 와 다르다"
+        )
 
     def test_it_names_the_rollback_precondition(self) -> None:
         """되돌림은 **Hub 에 옛 태그가 남아 있을 때만** 된다.
