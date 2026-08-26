@@ -1,9 +1,10 @@
 """OCR Worker 태스크 통합 테스트 — KEY-56.
 
-실제 DB를 사용해 process_ocr_job의 세 경로를 검증한다.
+실제 DB를 사용해 process_ocr_job의 경로를 검증한다.
   - CLOVA 성공 → OcrResult(clova-ocr-v2) + COMPLETED
-  - CLOVA 실패 → fixture fallback → OcrResult(fixture-v0) + COMPLETED
-  - CLOVA 비활성 → fixture fallback → OcrResult(fixture-v0) + COMPLETED
+  - CLOVA 실패 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED + failure_code=CLOVA_API_ERROR
+  - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED
+  - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=False → FAILED + failure_code=OCR_NOT_CONFIGURED
   - 존재하지 않는 job_id → 예외 없이 종료
   - 이미 완료된 job → 중복 처리 없이 종료
 """
@@ -137,10 +138,12 @@ class TestProcessOcrJob(TestCase):
             ),
         ):
             mock_cfg.clova_enabled = True
+            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(job.ocr_job_id)
 
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.COMPLETED
+        assert job.failure_code == "CLOVA_API_ERROR"
 
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None
@@ -153,6 +156,7 @@ class TestProcessOcrJob(TestCase):
 
         with patch("ai_worker.tasks.ocr_task.config") as mock_cfg:
             mock_cfg.clova_enabled = False
+            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(job.ocr_job_id)
 
         await job.refresh_from_db()
@@ -161,6 +165,19 @@ class TestProcessOcrJob(TestCase):
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None
         assert result.model_name == FIXTURE_MODEL_NAME
+
+    async def test_clova_not_configured_marks_job_failed(self) -> None:
+        job = await self._seed("ocr_key56_not_configured")
+
+        with patch("ai_worker.tasks.ocr_task.config") as mock_cfg:
+            mock_cfg.clova_enabled = False
+            mock_cfg.OCR_FIXTURE_FALLBACK = False
+            mock_cfg.ENV = "prod"
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.FAILED
+        assert job.failure_code == "OCR_NOT_CONFIGURED"
 
     # ── 예외·경계 케이스 ──────────────────────────────────────────────────────
 

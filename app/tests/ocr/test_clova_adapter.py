@@ -4,6 +4,7 @@ httpx를 모킹해 외부 호출 없이 어댑터 계약을 검증한다.
 성공·타임아웃·HTTP 오류·인식 실패·빈 응답·미지원 형식 경로를 다룬다.
 """
 
+import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -69,6 +70,26 @@ async def test_empty_fields_in_response_returns_empty_raw_text() -> None:
         result = await call_clova_ocr(JPEG_BYTES, "image/jpeg")
     assert result.raw_text == ""
     assert result.fields == []
+
+
+async def test_request_sends_auth_header_base64_payload_and_format() -> None:
+    """어댑터가 X-OCR-SECRET 헤더, base64 인코딩, format을 올바르게 전송하는지 검증한다."""
+    pdf_bytes = b"%PDF-1.4" + b"\x00" * 20
+    mock_client = _make_mock_client(200, _SUCCESS_BODY)
+
+    with (
+        patch("ai_worker.adapters.clova.httpx.AsyncClient", return_value=mock_client),
+        patch("ai_worker.adapters.clova.config") as mock_cfg,
+    ):
+        mock_cfg.CLOVA_OCR_SECRET_KEY = "test-secret"
+        mock_cfg.CLOVA_OCR_INVOKE_URL = "https://ocr.fake"
+        mock_cfg.CLOVA_OCR_TIMEOUT_SECONDS = 10.0
+        await call_clova_ocr(pdf_bytes, "application/pdf")
+
+    _, kwargs = mock_client.post.call_args
+    assert kwargs["headers"]["X-OCR-SECRET"] == "test-secret"
+    assert kwargs["json"]["images"][0]["format"] == "pdf"
+    assert base64.b64decode(kwargs["json"]["images"][0]["data"]) == pdf_bytes
 
 
 # ── 외부 오류 표준화 ──────────────────────────────────────────────────────────

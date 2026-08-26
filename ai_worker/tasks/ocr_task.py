@@ -81,9 +81,11 @@ async def process_ocr_job(ocr_job_id: str) -> None:
             default_logger.exception("OCR 처리 오류 → FAILED — ocr_job_id=%s", ocr_job_id)
             await _mark_failed(job, "PROCESSING_ERROR")
     else:
-        default_logger.info("CLOVA 비활성 → fixture fallback — ocr_job_id=%s", ocr_job_id)
+        default_logger.warning("CLOVA 미설정 → 처리 불가 — ocr_job_id=%s", ocr_job_id)
+        job.failure_code = "OCR_NOT_CONFIGURED"
+        await job.save(update_fields=("failure_code",))
         await _fallback_or_fail(job, job_documents, ocr_job_id)
-        _log_elapsed(ocr_job_id, "fixture", started_at)
+        _log_elapsed(ocr_job_id, "CLOVA 미설정", started_at)
 
 
 # ---------------------------------------------------------------------------
