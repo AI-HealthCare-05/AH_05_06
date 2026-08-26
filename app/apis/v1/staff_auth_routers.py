@@ -67,10 +67,13 @@ def _set_refresh_cookie(response: Response, refresh: RefreshToken) -> None:
         samesite="lax",
         path=REFRESH_COOKIE_PATH,
         domain=config.COOKIE_DOMAIN or None,
-        # remember 는 발급 여부가 아니라 **쿠키가 얼마나 남는지**를 정한다.
-        # 끄면 Max-Age 없는 세션 쿠키 — 브라우저를 닫으면 사라진다.
-        # 켜도 유휴 30분은 그대로다 — 그건 refresh 가 본다.
-        max_age=config.REFRESH_TOKEN_EXPIRE_MINUTES * 60 if refresh.payload.get("remember") else None,
+        # **`Max-Age` 를 주지 않는다 — 언제나 세션 쿠키다** (KEY-179).
+        #
+        # 접수 PC 는 공용이다. 「로그인 유지」를 켜 둔 채 자리를 뜨면 다음 사람이
+        # 그 인증을 그대로 물려받는다. 브라우저를 닫으면 사라지는 것이 이 화면의
+        # 기본값이어야 한다.
+        #
+        # 유휴 30 분 만료는 그대로다 — 그건 쿠키가 아니라 refresh 가 본다.
     )
 
 
@@ -87,7 +90,7 @@ async def login(
     session: Annotated[StaffSessionService, Depends(_session)],
 ) -> StaffLoginResponse:
     staff = await auth.login(body.login_id, body.password)
-    access, refresh = await session.start(staff, body.remember)
+    access, refresh = await session.start(staff)
     _set_refresh_cookie(response, refresh)
 
     return StaffLoginResponse(

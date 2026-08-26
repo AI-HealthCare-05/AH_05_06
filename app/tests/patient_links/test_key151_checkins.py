@@ -56,7 +56,7 @@ class CheckInTestCase(TestCase):
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     async def headers(self, staff) -> dict[str, str]:
-        access, _ = await StaffSessionService(self.redis).start(staff, False)  # type: ignore[arg-type]
+        access, _ = await StaffSessionService(self.redis).start(staff)  # type: ignore[arg-type]
         return {"Authorization": f"Bearer {access}"}
 
 

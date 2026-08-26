@@ -225,6 +225,9 @@ function notifyFor(answers, key) {
     el("form").hidden = true;
     el("state").innerHTML = html;
     el("state").hidden = false;
+    /* 폼이 통째로 사라진다. 초점을 옮기지 않으면 저장 버튼에 있던 커서가
+       `body` 로 떨어져, 못 보는 사람은 **저장됐는지도 모른다** (KEY-129). */
+    el("state").focus();
   }
 
 
