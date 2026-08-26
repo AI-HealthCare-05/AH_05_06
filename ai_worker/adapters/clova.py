@@ -1,7 +1,7 @@
-"""CLOVA OCR General API 어댑터 — KEY-56.
+"""CLOVA OCR General API 어댑터 — KEY-56 · KEY-175.
 
 호출 계약:
-  - 성공 시 ClovaOcrResult 반환
+  - 성공 시 ClovaOcrResult 반환 (elapsed_ms: 실제 HTTP 호출 시간)
   - 실패 시 ClovaOcrError 발생 (code로 실패 종류 구분)
   - API 키가 없는 경우 호출 전에 확인하고 호출하지 않는다 (config.clova_enabled)
 
@@ -12,7 +12,7 @@ CLOVA API 레퍼런스:
 import base64
 import uuid
 from dataclasses import dataclass, field
-from time import time
+from time import perf_counter, time
 
 import httpx
 
@@ -50,6 +50,7 @@ class ClovaOcrResult:
 
     raw_text: str
     fields: list[ClovaTextField] = field(default_factory=list)
+    elapsed_ms: int = 0  # 실제 CLOVA HTTP 호출 시간 (KEY-175 관측용)
 
 
 async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
@@ -81,6 +82,7 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
     }
 
     timeout = config.CLOVA_OCR_TIMEOUT_SECONDS or _TIMEOUT_SECONDS
+    t_http = perf_counter()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
@@ -92,6 +94,7 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
         raise ClovaOcrError("CLOVA_TIMEOUT", "CLOVA OCR 요청 시간 초과") from exc
     except httpx.RequestError as exc:
         raise ClovaOcrError("CLOVA_NETWORK_ERROR", f"CLOVA OCR 네트워크 오류: {exc}") from exc
+    http_elapsed_ms = round((perf_counter() - t_http) * 1000)
 
     if response.status_code != 200:
         raise ClovaOcrError(
@@ -126,4 +129,4 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
     ]
     raw_text = "\n".join(f.text for f in text_fields)
 
-    return ClovaOcrResult(raw_text=raw_text, fields=text_fields)
+    return ClovaOcrResult(raw_text=raw_text, fields=text_fields, elapsed_ms=http_elapsed_ms)

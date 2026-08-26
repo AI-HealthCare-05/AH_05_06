@@ -12,7 +12,8 @@
 
 관측 로그 (KEY-175):
   모든 종료 경로에서 아래 형식의 단일 구조화 로그를 남긴다.
-  ocr_job_complete mode=<clova|fixture|failed> elapsed_ms=<n> error_code=<code|none> ocr_job_id=<id>
+  ocr_job_complete mode=<clova|fixture|failed> elapsed_ms=<n> clova_elapsed_ms=<n|none> error_code=<code|none> ocr_job_id=<id>
+  - clova_elapsed_ms: 실제 CLOVA HTTP 호출 시간 합계, 성공 경로에서만 기록
   - 환자정보·OCR 원문·파일 경로·오류 원문은 로그에 포함하지 않는다.
 """
 
@@ -72,7 +73,8 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         try:
             clova_results = await _call_clova_for_documents(job_documents, doc_map)
             await _save_clova_result(job, job_documents, clova_results)
-            _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None)
+            clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
+            _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None, clova_elapsed_ms=clova_elapsed_ms)
         except ClovaOcrError as exc:
             default_logger.warning(
                 "CLOVA 오류 → fixture fallback — ocr_job_id=%s, code=%s",
@@ -240,17 +242,20 @@ def _observe(
     mode: str,
     t0: float,
     error_code: str | None,
+    clova_elapsed_ms: int | None = None,
 ) -> None:
     """모든 OCR 종료 경로에서 단일 구조화 메트릭 로그를 남긴다 (KEY-175).
 
     mode: clova | fixture | failed
+    clova_elapsed_ms: 실제 CLOVA HTTP 호출 시간 합계 (성공 경로에서만 제공)
     환자정보·OCR 원문·파일 경로·오류 원문은 포함하지 않는다.
     """
     elapsed_ms = round((perf_counter() - t0) * 1000)
     default_logger.info(
-        "ocr_job_complete mode=%s elapsed_ms=%s error_code=%s ocr_job_id=%s",
+        "ocr_job_complete mode=%s elapsed_ms=%s clova_elapsed_ms=%s error_code=%s ocr_job_id=%s",
         mode,
         elapsed_ms,
+        clova_elapsed_ms if clova_elapsed_ms is not None else "none",
         error_code or "none",
         ocr_job_id,
     )
