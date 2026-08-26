@@ -17,6 +17,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from app.core.time import DISPLAY_TIMEZONE
 from app.models.staffs import Hospital
 from app.models.visits import GuideDocument, GuideSectionKey
 from app.services.patient_links import PatientLinkService
@@ -58,7 +59,7 @@ class ChatbotContextService:
         hospital = await Hospital.get(hospital_id=guide.hospital_id)
         await guide.fetch_related("visit")
         assert guide.approved_at is not None
-        return _to_context(guide, hospital.name, guide.visit.visited_at.date())
+        return _to_context(guide, hospital.name, guide.visit.visited_at.astimezone(DISPLAY_TIMEZONE).date())
 
 
 def _to_context(

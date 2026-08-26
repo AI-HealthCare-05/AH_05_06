@@ -21,6 +21,7 @@ from app.services.patient_links import digest_link_token
 
 _TOKEN = "KEY89testTokenABCDEFGHIJKLMNOP0123456789abcd"
 _OTHER_TOKEN = "KEY89testTokenOTHER00000000000000000000000B"
+_MIDNIGHT_TOKEN = "KEY89testTokenMIDNIGHT000000000000000000000C"
 
 
 async def _make_guide(hospital: Hospital, token: str = _TOKEN) -> GuideDocument:
@@ -154,6 +155,46 @@ class TestApprovedChatbotContext(TestCase):
         with self.assertRaises(AuthError) as cm:
             await ChatbotContextService().get_context("nonexistent-token-xyz")
         assert cm.exception.code == "LINK_NOT_FOUND"
+
+    async def test_encounter_date_uses_kst_not_utc(self) -> None:
+        """KST 자정~오전 9시 방문은 UTC 날짜와 달라 .date() 직접 호출 시 하루 밀린다."""
+        hospital = await Hospital.create(name="KEY-89 자정방문 합성의원")
+        patient = await Patient.create(
+            hospital_id=hospital.hospital_id,
+            hospital_patient_no="KEY89-MIDNIGHT",
+            name="자정합성환자",
+            birth_date="1991-02-03",
+            phone="01099998888",
+            sms_consent=True,
+        )
+        # KST 00:30 = UTC 전날 15:30 → .date() 직접 호출 시 2026-08-19 (버그)
+        visit = await Visit.create(
+            hospital_id=hospital.hospital_id,
+            patient=patient,
+            visited_at="2026-08-20T00:30:00+09:00",
+        )
+        guide = await GuideDocument.create(
+            hospital_id=hospital.hospital_id,
+            visit=visit,
+            status=GuideStatus.SCHEDULED_TO_SEND,
+            approved_by=1,
+            approved_at=now(),
+        )
+        await GuideSection.create(
+            guide_document=guide,
+            section_key=GuideSectionKey.MEDICATION,
+            generated_body="자정 복약 안내",
+        )
+        await PatientGuideLink.create(
+            guide_document=guide,
+            token_digest=digest_link_token(_MIDNIGHT_TOKEN),
+            expires_at=now() + timedelta(hours=72),
+            issued_by=1,
+        )
+
+        ctx = await ChatbotContextService().get_context(_MIDNIGHT_TOKEN)
+
+        assert ctx.encounter_date.isoformat() == "2026-08-20"
 
     async def test_token_is_scoped_to_issuing_hospital(self) -> None:
         hospital_a = await Hospital.create(name="KEY-89 병원A")
