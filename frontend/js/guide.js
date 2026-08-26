@@ -22,7 +22,14 @@ var state = {
   guide: null,
   tab: "guide",
   token: "",
-  chat: { busy: false, messages: [] },
+  /* `draft` — 치던 글자. 화면을 다시 그리면 입력칸이 새로 만들어져서
+       **치던 것이 사라진다.** 실측했다: 질문 하나를 보내는 동안 다른 질문을
+       치고 있으면 그대로 날아간다 (KEY-130).
+
+     `generation` — 몇 번째 요청인가. 중단은 **늦게 온 콜백을 버리는 것**으로
+       한다. 목업 스트림은 `setTimeout` 재귀라 취소 훅이 없어서, 중단을
+       눌러도 조각이 계속 들어오고 끝내 완성본이 화면에 되살아난다. */
+  chat: { busy: false, messages: [], draft: "", generation: 0 },
 };
 
 function el(tag, className, text) {
@@ -178,6 +185,9 @@ function renderLifeTab(g) {
 /* ── P6 챗봇 ─────────────────────────────────── */
 function chatbotAnswerText(message) {
   if (message.error) return message.error;
+  /* 중단은 **실패가 아니다.** 사용자가 그만 받겠다고 한 것이라 사과할 일이
+     아니고, 받다 만 글자는 그대로 둔다 — 거기까지는 읽을 수 있다. */
+  if (message.aborted) return message.text ? message.text + "\n\n(여기서 중단했어요)" : "중단했어요.";
   return message.text || "답변을 준비하고 있어요…";
 }
 
@@ -194,7 +204,13 @@ function renderChatMessage(message) {
     row.appendChild(el("div", "chat__bubble chat__bubble--user", message.text));
     return row;
   }
-  var answer = el("section", "chat__answer" + (message.urgent ? " chat__answer--urgent" : ""));
+  var answer = el(
+    "section",
+    "chat__answer" +
+      (message.urgent ? " chat__answer--urgent" : "") +
+      (message.streaming ? " chat__answer--streaming" : "") +
+      (message.aborted ? " chat__answer--aborted" : ""),
+  );
   if (message.urgent) answer.appendChild(el("p", "chat__urgent", "⚠ 긴급 안내"));
   var answerText = el("p", "chat__answer-text", chatbotAnswerText(message));
   if (message.streaming) answerText.id = "chat-stream-answer";
@@ -203,9 +219,36 @@ function renderChatMessage(message) {
   if (message.source) answer.appendChild(el("p", "chat__meta", "출처 · " + message.source));
   if (message.limitation) answer.appendChild(el("p", "chat__meta", "한계 · " + message.limitation));
   if (!message.streaming) {
+    /* 실패했거나 중단한 답변에는 **다시 시도**가 다음 행동이다. 예전에는
+       「잠시 뒤 다시 시도해 주세요」라는 문구만 있고 버튼이 없어서, 환자가
+       질문을 손으로 다시 쳐야 했다 (KEY-130). */
+    if ((message.error || message.aborted) && message.question) {
+      var retry = el("button", "button chat__retry", "다시 시도");
+      retry.type = "button";
+      retry.addEventListener("click", function () {
+        retryChatAnswer(message);
+      });
+      answer.appendChild(retry);
+    }
     answer.appendChild(renderContactButton("button chat__contact"));
   }
   return answer;
+}
+
+/* 같은 질문으로 다시 묻는다 — KEY-130.
+ *
+ * 실패한 답변을 **지우고** 다시 보낸다. 남겨 두면 같은 질문에 대한 답이 둘이
+ * 되어 「중복 메시지」가 된다 — 완료 조건이 막으라고 한 것이다. 사용자 질문
+ * 말풍선도 함께 지운다. `sendChatQuestion` 이 다시 넣는다.
+ */
+function retryChatAnswer(message) {
+  if (state.chat.busy) return;
+  var at = state.chat.messages.indexOf(message);
+  if (at === -1) return;
+  /* 답변과 그 앞의 질문을 함께 걷는다. */
+  var from = at > 0 && state.chat.messages[at - 1].role === "user" ? at - 1 : at;
+  state.chat.messages.splice(from, at - from + 1);
+  sendChatQuestion(message.question);
 }
 
 function renderChatTab() {
@@ -244,38 +287,94 @@ function renderChatTab() {
   input.placeholder = "메시지를 입력하세요";
   input.setAttribute("aria-label", "챗봇 질문");
   input.maxLength = 500;
-  input.disabled = state.chat.busy;
-  var submit = el("button", "chat__send", state.chat.busy ? "답변 중…" : "전송");
+  /* **답변 중에도 다음 질문을 칠 수 있다.** 예전에는 입력칸을 잠갔는데,
+     기다리는 동안 할 수 있는 일이 없어진다. 보내는 것만 막으면 된다. */
+  input.value = state.chat.draft;
+  input.addEventListener("input", function () {
+    state.chat.draft = input.value;
+  });
+
+  var submit = el("button", "chat__send", "전송");
   submit.type = "submit";
   submit.disabled = state.chat.busy;
   form.appendChild(input);
   form.appendChild(submit);
+
+  /* 답변이 오는 동안에는 **중단**이 다음 행동이다. 「답변 중…」이라고만
+     적어 두면 기다리는 것 말고 할 수 있는 것이 없다. */
+  if (state.chat.busy) {
+    var stop = el("button", "chat__stop", "중단");
+    stop.type = "button";
+    stop.addEventListener("click", abortChatAnswer);
+    form.appendChild(stop);
+  }
+
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     var question = input.value.trim();
-    if (question) sendChatQuestion(question);
+    if (!question) return;
+    /* **초안은 여기서만 비운다** — 입력칸에서 꺼내 보낸 자리다.
+       예전에는 `sendChatQuestion` 이 무조건 비웠는데, **다시 시도**도 그 길로
+       들어온다. 실패한 답변 아래에서 다음 질문을 치던 중 「다시 시도」를 누르면
+       치던 글자가 조용히 사라졌다 — 이 티켓이 고치려던 ③ 이 재시도 경로로
+       되살아난 꼴이다 (이희진 님 `#135` 리뷰). */
+    state.chat.draft = "";
+    sendChatQuestion(question);
   });
   wrap.appendChild(form);
   wrap.appendChild(el("p", "chat__feedback", "이 안내가 도움이 되었나요?　👍　👎　오류 신고"));
   return wrap;
 }
 
+/* 답변을 그만 받는다 — KEY-130.
+ *
+ * **취소 훅이 없다.** 목업 스트림은 `setTimeout` 재귀이고(`chatbot-api.js`),
+ * 실서버 어댑터도 `Promise` 만 돌려준다. 그래서 「멈추게」 할 수가 없다.
+ *
+ * 대신 **세대를 올려 늦게 온 것을 버린다.** 이걸 안 하면 중단을 눌러도
+ * 조각이 계속 들어오고, 끝내 완성본(근거·출처·한계까지 붙은)이 화면에
+ * 되살아난다 — 사용자는 멈췄다고 생각하는데.
+ */
+function abortChatAnswer() {
+  if (!state.chat.busy) return;
+  state.chat.generation += 1;
+  state.chat.busy = false;
+
+  var last = state.chat.messages[state.chat.messages.length - 1];
+  if (last && last.role === "assistant" && last.streaming) {
+    last.streaming = false;
+    last.aborted = true;
+  }
+  renderBody();
+}
+
 function sendChatQuestion(question) {
   if (state.chat.busy) return;
   state.chat.busy = true;
+  /* 초안은 **건드리지 않는다.** 보내는 길이 둘이라(전송 · 다시 시도) 여기서
+     비우면 재시도가 남의 초안을 지운다. 비우는 것은 전송 핸들러의 몫이다. */
+  var mine = ++state.chat.generation;
   state.chat.messages.push({ role: "user", text: question });
-  var answer = { role: "assistant", text: "", streaming: true };
+  /* 질문을 답변에 함께 담는다 — **다시 시도**가 그것을 그대로 쓴다. */
+  var answer = { role: "assistant", text: "", streaming: true, question: question };
   state.chat.messages.push(answer);
   renderBody();
+
+  /* 늦게 온 콜백인가. 중단했거나 다음 질문이 시작된 뒤에 도착한 것이다. */
+  function stale() {
+    return mine !== state.chat.generation;
+  }
 
   return streamChatbotAnswer(
     { link_token: state.token, question: question },
     {
       onDelta: function (chunk) {
+        if (stale()) return;
         answer.text += chunk;
         if (!updateStreamingAnswer(answer)) renderBody();
       },
       onComplete: function (result) {
+        if (stale()) return;
         answer.streaming = false;
         answer.urgent = !!result.urgent;
         answer.evidence = result.evidence;
@@ -285,10 +384,12 @@ function sendChatQuestion(question) {
     },
   )
     .catch(function (err) {
+      if (stale()) return;
       answer.streaming = false;
       answer.error = chatbotErrorMessage(err && err.code);
     })
     .finally(function () {
+      if (stale()) return;
       state.chat.busy = false;
       renderBody();
     });
@@ -347,10 +448,43 @@ function renderTabs() {
   });
 }
 
+/* 다시 그리기 **전에** 커서가 입력칸의 어디에 있었는가. 없으면 `-1`.
+
+   비우고 나서 물으면 늦다 — 지운 노드에서 포커스가 이미 빠져 있다. */
+function chatTypingAt() {
+  var live = document.activeElement;
+  if (!live || String(live.className || "").indexOf("chat__input") === -1) return -1;
+  return typeof live.selectionStart === "number" ? live.selectionStart : 0;
+}
+
+/* 초안(`draft`)은 되찾는데 **커서는 안 되찾으면**, 다음 질문을 치던 중 앞 답변이
+   끝나는 순간 손이 멈춘다. 다시 클릭해야 이어 칠 수 있다 (이희진 님 `#135` 리뷰).
+
+   **치던 자리까지 돌려준다.** 포커스만 주면 커서가 글 끝으로 가서, 문장 중간을
+   고치던 중이면 거기서 또 어긋난다. 값은 `draft` 로 똑같이 되살아나 있으므로
+   자리는 그대로 유효하다. */
+function focusChatInput(at) {
+  var input = document.querySelector(".chat__input");
+  if (!input || !input.focus) return;
+  input.focus();
+  if (at >= 0 && input.setSelectionRange) input.setSelectionRange(at, at);
+}
+
 function renderBody() {
   var body = document.getElementById("guide-body");
+  /* 커서 자리는 **비우기 전에** 들고 온다. */
+  var typingAt = chatTypingAt();
   body.textContent = "";
-  var g = state.guide;
+  fillGuideBody(body, state.guide);
+  /* 채우는 길이 여럿이다 — 안내문 구조가 새 것이냐 옛 것이냐로 갈리고, 그
+     안에서 다시 탭으로 갈린다. **그래서 되돌리는 일은 여기 한 곳에서 한다.**
+     분기마다 붙이면 새 분기가 생길 때 또 빠지는데, 실제로 한 번 빠뜨렸다
+     (이희진 님 `#135` 리뷰 — 챗봇 탭을 그리는 자리가 둘인데 하나만 이었다). */
+  if (state.tab === "chat" && typingAt >= 0) focusChatInput(typingAt);
+}
+
+/* 본문을 채우기만 한다 — 커서는 부르는 쪽이 되돌린다. */
+function fillGuideBody(body, g) {
   if (!g) return;
   if (g.sections) {
     var keys =
