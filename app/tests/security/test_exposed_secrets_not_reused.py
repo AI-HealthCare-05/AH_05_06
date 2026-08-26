@@ -51,9 +51,17 @@ def _digest_index() -> dict[str, list[tuple[str, str]]]:
     index: dict[str, list[tuple[str, str]]] = {}
     for rel in tracked_files(skip=SKIP):
         try:
-            body = (ROOT / rel).read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError, IsADirectoryError):
-            continue  # 바이너리·심볼릭 링크는 건너뛴다
+            raw = (ROOT / rel).read_bytes()
+        except (OSError, IsADirectoryError):
+            continue  # 심볼릭 링크·디렉터리는 건너뛴다
+        # **인코딩 때문에 건너뛰지 않는다.** 예전에는 `read_text(encoding="utf-8")`
+        # 이 `UnicodeDecodeError` 를 내면 넘겼고, 주석은 그걸 「바이너리」라고
+        # 불렀다. 그런데 CP949 같은 **멀쩡한 텍스트 파일**도 같은 예외로 통째로
+        # 빠졌다 — 그 안에 비밀값이 있어도 못 찾는다 (KEY-139).
+        #
+        # 찾는 값은 전부 ASCII 라, 못 읽는 바이트를 바꿔치기해도 걸릴 것은
+        # 그대로 걸린다. 바이너리는 정규식에 걸릴 모양이 없어 그냥 지나간다.
+        body = raw.decode("utf-8", errors="replace")
         for pattern in _CANDIDATES:
             for value in pattern.findall(body):
                 digest = hashlib.sha256(value.strip().encode()).hexdigest()
