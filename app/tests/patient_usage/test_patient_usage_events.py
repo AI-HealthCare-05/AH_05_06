@@ -272,5 +272,7 @@ class TestTheReadPathRecordsTheView(PatientUsageTestCase):
         """
         paths = [path for path in (getattr(route, "path", "") for route in self.app.routes) if path.startswith("/api/")]
 
-        opened = [p for p in paths if "usage" in p or "chat" in p]
+        # KEY-96의 환자용 `/chatbot/responses`는 필요하다. 여기서 금지하는 것은
+        # 저장된 이용 이벤트를 병원에 다시 돌려주는 조회 창구다.
+        opened = [p for p in paths if "usage" in p or "events" in p]
         assert not opened, f"이용 이벤트를 돌려주는 창구가 생겼다: {opened}"
