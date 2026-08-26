@@ -317,6 +317,90 @@ class TestGenerateFallsBackWhenNoContent(DrugCautionTestCase):
         assert db[GuideSectionKey.CAUTION].generated_body == _CAUTION_FALLBACK
         assert db[GuideSectionKey.EMERGENCY].generated_body == _EMERGENCY_FALLBACK
 
+    async def test_grade_b_approved_content_uses_fallback(self) -> None:
+        """B등급 APPROVED 문구는 단독 근거 불가 — 폴백을 사용한다(KEY-180 §2)."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        ps, _ = await PrescriptionSet.get_or_create(name="테스트세트-B등급")
+        await DrugCautionContent.create(
+            prescription_set=ps,
+            section_key=CautionSectionKey.CAUTION,
+            body="[합성 B등급 주의]",
+            source_name="학술지",
+            source_org="학회",
+            source_url="https://nedrug.mfds.go.kr/TEST-ONLY/b-grade",
+            verified_at="2026-08-25",
+            content_version="v1",
+            source_grade="B",
+            approval_status=ApprovalStatus.APPROVED,
+            approved_key=f"{ps.prescription_set_id}:caution",
+        )
+        visit = await make_visit(clinic, set_name="테스트세트-B등급")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        resp = await self.generate(visit, staff)
+
+        assert resp.status_code == 201
+        db = await self.sections_from_db(visit.visit_id)
+        assert db[GuideSectionKey.CAUTION].generated_body == _CAUTION_FALLBACK
+        assert db[GuideSectionKey.CAUTION].drug_caution_content_id is None
+
+    async def test_grade_c_approved_content_uses_fallback(self) -> None:
+        """C등급 APPROVED 문구는 이번 범위 사용 불가 — 폴백을 사용한다(KEY-180 §2)."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        ps, _ = await PrescriptionSet.get_or_create(name="테스트세트-C등급")
+        await DrugCautionContent.create(
+            prescription_set=ps,
+            section_key=CautionSectionKey.EMERGENCY,
+            body="[합성 C등급 응급]",
+            source_name="비공개자료",
+            source_org="미상",
+            source_url="https://nedrug.mfds.go.kr/TEST-ONLY/c-grade",
+            verified_at="2026-08-25",
+            content_version="v1",
+            source_grade="C",
+            approval_status=ApprovalStatus.APPROVED,
+            approved_key=f"{ps.prescription_set_id}:emergency",
+        )
+        visit = await make_visit(clinic, set_name="테스트세트-C등급")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        resp = await self.generate(visit, staff)
+
+        assert resp.status_code == 201
+        db = await self.sections_from_db(visit.visit_id)
+        assert db[GuideSectionKey.EMERGENCY].generated_body == _EMERGENCY_FALLBACK
+        assert db[GuideSectionKey.EMERGENCY].drug_caution_content_id is None
+
+    async def test_empty_source_metadata_uses_fallback(self) -> None:
+        """근거 메타데이터가 비어 있으면 폴백을 사용한다(KEY-180 §4)."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        ps, _ = await PrescriptionSet.get_or_create(name="테스트세트-빈근거")
+        await DrugCautionContent.create(
+            prescription_set=ps,
+            section_key=CautionSectionKey.CAUTION,
+            body="[합성 빈근거 주의]",
+            source_name="",  # 빈 문자열
+            source_org="",
+            source_url="",
+            verified_at="2026-08-25",
+            content_version="",
+            source_grade="A",
+            approval_status=ApprovalStatus.APPROVED,
+            approved_key=f"{ps.prescription_set_id}:caution",
+        )
+        visit = await make_visit(clinic, set_name="테스트세트-빈근거")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        resp = await self.generate(visit, staff)
+
+        assert resp.status_code == 201
+        db = await self.sections_from_db(visit.visit_id)
+        assert db[GuideSectionKey.CAUTION].generated_body == _CAUTION_FALLBACK
+        assert db[GuideSectionKey.CAUTION].drug_caution_content_id is None
+
 
 # ── D-3: emergency 수정 차단 회귀 ────────────────────────────────────────────
 
@@ -438,8 +522,8 @@ class TestGeneratedBodyIsImmutableAfterApproveVersion(DrugCautionTestCase):
 class TestApprovedKeyUniquenessConstraint(DrugCautionTestCase):
     """D-5: DB 유니크 제약이 같은 세트·섹션에 승인 버전이 둘이 되는 경합을 차단한다."""
 
-    async def test_two_approved_entries_for_same_set_section_are_rejected(self) -> None:
-        """같은 approved_key 를 두 행에 INSERT 하면 DB 가 거부한다."""
+    async def test_duplicate_approved_key_on_two_rows_is_rejected_by_db(self) -> None:
+        """같은 approved_key 를 두 행에 INSERT 하면 DB 유니크 제약이 거부한다."""
         ps = await PrescriptionSet.create(name="테스트세트")
         approved_key = f"{ps.prescription_set_id}:caution"
 

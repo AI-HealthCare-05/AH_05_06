@@ -17,7 +17,7 @@ import logging
 
 from tortoise.transactions import in_transaction
 
-from app.models.catalog import ApprovalStatus, CautionSectionKey, DrugCautionContent, PrescriptionSet
+from app.models.catalog import ApprovalStatus, CautionSectionKey, DrugCautionContent, PrescriptionSet, SourceGrade
 
 LOGGER = logging.getLogger("app.drug_caution")
 
@@ -44,10 +44,11 @@ class DrugCautionService:
             LOGGER.info("미등록 처방 세트: %r — %s 범용 문구로 폴백", set_name, section_key)
             return None
 
+        # approved_key 로 조회: 값이 채워진 행이 곧 현재 승인본이며 유니크(KEY-180 §3).
+        # source_grade=A 필터: B·C 등급은 caution/emergency 단독 근거 불가(KEY-180 §2).
         content = await DrugCautionContent.filter(
-            prescription_set=ps,
-            section_key=section_key,
-            approval_status=ApprovalStatus.APPROVED,
+            approved_key=f"{ps.prescription_set_id}:{section_key.value}",
+            source_grade=SourceGrade.A,
         ).first()
 
         if content is None:
@@ -56,6 +57,12 @@ class DrugCautionService:
                 section_key,
                 set_name,
             )
+            return None
+
+        # KEY-180 §4: 근거 메타데이터가 하나라도 비어 있으면 생성에 사용하지 않는다.
+        if not all([content.source_name, content.source_org, content.source_url, content.content_version]):
+            LOGGER.warning("근거가 비어 있어 폴백 — %s / %r", section_key, set_name)
+            return None
 
         return content
 
