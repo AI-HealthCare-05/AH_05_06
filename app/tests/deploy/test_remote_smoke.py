@@ -15,6 +15,7 @@
 import httpx
 import pytest
 
+from app.tests.deploy.test_pilot_deploy_contract import ROOT
 from scripts.smoke import (
     Check,
     Reason,
@@ -23,9 +24,11 @@ from scripts.smoke import (
     judge_core,
     judge_health,
     judge_login,
+    judge_status,
     normalize_base,
     report,
     run_smoke,
+    run_smoke_with_retry,
 )
 
 #: 응답 안에 있으면 안 되는 것들이 밖으로 나오는지 보려고 심는 표식.
@@ -131,6 +134,67 @@ class TestItPassesOnlyWhenEverythingIsUp:
         assert exit_code(checks) == 1
 
 
+class TestRetryOnlyForNotReachingIt:
+    """배포 직후 콜드스타트만 다시 건다 — `#141` 리뷰의 설계 질문에 대한 답.
+
+    **판정된 실패는 다시 걸지 않는다.** `degraded`·`401`·`5xx` 는 다시 물어도
+    같은 답이 오고, 여러 번 묻는 동안 진짜 고장이 「간헐적」으로 보인다.
+    """
+
+    class FlakyThenUp(StubClient):
+        """처음 몇 번은 못 닿고, 그 뒤에는 멀쩡한 서버."""
+
+        def __init__(self, fail_times: int) -> None:
+            super().__init__(StubResponse(200, HEALTHY), LOGIN_OK, CORE_OK)
+            self.left = fail_times
+            self.tries = 0
+
+        def _give(self, key: str, url: str, kwargs: dict) -> StubResponse:
+            if key == "health":
+                self.tries += 1
+                if self.left > 0:
+                    self.left -= 1
+                    raise httpx.ConnectError("아직 뜨는 중")
+            return super()._give(key, url, kwargs)
+
+    async def test_a_cold_start_is_given_another_chance(self) -> None:
+        client = self.FlakyThenUp(fail_times=2)
+
+        checks = await run_smoke_with_retry("https://synthetic.example", "s", "s", client, attempts=3, wait_seconds=0)  # type: ignore[arg-type]
+
+        assert exit_code(checks) == 0, "콜드스타트 한두 번에 되돌리게 된다"
+        assert client.tries == 3
+
+    async def test_a_judged_failure_is_not_asked_again(self) -> None:
+        """`degraded` 를 여러 번 물으면 진짜 고장이 간헐적으로 보인다."""
+        client = StubClient(StubResponse(503, DEGRADED))
+
+        checks = await run_smoke_with_retry("https://synthetic.example", "s", "s", client, attempts=3, wait_seconds=0)  # type: ignore[arg-type]
+
+        assert exit_code(checks) == 1
+        assert len(client.seen) == 1, f"판정된 실패를 다시 물었다 ({len(client.seen)}회)"
+
+    def test_the_entry_point_actually_uses_it(self) -> None:
+        """**부품만 있고 연결이 없으면 아무 일도 안 일어난다.**
+
+        실제로 이 PR 을 만들다 `main()` 이 재시도 없는 쪽을 부르는 채로 한 번
+        지나갔다. 검사 넷이 다 초록이었는데 배포에서는 재시도가 안 돈다.
+        """
+        source = (ROOT / "scripts" / "smoke.py").read_text(encoding="utf-8")
+        entry = source[source.index("async def main(") :]
+
+        assert "run_smoke_with_retry(" in entry, "진입점이 재시도판을 안 쓴다"
+        assert "await run_smoke(" not in entry, "진입점이 재시도 없는 쪽을 부른다"
+
+    async def test_it_gives_up_after_the_last_attempt(self) -> None:
+        client = self.FlakyThenUp(fail_times=99)
+
+        checks = await run_smoke_with_retry("https://synthetic.example", "s", "s", client, attempts=2, wait_seconds=0)  # type: ignore[arg-type]
+
+        assert exit_code(checks) == 1
+        assert client.tries == 2, "정해진 횟수를 넘겨 계속 건다"
+
+
 class TestNothingFromTheResponseLeavesTheProcess:
     """**이 검사가 이 파일의 요점이다.**
 
@@ -168,6 +232,51 @@ class TestNothingFromTheResponseLeavesTheProcess:
         assert LEAK_MARKERS[0] not in degraded.note
 
 
+class TestRejectedAndNotPermittedAreDifferentThings:
+    """401 과 403 은 **고치는 사람이 다르다** — `#141` 리뷰.
+
+        401  토큰이 없거나 만료됐다 — 인증 문제
+        403  `hospital_id` 미배정이거나 `PATIENT_READ` 가 없다 — 계정 설정 문제
+
+    한 사유로 묶으면 배포가 멈춘 새벽에 비밀번호부터 뒤진다.
+    """
+
+    @pytest.mark.parametrize("name", ["auth", "core"])
+    def test_a_401_is_an_auth_problem(self, name: str) -> None:
+        assert judge_status(name, 401).reason is Reason.AUTH_REJECTED  # type: ignore[union-attr]
+
+    @pytest.mark.parametrize("name", ["auth", "core"])
+    def test_a_403_is_an_account_setup_problem(self, name: str) -> None:
+        check = judge_status(name, 403)
+        assert check is not None and check.reason is Reason.NOT_PERMITTED
+        assert "hospital_id" in str(check.reason), "무엇을 봐야 하는지 안 알려 준다"
+
+    def test_the_two_do_not_share_a_reason(self) -> None:
+        """같은 사유로 묶이면 이 검사가 운다."""
+        assert judge_status("core", 401).reason is not judge_status("core", 403).reason  # type: ignore[union-attr]
+
+
+class TestOnlyKnownServiceNamesLeave:
+    """`health` 가 새 항목을 돌려줘도 **그 글자는 안 나간다** — `#141` 리뷰."""
+
+    def test_a_known_service_is_named(self) -> None:
+        assert judge_health(503, DEGRADED).note == "db"
+
+    def test_an_unknown_service_name_is_not_echoed(self) -> None:
+        body = {
+            "status": "degraded",
+            "services": {
+                "api": {"status": "ok"},
+                "SYNTHETIC-NEW-KEY": {"status": "error", "detail": LEAK_MARKERS[0]},
+            },
+        }
+        check = judge_health(503, body)
+
+        assert not check.ok
+        assert "SYNTHETIC-NEW-KEY" not in check.line(), "모르는 항목 이름이 그대로 나갔다"
+        assert LEAK_MARKERS[0] not in check.line()
+
+
 class TestTheTargetUrlIsCheckedBeforeAnythingIsSent:
     @pytest.mark.parametrize("raw", ["api.example.com", "ftp://api.example.com", "", "  "])
     def test_a_target_that_is_not_http_is_refused(self, raw: str) -> None:
@@ -193,7 +302,15 @@ class TestTheJudgementsThemselves:
         assert judge_core(200).ok
         assert not judge_core(204).ok
 
-    def test_an_unknown_exception_is_not_swallowed(self) -> None:
-        """모르는 예외를 삼키면 「통과」로 보일 수 있다 — 그대로 터뜨린다."""
-        with pytest.raises(RuntimeError):
-            failure_of("health", RuntimeError("모르는 것"))
+    def test_an_unknown_exception_becomes_a_failure_not_a_traceback(self) -> None:
+        """모르는 예외도 **실패로 남기되 어휘로만 낸다** — `#141` 리뷰 반영.
+
+        예전에는 그대로 다시 던졌다. 「삼키지 않는다」는 맞았지만, 판정 함수에
+        버그가 있으면 정제된 보고문 대신 raw traceback 이 배포 로그에 찍힌다.
+        """
+        check = failure_of("health", RuntimeError("SYNTHETIC-INNER-DETAIL"))
+
+        assert not check.ok, "모르는 예외가 통과로 보인다"
+        assert check.reason is Reason.JUDGE_FAILED
+        assert "SYNTHETIC-INNER-DETAIL" not in check.line(), "예외 속 글자가 보고문으로 샜다"
+        assert "RuntimeError" in check.note, "무엇이 터졌는지는 남아야 한다"

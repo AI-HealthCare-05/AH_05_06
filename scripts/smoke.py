@@ -34,6 +34,14 @@ CORE_PATH = "/api/v1/front-desk/visits"
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
 
+#: **닿지 못한 경우에만** 다시 걸어 본다 (KEY-184, 이희진 님 `#141` 리뷰).
+#:
+#: 배포 직후에는 컨테이너가 아직 뜨는 중일 수 있다. 그 한 번을 실패로 보고
+#: 되돌리면 멀쩡한 배포를 되돌리게 된다.
+#:
+#: **판정된 실패는 다시 걸지 않는다.** `degraded`·`401`·`5xx` 는 다시 물어도
+#: 같은 답이 오고, 여러 번 묻는 동안 진짜 고장이 「간헐적」으로 보인다.
+
 
 class Reason(StrEnum):
     """**밖으로 나갈 수 있는 말의 전부다.**
@@ -50,9 +58,18 @@ class Reason(StrEnum):
     DEGRADED = "health 가 degraded 다"
     MALFORMED = "health 응답 모양이 계약과 다르다"
     AUTH_REJECTED = "합성 계정 로그인이 거절됐다"
+    NOT_PERMITTED = "로그인은 됐는데 권한이 없다 (hospital_id 배정·PATIENT_READ 확인)"
+    UNKNOWN_SERVICE = "health 가 모르는 항목을 돌려줬다"
+    BAD_TIMEOUT = "SMOKE_TIMEOUT_SECONDS 가 숫자가 아니다"
+    JUDGE_FAILED = "판정 중에 예상 밖 오류가 났다"
     NO_TOKEN = "로그인은 통과했는데 access_token 이 없다"
     UNEXPECTED_STATUS = "예상 밖 상태 코드"
     MISSING_CREDENTIALS = "SMOKE_LOGIN_ID · SMOKE_PASSWORD 가 없다"
+
+
+RETRYABLE = frozenset({Reason.UNREACHABLE, Reason.TIMEOUT})
+DEFAULT_ATTEMPTS = 3
+RETRY_WAIT_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -81,11 +98,19 @@ def normalize_base(raw: str) -> str | None:
     return target
 
 
+#: `health` 가 돌려주는 항목 이름. **이 셋만 밖으로 나간다** (KEY-184).
+#:
+#: 예전에는 응답의 키를 그대로 `note` 에 실었다. 「정해진 어휘로만 나간다」를
+#: 관례로만 지키고 있었던 셈이라, 서버가 새 키를 하나 더하는 날 그 글자가
+#: 그대로 배포 로그에 남는다 (이희진 님 `#141` 리뷰).
+KNOWN_SERVICES = ("api", "db", "redis")
+
+
 def judge_health(status_code: int, body: object) -> Check:
     """`health` 응답을 판정한다 — **본문은 읽되 옮기지 않는다.**
 
-    서비스 이름(`db`·`redis`)은 우리가 정한 이름이라 내보내도 된다. 그 안의
-    `detail` 은 예외 문자열이라 절대 안 내보낸다.
+    항목 이름조차 `KNOWN_SERVICES` 를 거친 것만 내보낸다. 그 안의 `detail` 은
+    예외 문자열이라 절대 안 내보낸다.
     """
     if status_code >= 500 and status_code != 503:
         return Check("health", Reason.SERVER_ERROR, str(status_code))
@@ -97,43 +122,70 @@ def judge_health(status_code: int, body: object) -> Check:
         name for name, value in services.items() if not (isinstance(value, dict) and value.get("status") == "ok")
     )
     if down:
-        return Check("health", Reason.DEGRADED, "·".join(down))
+        named = [name for name in down if name in KNOWN_SERVICES]
+        if len(named) != len(down):
+            # 모르는 이름이 섞였다. **그 글자는 안 내보낸다** — 몇 개인지만 센다.
+            return Check("health", Reason.UNKNOWN_SERVICE, f"{len(down)}개 이상")
+        return Check("health", Reason.DEGRADED, "·".join(named))
     if status_code != 200:
         return Check("health", Reason.UNEXPECTED_STATUS, str(status_code))
     return Check("health", Reason.OK)
 
 
-def judge_login(status_code: int, body: object) -> Check:
-    if status_code in (401, 403):
-        return Check("auth", Reason.AUTH_REJECTED)
+def judge_status(name: str, status_code: int) -> Check | None:
+    """두 단계가 함께 쓰는 상태코드 판정. 통과할 만하면 `None`.
+
+    **401 과 403 을 가른다.** 둘 다 「거절」이지만 고치는 사람이 다르다.
+
+        401   토큰이 없거나 만료됐다 — 인증 문제
+        403   `_require_patient_permission` 이 막았다 — `hospital_id` 가
+              안 배정됐거나 `PATIENT_READ` 가 없다. **계정 설정 문제**다
+
+    한 사유로 묶어 두면 배포가 멈춘 새벽에 「로그인이 거절됐다」를 보고 비밀번호
+    부터 뒤진다 (이희진 님 `#141` 리뷰).
+    """
+    if status_code == 401:
+        return Check(name, Reason.AUTH_REJECTED)
+    if status_code == 403:
+        return Check(name, Reason.NOT_PERMITTED)
     if status_code >= 500:
-        return Check("auth", Reason.SERVER_ERROR, str(status_code))
+        return Check(name, Reason.SERVER_ERROR, str(status_code))
     if status_code != 200:
-        return Check("auth", Reason.UNEXPECTED_STATUS, str(status_code))
+        return Check(name, Reason.UNEXPECTED_STATUS, str(status_code))
+    return None
+
+
+def judge_login(status_code: int, body: object) -> Check:
+    bad = judge_status("auth", status_code)
+    if bad is not None:
+        return bad
     if not isinstance(body, dict) or not body.get("access_token"):
         return Check("auth", Reason.NO_TOKEN)
     return Check("auth", Reason.OK)
 
 
 def judge_core(status_code: int) -> Check:
-    if status_code in (401, 403):
-        return Check("core", Reason.AUTH_REJECTED)
-    if status_code >= 500:
-        return Check("core", Reason.SERVER_ERROR, str(status_code))
-    if status_code != 200:
-        return Check("core", Reason.UNEXPECTED_STATUS, str(status_code))
-    return Check("core", Reason.OK)
+    return judge_status("core", status_code) or Check("core", Reason.OK)
 
 
 def failure_of(name: str, exc: Exception) -> Check:
-    """오갈 때 터진 예외를 **어휘 안의 진단**으로 옮긴다."""
+    """터진 예외를 **어휘 안의 진단**으로 옮긴다.
+
+    오가다 난 것은 종류별로 가르고, **그 밖의 것도 삼키지 않되 밖으로는 어휘만
+    내보낸다.** 예전에는 모르는 예외를 그대로 다시 던졌는데, 그러면 판정 함수에
+    버그가 있을 때 정제된 보고문 대신 raw traceback 이 배포 로그에 찍힌다
+    (이희진 님 `#141` 리뷰).
+
+    잃어버리지는 않는다 — 로그에는 남기고 화면에는 어휘만 낸다.
+    """
     if isinstance(exc, httpx.TimeoutException):
         return Check(name, Reason.TIMEOUT)
     if isinstance(exc, httpx.InvalidURL):
         return Check(name, Reason.BAD_URL)
     if isinstance(exc, httpx.RequestError):
         return Check(name, Reason.UNREACHABLE)
-    raise exc
+    print(f"[smoke] {name}: 예상 밖 오류 {type(exc).__name__}", file=sys.stderr)
+    return Check(name, Reason.JUDGE_FAILED, type(exc).__name__)
 
 
 async def run_smoke(base: str, login_id: str, password: str, client: httpx.AsyncClient) -> list[Check]:
@@ -186,6 +238,27 @@ def report(checks: list[Check]) -> str:
     return "\n".join(check.line() for check in checks)
 
 
+async def run_smoke_with_retry(
+    base: str,
+    login_id: str,
+    password: str,
+    client: httpx.AsyncClient,
+    attempts: int = DEFAULT_ATTEMPTS,
+    wait_seconds: float = RETRY_WAIT_SECONDS,
+) -> list[Check]:
+    """닿지 못했을 때만 다시 건다 — 그 밖의 실패는 첫 답을 그대로 쓴다."""
+    checks: list[Check] = []
+    for attempt in range(1, attempts + 1):
+        checks = await run_smoke(base, login_id, password, client)
+        if all(check.ok for check in checks):
+            return checks
+        if checks[-1].reason not in RETRYABLE or attempt == attempts:
+            return checks
+        print(f"[smoke] {checks[-1].reason} — {attempt}/{attempts}, 다시 걸어 본다", file=sys.stderr)
+        await asyncio.sleep(wait_seconds)
+    return checks
+
+
 def exit_code(checks: list[Check]) -> int:
     """하나라도 어긋나면 1 — 배포·CI 가 이 값으로 멈춘다."""
     return 0 if checks and all(check.ok for check in checks) else 1
@@ -207,9 +280,15 @@ async def main(argv: list[str]) -> int:
         print(Check("credentials", Reason.MISSING_CREDENTIALS).line(), file=sys.stderr)
         return 1
 
-    timeout = float(os.environ.get("SMOKE_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS))
+    raw_timeout = os.environ.get("SMOKE_TIMEOUT_SECONDS", "")
+    try:
+        timeout = float(raw_timeout) if raw_timeout else DEFAULT_TIMEOUT_SECONDS
+    except ValueError:
+        # 오타 하나로 스크립트가 traceback 으로 죽으면 무엇이 문제인지 안 보인다.
+        print(Check("credentials", Reason.BAD_TIMEOUT).line(), file=sys.stderr)
+        return 1
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        checks = await run_smoke(base, login_id, password, client)
+        checks = await run_smoke_with_retry(base, login_id, password, client)
 
     print(report(checks))
     return exit_code(checks)
