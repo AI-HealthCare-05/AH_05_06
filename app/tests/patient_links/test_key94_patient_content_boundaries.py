@@ -2,7 +2,7 @@
 
 from app.dtos.checkins import CheckInAnswerContent, CheckInPainTypeResponse, CheckInReadResponse
 from app.dtos.patient_links import PatientGuideResponse, PatientGuideSectionResponse
-from app.models.visits import GuideStatus, PatientGuideLink
+from app.models.visits import GuideDocument, GuideStatus, PatientGuideLink
 from app.tests.patient_links.test_patient_links import (
     TOKEN,
     PatientLinkTestCase,
@@ -79,3 +79,49 @@ class TestPatientContentBoundaries(PatientLinkTestCase):
             "message": "승인 완료된 안내문만 링크를 발급할 수 있습니다.",
         }
         assert await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).count() == 0
+
+    async def test_stale_approved_at_does_not_open_a_pending_guide(self) -> None:
+        """상태가 미승인이면 승인 시각이 남아 있어도 발급·조회 관문이 모두 닫힌다."""
+
+        hospital = await make_hospital("KEY-94 오래된 승인시각 합성의원")
+        guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        staff = await make_staff(hospital, "key94-stale-approved-at", ["doctor"])
+        assert (await self.issue(guide, staff)).status_code == 201
+
+        await GuideDocument.filter(guide_document_id=guide.guide_document_id).update(
+            status=GuideStatus.APPROVAL_PENDING
+        )
+
+        reissued = await self.issue(guide, staff)
+        assert reissued.status_code == 409
+        assert reissued.json()["code"] == "GUIDE_NOT_APPROVED"
+
+        async with self.client() as client:
+            patient_guide = await client.get(f"/api/v1/guides/{TOKEN}")
+            checkin = await client.get(f"/api/v1/checkins/{TOKEN}")
+
+        for response in (patient_guide, checkin):
+            assert response.status_code == 404
+            assert response.json()["code"] == "LINK_NOT_FOUND"
+
+    async def test_missing_approved_at_does_not_open_a_scheduled_guide(self) -> None:
+        """상태가 승인 완료여도 승인 시각이 없으면 발급·조회 관문이 모두 닫힌다."""
+
+        hospital = await make_hospital("KEY-94 승인시각 누락 합성의원")
+        guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        staff = await make_staff(hospital, "key94-missing-approved-at", ["doctor"])
+        assert (await self.issue(guide, staff)).status_code == 201
+
+        await GuideDocument.filter(guide_document_id=guide.guide_document_id).update(approved_at=None)
+
+        reissued = await self.issue(guide, staff)
+        assert reissued.status_code == 409
+        assert reissued.json()["code"] == "GUIDE_NOT_APPROVED"
+
+        async with self.client() as client:
+            patient_guide = await client.get(f"/api/v1/guides/{TOKEN}")
+            checkin = await client.get(f"/api/v1/checkins/{TOKEN}")
+
+        for response in (patient_guide, checkin):
+            assert response.status_code == 404
+            assert response.json()["code"] == "LINK_NOT_FOUND"
