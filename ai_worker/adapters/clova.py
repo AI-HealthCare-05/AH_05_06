@@ -31,8 +31,9 @@ _TIMEOUT_SECONDS = 30.0
 class ClovaOcrError(Exception):
     """CLOVA OCR 호출 또는 응답 파싱 실패."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, elapsed_ms: int = 0) -> None:
         self.code = code
+        self.elapsed_ms = elapsed_ms  # HTTP 호출 시간 — 타임아웃·네트워크 오류 경로에서도 기록
         super().__init__(message)
 
 
@@ -91,9 +92,17 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
                 headers={"X-OCR-SECRET": config.CLOVA_OCR_SECRET_KEY},
             )
     except httpx.TimeoutException as exc:
-        raise ClovaOcrError("CLOVA_TIMEOUT", "CLOVA OCR 요청 시간 초과") from exc
+        raise ClovaOcrError(
+            "CLOVA_TIMEOUT",
+            "CLOVA OCR 요청 시간 초과",
+            elapsed_ms=round((perf_counter() - t_http) * 1000),
+        ) from exc
     except httpx.RequestError as exc:
-        raise ClovaOcrError("CLOVA_NETWORK_ERROR", f"CLOVA OCR 네트워크 오류: {exc}") from exc
+        raise ClovaOcrError(
+            "CLOVA_NETWORK_ERROR",
+            "CLOVA OCR 네트워크 오류",
+            elapsed_ms=round((perf_counter() - t_http) * 1000),
+        ) from exc
     http_elapsed_ms = round((perf_counter() - t_http) * 1000)
 
     if response.status_code != 200:

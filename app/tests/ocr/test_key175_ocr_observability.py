@@ -207,6 +207,22 @@ class TestOcrObservabilityIntegration(TestCase):
         assert "mode=fixture" in log
         assert "error_code=CLOVA_TIMEOUT" in log
 
+    async def test_clova_timeout_records_clova_elapsed_ms(self) -> None:
+        """CLOVA_TIMEOUT 발생 시 elapsed_ms가 clova_elapsed_ms로 로그에 기록된다."""
+        job = await self._seed("obs-175-timeout-elapsed-001")
+        timeout_err = ClovaOcrError("CLOVA_TIMEOUT", "CLOVA OCR 요청 시간 초과", elapsed_ms=29800)
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", side_effect=timeout_err),
+            self.assertLogs(_LOGGER, level="INFO") as cap,
+        ):
+            mock_cfg.clova_enabled = True
+            mock_cfg.OCR_FIXTURE_FALLBACK = True
+            await process_ocr_job(str(job.ocr_job_id))
+
+        log = "\n".join(cap.output)
+        assert "clova_elapsed_ms=29800" in log, "타임아웃 시 elapsed_ms가 로그에 없으면 P95 계산에서 제외됨"
+
     async def test_clova_network_error_logs_mode_fixture(self) -> None:
         """CLOVA_NETWORK_ERROR 발생 시 mode=fixture, error_code=CLOVA_NETWORK_ERROR 로그."""
         job = await self._seed("obs-175-network-001")

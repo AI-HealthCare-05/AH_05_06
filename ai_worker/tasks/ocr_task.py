@@ -89,6 +89,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
                 mode="fixture" if used_fixture else "failed",
                 t0=t0,
                 error_code=exc.code,
+                clova_elapsed_ms=exc.elapsed_ms or None,
             )
         except Exception:
             default_logger.exception("OCR 처리 오류 — ocr_job_id=%s", ocr_job_id)
