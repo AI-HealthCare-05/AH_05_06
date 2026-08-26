@@ -81,6 +81,11 @@ var FAILURE_SAYINGS = [
   { code: "OCR_ENGINE_TIMEOUT", say: "판독이 정해진 시간 안에 끝나지 않았습니다." },
   { code: "OCR_ENGINE_ERROR", say: "판독기가 문서를 처리하지 못했습니다." },
   { code: "UNREADABLE", say: "문서의 글자를 알아볼 수 없었습니다." },
+  { code: "CLOVA_API_ERROR", say: "판독 서버에 일시적인 문제가 있었습니다. 잠시 후 다시 올려 주세요." },
+  { code: "OCR_NOT_CONFIGURED", say: "판독 서비스가 준비되지 않았습니다. 관리자에게 문의해 주세요." },
+  { code: "FALLBACK_ERROR", say: "판독에 실패했습니다. 파일을 확인한 뒤 다시 올려 주세요." },
+  { code: "NO_DOCUMENTS", say: "올라간 문서가 없습니다. 파일을 다시 올려 주세요." },
+  { code: "PROCESSING_ERROR", say: "판독 처리 중 오류가 발생했습니다. 다시 올려 주세요." },
 ];
 
 /* 왜 실패했는지와, 문의할 때 쓸 코드. **그것뿐이다.**

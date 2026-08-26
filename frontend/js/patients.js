@@ -501,7 +501,7 @@ function tiedBirthDates(items) {
 
     var makeVisit = function (patientId) {
       return patientsApi.createVisit(patientId, {
-        department_id: Number(el("f-dept").value),
+        department_id: null, // 진료과 검증 테이블 미구현 — KEY-33 이후 연결
         doctor_id: Number(el("f-doctor").value),
         /* 계약은 datetime 을 받는다. 오프셋을 붙여 보내야 서버가 어느 날의
            진료인지 시간대를 헤아리지 않아도 된다. */

@@ -57,6 +57,17 @@ class Config(BaseSettings):
     # 실제 OCR 워커 없이 fixture 결과를 즉시 DB에 기록한다 — Walking Skeleton 데모 전용.
     OCR_FIXTURE_FALLBACK: bool = False
 
+    # CLOVA OCR 연동 — 비어 있으면 Worker가 fixture fallback으로 동작한다.
+    # 실제 키는 .env에만 기록하고 코드·로그에 남기지 않는다.
+    CLOVA_OCR_INVOKE_URL: str = ""
+    CLOVA_OCR_SECRET_KEY: str = ""
+    # KEY-163 §8 기준값 10초. 실제 응답 시간은 8/27 멘토링 후 확인 예정.
+    CLOVA_OCR_TIMEOUT_SECONDS: float = 10.0
+
+    @property
+    def clova_enabled(self) -> bool:
+        return bool(self.CLOVA_OCR_INVOKE_URL and self.CLOVA_OCR_SECRET_KEY)
+
     # KEY-96 환자 챗봇의 단일 실제 모델 경로. 키가 없거나 호출이 실패하면
     # 승인 안내 화면 전체를 멈추지 않고 안전한 고정 응답으로 대체한다.
     OPENAI_API_KEY: SecretStr | None = None
