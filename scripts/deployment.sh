@@ -25,6 +25,10 @@ build_and_push () {
   # **태그 앞머리를 인자로 받는다** — 예전에는 「FastAPI 아니면 ai」였다.
   # 세 번째가 생기는 순간 nginx 이미지가 `ai-` 로 밀려 올라간다 (KEY-189).
   local tag_base=$7
+  # 빠뜨리면 **조용히 `:-v1.0.0` 이 올라간다** — 태그 앞머리가 빈 문자열이 되고
+  # 아무도 안 운다 (이희진 님 `#145` ②). 이 PR 이 고치려던 실수가 한 칸 옆으로
+  # 옮겨간 자리라 여기서 죽인다.
+  : "${tag_base:?build_and_push: tag_base(7번째 인자)가 없다 — api|ai|web 중 하나를 넘겨라}"
   echo "${COLOR_BLUE}${name} Docker Image Build Start.${COLOR_NC}"
   docker build --platform linux/amd64 -t ${docker_user}/${docker_repo}:${tag_base}-${tag} -f ${dockerfile} ${context}
 
