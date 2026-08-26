@@ -80,6 +80,18 @@ SECRET_KEY     운영에서 기본값·자리표시자면 멈춘다 (KEY-174)
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
+### 서버에 올라간 `.env`
+
+`scp` 는 로컬 파일의 권한을 그대로 안 옮긴다. 그래서 **올린 직후에 잠근다.**
+
+```bash
+scp … envs/.prod.env ubuntu@<ip>:~/project/.env
+ssh … "chmod 600 ~/project/.env"      # 이 순서다. 나중에 잠그면 그 사이가 열려 있다
+```
+
+`scripts/deployment.sh` 가 이 둘을 붙여서 한다. 손으로 올릴 때도 같이 한다 —
+이 파일에는 `DB_PASSWORD` 와 `SECRET_KEY` 가 들어 있다.
+
 ## 3. 배포 절차
 
 ```bash

@@ -79,6 +79,26 @@ class TestSecretsNeverReachTheScreen:
         assert "--password-stdin" in script, "비밀번호를 표준입력으로 안 넘긴다"
         assert not re.search(r"docker login[^\n|]*\s-p\s", script), "비밀번호를 명령줄 인자로 넘긴다"
 
+    def test_the_env_file_is_locked_down_right_after_it_lands(self) -> None:
+        """`.env` 를 올린 **직후에** 잠근다 — 한금준 님 `#133` 보안 확인.
+
+        `scp` 는 로컬 파일의 권한을 그대로 안 옮긴다. 기본 umask 로 떨어지면
+        그 서버의 다른 계정이 읽을 수 있는데, 이 파일에는 `DB_PASSWORD` 와
+        `SECRET_KEY` 가 들어 있다.
+
+        **순서를 함께 잰다.** 나중에 잠그면 그 사이가 열려 있고, 배포가 중간에
+        끊기면 열린 채로 남는다.
+        """
+        script = read("scripts/deployment.sh")
+
+        landed = script.index("ubuntu@${ec2_ip}:~/project/.env")
+        locked = script.find("chmod 600 ~/project/.env")
+
+        assert locked != -1, "`.env` 를 올려 놓고 잠그지 않는다"
+        assert landed < locked, "잠그고 나서 올린다 — 그 사이가 열려 있다"
+        # 「바로 다음 줄인가」까지 재려다 **주석 안의 `scp` 라는 글자**에 걸렸다.
+        # 그건 과한 단정이라 걷었다 — 순서가 지켜지면 뜻은 이미 지켜진다.
+
     def test_the_pat_is_not_passed_through_the_ssh_command_line(self) -> None:
         """`ssh "DOCKER_PAT=… bash -s"` 는 **원격의 `ps` 에 남는다.**"""
         script = read("scripts/deployment.sh")

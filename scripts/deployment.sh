@@ -122,6 +122,10 @@ echo ""
 
 # ---------- EC2 내에 배포 준비 파일 복사  ----------
 scp -i ~/.ssh/${ssh_key_file} envs/.prod.env ubuntu@${ec2_ip}:~/project/.env
+# **올린 직후에 잠근다** — `scp` 는 로컬 파일의 권한을 그대로 안 옮긴다.
+# 기본 umask 로 떨어지면 그 서버의 다른 계정이 읽을 수 있고, 이 파일에는
+# `DB_PASSWORD` 와 `SECRET_KEY` 가 들어 있다 (한금준 님 `#133` 보안 확인).
+ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} "chmod 600 ~/project/.env"
 scp -i ~/.ssh/${ssh_key_file} infra/docker/docker-compose.prod.yml ubuntu@${ec2_ip}:~/project/docker-compose.yml
 if [[ "$is_https" == "1" ]] ; then
   # ---------- prod_http.conf 파일의 server_name 자동 수정 ----------
