@@ -1,6 +1,11 @@
 #!/bin/bash
 set -eo pipefail
 
+# 공용 조각은 `scripts/lib.sh` 한 곳에 둔다 — 복제해 두면 한쪽만 고치게 된다
+# (KEY-174).
+# shellcheck source=scripts/lib.sh
+source "$(dirname "$0")/lib.sh"
+
 COLOR_GREEN=$(tput setaf 2)
 COLOR_BLUE=$(tput setaf 4)
 COLOR_RED=$(tput setaf 1)
@@ -34,17 +39,27 @@ build_and_push () {
   echo ""
 }
 
-# ---------- Docker login Prompt ----------
-echo "${COLOR_BLUE}도커 유저네임과 비밀번호(PAT)을 입력해주세요.${COLOR_NC}"
-read -p "username: " docker_user
-read -p "password: " docker_pw
-echo ""
-
-
-# ---------- Docker Login ----------
+# ---------- Docker login ----------
+#
+# **PAT 를 화면에 찍지 않는다** (KEY-174).
+#   · `read -s` — 입력이 안 보인다. 예전에는 -p 만 있어 그대로 찍혔다
+#   · `--password-stdin` — 예전 `docker login -p` 는 경고를 내고 프로세스
+#     목록(`ps`)에 값이 남는다
+#   · 환경변수로 미리 주면 묻지 않는다 — CI 에서 비대화형으로 돌릴 수 있다
 echo "${COLOR_BLUE}Docker login${COLOR_NC}"
-if ! docker login -u ${docker_user} -p ${docker_pw} ; then
-  echo "${COLOR_RED}도커 로그인에 실패했습니다. 도커 유저네임과 비밀번호를 확인해주세요.${COLOR_NC}"
+if [ -z "${DOCKER_USERNAME:-}" ]; then
+  read -r -p "username: " DOCKER_USERNAME
+fi
+if [ -z "${DOCKER_PAT:-}" ]; then
+  read -r -s -p "password (PAT, 화면에 안 보입니다): " DOCKER_PAT
+  echo ""
+fi
+docker_user="${DOCKER_USERNAME}"
+docker_pw="${DOCKER_PAT}"
+
+if ! printf '%s' "${docker_pw}" | docker login -u "${docker_user}" --password-stdin ; then
+  echo "${COLOR_RED}도커 로그인에 실패했습니다. 유저네임과 PAT 을 확인해주세요.${COLOR_NC}"
+  exit 1
 fi
 echo "${COLOR_GREEN}도커 로그인 성공!${COLOR_NC}"
 echo ""
@@ -107,38 +122,33 @@ echo ""
 
 # ---------- EC2 내에 배포 준비 파일 복사  ----------
 scp -i ~/.ssh/${ssh_key_file} envs/.prod.env ubuntu@${ec2_ip}:~/project/.env
+# **올린 직후에 잠근다** — `scp` 는 로컬 파일의 권한을 그대로 안 옮긴다.
+# 기본 umask 로 떨어지면 그 서버의 다른 계정이 읽을 수 있고, 이 파일에는
+# `DB_PASSWORD` 와 `SECRET_KEY` 가 들어 있다 (한금준 님 `#133` 보안 확인).
+ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} "chmod 600 ~/project/.env"
 scp -i ~/.ssh/${ssh_key_file} infra/docker/docker-compose.prod.yml ubuntu@${ec2_ip}:~/project/docker-compose.yml
 if [[ "$is_https" == "1" ]] ; then
   # ---------- prod_http.conf 파일의 server_name 자동 수정 ----------
-  sed -i '' "s/server_name .*/server_name ${ec2_ip};/g" infra/nginx/prod_http.conf
+  sed_inplace "s/server_name .*/server_name ${ec2_ip};/g" infra/nginx/prod_http.conf
   scp -i ~/.ssh/${ssh_key_file} infra/nginx/prod_http.conf ubuntu@${ec2_ip}:~/project/nginx/default.conf
 else
   echo "${COLOR_BLUE} 사용중인 도메인을 입력하세요. (ex. api.ozcoding.site)${COLOR_NC}"
   read -p "Domain: " domain
   # ---------- prod_https.conf 파일의 server_name, ssl_certificate 자동 수정 ----------
-  sed -i '' "s/server_name .*/server_name ${domain};/g" infra/nginx/prod_https.conf
-  sed -i '' "s|/etc/letsencrypt/live/[^/]*|/etc/letsencrypt/live/${domain}|g" infra/nginx/prod_https.conf
+  sed_inplace "s/server_name .*/server_name ${domain};/g" infra/nginx/prod_https.conf
+  sed_inplace "s|/etc/letsencrypt/live/[^/]*|/etc/letsencrypt/live/${domain}|g" infra/nginx/prod_https.conf
   scp -i ~/.ssh/${ssh_key_file} infra/nginx/prod_https.conf ubuntu@${ec2_ip}:~/project/nginx/default.conf
 fi
 
 # ---------- EC2 배포 자동화  ----------
 echo "${COLOR_BLUE}EC2 인스턴스에 SSH 접속을 시도합니다.${COLOR_NC}"
 chmod 400 ~/.ssh/${ssh_key_file}
-ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} \
-  "DOCKER_USERNAME=${docker_user} \
-   DOCKER_PAT=${docker_pw} \
-   DEPLOY_SERVICES='${DEPLOY_SERVICES[*]}' \
-   bash -s" << 'EOF'
-  set -e
-  cd project
-
-  echo "Docker login"
-  docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PAT"
-
-  echo "Deploying services: $DEPLOY_SERVICES"
-  docker compose up -d --pull always --no-deps $DEPLOY_SERVICES
-
-  docker image prune -af
-EOF
+# **PAT 를 ssh 명령줄에 싣지 않는다** — 원격의 `ps` 에 그대로 남는다.
+# 스크립트를 통째로 stdin 으로 흘려보낸다. 자세한 사정은 `lib.sh` 참고.
+remote_deploy_payload "${docker_pw}" \
+  | ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} \
+      "DOCKER_USERNAME=${docker_user} \
+       DEPLOY_SERVICES='${DEPLOY_SERVICES[*]}' \
+       bash -s"
 
 echo "✅ Deployment finished."
