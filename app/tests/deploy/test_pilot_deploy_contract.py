@@ -534,6 +534,52 @@ class TestTheRunbookTellsTheTruth:
             "실패했을 때 멈추는 법이 없다 — 게이트로 못 쓴다"
         )
 
+    def test_the_smoke_account_the_runbook_names_can_actually_do_it(self) -> None:
+        """**런북이 시킨 계정으로 smoke 가 실제로 통과하는가** — KEY-192.
+
+        예전 판은 `<합성 계정 아이디>` 라고만 적혀 있었다. 그런데 합성 직원
+        CSV 에는 **다른 시험이 쓰라고 만든 계정**이 섞여 있다. `lock01` 은
+        「5 회 실패 잠금 전용」이라, 배포하는 사람이 그걸 골라 비밀번호를 한 번
+        틀리면 그 시험이 못 돈다.
+
+        계정 이름을 **런북에서 읽어 온다.** 여기에 다시 적으면 문서와 검사가
+        따로 놀아서, 문서를 고쳐도 검사는 옛 계정을 계속 통과시킨다.
+        """
+        import csv
+        import re as _re
+
+        from app.core.rbac import Permission, has_permission
+
+        named = _re.search(r"export SMOKE_LOGIN_ID=(\S+)", RUNBOOK.read_text(encoding="utf-8"))
+        assert named, "런북이 smoke 계정 이름을 안 적었다"
+        login_id = named.group(1)
+        assert not login_id.startswith("<"), f"런북이 아직 자리표시자다: {login_id}"
+
+        rows = list(csv.DictReader((ROOT / "docs/data/synthetic-staff.csv").open(encoding="utf-8")))
+        assert rows, "합성 직원 CSV 를 못 읽었다 — 검사가 헛돈다"
+
+        row = next((r for r in rows if r["login_id"].strip() == login_id), None)
+        assert row, f"런북이 CSV 에 없는 계정을 시킨다: {login_id}"
+
+        roles = [x for x in _re.split(r"[|,·]", row["roles"]) if x.strip()]
+        assert has_permission(roles, Permission.PATIENT_READ), (
+            f"{login_id} 에 PATIENT_READ 가 없다 — smoke 의 core 단계가 403 으로 끝난다"
+        )
+        assert row["병원"].strip(), f"{login_id} 에 병원이 없다 — 403 이다"
+        assert row["status"].strip() == "active", f"{login_id} 가 재직 중이 아니다"
+        assert row["must_change_password"].strip() == "N", (
+            f"{login_id} 는 첫 로그인에 비밀번호를 바꿔야 한다 — smoke 의 auth 단계가 막힌다"
+        )
+
+    def test_the_runbook_warns_off_the_accounts_reserved_for_other_tests(self) -> None:
+        """자격만 보면 통과하는데 **쓰면 안 되는** 계정들이 있다."""
+        body = RUNBOOK.read_text(encoding="utf-8")
+
+        assert "lock01" in body, "잠금 전용 계정을 쓰지 말라는 말이 없다"
+
+        named = re.search(r"export SMOKE_LOGIN_ID=(\S+)", body)
+        assert named and named.group(1) != "lock01", "런북이 하필 잠금 전용 계정을 시킨다"
+
     def test_every_referenced_file_exists(self) -> None:
         """런북이 가리키는 파일이 실제로 있어야 한다."""
         runbook = read("docs/deploy-runbook.md")

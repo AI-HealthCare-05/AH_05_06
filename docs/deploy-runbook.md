@@ -146,9 +146,14 @@ DB 는 별개다. 마이그레이션을 되돌리려면 `aerich downgrade` 이�
 
 배포한 뒤 **기계가 세 자리를 찔러 본다** (KEY-184).
 
+**계정은 `staff01` 을 쓴다** (KEY-192). 합성 직원 17 명 중 자격을 갖춘 것은
+열이지만 아무거나 고르면 안 된다 — 아래 「고르면 안 되는 것」 참고.
+
 ```bash
-export SMOKE_LOGIN_ID=<합성 계정 아이디>
+export SMOKE_LOGIN_ID=staff01
 export SMOKE_PASSWORD=<합성 비밀번호>      # 인자로 주지 않는다 — ps · CI 로그에 남는다
+                                          # 값은 시딩할 때 넣은 것이다 (`SEED_PASSWORD`).
+                                          # 저장소·Jira·채팅 어디에도 안 적는다.
 
 uv run python scripts/smoke.py https://<도메인>
 echo $?        # 0 이면 통과, 1 이면 어느 자리가 왜 어긋났는지 위에 찍힌다
@@ -159,6 +164,20 @@ echo $?        # 0 이면 통과, 1 이면 어느 자리가 왜 어긋났는지 
 | `health` | `GET /api/v1/health` — api·db·redis 가 **다** ok 인가 |
 | `auth` | 합성 계정으로 `access_token` 을 받나 |
 | `core` | 그 토큰으로 `GET /api/v1/front-desk/visits` 가 200 인가 |
+
+### 고르면 안 되는 계정
+
+같은 CSV 에 **다른 시험이 쓰라고 만든 계정**이 섞여 있다. 자격 조건만 보면
+통과하는데, 쓰면 그 시험이 깨진다.
+
+| 계정 | 왜 안 되나 |
+|---|---|
+| `lock01` | 5 회 실패 잠금 전용. smoke 가 비밀번호를 한 번 틀리면 그 시험이 못 돈다 |
+| `staff21` · `doctor21` | 다른 의원(H2). 「H1 이 안 보이는가」를 재는 계정이라 데이터가 다르다 |
+| `adminstaff01` · `admindoc01` · `allthree01` | 겸직 검사용. 권한 합집합을 재는 자리다 |
+
+`staff01` 은 CSV 가 스스로 「기준 스탭 — L-1 로그인의 표준 계정. 다른 시험의
+기본값으로 쓴다」고 적어 둔 계정이다.
 
 ### smoke 계정이 갖춰야 하는 것
 
