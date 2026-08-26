@@ -191,7 +191,7 @@ await PatientUsageService().record_chatbot_answer(
 |---|---|---|
 | `GET /api/v1/guides/{token}` | `record_guide_view()` | **연결 완료** — KEY-170 |
 | 챗봇 스트리밍 UI (KEY-95) | `record_chatbot_answer()` | 미연결 — 챗봇 화면 자체가 미구현 |
-| LLM·RAG 응답 경로 (KEY-96) | `record_chatbot_answer()` | 미연결 — 질문 갈래 분류와 차단 판정이 KEY-96 범위 |
+| 승인 컨텍스트 기반 LLM 응답 경로 (KEY-96) | `record_chatbot_answer()` | 미연결 — 질문 갈래 분류와 차단 판정이 KEY-96 범위 |
 
 ## 3. D+7 복약 신호 — `POST /checkins/{token}/signals`
 

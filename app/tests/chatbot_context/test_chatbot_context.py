@@ -20,6 +20,7 @@ from app.services.chatbot_context import ApprovedChatbotContext, ChatbotContextS
 from app.services.patient_links import digest_link_token
 
 _TOKEN = "KEY89testTokenABCDEFGHIJKLMNOP0123456789abcd"
+_OTHER_TOKEN = "KEY89testTokenOTHER00000000000000000000000B"
 
 
 async def _make_guide(hospital: Hospital) -> GuideDocument:
@@ -153,3 +154,42 @@ class TestApprovedChatbotContext(TestCase):
         with self.assertRaises(AuthError) as cm:
             await ChatbotContextService().get_context("nonexistent-token-xyz")
         assert cm.exception.code == "LINK_NOT_FOUND"
+
+    async def test_token_is_scoped_to_issuing_hospital(self) -> None:
+        hospital_a = await Hospital.create(name="KEY-89 병원A")
+        hospital_b = await Hospital.create(name="KEY-89 병원B")
+        await _make_guide(hospital_a)
+
+        patient_b = await Patient.create(
+            hospital_id=hospital_b.hospital_id,
+            hospital_patient_no="KEY89-P02",
+            name="합성환자B",
+            birth_date="1992-03-04",
+            phone="01044445555",
+            sms_consent=True,
+        )
+        visit_b = await Visit.create(
+            hospital_id=hospital_b.hospital_id,
+            patient=patient_b,
+            visited_at="2026-08-21T09:00:00+09:00",
+        )
+        guide_b = await GuideDocument.create(
+            hospital_id=hospital_b.hospital_id,
+            visit=visit_b,
+            status=GuideStatus.SCHEDULED_TO_SEND,
+            approved_by=1,
+            approved_at=now(),
+        )
+        await PatientGuideLink.create(
+            guide_document=guide_b,
+            token_digest=digest_link_token(_OTHER_TOKEN),
+            expires_at=now() + timedelta(hours=72),
+            issued_by=1,
+        )
+
+        ctx_a = await ChatbotContextService().get_context(_TOKEN)
+        ctx_b = await ChatbotContextService().get_context(_OTHER_TOKEN)
+
+        assert ctx_a.clinic_name == "KEY-89 병원A"
+        assert ctx_b.clinic_name == "KEY-89 병원B"
+        assert ctx_a.guide_document_id != ctx_b.guide_document_id
