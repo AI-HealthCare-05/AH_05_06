@@ -87,7 +87,7 @@ class PatientLinkTestCase(TestCase):
         super().tearDown()
 
     async def headers(self, staff: Staff) -> dict[str, str]:
-        access, _ = await StaffSessionService(self.redis).start(staff, False)  # type: ignore[arg-type]
+        access, _ = await StaffSessionService(self.redis).start(staff)  # type: ignore[arg-type]
         return {"Authorization": f"Bearer {access}"}
 
     def client(self) -> AsyncClient:

@@ -7,14 +7,13 @@ rotation · 유휴 30분 · 로그아웃 · 재사용 감지가 서로 얽혀 �
 from typing import Any
 
 from httpx import ASGITransport, AsyncClient
-from tortoise.contrib.test import TestCase
 
-from app.core import config
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
 from app.models.staffs import Hospital, Staff, StaffStatus
-from app.tests.fakes import FakeRedis, InterleavingRedis
+from app.tests.auth_base import AuthTestCase
+from app.tests.fakes import InterleavingRedis
 
 PASSWORD = "Password123!"
 BASE = "/api/v1/auth"
@@ -33,28 +32,11 @@ async def make_staff(login_id: str = "staff01", **kwargs: Any) -> Staff:
     )
 
 
-class SessionTestCase(TestCase):
-    def setUp(self) -> None:
-        super().setUp()
-        self.redis = FakeRedis()
-        app.dependency_overrides[get_redis] = lambda: self.redis
-        # 쿠키 도메인을 비워 둔다. `.env` 에 COOKIE_DOMAIN 이 박혀 있으면
-        # 테스트 클라이언트의 호스트(`test`)와 안 맞아 **쿠키가 통째로 버려지고**,
-        # rotation·로그아웃 검사가 전부 「쿠키가 없다」로 깨진다.
-        # config.py 의 주석이 경고하는 그 상황이고, 실제로 로컬에서 났다.
-        # 검사가 개발자 `.env` 에 좌우되면 안 된다.
-        self._cookie_domain = config.COOKIE_DOMAIN
-        config.COOKIE_DOMAIN = ""
-
-    def tearDown(self) -> None:
-        config.COOKIE_DOMAIN = self._cookie_domain
-        app.dependency_overrides.clear()
-        super().tearDown()
-
-    async def sign_in(self, client: AsyncClient, login_id: str = "staff01", remember: bool = False) -> str:
+class SessionTestCase(AuthTestCase):
+    async def sign_in(self, client: AsyncClient, login_id: str = "staff01") -> str:
         response = await client.post(
             f"{BASE}/login",
-            json={"login_id": login_id, "password": PASSWORD, "remember": remember},
+            json={"login_id": login_id, "password": PASSWORD},
         )
         assert response.status_code == 200
         return str(response.json()["access_token"])
@@ -99,19 +81,25 @@ class TestRotation(SessionTestCase):
 
         assert response.status_code == 401
 
-    async def test_remember_survives_rotation(self) -> None:
-        """로그인 유지를 켜고 갱신했는데 세션 쿠키로 바뀌면, 브라우저를 닫는
-        순간 「유지」가 거짓말이 된다."""
-        from app.core import config
+    async def test_rotation_keeps_it_a_session_cookie(self) -> None:
+        """**갱신이 수명을 되살리지 않는다** — KEY-179.
 
+        이 검사는 뒤집힌 것이다. 예전에는 「로그인 유지를 켜고 갱신했는데 세션
+        쿠키로 바뀌면 유지가 거짓말이 된다」를 쟀다. 이제 유지 자체가 없으므로
+        **갱신을 몇 번 하든 세션 쿠키여야 한다.**
+
+        쿠키를 굽는 곳이 로그인과 갱신 두 자리라(`_set_refresh_cookie`) 한쪽만
+        고치고 지나갈 수 있어서 갱신 쪽을 따로 잰다.
+        """
         await make_staff()
 
         async with self.client() as client:
-            await self.sign_in(client, remember=True)
+            await self.sign_in(client)
             response = await client.post(f"{BASE}/refresh")
 
         cookie = next(h for h in response.headers.get_list("set-cookie") if "refresh_token=" in h)
-        assert f"Max-Age={config.REFRESH_TOKEN_EXPIRE_MINUTES * 60}" in cookie
+        assert "Max-Age" not in cookie, f"갱신이 수명을 붙였다: {cookie}"
+        assert "Expires" not in cookie, f"갱신이 만료 날짜를 붙였다: {cookie}"
 
     async def test_missing_cookie_is_401(self) -> None:
         async with self.client() as client:

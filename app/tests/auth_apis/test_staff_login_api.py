@@ -76,32 +76,37 @@ class TestLoginSucceeds(StaffLoginTestCase):
         assert "Path=/api/v1/auth" in cookie
         assert "SameSite=lax" in cookie
 
-    async def test_remember_off_leaves_a_session_cookie(self) -> None:
-        """`remember` 는 발급 여부가 아니라 쿠키가 얼마나 남는지를 정한다.
+    async def test_the_refresh_cookie_is_always_a_session_cookie(self) -> None:
+        """**접수 PC 는 공용이다** — 브라우저를 닫으면 인증이 사라져야 한다 (KEY-179).
 
-        꺼져 있으면 Max-Age 가 없어 브라우저를 닫을 때 사라진다.
+        예전에는 「이 컴퓨터에서 로그인 유지」를 켜면 쿠키에 `Max-Age` 가 붙어
+        14 일을 남았다. 자리를 뜬 뒤 다음 사람이 그 인증을 그대로 물려받는다.
+        선택지 자체를 없앴으므로 **어떤 요청에도 수명이 붙지 않는다.**
+
+        영속 `Expires` 도 함께 본다 — `Max-Age` 만 막으면 그쪽으로 새어 나간다.
         """
         await make_staff()
 
-        response = await self.post(remember=False)
+        response = await self.post()
 
         cookie = next(h for h in response.headers.get_list("set-cookie") if "refresh_token=" in h)
-        assert "Max-Age" not in cookie
+        assert "Max-Age" not in cookie, f"쿠키에 수명이 붙었다: {cookie}"
+        assert "Expires" not in cookie, f"쿠키에 만료 날짜가 붙었다: {cookie}"
 
-    async def test_remember_on_sets_refresh_lifetime_not_access(self) -> None:
-        """쿠키 수명은 **리프레시** 수명이어야 한다.
+    async def test_asking_to_be_remembered_changes_nothing(self) -> None:
+        """**계약에서 사라진 것을 보내도 수명이 안 붙는다.**
 
-        기존 코드는 여기에 액세스 토큰의 exp 를 넣고 있었다 — 14일짜리
-        리프레시가 한 시간 만에 죽는다.
+        옛 화면이 캐시에 남아 `remember: true` 를 보낼 수 있고, 손으로 부르는
+        사람도 있다. 「필드를 지웠다」로 끝내면 그 요청이 조용히 옛 동작을
+        되살릴 자리가 남는다.
         """
-        from app.core import config
-
         await make_staff()
 
         response = await self.post(remember=True)
 
+        assert response.status_code == 200, response.text
         cookie = next(h for h in response.headers.get_list("set-cookie") if "refresh_token=" in h)
-        assert f"Max-Age={config.REFRESH_TOKEN_EXPIRE_MINUTES * 60}" in cookie
+        assert "Max-Age" not in cookie, f"지운 필드가 되살아났다: {cookie}"
 
     async def test_first_login_is_reported(self) -> None:
         """화면(L-3)이 비밀번호 변경으로 보낼 근거다."""

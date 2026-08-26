@@ -33,11 +33,16 @@
         <!-- 문의하기를 눌렀을 때 답하는 자리. 창구가 아직 없어서
              「지금 할 수 있는 일」을 알려 준다 (#55 리뷰). -->
         <p class="ask-note" id="ask-note" role="status" tabindex="-1" hidden></p>
-        <p class="error" id="error" hidden></p>
+        <!-- 저장 실패는 **바로 알려야 한다** — 화면에는 떴는데 소리로는 아무
+             일도 없으면, 못 보는 사람은 저장된 줄 알고 창을 닫는다 (KEY-129). -->
+        <p class="error" id="error" role="alert" aria-live="assertive" hidden></p>
         <p class="foot">ⓘ 담당 의료진이 요청한 기록이에요</p>
       </div>
 
-      <div id="state" hidden></div>
+      <!-- 저장이 끝나면 폼이 통째로 이 안으로 바뀐다. 초점을 여기로 옮기지
+           않으면 사라진 버튼에 있던 커서가 `body` 로 떨어져, 「저장됐어요」를
+           못 듣는다 (KEY-129). -->
+      <div id="state" role="status" aria-live="polite" tabindex="-1" hidden></div>
     </main>
 
     <script src="/js/api.js"></script>

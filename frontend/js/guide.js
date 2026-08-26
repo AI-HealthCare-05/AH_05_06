@@ -307,6 +307,25 @@ function notice(message) {
   bar.id = "notice";
   bar.textContent = message;
   body.insertBefore(bar, body.firstChild);
+  /* **이 배너는 본문이 라이브 리전이라 소리로도 났었다.** 그 속성을 걷으면서
+     문의하기·PDF 저장·오류 신고 셋이 조용해졌다 — 고치려던 병을 다른 자리로
+     옮긴 셈이었다 (이희진 님 `#131` 리뷰).
+
+     부르는 쪽 셋에 각각 붙이지 않고 **여기 한 곳**에서 알린다. 새 호출부가
+     생겨도 따라온다. */
+  sayGuide(message);
+}
+
+/* 눈에는 안 보이고 **소리로만** 읽히는 한 줄 — KEY-129.
+ *
+ * 본문(`#guide-body`)을 통째로 라이브 리전으로 두면 탭을 옮길 때마다 안내문
+ * 전체가 다시 낭독된다. 실측했더니 탭 3 번에 6 번 읽혔다.
+ *
+ * 그래서 **무엇으로 바뀌었는지만** 말한다. 내용은 화면이 보여 준다.
+ */
+function sayGuide(text) {
+  var box = document.getElementById("guide-say");
+  if (box) box.textContent = text;
 }
 
 function renderTabs() {
@@ -321,6 +340,8 @@ function renderTabs() {
       renderTabs();
       renderBody();
       window.scrollTo(0, 0);
+      /* **바뀐 것만** 알린다 — 어느 탭으로 왔는지 한 줄. */
+      sayGuide(tab.label);
     });
     nav.appendChild(button);
   });
@@ -369,6 +390,9 @@ function renderBody() {
 function renderError(code) {
   var body = document.getElementById("guide-body");
   body.textContent = "";
+  /* 안내를 못 여는 것은 **알려야 하는 일**이다 — 화면에만 뜨면 못 보는 사람은
+     계속 기다린다. */
+  sayGuide("아직 안내를 보실 수 없어요");
   var box = section("아직 안내를 보실 수 없어요");
   var message =
     code === GUIDE_ERROR.LINK_EXPIRED
