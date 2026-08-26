@@ -40,18 +40,18 @@ async def _prescription(visit: Visit, label: str = "자궁내막증 · 비잔 (�
 
 class TestOnePrescriptionHoldsManyDrugs(TestCase):
     async def test_two_items_hang_off_one_prescription(self) -> None:
-        """CSV 의 "비잔정 2mg + 진통제" 가 두 줄이 되어야 한다.
+        """CSV 의 "비잔정(디에노게스트) 2mg + 진통제" 가 두 줄이 되어야 한다.
 
         한 줄에 눌러 두면 「두 번째 약의 용법」을 꺼낼 수 없다.
         """
         prescription = await _prescription(await _visit())
         await PrescriptionItem.create(
-            prescription=prescription, name="비잔정 2mg", frequency="1일 1회", duration_days=84
+            prescription=prescription, name="비잔정(디에노게스트) 2mg", frequency="1일 1회", duration_days=84
         )
         await PrescriptionItem.create(prescription=prescription, name="진통제", frequency=AS_NEEDED)
 
         items = await PrescriptionItem.filter(prescription=prescription).order_by("prescription_item_id")
-        assert [i.name for i in items] == ["비잔정 2mg", "진통제"]
+        assert [i.name for i in items] == ["비잔정(디에노게스트) 2mg", "진통제"]
         assert [i.frequency for i in items] == ["1일 1회", AS_NEEDED]
 
     async def test_the_set_label_is_kept_as_written(self) -> None:
@@ -75,7 +75,7 @@ class TestAsNeededDrugsCarryNoDuration(TestCase):
         """소진예정일을 계산하려면 정수여야 한다 — 문자열이면 더할 수 없다."""
         prescription = await _prescription(await _visit())
         item = await PrescriptionItem.create(
-            prescription=prescription, name="비잔정 2mg", frequency="1일 1회", duration_days=84
+            prescription=prescription, name="비잔정(디에노게스트) 2mg", frequency="1일 1회", duration_days=84
         )
 
         stored = await PrescriptionItem.get(prescription_item_id=item.prescription_item_id)
@@ -97,7 +97,9 @@ class TestHospitalIsolationRidesOnTheVisit(TestCase):
 
     async def test_items_are_scoped_through_two_hops(self) -> None:
         theirs = await _prescription(await _visit(OTHER_HOSPITAL, "SYN-137-20"))
-        await PrescriptionItem.create(prescription=theirs, name="야즈정", frequency="1일 1회", duration_days=28)
+        await PrescriptionItem.create(
+            prescription=theirs, name="야즈정(드로스피레논/에티닐에스트라디올)", frequency="1일 1회", duration_days=28
+        )
 
         leaked = await PrescriptionItem.filter(prescription__visit__hospital_id=HOSPITAL)
         assert leaked == [], "타 병원 처방 항목이 보인다"
@@ -112,7 +114,7 @@ class TestDeletingAVisitTakesThePrescriptionWithIt(TestCase):
         visit = await _visit(chart_no="SYN-137-30")
         prescription = await _prescription(visit)
         await PrescriptionItem.create(
-            prescription=prescription, name="비잔정 2mg", frequency="1일 1회", duration_days=56
+            prescription=prescription, name="비잔정(디에노게스트) 2mg", frequency="1일 1회", duration_days=56
         )
 
         await visit.delete()
