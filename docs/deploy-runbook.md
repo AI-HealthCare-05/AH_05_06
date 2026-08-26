@@ -13,6 +13,7 @@
 infra/docker/docker-compose.prod.yml   fastapi · mysql · redis · nginx · certbot
 infra/nginx/prod_http.conf             HTTP 전용 (인증서 받기 전)
 infra/nginx/prod_https.conf            HTTPS (인증서 받은 뒤)
+scripts/lib.sh                         두 스크립트가 함께 쓰는 조각
 scripts/deployment.sh                  이미지 빌드·푸시 → EC2 배포
 scripts/certbot.sh                     Let's Encrypt 인증서 발급
 envs/example.prod.env                  운영 환경변수 이름표
@@ -41,11 +42,17 @@ envs/example.prod.env                  운영 환경변수 이름표
 ```bash
 read -r -s -p "password (PAT, 화면에 안 보입니다): " DOCKER_PAT   # 안 찍힌다
 printf '%s' "${docker_pw}" | docker login --password-stdin        # ps 에 안 남는다
-ssh … bash -s << EOF ; PAT 는 첫 줄로 흘려보낸다                   # 원격 ps 에 안 남는다
+remote_deploy_payload "$pat" | ssh … bash -s                      # 원격 ps 에 안 남는다
 ```
 
 예전 판은 `read -p`(그대로 찍힘) · `docker login -p`(경고 + `ps` 노출) ·
 `ssh "DOCKER_PAT=… bash -s"`(원격 `ps` 노출) 셋 다 걸렸다.
+
+**한 번 더 고쳤다.** 그 사이 판은 PAT 를 스크립트보다 **먼저** 한 줄로 얹었는데,
+`bash -s` 는 stdin 을 스크립트로 읽으므로 그 줄을 명령으로 실행하려다
+`command not found` 로 **stderr 에 그대로 흘렸고**, 뒤의 `read` 는 PAT 대신 다음
+스크립트 줄을 삼켰다 — 막으려던 노출을 만들면서 **배포는 100% 실패했다.**
+지금은 PAT 를 스크립트 본문 안 heredoc 으로 넘긴다 (`scripts/lib.sh`).
 
 **환경변수로 미리 주면 묻지 않는다** — CI 에서 비대화형으로 돌릴 수 있다.
 
@@ -59,11 +66,15 @@ DOCKER_USERNAME=... DOCKER_PAT=... ./scripts/deployment.sh
 
 ```text
 DB_PASSWORD    비어 있으면 멈춘다 (KEY-110)
-SECRET_KEY     운영에서 기본값이면 멈춘다 (KEY-174)
+SECRET_KEY     운영에서 기본값·자리표시자면 멈춘다 (KEY-174)
 ```
 
 `SECRET_KEY` 기본값은 **프로세스마다 다르다.** 안 채우고 뜨면 재배포할 때마다
 발급한 토큰이 전부 죽어 「갑자기 로그아웃됐다」가 된다.
+
+예시 파일에 적힌 자리표시자(`change-me-…`)도 같이 막는다. `DB_PASSWORD` 와 달리
+**값이 있어 보여서 안 채우고 넘어가기 쉽고**, 그렇게 뜨면 서버는 조용히 살아나
+공개 저장소에 적힌 값으로 JWT 를 서명한다.
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -89,7 +100,7 @@ $EDITOR envs/.prod.env          # SECRET_KEY·DB_PASSWORD 는 반드시
 
 1. 고른 서비스의 이미지를 빌드해 Docker Hub 로 민다
 2. `envs/.prod.env` → EC2 `~/project/.env`
-3. `docker-compose.prod.yml` → EC2 `~/project/docker-compose.yml`
+3. `infra/docker/docker-compose.prod.yml` → EC2 `~/project/docker-compose.yml`
 4. nginx 설정의 `server_name` 을 IP/도메인으로 바꿔 EC2 로
 5. EC2 에서 `docker compose up -d --pull always` 후 옛 이미지 정리
 
@@ -146,7 +157,7 @@ curl -fsS -X POST https://<도메인>/api/v1/auth/login \
 ```text
 infra/nginx/prod_http.conf:25-27    location / { return 404; }
 infra/nginx/prod_https.conf:46-48   location / { return 404; }
-docker-compose.prod.yml             nginx 에 frontend 볼륨이 없다
+infra/docker/docker-compose.prod.yml   nginx 에 frontend 볼륨이 없다
 app/main.py                         StaticFiles 마운트가 없다
 ```
 

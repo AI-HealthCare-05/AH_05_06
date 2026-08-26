@@ -1,16 +1,10 @@
 #!/bin/bash
 set -eo pipefail
 
-# `sed -i` 는 GNU 와 BSD(macOS)가 인자를 다르게 받는다. 예전 판은 `sed -i ''`
-# 라 **맥에서만 돌았다** — 「새 환경에서 문서화된 절차로 재현」이 인수조건인데
-# 사실상 특정인의 노트북 전용이었다 (KEY-174).
-sed_inplace() {
-  if sed --version >/dev/null 2>&1; then
-    sed -i "$@"        # GNU
-  else
-    sed_inplace "$@"     # BSD / macOS
-  fi
-}
+# 공용 조각은 `scripts/lib.sh` 한 곳에 둔다 — 복제해 두면 한쪽만 고치게 된다
+# (KEY-174).
+# shellcheck source=scripts/lib.sh
+source "$(dirname "$0")/lib.sh"
 
 COLOR_GREEN=$(tput setaf 2)
 COLOR_BLUE=$(tput setaf 4)

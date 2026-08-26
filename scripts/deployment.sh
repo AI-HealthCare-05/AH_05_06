@@ -1,16 +1,10 @@
 #!/bin/bash
 set -eo pipefail
 
-# `sed -i` 는 GNU 와 BSD(macOS)가 인자를 다르게 받는다. 예전 판은 `sed -i ''`
-# 라 **맥에서만 돌았다** — 「새 환경에서 문서화된 절차로 재현」이 인수조건인데
-# 사실상 특정인의 노트북 전용이었다 (KEY-174).
-sed_inplace() {
-  if sed --version >/dev/null 2>&1; then
-    sed -i "$@"        # GNU
-  else
-    sed_inplace "$@"     # BSD / macOS
-  fi
-}
+# 공용 조각은 `scripts/lib.sh` 한 곳에 둔다 — 복제해 두면 한쪽만 고치게 된다
+# (KEY-174).
+# shellcheck source=scripts/lib.sh
+source "$(dirname "$0")/lib.sh"
 
 COLOR_GREEN=$(tput setaf 2)
 COLOR_BLUE=$(tput setaf 4)
@@ -146,26 +140,11 @@ fi
 echo "${COLOR_BLUE}EC2 인스턴스에 SSH 접속을 시도합니다.${COLOR_NC}"
 chmod 400 ~/.ssh/${ssh_key_file}
 # **PAT 를 ssh 명령줄에 싣지 않는다** — 원격의 `ps` 에 그대로 남는다.
-# 첫 줄로 흘려보내고 원격 스크립트가 `read` 로 받는다 (KEY-174).
-ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} \
-  "DOCKER_USERNAME=${docker_user} \
-   DEPLOY_SERVICES='${DEPLOY_SERVICES[*]}' \
-   bash -s" << EOF
-$(printf '%s\n' "${docker_pw}")
-$(cat <<'REMOTE'
-  set -e
-  read -r DOCKER_PAT
-  cd project
-
-  echo "Docker login"
-  printf '%s' "$DOCKER_PAT" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
-  echo "Deploying services: $DEPLOY_SERVICES"
-  docker compose up -d --pull always --no-deps $DEPLOY_SERVICES
-
-  docker image prune -af
-REMOTE
-)
-EOF
+# 스크립트를 통째로 stdin 으로 흘려보낸다. 자세한 사정은 `lib.sh` 참고.
+remote_deploy_payload "${docker_pw}" \
+  | ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} \
+      "DOCKER_USERNAME=${docker_user} \
+       DEPLOY_SERVICES='${DEPLOY_SERVICES[*]}' \
+       bash -s"
 
 echo "✅ Deployment finished."
