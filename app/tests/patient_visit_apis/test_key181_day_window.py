@@ -16,12 +16,13 @@
 알고 있었다.
 """
 
+import unittest
 from datetime import date, datetime, time, timedelta
 
 from tortoise.contrib.test import TestCase
 
 from app.core.api_errors import ApiError
-from app.core.time import DISPLAY_TIMEZONE
+from app.core.time import DISPLAY_TIMEZONE, clinic_day_window
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import VisitCreateRequest
 from app.models.patients import Patient
@@ -158,3 +159,34 @@ class TestOnePerDayCountsTheClinicDay(TestCase):
             assert error.code == "VISIT_ALREADY_REGISTERED", error.code
         else:
             raise AssertionError("같은 날 두 번째 진료가 그냥 들어갔다 — 규칙이 사라졌다")
+
+
+class TestTheWindowKeepsItsTimezone(unittest.TestCase):
+    """경계 값이 **시간대를 달고** 나오는가 — KEY-181.
+
+    위 검사들은 SQL 을 거쳐 잰다. 그런데 asyncmy 의 `escape_datetime` 은
+    tzinfo 를 무시하고 `.hour`·`.minute` 만 싣는다. 그래서 `clinic_day_window`
+    가 **tzinfo 를 떼고 naive KST** 를 돌려줘도 오늘은 SQL 이 똑같아 위
+    검사들이 전부 통과한다 — 실제로 확인했다.
+
+    지금은 무해하지만, 저장을 UTC 로 정규화하는 날(KEY-181 의 갈래 ②) 그
+    순간 조용히 깨진다. 그때 이 두 줄이 먼저 운다.
+    """
+
+    def test_both_edges_carry_the_clinic_timezone(self) -> None:
+        day_start, day_end = clinic_day_window(date(2026, 8, 27))
+        for label, edge in (("day_start", day_start), ("day_end", day_end)):
+            with self.subTest(edge=label):
+                self.assertIsNotNone(edge.tzinfo, f"{label} 이 naive 다 — 시간대를 달고 나와야 한다")
+                self.assertEqual(
+                    edge.utcoffset(),
+                    datetime(2026, 8, 27, tzinfo=DISPLAY_TIMEZONE).utcoffset(),
+                    f"{label} 이 의원 시간대가 아니다",
+                )
+
+    def test_it_is_local_midnight_to_local_midnight(self) -> None:
+        day_start, day_end = clinic_day_window(date(2026, 8, 27))
+        self.assertEqual((day_start.hour, day_start.minute, day_start.second), (0, 0, 0))
+        self.assertEqual(day_start.date(), date(2026, 8, 27))
+        self.assertEqual(day_end.date(), date(2026, 8, 28))
+        self.assertEqual(day_end - day_start, timedelta(days=1))
