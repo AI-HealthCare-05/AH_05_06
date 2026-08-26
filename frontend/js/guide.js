@@ -472,9 +472,19 @@ function focusChatInput(at) {
 
 function renderBody() {
   var body = document.getElementById("guide-body");
+  /* 커서 자리는 **비우기 전에** 들고 온다. */
   var typingAt = chatTypingAt();
   body.textContent = "";
-  var g = state.guide;
+  fillGuideBody(body, state.guide);
+  /* 채우는 길이 여럿이다 — 안내문 구조가 새 것이냐 옛 것이냐로 갈리고, 그
+     안에서 다시 탭으로 갈린다. **그래서 되돌리는 일은 여기 한 곳에서 한다.**
+     분기마다 붙이면 새 분기가 생길 때 또 빠지는데, 실제로 한 번 빠뜨렸다
+     (이희진 님 `#135` 리뷰 — 챗봇 탭을 그리는 자리가 둘인데 하나만 이었다). */
+  if (state.tab === "chat" && typingAt >= 0) focusChatInput(typingAt);
+}
+
+/* 본문을 채우기만 한다 — 커서는 부르는 쪽이 되돌린다. */
+function fillGuideBody(body, g) {
   if (!g) return;
   if (g.sections) {
     var keys =
@@ -487,7 +497,6 @@ function renderBody() {
             : [];
     if (!keys.length) {
       body.appendChild(state.tab === "chat" ? renderChatTab() : renderPending("복약 현황"));
-      if (state.tab === "chat" && typingAt >= 0) focusChatInput(typingAt);
       return;
     }
     var titles = { medication: "복약지도", caution: "주의사항", emergency: "응급 안내", life: "생활관리" };

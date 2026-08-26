@@ -100,9 +100,27 @@ test("커서가 입력칸의 **어디에** 있었는지 비우기 전에 본다"
   const body = read("js/guide.js").slice(read("js/guide.js").indexOf("function renderBody()"));
   assert.ok(body.indexOf("chatTypingAt()") < body.indexOf('body.textContent = ""'), "비운 뒤에 묻는다 — 그때는 이미 늦다");
 
-  /* 부품 둘이 멀쩡해도 **연결이 없으면** 아무 일도 안 일어난다. 채팅 탭을
-     그린 뒤 실제로 되돌려 주는지 본다. */
-  assert.match(body, /renderChatTab\(\)[\s\S]{0,200}focusChatInput\(typingAt\)/, "그려 놓고 커서를 안 돌려준다");
+  /* 부품 둘이 멀쩡해도 **연결이 없으면** 아무 일도 안 일어난다.
+
+     예전 판은 `renderChatTab()` 바로 뒤만 봤는데, 챗봇 탭을 그리는 자리가
+     **둘**이라 하나만 이어 놓고도 통과했다 (이희진 님 `#135` 리뷰). 그래서
+     지금은 「어느 분기 뒤에 붙었나」가 아니라 **「채우기가 다 끝난 뒤 한 곳에서
+     되돌리나」**를 잰다 — 자리가 셋이 되어도 이 검사는 그대로 유효하다. */
+  const js = read("js/guide.js");
+  const renderBody = js.slice(js.indexOf("function renderBody()"), js.indexOf("function fillGuideBody"));
+  const fill = js.slice(js.indexOf("function fillGuideBody"), js.indexOf("function renderError"));
+
+  assert.strictEqual(
+    (renderBody.match(/focusChatInput\(/g) || []).length,
+    1,
+    "되돌리는 자리가 한 곳이 아니다 — 분기마다 붙이면 새 분기에서 또 빠진다",
+  );
+  assert.doesNotMatch(fill, /focusChatInput\(/, "채우는 쪽이 커서까지 건드린다 — 분기마다 흩어진다");
+  assert.ok(
+    renderBody.indexOf("fillGuideBody(") < renderBody.indexOf("focusChatInput("),
+    "다 채우기 전에 되돌린다 — 그리면서 노드가 다시 갈린다",
+  );
+  assert.match(fill, /renderChatTab\(\)/, "채우는 쪽에서 챗봇 탭을 안 그린다 — 검사가 헛돈다");
 });
 
 test("커서를 돌려줄 때 **치던 자리로** 돌려준다", () => {
