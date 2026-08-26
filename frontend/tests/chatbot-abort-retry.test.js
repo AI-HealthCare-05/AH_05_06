@@ -21,6 +21,7 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
+const { load } = require("./browser-shim.js");
 
 const ROOT = path.join(__dirname, "..");
 
@@ -39,12 +40,101 @@ test("치던 질문을 상태가 들고 있다", () => {
   assert.match(js, /state\.chat\.draft = input\.value/, "치는 대로 보관하지 않는다");
 });
 
-test("보낸 뒤에는 초안을 비운다", () => {
-  /* 안 비우면 보낸 질문이 입력칸에 남아 두 번 보내기 쉬워진다. */
+test("보낸 뒤에는 초안을 비운다 — **입력칸에서 꺼내 보낸 경우에만**", () => {
+  /* 안 비우면 보낸 질문이 입력칸에 남아 두 번 보내기 쉬워진다. 그런데 비우는
+     자리가 `sendChatQuestion` 이면 **다시 시도**도 그 길로 들어와 남의 초안을
+     지운다. 입력칸에서 꺼낸 자리에서만 비운다. */
   const js = read("js/guide.js");
   const at = js.indexOf("function sendChatQuestion(");
 
-  assert.match(js.slice(at, at + 400), /state\.chat\.draft = ""/, "보낸 뒤 초안이 남는다");
+  assert.doesNotMatch(js.slice(at, at + 500), /state\.chat\.draft = ""/, "보내는 함수가 초안을 지운다 — 재시도까지 지운다");
+
+  const submit = js.slice(js.indexOf('form.addEventListener("submit"'), js.indexOf("wrap.appendChild(form)"));
+  assert.match(submit, /state\.chat\.draft = ""/, "전송한 뒤에도 초안이 남는다");
+});
+
+test("**다시 시도가 치던 글자를 지우지 않는다** — 실제로 불러 본다", () => {
+  /* 이 티켓이 고치려던 ③(치던 글자가 날아간다)이 **재시도 경로로 되살아나
+     있었다.** 문자열만 보던 검사로는 안 잡혔다 (이희진 님 `#135` 리뷰).
+
+     시나리오 — 질문이 실패해 「다시 시도」가 떴고, 그 아래에서 다음 질문을
+     치던 중 「다시 시도」를 누른다. */
+  const { state, retryChatAnswer } = load("api", "session", "patients-api", "shell", "guide-api", "guide");
+
+  const failed = { role: "assistant", text: "", error: "잠시 뒤 다시 시도해 주세요.", question: "첫 질문" };
+  state.chat.messages = [{ role: "user", text: "첫 질문" }, failed];
+  state.chat.busy = false;
+  state.chat.draft = "치고 있던 다음 질문";
+
+  try {
+    retryChatAnswer(failed);
+  } catch (err) {
+    /* 껍데기는 **그리려 하면 던진다** — 화면은 브라우저에서 눈으로 본다. 초안은
+       그리기 전에 정해지므로 여기까지 온 것으로 충분하다. 두 모습으로 오는데,
+       그 둘만 받아 넘기고 나머지는 그대로 터뜨린다 — 진짜 버그를 삼키면 안 된다. */
+    const said = String(err && err.message);
+    if (!/화면을 그리려/.test(said) && !/Cannot set properties of null/.test(said)) throw err;
+  }
+
+  assert.strictEqual(state.chat.draft, "치고 있던 다음 질문", "다시 시도가 치던 글자를 지웠다");
+});
+
+test("커서가 입력칸의 **어디에** 있었는지 비우기 전에 본다", () => {
+  /* 초안은 되찾는데 커서를 안 되찾으면, 다음 질문을 치던 중 앞 답변이 끝나는
+     순간 손이 멈춘다. 그리고 다 비운 뒤에 물으면 늦다 — 지운 노드에서 포커스가
+     이미 빠져 있다 (이희진 님 `#135` 리뷰). */
+  const box = load("api", "session", "patients-api", "shell", "guide-api", "guide");
+
+  box.document.activeElement = { className: "chat__input", selectionStart: 4 };
+  assert.strictEqual(box.chatTypingAt(), 4, "치던 자리를 안 들고 온다 — 커서가 글 끝으로 간다");
+
+  box.document.activeElement = { className: "chat__input" };
+  assert.strictEqual(box.chatTypingAt(), 0, "자리를 모르면 처음으로 둔다");
+
+  box.document.activeElement = { className: "tabs__button", selectionStart: 4 };
+  assert.strictEqual(box.chatTypingAt(), -1, "아무 데나 커서가 있으면 포커스를 뺏는다");
+
+  box.document.activeElement = null;
+  assert.strictEqual(box.chatTypingAt(), -1, "커서가 없는데도 가져간다");
+
+  const body = read("js/guide.js").slice(read("js/guide.js").indexOf("function renderBody()"));
+  assert.ok(body.indexOf("chatTypingAt()") < body.indexOf('body.textContent = ""'), "비운 뒤에 묻는다 — 그때는 이미 늦다");
+
+  /* 부품 둘이 멀쩡해도 **연결이 없으면** 아무 일도 안 일어난다. 채팅 탭을
+     그린 뒤 실제로 되돌려 주는지 본다. */
+  assert.match(body, /renderChatTab\(\)[\s\S]{0,200}focusChatInput\(typingAt\)/, "그려 놓고 커서를 안 돌려준다");
+});
+
+test("커서를 돌려줄 때 **치던 자리로** 돌려준다", () => {
+  /* 자리를 들고 오기만 하고 안 쓰면 소용없다 — 포커스만 주면 커서가 글 끝으로
+     간다. 껍데기 입력칸을 하나 물려 주고 **무엇을 불렀는지** 본다. 값을 넣지
+     않으므로 「그리는 것」이 아니다. */
+  const box = load("api", "session", "patients-api", "shell", "guide-api", "guide");
+
+  const calls = [];
+  box.document.querySelector = () => ({
+    className: "chat__input",
+    focus: () => calls.push("focus"),
+    setSelectionRange: (a, b) => calls.push("range:" + a + "," + b),
+  });
+
+  box.focusChatInput(4);
+  assert.deepStrictEqual(calls, ["focus", "range:4,4"], "치던 자리로 안 돌려준다");
+
+  calls.length = 0;
+  box.focusChatInput(-1);
+  assert.deepStrictEqual(calls, ["focus"], "자리를 모르는데 0 으로 밀어 넣는다");
+});
+
+test("입력칸을 안 잠그므로 `:disabled` 규칙도 없다 — 둘은 같이 움직인다", () => {
+  /* 이 PR 이 `input.disabled = state.chat.busy` 를 걷어 냈으므로
+     `.chat__input:disabled` 는 **어떤 경로로도 안 붙는다.** 남겨 두면 다음
+     사람이 「잠기는 상태가 있나 보다」로 읽는다 (이희진 님 `#135` 리뷰).
+     한쪽만 되돌아가지 않도록 둘을 한 검사에 묶어 둔다. */
+  const locks = /input\.disabled\s*=\s*state\.chat\.busy/.test(read("js/guide.js"));
+  const styled = /^\s*\.chat__input:disabled\s*,?\s*$/m.test(read("css/guide.css"));
+
+  assert.strictEqual(styled, locks, locks ? "잠그는데 그 모양이 없다" : "안 잠그는데 죽은 규칙이 남았다");
 });
 
 test("**답변 중에도 다음 질문을 칠 수 있다**", () => {

@@ -438,8 +438,10 @@
   outline-offset: 2px;
 }
 
+/* `.chat__input:disabled` 는 여기 없다 — 이 화면은 **답변 중에도 입력칸을
+   잠그지 않는다**(KEY-130). 어떤 경로로도 안 붙는 규칙이라 걷어 냈다
+   (이희진 님 `#135` 리뷰). */
 .chat__prompt:disabled,
-.chat__input:disabled,
 .chat__send:disabled {
   color: var(--disabled);
   cursor: not-allowed;

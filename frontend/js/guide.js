@@ -312,7 +312,14 @@ function renderChatTab() {
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     var question = input.value.trim();
-    if (question) sendChatQuestion(question);
+    if (!question) return;
+    /* **초안은 여기서만 비운다** — 입력칸에서 꺼내 보낸 자리다.
+       예전에는 `sendChatQuestion` 이 무조건 비웠는데, **다시 시도**도 그 길로
+       들어온다. 실패한 답변 아래에서 다음 질문을 치던 중 「다시 시도」를 누르면
+       치던 글자가 조용히 사라졌다 — 이 티켓이 고치려던 ③ 이 재시도 경로로
+       되살아난 꼴이다 (이희진 님 `#135` 리뷰). */
+    state.chat.draft = "";
+    sendChatQuestion(question);
   });
   wrap.appendChild(form);
   wrap.appendChild(el("p", "chat__feedback", "이 안내가 도움이 되었나요?　👍　👎　오류 신고"));
@@ -344,7 +351,8 @@ function abortChatAnswer() {
 function sendChatQuestion(question) {
   if (state.chat.busy) return;
   state.chat.busy = true;
-  state.chat.draft = "";
+  /* 초안은 **건드리지 않는다.** 보내는 길이 둘이라(전송 · 다시 시도) 여기서
+     비우면 재시도가 남의 초안을 지운다. 비우는 것은 전송 핸들러의 몫이다. */
   var mine = ++state.chat.generation;
   state.chat.messages.push({ role: "user", text: question });
   /* 질문을 답변에 함께 담는다 — **다시 시도**가 그것을 그대로 쓴다. */
@@ -440,8 +448,31 @@ function renderTabs() {
   });
 }
 
+/* 다시 그리기 **전에** 커서가 입력칸의 어디에 있었는가. 없으면 `-1`.
+
+   비우고 나서 물으면 늦다 — 지운 노드에서 포커스가 이미 빠져 있다. */
+function chatTypingAt() {
+  var live = document.activeElement;
+  if (!live || String(live.className || "").indexOf("chat__input") === -1) return -1;
+  return typeof live.selectionStart === "number" ? live.selectionStart : 0;
+}
+
+/* 초안(`draft`)은 되찾는데 **커서는 안 되찾으면**, 다음 질문을 치던 중 앞 답변이
+   끝나는 순간 손이 멈춘다. 다시 클릭해야 이어 칠 수 있다 (이희진 님 `#135` 리뷰).
+
+   **치던 자리까지 돌려준다.** 포커스만 주면 커서가 글 끝으로 가서, 문장 중간을
+   고치던 중이면 거기서 또 어긋난다. 값은 `draft` 로 똑같이 되살아나 있으므로
+   자리는 그대로 유효하다. */
+function focusChatInput(at) {
+  var input = document.querySelector(".chat__input");
+  if (!input || !input.focus) return;
+  input.focus();
+  if (at >= 0 && input.setSelectionRange) input.setSelectionRange(at, at);
+}
+
 function renderBody() {
   var body = document.getElementById("guide-body");
+  var typingAt = chatTypingAt();
   body.textContent = "";
   var g = state.guide;
   if (!g) return;
@@ -456,6 +487,7 @@ function renderBody() {
             : [];
     if (!keys.length) {
       body.appendChild(state.tab === "chat" ? renderChatTab() : renderPending("복약 현황"));
+      if (state.tab === "chat" && typingAt >= 0) focusChatInput(typingAt);
       return;
     }
     var titles = { medication: "복약지도", caution: "주의사항", emergency: "응급 안내", life: "생활관리" };
