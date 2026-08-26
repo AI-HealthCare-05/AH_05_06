@@ -408,26 +408,26 @@ async def seed_catalog() -> None:
 
     created_contents = 0
     skipped_contents = 0
-    for row in DRUG_CAUTION_CONTENTS:
-        ps = sets_by_name.get(row.prescription_set_name)
+    for content_row in DRUG_CAUTION_CONTENTS:
+        ps = sets_by_name.get(content_row.prescription_set_name)
         if ps is None:
             print(
-                f"[catalog] 알 수 없는 세트: {row.prescription_set_name!r} — 건너뛴다",
+                f"[catalog] 알 수 없는 세트: {content_row.prescription_set_name!r} — 건너뛴다",
                 file=sys.stderr,
             )
             continue
 
         approved_key = (
-            f"{ps.prescription_set_id}:{row.section_key.value}"
-            if row.approval_status == ApprovalStatus.APPROVED
+            f"{ps.prescription_set_id}:{content_row.section_key.value}"
+            if content_row.approval_status == ApprovalStatus.APPROVED
             else None
         )
 
         # (세트, 섹션, 버전) 단위로 중복 방지 — content_version 이 같으면 건너뛴다
         exists = await DrugCautionContent.filter(
             prescription_set=ps,
-            section_key=row.section_key,
-            content_version=row.content_version,
+            section_key=content_row.section_key,
+            content_version=content_row.content_version,
         ).exists()
         if exists:
             skipped_contents += 1
@@ -435,15 +435,15 @@ async def seed_catalog() -> None:
 
         await DrugCautionContent.create(
             prescription_set=ps,
-            section_key=row.section_key,
-            body=row.body,
-            source_name=row.source_name,
-            source_org=row.source_org,
-            source_url=row.source_url,
-            verified_at=row.verified_at,
-            content_version=row.content_version,
-            source_grade=row.source_grade,
-            approval_status=row.approval_status,
+            section_key=content_row.section_key,
+            body=content_row.body,
+            source_name=content_row.source_name,
+            source_org=content_row.source_org,
+            source_url=content_row.source_url,
+            verified_at=content_row.verified_at,
+            content_version=content_row.content_version,
+            source_grade=content_row.source_grade,
+            approval_status=content_row.approval_status,
             approved_key=approved_key,
         )
         created_contents += 1

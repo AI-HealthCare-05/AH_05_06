@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from tortoise import fields, models
 from tortoise.fields import OnDelete
 
 from app.models.patients import Patient
+
+if TYPE_CHECKING:
+    from app.models.catalog import DrugCautionContent
 
 
 class VisitStatus(StrEnum):
@@ -165,7 +171,7 @@ class GuideSection(models.Model):
     # KEY-165: generated_body 생성에 사용한 DrugCautionContent 버전 추적.
     # DrugCautionContent는 삭제되지 않고 DEPRECATED되므로 SET_NULL은 비상 안전망이다.
     drug_caution_content_id: int | None
-    drug_caution_content = fields.ForeignKeyField(
+    drug_caution_content: fields.ForeignKeyRelation[DrugCautionContent] | None = fields.ForeignKeyField(
         "models.DrugCautionContent",
         related_name="guide_sections",
         on_delete=OnDelete.SET_NULL,

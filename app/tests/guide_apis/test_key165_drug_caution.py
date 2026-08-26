@@ -10,7 +10,7 @@ D-5  approved_key 경합: DB 유니크 제약이 승인 중복을 차단함
 from datetime import UTC, datetime
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from tortoise.contrib.test import TestCase
 from tortoise.exceptions import IntegrityError
 
@@ -144,7 +144,7 @@ class DrugCautionTestCase(TestCase):
     def client(self) -> AsyncClient:
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
-    async def generate(self, visit: Visit, staff: Staff) -> dict:
+    async def generate(self, visit: Visit, staff: Staff) -> Response:
         async with self.client() as client:
             response = await client.post(
                 f"{BASE}/{visit.visit_id}/guide/generate",
