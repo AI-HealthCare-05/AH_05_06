@@ -92,6 +92,12 @@ test("화면 복구 상태는 세션 만료 답을 재전송하고 죽은 링크
   );
   assert.deepEqual(retried, answer, "재인증 뒤 같은 작성값을 다시 저장하지 않는다");
 
+  recovery.complete();
+  assert.equal(
+    recovery.retryAfterVerification(() => assert.fail("이미 저장한 답을 또 보내면 안 된다")),
+    false,
+  );
+
   recovery.onSaveFailed({ code: "PATIENT_SESSION_EXPIRED" }, answer);
   assert.equal(recovery.onSaveFailed({ code: "LINK_EXPIRED" }, answer), "link-closed");
   assert.equal(recovery.retryAfterVerification(() => assert.fail("죽은 링크의 답을 다시 보내면 안 된다")), false);
@@ -167,6 +173,7 @@ test("새로고침 때 인증 성공을 브라우저 저장소에서 추측하�
     /authRecovery\.retryAfterVerification\(submitAnswer\)/,
     "재인증 뒤 보존한 답을 저장하지 않는다",
   );
+  assert.match(source, /authRecovery\.complete\(\)/, "저장 성공 뒤 보류 답을 비우지 않는다");
 });
 
 test("OTP 입력은 원문을 화면에 다시 출력하지 않고 숫자 6자리에서만 확인할 수 있다", () => {
