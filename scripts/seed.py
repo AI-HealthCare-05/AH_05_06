@@ -48,10 +48,12 @@ from app.core.config import Config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.common import normalize_phone_number  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
+from app.models.catalog import ApprovalStatus, DrugCautionContent, PrescriptionSet  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.prescriptions import Prescription, PrescriptionItem  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
 from app.models.visits import Visit, VisitStatus  # noqa: E402
+from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS  # noqa: E402
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
 from app.tests.fixtures.staff import StaffDataError, all_staff  # noqa: E402
 from app.tests.fixtures.validation import validate_canonical_patient_data  # noqa: E402
@@ -387,6 +389,68 @@ async def _seed_prescription(visit: Visit, row: dict[str, str]) -> tuple[int, in
     return 1, len(items)
 
 
+async def seed_catalog() -> None:
+    """처방 세트 8종과 주의·응급 문구 마스터를 적재한다 — KEY-165.
+
+    같은 명령을 반복 실행해도 데이터가 쌓이지 않는다(name 기준 get_or_create).
+    APPROVED 문구는 `approved_key` 를 채워 "세트·섹션당 하나" 제약을 DB 가 지키게 한다.
+    """
+    # 처방 세트 8종
+    created_sets = 0
+    for row in PRESCRIPTION_SETS:
+        _, was_created = await PrescriptionSet.get_or_create(name=row.name)
+        if was_created:
+            created_sets += 1
+    print(f"[catalog] prescription_set created={created_sets} skipped={len(PRESCRIPTION_SETS) - created_sets}")
+
+    # 세트 이름 → id 역색인 (콘텐츠 삽입에 사용)
+    sets_by_name: dict[str, PrescriptionSet] = {ps.name: ps async for ps in PrescriptionSet.all()}
+
+    created_contents = 0
+    skipped_contents = 0
+    for row in DRUG_CAUTION_CONTENTS:
+        ps = sets_by_name.get(row.prescription_set_name)
+        if ps is None:
+            print(
+                f"[catalog] 알 수 없는 세트: {row.prescription_set_name!r} — 건너뛴다",
+                file=sys.stderr,
+            )
+            continue
+
+        approved_key = (
+            f"{ps.prescription_set_id}:{row.section_key.value}"
+            if row.approval_status == ApprovalStatus.APPROVED
+            else None
+        )
+
+        # (세트, 섹션, 버전) 단위로 중복 방지 — content_version 이 같으면 건너뛴다
+        exists = await DrugCautionContent.filter(
+            prescription_set=ps,
+            section_key=row.section_key,
+            content_version=row.content_version,
+        ).exists()
+        if exists:
+            skipped_contents += 1
+            continue
+
+        await DrugCautionContent.create(
+            prescription_set=ps,
+            section_key=row.section_key,
+            body=row.body,
+            source_name=row.source_name,
+            source_org=row.source_org,
+            source_url=row.source_url,
+            verified_at=row.verified_at,
+            content_version=row.content_version,
+            source_grade=row.source_grade,
+            approval_status=row.approval_status,
+            approved_key=approved_key,
+        )
+        created_contents += 1
+
+    print(f"[catalog] drug_caution_content created={created_contents} skipped={skipped_contents}")
+
+
 async def main(mode: str) -> None:
     _guard_environment()
     await Tortoise.init(config=TORTOISE_ORM)
@@ -397,9 +461,11 @@ async def main(mode: str) -> None:
         case "staff":
             password = _require_password()
             await seed_staff(password)
+            await seed_catalog()
         case "full":
             password = _require_password()
             hospitals = await seed_staff(password)
+            await seed_catalog()
             await seed_patients(hospitals)
         case _:
             print(f"알 수 없는 mode: {mode}", file=sys.stderr)

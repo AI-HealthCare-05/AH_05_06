@@ -13,6 +13,7 @@ TORTOISE_APP_MODELS = [
     "app.models.ocr",
     "app.models.staffs",
     "app.models.documents",
+    "app.models.catalog",
 ]
 
 TORTOISE_ORM = {
