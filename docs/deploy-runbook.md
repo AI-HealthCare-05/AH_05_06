@@ -144,22 +144,59 @@ DB 는 별개다. 마이그레이션을 되돌리려면 `aerich downgrade` 이�
 
 ## 5. Smoke test
 
-배포가 살아 있는지 보는 최소 확인이다.
+배포한 뒤 **기계가 세 자리를 찔러 본다** (KEY-184).
 
 ```bash
-# ① 서버가 떴는가
-curl -fsS https://<도메인>/api/v1/health | jq .
+export SMOKE_LOGIN_ID=<합성 계정 아이디>
+export SMOKE_PASSWORD=<합성 비밀번호>      # 인자로 주지 않는다 — ps · CI 로그에 남는다
 
-# ② 로그인이 되는가 (합성 계정)
-curl -fsS -X POST https://<도메인>/api/v1/auth/login \
-  -H 'content-type: application/json' \
-  -d '{"login_id":"staff01","password":"<합성 비밀번호>"}' | jq .must_change_password
+uv run python scripts/smoke.py https://<도메인>
+echo $?        # 0 이면 통과, 1 이면 어느 자리가 왜 어긋났는지 위에 찍힌다
 ```
 
-전 구간 여정은 이미 정리돼 있다 — `docs/qa/KEY-152-e2e-evidence.md` 가
-`SYN-EMS-01` 고정 시나리오로 로그인→업로드→판독→승인→환자링크→D+7 을 적었고
-`scripts/run_key152_e2e.sh` 가 로컬에서 그것을 돌린다. **원격 대상으로 돌리는
-판은 아직 없다** — 아래 참조.
+| 자리 | 무엇을 보나 |
+|---|---|
+| `health` | `GET /api/v1/health` — api·db·redis 가 **다** ok 인가 |
+| `auth` | 합성 계정으로 `access_token` 을 받나 |
+| `core` | 그 토큰으로 `GET /api/v1/front-desk/visits` 가 200 인가 |
+
+앞이 어긋나면 뒤는 안 부른다 — 로그인 실패가 「DB 가 죽었다」를 덮지 않게 한다.
+
+**진단은 정해진 어휘로만 나간다.** 응답 본문·토큰·비밀번호는 어떤 경로로도 안
+찍힌다. `health` 는 로컬에서 예외 문자열을 `detail` 에 실어 주므로
+(`app/apis/v1/health_routers.py:27`), 그대로 옮기면 접속 문자열이 배포 로그에
+남는다. `scripts/smoke.py` 의 `Reason` 이 밖으로 나갈 수 있는 말의 전부다.
+
+```text
+대상 주소가 http/https URL 이 아니다      대상에 닿지 못했다
+제한 시간 안에 답이 없다                   서버가 5xx 로 답했다
+health 가 degraded 다 (db·redis)           합성 계정 로그인이 거절됐다
+```
+
+`SMOKE_TIMEOUT_SECONDS` 로 제한 시간을 바꾼다(기본 10초).
+
+**실패 게이트로 쓸 때**는 종료 코드만 보면 된다. 배포 스크립트 끝이나 GitHub
+Actions 에서 같은 명령을 그대로 쓴다.
+
+```bash
+uv run python scripts/smoke.py "$TARGET" || { echo "smoke 실패 — 롤백한다"; exit 1; }
+```
+
+### 손으로 볼 때
+
+```bash
+curl -fsS https://<도메인>/api/v1/health | jq .
+```
+
+로그인까지 손으로 확인할 때는 **비밀번호를 명령줄에 적지 않는다.** 위 실행기를
+쓰는 편이 낫다.
+
+### 아직 원격에서 못 도는 것
+
+전 구간 여정은 정리돼 있다 — `docs/qa/KEY-152-e2e-evidence.md` 가 `SYN-EMS-01`
+고정 시나리오로 로그인→업로드→판독→승인→환자링크→D+7 을 적었고
+`scripts/run_key152_e2e.sh` 가 그것을 돌린다. **그 스크립트는 아직 로컬 전용**
+이다. 위 smoke 는 「API 가 최소한 살아 있는가」까지만 본다.
 
 ## 6. 🔴 아직 못 하는 것
 
@@ -191,7 +228,8 @@ API 문서로 대신 보여 줄 수도 없다.
 
 그 밖에 남은 것:
 
-- **원격 대상 smoke 자동화** — `scripts/run_key152_e2e.sh` 는 로컬 전용이다
+- **원격 대상 전 구간 E2E** — 5절의 smoke 는 「API 가 살아 있는가」까지다(KEY-184).
+  `scripts/run_key152_e2e.sh` 가 도는 전 구간 여정은 여전히 로컬 전용이다
 - **CI 배포** — 지금은 사람이 로컬에서 스크립트를 돌린다
 - **EC2 인스턴스·도메인·Docker Hub 계정** — 실제로 확보돼 있는지 저장소만으로는
   알 수 없다
@@ -200,6 +238,7 @@ API 문서로 대신 보여 줄 수도 없다.
 
 - 부모: [KEY-144](https://leehee.atlassian.net/browse/KEY-144)
 - 형제: KEY-175(한금준) · KEY-176(김고은) · KEY-177(유가은) — 이 환경 위에서 검증
+- 후속: [KEY-184](https://leehee.atlassian.net/browse/KEY-184) 원격 smoke·실패 게이트(5절) · [KEY-185](https://leehee.atlassian.net/browse/KEY-185) 롤백 리허설
 - 로컬 확인: `docs/local-health-check.md`
 - 규모 설계 비교: `docs/infra-scale.md`
 - E2E 증적: `docs/qa/KEY-152-e2e-evidence.md`
