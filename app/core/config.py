@@ -66,6 +66,7 @@ class Config(BaseSettings):
     @property
     def clova_enabled(self) -> bool:
         return bool(self.CLOVA_OCR_INVOKE_URL and self.CLOVA_OCR_SECRET_KEY)
+
     # KEY-96 환자 챗봇의 단일 실제 모델 경로. 키가 없거나 호출이 실패하면
     # 승인 안내 화면 전체를 멈추지 않고 안전한 고정 응답으로 대체한다.
     OPENAI_API_KEY: SecretStr | None = None
