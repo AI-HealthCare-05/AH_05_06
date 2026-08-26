@@ -4,6 +4,7 @@ from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, status
 
+from app.dependencies.patient_auth import require_patient_session
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.checkins import (
     CheckInAnswerContent,
@@ -129,6 +130,7 @@ async def read_patient_checkin(
 async def save_patient_checkin(
     token: str,
     payload: CheckInCreateRequest,
+    _: Annotated[None, Depends(require_patient_session)],
     service: Annotated[CheckInService, Depends(_checkin_service)],
 ) -> CheckInSaveResponse:
     check_in = await service.save(token, payload)

@@ -21,6 +21,7 @@ from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideSectionKey, GuideStatus, Visit
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
+from app.tests.ocr_fixture import complete_ocr
 
 BASE = "/api/v1/visits"
 
@@ -57,22 +58,19 @@ async def make_visit(hospital: Hospital, chart: str = "SYN-GEN-01") -> Visit:
 
 
 async def attach_confirmed_ocr(visit: Visit, staff_id: int) -> OcrField:
-    """visit에 완료된 OCR 잡과 확정 필드 하나를 붙인다 — W1 fixture."""
-    job = await OcrJob.create(
-        ocr_job_id=f"syn-gen-{visit.visit_id}",
+    """visit 에 완료·확정된 판독 한 건을 붙인다 — W1 fixture.
+
+    만드는 일은 `app/tests/ocr_fixture.py` 가 한다. 예전에는 여기서 손으로
+    만들어 운영의 완료 경로와 모양이 조금 달랐다 (KEY-172).
+    """
+    done = await complete_ocr(
         hospital_id=visit.hospital_id,
         visit_id=visit.visit_id,
+        job_id=f"syn-gen-{visit.visit_id}",
         requested_by=staff_id,
-        status=OcrJobStatus.COMPLETED,
-    )
-    result = await OcrResult.create(ocr_job=job, model_name="synthetic-fixture")
-    return await OcrField.create(
-        ocr_result=result,
-        field_type="DIAGNOSIS",
-        extracted_value="PCOS",
-        is_confirmed=True,
         confirmed_by=staff_id,
     )
+    return await OcrField.get(ocr_field_id=done.field_id)
 
 
 class GenerateGuideTestCase(TestCase):
@@ -202,14 +200,18 @@ class TestGenerateCreatesApprovalPendingGuide(GenerateGuideTestCase):
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
         visit = await make_visit(clinic)
-        await attach_confirmed_ocr(visit, staff.staff_id)  # DIAGNOSIS: PCOS
+        field = await attach_confirmed_ocr(visit, staff.staff_id)
 
         async with self.client() as client:
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
         medication = next(s for s in response.json()["sections"] if s["key"] == GuideSectionKey.MEDICATION)
-        assert "DIAGNOSIS" in medication["body"]
-        assert "PCOS" in medication["body"]
+        # **픽스처가 넣은 값을 그대로 읽어 견준다.** 예전에는 `"PCOS"` 를 박아
+        # 뒀는데, 그러면 픽스처가 값을 바꾸는 순간 이 검사가 「안내가 깨졌다」로
+        # 잘못 운다. 재려는 것은 「확정된 값이 본문에 실린다」이지 그 값이
+        # 무엇인지가 아니다 (KEY-172).
+        assert field.field_type in medication["body"]
+        assert field.extracted_value in medication["body"]
 
 
 class TestGenerateDuplicateIsRefused(GenerateGuideTestCase):

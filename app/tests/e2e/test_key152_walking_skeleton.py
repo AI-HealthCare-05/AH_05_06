@@ -3,15 +3,13 @@
 import hashlib
 from datetime import UTC, date, datetime
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
-from tortoise.contrib.test import TestCase
 from tortoise.transactions import in_transaction
 
-from app.core import config
-from app.core.redis_client import get_redis
+from app.apis.v1.patient_otp_routers import _otp_service
 from app.core.storage import LocalFileStorage
-from app.core.utils.security import hash_password
 from app.documents.api import get_document_service
 from app.documents.service import DocumentUploadService
 from app.main import app
@@ -20,13 +18,15 @@ from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import CheckIn, GuideDocument, GuideStatus, PatientGuideLink, Visit
 from app.ocr.service import seed_fixture_result
-from app.tests.fakes import FakeRedis
+from app.services.patient_otp import PatientOtpService
+from app.tests.auth_base import AuthTestCase, login_headers, make_staff_account
+from app.tests.patient_links.test_patient_otp import RecordingDelivery
 
-PASSWORD = "Synthetic-KEY152-only-1!"
-LOGIN = "/api/v1/auth/login"
+PATIENT_OTP = "152027"
+PATIENT_OTP_SECRET = "synthetic-key152-test-secret-never-used-outside-tests"
 
 
-class TestKey152WalkingSkeleton(TestCase):
+class TestKey152WalkingSkeleton(AuthTestCase):
     """단일 병원의 정상 여정만 연결한다.
 
     병원 간 격리와 역할별 거부는 각 API의 권한 테스트가 담당하고, 여기서는
@@ -35,37 +35,36 @@ class TestKey152WalkingSkeleton(TestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.redis = FakeRedis()
         self.upload_dir = TemporaryDirectory(prefix="key152-")
-        self.cookie_domain = config.COOKIE_DOMAIN
-        config.COOKIE_DOMAIN = ""
-        app.dependency_overrides[get_redis] = lambda: self.redis
+        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(
+            RecordingDelivery(),
+            secret_key=PATIENT_OTP_SECRET,
+        )
         app.dependency_overrides[get_document_service] = lambda: DocumentUploadService(
             LocalFileStorage(self.upload_dir.name),
             max_upload_bytes=1024 * 1024,
         )
 
     def tearDown(self) -> None:
-        config.COOKIE_DOMAIN = self.cookie_domain
         app.dependency_overrides.clear()
         self.upload_dir.cleanup()
         super().tearDown()
 
     async def _account(self, hospital: Hospital, login_id: str, name: str, roles: list[str]) -> Staff:
-        return await Staff.create(
-            hospital=hospital,
-            login_id=login_id,
-            password_hash=hash_password(PASSWORD),
-            name=name,
-            roles=roles,
-            must_change_password=False,
-        )
+        """계정 만들기는 `app/tests/auth_base.py` 가 한다 (KEY-173).
+
+        예전에는 여기서 다시 썼다. 필수 필드가 늘거나 해시 방식이 바뀌면
+        이 사본만 옛 모양으로 남는다.
+        """
+        return await make_staff_account(hospital, login_id, roles, name=name)
 
     async def _login(self, client: AsyncClient, login_id: str) -> dict[str, str]:
-        response = await client.post(LOGIN, json={"login_id": login_id, "password": PASSWORD})
-        assert response.status_code == 200, response.text
-        assert "refresh_token" not in response.text
-        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+        """**이 여정의 클라이언트를 그대로 쓴다** — 쿠키를 물려받아야 한다.
+
+        그래서 공용 헬퍼가 클라이언트를 인자로 받는다. 리프레시 토큰이 본문에
+        안 실리는지도 그 안에서 함께 본다.
+        """
+        return await login_headers(client, login_id)
 
     async def test_syn_ems_01_completes_the_demo_journey_with_one_visit_id(self) -> None:
         hospital = await Hospital.create(name="기준의원")
@@ -158,6 +157,18 @@ class TestKey152WalkingSkeleton(TestCase):
             assert edited_text in [section["body"] for section in sections]
 
             checkin_path = f"/api/v1/checkins/{raw_token}"
+            with patch("app.services.patient_otp.secrets.randbelow", return_value=int(PATIENT_OTP)):
+                otp_issued = await client.post(
+                    "/api/v1/patient-auth/otp/issue",
+                    json={"link_token": raw_token},
+                )
+            assert otp_issued.status_code == 200, otp_issued.text
+            otp_verified = await client.post(
+                "/api/v1/patient-auth/otp/verify",
+                json={"link_token": raw_token, "code": PATIENT_OTP},
+            )
+            assert otp_verified.status_code == 200, otp_verified.text
+
             submitted = await client.post(
                 checkin_path,
                 json={"medication": "taking", "pain": {"had": True, "score": 3, "types": ["menstrual"]}},

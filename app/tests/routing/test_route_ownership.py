@@ -11,8 +11,9 @@ opt-in 이라(`route_class=ContractRoute`), 봉투 없는 라우터에 `ApiError
 맞춰 주는 것이 아무것도 없다.
 """
 
+import ast
 import inspect
-import re
+import pathlib
 from enum import Enum
 
 from fastapi import APIRouter, FastAPI
@@ -20,7 +21,7 @@ from fastapi.routing import APIRoute
 
 from app.core.api_errors import ApiError, ContractRoute
 from app.main import app
-from app.tests.routes import api_routes, contract_methods
+from app.tests.routes import NON_CONTRACT_METHODS, api_routes, contract_methods
 
 #: 오류 봉투 없이도 되는 라우터. `AuthError` 만 던지고, 그것은 전역 처리기가 받는다.
 #: 여기 이름을 더하는 것은 **결정**이다 — 그 라우터에서 `ApiError` 를 쓰면 샌다.
@@ -305,10 +306,89 @@ class TestHeadAndOptionsAreNotContract:
         """**지금은 하나도 없다** — 위 둘이 가상의 상황을 재고 있음을 못 박는다.
 
         생기는 날 이 검사가 죽고, 그때 제외가 진짜로 일하기 시작한 것이다.
+
+        **이름값대로만 잰다.** 예전에는 메서드 구성 전체를 완전 일치로 박아
+        뒀는데, 그러면 HEAD·OPTIONS 와 아무 상관 없는 새 동사에도 터진다.
+        실제로 `#119`(KEY-92)가 저장소 최초의 `DELETE` 를 들고 오자 이 클래스
+        안의 검사가 빨간불이 났다 — 로그아웃 엔드포인트를 더한 사람이
+        「HEAD·OPTIONS 계약」 검사가 깨진 빌드를 받았다. 실패 메시지가 실제
+        이유와 맞지 않으면 고치는 사람이 엉뚱한 데를 판다.
+
+        그리고 그 리터럴 자체가 KEY-169 가 없애려던 것이다 — 「이 앱에 어떤
+        메서드가 있는가」를 이 파일이 다시 적고 있었다. 기준은 `routes.py` 의
+        `NON_CONTRACT_METHODS` 하나다.
         """
         live = {method for route in api_routes() for method in route.methods}
 
-        assert live == {"GET", "PATCH", "POST"}, f"메서드 구성이 바뀌었다: {sorted(live)}"
+        leaked = live & NON_CONTRACT_METHODS
+        assert not leaked, f"HEAD·OPTIONS 가 생겼다: {sorted(leaked)}"
+
+
+#: 「같은 뜻」인지 재는 잣대. **정본에서 가져온다** — 여기 다시 적으면 이 검사
+#: 자신이 기준을 두 곳에 적는 꼴이 된다. 실제로 처음엔 그렇게 썼다가 자기
+#: 가드에 걸렸다. 잣대가 정본을 따라가므로 `TRACE` 가 늘어도 함께 움직인다.
+_CRITERION_NAMES = NON_CONTRACT_METHODS
+
+
+def _string_elements(node: ast.AST) -> frozenset[str]:
+    """`{...}` · `[...]` · `(...)` 안의 문자열 상수들."""
+    if not isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+        return frozenset()
+    return frozenset(e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str))
+
+
+def _spells_out_the_criterion(node: ast.AST) -> bool:
+    """이 마디가 **기준을 집합으로 적고 있는가.**
+
+    리스트·튜플은 세지 않는다. 가짜 라우트를 만들 때 쓰는
+    `methods=["GET", "HEAD", "OPTIONS"]` 는 재는 기준이 아니라 **입력값**이라
+    일부러 남겨 둔 것이다.
+    """
+    if isinstance(node, ast.Set):
+        return _string_elements(node) == _CRITERION_NAMES
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"set", "frozenset"}:
+        return any(_string_elements(arg) == _CRITERION_NAMES for arg in node.args)
+    return False
+
+
+def _subtracts_them_apart(node: ast.AST) -> bool:
+    """`x - {"HEAD"} - {"OPTIONS"}` 처럼 **나눠 빼는** 모양."""
+    if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Sub):
+        return False
+    taken: set[str] = set()
+    cur: ast.AST = node
+    while isinstance(cur, ast.BinOp) and isinstance(cur.op, ast.Sub):
+        taken |= _string_elements(cur.right)
+        cur = cur.left
+    return _CRITERION_NAMES <= taken
+
+
+def _files_that_spell_out_the_criterion(root: pathlib.Path) -> list[str]:
+    """HEAD·OPTIONS 를 **집합으로 적은** 파일들.
+
+    글자가 아니라 **뜻**으로 잰다. 정규식으로 찾으면 같은 뜻인데 모양이 다른
+    것을 놓친다 — 실제로 KEY-169 직전 판에 홑따옴표로 적힌 리터럴이 하나 더
+    있었고, 그 검사는 그것을 못 봤다.
+
+    못 잡던 모양들:
+
+        {'HEAD', 'OPTIONS'}          홑따옴표
+        {"OPTIONS", "HEAD"}          순서 뒤집기
+        set(["HEAD", "OPTIONS"])     생성자
+        x - {"HEAD"} - {"OPTIONS"}   나눠 빼기
+
+    AST 로 보면 넷 다 같은 뜻이라 한 판정에 걸린다. 반대로 **주석·독스트링·
+    문자열 안의 글자는 안 걸린다** — 파싱하면 코드가 아니기 때문이다. 그래서
+    이 설명에 {"HEAD", "OPTIONS"} 를 그대로 써도 된다. 정규식 판에서는 자기
+    독스트링에 걸려 설명을 에둘러 써야 했다.
+    """
+    found = set()
+    for path in root.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if _spells_out_the_criterion(node) or _subtracts_them_apart(node):
+                found.add(str(path.relative_to(root)))
+                break
+    return sorted(found)
 
 
 def test_the_method_criterion_lives_in_exactly_one_place() -> None:
@@ -319,24 +399,11 @@ def test_the_method_criterion_lives_in_exactly_one_place() -> None:
     같은 것이 늘면 **그 검사만 조용히 옛 기준으로 남는다** — KEY-169 가 막으려던
     바로 그 재발이다.
 
-    그래서 「고쳤다」로 끝내지 않고 **다시 생기면 죽게** 걸어 둔다.
-
-    재는 것은 두 이름을 담은 **집합 리터럴**이다. 가짜 라우트를 만들 때 쓰는
-    것은 리스트라 여기 안 걸린다 — 그쪽은 재는 기준이 아니라 만들어 넣는
-    입력값이다.
-
-    이 설명에 그 집합 표기를 그대로 쓰지 않는 것도 그래서다. 처음엔 썼다가
-    **검사가 자기 독스트링을 잡았다** — 이 파일까지 훑는다는 증거이기도 하다.
-    실제로 이번에 걸린 리터럴이 바로 이 파일 안에 있었다.
+    그래서 「고쳤다」로 끝내지 않고 **다시 생기면 죽게** 걸어 둔다. 판정은
+    `_files_that_spell_out_the_criterion()` 이 AST 로 한다 — 글자로 재면
+    `{'HEAD', 'OPTIONS'}` 같은 같은 뜻 다른 모양을 놓친다.
     """
-    import pathlib
-
-    root = pathlib.Path(__file__).resolve().parents[1]
-    literal = re.compile(r"\{\s*\"HEAD\"\s*,\s*\"OPTIONS\"\s*\}")
-
-    owners = sorted(
-        {str(path.relative_to(root)) for path in root.rglob("*.py") if literal.search(path.read_text(encoding="utf-8"))}
-    )
+    owners = _files_that_spell_out_the_criterion(pathlib.Path(__file__).resolve().parents[1])
 
     assert owners == ["routes.py"], (
         f"HEAD·OPTIONS 제외 기준이 두 곳이 됐다 — `contract_methods()` 를 써라.\n  지금 기준을 적고 있는 파일: {owners}"

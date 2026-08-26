@@ -84,7 +84,12 @@
         <h1 class="pane__title">③ 판독 결과 확인</h1>
 
         <!-- 판독 중 · 판독 실패 · 결과 없음이 여기로 온다 -->
-        <section class="state" id="state" hidden></section>
+        <!-- 손대야 하는 상태면 커서가 여기로 온다 (KEY-126).
+             **라이브 리전은 아니다** — 진행률이 1.5초마다 바뀌어서 통째로 실어
+             두면 「판독 중입니다 NN%」를 수십 번 연달아 듣는다. 소리는 아래
+             `#state-say` 가 맡고, 갈래가 바뀔 때만 한 줄 읽는다. -->
+        <section class="state" id="state" tabindex="-1" hidden></section>
+        <p class="sr-only" id="state-say" role="status" aria-live="polite"></p>
 
         <div id="work">
           <div class="review">
