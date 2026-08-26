@@ -425,6 +425,9 @@ class TestNeverRunsInProduction:
         """
         from app.core.config import Config
 
+        # 운영에서는 `SECRET_KEY` 가 있어야 뜬다(KEY-174). 이 검사가 재는 것은
+        # 「어느 이름을 읽는가」이지 비밀값이 아니므로, 합성값을 함께 준다.
+        monkeypatch.setenv("SECRET_KEY", "synthetic-for-this-test")
         monkeypatch.setenv("ENV", "prod")
         monkeypatch.delenv("APP_ENV", raising=False)
         assert Config().ENV is Env.PROD, "`ENV` 를 안 읽는다 — 운영에서 기본값 local 로 통과한다"

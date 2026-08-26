@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import zoneinfo
 from dataclasses import field
@@ -14,6 +15,15 @@ class Env(StrEnum):
     LOCAL = "local"
     DEV = "dev"
     PROD = "prod"
+
+
+# 예시 파일이 「여기에 무엇을 넣는지」 알려 주려고 쓰는 자리표시자 모양.
+#
+# **이 정의는 여기 하나뿐이다.** 예전에는 검증기·배포 검사·비밀 검사가 각자
+# 적어 두고 있었고, 실제로 서로 어긋나 있었다 — 한쪽은 `changeme` 만 알고
+# 다른 쪽은 `change-me` 만 알았다. `sed_inplace` 가 복제돼 양쪽에 같은 버그를
+# 남긴 것과 같은 모양이다 (이희진 님 `#133` 리뷰).
+PLACEHOLDER = re.compile(r"^(your[-_]|change[-_]?me|<|xxx+|\.\.\.|example)", re.IGNORECASE)
 
 
 class Config(BaseSettings):
@@ -84,6 +94,44 @@ class Config(BaseSettings):
     def _fixture_fallback_is_local_only(self) -> "Config":
         if self.OCR_FIXTURE_FALLBACK and self.ENV is not Env.LOCAL:
             raise ValueError(f"OCR_FIXTURE_FALLBACK은 로컬 환경에서만 사용할 수 있습니다. (ENV={self.ENV.value})")
+        return self
+
+    @model_validator(mode="after")
+    def _secret_key_must_be_set_outside_local(self) -> "Config":
+        """**운영에서 기본값으로 뜨는 길을 막는다** — KEY-174.
+
+        기본값이 `f"default-secret-key{uuid4().hex}"` 라 설정을 안 해도 서버가
+        뜬다. 그런데 그 값은 **프로세스마다 다르다.** 재배포하거나 컨테이너가
+        재시작될 때마다 바뀌어서, 그 전에 발급한 액세스·리프레시 토큰이 전부
+        한꺼번에 죽는다. 사용자에게는 「갑자기 로그아웃됐다」로 보인다.
+
+        `DB_PASSWORD` 에 이미 같은 규칙이 있다(KEY-110). 이름을 대며 멈추는
+        편이 조용히 뜨는 것보다 낫다.
+
+        **자리표시자도 같이 막는다.** 예시 파일에는 값이 적혀 있어야 「여기에
+        무엇을 넣는지」가 보이는데, 그러면 `DB_PASSWORD` 와 달리 **안 채우고
+        넘어가기 쉽다** — 빈칸이 아니라 이미 뭔가 들어 있어 보이기 때문이다.
+        그렇게 뜨면 서버는 조용히 살아나서 **공개 저장소에 적힌 값으로 JWT 를
+        서명한다** (이희진 님 `#133` 리뷰).
+        """
+        if self.ENV is Env.LOCAL:
+            return self
+        if not self.SECRET_KEY.strip():
+            raise ValueError(
+                f"SECRET_KEY 가 비어 있다 (ENV={self.ENV.value}). 빈 값으로 서명하면 누구나 토큰을 위조한다 (KEY-174)."
+            )
+        if self.SECRET_KEY.startswith("default-secret-key"):
+            raise ValueError(
+                f"SECRET_KEY 가 설정되지 않았다 (ENV={self.ENV.value}). "
+                "기본값은 프로세스마다 달라서 재시작하면 발급한 토큰이 전부 죽는다 — "
+                "환경변수나 `.env` 로 넘겨라 (KEY-174)."
+            )
+        if PLACEHOLDER.match(self.SECRET_KEY):
+            raise ValueError(
+                f"SECRET_KEY 가 예시 파일의 자리표시자 그대로다 (ENV={self.ENV.value}). "
+                "공개 저장소에 적힌 값이라 아무나 토큰을 위조할 수 있다 — "
+                "진짜 무작위 값으로 바꿔라 (KEY-174)."
+            )
         return self
 
     @field_validator("DB_PASSWORD")

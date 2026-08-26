@@ -14,14 +14,15 @@ import subprocess
 
 import pytest
 
+from app.core.config import PLACEHOLDER
 from app.tests.security._shared import REPO_ROOT as REPO
 from app.tests.security._shared import tracked_files
 
+#: 자리표시자 판별(`PLACEHOLDER`)은 **`app/core/config.py` 한 곳에서 가져온다**
+#: — 검증기가 막는 것과 검사가 봐주는 것이 어긋나면 안 된다 (KEY-174). 빈 값은
+#: `is_secret_value` 가 따로 걸러 내므로 여기서 다시 다루지 않는다.
 #: 실제 값이 들어 있는 파일들. 예시(`example.*.env`)는 추적해도 된다.
 MUST_BE_IGNORED = (".env", "envs/.local.env", "envs/.prod.env")
-
-#: 예시 파일에 남아 있으면 안 되는 것. 자리표시자는 통과시킨다.
-PLACEHOLDER = re.compile(r"^(your[-_]|<|changeme|xxx|\.\.\.|$)", re.IGNORECASE)
 
 SECRET_ASSIGNMENTS = re.compile(
     r"^(?P<key>[A-Z_]*(?:PASSWORD|SECRET|TOKEN|API_KEY|CREDENTIAL)[A-Z_]*)\s*=\s*(?P<value>.*)$"
