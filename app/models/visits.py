@@ -114,8 +114,8 @@ class GuideDocument(models.Model):
     )
     #: Tortoise 가 만들어 주는 것들. 선언해 두지 않으면 타입 검사가 못 본다.
     visit_id: int
-    sections: fields.ReverseRelation["GuideSection"]
-    events: fields.ReverseRelation["GuideEvent"]
+    sections: fields.ReverseRelation[GuideSection]
+    events: fields.ReverseRelation[GuideEvent]
 
     status = fields.CharEnumField(enum_type=GuideStatus, default=GuideStatus.STAFF_REVIEW)
     version = fields.IntField(default=1)
