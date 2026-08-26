@@ -44,7 +44,8 @@ function notifyFor(answers, key) {
   var data = null;
   /* 실제 화면에서 토큰이 없으면 합성 기본값으로 요청하지 않는다. 새로고침·
      잘못된 주소는 서버 인증 상태를 추측하지 않고 닫힌 링크 안내로 보낸다. */
-  var token = new URLSearchParams(location.search).get("t") || "";
+  var token =
+    new URLSearchParams(location.search).get("t") || (MOCK && CHECKIN_CASE ? "synthetic-link-token" : "");
 
   var picked = null; // 복약 답
   /* 신호를 언제 보낼지 정하는 것은 `checkin-api.js` 의 `createSignalTracker` 다.
@@ -269,7 +270,7 @@ function notifyFor(answers, key) {
       controls = '<button class="auth-recovery__primary" type="button" id="auth-issue" disabled>잠금 해제 기다리는 중</button>';
       if (guide.retryAfterSeconds) {
         authTimer = window.setTimeout(function () {
-          renderAuthGuidance({ code: "PATIENT_SESSION_EXPIRED", data: {} });
+          renderAuthGuidance({ code: "OTP_NOT_ISSUED", data: {} });
         }, guide.retryAfterSeconds * 1000);
       }
     } else {
@@ -323,6 +324,7 @@ function notifyFor(answers, key) {
         renderOtpEntry("인증번호는 3분 동안 사용할 수 있어요.", result.retry_after_seconds);
       })
       .catch(function (error) {
+        authRecovery.discardIfLinkClosed(error);
         if (error && error.code === "OTP_RESEND_TOO_SOON") {
           return renderOtpEntry(patientAuthGuidance(error).message, error.data && error.data.retry_after_seconds);
         }
@@ -349,6 +351,7 @@ function notifyFor(answers, key) {
         authRecovery.retryAfterVerification(submitAnswer);
       })
       .catch(function (error) {
+        authRecovery.discardIfLinkClosed(error);
         var guide = patientAuthGuidance(error);
         if (guide.action === "verify") return renderOtpEntry(guide.message, 0);
         if (guide.action === "retry") return renderOtpEntry(guide.message, 0);
@@ -358,7 +361,7 @@ function notifyFor(answers, key) {
   }
 
   function submitAnswer(answer) {
-    showOnly(authCard("기록을 저장하고 있어요", "잠시만 기다려 주세요.", ""));
+    el("save").textContent = "저장 중…";
     checkinApi
       .save(token, answer)
       .then(function (result) {
@@ -376,7 +379,8 @@ function notifyFor(answers, key) {
         el("state").hidden = true;
         el("form").hidden = false;
         el("save").disabled = false;
-        el("error").textContent = "저장하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러 주세요.";
+        el("save").textContent = "저장";
+        el("error").textContent = patientCheckinSaveFailureMessage(error);
         el("error").hidden = false;
       });
   }
@@ -538,7 +542,7 @@ function notifyFor(answers, key) {
     .catch(function (error) {
       /* 링크는 3일 뒤 닫힌다. **오류가 아니라 안내다** — 환자가 잘못한 것이
          아니므로 「오류」라고 말하지 않는다. */
-      if (error && (error.code === "LINK_EXPIRED" || error.code === "LINK_NOT_FOUND")) {
+      if (isPatientLinkClosed(error)) {
         return renderAuthGuidance(error);
       }
       showOnly(

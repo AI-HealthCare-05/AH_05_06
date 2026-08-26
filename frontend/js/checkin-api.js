@@ -79,6 +79,13 @@ var checkinApi = {
   },
 };
 
+var PATIENT_LINK_CLOSED_CODES = ["LINK_EXPIRED", "LINK_NOT_FOUND", "LINK_REVOKED", "LINK_REISSUED"];
+
+function isPatientLinkClosed(error) {
+  var code = typeof error === "string" ? error : error && error.code;
+  return PATIENT_LINK_CLOSED_CODES.indexOf(code) !== -1;
+}
+
 /* 서버 오류 코드를 환자가 이해할 수 있는 원인과 다음 행동으로 옮긴다.
 
    서버가 구분하지 않는 상태는 화면도 추측하지 않는다. `LINK_NOT_FOUND`는
@@ -106,7 +113,7 @@ function patientAuthGuidance(error) {
       action: "latest-link",
     };
   }
-  if (code === "LINK_NOT_FOUND" || code === "LINK_REVOKED" || code === "LINK_REISSUED") {
+  if (isPatientLinkClosed(error)) {
     return {
       kind: "link-closed",
       title: "이 링크는 더 이상 사용할 수 없어요",
@@ -129,8 +136,10 @@ function patientAuthGuidance(error) {
     return {
       kind: "locked",
       title: "본인 확인에 여러 번 실패했어요",
-      message: retry ? "안전을 위해 잠시 막았어요. " + Math.ceil(retry / 60) + "분 뒤 다시 시도해 주세요." : "안전을 위해 잠시 막았어요. 잠시 뒤 다시 시도해 주세요.",
-      action: "wait",
+      message: retry
+        ? "안전을 위해 잠시 막았어요. " + Math.ceil(retry / 60) + "분 뒤 다시 시도해 주세요."
+        : "잠금 시간을 확인하지 못했어요. 인증번호 받기를 다시 눌러 상태를 확인해 주세요.",
+      action: retry ? "wait" : "retry",
       retryAfterSeconds: retry,
     };
   }
@@ -175,6 +184,17 @@ function patientAuthGuidance(error) {
   };
 }
 
+function patientCheckinSaveFailureMessage(error) {
+  var code = error && error.code;
+  if (code === "CHECKIN_ALREADY_ANSWERED") {
+    return "이미 저장된 기록이에요. 화면을 다시 열어 저장된 내용을 확인해 주세요.";
+  }
+  if (code === "INVALID_REQUEST" || code === "MEDICATION_REQUIRED" || code === "UNKNOWN_ANSWER") {
+    return "입력한 내용을 확인한 뒤 다시 저장해 주세요.";
+  }
+  return "기록을 저장하지 못했어요. 잠시 뒤 다시 눌러 주세요. 계속되면 진료받으신 병원에 문의해 주세요.";
+}
+
 /* D+7 저장과 재인증 사이의 상태 전이만 떼어 낸다.
 
    DOM 을 흉내 낸 검사는 실제 브라우저 동작을 보장하지 못한다. 대신 환자 답을
@@ -193,15 +213,15 @@ function createPatientAuthRecovery() {
         return "reauth";
       }
       pendingAnswer = null;
-      if (
-        code === "LINK_EXPIRED" ||
-        code === "LINK_NOT_FOUND" ||
-        code === "LINK_REVOKED" ||
-        code === "LINK_REISSUED"
-      ) {
+      if (isPatientLinkClosed(error)) {
         return "link-closed";
       }
       return "form";
+    },
+    discardIfLinkClosed: function (error) {
+      if (!isPatientLinkClosed(error)) return false;
+      pendingAnswer = null;
+      return true;
     },
     retryAfterVerification: function (retry) {
       if (pendingAnswer === null) return false;
@@ -344,7 +364,8 @@ var PAIN_TYPES = [
  *   expired  링크가 3일을 넘겼을 때
  *   done     이미 답한 회차
  *   session-expired  저장 때 재인증이 필요한 흐름 (합성 OTP 123456)
- *   locked   OTP 잠금 안내
+ *   locked   OTP 잠금 안내 (`t` 없이도 합성 링크로 진입)
+ *   locked-no-retry  잠금 남은 시간을 받지 못한 복구 안내
  */
 var CHECKIN_CASE = (function () {
   var q = new URLSearchParams(location.search).get("case");
@@ -452,6 +473,7 @@ function mockCheckinRequest(path, options) {
         if (CHECKIN_CASE === "locked") {
           return reject(new ApiError("OTP_LOCKED", 429, { retry_after_seconds: 600 }));
         }
+        if (CHECKIN_CASE === "locked-no-retry") return reject(new ApiError("OTP_LOCKED", 429, {}));
         return resolve({ expires_at: new Date(Date.now() + 180000).toISOString(), retry_after_seconds: 60 });
       }
       if (path === "/patient-auth/otp/verify") {
@@ -492,7 +514,10 @@ function mockCheckinRequest(path, options) {
       }
 
       if (options.method === "POST") {
-        if (CHECKIN_CASE === "session-expired" && !MOCK_PATIENT_AUTHENTICATED) {
+        if (
+          (CHECKIN_CASE === "session-expired" || CHECKIN_CASE === "locked" || CHECKIN_CASE === "locked-no-retry") &&
+          !MOCK_PATIENT_AUTHENTICATED
+        ) {
           return reject(new ApiError("PATIENT_SESSION_EXPIRED", 401, {}));
         }
         if (MEDICATION_ANSWERS.indexOf(body.medication) === -1) {
