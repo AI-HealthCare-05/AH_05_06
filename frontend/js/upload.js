@@ -185,7 +185,6 @@ function guessKind(name) {
       })
       .then(function (data) {
         item.state = "done";
-        item.kind = guessKind(item.name);
         item.ocr_job_id = data.ocr_job_id;
         render();
       })
@@ -215,7 +214,7 @@ function guessKind(name) {
         state: "uploading",
         progress: 0,
         thumb: null,
-        kind: "emr",
+        kind: guessKind(file.name),
       };
       var bad = reject(file);
       files.push(item);
