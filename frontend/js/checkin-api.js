@@ -38,6 +38,23 @@ var checkinApi = {
     return checkinRequest("/checkins/" + encodeURIComponent(token), { method: "POST", body: body });
   },
 
+  /* D+7 저장에서 세션이 끝났을 때만 쓰는 재인증 경로 — KEY-128.
+
+     안내·양식 조회는 링크 자체가 접근 증명이고, 쓰기만 30분 환자 세션을
+     요구한다(KEY-92 확정 계약). 화면은 이 둘을 섞어 조회까지 새로 막지 않는다. */
+  issueOtp: function (token) {
+    return checkinRequest("/patient-auth/otp/issue", {
+      method: "POST",
+      body: { link_token: token },
+    });
+  },
+  verifyOtp: function (token, code) {
+    return checkinRequest("/patient-auth/otp/verify", {
+      method: "POST",
+      body: { link_token: token, code: code },
+    });
+  },
+
   /* 고르는 즉시 의료진 화면에 「이 환자를 봐 주세요」를 보낸다.
 
      **이것은 기록이 아니다.** 의무기록은 [저장] 이 남기는 답이고, 이 신호는
@@ -61,6 +78,101 @@ var checkinApi = {
     });
   },
 };
+
+/* 서버 오류 코드를 환자가 이해할 수 있는 원인과 다음 행동으로 옮긴다.
+
+   서버가 구분하지 않는 상태는 화면도 추측하지 않는다. `LINK_NOT_FOUND`는
+   없는 링크·폐기·재발급으로 교체된 예전 링크를 같은 문구로 안내해 링크의
+   내부 상태가 새지 않게 한다. 토큰·OTP 값은 인자로도 받지 않는다. */
+function patientAuthGuidance(error) {
+  var code = error && error.code;
+  var data = (error && error.data) || {};
+  var retry = Math.max(0, Number(data.retry_after_seconds) || 0);
+
+  if (code === "PATIENT_SESSION_EXPIRED") {
+    return {
+      kind: "session",
+      title: "본인 확인이 다시 필요해요",
+      message: "인증 시간이 끝났거나 새로 접속했어요. 작성한 답은 이 화면에 그대로 두고 인증 후 저장할게요.",
+      action: "issue",
+    };
+  }
+  if (code === "LINK_EXPIRED") {
+    return {
+      kind: "link-closed",
+      title: "링크가 만료됐어요",
+      message: "보내드린 링크는 3일 동안 열려 있어요. 병원에서 새 문자를 받으면 그 링크로 다시 들어와 주세요.",
+      action: "latest-link",
+    };
+  }
+  if (code === "LINK_NOT_FOUND" || code === "LINK_REVOKED" || code === "LINK_REISSUED") {
+    return {
+      kind: "link-closed",
+      title: "이 링크는 더 이상 사용할 수 없어요",
+      message: "폐기되었거나 새 링크로 바뀌었을 수 있어요. 병원에서 가장 최근에 받은 문자를 확인해 주세요.",
+      action: "latest-link",
+    };
+  }
+  if (code === "OTP_INVALID") {
+    var remaining = Number(data.remaining_attempts);
+    return {
+      kind: "otp",
+      title: "인증번호가 맞지 않아요",
+      message: Number.isFinite(remaining)
+        ? "문자로 받은 6자리 번호를 확인해 주세요. " + remaining + "번 더 입력할 수 있어요."
+        : "문자로 받은 6자리 번호를 다시 확인해 주세요.",
+      action: "verify",
+    };
+  }
+  if (code === "OTP_LOCKED") {
+    return {
+      kind: "locked",
+      title: "본인 확인에 여러 번 실패했어요",
+      message: retry ? "안전을 위해 잠시 막았어요. " + Math.ceil(retry / 60) + "분 뒤 다시 시도해 주세요." : "안전을 위해 잠시 막았어요. 잠시 뒤 다시 시도해 주세요.",
+      action: "wait",
+      retryAfterSeconds: retry,
+    };
+  }
+  if (code === "OTP_EXPIRED" || code === "OTP_ALREADY_USED" || code === "OTP_NOT_ISSUED") {
+    return {
+      kind: "otp-new",
+      title: code === "OTP_EXPIRED" ? "인증번호가 만료됐어요" : "새 인증번호가 필요해요",
+      message: "인증번호를 다시 받은 뒤 새 6자리 번호를 입력해 주세요.",
+      action: "issue",
+    };
+  }
+  if (code === "OTP_RESEND_TOO_SOON") {
+    return {
+      kind: "otp-wait",
+      title: "인증번호를 이미 보내드렸어요",
+      message: retry ? retry + "초 뒤에 다시 받을 수 있어요." : "잠시 뒤에 다시 받을 수 있어요.",
+      action: "wait-resend",
+      retryAfterSeconds: retry,
+    };
+  }
+  if (code === "SMS_OPT_OUT") {
+    return {
+      kind: "contact",
+      title: "인증번호를 보내드릴 수 없어요",
+      message: "문자 수신 설정을 확인하려면 진료받으신 병원에 문의해 주세요.",
+      action: "contact",
+    };
+  }
+  if (code === "OTP_DELIVERY_UNAVAILABLE") {
+    return {
+      kind: "delivery",
+      title: "인증번호 전송이 지연되고 있어요",
+      message: "잠시 뒤 다시 시도해 주세요. 계속 받지 못하면 진료받으신 병원에 문의해 주세요.",
+      action: "issue",
+    };
+  }
+  return {
+    kind: "retry",
+    title: "잠시 연결하지 못했어요",
+    message: "인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
+    action: "retry",
+  };
+}
 
 /* 한 화면이 신호를 언제 보낼지 정하는 자리 — KEY-138.
 
@@ -191,12 +303,15 @@ var PAIN_TYPES = [
  *   last     남은 확인 문자가 없을 때 — 완료 화면이 다음 진료일을 알린다
  *   expired  링크가 3일을 넘겼을 때
  *   done     이미 답한 회차
+ *   session-expired  저장 때 재인증이 필요한 흐름 (합성 OTP 123456)
+ *   locked   OTP 잠금 안내
  */
 var CHECKIN_CASE = (function () {
   var q = new URLSearchParams(location.search).get("case");
   if (q !== null) sessionStorage.setItem("mockCheckinCase", q);
   return sessionStorage.getItem("mockCheckinCase") || "";
 })();
+var MOCK_PATIENT_AUTHENTICATED = false;
 
 function mockCheckin() {
   return {
@@ -293,6 +408,19 @@ function mockCheckinRequest(path, options) {
         // 링크는 3일 뒤 닫힌다(P8 노트). 만료는 오류가 아니라 안내다.
         return reject(new ApiError("LINK_EXPIRED", 410, {}));
       }
+      if (path === "/patient-auth/otp/issue") {
+        if (CHECKIN_CASE === "locked") {
+          return reject(new ApiError("OTP_LOCKED", 429, { retry_after_seconds: 600 }));
+        }
+        return resolve({ expires_at: new Date(Date.now() + 180000).toISOString(), retry_after_seconds: 60 });
+      }
+      if (path === "/patient-auth/otp/verify") {
+        if (body.code !== "123456") {
+          return reject(new ApiError("OTP_INVALID", 401, { remaining_attempts: 4 }));
+        }
+        MOCK_PATIENT_AUTHENTICATED = true;
+        return resolve({ verified: true, session_expires_in_seconds: 1800 });
+      }
       /* 신호는 저장보다 먼저 온다. 화면은 **고른 것을 그대로** 보내고, 알릴지는
          여기서 정한다 — 그래야 답을 바꿨을 때 앞 신호가 덮인다. */
       if (options.method === "POST" && /\/signals$/.test(path)) {
@@ -324,6 +452,9 @@ function mockCheckinRequest(path, options) {
       }
 
       if (options.method === "POST") {
+        if (CHECKIN_CASE === "session-expired" && !MOCK_PATIENT_AUTHENTICATED) {
+          return reject(new ApiError("PATIENT_SESSION_EXPIRED", 401, {}));
+        }
         if (MEDICATION_ANSWERS.indexOf(body.medication) === -1) {
           return reject(new ApiError("MEDICATION_REQUIRED", 422, {}));
         }

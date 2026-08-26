@@ -54,7 +54,7 @@
             <div style="height:52px;border-radius:10px;background:#111827;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600">확인</div>
             <div style="text-align:center;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;line-height:20px;color:#374151">못 받으셨나요?</span><span style="font-size:14px;line-height:20px;color:#D1D5DB">다시 받기 (48초)</span></div>
           </div></div>
-        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151;width:375px">──(확인)──▶ <b>P2 복약지도</b> · 세션 30분 · ──(5회 실패)──▶ <b>P1-4</b> · 세션 30분 만료 화면 ※ 프레임 추후 추가</div></sc-if>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151;width:375px">──(확인)──▶ <b>P2 복약지도</b> · 세션 30분 · ──(5회 실패)──▶ <b>P1-4</b> · D+7 저장 중 세션 만료 ──▶ 작성값 유지 · <b>P1-1 → P1-2</b> 재인증 뒤 저장 재시도</div></sc-if>
         <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="border:1px dashed #6B7280;border-radius:8px;padding:12px;font-size:12px;color:#374151;line-height:18px;width:375px">6칸을 따로 그리면 몇 자리인지 보이고 넣기 쉽다. autocomplete="one-time-code"로 문자가 오면 저절로 채워진다. 다시 받기는 60초 뒤에 활성되고 한 토큰에 3번까지. 문자 잔량이 0이면 이미 링크를 받은 환자도 못 연다 — 문구는 「잠시 뒤 다시 시도해 주세요」로 쓴다.</div></sc-if>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;width:375px">
@@ -82,10 +82,10 @@
         <div style="display:flex;flex-direction:column"><span style="font-size:15px;font-weight:700">P1-4 · 5회 초과 차단</span><span style="font-size:12px;color:#6B7280">375 × 812 · 원인 + 해결</span></div>
         <div data-screen-label="P1-4" style="width:375px;height:812px;background:#FFFFFF;border:1px solid #D1D5DB;border-radius:12px;overflow:hidden;display:flex;flex-direction:column"><div style="flex:1;padding:0 16px;display:flex;flex-direction:column;gap:20px;justify-content:center;text-align:center">
             <div style="font-size:40px">⚠</div>
-            <div style="display:flex;flex-direction:column;gap:8px"><span style="font-size:18px;line-height:26px;font-weight:600">본인 확인에 여러 번 실패했어요</span><span style="font-size:15px;line-height:22px;color:#374151">안전을 위해 잠시 막았어요.<br>병원으로 문의해 주세요.</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px"><span style="font-size:18px;line-height:26px;font-weight:600">본인 확인에 여러 번 실패했어요</span><span style="font-size:15px;line-height:22px;color:#374151">안전을 위해 10분 동안 막았어요.<br>잠금이 풀린 뒤 다시 시도하거나 병원으로 문의해 주세요.</span></div>
             <div style="height:52px;border-radius:10px;background:#111827;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600">💬 문의하기</div>
           </div></div>
-        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151;width:375px">──(💬 문의하기)──▶ 카카오톡 채널</div></sc-if>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151;width:375px">──(10분 경과)──▶ <b>P1-1</b> 재시도 · ──(💬 문의하기)──▶ 카카오톡 채널</div></sc-if>
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:17px;font-weight:700">행 2 · 자궁내막증 · 비잔 ★ — 5프레임</div><div style="font-size:13px;color:#6B7280">탭 5개를 한 줄로 본다. 복약지도 ⇄ 주의사항 ⇄ 생활관리 ⇄ 현황 ⇄ 챗봇 — 같은 헤더와 탭을 공유한다.</div></div>

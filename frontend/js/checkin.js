@@ -42,7 +42,9 @@ function notifyFor(answers, key) {
   };
 
   var data = null;
-  var token = new URLSearchParams(location.search).get("t") || "synthetic-link-token";
+  /* 실제 화면에서 토큰이 없으면 합성 기본값으로 요청하지 않는다. 새로고침·
+     잘못된 주소는 서버 인증 상태를 추측하지 않고 닫힌 링크 안내로 보낸다. */
+  var token = new URLSearchParams(location.search).get("t") || "";
 
   var picked = null; // 복약 답
   /* 신호를 언제 보낼지 정하는 것은 `checkin-api.js` 의 `createSignalTracker` 다.
@@ -52,6 +54,9 @@ function notifyFor(answers, key) {
   var painHad = null; // true · false · null(아직 안 고름)
   var painScore = 4;
   var painTypes = [];
+  var pendingAnswer = null;
+  var authTimer = null;
+  var otpResendAvailableAt = 0;
 
 
   var LABELS = {
@@ -230,6 +235,155 @@ function notifyFor(answers, key) {
     el("state").focus();
   }
 
+  function clearAuthTimer() {
+    if (authTimer !== null) {
+      window.clearTimeout(authTimer);
+      authTimer = null;
+    }
+  }
+
+  function authCard(title, message, controls) {
+    return (
+      '<div class="auth-recovery">' +
+      '<p class="auth-recovery__mark" aria-hidden="true">⚠</p>' +
+      '<h1 class="auth-recovery__title">' +
+      esc(title) +
+      "</h1>" +
+      '<p class="auth-recovery__message">' +
+      esc(message) +
+      "</p>" +
+      (controls || "") +
+      '<p class="auth-recovery__safe">ⓘ 링크와 인증번호 원문은 서버 응답이나 로그에 남기지 않아요.</p>' +
+      "</div>"
+    );
+  }
+
+  function renderAuthGuidance(error) {
+    clearAuthTimer();
+    var guide = patientAuthGuidance(error);
+    var controls = "";
+
+    if (guide.action === "issue" || guide.action === "retry") {
+      controls = '<button class="auth-recovery__primary" type="button" id="auth-issue">인증번호 받기</button>';
+    } else if (guide.action === "wait") {
+      controls = '<button class="auth-recovery__primary" type="button" id="auth-issue" disabled>잠금 해제 기다리는 중</button>';
+      if (guide.retryAfterSeconds) {
+        authTimer = window.setTimeout(function () {
+          renderAuthGuidance({ code: "PATIENT_SESSION_EXPIRED", data: {} });
+        }, guide.retryAfterSeconds * 1000);
+      }
+    } else {
+      controls = '<p class="auth-recovery__next">가장 최근 문자 링크를 다시 열거나 진료받으신 병원에 문의해 주세요.</p>';
+    }
+    showOnly(authCard(guide.title, guide.message, controls));
+  }
+
+  function renderOtpEntry(message, resendAfterSeconds) {
+    clearAuthTimer();
+    var requestedWait = Math.max(0, Number(resendAfterSeconds) || 0);
+    if (requestedWait) otpResendAvailableAt = Date.now() + requestedWait * 1000;
+    var wait = Math.max(0, Math.ceil((otpResendAvailableAt - Date.now()) / 1000));
+    var controls =
+      '<label class="auth-recovery__label" for="patient-otp">문자로 받은 6자리 인증번호</label>' +
+      '<input class="auth-recovery__otp" id="patient-otp" name="one-time-code" type="text" inputmode="numeric" ' +
+      'autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" aria-describedby="auth-otp-help" />' +
+      '<p class="auth-recovery__help" id="auth-otp-help">' +
+      esc(message || "3분 안에 입력해 주세요.") +
+      "</p>" +
+      '<button class="auth-recovery__primary" type="button" id="auth-verify" disabled>확인</button>' +
+      '<button class="auth-recovery__secondary" type="button" id="auth-issue"' +
+      (wait ? " disabled" : "") +
+      ">" +
+      (wait ? "다시 받기 (" + wait + "초)" : "인증번호 다시 받기") +
+      "</button>";
+    showOnly(authCard("인증번호를 넣어주세요", "본인 확인이 끝나면 작성한 답을 바로 저장할게요.", controls));
+    var input = el("patient-otp");
+    if (input) input.focus();
+    updateResendButton();
+  }
+
+  function updateResendButton() {
+    var button = el("auth-issue");
+    if (!button || !button.classList.contains("auth-recovery__secondary")) return;
+    var remaining = Math.max(0, Math.ceil((otpResendAvailableAt - Date.now()) / 1000));
+    button.disabled = remaining > 0;
+    button.textContent = remaining ? "다시 받기 (" + remaining + "초)" : "인증번호 다시 받기";
+    if (remaining) authTimer = window.setTimeout(updateResendButton, 1000);
+  }
+
+  function issueOtp() {
+    var button = el("auth-issue");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "보내는 중…";
+    }
+    checkinApi
+      .issueOtp(token)
+      .then(function (result) {
+        renderOtpEntry("인증번호는 3분 동안 사용할 수 있어요.", result.retry_after_seconds);
+      })
+      .catch(function (error) {
+        if (error && error.code === "OTP_RESEND_TOO_SOON") {
+          return renderOtpEntry(patientAuthGuidance(error).message, error.data && error.data.retry_after_seconds);
+        }
+        renderAuthGuidance(error);
+      });
+  }
+
+  function verifyOtp() {
+    var input = el("patient-otp");
+    var code = input ? input.value.trim() : "";
+    if (!/^\d{6}$/.test(code)) {
+      if (el("auth-otp-help")) el("auth-otp-help").textContent = "숫자 6자리를 모두 입력해 주세요.";
+      return;
+    }
+    var button = el("auth-verify");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "확인 중…";
+    }
+    checkinApi
+      .verifyOtp(token, code)
+      .then(function () {
+        clearAuthTimer();
+        var answer = pendingAnswer;
+        pendingAnswer = null;
+        if (answer) submitAnswer(answer);
+      })
+      .catch(function (error) {
+        var guide = patientAuthGuidance(error);
+        if (guide.action === "verify") return renderOtpEntry(guide.message, 0);
+        if (guide.action === "retry") return renderOtpEntry(guide.message, 0);
+        if (guide.action === "issue") return renderAuthGuidance(error);
+        renderAuthGuidance(error);
+      });
+  }
+
+  function submitAnswer(answer) {
+    showOnly(authCard("기록을 저장하고 있어요", "잠시만 기다려 주세요.", ""));
+    checkinApi
+      .save(token, answer)
+      .then(function (result) {
+        pendingAnswer = null;
+        showOnly(doneHtml(result));
+      })
+      .catch(function (error) {
+        if (error && error.code === "PATIENT_SESSION_EXPIRED") {
+          pendingAnswer = answer;
+          return renderAuthGuidance(error);
+        }
+        if (error && (error.code === "LINK_EXPIRED" || error.code === "LINK_NOT_FOUND")) {
+          pendingAnswer = null;
+          return renderAuthGuidance(error);
+        }
+        el("state").hidden = true;
+        el("form").hidden = false;
+        el("save").disabled = false;
+        el("error").textContent = "저장하지 못했어요. 인터넷 연결을 확인한 뒤 다시 눌러 주세요.";
+        el("error").hidden = false;
+      });
+  }
+
 
   /* 고르는 즉시 의료진 화면에 「이 환자를 봐 주세요」를 보낸다 (KEY-138).
 
@@ -264,6 +418,15 @@ function notifyFor(answers, key) {
   /* ── 이벤트 ─────────────────────────────────────────── */
 
   document.addEventListener("click", function (event) {
+    if (event.target.id === "auth-issue") {
+      issueOtp();
+      return;
+    }
+    if (event.target.id === "auth-verify") {
+      verifyOtp();
+      return;
+    }
+
     /* 눌러도 아무 일이 없었다 (`#55` 리뷰). 환자 안전과 닿은 버튼이라
        가만히 있는 것이 가장 나쁘다.
 
@@ -309,19 +472,19 @@ function notifyFor(answers, key) {
 
     if (event.target.id === "save" && picked) {
       event.target.disabled = true;
+      el("error").hidden = true;
       var saveStamp = signals.mark();
-      checkinApi
-        .save(token, {
-          medication: picked,
-          pain: painHad === null ? null : { had: painHad, score: painHad ? painScore : null, types: painTypes },
-          note: el("note").value.trim() || null,
+      submitAnswer({
+        medication: picked,
+        pain: painHad === null ? null : { had: painHad, score: painHad ? painScore : null, types: painTypes },
+        note: el("note").value.trim() || null,
           /* 이 답이 의료진 알림을 만들어야 하는가. 서버가 정하는 값이지만
              화면이 **받은 그대로 되돌려** 준다 — 화면이 「원장님께 전해
              드릴게요」라고 말해 놓고 서버는 모르는 상태를 막는다 (`#55` 리뷰).
 
              다만 이건 **저장할 때**다. 와이어프레임은 고르는 즉시 알리라고
              하는데, 그러려면 계약이 하나 더 필요하다 — 아래 주석 참고. */
-          notify: notifyFor(data && data.answers, picked),
+        notify: notifyFor(data && data.answers, picked),
           /* **저장도 신호와 같은 규칙으로 순번을 받는다.** 예전에는 서버가
              저장에 고정값(「늘 가장 나중」)을 박았는데, 그러면 저장을 두 번
              했을 때 둘이 같아져 뒤엣것이 앞엣것을 못 덮는다 — 지금은 도착
@@ -330,28 +493,32 @@ function notifyFor(answers, key) {
 
              답을 접지 않는 `mark()` 를 쓴다. 같은 답을 다시 저장해도 그것은
              새 저장이다. */
-          client_id: saveStamp.clientId,
-          client_session_id: saveStamp.session,
-          client_sequence: saveStamp.sequence,
-        })
-        .then(function (result) {
-          showOnly(doneHtml(result));
-        })
-        .catch(function () {
-          event.target.disabled = false;
-          el("error").textContent = "저장하지 못했어요. 잠시 뒤 다시 눌러 주세요.";
-          el("error").hidden = false;
-        });
+        client_id: saveStamp.clientId,
+        client_session_id: saveStamp.session,
+        client_sequence: saveStamp.sequence,
+      });
     }
   });
 
   document.addEventListener("input", function (event) {
-    if (event.target.id !== "pain-score") return;
-    painScore = Number(event.target.value);
-    el("score-value").textContent = painScore + " / 10";
+    if (event.target.id === "patient-otp") {
+      event.target.value = event.target.value.replace(/\D/g, "").slice(0, 6);
+      var verify = el("auth-verify");
+      if (verify) verify.disabled = event.target.value.length !== 6;
+      return;
+    }
+    if (event.target.id === "pain-score") {
+      painScore = Number(event.target.value);
+      el("score-value").textContent = painScore + " / 10";
+    }
   });
 
   /* ── 시작 ───────────────────────────────────────────── */
+
+  if (!token) {
+    renderAuthGuidance({ code: "LINK_NOT_FOUND", data: {} });
+    return;
+  }
 
   checkinApi
     .read(token)
@@ -374,12 +541,8 @@ function notifyFor(answers, key) {
     .catch(function (error) {
       /* 링크는 3일 뒤 닫힌다. **오류가 아니라 안내다** — 환자가 잘못한 것이
          아니므로 「오류」라고 말하지 않는다. */
-      if (error && error.code === "LINK_EXPIRED") {
-        return showOnly(
-          '<div class="done"><h1 class="done__title">링크가 만료됐어요</h1>' +
-            '<p class="done__note">보내드린 링크는 3일 동안 열려 있어요.<br />' +
-            "다음 확인 문자가 오면 그때 답해 주셔도 괜찮습니다.</p></div>",
-        );
+      if (error && (error.code === "LINK_EXPIRED" || error.code === "LINK_NOT_FOUND")) {
+        return renderAuthGuidance(error);
       }
       showOnly(
         '<div class="done"><h1 class="done__title">불러오지 못했어요</h1>' +

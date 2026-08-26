@@ -348,6 +348,114 @@
   color: var(--ink-3);
 }
 
+/* P1-1~P1-4 본인 확인·오류 복구 — KEY-128.
+
+   D+7 저장 중 세션이 끝나면 같은 시트 안에서 인증하고 작성한 답으로 돌아간다.
+   원인·다음 행동을 한 카드에 두고, 잠금은 버튼 비활성화로도 드러내 우회할
+   수 있는 동작처럼 보이지 않게 한다. */
+.auth-recovery {
+  padding: var(--s-32) var(--s-16);
+  text-align: center;
+}
+
+.auth-recovery__mark {
+  margin: 0 0 var(--s-8);
+  font-size: 40px;
+}
+
+.auth-recovery__title {
+  margin: 0 0 var(--s-8);
+  font-size: 22px;
+  line-height: 1.45;
+}
+
+.auth-recovery__message,
+.auth-recovery__next,
+.auth-recovery__help,
+.auth-recovery__safe {
+  margin: 0;
+  color: var(--ink-2);
+  line-height: 1.65;
+}
+
+.auth-recovery__label {
+  display: block;
+  margin-top: var(--s-24);
+  color: var(--ink-2);
+  font-size: 13px;
+  text-align: left;
+}
+
+.auth-recovery__otp {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  margin-top: var(--s-8);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.55em;
+  text-align: center;
+}
+
+.auth-recovery__help {
+  margin-top: var(--s-8);
+  font-size: 13px;
+}
+
+.auth-recovery__primary,
+.auth-recovery__secondary {
+  width: 100%;
+  min-height: 52px;
+  margin-top: var(--s-16);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-recovery__primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.auth-recovery__secondary {
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.auth-recovery__primary:disabled,
+.auth-recovery__secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.auth-recovery__otp:focus-visible,
+.auth-recovery__primary:focus-visible,
+.auth-recovery__secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.auth-recovery__next {
+  margin-top: var(--s-24);
+  padding: var(--s-12);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.auth-recovery__safe {
+  margin-top: var(--s-16);
+  font-size: 12px;
+}
+
 /* 문의하기를 눌렀을 때 나오는 안내. 오류가 아니라 안내라 붉게 하지 않는다. */
 .ask-note {
   margin-top: var(--s-12);
