@@ -76,14 +76,15 @@ async def process_ocr_job(ocr_job_id: str) -> None:
             clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
             _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None, clova_elapsed_ms=clova_elapsed_ms)
         except ClovaOcrError as exc:
-            default_logger.warning(
-                "CLOVA 오류 → fixture fallback — ocr_job_id=%s, code=%s",
-                ocr_job_id,
-                exc.code,
-            )
             job.failure_code = "CLOVA_API_ERROR"
             await job.save(update_fields=("failure_code",))
             used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
+            default_logger.warning(
+                "CLOVA 오류 → %s — ocr_job_id=%s, code=%s",
+                "fixture fallback" if used_fixture else "FAILED",
+                ocr_job_id,
+                exc.code,
+            )
             _observe(
                 ocr_job_id=ocr_job_id,
                 mode="fixture" if used_fixture else "failed",
@@ -96,10 +97,14 @@ async def process_ocr_job(ocr_job_id: str) -> None:
             await _mark_failed(job, "PROCESSING_ERROR")
             _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR")
     else:
-        default_logger.warning("CLOVA 미설정 → fixture fallback — ocr_job_id=%s", ocr_job_id)
         job.failure_code = "OCR_NOT_CONFIGURED"
         await job.save(update_fields=("failure_code",))
         used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
+        default_logger.warning(
+            "CLOVA 미설정 → %s — ocr_job_id=%s",
+            "fixture fallback" if used_fixture else "FAILED",
+            ocr_job_id,
+        )
         _observe(
             ocr_job_id=ocr_job_id,
             mode="fixture" if used_fixture else "failed",
