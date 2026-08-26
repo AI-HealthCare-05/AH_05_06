@@ -14,12 +14,13 @@
 위해 정본을 더럽히는 일**이라, 검사가 임시 저장소를 만들어 그 안에서 잰다.
 """
 
+import ast
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from app.tests.security._shared import tracked_files
+from app.tests.security._shared import read_tracked_text, tracked_files
 
 #: 이 파일들이 담는 값. 진짜 비밀이 아니라 **훑기가 닿았는지 보려고 심는 표식**이다.
 MARKER = "synthetic-marker-not-a-secret"
@@ -73,10 +74,11 @@ class TestNoTextFileIsSkippedForItsEncoding:
         path = tmp_path / "conf.env"
         path.write_bytes(body)
 
-        # 가드가 쓰는 것과 같은 방식으로 읽는다.
-        text = path.read_bytes().decode("utf-8", errors="replace")
+        # **가드가 쓰는 그 함수를 부른다.** 예전 판은 읽는 방법을 여기 베껴
+        # 놓아서, 가드가 다시 `read_text` 로 돌아가도 이 검사는 초록이었다.
+        text = read_tracked_text(path)
 
-        assert MARKER in text, f"{encoding} 파일이 통째로 빠진다 — 안의 비밀값을 못 찾는다"
+        assert text is not None and MARKER in text, f"{encoding} 파일이 통째로 빠진다 — 안의 비밀값을 못 찾는다"
 
     def test_the_old_way_would_have_dropped_it(self, tmp_path: Path) -> None:
         """예전 방식이 정말 빠뜨렸는지 함께 박아 둔다 — 근거가 주석에만 남지 않게."""
@@ -91,6 +93,66 @@ class TestNoTextFileIsSkippedForItsEncoding:
         path = tmp_path / "blob.bin"
         path.write_bytes(bytes(range(256)))
 
-        text = path.read_bytes().decode("utf-8", errors="replace")
+        text = read_tracked_text(path)
 
-        assert MARKER not in text
+        assert text is not None and MARKER not in text
+
+
+class TestTheFragileWayCannotComeBack:
+    """가드가 **다시 `read_text` 로 돌아가지 못하게** 한다.
+
+    이 버그는 이 디렉터리 안에서 **두 번 따로** 생겼다 — 재유출 가드에서
+    고쳤더니 개인키 가드에 그대로 남아 있었다 (이희진 님 `#143`). 한 자리만
+    고치면 세 번째가 온다.
+
+    그래서 문자열이 아니라 **구문 트리**로 잰다. 주석이나 독스트링에 적힌
+    낱말에는 안 걸린다 — 이 저장소에서 두 번 밟은 자리다.
+    """
+
+    #: 훑기를 도는 함수만 본다. 「예전 방식이 정말 빠뜨렸는지」를 보여 주는
+    #: 재현 검사는 일부러 `read_text` 를 쓰므로 여기 걸리면 안 된다.
+    SCANNER = "tracked_files"
+
+    def _scanning_functions(self) -> list[tuple[str, ast.FunctionDef]]:
+        found = []
+        for path in sorted(Path(__file__).parent.glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                calls = {c.func.id for c in ast.walk(node) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+                if self.SCANNER in calls:
+                    found.append((f"{path.name}::{node.name}", node))
+        return found
+
+    def test_there_are_scanning_functions_to_check(self) -> None:
+        """**아래 검사가 조용히 통과하지 않게 한다.**"""
+        names = [name for name, _ in self._scanning_functions()]
+
+        assert len(names) >= 2, f"훑는 함수를 못 찾았다 — 아래 검사가 헛돈다: {names}"
+
+    def test_no_guard_reads_text_the_fragile_way(self) -> None:
+        offenders = []
+        for name, node in self._scanning_functions():
+            for call in ast.walk(node):
+                if (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "read_text"
+                ):
+                    offenders.append(name)
+
+        assert not offenders, f"`read_text` 는 CP949 파일을 통째로 빠뜨린다 — `read_tracked_text` 를 써라: {offenders}"
+
+    def test_no_guard_swallows_a_decode_error(self) -> None:
+        """`except UnicodeDecodeError: continue` 가 파일을 통째로 지우던 자리다."""
+        offenders = []
+        for name, node in self._scanning_functions():
+            for handler in ast.walk(node):
+                if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
+                    continue
+                caught = ast.unparse(handler.type)
+                if "UnicodeDecodeError" in caught:
+                    offenders.append(f"{name} ({caught})")
+
+        assert not offenders, f"인코딩 오류를 삼키면 그 파일은 안 본 것과 같다: {offenders}"

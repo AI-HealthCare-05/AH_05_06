@@ -16,7 +16,7 @@ import re
 from functools import lru_cache
 
 from app.tests.security._shared import REPO_ROOT as ROOT
-from app.tests.security._shared import tracked_files
+from app.tests.security._shared import read_tracked_text, tracked_files
 
 #: `b8ee2a9` 의 `SECRET_KEY` · `DB_PASSWORD` · `DB_ROOT_PASSWORD` (local · prod)
 EXPOSED_DIGESTS = frozenset(
@@ -50,18 +50,11 @@ def _digest_index() -> dict[str, list[tuple[str, str]]]:
     """
     index: dict[str, list[tuple[str, str]]] = {}
     for rel in tracked_files(skip=SKIP):
-        try:
-            raw = (ROOT / rel).read_bytes()
-        except (OSError, IsADirectoryError):
-            continue  # 심볼릭 링크·디렉터리는 건너뛴다
-        # **인코딩 때문에 건너뛰지 않는다.** 예전에는 `read_text(encoding="utf-8")`
-        # 이 `UnicodeDecodeError` 를 내면 넘겼고, 주석은 그걸 「바이너리」라고
-        # 불렀다. 그런데 CP949 같은 **멀쩡한 텍스트 파일**도 같은 예외로 통째로
-        # 빠졌다 — 그 안에 비밀값이 있어도 못 찾는다 (KEY-139).
-        #
-        # 찾는 값은 전부 ASCII 라, 못 읽는 바이트를 바꿔치기해도 걸릴 것은
-        # 그대로 걸린다. 바이너리는 정규식에 걸릴 모양이 없어 그냥 지나간다.
-        body = raw.decode("utf-8", errors="replace")
+        # 읽는 방법은 `_shared.read_tracked_text` 하나뿐이다 — 왜 그렇게
+        # 읽는지는 거기 적혀 있다 (KEY-139 · 이희진 님 `#143`).
+        body = read_tracked_text(ROOT / rel)
+        if body is None:
+            continue  # 심볼릭 링크·디렉터리
         for pattern in _CANDIDATES:
             for value in pattern.findall(body):
                 digest = hashlib.sha256(value.strip().encode()).hexdigest()

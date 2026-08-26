@@ -16,7 +16,7 @@ import pytest
 
 from app.core.config import PLACEHOLDER
 from app.tests.security._shared import REPO_ROOT as REPO
-from app.tests.security._shared import tracked_files
+from app.tests.security._shared import read_tracked_text, tracked_files
 
 #: 자리표시자 판별(`PLACEHOLDER`)은 **`app/core/config.py` 한 곳에서 가져온다**
 #: — 검증기가 막는 것과 검사가 봐주는 것이 어긋나면 안 된다 (KEY-174). 빈 값은
@@ -106,9 +106,10 @@ class TestNoSecretsInSource:
             path = REPO / name
             if not path.is_file() or path.suffix not in (".py", ".js", ".yml", ".yaml", ".env", ".md"):
                 continue
-            try:
-                if marker in path.read_text(encoding="utf-8"):
-                    offenders.append(name)
-            except UnicodeDecodeError:
-                continue
+            # **인코딩으로 빠뜨리지 않는다** — 재유출 가드와 같은 버그가 여기
+            # 남아 있었다 (이희진 님 `#143`). CP949 로 저장된 추적 파일 안에
+            # 개인키가 있어도 조용히 초록이었다.
+            body = read_tracked_text(path)
+            if body is not None and marker in body:
+                offenders.append(name)
         assert not offenders, f"개인키가 저장소에 있다: {offenders}"
