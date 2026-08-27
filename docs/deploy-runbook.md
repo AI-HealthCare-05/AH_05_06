@@ -187,6 +187,65 @@ curl -fsS http://<IP>/api/v1/health | jq .     # api·db·redis 가 다 ok 인�
 curl -sI  http://<IP>/                         # 프런트 화면 (KEY-189)
 ```
 
+## 4-3. 합성 데이터를 붓는다 (KEY-200)
+
+**배포는 데이터를 넣지 않는다.** `deployment.sh` 는 `seed` 를 부르지 않고, 앞으로도
+부르지 않는다 — 배포가 곧 시딩이 되면 언젠가 진짜 운영 DB 에 합성 환자가 들어간다.
+그래서 이 절은 **사람이 손으로 한 번 돌리는 자리**로 남겨 둔다.
+
+`scripts/seed.py` 는 `ENV=prod` 에서 스스로 멈춘다. Pilot 은 「운영처럼 뜨지만
+합성 데이터로 도는 환경」이라 그 가드와 정면으로 부딪힌다. 문을 없애지 않고
+**좁은 문 하나**를 냈다.
+
+```bash
+# 서버에서. 스키마가 먼저 올라가 있어야 한다 (4-1 aerich upgrade).
+SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD='<합성 비밀번호>' \
+  docker compose exec -T fastapi uv run python scripts/seed.py --mode full
+```
+
+```text
+⚠ ENV=prod 시딩 허용됨 (SEED_ALLOW_PROD) — Pilot/합성 전용
+```
+
+이 배너가 stderr 에 뜨면 문이 열린 것이다. 안 뜨면 안 열린 것이니 아래를 본다.
+
+### 🔴 플래그를 `.env` 에 적지 않는다
+
+**명령줄에 그때그때 붙인다.** 파일에 적으면 두 가지가 한꺼번에 어긋난다.
+
+```text
+envs/.prod.env 에 적으면   deployment.sh 가 그 파일을 ~/project/.env 로 올린다
+                          → 배포할 때마다 따라 올라가 서버에 영구히 켜져 있다
+~/project/.env 에 적으면   다음 배포가 덮어쓰기 전까지 남아 있다
+```
+
+`seed.py` 는 이 플래그를 **`os.environ` 에서만** 읽는다. `.env` 에 적어도 안 켜진다 —
+`Config` 가 그 값을 흡수하더라도 가드는 쳐다보지 않는다. 이 성질은 검사로 못박아
+두었다 (`app/tests/deploy/test_key200_seed_prod_gate.py`).
+
+### 운영에서는 `--mode` 를 적어야 한다
+
+로컬에서는 `--mode` 를 빼면 `staff` 로 간다. **`ENV=prod` 에서는 안 된다** — 무엇을
+부을지 사람이 한 번 더 적게 한다. 안 적으면 나중에 무엇이 들어갔는지 아무도 모른다.
+
+| `--mode` | 무엇이 들어가나 |
+|---|---|
+| `empty` | 아무것도 안 넣는다 (연결만 확인) |
+| `staff` | 병원 2 · 직원 17 · 처방세트 8 · 주의문구 13 |
+| `full` | 거기에 합성 환자 100 · 진료 · 처방 |
+
+Pilot 로그인만 필요하면 `staff` 로 충분하다. 시연·QA 까지 보려면 `full` 이다.
+
+### 값을 정확히 쓴다
+
+`1` 과 `true` 만 문을 연다 (앞뒤 공백은 털고 대소문자는 안 가린다).
+`yes` · `Y` · `2` 는 **안 열린다** — 오타가 운영 DB 를 여는 열쇠가 되면 안 된다.
+
+### 다시 돌려도 안전하다
+
+`seed.py` 는 전부 `get_or_create` 라 같은 명령을 여러 번 돌려도 쌓이지 않는다.
+비밀번호를 바꾸고 다시 돌리면 직원 계정의 비밀번호가 갱신된다.
+
 ## 5. Smoke test
 
 배포한 뒤 **기계가 세 자리를 찔러 본다** (KEY-184).
@@ -197,7 +256,7 @@ curl -sI  http://<IP>/                         # 프런트 화면 (KEY-189)
 ```bash
 export SMOKE_LOGIN_ID=staff01
 export SMOKE_PASSWORD=<합성 비밀번호>      # 인자로 주지 않는다 — ps · CI 로그에 남는다
-                                          # 값은 시딩할 때 넣은 것이다 (`SEED_PASSWORD`).
+                                          # 값은 시딩할 때 넣은 것이다 (`SEED_STAFF_PASSWORD`).
                                           # 저장소·Jira·채팅 어디에도 안 적는다.
 
 uv run python scripts/smoke.py https://<도메인>
