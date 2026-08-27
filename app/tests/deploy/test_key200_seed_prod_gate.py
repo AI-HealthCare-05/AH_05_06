@@ -271,3 +271,119 @@ class TestTheRunbookSaysWhatTheCodeDoes:
         assert accepted == {"1", "true"}, f"코드가 받는 값이 바뀌었다 — {accepted}"
         for value in accepted:
             assert f"`{value}`" in section, f"4-3 절이 `{value}` 를 안 적었다"
+
+
+class TestTheRunbookCommandCanActuallyRun:
+    """**문서에 적힌 명령이 서버에서 실제로 도는가.**
+
+    처음에 적었던 것은 못 도는 명령이었다.
+
+        docker compose exec -T fastapi uv run python scripts/seed.py --mode full
+
+    세 군데가 틀렸다. 로컬에서 그대로 밟아 보고 하나씩 잡았다.
+
+        scripts/seed.py 가 이미지에 없다   app/Dockerfile 은 pyproject·uv.lock·./app 셋만
+                                          복사한다 → `ls: cannot access '/app/scripts/seed.py'`
+        환경변수가 안 넘어간다              `docker compose exec` 는 호스트 값을 자동으로
+                                          안 준다 → `-e NAME` 이 필요하다
+        `python` 이 시스템 파이썬이다       → `ModuleNotFoundError: No module named 'tortoise'`
+
+    문서만 읽고 따라 하는 사람이 시연 당일에 이 셋을 차례로 밟게 둘 수는 없다.
+    """
+
+    RUNBOOK = ROOT / "docs" / "deploy-runbook.md"
+    SECTION = "## 4-3. 합성 데이터를 붓는다 (KEY-200)"
+
+    @classmethod
+    def _section(cls) -> str:
+        prose = cls.RUNBOOK.read_text(encoding="utf-8")
+        assert cls.SECTION in prose, f"런북에 「{cls.SECTION}」 절이 없다"
+        body = prose.split(cls.SECTION, 1)[1]
+        cut = body.find("\n## ")
+        return body[:cut] if cut != -1 else body
+
+    def test_the_app_image_really_does_not_carry_the_seed_script(self) -> None:
+        """이 절의 전제가 아직 사실인가.
+
+        누가 `app/Dockerfile` 에 `COPY ./scripts` 를 더하면 이 절의 설명이 낡는다.
+        그때 이 검사가 먼저 운다.
+        """
+        dockerfile = (ROOT / "app" / "Dockerfile").read_text(encoding="utf-8")
+        copied = [ln.split()[1] for ln in dockerfile.splitlines() if ln.startswith("COPY ") and "--from" not in ln]
+
+        assert not any("scripts" in c for c in copied), (
+            f"app 이미지가 이제 scripts 를 담는다 — 런북 4-3 절의 `docker cp` 설명이 낡았다. {copied}"
+        )
+
+    def test_it_creates_the_directory_before_copying(self) -> None:
+        """`docker cp` 는 대상 디렉터리를 안 만든다 — 없으면 죽는다."""
+        section = "\n".join(self._bash())
+        assert "mkdir -p /app/scripts" in section, (
+            "`docker cp` 앞에 `mkdir` 이 없다 — 「Could not find the file /app/scripts」로 죽는다"
+        )
+
+    def test_it_passes_the_environment_through(self) -> None:
+        """**`seed.py` 를 부르는 블록마다** 확인한다.
+
+        처음에는 4-3 절의 bash 를 통째로 이어 붙여 `-e` 를 찾았다. 그런데 이 절에는
+        `seed.py` 를 부르는 블록이 **둘**(기본 시딩 · KEY-176 fixture)이라, 한쪽에서
+        `-e` 를 지워도 다른 쪽 것을 보고 통과했다. 오늘 세 번 밟은 것과 같은 함정이라
+        블록 단위로 갈랐다.
+        """
+        blocks = [b for b in self._bash_blocks() if any("scripts/seed.py" in ln for ln in b)]
+        assert blocks, "4-3 절에 seed 를 부르는 bash 블록이 없다"
+
+        for block in blocks:
+            text = "\n".join(block)
+            for name in ("-e SEED_ALLOW_PROD", "-e SEED_STAFF_PASSWORD"):
+                assert name in text, (
+                    f"`{name}` 이 없는 블록이 있다 — 값이 컨테이너에 안 들어가 seed 가 거부한다:\n{text}"
+                )
+
+    @classmethod
+    def _bash_blocks(cls) -> list[list[str]]:
+        """` ```bash ` 블록을 **각각 따로** 돌려준다."""
+        blocks: list[list[str]] = []
+        current: list[str] | None = None
+        for line in cls._section().splitlines():
+            if line.startswith("```"):
+                if current is not None:
+                    blocks.append(current)
+                    current = None
+                elif line.strip() == "```bash":
+                    current = []
+                continue
+            if current is not None:
+                current.append(line)
+        if current:
+            blocks.append(current)
+        return blocks
+
+    @classmethod
+    def _bash(cls) -> list[str]:
+        """**따라 칠 명령만 뽑는다** — ` ```bash ` 블록 안.
+
+        이 절은 「이렇게 하면 죽는다」를 일부러 적어 둔다.
+
+            python scripts/seed.py  →  ModuleNotFoundError: No module named 'tortoise'
+
+        그것까지 잡으면 검사가 **문서가 경고하려는 바로 그 문장**에 걸려 빨간불이
+        난다. 반례는 ` ```text ` 에, 실행할 것은 ` ```bash ` 에 있으므로 그것으로
+        가른다. (처음에는 산문까지 잡혔다 — 글자를 훑는 검사가 자기 문서를 잡는
+        자리는 오늘만 세 번째다.)
+        """
+        return [line for block in cls._bash_blocks() for line in block]
+
+    def test_it_uses_the_interpreter_that_has_the_dependencies(self) -> None:
+        seed_lines = [ln for ln in self._bash() if "scripts/seed.py" in ln and "docker cp" not in ln]
+
+        assert seed_lines, "4-3 절의 bash 블록에 seed 실행 줄이 없다"
+        for line in seed_lines:
+            assert "uv run --no-sync" in line or ".venv/bin/python" in line, (
+                f"시스템 파이썬으로 돌린다 — tortoise 가 없어 죽는다: 「{line.strip()}」"
+            )
+
+    def test_it_cleans_up_afterwards(self) -> None:
+        """운영 이미지에 시딩 도구를 남기지 않는다."""
+        section = "\n".join(self._bash())
+        assert "rm -rf /app/scripts" in section, "밀어 넣은 것을 도로 치우는 단계가 없다"

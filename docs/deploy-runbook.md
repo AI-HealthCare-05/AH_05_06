@@ -197,11 +197,53 @@ curl -sI  http://<IP>/                         # 프런트 화면 (KEY-189)
 합성 데이터로 도는 환경」이라 그 가드와 정면으로 부딪힌다. 문을 없애지 않고
 **좁은 문 하나**를 냈다.
 
-```bash
-# 서버에서. 스키마가 먼저 올라가 있어야 한다 (4-1 aerich upgrade).
-SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD='<합성 비밀번호>' \
-  docker compose exec -T fastapi uv run python scripts/seed.py --mode full
+### 🔴 `scripts/seed.py` 는 앱 이미지 안에 없다
+
+`app/Dockerfile` 이 복사하는 것은 셋뿐이다 — `pyproject.toml` · `uv.lock` · `./app`.
+그래서 `docker compose exec fastapi … scripts/seed.py` 는 **서버에서 못 돈다.**
+실제로 돌고 있는 컨테이너에 물어 확인했다.
+
+```text
+$ docker exec fastapi ls /app/scripts/seed.py
+ls: cannot access '/app/scripts/seed.py': No such file or directory
 ```
+
+`docs/data/*.csv`(합성 환자·직원)도 없다. 이미지가 가벼운 것은 의도된 것이라
+(운영 이미지에 시딩 도구를 두지 않는다) **넣지 말고 그때만 밀어 넣는다.**
+
+```bash
+# 서버에서. 스키마가 먼저 올라가 있어야 한다 (4. 롤백 아래 「마이그레이션」 참고).
+
+# ① 시딩에 필요한 것만 컨테이너로 밀어 넣는다
+#    `docker cp` 는 대상 디렉터리를 안 만든다 — 없으면
+#    「Could not find the file /app/scripts」로 죽는다. 먼저 만든다.
+docker compose exec -T fastapi mkdir -p /app/scripts /app/docs
+docker cp scripts/seed.py fastapi:/app/scripts/seed.py
+docker cp docs/data      fastapi:/app/docs/
+
+# ② 돌린다 — 플래그와 비밀번호는 **이 줄에만** 적는다
+SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD='<합성 비밀번호>' \
+  docker compose exec -T \
+    -e SEED_ALLOW_PROD -e SEED_STAFF_PASSWORD \
+    fastapi uv run --no-sync python scripts/seed.py --mode full
+
+# ③ 끝나면 도로 치운다 — 운영 이미지에 시딩 도구를 남기지 않는다
+docker compose exec -T fastapi rm -rf /app/scripts /app/docs
+```
+
+두 가지가 안 하면 죽는 자리다. 셋 다 로컬에서 그대로 밟아 확인했다.
+
+```text
+docker compose exec 는 호스트 환경변수를 자동으로 안 넘긴다
+  -e 없이  →  컨테이너가 본 값: 없음   (seed 가 「SEED_STAFF_PASSWORD 환경변수가 없습니다」로 종료)
+  -e 주면  →  컨테이너가 본 값: 있음
+
+그냥 `python` 은 시스템 파이썬이라 의존성이 없다
+  python scripts/seed.py            →  ModuleNotFoundError: No module named 'tortoise'
+  uv run --no-sync python …         →  [seed] 완료
+```
+
+`--no-sync` 는 이미지 `CMD` 와 같은 꼴이다 — 컨테이너 안에서 다시 설치하지 않는다.
 
 ```text
 ⚠ ENV=prod 시딩 허용됨 (SEED_ALLOW_PROD) — Pilot/합성 전용
@@ -247,10 +289,13 @@ Pilot 로그인만 필요하면 `staff` 로 충분하다. 시연·QA 까지 보�
 같이 만든다. 단 링크 토큰을 넘겨야 선다.
 
 ```bash
+# 위 4-3 의 ①(mkdir + docker cp)을 먼저 한 상태에서.
 SEED_ALLOW_PROD=1 \
 SEED_STAFF_PASSWORD='<합성 비밀번호>' \
 SEED_SMOKE_LINK_TOKEN='<직접 정한 토큰>' \
-  docker compose exec -T fastapi uv run python scripts/seed.py --mode full
+  docker compose exec -T \
+    -e SEED_ALLOW_PROD -e SEED_STAFF_PASSWORD -e SEED_SMOKE_LINK_TOKEN \
+    fastapi uv run --no-sync python scripts/seed.py --mode full
 ```
 
 ```text

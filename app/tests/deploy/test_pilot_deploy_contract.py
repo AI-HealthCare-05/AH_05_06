@@ -660,7 +660,14 @@ class TestTheRunbookTellsTheTruth:
         # 하는 것」이 통째로 사각지대였다 — 파일 목록이 코드블록 안에 있어
         # 하나도 안 걸렸다. 이 문서에서 **가장 정직해야 하는 구간**이 검사 밖에
         # 있었던 셈이다 (이희진 님 `#133` 리뷰).
-        referenced = {path.rstrip(".,)") for path in re.findall(r"(?:infra|scripts|envs|docs|app)/[\w./-]+", runbook)}
+        # **컨테이너 안 절대경로는 저장소 경로가 아니다.** 4-3 절이 시딩 도구를
+        # 컨테이너로 밀어 넣는 법을 적으면서 `/app/scripts/seed.py` 를 쓰는데,
+        # 앞의 `/` 를 안 보면 그것을 저장소의 `app/scripts/seed.py` 로 읽어
+        # 「없는 파일을 가리킨다」고 **거짓 실패**를 낸다. 저장소 상대경로는
+        # `/` 로 시작하지 않으므로 그것으로 가른다 (KEY-200).
+        referenced = {
+            path.rstrip(".,)") for path in re.findall(r"(?<![\w./-])(?:infra|scripts|envs|docs|app)/[\w./-]+", runbook)
+        }
         assert referenced, "참조가 하나도 없다 — 검사가 헛돈다"
 
         # 6절이 실제로 걸리는지 못 박는다. 이게 없으면 정규식이 다시 좁아져도
