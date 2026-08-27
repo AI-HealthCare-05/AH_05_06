@@ -147,6 +147,21 @@ class TestSafeFallbacks(ChatbotTestCase):
             assert secret not in rendered
             assert secret not in logs
 
+    async def test_emergency_context_lookup_failure_directs_immediate_contact(self) -> None:
+        model = FakeModel()
+        question = "갑자기 숨이 차고 가슴 통증이 있어요"
+        service = ChatbotService(model=model, links=FailingPatientLinkService())
+
+        result = await service.answer(link_token=TOKEN, question=question)
+
+        assert result.fallback is True
+        assert result.urgent is True
+        assert "기다리지 마시고 바로 담당 병원이나 응급실에 연락" in result.answer
+        assert "잠시 뒤 다시 시도" not in result.answer
+        assert result.grounded_section is None
+        assert model.prompts == []
+        assert await PatientUsageEvent.all().count() == 0
+
     async def test_expired_context_keeps_the_public_error_contract_and_skips_the_model(self) -> None:
         guide = await self.approved("KEY-131 만료 합성의원")
         link = await PatientGuideLink.get(guide_document=guide)
