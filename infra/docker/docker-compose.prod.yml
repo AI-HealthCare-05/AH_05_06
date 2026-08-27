@@ -6,7 +6,10 @@ services:
     networks:
       - ws
     ports:
-      - "${REDIS_PORT}:6379"
+      # **밖으로 열지 않는다** — 앱은 `REDIS_HOST=redis` 로 도커 네트워크를
+      # 지나간다. 호스트에 붙이는 것은 사람이 들여다볼 때뿐이라 `127.0.0.1`
+      # 이면 충분하고, 보안 그룹을 한 번 잘못 열어도 인터넷에서 안 닿는다.
+      - "127.0.0.1:${REDIS_PORT}:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -28,7 +31,9 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD}
       TZ: Asia/Seoul
     ports:
-      - ${DB_EXPOSE_PORT}:${DB_PORT}
+      # 앱은 `DB_HOST=mysql` 로 닿는다. 여기가 공개로 열리면 **환자 표가
+      # 통째로 인터넷에 붙는다** — MinIO 를 묶은 것과 같은 까닭이다.
+      - "127.0.0.1:${DB_EXPOSE_PORT}:${DB_PORT}"
     networks:
       - ws
     volumes:
@@ -53,7 +58,10 @@ services:
       - media_volume:/app/media
     restart: always
     ports:
-      - "8000:8000"
+      # nginx 는 `upstream fastapi { server fastapi:8000; }` 로 도커 네트워크를
+      # 지난다 — 호스트 포트가 없어도 돈다. 여기를 열면 **nginx 를 건너뛰고**
+      # 앱에 직접 닿는 길이 하나 더 생긴다.
+      - "127.0.0.1:8000:8000"
     networks:
       - ws
     depends_on:

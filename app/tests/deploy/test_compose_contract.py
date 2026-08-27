@@ -119,6 +119,49 @@ class TestMinioIsInBothPlaces:
         assert not wide_open, f"운영 MinIO 포트가 밖으로 열려 있다: {wide_open}"
 
 
+class TestProductionPublishesOnlyTheWebPorts:
+    """**보안 그룹 하나에 환자 표가 걸려 있으면 안 된다** — KEY-192 배포 준비.
+
+    MinIO 를 `127.0.0.1` 에 묶고 나서 같은 파일을 다시 보니, MySQL · Redis ·
+    FastAPI 가 여전히 호스트로 열려 있었다. 앱은 도커 네트워크로 지나간다 —
+    `DB_HOST=mysql` · `REDIS_HOST=redis` · `upstream fastapi { server
+    fastapi:8000; }`. 그 포트들은 **사람이 들여다볼 때만** 쓴다.
+
+    그런데 EC2 보안 그룹을 한 번 잘못 열면 그대로 인터넷에 붙는다.
+    같은 규칙을 셋에 마저 걸었다.
+
+    **묶고 나서 실제로 띄워 봤다** — 운영 compose 로 스택을 올리니
+    `/` 200, `/api/v1/health` 가 api·db·redis 전부 ok 였다.
+    """
+
+    #: 밖에서 닿아야 하는 것은 웹 둘뿐이다.
+    PUBLIC = {"80", "443"}
+
+    def test_only_the_web_ports_face_the_world(self) -> None:
+        exposed: dict[str, list[str]] = {}
+        for name, svc in (compose(PROD).get("services") or {}).items():
+            for spec in svc.get("ports") or []:
+                if not str(spec).startswith("127.0.0.1:"):
+                    exposed.setdefault(name, []).append(str(spec))
+
+        assert exposed, "운영 compose 에서 열린 포트를 하나도 못 찾았다 — 검사가 헛돈다"
+
+        wrong = {n: p for n, p in exposed.items() if n != "nginx"}
+        assert not wrong, f"nginx 말고 밖으로 열린 것이 있다: {wrong}"
+
+        ports = {p.split(":")[0] for p in exposed["nginx"]}
+        assert ports <= self.PUBLIC, f"nginx 가 웹 포트 말고 다른 것도 연다: {sorted(ports - self.PUBLIC)}"
+
+    @pytest.mark.parametrize("name", ["mysql", "redis", "fastapi", "minio"])
+    def test_the_internal_services_stay_on_localhost(self, name: str) -> None:
+        """이름을 박아 둔다 — 하나가 조용히 빠지면 위 검사만으로는 안 보인다."""
+        published = [str(p) for p in service(PROD, name).get("ports") or []]
+
+        assert published, f"{name} 의 포트 줄을 못 찾았다 — 검사가 헛돈다"
+        wide = [p for p in published if not p.startswith("127.0.0.1:")]
+        assert not wide, f"{name} 가 밖으로 열려 있다: {wide}"
+
+
 class TestTheBucketIsNotPublic:
     """**정책이 문서에만 있으면 아무도 안 지킨다** — 이희진 님 `#149` ④.
 
