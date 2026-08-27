@@ -43,16 +43,28 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tortoise import Tortoise  # noqa: E402
+from tortoise.timezone import now  # noqa: E402
 
 from app.core.config import Config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.common import normalize_phone_number  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
-from app.models.catalog import ApprovalStatus, DrugCautionContent, PrescriptionSet  # noqa: E402
+from app.models.catalog import ApprovalStatus, CautionSectionKey, DrugCautionContent, PrescriptionSet  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.prescriptions import Prescription, PrescriptionItem  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
-from app.models.visits import Visit, VisitStatus  # noqa: E402
+from app.models.visits import (  # noqa: E402
+    CheckIn,
+    GuideDocument,
+    GuideSection,
+    GuideSectionKey,
+    GuideStatus,
+    PatientGuideLink,
+    Visit,
+    VisitStatus,
+)
+from app.services.drug_caution import DrugCautionService  # noqa: E402
+from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
 from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS  # noqa: E402
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
 from app.tests.fixtures.staff import StaffDataError, all_staff  # noqa: E402
@@ -74,6 +86,36 @@ SEED_ALLOW_PROD_ENV = "SEED_ALLOW_PROD"
 #: 정확히 이 둘만 켠다. `yes` · `Y` · `2` · `true ` 는 안 켜진다 — 「대충 참으로
 #: 보이는 값」을 받아 주면 오타가 운영 DB 를 여는 열쇠가 된다.
 SEED_ALLOW_PROD_TRUE = frozenset({"1", "true"})
+
+#: **조작자가 값을 준다 — 시드가 만들지 않는다.**
+#:
+#: 환자 링크 토큰은 DB 에 sha256 만 남고 원문은 발급 응답 한 번뿐이다
+#: (`app/services/patient_links.py`). 시드가 원문을 만들어 찍으면 그 순간
+#: **로그에 환자 링크 토큰이 남는다** — `AGENTS.md` 가 금지한 자리다.
+#: 그래서 값을 밖에서 받고, 저장은 해시만 한다. smoke 를 돌리는 사람은 이미 그
+#: 값을 알고 있으므로(`PATIENT_SMOKE_LINK_TOKEN` 에 같은 값을 넣는다) 잃는 것이 없다.
+SMOKE_LINK_TOKEN_ENV = "SEED_SMOKE_LINK_TOKEN"
+
+#: KEY-176 smoke 전용 진료. **시연이 쓰는 `SYN-EMS-01` 과 일부러 다르다** —
+#: smoke 는 제출로 fixture 를 소진하므로, 같은 건을 쓰면 시연 시나리오가 오염된다.
+#:
+#: 이 행을 고른 이유는 CSV 가 이미 그렇게 적어 두었기 때문이다.
+#:
+#:     진료상태   발송 완료      승인까지 끝난 안내라는 뜻
+#:     확인문자회차 D+7 · D+15   D+7 이 이미 나갔다
+#:     열람여부   미열람        아직 아무것도 제출하지 않았다
+#:     이탈표시   (없음)
+#:
+#: 처방세트(`자궁내막증 · 비잔 (계속)`)에 승인된 caution·emergency 문구가 둘 다
+#: 있어서 안내가 폴백 없이 선다.
+SMOKE_SCENARIO_ID = "SYN-BULK-020"
+SMOKE_CHART_NO = "08424"
+
+#: **승인 카탈로그 밖 문구는 `guides.generate` 가 쓰는 것과 같은 말만 쓴다.**
+#: 새 의학 문장을 지어내지 않는다 — 이 셋은 그 함수의 문자열을 그대로 옮긴 것이다.
+_SMOKE_MEDICATION_BODY = "[합성 복약 안내]\n복약 지시에 따라 정해진 시간에 복용해 주세요."
+_SMOKE_LIFE_BODY = "처방 기간 중 음주는 피해 주세요. 충분한 수분 섭취와 규칙적인 수면을 유지해 주세요."
+_SMOKE_MESSAGES_BODY = "복약 안내가 발송될 예정입니다. 궁금한 점은 진료실로 문의해 주세요."
 
 # CSV 의 H1/H2 레이블 → seed 전용 병원 이름
 _HOSPITAL_NAMES: dict[str, str] = {
@@ -501,6 +543,125 @@ async def seed_catalog() -> None:
     print(f"[catalog] drug_caution_content created={created_contents} skipped={skipped_contents}")
 
 
+async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
+    """KEY-176 smoke 가 쓸 **승인 완료 안내 1건 + 미제출 D+7 상태**를 만든다.
+
+    두 건이 아니라 **한 진료 건의 두 성질**이다. smoke 스크립트가 받는 식별자가
+    `PATIENT_SMOKE_LINK_TOKEN` 하나와 `PATIENT_SMOKE_VISIT_ID` 하나뿐이고,
+    ⑤ 가 그 토큰 뒤의 안내에 `CheckIn` 을 만들면 ⑦ 이 `visit_id` 로 되찾는다
+    (`app/services/checkins.py`). 두 진료로 나누면 ⑦ 이 404 다.
+
+    ## 의학 문구를 지어내지 않는다
+
+    caution·emergency 는 `DrugCautionService.get_approved_content` 로 **이미
+    승인된 카탈로그 문구**를 그대로 가져온다 — `app/services/guides.py` 의
+    `generate` 가 하는 것과 같은 길이다. 「확정 승인 지식 외 내용 추가 금지」
+    (이희진 님, PR #150)를 코드로 지키는 자리다. 승인 문구가 없는 세트를 고르면
+    폴백으로 서기 때문에, 세트에 둘 다 있는 행을 골라 두었다.
+
+    ## 다시 돌릴 수 있다
+
+    smoke 는 ⑤ 에서 제출하며 fixture 를 **소진한다** — `CheckIn` 은 안내문당
+    하나뿐이라(OneToOne) 두 번째 제출은 409 다. 그래서 이 함수는 매번
+    **그 `CheckIn` 을 지우고** 링크 만료도 다시 72 시간으로 민다. 지우는 대상은
+    이 fixture 안내문 하나뿐이다.
+    """
+    raw_token = os.environ.get(SMOKE_LINK_TOKEN_ENV)
+    if not raw_token:
+        print(
+            f"[smoke] {SMOKE_LINK_TOKEN_ENV} 가 없어 건너뜁니다.\n"
+            f"  KEY-176 smoke 를 돌리려면 링크 토큰을 직접 정해 넘겨 주세요 —\n"
+            f"  시드는 토큰을 만들지 않습니다(만들면 로그에 남습니다).",
+            file=sys.stderr,
+        )
+        return
+
+    h1 = hospitals["H1"]
+    patient = await Patient.filter(hospital_id=h1.hospital_id, hospital_patient_no=SMOKE_CHART_NO).first()
+    if patient is None:
+        print(f"[smoke] 차트 {SMOKE_CHART_NO} 환자가 없습니다 — --mode full 로 먼저 적재하세요.", file=sys.stderr)
+        return
+
+    visit = await Visit.filter(hospital_id=h1.hospital_id, patient=patient).order_by("-visited_at").first()
+    if visit is None:
+        print(f"[smoke] 차트 {SMOKE_CHART_NO} 의 진료가 없습니다.", file=sys.stderr)
+        return
+
+    doctor_id = visit.doctor_id
+    prescription = await Prescription.filter(visit_id=visit.visit_id).first()
+    set_name = prescription.prescription_set if prescription else None
+
+    caution = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.CAUTION)
+    emergency = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.EMERGENCY)
+    if caution is None or emergency is None:
+        print(
+            f"[smoke] 처방세트 {set_name!r} 에 승인된 주의·응급 문구가 없습니다 — "
+            "폴백 문구로 서게 되므로 멈춥니다. 세트를 바꾸거나 카탈로그를 먼저 적재하세요.",
+            file=sys.stderr,
+        )
+        return
+
+    guide, guide_created = await GuideDocument.get_or_create(
+        visit_id=visit.visit_id,
+        defaults={
+            "hospital_id": h1.hospital_id,
+            # **승인 완료 = SCHEDULED_TO_SEND.** `APPROVED` 라는 상태는 없다 —
+            # 승인이 곧 발송 예약이다(`GuideStatus` docstring).
+            "status": GuideStatus.SCHEDULED_TO_SEND,
+            "approved_by": doctor_id,
+            "approved_at": now(),
+        },
+    )
+    if not guide_created:
+        await GuideDocument.filter(guide_document_id=guide.guide_document_id).update(
+            status=GuideStatus.SCHEDULED_TO_SEND,
+            approved_by=doctor_id,
+            approved_at=guide.approved_at or now(),
+        )
+
+    sections: tuple[tuple[GuideSectionKey, str, int | None, bool], ...] = (
+        (GuideSectionKey.MEDICATION, _SMOKE_MEDICATION_BODY, None, False),
+        (GuideSectionKey.CAUTION, caution.body, caution.drug_caution_content_id, False),
+        # 🚨 응급 문장은 사람이 못 고친다 (KEY-150, KEY-165).
+        (GuideSectionKey.EMERGENCY, emergency.body, emergency.drug_caution_content_id, True),
+        (GuideSectionKey.LIFE, _SMOKE_LIFE_BODY, None, False),
+        (GuideSectionKey.MESSAGES, _SMOKE_MESSAGES_BODY, None, False),
+    )
+    for key, body, content_id, locked in sections:
+        await GuideSection.get_or_create(
+            guide_document=guide,
+            section_key=key,
+            defaults={"generated_body": body, "drug_caution_content_id": content_id, "locked": locked},
+        )
+
+    digest = digest_link_token(raw_token)
+    link = await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).first()
+    if link is None:
+        await PatientGuideLink.create(
+            guide_document=guide,
+            token_digest=digest,
+            expires_at=now() + LINK_TTL,
+            issued_by=doctor_id or 0,
+        )
+    else:
+        # 다시 돌릴 때 **만료를 되민다** — TTL 이 72 시간이라 이틀 뒤 QA 에서 410 이 난다.
+        await PatientGuideLink.filter(patient_guide_link_id=link.patient_guide_link_id).update(
+            token_digest=digest,
+            expires_at=now() + LINK_TTL,
+        )
+
+    # **미제출로 되돌린다.** smoke 가 제출하면 `CheckIn` 이 생기고 두 번째 제출은
+    # 409 다 — 이 한 줄이 「재시드 가능」의 전부다.
+    cleared = await CheckIn.filter(guide_document_id=guide.guide_document_id).delete()
+
+    print(
+        f"[smoke] 시나리오={SMOKE_SCENARIO_ID} 차트={SMOKE_CHART_NO} "
+        f"visit_id={visit.visit_id} 안내문={guide.guide_document_id} "
+        f"제출초기화={cleared} 처방세트={set_name}"
+    )
+    print(f"[smoke] PATIENT_SMOKE_VISIT_ID={visit.visit_id} 로 쓰세요 (토큰은 넣어 주신 값 그대로).")
+
+
 async def main(mode: str) -> None:
     _guard_environment()
     await Tortoise.init(config=TORTOISE_ORM)
@@ -517,6 +678,10 @@ async def main(mode: str) -> None:
             hospitals = await seed_staff(password)
             await seed_catalog()
             await seed_patients(hospitals)
+            # KEY-176 smoke fixture 는 **환자·진료·카탈로그가 다 있어야** 선다.
+            # 토큰을 안 넘기면 조용히 건너뛴다 — smoke 를 안 돌리는 사람에게
+            # 없던 요구를 만들지 않는다.
+            await seed_smoke_fixture(hospitals)
         case _:
             print(f"알 수 없는 mode: {mode}", file=sys.stderr)
             await Tortoise.close_connections()
