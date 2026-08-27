@@ -65,9 +65,14 @@
 uv sync
 
 # 특정 그룹의 의존성만 설치하려는 경우
-uv sync --group app  # API 서버용
-uv sync --group ai   # AI 워커용
+uv sync --group app                    # API 서버용
+uv sync --group worker --group ai      # AI 워커용
 ```
+
+> **`--group ai` 만으로는 워커가 안 뜬다.** 그 그룹에는 모델 쪽 패키지만 있고
+> `tortoise-orm` 이 없어서 `ModuleNotFoundError: No module named 'tortoise'` 로
+> 죽는다. 예전 안내가 그렇게 적혀 있어 그대로 따라 하면 막혔다 (KEY-198).
+> 도커 경로는 KEY-197 에서 같은 이유로 고쳤다.
 
 ### 2. 환경 변수 설정
 
@@ -120,6 +125,17 @@ uv run aerich upgrade
 
 > **참고**: 이 단계를 건너뛰면 API 호출 시 `OperationalError: Table 'ai_health.users' doesn't exist` 오류가 발생합니다.
 
+올린 뒤 **모델과 맞는지 확인**합니다.
+
+```bash
+uv run python scripts/check_schema_drift.py
+```
+
+`/api/v1/health` 는 `SELECT 1` 만 보기 때문에 **스키마가 밀려 있어도 `ok`** 를 줍니다.
+그래서 조용히 밀린 채로 검증을 돌리게 되고, 한참 뒤에 엉뚱한 자리에서
+`Unknown column '...'` 로 터집니다. 이 명령은 표뿐 아니라 **칸 단위로** 대조합니다 —
+표 개수는 맞는데 칸이 비어 있는 경우가 실제로 있었습니다 (KEY-198).
+
 실행 후 다음 주소로 접속 가능합니다:
 - **FE**: [http://localhost](http://localhost) (정적 HTML·CSS·JS)
 - **API 서버**: [http://localhost/api/docs](http://localhost/api/docs) (Swagger UI)
@@ -136,7 +152,7 @@ uv run uvicorn app.main:app --reload
 docker compose up -d --build app
 ```
 
-**AI Worker 실행:**
+**AI Worker 실행:** (먼저 `uv sync --group worker --group ai`)
 ```bash
 uv run python -m ai_worker.main
 # or
