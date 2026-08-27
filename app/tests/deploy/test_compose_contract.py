@@ -339,26 +339,71 @@ class TestHostPortsAreNotAlsoAppPorts:
                 f"밖을 바꾸면 앱이 안쪽에서 길을 잃는다: {spec}"
             )
 
-    @pytest.mark.parametrize(("service_name", "app_var"), APP_SIDE)
-    def test_the_container_actually_listens_on_it(self, service_name: str, app_var: str) -> None:
-        """**앱만 아는 값이 되면 안 된다.**
+    #: 포트를 **실제로 정하는** 자리만 담는다 — 서비스마다 다르다.
+    #:
+    #: `healthcheck` 가 redis 에만 있는 것은 재 봤기 때문이다.
+    #:
+    #:     redis   redis-cli -p 16379  →  PONG
+    #:             redis-cli -p 6379   →  Connection refused   ← 포트에 걸린다
+    #:     mysql   mysqladmin ping -h localhost        →  mysqld is alive
+    #:             mysqladmin ping -h localhost -P 3306 →  mysqld is alive
+    #:                                                      (서버는 13306 을 듣는 중)
+    #:
+    #: `-h localhost` 는 유닉스 소켓으로 붙어 포트와 무관하다. 그래서 mysql 의
+    #: healthcheck 에 `DB_PORT` 를 요구하면 **없어도 되는 것을 요구하는 검사**가 된다.
+    LISTENING_PLACES = (
+        ("redis", "REDIS_PORT", "command", "컨테이너가 그 포트를 안 듣는다 — 앱이 없는 포트로 붙는다"),
+        ("redis", "REDIS_PORT", "healthcheck", "다른 포트를 찔러 본다 — 컨테이너가 계속 unhealthy 다"),
+        ("mysql", "DB_PORT", "command", "컨테이너가 그 포트를 안 듣는다 — 앱이 없는 포트로 붙는다"),
+    )
+
+    @staticmethod
+    def _listening_text(service_name: str, place: str) -> str:
+        """`command` 또는 `healthcheck` **한 자리만** 문자열로 돌려준다."""
+        svc = service(PROD, service_name)
+        if place == "command":
+            command = svc.get("command") or ""
+            parts = command if isinstance(command, list) else [command]
+        else:
+            parts = (svc.get("healthcheck") or {}).get("test") or []
+        return " ".join(str(part) for part in parts)
+
+    @pytest.mark.parametrize(
+        ("service_name", "app_var", "place", "symptom"),
+        LISTENING_PLACES,
+        #: 한글을 넣으면 pytest 가 `컨…` 로 이스케이프해 CI 출력이 안 읽힌다.
+        ids=[f"{service}-{place}" for service, _var, place, _symptom in LISTENING_PLACES],
+    )
+    def test_the_container_actually_listens_on_it(
+        self, service_name: str, app_var: str, place: str, symptom: str
+    ) -> None:
+        """**앱만 아는 값이 되면 안 된다 — 그리고 자리마다 따로 잰다.**
 
         예전 판은 파일 전체 텍스트에서 `${REDIS_PORT}` 를 찾았다. 그런데 그
         이름은 `ports:` 줄에도 있어서, `command` 를 지우고 `--port 6379` 로
         되돌려도(= KEY-193 버그를 그대로 재현해도) **통과했다**
         (이희진 님 `#155` ①).
 
-        그래서 컨테이너를 띄우는 자리(`command` · `healthcheck`)만 떼어 본다.
-        """
-        svc = service(PROD, service_name)
-        runs = " ".join(
-            [str(svc.get("command") or "")] + [str(part) for part in (svc.get("healthcheck") or {}).get("test") or []]
-        )
+        그 뒤 `command` 와 `healthcheck` 만 떼어 보게 고쳤는데, **둘을 한
+        문자열로 합쳐서** 봤다. 그러면 한쪽에만 이름이 남아 있어도 통과한다 —
+        범위가 한 단계 좁아졌을 뿐 서로가 서로를 가려 주는 모양은 그대로였다.
 
-        assert runs.strip(), f"{service_name} 에 command·healthcheck 가 없다 — 검사가 헛돈다"
-        assert app_var in compose_vars(runs), (
-            f"{service_name}: 컨테이너가 {app_var} 를 안 듣는다 — 그 값은 앱만 아는 값이 되고, "
-            f"바꾸는 순간 앱이 없는 포트로 붙는다: {runs[:120]}"
+            command 만 되돌린다        117 passed  🔴
+            healthcheck 만 되돌린다     117 passed  🔴
+            둘 다 되돌린다             2 failed
+
+        **한쪽만 어긋나도 서비스가 안 선다.** `command` 가 고정 숫자면 앱이 없는
+        포트로 붙고, redis 의 `healthcheck` 가 고정 숫자면 컨테이너가 계속
+        unhealthy 라 의존하는 서비스가 못 뜬다. 그래서 자리마다 하나씩 잠근다.
+
+        어느 자리가 포트를 정하는지는 서비스마다 다르다 — `LISTENING_PLACES` 의
+        주석에 재 본 값이 있다.
+        """
+        text = self._listening_text(service_name, place)
+
+        assert text.strip(), f"{service_name} 에 {place} 가 없다 — 검사가 헛돈다"
+        assert app_var in compose_vars(text), (
+            f"{service_name}: {place} 가 {app_var} 를 안 쓴다 — {symptom}: {text[:120]}"
         )
 
     @pytest.mark.parametrize(("service_name", "app_var"), APP_SIDE)
