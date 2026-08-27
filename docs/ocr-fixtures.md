@@ -109,19 +109,30 @@ ssh -N -L 9000:127.0.0.1:9000 -L 9001:127.0.0.1:9001 ubuntu@<서버>
 「팀 6인만」이 **자격증명 하나에만 걸려 있지 않게** 하는 것이 요점이다.
 버킷 정책 `private` 과 익명 GET 403 은 두 번째 문이다.
 
+### 정책은 손이 아니라 스크립트가 닫는다
+
+`scripts/minio_init.sh` 가 버킷을 만들 때마다 `mc anonymous set none` 을 다시
+건다. MinIO 기본값이 private 이지만 **기대지 않는다** — 버킷이 다른 서버에서
+다시 만들어지거나 누가 `download` 로 한 번 열면, 문서에 적힌 「403 이더라」는
+아무것도 못 막는다 (이희진 님 `#149` ④). 실제로 열어 놓고 다시 돌려 보니
+`download` → `private` 로 돌아왔다.
+
 ### 올리고 되받는 법
 
 ```bash
 # 1) KEY-190 렌더로 만든다 (§4-1 — 누가 돌려도 같은 바이트)
 ./scripts/render_ocr_fixture.sh
 
-# 2) 올린다. MC_HOST_… 에 자격증명을 담는다 — 명령줄에 쓰면 `ps` 에 남는다.
+# 2) 버킷을 준비한다. **익명 접근을 매번 다시 닫는다** — 멱등이라 몇 번 돌려도 된다.
+#    MC_HOST_… 에 자격증명을 담는다 — 명령줄에 쓰면 `ps` 에 남는다.
 export MC_HOST_team="http://<사용자>:<비밀번호>@<서버>:9000"
-mc mb --ignore-existing team/ocr-fixtures
+./scripts/minio_init.sh team
+
+# 3) 올린다
 mc cp build/ocr-fixtures/SYN-EMS-01.emr.v1.png \
       team/ocr-fixtures/emr/v1/SYN-EMS-01.emr.v1.png
 
-# 3) 받은 것이 같은 바이트인지 본다
+# 4) 받은 것이 같은 바이트인지 본다
 mc cp team/ocr-fixtures/emr/v1/SYN-EMS-01.emr.v1.png ./받은것.png
 shasum -a 256 ./받은것.png     # §4-1 의 해시와 같아야 한다
 ```

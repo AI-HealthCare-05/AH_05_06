@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 
 from app.core.config import PLACEHOLDER
+from app.tests.deploy.conftest import ROOT, read
 
-ROOT = Path(__file__).resolve().parents[3]
 RUNBOOK = ROOT / "docs" / "deploy-runbook.md"
 
 #: 값이 새면 안 되는 것들. 나머지(호스트·포트·시간대 …)는 적어 두는 편이 낫다.
@@ -51,10 +51,6 @@ def write_stub(directory: Path, name: str, body: str) -> Path:
     stub.write_text("#!/bin/bash\n" + body, encoding="utf-8")
     stub.chmod(0o755)
     return stub
-
-
-def read(rel: str) -> str:
-    return (ROOT / rel).read_text(encoding="utf-8")
 
 
 #: `COPY <src> <dst>` 한 줄. 칸이 여러 개여도 잡는다.
