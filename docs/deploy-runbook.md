@@ -176,9 +176,14 @@ curl -sI  http://<IP>/                         # 프런트 화면 (KEY-189)
 
 배포한 뒤 **기계가 세 자리를 찔러 본다** (KEY-184).
 
+**계정은 `staff01` 을 쓴다** (KEY-192). 합성 직원 17 명 중 자격을 갖춘 것은
+열이지만 아무거나 고르면 안 된다 — 아래 「고르면 안 되는 것」 참고.
+
 ```bash
-export SMOKE_LOGIN_ID=<합성 계정 아이디>
+export SMOKE_LOGIN_ID=staff01
 export SMOKE_PASSWORD=<합성 비밀번호>      # 인자로 주지 않는다 — ps · CI 로그에 남는다
+                                          # 값은 시딩할 때 넣은 것이다 (`SEED_PASSWORD`).
+                                          # 저장소·Jira·채팅 어디에도 안 적는다.
 
 uv run python scripts/smoke.py https://<도메인>
 echo $?        # 0 이면 통과, 1 이면 어느 자리가 왜 어긋났는지 위에 찍힌다
@@ -189,6 +194,32 @@ echo $?        # 0 이면 통과, 1 이면 어느 자리가 왜 어긋났는지 
 | `health` | `GET /api/v1/health` — api·db·redis 가 **다** ok 인가 |
 | `auth` | 합성 계정으로 `access_token` 을 받나 |
 | `core` | 그 토큰으로 `GET /api/v1/front-desk/visits` 가 200 인가 |
+
+### 고르면 안 되는 계정
+
+**의원은 `H1` 이다.** 합성 환자 100 명이 전부 여기 있고, 시연이 보는 것도
+여기다. 다른 의원 계정을 쓰면 smoke 는 **통과하는데 아무것도 증명하지
+못한다** — H2 스탭이 H2 진료를 읽으니 초록이 뜬다.
+
+같은 CSV 에 **눈으로는 통과하는데 쓰면 안 되는** 계정이 여섯 있다. 셋은
+합성 직원 CSV 가 `★` 로 「전용」이라고 표시해 둔 것이다.
+
+| 계정 | 왜 안 되나 |
+|---|---|
+| `lock01` | `★` 5 회 실패 잠금 전용. smoke 가 비밀번호를 한 번 틀리면 그 시험이 못 돈다 |
+| `adminstaff01` | `★` 의료 승인 차단 검사 전용 |
+| `newbie01` | `★` 첫 로그인 검사 전용. 게다가 비밀번호를 바꿔야 해 **auth 가 막힌다** |
+| `newdoc01` | 비밀번호를 바꿔야 한다 — 같은 이유로 auth 가 막힌다 |
+| `staff21` | 다른 의원(H2) |
+| `doctor21` | `★` 동명이인 검사 전용 · 다른 의원(H2) |
+
+반대로 `staff01` · `doctor01` · `doctor02` · `both01` · `admindoc01` ·
+`allthree01` 은 조건을 다 갖췄다. 그중 **`staff01`** 을 쓴다 — CSV 가 스스로
+「기준 스탭 — L-1 로그인의 표준 계정. 다른 시험의 기본값으로 쓴다」고 적어
+둔 계정이다.
+
+이 목록은 `app/tests/deploy/test_pilot_deploy_contract.py` 가 CSV 에서 다시
+계산해 대조한다. 계정이 늘거나 `★` 가 붙으면 여기가 먼저 운다.
 
 ### smoke 계정이 갖춰야 하는 것
 

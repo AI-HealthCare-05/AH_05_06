@@ -530,6 +530,128 @@ class TestTheRunbookTellsTheTruth:
             "실패했을 때 멈추는 법이 없다 — 게이트로 못 쓴다"
         )
 
+    #: 합성 직원 CSV 가 「이 계정은 이 시험 전용」이라고 표시하는 방식.
+    RESERVED_MARK = "★"
+
+    @staticmethod
+    def _staff_rows() -> list[dict[str, str]]:
+        import csv
+
+        return list(csv.DictReader((ROOT / "docs/data/synthetic-staff.csv").open(encoding="utf-8")))
+
+    @staticmethod
+    def _named_account() -> str:
+        found = re.search(r"export SMOKE_LOGIN_ID=(\S+)", RUNBOOK.read_text(encoding="utf-8"))
+        assert found, "런북이 smoke 계정 이름을 안 적었다"
+        assert not found.group(1).startswith("<"), f"런북이 아직 자리표시자다: {found.group(1)}"
+        return found.group(1)
+
+    @staticmethod
+    def _demo_hospital() -> str:
+        """**런북이 밝힌 의원.**
+
+        CSV 에서 끌어올 수가 없다 — 환자 CSV 는 담당의 **이름**으로만 잇는데,
+        `박연` 이 H1·H2 양쪽에 있다(동명이인 검사용 `doctor21`). 그래서 사람이
+        정해 적고, 아래 검사가 계정과 그 값을 대조한다.
+        """
+        found = re.search(r"\*\*의원은 `([A-Z0-9]+)` 이다\.\*\*", RUNBOOK.read_text(encoding="utf-8"))
+        assert found, "런북이 어느 의원인지 안 적었다"
+        return found.group(1)
+
+    @classmethod
+    def _tempting(cls, row: dict[str, str]) -> bool:
+        """**눈으로 훑으면 통과하는가** — 재직 · 병원 있음 · `PATIENT_READ`."""
+        import re as _re
+
+        from app.core.rbac import Permission, has_permission
+
+        roles = [x for x in _re.split(r"[|,·]", row["roles"]) if x.strip()]
+        return bool(
+            row["status"].strip() == "active" and row["병원"].strip() and has_permission(roles, Permission.PATIENT_READ)
+        )
+
+    @classmethod
+    def _why_not(cls, row: dict[str, str], demo_hospital: str) -> list[str]:
+        """조건은 갖췄는데 **쓰면 안 되는** 사유. 없으면 빈 목록."""
+        why = []
+        if cls.RESERVED_MARK in row["케이스의도"]:
+            why.append("다른 시험 전용")
+        if row["병원"].strip() != demo_hospital:
+            why.append(f"다른 의원({row['병원']})")
+        if row["must_change_password"].strip() == "Y":
+            why.append("첫 로그인 비밀번호 변경")
+        return why
+
+    def test_the_smoke_account_the_runbook_names_can_actually_do_it(self) -> None:
+        """**런북이 시킨 계정으로 smoke 가 실제로 통과하는가** — KEY-192.
+
+        예전 판은 `<합성 계정 아이디>` 라고만 적혀 있었다. 그런데 합성 직원
+        CSV 에는 **다른 시험이 쓰라고 만든 계정**이 섞여 있다.
+
+        계정 이름을 **런북에서 읽어 온다.** 여기에 다시 적으면 문서와 검사가
+        따로 놀아서, 문서를 고쳐도 검사는 옛 계정을 계속 통과시킨다.
+        """
+        login_id = self._named_account()
+        row = next((r for r in self._staff_rows() if r["login_id"].strip() == login_id), None)
+
+        assert row, f"런북이 CSV 에 없는 계정을 시킨다: {login_id}"
+        assert self._tempting(row), (
+            f"{login_id} 가 재직·병원·PATIENT_READ 중 하나를 못 갖췄다 — smoke 가 401/403 으로 끝난다"
+        )
+
+    def test_the_smoke_account_is_not_one_of_the_traps(self) -> None:
+        """**조건만 갖추면 되는 것이 아니다.**
+
+        `staff21` 은 재직·병원·`PATIENT_READ` 를 다 갖췄는데 H2 다. 고르면
+        smoke 가 **통과한다** — H2 스탭이 H2 진료를 읽으니까. 그런데 시연이
+        보는 것은 H1 이라, 초록인데 아무것도 증명하지 못한다.
+
+        예전 판은 `row["병원"]` 이 **비어 있지 않은지만** 봤다.
+        """
+        login_id = self._named_account()
+        row = next(r for r in self._staff_rows() if r["login_id"].strip() == login_id)
+
+        why = self._why_not(row, self._demo_hospital())
+
+        assert not why, f"런북이 하필 쓰면 안 되는 계정을 시킨다 — {login_id}: {' · '.join(why)}"
+
+    def test_the_runbook_warns_off_every_trap(self) -> None:
+        """**함정 목록을 CSV 에서 다시 계산해 대조한다.**
+
+        예전 판은 `assert "lock01" in body` 하나였다. 표에 세 줄이 있는데 한
+        줄만 지켜져서, 나머지를 지워도 조용했다. 계정이 늘거나 `★` 가 붙으면
+        여기가 먼저 울어야 한다.
+        """
+        body = RUNBOOK.read_text(encoding="utf-8")
+        demo = self._demo_hospital()
+
+        traps = {r["login_id"].strip(): self._why_not(r, demo) for r in self._staff_rows() if self._tempting(r)}
+        traps = {k: v for k, v in traps.items() if v}
+
+        assert len(traps) >= 3, f"함정을 거의 못 찾았다 — 검사가 헛돈다: {traps}"
+
+        unwarned = sorted(name for name in traps if name not in body)
+        assert not unwarned, f"쓰면 안 되는데 런북이 경고하지 않는다: {unwarned}"
+
+    def test_the_runbook_does_not_scare_people_off_usable_accounts(self) -> None:
+        """**반대 방향도 틀리면 안 된다.**
+
+        첫 판은 `admindoc01` · `allthree01` 을 「겸직 검사용」이라며 쓰지 말라고
+        적었는데, 재 보니 셋 다 갖춘 멀쩡한 계정이었다 (이희진 님 `#150` 검증).
+        없는 함정을 적으면 다음 사람이 고를 수 있는 것을 좁힌다.
+        """
+        table = RUNBOOK.read_text(encoding="utf-8").split("### 고르면 안 되는 계정", 1)[1]
+        table = table.split("반대로", 1)[0]
+        demo = self._demo_hospital()
+
+        wrongly_listed = [
+            r["login_id"].strip()
+            for r in self._staff_rows()
+            if self._tempting(r) and not self._why_not(r, demo) and f"`{r['login_id'].strip()}`" in table
+        ]
+
+        assert not wrongly_listed, f"멀쩡한 계정을 쓰지 말라고 적었다: {wrongly_listed}"
+
     def test_every_referenced_file_exists(self) -> None:
         """런북이 가리키는 파일이 실제로 있어야 한다."""
         runbook = read("docs/deploy-runbook.md")
