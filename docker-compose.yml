@@ -83,6 +83,12 @@ services:
         - linux/arm64
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:ai-${AI_WORKER_VERSION}  # AI_WORKER_VERSION은 빌드된 이미지의 버전관리를 위함입니다. V1.0.0 형식으로 사용합니다.
     env_file: .env
+    volumes:
+      # **업로드 파일을 fastapi 와 나눠 쓴다.** 이것이 없으면 워커가 판독할
+      # 파일을 못 찾아 `FileNotFoundError` 로 죽는다 — OCR 이 로컬에서
+      # 절대 안 된다. fastapi 쪽 주석이 「Worker(로컬)와 업로드 파일 공유」
+      # 라고 적어 두었는데 정작 워커에는 이 줄이 없었다.
+      - /tmp/medical_uploads:/tmp/medical_uploads
     restart: always
     mem_limit: 4G
     networks:

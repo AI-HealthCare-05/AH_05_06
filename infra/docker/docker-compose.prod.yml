@@ -55,7 +55,11 @@ services:
     env_file: .env
     volumes:
       - static_volume:/app/templates
-      - media_volume:/app/media
+      # **앱이 쓰는 자리에 붙인다.** `UPLOAD_DIR` 이 `/vol/web/media` 인데
+      # 볼륨은 `/app/media` 에 붙어 있었다 — 업로드가 **볼륨 밖 컨테이너
+      # 안쪽**에 떨어져서, 재시작하면 사라지고 nginx·워커도 못 봤다.
+      # nginx 는 처음부터 `/vol/web/media` 로 붙이고 있었다 (KEY-197 후속).
+      - media_volume:/vol/web/media
     restart: always
     ports:
       # nginx 는 `upstream fastapi { server fastapi:8000; }` 로 도커 네트워크를
@@ -75,6 +79,11 @@ services:
     container_name: ai-worker
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:ai-${AI_WORKER_VERSION}  # AI_WORKER_VERSION은 빌드된 이미지의 버전관리를 위함입니다. V1.0.0 형식으로 사용합니다.
     env_file: .env
+    volumes:
+      # **업로드 파일을 fastapi 와 나눠 쓴다.** 워커는 `document.file_path` 를
+      # 그대로 열어 CLOVA 에 보낸다 — 이 볼륨이 없으면 `FileNotFoundError` 로
+      # 죽고 OCR 이 전부 실패한다 (KEY-197 후속).
+      - media_volume:/vol/web/media
     restart: always
     mem_limit: 4G
     networks:
