@@ -152,7 +152,7 @@ function mockGuideBase(visitId) {
         key: "medication",
         body:
           "자궁내막증으로 진료받으셨고, 통증 관리를 위한 약을 처방받으셨어요.\n\n" +
-          "처방받은 약 — 비잔정 2mg · 성분 디에노게스트 · 1일 1회 · 84일분\n" +
+          "처방받은 약 — 비잔정(디에노게스트) 2mg · 1일 1회 · 84일분\n" +
           "빈혈 Hb 10.2 → 10.4 (목표 12) · 자궁내막종 2.8 → 2.4",
         edited: false,
         locked: false,

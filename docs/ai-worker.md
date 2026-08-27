@@ -68,7 +68,7 @@ S1-5 업로드 → ocr.read → S1-6 판독 확인 (스탭이 값 확인 · 수�
   "visit_id":   "<uuid>",
   "mode":       "full",                 // "full" | "fallback"
   "diagnosis":  "EMS",
-  "drugs":      [{ "code": "DNG", "name": "비잔정 2mg", "days": 84 }],
+  "drugs":      [{ "code": "DNG", "name": "비잔정(디에노게스트) 2mg", "days": 84 }],
   "extracted":  [ { "field": "HB", "value": "10.4", "unit": "g/dL", "state": "read" } ],
   "previous":   { "HB": "10.2", "visit_date": "2026-05-20" },
   "components": [ { "id": "CAU-DNG-01", "kind": "CAU", "body": "…", "locked": false } ],
