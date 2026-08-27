@@ -17,17 +17,21 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # 2. 의존성 패키지 관리 파일을 컨테이너 내부에 복사합니다.
 COPY pyproject.toml uv.lock ./
 
-# 3. **두 그룹을 다 깐다.** 주석은 처음부터 「app 그룹만」이라고 적혀 있었는데
-#    명령은 `--group ai` 였다 — 주석과 명령이 어긋난 채로 병합됐다 (KEY-197).
+# 3. **워커가 실제로 쓰는 것만 깐다** (KEY-198).
 #
-#    `ai_worker/main.py` 는 `tortoise` 와 `app.core.*` 를 임포트한다.
-#    `tortoise-orm` 은 `app` 그룹(`pyproject.toml`)이라 `ai` 만 깔면
-#    **컨테이너가 임포트에서 죽는다** — CLOVA 키가 있어도 판독이 못 돈다.
-#
+#    처음에는 주석이 「app 그룹만」인데 명령은 `--group ai` 였다 — 어긋난 채로
+#    병합돼서 `tortoise` 가 안 깔렸고 **컨테이너가 임포트에서 죽었다**(KEY-197).
 #    KEY-56(`9d26e45`)이 `main.py` 에 그 임포트를 넣으면서 여기를 안 늘렸고,
-#    CI 가 이 이미지를 굽지 않아 병합 뒤에도 안 드러났다. 배포하려고 처음
-#    구우면서 나왔다.
-RUN uv sync --group app --group ai --no-dev --frozen
+#    CI 가 이 이미지를 굽지 않아 병합 뒤에도 안 드러났다.
+#
+#    고칠 때 `--group app` 을 통째로 붙였는데, 그러면 워커가 안 쓰는 것까지
+#    들어온다. `ai_worker.main` 임포트 그래프를 실제로 재서 `worker` 그룹을
+#    따로 만들었다 (`pyproject.toml` 의 그 그룹 주석에 뺀 이유가 적혀 있다).
+#
+#    `aerich` 가 빠지는 것이 특히 중요하다 — 워커는 이미 DB 크리덴셜을 쥐고
+#    있어서, 스키마를 갈아엎는 `aerich upgrade`·`downgrade` 까지 같은 이미지에
+#    두면 한 번 뚫렸을 때 번지는 범위가 커진다.
+RUN uv sync --group worker --group ai --no-dev --frozen
 
 # 4. 로컬 소스 코드를 컨테이너 내부로 복사합니다.
 # ai_worker는 app.* 를 직접 임포트하므로 두 패키지를 모두 복사한다.
