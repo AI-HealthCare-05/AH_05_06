@@ -94,9 +94,9 @@ rsvg-convert -w 1600 build/ocr-fixtures/SYN-EMS-01.emr.v1.svg -o emr.png
 
 | 항목 | sha256 |
 |---|---|
-| `SYN-EMS-01.emr.v1.png` | `29458d8bf82cd901d1f5abacbd1d435530cf4d9bc0eae2aa3caf0e3893bcc983` |
-| `SYN-EMS-01.emr.v1.svg` | `cbd590f056384c830927453796d57d55a9710f25a08c89155d0102c61c681ae0` |
-| `docs/data/synthetic-patients.csv` | `88143d5a32440a25ec8f9b7e571f9acd6c6f13ab78cfee5f1936ad3a42fdb43c` |
+| `SYN-EMS-01.emr.v1.png` | `7dcf8d6af074f45e313b7b8ab0a9d7768f77df808ea39a1181015e7470b73238` |
+| `SYN-EMS-01.emr.v1.svg` | `524ee09b79ead7ba532875cbf0f1460cd2c3dac0f6a36716a0db4f3aecaf3bd3` |
+| `docs/data/synthetic-patients.csv` | `37374ea3a501690a3841ca47228df649f50440788aaf4281a763780ce075c77e` |
 
 `develop` `136f5ec` 기준. **셋을 함께 적는 이유가 있다** — 이미지 해시만 두면
 값이 달라졌을 때 「렌더가 흔들린 것」인지 「정본 CSV 가 바뀐 것」인지 모른다.
@@ -201,8 +201,8 @@ shasum -a 256 ./받은것.png     # §4-1 의 해시와 같아야 한다
 
 ```text
 기동          2초 만에 health 응답
-업로드        emr/v1/SYN-EMS-01.emr.v1.png   32.32 KiB
-되받은 바이트  29458d8bf82cd901d1f5abacbd1d435530cf4d9bc0eae2aa3caf0e3893bcc983
+업로드        emr/v1/SYN-EMS-01.emr.v1.png   33.54 KiB
+되받은 바이트  7dcf8d6af074f45e313b7b8ab0a9d7768f77df808ea39a1181015e7470b73238
               → §4-1 의 해시와 같다
 
 익명 GET(객체)     HTTP 403  AccessDenied
