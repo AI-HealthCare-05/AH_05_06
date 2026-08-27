@@ -94,10 +94,10 @@ def collect(lines: list[str]) -> tuple[list[OcrRecord], list[LlmRecord]]:
     ocr_records: list[OcrRecord] = []
     llm_records: list[LlmRecord] = []
     for line in lines:
-        if r := _parse_ocr(line):
-            ocr_records.append(r)
-        if r := _parse_llm(line):
-            llm_records.append(r)
+        if ocr_r := _parse_ocr(line):
+            ocr_records.append(ocr_r)
+        if llm_r := _parse_llm(line):
+            llm_records.append(llm_r)
     return ocr_records, llm_records
 
 
