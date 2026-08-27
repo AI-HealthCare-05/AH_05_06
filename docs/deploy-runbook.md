@@ -241,6 +241,42 @@ Pilot 로그인만 필요하면 `staff` 로 충분하다. 시연·QA 까지 보�
 `1` 과 `true` 만 문을 연다 (앞뒤 공백은 털고 대소문자는 안 가린다).
 `yes` · `Y` · `2` 는 **안 열린다** — 오타가 운영 DB 를 여는 열쇠가 되면 안 된다.
 
+### KEY-176 smoke 용 fixture 를 함께 심는다
+
+`--mode full` 은 KEY-176 smoke 가 쓸 **승인 완료 안내 1건 + 미제출 D+7 상태**를
+같이 만든다. 단 링크 토큰을 넘겨야 선다.
+
+```bash
+SEED_ALLOW_PROD=1 \
+SEED_STAFF_PASSWORD='<합성 비밀번호>' \
+SEED_SMOKE_LINK_TOKEN='<직접 정한 토큰>' \
+  docker compose exec -T fastapi uv run python scripts/seed.py --mode full
+```
+
+```text
+[smoke] 시나리오=SYN-BULK-020 차트=08424 visit_id=50 안내문=1 제출초기화=0 …
+[smoke] PATIENT_SMOKE_VISIT_ID=50 로 쓰세요 (토큰은 넣어 주신 값 그대로).
+```
+
+**토큰은 시드가 만들지 않는다.** DB 에는 sha256 만 남고 원문은 발급 응답 한 번뿐이라,
+시드가 만들면 알려 줄 길이 출력밖에 없고 그러면 **로그에 환자 링크 토큰이 남는다**.
+직접 정해 넘기고, 같은 값을 smoke 의 `PATIENT_SMOKE_LINK_TOKEN` 에 넣는다.
+
+시연이 쓰는 `SYN-EMS-01`(차트 12401) 과 **일부러 다른 건**이다 — smoke 는 제출로
+fixture 를 소진하므로 같은 건을 쓰면 시연 시나리오가 오염된다.
+
+### fixture 를 다시 심는다 (소진된 뒤)
+
+smoke 가 ⑤ 에서 제출하면 fixture 가 **소진된다** — 제출 기록은 안내문당 하나뿐이라
+두 번째 제출은 409 다. 같은 명령을 다시 돌리면 된다.
+
+```text
+[smoke] … 제출초기화=1 …      ← 이 숫자가 1 이면 지난 제출을 지우고 다시 세운 것이다
+```
+
+링크 만료(72 시간)도 함께 다시 밀린다. 이틀 넘게 두었다가 돌리면 밀지 않는 한
+`410 LINK_EXPIRED` 가 난다.
+
 ### 다시 돌려도 안전하다
 
 `seed.py` 는 전부 `get_or_create` 라 같은 명령을 여러 번 돌려도 쌓이지 않는다.
