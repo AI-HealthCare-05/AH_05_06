@@ -1,4 +1,4 @@
-"""OCR Worker 태스크 — KEY-56.
+"""OCR Worker 태스크 — KEY-56 · KEY-175.
 
 처리 흐름:
   CLOVA 활성  : 파일 읽기 → CLOVA 호출 → OcrResult/OcrDocumentText/OcrField 저장 → COMPLETED
@@ -9,11 +9,17 @@
 필드 파싱:
   와이어프레임 S1-6~9 근거로 문서 유형별 핵심 필드를 추출한다 (field_extractor.py).
   패턴 정확도는 8/27 멘토링 후 실제 CLOVA 출력을 확인하고 보정한다.
+
+관측 로그 (KEY-175):
+  모든 종료 경로에서 아래 형식의 단일 구조화 로그를 남긴다.
+  ocr_job_complete mode=<clova|fixture|failed> elapsed_ms=<n> clova_elapsed_ms=<n|none> error_code=<code|none> ocr_job_id=<id>
+  - clova_elapsed_ms: 실제 CLOVA HTTP 호출 시간 합계, 성공 경로에서만 기록
+  - 환자정보·OCR 원문·파일 경로·오류 원문은 로그에 포함하지 않는다.
 """
 
 import asyncio
-from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.timezone import now
@@ -39,14 +45,17 @@ _CLOVA_MODEL_NAME = "clova-ocr-v2"
 
 async def process_ocr_job(ocr_job_id: str) -> None:
     """Redis 큐에서 수신한 OCR 작업을 처리한다."""
+    t0 = perf_counter()
     started_at = now()
 
     job = await OcrJob.filter(ocr_job_id=ocr_job_id).first()
     if job is None:
         default_logger.warning("OcrJob 없음 — ocr_job_id=%s", ocr_job_id)
+        _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="JOB_NOT_FOUND")
         return
     if job.status != OcrJobStatus.PROCESSING:
         default_logger.warning("이미 처리된 작업 — ocr_job_id=%s, status=%s", ocr_job_id, job.status)
+        _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="ALREADY_PROCESSED")
         return
 
     job.started_at = started_at
@@ -55,6 +64,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
     job_documents = await OcrJobDocument.filter(ocr_job=job).all()
     if not job_documents:
         await _mark_failed(job, "NO_DOCUMENTS")
+        _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="NO_DOCUMENTS")
         return
 
     document_ids = [jd.document_id for jd in job_documents]
@@ -65,27 +75,49 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         try:
             clova_results = await _call_clova_for_documents(job_documents, doc_map)
             await _save_clova_result(job, job_documents, clova_results)
-            _log_elapsed(ocr_job_id, "CLOVA", started_at)
+            clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
+            _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None, clova_elapsed_ms=clova_elapsed_ms)
         except ClovaOcrError as exc:
-            default_logger.warning(
-                "CLOVA 오류 → fixture fallback — ocr_job_id=%s, code=%s: %s",
-                ocr_job_id,
-                exc.code,
-                exc,
-            )
             job.failure_code = "CLOVA_API_ERROR"
             await job.save(update_fields=("failure_code",))
-            await _fallback_or_fail(job, job_documents, ocr_job_id)
-            _log_elapsed(ocr_job_id, "fixture(CLOVA 실패 후)", started_at)
-        except Exception:
-            default_logger.exception("OCR 처리 오류 → FAILED — ocr_job_id=%s", ocr_job_id)
+            used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
+            default_logger.warning(
+                "CLOVA 오류 → %s — ocr_job_id=%s, code=%s",
+                "fixture fallback" if used_fixture else "FAILED",
+                ocr_job_id,
+                exc.code,
+            )
+            _observe(
+                ocr_job_id=ocr_job_id,
+                mode="fixture" if used_fixture else "failed",
+                t0=t0,
+                error_code=exc.code,
+                clova_elapsed_ms=exc.elapsed_ms,
+            )
+        except Exception as exc:
+            default_logger.error(
+                "OCR 처리 오류 — ocr_job_id=%s, error_type=%s",
+                ocr_job_id,
+                type(exc).__name__,
+                exc_info=False,
+            )
             await _mark_failed(job, "PROCESSING_ERROR")
+            _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR")
     else:
-        default_logger.warning("CLOVA 미설정 → 처리 불가 — ocr_job_id=%s", ocr_job_id)
         job.failure_code = "OCR_NOT_CONFIGURED"
         await job.save(update_fields=("failure_code",))
-        await _fallback_or_fail(job, job_documents, ocr_job_id)
-        _log_elapsed(ocr_job_id, "CLOVA 미설정", started_at)
+        used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
+        default_logger.warning(
+            "CLOVA 미설정 → %s — ocr_job_id=%s",
+            "fixture fallback" if used_fixture else "FAILED",
+            ocr_job_id,
+        )
+        _observe(
+            ocr_job_id=ocr_job_id,
+            mode="fixture" if used_fixture else "failed",
+            t0=t0,
+            error_code="OCR_NOT_CONFIGURED",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -99,12 +131,20 @@ async def _call_clova_for_documents(
 ) -> dict[int, ClovaOcrResult]:
     """문서마다 CLOVA OCR을 호출해 결과를 document_id → ClovaOcrResult로 반환한다."""
     results: dict[int, ClovaOcrResult] = {}
+    accumulated_ms = 0
     for jd in job_documents:
         med_doc = doc_map.get(jd.document_id)
         if med_doc is None:
             raise RuntimeError(f"MedicalDocument 없음 — document_id={jd.document_id}")
         content = await asyncio.to_thread(Path(med_doc.file_path).read_bytes)
-        results[jd.document_id] = await call_clova_ocr(content, med_doc.mime_type)
+        try:
+            result = await call_clova_ocr(content, med_doc.mime_type)
+        except ClovaOcrError as exc:
+            has_timing = accumulated_ms > 0 or exc.elapsed_ms is not None
+            elapsed_ms = (accumulated_ms + (exc.elapsed_ms or 0)) if has_timing else None
+            raise ClovaOcrError(exc.code, str(exc), elapsed_ms=elapsed_ms) from exc
+        accumulated_ms += result.elapsed_ms
+        results[jd.document_id] = result
     return results
 
 
@@ -182,8 +222,8 @@ async def _fallback_or_fail(
     job: OcrJob,
     job_documents: list[OcrJobDocument],
     ocr_job_id: str,
-) -> None:
-    """fixture fallback을 시도하고, 실패하면 FAILED로 전환한다.
+) -> bool:
+    """fixture fallback을 시도한다. fixture 성공이면 True, FAILED 전환이면 False를 반환한다.
 
     OCR_FIXTURE_FALLBACK이 비활성(로컬 외 환경 또는 명시적으로 꺼진 경우)이면
     fixture를 심지 않고 즉시 FAILED로 전환한다.
@@ -195,7 +235,7 @@ async def _fallback_or_fail(
             config.ENV,
         )
         await _mark_failed(job, job.failure_code or "PROCESSING_ERROR")
-        return
+        return False
     try:
         async with in_transaction() as conn:
             await seed_fixture_result(
@@ -203,9 +243,16 @@ async def _fallback_or_fail(
                 [(jd.document_id, OcrDocumentType(jd.document_type)) for jd in job_documents],
                 conn,
             )
-    except Exception:
-        default_logger.exception("fixture fallback도 실패 — ocr_job_id=%s", ocr_job_id)
+        return True
+    except Exception as exc:
+        default_logger.error(
+            "fixture fallback도 실패 — ocr_job_id=%s, error_type=%s",
+            ocr_job_id,
+            type(exc).__name__,
+            exc_info=False,
+        )
         await _mark_failed(job, "FALLBACK_ERROR")
+        return False
 
 
 async def _mark_failed(job: OcrJob, failure_code: str) -> None:
@@ -215,11 +262,26 @@ async def _mark_failed(job: OcrJob, failure_code: str) -> None:
     await job.save(update_fields=("status", "failure_code", "completed_at"))
 
 
-def _log_elapsed(ocr_job_id: str, mode: str, started_at: datetime) -> None:
-    elapsed = (now() - started_at).total_seconds()
+def _observe(
+    *,
+    ocr_job_id: str,
+    mode: str,
+    t0: float,
+    error_code: str | None,
+    clova_elapsed_ms: int | None = None,
+) -> None:
+    """모든 OCR 종료 경로에서 단일 구조화 메트릭 로그를 남긴다 (KEY-175).
+
+    mode: clova | fixture | failed
+    clova_elapsed_ms: 실제 CLOVA HTTP 호출 시간 합계 (성공 경로에서만 제공)
+    환자정보·OCR 원문·파일 경로·오류 원문은 포함하지 않는다.
+    """
+    elapsed_ms = round((perf_counter() - t0) * 1000)
     default_logger.info(
-        "OCR 처리 완료 — ocr_job_id=%s, 모드=%s, 소요시간=%.2fs",
-        ocr_job_id,
+        "ocr_job_complete mode=%s elapsed_ms=%s clova_elapsed_ms=%s error_code=%s ocr_job_id=%s",
         mode,
-        elapsed,
+        elapsed_ms,
+        clova_elapsed_ms if clova_elapsed_ms is not None else "none",
+        error_code or "none",
+        ocr_job_id,
     )
