@@ -190,6 +190,32 @@ class TestTheWorkerCanReadWhatTheAppWrote:
         return [str(v) for v in service(rel, name).get("volumes") or []]
 
     @staticmethod
+    def _split(mount: str) -> tuple[str, str]:
+        """마운트 문자열을 **(왼쪽, 컨테이너 안 경로)** 로 쪼갠다.
+
+        `host:container` 만 있는 것이 아니다. `host:container:ro` 처럼 **세 토막**이
+        오는 형식이 같은 파일에 이미 쓰이고 있다.
+
+            ./infra/docker/initdb.d:/docker-entrypoint-initdb.d:ro
+            ./frontend:/vol/web/frontend:ro
+
+        처음에는 `endswith(f":{upload_dir}")` 와 `rsplit(":", 1)` 로 두 토막만
+        가정했다. 그러면 나중에 누가 워커의 media 볼륨에 `:ro` 를 붙이는 순간
+        — 워커는 읽기만 하므로 **자연스러운 강화 조치다** — 검사가 그 마운트를
+        아예 못 찾아 「볼륨이 없다」는 **거짓 실패**를 낸다. 볼륨은 있는데.
+        이희진 님이 `#157` ① 로 짚어 주셨고, 실제로 붙여 재현했다.
+
+        마지막 토막이 옵션(`ro` · `rw` · `z` · `Z` · `delegated` …)이면 떼어 낸다.
+        컨테이너 안 경로는 반드시 `/` 로 시작하므로 그것으로 가른다 — 옵션 이름을
+        일일이 나열하면 새 옵션이 생길 때 또 같은 함정에 빠진다.
+        """
+        parts = mount.split(":")
+        if len(parts) >= 3 and not parts[-1].startswith("/"):
+            parts = parts[:-1]
+        left, container = ":".join(parts[:-1]), parts[-1]
+        return left, container
+
+    @staticmethod
     def _upload_dir(example: str) -> str:
         """**앱이 실제로 쓰는 자리.** 예시 env 가 정해 두었으면 그 값, 비워
         두었으면 `Settings` 의 기본값 — 앱이 고르는 순서 그대로다.
@@ -218,15 +244,15 @@ class TestTheWorkerCanReadWhatTheAppWrote:
     @pytest.mark.parametrize(("rel", "example"), UPLOADS)
     def test_the_worker_shares_the_upload_dir(self, rel: str, example: str) -> None:
         upload_dir = self._upload_dir(example)
-        api = [m for m in self._mounts(rel, "fastapi") if m.endswith(f":{upload_dir}")]
-        worker = [m for m in self._mounts(rel, "ai-worker") if m.endswith(f":{upload_dir}")]
+        api = [m for m in self._mounts(rel, "fastapi") if self._split(m)[1] == upload_dir]
+        worker = [m for m in self._mounts(rel, "ai-worker") if self._split(m)[1] == upload_dir]
 
         assert api, f"{rel}: fastapi 가 {upload_dir} 에 볼륨을 안 붙였다"
         assert worker, (
             f"{rel}: ai-worker 에 {upload_dir} 볼륨이 없다 — 워커가 업로드 파일을 못 열어 "
             "OCR 이 FileNotFoundError 로 전부 죽는다"
         )
-        assert {m.rsplit(":", 1)[0] for m in api} == {m.rsplit(":", 1)[0] for m in worker}, (
+        assert {self._split(m)[0] for m in api} == {self._split(m)[0] for m in worker}, (
             f"{rel}: fastapi 와 ai-worker 가 서로 다른 곳을 본다 — {api} vs {worker}"
         )
 
@@ -240,7 +266,7 @@ class TestTheWorkerCanReadWhatTheAppWrote:
         """
         expected = self._upload_dir(example)
 
-        mounted = [m.rsplit(":", 1)[1] for m in self._mounts(rel, "fastapi")]
+        mounted = [self._split(m)[1] for m in self._mounts(rel, "fastapi")]
         assert expected in mounted, (
             f"{rel}: 앱은 {expected} 에 쓰는데 볼륨은 {mounted} 에 붙었다 — "
             "업로드가 볼륨 밖에 떨어져 재시작하면 사라진다"
@@ -249,8 +275,8 @@ class TestTheWorkerCanReadWhatTheAppWrote:
     def test_nginx_serves_the_same_place_in_production(self) -> None:
         """nginx 가 다른 곳을 보면 올린 파일을 못 준다."""
         prod = "infra/docker/docker-compose.prod.yml"
-        api = {m.rsplit(":", 1)[0] for m in self._mounts(prod, "fastapi") if "media" in m}
-        web = {m.rsplit(":", 1)[0] for m in self._mounts(prod, "nginx") if "media" in m}
+        api = {self._split(m)[0] for m in self._mounts(prod, "fastapi") if "media" in m}
+        web = {self._split(m)[0] for m in self._mounts(prod, "nginx") if "media" in m}
 
         assert api and web, f"media 볼륨을 못 찾았다 — fastapi {api} · nginx {web}"
         assert api == web, f"fastapi 와 nginx 가 다른 볼륨을 본다 — {api} vs {web}"
