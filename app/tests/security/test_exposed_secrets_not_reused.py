@@ -16,7 +16,7 @@ import re
 from functools import lru_cache
 
 from app.tests.security._shared import REPO_ROOT as ROOT
-from app.tests.security._shared import tracked_files
+from app.tests.security._shared import read_tracked_text, tracked_files
 
 #: `b8ee2a9` 의 `SECRET_KEY` · `DB_PASSWORD` · `DB_ROOT_PASSWORD` (local · prod)
 EXPOSED_DIGESTS = frozenset(
@@ -50,10 +50,11 @@ def _digest_index() -> dict[str, list[tuple[str, str]]]:
     """
     index: dict[str, list[tuple[str, str]]] = {}
     for rel in tracked_files(skip=SKIP):
-        try:
-            body = (ROOT / rel).read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError, IsADirectoryError):
-            continue  # 바이너리·심볼릭 링크는 건너뛴다
+        # 읽는 방법은 `_shared.read_tracked_text` 하나뿐이다 — 왜 그렇게
+        # 읽는지는 거기 적혀 있다 (KEY-139 · 이희진 님 `#143`).
+        body = read_tracked_text(ROOT / rel)
+        if body is None:
+            continue  # 심볼릭 링크·디렉터리
         for pattern in _CANDIDATES:
             for value in pattern.findall(body):
                 digest = hashlib.sha256(value.strip().encode()).hexdigest()
