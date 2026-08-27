@@ -35,6 +35,16 @@ def _resolve_mime(path: Path) -> str:
     return mime
 
 
+def _redact_url(url: str) -> str:
+    """호스트만 남기고 경로를 가린다 — 출력이 공개 PR 로 간다."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return "(설정 안 됨)"
+    return f"{parts.scheme}://{parts.hostname}/…(경로 가림)"
+
+
 def _print_section(title: str) -> None:
     print(f"\n{'─' * 60}")
     print(f"  {title}")
@@ -70,7 +80,12 @@ async def run(image_path: Path, doc_type_str: str) -> None:
 
     print(f"\n파일   : {image_path.name}  ({len(content):,} bytes, {mime})")
     print(f"문서   : {doc_type_str}")
-    print(f"URL    : {config.CLOVA_OCR_INVOKE_URL[:60]}...")
+    # **URL 을 통째로 찍지 않는다.** CLOVA invoke URL 은
+    # `https://<id>.apigw.ntruss.com/custom/v1/<번호>/<해시>/general` 모양이라
+    # 경로 뒷부분이 앱마다 다른 식별자다. 이 출력은 PR 에 붙는데 저장소가
+    # **공개**라, KEY-190 인수조건(「저장소·PR·로그에 운영 자격증명이나 토큰이
+    # 남지 않음」)에 걸린다. 어디로 갔는지 알아볼 만큼만 남긴다.
+    print(f"URL    : {_redact_url(config.CLOVA_OCR_INVOKE_URL)}")
     print(f"타임아웃: {config.CLOVA_OCR_TIMEOUT_SECONDS}s")
     print("\n[→] CLOVA OCR 호출 중...")
 

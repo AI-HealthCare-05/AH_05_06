@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from pydantic.types import SecretStr
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, call_clova_ocr
 
@@ -81,13 +82,15 @@ async def test_request_sends_auth_header_base64_payload_and_format() -> None:
         patch("ai_worker.adapters.clova.httpx.AsyncClient", return_value=mock_client),
         patch("ai_worker.adapters.clova.config") as mock_cfg,
     ):
-        mock_cfg.CLOVA_OCR_SECRET_KEY = "test-secret"
+        # **목이 실제 타입과 같아야 한다.** 예전에는 맨 `str` 을 넣어서, 설정이
+        # `SecretStr` 로 바뀐 것을 이 검사가 못 알아봤다 (이희진 님 `#137` ③).
+        mock_cfg.CLOVA_OCR_SECRET_KEY = SecretStr("test-secret")
         mock_cfg.CLOVA_OCR_INVOKE_URL = "https://ocr.fake"
         mock_cfg.CLOVA_OCR_TIMEOUT_SECONDS = 10.0
         await call_clova_ocr(pdf_bytes, "application/pdf")
 
     _, kwargs = mock_client.post.call_args
-    assert kwargs["headers"]["X-OCR-SECRET"] == "test-secret"
+    assert kwargs["headers"]["X-OCR-SECRET"] == "test-secret", "헤더에 실제 값이 안 실린다"
     assert kwargs["json"]["images"][0]["format"] == "pdf"
     assert base64.b64decode(kwargs["json"]["images"][0]["data"]) == pdf_bytes
 

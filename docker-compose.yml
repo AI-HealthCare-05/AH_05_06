@@ -108,9 +108,44 @@ services:
     depends_on:
       - fastapi
 
+  # 6. MinIO (합성 EMR 이미지 보관 — S3 호환)
+  #
+  # KEY-190 이 만든 고정 PNG 를 팀이 **같은 바이트로** 나눠 갖는 자리다.
+  # 저장소에 바이너리를 안 두기로 했는데(KEY-68 범위 밖 첫 줄) 그러면 둘 자리가
+  # 없어서, KEY-163 §8 이 「보관 위치 — 미확인」으로 열어 둔 항목이었다.
+  #
+  # **S3 호환이라서 고른다.** Sprint 6 에 AWS 로 가면 엔드포인트만 바꾼다.
+  #
+  # 태그를 digest 까지 박는다 — 이 저장소가 KEY-190 에서 정한 방식이다.
+  # 「누가 언제 올려도 같은 것」이 이 서비스의 존재 이유라 판이 흔들리면 안 된다.
+  minio:
+    container_name: minio
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      TZ: 'Asia/Seoul'
+    command: server /data --console-address ":9001"
+    ports:
+      # 9000 = S3 API · 9001 = 웹 콘솔.
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - ws
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
 volumes:
   mysql_data:
   static_volume:
+  minio_data:
 
 networks:
   ws:
