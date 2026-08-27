@@ -86,19 +86,16 @@ class TestObserveUnit(TestCase):
         assert "error_code=PROCESSING_ERROR" in log
 
     def test_no_sensitive_data_in_observe_log(self) -> None:
-        """_observe() 로그에 환자정보·OCR 원문·파일 경로·비밀값이 없어야 한다."""
-        sensitive = [
-            "CA-125",  # OCR 원문
-            "/tmp/upload",  # 파일 경로
-            "sk-secret-key",  # API 키 패턴
-            "환자이름",  # 환자 개인정보 패턴
-        ]
+        """_observe() 가 전달받은 인자 외의 데이터를 로그에 남기지 않는다.
+
+        raw_text·파일경로 누출은 통합 테스트 TestOcrObservabilityIntegration.test_no_sensitive_data_in_observe_log 에서 검증한다.
+        """
         t0 = perf_counter()
         with self.assertLogs(_LOGGER, level="INFO") as cap:
             _observe(ocr_job_id="unit-test-004", mode="clova", t0=t0, error_code=None, clova_elapsed_ms=500)
         log = "\n".join(cap.output)
-        for secret in sensitive:
-            assert secret not in log, f"민감정보 노출: {secret!r}"
+        for raw_line in _FAKE_CLOVA.raw_text.splitlines():
+            assert raw_line not in log, f"OCR 원문 노출: {raw_line!r}"
 
     def test_elapsed_ms_is_positive_integer(self) -> None:
         import re
@@ -279,6 +276,22 @@ class TestOcrObservabilityIntegration(TestCase):
         # _FAKE_CLOVA.raw_text 원문과 파일 경로가 없어야 한다
         assert _FAKE_CLOVA.raw_text not in log
         assert self._tmp.name not in log
+
+    async def test_no_sensitive_data_in_observe_log(self) -> None:
+        """process_ocr_job() 전체 경로에서 OCR 원문·파일경로가 로그에 남지 않는다."""
+        job = await self._seed("obs-175-secret-003")
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", new=AsyncMock(return_value=_FAKE_CLOVA)),
+            self.assertLogs(_LOGGER, level="INFO") as cap,
+        ):
+            mock_cfg.clova_enabled = True
+            mock_cfg.OCR_FIXTURE_FALLBACK = True
+            await process_ocr_job(str(job.ocr_job_id))
+        log = "\n".join(cap.output)
+        for raw_line in _FAKE_CLOVA.raw_text.splitlines():
+            assert raw_line not in log, f"OCR 원문 노출: {raw_line!r}"
+        assert self._tmp.name not in log, "파일 경로 노출"
 
     async def test_no_error_message_in_clova_warning_log(self) -> None:
         """CLOVA 오류 경고 로그에 예외 원문(사람용 메시지)이 포함되지 않는다."""

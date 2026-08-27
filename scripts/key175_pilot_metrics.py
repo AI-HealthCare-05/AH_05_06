@@ -150,10 +150,14 @@ def report_ocr(records: list[OcrRecord]) -> None:
     if clova:
         elapsed = [r.elapsed_ms for r in clova]
         print()
-        print(f"  elapsed_ms    P50={_fmt(_pct(elapsed, 50))}  P95={_fmt(_pct(elapsed, 95))}  max={_fmt(max(elapsed))}")
+        print(
+            f"  elapsed_ms    P50={_fmt(_pct(elapsed, 50))}  P95={_fmt(_pct(elapsed, 95))}  max={_fmt(max(elapsed))}  (clova {len(clova)}건)"
+        )
         ct = [r.clova_elapsed_ms for r in clova if r.clova_elapsed_ms is not None]
         if ct:
-            print(f"  clova_http    P50={_fmt(_pct(ct, 50))}  P95={_fmt(_pct(ct, 95))}  max={_fmt(max(ct))}")
+            print(
+                f"  clova_http    P50={_fmt(_pct(ct, 50))}  P95={_fmt(_pct(ct, 95))}  max={_fmt(max(ct))}  ({len(ct)}건)"
+            )
 
     non_clova = fixture + failed
     if non_clova:
@@ -184,7 +188,7 @@ def report_llm(records: list[LlmRecord]) -> None:
         print()
         print(
             f"  latency_ms    P50={_fmt(_pct(latencies, 50))}  P95={_fmt(_pct(latencies, 95))}"
-            f"  max={_fmt(max(latencies))}"
+            f"  max={_fmt(max(latencies))}  (성공 {len(success)}건)"
         )
 
     if failures:
