@@ -21,13 +21,12 @@ import asyncio
 from pathlib import Path
 from time import perf_counter
 
-from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, call_clova_ocr
 from ai_worker.core import config, default_logger
-from ai_worker.tasks.field_extractor import extract_fields
+from ai_worker.tasks.field_extractor import ExtractedField, extract_fields
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentText,
@@ -41,6 +40,9 @@ from app.models.ocr import (
 from app.ocr.service import seed_fixture_result
 
 _CLOVA_MODEL_NAME = "clova-ocr-v2"
+
+# EMR 문서가 포함된 작업에서 COMPLETED로 인정하려면 이 필드를 모두 추출해야 한다 (KEY-163 §4, KEY-187)
+_REQUIRED_OCR_FIELDS: frozenset[str] = frozenset({"DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"})
 
 
 async def process_ocr_job(ocr_job_id: str) -> None:
@@ -74,9 +76,26 @@ async def process_ocr_job(ocr_job_id: str) -> None:
     if config.clova_enabled:
         try:
             clova_results = await _call_clova_for_documents(job_documents, doc_map)
-            await _save_clova_result(job, job_documents, clova_results)
             clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
-            _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None, clova_elapsed_ms=clova_elapsed_ms)
+            saved = await _save_clova_result(job, job_documents, clova_results)
+            if saved:
+                _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None, clova_elapsed_ms=clova_elapsed_ms)
+            else:
+                job.failure_code = "REQUIRED_FIELD_MISSING"
+                await job.save(update_fields=("failure_code",))
+                used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
+                default_logger.warning(
+                    "필수 OCR 필드 누락 → %s — ocr_job_id=%s",
+                    "fixture fallback" if used_fixture else "FAILED",
+                    ocr_job_id,
+                )
+                _observe(
+                    ocr_job_id=ocr_job_id,
+                    mode="fixture" if used_fixture else "failed",
+                    t0=t0,
+                    error_code="REQUIRED_FIELD_MISSING",
+                    clova_elapsed_ms=clova_elapsed_ms,
+                )
         except ClovaOcrError as exc:
             job.failure_code = "CLOVA_API_ERROR"
             await job.save(update_fields=("failure_code",))
@@ -152,8 +171,33 @@ async def _save_clova_result(
     job: OcrJob,
     job_documents: list[OcrJobDocument],
     clova_results: dict[int, ClovaOcrResult],
-) -> None:
-    """CLOVA 결과를 OcrResult / OcrDocumentText / OcrField로 트랜잭션 안에 저장한다."""
+) -> bool:
+    """CLOVA 결과를 OcrResult / OcrDocumentText / OcrField로 트랜잭션 안에 저장한다.
+
+    EMR 문서가 포함된 경우 필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS)가
+    모두 추출되어야 COMPLETED로 처리한다. 하나라도 누락이면 False를 반환한다.
+    """
+    # Phase 1: 메모리에서 필드 추출 — 필수 필드 검사를 트랜잭션 밖에서 수행
+    fields_by_doc: list[tuple[OcrJobDocument, list[ExtractedField]]] = []
+    all_field_types: set[str] = set()
+    has_emr = False
+
+    for jd in job_documents:
+        doc_type = OcrDocumentType(jd.document_type)
+        if doc_type == OcrDocumentType.EMR:
+            has_emr = True
+        clova_result = clova_results.get(jd.document_id)
+        if clova_result is None:
+            continue
+        fields = extract_fields(clova_result, doc_type)
+        fields_by_doc.append((jd, fields))
+        all_field_types.update(f.field_type for f in fields)
+
+    # Phase 2: EMR이 포함된 경우 필수 필드 게이트 (KEY-163 §4)
+    if has_emr and not (_REQUIRED_OCR_FIELDS <= all_field_types):
+        return False
+
+    # Phase 3: 트랜잭션 안에서 DB 저장
     async with in_transaction() as conn:
         ocr_result = await OcrResult.create(
             ocr_job=job,
@@ -172,7 +216,23 @@ async def _save_clova_result(
             )
             doc_text_map[jd.document_id] = doc_text
 
-        await _extract_fields(ocr_result, doc_text_map, job_documents, clova_results, conn)
+        seen_types: set[str] = set()
+        for jd, fields in fields_by_doc:
+            doc_text = doc_text_map.get(jd.document_id)
+            if doc_text is None:
+                continue
+            for field in fields:
+                if field.field_type in seen_types:
+                    continue
+                seen_types.add(field.field_type)
+                await OcrField.create(
+                    ocr_result=ocr_result,
+                    document_text=doc_text,
+                    field_type=field.field_type,
+                    extracted_value=field.extracted_value,
+                    confidence=field.confidence,
+                    using_db=conn,
+                )
 
         completed_at = now()
         job.status = OcrJobStatus.COMPLETED
@@ -183,39 +243,7 @@ async def _save_clova_result(
             using_db=conn,
         )
 
-
-async def _extract_fields(
-    ocr_result: OcrResult,
-    doc_text_map: dict[int, OcrDocumentText],
-    job_documents: list[OcrJobDocument],
-    clova_results: dict[int, ClovaOcrResult],
-    conn: BaseDBAsyncClient,
-) -> None:
-    """CLOVA 결과에서 문서 유형별 핵심 필드를 추출해 OcrField로 저장한다.
-
-    와이어프레임 S1-6~9 근거 (2026-08-25).
-    패턴 정확도는 8/27 멘토링 후 실제 CLOVA 출력으로 보정한다.
-    동일 field_type은 첫 번째 문서 기준으로 저장하고 나머지는 스킵한다.
-    """
-    seen_types: set[str] = set()
-    for jd in job_documents:
-        clova_result = clova_results.get(jd.document_id)
-        doc_text = doc_text_map.get(jd.document_id)
-        if clova_result is None or doc_text is None:
-            continue
-
-        for field in extract_fields(clova_result, OcrDocumentType(jd.document_type)):
-            if field.field_type in seen_types:
-                continue
-            seen_types.add(field.field_type)
-            await OcrField.create(
-                ocr_result=ocr_result,
-                document_text=doc_text,
-                field_type=field.field_type,
-                extracted_value=field.extracted_value,
-                confidence=field.confidence,
-                using_db=conn,
-            )
+    return True
 
 
 async def _fallback_or_fail(
