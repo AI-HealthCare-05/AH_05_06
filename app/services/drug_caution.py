@@ -45,9 +45,11 @@ class DrugCautionService:
             return None
 
         # approved_key 로 조회: 값이 채워진 행이 곧 현재 승인본이며 유니크(KEY-180 §3).
+        # approval_status=APPROVED 와 함께 걸어 DRAFT·DEPRECATED 행이 키를 갖더라도 차단한다.
         # source_grade=A 필터: B·C 등급은 caution/emergency 단독 근거 불가(KEY-180 §2).
         content = await DrugCautionContent.filter(
             approved_key=f"{ps.prescription_set_id}:{section_key.value}",
+            approval_status=ApprovalStatus.APPROVED,
             source_grade=SourceGrade.A,
         ).first()
 

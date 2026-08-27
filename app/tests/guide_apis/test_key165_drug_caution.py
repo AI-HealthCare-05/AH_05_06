@@ -373,6 +373,38 @@ class TestGenerateFallsBackWhenNoContent(DrugCautionTestCase):
         assert db[GuideSectionKey.EMERGENCY].generated_body == _EMERGENCY_FALLBACK
         assert db[GuideSectionKey.EMERGENCY].drug_caution_content_id is None
 
+    async def test_approved_with_null_key_uses_fallback(self) -> None:
+        """APPROVED 상태여도 approved_key 가 NULL 이면 조회되지 않아 폴백을 사용한다.
+
+        approved_key 로 조회하므로 NULL 행은 결코 반환되지 않는다(KEY-180 §3).
+        이 검사가 있어야 approved_key → approval_status 로 되돌리는 실수를 CI 가 잡는다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        ps, _ = await PrescriptionSet.get_or_create(name="테스트세트-키없음")
+        await DrugCautionContent.create(
+            prescription_set=ps,
+            section_key=CautionSectionKey.CAUTION,
+            body="[합성 키없는 승인]",
+            source_name="의약품안전나라 제품 허가사항",
+            source_org="식품의약품안전처",
+            source_url="https://nedrug.mfds.go.kr/TEST-ONLY/no-key",
+            verified_at="2026-08-25",
+            content_version="v1",
+            source_grade="A",
+            approval_status=ApprovalStatus.APPROVED,
+            approved_key=None,  # approved_key 없음 — 조회 불가여야 한다
+        )
+        visit = await make_visit(clinic, set_name="테스트세트-키없음")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        resp = await self.generate(visit, staff)
+
+        assert resp.status_code == 201
+        db = await self.sections_from_db(visit.visit_id)
+        assert db[GuideSectionKey.CAUTION].generated_body == _CAUTION_FALLBACK
+        assert db[GuideSectionKey.CAUTION].drug_caution_content_id is None
+
     async def test_empty_source_metadata_uses_fallback(self) -> None:
         """근거 메타데이터가 비어 있으면 폴백을 사용한다(KEY-180 §4)."""
         clinic = await make_clinic()
@@ -520,7 +552,7 @@ class TestGeneratedBodyIsImmutableAfterApproveVersion(DrugCautionTestCase):
 
 
 class TestApprovedKeyUniquenessConstraint(DrugCautionTestCase):
-    """D-5: DB 유니크 제약이 같은 세트·섹션에 승인 버전이 둘이 되는 경합을 차단한다."""
+    """D-5: DB 유니크 제약이 같은 approved_key 를 두 행에 동시에 허용하지 않는다."""
 
     async def test_duplicate_approved_key_on_two_rows_is_rejected_by_db(self) -> None:
         """같은 approved_key 를 두 행에 INSERT 하면 DB 유니크 제약이 거부한다."""
