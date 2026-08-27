@@ -62,6 +62,19 @@ _CONFIG = Config()
 
 SEED_PASSWORD_ENV = "SEED_STAFF_PASSWORD"
 
+#: **`Config` 를 거치지 않는다** — 가드레일 ①. `Config` 는 `extra="allow"` 라
+#: `.env` 에 적어 둔 아무 이름이나 **소문자로** 빨아들인다 (`c.seed_allow_prod`
+#: · `c.model_extra["seed_allow_prod"]` · `c.model_dump()["seed_allow_prod"]`
+#: 셋 다 값이 나온다 — 실측). 그리고 `scripts/deployment.sh:133` 이
+#: `envs/.prod.env` 를 그대로 `~/project/.env` 로 올린다. 즉 한 번 파일에
+#: 적히면 **배포될 때마다 따라 올라가** 서버에 영구히 켜져 있게 된다.
+#: `os.environ` 만 보면 그 길이 막힌다 — 명령줄에 그때그때 적어야만 켜진다.
+SEED_ALLOW_PROD_ENV = "SEED_ALLOW_PROD"
+
+#: 정확히 이 둘만 켠다. `yes` · `Y` · `2` · `true ` 는 안 켜진다 — 「대충 참으로
+#: 보이는 값」을 받아 주면 오타가 운영 DB 를 여는 열쇠가 된다.
+SEED_ALLOW_PROD_TRUE = frozenset({"1", "true"})
+
 # CSV 의 H1/H2 레이블 → seed 전용 병원 이름
 _HOSPITAL_NAMES: dict[str, str] = {
     "H1": "기준의원",
@@ -125,10 +138,47 @@ def _validate_patient_rows(
     return patient_values_by_chart
 
 
+def _prod_override_granted() -> bool:
+    """**`os.environ` 만 본다.** `Config`·`.env` 는 쳐다보지 않는다 (가드레일 ①).
+
+    값은 정확히 `1` 또는 `true` 여야 한다. 앞뒤 공백은 털고 대소문자는 안 가리지만,
+    그 밖의 무엇도 참으로 치지 않는다.
+    """
+    raw = os.environ.get(SEED_ALLOW_PROD_ENV)
+    return raw is not None and raw.strip().lower() in SEED_ALLOW_PROD_TRUE
+
+
 def _guard_environment() -> None:
-    if str(_CONFIG.ENV).lower() == "prod":
-        print("오류: 운영 환경(ENV=prod)에서는 seed 를 실행할 수 없습니다.", file=sys.stderr)
+    """운영 환경에서는 막는다 — 다만 **명령줄로 한 번 열 수 있다**.
+
+    Pilot 은 「운영처럼 뜨지만 합성 데이터로 도는 환경」이라 이 가드와 정면으로
+    부딪힌다 (KEY-192). 가드를 없애는 대신 **좁은 문 하나**를 낸 것이 KEY-200 이다.
+    문이 좁아야 하는 이유는 이 스크립트가 하는 일이 `Staff` · `Patient` · `Visit`
+    을 실제로 만드는 것이기 때문이다 — 진짜 운영 DB 에서 돌면 합성 환자가 섞인다.
+
+    좁게 만드는 장치가 셋이다.
+
+        os.environ 만 본다      `.env` 에 적어 두면 안 켜진다. `deployment.sh` 가
+                                그 파일을 서버로 나르므로, 파일로 켜지면 영구히 켜진다
+        값을 1·true 로 못박음    오타가 열쇠가 되지 않는다
+        stderr 로 크게 알림      로그를 보는 사람이 「지금 prod 에 붓고 있다」를 안다
+    """
+    if str(_CONFIG.ENV).lower() != "prod":
+        return
+
+    if not _prod_override_granted():
+        print(
+            "오류: 운영 환경(ENV=prod)에서는 seed 를 실행할 수 없습니다.\n"
+            f"  Pilot/합성 환경이라면 {SEED_ALLOW_PROD_ENV}=1 을 **명령줄에** 붙여 주세요.\n"
+            f"  .env 파일에 적으면 켜지지 않습니다 — 배포 때마다 따라 올라가기 때문입니다.",
+            file=sys.stderr,
+        )
         sys.exit(1)
+
+    print(
+        f"⚠ ENV=prod 시딩 허용됨 ({SEED_ALLOW_PROD_ENV}) — Pilot/합성 전용",
+        file=sys.stderr,
+    )
 
 
 def _require_password() -> str:
@@ -490,8 +540,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode",
         choices=["empty", "staff", "full"],
-        default="staff",
-        help="empty=적재 없음 | staff=직원만(기본값) | full=전체",
+        default=None,
+        help="empty=적재 없음 | staff=직원만(로컬 기본값) | full=전체",
     )
     args = parser.parse_args()
-    asyncio.run(main(args.mode))
+
+    # **운영에서는 `--mode` 를 손으로 적게 한다** — 가드레일 ②.
+    #
+    # 예전에는 `default="staff"` 라 인자를 안 주면 조용히 `staff` 가 돌았다.
+    # 로컬에서는 편한 기본값이지만, `SEED_ALLOW_PROD` 로 문을 연 자리에서는
+    # 「무엇을 부을지」를 사람이 한 번 더 적어야 한다. 안 적으면 무엇이 들어갔는지
+    # 나중에 아무도 모른다.
+    mode = args.mode
+    if mode is None:
+        if str(_CONFIG.ENV).lower() == "prod":
+            print(
+                "오류: 운영 환경(ENV=prod)에서는 --mode 를 명시해야 합니다.\n"
+                "  --mode empty | --mode staff | --mode full",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        mode = "staff"
+
+    asyncio.run(main(mode))
