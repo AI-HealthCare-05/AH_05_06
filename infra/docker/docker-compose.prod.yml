@@ -6,7 +6,10 @@ services:
     networks:
       - ws
     ports:
-      - "${REDIS_PORT}:6379"
+      # **밖으로 열지 않는다** — 앱은 `REDIS_HOST=redis` 로 도커 네트워크를
+      # 지나간다. 호스트에 붙이는 것은 사람이 들여다볼 때뿐이라 `127.0.0.1`
+      # 이면 충분하고, 보안 그룹을 한 번 잘못 열어도 인터넷에서 안 닿는다.
+      - "127.0.0.1:${REDIS_PORT}:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -28,7 +31,9 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD}
       TZ: Asia/Seoul
     ports:
-      - ${DB_EXPOSE_PORT}:${DB_PORT}
+      # 앱은 `DB_HOST=mysql` 로 닿는다. 여기가 공개로 열리면 **환자 표가
+      # 통째로 인터넷에 붙는다** — MinIO 를 묶은 것과 같은 까닭이다.
+      - "127.0.0.1:${DB_EXPOSE_PORT}:${DB_PORT}"
     networks:
       - ws
     volumes:
@@ -53,7 +58,10 @@ services:
       - media_volume:/app/media
     restart: always
     ports:
-      - "8000:8000"
+      # nginx 는 `upstream fastapi { server fastapi:8000; }` 로 도커 네트워크를
+      # 지난다 — 호스트 포트가 없어도 돈다. 여기를 열면 **nginx 를 건너뛰고**
+      # 앱에 직접 닿는 길이 하나 더 생긴다.
+      - "127.0.0.1:8000:8000"
     networks:
       - ws
     depends_on:
@@ -107,6 +115,41 @@ services:
     depends_on:
       - nginx
 
+  # 7. MinIO (합성 EMR 이미지 보관 — S3 호환)
+  #
+  # 팀이 KEY-190 고정 PNG 를 **같은 바이트로** 나눠 갖는 자리다 (KEY-191).
+  # 자세한 것은 `docs/ocr-fixtures.md` §5.
+  #
+  # **포트를 밖으로 열지 않는다.** `127.0.0.1` 에만 묶어서, 보안 그룹을
+  # 잘못 열어도 공개 인터넷에서는 안 닿는다 — 팀은 SSH 터널로 붙는다.
+  #
+  #     ssh -N -L 9000:127.0.0.1:9000 -L 9001:127.0.0.1:9001 ubuntu@<서버>
+  #
+  # 「팀 6인만 접근」이 자격증명 하나에만 걸려 있지 않게 하는 것이 요점이다.
+  # 버킷 정책은 `private` 이고 익명 GET 은 403 이지만, 그것은 **두 번째 문**이다.
+  minio:
+    container_name: minio
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      TZ: Asia/Seoul
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - ws
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
 volumes:
   mysql_data:
     name: mysql_data
@@ -118,6 +161,8 @@ volumes:
     name: certbot-conf
   certbot-www:
     name: certbot-www
+  minio_data:
+    name: minio_data
 
 networks:
   ws:

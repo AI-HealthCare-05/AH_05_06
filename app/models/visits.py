@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from tortoise import fields, models
 from tortoise.fields import OnDelete
 
 from app.models.patients import Patient
+
+if TYPE_CHECKING:
+    from app.models.catalog import DrugCautionContent
 
 
 class VisitStatus(StrEnum):
@@ -108,8 +114,8 @@ class GuideDocument(models.Model):
     )
     #: Tortoise 가 만들어 주는 것들. 선언해 두지 않으면 타입 검사가 못 본다.
     visit_id: int
-    sections: fields.ReverseRelation["GuideSection"]
-    events: fields.ReverseRelation["GuideEvent"]
+    sections: fields.ReverseRelation[GuideSection]
+    events: fields.ReverseRelation[GuideEvent]
 
     status = fields.CharEnumField(enum_type=GuideStatus, default=GuideStatus.STAFF_REVIEW)
     version = fields.IntField(default=1)
@@ -142,6 +148,11 @@ class GuideSection(models.Model):
 
     `locked` 는 🚨 응급 문장이다. 식약처 의약품정보를 근거로 미리 써 둔
     문장이라 약이 바뀌면 문장도 함께 바뀐다 — 사람이 손댈 자리가 아니다.
+
+    `drug_caution_content_id` 는 caution·emergency 섹션 생성 시 사용한
+    `DrugCautionContent` 버전의 ID다(KEY-165, KEY-180 §6). null 이면 범용 문구를
+    사용했거나 caution/emergency 가 아닌 섹션이다. 근거 버전은 `generated_body`
+    기준이며 의사가 고친 `edited_body` 와는 무관하다.
     """
 
     guide_section_id = fields.BigIntField(primary_key=True)
@@ -157,6 +168,16 @@ class GuideSection(models.Model):
     #: AI 가 스스로 자신 없는 곳 · 지난번과 달라진 곳 · 값이 빠진 곳.
     #: 화면의 ⚠ 는 이 값이 있을 때만 뜬다 — 화면이 판정하지 않는다.
     warn = fields.CharField(max_length=200, null=True)
+    # KEY-165: generated_body 생성에 사용한 DrugCautionContent 버전 추적.
+    # DrugCautionContent는 삭제되지 않고 DEPRECATED되므로 SET_NULL은 비상 안전망이다.
+    drug_caution_content_id: int | None
+    drug_caution_content: fields.ForeignKeyRelation[DrugCautionContent] | None = fields.ForeignKeyField(
+        "models.DrugCautionContent",
+        related_name="guide_sections",
+        on_delete=OnDelete.SET_NULL,
+        null=True,
+        source_field="drug_caution_content_id",
+    )
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
