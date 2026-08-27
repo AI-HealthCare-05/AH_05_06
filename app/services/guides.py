@@ -28,7 +28,9 @@ from app.core import config
 # 병합되면 이 import 만 갈아 끼우면 된다. 지금 같은 파일을 새로 만들면
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
+from app.models.catalog import CautionSectionKey
 from app.models.ocr import OcrField
+from app.models.prescriptions import Prescription
 from app.models.visits import (
     GuideDocument,
     GuideEvent,
@@ -38,6 +40,7 @@ from app.models.visits import (
     GuideStatus,
     Visit,
 )
+from app.services.drug_caution import DrugCautionService
 
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
 #: 진료가 끝난 저녁에 받아야 환자가 차분히 읽는다 — 진료 중에 오면 안 본다.
@@ -45,6 +48,16 @@ SEND_HOUR = 18
 
 #: 반려 사유의 길이. 스탭 알림 한 줄에 들어가야 한다.
 REASON_MAX = 200
+
+# KEY-165: DrugCautionContent 승인 문구가 없을 때 사용하는 범용 폴백.
+# caution 은 어떤 약물·증상도 특정하지 않는 안전한 문장이다(PR #100 이희진 검수).
+# emergency 폴백은 약물 비특이적 일반 응급 지시다. 세트별 승인 문구가 없을 때만 쓴다.
+_CAUTION_FALLBACK = (
+    "[합성 주의 안내]\n복용 중 의사 또는 약사에게 미리 안내받지 않은 증상이나 "
+    "불편감이 나타나면 의료진에게 알려 주세요.\n미리 안내받은 증상이라도 심해지거나 "
+    "계속되면 알려 주세요."
+)
+_EMERGENCY_FALLBACK = "처방약 복용 중 두드러기, 호흡 곤란, 심한 복통이 생기면 즉시 복용을 중단하고 응급실을 방문하세요."
 
 
 def _not_found() -> ApiError:
@@ -79,6 +92,15 @@ class GuideService:
             )
 
         field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else confirmed.field_type
+
+        # KEY-165: 처방 세트 이름으로 승인된 caution/emergency 문구를 미리 조회한다.
+        # 트랜잭션 밖에서 실행해 락 보유 시간을 줄인다.
+        # 미등록·미승인이면 None → 트랜잭션 안에서 폴백 문구를 사용한다(KEY-180 §4).
+        prescription = await Prescription.filter(visit_id=visit_id).first()
+        set_name = prescription.prescription_set if prescription else None
+        caution_content = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.CAUTION)
+        emergency_content = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.EMERGENCY)
+
         async with in_transaction() as connection:
             # Visit 행을 잠근 채로 중복을 확인하고 생성한다.
             # 잠금 밖에서 exists()→create() 하면 동시 요청이 둘 다 통과해
@@ -110,29 +132,22 @@ class GuideService:
             # 주의사항은 **두 갈래로 저장한다.** 예전에는 `caution` 한 줄에 응급
             # 문장만 담고 통째로 잠갔는데, 그러면 고칠 수 있어야 할 일반 주의
             # 문구를 넣을 자리가 없다 — 넣는 순간 그것까지 잠긴다(KEY-161).
+            #
+            # KEY-165: 처방 세트별 승인 문구가 있으면 그것을 쓴다. 없으면 폴백.
+            # caution 은 의사가 고칠 수 있어 locked=False, emergency 는 locked=True.
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.CAUTION,
-                # 일반 주의 문구 — 원장님이 환자에 맞춰 고치는 자리다. 잠그지 않는다.
-                #
-                # 문구는 이희진 님이 `#100` 리뷰에서 주신 것이다. 앞서 쓴 「가벼운
-                # 불편감이 있을 수 있고 대개 시간이 지나면서 좋아집니다」는 **약물과
-                # 증상을 식별하지 않은 채 경중과 자연 호전을 판단하는 의학적
-                # 일반화**였다. 어떤 약인지 모르는 고정 템플릿이 할 말이 아니다.
-                #
-                # 지금 문구는 판단하지 않는다 — 「알려 주세요」까지만 말한다.
-                generated_body=(
-                    "[합성 주의 안내]\n복용 중 의사 또는 약사에게 미리 안내받지 않은 증상이나 "
-                    "불편감이 나타나면 의료진에게 알려 주세요.\n미리 안내받은 증상이라도 심해지거나 "
-                    "계속되면 알려 주세요."
-                ),
+                generated_body=caution_content.body if caution_content else _CAUTION_FALLBACK,
+                drug_caution_content_id=(caution_content.drug_caution_content_id if caution_content else None),
                 using_db=connection,
             )
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.EMERGENCY,
-                # 🚨 식약처 근거 응급 문장 — 사람이 고칠 수 없다(D1-2, KEY-150 이희진 코멘트).
-                generated_body="처방약 복용 중 두드러기, 호흡 곤란, 심한 복통이 생기면 즉시 복용을 중단하고 응급실을 방문하세요.",
+                # 🚨 승인된 세트별 응급 문장 또는 범용 폴백 — 사람이 고칠 수 없다(KEY-150, KEY-165).
+                generated_body=emergency_content.body if emergency_content else _EMERGENCY_FALLBACK,
+                drug_caution_content_id=(emergency_content.drug_caution_content_id if emergency_content else None),
                 locked=True,
                 using_db=connection,
             )
