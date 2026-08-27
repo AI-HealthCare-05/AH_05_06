@@ -8,6 +8,7 @@ from typing import Protocol
 
 import httpx
 
+from app.core.auth_errors import AuthError
 from app.models.visits import (
     GuideDocument,
     GuideSection,
@@ -26,6 +27,17 @@ NO_CONTEXT_ANSWER = (
 )
 MODEL_FAILURE_ANSWER = "지금은 답변을 불러오지 못했어요. 복용을 중단하거나 변경하지 마시고 담당 병원에 문의해 주세요."
 UNSAFE_ANSWER = "안전하게 답변할 수 없는 내용이에요. 복용을 중단하거나 변경하지 마시고 담당 병원에 문의해 주세요."
+CONTEXT_LOOKUP_FAILURE_ANSWER = (
+    "승인된 안내를 지금 확인할 수 없어 답변을 만들지 않았어요. "
+    "복용을 중단하거나 변경하지 마시고 잠시 뒤 다시 시도해 주세요. 계속되면 담당 병원에 문의해 주세요."
+)
+EMERGENCY_CONTEXT_LOOKUP_FAILURE_ANSWER = (
+    "지금 안내를 확인할 수 없어요. 말씀하신 증상은 지체 없이 확인이 필요할 수 있으니 "
+    "기다리지 마시고 바로 담당 병원이나 응급실에 연락해 주세요. 복용은 임의로 중단하거나 변경하지 마세요."
+)
+NO_CONTEXT_SOURCE = "답변 생성에 사용한 의료 정보 없음"
+NO_CONTEXT_EVIDENCE = "승인 안내를 확인하지 못함"
+NO_CONTEXT_LIMITATION = "승인 안내를 확인할 수 없어 의료 내용을 답변에 사용하지 않았어요."
 
 _TOKEN = re.compile(r"[0-9A-Za-z가-힣]+")
 _SAFE_PROVIDER_ERROR = re.compile(r"[a-z0-9_.-]{1,64}")
@@ -281,7 +293,30 @@ class ChatbotService:
         self._output_rate = output_usd_per_1m_tokens
 
     async def answer(self, *, link_token: str, question: str) -> ChatbotResult:
-        _, guide = await self._links.get_approved_guide(link_token)
+        try:
+            _, guide = await self._links.get_approved_guide(link_token)
+        except AuthError:
+            # 만료·미승인·없는 링크는 기존 공개 오류 계약을 유지한다. 화면은
+            # 코드만으로 복구 행동을 안내하고, 모델에는 어떤 값도 전달하지 않는다.
+            raise
+        except Exception:
+            # DB·네트워크 등 내부 오류 원문은 환자 응답과 로그에 복사하지 않는다.
+            # 승인 여부를 확인하지 못했으므로 이용 이벤트도 만들 수 없다.
+            urgent = bool(_EMERGENCY_QUESTION.search(question))
+            self._observe(
+                model_name=self._model_name(),
+                success=False,
+                latency_ms=0,
+                reason="context_lookup_failed",
+            )
+            return ChatbotResult(
+                answer=(EMERGENCY_CONTEXT_LOOKUP_FAILURE_ANSWER if urgent else CONTEXT_LOOKUP_FAILURE_ANSWER),
+                evidence=NO_CONTEXT_EVIDENCE,
+                source=NO_CONTEXT_SOURCE,
+                limitation=NO_CONTEXT_LIMITATION,
+                urgent=urgent,
+                fallback=True,
+            )
         section = select_approved_context(question, list(guide.sections))
         question_kind = classify_question(question)
 

@@ -2,6 +2,7 @@
 
 import hashlib
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 import httpx
 from httpx import ASGITransport, AsyncClient
@@ -9,6 +10,7 @@ from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
 
 from app.apis.v1.chatbot_routers import get_chatbot_service
+from app.core.auth_errors import AuthError
 from app.main import app
 from app.models.visits import (
     GuideDocument,
@@ -25,6 +27,7 @@ from app.services.chatbot import (
     ModelAnswer,
     OpenAIResponsesModel,
 )
+from app.services.patient_links import PatientLinkService
 from app.tests.patient_links.test_patient_links import make_guide, make_hospital
 
 TOKEN = "synthetic-key96-link-token"
@@ -43,6 +46,11 @@ class FakeModel:
         if self.fail:
             raise ChatModelError("synthetic failure")
         return ModelAnswer(self.answer, input_tokens=120, output_tokens=30)
+
+
+class FailingPatientLinkService(PatientLinkService):
+    async def get_approved_guide(self, raw_token: str) -> tuple[PatientGuideLink, GuideDocument]:
+        raise RuntimeError("synthetic-internal-database-detail")
 
 
 async def link_guide(guide: GuideDocument, token: str) -> None:
@@ -118,6 +126,57 @@ class TestApprovedContextOnly(ChatbotTestCase):
 
 
 class TestSafeFallbacks(ChatbotTestCase):
+    async def test_context_lookup_failure_blocks_the_model_and_hides_internal_details(self) -> None:
+        model = FakeModel()
+        question = "로그에 남으면 안 되는 합성 질문"
+        service = ChatbotService(model=model, links=FailingPatientLinkService())
+
+        with self.assertLogs("app.chatbot", level="INFO") as captured:
+            result = await service.answer(link_token=TOKEN, question=question)
+
+        rendered = " ".join((result.answer, result.evidence, result.source, result.limitation))
+        logs = "\n".join(captured.output)
+        assert result.fallback is True
+        assert result.grounded_section is None
+        assert result.source == "답변 생성에 사용한 의료 정보 없음"
+        assert "잠시 뒤 다시 시도" in result.answer
+        assert model.prompts == []
+        assert await PatientUsageEvent.all().count() == 0
+        assert "reason=context_lookup_failed" in logs
+        for secret in ("synthetic-internal-database-detail", TOKEN, question):
+            assert secret not in rendered
+            assert secret not in logs
+
+    async def test_emergency_context_lookup_failure_directs_immediate_contact(self) -> None:
+        model = FakeModel()
+        question = "갑자기 숨이 차고 가슴 통증이 있어요"
+        service = ChatbotService(model=model, links=FailingPatientLinkService())
+
+        result = await service.answer(link_token=TOKEN, question=question)
+
+        assert result.fallback is True
+        assert result.urgent is True
+        assert "기다리지 마시고 바로 담당 병원이나 응급실에 연락" in result.answer
+        assert "잠시 뒤 다시 시도" not in result.answer
+        assert result.grounded_section is None
+        assert model.prompts == []
+        assert await PatientUsageEvent.all().count() == 0
+
+    async def test_expired_context_keeps_the_public_error_contract_and_skips_the_model(self) -> None:
+        guide = await self.approved("KEY-131 만료 합성의원")
+        link = await PatientGuideLink.get(guide_document=guide)
+        link.expires_at = now() - timedelta(seconds=1)
+        await link.save(update_fields=["expires_at"])
+        model = FakeModel()
+
+        with self.assertRaises(AuthError) as captured:
+            await ChatbotService(model=model).answer(link_token=TOKEN, question="약은 언제 먹나요?")
+
+        assert captured.exception.code == "LINK_EXPIRED"
+        assert captured.exception.status_code == 410
+        assert model.prompts == []
+        assert await PatientUsageEvent.all().count() == 0
+
     async def test_missing_context_skips_the_model_and_returns_fixed_guidance(self) -> None:
         guide = await self.approved("KEY-96 근거없음 합성의원")
         model = FakeModel()
@@ -139,6 +198,7 @@ class TestSafeFallbacks(ChatbotTestCase):
 
         assert result.fallback is True
         assert "복용을 중단하거나 변경하지 마시고" in result.answer
+        assert "synthetic failure" not in result.answer
         event = await PatientUsageEvent.get(guide_document=guide)
         assert event.answer_outcome is PatientAnswerOutcome.FALLBACK
 
