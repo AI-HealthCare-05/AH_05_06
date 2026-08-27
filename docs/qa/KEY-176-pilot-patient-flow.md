@@ -54,6 +54,9 @@ uv run python scripts/key176_patient_smoke.py https://<Pilot URL>
 ```
 
 스크립트는 OTP 발급·검증→안내→챗봇→D+7 제출→병원 조회를 순서대로 호출한다.
+챗봇은 HTTP 200뿐 아니라 응답의 `fallback` boolean을 확인한다. 정상 생성은
+`[PASS]`, 안전 fallback은 `[WARN]`으로 구분하되 환자 여정은 D+7까지 계속한다.
+`fallback`이 없거나 boolean이 아니면 응답 계약 위반으로 `[FAIL]` 처리하고 멈춘다.
 밖으로 출력하는 것은 단계 이름·허용된 사유·HTTP 상태 코드뿐이다. 응답 본문,
 링크·OTP·직원 토큰·비밀번호는 출력하지 않는다. 전용 진료 건은 D+7을 한 번
 제출하면 다시 쓸 수 없으므로 실행마다 새 합성 fixture를 준비한다.

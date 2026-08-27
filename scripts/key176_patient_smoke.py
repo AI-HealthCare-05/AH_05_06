@@ -12,7 +12,7 @@
 import asyncio
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -21,6 +21,7 @@ import httpx
 
 class Reason(StrEnum):
     OK = "정상"
+    SAFE_FALLBACK = "안전 fallback 응답 — 챗봇 정상 생성은 확인하지 못했다"
     BAD_URL = "대상 주소가 http/https URL이 아니다"
     MISSING_INPUT = "합성 Pilot 환경변수가 빠졌다"
     SYNTHETIC_ONLY = "합성 데이터 전용 확인 표시가 없다"
@@ -38,10 +39,13 @@ class Check:
 
     @property
     def ok(self) -> bool:
-        return self.reason is Reason.OK
+        return self.reason in {Reason.OK, Reason.SAFE_FALLBACK}
 
     def line(self) -> str:
-        mark = "PASS" if self.ok else "FAIL"
+        if self.reason is Reason.SAFE_FALLBACK:
+            mark = "WARN"
+        else:
+            mark = "PASS" if self.ok else "FAIL"
         suffix = f" ({self.status_code})" if self.status_code is not None else ""
         return f"[{mark}] {self.name} — {self.reason}{suffix}"
 
@@ -75,6 +79,18 @@ def _status(name: str, response: httpx.Response, expected: int) -> Check:
     return Check(name, Reason.OK)
 
 
+def _chatbot_status(response: httpx.Response) -> Check:
+    status = _status("chatbot", response, 200)
+    if not status.ok:
+        return status
+    body = _json_or_none(response)
+    if not isinstance(body, dict) or not isinstance(body.get("fallback"), bool):
+        return Check("chatbot", Reason.MALFORMED, response.status_code)
+    if body["fallback"]:
+        return Check("chatbot", Reason.SAFE_FALLBACK, response.status_code)
+    return status
+
+
 def _failure(name: str, error: Exception) -> Check:
     if isinstance(error, httpx.TimeoutException):
         return Check(name, Reason.TIMEOUT)
@@ -102,6 +118,7 @@ async def run_patient_smoke(
         *,
         json_body: object | None = None,
         headers: Mapping[str, str] | None = None,
+        judge: Callable[[httpx.Response], Check] | None = None,
     ) -> httpx.Response | None:
         try:
             response = await client.request(
@@ -113,7 +130,7 @@ async def run_patient_smoke(
         except Exception as error:
             checks.append(_failure(name, error))
             return None
-        checks.append(_status(name, response, expected))
+        checks.append(judge(response) if judge is not None else _status(name, response, expected))
         return response if checks[-1].ok else None
 
     if (
@@ -147,6 +164,7 @@ async def run_patient_smoke(
             "POST",
             "/api/v1/chatbot/responses",
             json_body={"link_token": link_token, "question": FIXED_QUESTION},
+            judge=_chatbot_status,
         )
         is None
     ):
