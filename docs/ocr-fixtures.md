@@ -70,8 +70,52 @@ qlmanage -t -s 1600 -o . build/ocr-fixtures/SYN-EMS-01.emr.v1.svg
 rsvg-convert -w 1600 build/ocr-fixtures/SYN-EMS-01.emr.v1.svg -o emr.png
 ```
 
-> **글꼴 주의** — SVG 의 한글은 **바꾸는 쪽 환경의 글꼴**로 그려진다. 판독 결과를 비교할
-> 때는 어느 글꼴로 래스터했는지 함께 적는다. 같은 SVG 라도 글꼴이 다르면 인식률이 달라진다.
+> **글꼴 주의** — SVG 의 한글은 **바꾸는 쪽 환경의 글꼴**로 그려진다. 같은 SVG 라도 글꼴이
+> 다르면 픽셀이 달라지고 **판독 결과도 달라진다.** 손으로 바꾸지 말고 아래 4-1 을 쓴다.
+
+## 4-1. 시연용 고정 이미지 — 누가 돌려도 같은 바이트 (KEY-190)
+
+```bash
+./scripts/render_ocr_fixture.sh            # 기본 build/ocr-fixtures
+```
+
+그리는 환경을 컨테이너에 가둔다. 이 셋이 고정하는 것이 전부다.
+
+```text
+알파인          alpine:3.20
+              sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+래스터          rsvg-convert 2.58.5-r0
+글꼴            font-noto-cjk 0_git20220127-r1   (SVG 의 애플 글꼴은 컨테이너에 없어
+                                                 스택이 여기로 떨어진다)
+해상도          150 dpi · 원본 900×520 → 1875×1083
+```
+
+### 지금 값
+
+| 항목 | sha256 |
+|---|---|
+| `SYN-EMS-01.emr.v1.png` | `7dcf8d6af074f45e313b7b8ab0a9d7768f77df808ea39a1181015e7470b73238` |
+| `SYN-EMS-01.emr.v1.svg` | `524ee09b79ead7ba532875cbf0f1460cd2c3dac0f6a36716a0db4f3aecaf3bd3` |
+| `docs/data/synthetic-patients.csv` | `37374ea3a501690a3841ca47228df649f50440788aaf4281a763780ce075c77e` |
+
+`develop` `136f5ec` 기준. **셋을 함께 적는 이유가 있다** — 이미지 해시만 두면
+값이 달라졌을 때 「렌더가 흔들린 것」인지 「정본 CSV 가 바뀐 것」인지 모른다.
+CSV 해시가 다르면 뒤쪽이다.
+
+### PDF 는 해시를 고정하지 않는다
+
+`rsvg-convert -f pdf` 도 되지만 **매번 다른 바이트가 나온다.** 압축된 객체
+스트림 안에 만든 시각이 들어가서다 — 두 번 돌려 71283 / 71284 바이트로 갈렸고
+70701 번째 바이트부터 달랐다.
+
+그래서 **못 박는 것은 PNG 하나다.** PDF 가 필요하면 같은 스크립트가 함께 내지만
+해시로 같은 것임을 주장하지 않는다.
+
+### KEY-69 가 쓰는 법
+
+E2E 는 이 스크립트를 먼저 부르고 `build/ocr-fixtures/SYN-EMS-01.emr.v1.png` 를
+업로드한다. 기대값은 옆의 `SYN-EMS-01.emr.v1.expected.json` 이다 — 같은 실행에서
+같이 나오므로 둘이 어긋날 일이 없다.
 
 ## 5. 외부 보관 — **MinIO** (KEY-191)
 
@@ -157,8 +201,8 @@ shasum -a 256 ./받은것.png     # §4-1 의 해시와 같아야 한다
 
 ```text
 기동          2초 만에 health 응답
-업로드        emr/v1/SYN-EMS-01.emr.v1.png   32.32 KiB
-되받은 바이트  29458d8bf82cd901d1f5abacbd1d435530cf4d9bc0eae2aa3caf0e3893bcc983
+업로드        emr/v1/SYN-EMS-01.emr.v1.png   33.54 KiB
+되받은 바이트  7dcf8d6af074f45e313b7b8ab0a9d7768f77df808ea39a1181015e7470b73238
               → §4-1 의 해시와 같다
 
 익명 GET(객체)     HTTP 403  AccessDenied
@@ -198,6 +242,48 @@ for name in expected["success_requires"]:
 ```
 
 `success_requires` 가 KEY-163 §4 의 성공 판정 기준이다. 이 셋 중 하나라도 비면 fallback 이다.
+
+## 7-1. 실제 CLOVA 판독 — **아직 못 돌렸다** (KEY-190)
+
+KEY-190 인수조건에 「KEY-56 경로에서 실제 CLOVA OCR 1회 실행 결과가 기록됨」이
+있는데, **차단됐다.** 같은 일감이 그 경우를 미리 적어 뒀다 — 「외부 의존성이
+기한 내 제공되지 않으면 이미지·해시·공유까지 완료하고 실제 판독만 차단 사유와
+함께 명시」.
+
+| | |
+|---|---|
+| **차단 사유** | CLOVA 개발 계정 키를 못 받았다 |
+| **확인한 자리** | 로컬 `.env`(CLOVA 칸 없음) · 노션 검색 · Jira KEY-56/KEY-190(코멘트 0건) |
+| **선행 담당** | KEY-190 「실제 CLOVA 판독 기술 확인: 한금준」 |
+| **되면 걸리는 시간** | `.env` 두 줄 + 명령 한 줄 |
+
+키가 오면 이렇게 돈다.
+
+```bash
+# .env 에 두 줄 (값은 여기에도 커밋에도 안 적는다)
+#   CLOVA_OCR_INVOKE_URL=...
+#   CLOVA_OCR_SECRET_KEY=...
+uv run python scripts/make_ocr_fixture.py --out build/ocr-fixtures
+DB_HOST=127.0.0.1 uv run python scripts/test_clova_ocr.py \
+    build/ocr-fixtures/SYN-EMS-01.emr.v1.png EMR
+```
+
+출력은 `raw_text` · 텍스트 블록별 신뢰도 · `field_extractor` 매칭 결과다.
+§7 의 `success_requires` 셋과 맞대면 「차이」가 나온다.
+
+### 출력을 그대로 PR 에 붙여도 되는가 — 이제 된다
+
+이 저장소는 **공개**고 KEY-190 인수조건에 「저장소·PR·로그에 운영 자격증명이나
+토큰이 남지 않음」이 있다. 붙이기 전에 두 자리를 막았다.
+
+| 새던 자리 | 지금 |
+|---|---|
+| `Config` 의 `repr`·`str`·`model_dump`·`model_dump_json` | `SecretStr` 이라 `'**********'` |
+| 러너가 찍던 invoke URL 전체 | 호스트까지만 (`…(경로 가림)`) |
+
+첫째 줄이 실제로 새고 있었다 — 같은 파일 세 줄 차이로 `OPENAI_API_KEY` 는
+가려지고 `CLOVA_OCR_SECRET_KEY` 만 평문이었다 (이희진 님 `#137` ③).
+`app/tests/security/test_clova_secret_does_not_leak.py` 가 지킨다.
 
 ## 8. 둘을 헷갈리지 않는다
 

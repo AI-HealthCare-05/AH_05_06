@@ -86,7 +86,7 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
             response = await client.post(
                 config.CLOVA_OCR_INVOKE_URL,
                 json=payload,
-                headers={"X-OCR-SECRET": config.CLOVA_OCR_SECRET_KEY},
+                headers={"X-OCR-SECRET": config.CLOVA_OCR_SECRET_KEY.get_secret_value()},
             )
     except httpx.TimeoutException as exc:
         raise ClovaOcrError("CLOVA_TIMEOUT", "CLOVA OCR 요청 시간 초과") from exc
