@@ -124,7 +124,24 @@ INGREDIENTS = ingredients_from_csv()
 SAME_AS_INGREDIENT = ("메트포르민",)
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "js"
-DECISION = Path(__file__).resolve().parents[3] / "docs" / "decisions" / "KEY-163-ocr-real-contract.md"
+DOCS = Path(__file__).resolve().parents[3] / "docs"
+
+#: **CSV 의 「약」 값을 그대로 옮겨 적는 문서들.** 여기는 형식을 따라와야 한다.
+#:
+#: 처음엔 결정 문서 하나만 봤다. 그래서 `docs/qa/KEY-148-walking-skeleton.md`
+#: 가 옛 표기로 남은 것을 이 검사가 아니라 **사람이 찾았다** (이희진 님 `#142`).
+TRANSCRIBING_DOCS = (
+    "decisions/KEY-163-ocr-real-contract.md",
+    "qa/KEY-148-walking-skeleton.md",
+    "ai-worker.md",
+)
+
+#: 약 이름이 나오지만 **형식을 따라오면 안 되는** 문서. 까닭을 함께 적는다.
+EXEMPT_DOCS = {
+    # 와이어프레임은 고정된 스냅샷이고, 여기 나오는 것은 절 제목
+    # (`야즈정 드시는 동안`)이라 브랜드만 쓰는 것이 맞다 — `#142` ④ 결정.
+    "wireframes/PATCH-2.3-to-2.3.1.md",
+}
 
 
 def code_strings(source: str) -> list[str]:
@@ -223,8 +240,9 @@ class TestDrugNamesCarryTheirIngredient:
                     if piece.strip().startswith(brand):
                         assert "(" not in piece, f"제품명=성분명인데 괄호가 붙었다: {piece}"
 
-    def test_the_decision_document_does_not_contradict_the_csv(self) -> None:
-        """결정 문서가 **적어 둔 약에 대해서만** 어긋나지 않는지 본다.
+    @pytest.mark.parametrize("rel", TRANSCRIBING_DOCS)
+    def test_the_documents_do_not_contradict_the_csv(self, rel: str) -> None:
+        """CSV 를 옮겨 적은 문서가 **적어 둔 약에 대해서만** 어긋나지 않는지 본다.
 
         예전 판은 비잔정만 확인하면서 주석에는 「§3 에 이미 같은 모양으로 적혀
         있다」고 적었다. 그런데 **§3 에는 야즈정이 아예 없다** — 있지도 않은
@@ -233,16 +251,39 @@ class TestDrugNamesCarryTheirIngredient:
         문서에 없는 약을 있어야 한다고 우기지 않는다. 적힌 것만 대조하고, 무엇도
         대조하지 못하면 그때 운다 — 그래야 검사가 헛돌지 않는다.
         """
-        text = DECISION.read_text(encoding="utf-8")
+        text = (DOCS / rel).read_text(encoding="utf-8")
 
         checked = 0
         for brand in INGREDIENTS:
             if brand not in text:
                 continue  # 이 문서가 다루지 않는 약이다
             checked += 1
-            assert expected_name(brand) in text, f"결정 문서가 {brand} 를 옛 표기로 쓴다"
+            assert expected_name(brand) in text, f"{rel} 이 {brand} 를 옛 표기로 쓴다"
 
-        assert checked, "결정 문서에서 아는 약을 하나도 못 찾았다 — 검사가 헛돈다"
+        assert checked, f"{rel} 에서 아는 약을 하나도 못 찾았다 — 검사가 헛돈다"
+
+    def test_no_document_slips_through_unclassified(self) -> None:
+        """**목록이 조용히 낡지 않게 한다.**
+
+        약 이름이 나오는 문서가 새로 생기면, 형식을 따라야 하는 쪽인지
+        (`TRANSCRIBING_DOCS`) 아닌지(`EXEMPT_DOCS`) 사람이 정해야 한다.
+        정하지 않은 문서가 있으면 여기서 운다 — 처음에 결정 문서 하나만
+        보다가 `docs/qa/` 를 통째로 놓친 자리다.
+        """
+        classified = set(TRANSCRIBING_DOCS) | EXEMPT_DOCS
+        mentioning = {
+            path.relative_to(DOCS).as_posix()
+            for path in DOCS.rglob("*.md")
+            if any(brand in path.read_text(encoding="utf-8") for brand in INGREDIENTS)
+        }
+
+        assert mentioning, "약 이름이 나오는 문서를 하나도 못 찾았다 — 검사가 헛돈다"
+
+        unclassified = sorted(mentioning - classified)
+        assert not unclassified, (
+            f"약 이름이 나오는데 어느 쪽인지 안 정해진 문서: {unclassified} — "
+            "CSV 를 옮겨 적었으면 TRANSCRIBING_DOCS, 아니면 까닭과 함께 EXEMPT_DOCS 로"
+        )
 
     #: 약을 **처방 항목으로 지목하는** 자리. 여기만 이 규칙의 대상이다.
     #:
