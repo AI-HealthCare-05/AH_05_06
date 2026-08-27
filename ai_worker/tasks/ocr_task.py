@@ -51,9 +51,11 @@ async def process_ocr_job(ocr_job_id: str) -> None:
     job = await OcrJob.filter(ocr_job_id=ocr_job_id).first()
     if job is None:
         default_logger.warning("OcrJob 없음 — ocr_job_id=%s", ocr_job_id)
+        _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="JOB_NOT_FOUND")
         return
     if job.status != OcrJobStatus.PROCESSING:
         default_logger.warning("이미 처리된 작업 — ocr_job_id=%s, status=%s", ocr_job_id, job.status)
+        _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="ALREADY_PROCESSED")
         return
 
     job.started_at = started_at
@@ -90,10 +92,15 @@ async def process_ocr_job(ocr_job_id: str) -> None:
                 mode="fixture" if used_fixture else "failed",
                 t0=t0,
                 error_code=exc.code,
-                clova_elapsed_ms=exc.elapsed_ms or None,
+                clova_elapsed_ms=exc.elapsed_ms,
             )
-        except Exception:
-            default_logger.exception("OCR 처리 오류 — ocr_job_id=%s", ocr_job_id)
+        except Exception as exc:
+            default_logger.error(
+                "OCR 처리 오류 — ocr_job_id=%s, error_type=%s",
+                ocr_job_id,
+                type(exc).__name__,
+                exc_info=False,
+            )
             await _mark_failed(job, "PROCESSING_ERROR")
             _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR")
     else:
@@ -124,12 +131,20 @@ async def _call_clova_for_documents(
 ) -> dict[int, ClovaOcrResult]:
     """문서마다 CLOVA OCR을 호출해 결과를 document_id → ClovaOcrResult로 반환한다."""
     results: dict[int, ClovaOcrResult] = {}
+    accumulated_ms = 0
     for jd in job_documents:
         med_doc = doc_map.get(jd.document_id)
         if med_doc is None:
             raise RuntimeError(f"MedicalDocument 없음 — document_id={jd.document_id}")
         content = await asyncio.to_thread(Path(med_doc.file_path).read_bytes)
-        results[jd.document_id] = await call_clova_ocr(content, med_doc.mime_type)
+        try:
+            result = await call_clova_ocr(content, med_doc.mime_type)
+        except ClovaOcrError as exc:
+            has_timing = accumulated_ms > 0 or exc.elapsed_ms is not None
+            elapsed_ms = (accumulated_ms + (exc.elapsed_ms or 0)) if has_timing else None
+            raise ClovaOcrError(exc.code, str(exc), elapsed_ms=elapsed_ms) from exc
+        accumulated_ms += result.elapsed_ms
+        results[jd.document_id] = result
     return results
 
 
@@ -229,8 +244,13 @@ async def _fallback_or_fail(
                 conn,
             )
         return True
-    except Exception:
-        default_logger.exception("fixture fallback도 실패 — ocr_job_id=%s", ocr_job_id)
+    except Exception as exc:
+        default_logger.error(
+            "fixture fallback도 실패 — ocr_job_id=%s, error_type=%s",
+            ocr_job_id,
+            type(exc).__name__,
+            exc_info=False,
+        )
         await _mark_failed(job, "FALLBACK_ERROR")
         return False
 

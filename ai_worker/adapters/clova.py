@@ -31,9 +31,9 @@ _TIMEOUT_SECONDS = 30.0
 class ClovaOcrError(Exception):
     """CLOVA OCR 호출 또는 응답 파싱 실패."""
 
-    def __init__(self, code: str, message: str, elapsed_ms: int = 0) -> None:
+    def __init__(self, code: str, message: str, elapsed_ms: int | None = None) -> None:
         self.code = code
-        self.elapsed_ms = elapsed_ms  # HTTP 호출 시간 — 타임아웃·네트워크 오류 경로에서도 기록
+        self.elapsed_ms = elapsed_ms  # HTTP 호출 시간 — HTTP I/O 전에 실패하면 None
         super().__init__(message)
 
 
@@ -109,22 +109,24 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
         raise ClovaOcrError(
             "CLOVA_HTTP_ERROR",
             f"CLOVA OCR HTTP {response.status_code}",
+            elapsed_ms=http_elapsed_ms,
         )
 
     try:
         data: dict = response.json()
     except Exception as exc:
-        raise ClovaOcrError("CLOVA_PARSE_ERROR", "CLOVA OCR 응답 파싱 실패") from exc
+        raise ClovaOcrError("CLOVA_PARSE_ERROR", "CLOVA OCR 응답 파싱 실패", elapsed_ms=http_elapsed_ms) from exc
 
     images: list[dict] = data.get("images", [])
     if not images:
-        raise ClovaOcrError("CLOVA_PARSE_ERROR", "CLOVA OCR 응답에 이미지 데이터 없음")
+        raise ClovaOcrError("CLOVA_PARSE_ERROR", "CLOVA OCR 응답에 이미지 데이터 없음", elapsed_ms=http_elapsed_ms)
 
     image = images[0]
     if image.get("inferResult") != "SUCCESS":
         raise ClovaOcrError(
             "CLOVA_INFER_FAILED",
             f"CLOVA OCR 인식 실패: {image.get('message', '')}",
+            elapsed_ms=http_elapsed_ms,
         )
 
     raw_fields = image.get("fields", [])
