@@ -1,0 +1,191 @@
+"""**KEY-176 smoke fixture 가 지켜야 하는 것** — KEY-200.
+
+DB 를 띄우지 않고, `scripts/seed.py` 의 소스를 읽어 계약만 잰다. 실제로 서는지는
+스키마가 맞는 DB 가 있어야 해서(마이그레이션 20 · KEY-196) 여기서 못 재고,
+그 확인은 PR 본문에 실측으로 남긴다.
+
+여기서 지키는 것은 **말로 하면 잊히는 세 가지**다.
+
+    토큰을 시드가 만들지 않는다   만들면 그 순간 로그에 환자 링크 토큰이 남는다
+    의학 문구를 지어내지 않는다   승인된 카탈로그에서만 가져온다
+    시연 건과 겹치지 않는다      smoke 는 제출로 fixture 를 소진한다
+"""
+
+import ast
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+SEED = ROOT / "scripts" / "seed.py"
+
+
+def _tree() -> ast.Module:
+    return ast.parse(SEED.read_text(encoding="utf-8"))
+
+
+def _func(name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
+    for node in ast.walk(_tree()):
+        if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"seed.py 에 {name} 이 없다")
+
+
+def _assigned(name: str) -> ast.expr:
+    for node in ast.walk(_tree()):
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            return node.value
+    raise AssertionError(f"seed.py 에 {name} 이 없다")
+
+
+class TestTheSeedNeverInventsALinkToken:
+    """**토큰은 밖에서 받는다.**
+
+    `PatientGuideLink` 는 sha256 만 저장하고 원문은 발급 응답 한 번뿐이다. 시드가
+    원문을 만들면 조작자에게 알려 줄 길이 출력밖에 없고, 그러면 로그에 환자 링크
+    토큰이 남는다 — `AGENTS.md` 가 금지한 자리다.
+    """
+
+    def test_the_token_comes_from_the_environment(self) -> None:
+        src = ast.get_source_segment(SEED.read_text(encoding="utf-8"), _func("seed_smoke_fixture")) or ""
+        assert "SMOKE_LINK_TOKEN_ENV" in src, "fixture 가 토큰을 환경변수에서 안 받는다"
+
+    def test_the_seed_does_not_generate_one(self) -> None:
+        """`secrets` 로 토큰을 만드는 순간 이 검사가 막는다."""
+        fn = _func("seed_smoke_fixture")
+        calls = {
+            node.func.attr
+            for node in ast.walk(fn)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        forbidden = {"token_urlsafe", "token_hex", "token_bytes", "uuid4"}
+        assert not (calls & forbidden), (
+            f"시드가 토큰을 직접 만든다 ({sorted(calls & forbidden)}) — 그러면 조작자에게 "
+            "알려 줄 길이 출력뿐이고, 로그에 환자 링크 토큰이 남는다"
+        )
+
+    def test_it_stores_only_the_digest(self) -> None:
+        fn = _func("seed_smoke_fixture")
+        names = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+        assert "digest_link_token" in names, "원문을 그대로 저장하려는 것으로 보인다 — sha256 을 써야 한다"
+
+    def test_it_never_prints_the_raw_token(self) -> None:
+        """출력하는 자리에 토큰 변수가 섞이면 막는다.
+
+        문자열 검사가 아니라 **AST 로** 본다 — 주석이나 설명문에 `raw_token` 이라는
+        말이 나온다고 걸리면, 검사가 재는 척만 하게 된다.
+        """
+        fn = _func("seed_smoke_fixture")
+        for node in ast.walk(fn):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print"):
+                continue
+            printed = {n.id for a in node.args for n in ast.walk(a) if isinstance(n, ast.Name)}
+            assert "raw_token" not in printed, "시드가 링크 토큰 원문을 출력한다"
+
+
+class TestTheFixtureUsesApprovedKnowledgeOnly:
+    """**의학 문구를 지어내지 않는다** — 이희진 님 「확정 승인 지식 외 내용 추가 금지」."""
+
+    def test_caution_and_emergency_come_from_the_catalog(self) -> None:
+        fn = _func("seed_smoke_fixture")
+        names = {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
+        assert "get_approved_content" in names, (
+            "주의·응급 문구를 승인 카탈로그에서 안 가져온다 — 지어낸 문장이 환자에게 간다"
+        )
+
+    def test_it_refuses_to_fall_back_silently(self) -> None:
+        """승인 문구가 없으면 **폴백으로 서지 말고 멈춰야 한다.**
+
+        폴백은 실서비스에서는 옳지만, smoke fixture 로는 「승인된 안내」라고
+        부를 수 없다. 조용히 폴백으로 서면 아무도 모른다.
+        """
+        src = ast.get_source_segment(SEED.read_text(encoding="utf-8"), _func("seed_smoke_fixture")) or ""
+        assert "is None or" in src or "None in" in src, "승인 문구가 없을 때를 안 가른다"
+        assert "폴백" in src, "폴백으로 서면 안 된다는 것을 적어 두지 않았다"
+
+    def test_the_emergency_section_is_locked(self) -> None:
+        """🚨 응급 문장은 사람이 못 고친다 (KEY-150, KEY-165)."""
+        src = ast.get_source_segment(SEED.read_text(encoding="utf-8"), _func("seed_smoke_fixture")) or ""
+        emergency = next((ln for ln in src.splitlines() if "GuideSectionKey.EMERGENCY" in ln), "")
+        assert emergency, "응급 섹션을 안 만든다"
+        assert "True" in emergency, f"응급 섹션이 잠기지 않았다 — {emergency.strip()}"
+
+
+class TestTheFixtureDoesNotCollideWithTheDemo:
+    """**시연 건을 쓰면 안 된다** — smoke 는 제출로 fixture 를 소진한다."""
+
+    #: KEY-148 정본 시나리오. 시연이 이것을 쓴다.
+    DEMO_SCENARIO = "SYN-EMS-01"
+    DEMO_CHART = "12401"
+
+    def test_the_smoke_scenario_is_a_different_one(self) -> None:
+        scenario = ast.literal_eval(_assigned("SMOKE_SCENARIO_ID"))
+        chart = ast.literal_eval(_assigned("SMOKE_CHART_NO"))
+
+        assert scenario != self.DEMO_SCENARIO, (
+            f"smoke 가 시연 시나리오({self.DEMO_SCENARIO})를 쓴다 — 제출 한 번에 시연이 오염된다"
+        )
+        assert chart != self.DEMO_CHART, f"smoke 가 시연 차트({self.DEMO_CHART})를 쓴다"
+
+    def test_the_chosen_row_is_really_in_the_csv_and_fits(self) -> None:
+        """고른 행이 **실제로 그런 행인지** CSV 로 대조한다.
+
+        상수만 보고 통과하면, 나중에 누가 시나리오를 바꿔도 검사가 모른다.
+        """
+        import csv
+
+        scenario = ast.literal_eval(_assigned("SMOKE_SCENARIO_ID"))
+        chart = ast.literal_eval(_assigned("SMOKE_CHART_NO"))
+
+        with (ROOT / "docs" / "data" / "synthetic-patients.csv").open(encoding="utf-8-sig") as f:
+            row = next((r for r in csv.DictReader(f) if r["시나리오ID"] == scenario), None)
+
+        assert row is not None, f"CSV 에 {scenario} 가 없다"
+        assert row["차트번호"].strip() == chart, f"차트번호가 어긋난다 — CSV {row['차트번호']} vs 상수 {chart}"
+        assert row["문자수신동의"].strip() == "Y", "문자 미동의 환자는 OTP 가 409 SMS_OPT_OUT 이다"
+        assert row["진료일"].strip(), "진료일이 없으면 진료가 안 만들어진다"
+        assert row["처방세트"].strip(), "처방세트가 없으면 승인 문구를 못 고른다"
+
+    def test_the_chosen_set_has_approved_wording(self) -> None:
+        """고른 처방세트에 승인된 주의·응급 문구가 **둘 다** 있어야 한다."""
+        import csv
+
+        from app.models.catalog import CautionSectionKey
+        from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
+
+        scenario = ast.literal_eval(_assigned("SMOKE_SCENARIO_ID"))
+        with (ROOT / "docs" / "data" / "synthetic-patients.csv").open(encoding="utf-8-sig") as f:
+            row = next(r for r in csv.DictReader(f) if r["시나리오ID"] == scenario)
+        set_name = row["처방세트"].strip()
+
+        have = {c.section_key for c in DRUG_CAUTION_CONTENTS if c.prescription_set_name == set_name}
+        for key in (CautionSectionKey.CAUTION, CautionSectionKey.EMERGENCY):
+            assert key in have, f"{set_name!r} 에 승인된 {key.value} 문구가 없다 — 폴백으로 선다"
+
+
+class TestItCanBeSeededAgain:
+    """**일회용이라 다시 심을 수 있어야 한다.**
+
+    `CheckIn` 은 안내문당 하나뿐이라(OneToOne) smoke 가 제출하면 두 번째는 409 다.
+    """
+
+    def test_it_clears_the_previous_submission(self) -> None:
+        fn = _func("seed_smoke_fixture")
+        deletes = [
+            n
+            for n in ast.walk(fn)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "delete"
+        ]
+        assert deletes, "이전 제출을 안 지운다 — 두 번째 smoke 가 409 로 죽는다"
+
+        src = ast.get_source_segment(SEED.read_text(encoding="utf-8"), fn) or ""
+        assert "CheckIn.filter(guide_document_id=" in src, "지우는 대상이 이 fixture 의 안내문 하나로 좁혀져 있지 않다"
+
+    def test_it_pushes_the_expiry_back(self) -> None:
+        """링크 TTL 이 72 시간이라, 안 밀면 이틀 뒤 QA 에서 410 LINK_EXPIRED 다."""
+        src = ast.get_source_segment(SEED.read_text(encoding="utf-8"), _func("seed_smoke_fixture")) or ""
+        assert src.count("LINK_TTL") >= 2, "재시드할 때 만료를 다시 밀지 않는다"
+
+    def test_skipping_is_quiet_when_no_token_is_given(self) -> None:
+        """토큰을 안 준 사람에게 **없던 요구를 만들지 않는다.**"""
+        src = ast.get_source_segment(SEED.read_text(encoding="utf-8"), _func("seed_smoke_fixture")) or ""
+        head = src.split("h1 = hospitals", 1)[0]
+        assert "return" in head, "토큰이 없을 때 조용히 건너뛰지 않는다"
