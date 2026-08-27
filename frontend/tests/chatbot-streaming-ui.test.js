@@ -78,6 +78,23 @@ test("스트림 실패는 환자용 재시도 문구로 정규화한다", async 
   assert.equal(api.chatbotErrorMessage("CHATBOT_STREAM_FAILED"), "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.");
 });
 
+test("승인 컨텍스트를 사용할 수 없는 링크 오류는 내부 정보 없이 다음 행동을 안내한다", () => {
+  const api = loadApi();
+
+  assert.equal(
+    api.chatbotErrorMessage("LINK_EXPIRED"),
+    "안내 링크가 만료되어 답변을 만들 수 없어요. 새 안내 문자를 받은 뒤 다시 이용해 주세요.",
+  );
+  assert.equal(
+    api.chatbotErrorMessage("LINK_NOT_FOUND"),
+    "승인된 안내를 확인할 수 없어 답변을 만들 수 없어요. 담당 병원에 문의해 주세요.",
+  );
+  assert.equal(
+    api.chatbotErrorMessage("SYNTHETIC_INTERNAL_DATABASE_ERROR"),
+    "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.",
+  );
+});
+
 test("KEY-95 UI는 챗봇 탭과 근거·출처·한계 표시를 실제 렌더 경로에 둔다", () => {
   const source = fs.readFileSync(path.join(JS_DIR, "guide.js"), "utf8");
 
