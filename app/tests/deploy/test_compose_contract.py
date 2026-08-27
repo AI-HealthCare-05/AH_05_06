@@ -21,7 +21,17 @@ import re
 
 import pytest
 
-from app.tests.deploy.conftest import ROOT, compose, declared_names, read, service
+from app.tests.deploy.conftest import (
+    COMPOSE_VAR,
+    ROOT,
+    compose,
+    compose_vars,
+    declared_names,
+    host_side,
+    read,
+    service,
+    service_ports,
+)
 
 #: compose 파일과 **그 짝인 예시**. 둘을 싸잡아 보면 안 된다 — 로컬 compose 는
 #: `WEB_VERSION` 을 안 쓰고, 운영 compose 는 빌드 컨텍스트를 안 쓴다.
@@ -36,7 +46,6 @@ COMPOSES = tuple(c for c, _ in PAIRS)
 PROD = "infra/docker/docker-compose.prod.yml"
 
 #: `${NAME}` · `${NAME:-기본값}` 둘 다.
-COMPOSE_VAR = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)")
 
 
 @pytest.mark.parametrize("rel", COMPOSES)
@@ -156,7 +165,7 @@ class TestProductionPublishesOnlyTheWebPorts:
     @pytest.mark.parametrize("name", ["mysql", "redis", "fastapi", "minio"])
     def test_the_internal_services_stay_on_localhost(self, name: str) -> None:
         """이름을 박아 둔다 — 하나가 조용히 빠지면 위 검사만으로는 안 보인다."""
-        published = [str(p) for p in service(PROD, name).get("ports") or []]
+        published = service_ports(PROD, name)
 
         assert published, f"{name} 의 포트 줄을 못 찾았다 — 검사가 헛돈다"
         wide = [p for p in published if not p.startswith("127.0.0.1:")]
@@ -280,6 +289,99 @@ class TestTheWorkerCanReadWhatTheAppWrote:
 
         assert api and web, f"media 볼륨을 못 찾았다 — fastapi {api} · nginx {web}"
         assert api == web, f"fastapi 와 nginx 가 다른 볼륨을 본다 — {api} vs {web}"
+
+
+class TestHostPortsAreNotAlsoAppPorts:
+    """**밖에서 보이는 번호와 앱이 붙는 번호는 다른 값이어야 한다** — KEY-193.
+
+    `redis` 는 `REDIS_PORT` 하나가 두 자리를 겸했다. 그런데 그 값은 앱이
+    붙을 때도 쓰는 값이라(`config.REDIS_PORT`), 호스트 포트를 바꾸면 앱이
+    `redis:<그 값>` 으로 붙으려다 실패한다. 배포 리허설에서 `16379` 로 두니
+    health 가 `redis: connection_failed` 였다.
+
+    `mysql` 은 처음부터 `DB_EXPOSE_PORT`(호스트) 와 `DB_PORT`(내부)로 갈려
+    있었다. 같은 규칙을 전체에 건다.
+    """
+
+    #: 앱이 붙을 때 쓰는 설정 이름 → 그 값을 실제로 듣는 컨테이너의 자리.
+    #: 이름을 박아 두지만, 아래 제네릭 검사가 새 서비스도 함께 본다.
+    APP_SIDE = (("redis", "REDIS_PORT"), ("mysql", "DB_PORT"))
+
+    def test_no_service_publishes_with_its_own_app_port(self) -> None:
+        """**서비스를 다 돈다** — 이름 박은 목록에 없는 것도 잡는다.
+
+        앞으로 세 번째 서비스가 같은 겸용 버그를 가져도, 누가 `APP_SIDE` 에
+        추가하는 걸 기억하지 않아도 여기서 걸린다 (이희진 님 `#155` ⑤).
+
+        규칙: 어떤 포트 줄의 **컨테이너 쪽**에 쓰인 변수는 **호스트 쪽**에
+        나오면 안 된다.
+        """
+        offenders = []
+        for name, svc in (compose(PROD).get("services") or {}).items():
+            for spec in (str(port) for port in svc.get("ports") or []):
+                host = host_side(spec)
+                inside = spec[len(host) :].lstrip(":")
+                shared = compose_vars(host) & compose_vars(inside)
+                if shared:
+                    offenders.append(f"{name}: {sorted(shared)} — {spec}")
+
+        assert not offenders, f"호스트 쪽과 컨테이너 쪽이 같은 변수를 쓴다: {offenders}"
+
+    @pytest.mark.parametrize(("service_name", "app_var"), APP_SIDE)
+    def test_the_app_port_is_not_used_for_the_host_side(self, service_name: str, app_var: str) -> None:
+        """이름을 박아 둔다 — 위 검사가 무슨 이유로 조용해져도 이건 운다."""
+        published = service_ports(PROD, service_name)
+
+        assert published, f"{service_name} 의 포트 줄을 못 찾았다 — 검사가 헛돈다"
+        for spec in published:
+            assert app_var not in compose_vars(host_side(spec)), (
+                f"{service_name}: 호스트 쪽에 앱 접속 포트({app_var})를 썼다 — "
+                f"밖을 바꾸면 앱이 안쪽에서 길을 잃는다: {spec}"
+            )
+
+    @pytest.mark.parametrize(("service_name", "app_var"), APP_SIDE)
+    def test_the_container_actually_listens_on_it(self, service_name: str, app_var: str) -> None:
+        """**앱만 아는 값이 되면 안 된다.**
+
+        예전 판은 파일 전체 텍스트에서 `${REDIS_PORT}` 를 찾았다. 그런데 그
+        이름은 `ports:` 줄에도 있어서, `command` 를 지우고 `--port 6379` 로
+        되돌려도(= KEY-193 버그를 그대로 재현해도) **통과했다**
+        (이희진 님 `#155` ①).
+
+        그래서 컨테이너를 띄우는 자리(`command` · `healthcheck`)만 떼어 본다.
+        """
+        svc = service(PROD, service_name)
+        runs = " ".join(
+            [str(svc.get("command") or "")] + [str(part) for part in (svc.get("healthcheck") or {}).get("test") or []]
+        )
+
+        assert runs.strip(), f"{service_name} 에 command·healthcheck 가 없다 — 검사가 헛돈다"
+        assert app_var in compose_vars(runs), (
+            f"{service_name}: 컨테이너가 {app_var} 를 안 듣는다 — 그 값은 앱만 아는 값이 되고, "
+            f"바꾸는 순간 앱이 없는 포트로 붙는다: {runs[:120]}"
+        )
+
+    @pytest.mark.parametrize(("service_name", "app_var"), APP_SIDE)
+    def test_the_app_port_has_a_default(self, service_name: str, app_var: str) -> None:
+        """**비면 컨테이너가 아예 안 뜬다** — 갈라 놓으면서 넓어진 실패 범위.
+
+        예전에는 컨테이너 쪽이 고정 숫자라 이 값이 비어도 떴다. 이제
+        `ports` · `command` · `healthcheck` 셋이 걸려 있다 (이희진 님 `#155` ②).
+        """
+        # **주석은 뺀다.** 설명에 적힌 `${DB_PORT}` 같은 낱말이 걸린다 —
+        # 이 저장소에서 여러 번 밟은 함정이다.
+        code = "\n".join(line.split("#", 1)[0] for line in read(PROD).splitlines())
+        used = re.findall(r"\$\{" + app_var + r"(:-[^}]*)?\}", code)
+
+        assert used, f"{app_var} 가 운영 compose 에 안 쓰인다"
+        assert all(used), f"{service_name}: {app_var} 에 기본값이 없다 — 비면 컨테이너가 안 뜬다"
+
+    def test_both_names_are_shown_in_the_examples(self) -> None:
+        """예시가 이름을 안 보여 주면 베낀 사람이 갈린 줄 모른다."""
+        for example in ("envs/example.prod.env", "envs/example.local.env"):
+            named = declared_names(example)
+            missing = sorted({"REDIS_PORT", "REDIS_EXPOSE_PORT", "DB_PORT", "DB_EXPOSE_PORT"} - named)
+            assert not missing, f"{example} 에 이름이 없다: {missing}"
 
 
 class TestTheBucketIsNotPublic:
