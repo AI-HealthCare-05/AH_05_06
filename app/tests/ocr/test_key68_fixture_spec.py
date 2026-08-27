@@ -208,16 +208,13 @@ def test_the_expected_json_carries_what_consumers_loop_over(tmp_path: Path) -> N
 #: 결정 문서와 정본 CSV 가 **지금 다르게 적고 있는 것.** 알고 두는 것이지 봐 주는
 #: 것이 아니다 — 하나씩 사라져야 하고, 사라지면 이 검사가 죽어 그때 걷는다.
 #:
-#: `약품명` — 문서 §3 은 `비잔정(디에노게스트) 2mg`, CSV 는 `비잔정 2mg` 이다.
-#: 처방 세트 매칭이 ID 에서 **이름 문자열**로 바뀌었으므로(`60d2669`) 이 차이는
-#: 글자 문제가 아니라 매칭이 되고 안 되고의 문제다.
+#: `약품명` 은 KEY-183 에서 걷었다. 문서 §3 과 정본 CSV 가 이제 둘 다
+#: `비잔정(디에노게스트) 2mg` 이다 — **이 검사가 그것을 알려 줘서** 걷을 때를
+#: 알았다. 「사라지면 이 검사가 죽어 그때 걷는다」가 그대로 일어났다.
 #:
-#: **방향은 정해졌다** — `브랜드명(성분명) 용량` 으로 성분명을 병기한다
-#: (이희진 님 `#129` 답). 다만 정본 CSV·검사 열한 곳·프런트 표기를 함께 옮기는
-#: 일이라 **별도 티켓**으로 분리됐고, 그것이 들어오면 이 목록에서 빼면 된다.
-#: 그때까지 fixture 는 **정본 규칙대로 CSV 를 따른다**
-#: (`docs/synthetic-data-spec.md` 1절 「한 곳에서만 고친다」).
-KNOWN_DIVERGENCE = {"MEDICATION_NAME"}
+#: 비어 있다고 지우지 않는다. 다음에 갈리는 것이 생기면 여기 이름을 적고,
+#: 왜 갈렸는지와 언제 걷을지를 함께 남긴다.
+KNOWN_DIVERGENCE: set[str] = set()
 
 
 def test_the_generated_values_match_the_decision_table(tmp_path: Path) -> None:
@@ -310,3 +307,47 @@ def test_an_unknown_document_type_is_refused_with_a_reason() -> None:
 
     assert "렌더러가 없다" in str(caught.value), str(caught.value)
     assert "PRESCRIPTION" in str(caught.value)
+
+
+# ── 시연용 고정 이미지 — KEY-190 ──────────────────────────────────────────────
+
+
+def test_the_render_script_exists_and_is_runnable() -> None:
+    """문서가 가리키는 스크립트가 실제로 있어야 한다."""
+    script = ROOT / "scripts" / "render_ocr_fixture.sh"
+
+    assert script.exists(), "docs/ocr-fixtures.md 4-1 이 없는 스크립트를 가리킨다"
+    assert script.stat().st_mode & 0o111, "실행 권한이 없다"
+
+
+def test_the_document_pins_the_whole_render_environment() -> None:
+    """**셋 다 적혀 있어야 한다** — 하나라도 빠지면 재현이 안 된다.
+
+    글꼴이 빠지면 한글이 다른 모양으로 그려지고, 해상도가 빠지면 픽셀 수가
+    달라지고, 베이스 이미지가 빠지면 래스터 판이 달라진다 (KEY-190).
+    """
+    doc = (ROOT / "docs" / "ocr-fixtures.md").read_text(encoding="utf-8")
+
+    for pinned in ("alpine:3.20", "rsvg-convert 2.58.5-r0", "font-noto-cjk", "150 dpi"):
+        assert pinned in doc, f"렌더 환경에서 {pinned} 가 안 적혔다"
+
+
+def test_the_document_records_the_csv_hash_next_to_the_image_hash() -> None:
+    """이미지 해시만 두면 **왜 달라졌는지**를 모른다.
+
+    정본 CSV 가 바뀌어도, 렌더가 흔들려도 이미지 해시는 달라진다. 둘을 나란히
+    적어야 어느 쪽인지 가른다 — 실제로 `#142`(KEY-183)가 약품명을 바꾸면
+    이미지 해시가 달라진다.
+    """
+    doc = (ROOT / "docs" / "ocr-fixtures.md").read_text(encoding="utf-8")
+    pinned = doc[doc.index("### 지금 값") :]
+
+    assert "synthetic-patients.csv" in pinned, "정본 CSV 해시를 함께 안 적었다"
+    assert pinned.count("`") >= 6, "해시가 셋 다 안 적혔다"
+
+
+def test_the_document_admits_the_pdf_is_not_reproducible() -> None:
+    """PDF 는 만든 시각을 품어 매번 다른 바이트가 나온다 — 감추면 안 된다."""
+    doc = (ROOT / "docs" / "ocr-fixtures.md").read_text(encoding="utf-8")
+
+    assert "PDF 는 해시를 고정하지 않는다" in doc, "PDF 가 재현되는 것처럼 읽힌다"

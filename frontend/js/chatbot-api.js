@@ -107,7 +107,14 @@ if (!CHATBOT_MOCK && typeof window.chatbotStreamTransport !== "function") {
 }
 
 function chatbotErrorMessage(code) {
-  return code === "CHATBOT_API_NOT_READY"
-    ? "챗봇 연결을 준비하고 있어요. 잠시 뒤 다시 시도해 주세요."
-    : "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+  if (code === "CHATBOT_API_NOT_READY") {
+    return "챗봇 연결을 준비하고 있어요. 잠시 뒤 다시 시도해 주세요.";
+  }
+  if (code === "LINK_EXPIRED") {
+    return "안내 링크가 만료되어 답변을 만들 수 없어요. 새 안내 문자를 받은 뒤 다시 이용해 주세요.";
+  }
+  if (code === "LINK_NOT_FOUND") {
+    return "승인된 안내를 확인할 수 없어 답변을 만들 수 없어요. 담당 병원에 문의해 주세요.";
+  }
+  return "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
