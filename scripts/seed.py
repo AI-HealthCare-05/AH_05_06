@@ -56,6 +56,8 @@ from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
 from app.models.visits import (  # noqa: E402
     CheckIn,
     GuideDocument,
+    GuideEvent,
+    GuideEventType,
     GuideSection,
     GuideSectionKey,
     GuideStatus,
@@ -64,6 +66,7 @@ from app.models.visits import (  # noqa: E402
     VisitStatus,
 )
 from app.services.drug_caution import DrugCautionService  # noqa: E402
+from app.services.guides import GuideService  # noqa: E402
 from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
 from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS  # noqa: E402
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
@@ -601,22 +604,61 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
         )
         return
 
+    # **승인자가 없으면 만들지 않는다** — 이희진 님 `#158` ②.
+    #
+    # 예전에는 `doctor_id` 가 `None` 이어도 `approved_by=None` · `issued_by=0` 으로
+    # 조용히 지나갔다. CSV 담당의 칸이 비면 **승인한 사람 없이 「승인·발급」된
+    # 안내문**이 생긴다. 바로 위 승인 문구 검사는 명시적으로 멈추는데 이 자리만
+    # 안 멈추던 것이라 같은 모양으로 맞춘다.
+    if doctor_id is None:
+        print(
+            f"[smoke] 진료 {visit.visit_id} 에 담당의가 없습니다 — 승인자 없이 승인 상태를 "
+            "만들 수 없어 멈춥니다. CSV 의 담당의 칸을 확인해 주세요.",
+            file=sys.stderr,
+        )
+        return
+
+    # **실제 승인이 채우는 것을 빠짐없이 맞춘다** — 이희진 님 `#158` ①③.
+    #
+    # `GuideService.approve()` 는 한 트랜잭션에서 다섯을 함께 쓰고 감사로그를
+    # 남긴다. 앞서는 `status`·`approved_by`·`approved_at` 셋만 써서, **실제
+    # 승인 흐름으로는 나올 수 없는 상태**(승인됐는데 예약시각도 감사로그도 없음)
+    # 를 만들고 있었다. `docs/api/hospital.md` 가 「승인은 `scheduled_at` 을
+    # 채우는 데까지다」라고 적어 두었고 `test_guide_approval.py` 가 그것을
+    # 이미 단언한다.
+    #
+    # `returned_reason` 도 지운다(③) — 반려 이력이 있는 진료를 다시 시드하면
+    # 「승인됨인데 반려 사유가 화면에 남는」 상태가 된다.
+    approved_moment = now()
+    approved_fields = {
+        # **승인 완료 = SCHEDULED_TO_SEND.** `APPROVED` 라는 상태는 없다 —
+        # 승인이 곧 발송 예약이다(`GuideStatus` docstring).
+        "status": GuideStatus.SCHEDULED_TO_SEND,
+        "approved_by": doctor_id,
+        "approved_at": approved_moment,
+        "scheduled_at": GuideService.send_at(approved_moment),
+        "returned_reason": None,
+    }
+
     guide, guide_created = await GuideDocument.get_or_create(
         visit_id=visit.visit_id,
-        defaults={
-            "hospital_id": h1.hospital_id,
-            # **승인 완료 = SCHEDULED_TO_SEND.** `APPROVED` 라는 상태는 없다 —
-            # 승인이 곧 발송 예약이다(`GuideStatus` docstring).
-            "status": GuideStatus.SCHEDULED_TO_SEND,
-            "approved_by": doctor_id,
-            "approved_at": now(),
-        },
+        defaults={"hospital_id": h1.hospital_id, **approved_fields},
     )
     if not guide_created:
         await GuideDocument.filter(guide_document_id=guide.guide_document_id).update(
-            status=GuideStatus.SCHEDULED_TO_SEND,
-            approved_by=doctor_id,
-            approved_at=guide.approved_at or now(),
+            **{**approved_fields, "approved_at": guide.approved_at or approved_moment},
+        )
+        guide = await GuideDocument.get(guide_document_id=guide.guide_document_id)
+
+    # 감사로그 — 누가 언제 승인했는지가 남아야 한다. 다시 시드해도 하나만 둔다.
+    if not await GuideEvent.filter(
+        guide_document_id=guide.guide_document_id,
+        event_type=GuideEventType.APPROVED,
+    ).exists():
+        await GuideEvent.create(
+            guide_document=guide,
+            event_type=GuideEventType.APPROVED,
+            actor_id=doctor_id,
         )
 
     sections: tuple[tuple[GuideSectionKey, str, int | None, bool], ...] = (
@@ -641,7 +683,7 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
             guide_document=guide,
             token_digest=digest,
             expires_at=now() + LINK_TTL,
-            issued_by=doctor_id or 0,
+            issued_by=doctor_id,  # 위에서 None 을 이미 막았다 — 0 으로 메우지 않는다
         )
     else:
         # 다시 돌릴 때 **만료를 되민다** — TTL 이 72 시간이라 이틀 뒤 QA 에서 410 이 난다.

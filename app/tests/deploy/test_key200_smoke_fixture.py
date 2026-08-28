@@ -12,6 +12,7 @@ DB 를 띄우지 않고, `scripts/seed.py` 의 소스를 읽어 계약만 잰다
 """
 
 import ast
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,6 +21,13 @@ SEED = ROOT / "scripts" / "seed.py"
 
 def _tree() -> ast.Module:
     return ast.parse(SEED.read_text(encoding="utf-8"))
+
+
+def _func_in(source: str, name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"{name} 을 못 찾았다")
 
 
 def _func(name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
@@ -189,3 +197,78 @@ class TestItCanBeSeededAgain:
         src = ast.get_source_segment(SEED.read_text(encoding="utf-8"), _func("seed_smoke_fixture")) or ""
         head = src.split("h1 = hospitals", 1)[0]
         assert "return" in head, "토큰이 없을 때 조용히 건너뛰지 않는다"
+
+
+class TestTheFixtureLooksLikeARealApproval:
+    """**손으로 흉내낸 승인이 진짜 승인과 어긋나면 안 된다** — 이희진 님 `#158`.
+
+    처음에는 `status`·`approved_by`·`approved_at` 셋만 채웠다. 그런데 실제
+    `GuideService.approve()` 는 한 트랜잭션에서 **다섯**을 쓰고 감사로그까지
+    남긴다. 그래서 이 fixture 가 **실제 승인 흐름으로는 나올 수 없는 상태**를
+    만들고 있었다 — 승인됐는데 예약시각이 없고, 누가 승인했는지 기록도 없다.
+
+    `docs/api/hospital.md` 가 「승인은 `scheduled_at` 을 채우는 데까지다」라고
+    적어 두었고 `test_guide_approval.py` 가 그것을 이미 단언한다. 시드만 그
+    계약 밖에 있었다.
+    """
+
+    @staticmethod
+    def _seed_source() -> str:
+        src = ast.get_source_segment(
+            (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8"), _func("seed_smoke_fixture")
+        )
+        assert src, "seed_smoke_fixture 를 못 찾았다"
+        return src
+
+    def test_it_fills_everything_the_real_approval_fills(self) -> None:
+        """**진짜 승인이 쓰는 필드를 코드에서 읽어** 하나씩 대조한다.
+
+        목록을 여기 적어 두면 `approve()` 가 필드를 하나 더 쓰기 시작해도
+        검사가 모른다. `update_fields=[...]` 를 직접 읽는다.
+        """
+        guides = (ROOT / "app" / "services" / "guides.py").read_text(encoding="utf-8")
+        approve = ast.get_source_segment(guides, _func_in(guides, "approve")) or ""
+
+        line = next((ln for ln in approve.splitlines() if "update_fields=[" in ln), "")
+        assert line, "approve() 의 update_fields 를 못 찾았다"
+        fields = re.findall(r'"([a-z_]+)"', line)
+        assert {"status", "approved_by", "approved_at", "scheduled_at", "returned_reason"} <= set(fields), (
+            f"approve() 가 쓰는 필드가 달라졌다 — {fields}"
+        )
+
+        fixture = self._seed_source()
+        for field in fields:
+            if field == "updated_at":
+                continue  # auto_now — 손으로 쓰지 않는다
+            assert f'"{field}"' in fixture, (
+                f"실제 승인은 {field} 를 채우는데 fixture 는 안 채운다 — 실제 흐름으로는 나올 수 없는 상태가 된다"
+            )
+
+    def test_it_uses_the_same_schedule_rule(self) -> None:
+        """예약시각을 **따로 계산하지 않는다.**
+
+        시드가 제 나름대로 18시를 구하면 두 곳이 어긋나고, 어긋난 쪽이 조용히
+        환자에게 나간다. `_send_at` 이 시간대 때문에 한 번 틀렸던 자리다.
+        """
+        fixture = self._seed_source()
+        assert "GuideService.send_at" in fixture, "예약시각을 서비스와 같은 규칙으로 안 구한다"
+
+    def test_it_leaves_an_audit_row(self) -> None:
+        fixture = self._seed_source()
+        assert "GuideEventType.APPROVED" in fixture, "누가 승인했는지 감사로그가 안 남는다"
+        assert "exists()" in fixture, "다시 시드하면 감사로그가 쌓인다 — 하나만 두어야 한다"
+
+    def test_it_refuses_without_an_approver(self) -> None:
+        """**승인자 없이 「승인」을 만들지 않는다** — `#158` ②.
+
+        예전에는 `doctor_id` 가 `None` 이어도 `issued_by=0` 으로 조용히 지나갔다.
+        """
+        fixture = self._seed_source()
+        head = fixture.split("approved_moment", 1)[0]
+        assert "doctor_id is None" in head, "담당의가 없을 때 멈추는 가드가 없다"
+        assert "return" in head, "가드가 멈추지 않는다"
+
+    def test_it_never_invents_an_issuer(self) -> None:
+        """`issued_by=doctor_id or 0` 같은 자리를 남기지 않는다."""
+        fixture = self._seed_source()
+        assert "or 0" not in fixture, "승인자·발급자를 0 으로 메우는 자리가 있다 — 실제로 없는 사람이 발급한 것이 된다"
