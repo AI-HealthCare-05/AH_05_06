@@ -130,7 +130,6 @@ var GENERATE_SAYINGS = [
   { code: "VISIT_NOT_FOUND", say: "이 진료를 찾을 수 없습니다 — 목록에서 다시 골라 주세요" },
   { code: "FORBIDDEN", say: "안내문을 만들 권한이 없습니다" },
   { status: 401, say: "로그인이 풀렸습니다 — 다시 로그인해 주세요" },
-  { status: 0, say: "서버에 닿지 못했습니다 — 잠시 뒤 다시 눌러 주세요" },
 ];
 
 function generateFailureSaying(error) {
@@ -143,6 +142,20 @@ function generateFailureSaying(error) {
  * 화면이 이걸 빨간 오류로 보여 주면 스탭은 무엇이 잘못됐는지 찾게 되는데,
  * 실제로는 **원하던 것이 이미 있는 상태**다. 그래서 「있습니다」로 읽는다.
  */
+/* 늦게 온 결과를 지금 화면에 써도 되는가 — 이희진 님 `#162` ③.
+ *
+ * 처음에는 세대 번호(`loadSeq`)로 갈랐다. 그러면 A 에서 누르고 B 로 갔다가
+ * **다시 A 로 돌아오면** 세대가 달라져 결과를 버린다. 안내문은 실제로
+ * 만들어졌는데 화면은 아무 말이 없고, 사람은 다시 눌러 409 를 받아야 안다.
+ *
+ * 물어야 할 것은 「같은 세대인가」가 아니라 **「지금 보고 있는 진료가 그것인가」**다.
+ * `doctor.js` 가 승인에서 `approvingId` 로 하는 것과 같은 뜻이다 — 붙잡은
+ * 대상에 결과를 붙이지, 화면의 판 번호에 붙이지 않는다.
+ */
+function outcomeBelongsToScreen(wantedId, shownVisit) {
+  return !!shownVisit && shownVisit.visit_id === wantedId;
+}
+
 function guideAlreadyThere(error) {
   return !!error && error.code === "GUIDE_ALREADY_EXISTS";
 }
@@ -880,7 +893,6 @@ function stateTakesFocus(tone) {
          이유로 `approvingId` 를 따로 잡는다. */
       if (!visit || !visit.visit_id) return;
       var wantedId = visit.visit_id;
-      var mine = loadSeq;
 
       if (generating) return; // 이미 나가 있다
       generating = true;
@@ -892,17 +904,19 @@ function stateTakesFocus(tone) {
       ocrApi
         .generateGuide(wantedId)
         .then(function () {
-          /* 늦게 온 응답은 버린다. 이미 다른 진료를 보고 있다면 이 소식은
-             지금 화면과 무관하다 — 이 파일이 판독 폴링에서 쓰는 규율과 같다. */
-          if (mine !== loadSeq) return;
+          /* **요청은 끝났다** — 어느 화면을 보고 있든 잠금부터 푼다. */
           generating = false;
+
+          /* 늦게 온 소식은 **그 진료를 보고 있을 때만** 쓴다. 다른 진료로
+             갔다면 지금 화면과 무관하고, 돌아왔다면 여전히 관계있다. */
+          if (!outcomeBelongsToScreen(wantedId, visit)) return;
           redraw();
           saveNote.textContent = "안내문을 만들었습니다 — 의사 승인 화면에서 이어서 보실 수 있습니다";
           saveNote.hidden = false;
         })
         .catch(function (error) {
-          if (mine !== loadSeq) return;
           generating = false;
+          if (!outcomeBelongsToScreen(wantedId, visit)) return;
           redraw();
 
           /* 409 는 실패가 아니다. 새로고침 뒤 다시 눌렀거나 두 사람이 같이
@@ -1063,12 +1077,18 @@ function stateTakesFocus(tone) {
     failed = blank.failed;
     conflict = blank.conflict;
     focusOn = blank.focusOn;
-      generating = blank.generating;
+    generating = blank.generating;
     fieldsBox.innerHTML = "";
     rawBox.innerHTML = "";
     docTabs.innerHTML = "";
     summary.textContent = "—";
-    if (saveNote) saveNote.textContent = "";
+    /* **글자만 지우고 숨기지 않으면 빈 칸이 자리를 차지한다** — 이희진 님 `#162` ④.
+       쓰는 자리(901·914·925)는 전부 `textContent` 와 `hidden` 을 짝지어 다루는데
+       치우는 자리만 한쪽을 빠뜨리고 있었다. */
+    if (saveNote) {
+      saveNote.textContent = "";
+      saveNote.hidden = true;
+    }
     if (submit) submit.disabled = true;
   }
 

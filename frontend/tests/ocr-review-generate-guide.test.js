@@ -165,16 +165,68 @@ test("**요청 직전에 visit_id 를 붙잡는다** — 응답 오는 사이 �
 
   const branch = source.slice(at, source.indexOf("var jump = target.closest", at));
 
-  assert.match(branch, /var wantedId = visit\.visit_id/, "visit_id 를 미리 붙잡지 않는다");
-  assert.ok(
-    !/generateGuide\(\s*visit\.visit_id\s*\)/.test(branch),
-    "요청할 때 전역 visit 을 다시 읽는다 — 그 사이 바뀔 수 있다",
+  /* **붙잡은 값이 호출부까지 이어지는지 본다** — 이희진 님 `#162` ②.
+     예전 판은 「`var wantedId =` 가 있다」와 「`generateGuide(visit.visit_id)` 가
+     아니다」 둘만 봤다. 그러면 `generateGuide(current && current.visit_id)` 로
+     바꾸고 `wantedId` 를 죽은 채로 둬도 전부 통과한다. 프런트에 린터가 없어
+     죽은 변수도 아무도 안 잡는다.
+
+     그래서 붙잡은 **이름을 꺼내** 그 이름이 그대로 넘어가는지 잰다. */
+  const capture = branch.match(/var\s+(\w+)\s*=\s*visit\.visit_id\b/);
+  assert.ok(capture, "visit_id 를 미리 붙잡지 않는다");
+
+  const held = capture[1];
+  assert.match(
+    branch,
+    new RegExp("\\.generateGuide\\(\\s*" + held + "\\s*\\)"),
+    `붙잡은 \`${held}\` 를 안 넘긴다 — 붙잡아 놓고 딴 값을 보내면 붙잡은 뜻이 없다`,
   );
 
-  /* **성공·실패 두 갈래 모두** 늦은 응답을 버려야 한다. 한쪽만 막으면
+  /* **성공·실패 두 갈래 모두** 늦은 소식을 가려야 한다. 한쪽만 막으면
      다른 쪽이 남의 화면에 글을 쓴다. */
-  const guards = branch.match(/mine !== loadSeq/g) || [];
-  assert.equal(guards.length, 2, `늦게 온 응답을 한쪽에서만 버린다 — ${guards.length} 곳`);
+  const guards = branch.match(/outcomeBelongsToScreen\(/g) || [];
+  assert.equal(guards.length, 2, `늦게 온 소식을 한쪽에서만 가린다 — ${guards.length} 곳`);
+});
+
+/* ── 떠났다 돌아오면 ───────────────────────────────────────────────────── */
+
+test("**같은 진료로 돌아오면 결과를 보여 준다** — 세대 번호로 가르지 않는다", () => {
+  /* 이희진 님 `#162` ③. 예전 판은 `mine !== loadSeq` 로 갈랐다. A 에서 누르고
+     B 로 갔다가 다시 A 로 오면 세대가 달라져 결과를 버렸다 — 안내문은 실제로
+     만들어졌는데 화면은 아무 말이 없고, 다시 눌러 409 를 받아야 알았다. */
+  const box = load("ocr-review");
+
+  assert.equal(box.outcomeBelongsToScreen(8801, { visit_id: 8801 }), true, "같은 진료인데 버린다");
+  assert.equal(box.outcomeBelongsToScreen(8801, { visit_id: 8802 }), false, "다른 진료인데 쓴다");
+  assert.equal(box.outcomeBelongsToScreen(8801, null), false, "보고 있는 진료가 없는데 쓴다");
+});
+
+test("판 번호(loadSeq)로 가르던 자리가 남아 있지 않다", () => {
+  const source = read("js/ocr-review.js");
+
+  const at = source.indexOf('if (target.id === "submit")');
+  const branch = source.slice(at, source.indexOf("var jump = target.closest", at));
+
+  assert.ok(
+    !/mine !== loadSeq/.test(branch),
+    "안내문 생성 갈래가 아직 세대 번호로 가른다 — 돌아온 사람에게 아무 말도 못 한다",
+  );
+});
+
+test("요청이 끝나면 어느 화면이든 잠금을 푼다", () => {
+  const source = read("js/ocr-review.js");
+
+  const at = source.indexOf('if (target.id === "submit")');
+  const branch = source.slice(at, source.indexOf("var jump = target.closest", at));
+
+  /* `generating = false` 가 가림막 **뒤**에 있으면, 다른 진료를 보는 사이
+     응답이 와서 버려질 때 잠금이 안 풀린다. */
+  const then = branch.indexOf(".then(");
+  const guard = branch.indexOf("outcomeBelongsToScreen(", then);
+  const unlock = branch.indexOf("generating = false", then);
+
+  assert.ok(unlock !== -1 && guard !== -1, "성공 갈래에서 둘 중 하나를 못 찾았다");
+  assert.ok(unlock < guard, "잠금 푸는 줄이 가림막 뒤에 있다 — 버려질 때 버튼이 잠긴 채 남는다");
 });
 
 test("병원을 실어 보내지 않는다 — 서버가 토큰으로 판단한다", () => {
@@ -202,4 +254,38 @@ test("「아직 연결되지 않았습니다」가 사라졌다", () => {
   const visible = html.replace(/<!--[\s\S]*?-->/g, "");
   assert.ok(!/아직 연결되지 않았습니다/.test(visible), "HTML 에 낡은 안내가 남아 있다");
   assert.ok(!/KEY-\d+/.test(visible), "화면에 일감 번호가 보인다 — 스탭이 알 필요 없는 말이다");
+});
+
+/* ── 치우는 자리와 쓰는 자리 ───────────────────────────────────────────── */
+
+test("**`saveNote` 는 글자와 숨김을 늘 짝지어 다룬다**", () => {
+  /* 이희진 님 `#162` ④. 쓰는 자리 셋은 `textContent` 와 `hidden` 을 짝지어
+     다루는데 `resetState` 만 글자를 지우고 숨기지 않았다. 빈 칸이 12px 자리를
+     차지한 채 남는다.
+
+     화면 코드라 검사에서 부를 수가 없다 — 껍데기의 `getElementById` 가 `null`
+     을 주면 IIFE 가 통째로 안 돈다. 그래서 **짝이 맞는지**를 센다. */
+  const source = read("js/ocr-review.js");
+
+  const writes = (source.match(/saveNote\.textContent\s*=/g) || []).length;
+  const shows = (source.match(/saveNote\.hidden\s*=/g) || []).length;
+
+  assert.ok(writes > 2, `saveNote 를 다루는 자리를 거의 못 찾았다 — 검사가 헛돈다 (${writes})`);
+  assert.equal(shows, writes, `글자를 ${writes} 곳에서 다루는데 숨김은 ${shows} 곳뿐이다 — 한쪽이 빠졌다`);
+});
+
+test("문구 표에 **절대 안 걸리는 규칙**을 두지 않는다", () => {
+  /* 이희진 님 `#162` ⑤. `{ status: 0 }` 규칙이 있었는데 `request()` 는
+     `ApiError` 에 `res.status` 만 싣는다 — `fetch` 가 던지는 `TypeError` 에는
+     `.status` 자체가 없다. 그 규칙은 한 번도 안 걸렸다.
+
+     안 걸리는 규칙은 「이 경우도 챙겼다」는 착각만 남긴다. 진짜로 챙기려면
+     `request()` 가 네트워크 실패를 `status: 0` 으로 정규화해야 하는데, 그건
+     모든 화면의 오류 모양을 바꾸는 일이라 이 PR 밖이다. 여기서는 없앤다. */
+  const box = load("ocr-review");
+  const rules = box.GENERATE_SAYINGS;
+
+  assert.ok(Array.isArray(rules) && rules.length > 2, `문구 표를 못 찾았다 — ${JSON.stringify(rules)}`);
+  const unreachable = rules.filter((rule) => rule.status === 0);
+  assert.deepEqual(unreachable, [], "request() 가 status 0 을 안 만든다 — 이 규칙은 안 걸린다");
 });
