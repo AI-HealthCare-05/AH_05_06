@@ -192,6 +192,32 @@ def all_staff() -> tuple[Staff, ...]:
     return _read_csv()
 
 
+def read_staff_csv_for_seed_override() -> tuple[Staff, ...]:
+    """**운영 거부 가드를 건너뛰고** CSV 를 읽는다 — `scripts/seed.py` 전용.
+
+    이름이 길고 흉한 것은 일부러다. 이 함수를 부르는 코드는 **자기가 예외
+    경로를 타고 있다는 것을 이름만 보고도 알아야 한다.**
+
+    ## 왜 `all_staff()` 를 고치지 않았나
+
+    `_refuse_in_production()` 은 `seed.py` 전용 가드가 아니라 `all_staff()` 를
+    부르는 **모든 자리**에 걸리는 범용 안전핀이다. 거기에 `SEED_ALLOW_PROD`
+    조건을 넣으면 「합성 계정은 운영에서 절대 못 읽는다」는 KEY-110 의 규칙이
+    **조건부**로 바뀌고, `seed.py` 말고 다른 코드가 실수로 그 경로를 타도
+    조용히 통과할 여지가 생긴다 (이희진 님 `#158`).
+
+    그래서 공용 가드는 그대로 두고 **좁은 문 하나만** 낸다. `SEED_ALLOW_PROD`
+    를 `Config` 가 아니라 `os.environ` 에서만 읽는 것과 같은 논리다.
+
+    ## 부르는 쪽이 지켜야 하는 것
+
+    `scripts/seed.py` 는 `SEED_ALLOW_PROD` 를 **이미 확인한 뒤에만** 이것을
+    쓴다. 그 순서가 어긋나면 운영에서 아무 확인 없이 합성 계정을 읽게 된다 —
+    `app/tests/deploy/test_key200_seed_prod_gate.py` 가 그 순서를 못박는다.
+    """
+    return _read_csv()
+
+
 def forget_cached_staff() -> None:
     """읽어 둔 CSV 를 버린다. `CSV_PATH` 를 바꿔치기하는 검사에서 쓴다."""
     _read_csv.cache_clear()

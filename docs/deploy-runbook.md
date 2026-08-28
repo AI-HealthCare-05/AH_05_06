@@ -187,6 +187,179 @@ curl -fsS http://<IP>/api/v1/health | jq .     # api·db·redis 가 다 ok 인�
 curl -sI  http://<IP>/                         # 프런트 화면 (KEY-189)
 ```
 
+## 4-3. 합성 데이터를 붓는다 (KEY-200)
+
+**배포는 데이터를 넣지 않는다.** `deployment.sh` 는 `seed` 를 부르지 않고, 앞으로도
+부르지 않는다 — 배포가 곧 시딩이 되면 언젠가 진짜 운영 DB 에 합성 환자가 들어간다.
+그래서 이 절은 **사람이 손으로 한 번 돌리는 자리**로 남겨 둔다.
+
+`scripts/seed.py` 는 `ENV=prod` 에서 스스로 멈춘다. Pilot 은 「운영처럼 뜨지만
+합성 데이터로 도는 환경」이라 그 가드와 정면으로 부딪힌다. 문을 없애지 않고
+**좁은 문 하나**를 냈다.
+
+### 🔴 `scripts/seed.py` 는 앱 이미지 안에 없다
+
+`app/Dockerfile` 이 복사하는 것은 셋뿐이다 — `pyproject.toml` · `uv.lock` · `./app`.
+그래서 `docker compose exec fastapi … scripts/seed.py` 는 **서버에서 못 돈다.**
+실제로 돌고 있는 컨테이너에 물어 확인했다.
+
+```text
+$ docker exec fastapi ls /app/scripts/seed.py
+ls: cannot access '/app/scripts/seed.py': No such file or directory
+```
+
+`docs/data/*.csv`(합성 환자·직원)도 없다. 이미지가 가벼운 것은 의도된 것이라
+(운영 이미지에 시딩 도구를 두지 않는다) **넣지 말고 그때만 밀어 넣는다.**
+
+```bash
+# 서버에서. 스키마가 먼저 올라가 있어야 한다 (4. 롤백 아래 「마이그레이션」 참고).
+
+# ① 시딩에 필요한 것만 컨테이너로 밀어 넣는다
+#    `docker cp` 는 대상 디렉터리를 안 만든다 — 없으면
+#    「Could not find the file /app/scripts」로 죽는다. 먼저 만든다.
+docker compose exec -T fastapi mkdir -p /app/scripts /app/docs
+docker cp scripts/seed.py fastapi:/app/scripts/seed.py
+docker cp docs/data      fastapi:/app/docs/
+
+# ② 돌린다 — 플래그와 비밀번호는 **이 줄에만** 적는다
+SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD='<합성 비밀번호>' \
+  docker compose exec -T \
+    -e SEED_ALLOW_PROD -e SEED_STAFF_PASSWORD \
+    fastapi uv run --no-sync python scripts/seed.py --mode full --allow-prod-seed
+
+# ③ 끝나면 도로 치운다 — 운영 이미지에 시딩 도구를 남기지 않는다
+docker compose exec -T fastapi rm -rf /app/scripts /app/docs
+```
+
+두 가지가 안 하면 죽는 자리다. 셋 다 로컬에서 그대로 밟아 확인했다.
+
+```text
+docker compose exec 는 호스트 환경변수를 자동으로 안 넘긴다
+  -e 없이  →  컨테이너가 본 값: 없음   (seed 가 「SEED_STAFF_PASSWORD 환경변수가 없습니다」로 종료)
+  -e 주면  →  컨테이너가 본 값: 있음
+
+그냥 `python` 은 시스템 파이썬이라 의존성이 없다
+  python scripts/seed.py            →  ModuleNotFoundError: No module named 'tortoise'
+  uv run --no-sync python …         →  [seed] 완료
+```
+
+`--no-sync` 는 이미지 `CMD` 와 같은 꼴이다 — 컨테이너 안에서 다시 설치하지 않는다.
+
+```text
+⚠ ENV=prod 시딩 허용됨 (SEED_ALLOW_PROD + --allow-prod-seed) — Pilot/합성 전용
+```
+
+이 배너가 stderr 에 뜨면 문이 열린 것이다. 안 뜨면 안 열린 것이니 아래를 본다.
+
+### 🔴 플래그를 `.env` 에 적지 않는다
+
+**명령줄에 그때그때 붙인다.** 파일에 적으면 두 가지가 한꺼번에 어긋난다.
+
+```text
+envs/.prod.env 에 적으면   deployment.sh 가 그 파일을 ~/project/.env 로 올린다
+                          → 배포할 때마다 따라 올라가 서버에 영구히 켜져 있다
+~/project/.env 에 적으면   다음 배포가 덮어쓰기 전까지 남아 있다
+```
+
+#### 🔴 파일에 적으면 **서버에서는 켜진다** — 가드가 못 막는다
+
+앞 판의 이 문서는 「`.env` 에 적어도 안 켜진다」고 적어 두었다. **그건 틀렸다.**
+한금준 님이 `#158` 에서 짚었고, 재현해서 확인했다.
+
+```text
+docker-compose.prod.yml:55  fastapi     env_file: .env
+docker-compose.prod.yml:81  ai-worker   env_file: .env
+
+  .env 에 SEED_ALLOW_PROD=1 을 적고 컨테이너를 다시 만들면
+  → os.environ.get("SEED_ALLOW_PROD") == "1"      ← 문이 열린다
+```
+
+`env_file` 은 **도커가 진짜 환경변수로 실어 준다.** 파이썬이 시작하기 전 일이라
+`os.environ` 만 보는 가드로는 구별할 수가 없다.
+
+호스트에서 `python scripts/seed.py` 를 그냥 돌릴 때는 여전히 안 열린다 — 그때는
+`Config` 가 `.env` 를 흡수할 뿐 `os.environ` 에는 안 들어간다. 검사가 못박은 것은
+**그 경우뿐**이다 (`test_a_flag_only_in_the_env_file_does_not_open_it`).
+
+그래서 **환경변수 하나로는 안 열리게 고쳤다** (가드레일 ① 개정, 이희진 님
+2026-08-28 결정 · 한금준 님 제안).
+
+```text
+SEED_ALLOW_PROD=1        환경변수      「이 서버는 Pilot 이다」
+--allow-prod-seed        명령줄 인자   「이번 실행을 사람이 뜻했다」
+
+둘 다 있을 때만 열린다.
+```
+
+`env_file` 은 **argv 를 만들 수 없다.** 서버 `.env` 에 값이 남아 있어도, 실행할
+때 명령줄에 다시 적지 않으면 문이 안 열린다. 하나만 있을 때 어떻게 막히는지는
+계약 검사 다섯이 붙들고 있다 (`test_key200_seed_prod_gate.py`).
+
+그래도 서버 `.env` 에는 안 적는 것이 낫다 — 두 문턱 중 하나를 미리 열어 두는
+셈이다.
+
+### 운영에서는 `--mode` 를 적어야 한다
+
+로컬에서는 `--mode` 를 빼면 `staff` 로 간다. **`ENV=prod` 에서는 안 된다** — 무엇을
+부을지 사람이 한 번 더 적게 한다. 안 적으면 나중에 무엇이 들어갔는지 아무도 모른다.
+
+| `--mode` | 무엇이 들어가나 |
+|---|---|
+| `empty` | 아무것도 안 넣는다 (연결만 확인) |
+| `staff` | 병원 2 · 직원 17 · 처방세트 8 · 주의문구 13 |
+| `full` | 거기에 합성 환자 100 · 진료 · 처방 |
+
+Pilot 로그인만 필요하면 `staff` 로 충분하다. 시연·QA 까지 보려면 `full` 이다.
+
+### 값을 정확히 쓴다
+
+`1` 과 `true` 만 문을 연다 (앞뒤 공백은 털고 대소문자는 안 가린다).
+`yes` · `Y` · `2` 는 **안 열린다** — 오타가 운영 DB 를 여는 열쇠가 되면 안 된다.
+
+### KEY-176 smoke 용 fixture 를 함께 심는다
+
+`--mode full` 은 KEY-176 smoke 가 쓸 **승인 완료 안내 1건 + 미제출 D+7 상태**를
+같이 만든다. 단 링크 토큰을 넘겨야 선다.
+
+```bash
+# 위 4-3 의 ①(mkdir + docker cp)을 먼저 한 상태에서.
+SEED_ALLOW_PROD=1 \
+SEED_STAFF_PASSWORD='<합성 비밀번호>' \
+SEED_SMOKE_LINK_TOKEN='<직접 정한 토큰>' \
+  docker compose exec -T \
+    -e SEED_ALLOW_PROD -e SEED_STAFF_PASSWORD -e SEED_SMOKE_LINK_TOKEN \
+    fastapi uv run --no-sync python scripts/seed.py --mode full --allow-prod-seed
+```
+
+```text
+[smoke] 시나리오=SYN-BULK-020 차트=08424 visit_id=50 안내문=1 제출초기화=0 …
+[smoke] PATIENT_SMOKE_VISIT_ID=50 로 쓰세요 (토큰은 넣어 주신 값 그대로).
+```
+
+**토큰은 시드가 만들지 않는다.** DB 에는 sha256 만 남고 원문은 발급 응답 한 번뿐이라,
+시드가 만들면 알려 줄 길이 출력밖에 없고 그러면 **로그에 환자 링크 토큰이 남는다**.
+직접 정해 넘기고, 같은 값을 smoke 의 `PATIENT_SMOKE_LINK_TOKEN` 에 넣는다.
+
+시연이 쓰는 `SYN-EMS-01`(차트 12401) 과 **일부러 다른 건**이다 — smoke 는 제출로
+fixture 를 소진하므로 같은 건을 쓰면 시연 시나리오가 오염된다.
+
+### fixture 를 다시 심는다 (소진된 뒤)
+
+smoke 가 ⑤ 에서 제출하면 fixture 가 **소진된다** — 제출 기록은 안내문당 하나뿐이라
+두 번째 제출은 409 다. 같은 명령을 다시 돌리면 된다.
+
+```text
+[smoke] … 제출초기화=1 …      ← 이 숫자가 1 이면 지난 제출을 지우고 다시 세운 것이다
+```
+
+링크 만료(72 시간)도 함께 다시 밀린다. 이틀 넘게 두었다가 돌리면 밀지 않는 한
+`410 LINK_EXPIRED` 가 난다.
+
+### 다시 돌려도 안전하다
+
+`seed.py` 는 전부 `get_or_create` 라 같은 명령을 여러 번 돌려도 쌓이지 않는다.
+비밀번호를 바꾸고 다시 돌리면 직원 계정의 비밀번호가 갱신된다.
+
 ## 5. Smoke test
 
 배포한 뒤 **기계가 세 자리를 찔러 본다** (KEY-184).
@@ -197,7 +370,7 @@ curl -sI  http://<IP>/                         # 프런트 화면 (KEY-189)
 ```bash
 export SMOKE_LOGIN_ID=staff01
 export SMOKE_PASSWORD=<합성 비밀번호>      # 인자로 주지 않는다 — ps · CI 로그에 남는다
-                                          # 값은 시딩할 때 넣은 것이다 (`SEED_PASSWORD`).
+                                          # 값은 시딩할 때 넣은 것이다 (`SEED_STAFF_PASSWORD`).
                                           # 저장소·Jira·채팅 어디에도 안 적는다.
 
 uv run python scripts/smoke.py https://<도메인>

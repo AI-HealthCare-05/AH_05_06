@@ -204,7 +204,7 @@ class TestApprovalSchedulesTheSend(GuideTestCase):
         midnightish = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)  # 한국 23:30
 
         picked = {
-            label: GuideService._send_at(m).astimezone(SEOUL)
+            label: GuideService.send_at(m).astimezone(SEOUL)
             for label, m in (("낮", morning), ("저녁", evening), ("밤", midnightish))
         }
 

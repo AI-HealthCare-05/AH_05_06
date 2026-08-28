@@ -43,24 +43,116 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tortoise import Tortoise  # noqa: E402
+from tortoise.timezone import now  # noqa: E402
 
 from app.core.config import Config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.common import normalize_phone_number  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
-from app.models.catalog import ApprovalStatus, DrugCautionContent, PrescriptionSet  # noqa: E402
+from app.models.catalog import ApprovalStatus, CautionSectionKey, DrugCautionContent, PrescriptionSet  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.prescriptions import Prescription, PrescriptionItem  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
-from app.models.visits import Visit, VisitStatus  # noqa: E402
+from app.models.visits import (  # noqa: E402
+    CheckIn,
+    GuideDocument,
+    GuideEvent,
+    GuideEventType,
+    GuideSection,
+    GuideSectionKey,
+    GuideStatus,
+    PatientGuideLink,
+    Visit,
+    VisitStatus,
+)
+from app.services.drug_caution import DrugCautionService  # noqa: E402
+from app.services.guides import GuideService  # noqa: E402
+from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
 from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS  # noqa: E402
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
-from app.tests.fixtures.staff import StaffDataError, all_staff  # noqa: E402
-from app.tests.fixtures.validation import validate_canonical_patient_data  # noqa: E402
+from app.tests.fixtures.staff import (  # noqa: E402
+    StaffDataError,
+    all_staff,
+    read_staff_csv_for_seed_override,
+)
+from app.tests.fixtures.validation import (  # noqa: E402
+    read_patient_rows,
+    validate_patient_rows,
+)
 
 _CONFIG = Config()
 
 SEED_PASSWORD_ENV = "SEED_STAFF_PASSWORD"
+
+#: **`Config` 를 거치지 않는다** — 가드레일 ①. `Config` 는 `extra="allow"` 라
+#: `.env` 에 적어 둔 아무 이름이나 **소문자로** 빨아들인다 (`c.seed_allow_prod`
+#: · `c.model_extra["seed_allow_prod"]` · `c.model_dump()["seed_allow_prod"]`
+#: 셋 다 값이 나온다 — 실측). 그리고 `scripts/deployment.sh:133` 이
+#: `envs/.prod.env` 를 그대로 `~/project/.env` 로 올린다. 즉 한 번 파일에
+#: 적히면 **배포될 때마다 따라 올라가** 서버에 영구히 켜져 있게 된다.
+#: `os.environ` 만 보면 그 길이 막힌다 — 명령줄에 그때그때 적어야만 켜진다.
+SEED_ALLOW_PROD_ENV = "SEED_ALLOW_PROD"
+
+#: 정확히 이 둘만 켠다. `yes` · `Y` · `2` · `true ` 는 안 켜진다 — 「대충 참으로
+#: 보이는 값」을 받아 주면 오타가 운영 DB 를 여는 열쇠가 된다.
+SEED_ALLOW_PROD_TRUE = frozenset({"1", "true"})
+
+#: **환경변수만으로는 안 연다 — 이 인자가 함께 있어야 한다** (가드레일 ① 개정,
+#: 이희진 님 2026-08-28 결정 · 한금준 님 `#158` 제안).
+#:
+#: 처음에는 `os.environ` 만 보면 파일로는 안 켜진다고 여겼다. **틀렸다.**
+#: 운영 compose 가 `env_file: .env` 를 쓰고, 도커가 그 값을 **진짜 환경변수로**
+#: 실어 준다. 파이썬이 시작하기 전 일이라 「명령줄에서 온 값」과 「파일에서 온
+#: 값」을 `os.environ` 만으로는 구별할 수가 없다. 실제로 재현했다 — 서버 `.env`
+#: 에 한 줄 적고 컨테이너를 다시 만드니 명령줄 없이 문이 열렸다.
+#:
+#: `env_file` 은 **argv 를 만들 수 없다.** 그래서 이 인자가 「이번 실행에
+#: 사람이 직접 적었다」의 유일한 증거가 된다.
+SEED_ALLOW_PROD_ARGV = "--allow-prod-seed"
+
+#: **조작자가 값을 준다 — 시드가 만들지 않는다.**
+#:
+#: 환자 링크 토큰은 DB 에 sha256 만 남고 원문은 발급 응답 한 번뿐이다
+#: (`app/services/patient_links.py`). 시드가 원문을 만들어 찍으면 그 순간
+#: **로그에 환자 링크 토큰이 남는다** — `AGENTS.md` 가 금지한 자리다.
+#: 그래서 값을 밖에서 받고, 저장은 해시만 한다. smoke 를 돌리는 사람은 이미 그
+#: 값을 알고 있으므로(`PATIENT_SMOKE_LINK_TOKEN` 에 같은 값을 넣는다) 잃는 것이 없다.
+SMOKE_LINK_TOKEN_ENV = "SEED_SMOKE_LINK_TOKEN"
+
+#: KEY-176 smoke 전용 진료. **시연이 쓰는 `SYN-EMS-01` 과 일부러 다르다** —
+#: smoke 는 제출로 fixture 를 소진하므로, 같은 건을 쓰면 시연 시나리오가 오염된다.
+#:
+#: 이 행을 고른 이유는 CSV 가 이미 그렇게 적어 두었기 때문이다.
+#:
+#:     진료상태   발송 완료      승인까지 끝난 안내라는 뜻
+#:     확인문자회차 D+7 · D+15   D+7 이 이미 나갔다
+#:     열람여부   미열람        아직 아무것도 제출하지 않았다
+#:     이탈표시   (없음)
+#:
+#: 처방세트(`자궁내막증 · 비잔 (계속)`)에 승인된 caution·emergency 문구가 둘 다
+#: 있어서 안내가 폴백 없이 선다.
+SMOKE_SCENARIO_ID = "SYN-BULK-020"
+SMOKE_CHART_NO = "08424"
+
+#: **승인 카탈로그 밖 문구는 `guides.generate` 가 쓰는 말만 쓴다.**
+#: 새 의학 문장을 지어내지 않는다.
+#:
+#: 한 줄은 뺐다 — `generate` 의 MEDICATION 본문에는
+#:
+#:     [합성 복약 안내]
+#:     확정된 항목: {field_label}          ← 이 줄
+#:     복약 지시에 따라 정해진 시간에 복용해 주세요.
+#:
+#: 가운데 줄이 더 있는데, 그 값은 **확정된 `OcrField`** 에서 온다
+#: (`guides.py` 의 `field_label`). 이 fixture 는 판독을 거치지 않고 안내문을
+#: 바로 세우므로 확정된 항목이 없다 — 채울 값이 없는데 줄만 넣으면 빈
+#: 「확정된 항목: 」이 환자 화면에 나간다. 그래서 **뺐다.**
+#:
+#: 앞서 이 주석은 「그대로 옮긴 것」이라고 적혀 있었는데 사실이 아니었다
+#: (이희진 님 `#158` ⑤). 지어낸 말은 없지만, 같지도 않았다.
+_SMOKE_MEDICATION_BODY = "[합성 복약 안내]\n복약 지시에 따라 정해진 시간에 복용해 주세요."
+_SMOKE_LIFE_BODY = "처방 기간 중 음주는 피해 주세요. 충분한 수분 섭취와 규칙적인 수면을 유지해 주세요."
+_SMOKE_MESSAGES_BODY = "복약 안내가 발송될 예정입니다. 궁금한 점은 진료실로 문의해 주세요."
 
 # CSV 의 H1/H2 레이블 → seed 전용 병원 이름
 _HOSPITAL_NAMES: dict[str, str] = {
@@ -125,10 +217,67 @@ def _validate_patient_rows(
     return patient_values_by_chart
 
 
+def _prod_override_granted() -> bool:
+    """**둘 다 있어야 연다** — 환경변수 `그리고` 명령줄 인자 (가드레일 ① 개정).
+
+        SEED_ALLOW_PROD=1   있고
+        --allow-prod-seed   이번 실행의 argv 에도 있고
+
+    하나만으로는 안 열린다. 환경변수는 `.env` → compose `env_file` → 컨테이너
+    환경변수로 **저절로 따라 들어올 수 있고**, 그 길을 `os.environ` 으로는 못
+    가린다. argv 는 그 길이 없다 — 사람이 이번에 직접 적어야 생긴다.
+
+    `Config`·`.env` 는 여전히 쳐다보지 않는다. 값은 정확히 `1` 또는 `true` 여야
+    한다. 앞뒤 공백은 털고 대소문자는 안 가리지만, 그 밖의 무엇도 참으로 안 친다.
+
+    argv 를 `sys.argv` 에서 직접 본다 — 인자를 함수로 실어 나르지 않는다.
+    이 함수를 부르는 자리가 셋(가드 · 직원 시딩 · 환자 검증)인데, 실어 나르면
+    한 곳만 빠뜨려도 그 자리가 조용히 열린다.
+    """
+    raw = os.environ.get(SEED_ALLOW_PROD_ENV)
+    from_env = raw is not None and raw.strip().lower() in SEED_ALLOW_PROD_TRUE
+    from_argv = SEED_ALLOW_PROD_ARGV in sys.argv[1:]
+    return from_env and from_argv
+
+
 def _guard_environment() -> None:
-    if str(_CONFIG.ENV).lower() == "prod":
-        print("오류: 운영 환경(ENV=prod)에서는 seed 를 실행할 수 없습니다.", file=sys.stderr)
+    """운영 환경에서는 막는다 — 다만 **명령줄로 한 번 열 수 있다**.
+
+    Pilot 은 「운영처럼 뜨지만 합성 데이터로 도는 환경」이라 이 가드와 정면으로
+    부딪힌다 (KEY-192). 가드를 없애는 대신 **좁은 문 하나**를 낸 것이 KEY-200 이다.
+    문이 좁아야 하는 이유는 이 스크립트가 하는 일이 `Staff` · `Patient` · `Visit`
+    을 실제로 만드는 것이기 때문이다 — 진짜 운영 DB 에서 돌면 합성 환자가 섞인다.
+
+    좁게 만드는 장치가 셋이다.
+
+        환경변수 + 명령줄 둘 다   환경변수 하나는 서버 `.env` 에서 compose 의
+                                `env_file` 을 타고 저절로 들어올 수 있다. argv 는
+                                그 길이 없으므로 「이번에 사람이 적었다」의 증거가 된다
+        값을 1·true 로 못박음    오타가 열쇠가 되지 않는다
+        stderr 로 크게 알림      로그를 보는 사람이 「지금 prod 에 붓고 있다」를 안다
+
+    처음 판은 `os.environ` 만 보면 파일로는 안 켜진다고 여겼다. **틀렸다** —
+    운영 compose 가 `env_file: .env` 를 쓴다. 재현해서 확인하고 고쳤다.
+    """
+    if str(_CONFIG.ENV).lower() != "prod":
+        return
+
+    if not _prod_override_granted():
+        print(
+            "오류: 운영 환경(ENV=prod)에서는 seed 를 실행할 수 없습니다.\n"
+            f"  Pilot/합성 환경이라면 **둘 다** 필요합니다:\n"
+            f"    {SEED_ALLOW_PROD_ENV}=1        (환경변수)\n"
+            f"    {SEED_ALLOW_PROD_ARGV}         (이번 실행의 명령줄)\n"
+            f"  {SEED_ALLOW_PROD_ENV} 만으로는 안 열립니다 — 그 값은 서버 .env 에서\n"
+            "  compose 의 env_file 을 타고 저절로 들어올 수 있기 때문입니다.",
+            file=sys.stderr,
+        )
         sys.exit(1)
+
+    print(
+        f"⚠ ENV=prod 시딩 허용됨 ({SEED_ALLOW_PROD_ENV} + {SEED_ALLOW_PROD_ARGV}) — Pilot/합성 전용",
+        file=sys.stderr,
+    )
 
 
 def _require_password() -> str:
@@ -189,7 +338,17 @@ async def seed_staff(password: str) -> dict[str, Hospital]:
     )
 
     try:
-        staff_rows = all_staff()
+        # **문이 열려 있을 때만 가드를 건너뛴다** — 이희진 님 `#158` B안.
+        #
+        # `all_staff()` 는 `_refuse_in_production()` 을 거치는데, 그것은 이
+        # 스크립트 전용이 아니라 **합성 계정을 부르는 모든 자리**에 걸리는
+        # 범용 안전핀이다. 거기에 조건을 넣으면 「운영에서 절대 안 읽는다」가
+        # 조건부로 바뀌므로, 그 함수는 한 글자도 안 건드리고 여기서 갈랐다.
+        #
+        # 순서가 중요하다 — `_guard_environment()` 가 `main()` 첫 줄에서
+        # `SEED_ALLOW_PROD` 를 이미 확인했다. 그 확인 없이 아래 함수를 부르면
+        # 운영에서 아무 문턱 없이 합성 계정을 읽게 된다.
+        staff_rows = read_staff_csv_for_seed_override() if _prod_override_granted() else all_staff()
     except StaffDataError as exc:
         print(f"오류: CSV 검증 실패 — {exc}", file=sys.stderr)
         sys.exit(1)
@@ -257,7 +416,14 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         PATIENTS_CSV,
         hint="저장소를 최신화하세요.",
     )
-    validate_canonical_patient_data()
+    # **여기서도 좁은 문으로 간다** — `validate_canonical_patient_data()` 는
+    # 안에서 `all_staff()` 를 부르고, 그것은 운영에서 멈춘다. 검증 함수는
+    # 이미 `staff=` 를 받게 되어 있으므로 **그 함수도 안 건드리고** 읽어 둔
+    # 것을 넘긴다.
+    validate_patient_rows(
+        read_patient_rows(),
+        staff=read_staff_csv_for_seed_override() if _prod_override_granted() else all_staff(),
+    )
 
     h1 = hospitals["H1"]
 
@@ -451,6 +617,164 @@ async def seed_catalog() -> None:
     print(f"[catalog] drug_caution_content created={created_contents} skipped={skipped_contents}")
 
 
+async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
+    """KEY-176 smoke 가 쓸 **승인 완료 안내 1건 + 미제출 D+7 상태**를 만든다.
+
+    두 건이 아니라 **한 진료 건의 두 성질**이다. smoke 스크립트가 받는 식별자가
+    `PATIENT_SMOKE_LINK_TOKEN` 하나와 `PATIENT_SMOKE_VISIT_ID` 하나뿐이고,
+    ⑤ 가 그 토큰 뒤의 안내에 `CheckIn` 을 만들면 ⑦ 이 `visit_id` 로 되찾는다
+    (`app/services/checkins.py`). 두 진료로 나누면 ⑦ 이 404 다.
+
+    ## 의학 문구를 지어내지 않는다
+
+    caution·emergency 는 `DrugCautionService.get_approved_content` 로 **이미
+    승인된 카탈로그 문구**를 그대로 가져온다 — `app/services/guides.py` 의
+    `generate` 가 하는 것과 같은 길이다. 「확정 승인 지식 외 내용 추가 금지」
+    (이희진 님, PR #150)를 코드로 지키는 자리다. 승인 문구가 없는 세트를 고르면
+    폴백으로 서기 때문에, 세트에 둘 다 있는 행을 골라 두었다.
+
+    ## 다시 돌릴 수 있다
+
+    smoke 는 ⑤ 에서 제출하며 fixture 를 **소진한다** — `CheckIn` 은 안내문당
+    하나뿐이라(OneToOne) 두 번째 제출은 409 다. 그래서 이 함수는 매번
+    **그 `CheckIn` 을 지우고** 링크 만료도 다시 72 시간으로 민다. 지우는 대상은
+    이 fixture 안내문 하나뿐이다.
+    """
+    raw_token = os.environ.get(SMOKE_LINK_TOKEN_ENV)
+    if not raw_token:
+        print(
+            f"[smoke] {SMOKE_LINK_TOKEN_ENV} 가 없어 건너뜁니다.\n"
+            f"  KEY-176 smoke 를 돌리려면 링크 토큰을 직접 정해 넘겨 주세요 —\n"
+            f"  시드는 토큰을 만들지 않습니다(만들면 로그에 남습니다).",
+            file=sys.stderr,
+        )
+        return
+
+    h1 = hospitals["H1"]
+    patient = await Patient.filter(hospital_id=h1.hospital_id, hospital_patient_no=SMOKE_CHART_NO).first()
+    if patient is None:
+        print(f"[smoke] 차트 {SMOKE_CHART_NO} 환자가 없습니다 — --mode full 로 먼저 적재하세요.", file=sys.stderr)
+        return
+
+    visit = await Visit.filter(hospital_id=h1.hospital_id, patient=patient).order_by("-visited_at").first()
+    if visit is None:
+        print(f"[smoke] 차트 {SMOKE_CHART_NO} 의 진료가 없습니다.", file=sys.stderr)
+        return
+
+    doctor_id = visit.doctor_id
+    prescription = await Prescription.filter(visit_id=visit.visit_id).first()
+    set_name = prescription.prescription_set if prescription else None
+
+    caution = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.CAUTION)
+    emergency = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.EMERGENCY)
+    if caution is None or emergency is None:
+        print(
+            f"[smoke] 처방세트 {set_name!r} 에 승인된 주의·응급 문구가 없습니다 — "
+            "폴백 문구로 서게 되므로 멈춥니다. 세트를 바꾸거나 카탈로그를 먼저 적재하세요.",
+            file=sys.stderr,
+        )
+        return
+
+    # **승인자가 없으면 만들지 않는다** — 이희진 님 `#158` ②.
+    #
+    # 예전에는 `doctor_id` 가 `None` 이어도 `approved_by=None` · `issued_by=0` 으로
+    # 조용히 지나갔다. CSV 담당의 칸이 비면 **승인한 사람 없이 「승인·발급」된
+    # 안내문**이 생긴다. 바로 위 승인 문구 검사는 명시적으로 멈추는데 이 자리만
+    # 안 멈추던 것이라 같은 모양으로 맞춘다.
+    if doctor_id is None:
+        print(
+            f"[smoke] 진료 {visit.visit_id} 에 담당의가 없습니다 — 승인자 없이 승인 상태를 "
+            "만들 수 없어 멈춥니다. CSV 의 담당의 칸을 확인해 주세요.",
+            file=sys.stderr,
+        )
+        return
+
+    # **실제 승인이 채우는 것을 빠짐없이 맞춘다** — 이희진 님 `#158` ①③.
+    #
+    # `GuideService.approve()` 는 한 트랜잭션에서 다섯을 함께 쓰고 감사로그를
+    # 남긴다. 앞서는 `status`·`approved_by`·`approved_at` 셋만 써서, **실제
+    # 승인 흐름으로는 나올 수 없는 상태**(승인됐는데 예약시각도 감사로그도 없음)
+    # 를 만들고 있었다. `docs/api/hospital.md` 가 「승인은 `scheduled_at` 을
+    # 채우는 데까지다」라고 적어 두었고 `test_guide_approval.py` 가 그것을
+    # 이미 단언한다.
+    #
+    # `returned_reason` 도 지운다(③) — 반려 이력이 있는 진료를 다시 시드하면
+    # 「승인됨인데 반려 사유가 화면에 남는」 상태가 된다.
+    approved_moment = now()
+    approved_fields = {
+        # **승인 완료 = SCHEDULED_TO_SEND.** `APPROVED` 라는 상태는 없다 —
+        # 승인이 곧 발송 예약이다(`GuideStatus` docstring).
+        "status": GuideStatus.SCHEDULED_TO_SEND,
+        "approved_by": doctor_id,
+        "approved_at": approved_moment,
+        "scheduled_at": GuideService.send_at(approved_moment),
+        "returned_reason": None,
+    }
+
+    guide, guide_created = await GuideDocument.get_or_create(
+        visit_id=visit.visit_id,
+        defaults={"hospital_id": h1.hospital_id, **approved_fields},
+    )
+    if not guide_created:
+        await GuideDocument.filter(guide_document_id=guide.guide_document_id).update(
+            **{**approved_fields, "approved_at": guide.approved_at or approved_moment},
+        )
+        guide = await GuideDocument.get(guide_document_id=guide.guide_document_id)
+
+    # 감사로그 — 누가 언제 승인했는지가 남아야 한다. 다시 시드해도 하나만 둔다.
+    if not await GuideEvent.filter(
+        guide_document_id=guide.guide_document_id,
+        event_type=GuideEventType.APPROVED,
+    ).exists():
+        await GuideEvent.create(
+            guide_document=guide,
+            event_type=GuideEventType.APPROVED,
+            actor_id=doctor_id,
+        )
+
+    sections: tuple[tuple[GuideSectionKey, str, int | None, bool], ...] = (
+        (GuideSectionKey.MEDICATION, _SMOKE_MEDICATION_BODY, None, False),
+        (GuideSectionKey.CAUTION, caution.body, caution.drug_caution_content_id, False),
+        # 🚨 응급 문장은 사람이 못 고친다 (KEY-150, KEY-165).
+        (GuideSectionKey.EMERGENCY, emergency.body, emergency.drug_caution_content_id, True),
+        (GuideSectionKey.LIFE, _SMOKE_LIFE_BODY, None, False),
+        (GuideSectionKey.MESSAGES, _SMOKE_MESSAGES_BODY, None, False),
+    )
+    for key, body, content_id, locked in sections:
+        await GuideSection.get_or_create(
+            guide_document=guide,
+            section_key=key,
+            defaults={"generated_body": body, "drug_caution_content_id": content_id, "locked": locked},
+        )
+
+    digest = digest_link_token(raw_token)
+    link = await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).first()
+    if link is None:
+        await PatientGuideLink.create(
+            guide_document=guide,
+            token_digest=digest,
+            expires_at=now() + LINK_TTL,
+            issued_by=doctor_id,  # 위에서 None 을 이미 막았다 — 0 으로 메우지 않는다
+        )
+    else:
+        # 다시 돌릴 때 **만료를 되민다** — TTL 이 72 시간이라 이틀 뒤 QA 에서 410 이 난다.
+        await PatientGuideLink.filter(patient_guide_link_id=link.patient_guide_link_id).update(
+            token_digest=digest,
+            expires_at=now() + LINK_TTL,
+        )
+
+    # **미제출로 되돌린다.** smoke 가 제출하면 `CheckIn` 이 생기고 두 번째 제출은
+    # 409 다 — 이 한 줄이 「재시드 가능」의 전부다.
+    cleared = await CheckIn.filter(guide_document_id=guide.guide_document_id).delete()
+
+    print(
+        f"[smoke] 시나리오={SMOKE_SCENARIO_ID} 차트={SMOKE_CHART_NO} "
+        f"visit_id={visit.visit_id} 안내문={guide.guide_document_id} "
+        f"제출초기화={cleared} 처방세트={set_name}"
+    )
+    print(f"[smoke] PATIENT_SMOKE_VISIT_ID={visit.visit_id} 로 쓰세요 (토큰은 넣어 주신 값 그대로).")
+
+
 async def main(mode: str) -> None:
     _guard_environment()
     await Tortoise.init(config=TORTOISE_ORM)
@@ -467,6 +791,10 @@ async def main(mode: str) -> None:
             hospitals = await seed_staff(password)
             await seed_catalog()
             await seed_patients(hospitals)
+            # KEY-176 smoke fixture 는 **환자·진료·카탈로그가 다 있어야** 선다.
+            # 토큰을 안 넘기면 조용히 건너뛴다 — smoke 를 안 돌리는 사람에게
+            # 없던 요구를 만들지 않는다.
+            await seed_smoke_fixture(hospitals)
         case _:
             print(f"알 수 없는 mode: {mode}", file=sys.stderr)
             await Tortoise.close_connections()
@@ -484,14 +812,44 @@ if __name__ == "__main__":
             "예시:\n"
             "  SEED_STAFF_PASSWORD=devpass uv run python scripts/seed.py --mode=staff\n"
             "  SEED_STAFF_PASSWORD=devpass uv run python scripts/seed.py --mode=full\n"
-            "  uv run python scripts/seed.py --mode=empty"
+            "  uv run python scripts/seed.py --mode=empty\n"
+            "\n"
+            "ENV=prod (Pilot) 에서는 둘 다 필요합니다:\n"
+            "  SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD=… \\\n"
+            "    uv run python scripts/seed.py --mode=full --allow-prod-seed"
+        ),
+    )
+    parser.add_argument(
+        SEED_ALLOW_PROD_ARGV,
+        action="store_true",
+        help=(
+            f"ENV=prod 에서 시딩을 허용한다. {SEED_ALLOW_PROD_ENV}=1 과 **함께** 있어야 한다 "
+            "(환경변수 하나만으로는 안 열린다 — 서버 .env 에서 저절로 들어올 수 있기 때문)"
         ),
     )
     parser.add_argument(
         "--mode",
         choices=["empty", "staff", "full"],
-        default="staff",
-        help="empty=적재 없음 | staff=직원만(기본값) | full=전체",
+        default=None,
+        help="empty=적재 없음 | staff=직원만(로컬 기본값) | full=전체",
     )
     args = parser.parse_args()
-    asyncio.run(main(args.mode))
+
+    # **운영에서는 `--mode` 를 손으로 적게 한다** — 가드레일 ②.
+    #
+    # 예전에는 `default="staff"` 라 인자를 안 주면 조용히 `staff` 가 돌았다.
+    # 로컬에서는 편한 기본값이지만, `SEED_ALLOW_PROD` 로 문을 연 자리에서는
+    # 「무엇을 부을지」를 사람이 한 번 더 적어야 한다. 안 적으면 무엇이 들어갔는지
+    # 나중에 아무도 모른다.
+    mode = args.mode
+    if mode is None:
+        if str(_CONFIG.ENV).lower() == "prod":
+            print(
+                "오류: 운영 환경(ENV=prod)에서는 --mode 를 명시해야 합니다.\n"
+                "  --mode empty | --mode staff | --mode full",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        mode = "staff"
+
+    asyncio.run(main(mode))
