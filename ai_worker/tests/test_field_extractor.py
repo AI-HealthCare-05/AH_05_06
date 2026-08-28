@@ -158,6 +158,42 @@ def test_regex_default_confidence_is_below_low_confidence_threshold() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# EMR 정규식 fallback — MEDICATION_NAME 경계 강화 (KEY-187)
+# ---------------------------------------------------------------------------
+
+
+def test_emr_regex_medication_name_does_not_cross_newline() -> None:
+    """EMR 정규식 fallback: 약품명이 개행 너머 텍스트를 포함하지 않는다."""
+    result = ClovaOcrResult(
+        raw_text="처방: 비잔정 2mg\n무관한텍스트 여기까지가끝",
+        fields=[],  # 블록 파서 미작동 → 정규식 fallback
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "MEDICATION_NAME" in field_map
+    assert "\n" not in field_map["MEDICATION_NAME"]
+    assert "무관한텍스트" not in field_map["MEDICATION_NAME"]
+
+
+def test_emr_regex_medication_name_captures_dosage_units() -> None:
+    """EMR 정규식 fallback: mg·정·캡슐 등 다양한 용량 단위를 포함해 추출한다."""
+    cases = [
+        ("처방: 비잔정 2mg", "비잔정 2mg"),
+        ("투약: 프로베라정 1정", "프로베라정 1정"),
+        ("약제: 루프론 3.75mg", "루프론 3.75mg"),
+    ]
+    for raw_text, expected_value in cases:
+        result = ClovaOcrResult(raw_text=raw_text, fields=[])
+        fields = extract_fields(result, OcrDocumentType.EMR)
+        field_map = {f.field_type: f.extracted_value for f in fields}
+        assert "MEDICATION_NAME" in field_map, f"MEDICATION_NAME 누락: {raw_text!r}"
+        assert field_map["MEDICATION_NAME"] == expected_value, (
+            f"기대값={expected_value!r}, 실제값={field_map['MEDICATION_NAME']!r}"
+        )
+
+
 def test_prescription_doc_type_uses_correct_field_names() -> None:
     """PRESCRIPTION 문서 유형도 MEDICATION_NAME·DURATION_DAYS 이름을 사용한다."""
     result = ClovaOcrResult(

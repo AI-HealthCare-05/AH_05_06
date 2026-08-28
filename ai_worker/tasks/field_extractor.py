@@ -84,7 +84,7 @@ _EMR_PATTERNS: dict[str, re.Pattern[str]] = {
         "DIAGNOSIS": r"(?:진단|상병|Dx|diagnosis)\s*[:：]\s*([^\n\r,;]{1,80})",
         "MEDICATION_NAME": (
             r"(?:처방|투약|약제|Rx)\s*[:：]?\s*"
-            r"([가-힣A-Za-z]{2,}[가-힣A-Za-z\s]*(?:\d+\s*mg)?)"
+            r"([가-힣A-Za-z]{2,}[가-힣A-Za-z ]*(?:\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|정|캡슐))?)"
         ),
         "DURATION_DAYS": r"(\d{1,3})\s*일\s*(?:처방|분|치)",
         "DOSAGE": r"1회량\s*[:：]?\s*(\d+(?:\.\d+)?(?:\s*정|\s*캡슐|\s*mL)?)",

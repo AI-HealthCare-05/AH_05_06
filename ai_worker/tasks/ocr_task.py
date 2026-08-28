@@ -1,14 +1,18 @@
 """OCR Worker 태스크 — KEY-56 · KEY-175.
 
 처리 흐름:
-  CLOVA 활성  : 파일 읽기 → CLOVA 호출 → OcrResult/OcrDocumentText/OcrField 저장 → COMPLETED
-  CLOVA 실패  : fixture fallback → COMPLETED  (전체 여정이 중단되지 않는다)
-  CLOVA 비활성: fixture fallback → COMPLETED
-  파일/DB 오류 : OcrJob.status → FAILED
+  CLOVA 활성                  : 파일 읽기 → CLOVA 호출 → OcrResult/OcrDocumentText/OcrField 저장 → COMPLETED
+  CLOVA 활성 + 필수 필드 누락 : REQUIRED_FIELD_MISSING 설정 → fixture fallback 또는 FAILED
+  CLOVA 실패                  : CLOVA_API_ERROR 설정 → fixture fallback 또는 FAILED
+  CLOVA 비활성                : OCR_NOT_CONFIGURED 설정 → fixture fallback 또는 FAILED
+  파일/DB 오류                : OcrJob.status → FAILED
+
+  필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS) 중 하나라도 누락되면
+  CLOVA 호출 자체가 성공해도 COMPLETED로 처리하지 않는다 (KEY-163 §4, KEY-187).
 
 필드 파싱:
   와이어프레임 S1-6~9 근거로 문서 유형별 핵심 필드를 추출한다 (field_extractor.py).
-  패턴 정확도는 8/27 멘토링 후 실제 CLOVA 출력을 확인하고 보정한다.
+  EMR은 CLOVA 블록 파서(헤더→값 레이아웃) 우선, 실패한 필드만 정규식으로 보완한다.
 
 관측 로그 (KEY-175):
   모든 종료 경로에서 아래 형식의 단일 구조화 로그를 남긴다.
