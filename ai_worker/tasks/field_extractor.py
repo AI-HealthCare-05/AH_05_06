@@ -84,7 +84,7 @@ _EMR_PATTERNS: dict[str, re.Pattern[str]] = {
         "DIAGNOSIS": r"(?:진단|상병|Dx|diagnosis)\s*[:：]\s*([^\n\r,;]{1,80})",
         "MEDICATION_NAME": (
             r"(?:처방|투약|약제|Rx)\s*[:：]?\s*"
-            r"([가-힣A-Za-z]{2,}[가-힣A-Za-z ]*(?:\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|정|캡슐))?)"
+            r"([가-힣A-Za-z]{2,}(?:\s?\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|정|캡슐))?)"
         ),
         "DURATION_DAYS": r"(\d{1,3})\s*일\s*(?:처방|분|치)",
         "DOSAGE": r"1회량\s*[:：]?\s*(\d+(?:\.\d+)?(?:\s*정|\s*캡슐|\s*mL)?)",
@@ -99,7 +99,7 @@ _EMR_PATTERNS: dict[str, re.Pattern[str]] = {
 _PRESCRIPTION_PATTERNS: dict[str, re.Pattern[str]] = {
     k: re.compile(v, re.IGNORECASE)
     for k, v in {
-        "MEDICATION_NAME": (r"([가-힣A-Za-z]{2,}[가-힣A-Za-z ]+\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|정|캡슐))"),
+        "MEDICATION_NAME": (r"([가-힣A-Za-z]{2,}(?:\s?\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|정|캡슐)))"),
         "DURATION_DAYS": r"(\d{1,3})\s*일",
         "DOSAGE": r"1회량\s*[:：]?\s*(\d+(?:\.\d+)?(?:\s*정|\s*캡슐|\s*mL)?)",
         "FREQUENCY": r"(?:일일|하루)\s*(\d+)\s*회",
@@ -164,8 +164,9 @@ def _extract_from_clova_blocks(clova_result: ClovaOcrResult) -> list[ExtractedFi
 
     SYN-EMS-01 실측 기준 (PR #147 / KEY-190):
       진단 표: 상병명/진단명 헤더 → 다음 비헤더 블록이 진단명
-      처방 표: 처방 열 헤더들의 마지막 위치 다음부터 등장 순서대로 값 블록이 위치한다.
-               헤더 사이에 비헤더 블록이 끼어 있어도 동작한다.
+      처방 표: 처방 열 헤더들이 연속 구간을 이루어야 한다. 마지막 헤더 다음부터
+               등장 순서대로 값 블록이 위치한다. 헤더 구간 안에 비헤더 블록이
+               끼이면 positional 매핑이 틀리므로 파서 전체를 건너뛴다(safe-fail).
     """
     texts = [f.text.strip() for f in clova_result.fields]
     n = len(texts)
@@ -183,30 +184,59 @@ def _extract_from_clova_blocks(clova_result: ClovaOcrResult) -> list[ExtractedFi
                         confidence=Decimal(str(round(clova_result.fields[i + 1].confidence, 4))),
                     )
                 )
-            break
+                break
 
-    # 2. 처방 표: 헤더 위치를 개별 탐색 → 마지막 헤더 다음부터 등장 순서대로 값 추출
-    # 헤더가 비연속으로 반환되더라도 각 헤더의 첫 등장 위치를 기준으로 동작한다.
+    # 2. 처방 표
+    results.extend(_extract_prescription_fields(texts, clova_result.fields))
+    return results
+
+
+def _extract_prescription_fields(
+    texts: list[str],
+    fields: list,
+) -> list[ExtractedField]:
+    """처방 표에서 헤더→값 positional 매핑으로 필드를 추출한다.
+
+    헤더가 연속 구간을 이루어야만 파싱을 진행한다. 헤더 구간 안에 비헤더 블록이
+    끼이면 safe-fail로 빈 리스트를 반환한다.
+    """
+    n = len(texts)
     header_positions: dict[str, int] = {}
     for i, t in enumerate(texts):
         if t in _PRESCRIPTION_COLUMN_HEADERS and t not in header_positions:
             header_positions[t] = i
 
-    if len(header_positions) >= 2:
-        ordered_headers = sorted(header_positions.items(), key=lambda x: x[1])
-        last_header_pos = ordered_headers[-1][1]
-        for rank, (header_text, _) in enumerate(ordered_headers):
-            value_idx = last_header_pos + 1 + rank
-            if value_idx >= n:
-                break
-            results.append(
-                ExtractedField(
-                    field_type=_PRESCRIPTION_COLUMN_HEADERS[header_text],
-                    extracted_value=texts[value_idx],
-                    confidence=Decimal(str(round(clova_result.fields[value_idx].confidence, 4))),
-                )
-            )
+    if len(header_positions) < 2:
+        return []
 
+    ordered_headers = sorted(header_positions.items(), key=lambda x: x[1])
+    first_header_pos = ordered_headers[0][1]
+    last_header_pos = ordered_headers[-1][1]
+
+    header_span = texts[first_header_pos : last_header_pos + 1]
+    if not all(t in _PRESCRIPTION_COLUMN_HEADERS for t in header_span):
+        return []
+
+    results: list[ExtractedField] = []
+    for rank, (header_text, _) in enumerate(ordered_headers):
+        value_idx = last_header_pos + 1 + rank
+        if value_idx >= n:
+            break
+        value = texts[value_idx]
+        field_type = _PRESCRIPTION_COLUMN_HEADERS[header_text]
+        if not value or value in _KNOWN_NON_VALUE_TOKENS:
+            continue
+        if field_type == "DURATION_DAYS" and not re.search(r"\d", value):
+            continue
+        if field_type == "MEDICATION_NAME" and not re.search(r"[가-힣A-Za-z]", value):
+            continue
+        results.append(
+            ExtractedField(
+                field_type=field_type,
+                extracted_value=value,
+                confidence=Decimal(str(round(fields[value_idx].confidence, 4))),
+            )
+        )
     return results
 
 
@@ -219,14 +249,11 @@ def _extract_by_regex(
     clova_result: ClovaOcrResult,
     patterns: dict[str, re.Pattern[str]],
 ) -> list[ExtractedField]:
-    """정규식으로 raw_text에서 필드를 추출한다. 동일 field_type은 첫 번째만 사용."""
+    """정규식으로 raw_text에서 필드를 추출한다."""
     raw_text = clova_result.raw_text or ""
     extracted: list[ExtractedField] = []
-    seen: set[str] = set()
 
     for field_type, pattern in patterns.items():
-        if field_type in seen:
-            continue
         match = pattern.search(raw_text)
         if not match:
             continue
@@ -240,7 +267,6 @@ def _extract_by_regex(
                 confidence=_confidence_for(value, clova_result),
             )
         )
-        seen.add(field_type)
 
     return extracted
 

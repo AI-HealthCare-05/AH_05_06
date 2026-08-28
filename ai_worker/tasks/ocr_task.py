@@ -287,9 +287,6 @@ async def _fallback_or_fail(
                 [(jd.document_id, OcrDocumentType(jd.document_type)) for jd in job_documents],
                 conn,
             )
-        # fixture 성공 시 failure_code 초기화 — COMPLETED 상태에서 UI 오류 문구 방지
-        job.failure_code = None  # type: ignore[assignment]  # CharField(null=True)
-        await job.save(update_fields=("failure_code",))
         return True
     except Exception as exc:
         default_logger.error(
