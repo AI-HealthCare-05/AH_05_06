@@ -511,6 +511,25 @@ function patientLinkSaying(error) {
   document.addEventListener("click", function (event) {
     var target = event.target;
 
+    /* 진행 단계 — 앞 두 칸은 스탭 화면에 있다.
+       `안내문`·`최종 확인` 은 지금 보고 있는 이 화면이고 `현황`(D1-6·D1-7)은 아직
+       없다. 셋 다 `aria-disabled` 라 여기서 걸러진다 — 눌러도 아무 데도 안 간다.
+
+       **어느 진료인지를 실어 보낸다.** 목록으로만 보내면 원장님이 방금 보던
+       사람을 다시 찾아야 한다. `open` 은 `shell.js` 가 `open_tab` 으로 옮겨
+       주고, 등록 직후 진료기록 탭을 여는 자리가 이미 쓰던 길이다. */
+    var step = target.closest("[data-step]");
+    if (step) {
+      if (step.getAttribute("aria-disabled") === "true") return;
+      if (!visit) return; // 아직 아무 진료도 안 열렸다
+      location.href =
+        "/patients.html?visit=" +
+        encodeURIComponent(visit.visit_id) +
+        "&open=" +
+        encodeURIComponent(step.getAttribute("data-step"));
+      return;
+    }
+
     var tab = target.closest("[data-section]");
     if (tab) {
       section = tab.getAttribute("data-section");

@@ -74,13 +74,17 @@
           <div class="patient-head__visit" id="p-visit"></div>
         </div>
 
-        <ol class="steps">
-          <li class="step step--done"><span class="step__mark">✓</span>기본정보</li>
-          <li class="step step--done"><span class="step__mark">✓</span>진료기록</li>
-          <li class="step step--done"><span class="step__mark">✓</span>안내문</li>
-          <li class="step step--now"><span class="step__mark">●</span>최종 확인</li>
-          <li class="step"><span class="step__mark">○</span>현황</li>
-        </ol>
+        <!-- 앞 두 단계는 스탭 화면에 있다. 의사가 「기본정보를 다시 보고 싶다」고
+             할 때 목록으로 돌아가 사람을 다시 찾게 두지 않는다 — 눌러서 그 환자의
+             그 탭으로 바로 간다. 뒤 셋은 이 화면이거나(안내문·최종 확인) 아직
+             없어서(현황 — D1-6·D1-7) 갈 곳이 없다. -->
+        <div class="steps" id="steps" role="group" aria-label="진행 단계">
+          <button class="step step--done" type="button" data-step="basic"><span class="step__mark" aria-hidden="true">✓</span>기본정보</button>
+          <button class="step step--done" type="button" data-step="record"><span class="step__mark" aria-hidden="true">✓</span>진료기록</button>
+          <button class="step step--done" type="button" data-step="guide" aria-disabled="true"><span class="step__mark" aria-hidden="true">✓</span>안내문</button>
+          <button class="step step--now" type="button" data-step="final" aria-current="step" aria-disabled="true"><span class="step__mark" aria-hidden="true">●</span>최종 확인</button>
+          <button class="step step--later" type="button" data-step="status" aria-disabled="true"><span class="step__mark" aria-hidden="true">○</span>현황</button>
+        </div>
 
         <h1 class="pane__title">환자가 받게 될 안내문 · 미리보기</h1>
 

@@ -318,11 +318,14 @@ body.shell {
 }
 
 /* 단계 — 어디까지 왔는지. 지금 단계만 진하게 둔다.
-   순서가 있으니 ol 로 적되 번호는 지운다 — ✓ ● ○ 가 이미 어디까지 왔는지 말한다. */
+   ✓ ● ○ 가 이미 어디까지 왔는지 말하므로 번호는 없다.
+
+   **누를 수 있는 것은 버튼으로 적는다.** 앞 두 단계는 스탭 화면으로 옮겨 가고,
+   그러면 `<li>` 로는 키보드로 닿지 못한다. 색·크기는 그대로 두고 태그만 바꾼다 —
+   화면이 달라 보이면 안 된다.
+   대비 사다리는 `detail.css` 의 `.tab` 과 같은 기준이다 (KEY-106):
+   지금 단계 `--ink` · 갈 수 있는 단계 `--ink-2` · 아직인 단계 `--ink-3`. */
 .steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   gap: var(--s-24);
   margin: var(--s-16) 0 var(--s-24);
@@ -330,6 +333,16 @@ body.shell {
   border-bottom: 1px solid var(--line);
   font-size: 13px;
   color: var(--ink-3);
+}
+
+.step {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-3);
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .step__mark {
@@ -343,6 +356,28 @@ body.shell {
 .step--now {
   color: var(--ink);
   font-weight: 600;
+}
+
+/* 아직 오지 않은 단계. 흐리게 두되 지우지는 않는다 — 앞으로 무엇이 남았는지가
+   보여야 「여기서 끝인가」를 묻지 않는다. */
+.step--later {
+  color: var(--ink-3);
+}
+
+/* **갈 곳이 없으면 손가락도 뜨지 않는다.** 지금 화면인 칸(안내문 · 최종 확인)과
+   아직 없는 칸(현황)은 눌러도 아무 데도 안 간다 — 커서까지 눌리는 시늉을 하면
+   눌러 보고 「고장났나」로 읽는다. */
+.step[aria-disabled="true"] {
+  cursor: default;
+}
+
+.step:hover:not([aria-disabled="true"]) {
+  color: var(--ink);
+}
+
+.step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .pane__title {

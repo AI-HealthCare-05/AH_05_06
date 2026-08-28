@@ -32,6 +32,25 @@ var rows = [];
 var listDay = new Date();
 var listQuery = "";
 
+/* 다른 화면에서 「이 진료의 이 탭을 열어라」로 들어온 것 (의사 화면의 진행 단계).
+   **한 번만 쓰고 버린다** — 새로고침하거나 다른 줄을 눌렀는데도 계속 이 사람으로
+   끌려가면 목록을 못 쓰게 된다. 주소에서도 지운다: 진료 번호가 주소창에 남으면
+   화면을 공유하거나 복사할 때 따라간다. */
+var entry = (function () {
+  var q = new URLSearchParams(location.search);
+  var visitId = q.get("visit");
+  if (!visitId) return null;
+
+  q.delete("visit");
+  var tab = q.get("open");
+  q.delete("open");
+  if (typeof history !== "undefined" && typeof history.replaceState === "function") {
+    var rest = q.toString();
+    history.replaceState(null, "", location.pathname + (rest ? "?" + rest : ""));
+  }
+  return { visit_id: Number(visitId), open_tab: tab || null };
+})();
+
 
 function roleLabel(roles) {
   var names = { staff: "스탭", doctor: "의사", admin: "관리자" };
@@ -146,6 +165,18 @@ function blankHtml() {
   );
 }
 
+/* 이 진료가 걸린 상태 탭을 켠다. 목록에 그 줄이 없으면(어제 진료 등) 아무것도
+   안 한다 — 없는 것을 보이게 만들 수는 없고, 켜 봐야 엉뚱한 탭만 열린다. */
+function showTabOf(visitId) {
+  var found = rows.find(function (r) {
+    return r.visit_id === visitId;
+  });
+  if (!found) return;
+
+  var chip = document.querySelector('.chip[data-tab="' + found.work_category + '"]');
+  if (chip) chip.setAttribute("aria-pressed", "true");
+}
+
 function renderRows(keepVisitId) {
   var shown = visibleRows();
   var box = document.getElementById("rows");
@@ -236,7 +267,12 @@ function syncPane(force) {
   if (!visibleRows().length) return showView("view-none");
   showView("view-card");
   var visit = selectedVisit();
-  if (visit) document.dispatchEvent(new CustomEvent("visit:selected", { detail: visit }));
+  if (!visit) return;
+
+  /* 어느 탭을 열지는 **한 번만** 실어 보낸다. 그 뒤로는 평소대로 기본정보로
+     열린다 — 다른 줄을 눌렀는데 앞 사람이 보던 탭이 따라오면 안 된다. */
+  if (entry && entry.open_tab && visit.visit_id === entry.visit_id) visit.open_tab = entry.open_tab;
+  document.dispatchEvent(new CustomEvent("visit:selected", { detail: visit }));
 }
 
 function loadDay() {
@@ -244,9 +280,20 @@ function loadDay() {
     .onDay(toIsoDate(listDay))
     .then(function (page) {
       rows = page.items;
+      /* 지목받은 줄이 꺼진 탭에 속하면 목록에서 걸러진다 — 의사 화면은 「승인
+         요청」만 켜 두는데 그 환자는 「보완」일 수 있다. 등록 직후와 같은 이유로
+         (`addVisit`) 그 탭을 켜서 반드시 보이게 한다. 안 켜면 눌러서 왔는데
+         빈 목록이 나오고, 엉뚱한 환자가 대신 선다. */
+      if (entry) showTabOf(entry.visit_id);
       renderChipCounts();
-      renderRows();
+      /* 지목한 진료가 오늘 목록에 있으면 그 줄을 골라 둔다. 없으면(어제 진료 등)
+         평소대로 맨 위가 골라진다 — 빈 화면을 주지 않는다.
+
+         **한 번 쓰면 반드시 버린다.** 못 찾았을 때도 버린다 — 안 그러면 날짜를
+         옮기거나 목록을 다시 그릴 때마다 그 사람으로 끌려가 목록을 못 쓴다. */
+      renderRows(entry ? entry.visit_id : undefined);
       syncPane();
+      entry = null;
     })
     .catch(function () {
       rows = [];
