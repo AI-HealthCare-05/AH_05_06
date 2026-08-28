@@ -6,6 +6,7 @@
  *   PATCH /api/v1/visits/{visit_id}/guide/sections/{key}  그 항목만 고친다
  *   POST  /api/v1/visits/{visit_id}/guide/approve         승인 — 발송 예약
  *   POST  /api/v1/visits/{visit_id}/guide/return          스탭에 되돌린다 (사유 필수)
+ *   POST  /api/v1/visits/{visit_id}/guide/link            개발용 환자 링크 한 번 발급
  *
  * **서버가 생겼습니다(KEY-111).** 이 파일은 이제 그 응답 모양을 그대로 흉내
  * 냅니다 — 예전에는 화면이 바라는 모양을 적어 두었는데 서버와 달라서
@@ -38,6 +39,11 @@ var doctorApi = {
       body: body || {},
     });
   },
+  issuePatientLink: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/link", {
+      method: "POST",
+    });
+  },
   /* 되돌리기에는 **사유가 반드시 붙는다.** 스탭의 알림에 그대로 뜨는 문장이라
      (와이어프레임 D1-7 「승인 반려 — 진료기록 재업로드 필요」) 없으면
      받는 사람이 무엇을 고쳐야 하는지 알 수 없다. */
@@ -66,6 +72,7 @@ var RETURN_REASONS = [
  *   staff     스탭 계정으로 본 화면 — 승인·되돌리기가 잠긴다
  *   returned  이미 되돌린 건
  *   clean     ⚠ 가 하나도 없는 건 — 읽지 않고 승인해도 되는 상태
+ *   approved  승인 완료 건 — 개발용 환자 화면 연결을 확인하는 상태
  */
 var DOCTOR_CASE = (function () {
   var q = new URLSearchParams(location.search).get("case");
@@ -124,7 +131,14 @@ var MOCK_GUIDE_STATE = {};
 function mockGuideState(visitId) {
   return (
     MOCK_GUIDE_STATE[visitId] ||
-    (MOCK_GUIDE_STATE[visitId] = { status: null, scheduled_at: null, returned_reason: null, sections: {} })
+    (MOCK_GUIDE_STATE[visitId] = {
+      status: null,
+      approved_at: null,
+      scheduled_at: null,
+      returned_reason: null,
+      patient_link_issued: false,
+      sections: {},
+    })
   );
 }
 
@@ -142,10 +156,15 @@ function mockGuideBase(visitId) {
     visit_id: visitId,
     patient: who.patient,
     summary: who.summary,
-    status: DOCTOR_CASE === "returned" ? "APPROVAL_RETURNED" : "APPROVAL_PENDING",
+    status:
+      DOCTOR_CASE === "returned"
+        ? "APPROVAL_RETURNED"
+        : DOCTOR_CASE === "approved"
+          ? "SCHEDULED_TO_SEND"
+          : "APPROVAL_PENDING",
     version: 3,
-    approved_at: null,
-    scheduled_at: null,
+    approved_at: DOCTOR_CASE === "approved" ? mockScheduledAt() : null,
+    scheduled_at: DOCTOR_CASE === "approved" ? mockScheduledAt() : null,
     returned_reason: DOCTOR_CASE === "returned" ? "검사 결과지를 다시 올려 주세요" : null,
     sections: [
       {
@@ -220,6 +239,7 @@ function mockGuide(visitId) {
   var saved = MOCK_GUIDE_STATE[visitId];
   if (!saved) return guide;
   if (saved.status !== null) guide.status = saved.status;
+  if (saved.approved_at !== null) guide.approved_at = saved.approved_at;
   guide.scheduled_at = saved.scheduled_at;
   guide.returned_reason = saved.returned_reason;
   guide.sections.forEach(function (s) {
@@ -285,7 +305,8 @@ function mockDoctorRequest(path, options) {
     setTimeout(function () {
       /* **목업이 서버보다 헐거우면 경로 오류를 못 잡는다.** 예전 정규식은
          `/guide/{무엇이든}` 을 다 받아서, 화면이 없는 주소를 불러도 `?mock=1`
-         에서는 멀쩡해 보였다. 서버가 실제로 가진 넷만 받는다. */
+         에서는 멀쩡해 보였다. 서버가 실제로 가진 안내 조회·수정·승인·반려와
+         개발용 링크 발급 경로만 받는다. */
       var get = path.match(/^\/visits\/(\d+)\/guide$/);
       /* 키의 **모양**은 여기서 보지 않는다. 서버 경로도 `{key}: str` 이라
          무엇이든 받고, 그 키가 실제로 있는지는 핸들러가 판정해
@@ -295,9 +316,28 @@ function mockDoctorRequest(path, options) {
          `/sections/` 를 요구하므로 approve·return 경로를 삼키지는 않는다. */
       var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
       var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return)$/);
-      var m = get || sec || act;
+      var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
+      var m = get || sec || act || issueLink;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
+
+      if (issueLink && options.method === "POST") {
+        var linkedGuide = mockGuide(visitId);
+        if (!linkedGuide) return reject(mockNoGuide());
+        if (linkedGuide.status !== "SCHEDULED_TO_SEND" || !linkedGuide.approved_at) {
+          return reject(new ApiError("GUIDE_NOT_APPROVED", 409, {}));
+        }
+        var linkedState = mockGuideState(visitId);
+        if (linkedState.patient_link_issued) {
+          return reject(new ApiError("LINK_ALREADY_ISSUED", 409, {}));
+        }
+        linkedState.patient_link_issued = true;
+        return resolve({
+          path: "/api/v1/guides/demo-key205-link",
+          expires_at: "2026-08-31T18:00:00+09:00",
+          demo_only: true,
+        });
+      }
 
       if (options.method === "POST" && /\/approve$/.test(path)) {
         /* 서버가 역할을 판단한다(`docs/models-layout.md` — 「[승인]은 의사 계정만」).
@@ -312,9 +352,11 @@ function mockDoctorRequest(path, options) {
         /* 계약 §6 의 어휘를 그대로 쓴다. 서버도 `GuideStatus.SCHEDULED_TO_SEND` 를
            넣는다 — **승인이 곧 발송 예약**이라 「승인됨」이라는 상태는 없다(`D1-5`). */
         approved.status = "SCHEDULED_TO_SEND";
+        approved.approved_at = mockScheduledAt();
         approved.scheduled_at = mockScheduledAt();
         var approvedState = mockGuideState(visitId);
         approvedState.status = approved.status;
+        approvedState.approved_at = approved.approved_at;
         approvedState.scheduled_at = approved.scheduled_at;
         approvedState.returned_reason = null;
         return resolve(approved);
