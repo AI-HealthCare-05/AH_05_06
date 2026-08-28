@@ -33,7 +33,11 @@ function stubElement() {
 }
 
 /** 화면 파일들을 한 상자에 실어서 그 상자를 돌려준다. */
+/* 마지막 인자가 문자열이 아니면 **설정**으로 본다 — `{ search: "?mock=1&case=forbidden" }`.
+   목업의 갈래(`MOCK_CASE`)는 파일이 불릴 때 한 번 읽히므로, 검사가 그 뒤에
+   `sessionStorage` 를 만져도 늦다. 갈래별 검사를 쓰려면 여기서 정해야 한다. */
 function load(...files) {
+  const options = typeof files[files.length - 1] === "object" ? files.pop() : {};
   const store = new Map();
   const persistent = new Map();
 
@@ -65,8 +69,8 @@ function load(...files) {
        불린다 — 실제 요청이 나가면 그건 목업 분기가 깨졌다는 뜻이고, `fetch` 가
        없어 바로 터진다. 조용히 통과하는 것보다 낫다. */
     location: {
-      search: "?mock=1",
-      href: "http://test/patients.html?mock=1",
+      search: options.search || "?mock=1",
+      href: "http://test/patients.html" + (options.search || "?mock=1"),
       pathname: "/patients.html",
 
       /* `session.js` 의 `bounce()` 가 부른다. 없으면 `TypeError` 가 나는데,

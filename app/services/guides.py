@@ -282,7 +282,7 @@ class GuideService:
             guide.status = GuideStatus.SCHEDULED_TO_SEND
             guide.approved_by = actor.user_id
             guide.approved_at = moment
-            guide.scheduled_at = self._send_at(moment)
+            guide.scheduled_at = self.send_at(moment)
             guide.returned_reason = None  # type: ignore[assignment]
             await guide.save(
                 update_fields=["status", "approved_by", "approved_at", "scheduled_at", "returned_reason", "updated_at"],
@@ -364,8 +364,12 @@ class GuideService:
         raise ApiError("GUIDE_NOT_PENDING", 409, "아직 승인 요청된 안내문이 아닙니다.")
 
     @staticmethod
-    def _send_at(moment: datetime) -> datetime:
+    def send_at(moment: datetime) -> datetime:
         """**병원 시간으로** 오늘 18:00. 이미 지났으면 내일 같은 시각이다.
+
+        이름이 열려 있는 것은 `scripts/seed.py` 가 같은 규칙을 써야 하기 때문이다.
+        시드가 예약시각을 따로 계산하면 두 곳이 어긋나고, 어긋난 쪽이 조용히
+        환자에게 나간다 (이희진 님 `#158` ①).
 
         시간대를 옮기지 않으면 18시가 아니라 **받은 값의 시간대에서** 18시가
         된다. 운영은 `databases.py` 가 `use_tz: True` 라 `now()` 가 UTC 를
