@@ -19,11 +19,12 @@
 
 import ast
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
-from aerich import Command
 from tortoise import Tortoise
 
 from app.core import config
@@ -37,16 +38,43 @@ MIGRATIONS = ROOT / "app" / "core" / "db" / "migrations"
 SCRATCH = "key206_upgrade_probe"
 
 
-def _config_for(database: str) -> dict[str, Any]:
-    """`TORTOISE_ORM` 을 그대로 두고 DB 이름만 바꾼 사본."""
-    creds = dict(TORTOISE_ORM["connections"]["default"]["credentials"])  # type: ignore[index]
-    creds["database"] = database
-    return {
-        **TORTOISE_ORM,
-        "connections": {
-            "default": {**TORTOISE_ORM["connections"]["default"], "credentials": creds}  # type: ignore[dict-item,index]
-        },
+def _aerich(database: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """**딴 프로세스에서 `aerich` 를 돌린다** — 배포가 하는 것과 같은 꼴.
+
+    처음에는 `aerich.Command` 를 이 프로세스에서 직접 불렀다. 로컬에서는
+    권한이 없어 건너뛰어 몰랐는데, **CI 에서는 실제로 돌면서 뒤따르는 검사
+    다섯을 깨뜨렸다.** `Command.init()` 이 전역 `Tortoise` 를 다른 설정으로
+    다시 세우기 때문이다 — `use_tz` 와 `timezone: Asia/Seoul` 이 날아가서
+    환자 OTP 검사들이 KST 를 UTC 로 읽고 만료를 오판했다.
+
+        내 검사 빼고 전체        1406 passed
+        내 검사 + patient_links     5 failed
+        patient_links 만           42 passed
+
+    별도 프로세스면 그 오염이 원천적으로 없다. **그리고 배포가 실제로 이
+    꼴로 돈다** — `docker compose run … aerich upgrade`. 재는 것이 실물에
+    가까워진 것은 덤이 아니라 요점이다.
+    """
+    creds = TORTOISE_ORM["connections"]["default"]["credentials"]  # type: ignore[index]
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "DB_HOST": str(creds["host"]),
+        "DB_PORT": str(creds["port"]),
+        "DB_USER": str(creds["user"]),
+        "DB_PASSWORD": str(creds["password"]),
+        "DB_NAME": database,
+        "SECRET_KEY": "synthetic-key206-not-a-secret",
+        "ENV": "local",  # `Config` 는 local·dev·prod 만 받는다
     }
+    return subprocess.run(
+        [sys.executable, "-m", "aerich", *args],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
 
 
 async def _sql(database: str | None, statement: str) -> list[Any]:
@@ -112,17 +140,16 @@ async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
     """**빈 DB → 모든 표 → 두 번째는 무일.**
 
     둘을 한 검사에 담는다. 배포가 하는 일이 원래 하나이기 때문이다 — 「올리고
-    또 올린다」. 나눠 놓으면 `Command` 가 잡고 있는 연결이 검사 사이에서 다른
-    이벤트 루프에 걸려 검사 자체가 깨진다.
+    또 올린다」.
     """
     await _make_scratch_database()
 
-    command = Command(tortoise_config=_config_for(SCRATCH), app="models", location=str(MIGRATIONS))
     try:
-        await command.init()
-
-        first = await command.upgrade(run_in_transaction=False)
-        assert first, "빈 DB 인데 적용된 마이그레이션이 없다 — upgrade 가 아무것도 안 했다"
+        first = _aerich(SCRATCH, "upgrade")
+        assert first.returncode == 0, f"빈 DB 에 upgrade 가 실패했다 — {first.stderr[-600:]}"
+        assert "Success upgrading" in first.stdout, (
+            f"적용된 마이그레이션이 없다 — upgrade 가 아무것도 안 했다: {first.stdout[-400:]}"
+        )
 
         # ① 모델이 아는 표가 하나도 안 빠졌는가.
         #    「개수가 맞다」로는 부족하다 — 개수는 맞고 이름이 다를 수 있다.
@@ -130,14 +157,35 @@ async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
         wanted = {d["table"] for d in Tortoise.describe_models(serializable=True).values()}
         built = {row[0] for row in await _sql(SCRATCH, "SHOW TABLES")}
         missing = sorted(wanted - built)
-        assert not missing, f"모델은 아는데 upgrade 가 안 만든 표 ({len(first)} 개 적용): {missing}"
+        assert not missing, f"모델은 아는데 upgrade 가 안 만든 표: {missing}"
 
         # ② 배포는 이걸 매번 돈다. 두 번째가 뭔가 한다면 굴릴 수 없다.
-        again = await command.upgrade(run_in_transaction=False)
-        assert again == [], f"두 번째 upgrade 가 또 뭘 했다 — 배포가 굴러가지 않는다: {again}"
+        again = _aerich(SCRATCH, "upgrade")
+        assert again.returncode == 0, f"두 번째 upgrade 가 죽었다 — {again.stderr[-600:]}"
+        assert "Success upgrading" not in again.stdout, (
+            f"두 번째 upgrade 가 또 뭘 했다 — 배포가 굴러가지 않는다: {again.stdout[-400:]}"
+        )
     finally:
-        await Tortoise.close_connections()
         await _sql(None, f"DROP DATABASE IF EXISTS {SCRATCH}")
+
+
+def test_the_migration_runs_in_its_own_process() -> None:
+    """**이 검사가 남의 검사를 깨뜨리지 않게 한다.**
+
+    한 프로세스 안에서 `aerich.Command` 를 부르면 전역 `Tortoise` 설정이
+    갈린다. 로컬에서는 권한이 없어 건너뛰므로 **아무도 모른 채 CI 만 빨개진다** —
+    실제로 그렇게 다섯이 깨졌다. 딴 프로세스로 도는지 못박아 둔다.
+    """
+    source = Path(__file__).read_text(encoding="utf-8")
+
+    assert "subprocess.run" in source, "마이그레이션을 딴 프로세스에서 안 돌린다"
+
+    # **낱말을 쪼개 둔다.** 통째로 적으면 이 줄 자신이 걸려서, 코드를 고쳐도
+    # 검사가 계속 운다 — 이 저장소에서 여러 번 밟은 함정이라 여기서도 쪼갠다.
+    in_process = "from aerich" + " import Command"
+    assert in_process not in source, (
+        "`aerich` 의 명령 객체를 이 프로세스에서 부른다 — 전역 Tortoise 설정이 갈려 뒤따르는 검사들이 깨진다"
+    )
 
 
 def test_the_guard_stands_before_the_drop_not_beside_it() -> None:
