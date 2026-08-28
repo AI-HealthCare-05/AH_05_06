@@ -234,9 +234,9 @@ async def _save_clova_result(
 
         seen_types: set[str] = set()
         for jd, fields in fields_by_doc:
-            doc_text = doc_text_map.get(jd.document_id)
-            if doc_text is None:
+            if jd.document_id not in doc_text_map:
                 continue
+            doc_text = doc_text_map[jd.document_id]
             for field in fields:
                 if field.field_type in seen_types:
                     continue
@@ -288,7 +288,7 @@ async def _fallback_or_fail(
                 conn,
             )
         # fixture 성공 시 failure_code 초기화 — COMPLETED 상태에서 UI 오류 문구 방지
-        job.failure_code = None
+        job.failure_code = None  # type: ignore[assignment]  # CharField(null=True)
         await job.save(update_fields=("failure_code",))
         return True
     except Exception as exc:
