@@ -431,6 +431,38 @@ function mockJobForVisit(visitId) {
   });
 }
 
+/* 안내문을 이미 만든 진료. 새로고침하면 사라진다 — 목업 한 판 동안만 산다. */
+var mockGuides = {};
+
+/* `POST /visits/{id}/guide/generate` — KEY-204.
+ *
+ * **이 자리가 비어 있었다.** 목업 라우터가 못 알아본 경로라 아래 갈래로
+ * 흘러가 화면은 무엇을 눌러도 가짜 성공을 받았고, 이 PR 이 공들인
+ * 409 · 403 · 404 갈래를 `?mock=1` 로는 **한 번도 못 봤다.**
+ *
+ * 서버 규칙 그대로다 (`app/services/guides.py`).
+ *
+ *   처음 누르면   201
+ *   또 누르면     409 GUIDE_ALREADY_EXISTS   ← 실패가 아니다. 원하던 것이 이미 있다
+ *   권한 없으면   403 FORBIDDEN
+ *   진료 없으면   404 VISIT_NOT_FOUND
+ *
+ * 뒤 둘은 `?mock=1&case=forbidden` · `&case=novisit` 로 본다.
+ */
+function mockGenerateGuide(visitId) {
+  if (MOCK_CASE === "forbidden") return new ApiError("FORBIDDEN", 403, {});
+  if (MOCK_CASE === "novisit") return new ApiError("VISIT_NOT_FOUND", 404, {});
+  if (MOCK_CASE === "guide-exists" || mockGuides[visitId]) {
+    return new ApiError("GUIDE_ALREADY_EXISTS", 409, {});
+  }
+  mockGuides[visitId] = true;
+
+  /* 화면은 본문을 안 읽는다 — 성공했다는 사실만 쓴다. 그래서 뼈대만 둔다.
+     **여기에 진료 문장을 지어 넣지 않는다** (AGENTS.md). 지어낸 의학 문장이
+     화면에 뜨면 그게 진짜인 줄 아는 사람이 생긴다. */
+  return { visit_id: Number(visitId), status: "DRAFT", version: 1, sections: [] };
+}
+
 function mockOcrRequest(path, options) {
   var body = (options && options.body) || {};
   return new Promise(function (resolve, reject) {
@@ -441,22 +473,39 @@ function mockOcrRequest(path, options) {
         return out instanceof ApiError ? reject(out) : resolve(mockCopy(out));
       }
 
+      var generate = path.match(/^\/visits\/([^/]+)\/guide\/generate$/);
+      if (generate) {
+        var made = mockGenerateGuide(decodeURIComponent(generate[1]));
+        return made instanceof ApiError ? reject(made) : resolve(made);
+      }
+
       /* `/ocr/jobs/{id}` · `.../result` · `.../fields` 셋 다 여기서 id 를 얻는다. */
       var onJob = path.match(/^\/ocr\/jobs\/([^/]+)/);
-      var job = mockJob(onJob && onJob[1]);
-      if (/\/(result|fields)$/.test(path)) {
-        if (job.status !== "COMPLETED") {
-          /* #32 계약 그대로. 화면은 이 코드를 보고 「아직」과 「실패」를 가른다. */
-          return reject(new ApiError("OCR_RESULT_NOT_READY", 409, {}));
+      if (onJob) {
+        var job = mockJob(onJob[1]);
+        if (/\/(result|fields)$/.test(path)) {
+          if (job.status !== "COMPLETED") {
+            /* #32 계약 그대로. 화면은 이 코드를 보고 「아직」과 「실패」를 가른다. */
+            return reject(new ApiError("OCR_RESULT_NOT_READY", 409, {}));
+          }
+          var state = mockState();
+          if (/\/fields$/.test(path)) return resolve(mockCopy(state.fields));
+          var first = !state._served;
+          state._served = true;
+          if (first && MOCK_CASE === "conflict") setTimeout(mockGhostEdit, 0);
+          return resolve(mockCopy(state));
         }
-        var state = mockState();
-        if (/\/fields$/.test(path)) return resolve(mockCopy(state.fields));
-        var first = !state._served;
-        state._served = true;
-        if (first && MOCK_CASE === "conflict") setTimeout(mockGhostEdit, 0);
-        return resolve(mockCopy(state));
+        return resolve(job);
       }
-      return resolve(job);
+
+      /* **모르는 경로를 조용히 성공시키지 않는다.**
+       *
+       * 예전에는 여기까지 흘러온 것이 전부 `resolve(job)` 로 돌아갔다 —
+       * 목업에 없는 경로를 화면이 부르면 **가짜 판독 작업**을 받고 「됐다」가
+       * 떴다. 안내문 생성이 딱 그 자리였다 (이희진 님 `#162` 1번).
+       *
+       * 조용한 성공은 검사가 재는 척만 하게 만든다. 여기서 크게 운다. */
+      return reject(new ApiError("MOCK_ROUTE_MISSING", 501, { path: path }));
     }, 200);
   });
 }
