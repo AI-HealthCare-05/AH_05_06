@@ -25,6 +25,7 @@ D+7 제출은 이 절차의 범위가 아니다.
 6. 승인 복약 안내를 근거로 답하거나, 모델 장애 시 안전 fallback과 한계가 표시되는지 확인한다.
 7. 병원 화면으로 돌아와 Console, DOM, `localStorage`, `sessionStorage`에 링크 토큰 원문이 없는지 확인한다.
 8. 서버 access log에 `/guide.html#t=...` 또는 링크 토큰 원문이 없는지 확인한다. URL fragment는 HTTP 요청에 포함되지 않아야 한다.
+   - 예외: 구버전 호환 주소(`/guide.html?t=...`, `?visit=...`)는 페이지 요청 자체가 `location /`(정적 파일 서빙)을 거쳐 access log에 남는다. 정리(`replaceState`)는 브라우저 도착 이후에만 일어나므로 이 갈래는 검증 대상에서 제외한다. 현재 이런 형태의 링크를 발급하는 코드는 없으며(`doctor.js`는 `#t=` fragment만 생성), 신규 발급 경로는 이 조건을 그대로 만족한다.
 
 ## 차단·오류 흐름
 

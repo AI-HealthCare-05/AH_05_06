@@ -89,10 +89,15 @@ test("병원 화면은 토큰을 DOM·console·localStorage에 쓰지 않는다"
     doctor.indexOf("function openPatientGuide"),
     doctor.indexOf("function returnModal", doctor.indexOf("function openPatientGuide")),
   );
+  const urlFn = doctor.slice(
+    doctor.indexOf("function patientGuideUrl"),
+    doctor.indexOf("function patientLinkSaying"),
+  );
   const html = read("doctor.html");
 
   assert.match(html, /id="patient-open"[^>]*hidden>개발용 환자 화면 열기<\/button>/);
   assert.doesNotMatch(launch, /console\.|localStorage|sessionStorage|innerHTML|textContent/);
+  assert.doesNotMatch(urlFn, /console\.|localStorage|sessionStorage|innerHTML|textContent/);
   assert.match(launch, /if \(!popup\)[\s\S]*return;/);
   assert.ok(
     launch.indexOf("if (!popup)") < launch.indexOf("doctorApi") && launch.indexOf("doctorApi") < launch.indexOf("issuePatientLink"),
