@@ -275,6 +275,74 @@ class TestApiAndObservability(ChatbotTestCase):
             assert secret not in logs
 
 
+class TestKey97GroundingAndUnapprovedDataBoundary(ChatbotTestCase):
+    """KEY-97: 표시 계약과 미승인 데이터 비노출을 API 경계에서 함께 증명한다."""
+
+    async def test_answer_displays_grounding_metadata_without_unapproved_data(self) -> None:
+        await self.approved("KEY-97 승인 합성의원")
+        pending_hospital = await make_hospital("KEY-97 미승인 합성의원")
+        pending = await make_guide(pending_hospital, GuideStatus.APPROVAL_PENDING)
+        pending_section = await GuideSection.get(
+            guide_document=pending,
+            section_key=GuideSectionKey.MEDICATION,
+        )
+        unapproved_canary = "KEY97_UNAPPROVED_MEDICATION_MUST_NEVER_LEAK"
+        pending_section.edited_body = unapproved_canary
+        await pending_section.save(update_fields=["edited_body"])
+        model = FakeModel()
+        service = ChatbotService(model=model)
+        app.dependency_overrides[get_chatbot_service] = lambda: service
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/chatbot/responses",
+                    json={"link_token": TOKEN, "question": "약은 언제 먹나요?"},
+                )
+        finally:
+            app.dependency_overrides.pop(get_chatbot_service, None)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["fallback"] is False
+        assert body["evidence"].startswith("복약 안내 ·")
+        assert body["source"] == "담당 의료진이 승인한 진료 안내"
+        assert "승인된 안내 범위" in body["limitation"]
+        assert body["grounded_section"] == "medication"
+        assert unapproved_canary not in response.text
+        assert len(model.prompts) == 1
+        assert unapproved_canary not in model.prompts[0]
+
+    async def test_unapproved_guide_is_hidden_before_model_call_and_public_response(self) -> None:
+        hospital = await make_hospital("KEY-97 미승인 링크 합성의원")
+        guide = await make_guide(hospital, GuideStatus.APPROVAL_PENDING)
+        await add_sections(guide)
+        await link_guide(guide, TOKEN)
+        unapproved_canary = "KEY97_UNAPPROVED_GUIDE_MUST_NEVER_LEAK"
+        medication = await GuideSection.get(
+            guide_document=guide,
+            section_key=GuideSectionKey.MEDICATION,
+        )
+        medication.edited_body = unapproved_canary
+        await medication.save(update_fields=["edited_body"])
+        model = FakeModel()
+        service = ChatbotService(model=model)
+        app.dependency_overrides[get_chatbot_service] = lambda: service
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/chatbot/responses",
+                    json={"link_token": TOKEN, "question": "약은 언제 먹나요?"},
+                )
+        finally:
+            app.dependency_overrides.pop(get_chatbot_service, None)
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "LINK_NOT_FOUND"
+        assert unapproved_canary not in response.text
+        assert model.prompts == []
+        assert await PatientUsageEvent.all().count() == 0
+
+
 async def test_openai_responses_adapter_disables_storage_and_reads_usage() -> None:
     captured: dict[str, object] = {}
 
