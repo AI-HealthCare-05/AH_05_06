@@ -25,7 +25,9 @@ class ApprovedGuideModel:
 
     async def generate(self, *, instructions: str, prompt: str) -> ModelAnswer:
         self.prompts.append(f"{instructions}\n{prompt}")
-        return ModelAnswer("승인된 복약 안내를 확인해 주세요.", input_tokens=1, output_tokens=1)
+        # 최신 안전 계약은 승인 컨텍스트의 완전한 문장을 그대로 인용한 답만
+        # 환자에게 내보낸다. fixture도 실제 승인 본문을 벗어나 새 표현을 만들지 않는다.
+        return ModelAnswer("합성 승인 복약 안내", input_tokens=1, output_tokens=1)
 
 
 class TestKey205PatientLinkLaunch(PatientLinkTestCase):
