@@ -11,7 +11,7 @@ from tortoise import Tortoise
 
 from ai_worker.core import config, default_logger
 from ai_worker.tasks.ocr_task import process_ocr_job
-from app.core.db.databases import TORTOISE_ORM
+from app.core.db.databases import WORKER_TORTOISE_ORM
 from app.core.redis_client import close_redis, get_redis
 from app.documents.service import OCR_JOB_QUEUE
 
@@ -33,7 +33,7 @@ async def _run() -> None:
         "활성" if config.clova_enabled else "fixture fallback",
     )
 
-    await Tortoise.init(config=TORTOISE_ORM)
+    await Tortoise.init(config=WORKER_TORTOISE_ORM)
     default_logger.info("DB 연결 완료")
 
     redis = get_redis()

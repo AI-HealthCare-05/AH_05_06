@@ -34,6 +34,30 @@ app = [
     "tortoise-orm>=0.25.3",
     "uvicorn>=0.40.0",
 ]
+# **워커가 실제로 임포트하는 것만 담는다** — KEY-198.
+#
+# `app` 그룹 전체를 깔면 워커가 안 쓰는 것이 함께 들어간다. 임포트 그래프를
+# 실제로 재서 (`ai_worker.main` 을 임포트해 놓고 로드된 서드파티 최상위 모듈을
+# 셌다) 아래 넷을 뺐다.
+#
+#     passlib   워커 임포트 체인에 없다. 비밀번호를 다루는 것은 앱뿐이다
+#     bcrypt    같다. 트레이스에 뜨는 bcrypt 는 `cryptography` 가 끌어온 것이고,
+#               `cryptography` 는 최상위 의존성이라 이 그룹과 무관하다
+#     aerich    `TORTOISE_APP_MODELS` 의 `aerich.models` 때문에 런타임에 들어왔다.
+#               워커는 `WORKER_TORTOISE_ORM` 을 쓰므로 이제 필요 없다 —
+#               `aerich upgrade`·`downgrade` CLI 가 워커 이미지에서 빠진다
+#     uvicorn   워커는 HTTP 를 안 연다. `fastapi[standard]` 가 어차피 끌고 온다
+#
+# `fastapi` 는 남는다 — 워커가 서버를 띄우진 않지만 `app.*` 의 DTO·오류 타입이
+# 그것을 타고 들어온다. `pyjwt` 도 남는다 (`app.core.jwt.*` 경유로 실제 사용).
+worker = [
+    "asyncmy>=0.2.11",
+    "fastapi[standard]>=0.128.0",
+    "httpx>=0.28.1",
+    "orjson>=3.11.5",
+    "pyjwt>=2.10.1",
+    "tortoise-orm>=0.25.3",
+]
 dev = [
     "coverage>=7.13.2",
     "mypy>=1.19.1",

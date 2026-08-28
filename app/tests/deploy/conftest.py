@@ -53,3 +53,47 @@ def service(rel: str, name: str) -> dict[str, Any]:
     svc = compose(rel).get("services", {}).get(name)
     assert isinstance(svc, dict), f"{rel} 에 {name} 서비스가 없다"
     return svc
+
+
+def service_ports(rel: str, name: str) -> list[str]:
+    """한 서비스가 **호스트로 여는** 포트 줄들."""
+    return [str(port) for port in service(rel, name).get("ports") or []]
+
+
+def compose_vars(text: str) -> set[str]:
+    """`${NAME}` · `${NAME:-기본값}` 에서 이름만 뽑는다.
+
+    손으로 `f"${{{name}}}" in text` 를 쓰지 않는다 — 문법이 바뀌면 여기만
+    고치면 되게 한 자리로 모은다 (이희진 님 `#155` ④).
+    """
+    return set(COMPOSE_VAR.findall(text))
+
+
+#: `${NAME}` · `${NAME:-기본값}` 둘 다.
+COMPOSE_VAR = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)")
+
+
+def host_side(spec: str) -> str:
+    """`"127.0.0.1:${A:-1}:${B:-2}"` 에서 **컨테이너 쪽을 뺀 앞부분.**
+
+    `rsplit(":", 1)` 로 자르면 `${B:-2}` 안의 콜론에 걸린다 — 지금은 안쪽에
+    기본값이 없어 우연히 맞지만, 붙는 순간 조용히 엉뚱한 데서 잘린다
+    (이희진 님 `#155` ⑦). 그래서 `${...}` 를 통째로 가린 뒤 자른다.
+    """
+    masked = COMPOSE_VAR.sub("V", re.sub(r"\$\{[^}]*\}", "V", spec))
+    if ":" not in masked:
+        return ""
+    cut = masked.rindex(":")
+    return spec[: _unmask_index(spec, masked, cut)]
+
+
+def _unmask_index(original: str, masked: str, index: int) -> int:
+    """가린 문자열의 자리를 원본 자리로 되돌린다."""
+    oi = mi = 0
+    while mi < index and oi < len(original):
+        if original[oi : oi + 2] == "${":
+            oi = original.index("}", oi) + 1
+        else:
+            oi += 1
+        mi += 1
+    return oi
