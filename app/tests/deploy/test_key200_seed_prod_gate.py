@@ -64,7 +64,10 @@ def _func_in(source: str, name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
 
 
 GATE_CLOSED = "운영 환경(ENV=prod)에서는 seed 를 실행할 수 없습니다"
-GATE_OPEN = "⚠ ENV=prod 시딩 허용됨 (SEED_ALLOW_PROD) — Pilot/합성 전용"
+GATE_OPEN = "⚠ ENV=prod 시딩 허용됨 (SEED_ALLOW_PROD + --allow-prod-seed) — Pilot/합성 전용"
+
+#: 이번 실행에 사람이 직접 적어야 생기는 것. `env_file` 은 이것을 못 만든다.
+ALLOW_ARGV = "--allow-prod-seed"
 MODE_REQUIRED = "운영 환경(ENV=prod)에서는 --mode 를 명시해야 합니다"
 
 
@@ -154,14 +157,19 @@ class TestTheProdGateStaysNarrow:
         )
         assert "fastapi" in carriers, f"시드를 돌리는 서비스가 `env_file` 을 안 쓴다 — 설명을 다시 보라: {carriers}"
 
-    def test_the_flag_in_the_environment_opens_it_and_says_so(self, tmp_path: Path) -> None:
-        """ⓒ **`os.environ` 에 있으면 열리고, 열렸다고 크게 알린다.**
+    def test_the_environment_variable_alone_does_not_open_it(self, tmp_path: Path) -> None:
+        """ⓒ **환경변수만으로는 안 열린다** — 가드레일 ① 개정.
 
-        같은 `.env` 를 둔 채로 잰다 — ⓑ 와 갈리는 것이 오직 `os.environ` 하나임을
-        보이기 위해서다.
+        예전 판은 여기서 열렸다. 그게 결함이었다.
+
+        `os.environ` 에 값이 있다는 것은 「사람이 이번에 명령줄에 적었다」를
+        **뜻하지 않는다.** 운영 compose 가 `env_file: .env` 를 쓰므로, 서버
+        `.env` 에 한 줄 적혀 있기만 하면 도커가 그 값을 진짜 환경변수로 실어
+        준다. 파이썬이 시작하기 전 일이라 출처를 구별할 수가 없다.
+
+        실제로 재현했다 — 서버 `.env` 에 적고 `--force-recreate` 한 뒤
+        명령줄에 아무것도 안 붙이고 돌렸더니 문이 열렸다.
         """
-        (tmp_path / ".env").write_text("SEED_ALLOW_PROD=1\n", encoding="utf-8")
-
         done = run_seed(
             tmp_path,
             "--mode=empty",
@@ -170,15 +178,69 @@ class TestTheProdGateStaysNarrow:
             SEED_STAFF_PASSWORD="synthetic-key200-staff",
         )
 
-        assert GATE_CLOSED not in done.stderr, f"열려야 하는데 막혔다 — stderr={done.stderr[-400:]!r}"
+        assert done.returncode == 1, (
+            "환경변수 하나로 문이 열렸다 — 서버 `.env` 에 적어 두면 배포 때마다 "
+            f"따라 올라가 영구히 켜진다. stdout={done.stdout!r}"
+        )
+        assert GATE_CLOSED in done.stderr, f"stderr={done.stderr[-400:]!r}"
+
+    def test_the_command_line_flag_alone_does_not_open_it(self, tmp_path: Path) -> None:
+        """ⓓ **명령줄 인자만으로도 안 열린다.**
+
+        argv 는 위조가 어렵지만, 그것 하나로 여는 것은 문을 넓히는 일이다.
+        환경변수는 「이 서버가 Pilot 이다」를 뜻하고, argv 는 「이번 실행을
+        사람이 뜻했다」를 뜻한다. 둘은 다른 것을 증명하므로 둘 다 받는다.
+        """
+        done = run_seed(
+            tmp_path,
+            "--mode=empty",
+            ALLOW_ARGV,
+            ENV="prod",
+            SEED_STAFF_PASSWORD="synthetic-key200-staff",
+        )
+
+        assert done.returncode == 1, f"명령줄 인자 하나로 문이 열렸다 — stdout={done.stdout!r}"
+        assert GATE_CLOSED in done.stderr, f"stderr={done.stderr[-400:]!r}"
+
+    def test_both_together_open_it_and_say_so(self, tmp_path: Path) -> None:
+        """ⓔ **둘 다 있어야 열리고, 열렸다고 크게 알린다.**
+
+        `.env` 를 둔 채로 잰다 — ⓑ 와 갈리는 것이 무엇인지 보이게.
+        """
+        (tmp_path / ".env").write_text("SEED_ALLOW_PROD=1\n", encoding="utf-8")
+
+        done = run_seed(
+            tmp_path,
+            "--mode=empty",
+            ALLOW_ARGV,
+            ENV="prod",
+            SEED_ALLOW_PROD="1",
+            SEED_STAFF_PASSWORD="synthetic-key200-staff",
+        )
+
+        assert GATE_CLOSED not in done.stderr, f"둘 다 줬는데 막혔다 — stderr={done.stderr[-400:]!r}"
         assert GATE_OPEN in done.stderr, (
             f"열리긴 했는데 **배너가 없다** — 로그를 보는 사람이 모른다. stderr={done.stderr[-400:]!r}"
         )
 
+    def test_the_gate_needs_the_argv_that_a_file_cannot_forge(self) -> None:
+        """**왜 argv 인가** — 이 이유가 흐려지면 다음 사람이 되돌린다.
+
+        가드가 `sys.argv` 를 봐야 한다. `Config` 나 `.env` 를 보면 같은 구멍이
+        다시 생긴다. 코드가 실제로 무엇을 읽는지 구문 나무로 확인한다.
+        """
+        tree = ast.parse(SEED.read_text(encoding="utf-8"))
+        fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_prod_override_granted")
+        body = ast.dump(fn)
+
+        assert "argv" in body, "가드가 argv 를 안 본다 — 파일에서 온 값과 구별할 수가 없다"
+        assert "environ" in body, "가드가 환경변수를 안 본다"
+        assert "_CONFIG" not in body, "가드가 `Config` 를 본다 — `.env` 가 다시 새어 든다"
+
     @pytest.mark.parametrize("value", ["yes", "Y", "2", "0", "false", "", "truthy"])
     def test_only_one_and_true_count(self, tmp_path: Path, value: str) -> None:
         """**대충 참으로 보이는 값**은 안 받는다 — 오타가 열쇠가 되면 안 된다."""
-        done = run_seed(tmp_path, "--mode=empty", ENV="prod", SEED_ALLOW_PROD=value)
+        done = run_seed(tmp_path, "--mode=empty", ALLOW_ARGV, ENV="prod", SEED_ALLOW_PROD=value)
 
         assert done.returncode == 1, f"{value!r} 로 문이 열렸다"
         assert GATE_CLOSED in done.stderr, f"stderr={done.stderr[-400:]!r}"
@@ -192,6 +254,7 @@ class TestTheProdGateStaysNarrow:
         done = run_seed(
             tmp_path,
             "--mode=empty",
+            ALLOW_ARGV,
             ENV="prod",
             SEED_ALLOW_PROD=value,
             SEED_STAFF_PASSWORD="synthetic-key200-staff",

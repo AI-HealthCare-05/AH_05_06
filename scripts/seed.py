@@ -97,6 +97,19 @@ SEED_ALLOW_PROD_ENV = "SEED_ALLOW_PROD"
 #: 보이는 값」을 받아 주면 오타가 운영 DB 를 여는 열쇠가 된다.
 SEED_ALLOW_PROD_TRUE = frozenset({"1", "true"})
 
+#: **환경변수만으로는 안 연다 — 이 인자가 함께 있어야 한다** (가드레일 ① 개정,
+#: 이희진 님 2026-08-28 결정 · 한금준 님 `#158` 제안).
+#:
+#: 처음에는 `os.environ` 만 보면 파일로는 안 켜진다고 여겼다. **틀렸다.**
+#: 운영 compose 가 `env_file: .env` 를 쓰고, 도커가 그 값을 **진짜 환경변수로**
+#: 실어 준다. 파이썬이 시작하기 전 일이라 「명령줄에서 온 값」과 「파일에서 온
+#: 값」을 `os.environ` 만으로는 구별할 수가 없다. 실제로 재현했다 — 서버 `.env`
+#: 에 한 줄 적고 컨테이너를 다시 만드니 명령줄 없이 문이 열렸다.
+#:
+#: `env_file` 은 **argv 를 만들 수 없다.** 그래서 이 인자가 「이번 실행에
+#: 사람이 직접 적었다」의 유일한 증거가 된다.
+SEED_ALLOW_PROD_ARGV = "--allow-prod-seed"
+
 #: **조작자가 값을 준다 — 시드가 만들지 않는다.**
 #:
 #: 환자 링크 토큰은 DB 에 sha256 만 남고 원문은 발급 응답 한 번뿐이다
@@ -205,13 +218,26 @@ def _validate_patient_rows(
 
 
 def _prod_override_granted() -> bool:
-    """**`os.environ` 만 본다.** `Config`·`.env` 는 쳐다보지 않는다 (가드레일 ①).
+    """**둘 다 있어야 연다** — 환경변수 `그리고` 명령줄 인자 (가드레일 ① 개정).
 
-    값은 정확히 `1` 또는 `true` 여야 한다. 앞뒤 공백은 털고 대소문자는 안 가리지만,
-    그 밖의 무엇도 참으로 치지 않는다.
+        SEED_ALLOW_PROD=1   있고
+        --allow-prod-seed   이번 실행의 argv 에도 있고
+
+    하나만으로는 안 열린다. 환경변수는 `.env` → compose `env_file` → 컨테이너
+    환경변수로 **저절로 따라 들어올 수 있고**, 그 길을 `os.environ` 으로는 못
+    가린다. argv 는 그 길이 없다 — 사람이 이번에 직접 적어야 생긴다.
+
+    `Config`·`.env` 는 여전히 쳐다보지 않는다. 값은 정확히 `1` 또는 `true` 여야
+    한다. 앞뒤 공백은 털고 대소문자는 안 가리지만, 그 밖의 무엇도 참으로 안 친다.
+
+    argv 를 `sys.argv` 에서 직접 본다 — 인자를 함수로 실어 나르지 않는다.
+    이 함수를 부르는 자리가 셋(가드 · 직원 시딩 · 환자 검증)인데, 실어 나르면
+    한 곳만 빠뜨려도 그 자리가 조용히 열린다.
     """
     raw = os.environ.get(SEED_ALLOW_PROD_ENV)
-    return raw is not None and raw.strip().lower() in SEED_ALLOW_PROD_TRUE
+    from_env = raw is not None and raw.strip().lower() in SEED_ALLOW_PROD_TRUE
+    from_argv = SEED_ALLOW_PROD_ARGV in sys.argv[1:]
+    return from_env and from_argv
 
 
 def _guard_environment() -> None:
@@ -224,10 +250,14 @@ def _guard_environment() -> None:
 
     좁게 만드는 장치가 셋이다.
 
-        os.environ 만 본다      `.env` 에 적어 두면 안 켜진다. `deployment.sh` 가
-                                그 파일을 서버로 나르므로, 파일로 켜지면 영구히 켜진다
+        환경변수 + 명령줄 둘 다   환경변수 하나는 서버 `.env` 에서 compose 의
+                                `env_file` 을 타고 저절로 들어올 수 있다. argv 는
+                                그 길이 없으므로 「이번에 사람이 적었다」의 증거가 된다
         값을 1·true 로 못박음    오타가 열쇠가 되지 않는다
         stderr 로 크게 알림      로그를 보는 사람이 「지금 prod 에 붓고 있다」를 안다
+
+    처음 판은 `os.environ` 만 보면 파일로는 안 켜진다고 여겼다. **틀렸다** —
+    운영 compose 가 `env_file: .env` 를 쓴다. 재현해서 확인하고 고쳤다.
     """
     if str(_CONFIG.ENV).lower() != "prod":
         return
@@ -235,14 +265,17 @@ def _guard_environment() -> None:
     if not _prod_override_granted():
         print(
             "오류: 운영 환경(ENV=prod)에서는 seed 를 실행할 수 없습니다.\n"
-            f"  Pilot/합성 환경이라면 {SEED_ALLOW_PROD_ENV}=1 을 **명령줄에** 붙여 주세요.\n"
-            f"  .env 파일에 적으면 켜지지 않습니다 — 배포 때마다 따라 올라가기 때문입니다.",
+            f"  Pilot/합성 환경이라면 **둘 다** 필요합니다:\n"
+            f"    {SEED_ALLOW_PROD_ENV}=1        (환경변수)\n"
+            f"    {SEED_ALLOW_PROD_ARGV}         (이번 실행의 명령줄)\n"
+            f"  {SEED_ALLOW_PROD_ENV} 만으로는 안 열립니다 — 그 값은 서버 .env 에서\n"
+            "  compose 의 env_file 을 타고 저절로 들어올 수 있기 때문입니다.",
             file=sys.stderr,
         )
         sys.exit(1)
 
     print(
-        f"⚠ ENV=prod 시딩 허용됨 ({SEED_ALLOW_PROD_ENV}) — Pilot/합성 전용",
+        f"⚠ ENV=prod 시딩 허용됨 ({SEED_ALLOW_PROD_ENV} + {SEED_ALLOW_PROD_ARGV}) — Pilot/합성 전용",
         file=sys.stderr,
     )
 
@@ -779,7 +812,19 @@ if __name__ == "__main__":
             "예시:\n"
             "  SEED_STAFF_PASSWORD=devpass uv run python scripts/seed.py --mode=staff\n"
             "  SEED_STAFF_PASSWORD=devpass uv run python scripts/seed.py --mode=full\n"
-            "  uv run python scripts/seed.py --mode=empty"
+            "  uv run python scripts/seed.py --mode=empty\n"
+            "\n"
+            "ENV=prod (Pilot) 에서는 둘 다 필요합니다:\n"
+            "  SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD=… \\\n"
+            "    uv run python scripts/seed.py --mode=full --allow-prod-seed"
+        ),
+    )
+    parser.add_argument(
+        SEED_ALLOW_PROD_ARGV,
+        action="store_true",
+        help=(
+            f"ENV=prod 에서 시딩을 허용한다. {SEED_ALLOW_PROD_ENV}=1 과 **함께** 있어야 한다 "
+            "(환경변수 하나만으로는 안 열린다 — 서버 .env 에서 저절로 들어올 수 있기 때문)"
         ),
     )
     parser.add_argument(

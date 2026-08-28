@@ -225,7 +225,7 @@ docker cp docs/data      fastapi:/app/docs/
 SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD='<합성 비밀번호>' \
   docker compose exec -T \
     -e SEED_ALLOW_PROD -e SEED_STAFF_PASSWORD \
-    fastapi uv run --no-sync python scripts/seed.py --mode full
+    fastapi uv run --no-sync python scripts/seed.py --mode full --allow-prod-seed
 
 # ③ 끝나면 도로 치운다 — 운영 이미지에 시딩 도구를 남기지 않는다
 docker compose exec -T fastapi rm -rf /app/scripts /app/docs
@@ -246,7 +246,7 @@ docker compose exec 는 호스트 환경변수를 자동으로 안 넘긴다
 `--no-sync` 는 이미지 `CMD` 와 같은 꼴이다 — 컨테이너 안에서 다시 설치하지 않는다.
 
 ```text
-⚠ ENV=prod 시딩 허용됨 (SEED_ALLOW_PROD) — Pilot/합성 전용
+⚠ ENV=prod 시딩 허용됨 (SEED_ALLOW_PROD + --allow-prod-seed) — Pilot/합성 전용
 ```
 
 이 배너가 stderr 에 뜨면 문이 열린 것이다. 안 뜨면 안 열린 것이니 아래를 본다.
@@ -281,16 +281,22 @@ docker-compose.prod.yml:81  ai-worker   env_file: .env
 `Config` 가 `.env` 를 흡수할 뿐 `os.environ` 에는 안 들어간다. 검사가 못박은 것은
 **그 경우뿐**이다 (`test_a_flag_only_in_the_env_file_does_not_open_it`).
 
-그러니 서버에서는 규칙으로 지킨다.
+그래서 **환경변수 하나로는 안 열리게 고쳤다** (가드레일 ① 개정, 이희진 님
+2026-08-28 결정 · 한금준 님 제안).
 
-* `envs/.prod.env` 와 서버 `~/project/.env` 에 `SEED_ALLOW_PROD` 를 **적지 않는다**
-* 시딩할 때만 명령줄에 붙인다 (`docker compose exec -e SEED_ALLOW_PROD …`)
-* 시딩이 끝나면 그 셸을 닫는다 — 변수는 그 명령에만 산다
+```text
+SEED_ALLOW_PROD=1        환경변수      「이 서버는 Pilot 이다」
+--allow-prod-seed        명령줄 인자   「이번 실행을 사람이 뜻했다」
 
-명령줄이어야만 열리게 코드를 고치는 길(예: `--allow-prod` 를 argv 로 요구)도 있다.
-`env_file` 은 argv 를 못 만들기 때문이다. 다만 한금준 님이 「해결 방식을 바로
-정하기보다 재현 결과를 공유하고 가드레일 변경 여부를 합의하자」고 했으므로 **팀
-합의 뒤에** 손댄다. 지금은 사실만 정확히 적어 둔다.
+둘 다 있을 때만 열린다.
+```
+
+`env_file` 은 **argv 를 만들 수 없다.** 서버 `.env` 에 값이 남아 있어도, 실행할
+때 명령줄에 다시 적지 않으면 문이 안 열린다. 하나만 있을 때 어떻게 막히는지는
+계약 검사 다섯이 붙들고 있다 (`test_key200_seed_prod_gate.py`).
+
+그래도 서버 `.env` 에는 안 적는 것이 낫다 — 두 문턱 중 하나를 미리 열어 두는
+셈이다.
 
 ### 운영에서는 `--mode` 를 적어야 한다
 
@@ -322,7 +328,7 @@ SEED_STAFF_PASSWORD='<합성 비밀번호>' \
 SEED_SMOKE_LINK_TOKEN='<직접 정한 토큰>' \
   docker compose exec -T \
     -e SEED_ALLOW_PROD -e SEED_STAFF_PASSWORD -e SEED_SMOKE_LINK_TOKEN \
-    fastapi uv run --no-sync python scripts/seed.py --mode full
+    fastapi uv run --no-sync python scripts/seed.py --mode full --allow-prod-seed
 ```
 
 ```text
