@@ -114,9 +114,11 @@
 
           <div class="footbar">
             <button class="button" type="button" id="submit">확인 완료 · 안내문 생성</button>
-            <span class="save-note" id="save-note" hidden>
-              안내문 생성 연동은 KEY-64 입니다 — 이 화면에서는 값 확인까지만 합니다
-            </span>
+            <!-- 처음 그릴 때는 비워 둔다. 여기에 미리 글을 넣어 두면, 스크립트가
+                 아직 안 붙은 순간에 `hidden` 만 풀려도 낡은 말이 그대로 보인다.
+                 (예전에는 「아직 연결되지 않았습니다」류의 안내가 박혀 있었고,
+                 거기 적힌 일감 번호부터 틀린 것이었다.) 문구는 ocr-review.js 가 넣는다. -->
+            <span class="save-note" id="save-note" hidden></span>
           </div>
         </div>
         </section>

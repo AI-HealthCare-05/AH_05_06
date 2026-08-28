@@ -55,6 +55,16 @@ var ocrApi = {
   updateField: function (fieldId, body) {
     return ocrRequest("/ocr/fields/" + encodeURIComponent(fieldId), { method: "PATCH", body: body });
   },
+
+  /* POST /visits/{visitId}/guide/generate — KEY-204.
+     서버는 KEY-150 에서 이미 끝나 있고, 여기서는 부르기만 한다.
+
+     **병원은 안 보낸다.** 서버가 토큰의 `actor.hospital_id` 로 진료를 고르므로
+     (`app/services/guides.py`), 화면이 병원을 실어 보내면 그것이 더 약한 길이
+     된다 — 보낸 값을 믿게 되는 순간 남의 병원 진료를 부를 여지가 생긴다. */
+  generateGuide: function (visitId) {
+    return ocrRequest("/visits/" + encodeURIComponent(visitId) + "/guide/generate", { method: "POST" });
+  },
 };
 
 /* 필드 하나가 넷 중 어느 상태인지. 화면 전체가 이 함수 하나로 갈린다.
