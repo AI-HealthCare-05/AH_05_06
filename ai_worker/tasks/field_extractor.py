@@ -99,7 +99,7 @@ _EMR_PATTERNS: dict[str, re.Pattern[str]] = {
 _PRESCRIPTION_PATTERNS: dict[str, re.Pattern[str]] = {
     k: re.compile(v, re.IGNORECASE)
     for k, v in {
-        "MEDICATION_NAME": (r"([가-힣A-Za-z]{2,}[가-힣A-Za-z\s]+\d+\s*(?:mg|mcg|g|mL))"),
+        "MEDICATION_NAME": (r"([가-힣A-Za-z]{2,}[가-힣A-Za-z ]+\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|정|캡슐))"),
         "DURATION_DAYS": r"(\d{1,3})\s*일",
         "DOSAGE": r"1회량\s*[:：]?\s*(\d+(?:\.\d+)?(?:\s*정|\s*캡슐|\s*mL)?)",
         "FREQUENCY": r"(?:일일|하루)\s*(\d+)\s*회",
@@ -163,8 +163,9 @@ def _extract_from_clova_blocks(clova_result: ClovaOcrResult) -> list[ExtractedFi
     """CLOVA 블록 리스트에서 헤더→값 레이아웃으로 EMR 필드를 추출한다.
 
     SYN-EMS-01 실측 기준 (PR #147 / KEY-190):
-      진단 표: 상병명 헤더 → 다음 비헤더 블록이 진단명
-      처방 표: [약품명·1회량·일일횟수·처방일수] 연속 → 그 다음 N개 블록이 값
+      진단 표: 상병명/진단명 헤더 → 다음 비헤더 블록이 진단명
+      처방 표: 처방 열 헤더들의 마지막 위치 다음부터 등장 순서대로 값 블록이 위치한다.
+               헤더 사이에 비헤더 블록이 끼어 있어도 동작한다.
     """
     texts = [f.text.strip() for f in clova_result.fields]
     n = len(texts)
@@ -184,20 +185,18 @@ def _extract_from_clova_blocks(clova_result: ClovaOcrResult) -> list[ExtractedFi
                 )
             break
 
-    # 2. 처방 표: 연속된 열 헤더 블록 → 오프셋으로 값 블록 추출
-    all_pres_headers = set(_PRESCRIPTION_COLUMN_HEADERS.keys())
-    for start in range(n):
-        run: list[str] = []
-        j = start
-        while j < n and texts[j] in all_pres_headers:
-            run.append(texts[j])
-            j += 1
-        if len(run) < 2:
-            continue
-        # run의 마지막 헤더 바로 다음부터 값 블록이 헤더 순서대로 위치한다
-        last_header_idx = start + len(run) - 1
-        for rank, header_text in enumerate(run):
-            value_idx = last_header_idx + 1 + rank
+    # 2. 처방 표: 헤더 위치를 개별 탐색 → 마지막 헤더 다음부터 등장 순서대로 값 추출
+    # 헤더가 비연속으로 반환되더라도 각 헤더의 첫 등장 위치를 기준으로 동작한다.
+    header_positions: dict[str, int] = {}
+    for i, t in enumerate(texts):
+        if t in _PRESCRIPTION_COLUMN_HEADERS and t not in header_positions:
+            header_positions[t] = i
+
+    if len(header_positions) >= 2:
+        ordered_headers = sorted(header_positions.items(), key=lambda x: x[1])
+        last_header_pos = ordered_headers[-1][1]
+        for rank, (header_text, _) in enumerate(ordered_headers):
+            value_idx = last_header_pos + 1 + rank
             if value_idx >= n:
                 break
             results.append(
@@ -207,7 +206,6 @@ def _extract_from_clova_blocks(clova_result: ClovaOcrResult) -> list[ExtractedFi
                     confidence=Decimal(str(round(clova_result.fields[value_idx].confidence, 4))),
                 )
             )
-        break  # 첫 번째 처방 표만 처리
 
     return results
 
@@ -250,11 +248,17 @@ def _extract_by_regex(
 def _confidence_for(value: str, clova_result: ClovaOcrResult) -> Decimal:
     """추출한 값과 가장 잘 일치하는 CLOVA 블록의 신뢰도를 반환한다.
 
+    완전 일치를 먼저 탐색하고, 3자 이상인 경우만 포함 관계로 fallback한다.
+    짧은 숫자("1", "84" 등)의 오매칭으로 is_low_confidence가 잘못 판정되는 것을 방지한다.
     일치하는 블록이 없으면 _DEFAULT_CONFIDENCE를 반환한다 (정규식 단독 매칭).
     """
     value_lower = value.lower()
     for field in clova_result.fields:
-        text_lower = field.text.lower()
-        if value_lower in text_lower or text_lower in value_lower:
+        if field.text.lower() == value_lower:
             return Decimal(str(round(field.confidence, 4)))
+    if len(value_lower) >= 3:
+        for field in clova_result.fields:
+            text_lower = field.text.lower()
+            if value_lower in text_lower or text_lower in value_lower:
+                return Decimal(str(round(field.confidence, 4)))
     return _DEFAULT_CONFIDENCE

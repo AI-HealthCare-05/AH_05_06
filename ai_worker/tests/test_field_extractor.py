@@ -5,15 +5,21 @@
   - 필드명이 KEY-163 §2 계약(MEDICATION_NAME·DURATION_DAYS)과 일치
   - DOSAGE·FREQUENCY 권장 필드 추출
   - CLOVA 블록 매칭 시 실제 inferConfidence 사용
-  - 정규식 단독 매칭 시 _DEFAULT_CONFIDENCE(0.70) 사용 → is_low_confidence 임계값(0.75) 미만
+  - 정규식 단독 매칭 시 is_low_confidence 임계값(0.75) 미만 신뢰도 부여
   - 구버전 필드명(PRESCRIPTION_NAME·PRESCRIPTION_DURATION) 미생성
+  - 처방 표 헤더 비연속 레이아웃에서도 올바른 필드 추출
+  - 짧은 숫자값의 블록 부분 매칭 오판정 방지
 """
 
 from decimal import Decimal
 
+import pytest
+
 from ai_worker.adapters.clova import ClovaOcrResult, ClovaTextField
-from ai_worker.tasks.field_extractor import _DEFAULT_CONFIDENCE, extract_fields
+from ai_worker.tasks.field_extractor import extract_fields
 from app.models.ocr import OcrDocumentType
+
+_LOW_CONFIDENCE_THRESHOLD = Decimal("0.75")
 
 # ---------------------------------------------------------------------------
 # SYN-EMS-01 실측 CLOVA 블록 — PR #147 / KEY-190 (2026-08-27)
@@ -108,6 +114,34 @@ def test_no_deprecated_field_names() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 처방 표 블록 파서 — 헤더 비연속 레이아웃 (항목 3 수정 검증)
+# ---------------------------------------------------------------------------
+
+
+def test_prescription_table_with_non_consecutive_headers() -> None:
+    """처방 표 헤더 사이에 비헤더 블록이 끼어 있어도 올바른 필드-값 매핑이 된다."""
+    # 약품명 / [비헤더] / 1회량 / 일일횟수 / 처방일수 / 비잔정2mg / 1 / 1 / 84
+    blocks = [
+        ClovaTextField(text="약품명", confidence=0.99),
+        ClovaTextField(text="(구분선)", confidence=0.88),  # 비헤더 블록
+        ClovaTextField(text="1회량", confidence=0.98),
+        ClovaTextField(text="일일횟수", confidence=0.97),
+        ClovaTextField(text="처방일수", confidence=0.99),
+        ClovaTextField(text="비잔정 2mg", confidence=0.94),
+        ClovaTextField(text="1", confidence=0.98),
+        ClovaTextField(text="1", confidence=0.97),
+        ClovaTextField(text="84", confidence=0.99),
+    ]
+    result = ClovaOcrResult(raw_text="\n".join(b.text for b in blocks), fields=blocks)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert field_map.get("MEDICATION_NAME") == "비잔정 2mg"
+    assert field_map.get("DOSAGE") == "1"
+    assert field_map.get("DURATION_DAYS") == "84"
+
+
+# ---------------------------------------------------------------------------
 # 신뢰도 — CLOVA 블록 매칭 시 실제 inferConfidence 사용
 # ---------------------------------------------------------------------------
 
@@ -126,12 +160,12 @@ def test_block_matched_field_uses_clova_confidence() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 신뢰도 — 정규식 단독 매칭 시 _DEFAULT_CONFIDENCE(0.70) 적용
+# 신뢰도 — 정규식 단독 매칭 시 is_low_confidence 임계값 미만 (항목 6 수정)
 # ---------------------------------------------------------------------------
 
 
-def test_regex_only_match_uses_default_confidence() -> None:
-    """CLOVA 블록과 매칭되지 않은 정규식 추출값은 _DEFAULT_CONFIDENCE를 가진다."""
+def test_regex_only_match_uses_low_confidence() -> None:
+    """CLOVA 블록과 매칭되지 않은 정규식 추출값은 is_low_confidence 임계값(0.75) 미만이다."""
     result = ClovaOcrResult(
         raw_text="CA-125 : 48 U/mL\nAMH : 2.8 ng/mL",
         fields=[],  # 매칭되는 CLOVA 블록 없음 → 정규식 단독 매칭
@@ -140,22 +174,24 @@ def test_regex_only_match_uses_default_confidence() -> None:
     assert len(fields) > 0, "LAB_RESULT 패턴이 추출되어야 한다"
 
     for f in fields:
-        assert f.confidence == _DEFAULT_CONFIDENCE, (
-            f"{f.field_type}의 confidence {f.confidence}가 _DEFAULT_CONFIDENCE({_DEFAULT_CONFIDENCE})여야 한다"
+        assert f.confidence < _LOW_CONFIDENCE_THRESHOLD, (
+            f"{f.field_type}의 confidence {f.confidence}가 임계값({_LOW_CONFIDENCE_THRESHOLD}) 이상"
         )
 
 
-def test_regex_default_confidence_is_below_low_confidence_threshold() -> None:
-    """_DEFAULT_CONFIDENCE가 is_low_confidence 임계값(0.75) 미만이다."""
-    assert _DEFAULT_CONFIDENCE < Decimal("0.75"), (
-        f"_DEFAULT_CONFIDENCE({_DEFAULT_CONFIDENCE})가 임계값 0.75 이상이면 "
-        "정규식 단독 매칭값이 is_low_confidence로 표시되지 않는다"
+def test_short_numeric_value_avoids_partial_block_match() -> None:
+    """길이 3 미만의 추출값은 블록 부분 일치를 시도하지 않아 낮은 신뢰도를 반환한다."""
+    # PRESCRIPTION DURATION_DAYS 패턴이 "84"를 추출하지만,
+    # 블록 텍스트 "84일처방기간"에 "84"가 포함되어도 len("84") < 3이므로 부분 매칭 안 함
+    result = ClovaOcrResult(
+        raw_text="84일",
+        fields=[ClovaTextField(text="84일처방기간", confidence=0.95)],
     )
+    fields = extract_fields(result, OcrDocumentType.PRESCRIPTION)
+    field_map = {f.field_type: f for f in fields}
 
-
-# ---------------------------------------------------------------------------
-# 처방전(PRESCRIPTION) 문서 유형 — 필드명 정합
-# ---------------------------------------------------------------------------
+    assert "DURATION_DAYS" in field_map
+    assert field_map["DURATION_DAYS"].confidence < _LOW_CONFIDENCE_THRESHOLD
 
 
 # ---------------------------------------------------------------------------
@@ -177,21 +213,27 @@ def test_emr_regex_medication_name_does_not_cross_newline() -> None:
     assert "무관한텍스트" not in field_map["MEDICATION_NAME"]
 
 
-def test_emr_regex_medication_name_captures_dosage_units() -> None:
-    """EMR 정규식 fallback: mg·정·캡슐 등 다양한 용량 단위를 포함해 추출한다."""
-    cases = [
+@pytest.mark.parametrize(
+    "raw_text, expected_value",
+    [
         ("처방: 비잔정 2mg", "비잔정 2mg"),
         ("투약: 프로베라정 1정", "프로베라정 1정"),
         ("약제: 루프론 3.75mg", "루프론 3.75mg"),
-    ]
-    for raw_text, expected_value in cases:
-        result = ClovaOcrResult(raw_text=raw_text, fields=[])
-        fields = extract_fields(result, OcrDocumentType.EMR)
-        field_map = {f.field_type: f.extracted_value for f in fields}
-        assert "MEDICATION_NAME" in field_map, f"MEDICATION_NAME 누락: {raw_text!r}"
-        assert field_map["MEDICATION_NAME"] == expected_value, (
-            f"기대값={expected_value!r}, 실제값={field_map['MEDICATION_NAME']!r}"
-        )
+    ],
+)
+def test_emr_regex_medication_name_captures_dosage_units(raw_text: str, expected_value: str) -> None:
+    """EMR 정규식 fallback: mg·정·캡슐 등 다양한 용량 단위를 포함해 추출한다."""
+    result = ClovaOcrResult(raw_text=raw_text, fields=[])
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "MEDICATION_NAME" in field_map, f"MEDICATION_NAME 누락: {raw_text!r}"
+    assert field_map["MEDICATION_NAME"] == expected_value
+
+
+# ---------------------------------------------------------------------------
+# 처방전(PRESCRIPTION) 문서 유형 — 필드명 정합
+# ---------------------------------------------------------------------------
 
 
 def test_prescription_doc_type_uses_correct_field_names() -> None:
