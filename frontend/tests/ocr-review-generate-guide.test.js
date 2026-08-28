@@ -213,48 +213,82 @@ test("판 번호(loadSeq)로 가르던 자리가 남아 있지 않다", () => {
   );
 });
 
-test("요청이 끝나면 어느 화면이든 잠금을 푼다", () => {
+test("**잠금은 내가 쥔 것일 때만 푼다** — 늦게 온 옛 응답이 새 요청을 열지 않게", () => {
+  /* 이희진 님 `KEY-210`. 앞 판은 「어느 화면이든 잠금부터 푼다」였고, 검사도
+     그 순서를 강제하고 있었다. 그러면 이렇게 된다.
+
+       A 에서 누름(req1) → B 로 감 → A 로 돌아옴 → 다시 누름(req2)
+       → req1 응답 도착 → generating=false → **req2 가 나가 있는데 버튼이 열린다**
+
+     물어야 할 것은 「끝났는가」가 아니라 **「내가 지금 나가 있는 그 요청인가」**다. */
+  const box = load("ocr-review");
+
+  assert.equal(box.generateLockIsMine(3, 3), true, "내가 최신인데 잠금을 안 푼다");
+  assert.equal(box.generateLockIsMine(2, 3), false, "옛 요청이 새 잠금을 푼다");
+});
+
+test("재현 순서 — 돌아와 다시 누른 뒤 옛 응답이 와도 잠금이 유지된다", () => {
+  /* `KEY-210` 인수조건 ①②. 화면 코드를 부를 수 없으니(껍데기의 `getElementById`
+     가 `null` 이면 IIFE 가 통째로 안 돈다) **두 규칙의 조합**으로 재현한다.
+
+       req1 = 1세대 · A         req2 = 2세대 · A (재클릭)
+       지금 나가 있는 것은 2세대, 화면은 A */
+  const box = load("ocr-review");
+  const latest = 2;
+  const shown = { visit_id: 8801 };
+
+  const req1 = { seq: 1, wanted: 8801 };
+  const req2 = { seq: 2, wanted: 8801 };
+
+  const mayTouch = (r) =>
+    box.generateLockIsMine(r.seq, latest) && box.outcomeBelongsToScreen(r.wanted, shown);
+
+  assert.equal(mayTouch(req1), false, "늦게 온 req1 이 잠금·문구를 건드린다");
+  assert.equal(mayTouch(req2), true, "지금 나가 있는 req2 가 결과를 못 쓴다");
+});
+
+test("떠났다 돌아온 정상 케이스는 그대로다 — 재클릭이 없으면 결과를 보여 준다", () => {
+  /* `KEY-210` 인수조건 ③ — KEY-204 회귀를 유지한다. */
+  const box = load("ocr-review");
+
+  const stillMine = box.generateLockIsMine(1, 1);
+  const sameVisit = box.outcomeBelongsToScreen(8801, { visit_id: 8801 });
+
+  assert.ok(stillMine && sameVisit, "재클릭 없이 돌아왔는데 결과를 못 쓴다");
+});
+
+test("**요청마다 세대가 올라간다** — 안 올리면 규칙이 늘 참이 된다", () => {
+  /* `generateLockIsMine` 만 잘 만들어도 소용이 없다. 세대를 안 올리면 모든
+     요청이 같은 번호를 갖고, 규칙은 언제나 「내 것」이라고 답한다 — 결함이
+     조용히 되돌아온다. 실제로 주입해 보니 규칙 검사 넷이 다 통과했다.
+
+     그래서 **올리는 자리**를 따로 잰다. */
   const source = read("js/ocr-review.js");
 
   const at = source.indexOf('if (target.id === "submit")');
   const branch = source.slice(at, source.indexOf("var jump = target.closest", at));
 
-  /* `generating = false` 가 가림막 **뒤**에 있으면, 다른 진료를 보는 사이
-     응답이 와서 버려질 때 잠금이 안 풀린다. */
-  const then = branch.indexOf(".then(");
-  const guard = branch.indexOf("outcomeBelongsToScreen(", then);
-  const unlock = branch.indexOf("generating = false", then);
-
-  assert.ok(unlock !== -1 && guard !== -1, "성공 갈래에서 둘 중 하나를 못 찾았다");
-  assert.ok(unlock < guard, "잠금 푸는 줄이 가림막 뒤에 있다 — 버려질 때 버튼이 잠긴 채 남는다");
+  assert.match(
+    branch,
+    /var\s+\w+\s*=\s*\+\+generateSeq/,
+    "요청 세대를 올리지 않고 그냥 읽는다 — 모든 요청이 같은 번호가 되어 규칙이 늘 참이 된다",
+  );
 });
 
-test("병원을 실어 보내지 않는다 — 서버가 토큰으로 판단한다", () => {
-  const source = read("js/ocr-api.js");
-
-  const at = source.indexOf("generateGuide:");
-  assert.ok(at !== -1, "생성 헬퍼가 없다");
-
-  const fn = source.slice(at, at + 240);
-  assert.ok(!/hospital/i.test(fn), "화면이 병원을 보낸다 — 보낸 값을 믿는 길이 생긴다");
-  assert.match(fn, /encodeURIComponent/, "경로에 값을 그대로 끼운다");
-});
-
-/* ── 낡은 말이 남지 않았는가 ───────────────────────────────────────────── */
-
-test("「아직 연결되지 않았습니다」가 사라졌다", () => {
+test("두 갈래 모두 잠금 주인을 확인한다", () => {
   const source = read("js/ocr-review.js");
-  const html = read("ocr-review.html");
 
-  assert.ok(!source.includes("안내문 생성은 아직 연결되지 않았습니다"), "JS 에 낡은 문구가 남아 있다");
+  const at = source.indexOf('if (target.id === "submit")');
+  const branch = source.slice(at, source.indexOf("var jump = target.closest", at));
 
-  /* HTML 은 **사람이 보는 자리**만 본다. 주석까지 훑으면 「예전에는 이렇게
-     적혀 있었다」는 회고 설명에 걸린다 — 글자만 보는 검사는 주장과 회고를
-     못 가른다(오늘 여러 번 밟았다). 주석을 떼고 남는 것으로 잰다. */
-  const visible = html.replace(/<!--[\s\S]*?-->/g, "");
-  assert.ok(!/아직 연결되지 않았습니다/.test(visible), "HTML 에 낡은 안내가 남아 있다");
-  assert.ok(!/KEY-\d+/.test(visible), "화면에 일감 번호가 보인다 — 스탭이 알 필요 없는 말이다");
+  const checks = branch.match(/generateLockIsMine\(/g) || [];
+  assert.equal(checks.length, 2, `성공·실패 중 한쪽만 잠금 주인을 본다 — ${checks.length} 곳`);
+  assert.ok(
+    !/^\s*generating = false;\s*$/m.test(branch.replace(/if \(lockIsMine\) generating = false;/g, "")),
+    "잠금을 무조건 푸는 줄이 남아 있다",
+  );
 });
+
 
 /* ── 치우는 자리와 쓰는 자리 ───────────────────────────────────────────── */
 

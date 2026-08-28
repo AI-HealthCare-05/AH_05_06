@@ -152,6 +152,21 @@ function generateFailureSaying(error) {
  * `doctor.js` 가 승인에서 `approvingId` 로 하는 것과 같은 뜻이다 — 붙잡은
  * 대상에 결과를 붙이지, 화면의 판 번호에 붙이지 않는다.
  */
+/* 이 응답이 **지금 잠금을 쥔 요청**의 것인가 — 이희진 님 `KEY-210`.
+ *
+ * `#162` 에서 잠금 푸는 줄을 가림막 앞으로 옮겼는데, 그러면 **늦게 온 옛 응답이
+ * 새 요청의 잠금까지 푼다.** A 에서 누르고 → B 로 갔다 → A 로 돌아와 → 다시
+ * 누르면, 첫 응답이 도착하는 순간 두 번째가 아직 나가 있는데도 버튼이 열린다.
+ * 이희진 님이 그 자리를 짚어 티켓으로 냈다.
+ *
+ * 세대 번호를 하나 더 둔다. **화면 세대(`loadSeq`)가 아니라 요청 세대다** —
+ * 물어야 할 것이 「지금 어느 화면인가」가 아니라 「지금 나가 있는 요청이
+ * 무엇인가」이기 때문이다.
+ */
+function generateLockIsMine(mySeq, latestSeq) {
+  return mySeq === latestSeq;
+}
+
 function outcomeBelongsToScreen(wantedId, shownVisit) {
   return !!shownVisit && shownVisit.visit_id === wantedId;
 }
@@ -234,6 +249,9 @@ function stateTakesFocus(tone) {
      또 남의 값이 뜬다. 세대를 세어 **지금 것만** 그린다 —
      `doctor.js` 의 `loadSeq` 와 같은 장치다. */
   var loadSeq = 0;
+
+  /* 안내문 생성 요청의 세대. 화면 세대와 따로 센다 (KEY-210). */
+  var generateSeq = 0;
   var pollTimer = null;
 
   /* 상태 칸의 **처음 값도** `blankReviewState()` 에서 받는다. 선언과 초기화가
@@ -896,6 +914,7 @@ function stateTakesFocus(tone) {
 
       if (generating) return; // 이미 나가 있다
       generating = true;
+      var mySeq = ++generateSeq; // 이 잠금은 내 것이다
       redraw(); // 버튼을 잠근다 — 잠금은 renderSummary 가 규칙으로 계산한다
 
       saveNote.textContent = "안내문을 만드는 중입니다…";
@@ -904,19 +923,22 @@ function stateTakesFocus(tone) {
       ocrApi
         .generateGuide(wantedId)
         .then(function () {
-          /* **요청은 끝났다** — 어느 화면을 보고 있든 잠금부터 푼다. */
-          generating = false;
+          /* **내가 쥔 잠금일 때만 푼다.** 늦게 온 옛 응답이 새 요청의 잠금을
+             풀면, 나가 있는 요청이 있는데도 버튼이 열린다 (KEY-210). */
+          var lockIsMine = generateLockIsMine(mySeq, generateSeq);
+          if (lockIsMine) generating = false;
 
-          /* 늦게 온 소식은 **그 진료를 보고 있을 때만** 쓴다. 다른 진료로
-             갔다면 지금 화면과 무관하고, 돌아왔다면 여전히 관계있다. */
-          if (!outcomeBelongsToScreen(wantedId, visit)) return;
+          /* 화면에 쓰는 것은 **내가 최신 요청이고, 그 진료를 보고 있을 때만.**
+             다른 진료로 갔다면 무관하고, 돌아왔다면 여전히 관계있다. */
+          if (!lockIsMine || !outcomeBelongsToScreen(wantedId, visit)) return;
           redraw();
           saveNote.textContent = "안내문을 만들었습니다 — 의사 승인 화면에서 이어서 보실 수 있습니다";
           saveNote.hidden = false;
         })
         .catch(function (error) {
-          generating = false;
-          if (!outcomeBelongsToScreen(wantedId, visit)) return;
+          var lockIsMine = generateLockIsMine(mySeq, generateSeq);
+          if (lockIsMine) generating = false;
+          if (!lockIsMine || !outcomeBelongsToScreen(wantedId, visit)) return;
           redraw();
 
           /* 409 는 실패가 아니다. 새로고침 뒤 다시 눌렀거나 두 사람이 같이
