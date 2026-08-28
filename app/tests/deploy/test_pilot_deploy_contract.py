@@ -327,7 +327,7 @@ class TestThePatReachesDockerAndNothingElse:
 
     PAT = "SYNTHETIC-PAT-NOT-A-REAL-TOKEN"
 
-    def _deploy(self, tmp_path: Path) -> tuple[subprocess.CompletedProcess[str], Path]:
+    def _deploy(self, tmp_path: Path, services: str = "api nginx") -> tuple[subprocess.CompletedProcess[str], Path]:
         seen = tmp_path / "login-stdin.txt"
         write_stub(
             tmp_path / "bin",
@@ -343,7 +343,7 @@ echo "docker $*"
             cwd=tmp_path,
             stub_dir=tmp_path / "bin",
             DOCKER_USERNAME="synthetic-user",
-            DEPLOY_SERVICES="api nginx",
+            DEPLOY_SERVICES=services,
         )
         return done, seen
 
@@ -357,8 +357,35 @@ echo "docker $*"
         """예전 구조에서는 `set -e` 에 걸려 여기까지 오지도 못했다."""
         done, _ = self._deploy(tmp_path)
 
-        assert "compose up -d --pull always" in done.stdout, f"배포가 중간에 끊겼다 — {done.stdout}"
+        assert "compose up -d" in done.stdout, f"배포가 중간에 끊겼다 — {done.stdout}"
         assert "image prune -af" in done.stdout, "옛 이미지 정리까지 못 갔다"
+
+    def test_it_migrates_before_swapping_the_app(self, tmp_path: Path) -> None:
+        """**payload 를 진짜로 돌려서** 마이그레이션이 앞인지 본다 — KEY-206.
+
+        글자로 스크립트를 훑는 검사는 따로 있다. 여기서는 `bash -s` 에 물려
+        **실제로 나가는 명령의 차례**를 본다 — 조건문이 엉뚱하게 걸리거나
+        `set -e` 가 중간에 끊으면 글자 검사는 못 잡는다.
+        """
+        done, _ = self._deploy(tmp_path, services="fastapi nginx")
+
+        lines = done.stdout.splitlines()
+        migrate = next((i for i, ln in enumerate(lines) if "aerich upgrade" in ln), -1)
+        swap = next((i for i, ln in enumerate(lines) if "compose up -d" in ln), -1)
+
+        assert migrate >= 0, f"fastapi 를 올리는데 마이그레이션이 안 돌았다 — {done.stdout}"
+        assert swap >= 0, f"앱 교체가 안 돌았다 — {done.stdout}"
+        assert migrate < swap, (
+            f"마이그레이션({migrate})이 앱 교체({swap}) 뒤에 있다 — 실패해도 새 코드가 "
+            f"이미 돌고 있어 배포를 멈출 수가 없다\n{done.stdout}"
+        )
+
+    def test_it_leaves_the_database_alone_when_the_app_is_not_deployed(self, tmp_path: Path) -> None:
+        """nginx 만 올리는 배포까지 DB 를 건드릴 이유는 없다."""
+        done, _ = self._deploy(tmp_path, services="nginx")
+
+        assert "aerich" not in done.stdout, f"nginx 만 올리는데 마이그레이션이 돌았다 — {done.stdout}"
+        assert "compose up -d" in done.stdout, f"배포가 안 돌았다 — {done.stdout}"
 
     def test_the_pat_never_shows_up_in_the_output(self, tmp_path: Path) -> None:
         """`bash: line 1: <PAT>: command not found` 로 새던 자리다."""
