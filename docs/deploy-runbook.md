@@ -261,9 +261,36 @@ envs/.prod.env 에 적으면   deployment.sh 가 그 파일을 ~/project/.env �
 ~/project/.env 에 적으면   다음 배포가 덮어쓰기 전까지 남아 있다
 ```
 
-`seed.py` 는 이 플래그를 **`os.environ` 에서만** 읽는다. `.env` 에 적어도 안 켜진다 —
-`Config` 가 그 값을 흡수하더라도 가드는 쳐다보지 않는다. 이 성질은 검사로 못박아
-두었다 (`app/tests/deploy/test_key200_seed_prod_gate.py`).
+#### 🔴 파일에 적으면 **서버에서는 켜진다** — 가드가 못 막는다
+
+앞 판의 이 문서는 「`.env` 에 적어도 안 켜진다」고 적어 두었다. **그건 틀렸다.**
+한금준 님이 `#158` 에서 짚었고, 재현해서 확인했다.
+
+```text
+docker-compose.prod.yml:55  fastapi     env_file: .env
+docker-compose.prod.yml:81  ai-worker   env_file: .env
+
+  .env 에 SEED_ALLOW_PROD=1 을 적고 컨테이너를 다시 만들면
+  → os.environ.get("SEED_ALLOW_PROD") == "1"      ← 문이 열린다
+```
+
+`env_file` 은 **도커가 진짜 환경변수로 실어 준다.** 파이썬이 시작하기 전 일이라
+`os.environ` 만 보는 가드로는 구별할 수가 없다.
+
+호스트에서 `python scripts/seed.py` 를 그냥 돌릴 때는 여전히 안 열린다 — 그때는
+`Config` 가 `.env` 를 흡수할 뿐 `os.environ` 에는 안 들어간다. 검사가 못박은 것은
+**그 경우뿐**이다 (`test_a_flag_only_in_the_env_file_does_not_open_it`).
+
+그러니 서버에서는 규칙으로 지킨다.
+
+* `envs/.prod.env` 와 서버 `~/project/.env` 에 `SEED_ALLOW_PROD` 를 **적지 않는다**
+* 시딩할 때만 명령줄에 붙인다 (`docker compose exec -e SEED_ALLOW_PROD …`)
+* 시딩이 끝나면 그 셸을 닫는다 — 변수는 그 명령에만 산다
+
+명령줄이어야만 열리게 코드를 고치는 길(예: `--allow-prod` 를 argv 로 요구)도 있다.
+`env_file` 은 argv 를 못 만들기 때문이다. 다만 한금준 님이 「해결 방식을 바로
+정하기보다 재현 결과를 공유하고 가드레일 변경 여부를 합의하자」고 했으므로 **팀
+합의 뒤에** 손댄다. 지금은 사실만 정확히 적어 둔다.
 
 ### 운영에서는 `--mode` 를 적어야 한다
 

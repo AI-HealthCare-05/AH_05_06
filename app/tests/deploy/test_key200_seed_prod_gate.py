@@ -41,6 +41,8 @@ from pathlib import Path
 
 import pytest
 
+from app.tests.deploy.conftest import compose
+
 ROOT = Path(__file__).resolve().parents[3]
 SEED = ROOT / "scripts" / "seed.py"
 
@@ -105,10 +107,18 @@ class TestTheProdGateStaysNarrow:
         assert GATE_CLOSED in done.stderr, f"막히긴 했는데 **가드가 막은 것이 아니다** — stderr={done.stderr[-400:]!r}"
 
     def test_a_flag_only_in_the_env_file_does_not_open_it(self, tmp_path: Path) -> None:
-        """ⓑ **`.env` 에 적어 두는 것으로는 안 열린다** — 가드레일 ①.
+        """ⓑ **호스트에서 `.env` 에 적어 두는 것으로는 안 열린다** — 가드레일 ①.
 
         `deployment.sh:133` 이 `envs/.prod.env` 를 `~/project/.env` 로 올리므로,
         파일로 켜지면 배포될 때마다 따라 올라간다. 그 길을 막는다.
+
+        **여기서 재는 것은 호스트에서 직접 돌릴 때뿐이다.** 컨테이너 안은 다르다 —
+        `docker-compose.prod.yml` 이 `env_file: .env` 를 쓰므로 도커가 그 값을
+        **진짜 환경변수로** 실어 준다. 파이썬이 시작하기 전 일이라 `os.environ` 만
+        보는 가드로는 구별할 수 없고, 그 경우엔 **열린다**.
+
+        한금준 님이 `#158` 에서 짚었고 재현했다. 아래 검사가 그 사실을 못박는다 —
+        이 검사만 보고 「파일로는 절대 안 열린다」고 읽지 말라는 뜻이다.
         """
         (tmp_path / ".env").write_text("SEED_ALLOW_PROD=1\n", encoding="utf-8")
 
@@ -119,6 +129,30 @@ class TestTheProdGateStaysNarrow:
             f"영구히 켜진다. stdout={done.stdout!r}"
         )
         assert GATE_CLOSED in done.stderr, f"stderr={done.stderr[-400:]!r}"
+
+    def test_the_prod_containers_hand_the_env_file_to_the_process(self) -> None:
+        """**위 검사가 못 재는 자리를 사실로 적어 둔다** — 한금준 님 `#158`.
+
+        운영 compose 가 `env_file: .env` 를 쓰는 한, 서버 `.env` 에 적힌
+        `SEED_ALLOW_PROD` 는 컨테이너의 `os.environ` 에 그대로 들어온다.
+        가드가 못 막는다.
+
+        재현(2026-08-28):
+
+            .env: SEED_ALLOW_PROD=1  →  컨테이너에서 os.environ.get(...) == "1"
+
+        이 사실이 바뀌면 — 누가 `env_file` 을 걷어내면 — 이 검사가 울고,
+        런북의 설명도 함께 고치게 된다. 지금은 규칙(런북)으로만 막고 있고,
+        코드로 막을지는 팀 합의 뒤에 정한다.
+        """
+        prod = compose("infra/docker/docker-compose.prod.yml")
+        carriers = {name: svc.get("env_file") for name, svc in prod["services"].items() if svc.get("env_file")}
+
+        assert carriers, (
+            "운영 compose 에 `env_file` 이 하나도 없다 — 그렇다면 런북의 "
+            "「파일에 적으면 서버에서는 켜진다」 설명이 낡았다. 함께 고쳐라"
+        )
+        assert "fastapi" in carriers, f"시드를 돌리는 서비스가 `env_file` 을 안 쓴다 — 설명을 다시 보라: {carriers}"
 
     def test_the_flag_in_the_environment_opens_it_and_says_so(self, tmp_path: Path) -> None:
         """ⓒ **`os.environ` 에 있으면 열리고, 열렸다고 크게 알린다.**
