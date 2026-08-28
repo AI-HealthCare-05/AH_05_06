@@ -1,14 +1,18 @@
 """OCR Worker 태스크 — KEY-56 · KEY-175.
 
 처리 흐름:
-  CLOVA 활성  : 파일 읽기 → CLOVA 호출 → OcrResult/OcrDocumentText/OcrField 저장 → COMPLETED
-  CLOVA 실패  : fixture fallback → COMPLETED  (전체 여정이 중단되지 않는다)
-  CLOVA 비활성: fixture fallback → COMPLETED
-  파일/DB 오류 : OcrJob.status → FAILED
+  CLOVA 활성                  : 파일 읽기 → CLOVA 호출 → OcrResult/OcrDocumentText/OcrField 저장 → COMPLETED
+  CLOVA 활성 + 필수 필드 누락 : REQUIRED_FIELD_MISSING 설정 → fixture fallback 또는 FAILED
+  CLOVA 실패                  : CLOVA_API_ERROR 설정 → fixture fallback 또는 FAILED
+  CLOVA 비활성                : OCR_NOT_CONFIGURED 설정 → fixture fallback 또는 FAILED
+  파일/DB 오류                : OcrJob.status → FAILED
+
+  필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS) 중 하나라도 누락되면
+  CLOVA 호출 자체가 성공해도 COMPLETED로 처리하지 않는다 (KEY-163 §4, KEY-187).
 
 필드 파싱:
   와이어프레임 S1-6~9 근거로 문서 유형별 핵심 필드를 추출한다 (field_extractor.py).
-  패턴 정확도는 8/27 멘토링 후 실제 CLOVA 출력을 확인하고 보정한다.
+  EMR은 CLOVA 블록 파서(헤더→값 레이아웃) 우선, 실패한 필드만 정규식으로 보완한다.
 
 관측 로그 (KEY-175):
   모든 종료 경로에서 아래 형식의 단일 구조화 로그를 남긴다.
@@ -21,13 +25,12 @@ import asyncio
 from pathlib import Path
 from time import perf_counter
 
-from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, call_clova_ocr
 from ai_worker.core import config, default_logger
-from ai_worker.tasks.field_extractor import extract_fields
+from ai_worker.tasks.field_extractor import ExtractedField, extract_fields
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentText,
@@ -41,6 +44,9 @@ from app.models.ocr import (
 from app.ocr.service import seed_fixture_result
 
 _CLOVA_MODEL_NAME = "clova-ocr-v2"
+
+# EMR 문서가 포함된 작업에서 COMPLETED로 인정하려면 이 필드를 모두 추출해야 한다 (KEY-163 §4, KEY-187)
+_REQUIRED_OCR_FIELDS: frozenset[str] = frozenset({"DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"})
 
 
 async def process_ocr_job(ocr_job_id: str) -> None:
@@ -74,9 +80,26 @@ async def process_ocr_job(ocr_job_id: str) -> None:
     if config.clova_enabled:
         try:
             clova_results = await _call_clova_for_documents(job_documents, doc_map)
-            await _save_clova_result(job, job_documents, clova_results)
             clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
-            _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None, clova_elapsed_ms=clova_elapsed_ms)
+            saved = await _save_clova_result(job, job_documents, clova_results)
+            if saved:
+                _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None, clova_elapsed_ms=clova_elapsed_ms)
+            else:
+                job.failure_code = "REQUIRED_FIELD_MISSING"
+                await job.save(update_fields=("failure_code",))
+                used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
+                default_logger.warning(
+                    "필수 OCR 필드 누락 → %s — ocr_job_id=%s",
+                    "fixture fallback" if used_fixture else "FAILED",
+                    ocr_job_id,
+                )
+                _observe(
+                    ocr_job_id=ocr_job_id,
+                    mode="fixture" if used_fixture else "failed",
+                    t0=t0,
+                    error_code="REQUIRED_FIELD_MISSING",
+                    clova_elapsed_ms=clova_elapsed_ms,
+                )
         except ClovaOcrError as exc:
             job.failure_code = "CLOVA_API_ERROR"
             await job.save(update_fields=("failure_code",))
@@ -148,12 +171,49 @@ async def _call_clova_for_documents(
     return results
 
 
+def _extract_fields_per_doc(
+    job_documents: list[OcrJobDocument],
+    clova_results: dict[int, ClovaOcrResult],
+) -> tuple[list[tuple[OcrJobDocument, list[ExtractedField]]], set[str], bool]:
+    """문서별로 필드를 추출해 (fields_by_doc, emr_field_types, has_emr)을 반환한다.
+
+    emr_field_types는 EMR 문서에서 추출된 field_type만 포함한다 (필수 필드 게이트 전용).
+    """
+    fields_by_doc: list[tuple[OcrJobDocument, list[ExtractedField]]] = []
+    emr_field_types: set[str] = set()
+    has_emr = False
+    for jd in job_documents:
+        doc_type = OcrDocumentType(jd.document_type)
+        if doc_type == OcrDocumentType.EMR:
+            has_emr = True
+        clova_result = clova_results.get(jd.document_id)
+        if clova_result is None:
+            continue
+        fields = extract_fields(clova_result, doc_type)
+        fields_by_doc.append((jd, fields))
+        if doc_type == OcrDocumentType.EMR:
+            emr_field_types.update(f.field_type for f in fields)
+    return fields_by_doc, emr_field_types, has_emr
+
+
 async def _save_clova_result(
     job: OcrJob,
     job_documents: list[OcrJobDocument],
     clova_results: dict[int, ClovaOcrResult],
-) -> None:
-    """CLOVA 결과를 OcrResult / OcrDocumentText / OcrField로 트랜잭션 안에 저장한다."""
+) -> bool:
+    """CLOVA 결과를 OcrResult / OcrDocumentText / OcrField로 트랜잭션 안에 저장한다.
+
+    EMR 문서가 포함된 경우 필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS)가
+    모두 추출되어야 COMPLETED로 처리한다. 하나라도 누락이면 False를 반환한다.
+    """
+    # Phase 1: 필드 추출 — 트랜잭션 밖에서 수행해 불필요한 롤백 방지
+    fields_by_doc, emr_field_types, has_emr = _extract_fields_per_doc(job_documents, clova_results)
+
+    # Phase 2: EMR이 포함된 경우 필수 필드 게이트 — EMR 문서 추출 필드만 검사 (KEY-163 §4)
+    if has_emr and not (_REQUIRED_OCR_FIELDS <= emr_field_types):
+        return False
+
+    # Phase 3: 트랜잭션 안에서 DB 저장
     async with in_transaction() as conn:
         ocr_result = await OcrResult.create(
             ocr_job=job,
@@ -172,7 +232,23 @@ async def _save_clova_result(
             )
             doc_text_map[jd.document_id] = doc_text
 
-        await _extract_fields(ocr_result, doc_text_map, job_documents, clova_results, conn)
+        seen_types: set[str] = set()
+        for jd, fields in fields_by_doc:
+            if jd.document_id not in doc_text_map:
+                continue
+            doc_text = doc_text_map[jd.document_id]
+            for field in fields:
+                if field.field_type in seen_types:
+                    continue
+                seen_types.add(field.field_type)
+                await OcrField.create(
+                    ocr_result=ocr_result,
+                    document_text=doc_text,
+                    field_type=field.field_type,
+                    extracted_value=field.extracted_value,
+                    confidence=field.confidence,
+                    using_db=conn,
+                )
 
         completed_at = now()
         job.status = OcrJobStatus.COMPLETED
@@ -183,39 +259,7 @@ async def _save_clova_result(
             using_db=conn,
         )
 
-
-async def _extract_fields(
-    ocr_result: OcrResult,
-    doc_text_map: dict[int, OcrDocumentText],
-    job_documents: list[OcrJobDocument],
-    clova_results: dict[int, ClovaOcrResult],
-    conn: BaseDBAsyncClient,
-) -> None:
-    """CLOVA 결과에서 문서 유형별 핵심 필드를 추출해 OcrField로 저장한다.
-
-    와이어프레임 S1-6~9 근거 (2026-08-25).
-    패턴 정확도는 8/27 멘토링 후 실제 CLOVA 출력으로 보정한다.
-    동일 field_type은 첫 번째 문서 기준으로 저장하고 나머지는 스킵한다.
-    """
-    seen_types: set[str] = set()
-    for jd in job_documents:
-        clova_result = clova_results.get(jd.document_id)
-        doc_text = doc_text_map.get(jd.document_id)
-        if clova_result is None or doc_text is None:
-            continue
-
-        for field in extract_fields(clova_result, OcrDocumentType(jd.document_type)):
-            if field.field_type in seen_types:
-                continue
-            seen_types.add(field.field_type)
-            await OcrField.create(
-                ocr_result=ocr_result,
-                document_text=doc_text,
-                field_type=field.field_type,
-                extracted_value=field.extracted_value,
-                confidence=field.confidence,
-                using_db=conn,
-            )
+    return True
 
 
 async def _fallback_or_fail(

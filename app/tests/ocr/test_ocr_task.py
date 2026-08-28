@@ -2,8 +2,8 @@
 
 실제 DB를 사용해 process_ocr_job의 경로를 검증한다.
   - CLOVA 성공 → OcrResult(clova-ocr-v2) + COMPLETED
-  - CLOVA 실패 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED + failure_code=CLOVA_API_ERROR
-  - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED
+  - CLOVA 실패 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED (failure_code=CLOVA_API_ERROR 유지)
+  - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED (failure_code=OCR_NOT_CONFIGURED 유지)
   - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=False → FAILED + failure_code=OCR_NOT_CONFIGURED
   - 존재하지 않는 job_id → 예외 없이 종료
   - 이미 완료된 job → 중복 처리 없이 종료
@@ -143,7 +143,7 @@ class TestProcessOcrJob(TestCase):
 
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.COMPLETED
-        assert job.failure_code == "CLOVA_API_ERROR"
+        assert job.failure_code == "CLOVA_API_ERROR"  # 감사 흔적으로 유지
 
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None
@@ -161,6 +161,7 @@ class TestProcessOcrJob(TestCase):
 
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.COMPLETED
+        assert job.failure_code == "OCR_NOT_CONFIGURED"  # 감사 흔적으로 유지
 
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None
@@ -184,6 +185,73 @@ class TestProcessOcrJob(TestCase):
     async def test_unknown_job_id_returns_without_error(self) -> None:
         # 예외가 발생하면 Worker 루프 전체가 멈추므로 조용히 종료해야 한다
         await process_ocr_job("ocr_does_not_exist_key56")
+
+    # ── REQUIRED_FIELD_MISSING → fixture fallback (KEY-187) ──────────────────
+
+    async def test_required_field_missing_falls_back_to_fixture(self) -> None:
+        """EMR 문서에서 필수 필드가 누락되면 REQUIRED_FIELD_MISSING으로 fallback한다."""
+        patient = await Patient.create(
+            patient_id=910002,
+            hospital_id=HOSPITAL_ID,
+            hospital_patient_no="TEST-KEY187",
+            name="테스트환자2",
+            birth_date=date(1990, 1, 1),
+            phone="01000000001",
+        )
+        visit = await Visit.create(
+            visit_id=910002,
+            hospital_id=HOSPITAL_ID,
+            patient=patient,
+            visited_at=datetime(2026, 8, 28, 9, 0, tzinfo=UTC),
+        )
+        med_doc = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.EMR,
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        job = await OcrJob.create(
+            ocr_job_id="ocr_key187_required_field_missing",
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            requested_by=1,
+        )
+        await OcrJobDocument.create(
+            ocr_job=job,
+            document_id=med_doc.document_id,
+            document_type=OcrDocumentType.EMR,
+        )
+
+        # CLOVA 호출 자체는 성공하지만 필수 EMR 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS)가 없는 응답
+        incomplete_clova_result = ClovaOcrResult(
+            raw_text="환자명\n홍길동\n진료일\n2026-08-01",
+            fields=[
+                ClovaTextField(text="환자명", confidence=0.99),
+                ClovaTextField(text="홍길동", confidence=0.97),
+            ],
+        )
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=incomplete_clova_result),
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            mock_cfg.OCR_FIXTURE_FALLBACK = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.failure_code == "REQUIRED_FIELD_MISSING"  # 감사 흔적으로 유지
+        assert job.status == OcrJobStatus.COMPLETED
+
+        result = await OcrResult.filter(ocr_job=job).first()
+        assert result is not None
+        assert result.model_name == FIXTURE_MODEL_NAME
 
     async def test_already_completed_job_is_skipped(self) -> None:
         job = await self._seed("ocr_key56_already_done")
