@@ -15,6 +15,8 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[3]
 SEED = ROOT / "scripts" / "seed.py"
 
@@ -272,3 +274,79 @@ class TestTheFixtureLooksLikeARealApproval:
         """`issued_by=doctor_id or 0` 같은 자리를 남기지 않는다."""
         fixture = self._seed_source()
         assert "or 0" not in fixture, "승인자·발급자를 0 으로 메우는 자리가 있다 — 실제로 없는 사람이 발급한 것이 된다"
+
+
+class TestTheFixtureInventsNoMedicalText:
+    """**시드가 새 의학 문장을 지어내지 않는다** — 이희진 님 `#158` ⑤.
+
+    카탈로그 밖 세 섹션(medication · life · messages)의 본문은 `guides.generate`
+    가 쓰는 말이어야 한다. 주석은 「그대로 옮긴 것」이라 적혀 있었는데 실제로는
+    `확정된 항목: {field_label}` 줄이 빠져 있었다 — **지어낸 말은 없었지만 같지도
+    않았다.**
+
+    주석은 다시 어긋날 수 있으므로, 여기서는 말이 아니라 **문장 단위로** 잰다.
+    시드가 쓰는 모든 줄이 `guides.py` 의 그 자리에 실제로 있는지 본다.
+    """
+
+    #: (시드 상수 이름, `guides.py` 의 섹션 키)
+    BODIES = (
+        ("_SMOKE_MEDICATION_BODY", "MEDICATION"),
+        ("_SMOKE_LIFE_BODY", "LIFE"),
+        ("_SMOKE_MESSAGES_BODY", "MESSAGES"),
+    )
+
+    @staticmethod
+    def _generated_body(section: str) -> str:
+        """`guides.generate` 가 그 섹션에 넣는 문자열 원문."""
+        guides = (ROOT / "app" / "services" / "guides.py").read_text(encoding="utf-8")
+        lines = guides.splitlines()
+        at = next(
+            (i for i, ln in enumerate(lines) if f"GuideSectionKey.{section}" in ln),
+            None,
+        )
+        assert at is not None, f"guides.py 에 {section} 섹션이 없다"
+        body = next((ln for ln in lines[at : at + 6] if "generated_body=" in ln), "")
+        assert body, f"{section} 의 generated_body 를 못 찾았다"
+        return body
+
+    @pytest.mark.parametrize(("const", "section"), BODIES)
+    def test_every_line_it_writes_exists_in_the_real_one(self, const: str, section: str) -> None:
+        seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
+        line = next((ln for ln in seed.splitlines() if ln.startswith(f"{const} = ")), "")
+        assert line, f"seed.py 에 {const} 가 없다"
+
+        value = ast.literal_eval(line.split("=", 1)[1].strip())
+        real = self._generated_body(section)
+
+        for sentence in [s for s in value.split("\n") if s.strip()]:
+            assert sentence in real, (
+                f"{const} 의 「{sentence}」 가 guides.py 의 {section} 본문에 없다 — 시드가 새 문장을 지어냈다"
+            )
+
+    def test_the_comment_says_what_was_left_out(self) -> None:
+        """**무엇을 왜 뺐는지 적혀 있어야 한다.**
+
+        앞의 두 검사가 「지어낸 문장이 없다」를 이미 재므로, 여기서는 다음 사람이
+        대조를 건너뛰지 않도록 **빠진 줄이 무엇인지** 적혀 있는지만 본다.
+
+        「그대로 옮겼다고 말하지 않는가」도 재려 했는데 접었다. 지금 주석은 과거
+        오류를 설명하느라 그 표현을 **인용**하는데, 글자만 훑는 검사는 주장과
+        회고를 못 가른다 — 제 설명에 제가 걸려 빨간불이 났다. 실질은 위 두
+        검사가 잡으니 여기서 산문을 더 재지 않는다.
+        """
+        seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
+        head = seed.split("_SMOKE_MEDICATION_BODY = ", 1)[0]
+        note = head[head.rindex("SMOKE_CHART_NO") :]
+
+        assert "확정된 항목" in note, "무엇을 왜 뺐는지 적혀 있지 않다"
+        assert "field_label" in note, "그 값이 어디서 오는지 적혀 있지 않다"
+
+    def test_it_does_not_write_an_empty_confirmed_line(self) -> None:
+        """빈 「확정된 항목: 」이 환자 화면에 나가면 안 된다."""
+        seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
+        line = next((ln for ln in seed.splitlines() if ln.startswith("_SMOKE_MEDICATION_BODY = ")), "")
+        value = ast.literal_eval(line.split("=", 1)[1].strip())
+
+        assert "확정된 항목" not in value, (
+            "확정된 OCR 항목이 없는 fixture 인데 그 줄을 넣었다 — 빈 값이 환자에게 나간다"
+        )
