@@ -73,10 +73,11 @@ class TestKey70OcrSecurityRegression(OcrContractTestCase):
         """소유 병원 응답에도 서버 내부 경로·업로드 파일명은 계약 밖이다."""
         staff = await self.make_staff(login_id="key70reader", roles=["staff"], hospital_name="감마의원")
         job, _, _ = await self.make_completed_result(staff, job_id="syn-key70-private-metadata")
+        visit = await job.visit
         await MedicalDocument.create(
             document_id=610001,
             hospital_id=staff.hospital_id,
-            visit_id=job.visit_id,
+            visit_id=visit.visit_id,
             document_type=OcrDocumentType.LAB_RESULT,
             file_path=STORAGE_MARKER,
             original_filename=FILENAME_MARKER,
