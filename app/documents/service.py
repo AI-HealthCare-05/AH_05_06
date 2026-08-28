@@ -68,6 +68,7 @@ class DocumentUploadService:
                     await self._storage.delete(path)
             raise
 
+        # OCR_FIXTURE_FALLBACK=true이면 _persist에서 seed_fixture_result가 이미 COMPLETED로 처리했으므로 큐잉하지 않는다.
         if not config.OCR_FIXTURE_FALLBACK:
             try:
                 await get_redis().rpush(OCR_JOB_QUEUE, ocr_job_id)  # type: ignore[misc]

@@ -1,10 +1,10 @@
-"""OCR Worker 태스크 통합 테스트 — KEY-56.
+"""OCR Worker 태스크 통합 테스트 — KEY-56 · KEY-199.
 
 실제 DB를 사용해 process_ocr_job의 경로를 검증한다.
   - CLOVA 성공 → OcrResult(clova-ocr-v2) + COMPLETED
-  - CLOVA 실패 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED (failure_code=CLOVA_API_ERROR 유지)
-  - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED (failure_code=OCR_NOT_CONFIGURED 유지)
-  - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=False → FAILED + failure_code=OCR_NOT_CONFIGURED
+  - CLOVA 실패 → FAILED + failure_code=CLOVA_API_ERROR  (워커는 fixture seed 불가 — KEY-199)
+  - CLOVA 미설정 → FAILED + failure_code=OCR_NOT_CONFIGURED  (워커는 fixture seed 불가 — KEY-199)
+  - 필수 필드 누락 → FAILED + failure_code=REQUIRED_FIELD_MISSING  (워커는 fixture seed 불가 — KEY-199)
   - 존재하지 않는 job_id → 예외 없이 종료
   - 이미 완료된 job → 중복 처리 없이 종료
 """
@@ -29,7 +29,6 @@ from app.models.ocr import (
 )
 from app.models.patients import Patient
 from app.models.visits import Visit
-from app.ocr.service import FIXTURE_MODEL_NAME
 
 HOSPITAL_ID = 9100
 PATIENT_ID = 910001
@@ -125,9 +124,9 @@ class TestProcessOcrJob(TestCase):
         assert "CA_125" in field_types
         assert "AMH" in field_types
 
-    # ── CLOVA 실패 → fixture fallback ────────────────────────────────────────
+    # ── CLOVA 실패 → FAILED (KEY-199: 워커는 fixture seed 불가) ─────────────
 
-    async def test_clova_error_falls_back_to_fixture_and_completes(self) -> None:
+    async def test_clova_error_marks_job_failed(self) -> None:
         job = await self._seed("ocr_key56_clova_err")
 
         with (
@@ -138,42 +137,34 @@ class TestProcessOcrJob(TestCase):
             ),
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(job.ocr_job_id)
 
         await job.refresh_from_db()
-        assert job.status == OcrJobStatus.COMPLETED
-        assert job.failure_code == "CLOVA_API_ERROR"  # 감사 흔적으로 유지
+        assert job.status == OcrJobStatus.FAILED
+        assert job.failure_code == "CLOVA_API_ERROR"
 
-        result = await OcrResult.filter(ocr_job=job).first()
-        assert result is not None
-        assert result.model_name == FIXTURE_MODEL_NAME
+        assert await OcrResult.filter(ocr_job=job).count() == 0
 
-    # ── CLOVA 비활성 → fixture fallback ──────────────────────────────────────
+    # ── CLOVA 비활성 → FAILED (KEY-199: 워커는 fixture seed 불가) ───────────
 
-    async def test_clova_disabled_uses_fixture_and_completes(self) -> None:
+    async def test_clova_disabled_marks_job_failed(self) -> None:
         job = await self._seed("ocr_key56_no_clova")
 
         with patch("ai_worker.tasks.ocr_task.config") as mock_cfg:
             mock_cfg.clova_enabled = False
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(job.ocr_job_id)
 
         await job.refresh_from_db()
-        assert job.status == OcrJobStatus.COMPLETED
-        assert job.failure_code == "OCR_NOT_CONFIGURED"  # 감사 흔적으로 유지
+        assert job.status == OcrJobStatus.FAILED
+        assert job.failure_code == "OCR_NOT_CONFIGURED"
 
-        result = await OcrResult.filter(ocr_job=job).first()
-        assert result is not None
-        assert result.model_name == FIXTURE_MODEL_NAME
+        assert await OcrResult.filter(ocr_job=job).count() == 0
 
     async def test_clova_not_configured_marks_job_failed(self) -> None:
         job = await self._seed("ocr_key56_not_configured")
 
         with patch("ai_worker.tasks.ocr_task.config") as mock_cfg:
             mock_cfg.clova_enabled = False
-            mock_cfg.OCR_FIXTURE_FALLBACK = False
-            mock_cfg.ENV = "prod"
             await process_ocr_job(job.ocr_job_id)
 
         await job.refresh_from_db()
@@ -186,10 +177,10 @@ class TestProcessOcrJob(TestCase):
         # 예외가 발생하면 Worker 루프 전체가 멈추므로 조용히 종료해야 한다
         await process_ocr_job("ocr_does_not_exist_key56")
 
-    # ── REQUIRED_FIELD_MISSING → fixture fallback (KEY-187) ──────────────────
+    # ── REQUIRED_FIELD_MISSING → FAILED (KEY-187 · KEY-199) ─────────────────
 
-    async def test_required_field_missing_falls_back_to_fixture(self) -> None:
-        """EMR 문서에서 필수 필드가 누락되면 REQUIRED_FIELD_MISSING으로 fallback한다."""
+    async def test_required_field_missing_marks_job_failed(self) -> None:
+        """EMR 문서에서 필수 필드가 누락되면 REQUIRED_FIELD_MISSING으로 FAILED 처리한다."""
         patient = await Patient.create(
             patient_id=910002,
             hospital_id=HOSPITAL_ID,
@@ -242,16 +233,13 @@ class TestProcessOcrJob(TestCase):
             ),
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(job.ocr_job_id)
 
         await job.refresh_from_db()
-        assert job.failure_code == "REQUIRED_FIELD_MISSING"  # 감사 흔적으로 유지
-        assert job.status == OcrJobStatus.COMPLETED
+        assert job.status == OcrJobStatus.FAILED
+        assert job.failure_code == "REQUIRED_FIELD_MISSING"
 
-        result = await OcrResult.filter(ocr_job=job).first()
-        assert result is not None
-        assert result.model_name == FIXTURE_MODEL_NAME
+        assert await OcrResult.filter(ocr_job=job).count() == 0
 
     async def test_already_completed_job_is_skipped(self) -> None:
         job = await self._seed("ocr_key56_already_done")
