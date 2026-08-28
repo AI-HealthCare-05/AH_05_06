@@ -158,3 +158,39 @@ def test_the_runbook_says_what_to_do_when_it_breaks() -> None:
 
     for phrase in ("No upgrade items found", "aerich history", "--delete"):
         assert phrase in section, f"런북 3-2 절에 「{phrase}」 안내가 없다"
+
+
+DEPLOY = ROOT / "scripts" / "deployment.sh"
+
+
+def test_the_documented_entry_point_can_actually_run() -> None:
+    """**런북이 `./scripts/deployment.sh` 라고 적어 뒀는데 돌지 않았다.**
+
+        $ ./scripts/deployment.sh
+        zsh: permission denied: ./scripts/deployment.sh
+
+    `scripts/` 의 다른 `.sh` 는 전부 `100755` 인데 이 파일만 `100644` 였다.
+    `lib.sh` 는 `source` 로만 쓰이니 상관없지만, 이것은 **사람이 직접 부르는
+    입구**다. 시연 준비 중에 배포가 이 한 줄에서 멈췄다.
+
+    글자로 「명령이 문서에 있다」를 재는 검사는 이 자리를 못 잡는다 — 문서에는
+    분명히 있었다. **돌 수 있는가**를 봐야 한다.
+    """
+    assert DEPLOY.exists(), f"{DEPLOY.name} 이 없다"
+    assert DEPLOY.stat().st_mode & 0o111, (
+        f"{DEPLOY.name} 에 실행 권한이 없다 — 런북이 `./scripts/deployment.sh` 로 "
+        "부르라고 적어 두었는데 `permission denied` 로 멈춘다"
+    )
+
+
+def test_every_script_the_runbook_calls_directly_is_executable() -> None:
+    """이 파일 하나만 고치면 다음에 다른 것이 같은 자리에서 멈춘다.
+
+    런북이 `./scripts/…` 꼴로 **직접 부르는** 것만 본다. `bash x.sh` 나
+    `source` 로 쓰는 것은 권한이 없어도 돈다.
+    """
+    called = set(re.findall(r"(?<![\w/])\./(scripts/[\w./-]+\.sh)", RUNBOOK.read_text(encoding="utf-8")))
+
+    assert called, "런북이 직접 부르는 스크립트를 못 찾았다 — 검사가 헛돈다"
+    not_runnable = sorted(rel for rel in called if not (ROOT / rel).stat().st_mode & 0o111)
+    assert not not_runnable, f"런북이 직접 부르는데 실행 권한이 없다: {not_runnable}"
