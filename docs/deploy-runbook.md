@@ -213,7 +213,15 @@ ls: cannot access '/app/scripts/seed.py': No such file or directory
 (운영 이미지에 시딩 도구를 두지 않는다) **넣지 말고 그때만 밀어 넣는다.**
 
 ```bash
-# 서버에서. 스키마가 먼저 올라가 있어야 한다 (4. 롤백 아래 「마이그레이션」 참고).
+# ⓪ **저장소가 있는 기계에서.** 서버에는 `scripts/` 도 `docs/` 도 없다 —
+#    `deployment.sh` 가 올리는 것은 `.env` · `docker-compose.yml` ·
+#    `nginx/default.conf` 셋뿐이다(133-142 줄). 이 줄이 없으면 아래 ① 이
+#    「lstat /home/ubuntu/project/scripts: no such file or directory」로 죽는다.
+ssh -i ~/.ssh/<키> ubuntu@<IP> 'mkdir -p ~/project/docs'
+scp -i ~/.ssh/<키> -r scripts   ubuntu@<IP>:~/project/
+scp -i ~/.ssh/<키> -r docs/data ubuntu@<IP>:~/project/docs/
+
+# 아래부터 서버에서. 스키마가 먼저 올라가 있어야 한다 (4. 롤백 아래 「마이그레이션」 참고).
 
 # ① 시딩에 필요한 것만 컨테이너로 밀어 넣는다
 #    `docker cp` 는 대상 디렉터리를 안 만든다 — 없으면
@@ -228,13 +236,19 @@ SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD='<합성 비밀번호>' \
     -e SEED_ALLOW_PROD -e SEED_STAFF_PASSWORD \
     fastapi uv run --no-sync python scripts/seed.py --mode full --allow-prod-seed
 
-# ③ 끝나면 도로 치운다 — 운영 이미지에 시딩 도구를 남기지 않는다
+# ③ 끝나면 도로 치운다 — **컨테이너 안과 호스트 양쪽.**
+#    ⓪ 이 올린 것이 서버에 남으면 시딩 도구를 안 남긴다는 뜻이 반만 지켜진다.
 docker compose exec -T fastapi rm -rf /app/scripts /app/docs
+rm -rf ~/project/scripts ~/project/docs
 ```
 
-두 가지가 안 하면 죽는 자리다. 셋 다 로컬에서 그대로 밟아 확인했다.
+세 가지가 안 하면 죽는 자리다. 셋 다 그대로 밟아 확인했다 — ⓪ 은 실제 Pilot EC2 에서.
 
 ```text
+서버에는 저장소 사본이 없다
+  ⓪ 없이  →  lstat /home/ubuntu/project/scripts: no such file or directory
+  ⓪ 하면  →  docker cp 가 지난다
+
 docker compose exec 는 호스트 환경변수를 자동으로 안 넘긴다
   -e 없이  →  컨테이너가 본 값: 없음   (seed 가 「SEED_STAFF_PASSWORD 환경변수가 없습니다」로 종료)
   -e 주면  →  컨테이너가 본 값: 있음
@@ -376,7 +390,8 @@ smoke 가 ⑤ 에서 제출하면 fixture 가 **소진된다** — 제출 기록
 | ②③④ 배포 · 마이그레이션 · seed 실행 | 한금준 |
 | ⑥   smoke 검증 | 유가은 |
 
-**시연 창 동안 Pilot 의 DB·컨테이너를 만지는 사람은 위 둘뿐이다.** SSH 키를 가진
+**시연 창 동안 Pilot 의 DB·컨테이너를 만지는 사람은 권일준·한금준 둘뿐이다**
+(유가은은 ⑥ 검증만 하고 쓰지 않는다). SSH 키를 가진
 사람이 더 있어도 마찬가지다 — 이 문단이 사실상 유일한 잠금이다.
 
 ### 시작 전 — 선행 셋이 `develop` 에 있는가
@@ -405,6 +420,8 @@ KEY-200  seed 운영 가드       없으면 ④ 가 「운영 환경(ENV=prod)�
 ### ① 이미지를 굽고 민다
 
 ```bash
+# 이 스크립트가 `scripts/lib.sh` 를 source 한다 — 아래 ② 가 가리키는 `lib.sh:51`
+# 이 실제로 `docker compose up` 을 부르는 자리다.
 ./scripts/deployment.sh    # 대화형 — 무엇을 구울지 고른다
 ```
 
@@ -416,6 +433,16 @@ APP_VERSION         fastapi
 AI_WORKER_VERSION   ai-worker      ← 예전 런북이 이것을 안 적었다
 WEB_VERSION         nginx (프런트를 구워서 담는다 — 7절)
 ```
+
+**재프로비저닝 때는 태그를 올린다.** 같은 태그로 다시 밀면 `--pull always` 가
+새것을 받기는 하지만 `docker ps` 로는 어제 것과 오늘 것이 같아 보인다. 8/28 에
+「이미지가 낡았나」를 이미지 안 마이그레이션 파일을 뒤져서야 알았다.
+
+```bash
+docker image inspect <user>/<repo>:app-<태그> --format '{{.Created}}'
+```
+
+태그를 올려 두면 이 명령을 찾을 일이 없다.
 
 ### ② 전체를 띄운다
 
@@ -447,7 +474,8 @@ docker compose exec -T mysql sh -c \
    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=\"$MYSQL_DATABASE\";"'
 ```
 
-**25 가 나와야 한다.** 0 이면 마이그레이션이 안 돈 것이고, 그 상태로 ④ 를 하면
+**25 가 나와야 한다.** <!-- 마이그레이션이 표를 더하면 이 숫자를 갱신한다 -->
+0 이면 마이그레이션이 안 돈 것이고, 그 상태로 ④ 를 하면
 「Unknown column …」 같은 엉뚱한 자리에서 죽는다.
 
 표 개수만으로는 부족한 경우가 있다 — **표는 다 있는데 칸이 빠진** 상태가 실제로
@@ -457,8 +485,12 @@ docker compose exec -T mysql sh -c \
 
 ### ④ 합성 데이터를 붓는다
 
-**4-3 절을 그대로 따른다.** 명령이 세 군데 함정을 지나므로 요약하지 말고
-그 절을 편다 — `mkdir` → `docker cp` → `-e` 로 값 전달 → `uv run --no-sync`.
+**4-3 절을 그대로 따른다.** 명령이 네 군데 함정을 지나므로 요약하지 말고
+그 절을 편다 — `scp` → `mkdir` → `docker cp` → `-e` 로 값 전달 → `uv run --no-sync`.
+
+**⓪ 만 다른 기계에서 돈다.** 서버에는 `scripts/` 도 `docs/` 도 없어서(①②는
+`.env`·compose·nginx 만 올린다) 저장소가 있는 기계에서 먼저 올려야 한다. 그
+줄을 건너뛰면 `docker cp` 가 「no such file or directory」로 멈춘다.
 
 ### ⑤ 로그인이 되는가
 

@@ -84,7 +84,13 @@ class TestSecretsNeverLandInTheDocument:
         assert "비밀번호 매니저" in body, "전달 수단이 안 적혀 있다"
 
     def test_no_value_looks_like_a_real_password(self) -> None:
-        """`<합성 비밀번호>` 같은 자리표시자만 있어야 한다."""
+        """`<합성 비밀번호>` 같은 자리표시자만 있어야 한다.
+
+        **지금은 공허하게 통과한다** — 이 절에 `SEED_STAFF_PASSWORD=…` 리터럴이
+        하나도 없어서 아래 루프가 한 번도 안 돈다 (이희진 님 `#161`). 그대로 두는
+        것은 **미래의 트립와이어**로 쓰기 위해서다. 누군가 값을 적어 넣는 순간
+        이 검사가 처음으로 돌면서 운다.
+        """
         for line in section().splitlines():
             for match in re.finditer(r"(SEED_STAFF_PASSWORD|SMOKE_PASSWORD)=(\S+)", line):
                 value = match.group(2)
@@ -149,3 +155,58 @@ class TestItListsThePrerequisites:
         assert "멈춘다" in line or "실패" in line, (
             f"{key} 가 없으면 **무슨 일이 생기는지**를 안 적었다 — 「{line.strip()}」"
         )
+
+
+SEEDING = "## 4-3. 합성 데이터를 붓는다 (KEY-200)"
+
+
+def seeding_section() -> str:
+    """④ 가 「그대로 따른다」고 가리키는 절만 자른다.
+
+    4-4 의 ④ 는 명령을 복사하지 않고 이 절을 가리킨다(copy-drift 를 피하려고).
+    그래서 실행자가 실제로 읽는 명령은 여기 있고, 여기를 따로 재야 한다.
+    """
+    prose = read(RUNBOOK)
+    assert SEEDING in prose, f"런북에 「{SEEDING}」 절이 없다 — 아래 검사가 전부 헛돈다"
+    body = prose.split(SEEDING, 1)[1]
+    cut = body.find("\n## ")
+    return body[:cut] if cut != -1 else body
+
+
+class TestTheSeedingRecipeCanRunOnTheServer:
+    """**서버에는 저장소 사본이 없다.**
+
+    `scripts/deployment.sh:133-142` 가 올리는 것은 `.env` · `docker-compose.yml` ·
+    `nginx/default.conf` 셋뿐이고, 앱 이미지에도 `scripts/` 가 없다(4-3 이 그렇게
+    적어 두었다). 그래서 `docker cp scripts/seed.py …` 는 **서버에서 원본을 못 찾는다.**
+
+        $ cd ~/project && docker cp scripts/seed.py fastapi:/tmp/probe-seed.py
+        lstat /home/ubuntu/project/scripts: no such file or directory
+
+    실제 Pilot EC2 에서 확인한 것이다 (이희진 님 `#161` 차단 지적). 이 절이 파일을
+    먼저 올리라고 말하지 않으면 시연 당일 실행자가 그 자리에서 멈춘다.
+    """
+
+    def test_it_puts_the_files_on_the_server_first(self) -> None:
+        body = seeding_section()
+        assert "scp" in body, (
+            "서버로 파일을 올리는 단계가 없다 — `docker cp` 가 원본을 못 찾아 「no such file or directory」로 멈춘다"
+        )
+
+    def test_the_upload_comes_before_the_copy_into_the_container(self) -> None:
+        body = seeding_section()
+        assert body.index("scp") < body.index("docker cp"), (
+            "`scp` 가 `docker cp` 뒤에 있다 — 순서가 뒤집히면 올리기 전에 복사한다"
+        )
+
+    def test_it_says_the_upload_runs_somewhere_else(self) -> None:
+        """**이 한 줄만 다른 기계에서 돈다.** 안 적으면 서버에서 치다가 막힌다."""
+        body = seeding_section()
+        head = body[: body.index("scp")]
+        assert "저장소가 있는 기계" in head, "`scp` 를 어디서 돌리는지 안 적었다"
+
+    def test_it_cleans_up_both_sides(self) -> None:
+        """컨테이너만 치우면 올린 것이 서버에 남는다 — 반만 지켜진 약속이다."""
+        body = seeding_section()
+        assert "rm -rf /app/scripts" in body, "컨테이너 쪽 뒷정리가 없다"
+        assert "rm -rf ~/project/scripts" in body, "호스트 쪽 뒷정리가 없다 — `scp` 로 올린 시딩 도구가 서버에 남는다"
