@@ -82,6 +82,32 @@ function guideLoadSaying(error) {
   return errorMessage(error, GUIDE_LOAD_SAYINGS, "안내문을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
 }
 
+/* 링크 응답의 API 경로에서 토큰만 꺼내 환자 화면의 fragment 로 옮긴다.
+
+   fragment 는 서버 요청과 access log 에 실리지 않는다. 병원 화면의 주소나
+   DOM 에도 토큰을 쓰지 않고, 새 환자 탭의 메모리로만 넘긴다. 서버가 정한
+   `path` 모양이 아니면 임의 주소를 열지 않는다. */
+function patientGuideUrl(result) {
+  var path = result && result.path;
+  var matched = typeof path === "string" && path.match(/^\/api\/v1\/guides\/([A-Za-z0-9_-]+)$/);
+  if (!matched) throw new Error("invalid patient guide link response");
+  return "/guide.html" + (typeof MOCK !== "undefined" && MOCK ? "?mock=1" : "") + "#t=" + encodeURIComponent(matched[1]);
+}
+
+var PATIENT_LINK_SAYINGS = [
+  { code: "GUIDE_NOT_APPROVED", say: "승인 완료된 안내에서만 개발용 환자 화면을 열 수 있어요." },
+  {
+    code: "LINK_ALREADY_ISSUED",
+    say: "이미 개발용 링크가 발급됐어요. 보관해 둔 기존 환자 화면을 이용해 주세요. 이 화면에서는 토큰을 다시 보여주지 않아요.",
+  },
+  { code: "GUIDE_NOT_FOUND", say: "이 진료의 안내문을 찾지 못했어요." },
+  { status: 403, say: "이 진료의 개발용 링크를 발급할 권한이 없어요." },
+];
+
+function patientLinkSaying(error) {
+  return errorMessage(error, PATIENT_LINK_SAYINGS, "환자 화면을 열지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+}
+
 (function () {
   /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
      이 파일은 `doctor.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
@@ -104,9 +130,15 @@ function guideLoadSaying(error) {
   var me = null;
   var section = "medication";
   var loadSeq = 0;
+  var patientLinkOpening = false;
 
   function isDoctor() {
     return !!(me && (me.roles || []).indexOf("doctor") !== -1);
+  }
+
+  function canIssuePatientLink() {
+    var roles = (me && me.roles) || [];
+    return roles.indexOf("doctor") !== -1 || roles.indexOf("staff") !== -1;
   }
 
 
@@ -285,7 +317,11 @@ function guideLoadSaying(error) {
     var can = isDoctor() && !alreadyDone(visit) && guide !== null;
     el("approve").disabled = !can;
     el("return").disabled = !can;
-    el("role-note").hidden = isDoctor();
+    var approved = !!(guide && guide.status === "SCHEDULED_TO_SEND");
+    el("patient-open").hidden = !approved;
+    el("patient-open").disabled = !approved || !canIssuePatientLink();
+    el("role-note").textContent = approved ? "스탭 또는 의사 권한이 있어야 열 수 있습니다" : "의사 권한이 있어야 승인합니다";
+    el("role-note").hidden = approved ? canIssuePatientLink() : isDoctor();
   }
 
   /* 승인·되돌리기가 끝나면 왼쪽 줄도 그 사실을 말해야 한다. 목록이 「승인
@@ -355,8 +391,57 @@ function guideLoadSaying(error) {
          덧붙인다 (`KEY-160`). */
       '<p class="modal__note">[demo] 문자 발송은 아직 붙지 않았습니다 — 승인은 <b>발송 예약까지</b>입니다.<br />' +
       "확인 문자·소진 임박 안내의 실제 발송과 실패 알림은 S1-14 후속 계약입니다.</p>" +
+      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
+      '<button class="button-primary" type="button" data-open-patient>개발용 환자 화면 열기</button></div>'
+    );
+  }
+
+  function patientLinkFailedModal(error) {
+    return (
+      '<h2 class="modal__title">환자 화면을 열지 못했어요</h2>' +
+      '<p class="modal__lead">' +
+      esc(patientLinkSaying(error)) +
+      "</p>" +
       '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'
     );
+  }
+
+  /* 팝업 차단을 피하려고 클릭 순간 빈 탭을 만들고, 링크 발급이 성공한 뒤에만
+     환자 화면으로 바꾼다. 실패하면 빈 탭을 닫고 병원 화면에는 안전한 사유만
+     표시한다. 토큰은 console·DOM·저장소에 쓰지 않는다. */
+  function openPatientGuide() {
+    if (patientLinkOpening || !visit || !guide || guide.status !== "SCHEDULED_TO_SEND") return;
+    patientLinkOpening = true;
+    var openingId = visit.visit_id;
+    var popup = window.open("about:blank", "_blank");
+    /* 비동기 발급 뒤 다시 window.open()을 부르면 브라우저가 팝업으로 막는다.
+       더 중요한 점은 `noopener`로 성공해도 반환값이 null일 수 있어 성공 여부를
+       판정할 수 없다는 것이다. 클릭 순간 빈 탭을 못 만들었으면 링크를 발급하지
+       않고 끝낸다 — 일회용 링크를 화면 없이 소진하지 않는다. */
+    if (!popup) {
+      patientLinkOpening = false;
+      renderRole();
+      openModal(patientLinkFailedModal(new Error("patient guide popup blocked")));
+      return;
+    }
+    popup.opener = null;
+    el("patient-open").disabled = true;
+
+    doctorApi
+      .issuePatientLink(openingId)
+      .then(function (result) {
+        var url = patientGuideUrl(result);
+        popup.location.replace(url);
+        patientLinkOpening = false;
+        if (visit && visit.visit_id === openingId) renderRole();
+        closeModal();
+      })
+      .catch(function (error) {
+        patientLinkOpening = false;
+        if (popup) popup.close();
+        if (visit && visit.visit_id === openingId) renderRole();
+        openModal(patientLinkFailedModal(error));
+      });
   }
 
   function returnModal() {
@@ -436,6 +521,11 @@ function guideLoadSaying(error) {
 
     if (target.closest("[data-close]")) return closeModal();
 
+    if (target.id === "patient-open" || target.closest("[data-open-patient]")) {
+      openPatientGuide();
+      return;
+    }
+
     var reason = target.closest("[data-reason]");
     if (reason) {
       var box = el("reason-text");
@@ -452,6 +542,7 @@ function guideLoadSaying(error) {
         .then(function (result) {
           /* 승인했으면 그 진료는 발송 대기다. 줄을 먼저 고치고 모달을 연다 —
              모달을 닫았을 때 목록이 이미 사실을 말하고 있어야 한다. */
+          if (visit && visit.visit_id === approvingId) guide = result;
           markDone(approvingId, { work_category: "SEND_PENDING", detail_status: "SCHEDULED_TO_SEND" });
           openModal(approvedModal(result));
         })

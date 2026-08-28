@@ -534,15 +534,37 @@ function renderError(code) {
   var message =
     code === GUIDE_ERROR.LINK_EXPIRED
       ? "링크가 닫혔어요. 문자를 다시 받으시면 열립니다."
+      : code === GUIDE_ERROR.NOT_FOUND
+        ? "링크가 없거나 더 이상 사용할 수 없어요. 병원에 안내 링크를 문의해 주세요."
       : "담당 의료진이 확인을 마치면 문자로 다시 알려드릴게요.";
   box.appendChild(el("p", "card__text", message));
   body.appendChild(box);
   document.getElementById("tabs").textContent = "";
 }
 
+/* 개발용 링크 토큰은 URL fragment 로 받는다 — fragment 는 서버 요청과 access
+   log 에 포함되지 않는다. 값을 메모리로 옮긴 즉시 주소에서도 지워서 화면 공유나
+   복사 중에 토큰이 따라가지 않게 한다. 예전 `?t=`·`?visit=` 주소도 한 번 읽고
+   같은 방식으로 정리해 기존 링크를 깨지 않는다. */
+function takeGuideToken() {
+  var query = new URLSearchParams(window.location.search);
+  var fragment = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+  var token = fragment.get("t") || query.get("t") || query.get("visit") || "";
+
+  fragment.delete("t");
+  query.delete("t");
+  query.delete("visit");
+  var safeQuery = query.toString();
+  var safeFragment = fragment.toString();
+  var safeUrl = window.location.pathname + (safeQuery ? "?" + safeQuery : "") + (safeFragment ? "#" + safeFragment : "");
+  if (window.history && typeof window.history.replaceState === "function") {
+    window.history.replaceState(null, "", safeUrl);
+  }
+  return token;
+}
+
 function start() {
-  var params = new URLSearchParams(window.location.search);
-  var token = params.get("t") || params.get("visit") || "";
+  var token = takeGuideToken();
   state.token = token;
 
   fetchGuide(token)

@@ -1137,11 +1137,12 @@
               </div>
               <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:2px">
                 <div style="height:40px;padding:0 18px;border:1px solid #D1D5DB;border-radius:6px;display:flex;align-items:center;font-size:14px;font-weight:600">현황 보기</div>
+                <div style="height:40px;padding:0 18px;border:1px solid #111827;border-radius:6px;display:flex;align-items:center;font-size:14px;font-weight:600">개발용 환자 화면 열기</div>
                 <div style="height:40px;padding:0 20px;border-radius:6px;background:#111827;color:#FFFFFF;display:flex;align-items:center;font-size:14px;font-weight:600">닫기</div>
               </div>
             </div>
           </div></div>
-        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">지정 시각 ──▶ 자동 발송 ──▶ 성공은 <b>발송 완료</b> · 실패는 <b>S1 맨 위</b>에 뜬다</div></sc-if>
+        <sc-if value="{{ showFlow }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;color:#374151">([ 개발용 환자 화면 열기 ]) ──▶ 기존 링크 발급 API ──▶ <b>P2 승인 안내</b> · 지정 시각 ──▶ 자동 발송 ──▶ 성공은 <b>발송 완료</b> · 실패는 <b>S1 맨 위</b>에 뜬다</div></sc-if>
         <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="border:1px dashed #6B7280;border-radius:8px;padding:12px 16px;font-size:12px;color:#374151;line-height:18px">스탭이 발송 버튼을 누르지 않는다. 진료 안내문 · 확인 문자 · 소진 임박 안내가 모두 저절로 나가고, 사람이 손대는 것은 실패했을 때뿐이다.</div></sc-if>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;width:1280px">
