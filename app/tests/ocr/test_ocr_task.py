@@ -2,8 +2,8 @@
 
 실제 DB를 사용해 process_ocr_job의 경로를 검증한다.
   - CLOVA 성공 → OcrResult(clova-ocr-v2) + COMPLETED
-  - CLOVA 실패 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED + failure_code=CLOVA_API_ERROR
-  - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED
+  - CLOVA 실패 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED (failure_code 초기화)
+  - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=True → fixture fallback → OcrResult(fixture-v0) + COMPLETED (failure_code 초기화)
   - CLOVA 미설정 + OCR_FIXTURE_FALLBACK=False → FAILED + failure_code=OCR_NOT_CONFIGURED
   - 존재하지 않는 job_id → 예외 없이 종료
   - 이미 완료된 job → 중복 처리 없이 종료
@@ -143,7 +143,7 @@ class TestProcessOcrJob(TestCase):
 
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.COMPLETED
-        assert job.failure_code == "CLOVA_API_ERROR"
+        assert job.failure_code is None  # fixture 성공 시 초기화
 
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None
@@ -245,8 +245,8 @@ class TestProcessOcrJob(TestCase):
             await process_ocr_job(job.ocr_job_id)
 
         await job.refresh_from_db()
-        assert job.failure_code == "REQUIRED_FIELD_MISSING"
-        assert job.status == OcrJobStatus.COMPLETED  # fixture fallback 성공
+        assert job.failure_code is None  # fixture 성공 시 초기화
+        assert job.status == OcrJobStatus.COMPLETED
 
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None

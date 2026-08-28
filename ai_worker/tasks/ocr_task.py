@@ -171,6 +171,31 @@ async def _call_clova_for_documents(
     return results
 
 
+def _extract_fields_per_doc(
+    job_documents: list[OcrJobDocument],
+    clova_results: dict[int, ClovaOcrResult],
+) -> tuple[list[tuple[OcrJobDocument, list[ExtractedField]]], set[str], bool]:
+    """문서별로 필드를 추출해 (fields_by_doc, emr_field_types, has_emr)을 반환한다.
+
+    emr_field_types는 EMR 문서에서 추출된 field_type만 포함한다 (필수 필드 게이트 전용).
+    """
+    fields_by_doc: list[tuple[OcrJobDocument, list[ExtractedField]]] = []
+    emr_field_types: set[str] = set()
+    has_emr = False
+    for jd in job_documents:
+        doc_type = OcrDocumentType(jd.document_type)
+        if doc_type == OcrDocumentType.EMR:
+            has_emr = True
+        clova_result = clova_results.get(jd.document_id)
+        if clova_result is None:
+            continue
+        fields = extract_fields(clova_result, doc_type)
+        fields_by_doc.append((jd, fields))
+        if doc_type == OcrDocumentType.EMR:
+            emr_field_types.update(f.field_type for f in fields)
+    return fields_by_doc, emr_field_types, has_emr
+
+
 async def _save_clova_result(
     job: OcrJob,
     job_documents: list[OcrJobDocument],
@@ -181,24 +206,11 @@ async def _save_clova_result(
     EMR 문서가 포함된 경우 필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS)가
     모두 추출되어야 COMPLETED로 처리한다. 하나라도 누락이면 False를 반환한다.
     """
-    # Phase 1: 메모리에서 필드 추출 — 필수 필드 검사를 트랜잭션 밖에서 수행
-    fields_by_doc: list[tuple[OcrJobDocument, list[ExtractedField]]] = []
-    all_field_types: set[str] = set()
-    has_emr = False
+    # Phase 1: 필드 추출 — 트랜잭션 밖에서 수행해 불필요한 롤백 방지
+    fields_by_doc, emr_field_types, has_emr = _extract_fields_per_doc(job_documents, clova_results)
 
-    for jd in job_documents:
-        doc_type = OcrDocumentType(jd.document_type)
-        if doc_type == OcrDocumentType.EMR:
-            has_emr = True
-        clova_result = clova_results.get(jd.document_id)
-        if clova_result is None:
-            continue
-        fields = extract_fields(clova_result, doc_type)
-        fields_by_doc.append((jd, fields))
-        all_field_types.update(f.field_type for f in fields)
-
-    # Phase 2: EMR이 포함된 경우 필수 필드 게이트 (KEY-163 §4)
-    if has_emr and not (_REQUIRED_OCR_FIELDS <= all_field_types):
+    # Phase 2: EMR이 포함된 경우 필수 필드 게이트 — EMR 문서 추출 필드만 검사 (KEY-163 §4)
+    if has_emr and not (_REQUIRED_OCR_FIELDS <= emr_field_types):
         return False
 
     # Phase 3: 트랜잭션 안에서 DB 저장
@@ -275,6 +287,9 @@ async def _fallback_or_fail(
                 [(jd.document_id, OcrDocumentType(jd.document_type)) for jd in job_documents],
                 conn,
             )
+        # fixture 성공 시 failure_code 초기화 — COMPLETED 상태에서 UI 오류 문구 방지
+        job.failure_code = None
+        await job.save(update_fields=("failure_code",))
         return True
     except Exception as exc:
         default_logger.error(
