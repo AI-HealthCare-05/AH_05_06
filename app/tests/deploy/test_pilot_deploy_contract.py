@@ -34,6 +34,19 @@ SECRETS = frozenset(
 )
 
 
+def _section(rel: str, heading: str) -> str:
+    """문서에서 **그 절만** 떼어 낸다 — 다음 `## ` 제목 전까지.
+
+    문서 전체를 훑는 검사는 그 절이 통째로 사라져도 다른 곳의 같은 글자를 보고
+    통과한다. 이 파일에서 실제로 두 자리가 그랬다 (롤백 · smoke).
+    """
+    prose = read(rel)
+    assert heading in prose, f"{rel} 에 「{heading}」 절이 없다"
+    body = prose.split(heading, 1)[1]
+    cut = body.find("\n## ")
+    return body[:cut] if cut != -1 else body
+
+
 def run_bash(script: str, *, cwd: Path, stub_dir: Path, **env: str) -> subprocess.CompletedProcess[str]:
     """스크립트를 **진짜로 돌린다.**
 
@@ -511,9 +524,12 @@ class TestTheRunbookTellsTheTruth:
         """
         assert "docker image prune -af" in read("scripts/lib.sh")
 
-        runbook = read("docs/deploy-runbook.md")
-        assert "prune" in runbook, "롤백 전제를 안 적었다"
-        assert "APP_VERSION" in runbook
+        # **롤백 절 안만 본다.** 문서 전체에서 `APP_VERSION` 을 찾으면 7절
+        # (「되돌리는 것도 APP_VERSION 과 같다」)이 걸려서, **4절을 통째로 지워도**
+        # 검사가 통과했다. 재는 척만 하는 자리였다 (KEY-203 준비 중 발견).
+        section = _section("docs/deploy-runbook.md", "## 4. 롤백")
+        assert "prune" in section, "롤백 절에 되돌림 전제(옛 태그가 Hub 에 남아야 한다)를 안 적었다"
+        assert "APP_VERSION" in section, "롤백 절이 무엇을 되돌리는지 안 적었다"
 
     def test_the_runbook_carries_the_smoke_command(self) -> None:
         """「런북에서 실행 명령을 찾을 수 있음」이 KEY-184 인수조건이다.
@@ -521,12 +537,15 @@ class TestTheRunbookTellsTheTruth:
         실행기만 있고 문서에 없으면, 배포하는 사람이 그것이 있는 줄 모른다.
         **게이트로 쓰는 법까지** 적혀 있어야 배포·CI 가 그대로 붙인다.
         """
-        runbook = read("docs/deploy-runbook.md")
+        # **5절 안만 본다.** 문서 전체에서 찾으면 `scripts/smoke.py` 가 세 곳에
+        # 있어서(실행·산문·게이트 예시) 5절의 실행 블록을 지워도 다른 것을 보고
+        # 통과했다 (KEY-203 준비 중 발견).
+        section = _section("docs/deploy-runbook.md", "## 5. Smoke test")
 
-        assert "scripts/smoke.py" in runbook, "실행기를 가리키지 않는다"
+        assert "scripts/smoke.py" in section, "5절이 실행기를 가리키지 않는다"
         for name in ("SMOKE_LOGIN_ID", "SMOKE_PASSWORD"):
-            assert name in runbook, f"{name} 를 어디서 주는지 안 적었다"
-        assert re.search(r"scripts/smoke\.py[^\n]*(\|\||\$\?)", runbook), (
+            assert name in section, f"5절이 {name} 를 어디서 주는지 안 적었다"
+        assert re.search(r"scripts/smoke\.py[^\n]*(\|\||\$\?)", section), (
             "실패했을 때 멈추는 법이 없다 — 게이트로 못 쓴다"
         )
 

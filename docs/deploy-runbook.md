@@ -114,7 +114,8 @@ $EDITOR envs/.prod.env          # SECRET_KEY·DB_PASSWORD 는 반드시
 2. `envs/.prod.env` → EC2 `~/project/.env`
 3. `infra/docker/docker-compose.prod.yml` → EC2 `~/project/docker-compose.yml`
 4. nginx 설정의 `server_name` 을 IP/도메인으로 바꿔 EC2 로
-5. EC2 에서 `docker compose up -d --pull always` 후 옛 이미지 정리
+5. EC2 에서 `docker compose up -d --pull always --no-deps <고른 서비스>` 후 옛 이미지 정리
+   (`scripts/lib.sh:51`. **고른 것만 뜬다** — `--no-deps` 라 mysql·redis 는 딸려 오지 않는다)
 
 ## 4. 롤백
 
@@ -212,7 +213,15 @@ ls: cannot access '/app/scripts/seed.py': No such file or directory
 (운영 이미지에 시딩 도구를 두지 않는다) **넣지 말고 그때만 밀어 넣는다.**
 
 ```bash
-# 서버에서. 스키마가 먼저 올라가 있어야 한다 (4. 롤백 아래 「마이그레이션」 참고).
+# ⓪ **저장소가 있는 기계에서.** 서버에는 `scripts/` 도 `docs/` 도 없다 —
+#    `deployment.sh` 가 올리는 것은 `.env` · `docker-compose.yml` ·
+#    `nginx/default.conf` 셋뿐이다(133-142 줄). 이 줄이 없으면 아래 ① 이
+#    「lstat /home/ubuntu/project/scripts: no such file or directory」로 죽는다.
+ssh -i ~/.ssh/<키> ubuntu@<IP> 'mkdir -p ~/project/docs'
+scp -i ~/.ssh/<키> -r scripts   ubuntu@<IP>:~/project/
+scp -i ~/.ssh/<키> -r docs/data ubuntu@<IP>:~/project/docs/
+
+# 아래부터 서버에서. 스키마가 먼저 올라가 있어야 한다 (4. 롤백 아래 「마이그레이션」 참고).
 
 # ① 시딩에 필요한 것만 컨테이너로 밀어 넣는다
 #    `docker cp` 는 대상 디렉터리를 안 만든다 — 없으면
@@ -227,13 +236,19 @@ SEED_ALLOW_PROD=1 SEED_STAFF_PASSWORD='<합성 비밀번호>' \
     -e SEED_ALLOW_PROD -e SEED_STAFF_PASSWORD \
     fastapi uv run --no-sync python scripts/seed.py --mode full --allow-prod-seed
 
-# ③ 끝나면 도로 치운다 — 운영 이미지에 시딩 도구를 남기지 않는다
+# ③ 끝나면 도로 치운다 — **컨테이너 안과 호스트 양쪽.**
+#    ⓪ 이 올린 것이 서버에 남으면 시딩 도구를 안 남긴다는 뜻이 반만 지켜진다.
 docker compose exec -T fastapi rm -rf /app/scripts /app/docs
+rm -rf ~/project/scripts ~/project/docs
 ```
 
-두 가지가 안 하면 죽는 자리다. 셋 다 로컬에서 그대로 밟아 확인했다.
+세 가지가 안 하면 죽는 자리다. 셋 다 그대로 밟아 확인했다 — ⓪ 은 실제 Pilot EC2 에서.
 
 ```text
+서버에는 저장소 사본이 없다
+  ⓪ 없이  →  lstat /home/ubuntu/project/scripts: no such file or directory
+  ⓪ 하면  →  docker cp 가 지난다
+
 docker compose exec 는 호스트 환경변수를 자동으로 안 넘긴다
   -e 없이  →  컨테이너가 본 값: 없음   (seed 가 「SEED_STAFF_PASSWORD 환경변수가 없습니다」로 종료)
   -e 주면  →  컨테이너가 본 값: 있음
@@ -359,6 +374,161 @@ smoke 가 ⑤ 에서 제출하면 fixture 가 **소진된다** — 제출 기록
 
 `seed.py` 는 전부 `get_or_create` 라 같은 명령을 여러 번 돌려도 쌓이지 않는다.
 비밀번호를 바꾸고 다시 돌리면 직원 계정의 비밀번호가 갱신된다.
+
+## 4-4. 시연 전 재프로비저닝 — 한 번에 따라가는 순서 (KEY-203)
+
+**시연 당일에 읽는 절이다.** 위의 3·4·4-2·4-3 은 각각 「무엇을 할 수 있는가」를
+적은 배경이고, 이 절은 **어느 순서로 누가 무엇을 하는가**만 적는다.
+
+### 누가 무엇을 하나
+
+같은 서버를 두 사람이 동시에 만지면 무엇이 깨졌는지 알 수 없게 된다.
+
+| 단계 | 하는 사람 |
+|---|---|
+| ①②  EC2 · compose · env (프로비저닝) | 권일준 |
+| ②③④ 배포 · 마이그레이션 · seed 실행 | 한금준 |
+| ⑥   smoke 검증 | 유가은 |
+
+**시연 창 동안 Pilot 의 DB·컨테이너를 만지는 사람은 권일준·한금준 둘뿐이다**
+(유가은은 ⑥ 검증만 하고 쓰지 않는다). SSH 키를 가진
+사람이 더 있어도 마찬가지다 — 이 문단이 사실상 유일한 잠금이다.
+
+### 시작 전 — 선행 셋이 `develop` 에 있는가
+
+```text
+KEY-196  마이그레이션 형식     없으면 ③ 이 「Old format of migration file」로 멈춘다
+KEY-197  업로드 볼륨          없으면 OCR 이 FileNotFoundError 로 전부 실패한다
+KEY-200  seed 운영 가드       없으면 ④ 가 「운영 환경(ENV=prod)에서는…」으로 멈춘다
+```
+
+셋 중 하나라도 빠져 있으면 **그 단계에서 반드시 멈춘다.** 시작 전에 확인한다.
+
+### 비밀값 — 값은 이 문서에 없다
+
+| 이름 | 누가 정하나 | 어떻게 나누나 |
+|---|---|---|
+| `SEED_STAFF_PASSWORD` | 시딩 담당자 | 팀 비밀번호 매니저 또는 1:1 DM |
+| `SMOKE_PASSWORD` | 위와 **같은 값** | 유가은에게 같은 방법으로 |
+
+커밋·이슈·Jira 본문·로그·`~/project/.env` 어디에도 남기지 않는다. 「채팅에 안 적는다」와
+「1:1 DM」이 어긋나 보이지만 뜻은 하나다 — **여러 사람이 보는 자리에 안 적는다.**
+
+시연 계정은 표준 `staff01` · 승인 `doctor01` 이다. H2 · 잠금 · 첫 로그인 계정은
+쓰지 않는다 (「고르면 안 되는 계정」 참고).
+
+### ① 이미지를 굽고 민다
+
+```bash
+# 이 스크립트가 `scripts/lib.sh` 를 source 한다 — 아래 ② 가 가리키는 `lib.sh:51`
+# 이 실제로 `docker compose up` 을 부르는 자리다.
+./scripts/deployment.sh    # 대화형 — 무엇을 구울지 고른다
+```
+
+**버전 세 개를 다 챙긴다.** 롤백은 태그를 되돌리는 것이라(4절) 지금 무엇을
+올렸는지가 곧 되돌릴 지점이다.
+
+```text
+APP_VERSION         fastapi
+AI_WORKER_VERSION   ai-worker      ← 예전 런북이 이것을 안 적었다
+WEB_VERSION         nginx (프런트를 구워서 담는다 — 7절)
+```
+
+**재프로비저닝 때는 태그를 올린다.** 같은 태그로 다시 밀면 `--pull always` 가
+새것을 받기는 하지만 `docker ps` 로는 어제 것과 오늘 것이 같아 보인다. 8/28 에
+「이미지가 낡았나」를 이미지 안 마이그레이션 파일을 뒤져서야 알았다.
+
+```bash
+docker image inspect <user>/<repo>:app-<태그> --format '{{.Created}}'
+```
+
+태그를 올려 두면 이 명령을 찾을 일이 없다.
+
+### ② 전체를 띄운다
+
+**배포 스크립트만으로는 전체가 안 뜬다.** `scripts/lib.sh:51` 이
+`--no-deps` 로 **고른 서비스만** 올린다 — mysql·redis 는 딸려 오지 않는다.
+
+```bash
+# EC2 에서. 서비스 이름을 주지 않으면 compose 가 전부 띄운다.
+cd ~/project && docker compose up -d
+docker compose ps      # 일곱이 다 떴는가
+```
+
+이 저장소의 운영 compose 에는 `profiles:` 가 없다 — 줄 옵션을 찾지 않아도 된다.
+
+### ③ 스키마를 올린다
+
+```bash
+docker compose exec -T fastapi uv run --no-sync aerich upgrade
+```
+
+올린 뒤 **표가 실제로 생겼는지 본다.** `/api/v1/health` 로는 알 수 없다 —
+`SELECT 1` 만 보기 때문에 **DB 가 비어 있어도 `ok`** 를 준다.
+
+```bash
+# 변수는 **컨테이너 안에서** 풀게 한다. 밖에서 풀면 호스트 셸에 그 이름이
+# 없을 때 조용히 빈 값이 들어가 `Access denied for user '-p'` 로 죽는다.
+docker compose exec -T mysql sh -c \
+  'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+   "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=\"$MYSQL_DATABASE\";"'
+```
+
+**25 가 나와야 한다.** <!-- 마이그레이션이 표를 더하면 이 숫자를 갱신한다 -->
+0 이면 마이그레이션이 안 돈 것이고, 그 상태로 ④ 를 하면
+「Unknown column …」 같은 엉뚱한 자리에서 죽는다.
+
+표 개수만으로는 부족한 경우가 있다 — **표는 다 있는데 칸이 빠진** 상태가 실제로
+있었다(`guide_section.drug_caution_content_id` 하나가 빠진 채 표는 25 개였다).
+칸 단위로 대조하는 스크립트는 KEY-198 이 붙인다. 그것이 들어오기 전에는, 위 개수
+확인이 통과해도 **④ 에서 「Unknown column …」이 나면 이 자리를 의심한다.**
+
+### ④ 합성 데이터를 붓는다
+
+**4-3 절을 그대로 따른다.** 명령이 네 군데 함정을 지나므로 요약하지 말고
+그 절을 편다 — `scp` → `mkdir` → `docker cp` → `-e` 로 값 전달 → `uv run --no-sync`.
+
+**⓪ 만 다른 기계에서 돈다.** 서버에는 `scripts/` 도 `docs/` 도 없어서(①②는
+`.env`·compose·nginx 만 올린다) 저장소가 있는 기계에서 먼저 올려야 한다. 그
+줄을 건너뛰면 `docker cp` 가 「no such file or directory」로 멈춘다.
+
+### ⑤ 로그인이 되는가
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://<IP>/login.html      # 화면 200
+curl -sS -X POST http://<IP>/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"login_id":"staff01","password":"<합성 비밀번호>"}' | head -c 80
+```
+
+`access_token` 이 나오면 통과다. **화면 `/login` 은 404 다** — nginx 가
+`try_files $uri $uri/ =404` 라 확장자 없는 경로를 못 찾는다. `/login.html` 로 본다.
+
+### ⑥ 한 바퀴 돌려 보고 넘긴다
+
+`docs/qa/KEY-148-walking-skeleton.md` 의 시나리오(`SYN-EMS-01` · 차트 12401 ·
+`staff01` · `doctor01`)를 **손으로 한 번** 밟는다. 그 뒤 5절 smoke 를 유가은에게
+넘긴다 — `SMOKE_LOGIN_ID=staff01` 과 `SMOKE_PASSWORD`(④ 에서 쓴 값과 같다).
+
+### 볼륨을 비우는 경우
+
+재프로비저닝은 **상태를 예측 가능하게** 두려고 볼륨을 비우고 다시 심는다.
+
+```bash
+cd ~/project && docker compose down -v     # 🔴 mysql_data 가 사라진다
+```
+
+`mysql_data` · `media_volume` · `minio_data` 가 함께 지워진다. **보존이 필요하면
+실행 전에 KEY-203 코멘트에 사유를 남기고 결정한다.** 지운 뒤에는 ②③④ 를 다시 밟는다.
+
+### 중간에 깨지면
+
+| 어디서 | 어떻게 되돌리나 |
+|---|---|
+| ① 이미지 | 4절 — Hub 태그를 되돌린다 |
+| ② 기동 | `docker compose ps` 로 무엇이 안 떴는지 보고 그것만 다시 |
+| ③ 마이그레이션 | `aerich downgrade` (`docs/migrations/`). **먼저 어디까지 올랐는지 확인한다** |
+| ④ 시딩 | `down -v` 로 비우고 ②부터 다시 — seed 는 `get_or_create` 라 다시 돌려도 안 쌓인다 |
 
 ## 5. Smoke test
 
