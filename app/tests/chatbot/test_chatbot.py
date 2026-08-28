@@ -86,6 +86,23 @@ class ChatbotTestCase(TestCase):
         await link_guide(guide, token)
         return guide
 
+    async def post_chatbot_response(
+        self,
+        service: ChatbotService,
+        *,
+        question: str,
+        token: str = TOKEN,
+    ) -> httpx.Response:
+        app.dependency_overrides[get_chatbot_service] = lambda: service
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                return await client.post(
+                    "/api/v1/chatbot/responses",
+                    json={"link_token": token, "question": question},
+                )
+        finally:
+            app.dependency_overrides.pop(get_chatbot_service, None)
+
 
 class TestApprovedContextOnly(ChatbotTestCase):
     async def test_one_model_call_uses_only_the_linked_approved_guide(self) -> None:
@@ -233,15 +250,7 @@ class TestApiAndObservability(ChatbotTestCase):
     async def test_api_returns_evidence_source_and_limitation(self) -> None:
         await self.approved("KEY-96 API 합성의원")
         service = ChatbotService(model=FakeModel())
-        app.dependency_overrides[get_chatbot_service] = lambda: service
-        try:
-            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/chatbot/responses",
-                    json={"link_token": TOKEN, "question": "약은 언제 먹나요?"},
-                )
-        finally:
-            app.dependency_overrides.pop(get_chatbot_service, None)
+        response = await self.post_chatbot_response(service, question="약은 언제 먹나요?")
 
         assert response.status_code == 200
         body = response.json()
@@ -289,17 +298,10 @@ class TestKey97GroundingAndUnapprovedDataBoundary(ChatbotTestCase):
         unapproved_canary = "KEY97_UNAPPROVED_MEDICATION_MUST_NEVER_LEAK"
         pending_section.edited_body = unapproved_canary
         await pending_section.save(update_fields=["edited_body"])
+        await link_guide(pending, OTHER_TOKEN)
         model = FakeModel()
         service = ChatbotService(model=model)
-        app.dependency_overrides[get_chatbot_service] = lambda: service
-        try:
-            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/chatbot/responses",
-                    json={"link_token": TOKEN, "question": "약은 언제 먹나요?"},
-                )
-        finally:
-            app.dependency_overrides.pop(get_chatbot_service, None)
+        response = await self.post_chatbot_response(service, question="약은 언제 먹나요?")
 
         assert response.status_code == 200
         body = response.json()
@@ -326,15 +328,7 @@ class TestKey97GroundingAndUnapprovedDataBoundary(ChatbotTestCase):
         await medication.save(update_fields=["edited_body"])
         model = FakeModel()
         service = ChatbotService(model=model)
-        app.dependency_overrides[get_chatbot_service] = lambda: service
-        try:
-            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/chatbot/responses",
-                    json={"link_token": TOKEN, "question": "약은 언제 먹나요?"},
-                )
-        finally:
-            app.dependency_overrides.pop(get_chatbot_service, None)
+        response = await self.post_chatbot_response(service, question="약은 언제 먹나요?")
 
         assert response.status_code == 404
         assert response.json()["code"] == "LINK_NOT_FOUND"
