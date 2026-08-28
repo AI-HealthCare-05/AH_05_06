@@ -305,10 +305,21 @@ function guessKind(name) {
   });
 
   next.addEventListener("click", function () {
-    /* KEY-56: ocr-review.html 이 완성됐으므로 바로 이동한다 (KEY-62 TODO 처리).
-       shell.js 가 현재 진료 건을 자동 선택하고 visit:selected 를 발생시키면
-       ocr-review.js 가 jobForVisit 으로 OCR 결과를 불러온다. */
-    location.href = "/ocr-review.html";
+    /* **어느 진료인지 실어 보낸다.**
+
+       예전에는 `/ocr-review.html` 로 맨몸으로 갔다. 주석은 「shell.js 가 현재
+       진료 건을 자동 선택한다」고 적어 두었는데, 그런 보장이 없다 — 새 화면의
+       `shell.js` 는 **목록의 맨 위 줄**을 고른다. 그래서 올린 사람과 다른
+       환자의 판독 화면이 열렸다.
+
+       게다가 올리고 나면 그 진료의 분류가 바뀐다(진료기록 없음 → 판독 확인).
+       고른 칩이 옛 분류면 그 줄은 목록에서 아예 걸러진다 — 맨 위 줄이 남의
+       것일 수밖에 없다.
+
+       `?visit=` 은 `shell.js` 의 `entry` 가 받아서 그 줄을 고르고, 꺼져 있으면
+       그 칩까지 켠다. 의사 화면의 진행 단계가 쓰는 길과 같은 것이다. */
+    if (!visit || !visit.visit_id) return;
+    location.href = "/ocr-review.html?visit=" + encodeURIComponent(visit.visit_id);
   });
 
   /* 지금 고른 진료 건. **업로드가 붙는 자리는 visit_id 다.**
