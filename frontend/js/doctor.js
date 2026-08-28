@@ -414,17 +414,24 @@ function patientLinkSaying(error) {
     patientLinkOpening = true;
     var openingId = visit.visit_id;
     var popup = window.open("about:blank", "_blank");
-    if (popup) popup.opener = null;
+    /* 비동기 발급 뒤 다시 window.open()을 부르면 브라우저가 팝업으로 막는다.
+       더 중요한 점은 `noopener`로 성공해도 반환값이 null일 수 있어 성공 여부를
+       판정할 수 없다는 것이다. 클릭 순간 빈 탭을 못 만들었으면 링크를 발급하지
+       않고 끝낸다 — 일회용 링크를 화면 없이 소진하지 않는다. */
+    if (!popup) {
+      patientLinkOpening = false;
+      renderRole();
+      openModal(patientLinkFailedModal(new Error("patient guide popup blocked")));
+      return;
+    }
+    popup.opener = null;
     el("patient-open").disabled = true;
 
     doctorApi
       .issuePatientLink(openingId)
       .then(function (result) {
         var url = patientGuideUrl(result);
-        var opened = popup;
-        if (opened) opened.location.replace(url);
-        else opened = window.open(url, "_blank", "noopener");
-        if (!opened) throw new Error("patient guide popup blocked");
+        popup.location.replace(url);
         patientLinkOpening = false;
         if (visit && visit.visit_id === openingId) renderRole();
         closeModal();
@@ -515,7 +522,6 @@ function patientLinkSaying(error) {
     if (target.closest("[data-close]")) return closeModal();
 
     if (target.id === "patient-open" || target.closest("[data-open-patient]")) {
-      target.disabled = true;
       openPatientGuide();
       return;
     }

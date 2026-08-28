@@ -32,6 +32,9 @@ test("목업도 승인 완료 건 한 번만 발급하고 중복은 안전하게
   const issued = await box.doctorApi.issuePatientLink(8801);
   assert.equal(issued.demo_only, true);
   assert.match(issued.path, /^\/api\/v1\/guides\/[A-Za-z0-9_-]+$/);
+  const reloaded = await box.doctorApi.guide(8801);
+  assert.ok(reloaded.approved_at, "링크 발급 뒤 승인 시각이 사라졌다");
+  assert.ok(reloaded.scheduled_at, "링크 발급 뒤 예약 시각이 사라졌다");
   await assert.rejects(
     box.doctorApi.issuePatientLink(8801),
     (error) => error.code === "LINK_ALREADY_ISSUED" && error.status === 409,
@@ -90,9 +93,25 @@ test("병원 화면은 토큰을 DOM·console·localStorage에 쓰지 않는다"
 
   assert.match(html, /id="patient-open"[^>]*hidden>개발용 환자 화면 열기<\/button>/);
   assert.doesNotMatch(launch, /console\.|localStorage|sessionStorage|innerHTML|textContent/);
-  assert.match(launch, /opened\.location\.replace\(url\)/);
-  assert.match(launch, /if \(!opened\) throw new Error/);
+  assert.match(launch, /if \(!popup\)[\s\S]*return;/);
+  assert.ok(
+    launch.indexOf("if (!popup)") < launch.indexOf("doctorApi") && launch.indexOf("doctorApi") < launch.indexOf("issuePatientLink"),
+    "팝업 차단을 링크 발급 뒤에 판정해 일회용 링크를 소진한다",
+  );
+  assert.match(launch, /popup\.location\.replace\(url\)/);
+  assert.doesNotMatch(launch, /window\.open\(url/);
   assert.match(launch, /if \(patientLinkOpening \|\|/);
+});
+
+test("클릭 가드에 걸려도 누른 버튼을 선행 비활성화해 고착시키지 않는다", () => {
+  const doctor = read("js/doctor.js");
+  const clickBranch = doctor.slice(
+    doctor.indexOf('if (target.id === "patient-open"'),
+    doctor.indexOf("var reason", doctor.indexOf('if (target.id === "patient-open"')),
+  );
+
+  assert.match(clickBranch, /openPatientGuide\(\)/);
+  assert.doesNotMatch(clickBranch, /target\.disabled\s*=\s*true/);
 });
 
 test("미승인·중복·권한 오류는 재발급 없이 다음 행동만 안내한다", () => {

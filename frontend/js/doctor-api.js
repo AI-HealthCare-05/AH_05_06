@@ -240,7 +240,7 @@ function mockGuide(visitId) {
   if (!saved) return guide;
   if (saved.status !== null) guide.status = saved.status;
   if (saved.approved_at !== null) guide.approved_at = saved.approved_at;
-  guide.scheduled_at = saved.scheduled_at;
+  if (saved.scheduled_at !== null) guide.scheduled_at = saved.scheduled_at;
   guide.returned_reason = saved.returned_reason;
   guide.sections.forEach(function (s) {
     if (Object.prototype.hasOwnProperty.call(saved.sections, s.key)) {
