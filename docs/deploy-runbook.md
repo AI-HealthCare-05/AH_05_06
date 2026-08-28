@@ -161,6 +161,21 @@ FastAPI · MinIO 는 `127.0.0.1` 에 묶여 있다.
 ssh -N -L 13306:127.0.0.1:3306 -L 19000:127.0.0.1:9000 ubuntu@<서버>
 ```
 
+### 포트 변수는 안쪽과 바깥이 갈려 있다
+
+```text
+DB_PORT           앱이 붙는 포트 · 컨테이너가 실제로 듣는다 (--port=…)
+DB_EXPOSE_PORT    호스트에 붙일 번호
+
+REDIS_PORT        같은 뜻 (redis-server --port …)
+REDIS_EXPOSE_PORT 같은 뜻 · 안 적으면 6379
+```
+
+**바깥 번호를 바꾼다고 안쪽이 바뀌지 않는다.** 예전에는 redis 만 `REDIS_PORT`
+하나가 두 자리를 겸해서, 호스트 번호를 6379 아닌 값으로 두면 앱이
+`redis:<그 값>` 으로 붙으려다 실패했다 — health 가 `redis: connection_failed`
+였다 (KEY-193). 지금은 갈려 있다.
+
 ### 확인은 `/api/v1/health` 로 한다
 
 팀 노션의 배포 가이드 7단계는 `http://<IP>/api/docs` 로 확인하라고 하는데,
