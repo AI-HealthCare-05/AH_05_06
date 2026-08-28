@@ -33,6 +33,7 @@
 함께 **stderr 문구까지** 단언한다. 그러지 않으면 검사가 재는 척만 한다.
 """
 
+import ast
 import os
 import subprocess
 import sys
@@ -50,6 +51,15 @@ BASE_ENV = {
     "SECRET_KEY": "synthetic-key200-contract-0123456789abcdef",
     "DB_PASSWORD": "synthetic-key200-db",
 }
+
+
+def _func_in(source: str, name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
+    """소스에서 그 이름의 함수 노드를 찾는다."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"{name} 을 못 찾았다")
+
 
 GATE_CLOSED = "운영 환경(ENV=prod)에서는 seed 를 실행할 수 없습니다"
 GATE_OPEN = "⚠ ENV=prod 시딩 허용됨 (SEED_ALLOW_PROD) — Pilot/합성 전용"
@@ -387,3 +397,72 @@ class TestTheRunbookCommandCanActuallyRun:
         """운영 이미지에 시딩 도구를 남기지 않는다."""
         section = "\n".join(self._bash())
         assert "rm -rf /app/scripts" in section, "밀어 넣은 것을 도로 치우는 단계가 없다"
+
+
+class TestTheNarrowDoorIsTheOnlyWayPastTheFixtureGuard:
+    """**공용 안전핀은 그대로 두고 좁은 문 하나만 낸다** — 이희진 님 `#158` B안.
+
+    `SEED_ALLOW_PROD` 로 `seed.py` 의 문을 열어도, 그 다음에 `all_staff()` 가
+    `_refuse_in_production()` 으로 다시 막는다. 실제로 막혔다 —
+
+        ProductionFixtureError: 합성 직원 계정은 운영 환경에서 읽지 않는다 (ENV=prod)
+
+    그 가드에 `SEED_ALLOW_PROD` 조건을 넣는 길도 있었지만 그러면 「합성 계정은
+    운영에서 절대 못 읽는다」는 KEY-110 의 규칙이 **조건부**로 바뀐다. `seed.py`
+    말고 다른 코드가 실수로 그 경로를 타도 조용히 통과하게 된다.
+
+    그래서 가드는 한 글자도 안 건드리고 `read_staff_csv_for_seed_override()`
+    하나를 새로 냈다. 이 검사가 그 경계를 지킨다.
+    """
+
+    STAFF = ROOT / "app" / "tests" / "fixtures" / "staff.py"
+    SEED = ROOT / "scripts" / "seed.py"
+
+    def test_the_common_guard_is_untouched(self) -> None:
+        """`all_staff()` 는 조건 없이 가드를 거친다."""
+        source = self.STAFF.read_text(encoding="utf-8")
+        fn = ast.get_source_segment(source, _func_in(source, "all_staff")) or ""
+
+        assert "_refuse_in_production()" in fn, "`all_staff()` 가 가드를 안 거친다"
+        assert "SEED_ALLOW_PROD" not in fn, "공용 가드에 조건이 붙었다 — 「운영에서 절대 안 읽는다」가 조건부가 된다"
+
+        guard = ast.get_source_segment(source, _func_in(source, "_refuse_in_production")) or ""
+        assert "SEED_ALLOW_PROD" not in guard, "가드 자체에 예외가 뚫렸다"
+
+    def test_the_override_skips_the_guard_and_says_so(self) -> None:
+        source = self.STAFF.read_text(encoding="utf-8")
+        fn = ast.get_source_segment(source, _func_in(source, "read_staff_csv_for_seed_override")) or ""
+
+        assert fn, "좁은 문이 없다"
+        assert "_refuse_in_production" not in fn.split('"""')[-1], "좁은 문이 가드를 거친다 — 그러면 낼 이유가 없다"
+        assert "seed" in fn.lower(), "이름·설명에 이것이 시드 전용 예외 경로임이 안 드러난다"
+
+    def test_the_seed_checks_the_flag_before_using_it(self) -> None:
+        """**순서가 뒤집히면 아무 문턱 없이 합성 계정을 읽는다.**
+
+        시드가 그 함수를 부르는 모든 자리는 `_prod_override_granted()` 로 갈려
+        있어야 한다.
+        """
+        source = self.SEED.read_text(encoding="utf-8")
+        live = "\n".join(line.split("#", 1)[0] for line in source.splitlines())
+
+        calls = [ln for ln in live.splitlines() if "read_staff_csv_for_seed_override(" in ln]
+        assert calls, "시드가 좁은 문을 안 쓴다 — 운영에서 가드에 막힌다"
+
+        for line in calls:
+            assert "_prod_override_granted()" in line, f"플래그 확인 없이 좁은 문을 쓴다 — 「{line.strip()}」"
+
+    def test_nothing_else_uses_the_override(self) -> None:
+        """**`seed.py` 밖에서는 아무도 못 쓴다.**
+
+        이 함수가 여기저기 퍼지면 공용 가드를 남겨 둔 뜻이 없어진다.
+        """
+        users = []
+        for path in (ROOT / "app").rglob("*.py"):
+            if path == self.STAFF:
+                continue
+            if "read_staff_csv_for_seed_override" in path.read_text(encoding="utf-8"):
+                users.append(str(path.relative_to(ROOT)))
+
+        allowed = {"app/tests/deploy/test_key200_seed_prod_gate.py"}
+        assert set(users) <= allowed, f"시드 밖에서 좁은 문을 쓴다 — {sorted(set(users) - allowed)}"

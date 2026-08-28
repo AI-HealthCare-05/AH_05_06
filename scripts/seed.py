@@ -70,8 +70,15 @@ from app.services.guides import GuideService  # noqa: E402
 from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
 from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS  # noqa: E402
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
-from app.tests.fixtures.staff import StaffDataError, all_staff  # noqa: E402
-from app.tests.fixtures.validation import validate_canonical_patient_data  # noqa: E402
+from app.tests.fixtures.staff import (  # noqa: E402
+    StaffDataError,
+    all_staff,
+    read_staff_csv_for_seed_override,
+)
+from app.tests.fixtures.validation import (  # noqa: E402
+    read_patient_rows,
+    validate_patient_rows,
+)
 
 _CONFIG = Config()
 
@@ -298,7 +305,17 @@ async def seed_staff(password: str) -> dict[str, Hospital]:
     )
 
     try:
-        staff_rows = all_staff()
+        # **문이 열려 있을 때만 가드를 건너뛴다** — 이희진 님 `#158` B안.
+        #
+        # `all_staff()` 는 `_refuse_in_production()` 을 거치는데, 그것은 이
+        # 스크립트 전용이 아니라 **합성 계정을 부르는 모든 자리**에 걸리는
+        # 범용 안전핀이다. 거기에 조건을 넣으면 「운영에서 절대 안 읽는다」가
+        # 조건부로 바뀌므로, 그 함수는 한 글자도 안 건드리고 여기서 갈랐다.
+        #
+        # 순서가 중요하다 — `_guard_environment()` 가 `main()` 첫 줄에서
+        # `SEED_ALLOW_PROD` 를 이미 확인했다. 그 확인 없이 아래 함수를 부르면
+        # 운영에서 아무 문턱 없이 합성 계정을 읽게 된다.
+        staff_rows = read_staff_csv_for_seed_override() if _prod_override_granted() else all_staff()
     except StaffDataError as exc:
         print(f"오류: CSV 검증 실패 — {exc}", file=sys.stderr)
         sys.exit(1)
@@ -366,7 +383,14 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         PATIENTS_CSV,
         hint="저장소를 최신화하세요.",
     )
-    validate_canonical_patient_data()
+    # **여기서도 좁은 문으로 간다** — `validate_canonical_patient_data()` 는
+    # 안에서 `all_staff()` 를 부르고, 그것은 운영에서 멈춘다. 검증 함수는
+    # 이미 `staff=` 를 받게 되어 있으므로 **그 함수도 안 건드리고** 읽어 둔
+    # 것을 넘긴다.
+    validate_patient_rows(
+        read_patient_rows(),
+        staff=read_staff_csv_for_seed_override() if _prod_override_granted() else all_staff(),
+    )
 
     h1 = hospitals["H1"]
 
