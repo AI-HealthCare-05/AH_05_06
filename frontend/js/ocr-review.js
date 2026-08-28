@@ -44,6 +44,7 @@ function blankReviewState() {
     failed: {}, // 저장이 실패한 필드 — { code, mine }
     conflict: {}, // 409 — { mine, theirs }
     focusOn: null, // 방금 연 입력칸. 다시 그린 뒤 여기로 커서를 돌려준다
+    generating: false, // 안내문 생성 요청이 나가 있다 (KEY-204)
   };
 }
 
@@ -92,6 +93,88 @@ var FAILURE_SAYINGS = [
  *
  * 예전에는 title·next 까지 담아 매번 네 칸짜리 객체를 만들었는데, 그 둘은 어떤
  * 코드가 와도 같은 상수였다 (이희진 님 `#121` 리뷰). 부르는 쪽에 상수로 둔다. */
+/* 생성 버튼을 잠글 것인가 — KEY-204.
+ *
+ * **`submit.disabled = true` 만 걸면 안 된다.** `renderSummary()` 가 매번
+ * 이 값을 다시 쓰는데, 필드 하나를 저장하면 2.5 초 뒤 타이머가 `redraw()` 를
+ * 불러 그 자리를 지난다. 그러면 요청이 아직 돌고 있는데 버튼이 조용히
+ * 풀린다 — 두 번 눌리는 정확한 경로다.
+ *
+ * 그래서 잠금 여부를 **한 군데 규칙**으로 모으고 `renderSummary()` 가 이것을
+ * 부르게 한다. 세 가지 중 하나라도 참이면 잠근다.
+ *
+ *     못 읽은 값이 남았다      빈칸으로 만든 안내문이 환자에게 그대로 나간다
+ *     안 푼 충돌이 남았다      같다
+ *     이미 요청이 나가 있다     두 번 만들면 409 가 나거나 두 건이 생긴다
+ */
+function generateBlocked(counts, clashes, generating) {
+  var missing = counts && counts.missing ? counts.missing : 0;
+  return missing > 0 || (clashes || 0) > 0 || generating === true;
+}
+
+/* 잠근 이유를 사람 말로 — 버튼 `title` 에 쓴다. 이유가 다르면 말도 달라야 한다. */
+function generateBlockedSaying(counts, clashes, generating) {
+  if (generating === true) return "안내문을 만드는 중입니다";
+  if (generateBlocked(counts, clashes, false)) return "못 읽은 값과 충돌을 정리한 뒤 생성할 수 있습니다";
+  return "";
+}
+
+/* 안내문 생성이 실패했을 때 화면에 뭐라고 쓸 것인가 — KEY-204.
+ *
+ * **서버 `message` 를 그대로 흘리지 않는다.** 그 자리에 OCR 원문이나 값이
+ * 실릴 수 있고, 인수조건이 「오류 응답·로그에 OCR 원문·토큰·비밀값이
+ * 노출되지 않는다」를 요구한다. 코드만 보고 우리 말로 갈아 끼운다.
+ */
+var GENERATE_SAYINGS = [
+  { code: "OCR_NOT_CONFIRMED", say: "확정한 항목이 아직 없습니다 — 값을 확인해 저장한 뒤 다시 눌러 주세요" },
+  { code: "VISIT_NOT_FOUND", say: "이 진료를 찾을 수 없습니다 — 목록에서 다시 골라 주세요" },
+  { code: "FORBIDDEN", say: "안내문을 만들 권한이 없습니다" },
+  { status: 401, say: "로그인이 풀렸습니다 — 다시 로그인해 주세요" },
+];
+
+function generateFailureSaying(error) {
+  return errorMessage(error, GENERATE_SAYINGS, "안내문을 만들지 못했습니다 — 잠시 뒤 다시 눌러 주세요");
+}
+
+/* `409 GUIDE_ALREADY_EXISTS` 는 **실패가 아니다.**
+ *
+ * 새로고침 뒤 다시 누르거나 두 사람이 같이 누르면 서버가 이것으로 막는다.
+ * 화면이 이걸 빨간 오류로 보여 주면 스탭은 무엇이 잘못됐는지 찾게 되는데,
+ * 실제로는 **원하던 것이 이미 있는 상태**다. 그래서 「있습니다」로 읽는다.
+ */
+/* 늦게 온 결과를 지금 화면에 써도 되는가 — 이희진 님 `#162` ③.
+ *
+ * 처음에는 세대 번호(`loadSeq`)로 갈랐다. 그러면 A 에서 누르고 B 로 갔다가
+ * **다시 A 로 돌아오면** 세대가 달라져 결과를 버린다. 안내문은 실제로
+ * 만들어졌는데 화면은 아무 말이 없고, 사람은 다시 눌러 409 를 받아야 안다.
+ *
+ * 물어야 할 것은 「같은 세대인가」가 아니라 **「지금 보고 있는 진료가 그것인가」**다.
+ * `doctor.js` 가 승인에서 `approvingId` 로 하는 것과 같은 뜻이다 — 붙잡은
+ * 대상에 결과를 붙이지, 화면의 판 번호에 붙이지 않는다.
+ */
+/* 이 응답이 **지금 잠금을 쥔 요청**의 것인가 — 이희진 님 `KEY-210`.
+ *
+ * `#162` 에서 잠금 푸는 줄을 가림막 앞으로 옮겼는데, 그러면 **늦게 온 옛 응답이
+ * 새 요청의 잠금까지 푼다.** A 에서 누르고 → B 로 갔다 → A 로 돌아와 → 다시
+ * 누르면, 첫 응답이 도착하는 순간 두 번째가 아직 나가 있는데도 버튼이 열린다.
+ * 이희진 님이 그 자리를 짚어 티켓으로 냈다.
+ *
+ * 세대 번호를 하나 더 둔다. **화면 세대(`loadSeq`)가 아니라 요청 세대다** —
+ * 물어야 할 것이 「지금 어느 화면인가」가 아니라 「지금 나가 있는 요청이
+ * 무엇인가」이기 때문이다.
+ */
+function generateLockIsMine(mySeq, latestSeq) {
+  return mySeq === latestSeq;
+}
+
+function outcomeBelongsToScreen(wantedId, shownVisit) {
+  return !!shownVisit && shownVisit.visit_id === wantedId;
+}
+
+function guideAlreadyThere(error) {
+  return !!error && error.code === "GUIDE_ALREADY_EXISTS";
+}
+
 function failureSaying(code) {
   return {
     why: errorMessage({ code: code }, FAILURE_SAYINGS, "판독기가 문서를 읽지 못했습니다."),
@@ -166,6 +249,9 @@ function stateTakesFocus(tone) {
      또 남의 값이 뜬다. 세대를 세어 **지금 것만** 그린다 —
      `doctor.js` 의 `loadSeq` 와 같은 장치다. */
   var loadSeq = 0;
+
+  /* 안내문 생성 요청의 세대. 화면 세대와 따로 센다 (KEY-210). */
+  var generateSeq = 0;
   var pollTimer = null;
 
   /* 상태 칸의 **처음 값도** `blankReviewState()` 에서 받는다. 선언과 초기화가
@@ -184,6 +270,7 @@ function stateTakesFocus(tone) {
   var failed = view.failed;
   var conflict = view.conflict;
   var focusOn = view.focusOn;
+  var generating = view.generating; // 안내문 생성 요청이 나가 있다 (KEY-204)
 
   /* 칸이 열려 있는지는 **키가 있는지**로 본다. 값으로 보면 칸을 비웠을 때
      ""(falsy)가 되어 입력칸이 저 혼자 닫힌다 — 지우고 다시 치는 것이 값
@@ -589,9 +676,12 @@ function stateTakesFocus(tone) {
     }
 
     /* 못 읽은 값이나 안 푼 충돌이 남아 있으면 안내문을 만들지 않는다.
-       빈칸으로 만든 안내문은 환자에게 그대로 나간다. */
-    submit.disabled = counts.missing > 0 || clashes > 0;
-    submit.title = submit.disabled ? "못 읽은 값과 충돌을 정리한 뒤 생성할 수 있습니다" : "";
+       빈칸으로 만든 안내문은 환자에게 그대로 나간다.
+
+       **생성 중인지도 함께 본다** (KEY-204). 여기서 안 보면, 요청이 도는 사이
+       필드 저장 타이머가 이 줄을 다시 지나며 버튼을 조용히 풀어 준다. */
+    submit.disabled = generateBlocked(counts, clashes, generating);
+    submit.title = generateBlockedSaying(counts, clashes, generating);
   }
 
   function redraw() {
@@ -813,11 +903,52 @@ function stateTakesFocus(tone) {
 
 
     if (target.id === "submit") {
-      /* 티켓 번호를 화면에 쓰지 않는다. 접수대에게 `KEY-75` 는 아무것도 알려
-         주지 않는다 — 알아야 하는 것은 「지금 되는가」와 「그럼 뭘 하면 되는가」다.
-         (예전에 KEY-64 라고 적혀 있었는데 그건 다른 일감이었다.) */
-      saveNote.textContent = "안내문 생성은 아직 연결되지 않았습니다 — 여기서는 값 확인까지 하시면 됩니다";
+      /* KEY-204 — 여기서 안내문을 만든다.
+
+         **`visit_id` 를 지금 붙잡는다.** 응답이 오는 사이 사람이 왼쪽 목록에서
+         다른 진료를 고르면 모듈 지역 `visit` 이 바뀐다. 그러면 A 를 눌러 놓고
+         B 의 안내문을 만든 것처럼 보이게 된다 — `doctor.js` 가 승인에서 같은
+         이유로 `approvingId` 를 따로 잡는다. */
+      if (!visit || !visit.visit_id) return;
+      var wantedId = visit.visit_id;
+
+      if (generating) return; // 이미 나가 있다
+      generating = true;
+      var mySeq = ++generateSeq; // 이 잠금은 내 것이다
+      redraw(); // 버튼을 잠근다 — 잠금은 renderSummary 가 규칙으로 계산한다
+
+      saveNote.textContent = "안내문을 만드는 중입니다…";
       saveNote.hidden = false;
+
+      ocrApi
+        .generateGuide(wantedId)
+        .then(function () {
+          /* **내가 쥔 잠금일 때만 푼다.** 늦게 온 옛 응답이 새 요청의 잠금을
+             풀면, 나가 있는 요청이 있는데도 버튼이 열린다 (KEY-210). */
+          var lockIsMine = generateLockIsMine(mySeq, generateSeq);
+          if (lockIsMine) generating = false;
+
+          /* 화면에 쓰는 것은 **내가 최신 요청이고, 그 진료를 보고 있을 때만.**
+             다른 진료로 갔다면 무관하고, 돌아왔다면 여전히 관계있다. */
+          if (!lockIsMine || !outcomeBelongsToScreen(wantedId, visit)) return;
+          redraw();
+          saveNote.textContent = "안내문을 만들었습니다 — 의사 승인 화면에서 이어서 보실 수 있습니다";
+          saveNote.hidden = false;
+        })
+        .catch(function (error) {
+          var lockIsMine = generateLockIsMine(mySeq, generateSeq);
+          if (lockIsMine) generating = false;
+          if (!lockIsMine || !outcomeBelongsToScreen(wantedId, visit)) return;
+          redraw();
+
+          /* 409 는 실패가 아니다. 새로고침 뒤 다시 눌렀거나 두 사람이 같이
+             누른 것이고, **원하던 것은 이미 있다.** 빨간 오류로 보여 주면
+             스탭이 없는 문제를 찾게 된다. */
+          saveNote.textContent = guideAlreadyThere(error)
+            ? "이 진료의 안내문은 이미 있습니다 — 의사 승인 화면에서 보실 수 있습니다"
+            : generateFailureSaying(error);
+          saveNote.hidden = false;
+        });
       return;
     }
 
@@ -968,11 +1099,18 @@ function stateTakesFocus(tone) {
     failed = blank.failed;
     conflict = blank.conflict;
     focusOn = blank.focusOn;
+    generating = blank.generating;
     fieldsBox.innerHTML = "";
     rawBox.innerHTML = "";
     docTabs.innerHTML = "";
     summary.textContent = "—";
-    if (saveNote) saveNote.textContent = "";
+    /* **글자만 지우고 숨기지 않으면 빈 칸이 자리를 차지한다** — 이희진 님 `#162` ④.
+       쓰는 자리(901·914·925)는 전부 `textContent` 와 `hidden` 을 짝지어 다루는데
+       치우는 자리만 한쪽을 빠뜨리고 있었다. */
+    if (saveNote) {
+      saveNote.textContent = "";
+      saveNote.hidden = true;
+    }
     if (submit) submit.disabled = true;
   }
 
