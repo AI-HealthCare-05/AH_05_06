@@ -163,6 +163,15 @@ class GuideService:
                 generated_body="복약 안내가 발송될 예정입니다. 궁금한 점은 진료실로 문의해 주세요.",
                 using_db=connection,
             )
+            # 안내문과 다섯 섹션이 생겼는데 이 행만 빠지면 「누가 생성했나」에
+            # 답할 수 없다. 같은 트랜잭션에 둬서 감사 기록 저장이 실패하면
+            # 안내문·섹션도 함께 되돌린다 — 생성 성공과 감사 성공은 한 사건이다.
+            await GuideEvent.create(
+                guide_document=guide,
+                event_type=GuideEventType.GENERATED,
+                actor_id=actor.user_id,
+                using_db=connection,
+            )
 
         return guide
 

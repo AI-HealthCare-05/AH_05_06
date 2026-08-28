@@ -92,6 +92,7 @@ class GuideSectionKey(StrEnum):
 
 
 class GuideEventType(StrEnum):
+    GENERATED = "GENERATED"
     EDITED = "EDITED"
     APPROVED = "APPROVED"
     RETURNED = "RETURNED"
@@ -192,7 +193,7 @@ class GuideSection(models.Model):
 
 
 class GuideEvent(models.Model):
-    """승인 · 반려 · 수정 이력.
+    """생성 · 수정 · 승인 · 반려 이력.
 
     「누가 언제 무엇을 했나」가 남아야 나중에 되짚을 수 있다. 특히 반려는
     **사유가 함께 남아야** 한다 — 스탭이 무엇을 고쳐야 하는지가 그 문장이다.
@@ -208,7 +209,7 @@ class GuideEvent(models.Model):
         on_delete=OnDelete.CASCADE,
     )
     event_type = fields.CharEnumField(enum_type=GuideEventType)
-    #: 수정이면 어느 갈래를 고쳤는가. 승인 · 반려면 비어 있다.
+    #: 수정이면 어느 갈래를 고쳤는가. 생성 · 승인 · 반려면 비어 있다.
     section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
     #: 반려 사유. 반려가 아니면 비어 있다.
     reason = fields.CharField(max_length=200, null=True)
