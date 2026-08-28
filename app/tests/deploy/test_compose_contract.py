@@ -273,13 +273,29 @@ class TestTheWorkerCanReadWhatTheAppWrote:
         )
 
     def test_nginx_serves_the_same_place_in_production(self) -> None:
-        """nginx 가 다른 곳을 보면 올린 파일을 못 준다."""
-        prod = "infra/docker/docker-compose.prod.yml"
-        api = {self._split(m)[0] for m in self._mounts(prod, "fastapi") if "media" in m}
-        web = {self._split(m)[0] for m in self._mounts(prod, "nginx") if "media" in m}
+        """nginx 가 다른 곳을 보면 올린 파일을 못 준다.
 
-        assert api and web, f"media 볼륨을 못 찾았다 — fastapi {api} · nginx {web}"
-        assert api == web, f"fastapi 와 nginx 가 다른 볼륨을 본다 — {api} vs {web}"
+        **볼륨 이름만 보면 부족하다** — 이희진 님 `#157` 승인 코멘트, 한금준 님도
+        같은 자리를 짚었다. 같은 `media_volume` 을 nginx 가 `/srv/media` 처럼
+        **다른 경로**에 붙여도 이름은 똑같으니 그대로 통과한다. 그런데 nginx 설정은
+        `/vol/web/media` 를 가리키고 있으니 실제로는 404 다.
+
+        그래서 붙는 **자리**까지 본다. 그 자리는 손으로 적지 않고 앱이 고르는
+        순서 그대로 구한다 (`_upload_dir`) — 예시 env 가 정했으면 그 값,
+        비워 뒀으면 `config.py` 기본값을 AST 로.
+        """
+        prod = "infra/docker/docker-compose.prod.yml"
+        upload_dir = self._upload_dir("envs/example.prod.env")
+        api = {self._split(m)[0] for m in self._mounts(prod, "fastapi") if "media" in m}
+        web = [m for m in self._mounts(prod, "nginx") if "media" in m]
+        web_names = {self._split(m)[0] for m in web}
+
+        assert api and web_names, f"media 볼륨을 못 찾았다 — fastapi {api} · nginx {web_names}"
+        assert api == web_names, f"fastapi 와 nginx 가 다른 볼륨을 본다 — {api} vs {web_names}"
+        assert [m for m in web if self._split(m)[1] == upload_dir], (
+            f"nginx 가 media 볼륨을 {upload_dir} 이 아닌 곳에 붙였다 — {web}. "
+            "볼륨 이름은 같아도 붙는 자리가 다르면 올린 파일을 못 준다"
+        )
 
 
 class TestTheBucketIsNotPublic:
