@@ -20,8 +20,11 @@
  * IIFE **밖**에 두는 것은 검사가 부를 수 있게 하려는 것이다 (KEY-158).
  * 그리는 함수는 옮기지 않는다 — 그건 브라우저가 할 일이다.
  *
- * `warnCount` · `alreadyDone` 은 닫힌 값(`guide` · `visit`)을 읽고 있어서
- * **인자를 받도록 바꿨다.** 그래야 검사가 조합을 표처럼 채울 수 있다.
+ * `alreadyDone` 은 닫힌 값(`visit`)을 읽고 있어서 **인자를 받도록 바꿨다.**
+ * 그래야 검사가 조합을 표처럼 채울 수 있다.
+ *
+ * 안내문을 그리는 규칙은 `js/guide-view.js` 로 옮겼다 — 환자 카드의 「안내문」·
+ * 「최종 확인」 탭이 같은 것을 쓴다. 거기 있는 것도 전부 순수 함수다.
  */
 
 /* 서버는 `2026-08-21T18:00:00+09:00` 처럼 **병원 시간대를 달아서** 준다
@@ -43,12 +46,6 @@ function whenText(iso) {
   var m = String(iso).match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
   if (!m) return String(iso);
   return Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3];
-}
-
-function warnCount(sections) {
-  return sections.filter(function (s) {
-    return !!s.warn;
-  }).length;
 }
 
 /* 이미 승인한 진료는 다시 승인하지 않는다.
@@ -142,140 +139,28 @@ function patientLinkSaying(error) {
   }
 
 
-  /* 서버는 `key` 와 `gender` 를 계약대로 주고, **한국어로 옮기는 것은 화면
-     몫이다.** 서버가 한국어를 주면 화면마다 다른 말이 섞이고, 나중에 문구를
-     바꿀 때 서버와 화면 두 곳을 고쳐야 한다. */
-  var SECTION_LABEL = {
-    medication: "복약지도",
-    caution: "주의사항",
-    emergency: "🚨 바로 병원에 연락하세요",
-    life: "생활 안내",
-    messages: "문자 설정",
-  };
-
-  /* **응급 문장은 탭을 갖지 않는다.** 서버가 주는 다섯 갈래 중 `emergency` 만
-     탭에서 빼고, 「주의사항」 탭 본문 안에 이어 붙인다(와이어프레임 D1-2).
-
-     따로 탭을 만들면 원장님이 그 탭을 안 열고 승인할 수 있다. 열지 않아도
-     되는 문장이 아니다 — 일반 주의 문구를 읽으러 들어온 자리에서 함께 보인다.
-
-     서버에서 나눈 까닭은 **잠금 단위**다. `locked` 는 섹션 단위라, 한 칸에
-     두면 응급 문장을 지키려다 일반 문구까지 잠긴다 (KEY-161). */
-  var TUCKED_UNDER = { emergency: "caution" };
-
-  function tabSections() {
-    return guide.sections.filter(function (s) {
-      return !TUCKED_UNDER[s.key];
-    });
-  }
-
-  /* 이 탭에서 함께 보여 줄 섹션들 — 차례는 서버가 준 그대로다. */
-  function sectionsOf(key) {
-    return guide.sections.filter(function (s) {
-      return s.key === key || TUCKED_UNDER[s.key] === key;
-    });
-  }
-
-  var GENDER_LABEL = { FEMALE: "여", MALE: "남", OTHER: "기타", UNKNOWN: "—" };
-
-  /* **아직 받아 줄 서버가 없는 섹션.**
-
-     `messages` 는 본문 자체는 서버가 주지만, 회차·문구를 **저장할 자리가
-     없다**(구조화된 문자 설정은 `GuideResponse` 에 없고 `S1-14` 후속 계약이다).
-     그래서 [수정] 을 열지 않는다 — 이 저장소가 「고칠 수 있어 보이는데 저장이
-     안 되는 칸이 제일 나쁘다」로 정해 둔 자리다.
-
-     `locked` 로 표현하지 않는다. `locked` 는 「식약처 기준 문장이라 사람이
-     고칠 자리가 아니다」라는 뜻이고, 여기는 「아직 안 만들었다」라서 이유가
-     다르다. 섞으면 나중에 문자 설정이 붙었을 때 무엇을 풀어야 하는지 알 수
-     없다 (`KEY-160`). */
-  var NOT_IMPLEMENTED = { messages: "회차·문구를 저장할 자리가 아직 없습니다 — S1-14 후속 계약입니다" };
-
-  /* ── 안내문 ──────────────────────────────────────────── */
-
-  function currentSection() {
-    var tabs = tabSections();
-    for (var i = 0; i < tabs.length; i++) {
-      if (tabs[i].key === section) return tabs[i];
-    }
-    return tabs[0];
-  }
+  /* 안내문을 그리는 규칙은 `js/guide-view.js` 가 갖는다 — 환자 카드의
+     「안내문」·「최종 확인」 탭이 같은 것을 쓴다. 와이어프레임에서 D1 은 별도
+     화면이 아니라 그 탭 뒷칸이라, 두 곳이 같은 안내문을 그린다. 코드가 두
+     벌이면 한쪽만 고쳐지고 화면마다 다른 말이 나온다. */
 
   function renderTabs() {
-    var tabs = tabSections()
-      .map(function (s) {
-        return (
-          '<button class="vtab' +
-          (s.key === section ? " is-on" : "") +
-          '" type="button" data-section="' +
-          s.key +
-          '">' +
-          esc(SECTION_LABEL[s.key] || s.key) +
-          (s.warn ? ' <span class="vtab__warn">⚠</span>' : "") +
-          "</button>"
-        );
-      })
-      .join("");
-    /* 예전에는 「문자 설정」을 화면이 따로 붙였다. 서버의 `GuideSectionKey` 에
-       `messages` 가 있으므로 그것도 섹션 하나다 — 화면이 목록을 만들지 않는다. */
-    el("vtabs").innerHTML = tabs;
+    el("vtabs").innerHTML = guideTabsHtml(guide.sections, section);
   }
 
-  /* 서버는 섹션마다 **본문 한 덩이**(`body`)를 준다. 예전 목업은 제목·표·목록으로
-     쪼갠 `blocks` 를 그렸는데, 그건 렌더 편의로 만든 모양이지 계약이 아니었다.
-
-     8/27 여정에서 안내문은 고정 텍스트다(KEY-150 — 「확정 OCR→고정 안내→의사
-     승인」). 채울 것이 없는 표 구조를 먼저 굳히지 않는다. 실제 생성이 붙을 때
-     「어느 확정값이 어느 칸에 들어갔는가」와 함께 다시 정한다. */
-  function sectionHtml(s) {
-    var title = SECTION_LABEL[s.key] || s.key;
-
-    /* 잠긴 섹션은 왜 잠겼는지를 함께 적는다. 이유 없이 안 눌리는 버튼은
-       「고장났다」로 읽히고, 원장님은 그것을 확인하느라 시간을 쓴다. */
-    var pending = NOT_IMPLEMENTED[s.key];
-    var tail = s.locked
-      ? '<p class="block__locked">🔒 식약처 기준 문장이라 고칠 수 없습니다 — 약이 바뀌면 문장도 바뀝니다</p>'
-      : pending
-        ? '<p class="block__locked">[demo] ' + esc(pending) + "</p>"
-        : '<button class="block__edit" type="button" data-edit="' + esc(title) + '">수정</button>';
-
-    return (
-      '<section class="block' +
-      (s.warn ? " block--warn" : "") +
-      (s.locked ? " block--locked" : "") +
-      '">' +
-      '<h3 class="block__title">' +
-      esc(title) +
-      "</h3>" +
-      (s.warn ? '<p class="block__warnline">⚠ ' + esc(s.warn) + "</p>" : "") +
-      '<p class="block__body">' +
-      esc(s.body) +
-      "</p>" +
-      (s.edited ? '<p class="block__hint">이 항목은 수정되었습니다</p>' : "") +
-      tail +
-      "</section>"
-    );
+  function currentSection() {
+    return guideCurrentSection(guide.sections, section);
   }
 
-  /* 「문자 설정」도 서버가 주는 섹션 하나라, 다른 셋과 같은 길로 그린다.
-
-     예전에는 이 탭만 체크박스·미리보기가 붙은 별도 화면이었는데 **그것을 받아
-     주는 서버가 없었다.** 목업을 끄면 눌러도 저장되지 않는 칸이 되는데, 이
-     저장소가 「고칠 수 있어 보이는데 저장이 안 되는 칸이 제일 나쁘다」로 정해
-     둔 그것이다. 알림 일정 계약은 KEY-138 에서 정한 뒤 다시 붙인다. */
   function renderPanel() {
-    el("panel").innerHTML = sectionsOf(currentSection().key).map(sectionHtml).join("");
+    var now = currentSection();
+    el("panel").innerHTML = now ? guidePanelHtml(guide.sections, now.key, isDoctor()) : "";
   }
 
-
-  /* 위에 몇 개를 봐야 하는지 먼저 말한다. 없으면 「없다」고 분명히 말한다 —
-     그래야 읽지 않고 승인해도 된다는 것이 전해진다. */
   function renderSummary() {
-    var n = warnCount(guide.sections);
-    el("warn-line").className = "warnline" + (n ? " warnline--warn" : " warnline--ok");
-    el("warn-line").textContent = n
-      ? "확인 부탁드리는 곳 " + n + "군데 — ⚠ 표시만 보시면 됩니다"
-      : "확인 부탁드릴 곳이 없습니다 — 그대로 승인하셔도 됩니다";
+    var line = guideWarnLine(guide.sections);
+    el("warn-line").className = line.className;
+    el("warn-line").textContent = line.text;
   }
 
   /* 안내문이 없으면 **앞 환자의 이름을 지운다.** 안내문을 불러오는 동안 이름만
