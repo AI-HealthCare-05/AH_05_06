@@ -116,8 +116,16 @@
  * 상태 배지 `12px · border 1px · radius 4px · padding 1px 7px`,
  * 둘째 줄은 `12px`.
  *
- * **밑줄은 두지 않는다** — 원문에는 `border-bottom` 이 있지만, 아래 블록들이
- * 각자 테두리를 가져서 여기까지 선을 그으면 가로줄이 겹쳐 층층이 잘려 보인다.
+ * **판 가장자리까지 흰 바탕을 펴고 아래에 선을 하나 긋는다** — 원문의
+ * `border-bottom` 이다.
+ *
+ * 한때 이 선을 뺐었다. 그때는 머리말이 본문과 같은 바탕이라, 선까지 그으면
+ * 아래 블록들의 테두리와 겹쳐 가로줄이 층층이 보였다. 지금은 머리말만 흰
+ * 바탕이라 **선이 겹치는 것이 아니라 나누는 일을 한다** — 누구의 기록인지가
+ * 본문과 확실히 갈린다.
+ *
+ * `.pane` 이 `18px 24px` 여백을 물고 있어서 그만큼 되밀고, 원문 여백
+ * (`11px 26px`)으로 다시 준다. 안 그러면 흰 바탕이 가운데만 뜬 띠가 된다.
  */
 
 .patient-head {
@@ -125,7 +133,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 18px;
-  padding-bottom: var(--s-12);
+  margin: -18px -24px 18px;
+  padding: 11px 26px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
 }
 
 .patient-head__who {

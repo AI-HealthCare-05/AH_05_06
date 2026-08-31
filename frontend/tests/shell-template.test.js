@@ -378,6 +378,21 @@ test("**머리말과 탭이 한 줄이다** — 탭을 아래로 내리면 지�
   const css = rule(read("css/blocks.css"), ".patient-head");
   assert.match(css, /display:\s*flex/, "머리말이 가로가 아니다");
   assert.match(css, /gap:\s*18px/, "와이어프레임 간격과 다르다");
+
+  /* **본문과 갈린다** — 흰 바탕에 아래 선 하나. 누구의 기록인지가 본문에
+     묻히면 다른 환자에게 잘못 넣는다. */
+  assert.match(css, /border-bottom:\s*1px/, "본문과 나누는 선이 없다");
+  assert.match(css, /background:/, "머리말 바탕이 본문과 같다");
+
+  /* 판 가장자리까지 펴야 한다 — 안 그러면 가운데만 뜬 띠가 된다.
+     `.pane` 이 18px 24px 을 물고 있으므로 그만큼 되민다. */
+  const pane = rule(read("css/shell.css"), ".pane");
+  const pad = /padding:\s*(\d+)px\s+(\d+)px/.exec(pane);
+  assert.ok(pad, ".pane 여백을 못 읽었다 — 검사가 헛돈다");
+  assert.ok(
+    css.includes("-" + pad[1] + "px -" + pad[2] + "px"),
+    `머리말이 판 가장자리까지 안 펴진다 — .pane 이 ${pad[1]}px ${pad[2]}px 을 물고 있다`,
+  );
 });
 
 test("**탭이 버튼 형식이다** — 고른 것만 채워진다", () => {
