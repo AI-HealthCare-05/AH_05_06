@@ -156,7 +156,7 @@
         }
         var contact = document.createElement('button');
         contact.type = 'button'; contact.className = 'chat-contact';
-        contact.textContent = '💬 문의하기';
+        contact.innerHTML = '<img src="../assets/chat_bot.png" alt="" class="chat-contact__icon" aria-hidden="true"> 문의하기';
         contact.addEventListener('click', function () {
           alert('문의 창구는 병원 설정에서 연결됩니다.');
         });

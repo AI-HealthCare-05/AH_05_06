@@ -13,7 +13,7 @@ function Fab(opts, onClick) {
   el.type = 'button';
   el.className = 'fab';
   el.setAttribute('aria-label', '의료 상담 챗봇 열기');
-  el.innerHTML = '💬<span class="fab-badge" id="fab-badge"></span>';
+  el.innerHTML = '<img src="../assets/chat_bot.png" alt="" class="fab__icon" aria-hidden="true"><span class="fab-badge" id="fab-badge"></span>';
   el.style.bottom = bottom + 'px';
   el.style.right  = right  + 'px';
 
