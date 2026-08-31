@@ -134,7 +134,10 @@
     goalHead.appendChild(goalDate);
     goalCard.appendChild(goalHead);
 
-    g.goals.forEach(function (goal, i) {
+    var visibleGoals = g.goals.filter(function (goal) {
+      return !goal.dim && goal.now !== '─';
+    });
+    visibleGoals.forEach(function (goal, i) {
       var item = el('div', 'goal-item' + (i === 0 ? ' goal-item--first' : ''));
       item.appendChild(text('div', 'goal-name' + (goal.dim ? '" style="color:var(--tx-muted)' : ''), goal.n));
       item.appendChild(text('div', 'goal-range-label', goal.rangeLabel || ''));
@@ -220,6 +223,9 @@
     var nextCard = el('div', 'card');
     nextCard.appendChild(text('div', 'card__section-title', '다음 방문 계획'));
     nextCard.appendChild(text('div', 'care-body-text', g.next));
+    var linkNote = text('p', 'link-expiry-note', '이 링크는 진료 후 3일간 열려요. 나중에도 보고 싶다면 PDF로 저장해 두세요.');
+    linkNote.style.cssText = 'font-size:12px;line-height:14px;color:var(--tx-muted);margin-top:12px;';
+    nextCard.appendChild(linkNote);
     expandBody.appendChild(nextCard);
 
     expandBtn.addEventListener('click', function () {
