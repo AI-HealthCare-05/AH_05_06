@@ -445,14 +445,15 @@
 
   /* ── PDF 시트 ─── */
   var PDF_OPTIONS = [
-    { key:'guide', label:'복약지도', desc:'오늘 진료 요약 · 나의 목표 · 처방받은 약' },
-    { key:'care',  label:'주의사항', desc:'흔한 반응 · 함께 드시면 안 되는 것' },
-    { key:'life',  label:'생활관리', desc:'이번 4주 챌린지 · 생활 관리 가이드' },
+    { key:'guide', label:'복약지도', desc:'오늘 진료 요약 · 나의 목표 · 처방받은 약 · 복용 방법' },
+    { key:'care',  label:'주의사항', desc:'흔한 반응 · 함께 드시면 안 되는 것 · 바로 병원에 연락할 경우' },
+    { key:'life',  label:'생활관리', desc:'수면 · 뼈 건강 · 운동 · 통증' },
     { key:'stat',  label:'복약 현황', desc:'약별 남은 일수와 소진 예정일' },
   ];
   var pdfSheet = Sheet({
-    title: 'PDF 저장 · 범위 고르기',
-    options: PDF_OPTIONS.map(function (o) { return { key: o.key, label: o.label + ' — ' + o.desc }; }),
+    title: 'PDF로 저장',
+    options: PDF_OPTIONS,
+    defaultSelected: ['guide', 'care', 'life'],
     onSave: function (chosen) {
       alert('PDF 저장: ' + chosen.join(', ') + '\n(실제 저장은 서버 연동 후 동작합니다)');
     },

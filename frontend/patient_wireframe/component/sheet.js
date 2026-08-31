@@ -2,8 +2,9 @@
  *
  * 사용법:
  *   var sheet = Sheet({
- *     title: 'PDF 저장 · 범위 고르기',
- *     options: [{ key: 'guide', label: '복약지도' }, ...],
+ *     title: 'PDF로 저장',
+ *     options: [{ key: 'guide', label: '복약지도', desc: '...' }, ...],
+ *     defaultSelected: ['guide', 'care'],
  *     onSave: function(selected) { ... }
  *   });
  *   document.body.appendChild(sheet.el);
@@ -13,7 +14,10 @@
  */
 function Sheet(opts) {
   var selected = {};
-  (opts.options || []).forEach(function (o) { selected[o.key] = true; });
+  var defaults = opts.defaultSelected || opts.options.map(function (o) { return o.key; });
+  (opts.options || []).forEach(function (o) {
+    selected[o.key] = defaults.indexOf(o.key) >= 0;
+  });
 
   var backdrop = document.createElement('div');
   backdrop.className = 'pdf-sheet-backdrop';
@@ -21,35 +25,97 @@ function Sheet(opts) {
 
   var el = document.createElement('div');
   el.className = 'pdf-sheet';
-  el.innerHTML =
-    '<div class="pdf-sheet__handle"></div>' +
-    '<h2 class="pdf-sheet__title">' + (opts.title || '') + '</h2>' +
-    '<div id="sheet-options"></div>' +
-    '<div class="pdf-sheet__actions">' +
-      '<button type="button" class="btn-sheet btn-sheet--cancel" id="sheet-cancel">취소</button>' +
-      '<button type="button" class="btn-sheet btn-sheet--save"   id="sheet-save">PDF 저장</button>' +
-    '</div>';
+
+  var handle = document.createElement('div');
+  handle.className = 'pdf-sheet__handle';
+
+  var title = document.createElement('h2');
+  title.className = 'pdf-sheet__title';
+  title.textContent = opts.title || 'PDF로 저장';
+
+  var subtitle = document.createElement('p');
+  subtitle.className = 'pdf-sheet__subtitle';
+  subtitle.textContent = opts.subtitle || '넣을 내용을 고르세요. 탭이 나뉘어 있어도 한 파일로 묶어요.';
+
+  var optionsWrap = document.createElement('div');
+  optionsWrap.id = 'sheet-options';
+
+  var note = document.createElement('p');
+  note.className = 'pdf-sheet__note';
+  note.textContent = 'ⓘ 챗봇 대화는 담기지 않아요. 파일에 이름과 진료일이 들어가니 공유에 주의해 주세요.';
+
+  var actions = document.createElement('div');
+  actions.className = 'pdf-sheet__actions';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn-sheet btn-sheet--cancel';
+  cancelBtn.textContent = '취소';
+  cancelBtn.addEventListener('click', close);
+
+  var saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn-sheet btn-sheet--save';
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+
+  el.appendChild(handle);
+  el.appendChild(title);
+  el.appendChild(subtitle);
+  el.appendChild(optionsWrap);
+  el.appendChild(note);
+  el.appendChild(actions);
+
+  function countSelected() {
+    return Object.keys(selected).filter(function (k) { return selected[k]; }).length;
+  }
+
+  function updateSaveBtn() {
+    var n = countSelected();
+    saveBtn.textContent = '미리보기 (' + n + '쪽)';
+    saveBtn.disabled = n === 0;
+  }
 
   function renderOptions() {
-    var wrap = el.querySelector('#sheet-options');
-    wrap.innerHTML = '';
+    optionsWrap.innerHTML = '';
     (opts.options || []).forEach(function (o) {
       var div = document.createElement('div');
       div.className = 'pdf-option' + (selected[o.key] ? ' pdf-option--checked' : '');
-      div.innerHTML =
-        '<span class="pdf-option__check">' + (selected[o.key] ? '✓' : '') + '</span>' +
-        '<span class="pdf-option__label">' + o.label + '</span>';
+
+      var check = document.createElement('span');
+      check.className = 'pdf-option__check';
+      check.textContent = selected[o.key] ? '✓' : '';
+
+      var info = document.createElement('div');
+      info.className = 'pdf-option__info';
+
+      var label = document.createElement('div');
+      label.className = 'pdf-option__label';
+      label.textContent = o.label;
+
+      var desc = document.createElement('div');
+      desc.className = 'pdf-option__desc';
+      desc.textContent = o.desc || '';
+
+      info.appendChild(label);
+      info.appendChild(desc);
+      div.appendChild(check);
+      div.appendChild(info);
+
       div.addEventListener('click', function () {
         selected[o.key] = !selected[o.key];
         renderOptions();
+        updateSaveBtn();
       });
-      wrap.appendChild(div);
+      optionsWrap.appendChild(div);
     });
   }
-  renderOptions();
 
-  el.querySelector('#sheet-cancel').addEventListener('click', close);
-  el.querySelector('#sheet-save').addEventListener('click', function () {
+  renderOptions();
+  updateSaveBtn();
+
+  saveBtn.addEventListener('click', function () {
     var chosen = Object.keys(selected).filter(function (k) { return selected[k]; });
     if (opts.onSave) opts.onSave(chosen);
     close();
