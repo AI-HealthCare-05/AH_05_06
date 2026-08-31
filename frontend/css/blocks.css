@@ -517,30 +517,8 @@
 /* 환자 화면 쪽은 바탕을 달리해 「우리 것이 아니다」를 보인다 */
 .gs__pane--pv .gs__paneBody {
   background: var(--bg);
-}
-
-.pv__block {
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  /* 환자 화면은 각 묶음 왼쪽에 굵은 세로선이 있다 */
-  border-left: 3px solid var(--accent);
-}
-
-.pv__title {
-  margin: 0 0 4px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.pv__body {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--ink-2);
-  white-space: pre-wrap;
+  display: flex;
+  justify-content: center;
 }
 
 .gs__memo {
@@ -610,4 +588,270 @@
   display: flex;
   gap: var(--s-8);
   margin-top: var(--s-8);
+}
+
+/* ── 문자 설정 (와이어프레임 S1-14) ───────────────────────────────────
+ *
+ * 왼쪽에서 발송 항목을 고르면 오른쪽에서 그 문자의 문구를 고치고 미리보기로
+ * 확인한다. 원문 비율은 **왼쪽 11 : 오른쪽 9** — 왼쪽에 회차 · 소진 · 재진
+ * 세 묶음이 서고 오른쪽은 문구와 말풍선 둘이라, 왼쪽이 조금 더 넓다.
+ */
+
+.sms {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  flex-wrap: wrap;
+}
+
+.sms__side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sms__side--left {
+  flex: 11 1 320px;
+}
+
+.sms__side--right {
+  flex: 9 1 300px;
+}
+
+/* 원문 `border-radius:10px · padding:14px 18px · gap:8px` */
+.sms__card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card);
+}
+
+.sms__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sms__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sms__sub {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+/* 회차 한 줄 — 원문 `radius:8px · padding:8px 12px · 12.5px` */
+.sms__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+}
+
+/* 지금 미리보기 중인 줄만 진한 테두리 — 오른쪽 문구가 어느 것인지 말한다 */
+.sms__row.is-on {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+/* 꺼진 회차. 지우지 않고 흐리게 둔다 — 켤 수 있다는 것이 보여야 한다 */
+.sms__row.is-off {
+  color: var(--ink-3);
+}
+
+.sms__check {
+  flex: none;
+}
+
+.sms__fixed {
+  color: var(--ink-2);
+}
+
+.sms__when {
+  margin-left: auto;
+  color: var(--ink-2);
+}
+
+.sms__now {
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.sms__note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.sms__tpl {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* 바이트 수 — 90을 넘으면 요금이 갈리므로 한 글자 더 넣기 전에 보여야 한다 */
+.sms__bytes {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.sms__bytes.is-long {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+/* 문구 — 원문 `min-height:74px · 12.5px · line-height:1.7` */
+.sms__text {
+  margin: 0;
+  min-height: 74px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+.sms__warn {
+  margin: 0;
+  font-size: 12px;
+  color: var(--warn);
+}
+
+/* 미리보기 — 환자 휴대폰에 이렇게 간다 */
+.sms__phone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.sms__meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* 말풍선 — 원문 `max-width:290px · radius:12px · 왼쪽 위만 3px` */
+.sms__bubble {
+  margin: 0;
+  max-width: 290px;
+  padding: 10px 13px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  border-top-left-radius: 3px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+
+/* ── 환자 화면 시뮬레이션 (와이어프레임 patient-2.3.1 P2) ──────────────
+ *
+ * 우리가 읽는 원문과 환자가 보는 것이 다르면, 고치는 사람은 무엇이 나갈지
+ * 모른 채 고친다. 그래서 카드 몇 장이 아니라 **기기 화면을 흉내낸다.**
+ *
+ * 원문에서 확인한 것 — 지어낸 값이 하나도 없다:
+ *   폭 375 · 테두리 2px · radius 12 · 본문 padding 16 · 묶음 사이 18
+ *   탭 다섯은 **맨 위** 44px (아래가 아니다)
+ *   제목은 카드가 아니라 3×18 막대 + 18px/600
+ *   본문은 15px/22px
+ *
+ * **상태바 · 노치 · 홈 인디케이터는 그리지 않는다.** 원문에 없다 — 없는 것을
+ * 그리면 「환자가 저렇게 본다」가 거짓이 된다.
+ */
+
+.ph {
+  width: 375px;
+  flex: none;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card);
+  /* 원문이 `zoom:.8` 이다. `transform: scale()` 로 바꾸면 안쪽 폭이 375 가
+     아니라 300 으로 잡혀 **줄바꿈이 달라진다** — 환자가 볼 줄 모양과 다르다. */
+  zoom: 0.8;
+}
+
+.ph__tabs {
+  display: flex;
+  height: 44px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ph__tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.ph__tab.is-on {
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+.ph__body-wrap {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ph__block {
+  margin: 0;
+}
+
+/* 묶음 제목 — 카드가 아니라 막대 + 글자다 */
+.ph__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+
+.ph__bar {
+  width: 3px;
+  height: 18px;
+  flex: none;
+  background: var(--ink);
+}
+
+.ph__body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--ink-2);
+  white-space: pre-wrap;
 }

@@ -224,26 +224,70 @@ function guideSegmentsHtml(sections, current) {
   );
 }
 
-/* 환자가 받을 모양. **같은 글을 다른 그릇에 담는다** — 우리가 읽는 원문과
-   환자가 보는 것이 다르면, 고치는 사람은 무엇이 나갈지 모른 채 고친다.
-   와이어프레임은 P2 화면을 80% 로 줄여 옆에 세운다. */
+/* 환자가 받을 모양 — **환자 앱 화면을 그대로 축소해 세운다.**
+ *
+ * 우리가 읽는 원문과 환자가 보는 것이 다르면, 고치는 사람은 무엇이 나갈지
+ * 모른 채 고친다. 그래서 카드 몇 장이 아니라 **기기 화면을 흉내낸다.**
+ *
+ * 와이어프레임 원문(`wireframe-patient-2.3.1.html` P2)에서 확인한 것:
+ *   · 폭 375px · 높이 지정 없음(내용대로 늘어난다) · 테두리 2px · radius 12
+ *   · 상태바 · 노치 · 홈 인디케이터는 **그린 적이 없다** — 흉내내지 않는다
+ *   · 탭 다섯은 **맨 위**에 있다(44px). 아래가 아니다
+ *   · 본문 `padding:16px · gap:18px`
+ *   · 묶음 제목은 카드가 아니라 **3×18 검정 막대 + 18px/600 글자**
+ *   · 「본문만」은 56px 머리와 아래 안내상자·푸터를 뺀다 — 탭 줄은 남긴다
+ *   · 축소는 `zoom:.8` 이다. `transform:scale` 로 바꾸면 안쪽 폭이 375 가
+ *     아니라 300 이 되어 **줄바꿈이 달라진다** — 환자가 볼 줄 모양과 다르다
+ */
+
+/* 환자 화면의 탭. 의료진 화면과 이름이 다르다 — 「생활지도」가 환자에게는
+   「생활관리」다. 각자 자기 쪽 이름을 쓴다. */
+var PATIENT_TABS = [
+  { key: "medication", label: "복약지도" },
+  { key: "caution", label: "주의사항" },
+  { key: "life", label: "생활관리" },
+  { key: "status", label: "현황" },
+  { key: "chat", label: "챗봇" },
+];
+
 function guidePreviewHtml(sections, current) {
   var rows = guideSectionsOf(sections, current);
-  if (!rows.length) return '<p class="note">이 항목에는 아직 내용이 없습니다</p>';
 
-  return rows
-    .map(function (s) {
-      return (
-        '<section class="pv__block">' +
-        '<h4 class="pv__title">' +
-        esc(GUIDE_SECTION_LABEL[s.key] || s.key) +
-        "</h4>" +
-        '<p class="pv__body">' +
-        esc(s.body) +
-        "</p></section>"
-      );
-    })
-    .join("");
+  var tabs = PATIENT_TABS.map(function (t) {
+    return (
+      '<span class="ph__tab' +
+      (t.key === current || (current === "emergency" && t.key === "caution") ? " is-on" : "") +
+      '">' +
+      esc(t.label) +
+      "</span>"
+    );
+  }).join("");
+
+  var body = rows.length
+    ? rows
+        .map(function (s) {
+          return (
+            '<section class="ph__block">' +
+            '<h4 class="ph__title"><span class="ph__bar" aria-hidden="true"></span>' +
+            esc(GUIDE_SECTION_LABEL[s.key] || s.key) +
+            "</h4>" +
+            '<p class="ph__body">' +
+            esc(s.body) +
+            "</p></section>"
+          );
+        })
+        .join("")
+    : '<p class="ph__body">이 항목에는 아직 내용이 없습니다</p>';
+
+  return (
+    '<div class="ph" aria-label="환자 화면 미리보기">' +
+    '<div class="ph__tabs">' +
+    tabs +
+    "</div>" +
+    '<div class="ph__body-wrap">' +
+    body +
+    "</div></div>"
+  );
 }
 
 function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
@@ -257,6 +301,34 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
     "</span>" +
     guideSegmentsHtml(sections, current) +
     "</div>" +
+    /* **「문자 설정」은 다른 화면이다** (S1-14). 원문·미리보기 두 칸이 아니라
+       회차·문구를 다루는 자리라, 그 탭에서는 통째로 갈아 끼운다. */
+    (current === "messages"
+      ? smsScreenHtml(smsPlanOf(sections, mode))
+      : guideBodyHtml(sections, current, canEdit, editingKey)) +
+    "</section>"
+  );
+}
+
+/* 문자 설정에 넘길 값. 서버가 회차·문구를 주지 않으므로 **화면이 아는 것만**
+   모은다 — 진료일과 소진 예정일은 판독 값에서 오고, 문구는 기본 템플릿이다. */
+function smsPlanOf(sections, mode) {
+  var plan = (typeof guideSmsPlan === "function" && guideSmsPlan(mode)) || {};
+  return {
+    startIso: plan.startIso || "",
+    runOutIso: plan.runOutIso || "",
+    runOutBefore: plan.runOutBefore || 3,
+    picked: plan.picked || "d7",
+    on: plan.on || { d15: true },
+    at: plan.at || "오전 10:00",
+    phone: plan.phone || "",
+    text: plan.text || "{환자명}님, 복약 {일차}일째 확인입니다. 잘 드시고 계신가요? {링크}",
+    values: plan.values || {},
+  };
+}
+
+function guideBodyHtml(sections, current, canEdit, editingKey) {
+  return (
     '<div class="gs__body">' +
     /* 왼쪽 — 원문 */
     '<section class="gs__pane">' +
@@ -281,8 +353,7 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
     "</div>" +
     /* 병원에서만 보는 메모 — 환자 화면에 안 나간다 */
     '<p class="gs__memo">병원에서만 보는 메모 — 환자 화면에 안 나갑니다 · ' +
-    "안내 문구가 없는 약이 섞이면 그 항목만 「약사 복약지도를 참고하세요」로 나갑니다</p>" +
-    "</section>"
+    "안내 문구가 없는 약이 섞이면 그 항목만 「약사 복약지도를 참고하세요」로 나갑니다</p>"
   );
 }
 
@@ -396,4 +467,154 @@ function wireGuideEditing(opts) {
         say((error && error.message) || "저장하지 못했습니다. 다시 시도해 주세요.");
       });
   });
+}
+
+
+/* ── 문자 설정 (와이어프레임 S1-14) ───────────────────────────────────
+ *
+ * 안내문 화면의 네 번째 탭이다. 확인 문자 회차 · 소진 임박 · 재진 안내를 한
+ * 자리에 모아, 스탭이 S2-1 에서 이탈 환자를 발견하면 곧바로 조치할 수 있게 한다.
+ *
+ * 왼쪽에서 발송 항목을 고르면 오른쪽에서 그 문자의 문구를 고치고 미리보기로
+ * 확인한다. 미리보기는 **변수가 치환된 실제 발송본**이고 바이트 수도 치환 후
+ * 기준이다 — 치환 전 글을 보여 주면 무엇이 나갈지 모른 채 고치게 된다.
+ *
+ * 셈은 `js/sms-plan.js` 가 갖는다. 여기는 그리는 것만 한다.
+ *
+ * **저장할 자리가 서버에 아직 없다.** 회차·문구를 담는 표가 없다
+ * (`check_in` 은 환자의 D+7 응답이지 회차가 아니다). 화면은 그것을 감추지
+ * 않는다 — 켤 수 있게 두면 스탭이 켜 두고 갔다고 믿는다.
+ */
+
+var SMS_NOT_SAVED = "회차와 문구를 저장하는 자리가 서버에 아직 없습니다 — 지금은 보기만 됩니다";
+
+/** 회차 줄 하나. 고른 줄만 진한 테두리에 「◀ 미리보기 중」이 붙는다. */
+function smsRoundRow(round, startIso, on, picked) {
+  var when = smsWhen(smsDateAfter(startIso, round.days));
+  var tail = on ? when + " 예정" : "꺼짐 · 켜면 " + when;
+
+  return (
+    '<div class="sms__row' +
+    (picked ? " is-on" : "") +
+    (on ? "" : " is-off") +
+    '" data-round="' +
+    esc(round.key) +
+    '">' +
+    '<span class="sms__check" aria-hidden="true">' +
+    (on ? "☑" : "☐") +
+    "</span>" +
+    esc(round.label) +
+    (round.fixed ? ' <span class="sms__fixed">(고정)</span>' : "") +
+    '<span class="sms__when">' +
+    esc(tail) +
+    "</span>" +
+    (picked ? '<span class="sms__now">◀ 미리보기 중</span>' : "") +
+    "</div>"
+  );
+}
+
+/** 왼쪽 칸 — 확인 문자 · 소진 임박 · 재진 안내 */
+function smsLeftHtml(plan) {
+  var startIso = plan.startIso || "";
+  var runOutIso = plan.runOutIso || "";
+  var before = plan.runOutBefore || 3;
+  var noticeIso = smsRunOutNotice(runOutIso, before);
+
+  var rounds = SMS_ROUNDS.map(function (r) {
+    /* 일주일 뒤는 끌 수 없다 — 켜짐이 아니라 **고정**이다 */
+    var on = r.fixed || (plan.on || {})[r.key] === true;
+    return smsRoundRow(r, startIso, on, plan.picked === r.key);
+  }).join("");
+
+  return (
+    '<section class="sms__card">' +
+    '<h3 class="sms__title">확인 문자 <span class="sms__sub">· 처방 세트 기본값 · 이 환자만 바꾼다</span></h3>' +
+    rounds +
+    '<p class="sms__note">확인 문자 시각 <b>' +
+    esc(plan.at || "오전 10:00") +
+    "</b> — 확인 · 재진 문자에 적용 · 안내문은 승인 시각(기본 18:00) 규칙을 따릅니다</p>" +
+    "</section>" +
+    '<section class="sms__card">' +
+    '<h3 class="sms__title">소진 임박 안내</h3>' +
+    '<div class="sms__row">' +
+    '<span class="sms__check" aria-hidden="true">☑</span>소진 <b>' +
+    esc(String(before)) +
+    "</b> 일 전" +
+    '<span class="sms__when">' +
+    (noticeIso
+      ? esc(smsWhen(noticeIso)) + " 예정 · 소진 " + esc(smsWhen(runOutIso))
+      : "처방일수를 확인하면 셈합니다") +
+    "</span></div></section>" +
+    '<section class="sms__card">' +
+    '<h3 class="sms__title">재진 안내</h3>' +
+    '<div class="sms__row">마지막 발송 — 없음<span class="sms__when">' +
+    "발송하는 자리가 아직 없습니다</span></div>" +
+    '<p class="sms__note">ⓘ 문자 동의 「거부」면 비활성 · 잔량 0이면 대기</p>' +
+    "</section>"
+  );
+}
+
+/** 오른쪽 칸 — 문구와 미리보기 */
+function smsRightHtml(plan) {
+  var round = null;
+  for (var i = 0; i < SMS_ROUNDS.length; i++) {
+    if (SMS_ROUNDS[i].key === plan.picked) round = SMS_ROUNDS[i];
+  }
+  if (!round) round = SMS_ROUNDS[0];
+
+  var text = plan.text || "";
+  var filled = smsFill(text, plan.values || {});
+  var kind = smsKind(filled);
+  var missing = smsLinkMissingSaying(text);
+  var whenIso = smsDateAfter(plan.startIso, round.days);
+
+  return (
+    '<section class="sms__card">' +
+    '<div class="sms__head">' +
+    '<h3 class="sms__title">문구</h3>' +
+    '<span class="sms__tpl">' +
+    esc(round.label) +
+    " 확인 · 기본 템플릿</span>" +
+    '<span class="sms__bytes' +
+    (kind.long ? " is-long" : "") +
+    '">' +
+    esc(kind.label + " · " + kind.bytes + "바이트") +
+    "</span></div>" +
+    '<p class="sms__text">' +
+    esc(text) +
+    "</p>" +
+    (missing ? '<p class="sms__warn">⚠ ' + esc(missing) + "</p>" : "") +
+    '<p class="sms__note">ⓘ {링크}는 지울 수 없습니다 · ' +
+    esc(SMS_NOT_SAVED) +
+    "</p>" +
+    "</section>" +
+    /* 미리보기 — 환자 휴대폰에 이렇게 간다 */
+    '<section class="sms__card">' +
+    '<h3 class="sms__title">미리보기 <span class="sms__sub">· 환자 화면에 이렇게 갑니다</span></h3>' +
+    '<div class="sms__phone">' +
+    '<p class="sms__meta">' +
+    esc((plan.phone || "") + (whenIso ? " · " + smsWhen(whenIso) + " " + (plan.at || "오전 10:00") : "")) +
+    "</p>" +
+    '<p class="sms__bubble">' +
+    esc(filled) +
+    "</p>" +
+    '<p class="sms__meta">변수 치환 후 ' +
+    esc(kind.bytes + "바이트 · " + kind.label) +
+    "</p></div>" +
+    '<p class="sms__note">ⓘ 링크는 발송 시 이 환자 · 이 건의 고유 주소로 발급됩니다 (3일 만료) — 미리보기는 예시입니다</p>' +
+    "</section>"
+  );
+}
+
+/** 문자 설정 탭 한 판 — 왼쪽 11 : 오른쪽 9 (와이어프레임 원문) */
+function smsScreenHtml(plan) {
+  return (
+    '<div class="sms">' +
+    '<div class="sms__side sms__side--left">' +
+    smsLeftHtml(plan) +
+    "</div>" +
+    '<div class="sms__side sms__side--right">' +
+    smsRightHtml(plan) +
+    "</div></div>"
+  );
 }

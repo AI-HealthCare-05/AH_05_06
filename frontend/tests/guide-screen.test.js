@@ -279,3 +279,117 @@ test("**저장하는 사이 환자를 바꾸면 버린다** — 남의 글을 �
   const guards = body.match(/getVisitId\(\) !== wantedId/g) || [];
   assert.equal(guards.length, 2, `답이 온 뒤 확인하는 자리가 ${guards.length}곳이다 — 성공·실패 둘 다여야 한다`);
 });
+
+/* ── 환자 화면 시뮬레이션 ────────────────────────────────────────────── */
+
+test("**기기 화면을 흉내낸다** — 카드 몇 장이 아니다", () => {
+  const { guidePreviewHtml } = box();
+  const html = guidePreviewHtml(SECTIONS, "medication");
+
+  assert.ok(html.includes('class="ph"'), "기기 틀이 없다");
+  assert.ok(html.includes("ph__tabs"), "탭 줄이 없다");
+  assert.ok(html.includes("ph__bar"), "묶음 제목의 막대가 없다");
+});
+
+test("**탭 다섯이 맨 위에 있다** — 아래가 아니다 (환자 원문)", () => {
+  const { guidePreviewHtml } = box();
+  const html = guidePreviewHtml(SECTIONS, "medication");
+
+  for (const label of ["복약지도", "주의사항", "생활관리", "현황", "챗봇"]) {
+    assert.ok(html.includes(label), `${label} 탭이 없다`);
+  }
+
+  /* 환자는 「생활관리」라 부른다 — 의료진 화면의 「생활지도」와 다르다 */
+  assert.ok(!html.includes("생활지도"), "환자 화면에 의료진 쪽 이름을 썼다");
+
+  /* 탭이 본문보다 위에 온다 */
+  assert.ok(html.indexOf("ph__tabs") < html.indexOf("ph__body-wrap"), "탭이 본문 아래에 있다");
+});
+
+test("**보고 있는 항목이 탭에 표시된다** — 응급은 주의사항 탭이다", () => {
+  const { guidePreviewHtml } = box();
+
+  const life = guidePreviewHtml(SECTIONS, "life");
+  const at = life.indexOf("생활관리");
+  assert.ok(life.slice(Math.max(0, at - 60), at).includes("is-on"), "생활관리 탭이 안 켜졌다");
+
+  /* 응급 문장을 볼 때도 환자에게는 「주의사항」 탭이다 */
+  const emer = guidePreviewHtml(SECTIONS, "emergency");
+  const ca = emer.indexOf("주의사항");
+  assert.ok(emer.slice(Math.max(0, ca - 60), ca).includes("is-on"), "응급일 때 주의사항 탭이 안 켜졌다");
+});
+
+test("**없는 것을 그리지 않는다** — 상태바 · 노치 · 홈 인디케이터", () => {
+  /* 환자 와이어프레임 두 파일 어디에도 없다. 없는 것을 그리면
+     「환자가 저렇게 본다」가 거짓이 된다. */
+  /* **주석을 걷어낸다.** 「노치를 그리지 않는다」고 적은 내 설명글 때문에
+     이 검사가 늘 실패했다 — 같은 함정에 여섯 번째다 (`tests/source.js`). */
+  const css = codeOnly(read("css/blocks.css"));
+  const code = codeOnly(read("js/guide-view.js"));
+
+  for (const word of ["notch", "노치", "상태바", "status-bar", "home-indicator"]) {
+    assert.ok(!css.includes(word), `CSS 에 ${word} 를 그렸다 — 원문에 없다`);
+    assert.ok(!code.includes(word), `코드에 ${word} 를 그렸다 — 원문에 없다`);
+  }
+});
+
+test("**축소는 `zoom` 이다** — `scale` 로 바꾸면 줄바꿈이 달라진다", () => {
+  /* 주석에 「`transform: scale` 로 바꾸면」이라 적어 두었더니 그 글자에 걸렸다 */
+  const css = codeOnly(read("css/blocks.css"));
+  const phone = rule(css, ".ph");
+
+  assert.match(phone, /width:\s*375px/, "환자 화면 폭이 375 가 아니다");
+  assert.match(phone, /zoom:/, "축소를 안 한다");
+  assert.ok(
+    !/transform:\s*scale/.test(phone),
+    "scale 로 축소한다 — 안쪽 폭이 300 으로 잡혀 환자가 볼 줄 모양과 달라진다",
+  );
+});
+
+/* ── 문자 설정 (S1-14) ───────────────────────────────────────────────── */
+
+test("**「문자 설정」은 다른 화면이다** — 원문·미리보기 두 칸이 아니다", () => {
+  const { guideScreenHtml } = load("api", "session", "sms-plan", "guide-view");
+
+  const sms = guideScreenHtml(SECTIONS, "messages", "guide", true, null);
+  assert.ok(sms.includes("확인 문자"), "회차가 없다");
+  assert.ok(sms.includes("소진 임박"), "소진 임박이 없다");
+  assert.ok(sms.includes("재진 안내"), "재진 안내가 없다");
+  assert.ok(!sms.includes("환자 화면과 같은 차례"), "원문 칸이 그대로 남았다");
+
+  /* 다른 탭에는 회차가 새면 안 된다 */
+  const med = guideScreenHtml(SECTIONS, "medication", "guide", true, null);
+  assert.ok(!med.includes("확인 문자"), "복약지도 탭에 회차가 샜다");
+});
+
+test("**일주일 뒤는 켜진 채로 그려진다** — 끌 수 없는 회차다", () => {
+  const { smsLeftHtml } = load("api", "session", "sms-plan", "guide-view");
+  const html = smsLeftHtml({ startIso: "2026-08-13", picked: "d7", on: {} });
+
+  /* `on` 이 비어 있어도 일주일 뒤는 켜져야 한다 */
+  const at = html.indexOf("일주일 뒤");
+  assert.ok(html.slice(Math.max(0, at - 120), at).includes("☑"), "일주일 뒤가 꺼진 채로 그려졌다");
+  assert.ok(html.includes("(고정)"), "고정이라는 것을 안 밝힌다");
+});
+
+test("**미리보기는 치환된 실제 발송본이다**", () => {
+  const { smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+  const html = smsRightHtml({
+    startIso: "2026-08-13",
+    picked: "d7",
+    text: "{환자명}님, 복약 {일차}일째 확인입니다. {링크}",
+    values: { 환자명: "김서연", 일차: 7, 링크: "mg.kr/a3F9x2" },
+  });
+
+  assert.ok(html.includes("김서연님, 복약 7일째"), "치환 전 글을 보여 준다");
+  assert.ok(html.includes("바이트"), "몇 바이트인지 안 말한다");
+  assert.ok(html.includes("08-20 (목)"), "언제 가는지 안 말한다");
+});
+
+test("**저장할 자리가 없다는 것을 말한다** — 켤 수 있게 두면 켜 뒀다고 믿는다", () => {
+  const { SMS_NOT_SAVED, smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+
+  assert.match(SMS_NOT_SAVED, /아직 없습니다/, "되는 것처럼 말한다");
+  const html = smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: "{링크}" });
+  assert.ok(html.includes(SMS_NOT_SAVED), "화면이 그 말을 안 한다");
+});

@@ -99,6 +99,19 @@ function guideMissingSaying(error) {
     }
   }
 
+  /* 문자 설정(S1-14)에 넘길 값. **화면이 아는 것만** 모은다 — 서버가 회차·문구를
+     주지 않으므로, 진료일과 환자 번호처럼 이미 손에 있는 것으로 셈한다.
+     처방일수·소진 예정일은 판독 값에서 오는데 그 자리가 아직 없어 비워 둔다. */
+  window.guideSmsPlan = function () {
+    var p = (guide && guide.patient) || {};
+    return {
+      startIso: guide && guide.visited_at ? String(guide.visited_at).slice(0, 10) : "",
+      runOutIso: "",
+      phone: p.phone || "",
+      values: { 환자명: p.name || "", 일차: 7, 의원명: "" },
+    };
+  };
+
   /* 누른 뒤에 무슨 일이 일어났는지 한 줄. 작아서 화면낭독기가 읽어도
      시끄럽지 않다 — 다른 화면들과 같은 자리다. */
   function say(text) {
