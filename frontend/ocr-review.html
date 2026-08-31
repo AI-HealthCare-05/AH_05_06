@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/shell.css" />
     <link rel="stylesheet" href="/css/blocks.css" />
+    <link rel="stylesheet" href="/css/upload.css" />
     <link rel="stylesheet" href="/css/ocr-review.css" />
   </head>
   <body class="shell">
@@ -135,12 +136,34 @@
                 </p>
               </section>
 
-              <!-- `id` 가 아니라 `data-go` 다. 판독 실패 상태 상자가 같은
-                   이름의 「재업로드」 버튼을 만들어서, `id` 로 두면 한 문서에
-                   같은 이름이 둘이 된다 (`#work` 는 숨겨져도 문서에 남는다). -->
+              <!-- **여기서 바로 올린다.** 「재업로드」와 「검사지 추가」는
+                   같은 일이었다 — 사진을 한 장 더 보내는 것. 갈래를 물으면
+                   스탭이 매번 어느 칸인지 고민하고, 그 답은 쓰이지도 않는다
+                   (문서를 「이미지1 · 이미지2」로 부르는 것과 같은 판단).
+
+                   업로드 화면으로 보내지 않는다. 판독을 보다가 「사진이 흐려서
+                   못 읽었구나」를 알게 되는데, 그때 다른 화면으로 갔다 오면
+                   보던 값을 잃는다. 접었다 펴는 판을 이 자리에 둔다. -->
               <div class="raw-acts">
-                <button class="button-ghost button-ghost--sm" type="button" data-go="record">재업로드</button>
-                <button class="button-ghost button-ghost--sm" type="button" data-go="record">검사지 추가</button>
+                <button
+                  class="button-ghost button-ghost--sm"
+                  type="button"
+                  id="add-doc"
+                  aria-expanded="false"
+                  aria-controls="add-panel"
+                >
+                  진료기록 추가
+                </button>
+              </div>
+
+              <div class="add-panel" id="add-panel" hidden>
+                <div class="drop drop--sm" id="drop2">
+                  <p class="drop__lead">파일을 끌어다 놓거나</p>
+                  <button class="drop__pick" type="button" id="pick2">파일 고르기</button>
+                  <input type="file" id="file2" multiple accept="image/*,application/pdf" hidden />
+                </div>
+                <p class="note note--warn">⚠ 다른 환자의 정보가 함께 촬영되지 않도록 주의해 주세요</p>
+                <p class="note" id="add-say" role="status" aria-live="polite"></p>
               </div>
             </section>
 
@@ -174,6 +197,7 @@
     <script src="/js/step-nav.js"></script>
     <script src="/js/list-fold.js"></script>
     <script src="/js/shell.js"></script>
+    <script src="/js/upload-core.js"></script>
     <script src="/js/ocr-api.js"></script>
     <script src="/js/ocr-review.js"></script>
   </body>

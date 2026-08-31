@@ -89,21 +89,11 @@ function filePic(mimeType) {
   var next = document.getElementById("next");
   var later = document.getElementById("later");
 
-  /* 명세에 제약이 없어 여기서 정한다 — PR 에 적어 서버와 맞춘다.
-     화면 검증은 편의일 뿐이고 최종 판정은 서버가 한다(KEY-9 와 같은 원칙). */
-  var MAX_BYTES = 20 * 1024 * 1024;
-  var MAX_FILES = 10;
-  var ACCEPT = /^(image\/|application\/pdf$)/;
-
+  /* 크기 제한 · 받는 형식 · 보내는 주소는 `js/upload-core.js` 가 갖는다 —
+     판독 확인 화면에서도 그 자리에서 올릴 수 있어야 해서, 두 벌이면 한쪽만
+     고쳐지고 어디서 올렸느냐에 따라 되고 안 되고가 갈린다 (WP-S③ 공용 모듈). */
   var files = [];
   var seq = 0;
-
-
-  function reject(file) {
-    if (!ACCEPT.test(file.type)) return "이미지나 PDF만 올릴 수 있습니다.";
-    if (file.size > MAX_BYTES) return "파일이 너무 큽니다 (" + human(MAX_BYTES) + " 까지).";
-    return null;
-  }
 
   function render() {
     var done = files.filter(function (f) {
@@ -200,26 +190,7 @@ function filePic(mimeType) {
     item.progress = 0;
     render();
 
-    var form = new FormData();
-    form.append("files", item.file);
-    /* `document_type` 을 안 보낸다 — 서버가 EMR 로 두고 판독이 가려낸다. */
-
-    var headers = { Accept: "application/json" };
-    var token = session.token();
-    if (token) headers["Authorization"] = "Bearer " + token;
-
-    fetch(API_BASE + "/front-desk/visits/" + visit.visit_id + "/documents", {
-      method: "POST",
-      headers: headers,
-      credentials: "include",
-      body: form,
-    })
-      .then(function (res) {
-        return res.json().then(function (data) {
-          if (!res.ok) throw new Error(data.message || "업로드 실패");
-          return data;
-        });
-      })
+    postDocument(visit.visit_id, item.file)
       .then(function (data) {
         item.state = "done";
         item.ocr_job_id = data.ocr_job_id;
@@ -235,10 +206,10 @@ function filePic(mimeType) {
 
   function add(fileList) {
     var incoming = Array.prototype.slice.call(fileList);
-    var room = MAX_FILES - files.length;
+    var room = roomFor(files.length);
     if (incoming.length > room) {
-      incoming = incoming.slice(0, Math.max(0, room));
-      alert("한 번에 " + MAX_FILES + "장까지 올릴 수 있습니다.");
+      incoming = incoming.slice(0, room);
+      alert("한 번에 " + UPLOAD_MAX_FILES + "장까지 올릴 수 있습니다.");
     }
 
     incoming.forEach(function (file) {
@@ -252,7 +223,7 @@ function filePic(mimeType) {
         progress: 0,
         thumb: null,
       };
-      var bad = reject(file);
+      var bad = rejectFile(file, human);
       files.push(item);
 
       if (bad) {
@@ -275,27 +246,8 @@ function filePic(mimeType) {
     this.value = ""; // 같은 파일을 다시 골라도 change 가 나게 한다
   });
 
-  /* 끌어다 놓기 — 창 전체에서 기본 동작(파일 열기)을 막지 않으면
-     빗나가게 놓았을 때 브라우저가 그 파일로 화면을 덮어 버린다. */
-  ["dragenter", "dragover", "dragleave", "drop"].forEach(function (name) {
-    window.addEventListener(name, function (event) {
-      event.preventDefault();
-    });
-  });
-
-  drop.addEventListener("dragenter", function () {
-    drop.classList.add("is-over");
-  });
-  drop.addEventListener("dragover", function () {
-    drop.classList.add("is-over");
-  });
-  drop.addEventListener("dragleave", function (event) {
-    if (!drop.contains(event.relatedTarget)) drop.classList.remove("is-over");
-  });
-  drop.addEventListener("drop", function (event) {
-    drop.classList.remove("is-over");
-    if (event.dataTransfer && event.dataTransfer.files.length) add(event.dataTransfer.files);
-  });
+  /* 끌어다 놓기 — 창 전체 방어까지 `js/upload-core.js` 가 붙인다 */
+  wireDrop(drop, add);
 
   list.addEventListener("click", function (event) {
     var retry = event.target.closest("[data-retry]");

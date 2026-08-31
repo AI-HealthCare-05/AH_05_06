@@ -1051,16 +1051,11 @@ function stateTakesFocus(tone) {
       return;
     }
 
-    /* 「재업로드」·「검사지 추가」 — 둘 다 이 진료의 진료기록 칸으로 간다.
-       상태 상자의 `#reupload` 와 왼쪽 판의 `[data-go]` 가 같은 곳으로 간다. */
-    var goTab = target.getAttribute && target.getAttribute("data-go");
-    if (target.id === "reupload" || goTab) {
+    /* 판독 실패 상태 상자의 「재업로드」. 왼쪽 판의 「진료기록 추가」와 같은
+       일을 하되, 실패 화면에서는 `#work` 가 숨겨져 그 판이 안 보인다. */
+    if (target.id === "reupload") {
       if (!visit) return;
-      location.href =
-        "/patients.html?visit=" +
-        encodeURIComponent(visit.visit_id) +
-        "&tab=" +
-        encodeURIComponent(goTab || "record");
+      location.href = "/patients.html?visit=" + encodeURIComponent(visit.visit_id) + "&tab=record";
       return;
     }
 
@@ -1249,6 +1244,90 @@ function stateTakesFocus(tone) {
 
   /* 화면에 남아 있던 것을 전부 버린다. 하나라도 남으면 앞 환자의 편집·충돌·
      저장 표시가 새 환자 줄에 붙는다. */
+  /* ── 여기서 바로 올린다 ──────────────────────────────────────────────
+   *
+   * 판독을 보다가 「사진이 흐려서 못 읽었구나」를 알게 되는데, 그때 업로드
+   * 화면으로 갔다 오면 보던 값을 잃는다. 접었다 펴는 판을 이 자리에 둔다.
+   *
+   * 올리는 알맹이(크기 제한 · 받는 형식 · 보내는 주소)는 `js/upload-core.js`
+   * 가 갖는다 — 진료기록 탭과 두 벌이면 한쪽만 고쳐진다. */
+  function wireAddPanel() {
+    var button = document.getElementById("add-doc");
+    var panel = document.getElementById("add-panel");
+    var drop = document.getElementById("drop2");
+    var input = document.getElementById("file2");
+    var pick = document.getElementById("pick2");
+    if (!button || !panel || !drop || !input || !pick) return;
+
+    function addSay(text) {
+      var box = document.getElementById("add-say");
+      if (box) box.textContent = text;
+    }
+
+    button.addEventListener("click", function () {
+      var open = panel.hidden;
+      panel.hidden = !open;
+      button.setAttribute("aria-expanded", open ? "true" : "false");
+      /* 열면 바로 고를 수 있게 초점을 옮긴다 — 키보드로 다니는 사람이
+         판이 열린 것을 알 방법이 그것뿐이다. */
+      if (open) pick.focus();
+    });
+
+    pick.addEventListener("click", function () {
+      input.click();
+    });
+
+    input.addEventListener("change", function () {
+      send(this.files);
+      this.value = ""; // 같은 파일을 다시 골라도 change 가 나게 한다
+    });
+
+    wireDrop(drop, send);
+
+    function send(fileList) {
+      if (!visit || !visit.visit_id) return addSay("진료 건을 먼저 선택해 주세요.");
+
+      var list = Array.prototype.slice.call(fileList).slice(0, roomFor(0));
+      if (!list.length) return;
+
+      /* **어느 진료에 올리는지 지금 붙잡는다.** 올라가는 사이 왼쪽 목록에서
+         다른 환자를 고르면 `visit` 이 바뀐다 — 남의 진료에 사진이 붙는다. */
+      var wantedId = visit.visit_id;
+      var bad = null;
+      list.forEach(function (file) {
+        bad = bad || rejectFile(file, human2);
+      });
+      if (bad) return addSay(bad);
+
+      addSay(list.length + "장 올리는 중입니다…");
+
+      Promise.all(
+        list.map(function (file) {
+          return postDocument(wantedId, file);
+        }),
+      )
+        .then(function () {
+          if (!visit || visit.visit_id !== wantedId) return;
+          addSay(list.length + "장 올렸습니다 — 판독을 다시 불러옵니다.");
+          /* 새 사진이 붙으면 판독이 다시 돈다. 화면을 새로 여는 것과 같은
+             경로로 다시 묻는다 — 반쪽만 갱신하면 원문과 값이 어긋난다. */
+          loadVisit(visit);
+        })
+        .catch(function (err) {
+          if (!visit || visit.visit_id !== wantedId) return;
+          addSay(err.message || "올리지 못했습니다. 다시 시도해 주세요.");
+        });
+    }
+  }
+
+  /* 크기를 사람 말로. `upload.js` 의 것과 같은 규칙인데, 그 파일은 이 화면이
+     싣지 않는다 — 한 줄짜리라 공용으로 올리지 않고 여기 둔다. */
+  function human2(bytes) {
+    return Math.round(bytes / (1024 * 1024)) + "MB";
+  }
+
+  wireAddPanel();
+
   function resetState() {
     if (pollTimer) {
       clearTimeout(pollTimer);

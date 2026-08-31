@@ -8,6 +8,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const { load } = require("./browser-shim.js");
+const { markupOnly } = require("./source.js");
 
 function box() {
   return load("ocr-groups");
@@ -239,23 +240,53 @@ test("**화면이 두 파일을 싣는다** — 안 실으면 브라우저에서
   );
 });
 
-test("**눌러도 아무 일 없는 버튼을 두지 않는다** — 왼쪽 판의 두 버튼", () => {
-  /* 「된다」고 말해 놓고 아무 데도 안 가는 버튼이 1차 시연을 멈춘 방식이다.
-     이 화면에 새로 놓은 버튼은 모두 갈 곳이 있어야 한다. */
-  const page = codeOnly(source("ocr-review.html"));
-  const code = codeOnly(source("js/ocr-review.js"));
+test("**「재업로드」와 「검사지 추가」가 하나로 합쳐졌다** — 같은 일이었다", () => {
+  /* 둘 다 사진을 한 장 더 보내는 일이다. 갈래를 물으면 스탭이 매번 어느
+     칸인지 고민하고, 그 답은 쓰이지도 않는다 — 문서를 「이미지1 · 이미지2」로
+     부르는 것과 같은 판단이다. */
+  const page = markupOnly(source("ocr-review.html"));
 
   /* 클래스 이름으로 찾지 않는다 — 이름을 바꾸면 검사가 조용히 0개를 세고
      통과한다(그렇게 한 번 새어 나갔다). **자리로** 찾는다. */
   const acts = page.slice(page.indexOf('<div class="raw-acts">'));
   const inPanel = acts.slice(0, acts.indexOf("</div>")).split("\n").filter((line) => line.includes("<button"));
-  assert.equal(inPanel.length, 2, "왼쪽 판의 버튼이 둘이 아니다 — 검사가 헛돈다");
+  assert.equal(inPanel.length, 1, `왼쪽 판의 버튼이 ${inPanel.length}개다 — 하나여야 한다`);
+  assert.ok(!page.includes("검사지 추가"), "「검사지 추가」가 아직 남아 있다");
+});
 
-  for (const line of inPanel) {
-    const m = /data-go="([^"]+)"/.exec(line);
-    assert.ok(m, `갈 곳이 없는 버튼이다: ${line.trim()}`);
-    assert.ok(code.includes('data-go'), "누른 것을 받는 자리가 없다");
-  }
+test("**그 자리에서 올린다** — 업로드 화면으로 보내면 보던 값을 잃는다", () => {
+  const page = markupOnly(source("ocr-review.html"));
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  assert.ok(page.includes('id="add-panel"'), "올리는 판이 없다");
+  assert.ok(page.includes('id="drop2"'), "끌어다 놓을 자리가 없다");
+  assert.ok(page.includes('id="pick2"'), "파일을 고를 길이 없다");
+
+  /* 판이 처음부터 펴져 있으면 원문 칸이 밀린다 — 주인공은 판독 값이다 */
+  const at = page.indexOf('id="add-panel"');
+  assert.match(page.slice(at, at + 40), /hidden/, "판이 처음부터 펴져 있다");
+
+  assert.ok(code.includes("wireAddPanel"), "판을 배선하는 자리가 없다");
+  assert.ok(code.includes("aria-expanded"), "펴졌는지를 화면낭독기가 모른다");
+
+  /* **업로드 화면으로 보내지 않는다** — 옛 길이 남아 있으면 안 된다 */
+  assert.ok(
+    !/data-go=/.test(page),
+    "아직 업로드 화면으로 보내는 버튼이 있다 — 갔다 오면 보던 값을 잃는다",
+  );
+});
+
+test("**올리는 사이 다른 환자를 골라도 남의 진료에 안 붙는다**", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function send(");
+  assert.notEqual(at, -1, "보내는 자리가 없다 — 검사가 헛돈다");
+
+  const body = code.slice(at, at + 1400);
+  assert.ok(body.includes("var wantedId"), "어느 진료에 올리는지 안 붙잡는다");
+  assert.ok(
+    /postDocument\(wantedId/.test(body),
+    "붙잡은 것을 안 쓰고 그때그때의 visit 을 쓴다 — 남의 진료에 사진이 붙는다",
+  );
 });
 
 test("**같은 `id` 를 두 번 만들지 않는다** — 판독 실패 상자가 「재업로드」를 또 만든다", () => {
