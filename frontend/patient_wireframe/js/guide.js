@@ -418,7 +418,7 @@
 
     /* 모든 탭 공통 하단 푸터 */
     var footer = (typeof GuideFooter === 'function')
-      ? GuideFooter({ generatedAt: d.visit + ' 10:44', onReport: function () { alert('오류 신고 기능은 서버 연동 후 동작합니다.'); } })
+      ? GuideFooter({ generatedAt: d.visit + ' 10:44', onReport: function () { openReport(); } })
       : (function () {
           var f = document.createElement('div');
           f.className = 'guide-footer';
@@ -441,6 +441,162 @@
           return f;
         })();
     body.appendChild(footer);
+  }
+
+  /* ── 오류 신고 오버레이 ─── */
+  var REPORT_SCREENS = [
+    '복약지도 · 오늘 진료 요약',
+    '복약지도 · 나의 목표',
+    '복약지도 · 처방받은 약',
+    '복약지도 · 이 약을 왜 드시나요',
+    '복약지도 · 복용 방법',
+    '복약지도 · 다음 방문 계획',
+    '주의사항 · 흔한 반응',
+    '주의사항 · 함께 드시면 안 되는 것',
+    '주의사항 · 바로 병원에 연락할 경우',
+    '생활관리 · 4주 챌린지',
+    '생활관리 · 수면',
+    '생활관리 · 뼈 건강',
+    '생활관리 · 운동',
+    '생활관리 · 통증',
+  ];
+  var REPORT_REASONS = [
+    '도움이 됨',
+    '도움이 되지 않음',
+    '안내와 다른 내용',
+    '이해하기 어려움',
+    '부적절한 의료 안내',
+    '기타',
+  ];
+
+  function buildReportOverlay() {
+    var overlay = document.createElement('div');
+    overlay.className = 'report-overlay';
+
+    /* 헤더 */
+    var header = document.createElement('div');
+    header.className = 'report-overlay__header';
+    var backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'report-overlay__back';
+    backBtn.textContent = '‹';
+    backBtn.addEventListener('click', function () { closeReport(); });
+    header.appendChild(backBtn);
+    overlay.appendChild(header);
+
+    /* 콘텐츠 */
+    var content = document.createElement('div');
+    content.className = 'report-overlay__content';
+
+    var title = document.createElement('h2');
+    title.className = 'report-overlay__title';
+    title.textContent = '오류 신고 · 피드백';
+    content.appendChild(title);
+
+    var sub = document.createElement('p');
+    sub.className = 'report-overlay__sub';
+    sub.textContent = '받으신 안내에 대해 알려주세요';
+    content.appendChild(sub);
+
+    /* 신고할 화면 */
+    var screenLabel = document.createElement('div');
+    screenLabel.className = 'report-field-label';
+    screenLabel.textContent = '신고할 화면';
+    content.appendChild(screenLabel);
+
+    var select = document.createElement('select');
+    select.className = 'report-select';
+    REPORT_SCREENS.forEach(function (s) {
+      var opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      select.appendChild(opt);
+    });
+    var currentScreen = state.tab === '복약지도' ? '복약지도 · 이 약을 왜 드시나요'
+                      : state.tab === '주의사항' ? '주의사항 · 흔한 반응'
+                      : state.tab === '생활관리' ? '생활관리 · 4주 챌린지'
+                      : '복약지도 · 오늘 진료 요약';
+    select.value = currentScreen;
+    content.appendChild(select);
+
+    var screenHint = document.createElement('p');
+    screenHint.className = 'report-hint';
+    screenHint.textContent = 'ⓘ 눌렀던 화면이 골라져 있어요 · 다른 화면 이야기면 바꿔 주세요';
+    content.appendChild(screenHint);
+
+    /* 문제 유형 */
+    var reasonLabel = document.createElement('div');
+    reasonLabel.className = 'report-field-label';
+    reasonLabel.textContent = '어떤 점이 문제였나요?';
+    content.appendChild(reasonLabel);
+
+    var selectedReason = null;
+    var reasonBtns = [];
+    REPORT_REASONS.forEach(function (r) {
+      var row = document.createElement('div');
+      row.className = 'report-reason';
+
+      var radio = document.createElement('span');
+      radio.className = 'report-reason__radio';
+
+      var label = document.createElement('span');
+      label.className = 'report-reason__label';
+      label.textContent = r;
+
+      row.appendChild(radio);
+      row.appendChild(label);
+      row.addEventListener('click', function () {
+        selectedReason = r;
+        reasonBtns.forEach(function (b) { b.classList.remove('report-reason--selected'); });
+        row.classList.add('report-reason--selected');
+        radio.classList.add('report-reason__radio--selected');
+        reasonBtns.forEach(function (b) {
+          if (b !== row) b.querySelector('.report-reason__radio').classList.remove('report-reason__radio--selected');
+        });
+      });
+      reasonBtns.push(row);
+      content.appendChild(row);
+    });
+
+    /* 자세히 */
+    var detailLabel = document.createElement('div');
+    detailLabel.className = 'report-field-label';
+    detailLabel.textContent = '자세히 (선택)';
+    content.appendChild(detailLabel);
+
+    var textarea = document.createElement('textarea');
+    textarea.className = 'report-textarea';
+    textarea.placeholder = '어떤 부분이 다른지 적어주세요';
+    textarea.rows = 4;
+    content.appendChild(textarea);
+
+    /* 제출 버튼 */
+    var submitBtn = document.createElement('button');
+    submitBtn.type = 'button';
+    submitBtn.className = 'btn btn--primary report-submit';
+    submitBtn.textContent = '보내기';
+    submitBtn.addEventListener('click', function () {
+      alert('신고가 접수되었습니다.\n(실제 전송은 서버 연동 후 동작합니다)');
+      closeReport();
+    });
+    content.appendChild(submitBtn);
+
+    overlay.appendChild(content);
+    return overlay;
+  }
+
+  var reportOverlay = null;
+  function openReport() {
+    if (reportOverlay) reportOverlay.remove();
+    reportOverlay = buildReportOverlay();
+    document.body.appendChild(reportOverlay);
+    requestAnimationFrame(function () { reportOverlay.classList.add('report-overlay--open'); });
+    document.body.style.overflow = 'hidden';
+  }
+  function closeReport() {
+    if (!reportOverlay) return;
+    reportOverlay.classList.remove('report-overlay--open');
+    document.body.style.overflow = '';
+    setTimeout(function () { if (reportOverlay) { reportOverlay.remove(); reportOverlay = null; } }, 300);
   }
 
   /* ── PDF 시트 ─── */
