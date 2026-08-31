@@ -14,12 +14,38 @@ function human(bytes) {
   return (bytes / 1024 / 1024).toFixed(1) + " MB";
 }
 
-/* 서버가 판독으로 가려내기 전, 화면에서 미리 어림잡는다.
-   맞히려는 것이 아니라 고르는 수고를 줄이려는 것이다 — 사람이 고칠 수 있다. */
-function guessKind(name) {
-  if (/lab|검사|결과지|result/i.test(name)) return "lab";
-  if (/note|소견|메모|초음파/i.test(name)) return "note";
-  return "emr";
+/* **종류는 화면이 정하지 않는다.**
+
+   전에는 파일명 정규식으로 어림잡고(`guessKind`) 사람이 고르개로 고치게 했다.
+   와이어프레임 설계 주석은 그 반대를 말한다 — 「진료기록을 종류별로 나눠 올리게
+   하면 스탭이 매번 어느 칸인지 고민한다. **한 버튼으로 받고 무엇이 찍혔는지는
+   프로그램이 가려낸다**」.
+
+   그리고 파일명으로 맞히는 것은 못 맞힌다. 「스크린샷 2026-08-14.png」에는
+   단서가 없다. 못 맞힌 값이 고르개에 남으면 사람이 그것을 고치는 수고가 다시
+   생기고, 안 고치면 버튼이 잠긴 채로 남았다.
+
+   서버는 `document_type` 을 **선택값**으로 받고 없으면 EMR 로 둔다
+   (`app/documents/api.py:36` · `service.py:43`). 판독이 실제 종류를 가려낸다. */
+
+/* 미리보기를 못 만들었을 때 자리를 채우는 그림. 이모지를 쓰지 않는다 —
+   기기마다 다르게 그려지고 색을 못 맞춘다 (tokens.css: 「장식용 이모지」). */
+var FILE_PIC = {
+  pdf:
+    '<svg class="file__pic" viewBox="0 0 20 20" aria-hidden="true" focusable="false">' +
+    '<path d="M5 2.5h6l4 4v11h-10z" fill="none" stroke="currentColor" stroke-width="1.3"' +
+    ' stroke-linejoin="round"/><path d="M11 2.5v4h4" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.3" stroke-linejoin="round"/></svg>',
+  image:
+    '<svg class="file__pic" viewBox="0 0 20 20" aria-hidden="true" focusable="false">' +
+    '<rect x="3" y="4.5" width="14" height="11" rx="1.5" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.3"/><circle cx="7.5" cy="8.5" r="1.2" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.3"/><path d="M4.5 13.5l3.5-3.5 2.5 2.5 2-1.7 3 3.2" fill="none"' +
+    ' stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+
+function filePic(mimeType) {
+  return mimeType === "application/pdf" ? FILE_PIC.pdf : FILE_PIC.image;
 }
 
 (function () {
@@ -39,13 +65,6 @@ function guessKind(name) {
   var MAX_BYTES = 20 * 1024 * 1024;
   var MAX_FILES = 10;
   var ACCEPT = /^(image\/|application\/pdf$)/;
-
-  /* 자동 분류 결과. 프로그램이 틀릴 수 있으므로 사람이 고칠 수 있어야 한다. */
-  var KINDS = [
-    { key: "emr", label: "과거기록" },
-    { key: "note", label: "소견" },
-    { key: "lab", label: "검사지" },
-  ];
 
   var files = [];
   var seq = 0;
@@ -95,18 +114,7 @@ function guessKind(name) {
           }
 
           var right = "";
-          if (f.state === "done") {
-            right =
-              '<select class="file__kind" data-kind="' +
-              f.id +
-              '" aria-label="' +
-              f.name +
-              ' 종류">' +
-              KINDS.map(function (k) {
-                return '<option value="' + k.key + '"' + (k.key === f.kind ? " selected" : "") + ">" + k.label + "</option>";
-              }).join("") +
-              "</select>";
-          } else if (f.state === "failed") {
+          if (f.state === "failed") {
             right = '<button class="file__act" type="button" data-retry="' + f.id + '">다시 시도</button>';
           }
           /* rejected 에는 다시 시도를 붙이지 않는다 — 지우고 다른 파일을 올려야 한다 */
@@ -116,7 +124,7 @@ function guessKind(name) {
             (f.state === "failed" || f.state === "rejected" ? " file--failed" : "") +
             '">' +
             '<div class="file__thumb">' +
-            (f.thumb ? '<img src="' + f.thumb + '" alt="">' : f.type === "application/pdf" ? "📄" : "🖼") +
+            (f.thumb ? '<img src="' + f.thumb + '" alt="">' : filePic(f.type)) +
             "</div>" +
             '<div class="file__body"><div class="file__name">' +
             f.name +
@@ -134,17 +142,18 @@ function guessKind(name) {
         })
         .join("");
 
-    /* EMR 과거기록이 「안내문 생성 필수」다. 한 장도 없으면 다음으로 못 간다 —
-       화면에 필수라고 적어 놓고 통과시키면 다음 단계에서 막힌다. */
-    var hasEmr = done.some(function (f) {
-      return f.kind === "emr";
-    });
-    next.disabled = !hasEmr;
-    next.title = hasEmr ? "" : "EMR 과거기록을 한 장 이상 올려 주세요";
-  }
+    /* **한 장이라도 올렸으면 다음으로 간다.**
 
-  /* 화면 kind → 서버 OcrDocumentType 매핑 (KEY-56) */
-  var KIND_TO_TYPE = { emr: "EMR", note: "EMR", lab: "LAB_RESULT" };
+       전에는 「EMR 과거기록이 한 장 이상」을 요구했는데, 그 판정이 파일명
+       정규식이었다. 「스크린샷 2026-08-14.png」는 EMR 인지 알 길이 없어
+       기본값으로 통과했고, 파일명에 「검사」가 든 EMR 은 잠긴 채로 남았다 —
+       사람이 고르개로 고쳐야만 풀렸다.
+
+       못 맞히는 값으로 길을 막지 않는다. 진짜 판정은 판독이 한다 — 필수 항목이
+       안 나오면 그때 「확인 필요」로 선다(`ai_worker/tasks/ocr_task.py`). */
+    next.disabled = !done.length;
+    next.title = done.length ? "" : "진료기록을 한 장 이상 올려 주세요";
+  }
 
   /* 실제 업로드 — POST /api/v1/front-desk/visits/{visit_id}/documents
      request() 는 Content-Type: application/json 을 고정으로 붙이므로
@@ -164,8 +173,7 @@ function guessKind(name) {
 
     var form = new FormData();
     form.append("files", item.file);
-    var docType = KIND_TO_TYPE[item.kind];
-    if (docType) form.append("document_type", docType);
+    /* `document_type` 을 안 보낸다 — 서버가 EMR 로 두고 판독이 가려낸다. */
 
     var headers = { Accept: "application/json" };
     var token = session.token();
@@ -214,7 +222,6 @@ function guessKind(name) {
         state: "uploading",
         progress: 0,
         thumb: null,
-        kind: guessKind(file.name),
       };
       var bad = reject(file);
       files.push(item);
@@ -279,16 +286,6 @@ function guessKind(name) {
       });
       render();
     }
-  });
-
-  list.addEventListener("change", function (event) {
-    var picker = event.target.closest("[data-kind]");
-    if (!picker) return;
-    var item = files.find(function (f) {
-      return f.id === picker.dataset.kind;
-    });
-    if (item) item.kind = picker.value;
-    render();
   });
 
   /* 두 버튼이 갈 곳은 아직 없다.
