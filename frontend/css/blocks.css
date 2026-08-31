@@ -964,3 +964,179 @@ textarea.sms__text:focus-visible {
   gap: 6px;
   flex-wrap: wrap;
 }
+
+/* ── 현황 (와이어프레임 D1-6) ─────────────────────────────────────────
+ *
+ * 승인 뒤에 무슨 일이 있었는지. 원문 배치는 **위 2 : 1, 아래 전폭**이다 —
+ * 「안내문 읽음」과 「확인 문자 응답」은 별도 카드가 아니라 한 카드 안에서
+ * 구분선으로 나뉜다.
+ */
+
+.st {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.st__top {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.st__send {
+  flex: 2 1 380px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.st__head {
+  padding: 8px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+/* 발송 줄 — 원문 `padding:10px 14px · gap:12px · 13px` */
+.sd__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--bg);
+  font-size: 13px;
+}
+
+/* **● 와 ○ 는 크기·색이 같다.** 원문이 그렇다 — 다른 것은 글리프와,
+   보낸 줄만 제목이 굵다는 것뿐이다. 예정을 흐리게 만들면 「아직 안 됐다」가
+   아니라 「안 될 것」으로 읽힌다. */
+.sd__dot {
+  width: 12px;
+  flex: none;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.sd__what {
+  width: 104px;
+  flex: none;
+}
+
+.sd__what.is-done {
+  font-weight: 700;
+}
+
+.sd__when {
+  width: 100px;
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.sd__state {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-2);
+}
+
+/* 오른쪽 — 안내문 읽음 + 확인 문자 응답이 **한 카드**다 */
+.st__side {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.st__label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.st__big {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.st__sub {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+
+/* 원문 `margin:8px 0 6px` — 위아래가 다르다 */
+.st__rule {
+  height: 1px;
+  background: var(--line);
+  margin: 8px 0 6px;
+}
+
+.st__note {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+/* ── 진료 처리 이력 ───────────────────────────────────────────────── */
+
+.tl__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+
+.tl__title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tl__tail {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* 원문 `grid-template-columns:66px 1fr 104px · gap:12px · padding:7px 0` —
+   줄 **위에만** 선이 있다. */
+.tl__row {
+  display: grid;
+  grid-template-columns: 66px 1fr 104px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.tl__at {
+  color: var(--ink-2);
+}
+
+.tl__who {
+  text-align: right;
+}
+
+/* **시스템이 한 일도 숨기지 않는다** — 사람이 한 것만 보면 절반이 빈다.
+   다만 글자색으로 가른다: 아이콘이나 배지를 붙이면 시스템이 한 일이
+   사람이 한 일보다 눈에 먼저 든다. */
+.tl__who--system {
+  color: var(--ink-3);
+}
+
+.tl__who--staff,
+.tl__who--patient {
+  color: var(--ink);
+}

@@ -49,6 +49,9 @@ function guideMissingSaying(error) {
   var visitId = null;
   var me = null;
   var loadSeq = 0;
+  /* **현황은 자기 번호표를 쓴다.** 안내문과 나눠 쓰면 서로를 취소시킨다 —
+     둘을 같이 부르므로 뒤에 부른 쪽이 앞의 것을 늘 죽인다. */
+  var timelineSeq = 0;
   var section = { guide: "medication", final: "medication" };
 
   function el(id) {
@@ -174,27 +177,52 @@ function guideMissingSaying(error) {
       : '<p class="note">' + esc(can.why) + "</p>";
   }
 
-  /* 「현황」은 아직 줄 API 가 없다 — 발송 이력 테이블 자체가 서버에 없다.
-     값을 지어내지 않고 무엇이 있어야 되는지를 말한다(KEY-234 안내 화면 규칙). */
+  /* 「현황」 — 와이어프레임 D1-6. 이제 **진짜 기록**으로 찬다.
+     사람이 한 일 · 환자가 한 일 · 확인 응답이 `GET /visits/{id}/timeline` 로
+     한 줄기로 온다. 발송 예정만 아직 프레임이다 — 담는 표가 서버에 없다. */
+  var timeline = null;
+
   function renderStatus() {
     var body = el("status-body");
     if (!body) return;
 
-    var html = "";
-    var ids = ["D1-6", "D1-7"];
-    for (var i = 0; i < ids.length; i++) {
-      var frame = typeof frameById === "function" ? frameById(ids[i]) : null;
-      if (!frame) continue;
-      html +=
-        '<section class="box">' +
-        '<div class="box__head"><h2 class="box__title">' +
-        esc(frame.name) +
-        "</h2></div>" +
-        '<p class="note">' + esc(frame.role || "") + "</p>" +
-        '<p class="note">이 화면이 되려면 — ' + esc(frame.blocker || "미정") + "</p>" +
-        "</section>";
+    if (!timeline) {
+      body.innerHTML = '<p class="note">현황을 불러오는 중입니다…</p>';
+      return;
     }
-    body.innerHTML = html || '<p class="note">현황을 보여 줄 자리가 아직 없습니다.</p>';
+
+    var answer = null;
+    for (var i = 0; i < timeline.entries.length; i++) {
+      if (timeline.entries[i].kind === "CHECK_IN") answer = timeline.entries[i];
+    }
+
+    body.innerHTML = statusScreenHtml({
+      entries: timeline.entries,
+      checkInSaying: answer
+        ? timelineClock(answer.at) + " 응답 · " + (answer.detail || "")
+        : "아직 없음",
+      plan: (typeof guideSmsPlan === "function" && guideSmsPlan()) || {},
+    });
+  }
+
+  /* 현황은 안내문과 **따로 불러온다.** 안내문이 없어도 등록·열람 기록은
+     있을 수 있고, 한 요청이 실패해도 다른 하나는 보여야 한다. */
+  function loadTimeline(id) {
+    var mine = ++timelineSeq;
+    timeline = null;
+    renderStatus();
+    doctorApi
+      .timeline(id)
+      .then(function (data) {
+        if (mine !== timelineSeq) return; // 늦게 온 답이 새 환자 화면에 붙으면 안 된다
+        timeline = data;
+        renderStatus();
+      })
+      .catch(function () {
+        if (mine !== timelineSeq) return;
+        var body = el("status-body");
+        if (body) body.innerHTML = '<p class="note">현황을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.</p>';
+      });
   }
 
   function renderAll() {
@@ -307,7 +335,10 @@ function guideMissingSaying(error) {
   document.addEventListener("visit:selected", function (event) {
     /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
     smsForget();
-    if (event.detail) loadGuide(event.detail.visit_id || event.detail);
+    var id = event.detail && (event.detail.visit_id || event.detail);
+    if (!id) return;
+    loadGuide(id);
+    loadTimeline(id);
   });
 
   requireSession().then(function (who) {

@@ -41,6 +41,12 @@ var doctorApi = {
     });
   },
 
+  /* 이 진료에 무슨 일이 있었는지 — 와이어프레임 D1-6.
+     사람이 한 일 · 환자가 한 일 · 확인 응답을 한 줄기로 준다. */
+  timeline: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/timeline");
+  },
+
   approve: function (visitId, body) {
     return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/approve", {
       method: "POST",
