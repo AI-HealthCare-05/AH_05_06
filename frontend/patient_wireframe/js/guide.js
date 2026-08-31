@@ -297,7 +297,7 @@
 
     /* 더 보기 / 접기 버튼 */
     if (!state.careExpanded) {
-      var moreBtn = btn('btn btn--full', '더 보기', function () {
+      var moreBtn = btn('btn btn--full', '더 자세히 보기', function () {
         state.careExpanded = true;
         renderBody(d);
       });
