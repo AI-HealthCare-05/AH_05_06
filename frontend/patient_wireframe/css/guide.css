@@ -5,8 +5,12 @@ body {
   font-size: 17px;
   line-height: 25px;
   color: var(--tx);
-  background: var(--bg);
+  background: var(--surface);
   -webkit-font-smoothing: antialiased;
+}
+
+@media (min-width: 431px) {
+  body { background: var(--bg); }
 }
 
 /* ── 앱 쉘 ─── */
