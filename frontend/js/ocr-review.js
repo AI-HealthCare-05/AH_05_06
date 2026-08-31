@@ -375,7 +375,9 @@ function stateTakesFocus(tone) {
           '" type="button" data-doc="' +
           doc.document_id +
           '">' +
-          escapeHtml(doc.label || doc.document_type) +
+          /* 올린 차례로 번호를 매긴다 — 종류는 짐작이라 틀리면 값보다
+             이름을 먼저 의심하게 된다 (`js/ocr-groups.js` 의 documentName). */
+          escapeHtml(documentName(result.documents, doc.document_id)) +
           "</button>"
         );
       })
@@ -431,7 +433,7 @@ function stateTakesFocus(tone) {
       '" data-line="' +
       lineAttr(field.source_line) +
       '">' +
-      escapeHtml(doc.label || doc.document_type) +
+      escapeHtml(documentName(result.documents, field.document_id)) +
       "</button>"
     );
   }
@@ -439,8 +441,7 @@ function stateTakesFocus(tone) {
   function candidateRows(field) {
     return field.candidates
       .map(function (item) {
-        var doc = docById(item.document_id);
-        var where = doc ? doc.label || doc.document_type : "출처 미상";
+        var where = documentName(result.documents, item.document_id) || "출처 미상";
         /* 기본값은 검사일이 최근인 rank 1 이지만, 사람이 바꾸면 「사용 중」이
            최근 값이 아니게 된다. 그때도 「최근 값」이라고 적으면 거짓말이 된다. */
         var mark = item.is_selected

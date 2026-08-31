@@ -270,3 +270,40 @@ test("**같은 `id` 를 두 번 만들지 않는다** — 판독 실패 상자�
   const clash = madeByJs.filter((id) => inPage.includes(id));
   assert.deepEqual(clash, [], `화면과 스크립트가 같은 id 를 만든다: ${clash.join(", ")}`);
 });
+
+/* ── 문서 이름 ───────────────────────────────────────────────────────── */
+
+test("**올린 차례로 번호를 매긴다** — 종류는 짐작이라 틀리면 값보다 이름을 의심하게 된다", () => {
+  const { documentName } = box();
+
+  const docs = [{ document_id: 7 }, { document_id: 3 }, { document_id: 11 }];
+  assert.equal(documentName(docs, 7), "이미지1", "첫 번째로 올린 것이 이미지1 이다");
+  assert.equal(documentName(docs, 3), "이미지2");
+  assert.equal(documentName(docs, 11), "이미지3");
+});
+
+test("모르는 문서에는 이름을 지어내지 않는다", () => {
+  const { documentName } = box();
+
+  assert.equal(documentName([{ document_id: 1 }], 99), "", "없는 문서에 번호를 붙였다");
+  assert.equal(documentName(null, 1), "");
+  assert.equal(documentName([], 1), "");
+});
+
+test("**종류 이름을 쓰지 않는다** — 업로드에서 종류 고르기를 없앤 것과 같은 판단", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  assert.ok(
+    !/doc\.label\s*\|\|\s*doc\.document_type/.test(code),
+    "문서 종류를 이름으로 쓰는 자리가 남았다 — 짐작이 틀리면 스탭이 값을 의심한다",
+  );
+  assert.ok(code.includes("documentName("), "번호를 안 쓴다");
+});
+
+test("탭 이름도 값 옆 출처도 **같은 이름**이다 — 다르면 같은 사진인지 알 수 없다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  /* 탭(renderDocTabs) · 값 옆 배지(sourceChip) · 후보 줄(candidateRows) 셋 다 */
+  const uses = (code.match(/documentName\(/g) || []).length;
+  assert.ok(uses >= 3, `문서 이름을 짓는 자리가 ${uses}곳이다 — 탭·출처·후보 셋 모두여야 한다`);
+});

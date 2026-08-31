@@ -136,3 +136,36 @@ function groupIsReady(key, data) {
   var rows = (data || {})[key];
   return !!(rows && rows.length);
 }
+
+
+/* ── 문서 이름 ─────────────────────────────────────────────────────────
+ *
+ * **올린 이미지가 EMR 인지 검사 결과지인지는 중요하지 않다.** 중요한 것은
+ * 그 이미지에서 어떤 값을 찾았느냐다. 종류를 이름으로 붙이면 두 가지가
+ * 나빠진다:
+ *
+ *   ① 틀린다. 종류는 프로그램이 짐작한 것이고, 짐작이 틀리면 스탭은 「검사지1」
+ *      이라 적힌 EMR 화면을 보게 된다 — 값보다 이름을 먼저 의심하게 된다.
+ *   ② 쓸모가 없다. 출처 배지를 누르는 이유는 「이 값이 어느 사진에서 나왔나」를
+ *      보려는 것이지 그 사진의 갈래를 알려는 것이 아니다.
+ *
+ * 업로드에서 「과거기록 · 소견 · 검사지」 고르기를 없앤 것과 같은 판단이다
+ * (스탭이 매번 어느 칸인지 고민하게 만들지 않는다 — 와이어프레임 S1-3).
+ *
+ * 그래서 **올린 차례로 번호를 매긴다.** 순서는 서버가 준 차례를 그대로 쓴다 —
+ * 스탭이 올린 차례이고, 화면을 다시 열어도 같은 번호가 나온다.
+ */
+function documentName(documents, documentId) {
+  var list = documents || [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].document_id === documentId) return "이미지" + (i + 1);
+  }
+  return "";
+}
+
+/** 탭에 세울 이름들. 서버가 준 차례가 곧 올린 차례다. */
+function documentNames(documents) {
+  return (documents || []).map(function (doc, i) {
+    return { document_id: doc.document_id, name: "이미지" + (i + 1) };
+  });
+}
