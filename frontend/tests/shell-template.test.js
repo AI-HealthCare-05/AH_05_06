@@ -251,19 +251,24 @@ test("**①환자 찾기와 ②환자 정보가 좌우 2단이다** — 세로�
 });
 
 /* 여는 태그부터 **짝이 맞는 닫는 태그**까지를 돌려준다.
-   `indexOf` 로 구간을 자르면 `</div>` 가 어디 있든 같은 문자열이 나와,
-   칸을 일찍 닫아도 검사가 통과한다(돌연변이로 확인했다). */
+   `indexOf` 로 구간을 자르면 닫는 태그가 어디 있든 같은 문자열이 나와,
+   칸을 일찍 닫거나 다른 칸으로 옮겨도 검사가 통과한다(돌연변이로 확인했다). */
 function element(html, opener) {
+  const tag = /^<([a-z]+)/.exec(opener);
+  assert.ok(tag, `여는 태그를 못 읽었다: ${opener}`);
+  const open = `<${tag[1]}`;
+  const close = `</${tag[1]}>`;
+
   const start = html.indexOf(opener);
   assert.notEqual(start, -1, `${opener} 가 없다 — 검사가 헛돈다`);
 
   let depth = 0;
   let at = start;
   while (at < html.length) {
-    if (html.startsWith("<div", at)) depth++;
-    else if (html.startsWith("</div>", at)) {
+    if (html.startsWith(open, at)) depth++;
+    else if (html.startsWith(close, at)) {
       depth--;
-      if (depth === 0) return html.slice(start, at + 6);
+      if (depth === 0) return html.slice(start, at + close.length);
     }
     at++;
   }
@@ -400,4 +405,48 @@ test("`tab--later` 가 상단바와 같은 파일에 있다 — 어드민은 det
   assert.ok(read("css/shell.css").includes(".tab--later"), "상단바 파일에 규칙이 없다");
   assert.ok(!read("css/detail.css").includes(".tab--later"), "규칙이 두 곳에 있다");
   assert.ok(read("admin.html").includes("shell.css"), "어드민이 상단바 파일을 안 싣는다");
+});
+
+test("**목록 줄의 상태가 이름과 같은 줄에 있다** — 셋째 줄로 내리면 하루치가 안 들어온다", () => {
+  const { rowHtml } = load("api", "session", "patients-api", "shell");
+
+  const html = rowHtml(
+    {
+      visit_id: 1,
+      patient_id: 2,
+      name: "서연수",
+      hospital_patient_no: "123478",
+      age: 43,
+      diagnosis_name: "자궁내막증",
+      doctor: { name: "박연 원장" },
+      work_category: "IN_PROGRESS",
+      detail_status: "NO_RECORD",
+    },
+    "false",
+  );
+
+  /* 와이어프레임 S1-4 의 줄은 두 줄이다 — 첫 줄 왼쪽에 이름·진단, 오른쪽 끝에
+     상태. 스탭이 훑는 것은 이름과 상태 둘뿐이라 눈이 한 번만 움직여야 한다. */
+  const top = element(html, '<span class="row__top">');
+  assert.ok(top.includes("서연수"), "이름이 첫 줄에 없다");
+  assert.ok(
+    /row__state|state--/.test(top),
+    "상태가 이름 줄 밖에 있다 — 아래로 내려갔거나 다른 칸에 들어갔다",
+  );
+  /* 첫 줄에 차트·나이·담당의까지 들어오면 줄이 넘쳐 이름이 밀린다.
+     첫 줄은 이름 · 진단 · 상태 셋뿐이다. */
+  assert.ok(!top.includes("row__meta"), "차트·나이까지 이름 줄로 올라왔다");
+
+  assert.ok(!html.includes("<br>"), "줄바꿈으로 상태를 내린다 — 줄이 세 줄이 된다");
+});
+
+test("진단이 길면 진단이 줄고 상태는 안 밀린다", () => {
+  const css = read("css/shell.css");
+
+  const dx = rule(css, ".row__dx");
+  assert.match(dx, /flex:\s*1/, "진단이 안 늘어나 상태가 가운데에 붙는다");
+  assert.match(dx, /text-overflow:\s*ellipsis/, "긴 진단이 줄을 밀어낸다");
+
+  const state = rule(css, ".row__state");
+  assert.match(state, /flex:\s*none/, "상태가 찌그러진다 — 훑을 때 못 읽는다");
 });

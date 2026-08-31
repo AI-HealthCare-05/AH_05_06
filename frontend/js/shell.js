@@ -205,21 +205,24 @@ function rowHtml(r, current) {
     '" data-chart-no="' +
     esc(r.hospital_patient_no) +
     '">' +
+    /* 와이어프레임 S1-4 의 줄은 두 줄이다 — 첫 줄 왼쪽에 이름·진단, 오른쪽 끝에
+       지금 상태. 상태를 셋째 줄로 내리면 한 줄이 세 줄이 되어, 320px 목록에
+       하루치 환자가 안 들어온다. 스탭이 훑는 것은 이름과 상태 둘뿐이라
+       같은 줄에 있어야 눈이 한 번만 움직인다. */
     '<span class="row__top"><span class="row__name">' +
     esc(r.name) +
     '</span><span class="row__dx">' +
     esc(r.diagnosis_name || "") +
+    '</span><span class="' +
+    stateClass(r.work_category) +
+    '">' +
+    esc(statusLabel(r.detail_status)) +
     "</span></span>" +
     '<span class="row__meta">차트 ' +
     esc(r.hospital_patient_no) +
     (r.age == null ? "" : " · " + r.age + "세") +
     " · " +
     esc(r.doctor ? r.doctor.name : "") +
-    "</span><br>" +
-    '<span class="' +
-    stateClass(r.work_category) +
-    '">' +
-    esc(statusLabel(r.detail_status)) +
     "</span></button>"
   );
 }

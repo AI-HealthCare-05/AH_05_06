@@ -335,7 +335,14 @@ body.shell {
   font-weight: 600;
 }
 
+/* 진단명은 이름 옆에서 늘어나 상태를 오른쪽 끝으로 민다.
+   진단이 길면 줄여서 보인다 — 밀려나야 하는 것은 상태가 아니라 진단이다. */
 .row__dx {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--ink-3);
 }
@@ -347,7 +354,7 @@ body.shell {
 }
 
 .row__state {
-  margin-top: 6px;
+  flex: none;
   display: inline-block;
   padding: 2px 8px;
   font-size: 12px;
