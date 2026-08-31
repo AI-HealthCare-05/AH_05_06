@@ -102,12 +102,14 @@
 
 | 항목 | WP | 오너 / 리뷰어 |
 |---|---|---|
-| P0-A clone→run, bootstrap-local.sh, migration·seed, README | WP-A | 한금준 / 이희진 |
+| P0-A clone→run, bootstrap-local.sh, migration·seed, README | WP-A (KEY-216) | 한금준 / 이희진 |
 | P0-B 환자 OTP 흐름, 무인증 우회 제거 | WP-B (KEY-212) | 권일준 / 유가은 |
-| P0-C SMS mock 분리 | WP-B 내 | 권일준 / 유가은 |
+| P0-C SMS mock 분리 | WP-B 내 (KEY-212) | 권일준 / 유가은 |
 | P0-D OCR 확정값 전송 (B1) | WP-D (KEY-214) | 한금준 / 이희진 |
 | P1-A 링크 발급·표시, 상태 전환, 반려 복귀 | WP-C (KEY-213) | 김고은 / 이희진 |
 | P1-B OCR 안정성 (게이트 위치·재시도·fixture) | WP-D (KEY-214) | 한금준 / 이희진 |
-| P2 구조 정리 (인터페이스 정합성·미완성 구현 분류) | WP-S | 권일준 / 한금준 |
+| P2 구조 정리 (인터페이스 정합성·미완성 구현 분류) | WP-S (KEY-217) | 권일준 / 한금준 |
+| — 3단계 안내화면 20프레임 | WP-F (KEY-218) | 권일준 / 김고은 |
+| — 데모 E2E·보안·migration 회귀 | WP-Q (KEY-215) | 유가은 / 이희진 |
 
-세부 하위작업·Jira 매핑·일정은 [`work-packages.md`](work-packages.md)를 따른다.
+세부 하위작업·Jira 매핑·일정(주말 제외, 7개 WP 전부 1주차 9/1~9/4 완료, 데모 임계분 9/2)은 [`work-packages.md`](work-packages.md)를 따른다.
