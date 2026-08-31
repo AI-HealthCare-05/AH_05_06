@@ -24,6 +24,15 @@ function dayLabel(isoDatetime) {
   return day + (day === toIsoDate(new Date()) ? " (오늘)" : "");
 }
 
+/* **지난 방문에는 날짜만 쓴다.** 서버는 `2026-05-20T14:32:00+09:00` 을 주는데
+   그대로 찍으면 한 칸이 서른 자가 되어 표가 밀린다. 지난 진료에서 궁금한 것은
+   「언제 왔었나」이지 몇 시였는지가 아니다 — 시각이 필요한 자리는 오늘 진료
+   쪽이고 거기는 따로 적는다 (와이어프레임 S1-4 의 지난 방문도 `2026-05-20` 다). */
+function visitDay(isoDatetime) {
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(isoDatetime || ""));
+  return m ? m[1] : "";
+}
+
 function timeLabel(isoDatetime) {
   var m = String(isoDatetime || "").match(/T(\d{2}:\d{2})/);
   return m ? m[1] + " 등록" : "";
@@ -163,7 +172,7 @@ function timeLabel(isoDatetime) {
       .map(function (v) {
         return (
           "<tr><td>" +
-          esc(v.visited_at) +
+          esc(visitDay(v.visited_at)) +
           "</td><td>" +
           esc(v.diagnosis_name) +
           "</td><td>" +

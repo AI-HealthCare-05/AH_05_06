@@ -141,3 +141,36 @@ test("진료 번호로 서버가 준 줄을 찾는다", () => {
   assert.strictEqual(rowByVisit([], 1), null);
   assert.strictEqual(rowByVisit(null, 1), null);
 });
+
+/* ── 지난 방문의 진료일 ──────────────────────────────────────────────── */
+
+test("**지난 방문에는 날짜만 쓴다** — 시각까지 찍으면 한 칸이 서른 자가 된다", () => {
+  const { visitDay } = load("api", "session", "patients-api", "shell", "detail");
+
+  /* 서버는 `2026-05-20T14:32:00+09:00` 을 준다. 그대로 찍으면 표가 밀린다.
+     지난 진료에서 궁금한 것은 「언제 왔었나」이지 몇 시였는지가 아니다
+     (와이어프레임 S1-4 의 지난 방문도 `2026-05-20` 다). */
+  assert.strictEqual(visitDay("2026-05-20T14:32:00+09:00"), "2026-05-20");
+  assert.strictEqual(visitDay("2026-05-20"), "2026-05-20", "날짜만 와도 그대로 둔다");
+});
+
+test("이상한 값에는 빈 칸을 둔다 — 표가 깨지지 않게", () => {
+  const { visitDay } = load("api", "session", "patients-api", "shell", "detail");
+
+  for (const bad of ["", null, undefined, "언젠가", "26-5-20"]) {
+    assert.strictEqual(visitDay(bad), "", `이상한 값을 그대로 찍는다: ${bad}`);
+  }
+});
+
+test("표가 시각을 다시 찍지 않는다", () => {
+  const source = fs.readFileSync(path.join(ROOT, "js", "detail.js"), "utf8");
+  const at = source.indexOf("function renderHistory");
+  assert.notEqual(at, -1, "지난 방문을 그리는 자리가 없다 — 검사가 헛돈다");
+
+  const body = source.slice(at, source.indexOf("\n  /* 발송 이력", at));
+  assert.ok(
+    !/esc\(v\.visited_at\)/.test(body),
+    "진료일을 통째로 찍는다 — 시각까지 나온다",
+  );
+  assert.ok(body.includes("visitDay("), "날짜만 남기는 규칙을 안 쓴다");
+});
