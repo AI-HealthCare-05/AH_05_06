@@ -170,6 +170,19 @@ test("**서버에 자리가 없는 묶음은 그렇다고 말한다** — 목업
     assert.match(group.saying, /아직|없습니다/, `${group.key} 가 되는 것처럼 말한다`);
     assert.ok(group.needs, `${group.key} 에 무엇이 필요한지 안 적혀 있다`);
   }
+
+  /* **막힌 곳이 서로 다르다.** 뭉뚱그려 「서버에 자리가 없습니다」로 두면
+     판독 API 를 맡는 사람이 둘 다 표부터 만들어야 하는 줄 안다. */
+  const byKey = Object.fromEntries(GROUPS_WITHOUT_SERVER.map((g) => [g.key, g]));
+
+  assert.match(byKey.carried.saying, /저장돼 있고|이미/, "③ 은 값이 이미 있다는 것을 말해야 한다");
+  assert.match(byKey.carried.needs, /길|꺼내/, "③ 에 필요한 것은 표가 아니라 길이다");
+
+  assert.match(byKey.checks.needs, /표부터|표가 없다/, "④ 는 표부터 없다는 것을 말해야 한다");
+  assert.ok(
+    byKey.carried.saying !== byKey.checks.saying,
+    "두 문구가 같다 — 막힌 곳이 다른데 같은 말을 한다",
+  );
 });
 
 test("채울 것이 생기면 채운다 — 영영 점선으로 두는 자리가 아니다", () => {
