@@ -81,14 +81,7 @@
     /* 약 카드 */
     var drugCard = el('div', 'card');
     drugCard.appendChild(text('div', 'stat-drug-name', s.drugName));
-    drugCard.appendChild(text('div', 'stat-drug-sub', s.prescribed + '일분 · ' + s.dayOn + '일째 · ' + s.remaining + '일 남음'));
-
-    var barWrap = el('div', 'stat-bar-wrap');
-    var fill    = el('i', 'stat-bar-fill');
-    fill.style.width = s.pct + '%';
-    barWrap.appendChild(fill);
-    drugCard.appendChild(barWrap);
-    drugCard.appendChild(text('div', 'stat-bar-pct', s.pct + '%'));
+    drugCard.appendChild(text('div', 'stat-drug-sub', s.prescribed + '일분'));
     frag.appendChild(drugCard);
 
     /* 소진 예정 핑크 카드 */
