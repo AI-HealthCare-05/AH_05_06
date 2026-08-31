@@ -106,15 +106,25 @@ function renderChips(roles) {
       '" data-tab="' +
       t.key +
       '"><span data-label>' +
-      t.label +
-      "</span></button>"
+      esc(t.label) +
+      '</span><span class="chip__count" data-count hidden></span></button>'
     );
   }).join("");
   renderChipCounts();
 }
 
-/* 개수는 행이 바뀔 때마다 다시 센다. 등록하면 「작성 중」이 하나 늘어야 한다.
-   탭 이름만 다시 그리면 켜고 끈 상태가 지워지므로 안쪽 라벨만 갈아 끼운다. */
+/* **숫자는 라벨에 섞지 않는다.** 「작성 중 2」처럼 한 문자열로 두면 320px 목록에
+   다섯이 한 줄에 안 들어오고, 숫자가 바뀔 때마다 칩 폭이 흔들려 옆 칩이 밀린다.
+
+   iOS 앱 아이콘의 알림 수처럼 오른쪽 위에 띄운다 — 절대 위치라 **칩 폭을
+   차지하지 않는다.** 그래서 숫자가 붙어도 한 줄이 유지된다.
+
+   화면낭독기에는 붙여서 읽힌다(`aria-label`) — 「작성 중, 2건」. 배지만 보고
+   무슨 숫자인지 알 수 없으면 소리로 듣는 사람에게는 뜻이 없다. */
+function chipCountLabel(label, count) {
+  return count ? label + ", " + count + "건" : label;
+}
+
 function renderChipCounts() {
   document.querySelectorAll(".chip").forEach(function (chip) {
     var tab = STATUS_TABS.find(function (t) {
@@ -123,10 +133,18 @@ function renderChipCounts() {
     var count = rows.filter(function (r) {
       return r.work_category === chip.dataset.tab;
     }).length;
-    chip.querySelector("[data-label]").textContent =
-      (tab.warn && count ? "⚠ " : "") + tab.label + (count ? " " + count : "");
+
+    chip.querySelector("[data-label]").textContent = (tab.warn && count ? "⚠ " : "") + tab.label;
+
+    var badge = chip.querySelector("[data-count]");
+    badge.textContent = count ? String(count) : "";
+    badge.hidden = !count;
+
+    /* 배지는 눈으로만 읽힌다 — 소리로 듣는 사람에게 숫자를 붙여 준다. */
+    chip.setAttribute("aria-label", chipCountLabel(tab.label, count));
   });
 }
+
 
 /* 0명에는 세 가지가 있고, 사람이 해야 할 일이 저마다 다르다.
    ① 찾는 이름이 오늘 목록에 없다 → 그 이름으로 바로 등록하러 간다

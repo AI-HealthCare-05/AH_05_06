@@ -296,14 +296,18 @@ test("**자리가 없으면 알아서 세로로 돌아간다** — 창 폭으로
   }
 });
 
-test("**상태 칩 높이는 토큰 결정을 지킨다** — 와이어프레임 11px 보다 크다", () => {
-  /* 와이어프레임은 `font-size:11px · padding:3px 10px`(약 21px)인데 구현은
-     32px 다. 주석에 이유가 적혀 있다 — 「320px 폭에 다섯이 들어가야 해서
-     44px 은 못 쓴다. 폭은 그대로 두고 높이만 올려 줄바꿈을 늘리지 않는다」.
-     초점과 손가락이 닿아야 하는 자리라 와이어프레임 치수로 되돌리지 않는다. */
+test("**상태 칩이 한 줄에 들어갈 크기다** — 두 줄이면 목록이 그만큼 짧아진다", () => {
+  /* 다섯이 320px 안에 서야 한다. WCAG 2.2 의 최소 목표 크기(2.5.8)는 24px 이라
+     26px 은 그 위다. 44px(2.5.5 AAA)은 이 폭에서 못 쓴다 — 셋 다 만족하는 값이
+     없어서, 「닿을 수 있는 최소」와 「한 줄」 둘을 고른 것이다. */
   const chip = rule(read("css/shell.css"), ".chip");
-  assert.match(chip, /height:\s*32px/, "칩 높이가 바뀌었다 — 초점이 닿기 어려워진다");
-  assert.match(chip, /padding:\s*0 10px/, "칩 폭이 바뀌면 320px 안에서 줄바꿈이 늘어난다");
+
+  const height = /height:\s*(\d+)px/.exec(chip);
+  assert.ok(height, "칩 높이가 없다 — 검사가 헛돈다");
+  assert.ok(Number(height[1]) >= 24, `목표 크기가 24px 아래다: ${height[1]}px (WCAG 2.5.8)`);
+  assert.ok(Number(height[1]) <= 28, `칩이 커서 다섯이 한 줄에 안 선다: ${height[1]}px`);
+
+  assert.match(chip, /white-space:\s*nowrap/, "칩 안에서 글자가 접히면 높이가 들쭉날쭉해진다");
 });
 
 test("**등록 폼의 라벨이 입력 왼쪽에 붙는다** — 위에 두면 여덟 칸이 한 화면에 안 들어온다", () => {
@@ -449,4 +453,51 @@ test("진단이 길면 진단이 줄고 상태는 안 밀린다", () => {
 
   const state = rule(css, ".row__state");
   assert.match(state, /flex:\s*none/, "상태가 찌그러진다 — 훑을 때 못 읽는다");
+});
+
+/* ── 상태 칩의 숫자 배지 ─────────────────────────────────────────────── */
+
+test("**숫자가 칩 폭을 차지하지 않는다** — 라벨에 섞으면 숫자마다 줄바꿈이 오간다", () => {
+  const css = read("css/shell.css");
+  const badge = rule(css, ".chip__count");
+
+  /* iOS 앱 아이콘의 알림 수처럼 오른쪽 위에 띄운다. 절대 위치라 칩이 넓어지지
+     않는다 — 「작성 중 2」처럼 한 문자열로 두면 숫자가 바뀔 때마다 폭이 흔들려
+     다섯째 칩이 다음 줄로 내려갔다 올라온다. */
+  assert.match(badge, /position:\s*absolute/, "배지가 칩 폭을 넓힌다");
+  assert.match(badge, /top:\s*-?\d/, "배지가 위로 안 올라간다");
+  assert.match(badge, /right:\s*-?\d/, "배지가 오른쪽 끝에 안 붙는다");
+
+  const chip = rule(css, ".chip");
+  assert.match(chip, /position:\s*relative/, "배지가 칩이 아니라 화면 기준으로 뜬다");
+});
+
+test("배지가 잘리지 않게 위쪽에 자리가 있다", () => {
+  const chips = rule(read("css/shell.css"), ".chips");
+  const pad = /padding:\s*(\d+)px/.exec(chips);
+  assert.ok(pad, "칩 줄 여백이 없다 — 검사가 헛돈다");
+  assert.ok(Number(pad[1]) >= 10, `위 여백이 좁아 배지가 잘린다: ${pad[1]}px`);
+});
+
+test("**라벨에 숫자를 다시 섞지 않는다**", () => {
+  const source = read("js/shell.js");
+  const at = source.indexOf("function renderChipCounts");
+  assert.notEqual(at, -1, "칩 숫자를 그리는 자리가 없다 — 검사가 헛돈다");
+
+  const body = source.slice(at, source.indexOf("\nfunction ", at + 10));
+  const labelLine = body.split("\n").find((l) => l.includes('querySelector("[data-label]")'));
+  assert.ok(labelLine, "라벨을 쓰는 자리가 없다");
+  assert.ok(
+    !/\+\s*count|count\s*\+/.test(labelLine),
+    `라벨에 숫자를 붙인다 — 칩 폭이 흔들린다: 「${labelLine.trim()}」`,
+  );
+});
+
+test("소리로 듣는 사람에게는 숫자를 붙여 읽어 준다", () => {
+  const { chipCountLabel } = load("api", "session", "patients-api", "shell");
+
+  /* 배지는 눈으로만 읽힌다. 화면낭독기가 「작성 중」만 읽으면 2건이 있다는 것을
+     알 수 없다 — 배지의 뜻이 소리로 전해지지 않는다. */
+  assert.strictEqual(chipCountLabel("작성 중", 2), "작성 중, 2건");
+  assert.strictEqual(chipCountLabel("완료", 0), "완료", "0건에 숫자를 붙이면 시끄럽다");
 });
