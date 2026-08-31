@@ -35,7 +35,10 @@ function timeLabel(isoDatetime) {
      위 순수 규칙은 그대로 남아서 다른 파일도, 검사도 부를 수 있다 (KEY-158). */
   if (!document.getElementById("patient-facts")) return;
 
-  var TABS = ["basic", "record"];
+  /* **다섯 탭이 다 열려 있다.** 안내문 · 최종 확인 · 현황은 `js/visit-guide.js`
+     가 채운다. 와이어프레임에서 의사 화면(D1)은 별도 페이지가 아니라 이 탭의
+     뒷칸이라, 스탭도 의사도 같은 다섯 칸을 본다 — 가르는 것은 버튼이다. */
+  var TABS = ["basic", "record", "guide", "final", "status"];
 
   /* 늦게 온 응답이 지금 보고 있는 환자를 덮어쓰지 않게 하는 번호.
      `visit_id` 를 쓰면 같은 환자를 빠르게 다시 고를 때(A→B→A) 값이 그대로라
@@ -54,7 +57,7 @@ function timeLabel(isoDatetime) {
   /* ── 탭 ─────────────────────────────────────────────── */
 
   function showTab(name) {
-    if (TABS.indexOf(name) === -1) return; // 안내문 · 최종 확인 · 현황은 아직 없다
+    if (TABS.indexOf(name) === -1) return; // 모르는 이름이면 아무것도 하지 않는다
     TABS.forEach(function (t) {
       el("panel-" + t).hidden = t !== name;
     });

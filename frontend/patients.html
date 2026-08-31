@@ -198,6 +198,14 @@
             <div class="patient-head__visit" id="p-visit"></div>
           </div>
 
+          <!-- **다섯 탭이 다 열려 있다** — 역할이 화면을 가르지 않는다.
+               와이어프레임에서 D1(의사)은 별도 화면이 아니라 이 탭의 뒷칸이다
+               (`D1-1` 골격: 「좌 320 목록 / 우 960 본문 → 5단계 탭」). 시연 때
+               의사와 스탭이 서로의 화면을 못 봐서 막힌 자리가 여기다.
+
+               서버도 그렇게 되어 있다 — `app/core/rbac.py` 에서 조회·업로드·
+               안내문 작성은 staff·doctor 둘 다이고, 승인·반려만 doctor 다.
+               **가르는 것은 버튼이지 화면이 아니다.** -->
           <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드">
             <button class="tab" type="button" role="tab" data-tab="basic" aria-selected="true">
               <span class="tab__mark" aria-hidden="true">●</span>기본정보
@@ -205,13 +213,13 @@
             <button class="tab" type="button" role="tab" data-tab="record" aria-selected="false">
               <span class="tab__mark" aria-hidden="true">○</span>진료기록
             </button>
-            <button class="tab tab--later" type="button" role="tab" data-tab="guide" aria-selected="false" aria-disabled="true">
+            <button class="tab" type="button" role="tab" data-tab="guide" aria-selected="false">
               <span class="tab__mark" aria-hidden="true">○</span>안내문
             </button>
-            <button class="tab tab--later" type="button" role="tab" data-tab="final" aria-selected="false" aria-disabled="true">
+            <button class="tab" type="button" role="tab" data-tab="final" aria-selected="false">
               <span class="tab__mark" aria-hidden="true">○</span>최종 확인
             </button>
-            <button class="tab tab--later" type="button" role="tab" data-tab="status" aria-selected="false" aria-disabled="true">
+            <button class="tab" type="button" role="tab" data-tab="status" aria-selected="false">
               <span class="tab__mark" aria-hidden="true">○</span>현황
             </button>
           </div>
@@ -311,6 +319,37 @@
           <!-- 누른 뒤에 무슨 일이 일어났는지. 작아서 화면낭독기가 읽어도 시끄럽지 않다 -->
           <p class="note" id="say" role="status"></p>
           </div>
+
+          <!-- ─ 안내문 (S1-11 · S1-12 · S1-13) ───────────────────
+               스탭이 안내문을 확인하고 고쳐 의사에게 넘기는 자리.
+               본문은 `js/guide-view.js` 가 그린다 — 「최종 확인」 탭과 같은
+               것을 쓴다. 두 벌이면 한쪽만 고쳐지고 화면마다 다른 말이 나온다. -->
+          <div class="panel" id="panel-guide" hidden>
+            <p class="warnline" id="guide-warn"></p>
+            <div class="vtabs" id="guide-vtabs"></div>
+            <div id="guide-panel"></div>
+            <p class="note" id="guide-say" role="status"></p>
+          </div>
+
+          <!-- ─ 최종 확인 (D1-1 ~ D1-5) ──────────────────────────
+               같은 안내문을 의사가 보는 자리. **화면은 스탭도 본다** —
+               와이어프레임에서 D1 은 별도 화면이 아니라 이 탭이다.
+               승인·반려 버튼만 의사에게 열린다(rbac.py: GUIDE_APPROVE). -->
+          <div class="panel" id="panel-final" hidden>
+            <p class="warnline" id="final-warn"></p>
+            <div class="vtabs" id="final-vtabs"></div>
+            <div id="final-panel"></div>
+            <div class="actions" id="final-actions"></div>
+            <p class="note" id="final-say" role="status"></p>
+          </div>
+
+          <!-- ─ 현황 (D1-6 · D1-7) ───────────────────────────────
+               발송·열람·응답 타임라인. **줄 API 가 서버에 없다** —
+               발송 이력 테이블 자체가 없다. 값을 지어내지 않고
+               무엇이 있어야 되는지만 말한다. -->
+          <div class="panel" id="panel-status" hidden>
+            <div id="status-body"></div>
+          </div>
         </section>
       </main>
     </div>
@@ -318,9 +357,13 @@
     <script src="/js/session.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/patients-api.js"></script>
+    <script src="/js/guide-view.js"></script>
+    <script src="/js/doctor-api.js"></script>
     <script src="/js/shell.js"></script>
     <script src="/js/patients.js"></script>
     <script src="/js/detail.js"></script>
     <script src="/js/upload.js"></script>
+    <script src="/js/frames.js"></script>
+    <script src="/js/visit-guide.js"></script>
   </body>
 </html>
