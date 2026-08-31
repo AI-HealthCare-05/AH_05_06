@@ -20,6 +20,16 @@ const { load } = require("./browser-shim.js");
 const ROOT = path.join(__dirname, "..");
 const SHELL_PAGES = ["patients.html", "ocr-review.html", "doctor.html", "admin.html"];
 
+/* CSS 규칙 하나를 정확히 집는다. `.list__head {` 로 찾으면
+   `.list--folded .list__head {` 를 먼저 물어 엉뚱한 블록을 잰다. */
+function rule(css, selector) {
+  const at = css.indexOf("\n" + selector + " {");
+  assert.notEqual(at, -1, `${selector} 규칙이 없다 — 검사가 헛돈다`);
+  const open = css.indexOf("{", at);
+  const close = css.indexOf("}", open);
+  return css.slice(open, close);
+}
+
 function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
@@ -75,8 +85,8 @@ test("**상단바 탭이 가운데다** — 양옆이 같은 폭을 가져야 �
 
   /* 브랜드와 오른쪽 칸이 같은 `flex` 를 가져야 한다. 한쪽만 늘어나면
      탭이 한쪽으로 밀린다 — 와이어프레임은 가운데로 그렸다. */
-  const brand = css.slice(css.indexOf(".topbar__brand {"), css.indexOf(".topbar__nav {"));
-  const right = css.slice(css.indexOf(".topbar__right {"), css.indexOf(".topbar__right {") + 200);
+  const brand = rule(css, ".topbar__brand");
+  const right = rule(css, ".topbar__right");
 
   assert.match(brand, /flex:\s*1 1 0/, "브랜드 칸이 안 늘어난다 — 탭이 왼쪽에 붙는다");
   assert.match(right, /flex:\s*1 1 0/, "오른쪽 칸이 안 늘어난다 — 탭이 오른쪽으로 밀린다");
@@ -84,7 +94,7 @@ test("**상단바 탭이 가운데다** — 양옆이 같은 폭을 가져야 �
 
 test("접힌 레일이 48px 다 — 와이어프레임 S1-7 이 그린 폭", () => {
   const css = read("css/shell.css");
-  const folded = css.slice(css.indexOf(".list--folded {"), css.indexOf(".list--folded {") + 120);
+  const folded = rule(css, ".list--folded");
   assert.match(folded, /flex-basis:\s*48px/, "접힌 폭이 48px 가 아니다");
 });
 
@@ -172,4 +182,51 @@ test("저장소가 막혀도 죽지 않는다 — 사생활 보호 창에서 던
   assert.strictEqual(context.foldMemory(), false, "못 읽었으면 펴진 것으로 본다");
   assert.doesNotThrow(() => context.applyFold(true, true), "기억을 적다 죽는다");
   assert.ok(list.classes.has("list--folded"), "기억은 못 해도 화면은 접혀야 한다");
+});
+
+/* ── 와이어프레임 치수 ─────────────────────────────────────────────────── */
+
+test("**좌측 머리가 세로로 쌓인다** — 가로로 두면 줄바꿈이 나서 흩어진다", () => {
+  const css = read("css/shell.css");
+  const head = rule(css, ".list__head");
+
+  assert.match(head, /flex-direction:\s*column/, "머리가 가로다 — 검색·등록이 제목줄 옆으로 밀린다");
+  assert.match(head, /padding:\s*14px 14px 12px/, "와이어프레임 여백과 다르다");
+});
+
+test("제목줄에서 라벨이 늘어나고 단추가 오른쪽 끝에 선다", () => {
+  const css = read("css/shell.css");
+  const title = rule(css, ".list__title");
+  const label = rule(css, ".list__label");
+
+  assert.match(title, /display:\s*flex/, "제목줄이 가로가 아니다");
+  assert.match(label, /flex:\s*1/, "라벨이 안 늘어난다 — 단추가 라벨에 붙는다");
+  assert.match(label, /font-size:\s*16px/, "와이어프레임 원문은 16px 다");
+});
+
+test("접기 단추가 28×28 이다 — 와이어프레임 원문", () => {
+  const css = read("css/shell.css");
+  const fold = rule(css, ".list__fold");
+  assert.match(fold, /width:\s*28px/);
+  assert.match(fold, /height:\s*28px/);
+});
+
+test("**[+ 환자 등록]이 전체 폭이고 테두리가 2px 다** — 좌측 칸의 유일한 주 진입", () => {
+  const css = read("css/patients.css");
+  const add = rule(css, ".list__add");
+
+  assert.match(add, /width:\s*100%/, "폭이 없으면 글자만큼 줄어 잘린 것처럼 보인다");
+  assert.match(add, /border:\s*2px/, "주 진입인데 테두리가 얇다 — 어드민 [+ 직원 추가]도 2px 다");
+});
+
+test("**높이는 토큰을 따른다** — 와이어프레임 34px 보다 접근성이 우선이다", () => {
+  /* 와이어프레임 원문은 34px 인데 tokens.css 가 44px 로 두었다 —
+     「손가락과 초점이 닿는 최소 크기」. WCAG 2.5.5 최소 터치 영역이라
+     와이어프레임 치수로 되돌리면 퇴보다. 이 선택을 검사로 남긴다. */
+  const tokens = read("css/tokens.css");
+  assert.match(tokens, /--field-h:\s*44px/, "터치 영역이 44px 아래로 내려갔다");
+
+  const css = read("css/patients.css");
+  const add = rule(css, ".list__add");
+  assert.match(add, /height:\s*var\(--field-h\)/, "높이를 토큰이 아니라 숫자로 박았다");
 });

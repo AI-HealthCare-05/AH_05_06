@@ -165,7 +165,8 @@ body.shell {
 
 .list__label {
   flex: 1;
-  font-size: 13px;
+  min-width: 0;
+  font-size: 16px; /* 와이어프레임 원문 */
   font-weight: 700;
 }
 
@@ -173,18 +174,30 @@ body.shell {
   display: none;
 }
 
-/* 접기 버튼 — 와이어프레임이 28px 로 적어 두었다. */
+/* 접히면 48px 안에 단추 하나만 남는다 — 좌우 여백을 줄여야 안 잘린다. */
+.list--folded .list__head {
+  padding: var(--s-12) 10px;
+}
+
+.list--folded .list__title {
+  margin-bottom: 0;
+}
+
+/* 접기 버튼 — 와이어프레임 원문: 28×28 · radius 6 · 13px · 가운데 정렬. */
 .list__fold {
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--card);
   color: var(--ink-2);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
 }
@@ -194,13 +207,23 @@ body.shell {
   color: var(--ink);
 }
 
+/* 치수는 와이어프레임 원문에서 가져왔다 (`docs/wireframes/wireframe-medic-2.3.1.html`
+   S1-1 좌측 칸) — `padding:14px 14px 12px · flex-direction:column · gap:8px`.
+   색은 이 저장소의 토큰을 쓴다. 두 기준을 섞지 않는다. */
 .list__head {
-  padding: var(--s-12);
+  padding: 14px 14px 12px;
   border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+  flex: none;
+}
+
+/* 제목줄 — 「환자」는 왼쪽에서 늘어나고 `◀` 는 오른쪽 끝. */
+.list__title {
   display: flex;
   align-items: center;
   gap: var(--s-8);
-  flex-wrap: wrap;
 }
 
 .list__search {
