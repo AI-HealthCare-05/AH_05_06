@@ -52,10 +52,20 @@
           <!-- 등록은 검색 하나로 시작한다 — 「신규냐 기존이냐」를 미리 묻지 않는다 -->
           <button class="list__add" type="button" id="add-patient">+ 환자 등록</button>
         </div>
+        <!-- 와이어프레임 S1-1: `padding:9px 12px · gap:6px`, 화살표 `24×24`,
+             날짜는 `flex:1 · 가운데 · 13px/700`.
+
+             날짜를 누르면 달력이 열린다. 직접 그리지 않고 `<input type="date">`
+             를 겹쳐 둔다 — 브라우저·운영체제가 주는 달력이라 키보드로도 되고
+             언어·주 시작 요일도 그 기기 설정을 따른다. 우리가 그린 달력은
+             그 셋을 다시 만들어야 한다. -->
         <div class="list__day">
-          <button class="icon-button" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
-          <span class="grow" id="day">—</span>
-          <button class="icon-button" type="button" id="day-next" aria-label="다음 날짜">›</button>
+          <button class="day__step" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
+          <div class="day__pick">
+            <span class="day__label" id="day">—</span>
+            <input class="day__input" type="date" id="day-input" aria-label="날짜 고르기" />
+          </div>
+          <button class="day__step" type="button" id="day-next" aria-label="다음 날짜">›</button>
         </div>
 
         <!-- 문자가 나가지 않는 상태는 목록 위에 붙는다. 등록은 되지만 발송이 밀린다. -->

@@ -272,23 +272,51 @@ function loadDay() {
     });
 }
 
-/* 목록의 축은 하루다. 「오늘」인지 아닌지가 붙어야 지난 날짜를 보고 있다는 것을 안다. */
-function renderDay() {
-  var week = ["일", "월", "화", "수", "목", "금", "토"];
-  var today = toIsoDate(new Date()) === toIsoDate(listDay);
-  document.getElementById("day").textContent =
-    listDay.getMonth() +
+/* 목록의 축은 하루다. 「오늘」인지 아닌지가 붙어야 지난 날짜를 보고 있다는 것을 안다.
+   순수 함수로 두어 검사가 부를 수 있게 한다 (KEY-158). */
+var WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+function dayHeading(day, now) {
+  return (
+    day.getMonth() +
     1 +
     "월 " +
-    listDay.getDate() +
+    day.getDate() +
     "일 (" +
-    week[listDay.getDay()] +
+    WEEKDAYS[day.getDay()] +
     ")" +
-    (today ? " · 오늘" : "");
+    (toIsoDate(now) === toIsoDate(day) ? ' <span class="day__today">오늘</span>' : "")
+  );
+}
+
+/* 달력이 준 `YYYY-MM-DD` 를 그 날 00:00 으로 읽는다.
+   `new Date("2026-08-31")` 은 **UTC 자정**이라 KST 에서는 전날 09:00 이 된다 —
+   그대로 쓰면 고른 날의 하루 전 목록이 열린다. */
+function dayFromInput(value) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function renderDay() {
+  var label = document.getElementById("day");
+  if (label) label.innerHTML = dayHeading(listDay, new Date());
+
+  /* 달력을 열었을 때 지금 보고 있는 날에서 시작한다. */
+  var input = document.getElementById("day-input");
+  if (input) input.value = toIsoDate(listDay);
 }
 
 function moveDay(days) {
   listDay = new Date(listDay.getTime() + days * 86400000);
+  renderDay();
+  loadDay();
+}
+
+/* 달력에서 고른 날로 간다. 하루씩 넘기는 것과 같은 길을 쓴다. */
+function goToDay(day) {
+  if (!day) return;
+  listDay = day;
   renderDay();
   loadDay();
 }
@@ -415,6 +443,15 @@ function bindShell() {
   document.getElementById("day-next").addEventListener("click", function () {
     moveDay(1);
   });
+
+  /* 달력에서 고른 날짜. `change` 로 듣는다 — `input` 은 연·월·일을 하나씩 칠 때마다
+     불려서, 아직 다 안 친 날짜로 목록을 세 번 다시 부른다. */
+  var dayInput = document.getElementById("day-input");
+  if (dayInput) {
+    dayInput.addEventListener("change", function () {
+      goToDay(dayFromInput(this.value));
+    });
+  }
 
   /* 탭은 다중 선택 토글이다 — 켠 탭들의 행이 함께 보인다 */
   document.getElementById("chips").addEventListener("click", function (event) {
