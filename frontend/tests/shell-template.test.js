@@ -20,14 +20,26 @@ const { load } = require("./browser-shim.js");
 const ROOT = path.join(__dirname, "..");
 const SHELL_PAGES = ["patients.html", "ocr-review.html", "doctor.html", "admin.html"];
 
-/* CSS 규칙 하나를 정확히 집는다. `.list__head {` 로 찾으면
-   `.list--folded .list__head {` 를 먼저 물어 엉뚱한 블록을 잰다. */
+/* CSS 규칙 하나를 정확히 집는다.
+ *
+ *   · `.list__head {` 로 찾으면 `.list--folded .list__head {` 를 먼저 물어
+ *     엉뚱한 블록을 잰다 — 그래서 **줄 처음**에 오는 것만 본다.
+ *   · 묶음 선택자(`A,\nB {`)도 찾는다. `.button-primary--sm` 뒤에 ` {` 가
+ *     아니라 `,` 가 와서 「규칙이 없다」로 떨어진 적이 있다. */
 function rule(css, selector) {
-  const at = css.indexOf("\n" + selector + " {");
-  assert.notEqual(at, -1, `${selector} 규칙이 없다 — 검사가 헛돈다`);
-  const open = css.indexOf("{", at);
-  const close = css.indexOf("}", open);
-  return css.slice(open, close);
+  const lines = css.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line !== selector + " {" && line !== selector + ",") continue;
+
+    /* 묶음이면 `{` 가 나오는 줄까지 내려간다 */
+    let j = i;
+    while (j < lines.length && !lines[j].includes("{")) j += 1;
+
+    const open = css.indexOf("{", css.split("\n").slice(0, j).join("\n").length);
+    return css.slice(open, css.indexOf("}", open));
+  }
+  assert.fail(`${selector} 규칙이 없다 — 검사가 헛돈다`);
 }
 
 function read(rel) {
@@ -583,7 +595,10 @@ test("**업로드 화면이 상자 하나에 담긴다** — 기본정보의 「
 
 test("아래 단추가 작다 — 이 화면의 주인공은 드롭존이다", () => {
   const html = read("patients.html");
-  const css = read("css/upload.css");
+  /* 버튼 어휘는 css/blocks.css 로 모았다 — 바탕이 doctor.css 와 upload.css
+     양쪽에 있었고 작은 것은 detail.css 와 upload.css 에 갈려 있어서, 판독
+     확인 화면에서 --sm 을 붙였는데 큰 버튼이 떴다. */
+  const css = read("css/blocks.css");
 
   assert.ok(html.includes("button-ghost--sm"), "「나중에 업로드」가 크다");
   assert.ok(html.includes("button-primary--sm"), "「업로드 후 안내문 생성」이 크다");

@@ -7,34 +7,9 @@
  * 색을 더 늘리면 무엇을 봐야 하는지가 사라진다.
  */
 
-.warnline {
-  padding: var(--s-12) var(--s-16);
-  border-radius: var(--radius);
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0 0 var(--s-12);
-}
-
-.warnline--warn {
-  background: var(--warn-bg);
-  color: var(--warn);
-  border: 1px solid var(--warn-line);
-}
-
-.warnline--ok {
-  background: var(--done-bg);
-  color: var(--done);
-  border: 1px solid transparent;
-}
 
 /* ── 뷰 탭 ───────────────────────────────────────────────── */
 
-.vtabs {
-  display: flex;
-  gap: var(--s-4);
-  flex-wrap: wrap;
-  margin-bottom: var(--s-12);
-}
 
 .vtab {
   height: 34px;
@@ -227,38 +202,6 @@
 .role-note {
   font-size: 12px;
   color: var(--ink-3);
-}
-
-.button-primary,
-.button-ghost {
-  height: var(--button-h);
-  padding: 0 var(--s-24);
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.button-primary {
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-
-.button-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.button-ghost {
-  border: 1px solid var(--line-strong);
-  background: var(--card);
-  color: var(--ink);
-}
-
-.button-primary:disabled,
-.button-ghost:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .grow {

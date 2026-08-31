@@ -135,38 +135,6 @@
 /* ── 오른쪽 칸 ──────────────────────────────────────── */
 
 /* S1-1 오른쪽 — 할 일이 없다는 것도 상태다. 빈 화면으로 두면 고장으로 읽힌다. */
-.blank {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: var(--s-32);
-}
-
-.blank__mark {
-  width: 56px;
-  height: 56px;
-  margin-bottom: var(--s-16);
-  font-size: 22px;
-  line-height: 56px;
-  color: var(--done);
-  background: var(--done-bg);
-  border-radius: 28px;
-}
-
-.blank__title {
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.blank__lead {
-  margin: var(--s-8) 0 var(--s-24);
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--ink-2);
-}
 
 /* ── 등록 화면 ──────────────────────────────────────── */
 

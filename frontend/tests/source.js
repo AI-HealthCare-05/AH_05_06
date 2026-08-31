@@ -66,10 +66,16 @@ function markupOnly(text) {
 /** CSS 규칙 하나를 통째로. `.list__head` 를 찾다가 `.list--folded .list__head`
     에 걸린 적이 있어, **줄 처음에 오는** 선택자만 본다. */
 function rule(css, selector) {
-  const at = css.indexOf("\n" + selector + " {");
-  if (at === -1) throw new Error(`${selector} 규칙이 없다 — 검사가 헛돈다`);
-  const open = css.indexOf("{", at);
-  return css.slice(open, css.indexOf("}", open));
+  const lines = css.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line !== selector + " {" && line !== selector + ",") continue;
+    let j = i;
+    while (j < lines.length && !lines[j].includes("{")) j += 1;
+    const open = css.indexOf("{", lines.slice(0, j).join("\n").length);
+    return css.slice(open, css.indexOf("}", open));
+  }
+  throw new Error(`${selector} 규칙이 없다 — 검사가 헛돈다`);
 }
 
 module.exports = { read, codeOnly, markupOnly, rule };

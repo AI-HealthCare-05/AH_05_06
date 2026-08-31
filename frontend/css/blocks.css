@@ -239,3 +239,146 @@
    내릴 여지가 없어서, 단계 셋을 토큰 사다리로 갈랐다 — 지금 단계 --ink(15.15)
    · 갈 수 있는 단계 --ink-2(5.82) · 아직인 단계 --ink-3(4.85). 셋 다 AA 를
    넘고 서로 구별된다 (KEY-106). */
+
+
+/* ── 버튼 ─────────────────────────────────────────────────────────────
+ *
+ * 세 파일에 흩어져 있었다. 바탕(`.button-primary`·`.button-ghost`)이
+ * `doctor.css` 와 `upload.css` **양쪽에** 있었고(한 파일 안에서도 두 번),
+ * 작은 것은 `.button-ghost--sm` 이 `detail.css` 에, `.button-primary--sm` 이
+ * `upload.css` 에 갈려 있었다.
+ *
+ * 그래서 판독 확인 화면에서 `button-ghost--sm` 을 붙였는데 **큰 버튼이 떴다** —
+ * 그 화면은 `detail.css` 를 안 싣는다. 단계 줄과 블록이 같은 이유로 안 섰던
+ * 것과 같은 자리다.
+ *
+ * 두 정의는 사실상 같았다 — `border-radius: 8px` 와 `var(--radius)` 가 같은
+ * 값이다. 토큰 쪽으로 모은다.
+ */
+
+.button-primary,
+.button-ghost {
+  height: var(--button-h);
+  padding: 0 var(--s-24);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.button-primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.button-ghost {
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.button-ghost:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.button-primary:disabled,
+.button-ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 작은 것 — 블록 머리에 서는 버튼. 그 자리는 제목과 한 줄이라, 큰 버튼을
+   두면 머리 줄이 통째로 두꺼워지고 아래 값보다 눈에 먼저 든다. */
+.button-primary--sm,
+.button-ghost--sm {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+
+/* ── 빈 화면 ──────────────────────────────────────────────────────────
+ *
+ * 「왼쪽에서 환자를 고르세요」. 할 일이 없다는 것도 상태다 — 빈 화면으로
+ * 두면 고장으로 읽힌다.
+ *
+ * `patients.css` 에만 있었다. 판독 확인 화면과 의사 화면도 같은 빈 화면을
+ * 쓰는데 그 파일을 안 실어서, **두 화면에서는 모양 없이 떴다.** 블록과 단계
+ * 줄과 버튼이 같은 이유로 안 섰던 것과 같은 자리다.
+ */
+
+.blank {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--s-32);
+}
+
+.blank__mark {
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--s-16);
+  font-size: 22px;
+  line-height: 56px;
+  color: var(--done);
+  background: var(--done-bg);
+  border-radius: 28px;
+}
+
+.blank__title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.blank__lead {
+  margin: var(--s-8) 0 var(--s-24);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+
+/* ── 경고 줄 · 세로 탭 ────────────────────────────────────────────────
+ *
+ * `doctor.css` 에만 있었다. 「안내문」 탭의 경고 줄(`#guide-warn`)과 섹션
+ * 세로 탭은 의사 화면과 진료기록 화면이 **같은 것**을 쓴다 — 본문을
+ * `js/guide-view.js` 가 한 곳에서 그리기 때문이다. 그런데 모양은 한 화면에만
+ * 있었으니 반쪽만 공용이었다.
+ */
+
+.warnline {
+  padding: var(--s-12) var(--s-16);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 var(--s-12);
+}
+
+.warnline--warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 1px solid var(--warn-line);
+}
+
+.warnline--ok {
+  background: var(--done-bg);
+  color: var(--done);
+  border: 1px solid transparent;
+}
+
+.vtabs {
+  display: flex;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-12);
+}
