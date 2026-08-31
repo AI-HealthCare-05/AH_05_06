@@ -233,3 +233,18 @@ function withMissingRows(fields, types) {
   }
   return out;
 }
+
+
+/* 원문 칸 머리에 붙는 곁말 — 「이미지1 에서 판독한 원문」.
+ *
+ * 전에는 「현재 화면에서 판독한 원문」이라는 붙박이 문구였다. 그런데 이미지가
+ * 여럿이면 **지금 보고 있는 것이 몇 번째인지**가 이 칸의 전부다 — 값 옆
+ * 출처 배지가 「이미지2」라고 적혀 있는데 원문 칸이 어느 것인지 안 말하면,
+ * 눌러서 옮겨 온 뒤에도 제대로 왔는지 알 수 없다.
+ *
+ * 이름을 못 찾으면 붙박이 문구로 돌아간다 — 「 에서 판독한 원문」처럼
+ * 앞이 빈 말을 내보내지 않는다. */
+function rawTextNote(documents, documentId) {
+  var name = documentName(documents, documentId);
+  return name ? name + " 에서 판독한 원문" : "현재 화면에서 판독한 원문";
+}

@@ -391,3 +391,31 @@ test("**확인 항목은 꺼진 채로 세운다** — 켤 수 있으면 저장�
   assert.ok(body.includes("disabled"), "체크할 수 있게 두었다 — 저장되지 않는데 저장됐다고 믿는다");
   assert.ok(body.includes("CHECK_ITEMS"), "항목을 여기서 지어낸다");
 });
+
+test("**원문 칸이 몇 번째 이미지인지 말한다** — 출처 배지와 같은 이름이어야 한다", () => {
+  const { rawTextNote } = box();
+
+  const docs = [{ document_id: 4 }, { document_id: 9 }];
+  assert.equal(rawTextNote(docs, 4), "이미지1 에서 판독한 원문");
+  assert.equal(rawTextNote(docs, 9), "이미지2 에서 판독한 원문");
+});
+
+test("이름을 못 찾으면 앞이 빈 말을 내보내지 않는다", () => {
+  const { rawTextNote } = box();
+
+  assert.equal(rawTextNote([], 1), "현재 화면에서 판독한 원문");
+  assert.equal(rawTextNote(null, 1), "현재 화면에서 판독한 원문");
+  assert.ok(!rawTextNote([], 1).startsWith(" "), "「 에서 판독한 원문」이 나갔다");
+});
+
+test("**화면이 그 곁말을 실제로 갈아 끼운다** — 붙박이로 두면 이미지를 옮겨도 안 바뀐다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const page = markupOnly(source("ocr-review.html"));
+
+  assert.ok(page.includes('id="raw-note"'), "곁말에 이름이 없다 — 갈아 끼울 수 없다");
+
+  /* 문서를 다시 그릴 때마다 함께 바뀌어야 한다 */
+  const at = code.indexOf("function renderRaw");
+  const body = code.slice(at, at + 500);
+  assert.ok(body.includes("rawTextNote("), "원문을 다시 그려도 곁말이 그대로다");
+});

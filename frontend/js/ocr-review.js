@@ -387,6 +387,12 @@ function stateTakesFocus(tone) {
   function renderRaw(highlightLine) {
     var doc = docById(activeDoc);
     if (!doc) return;
+
+    /* 지금 보고 있는 것이 몇 번째 이미지인지 — 값 옆 출처 배지와 같은 이름을
+       써야 눌러서 옮겨 온 뒤에 제대로 왔는지 알 수 있다. */
+    var note = document.getElementById("raw-note");
+    if (note) note.textContent = rawTextNote(result.documents, activeDoc);
+
     var lines = (doc.raw_text || "").split("\n");
     rawBox.innerHTML = lines
       .map(function (line, index) {
