@@ -313,18 +313,10 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
 /* 문자 설정에 넘길 값. 서버가 회차·문구를 주지 않으므로 **화면이 아는 것만**
    모은다 — 진료일과 소진 예정일은 판독 값에서 오고, 문구는 기본 템플릿이다. */
 function smsPlanOf(sections, mode) {
-  var plan = (typeof guideSmsPlan === "function" && guideSmsPlan(mode)) || {};
-  return {
-    startIso: plan.startIso || "",
-    runOutIso: plan.runOutIso || "",
-    runOutBefore: plan.runOutBefore || 3,
-    picked: plan.picked || "d7",
-    on: plan.on || { d15: true },
-    at: plan.at || "오전 10:00",
-    phone: plan.phone || "",
-    text: plan.text || "{환자명}님, 복약 {일차}일째 확인입니다. 잘 드시고 계신가요? {링크}",
-    values: plan.values || {},
-  };
+  /* 진료에서 오는 값(진료일 · 소진 예정일 · 환자 번호)은 화면이 준다.
+     사람이 만진 값(회차 · 시각 · 문구)은 `guideSmsState` 가 들고 있다. */
+  var seed = (typeof guideSmsPlan === "function" && guideSmsPlan(mode)) || {};
+  return smsStateNow(seed);
 }
 
 function guideBodyHtml(sections, current, canEdit, editingKey) {
@@ -488,7 +480,12 @@ function wireGuideEditing(opts) {
 
 var SMS_NOT_SAVED = "회차와 문구를 저장하는 자리가 서버에 아직 없습니다 — 지금은 보기만 됩니다";
 
-/** 회차 줄 하나. 고른 줄만 진한 테두리에 「◀ 미리보기 중」이 붙는다. */
+/** 회차 줄 하나. 고른 줄만 진한 테두리에 「◀ 미리보기 중」이 붙는다.
+ *
+ * **줄 전체가 고르는 버튼이고, 체크는 따로 켜고 끈다.** 둘을 한 버튼에 두면
+ * 「보려고 눌렀는데 꺼졌다」가 생긴다 — 회차를 보려면 골라야 하는데, 고르는
+ * 것과 켜는 것은 다른 일이다.
+ */
 function smsRoundRow(round, startIso, on, picked) {
   var when = smsWhen(smsDateAfter(startIso, round.days));
   var tail = on ? when + " 예정" : "꺼짐 · 켜면 " + when;
@@ -497,14 +494,28 @@ function smsRoundRow(round, startIso, on, picked) {
     '<div class="sms__row' +
     (picked ? " is-on" : "") +
     (on ? "" : " is-off") +
-    '" data-round="' +
-    esc(round.key) +
     '">' +
-    '<span class="sms__check" aria-hidden="true">' +
+    /* 켜고 끄기 — 고정 회차는 잠긴다 */
+    '<button class="sms__check" type="button" data-sms-toggle="' +
+    esc(round.key) +
+    '"' +
+    (round.fixed ? ' aria-disabled="true"' : "") +
+    ' aria-pressed="' +
+    (on ? "true" : "false") +
+    '" aria-label="' +
+    esc(round.label + (on ? " 끄기" : " 켜기")) +
+    '">' +
     (on ? "☑" : "☐") +
-    "</span>" +
+    "</button>" +
+    /* 고르기 — 오른쪽 문구·미리보기가 이 회차로 바뀐다 */
+    '<button class="sms__pick" type="button" data-sms-pick="' +
+    esc(round.key) +
+    '" aria-pressed="' +
+    (picked ? "true" : "false") +
+    '">' +
     esc(round.label) +
     (round.fixed ? ' <span class="sms__fixed">(고정)</span>' : "") +
+    "</button>" +
     '<span class="sms__when">' +
     esc(tail) +
     "</span>" +
@@ -530,16 +541,29 @@ function smsLeftHtml(plan) {
     '<section class="sms__card">' +
     '<h3 class="sms__title">확인 문자 <span class="sms__sub">· 처방 세트 기본값 · 이 환자만 바꾼다</span></h3>' +
     rounds +
-    '<p class="sms__note">확인 문자 시각 <b>' +
-    esc(plan.at || "오전 10:00") +
-    "</b> — 확인 · 재진 문자에 적용 · 안내문은 승인 시각(기본 18:00) 규칙을 따릅니다</p>" +
+    '<p class="sms__note">확인 문자 시각 ' +
+    '<select class="sms__time" data-sms-at aria-label="확인 문자 시각">' +
+    SMS_TIMES.map(function (t) {
+      return (
+        '<option value="' +
+        esc(t.key) +
+        '"' +
+        (t.key === (plan.at || "10:00") ? " selected" : "") +
+        ">" +
+        esc(t.label) +
+        "</option>"
+      );
+    }).join("") +
+    "</select>" +
+    " — 확인 · 재진 문자에 적용 · 안내문은 승인 시각(기본 18:00) 규칙을 따릅니다</p>" +
     "</section>" +
     '<section class="sms__card">' +
     '<h3 class="sms__title">소진 임박 안내</h3>' +
     '<div class="sms__row">' +
-    '<span class="sms__check" aria-hidden="true">☑</span>소진 <b>' +
+    '<span class="sms__check" aria-hidden="true">☑</span>소진 ' +
+    '<input class="sms__days" type="number" min="1" max="90" value="' +
     esc(String(before)) +
-    "</b> 일 전" +
+    '" data-sms-before aria-label="소진 며칠 전에 보낼지" /> 일 전' +
     '<span class="sms__when">' +
     (noticeIso
       ? esc(smsWhen(noticeIso)) + " 예정 · 소진 " + esc(smsWhen(runOutIso))
@@ -556,14 +580,18 @@ function smsLeftHtml(plan) {
 
 /** 오른쪽 칸 — 문구와 미리보기 */
 function smsRightHtml(plan) {
-  var round = null;
-  for (var i = 0; i < SMS_ROUNDS.length; i++) {
-    if (SMS_ROUNDS[i].key === plan.picked) round = SMS_ROUNDS[i];
-  }
-  if (!round) round = SMS_ROUNDS[0];
+  var round = smsRoundOf(plan.picked) || SMS_ROUNDS[0];
 
   var text = plan.text || "";
-  var filled = smsFill(text, plan.values || {});
+  /* **「일차」는 고른 회차의 날수다.** 7일째 문자를 보면서 「15일째」가 뜨면
+     스탭은 어느 회차를 고쳤는지 알 수 없다. */
+  var values = {};
+  var src = plan.values || {};
+  for (var k in src) {
+    if (Object.prototype.hasOwnProperty.call(src, k)) values[k] = src[k];
+  }
+  values["일차"] = round.days;
+  var filled = smsFill(text, values);
   var kind = smsKind(filled);
   var missing = smsLinkMissingSaying(text);
   var whenIso = smsDateAfter(plan.startIso, round.days);
@@ -580,9 +608,25 @@ function smsRightHtml(plan) {
     '">' +
     esc(kind.label + " · " + kind.bytes + "바이트") +
     "</span></div>" +
-    '<p class="sms__text">' +
+    '<textarea class="sms__text" data-sms-text aria-label="문자 문구">' +
     esc(text) +
-    "</p>" +
+    "</textarea>" +
+    '<div class="sms__acts">' +
+    '<button class="button-ghost button-ghost--sm" type="button" data-sms-put="{링크}">+ 링크</button>' +
+    SMS_VARS.filter(function (v) {
+      return v.token !== "{링크}";
+    })
+      .map(function (v) {
+        return (
+          '<button class="button-ghost button-ghost--sm" type="button" data-sms-put="' +
+          esc(v.token) +
+          '">+ ' +
+          esc(v.label) +
+          "</button>"
+        );
+      })
+      .join("") +
+    "</div>" +
     (missing ? '<p class="sms__warn">⚠ ' + esc(missing) + "</p>" : "") +
     '<p class="sms__note">ⓘ {링크}는 지울 수 없습니다 · ' +
     esc(SMS_NOT_SAVED) +
@@ -593,7 +637,7 @@ function smsRightHtml(plan) {
     '<h3 class="sms__title">미리보기 <span class="sms__sub">· 환자 화면에 이렇게 갑니다</span></h3>' +
     '<div class="sms__phone">' +
     '<p class="sms__meta">' +
-    esc((plan.phone || "") + (whenIso ? " · " + smsWhen(whenIso) + " " + (plan.at || "오전 10:00") : "")) +
+    esc((plan.phone || "") + (whenIso ? " · " + smsWhen(whenIso) + " " + smsTimeLabel(plan.at) : "")) +
     "</p>" +
     '<p class="sms__bubble">' +
     esc(filled) +
@@ -617,4 +661,130 @@ function smsScreenHtml(plan) {
     smsRightHtml(plan) +
     "</div></div>"
   );
+}
+
+/* ── 문자 설정 배선 ────────────────────────────────────────────────────
+ *
+ * 스탭 화면과 의사 화면이 **같은 배선**을 쓴다 — 고치기(`wireGuideEditing`)와
+ * 같은 이유다. 두 벌이면 어느 화면에서 만졌느냐에 따라 되고 안 되고가 갈린다.
+ *
+ * **고른 것은 화면 안에만 있다.** 회차·문구를 담는 표가 서버에 없어서다.
+ * 저장된 척하지 않는다 — 카드 아래 줄이 그 사실을 말한다. 판독 화면에서
+ * 직접 적은 값을 「저장 안 됨」으로 둔 것과 같은 판단이다.
+ */
+var guideSmsState = null;
+
+/** 지금 상태. 처음 부를 때 화면이 아는 값으로 채운다. */
+function smsStateNow(seed) {
+  if (!guideSmsState) {
+    guideSmsState = {
+      picked: "d7",
+      on: { d15: true },
+      at: "10:00",
+      runOutBefore: 3,
+      texts: {},
+    };
+  }
+  var st = guideSmsState;
+  var base = seed || {};
+  return {
+    startIso: base.startIso || "",
+    runOutIso: base.runOutIso || "",
+    courseDays: base.courseDays || 0,
+    phone: base.phone || "",
+    values: base.values || {},
+    picked: st.picked,
+    on: st.on,
+    at: st.at,
+    runOutBefore: st.runOutBefore,
+    text: st.texts[st.picked] !== undefined ? st.texts[st.picked] : smsDefaultText(st.picked),
+  };
+}
+
+/** 회차별 기본 문구. 「이 환자만 적용」 > 의원 템플릿 > 기본 — 지금은 기본뿐이다. */
+function smsDefaultText(key) {
+  var r = smsRoundOf(key);
+  var days = r ? r.days : 7;
+  return "{환자명}님, 복약 " + days + "일째 확인입니다. 잘 드시고 계신가요? {링크}";
+}
+
+/** 다른 환자로 옮기면 지운다 — 앞 사람에게 고친 문구가 남으면 안 된다. */
+function smsForget() {
+  guideSmsState = null;
+}
+
+function wireSmsSettings(opts) {
+  var reRender = opts.reRender;
+  var say = opts.say || function () {};
+
+  function state() {
+    smsStateNow();
+    return guideSmsState;
+  }
+
+  document.addEventListener("click", function (event) {
+    var t = event.target;
+    if (!t || !t.closest) return;
+
+    /* 켜고 끄기 */
+    var toggle = t.closest("[data-sms-toggle]");
+    if (toggle) {
+      var key = toggle.getAttribute("data-sms-toggle");
+      var fixed = smsFixedSaying(key);
+      if (fixed) {
+        /* 아무 반응 없으면 「고장」으로 읽힌다 — 왜 안 되는지 말한다 */
+        say(fixed);
+        return;
+      }
+      state().on = smsToggled({ on: state().on }, key);
+      say("");
+      reRender();
+      return;
+    }
+
+    /* 고르기 — 오른쪽 문구와 미리보기가 그 회차로 바뀐다 */
+    var pick = t.closest("[data-sms-pick]");
+    if (pick) {
+      state().picked = pick.getAttribute("data-sms-pick");
+      say("");
+      reRender();
+      return;
+    }
+
+    /* 문구에 토큰 끼워 넣기 — 커서 자리에 넣는다 */
+    var put = t.closest("[data-sms-put]");
+    if (put) {
+      var box = document.querySelector("[data-sms-text]");
+      var st = state();
+      var text = box ? box.value : st.texts[st.picked] || smsDefaultText(st.picked);
+      var at = box && typeof box.selectionStart === "number" ? box.selectionStart : text.length;
+      st.texts[st.picked] = smsInsert(text, put.getAttribute("data-sms-put"), at);
+      reRender();
+      return;
+    }
+  });
+
+  /* 치는 대로 바이트 수와 미리보기가 따라와야 한다 — 다 치고 나서 알면
+     90 을 넘긴 뒤에 지우게 된다. */
+  document.addEventListener("input", function (event) {
+    var t = event.target;
+    if (!t || !t.getAttribute) return;
+
+    if (t.hasAttribute("data-sms-text")) {
+      state().texts[state().picked] = t.value;
+      reRender(true); // 커서를 지키며 다시 그린다
+      return;
+    }
+    if (t.hasAttribute("data-sms-before")) {
+      state().runOutBefore = smsClampBefore(t.value, opts.courseDays && opts.courseDays());
+      reRender();
+    }
+  });
+
+  document.addEventListener("change", function (event) {
+    var t = event.target;
+    if (!t || !t.hasAttribute || !t.hasAttribute("data-sms-at")) return;
+    state().at = t.value;
+    reRender();
+  });
 }

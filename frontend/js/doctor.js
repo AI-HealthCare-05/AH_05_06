@@ -389,6 +389,8 @@ function patientLinkSaying(error) {
        쓰던 사유가 뒷 환자의 이름 아래 남는다. 이름·버튼을 거두는 것과 같은
        이유다 — 화면이 말하는 사람과 눌렀을 때 가는 사람이 달라진다. */
     guide = null;
+    /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
+    smsForget();
     closeModal();
     renderHead();
     renderRole();
@@ -519,6 +521,17 @@ function patientLinkSaying(error) {
   /* 고치기는 `js/guide-view.js` 가 배선한다 — 스탭 화면과 같은 것을 쓴다.
      전에는 이 자리가 「항목 편집은 승인 API 가 붙은 뒤입니다」 안내창이었다.
      그 API 는 그 뒤에 붙었는데 안내창만 남아 있었다. */
+  /* 문자 설정도 스탭 화면과 같은 배선을 쓴다. */
+  wireSmsSettings({
+    reRender: function () {
+      renderPanel();
+    },
+    say: function (text) {
+      var box = el("say");
+      if (box) box.textContent = text;
+    },
+  });
+
   wireGuideEditing({
     visitId: function () {
       return visit ? visit.visit_id : null;

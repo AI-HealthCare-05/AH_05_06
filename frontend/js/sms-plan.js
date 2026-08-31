@@ -124,3 +124,84 @@ function smsFill(text, values) {
   }
   return out;
 }
+
+/* ── 켜고 끄기 ─────────────────────────────────────────────────────────
+ *
+ * 회차를 켜고 끄는 것은 규칙이 하나뿐이다 — **일주일 뒤는 못 끈다.**
+ * 그 규칙을 화면 여러 곳에 흩어 두면 한쪽만 고쳐진다.
+ */
+function smsRoundOf(key) {
+  for (var i = 0; i < SMS_ROUNDS.length; i++) {
+    if (SMS_ROUNDS[i].key === key) return SMS_ROUNDS[i];
+  }
+  return null;
+}
+
+function smsRoundOn(plan, key) {
+  var r = smsRoundOf(key);
+  if (!r) return false;
+  return r.fixed || ((plan && plan.on) || {})[key] === true;
+}
+
+/** 켜고 끈 뒤의 `on`. **원래 것을 고치지 않고 새로 만든다** — 화면이 다시
+    그릴 때 무엇이 바뀌었는지 알 수 있어야 한다. */
+function smsToggled(plan, key) {
+  var r = smsRoundOf(key);
+  var on = {};
+  var src = (plan && plan.on) || {};
+  for (var k in src) {
+    if (Object.prototype.hasOwnProperty.call(src, k)) on[k] = src[k];
+  }
+  /* 고정 회차는 눌러도 그대로다. 끄는 시늉을 하면 껐다고 믿는다. */
+  if (r && !r.fixed) on[key] = !on[key];
+  return on;
+}
+
+/** 못 끄는 회차를 눌렀을 때 할 말. 아무 반응 없으면 「고장」으로 읽힌다. */
+function smsFixedSaying(key) {
+  var r = smsRoundOf(key);
+  return r && r.fixed
+    ? "일주일 뒤 확인은 끌 수 없습니다 — 복약 첫 주가 가장 잘 끊기는 구간입니다"
+    : "";
+}
+
+/* ── 글에 끼워 넣기 ────────────────────────────────────────────────────
+ *
+ * 「+ 링크」·「+ 변수」가 커서 자리에 토큰을 넣는다. 끝에 붙이면 문장 가운데
+ * 넣고 싶을 때 잘라 붙여야 한다.
+ */
+function smsInsert(text, token, at) {
+  var s = String(text || "");
+  var i = typeof at === "number" && at >= 0 && at <= s.length ? at : s.length;
+  return s.slice(0, i) + token + s.slice(i);
+}
+
+/* ── 시각 ──────────────────────────────────────────────────────────────
+ *
+ * 와이어프레임은 「오전 10:00」이다. 진료 시간 안에서만 고르게 둔다 —
+ * 새벽에 문자가 가면 그것 자체가 불편이다.
+ */
+var SMS_TIMES = [
+  { key: "09:00", label: "오전 9:00" },
+  { key: "10:00", label: "오전 10:00" },
+  { key: "11:00", label: "오전 11:00" },
+  { key: "14:00", label: "오후 2:00" },
+  { key: "18:00", label: "오후 6:00" },
+];
+
+function smsTimeLabel(key) {
+  for (var i = 0; i < SMS_TIMES.length; i++) {
+    if (SMS_TIMES[i].key === key) return SMS_TIMES[i].label;
+  }
+  return SMS_TIMES[1].label;
+}
+
+/** 소진 며칠 전. **1일 아래로도, 처방일수 위로도 안 간다** — 0이면 소진
+    당일이라 임박이 아니고, 처방일수보다 크면 처방 전에 보내는 셈이 된다. */
+function smsClampBefore(value, courseDays) {
+  var n = parseInt(String(value), 10);
+  if (isNaN(n)) return 3;
+  var max = parseInt(String(courseDays), 10);
+  if (!max || isNaN(max)) max = 30;
+  return Math.max(1, Math.min(n, max));
+}

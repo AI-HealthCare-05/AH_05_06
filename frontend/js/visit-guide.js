@@ -70,7 +70,21 @@ function guideMissingSaying(error) {
   }
 
   /* 두 탭이 같은 안내문을 그린다 — 다른 것은 편집 권한과 아래 버튼뿐이다. */
-  function renderOne(prefix, canEdit) {
+  /* 문구를 치는 사이 다시 그리면 커서가 사라진다 — `innerHTML` 이 통째로
+     바뀌기 때문이다. 치던 자리를 되돌려 준다 (판독 화면이 값 칸에 한 것과
+     같은 처리다). */
+  function keepCaretAround(box, run) {
+    var live = box.querySelector("[data-sms-text]");
+    var at = live && typeof live.selectionStart === "number" ? live.selectionStart : null;
+    run();
+    if (at === null) return;
+    var next = box.querySelector("[data-sms-text]");
+    if (!next) return;
+    next.focus();
+    next.setSelectionRange(at, at);
+  }
+
+  function renderOne(prefix, canEdit, keepCaret) {
     var vtabs = el(prefix + "-vtabs");
     var panel = el(prefix + "-panel");
     var warn = el(prefix + "-warn");
@@ -90,7 +104,11 @@ function guideMissingSaying(error) {
     /* **한 판으로 그린다** — 제목 · 가로 탭 · 원문 · 미리보기가 한 덩어리다
        (와이어프레임 S1-11 · D1-1). 전에는 세로 탭과 본문이 따로 떠 있었다. */
     vtabs.innerHTML = "";
-    panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit, guideEditingNow());
+    var draw = function () {
+      panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit, guideEditingNow());
+    };
+    if (keepCaret) keepCaretAround(panel, draw);
+    else draw();
 
     if (warn) {
       var line = guideWarnLine(guide.sections);
@@ -263,6 +281,18 @@ function guideMissingSaying(error) {
 
   /* 고치기는 `js/guide-view.js` 가 배선한다 — 의사 화면과 같은 것을 쓴다.
      화면마다 다른 것은 어느 진료인지와 다시 그리는 법뿐이다. */
+  /* 문자 설정도 같은 배선을 쓴다 — 두 벌이면 어느 화면에서 만졌느냐에 따라
+     되고 안 되고가 갈린다. */
+  wireSmsSettings({
+    reRender: function (keepCaret) {
+      renderOne("guide", canEditNow("guide"), keepCaret);
+    },
+    say: say,
+    courseDays: function () {
+      return 0;
+    },
+  });
+
   wireGuideEditing({
     visitId: function () {
       return visitId;
@@ -275,6 +305,8 @@ function guideMissingSaying(error) {
   });
 
   document.addEventListener("visit:selected", function (event) {
+    /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
+    smsForget();
     if (event.detail) loadGuide(event.detail.visit_id || event.detail);
   });
 

@@ -139,3 +139,83 @@ test("**바이트 규칙을 와이어프레임 숫자에 맞추려 비틀지 않
   const { smsBytes } = box();
   assert.equal(smsBytes("{환자명}님, 복약 {일차}일째 확인입니다. 잘 드시고 계신가요? {링크}"), 66);
 });
+
+/* ── 켜고 끄기 ──────────────────────────────────────────────────────── */
+
+test("**일주일 뒤는 눌러도 안 꺼진다** — 끄는 시늉을 하면 껐다고 믿는다", () => {
+  const { smsToggled, smsRoundOn } = box();
+
+  const after = smsToggled({ on: {} }, "d7");
+  assert.equal(smsRoundOn({ on: after }, "d7"), true, "고정 회차가 꺼졌다");
+
+  /* **상태에도 손대지 않아야 한다.** `smsRoundOn` 이 `fixed` 로 덮어써서
+     겉으로는 같아 보이지만, 지도에 `d7: false` 가 남으면 그것을 읽는 다음
+     코드가 「꺼져 있다」고 본다 — 저장이 붙는 순간 꺼진 채로 나간다. */
+  assert.deepEqual(after, {}, `고정 회차를 눌렀는데 상태가 바뀌었다: ${JSON.stringify(after)}`);
+
+  /* 이미 켜져 있던 것을 눌러도 마찬가지다 */
+  assert.deepEqual(smsToggled({ on: { d7: true } }, "d7"), { d7: true });
+});
+
+test("나머지는 켜고 꺼진다", () => {
+  const { smsToggled, smsRoundOn } = box();
+
+  let on = smsToggled({ on: {} }, "d30");
+  assert.equal(smsRoundOn({ on: on }, "d30"), true);
+  on = smsToggled({ on: on }, "d30");
+  assert.equal(smsRoundOn({ on: on }, "d30"), false);
+});
+
+test("**원래 것을 고치지 않는다** — 무엇이 바뀌었는지 알 수 있어야 한다", () => {
+  const { smsToggled } = box();
+
+  const before = { d15: true };
+  const after = smsToggled({ on: before }, "d30");
+  assert.equal(before.d30, undefined, "넘겨준 것을 그 자리에서 고쳤다");
+  assert.equal(after.d15, true, "원래 켜 둔 것이 사라졌다");
+});
+
+test("**못 끄는 회차를 누르면 왜인지 말한다** — 아무 반응 없으면 고장으로 읽힌다", () => {
+  const { smsFixedSaying } = box();
+
+  assert.match(smsFixedSaying("d7"), /끌 수 없습니다/);
+  assert.match(smsFixedSaying("d7"), /첫 주/, "왜 고정인지 안 말한다");
+  assert.equal(smsFixedSaying("d15"), "", "끌 수 있는 회차에도 말한다");
+});
+
+/* ── 글에 끼워 넣기 ──────────────────────────────────────────────────── */
+
+test("**커서 자리에 넣는다** — 끝에 붙이면 잘라 붙여야 한다", () => {
+  const { smsInsert } = box();
+
+  assert.equal(smsInsert("안녕하세요", "{링크}", 2), "안녕{링크}하세요");
+  assert.equal(smsInsert("안녕", "{링크}", 0), "{링크}안녕");
+  assert.equal(smsInsert("안녕", "{링크}"), "안녕{링크}", "자리를 모르면 끝에 붙인다");
+  assert.equal(smsInsert("안녕", "{링크}", 999), "안녕{링크}", "범위 밖이면 끝에 붙인다");
+});
+
+/* ── 소진 며칠 전 ───────────────────────────────────────────────────── */
+
+test("**1일 아래로도, 처방일수 위로도 안 간다**", () => {
+  const { smsClampBefore } = box();
+
+  assert.equal(smsClampBefore(3, 84), 3);
+  assert.equal(smsClampBefore(0, 84), 1, "0이면 소진 당일이라 임박이 아니다");
+  assert.equal(smsClampBefore(-5, 84), 1);
+  assert.equal(smsClampBefore(100, 84), 84, "처방일수보다 크면 처방 전에 보내는 셈이다");
+  assert.equal(smsClampBefore("몰라", 84), 3, "못 읽으면 기본값으로 둔다");
+});
+
+/* ── 시각 ────────────────────────────────────────────────────────────── */
+
+test("진료 시간 안에서만 고른다 — 새벽 문자는 그것 자체가 불편이다", () => {
+  const { SMS_TIMES, smsTimeLabel } = box();
+
+  assert.ok(SMS_TIMES.length >= 3, "고를 것이 없다");
+  for (const t of SMS_TIMES) {
+    const hour = Number(t.key.slice(0, 2));
+    assert.ok(hour >= 8 && hour <= 20, `${t.key} 는 진료 시간이 아니다`);
+  }
+  assert.equal(smsTimeLabel("10:00"), "오전 10:00");
+  assert.equal(smsTimeLabel("몰라"), "오전 10:00", "모르는 값에도 이름표가 있어야 한다");
+});

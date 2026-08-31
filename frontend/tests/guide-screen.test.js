@@ -366,9 +366,14 @@ test("**일주일 뒤는 켜진 채로 그려진다** — 끌 수 없는 회차�
   const { smsLeftHtml } = load("api", "session", "sms-plan", "guide-view");
   const html = smsLeftHtml({ startIso: "2026-08-13", picked: "d7", on: {} });
 
-  /* `on` 이 비어 있어도 일주일 뒤는 켜져야 한다 */
-  const at = html.indexOf("일주일 뒤");
-  assert.ok(html.slice(Math.max(0, at - 120), at).includes("☑"), "일주일 뒤가 꺼진 채로 그려졌다");
+  /* `on` 이 비어 있어도 일주일 뒤는 켜져야 한다.
+     **켜짐을 `aria-pressed` 로 본다** — 글자 ☑ 를 앞뒤 몇 자로 찾으면
+     마크업이 조금만 바뀌어도 헛돈다(그렇게 한 번 깨졌다). */
+  const at = html.indexOf('data-sms-toggle="d7"');
+  assert.notEqual(at, -1, "일주일 뒤 켜고 끄기가 없다");
+  const tag = html.slice(at, html.indexOf(">", at));
+  assert.ok(tag.includes('aria-pressed="true"'), "일주일 뒤가 꺼진 채로 그려졌다");
+  assert.ok(tag.includes('aria-disabled="true"'), "일주일 뒤를 끌 수 있게 두었다");
   assert.ok(html.includes("(고정)"), "고정이라는 것을 안 밝힌다");
 });
 
@@ -392,4 +397,44 @@ test("**저장할 자리가 없다는 것을 말한다** — 켤 수 있게 두�
   assert.match(SMS_NOT_SAVED, /아직 없습니다/, "되는 것처럼 말한다");
   const html = smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: "{링크}" });
   assert.ok(html.includes(SMS_NOT_SAVED), "화면이 그 말을 안 한다");
+});
+
+test("**회차를 고르는 것과 켜는 것이 다른 버튼이다** — 보려고 눌렀는데 꺼지면 안 된다", () => {
+  const { smsLeftHtml } = load("api", "session", "sms-plan", "guide-view");
+  const html = smsLeftHtml({ startIso: "2026-08-13", picked: "d7", on: { d15: true } });
+
+  assert.ok(html.includes('data-sms-toggle="d15"'), "켜고 끄는 버튼이 없다");
+  assert.ok(html.includes('data-sms-pick="d15"'), "고르는 버튼이 없다");
+});
+
+test("**문구를 고칠 수 있다** — 읽기 전용이면 화면이 거기서 끝난다", () => {
+  const { smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+  const html = smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: "{링크}" });
+
+  assert.ok(html.includes("<textarea"), "문구가 읽기 전용이다");
+  assert.ok(html.includes("data-sms-text"), "친 것을 받는 자리가 없다");
+  assert.ok(html.includes('data-sms-put="{링크}"'), "링크를 넣는 버튼이 없다");
+});
+
+test("**「일차」는 고른 회차의 날수다** — 7일째 문자에 15가 뜨면 안 된다", () => {
+  const { smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+
+  const tpl = "복약 {일차}일째";
+  assert.ok(smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: tpl }).includes("복약 7일째"));
+  assert.ok(smsRightHtml({ startIso: "2026-08-13", picked: "d15", text: tpl }).includes("복약 15일째"));
+});
+
+test("**두 화면이 같은 배선을 쓴다**", () => {
+  for (const js of ["js/visit-guide.js", "js/doctor.js"]) {
+    const code = codeOnly(read(js));
+    assert.match(code, /(^|\n)\s*wireSmsSettings\(\{/, `${js} 가 문자 설정 배선을 안 쓴다`);
+    /* 환자를 옮기면 지운다 — 앞 사람에게 고친 문구가 남으면 남의 문자다 */
+    assert.ok(code.includes("smsForget()"), `${js} 가 앞 환자의 문구를 안 지운다`);
+  }
+});
+
+test("**치는 사이 커서가 안 튄다** — 다시 그리면 innerHTML 이 통째로 바뀐다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  assert.ok(code.includes("keepCaretAround"), "커서를 안 지킨다");
+  assert.ok(code.includes("setSelectionRange"), "치던 자리를 안 되돌린다");
 });

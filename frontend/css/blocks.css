@@ -855,3 +855,101 @@
   color: var(--ink-2);
   white-space: pre-wrap;
 }
+
+/* ── 문자 설정의 조작 요소 ────────────────────────────────────────────
+ *
+ * 줄 전체가 고르는 버튼이고 체크는 따로 켜고 끈다. 둘을 한 버튼에 두면
+ * 「보려고 눌렀는데 꺼졌다」가 생긴다 — 고르는 것과 켜는 것은 다른 일이다.
+ */
+
+.sms__check {
+  flex: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* 끌 수 없는 회차. 흐리게 두되 눌리기는 한다 — 눌러서 왜 안 되는지 듣는다. */
+.sms__check[aria-disabled="true"] {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.sms__pick {
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sms__pick[aria-pressed="true"] {
+  font-weight: 700;
+}
+
+.sms__check:focus-visible,
+.sms__pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sms__time {
+  height: 26px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.sms__days {
+  width: 52px;
+  height: 26px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+/* 문구 — 치는 대로 바이트 수와 미리보기가 따라온다 */
+textarea.sms__text {
+  display: block;
+  width: 100%;
+  min-height: 74px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+textarea.sms__text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sms__acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
