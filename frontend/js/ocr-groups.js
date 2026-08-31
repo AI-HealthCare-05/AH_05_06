@@ -26,6 +26,11 @@ var PRESCRIPTION_TYPES = [
   "FREQUENCY",
   "DURATION_DAYS",
   "PRESCRIPTION_DATE",
+
+  /* 구버전 이름 (KEY-187 개명 이전). 이 행들이 DB 에 남아 있어서, 여기
+     없으면 약품명이 「이번 판독 값」(검사) 묶음으로 새어 들어간다. */
+  "PRESCRIPTION_NAME",
+  "PRESCRIPTION_DURATION",
 ];
 
 /* 검사일은 값 줄이 아니라 **묶음 머리**에 붙는다 (「이번 판독 값 · 검사일 08-05」).

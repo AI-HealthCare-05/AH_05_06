@@ -114,3 +114,42 @@ test("단위는 서버 값이 우선이다 — 여기 것은 없을 때만 쓴�
   assert.equal(fieldUnit("HEMOGLOBIN", ""), "g/dL", "서버가 안 줬는데 기본값도 안 나온다");
   assert.equal(fieldUnit("NEW_THING", ""), "", "모르는 항목에 단위를 지어내면 안 된다");
 });
+
+/* ── 구버전 이름 ─────────────────────────────────────────────────────── */
+
+test("**개명 이전 이름도 읽는다** — 그 행들이 DB 에 남아 있다", () => {
+  /* 항목 이름이 2026-08-28(`82a2fc2`)에 바뀌었는데, 그 전에 쌓인 행은
+     그대로 남는다 — `unique_together` 가 (결과, 항목이름) 이라 새 이름으로
+     다시 넣어도 옛 행이 안 사라진다. 화면에 영문이 뜬 것이 이것이었다. */
+  const { fieldLabel } = box();
+
+  assert.equal(fieldLabel("PRESCRIPTION_NAME"), "약품명");
+  assert.equal(fieldLabel("PRESCRIPTION_DURATION"), "처방일수");
+});
+
+test("구버전 이름이 **처방 묶음**으로 간다 — 검사값 사이에 약 이름이 끼면 안 된다", () => {
+  const { splitFields } = load("ocr-groups");
+
+  const split = splitFields([
+    { field_type: "PRESCRIPTION_NAME", value: "비잔" },
+    { field_type: "HEMOGLOBIN", value: "10.2" },
+  ]);
+  assert.deepEqual(
+    split.prescription.map((f) => f.field_type),
+    ["PRESCRIPTION_NAME"],
+    "약품명이 처방 묶음에 없다",
+  );
+  assert.deepEqual(split.labs.map((f) => f.field_type), ["HEMOGLOBIN"]);
+});
+
+test("**옛 이름을 새로 만들지는 않는다** — 추출기가 안 만드는 것을 화면이 되살리면 안 된다", () => {
+  /* 서버 어휘 대조 검사가 「추출기에 있는 것이 이름표에 다 있는가」를 보는데,
+     그 반대(이름표에만 있는 것)는 **있어도 된다** — 읽기용이기 때문이다.
+     다만 그것이 무엇인지는 적혀 있어야 한다. */
+  const source = fs.readFileSync(path.join(ROOT, "js/field-labels.js"), "utf8");
+  const at = source.indexOf("PRESCRIPTION_NAME:");
+  assert.notEqual(at, -1, "구버전 이름이 없다 — 검사가 헛돈다");
+
+  const before = source.slice(Math.max(0, at - 900), at);
+  assert.match(before, /구버전|개명/, "왜 있는지가 안 적혀 있다 — 다음 사람이 지운다");
+});
