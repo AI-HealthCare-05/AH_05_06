@@ -2,6 +2,10 @@
 
 > 기준일: 2026-08-31 / 기준 브랜치: `develop`
 > 입력: 2026-08-31 멘토링 정리, [`구현현황.md`](구현현황.md), [`project_workflow.md`](project_workflow.md) §4
+>
+> **2026-08-31 갱신:** 권일준 전체 구조 진단(시연 차단 8건 B1~B8) 및 한금준 로컬 설치 자동화 개선안 반영.
+> 실제 오너·하위작업·Jira 매핑은 [`work-packages.md`](work-packages.md)를 정본으로 한다. 이 문서는 이번 주 성격과 우선순위 기준선이다.
+> 진단이 확인한 갭: **B1(화면이 `confirm:true` 미전송 → 실서버에서 안내 생성 전량 422)** 이 원안에 없었다 → P0-D로 추가.
 
 ## 1. 이번 주 성격
 
@@ -48,6 +52,13 @@
 - 발송 수단을 어댑터 인터페이스 하나로 추상화한다. 개발용 mock / 시연용 mock 구현을 두고 실제 공급자는 이후 교체만 하도록 남긴다.
 - 지금은 "발송 성공" 상태 + 서버 로그 확인만 제공한다. 토큰·인증번호 원문은 로그에 남기지 않는다([`qa/KEY-48-log-masking-review.md`](qa/KEY-48-log-masking-review.md)).
 
+### P0-D. OCR 확정값 전송 (진단 B1)
+
+- `frontend/js/` 전체에서 `confirm:true`를 전송하는 코드가 0건이라, 서버 확정 처리(`app/ocr/service.py`, `is_confirmed`)가 완비돼 있어도 실서버에서 안내 생성이 전량 `422 OCR_NOT_CONFIRMED`로 막힌다.
+- 확정 버튼에 `{confirm: true}` 전송을 연결한다. 서버 변경 없음, 규모 0.5인일.
+- 미조치 시 P1-A(링크 발급·표시)·P1-B(OCR 안정성) 검증이 불가능하다. **P0 게이트로 취급한다.**
+- 근거: 권일준 진단 §4.2 / [`work-packages.md`](work-packages.md) WP-D.
+
 ### P1-A. MVP 데모 흐름 나머지 블로커 (블로커 2·3)
 
 - 블로커 2: 의사 승인 직후 환자 링크 **발급·화면 표시·복사**를 연결한다([`qa/KEY-205-patient-link-launch.md`](qa/KEY-205-patient-link-launch.md) 확인).
@@ -79,22 +90,23 @@
 ## 4. 완료 기준
 
 - 초기화된 환경에서 문서 절차대로 5분 내 로그인 도달을 1회 이상 확인하고 소요 시간을 기록했다.
-- §1의 데모 흐름을 고정 OTP `000000`으로 처음부터 끝까지 1회 완주했다.
+- §1의 데모 흐름을 고정 OTP `000000`으로 처음부터 끝까지 `?mock=1` 없이 1회 완주했다. 확정 → 안내 생성 단계(B1)가 실서버 응답으로 통과한다.
 - 무인증 우회 경로가 제거되고, 운영 설정에서 `MOCK_OTP_CODE`가 우회를 열지 않음을 테스트로 확인했다.
 - OCR 실패·재시도가 합성 fixture로 재현·통과된다.
 - 링크 토큰·OTP 원문이 화면·로그에 노출되지 않는다.
 - `README.md` 한글 깨짐이 수정되고 Quickstart가 최신 명령과 일치한다.
 - 관련 테스트와 기존 핵심 흐름 회귀가 통과한다. 실행하지 못한 검증은 PR에 사유를 기록한다.
 
-## 5. 담당 (영역 기준, [`project_workflow.md`](project_workflow.md) §3)
+## 5. 담당 ([`work-packages.md`](work-packages.md) 요약, [`project_workflow.md`](project_workflow.md) §3)
 
-| 작업 | 주 담당 영역 |
-|---|---|
-| P0-A clone→run, migration·seed 통일, README | `KEY-6` 공동 + 기술 리드(한금준) |
-| P0-B 환자 OTP 흐름, 무인증 우회 제거 | 환자 인증·모바일 (김고은) / 리뷰 유가은 |
-| P0-C SMS mock 분리 | 환자 인증·모바일 (김고은) + 인프라 |
-| P1-A 링크 발급·표시, 상태 전환 | 의료문서·안내 승인 (한금준) + 환자 인증 (김고은) 접점 |
-| P1-B OCR 안정성 | 의료문서 OCR (한금준) / 리뷰 이희진 |
-| P2 구조 진단 세션 | 전원 |
+| 항목 | WP | 오너 / 리뷰어 |
+|---|---|---|
+| P0-A clone→run, bootstrap-local.sh, migration·seed, README | WP-A | 한금준 / 이희진 |
+| P0-B 환자 OTP 흐름, 무인증 우회 제거 | WP-B (KEY-212) | 권일준 / 유가은 |
+| P0-C SMS mock 분리 | WP-B 내 | 권일준 / 유가은 |
+| P0-D OCR 확정값 전송 (B1) | WP-D (KEY-214) | 한금준 / 이희진 |
+| P1-A 링크 발급·표시, 상태 전환, 반려 복귀 | WP-C (KEY-213) | 김고은 / 이희진 |
+| P1-B OCR 안정성 (게이트 위치·재시도·fixture) | WP-D (KEY-214) | 한금준 / 이희진 |
+| P2 구조 정리 (인터페이스 정합성·미완성 구현 분류) | WP-S | 권일준 / 한금준 |
 
-세부 티켓은 스프린트 시작 시 Jira에서 위 항목을 API·화면·검증 단위로 분해하고 담당자·리뷰어를 지정한다.
+세부 하위작업·Jira 매핑·일정은 [`work-packages.md`](work-packages.md)를 따른다.
