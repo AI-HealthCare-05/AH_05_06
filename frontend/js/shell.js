@@ -508,6 +508,19 @@ function bindShell() {
 
   /* 세션이 없거나 첫 로그인이면 여기서 되돌린다.
      화면에서 막는 것은 편의일 뿐이고 실제 차단은 서버가 한다(KEY-9). */
+  /* **진료 상태가 바뀌었다** — 목록을 다시 부른다.
+   *
+   * 승인하면 그 줄이 「승인 요청」에서 「발송 대기」로 옮겨 가야 한다. 그런데
+   * 상태를 바꾸는 것은 안내문 화면이고 목록은 여기가 갖는다 — 화면이 목록을
+   * 직접 만지면 어느 쪽이 정본인지 흐려진다. 「바뀌었다」만 듣고 **다시 묻는다.**
+   *
+   * 파생은 서버가 한다(`work_category.py`). 화면이 「승인했으니 발송 대기겠지」
+   * 라고 옮겨 적으면 서버 규칙이 바뀔 때 두 곳이 갈라진다.
+   */
+  document.addEventListener("visit:changed", function () {
+    loadDay();
+  });
+
   requireSession()
     .then(function (me) {
       document.getElementById("who-name").textContent = me.name;

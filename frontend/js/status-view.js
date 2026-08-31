@@ -4,7 +4,7 @@
  * 답했는지 · 다음 문자가 언제 나가는지가 어디에도 안 보였다.
  *
  * 화면은 세 덩어리다 (원문 배치):
- *   위 2 : 1  ① 발송·예정  |  ② 안내문 읽음 + ③ 확인 문자 응답 (한 카드)
+ *   위 2 : 1  ① 발송·예정  |  ② 환자 액션 현황 (안내문 읽음 + 확인 문자 응답)
  *   아래 전폭 ④ 진료 처리 이력
  *   맨 아래  [링크 무효화] [재발송]
  *
@@ -211,11 +211,20 @@ function statusScreenHtml(view) {
     /* 위 2 : 1 */
     '<div class="st__top">' +
     '<section class="st__send">' +
-    '<div class="st__head">발송 · 예정</div>' +
+    /* 철회는 **여기** 붙는다 — 무엇을 거두는지가 이 블록에 적혀 있다.
+       최종 확인 탭의 승인 버튼 옆에 두면, 이미 승인된 뒤에 그 탭을 다시
+       열 일이 없어서 찾지 못한다. */
+    '<div class="st__head">발송 · 예정' +
+    (view.canUnapprove
+      ? '<button class="button-ghost button-ghost--sm st__act" type="button" id="status-unapprove">승인 철회</button>'
+      : "") +
+    "</div>" +
     sendRowsHtml(view.messages) +
     '<p class="st__note">ⓘ 못 나간 문자가 있으면 그 줄에 표시됩니다 — 발송기가 붙으면 다시 보낼 수 있습니다</p>' +
     "</section>" +
     '<section class="st__side">' +
+    '<div class="st__head">환자 액션 현황</div>' +
+    '<div class="st__body">' +
     '<div class="st__label">안내문 읽음</div>' +
     '<div class="st__big">' +
     /* 원문 표기는 「5장 중 2장」 — 전체가 앞, 읽은 것이 뒤다 */
@@ -231,7 +240,7 @@ function statusScreenHtml(view) {
     '<div class="st__label">확인 문자 응답</div>' +
     '<p class="st__sub">' +
     esc(view.checkInSaying || "아직 없음") +
-    "</p></section>" +
+    "</p></div></section>" +
     "</div>" +
     /* 아래 전폭 */
     '<section class="tl">' +

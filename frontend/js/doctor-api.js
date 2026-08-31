@@ -5,6 +5,7 @@
  *   GET   /api/v1/visits/{visit_id}/guide                안내문 네 갈래 + ⚠ 표시
  *   PATCH /api/v1/visits/{visit_id}/guide/sections/{key}  그 항목만 고친다
  *   POST  /api/v1/visits/{visit_id}/guide/approve         승인 — 발송 예약
+ *   POST  /api/v1/visits/{visit_id}/guide/unapprove       승인 철회 — 예약 끄기
  *   POST  /api/v1/visits/{visit_id}/guide/return          스탭에 되돌린다 (사유 필수)
  *   POST  /api/v1/visits/{visit_id}/guide/link            개발용 환자 링크 한 번 발급
  *
@@ -53,6 +54,14 @@ var doctorApi = {
       body: body || {},
     });
   },
+  /* 승인을 거둔다 — 승인했는데 잘못된 것을 발견했을 때 (와이어프레임 D1-6).
+     이미 나간 문자가 있으면 서버가 409 `GUIDE_ALREADY_SENT` 로 막는다. */
+  unapprove: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/unapprove", {
+      method: "POST",
+    });
+  },
+
   issuePatientLink: function (visitId) {
     return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/link", {
       method: "POST",
@@ -329,7 +338,7 @@ function mockDoctorRequest(path, options) {
          **「없는 섹션」 검사가 섹션 조회에 닿지도 못했다.**
          `/sections/` 를 요구하므로 approve·return 경로를 삼키지는 않는다. */
       var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
-      var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return)$/);
+      var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
       var m = get || sec || act || issueLink;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
@@ -374,6 +383,25 @@ function mockDoctorRequest(path, options) {
         approvedState.scheduled_at = approved.scheduled_at;
         approvedState.returned_reason = null;
         return resolve(approved);
+      }
+
+      if (options.method === "POST" && /\/unapprove$/.test(path)) {
+        if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
+        var taken = mockGuide(visitId);
+        if (!taken) return reject(mockNoGuide());
+        /* 서버는 승인된 것만 거둔다 — 목업이 헐거우면 화면이 아무 상태에서나
+           눌리게 만들어 놓고도 멀쩡해 보인다. */
+        if (taken.status !== "SCHEDULED_TO_SEND") {
+          return reject(new ApiError("GUIDE_NOT_SCHEDULED", 409, {}));
+        }
+        taken.status = "APPROVAL_PENDING";
+        taken.approved_at = null;
+        taken.scheduled_at = null;
+        var takenState = mockGuideState(visitId);
+        takenState.status = taken.status;
+        takenState.approved_at = null;
+        takenState.scheduled_at = null;
+        return resolve(taken);
       }
 
       if (options.method === "POST" && /\/return$/.test(path)) {

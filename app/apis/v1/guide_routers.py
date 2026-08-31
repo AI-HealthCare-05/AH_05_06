@@ -142,6 +142,21 @@ async def approve_guide(
     return _to_response(guide)
 
 
+@guide_router.post("/{visit_id}/guide/unapprove", response_model=GuideResponse, status_code=status.HTTP_200_OK)
+async def unapprove_guide(
+    visit_id: int,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> GuideResponse:
+    """승인을 거둔다 — 승인했는데 잘못된 것을 발견했을 때.
+
+    이미 나간 문자가 있으면 거두지 않는다. 예약된 문자는 꺼진다.
+    """
+    guide = await service.unapprove(actor, visit_id)
+    await guide.fetch_related("sections", "visit__patient")
+    return _to_response(guide)
+
+
 @guide_router.post("/{visit_id}/guide/return", response_model=GuideResponse, status_code=status.HTTP_200_OK)
 async def return_guide(
     visit_id: int,

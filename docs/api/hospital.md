@@ -830,12 +830,19 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 |---|---|---|---|
 | POST | `/api/v1/visits/{visit_id}/guide/generate` | 확정 OCR로 고정 안내 생성 — 201 | `staff`·`doctor` |
 | GET | `/api/v1/visits/{visit_id}/guide` | 안내문 조회 — 다섯 갈래 + ⚠ 표시 | `staff`·`doctor` |
-| PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | `doctor` |
+| PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | 상태에 따라 `staff`·`doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/submit` | 스탭 확인을 마치고 의사에게 넘김 | `staff`·`doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/approve` | 승인 — 발송 예약 | `doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/unapprove` | 승인 철회 — 예약 끄기 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/return` | 스탭에 되돌림 (사유 필수) | `doctor` |
+| GET | `/api/v1/visits/{visit_id}/timeline` | 진료 처리 이력 + 발송 예정 | `staff`·`doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/link` | 72시간 개발용 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
 
 `admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
+
+수정은 상태가 가른다. `STAFF_REVIEW` 는 스탭이 고치고, 의사에게 넘긴 뒤(`APPROVAL_PENDING`)로는 의사만 고친다 — 스탭이 그때 고치려 하면 `403` 이다.
+
+**철회는 승인된 것만, 그리고 아직 아무 문자도 안 나갔을 때만 된다.** 이미 환자가 받은 글이 있으면 `409 GUIDE_ALREADY_SENT` 로 막는다 — 그때 할 일은 되돌리기가 아니라 새 안내를 보내는 것이다. 철회하면 예약된 문자는 지워지지 않고 `CANCELED` 로 꺼지며, 다시 승인하면 그 줄이 되살아난다.
 
 ### 상태값
 

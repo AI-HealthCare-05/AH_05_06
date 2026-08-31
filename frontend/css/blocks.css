@@ -990,16 +990,25 @@ textarea.sms__text:focus-visible {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: var(--card);
   overflow: hidden;
 }
 
 .st__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 8px 14px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
   font-size: 12px;
   font-weight: 700;
   color: var(--ink-2);
+}
+
+/* 머리띠 오른쪽 끝 — 수정 버튼을 판 머리에 둔 것과 같은 자리다 */
+.st__act {
+  margin-left: auto;
 }
 
 /* 발송 줄 — 원문 `padding:10px 14px · gap:12px · 13px` */
@@ -1045,16 +1054,23 @@ textarea.sms__text:focus-visible {
   color: var(--ink-2);
 }
 
-/* 오른쪽 — 안내문 읽음 + 확인 문자 응답이 **한 카드**다 */
+/* 오른쪽 — 「환자 액션 현황」 한 카드 안에 안내문 읽음과 확인 문자 응답이
+   구분선으로 나뉜다. 세 블록 다 흰 바탕이라야 회색 바닥 위에서 블록으로
+   읽힌다 — 테두리만으로는 카드가 바닥에 잠긴다. */
 .st__side {
   flex: 1 1 260px;
   min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.st__body {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 13px 15px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
 }
 
 .st__label {
@@ -1089,18 +1105,32 @@ textarea.sms__text:focus-visible {
   color: var(--ink-3);
 }
 
-/* ── 진료 처리 이력 ───────────────────────────────────────────────── */
+/* ── 진료 처리 이력 ─────────────────────────────────────────────────
+ *
+ * 위 두 블록과 같은 카드다. 전에는 제목과 줄만 있어서 바닥에 얹힌 글처럼
+ * 보였다.
+ */
+
+.tl {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow: hidden;
+}
 
 .tl__head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding-bottom: 4px;
+  padding: 8px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
 }
 
 .tl__title {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
+  color: var(--ink-2);
 }
 
 .tl__tail {
@@ -1116,7 +1146,7 @@ textarea.sms__text:focus-visible {
   grid-template-columns: 66px 1fr 104px;
   gap: 12px;
   align-items: baseline;
-  padding: 7px 0;
+  padding: 7px 14px;
   border-top: 1px solid var(--line);
   font-size: 13px;
 }

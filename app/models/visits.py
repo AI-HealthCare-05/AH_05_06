@@ -97,6 +97,10 @@ class GuideEventType(StrEnum):
     #: 누가 언제 넘겼는지가 남아야, 승인이 늦을 때 어디서 멈췄는지 안다.
     SUBMITTED = "SUBMITTED"
     APPROVED = "APPROVED"
+    #: 승인을 거뒀다 — 승인했는데 잘못된 것을 발견했을 때.
+    #: 승인 줄을 지우지 않고 이 줄을 더한다: 승인했다가 거뒀다는 것이
+    #: 기록이고, 지우면 「왜 예약이 사라졌지」에 답할 수 없다.
+    UNAPPROVED = "UNAPPROVED"
     RETURNED = "RETURNED"
 
 

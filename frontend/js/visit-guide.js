@@ -224,7 +224,13 @@ function guideMissingSaying(error) {
       if (timeline.entries[i].kind === "CHECK_IN") answer = timeline.entries[i];
     }
 
+    /* 철회는 의사만, 그리고 **승인된 뒤에만** 보인다. 아직 승인 안 한 것에
+       철회 버튼이 있으면 무엇을 되돌리는지가 흐려진다. */
+    var canUnapprove =
+      ((me && me.roles) || []).indexOf("doctor") !== -1 && !!guide && guide.status === "SCHEDULED_TO_SEND";
+
     body.innerHTML = statusScreenHtml({
+      canUnapprove: canUnapprove,
       entries: timeline.entries,
       checkInSaying: answer
         ? timelineClock(answer.at) + " 응답 · " + (answer.detail || "")
@@ -232,6 +238,44 @@ function guideMissingSaying(error) {
       /* **화면이 따로 셈하지 않는다.** 승인이 잡아 둔 날짜를 그대로 쓴다 —
          두 곳이 셈하면 어느 쪽이 진짜인지 알 수 없다. */
       messages: timeline.messages || [],
+    });
+
+    wireUnapprove();
+  }
+
+  /* 승인 철회 — 승인했는데 잘못된 것을 발견했을 때. */
+  function wireUnapprove() {
+    var back = el("status-unapprove");
+    if (!back) return;
+
+    back.addEventListener("click", function () {
+      var wantedId = visitId;
+      if (!confirm("승인을 거두면 예약된 문자가 모두 꺼집니다. 철회하시겠습니까?")) return;
+
+      back.disabled = true;
+      back.textContent = "철회하는 중…";
+
+      doctorApi
+        .unapprove(wantedId)
+        .then(function () {
+          /* 사이에 다른 환자로 옮겼으면 그 화면을 건드리지 않는다 */
+          if (visitId !== wantedId) return;
+          say("승인을 거뒀습니다 — 예약된 문자를 껐습니다");
+          loadGuide(wantedId);
+          loadTimeline(wantedId);
+          /* 목록의 상태도 「발송 대기」에서 「승인 요청」으로 되돌아가야 한다 */
+          document.dispatchEvent(new CustomEvent("visit:changed"));
+        })
+        .catch(function (err) {
+          if (visitId !== wantedId) return;
+          back.disabled = false;
+          back.textContent = "승인 철회";
+          say(
+            err && err.code === "GUIDE_ALREADY_SENT"
+              ? "이미 환자에게 나간 문자가 있어 철회할 수 없습니다 — 새 안내를 보내 주세요"
+              : "철회하지 못했습니다. 잠시 뒤 다시 시도해 주세요",
+          );
+        });
     });
   }
 
@@ -339,6 +383,7 @@ function guideMissingSaying(error) {
           say("스탭에게 되돌렸습니다");
           loadGuide(wantedId);
           loadTimeline(wantedId);
+          document.dispatchEvent(new CustomEvent("visit:changed"));
         })
         .catch(function (error) {
           if (visitId !== wantedId) return;
@@ -358,6 +403,9 @@ function guideMissingSaying(error) {
         say("승인했습니다 — 발송이 예약되었습니다");
         loadGuide(wantedId);
         loadTimeline(wantedId);
+        /* 목록의 그 줄이 「승인 요청」에서 「발송 대기」로 옮겨 가야 한다.
+           옮기는 것은 골격 몫이다 — 여기서는 바뀌었다고만 알린다. */
+        document.dispatchEvent(new CustomEvent("visit:changed"));
       })
       .catch(function (error) {
         if (visitId !== wantedId) return;
@@ -389,6 +437,7 @@ function guideMissingSaying(error) {
       .then(function () {
         if (visitId !== wantedId) return;
         say("의사에게 넘겼습니다 — 승인을 기다립니다");
+        document.dispatchEvent(new CustomEvent("visit:changed"));
         return loadGuide(wantedId);
       })
       .catch(function (error) {

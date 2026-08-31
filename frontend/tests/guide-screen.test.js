@@ -539,3 +539,40 @@ test("**두 탭 모두에 알린다** — 한쪽에만 쓰면 결과가 어디�
   assert.ok(body.includes("guide-say"), "안내문 탭에 안 쓴다");
   assert.ok(body.includes("final-say"), "최종 확인 탭에 안 쓴다");
 });
+
+/* ── 승인 철회 ─────────────────────────────────────────────────────────
+ *
+ * 승인 버튼이 「그려지기만 하고 받는 자리가 없었던」 일이 있었다. 철회도
+ * 같은 함정을 지난다 — 버튼은 문자열이고, 손잡이는 다른 함수에 있다.
+ */
+test("**승인 철회 버튼이 실제로 눌린다**", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  const at = code.indexOf('el("status-unapprove")');
+  assert.ok(at !== -1, "철회 버튼을 집는 자리가 없다 — 눌러도 아무 일이 없다");
+
+  const around = code.slice(at, at + 1600);
+  assert.match(around, /addEventListener\("click"/, "누름을 안 받는다");
+  assert.match(around, /doctorApi\s*\.?\s*unapprove\(/, "서버에 안 보낸다");
+  assert.ok(around.includes("loadTimeline("), "거둔 뒤 현황을 다시 안 읽는다");
+  assert.ok(
+    around.includes("visit:changed"),
+    "목록에 안 알린다 — 발송 대기에 남은 채로 보인다",
+  );
+});
+
+test("철회는 의사만, 승인된 뒤에만 보인다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  const at = code.indexOf("canUnapprove");
+  assert.ok(at !== -1, "보일지 말지를 정하는 자리가 없다");
+  const around = code.slice(at, at + 400);
+  assert.match(around, /doctor/, "스탭에게도 보인다");
+  assert.match(around, /SCHEDULED_TO_SEND/, "승인 전에도 보인다 — 무엇을 거두는지 흐려진다");
+});
+
+test("이미 나간 문자로 막히면 그 이유를 말한다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  assert.ok(
+    code.includes("GUIDE_ALREADY_SENT"),
+    "서버가 준 이유를 안 읽는다 — 「알 수 없는 오류」만 뜬다",
+  );
+});

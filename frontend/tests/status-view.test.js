@@ -224,3 +224,74 @@ test("**화면이 서버의 발송 목록을 넘긴다**", () => {
   const code = codeOnly(read("js/visit-guide.js"));
   assert.ok(code.includes("messages: timeline.messages"), "서버가 준 목록을 안 넘긴다");
 });
+
+/* ── 세 블록이 블록으로 보이는가 ────────────────────────────────────────
+ *
+ * 회색 바닥 위에 테두리만 있으면 카드가 바닥에 잠긴다. 흰 바탕이 있어야
+ * 블록으로 읽힌다 — 화면에서 「배경이 없다」로 되돌아온 자리다.
+ */
+test("현황의 세 블록은 흰 바탕을 가진다", () => {
+  const css = read("css/blocks.css");
+  ["st__send", "st__side", "tl"].forEach((name) => {
+    const body = rule(css, "." + name);
+    assert.match(
+      body,
+      /background:\s*var\(--card\)/,
+      `.${name} 에 바탕이 없다 — 회색 바닥에 잠긴다`
+    );
+    assert.match(body, /border:\s*1px solid var\(--line\)/, `.${name} 에 테두리가 없다`);
+  });
+});
+
+test("진료 처리 이력 줄은 카드 안쪽 여백을 가진다", () => {
+  /* 카드에는 padding 이 없다 — 줄이 스스로 좌우를 벌리지 않으면 글자가
+     테두리에 붙는다. */
+  const body = rule(read("css/blocks.css"), ".tl__row");
+  const pad = /padding:\s*\d+px\s+(\d+)px/.exec(body);
+  assert.ok(pad, ".tl__row 에 좌우 여백이 안 적혀 있다");
+  assert.ok(Number(pad[1]) > 0, "좌우 여백이 0 이다 — 글자가 테두리에 붙는다");
+});
+
+test("환자 액션 블록에는 제목이 있다", () => {
+  const code = codeOnly(read("js/status-view.js"));
+  assert.ok(
+    code.includes("환자 액션 현황"),
+    "블록에 이름이 없다 — 안내문 읽음과 확인 문자 응답이 무엇의 현황인지 안 보인다"
+  );
+  /* 제목이 카드 머리띠로 그려져야 발송·예정 블록과 같은 모양이 된다 */
+  const at = code.indexOf("환자 액션 현황");
+  assert.match(
+    code.slice(at - 120, at),
+    /st__head/,
+    "제목이 머리띠(.st__head)가 아니다 — 왼쪽 블록과 모양이 어긋난다"
+  );
+  assert.ok(code.includes("st__body"), "머리띠를 넣었으면 본문에 여백을 주는 칸이 있어야 한다");
+});
+
+/* ── 승인 철회 버튼 ─────────────────────────────────────────────────── */
+
+test("승인된 뒤에는 발송 블록 머리에 철회 버튼이 선다", () => {
+  const { statusScreenHtml } = box();
+  const view = { entries: [], messages: [], checkInSaying: "아직 없음" };
+
+  const off = statusScreenHtml(view);
+  assert.ok(!off.includes('id="status-unapprove"'), "승인 전인데 철회 버튼이 있다");
+
+  const on = statusScreenHtml(Object.assign({ canUnapprove: true }, view));
+  assert.ok(on.includes('id="status-unapprove"'), "철회 버튼이 안 그려진다 — 누를 것이 없다");
+  assert.ok(on.includes("승인 철회"), "버튼에 이름이 없다");
+
+  /* 발송·예정 머리띠 **안**이어야 한다 — 무엇을 거두는지가 거기 적혀 있다 */
+  const head = on.indexOf('class="st__head"');
+  assert.ok(head !== -1 && on.indexOf('id="status-unapprove"') > head, "머리띠 밖에 있다");
+  assert.ok(
+    on.indexOf('id="status-unapprove"') < on.indexOf("</div>", head),
+    "발송 블록 머리띠를 벗어났다",
+  );
+});
+
+test("철회 버튼은 머리띠 오른쪽 끝으로 밀린다", () => {
+  const body = rule(read("css/blocks.css"), ".st__act");
+  assert.match(body, /margin-left:\s*auto/, "제목에 붙어 버린다 — 판 머리의 수정 버튼과 어긋난다");
+  assert.match(rule(read("css/blocks.css"), ".st__head"), /display:\s*flex/, "머리띠가 줄이 아니다");
+});

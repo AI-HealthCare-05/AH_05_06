@@ -37,6 +37,7 @@ from app.models.visits import (
     GuideEventType,
     GuideMessage,
     GuideMessageKind,
+    GuideMessageStatus,
     GuideSection,
     GuideSectionKey,
     GuideStatus,
@@ -392,11 +393,18 @@ class GuideService:
         있어서(`return_to_staff` → 다시 `approve`), 그때마다 새로 만들면
         환자가 같은 문자를 두 번 받는다. 표의 유니크가 마지막으로 막지만,
         여기서 먼저 본다 — 예외로 막으면 승인 자체가 실패한다.
+
+        **거뒀다가 다시 승인하면 껐던 줄을 되살린다.** 유니크 때문에 새로
+        만들 수 없기도 하고, 껐던 것도 기록이라 지우지 않기 때문이다.
         """
-        already = {
-            m.kind
-            for m in await GuideMessage.filter(guide_document_id=guide.guide_document_id).using_db(connection).all()
-        }
+        live = await GuideMessage.filter(guide_document_id=guide.guide_document_id).using_db(connection).all()
+
+        # **껐던 줄은 「이미 있다」가 아니다.** 승인을 거두면 예약을 CANCELED 로
+        # 꺼 두는데, 그 줄까지 있는 것으로 세면 다시 승인해도 꺼진 채 남는다 —
+        # 화면은 「발송 예정」이라 적고 실제로는 아무것도 안 나간다. 유니크가
+        # (안내문, 종류) 라 새로 만들 수도 없어서, 여기서 되살린다.
+        already = {m.kind for m in live if m.status != GuideMessageStatus.CANCELED}
+        revive = {m.kind: m for m in live if m.status == GuideMessageStatus.CANCELED}
 
         rows: list[tuple[GuideMessageKind, datetime]] = []
         if GuideMessageKind.GUIDE not in already:
@@ -421,6 +429,16 @@ class GuideService:
 
         for kind, at in rows:
             if at is None:
+                continue
+            back = revive.get(kind)
+            if back is not None:
+                back.status = GuideMessageStatus.SCHEDULED
+                back.scheduled_at = at
+                back.failure_code = None
+                await back.save(
+                    update_fields=["status", "scheduled_at", "failure_code", "updated_at"],
+                    using_db=connection,
+                )
                 continue
             await GuideMessage.create(
                 guide_document=guide,
@@ -470,6 +488,68 @@ class GuideService:
         """
         local = started.astimezone(config.TIMEZONE)
         return (local + timedelta(days=days)).replace(hour=CHECK_HOUR, minute=0, second=0, microsecond=0)
+
+    async def unapprove(self, actor, visit_id: int) -> GuideDocument:
+        """승인을 **거둔다** — 승인했는데 잘못된 것을 발견했을 때.
+
+        의사만 한다. 승인한 사람이 거두는 것이라 같은 권한이다.
+
+        **이미 나간 문자가 있으면 거두지 않는다.** 환자가 이미 받았는데
+        「승인 안 한 것」으로 되돌리면, 화면에 안 보이는 글이 환자 손에 있는
+        상태가 된다 — 그때 할 일은 철회가 아니라 새 안내를 보내는 것이다.
+
+        거두면 **예약된 문자를 끈다.** 줄을 지우지 않고 `CANCELED` 로 둔다 —
+        껐다는 것도 기록이다. 나중에 「왜 안 갔지」를 물을 때 답이 있어야 한다.
+
+        상태는 `APPROVAL_PENDING` 으로 돌아간다. 스탭까지 되돌리지 않는 이유는,
+        **잘못을 본 사람이 의사이기 때문**이다 — 스탭에게 넘기려면 사유를 적어
+        `return_to_staff` 로 보낸다.
+        """
+        self._require_doctor(actor)
+
+        async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+
+            if guide.status is not GuideStatus.SCHEDULED_TO_SEND:
+                raise ApiError("GUIDE_NOT_SCHEDULED", 409, "승인된 안내문만 철회할 수 있습니다.")
+
+            sent = (
+                await GuideMessage.filter(
+                    guide_document_id=guide.guide_document_id,
+                    status=GuideMessageStatus.SENT,
+                )
+                .using_db(connection)
+                .exists()
+            )
+            if sent:
+                raise ApiError(
+                    "GUIDE_ALREADY_SENT",
+                    409,
+                    "이미 환자에게 나간 문자가 있어 철회할 수 없습니다. 새 안내를 보내 주세요.",
+                )
+
+            guide.status = GuideStatus.APPROVAL_PENDING
+            guide.approved_by = None
+            guide.approved_at = None
+            guide.scheduled_at = None
+            await guide.save(
+                update_fields=["status", "approved_by", "approved_at", "scheduled_at", "updated_at"],
+                using_db=connection,
+            )
+
+            # 예약을 끈다. **지우지 않는다** — 껐다는 것도 기록이다.
+            await GuideMessage.filter(
+                guide_document_id=guide.guide_document_id,
+                status=GuideMessageStatus.SCHEDULED,
+            ).using_db(connection).update(status=GuideMessageStatus.CANCELED)
+
+            await GuideEvent.create(
+                guide_document=guide,
+                event_type=GuideEventType.UNAPPROVED,
+                actor_id=actor.user_id,
+                using_db=connection,
+            )
+        return guide
 
     async def return_to_staff(self, actor, visit_id: int, reason: str) -> GuideDocument:
         """스탭에 되돌린다. **사유가 없으면 되돌리지 않는다.**
