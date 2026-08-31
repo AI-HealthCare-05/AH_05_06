@@ -392,6 +392,7 @@ body.shell {
    그만큼 줄어 1280×800 에서 지난 방문이 잘린다. */
 .patient-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 18px;
   padding-bottom: var(--s-12);
@@ -403,12 +404,8 @@ body.shell {
   min-width: 0;
 }
 
-/* 좁으면 탭이 아래로 내려간다 — 이름을 밀어내는 것보다 낫다. */
-@media (max-width: 1100px) {
-  .patient-head {
-    flex-wrap: wrap;
-  }
-}
+/* 자리가 모자라면 탭이 아래로 내려간다 — 이름을 밀어내는 것보다 낫다.
+   창 폭으로 자르지 않는다. 좌측 목록을 접으면 같은 창에서도 자리가 늘어난다. */
 
 .patient-head__name {
   font-size: 22px;

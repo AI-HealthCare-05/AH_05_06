@@ -482,21 +482,15 @@
  */
 .reg__cols {
   display: flex;
+  flex-wrap: wrap;
   gap: 26px;
   align-items: flex-start;
 }
 
 .reg__cols > .box {
-  flex: 1;
+  flex: 1 1 340px;
   min-width: 0;
   margin-top: var(--s-16);
-}
-
-/* 좁은 화면에서는 세로로 돌아간다 — 2단을 우겨넣으면 둘 다 못 읽는다. */
-@media (max-width: 1100px) {
-  .reg__cols {
-    display: block;
-  }
 }
 
 /* 여백을 와이어프레임 값으로 줄인다 — 제목줄 `14px 26px 12px`, 본문 `14px 26px`.

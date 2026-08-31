@@ -89,15 +89,6 @@
   font-size: 10px; /* 와이어프레임 원문 */
 }
 
-.tab[aria-selected="true"] {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.tab:hover:not([aria-disabled="true"]) {
-  color: var(--ink);
-}
-
 .tab:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -242,20 +233,18 @@
  * (지난 방문 · 발송 이력). 세로로 쌓으면 지난 방문을 보려고 스크롤해야 하는데,
  * 그건 오늘 값을 채우면서 곁눈질할 자리다.
  */
+/* **창 폭이 아니라 「들어갈 자리가 있는가」로 정한다.** 화면 크기로 자르면
+   숫자를 하나 정해야 하는데, 좌측 목록이 접히거나 펴지면 본문 폭이 달라져서
+   같은 창에서도 답이 바뀐다. `flex-basis` 를 주면 자리가 없을 때 알아서
+   접힌다 — 340 + 26 + 340 = 706px 아래에서 세로가 된다. */
 .cols2 {
   display: flex;
+  flex-wrap: wrap;
   gap: 26px;
   align-items: flex-start;
 }
 
 .cols2__side {
-  flex: 1;
+  flex: 1 1 340px;
   min-width: 0;
-}
-
-/* 좁으면 세로로 돌아간다 — 2단을 우겨넣으면 표가 잘린다. */
-@media (max-width: 1100px) {
-  .cols2 {
-    display: block;
-  }
 }

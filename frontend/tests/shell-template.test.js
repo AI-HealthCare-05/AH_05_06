@@ -277,11 +277,18 @@ test("①과 ②가 그 안에 다 들어 있다 — 하나만 감싸면 2단이
   assert.ok(inside.includes("② 환자 정보"), "②가 2단 밖에 있다 — 칸을 일찍 닫았다");
 });
 
-test("좁은 화면에서는 세로로 돌아간다 — 2단을 우겨넣으면 둘 다 못 읽는다", () => {
-  const css = read("css/patients.css");
-  const at = css.indexOf("@media (max-width: 1100px)");
-  assert.notEqual(at, -1, "좁은 화면 규칙이 없다");
-  assert.match(css.slice(at, at + 160), /display:\s*block/, "좁아도 2단을 고집한다");
+test("**자리가 없으면 알아서 세로로 돌아간다** — 창 폭으로 자르지 않는다", () => {
+  /* 화면 크기로 자르면 숫자를 하나 정해야 하는데, 좌측 목록이 접히거나 펴지면
+     본문 폭이 달라져 같은 창에서도 답이 바뀐다. `flex-wrap` + `flex-basis` 면
+     자리가 없을 때만 접힌다. */
+  for (const [file, sel] of [["css/patients.css", ".reg__cols"], ["css/detail.css", ".cols2"]]) {
+    const box = rule(read(file), sel);
+    assert.match(box, /flex-wrap:\s*wrap/, `${sel} 이 접히지 못한다 — 칸이 찌그러진다`);
+  }
+  for (const [file, sel] of [["css/patients.css", ".reg__cols > .box"], ["css/detail.css", ".cols2__side"]]) {
+    const side = rule(read(file), sel);
+    assert.match(side, /flex:\s*1 1 340px/, `${sel} 에 최소 폭이 없다 — 접힐 때를 모른다`);
+  }
 });
 
 test("**상태 칩 높이는 토큰 결정을 지킨다** — 와이어프레임 11px 보다 크다", () => {
