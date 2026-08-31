@@ -30,11 +30,16 @@
   if (!panel) return; /* 가드 */
 
   /* ── FAB ─── */
-  var fab = Fab({ defaultBottom: 88, defaultRight: 20 }, openPanel);
+  /* .app의 max-width(430px)를 기준으로 오른쪽 여백을 계산한다.
+   * 뷰포트가 430px보다 넓으면 앱 컨테이너 오른쪽 끝에서 20px 안쪽에 배치한다. */
+  var _vw = window.innerWidth;
+  var _appRight = Math.round(Math.max(20, (_vw - 430) / 2 + 20));
+  var fab = Fab({ defaultBottom: 88, defaultRight: _appRight }, openPanel);
   document.body.appendChild(fab.el);
 
   /* ── 열기 / 닫기 ────────────────────────── */
   function openPanel() {
+    panel.style.visibility = 'visible';
     backdrop.classList.add('chat-backdrop--open');
     panel.classList.add('chat-panel--open');
     document.body.style.overflow = 'hidden';
@@ -46,6 +51,11 @@
     backdrop.classList.remove('chat-backdrop--open');
     panel.classList.remove('chat-panel--open');
     document.body.style.overflow = '';
+    setTimeout(function () {
+      if (!panel.classList.contains('chat-panel--open')) {
+        panel.style.visibility = '';
+      }
+    }, 320);
   }
 
   backdrop.addEventListener('click', closePanel);

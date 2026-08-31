@@ -56,6 +56,7 @@ function Sheet(opts) {
   });
 
   function open() {
+    el.style.visibility = 'visible';
     backdrop.classList.add('pdf-sheet-backdrop--open');
     el.classList.add('pdf-sheet--open');
     document.body.style.overflow = 'hidden';
@@ -64,6 +65,11 @@ function Sheet(opts) {
     backdrop.classList.remove('pdf-sheet-backdrop--open');
     el.classList.remove('pdf-sheet--open');
     document.body.style.overflow = '';
+    setTimeout(function () {
+      if (!el.classList.contains('pdf-sheet--open')) {
+        el.style.visibility = '';
+      }
+    }, 320);
   }
 
   return { el: el, backdrop: backdrop, open: open, close: close };
