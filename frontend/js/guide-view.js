@@ -130,10 +130,13 @@ function guideSectionHtml(section, canEdit, editingKey) {
       '<button class="button-ghost button-ghost--sm" type="button" data-edit-cancel="1">취소</button>' +
       "</div>";
   } else {
-    /* **열쇠는 항목 이름이 아니라 `key` 다.** 서버가 `PATCH /guide/sections/{key}`
-       로 받는데 전에는 한글 제목을 담고 있어서, 눌러도 보낼 데가 없었다. */
-    tail =
-      '<button class="block__edit" type="button" data-edit="' + esc(section.key) + '">수정</button>';
+    /* **「수정」 버튼은 여기 없다.** 판 머리 오른쪽 끝으로 올렸다
+       (`guideHeadEditHtml` — 와이어프레임 S1-11 · D1-1 이 그 자리에 둔다).
+       항목마다 버튼이 있으면 한 탭에 둘이 뜨는데(주의사항 + 응급), 그중
+       하나는 잠겨 있어서 「왜 하나만 눌리지」가 된다.
+
+       왜 못 고치는지는 여기 그대로 둔다 — 그건 그 항목의 사정이다. */
+    tail = "";
   }
 
   return (
@@ -290,6 +293,28 @@ function guidePreviewHtml(sections, current) {
   );
 }
 
+/* 판 머리 오른쪽 끝의 「수정」 — 와이어프레임 S1-11 · D1-1.
+ *
+ * **이 탭의 주인 항목**을 고친다. 주의사항 탭에는 응급 문장이 함께 오는데
+ * 그건 식약처 기준이라 못 고친다 — 고칠 수 있는 것은 탭 이름이 가리키는
+ * 항목 하나뿐이다.
+ *
+ * 못 고치는 상황에서는 아무것도 안 그린다. 이유는 항목 블록이 말한다 —
+ * 머리에도 적으면 같은 말이 두 번 뜬다.
+ */
+function guideHeadEditHtml(sections, current, canEdit, editingKey) {
+  if (canEdit === false || editingKey === current) return "";
+
+  var own = null;
+  var rows = guideSectionsOf(sections, current);
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].key === current) own = rows[i];
+  }
+  if (!own || own.locked || GUIDE_NOT_IMPLEMENTED[own.key]) return "";
+
+  return '<button class="gs__edit" type="button" data-edit="' + esc(own.key) + '">수정</button>';
+}
+
 function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
   var title = GUIDE_SCREEN_TITLE[mode] || GUIDE_SCREEN_TITLE.guide;
 
@@ -327,6 +352,7 @@ function guideBodyHtml(sections, current, canEdit, editingKey) {
     '<div class="gs__paneHead">' +
     '<span class="gs__paneTitle">원문</span>' +
     '<span class="gs__paneNote">환자 화면과 같은 차례</span>' +
+    guideHeadEditHtml(sections, current, canEdit, editingKey) +
     "</div>" +
     '<div class="gs__paneBody">' +
     guidePanelHtml(sections, current, canEdit, editingKey) +

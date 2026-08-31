@@ -197,14 +197,59 @@ test("**모양이 두 화면 모두에 닿는다** — 한쪽 파일에 두면 �
 
 /* ── 고치기 ──────────────────────────────────────────────────────────── */
 
+test("**「수정」은 판 머리 오른쪽 끝에 있다** — 항목 블록 안이 아니다", () => {
+  const { guideScreenHtml, guideSectionHtml } = box();
+  const html = guideScreenHtml(SECTIONS, "medication", "guide", true, null);
+
+  /* 「원문 · 환자 화면과 같은 차례」와 같은 줄이다 (와이어프레임 S1-11) */
+  const headAt = html.indexOf("환자 화면과 같은 차례");
+  const editAt = html.indexOf('data-edit="medication"');
+  const bodyAt = html.indexOf("gs__paneBody");
+  assert.ok(editAt !== -1, "수정 버튼이 없다");
+  assert.ok(headAt < editAt && editAt < bodyAt, "수정이 판 머리 줄에 없다");
+
+  /* **오른쪽 끝**이다 — 원문이 `margin-left:auto` 로 민다. 왼쪽에 붙으면
+     제목·곁말과 뭉쳐서 무엇이 버튼인지 안 보인다. */
+  const css = codeOnly(read("css/blocks.css"));
+  assert.match(rule(css, ".gs__edit"), /margin-left:\s*auto/, "수정이 오른쪽 끝으로 안 밀린다");
+
+  /* 항목 블록에는 없어야 한다 — 한 탭에 항목이 둘일 때 버튼도 둘이 된다 */
+  assert.ok(
+    !guideSectionHtml(SECTIONS[0], true, null).includes("data-edit="),
+    "항목 블록에도 수정 버튼이 남았다",
+  );
+});
+
 test("**열쇠는 항목 이름이 아니라 `key` 다** — 서버가 그것으로 받는다", () => {
-  const { guideSectionHtml } = box();
-  const html = guideSectionHtml(SECTIONS[0], true, null);
+  const { guideHeadEditHtml } = box();
+  const html = guideHeadEditHtml(SECTIONS, "medication", true, null);
 
   /* 전에는 한글 제목을 담고 있어서 눌러도 보낼 데가 없었다.
      서버는 `PATCH /guide/sections/{key}` 로 받는다. */
   assert.ok(html.includes('data-edit="medication"'), "고치기 열쇠가 key 가 아니다");
-  assert.ok(!html.includes('data-edit="복약지도"'), "한글 제목을 열쇠로 쓴다");
+  assert.ok(!html.includes("복약지도"), "한글 제목을 열쇠로 쓴다");
+});
+
+test("**한 탭에 수정 버튼은 하나다** — 주의사항 탭에는 응급이 함께 온다", () => {
+  const { guideScreenHtml, guideHeadEditHtml } = box();
+
+  const html = guideScreenHtml(SECTIONS, "caution", "guide", true, null);
+  const count = (html.match(/data-edit="/g) || []).length;
+  assert.equal(count, 1, `수정 버튼이 ${count}개다 — 하나는 잠긴 응급 문장이다`);
+
+  /* 그리고 그 하나는 **탭의 주인**이어야 한다 */
+  assert.ok(guideHeadEditHtml(SECTIONS, "caution", true, null).includes('data-edit="caution"'));
+});
+
+test("**못 고치는 자리에는 안 그린다** — 이유는 항목 블록이 말한다", () => {
+  const { guideHeadEditHtml } = box();
+
+  /* 응급은 식약처 기준 문장이라 잠겨 있다 */
+  assert.equal(guideHeadEditHtml(SECTIONS, "emergency", true, null), "");
+  /* 의사 차례가 아니면 */
+  assert.equal(guideHeadEditHtml(SECTIONS, "medication", false, null), "");
+  /* 이미 고치는 중이면 — 저장·취소가 아래 있다 */
+  assert.equal(guideHeadEditHtml(SECTIONS, "medication", true, "medication"), "");
 });
 
 test("**제자리에서 고친다** — 창을 띄우면 미리보기가 가려진다", () => {
