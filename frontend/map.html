@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>화면 지도 · 복약 안내 도우미</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/frames.css" />
+  </head>
+  <body class="frames">
+    <!-- 화면 지도 — KEY-234
+         와이어프레임 2.3.1 의 64프레임을 한 자리에 놓고, 각 프레임이 지금
+         어디까지 됐는지와 이번 주에 어디까지 갈지를 나란히 보여 준다.
+
+         「우리가 어디까지 개발하고 있는 건지 계속 놓치고 있다」(8/28 팀 논의)에
+         대한 답이다. 표 하나(js/frames.js)만 읽으므로 화면이 구현되면
+         그 줄의 level 만 고치면 여기도 같이 바뀐다. -->
+    <div class="frames__inner">
+      <h1 class="frames__title">화면 지도</h1>
+      <p class="frames__sub">
+        와이어프레임 2.3.1 · 64프레임 —
+        <code>docs/wireframes/*.html</code> 의 <code>data-screen-label</code> 기준
+      </p>
+
+      <p class="frames__tally-label">지금</p>
+      <div class="frames__tally" id="tally-now"></div>
+
+      <p class="frames__tally-label">이번 주 목표</p>
+      <div class="frames__tally" id="tally-goal"></div>
+
+      <div id="areas"></div>
+
+      <p class="frames__legend">
+        <b>완전 구현</b> 실서버로 그 화면의 핵심 동작이 완결된다 ·
+        <b>일부 동작</b> 화면과 데이터는 있으나 일부가 안 된다 ·
+        <b>화면 없음</b> 화면이 없거나 잠겨 있다<br />
+        <code>B1</code>~<code>B8</code> 은 구조 진단 보고서의 시연 차단 항목 번호다.
+      </p>
+    </div>
+
+    <script src="/js/frames.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        function escape(text) {
+          return String(text == null ? "" : text)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        }
+
+        function badge(level) {
+          return (
+            '<span class="frames__badge frames__badge--' +
+            level +
+            '">' +
+            escape(FRAME_LEVELS[level]) +
+            "</span>"
+          );
+        }
+
+        /* 「지금」과 「목표」를 같은 모양으로 센다 — 한쪽만 보이면 진척판이
+           사실과 달라지거나(목표만) 어디로 가는지 안 보인다(지금만). */
+        function renderTally(elementId, key) {
+          var box = document.getElementById(elementId);
+          if (!box) return;
+          var count = { 1: 0, 2: 0, 3: 0 };
+          var i;
+          for (i = 0; i < FRAMES.length; i++) count[FRAMES[i][key]]++;
+
+          var html = '<div class="frames__count"><b>' + FRAMES.length + "</b>프레임</div>";
+          for (i = 1; i <= 3; i++) {
+            html +=
+              '<div class="frames__count"><b>' +
+              count[i] +
+              "</b>" +
+              escape(FRAME_LEVELS[i]) +
+              "</div>";
+          }
+          box.innerHTML = html;
+        }
+
+        function renderAreas() {
+          var box = document.getElementById("areas");
+          if (!box) return;
+
+          var byArea = {};
+          for (var i = 0; i < FRAMES.length; i++) {
+            var frame = FRAMES[i];
+            if (!byArea[frame.area]) byArea[frame.area] = [];
+            byArea[frame.area].push(frame);
+          }
+
+          var order = ["medic", "patient", "admin"];
+          var html = "";
+          for (var a = 0; a < order.length; a++) {
+            var rows = byArea[order[a]] || [];
+            if (!rows.length) continue;
+
+            html +=
+              '<h2 class="frames__area">' +
+              escape(FRAME_AREAS[order[a]]) +
+              "<span>" +
+              rows.length +
+              "프레임</span></h2><table class=\"frames__table\"><tbody>";
+
+            for (var r = 0; r < rows.length; r++) {
+              var f = rows[r];
+              /* 3단계는 안내 화면으로, 나머지는 실제 화면으로 보낸다. */
+              var href = f.url || "/frame.html?id=" + encodeURIComponent(f.id);
+              var note = f.blocker || (f.level === 3 ? f.role : "");
+
+              html +=
+                '<tr><td class="frames__id">' +
+                escape(f.id) +
+                '</td><td><a href="' +
+                escape(href) +
+                '">' +
+                escape(f.name) +
+                "</a>" +
+                (note ? '<div class="frames__note">' + escape(note) + "</div>" : "") +
+                '</td><td class="frames__level">' +
+                badge(f.level) +
+                (f.target < f.level
+                  ? '<span class="frames__arrow">→</span>' + badge(f.target)
+                  : "") +
+                "</td></tr>";
+            }
+            html += "</tbody></table>";
+          }
+          box.innerHTML = html;
+        }
+
+        renderTally("tally-now", "level");
+        renderTally("tally-goal", "target");
+        renderAreas();
+      })();
+    </script>
+  </body>
+</html>
