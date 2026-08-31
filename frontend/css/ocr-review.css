@@ -959,3 +959,13 @@
 .state--strip .state__acts {
   margin-top: var(--s-8);
 }
+
+/* 항목 이름과 상태를 **한 줄로** 둔다. 「1회량 ⚠ 인식 / 실패」처럼 접히면
+   값 칸이 아래로 밀려 줄마다 높이가 달라지고, 열이 안 맞아 훑기 어렵다. */
+.field__name {
+  white-space: nowrap;
+}
+
+.field__tag {
+  white-space: nowrap;
+}

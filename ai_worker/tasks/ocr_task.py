@@ -2,13 +2,19 @@
 
 처리 흐름:
   CLOVA 활성                  : 파일 읽기 → CLOVA 호출 → OcrResult/OcrDocumentText/OcrField 저장 → COMPLETED
-  CLOVA 활성 + 필수 필드 누락 : REQUIRED_FIELD_MISSING 설정 → fixture fallback 또는 FAILED
+  CLOVA 활성 + 필수 필드 누락 : **빈 줄로 저장하고 COMPLETED** — 화면이 물음표로 세우고 사람이 채운다
   CLOVA 실패                  : CLOVA_API_ERROR 설정 → fixture fallback 또는 FAILED
   CLOVA 비활성                : OCR_NOT_CONFIGURED 설정 → fixture fallback 또는 FAILED
   파일/DB 오류                : OcrJob.status → FAILED
 
-  필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS) 중 하나라도 누락되면
-  CLOVA 호출 자체가 성공해도 COMPLETED로 처리하지 않는다 (KEY-163 §4, KEY-187).
+  필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS) 중 못 읽은 것은
+  **값이 빈 OcrField 로 남긴다** (KEY-163 §4, KEY-187).
+
+  예전에는 하나라도 없으면 작업 전체를 FAILED 로 보냈다. 그러면 OcrResult
+  자체가 안 생겨서 화면에 채워 넣을 항목 목록이 없었고, 스탭은 「판독하지
+  못했습니다」 앞에서 막혔다 — 사진은 멀쩡한데 표 한 칸을 못 읽어서 진료가
+  멈추는 모양이다. 빈 줄을 남기면 화면이 물음표로 세우고 사람이 눈으로 읽어
+  채운다. 못 읽은 횟수는 로그와 관측 줄(error_code)에 남는다.
 
 필드 파싱:
   와이어프레임 S1-6~9 근거로 문서 유형별 핵심 필드를 추출한다 (field_extractor.py).
@@ -81,25 +87,26 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         try:
             clova_results = await _call_clova_for_documents(job_documents, doc_map)
             clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
-            saved = await _save_clova_result(job, job_documents, clova_results)
-            if saved:
-                _observe(ocr_job_id=ocr_job_id, mode="clova", t0=t0, error_code=None, clova_elapsed_ms=clova_elapsed_ms)
-            else:
-                job.failure_code = "REQUIRED_FIELD_MISSING"
-                await job.save(update_fields=("failure_code",))
-                used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
+            missing = await _save_clova_result(job, job_documents, clova_results)
+            if missing:
+                # **작업은 성공이다.** 못 읽은 항목은 빈 줄로 남아 있고, 화면이
+                # 그 자리를 물음표로 세워 사람이 채운다. 판독은 거들 뿐이라,
+                # 표 한 칸을 못 읽었다고 진료를 멈추지 않는다.
+                #
+                # 다만 **얼마나 자주 못 읽는지는 남긴다.** 이것이 안 보이면
+                # 추출기가 나빠지는 것을 아무도 모른 채 스탭 손이 늘어난다.
                 default_logger.warning(
-                    "필수 OCR 필드 누락 → %s — ocr_job_id=%s",
-                    "fixture fallback" if used_fixture else "FAILED",
+                    "필수 OCR 필드 누락 — 빈 줄로 저장 · ocr_job_id=%s, fields=%s",
                     ocr_job_id,
+                    ",".join(sorted(missing)),
                 )
-                _observe(
-                    ocr_job_id=ocr_job_id,
-                    mode="fixture" if used_fixture else "failed",
-                    t0=t0,
-                    error_code="REQUIRED_FIELD_MISSING",
-                    clova_elapsed_ms=clova_elapsed_ms,
-                )
+            _observe(
+                ocr_job_id=ocr_job_id,
+                mode="clova",
+                t0=t0,
+                error_code="REQUIRED_FIELD_MISSING" if missing else None,
+                clova_elapsed_ms=clova_elapsed_ms,
+            )
         except ClovaOcrError as exc:
             job.failure_code = "CLOVA_API_ERROR"
             await job.save(update_fields=("failure_code",))
@@ -200,18 +207,35 @@ async def _save_clova_result(
     job: OcrJob,
     job_documents: list[OcrJobDocument],
     clova_results: dict[int, ClovaOcrResult],
-) -> bool:
+) -> set[str]:
     """CLOVA 결과를 OcrResult / OcrDocumentText / OcrField로 트랜잭션 안에 저장한다.
 
-    EMR 문서가 포함된 경우 필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS)가
-    모두 추출되어야 COMPLETED로 처리한다. 하나라도 누락이면 False를 반환한다.
+    EMR 문서가 포함됐는데 필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS)를
+    못 읽었으면 **값이 빈 줄을 대신 남기고** 저장을 계속한다.
+    못 읽은 필드 이름을 돌려준다 (없으면 빈 집합).
+
+    예전에는 여기서 False를 돌려주고 작업 전체를 FAILED로 보냈다. 그러면
+    OcrResult 자체가 안 생겨서 화면에 채워 넣을 항목 목록이 없었고, 스탭은
+    「판독하지 못했습니다」 한 판 앞에서 막혔다 — 사진은 멀쩡한데 표 한 칸을
+    못 읽어서 진료가 멈추는 모양이다.
+
+    빈 줄을 남기면 화면이 그 자리를 물음표로 세우고 사람이 눈으로 읽어
+    채운다(`PATCH /ocr/fields/{id}`). 판독은 거들 뿐이고, 못 읽었다고
+    진료가 멈추면 안 된다.
+
+    **빈 줄과 「값이 0이다」는 다르다.** `extracted_value=None` 이고
+    `confidence=None` 이라, 화면은 이것을 「못 읽음」으로 그린다
+    (`fieldState` — 값이 없으면 missing). 사람이 확정하기 전에는 안내문에도
+    안 실린다(`is_confirmed=False`).
     """
     # Phase 1: 필드 추출 — 트랜잭션 밖에서 수행해 불필요한 롤백 방지
     fields_by_doc, emr_field_types, has_emr = _extract_fields_per_doc(job_documents, clova_results)
 
-    # Phase 2: EMR이 포함된 경우 필수 필드 게이트 — EMR 문서 추출 필드만 검사 (KEY-163 §4)
-    if has_emr and not (_REQUIRED_OCR_FIELDS <= emr_field_types):
-        return False
+    # Phase 2: EMR이 포함된 경우 못 읽은 필수 필드를 센다 (KEY-163 §4)
+    #
+    # EMR이 없는 작업(검사 결과지만 올린 경우)에는 처방 항목이 애초에 없다.
+    # 그때 빈 줄을 만들면 안 한 것을 못 읽은 것처럼 보인다.
+    missing = sorted(_REQUIRED_OCR_FIELDS - emr_field_types) if has_emr else []
 
     # Phase 3: 트랜잭션 안에서 DB 저장
     async with in_transaction() as conn:
@@ -250,6 +274,20 @@ async def _save_clova_result(
                     using_db=conn,
                 )
 
+        # 못 읽은 필수 항목은 **빈 줄로 남긴다.** 어느 문서에서 나올 값인지
+        # 모르므로 document_text는 비운다 (모델이 null을 허용한다).
+        for field_type in missing:
+            if field_type in seen_types:
+                continue
+            await OcrField.create(
+                ocr_result=ocr_result,
+                document_text=None,
+                field_type=field_type,
+                extracted_value=None,
+                confidence=None,
+                using_db=conn,
+            )
+
         completed_at = now()
         job.status = OcrJobStatus.COMPLETED
         job.progress = 100
@@ -259,7 +297,7 @@ async def _save_clova_result(
             using_db=conn,
         )
 
-    return True
+    return set(missing)
 
 
 async def _fallback_or_fail(

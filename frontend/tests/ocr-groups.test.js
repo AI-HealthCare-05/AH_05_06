@@ -384,10 +384,13 @@ test("탭 이름도 값 옆 출처도 **같은 이름**이다 — 다르면 같�
 test("**판독이 못 찾은 처방 항목도 자리에 선다** — 안 세우면 빠진 채로 안내문이 만들어진다", () => {
   const { withMissingRows, PRESCRIPTION_CORE } = box();
 
-  assert.equal(PRESCRIPTION_CORE.length, 6, "진단·약품명·1회량·일일횟수·처방일수·처방일");
+  /* 셋이다 — 서버가 필수로 보는 셋과 같다. 1회량·일일횟수·처방일은 못 읽었을
+     때 물음표로 세우지 않는다: 맨 위 셋과 무게가 같아 보여 무엇을 먼저
+     채워야 하는지가 흐려진다. 읽었으면 아래 줄로 그대로 보인다. */
+  assert.equal(PRESCRIPTION_CORE.length, 3, "진단 · 약품명 · 처방일수");
 
   const rows = withMissingRows([{ field_type: "MEDICATION_NAME", value: "비잔" }], PRESCRIPTION_CORE);
-  assert.equal(rows.length, 6, "여섯 줄이 다 서지 않았다");
+  assert.equal(rows.length, 3, "세 줄이 다 서지 않았다");
   assert.equal(rows.map((r) => r.field_type).join(","), PRESCRIPTION_CORE.join(","), "차례가 다르다");
 
   const med = rows.find((r) => r.field_type === "MEDICATION_NAME");
@@ -406,16 +409,25 @@ test("**못 찾은 줄에 가짜 번호를 주지 않는다** — 저장하려 �
   assert.equal(rows[0].ocr_field_id, undefined, "없는 항목에 번호가 붙었다");
 });
 
-test("검사값은 늘 세우지 않는다 — 안 한 검사를 열 줄씩 `?` 로 세우면 진짜 못 읽은 줄이 묻힌다", () => {
+test("**검사값도 자리를 세운다** — 안 세우면 못 읽은 것과 안 한 것을 구별할 수 없다", () => {
+  const { LAB_CORE } = box();
   const code = codeOnly(source("js/ocr-review.js"));
   const at = code.indexOf("function groupsHtml");
-  const body = code.slice(at, at + 600);
+  const body = code.slice(at, at + 700);
 
-  assert.ok(body.includes("PRESCRIPTION_CORE"), "처방 여섯을 안 세운다");
-  assert.ok(
-    !/withMissingRows\(\s*split\.labs/.test(body),
-    "검사값까지 늘 세운다 — 안 한 검사가 못 읽은 줄처럼 보인다",
-  );
+  assert.ok(body.includes("PRESCRIPTION_CORE"), "처방 셋을 안 세운다");
+  assert.ok(/withMissingRows\(\s*split\.labs/.test(body), "검사값 자리를 안 세운다");
+
+  /* 와이어프레임 S1-6 의 「이번 판독 값」에 선 것들 + 지난 값으로 넘어간 둘 */
+  for (const type of ["HEMOGLOBIN", "ENDOMETRIOMA_SIZE", "ENDOMETRIAL_THICKNESS", "CA_125", "AMH", "AST_ALT"]) {
+    assert.ok(LAB_CORE.indexOf(type) !== -1, `${type} 자리가 없다`);
+  }
+
+  /* **추출기가 읽는 것 전부를 세우지는 않는다.** 열 줄을 물음표로 세우면
+     진짜 봐야 할 줄이 그 안에 묻힌다. */
+  for (const type of ["E2", "CRP", "CA19_9", "LAB_DATE"]) {
+    assert.equal(LAB_CORE.indexOf(type), -1, `${type} 까지 세운다 — 봐야 할 줄이 묻힌다`);
+  }
 });
 
 test("**확인 항목은 꺼진 채로 세운다** — 켤 수 있으면 저장됐다고 믿는다", () => {
@@ -617,4 +629,29 @@ test("**화면 제목은 소리로만 남는다** — 문서에 제목이 하나
   const h1 = /<h1[^>]*>/.exec(page);
   assert.ok(h1, "제목이 아예 없다 — 화면낭독기가 「이 화면이 무엇인가」를 못 읽는다");
   assert.match(h1[0], /sr-only/, "제목이 눈에 보인다 — 머리말과 단계 줄이 이미 같은 말을 한다");
+});
+
+test("**항목 이름과 상태가 한 줄에 선다** — 접히면 값 칸이 밀려 열이 안 맞는다", () => {
+  /* 「1회량 ⚠ 인식 / 실패」처럼 접히면 줄마다 높이가 달라지고, 값이 세로로
+     안 훑힌다 — 열을 고정 폭으로 세운 이유가 사라진다. */
+  const css = source("css/ocr-review.css");
+
+  for (const sel of [".field__name", ".field__tag"]) {
+    const at = css.lastIndexOf(sel + " {");
+    assert.notEqual(at, -1, `${sel} 규칙이 없다 — 검사가 헛돈다`);
+    const rule = css.slice(at, css.indexOf("}", at));
+    assert.match(rule, /white-space:\s*nowrap/, `${sel} 이 접힌다`);
+  }
+});
+
+test("맨 위 줄 이름표는 와이어프레임을 따른다 — 「처방」", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("var TOP_ROW");
+  const block = code.slice(at, code.indexOf("];", at));
+
+  assert.match(block, /type: "MEDICATION_NAME", label: "처방"/, "맨 위 줄이 「약품명」이라 적는다");
+
+  /* 항목 이름표 자체는 그대로다 — 아래 값 줄에서는 「약품명」이 맞다 */
+  const { fieldLabel } = load("field-labels");
+  assert.equal(fieldLabel("MEDICATION_NAME"), "약품명");
 });

@@ -619,7 +619,7 @@ function stateTakesFocus(tone) {
         '<button class="field__act" type="button" data-local-fill="' +
         escapeHtml(field.field_type) +
         '">직접 입력</button>' +
-        '<span class="field__hint">판독이 못 찾았습니다</span>';
+        '<span class="field__hint">판독 실패</span>';
     } else if (state === "missing") {
       /* 빈 칸이 아니라 「못 읽었다」로 보여야 한다. 빈 칸은 안 읽은 것처럼 보인다. */
       body =
@@ -766,7 +766,10 @@ function stateTakesFocus(tone) {
    * 값이 두 번 보이고, 어느 쪽을 고쳐야 하는지 묻게 된다. */
   var TOP_ROW = [
     { type: "DIAGNOSIS", label: "진단", wide: false },
-    { type: "MEDICATION_NAME", label: "약품명", wide: true },
+    /* 와이어프레임 S1-6 의 이름표가 「처방」이다 — 스탭이 EMR 에서 옮겨 적는
+       칸의 이름과 맞춘다. 항목 이름(`fieldLabel`)은 「약품명」 그대로 두고
+       이 자리의 이름표만 바꾼다: 아래 값 줄에서는 「약품명」이 맞다. */
+    { type: "MEDICATION_NAME", label: "처방", wide: true },
     { type: "DURATION_DAYS", label: "처방일수", unit: "일", wide: false },
   ];
 
@@ -844,7 +847,9 @@ function stateTakesFocus(tone) {
     /* 처방 여섯은 판독이 못 읽어도 자리에 세운다 — 안내문이 그것으로
        만들어져서, 화면에서 사라지면 빠진 채로 만들어진다 (S1-7). */
     var rx = withMissingRows(split.prescription, PRESCRIPTION_CORE);
-    return prescriptionHtml(rx) + labsHtml(split.labs) + notReadyHtml();
+    /* 검사값도 자리를 세운다 — 안 세우면 못 읽은 것과 안 한 것을 구별할 수 없다 */
+    var labs = withMissingRows(split.labs, LAB_CORE);
+    return prescriptionHtml(rx) + labsHtml(labs) + notReadyHtml();
   }
 
   /* ① 진단 · 처방 */
