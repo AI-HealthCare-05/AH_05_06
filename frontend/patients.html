@@ -198,16 +198,20 @@
              줄을 누르면 먼저 「이 사람이 누구인가」가 뜬다. 머리와 탭은 두 화면이
              함께 쓰고 아래 칸만 바뀐다 — 누구의 기록을 다루는 중인지가 안 끊긴다. -->
         <section class="view" id="view-card" hidden>
+          <!-- 와이어프레임 S1-4: 머리말과 탭이 **한 줄**이다
+               (`padding:11px 26px · flex · align-items:center · gap:18px`).
+               왼쪽에 누구인지, 오른쪽에 어디를 보는지. 탭을 아래 줄로 내리면
+               본문이 그만큼 줄고, 1280×800 에서 지난 방문이 잘린다. -->
           <div class="patient-head">
-            <div class="patient-head__top">
-              <div class="patient-head__name" id="p-name">—</div>
-              <div class="patient-head__id" id="p-id"></div>
-              <span class="row__state" id="p-state" hidden></span>
+            <div class="patient-head__who">
+              <div class="patient-head__top">
+                <div class="patient-head__name" id="p-name">—</div>
+                <div class="patient-head__id" id="p-id"></div>
+                <span class="row__state" id="p-state" hidden></span>
+              </div>
+              <div class="patient-head__visit" id="p-visit"></div>
             </div>
-            <div class="patient-head__visit" id="p-visit"></div>
-          </div>
-
-          <!-- **다섯 탭이 다 열려 있다** — 역할이 화면을 가르지 않는다.
+            <!-- **다섯 탭이 다 열려 있다** — 역할이 화면을 가르지 않는다.
                와이어프레임에서 D1(의사)은 별도 화면이 아니라 이 탭의 뒷칸이다
                (`D1-1` 골격: 「좌 320 목록 / 우 960 본문 → 5단계 탭」). 시연 때
                의사와 스탭이 서로의 화면을 못 봐서 막힌 자리가 여기다.
@@ -215,26 +219,35 @@
                서버도 그렇게 되어 있다 — `app/core/rbac.py` 에서 조회·업로드·
                안내문 작성은 staff·doctor 둘 다이고, 승인·반려만 doctor 다.
                **가르는 것은 버튼이지 화면이 아니다.** -->
-          <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드">
-            <button class="tab" type="button" role="tab" data-tab="basic" aria-selected="true">
-              <span class="tab__mark" aria-hidden="true">●</span>기본정보
-            </button>
-            <button class="tab" type="button" role="tab" data-tab="record" aria-selected="false">
-              <span class="tab__mark" aria-hidden="true">○</span>진료기록
-            </button>
-            <button class="tab" type="button" role="tab" data-tab="guide" aria-selected="false">
-              <span class="tab__mark" aria-hidden="true">○</span>안내문
-            </button>
-            <button class="tab" type="button" role="tab" data-tab="final" aria-selected="false">
-              <span class="tab__mark" aria-hidden="true">○</span>최종 확인
-            </button>
-            <button class="tab" type="button" role="tab" data-tab="status" aria-selected="false">
-              <span class="tab__mark" aria-hidden="true">○</span>현황
-            </button>
+            <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드">
+              <button class="tab" type="button" role="tab" data-tab="basic" aria-selected="true">
+                <span class="tab__mark" aria-hidden="true">●</span>기본정보
+              </button>
+              <button class="tab" type="button" role="tab" data-tab="record" aria-selected="false">
+                <span class="tab__mark" aria-hidden="true">○</span>진료기록
+              </button>
+              <button class="tab" type="button" role="tab" data-tab="guide" aria-selected="false">
+                <span class="tab__mark" aria-hidden="true">○</span>안내문
+              </button>
+              <button class="tab" type="button" role="tab" data-tab="final" aria-selected="false">
+                <span class="tab__mark" aria-hidden="true">○</span>최종 확인
+              </button>
+              <button class="tab" type="button" role="tab" data-tab="status" aria-selected="false">
+                <span class="tab__mark" aria-hidden="true">○</span>현황
+              </button>
+            </div>
           </div>
+
 
           <!-- ─ 기본정보 (S1-4) ─────────────────────────────────── -->
           <div class="panel" id="panel-basic">
+          <!-- 와이어프레임 S1-4 는 본문을 **좌우 2단**으로 둔다
+               (`display:flex · gap:26px · flex:1 · min-height:0`).
+               왼쪽은 오늘 손볼 것(환자 정보 · 오늘 진료), 오른쪽은 참고할 것
+               (지난 방문 · 발송 이력). 세로로 쌓으면 지난 방문을 보려고
+               스크롤해야 하는데, 그건 오늘 값을 채우면서 곁눈질할 자리다. -->
+          <div class="cols2">
+            <div class="cols2__side">
             <section class="box">
               <div class="box__head">
                 <h2 class="box__title">환자 정보</h2>
@@ -252,7 +265,8 @@
               <dl class="facts" id="visit-facts"></dl>
               <form class="edit" id="visit-edit" hidden></form>
             </section>
-
+            </div>
+            <div class="cols2__side">
             <!-- 「전에 뭐라고 안내했지?」를 관리 화면에서 찾지 않게 여기 둔다 -->
             <section class="box">
               <h2 class="box__title">지난 방문</h2>
@@ -277,6 +291,8 @@
             </section>
 
             <p class="note">ⓘ 지난 안내문과 발송 이력은 관리 화면에서도 확인할 수 있습니다</p>
+            </div>
+          </div>
           </div>
 
           <!-- ─ 진료기록 업로드 (S1-5) ──────────────────────────── -->

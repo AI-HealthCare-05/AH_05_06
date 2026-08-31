@@ -333,3 +333,64 @@ test("죽은 규칙을 남기지 않았다 — grid2 는 아무도 안 쓴다", 
   assert.strictEqual(used, false, "화면이 아직 grid2 를 쓴다");
   assert.strictEqual(defined, false, "쓰지 않는 grid2 규칙이 CSS 에 남아 있다");
 });
+
+/* ── 환자 카드 (S1-4) ─────────────────────────────────────────────────── */
+
+test("**머리말과 탭이 한 줄이다** — 탭을 아래로 내리면 지난 방문이 잘린다", () => {
+  const html = read("patients.html");
+
+  /* 와이어프레임 S1-4: `padding:11px 26px · flex · align-items:center · gap:18px`.
+     왼쪽에 누구인지, 오른쪽에 어디를 보는지. */
+  const head = element(html, '<div class="patient-head">');
+  assert.ok(head.includes('id="p-name"'), "머리말에 이름이 없다");
+  assert.ok(head.includes('id="tabs"'), "탭이 머리말 밖에 있다 — 아래 줄을 차지한다");
+
+  const css = rule(read("css/shell.css"), ".patient-head");
+  assert.match(css, /display:\s*flex/, "머리말이 가로가 아니다");
+  assert.match(css, /gap:\s*18px/, "와이어프레임 간격과 다르다");
+});
+
+test("**탭이 버튼 형식이다** — 고른 것만 채워진다", () => {
+  const css = read("css/detail.css");
+
+  const tab = rule(css, ".tab");
+  assert.match(tab, /height:\s*30px/, "와이어프레임은 30px 다");
+  assert.match(tab, /border-radius/, "테두리가 없으면 버튼으로 안 보인다");
+  assert.match(tab, /border:\s*1px/, "테두리가 없다");
+
+  const on = rule(css, '.tab[aria-selected="true"]');
+  assert.match(on, /background:\s*var\(--accent\)/, "고른 탭이 안 채워진다");
+  assert.match(on, /font-weight:\s*700/, "고른 탭이 안 굵어진다");
+});
+
+test("안 고른 탭 색은 와이어프레임을 안 따른다 — 대비가 1.6 이라 안 읽힌다", () => {
+  /* 원문은 `#D1D5DB` 인데 흰 배경에서 대비가 1.6 이다. 토큰의 --ink-2(6.35)를
+     쓰고, 「지금 여기가 아니다」는 채움과 굵기로 말한다 (KEY-106 과 같은 판단). */
+  const tab = rule(read("css/detail.css"), ".tab");
+  assert.match(tab, /color:\s*var\(--ink-2\)/, "안 고른 탭이 읽히지 않는 색이다");
+  assert.ok(!/#D1D5DB/i.test(tab), "와이어프레임 색을 그대로 옮겼다");
+});
+
+test("**본문이 좌우 2단이다** — 왼쪽은 오늘 손볼 것, 오른쪽은 참고할 것", () => {
+  const html = read("patients.html");
+  const basic = element(html, '<div class="cols2">');
+
+  const left = basic.slice(0, basic.indexOf('cols2__side', basic.indexOf("cols2__side") + 1));
+  const right = basic.slice(basic.indexOf('cols2__side', basic.indexOf("cols2__side") + 1));
+
+  assert.ok(left.includes("환자 정보") && left.includes("오늘 진료"), "왼쪽 칸이 비었다");
+  assert.ok(right.includes("지난 방문"), "지난 방문이 오른쪽에 없다");
+  assert.ok(right.includes("발송 이력"), "발송 이력이 오른쪽에 없다");
+
+  const css = rule(read("css/detail.css"), ".cols2");
+  assert.match(css, /display:\s*flex/, "2단이 아니다");
+  assert.match(css, /gap:\s*26px/, "와이어프레임 간격과 다르다");
+});
+
+test("`tab--later` 가 상단바와 같은 파일에 있다 — 어드민은 detail.css 를 안 싣는다", () => {
+  /* 옮기기 전에는 detail.css 에 있었고, 어드민 상단바의 「관리·설정」이
+     스타일 없이 떴다. 상단바는 shell.css 것이다. */
+  assert.ok(read("css/shell.css").includes(".tab--later"), "상단바 파일에 규칙이 없다");
+  assert.ok(!read("css/detail.css").includes(".tab--later"), "규칙이 두 곳에 있다");
+  assert.ok(read("admin.html").includes("shell.css"), "어드민이 상단바 파일을 안 싣는다");
+});
