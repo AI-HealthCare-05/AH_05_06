@@ -244,7 +244,7 @@ function tiedBirthDates(items) {
           '</td><td class="' +
           (same ? "hit__key" : "") +
           '">' +
-          esc(maskPhone(p.phone)) +
+          esc(formatPhone(p.phone)) +
           "</td><td>" +
           esc(p.hospital_patient_no) +
           "</td><td>" +
@@ -267,7 +267,7 @@ function tiedBirthDates(items) {
     el("f-name").value = picked.name;
     el("f-chart").value = picked.hospital_patient_no;
     el("f-birth").value = picked.birth_date;
-    el("f-phone").value = maskPhone(picked.phone);
+    el("f-phone").value = formatPhone(picked.phone);
     lock();
     render();
   }
@@ -370,8 +370,9 @@ function tiedBirthDates(items) {
   }
 
   function phoneOk(text) {
+    /* 고른 환자의 잠긴 칸에도 이제 **진짜 번호**가 들어간다(전에는 가려진 값이라
+       이 검사를 지나칠 수 없었다). 그래서 잠겼든 아니든 같은 규칙으로 잰다. */
     return /^01\d{8,9}$/.test(text.replace(/\D/g, ""));
-    /* 잠긴 칸에는 가려진 값(010-****-1234)이 들어 있다 — 그때는 이 검사를 건너뛴다 */
   }
 
   /* 오늘 이미 서 있는 줄인가. 있으면 또 만들지 않고 그 줄로 보낸다. */
@@ -396,7 +397,7 @@ function tiedBirthDates(items) {
           ok: false,
           block: false,
           text:
-            "생년월일이 같은 분이 또 있습니다 — 휴대폰 " + maskPhone(picked.phone).slice(-4) + " 가 맞는지 확인하세요",
+            "생년월일이 같은 분이 또 있습니다 — 휴대폰 " + formatPhone(picked.phone) + " 가 맞는지 확인하세요",
         });
       } else {
         out.unshift({ ok: true, text: "생년월일 일치 — 동명이인이 아닙니다" });

@@ -705,9 +705,22 @@ function ageOf(birthDate) {
   return years;
 }
 
-/* 화면에 전체 번호를 띄우지 않는다 — 같은 이름을 가를 만큼만 보여 준다 */
-function maskPhone(digits) {
+/* **화면에는 전체 번호를 보여 준다.**
+ *
+ * 전에는 가운데를 `****` 로 가렸다(와이어프레임도 그렇게 그렸다). 그런데 이
+ * 번호를 보는 사람은 그 환자를 방금 접수한 그 의원의 스탭이고, 안내 문자가
+ * 안 가면 **전화를 걸어야 하는 사람**이다. 가려 두면 번호를 확인하려고 EMR 을
+ * 따로 열게 되고, 그 사이에 옮겨 적다 틀린다.
+ *
+ * **로그와 오류 응답의 마스킹은 그대로다** — 그쪽은 KEY-48 이 요구하는 보안
+ * 사항이고 여기와 다른 문제다. 화면은 권한 있는 사람이 보고, 로그는 누가 볼지
+ * 모른다.
+ *
+ * 끊어 쓰는 것은 읽기 위해서다 — `01056785687` 은 눈으로 옮겨 적기 어렵다.
+ */
+function formatPhone(digits) {
   var d = (digits || "").replace(/\D/g, "");
-  if (d.length < 8) return d;
-  return d.slice(0, 3) + "-****-" + d.slice(-4);
+  if (d.length === 11) return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7);
+  if (d.length === 10) return d.slice(0, 3) + "-" + d.slice(3, 6) + "-" + d.slice(6);
+  return d;
 }

@@ -136,7 +136,7 @@ function timeLabel(isoDatetime) {
       ["이름", patient.name],
       ["차트번호", patient.hospital_patient_no],
       ["생년월일", patient.birth_date + " (" + ageOf(patient.birth_date) + "세)"],
-      ["휴대폰", maskPhone(patient.phone), "이 번호로 안내 문자가 발송됩니다"],
+      ["휴대폰", formatPhone(patient.phone), "이 번호로 안내 문자가 발송됩니다"],
       ["문자 수신", consent],
     ]);
   }
