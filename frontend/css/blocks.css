@@ -551,3 +551,63 @@
   font-size: 11px;
   line-height: 1.6;
 }
+
+
+/* ── 곁말 한 줄 ───────────────────────────────────────────────────────
+ *
+ * 「누른 뒤에 무슨 일이 일어났는지」·「지금은 왜 안 되는지」를 적는 자리.
+ * `upload.css` 에만 있어서 의사 화면에서는 모양 없이 떴다 — 그 화면은 그
+ * 파일을 안 싣는다. 블록 · 단계 줄 · 버튼 · 빈 화면이 같은 이유로 어긋났던
+ * 것과 같은 자리다.
+ *
+ * (환자 화면 `checkin.css` 에도 같은 이름이 있지만 그 화면은 이 파일을 안
+ *  실어서 부딪히지 않는다.)
+ */
+
+.note {
+  margin-top: var(--s-12);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* 남의 정보가 함께 찍히면 되돌릴 수 없다. 다른 안내보다 눈에 띄어야 한다. */
+.note--warn {
+  padding: 10px 12px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius);
+}
+
+/* ── 제자리에서 고치기 ────────────────────────────────────────────────
+ *
+ * 창을 띄우지 않는다. 창이 뜨면 옆의 환자 화면 미리보기가 가려져, 무엇이
+ * 나갈지 못 보면서 고치게 된다 — 두 칸을 나란히 둔 이유가 사라진다.
+ */
+
+.block__edit-box {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  margin-top: var(--s-8);
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+}
+
+.block__edit-box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.block__edit-acts {
+  display: flex;
+  gap: var(--s-8);
+  margin-top: var(--s-8);
+}

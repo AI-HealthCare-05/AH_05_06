@@ -144,8 +144,10 @@ function patientLinkSaying(error) {
      화면이 아니라 그 탭 뒷칸이라, 두 곳이 같은 안내문을 그린다. 코드가 두
      벌이면 한쪽만 고쳐지고 화면마다 다른 말이 나온다. */
 
+  /* 가로 탭은 한 판 안에 함께 그려진다(`guideScreenHtml`) — 이 칸은 비운다.
+     와이어프레임 D1-1 이 S1-11 과 같은 화면이라 같은 것을 쓴다. */
   function renderTabs() {
-    el("vtabs").innerHTML = guideTabsHtml(guide.sections, section);
+    el("vtabs").innerHTML = "";
   }
 
   function currentSection() {
@@ -154,7 +156,9 @@ function patientLinkSaying(error) {
 
   function renderPanel() {
     var now = currentSection();
-    el("panel").innerHTML = now ? guidePanelHtml(guide.sections, now.key, isDoctor()) : "";
+    el("panel").innerHTML = now
+      ? guideScreenHtml(guide.sections, now.key, "final", isDoctor(), guideEditingNow())
+      : "";
   }
 
   function renderSummary() {
@@ -510,18 +514,23 @@ function patientLinkSaying(error) {
       return;
     }
 
-    /* 항목 수정은 서버가 붙은 뒤다(KEY-111) — 지금은 어디까지 됐는지 말한다. */
-    var edit = target.closest("[data-edit]");
-    if (edit) {
-      openModal(
-        '<h2 class="modal__title">' +
-          esc(edit.getAttribute("data-edit")) +
-          " 수정</h2>" +
-          '<p class="modal__lead">항목 편집은 승인 API 가 붙은 뒤입니다 (KEY-111).</p>' +
-          '<p class="modal__note">지금은 읽고 승인하거나 되돌리는 것까지 됩니다.</p>' +
-          '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>',
-      );
-    }
+  });
+
+  /* 고치기는 `js/guide-view.js` 가 배선한다 — 스탭 화면과 같은 것을 쓴다.
+     전에는 이 자리가 「항목 편집은 승인 API 가 붙은 뒤입니다」 안내창이었다.
+     그 API 는 그 뒤에 붙었는데 안내창만 남아 있었다. */
+  wireGuideEditing({
+    visitId: function () {
+      return visit ? visit.visit_id : null;
+    },
+    reRender: function (reload) {
+      if (reload && visit) return load(visit);
+      renderPanel();
+    },
+    say: function (text) {
+      var box = el("say");
+      if (box) box.textContent = text;
+    },
   });
 
   document.addEventListener("session:ready", function (event) {

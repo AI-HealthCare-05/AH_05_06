@@ -99,7 +99,7 @@ function guideTabsHtml(sections, current) {
    `canEdit` 는 역할이 정한다 — **화면을 감추지 않고 버튼만 잠근다.** 스탭도
    의사 화면을 다 볼 수 있어야 하고(와이어프레임은 한 화면이다), 고칠 수 있는
    범위만 다르다. 실제 차단은 서버가 한다(KEY-9). */
-function guideSectionHtml(section, canEdit) {
+function guideSectionHtml(section, canEdit, editingKey) {
   var title = GUIDE_SECTION_LABEL[section.key] || section.key;
 
   /* 잠긴 섹션은 왜 잠겼는지를 함께 적는다. 이유 없이 안 눌리는 버튼은
@@ -112,8 +112,28 @@ function guideSectionHtml(section, canEdit) {
     tail = '<p class="block__locked">[demo] ' + esc(pending) + "</p>";
   } else if (canEdit === false) {
     tail = '<p class="block__locked">안내문 수정은 의사 계정에서 할 수 있습니다</p>';
+  } else if (editingKey === section.key) {
+    /* 고치는 중. **제자리에서 고친다** — 창을 띄우면 옆의 미리보기가 가려져
+       무엇이 나갈지 못 보면서 고치게 된다. 그러려고 두 칸을 나란히 뒀다. */
+    tail =
+      '<textarea class="block__edit-box" data-edit-box="' +
+      esc(section.key) +
+      '" aria-label="' +
+      esc(title) +
+      ' 본문">' +
+      esc(section.body) +
+      "</textarea>" +
+      '<div class="block__edit-acts">' +
+      '<button class="button-primary button-primary--sm" type="button" data-edit-save="' +
+      esc(section.key) +
+      '">저장</button>' +
+      '<button class="button-ghost button-ghost--sm" type="button" data-edit-cancel="1">취소</button>' +
+      "</div>";
   } else {
-    tail = '<button class="block__edit" type="button" data-edit="' + esc(title) + '">수정</button>';
+    /* **열쇠는 항목 이름이 아니라 `key` 다.** 서버가 `PATCH /guide/sections/{key}`
+       로 받는데 전에는 한글 제목을 담고 있어서, 눌러도 보낼 데가 없었다. */
+    tail =
+      '<button class="block__edit" type="button" data-edit="' + esc(section.key) + '">수정</button>';
   }
 
   return (
@@ -134,10 +154,10 @@ function guideSectionHtml(section, canEdit) {
   );
 }
 
-function guidePanelHtml(sections, current, canEdit) {
+function guidePanelHtml(sections, current, canEdit, editingKey) {
   return guideSectionsOf(sections, current)
     .map(function (s) {
-      return guideSectionHtml(s, canEdit);
+      return guideSectionHtml(s, canEdit, editingKey);
     })
     .join("");
 }
@@ -226,7 +246,7 @@ function guidePreviewHtml(sections, current) {
     .join("");
 }
 
-function guideScreenHtml(sections, current, mode, canEdit) {
+function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
   var title = GUIDE_SCREEN_TITLE[mode] || GUIDE_SCREEN_TITLE.guide;
 
   return (
@@ -245,7 +265,7 @@ function guideScreenHtml(sections, current, mode, canEdit) {
     '<span class="gs__paneNote">환자 화면과 같은 차례</span>' +
     "</div>" +
     '<div class="gs__paneBody">' +
-    guidePanelHtml(sections, current, canEdit) +
+    guidePanelHtml(sections, current, canEdit, editingKey) +
     "</div>" +
     "</section>" +
     /* 오른쪽 — 환자 화면 미리보기 */
@@ -296,4 +316,84 @@ function guideActionsFor(status, roles) {
     return { canSubmit: false, say: "승인되어 발송을 기다리는 중입니다" };
   }
   return { canSubmit: false, say: "" };
+}
+
+/* ── 고치기 배선 ───────────────────────────────────────────────────────
+ *
+ * 스탭 화면(`patients.html`)과 의사 화면(`doctor.html`)이 **같은 배선**을
+ * 쓴다. 두 벌이면 한쪽만 고쳐지고, 어느 화면에서 고쳤느냐에 따라 되고 안
+ * 되고가 달라진다 — 이 저장소에서 이미 여러 번 그랬다.
+ *
+ * 지금까지 양쪽 다 이어져 있지 않았다. 의사 화면은 「항목 편집은 승인 API 가
+ * 붙은 뒤입니다」라는 안내창을 띄웠고(그 API 는 그 뒤에 붙었다), 스탭 화면은
+ * 처리기 자체가 없었다.
+ *
+ * 화면마다 다른 것은 **어느 진료인지**와 **다시 그리는 법**뿐이라, 그 둘만
+ * 받는다.
+ */
+var guideEditingKey = null;
+
+function guideEditingNow() {
+  return guideEditingKey;
+}
+
+function wireGuideEditing(opts) {
+  var getVisitId = opts.visitId;
+  var reRender = opts.reRender;
+  var say = opts.say || function () {};
+
+  document.addEventListener("click", function (event) {
+    var t = event.target;
+    if (!t || !t.closest) return;
+
+    var open = t.closest("[data-edit]");
+    if (open) {
+      guideEditingKey = open.getAttribute("data-edit");
+      reRender();
+      /* 열자마자 칠 수 있게 — 키보드로 다니는 사람이 판이 열린 것을 알
+         방법이 그것뿐이다. */
+      var box = document.querySelector('[data-edit-box="' + guideEditingKey + '"]');
+      if (box) box.focus();
+      return;
+    }
+
+    if (t.closest("[data-edit-cancel]")) {
+      guideEditingKey = null;
+      reRender();
+      return;
+    }
+
+    var save = t.closest("[data-edit-save]");
+    if (!save) return;
+
+    var key = save.getAttribute("data-edit-save");
+    var field = document.querySelector('[data-edit-box="' + key + '"]');
+    var text = field ? String(field.value || "").trim() : "";
+    var visitId = getVisitId();
+    if (!visitId) return;
+
+    /* **빈 글로 덮지 않는다.** 환자가 받는 글이라, 지우고 저장하면 그 항목이
+       빈 채로 나간다. 지우는 것이 목적이면 그건 다른 일이다. */
+    if (!text) {
+      say("내용을 비울 수는 없습니다 — 환자가 받는 글입니다");
+      return;
+    }
+
+    /* 두 번 눌리지 않게 잠근다. 저장이 두 번 가면 판(version)이 두 번 오른다. */
+    save.disabled = true;
+    var wantedId = visitId;
+    doctorApi
+      .editSection(wantedId, key, { body: text })
+      .then(function () {
+        if (getVisitId() !== wantedId) return;
+        guideEditingKey = null;
+        say("고쳤습니다");
+        reRender(true);
+      })
+      .catch(function (error) {
+        if (getVisitId() !== wantedId) return;
+        save.disabled = false;
+        say((error && error.message) || "저장하지 못했습니다. 다시 시도해 주세요.");
+      });
+  });
 }

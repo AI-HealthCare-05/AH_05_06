@@ -90,7 +90,7 @@ function guideMissingSaying(error) {
     /* **한 판으로 그린다** — 제목 · 가로 탭 · 원문 · 미리보기가 한 덩어리다
        (와이어프레임 S1-11 · D1-1). 전에는 세로 탭과 본문이 따로 떠 있었다. */
     vtabs.innerHTML = "";
-    panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit);
+    panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit, guideEditingNow());
 
     if (warn) {
       var line = guideWarnLine(guide.sections);
@@ -246,6 +246,19 @@ function guideMissingSaying(error) {
         go.disabled = false;
         say((error && error.message) || "넘기지 못했습니다. 다시 시도해 주세요.");
       });
+  });
+
+  /* 고치기는 `js/guide-view.js` 가 배선한다 — 의사 화면과 같은 것을 쓴다.
+     화면마다 다른 것은 어느 진료인지와 다시 그리는 법뿐이다. */
+  wireGuideEditing({
+    visitId: function () {
+      return visitId;
+    },
+    reRender: function (reload) {
+      if (reload && visitId) return loadGuide(visitId);
+      renderAll();
+    },
+    say: say,
   });
 
   document.addEventListener("visit:selected", function (event) {

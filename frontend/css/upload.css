@@ -98,21 +98,6 @@
   font-weight: 600;
 }
 
-.note {
-  margin-top: var(--s-12);
-  font-size: 12px;
-  color: var(--ink-3);
-}
-
-/* 남의 정보가 함께 찍히면 되돌릴 수 없다. 다른 안내보다 눈에 띄어야 한다. */
-.note--warn {
-  padding: 10px 12px;
-  color: var(--warn);
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--radius);
-}
-
 /* ── 올린 것 ────────────────────────────────────────── */
 
 .files {

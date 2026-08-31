@@ -194,3 +194,88 @@ test("**모양이 두 화면 모두에 닿는다** — 한쪽 파일에 두면 �
     assert.ok(rule(css, sel), `${sel} 규칙이 없다`);
   }
 });
+
+/* ── 고치기 ──────────────────────────────────────────────────────────── */
+
+test("**열쇠는 항목 이름이 아니라 `key` 다** — 서버가 그것으로 받는다", () => {
+  const { guideSectionHtml } = box();
+  const html = guideSectionHtml(SECTIONS[0], true, null);
+
+  /* 전에는 한글 제목을 담고 있어서 눌러도 보낼 데가 없었다.
+     서버는 `PATCH /guide/sections/{key}` 로 받는다. */
+  assert.ok(html.includes('data-edit="medication"'), "고치기 열쇠가 key 가 아니다");
+  assert.ok(!html.includes('data-edit="복약지도"'), "한글 제목을 열쇠로 쓴다");
+});
+
+test("**제자리에서 고친다** — 창을 띄우면 미리보기가 가려진다", () => {
+  const { guideSectionHtml } = box();
+  const editing = guideSectionHtml(SECTIONS[0], true, "medication");
+
+  assert.ok(editing.includes("<textarea"), "고치는 칸이 없다");
+  assert.ok(editing.includes('data-edit-box="medication"'), "어느 항목인지 안 붙는다");
+  assert.ok(editing.includes("복약 본문"), "지금 글이 안 채워진다 — 처음부터 다시 쓰게 된다");
+  assert.ok(editing.includes("data-edit-save"), "저장할 것이 없다");
+  assert.ok(editing.includes("data-edit-cancel"), "무를 길이 없다");
+
+  /* 고치는 중에는 「수정」 버튼이 없어야 한다 — 둘이 같이 있으면 어느 것을
+     눌러야 하는지 묻게 된다 */
+  assert.ok(!editing.includes('data-edit="medication"'), "고치는 중에 수정 버튼이 남았다");
+});
+
+test("**잠긴 항목은 못 고친다** — 식약처 기준 문장이다", () => {
+  const { guideSectionHtml } = box();
+  const locked = guideSectionHtml(SECTIONS[2], true, "emergency");
+
+  assert.ok(!locked.includes("<textarea"), "잠긴 항목에 고치는 칸이 열렸다");
+  assert.ok(locked.includes("고칠 수 없습니다"), "왜 못 고치는지 안 말한다");
+});
+
+test("**두 화면이 같은 배선을 쓴다** — 두 벌이면 한쪽만 고쳐진다", () => {
+  const view = codeOnly(read("js/guide-view.js"));
+  assert.ok(view.includes("function wireGuideEditing"), "공용 배선이 없다");
+
+  for (const js of ["js/visit-guide.js", "js/doctor.js"]) {
+    const code = codeOnly(read(js));
+    /* **줄 처음에 와야 한다.** 그냥 `includes` 로 재면 `if (false) wireGuideEditing(`
+       처럼 감싸도 통과한다 — 돌연변이를 넣어 보고 알았다. */
+    assert.match(
+      code,
+      /(^|\n)\s*wireGuideEditing\(\{/,
+      `${js} 가 공용 배선을 조건 없이 부르지 않는다`,
+    );
+    /* 각자 처리기를 또 만들면 안 된다 */
+    assert.ok(!code.includes('closest("[data-edit-save]")'), `${js} 가 저장을 따로 다룬다`);
+  }
+
+  /* 의사 화면의 옛 안내창은 사라져야 한다 — 그 API 는 이미 붙었다 */
+  const doc = codeOnly(read("js/doctor.js"));
+  assert.ok(!doc.includes("KEY-111"), "「승인 API 가 붙은 뒤입니다」 안내창이 남아 있다");
+});
+
+test("**빈 글로 덮지 않는다** — 환자가 받는 글이다", () => {
+  const view = codeOnly(read("js/guide-view.js"));
+  const at = view.indexOf("function wireGuideEditing");
+  const body = view.slice(at);
+
+  assert.ok(body.includes("if (!text)"), "빈 글도 저장한다 — 그 항목이 빈 채로 나간다");
+  assert.match(body, /비울 수는 없습니다/, "왜 안 되는지 안 말한다");
+});
+
+test("**저장이 두 번 가지 않는다** — 판(version)이 두 번 오른다", () => {
+  const view = codeOnly(read("js/guide-view.js"));
+  const at = view.indexOf("function wireGuideEditing");
+  const body = view.slice(at);
+
+  assert.ok(body.includes("save.disabled = true"), "두 번 눌린다");
+  assert.ok(body.includes("save.disabled = false"), "실패해도 잠긴 채로 남는다");
+});
+
+test("**저장하는 사이 환자를 바꾸면 버린다** — 남의 글을 고친 것이 된다", () => {
+  const view = codeOnly(read("js/guide-view.js"));
+  const at = view.indexOf("function wireGuideEditing");
+  const body = view.slice(at);
+
+  assert.ok(body.includes("var wantedId"), "어느 진료를 고치는지 안 붙잡는다");
+  const guards = body.match(/getVisitId\(\) !== wantedId/g) || [];
+  assert.equal(guards.length, 2, `답이 온 뒤 확인하는 자리가 ${guards.length}곳이다 — 성공·실패 둘 다여야 한다`);
+});
