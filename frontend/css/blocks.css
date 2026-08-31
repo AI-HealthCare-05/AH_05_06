@@ -1166,3 +1166,14 @@ textarea.sms__text:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* 못 나간 문자. **「예정」과 또렷이 갈라야 한다** — 못 나간 것은 사람이
+   손대야 하고, 예정은 두면 나간다. */
+.sd__row.is-bad {
+  background: var(--warn-bg);
+}
+
+.sd__row.is-bad .sd__state {
+  color: var(--warn);
+  font-weight: 700;
+}

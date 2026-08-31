@@ -11,8 +11,15 @@
 
 from app.core.api_errors import ApiError
 from app.models.staffs import Staff
-from app.models.visits import CheckIn, GuideDocument, GuideEvent, PatientUsageEvent, Visit
-from app.timeline.schemas import TimelineEntry, TimelineResponse
+from app.models.visits import (
+    CheckIn,
+    GuideDocument,
+    GuideEvent,
+    GuideMessage,
+    PatientUsageEvent,
+    Visit,
+)
+from app.timeline.schemas import ScheduledMessage, TimelineEntry, TimelineResponse
 
 
 class TimelineService:
@@ -71,6 +78,21 @@ class TimelineService:
             )
 
         # 확인 문자 응답 — 한 진료에 한 건이다(Walking Skeleton).
+        # 나갈 문자 — **예정 시각 순**이다. 만든 차례로 두면 소진 임박이
+        # 확인 회차보다 위에 뜬다(먼저 만들어질 수 있어서).
+        messages = [
+            ScheduledMessage(
+                kind=str(row.kind),
+                status=str(row.status),
+                at=row.scheduled_at,
+                sent_at=row.sent_at,
+                failure_code=row.failure_code,
+            )
+            for row in await GuideMessage.filter(guide_document_id=guide.guide_document_id)
+            .order_by("scheduled_at")
+            .all()
+        ]
+
         answer = await CheckIn.filter(guide_document_id=guide.guide_document_id).first()
         if answer is not None:
             entries.append(
@@ -81,7 +103,7 @@ class TimelineService:
                 )
             )
 
-        return TimelineResponse(visit_id=visit_id, entries=self._sorted(entries))
+        return TimelineResponse(visit_id=visit_id, entries=self._sorted(entries), messages=messages)
 
     @staticmethod
     def _sorted(entries: list[TimelineEntry]) -> list[TimelineEntry]:

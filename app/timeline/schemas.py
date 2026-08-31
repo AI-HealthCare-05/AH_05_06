@@ -27,8 +27,28 @@ class TimelineEntry(StrictModel):
     detail: str | None = None
 
 
+class ScheduledMessage(StrictModel):
+    """환자에게 나갈 문자 한 통 — 와이어프레임 D1-6 「발송 · 예정」.
+
+    **한 통이 한 줄이다.** 다섯 통 중 어느 것이든 실패할 수 있고, 실패한
+    것만 고쳐 다시 보낸다.
+    """
+
+    #: 무엇인가 — GUIDE · CHECK_D7 · CHECK_D15 · CHECK_D30 · RUN_OUT.
+    #: 화면이 사람 말로 옮긴다.
+    kind: str
+    #: 지금 어디에 있나 — SCHEDULED · SENT · FAILED · CANCELED
+    status: str
+    at: datetime
+    sent_at: datetime | None = None
+    #: 못 나간 이유. 화면이 사람 말로 옮긴다 — 코드를 그대로 보여 주지 않는다.
+    failure_code: str | None = None
+
+
 class TimelineResponse(StrictModel):
     visit_id: int
     #: **오래된 것이 위다.** 진료가 어떻게 흘러갔는지 읽는 자리라
     #: 최신순으로 뒤집으면 거꾸로 읽게 된다.
     entries: list[TimelineEntry]
+    #: 나갈 문자들. 승인 전에는 비어 있다 — 예약은 승인이 만든다.
+    messages: list[ScheduledMessage] = []

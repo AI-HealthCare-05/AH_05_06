@@ -112,48 +112,68 @@ function readSaying(progress, label) {
  * **한 카드 안에** 구분선으로 나뉜다. 아래는 전폭 이력.
  */
 
-/* ① 발송 · 예정 — **아직 프레임이다.** 발송 예정을 담는 표가 서버에 없다.
-   문자 설정(S1-14)에서 정한 회차를 화면이 셈해 보여 주되, 「보냈다」는 서버가
-   말해 주기 전에는 못 적는다. */
-function sendRowsHtml(plan) {
-  var rows = [
-    { label: "진료 안내문", when: plan.approvedAt || "", state: "승인 뒤 발송", done: false },
-  ];
-  for (var i = 0; i < SMS_ROUNDS.length; i++) {
-    var r = SMS_ROUNDS[i];
-    var on = r.fixed || (plan.on || {})[r.key] === true;
-    if (!on) continue;
-    rows.push({
-      label: r.label + (r.key === "d7" ? " 확인" : ""),
-      when: smsWhen(smsDateAfter(plan.startIso, r.days)) + " " + smsTimeLabel(plan.at).replace("오전 ", "").replace("오후 ", ""),
-      state: "예정",
-      done: false,
-    });
-  }
-  if (plan.runOutIso) {
-    var notice = smsRunOutNotice(plan.runOutIso, plan.runOutBefore || 3);
-    if (notice) {
-      rows.push({ label: "소진 임박", when: smsWhen(notice), state: "예정", done: false });
-    }
+/* ① 발송 · 예정 — **이제 서버가 준다.**
+ *
+ * 승인이 나갈 문자를 전부 세워 둔다(`GuideService._schedule_messages`).
+ * 화면은 셈하지 않고 받은 것을 그린다 — 화면이 따로 셈하면 서버가 잡은
+ * 날짜와 다른 날짜를 보여 주게 되고, 어느 쪽이 진짜인지 알 수 없다.
+ */
+var MESSAGE_SAYING = {
+  GUIDE: "진료 안내문",
+  CHECK_D7: "일주일 뒤 확인",
+  CHECK_D15: "보름 뒤",
+  CHECK_D30: "한 달 뒤",
+  RUN_OUT: "소진 임박",
+};
+
+/* 한 통이 지금 어디에 있는가. **「예정」과 「못 나감」을 또렷이 가른다** —
+   못 나간 것은 사람이 손대야 하고, 예정은 두면 나간다. */
+var MESSAGE_STATE = {
+  SCHEDULED: { say: "예정", done: false, bad: false },
+  SENT: { say: "발송 완료", done: true, bad: false },
+  FAILED: { say: "못 나감", done: false, bad: true },
+  CANCELED: { say: "꺼짐", done: false, bad: false },
+};
+
+function messageState(status) {
+  return MESSAGE_STATE[status] || { say: String(status || ""), done: false, bad: false };
+}
+
+/** 「08-20 10:00」 — 날짜와 시각을 함께 적는다. 회차는 며칠 뒤라 날짜가 있어야 한다. */
+function messageWhen(iso) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(iso || ""));
+  return m ? m[2] + "-" + m[3] + " " + m[4] + ":" + m[5] : "";
+}
+
+function sendRowsHtml(messages) {
+  var rows = messages || [];
+  if (!rows.length) {
+    /* 승인 전에는 아무것도 예약돼 있지 않다 — 예약은 승인이 만든다.
+       빈 판으로 두면 「고장」으로 읽히므로 왜 비었는지 적는다. */
+    return '<p class="st__note">승인하면 나갈 문자가 여기에 섭니다</p>';
   }
 
   return rows
     .map(function (row) {
+      var state = messageState(row.status);
       return (
-        '<div class="sd__row">' +
+        '<div class="sd__row' +
+        (state.bad ? " is-bad" : "") +
+        '">' +
         '<span class="sd__dot" aria-hidden="true">' +
-        (row.done ? "●" : "○") +
+        (state.done ? "\u25cf" : "\u25cb") +
         "</span>" +
         '<span class="sd__what' +
-        (row.done ? " is-done" : "") +
+        (state.done ? " is-done" : "") +
         '">' +
-        esc(row.label) +
+        esc(MESSAGE_SAYING[row.kind] || row.kind) +
         "</span>" +
         '<span class="sd__when">' +
-        esc(row.when) +
+        esc(messageWhen(row.at)) +
         "</span>" +
         '<span class="sd__state">' +
-        esc(row.state) +
+        esc(state.say) +
+        (row.sent_at ? " \u00b7 " + esc(messageWhen(row.sent_at)) : "") +
         "</span></div>"
       );
     })
@@ -192,8 +212,8 @@ function statusScreenHtml(view) {
     '<div class="st__top">' +
     '<section class="st__send">' +
     '<div class="st__head">발송 · 예정</div>' +
-    sendRowsHtml(view.plan || {}) +
-    '<p class="st__note">발송 여부는 문자 발송이 붙으면 여기에 표시됩니다 — 지금은 예정만 셈합니다</p>' +
+    sendRowsHtml(view.messages) +
+    '<p class="st__note">ⓘ 못 나간 문자가 있으면 그 줄에 표시됩니다 — 발송기가 붙으면 다시 보낼 수 있습니다</p>' +
     "</section>" +
     '<section class="st__side">' +
     '<div class="st__label">안내문 읽음</div>' +

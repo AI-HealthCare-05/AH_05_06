@@ -35,6 +35,8 @@ from app.models.visits import (
     GuideDocument,
     GuideEvent,
     GuideEventType,
+    GuideMessage,
+    GuideMessageKind,
     GuideSection,
     GuideSectionKey,
     GuideStatus,
@@ -45,6 +47,23 @@ from app.services.drug_caution import DrugCautionService
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
 #: 진료가 끝난 저녁에 받아야 환자가 차분히 읽는다 — 진료 중에 오면 안 본다.
 SEND_HOUR = 18
+
+#: 확인 · 소진 문자가 나가는 시각. 안내문(18:00)과 다르다 —
+#: 와이어프레임 S1-14 가 「확인 문자 시각 오전 10:00」이라 적는다.
+#: 안내문은 진료 당일 저녁에 받아야 하고, 확인 문자는 며칠 뒤 낮이 낫다.
+CHECK_HOUR = 10
+
+#: 승인이 만드는 회차 — (무엇, 진료일로부터 며칠).
+#: 일주일 뒤는 어느 처방에서도 끌 수 없다(D2-3 「(고정)」) — 복약 첫 주가
+#: 가장 잘 끊기는 구간이다. 보름 뒤는 와이어프레임 기본값이 켜짐이다.
+_CHECK_ROUNDS: tuple[tuple[str, int], ...] = (
+    ("CHECK_D7", 7),
+    ("CHECK_D15", 15),
+)
+
+#: 소진 임박은 며칠 전에 보내나. D2-3 에서 처방별로 정할 값인데 그 자리가
+#: 아직 없어 기본값을 쓴다 (S1-14 의 「소진 3일 전」).
+RUN_OUT_BEFORE_DAYS = 3
 
 #: 반려 사유의 길이. 스탭 알림 한 줄에 들어가야 한다.
 REASON_MAX = 200
@@ -357,7 +376,100 @@ class GuideService:
                 actor_id=actor.user_id,
                 using_db=connection,
             )
+            # **예약도 같은 트랜잭션이다.** 갈라 두면 승인은 됐는데 예약이
+            # 빈 건이 생기고, 그 환자만 조용히 아무 문자도 못 받는다.
+            await self._schedule_messages(guide, moment, connection)
         return guide
+
+    async def _schedule_messages(self, guide: GuideDocument, moment: datetime, connection) -> None:
+        """승인 순간에 **나갈 문자를 전부 세워 둔다** — 와이어프레임 D1-6.
+
+        전에는 `guide.scheduled_at` 하나뿐이라 진료 안내문 한 통만 예약됐다.
+        확인 회차와 소진 임박은 담길 데가 없어서, 화면이 「예정」이라 적어도
+        실제로는 아무것도 예약돼 있지 않았다.
+
+        **다시 승인해도 두 번 만들지 않는다.** 반려됐다가 다시 올라오는 길이
+        있어서(`return_to_staff` → 다시 `approve`), 그때마다 새로 만들면
+        환자가 같은 문자를 두 번 받는다. 표의 유니크가 마지막으로 막지만,
+        여기서 먼저 본다 — 예외로 막으면 승인 자체가 실패한다.
+        """
+        already = {
+            m.kind
+            for m in await GuideMessage.filter(guide_document_id=guide.guide_document_id).using_db(connection).all()
+        }
+
+        rows: list[tuple[GuideMessageKind, datetime]] = []
+        if GuideMessageKind.GUIDE not in already:
+            rows.append((GuideMessageKind.GUIDE, guide.scheduled_at))
+
+        # 확인 회차는 **진료일** 기준이다. 승인일 기준으로 세면 승인이 하루
+        # 늦어질 때 「복약 7일째」가 8일째에 간다 — 환자에게 적는 숫자다.
+        visit = await Visit.filter(visit_id=guide.visit_id).using_db(connection).first()
+        started = visit.visited_at if visit else moment
+
+        for name, days in _CHECK_ROUNDS:
+            kind = GuideMessageKind(name)
+            if kind in already:
+                continue
+            rows.append((kind, self.check_at(started, days)))
+
+        # 소진 임박은 **처방일수를 알아야** 셈할 수 있다. 판독이 못 읽었으면
+        # 만들지 않는다 — 지어낸 날짜로 예약하면 엉뚱한 날 문자가 간다.
+        course = await self._course_days(guide.visit_id, connection)
+        if course and GuideMessageKind.RUN_OUT not in already:
+            rows.append((GuideMessageKind.RUN_OUT, self.check_at(started, course - RUN_OUT_BEFORE_DAYS)))
+
+        for kind, at in rows:
+            if at is None:
+                continue
+            await GuideMessage.create(
+                guide_document=guide,
+                kind=kind,
+                scheduled_at=at,
+                using_db=connection,
+            )
+
+    @staticmethod
+    async def _course_days(visit_id: int, connection) -> int | None:
+        """처방일수 — 판독이 확정한 값에서 읽는다.
+
+        **확정된 것만 본다.** 스탭이 아직 확인하지 않은 값으로 발송일을 잡으면,
+        고친 뒤에도 옛 날짜로 예약된 채 남는다.
+        """
+        row = (
+            await OcrField.filter(
+                ocr_result__ocr_job__visit_id=visit_id,
+                field_type="DURATION_DAYS",
+                is_confirmed=True,
+            )
+            .using_db(connection)
+            .first()
+        )
+        if row is None or not row.value:
+            return None
+        try:
+            days = int(str(row.value).strip())
+        except ValueError:
+            # 「84일」처럼 단위가 붙어 오면 숫자만 뗀다. 그래도 안 되면 포기한다 —
+            # 지어낸 값으로 예약하는 것보다 안 만드는 편이 낫다.
+            digits = "".join(ch for ch in str(row.value) if ch.isdigit())
+            if not digits:
+                return None
+            days = int(digits)
+        return days if days > 0 else None
+
+    @staticmethod
+    def check_at(started: datetime, days: int) -> datetime:
+        """확인 · 소진 문자가 나갈 시각 — **병원 시간으로** 그날 오전 10시.
+
+        안내문(18:00)과 다르다. 안내문은 진료 당일 저녁에 받아야 차분히 읽고,
+        확인 문자는 며칠 뒤 낮에 오는 편이 낫다 (S1-14 「오전 10:00」).
+
+        `send_at` 과 같은 이유로 **시간대를 옮겨 판단한다** — 안 옮기면 받은
+        값의 시간대에서 10시가 되고, 운영(UTC)에서는 한국 저녁 7시가 된다.
+        """
+        local = started.astimezone(config.TIMEZONE)
+        return (local + timedelta(days=days)).replace(hour=CHECK_HOUR, minute=0, second=0, microsecond=0)
 
     async def return_to_staff(self, actor, visit_id: int, reason: str) -> GuideDocument:
         """스탭에 되돌린다. **사유가 없으면 되돌리지 않는다.**

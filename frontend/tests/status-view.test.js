@@ -165,3 +165,62 @@ test("**현황은 자기 번호표를 쓴다** — 안내문과 나눠 쓰면 �
   const body = code.slice(at, at + 600);
   assert.ok(!body.includes("loadSeq"), "현황이 안내문 번호표를 건드린다");
 });
+
+/* ── 발송 · 예정 ─────────────────────────────────────────────────────── */
+
+test("**서버가 준 것을 그린다** — 화면이 따로 셈하지 않는다", () => {
+  const { sendRowsHtml } = box();
+  const html = sendRowsHtml([
+    { kind: "GUIDE", status: "SENT", at: "2026-08-13T18:00:00+09:00", sent_at: "2026-08-13T18:00:00+09:00" },
+    { kind: "CHECK_D7", status: "SCHEDULED", at: "2026-08-20T10:00:00+09:00" },
+  ]);
+
+  assert.ok(html.includes("진료 안내문"), "코드를 사람 말로 안 옮긴다");
+  assert.ok(html.includes("일주일 뒤 확인"), "회차 이름이 없다");
+  assert.ok(html.includes("08-20 10:00"), "언제 가는지 안 적는다");
+  assert.ok(html.includes("발송 완료"), "보낸 것을 안 표시한다");
+  assert.ok(html.includes("예정"), "예정을 안 표시한다");
+
+  /* **두 곳이 셈하면 어느 쪽이 진짜인지 알 수 없다** — 화면은 받은 것만 쓴다 */
+  const code = codeOnly(read("js/status-view.js"));
+  const at = code.indexOf("function sendRowsHtml");
+  const body = code.slice(at, at + 1400);
+  assert.ok(!body.includes("smsDateAfter"), "화면이 발송일을 따로 셈한다");
+});
+
+test("**못 나간 것과 예정을 또렷이 가른다** — 못 나간 것은 사람이 손대야 한다", () => {
+  const { sendRowsHtml, messageState } = box();
+
+  assert.equal(messageState("FAILED").bad, true);
+  assert.equal(messageState("SCHEDULED").bad, false);
+  assert.equal(messageState("SENT").done, true);
+  assert.equal(messageState("CANCELED").done, false, "끈 것을 보낸 것으로 본다");
+
+  const html = sendRowsHtml([{ kind: "CHECK_D7", status: "FAILED", at: "2026-08-20T10:00:00+09:00" }]);
+  assert.ok(html.includes("is-bad"), "못 나간 줄이 예정과 같아 보인다");
+  assert.ok(html.includes("못 나감"), "무슨 일인지 안 말한다");
+
+  const css = codeOnly(read("css/blocks.css"));
+  assert.ok(rule(css, ".sd__row.is-bad"), "못 나간 줄의 모양이 없다");
+});
+
+test("**승인 전에는 왜 비었는지 말한다** — 빈 판은 「고장」으로 읽힌다", () => {
+  const { sendRowsHtml } = box();
+
+  const html = sendRowsHtml([]);
+  assert.match(html, /승인하면/, "왜 비었는지 안 말한다");
+  assert.ok(!html.includes("sd__row"), "빈 줄을 그렸다");
+});
+
+test("모르는 상태·회차도 그대로 보여 준다 — 빈칸이면 일이 있었는데 없어 보인다", () => {
+  const { sendRowsHtml, messageState } = box();
+
+  assert.equal(messageState("SOMETHING").say, "SOMETHING");
+  const html = sendRowsHtml([{ kind: "NEW_KIND", status: "SCHEDULED", at: "2026-08-20T10:00:00+09:00" }]);
+  assert.ok(html.includes("NEW_KIND"), "모르는 회차가 화면에서 사라졌다");
+});
+
+test("**화면이 서버의 발송 목록을 넘긴다**", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  assert.ok(code.includes("messages: timeline.messages"), "서버가 준 목록을 안 넘긴다");
+});

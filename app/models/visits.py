@@ -281,6 +281,76 @@ class PatientOtpChallenge(models.Model):
         indexes = (("expires_at",), ("locked_until",))
 
 
+class GuideMessageKind(StrEnum):
+    """문자 한 통이 무엇인가 — 와이어프레임 D1-6 「발송 · 예정」.
+
+    회차를 값으로 두는 것이 중요하다. 「일곱째 날」을 시각에서 되계산하면
+    진료일이 고쳐질 때 어느 회차였는지를 잃는다.
+    """
+
+    #: 승인 직후 나가는 진료 안내문. 링크가 이것으로 간다.
+    GUIDE = "GUIDE"
+    #: 확인 문자 — 복약을 이어 가고 있는지 묻는다.
+    CHECK_D7 = "CHECK_D7"
+    CHECK_D15 = "CHECK_D15"
+    CHECK_D30 = "CHECK_D30"
+    #: 약이 떨어지기 전에 알린다. 처방일수를 알아야 셈할 수 있다.
+    RUN_OUT = "RUN_OUT"
+
+
+class GuideMessageStatus(StrEnum):
+    """문자 한 통이 지금 어디에 있는가.
+
+    **한 통 단위다.** 다섯 통 중 어느 것이든 실패할 수 있고, 실패한 것만
+    고쳐 다시 보낸다 (D1-6 캡션 — 「발송 상태는 문자 한 통 단위다」).
+
+    `CANCELED` 는 사람이 회차를 끈 것이다. 줄을 지우지 않는 이유는, 껐다는
+    것도 기록이기 때문이다 — 나중에 「왜 안 갔지」를 물을 때 답이 있어야 한다.
+    """
+
+    SCHEDULED = "SCHEDULED"
+    SENT = "SENT"
+    FAILED = "FAILED"
+    CANCELED = "CANCELED"
+
+
+class GuideMessage(models.Model):
+    """환자에게 나갈 문자 한 통 — 와이어프레임 D1-6 · S1-14.
+
+    승인이 이 줄들을 만든다. 「승인했는데 왜 안 나갔지」가 생기지 않게
+    승인과 예약을 한 동작으로 두는 것과 같은 이유다 (`GuideService.approve`).
+
+    **문구를 여기 담지 않는다.** 보낼 때 그 시점의 템플릿으로 만든다 —
+    미리 굳혀 두면 의원이 문구를 고쳐도 예약된 것만 옛 글로 나간다.
+    보낸 뒤에는 `sent_body` 에 남긴다: 그때는 이미 나간 글이라 바뀌면 안 된다.
+    """
+
+    guide_message_id = fields.BigIntField(primary_key=True)
+    guide_document_id: int
+    guide_document: fields.ForeignKeyRelation["GuideDocument"] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="messages",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    kind = fields.CharEnumField(enum_type=GuideMessageKind)
+    status = fields.CharEnumField(enum_type=GuideMessageStatus, default=GuideMessageStatus.SCHEDULED)
+    scheduled_at = fields.DatetimeField()
+    sent_at = fields.DatetimeField(null=True)
+    #: 못 나간 이유. 화면이 사람 말로 옮긴다 — 코드를 그대로 보여 주지 않는다.
+    failure_code = fields.CharField(max_length=64, null=True)
+    #: 실제로 나간 글. 보내기 전에는 비어 있다.
+    sent_body = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "guide_message"
+        #: 한 안내문에 같은 회차가 둘이면 환자가 같은 문자를 두 번 받는다.
+        unique_together = (("guide_document", "kind"),)
+        indexes = (("status", "scheduled_at"),)
+
+
 class CheckInMedication(StrEnum):
     TAKING = "taking"
     UNCOMFORTABLE = "uncomfortable"

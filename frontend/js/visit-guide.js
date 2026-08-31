@@ -201,7 +201,9 @@ function guideMissingSaying(error) {
       checkInSaying: answer
         ? timelineClock(answer.at) + " 응답 · " + (answer.detail || "")
         : "아직 없음",
-      plan: (typeof guideSmsPlan === "function" && guideSmsPlan()) || {},
+      /* **화면이 따로 셈하지 않는다.** 승인이 잡아 둔 날짜를 그대로 쓴다 —
+         두 곳이 셈하면 어느 쪽이 진짜인지 알 수 없다. */
+      messages: timeline.messages || [],
     });
   }
 
