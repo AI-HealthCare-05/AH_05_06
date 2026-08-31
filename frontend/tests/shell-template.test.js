@@ -230,3 +230,106 @@ test("**높이는 토큰을 따른다** — 와이어프레임 34px 보다 접�
   const add = rule(css, ".list__add");
   assert.match(add, /height:\s*var\(--field-h\)/, "높이를 토큰이 아니라 숫자로 박았다");
 });
+
+/* ── 환자 등록 (S1-2) ─────────────────────────────────────────────────── */
+
+test("**①환자 찾기와 ②환자 정보가 좌우 2단이다** — 세로로 쌓으면 한 화면에 안 들어온다", () => {
+  const html = read("patients.html");
+  const css = read("css/patients.css");
+
+  /* 와이어프레임 S1-2 우측 본문: `display:flex · gap:26px`.
+     스탭은 찾은 결과를 보면서 아래 칸을 채운다 — 스크롤로 갈리면 앞뒤를 오간다. */
+  assert.ok(html.includes('class="reg__cols"'), "두 칸을 감싸는 자리가 없다");
+
+  const cols = rule(css, ".reg__cols");
+  assert.match(cols, /display:\s*flex/, "2단이 아니다");
+  assert.match(cols, /gap:\s*26px/, "와이어프레임 간격과 다르다");
+
+  const box = rule(css, ".reg__cols > .box");
+  assert.match(box, /flex:\s*1/, "한 칸이 안 늘어난다");
+  assert.match(box, /min-width:\s*0/, "긴 내용이 칸을 밀어낸다");
+});
+
+/* 여는 태그부터 **짝이 맞는 닫는 태그**까지를 돌려준다.
+   `indexOf` 로 구간을 자르면 `</div>` 가 어디 있든 같은 문자열이 나와,
+   칸을 일찍 닫아도 검사가 통과한다(돌연변이로 확인했다). */
+function element(html, opener) {
+  const start = html.indexOf(opener);
+  assert.notEqual(start, -1, `${opener} 가 없다 — 검사가 헛돈다`);
+
+  let depth = 0;
+  let at = start;
+  while (at < html.length) {
+    if (html.startsWith("<div", at)) depth++;
+    else if (html.startsWith("</div>", at)) {
+      depth--;
+      if (depth === 0) return html.slice(start, at + 6);
+    }
+    at++;
+  }
+  assert.fail(`${opener} 가 안 닫힌다`);
+}
+
+test("①과 ②가 그 안에 다 들어 있다 — 하나만 감싸면 2단이 안 된다", () => {
+  const inside = element(read("patients.html"), '<div class="reg__cols">');
+
+  assert.ok(inside.includes("① 환자 찾기"), "①이 2단 밖에 있다");
+  assert.ok(inside.includes("② 환자 정보"), "②가 2단 밖에 있다 — 칸을 일찍 닫았다");
+});
+
+test("좁은 화면에서는 세로로 돌아간다 — 2단을 우겨넣으면 둘 다 못 읽는다", () => {
+  const css = read("css/patients.css");
+  const at = css.indexOf("@media (max-width: 1100px)");
+  assert.notEqual(at, -1, "좁은 화면 규칙이 없다");
+  assert.match(css.slice(at, at + 160), /display:\s*block/, "좁아도 2단을 고집한다");
+});
+
+test("**상태 칩 높이는 토큰 결정을 지킨다** — 와이어프레임 11px 보다 크다", () => {
+  /* 와이어프레임은 `font-size:11px · padding:3px 10px`(약 21px)인데 구현은
+     32px 다. 주석에 이유가 적혀 있다 — 「320px 폭에 다섯이 들어가야 해서
+     44px 은 못 쓴다. 폭은 그대로 두고 높이만 올려 줄바꿈을 늘리지 않는다」.
+     초점과 손가락이 닿아야 하는 자리라 와이어프레임 치수로 되돌리지 않는다. */
+  const chip = rule(read("css/shell.css"), ".chip");
+  assert.match(chip, /height:\s*32px/, "칩 높이가 바뀌었다 — 초점이 닿기 어려워진다");
+  assert.match(chip, /padding:\s*0 10px/, "칩 폭이 바뀌면 320px 안에서 줄바꿈이 늘어난다");
+});
+
+test("**등록 폼의 라벨이 입력 왼쪽에 붙는다** — 위에 두면 여덟 칸이 한 화면에 안 들어온다", () => {
+  const html = read("patients.html");
+  const css = read("css/patients.css");
+
+  /* 와이어프레임 S1-2·S1-3 의 ② 칸: 행은 `flex · gap:14px`,
+     라벨은 `width:78px · flex:none`, 입력은 `flex:1 · min-width:0`. */
+  assert.ok(html.includes('class="fields"'), "폼 행을 묶는 자리가 없다");
+
+  const rows = rule(css, ".fields");
+  assert.match(rows, /flex-direction:\s*column/, "행이 세로로 안 쌓인다");
+
+  const row = rule(css, ".fields .field");
+  assert.match(row, /display:\s*flex/, "라벨이 입력 위에 있다");
+  assert.match(row, /gap:\s*14px/, "와이어프레임 간격과 다르다");
+
+  const label = rule(css, ".fields .field__label");
+  assert.match(label, /width:\s*78px/, "라벨 폭이 와이어프레임과 다르다");
+  assert.match(label, /flex:\s*none/, "라벨이 늘어나 입력을 밀어낸다");
+});
+
+test("도움말은 입력 옆이 아니라 아래에 온다 — 옆에 두면 입력이 절반으로 줄어든다", () => {
+  const css = read("css/patients.css");
+
+  const row = rule(css, ".fields .field");
+  assert.match(row, /flex-wrap:\s*wrap/, "도움말이 줄바꿈을 못 해 입력 옆에 붙는다");
+
+  const hint = rule(css, ".fields .field__hint");
+  assert.match(hint, /width:\s*100%/, "도움말이 자기 줄을 안 갖는다");
+  assert.match(hint, /margin:[^;]*92px/, "도움말이 입력과 세로선이 안 맞는다 (78 + 14)");
+});
+
+test("죽은 규칙을 남기지 않았다 — grid2 는 아무도 안 쓴다", () => {
+  /* `grid2` 를 `fields` 로 바꾸면서 화면에서 사라졌다. CSS 에만 남으면
+     다음 사람이 「이건 뭘 위한 규칙이지」를 확인하느라 시간을 쓴다. */
+  const used = read("patients.html").includes("grid2");
+  const defined = read("css/patients.css").includes("grid2");
+  assert.strictEqual(used, false, "화면이 아직 grid2 를 쓴다");
+  assert.strictEqual(defined, false, "쓰지 않는 grid2 규칙이 CSS 에 남아 있다");
+});
