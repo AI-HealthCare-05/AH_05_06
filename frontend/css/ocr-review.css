@@ -172,10 +172,6 @@
   color: var(--warn);
 }
 
-.summary--ok {
-  background: var(--done-bg);
-  color: var(--done);
-}
 
 .fields {
   margin: 0;

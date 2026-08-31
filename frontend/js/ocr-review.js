@@ -954,11 +954,18 @@ function stateTakesFocus(tone) {
     if (counts.low) parts.push("확인 필요 " + counts.low);
 
     var clashes = Object.keys(conflict).length;
-    summary.className = "summary" + (total || clashes ? " summary--warn" : " summary--ok");
+
+    /* **할 일이 없으면 안 뜬다.** 「모두 읽혔습니다」는 판을 차지하면서 아무
+       일도 안 시킨다 — 값이 다 읽힌 것은 아래 블록을 보면 안다. 손봐야 하는
+       것이 있을 때만 뜨고, 그때는 눈에 걸려야 한다. */
+    summary.hidden = !(total || clashes);
+    summary.className = "summary summary--warn";
     if (clashes) {
       summary.textContent = "다른 사람이 먼저 고친 항목 " + clashes + "개 — 어느 값을 둘지 골라 주세요";
+    } else if (total) {
+      summary.textContent = "확인할 항목 " + total + "개 — " + parts.join(" · ");
     } else {
-      summary.textContent = total ? "확인할 항목 " + total + "개 — " + parts.join(" · ") : "모두 읽혔습니다";
+      summary.textContent = "";
     }
 
     /* 못 읽은 값이나 안 푼 충돌이 남아 있으면 안내문을 만들지 않는다.
@@ -1554,7 +1561,8 @@ function stateTakesFocus(tone) {
     fieldsBox.innerHTML = "";
     rawBox.innerHTML = "";
     docTabs.innerHTML = "";
-    summary.textContent = "—";
+    summary.textContent = "";
+    summary.hidden = true;
     /* **글자만 지우고 숨기지 않으면 빈 칸이 자리를 차지한다** — 이희진 님 `#162` ④.
        쓰는 자리(901·914·925)는 전부 `textContent` 와 `hidden` 을 짝지어 다루는데
        치우는 자리만 한쪽을 빠뜨리고 있었다. */

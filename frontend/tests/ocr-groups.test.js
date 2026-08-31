@@ -578,3 +578,33 @@ test("맨 위 줄에 없는 항목은 자리를 비우지 않는다", () => {
   const body = code.slice(at, at + 900);
   assert.ok(/if \(!field\) return ""/.test(body), "없는 항목을 그대로 그린다");
 });
+
+/* ── 할 일이 없으면 안 뜬다 ──────────────────────────────────────────── */
+
+test("**「모두 읽혔습니다」 판을 두지 않는다** — 판을 차지하면서 아무 일도 안 시킨다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const css = source("css/ocr-review.css");
+
+  assert.ok(!code.includes("모두 읽혔습니다"), "할 일이 없는데 판이 뜬다");
+  assert.ok(!css.includes(".summary--ok"), "쓰지 않는 초록 규칙이 남았다");
+
+  /* 손봐야 하는 것이 있을 때는 **여전히 뜬다** — 충돌은 사람이 골라야 한다 */
+  assert.ok(code.includes("다른 사람이 먼저 고친 항목"), "충돌 경고가 사라졌다");
+  assert.ok(code.includes("확인할 항목 "), "확인할 항목 안내가 사라졌다");
+
+  const at = code.indexOf("summary.hidden");
+  assert.notEqual(at, -1, "감추는 자리가 없다");
+  assert.match(
+    code.slice(at, at + 60),
+    /!\(total \|\| clashes\)/,
+    "감추는 조건이 「할 일이 없을 때」가 아니다",
+  );
+});
+
+test("**화면 제목은 소리로만 남는다** — 문서에 제목이 하나는 있어야 한다", () => {
+  const page = markupOnly(source("ocr-review.html"));
+
+  const h1 = /<h1[^>]*>/.exec(page);
+  assert.ok(h1, "제목이 아예 없다 — 화면낭독기가 「이 화면이 무엇인가」를 못 읽는다");
+  assert.match(h1[0], /sr-only/, "제목이 눈에 보인다 — 머리말과 단계 줄이 이미 같은 말을 한다");
+});
