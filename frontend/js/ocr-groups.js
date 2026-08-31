@@ -260,3 +260,37 @@ function rawTextNote(documents, documentId) {
   var name = documentName(documents, documentId);
   return name ? name + " 에서 판독한 원문" : "현재 화면에서 판독한 원문";
 }
+
+
+/* ── 화면에서 직접 채운 값 ─────────────────────────────────────────────
+ *
+ * 판독이 못 찾은 항목은 서버에 줄이 안 남는다 (`ocr_task.py` 의 Phase 2 게이트가
+ * 필수 필드가 없으면 Phase 3 저장 앞에서 돌아선다). 그래서 고칠 대상도, 값을
+ * 새로 만드는 자리(POST)도 없다 — 지금 서버로는 이 값을 보낼 수 없다.
+ *
+ * 그래도 **화면에서는 채울 수 있어야 한다.** 처방 여섯은 안내문의 뼈대라,
+ * 스탭이 눈으로 읽은 값을 적을 자리가 없으면 화면이 거기서 끝난다.
+ *
+ * 채운 값은 **화면 안에만** 있다. 저장된 척하지 않는다 — 적어 넣고 안내문을
+ * 만들면 그 값은 실리지 않는데, 그것을 말 안 하면 스탭은 실린 줄 안다.
+ * 판독 API 가 새 값을 받게 되면 이 자리는 통째로 사라진다.
+ */
+function localFilled(local) {
+  var keys = Object.keys(local || {});
+  var out = [];
+  for (var i = 0; i < keys.length; i++) {
+    if (String(local[keys[i]] || "").trim()) out.push(keys[i]);
+  }
+  return out;
+}
+
+/** 적어 넣은 값이 안내문에 안 실린다는 것을 말한다. 막지는 않는다. */
+function localSaying(local) {
+  var filled = localFilled(local);
+  if (!filled.length) return "";
+  return (
+    "직접 적은 " +
+    filled.length +
+    "개는 아직 저장되지 않아 안내문에 실리지 않습니다 — 판독 API 가 새 값을 받게 되면 반영됩니다"
+  );
+}

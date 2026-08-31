@@ -89,10 +89,19 @@ test("**판독 화면이 이 이름표를 실제로 쓴다** — 규칙만 있�
     .join("\n");
 
   assert.ok(code.includes("fieldLabel(field.field_type)"), "항목 이름을 이름표 없이 그린다");
-  assert.ok(
-    !/escapeHtml\(\s*field\.field_type\s*\)/.test(code),
-    "서버 코드를 그대로 그리는 자리가 남았다 — 「MEDICATION_NAME」이 화면에 뜬다",
-  );
+
+  /* **보이는 자리만 본다.** `data-local-fill="MEDICATION_NAME"` 처럼 속성값으로
+     쓰는 것은 이름이 아니라 열쇠라 그대로여야 한다 — 사람이 안 읽는다.
+     처음엔 전부 금지했더니 그 자리까지 걸렸다. 앞에 `data-…="` 가 붙어 있으면
+     속성값이고, 아니면 사람이 읽는 자리다. */
+  for (const m of code.matchAll(/escapeHtml\(\s*field\.field_type\s*\)/g)) {
+    const before = code.slice(Math.max(0, m.index - 120), m.index);
+    const isAttr = /data-[a-z-]+="'\s*\+\s*$/.test(before);
+    assert.ok(
+      isAttr,
+      `서버 코드를 사람이 읽는 자리에 그대로 그린다 — 「MEDICATION_NAME」이 화면에 뜬다:\n…${before.slice(-70)}`,
+    );
+  }
 });
 
 test("**화면이 이름표 파일을 싣는다** — 안 실으면 브라우저에서 `fieldLabel is not defined`", () => {

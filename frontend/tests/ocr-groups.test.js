@@ -432,3 +432,61 @@ test("**화면이 그 곁말을 실제로 갈아 끼운다** — 붙박이로 �
   const body = code.slice(at, at + 500);
   assert.ok(body.includes("rawTextNote("), "원문을 다시 그려도 곁말이 그대로다");
 });
+
+/* ── 화면에서 직접 적은 값 ───────────────────────────────────────────── */
+
+test("**적어 넣은 값이 몇 개인지 센다** — 빈 값은 세지 않는다", () => {
+  const { localFilled } = box();
+
+  assert.deepEqual(localFilled({}), []);
+  assert.deepEqual(localFilled(null), []);
+  assert.deepEqual(localFilled({ DIAGNOSIS: "자궁내막증" }), ["DIAGNOSIS"]);
+  assert.deepEqual(localFilled({ DIAGNOSIS: "  " }), [], "공백만 적은 것을 「적었다」로 셌다");
+  assert.deepEqual(localFilled({ DIAGNOSIS: "" }), []);
+});
+
+test("**안내문에 안 실린다는 것을 말한다** — 말 안 하면 실린 줄 안다", () => {
+  const { localSaying } = box();
+
+  const say = localSaying({ DIAGNOSIS: "자궁내막증", DOSAGE: "1" });
+  assert.match(say, /2/, "몇 개인지 안 말한다");
+  assert.match(say, /안내문에 실리지 않습니다/, "무슨 일이 일어날지 안 말한다");
+  assert.match(say, /저장되지 않아|아직/, "왜 그런지 안 말한다");
+
+  assert.equal(localSaying({}), "", "적은 것이 없으면 할 말이 없다");
+});
+
+test("**막지 않는다** — 막으면 화면이 거기서 끝난다", () => {
+  /* 판독 API 가 새 값을 못 받는 동안에도 스탭은 다음 단계로 가야 한다.
+     못 읽은 값이 길을 막지 않는 것(S1-7)과 같은 판단이다. */
+  const { generateBlocked } = load("api", "session", "patients-api", "shell", "ocr-api", "ocr-review");
+  assert.equal(generateBlocked({ missing: 3 }, 0, false), false);
+
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("localSaying(local)");
+  assert.notEqual(at, -1, "알리는 자리가 없다 — 검사가 헛돈다");
+  assert.ok(
+    !/generateBlocked\([^)]*local/.test(code),
+    "적어 넣은 값으로 생성을 막는다 — 화면이 거기서 끝난다",
+  );
+});
+
+test("**다른 환자로 옮기면 지운다** — 남의 값이 「저장 안 됨」으로 뜬다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function resetState");
+  const body = code.slice(at, at + 400);
+
+  assert.ok(/local\s*=\s*\{\}/.test(body), "앞 환자에게 적은 값을 안 지운다");
+  assert.ok(/localEditing\s*=\s*null/.test(body), "적던 칸이 남는다");
+});
+
+test("**저장된 값과 달라 보인다** — 같아 보이면 저장된 줄 안다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const css = source("css/ocr-review.css");
+
+  assert.ok(code.includes("field__tag--local"), "「저장 안 됨」 표시가 없다");
+  assert.ok(code.includes("저장 안 됨"), "무엇이 안 됐는지 안 적는다");
+
+  const rule = css.slice(css.indexOf(".field__value--local"), css.indexOf(".field__tag--local"));
+  assert.match(rule, /dashed/, "판독한 값과 테두리가 같다");
+});

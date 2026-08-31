@@ -323,6 +323,11 @@ function stateTakesFocus(tone) {
   /* 칸이 열려 있는지는 **키가 있는지**로 본다. 값으로 보면 칸을 비웠을 때
      ""(falsy)가 되어 입력칸이 저 혼자 닫힌다 — 지우고 다시 치는 것이 값
      고치기의 절반이다. */
+  /* 판독이 못 찾아 서버에 줄이 없는 항목을 스탭이 눈으로 읽어 적은 값.
+     **화면 안에만 있다** — 보낼 자리가 없다 (`js/ocr-groups.js` 의 localSaying). */
+  var local = {};
+  var localEditing = null;
+
   function isEditing(id) {
     return Object.prototype.hasOwnProperty.call(editing, id);
   }
@@ -561,6 +566,33 @@ function stateTakesFocus(tone) {
         '<button class="field__act" type="button" data-cancel="' +
         id +
         '">취소</button>';
+    } else if (field.is_absent && localEditing === field.field_type) {
+      /* 적는 중. 서버로 안 가므로 「저장」이 아니라 「적기」다. */
+      body =
+        '<input class="field__input" type="text" data-local-input="' +
+        escapeHtml(field.field_type) +
+        '" value="' +
+        escapeHtml(local[field.field_type] || "") +
+        '" aria-label="' +
+        escapeHtml(fieldLabel(field.field_type)) +
+        ' 값 적기" />' +
+        '<button class="field__act field__act--go" type="button" data-local-keep="' +
+        escapeHtml(field.field_type) +
+        '">적기</button>' +
+        '<button class="field__act" type="button" data-local-cancel="1">취소</button>';
+    } else if (field.is_absent && local[field.field_type]) {
+      /* 적어 둔 값. **저장된 척하지 않는다** — 배지로 못 박는다. */
+      body =
+        '<div class="field__value field__value--local">' +
+        escapeHtml(local[field.field_type]) +
+        "</div>" +
+        '<span class="field__unit">' +
+        escapeHtml(fieldUnit(field.field_type, "")) +
+        "</span>" +
+        '<span class="field__tag field__tag--local">저장 안 됨</span>' +
+        '<button class="field__act" type="button" data-local-fill="' +
+        escapeHtml(field.field_type) +
+        '">고치기</button>';
     } else if (state === "missing" && field.is_absent) {
       /* **서버가 이 항목의 줄을 아예 안 만들었다.**
        *
@@ -573,7 +605,10 @@ function stateTakesFocus(tone) {
        * 를 말한다 — 눌러도 아무 일 없는 버튼을 두는 것보다 낫다. */
       body =
         '<div class="field__value field__value--missing">?</div>' +
-        '<span class="field__hint">판독이 못 찾았습니다 — 값을 새로 만드는 자리가 아직 없습니다</span>';
+        '<button class="field__act" type="button" data-local-fill="' +
+        escapeHtml(field.field_type) +
+        '">직접 입력</button>' +
+        '<span class="field__hint">판독이 못 찾았습니다</span>';
     } else if (state === "missing") {
       /* 빈 칸이 아니라 「못 읽었다」로 보여야 한다. 빈 칸은 안 읽은 것처럼 보인다. */
       body =
@@ -863,6 +898,13 @@ function stateTakesFocus(tone) {
        필드 저장 타이머가 이 줄을 다시 지나며 버튼을 조용히 풀어 준다. */
     submit.disabled = generateBlocked(counts, clashes, generating);
     submit.title = generateBlockedSaying(counts, clashes, generating);
+
+    /* **막지 않고 알린다.** 적어 넣은 값은 서버에 없어서 안내문에 안 실리는데,
+       말 안 하면 스탭은 실린 줄 안다. 막으면 화면이 거기서 끝나므로, 무슨
+       일이 일어날지만 정확히 적는다 (`missingSaying` 과 같은 판단). */
+    var localNote = localSaying(local);
+    saveNote.hidden = !localNote;
+    if (localNote) saveNote.textContent = localNote;
   }
 
   function redraw() {
@@ -1095,6 +1137,35 @@ function stateTakesFocus(tone) {
        작업을 다시 묻고, 아직 도는 중이면 폴링에 다시 들어간다. */
     if (target.id === "recheck") {
       if (visit) loadVisit(visit);
+      return;
+    }
+
+    /* ── 화면에서 직접 적기 ─────────────────────────────────────────
+       판독이 못 찾아 서버에 줄이 없는 항목. 보낼 자리가 없어 화면 안에만
+       둔다 — 저장된 척하지 않고, 안내문에 안 실린다는 것을 아래에 적는다. */
+    var fill = target.getAttribute && target.getAttribute("data-local-fill");
+    if (fill) {
+      localEditing = fill;
+      redraw();
+      var box = fieldsBox.querySelector('[data-local-input="' + fill + '"]');
+      if (box) box.focus();
+      return;
+    }
+
+    var keep = target.getAttribute && target.getAttribute("data-local-keep");
+    if (keep) {
+      var input = fieldsBox.querySelector('[data-local-input="' + keep + '"]');
+      var typed = input ? String(input.value || "").trim() : "";
+      if (typed) local[keep] = typed;
+      else delete local[keep]; /* 비우면 지운다 — 빈 값을 「적었다」로 세지 않는다 */
+      localEditing = null;
+      redraw();
+      return;
+    }
+
+    if (target.getAttribute && target.getAttribute("data-local-cancel")) {
+      localEditing = null;
+      redraw();
       return;
     }
 
@@ -1376,6 +1447,10 @@ function stateTakesFocus(tone) {
   wireAddPanel();
 
   function resetState() {
+    /* **앞 환자에게 적은 값을 따라가면 안 된다.** 남겨 두면 새 환자 화면에
+       그 사람 값이 뜨고, 배지가 「저장 안 됨」이라 더 헷갈린다. */
+    local = {};
+    localEditing = null;
     if (pollTimer) {
       clearTimeout(pollTimer);
       pollTimer = null;
