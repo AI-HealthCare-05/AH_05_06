@@ -253,18 +253,45 @@ test("**화면이 두 파일을 싣는다** — 안 실으면 브라우저에서
   );
 });
 
-test("**「재업로드」와 「검사지 추가」가 하나로 합쳐졌다** — 같은 일이었다", () => {
-  /* 둘 다 사진을 한 장 더 보내는 일이다. 갈래를 물으면 스탭이 매번 어느
-     칸인지 고민하고, 그 답은 쓰이지도 않는다 — 문서를 「이미지1 · 이미지2」로
-     부르는 것과 같은 판단이다. */
+test("**왼쪽 칸이 한 블록이다** — 오른쪽만 블록이면 두 칸이 다른 화면처럼 보인다", () => {
   const page = markupOnly(source("ocr-review.html"));
+  const side = page.slice(page.indexOf('<section class="side"'), page.indexOf('class="main-col"'));
 
-  /* 클래스 이름으로 찾지 않는다 — 이름을 바꾸면 검사가 조용히 0개를 세고
-     통과한다(그렇게 한 번 새어 나갔다). **자리로** 찾는다. */
-  const acts = page.slice(page.indexOf('<div class="raw-acts">'));
-  const inPanel = acts.slice(0, acts.indexOf("</div>")).split("\n").filter((line) => line.includes("<button"));
-  assert.equal(inPanel.length, 1, `왼쪽 판의 버튼이 ${inPanel.length}개다 — 하나여야 한다`);
+  const boxes = (side.match(/<section class="box/g) || []).length;
+  assert.equal(boxes, 1, `왼쪽 칸에 블록이 ${boxes}개다 — 하나여야 한다`);
+
+  /* 탭 · 미리보기 · 원문 · 안내가 모두 그 안에 있어야 한다 */
+  const box = side.slice(side.indexOf('<section class="box'));
+  for (const part of ['id="doc-tabs"', 'id="doc-view"', 'id="raw"', 'id="add-panel"']) {
+    assert.ok(box.includes(part), `블록 밖에 남은 것이 있다: ${part}`);
+  }
+});
+
+test("**블록 머리에 버튼 둘** — 이 칸에서 할 수 있는 일이 맨 위에 보인다", () => {
+  const page = markupOnly(source("ocr-review.html"));
+  const side = page.slice(page.indexOf('<section class="side"'), page.indexOf('class="main-col"'));
+
+  const head = side.indexOf('class="box__head"');
+  const tabs = side.indexOf('id="doc-tabs"');
+  for (const id of ["add-doc", "reread"]) {
+    const at = side.indexOf(`id="${id}"`);
+    assert.ok(at !== -1, `${id} 버튼이 없다`);
+    assert.ok(head < at && at < tabs, `${id} 가 블록 머리에 없다`);
+  }
+
+  /* 갈래를 묻던 옛 버튼은 사라져야 한다 — 그 답은 쓰이지도 않는다 */
   assert.ok(!page.includes("검사지 추가"), "「검사지 추가」가 아직 남아 있다");
+  assert.ok(!page.includes("재업로드"), "「재업로드」가 아직 남아 있다");
+});
+
+test("**「판독 결과 확인」이 판독을 다시 불러온다** — 새로고침하면 화면을 벗어난다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf('target.id === "reread"');
+  assert.notEqual(at, -1, "누른 것을 받는 자리가 없다");
+
+  const body = code.slice(at, at + 200);
+  assert.ok(body.includes("loadVisit"), "판독을 다시 안 부른다");
+  assert.ok(!/location\.href/.test(body), "화면을 벗어난다 — 보던 값을 잃는다");
 });
 
 test("**그 자리에서 올린다** — 업로드 화면으로 보내면 보던 값을 잃는다", () => {

@@ -1140,6 +1140,15 @@ function stateTakesFocus(tone) {
       return;
     }
 
+    /* 「판독 결과 확인」 — 판독을 서버에서 다시 불러온다.
+       사진을 더 올리면 판독이 다시 도는데, 언제 끝나는지는 화면이 모른다.
+       올린 뒤 자동으로 한 번 부르지만(`send` 의 loadVisit), 그 사이에 끝난
+       것을 스탭이 직접 확인할 길도 있어야 한다 — 새로고침하면 화면을 벗어난다. */
+    if (target.id === "reread") {
+      if (visit) loadVisit(visit);
+      return;
+    }
+
     /* ── 화면에서 직접 적기 ─────────────────────────────────────────
        판독이 못 찾아 서버에 줄이 없는 항목. 보낼 자리가 없어 화면 안에만
        둔다 — 저장된 척하지 않고, 안내문에 안 실린다는 것을 아래에 적는다. */
@@ -1379,7 +1388,10 @@ function stateTakesFocus(tone) {
 
     function addSay(text) {
       var box = document.getElementById("add-say");
-      if (box) box.textContent = text;
+      if (!box) return;
+      box.textContent = text;
+      /* 할 말이 없으면 자리도 비운다 — 빈 줄이 남으면 블록에 틈이 생긴다 */
+      box.hidden = !text;
     }
 
     button.addEventListener("click", function () {

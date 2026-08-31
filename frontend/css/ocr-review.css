@@ -28,9 +28,6 @@
   flex: 1 1 440px;
   max-width: 440px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .main-col {
@@ -64,15 +61,35 @@
   font-size: 12px;
 }
 
-/* 원문 상자는 블록이되 안쪽을 조인다 — 원문이 길어 여백까지 크면 스크롤만 는다 */
+/* 왼쪽 칸은 블록 하나다. 안쪽을 조인다 — 원문이 길어 여백까지 크면
+   스크롤만 는다 (와이어프레임 원문도 `padding:11px 13px`). */
 .box--raw {
   margin-top: 0;
   padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.raw-acts {
+/* 블록 안의 것들은 각자 바깥 여백을 갖지 않는다 — 간격은 블록이 준다 */
+.box--raw > * {
+  margin: 0;
+}
+
+.box--raw .box__head {
+  margin-bottom: 0;
+}
+
+/* 원문 제목 — 블록 제목이 「진료기록」이라 그 아래 작은 제목으로 둔다 */
+.raw__head {
   display: flex;
+  align-items: baseline;
   gap: 8px;
+}
+
+.raw__title {
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .doc-tabs {
