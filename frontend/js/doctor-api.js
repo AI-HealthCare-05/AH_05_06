@@ -33,6 +33,14 @@ var doctorApi = {
       body: body,
     });
   },
+  /* 스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11.
+     이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다. */
+  submit: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/submit", {
+      method: "POST",
+    });
+  },
+
   approve: function (visitId, body) {
     return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/approve", {
       method: "POST",

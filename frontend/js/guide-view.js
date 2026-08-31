@@ -21,7 +21,10 @@ var GUIDE_SECTION_LABEL = {
   medication: "복약지도",
   caution: "주의사항",
   emergency: "🚨 바로 병원에 연락하세요",
-  life: "생활 안내",
+  /* 와이어프레임 S1-11 · D1-1 의 탭 이름이 「생활지도」다. 환자 화면(P4)은
+     같은 것을 「생활관리」로 부르는데, 이 화면은 의료진이 보는 자리라
+     의료진 쪽 이름을 쓴다 — 원장님이 탭 이름으로 찾는다. */
+  life: "생활지도",
   messages: "문자 설정",
 };
 
@@ -153,4 +156,144 @@ function guideWarnLine(sections) {
       ? "확인 부탁드리는 곳 " + n + "군데 — ⚠ 표시만 보시면 됩니다"
       : "확인 부탁드릴 곳이 없습니다 — 그대로 승인하셔도 됩니다",
   };
+}
+
+
+/* ── 안내문 화면 한 판 (와이어프레임 S1-11 · D1-1) ─────────────────────
+ *
+ * **두 프레임은 같은 화면이다.** 다른 것은 제목과 아래 버튼뿐이다:
+ *
+ *   S1-11  「환자가 받게 될 안내문 · 스탭 확인」   [진료기록 재업로드] [의사 승인 요청]
+ *   D1-1   「환자가 받게 될 안내문 · 미리보기」     [스탭에 되돌리기]   [승인]
+ *
+ * 그래서 한 벌로 그린다. 두 벌이면 한쪽만 고쳐지고, 스탭이 본 것과 의사가
+ * 보는 것이 달라진다 — 그건 「의사가 보지 않은 글이 환자에게 간다」와 같은
+ * 종류의 사고다.
+ *
+ * 왼쪽이 원문(고칠 수 있는 것), 오른쪽이 환자가 받을 모양이다. 나란히 두는
+ * 것이 이 화면의 전부다 — 고치면서 환자 눈에 어떻게 보이는지 함께 본다.
+ */
+
+var GUIDE_SCREEN_TITLE = {
+  guide: "환자가 받게 될 안내문 · 스탭 확인",
+  final: "환자가 받게 될 안내문 · 미리보기",
+};
+
+/* 가로 탭 — 와이어프레임은 칸막이로 이어 붙인 한 덩어리다(`height:26px`,
+   고른 것만 검정 채움). 세로 목록이 아니라 가로라, 네 항목이 한눈에 든다. */
+function guideSegmentsHtml(sections, current) {
+  return (
+    '<div class="seg" role="tablist" aria-label="안내문 항목">' +
+    guideTabSections(sections)
+      .map(function (s) {
+        return (
+          '<button class="seg__one' +
+          (s.key === current ? " is-on" : "") +
+          '" type="button" role="tab" aria-selected="' +
+          (s.key === current ? "true" : "false") +
+          '" data-section="' +
+          esc(s.key) +
+          '">' +
+          esc(GUIDE_SECTION_LABEL[s.key] || s.key) +
+          (s.warn ? ' <span class="seg__warn">⚠</span>' : "") +
+          "</button>"
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+/* 환자가 받을 모양. **같은 글을 다른 그릇에 담는다** — 우리가 읽는 원문과
+   환자가 보는 것이 다르면, 고치는 사람은 무엇이 나갈지 모른 채 고친다.
+   와이어프레임은 P2 화면을 80% 로 줄여 옆에 세운다. */
+function guidePreviewHtml(sections, current) {
+  var rows = guideSectionsOf(sections, current);
+  if (!rows.length) return '<p class="note">이 항목에는 아직 내용이 없습니다</p>';
+
+  return rows
+    .map(function (s) {
+      return (
+        '<section class="pv__block">' +
+        '<h4 class="pv__title">' +
+        esc(GUIDE_SECTION_LABEL[s.key] || s.key) +
+        "</h4>" +
+        '<p class="pv__body">' +
+        esc(s.body) +
+        "</p></section>"
+      );
+    })
+    .join("");
+}
+
+function guideScreenHtml(sections, current, mode, canEdit) {
+  var title = GUIDE_SCREEN_TITLE[mode] || GUIDE_SCREEN_TITLE.guide;
+
+  return (
+    '<section class="gs">' +
+    '<div class="gs__head">' +
+    '<span class="gs__title">' +
+    esc(title) +
+    "</span>" +
+    guideSegmentsHtml(sections, current) +
+    "</div>" +
+    '<div class="gs__body">' +
+    /* 왼쪽 — 원문 */
+    '<section class="gs__pane">' +
+    '<div class="gs__paneHead">' +
+    '<span class="gs__paneTitle">원문</span>' +
+    '<span class="gs__paneNote">환자 화면과 같은 차례</span>' +
+    "</div>" +
+    '<div class="gs__paneBody">' +
+    guidePanelHtml(sections, current, canEdit) +
+    "</div>" +
+    "</section>" +
+    /* 오른쪽 — 환자 화면 미리보기 */
+    '<section class="gs__pane gs__pane--pv">' +
+    '<div class="gs__paneHead">' +
+    '<span class="gs__paneTitle">환자 화면 미리보기</span>' +
+    '<span class="gs__paneNote">환자가 받는 그대로</span>' +
+    "</div>" +
+    '<div class="gs__paneBody">' +
+    guidePreviewHtml(sections, current) +
+    "</div>" +
+    "</section>" +
+    "</div>" +
+    /* 병원에서만 보는 메모 — 환자 화면에 안 나간다 */
+    '<p class="gs__memo">병원에서만 보는 메모 — 환자 화면에 안 나갑니다 · ' +
+    "안내 문구가 없는 약이 섞이면 그 항목만 「약사 복약지도를 참고하세요」로 나갑니다</p>" +
+    "</section>"
+  );
+}
+
+/* ── 안내문 화면의 하단 버튼 ──────────────────────────────────────────
+ *
+ *   S1-11 (안내문 · 스탭 확인)   [진료기록 재업로드]  … [의사 승인 요청]
+ *   D1-1  (최종 확인 · 미리보기)  [스탭에 되돌리기]    … [승인]
+ *
+ * 넘긴 뒤에는 스탭이 더 할 일이 없다 — 버튼을 지우고 어디까지 왔는지 말한다.
+ * 눌러도 409 로 떨어지는 버튼을 두면 「내가 뭘 잘못했나」로 읽힌다.
+ */
+function guideActionsFor(status, roles) {
+  var isDoctor = (roles || []).indexOf("doctor") !== -1;
+
+  if (status === "STAFF_REVIEW") {
+    return { canSubmit: true, say: "스탭 확인 후 의사에게 전달됩니다 · 승인은 의사 역할만 가능합니다" };
+  }
+  if (status === "APPROVAL_RETURNED") {
+    /* 반려된 것은 다시 스탭 차례다 — 고치고 다시 넘긴다. */
+    return { canSubmit: true, say: "반려된 안내문입니다 — 고친 뒤 다시 넘겨 주세요" };
+  }
+  if (status === "APPROVAL_PENDING") {
+    return {
+      canSubmit: false,
+      say: isDoctor
+        ? "의사 승인을 기다리는 중입니다 — 「최종 확인」에서 승인하실 수 있습니다"
+        : "의사에게 넘겼습니다 — 승인을 기다리는 중입니다",
+    };
+  }
+  if (status === "SCHEDULED_TO_SEND") {
+    return { canSubmit: false, say: "승인되어 발송을 기다리는 중입니다" };
+  }
+  return { canSubmit: false, say: "" };
 }

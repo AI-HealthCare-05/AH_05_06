@@ -55,6 +55,20 @@ function guideMissingSaying(error) {
     return document.getElementById(id);
   }
 
+  /* **누가 고칠 수 있나** — 서버와 같은 규칙을 화면도 쓴다.
+   *
+   * 스탭 확인 중이면 스탭이, 의사에게 넘긴 뒤에는 의사가 고친다
+   * (`app/services/guides.py` 의 `edit_section`). 화면이 다른 규칙을 쓰면
+   * 눌리는데 저장이 403 으로 떨어져, 스탭은 「내가 뭘 잘못했나」로 읽는다.
+   *
+   * 최종 확인 탭은 의사 차례라 의사만 고친다. */
+  function canEditNow(prefix) {
+    var isDoctor = ((me && me.roles) || []).indexOf("doctor") !== -1;
+    if (prefix === "final") return isDoctor;
+    /* 안내문 탭 — 넘기기 전이면 스탭도 고친다 */
+    return isDoctor || (guide && guide.status === "STAFF_REVIEW");
+  }
+
   /* 두 탭이 같은 안내문을 그린다 — 다른 것은 편집 권한과 아래 버튼뿐이다. */
   function renderOne(prefix, canEdit) {
     var vtabs = el(prefix + "-vtabs");
@@ -73,14 +87,44 @@ function guideMissingSaying(error) {
     if (!now) return;
     section[prefix] = now.key;
 
-    vtabs.innerHTML = guideTabsHtml(guide.sections, now.key);
-    panel.innerHTML = guidePanelHtml(guide.sections, now.key, canEdit);
+    /* **한 판으로 그린다** — 제목 · 가로 탭 · 원문 · 미리보기가 한 덩어리다
+       (와이어프레임 S1-11 · D1-1). 전에는 세로 탭과 본문이 따로 떠 있었다. */
+    vtabs.innerHTML = "";
+    panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit);
 
     if (warn) {
       var line = guideWarnLine(guide.sections);
       warn.className = line.className;
       warn.textContent = line.text;
     }
+  }
+
+  /* 누른 뒤에 무슨 일이 일어났는지 한 줄. 작아서 화면낭독기가 읽어도
+     시끄럽지 않다 — 다른 화면들과 같은 자리다. */
+  function say(text) {
+    var box = el("guide-say");
+    if (box) box.textContent = text;
+  }
+
+  /* S1-11 하단 — 스탭이 확인을 마치고 의사에게 넘긴다. */
+  function renderGuideActions() {
+    var box = el("guide-actions");
+    if (!box) return;
+    if (!guide) {
+      box.innerHTML = "";
+      return;
+    }
+
+    var can = guideActionsFor(guide.status, me && me.roles);
+    box.innerHTML =
+      '<button class="button-ghost button-ghost--sm" type="button" id="guide-reupload">진료기록 재업로드</button>' +
+      '<span class="grow"></span>' +
+      '<span class="note">' +
+      esc(can.say) +
+      "</span>" +
+      (can.canSubmit
+        ? '<button class="button-primary button-primary--sm" type="button" id="guide-submit">의사 승인 요청</button>'
+        : "");
   }
 
   function renderFinalActions() {
@@ -123,10 +167,12 @@ function guideMissingSaying(error) {
   }
 
   function renderAll() {
-    /* 스탭은 고칠 수 있고(GUIDE_DRAFT), 의사도 고칠 수 있다. 「최종 확인」은
-       읽는 자리라 편집을 열지 않는다 — 고치려면 「안내문」 탭으로 간다. */
-    renderOne("guide", true);
-    renderOne("final", false);
+    /* 「안내문」은 스탭 차례, 「최종 확인」은 의사 차례다 — `canEditNow` 가
+       서버와 같은 규칙으로 정한다. 화면이 다른 규칙을 쓰면 눌리는데 저장이
+       403 으로 떨어진다. */
+    renderOne("guide", canEditNow("guide"));
+    renderOne("final", canEditNow("final"));
+    renderGuideActions();
     renderFinalActions();
     renderStatus();
   }
@@ -155,16 +201,51 @@ function guideMissingSaying(error) {
     );
   }
 
-  /* 세그먼트 탭 — 두 패널이 각자 고른 것을 기억한다. */
+  /* 가로 탭 — 두 패널이 각자 고른 것을 기억한다.
+     탭이 **본문 안에** 들어갔으므로(한 판으로 그린다) 본문에 붙인다.
+     전에는 `#{prefix}-vtabs` 에 붙어 있었는데 그 칸이 이제 비어서, 거기
+     그대로 두면 아무것도 안 눌린다. */
   ["guide", "final"].forEach(function (prefix) {
-    var box = el(prefix + "-vtabs");
+    var box = el(prefix + "-panel");
     if (!box) return;
     box.addEventListener("click", function (event) {
       var tab = event.target.closest ? event.target.closest("[data-section]") : null;
       if (!tab) return;
       section[prefix] = tab.getAttribute("data-section");
-      renderOne(prefix, prefix === "guide");
+      renderOne(prefix, canEditNow(prefix));
     });
+  });
+
+  /* 「의사 승인 요청」 — 확인이 끝났다는 뜻이다. 성공하면 최종 확인 탭으로
+     옮겨 준다: 무엇이 넘어갔는지 그 자리에서 보인다. */
+  document.addEventListener("click", function (event) {
+    var t = event.target;
+    if (!t || !t.closest) return;
+
+    if (t.closest("#guide-reupload")) {
+      if (visitId) location.href = "/patients.html?visit=" + encodeURIComponent(visitId) + "&tab=record";
+      return;
+    }
+
+    var go = t.closest("#guide-submit");
+    if (!go || !visitId) return;
+
+    /* **누르는 사이 두 번 눌리지 않게 잠근다.** 두 번 넘기면 서버가 409 로
+       막지만, 그 사이 눌린 것은 스탭에게 「안 됐나」로 읽힌다. */
+    go.disabled = true;
+    var wantedId = visitId;
+    doctorApi
+      .submit(wantedId)
+      .then(function () {
+        if (visitId !== wantedId) return;
+        say("의사에게 넘겼습니다 — 승인을 기다립니다");
+        return loadGuide(wantedId);
+      })
+      .catch(function (error) {
+        if (visitId !== wantedId) return;
+        go.disabled = false;
+        say((error && error.message) || "넘기지 못했습니다. 다시 시도해 주세요.");
+      });
   });
 
   document.addEventListener("visit:selected", function (event) {

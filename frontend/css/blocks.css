@@ -382,3 +382,172 @@
   flex-wrap: wrap;
   margin-bottom: var(--s-12);
 }
+
+/* ── 안내문 화면 (와이어프레임 S1-11 · D1-1) ──────────────────────────
+ *
+ * 두 프레임은 같은 화면이다 — 제목과 아래 버튼만 다르다. 왼쪽이 원문(고칠
+ * 수 있는 것), 오른쪽이 환자가 받을 모양이고, 나란히 두는 것이 이 화면의
+ * 전부다: 고치면서 환자 눈에 어떻게 보이는지 함께 본다.
+ *
+ * `blocks.css` 에 둔다 — 스탭 화면(patients.html)과 의사 화면(doctor.html)이
+ * 같은 것을 쓴다. 한쪽 파일에 두면 다른 쪽에서 모양 없이 뜬다.
+ */
+
+.gs {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--card);
+}
+
+/* 원문 `padding:7px 10px 7px 14px · background:#F3F4F6` */
+.gs__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 10px 7px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.gs__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+/* 칸막이로 이어 붙인 한 덩어리 — 네 항목이 한눈에 든다 */
+.seg {
+  display: flex;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--card);
+}
+
+.seg__one {
+  height: 26px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--card);
+  border: 0;
+  border-left: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.seg__one:first-child {
+  border-left: 0;
+}
+
+.seg__one[aria-selected="true"] {
+  font-weight: 700;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.seg__one:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 「확인 부탁」이다 — 환자에게 나가는 응급 안내(🚨)와 기호를 나눠 쓴다.
+   같은 기호를 쓰면 「누구에게 하는 경고인가」가 섞인다. */
+.seg__warn {
+  color: var(--warn);
+}
+
+.seg__one[aria-selected="true"] .seg__warn {
+  color: var(--warn-line);
+}
+
+/* ── 두 칸 ─────────────────────────────────────────────────────────── */
+
+.gs__body {
+  display: flex;
+  gap: 14px;
+  padding: 10px 12px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.gs__pane {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.gs__paneHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 11px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.gs__paneTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.gs__paneNote {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.gs__paneBody {
+  padding: 9px 11px;
+  overflow: auto;
+  max-height: 520px;
+}
+
+/* 환자 화면 쪽은 바탕을 달리해 「우리 것이 아니다」를 보인다 */
+.gs__pane--pv .gs__paneBody {
+  background: var(--bg);
+}
+
+.pv__block {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  /* 환자 화면은 각 묶음 왼쪽에 굵은 세로선이 있다 */
+  border-left: 3px solid var(--accent);
+}
+
+.pv__title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pv__body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+.gs__memo {
+  margin: 0;
+  padding: 8px 14px 11px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.6;
+}
