@@ -1,0 +1,37 @@
+:root {
+  /* ── Brand ─── */
+  --p:           #E4C1F5;   /* primary */
+  --p-dark:      #A63C79;
+  --p-deep:      #4A1F38;
+  --p-soft:      #F8F0F6;   /* 현황 핑크 카드 배경 */
+
+  /* ── Surface ─── */
+  --bg:          #FAF6F9;
+  --surface:     #ffffff;
+  --border:      #F2E6EE;
+  --border-mid:  #EEDCE8;
+  --border-str:  #DFC7D8;
+
+  /* ── Text ─── */
+  --tx:          #30272C;
+  --tx-sub:      #6C5963;
+  --tx-muted:    #857280;
+  --tx-on-p:     #4A1F38;
+
+  /* ── Danger ─── */
+  --danger:      #A63A2E;
+  --danger-bg:   #FBEDE9;
+
+  /* ── Radius ─── */
+  --r-card:   22px;
+  --r-btn:    14px;
+  --r-pill:   999px;
+  --r-sm:     12px;
+
+  /* ── Shadow ─── */
+  --shadow-card: 0 1px 2px rgba(105,45,69,.03), 0 8px 24px rgba(105,45,69,.06);
+
+  /* ── Font ─── */
+  --font: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+          Pretendard, 'Noto Sans KR', system-ui, sans-serif;
+}
