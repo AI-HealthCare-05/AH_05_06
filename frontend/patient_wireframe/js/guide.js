@@ -236,8 +236,8 @@
       expandBody.className = 'expand-body' + (state.guideExpanded ? ' expand-body--open' : '');
     });
 
-    frag.appendChild(expandBtn);
     frag.appendChild(expandBody);
+    frag.appendChild(expandBtn);
     return frag;
   }
 
