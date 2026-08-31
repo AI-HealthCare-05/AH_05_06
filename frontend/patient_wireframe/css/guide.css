@@ -511,13 +511,14 @@ b { font-weight: 700; }
    공통 하단 푸터 (component/guide-footer.js)
 ════════════════════════════════════════ */
 .guide-footer {
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
   font-size: 12px;
   line-height: 17px;
   color: var(--tx-muted);
-  padding: 24px 4px 96px;
+  padding: 24px 4px 16px;
 }
 .guide-footer__note {
   color: var(--tx-sub);

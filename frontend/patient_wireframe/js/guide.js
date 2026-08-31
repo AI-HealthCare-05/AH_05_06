@@ -416,8 +416,7 @@
     }
     body.appendChild(frag);
 
-    /* 모든 탭 공통 하단 푸터
-     * GuideFooter 컴포넌트를 우선 사용하고, 미로드 시 직접 생성 */
+    /* 모든 탭 공통 하단 푸터 */
     var footer = (typeof GuideFooter === 'function')
       ? GuideFooter({ generatedAt: d.visit + ' 10:44', onReport: function () { alert('오류 신고 기능은 서버 연동 후 동작합니다.'); } })
       : (function () {
