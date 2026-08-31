@@ -201,7 +201,7 @@
 }
 
 .past td {
-  padding: var(--s-12);
+  padding: 9px 12px; /* 와이어프레임 원문 */
   border-bottom: 1px solid var(--line);
 }
 
@@ -247,4 +247,43 @@
 .cols2__side {
   flex: 1 1 340px;
   min-width: 0;
+}
+
+/* ── 상자 여백을 조인다 (S1-4) ───────────────────────────────────────────
+ *
+ * 와이어프레임의 본문은 `padding:22px 28px`, 칸 사이 `gap:14px` 이고 상자
+ * 안쪽도 그만큼 촘촘하다. 구현은 상자마다 24px 안쪽 여백에 24px 바깥 여백이라
+ * 네 상자를 세우면 여백만 100px 을 넘었다.
+ *
+ * 값은 열넷이 채 안 되는데 화면 한 장을 다 쓰면, 스탭은 「무엇을 봐야 하는가」
+ * 대신 「어디를 봐야 하는가」를 먼저 묻게 된다.
+ */
+.cols2 .box,
+.panel > .box {
+  margin-top: 14px;
+  padding: 16px 18px;
+}
+
+.cols2 .box:first-child,
+.panel > .box:first-child {
+  margin-top: 0;
+}
+
+.cols2 .box__head,
+.panel > .box .box__head {
+  margin-bottom: var(--s-12);
+}
+
+.cols2 .box__title,
+.panel > .box .box__title {
+  margin-bottom: var(--s-12);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* 값 목록도 조인다 — 줄 간격 12px 은 열 줄이 넘으면 한 화면을 넘긴다. */
+.cols2 .facts,
+.panel > .box .facts {
+  grid-template-columns: 92px 1fr;
+  gap: 8px 14px;
 }

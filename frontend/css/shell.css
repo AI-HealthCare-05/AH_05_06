@@ -378,11 +378,13 @@ body.shell {
 
 /* ── 오른쪽 내용 ────────────────────────────────────── */
 
+/* 와이어프레임 본문은 `padding:22px 28px` 이다. 좌우를 조금 넉넉히, 위아래를
+   조금 좁게 — 글은 가로로 읽고 세로로는 훑는다. */
 .pane {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: var(--s-24);
+  padding: 18px 24px;
 }
 
 /* 누구의 기록을 다루는 중인지 늘 붙어 있어야 다른 환자에게 잘못 넣지 않는다 */
@@ -390,13 +392,15 @@ body.shell {
    (`padding:11px 26px · flex · align-items:center · gap:18px`).
    왼쪽에 누구인지, 오른쪽에 어디를 보는지. 탭을 아래 줄로 내리면 본문이
    그만큼 줄어 1280×800 에서 지난 방문이 잘린다. */
+/* **밑줄을 두지 않는다.** 아래 상자들이 각자 테두리를 갖고 있어서, 여기까지
+   선을 그으면 가로줄이 겹쳐 화면이 층층이 잘려 보인다. 머리말과 본문은
+   여백으로 갈린다. */
 .patient-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 18px;
   padding-bottom: var(--s-12);
-  border-bottom: 1px solid var(--line);
 }
 
 .patient-head__who {
