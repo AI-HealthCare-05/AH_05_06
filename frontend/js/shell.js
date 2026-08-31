@@ -37,6 +37,15 @@ var listQuery = "";
    쓰는데 그 화면은 이 파일을 싣지 않는다(환자 목록이 없어 `bindShell` 이
    찾는 칸이 없다). 공통 템플릿이라 따로 뺐다. */
 
+/* 목록에서 그 진료의 줄을 찾는다. 서버가 준 줄이라 이름·차트번호·상태가 다 있다.
+   순수 함수로 두어 검사가 부를 수 있게 한다 (KEY-158). */
+function rowByVisit(list, visitId) {
+  for (var i = 0; i < (list || []).length; i++) {
+    if (list[i] && list[i].visit_id === visitId) return list[i];
+  }
+  return null;
+}
+
 function roleLabel(roles) {
   var names = { staff: "스탭", doctor: "의사", admin: "관리자" };
   return (roles || [])
@@ -308,37 +317,54 @@ function selectedVisit() {
 }
 
 /* 방금 만든 진료 건을 목록에 세우고 고른다. 등록이 끝났다는 것을 목록이 보여 준다. */
+/* 방금 만든 진료를 목록에 세운다 — **서버에서 다시 받아서** 세운다.
+ *
+ * 예전에는 `POST /visits` 응답을 그대로 `rows` 에 밀어 넣었다. 그런데 두
+ * 응답의 모양이 다르다.
+ *
+ *     오늘 목록  FrontDeskVisitItem   name · hospital_patient_no · age ·
+ *                                     diagnosis_name · work_category · detail_status
+ *     진료 생성  VisitResponse        doctor_id · department · status ·
+ *                                     planned_stop · visit_summary …
+ *
+ * 그래서 등록 직후 목록 줄에 **이름이 비고** 머리말이 「차트 undefined」로
+ * 떴다. 상태 칩도 `work_category` 가 없어 아무 데도 안 걸렸다.
+ *
+ * 화면이 그 칸들을 지어내면 안 된다 — `work_category` 는 서버가 OCR · 안내 ·
+ * 승인 · 발송의 최신 이벤트를 읽어 파생해 주는 값이다(계약 §6). 화면이 파생하면
+ * 화면마다 규칙이 갈리고, 규칙이 바뀔 때 어디를 고쳐야 하는지 알 수 없다.
+ */
 function addVisit(visit) {
-  rows.unshift(visit);
-
-  /* 방금 등록한 줄이 꺼진 탭에 속하면 목록에서 걸러진다. 등록했는데 안 보이면
-     「등록이 안 됐나」가 되고, 고를 줄이 없어 엉뚱한 환자가 대신 서기도 한다.
-     그 탭을 켜서 방금 만든 것이 반드시 보이게 한다. */
-  var chip = document.querySelector('.chip[data-tab="' + visit.work_category + '"]');
-  if (chip) chip.setAttribute("aria-pressed", "true");
-
-  /* 검색어도 같은 이유로 지운다. 탭만 켜서는 부족하다 — 「이서윤」을 찾다가
-     못 찾아 김서연을 등록하면, 남아 있는 검색어가 방금 만든 줄을 그대로
-     가린다. 그때 화면은 **「이서윤」로 오늘 등록된 환자가 없습니다** 라고
-     말한다. 등록한 직후에 등록된 사람이 없다고 하는 셈이다.
-
-     찾던 이름을 지우는 것이 아깝지 않은 이유는, 등록을 마친 순간 그 검색의
-     용무가 끝났기 때문이다 — 이제 봐야 할 것은 방금 만든 줄이다. */
+  /* 검색어를 먼저 지운다. 남겨 두면 다시 받아 온 목록에서도 방금 만든 줄이
+     가려진다 — 「이서윤」을 찾다가 못 찾아 김서연을 등록하면, 화면은 등록한
+     직후에 「이서윤로 오늘 등록된 환자가 없습니다」라고 말한다. */
   listQuery = "";
   var search = document.getElementById("quick-search");
   if (search) search.value = "";
 
-  renderChipCounts();
-  renderRows(visit.visit_id);
-  showView("view-card");
+  return loadDay().then(function () {
+    var made = rowByVisit(rows, visit.visit_id);
 
-  /* 방금 등록한 사람은 기본정보를 다시 볼 이유가 없다 — 진료기록 올리러 간다.
-     줄을 눌러 들어올 때(기본정보)와 다른 자리라 어느 탭을 열지 실어 보낸다.
-     `tab` 은 목록의 상태 묶음(작성 중 · 보완 …)이 이미 쓰고 있어서 이름을 달리한다. */
-  var picked = selectedVisit();
-  if (!picked) return; // 그래도 못 고르면 빈 것을 실어 보내지 않는다
-  picked.open_tab = "record";
-  document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
+    /* 방금 등록한 줄이 꺼진 탭에 속하면 목록에서 걸러진다. 등록했는데 안 보이면
+       「등록이 안 됐나」가 되고, 고를 줄이 없어 엉뚱한 환자가 대신 선다.
+       그 탭을 켜서 반드시 보이게 한다 — 탭 값은 **서버가 준 것**을 쓴다. */
+    if (made) {
+      var chip = document.querySelector('.chip[data-tab="' + made.work_category + '"]');
+      if (chip) chip.setAttribute("aria-pressed", "true");
+    }
+
+    renderChipCounts();
+    renderRows(visit.visit_id);
+    showView("view-card");
+
+    /* 방금 등록한 사람은 기본정보를 다시 볼 이유가 없다 — 진료기록 올리러 간다.
+       줄을 눌러 들어올 때(기본정보)와 다른 자리라 어느 탭을 열지 실어 보낸다.
+       `tab` 은 목록의 상태 묶음(작성 중 · 보완 …)이 이미 쓰고 있어서 이름을 달리한다. */
+    var picked = selectedVisit();
+    if (!picked) return; // 그래도 못 고르면 빈 것을 실어 보내지 않는다
+    picked.open_tab = "record";
+    document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
+  });
 }
 
 /* 오늘 목록에 이 환자의 진료가 이미 서 있는가.

@@ -526,7 +526,10 @@ function tiedBirthDates(items) {
     chain
       .then(function (visit) {
         reset();
-        addVisit(visit); // 목록 「작성 중 · 진료기록 없음」에 서고 S1-5 로 넘어간다
+        /* **돌려준다.** 목록을 서버에서 다시 받아 오므로 그 사이의 실패도
+           아래 catch 로 와야 한다 — 안 그러면 등록은 됐는데 목록이 안 서고
+           아무 말도 없이 끝난다. */
+        return addVisit(visit); // 목록 「작성 중 · 진료기록 없음」에 서고 S1-5 로 넘어간다
       })
       .catch(function (error) {
         /* 화면에서 막는 것은 편의일 뿐이고 판정은 서버가 한다.
