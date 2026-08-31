@@ -42,6 +42,7 @@
     panel.style.visibility = 'visible';
     backdrop.classList.add('chat-backdrop--open');
     panel.classList.add('chat-panel--open');
+    fab.el.style.display = 'none';
     document.body.style.overflow = 'hidden';
     if (state.messages.length === 0) renderIntro();
     scrollBottom();
@@ -54,6 +55,7 @@
     setTimeout(function () {
       if (!panel.classList.contains('chat-panel--open')) {
         panel.style.visibility = '';
+        fab.el.style.display = '';
       }
     }, 320);
   }
