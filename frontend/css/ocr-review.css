@@ -969,3 +969,44 @@
 .field__tag {
   white-space: nowrap;
 }
+
+/* 약속처방 고르는 칸 — 와이어프레임 S1-6 원문 `height:34px · radius:6px · 14px` */
+.top__pick {
+  height: 34px;
+  width: 100%;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.top__pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 판독이 읽은 약 이름 — 어느 세트를 골라야 하는지의 실마리이지 처방 자체가
+   아니다. 고르는 칸보다 약하게 둔다. */
+.top__read {
+  margin-top: 4px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+/* 목록이 없을 때. 빈 드롭다운을 두지 않는다 — 열어도 아무것도 없는 칸은
+   「고장」으로 읽힌다. */
+.top__note {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.4;
+}

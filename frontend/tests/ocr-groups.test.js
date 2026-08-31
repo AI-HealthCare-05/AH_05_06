@@ -655,3 +655,73 @@ test("맨 위 줄 이름표는 와이어프레임을 따른다 — 「처방」"
   const { fieldLabel } = load("field-labels");
   assert.equal(fieldLabel("MEDICATION_NAME"), "약품명");
 });
+
+/* ── 약속처방 고르기 ─────────────────────────────────────────────────── */
+
+test("**하나로 좁혀질 때만 고른다** — 둘이면 사람이 골라야 한다", () => {
+  const { guessPrescriptionSet } = box();
+
+  const sets = [
+    { prescription_set_id: 1, name: "자궁내막증 · 비잔 (처음)" },
+    { prescription_set_id: 2, name: "자궁내막증 · 비잔 (계속)" },
+    { prescription_set_id: 3, name: "PCOS · 야즈 (계속)" },
+  ];
+
+  /* 「비잔」은 둘에 걸린다 — 안내문이 다르고 기계가 고를 근거가 없다 */
+  assert.equal(guessPrescriptionSet(sets, "비잔"), null, "둘 중 하나를 마음대로 골랐다");
+
+  /* 「야즈」는 하나뿐이다 */
+  assert.equal(guessPrescriptionSet(sets, "야즈").prescription_set_id, 3);
+
+  assert.equal(guessPrescriptionSet(sets, ""), null);
+  assert.equal(guessPrescriptionSet([], "비잔"), null);
+  assert.equal(guessPrescriptionSet(sets, "없는약"), null);
+});
+
+test("글자 몇 개가 겹친다고 고르지 않는다", () => {
+  const { guessPrescriptionSet } = box();
+  const sets = [{ prescription_set_id: 5, name: "PCOS · 초진 (야즈 불가)" }];
+
+  /* 「야즈」가 「야즈 불가」에 들어 있다 — 통째로 들어 있으면 후보다.
+     그래도 하나뿐이라 고른다: 사람이 보고 바꿀 수 있는 자리다. */
+  assert.equal(guessPrescriptionSet(sets, "야즈").prescription_set_id, 5);
+});
+
+test("**목록이 없으면 빈 드롭다운을 두지 않는다** — 열어도 아무것도 없으면 「고장」으로 읽힌다", () => {
+  const { setsMissingSaying } = box();
+
+  assert.match(setsMissingSaying([], false), /설정 · 처방/, "어디서 채우는지 안 알려 준다");
+  assert.match(setsMissingSaying([], true), /불러오지 못했습니다/, "못 불러온 것과 없는 것을 안 가른다");
+  assert.equal(setsMissingSaying([{ prescription_set_id: 1, name: "x" }], false), "");
+
+  /* **부르는 것만으로는 모자란다.** 부르고 그 값을 버리면 검사가 안 문다 —
+     돌연변이를 넣어 보고 알았다. 그 값으로 **갈라지는지**를 본다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function setPickerHtml");
+  const body = code.slice(at, at + 900);
+
+  assert.match(
+    body,
+    /var note = setsMissingSaying\([\s\S]{0,80}if \(note\) \{/,
+    "말할 것이 있는지 부르기만 하고 갈라지지 않는다 — 빈 드롭다운이 그대로 뜬다",
+  );
+  /* 그 갈래가 드롭다운 **대신** 서야 한다 */
+  const branch = body.slice(body.indexOf("if (note) {"), body.indexOf("var options"));
+  assert.ok(!branch.includes("<select"), "빈 목록인데도 드롭다운을 함께 그린다");
+});
+
+test("**판독이 읽은 약 이름을 버리지 않는다** — 어느 세트인지의 실마리다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function setPickerHtml");
+  const body = code.slice(at, at + 1400);
+
+  assert.ok(body.includes("top__read"), "판독한 이름을 안 보여 준다");
+  assert.ok(body.includes("판독:"), "그것이 판독한 값이라고 안 밝힌다");
+});
+
+test("**다른 환자로 옮기면 고른 처방도 지운다** — 남의 처방으로 안내문이 만들어진다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function resetState");
+  const body = code.slice(at, at + 500);
+  assert.ok(/pickedSet\s*=\s*null/.test(body), "앞 환자에게 고른 처방이 남는다");
+});

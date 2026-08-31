@@ -337,6 +337,12 @@ function stateTakesFocus(tone) {
   var local = {};
   var localEditing = null;
 
+  /* 의사가 설정(D2-3)에서 정해 둔 약속처방. 화면이 뜰 때 한 번 불러 둔다 —
+     환자를 옮길 때마다 다시 부르면 같은 목록을 하루에 수십 번 받는다. */
+  var sets = [];
+  var setsFailed = false;
+  var pickedSet = null;
+
   function isEditing(id) {
     return Object.prototype.hasOwnProperty.call(editing, id);
   }
@@ -766,12 +772,56 @@ function stateTakesFocus(tone) {
    * 값이 두 번 보이고, 어느 쪽을 고쳐야 하는지 묻게 된다. */
   var TOP_ROW = [
     { type: "DIAGNOSIS", label: "진단", wide: false },
-    /* 와이어프레임 S1-6 의 이름표가 「처방」이다 — 스탭이 EMR 에서 옮겨 적는
-       칸의 이름과 맞춘다. 항목 이름(`fieldLabel`)은 「약품명」 그대로 두고
-       이 자리의 이름표만 바꾼다: 아래 값 줄에서는 「약품명」이 맞다. */
-    { type: "MEDICATION_NAME", label: "처방", wide: true },
+    /* 「처방」은 판독이 읽은 약 이름이 아니라 **설정(D2-3)에서 정해 둔 세트**
+       에서 고른다. 세트에 약 목록 · 확인 항목 · 주의 문구가 함께 묶여 있어서,
+       자유 입력이면 붙일 문구를 못 찾는다. `pick: true` 인 칸은 값 줄 대신
+       고르는 칸으로 그린다. */
+    { type: "MEDICATION_NAME", label: "처방", wide: true, pick: true },
     { type: "DURATION_DAYS", label: "처방일수", unit: "일", wide: false },
   ];
+
+  /* 약속처방 고르는 칸.
+   *
+   * 목록이 없으면 **빈 드롭다운을 두지 않는다** — 열어도 아무것도 없는 칸은
+   * 「고장」으로 읽힌다. 대신 왜 비었는지와 어디서 채우는지를 적는다.
+   *
+   * 판독이 읽은 약 이름은 아래 곁말로 남긴다. 어느 세트를 골라야 하는지의
+   * 실마리이지, 그 자체가 처방은 아니다. */
+  function setPickerHtml(field) {
+    var readName = field && field.value ? String(field.value) : "";
+    var note = setsMissingSaying(sets, setsFailed);
+
+    if (note) {
+      return (
+        '<div class="top__note">' +
+        escapeHtml(note) +
+        "</div>" +
+        (readName ? '<div class="top__read">판독: ' + escapeHtml(readName) + "</div>" : "")
+      );
+    }
+
+    var options = sets
+      .map(function (set) {
+        return (
+          '<option value="' +
+          escapeHtml(String(set.prescription_set_id)) +
+          '"' +
+          (pickedSet && pickedSet.prescription_set_id === set.prescription_set_id ? " selected" : "") +
+          ">" +
+          escapeHtml(set.name) +
+          "</option>"
+        );
+      })
+      .join("");
+
+    return (
+      '<select class="top__pick" id="set-pick" aria-label="약속처방 고르기">' +
+      '<option value="">처방을 고르세요</option>' +
+      options +
+      "</select>" +
+      (readName ? '<div class="top__read">판독: ' + escapeHtml(readName) + "</div>" : "")
+    );
+  }
 
   function topRowHtml(rows) {
     var cells = TOP_ROW.map(function (spec) {
@@ -780,6 +830,18 @@ function stateTakesFocus(tone) {
         if (rows[i].field_type === spec.type) field = rows[i];
       }
       if (!field) return "";
+
+      /* 약속처방은 값 줄이 아니라 **고르는 칸**이다 */
+      if (spec.pick) {
+        return (
+          '<div class="top__cell top__cell--wide">' +
+          '<span class="top__label">' +
+          escapeHtml(spec.label) +
+          "</span>" +
+          setPickerHtml(field) +
+          "</div>"
+        );
+      }
 
       var made = fieldBody(field);
       return (
@@ -1567,11 +1629,41 @@ function stateTakesFocus(tone) {
 
   wireAddPanel();
 
+  /* 약속처방 목록을 한 번 불러 둔다. 못 불러와도 화면은 선다 —
+     고르는 칸이 「왜 비었는지」를 대신 적는다. */
+  ocrApi
+    .prescriptionSets()
+    .then(function (rows) {
+      sets = rows || [];
+      setsFailed = false;
+      if (result) redraw();
+    })
+    .catch(function () {
+      setsFailed = true;
+      if (result) redraw();
+    });
+
+  /* 고른 것을 붙잡는다. **서버로 보내지 않는다** — 진료에 처방 세트를 붙이는
+     자리가 아직 없다(`Prescription` 표는 있으나 운영 코드가 안 쓴다). 화면이
+     기억만 하고, 그 사실을 아래 곁말이 말한다. */
+  document.addEventListener("change", function (event) {
+    var pick = event.target;
+    if (!pick || pick.id !== "set-pick") return;
+    var wanted = Number(pick.value);
+    pickedSet = null;
+    for (var i = 0; i < sets.length; i++) {
+      if (sets[i].prescription_set_id === wanted) pickedSet = sets[i];
+    }
+    redraw();
+  });
+
   function resetState() {
     /* **앞 환자에게 적은 값을 따라가면 안 된다.** 남겨 두면 새 환자 화면에
        그 사람 값이 뜨고, 배지가 「저장 안 됨」이라 더 헷갈린다. */
     local = {};
     localEditing = null;
+    /* 앞 환자에게 고른 처방이 남으면 남의 처방으로 안내문이 만들어진다 */
+    pickedSet = null;
     if (pollTimer) {
       clearTimeout(pollTimer);
       pollTimer = null;

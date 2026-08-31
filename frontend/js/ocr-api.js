@@ -31,11 +31,32 @@ function ocrRequest(path, options) {
   return request(path, options);
 }
 
+/* 목업 — 설정(D2-3)에 8종이 사전 등록돼 있다. 이름은 실제 표와 같다. */
+var MOCK_PRESCRIPTION_SETS = [
+  { prescription_set_id: 1, name: "자궁내막증 · 비잔 (처음)" },
+  { prescription_set_id: 2, name: "자궁내막증 · 비잔 (계속)" },
+  { prescription_set_id: 3, name: "자궁내막증 · 통증관리" },
+  { prescription_set_id: 4, name: "PCOS · 초진" },
+  { prescription_set_id: 5, name: "PCOS · 초진 (야즈 불가)" },
+  { prescription_set_id: 6, name: "PCOS · 야즈 (계속)" },
+  { prescription_set_id: 7, name: "PCOS · 야즈 + 메트포르민" },
+  { prescription_set_id: 8, name: "PCOS · 대사관리" },
+];
+
 var ocrApi = {
   /* GET /visits/{visitId}/ocr-job — KEY-133 */
   jobForVisit: function (visitId) {
     if (MOCK) return mockJobForVisit(visitId);
     return request("/visits/" + visitId + "/ocr-job");
+  },
+
+  /* 약속처방 목록 — 의사가 설정(D2-3)에서 정해 둔 것. 판독 확인 화면의
+     「처방」 칸이 여기서 고른다. 자유 입력이면 안 되는 이유는 이름을 고를 때
+     그 세트에 묶인 주의 문구가 안내문에 붙기 때문이다 — 「비잔」과 「비잔정」이
+     다른 값으로 들어오면 붙일 문구를 못 찾는다. */
+  prescriptionSets: function () {
+    if (MOCK) return Promise.resolve(MOCK_PRESCRIPTION_SETS);
+    return request("/prescription-sets");
   },
 
   job: function (jobId) {
