@@ -818,3 +818,30 @@
   font-size: 12px;
   color: var(--ink-2);
 }
+
+/* ④ 확인 항목 — 아직 저장되는 자리가 없어 꺼진 채로 세운다.
+   켤 수 있게 두면 스탭이 체크하고 저장됐다고 믿는데 아무 데도 안 남는다. */
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.checks__item {
+  margin: 0;
+}
+
+.checks__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.checks__label input {
+  margin: 0;
+}

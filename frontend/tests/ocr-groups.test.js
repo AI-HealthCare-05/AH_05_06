@@ -338,3 +338,56 @@ test("탭 이름도 값 옆 출처도 **같은 이름**이다 — 다르면 같�
   const uses = (code.match(/documentName\(/g) || []).length;
   assert.ok(uses >= 3, `문서 이름을 짓는 자리가 ${uses}곳이다 — 탭·출처·후보 셋 모두여야 한다`);
 });
+
+/* ── 없는 줄도 세운다 ────────────────────────────────────────────────── */
+
+test("**판독이 못 찾은 처방 항목도 자리에 선다** — 안 세우면 빠진 채로 안내문이 만들어진다", () => {
+  const { withMissingRows, PRESCRIPTION_CORE } = box();
+
+  assert.equal(PRESCRIPTION_CORE.length, 6, "진단·약품명·1회량·일일횟수·처방일수·처방일");
+
+  const rows = withMissingRows([{ field_type: "MEDICATION_NAME", value: "비잔" }], PRESCRIPTION_CORE);
+  assert.equal(rows.length, 6, "여섯 줄이 다 서지 않았다");
+  assert.equal(rows.map((r) => r.field_type).join(","), PRESCRIPTION_CORE.join(","), "차례가 다르다");
+
+  const med = rows.find((r) => r.field_type === "MEDICATION_NAME");
+  assert.equal(med.value, "비잔", "찾은 값이 덮였다");
+  assert.ok(!med.is_absent, "찾은 줄이 없는 줄로 표시됐다");
+
+  const diag = rows.find((r) => r.field_type === "DIAGNOSIS");
+  assert.equal(diag.value, null, "못 찾은 줄에 값이 생겼다");
+  assert.equal(diag.is_absent, true, "못 찾은 줄이 표시가 안 됐다");
+});
+
+test("**못 찾은 줄에 가짜 번호를 주지 않는다** — 저장하려 들다가 404 를 받는다", () => {
+  const { withMissingRows } = box();
+
+  const rows = withMissingRows([], ["DIAGNOSIS"]);
+  assert.equal(rows[0].ocr_field_id, undefined, "없는 항목에 번호가 붙었다");
+});
+
+test("검사값은 늘 세우지 않는다 — 안 한 검사를 열 줄씩 `?` 로 세우면 진짜 못 읽은 줄이 묻힌다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function groupsHtml");
+  const body = code.slice(at, at + 600);
+
+  assert.ok(body.includes("PRESCRIPTION_CORE"), "처방 여섯을 안 세운다");
+  assert.ok(
+    !/withMissingRows\(\s*split\.labs/.test(body),
+    "검사값까지 늘 세운다 — 안 한 검사가 못 읽은 줄처럼 보인다",
+  );
+});
+
+test("**확인 항목은 꺼진 채로 세운다** — 켤 수 있으면 저장됐다고 믿는다", () => {
+  const { CHECK_ITEMS } = box();
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  assert.ok(CHECK_ITEMS.length >= 4, "세울 항목이 없다");
+
+  const at = code.indexOf("function checkListHtml");
+  assert.notEqual(at, -1, "확인 항목을 세우는 자리가 없다");
+
+  const body = code.slice(at, at + 700);
+  assert.ok(body.includes("disabled"), "체크할 수 있게 두었다 — 저장되지 않는데 저장됐다고 믿는다");
+  assert.ok(body.includes("CHECK_ITEMS"), "항목을 여기서 지어낸다");
+});

@@ -574,7 +574,9 @@ test("**업로드 화면이 상자 하나에 담긴다** — 기본정보의 「
   assert.ok(panel.includes('<section class="box">'), "업로드가 상자에 안 담겼다");
 
   const box = element(panel, '<section class="box">');
-  for (const part of ["진료기록 업로드", 'id="drop"', 'class="kinds"', 'id="later"', 'id="next"']) {
+  /* 블록 제목은 「진료기록」이다 — 판독 확인까지 한 블록에 들어와서,
+     「업로드」라고만 적으면 이 블록이 하는 일의 절반만 말한다. */
+  for (const part of ["진료기록", 'id="pick"', 'id="reading-go"', 'id="drop"', 'class="kinds"', 'id="later"', 'id="next"']) {
     assert.ok(box.includes(part), `상자 밖에 남은 것이 있다: ${part}`);
   }
 });

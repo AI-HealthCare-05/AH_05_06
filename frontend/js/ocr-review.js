@@ -555,6 +555,19 @@ function stateTakesFocus(tone) {
         '<button class="field__act" type="button" data-cancel="' +
         id +
         '">취소</button>';
+    } else if (state === "missing" && field.is_absent) {
+      /* **서버가 이 항목의 줄을 아예 안 만들었다.**
+       *
+       * 판독이 찾지 못한 항목은 레코드로 남지 않는다 (화면 지도의 S1-7 걸림돌).
+       * 그래서 고칠 대상이 없고, 「직접 입력」을 눌러도 보낼 곳이 없다 —
+       * 값을 새로 만드는 자리(POST)가 아직 없다.
+       *
+       * 그래도 **줄은 세운다.** 안 세우면 스탭 눈에는 「그 항목이 없는 진료」로
+       * 보이고 빠진 채로 안내문이 만들어진다. 자리는 있고, 왜 지금 못 채우는지
+       * 를 말한다 — 눌러도 아무 일 없는 버튼을 두는 것보다 낫다. */
+      body =
+        '<div class="field__value field__value--missing">?</div>' +
+        '<span class="field__hint">판독이 못 찾았습니다 — 값을 새로 만드는 자리가 아직 없습니다</span>';
     } else if (state === "missing") {
       /* 빈 칸이 아니라 「못 읽었다」로 보여야 한다. 빈 칸은 안 읽은 것처럼 보인다. */
       body =
@@ -713,7 +726,10 @@ function stateTakesFocus(tone) {
    * 기본정보(S1-4)와 같은 상자다. 안의 치수는 원문 그대로. */
   function groupsHtml() {
     var split = splitFields(result.fields);
-    return prescriptionHtml(split.prescription) + labsHtml(split.labs) + notReadyHtml();
+    /* 처방 여섯은 판독이 못 읽어도 자리에 세운다 — 안내문이 그것으로
+       만들어져서, 화면에서 사라지면 빠진 채로 만들어진다 (S1-7). */
+    var rx = withMissingRows(split.prescription, PRESCRIPTION_CORE);
+    return prescriptionHtml(rx) + labsHtml(split.labs) + notReadyHtml();
   }
 
   /* ① 진단 · 처방 */
@@ -774,11 +790,36 @@ function stateTakesFocus(tone) {
         '<span class="box__note">' +
         escapeHtml(group.note) +
         "</span></div>" +
+        (group.key === "checks" ? checkListHtml() : "") +
         '<p class="box__soon">' +
         escapeHtml(group.saying) +
         "</p></section>"
       );
     }).join("");
+  }
+
+  /* ④ 확인 항목의 **모양**을 세운다 — 와이어프레임 S1-6.
+   *
+   * 항목은 처방에 따라 달라지고 그것을 주는 자리가 아직 없다. 그런데 자리만
+   * 비워 두면 이 블록이 무엇이 될지가 안 보이고, 판독 API 를 붙이는 사람이
+   * 무엇을 만들어야 하는지도 안 보인다.
+   *
+   * 그래서 **꺼진 채로** 세운다. 켤 수 있게 두면 스탭이 「우울증 병력」을
+   * 체크하고 저장됐다고 믿는데 아무 데도 안 남는다 — 안전에 걸리는 항목이라
+   * 그 오해가 가장 나쁘다. 눌리지 않고, 왜 아직 안 눌리는지 아래 줄이 말한다. */
+  function checkListHtml() {
+    return (
+      '<ul class="checks" aria-label="확인 항목 (아직 저장되지 않습니다)">' +
+      CHECK_ITEMS.map(function (item) {
+        return (
+          '<li class="checks__item"><label class="checks__label">' +
+          '<input type="checkbox" disabled />' +
+          escapeHtml(item) +
+          "</label></li>"
+        );
+      }).join("") +
+      "</ul>"
+    );
   }
 
   /* 위에 몇 개를 봐야 하는지 먼저 말한다. 목록을 훑기 전에 알아야

@@ -33,6 +33,21 @@ var PRESCRIPTION_TYPES = [
   "PRESCRIPTION_DURATION",
 ];
 
+/* **늘 세우는 처방 여섯.** 안내문이 이것으로 만들어진다 — 무슨 약을, 얼마씩,
+   하루 몇 번, 며칠 치. 하나라도 빠지면 안내문이 성립하지 않으므로, 판독이
+   못 읽었어도 자리를 비워 두고 사람이 채우게 한다.
+
+   구버전 이름은 여기 넣지 않는다 — 넣으면 새 이름과 옛 이름 두 줄이 나란히
+   선다. 옛 행이 있으면 `splitFields` 가 이미 처방 묶음에 넣어 준다. */
+var PRESCRIPTION_CORE = [
+  "DIAGNOSIS",
+  "MEDICATION_NAME",
+  "DOSAGE",
+  "FREQUENCY",
+  "DURATION_DAYS",
+  "PRESCRIPTION_DATE",
+];
+
 /* 검사일은 값 줄이 아니라 **묶음 머리**에 붙는다 (「이번 판독 값 · 검사일 08-05」).
    ②의 줄로도 세우면 같은 것이 두 번 보인다. */
 var LAB_HEAD_TYPE = "LAB_DATE";
@@ -136,6 +151,13 @@ var GROUPS_WITHOUT_SERVER = [
   },
 ];
 
+/* ④ 확인 항목에 세울 것 — 와이어프레임 S1-6 이 그린 그대로.
+ *
+ * 처방에 따라 달라지는 것이 맞고(비잔이면 우울증 병력을 여쭙는다), 그것을
+ * 주는 자리가 붙으면 이 목록은 서버에서 온다. 그때까지는 **무엇이 올 자리인지**
+ * 를 보이기 위한 모양이다 — 화면은 이것을 꺼진 채로 세운다. */
+var CHECK_ITEMS = ["우울증 병력", "고혈압", "골다공증", "당뇨", "임신 계획"];
+
 /** 이 묶음을 지금 채울 수 있는가. 채울 수 없으면 화면이 그렇게 말해야 한다. */
 function groupIsReady(key, data) {
   var rows = (data || {})[key];
@@ -173,4 +195,41 @@ function documentNames(documents) {
   return (documents || []).map(function (doc, i) {
     return { document_id: doc.document_id, name: "이미지" + (i + 1) };
   });
+}
+
+
+/* ── 없는 줄도 세운다 ─────────────────────────────────────────────────
+ *
+ * 화면이 **서버가 준 값만** 그리면, 판독이 못 읽은 항목은 화면에서 아예
+ * 사라진다. 스탭 눈에는 「그 항목이 없는 진료」로 보이고, 빠진 채로 안내문이
+ * 만들어진다.
+ *
+ * 와이어프레임 S1-7 이 그린 것이 바로 그 반대다 — 못 읽은 줄도 자리에 서
+ * 있고, 점선 네모에 `?` 가 들어가고, 옆에 「직접 입력」이 붙는다.
+ * 「그 줄만 점선 · 다른 줄과 확인 항목은 그대로다 — 추측해서 채우지 않는다」.
+ *
+ * **처방 여섯은 늘 세운다.** 안내문이 그것으로 만들어지기 때문이다 — 약 이름과
+ * 며칠 치인지가 빠지면 안내문이 성립하지 않는다. 검사값은 진료마다 한 것이
+ * 달라서 늘 세우지 않는다. 안 한 검사를 열 줄씩 `?` 로 세우면 진짜 못 읽은
+ * 줄이 그 안에 묻힌다 — 이번에 안 한 검사는 ③ 「이전 값 유지」의 몫이다.
+ */
+function withMissingRows(fields, types) {
+  var have = fields || [];
+  var want = types || [];
+  var out = [];
+
+  for (var i = 0; i < want.length; i++) {
+    var found = null;
+    for (var j = 0; j < have.length; j++) {
+      if (have[j].field_type === want[i]) {
+        found = have[j];
+        break;
+      }
+    }
+    /* 못 읽은 줄에는 **가짜 번호를 주지 않는다.** `ocr_field_id` 가 없으면
+       고칠 대상도 없다는 뜻이고, 화면이 그것을 보고 「직접 입력」을 그린다.
+       0 이나 -1 을 넣으면 저장하려 들다가 서버에서 404 를 받는다. */
+    out.push(found || { field_type: want[i], value: null, is_absent: true });
+  }
+  return out;
 }

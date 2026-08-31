@@ -308,11 +308,11 @@ function filePic(mimeType) {
   /* 이 진료 건에 판독 작업이 있는지 묻고, 있으면 돌아가는 길을 낸다.
      없으면 조용히 지운다 — 앞 환자의 길이 남아 있으면 남의 판독으로 간다. */
   function askReading() {
-    var box = document.getElementById("reading");
-    if (!box || !visit || !visit.visit_id) return;
+    var go = document.getElementById("reading-go");
+    if (!go || !visit || !visit.visit_id) return;
     var asked = visit.visit_id;
 
-    box.hidden = true;
+    drawReading({ show: false });
     ocrApi
       .jobForVisit(asked)
       .then(function (job) {
@@ -327,19 +327,21 @@ function filePic(mimeType) {
       });
   }
 
+  /* 판독 확인 버튼과 그 아래 상태 줄. 둘 다 「진료기록」 블록 안에 있다 —
+     전에는 따로 선 블록이었는데, 스탭이 이 탭에 오는 이유가 「올리려고」거나
+     「판독을 보려고」 둘 중 하나라 두 길을 한 자리에 세운다. */
   function drawReading(link) {
-    var box = document.getElementById("reading");
-    if (!box) return;
-    box.hidden = !link.show;
-    if (!link.show) return;
-
-    var say = document.getElementById("reading-say");
     var go = document.getElementById("reading-go");
+    var say = document.getElementById("reading-say");
+    if (!go) return;
+
+    go.hidden = !link.show;
     if (say) {
-      say.textContent = link.say;
-      say.className = "note note--" + link.tone;
+      say.hidden = !link.show;
+      say.textContent = link.show ? link.say : "";
+      say.className = "note note--" + (link.tone || "");
     }
-    if (go) go.textContent = link.label;
+    if (link.show && link.label) go.textContent = link.label;
   }
 
   document.addEventListener("session:ready", function () {

@@ -57,23 +57,40 @@ test("끝났으면 끝났다고 말한다", () => {
 test("**화면에 그 자리가 있다** — 규칙만 있고 자리가 없으면 소용없다", () => {
   const page = read("patients.html");
 
-  const at = page.indexOf('id="reading"');
-  assert.ok(at !== -1, "진료기록 탭에 판독 블록이 없다");
-
-  /* 업로드 칸 **위**에 있어야 한다. 아래에 두면 파일 목록과 안내문이 길어서
-     스크롤해야 보이고, 그러면 없는 것과 같다. */
+  /* 「진료기록」 블록 **머리**에 있어야 한다. 아래에 두면 파일 목록과 안내문이
+     길어서 스크롤해야 보이고, 그러면 없는 것과 같다. */
   const record = page.indexOf('id="panel-record"');
+  const head = page.indexOf('class="box__head"', record);
+  const go = page.indexOf('id="reading-go"');
   const drop = page.indexOf('id="drop"');
-  assert.ok(record < at && at < drop, "판독 블록이 업로드 칸 아래에 있다 — 스크롤해야 보인다");
 
-  assert.ok(page.includes('id="reading-go"'), "누를 것이 없다");
+  assert.ok(go !== -1, "판독 확인 버튼이 없다");
+  assert.ok(head < go && go < drop, "판독 확인 버튼이 블록 머리에 없다");
   assert.ok(page.includes('id="reading-say"'), "지금 어느 상태인지 말할 자리가 없다");
+
+  /* 올리는 버튼도 같은 머리에 — 이 탭에 오는 이유가 둘 중 하나라서 */
+  const pick = page.indexOf('id="pick"');
+  assert.ok(head < pick && pick < drop, "OCR 업로드 버튼이 블록 머리에 없다");
 });
 
-test("**처음엔 숨어 있다** — 물어보기 전에 뜨면 판독이 있는 것처럼 보인다", () => {
+test("**한 블록이다** — 판독과 업로드를 갈라 두면 위아래로 훑어야 한다", () => {
   const page = read("patients.html");
-  const tag = page.slice(page.indexOf('id="reading"') - 200, page.indexOf('id="reading"') + 40);
-  assert.match(tag, /hidden/, "물어보기 전부터 떠 있다");
+  const record = page.slice(page.indexOf('id="panel-record"'), page.indexOf('id="panel-guide"'));
+
+  const boxes = (record.match(/<section class="box"/g) || []).length;
+  assert.equal(boxes, 1, `진료기록 탭에 블록이 ${boxes}개다 — 하나여야 한다`);
+});
+
+test("**물어보기 전에는 안 뜬다** — 뜨면 판독이 있는 것처럼 보인다", () => {
+  const page = read("patients.html");
+
+  for (const id of ["reading-go", "reading-say"]) {
+    const at = page.indexOf(`id="${id}"`);
+    assert.ok(at !== -1, `${id} 가 없다`);
+    /* 여는 태그 안에 hidden 이 있어야 한다 — 태그 끝까지만 본다 */
+    const tag = page.slice(at, page.indexOf(">", at));
+    assert.match(tag, /hidden/, `${id} 가 처음부터 떠 있다`);
+  }
 });
 
 test("**다른 환자를 고르면 앞 사람의 길이 안 남는다**", () => {
