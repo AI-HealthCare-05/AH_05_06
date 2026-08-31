@@ -136,8 +136,13 @@ function guideMissingSaying(error) {
   /* 누른 뒤에 무슨 일이 일어났는지 한 줄. 작아서 화면낭독기가 읽어도
      시끄럽지 않다 — 다른 화면들과 같은 자리다. */
   function say(text) {
-    var box = el("guide-say");
-    if (box) box.textContent = text;
+    /* **두 탭 모두에 쓴다.** 안내문 탭과 최종 확인 탭이 각자 알림 줄을
+       갖는데, 한쪽에만 쓰면 다른 탭에서 누른 결과가 어디에도 안 보인다 —
+       승인하고 「됐나?」를 묻게 된다. */
+    ["guide-say", "final-say"].forEach(function (id) {
+      var box = el(id);
+      if (box) box.textContent = text;
+    });
   }
 
   /* S1-11 하단 — 스탭이 확인을 마치고 의사에게 넘긴다. */
@@ -170,11 +175,34 @@ function guideMissingSaying(error) {
     }
 
     var can = finalActionsFor(me && me.roles);
-    box.innerHTML = can.canApprove
-      ? '<button class="button-ghost" type="button" id="final-return">스탭에게 되돌리기</button>' +
-        '<span class="grow"></span>' +
-        '<button class="button-primary" type="button" id="final-approve">승인</button>'
-      : '<p class="note">' + esc(can.why) + "</p>";
+    if (!can.canApprove) {
+      box.innerHTML = '<p class="note">' + esc(can.why) + "</p>";
+      return;
+    }
+
+    /* **스탭이 넘긴 것만 승인한다.** 서버가 그렇게 막는데(GUIDE_NOT_PENDING),
+       화면이 그대로 두면 눌러서 409 를 받고 「내가 뭘 잘못했나」로 읽힌다.
+       왜 지금 못 누르는지를 대신 적는다. */
+    var ready = guide.status === "APPROVAL_PENDING";
+    box.innerHTML =
+      '<button class="button-ghost" type="button" id="final-return"' +
+      (ready ? "" : " disabled") +
+      ">스탭에게 되돌리기</button>" +
+      '<span class="grow"></span>' +
+      (ready
+        ? ""
+        : '<span class="note">' +
+          esc(
+            guide.status === "STAFF_REVIEW"
+              ? "스탭이 확인 중입니다 — 넘어오면 승인할 수 있습니다"
+              : guide.status === "SCHEDULED_TO_SEND"
+                ? "이미 승인되어 발송을 기다립니다"
+                : "지금은 승인할 수 없습니다",
+          ) +
+          "</span>") +
+      '<button class="button-primary" type="button" id="final-approve"' +
+      (ready ? "" : " disabled") +
+      ">승인</button>";
   }
 
   /* 「현황」 — 와이어프레임 D1-6. 이제 **진짜 기록**으로 찬다.
@@ -275,6 +303,67 @@ function guideMissingSaying(error) {
       section[prefix] = tab.getAttribute("data-section");
       renderOne(prefix, canEditNow(prefix));
     });
+  });
+
+  /* **승인 · 되돌리기.** 버튼은 그려지는데 누른 것을 받는 자리가 없었다 —
+     의사 계정에서 승인이 안 눌리던 것이 이것이다.
+
+     승인하면 발송이 예약된다(서버가 한 트랜잭션에서 한다). 그래서 성공 뒤에
+     안내문을 다시 불러온다 — 상태가 「발송 대기」로 바뀌고 「현황」에 예약된
+     문자가 선다. */
+  document.addEventListener("click", function (event) {
+    var t = event.target;
+    if (!t || !t.closest) return;
+
+    var go = t.closest("#final-approve");
+    var back = t.closest("#final-return");
+    if ((!go && !back) || !visitId) return;
+    if ((go || back).disabled) return;
+
+    var wantedId = visitId;
+
+    if (back) {
+      /* **사유 없이 되돌리지 않는다.** 그 문장이 스탭 알림에 그대로 뜨는데,
+         비어 있으면 받는 사람은 무엇을 고쳐야 하는지 알 수 없다. */
+      var why = window.prompt("무엇을 고쳐야 하는지 적어 주세요 — 스탭에게 그대로 전달됩니다");
+      if (why === null) return;
+      if (!String(why).trim()) {
+        say("무엇을 고쳐야 하는지 적어 주세요");
+        return;
+      }
+      back.disabled = true;
+      doctorApi
+        .returnToStaff(wantedId, String(why).trim())
+        .then(function () {
+          if (visitId !== wantedId) return;
+          say("스탭에게 되돌렸습니다");
+          loadGuide(wantedId);
+          loadTimeline(wantedId);
+        })
+        .catch(function (error) {
+          if (visitId !== wantedId) return;
+          back.disabled = false;
+          say((error && error.message) || "되돌리지 못했습니다. 다시 시도해 주세요.");
+        });
+      return;
+    }
+
+    /* 두 번 눌리지 않게 잠근다 — 승인이 두 번 가면 발송이 두 번 예약될 수 있다.
+       표의 유니크가 막지만, 그 전에 사람이 「안 됐나」로 읽는다. */
+    go.disabled = true;
+    doctorApi
+      .approve(wantedId)
+      .then(function () {
+        if (visitId !== wantedId) return;
+        say("승인했습니다 — 발송이 예약되었습니다");
+        loadGuide(wantedId);
+        loadTimeline(wantedId);
+      })
+      .catch(function (error) {
+        if (visitId !== wantedId) return;
+        go.disabled = false;
+        say((error && error.message) || "승인하지 못했습니다. 다시 시도해 주세요.");
+      });
   });
 
   /* 「의사 승인 요청」 — 확인이 끝났다는 뜻이다. 성공하면 최종 확인 탭으로

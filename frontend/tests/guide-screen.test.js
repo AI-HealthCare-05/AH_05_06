@@ -483,3 +483,59 @@ test("**치는 사이 커서가 안 튄다** — 다시 그리면 innerHTML 이 
   assert.ok(code.includes("keepCaretAround"), "커서를 안 지킨다");
   assert.ok(code.includes("setSelectionRange"), "치던 자리를 안 되돌린다");
 });
+
+/* ── 승인 · 되돌리기 ─────────────────────────────────────────────────── */
+
+test("**승인 버튼이 실제로 눌린다** — 그리기만 하고 받는 자리가 없었다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+
+  assert.ok(code.includes('closest("#final-approve")'), "승인을 누른 것을 안 받는다");
+  assert.ok(code.includes('closest("#final-return")'), "되돌리기를 누른 것을 안 받는다");
+  assert.ok(code.includes("doctorApi\n      .approve("), "승인을 서버에 안 보낸다");
+});
+
+test("**넘어오기 전에는 못 누른다** — 눌러서 409 를 받으면 「내가 뭘 잘못했나」로 읽힌다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  const at = code.indexOf("function renderFinalActions");
+  const body = code.slice(at, at + 1400);
+
+  assert.ok(body.includes('guide.status === "APPROVAL_PENDING"'), "상태를 안 본다");
+  assert.ok(body.includes("disabled"), "승인 전에도 눌린다");
+  /* 왜 못 누르는지를 대신 말한다 */
+  assert.match(body, /스탭이 확인 중입니다/, "왜 지금 안 되는지 안 말한다");
+  assert.match(body, /이미 승인되어/, "이미 승인된 것을 안 가른다");
+});
+
+test("**사유 없이 되돌리지 않는다** — 그 문장이 스탭 알림에 그대로 뜬다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  const at = code.indexOf('closest("#final-return")');
+  const body = code.slice(at, at + 1200);
+
+  assert.ok(body.includes("prompt("), "사유를 안 묻는다");
+  assert.match(body, /무엇을 고쳐야 하는지/, "무엇을 적어야 하는지 안 말한다");
+  assert.ok(/if \(!String\(why\)\.trim\(\)\)/.test(body), "빈 사유로 보낸다");
+});
+
+test("**승인하면 다시 불러온다** — 상태가 바뀌고 발송이 예약된다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  const at = code.indexOf("doctorApi\n      .approve(");
+  assert.notEqual(at, -1, "승인을 서버에 안 보낸다 — 검사가 헛돈다");
+
+  /* 잠그는 것은 **부르기 앞**이라 뒤만 보면 못 찾는다 — 그렇게 한 번 헛돌았다.
+     앞뒤를 함께 본다. */
+  const around = code.slice(Math.max(0, at - 300), at + 700);
+
+  assert.ok(around.includes("loadGuide("), "안내문을 다시 안 부른다");
+  assert.ok(around.includes("loadTimeline("), "현황을 다시 안 부른다 — 예약된 문자가 안 뜬다");
+  assert.ok(around.includes("go.disabled = true"), "두 번 눌린다");
+  assert.ok(around.includes("go.disabled = false"), "실패해도 잠긴 채로 남는다");
+});
+
+test("**두 탭 모두에 알린다** — 한쪽에만 쓰면 결과가 어디에도 안 보인다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  const at = code.indexOf("function say(");
+  const body = code.slice(at, at + 300);
+
+  assert.ok(body.includes("guide-say"), "안내문 탭에 안 쓴다");
+  assert.ok(body.includes("final-say"), "최종 확인 탭에 안 쓴다");
+});
