@@ -507,6 +507,16 @@ test("**다른 환자로 옮기면 지운다** — 남의 값이 「저장 안 �
   assert.ok(/localEditing\s*=\s*null/.test(body), "적던 칸이 남는다");
 });
 
+test("**「저장」이라 쓰지 않는다** — 서버로 안 가는데 저장이라 하면 남았다고 믿는다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("data-local-keep=");
+  assert.notEqual(at, -1, "적는 칸이 없다 — 검사가 헛돈다");
+
+  const around = code.slice(at, at + 300);
+  assert.ok(around.includes(">확인</button>"), "굳히는 버튼이 「확인」이 아니다");
+  assert.ok(!around.includes(">저장</button>"), "「저장」이라 적었다 — 남았다고 믿는다");
+});
+
 test("**저장된 값과 달라 보인다** — 같아 보이면 저장된 줄 안다", () => {
   const code = codeOnly(source("js/ocr-review.js"));
   const css = source("css/ocr-review.css");

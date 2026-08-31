@@ -98,3 +98,56 @@ test("모르는 상태는 막지 않는다 — 결과 화면으로 보낸다", (
   assert.strictEqual(jobPhase({ status: "SOMETHING_NEW" }).phase, "ready");
   assert.strictEqual(jobPhase(null).phase, "ready");
 });
+
+/* ── 판독이 실패해도 화면을 덮지 않는다 ─────────────────────────────── */
+
+const { codeOnly: strip2, read: read2 } = require("./source.js");
+
+test("**실패는 위에 붙고, 나머지는 덮는다**", () => {
+  const { stateRules } = load("api", "session", "patients-api", "shell", "ocr-api", "ocr-review");
+  const rules = stateRules();
+
+  /* 판독이 실패해도 값은 사람이 눈으로 읽어 넣을 수 있어야 한다.
+     덮어 버리면 그 길이 막힌다 — 사진은 멀쩡한데 표 한 칸을 못 읽어서
+     화면이 통째로 막히던 것이 1차 시연이 멈춘 방식이다. */
+  assert.equal(rules.job_failed.keepsWork, true, "판독 실패가 화면을 덮는다 — 직접 적을 길이 막힌다");
+
+  /* 아래에 보여 줄 것이 아직 없는 상태는 덮어야 한다. 반쯤 그린 값을
+     보여 주면 그것을 판독 결과로 읽는다. */
+  for (const kind of ["loading", "processing", "no_job", "not_ready", "poll_failed", "result_failed"]) {
+    assert.equal(rules[kind].keepsWork, false, `${kind} 이 반쯤 그린 화면을 보여 준다`);
+  }
+
+  /* **화면이 그 규칙을 실제로 본다.** 규칙만 있고 `hidden = true` 를 그대로
+     두면 검사가 안 문다 — 돌연변이를 넣어 보고 알았다. 그리는 것은 shim
+     아래서 안 돌기 때문에 원문으로 잰다. */
+  const code = strip2(read2("js/ocr-review.js"));
+  const at = code.indexOf('getElementById("work").hidden');
+  assert.notEqual(at, -1, "작업 칸을 감추는 자리가 없다 — 검사가 헛돈다");
+
+  const line = code.slice(at, code.indexOf(";", at));
+  assert.match(line, /rule\.keepsWork/, `규칙을 안 보고 늘 덮는다: 「${line.trim()}」`);
+});
+
+test("**실패해도 빈 프레임을 세운다** — 결과가 없어도 적을 자리는 있어야 한다", () => {
+  const code = strip2(read2("js/ocr-review.js"));
+  const at = code.indexOf('showState(\n        "job_failed"');
+  assert.notEqual(at, -1, "실패를 그리는 자리가 없다 — 검사가 헛돈다");
+
+  const around = code.slice(Math.max(0, at - 400), at + 500);
+  assert.match(around, /if \(!result\) result = \{/, "결과가 없을 때 빈 것을 안 세운다");
+  assert.match(around, /documents: \[\], fields: \[\]/, "빈 것의 모양이 다르다");
+  assert.ok(around.includes("redraw()"), "빈 프레임을 안 그린다");
+  assert.match(around, /직접 적거나/, "직접 적을 수 있다는 것을 안 알린다");
+});
+
+test("**값이 하나도 없으면 안내문 만들기를 미리 잠근다** — 눌러도 422 로 떨어진다", () => {
+  const { noFieldsSaying } = load("ocr-groups");
+
+  assert.equal(noFieldsSaying([{ field_type: "DIAGNOSIS" }]), "", "값이 있는데 잠갔다");
+  assert.match(noFieldsSaying([]), /만들 수 없습니다/, "왜 안 되는지 안 말한다");
+  assert.match(noFieldsSaying([]), /다시 올리|자리가 붙으면/, "무엇을 하면 되는지 안 말한다");
+
+  const code = strip2(read2("js/ocr-review.js"));
+  assert.ok(code.includes("noFieldsSaying(result.fields)"), "화면이 그 규칙을 안 쓴다");
+});

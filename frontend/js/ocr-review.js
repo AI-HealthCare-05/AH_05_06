@@ -248,14 +248,23 @@ function failureSaying(code) {
  * 에서 못 벗어나는데(KEY-148 검수 문서), 자동으로 계속 돌면 **영원히 돌면서
  * 문제를 감춘다.** 「다시 확인」을 사람이 누르는 편이 정직하다.
  */
+/* `keepsWork` — 이 상태에서 **아래 작업 칸을 그대로 두는가.**
+ *
+ * 판독이 실패해도 화면을 덮지 않는다. 값은 사람이 눈으로 읽어 넣어도 되고,
+ * 덮어 버리면 그 길이 막힌다 — 사진은 멀쩡한데 표 한 칸을 못 읽어서 화면이
+ * 통째로 막히던 것이 1차 시연이 멈춘 방식이다.
+ *
+ * 나머지는 덮는다. 아래에 보여 줄 것이 아직 없거나(판독 중 · 결과 없음),
+ * 무엇이 맞는지 화면이 모르는 상태(결과를 못 불러옴)라, 반쯤 그린 값을
+ * 보여 주면 그것을 판독 결과로 읽는다. */
 var STATE_RULES = {
-  loading: { tone: "busy", action: null },
-  processing: { tone: "busy", action: null },
-  no_job: { tone: "info", action: null },
-  job_failed: { tone: "warn", action: "reupload" },
-  not_ready: { tone: "warn", action: "recheck" },
-  poll_failed: { tone: "warn", action: "recheck" },
-  result_failed: { tone: "warn", action: "recheck" },
+  loading: { tone: "busy", action: null, keepsWork: false },
+  processing: { tone: "busy", action: null, keepsWork: false },
+  no_job: { tone: "info", action: null, keepsWork: false },
+  job_failed: { tone: "warn", action: "reupload", keepsWork: true },
+  not_ready: { tone: "warn", action: "recheck", keepsWork: false },
+  poll_failed: { tone: "warn", action: "recheck", keepsWork: false },
+  result_failed: { tone: "warn", action: "recheck", keepsWork: false },
 };
 
 function stateRules() {
@@ -263,7 +272,7 @@ function stateRules() {
 }
 
 function stateRule(kind) {
-  return STATE_RULES[kind] || { tone: "info", action: null };
+  return STATE_RULES[kind] || { tone: "info", action: null, keepsWork: false };
 }
 
 function stateTakesFocus(tone) {
@@ -567,7 +576,9 @@ function stateTakesFocus(tone) {
         id +
         '">취소</button>';
     } else if (field.is_absent && localEditing === field.field_type) {
-      /* 적는 중. 서버로 안 가므로 「저장」이 아니라 「적기」다. */
+      /* 적는 중. 「저장」이라 쓰지 않는다 — 서버로 안 가는데 저장이라고
+         하면 남았다고 믿는다. 「확인」은 이 화면에서 값을 굳힌다는 뜻이고,
+         남지 않는다는 것은 아래 「저장 안 됨」 배지가 말한다. */
       body =
         '<input class="field__input" type="text" data-local-input="' +
         escapeHtml(field.field_type) +
@@ -578,7 +589,7 @@ function stateTakesFocus(tone) {
         ' 값 적기" />' +
         '<button class="field__act field__act--go" type="button" data-local-keep="' +
         escapeHtml(field.field_type) +
-        '">적기</button>' +
+        '">확인</button>' +
         '<button class="field__act" type="button" data-local-cancel="1">취소</button>';
     } else if (field.is_absent && local[field.field_type]) {
       /* 적어 둔 값. **저장된 척하지 않는다** — 배지로 못 박는다. */
@@ -973,8 +984,11 @@ function stateTakesFocus(tone) {
 
        **생성 중인지도 함께 본다** (KEY-204). 여기서 안 보면, 요청이 도는 사이
        필드 저장 타이머가 이 줄을 다시 지나며 버튼을 조용히 풀어 준다. */
-    submit.disabled = generateBlocked(counts, clashes, generating);
-    submit.title = generateBlockedSaying(counts, clashes, generating);
+    /* 판독 값이 하나도 없으면 서버가 422 로 되돌린다 — 미리 잠그고 왜인지
+       적는다. 그대로 두면 「내가 뭘 잘못했나」로 읽힌다. */
+    var noFields = noFieldsSaying(result.fields);
+    submit.disabled = !!noFields || generateBlocked(counts, clashes, generating);
+    submit.title = noFields || generateBlockedSaying(counts, clashes, generating);
 
     /* **막지 않고 알린다.** 적어 넣은 값은 서버에 없어서 안내문에 안 실리는데,
        말 안 하면 스탭은 실린 줄 안다. 막으면 화면이 거기서 끝나므로, 무슨
@@ -1122,10 +1136,11 @@ function stateTakesFocus(tone) {
     var rule = stateRule(kind);
     var acts = actionHtml(rule.action);
 
-    stateBox.className = "state state--" + rule.tone;
+    stateBox.className = "state state--" + rule.tone + (rule.keepsWork ? " state--strip" : "");
     stateBox.innerHTML = body + (acts ? '<div class="state__acts">' + acts + "</div>" : "");
     stateBox.hidden = false;
-    document.getElementById("work").hidden = true;
+    /* **덮을 것과 위에 붙을 것을 가른다** (`STATE_RULES` 의 `keepsWork`). */
+    document.getElementById("work").hidden = !rule.keepsWork;
 
     if (shownKind !== kind) {
       /* 진행률이 바뀔 때마다 읽어 주면 수십 초짜리 판독에서 20~40 번을 연달아
@@ -1174,26 +1189,38 @@ function stateTakesFocus(tone) {
     if (phase === "failed") {
       /* 실패했다고 화면을 막지 않는다. 판독은 거들 뿐이고
          값은 사람이 직접 넣어도 진행할 수 있어야 한다. */
-      /* 예전에는 「직접 입력」·「재업로드」 둘 다 식별자도 처리기도 없어서
-         눌러도 아무 일이 없었다 (`#40` 리뷰).
-
-         「직접 입력」은 지금 계약으로 못 짠다 — 작업이 FAILED 면 결과가 없고,
-         결과가 없으면 채워 넣을 항목 목록 자체가 없다. 빈 항목을 만들어 주는
-         길이 계약에 없다(KEY-109 에 적는다). 눌러도 안 되는 버튼을 두느니
-         지운다 — 이 파일이 「이전 값 유지」·「이번 미시행」에 한 것과 같다.
-
-         「재업로드」는 지금 된다. 이 진료의 진료기록 칸으로 돌려보낸다. */
+      /* **실패해도 화면을 덮지 않는다.**
+       *
+       * 예전에는 이 자리가 화면 전체를 막았고, 「직접 입력」은 짤 수가 없었다 —
+       * 작업이 FAILED 면 결과가 없고, 결과가 없으면 채워 넣을 항목 목록 자체가
+       * 없었기 때문이다.
+       *
+       * 이제는 그 목록을 **화면이 안다** (`PRESCRIPTION_CORE` — 서버가 필수로
+       * 보는 셋과 같다). 빈 프레임을 세우면 스탭이 눈으로 읽은 값을 적을 수
+       * 있다. 판독은 거들 뿐이고, 못 읽었다고 진료가 멈추면 안 된다.
+       *
+       * 특히 `REQUIRED_FIELD_MISSING` 이 그렇다 — 워커의 필수 필드 게이트가
+       * 진단·약품명·처방일수 중 하나라도 못 읽으면 **저장 앞에서 돌아선다**
+       * (`ocr_task.py` Phase 2). 사진은 멀쩡한데 표 한 칸을 못 읽어서 화면이
+       * 통째로 막히던 것이 1차 시연이 멈춘 방식이다.
+       *
+       * 「재업로드」는 그대로 둔다. 사진이 흐린 것이 원인일 때가 많다. */
       var saying = failureSaying(job.failure_code);
+
+      /* 결과가 없으니 빈 것을 세운다 — 프레임은 값 없이도 서야 한다 */
+      if (!result) result = { ocr_result_id: null, documents: [], fields: [] };
+
       showState(
         "job_failed",
         '<p class="state__title">판독하지 못했습니다</p>' +
           '<p class="state__body">' +
           escapeHtml(saying.why) +
-          " 진료기록을 다시 올리면 판독을 다시 시작합니다.</p>" +
+          " 아래에서 직접 적거나, 진료기록을 다시 올리면 판독을 다시 시작합니다.</p>" +
           (saying.code
             ? '<p class="state__code">문의할 때 알려 주세요 · ' + escapeHtml(saying.code) + "</p>"
             : ""),
       );
+      redraw();
       return false;
     }
     return true;
