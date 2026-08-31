@@ -245,8 +245,10 @@ test("**눌러도 아무 일 없는 버튼을 두지 않는다** — 왼쪽 판�
   const page = codeOnly(source("ocr-review.html"));
   const code = codeOnly(source("js/ocr-review.js"));
 
-  const buttons = page.split("\n").filter((line) => line.includes("<button"));
-  const inPanel = buttons.filter((line) => line.includes("button--quiet"));
+  /* 클래스 이름으로 찾지 않는다 — 이름을 바꾸면 검사가 조용히 0개를 세고
+     통과한다(그렇게 한 번 새어 나갔다). **자리로** 찾는다. */
+  const acts = page.slice(page.indexOf('<div class="raw-acts">'));
+  const inPanel = acts.slice(0, acts.indexOf("</div>")).split("\n").filter((line) => line.includes("<button"));
   assert.equal(inPanel.length, 2, "왼쪽 판의 버튼이 둘이 아니다 — 검사가 헛돈다");
 
   for (const line of inPanel) {

@@ -699,24 +699,23 @@ function stateTakesFocus(tone) {
     if (caret && typingIn === wanted) box.setSelectionRange(caret[0], caret[1]);
   }
 
-  /* ── 오른쪽 네 묶음 (와이어프레임 S1-6) ───────────────────────────────
+  /* ── 오른쪽 블록 넷 (와이어프레임 S1-6) ──────────────────────────────
    *
    * 서버는 값을 한 줄로 준다. 가르는 규칙은 `js/ocr-groups.js` 가 갖는다 —
    * 검사가 닿아야 해서 IIFE 밖이다.
    *
    * ①은 안내문의 뼈대(무슨 약을 며칠)고 ②는 참고값이다. 한 줄로 두면 스탭이
    * 「처방일수 84」와 「혈색소 10.2」를 같은 무게로 훑는다. 84가 틀리면
-   * 환자가 약을 잘못 먹는다. */
+   * 환자가 약을 잘못 먹는다.
+   *
+   * 와이어프레임은 구획을 가로줄로 나누지만 우리는 **블록**으로 세운다 —
+   * 기본정보(S1-4)와 같은 상자다. 안의 치수는 원문 그대로. */
   function groupsHtml() {
     var split = splitFields(result.fields);
-    return (
-      prescriptionHtml(split.prescription) +
-      labsHtml(split.labs) +
-      notReadyHtml()
-    );
+    return prescriptionHtml(split.prescription) + labsHtml(split.labs) + notReadyHtml();
   }
 
-  /* ① 진단 · 처방 — 머리줄에 진단과 약, 그 아래 처방일 · 소진 예정일 */
+  /* ① 진단 · 처방 */
   function prescriptionHtml(rows) {
     if (!rows.length) return "";
 
@@ -732,50 +731,51 @@ function stateTakesFocus(tone) {
     if (until) meta.push("소진 예정일 " + escapeHtml(shortDate(until)) + " (계산)");
 
     return (
-      '<li class="group"><div class="group__head">' +
-      '<span class="group__title">진단 · 처방</span>' +
+      '<section class="box"><div class="box__head">' +
+      '<h2 class="box__title">진단 · 처방</h2>' +
+      (warn ? '<span class="box__warn">ⓘ ' + escapeHtml(warn) + "</span>" : "") +
       "</div>" +
-      (meta.length ? '<p class="group__meta">' + meta.join(" · ") + "</p>" : "") +
-      (warn ? '<p class="group__warn">ⓘ ' + escapeHtml(warn) + "</p>" : "") +
-      '<ul class="group__rows">' +
+      '<div class="rows">' +
       rows.map(renderField).join("") +
-      "</ul></li>"
+      "</div>" +
+      (meta.length ? '<p class="box__meta">' + meta.join(" · ") + "</p>" : "") +
+      "</section>"
     );
   }
 
-  /* ② 이번 판독 값 — 검사일은 줄이 아니라 묶음 머리에 붙는다 */
+  /* ② 이번 판독 값 — 검사일은 값 줄이 아니라 블록 머리에 붙는다 */
   function labsHtml(rows) {
     if (!rows.length) return "";
     var on = labDateOf(result.fields);
 
     return (
-      '<li class="group"><div class="group__head">' +
-      '<span class="group__title">이번 판독 값</span>' +
-      (on ? '<span class="group__when">검사일 ' + escapeHtml(shortDate(on)) + "</span>" : "") +
+      '<section class="box"><div class="box__head">' +
+      '<h2 class="box__title">이번 판독 값</h2>' +
+      (on ? '<span class="box__note">검사일 ' + escapeHtml(shortDate(on)) + "</span>" : "") +
       "</div>" +
-      '<ul class="group__rows">' +
+      '<div class="rows">' +
       rows.map(renderField).join("") +
-      "</ul></li>"
+      "</div></section>"
     );
   }
 
-  /* ③④ 아직 서버에 자리가 없는 묶음.
+  /* ③④ 아직 서버에 자리가 없는 블록.
    *
    * **눌러도 아무 일 없는 버튼을 두지 않는다** — 그 자리에 무엇이 없는지 쓴다.
    * 목업 값을 채워 두면 되는 것처럼 보이고, 그게 1차 시연이 멈춘 방식이다. */
   function notReadyHtml() {
     return GROUPS_WITHOUT_SERVER.map(function (group) {
       return (
-        '<li class="group group--waiting"><div class="group__head">' +
-        '<span class="group__title">' +
+        '<section class="box box--waiting"><div class="box__head">' +
+        '<h2 class="box__title">' +
         escapeHtml(group.title) +
-        "</span>" +
-        '<span class="group__when">' +
+        "</h2>" +
+        '<span class="box__note">' +
         escapeHtml(group.note) +
         "</span></div>" +
-        '<p class="group__soon">' +
+        '<p class="box__soon">' +
         escapeHtml(group.saying) +
-        "</p></li>"
+        "</p></section>"
       );
     }).join("");
   }

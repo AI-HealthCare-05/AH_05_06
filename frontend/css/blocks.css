@@ -1,0 +1,241 @@
+/* **블록** — 화면 여러 곳이 같은 상자를 쓴다.
+ *
+ * 기본정보(S1-4)가 「환자 정보 · 오늘 진료 · 지난 방문 · 발송 이력」을 네
+ * 블록으로 세우고, 판독 확인(S1-6)도 「진단·처방 · 이번 판독 값 · 이전 값
+ * 유지 · 확인 항목」을 같은 블록으로 세운다.
+ *
+ * 전에는 `.box` 가 `patients.css` 에, `.box__head`·`.facts`·`.cols2` 가
+ * `detail.css` 에 흩어져 있었다. 판독 화면은 그 두 파일을 안 싣기 때문에
+ * 같은 모양을 다시 그려야 했고, 그러면 한쪽만 고쳐져 두 화면이 갈라진다 —
+ * 판독 항목 이름표를 한 곳에 모은 것과 같은 이유다 (WP-S③ 공용 모듈).
+ *
+ * 여기 있는 것은 **어느 화면에서나 같아야 하는 것**만이다. 화면마다 달라야
+ * 하는 여백·너비는 각자의 CSS 가 덮는다 (`detail.css` 가 그렇게 한다).
+ */
+
+.box {
+  margin-top: var(--s-24);
+  padding: var(--s-24);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.box__title {
+  margin-bottom: var(--s-16);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 제목과 오른쪽 것(수정 버튼 · 검사일 따위)을 한 줄에 세운다 */
+.box__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  margin-bottom: var(--s-16);
+}
+
+.box__head .box__title {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* 제목 옆에 붙는 곁말. 제목보다 약하게 둔다 — 읽을 것은 제목이다. */
+.box__note {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+/* ── 이름 / 값 짝 ─────────────────────────────────────────────────────── */
+
+.facts {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: var(--s-12) var(--s-16);
+  margin: 0;
+  font-size: 13px;
+}
+
+.facts dt {
+  color: var(--ink-3);
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* 값 옆에 붙는 설명. 값보다 약하게 둔다 — 읽을 것은 값이다. */
+.facts__note {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* ── 좌우 2단 ─────────────────────────────────────────────────────────
+ *
+ * 화면 너비로 가르지 않는다 (`@media`). 레티나 화면에서 CSS 픽셀이 절반이라
+ * 1100px 로 끊었더니 1280 짜리 화면에서도 2단이 안 섰다 — 그 함정에 이미
+ * 걸렸다. 칸이 좁아지면 저절로 접히게 둔다. */
+
+.cols2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  align-items: flex-start;
+}
+
+.cols2__side {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.cols2 .box {
+  margin-top: 14px;
+  padding: 16px 18px;
+}
+
+.cols2 .box:first-child {
+  margin-top: 0;
+}
+
+
+/* ── 환자 머리말 ─────────────────────────────────────────────────────
+ *
+ * 누구의 기록을 다루는 중인지. 탭을 옮겨도 이 줄은 그대로 있다 — 끊기면
+ * 다른 환자에게 잘못 넣는다.
+ *
+ * 전에는 `.patient-head` 가 `shell.css` 에, `.patient-head__top` 이
+ * `detail.css` 에 갈려 있었다. 판독 확인 화면은 `detail.css` 를 안 싣기
+ * 때문에 이름·차트·상태가 **한 줄로 안 서고 세 줄로 흩어졌다.**
+ *
+ * 와이어프레임 S1-6 원문: 줄은 `gap:18px`, 왼쪽은 `flex:1 · column · gap:3px`,
+ * 첫 줄은 `baseline · gap:10px` 에 이름 `17px/700` · 차트와 생년월일 `13px` ·
+ * 상태 배지 `12px · border 1px · radius 4px · padding 1px 7px`,
+ * 둘째 줄은 `12px`.
+ *
+ * **밑줄은 두지 않는다** — 원문에는 `border-bottom` 이 있지만, 아래 블록들이
+ * 각자 테두리를 가져서 여기까지 선을 그으면 가로줄이 겹쳐 층층이 잘려 보인다.
+ */
+
+.patient-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: var(--s-12);
+}
+
+.patient-head__who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* 이름 · 차트 · 생년월일 · 상태가 **한 줄에** 선다 */
+.patient-head__top {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.patient-head__name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.patient-head__id {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.patient-head__top .row__state {
+  margin-top: 0;
+}
+
+.patient-head__visit {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* 자리가 모자라면 단계 줄이 아래로 내려간다 — 이름을 밀어내는 것보다 낫다.
+   창 폭으로 자르지 않는다. 좌측 목록을 접으면 같은 창에서도 자리가 늘어난다. */
+
+/* ── 환자 머리말의 단계 줄 ────────────────────────────────────────────
+ *
+ * 전에는 `detail.css` 에만 있었다. 판독 확인 화면은 그 파일을 안 싣기 때문에
+ * 같은 단계 줄이 **아무 모양도 없이** 떴다 — 「판독 화면으로 넘어가면 상단
+ * 레이아웃이 예전 것으로 바뀐다」는 것이 이것이었다. 마크업은 `js/step-nav.js`
+ * 가 한 곳에서 그리는데 모양은 한 화면에만 있었으니, 반쪽만 공용이었던 셈이다.
+ */
+
+/* ── 탭 ─────────────────────────────────────────────── */
+
+/* 머리말 오른쪽에 선다 — 아래 줄을 차지하지 않는다 (S1-4). */
+.tabs {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 단계이자 이동 수단이다 — ● ○ 가 어디까지 왔는지 말하고, 누르면 그리로 간다.
+ *
+ * 와이어프레임 S1-4 는 **버튼 형식**이다 — `height:30px · padding:0 12px ·
+ * radius:6 · gap:5 · 12px · nowrap`. 고른 탭만 검정 채움에 굵은 글씨.
+ *
+ * 안 고른 탭 색은 와이어프레임의 `#D1D5DB` 를 쓰지 않는다 — 흰 배경에서 대비가
+ * 1.6 밖에 안 나와 읽히지 않는다. 토큰의 `--ink-2`(6.35) 를 쓴다. 「지금 여기가
+ * 아니다」는 색이 아니라 채움과 굵기로 말한다 (KEY-106 과 같은 판단이다).
+ */
+.tab {
+  height: 30px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.tab:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+/* 지금 보고 있는 칸 */
+.tab[aria-selected="true"] {
+  font-weight: 700;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tab__mark {
+  font-size: 10px; /* 와이어프레임 원문 */
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* 아직 오지 않은 단계. 흐리게 두되 지우지는 않는다 — 앞으로 무엇이 남았는지가
+   보여야 「여기서 끝인가」를 묻지 않는다.
+
+   #9aa0a7 은 이 바탕(#f4f5f6)에서 대비 2.42 라 읽히지 않았다. 밝기로는 더
+   내릴 여지가 없어서, 단계 셋을 토큰 사다리로 갈랐다 — 지금 단계 --ink(15.15)
+   · 갈 수 있는 단계 --ink-2(5.82) · 아직인 단계 --ink-3(4.85). 셋 다 AA 를
+   넘고 서로 구별된다 (KEY-106). */

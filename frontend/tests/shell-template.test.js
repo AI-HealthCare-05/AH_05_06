@@ -285,11 +285,11 @@ test("**자리가 없으면 알아서 세로로 돌아간다** — 창 폭으로
   /* 화면 크기로 자르면 숫자를 하나 정해야 하는데, 좌측 목록이 접히거나 펴지면
      본문 폭이 달라져 같은 창에서도 답이 바뀐다. `flex-wrap` + `flex-basis` 면
      자리가 없을 때만 접힌다. */
-  for (const [file, sel] of [["css/patients.css", ".reg__cols"], ["css/detail.css", ".cols2"]]) {
+  for (const [file, sel] of [["css/patients.css", ".reg__cols"], ["css/blocks.css", ".cols2"]]) {
     const box = rule(read(file), sel);
     assert.match(box, /flex-wrap:\s*wrap/, `${sel} 이 접히지 못한다 — 칸이 찌그러진다`);
   }
-  for (const [file, sel] of [["css/patients.css", ".reg__cols > .box"], ["css/detail.css", ".cols2__side"]]) {
+  for (const [file, sel] of [["css/patients.css", ".reg__cols > .box"], ["css/blocks.css", ".cols2__side"]]) {
     const side = rule(read(file), sel);
     assert.match(side, /flex:\s*1 1 340px/, `${sel} 에 최소 폭이 없다 — 접힐 때를 모른다`);
   }
@@ -360,13 +360,18 @@ test("**머리말과 탭이 한 줄이다** — 탭을 아래로 내리면 지�
   assert.ok(head.includes('id="p-name"'), "머리말에 이름이 없다");
   assert.ok(head.includes('id="tabs"'), "탭이 머리말 밖에 있다 — 아래 줄을 차지한다");
 
-  const css = rule(read("css/shell.css"), ".patient-head");
+  /* 머리말은  로 올렸다 — 전에는 `.patient-head` 가
+     shell.css 에, `.patient-head__top` 이 detail.css 에 갈려 있어서
+     판독 확인 화면에서 이름·차트·상태가 세 줄로 흩어졌다. */
+  const css = rule(read("css/blocks.css"), ".patient-head");
   assert.match(css, /display:\s*flex/, "머리말이 가로가 아니다");
   assert.match(css, /gap:\s*18px/, "와이어프레임 간격과 다르다");
 });
 
 test("**탭이 버튼 형식이다** — 고른 것만 채워진다", () => {
-  const css = read("css/detail.css");
+  /* 단계 줄은 `css/blocks.css` 로 올렸다 — 판독 확인 화면이 `detail.css` 를
+     안 싣는 탓에 같은 단계 줄이 아무 모양 없이 떴다. */
+  const css = read("css/blocks.css");
 
   const tab = rule(css, ".tab");
   assert.match(tab, /height:\s*30px/, "와이어프레임은 30px 다");
@@ -381,7 +386,7 @@ test("**탭이 버튼 형식이다** — 고른 것만 채워진다", () => {
 test("안 고른 탭 색은 와이어프레임을 안 따른다 — 대비가 1.6 이라 안 읽힌다", () => {
   /* 원문은 `#D1D5DB` 인데 흰 배경에서 대비가 1.6 이다. 토큰의 --ink-2(6.35)를
      쓰고, 「지금 여기가 아니다」는 채움과 굵기로 말한다 (KEY-106 과 같은 판단). */
-  const tab = rule(read("css/detail.css"), ".tab");
+  const tab = rule(read("css/blocks.css"), ".tab");
   assert.match(tab, /color:\s*var\(--ink-2\)/, "안 고른 탭이 읽히지 않는 색이다");
   assert.ok(!/#D1D5DB/i.test(tab), "와이어프레임 색을 그대로 옮겼다");
 });
@@ -397,7 +402,9 @@ test("**본문이 좌우 2단이다** — 왼쪽은 오늘 손볼 것, 오른쪽
   assert.ok(right.includes("지난 방문"), "지난 방문이 오른쪽에 없다");
   assert.ok(right.includes("발송 이력"), "발송 이력이 오른쪽에 없다");
 
-  const css = rule(read("css/detail.css"), ".cols2");
+  /* 블록 어휘는 `css/blocks.css` 로 올렸다 — 판독 확인 화면도 같은 상자를
+     쓰는데 그 화면은 `detail.css` 를 안 싣기 때문이다 (WP-S③ 공용 모듈). */
+  const css = rule(read("css/blocks.css"), ".cols2");
   assert.match(css, /display:\s*flex/, "2단이 아니다");
   assert.match(css, /gap:\s*26px/, "와이어프레임 간격과 다르다");
 });

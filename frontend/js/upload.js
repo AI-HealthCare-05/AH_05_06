@@ -44,6 +44,35 @@ var FILE_PIC = {
     ' stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
+/* **판독으로 돌아가는 길** — 와이어프레임에 없는 추가다.
+ *
+ * 판독 확인 도중에 「기본정보」를 눌러 돌아오면 판독 화면으로 갈 길이 없었다.
+ * 단계 줄의 「진료기록」은 이 업로드 칸으로 오고, 판독 확인은 그 다음 화면이라
+ * 단계 줄에 자리가 없다. 막다른 곳이다.
+ *
+ * 업로드가 끝나고 판독이 돌기 시작하면 이 진료 건에는 **판독 작업이 있다.**
+ * 그때만 길을 낸다 — 없는데 버튼을 두면 눌러도 아무 일이 없다.
+ */
+function readingLink(job) {
+  if (!job || !job.ocr_job_id) {
+    return { show: false, label: "", say: "", tone: "" };
+  }
+  if (job.status === "PROCESSING") {
+    return {
+      show: true,
+      label: "판독 결과 확인",
+      say: "판독 중입니다" + (typeof job.progress === "number" ? " · " + job.progress + "%" : ""),
+      tone: "wait",
+    };
+  }
+  if (job.status === "FAILED") {
+    /* 실패해도 길은 연다 — 판독 화면이 왜 실패했는지와 다시 하는 길을 갖는다.
+       여기서 막으면 스탭이 실패 사유를 볼 데가 없다. */
+    return { show: true, label: "판독 결과 확인", say: "판독이 실패했습니다", tone: "warn" };
+  }
+  return { show: true, label: "판독 결과 확인", say: "판독이 끝났습니다", tone: "done" };
+}
+
 function filePic(mimeType) {
   return mimeType === "application/pdf" ? FILE_PIC.pdf : FILE_PIC.image;
 }
@@ -321,6 +350,44 @@ function filePic(mimeType) {
   function showVisit(next) {
     if (!next) return;
     visit = next;
+    askReading();
+  }
+
+  /* 이 진료 건에 판독 작업이 있는지 묻고, 있으면 돌아가는 길을 낸다.
+     없으면 조용히 지운다 — 앞 환자의 길이 남아 있으면 남의 판독으로 간다. */
+  function askReading() {
+    var box = document.getElementById("reading");
+    if (!box || !visit || !visit.visit_id) return;
+    var asked = visit.visit_id;
+
+    box.hidden = true;
+    ocrApi
+      .jobForVisit(asked)
+      .then(function (job) {
+        /* 답이 오는 사이 다른 환자를 골랐으면 버린다 */
+        if (!visit || visit.visit_id !== asked) return;
+        drawReading(readingLink(job));
+      })
+      .catch(function () {
+        /* 판독 작업이 없으면 404 다. 그건 오류가 아니라 「아직 안 올렸다」다. */
+        if (!visit || visit.visit_id !== asked) return;
+        drawReading(readingLink(null));
+      });
+  }
+
+  function drawReading(link) {
+    var box = document.getElementById("reading");
+    if (!box) return;
+    box.hidden = !link.show;
+    if (!link.show) return;
+
+    var say = document.getElementById("reading-say");
+    var go = document.getElementById("reading-go");
+    if (say) {
+      say.textContent = link.say;
+      say.className = "note note--" + link.tone;
+    }
+    if (go) go.textContent = link.label;
   }
 
   document.addEventListener("session:ready", function () {
@@ -340,6 +407,12 @@ function filePic(mimeType) {
     say("");
     showVisit(event.detail);
     render();
+  });
+
+  document.addEventListener("click", function (event) {
+    var go = event.target.closest && event.target.closest("#reading-go");
+    if (!go || !visit || !visit.visit_id) return;
+    location.href = "/ocr-review.html?visit=" + encodeURIComponent(visit.visit_id);
   });
 
   render();

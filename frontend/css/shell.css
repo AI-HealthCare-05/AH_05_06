@@ -535,43 +535,6 @@ body.shell {
    (`padding:11px 26px · flex · align-items:center · gap:18px`).
    왼쪽에 누구인지, 오른쪽에 어디를 보는지. 탭을 아래 줄로 내리면 본문이
    그만큼 줄어 1280×800 에서 지난 방문이 잘린다. */
-/* **밑줄을 두지 않는다.** 아래 상자들이 각자 테두리를 갖고 있어서, 여기까지
-   선을 그으면 가로줄이 겹쳐 화면이 층층이 잘려 보인다. 머리말과 본문은
-   여백으로 갈린다. */
-.patient-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 18px;
-  padding-bottom: var(--s-12);
-}
-
-.patient-head__who {
-  flex: 1;
-  min-width: 0;
-}
-
-/* 자리가 모자라면 탭이 아래로 내려간다 — 이름을 밀어내는 것보다 낫다.
-   창 폭으로 자르지 않는다. 좌측 목록을 접으면 같은 창에서도 자리가 늘어난다. */
-
-.patient-head__name {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.patient-head__id {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--ink-2);
-}
-
-.patient-head__visit {
-  margin-top: var(--s-8);
-  font-size: 13px;
-  color: var(--ink-3);
-}
-
 /* 단계 — 어디까지 왔는지. 지금 단계만 진하게 둔다.
    순서가 있으니 ol 로 적되 번호는 지운다 — ✓ ● ○ 가 이미 어디까지 왔는지 말한다. */
 .steps {

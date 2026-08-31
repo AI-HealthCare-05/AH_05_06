@@ -184,20 +184,6 @@
   letter-spacing: -0.01em;
 }
 
-.box {
-  margin-top: var(--s-24);
-  padding: var(--s-24);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.box__title {
-  margin-bottom: var(--s-16);
-  font-size: 15px;
-  font-weight: 600;
-}
-
 /* 마지막으로 한 번 눈으로 훑는 칸. 앞의 두 칸과 배경을 달리해 「확인」임을 알린다. */
 .box--confirm {
   background: var(--bg);
@@ -556,4 +542,37 @@
   margin: 0 0 0 92px; /* 라벨 78 + gap 14 — 입력과 세로선을 맞춘다 */
   font-size: 11px;
   line-height: 15px;
+}
+
+/* ── 판독으로 돌아가는 길 (와이어프레임에 없는 추가) ────────────────────
+ *
+ * 판독 확인 도중에 「기본정보」로 돌아오면 판독 화면으로 갈 길이 없었다.
+ * 업로드 칸 맨 위에 둔다 — 진료기록 탭에 온 이유가 「다시 올리려고」이거나
+ * 「판독을 보려고」 둘 중 하나라서, 둘을 같은 자리에 세운다.
+ */
+.box--go {
+  display: flex;
+  align-items: center;
+  gap: var(--s-16);
+}
+
+.box--go .box__head {
+  flex: 1;
+  margin-bottom: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.box--go .box__title {
+  margin-bottom: 0;
+}
+
+/* 판독 상태 — 돌고 있는지 끝났는지 실패했는지 */
+.note--wait {
+  color: var(--ink-2);
+}
+
+.note--done {
+  color: var(--done);
 }

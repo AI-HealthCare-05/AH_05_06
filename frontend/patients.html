@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/shell.css" />
+    <link rel="stylesheet" href="/css/blocks.css" />
     <link rel="stylesheet" href="/css/upload.css" />
     <!-- 등록 화면은 업로드 화면의 버튼 · 여백 규칙 위에 얹는다 — 뒤에 둬야 덧쓰기가 된다 -->
     <link rel="stylesheet" href="/css/patients.css" />
@@ -307,6 +308,19 @@
 
           <!-- ─ 진료기록 업로드 (S1-5) ──────────────────────────── -->
           <div class="panel" id="panel-record" hidden>
+          <!-- **판독으로 돌아가는 길** — 와이어프레임에 없는 추가다.
+               판독 확인 도중에 「기본정보」로 돌아오면 판독 화면으로 갈 길이
+               없었다. 단계 줄의 「진료기록」은 이 업로드 칸으로 오고 판독
+               확인은 그 다음 화면이라 단계 줄에 자리가 없다 — 막다른 곳이다.
+               판독 작업이 있을 때만 뜬다 (`js/upload.js` 의 readingLink). -->
+          <section class="box box--go" id="reading" hidden>
+            <div class="box__head">
+              <h2 class="box__title">판독 결과</h2>
+              <p class="note" id="reading-say"></p>
+            </div>
+            <button class="button-primary button-primary--sm" type="button" id="reading-go">판독 결과 확인</button>
+          </section>
+
           <!-- 기본정보의 「환자 정보」와 같은 상자 하나로 담는다. 화면마다 담는
                모양이 다르면 같은 자리인지가 안 보인다. -->
           <section class="box">

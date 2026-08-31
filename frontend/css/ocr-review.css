@@ -11,66 +11,102 @@
  */
 
 .review {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--s-16);
-  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  align-items: flex-start;
   min-height: 0;
 }
 
-@media (max-width: 1100px) {
-  .review {
-    grid-template-columns: 1fr;
-  }
-}
+/* 왼쪽 440px — 와이어프레임 원문. 원문과 값을 나란히 두는 것이 이 화면의
+   전부라, 원문 칸은 고정 폭이고 값 칸이 남는 자리를 받는다.
 
-/* ── 왼쪽 · 원문 ─────────────────────────────────────────────── */
-
-.panel {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
+   창 폭으로 자르지 않는다 (`@media`). 레티나 화면에서 CSS 픽셀이 절반이라
+   1100px 로 끊었더니 1280 짜리 화면에서도 2단이 안 섰다 — 그 함정에 이미
+   걸렸다. 자리가 모자라면 `flex-wrap` 이 알아서 접는다. */
+.side {
+  flex: 1 1 440px;
+  max-width: 440px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  gap: 10px;
 }
 
-.panel__head {
-  padding: var(--s-12) var(--s-16);
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
+.main-col {
+  flex: 3 1 420px;
+  min-width: 0;
+}
+
+/* 무엇을 보고 읽었는지. 원문은 `#F3F4F6 · 180px` 의 미리보기 판이다. */
+.doc-view {
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-12);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.doc-view__soon {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.raw-note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+/* 원문 상자는 블록이되 안쪽을 조인다 — 원문이 길어 여백까지 크면 스크롤만 는다 */
+.box--raw {
+  margin-top: 0;
+  padding: 11px 13px;
+}
+
+.raw-acts {
+  display: flex;
+  gap: 8px;
 }
 
 .doc-tabs {
   display: flex;
-  gap: var(--s-4);
-  padding: var(--s-8) var(--s-12);
-  border-bottom: 1px solid var(--line);
+  gap: 6px;
   flex-wrap: wrap;
 }
 
+/* 와이어프레임 원문: `height:28px · padding:0 12px · radius:6px · 12px`.
+   고른 것만 진한 테두리에 굵은 글씨 — 채우지 않는다. 단계 줄이 이미 검정
+   채움을 쓰고 있어서, 둘 다 채우면 지금 어느 단계인지가 흐려진다. */
 .doc-tab {
-  height: 32px;
+  height: 28px;
   padding: 0 12px;
+  display: flex;
+  align-items: center;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-sm);
   background: var(--card);
   color: var(--ink-2);
-  font-size: 13px;
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
 }
 
 .doc-tab:hover {
   border-color: var(--line-strong);
+  color: var(--ink);
 }
 
 .doc-tab.is-on {
-  background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .raw {
@@ -125,41 +161,52 @@
 }
 
 .fields {
-  list-style: none;
   margin: 0;
   padding: 0;
-  overflow: auto;
-  max-height: 420px;
 }
 
+/* 블록 안의 값 줄 묶음 */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* **한 줄에 선다** — 이름 84 · 값칸 68 · 단위 46 · 출처 (와이어프레임 원문).
+ *
+ * 전에는 이름이 위, 값이 아래인 두 줄이었다. 값 열이 안 맞아서 열 개를 훑을 때
+ * 눈이 지그재그로 갔다. 열을 고정 폭으로 세우면 값만 아래로 훑힌다.
+ *
+ * 격자(grid)가 아니라 flex 다 — 못 읽은 줄은 뒤에 「⚠ 인식 실패」와 「직접
+ * 입력」이 더 붙고, 고치는 중이면 입력칸이 늘어난다. 열 수가 줄마다 달라서
+ * 격자로 두면 빈 칸이 생긴다. */
 .field {
-  padding: var(--s-12) var(--s-16);
-  border-bottom: 1px solid var(--line);
-  border-left: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 30px;
+  padding: 2px 0;
+  font-size: 13px;
 }
 
-.field:last-child {
-  border-bottom: 0;
-}
-
-.field--low {
-  border-left-color: var(--warn);
+/* 상태는 왼선이 아니라 값칸 자체로 말한다 — 블록마다 왼선을 그으면
+   블록 테두리와 겹쳐 층이 하나 더 생긴다. */
+.field--low .field__value,
+.field--candidates .field__value {
+  border-color: var(--warn);
   background: var(--warn-bg);
 }
 
-.field--missing {
-  border-left-color: var(--danger);
-  background: var(--danger-bg);
-}
-
-.field--candidates {
-  border-left-color: var(--line-strong);
-}
-
 .field__name {
-  font-size: 12px;
-  color: var(--ink-3);
-  margin-bottom: var(--s-4);
+  width: 84px;
+  flex: none;
+  color: var(--ink-2);
+}
+
+/* 이름이 길면 줄이 밀린다 — 「간수치 AST/ALT」가 그렇다. 넘치면 줄바꿈한다. */
+.field__name {
+  word-break: keep-all;
 }
 
 .field__tag {
@@ -181,35 +228,58 @@
 .field__row {
   display: flex;
   align-items: center;
-  gap: var(--s-8);
+  gap: 10px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
+/* 값칸 — 와이어프레임 원문 `height:30px · width:68px · radius:6px` */
 .field__value {
-  font-size: 16px;
-  font-weight: 700;
+  height: 30px;
+  min-width: 68px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  font-size: 13px;
+  font-weight: 600;
   color: var(--ink);
 }
 
-/* 못 읽은 값. 점선 네모를 그려서 「여기 값이 들어와야 한다」를 보인다. */
+/* 못 읽은 값. 점선 네모를 그려서 「여기 값이 들어와야 한다」를 보인다.
+   **그 줄만 점선이다** — 다른 줄과 확인 항목은 그대로 둔다 (S1-7 캡션). */
 .field__value--missing {
-  min-width: 64px;
-  padding: 2px 10px;
-  border: 1px dashed var(--danger-line);
-  border-radius: 6px;
+  border-style: dashed;
+  border-color: var(--danger-line);
   color: var(--danger);
-  text-align: center;
+  font-weight: 700;
 }
 
+/* 「추후 보고 예정」은 값이 아니라 말이라 칸 너비를 고정하지 않는다 */
 .field__value--pending {
-  font-size: 14px;
-  font-weight: 600;
+  min-width: 0;
+  padding: 0 12px;
+  border-style: dashed;
+  border-color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 400;
   color: var(--ink-2);
 }
 
-.field__unit,
-.field__date {
+.field__unit {
+  width: 46px;
+  flex: none;
   font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+.field__date {
+  font-size: 11px;
   font-weight: 400;
   color: var(--ink-3);
 }
@@ -219,14 +289,15 @@
   color: var(--ink-3);
 }
 
+/* 출처 배지 — 와이어프레임 원문 `11px · border 1px · radius 4px · padding 2px 6px` */
 .chip--src {
-  height: 24px;
-  padding: 0 8px;
+  padding: 2px 6px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 4px;
   background: var(--card);
   color: var(--ink-2);
-  font-size: 12px;
+  font: inherit;
+  font-size: 11px;
   cursor: pointer;
 }
 
@@ -646,4 +717,51 @@
   color: var(--ink-2);
   border: 1px solid var(--line);
   font-weight: 400;
+}
+
+
+/* ── 블록 안의 곁말 ──────────────────────────────────────────────── */
+
+/* 판독 화면의 블록은 값 줄이 많아 기본정보보다 조인다 */
+.main-col .box {
+  margin-top: 12px;
+  padding: 14px 16px;
+}
+
+.main-col .box:first-of-type {
+  margin-top: 0;
+}
+
+.box__meta {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+/* 「28일 미만」은 막는 것이 아니라 여쭙는 것이다 */
+.box__warn {
+  color: var(--warn);
+  font-size: 11px;
+  text-align: right;
+}
+
+/* ③④ — 서버에 자리가 없는 블록. **눌러도 아무 일 없는 버튼을 두지 않는다.**
+   흐릿하게 두되 사라지지는 않게 한다: 이 자리에 무엇이 올지가 화면의 정보다. */
+.box--waiting {
+  border-style: dashed;
+  background: transparent;
+}
+
+.box--waiting .box__title,
+.box--waiting .box__note {
+  color: var(--ink-3);
+}
+
+.box__soon {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.6;
 }
