@@ -501,3 +501,58 @@ test("소리로 듣는 사람에게는 숫자를 붙여 읽어 준다", () => {
   assert.strictEqual(chipCountLabel("작성 중", 2), "작성 중, 2건");
   assert.strictEqual(chipCountLabel("완료", 0), "완료", "0건에 숫자를 붙이면 시끄럽다");
 });
+
+/* ── 상단바 아이콘 단추 ──────────────────────────────────────────────── */
+
+const MEDIC_PAGES = ["patients.html", "doctor.html", "ocr-review.html", "admin.html"];
+
+test("**아이콘이 이모지가 아니라 SVG 다** — 이모지는 기기마다 다르게 그려진다", () => {
+  /* tokens.css 가 「장식용 이모지」를 안 쓰기로 정해 뒀다. 이모지는 기기마다
+     모양이 달라 같은 화면이 사람마다 달라 보이고, 색도 못 맞춘다. */
+  for (const page of MEDIC_PAGES) {
+    const html = read(page);
+    assert.ok(!html.includes("🔔"), `${page} 에 종 이모지가 남아 있다`);
+    assert.ok(!html.includes("⏻"), `${page} 에 전원 이모지가 남아 있다`);
+    assert.ok(html.includes('<svg class="icon"'), `${page} 에 그림글자가 없다`);
+  }
+});
+
+test("그림은 화면낭독기가 읽지 않고, 단추가 대신 말한다", () => {
+  for (const page of MEDIC_PAGES) {
+    const html = read(page);
+    /* SVG 를 읽으면 「path path」가 들린다. 뜻은 단추의 aria-label 이 갖는다. */
+    for (const svg of html.match(/<svg class="icon"[^>]*>/g) || []) {
+      assert.ok(svg.includes('aria-hidden="true"'), `${page} 의 그림을 낭독기가 읽는다`);
+    }
+    assert.ok(html.includes('aria-label="로그아웃"'), `${page} 의 로그아웃 단추가 말이 없다`);
+  }
+});
+
+test("**누를 수 있는 것으로 보인다** — 테두리가 없으면 글자로 읽힌다", () => {
+  const btn = rule(read("css/shell.css"), ".icon-button");
+  assert.match(btn, /border:\s*1px/, "테두리가 없다 — 상단바에 놓인 글자로 읽힌다");
+  assert.match(btn, /background:\s*var\(--card\)/, "배경이 없어 단추 면이 안 보인다");
+});
+
+test("알림 배지가 칩 배지와 같은 모양이다 — 한 뜻이 두 모양이면 다시 배운다", () => {
+  const css = read("css/shell.css");
+  const alert = rule(css, ".icon-button__count");
+  const chip = rule(css, ".chip__count");
+
+  for (const prop of ["position", "min-width", "height", "font-size", "border-radius"]) {
+    const a = new RegExp(prop + ":\\s*([^;]+)").exec(alert);
+    const c = new RegExp(prop + ":\\s*([^;]+)").exec(chip);
+    assert.ok(a && c, `${prop} 를 한쪽이 안 갖는다`);
+    assert.strictEqual(a[1].trim(), c[1].trim(), `${prop} 가 서로 다르다`);
+  }
+});
+
+test("좌측 목록 제목이 「환자 리스트」다", () => {
+  for (const page of ["patients.html", "doctor.html", "ocr-review.html"]) {
+    assert.ok(
+      read(page).includes('<span class="list__label">환자 리스트</span>'),
+      `${page} 의 목록 제목이 다르다`,
+    );
+  }
+  assert.ok(read("admin.html").includes('<span class="list__label">어드민</span>'));
+});

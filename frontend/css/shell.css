@@ -107,37 +107,64 @@ body.shell {
   color: var(--ink-3);
 }
 
+/* **버튼처럼 보인다.** 전에는 테두리도 배경도 없어서 상단바 오른쪽에 놓인
+   글자로 읽혔다 — 누를 수 있는 것인지가 안 보였다.
+
+   그림은 이모지가 아니라 인라인 SVG 다. 이 저장소가 「장식용 이모지」를 안
+   쓰기로 했고(tokens.css), 이모지는 기기마다 다르게 그려져 같은 화면이
+   사람마다 달라 보인다. SVG 는 `currentColor` 를 따라 색도 맞는다. */
 .icon-button {
   position: relative;
-  width: var(--field-h);
-  height: var(--field-h);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font: inherit;
-  font-size: 15px;
   color: var(--ink-2);
-  background: none;
-  border: 0;
-  border-radius: var(--radius);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
+.icon-button .icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
 .icon-button:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
   background: var(--bg);
 }
 
+/* 알림 수 — 칩의 숫자 배지와 같은 자리·같은 모양이다. 한 화면에서 같은 뜻이
+   두 모양이면 읽는 사람이 그때마다 다시 배운다. 바깥으로 띄워 단추 폭을
+   차지하지 않는다. */
 .icon-button__count {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  min-width: 17px;
-  height: 17px;
+  top: -6px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
   padding: 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
   color: var(--on-accent);
   background: var(--danger);
-  /* 높이 17px 이라 브라우저가 8.5px 로 자른다 — 알약이다 */
+  border: 1px solid var(--card);
   border-radius: var(--radius-pill);
+}
+
+.icon-button__count[hidden] {
+  display: none;
 }
 
 /* ── 본문 두 칸 ─────────────────────────────────────── */
