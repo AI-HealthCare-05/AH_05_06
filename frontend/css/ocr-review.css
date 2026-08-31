@@ -533,3 +533,117 @@
   font-size: 12px;
   color: var(--warn);
 }
+
+/* ── 오른쪽 네 묶음 (와이어프레임 S1-6) ─────────────────────────────────
+ *
+ * ①진단·처방 / ②이번 판독 값 / ③이전 값 유지 / ④확인 항목.
+ * 서버는 한 줄로 주고, 가르는 규칙은 `js/ocr-groups.js` 가 갖는다.
+ */
+
+.group {
+  list-style: none;
+  margin: 0 0 var(--s-12);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.group__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-8);
+  padding: var(--s-8) var(--s-12);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.group__title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 검사일은 묶음 머리에 붙는다 — 값 줄로도 세우면 같은 것이 두 번 보인다 */
+.group__when {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.group__meta {
+  margin: 0;
+  padding: var(--s-8) var(--s-12) 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+/* 「28일 미만」은 막는 것이 아니라 여쭙는 것이다 — 경고색을 쓰되 붉지 않게 */
+.group__warn {
+  margin: var(--s-4) 0 0;
+  padding: 0 var(--s-12);
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.group__rows {
+  margin: 0;
+  padding: var(--s-8) 0 0;
+  list-style: none;
+}
+
+/* ③④ — 서버에 자리가 없는 묶음. **눌러도 아무 일 없는 버튼을 두지 않는다.**
+   흐릿하게 두되 사라지지는 않게 한다: 이 자리에 무엇이 올지가 화면의 정보다. */
+.group--waiting {
+  border-style: dashed;
+  background: transparent;
+}
+
+.group--waiting .group__head {
+  background: transparent;
+  border-bottom: 0;
+}
+
+.group--waiting .group__title,
+.group--waiting .group__when {
+  color: var(--ink-3);
+}
+
+.group__soon {
+  margin: 0;
+  padding: 0 var(--s-12) var(--s-12);
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ── 왼쪽 판 ─────────────────────────────────────────────────────────── */
+
+.panel__sub {
+  margin-left: var(--s-8);
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.raw-note {
+  margin: 0 0 var(--s-8);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.raw-acts {
+  display: flex;
+  gap: var(--s-8);
+  margin-top: var(--s-12);
+}
+
+/* 이 둘은 주된 길이 아니다 — 「확인 완료 · 안내문 생성」과 무게가 같으면
+   스탭이 어디로 가야 하는지 흐려진다. */
+.button--quiet {
+  flex: 1;
+  background: var(--card);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  font-weight: 400;
+}

@@ -109,15 +109,36 @@ var FAILURE_SAYINGS = [
  *     이미 요청이 나가 있다     두 번 만들면 409 가 나거나 두 건이 생긴다
  */
 function generateBlocked(counts, clashes, generating) {
-  var missing = counts && counts.missing ? counts.missing : 0;
-  return missing > 0 || (clashes || 0) > 0 || generating === true;
+  /* **못 읽은 값은 길을 막지 않는다** — 와이어프레임 S1-7.
+   *
+   * 전에는 `counts.missing > 0` 이면 버튼을 잠갔다. 그런데 S1-7 은 「못 읽은
+   * 항목이 있을 때」를 그린 프레임이고, 거기서 「확인 완료 · 안내문 생성」은
+   * **살아 있는 색**이다. 흐름 줄도 「못 읽은 값 없이 생성」이라 적는다.
+   * 프레임 캡션이 못 박는다 — 「그 줄만 점선 + ? · 다른 줄과 확인 항목은
+   * 그대로다 — 추측해서 채우지 않는다」. 한 줄이 실패해도 화면 전체를 막지
+   * 않는다는 뜻이다.
+   *
+   * 잠가 두면 어떻게 되는지는 이미 봤다. 못 읽은 값을 푸는 유일한 길이었던
+   * 「이번 미시행」은 서버에 `field_status` 가 없어 실서버에서 버튼조차 안
+   * 그려진다 — 잠긴 채로 남는다. 1차 시연이 멈춘 것과 같은 모양이다.
+   *
+   * 충돌(같은 항목이 두 곳에 있음)은 그대로 막는다. 그건 **어느 값이 맞는지
+   * 사람이 골라야** 하는 것이라, 고르지 않고 만들면 둘 중 아무거나 실린다. */
+  return (clashes || 0) > 0 || generating === true;
 }
 
 /* 잠근 이유를 사람 말로 — 버튼 `title` 에 쓴다. 이유가 다르면 말도 달라야 한다. */
 function generateBlockedSaying(counts, clashes, generating) {
   if (generating === true) return "안내문을 만드는 중입니다";
-  if (generateBlocked(counts, clashes, false)) return "못 읽은 값과 충돌을 정리한 뒤 생성할 수 있습니다";
+  if ((clashes || 0) > 0) return "같은 항목이 두 곳에 있습니다 — 어느 값을 쓸지 골라 주세요";
   return "";
+}
+
+/* 못 읽은 값이 남았는데 그냥 만들려 할 때 한 번 알린다. 막지는 않는다 —
+   묻지도 않고 만들면 스탭은 빠진 줄을 못 보고 넘어간다. */
+function missingSaying(counts) {
+  var missing = counts && counts.missing ? counts.missing : 0;
+  return missing > 0 ? "못 읽은 값 " + missing + "개는 빈 채로 만듭니다" : "";
 }
 
 /* **「확인 완료」를 누를 때 서버로 확정을 보낼 항목** — 와이어프레임 `S1-6`.
@@ -493,7 +514,9 @@ function stateTakesFocus(tone) {
           : fieldState(field, threshold);
     var head =
       '<div class="field__name">' +
-      escapeHtml(field.field_type) +
+      /* 서버 코드를 사람 말로 — 전에는 「MEDICATION_NAME」이 그대로 떴다.
+         이름표는 `js/field-labels.js` 가 갖는다 (WP-S③ 공용 모듈). */
+      escapeHtml(fieldLabel(field.field_type)) +
       (STATE_TEXT[state]
         ? ' <span class="field__tag field__tag--' + state + '">' + STATE_TEXT[state] + "</span>"
         : "") +
@@ -521,7 +544,9 @@ function stateTakesFocus(tone) {
         '" value="' +
         escapeHtml(editing[id]) +
         '" aria-label="' +
-        escapeHtml(field.field_type) +
+        /* 화면 읽기 프로그램도 사람 말을 들어야 한다 — 전에는
+           「MEDICATION_NAME 값 입력」이라 읽혔다. */
+        escapeHtml(fieldLabel(field.field_type)) +
         ' 값 입력" />' +
         '<button class="field__act field__act--go" type="button" data-save="' +
         id +
@@ -660,11 +685,7 @@ function stateTakesFocus(tone) {
         : null;
     var caret = typingIn === null ? null : [active.selectionStart, active.selectionEnd];
 
-    fieldsBox.innerHTML = result.fields
-      .map(function (field) {
-        return renderField(field);
-      })
-      .join("");
+    fieldsBox.innerHTML = groupsHtml();
 
     /* 방금 「고치기」를 누른 칸이 먼저다. 치던 칸을 지키는 것보다 앞서야
        하는 이유는, 두 칸이 열려 있을 때 새로 연 칸으로 커서가 안 가면
@@ -676,6 +697,87 @@ function stateTakesFocus(tone) {
     if (!box) return;
     box.focus();
     if (caret && typingIn === wanted) box.setSelectionRange(caret[0], caret[1]);
+  }
+
+  /* ── 오른쪽 네 묶음 (와이어프레임 S1-6) ───────────────────────────────
+   *
+   * 서버는 값을 한 줄로 준다. 가르는 규칙은 `js/ocr-groups.js` 가 갖는다 —
+   * 검사가 닿아야 해서 IIFE 밖이다.
+   *
+   * ①은 안내문의 뼈대(무슨 약을 며칠)고 ②는 참고값이다. 한 줄로 두면 스탭이
+   * 「처방일수 84」와 「혈색소 10.2」를 같은 무게로 훑는다. 84가 틀리면
+   * 환자가 약을 잘못 먹는다. */
+  function groupsHtml() {
+    var split = splitFields(result.fields);
+    return (
+      prescriptionHtml(split.prescription) +
+      labsHtml(split.labs) +
+      notReadyHtml()
+    );
+  }
+
+  /* ① 진단 · 처방 — 머리줄에 진단과 약, 그 아래 처방일 · 소진 예정일 */
+  function prescriptionHtml(rows) {
+    if (!rows.length) return "";
+
+    var days = fieldValueOf(result.fields, "DURATION_DAYS");
+    var start = fieldValueOf(result.fields, "PRESCRIPTION_DATE");
+    var until = runOutDate(start, days);
+    var warn = courseWarn(days);
+
+    var meta = [];
+    if (start) meta.push("처방일 " + escapeHtml(shortDate(start)));
+    /* 소진 예정일은 서버 값이 아니라 처방일 + 처방일수다. 계산한 값이라고
+       밝힌다 — 판독한 값처럼 보이면 스탭이 원문에서 찾으려 든다. */
+    if (until) meta.push("소진 예정일 " + escapeHtml(shortDate(until)) + " (계산)");
+
+    return (
+      '<li class="group"><div class="group__head">' +
+      '<span class="group__title">진단 · 처방</span>' +
+      "</div>" +
+      (meta.length ? '<p class="group__meta">' + meta.join(" · ") + "</p>" : "") +
+      (warn ? '<p class="group__warn">ⓘ ' + escapeHtml(warn) + "</p>" : "") +
+      '<ul class="group__rows">' +
+      rows.map(renderField).join("") +
+      "</ul></li>"
+    );
+  }
+
+  /* ② 이번 판독 값 — 검사일은 줄이 아니라 묶음 머리에 붙는다 */
+  function labsHtml(rows) {
+    if (!rows.length) return "";
+    var on = labDateOf(result.fields);
+
+    return (
+      '<li class="group"><div class="group__head">' +
+      '<span class="group__title">이번 판독 값</span>' +
+      (on ? '<span class="group__when">검사일 ' + escapeHtml(shortDate(on)) + "</span>" : "") +
+      "</div>" +
+      '<ul class="group__rows">' +
+      rows.map(renderField).join("") +
+      "</ul></li>"
+    );
+  }
+
+  /* ③④ 아직 서버에 자리가 없는 묶음.
+   *
+   * **눌러도 아무 일 없는 버튼을 두지 않는다** — 그 자리에 무엇이 없는지 쓴다.
+   * 목업 값을 채워 두면 되는 것처럼 보이고, 그게 1차 시연이 멈춘 방식이다. */
+  function notReadyHtml() {
+    return GROUPS_WITHOUT_SERVER.map(function (group) {
+      return (
+        '<li class="group group--waiting"><div class="group__head">' +
+        '<span class="group__title">' +
+        escapeHtml(group.title) +
+        "</span>" +
+        '<span class="group__when">' +
+        escapeHtml(group.note) +
+        "</span></div>" +
+        '<p class="group__soon">' +
+        escapeHtml(group.saying) +
+        "</p></li>"
+      );
+    }).join("");
   }
 
   /* 위에 몇 개를 봐야 하는지 먼저 말한다. 목록을 훑기 전에 알아야
@@ -948,9 +1050,16 @@ function stateTakesFocus(tone) {
       return;
     }
 
-    if (target.id === "reupload") {
+    /* 「재업로드」·「검사지 추가」 — 둘 다 이 진료의 진료기록 칸으로 간다.
+       상태 상자의 `#reupload` 와 왼쪽 판의 `[data-go]` 가 같은 곳으로 간다. */
+    var goTab = target.getAttribute && target.getAttribute("data-go");
+    if (target.id === "reupload" || goTab) {
       if (!visit) return;
-      location.href = "/patients.html?visit=" + encodeURIComponent(visit.visit_id) + "&tab=record";
+      location.href =
+        "/patients.html?visit=" +
+        encodeURIComponent(visit.visit_id) +
+        "&tab=" +
+        encodeURIComponent(goTab || "record");
       return;
     }
 

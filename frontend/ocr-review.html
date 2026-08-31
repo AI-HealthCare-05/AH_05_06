@@ -109,19 +109,40 @@
 
         <div id="work">
           <div class="review">
-            <!-- 왼쪽 · 원문 -->
-            <section class="panel" aria-label="판독한 원문">
-              <div class="panel__head">원문 텍스트</div>
+            <!-- 왼쪽 · 원문 (와이어프레임 S1-6 좌 440px) -->
+            <section class="panel panel--raw" aria-label="판독한 원문">
               <div class="doc-tabs" id="doc-tabs" role="group" aria-label="문서 고르기"></div>
+              <p class="raw-note">수치 옆 출처를 누르면 해당 진료기록으로 이동합니다</p>
+
+              <div class="panel__head">
+                원문 텍스트
+                <span class="panel__sub">현재 화면에서 판독한 원문</span>
+              </div>
               <div class="raw" id="raw" tabindex="0"></div>
+
+              <p class="purge-note">
+                ⓘ EMR 과거기록의 「수 치 : / 참고치 :」 줄에서 읽습니다 · 실패 시 직접 입력합니다
+              </p>
               <p class="purge-note">
                 ⓘ 이 원문과 원본 이미지는 승인과 함께 지워집니다 — 뽑은 값만 남습니다
               </p>
+
+              <!-- 못 읽은 값을 푸는 두 번째 길이다. 「직접 입력」이 한 항목을
+                   고치는 것이라면, 이쪽은 사진이 흐릴 때 다시 찍어 올리는
+                   길이다. 와이어프레임이 이 자리에 둔 이유이기도 하다. -->
+              <!-- `id` 가 아니라 `data-go` 다. 판독 실패 상태 상자가 같은
+                   이름의 「재업로드」 버튼을 만들어서, `id` 로 두면 한 문서에
+                   같은 이름이 둘이 된다 (`#work` 는 숨겨져도 문서에 남는다). -->
+              <div class="raw-acts">
+                <button class="button button--quiet" type="button" data-go="record">재업로드</button>
+                <button class="button button--quiet" type="button" data-go="record">검사지 추가</button>
+              </div>
             </section>
 
-            <!-- 오른쪽 · 뽑아낸 값 -->
-            <section class="panel" aria-label="이번 판독 값">
-              <div class="panel__head">이번 판독 값</div>
+            <!-- 오른쪽 · 뽑아낸 값. 머리말을 묶음이 각자 갖는다 — 판 하나에
+                 「이번 판독 값」이라 붙여 두면 ①진단·처방까지 그 이름 아래
+                 들어가서, 처방일수가 검사값처럼 보인다. -->
+            <section class="panel" aria-label="판독 값 확인">
               <p class="summary" id="summary" aria-live="polite">—</p>
               <ul class="fields" id="fields"></ul>
               <p class="purge-note">ⓘ 값 옆의 출처를 누르면 그 값이 나온 원문 줄로 이동합니다</p>
@@ -144,6 +165,8 @@
     <script src="/js/api.js"></script>
     <script src="/js/patients-api.js"></script>
     <script src="/js/session.js"></script>
+    <script src="/js/field-labels.js"></script>
+    <script src="/js/ocr-groups.js"></script>
     <script src="/js/step-nav.js"></script>
     <script src="/js/list-fold.js"></script>
     <script src="/js/shell.js"></script>

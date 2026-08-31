@@ -40,11 +40,34 @@ test("**요청이 도는 동안은 잠긴다** — 다 읽혔고 충돌이 없�
   assert.equal(generateBlocked({ missing: 0 }, 0, true), true, "도는 중인데 또 눌리면 두 건이 생긴다");
 });
 
-test("못 읽은 값이나 충돌이 남으면 잠근다 — 빈칸 안내문이 환자에게 나간다", () => {
+test("**못 읽은 값은 길을 막지 않는다** — 와이어프레임 S1-7", () => {
+  /* 전에는 못 읽은 값이 하나라도 있으면 잠갔다. 그런데 S1-7 은 바로 그
+     「못 읽은 항목이 있는」 상태를 그린 프레임이고, 거기서 「확인 완료 ·
+     안내문 생성」은 살아 있는 색이다. 흐름 줄은 「못 읽은 값 없이 생성」.
+
+     잠가 두면 어떻게 되는지는 봤다 — 푸는 유일한 길이던 「이번 미시행」이
+     실서버에서 안 그려져서, 잠긴 채로 남는다. */
   const { generateBlocked } = box();
 
-  assert.equal(generateBlocked({ missing: 1 }, 0, false), true, "못 읽은 값이 남았다");
+  assert.equal(generateBlocked({ missing: 1 }, 0, false), false, "못 읽은 값이 길을 막았다");
+  assert.equal(generateBlocked({ missing: 9 }, 0, false), false, "여러 개여도 마찬가지다");
+});
+
+test("**충돌은 그대로 막는다** — 어느 값이 맞는지는 사람이 골라야 한다", () => {
+  /* 못 읽은 값은 「없다」가 답이라 빈 채로 두면 되지만, 충돌은 같은 항목이
+     두 곳에 다른 값으로 있는 것이라 고르지 않으면 아무거나 실린다. */
+  const { generateBlocked } = box();
+
   assert.equal(generateBlocked({ missing: 0 }, 1, false), true, "안 푼 충돌이 남았다");
+  assert.equal(generateBlocked({ missing: 3 }, 1, false), true, "못 읽은 값과 함께여도 충돌은 막는다");
+});
+
+test("못 읽은 값이 남으면 **막지 않고 알린다**", () => {
+  const { missingSaying } = box();
+
+  assert.match(missingSaying({ missing: 2 }), /2/, "몇 개인지 말해야 한다");
+  assert.match(missingSaying({ missing: 2 }), /빈 채로/, "어떻게 되는지 말해야 한다");
+  assert.equal(missingSaying({ missing: 0 }), "", "다 읽혔으면 할 말이 없다");
 });
 
 test("**`renderSummary` 가 이 규칙을 부른다** — 안 부르면 2.5 초 뒤 타이머가 잠금을 푼다", () => {
@@ -68,8 +91,12 @@ test("잠근 이유가 다르면 말도 다르다", () => {
   const { generateBlockedSaying } = box();
 
   assert.match(generateBlockedSaying({ missing: 0 }, 0, true), /만드는 중/);
-  assert.match(generateBlockedSaying({ missing: 2 }, 0, false), /정리한 뒤/);
+  assert.match(generateBlockedSaying({ missing: 0 }, 1, false), /골라/, "충돌은 고르라고 말해야 한다");
   assert.equal(generateBlockedSaying({ missing: 0 }, 0, false), "", "잠기지 않았으면 할 말이 없다");
+  assert.equal(
+    generateBlockedSaying({ missing: 5 }, 0, false), "",
+    "못 읽은 값은 이제 안 막는다 — 잠금 문구를 띄우면 잠긴 것처럼 보인다",
+  );
 });
 
 test("**상태 칸에 들어 있다** — `blankReviewState()` 가 모르면 화면을 바꿀 때 안 지워진다", () => {
