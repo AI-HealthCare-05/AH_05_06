@@ -167,6 +167,16 @@ function patientLinkSaying(error) {
      남아 있으면, 화면은 앞 사람을 말하는데 `visit` 은 뒷사람이라 원장님이 읽는
      대상과 누를 대상이 어긋난다. 환자 식별이 걸린 자리라 비워 두는 편이 낫다. */
   function renderHead() {
+    /* 단계 줄은 **스탭 화면과 같은 것**을 쓴다 (`js/step-nav.js`).
+       전에는 이 화면만 정적 `<ol>` 이라 눌리지도 않았고, 그래서 의사가
+       기본정보·진료기록·안내문으로 갈 길이 없었다. 의사가 서는 자리는
+       「최종 확인」이지만 앞 단계를 되짚는 길은 열려 있어야 한다 —
+       무엇을 보고 만든 글인지 확인하고 승인한다. */
+    var steps = el("tabs");
+    if (steps) {
+      steps.innerHTML = stepsHtml("final", "/doctor.html", visit ? visit.visit_id : "");
+    }
+
     if (guide === null) {
       el("p-name").textContent = "—";
       el("p-id").textContent = "";
@@ -183,6 +193,21 @@ function patientLinkSaying(error) {
       (GENDER_LABEL[p.gender] || "—") + " " + p.age + "세 · 차트 " + p.hospital_patient_no;
     el("p-visit").textContent = guide.summary || "";
   }
+
+  /* 단계 줄을 누르면 그 단계로 간다.
+   *
+   * 이 화면에는 그 탭들의 본문이 없다 — 「최종 확인」만 있다. 그래서 같은
+   * 화면에서 바꾸지 않고 `patients.html` 의 그 탭으로 옮긴다.
+   * 어디로 갈지는 `js/step-nav.js` 가 `data-href` 로 붙여 준다 —
+   * 스탭 화면과 같은 규칙을 쓰기 위해서다.
+   *
+   * 지금 서 있는 단계에는 `data-href` 가 없다. **제자리로 오는 링크가 가장
+   * 나쁘다** — 눌렀는데 아무 일도 안 일어나면 고장으로 읽힌다. */
+  document.addEventListener("click", function (event) {
+    var step = event.target.closest && event.target.closest(".tab[data-href]");
+    if (!step) return;
+    location.href = step.getAttribute("data-href");
+  });
 
   /* ── 권한 ───────────────────────────────────────────── */
 

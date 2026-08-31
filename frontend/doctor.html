@@ -83,19 +83,22 @@
         <section class="view" id="view-register" hidden></section>
 
         <section class="view" id="view-card" hidden>
+        <!-- 머리말과 단계 줄은 스탭 화면과 **같은 것**이다.
+             전에는 이 화면만 `<ol class="steps">` 로 박아 둔 정적 목록이었다 —
+             `<li>` 라 눌리지도 않았고, 아래 줄을 차지해 이름 밑으로 내려왔다.
+             그래서 의사가 기본정보·진료기록·안내문으로 갈 길이 없었다.
+             줄은 `js/step-nav.js` 가 그린다. -->
         <div class="patient-head">
-          <div class="patient-head__name" id="p-name">—</div>
-          <div class="patient-head__id" id="p-id"></div>
-          <div class="patient-head__visit" id="p-visit"></div>
+          <div class="patient-head__who">
+            <div class="patient-head__top">
+              <div class="patient-head__name" id="p-name">—</div>
+              <div class="patient-head__id" id="p-id"></div>
+              <span class="row__state" id="p-state" hidden></span>
+            </div>
+            <div class="patient-head__visit" id="p-visit"></div>
+          </div>
+          <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드"></div>
         </div>
-
-        <ol class="steps">
-          <li class="step step--done"><span class="step__mark">✓</span>기본정보</li>
-          <li class="step step--done"><span class="step__mark">✓</span>진료기록</li>
-          <li class="step step--done"><span class="step__mark">✓</span>안내문</li>
-          <li class="step step--now"><span class="step__mark">●</span>최종 확인</li>
-          <li class="step"><span class="step__mark">○</span>현황</li>
-        </ol>
 
         <h1 class="pane__title">환자가 받게 될 안내문 · 미리보기</h1>
 
@@ -131,6 +134,7 @@
          「승인 요청」의 행도 그 목업에 있다. -->
     <script src="/js/patients-api.js"></script>
     <script src="/js/session.js"></script>
+    <script src="/js/step-nav.js"></script>
     <script src="/js/list-fold.js"></script>
     <script src="/js/shell.js"></script>
     <script src="/js/guide-view.js"></script>

@@ -114,3 +114,41 @@ test("머리말의 진료일에 시각이 안 붙는다", () => {
     "앞 다섯 자만 떼어낸다 — 시각까지 남아 「08-31T17:04:42+09:00」로 뜬다",
   );
 });
+
+/* ── 의사 화면도 같은 단계 줄을 쓴다 ─────────────────────────────────── */
+
+const { read: readSrc, codeOnly: stripSrc, markupOnly: stripTags } = require("./source.js");
+
+test("**의사 화면의 단계 줄이 눌린다** — 정적 `<ol>` 이라 갈 길이 없었다", () => {
+  const page = stripTags(readSrc("doctor.html"));
+
+  /* 예전에는 `<li class="step">` 을 박아 뒀다 — `<li>` 는 안 눌린다 */
+  assert.ok(!page.includes('<ol class="steps">'), "정적 단계 목록이 남아 있다");
+  assert.ok(!page.includes('class="step step--'), "정적 단계 항목이 남아 있다");
+
+  /* 스탭 화면과 같은 자리·같은 이름 */
+  assert.ok(page.includes('<div class="tabs" id="tabs"'), "단계 줄을 담을 자리가 없다");
+  assert.ok(page.includes('<script src="/js/step-nav.js"></script>'), "단계 줄을 그리는 파일을 안 싣는다");
+});
+
+test("**머리말 안에 선다** — 아래 줄을 차지하면 이름 밑으로 내려온다", () => {
+  const page = stripTags(readSrc("doctor.html"));
+  const head = page.slice(page.indexOf('<div class="patient-head">'));
+  const upto = head.slice(0, head.indexOf('<h1'));
+
+  assert.ok(upto.includes('id="tabs"'), "단계 줄이 머리말 밖에 있다");
+  assert.ok(upto.includes('patient-head__who'), "스탭 화면과 머리말 구조가 다르다");
+});
+
+test("**누르면 그 단계로 간다** — 이 화면에는 그 탭들의 본문이 없다", () => {
+  const code = stripSrc(readSrc("js/doctor.js"));
+
+  assert.ok(code.includes("stepsHtml("), "단계 줄을 안 그린다");
+  assert.ok(code.includes('closest(".tab[data-href]")'), "누른 것을 받는 자리가 없다");
+
+  /* `data-href` 가 없는 것(지금 서 있는 단계)은 안 따라간다 —
+     제자리로 오는 링크가 가장 나쁘다 */
+  const at = code.indexOf('closest(".tab[data-href]")');
+  const body = code.slice(at, at + 200);
+  assert.ok(body.includes("if (!step) return"), "지금 서 있는 단계를 눌러도 뭔가 한다");
+});

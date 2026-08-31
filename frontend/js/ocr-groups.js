@@ -361,3 +361,18 @@ function setsMissingSaying(sets, failed) {
   if (!(sets || []).length) return "약속처방이 아직 없습니다 — 설정 · 처방에서 추가해 주세요";
   return "";
 }
+
+
+/* 안내문을 만든 뒤 갈 곳.
+ *
+ * 전에는 「의사 승인 화면에서 이어서 보실 수 있습니다」라고만 적고 그 자리에
+ * 머물렀다. 그런데 **안내문이 제대로 만들어졌는지 보는 것은 스탭 몫이다** —
+ * 스탭이 먼저 확인하고 고친 뒤에 의사에게 넘긴다 (와이어프레임 S1-11~13).
+ * 말만 하고 안 데려다주면 스탭은 단계 줄에서 「안내문」을 다시 찾아 눌러야 한다.
+ *
+ * **이미 있을 때(409)도 같은 곳으로 간다.** 새로고침 뒤 다시 눌렀거나 두
+ * 사람이 같이 누른 것이고, 원하던 것은 이미 거기 있다. */
+function guideScreenHref(visitId) {
+  if (!visitId) return "";
+  return "/patients.html?visit=" + encodeURIComponent(visitId) + "&tab=guide";
+}

@@ -1393,8 +1393,12 @@ function stateTakesFocus(tone) {
              다른 진료로 갔다면 무관하고, 돌아왔다면 여전히 관계있다. */
           if (!lockIsMine || !outcomeBelongsToScreen(wantedId, visit)) return;
           redraw();
-          saveNote.textContent = "안내문을 만들었습니다 — 의사 승인 화면에서 이어서 보실 수 있습니다";
+          /* **바로 안내문 화면으로 데려간다.** 제대로 만들어졌는지 보는 것이
+             스탭 몫이고(S1-11~13), 말만 하고 안 데려다주면 단계 줄에서
+             「안내문」을 다시 찾아 눌러야 한다. */
+          saveNote.textContent = "안내문을 만들었습니다 — 확인 화면으로 이동합니다";
           saveNote.hidden = false;
+          location.href = guideScreenHref(wantedId);
         })
         .catch(function (error) {
           var lockIsMine = generateLockIsMine(mySeq, generateSeq);
@@ -1405,9 +1409,14 @@ function stateTakesFocus(tone) {
           /* 409 는 실패가 아니다. 새로고침 뒤 다시 눌렀거나 두 사람이 같이
              누른 것이고, **원하던 것은 이미 있다.** 빨간 오류로 보여 주면
              스탭이 없는 문제를 찾게 된다. */
-          saveNote.textContent = guideAlreadyThere(error)
-            ? "이 진료의 안내문은 이미 있습니다 — 의사 승인 화면에서 보실 수 있습니다"
-            : generateFailureSaying(error);
+          if (guideAlreadyThere(error)) {
+            /* 409 는 실패가 아니다 — 원하던 것이 이미 거기 있다. 같은 곳으로 간다. */
+            saveNote.textContent = "이 진료의 안내문은 이미 있습니다 — 확인 화면으로 이동합니다";
+            saveNote.hidden = false;
+            location.href = guideScreenHref(wantedId);
+            return;
+          }
+          saveNote.textContent = generateFailureSaying(error);
           saveNote.hidden = false;
         });
       return;
