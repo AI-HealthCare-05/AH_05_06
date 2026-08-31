@@ -880,3 +880,70 @@
   font-size: 11px;
   font-weight: 400;
 }
+
+/* ── 맨 위 진단 · 처방 줄 (와이어프레임 S1-6) ──────────────────────────
+ *
+ * 「진단 [자궁내막증] · 약품명 [비잔] [84] 일」.
+ * 여기 서는 셋은 서버가 필수로 보는 셋과 같다 — 없으면 판독 작업 자체가
+ * 실패하고 안내문도 「무슨 약을 며칠」을 못 쓴다. 그래서 크게 세운다.
+ *
+ * 원문 치수: 라벨 12px, 칸 높이 34px, 진단 206px, 처방은 남는 폭, 간격 14px.
+ */
+.top {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.top__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 0 0 206px;
+}
+
+.top__cell--wide {
+  flex: 1 1 200px;
+}
+
+.top__label {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.top__unit {
+  align-self: center;
+  padding-bottom: 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* 맨 위 줄의 값칸은 아래 줄보다 크다 — 읽을 것이 이 셋이다 */
+.top .field {
+  min-height: 34px;
+  padding: 0;
+}
+
+.top .field__value {
+  height: 34px;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.top .field__row {
+  gap: 6px;
+}
+
+/* 처방일 · 소진 예정일 줄은 맨 위 줄 바로 아래에 붙는다 — 위 칸을 설명하는
+   말이라, 아래 값 줄들과 사이에 선을 두면 그쪽에 딸린 것처럼 보인다. */
+.box__meta--top {
+  margin: 0 0 10px;
+  padding-top: 0;
+  border-top: 0;
+}

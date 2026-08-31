@@ -711,19 +711,82 @@ function stateTakesFocus(tone) {
     }
     if (conflict[id]) more += conflictBox(field);
 
+    /* **몸통을 따로 꺼낼 수 있게 둔다.** 맨 위 진단·처방 줄이 같은 몸통을
+       가로로 세우는데(`topRowHtml`), 거기서 다시 그리면 「고치기」·「직접
+       입력」·충돌 처리가 두 벌이 되어 한쪽만 고쳐진다. */
+    lastBody = {
+      state: state,
+      clash: !!conflict[id],
+      body: '<div class="field__row">' + body + tail + "</div>" + more,
+    };
+
     return (
       '<li class="field field--' +
       state +
       (conflict[id] ? " field--clash" : "") +
       '">' +
       head +
-      '<div class="field__row">' +
-      body +
-      tail +
-      "</div>" +
-      more +
+      lastBody.body +
       "</li>"
     );
+  }
+
+  /* `renderField` 가 방금 만든 몸통. 가로줄이 그것만 꺼내 쓴다 —
+     함수를 둘로 쪼개는 것보다 부르는 자리가 적어 어긋날 여지가 없다. */
+  var lastBody = null;
+
+  function fieldBody(field) {
+    renderField(field);
+    return lastBody;
+  }
+
+  /* ── 맨 위 진단 · 처방 줄 (와이어프레임 S1-6) ────────────────────────
+   *
+   * 「진단 [자궁내막증] · 처방 [비잔 2mg · 계속] [84] 일」.
+   *
+   * 여기 서는 셋은 **서버가 필수로 보는 셋과 같다** —
+   * `ocr_task.py` 의 `_REQUIRED_OCR_FIELDS = {DIAGNOSIS, MEDICATION_NAME,
+   * DURATION_DAYS}`. 이 셋이 없으면 판독 작업 자체가 실패하고, 안내문도
+   * 「무슨 약을 며칠」을 못 쓴다. 그래서 맨 위에 크게 세운다.
+   *
+   * 와이어프레임은 처방 칸에 「비잔 2mg · 계속」처럼 약과 용량을 붙여 놓는데,
+   * 그건 처방 세트를 목록에서 고르는 설계라 그렇다. 우리는 판독이 항목별로
+   * 따로 주므로 **붙이지 않는다** — 붙여 놓고 아래에 1회량을 또 세우면 같은
+   * 값이 두 번 보이고, 어느 쪽을 고쳐야 하는지 묻게 된다. */
+  var TOP_ROW = [
+    { type: "DIAGNOSIS", label: "진단", wide: false },
+    { type: "MEDICATION_NAME", label: "약품명", wide: true },
+    { type: "DURATION_DAYS", label: "처방일수", unit: "일", wide: false },
+  ];
+
+  function topRowHtml(rows) {
+    var cells = TOP_ROW.map(function (spec) {
+      var field = null;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].field_type === spec.type) field = rows[i];
+      }
+      if (!field) return "";
+
+      var made = fieldBody(field);
+      return (
+        '<div class="top__cell' +
+        (spec.wide ? " top__cell--wide" : "") +
+        (made.clash ? " field--clash" : "") +
+        '">' +
+        '<span class="top__label">' +
+        escapeHtml(spec.label) +
+        "</span>" +
+        '<div class="field field--' +
+        made.state +
+        '">' +
+        made.body +
+        "</div>" +
+        "</div>" +
+        (spec.unit ? '<span class="top__unit">' + escapeHtml(spec.unit) + "</span>" : "")
+      );
+    }).join("");
+
+    return cells ? '<div class="top">' + cells + "</div>" : "";
   }
 
   /* 다시 그리면 `innerHTML` 이 통째로 바뀌어 커서와 캐럿이 사라진다. 저장
@@ -788,15 +851,22 @@ function stateTakesFocus(tone) {
        밝힌다 — 판독한 값처럼 보이면 스탭이 원문에서 찾으려 든다. */
     if (until) meta.push("소진 예정일 " + escapeHtml(shortDate(until)) + " (계산)");
 
+    /* 맨 위 셋은 가로로, 나머지는 아래에 줄로. 같은 값을 두 번 세우지 않는다. */
+    var topTypes = TOP_ROW.map(function (spec) {
+      return spec.type;
+    });
+    var rest = rows.filter(function (field) {
+      return topTypes.indexOf(field.field_type) === -1;
+    });
+
     return (
       '<section class="box"><div class="box__head">' +
       '<h2 class="box__title">진단 · 처방</h2>' +
       (warn ? '<span class="box__warn">ⓘ ' + escapeHtml(warn) + "</span>" : "") +
       "</div>" +
-      '<div class="rows">' +
-      rows.map(renderField).join("") +
-      "</div>" +
-      (meta.length ? '<p class="box__meta">' + meta.join(" · ") + "</p>" : "") +
+      topRowHtml(rows) +
+      (meta.length ? '<p class="box__meta box__meta--top">' + meta.join(" · ") + "</p>" : "") +
+      (rest.length ? '<div class="rows">' + rest.map(renderField).join("") + "</div>" : "") +
       "</section>"
     );
   }

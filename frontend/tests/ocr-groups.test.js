@@ -517,3 +517,64 @@ test("**저장된 값과 달라 보인다** — 같아 보이면 저장된 줄 �
   const rule = css.slice(css.indexOf(".field__value--local"), css.indexOf(".field__tag--local"));
   assert.match(rule, /dashed/, "판독한 값과 테두리가 같다");
 });
+
+/* ── 맨 위 진단 · 처방 줄 ────────────────────────────────────────────── */
+
+test("**맨 위 줄에 서는 셋은 서버가 필수로 보는 셋과 같다**", () => {
+  /* `ai_worker/tasks/ocr_task.py` 의 `_REQUIRED_OCR_FIELDS`. 이 셋이 없으면
+     판독 작업 자체가 실패하고, 안내문도 「무슨 약을 며칠」을 못 쓴다.
+     서버가 그 목록을 바꾸면 이 검사가 먼저 깨진다. */
+  const fs2 = require("node:fs");
+  const path2 = require("node:path");
+  const worker = fs2.readFileSync(
+    path2.join(__dirname, "..", "..", "ai_worker", "tasks", "ocr_task.py"),
+    "utf8",
+  );
+  const m = /_REQUIRED_OCR_FIELDS[^=]*=\s*frozenset\(\{([^}]+)\}\)/.exec(worker);
+  assert.ok(m, "서버의 필수 항목 목록을 못 찾았다 — 검사가 헛돈다");
+
+  const required = [...m[1].matchAll(/"([A-Z_]+)"/g)].map((x) => x[1]).sort();
+
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("var TOP_ROW");
+  assert.notEqual(at, -1, "맨 위 줄 정의가 없다");
+  const block = code.slice(at, code.indexOf("];", at));
+  const shown = [...block.matchAll(/type:\s*"([A-Z_]+)"/g)].map((x) => x[1]).sort();
+
+  assert.deepEqual(shown, required, "맨 위 줄과 서버 필수 항목이 어긋난다");
+});
+
+test("**같은 값을 두 번 세우지 않는다** — 맨 위에 선 것은 아래 줄에서 뺀다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function prescriptionHtml");
+  const body = code.slice(at, code.indexOf("function labsHtml"));
+
+  assert.ok(body.includes("topRowHtml("), "맨 위 줄을 안 세운다");
+  assert.ok(
+    /topTypes\.indexOf\([^)]*\)\s*===\s*-1/.test(body),
+    "맨 위에 선 것을 아래 줄에서 안 뺀다 — 같은 값이 두 번 보이고 어느 쪽을 고칠지 묻게 된다",
+  );
+});
+
+test("**고치는 길이 한 벌이다** — 두 벌이면 한쪽만 고쳐진다", () => {
+  /* 맨 위 줄이 `renderField` 의 몸통을 그대로 쓴다. 따로 그리면 「고치기」·
+     「직접 입력」·충돌 처리가 두 벌이 되고, 그중 하나만 고쳐진다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  assert.ok(code.includes("function fieldBody"), "몸통을 꺼내는 자리가 없다");
+
+  const at = code.indexOf("function topRowHtml");
+  const body = code.slice(at, at + 1200);
+  assert.ok(body.includes("fieldBody("), "맨 위 줄이 몸통을 따로 그린다");
+  assert.ok(!body.includes("data-fill="), "맨 위 줄이 「직접 입력」을 따로 그린다");
+  assert.ok(!body.includes("field__value"), "맨 위 줄이 값칸을 따로 그린다");
+});
+
+test("맨 위 줄에 없는 항목은 자리를 비우지 않는다", () => {
+  /* `withMissingRows` 가 여섯을 다 세우므로 정상적으로는 늘 셋 다 있지만,
+     방어로 둔다 — 없는 것을 `undefined` 로 그리면 화면이 깨진다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function topRowHtml");
+  const body = code.slice(at, at + 900);
+  assert.ok(/if \(!field\) return ""/.test(body), "없는 항목을 그대로 그린다");
+});
