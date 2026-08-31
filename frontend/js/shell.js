@@ -33,6 +33,10 @@ var listDay = new Date();
 var listQuery = "";
 
 
+/* 좌측 목록 접기는 `js/list-fold.js` 가 갖는다 — 어드민 화면도 같은 골격을
+   쓰는데 그 화면은 이 파일을 싣지 않는다(환자 목록이 없어 `bindShell` 이
+   찾는 칸이 없다). 공통 템플릿이라 따로 뺐다. */
+
 function roleLabel(roles) {
   var names = { staff: "스탭", doctor: "의사", admin: "관리자" };
   return (roles || [])
@@ -412,6 +416,11 @@ function bindShell() {
     showView("view-card");
     document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
   });
+
+  /* 판독 화면은 원문을 넓게 봐야 해서 목록이 저절로 접힌다 (와이어프레임 `S1-7`
+     「좌측 48px 접힌 레일」). 그 접힘은 기억하지 않는다 — 다음에 환자 목록을
+     열었을 때 까닭 없이 접혀 있으면 고장으로 읽힌다. */
+  wireFold(document.body.classList.contains("shell--fold-list"));
 
   /* 세션이 없거나 첫 로그인이면 여기서 되돌린다.
      화면에서 막는 것은 편의일 뿐이고 실제 차단은 서버가 한다(KEY-9). */

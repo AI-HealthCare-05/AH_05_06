@@ -33,13 +33,18 @@ body.shell {
   border-bottom: 1px solid var(--line);
 }
 
+/* **탭은 가운데다** — 와이어프레임 A1 공통 골격: 「로고칸 + 브랜드 / 가운데 탭 /
+   오른쪽 계정·🔔·⏻」. 양옆이 같은 폭을 갖지 않으면 가운데가 가운데로 안 보인다.
+   그래서 브랜드와 오른쪽 칸에 같은 `flex` 를 준다. */
 .topbar__brand {
+  flex: 1 1 0;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .topbar__nav {
+  flex: 0 0 auto;
   display: flex;
   gap: var(--s-4);
 }
@@ -67,6 +72,8 @@ body.shell {
 }
 
 .topbar__right {
+  flex: 1 1 0;
+  justify-content: flex-end;
   margin-left: auto;
   display: flex;
   align-items: center;
@@ -131,17 +138,69 @@ body.shell {
   display: flex;
 }
 
+/* 좌 320px 고정. 접으면 48px 레일이 된다 — 와이어프레임 `S1-7` 이 그 상태를
+   그려 두었다(「좌측 48px 접힌 레일」). 판독 화면처럼 원문을 넓게 봐야 하는
+   자리에서 쓴다. */
 .list {
   flex: 0 0 320px;
   display: flex;
   flex-direction: column;
   background: var(--card);
   border-right: 1px solid var(--line);
+  transition: flex-basis var(--motion) var(--ease);
+}
+
+.list--folded {
+  flex-basis: 48px;
+}
+
+/* 접히면 머리의 제목과 접기 버튼만 남는다. 나머지는 폭이 없어 글자가 깨진다. */
+.list--folded .list__search,
+.list--folded .list__rows,
+.list--folded .list__note,
+.list--folded .list__day,
+.list--folded .chips {
+  display: none;
+}
+
+.list__label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.list--folded .list__label {
+  display: none;
+}
+
+/* 접기 버튼 — 와이어프레임이 28px 로 적어 두었다. */
+.list__fold {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.list__fold:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
 }
 
 .list__head {
   padding: var(--s-12);
   border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  flex-wrap: wrap;
 }
 
 .list__search {

@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="/css/shell.css" />
     <link rel="stylesheet" href="/css/ocr-review.css" />
   </head>
-  <body class="shell">
+  <body class="shell shell--fold-list">
     <!-- S1-7 · S1-8 판독 결과 확인 (KEY-62)
          왼쪽 목록과 위 막대는 다른 화면과 같은 골격이다(KEY-53 · KEY-35).
          가운데 두 칸이 이 화면이다 — 원문과 뽑아낸 값.
@@ -37,6 +37,8 @@
     <div class="main">
       <aside class="list" aria-label="환자 목록">
         <div class="list__head">
+        <span class="list__label">환자</span>
+        <button class="list__fold" type="button" aria-expanded="true" title="목록 접기">◀</button>
           <input
             class="list__search"
             type="search"
@@ -128,6 +130,7 @@
     <script src="/js/api.js"></script>
     <script src="/js/patients-api.js"></script>
     <script src="/js/session.js"></script>
+    <script src="/js/list-fold.js"></script>
     <script src="/js/shell.js"></script>
     <script src="/js/ocr-api.js"></script>
     <script src="/js/ocr-review.js"></script>

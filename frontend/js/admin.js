@@ -144,6 +144,9 @@ function adminMenuCovers(frames) {
   renderMenu();
   renderBody();
 
+  /* 좌측 접기는 의료진 화면과 같은 것을 쓴다 (js/list-fold.js) — 공통 골격이다. */
+  wireFold(false);
+
   requireSession().then(function (me) {
     var name = document.getElementById("who-name");
     var roles = document.getElementById("who-roles");

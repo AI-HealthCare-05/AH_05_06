@@ -37,6 +37,8 @@
     <div class="main">
       <aside class="list" aria-label="환자 목록">
         <div class="list__head">
+        <span class="list__label">환자</span>
+        <button class="list__fold" type="button" aria-expanded="true" title="목록 접기">◀</button>
           <input class="list__search" type="search" id="quick-search" placeholder="이름 · 차트번호 검색" aria-label="환자 검색" />
         </div>
         <div class="list__day">
@@ -116,6 +118,7 @@
          「승인 요청」의 행도 그 목업에 있다. -->
     <script src="/js/patients-api.js"></script>
     <script src="/js/session.js"></script>
+    <script src="/js/list-fold.js"></script>
     <script src="/js/shell.js"></script>
     <script src="/js/guide-view.js"></script>
     <script src="/js/doctor-api.js"></script>
