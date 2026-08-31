@@ -120,6 +120,28 @@ function generateBlockedSaying(counts, clashes, generating) {
   return "";
 }
 
+/* **「확인 완료」를 누를 때 서버로 확정을 보낼 항목** — 와이어프레임 `S1-6`.
+ *
+ * 그 화면의 버튼은 「확인 완료 · 안내문 생성」 하나다. 확정과 생성이 한 동작이다.
+ * 그런데 화면이 `confirm` 을 한 번도 안 보내고 있었고, 서버는 확정된 항목이
+ * 하나도 없으면 생성을 422 `OCR_NOT_CONFIRMED` 로 막는다
+ * (`app/services/guides.py`). 그래서 **실서버에서는 안내문이 한 번도 안 만들어졌다.**
+ *
+ * 이미 확정된 항목은 뺀다 — 다시 보내면 409 `OCR_FIELD_CONFIRMED` 다.
+ * 값이 없는 항목도 뺀다. 못 읽은 칸을 확정하면 빈 값이 안내문에 그대로 나간다
+ * (생성 버튼도 같은 이유로 `counts.missing` 을 보고 잠근다).
+ */
+function fieldsToConfirm(fields) {
+  var out = [];
+  for (var i = 0; i < (fields || []).length; i++) {
+    var field = fields[i];
+    if (!field || field.is_confirmed) continue;
+    if (field.value === null || field.value === undefined || field.value === "") continue;
+    out.push(field);
+  }
+  return out;
+}
+
 /* 안내문 생성이 실패했을 때 화면에 뭐라고 쓸 것인가 — KEY-204.
  *
  * **서버 `message` 를 그대로 흘리지 않는다.** 그 자리에 OCR 원문이나 값이
@@ -130,6 +152,10 @@ var GENERATE_SAYINGS = [
   { code: "OCR_NOT_CONFIRMED", say: "확정한 항목이 아직 없습니다 — 값을 확인해 저장한 뒤 다시 눌러 주세요" },
   { code: "VISIT_NOT_FOUND", say: "이 진료를 찾을 수 없습니다 — 목록에서 다시 골라 주세요" },
   { code: "FORBIDDEN", say: "안내문을 만들 권한이 없습니다" },
+  /* 확정을 먼저 보내므로 저장 쪽 오류도 이 자리로 온다. 「안내문을 만들지
+     못했습니다」로만 말하면 스탭이 값을 다시 볼 생각을 못 한다. */
+  { code: "VERSION_CONFLICT", say: "그 사이 값이 바뀌었습니다 — 화면을 새로 고쳐 확인해 주세요" },
+  { code: "OCR_FIELD_CONFIRMED", say: "이미 확정된 항목이 있습니다 — 화면을 새로 고쳐 주세요" },
   { status: 401, say: "로그인이 풀렸습니다 — 다시 로그인해 주세요" },
 ];
 
@@ -745,6 +771,28 @@ function stateTakesFocus(tone) {
       });
   }
 
+  /* **화면에 뜬 값을 한꺼번에 확정한다** — 「확인 완료」의 실제 동작.
+     항목마다 `PATCH` 를 보내고 돌아온 것으로 그 줄을 갈아 끼운다. 하나라도
+     실패하면 그 오류를 그대로 올려 보낸다 — 생성으로 넘어가면 안 된다.
+     확정이 반쯤 된 채로 안내문이 만들어지면 무엇이 굳었는지 알 수 없다. */
+  function confirmShownFields() {
+    var targets = fieldsToConfirm(result && result.fields);
+    if (!targets.length) return Promise.resolve();
+
+    var sending = [];
+    for (var i = 0; i < targets.length; i++) {
+      sending.push(
+        ocrApi
+          .updateField(targets[i].ocr_field_id, {
+            base_version: targets[i].version,
+            confirm: true,
+          })
+          .then(replaceField),
+      );
+    }
+    return Promise.all(sending);
+  }
+
   /* 409 를 받으면 서버의 지금 값을 다시 읽어 와 내 값과 나란히 놓는다.
      계약에 단건 조회(GET /ocr/fields/{id})가 없어 목록을 다시 부른다. */
   /* `body` 를 함께 들고 있는 이유 — 「내 값으로 덮기」가 **원래 보낸 것과 같은
@@ -921,8 +969,13 @@ function stateTakesFocus(tone) {
       saveNote.textContent = "안내문을 만드는 중입니다…";
       saveNote.hidden = false;
 
-      ocrApi
-        .generateGuide(wantedId)
+      /* **확정을 먼저 보내고 생성한다.** 버튼이 「확인 완료 · 안내문 생성」인
+         이유다 — 스탭이 화면의 값을 다 봤다는 뜻이므로, 그 값을 확정으로
+         굳힌 뒤에 만든다. 확정이 실패하면 생성으로 넘어가지 않는다. */
+      confirmShownFields()
+        .then(function () {
+          return ocrApi.generateGuide(wantedId);
+        })
         .then(function () {
           /* **내가 쥔 잠금일 때만 푼다.** 늦게 온 옛 응답이 새 요청의 잠금을
              풀면, 나가 있는 요청이 있는데도 버튼이 열린다 (KEY-210). */
