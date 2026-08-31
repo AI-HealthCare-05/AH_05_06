@@ -334,8 +334,12 @@ function stateTakesFocus(tone) {
     return value === null || value === undefined || value === "" || isNaN(n) ? "" : String(n);
   }
 
+  /* `2026-08-31T17:04:42+09:00` → `08-31`.
+     `slice(5)` 만 하면 시각까지 통째로 남아 머리말이 「박연 ·
+     08-31T17:04:42+09:00」로 떴다. 진료 머리말에서 궁금한 것은 날짜다. */
   function shortDate(iso) {
-    return iso ? iso.slice(5) : "";
+    var m = /^\d{4}-(\d{2}-\d{2})/.exec(String(iso || ""));
+    return m ? m[1] : "";
   }
 
   /* ── 왼쪽 · 원문 ───────────────────────────────────────────── */
@@ -1188,10 +1192,20 @@ function stateTakesFocus(tone) {
       line.textContent = [
         next.diagnosis_name,
         next.doctor && next.doctor.name,
-        next.visited_at ? shortDate(next.visited_at) : "",
+        next.visited_at ? shortDate(next.visited_at) + " 진료" : "",
       ]
         .filter(Boolean)
         .join(" · ");
+    }
+
+    /* 상태 배지 — `patients.html` 의 머리말과 같은 자리다. 전에는 이 화면에만
+       없어서, 화면을 옮기면 「작성 중 · 판독 결과 확인」이 사라졌다
+       (와이어프레임 S1-6 은 머리말 첫 줄에 이 배지를 그린다). */
+    var state = document.getElementById("p-state");
+    if (state) {
+      state.hidden = !next.detail_status;
+      state.textContent = typeof statusLabel === "function" ? statusLabel(next.detail_status) : "";
+      state.className = typeof stateClass === "function" ? stateClass(next.work_category) : "row__state";
     }
   }
 
@@ -1257,6 +1271,7 @@ function stateTakesFocus(tone) {
     jobId = null;
     var mine = ++loadSeq;
     renderPatientHead(next);
+    renderSteps(); // 단계 줄은 진료가 정해져야 갈 곳을 안다
     showState("loading", '<p class="state__title">판독 결과를 불러오는 중…</p>');
 
     ocrApi
@@ -1292,6 +1307,26 @@ function stateTakesFocus(tone) {
   }
 
   /* ── 시작 ─────────────────────────────────────────────────── */
+
+  /* ── 5단계 줄 ─────────────────────────────────────────────
+     `patients.html` 과 같은 모듈이 그린다. 판독 화면은 「진료기록」 칸에 서
+     있고, 다른 칸을 누르면 그 진료의 환자 카드로 돌아간다. 전에는 `<li>` 라
+     눌리지 않아서 앞 화면으로 가려면 왼쪽 목록에서 환자를 다시 골라야 했다. */
+  function renderSteps() {
+    var box = document.getElementById("tabs");
+    if (!box) return;
+    var id = visit && visit.visit_id;
+    box.innerHTML = id ? stepsHtml("record", "/ocr-review.html", id) : "";
+  }
+
+  (function bindSteps() {
+    var box = document.getElementById("tabs");
+    if (!box) return;
+    box.addEventListener("click", function (event) {
+      var tab = event.target.closest ? event.target.closest("[data-href]") : null;
+      if (tab) location.href = tab.getAttribute("data-href");
+    });
+  })();
 
   document.addEventListener("visit:selected", function (event) {
     if (event.detail) loadVisit(event.detail);

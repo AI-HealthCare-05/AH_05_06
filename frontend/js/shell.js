@@ -517,6 +517,26 @@ function bindShell() {
       document.dispatchEvent(new CustomEvent("session:ready", { detail: me }));
       return loadDay();
     })
+    .then(function () {
+      /* **판독 화면에서 돌아왔는가.** `?visit=12&tab=basic` 을 달고 오면 그
+         진료를 고르고 그 칸을 연다 — 5단계 줄이 그 주소를 만든다
+         (`js/step-nav.js`). 이게 없으면 「기본정보」를 눌러도 오늘 목록의 맨 위
+         환자가 열려, 누른 사람이 다른 환자를 보게 된다.
+
+         주소는 한 번만 쓰고 지운다. 남겨 두면 새로고침할 때마다 고르던 것을
+         버리고 그 진료로 되돌아간다. */
+      var asked = stepFromSearch(location.search);
+      if (!asked.visitId) return;
+
+      var row = rowByVisit(rows, asked.visitId);
+      if (row) {
+        if (asked.tab) row.open_tab = asked.tab;
+        showView("view-card");
+        renderRows(asked.visitId);
+        document.dispatchEvent(new CustomEvent("visit:selected", { detail: row }));
+      }
+      history.replaceState(null, "", location.pathname);
+    })
     .catch(function () {});
 
   return true;

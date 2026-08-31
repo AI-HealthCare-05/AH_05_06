@@ -73,7 +73,11 @@ function timeLabel(isoDatetime) {
     document.querySelectorAll(".tab").forEach(function (tab) {
       var on = tab.dataset.tab === name;
       tab.setAttribute("aria-selected", String(on));
-      tab.querySelector(".tab__mark").textContent = on ? "●" : "○";
+      /* 지나온 칸은 ✓, 지금은 ●, 아직은 ○ — 와이어프레임 S1-4·S1-6 의 표시다.
+         규칙은 `js/step-nav.js` 가 갖는다. 판독 화면도 같은 것을 쓰므로 두
+         화면에서 표시가 갈리지 않는다. */
+      tab.querySelector(".tab__mark").textContent =
+        typeof stepMark === "function" ? stepMark(tab.dataset.tab, name) : on ? "●" : "○";
     });
   }
 

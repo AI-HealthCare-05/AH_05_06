@@ -65,12 +65,11 @@ test("**의료진·어드민 화면 넷에 접기 단추가 다 있다** — 공
   }
 });
 
-test("판독 화면만 저절로 접힌다 — 나머지는 펴진 채로 연다", () => {
-  assert.ok(
-    read("ocr-review.html").includes("shell--fold-list"),
-    "판독 화면이 저절로 안 접힌다 — 원문 칸이 좁아진다 (S1-7)",
-  );
-  for (const page of ["patients.html", "doctor.html", "admin.html"]) {
+test("**어느 화면도 저절로 접지 않는다** — 목록이 사라지면 다음 환자로 가는 길을 잃는다", () => {
+  /* 와이어프레임 S1-7 은 판독 화면을 「좌측 48px 접힌 레일」로 그렸다. 그대로
+     넣어 봤더니 화면을 옮길 때마다 목록이 사라져, 다음 환자를 고르려면 매번
+     다시 펴야 했다. 접고 싶으면 `◀` 로 접는다 — 그 선택은 기억된다. */
+  for (const page of SHELL_PAGES) {
     assert.ok(
       !read(page).includes("shell--fold-list"),
       `${page} 가 까닭 없이 접힌 채로 열린다`,
