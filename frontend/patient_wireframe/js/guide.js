@@ -295,13 +295,20 @@
     }
     frag.appendChild(fadeWrap);
 
-    /* 더 보기 버튼 */
+    /* 더 보기 / 접기 버튼 */
     if (!state.careExpanded) {
       var moreBtn = btn('btn btn--full', '더 보기', function () {
         state.careExpanded = true;
         renderBody(d);
       });
       frag.appendChild(moreBtn);
+    } else {
+      var collapseBtn = btn('btn btn--full', '접기', function () {
+        state.careExpanded = false;
+        renderBody(d);
+        document.getElementById('body').scrollTop = 0;
+      });
+      frag.appendChild(collapseBtn);
     }
 
     return frag;
