@@ -135,6 +135,8 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
         "/api/v1/visits/{visit_id}/guide/approve": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/generate": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/return": "app.apis.v1.guide_routers",
+        # 스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11 (KEY-234)
+        "/api/v1/visits/{visit_id}/guide/submit": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/sections/{key}": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/link": "app.apis.v1.patient_link_routers",
         "/api/v1/visits/{visit_id}/checkin": "app.apis.v1.patient_link_routers",

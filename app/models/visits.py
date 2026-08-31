@@ -93,6 +93,9 @@ class GuideSectionKey(StrEnum):
 
 class GuideEventType(StrEnum):
     EDITED = "EDITED"
+    #: 스탭이 확인을 마치고 의사에게 넘겼다 (와이어프레임 S1-11).
+    #: 누가 언제 넘겼는지가 남아야, 승인이 늦을 때 어디서 멈췄는지 안다.
+    SUBMITTED = "SUBMITTED"
     APPROVED = "APPROVED"
     RETURNED = "RETURNED"
 

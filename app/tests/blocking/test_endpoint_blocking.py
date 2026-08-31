@@ -378,7 +378,18 @@ class TestOcrStillRejectsAnonymous(BlockingTestCase):
 GUIDE_DOCTOR_ONLY_ROUTES = [
     ("POST", "/api/v1/visits/{v}/guide/approve", {}),
     ("POST", "/api/v1/visits/{v}/guide/return", {"reason": "합성 반려 사유"}),
+]
+
+#: **수정은 의사 전용이 아니다** — 와이어프레임 S1-11 이 「스탭은 내용을 고칠
+#: 수 있지만 승인은 못 한다」고 적고, RBAC 도 `GUIDE_DRAFT = {staff, doctor}` 다.
+#:
+#: 대신 **언제** 고치느냐로 가른다: 스탭 확인 중이면 스탭이, 의사에게 넘긴
+#: 뒤에는 의사가. 아래 `TestStaffEditsBeforeHandoff` 가 그 규칙을 잰다.
+#:
+#: 넘기는 것(`submit`)도 스탭이 한다 — 그것이 스탭 확인의 끝이다.
+GUIDE_STAFF_OR_DOCTOR_ROUTES = [
     ("PATCH", "/api/v1/visits/{v}/guide/sections/medication", {"body": "합성 수정 본문"}),
+    ("POST", "/api/v1/visits/{v}/guide/submit", {}),
 ]
 
 
@@ -426,6 +437,83 @@ class TestOnlyDoctorsDecideOnGuides(BlockingTestCase):
             assert response.status_code == 404, (
                 f"{method} {template} 이 남의 의원 의사에게 {response.status_code} 를 냈다 — 존재가 샌다"
             )
+
+
+class TestStaffEditsBeforeHandoff(BlockingTestCase):
+    """**스탭 확인 중에는 스탭이 고친다. 넘긴 뒤에는 의사만.**
+
+    와이어프레임 S1-11 — 「스탭은 내용을 고칠 수 있지만 승인은 못 한다」.
+    스탭이 먼저 보는 이유는 원장님 시간을 아끼기 위해서다: 진료기록이 잘못
+    올라갔거나 다른 환자 것이 섞인 것은 스탭이 잡는다.
+    """
+
+    async def test_no_token_is_401(self) -> None:
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.STAFF_REVIEW)
+        for method, template, body in GUIDE_STAFF_OR_DOCTOR_ROUTES:
+            response = await self.call(method, template, world["h1"], None, body)
+            assert response.status_code == 401, f"{method} {template} 이 토큰 없이 {response.status_code} 를 냈다"
+
+    async def test_staff_may_edit_while_in_review(self) -> None:
+        """스탭 확인 중이면 스탭이 고친다 — 이것이 막히면 확인 화면이 읽기 전용이 된다."""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.STAFF_REVIEW)
+
+        response = await self.call(
+            "PATCH",
+            "/api/v1/visits/{v}/guide/sections/medication",
+            world["h1"],
+            world["staff1"].auth,
+            {"body": "합성 수정 본문"},
+        )
+        assert response.status_code == 200, f"스탭이 확인 중에 못 고쳤다: {response.status_code}"
+
+    async def test_staff_may_not_edit_after_handoff(self) -> None:
+        """**넘긴 뒤에는 403.** 원장님이 보고 있는 글을 스탭이 바꾸면,
+        승인한 것과 읽은 것이 달라진다."""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+
+        response = await self.call(
+            "PATCH",
+            "/api/v1/visits/{v}/guide/sections/medication",
+            world["h1"],
+            world["staff1"].auth,
+            {"body": "합성 수정 본문"},
+        )
+        assert response.status_code == 403, (
+            f"넘긴 뒤에도 스탭이 고칠 수 있다: {response.status_code} — 승인한 것과 읽은 것이 달라진다"
+        )
+
+    async def test_admin_only_is_still_blocked(self) -> None:
+        """`admin` 은 역할이 아니라 권한이다 — 진료 화면이 열리지 않는다."""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.STAFF_REVIEW)
+        for method, template, body in GUIDE_STAFF_OR_DOCTOR_ROUTES:
+            response = await self.call(method, template, world["h1"], world["admin1"].auth, body)
+            assert response.status_code == 403, f"{method} {template} 이 관리자에게 {response.status_code} 로 열렸다"
+
+    async def test_another_hospitals_guide_is_not_found(self) -> None:
+        """남의 의원 것은 스탭에게도 없는 것이다."""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.STAFF_REVIEW)
+        staff2 = await make_staff_in(world["h2"].hospital_id, "blk_staff2_edit", ["staff"])
+        for method, template, body in GUIDE_STAFF_OR_DOCTOR_ROUTES:
+            response = await self.call(method, template, world["h1"], staff2.auth, body)
+            assert response.status_code == 404, (
+                f"{method} {template} 이 남의 의원 스탭에게 {response.status_code} 를 냈다 — 존재가 샌다"
+            )
+
+    async def test_submit_twice_is_rejected(self) -> None:
+        """**두 번 넘기지 않는다.** 조용히 통과시키면 이벤트가 두 번 쌓여
+        누가 언제 넘겼는지가 흐려진다."""
+        world = await build_two_hospitals()
+        await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
+
+        response = await self.call(
+            "POST", "/api/v1/visits/{v}/guide/submit", world["h1"], world["staff1"].auth, {}
+        )
+        assert response.status_code == 409, f"이미 넘긴 것을 또 넘겼다: {response.status_code}"
 
     async def test_first_login_is_held_at_the_door(self) -> None:
         world = await build_two_hospitals()

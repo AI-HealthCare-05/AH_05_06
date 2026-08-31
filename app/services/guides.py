@@ -120,7 +120,17 @@ class GuideService:
             guide = await GuideDocument.create(
                 hospital_id=actor.hospital_id,
                 visit_id=visit_id,
-                status=GuideStatus.APPROVAL_PENDING,
+                # **스탭 확인부터다** (와이어프레임 S1-11).
+                #
+                # 전에는 여기서 바로 APPROVAL_PENDING 으로 보냈다 — 만들자마자
+                # 원장님 목록에 떴다는 뜻이다. 그런데 와이어프레임은
+                # 「스탭이 넘기지 않으면 원장님 목록에 뜨지 않는다」고 못 박는다.
+                # 스탭이 먼저 보는 이유는 원장님 시간을 아끼기 위해서다 —
+                # 진료기록이 잘못 올라갔거나 다른 환자 것이 섞인 것은 스탭이 잡는다.
+                #
+                # `GuideDocument.status` 의 기본값이 이미 STAFF_REVIEW 다.
+                # 그것을 덮어쓰던 한 줄이 흐름을 건너뛰고 있었다.
+                status=GuideStatus.STAFF_REVIEW,
                 using_db=connection,
             )
             await GuideSection.create(
@@ -223,7 +233,14 @@ class GuideService:
 
     async def edit_section(self, actor, visit_id: int, key: str, body: str) -> GuideSection:
         """한 갈래만 고친다. 생성 원문은 지우지 않는다."""
-        self._require_doctor(actor)
+        # **스탭도 고친다** (와이어프레임 S1-11 — 「스탭은 내용을 고칠 수
+        # 있지만 승인은 못 한다」). RBAC 도 이미 그렇게 적혀 있다:
+        # GUIDE_DRAFT = {staff, doctor}. 여기만 의사로 좁혀 두어서, 스탭이
+        # 확인 화면에서 고칠 수가 없었다.
+        #
+        # **누가 고치느냐가 아니라 언제 고치느냐로 가른다** — 아래 상태 검사가
+        # 그 몫이다. 스탭 확인 중이면 스탭이, 승인 요청 중이면 의사가 고친다.
+        self._require_staff_or_doctor(actor, "안내문 수정은")
 
         try:
             section_key = GuideSectionKey(key)
@@ -248,10 +265,24 @@ class GuideService:
                 # 약이 바뀌면 문장도 함께 바뀐다 — 사람이 고칠 자리가 아니다.
                 raise ApiError("SECTION_LOCKED", 409, "응급 안내 문장은 고칠 수 없습니다.")
 
-            if guide.status is not GuideStatus.APPROVAL_PENDING:
-                # 이미 승인해 발송을 기다리는 글을 조용히 바꾸면, 환자가 받는 것과
-                # 승인한 것이 달라진다. 잠근 채로 보므로 승인과 겹치지 않는다.
-                raise ApiError("GUIDE_NOT_PENDING", 409, "승인 요청 상태에서만 고칠 수 있습니다.")
+            # 이미 승인해 발송을 기다리는 글을 조용히 바꾸면, 환자가 받는 것과
+            # 승인한 것이 달라진다. 잠근 채로 보므로 승인과 겹치지 않는다.
+            if guide.status not in (GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_PENDING):
+                raise ApiError("GUIDE_NOT_PENDING", 409, "확인·승인 요청 상태에서만 고칠 수 있습니다.")
+
+            # **승인 요청 중에는 의사만 고친다.** 원장님이 보고 있는 글을 스탭이
+            # 바꾸면, 승인한 것과 읽은 것이 달라진다. 스탭이 고치려면 반려를
+            # 거쳐 자기 차례로 돌아와야 한다.
+            if guide.status is GuideStatus.APPROVAL_PENDING and not self._is_doctor(actor):
+                # **403 이다, 409 가 아니다.** 「지금은 때가 아니다」가 아니라
+                # 「당신은 못 한다」이기 때문이다 — 스탭은 기다린다고 이 글을
+                # 고칠 수 있게 되지 않는다. 고치려면 의사가 반려해서 자기
+                # 차례로 돌아와야 한다.
+                raise ApiError(
+                    "FORBIDDEN",
+                    403,
+                    "의사에게 넘긴 뒤에는 의사 계정에서만 고칠 수 있습니다.",
+                )
 
             section.edited_body = text
             await section.save(update_fields=["edited_body", "updated_at"], using_db=connection)
@@ -265,6 +296,38 @@ class GuideService:
                 using_db=connection,
             )
         return section
+
+    async def submit(self, actor, visit_id: int) -> GuideDocument:
+        """스탭이 확인을 마치고 **의사에게 넘긴다** (와이어프레임 S1-11).
+
+        이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다. 스탭이
+        먼저 보는 이유는 원장님 시간을 아끼기 위해서다 — 진료기록이 잘못
+        올라갔거나 다른 환자 것이 섞인 것은 스탭이 잡는다.
+
+        의사도 부를 수 있다. 의사가 직접 만들고 바로 승인으로 넘어가는 길을
+        막을 이유가 없다 — 승인 자체는 여전히 의사만 한다.
+        """
+        self._require_staff_or_doctor(actor, "의사 승인 요청은")
+
+        async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+
+            # **이미 넘긴 것을 또 넘기지 않는다.** 두 사람이 같이 눌렀거나
+            # 새로고침 뒤 다시 누른 것이고, 원하던 것은 이미 그 상태다.
+            # 조용히 통과시키면 승인 이벤트가 두 번 쌓여 누가 언제 넘겼는지가
+            # 흐려진다.
+            if guide.status is not GuideStatus.STAFF_REVIEW:
+                raise ApiError("GUIDE_NOT_IN_REVIEW", 409, "이미 의사에게 넘긴 안내문입니다.")
+
+            guide.status = GuideStatus.APPROVAL_PENDING
+            await guide.save(update_fields=["status", "updated_at"], using_db=connection)
+            await GuideEvent.create(
+                guide_document=guide,
+                event_type=GuideEventType.SUBMITTED,
+                actor_id=actor.user_id,
+                using_db=connection,
+            )
+        return guide
 
     async def approve(self, actor, visit_id: int) -> GuideDocument:
         """승인 — 그리고 **곧 발송 예약**이다.
@@ -342,6 +405,16 @@ class GuideService:
         """
         if not ({"staff", "doctor"} & set(actor.roles)):
             raise ApiError("FORBIDDEN", 403, f"{subject} 스탭 또는 의사 계정만 할 수 있습니다.")
+
+    @staticmethod
+    def _is_doctor(actor) -> bool:
+        """`_require_doctor` 와 같은 판정을 **막지 않고 묻기만** 한다.
+
+        고칠 수 있는지를 상태와 함께 봐야 하는 자리가 있어서다 — 스탭 확인
+        중이면 스탭이, 승인 요청 중이면 의사가 고친다. 두 곳이 서로 다른
+        기준을 쓰면 한쪽만 고쳐진다.
+        """
+        return "doctor" in actor.roles
 
     @staticmethod
     def _require_doctor(actor) -> None:

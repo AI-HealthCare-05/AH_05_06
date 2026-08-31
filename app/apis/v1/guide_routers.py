@@ -115,6 +115,22 @@ async def edit_section(
     return _section(await service.edit_section(actor, visit_id, key, body.body))
 
 
+@guide_router.post("/{visit_id}/guide/submit", response_model=GuideResponse, status_code=status.HTTP_200_OK)
+async def submit_guide(
+    visit_id: int,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> GuideResponse:
+    """스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11.
+
+    이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다.
+    승인은 여전히 의사만 한다 (`/guide/approve`).
+    """
+    guide = await service.submit(actor, visit_id)
+    await guide.fetch_related("sections", "visit__patient")
+    return _to_response(guide)
+
+
 @guide_router.post("/{visit_id}/guide/approve", response_model=GuideResponse, status_code=status.HTTP_200_OK)
 async def approve_guide(
     visit_id: int,

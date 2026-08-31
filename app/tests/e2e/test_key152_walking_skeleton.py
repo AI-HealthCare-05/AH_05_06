@@ -123,7 +123,33 @@ class TestKey152WalkingSkeleton(AuthTestCase):
             )
             assert generated.status_code == 201, generated.text
             assert generated.json()["visit_id"] == visit.visit_id
-            assert generated.json()["status"] == GuideStatus.APPROVAL_PENDING
+            # **만들면 스탭 확인부터다** — 와이어프레임 S1-11.
+            assert generated.json()["status"] == GuideStatus.STAFF_REVIEW
+
+            # 스탭이 확인 화면에서 고친다. 이 자리가 막혀 있으면 확인 화면이
+            # 읽기 전용이 되어, 잘못 올라간 진료기록을 스탭이 못 잡는다.
+            staff_edit = await client.patch(
+                f"/api/v1/visits/{visit.visit_id}/guide/sections/medication",
+                headers=staff_headers,
+                json={"body": "[합성 스탭 확인 문구] 스탭이 먼저 다듬는다."},
+            )
+            assert staff_edit.status_code == 200, staff_edit.text
+
+            # 확인이 끝나면 원장님께 넘긴다. **넘기기 전에는 승인이 안 된다.**
+            too_early = await client.post(
+                f"/api/v1/visits/{visit.visit_id}/guide/approve",
+                headers=doctor_headers,
+            )
+            assert too_early.status_code == 409, (
+                f"넘기기 전에 승인이 됐다: {too_early.status_code} — 아무도 안 본 글이 환자에게 간다"
+            )
+
+            handoff = await client.post(
+                f"/api/v1/visits/{visit.visit_id}/guide/submit",
+                headers=staff_headers,
+            )
+            assert handoff.status_code == 200, handoff.text
+            assert handoff.json()["status"] == GuideStatus.APPROVAL_PENDING
 
             edited_text = "[합성 최종 승인 문구] 처방에 따라 복용하고 이상 증상이 있으면 병원에 문의하세요."
             edited = await client.patch(
