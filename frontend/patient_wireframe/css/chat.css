@@ -4,9 +4,9 @@
   z-index: 70;
   width: 52px; height: 52px;
   border-radius: 50%;
-  background: #e4c1f5;
+  background: #fff;
   color: #fff;
-  border: none;
+  border: 2px solid #e4c1f5;
   box-shadow: 0 4px 20px rgba(74,31,56,.22);
   cursor: grab;
   display: flex; align-items: center; justify-content: center;
