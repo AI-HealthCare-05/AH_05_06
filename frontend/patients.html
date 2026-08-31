@@ -307,12 +307,17 @@
 
           <!-- ─ 진료기록 업로드 (S1-5) ──────────────────────────── -->
           <div class="panel" id="panel-record" hidden>
-          <h1 class="pane__title">② 진료기록 업로드</h1>
-          <p class="pane__lead">환자를 먼저 등록하고 진료기록은 나중에 업로드할 수 있습니다</p>
+          <!-- 기본정보의 「환자 정보」와 같은 상자 하나로 담는다. 화면마다 담는
+               모양이 다르면 같은 자리인지가 안 보인다. -->
+          <section class="box">
+            <div class="box__head">
+              <h2 class="box__title">② 진료기록 업로드</h2>
+            </div>
+            <p class="pane__lead">환자를 먼저 등록하고 진료기록은 나중에 업로드할 수 있습니다</p>
 
           <!-- 한 버튼으로 받는다. 종류는 프로그램이 가려낸다. -->
           <div class="drop" id="drop">
-            <div class="drop__icon" aria-hidden="true">🖼</div>
+            <div class="drop__icon" aria-hidden="true"><svg class="drop__pic" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="4" y="7" width="24" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="11" cy="13.5" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 22.5l6-6 4.5 4.5 3.5-3 5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
             <div class="drop__title">진료기록 업로드</div>
             <p class="drop__lead">파일을 끌어다 놓을 수 있습니다</p>
             <p class="drop__hint">여러 장 동시 업로드 · 순서 무관</p>
@@ -345,14 +350,17 @@
           <p class="note note--warn">⚠ 다른 환자의 정보가 함께 촬영되지 않도록 주의해 주세요</p>
           <p class="note">업로드하지 않으면 「작성 중 · 진료기록 없음」 상태로 유지됩니다</p>
 
-          <div class="actions">
-            <button class="button-ghost" type="button" id="later">나중에 업로드</button>
+          <div class="actions actions--sm">
+            <button class="button-ghost button-ghost--sm" type="button" id="later">나중에 업로드</button>
             <span class="grow"></span>
-            <button class="button-primary" type="button" id="next" disabled>업로드 후 안내문 생성</button>
+            <button class="button-primary button-primary--sm" type="button" id="next" disabled>
+              업로드 후 안내문 생성
+            </button>
           </div>
 
           <!-- 누른 뒤에 무슨 일이 일어났는지. 작아서 화면낭독기가 읽어도 시끄럽지 않다 -->
           <p class="note" id="say" role="status"></p>
+          </section>
           </div>
 
           <!-- ─ 안내문 (S1-11 · S1-12 · S1-13) ───────────────────

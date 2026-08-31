@@ -19,7 +19,6 @@
 }
 
 .drop__icon {
-  font-size: 28px;
   line-height: 1;
   color: var(--ink-3);
 }
@@ -325,4 +324,41 @@
 .drop__pick:active,
 .file__act:active {
   background: var(--line);
+}
+
+/* ── 업로드 화면을 상자 하나로 (S1-5) ────────────────────────────────────
+ *
+ * 기본정보의 「환자 정보」와 같은 상자에 담는다. 화면마다 담는 모양이 다르면
+ * 같은 자리인지가 안 보이고, 탭을 옮길 때마다 눈이 새로 자리를 찾는다.
+ */
+.panel > .box .pane__lead {
+  margin: 0 0 var(--s-12);
+}
+
+/* 상자 안이라 위쪽 경계선은 상자가 이미 갖고 있다 — 줄을 두 번 긋지 않는다. */
+.box .actions {
+  margin-top: var(--s-16);
+  padding-top: var(--s-12);
+}
+
+/* 아래 단추는 작게. 이 화면의 주인공은 드롭존이고, 단추는 그 뒤에 오는 것이다.
+   `--field-h`(44px)를 그대로 쓰면 상자 안에서 드롭존만큼 무거워 보인다.
+   34px 은 WCAG 2.2 의 최소 목표 크기(24px) 위다. */
+.actions--sm {
+  gap: var(--s-8);
+}
+
+.button-primary--sm {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* 그림글자 — 이모지를 걷어냈다(tokens.css: 「장식용 이모지」를 쓰지 않는다).
+   `currentColor` 를 따르므로 드롭존이 활성화될 때 색이 함께 움직인다. */
+.drop__pic {
+  width: 32px;
+  height: 32px;
+  display: block;
+  margin: 0 auto;
 }

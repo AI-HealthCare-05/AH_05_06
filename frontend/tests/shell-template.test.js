@@ -556,3 +556,43 @@ test("좌측 목록 제목이 「환자 리스트」다", () => {
   }
   assert.ok(read("admin.html").includes('<span class="list__label">어드민</span>'));
 });
+
+/* ── 진료기록 업로드 (S1-5) ──────────────────────────────────────────── */
+
+test("**업로드 화면이 상자 하나에 담긴다** — 기본정보의 「환자 정보」와 같은 모양", () => {
+  const html = read("patients.html");
+  const panel = element(html, '<div class="panel" id="panel-record" hidden>');
+
+  /* 화면마다 담는 모양이 다르면 같은 자리인지가 안 보이고, 탭을 옮길 때마다
+     눈이 새로 자리를 찾는다. */
+  assert.ok(panel.includes('<section class="box">'), "업로드가 상자에 안 담겼다");
+
+  const box = element(panel, '<section class="box">');
+  for (const part of ["② 진료기록 업로드", 'id="drop"', 'class="kinds"', 'id="later"', 'id="next"']) {
+    assert.ok(box.includes(part), `상자 밖에 남은 것이 있다: ${part}`);
+  }
+});
+
+test("아래 단추가 작다 — 이 화면의 주인공은 드롭존이다", () => {
+  const html = read("patients.html");
+  const css = read("css/upload.css");
+
+  assert.ok(html.includes("button-ghost--sm"), "「나중에 업로드」가 크다");
+  assert.ok(html.includes("button-primary--sm"), "「업로드 후 안내문 생성」이 크다");
+
+  const small = rule(css, ".button-primary--sm");
+  const height = /height:\s*(\d+)px/.exec(small);
+  assert.ok(height, "작은 단추 높이가 없다 — 검사가 헛돈다");
+  assert.ok(Number(height[1]) < 44, `단추가 안 작아졌다: ${height[1]}px`);
+  assert.ok(Number(height[1]) >= 24, `목표 크기가 24px 아래다: ${height[1]}px (WCAG 2.5.8)`);
+});
+
+test("드롭존 그림도 이모지가 아니다", () => {
+  const html = read("patients.html");
+  assert.ok(!html.includes("🖼"), "드롭존에 이모지가 남아 있다");
+  assert.ok(html.includes('class="drop__pic"'), "드롭존에 그림글자가 없다");
+
+  const pic = /<svg class="drop__pic"[^>]*>/.exec(html);
+  assert.ok(pic, "그림글자를 못 찾았다");
+  assert.ok(pic[0].includes('aria-hidden="true"'), "그림을 낭독기가 읽는다");
+});
