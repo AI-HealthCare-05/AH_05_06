@@ -1,3 +1,6 @@
+/* [주의] frontend/css/tokens.css 와 --bg, --danger, --danger-bg, --font 변수명이 겹친다.
+ * 현재는 별도 HTML에서만 로드되므로 충돌하지 않는다.
+ * 공통 컴포넌트를 합칠 계획이 확정되면 :root → .theme-patient 스코프 클래스로 변경한다. */
 :root {
   /* ── Brand ─── */
   --p:           #E4C1F5;   /* primary */
