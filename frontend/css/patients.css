@@ -116,12 +116,12 @@
 
 /* ── 등록 화면 ──────────────────────────────────────── */
 
+/* 제목 아래 줄은 두지 않는다 — 아래가 곧 상자들이라 경계는 상자 테두리가
+   이미 긋는다. 줄이 하나 더 있으면 선이 두 겹으로 보인다. */
 .reg__head {
   display: flex;
   align-items: center;
   gap: var(--s-16);
-  padding-bottom: var(--s-16);
-  border-bottom: 1px solid var(--line);
 }
 
 .reg__head .pane__title {
@@ -130,9 +130,13 @@
   letter-spacing: -0.01em;
 }
 
-/* 마지막으로 한 번 눈으로 훑는 칸. 앞의 두 칸과 배경을 달리해 「확인」임을 알린다. */
+/* 마지막으로 한 번 눈으로 훑는 칸.
+   **바탕을 `--bg` 로 두었더니 배경이 없어 보였다** — 그 값이 화면 바닥
+   색(`#f4f5f6`)이라, 바닥 위에 얹힌 이 칸은 테두리만 남고 잠겼다.
+   다른 블록과 같은 흰 바탕을 쓴다. 「확인 칸」이라는 것은 색이 아니라 자리
+   (오른쪽 칸)와 제목이 말한다. */
 .box--confirm {
-  background: var(--bg);
+  background: var(--card);
 }
 
 /* ── 입력 ───────────────────────────────────────────── */
@@ -419,17 +423,25 @@
   align-items: flex-start;
 }
 
-.reg__cols > .box {
-  flex: 1 1 340px;
+/* 왼쪽이 넓다 — 쓰는 칸이 둘이고 오른쪽은 훑는 칸 하나다 */
+.reg__col {
+  flex: 3 1 420px;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.reg__col--side {
+  flex: 2 1 300px;
+}
+
+.reg__col > .box {
   margin-top: var(--s-16);
 }
 
 /* 여백을 와이어프레임 값으로 줄인다 — 제목줄 `14px 26px 12px`, 본문 `14px 26px`.
    전에는 상자마다 24px 여백이 들어가 한 화면을 넘겼다. */
-.reg__head {
-  padding-bottom: var(--s-12);
-}
+
 
 .reg__cols > .box,
 .box--confirm {

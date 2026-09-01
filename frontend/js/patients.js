@@ -266,8 +266,10 @@ function tiedBirthDates(items) {
 
     el("f-name").value = picked.name;
     el("f-chart").value = picked.hospital_patient_no;
-    el("f-birth").value = picked.birth_date;
-    el("f-phone").value = formatPhone(picked.phone);
+    /* 고른 환자를 채울 때도 같은 모양으로 — 손으로 친 것과 다르면 「내가 친
+       것이 잘못됐나」로 읽힌다. */
+    el("f-birth").value = birthMask(picked.birth_date);
+    el("f-phone").value = phoneMask(picked.phone);
     lock();
     render();
   }
@@ -579,8 +581,42 @@ function tiedBirthDates(items) {
     if (row) pick(row);
   });
 
+  /* 숫자만 쳐도 하이픈이 붙는 칸. 규칙은 화면 밖에 있고(`birthMask` ·
+     `phoneMask`) 여기서는 **커서 지키기**만 한다 — 다시 그리면 커서가 끝으로
+     튀어, 가운데를 고치던 손이 매번 자리를 잃는다. */
+  var MASKS = { "f-birth": birthMask, "f-phone": phoneMask };
+  var lastDigits = {};
+
+  function applyMask(input, id, event) {
+    var mask = MASKS[id];
+    if (!mask) return;
+
+    var at = typeof input.selectionStart === "number" ? input.selectionStart : input.value.length;
+    var digits = onlyDigits(input.value);
+    var before = onlyDigits(input.value.slice(0, at)).length;
+
+    /* 지운 것이 하이픈뿐이면 숫자 수가 그대로다 — 그 앞 숫자를 마저 지운다 */
+    var wasDelete = event && event.inputType === "deleteContentBackward";
+    if (wasDelete && lastDigits[id] === digits) {
+      var back = maskAfterDelete(digits, before);
+      digits = back.digits;
+      before = back.at;
+    }
+
+    lastDigits[id] = digits;
+    var masked = mask(digits);
+    if (masked === input.value) return;
+
+    input.value = masked;
+    if (typeof input.setSelectionRange === "function") {
+      var caret = maskCaret(masked, before);
+      input.setSelectionRange(caret, caret);
+    }
+  }
+
   FIELDS.forEach(function (id) {
-    el(id).addEventListener("input", function () {
+    el(id).addEventListener("input", function (event) {
+      applyMask(this, id, event);
       if (id === "f-chart" || id === "f-phone") lookupDuplicates();
       else render();
     });

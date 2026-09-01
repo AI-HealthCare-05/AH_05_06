@@ -269,21 +269,32 @@ test("**높이는 토큰을 따른다** — 와이어프레임 34px 보다 접�
 
 /* ── 환자 등록 (S1-2) ─────────────────────────────────────────────────── */
 
-test("**①환자 찾기와 ②환자 정보가 좌우 2단이다** — 세로로 쌓으면 한 화면에 안 들어온다", () => {
-  const html = read("patients.html");
+test("**왼쪽에 쓰는 것, 오른쪽에 확인하는 것** — 다 채운 뒤 스크롤해 내려가지 않는다", () => {
+  const html = markupOnly(read("patients.html"));
   const css = read("css/patients.css");
 
-  /* 와이어프레임 S1-2 우측 본문: `display:flex · gap:26px`.
-     스탭은 찾은 결과를 보면서 아래 칸을 채운다 — 스크롤로 갈리면 앞뒤를 오간다. */
+  /* ①로 찾고 ②를 채우는 것은 한 줄기 일이라 위아래로 잇고, 「등록 전 확인」은
+     그 결과를 훑는 자리라 옆에 세운다 — 채우면서 오른쪽이 같이 차는 것이 보인다. */
   assert.ok(html.includes('class="reg__cols"'), "두 칸을 감싸는 자리가 없다");
 
   const cols = rule(css, ".reg__cols");
   assert.match(cols, /display:\s*flex/, "2단이 아니다");
   assert.match(cols, /gap:\s*26px/, "와이어프레임 간격과 다르다");
 
-  const box = rule(css, ".reg__cols > .box");
-  assert.match(box, /flex:\s*1/, "한 칸이 안 늘어난다");
-  assert.match(box, /min-width:\s*0/, "긴 내용이 칸을 밀어낸다");
+  const col = rule(css, ".reg__col");
+  assert.match(col, /flex:\s*3/, "왼쪽이 안 늘어난다");
+  assert.match(col, /min-width:\s*0/, "긴 내용이 칸을 밀어낸다");
+  assert.match(col, /flex-direction:\s*column/, "①② 가 위아래로 안 선다");
+
+  /* ①②는 왼쪽 칸 **안**에, 확인은 오른쪽 칸 안에 */
+  const left = element(html, '<div class="reg__col">');
+  assert.ok(left.includes("① 환자 찾기"), "① 이 왼쪽에 없다");
+  assert.ok(left.includes("② 환자 정보"), "② 가 왼쪽에 없다");
+  assert.ok(!left.includes("등록 전 확인"), "확인이 왼쪽에 딸려 들어갔다");
+
+  const side = element(html, '<div class="reg__col reg__col--side">');
+  assert.ok(side.includes("등록 전 확인"), "확인이 오른쪽에 없다");
+  assert.ok(side.includes('id="recap"'), "확인 내용이 오른쪽에 없다");
 });
 
 /* 여는 태그부터 **짝이 맞는 닫는 태그**까지를 돌려준다.
@@ -326,9 +337,13 @@ test("**자리가 없으면 알아서 세로로 돌아간다** — 창 폭으로
     const box = rule(read(file), sel);
     assert.match(box, /flex-wrap:\s*wrap/, `${sel} 이 접히지 못한다 — 칸이 찌그러진다`);
   }
-  for (const [file, sel] of [["css/patients.css", ".reg__cols > .box"], ["css/blocks.css", ".cols2__side"]]) {
+  for (const [file, sel, basis] of [
+    ["css/patients.css", ".reg__col", "420px"],
+    ["css/patients.css", ".reg__col--side", "300px"],
+    ["css/blocks.css", ".cols2__side", "340px"],
+  ]) {
     const side = rule(read(file), sel);
-    assert.match(side, /flex:\s*1 1 340px/, `${sel} 에 최소 폭이 없다 — 접힐 때를 모른다`);
+    assert.match(side, new RegExp(`flex:\\s*\\d+ 1 ${basis}`), `${sel} 에 최소 폭이 없다 — 접힐 때를 모른다`);
   }
 });
 
@@ -762,4 +777,22 @@ test("**띄운 셋이 같은 값이다** — 다르면 「띄운 것」이 여�
   assert.equal(Number(dir[1]), 0, "환자 카드 머리가 옆으로도 드리운다");
   assert.ok(Number(dir[2]) > 0, "환자 카드 머리가 아래로 안 드리운다");
   assert.match(head, /z-index:/, "본문 흰 바탕 아래로 묻힌다");
+});
+
+test("**등록 전 확인 칸도 바탕이 있다** — 바닥 색이면 잠긴다", () => {
+  /* `--bg` 는 화면 **바닥** 색이다. 그 값을 칸 바탕에 주면 바닥 위에 얹힌
+     칸은 테두리만 남고 배경이 없어 보인다 — 실제로 그렇게 보였다. */
+  const tokens = read("css/tokens.css");
+  const ground = /--bg:\s*([^;]+);/.exec(tokens);
+  const card = /--card:\s*([^;]+);/.exec(tokens);
+  assert.ok(ground && card, "바닥 · 카드 색을 못 읽었다 — 검사가 헛돈다");
+  assert.notEqual(ground[1].trim(), card[1].trim(), "바닥과 카드가 같은 색이다");
+
+  const confirm = rule(read("css/patients.css"), ".box--confirm");
+  assert.match(confirm, /background:\s*var\(--card\)/, "확인 칸이 바닥 색이다 — 잠겨 보인다");
+});
+
+test("환자 등록 제목 아래에 줄을 긋지 않는다 — 상자 테두리가 이미 경계다", () => {
+  const head = rule(read("css/patients.css"), ".reg__head");
+  assert.ok(!/border-bottom:/.test(head), "제목 밑줄이 남아 있다 — 선이 두 겹으로 보인다");
 });

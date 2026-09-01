@@ -495,12 +495,8 @@ function timeLabel(isoDatetime) {
     });
   }
 
-  function formatPhone(digits) {
-    var d = (digits || "").replace(/\D/g, "");
-    if (d.length === 11) return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7);
-    if (d.length === 10) return d.slice(0, 3) + "-" + d.slice(3, 6) + "-" + d.slice(6);
-    return d;
-  }
+  /* `formatPhone` 은 `patients-api.js` 것을 쓴다 — 여기 한 벌 더 두었더니
+     글자까지 같은 복사본이 되어, 한쪽만 고치면 화면마다 번호 모양이 갈린다. */
 
   /* ── 들어오기 ────────────────────────────────────────── */
 

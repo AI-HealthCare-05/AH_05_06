@@ -105,10 +105,13 @@
             <button class="button-ghost" type="button" id="reg-cancel-top">취소</button>
           </div>
 
-                    <!-- 와이어프레임 S1-2 는 ①·②를 **좌우 2단**으로 둔다
-               (`flex · gap:26px`). 세로로 쌓으면 한 화면에 안 들어와
-               스탭이 스크롤하며 앞뒤를 오간다. -->
+          <!-- **왼쪽에 쓰는 것, 오른쪽에 확인하는 것.**
+               ①로 찾고 ②를 채우는 것은 한 줄기 일이라 위아래로 잇고, 「등록 전
+               확인」은 그 결과를 훑는 자리라 옆에 세운다 — 채우면서 오른쪽이
+               같이 차는 것이 보인다. 전에는 ①②가 좌우로 서고 확인이 아래
+               전폭이라, 다 채운 뒤 스크롤해 내려가야 확인이 보였다. -->
           <div class="reg__cols">
+            <div class="reg__col">
 <section class="box">
             <h2 class="box__title">① 환자 찾기</h2>
             <form class="find" id="find-form">
@@ -159,12 +162,12 @@
               </label>
               <label class="field">
                 <span class="field__label">생년월일 *</span>
-                <input class="field__input" type="text" id="f-birth" placeholder="1994-07-22" autocomplete="off" />
+                <input class="field__input" type="text" id="f-birth" placeholder="1994-07-22" inputmode="numeric" autocomplete="off" />
                 <span class="field__hint" id="h-birth">환자 본인확인에 사용합니다</span>
               </label>
               <label class="field">
                 <span class="field__label">휴대폰 *</span>
-                <input class="field__input" type="text" id="f-phone" placeholder="010-0000-0000" autocomplete="off" />
+                <input class="field__input" type="text" id="f-phone" placeholder="010-0000-0000" inputmode="numeric" autocomplete="off" />
                 <span class="field__hint" id="h-phone">이 번호로 안내 문자가 발송됩니다</span>
               </label>
               <!-- 진료과 · 담당의사는 고른 환자여도 잠기지 않는다 — 오늘 진료의 값이다 -->
@@ -187,14 +190,17 @@
               ⓘ 기존 정보를 그대로 사용합니다 — 변경 사항은 [ 정보 수정 ]에서 반영해 주세요
             </p>
           </section>
-          </div>
+            </div>
 
-          <section class="box box--confirm">
-            <h2 class="box__title">등록 전 확인</h2>
-            <dl class="recap" id="recap"></dl>
-            <ul class="checks" id="checks"></ul>
-            <p class="field__hint">ⓘ 등록 시 오늘 목록 「작성 중」에 추가됩니다 · 진료기록은 다음 화면에서 업로드합니다</p>
-          </section>
+            <div class="reg__col reg__col--side">
+              <section class="box box--confirm">
+                <h2 class="box__title">등록 전 확인</h2>
+                <dl class="recap" id="recap"></dl>
+                <ul class="checks" id="checks"></ul>
+                <p class="field__hint">ⓘ 등록 시 오늘 목록 「작성 중」에 추가됩니다 · 진료기록은 다음 화면에서 업로드합니다</p>
+              </section>
+            </div>
+          </div>
 
           <p class="note">진료기록은 다음 화면에서 업로드합니다 — 이후 업로드도 가능합니다</p>
 

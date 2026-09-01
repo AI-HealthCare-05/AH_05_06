@@ -718,9 +718,63 @@ function ageOf(birthDate) {
  *
  * 끊어 쓰는 것은 읽기 위해서다 — `01056785687` 은 눈으로 옮겨 적기 어렵다.
  */
+/* ── 숫자만 쳐도 하이픈이 붙는다 ─────────────────────────────────────
+ *
+ * 스탭은 EMR 을 보며 옮겨 적는다. 거기 적힌 것은 `19940722` · `01047851256`
+ * 같은 숫자열이라, 하이픈을 손으로 넣게 하면 자리를 세어 가며 친다. 게다가
+ * 안 넣으면 「생년월일은 1994-07-22 처럼 적어 주세요」로 막혀 다시 고친다.
+ *
+ * **화면 밖의 규칙이라 검사가 부른다.** 자리 셈은 눈으로 확인하기 어렵다.
+ */
+
+function onlyDigits(text) {
+  return String(text === null || text === undefined ? "" : text).replace(/\D/g, "");
+}
+
+/** `19940722` → `1994-07-22`. **치는 도중에도 자연스럽게** — 5자면 `1994-0`.
+    다 친 뒤에만 모양을 잡으면 마지막 글자에서 화면이 튄다. */
+function birthMask(text) {
+  var d = onlyDigits(text).slice(0, 8);
+  if (d.length <= 4) return d;
+  if (d.length <= 6) return d.slice(0, 4) + "-" + d.slice(4);
+  return d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6);
+}
+
+/** `01047851256` → `010-4785-1256`.
+
+    가운데 자릿수는 **길이가 정한다** — 11자리는 4, 10자리는 3이다(`011-234-5678`).
+    010 만 보고 4로 박으면 옛 번호가 `011-2345-678` 로 어긋난다. */
+function phoneMask(text) {
+  var d = onlyDigits(text).slice(0, 11);
+  if (d.length <= 3) return d;
+  var mid = d.length > 10 ? 4 : 3;
+  if (d.length <= 3 + mid) return d.slice(0, 3) + "-" + d.slice(3);
+  return d.slice(0, 3) + "-" + d.slice(3, 3 + mid) + "-" + d.slice(3 + mid);
+}
+
+/** 숫자 `n` 개를 지난 자리. 하이픈을 넣으면 글자 수가 늘어 커서가 밀린다 —
+    **몇 번째 숫자 뒤였는지**로 되찾는다. */
+function maskCaret(masked, digits) {
+  if (digits <= 0) return 0;
+  var seen = 0;
+  for (var i = 0; i < masked.length; i++) {
+    if (/\d/.test(masked[i])) {
+      seen += 1;
+      if (seen === digits) return i + 1;
+    }
+  }
+  return masked.length;
+}
+
+/** 지운 것이 하이픈뿐이었나. 그러면 그 앞 숫자를 마저 지운다 — 안 그러면
+    하이픈이 곧바로 다시 붙어 **지운 것이 없어 보이고**, 두 번 눌러야 한다. */
+function maskAfterDelete(digits, at) {
+  if (at <= 0) return { digits: digits, at: at };
+  return { digits: digits.slice(0, at - 1) + digits.slice(at), at: at - 1 };
+}
+
+/** 담아 둔 번호를 읽기 좋게. **치는 중과 같은 규칙을 쓴다** — 두 벌로 두면
+    손으로 친 것과 화면에 뜬 것이 달라 보인다. */
 function formatPhone(digits) {
-  var d = (digits || "").replace(/\D/g, "");
-  if (d.length === 11) return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7);
-  if (d.length === 10) return d.slice(0, 3) + "-" + d.slice(3, 6) + "-" + d.slice(6);
-  return d;
+  return phoneMask(digits);
 }
