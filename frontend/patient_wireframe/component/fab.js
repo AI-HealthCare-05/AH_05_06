@@ -49,7 +49,7 @@ function Fab(opts, onClick) {
     var vh = window.innerHeight;
     var size = 52;
     var newRight  = Math.max(8, Math.min(vw  - size - 8, startRight  - dx));
-    var newBottom = Math.max(8, Math.min(vh  - size - 8, startBottom + dy));
+    var newBottom = Math.max(8, Math.min(vh  - size - 8, startBottom - dy));
     el.style.right  = newRight  + 'px';
     el.style.bottom = newBottom + 'px';
   }
