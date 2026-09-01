@@ -1,6 +1,6 @@
 """KEY-219: context·session·re-issue·mock OTP 통합 테스트."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.timezone import now
@@ -59,6 +59,16 @@ class TestPatientAuthContext(BaseAuthCase):
         assert body["masked_phone"].endswith("9100")
         assert "visited_at" in body
         assert "expires_at" in body
+
+    async def test_expires_at_is_utc_and_within_link_ttl(self) -> None:
+        await make_link()
+
+        res = await self.call_context()
+
+        expires_at = datetime.fromisoformat(res.json()["expires_at"])
+        assert expires_at.utcoffset().total_seconds() == 0, "expires_at offset must be UTC(+00:00)"
+        expected = now() + timedelta(hours=72)
+        assert abs((expires_at - expected).total_seconds()) < 5
 
     async def test_unknown_token_returns_404(self) -> None:
         res = await self.call_context("not-a-real-token")

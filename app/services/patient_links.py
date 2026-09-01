@@ -88,7 +88,7 @@ class PatientLinkService:
             hospital_name=hospital.name if hospital else "",
             masked_phone=mask_phone(patient.phone),
             visited_at=visit.visited_at.date(),
-            expires_at=link.expires_at,
+            expires_at=link.expires_at.replace(tzinfo=UTC),
         )
 
     async def re_issue(self, raw_link_token: str) -> None:
