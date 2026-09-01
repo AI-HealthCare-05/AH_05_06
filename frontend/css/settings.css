@@ -64,7 +64,11 @@
 }
 
 .rail__row {
-  display: block;
+  /* 이름과 표시가 양끝으로 — `display: block` 이면 표시의 `margin-left: auto`
+     가 아무 일도 안 해서 「비잔 (처음)확인 전」으로 붙어 나온다. */
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   width: 100%;
   padding: 9px 16px;
   border: 0;
@@ -94,6 +98,10 @@
   padding: 9px 16px;
   font-size: 13px;
   color: var(--ink-3);
+}
+
+.rail__name {
+  flex: 1;
 }
 
 .rail__note {
@@ -366,6 +374,38 @@
 }
 
 .cp__mark--done {
+  color: var(--done);
+  font-weight: 700;
+}
+
+/* 묶음 머리 — 누르면 접혔다 펴진다. 줄 이름과 헷갈리지 않게 화살표를 앞에
+   두고, 갈래 머리(`.rail__section`)보다는 약하게 둔다. */
+.rail__disease {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 16px 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.rail__disease:hover {
+  color: var(--ink);
+}
+
+.rail__mark {
+  width: 10px;
+  font-size: 10px;
+}
+
+/* 한 장의 확인 표시 — 레일에서도 보인다 */
+.rail__note--done {
   color: var(--done);
   font-weight: 700;
 }

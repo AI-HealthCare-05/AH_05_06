@@ -80,14 +80,10 @@ var RAIL_SECTIONS = [
 
 /* 갈래 안의 줄들. **아직 없는 것은 없다고 적는다** — 자리만 비워 두면 다음
    사람이 무엇을 만들어야 하는지 모르고, 채워 두면 되는 것처럼 보인다. */
+/* 「안내문 문구」 한 줄은 여기 없다 — 안내문은 갈래 밑에 **장이 그대로 선다.**
+   목록 바로 아래 같은 자리를 가리키는 줄이 또 있으면, 고른 장과 그 줄이 함께
+   굵어져 어느 것을 보고 있는지 화면이 두 가지로 말한다. */
 var RAIL_GROUPS = [
-  {
-    key: "guide",
-    section: "guide",
-    title: "안내문 문구",
-    note: "D2-1 · D2-2",
-    saying: "처방별 안내문 문구를 관리합니다",
-  },
   {
     key: "baseline",
     section: "rest",
@@ -137,5 +133,37 @@ function courseDaysOf(setting, written) {
 }
 
 /* **어느 묶음이 실제로 열리는가.** 자리만 세운 것과 만든 것을 여기서 가른다 —
-   화면 여러 곳이 이 사실을 물으므로 한 곳에 둔다. */
-var RAIL_GROUP_READY = { sms: true, baseline: true, guide: true };
+   화면 여러 곳이 이 사실을 물으므로 한 곳에 둔다.
+   `guide` 는 여기 없다 — 안내문은 줄 하나가 아니라 갈래 밑에 장이 그대로
+   서므로 여닫을 「묶음 줄」이 아예 없다. 안 쓰는 열쇠를 남겨 두면 다음 사람이
+   있지도 않은 줄을 찾는다. */
+var RAIL_GROUP_READY = { sms: true, baseline: true };
+
+/** 한 처방이 **레일에서 어느 묶음에 드는가.**
+ *
+ * `setsByDisease` 는 모르는 질환을 「그 밖의 질환」(`other`) 한 칸에 몰아넣는다.
+ * 그래서 처방의 `disease` 값을 그대로 묶음 열쇠로 쓰면 안 된다 — 모르는 질환의
+ * 처방을 고르면 열려는 묶음이 없어 조용히 접힌 채로 남는다. 나누는 규칙과 찾는
+ * 규칙이 갈라지지 않도록 **나눈 결과에서 되찾는다.**
+ */
+function railGroupKey(sets, setId) {
+  var blocks = setsByDisease(sets);
+  for (var i = 0; i < blocks.length; i++) {
+    var mine = blocks[i].sets.filter(function (row) {
+      return row.prescription_set_id === setId;
+    });
+    if (mine.length) return blocks[i].key;
+  }
+  return null;
+}
+
+/** 레일에 붙는 안내문 한 장의 표시. **모르면 모른다고 한다** — 아직 안 받아
+    온 목록을 「확인 전」으로 적으면 다 안 본 것처럼 보인다. */
+function copyRailMark(copy, setId) {
+  if (!copy || !copy.items) return { say: "", done: false };
+  var found = copy.items.filter(function (row) {
+    return row.prescription_set_id === setId;
+  })[0];
+  if (!found) return { say: "", done: false };
+  return { say: found.reviewed ? "✓" : "확인 전", done: !!found.reviewed };
+}

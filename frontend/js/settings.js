@@ -44,7 +44,11 @@
   var templates = null; // 문자 문구 판
   var baselines = null; // 검사 기준선 판
   var copy = null; // 안내문 문구 판
-  var openSet = null; // 펼친 한 장
+  var copyPick = null; // 안내문에서 고른 한 장
+  /* **펼친 묶음.** 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져
+     「그 밖에」가 화면 밖으로 밀린다」. 안내문도 같은 수라 같이 접는다.
+     비어 있으면 아무것도 안 펼친 것 — 고른 것이 있으면 그 묶음만 편다. */
+  var opened = { guide: {}, sets: {} };
   var who = null; // 로그인한 사람 — 문구가 누구 이름으로 나가는지 적는다
   var whose = null; // 누구 기준 — 비면 의원 공통
   var drafts = {}; // 아직 저장 안 한 문구 — 다시 그려도 친 값이 남아야 한다
@@ -58,7 +62,9 @@
       '<div class="rail__section"><span class="rail__section-name">' +
       esc(title) +
       "</span>" +
-      (count == null ? "" : '<span class="rail__count">' + count + "</span>") +
+      (count == null
+        ? ""
+        : '<span class="rail__count">' + esc(count) + "</span>") +
       "</div>"
     );
   }
@@ -86,37 +92,81 @@
     );
   }
 
+  /* 묶음 한 덩이 — 머리를 누르면 접혔다 펴진다.
+   *
+   * 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져 「그 밖에」가
+   * 화면 밖으로 밀린다」. 안내문도 같은 수라 같은 규칙을 준다.
+   */
+  function railGroupHtml(section, block, drawRow) {
+    var open = !!opened[section][block.key];
+    return (
+      '<button class="rail__disease" type="button" data-fold="' +
+      esc(section) +
+      "|" +
+      esc(block.key) +
+      '" aria-expanded="' +
+      (open ? "true" : "false") +
+      '"><span class="rail__mark">' +
+      (open ? "▾" : "▸") +
+      '</span><span class="rail__name">' +
+      esc(block.title) +
+      '</span><span class="rail__count">' +
+      block.sets.length +
+      "</span></button>" +
+      (open ? block.sets.map(drawRow).join("") : "")
+    );
+  }
+
+  /* 안내문 한 장 — 원문 레일의 「✓ 비잔」·「야즈 확인 전」. */
+  function copyRailRow(row) {
+    var mark = copyRailMark(copy, row.prescription_set_id);
+    return (
+      '<button class="rail__row' +
+      (row.prescription_set_id === copyPick ? " is-on" : "") +
+      '" type="button" data-copy-set="' +
+      row.prescription_set_id +
+      '"><span class="rail__name">' +
+      esc(row.name) +
+      '</span><span class="rail__note' +
+      (mark.done ? " rail__note--done" : "") +
+      '">' +
+      esc(mark.say) +
+      "</span></button>"
+    );
+  }
+
+  function setRailRow(row) {
+    return (
+      '<button class="rail__row' +
+      (row.prescription_set_id === pickedId ? " is-on" : "") +
+      '" type="button" data-set="' +
+      row.prescription_set_id +
+      '"><span class="rail__name">' +
+      esc(row.name) +
+      "</span></button>"
+    );
+  }
+
   function railHtml() {
     /* **거르개를 두지 않는다.** 처방이 아홉이라 한 화면에 다 서고, 검색칸이
        있으면 「검색해야 보이나」로 읽힌다. 환자 목록과는 다른 자리다. */
-    var rx = setsByDisease(sets)
+    var blocks = setsByDisease(sets);
+    var progress = copy ? copyProgress(copy.items) : null;
+
+    var guide = blocks
       .map(function (block) {
-        return (
-          '<div class="rail__disease"><span class="rail__name">' +
-          esc(block.title) +
-          '</span><span class="rail__count">' +
-          block.sets.length +
-          "</span></div>" +
-          block.sets
-            .map(function (row) {
-              return (
-                '<button class="rail__row' +
-                (row.prescription_set_id === pickedId ? " is-on" : "") +
-                '" type="button" data-set="' +
-                row.prescription_set_id +
-                '"><span class="rail__name">' +
-                esc(row.name) +
-                "</span></button>"
-              );
-            })
-            .join("")
-        );
+        return railGroupHtml("guide", block, copyRailRow);
+      })
+      .join("");
+    var rx = blocks
+      .map(function (block) {
+        return railGroupHtml("sets", block, setRailRow);
       })
       .join("");
 
     return (
-      sectionHtml("안내문") +
-      groupsIn("guide").map(groupRowHtml).join("") +
+      sectionHtml("안내문", progress ? progress.say : null) +
+      (guide || '<p class="rail__none">안내문이 없습니다</p>') +
       sectionHtml("처방", sets.length) +
       (rx || '<p class="rail__none">처방이 없습니다</p>') +
       sectionHtml("기타") +
@@ -491,22 +541,22 @@
     return who && who.name ? who.name + " 원장님" : "원장님";
   }
 
+  /* 한 장 — 왼쪽에서 고른 것 하나만 선다. 여덟이 한꺼번에 펼쳐져 있으면
+     어느 것을 보고 있는지 스크롤로 세어야 한다. */
   function copySetHtml(row) {
-    var open = openSet === row.prescription_set_id;
     return (
-      '<section class="box"><div class="box__head"><h2 class="box__title">' +
+      '<div class="patient-head"><span class="patient-head__name">' +
       esc(row.name) +
-      '</h2><span class="cp__mark' +
+      '</span><span class="cp__mark' +
       (row.reviewed ? " cp__mark--done" : "") +
       '">' +
       esc(copyMark(row)) +
       '</span><span class="grow"></span>' +
-      '<button class="button-ghost button-ghost--sm" type="button" data-open-copy="' +
-      esc(row.prescription_set_id) +
-      '">' +
-      (open ? "접기" : "열기") +
-      "</button>" +
-      (open && canEdit
+      (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
+      (canEdit
+        ? ""
+        : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
+      (canEdit
         ? '<button class="button-primary button-primary--sm" type="button" data-review-copy="' +
           esc(row.prescription_set_id) +
           '"' +
@@ -514,44 +564,24 @@
           ">확인 완료</button>"
         : "") +
       "</div>" +
-      (open
-        ? row.sections
-            .map(function (part) {
-              return copySectionHtml(row, part);
-            })
-            .join("")
-        : "") +
-      "</section>"
+      '<p class="note">ⓘ 원본은 지워지지 않습니다 — 언제든 되돌아갈 수 있습니다</p>' +
+      row.sections
+        .map(function (part) {
+          return copySectionHtml(row, part);
+        })
+        .join("") +
+      '<p class="note">ⓘ 「이 약을 왜 드시나요」와 「먹는 방법」은 환자마다 판독값으로 만들어집니다 — 여기서 고칠 문구가 없습니다</p>'
     );
   }
 
   function copyHtml() {
     if (!copy) return '<p class="note">불러오는 중…</p>';
-    var progress = copyProgress(copy.items);
-    return (
-      '<div class="patient-head"><span class="patient-head__name">안내문</span>' +
-      '<span class="box__note">확인 ' +
-      esc(progress.say) +
-      "</span>" +
-      '<span class="grow"></span>' +
-      (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
-      (canEdit
-        ? ""
-        : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
-      "</div>" +
-      '<p class="note">ⓘ 원본은 지워지지 않습니다 — 언제든 되돌아갈 수 있습니다</p>' +
-      copyByDisease(copy.items)
-        .map(function (block) {
-          return (
-            '<div class="rail__disease"><span class="rail__name">' +
-            esc(block.title) +
-            "</span></div>" +
-            block.rows.map(copySetHtml).join("")
-          );
-        })
-        .join("") +
-      '<p class="note">ⓘ 「이 약을 왜 드시나요」와 「먹는 방법」은 환자마다 판독값으로 만들어집니다 — 여기서 고칠 문구가 없습니다</p>'
-    );
+    var row = copy.items.filter(function (item) {
+      return item.prescription_set_id === copyPick;
+    })[0];
+    if (!row)
+      return '<p class="note">왼쪽에서 안내문을 선택하면 원본과 문구가 표시됩니다</p>';
+    return copySetHtml(row);
   }
 
   function detailHtml() {
@@ -981,6 +1011,9 @@
 
   function openCopy() {
     group = "guide";
+    /* 고른 장이 든 묶음은 펴 둔다 — 접힌 채로 두면 방금 고른 것이 안 보인다 */
+    var mine = copyPick ? railGroupKey(sets, copyPick) : null;
+    if (mine) opened.guide[mine] = true;
     pickedId = null;
     picked = null;
     templates = null;
@@ -990,15 +1023,20 @@
     return loadCopy();
   }
 
+  /* **레일이 늘 쓴다.** 안내문 목록은 왼쪽에 상시 서 있고 진도(「1/8」)와 ✓ 가
+     거기서 나오므로, 안내문 갈래를 열지 않아도 한 번 받아 둔다. 그래서 값을
+     붙일 때 「지금 안내문을 보고 있는가」로 막지 않는다 — 막으면 처방을 보는
+     동안 레일의 표시가 통째로 사라진다. */
   function loadCopy() {
     return catalogApi
       .guideCopy()
       .then(function (data) {
-        if (group !== "guide") return; // 그 사이 다른 데로 갔으면 붙이지 않는다
         copy = data;
         render();
       })
       .catch(function () {
+        /* 오른쪽에 적는 것은 안내문을 보고 있을 때만 — 처방을 보는 중에
+           남의 자리에 실패를 적을 수는 없다. 레일은 표시 없이 선다. */
         if (group !== "guide") return;
         el("detail").innerHTML =
           '<p class="note">안내문 문구를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>';
@@ -1085,7 +1123,12 @@
       group = null;
       templates = null;
       baselines = null;
-      copy = null;
+      /* **안내문 고름을 놓는다.** 오른쪽이 처방을 보고 있는데 안내문 줄이 굵게
+         남아 있으면 화면이 두 곳을 동시에 가리킨다. 목록(`copy`)은 그대로 둔다 —
+         레일의 진도와 ✓ 는 어느 갈래를 보고 있든 서 있어야 한다. */
+      copyPick = null;
+      var chose = railGroupKey(sets, Number(row.getAttribute("data-set")));
+      if (chose) opened.sets[chose] = true;
       return loadSet(Number(row.getAttribute("data-set")));
     }
 
@@ -1097,11 +1140,20 @@
     if (chosenGroup && chosenGroup.getAttribute("data-group") === "guide")
       return openCopy();
 
-    var openCopySet = target.closest("[data-open-copy]");
-    if (openCopySet) {
-      var asked = Number(openCopySet.getAttribute("data-open-copy"));
-      openSet = openSet === asked ? null : asked;
+    /* 묶음 머리 — 접혔다 펴진다. */
+    var fold = target.closest("[data-fold]");
+    if (fold) {
+      var parts = fold.getAttribute("data-fold").split("|");
+      opened[parts[0]][parts[1]] = !opened[parts[0]][parts[1]];
+      return render();
+    }
+
+    /* 안내문 한 장 고르기 */
+    var pickedCopy = target.closest("[data-copy-set]");
+    if (pickedCopy) {
+      copyPick = Number(pickedCopy.getAttribute("data-copy-set"));
       saying = "";
+      if (group !== "guide") return openCopy();
       return render();
     }
 
@@ -1239,6 +1291,7 @@
     el("who-name").textContent = me.name;
     el("who-roles").textContent = roleLabel(me.roles);
     canEdit = (me.roles || []).indexOf("doctor") !== -1;
-    return loadSets();
+    /* 안내문 목록도 같이 — 레일이 처음부터 진도를 보여 준다 */
+    return Promise.all([loadSets(), loadCopy()]);
   });
 })();
