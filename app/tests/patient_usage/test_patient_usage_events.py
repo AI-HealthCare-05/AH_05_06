@@ -129,13 +129,15 @@ class TestNothingVerbatimIsStored(PatientUsageTestCase):
             "question_kind",
             "answer_outcome",
             "grounded_section",
+            "response_ref_digest",
+            "patient_feedback",
             "created_at",
         }, f"칸이 바뀌었다: {sorted(columns)}"
 
         # `question_kind` · `answer_outcome` 은 **갈래와 결과**이지 원문이 아니다.
         # 위 목록에 이미 있으므로, 여기서는 **원문이 들어갈 법한 이름**만 본다.
         # 「무엇을 물었나」가 아니라 「어떤 갈래였나」까지가 이 표의 한계다.
-        shaped = {"question_kind", "answer_outcome", "grounded_section"}
+        shaped = {"question_kind", "answer_outcome", "grounded_section", "response_ref_digest"}
         for forbidden in ("question", "answer", "prompt", "token", "text", "body", "content", "message"):
             leaked = [c for c in columns - shaped if forbidden in c.lower()]
             assert not leaked, f"원문이 담길 만한 칸이 생겼다: {leaked}"

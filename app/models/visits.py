@@ -379,6 +379,9 @@ class PatientUsageEvent(models.Model):
     answer_outcome = fields.CharEnumField(enum_type=PatientAnswerOutcome, null=True)
     #: 답의 근거가 된 안내 갈래. **원문이 아니라 어디를 봤는지**만 남긴다.
     grounded_section = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
+    #: Random response references are returned once to the patient. Only their
+    #: digest is stored so feedback can be linked without retaining chat text.
+    response_ref_digest = fields.CharField(max_length=64, null=True, unique=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
