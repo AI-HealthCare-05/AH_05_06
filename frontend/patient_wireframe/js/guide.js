@@ -600,9 +600,11 @@
   }
   function closeReport() {
     if (!reportOverlay) return;
-    reportOverlay.classList.remove('report-overlay--open');
+    var closing = reportOverlay;
+    reportOverlay = null;
+    closing.classList.remove('report-overlay--open');
     document.body.style.overflow = '';
-    setTimeout(function () { if (reportOverlay) { reportOverlay.remove(); reportOverlay = null; } }, 300);
+    setTimeout(function () { closing.remove(); }, 300);
   }
 
   /* ── PDF 시트 ─── */
