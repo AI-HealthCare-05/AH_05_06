@@ -3,7 +3,7 @@
 import hashlib
 import secrets
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from tortoise.exceptions import IntegrityError
 from tortoise.timezone import now
@@ -73,7 +73,7 @@ class PatientLinkService:
             raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
 
         timestamp = now()
-        if link.expires_at <= timestamp:
+        if link.expires_at.replace(tzinfo=UTC) <= timestamp.replace(tzinfo=UTC):
             raise ApiError("LINK_EXPIRED", 410, "환자 링크가 만료되었습니다.")
 
         guide = link.guide_document
@@ -99,7 +99,7 @@ class PatientLinkService:
 
         timestamp = now()
         guide = await GuideDocument.filter(guide_document_id=link.guide_document_id).first()
-        is_expired = link.expires_at <= timestamp
+        is_expired = link.expires_at.replace(tzinfo=UTC) <= timestamp.replace(tzinfo=UTC)
         is_revoked = guide is None or guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None
 
         if not is_expired and not is_revoked:
@@ -118,7 +118,7 @@ class PatientLinkService:
         )
         if link is None:
             raise _link_not_found()
-        if link.expires_at <= now():
+        if link.expires_at.replace(tzinfo=UTC) <= now().replace(tzinfo=UTC):
             raise ApiError("LINK_EXPIRED", 410, "환자 링크가 만료되었습니다.")
 
         guide = link.guide_document

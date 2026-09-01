@@ -380,7 +380,8 @@
       });
 
       if (res.ok) {
-        window.location.replace('guide.html?token=' + encodeURIComponent(token));
+        sessionStorage.setItem('otp_verified', '1');
+        window.location.replace('guide.html?t=' + encodeURIComponent(token));
         return;
       }
 

@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from tortoise.backends.base.client import BaseDBAsyncClient
@@ -51,8 +51,18 @@ def _otp_digest(code: str, salt: str, secret_key: str) -> str:
     return hmac.new(otp_key, payload, hashlib.sha256).hexdigest()
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """Tortoise + MySQL timezone 불일치 보정 — KEY-219.
+
+    TORTOISE_ORM timezone="Asia/Seoul" 설정으로 인해 asyncmy가 DB에서 읽은
+    UTC 값에 +09:00 태그를 잘못 붙인다. now()는 +00:00(UTC)을 반환하므로
+    모든 timestamp 비교 전에 양쪽 모두 UTC로 정규화한다.
+    """
+    return dt.replace(tzinfo=UTC)
+
+
 def _seconds_until(value: datetime, timestamp: datetime) -> int:
-    return max(1, int((value - timestamp).total_seconds() + 0.999))
+    return max(1, int((_as_utc(value) - _as_utc(timestamp)).total_seconds() + 0.999))
 
 
 def _locked(challenge: PatientOtpChallenge, timestamp: datetime) -> ApiError:
@@ -117,7 +127,7 @@ class PatientOtpService:
         if link is None:
             raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
         timestamp = now()
-        if link.expires_at <= timestamp:
+        if _as_utc(link.expires_at) <= _as_utc(timestamp):
             raise ApiError("LINK_EXPIRED", 410, "환자 링크가 만료되었습니다.")
         guide = link.guide_document
         if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:
@@ -142,7 +152,7 @@ class PatientOtpService:
         timestamp: datetime,
         connection: BaseDBAsyncClient,
     ) -> None:
-        if challenge.locked_until is not None and challenge.locked_until <= timestamp:
+        if challenge.locked_until is not None and _as_utc(challenge.locked_until) <= _as_utc(timestamp):
             challenge.locked_until = None
             challenge.failed_attempts = 0
             await challenge.save(
@@ -200,7 +210,7 @@ class PatientOtpService:
                 await self._release_elapsed_lock(challenge, timestamp, connection)
                 if challenge.locked_until is not None:
                     raise _locked(challenge, timestamp)
-                if challenge.issued_at + OTP_RESEND_COOLDOWN > timestamp:
+                if _as_utc(challenge.issued_at) + OTP_RESEND_COOLDOWN > _as_utc(timestamp):
                     raise _resend_too_soon(challenge, timestamp)
 
                 previous = _PreviousOtp(
@@ -267,7 +277,7 @@ class PatientOtpService:
                 raise _locked(challenge, timestamp)
             if challenge.consumed_at is not None:
                 raise ApiError("OTP_ALREADY_USED", 409, "이미 사용한 인증번호입니다. 새 인증번호를 요청해 주세요.")
-            if challenge.expires_at <= timestamp:
+            if _as_utc(challenge.expires_at) <= _as_utc(timestamp):
                 raise ApiError("OTP_EXPIRED", 410, "인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.")
 
             valid_format = len(code) == OTP_LENGTH and code.isascii() and code.isdigit()
