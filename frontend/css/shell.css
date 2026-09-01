@@ -714,3 +714,10 @@ body.shell {
 .chip:active {
   border-color: var(--line-strong);
 }
+
+/* 반려 사유 — 「고친 뒤 다시 넘겨 주세요」 옆에 무엇을 고칠지 붙는다.
+   곁말보다 진하게 둔다: 이건 의사가 사람에게 쓴 문장이지 화면의 설명이 아니다. */
+.note__why {
+  color: var(--warn);
+  font-weight: 700;
+}

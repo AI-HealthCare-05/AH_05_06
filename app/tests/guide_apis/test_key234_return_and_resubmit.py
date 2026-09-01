@@ -168,3 +168,54 @@ class TestReturnAndResubmit(GenerateGuideTestCase):
 
         assert again.status_code == 409
         assert again.json()["code"] == "GUIDE_NOT_IN_REVIEW"
+
+    async def test_the_message_plan_opens_too(self) -> None:
+        """**문자 설정도 같이 열린다.**
+
+        반려 사유가 「문자 회차를 고쳐 주세요」인 순간, 본문만 열려 있으면
+        스탭은 본문은 고쳐지는데 문자 설정은 409 를 보는 화면을 만난다.
+        본문 쪽만 열었다가 이 자리를 빠뜨렸었다.
+        """
+        _, staff, doctor, visit = await self.make_world("k234mp")
+
+        async with self.client() as client:
+            staff_headers = await self.sign_in(staff)
+            doctor_headers = await self.sign_in(doctor)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=staff_headers)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/submit", headers=staff_headers)
+            await client.post(
+                f"{BASE}/{visit.visit_id}/guide/return",
+                headers=doctor_headers,
+                json={"reason": "문자 회차를 고쳐 주세요"},
+            )
+            saved = await client.put(
+                f"{BASE}/{visit.visit_id}/guide/messages",
+                headers=staff_headers,
+                json={"check_hour": 18, "rounds": []},
+            )
+
+        assert saved.status_code == 200, f"반려 상태에서 문자 설정이 막혔다 — {saved.json()}"
+
+    async def test_the_reason_reaches_the_screen(self) -> None:
+        """**무엇을 고칠지 화면이 받아야 한다.**
+
+        서버가 `returned_reason` 을 주는데 화면이 안 쓰고 있었다 — 「고친 뒤
+        다시 넘겨 주세요」만 보면 의사에게 다시 물어야 한다.
+        """
+        _, staff, doctor, visit = await self.make_world("k234rr")
+        why = "복약 안내에 식후 여부를 적어 주세요"
+
+        async with self.client() as client:
+            staff_headers = await self.sign_in(staff)
+            doctor_headers = await self.sign_in(doctor)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=staff_headers)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/submit", headers=staff_headers)
+            await client.post(
+                f"{BASE}/{visit.visit_id}/guide/return",
+                headers=doctor_headers,
+                json={"reason": why},
+            )
+            got = await client.get(f"{BASE}/{visit.visit_id}/guide", headers=staff_headers)
+
+        assert got.status_code == 200
+        assert got.json()["returned_reason"] == why, "사유가 화면까지 안 간다"
