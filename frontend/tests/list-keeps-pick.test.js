@@ -146,3 +146,22 @@ test("**줄을 누르면 그것이 전역의 고른 진료가 된다**", () => {
     "손잡이가 `picked` 를 다시 선언한다 — 전역을 가려서 고른 것이 밖으로 안 나간다",
   );
 });
+
+test("**상태 탭은 처음에 하나도 안 켜진다** — 그 날 전부가 보인다", () => {
+  /* 켜 둔 채 시작하면 목록에 없는 환자가 **숨겨진 것인지 없는 것인지** 구분이
+     안 된다. 방금 등록한 사람이 안 보여 「등록이 안 됐나」가 되던 자리다. */
+  const code = codeOnly(read("js/shell.js"));
+  const at = code.indexOf("function renderChips");
+  assert.notEqual(at, -1, "칩을 그리는 자리가 없다");
+
+  const body = code.slice(at, code.indexOf("\n}", at));
+  assert.match(body, /aria-pressed="false"/, "칩이 켜진 채 시작한다");
+  assert.ok(!body.includes("DEFAULT_TABS"), "역할별 기본 선택이 남아 있다");
+  assert.ok(!code.includes("var DEFAULT_TABS"), "안 쓰는 기본 선택표가 남아 있다");
+
+  /* 하나도 안 켜면 전부 보여야 한다 — 아무것도 안 보이면 그게 더 나쁘다 */
+  const { visibleRows } = load("api", "session", "patients-api", "shell");
+  assert.equal(typeof visibleRows, "function", "거르는 자리를 못 읽었다");
+  const filter = codeOnly(read("js/shell.js"));
+  assert.match(filter, /if \(on\.length &&/, "안 켰을 때도 걸러 낸다 — 목록이 통째로 빈다");
+});

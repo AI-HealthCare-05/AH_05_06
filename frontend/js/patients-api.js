@@ -342,6 +342,33 @@ var MOCK_TODAY = (function () {
   ];
 })();
 
+/* **고정 데이터의 날짜를 오늘에 맞춘다.**
+ *
+ * 고정 값은 「2026-08-20 이 오늘」이라 치고 적혔다. 달력이 지나면 그 날은
+ * 지난 날짜가 되고, 목록은 「오늘 등록된 환자가 없습니다」만 띄운다 — 목업이
+ * 하루가 지날 때마다 조용히 쓸모없어진다.
+ *
+ * 날짜를 지우지 않고 **통째로 민다.** 사이 간격은 뜻이 있기 때문이다 —
+ * 박수빈의 08-11 은 「아홉 날 전에 걸린 채로 남은 보완」이고, 그 간격이
+ * 사라지면 오늘 것과 구분이 안 된다.
+ */
+var MOCK_TODAY_BASE = "2026-08-20";
+
+(function shiftToToday() {
+  var base = new Date(MOCK_TODAY_BASE + "T00:00:00");
+  var now = new Date();
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var days = Math.round((today - base) / 86400000);
+  if (!days) return;
+
+  MOCK_TODAY.forEach(function (v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})(.*)$/.exec(String(v.visited_at));
+    if (!m) return;
+    var at = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days);
+    v.visited_at = toIsoDate(at) + m[4];
+  });
+})();
+
 /* 진료 상세에만 있는 칸. 오늘 목록(§6 S1-1)은 이것들을 주지 않는다 —
    목업 저장소는 하나지만, 아래 두 투영이 각각 자기 계약의 칸만 내보낸다. */
 MOCK_TODAY.forEach(function (v) {

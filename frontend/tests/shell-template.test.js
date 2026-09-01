@@ -796,3 +796,18 @@ test("환자 등록 제목 아래에 줄을 긋지 않는다 — 상자 테두�
   const head = rule(read("css/patients.css"), ".reg__head");
   assert.ok(!/border-bottom:/.test(head), "제목 밑줄이 남아 있다 — 선이 두 겹으로 보인다");
 });
+
+test("**취소는 한 곳이다** — 같은 일을 하는 단추가 둘이면 하나만 고쳐진다", () => {
+  const html = markupOnly(read("patients.html"));
+  const cancels = (html.match(/id="reg-cancel[^"]*"/g) || []);
+  assert.deepEqual(cancels, ['id="reg-cancel"'], `등록 화면에 취소가 ${cancels.length}개다`);
+
+  /* 그 하나는 아래 단추줄에 있다 — 위 제목줄이 아니다 */
+  const head = element(html, '<div class="reg__head">');
+  assert.ok(!head.includes("취소"), "제목줄에 취소가 남아 있다");
+
+  /* 손잡이도 사라진 것을 잡으면 안 된다 — 없는 요소에 붙이면 그 자리에서 죽는다 */
+  const code = codeOnly(read("js/patients.js"));
+  assert.ok(!code.includes("reg-cancel-top"), "없는 단추를 잡는다 — 화면이 그 줄에서 죽는다");
+  assert.match(code, /getElementById\("reg-cancel"\)/, "남은 취소가 안 눌린다");
+});

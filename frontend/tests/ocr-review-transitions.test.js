@@ -114,9 +114,15 @@ test("**실패는 위에 붙고, 나머지는 덮는다**", () => {
 
   /* 아래에 보여 줄 것이 아직 없는 상태는 덮어야 한다. 반쯤 그린 값을
      보여 주면 그것을 판독 결과로 읽는다. */
-  for (const kind of ["loading", "processing", "no_job", "not_ready", "poll_failed", "result_failed"]) {
+  for (const kind of ["loading", "processing", "not_ready", "poll_failed", "result_failed"]) {
     assert.equal(rules[kind].keepsWork, false, `${kind} 이 반쯤 그린 화면을 보여 준다`);
   }
+
+  /* **아직 아무것도 안 올린 것은 다르다.** 방금 등록한 환자가 처음 만나는
+     화면이고 여기서 할 수 있는 일이 올리는 것뿐이라, 통째로 덮으면 「없다」는
+     말만 남고 다음 걸음이 사라진다. 왼쪽(올리는 자리)만 남긴다 — 오른쪽
+     판독 값은 읽은 것이 없어 빈 칸만 늘어선다. */
+  assert.equal(rules.no_job.keepsWork, "left", "올릴 자리까지 덮는다 — 다음 걸음이 사라진다");
 
   /* **화면이 그 규칙을 실제로 본다.** 규칙만 있고 `hidden = true` 를 그대로
      두면 검사가 안 문다 — 돌연변이를 넣어 보고 알았다. 그리는 것은 shim
@@ -150,4 +156,30 @@ test("**값이 하나도 없으면 안내문 만들기를 미리 잠근다** —
 
   const code = strip2(read2("js/ocr-review.js"));
   assert.ok(code.includes("noFieldsSaying(result.fields)"), "화면이 그 규칙을 안 쓴다");
+});
+
+test("**읽은 것이 없으면 왼쪽만 남는다** — 빈 값 칸은 고장으로 읽힌다", () => {
+  const code = strip2(read2("js/ocr-review.js"));
+  const at = code.indexOf('getElementById("work").hidden');
+  assert.notEqual(at, -1, "작업 칸을 감추는 자리가 없다 — 검사가 헛돈다");
+
+  const around = code.slice(at, at + 400);
+  assert.match(around, /review--left/, "왼쪽만 남기는 자리가 없다");
+  assert.match(around, /keepsWork === "left"/, "규칙을 안 읽고 스스로 정한다");
+
+  /* 감추는 규칙이 CSS 에도 있어야 한다 — 클래스만 붙이고 규칙이 없으면 그대로 뜬다 */
+  const css = read2("css/ocr-review.css");
+  assert.match(css, /\.review--left \.main-col \{[^}]*display:\s*none/, "값 칸이 안 감춰진다");
+});
+
+test("올릴 자리가 저절로 펴진다 — 접힌 채면 올릴 데를 못 찾는다", () => {
+  const code = strip2(read2("js/ocr-review.js"));
+  const at = code.indexOf('"no_job"');
+  assert.notEqual(at, -1, "판독 없음 갈래가 없다");
+
+  const around = code.slice(Math.max(0, at - 300), at + 200);
+  assert.match(around, /ocrOpenAddPanel/, "올리는 판을 안 편다");
+
+  /* 펴는 자리가 실제로 있어야 한다 */
+  assert.match(code, /window\.ocrOpenAddPanel\s*=/, "펴는 함수가 없다");
 });

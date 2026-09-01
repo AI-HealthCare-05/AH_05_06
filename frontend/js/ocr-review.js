@@ -260,7 +260,11 @@ function failureSaying(code) {
 var STATE_RULES = {
   loading: { tone: "busy", action: null, keepsWork: false },
   processing: { tone: "busy", action: null, keepsWork: false },
-  no_job: { tone: "info", action: null, keepsWork: false },
+  /* **올릴 자리는 남긴다.** 방금 등록한 환자가 처음 만나는 화면이고, 여기서
+     할 수 있는 일이 진료기록을 올리는 것뿐이다. 화면을 통째로 덮으면 「없다」는
+     말만 남고 다음 걸음이 사라진다.
+     다만 오른쪽(판독 값)은 감춘다 — 읽은 것이 없어 빈 칸만 늘어선다. */
+  no_job: { tone: "info", action: null, keepsWork: "left" },
   job_failed: { tone: "warn", action: "reupload", keepsWork: true },
   not_ready: { tone: "warn", action: "recheck", keepsWork: false },
   poll_failed: { tone: "warn", action: "recheck", keepsWork: false },
@@ -1206,8 +1210,11 @@ function stateTakesFocus(tone) {
     stateBox.className = "state state--" + rule.tone + (rule.keepsWork ? " state--strip" : "");
     stateBox.innerHTML = body + (acts ? '<div class="state__acts">' + acts + "</div>" : "");
     stateBox.hidden = false;
-    /* **덮을 것과 위에 붙을 것을 가른다** (`STATE_RULES` 의 `keepsWork`). */
+    /* **덮을 것과 위에 붙을 것을 가른다** (`STATE_RULES` 의 `keepsWork`).
+       `"left"` 는 왼쪽만 남긴다 — 올릴 자리는 두고 읽은 값 칸만 감춘다. */
     document.getElementById("work").hidden = !rule.keepsWork;
+    var review = document.querySelector(".review");
+    if (review) review.classList.toggle("review--left", rule.keepsWork === "left");
 
     if (shownKind !== kind) {
       /* 진행률이 바뀔 때마다 읽어 주면 수십 초짜리 판독에서 20~40 번을 연달아
@@ -1574,13 +1581,25 @@ function stateTakesFocus(tone) {
       box.hidden = !text;
     }
 
-    button.addEventListener("click", function () {
-      var open = panel.hidden;
+    function openPanel(open, focus) {
       panel.hidden = !open;
       button.setAttribute("aria-expanded", open ? "true" : "false");
       /* 열면 바로 고를 수 있게 초점을 옮긴다 — 키보드로 다니는 사람이
          판이 열린 것을 알 방법이 그것뿐이다. */
-      if (open) pick.focus();
+      if (open && focus) pick.focus();
+    }
+
+    /* **올릴 것이 없으면 저절로 펴진다.**
+       방금 등록한 환자는 판독한 기록이 없다. 그때 「판독한 기록이 없습니다」만
+       띄우고 올리는 판을 접어 두면, 스탭은 올릴 자리를 못 찾는다 — 등록 다음
+       걸음이 바로 이것인데도. 볼 것이 있을 때만 접는다.
+       초점은 안 옮긴다 — 화면에 막 들어온 참이라 읽을 것이 먼저다. */
+    window.ocrOpenAddPanel = function () {
+      if (panel.hidden) openPanel(true, false);
+    };
+
+    button.addEventListener("click", function () {
+      openPanel(panel.hidden, true);
     });
 
     pick.addEventListener("click", function () {
@@ -1827,10 +1846,12 @@ function stateTakesFocus(tone) {
       .catch(function (error) {
         if (mine !== loadSeq) return;
         if (error && error.code === "NOT_FOUND") {
+          /* 올릴 자리를 펴 준다 — 이 화면에서 할 수 있는 일이 그것뿐이다 */
+          if (typeof ocrOpenAddPanel === "function") ocrOpenAddPanel();
           return showState(
             "no_job",
             '<p class="state__title">판독한 기록이 없습니다</p>' +
-              '<p class="state__body">진료기록을 올리면 판독이 시작됩니다.</p>',
+              '<p class="state__body">아래에서 진료기록을 올리면 판독이 시작됩니다.</p>',
           );
         }
         showState(

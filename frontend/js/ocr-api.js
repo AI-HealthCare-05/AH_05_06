@@ -443,10 +443,31 @@ function mockPatch(fieldId, body) {
 
 /* 진료마다 다른 작업 번호를 준다. 고정값을 쓰면 어느 환자를 골라도 같은
    판독 결과가 나온다 — 실제로 그랬다(`#40` 리뷰). */
+/* **진료기록을 안 올린 진료에는 판독이 없다.**
+ *
+ * 예전에는 어느 진료를 물어도 작업 번호를 내줬다. 그래서 목록이 「진료기록
+ * 없음」이라 적은 환자를 눌러도 판독 결과가 떴고, **「판독한 기록이 없습니다」
+ * 화면을 `?mock=1` 로는 한 번도 못 봤다** — 방금 등록한 환자가 처음 만나는
+ * 화면인데도.
+ *
+ * 목록이 들고 있는 `detail_status` 를 그대로 믿는다. 목업이 제 규칙을 따로
+ * 만들면 목록과 판독 화면이 서로 다른 말을 한다.
+ */
 function mockJobForVisit(visitId) {
   return new Promise(function (resolve, reject) {
     setTimeout(function () {
       if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      var row =
+        typeof MOCK_TODAY === "undefined"
+          ? null
+          : MOCK_TODAY.filter(function (v) {
+              return v.visit_id === Number(visitId);
+            })[0];
+      if (row && row.detail_status === "NO_DOCUMENT") {
+        return reject(new ApiError("NOT_FOUND", 404, {}));
+      }
+
       resolve({ ocr_job_id: "ocr_synthetic_" + visitId });
     }, 80);
   });

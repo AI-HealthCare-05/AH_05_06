@@ -16,6 +16,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const { codeOnly, markupOnly } = require("./source.js");
+const { load } = require("./browser-shim.js");
 
 const ROOT = path.join(__dirname, "..");
 
@@ -77,4 +78,47 @@ test("검사가 실제로 이름을 읽는다 — 못 읽으면 늘 초록이다
 
   /* 함수 **안**의 것은 안 읽어야 한다 — 전역이 아니다 */
   assert.ok(!globalsOf("shell.js").has("mine"), "함수 안의 이름까지 전역으로 센다");
+});
+
+/* ── 목업이 오늘도 쓸모 있는가 ───────────────────────────────────────── */
+
+test("**목업 고정 데이터가 오늘 날짜로 선다** — 달력이 지나면 조용히 쓸모없어진다", () => {
+  /* 고정 값은 「2026-08-20 이 오늘」이라 치고 적혔다. 밀어 주지 않으면 하루가
+     지날 때마다 목록이 「오늘 등록된 환자가 없습니다」만 띄운다. */
+  const { MOCK_TODAY } = load("api", "session", "patients-api");
+  assert.ok(Array.isArray(MOCK_TODAY) && MOCK_TODAY.length >= 3, "목업 목록을 못 읽었다");
+
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+  const onToday = MOCK_TODAY.filter((v) => String(v.visited_at).slice(0, 10) === today);
+  assert.ok(onToday.length >= 2, `오늘 진료가 ${onToday.length}건이다 — 목록이 비어 보인다`);
+
+  /* **사이 간격은 남는다.** 박수빈의 보완은 「며칠 전에 걸린 채로 남은 것」이라,
+     오늘로 당겨 버리면 오늘 것과 구분이 안 된다. */
+  const older = MOCK_TODAY.filter((v) => String(v.visited_at).slice(0, 10) < today);
+  assert.ok(older.length >= 1, "지난 날짜 진료가 하나도 없다 — 간격이 뭉갰다");
+});
+
+test("**진료기록을 안 올린 진료에는 판독이 없다**", async () => {
+  /* 어느 진료를 물어도 작업 번호를 내주면, 목록이 「진료기록 없음」이라 적은
+     환자를 눌러도 판독 결과가 뜬다 — 방금 등록한 환자가 처음 만나는 화면을
+     `?mock=1` 로는 한 번도 못 본다. */
+  const box = load("api", "session", "patients-api", "ocr-api");
+  const { MOCK_TODAY, mockJobForVisit } = box;
+
+  const blank = MOCK_TODAY.filter((v) => v.detail_status === "NO_DOCUMENT")[0];
+  assert.ok(blank, "목업에 진료기록 없는 진료가 없다 — 검사가 헛돈다");
+
+  await assert.rejects(
+    () => mockJobForVisit(blank.visit_id),
+    (err) => err && err.code === "NOT_FOUND",
+    "진료기록이 없는데 판독을 내준다",
+  );
+
+  const done = MOCK_TODAY.filter((v) => v.detail_status !== "NO_DOCUMENT")[0];
+  assert.ok(done, "목업에 판독이 있는 진료가 없다");
+  const job = await mockJobForVisit(done.visit_id);
+  assert.ok(job && job.ocr_job_id, "판독이 있는 진료에까지 안 내준다");
 });

@@ -100,9 +100,10 @@
         <!-- ② 환자 등록 (S1-2 · S1-3) ──────────────────────────────
              두 화면이 아니라 한 화면의 두 상태다. 검색 결과가 곧 분기다. -->
         <section class="view" id="view-register" hidden>
+          <!-- 취소는 **아래 한 곳**이다. 위아래로 두 개를 두면 어느 것을 눌러야
+               하는지 묻게 되고, 같은 일을 하는 단추가 둘이면 하나만 고쳐진다. -->
           <div class="reg__head">
             <h1 class="pane__title">환자 등록</h1>
-            <button class="button-ghost" type="button" id="reg-cancel-top">취소</button>
           </div>
 
           <!-- **왼쪽에 쓰는 것, 오른쪽에 확인하는 것.**

@@ -6,18 +6,18 @@
  * 목록은 환자 API 로 그린다(KEY-26 계약). 등록 화면은 patients.js 가 갖는다.
  */
 
-/* 상태 탭 다섯. 두 역할이 같은 탭을 쓰고 기본 선택만 다르다 —
-   스탭은 「작성 중 + 보완」(오늘 할 일과 고칠 일), 의사는 「승인 요청」.
+/* 상태 탭 다섯. 두 역할이 같은 탭을 쓴다.
+
+   **처음에는 하나도 안 켠다 — 그 날 전부가 보인다.** 전에는 역할별로 몇 개를
+   켜 둔 채 시작했는데(스탭은 「작성 중 + 보완」, 의사는 「승인 요청」), 그러면
+   목록에 없는 환자가 **숨겨진 것인지 없는 것인지** 구분이 안 된다. 방금 등록한
+   사람이 안 보여 「등록이 안 됐나」가 되던 자리다. 켜는 것은 걸러 보고 싶을
+   때다 — 걸러 달라고 한 적 없는데 걸러져 있으면 안 된다.
 
    탭 값은 계약(KEY-26 §6)의 `work_category` 다. 서버가 OCR · 안내 · 승인 · 발송의
    최신 이벤트를 읽어 파생해 준다 — **화면은 파생하지 않는다.** 화면이 파생하면
    화면마다 규칙이 갈리고, 규칙이 바뀔 때 어디를 고쳐야 하는지 알 수 없다. */
 var STATUS_TABS = WORK_CATEGORIES;
-
-var DEFAULT_TABS = {
-  staff: ["IN_PROGRESS", "NEEDS_ATTENTION"],
-  doctor: ["APPROVAL_REQUESTED"],
-};
 
 /* 목록이 들고 있는 것.
    식별자 셋을 처음부터 갈라 둔다 (KEY-26 계약 v1).
@@ -95,15 +95,15 @@ function visibleRows() {
   });
 }
 
-function renderChips(roles) {
-  var on = (roles || []).indexOf("staff") !== -1 ? DEFAULT_TABS.staff : DEFAULT_TABS.doctor;
+/* `roles` 는 이제 안 쓴다 — 역할로 갈리던 기본 선택이 없어졌다. 자리를 남겨
+   두는 이유는 부르는 쪽(`bindShell`)이 그대로이기 때문이고, 언젠가 역할별로
+   다시 갈릴 여지도 남는다. */
+function renderChips() {
   document.getElementById("chips").innerHTML = STATUS_TABS.map(function (t) {
     return (
       '<button class="chip' +
       (t.warn ? " chip--warn" : "") +
-      '" type="button" aria-pressed="' +
-      (on.indexOf(t.key) !== -1) +
-      '" data-tab="' +
+      '" type="button" aria-pressed="false" data-tab="' +
       t.key +
       '"><span data-label>' +
       esc(t.label) +

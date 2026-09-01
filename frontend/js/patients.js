@@ -627,7 +627,6 @@ function tiedBirthDates(items) {
 
   submit.addEventListener("click", register);
   document.getElementById("reg-cancel").addEventListener("click", close);
-  document.getElementById("reg-cancel-top").addEventListener("click", close);
 
   /* 등록 도중에 목록을 눌러도 잃는 것이 없어야 한다 */
   document.addEventListener("visit:selecting", function (event) {
