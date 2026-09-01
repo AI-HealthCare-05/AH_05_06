@@ -1,184 +1,225 @@
-/* 안내문 API — ?mock=1 또는 file:// 자동 활성 */
+/* 환자 안내 API 계약 — KEY-241
+ *
+ * 실제 화면은 GET /api/v1/guides/{token}의 PatientGuideResponse만 받는다.
+ * 목업도 같은 DTO를 거쳐야 하며, 실제 응답에 없는 환자명·병원명·처방량을
+ * 화면 편의를 위해 지어내지 않는다.
+ */
 var GUIDE_API_BASE = '/api/v1';
+
+var GUIDE_ERROR = {
+  CONTRACT: 'GUIDE_CONTRACT_MISMATCH',
+  LINK_REQUIRED: 'LINK_REQUIRED',
+  NOT_APPROVED: 'GUIDE_NOT_APPROVED',
+  NOT_FOUND: 'LINK_NOT_FOUND',
+  LINK_EXPIRED: 'LINK_EXPIRED',
+};
 
 var GUIDE_MOCK = (function () {
   try {
     var q = new URLSearchParams(window.location.search);
     if (q.has('mock')) sessionStorage.setItem('pw_mock', q.get('mock') === '0' ? '0' : '1');
-    var stored = sessionStorage.getItem('pw_mock');
-    if (stored === '0') return false;
-    if (stored === '1') return true;
-    return location.protocol === 'file:' || location.hostname === 'localhost';
-  } catch (e) { return true; }
+    return sessionStorage.getItem('pw_mock') === '1';
+  } catch (e) {
+    return false;
+  }
 })();
 
-/* ── 와이어프레임 데이터 구조 그대로 ─── */
-var MOCK = {
+/* 화면 미리보기도 서버 DTO보다 관대하지 않게 같은 계약으로 둔다. */
+var MOCK_GUIDES = {
   ems: {
-    visit:   '2026.08.13',
-    clinic:  '〇〇여성의원',
-    patient: '김서연',
-    disease: '자궁내막증 · 비잔정 복용 중',
-
-    /* 현황 탭 */
-    stat: {
-      drugName:      '비잔정 2mg',
-      drugSub:       '성분 · 디에노게스트  · 1일 1회 · 84일분',
-      prescribed:    84,
-      dayOn:         12,
-      remaining:     72,
-      pct:           14,         /* Math.round(12/84*100) */
-      out:           'ⓘ 11월 5일경 약이 소진돼요',
-      why:           '이 약은 <b>병변이 다시 자라지 않게</b> 하는 약이에요. 계속 필요합니다.',
-    },
-
-    /* 복약지도 탭 */
-    guide: {
-      summary: '자궁내막증으로 진료받으셨고, <b>통증 관리를 위한 약</b>을 처방받으셨어요.',
-      goals: [
-        { n:'빈혈 Hb',    a:'10.2', now:'10.4', t:'12', hasChart:true,
-          rangeLabel:'목표를 가운데 두고 본 지금 값' },
-        { n:'자궁내막종', a:'2.8',  now:'2.4',  t:'─', hasChart:true,
-          rangeLabel:'시작값을 기준으로 본 지금 값' },
-        { n:'AMH 곧 나와요',   a:'─',   now:'─',    t:'─',  hasChart:false, dim:true,
-          note:'결과가 나오면 채워드릴게요', startLine:'지금 ─' },
-      ],
-
-      drug: { n:'비잔정 2mg', s:'성분 · 디에노게스트', d:'1일 1회 · 84일분' },
-      why: [
-        '지난번 <b>8점</b>이던 생리통이 오늘 <b>4점</b>까지 내려왔어요. 약이 잘 듣고 있다는 뜻이에요.',
-        '다만 통증이 줄었다고 <b>병변까지 없어진 것은 아니에요.</b> 남아 있으면 계속 염증을 일으켜 유착과 폐경 후 만성 골반통의 원인이 됩니다.',
-        '끊을 시기는 <b>진료 때 함께 정해요.</b>',
-      ],
-      how:  '매일 같은 시간에 드세요.\n휴약기 없이 계속 복용합니다.',
-      next: '3개월 뒤 재진 예정이에요. 아팠던 날이나 불편했던 점을 기억해 두셨다가 이야기해 주세요.',
-    },
-
-    /* 주의사항 탭 */
-    care: {
-      title: '비잔정 2mg 드시는 동안',
-      blocks: [
-        { t:'흔하고 괜찮은 반응', p:[
-          '피가 조금씩 비치는 것이 가장 흔해요. 특히 <b>처음 3개월</b>에 그래요.',
-          '가슴이 단단해지는 느낌, 몸이 붓는 느낌도 시간이 지나면 좋아집니다.',
-          '생리가 없어지는 것은 <b>폐경이 아니에요.</b> 약을 끊으면 다시 돌아옵니다. 임의로 중단하지 마세요.',
-        ]},
-        { t:'이런 건 알려주세요', p:[
-          '드물게 기분이 가라앉는 분들이 있어요. 평소와 다르게 느껴지면 <b>참지 마시고 알려주세요.</b>',
-        ]},
-        { t:'함께 드시면 안 되는 것', p:[
-          '<b>세인트존스워트(성요한풀)</b>가 든 건강기능식품이나 허브차는 약효를 떨어뜨릴 수 있어요.',
-          '드시는 영양제나 한약이 있으면 진료 때 말씀해 주세요.',
-        ]},
-        { t:'이 약은 피임약이 아니에요', p:[
-          '피임이 필요하시면 별도의 방법을 함께 사용하세요.',
-        ]},
-      ],
-      danger: [
-        '· 기분이 심하게 가라앉아 일상생활이 어려울 때',
-        '· 스스로를 해치고 싶은 생각이 들 때',
-        '· 생리가 아닌데 출혈이 많아 어지럽거나 힘이 빠질 때',
-      ],
-      ask: '출혈이 2주 이상 계속되거나 심한 복통이 있으면 연락 주세요.',
-    },
-
-    /* 생활관리 탭 */
-    life: {
-      sub: '자궁내막증 · 비잔정 복용 중',
-      challenges: [
-        ['· 밤 11시 전에 잠들기', '주 5일'],
-        ['· 칼슘 음식 챙겨 먹기', '주 5일'],
-        ['· 주 3회 30분 걷기',    '주 3회'],
-      ],
-      axes: {
-        '수면':    { chal:'· 밤 11시 전에 잠들기', goal:'주 5일',
-          p:['지금은 새벽 1시쯤 주무신다고 하셨죠. <b>밤 10시~새벽 2시</b> 사이에 잠들어 있는 것이 좋아요.',
-             '자기 전 2시간은 휴대폰을 보지 않으시면 더 좋아요.'] },
-        '뼈 건강': { chal:'· 칼슘 음식 챙겨 먹기', goal:'주 5일',
-          p:['우유 · 요거트 · 치즈 · 두부 · 녹색 잎채소를 매일 챙겨 드세요.',
-             '약을 오래 드시는 동안 뼈를 함께 챙기면 좋습니다.'] },
-        '운동':    { chal:'· 주 3회 30분 걷기',    goal:'주 3회',
-          p:['걷기 · 계단 오르기처럼 <b>뼈에 체중이 실리는 운동</b>이 특히 좋아요.'] },
-        '통증':    { title:'통증 관리', p:[
-          '달력이나 메모에 생리통 점수를 <b>0점(안 아픔)~10점(아주 아픔)</b>으로 적어두세요.'] },
+    version: 1,
+    approved_at: '2026-09-01T09:00:00+09:00',
+    expires_at: '2026-09-08T09:00:00+09:00',
+    sections: [
+      {
+        key: 'medication',
+        body: '비잔정(디에노게스트) 2mg을 처방받으셨어요.\n매일 같은 시간에 처방받은 용법대로 복용해 주세요.',
       },
-    },
-
-    /* 챗봇 */
-    chat: {
-      chips: ['내 약이 뭐였죠?', '출혈이 계속돼요', '언제까지 먹나요?'],
-    },
+      {
+        key: 'caution',
+        body: '복용 중 평소와 다른 불편감이 생기거나 증상이 계속되면 의료진에게 알려 주세요.',
+      },
+      {
+        key: 'emergency',
+        body: '호흡 곤란이나 심한 복통처럼 급한 증상이 생기면 즉시 응급실을 방문하세요.',
+      },
+      {
+        key: 'life',
+        body: '충분한 수분 섭취와 규칙적인 수면을 유지해 주세요.\n무리하지 않는 범위에서 가볍게 걸어 주세요.',
+      },
+      { key: 'messages', body: '궁금한 점은 진료받은 병원에 문의해 주세요.' },
+    ],
+    demo_only: true,
   },
-
   pcos: {
-    visit:   '2026.08.13',
-    clinic:  '〇〇여성의원',
-    patient: '이민지',
-    disease: '다낭성난소증후군 · 야즈정 복용 중',
-    stat: {
-      drugName: '야즈정',
-      drugSub:  '드로스피레논/에티닐에스트라디올 · 1일 1회 · 84일분',
-      prescribed: 84, dayOn: 12, remaining: 72, pct: 14,
-      out: 'ⓘ 11월 5일경 약이 소진돼요',
-      why: '이 약은 <b>주기를 고르게</b> 하는 약이에요. 끊으면 다시 불규칙해집니다.',
-    },
-    guide: {
-      summary: '다낭성난소증후군으로 진료받으셨고, <b>주기를 고르게 하는 약</b>을 처방받으셨어요.',
-      goals: [
-        { n:'LH / FSH 비율', a:'3.2', now:'2.4', t:'2.0', hasChart:true,
-          rangeLabel:'목표를 가운데 두고 본 지금 값' },
-        { n:'DHEA-S',        a:'260', now:'210', t:'200', hasChart:true,
-          rangeLabel:'목표를 가운데 두고 본 지금 값' },
-        { n:'생리 주기',      a:'안 옴', now:'38일', t:'35일', hasChart:false,
-          note:'이번에는 추이만 기록해요', startLine:'시작 안 옴 · 지금 38일' },
-      ],
-      goalSay: '<b>주기가 돌아오고 있어요.</b>\n목표에 가까워지고 있습니다.',
-      drug: { n:'야즈정', s:'드로스피레논/에티닐에스트라디올', d:'1일 1회 · 84일분' },
-      why: ['주기가 규칙적이 된 것은 약이 잘 듣고 있다는 뜻이에요. 끊으면 다시 돌아옵니다.'],
-      how: '분홍색 알약을 먼저 다 드시고, 이어서 흰색 알약을 드세요.\n매일 같은 시간에 드세요.',
-      next: '3개월 뒤 재진 예정이에요.',
-    },
-    care: {
-      title: '야즈정 드시는 동안',
-      blocks: [
-        { t:'흔하고 괜찮은 반응', p:['처음 몇 달은 부정출혈이 있을 수 있어요.'] },
-        { t:'담배는 끊어 주세요', p:['흡연은 혈전 위험을 크게 높입니다.'] },
-      ],
-      danger: ['· 갑자기 숨이 차거나 가슴이 아플 때', '· 한쪽 종아리가 붓고 아플 때'],
-      ask: '부정출혈이 3개월 이상 계속되면 연락 주세요.',
-    },
-    life: {
-      sub: '다낭성난소증후군 · 야즈정 복용 중',
-      challenges: [
-        ['· 밤 11시 전에 잠들기', '주 5일'],
-        ['· 배달음식 줄이기',     '주 5일'],
-        ['· 주 3회 30분 걷기',    '주 3회'],
-      ],
-      axes: {
-        '수면':    { chal:'· 밤 11시 전에 잠들기', goal:'주 5일', p:['규칙적인 수면이 호르몬 주기를 돕습니다.'] },
-        '식이':    { chal:'· 배달음식 줄이기',     goal:'주 5일', p:['정제 탄수화물을 줄이면 인슐린 저항성 개선에 도움이 됩니다.'] },
-        '운동':    { chal:'· 주 3회 30분 걷기',    goal:'주 3회', p:['가벼운 유산소로 꾸준히 이어가는 것이 중요합니다.'] },
-        '월경주기':{ p:['생리 시작일을 달력에 적어두세요.'] },
+    version: 1,
+    approved_at: '2026-09-01T09:00:00+09:00',
+    expires_at: '2026-09-08T09:00:00+09:00',
+    sections: [
+      {
+        key: 'medication',
+        body: '야즈정을 처방받으셨어요.\n매일 같은 시간에 처방받은 용법대로 복용해 주세요.',
       },
-    },
-    chat: { chips: ['내 약이 뭐였죠?', '부정출혈이 계속돼요', '언제까지 먹나요?'] },
+      { key: 'caution', body: '처음 몇 달은 불규칙한 출혈이 나타날 수 있어요.' },
+      {
+        key: 'emergency',
+        body: '갑자기 숨이 차거나 가슴이 아프면 즉시 응급실을 방문하세요.',
+      },
+      {
+        key: 'life',
+        body: '규칙적인 수면과 식사를 유지해 주세요.\n가벼운 유산소 운동을 꾸준히 이어가 주세요.',
+      },
+      { key: 'messages', body: '불편감이 계속되면 진료받은 병원에 알려 주세요.' },
+    ],
+    demo_only: true,
   },
 };
 
+function GuideError(code) {
+  this.name = 'GuideError';
+  this.code = code;
+}
+GuideError.prototype = Object.create(Error.prototype);
+
+function sameKeys(value, expected) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  var keys = Object.keys(value).sort();
+  return keys.length === expected.length && keys.every(function (key, index) {
+    return key === expected[index];
+  });
+}
+
+function publicBody(body) {
+  if (typeof body !== 'string') throw new GuideError(GUIDE_ERROR.CONTRACT);
+  var cleaned = body.trim().replace(/^\[합성[^\]]*\]\s*/, '');
+  /* 중간에 남은 표시는 승인 문장 일부인지 구분할 수 없으므로 화면에 내보내지 않는다. */
+  if (/\[합성[^\]]*\]/.test(cleaned)) return '';
+  return cleaned;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function bodyLines(body) {
+  return publicBody(body).split(/\n+/).map(function (line) {
+    return escapeHtml(line.trim());
+  }).filter(Boolean);
+}
+
+function displayDate(value) {
+  var date = new Date(value);
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value) || isNaN(date.getTime())) {
+    throw new GuideError(GUIDE_ERROR.CONTRACT);
+  }
+  // 승인일은 서버가 보낸 진료 기준일을 그대로 표시한다.
+  // 브라우저 타임존으로 재계산하면 날짜가 하루 바뀐 수 있다.
+  return value.slice(0, 10).replace(/-/g, '.');
+}
+
+function adaptGuideResponse(payload) {
+  var responseFields = ['approved_at', 'demo_only', 'expires_at', 'sections', 'version'];
+  var sectionFields = ['body', 'key'];
+  var allowedKeys = ['medication', 'caution', 'emergency', 'life', 'messages'];
+
+  if (!sameKeys(payload, responseFields) ||
+      typeof payload.version !== 'number' ||
+      payload.demo_only !== true ||
+      !Array.isArray(payload.sections)) {
+    throw new GuideError(GUIDE_ERROR.CONTRACT);
+  }
+
+  var sections = {};
+  payload.sections.forEach(function (section) {
+    if (!sameKeys(section, sectionFields) ||
+        allowedKeys.indexOf(section.key) < 0 ||
+        Object.prototype.hasOwnProperty.call(sections, section.key)) {
+      throw new GuideError(GUIDE_ERROR.CONTRACT);
+    }
+    sections[section.key] = publicBody(section.body);
+  });
+
+  var approvedDate = displayDate(payload.approved_at);
+  displayDate(payload.expires_at);
+  var medication = sections.medication || '';
+  var caution = sections.caution || '';
+  var emergency = sections.emergency || '';
+  var life = sections.life || '';
+  var messages = sections.messages || '';
+
+  return {
+    visit: approvedDate,
+    clinic: '',
+    patient: '',
+    disease: '',
+    generatedAt: payload.approved_at,
+    expiresAt: payload.expires_at,
+    stat: {
+      drugName: '복약 현황',
+      prescribed: null,
+      body: escapeHtml(medication),
+      out: '',
+      why: '',
+    },
+    guide: {
+      summary: escapeHtml(medication),
+      goals: [],
+      drug: null,
+      why: [],
+      how: '',
+      next: escapeHtml(messages),
+    },
+    care: {
+      title: '복약 중 주의사항',
+      blocks: caution ? [{ t: '주의사항', p: bodyLines(caution) }] : [],
+      danger: bodyLines(emergency),
+      ask: escapeHtml(messages),
+    },
+    life: {
+      sub: '담당 의료진이 확인한 생활관리 안내',
+      challenges: [],
+      axes: life ? { '생활관리': { p: bodyLines(life) } } : {},
+    },
+    chat: { chips: [] },
+  };
+}
+
 function fetchGuide(token) {
   if (GUIDE_MOCK) {
-    var q   = new URLSearchParams(window.location.search);
+    var q = new URLSearchParams(window.location.search);
     var key = q.get('case') || 'ems';
-    return new Promise(function (resolve) {
-      setTimeout(function () { resolve(MOCK[key] || MOCK.ems); }, 100);
+    return new Promise(function (resolve, reject) {
+      setTimeout(function () {
+        if (key === 'none') {
+          reject(new GuideError(GUIDE_ERROR.NOT_APPROVED));
+          return;
+        }
+        if (!MOCK_GUIDES[key]) {
+          reject(new GuideError(GUIDE_ERROR.NOT_FOUND));
+          return;
+        }
+        try {
+          resolve(adaptGuideResponse(MOCK_GUIDES[key]));
+        } catch (error) {
+          reject(error);
+        }
+      }, 100);
     });
   }
+
+  if (!token) return Promise.reject(new GuideError(GUIDE_ERROR.LINK_REQUIRED));
+
   return fetch(GUIDE_API_BASE + '/guides/' + encodeURIComponent(token), {
     credentials: 'include',
     headers: { Accept: 'application/json' },
   }).then(function (res) {
-    if (res.ok) return res.json();
+    if (res.ok) return res.json().then(adaptGuideResponse);
     return res.json().catch(function () { return {}; })
-      .then(function (d) { throw new Error(d.code || 'NOT_FOUND'); });
+      .then(function (data) { throw new GuideError(data.code || GUIDE_ERROR.NOT_FOUND); });
   });
 }

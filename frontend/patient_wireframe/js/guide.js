@@ -1,23 +1,44 @@
 /* 진료 안내 — 화면 02~06  (guide.html) */
 (function () {
-  if (!document.getElementById('body')) return;
+  var bodyRoot = document.getElementById('body') || document.getElementById('guide-body');
+  if (!bodyRoot) return;
 
   /* OTP 인증 가드: 직접 URL 접근 차단 */
   if (!sessionStorage.getItem('otp_verified')) {
-    location.replace('../html/otp.html');
+    location.replace('/patient_wireframe/html/otp.html');
     return;
   }
 
-  var TOKEN = (function () {
-    try { return new URLSearchParams(window.location.search).get('t') || 'mock'; }
-    catch (e) { return 'mock'; }
-  })();
+  /* 토큰은 access log에 남지 않는 fragment로 받고 즉시 주소에서 지운다.
+     sessionStorage·DOM·console에는 저장하지 않는다(KEY-205 계약 유지). */
+  function takeGuideToken() {
+    var query = new URLSearchParams(window.location.search);
+    var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+    var token = fragment.get('t') || query.get('t') || query.get('visit') || '';
+
+    fragment.delete('t');
+    query.delete('t');
+    query.delete('visit');
+    var safeQuery = query.toString();
+    var safeFragment = fragment.toString();
+    var safeUrl = window.location.pathname + (safeQuery ? '?' + safeQuery : '') +
+      (safeFragment ? '#' + safeFragment : '');
+    if (window.history && typeof window.history.replaceState === 'function') {
+      window.history.replaceState(null, '', safeUrl);
+    }
+    return token;
+  }
+
+  var TOKEN = takeGuideToken();
 
   var TABS = ['현황', '복약지도', '주의사항', '생활관리'];
 
   var state = {
     data:          null,
-    tab:           '현황',
+    tab:           (function () {
+      var saved = sessionStorage.getItem('pw_guide_tab');
+      return TABS.indexOf(saved) >= 0 ? saved : '현황';
+    })(),
     guideExpanded: false,
     careExpanded:  false,
     lifeAxis:      null,
@@ -48,6 +69,13 @@
     if (onClick) b.addEventListener('click', onClick);
     return b;
   }
+  function emptyState(message) {
+    return text('div', 'guide-empty', message || '표시할 승인 안내가 아직 없어요.');
+  }
+  function sayGuide(message) {
+    var live = document.getElementById('guide-say');
+    if (live) live.textContent = message || '';
+  }
 
   /* ── 탭 바 (component/tab-bar.js 교체 — 와이어프레임 스타일) ─── */
   function buildTabBar(d) {
@@ -61,8 +89,10 @@
       b.addEventListener('click', function () {
         if (key === state.tab) return;
         state.tab = key;
+        sessionStorage.setItem('pw_guide_tab', key);
         buildTabBar(d);
         renderBody(d);
+        sayGuide(key);
         window.scrollTo(0, 0);
       });
       bar.appendChild(b);
@@ -71,8 +101,15 @@
 
   /* ── 헤더 메타 ─── */
   function fillHeader(d) {
-    document.getElementById('header-patient').textContent =
-      d.patient + ' 님 · ' + d.visit + ' · ' + d.clinic;
+    var meta = ['승인된 진료 안내', d.visit, d.clinic].filter(Boolean);
+    document.getElementById('header-patient').textContent = meta.join(' · ');
+  }
+
+  function showMockBadge() {
+    if (!GUIDE_MOCK || document.getElementById('guide-mock-badge')) return;
+    var badge = text('div', 'guide-mock-badge', '개발용 목업 화면');
+    badge.id = 'guide-mock-badge';
+    document.querySelector('.header').appendChild(badge);
   }
 
   /* ════════════════════════
@@ -88,24 +125,19 @@
     /* 약 카드 */
     var drugCard = el('div', 'card');
     drugCard.appendChild(text('div', 'stat-drug-name', s.drugName));
-    drugCard.appendChild(text('div', 'stat-drug-sub', s.prescribed + '일분'));
+    if (s.prescribed) drugCard.appendChild(text('div', 'stat-drug-sub', s.prescribed + '일분'));
+    if (s.body) drugCard.appendChild(richEl('div', 'care-body-text', s.body.replace(/\n/g, '<br>')));
+    else drugCard.appendChild(emptyState('표시할 승인 복약 안내가 아직 없어요.'));
     frag.appendChild(drugCard);
 
     /* 소진 예정 핑크 카드 */
-    var pinkCard = el('div', 'card card--pink');
-    pinkCard.appendChild(richEl('div', 'stat-out', s.out));
-    pinkCard.appendChild(richEl('div', 'stat-why', s.why));
-    pinkCard.appendChild(text('div', 'stat-cta-note', '재진 예약을 잡거나 병원에 문의해 주세요.'));
-
-    var btns = el('div', 'stat-btns');
-    btns.appendChild(btn('btn--primary', '예약하기 ↗', function () {
-      alert('예약 창구는 병원 설정에서 연결됩니다.');
-    }));
-    btns.appendChild(btn('btn--outline', '문의하기', function () {
-      alert('문의 창구는 병원 설정에서 연결됩니다.');
-    }));
-    pinkCard.appendChild(btns);
-    frag.appendChild(pinkCard);
+    if (s.out || s.why) {
+      var pinkCard = el('div', 'card card--pink');
+      if (s.out) pinkCard.appendChild(richEl('div', 'stat-out', s.out));
+      if (s.why) pinkCard.appendChild(richEl('div', 'stat-why', s.why));
+      pinkCard.appendChild(text('div', 'stat-cta-note', '재진 예약을 잡거나 병원에 문의해 주세요.'));
+      frag.appendChild(pinkCard);
+    }
 
     /* 복약지도 보기 버튼 */
     frag.appendChild(btn('btn btn--full', '복약지도 보기', function () {
@@ -128,23 +160,26 @@
     /* 오늘 진료 요약 */
     var sumCard = el('div', 'card');
     sumCard.appendChild(text('div', 'card__section-title', '오늘 진료 요약'));
-    sumCard.appendChild(richEl('div', 'care-body-text', g.summary));
+    sumCard.appendChild(g.summary
+      ? richEl('div', 'care-body-text', g.summary.replace(/\n/g, '<br>'))
+      : emptyState('표시할 승인 복약 안내가 아직 없어요.'));
     frag.appendChild(sumCard);
 
     /* 나의 목표 */
-    var goalCard = el('div', 'card');
-    var goalHead = el('div');
-    goalHead.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin-bottom:4px';
-    goalHead.appendChild(text('span', 'card__section-title', '나의 목표'));
-    var goalDate = text('span', null, d.visit);
-    goalDate.style.cssText = 'font-size:13px;color:var(--tx-muted);font-variant-numeric:tabular-nums';
-    goalHead.appendChild(goalDate);
-    goalCard.appendChild(goalHead);
+    if (g.goals && g.goals.length) {
+      var goalCard = el('div', 'card');
+      var goalHead = el('div');
+      goalHead.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin-bottom:4px';
+      goalHead.appendChild(text('span', 'card__section-title', '나의 목표'));
+      var goalDate = text('span', null, d.visit);
+      goalDate.style.cssText = 'font-size:13px;color:var(--tx-muted);font-variant-numeric:tabular-nums';
+      goalHead.appendChild(goalDate);
+      goalCard.appendChild(goalHead);
 
-    var visibleGoals = g.goals.filter(function (goal) {
-      return !goal.dim && goal.now !== '─';
-    });
-    visibleGoals.forEach(function (goal, i) {
+      var visibleGoals = g.goals.filter(function (goal) {
+        return !goal.dim && goal.now !== '─';
+      });
+      visibleGoals.forEach(function (goal, i) {
       var item = el('div', 'goal-item' + (i === 0 ? ' goal-item--first' : ''));
       item.appendChild(text('div', 'goal-name' + (goal.dim ? '" style="color:var(--tx-muted)' : ''), goal.n));
       item.appendChild(text('div', 'goal-range-label', goal.rangeLabel || ''));
@@ -224,21 +259,22 @@
         noChart.textContent = (goal.note || '') + ' · ' + (goal.startLine || '');
         item.appendChild(noChart);
       }
-      goalCard.appendChild(item);
-    });
-
-
-    frag.appendChild(goalCard);
+        goalCard.appendChild(item);
+      });
+      frag.appendChild(goalCard);
+    }
 
     /* 처방받은 약 */
-    var drugCard = el('div', 'card');
-    drugCard.appendChild(text('div', 'card__section-title', '처방받은 약'));
-    var drugRow = el('div', 'drug-row');
-    drugRow.appendChild(text('div', 'drug-row__name', g.drug.n));
-    drugRow.appendChild(text('div', 'drug-row__sub', g.drug.s));
-    drugRow.appendChild(text('div', 'drug-row__sub', g.drug.d));
-    drugCard.appendChild(drugRow);
-    frag.appendChild(drugCard);
+    if (g.drug) {
+      var drugCard = el('div', 'card');
+      drugCard.appendChild(text('div', 'card__section-title', '처방받은 약'));
+      var drugRow = el('div', 'drug-row');
+      if (g.drug.n) drugRow.appendChild(text('div', 'drug-row__name', g.drug.n));
+      if (g.drug.s) drugRow.appendChild(text('div', 'drug-row__sub', g.drug.s));
+      if (g.drug.d) drugRow.appendChild(text('div', 'drug-row__sub', g.drug.d));
+      drugCard.appendChild(drugRow);
+      frag.appendChild(drugCard);
+    }
 
     /* 더 자세히 보기 토글 */
     var expandBtn = el('button', 'expand-btn' + (state.guideExpanded ? ' expand-btn--open' : ''));
@@ -251,29 +287,32 @@
     var expandBody = el('div', 'expand-body' + (state.guideExpanded ? ' expand-body--open' : ''));
 
     /* 이 약을 왜 드시나요 */
-    var whyCard = el('div', 'card');
-    whyCard.appendChild(text('div', 'card__section-title', '이 약을 왜 드시나요'));
-    g.why.forEach(function (w, i) {
-      var p = richEl('div', 'care-body-text', w);
-      if (i === 0) p.style.marginTop = '0';
-      whyCard.appendChild(p);
-    });
-    expandBody.appendChild(whyCard);
+    if (g.why && g.why.length) {
+      var whyCard = el('div', 'card');
+      whyCard.appendChild(text('div', 'card__section-title', '이 약을 왜 드시나요'));
+      g.why.forEach(function (w, i) {
+        var p = richEl('div', 'care-body-text', w);
+        if (i === 0) p.style.marginTop = '0';
+        whyCard.appendChild(p);
+      });
+      expandBody.appendChild(whyCard);
+    }
 
     /* 복용 방법 */
-    var howCard = el('div', 'card');
-    howCard.appendChild(text('div', 'card__section-title', '약별 복용 방법'));
-    howCard.appendChild(richEl('div', 'care-body-text', g.how.replace(/\n/g, '<br>')));
-    expandBody.appendChild(howCard);
+    if (g.how) {
+      var howCard = el('div', 'card');
+      howCard.appendChild(text('div', 'card__section-title', '약별 복용 방법'));
+      howCard.appendChild(richEl('div', 'care-body-text', g.how.replace(/\n/g, '<br>')));
+      expandBody.appendChild(howCard);
+    }
 
     /* 다음 방문 */
-    var nextCard = el('div', 'card');
-    nextCard.appendChild(text('div', 'card__section-title', '다음 방문 계획'));
-    nextCard.appendChild(text('div', 'care-body-text', g.next));
-    var linkNote = text('p', 'link-expiry-note', '이 링크는 진료 후 3일간 열려요. 나중에도 보고 싶다면 PDF로 저장해 두세요.');
-    linkNote.style.cssText = 'font-size:12px;line-height:14px;color:var(--tx-muted);margin-top:12px;';
-    nextCard.appendChild(linkNote);
-    expandBody.appendChild(nextCard);
+    if (g.next) {
+      var nextCard = el('div', 'card');
+      nextCard.appendChild(text('div', 'card__section-title', '병원 안내'));
+      nextCard.appendChild(richEl('div', 'care-body-text', g.next));
+      expandBody.appendChild(nextCard);
+    }
 
     expandBtn.addEventListener('click', function () {
       state.guideExpanded = !state.guideExpanded;
@@ -282,8 +321,10 @@
       expandBody.className = 'expand-body' + (state.guideExpanded ? ' expand-body--open' : '');
     });
 
-    frag.appendChild(expandBody);
-    frag.appendChild(expandBtn);
+    if (expandBody.children.length) {
+      frag.appendChild(expandBody);
+      frag.appendChild(expandBtn);
+    }
     return frag;
   }
 
@@ -293,6 +334,7 @@
   function renderCare(d) {
     var c    = d.care;
     var frag = document.createDocumentFragment();
+    var hasCareContent = c.blocks.length || c.danger.length || c.ask;
 
     /* 제목 */
     var titleWrap = el('div', 'tab-title');
@@ -302,7 +344,7 @@
 
     /* 블록 카드들 */
     var fadeWrap = el('div', 'care-fade-wrap');
-    if (!state.careExpanded) fadeWrap.style.maxHeight = '420px';
+    if (!state.careExpanded && hasCareContent) fadeWrap.style.maxHeight = '420px';
 
     c.blocks.forEach(function (block) {
       var card = el('div', 'card');
@@ -315,41 +357,44 @@
       fadeWrap.appendChild(card);
     });
 
+    if (!c.blocks.length && !c.danger.length && !c.ask) {
+      fadeWrap.appendChild(emptyState('표시할 승인 주의사항이 아직 없어요.'));
+    }
+
     /* 긴급 카드 */
-    var dangerCard = el('div', 'card card--danger');
-    dangerCard.style.borderRadius = '22px';
-    dangerCard.appendChild(text('div', 'danger-title', '🚨 바로 병원에 연락하세요'));
-    c.danger.forEach(function (d) {
-      dangerCard.appendChild(text('div', 'danger-item', d));
-    });
-    fadeWrap.appendChild(dangerCard);
+    if (c.danger.length) {
+      var dangerCard = el('div', 'card card--danger');
+      dangerCard.style.borderRadius = '22px';
+      dangerCard.appendChild(text('div', 'danger-title', '🚨 바로 병원에 연락하세요'));
+      c.danger.forEach(function (d) {
+        dangerCard.appendChild(richEl('div', 'danger-item', d));
+      });
+      fadeWrap.appendChild(dangerCard);
+    }
 
     /* 문의할 사항 */
-    var askCard = el('div', 'card');
-    askCard.appendChild(text('div', 'card__section-title', '문의할 사항'));
-    askCard.appendChild(text('div', 'care-body-text', c.ask));
-    askCard.style.marginTop = '0';
-    var askBtn = btn('btn btn--full', '문의하기', function () {
-      alert('문의 창구는 병원 설정에서 연결됩니다.');
-    });
-    askBtn.style.marginTop = '16px';
-    askCard.appendChild(askBtn);
-    fadeWrap.appendChild(askCard);
+    if (c.ask) {
+      var askCard = el('div', 'card');
+      askCard.appendChild(text('div', 'card__section-title', '문의할 사항'));
+      askCard.appendChild(richEl('div', 'care-body-text', c.ask));
+      askCard.style.marginTop = '0';
+      fadeWrap.appendChild(askCard);
+    }
 
-    if (!state.careExpanded) {
+    if (!state.careExpanded && hasCareContent) {
       var fade = el('div', 'care-fade');
       fadeWrap.appendChild(fade);
     }
     frag.appendChild(fadeWrap);
 
     /* 더 보기 / 접기 버튼 */
-    if (!state.careExpanded) {
+    if (!state.careExpanded && hasCareContent) {
       var moreBtn = btn('btn btn--full', '더 자세히 보기', function () {
         state.careExpanded = true;
         renderBody(d);
       });
       frag.appendChild(moreBtn);
-    } else {
+    } else if (hasCareContent) {
       var collapseBtn = btn('btn btn--full', '접기', function () {
         state.careExpanded = false;
         renderBody(d);
@@ -367,7 +412,7 @@
     var life = d.life;
     var frag = document.createDocumentFragment();
     var axisKeys = Object.keys(life.axes);
-    if (!state.lifeAxis || axisKeys.indexOf(state.lifeAxis) < 0) state.lifeAxis = axisKeys[0];
+    if (!state.lifeAxis || axisKeys.indexOf(state.lifeAxis) < 0) state.lifeAxis = axisKeys[0] || null;
 
     /* 제목 */
     var titleWrap = el('div', 'tab-title');
@@ -375,18 +420,25 @@
     titleWrap.appendChild(text('div', 'tab-title__sub', life.sub));
     frag.appendChild(titleWrap);
 
+    if (!life.challenges.length && !axisKeys.length) {
+      frag.appendChild(emptyState('표시할 승인 생활관리 안내가 아직 없어요.'));
+      return frag;
+    }
+
     /* 4주 챌린지 카드 */
-    var chalCard = el('div', 'card');
-    chalCard.appendChild(text('div', 'card__section-title', '이번 4주 챌린지'));
-    life.challenges.forEach(function (ch, i) {
-      var row = el('div', 'challenge-row' + (i === 0 ? ' challenge-row--first' : ''));
-      row.appendChild(text('span', 'challenge-row__text', ch[0]));
-      row.appendChild(text('span', 'challenge-row__freq', ch[1]));
-      chalCard.appendChild(row);
-    });
-    chalCard.appendChild(text('div', 'challenge-note',
-      '이번 4주 동안 권해드리는 것이에요 · 따로 확인하거나 여쭤보지 않아요\n담당 의료진이 확인한 내용이에요. 무리해서 다 지키지 않아도 괜찮아요.'));
-    frag.appendChild(chalCard);
+    if (life.challenges.length) {
+      var chalCard = el('div', 'card');
+      chalCard.appendChild(text('div', 'card__section-title', '이번 4주 챌린지'));
+      life.challenges.forEach(function (ch, i) {
+        var row = el('div', 'challenge-row' + (i === 0 ? ' challenge-row--first' : ''));
+        row.appendChild(text('span', 'challenge-row__text', ch[0]));
+        row.appendChild(text('span', 'challenge-row__freq', ch[1]));
+        chalCard.appendChild(row);
+      });
+      chalCard.appendChild(text('div', 'challenge-note',
+        '이번 4주 동안 권해드리는 것이에요 · 따로 확인하거나 여쭤보지 않아요\n담당 의료진이 확인한 내용이에요. 무리해서 다 지키지 않아도 괜찮아요.'));
+      frag.appendChild(chalCard);
+    }
 
     /* 축 칩 탭 */
     var axisTabBar = el('div', 'axis-tabs');
@@ -450,7 +502,7 @@
 
   /* ── 본문 렌더 ─── */
   function renderBody(d) {
-    var body = document.getElementById('body');
+    var body = bodyRoot;
     body.innerHTML = '';
     var frag;
     switch (state.tab) {
@@ -464,26 +516,28 @@
 
     /* 모든 탭 공통 하단 푸터 */
     var footer = (typeof GuideFooter === 'function')
-      ? GuideFooter({ generatedAt: d.visit + ' 10:44', onReport: function () { openReport(); } })
+      ? GuideFooter({ generatedAt: d.visit, onReport: GUIDE_MOCK ? function () { openReport(); } : null })
       : (function () {
           var f = document.createElement('div');
           f.className = 'guide-footer';
           [
             { cls: 'guide-footer__note', t: 'ⓘ 이 안내는 담당 의료진이 확인한 내용입니다' },
             { cls: 'guide-footer__meta', t: '출처 · 식약처 의약품정보' },
-            { cls: 'guide-footer__meta', t: '생성 · ' + d.visit + ' 10:44' },
+            { cls: 'guide-footer__meta', t: '승인 · ' + d.visit },
           ].forEach(function (item) {
             var s = document.createElement('span');
             s.className = item.cls;
             s.textContent = item.t;
             f.appendChild(s);
           });
-          var btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'guide-footer__report';
-          btn.textContent = '오류 신고';
-          btn.addEventListener('click', function () { alert('오류 신고 기능은 서버 연동 후 동작합니다.'); });
-          f.appendChild(btn);
+          if (GUIDE_MOCK) {
+            var report = document.createElement('button');
+            report.type = 'button';
+            report.className = 'guide-footer__report';
+            report.textContent = '오류 신고';
+            report.addEventListener('click', openReport);
+            f.appendChild(report);
+          }
           return f;
         })();
     body.appendChild(footer);
@@ -662,31 +716,62 @@
     { key:'life',  label:'생활관리', desc:'수면 · 뼈 건강 · 운동 · 통증' },
     { key:'stat',  label:'복약 현황', desc:'처방일 기준 소진 예정일' },
   ];
-  var pdfSheet = Sheet({
-    title: 'PDF로 저장',
-    options: PDF_OPTIONS,
-    defaultSelected: state.pdfSelected,
-    onSave: function (chosen) {
-      state.pdfSelected = chosen;
-      alert('PDF 저장: ' + chosen.join(', ') + '\n(실제 저장은 서버 연동 후 동작합니다)');
-    },
-  });
-  document.body.appendChild(pdfSheet.backdrop);
-  document.body.appendChild(pdfSheet.el);
-  document.getElementById('pdf-btn').addEventListener('click', function () { pdfSheet.open(); });
+  if (GUIDE_MOCK) {
+    var pdfSheet = Sheet({
+      title: 'PDF로 저장',
+      options: PDF_OPTIONS,
+      defaultSelected: state.pdfSelected,
+      onSave: function (chosen) {
+        state.pdfSelected = chosen;
+        alert('PDF 저장 미리보기: ' + chosen.join(', '));
+      },
+    });
+    document.body.appendChild(pdfSheet.backdrop);
+    document.body.appendChild(pdfSheet.el);
+    document.getElementById('pdf-btn').addEventListener('click', function () { pdfSheet.open(); });
+  } else {
+    document.getElementById('pdf-btn').hidden = true;
+    document.getElementById('pdf-btn').style.display = 'none';
+  }
 
   /* ── 시작 ─── */
-  fetchGuide(TOKEN)
-    .then(function (d) {
-      state.data = d;
-      fillHeader(d);
-      buildTabBar(d);
-      renderBody(d);
-      if (window.chatSetGuide) chatSetGuide(d);
-    })
-    .catch(function (err) {
-      document.getElementById('body').innerHTML =
-        '<div style="padding:40px 20px;text-align:center;color:var(--tx-muted)">안내를 불러오지 못했어요.<br>잠시 뒤 다시 열어 주세요.</div>';
-      console.error(err);
-    });
+  function renderLoadError(error) {
+    var code = error && error.code;
+    var message = code === GUIDE_ERROR.LINK_EXPIRED
+      ? '링크 사용 기간이 끝났어요. 병원에 새 안내 링크를 요청해 주세요.'
+      : code === GUIDE_ERROR.LINK_REQUIRED
+        ? '안내 링크 정보가 없어요. 받으신 문자 링크를 다시 열어 주세요.'
+        : code === GUIDE_ERROR.NOT_FOUND
+          ? '링크가 없거나 더 이상 사용할 수 없어요. 병원에 안내 링크를 문의해 주세요.'
+        : code === GUIDE_ERROR.CONTRACT
+          ? '안내 형식이 맞지 않아 안전하게 표시하지 않았어요. 병원에 문의해 주세요.'
+          : '안내를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.';
+    bodyRoot.innerHTML = '';
+    var box = el('div', 'guide-load-error');
+    box.setAttribute('role', 'alert');
+    box.appendChild(text('strong', 'guide-load-error__title', '안내를 열 수 없어요'));
+    box.appendChild(text('p', 'guide-load-error__message', message));
+    if (TOKEN || GUIDE_MOCK) box.appendChild(btn('btn btn--full', '다시 시도', loadGuide));
+    bodyRoot.appendChild(box);
+    document.getElementById('tab-bar').innerHTML = '';
+    sayGuide('안내를 열 수 없어요');
+  }
+
+  function loadGuide() {
+    bodyRoot.innerHTML = '';
+    bodyRoot.appendChild(text('div', 'guide-loading', '안내를 불러오는 중이에요…'));
+    return fetchGuide(TOKEN)
+      .then(function (d) {
+        state.data = d;
+        fillHeader(d);
+        buildTabBar(d);
+        renderBody(d);
+        sayGuide('승인된 안내를 불러왔어요');
+        if (window.chatSetGuide) chatSetGuide(d.guide || d);
+      })
+      .catch(renderLoadError);
+  }
+
+  showMockBadge();
+  loadGuide();
 })();

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>진료 안내 · 케어온</title>
 <link rel="stylesheet" href="../css/tokens.css" />
-<link rel="stylesheet" href="../css/guide.css" />
+<link rel="stylesheet" href="../css/guide.css?v=5" />
 <link rel="stylesheet" href="../css/chat.css?v=4" />
 </head>
 <body>
@@ -26,11 +26,12 @@
   </header>
 
   <!-- 스크롤 바디 -->
-  <div class="body" id="body">
+  <main class="body" id="guide-body">
     <div style="padding:40px 20px;text-align:center;color:var(--tx-muted)">
       안내를 불러오는 중이에요…
     </div>
-  </div>
+  </main>
+  <p class="sr-only" id="guide-say" role="status" aria-live="polite"></p>
 
 </div>
 
@@ -57,12 +58,12 @@
 <!-- 컴포넌트 -->
 <script src="../component/fab.js?v=3"></script>
 <script src="../component/sheet.js?v=3"></script>
-<script src="../component/guide-footer.js?v=3"></script>
+<script src="../component/guide-footer.js?v=5"></script>
 
 <!-- API + 페이지 로직 -->
-<script src="../js/guide-api.js?v=3"></script>
-<script src="../js/guide.js?v=3"></script>
-<script src="../js/chat.js?v=4"></script>
+<script src="../js/guide-api.js?v=5"></script>
+<script src="../js/guide.js?v=5"></script>
+<script src="../js/chat.js?v=5"></script>
 
 </body>
 </html>

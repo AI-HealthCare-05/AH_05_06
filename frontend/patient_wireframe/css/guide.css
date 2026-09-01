@@ -657,3 +657,46 @@ b { font-weight: 700; }
   color: var(--tx-muted);
   cursor: default;
 }
+
+/* ── 실제 API 로딩·빈 값·오류 상태 (KEY-241) ─── */
+.guide-mock-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0 0 8px;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: #fff3cd;
+  color: #6b4d00;
+  font-size: 12px;
+  font-weight: 700;
+}
+.guide-loading,
+.guide-empty,
+.guide-load-error {
+  margin: 20px;
+  padding: 24px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  color: var(--tx-muted);
+  text-align: center;
+}
+.guide-empty { margin: 12px 0 0; }
+.guide-load-error__title {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--tx);
+  font-size: 18px;
+}
+.guide-load-error__message { margin-bottom: 16px; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

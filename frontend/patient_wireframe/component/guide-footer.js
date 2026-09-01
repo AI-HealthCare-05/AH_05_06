@@ -22,14 +22,15 @@ function GuideFooter(opts) {
   gen.textContent = '생성 · ' + (opts && opts.generatedAt ? opts.generatedAt : '');
   wrap.appendChild(gen);
 
-  var reportBtn = document.createElement('button');
-  reportBtn.type = 'button';
-  reportBtn.className = 'guide-footer__report';
-  reportBtn.textContent = '오류 신고';
-  reportBtn.addEventListener('click', function () {
-    if (opts && opts.onReport) opts.onReport();
-  });
-  wrap.appendChild(reportBtn);
+  /* P9가 연결되기 전 실제 화면에 동작하지 않는 조작 요소를 두지 않는다. */
+  if (opts && typeof opts.onReport === 'function') {
+    var reportBtn = document.createElement('button');
+    reportBtn.type = 'button';
+    reportBtn.className = 'guide-footer__report';
+    reportBtn.textContent = '오류 신고';
+    reportBtn.addEventListener('click', opts.onReport);
+    wrap.appendChild(reportBtn);
+  }
 
   return wrap;
 }
