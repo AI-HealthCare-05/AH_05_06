@@ -46,6 +46,7 @@ function timeLabel(isoDatetime) {
   var visit = null; // 그 줄의 진료 상세 (GET /visits/{id})
   var patient = null; // 그 진료 건의 환자
   var history = []; // 지난 방문
+  var timeline = []; // 이번 진료의 시간순 이력 (GET /visits/{id}/timeline)
 
   function el(id) {
     return document.getElementById(id);
@@ -178,11 +179,68 @@ function timeLabel(isoDatetime) {
       .join("");
   }
 
-  /* 발송 이력은 안내·발송 도메인 소유다. 그 API 가 아직 없다.
-     빈 줄을 두는 대신 「없다」와 「아직 못 가져온다」를 갈라 적는다 —
-     둘을 같게 보이면 발송이 안 된 것으로 읽힌다. */
-  function renderSends() {
-    el("sends").textContent = "발송 이력은 안내·발송 기능이 붙으면 여기에 표시됩니다 (준비 중)";
+  /* 이번 진료의 시간순 이력(S1-4). 서버가 문서·판독·안내문·D+7 사건을 하나로
+     모아 준다 — 화면은 사건 이름을 사람이 읽을 문구로만 바꾼다.
+     문자 발송 사건은 아직 이 목록에 없다(발송 이력 모델이 Sprint 5). */
+  var TIMELINE_EVENT_LABEL = {
+    DOCUMENT_UPLOADED: "진료기록 업로드",
+    OCR_STARTED: "판독 시작",
+    OCR_COMPLETED: "판독 완료",
+    OCR_FAILED: "판독 실패",
+    OCR_CONFIRMED: "판독 확정",
+    GUIDE_GENERATED: "안내문 생성",
+    GUIDE_EDITED: "안내문 수정",
+    GUIDE_APPROVED: "안내문 승인",
+    GUIDE_RETURNED: "안내문 반려",
+    CHECK_IN_SUBMITTED: "D+7 복약·통증 응답",
+  };
+  var TIMELINE_DOC_LABEL = { EMR: "EMR", PRESCRIPTION: "처방전", LAB_RESULT: "검사결과지" };
+  var TIMELINE_SECTION_LABEL = {
+    medication: "복약",
+    caution: "주의사항",
+    emergency: "응급 문구",
+    life: "생활관리",
+    messages: "문자 설정",
+  };
+
+  function timelineWhen(iso) {
+    var m = String(iso || "").match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    return m ? m[1] + " " + m[2] : String(iso || "");
+  }
+
+  /* 사건마다 붙는 한 조각 부연 — 어떤 문서였나, 어느 갈래를 고쳤나, 왜 반려됐나.
+     반려 사유·실패 코드는 스탭이 다음에 할 일을 정하는 문장이라 그대로 보인다. */
+  function timelineDetail(entry) {
+    if (entry.event === "DOCUMENT_UPLOADED") return TIMELINE_DOC_LABEL[entry.document_type] || entry.document_type || "";
+    if (entry.event === "GUIDE_EDITED") return TIMELINE_SECTION_LABEL[entry.section_key] || entry.section_key || "";
+    return entry.note || "";
+  }
+
+  function renderTimeline() {
+    var list = el("visit-timeline");
+    var note = el("visit-timeline-note");
+    if (!timeline.length) {
+      list.innerHTML = "";
+      note.textContent = "이 진료의 기록이 아직 없습니다";
+      note.hidden = false;
+      return;
+    }
+    note.hidden = true;
+    list.innerHTML = timeline
+      .map(function (entry) {
+        var detail = timelineDetail(entry);
+        return (
+          '<li class="timeline__row timeline__row--' +
+          esc(String(entry.category || "").toLowerCase()) +
+          '"><span class="timeline__when">' +
+          esc(timelineWhen(entry.at)) +
+          '</span><span class="timeline__what">' +
+          esc(TIMELINE_EVENT_LABEL[entry.event] || entry.event) +
+          (detail ? ' <span class="timeline__detail">' + esc(detail) + "</span>" : "") +
+          "</span></li>"
+        );
+      })
+      .join("");
   }
 
   /* ── 수정 ────────────────────────────────────────────── */
@@ -474,6 +532,7 @@ function timeLabel(isoDatetime) {
     visit = null;
     patient = null;
     history = [];
+    timeline = [];
 
     closeEdit("patient");
     closeEdit("visit");
@@ -486,7 +545,10 @@ function timeLabel(isoDatetime) {
     el("patient-facts").innerHTML = "<dt>불러오는 중…</dt><dd></dd>";
     el("visit-facts").innerHTML = "";
     el("past").innerHTML = "";
-    renderSends();
+    /* 이력은 아직 안 왔다 — 빈 목록("기록 없음")을 여기서 그리면 불러오는 동안
+       그 문구가 잠깐 뜬다. `past` 처럼 비워만 둔다. */
+    el("visit-timeline").innerHTML = "";
+    el("visit-timeline-note").hidden = true;
 
     var mine = ++loadSeq;
 
@@ -511,6 +573,24 @@ function timeLabel(isoDatetime) {
       .catch(function (error) {
         if (mine !== loadSeq) return;
         el("patient-facts").innerHTML = "<dt>—</dt><dd>" + esc(messageFor(error)) + "</dd>";
+      });
+
+    /* 이력은 곁다리 패널이다 — 따로 불러서, 여기서 실패해도 환자 카드 전체가
+       빈칸이 되지 않게 한다. */
+    patientsApi
+      .timeline(row.visit_id)
+      .then(function (body) {
+        if (mine !== loadSeq) return;
+        timeline = (body && body.entries) || [];
+        renderTimeline();
+      })
+      .catch(function () {
+        if (mine !== loadSeq) return;
+        timeline = [];
+        el("visit-timeline").innerHTML = "";
+        var note = el("visit-timeline-note");
+        note.textContent = "진료 이력을 불러오지 못했습니다";
+        note.hidden = false;
       });
   }
 

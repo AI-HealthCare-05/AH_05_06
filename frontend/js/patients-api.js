@@ -96,6 +96,12 @@ var patientsApi = {
   updateVisit: function (visitId, patch) {
     return patientsRequest("/visits/" + visitId, { method: "PATCH", body: patch });
   },
+  /* 이번 진료의 시간순 이력(S1-4). 문서 업로드 · 판독 · 안내문 · D+7 이 각자
+     남긴 사건을 서버가 하나로 모아 준다 — 화면은 만들지 않고 읽기만 한다.
+     문자 발송 사건은 아직 없다(발송 이력 모델이 Sprint 5). */
+  timeline: function (visitId) {
+    return patientsRequest("/visits/" + visitId + "/timeline");
+  },
 };
 
 /* 계약 §6 이 정한 수정 가능 필드. 화면이 이 목록 밖을 보내면 400 이다.
@@ -513,6 +519,35 @@ var MOCK_HISTORY = {
   ],
 };
 
+/* 이번 진료의 시간순 이력(S1-4) — `GET /visits/{id}/timeline` 목업.
+   키는 오늘 목록(MOCK_TODAY)의 visit_id 다. 없는 진료는 빈 목록을 준다 —
+   「아직 아무 일도 안 한 진료」와 같은 모양이다. */
+var MOCK_TIMELINE = {
+  8843: [
+    { at: "2026-08-20T09:14:00+09:00", category: "DOCUMENT", event: "DOCUMENT_UPLOADED", actor_id: 101, document_type: "PRESCRIPTION", section_key: null, note: null },
+    { at: "2026-08-20T09:14:40+09:00", category: "OCR", event: "OCR_STARTED", actor_id: 101, document_type: null, section_key: null, note: null },
+    { at: "2026-08-20T09:15:30+09:00", category: "OCR", event: "OCR_COMPLETED", actor_id: null, document_type: null, section_key: null, note: null },
+    { at: "2026-08-20T09:22:00+09:00", category: "OCR", event: "OCR_CONFIRMED", actor_id: 101, document_type: null, section_key: null, note: null },
+    { at: "2026-08-20T09:23:00+09:00", category: "GUIDE", event: "GUIDE_GENERATED", actor_id: 101, document_type: null, section_key: null, note: null },
+  ],
+  8801: [
+    { at: "2026-08-20T10:33:00+09:00", category: "DOCUMENT", event: "DOCUMENT_UPLOADED", actor_id: 101, document_type: "EMR", section_key: null, note: null },
+    { at: "2026-08-20T10:33:20+09:00", category: "DOCUMENT", event: "DOCUMENT_UPLOADED", actor_id: 101, document_type: "PRESCRIPTION", section_key: null, note: null },
+    { at: "2026-08-20T10:34:00+09:00", category: "OCR", event: "OCR_STARTED", actor_id: 101, document_type: null, section_key: null, note: null },
+    { at: "2026-08-20T10:35:10+09:00", category: "OCR", event: "OCR_COMPLETED", actor_id: null, document_type: null, section_key: null, note: null },
+    { at: "2026-08-20T10:41:00+09:00", category: "OCR", event: "OCR_CONFIRMED", actor_id: 101, document_type: null, section_key: null, note: null },
+    { at: "2026-08-20T10:42:00+09:00", category: "GUIDE", event: "GUIDE_GENERATED", actor_id: 101, document_type: null, section_key: null, note: null },
+    { at: "2026-08-20T10:55:00+09:00", category: "GUIDE", event: "GUIDE_EDITED", actor_id: 900, document_type: null, section_key: "caution", note: null },
+    { at: "2026-08-20T11:02:00+09:00", category: "GUIDE", event: "GUIDE_RETURNED", actor_id: 900, document_type: null, section_key: null, note: "처방일수를 확인해 주세요" },
+    { at: "2026-08-20T11:20:00+09:00", category: "GUIDE", event: "GUIDE_EDITED", actor_id: 101, document_type: null, section_key: "medication", note: null },
+  ],
+  8798: [
+    { at: "2026-08-11T16:06:00+09:00", category: "DOCUMENT", event: "DOCUMENT_UPLOADED", actor_id: 101, document_type: "LAB_RESULT", section_key: null, note: null },
+    { at: "2026-08-11T16:06:30+09:00", category: "OCR", event: "OCR_STARTED", actor_id: 101, document_type: null, section_key: null, note: null },
+    { at: "2026-08-11T16:09:00+09:00", category: "OCR", event: "OCR_FAILED", actor_id: null, document_type: null, section_key: null, note: "LOW_CONFIDENCE" },
+  ],
+};
+
 function mockPatientsRequest(path, options) {
   var body = options.body || {};
 
@@ -600,6 +635,23 @@ function mockPatientsRequest(path, options) {
           return a.visited_at < b.visited_at ? 1 : -1;
         });
         return resolve({ items: history, page: { next_cursor: null, has_next: false } });
+      }
+
+      /* 이번 진료 이력(S1-4) — 오름차순(오래된 것 먼저). 서버는 각 표에 이미
+         남은 사건을 모아 준다. 발송 사건은 아직 없다(Sprint 5).
+         없는 진료·타 병원 진료는 `GET /visits/{id}` 와 같은 404 다 —
+         목업이 서버보다 관대하면 서버 붙는 날 처음 알게 된다. */
+      var timelineMatch = path.match(/^\/visits\/(\d+)\/timeline$/);
+      if (timelineMatch && !options.method) {
+        var timelineVisitId = Number(timelineMatch[1]);
+        var known = MOCK_TODAY.some(function (v) {
+          return v.visit_id === timelineVisitId;
+        });
+        if (!known) return reject(new ApiError("VISIT_NOT_FOUND", 404, {}));
+        return resolve({
+          visit_id: timelineVisitId,
+          entries: MOCK_TIMELINE[timelineVisitId] || [],
+        });
       }
 
       var oneVisit = path.match(/^\/visits\/(\d+)$/);
