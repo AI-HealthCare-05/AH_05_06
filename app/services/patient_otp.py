@@ -34,6 +34,17 @@ class UnavailableOtpDelivery:
         raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.")
 
 
+class MockOtpDelivery:
+    """local·dev·test 전용 mock 발송 어댑터 — KEY-219.
+
+    실제 SMS를 보내지 않고 발송 성공만 시뮬레이션한다.
+    코드 원문은 로그에 남기지 않는다.
+    """
+
+    async def send(self, phone: str, code: str) -> None:
+        pass
+
+
 def _otp_digest(code: str, salt: str, secret_key: str) -> str:
     otp_key = hmac.new(secret_key.encode("utf-8"), b"patient-otp-hmac-key-v1", hashlib.sha256).digest()
     payload = bytes.fromhex(salt) + code.encode("ascii")
@@ -78,9 +89,16 @@ class _PreviousOtp:
 
 
 class PatientOtpService:
-    def __init__(self, delivery: OtpDelivery, *, secret_key: str | None = None) -> None:
+    def __init__(
+        self,
+        delivery: OtpDelivery,
+        *,
+        secret_key: str | None = None,
+        fixed_otp_code: str | None = None,
+    ) -> None:
         self.delivery = delivery
         self.secret_key = secret_key or config.SECRET_KEY
+        self.fixed_otp_code = fixed_otp_code
 
     async def _active_link(
         self,
@@ -192,7 +210,7 @@ class PatientOtpService:
                     consumed_at=challenge.consumed_at,
                     issued_at=challenge.issued_at,
                 )
-                code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
+                code = self.fixed_otp_code or f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
                 salt = secrets.token_hex(16)
                 challenge.otp_digest = _otp_digest(code, salt, self.secret_key)
                 challenge.otp_salt = salt
@@ -211,7 +229,7 @@ class PatientOtpService:
                     ],
                 )
             else:
-                code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
+                code = self.fixed_otp_code or f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
                 salt = secrets.token_hex(16)
                 challenge = await PatientOtpChallenge.create(
                     patient_guide_link=link,
