@@ -418,14 +418,39 @@ test("**검사값도 자리를 세운다** — 안 세우면 못 읽은 것과 �
   assert.ok(body.includes("PRESCRIPTION_CORE"), "처방 셋을 안 세운다");
   assert.ok(/withMissingRows\(\s*split\.labs/.test(body), "검사값 자리를 안 세운다");
 
-  /* 와이어프레임 S1-6 의 「이번 판독 값」에 선 것들 + 지난 값으로 넘어간 둘 */
-  for (const type of ["HEMOGLOBIN", "ENDOMETRIOMA_SIZE", "ENDOMETRIAL_THICKNESS", "CA_125", "AMH", "AST_ALT"]) {
+  /* 판독이 읽어야 하는 스물한 항목. 증상 · 초음파 · 혈액 세 묶음이다. */
+  for (const type of [
+    "PAIN_SCORE",
+    "HEAVY_BLEEDING",
+    "IRREGULAR_CYCLE",
+    "ADENOMYOSIS_SIZE",
+    "MYOMA_SIZE",
+    "MYOMA_COUNT",
+    "ENDOMETRIAL_THICKNESS",
+    "ADNEXAL_CYST_LEFT",
+    "ADNEXAL_CYST_RIGHT",
+    "HEMOGLOBIN",
+    "AST",
+    "ALT",
+    "LH_FSH_RATIO",
+    "DHEA_S",
+    "TESTOSTERONE",
+    "PROLACTIN",
+    "TSH",
+    "T3",
+    "T4",
+    "E2",
+    "PROGESTERONE",
+  ]) {
     assert.ok(LAB_CORE.indexOf(type) !== -1, `${type} 자리가 없다`);
   }
 
-  /* **추출기가 읽는 것 전부를 세우지는 않는다.** 열 줄을 물음표로 세우면
-     진짜 봐야 할 줄이 그 안에 묻힌다. */
-  for (const type of ["E2", "CRP", "CA19_9", "LAB_DATE"]) {
+  /* 검사일은 값 줄이 아니라 **묶음 머리**에 붙는다 — 줄로도 세우면 두 번 보인다 */
+  assert.equal(LAB_CORE.indexOf("LAB_DATE"), -1, "검사일이 값 줄로도 선다");
+
+  /* **옛 이름은 자리를 세우지 않는다.** DB 에 남은 값은 「그 밖에 읽은 값」으로
+     보이지만, 없는 진료에까지 물음표로 세우면 봐야 할 줄이 그 안에 묻힌다. */
+  for (const type of ["CA_125", "AST_ALT", "ENDOMETRIOMA_SIZE"]) {
     assert.equal(LAB_CORE.indexOf(type), -1, `${type} 까지 세운다 — 봐야 할 줄이 묻힌다`);
   }
 });

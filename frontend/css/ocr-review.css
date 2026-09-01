@@ -1021,3 +1021,50 @@
   font-size: 12px;
   line-height: 1.4;
 }
+
+/* 「이번 판독 값」 안의 묶음 이름 — 증상 · 초음파 · 혈액.
+   블록 제목보다 한 겹 작다: 이건 칸 안의 갈피지 새 블록이 아니다. */
+.rows__group {
+  margin: var(--s-16) 0 var(--s-8);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.rows__group:first-of-type {
+  margin-top: 0;
+}
+
+/* 「이번 판독 값」 두 칸 — 왼쪽 증상 · 초음파, 오른쪽 혈액.
+   자리가 없으면 알아서 세로로 돌아간다(창 폭으로 자르지 않는다). */
+.labs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  align-items: flex-start;
+}
+
+.labs__col {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+/* 고르는 항목의 「있다 / 없다」. 점선 값 칸과 같은 높이로 세워 줄이 안 흔들린다. */
+.field__pick {
+  flex: 0 0 auto;
+  min-width: 96px;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+
+/* 「있다」일 때만 따라 나오는 크기 칸 — 숫자만 들어가므로 좁다 */
+.field__input--size {
+  flex: 0 0 72px;
+  width: 72px;
+}

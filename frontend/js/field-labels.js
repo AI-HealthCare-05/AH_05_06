@@ -23,6 +23,33 @@ var FIELD_LABELS = {
   DURATION_DAYS: "처방일수",
   PRESCRIPTION_DATE: "처방일",
 
+  /* ── 증상 — 사람이 물어 적는 값 ─────────────────────────────────
+     판독이 못 읽으면 진료기록을 다시 보는 것이 아니라 스탭이 직접 적는다. */
+  PAIN_SCORE: "생리통 (0~10점)",
+  HEAVY_BLEEDING: "생리과다",
+  IRREGULAR_CYCLE: "불규칙 월경",
+
+  /* ── 초음파 — 본 것 ───────────────────────────────────────────── */
+  ADENOMYOSIS_SIZE: "선근증 (자궁크기)",
+  MYOMA_SIZE: "근종 크기",
+  MYOMA_COUNT: "근종 개수",
+  ADNEXAL_CYST_LEFT: "난소 부속기 혹 (왼쪽)",
+  ADNEXAL_CYST_RIGHT: "난소 부속기 혹 (오른쪽)",
+
+  /* ── 혈액 — 뽑아 잰 것 ─────────────────────────────────────────
+     AST 와 ALT 를 **따로 둔다.** 예전 `AST_ALT` 는 「24 / 34 U/L」처럼 한 칸에
+     둘을 담아서, 한쪽만 고칠 수가 없었다. 옛 행은 아래 구버전 이름으로 읽는다. */
+  AST: "AST",
+  ALT: "ALT",
+  LH_FSH_RATIO: "LH / FSH 비율",
+  DHEA_S: "DHEA-S",
+  TESTOSTERONE: "Testosterone",
+  PROLACTIN: "Prolactin",
+  TSH: "TSH",
+  T3: "T3",
+  T4: "T4",
+  PROGESTERONE: "Progesterone",
+
   /* 검사 — EMR 과거기록의 「수치 : / 참고치 :」 줄과 검사 결과지에서 읽는다 */
   LAB_DATE: "검사일",
   HEMOGLOBIN: "혈색소",
@@ -72,6 +99,22 @@ function fieldLabel(fieldType) {
    와이어프레임 S1-6 의 값 줄이 「혈색소 [10.2] g/dL」처럼 단위를 따로 세운다. */
 var FIELD_UNITS = {
   HEMOGLOBIN: "g/dL",
+
+  /* 새 판독 항목 (KEY-234). 「있다/없다」와 개수에는 단위가 없다 — 빈 값이
+     맞다. `?` 옆에 단위만 덩그러니 서면 무엇을 적어야 하는지 흐려진다. */
+  PAIN_SCORE: "점",
+  ADENOMYOSIS_SIZE: "cm",
+  MYOMA_SIZE: "cm",
+  MYOMA_COUNT: "개",
+  AST: "U/L",
+  ALT: "U/L",
+  DHEA_S: "µg/dL",
+  TESTOSTERONE: "ng/dL",
+  PROLACTIN: "ng/mL",
+  TSH: "µIU/mL",
+  T3: "ng/dL",
+  T4: "µg/dL",
+  PROGESTERONE: "ng/mL",
   ENDOMETRIOMA_SIZE: "cm",
   ENDOMETRIAL_THICKNESS: "cm",
   AMH: "ng/mL",
@@ -83,6 +126,59 @@ var FIELD_UNITS = {
   E2: "pg/mL",
   PRESCRIPTION_DURATION: "일",
 };
+
+/* **고르는 항목.** 「있다 / 없다」는 손으로 치는 값이 아니다 — 치게 두면
+   「有」·「있음」·「Y」가 섞여 들어와 같은 뜻이 세 가지 글자로 남는다.
+   와이어프레임의 값 어휘를 그대로 쓴다.
+
+   난소 부속기 혹은 **있다/없다에 크기가 딸린다.** 「있다」를 고르면 cm 를
+   함께 적고, 값은 「있다 3.2 cm」로 굳는다 — 두 칸으로 갈라 두면 「있다인데
+   크기가 빈」 상태가 남는다. */
+var FIELD_CHOICES = {
+  HEAVY_BLEEDING: ["있다", "없다"],
+  IRREGULAR_CYCLE: ["있다", "없다"],
+  ADNEXAL_CYST_LEFT: ["있다", "없다"],
+  ADNEXAL_CYST_RIGHT: ["있다", "없다"],
+};
+
+/* 「있다」일 때 크기를 함께 적는 항목 */
+var FIELD_CHOICE_SIZED = ["ADNEXAL_CYST_LEFT", "ADNEXAL_CYST_RIGHT"];
+
+function fieldChoices(fieldType) {
+  return FIELD_CHOICES[String(fieldType || "")] || null;
+}
+
+function fieldChoiceSized(fieldType) {
+  return FIELD_CHOICE_SIZED.indexOf(String(fieldType || "")) !== -1;
+}
+
+/** 담긴 값을 「고른 것 · 크기」로 뜯는다. 「있다 3.2 cm」 → `{pick:"있다", size:"3.2"}` */
+function splitChoiceValue(fieldType, value) {
+  var text = String(value === null || value === undefined ? "" : value).trim();
+  var picks = fieldChoices(fieldType) || [];
+  for (var i = 0; i < picks.length; i++) {
+    if (text === picks[i]) return { pick: picks[i], size: "" };
+    if (text.indexOf(picks[i]) === 0) {
+      return { pick: picks[i], size: text.slice(picks[i].length).replace(/cm/i, "").trim() };
+    }
+  }
+  /* 고른 적 없이 크기만 적힌 옛 값(「3.2 cm」)은 「있다」로 읽는다 —
+     크기가 적혔다는 것이 곧 있다는 뜻이다. */
+  if (text && picks.length) return { pick: picks[0], size: text.replace(/cm/i, "").trim() };
+  return { pick: "", size: "" };
+}
+
+/** 고른 것과 크기를 한 값으로 굳힌다. 「없다」에는 크기를 붙이지 않는다. */
+function joinChoiceValue(fieldType, pick, size) {
+  var chosen = String(pick || "").trim();
+  if (!chosen) return "";
+  if (!fieldChoiceSized(fieldType)) return chosen;
+
+  var picks = fieldChoices(fieldType) || [];
+  var cm = String(size || "").trim();
+  if (chosen !== picks[0] || !cm) return chosen;
+  return chosen + " " + cm + " cm";
+}
 
 function fieldUnit(fieldType, given) {
   if (given) return given;

@@ -811,3 +811,22 @@ test("**취소는 한 곳이다** — 같은 일을 하는 단추가 둘이면 �
   assert.ok(!code.includes("reg-cancel-top"), "없는 단추를 잡는다 — 화면이 그 줄에서 죽는다");
   assert.match(code, /getElementById\("reg-cancel"\)/, "남은 취소가 안 눌린다");
 });
+
+test("**접으면 머리 단추 하나만 남는다** — 빠뜨린 것은 48px 레일에서 쪼개진다", () => {
+  const css = read("css/shell.css");
+
+  /* 레일 폭을 먼저 확인한다 — 넓으면 이 검사가 헛돈다 */
+  assert.match(rule(css, ".list--folded"), /flex-basis:\s*48px/, "접힌 폭이 48px 이 아니다");
+
+  /* 접었을 때 감추는 목록에 **목록 머리의 모든 칸**이 들어야 한다.
+     하나라도 빠지면 그것만 남아 세로로 쪼개진다 — 「+ 환자 등록」이 그랬다. */
+  const folded = css.slice(css.indexOf(".list--folded .list__search"));
+  const block = folded.slice(0, folded.indexOf("}"));
+
+  for (const part of ["list__search", "list__add", "list__rows", "list__note", "list__day", "chips"]) {
+    assert.ok(block.includes(part), `접었을 때 .${part} 가 안 감춰진다 — 레일에 끼어 깨진다`);
+  }
+
+  /* 감추는 규칙이 실제로 감추는가 */
+  assert.match(folded.slice(0, folded.indexOf("}") + 40), /display:\s*none/, "감추는 규칙이 없다");
+});

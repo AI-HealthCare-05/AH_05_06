@@ -62,8 +62,29 @@ test("**이름표가 한글이다** — 영문을 넣어 두면 고친 티가 �
 
   for (const [code, label] of Object.entries(FIELD_LABELS)) {
     /* AMH · CRP 처럼 한국 병원에서도 영문 약어로 부르는 것은 그대로 둔다.
-       기준은 「의료진이 실제로 그렇게 부르는가」이지 문자 종류가 아니다. */
-    if (["AMH", "CRP", "AST_ALT", "CA_125", "CA19_9"].includes(code)) continue;
+       기준은 「의료진이 실제로 그렇게 부르는가」이지 문자 종류가 아니다.
+       혈액검사 항목 대부분이 그렇다 — 차트에도 `TSH` · `Prolactin` 로 적힌다.
+       한글로 옮기면(갑상선자극호르몬 …) 오히려 차트와 대조가 안 된다. */
+    if (
+      [
+        "AMH",
+        "CRP",
+        "AST_ALT",
+        "CA_125",
+        "CA19_9",
+        "AST",
+        "ALT",
+        "LH_FSH_RATIO",
+        "DHEA_S",
+        "TESTOSTERONE",
+        "PROLACTIN",
+        "TSH",
+        "T3",
+        "T4",
+        "PROGESTERONE",
+      ].includes(code)
+    )
+      continue;
     assert.match(label, /[가-힣]/, `「${code}」의 이름표가 한글이 아니다: ${label}`);
   }
 });

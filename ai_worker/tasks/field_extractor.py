@@ -74,6 +74,37 @@ _LAB_PATTERNS: dict[str, re.Pattern[str]] = {
         "ENDOMETRIOMA_SIZE": r"자궁내막종\s*[:：]?\s*([\d.]+\s*cm)",
         "ENDOMETRIAL_THICKNESS": (r"(?:내막\s*두께|자궁내막\s*두께|내막두께)\s*[:：]?\s*([\d.]+\s*cm)"),
         "AST_ALT": r"AST\s*/\s*ALT\s*[:：]\s*([\d]+\s*/\s*[\d]+\s*U/L)",
+        # ── KEY-234: 판독이 읽어야 하는 스물한 항목 ──────────────────────
+        #
+        # 증상 — 사람이 물어 적는 값이라 표현이 제각각이다. 「있다/없다」로
+        # 굳혀 담는다: 화면이 고르는 칸으로 받는 것과 같은 어휘여야 한다.
+        "PAIN_SCORE": r"생리통\s*[:：]?\s*(\d{1,2})\s*점?",
+        "HEAVY_BLEEDING": r"생리\s*과다\s*[:：]?\s*(있(?:다|음)|없(?:다|음)|유|무)",
+        "IRREGULAR_CYCLE": r"(?:불규칙\s*월경|월경\s*불규칙)\s*[:：]?\s*(있(?:다|음)|없(?:다|음)|유|무)",
+        # 초음파 — 본 것
+        "ADENOMYOSIS_SIZE": r"(?:선근증|자궁\s*크기)\s*[:：]?\s*([\d.]+\s*cm)",
+        "MYOMA_SIZE": r"근종\s*크기\s*[:：]?\s*([\d.]+\s*cm)",
+        "MYOMA_COUNT": r"근종\s*개수\s*[:：]?\s*(\d{1,2})\s*개?",
+        "ADNEXAL_CYST_LEFT": (
+            r"(?:난소\s*)?부속기\s*혹\s*\(?\s*(?:왼쪽|좌|Lt)\s*\)?\s*[:：]?\s*"
+            r"(있(?:다|음)\s*[\d.]+\s*cm|있(?:다|음)|없(?:다|음)|[\d.]+\s*cm)"
+        ),
+        "ADNEXAL_CYST_RIGHT": (
+            r"(?:난소\s*)?부속기\s*혹\s*\(?\s*(?:오른쪽|우|Rt)\s*\)?\s*[:：]?\s*"
+            r"(있(?:다|음)\s*[\d.]+\s*cm|있(?:다|음)|없(?:다|음)|[\d.]+\s*cm)"
+        ),
+        # 혈액 — 뽑아 잰 것. AST 와 ALT 를 **따로** 읽는다: 예전 `AST_ALT` 는
+        # 한 칸에 둘을 담아서 한쪽만 고칠 수가 없었다.
+        "AST": r"\bAST\b(?!\s*/)\s*[:：]\s*([\d.]+\s*(?:U/L)?)",
+        "ALT": r"\bALT\b\s*[:：]\s*([\d.]+\s*(?:U/L)?)",
+        "LH_FSH_RATIO": r"LH\s*/\s*FSH(?:\s*비율)?\s*[:：]\s*([\d.]+(?:\s*[:/]\s*[\d.]+)?)",
+        "DHEA_S": r"DHEA[-\s]?S\b\s*[:：]\s*([\d.]+\s*(?:[µu]g/dL)?)",
+        "TESTOSTERONE": r"(?:Testosterone|테스토스테론)\s*[:：]\s*([\d.]+\s*(?:ng/dL)?)",
+        "PROLACTIN": r"(?:Prolactin|프로락틴)\s*[:：]\s*([\d.]+\s*(?:ng/mL)?)",
+        "TSH": r"\bTSH\b\s*[:：]\s*([\d.]+\s*(?:[µu]IU/mL)?)",
+        "T3": r"\bT3\b\s*[:：]\s*([\d.]+\s*(?:ng/dL)?)",
+        "T4": r"\bT4\b\s*[:：]\s*([\d.]+\s*(?:[µu]g/dL)?)",
+        "PROGESTERONE": r"(?:Progesterone|프로게스테론)\s*[:：]\s*([\d.]+\s*(?:ng/mL)?)",
     }.items()
 }
 

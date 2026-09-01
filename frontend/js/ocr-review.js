@@ -341,6 +341,12 @@ function stateTakesFocus(tone) {
   var local = {};
   var localEditing = null;
 
+  /* 적는 **중**인 값. `local` 과 갈라 두는 이유는, 고르는 항목이 「있다」를
+     고른 순간 크기 칸을 내보내려면 다시 그려야 하는데 그때 `local` 에 써
+     버리면 「취소」로 되돌릴 것이 없고 「저장 안 됨」 배지가 미리 뜬다.
+     확인을 눌러야 `local` 로 넘어간다. */
+  var localDraft = {};
+
   /* 의사가 설정(D2-3)에서 정해 둔 약속처방. 화면이 뜰 때 한 번 불러 둔다 —
      환자를 옮길 때마다 다시 부르면 같은 목록을 하루에 수십 번 받는다. */
   var sets = [];
@@ -440,8 +446,10 @@ function stateTakesFocus(tone) {
 
   /* ── 오른쪽 · 구조화 필드 ──────────────────────────────────── */
 
+  /* **못 읽은 것은 이름 옆에 또 적지 않는다.** 오른쪽 줄이 이미 「판독 실패」라
+     말하는데 이름 옆에도 「⚠ 인식 실패」를 붙이면, 같은 말이 한 줄에 두 번
+     서서 항목 이름이 밀려 잘린다. 상태는 값이 서는 쪽에서 말한다. */
   var STATE_TEXT = {
-    missing: "⚠ 인식 실패",
     low: "⚠ 확인 필요",
     candidates: "값 2개",
     skipped: "이번 미시행",
@@ -532,6 +540,67 @@ function stateTakesFocus(tone) {
     );
   }
 
+  /* **「있다 / 없다」는 고르게 한다.** 손으로 치게 두면 「有」·「있음」·「Y」가
+     섞여 들어와 같은 뜻이 세 가지 글자로 남는다. 난소 부속기 혹은 「있다」일
+     때 크기를 함께 적는다 — 두 칸으로 갈라 두면 「있다인데 크기가 빈」 상태가
+     남는다.
+
+     `hook` 은 값을 어디로 보낼지다(`data-input` 이냐 `data-local-input` 이냐).
+     서버에 있는 줄과 아직 없는 줄이 **같은 모양**이어야 한다. */
+  function choiceHtml(field, hook, value) {
+    var picks = fieldChoices(field.field_type) || [];
+    var now = splitChoiceValue(field.field_type, value);
+
+    return (
+      '<select class="field__pick" data-owns="' +
+      escapeHtml(field.field_type) +
+      '" ' +
+      hook +
+      ' aria-label="' +
+      escapeHtml(fieldLabel(field.field_type)) +
+      ' 고르기">' +
+      '<option value=""' +
+      (now.pick ? "" : " selected") +
+      ">고르세요</option>" +
+      picks
+        .map(function (pick) {
+          return (
+            '<option value="' +
+            escapeHtml(pick) +
+            '"' +
+            (now.pick === pick ? " selected" : "") +
+            ">" +
+            escapeHtml(pick) +
+            "</option>"
+          );
+        })
+        .join("") +
+      "</select>" +
+      (fieldChoiceSized(field.field_type) && now.pick === picks[0]
+        ? '<input class="field__input field__input--size" type="text" inputmode="decimal" data-choice-size="' +
+          escapeHtml(field.field_type) +
+          '" value="' +
+          escapeHtml(now.size) +
+          '" aria-label="' +
+          escapeHtml(fieldLabel(field.field_type)) +
+          ' 크기" /><span class="field__unit">cm</span>'
+        : "")
+    );
+  }
+
+  /** 점선 칸 오른쪽의 단위. **무엇을 적어야 하는지가 그 글자에 있다** —
+      `?` 만 있으면 cm 인지 개수인지 점수인지 물어봐야 안다.
+      고르는 항목(있다/없다)과 단위 없는 항목에는 안 붙인다. */
+  function unitHtml(field) {
+    if (fieldChoices(field.field_type)) return "";
+    /* **처방 줄은 제 단위를 이미 그린다**(`top__unit`). 여기서 또 붙이면
+       「처방일수 ? 일 … 일」처럼 한 줄에 두 번 선다 — 가로줄과 값 줄이 같은
+       몸통(`lastBody.body`)을 나눠 쓰기 때문이다. */
+    if (PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1) return "";
+    var unit = fieldUnit(field.field_type, field.unit);
+    return unit ? '<span class="field__unit">' + escapeHtml(unit) + "</span>" : "";
+  }
+
   function renderField(field) {
     var id = field.ocr_field_id;
     /* 사람이 「이번엔 안 했다」고 한 것이 맨 앞이다. 기계가 못 읽었든 문서가
@@ -570,15 +639,17 @@ function stateTakesFocus(tone) {
         "</span></div>";
     } else if (isEditing(id)) {
       body =
-        '<input class="field__input" type="text" data-input="' +
-        id +
-        '" value="' +
-        escapeHtml(editing[id]) +
-        '" aria-label="' +
-        /* 화면 읽기 프로그램도 사람 말을 들어야 한다 — 전에는
-           「MEDICATION_NAME 값 입력」이라 읽혔다. */
-        escapeHtml(fieldLabel(field.field_type)) +
-        ' 값 입력" />' +
+        (fieldChoices(field.field_type)
+          ? choiceHtml(field, 'data-input="' + id + '"', editing[id])
+          : '<input class="field__input" type="text" data-input="' +
+            id +
+            '" value="' +
+            escapeHtml(editing[id]) +
+            '" aria-label="' +
+            /* 화면 읽기 프로그램도 사람 말을 들어야 한다 — 전에는
+               「MEDICATION_NAME 값 입력」이라 읽혔다. */
+            escapeHtml(fieldLabel(field.field_type)) +
+            ' 값 입력" />') +
         '<button class="field__act field__act--go" type="button" data-save="' +
         id +
         '">저장</button>' +
@@ -590,13 +661,21 @@ function stateTakesFocus(tone) {
          하면 남았다고 믿는다. 「확인」은 이 화면에서 값을 굳힌다는 뜻이고,
          남지 않는다는 것은 아래 「저장 안 됨」 배지가 말한다. */
       body =
-        '<input class="field__input" type="text" data-local-input="' +
-        escapeHtml(field.field_type) +
-        '" value="' +
-        escapeHtml(local[field.field_type] || "") +
-        '" aria-label="' +
-        escapeHtml(fieldLabel(field.field_type)) +
-        ' 값 적기" />' +
+        (fieldChoices(field.field_type)
+          ? choiceHtml(
+              field,
+              'data-local-input="' + escapeHtml(field.field_type) + '"',
+              localDraft[field.field_type] !== undefined
+                ? localDraft[field.field_type]
+                : local[field.field_type] || "",
+            )
+          : '<input class="field__input" type="text" data-local-input="' +
+            escapeHtml(field.field_type) +
+            '" value="' +
+            escapeHtml(local[field.field_type] || "") +
+            '" aria-label="' +
+            escapeHtml(fieldLabel(field.field_type)) +
+            ' 값 적기" />') +
         '<button class="field__act field__act--go" type="button" data-local-keep="' +
         escapeHtml(field.field_type) +
         '">확인</button>' +
@@ -626,6 +705,7 @@ function stateTakesFocus(tone) {
        * 를 말한다 — 눌러도 아무 일 없는 버튼을 두는 것보다 낫다. */
       body =
         '<div class="field__value field__value--missing">?</div>' +
+        unitHtml(field) +
         '<button class="field__act" type="button" data-local-fill="' +
         escapeHtml(field.field_type) +
         '">직접 입력</button>' +
@@ -634,6 +714,7 @@ function stateTakesFocus(tone) {
       /* 빈 칸이 아니라 「못 읽었다」로 보여야 한다. 빈 칸은 안 읽은 것처럼 보인다. */
       body =
         '<div class="field__value field__value--missing">?</div>' +
+        unitHtml(field) +
         '<button class="field__act" type="button" data-fill="' +
         id +
         '">직접 입력</button>' +
@@ -647,7 +728,9 @@ function stateTakesFocus(tone) {
            빠져 있어 표시만 바뀐다. 막힌 것을 푸는 것은 이 자리다. */
         '<button class="field__act field__act--quiet" type="button" data-skip="' +
         id +
-        '">이번 미시행</button>';
+        '">이번 미시행</button>' +
+        /* 왜 비었는지 여기서 말한다 — 이름 옆의 배지를 뺐기 때문이다 */
+        '<span class="field__hint">판독 실패</span>';
     } else if (state === "pending") {
       /* 「이전 값 유지」·「이번 미시행」 버튼이 있었는데 처리기가 없어서 눌러도
          아무 일이 없었다. 둘 다 지금 계약으로는 못 짠다 — 앞 진료 값은 이
@@ -745,6 +828,11 @@ function stateTakesFocus(tone) {
       '<li class="field field--' +
       state +
       (conflict[id] ? " field--clash" : "") +
+      /* 줄이 자기 항목 이름을 들고 있는다 — 값을 읽는 자리(`boxValue`)가
+         「이게 고르는 항목인가」를 알아야 하는데, 서버에 없는 줄은 `id` 가
+         없어서 되찾을 길이 이것뿐이다. */
+      '" data-field-type="' +
+      escapeHtml(field.field_type) +
       '">' +
       head +
       lastBody.body +
@@ -963,8 +1051,31 @@ function stateTakesFocus(tone) {
       '<h2 class="box__title">이번 판독 값</h2>' +
       (on ? '<span class="box__note">검사일 ' + escapeHtml(shortDate(on)) + "</span>" : "") +
       "</div>" +
-      '<div class="rows">' +
-      rows.map(renderField).join("") +
+      /* **두 칸으로 세운다.** 왼쪽은 사람이 보고 적는 것(증상 · 초음파),
+         오른쪽은 뽑아 잰 것(혈액)이다. 스물한 줄을 한 줄기로 늘어놓으면
+         아래가 화면 밖으로 나가고, 묶음 이름이 없으면 못 읽었을 때 어디를
+         다시 봐야 하는지도 안 보인다. */
+      '<div class="labs">' +
+      labColumnsOf(labGroupsOf(rows))
+        .map(function (column) {
+          return (
+            '<div class="labs__col">' +
+            column.groups
+              .map(function (group) {
+                return (
+                  '<p class="rows__group">' +
+                  escapeHtml(group.title) +
+                  "</p>" +
+                  '<div class="rows">' +
+                  group.rows.map(renderField).join("") +
+                  "</div>"
+                );
+              })
+              .join("") +
+            "</div>"
+          );
+        })
+        .join("") +
       "</div></section>"
     );
   }
@@ -1302,9 +1413,25 @@ function stateTakesFocus(tone) {
 
   /* ── 이벤트 ───────────────────────────────────────────────── */
 
+  /* 고르는 항목은 값이 **두 칸에 걸쳐 있다** — 「있다/없다」와 크기.
+     읽는 자리마다 따로 이으면 한 곳만 고쳐진다. 여기 한 번만 잇는다. */
+  function boxValue(box, fieldType) {
+    if (!box) return "";
+    var picked = String(box.value || "").trim();
+    if (!fieldChoices(fieldType)) return picked;
+
+    var size = fieldsBox.querySelector('[data-choice-size="' + fieldType + '"]');
+    return joinChoiceValue(fieldType, picked, size ? size.value : "");
+  }
+
+  function typeOfBox(box) {
+    var row = box && box.closest ? box.closest("[data-field-type]") : null;
+    return row ? row.getAttribute("data-field-type") : "";
+  }
+
   function inputValue(fieldId) {
     var box = fieldsBox.querySelector('[data-input="' + fieldId + '"]');
-    return box ? box.value.trim() : "";
+    return boxValue(box, typeOfBox(box));
   }
 
   document.addEventListener("click", function (event) {
@@ -1342,15 +1469,18 @@ function stateTakesFocus(tone) {
     var keep = target.getAttribute && target.getAttribute("data-local-keep");
     if (keep) {
       var input = fieldsBox.querySelector('[data-local-input="' + keep + '"]');
-      var typed = input ? String(input.value || "").trim() : "";
+      var typed = boxValue(input, keep);
       if (typed) local[keep] = typed;
       else delete local[keep]; /* 비우면 지운다 — 빈 값을 「적었다」로 세지 않는다 */
+      delete localDraft[keep];
       localEditing = null;
       redraw();
       return;
     }
 
     if (target.getAttribute && target.getAttribute("data-local-cancel")) {
+      /* 취소는 **적던 것을 버린다** — 초안을 남기면 다시 열었을 때 되살아난다 */
+      if (localEditing) delete localDraft[localEditing];
       localEditing = null;
       redraw();
       return;
@@ -1529,11 +1659,44 @@ function stateTakesFocus(tone) {
      다시 그릴 때 화면은 그 값으로 되돌아간다. 저장 타이머는 사람이
      아무것도 안 눌러도 도니까, 친 값이 저 혼자 사라지는 길이 된다.
      검사값 화면에서 제일 나쁜 것은 틀린 값이 조용히 저장되는 쪽이다. */
-  document.addEventListener("input", function (event) {
-    var box = event.target.getAttribute && event.target.getAttribute("data-input");
+  document.addEventListener("input", onTyped);
+  /* `<select>` 는 브라우저에 따라 `input` 이 안 나기도 한다 — 둘 다 받는다 */
+  document.addEventListener("change", onTyped);
+
+  function onTyped(event) {
+    var target = event.target;
+    if (!target || !target.getAttribute) return;
+
+    /* 크기 칸을 고치면 「있다」와 이어서 담아 둔다 — 안 그러면 다시 그릴 때
+       크기만 사라진다. */
+    var sized = target.getAttribute("data-choice-size");
+    if (sized) {
+      var owner = fieldsBox.querySelector('[data-owns="' + sized + '"]');
+      if (!owner) return;
+      var ownerId = owner.getAttribute("data-input");
+      if (ownerId !== null && ownerId !== undefined) editing[Number(ownerId)] = boxValue(owner, sized);
+      else localDraft[sized] = boxValue(owner, sized);
+      return;
+    }
+
+    /* 아직 서버에 없는 줄. 고른 것을 담아 둬야 크기 칸이 따라 나온다 —
+       담을 데가 없으면 「있다」를 골라도 화면이 그대로다. */
+    var localType = target.getAttribute("data-local-input");
+    if (localType) {
+      localDraft[localType] = boxValue(target, localType);
+      if (fieldChoices(localType) && fieldChoiceSized(localType)) redraw();
+      return;
+    }
+
+    var box = target.getAttribute("data-input");
     if (box === null || box === undefined) return;
-    editing[Number(box)] = event.target.value;
-  });
+
+    var type = typeOfBox(target);
+    editing[Number(box)] = boxValue(target, type);
+
+    /* 「있다」를 고르면 크기 칸이 따라 나와야 한다 — 다시 그려야 보인다 */
+    if (fieldChoices(type) && fieldChoiceSized(type)) redraw();
+  }
 
   /* 값 하나 고치는 데 마우스를 두 번 쓰게 하지 않는다 */
   document.addEventListener("keydown", function (event) {
@@ -1541,7 +1704,7 @@ function stateTakesFocus(tone) {
     if (!box) return;
     var id = Number(box.getAttribute("data-input"));
     if (event.key === "Enter") {
-      var typed = box.value.trim();
+      var typed = boxValue(box, typeOfBox(box));
       if (!typed) {
         failed[id] = "EMPTY";
         return redraw();

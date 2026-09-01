@@ -248,8 +248,11 @@ body.shell {
   flex-basis: 48px;
 }
 
-/* 접히면 머리의 제목과 접기 버튼만 남는다. 나머지는 폭이 없어 글자가 깨진다. */
+/* 접히면 머리의 접기 버튼만 남는다. 나머지는 폭이 없어 글자가 깨진다.
+   **여기 빠뜨리면 그 하나만 48px 레일에 끼어 세로로 쪼개진다** —
+   「+ 환자 등록」이 실제로 그랬다(이 목록에 나중에 더해진 것이라 빠졌다). */
 .list--folded .list__search,
+.list--folded .list__add,
 .list--folded .list__rows,
 .list--folded .list__note,
 .list--folded .list__day,

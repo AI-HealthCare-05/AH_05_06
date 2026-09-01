@@ -46,26 +46,134 @@ var PRESCRIPTION_TYPES = [
    선다. 옛 행이 있으면 `splitFields` 가 이미 처방 묶음에 넣어 준다. */
 var PRESCRIPTION_CORE = ["DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"];
 
-/* **늘 세우는 검사값.** 와이어프레임 S1-6 의 「이번 판독 값」에 선 것들이다.
+/* **「이번 판독 값」에 늘 세우는 것 — 세 묶음.**
  *
- * 판독이 못 읽었어도 자리를 세운다 — 안 세우면 스탭 눈에는 「그 검사가 없는
+ * 판독이 못 읽었어도 자리를 세운다. 안 세우면 스탭 눈에는 「그 검사가 없는
  * 진료」로 보이고, 못 읽은 것과 안 한 것을 구별할 수 없다. 자리가 있어야
  * 「이번엔 안 했다」고 말할 수도 있다.
  *
- * 추출기가 읽는 것 전부를 세우지는 않는다(E2 · CRP · CA19-9 는 뺐다). 열
- * 줄을 물음표로 세우면 진짜 봐야 할 줄이 그 안에 묻힌다 — 여기 있는 것은
- * 자궁내막증 · 다낭성 진료에서 매번 보는 값이다. */
-var LAB_CORE = [
-  "HEMOGLOBIN",
-  "ENDOMETRIOMA_SIZE",
-  "ENDOMETRIAL_THICKNESS",
-  "CA_125",
-  "AMH",
-  "AST_ALT",
+ * **묶어서 세운다.** 스물한 줄을 한 덩이로 두면 훑을 수가 없다 — 증상은 사람이
+ * 물어 적는 것이고, 초음파는 본 것이고, 혈액은 뽑아 잰 것이다. 나온 곳이
+ * 다르면 못 읽었을 때 어디를 다시 봐야 하는지도 다르다.
+ *
+ * 차례가 곧 화면 차례다.
+ */
+var LAB_GROUPS = [
+  {
+    key: "symptom",
+    title: "증상",
+    /* 사람이 물어 적는 값이다 — 판독이 못 읽으면 진료기록을 다시 보는 것이
+       아니라 스탭이 직접 적는다. */
+    types: ["PAIN_SCORE", "HEAVY_BLEEDING", "IRREGULAR_CYCLE"],
+  },
+  {
+    key: "ultrasound",
+    title: "초음파 검사",
+    types: [
+      "ADENOMYOSIS_SIZE",
+      "MYOMA_SIZE",
+      "MYOMA_COUNT",
+      "ENDOMETRIAL_THICKNESS",
+      "ADNEXAL_CYST_LEFT",
+      "ADNEXAL_CYST_RIGHT",
+    ],
+  },
+  {
+    key: "blood",
+    title: "혈액검사",
+    types: [
+      "HEMOGLOBIN",
+      "AST",
+      "ALT",
+      "LH_FSH_RATIO",
+      "DHEA_S",
+      "TESTOSTERONE",
+      "PROLACTIN",
+      "TSH",
+      "T3",
+      "T4",
+      "E2",
+      "PROGESTERONE",
+    ],
+  },
 ];
 
-/* 검사일은 값 줄이 아니라 **묶음 머리**에 붙는다 (「이번 판독 값 · 검사일 08-05」).
-   ②의 줄로도 세우면 같은 것이 두 번 보인다. */
+/* 묶음에 든 것 전부를 한 줄로. `withMissingRows` 가 이 차례로 자리를 세운다. */
+var LAB_CORE = (function () {
+  var out = [];
+  for (var i = 0; i < LAB_GROUPS.length; i++) {
+    for (var j = 0; j < LAB_GROUPS[i].types.length; j++) out.push(LAB_GROUPS[i].types[j]);
+  }
+  return out;
+})();
+
+/* 묶음에 없는데 판독이 읽어 온 값 — 옛 이름(CA-125 · AMH · 간수치 AST/ALT)이
+   그렇다. **버리지 않는다.** DB 에 남아 있는 값을 화면에서 지우면 읽은 것이
+   없어진 것처럼 보인다. 맨 뒤에 따로 세운다. */
+var LAB_OTHERS_TITLE = "그 밖에 읽은 값";
+
+/* **어느 묶음이 어느 칸에 서는가.**
+ *
+ * 왼쪽은 사람이 보고 적는 것(증상 · 초음파), 오른쪽은 뽑아 잰 것(혈액)이다.
+ * 혈액이 열두 줄로 가장 길어 혼자 한 칸을 쓴다 — 셋을 위아래로 쌓으면 스물한
+ * 줄이 한 줄기로 늘어져 아래가 화면 밖으로 나간다.
+ *
+ * 묶음에 없던 값(「그 밖에 읽은 값」)은 왼쪽에 붙인다. 드물게 서는 것이라
+ * 오른쪽 긴 칸을 더 늘리지 않는다.
+ */
+var LAB_COLUMNS = [
+  { key: "left", groups: ["symptom", "ultrasound", "others"] },
+  { key: "right", groups: ["blood"] },
+];
+
+/** 묶음들을 두 칸으로 나눈다. **빈 칸은 내지 않는다** — 한쪽만 있으면
+    빈 칸이 옆에 서서 화면이 반쯤 무너진 것처럼 보인다. */
+function labColumnsOf(groups) {
+  var all = groups || [];
+  var out = [];
+
+  for (var i = 0; i < LAB_COLUMNS.length; i++) {
+    var want = LAB_COLUMNS[i].groups;
+    var mine = [];
+    for (var w = 0; w < want.length; w++) {
+      for (var j = 0; j < all.length; j++) {
+        if (all[j].key === want[w]) mine.push(all[j]);
+      }
+    }
+    if (mine.length) out.push({ key: LAB_COLUMNS[i].key, groups: mine });
+  }
+  return out;
+}
+
+/** 줄들을 화면 묶음으로 가른다. **빈 묶음은 내지 않는다** — 「그 밖에」가
+    늘 서 있으면 무엇이 예외인지가 안 보인다. */
+function labGroupsOf(rows) {
+  var all = rows || [];
+  var taken = {};
+  var out = [];
+
+  for (var i = 0; i < LAB_GROUPS.length; i++) {
+    var group = LAB_GROUPS[i];
+    var mine = [];
+    for (var t = 0; t < group.types.length; t++) {
+      for (var j = 0; j < all.length; j++) {
+        if (all[j].field_type !== group.types[t]) continue;
+        mine.push(all[j]);
+        taken[j] = true;
+      }
+    }
+    if (mine.length) out.push({ key: group.key, title: group.title, rows: mine });
+  }
+
+  var rest = [];
+  for (var k = 0; k < all.length; k++) {
+    if (!taken[k]) rest.push(all[k]);
+  }
+  if (rest.length) out.push({ key: "others", title: LAB_OTHERS_TITLE, rows: rest });
+
+  return out;
+}
+
 var LAB_HEAD_TYPE = "LAB_DATE";
 
 /** 서버가 준 한 줄짜리 목록을 화면의 묶음으로 가른다. */
