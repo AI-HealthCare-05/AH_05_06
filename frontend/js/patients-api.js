@@ -73,6 +73,15 @@ var patientsApi = {
     );
   },
 
+  /* 환자 이력 모달(S2-2). **환자 단위다** — 진료 타임라인(D1-6)은 진료
+     하나짜리라 「이 환자가 지난 세 번 어떻게 했나」를 물을 수 없다. */
+  history: function (patientId, limit) {
+    if (MOCK) return mockPatientHistory(patientId, limit);
+    return patientsRequest(
+      "/patients/" + encodeURIComponent(patientId) + "/history?" + query({ limit: limit }),
+    );
+  },
+
   create: function (patient) {
     return patientsRequest("/patients", { method: "POST", body: patient });
   },
@@ -523,6 +532,89 @@ function rosterPage(keyword, params) {
     items: shown.slice(0, limit),
     page: { next_cursor: null, has_next: shown.length > limit },
   };
+}
+
+/* ── 환자 이력 모달 목업 (S2-2) ─────────────────────────────────────────
+ *
+ * 원문의 세 블록을 그대로 옮긴다 — 「3회 연속 미열람」인 최근 코스, 응답이
+ * 있는 지난 코스, 「먹고 있는데 불편해요」로 답한 첫 코스.
+ */
+var MOCK_PATIENT_HISTORY = {
+  2001: {
+    patient_id: 2001,
+    name: "유지수",
+    hospital_patient_no: "10118",
+    phone: "01031414410",
+    diagnosis_name: "자궁내막증",
+    doctor: { doctor_id: 2, name: "김연우" },
+    total: 4,
+    visits: [
+      {
+        visit_id: 9101,
+        visited_at: "2026-05-20T10:00:00+09:00",
+        prescription_set: "비잔 (계속)",
+        course_days: 84,
+        guide_sent_at: "2026-05-20T18:00:00+09:00",
+        guide_viewed_at: "2026-05-27T09:00:00+09:00",
+        checks: [
+          { kind: "CHECK_D7", at: "2026-05-27T10:00:00+09:00", sent: true, viewed_at: null, answer: null },
+          { kind: "CHECK_D15", at: "2026-06-04T10:00:00+09:00", sent: true, viewed_at: null, answer: null },
+          { kind: "CHECK_D30", at: "2026-06-19T10:00:00+09:00", sent: true, viewed_at: null, answer: null },
+        ],
+        runs_out_on: "2026-08-12",
+        revisited: false,
+      },
+      {
+        visit_id: 9111,
+        visited_at: "2026-02-14T10:00:00+09:00",
+        prescription_set: "비잔 (계속)",
+        course_days: 90,
+        guide_sent_at: "2026-02-14T18:00:00+09:00",
+        guide_viewed_at: "2026-02-15T09:00:00+09:00",
+        checks: [
+          { kind: "CHECK_D7", at: "2026-02-21T10:00:00+09:00", sent: true, viewed_at: "2026-02-21T20:00:00+09:00", answer: "taking" },
+        ],
+        runs_out_on: "2026-05-15",
+        revisited: true,
+      },
+      {
+        visit_id: 9112,
+        visited_at: "2025-11-07T10:00:00+09:00",
+        prescription_set: "비잔 (초회)",
+        course_days: 84,
+        guide_sent_at: "2025-11-07T18:00:00+09:00",
+        guide_viewed_at: "2025-11-07T20:00:00+09:00",
+        checks: [
+          { kind: "CHECK_D7", at: "2025-11-14T10:00:00+09:00", sent: true, viewed_at: "2025-11-14T21:00:00+09:00", answer: "uncomfortable" },
+        ],
+        runs_out_on: "2026-01-30",
+        revisited: true,
+      },
+    ],
+  },
+};
+
+function mockPatientHistory(patientId, limit) {
+  var found = MOCK_PATIENT_HISTORY[patientId];
+  if (!found) {
+    /* 목업에 없는 환자도 모달이 열려야 한다 — 이력이 없는 것도 답이다. */
+    var row = MOCK_ROSTER.filter(function (item) {
+      return item.patient_id === Number(patientId);
+    })[0];
+    if (!row) return Promise.reject(new ApiError("PATIENT_NOT_FOUND", 404, {}));
+    return Promise.resolve({
+      patient_id: row.patient_id,
+      name: row.name,
+      hospital_patient_no: row.hospital_patient_no,
+      phone: row.phone,
+      diagnosis_name: row.diagnosis_name,
+      doctor: row.doctor,
+      visits: [],
+      total: 0,
+    });
+  }
+  var shown = found.visits.slice(0, limit || 3);
+  return Promise.resolve(Object.assign({}, found, { visits: shown }));
 }
 
 function deskPage(isoDate, categories) {

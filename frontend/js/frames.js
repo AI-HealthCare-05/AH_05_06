@@ -35,7 +35,7 @@ var FRAMES = [
   {"id": "D1-6", "area": "medic", "name": "현황", "level": 3, "target": 3, "blocker": "발송·열람·응답 타임라인 본문 없음", "role": "승인 뒤 발송·열람·응답을 시간순으로 본다"},
   {"id": "D1-7", "area": "medic", "name": "현황 · 못 보냈을 때 + 🔔 알림 패널", "level": 3, "target": 3, "blocker": "발송 실패 상세 · 재시도 · 알림 패널 없음", "role": "발송 실패를 확인하고 다시 보낸다"},
   {"id": "S2-1", "area": "medic", "name": "환자 관리 — 이탈을 잡는 자리", "level": 2, "target": 1, "url": "/manage.html", "blocker": "전체 이력 보기(S2-2) · 재진 안내 발송 없음 · 3회 연속 미열람은 발송기가 있어야 뜬다"},
-  {"id": "S2-2", "area": "medic", "name": "환자 이력 모달", "level": 3, "target": 3, "blocker": "환자 이력 모달 없음", "role": "환자의 지난 진료 이력을 모달로 본다"},
+  {"id": "S2-2", "area": "medic", "name": "환자 이력 모달", "level": 2, "target": 1, "url": "/manage.html", "blocker": "「5장 중 3장」 열람 진도 없음 — 열람 이벤트에 어느 장인지가 안 남는다 · 「자세히 보기」(A1-7) 없음"},
   {"id": "S2-3", "area": "medic", "name": "발송 예정", "level": 2, "target": 1, "url": "/manage.html", "blocker": "시각 변경 · 즉시 발송 · 문자 충전 없음 — 문자를 보내는 발송기 자체가 없다"},
   {"id": "S2-4", "area": "medic", "name": "발송 이력", "level": 2, "target": 1, "url": "/manage.html", "blocker": "재승인(다시 보내기) 없음 — 문자를 보내는 발송기 자체가 없다"},
   {"id": "D2-1", "area": "medic", "name": "안내문 — 약 하나에 한 장", "level": 3, "target": 3, "blocker": "병원별 안내문 설정 모델 · API 없음", "role": "약마다 기본 안내문을 관리한다"},

@@ -161,3 +161,45 @@
   border-color: var(--accent);
   font-weight: 600;
 }
+
+/* ── 환자 이력 모달 (S2-2) ───────────────────────────── */
+
+/* 승인 확인 모달(440px)보다 넓다 — 진료 블록 셋이 서고 각 줄이 한 줄로
+   읽혀야 한다. 좁히면 「확인 문자 — 일주일 뒤 … · 보름 뒤 …」가 세 줄로
+   접혀 회차 차례가 안 보인다. */
+.modal__card--wide {
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal__top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-12);
+  margin-bottom: var(--s-16);
+}
+
+.modal__top > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.hist {
+  padding: var(--s-12) 0;
+  border-top: 1px solid var(--line);
+}
+
+.hist__head {
+  margin: 0 0 var(--s-8);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hist__line {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
