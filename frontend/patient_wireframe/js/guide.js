@@ -421,6 +421,7 @@
       default:         frag = document.createDocumentFragment();
     }
     body.appendChild(frag);
+    window.scrollTo(0, 0);
 
     /* 모든 탭 공통 하단 푸터 */
     var footer = (typeof GuideFooter === 'function')
