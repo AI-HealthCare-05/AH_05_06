@@ -660,7 +660,7 @@
     { key:'guide', label:'복약지도', desc:'오늘 진료 요약 · 나의 목표 · 처방받은 약 · 복용 방법' },
     { key:'care',  label:'주의사항', desc:'흔한 반응 · 함께 드시면 안 되는 것 · 바로 병원에 연락할 경우' },
     { key:'life',  label:'생활관리', desc:'수면 · 뼈 건강 · 운동 · 통증' },
-    { key:'stat',  label:'복약 현황', desc:'약별 남은 일수와 소진 예정일' },
+    { key:'stat',  label:'복약 현황', desc:'처방일 기준 소진 예정일' },
   ];
   var pdfSheet = Sheet({
     title: 'PDF로 저장',
