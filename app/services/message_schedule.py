@@ -14,7 +14,7 @@ SQL 안에 넣게 되는데, 그러면 읽는 사람이 창의 뜻을 오해한�
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from app.core.time import DISPLAY_TIMEZONE, clinic_day_window
+from app.core.time import clinic_day_window
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.messages import ScheduledMessageCounts, ScheduledMessageItem
 from app.dtos.patients import calculate_age
@@ -136,7 +136,3 @@ class MessageScheduleService:
             return {}
         rows = await Prescription.filter(visit_id__in=visit_ids).values_list("visit_id", "prescription_set")
         return {visit_id: name for visit_id, name in rows}
-
-
-def clinic_today() -> date:
-    return datetime.now(DISPLAY_TIMEZONE).date()

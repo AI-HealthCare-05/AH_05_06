@@ -371,10 +371,9 @@ test("화면이 스스로 세지 않고 서버 셈을 그린다", () => {
 
 test("이름과 세트명은 반드시 막고 그린다", () => {
   const code = codeOnly(read("js/manage.js"));
-  const drawn = code.slice(
-    code.indexOf("function rowHtml"),
-    code.indexOf("function whenSaying"),
-  );
+  /* 환자 칸은 두 갈래가 함께 쓴다(`whoHtml`) — 한 곳만 재면 다른 갈래가
+     막지 않고 그려도 모른다. */
+  const drawn = code.slice(code.indexOf("function whoHtml"), code.indexOf("function actionHtml"));
 
   for (const field of [
     "row.name",
@@ -419,7 +418,7 @@ test("눌러도 아무 일 없는 버튼을 두지 않는다", () => {
     /* 손이 붙은 버튼은 `id` 로 찾아 붙인다. 나머지는 셋 중 하나여야 한다 —
        여기(`aria-current`)이거나, 아직(`tab--later`)이거나, 없거나. */
     const alive =
-      tag.includes("id=") || tag.includes('aria-selected="true"') || tag.includes("tab--later");
+      tag.includes("id=") || tag.includes("data-view") || tag.includes("tab--later");
     if (!alive) dead.push(tag);
   }
 

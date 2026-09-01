@@ -80,14 +80,33 @@
   border-radius: var(--radius);
 }
 
-.send-foot {
-  margin-top: var(--s-12);
-  font-size: 12px;
-  color: var(--ink-2);
-}
-
 .send-cut {
   margin-top: var(--s-8);
   font-size: 12px;
   color: var(--warn);
+}
+
+/* 이력의 기간 표시 — 「2026-08-05 ~ 2026-08-11」. 고른 폭이 실제로 어느
+   날짜인지 눈에 보여야 한다. 「최근 7일」만으로는 경계를 모른다. */
+.send-period {
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.send-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  margin-top: var(--s-12);
+}
+
+.send-foot__say {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.send__read {
+  white-space: nowrap;
 }

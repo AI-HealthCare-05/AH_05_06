@@ -66,3 +66,57 @@ class ScheduledMessageListResponse(BaseModel):
     #: 예정이 `limit` 를 넘어 잘렸는가. **안 나간 것은 잘리지 않는다** —
     #: 이 화면의 요점이 그것이라, 잘라 놓고 조용히 있으면 안 된다.
     truncated: bool
+
+
+class SentMessageItem(BaseModel):
+    """발송 이력 한 줄 — 와이어프레임 S2-4.
+
+    **`happened_at` 은 `sent_at` 이 있으면 그것, 없으면 `scheduled_at` 이다.**
+    못 나간 줄에는 보낸 시각이 없는데, 원문은 실패 줄에도 시각을 적는다
+    (「08-11 10:06 · ⚠ 발송 실패」) — 「언제 일이 있었나」를 묻는 칸이다.
+    """
+
+    guide_message_id: int
+    visit_id: int
+    patient_id: int
+
+    happened_at: datetime
+    kind: GuideMessageKind
+    status: GuideMessageStatus
+    failure_code: GuideMessageFailure | None
+
+    name: str
+    hospital_patient_no: str
+    gender: PatientGender
+    birth_date: date
+    age: int
+    prescription_set: str | None
+
+    #: **안내문 단위다.** 환자에게 가는 링크가 안내문 하나를 열고, 그 안내문에
+    #: 문자가 여럿 달린다 — 어느 문자를 보고 열었는지는 물을 수 없다.
+    viewed: bool
+    viewed_at: datetime | None
+
+
+class SentMessageCounts(BaseModel):
+    """원문의 칩 넷 — 「전체 210 · ⚠ 실패 1 · 미열람 34 · 열람 175」.
+
+    **열람과 미열람은 나간 것 중에서만 센다.** 못 나간 문자에 열람을 묻는 것은
+    뜻이 없다. 원문의 수가 그렇게 맞는다 — 175 + 34 = 209 = 210 − 1.
+    """
+
+    total: int
+    failed: int
+    viewed: int
+    unviewed: int
+
+
+class SentMessageListResponse(BaseModel):
+    from_date: date
+    to_date: date
+    timezone: str = "Asia/Seoul"
+    counts: SentMessageCounts
+    items: list[SentMessageItem]
+    #: 나간 것이 `limit` 를 넘어 잘렸는가. **실패는 잘리지 않는다.**
+    #: 원문 요약도 「표에는 일부 행만 표시」라고 적어 둔다.
+    truncated: bool

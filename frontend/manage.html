@@ -97,37 +97,43 @@
 
     <div class="main">
       <main class="pane">
-        <!-- 원문의 세 갈래 (S2-1 · S2-3 · S2-4). 지금 선 것은 가운데 하나다.
+        <!-- 원문의 세 갈래 (S2-1 · S2-3 · S2-4). 지금 도는 것은 뒤의 둘이다.
              `aria-selected` 로 고른 것을 말한다 — 이 저장소의 탭이 다 그렇고,
              `.tab` 의 검정 채움도 그 속성으로 걸린다(`css/blocks.css`). -->
-        <div class="tabs" role="tablist" aria-label="관리 갈래">
+        <div class="tabs" id="tabs" role="tablist" aria-label="관리 갈래">
           <button class="tab tab--later" type="button" role="tab" aria-selected="false" aria-disabled="true" title="환자 관리(S2-1)는 아직 만들지 않았습니다">환자 관리</button>
-          <button class="tab" type="button" role="tab" aria-selected="true">발송 예정</button>
-          <button class="tab tab--later" type="button" role="tab" aria-selected="false" aria-disabled="true" title="발송 이력(S2-4)은 아직 만들지 않았습니다">발송 이력</button>
+          <button class="tab" type="button" role="tab" data-view="schedule" aria-selected="true">발송 예정</button>
+          <button class="tab" type="button" role="tab" data-view="history" aria-selected="false">발송 이력</button>
         </div>
 
         <div class="send-top">
           <div class="chips" id="chips"></div>
           <span class="send-top__grow"></span>
+          <span class="send-period" id="period" hidden></span>
           <label class="sr-only" for="days">기간</label>
           <select class="send-days" id="days"></select>
         </div>
 
         <div id="table"></div>
 
-        <p class="send-foot" id="summary"></p>
+        <div class="send-foot">
+          <p class="send-foot__say" id="summary"></p>
+          <span class="send-top__grow"></span>
+          <button class="button-ghost button-ghost--sm" type="button" id="csv" hidden>CSV 내려받기</button>
+        </div>
         <p class="send-cut" id="cut" hidden></p>
 
-        <!-- **아직 없는 것을 적어 둔다.** 원문의 할 일 칸에는 넷이 있는데
+        <!-- **아직 없는 것을 적어 둔다.** 원문 할 일 칸에는 넷이 있는데
              (고치기 · 문자 충전 · 시각 변경 · 즉시 발송) 그중 갈 데가 있는
-             것은 번호 수정 하나뿐이다. 나머지는 API 도 발송기도 없다. -->
-        <p class="note">
-          ⓘ 예정은 자동 발송됩니다 · 번호가 잘못된 줄은 「번호 수정」으로 그
-          환자의 기본정보에서 고칩니다
+             것은 번호 수정 하나뿐이다. 이력의 「재승인」도 마찬가지다 —
+             다시 보내려면 발송기가 있어야 한다. -->
+        <p class="note" id="note-schedule">
+          ⓘ 예정은 자동 발송됩니다 · 번호가 잘못된 줄은 「번호 수정」으로 그 환자의 기본정보에서 고칩니다
+          <br />ⓘ 시각 변경 · 즉시 발송 · 문자 충전은 아직 없습니다 — 문자를 실제로 보내는 발송기가 아직 없습니다
         </p>
-        <p class="note">
-          ⓘ 시각 변경 · 즉시 발송 · 문자 충전은 아직 없습니다 — 문자를 실제로
-          보내는 발송기가 아직 없습니다
+        <p class="note" id="note-history" hidden>
+          ⓘ 열람 여부는 안내문 단위입니다 — 한 안내문에 달린 문자는 한 번 열면 모두 열람으로 뜹니다
+          <br />ⓘ 「재승인」(다시 보내기)은 아직 없습니다 — 문자를 실제로 보내는 발송기가 아직 없습니다
         </p>
       </main>
     </div>
@@ -136,6 +142,7 @@
     <script src="/js/api.js"></script>
     <script src="/js/message-words.js"></script>
     <script src="/js/schedule-rules.js"></script>
+    <script src="/js/history-rules.js"></script>
     <script src="/js/messages-api.js"></script>
     <script src="/js/manage.js"></script>
   </body>

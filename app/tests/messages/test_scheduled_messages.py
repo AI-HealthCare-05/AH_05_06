@@ -18,7 +18,7 @@ from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
 
 from app.core.redis_client import get_redis
-from app.core.time import DISPLAY_TIMEZONE
+from app.core.time import DISPLAY_TIMEZONE, clinic_today
 from app.core.utils.security import hash_password
 from app.dtos.patients import calculate_age
 from app.main import app
@@ -34,7 +34,7 @@ from app.models.visits import (
     GuideMessageStatus,
     Visit,
 )
-from app.services.message_schedule import clinic_today, sort_key
+from app.services.message_schedule import sort_key
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 
