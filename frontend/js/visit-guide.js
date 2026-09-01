@@ -398,9 +398,17 @@ function guideMissingSaying(error) {
     go.disabled = true;
     doctorApi
       .approve(wantedId)
-      .then(function () {
+      .then(function (result) {
         if (visitId !== wantedId) return;
         say("승인했습니다 — 발송이 예약되었습니다");
+        /* 와이어프레임 D1-5 — 무엇이 언제 누구에게 나가는지 그 자리에서 말한다.
+           화면을 갈아끼우지 않아, 뒤에 최종 확인 탭이 그대로 남는다. */
+        openModal(
+          approvedModalHtml({
+            scheduledAt: (result && result.scheduled_at) || null,
+            name: ((guide && guide.patient) || {}).name || "",
+          }),
+        );
         loadGuide(wantedId);
         loadTimeline(wantedId);
         /* 목록의 그 줄이 「승인 요청」에서 「발송 대기」로 옮겨 가야 한다.
@@ -412,6 +420,40 @@ function guideMissingSaying(error) {
         go.disabled = false;
         say((error && error.message) || "승인하지 못했습니다. 다시 시도해 주세요.");
       });
+  });
+
+  /* ── 모달 (와이어프레임 D1-5) ─────────────────────────────────────
+     본문은 `guide-view.js` 가 그린다 — 의사 화면과 같은 창을 쓴다. */
+  function openModal(html) {
+    var body = el("modal-body");
+    var box = el("modal");
+    if (!body || !box) return;
+    body.innerHTML = html;
+    box.hidden = false;
+  }
+
+  function closeModal() {
+    var box = el("modal");
+    if (box) box.hidden = true;
+  }
+
+  document.addEventListener("click", function (event) {
+    var t = event.target;
+    if (!t || !t.closest) return;
+
+    /* 「현황 보기」는 탭 단추를 대신 누른다 — 탭을 바꾸는 규칙은 `detail.js`
+       것이고, 여기서 흉내내면 표시(✓ · ● · ○)가 갈린다. */
+    if (t.closest("[data-go-status]")) {
+      closeModal();
+      var tab = document.querySelector('.tab[data-tab="status"]');
+      if (tab) tab.click();
+      return;
+    }
+    if (t.closest("[data-close]")) closeModal();
+
+    /* 바깥을 눌러도 닫힌다. 창 안(`.modal__card`)을 누른 것은 아니어야 한다 —
+       글을 끌어 고르다 손을 떼면 닫히면 안 된다. */
+    if (t.id === "modal") closeModal();
   });
 
   /* 「의사 승인 요청」 — 확인이 끝났다는 뜻이다. 성공하면 최종 확인 탭으로

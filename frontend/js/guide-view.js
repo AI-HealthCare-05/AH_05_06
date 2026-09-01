@@ -814,3 +814,73 @@ function wireSmsSettings(opts) {
     reRender();
   });
 }
+
+/* ── 승인 확인 모달 (와이어프레임 D1-5) ──────────────────────────────
+ *
+ * 원문 주석: 「화면을 갈아끼우지 않는다 — 뒤에 최종 확인 탭이 흐려진 채
+ * 남는다」. 승인은 되돌리기 어려운 일이라, 무엇을 승인했는지 뒤에 그대로
+ * 보이는 채로 결과를 말한다.
+ *
+ * 의사 화면과 최종 확인 탭이 **같은 모달**을 쓴다. 예전에는 `doctor.js` 안에만
+ * 있어서 최종 확인 탭에서 승인하면 아무 창도 안 떴다.
+ */
+
+/* 「오늘 18:00」 — 원문의 표기다. 「9월 1일 18:00」이라고 적으면 원장님이
+   달력을 짚어 오늘인지 확인해야 한다. 오늘·내일만 말로 바꾸고 그 밖은
+   날짜를 적는다.
+
+   `now` 를 받는 이유는 검사가 시각을 정할 수 있어야 하기 때문이다. 안 주면
+   지금으로 본다. */
+function sendWhenText(iso, now) {
+  var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
+  if (!m) return "곧";
+
+  var at = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  var today = now ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : null;
+  if (!today) {
+    var t = new Date();
+    today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  }
+
+  var days = Math.round((at - today) / 86400000);
+  if (days === 0) return "오늘 " + m[4];
+  if (days === 1) return "내일 " + m[4];
+  return Number(m[2]) + "월 " + Number(m[3]) + "일 " + m[4];
+}
+
+/* 승인 뒤에 뜨는 창.
+ *
+ *   view.scheduledAt  승인이 잡아 둔 발송 시각 (서버가 준 `scheduled_at`)
+ *   view.name         환자 이름
+ *   view.now          지금 (검사용. 안 주면 진짜 지금)
+ *
+ * **없는 발송을 약속하지 않는다.** 원문은 「자동 발송됩니다」라고 적지만, 이
+ * 저장소에는 아직 문자를 보내는 것이 없다 — `GuideMessage` 를 `SENT` 로 바꾸는
+ * 코드가 검사 밖에 없다. 원장님이 그 문장만 읽고 「환자에게 갔다」고 믿으면,
+ * 안 간 것을 갔다고 아는 상태가 된다. 원문 문구는 그대로 두고 **아직 없는
+ * 것만** 아래에 덧붙인다 (`KEY-148` §6 · `KEY-160` 이 정한 방식이다).
+ */
+function approvedModalHtml(view) {
+  var name = (view && view.name) || "";
+  return (
+    '<p class="modal__mark">✓</p>' +
+    '<h2 class="modal__title">승인 완료</h2>' +
+    '<div class="modal__said">' +
+    '<p class="modal__lead"><b>' +
+    esc(sendWhenText(view && view.scheduledAt, view && view.now)) +
+    "</b> " +
+    esc(name ? name + " 님께 발송 예정" : "발송 예정") +
+    "</p>" +
+    '<p class="modal__sub">확인 문자(일주일 뒤 · 보름 뒤)와 소진 임박 안내는 자동 발송됩니다</p>' +
+    "</div>" +
+    '<div class="modal__box">' +
+    "<span>발송 실패 시 알림 창에서 확인할 수 있습니다</span>" +
+    "<span>문자 잔량 · 발신번호 문제는 실패 처리하지 않고 발송 대기합니다</span>" +
+    "</div>" +
+    '<p class="modal__note">[demo] 문자 발송기는 아직 붙지 않았습니다 — 지금 승인은 <b>발송 예약까지</b>입니다.</p>' +
+    '<div class="modal__acts">' +
+    '<button class="button-ghost" type="button" data-go-status>현황 보기</button>' +
+    '<button class="button-primary" type="button" data-close>닫기</button>' +
+    "</div>"
+  );
+}

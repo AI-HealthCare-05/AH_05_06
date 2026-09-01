@@ -285,29 +285,16 @@ function patientLinkSaying(error) {
     );
   }
 
+  /* 와이어프레임 D1-5. 본문은 `guide-view.js` 가 그린다 — 최종 확인 탭과
+     **같은 창**이다. 예전에는 여기서만 그려서 두 화면의 승인 확인이 갈렸다.
+
+     「개발용 환자 화면 열기」는 창에서 뺐다. 승인 직후에 개발용 링크를 발급하는
+     자리가 아니고, 그 단추는 화면 아래(`#patient-open`)에 그대로 있다. */
   function approvedModal(result) {
-    return (
-      '<p class="modal__mark">✓</p>' +
-      '<h2 class="modal__title">승인 완료</h2>' +
-      '<p class="modal__lead">' +
-      esc(whenText(result.scheduled_at)) +
-      " 발송 예약</p>" +
-      /* **없는 발송을 약속하지 않는다.**
-
-         예전에는 「발송 예정」 + 「확인 문자와 소진 임박 안내는 자동
-         발송됩니다」였다. 승인이 `scheduled_at` 을 채우는 것은 진짜지만
-         **문자를 보내는 것은 아무것도 없다** — 발송기도 SMS 연동도 아직
-         없다. 원장님이 그 문장을 읽고 「환자에게 갔다」고 믿으면, 안 간 것을
-         갔다고 아는 상태가 된다.
-
-         `KEY-148` §6 이 정한 대로 fallback 을 숨기지 않고 그 자리에 적는다.
-         승인 자체의 뜻(= 발송 예약)은 그대로 두고 **무엇이 아직 없는지만**
-         덧붙인다 (`KEY-160`). */
-      '<p class="modal__note">[demo] 문자 발송은 아직 붙지 않았습니다 — 승인은 <b>발송 예약까지</b>입니다.<br />' +
-      "확인 문자·소진 임박 안내의 실제 발송과 실패 알림은 S1-14 후속 계약입니다.</p>" +
-      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
-      '<button class="button-primary" type="button" data-open-patient>개발용 환자 화면 열기</button></div>'
-    );
+    return approvedModalHtml({
+      scheduledAt: result && result.scheduled_at,
+      name: (visit && visit.name) || "",
+    });
   }
 
   function patientLinkFailedModal(error) {

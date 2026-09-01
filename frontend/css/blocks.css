@@ -1207,3 +1207,135 @@ textarea.sms__text:focus-visible {
   color: var(--warn);
   font-weight: 700;
 }
+
+/* ── 모달 (와이어프레임 D1-5) ────────────────────────────────────────
+ *
+ * 원문 주석: 「화면을 갈아끼우지 않는다 — 뒤에 최종 확인 탭이 흐려진 채 남는다」.
+ * 무엇을 승인했는지 뒤에 그대로 보여야 하기 때문이다.
+ *
+ * 의사 화면(`doctor.html`)과 최종 확인 탭(`patients.html`)이 **같은 모달**을
+ * 쓴다. 예전에는 `doctor.css` 에만 있어서 최종 확인 탭에는 승인 확인이 아예
+ * 없었다.
+ */
+/* `hidden` 보다 `display:flex` 가 세다 — 이 한 줄이 없으면 모달이 처음부터 떠 있다. */
+.modal[hidden] {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 31, 35, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-24);
+  z-index: 50;
+}
+
+.modal__card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: var(--s-24);
+}
+
+.modal__mark {
+  margin: 0 0 var(--s-8);
+  font-size: 32px;
+  color: var(--done);
+}
+
+.modal__title {
+  margin: 0 0 var(--s-8);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.modal__lead {
+  margin: 0 0 var(--s-12);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.modal__note {
+  margin: 0 0 var(--s-16);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+.modal__input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.modal__error {
+  margin: var(--s-8) 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.modal__acts {
+  display: flex;
+  align-items: center;
+  margin-top: var(--s-16);
+}
+
+
+/* 원문은 두 줄을 8px 로 붙여 한 덩이로 둔다 — 「언제 · 누구」와 「그 뒤에 무엇이」 */
+.modal__said {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: var(--s-16);
+}
+
+.modal__said .modal__lead {
+  margin: 0;
+}
+
+/* 원문 13px `#374151` — 안내문 본문보다 한 겹 옅고 각주보다는 진하다 */
+.modal__sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.modal__box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--s-12);
+}
+
+.modal__box span {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+/* 둘째 줄은 한 겹 더 옅다 — 원문이 13px/11px 로 나눠 둔 자리다 */
+.modal__box span + span {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* 원문은 오른쪽 끝에 모아 두고 10px 을 띄운다 */
+.modal__acts {
+  gap: 10px;
+  justify-content: flex-end;
+}

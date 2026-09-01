@@ -435,6 +435,12 @@
     <!-- `upload.js` 가 「판독 결과 확인」으로 돌아가는 길을 낼 때 `ocrApi` 를 쓴다.
          이걸 안 실어서 환자를 고를 때마다 `ocrApi is not defined` 로 조용히
          죽어 있었다 — 버튼은 그려지는데 상태 줄이 안 붙었다. -->
+    <!-- 승인 확인 모달(와이어프레임 D1-5). 화면을 갈아끼우지 않는다 —
+         뒤에 최종 확인 탭이 흐려진 채 남아, 무엇을 승인했는지 보인다. -->
+    <div class="modal" id="modal" hidden>
+      <div class="modal__card" role="dialog" aria-modal="true" id="modal-body"></div>
+    </div>
+
     <script src="/js/ocr-api.js"></script>
     <script src="/js/upload.js"></script>
     <script src="/js/frames.js"></script>

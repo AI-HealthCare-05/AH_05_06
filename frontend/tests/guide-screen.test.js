@@ -522,8 +522,13 @@ test("**승인하면 다시 불러온다** — 상태가 바뀌고 발송이 예
   assert.notEqual(at, -1, "승인을 서버에 안 보낸다 — 검사가 헛돈다");
 
   /* 잠그는 것은 **부르기 앞**이라 뒤만 보면 못 찾는다 — 그렇게 한 번 헛돌았다.
-     앞뒤를 함께 본다. */
-  const around = code.slice(Math.max(0, at - 300), at + 700);
+     앞뒤를 함께 본다.
+
+     길이로 자르면 그 안에 줄을 더할 때마다 끝이 밀려 나간다(D1-5 모달을 넣다
+     실제로 그렇게 깨졌다). **손잡이가 끝나는 자리까지**를 본다. */
+  const from = Math.max(0, at - 300);
+  const stop = code.indexOf("\n  });", at);
+  const around = code.slice(from, stop === -1 ? code.length : stop);
 
   assert.ok(around.includes("loadGuide("), "안내문을 다시 안 부른다");
   assert.ok(around.includes("loadTimeline("), "현황을 다시 안 부른다 — 예약된 문자가 안 뜬다");
