@@ -30,30 +30,8 @@
 
 /* 등록은 검색 하나로 시작한다. 버튼은 검색칸 바로 아래에 둔다 —
    「먼저 찾아보고, 없으면 등록」이라는 순서가 자리로도 읽히게. */
-/* 와이어프레임 원문: `height:34px · border:2px solid #111827 · radius:6px ·
-   가운데 정렬 · 13px/600`. **좌측 칸의 유일한 주 진입**이라 테두리가 2px 다 —
-   어드민의 [+ 직원 추가]도 같은 규칙이다(「굵은 외곽선(2px) — 이 목록의 유일한
-   주 진입」). 폭을 안 주면 글자만큼 줄어들어 잘린 것처럼 보인다. */
-.list__add {
-  width: 100%;
-  height: var(--field-h);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--card);
-  border: 2px solid var(--accent);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.list__add:hover {
-  background: #eaecee;
-}
-
+/* `.list__add` 는 `shell.css` 로 옮겼다 — 목록 레일 어휘는 거기 있고,
+   판독 화면(`ocr-review.html`)은 `patients.css` 를 싣지 않는다. */
 /* 문자가 나가지 않는 상태. 등록은 되지만 발송이 밀리므로 목록 위에 붙여 둔다. */
 .banner {
   display: flex;

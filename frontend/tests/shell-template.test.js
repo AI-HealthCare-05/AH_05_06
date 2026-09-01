@@ -16,6 +16,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const { load } = require("./browser-shim.js");
+const { markupOnly, codeOnly } = require("./source.js");
 
 const ROOT = path.join(__dirname, "..");
 const SHELL_PAGES = ["patients.html", "ocr-review.html", "doctor.html", "admin.html"];
@@ -223,11 +224,36 @@ test("접기 단추가 28×28 이다 — 와이어프레임 원문", () => {
 });
 
 test("**[+ 환자 등록]이 전체 폭이고 테두리가 2px 다** — 좌측 칸의 유일한 주 진입", () => {
-  const css = read("css/patients.css");
-  const add = rule(css, ".list__add");
+  /* 어휘는 `shell.css` 에 있다 — 목록 레일은 화면마다 같아야 하는데, 판독
+     화면은 `patients.css` 를 싣지 않아 거기 두면 모양 없이 떴다. */
+  const add = rule(read("css/shell.css"), ".list__add");
 
   assert.match(add, /width:\s*100%/, "폭이 없으면 글자만큼 줄어 잘린 것처럼 보인다");
   assert.match(add, /border:\s*2px/, "주 진입인데 테두리가 얇다 — 어드민 [+ 직원 추가]도 2px 다");
+
+  /* 판독 화면에서는 `<a>` 라 글자가 왼쪽으로 붙고 밑줄이 그어진다 */
+  assert.match(add, /text-align:\s*center/, "링크로 그리면 글자가 왼쪽에 붙는다");
+  assert.match(add, /text-decoration:\s*none/, "링크에 밑줄이 그어진다");
+});
+
+test("**목록 레일이 화면마다 같다** — 등록 버튼이 사라지면 「없어졌다」로 읽힌다", () => {
+  /* 「진료기록」 칸이 판독 화면이 된 뒤로, 그 화면에 오면 등록 버튼이 없었다.
+     등록 폼은 환자 화면에만 두고(두 벌이면 갈린다) 버튼은 그리로 보낸다. */
+  for (const page of ["patients.html", "ocr-review.html"]) {
+    const html = markupOnly(read(page));
+    assert.match(html, /class="list__add"/, `${page} 목록에 등록 버튼이 없다`);
+  }
+
+  const review = markupOnly(read("ocr-review.html"));
+  assert.match(review, /href="\/patients\.html\?add=1"/, "판독 화면 버튼이 갈 곳이 없다");
+
+  /* 받는 쪽이 그 주소를 알아야 한다 */
+  const code = codeOnly(read("js/patients.js"));
+  assert.match(code, /add=1/, "환자 화면이 그 주소를 모른다 — 눌러도 등록 화면이 안 열린다");
+  const at = code.indexOf("add=1");
+  const around = code.slice(at, at + 300);
+  assert.match(around, /open\(/, "등록 화면을 안 연다");
+  assert.match(around, /replaceState/, "주소가 남는다 — 새로고침할 때마다 등록 화면이 뜬다");
 });
 
 test("**높이는 토큰을 따른다** — 와이어프레임 34px 보다 접근성이 우선이다", () => {
@@ -237,8 +263,7 @@ test("**높이는 토큰을 따른다** — 와이어프레임 34px 보다 접�
   const tokens = read("css/tokens.css");
   assert.match(tokens, /--field-h:\s*44px/, "터치 영역이 44px 아래로 내려갔다");
 
-  const css = read("css/patients.css");
-  const add = rule(css, ".list__add");
+  const add = rule(read("css/shell.css"), ".list__add");
   assert.match(add, /height:\s*var\(--field-h\)/, "높이를 토큰이 아니라 숫자로 박았다");
 });
 
@@ -650,4 +675,91 @@ test("**상단바가 아주 얕게 떠 있다** — 진하면 그림자가 먼�
 
   /* 줄이 경계를 긋고 그림자는 깊이만 준다 — 줄을 빼면 경계가 흐려진다 */
   assert.match(bar, /border-bottom:\s*1px solid var\(--line\)/, "경계 줄이 사라졌다");
+});
+
+test("**모든 화면이 같은 이름을 쓴다** — 화면마다 다르면 다른 프로그램으로 읽힌다", () => {
+  const pages = ["patients.html", "doctor.html", "admin.html", "ocr-review.html"];
+  for (const page of pages) {
+    const html = markupOnly(read(page));
+    const at = html.indexOf('class="topbar__brand"');
+    assert.notEqual(at, -1, `${page} 에 상단바 이름이 없다`);
+
+    /* 안에 span 이 하나 더 있어 짝을 세기 어렵다 — 다음 요소가 시작하기
+       전까지를 이름으로 본다. */
+    const stop = html.indexOf("<nav", at);
+    const text = html
+      .slice(at, stop === -1 ? at + 300 : stop)
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    assert.match(text, /케어온/, `${page} 이름이 다르다: 「${text}」`);
+    assert.match(text, /도로시여성의원/, `${page} 에 의원 이름이 없다: 「${text}」`);
+  }
+
+  /* 창 제목도 같이 바뀌어야 한다 — 탭 목록에서 옛 이름이 남는다 */
+  for (const page of pages) {
+    const title = /<title>([^<]*)<\/title>/.exec(read(page));
+    assert.ok(title, `${page} 에 창 제목이 없다`);
+    assert.ok(!title[1].includes("복약 안내 도우미"), `${page} 창 제목에 옛 이름이 남았다: ${title[1]}`);
+  }
+});
+
+test("의원 이름은 한 겹 옅다 — 둘 다 굵으면 무엇이 프로그램 이름인지 흐려진다", () => {
+  const clinic = rule(read("css/shell.css"), ".topbar__clinic");
+  assert.match(clinic, /color:\s*var\(--ink-2\)/, "서비스 이름과 같은 진하기다");
+
+  /* 가르는 줄은 글자가 아니라 테두리다 — 「|」를 글자로 적으면 글꼴에 따라
+     높이와 굵기가 제각각이고 화면낭독기가 「막대」로 읽는다. */
+  assert.match(clinic, /border-left:\s*1px solid/, "가르는 줄이 없다");
+  assert.ok(!markupOnly(read("patients.html")).includes("topbar__brand\">케어온 |"), "가름줄을 글자로 적었다");
+});
+
+test("**환자 목록도 아주 얕게 떠 있다** — 상단바와 같은 규칙", () => {
+  const list = rule(read("css/shell.css"), ".list");
+
+  assert.match(list, /box-shadow:/, "목록에 그림자가 없다");
+  assert.match(list, /z-index:/, "본문 흰 바탕 아래로 묻힌다");
+
+  /* 오른쪽으로만 드리운다 — 목록은 왼쪽 끝에 붙어 있다 */
+  const shadow = /box-shadow:\s*([\d.]+)\w*\s+([\d.]+)\w*\s+([\d.]+)\w*/.exec(list);
+  assert.ok(shadow, "그림자 값을 못 읽었다 — 검사가 헛돈다");
+  assert.ok(Number(shadow[1]) > 0, "오른쪽으로 안 드리운다");
+  assert.equal(Number(shadow[2]), 0, "위아래로도 드리운다 — 상단바 그림자와 겹친다");
+  assert.ok(Number(shadow[3]) <= 6, `그림자가 너무 퍼졌다: ${shadow[3]}px`);
+
+  const alpha = /\/\s*([\d.]+)%\s*\)/.exec(list);
+  assert.ok(alpha && Number(alpha[1]) <= 12, "그림자가 너무 진하다");
+});
+
+test("**띄운 셋이 같은 값이다** — 다르면 「띄운 것」이 여러 가지로 읽힌다", () => {
+  /* 상단바 · 환자 목록 · 환자 카드 머리. 셋 다 「아래 내용 위에 있다」는 한
+     가지를 말한다 — 값이 갈리면 하나는 더 떠 보이고 하나는 붙어 보인다. */
+  const shell = read("css/shell.css");
+  const blocks = read("css/blocks.css");
+
+  const alphaOf = (body) => {
+    const m = /box-shadow:[^;]*\/\s*([\d.]+)%\s*\)/.exec(body);
+    assert.ok(m, "그림자 짙기를 못 읽었다 — 검사가 헛돈다");
+    return m[1];
+  };
+  const blurOf = (body) => {
+    const m = /box-shadow:\s*[\d.]+\w*\s+[\d.]+\w*\s+([\d.]+)\w*/.exec(body);
+    assert.ok(m, "그림자 흐림을 못 읽었다 — 검사가 헛돈다");
+    return m[1];
+  };
+
+  const bar = rule(shell, ".topbar");
+  const list = rule(shell, ".list");
+  const head = rule(blocks, ".patient-head");
+
+  assert.equal(alphaOf(list), alphaOf(bar), "환자 목록 그림자가 상단바와 다르다");
+  assert.equal(alphaOf(head), alphaOf(bar), "환자 카드 머리 그림자가 상단바와 다르다");
+  assert.equal(blurOf(list), blurOf(bar), "환자 목록 그림자 흐림이 상단바와 다르다");
+  assert.equal(blurOf(head), blurOf(bar), "환자 카드 머리 그림자 흐림이 상단바와 다르다");
+
+  /* 환자 카드 머리는 **아래로만** 드리운다 */
+  const dir = /box-shadow:\s*([\d.]+)\w*\s+([\d.]+)\w*/.exec(head);
+  assert.equal(Number(dir[1]), 0, "환자 카드 머리가 옆으로도 드리운다");
+  assert.ok(Number(dir[2]) > 0, "환자 카드 머리가 아래로 안 드리운다");
+  assert.match(head, /z-index:/, "본문 흰 바탕 아래로 묻힌다");
 });

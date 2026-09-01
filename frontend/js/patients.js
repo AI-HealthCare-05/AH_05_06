@@ -550,6 +550,14 @@ function tiedBirthDates(items) {
   document.getElementById("add-patient").addEventListener("click", function () {
     open(document.getElementById("quick-search").value.trim());
   });
+
+  /* 다른 화면(판독)에서 「+ 환자 등록」을 누르고 온 길. 등록 폼은 여기에만
+     있으므로 주소로 받는다 — 저쪽에 폼을 한 벌 더 두면 두 벌이 갈린다.
+     주소는 한 번 쓰고 지운다: 남겨 두면 새로고침할 때마다 등록 화면이 뜬다. */
+  if (/[?&]add=1(&|$)/.test(location.search)) {
+    open("");
+    history.replaceState(null, "", location.pathname);
+  }
   document.getElementById("blank-add").addEventListener("click", function () {
     open("");
   });

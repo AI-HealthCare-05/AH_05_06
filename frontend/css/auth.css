@@ -33,6 +33,16 @@ body.auth {
   margin-bottom: var(--s-24);
 }
 
+/* 상단바와 같은 규칙 — 의원 이름은 한 겹 옅다 */
+.card__clinic {
+  margin-left: 10px;
+  padding-left: 11px;
+  border-left: 1px solid var(--line);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
 .card__title {
   font-size: 22px;
   font-weight: 600;

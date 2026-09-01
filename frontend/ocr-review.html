@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>판독 결과 확인 · 복약 안내 도우미</title>
+    <title>판독 결과 확인 · 케어온</title>
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/shell.css" />
@@ -18,7 +18,7 @@
          표시는 KEY-62, 값 수정·저장·동시 수정 처리는 KEY-63 이다. -->
 
     <header class="topbar">
-      <span class="topbar__brand">복약 안내 도우미</span>
+      <span class="topbar__brand">케어온 <span class="topbar__clinic">도로시여성의원</span></span>
       <nav class="topbar__nav">
         <button class="topbar__tab" type="button" aria-current="page">현황</button>
         <button class="topbar__tab" type="button">관리</button>
@@ -50,6 +50,12 @@
             placeholder="이름 · 차트번호 검색"
             aria-label="환자 검색"
           />
+
+          <!-- **목록 레일은 화면마다 같아야 한다.** 「진료기록」 칸이 이 화면이
+               된 뒤로, 여기 오면 등록 버튼이 사라져 「없어졌다」로 읽혔다.
+               등록 자체는 환자 화면이 하므로 그리로 보낸다 — 판독 화면에
+               등록 폼을 한 벌 더 두면 두 벌이 갈린다. -->
+          <a class="list__add" href="/patients.html?add=1">+ 환자 등록</a>
         </div>
         <!-- 와이어프레임 S1-1: `padding:9px 12px · gap:6px`, 화살표 `24×24`,
              날짜는 `flex:1 · 가운데 · 13px/700`.

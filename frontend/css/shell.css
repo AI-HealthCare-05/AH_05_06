@@ -49,6 +49,19 @@ body.shell {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* **의원 이름은 한 겹 옅다.** 서비스 이름(케어온)과 쓰는 곳(도로시여성의원)은
+   같은 무게가 아니다 — 둘 다 굵게 두면 무엇이 이 프로그램의 이름인지 흐려진다.
+   구분선은 글자가 아니라 테두리로 긋는다: 「|」를 글자로 적으면 글꼴에 따라
+   높이와 굵기가 제각각이고, 화면낭독기가 「막대」로 읽는다. */
+.topbar__clinic {
+  margin-left: 9px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  font-weight: 500;
+  color: var(--ink-2);
 }
 
 .topbar__nav {
@@ -192,7 +205,43 @@ body.shell {
   flex-direction: column;
   background: var(--card);
   border-right: 1px solid var(--line);
+  /* 상단바와 같은 이유로 아주 얕게 띄운다 — 목록이 본문 위에 있다는 것만
+     말하면 된다. 오른쪽으로만 드리운다(가로 1px). `z-index` 가 없으면 본문의
+     흰 바탕 아래로 들어가 안 보인다. */
+  position: relative;
+  z-index: 5;
+  box-shadow: 1px 0 3px rgb(28 31 35 / 6%);
   transition: flex-basis var(--motion) var(--ease);
+}
+
+/* 「+ 환자 등록」. **목록 레일은 화면마다 같아야 한다** — 판독 화면에서는
+   `<a>` 로 그려 등록 폼이 있는 화면으로 건너간다. 그래서 어휘가 여기 있다.
+   `patients.css` 에 두었더니 판독 화면에서 모양 없이 떴다. */
+/* 와이어프레임 원문: `height:34px · border:2px solid #111827 · radius:6px ·
+   가운데 정렬 · 13px/600`. **좌측 칸의 유일한 주 진입**이라 테두리가 2px 다 —
+   어드민의 [+ 직원 추가]도 같은 규칙이다(「굵은 외곽선(2px) — 이 목록의 유일한
+   주 진입」). 폭을 안 주면 글자만큼 줄어들어 잘린 것처럼 보인다. */
+.list__add {
+  width: 100%;
+  height: var(--field-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--card);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+  /* 판독 화면에서는 `<a>` 다 — 등록 폼이 있는 화면으로 건너간다 */
+  text-decoration: none;
+  text-align: center;
+}
+
+.list__add:hover {
+  background: #eaecee;
 }
 
 .list--folded {
