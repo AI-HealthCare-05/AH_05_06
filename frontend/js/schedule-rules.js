@@ -135,6 +135,6 @@ function truncationNote(page) {
     ((page.counts && page.counts.window) || 0) +
     "건 중 " +
     (page.items || []).length +
-    "건만 보입니다"
+    "건만 표시됩니다"
   );
 }

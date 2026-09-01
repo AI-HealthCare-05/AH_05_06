@@ -270,7 +270,7 @@ test("조용히 자르지 않는다", () => {
   );
   assert.strictEqual(
     truncationNote({ truncated: true, counts: { window: 30 }, items: [1, 2] }),
-    "예정 30건 중 2건만 보입니다",
+    "예정 30건 중 2건만 표시됩니다",
   );
 });
 
@@ -429,7 +429,7 @@ test("아직 없는 것을 화면이 말한다", () => {
   const markup = markupOnly(read("manage.html"));
 
   assert.ok(
-    markup.indexOf("발송기가 아직 없습니다") !== -1,
+    markup.indexOf("준비 중입니다") !== -1,
     "왜 버튼이 없는지 적지 않으면 고장으로 읽힌다",
   );
   assert.ok(

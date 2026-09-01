@@ -108,7 +108,7 @@ test("**고치는 것은 의사만** — 스탭은 볼 수만 있다", () => {
   assert.match(code.slice(save, save + 160), /canEdit \? "" : " disabled"/, "스탭에게도 눌린다");
 
   /* 왜 못 고치는지 말한다 — 잠긴 단추만 두면 고장으로 읽힌다 */
-  assert.ok(code.includes("의사 계정만 고칠 수 있습니다"), "왜 잠겼는지 안 말한다");
+  assert.ok(code.includes("의사 계정만 수정할 수 있습니다"), "왜 잠겼는지 안 말한다");
 
   /* 서버도 막는지 — 화면만 막으면 요청 하나로 뚫린다 */
   const api = read("../app/catalog/api.py");
@@ -134,7 +134,7 @@ test("**저장이 막혀도 친 값이 남는다** — 고치라는데 고칠 �
      성공한 길 안에서 찾아야 한다 — 실패 길의 `picked` 대입에 걸리면 헛돈다. */
   const ok = body.slice(body.indexOf(".then("), body.indexOf(".catch("));
   assert.match(ok, /picked = data;/, "저장 뒤 서버 값을 안 쓴다");
-  assert.ok(ok.includes("saying = \"저장했습니다\""), "저장했다고 말은 하는데 값을 안 갈아 끼운다");
+  assert.ok(ok.includes('saying = "저장되었습니다"'), "저장했다고 말은 하는데 값을 안 갈아 끼운다");
   assert.match(ok, /pickedId !== wanted/, "다른 처방 화면에 붙는다");
 });
 

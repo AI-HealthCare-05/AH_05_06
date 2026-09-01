@@ -63,6 +63,16 @@ var patientsApi = {
     );
   },
 
+  /* 환자 관리 표(S2-1). 검색과 같은 자리를 부르되 **분류와 쪽 크기를 함께
+     보낸다** — 등록 화면의 찾기는 「모든 환자」에서 이름으로 좁히는 일이고,
+     이쪽은 의원 전체를 훑으며 챙길 환자를 고르는 일이라 묻는 것이 다르다. */
+  roster: function (keyword, category, cursor, limit) {
+    return patientsRequest(
+      "/patients?" +
+        query({ keyword: keyword, category: category, cursor: cursor, limit: limit }),
+    );
+  },
+
   create: function (patient) {
     return patientsRequest("/patients", { method: "POST", body: patient });
   },
@@ -153,6 +163,15 @@ var DETAIL_STATUS_LABEL = {
 
 function statusLabel(detailStatus) {
   return DETAIL_STATUS_LABEL[detailStatus] || detailStatus || "";
+}
+
+/* 기본 상태를 사람 말로. 목록(S1)은 탭 이름으로 쓰고 환자 관리 표(S2-1)는
+   열로 쓰는데, **같은 값이라 이름도 같아야 한다.** */
+function categoryLabel(workCategory) {
+  for (var i = 0; i < WORK_CATEGORIES.length; i++) {
+    if (WORK_CATEGORIES[i].key === workCategory) return WORK_CATEGORIES[i].label;
+  }
+  return workCategory || "—";
 }
 
 /* ── 목업 ──────────────────────────────────────────────────────
@@ -439,6 +458,73 @@ function patientPage(items) {
   };
 }
 
+/* ── 환자 관리 표 목업 (S2-4 · 와이어프레임 S2-1) ────────────────────────
+ *
+ * 원문의 열 줄을 그대로 옮긴다. `MOCK_PATIENTS` 를 다시 쓰지 않는 이유는
+ * 저쪽이 **동명이인 찾기**를 보이려고 만든 자료라(김서연 셋) 상태·담당·이탈이
+ * 하나도 없기 때문이다. 표가 보여야 할 것이 다르다.
+ */
+var MOCK_ROSTER = [
+  { patient_id: 2001, hospital_patient_no: "10118", name: "유지수", birth_date: "1996-04-10", gender: "FEMALE", age: 30, phone: "01031414410", sms_consent: true, sms_consented_at: "2026-05-20T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "자궁내막증", doctor: { doctor_id: 2, name: "김연우" }, latest_visit: { visit_id: 9101, visited_at: "2026-05-20T10:00:00+09:00", status: "COMPLETED" }, work_category: "COMPLETED", detail_status: "VIEWED", flags: ["UNREAD_STREAK"] },
+  { patient_id: 2002, hospital_patient_no: "09660", name: "백소라", birth_date: "1990-11-02", gender: "FEMALE", age: 35, phone: "01026487203", sms_consent: true, sms_consented_at: "2026-06-02T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "다낭성", doctor: { doctor_id: 1, name: "박연" }, latest_visit: { visit_id: 9102, visited_at: "2026-06-02T10:00:00+09:00", status: "COMPLETED" }, work_category: "COMPLETED", detail_status: "VIEWED", flags: ["STOPPED_DOSING"] },
+  { patient_id: 2003, hospital_patient_no: "08455", name: "문지원", birth_date: "1993-02-18", gender: "FEMALE", age: 33, phone: "01081159034", sms_consent: true, sms_consented_at: "2026-05-12T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "자궁내막증", doctor: { doctor_id: 1, name: "박연" }, latest_visit: { visit_id: 9103, visited_at: "2026-05-12T10:00:00+09:00", status: "COMPLETED" }, work_category: "COMPLETED", detail_status: "VIEWED", flags: ["RUN_OUT_OVERDUE"] },
+  { patient_id: 2004, hospital_patient_no: "09871", name: "박수빈", birth_date: "1992-05-20", gender: "FEMALE", age: 34, phone: "01062908901", sms_consent: true, sms_consented_at: "2026-08-11T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "자궁내막증", doctor: { doctor_id: 1, name: "박연" }, latest_visit: { visit_id: 8801, visited_at: "2026-08-11T10:00:00+09:00", status: "COMPLETED" }, work_category: "NEEDS_ATTENTION", detail_status: "INVALID_PHONE", flags: [] },
+  { patient_id: 2005, hospital_patient_no: "11550", name: "한소영", birth_date: "1999-06-25", gender: "FEMALE", age: 27, phone: "01029055678", sms_consent: false, sms_consented_at: null, sms_opted_out_at: "2026-07-28T10:00:00+09:00", diagnosis_name: "자궁내막증", doctor: { doctor_id: 2, name: "김연우" }, latest_visit: { visit_id: 9105, visited_at: "2026-07-28T10:00:00+09:00", status: "COMPLETED" }, work_category: "NEEDS_ATTENTION", detail_status: "SMS_OPT_OUT", flags: [] },
+  { patient_id: 2006, hospital_patient_no: "12345", name: "김서연", birth_date: "1990-01-01", gender: "FEMALE", age: 36, phone: "01056781234", sms_consent: true, sms_consented_at: "2026-05-20T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "자궁내막증", doctor: { doctor_id: 1, name: "박연" }, latest_visit: { visit_id: 9106, visited_at: "2026-08-13T10:00:00+09:00", status: "COMPLETED" }, work_category: "IN_PROGRESS", detail_status: "NO_DOCUMENT", flags: [] },
+  { patient_id: 2007, hospital_patient_no: "11204", name: "이지우", birth_date: "1995-03-08", gender: "FEMALE", age: 31, phone: "01077421234", sms_consent: true, sms_consented_at: "2026-08-13T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "다낭성", doctor: { doctor_id: 2, name: "김연우" }, latest_visit: { visit_id: 9107, visited_at: "2026-08-13T10:00:00+09:00", status: "COMPLETED" }, work_category: "IN_PROGRESS", detail_status: "GUIDE_GENERATING", flags: [] },
+  { patient_id: 2008, hospital_patient_no: "12008", name: "정민아", birth_date: "1988-03-14", gender: "FEMALE", age: 38, phone: "01044373456", sms_consent: true, sms_consented_at: "2026-08-13T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "자궁내막증", doctor: { doctor_id: 1, name: "박연" }, latest_visit: { visit_id: 9108, visited_at: "2026-08-13T10:00:00+09:00", status: "COMPLETED" }, work_category: "APPROVAL_REQUESTED", detail_status: "APPROVAL_PENDING", flags: [] },
+  { patient_id: 2009, hospital_patient_no: "11732", name: "이서아", birth_date: "1998-12-01", gender: "FEMALE", age: 27, phone: "01055219210", sms_consent: true, sms_consented_at: "2026-08-13T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "다낭성", doctor: { doctor_id: 2, name: "김연우" }, latest_visit: { visit_id: 9109, visited_at: "2026-08-13T10:00:00+09:00", status: "COMPLETED" }, work_category: "SEND_PENDING", detail_status: "SCHEDULED_TO_SEND", flags: [] },
+  { patient_id: 2010, hospital_patient_no: "09102", name: "서다은", birth_date: "1995-07-19", gender: "FEMALE", age: 31, phone: "01091866120", sms_consent: true, sms_consented_at: "2026-02-02T10:00:00+09:00", sms_opted_out_at: null, diagnosis_name: "다낭성", doctor: { doctor_id: 1, name: "박연" }, latest_visit: { visit_id: 9110, visited_at: "2026-02-02T10:00:00+09:00", status: "COMPLETED" }, work_category: "COMPLETED", detail_status: "VIEWED", flags: [] },
+];
+
+/* 서버와 **같은 규칙**으로 거른다. 다르면 목업에서만 되는 화면이 생긴다. */
+function rosterHits(row, category) {
+  if (category === "IN_TREATMENT") return row.work_category && row.work_category !== "COMPLETED";
+  if (category === "NEEDS_ATTENTION") {
+    return row.work_category === "NEEDS_ATTENTION" || (row.flags || []).length > 0;
+  }
+  if (category === "SMS_OPT_OUT") return !!row.sms_opted_out_at;
+  if (category === "INACTIVE_6_MONTHS") {
+    var when = new Date(row.latest_visit && row.latest_visit.visited_at);
+    var edge = new Date();
+    edge.setMonth(edge.getMonth() - 6);
+    return !isNaN(when.getTime()) && when < edge;
+  }
+  return true;
+}
+
+function rosterPage(keyword, params) {
+  var category = params.get("category") || "ALL";
+  var limit = Number(params.get("limit")) || 20;
+  var digits = keyword.replace(/\D/g, "");
+  var searched = MOCK_ROSTER.filter(function (row) {
+    if (!keyword) return true;
+    if (row.name.indexOf(keyword) === 0) return true;
+    if (!digits) return false;
+    return row.hospital_patient_no.indexOf(digits) !== -1 || row.phone.indexOf(digits) !== -1;
+  });
+  var shown = searched.filter(function (row) {
+    return rosterHits(row, category);
+  });
+  var counted = function (name) {
+    return searched.filter(function (row) {
+      return rosterHits(row, name);
+    }).length;
+  };
+  return {
+    counts: {
+      ALL: searched.length,
+      IN_TREATMENT: counted("IN_TREATMENT"),
+      NEEDS_ATTENTION: counted("NEEDS_ATTENTION"),
+      SMS_OPT_OUT: counted("SMS_OPT_OUT"),
+      INACTIVE_6_MONTHS: counted("INACTIVE_6_MONTHS"),
+    },
+    selected_category: category,
+    items: shown.slice(0, limit),
+    page: { next_cursor: null, has_next: shown.length > limit },
+  };
+}
+
 function deskPage(isoDate, categories) {
   var wanted = (categories || "").split(",").filter(Boolean);
 
@@ -551,6 +637,10 @@ function mockPatientsRequest(path, options) {
       if (path.indexOf("/patients?") === 0) {
         var params = new URLSearchParams(path.slice("/patients?".length));
         var keyword = (params.get("keyword") || "").trim();
+        /* **환자 관리 표(S2-1)는 빈 검색어에도 답한다.** 등록 화면의 찾기는
+           아무 말 없이 온 세상을 돌려주면 안 되지만, 이쪽은 「의원 전체를
+           훑는 자리」라 빈 목록이 답이 아니다 — `category` 가 그 갈림이다. */
+        if (params.get("category")) return resolve(rosterPage(keyword, params));
         if (!keyword) return resolve(patientPage([]));
         var digits = keyword.replace(/\D/g, "");
         var hits = MOCK_PATIENTS.filter(function (p) {

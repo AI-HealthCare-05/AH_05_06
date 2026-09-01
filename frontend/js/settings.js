@@ -63,7 +63,7 @@
       '<span class="rail__count">' +
       shown.length +
       "</span></div>" +
-      (rx || '<p class="rail__none">찾는 처방이 없습니다</p>') +
+      (rx || '<p class="rail__none">검색 결과가 없습니다</p>') +
       /* 아직 없는 묶음. **자리는 세우고 없다고 적는다** — 빈 채로 두면 다음
          사람이 무엇을 만들어야 하는지 모르고, 채워 두면 되는 것처럼 보인다. */
       '<div class="rail__head rail__head--rest"><span class="rail__name">그 밖에</span></div>' +
@@ -162,14 +162,14 @@
             " />" +
             '<button class="drug__drop" type="button" data-drop="' +
             i +
-            '" aria-label="이 약 빼기"' +
+            '" aria-label="삭제"' +
             (canEdit ? "" : " disabled") +
             ">✕</button>" +
             "</div>"
           );
         })
         .join("") +
-      (rows.length ? "" : '<p class="fld__hint">아직 적힌 약이 없습니다</p>') +
+      (rows.length ? "" : '<p class="fld__hint">등록된 약이 없습니다</p>') +
       '<button class="button-ghost button-ghost--sm" type="button" id="drug-add"' +
       (canEdit ? "" : " disabled") +
       ">+ 약 추가</button>"
@@ -178,7 +178,7 @@
 
   function detailHtml() {
     if (!picked) {
-      return '<p class="note">왼쪽에서 처방을 고르면 그 처방의 설정이 여기에 펼쳐집니다</p>';
+      return '<p class="note">처방을 선택하면 상세 설정이 표시됩니다</p>';
     }
 
     return (
@@ -187,7 +187,7 @@
       "</span>" +
       '<span class="grow"></span>' +
       (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
-      (canEdit ? "" : '<span class="box__note">의사 계정만 고칠 수 있습니다</span>') +
+      (canEdit ? "" : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
       '<button class="button-primary button-primary--sm" type="button" id="set-save"' +
       (canEdit ? "" : " disabled") +
       ">저장</button></div>" +
@@ -226,7 +226,7 @@
       '<div class="cols2">' +
       pickHtml(
         "f-days-mode",
-        "세는 방법",
+        "표기 방식",
         [
           ["PACK", DAYS_MODE_LABELS.PACK],
           ["DAYS", DAYS_MODE_LABELS.DAYS],
@@ -234,7 +234,7 @@
         picked.days_mode,
       ) +
       (picked.days_mode === "PACK"
-        ? textHtml("f-days-per-pack", "1통 = 며칠", picked.days_per_pack, "이 값을 곱해 처방일수를 셈합니다")
+        ? textHtml("f-days-per-pack", "1통 기준 일수", picked.days_per_pack, "이 값으로 총 처방일수를 계산합니다")
         : "") +
       "</div>" +
       '<p class="fld__hint">ⓘ 소진 예정일과 소진 임박 문자가 이 값으로 계산됩니다</p></section>' +
@@ -245,7 +245,7 @@
         return checkHtml("f-check-" + key, checkItemLabel(key), (picked.check_items || []).indexOf(key) !== -1);
       }).join("") +
       "</div>" +
-      '<p class="fld__hint">ⓘ 판독 결과 확인 화면(S1-6)에 체크 목록으로 뜹니다</p></section>' +
+      '<p class="fld__hint">ⓘ 판독 결과 확인 화면에 체크 목록으로 표시됩니다 · 선택 시 해당 주의 문구가 안내문에 추가됩니다</p></section>' +
       /* ④ 자동 발송 기본값 */
       '<section class="box"><div class="box__head"><h2 class="box__title">자동 발송 기본값</h2></div>' +
       '<div class="checks-grid">' +
@@ -255,14 +255,14 @@
       checkHtml("f-runout", "소진 임박 안내", picked.run_out_on) +
       "</div>" +
       (picked.run_out_on
-        ? textHtml("f-runout-days", "소진 며칠 전", picked.run_out_before_days)
+        ? textHtml("f-runout-days", "소진 N일 전", picked.run_out_before_days)
         : "") +
-      '<p class="fld__hint">ⓘ 이 처방을 고르면 기본값으로 적용됩니다 · 환자별로는 S1-14 에서 바꿉니다</p></section>' +
+      '<p class="fld__hint">ⓘ 이 처방 선택 시 기본값으로 적용됩니다 · 환자별 설정은 문자 설정에서 변경합니다</p></section>' +
       /* ⑤ 그 밖에 */
       '<section class="box"><div class="box__head"><h2 class="box__title">그 밖에</h2></div>' +
       '<div class="cols2">' +
-      textHtml("f-emr", "EMR 표시 코드", picked.emr_code, "이 코드가 적힌 진료를 안내 대상으로 봅니다") +
-      textHtml("f-revisit", "재진 안내", picked.revisit_note, "소견에 다른 조건이 있으면 그쪽이 우선합니다") +
+      textHtml("f-emr", "EMR 표시 코드", picked.emr_code, "이 코드가 기록된 진료를 안내 대상으로 인식합니다") +
+      textHtml("f-revisit", "재진 안내", picked.revisit_note, "진료기록 소견에 다른 조건이 기재된 경우 해당 조건을 우선 적용합니다") +
       "</div></section>"
     );
   }
@@ -303,7 +303,7 @@
       })
       .catch(function () {
         if (mine !== loadSeq) return;
-        el("detail").innerHTML = '<p class="note">처방을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.</p>';
+        el("detail").innerHTML = '<p class="note">처방을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>';
       });
   }
 
@@ -364,7 +364,7 @@
         /* **서버가 돌려준 것을 화면으로 삼는다** — 서버가 고쳐 준 값(일수로
            바꾸면 통 크기를 비운다)이 화면에 안 보이면 안 된다. */
         picked = data;
-        saying = "저장했습니다";
+        saying = "저장되었습니다";
         render();
         loadSets(); // 이름이 바뀌었으면 레일도 따라간다
       })
@@ -372,10 +372,10 @@
         if (pickedId !== wanted) return;
         saying =
           err && err.code === "DAYS_PER_PACK_REQUIRED"
-            ? "한 통이 며칠치인지 적어 주세요"
+            ? "1통 기준 일수를 입력해 주세요"
             : err && err.status === 403
-              ? "의사 계정만 고칠 수 있습니다"
-              : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
+              ? "의사 계정만 수정할 수 있습니다"
+              : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요";
         render();
       });
   }

@@ -110,3 +110,54 @@
 .send__read {
   white-space: nowrap;
 }
+
+/* ── 환자 관리 (S2-1) ─────────────────────────────────── */
+
+.send-search {
+  flex: 0 1 320px;
+}
+
+/* 줄을 누르면 아래에 서는 카드. 표 안에 들어가므로 테두리 대신 바탕으로
+   묶는다 — 표 줄 사이에 테두리를 하나 더 그으면 줄이 끊겨 보인다. */
+.rostercard {
+  display: flex;
+  align-items: center;
+  gap: var(--s-16);
+  padding: var(--s-12) var(--s-16);
+  background: var(--bg);
+}
+
+.rostercard__lines {
+  flex: 1;
+  min-width: 0;
+}
+
+.rostercard__lines p {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.rostercard__lines p:first-child {
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.rostercard__acts {
+  display: flex;
+  gap: var(--s-8);
+  flex: none;
+}
+
+.send__card td {
+  padding: 0;
+}
+
+/* 고른 칩. 셈만 보이는 칩(`.chip--count`)과 달리 이쪽은 누르는 것이다. */
+.chip--on {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
