@@ -124,7 +124,7 @@ var DOCTOR_CASE = (function () {
    보인다. 실제 서버는 visit_id 로 갈라 주므로 목업도 그렇게 한다.
 
    **여기 없는 진료는 없는 것으로 답한다** (`mockGuideBase` 참고). 예전에는
-   `|| MOCK_PATIENTS[8801]` 로 김서연을 대신 돌려줬는데, 목록에서 박수빈
+   `|| MOCK_GUIDE_PATIENTS[8801]` 로 김서연을 대신 돌려줬는데, 목록에서 박수빈
    (`8798`)을 눌러도 오른쪽에 김서연이 떴다 — **의무기록 화면이 다른 사람을
    보여 주는 것**이라 「고르기가 고장난 것처럼」보다 나쁘다.
 
@@ -132,8 +132,14 @@ var DOCTOR_CASE = (function () {
      8798  박수빈  NEEDS_ATTENTION       보완 탭
      8801  김서연  APPROVAL_REQUESTED    승인 요청 탭
      8802  최다인  APPROVAL_REQUESTED    승인 요청 탭
-   값은 목록 쪽과 같은 것을 쓴다 — 두 곳이 다르면 그 자체가 또 어긋남이다. */
-var MOCK_PATIENTS = {
+   값은 목록 쪽과 같은 것을 쓴다 — 두 곳이 다르면 그 자체가 또 어긋남이다.
+
+   **이름을 `MOCK_PATIENTS` 로 두면 안 된다.** `patients-api.js` 가 같은 이름의
+   **배열**을 이미 전역에 얹는데, 한 화면이 둘 다 싣는다(`patients.html`).
+   나중에 실린 이쪽이 앞의 것을 통째로 덮어서, 목록 목업이 `.find is not a
+   function` 으로 죽었다 — 화면은 「환자가 없습니다」만 띄웠다. 파일은 모듈이
+   아니라 전역에 얹히는 스크립트라, 이름이 곧 자리다. */
+var MOCK_GUIDE_PATIENTS = {
   8798: {
     patient: { name: "박수빈", birth_date: "1992-09-18", age: 34, gender: "FEMALE", hospital_patient_no: "09871" },
     summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 08-11",
@@ -184,12 +190,12 @@ function mockGuideState(visitId) {
 /* 모르는 진료는 **없다고 답한다.** 서버(`app/services/guides.py`)가 그 자리에서
    `404 GUIDE_NOT_FOUND` 를 주므로 목업도 같게 한다.
 
-   예전에는 `|| MOCK_PATIENTS[8801]` 로 김서연을 대신 돌려줬다. 조용히 남의
+   예전에는 `|| MOCK_GUIDE_PATIENTS[8801]` 로 김서연을 대신 돌려줬다. 조용히 남의
    이름을 그리는 쪽이라 **화면은 멀쩡해 보이는데 다른 사람의 안내문**이 된다 —
    의무기록에서 제일 나쁜 실패다. 없으면 없다고 하는 편이 낫다. */
 function mockGuideBase(visitId) {
   var warn = DOCTOR_CASE !== "clean";
-  var who = MOCK_PATIENTS[visitId];
+  var who = MOCK_GUIDE_PATIENTS[visitId];
   if (!who) return null;
   return {
     visit_id: visitId,
