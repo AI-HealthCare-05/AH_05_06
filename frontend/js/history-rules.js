@@ -27,22 +27,13 @@ function spanSaying(days) {
   return "최근 " + days + "일";
 }
 
-function ymd(day) {
-  var pad = function (n) {
-    return (n < 10 ? "0" : "") + n;
-  };
-  return (
-    day.getFullYear() + "-" + pad(day.getMonth() + 1) + "-" + pad(day.getDate())
-  );
-}
-
 /** 「최근 N일」이 뜻하는 두 날짜. **오늘을 넣어 센다** — 7일이면 오늘까지
-    이레이지 오늘 빼고 이레가 아니다. */
+    이레지 오늘 빼고 이레가 아니다.
+
+    **의원의 오늘이다**(`js/clinic-clock.js`). 보는 사람의 노트북 시간대로
+    세면 자정 전후에 하루가 어긋나 「오늘 나간 문자」가 안 보인다. */
 function historyRange(days, today) {
-  var end = today ? new Date(today.getTime()) : new Date();
-  var start = new Date(end.getTime());
-  start.setDate(start.getDate() - (days - 1));
-  return { from: ymd(start), to: ymd(end) };
+  return { from: clinicDayShift(-(days - 1), today), to: clinicToday(today) };
 }
 
 function rangeSaying(range) {

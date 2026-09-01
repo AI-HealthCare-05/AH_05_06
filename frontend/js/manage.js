@@ -96,22 +96,18 @@
   /* ── 표 ───────────────────────────────────────────── */
 
   /* 「오늘 18:00」 · 「08-14 10:00」 — 오늘 것만 날짜를 지운다. 원문 표기다.
-     오늘이 몇 건인지가 가장 급한 물음이라 그 줄이 눈에 먼저 걸려야 한다. */
+     오늘이 몇 건인지가 이 화면에서 가장 급한 물음이라 그 줄이 눈에 먼저
+     걸려야 한다.
+
+     **의원 시계로 읽는다**(`js/clinic-clock.js`) — `new Date(...).getHours()`
+     로 읽으면 보는 사람의 시간대로 옮겨져, 시간대를 다르게 맞춘 노트북에서는
+     같은 진료가 다른 시각으로 뜬다. */
   function whenSaying(iso) {
-    var at = new Date(iso);
-    if (isNaN(at.getTime())) return String(iso || "");
-    var pad = function (n) {
-      return (n < 10 ? "0" : "") + n;
-    };
-    var clock = pad(at.getHours()) + ":" + pad(at.getMinutes());
-    var today = new Date();
-    var sameDay =
-      at.getFullYear() === today.getFullYear() &&
-      at.getMonth() === today.getMonth() &&
-      at.getDate() === today.getDate();
-    return sameDay
+    var clock = clinicTime(iso);
+    if (!clock) return String(iso || "");
+    return isClinicToday(iso)
       ? "오늘 " + clock
-      : pad(at.getMonth() + 1) + "-" + pad(at.getDate()) + " " + clock;
+      : clinicMonthDay(iso) + " " + clock;
   }
 
   function whoHtml(row) {

@@ -12,7 +12,7 @@ const { load } = require("./browser-shim.js");
 const { read, codeOnly, markupOnly } = require("./source.js");
 
 function rules() {
-  return load("api", "session", "message-words", "checkin-words", "patients-api", "history-modal");
+  return load("api", "clinic-clock", "session", "message-words", "checkin-words", "patients-api", "history-modal");
 }
 
 function a_block(over) {

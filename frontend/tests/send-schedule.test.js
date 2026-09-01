@@ -17,7 +17,7 @@ const { load } = require("./browser-shim.js");
 const { read, codeOnly, markupOnly } = require("./source.js");
 
 function rules() {
-  return load("api", "message-words", "schedule-rules");
+  return load("api", "clinic-clock", "message-words", "schedule-rules");
 }
 
 function a_row(over) {
@@ -277,7 +277,7 @@ test("조용히 자르지 않는다", () => {
 /* ── 목업이 서버와 같은 모양인가 ──────────────────────────────────────── */
 
 test("목업도 안 나간 것을 창 밖에서 데려온다", async () => {
-  const api = load("api", "message-words", "schedule-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "messages-api");
   api.MOCK = true;
 
   const page = await api.mockScheduled(7, 200);
@@ -295,7 +295,7 @@ test("목업도 안 나간 것을 창 밖에서 데려온다", async () => {
 });
 
 test("목업의 예정은 창을 지킨다", async () => {
-  const api = load("api", "message-words", "schedule-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "messages-api");
   api.MOCK = true;
 
   const seven = await api.mockScheduled(7, 200);
@@ -314,7 +314,7 @@ test("목업의 예정은 창을 지킨다", async () => {
 });
 
 test("목업이 서버 응답과 같은 칸을 갖는다", async () => {
-  const api = load("api", "message-words", "schedule-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "messages-api");
   api.MOCK = true;
 
   const page = await api.mockScheduled(7, 200);

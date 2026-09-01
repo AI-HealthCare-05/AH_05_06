@@ -15,7 +15,7 @@ const { load } = require("./browser-shim.js");
 const { read, codeOnly, markupOnly } = require("./source.js");
 
 function rules() {
-  return load("api", "message-words", "schedule-rules", "history-rules");
+  return load("api", "clinic-clock", "message-words", "schedule-rules", "history-rules");
 }
 
 function a_row(over) {
@@ -177,7 +177,7 @@ test("표는 잘려도 받기는 자르지 않는다", () => {
 /* ── 목업이 서버와 같은 모양인가 ──────────────────────────────────────── */
 
 test("목업이 서버 응답과 같은 칸을 갖는다", async () => {
-  const api = load("api", "message-words", "schedule-rules", "history-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "history-rules", "messages-api");
   api.MOCK = true;
 
   const page = await api.mockHistory(api.historyRange(30), 200);
@@ -197,7 +197,7 @@ test("목업이 서버 응답과 같은 칸을 갖는다", async () => {
 });
 
 test("목업의 셈이 원문의 규칙대로 맞는다", async () => {
-  const api = load("api", "message-words", "schedule-rules", "history-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "history-rules", "messages-api");
   api.MOCK = true;
 
   const page = await api.mockHistory(api.historyRange(30), 200);
@@ -211,7 +211,7 @@ test("목업의 셈이 원문의 규칙대로 맞는다", async () => {
 });
 
 test("목업의 기간이 실제로 걸러진다", async () => {
-  const api = load("api", "message-words", "schedule-rules", "history-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "history-rules", "messages-api");
   api.MOCK = true;
 
   const week = await api.mockHistory(api.historyRange(7), 200);
@@ -221,7 +221,7 @@ test("목업의 기간이 실제로 걸러진다", async () => {
 });
 
 test("목업도 실패는 자르지 않는다", async () => {
-  const api = load("api", "message-words", "schedule-rules", "history-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "history-rules", "messages-api");
   api.MOCK = true;
 
   const page = await api.mockHistory(api.historyRange(30), 1);
@@ -233,7 +233,7 @@ test("목업도 실패는 자르지 않는다", async () => {
 });
 
 test("목업 CSV 가 서버와 같은 열이다", async () => {
-  const api = load("api", "message-words", "schedule-rules", "history-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "history-rules", "messages-api");
   api.MOCK = true;
 
   const text = api.mockHistoryCsv(api.historyRange(30));
@@ -244,7 +244,7 @@ test("목업 CSV 가 서버와 같은 열이다", async () => {
 });
 
 test("쉼표가 든 값은 감싼다 — 안 그러면 열이 밀린다", () => {
-  const api = load("api", "message-words", "schedule-rules", "history-rules", "messages-api");
+  const api = load("api", "clinic-clock", "message-words", "schedule-rules", "history-rules", "messages-api");
 
   assert.strictEqual(api.csvCell("김서연"), "김서연");
   assert.strictEqual(api.csvCell("김, 서연"), '"김, 서연"');
