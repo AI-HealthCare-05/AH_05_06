@@ -272,7 +272,7 @@ body {
 .goal-chart { padding: 0 2px; }
 .goal-chart__pointer-row {
   position: relative;
-  height: 20px;
+  height: 36px;
 }
 .goal-chart__pointer {
   position: absolute;
@@ -281,6 +281,11 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+.goal-chart__now-label {
+  font-size: 11px; line-height: 14px;
+  color: var(--tx-muted);
+  white-space: nowrap;
 }
 .goal-chart__now-val {
   font-size: 13px; line-height: 15px;
@@ -315,12 +320,27 @@ body {
   width: 2px; border-radius: 1px;
   background: rgba(48,39,44,.20);
 }
-.goal-chart__text-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px; line-height: 19px;
+.goal-chart__label-row {
+  position: relative;
+  height: 44px;
+  margin-top: 6px;
+}
+.goal-chart__label {
+  position: absolute;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+}
+.goal-chart__label-name {
+  display: block;
+  font-size: 11px; line-height: 14px;
   color: var(--tx-muted);
-  margin-top: 8px;
+}
+.goal-chart__label-val {
+  display: block;
+  font-size: 12px; line-height: 16px; font-weight: 600;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
 }
 /* 차트 없는 목표 — 핑크 메모 */
 .goal-no-chart {

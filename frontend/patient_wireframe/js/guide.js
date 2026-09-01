@@ -150,32 +150,73 @@
 
       if (goal.hasChart) {
         var chart = el('div', 'goal-chart');
+
+        /* 목표값을 중앙(50%)에 고정하고 나머지 값을 상대 위치로 계산.
+           목표가 없는 경우(추이 관찰)는 시작값을 중앙 기준으로 사용. */
+        var nowNum    = parseFloat(goal.now);
+        var startNum  = parseFloat(goal.a);
+        var targetNum = parseFloat(goal.t);
+        var hasTarget = !isNaN(targetNum);
+        var center    = hasTarget ? targetNum : startNum;
+        var maxDiff   = Math.max(Math.abs(nowNum - center), Math.abs(startNum - center), 1);
+        var half      = maxDiff * 1.5;
+        function pctNum(v) {
+          return Math.min(95, Math.max(5, 50 + (v - center) / half * 50));
+        }
+        function pct(v) { return pctNum(v) + '%'; }
+
         /* 삼각형 포인터 */
         var pointerRow = el('div', 'goal-chart__pointer-row');
         var pointer    = el('div', 'goal-chart__pointer');
-        pointer.style.left = goal.nowPct;
+        pointer.style.left = pct(nowNum);
+        pointer.appendChild(text('span', 'goal-chart__now-label', '현재'));
         pointer.appendChild(text('span', 'goal-chart__now-val', goal.now));
         pointer.appendChild(el('div', 'goal-chart__arrow'));
         pointerRow.appendChild(pointer);
         chart.appendChild(pointerRow);
+
         /* 그라디언트 바 */
         var barWrap = el('div', 'goal-chart__bar-wrap');
-        if (goal.tPct !== '200%') {
+        if (hasTarget) {
           var tLine = el('span', 'goal-chart__target-line');
-          tLine.style.left = goal.tPct;
+          tLine.style.left = '50%';
           barWrap.appendChild(tLine);
-        }
-        if (goal.startPct !== '200%') {
           var sLine = el('span', 'goal-chart__start-line');
-          sLine.style.left = goal.startPct;
+          sLine.style.left = pct(startNum);
+          barWrap.appendChild(sLine);
+        } else {
+          var sLine = el('span', 'goal-chart__start-line');
+          sLine.style.left = '50%';
           barWrap.appendChild(sLine);
         }
         chart.appendChild(barWrap);
-        /* 텍스트 행 */
-        var textRow = el('div', 'goal-chart__text-row');
-        textRow.appendChild(text('span', null, goal.startLine));
-        textRow.appendChild(text('span', null, goal.targetLabel));
-        chart.appendChild(textRow);
+
+        /* 라벨 행 — 가까운 라벨은 위아래 교대 배치로 겹침 방지 */
+        var labelRow = el('div', 'goal-chart__label-row');
+        var labelDefs = [
+          { name: '시작', val: goal.a, p: hasTarget ? pctNum(startNum) : 50 },
+        ];
+        if (hasTarget) labelDefs.push({ name: '목표', val: goal.t, p: 50 });
+
+        labelDefs.sort(function (a, b) { return a.p - b.p; });
+
+        var OVERLAP_THRESHOLD = 15;
+        labelDefs[0].level = 0;
+        for (var li = 1; li < labelDefs.length; li++) {
+          labelDefs[li].level = (labelDefs[li].p - labelDefs[li - 1].p < OVERLAP_THRESHOLD)
+            ? (labelDefs[li - 1].level === 0 ? 1 : 0)
+            : 0;
+        }
+
+        labelDefs.forEach(function (d) {
+          var lbl = el('div', 'goal-chart__label');
+          lbl.style.left = d.p + '%';
+          lbl.style.top  = d.level === 1 ? '20px' : '0';
+          lbl.appendChild(text('span', 'goal-chart__label-name', d.name));
+          lbl.appendChild(text('span', 'goal-chart__label-val',  d.val));
+          labelRow.appendChild(lbl);
+        });
+        chart.appendChild(labelRow);
         item.appendChild(chart);
       } else {
         var noChart = el('div', 'goal-no-chart');
