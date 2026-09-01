@@ -76,10 +76,34 @@ test("**묶음 머리는 접힘을 화면 낭독기에도 알린다**", () => {
   assert.match(src, /aria-expanded="/, "aria-expanded 가 없으면 낭독기는 늘 펼쳐진 줄로 읽는다");
 });
 
-test("**안내문과 처방은 접힘을 따로 기억한다** — 한 통에 담으면 같이 접힌다", () => {
+test("**펼친 묶음은 하나다** — 넷 다 펼치면 「기타」가 화면 밖으로 밀린다", () => {
+  /* 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져 「그 밖에」가
+     화면 밖으로 밀린다」. 실측으로도 넷 다 937px vs 보이는 높이 689px 이다. */
   const src = codeOnly(read("js/settings.js"));
-  assert.match(src, /opened\s*=\s*\{\s*guide:\s*\{\},\s*sets:\s*\{\}\s*\}/);
-  assert.match(src, /opened\[parts\[0\]\]\[parts\[1\]\]/, "머리가 제 갈래만 여닫아야 한다");
+  assert.match(src, /var opened = null;/, "펼친 것을 여럿 담고 있다");
+  assert.match(src, /opened = opened === key \? null : key/, "아코디언이 아니다");
+});
+
+test("**갈래가 열쇠에 들어 있다** — 두 갈래에 같은 질환이 있다", () => {
+  const src = codeOnly(read("js/settings.js"));
+  assert.match(src, /railFoldKey\("guide"/, "안내문 쪽이 갈래를 안 담는다");
+  assert.match(src, /railFoldKey\("sets"/, "처방 쪽이 갈래를 안 담는다");
+});
+
+test("**여닫을 때 레일을 다시 안 그린다** — 화살표 회전과 키보드 초점이 사라진다", () => {
+  const src = codeOnly(read("js/settings.js"));
+  const at = src.indexOf('target.closest("[data-fold]")');
+  const body = src.slice(at, at + 260);
+  assert.match(body, /return showOpen\(\)/, "통째로 다시 그린다");
+  assert.doesNotMatch(body, /return render\(\)/);
+});
+
+test("**접힌 자식을 지우지 않고 감춘다** — 가리킬 것이 없으면 `aria-controls` 가 헛돈다", () => {
+  const src = codeOnly(read("js/settings.js"));
+  const at = src.indexOf("function railGroupHtml");
+  const body = src.slice(at, src.indexOf("function copyRailRow"));
+  assert.match(body, /aria-controls=/, "낭독기에 무엇이 열리는지 안 알린다");
+  assert.match(body, /open \? "" : " hidden"/, "접힐 때 노드를 지운다");
 });
 
 test("**처방을 고르면 안내문 고름을 놓는다** — 두 곳이 동시에 굵으면 안 된다", () => {
@@ -111,4 +135,89 @@ test("**받아 온 안내문은 어느 갈래를 보고 있든 붙인다**", () 
   );
   /* 실패를 오른쪽에 적는 것은 안내문을 보고 있을 때만 — 남의 자리다 */
   assert.match(load.slice(load.indexOf(".catch(")), /group !== "guide"/);
+});
+
+/* ── 보이는 이름 ──────────────────────────────────────────────────── */
+
+test("**묶음 안에서는 되풀이되는 앞머리를 뗀다** — 「자궁내막증」 밑에 「자궁내막증 · 」이 셋", () => {
+  const { railSetName } = rules();
+  const block = { key: "ENDOMETRIOSIS", title: "자궁내막증" };
+  assert.equal(railSetName(block, "자궁내막증 · 비잔 (처음)"), "비잔 (처음)");
+});
+
+test("**앞머리가 코드로 붙은 것도 뗀다** — 실제 DB 가 그렇다", () => {
+  const { railSetName } = rules();
+  /* 다낭성난소증후군 묶음의 이름은 「PCOS · 」로 시작한다 — 묶음 이름이
+     아니라 질환 **코드**다. 이름으로만 자르면 다섯 줄이 그대로 남는다. */
+  const block = { key: "PCOS", title: "다낭성난소증후군" };
+  assert.equal(railSetName(block, "PCOS · 야즈 + 메트포르민"), "야즈 + 메트포르민");
+  assert.equal(railSetName(block, "다낭성난소증후군 · 야즈"), "야즈");
+});
+
+test("**이름의 일부인 가운뎃점은 안 자른다** — 「`·` 앞을 자른다」로 하면 병명이 없어진다", () => {
+  const { railSetName } = rules();
+  const block = { key: "ENDOMETRIOSIS", title: "자궁내막증" };
+  assert.equal(railSetName(block, "선근증 · 생리과다"), "선근증 · 생리과다");
+});
+
+test("**「그 밖의 질환」에서는 아무것도 안 뗀다** — 거기선 질환 이름이 알아야 할 정보다", () => {
+  const { railSetName } = rules();
+  const block = { key: "other", title: "그 밖의 질환" };
+  assert.equal(railSetName(block, "ADENOMYOSIS · 생리과다"), "ADENOMYOSIS · 생리과다");
+});
+
+test("**벗기면 빈 줄이 되는 이름은 그대로 둔다** — 이름 없는 줄은 못 고른다", () => {
+  const { railSetName } = rules();
+  const block = { key: "PCOS", title: "다낭성난소증후군" };
+  assert.equal(railSetName(block, "PCOS · "), "PCOS · ");
+  /* 사이 공백이 없으면 앞머리가 아니다 */
+  assert.equal(railSetName(block, "PCOS·초진"), "PCOS·초진");
+  assert.equal(railSetName(null, "PCOS · 초진"), "PCOS · 초진");
+});
+
+/* ── 묶음 열쇠 ────────────────────────────────────────────────────── */
+
+test("**갈래를 열쇠에 담는다** — 두 갈래에 같은 질환이 있다", () => {
+  const { railFoldKey } = rules();
+  assert.notEqual(railFoldKey("guide", "PCOS"), railFoldKey("sets", "PCOS"));
+  assert.equal(railFoldKey("guide", "PCOS"), "guide|PCOS");
+});
+
+/* ── 묶음의 진도 ──────────────────────────────────────────────────── */
+
+test("**안내문 묶음은 진도를 단다** — 처방은 개수, 안내문은 「1/3」", () => {
+  const { copyBlockMark } = rules();
+  const sets = [{ prescription_set_id: 1 }, { prescription_set_id: 2 }, { prescription_set_id: 3 }];
+  const copy = {
+    items: [
+      { prescription_set_id: 1, reviewed: true },
+      { prescription_set_id: 2, reviewed: false },
+      { prescription_set_id: 3, reviewed: false },
+    ],
+  };
+  assert.deepEqual(copyBlockMark(copy, sets), { say: "1/3", done: false });
+});
+
+test("**다 봤으면 그렇다고 한다**", () => {
+  const { copyBlockMark } = rules();
+  const sets = [{ prescription_set_id: 1 }, { prescription_set_id: 2 }];
+  const copy = {
+    items: [
+      { prescription_set_id: 1, reviewed: true },
+      { prescription_set_id: 2, reviewed: true },
+    ],
+  };
+  assert.deepEqual(copyBlockMark(copy, sets), { say: "2/2", done: true });
+});
+
+test("**아직 못 받아 온 것을 「0/3」이라 하지 않는다** — 「다 안 봤다」와 「모른다」는 다르다", () => {
+  const { copyBlockMark } = rules();
+  const sets = [{ prescription_set_id: 1 }, { prescription_set_id: 2 }, { prescription_set_id: 3 }];
+  assert.deepEqual(copyBlockMark(null, sets), { say: "3", done: false });
+  assert.deepEqual(copyBlockMark({}, sets), { say: "3", done: false });
+});
+
+test("**빈 묶음은 「다 봤다」가 아니다** — 0/0 을 끝난 것으로 세면 안 된다", () => {
+  const { copyBlockMark } = rules();
+  assert.deepEqual(copyBlockMark({ items: [] }, []), { say: "0/0", done: false });
 });

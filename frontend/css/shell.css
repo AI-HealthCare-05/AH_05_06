@@ -655,6 +655,8 @@ body.shell {
    안 싣는 화면에서 브라우저 기본 링(1px)으로 떨어졌다. */
 .chip:focus-visible,
 .row:focus-visible,
+.rail__row:focus-visible,
+.rail__disease:focus-visible,
 .icon-button:focus-visible,
 .topbar__tab:focus-visible,
 .list__search:focus-visible,
@@ -694,7 +696,9 @@ body.shell {
    하루에 수십 번 지난다. */
 .topbar__tab,
 .icon-button,
-.row {
+.row,
+.rail__row,
+.rail__disease {
   transition: background-color var(--motion) var(--ease);
 }
 
@@ -722,7 +726,9 @@ body.shell {
 
 .topbar__tab:active,
 .icon-button:active,
-.row:active {
+.row:active,
+.rail__row:active,
+.rail__disease:active {
   background: var(--line);
 }
 

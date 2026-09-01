@@ -45,18 +45,26 @@
   var baselines = null; // 검사 기준선 판
   var copy = null; // 안내문 문구 판
   var copyPick = null; // 안내문에서 고른 한 장
-  /* **펼친 묶음.** 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져
-     「그 밖에」가 화면 밖으로 밀린다」. 안내문도 같은 수라 같이 접는다.
-     비어 있으면 아무것도 안 펼친 것 — 고른 것이 있으면 그 묶음만 편다. */
-  var opened = { guide: {}, sets: {} };
+  /* **펼친 묶음은 늘 하나다.**
+   *
+   * 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져 「그 밖에」가
+   * 화면 밖으로 밀린다」. 실제로 재 봤다 — 넷 다 펼치면 내용이 937px 이고
+   * 보이는 높이는 689px 이라 「기타」 세 줄이 통째로 밀려난다. 한 묶음만
+   * 펼치면 546.5px 로 다 보인다. 원문 다섯 프레임이 전부 그 상태다.
+   *
+   * 열쇠에 갈래를 함께 담는다(`"guide|ENDOMETRIOSIS"`). 갈래별로 통을 나눠
+   * 두었던 것은 두 갈래에 같은 질환이 있어 한 통에 담으면 같이 접히기
+   * 때문인데, 열쇠에 갈래가 들어 있으면 그 일이 안 난다. */
+  var opened = null;
   var who = null; // 로그인한 사람 — 문구가 누구 이름으로 나가는지 적는다
   var whose = null; // 누구 기준 — 비면 의원 공통
   var drafts = {}; // 아직 저장 안 한 문구 — 다시 그려도 친 값이 남아야 한다
 
   /* ── 왼쪽 레일 ─────────────────────────────────────────────────── */
 
-  /* 갈래 머리 — 원문 레일의 큰 글씨. 갈래가 셋뿐이라 눈이 먼저 여기 걸려야
-     「무엇을 고르는 화면인지」가 보인다. */
+  /* 갈래 머리 — **눌리지 않는 이름표다.** 개수를 이름 바로 옆에 붙인다:
+     오른쪽 끝으로 밀면 「오른쪽에 표시를 단 줄」이 되어, 아무 일도 안 하는
+     것이 화면에서 제일 눌러 보고 싶게 생긴다. */
   function sectionHtml(title, count) {
     return (
       '<div class="rail__section"><span class="rail__section-name">' +
@@ -64,69 +72,122 @@
       "</span>" +
       (count == null
         ? ""
-        : '<span class="rail__count">' + esc(count) + "</span>") +
+        : '<span class="rail__section-count">' + esc(count) + "</span>") +
       "</div>"
     );
   }
 
+  /* **모든 줄이 화살표 칸을 하나씩 갖는다.** 원문 D2-3 은 자식 줄에도 기타
+     줄에도 `width:10px` 칸을 달아 두었다 — 칸이 없는 줄만 이름이 한 단 왼쪽
+     으로 나가서 나무가 평평해진다. 나중에 줄에 표시를 넣을 자리이기도 하다. */
+  var RAIL_MARK = '<span class="rail__mark" aria-hidden="true"></span>';
+
   function groupRowHtml(row) {
     /* **만든 묶음만 눌린다.** 아직 없는 것은 자리를 세우되 눌리지 않게 둔다 —
-       눌러도 아무 일 없는 줄은 「된다」고 말한다. */
+       눌러도 아무 일 없는 줄은 「된다」고 말한다. 글자색 한 단만으로는 옆줄과
+       훑어서 구별이 안 돼서, 어디로 가야 하는지를 점선 칩으로 적는다. */
     if (!RAIL_GROUP_READY[row.key]) {
       return (
-        '<div class="rail__soon"><span class="rail__name">' +
+        '<div class="rail__soon">' +
+        RAIL_MARK +
+        '<span class="rail__name">' +
         esc(row.title) +
-        '</span><span class="rail__note">' +
+        '</span><span class="rail__note rail__note--soon">' +
         esc(row.note) +
         "</span></div>"
       );
     }
+    var on = group === row.key;
     return (
       '<button class="rail__row' +
-      (group === row.key ? " is-on" : "") +
-      '" type="button" data-group="' +
+      (on ? " is-on" : "") +
+      '" type="button"' +
+      /* 고름을 낭독기에도 알린다 — 지금까지 CSS 클래스뿐이라 눈으로만 보였다.
+         환자 목록(`shell.js` 의 `rowHtml`)·어드민은 이미 붙인다. */
+      (on ? ' aria-current="true"' : "") +
+      ' data-group="' +
       esc(row.key) +
-      '"><span class="rail__name">' +
+      '">' +
+      RAIL_MARK +
+      '<span class="rail__name">' +
       esc(row.title) +
       "</span></button>"
     );
   }
 
-  /* 묶음 한 덩이 — 머리를 누르면 접혔다 펴진다.
+  /* 묶음 한 덩이 — 머리 + 자식 통.
    *
-   * 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져 「그 밖에」가
-   * 화면 밖으로 밀린다」. 안내문도 같은 수라 같은 규칙을 준다.
+   * **접힌 자식을 지우지 않고 감춘다.** 지금은 `open ? … : ""` 로 존재 자체를
+   * 없앤다 — 그러면 `aria-controls` 가 가리킬 것이 없고, 화살표가 매번 새
+   * 노드라 회전이 한 프레임도 안 보이고, 다시 그릴 때 초점이 <body> 로
+   * 떨어진다. `[hidden]` 은 `style.css` 가 `display:none !important` 로 못박아
+   * 두었으므로 Tab 차례에서도 빠진다. 늘 그려도 여덟 줄이다.
+   *
+   * 판독 화면의 「그 자리에서 올리기」 판(`ocr-review.js` 의 `openPanel`)이
+   * 쓰는 짝을 그대로 따른다: `aria-expanded` + `aria-controls` + `hidden`.
    */
-  function railGroupHtml(section, block, drawRow) {
-    var open = !!opened[section][block.key];
+  function railGroupHtml(section, block, drawRow, count) {
+    var key = railFoldKey(section, block.key);
+    var open = opened === key;
+    /* 갈래를 id 에도 넣는다 — 안내문과 처방에 같은 질환이 있어서 묶음 열쇠만
+       으로는 id 가 겹친다. */
+    var kids = "rail-kids-" + section + "-" + block.key;
+
     return (
-      '<button class="rail__disease" type="button" data-fold="' +
-      esc(section) +
-      "|" +
-      esc(block.key) +
+      '<div class="rail__branch' +
+      (open ? " is-open" : "") +
+      '"><button class="rail__disease" type="button" data-fold="' +
+      esc(key) +
       '" aria-expanded="' +
       (open ? "true" : "false") +
-      '"><span class="rail__mark">' +
-      (open ? "▾" : "▸") +
-      '</span><span class="rail__name">' +
+      '" aria-controls="' +
+      esc(kids) +
+      '">' +
+      /* 화살표는 모양이지 뜻이 아니다 — 상태는 `aria-expanded` 가 말한다.
+         숨기지 않으면 「검은 오른쪽 삼각형, 자궁내막증, 3, 접힘, 버튼」으로
+         두 번 읽힌다. */
+      '<span class="rail__mark" aria-hidden="true">▶</span>' +
+      '<span class="rail__name">' +
       esc(block.title) +
-      '</span><span class="rail__count">' +
-      block.sets.length +
+      '</span><span class="rail__count' +
+      (count.done ? " rail__count--done" : "") +
+      '">' +
+      esc(count.say) +
       "</span></button>" +
-      (open ? block.sets.map(drawRow).join("") : "")
+      '<div class="rail__kids" id="' +
+      esc(kids) +
+      '"' +
+      (open ? "" : " hidden") +
+      ">" +
+      block.sets
+        .map(function (row) {
+          /* **`.map(drawRow)` 로 넘기지 않는다** — 그러면 둘째 인자로 차례
+             번호가 들어가서, 받는 쪽이 묶음인 줄 알고 이름을 못 줄인다. */
+          return drawRow(row, block);
+        })
+        .join("") +
+      "</div></div>"
     );
   }
 
-  /* 안내문 한 장 — 원문 레일의 「✓ 비잔」·「야즈 확인 전」. */
-  function copyRailRow(row) {
+  /* 안내문 한 장. 이름은 **보이는 것만** 줄인다(§4). 전체 이름은 `title` 에
+     남긴다 — 320px 에서 잘렸을 때 확인할 곳이 필요하다. */
+  function copyRailRow(row, block) {
     var mark = copyRailMark(copy, row.prescription_set_id);
+    var on = row.prescription_set_id === copyPick;
     return (
       '<button class="rail__row' +
-      (row.prescription_set_id === copyPick ? " is-on" : "") +
-      '" type="button" data-copy-set="' +
+      (on ? " is-on" : "") +
+      '" type="button"' +
+      (on ? ' aria-current="true"' : "") +
+      ' data-copy-set="' +
       row.prescription_set_id +
-      '"><span class="rail__name">' +
+      '" title="' +
       esc(row.name) +
+      '">' +
+      RAIL_MARK +
+      '<span class="rail__name">' +
+      esc(railSetName(block, row.name)) +
       '</span><span class="rail__note' +
       (mark.done ? " rail__note--done" : "") +
       '">' +
@@ -135,32 +196,50 @@
     );
   }
 
-  function setRailRow(row) {
+  function setRailRow(row, block) {
+    var on = row.prescription_set_id === pickedId;
     return (
       '<button class="rail__row' +
-      (row.prescription_set_id === pickedId ? " is-on" : "") +
-      '" type="button" data-set="' +
+      (on ? " is-on" : "") +
+      '" type="button"' +
+      (on ? ' aria-current="true"' : "") +
+      ' data-set="' +
       row.prescription_set_id +
-      '"><span class="rail__name">' +
+      '" title="' +
       esc(row.name) +
+      '">' +
+      RAIL_MARK +
+      '<span class="rail__name">' +
+      esc(railSetName(block, row.name)) +
       "</span></button>"
     );
   }
 
   function railHtml() {
-    /* **거르개를 두지 않는다.** 처방이 아홉이라 한 화면에 다 서고, 검색칸이
-       있으면 「검색해야 보이나」로 읽힌다. 환자 목록과는 다른 자리다. */
     var blocks = setsByDisease(sets);
     var progress = copy ? copyProgress(copy.items) : null;
 
+    /* **안내문 묶음은 진도를 단다(`1/3`), 처방 묶음은 개수를 단다(`3`).**
+         접두사를 떼고 나면 두 갈래가 글자까지 똑같은 나무 두 그루가 된다 —
+         가르는 것이 갈래 머리 하나뿐이면 스크롤 중에 어느 갈래인지 잃는다.
+         숫자의 뜻이 다르면 접혀 있을 때도 두 갈래가 다르게 읽히고, 이건
+         꾸밈이 아니라 볼 사람이 실제로 알고 싶은 값이다. */
     var guide = blocks
       .map(function (block) {
-        return railGroupHtml("guide", block, copyRailRow);
+        return railGroupHtml(
+          "guide",
+          block,
+          copyRailRow,
+          copyBlockMark(copy, block.sets),
+        );
       })
       .join("");
     var rx = blocks
       .map(function (block) {
-        return railGroupHtml("sets", block, setRailRow);
+        return railGroupHtml("sets", block, setRailRow, {
+          say: String(block.sets.length),
+          done: false,
+        });
       })
       .join("");
 
@@ -699,6 +778,22 @@
     );
   }
 
+  /* 펼친 묶음이 하나뿐이라 **전부를 훑어 맞춘다** — 방금 연 것과 방금 닫힌
+     것 둘을 따로 찾을 것 없이, 열쇠 하나와 대 보면 된다.
+     만지는 것은 셋뿐이다: 낭독기가 읽는 것(`aria-expanded`), 눈이 보는 것
+     (`is-open`), 자리를 차지하느냐(`hidden`). */
+  function showOpen() {
+    var heads = el("rail").querySelectorAll("[data-fold]");
+    for (var i = 0; i < heads.length; i++) {
+      var head = heads[i];
+      var on = head.getAttribute("data-fold") === opened;
+      var kids = el(head.getAttribute("aria-controls"));
+      head.setAttribute("aria-expanded", on ? "true" : "false");
+      head.parentNode.classList.toggle("is-open", on);
+      if (kids) kids.hidden = !on;
+    }
+  }
+
   function render() {
     el("rail").innerHTML = railHtml();
     el("detail").innerHTML = detailHtml();
@@ -1013,7 +1108,7 @@
     group = "guide";
     /* 고른 장이 든 묶음은 펴 둔다 — 접힌 채로 두면 방금 고른 것이 안 보인다 */
     var mine = copyPick ? railGroupKey(sets, copyPick) : null;
-    if (mine) opened.guide[mine] = true;
+    if (mine) opened = railFoldKey("guide", mine);
     pickedId = null;
     picked = null;
     templates = null;
@@ -1128,7 +1223,7 @@
          레일의 진도와 ✓ 는 어느 갈래를 보고 있든 서 있어야 한다. */
       copyPick = null;
       var chose = railGroupKey(sets, Number(row.getAttribute("data-set")));
-      if (chose) opened.sets[chose] = true;
+      if (chose) opened = railFoldKey("sets", chose);
       return loadSet(Number(row.getAttribute("data-set")));
     }
 
@@ -1140,12 +1235,20 @@
     if (chosenGroup && chosenGroup.getAttribute("data-group") === "guide")
       return openCopy();
 
-    /* 묶음 머리 — 접혔다 펴진다. */
+    /* 묶음 머리 — 그 자리에서 여닫는다. **다시 그리지 않는다.**
+     *
+     * `render()` 는 `el("rail").innerHTML` 로 레일을 통째로 갈아치운다. 그러면
+     * 방금 누른 버튼 노드가 사라져 (1) 화살표가 새 노드라 회전이 한 프레임도
+     * 안 보이고 (2) 키보드 초점이 <body> 로 떨어져 묶음 하나를 펼치면 다음
+     * Tab 이 화면 맨 위에서 다시 시작한다.
+     *
+     * 여기서 바뀌는 것은 **보이고 안 보이고**뿐이다. 데이터가 안 변하는 일에
+     * 화면을 새로 그릴 이유가 없다. */
     var fold = target.closest("[data-fold]");
     if (fold) {
-      var parts = fold.getAttribute("data-fold").split("|");
-      opened[parts[0]][parts[1]] = !opened[parts[0]][parts[1]];
-      return render();
+      var key = fold.getAttribute("data-fold");
+      opened = opened === key ? null : key;
+      return showOpen();
     }
 
     /* 안내문 한 장 고르기 */

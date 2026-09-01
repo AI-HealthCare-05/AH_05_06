@@ -153,3 +153,62 @@ function copyRailMark(copy, setId) {
   if (!found) return { say: "", done: false };
   return { say: found.reviewed ? "✓" : "확인 전", done: !!found.reviewed };
 }
+
+/** 레일에서 묶음을 가리키는 열쇠. **갈래를 함께 담는다** — 안내문과 처방에
+    같은 질환이 있어서, 질환 열쇠만으로는 한쪽을 열면 다른 쪽도 열린다.
+    질환 코드는 A–Z 라 `|` 가 들어올 일이 없다. */
+function railFoldKey(section, key) {
+  return String(section) + "|" + String(key);
+}
+
+/** 레일 자식 줄에 **보일** 이름. 저장값은 그대로 둔다.
+ *
+ * 이 문자열은 진료 기록의 스냅샷 조인 열쇠다 — `prescription_set` 열이
+ * 「진료 당시 처방 세트 이름의 스냅샷」이라, 저장값을 바꾸면 KEY-165 의 주의
+ * 문구가 이 이름으로 안내문을 못 찾는다. **화면에서만** 벗긴다.
+ *
+ * 접두사가 묶음마다 다르게 붙어 있다 — 자궁내막증은 이름으로(「자궁내막증 · 」),
+ * PCOS 는 코드로(「PCOS · 」). 그래서 **둘 다** 후보로 본다. 묶음 이름으로만
+ * 자르면 PCOS 다섯 줄이 그대로 남는다.
+ *
+ * 「`·` 앞을 자른다」로 하면 「선근증 · 생리과다」의 앞토막까지 없어진다 —
+ * 그 가운뎃점은 이름의 일부다. **이 묶음의 열쇠나 이름과 정확히 맞을 때만** 뗀다.
+ * 그래서 「그 밖의 질환」 묶음에서는 아무것도 안 떨어진다 — 모르는 질환이
+ * 몰려 있는 칸이라 질환 이름이 곧 알아야 할 정보다.
+ */
+function railSetName(block, name) {
+  var full = String(name == null ? "" : name);
+  if (!block) return full;
+
+  var at = full.indexOf(" · ");
+  if (at < 0) return full;
+
+  var head = full.slice(0, at);
+  if (head !== block.key && head !== block.title) return full;
+
+  /* 벗기고 나면 빈 줄이 되는 이름은 그대로 둔다 — 이름 없는 줄은 못 고른다 */
+  return full.slice(at + 3).trim() || full;
+}
+
+/** 한 묶음의 안내문 진도 — 「1/3」.
+ *
+ * 처방 갈래는 개수(`3`)를, 안내문 갈래는 진도(`1/3`)를 단다. 접두사를 떼면
+ * 두 갈래가 글자까지 같은 나무 두 그루가 되는데, 숫자의 뜻이 다르면 접혀
+ * 있을 때도 갈린다. 꾸밈이 아니라 볼 사람이 알고 싶은 값이다.
+ *
+ * **아직 못 받아 온 목록은 「0/3」이라 하지 않는다** — 그건 「세 장 다 안
+ * 봤다」는 뜻이라 「아직 모른다」와 다르다. 그때는 개수만 적는다.
+ */
+function copyBlockMark(copy, sets) {
+  var rows = sets || [];
+  if (!copy || !copy.items) return { say: String(rows.length), done: false };
+
+  var done = rows.filter(function (row) {
+    return copyRailMark(copy, row.prescription_set_id).done;
+  }).length;
+
+  return {
+    say: done + "/" + rows.length,
+    done: rows.length > 0 && done === rows.length,
+  };
+}
