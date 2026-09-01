@@ -186,9 +186,11 @@
     });
   });
 
+  var expired = false;
+
   function updateConfirm() {
     var filled = cells.every(function (c) { return c.value.length === 1; });
-    confirmBtn.disabled = !filled;
+    confirmBtn.disabled = !filled || expired;
   }
 
   /* ── 확인 버튼: OTP 검증 (와이어프레임 고정값 000000) ── */
@@ -219,6 +221,7 @@
     if (remaining <= 0) {
       clearInterval(timerInterval);
       timerEl.textContent = '시간이 만료되었어요';
+      expired = true;
       confirmBtn.disabled = true;
       return;
     }
@@ -245,6 +248,7 @@
     resendBtn.innerHTML = '다시 받기 (<span id="resend-timer">60</span>초)';
     resendTimerEl = document.getElementById('resend-timer');
     remaining = 180;
+    expired = false;
     clearInterval(resendInterval);
     resendInterval = setInterval(function () {
       resendRemaining--;
