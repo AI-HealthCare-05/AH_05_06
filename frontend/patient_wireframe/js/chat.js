@@ -50,7 +50,11 @@
     document.body.style.overflow = 'hidden';
     if (state.messages.length === 0) renderIntro();
     scrollBottom();
-    input.focus();
+    /* 모바일 Safari에서 입력창 자동 포커스가 페이지 확대와 키보드 노출을
+     * 일으키므로, 정밀 포인터를 쓰는 데스크톱 환경에서만 포커스한다. */
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      input.focus();
+    }
   }
   function closePanel() {
     backdrop.classList.remove('chat-backdrop--open');
