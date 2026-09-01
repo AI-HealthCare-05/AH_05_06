@@ -116,6 +116,7 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
     **자원별로 갈린 것**이다.
 
         /visits/{id}                   진료 그 자체    apis.v1.visit_routers
+        /visits/{id}/timeline          진료 이력       apis.v1.visit_routers
         /visits/{id}/guide/**          안내문          apis.v1.guide_routers
         /visits/{id}/guide/link        환자 링크       apis.v1.patient_link_routers
         /visits/{id}/ocr-job(s)        판독            ocr.api
@@ -130,6 +131,7 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
     """
     owner_of = {
         "/api/v1/visits/{visit_id}": "app.apis.v1.visit_routers",
+        "/api/v1/visits/{visit_id}/timeline": "app.apis.v1.visit_routers",
         "/api/v1/patients/{patient_id}/visits": "app.apis.v1.visit_routers",
         "/api/v1/visits/{visit_id}/guide": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/approve": "app.apis.v1.guide_routers",

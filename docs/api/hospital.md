@@ -417,6 +417,7 @@ HOSPITAL 1 ── N PATIENT 1 ── N VISIT
 | POST | `/api/v1/patients/{patient_id}/visits` | 환자에 진료 건 추가 | `patient:write` |
 | GET | `/api/v1/patients/{patient_id}/visits` | 지난 방문 시간순 조회 | `patient:read` |
 | GET | `/api/v1/visits/{visit_id}` | 진료 건 상세 및 후속 기능 연결 | `patient:read` |
+| GET | `/api/v1/visits/{visit_id}/timeline` | S1-4 진료 한 건의 시간순 이력 | `patient:read` |
 | PATCH | `/api/v1/visits/{visit_id}` | 진료 기본정보 수정 | `patient:write` |
 | GET | `/api/v1/front-desk/visits` | S1-1 날짜별 업무 목록 읽기 모델 | `patient:read` |
 
@@ -564,6 +565,20 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 - 응답은 `{items, page: {next_cursor, has_next}}`다.
 - 안내·발송·D+7 요약은 각 도메인의 구조화된 요약만 결합하며 원문 의료문서나 챗봇 대화 원문을 포함하지 않는다.
 
+#### 진료 이력 타임라인 (S1-4)
+
+```text
+GET /api/v1/visits/{visit_id}/timeline
+```
+
+- 진료 한 건이 이미 다른 표에 남긴 사건만 모아 시간 오름차순으로 돌려준다. 이 엔드포인트는 사건을 새로 만들지 않으며 새 모델·마이그레이션이 없다.
+- 응답은 `{visit_id, entries: [...]}`다. 각 항목: `at`, `category`(`DOCUMENT` · `OCR` · `GUIDE` · `CHECK_IN`), `event`, `actor_id`(없으면 `null`), `section_key`(안내문 수정일 때만), `document_type`(문서 업로드일 때만), `note`(반려 사유·OCR 실패 코드 등 스탭용 짧은 부연).
+- `event` 값: `DOCUMENT_UPLOADED` · `OCR_STARTED` · `OCR_COMPLETED` · `OCR_FAILED` · `OCR_CONFIRMED` · `GUIDE_GENERATED` · `GUIDE_EDITED` · `GUIDE_APPROVED` · `GUIDE_RETURNED` · `CHECK_IN_SUBMITTED`.
+- 문자 발송 사건은 포함하지 않는다. 발송 시각·상태를 남기는 모델(`SendLog` 계열)이 아직 없다(D1-5·D1-6, Sprint 5). 그 모델이 생기면 `category`에 `SEND`를 더한다.
+- `note`에 환자 대화 원문이나 검사값 원문을 담지 않는다. 반려 사유(`GuideEvent.reason`, 최대 200자)와 OCR 실패 코드만 노출한다.
+- 환자정보·검사값·처방이 담긴 화면이므로 `patient:read`가 필요하다 — `admin`만 가진 계정은 접근할 수 없다(KEY-168 회귀).
+- 병원 범위 검증은 단건 조회와 같다: 없거나 타 병원 소유이면 `404 VISIT_NOT_FOUND`.
+
 #### 진료 수정
 
 - 수정 가능: `doctor_id`, `department_id`, `visited_at`, `visit_summary`, `doctor_note`, `status`, `planned_stop`.
@@ -609,7 +624,7 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 | S1-1 | `/front-desk/visits?date`, 이름·차트번호·생년월일·파생 나이·확정 진단명·담당의·업무 카테고리, cursor pagination |
 | S1-2 | `name`, `birth_date`, `phone`, `hospital_patient_no`, `latest_visit.visited_at` |
 | S1-3 | 환자 생성 필드 + 생성 후 반환된 `patient_id` |
-| S1-4 | 환자 상세 + 오늘 진료 + `GET /patients/{id}/visits` |
+| S1-4 | 환자 상세 + 오늘 진료 + `GET /patients/{id}/visits` + `GET /visits/{id}/timeline` |
 | S1-5~S1-14 | `visit_id`를 OCR·안내·발송 계약에 전달 |
 | S2-1 | 환자 목록 + `latest_visit` + 구조화된 진행 상태 요약 |
 | S2-2 | 진료 목록 + 발송·열람·체크인 구조화 요약 |
