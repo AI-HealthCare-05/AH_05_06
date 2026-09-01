@@ -63,6 +63,7 @@
         state.tab = key;
         buildTabBar(d);
         renderBody(d);
+        window.scrollTo(0, 0);
       });
       bar.appendChild(b);
     });
@@ -111,7 +112,7 @@
       state.tab = '복약지도';
       buildTabBar(d);
       renderBody(d);
-      document.getElementById('body').scrollTop = 0;
+      window.scrollTo(0, 0);
     }));
 
     return frag;
@@ -352,7 +353,6 @@
       var collapseBtn = btn('btn btn--full', '접기', function () {
         state.careExpanded = false;
         renderBody(d);
-        document.getElementById('body').scrollTop = 0;
       });
       frag.appendChild(collapseBtn);
     }
@@ -461,7 +461,6 @@
       default:         frag = document.createDocumentFragment();
     }
     body.appendChild(frag);
-    window.scrollTo(0, 0);
 
     /* 모든 탭 공통 하단 푸터 */
     var footer = (typeof GuideFooter === 'function')
