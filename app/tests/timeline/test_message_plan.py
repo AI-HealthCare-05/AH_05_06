@@ -256,3 +256,153 @@ class PlanDrivesScheduleTestCase(World, TestCase):
 
         kinds = {m.kind for m in await GuideMessage.filter(guide_document=guide)}
         assert GuideMessageKind.RUN_OUT not in kinds, "껐는데 소진 임박이 예약됐다"
+
+
+class HeldTestCase(World, TestCase):
+    """**보류는 실패와 다른 축이다** — 와이어프레임 S2-3.
+
+    실패는 「보내려 했고 안 됐다」(지난 일), 보류는 「아직 안 보냈고, 지금
+    보내면 안 될 것을 안다」(앞일)다. 같은 번호가 08-11 에는 실패, 08-14 에는
+    보류인 것이 원문이다.
+
+    **아직 아무것도 이 상태를 만들지 않는다** — 문자를 보내는 것이 없다.
+    여기서 재는 것은 표와 화면이 그 상태를 **담고 나를 수 있는가**다.
+    """
+
+    async def test_a_held_row_survives(self) -> None:
+        """보류 한 줄이 사유와 함께 남는다."""
+        from app.models.visits import GuideMessageFailure, GuideMessageHold, GuideMessageStatus
+
+        actor, visit, guide = await self.make_world("HD-01")
+        await GuideService().approve(actor, visit.visit_id)
+
+        row = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.CHECK_D7)
+        row.status = GuideMessageStatus.HELD
+        row.hold_reason = GuideMessageHold.NO_CREDIT
+        await row.save(update_fields=["status", "hold_reason"])
+
+        again = await GuideMessage.get(guide_message_id=row.guide_message_id)
+        assert again.status == GuideMessageStatus.HELD
+        assert again.hold_reason == GuideMessageHold.NO_CREDIT
+        assert again.failure_code is None, "보류인데 실패 사유가 찼다"
+
+        # 실패는 실패대로 담긴다 — 두 칸이 서로를 밀어내지 않는다
+        other = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.GUIDE)
+        other.status = GuideMessageStatus.FAILED
+        other.failure_code = GuideMessageFailure.INVALID_PHONE
+        await other.save(update_fields=["status", "failure_code"])
+
+        back = await GuideMessage.get(guide_message_id=other.guide_message_id)
+        assert back.failure_code == GuideMessageFailure.INVALID_PHONE
+        assert back.hold_reason is None
+
+    async def test_the_timeline_carries_both(self) -> None:
+        """화면이 그릴 수 있게 두 칸을 **함께** 내려 준다."""
+        from app.models.visits import GuideMessageHold, GuideMessageStatus
+        from app.timeline.service import TimelineService
+
+        actor, visit, guide = await self.make_world("HD-02")
+        await GuideService().approve(actor, visit.visit_id)
+
+        row = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.CHECK_D7)
+        row.status = GuideMessageStatus.HELD
+        row.hold_reason = GuideMessageHold.INVALID_PHONE
+        await row.save(update_fields=["status", "hold_reason"])
+
+        seen = await TimelineService().read(actor, visit.visit_id)
+        held = [m for m in seen.messages if m.status == "HELD"]
+        assert held, "보류 줄이 화면까지 안 간다"
+        assert held[0].hold_reason == "INVALID_PHONE", "사유가 안 간다 — 화면이 「보류」로만 적는다"
+
+    async def test_the_two_lists_are_not_the_same(self) -> None:
+        """**사유 목록이 갈려 있다** — 보류는 둘(S2-3), 실패는 넷(D1-7).
+
+        한 목록으로 합치고 싶어지는 자리다. 겹치는 낱말이 있기 때문이다.
+        그러나 재는 것이 다르다 — 「보내기 전에 이미 아는 것」과 「보내 보고
+        안 것」이다.
+        """
+        from app.models.visits import GuideMessageFailure, GuideMessageHold
+
+        assert {m.value for m in GuideMessageHold} == {"INVALID_PHONE", "NO_CREDIT"}
+        assert {m.value for m in GuideMessageFailure} == {
+            "INVALID_PHONE",
+            "OPT_OUT",
+            "CARRIER",
+            "SENDER_UNREGISTERED",
+        }
+        assert {m.value for m in GuideMessageHold} != {m.value for m in GuideMessageFailure}
+
+    async def test_nothing_produces_these_yet(self) -> None:
+        """**아직 아무것도 보류·실패를 만들지 않는다.**
+
+        문자를 보내는 것이 없기 때문이다. 이 검사는 그 사실을 기록해 두는
+        자리다 — 발송기가 붙는 날 여기가 먼저 깨져서, 화면의 「[demo] 문자
+        발송기는 아직 붙지 않았습니다」를 지우는 것을 잊지 않게 한다.
+        """
+        import pathlib
+
+        service = pathlib.Path("app/services/guides.py").read_text(encoding="utf-8")
+        # 승인 철회가 「이미 나갔나」를 묻느라 SENT 를 읽기는 한다. **쓰지는** 않는다.
+        assert "status=GuideMessageStatus.SENT," in service, "읽는 자리까지 사라졌다"
+        assert "= GuideMessageStatus.SENT" not in service, (
+            "무언가 SENT 로 바꾸기 시작했다 — 발송기가 붙었으면 화면의 [demo] 문구를 지워야 한다"
+        )
+        assert "GuideMessageStatus.HELD" not in service, (
+            "무언가 보류를 만들기 시작했다 — 화면의 [demo] 문구를 지워야 한다"
+        )
+
+    async def test_a_reason_outside_the_list_is_refused(self) -> None:
+        """**목록 밖의 사유는 안 들어간다.**
+
+        자유 문자열로 두면 발송기를 붙이는 사람마다 다른 낱말을 넣고
+        (`SMS_FAIL_3`, `번호오류`, …), 화면은 그중 아는 것만 사람 말로 옮긴다 —
+        나머지는 「못 나감」으로만 보여 무엇을 고쳐야 하는지 알 수 없다.
+        """
+        from app.models.visits import GuideMessageStatus
+
+        actor, visit, guide = await self.make_world("HD-03")
+        await GuideService().approve(actor, visit.visit_id)
+        row = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.GUIDE)
+
+        row.status = GuideMessageStatus.FAILED
+        row.failure_code = "SMS_FAIL_3"
+        try:
+            await row.save(update_fields=["status", "failure_code"])
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("목록에 없는 실패 사유가 저장됐다")
+
+        row2 = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.CHECK_D7)
+        row2.status = GuideMessageStatus.HELD
+        row2.hold_reason = "잔량없음"
+        try:
+            await row2.save(update_fields=["status", "hold_reason"])
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("목록에 없는 보류 사유가 저장됐다")
+
+    async def test_a_failure_reason_is_not_a_hold_reason(self) -> None:
+        """**두 목록을 서로의 칸에 넣을 수 없다.**
+
+        「보류 · 발신번호 미등록」처럼 적히면, 보내 본 적이 없는데 보내 봤다는
+        말이 된다. 화면에서 가르는 것만으로는 부족하다 — 표가 먼저 막는다.
+        """
+        from app.models.visits import GuideMessageStatus
+
+        actor, visit, guide = await self.make_world("HD-04")
+        await GuideService().approve(actor, visit.visit_id)
+        row = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.CHECK_D7)
+
+        row.status = GuideMessageStatus.HELD
+        # `CARRIER` 를 고른 이유는 **짧기 때문**이다. `SENDER_UNREGISTERED` 는
+        # 19자라 칸 길이(13)에 먼저 걸려, 목록이 갈려 있어서 막힌 것인지
+        # 길어서 막힌 것인지 알 수 없다 — 검사가 헛돈다.
+        row.hold_reason = "CARRIER"  # 실패 목록에만 있는 값 (7자)
+        try:
+            await row.save(update_fields=["status", "hold_reason"])
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("실패 사유가 보류 칸에 들어갔다")

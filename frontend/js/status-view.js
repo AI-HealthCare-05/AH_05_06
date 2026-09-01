@@ -126,17 +126,53 @@ var MESSAGE_SAYING = {
   RUN_OUT: "소진 임박",
 };
 
-/* 한 통이 지금 어디에 있는가. **「예정」과 「못 나감」을 또렷이 가른다** —
-   못 나간 것은 사람이 손대야 하고, 예정은 두면 나간다. */
+/* **못 나간 이유는 넷뿐이다** — 와이어프레임 D1-7 「실패 이유 넷 — 잘못된
+   번호 · 수신 거부 · 통신사 오류 · 발신번호 미등록」. 발신번호 미등록만
+   처리 경로가 다르다(어드민 A1-5 에서 등록한다). */
+var FAILURE_SAYING = {
+  INVALID_PHONE: "잘못된 번호",
+  OPT_OUT: "수신 거부",
+  CARRIER: "통신사 오류",
+  SENDER_UNREGISTERED: "발신번호 미등록",
+};
+
+/* **붙들고 있는 이유는 둘뿐이다** — 와이어프레임 S2-3 「스탭이 손댈 일은
+   보류 두 가지뿐이다 — 번호가 잘못됐을 때와 문자가 떨어졌을 때」.
+   원문 표기가 「보류 · 번호」 · 「보류 · 문자 잔량」이라 짧게 적는다. */
+var HOLD_SAYING = {
+  INVALID_PHONE: "번호",
+  NO_CREDIT: "문자 잔량",
+};
+
+/* 한 통이 지금 어디에 있는가. **「예정」과 「못 나감」과 「보류」를 또렷이
+   가른다.**
+
+   실패와 보류를 한 무더기로 뭉치면 「이미 벌어진 것」과 「고치면 아직 막을 수
+   있는 것」이 섞인다 — 스탭이 무엇을 손대야 하는지 안 보인다. 와이어프레임
+   S2-3 도 「안 나간 것 3건 (실패 1 · 보류 2)」로 합쳐 세면서 따로 적는다. */
 var MESSAGE_STATE = {
-  SCHEDULED: { say: "예정", done: false, bad: false },
-  SENT: { say: "발송 완료", done: true, bad: false },
-  FAILED: { say: "못 나감", done: false, bad: true },
-  CANCELED: { say: "꺼짐", done: false, bad: false },
+  SCHEDULED: { say: "예정", mark: "○", done: false, bad: false },
+  SENT: { say: "발송 완료", mark: "●", done: true, bad: false },
+  FAILED: { say: "못 나감", mark: "⚠", done: false, bad: true },
+  HELD: { say: "보류", mark: "⏸", done: false, bad: true },
+  CANCELED: { say: "꺼짐", mark: "○", done: false, bad: false },
 };
 
 function messageState(status) {
-  return MESSAGE_STATE[status] || { say: String(status || ""), done: false, bad: false };
+  return MESSAGE_STATE[status] || { say: String(status || ""), mark: "○", done: false, bad: false };
+}
+
+/** 그 줄에 적을 한 마디 — 「못 나감 · 잘못된 번호」 · 「보류 · 문자 잔량」.
+    모르는 코드는 **적지 않는다** — 코드를 그대로 보이면 사람 말이 아니다. */
+function messageSaying(row) {
+  var state = messageState(row && row.status);
+  var why =
+    row && row.status === "HELD"
+      ? HOLD_SAYING[row.hold_reason]
+      : row && row.status === "FAILED"
+        ? FAILURE_SAYING[row.failure_code]
+        : null;
+  return why ? state.say + " · " + why : state.say;
 }
 
 /** 「08-20 10:00」 — 날짜와 시각을 함께 적는다. 회차는 며칠 뒤라 날짜가 있어야 한다. */
@@ -160,8 +196,10 @@ function sendRowsHtml(messages) {
         '<div class="sd__row' +
         (state.bad ? " is-bad" : "") +
         '">' +
+        /* **● 와 ○ 는 크기·색이 같다** — 원문이 그렇다. ⚠ 와 ⏸ 만 다르다:
+           그 둘은 사람이 손대야 하는 줄이라 눈에 걸려야 한다. */
         '<span class="sd__dot" aria-hidden="true">' +
-        (state.done ? "\u25cf" : "\u25cb") +
+        esc(state.mark) +
         "</span>" +
         '<span class="sd__what' +
         (state.done ? " is-done" : "") +
@@ -172,7 +210,7 @@ function sendRowsHtml(messages) {
         esc(messageWhen(row.at)) +
         "</span>" +
         '<span class="sd__state">' +
-        esc(state.say) +
+        esc(messageSaying(row)) +
         (row.sent_at ? " \u00b7 " + esc(messageWhen(row.sent_at)) : "") +
         "</span></div>"
       );
@@ -220,7 +258,7 @@ function statusScreenHtml(view) {
       : "") +
     "</div>" +
     sendRowsHtml(view.messages) +
-    '<p class="st__note">ⓘ 못 나간 문자가 있으면 그 줄에 표시됩니다 — 발송기가 붙으면 다시 보낼 수 있습니다</p>' +
+    '<p class="st__note">ⓘ ⚠ 못 나감은 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 발송기가 붙으면 그 자리에서 고칩니다</p>' +
     "</section>" +
     '<section class="st__side">' +
     '<div class="st__head">환자 액션 현황</div>' +

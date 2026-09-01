@@ -309,6 +309,39 @@ class GuideMessageKind(StrEnum):
     RUN_OUT = "RUN_OUT"
 
 
+class GuideMessageHold(StrEnum):
+    """**왜 붙들고 있나** — 와이어프레임 S2-3.
+
+    원문이 딱 둘로 못박는다: 「스탭이 손댈 일은 보류 두 가지뿐이다 — 번호가
+    잘못됐을 때와 문자가 떨어졌을 때.」
+
+    실패 사유(`GuideMessageFailure`)와 **다른 목록**이다. 겹치는 낱말이 있어
+    한 목록으로 합치고 싶어지지만, 재는 것이 다르다 — 이쪽은 「보내기 전에
+    이미 아는 것」이고 저쪽은 「보내 보고 안 것」이다.
+    """
+
+    #: 이 환자 번호로는 못 보낸다는 것을 이미 안다 (앞 통이 그 번호로 실패했다).
+    INVALID_PHONE = "INVALID_PHONE"
+    #: 의원의 문자 잔량이 없다. **환자마다 다르지 않다** — 그래서 실패가 아니다.
+    NO_CREDIT = "NO_CREDIT"
+
+
+class GuideMessageFailure(StrEnum):
+    """**보내 봤는데 안 됐다** — 와이어프레임 D1-7 「실패 이유 넷」.
+
+    원문: 「ⓘ 실패 이유 넷 — 잘못된 번호 · 수신 거부 · 통신사 오류 ·
+    발신번호 미등록」. 넷으로 못박혀 있으므로 자유 문자열로 두지 않는다 —
+    자유롭게 두면 발송기를 붙이는 사람마다 다른 낱말을 넣고, 화면은 그중
+    아는 것만 사람 말로 옮긴다.
+    """
+
+    INVALID_PHONE = "INVALID_PHONE"
+    OPT_OUT = "OPT_OUT"
+    CARRIER = "CARRIER"
+    #: 이것만 처리 경로가 다르다 — 어드민 A1-5 에서 발신번호를 등록한다(D1-7).
+    SENDER_UNREGISTERED = "SENDER_UNREGISTERED"
+
+
 class GuideMessageStatus(StrEnum):
     """문자 한 통이 지금 어디에 있는가.
 
@@ -321,7 +354,18 @@ class GuideMessageStatus(StrEnum):
 
     SCHEDULED = "SCHEDULED"
     SENT = "SENT"
+    #: **보내려 했고 안 됐다.** 지난 일이다 — 사유는 `GuideMessageFailure`.
     FAILED = "FAILED"
+    #: **아직 안 보냈고, 지금 보내면 안 될 것을 안다.** 앞일이다.
+    #:
+    #: 와이어프레임 S2-3 이 실패와 나란히 두고 따로 센다(「안 나간 것 3건
+    #: (실패 1 · 보류 2)」). 박수빈의 08-11 진료 안내문은 「⚠ 잘못된 번호」로
+    #: 실패했고, 같은 번호로 예약된 08-14 것은 「⏸ 보류 · 번호」다 — **같은
+    #: 원인인데 상태가 다르다.** 지난 것은 실패, 앞으로 나갈 것은 보류다.
+    #:
+    #: 실패로 뭉치면 「고칠 수 있는 것」과 「이미 벌어진 것」이 한 무더기가
+    #: 되어, 스탭이 무엇을 손대야 하는지 안 보인다.
+    HELD = "HELD"
     CANCELED = "CANCELED"
 
 
@@ -391,8 +435,14 @@ class GuideMessage(models.Model):
     status = fields.CharEnumField(enum_type=GuideMessageStatus, default=GuideMessageStatus.SCHEDULED)
     scheduled_at = fields.DatetimeField()
     sent_at = fields.DatetimeField(null=True)
-    #: 못 나간 이유. 화면이 사람 말로 옮긴다 — 코드를 그대로 보여 주지 않는다.
-    failure_code = fields.CharField(max_length=64, null=True)
+    #: 못 나간 이유 — **넷뿐이다**(D1-7). 자유 문자열로 두면 발송기를 붙이는
+    #: 사람마다 다른 낱말을 넣고, 화면은 그중 아는 것만 사람 말로 옮긴다.
+    #: 화면이 코드를 그대로 보여 주지는 않는다.
+    failure_code = fields.CharEnumField(enum_type=GuideMessageFailure, null=True)
+
+    #: 왜 붙들고 있나 — **둘뿐이다**(S2-3). `status` 가 `HELD` 일 때만 찬다.
+    #: 실패 사유와 목록이 다르다 — 재는 것이 다르기 때문이다.
+    hold_reason = fields.CharEnumField(enum_type=GuideMessageHold, null=True)
     #: 실제로 나간 글. 보내기 전에는 비어 있다.
     sent_body = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)

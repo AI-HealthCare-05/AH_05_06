@@ -87,6 +87,7 @@ class TimelineService:
                 at=row.scheduled_at,
                 sent_at=row.sent_at,
                 failure_code=row.failure_code,
+                hold_reason=row.hold_reason,
             )
             for row in await GuideMessage.filter(guide_document_id=guide.guide_document_id)
             .order_by("scheduled_at")

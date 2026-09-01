@@ -37,12 +37,15 @@ class ScheduledMessage(StrictModel):
     #: 무엇인가 — GUIDE · CHECK_D7 · CHECK_D15 · CHECK_D30 · RUN_OUT.
     #: 화면이 사람 말로 옮긴다.
     kind: str
-    #: 지금 어디에 있나 — SCHEDULED · SENT · FAILED · CANCELED
+    #: 지금 어디에 있나 — SCHEDULED · SENT · FAILED · HELD · CANCELED
     status: str
     at: datetime
     sent_at: datetime | None = None
-    #: 못 나간 이유. 화면이 사람 말로 옮긴다 — 코드를 그대로 보여 주지 않는다.
+    #: 못 나간 이유 — 넷뿐이다(D1-7). 화면이 사람 말로 옮긴다.
     failure_code: str | None = None
+    #: 왜 붙들고 있나 — 둘뿐이다(S2-3). `status` 가 `HELD` 일 때만 찬다.
+    #: 실패 사유와 **다른 목록**이다 — 재는 것이 다르다.
+    hold_reason: str | None = None
 
 
 class TimelineResponse(StrictModel):
