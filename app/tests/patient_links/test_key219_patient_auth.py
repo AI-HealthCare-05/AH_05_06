@@ -66,7 +66,9 @@ class TestPatientAuthContext(BaseAuthCase):
         res = await self.call_context()
 
         expires_at = datetime.fromisoformat(res.json()["expires_at"])
-        assert expires_at.utcoffset().total_seconds() == 0, "expires_at offset must be UTC(+00:00)"
+        utcoffset = expires_at.utcoffset()
+        assert utcoffset is not None, "expires_at must be timezone-aware"
+        assert utcoffset.total_seconds() == 0, "expires_at offset must be UTC(+00:00)"
         expected = now() + timedelta(hours=72)
         assert abs((expires_at - expected).total_seconds()) < 5
 
