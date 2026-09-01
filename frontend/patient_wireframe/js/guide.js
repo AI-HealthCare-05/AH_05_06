@@ -581,7 +581,7 @@
     submitBtn.className = 'btn btn--primary report-submit';
     submitBtn.textContent = '보내기';
     submitBtn.addEventListener('click', function () {
-      alert('신고가 접수되었습니다.\n(실제 전송은 서버 연동 후 동작합니다)');
+      alert('[미구현] 오류 신고 기능은 서버 연동 후 동작합니다.');
       closeReport();
     });
     content.appendChild(submitBtn);
