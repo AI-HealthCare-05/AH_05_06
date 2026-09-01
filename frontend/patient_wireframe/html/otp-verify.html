@@ -216,19 +216,28 @@
 
   /* ── 인증 타이머 (3분) ── */
   var remaining = 180;
-  var timerInterval = setInterval(function () {
-    remaining--;
-    if (remaining <= 0) {
-      clearInterval(timerInterval);
-      timerEl.textContent = '시간이 만료되었어요';
-      expired = true;
-      confirmBtn.disabled = true;
-      return;
-    }
-    var m = Math.floor(remaining / 60);
-    var s = remaining % 60;
-    timerEl.textContent = m + '분 ' + (s < 10 ? '0' : '') + s + '초 남았어요';
-  }, 1000);
+  var timerInterval;
+
+  function startMainTimer() {
+    clearInterval(timerInterval);
+    remaining = 180;
+    timerEl.textContent = '3분 00초 남았어요';
+    timerInterval = setInterval(function () {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(timerInterval);
+        timerEl.textContent = '시간이 만료되었어요';
+        expired = true;
+        confirmBtn.disabled = true;
+        return;
+      }
+      var m = Math.floor(remaining / 60);
+      var s = remaining % 60;
+      timerEl.textContent = m + '분 ' + (s < 10 ? '0' : '') + s + '초 남았어요';
+    }, 1000);
+  }
+
+  startMainTimer();
 
   /* ── 다시 받기 쿨다운 (60초) ── */
   var resendRemaining = 60;
@@ -247,8 +256,8 @@
     resendRemaining = 60;
     resendBtn.innerHTML = '다시 받기 (<span id="resend-timer">60</span>초)';
     resendTimerEl = document.getElementById('resend-timer');
-    remaining = 180;
     expired = false;
+    startMainTimer();
     clearInterval(resendInterval);
     resendInterval = setInterval(function () {
       resendRemaining--;
