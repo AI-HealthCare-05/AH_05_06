@@ -185,8 +185,7 @@
       goalCard.appendChild(item);
     });
 
-    /* goalSay */
-    goalCard.appendChild(richEl('div', 'goal-say', g.goalSay));
+
     frag.appendChild(goalCard);
 
     /* 처방받은 약 */
