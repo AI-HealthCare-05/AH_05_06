@@ -143,7 +143,7 @@
   </div>
 
   <div class="otp-bottom">
-    <button type="button" class="otp-confirm" id="otp-confirm" disabled onclick="location.href='guide.html'">확인</button>
+    <button type="button" class="otp-confirm" id="otp-confirm" disabled>확인</button>
     <div class="otp-resend">
       <span>못 받으셨나요?</span>
       <button type="button" class="otp-resend__btn" id="resend-btn" disabled>다시 받기 (<span id="resend-timer">60</span>초)</button>
@@ -190,6 +190,27 @@
     var filled = cells.every(function (c) { return c.value.length === 1; });
     confirmBtn.disabled = !filled;
   }
+
+  /* ── 확인 버튼: OTP 검증 (와이어프레임 고정값 000000) ── */
+  confirmBtn.addEventListener('click', function () {
+    var entered = cells.map(function (c) { return c.value; }).join('');
+    if (entered === '000000') {
+      sessionStorage.setItem('otp_verified', '1');
+      location.href = 'guide.html';
+    } else {
+      cells.forEach(function (c) { c.value = ''; });
+      cells[0].focus();
+      confirmBtn.disabled = true;
+      var errEl = document.getElementById('otp-error');
+      if (!errEl) {
+        errEl = document.createElement('p');
+        errEl.id = 'otp-error';
+        errEl.style.cssText = 'font-size:13px;color:var(--danger);margin-top:8px;';
+        document.getElementById('otp-cells').after(errEl);
+      }
+      errEl.textContent = '인증번호가 올바르지 않아요. 다시 확인해 주세요.';
+    }
+  });
 
   /* ── 인증 타이머 (3분) ── */
   var remaining = 180;

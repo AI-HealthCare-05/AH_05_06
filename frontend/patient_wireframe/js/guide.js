@@ -2,6 +2,12 @@
 (function () {
   if (!document.getElementById('body')) return;
 
+  /* OTP 인증 가드: 직접 URL 접근 차단 */
+  if (!sessionStorage.getItem('otp_verified')) {
+    location.replace('../html/otp.html');
+    return;
+  }
+
   var TOKEN = (function () {
     try { return new URLSearchParams(window.location.search).get('t') || 'mock'; }
     catch (e) { return 'mock'; }
