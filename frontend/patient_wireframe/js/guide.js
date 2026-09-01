@@ -617,8 +617,9 @@
   var pdfSheet = Sheet({
     title: 'PDF로 저장',
     options: PDF_OPTIONS,
-    defaultSelected: ['guide', 'care', 'life'],
+    defaultSelected: state.pdfSelected,
     onSave: function (chosen) {
+      state.pdfSelected = chosen;
       alert('PDF 저장: ' + chosen.join(', ') + '\n(실제 저장은 서버 연동 후 동작합니다)');
     },
   });
