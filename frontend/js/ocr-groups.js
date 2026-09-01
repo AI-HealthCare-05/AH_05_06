@@ -310,7 +310,27 @@ var CHECK_ITEM_LABELS = {
   PREGNANCY_PLAN: "임신 계획",
 };
 
-var CHECK_ITEMS = ["DEPRESSION", "HYPERTENSION", "OSTEOPOROSIS", "DIABETES", "PREGNANCY_PLAN"];
+/* **무엇을 여쭐지는 처방이 정한다** (와이어프레임 S1-6 「처방별」).
+ *
+ * 다섯을 모든 진료에 똑같이 세우던 자리다. 그러면 안 물어도 될 것을 묻게 되고,
+ * 물어야 할 것이 빠져도 아무도 모른다.
+ *
+ * 처방을 아직 안 골랐으면 **빈 목록**을 준다. 다섯을 미리 세워 두면 처방을
+ * 고르는 순간 항목이 바뀌면서, 이미 체크한 것이 사라진 것처럼 보인다. */
+function checkItemsOf(sets, chosen) {
+  /* 고른 세트를 통째로 받았으면 그것이 답이다 — 화면이 들고 있는 것(`pickedSet`)이
+     가장 확실하다. 이름만 받았으면 목록에서 찾는다(판독이 읽어 온 경우). */
+  if (chosen && chosen.check_items) return chosen.check_items;
+
+  var all = sets || [];
+  var want = String((chosen && chosen.name) || chosen || "").trim();
+  if (!want) return [];
+
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].name === want) return all[i].check_items || [];
+  }
+  return [];
+}
 
 function checkItemLabel(key) {
   return CHECK_ITEM_LABELS[String(key || "")] || String(key || "");

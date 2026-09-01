@@ -480,7 +480,7 @@ class GuideMessage(models.Model):
 
     guide_message_id = fields.BigIntField(primary_key=True)
     guide_document_id: int
-    guide_document: fields.ForeignKeyRelation["GuideDocument"] = fields.ForeignKeyField(
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
         "models.GuideDocument",
         related_name="messages",
         on_delete=OnDelete.CASCADE,

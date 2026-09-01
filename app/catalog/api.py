@@ -8,10 +8,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.core.api_errors import ContractRoute
 from app.catalog.schemas import PrescriptionSetResponse
+from app.core.api_errors import ContractRoute
 from app.dependencies.patient_access import ClinicalActor, require_patient_read
-from app.models.catalog import PrescriptionSet
+from app.models.catalog import PrescriptionCheckItem, PrescriptionSet
+from app.models.visits import VisitCheckKey
 
 catalog_router = APIRouter(tags=["catalog"], route_class=ContractRoute)
 
@@ -30,7 +31,18 @@ async def list_prescription_sets(
     말해 주고, 그건 밖에 흘릴 것이 아니다.
     """
     rows = await PrescriptionSet.all().order_by("prescription_set_id")
+
+    # 확인 항목을 **한 번에** 읽는다. 세트마다 물으면 여덟 번 다녀온다.
+    items = await PrescriptionCheckItem.all().order_by("position", "prescription_check_item_id")
+    by_set: dict[int, list[VisitCheckKey]] = {}
+    for item in items:
+        by_set.setdefault(item.prescription_set_id, []).append(item.item_key)
+
     return [
-        PrescriptionSetResponse(prescription_set_id=row.prescription_set_id, name=row.name)
+        PrescriptionSetResponse(
+            prescription_set_id=row.prescription_set_id,
+            name=row.name,
+            check_items=by_set.get(row.prescription_set_id, []),
+        )
         for row in rows
     ]

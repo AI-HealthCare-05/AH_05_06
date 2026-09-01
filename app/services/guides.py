@@ -615,35 +615,39 @@ class GuideService:
 
             for item in getattr(plan, "rounds", []) or []:
                 kind = GuideMessageKind(item.kind)
-                enabled = bool(item.enabled)
-
-                # **일주일 뒤는 끌 수 없다** — 화면이 잠그지만 요청은 그냥 온다.
-                if kind in FIXED_ON:
-                    enabled = True
-
-                body = item.body
-                if body is not None:
-                    body = body.strip()
-                    if not body:
-                        # 비운 것은 「기본 문구로 되돌린다」는 뜻이다.
-                        body = None
-                    elif len(body) > MESSAGE_BODY_MAX:
-                        raise ApiError("BODY_TOO_LONG", 422, "문구가 너무 깁니다.")
-
-                days_before = None
-                if kind is GuideMessageKind.RUN_OUT:
-                    days_before = RUN_OUT_BEFORE_DAYS if item.days_before is None else int(item.days_before)
-                    if not RUN_OUT_BEFORE_MIN <= days_before <= RUN_OUT_BEFORE_MAX:
-                        raise ApiError("BAD_DAYS_BEFORE", 422, "소진 며칠 전인지가 범위를 벗어났습니다.")
-
                 await GuideMessageSetting.update_or_create(
                     guide_document_id=guide.guide_document_id,
                     kind=kind,
-                    defaults={"enabled": enabled, "body": body, "days_before": days_before},
+                    defaults=self._round_values(kind, item),
                     using_db=connection,
                 )
 
         return await self.message_plan(actor, visit_id)
+
+    @staticmethod
+    def _round_values(kind: GuideMessageKind, item) -> dict:
+        """회차 한 줄이 담길 모양. **한 줄을 재는 규칙을 여기 모은다** —
+        저장 함수 안에 두었더니 트랜잭션·권한·검사가 한 덩이가 됐다.
+        """
+        # **일주일 뒤는 끌 수 없다** — 화면이 잠그지만 요청은 그냥 온다.
+        enabled = True if kind in FIXED_ON else bool(item.enabled)
+
+        body = item.body
+        if body is not None:
+            body = body.strip()
+            if not body:
+                # 비운 것은 「기본 문구로 되돌린다」는 뜻이다.
+                body = None
+            elif len(body) > MESSAGE_BODY_MAX:
+                raise ApiError("BODY_TOO_LONG", 422, "문구가 너무 깁니다.")
+
+        days_before = None
+        if kind is GuideMessageKind.RUN_OUT:
+            days_before = RUN_OUT_BEFORE_DAYS if item.days_before is None else int(item.days_before)
+            if not RUN_OUT_BEFORE_MIN <= days_before <= RUN_OUT_BEFORE_MAX:
+                raise ApiError("BAD_DAYS_BEFORE", 422, "소진 며칠 전인지가 범위를 벗어났습니다.")
+
+        return {"enabled": enabled, "body": body, "days_before": days_before}
 
     async def unapprove(self, actor, visit_id: int) -> GuideDocument:
         """승인을 **거둔다** — 승인했는데 잘못된 것을 발견했을 때.
@@ -694,10 +698,14 @@ class GuideService:
             )
 
             # 예약을 끈다. **지우지 않는다** — 껐다는 것도 기록이다.
-            await GuideMessage.filter(
-                guide_document_id=guide.guide_document_id,
-                status=GuideMessageStatus.SCHEDULED,
-            ).using_db(connection).update(status=GuideMessageStatus.CANCELED)
+            await (
+                GuideMessage.filter(
+                    guide_document_id=guide.guide_document_id,
+                    status=GuideMessageStatus.SCHEDULED,
+                )
+                .using_db(connection)
+                .update(status=GuideMessageStatus.CANCELED)
+            )
 
             await GuideEvent.create(
                 guide_document=guide,

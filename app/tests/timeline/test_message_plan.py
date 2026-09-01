@@ -8,15 +8,14 @@
 여기서 재는 것은 그 둘이 같은가다.
 """
 
+from tortoise.contrib.test import TestCase
+
 from app.models.visits import (
     GuideMessage,
     GuideMessageKind,
     GuideMessageSetting,
-    GuideStatus,
 )
 from app.services.guides import CHECK_HOUR, RUN_OUT_BEFORE_DAYS, GuideService
-
-from tortoise.contrib.test import TestCase
 
 from .test_send_schedule import World
 

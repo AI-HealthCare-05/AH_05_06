@@ -85,9 +85,7 @@ class CheckAnswerTestCase(TestCase):
         한쪽만 바뀐다.
         """
         actor, visit = await self.make_world("CK-02")
-        await VisitCheckService().save(
-            actor, visit.visit_id, Plan([Answer(VisitCheckKey.DIABETES, True)])
-        )
+        await VisitCheckService().save(actor, visit.visit_id, Plan([Answer(VisitCheckKey.DIABETES, True)]))
 
         got = await VisitCheckService().read(actor, visit.visit_id)
         keys = [r["item_key"] for r in got["answers"]]
@@ -119,33 +117,25 @@ class CheckAnswerTestCase(TestCase):
         `False` 로 담아 두면 여쭤서 아니라고 한 것과 섞인다.
         """
         actor, visit = await self.make_world("CK-04")
-        await VisitCheckService().save(
-            actor, visit.visit_id, Plan([Answer(VisitCheckKey.DEPRESSION, False)])
-        )
+        await VisitCheckService().save(actor, visit.visit_id, Plan([Answer(VisitCheckKey.DEPRESSION, False)]))
         assert await VisitCheckAnswer.filter(visit_id=visit.visit_id).exists()
 
-        got = await VisitCheckService().save(
-            actor, visit.visit_id, Plan([Answer(VisitCheckKey.DEPRESSION, None)])
-        )
+        got = await VisitCheckService().save(actor, visit.visit_id, Plan([Answer(VisitCheckKey.DEPRESSION, None)]))
 
         by = {r["item_key"]: r["checked"] for r in got["answers"]}
         assert by["DEPRESSION"] is None
-        assert not await VisitCheckAnswer.filter(
-            visit_id=visit.visit_id, item_key=VisitCheckKey.DEPRESSION
-        ).exists(), "되돌렸는데 행이 남았다"
+        assert not await VisitCheckAnswer.filter(visit_id=visit.visit_id, item_key=VisitCheckKey.DEPRESSION).exists(), (
+            "되돌렸는데 행이 남았다"
+        )
 
     async def test_saving_twice_does_not_duplicate(self) -> None:
         """같은 항목을 다시 답해도 줄이 늘지 않는다."""
         actor, visit = await self.make_world("CK-05")
 
         for value in (True, False, True):
-            await VisitCheckService().save(
-                actor, visit.visit_id, Plan([Answer(VisitCheckKey.DEPRESSION, value)])
-            )
+            await VisitCheckService().save(actor, visit.visit_id, Plan([Answer(VisitCheckKey.DEPRESSION, value)]))
 
-        rows = await VisitCheckAnswer.filter(
-            visit_id=visit.visit_id, item_key=VisitCheckKey.DEPRESSION
-        )
+        rows = await VisitCheckAnswer.filter(visit_id=visit.visit_id, item_key=VisitCheckKey.DEPRESSION)
         assert len(rows) == 1, f"줄이 {len(rows)}개다"
         assert rows[0].checked is True, "마지막 답이 안 남았다"
 
@@ -153,13 +143,9 @@ class CheckAnswerTestCase(TestCase):
         """누가 답했는지 남는다 — 나중에 「누가 이걸 확인했나」를 물을 자리다."""
         actor, visit = await self.make_world("CK-06")
 
-        await VisitCheckService().save(
-            actor, visit.visit_id, Plan([Answer(VisitCheckKey.PREGNANCY_PLAN, True)])
-        )
+        await VisitCheckService().save(actor, visit.visit_id, Plan([Answer(VisitCheckKey.PREGNANCY_PLAN, True)]))
 
-        row = await VisitCheckAnswer.get(
-            visit_id=visit.visit_id, item_key=VisitCheckKey.PREGNANCY_PLAN
-        )
+        row = await VisitCheckAnswer.get(visit_id=visit.visit_id, item_key=VisitCheckKey.PREGNANCY_PLAN)
         assert row.answered_by == actor.user_id, "답한 사람이 안 남았다"
         assert row.answered_at is not None, "답한 시각이 안 남았다"
 
@@ -170,9 +156,7 @@ class CheckAnswerTestCase(TestCase):
 
         for run in (
             lambda: VisitCheckService().read(stranger, visit.visit_id),
-            lambda: VisitCheckService().save(
-                stranger, visit.visit_id, Plan([Answer(VisitCheckKey.DIABETES, True)])
-            ),
+            lambda: VisitCheckService().save(stranger, visit.visit_id, Plan([Answer(VisitCheckKey.DIABETES, True)])),
         ):
             try:
                 await run()
@@ -186,9 +170,7 @@ class CheckAnswerTestCase(TestCase):
         actor, visit = await self.make_world("CK-09")
 
         try:
-            await VisitCheckService().save(
-                actor, visit.visit_id, Plan([Answer("흡연 여부", True)])
-            )
+            await VisitCheckService().save(actor, visit.visit_id, Plan([Answer("흡연 여부", True)]))
         except ValueError:
             pass
         else:

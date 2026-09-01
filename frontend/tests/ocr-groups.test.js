@@ -468,10 +468,15 @@ test("**확인 항목은 이제 켜지고 저장된다**", () => {
   /* 담을 표가 없어 꺼 둔 자리였다(`visit_check_answer` 가 생겼다). 켤 수 없으면
      스탭이 여쭈고도 남길 데가 없고, 켜 두고 안 담기면 남았다고 믿는다 —
      안전에 걸리는 항목이라 둘 다 나쁘다. */
-  const { CHECK_ITEMS, checkItemLabel } = box();
+  const { checkItemsOf, checkItemLabel } = box();
   const code = codeOnly(source("js/ocr-review.js"));
 
-  assert.ok(CHECK_ITEMS.length >= 4, "세울 항목이 없다");
+  const sets = [{ name: "자궁내막증 · 비잔 (계속)", check_items: ["DEPRESSION", "DIABETES"] }];
+  assert.deepEqual(
+    checkItemsOf(sets, "자궁내막증 · 비잔 (계속)"),
+    ["DEPRESSION", "DIABETES"],
+    "고른 처방의 항목을 못 찾는다",
+  );
   /* 서버는 코드로 주고 화면이 사람 말로 옮긴다 — 판독 항목과 같은 규칙 */
   assert.equal(checkItemLabel("DEPRESSION"), "우울증 병력");
   assert.equal(checkItemLabel("모르는코드"), "모르는코드", "모르는 코드가 사라진다");
@@ -482,7 +487,7 @@ test("**확인 항목은 이제 켜지고 저장된다**", () => {
   const body = code.slice(at, at + 1200);
   assert.ok(!body.includes("disabled"), "아직 꺼져 있다 — 여쭙고도 남길 데가 없다");
   assert.ok(body.includes("data-check"), "누름을 받는 자리가 없다");
-  assert.ok(body.includes("CHECK_ITEMS"), "항목을 여기서 지어낸다");
+  assert.ok(body.includes("checkItemsNow"), "항목을 여기서 지어낸다 — 처방이 정해야 한다");
 
   /* **끈 것은 「아직」이다.** 「아니오」라 적었더니 체크를 풀었을 때 글자가
      나타나는 꼴이라 더 헷갈렸다 — 켜면 예, 끄면 아직. */
@@ -501,8 +506,10 @@ test("**누르면 서버로 간다** — 「저장」을 따로 두면 눌러 �
   assert.notEqual(save, -1, "보내는 자리가 없다");
   const body = code.slice(save, save + 900);
   assert.match(body, /saveCheckItems\(wanted, answers\)/, "서버로 안 보낸다");
-  /* 한 판을 통째로 — 항목 하나씩 보내면 반쪽 상태가 남는다 */
-  assert.match(body, /CHECK_ITEMS\.map/, "누른 것 하나만 보낸다");
+  /* 한 판을 통째로 — 항목 하나씩 보내면 반쪽 상태가 남는다.
+     다만 **보이는 것만** 보낸다: 처방이 안 여쭙는 항목까지 보내면 그 항목을
+     빼는 순간 지난 답이 조용히 지워진다. */
+  assert.match(body, /checkItemsNow\(\)\.map/, "누른 것 하나만 보내거나, 안 여쭙는 것까지 보낸다");
   /* 안 여쭌 것은 `null` 로 보낸다 — `false` 로 보내면 아니라고 답한 것이 된다 */
   assert.match(body, /=== undefined \? null/, "안 여쭌 것을 「아니오」로 보낸다");
 
@@ -620,17 +627,21 @@ test("**적은 값은 이제 실제로 담긴다** — 「저장 안 됨」 배�
 
   assert.ok(!code.includes('field__tag--local">저장 안 됨'), "담기는데 「저장 안 됨」이라 적는다");
 
-  const at = code.indexOf('closest("#labs-save")');
+  const at = code.indexOf('"#labs-save, #rx-save"');
   assert.notEqual(at, -1, "저장 단추를 받는 자리가 없다");
-  const body = code.slice(at, at + 900);
+  const body = code.slice(at, at + 1600);
   assert.match(body, /writeField\(/, "서버로 안 보낸다");
   /* **한 번에 담는다** — 하나씩 저장하게 하면 어느 줄이 담겼는지 세어야 한다 */
-  assert.match(body, /Object\.keys\(local\)/, "적어 둔 것을 한 번에 안 보낸다");
-  assert.match(body, /local = \{\}/, "담고도 화면에 남겨 둔다 — 서버 값과 두 벌이 된다");
+  assert.match(body, /localOf\(isRx\)/, "적어 둔 것을 한 번에 안 보낸다");
   assert.match(body, /visit\.visit_id !== wanted/, "다른 환자 화면에 붙는다");
 
+  /* **내 블록 것만 지운다** — 옆 블록은 아직 안 담겼는데 함께 지우면 사라진다 */
+  assert.match(body, /typed\.forEach/, "담고 나서 옆 블록 값까지 지우거나 안 지운다");
+  assert.ok(!body.includes("local = {}"), "옆 블록의 적어 둔 값까지 지운다");
+
   /* 적은 것이 없으면 누를 것도 없다 */
-  assert.match(code, /Object\.keys\(local\)\.length \? "" : " disabled"/, "빈 채로도 눌린다");
+  assert.match(code, /localOf\(false\)\.length \?/, "판독 값 단추가 빈 채로 눌린다");
+  assert.match(code, /localOf\(true\)\.length \|\| pickedSet\)/, "처방 단추가 빈 채로 눌린다");
 });
 
 /* ── 맨 위 진단 · 처방 줄 ────────────────────────────────────────────── */
@@ -817,4 +828,160 @@ test("**다른 환자로 옮기면 고른 처방도 지운다** — 남의 처�
   const at = code.indexOf("function resetState");
   const body = code.slice(at, at + 500);
   assert.ok(/pickedSet\s*=\s*null/.test(body), "앞 환자에게 고른 처방이 남는다");
+});
+
+test("**무엇을 여쭐지는 처방이 정한다** — 처방 전에는 여쭐 것도 없다", () => {
+  const { checkItemsOf } = box();
+  const sets = [
+    { name: "자궁내막증 · 비잔 (계속)", check_items: ["DEPRESSION", "OSTEOPOROSIS"] },
+    { name: "PCOS · 야즈 (계속)", check_items: ["HYPERTENSION", "PREGNANCY_PLAN"] },
+  ];
+
+  assert.deepEqual(checkItemsOf(sets, "PCOS · 야즈 (계속)"), ["HYPERTENSION", "PREGNANCY_PLAN"]);
+
+  /* **고른 세트를 통째로 받으면 그것이 답이다** — 화면이 들고 있는 것이 가장
+     확실하다. 이름으로 되찾으면 목록을 못 불러온 사이에 빈 목록이 된다. */
+  assert.deepEqual(
+    checkItemsOf([], { name: "PCOS · 야즈 (계속)", check_items: ["HYPERTENSION"] }),
+    ["HYPERTENSION"],
+    "고른 세트를 그대로 안 읽는다",
+  );
+
+  /* **안 골랐으면 빈 목록이다.** 다섯을 미리 세워 두면 처방을 고르는 순간
+     항목이 바뀌면서 이미 체크한 것이 사라진 것처럼 보인다. */
+  assert.deepEqual(checkItemsOf(sets, ""), [], "처방 전에 항목을 세운다");
+  assert.deepEqual(checkItemsOf(sets, null), []);
+
+  /* 모르는 처방이면 지어내지 않는다 */
+  assert.deepEqual(checkItemsOf(sets, "없는 처방"), [], "모르는 처방에 항목을 지어낸다");
+
+  /* 목록을 못 불러왔을 때도 죽지 않는다 */
+  assert.deepEqual(checkItemsOf(null, "PCOS · 야즈 (계속)"), []);
+});
+
+test("처방을 안 골랐으면 그렇다고 말한다 — 빈 칸으로 두면 고장으로 읽힌다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function checkListHtml");
+  const body = code.slice(at, at + 600);
+
+  assert.match(body, /if \(!items\.length\)/, "안 골랐을 때를 안 가른다");
+  assert.ok(body.includes("처방을 고르면"), "왜 비었는지 안 말한다");
+});
+
+test("목업이 서버와 같은 모양을 준다 — 다르면 목업에서만 되는 화면이 생긴다", () => {
+  const api = codeOnly(source("js/ocr-api.js"));
+  assert.match(api, /check_items: MOCK_CHECK_ITEMS/, "목업 세트에 확인 항목이 없다");
+
+  /* 서버 씨앗과 같은 다섯이어야 한다 */
+  const at = api.indexOf("var MOCK_CHECK_ITEMS");
+  const line = api.slice(at, api.indexOf("]", at));
+  for (const key of ["DEPRESSION", "HYPERTENSION", "OSTEOPOROSIS", "DIABETES", "PREGNANCY_PLAN"]) {
+    assert.ok(line.includes(key), `목업에 ${key} 이 없다`);
+  }
+});
+
+test("**단위는 한 자리에서만 그린다** — 값 바로 뒤, 단추 앞", () => {
+  /* 칸 밖에 두면 오른쪽 끝으로 떨어지고, 칸 안 끝에 두면 단추 뒤로 밀린다.
+     값을 그리는 자리가 값 바로 뒤에 세우므로 그쪽 하나에 맡긴다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  const rows = code.split('top__unit">');
+  assert.equal(rows.length, 1, "맨 위 줄이 단위를 따로 또 그린다");
+
+  const at = code.indexOf("function unitHtml");
+  assert.notEqual(at, -1, "단위를 그리는 자리가 없다");
+  const body = code.slice(at, code.indexOf("\n  }", at));
+  assert.match(body, /fieldUnit\(/, "단위표를 안 읽는다");
+});
+
+test("**맨 위 줄에서 단위가 값 앞으로 튀지 않는다**", () => {
+  /* 값·단추의 줄바꿈 지점을 `order` 로 못박는데, 단위를 그 목록에서 빠뜨리면
+     그것만 기본값(0)이 되어 맨 앞에 선다 — 「일 ? 직접 입력」이 됐다. */
+  const css = source("css/ocr-review.css");
+  const at = css.indexOf("/* 값칸과 단위는 첫 줄에");
+  assert.notEqual(at, -1, "줄바꿈 규칙이 없다 — 검사가 헛돈다");
+
+  const block = css.slice(at, css.indexOf("}", at));
+  for (const sel of [".top .field__value", ".top .field__unit", ".top .field__pick"]) {
+    assert.ok(block.includes(sel), `${sel} 가 차례에서 빠졌다 — 그 칸만 앞으로 튄다`);
+  }
+  assert.match(css.slice(at, css.indexOf("}", at) + 20), /order:\s*1/, "차례를 안 정한다");
+});
+
+test("**견줄 판독값이 없으면 「수정됨」을 적지 않는다**", () => {
+  /* 기계가 아무것도 못 읽은 칸에 「수정됨 · 판독값 없음」을 붙이면, 사람이
+     적었다는 뻔한 사실을 값보다 먼저 읽게 된다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("field__edited");
+  assert.notEqual(at, -1, "고친 표시가 없다");
+
+  const around = code.slice(Math.max(0, at - 300), at + 200);
+  assert.match(around, /&&\s*field\.extracted_value/, "판독값이 없어도 「수정됨」을 적는다");
+  assert.ok(!around.includes('|| "없음"'), "「판독값 없음」이라 적는다");
+});
+
+test("**값 뒤에 오는 것은 모두 값 뒤에 선다** — 하나만 빠져도 앞으로 튄다", () => {
+  const css = source("css/ocr-review.css");
+  const at = css.indexOf(".top .field__act");
+  assert.notEqual(at, -1, "뒤에 세우는 규칙이 없다");
+
+  const block = css.slice(at, css.indexOf("}", at));
+  for (const sel of [".top .field__edited", ".top .field__date", ".top .field__save"]) {
+    assert.ok(block.includes(sel), `${sel} 가 빠졌다 — 그것만 값 앞으로 튄다`);
+  }
+});
+
+test("**고른 처방이 판독이 읽어 온 이름보다 앞선다**", () => {
+  /* 판독이 읽어 온 이름은 스탭이 고르기 전의 값이다. 고른 뒤에는 그쪽이 맞다 —
+     안 그러면 처방을 바꿔도 여쭐 항목이 앞 처방 것으로 남는다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function checkItemsNow");
+  assert.notEqual(at, -1, "여쭐 항목을 정하는 자리가 없다");
+
+  const body = code.slice(at, code.indexOf("\n  }", at));
+  assert.match(body, /pickedSet \|\|/, "고른 처방을 먼저 안 본다");
+});
+
+test("**두 블록이 각자 제 것만 담는다** — 안 만진 칸이 저장되면 안 된다", () => {
+  const { PRESCRIPTION_TYPES } = box();
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  const at = code.indexOf("function localOf");
+  assert.notEqual(at, -1, "블록별로 가르는 자리가 없다");
+  const body = code.slice(at, code.indexOf("\n  }", at));
+  assert.match(body, /PRESCRIPTION_TYPES\.indexOf/, "처방 항목인지를 안 가른다");
+
+  assert.ok(PRESCRIPTION_TYPES.indexOf("DIAGNOSIS") !== -1, "검사가 헛돈다");
+  assert.equal(PRESCRIPTION_TYPES.indexOf("TSH"), -1, "혈액 항목이 처방으로 세어진다");
+});
+
+test("**고른 처방도 담긴다** — 화면이 기억만 하면 새로고침에 사라진다", () => {
+  /* 안내문이 이 값으로 만들어진다. 화면에만 두면 「골랐는데 안 골라진」 채로
+     승인까지 간다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf('"#labs-save, #rx-save"');
+  const body = code.slice(at, at + 1600);
+
+  assert.match(body, /pickedSet \? \{ MEDICATION_NAME/, "고른 처방을 안 담는다");
+});
+
+test("**판독이 없으면 저장 단추가 잠긴다** — 눌러서 실패하면 적은 것이 날아간 줄 안다", () => {
+  /* 적어 넣는 값은 판독 결과에 붙는다(`ocr_field` 는 `ocr_result` 의 것이다).
+     아직 아무것도 안 올린 진료에는 붙일 자리가 없다 — 빈 판을 세우면서
+     생긴 자리다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  const at = code.indexOf("function canSaveFields");
+  assert.notEqual(at, -1, "담을 수 있는지 묻는 자리가 없다");
+  assert.match(code.slice(at, at + 200), /result\.ocr_result_id/, "판독 결과가 있는지 안 본다");
+
+  /* 두 단추 모두 그것을 본다 — 한쪽만 보면 그쪽만 잠긴다 */
+  for (const id of ["rx-save", "labs-save"]) {
+    const bat = code.indexOf('id="' + id + '"');
+    assert.notEqual(bat, -1, `${id} 단추가 없다`);
+    assert.match(code.slice(bat, bat + 220), /canSaveFields\(\)/, `${id} 가 잠기지 않는다`);
+  }
+
+  /* 왜 못 누르는지 말한다 — 잠긴 단추만 두면 고장으로 읽힌다 */
+  assert.match(code, /SAVE_LOCKED\s*=\s*"진료기록을 올리면/, "왜 잠겼는지 안 말한다");
 });

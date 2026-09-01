@@ -510,9 +510,7 @@ class TestStaffEditsBeforeHandoff(BlockingTestCase):
         world = await build_two_hospitals()
         await make_guide(world["h1"].hospital_id, world["h1"].visit_id, GuideStatus.APPROVAL_PENDING)
 
-        response = await self.call(
-            "POST", "/api/v1/visits/{v}/guide/submit", world["h1"], world["staff1"].auth, {}
-        )
+        response = await self.call("POST", "/api/v1/visits/{v}/guide/submit", world["h1"], world["staff1"].auth, {})
         assert response.status_code == 409, f"이미 넘긴 것을 또 넘겼다: {response.status_code}"
 
     async def test_first_login_is_held_at_the_door(self) -> None:

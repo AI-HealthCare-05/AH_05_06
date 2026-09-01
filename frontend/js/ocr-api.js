@@ -32,15 +32,20 @@ function ocrRequest(path, options) {
 }
 
 /* 목업 — 설정(D2-3)에 8종이 사전 등록돼 있다. 이름은 실제 표와 같다. */
+/* 확인 항목은 **처방이 정한다**(와이어프레임 S1-6 「처방별」). 지금은 여덟
+   세트 모두 다섯을 여쭙는다 — 서버 씨앗과 같은 값이다. 어느 처방에 무엇을
+   여쭐지는 의사가 설정(D2-3)에서 정하고, 그때 이 목업도 따라가야 한다. */
+var MOCK_CHECK_ITEMS = ["DEPRESSION", "HYPERTENSION", "OSTEOPOROSIS", "DIABETES", "PREGNANCY_PLAN"];
+
 var MOCK_PRESCRIPTION_SETS = [
-  { prescription_set_id: 1, name: "자궁내막증 · 비잔 (처음)" },
-  { prescription_set_id: 2, name: "자궁내막증 · 비잔 (계속)" },
-  { prescription_set_id: 3, name: "자궁내막증 · 통증관리" },
-  { prescription_set_id: 4, name: "PCOS · 초진" },
-  { prescription_set_id: 5, name: "PCOS · 초진 (야즈 불가)" },
-  { prescription_set_id: 6, name: "PCOS · 야즈 (계속)" },
-  { prescription_set_id: 7, name: "PCOS · 야즈 + 메트포르민" },
-  { prescription_set_id: 8, name: "PCOS · 대사관리" },
+  { prescription_set_id: 1, name: "자궁내막증 · 비잔 (처음)", check_items: MOCK_CHECK_ITEMS },
+  { prescription_set_id: 2, name: "자궁내막증 · 비잔 (계속)", check_items: MOCK_CHECK_ITEMS },
+  { prescription_set_id: 3, name: "자궁내막증 · 통증관리", check_items: MOCK_CHECK_ITEMS },
+  { prescription_set_id: 4, name: "PCOS · 초진", check_items: MOCK_CHECK_ITEMS },
+  { prescription_set_id: 5, name: "PCOS · 초진 (야즈 불가)", check_items: MOCK_CHECK_ITEMS },
+  { prescription_set_id: 6, name: "PCOS · 야즈 (계속)", check_items: MOCK_CHECK_ITEMS },
+  { prescription_set_id: 7, name: "PCOS · 야즈 + 메트포르민", check_items: MOCK_CHECK_ITEMS },
+  { prescription_set_id: 8, name: "PCOS · 대사관리", check_items: MOCK_CHECK_ITEMS },
 ];
 
 var ocrApi = {
@@ -63,6 +68,7 @@ var ocrApi = {
      **고치기(PATCH)와 다른 길이다.** 저쪽은 있는 줄의 값을 바꾸고, 이쪽은 줄
      자체가 없는 것을 만든다 — 그래서 번호가 아니라 항목 이름으로 짚는다. */
   writeField: function (visitId, fieldType, value) {
+    if (MOCK) return mockWriteField(visitId, fieldType, value);
     return request(
       "/visits/" + encodeURIComponent(visitId) + "/ocr-fields/" + encodeURIComponent(fieldType),
       { method: "PUT", body: { value: value } },
@@ -73,10 +79,12 @@ var ocrApi = {
      한 판을 통째로 주고받는다. 항목 하나씩 보내면 중간에 끊겼을 때 반쪽 상태가
      남고, 화면은 그것을 「안 여쭌 것」과 구별하지 못한다. */
   checkItems: function (visitId) {
+    if (MOCK) return mockCheckItems(visitId);
     return request("/visits/" + encodeURIComponent(visitId) + "/check-items");
   },
 
   saveCheckItems: function (visitId, answers) {
+    if (MOCK) return mockSaveCheckItems(visitId, answers);
     return request("/visits/" + encodeURIComponent(visitId) + "/check-items", {
       method: "PUT",
       body: { answers: answers },
@@ -477,6 +485,70 @@ function mockPatch(fieldId, body) {
  * 목록이 들고 있는 `detail_status` 를 그대로 믿는다. 목업이 제 규칙을 따로
  * 만들면 목록과 판독 화면이 서로 다른 말을 한다.
  */
+/* **목업도 담아 둔다.** 안 담으면 저장하고 다시 읽을 때 사라져서, 서버가
+   붙기 전에는 「담기는가」를 한 번도 볼 수 없다 — 새로고침하면 사라지던 바로
+   그 증상이 목업에만 남는다. 한 판 동안만 산다. */
+var mockWrittenFields = {};
+var mockCheckAnswers = {};
+
+function mockWriteField(visitId, fieldType, value) {
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      var text = String(value === null || value === undefined ? "" : value).trim();
+      var mine = mockWrittenFields[visitId] || (mockWrittenFields[visitId] = {});
+
+      /* 비우면 지운다 — 서버와 같은 규칙이다 */
+      if (!text) {
+        delete mine[fieldType];
+        return resolve(null);
+      }
+      mine[fieldType] = text;
+      return resolve({
+        ocr_field_id: 900000 + Object.keys(mine).length,
+        field_type: fieldType,
+        value: text,
+        corrected_value: text,
+        extracted_value: null,
+        is_confirmed: false,
+        candidates: [],
+      });
+    }, 80);
+  });
+}
+
+/* 서버 씨앗과 같은 다섯. 처방이 무엇을 여쭐지는 `MOCK_PRESCRIPTION_SETS` 가 준다. */
+function mockCheckItems(visitId) {
+  return new Promise(function (resolve) {
+    setTimeout(function () {
+      var mine = mockCheckAnswers[visitId] || {};
+      resolve({
+        visit_id: Number(visitId),
+        answers: MOCK_CHECK_ITEMS.map(function (key) {
+          return { item_key: key, checked: key in mine ? mine[key] : null };
+        }),
+      });
+    }, 80);
+  });
+}
+
+function mockSaveCheckItems(visitId, answers) {
+  return new Promise(function (resolve) {
+    setTimeout(function () {
+      var mine = mockCheckAnswers[visitId] || (mockCheckAnswers[visitId] = {});
+      (answers || []).forEach(function (row) {
+        /* `null` 은 「안 여쭌 것으로 되돌린다」 — 서버와 같은 규칙 */
+        if (row.checked === null || row.checked === undefined) delete mine[row.item_key];
+        else mine[row.item_key] = !!row.checked;
+      });
+      resolve(mockCheckItems(visitId));
+    }, 80);
+  }).then(function (p) {
+    return p;
+  });
+}
+
 function mockJobForVisit(visitId) {
   return new Promise(function (resolve, reject) {
     setTimeout(function () {

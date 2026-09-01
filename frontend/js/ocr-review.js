@@ -260,11 +260,6 @@ function failureSaying(code) {
 var STATE_RULES = {
   loading: { tone: "busy", action: null, keepsWork: false },
   processing: { tone: "busy", action: null, keepsWork: false },
-  /* **올릴 자리는 남긴다.** 방금 등록한 환자가 처음 만나는 화면이고, 여기서
-     할 수 있는 일이 진료기록을 올리는 것뿐이다. 화면을 통째로 덮으면 「없다」는
-     말만 남고 다음 걸음이 사라진다.
-     다만 오른쪽(판독 값)은 감춘다 — 읽은 것이 없어 빈 칸만 늘어선다. */
-  no_job: { tone: "info", action: null, keepsWork: "left" },
   job_failed: { tone: "warn", action: "reupload", keepsWork: true },
   not_ready: { tone: "warn", action: "recheck", keepsWork: false },
   poll_failed: { tone: "warn", action: "recheck", keepsWork: false },
@@ -596,11 +591,11 @@ function stateTakesFocus(tone) {
     /* 고르는 항목에도 **빈 칸**을 세운다 — 안 세우면 그 줄만 버튼이 앞으로
        당겨져 옆 줄과 어긋난다. 자리는 지키고 글자만 없다. */
     if (fieldChoices(field.field_type)) return '<span class="field__unit"></span>';
-    /* **처방 줄은 제 단위를 이미 그린다**(`top__unit`). 여기서 또 붙이면
-       「처방일수 ? 일 … 일」처럼 한 줄에 두 번 선다 — 가로줄과 값 줄이 같은
-       몸통(`lastBody.body`)을 나눠 쓰기 때문이다. */
-    if (PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1) return "";
+
     var unit = fieldUnit(field.field_type, field.unit);
+    /* 맨 위 줄(진단 · 처방)은 자리를 지킬 필요가 없다 — 세 칸이 각자 서 있어
+       빈 칸을 두면 값과 단추 사이가 까닭 없이 벌어진다. */
+    if (!unit && PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1) return "";
     return '<span class="field__unit">' + escapeHtml(unit) + "</span>";
   }
 
@@ -814,10 +809,14 @@ function stateTakesFocus(tone) {
     if (field.source_date && !isEditing(id)) {
       tail += '<span class="field__date">' + escapeHtml(shortDate(field.source_date)) + "</span>";
     }
-    /* 사람이 고친 값에는 그 사실이 남아야 한다. 판독값과 구별되지 않으면
-       나중에 「기계가 이렇게 읽었다」와 「사람이 이렇게 고쳤다」를 못 가른다. */
-    if (field.corrected_value !== null && field.corrected_value !== undefined) {
-      tail += '<span class="field__edited">수정됨 · 판독값 ' + escapeHtml(field.extracted_value || "없음") + "</span>";
+    /* 사람이 고친 값에는 그 사실이 남아야 한다 — 나중에 「기계가 이렇게
+       읽었다」와 「사람이 이렇게 고쳤다」를 가르려면.
+
+       **견줄 것이 없으면 적지 않는다.** 기계가 아무것도 못 읽은 칸에 「수정됨 ·
+       판독값 없음」이라고 붙이면, 사람이 적었다는 뻔한 사실을 값보다 먼저 읽게
+       된다 — 그 줄에서 봐야 할 것은 값이다. */
+    if (field.corrected_value !== null && field.corrected_value !== undefined && field.extracted_value) {
+      tail += '<span class="field__edited">수정됨 · 판독값 ' + escapeHtml(field.extracted_value) + "</span>";
     }
     if (saving[id]) tail += '<span class="field__save">저장 중…</span>';
     if (saved[id]) tail += '<span class="field__save field__save--ok">저장됨</span>';
@@ -977,10 +976,13 @@ function stateTakesFocus(tone) {
         '<div class="field field--' +
         made.state +
         '">' +
+        /* **단위는 값칸 바로 뒤, 단추 앞이다.** 여기서 따로 붙이지 않는다 —
+           칸 밖에 두면 오른쪽 끝으로 떨어지고, 칸 안 끝에 두면 단추 뒤로
+           밀린다. 값을 그리는 자리(`renderField` 의 `unitHtml`)가 값 바로
+           뒤에 세우므로 그쪽 하나에 맡긴다. */
         made.body +
         "</div>" +
-        "</div>" +
-        (spec.unit ? '<span class="top__unit">' + escapeHtml(spec.unit) + "</span>" : "")
+        "</div>"
       );
     }).join("");
 
@@ -1063,6 +1065,15 @@ function stateTakesFocus(tone) {
       '<section class="box"><div class="box__head">' +
       '<h2 class="box__title">진단 · 처방</h2>' +
       (warn ? '<span class="box__warn">ⓘ ' + escapeHtml(warn) + "</span>" : "") +
+      /* 고른 처방도 여기서 담는다 — 전에는 화면이 기억만 하고 새로고침하면
+         사라졌다. 안내문이 그 값으로 만들어지는데도. */
+      '<span class="grow"></span>' +
+      (rxSaying || !canSaveFields()
+        ? '<span class="box__note">' + escapeHtml(rxSaying || SAVE_LOCKED) + "</span>"
+        : "") +
+      '<button class="button-primary button-primary--sm" type="button" id="rx-save"' +
+      (canSaveFields() && (localOf(true).length || pickedSet) ? "" : " disabled") +
+      ">저장</button>" +
       "</div>" +
       topRowHtml(rows) +
       (meta.length ? '<p class="box__meta box__meta--top">' + meta.join(" · ") + "</p>" : "") +
@@ -1083,9 +1094,11 @@ function stateTakesFocus(tone) {
       /* **적은 것을 한 번에 담는다.** 스무 줄을 하나씩 저장하게 하면 어느 줄이
          담겼는지 세어야 하고, 하나만 빼먹으면 안내문에서야 안다. */
       '<span class="grow"></span>' +
-      (labSaying ? '<span class="box__note">' + escapeHtml(labSaying) + "</span>" : "") +
+      (labSaying || !canSaveFields()
+        ? '<span class="box__note">' + escapeHtml(labSaying || SAVE_LOCKED) + "</span>"
+        : "") +
       '<button class="button-primary button-primary--sm" type="button" id="labs-save"' +
-      (Object.keys(local).length ? "" : " disabled") +
+      (canSaveFields() && localOf(false).length ? "" : " disabled") +
       ">저장</button>" +
       "</div>" +
       /* **두 칸으로 세운다.** 왼쪽은 사람이 보고 적는 것(증상 · 초음파),
@@ -1164,13 +1177,56 @@ function stateTakesFocus(tone) {
   var checkAnswers = {};
   var checkSaying = "";
 
-  /* 「이번 판독 값」 저장 뒤 한 줄. 눌렀는데 아무 말이 없으면 「됐나」가 된다. */
+  /* 저장 뒤 한 줄. 눌렀는데 아무 말이 없으면 「됐나」가 된다.
+     블록마다 따로 둔다 — 한 줄을 나눠 쓰면 처방을 저장했는데 판독 값 쪽에
+     「저장했습니다」가 뜬다. */
   var labSaying = "";
+  var rxSaying = "";
+
+  /* 적어 둔 값 중 **이 블록의 것**만. 두 블록이 같은 `local` 을 나눠 쓰는데,
+     한쪽 단추가 남의 블록 값까지 담으면 「안 만진 칸이 저장됐다」가 된다. */
+  /* **판독이 있어야 담을 수 있다.** 적어 넣는 값은 판독 결과에 붙는다
+     (`ocr_field` 는 `ocr_result` 의 것이다). 아직 아무것도 안 올린 진료에는
+     붙일 자리가 없다.
+
+     빈 판을 세우면서 생긴 자리다 — 채울 칸은 보이는데 담을 곳이 없다. 담을 수
+     없으면 **누를 수 없게** 하고 왜인지 말한다. 눌러서 실패하게 두면 적은 것이
+     날아간 줄 안다. */
+  function canSaveFields() {
+    return !!(result && result.ocr_result_id);
+  }
+
+  var SAVE_LOCKED = "진료기록을 올리면 저장할 수 있습니다";
+
+  function localOf(wantPrescription) {
+    var out = [];
+    for (var type in local) {
+      if (!Object.prototype.hasOwnProperty.call(local, type)) continue;
+      var isRx = PRESCRIPTION_TYPES.indexOf(type) !== -1;
+      if (isRx === !!wantPrescription) out.push(type);
+    }
+    return out;
+  }
+
+  /* 고른 처방이 여쭙는 항목. 안 골랐으면 빈 목록이다.
+     **고른 것(`pickedSet`)이 먼저다** — 판독이 읽어 온 이름은 스탭이 고르기
+     전의 값이고, 고른 뒤에는 그쪽이 맞다. */
+  function checkItemsNow() {
+    return checkItemsOf(sets, pickedSet || fieldValueOf(result.fields, "MEDICATION_NAME"));
+  }
 
   function checkListHtml() {
+    var items = checkItemsNow();
+
+    /* **처방을 안 고르면 여쭐 것도 없다.** 다섯을 미리 세워 두면 처방을 고르는
+       순간 항목이 바뀌면서 이미 체크한 것이 사라진 것처럼 보인다. */
+    if (!items.length) {
+      return '<p class="box__soon">처방을 고르면 그 처방에서 여쭙는 항목이 여기에 섭니다</p>';
+    }
+
     return (
       '<ul class="checks" aria-label="확인 항목">' +
-      CHECK_ITEMS.map(function (key) {
+      items.map(function (key) {
         var answer = checkAnswers[key];
         return (
           '<li class="checks__item"><label class="checks__label">' +
@@ -1194,7 +1250,9 @@ function stateTakesFocus(tone) {
     if (!visit || !visit.visit_id) return;
     var wanted = visit.visit_id;
 
-    var answers = CHECK_ITEMS.map(function (key) {
+    /* **보이는 것만 보낸다.** 처방이 안 여쭙는 항목까지 보내면, 그 항목을
+       빼는 순간 지난 답이 조용히 지워진다 — 답은 질문이 바뀌어도 남아야 한다. */
+    var answers = checkItemsNow().map(function (key) {
       return { item_key: key, checked: checkAnswers[key] === undefined ? null : checkAnswers[key] };
     });
 
@@ -1784,32 +1842,54 @@ function stateTakesFocus(tone) {
   /* 적어 둔 값을 **한 번에** 서버로. 판독이 못 읽은 항목은 줄 자체가 없어서
      항목 이름으로 짚는다(`PUT /visits/{id}/ocr-fields/{type}`). */
   document.addEventListener("click", function (event) {
-    if (!event.target.closest || !event.target.closest("#labs-save")) return;
+    var hit = event.target.closest && event.target.closest("#labs-save, #rx-save");
+    if (!hit) return;
     if (!visit || !visit.visit_id) return;
 
+    /* 두 블록이 같은 길로 담는다 — 담는 규칙이 두 벌이면 한쪽만 고쳐진다.
+       다른 것은 **무엇을 담느냐**뿐이다. */
+    var isRx = hit.id === "rx-save";
     var wanted = visit.visit_id;
-    var typed = Object.keys(local);
-    if (!typed.length) return;
+    var typed = localOf(isRx);
 
-    labSaying = "저장하는 중…";
+    /* 고른 처방은 약품명 칸에 담는다 — 안내문이 그 값으로 만들어진다.
+       전에는 화면이 기억만 하고 새로고침하면 사라졌다. */
+    var extra = isRx && pickedSet ? { MEDICATION_NAME: pickedSet.name } : {};
+    if (!typed.length && !Object.keys(extra).length) return;
+
+    function say(text) {
+      if (isRx) rxSaying = text;
+      else labSaying = text;
+    }
+
+    say("저장하는 중…");
     redraw();
 
     Promise.all(
-      typed.map(function (type) {
-        return ocrApi.writeField(wanted, type, local[type]);
-      }),
+      typed
+        .map(function (type) {
+          return ocrApi.writeField(wanted, type, local[type]);
+        })
+        .concat(
+          Object.keys(extra).map(function (type) {
+            return ocrApi.writeField(wanted, type, extra[type]);
+          }),
+        ),
     )
       .then(function () {
         if (!visit || visit.visit_id !== wanted) return;
-        /* 담겼으니 화면에만 있던 것은 지운다 — 안 지우면 서버 값과 두 벌이 된다 */
-        local = {};
-        localDraft = {};
-        labSaying = "저장했습니다";
+        /* 담겼으니 화면에만 있던 것은 지운다 — 안 지우면 서버 값과 두 벌이 된다.
+           **내 블록 것만** 지운다: 옆 블록은 아직 안 담겼다. */
+        typed.forEach(function (type) {
+          delete local[type];
+          delete localDraft[type];
+        });
+        say("저장했습니다");
         return loadResult(loadSeq);
       })
       .catch(function () {
         if (!visit || visit.visit_id !== wanted) return;
-        labSaying = "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
+        say("저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요");
         redraw();
       });
   });
@@ -2181,13 +2261,20 @@ function stateTakesFocus(tone) {
       .catch(function (error) {
         if (mine !== loadSeq) return;
         if (error && error.code === "NOT_FOUND") {
-          /* 올릴 자리를 펴 준다 — 이 화면에서 할 수 있는 일이 그것뿐이다 */
+          /* **아직 안 올린 것은 「상태」가 아니다.**
+           *
+           * 「판독한 기록이 없습니다」를 화면 가득 띄웠더니, 방금 등록한 환자는
+           * 그 안내를 한 번 보고 → 올리고 → 그제야 판독 화면으로 **넘어가야**
+           * 했다. 화면이 두 번 바뀌는데 두 번 다 할 일은 같다.
+           *
+           * 판을 그냥 세운다. 왼쪽은 올리는 자리, 오른쪽은 채울 칸이 빈 채로.
+           * 무엇을 하는 화면인지가 첫눈에 보이고, 올리면 그 자리에서 값이
+           * 찬다 — 넘어가는 순간이 없다. */
           if (typeof ocrOpenAddPanel === "function") ocrOpenAddPanel();
-          return showState(
-            "no_job",
-            '<p class="state__title">판독한 기록이 없습니다</p>' +
-              '<p class="state__body">아래에서 진료기록을 올리면 판독이 시작됩니다.</p>',
-          );
+          result = { ocr_result_id: null, documents: [], fields: [] };
+          showWork();
+          redraw();
+          return null;
         }
         showState(
           "result_failed",

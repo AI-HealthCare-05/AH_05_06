@@ -122,7 +122,9 @@ test("**실패는 위에 붙고, 나머지는 덮는다**", () => {
      화면이고 여기서 할 수 있는 일이 올리는 것뿐이라, 통째로 덮으면 「없다」는
      말만 남고 다음 걸음이 사라진다. 왼쪽(올리는 자리)만 남긴다 — 오른쪽
      판독 값은 읽은 것이 없어 빈 칸만 늘어선다. */
-  assert.equal(rules.no_job.keepsWork, "left", "올릴 자리까지 덮는다 — 다음 걸음이 사라진다");
+  /* `no_job` 은 이제 갈래를 안 쓴다 — 판을 그냥 세운다. 규칙만 남겨 두면
+     다음 사람이 그 갈래를 다시 쓸 수 있으므로 표에서도 뺀다. */
+  assert.ok(!("no_job" in rules), "안 쓰는 갈래가 표에 남아 있다");
 
   /* **화면이 그 규칙을 실제로 본다.** 규칙만 있고 `hidden = true` 를 그대로
      두면 검사가 안 문다 — 돌연변이를 넣어 보고 알았다. 그리는 것은 shim
@@ -172,12 +174,21 @@ test("**읽은 것이 없으면 왼쪽만 남는다** — 빈 값 칸은 고장�
   assert.match(css, /\.review--left \.main-col \{[^}]*display:\s*none/, "값 칸이 안 감춰진다");
 });
 
-test("올릴 자리가 저절로 펴진다 — 접힌 채면 올릴 데를 못 찾는다", () => {
+test("**아직 안 올린 것은 「상태」가 아니다** — 판을 그냥 세운다", () => {
+  /* 「판독한 기록이 없습니다」를 화면 가득 띄웠더니, 방금 등록한 환자는 그
+     안내를 한 번 보고 → 올리고 → 그제야 판독 화면으로 넘어가야 했다.
+     화면이 두 번 바뀌는데 두 번 다 할 일은 같다. */
   const code = strip2(read2("js/ocr-review.js"));
-  const at = code.indexOf('"no_job"');
-  assert.notEqual(at, -1, "판독 없음 갈래가 없다");
+  const at = code.indexOf('error.code === "NOT_FOUND"');
+  assert.notEqual(at, -1, "판독이 없는 갈래를 안 받는다");
 
-  const around = code.slice(Math.max(0, at - 300), at + 200);
+  /* **그 갈래 안만 본다.** 넉넉히 자르면 다음 갈래(`result_failed`)의
+     `showState` 가 걸려서, 이쪽이 화면을 덮어도 통과한다. */
+  const stop = code.indexOf("\n        }", at);
+  const around = code.slice(at, stop === -1 ? at + 700 : stop);
+  assert.ok(!around.includes("showState("), "빈 화면을 띄우고 만다 — 판을 세워야 한다");
+  assert.match(around, /showWork\(\)/, "판을 안 세운다");
+  assert.match(around, /fields: \[\]/, "채울 칸을 빈 것으로도 안 세운다");
   assert.match(around, /ocrOpenAddPanel/, "올리는 판을 안 편다");
 
   /* 펴는 자리가 실제로 있어야 한다 */

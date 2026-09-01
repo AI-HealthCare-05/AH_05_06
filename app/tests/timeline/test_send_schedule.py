@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from tortoise.contrib.test import TestCase
 
 from app.core import config
-from app.models.ocr import OcrDocumentType, OcrField, OcrJob, OcrResult
+from app.models.ocr import OcrField, OcrJob, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import (
@@ -283,7 +283,5 @@ class UnapproveTestCase(SendScheduleTestCase):
         after = await GuideMessage.filter(guide_document=guide).count()
         assert after == before, f"다시 승인하니 {before} → {after} 로 늘었다"
 
-        live = await GuideMessage.filter(
-            guide_document=guide, status=GuideMessageStatus.SCHEDULED
-        ).count()
+        live = await GuideMessage.filter(guide_document=guide, status=GuideMessageStatus.SCHEDULED).count()
         assert live == before, f"되살아난 것이 {live}개뿐이다 — 껐던 채로 남으면 문자가 안 나간다"

@@ -292,8 +292,7 @@ class VisitCheckService:
         return {
             "visit_id": visit.visit_id,
             "answers": [
-                {"item_key": key.value, "checked": rows[key].checked if key in rows else None}
-                for key in VisitCheckKey
+                {"item_key": key.value, "checked": rows[key].checked if key in rows else None} for key in VisitCheckKey
             ],
         }
 
@@ -310,9 +309,7 @@ class VisitCheckService:
             for item in getattr(payload, "answers", []) or []:
                 key = VisitCheckKey(item.item_key)
                 if item.checked is None:
-                    await VisitCheckAnswer.filter(visit_id=visit.visit_id, item_key=key).using_db(
-                        connection
-                    ).delete()
+                    await VisitCheckAnswer.filter(visit_id=visit.visit_id, item_key=key).using_db(connection).delete()
                     continue
 
                 await VisitCheckAnswer.update_or_create(
