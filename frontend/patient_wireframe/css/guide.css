@@ -630,5 +630,10 @@ b { font-weight: 700; }
   margin-top: 8px; width: 100%;
   background: #fff;
   border: 2px solid var(--p-dark);
-  color: var(--p-dark);
+  color: #000;
+}
+.report-submit:disabled {
+  border-color: var(--border-str);
+  color: var(--tx-muted);
+  cursor: default;
 }

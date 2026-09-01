@@ -508,7 +508,7 @@
     /* 신고할 화면 */
     var screenLabel = document.createElement('div');
     screenLabel.className = 'report-field-label';
-    screenLabel.textContent = '신고할 화면';
+    screenLabel.innerHTML = '신고할 화면 <span aria-hidden="true" style="color:var(--p-dark)">*</span>';
     content.appendChild(screenLabel);
 
     var select = document.createElement('select');
@@ -533,7 +533,7 @@
     /* 문제 유형 */
     var reasonLabel = document.createElement('div');
     reasonLabel.className = 'report-field-label';
-    reasonLabel.textContent = '어떤 점이 문제였나요?';
+    reasonLabel.innerHTML = '어떤 점이 문제였나요? <span aria-hidden="true" style="color:var(--p-dark)">*</span>';
     content.appendChild(reasonLabel);
 
     var selectedReason = null;
@@ -581,11 +581,19 @@
     submitBtn.type = 'button';
     submitBtn.className = 'btn btn--primary report-submit';
     submitBtn.textContent = '보내기';
+    submitBtn.disabled = true;
     submitBtn.addEventListener('click', function () {
       alert('[미구현] 오류 신고 기능은 서버 연동 후 동작합니다.');
       closeReport();
     });
     content.appendChild(submitBtn);
+
+    /* 문제 유형 선택 시 보내기 버튼 활성화 */
+    reasonBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        submitBtn.disabled = false;
+      });
+    });
 
     overlay.appendChild(content);
     return overlay;
