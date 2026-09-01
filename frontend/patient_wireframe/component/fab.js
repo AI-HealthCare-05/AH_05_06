@@ -6,7 +6,11 @@
  *   fab.showBadge(true);
  */
 function Fab(opts, onClick) {
-  var bottom = opts.defaultBottom || 88;
+  var safeBottom = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sab') || '0', 10) ||
+    (CSS && CSS.supports && CSS.supports('padding-bottom', 'env(safe-area-inset-bottom)')
+      ? (function () { var d = document.createElement('div'); d.style.paddingBottom = 'env(safe-area-inset-bottom)'; document.body.appendChild(d); var v = parseInt(getComputedStyle(d).paddingBottom, 10) || 0; document.body.removeChild(d); return v; }())
+      : 0);
+  var bottom = (opts.defaultBottom || 88) + safeBottom;
   var right  = opts.defaultRight  || 20;
 
   var el = document.createElement('button');
