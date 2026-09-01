@@ -494,7 +494,10 @@ function guessPrescriptionSet(sets, readName) {
 
 /** 목록을 못 불러왔을 때 화면이 할 말. 빈 채로 두면 「고장」으로 읽는다. */
 function setsMissingSaying(sets, failed) {
-  if (failed) return "약속처방 목록을 불러오지 못했습니다 — 판독 결과 확인을 다시 눌러 주세요";
+  /* **없는 단추를 누르라고 하지 않는다.** 예전에는 「판독 결과 확인을 다시
+     눌러 주세요」였는데 그 단추를 걷었다. 화면에 없는 것을 가리키는 안내는
+     길을 알려 주는 척하면서 막다른 데로 보낸다. */
+  if (failed) return "약속처방 목록을 불러오지 못했습니다 — 잠시 후 다시 시도해 주세요";
   if (!(sets || []).length) return "약속처방이 아직 없습니다 — 설정 · 처방에서 추가해 주세요";
   return "";
 }

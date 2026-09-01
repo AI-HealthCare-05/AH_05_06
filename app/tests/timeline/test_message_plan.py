@@ -364,7 +364,9 @@ class HeldTestCase(World, TestCase):
         row = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.GUIDE)
 
         row.status = GuideMessageStatus.FAILED
-        row.failure_code = "SMS_FAIL_3"
+        # **일부러 목록에 없는 값을 넣는다.** mypy 를 달래려고 올바른 값으로
+        # 바꾸면 「막는가」를 재는 검사가 「통과하는가」를 재는 검사가 된다.
+        row.failure_code = "SMS_FAIL_3"  # type: ignore[assignment]
         try:
             await row.save(update_fields=["status", "failure_code"])
         except ValueError:
@@ -374,7 +376,7 @@ class HeldTestCase(World, TestCase):
 
         row2 = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.CHECK_D7)
         row2.status = GuideMessageStatus.HELD
-        row2.hold_reason = "잔량없음"
+        row2.hold_reason = "잔량없음"  # type: ignore[assignment]  # 목록 밖 값 — 그것이 이 검사다
         try:
             await row2.save(update_fields=["status", "hold_reason"])
         except ValueError:
@@ -398,7 +400,8 @@ class HeldTestCase(World, TestCase):
         # `CARRIER` 를 고른 이유는 **짧기 때문**이다. `SENDER_UNREGISTERED` 는
         # 19자라 칸 길이(13)에 먼저 걸려, 목록이 갈려 있어서 막힌 것인지
         # 길어서 막힌 것인지 알 수 없다 — 검사가 헛돈다.
-        row.hold_reason = "CARRIER"  # 실패 목록에만 있는 값 (7자)
+        # 아래 무시 표시는 목록 밖 값을 일부러 넣기 때문이다
+        row.hold_reason = "CARRIER"  # type: ignore[assignment]  # 실패 목록에만 있는 값 (7자)
         try:
             await row.save(update_fields=["status", "hold_reason"])
         except ValueError:

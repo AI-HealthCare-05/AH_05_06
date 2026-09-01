@@ -92,6 +92,7 @@ class GuideSectionKey(StrEnum):
 
 
 class GuideEventType(StrEnum):
+    GENERATED = "GENERATED"
     EDITED = "EDITED"
     #: 스탭이 확인을 마치고 의사에게 넘겼다 (와이어프레임 S1-11).
     #: 누가 언제 넘겼는지가 남아야, 승인이 늦을 때 어디서 멈췄는지 안다.
@@ -128,13 +129,23 @@ class GuideDocument(models.Model):
     version = fields.IntField(default=1)
 
     #: 승인한 사람과 시각. 「누가 이 글을 환자에게 내보냈는가」의 답이다.
-    approved_by = fields.BigIntField(null=True)
-    approved_at = fields.DatetimeField(null=True)
+    #:
+    #: **`| None` 을 손으로 적는다.** `null=True` 만으로는 mypy 가 이 칸을
+    #: 비울 수 있다는 것을 모른다 — 승인 철회(`unapprove`)가 셋을 다 `None` 으로
+    #: 되돌리는데, 그때마다 「없는 값을 넣는다」고 잘못 짚었다. 칸이 비는 것이
+    #: 이 셋의 요점이라 주석이 그것을 말해야 한다(`PrescriptionItem.duration_days`
+    #: 와 같은 방식).
+    approved_by: int | None = fields.BigIntField(null=True)
+    approved_at: datetime | None = fields.DatetimeField(null=True)
     #: 발송 예정 시각. 승인이 이 값을 채운다 — 승인과 예약이 한 동작이다.
-    scheduled_at = fields.DatetimeField(null=True)
+    scheduled_at: datetime | None = fields.DatetimeField(null=True)
 
     #: 마지막 반려 사유. 스탭 알림에 그대로 뜨는 문장이라 여기 남긴다.
     #: 이력 전체는 GuideEvent 가 갖는다.
+    #:
+    #: **재제출이 이 칸을 비운다.** 고쳐서 다시 올렸는데 사유가 남아 있으면
+    #: 화면이 아직 반려된 것으로 읽는다 — 지우는 것은 「지금 상태」뿐이고
+    #: 이력은 GuideEvent 에 그대로 있다.
     returned_reason = fields.CharField(max_length=200, null=True)
 
     #: 확인 문자를 몇 시에 보낼지 (와이어프레임 S1-14 「확인 문자 시각」).
@@ -206,7 +217,7 @@ class GuideSection(models.Model):
 
 
 class GuideEvent(models.Model):
-    """승인 · 반려 · 수정 이력.
+    """생성 · 수정 · 승인 · 반려 이력.
 
     「누가 언제 무엇을 했나」가 남아야 나중에 되짚을 수 있다. 특히 반려는
     **사유가 함께 남아야** 한다 — 스탭이 무엇을 고쳐야 하는지가 그 문장이다.
@@ -222,7 +233,7 @@ class GuideEvent(models.Model):
         on_delete=OnDelete.CASCADE,
     )
     event_type = fields.CharEnumField(enum_type=GuideEventType)
-    #: 수정이면 어느 갈래를 고쳤는가. 승인 · 반려면 비어 있다.
+    #: 수정이면 어느 갈래를 고쳤는가. 생성 · 승인 · 반려면 비어 있다.
     section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
     #: 반려 사유. 반려가 아니면 비어 있다.
     reason = fields.CharField(max_length=200, null=True)
@@ -493,7 +504,10 @@ class GuideMessage(models.Model):
     #: 못 나간 이유 — **넷뿐이다**(D1-7). 자유 문자열로 두면 발송기를 붙이는
     #: 사람마다 다른 낱말을 넣고, 화면은 그중 아는 것만 사람 말로 옮긴다.
     #: 화면이 코드를 그대로 보여 주지는 않는다.
-    failure_code = fields.CharEnumField(enum_type=GuideMessageFailure, null=True)
+    #:
+    #: **비울 수 있다.** 다시 예약하면 지난 실패 사유를 지운다 — 새로 잡은
+    #: 발송에 옛 실패가 붙어 있으면 화면이 「실패」로 읽는다.
+    failure_code: GuideMessageFailure | None = fields.CharEnumField(enum_type=GuideMessageFailure, null=True)
 
     #: 왜 붙들고 있나 — **둘뿐이다**(S2-3). `status` 가 `HELD` 일 때만 찬다.
     #: 실패 사유와 목록이 다르다 — 재는 것이 다르기 때문이다.
