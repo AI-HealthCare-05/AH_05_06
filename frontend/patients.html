@@ -306,79 +306,11 @@
           </div>
           </div>
 
-          <!-- ─ 진료기록 업로드 (S1-5) ──────────────────────────── -->
-          <div class="panel" id="panel-record" hidden>
-          <!-- **한 블록이다.** 전에는 「판독 결과」와 「진료기록 업로드」가
-               따로 서 있었다. 스탭이 이 탭에 오는 이유는 둘 중 하나 —
-               사진을 올리려고, 아니면 판독을 보려고. 두 길을 갈라 두면
-               위아래로 훑어야 하고, 판독 블록이 없을 때는 위가 비어 보인다.
-
-               두 버튼을 **블록 머리에** 올린다. 무엇을 할 수 있는지가 맨 위에
-               한 줄로 보이고, 아래는 그 결과다. 판독 확인 버튼은 판독 작업이
-               있을 때만 뜬다 (`js/upload.js` 의 readingLink) — 없는데 두면
-               눌러도 아무 일이 없다. -->
-          <section class="box">
-            <div class="box__head">
-              <h2 class="box__title">진료기록</h2>
-              <button class="button-ghost button-ghost--sm" type="button" id="pick">OCR 업로드</button>
-              <button class="button-primary button-primary--sm" type="button" id="reading-go" hidden>
-                판독 결과 확인
-              </button>
-            </div>
-
-            <!-- 판독이 어디까지 왔는지. 버튼 아래 한 줄이라 훑을 때 걸린다 -->
-            <p class="note" id="reading-say" hidden></p>
-
-            <p class="pane__lead">환자를 먼저 등록하고 진료기록은 나중에 업로드할 수 있습니다</p>
-
-            <!-- 한 버튼으로 받는다. 종류는 프로그램이 가려낸다.
-                 「파일 고르기」를 여기서 뺐다 — 블록 머리의 「OCR 업로드」와
-                 같은 일이라, 한 블록에 같은 일을 하는 버튼이 둘이면 어느
-                 것을 눌러야 하는지 묻게 된다. 끌어다 놓는 자리로만 둔다. -->
-            <div class="drop" id="drop">
-              <div class="drop__icon" aria-hidden="true"><svg class="drop__pic" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="4" y="7" width="24" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="11" cy="13.5" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 22.5l6-6 4.5 4.5 3.5-3 5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-              <p class="drop__lead">파일을 여기에 끌어다 놓으세요</p>
-              <p class="drop__hint">여러 장 동시 업로드 · 순서 무관 · 위 「OCR 업로드」로도 고를 수 있습니다</p>
-              <input type="file" id="file" multiple accept="image/*,application/pdf" hidden />
-            </div>
-
-            <div class="kinds">
-              <div class="kind">
-                <div class="kind__name">EMR 과거기록</div>
-                <p class="kind__desc">상병 · 처방 · 검사 수치가 함께 보이는 화면 — 이 화면만으로 충분합니다</p>
-                <p class="kind__when kind__when--must">★ 안내문 생성 필수</p>
-              </div>
-              <div class="kind">
-                <div class="kind__name">소견 · 메모</div>
-                <p class="kind__desc">초음파 소견 · 특이사항이 표시된 화면</p>
-                <p class="kind__when">안내문 생성에 사용</p>
-              </div>
-              <div class="kind">
-                <div class="kind__name">검사 결과지</div>
-                <p class="kind__desc">과거기록에 포함되지 않는 항목만 — AMH는 별도 서식이라 추가 업로드가 필요할 수 있습니다</p>
-                <p class="kind__when">검사 시행일에만</p>
-              </div>
-            </div>
-
-            <p class="note">진료기록 종류를 자동으로 분류합니다 · 종류별로 나누어 업로드하지 않아도 됩니다</p>
-
-            <section class="files" id="files" aria-live="polite"></section>
-
-            <p class="note note--warn">⚠ 다른 환자의 정보가 함께 촬영되지 않도록 주의해 주세요</p>
-            <p class="note">업로드하지 않으면 「작성 중 · 진료기록 없음」 상태로 유지됩니다</p>
-
-            <div class="actions actions--sm">
-              <button class="button-ghost button-ghost--sm" type="button" id="later">나중에 업로드</button>
-              <span class="grow"></span>
-              <button class="button-primary button-primary--sm" type="button" id="next" disabled>
-                업로드 후 안내문 생성
-              </button>
-            </div>
-
-            <!-- 누른 뒤에 무슨 일이 일어났는지. 작아서 화면낭독기가 읽어도 시끄럽지 않다 -->
-            <p class="note" id="say" role="status"></p>
-          </section>
-          </div>
+          <!-- 「진료기록」 칸은 **판독 화면**(`/ocr-review.html`)이다.
+               전에는 여기에도 업로드 화면이 하나 더 있었다 — 같은 칸에 두 화면이라,
+               판독이 끝난 환자를 눌러도 빈 업로드 판이 떴다. 올리는 일도 판독
+               화면 머리의 「OCR 업로드」가 한다 (`ocr-review.html` 의 `#add-panel`).
+               이 칸을 그리로 보내는 것은 `js/detail.js` 의 `showTab` 이다. -->
 
           <!-- ─ 안내문 (S1-11 · S1-12 · S1-13) ───────────────────
                스탭이 안내문을 확인하고 고쳐 의사에게 넘기는 자리.
@@ -432,17 +364,12 @@
     <script src="/js/patients.js"></script>
     <script src="/js/detail.js"></script>
     <script src="/js/upload-core.js"></script>
-    <!-- `upload.js` 가 「판독 결과 확인」으로 돌아가는 길을 낼 때 `ocrApi` 를 쓴다.
-         이걸 안 실어서 환자를 고를 때마다 `ocrApi is not defined` 로 조용히
-         죽어 있었다 — 버튼은 그려지는데 상태 줄이 안 붙었다. -->
     <!-- 승인 확인 모달(와이어프레임 D1-5). 화면을 갈아끼우지 않는다 —
          뒤에 최종 확인 탭이 흐려진 채 남아, 무엇을 승인했는지 보인다. -->
     <div class="modal" id="modal" hidden>
       <div class="modal__card" role="dialog" aria-modal="true" id="modal-body"></div>
     </div>
 
-    <script src="/js/ocr-api.js"></script>
-    <script src="/js/upload.js"></script>
     <script src="/js/frames.js"></script>
     <script src="/js/visit-guide.js"></script>
   </body>

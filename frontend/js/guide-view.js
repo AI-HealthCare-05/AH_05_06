@@ -319,9 +319,12 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
   var title = GUIDE_SCREEN_TITLE[mode] || GUIDE_SCREEN_TITLE.guide;
 
   return (
-    '<section class="gs">' +
-    '<div class="gs__head">' +
-    '<span class="gs__title">' +
+    /* **기본정보와 같은 상자다.** 예전에는 회색 머리띠를 두른 제 어휘였는데,
+       한 화면 안에서 탭을 옮길 때마다 블록 모양이 바뀌어 눈이 자리를 새로
+       찾았다. 담는 모양은 `.box` 하나로 모은다. */
+    '<section class="box gs">' +
+    '<div class="box__head gs__head">' +
+    '<span class="box__title gs__title">' +
     esc(title) +
     "</span>" +
     guideSegmentsHtml(sections, current) +

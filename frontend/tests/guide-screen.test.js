@@ -35,14 +35,14 @@ test("**제목만 다르다** — 나머지는 같은 화면이다", () => {
 
   /* **제목 자리를 짚어서 본다.** 그냥 `includes("미리보기")` 로 재면 오른쪽
      칸 제목(「환자 화면 미리보기」)에 걸려 늘 통과한다 — 그렇게 새어 나갔다. */
-  const titleOf = (html) => /<span class="gs__title">([^<]*)<\/span>/.exec(html)[1];
+  const titleOf = (html) => /<span class="[^"]*gs__title[^"]*">([^<]*)<\/span>/.exec(html)[1];
 
   assert.match(titleOf(staff), /스탭 확인/, "S1-11 제목이 아니다");
   assert.match(titleOf(doctor), /미리보기/, "D1-1 제목이 아니다");
   assert.notEqual(titleOf(staff), titleOf(doctor), "두 모드 제목이 같다");
 
   /* 제목 줄만 빼면 같아야 한다 — 두 벌이 되면 한쪽만 고쳐진다 */
-  const strip = (html) => html.replace(/<span class="gs__title">[^<]*<\/span>/, "");
+  const strip = (html) => html.replace(/<span class="box__title gs__title">[^<]*<\/span>/, "");
   assert.equal(strip(staff), strip(doctor), "제목 말고도 다르다 — 두 화면이 갈라졌다");
 });
 
@@ -585,4 +585,20 @@ test("이미 나간 문자로 막히면 그 이유를 말한다", () => {
     code.includes("GUIDE_ALREADY_SENT"),
     "서버가 준 이유를 안 읽는다 — 「알 수 없는 오류」만 뜬다",
   );
+});
+
+test("**안내문 블록도 기본정보와 같은 상자다**", () => {
+  /* 담는 모양을 제 어휘로 따로 두면, 한 화면에서 탭을 옮길 때마다 블록 모양이
+     바뀌어 눈이 자리를 새로 찾는다. */
+  const { guideScreenHtml } = load("api", "session", "sms-plan", "guide-view");
+  const html = guideScreenHtml(SECTIONS, "medication", "staff", true);
+
+  assert.match(html, /class="box gs"/, "공용 상자를 안 쓴다");
+  assert.match(html, /class="box__head gs__head"/, "공용 머리를 안 쓴다");
+  assert.match(html, /class="box__title gs__title"/, "공용 제목을 안 쓴다");
+
+  /* 회색 머리띠가 돌아오면 안 된다 — 기본정보는 띠가 없다 */
+  const head = rule(read("css/blocks.css"), ".gs__head");
+  assert.ok(!/background:/.test(head), "머리띠가 돌아왔다 — 기본정보와 모양이 갈린다");
+  assert.ok(!/border-bottom:/.test(head), "머리 아래 줄이 돌아왔다");
 });

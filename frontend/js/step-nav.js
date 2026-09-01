@@ -18,7 +18,10 @@
 /* 다섯 단계와 그것이 사는 곳. 순서가 곧 진행 순서다. */
 var VISIT_STEPS = [
   { key: "basic", label: "기본정보", page: "/patients.html" },
-  { key: "record", label: "진료기록", page: "/patients.html" },
+  /* 「진료기록」은 **판독 화면**이다. 전에는 `/patients.html` 의 업로드 판이라
+     적혀 있었는데, 같은 칸에 화면이 둘이었다 — 판독을 보려면 그 판을 지나
+     「판독 결과 확인」을 한 번 더 눌러야 했다. */
+  { key: "record", label: "진료기록", page: "/ocr-review.html" },
   { key: "guide", label: "안내문", page: "/patients.html" },
   { key: "final", label: "최종 확인", page: "/patients.html" },
   { key: "status", label: "현황", page: "/patients.html" },

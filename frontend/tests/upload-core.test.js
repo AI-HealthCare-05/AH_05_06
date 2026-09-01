@@ -69,15 +69,20 @@ test("**한 번에 10장까지** — 넘치면 자르되 조용히 버리지 않
 /* ── 두 화면이 같은 것을 쓴다 ───────────────────────────────────────── */
 
 test("**두 화면이 같은 알맹이를 쓴다** — 두 벌이면 한쪽만 고쳐진다", () => {
-  for (const page of ["patients.html", "ocr-review.html"]) {
-    const html = read(page);
-    assert.ok(html.includes("/js/upload-core.js"), `${page} 가 공용 알맹이를 안 싣는다`);
-  }
+  /* 올리는 자리는 **판독 화면 하나**다. 전에는 진료기록 탭에도 업로드 판이
+     있어서 둘이었고, 한쪽만 고쳐지는 위험이 있었다. 그래서 이 검사가 있었다.
+     이제 한 곳이지만, 공용 알맹이를 쓰는지는 계속 본다 — 자기 것을 다시 짜기
+     시작하면 제한과 셈이 갈린다. */
+  assert.ok(read("ocr-review.html").includes("/js/upload-core.js"), "판독 화면이 공용 알맹이를 안 싣는다");
+  assert.ok(
+    !read("patients.html").includes("/js/upload.js"),
+    "환자 화면에 업로드 판이 돌아왔다 — 같은 칸에 두 화면이 된다",
+  );
 
   /* 제한을 **각자 정하는** 자리가 남으면 안 된다.
      처음엔 `1024 * 1024` 를 찾았는데, 바이트를 KB 로 세는 `human()` 이 걸렸다 —
      크기를 다루는 것과 **한계를 정하는 것**은 다르다. 한계를 정하는 이름만 본다. */
-  for (const js of ["js/upload.js", "js/ocr-review.js"]) {
+  for (const js of ["js/ocr-review.js"]) {
     const code = codeOnly(read(js));
     const owns = code.match(/\bvar\s+(MAX_BYTES|MAX_FILES|ACCEPT)\b/g) || [];
     assert.deepEqual(owns, [], `${js} 가 제한을 따로 정한다 (${owns.join(", ")}) — 공용과 갈라진다`);

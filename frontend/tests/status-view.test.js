@@ -230,26 +230,46 @@ test("**화면이 서버의 발송 목록을 넘긴다**", () => {
  * 회색 바닥 위에 테두리만 있으면 카드가 바닥에 잠긴다. 흰 바탕이 있어야
  * 블록으로 읽힌다 — 화면에서 「배경이 없다」로 되돌아온 자리다.
  */
-test("현황의 세 블록은 흰 바탕을 가진다", () => {
-  const css = read("css/blocks.css");
+test("**현황의 세 블록이 기본정보와 같은 상자를 쓴다**", () => {
+  /* 담는 모양을 제 어휘로 따로 두면, 한 화면에서 탭을 옮길 때마다 블록 모양이
+     바뀌어 눈이 자리를 새로 찾는다. `.box` 하나가 갖는다. */
+  const code = codeOnly(read("js/status-view.js"));
   ["st__send", "st__side", "tl"].forEach((name) => {
-    const body = rule(css, "." + name);
-    assert.match(
-      body,
-      /background:\s*var\(--card\)/,
-      `.${name} 에 바탕이 없다 — 회색 바닥에 잠긴다`
+    assert.ok(
+      code.includes('"box ' + name + '"'),
+      `.${name} 이 공용 상자를 안 쓴다 — 기본정보와 모양이 갈린다`
     );
-    assert.match(body, /border:\s*1px solid var\(--line\)/, `.${name} 에 테두리가 없다`);
+  });
+
+  /* 그 상자가 흰 바탕과 테두리를 갖는지도 여기서 못 박는다 */
+  const box = rule(read("css/blocks.css"), ".box");
+  assert.match(box, /background:\s*var\(--card\)/, "상자에 바탕이 없다 — 회색 바닥에 잠긴다");
+  assert.match(box, /border:\s*1px solid var\(--line\)/, "상자에 테두리가 없다");
+  assert.match(box, /padding:/, "상자에 여백이 없다");
+});
+
+test("블록 제목도 기본정보와 같다", () => {
+  const code = codeOnly(read("js/status-view.js"));
+  ["발송 · 예정", "환자 액션 현황", "진료 처리 이력"].forEach((title) => {
+    const at = code.indexOf(title);
+    assert.notEqual(at, -1, `${title} 이 없다`);
+    assert.match(
+      code.slice(at - 200, at),
+      /box__title/,
+      `${title} 이 공용 제목이 아니다 — 크기와 굵기가 갈린다`
+    );
   });
 });
 
-test("진료 처리 이력 줄은 카드 안쪽 여백을 가진다", () => {
-  /* 카드에는 padding 이 없다 — 줄이 스스로 좌우를 벌리지 않으면 글자가
-     테두리에 붙는다. */
-  const body = rule(read("css/blocks.css"), ".tl__row");
-  const pad = /padding:\s*\d+px\s+(\d+)px/.exec(body);
-  assert.ok(pad, ".tl__row 에 좌우 여백이 안 적혀 있다");
-  assert.ok(Number(pad[1]) > 0, "좌우 여백이 0 이다 — 글자가 테두리에 붙는다");
+test("줄이 좌우 여백을 또 주지 않는다 — 상자가 이미 물고 있다", () => {
+  /* 상자(`.box`)가 24px 을 물고 있어서, 줄이 또 주면 두 겹이 된다.
+     예전에는 상자에 여백이 없어 줄이 스스로 벌렸다. */
+  const css = read("css/blocks.css");
+  [".tl__row", ".sd__row"].forEach((sel) => {
+    const pad = /padding:\s*[\w.]+\s+([\w.]+)/.exec(rule(css, sel));
+    assert.ok(pad, `${sel} 에 여백이 안 적혀 있다`);
+    assert.equal(parseFloat(pad[1]) || 0, 0, `${sel} 이 좌우 여백을 또 준다 — 두 겹이 된다: ${pad[1]}`);
+  });
 });
 
 test("환자 액션 블록에는 제목이 있다", () => {
@@ -282,7 +302,7 @@ test("승인된 뒤에는 발송 블록 머리에 철회 버튼이 선다", () =
   assert.ok(on.includes("승인 철회"), "버튼에 이름이 없다");
 
   /* 발송·예정 머리띠 **안**이어야 한다 — 무엇을 거두는지가 거기 적혀 있다 */
-  const head = on.indexOf('class="st__head"');
+  const head = on.indexOf("st__head");
   assert.ok(head !== -1 && on.indexOf('id="status-unapprove"') > head, "머리띠 밖에 있다");
   assert.ok(
     on.indexOf('id="status-unapprove"') < on.indexOf("</div>", head),
@@ -290,8 +310,9 @@ test("승인된 뒤에는 발송 블록 머리에 철회 버튼이 선다", () =
   );
 });
 
-test("철회 버튼은 머리띠 오른쪽 끝으로 밀린다", () => {
-  const body = rule(read("css/blocks.css"), ".st__act");
-  assert.match(body, /margin-left:\s*auto/, "제목에 붙어 버린다 — 판 머리의 수정 버튼과 어긋난다");
-  assert.match(rule(read("css/blocks.css"), ".st__head"), /display:\s*flex/, "머리띠가 줄이 아니다");
+test("철회 버튼은 블록 머리 오른쪽 끝으로 밀린다", () => {
+  const css = read("css/blocks.css");
+  assert.match(rule(css, ".st__act"), /margin-left:\s*auto/, "제목에 붙어 버린다");
+  /* 줄로 세우는 것은 공용 머리(`.box__head`)가 한다 — 기본정보의 「수정」과 같다 */
+  assert.match(rule(css, ".box__head"), /display:\s*flex/, "블록 머리가 줄이 아니다");
 });

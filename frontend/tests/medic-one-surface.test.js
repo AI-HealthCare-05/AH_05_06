@@ -43,20 +43,34 @@ test("**환자 카드의 다섯 탭이 하나도 잠겨 있지 않다**", () => 
   }
 });
 
-test("잠긴 탭에 붙일 패널이 실제로 있다 — 없으면 눌러도 빈 화면이다", () => {
+test("탭에 붙일 패널이 실제로 있다 — 없으면 눌러도 빈 화면이다", () => {
   const html = read("patients.html");
-  for (const name of ["basic", "record", "guide", "final", "status"]) {
+  for (const name of ["basic", "guide", "final", "status"]) {
     assert.ok(html.includes(`id="panel-${name}"`), `panel-${name} 이 없다`);
   }
+
+  /* 「진료기록」만 판이 없다 — 그 칸은 판독 화면(`/ocr-review.html`)이다.
+     전에는 여기에도 업로드 판이 있어서 같은 칸에 두 화면이었다. */
+  assert.ok(!html.includes('id="panel-record"'), "진료기록 판이 두 화면에 다 있다");
 });
 
-test("탭 목록이 다섯을 다 안다 — 모르면 showTab 이 조용히 돌아간다", () => {
+test("**다섯 칸을 다 안다 — 넷은 판으로, 하나는 다른 화면으로**", () => {
   const source = read("js/detail.js");
-  const line = source.split("\n").find((l) => l.includes("var TABS ="));
-  assert.ok(line, "TABS 가 없다 — 검사가 헛돈다");
-  for (const name of ["basic", "record", "guide", "final", "status"]) {
-    assert.ok(line.includes(`"${name}"`), `TABS 에 ${name} 이 없다: 「${line.trim()}」`);
+  const tabs = source.split("\n").find((l) => l.includes("var TABS ="));
+  const away = source.split("\n").find((l) => l.includes("var AWAY ="));
+  assert.ok(tabs && away, "TABS · AWAY 가 없다 — 검사가 헛돈다");
+
+  for (const name of ["basic", "guide", "final", "status"]) {
+    assert.ok(tabs.includes(`"${name}"`), `TABS 에 ${name} 이 없다: 「${tabs.trim()}」`);
   }
+  assert.ok(!tabs.includes('"record"'), "판이 없는 칸이 TABS 에 남아 있다 — 눌러도 빈 화면이다");
+  assert.match(away, /record:\s*"\/ocr-review\.html"/, "진료기록이 갈 곳을 모른다");
+
+  /* 화면에 그려진 다섯 칸이 모두 어딘가로 이어져야 한다 — 하나라도 빠지면
+     눌러도 아무 일이 없다. */
+  const drawn = [...read("patients.html").matchAll(/data-tab="(\w+)"/g)].map((m) => m[1]);
+  const known = new Set([...drawn].filter((k) => tabs.includes(`"${k}"`) || away.includes(`${k}:`)));
+  assert.deepEqual([...new Set(drawn)].sort(), [...known].sort(), "갈 곳 없는 탭이 그려져 있다");
 });
 
 /* ── 역할은 버튼만 가른다 ─────────────────────────────────────────────── */

@@ -590,47 +590,64 @@ test("좌측 목록 제목이 「환자 리스트」다", () => {
   assert.ok(read("admin.html").includes('<span class="list__label">어드민</span>'));
 });
 
-/* ── 진료기록 업로드 (S1-5) ──────────────────────────────────────────── */
+/* ── 진료기록 올리기 (S1-6·S1-7 판독 화면 안) ─────────────────────────
+ *
+ * 올리는 자리가 **판독 화면 하나**로 모였다. 전에는 진료기록 탭에도 업로드
+ * 화면이 따로 있어서 같은 칸에 두 화면이었고, 판독이 끝난 환자를 눌러도 빈
+ * 업로드 판이 떴다.
+ */
 
-test("**업로드 화면이 상자 하나에 담긴다** — 기본정보의 「환자 정보」와 같은 모양", () => {
-  const html = read("patients.html");
-  const panel = element(html, '<div class="panel" id="panel-record" hidden>');
+test("**올리는 자리가 판독 블록 안에 있다** — 다른 화면으로 보내지 않는다", () => {
+  const html = read("ocr-review.html");
+  const box = element(html, '<section class="box box--raw">');
 
-  /* 화면마다 담는 모양이 다르면 같은 자리인지가 안 보이고, 탭을 옮길 때마다
-     눈이 새로 자리를 찾는다. */
-  assert.ok(panel.includes('<section class="box">'), "업로드가 상자에 안 담겼다");
-
-  const box = element(panel, '<section class="box">');
-  /* 블록 제목은 「진료기록」이다 — 판독 확인까지 한 블록에 들어와서,
-     「업로드」라고만 적으면 이 블록이 하는 일의 절반만 말한다. */
-  for (const part of ["진료기록", 'id="pick"', 'id="reading-go"', 'id="drop"', 'class="kinds"', 'id="later"', 'id="next"']) {
-    assert.ok(box.includes(part), `상자 밖에 남은 것이 있다: ${part}`);
+  /* 판독을 보다가 「사진이 흐려서 못 읽었구나」를 알게 되는 자리다.
+     그때 다른 화면으로 갔다 오면 보던 값을 잃는다. */
+  for (const part of ['id="add-doc"', 'id="add-panel"', 'id="drop2"', 'id="pick2"', 'class="kinds"']) {
+    assert.ok(box.includes(part), `판독 블록 밖에 있다: ${part}`);
   }
 });
 
-test("아래 단추가 작다 — 이 화면의 주인공은 드롭존이다", () => {
+test("올리는 판은 접힌 채로 시작한다 — 판독을 보러 온 자리다", () => {
+  const html = read("ocr-review.html");
+  const panel = /<div class="add-panel" id="add-panel"([^>]*)>/.exec(html);
+  assert.ok(panel, "올리는 판이 없다 — 검사가 헛돈다");
+  assert.match(panel[1], /\bhidden\b/, "펼친 채로 시작한다 — 판독 값이 아래로 밀린다");
+
+  const button = /<button[\s\S]*?id="add-doc"[\s\S]*?>/.exec(html);
+  assert.ok(button, "여는 단추가 없다");
+  assert.match(button[0], /aria-expanded="false"/, "낭독기에 접힘이 안 간다");
+});
+
+test("환자 화면에는 업로드 판이 없다 — 같은 칸에 두 화면이 되지 않는다", () => {
   const html = read("patients.html");
-  /* 버튼 어휘는 css/blocks.css 로 모았다 — 바탕이 doctor.css 와 upload.css
-     양쪽에 있었고 작은 것은 detail.css 와 upload.css 에 갈려 있어서, 판독
-     확인 화면에서 --sm 을 붙였는데 큰 버튼이 떴다. */
-  const css = read("css/blocks.css");
-
-  assert.ok(html.includes("button-ghost--sm"), "「나중에 업로드」가 크다");
-  assert.ok(html.includes("button-primary--sm"), "「업로드 후 안내문 생성」이 크다");
-
-  const small = rule(css, ".button-primary--sm");
-  const height = /height:\s*(\d+)px/.exec(small);
-  assert.ok(height, "작은 단추 높이가 없다 — 검사가 헛돈다");
-  assert.ok(Number(height[1]) < 44, `단추가 안 작아졌다: ${height[1]}px`);
-  assert.ok(Number(height[1]) >= 24, `목표 크기가 24px 아래다: ${height[1]}px (WCAG 2.5.8)`);
+  for (const gone of ['id="panel-record"', 'id="drop"', 'id="later"', 'id="reading-go"']) {
+    assert.ok(!html.includes(gone), `업로드 화면이 남아 있다: ${gone}`);
+  }
 });
 
 test("드롭존 그림도 이모지가 아니다", () => {
-  const html = read("patients.html");
+  const html = read("ocr-review.html");
   assert.ok(!html.includes("🖼"), "드롭존에 이모지가 남아 있다");
-  assert.ok(html.includes('class="drop__pic"'), "드롭존에 그림글자가 없다");
+  assert.ok(!html.includes("📄"), "PDF 이모지가 남아 있다");
+});
 
-  const pic = /<svg class="drop__pic"[^>]*>/.exec(html);
-  assert.ok(pic, "그림글자를 못 찾았다");
-  assert.ok(pic[0].includes('aria-hidden="true"'), "그림을 낭독기가 읽는다");
+test("**상단바가 아주 얕게 떠 있다** — 진하면 그림자가 먼저 눈에 걸린다", () => {
+  const bar = rule(read("css/shell.css"), ".topbar");
+
+  assert.match(bar, /box-shadow:/, "상단바에 그림자가 없다");
+  assert.match(bar, /z-index:/, "아래 흰 칸에 그림자가 묻힌다");
+
+  /* 얕아야 한다. 진하면 읽어야 할 것(환자 이름 · 탭)에서 눈을 뺏는다.
+     흐림 반경과 짙기 둘 다 본다 — 한쪽만 재면 다른 쪽으로 진해질 수 있다. */
+  const blur = /box-shadow:\s*[\d.]+\w*\s+[\d.]+\w*\s+([\d.]+)px/.exec(bar);
+  assert.ok(blur, "그림자 흐림 반경을 못 읽었다 — 검사가 헛돈다");
+  assert.ok(Number(blur[1]) <= 6, `그림자가 너무 퍼졌다: ${blur[1]}px`);
+
+  const alpha = /\/\s*([\d.]+)%\s*\)/.exec(bar);
+  assert.ok(alpha, "그림자 짙기를 못 읽었다 — 검사가 헛돈다");
+  assert.ok(Number(alpha[1]) <= 12, `그림자가 너무 진하다: ${alpha[1]}%`);
+
+  /* 줄이 경계를 긋고 그림자는 깊이만 준다 — 줄을 빼면 경계가 흐려진다 */
+  assert.match(bar, /border-bottom:\s*1px solid var\(--line\)/, "경계 줄이 사라졌다");
 });

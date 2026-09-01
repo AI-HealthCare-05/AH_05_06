@@ -404,28 +404,16 @@
  * 같은 것을 쓴다. 한쪽 파일에 두면 다른 쪽에서 모양 없이 뜬다.
  */
 
+/* **담는 모양은 `.box` 가 갖는다** — 기본정보의 「환자 정보」와 같은 상자다.
+   여기서는 그 안에서 더할 것만 적는다. 예전에는 회색 머리띠를 두른 제 어휘였는데,
+   한 화면에서 탭을 옮길 때마다 블록 모양이 바뀌어 눈이 자리를 새로 찾았다. */
 .gs {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  margin-top: 0;
   overflow: hidden;
-  background: var(--card);
 }
 
-/* 원문 `padding:7px 10px 7px 14px · background:#F3F4F6` */
 .gs__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   flex-wrap: wrap;
-  padding: 7px 10px 7px 14px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
-}
-
-.gs__title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink-2);
 }
 
 /* 칸막이로 이어 붙인 한 덩어리 — 네 항목이 한눈에 든다 */
@@ -481,10 +469,10 @@
 
 /* ── 두 칸 ─────────────────────────────────────────────────────────── */
 
+/* 상자가 이미 여백을 물고 있다 — 여기서 또 주면 두 겹이 된다 */
 .gs__body {
   display: flex;
   gap: 14px;
-  padding: 10px 12px;
   align-items: stretch;
   flex-wrap: wrap;
 }
@@ -499,13 +487,13 @@
   overflow: hidden;
 }
 
+/* 안쪽 판. 바깥 상자와 같은 모양이되 한 겹 작다 — 두 겹 다 24px 이면
+   글이 가운데로 몰린다. */
 .gs__paneHead {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 7px 11px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
+  padding: 12px 14px 0;
 }
 
 .gs__paneTitle {
@@ -985,25 +973,15 @@ textarea.sms__text:focus-visible {
   align-items: flex-start;
 }
 
+/* 셋 다 `.box` 를 함께 쓴다 — 담는 모양은 거기 있고 여기서는 자리만 잡는다 */
 .st__send {
   flex: 2 1 380px;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-  overflow: hidden;
+  margin-top: 0;
 }
 
 .st__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink-2);
+  flex-wrap: wrap;
 }
 
 /* 머리띠 오른쪽 끝 — 수정 버튼을 판 머리에 둔 것과 같은 자리다 */
@@ -1017,7 +995,7 @@ textarea.sms__text:focus-visible {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 10px 14px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--bg);
   font-size: 13px;
 }
@@ -1060,17 +1038,13 @@ textarea.sms__text:focus-visible {
 .st__side {
   flex: 1 1 260px;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-  overflow: hidden;
+  margin-top: 0;
 }
 
 .st__body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 13px 15px;
 }
 
 .st__label {
@@ -1099,7 +1073,7 @@ textarea.sms__text:focus-visible {
 
 .st__note {
   margin: 0;
-  padding: 8px 14px;
+  padding: 8px 0 0;
   font-size: 11px;
   line-height: 1.6;
   color: var(--ink-3);
@@ -1112,25 +1086,11 @@ textarea.sms__text:focus-visible {
  */
 
 .tl {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-  overflow: hidden;
+  margin-top: 0;
 }
 
 .tl__head {
-  display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 8px 14px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
-}
-
-.tl__title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink-2);
 }
 
 .tl__tail {
@@ -1146,7 +1106,7 @@ textarea.sms__text:focus-visible {
   grid-template-columns: 66px 1fr 104px;
   gap: 12px;
   align-items: baseline;
-  padding: 7px 14px;
+  padding: 7px 0;
   border-top: 1px solid var(--line);
   font-size: 13px;
 }

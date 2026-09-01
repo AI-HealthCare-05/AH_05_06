@@ -1,120 +1,118 @@
-/* **판독으로 돌아가는 길** — 와이어프레임에 없는 추가.
+/* **「진료기록」 칸은 판독 화면 하나다.**
  *
- * 판독 확인 도중에 「기본정보」를 눌러 돌아오면 판독 화면으로 갈 길이 없었다.
- * 단계 줄의 「진료기록」은 업로드 칸으로 오고 판독 확인은 그 다음 화면이라
- * 단계 줄에 자리가 없다 — 막다른 곳이다.
+ * 전에는 그 칸에 화면이 둘이었다 — `patients.html` 의 업로드 판과
+ * `ocr-review.html` 의 판독 화면. 판독이 끝난 환자를 눌러도 빈 업로드 판이
+ * 떴고, 판독을 보려면 그 판 안의 「판독 결과 확인」을 한 번 더 눌러야 했다.
+ * 올리는 일도 판독 화면 머리의 「OCR 업로드」가 한다.
+ *
+ * 그리고 그 길은 **날짜를 잃었다.** 목록은 하루 단위인데 처음 여는 날은 늘
+ * 오늘이라, 어제 진료의 주소로 들어오면 오늘 목록에서 못 찾고 「환자가
+ * 없습니다」가 떴다.
  */
 const { test } = require("node:test");
 const assert = require("node:assert");
-const fs = require("node:fs");
-const path = require("node:path");
 const { load } = require("./browser-shim.js");
+const { read, codeOnly, markupOnly } = require("./source.js");
 
-const ROOT = path.join(__dirname, "..");
+/* ── 칸이 하나다 ────────────────────────────────────────────────────── */
 
-function box() {
-  return load("api", "session", "patients-api", "shell", "ocr-api", "upload");
-}
+test("**「진료기록」은 판독 화면에 산다**", () => {
+  const { VISIT_STEPS } = load("api", "session", "patients-api", "step-nav");
+  const record = VISIT_STEPS.filter((s) => s.key === "record")[0];
 
-function read(rel) {
-  return fs.readFileSync(path.join(ROOT, rel), "utf8");
-}
-
-test("**판독 작업이 없으면 길을 내지 않는다** — 눌러도 아무 일 없는 버튼이 된다", () => {
-  const { readingLink } = box();
-
-  assert.equal(readingLink(null).show, false, "작업이 없는데 버튼이 뜬다");
-  assert.equal(readingLink({}).show, false, "빈 응답에도 버튼이 뜬다");
-  assert.equal(readingLink({ status: "PROCESSING" }).show, false, "작업 번호가 없는데 버튼이 뜬다");
+  assert.ok(record, "진료기록 칸이 사라졌다");
+  assert.equal(record.page, "/ocr-review.html", "아직 업로드 화면을 가리킨다");
 });
 
-test("판독이 도는 중에도 길을 낸다 — 기다리는 화면이 판독 화면에 있다", () => {
-  const { readingLink } = box();
+test("환자 화면에는 그 판이 없다 — 같은 칸에 두 화면이 되지 않는다", () => {
+  const html = markupOnly(read("patients.html"));
+  assert.ok(!html.includes('id="panel-record"'), "업로드 판이 남아 있다");
+  assert.ok(!html.includes("/js/upload.js"), "없어진 파일을 아직 싣는다");
 
-  const link = readingLink({ ocr_job_id: "j1", status: "PROCESSING", progress: 40 });
-  assert.equal(link.show, true);
-  assert.match(link.say, /판독 중/);
-  assert.match(link.say, /40/, "얼마나 됐는지 안 알려 준다");
+  /* 탭 단추는 그대로 있어야 한다 — 다섯 칸이 보여야 어디까지 왔는지 읽힌다 */
+  assert.ok(html.includes('data-tab="record"'), "진료기록 칸이 화면에서 사라졌다");
 });
 
-test("**실패해도 막지 않는다** — 여기서 막으면 실패 사유를 볼 데가 없다", () => {
-  const { readingLink } = box();
+test("**그 칸을 누르면 판독 화면으로 간다**", () => {
+  const code = codeOnly(read("js/detail.js"));
 
-  const link = readingLink({ ocr_job_id: "j1", status: "FAILED" });
-  assert.equal(link.show, true, "실패하면 판독 화면으로 갈 길이 사라진다");
-  assert.match(link.say, /실패/);
-});
+  const at = code.indexOf("var AWAY");
+  assert.notEqual(at, -1, "다른 화면에 사는 칸을 모른다");
+  assert.match(code.slice(at, at + 200), /record:\s*"\/ocr-review\.html"/, "갈 곳이 없다");
 
-test("끝났으면 끝났다고 말한다", () => {
-  const { readingLink } = box();
-
-  const link = readingLink({ ocr_job_id: "j1", status: "SUCCEEDED" });
-  assert.equal(link.show, true);
-  assert.match(link.say, /끝났/);
-  assert.equal(link.label, "판독 결과 확인");
-});
-
-test("**화면에 그 자리가 있다** — 규칙만 있고 자리가 없으면 소용없다", () => {
-  const page = read("patients.html");
-
-  /* 「진료기록」 블록 **머리**에 있어야 한다. 아래에 두면 파일 목록과 안내문이
-     길어서 스크롤해야 보이고, 그러면 없는 것과 같다. */
-  const record = page.indexOf('id="panel-record"');
-  const head = page.indexOf('class="box__head"', record);
-  const go = page.indexOf('id="reading-go"');
-  const drop = page.indexOf('id="drop"');
-
-  assert.ok(go !== -1, "판독 확인 버튼이 없다");
-  assert.ok(head < go && go < drop, "판독 확인 버튼이 블록 머리에 없다");
-  assert.ok(page.includes('id="reading-say"'), "지금 어느 상태인지 말할 자리가 없다");
-
-  /* 올리는 버튼도 같은 머리에 — 이 탭에 오는 이유가 둘 중 하나라서 */
-  const pick = page.indexOf('id="pick"');
-  assert.ok(head < pick && pick < drop, "OCR 업로드 버튼이 블록 머리에 없다");
-});
-
-test("**한 블록이다** — 판독과 업로드를 갈라 두면 위아래로 훑어야 한다", () => {
-  const page = read("patients.html");
-  const record = page.slice(page.indexOf('id="panel-record"'), page.indexOf('id="panel-guide"'));
-
-  const boxes = (record.match(/<section class="box"/g) || []).length;
-  assert.equal(boxes, 1, `진료기록 탭에 블록이 ${boxes}개다 — 하나여야 한다`);
-});
-
-test("**물어보기 전에는 안 뜬다** — 뜨면 판독이 있는 것처럼 보인다", () => {
-  const page = read("patients.html");
-
-  for (const id of ["reading-go", "reading-say"]) {
-    const at = page.indexOf(`id="${id}"`);
-    assert.ok(at !== -1, `${id} 가 없다`);
-    /* 여는 태그 안에 hidden 이 있어야 한다 — 태그 끝까지만 본다 */
-    const tag = page.slice(at, page.indexOf(">", at));
-    assert.match(tag, /hidden/, `${id} 가 처음부터 떠 있다`);
-  }
-});
-
-test("**다른 환자를 고르면 앞 사람의 길이 안 남는다**", () => {
-  /* 답이 오는 사이 다른 환자를 고르면, 늦게 온 답이 새 환자 화면에 붙는다 —
-     남의 판독으로 가는 버튼이 된다. `doctor.js` 가 승인에서 같은 이유로
-     `approvingId` 를 따로 잡는다. */
-  const source = read("js/upload.js");
-  const code = source
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("/*") && !line.trim().startsWith("*"))
-    .join("\n");
-
-  const at = code.indexOf("function askReading");
-  const body = code.slice(at, code.indexOf("function drawReading"));
-
-  assert.ok(body.includes("var asked"), "어느 진료를 물었는지 안 붙잡는다");
-
-  /* **두 갈래를 다 센다.** 성공 쪽 방어만 빼도 실패 쪽이 남아 통과했다 —
-     한 번만 보면 검사가 안 문다(돌연변이가 살아남았다). 답은 성공으로도
-     실패로도 오고, 어느 쪽이든 늦게 오면 남의 화면에 붙는다. */
-  const guards = body.match(/visit\.visit_id !== asked/g) || [];
-  assert.equal(
-    guards.length,
-    2,
-    `답이 온 뒤 아직 그 환자인지 보는 자리가 ${guards.length}곳이다 — 성공·실패 두 갈래 모두 봐야 한다`,
+  /* `showTab` 이 먼저 보내야 한다 — TABS 검사에 먼저 걸리면 조용히 돌아간다 */
+  const show = code.indexOf("function showTab");
+  const body = code.slice(show, code.indexOf("\n  }", show));
+  assert.ok(body.indexOf("AWAY[name]") !== -1, "showTab 이 다른 화면으로 안 보낸다");
+  assert.ok(
+    body.indexOf("AWAY[name]") < body.indexOf("TABS.indexOf"),
+    "TABS 검사가 먼저다 — 모르는 이름으로 보고 조용히 돌아간다",
   );
+});
+
+test("**그 진료를 달고 간다** — 안 달면 도착한 화면이 다른 환자를 연다", () => {
+  const code = codeOnly(read("js/detail.js"));
+  const at = code.indexOf("function goAway");
+  assert.notEqual(at, -1, "보내는 자리가 없다");
+
+  const body = code.slice(at, code.indexOf("\n  }", at));
+  assert.match(body, /visit=/, "진료를 안 달고 간다");
+  assert.match(body, /encodeURIComponent\(row\.visit_id\)/, "진료 번호를 안 싣는다");
+  assert.match(body, /if \(!row/, "고른 환자가 없을 때도 간다");
+});
+
+/* ── 날짜를 잃지 않는다 ─────────────────────────────────────────────── */
+
+test("**주소로 찾아온 진료의 날짜로 옮긴다**", () => {
+  const code = codeOnly(read("js/shell.js"));
+  const at = code.indexOf("function openAsked");
+  assert.notEqual(at, -1, "주소로 찾아온 진료를 여는 자리가 없다");
+
+  const body = code.slice(at, code.indexOf("\n  }", at));
+
+  /* 오늘 목록에 있으면 묻지 않는다 — 대부분은 오늘 진료다 */
+  assert.match(body, /rowByVisit\(rows, asked\.visitId\)/, "오늘 목록을 먼저 안 본다");
+
+  /* 없으면 그 진료를 물어 날짜를 옮긴다 */
+  assert.match(body, /getVisit\(/, "그 진료를 안 물어본다 — 오늘 목록에 없으면 못 연다");
+  assert.match(body, /visited_at/, "진료일을 안 읽는다");
+  assert.match(body, /listDay\s*=/, "목록의 날짜를 안 옮긴다");
+  assert.match(body, /loadDay\(\)/, "그 날 목록을 안 다시 읽는다");
+});
+
+test("못 찾으면 오늘을 보인다 — 빈 화면을 띄우지 않는다", () => {
+  const code = codeOnly(read("js/shell.js"));
+  const at = code.indexOf("function openAsked");
+  const body = code.slice(at, code.indexOf("\n  }", at));
+  assert.match(body, /\.catch\(/, "못 찾으면 그대로 죽는다");
+});
+
+test("주소는 한 번만 쓰고 지운다 — 새로고침할 때마다 되돌아가면 안 된다", () => {
+  const code = codeOnly(read("js/shell.js"));
+  assert.match(code, /function clearAsked/, "주소를 지우는 자리가 없다");
+  assert.match(code, /history\.replaceState\(null, "", location\.pathname\)/, "주소가 남는다");
+
+  /* 두 길 모두에서 지워야 한다 — 오늘 목록에 있을 때와 없을 때 */
+  const at = code.indexOf("function openAsked");
+  assert.match(code.slice(at, code.indexOf("\n  }", at)), /clearAsked/, "물어본 길에서 안 지운다");
+  const open = code.indexOf("function openRow");
+  assert.match(code.slice(open, code.indexOf("\n  }", open)), /clearAsked/, "바로 연 길에서 안 지운다");
+});
+
+/* ── 카드를 누르면 기본정보 ─────────────────────────────────────────── */
+
+test("**환자 카드를 누르면 늘 기본정보가 열린다**", () => {
+  /* `open_tab` 은 목록의 줄에 그대로 붙는다(`row.open_tab = ...`). 한 번 붙으면
+     그 뒤로 그 환자를 누를 때마다 그 칸이 열렸다 — 「진료기록」이 붙어 있으면
+     카드를 눌렀는데 판독 화면으로 튀어 나간다. */
+  const code = codeOnly(read("js/shell.js"));
+  const at = code.indexOf('getElementById("rows").addEventListener');
+  assert.notEqual(at, -1, "줄 누름을 받는 자리가 없다");
+
+  const handler = code.slice(at, at + 1600);
+
+  /* **두 곳을 다 지워야 한다.** 넘겨 주는 사본과 목록이 들고 있는 원본이
+     따로다 — 사본만 지우면 다음에 누를 때 원본에서 다시 붙는다. */
+  assert.match(handler, /hit\.open_tab\s*=\s*null/, "넘겨 주는 것에 앞 칸이 남는다");
+  assert.match(handler, /kept\.open_tab\s*=\s*null/, "목록 줄에 앞 칸이 남아 다음에 또 열린다");
 });

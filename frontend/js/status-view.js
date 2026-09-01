@@ -248,11 +248,11 @@ function statusScreenHtml(view) {
     '<div class="st">' +
     /* 위 2 : 1 */
     '<div class="st__top">' +
-    '<section class="st__send">' +
+    '<section class="box st__send">' +
     /* 철회는 **여기** 붙는다 — 무엇을 거두는지가 이 블록에 적혀 있다.
        최종 확인 탭의 승인 버튼 옆에 두면, 이미 승인된 뒤에 그 탭을 다시
        열 일이 없어서 찾지 못한다. */
-    '<div class="st__head">발송 · 예정' +
+    '<div class="box__head st__head"><span class="box__title">발송 · 예정</span>' +
     (view.canUnapprove
       ? '<button class="button-ghost button-ghost--sm st__act" type="button" id="status-unapprove">승인 철회</button>'
       : "") +
@@ -260,8 +260,8 @@ function statusScreenHtml(view) {
     sendRowsHtml(view.messages) +
     '<p class="st__note">ⓘ ⚠ 못 나감은 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 발송기가 붙으면 그 자리에서 고칩니다</p>' +
     "</section>" +
-    '<section class="st__side">' +
-    '<div class="st__head">환자 액션 현황</div>' +
+    '<section class="box st__side">' +
+    '<div class="box__head st__head"><span class="box__title">환자 액션 현황</span></div>' +
     '<div class="st__body">' +
     '<div class="st__label">안내문 읽음</div>' +
     '<div class="st__big">' +
@@ -281,8 +281,8 @@ function statusScreenHtml(view) {
     "</p></div></section>" +
     "</div>" +
     /* 아래 전폭 */
-    '<section class="tl">' +
-    '<div class="tl__head"><span class="tl__title">진료 처리 이력</span>' +
+    '<section class="box tl">' +
+    '<div class="box__head tl__head"><span class="box__title tl__title">진료 처리 이력</span>' +
     '<span class="tl__tail">시스템 처리 내역 포함</span></div>' +
     (rows || '<p class="st__note">아직 기록이 없습니다</p>') +
     '<p class="st__note">ⓘ 열람 기록은 어드민 「전체 로그」에서 확인합니다 · 이 화면은 진료 흐름만 표시합니다</p>' +

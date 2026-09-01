@@ -573,6 +573,16 @@ function bindShell() {
     var asking = new CustomEvent("visit:selecting", { cancelable: true, detail: hit });
     if (!document.dispatchEvent(asking)) return;
 
+    /* **카드를 누르면 늘 기본정보다.**
+
+       `open_tab` 은 목록의 **줄에 그대로 붙는다**(`row.open_tab = ...`). 주소로
+       찾아와 한 번 붙으면 그 뒤로 그 환자를 누를 때마다 그 칸이 열렸다 —
+       「진료기록」이 붙어 있으면 카드를 눌렀는데 판독 화면으로 튀어 나간다.
+       누르는 것은 「이 환자를 본다」이지 「그때 보던 칸으로 간다」가 아니다. */
+    hit.open_tab = null;
+    var kept = rowByVisit(rows, hit.visit_id);
+    if (kept) kept.open_tab = null;
+
     /* **여기가 오른쪽을 바꾸는 유일한 자리다.** 날짜도 상태 탭도 목록의 보기일 뿐이다. */
     picked = hit;
     this.querySelectorAll("[data-visit-id]").forEach(function (r) {
@@ -602,6 +612,55 @@ function bindShell() {
     loadDay();
   });
 
+  /* **주소로 찾아온 진료를 연다 — 그 진료의 날짜로 옮겨서.**
+   *
+   * 목록은 하루 단위인데 처음 여는 날은 늘 오늘이다. 그래서 어제 진료의
+   * 주소(`?visit=12&tab=guide`)로 들어오면 오늘 목록에서 그 진료를 못 찾고,
+   * 화면은 「오늘은 환자가 없습니다」를 띄웠다 — 판독 화면에서 「안내문」을
+   * 누르거나 환자 카드에서 「판독 결과 확인」을 누를 때마다 그랬다.
+   *
+   * 주소에 날짜를 실어 보내는 방법도 있지만, 그러면 **주소를 만드는 모든
+   * 자리**가 날짜를 붙여야 한다 — 한 곳만 빠뜨려도 같은 증상이 돌아온다.
+   * 받는 쪽에서 한 번 물어보는 편이 한 자리에서 끝난다. 오늘 목록에 있으면
+   * 묻지 않는다.
+   */
+  function openAsked(asked) {
+    var here = rowByVisit(rows, asked.visitId);
+    if (here) return openRow(here, asked.tab);
+
+    return patientsApi
+      .getVisit(asked.visitId)
+      .then(function (visit) {
+        var day = visit && visit.visited_at ? dayFromInput(String(visit.visited_at).slice(0, 10)) : null;
+        if (!day) return null;
+        listDay = day;
+        renderDay();
+        return loadDay();
+      })
+      .then(function () {
+        var found = rowByVisit(rows, asked.visitId);
+        if (found) openRow(found, asked.tab);
+      })
+      .catch(function () {
+        /* 못 찾으면 오늘 목록 그대로 둔다 — 빈 화면을 띄우느니 오늘을 보인다 */
+      })
+      .then(clearAsked);
+  }
+
+  function openRow(row, tab) {
+    if (tab) row.open_tab = tab;
+    showView("view-card");
+    renderRows(row.visit_id);
+    tellPane(row);
+    clearAsked();
+  }
+
+  /* 주소는 한 번만 쓰고 지운다. 남겨 두면 새로고침할 때마다 고르던 것을
+     버리고 그 진료로 되돌아간다. */
+  function clearAsked() {
+    history.replaceState(null, "", location.pathname);
+  }
+
   requireSession()
     .then(function (me) {
       document.getElementById("who-name").textContent = me.name;
@@ -621,15 +680,7 @@ function bindShell() {
          버리고 그 진료로 되돌아간다. */
       var asked = stepFromSearch(location.search);
       if (!asked.visitId) return;
-
-      var row = rowByVisit(rows, asked.visitId);
-      if (row) {
-        if (asked.tab) row.open_tab = asked.tab;
-        showView("view-card");
-        renderRows(asked.visitId);
-        tellPane(row);
-      }
-      history.replaceState(null, "", location.pathname);
+      return openAsked(asked);
     })
     .catch(function () {});
 

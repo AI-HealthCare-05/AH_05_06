@@ -151,6 +151,30 @@
                     <input type="file" id="file2" multiple accept="image/*,application/pdf" hidden />
                   </div>
                   <p class="note note--warn">⚠ 다른 환자의 정보가 함께 촬영되지 않도록 주의해 주세요</p>
+
+                  <!-- **무엇을 찍어 와야 하는지는 여전히 말해 준다.**
+                       종류 고르개를 없앤 것이지 안내를 없앤 것이 아니다.
+                       전에는 진료기록 탭의 업로드 화면에 있었는데, 그 화면을
+                       없애면서 올리는 자리로 함께 옮겼다 — 접힌 판 안이라
+                       평소에는 자리를 안 먹는다. -->
+                  <div class="kinds">
+                    <div class="kind">
+                      <div class="kind__name">EMR 과거기록</div>
+                      <p class="kind__desc">상병 · 처방 · 검사 수치가 함께 보이는 화면 — 이 화면만으로 충분합니다</p>
+                      <p class="kind__when kind__when--must">★ 안내문 생성 필수</p>
+                    </div>
+                    <div class="kind">
+                      <div class="kind__name">소견 · 메모</div>
+                      <p class="kind__desc">초음파 소견 · 특이사항이 표시된 화면</p>
+                      <p class="kind__when">안내문 생성에 사용</p>
+                    </div>
+                    <div class="kind">
+                      <div class="kind__name">검사 결과지</div>
+                      <p class="kind__desc">과거기록에 포함되지 않는 항목만 — AMH는 별도 서식이라 추가 업로드가 필요할 수 있습니다</p>
+                      <p class="kind__when">검사 시행일에만</p>
+                    </div>
+                  </div>
+                  <p class="note">진료기록 종류를 자동으로 분류합니다 · 종류별로 나누어 업로드하지 않아도 됩니다</p>
                 </div>
                 <p class="note" id="add-say" role="status" aria-live="polite" hidden></p>
 

@@ -47,7 +47,15 @@ function timeLabel(isoDatetime) {
   /* **다섯 탭이 다 열려 있다.** 안내문 · 최종 확인 · 현황은 `js/visit-guide.js`
      가 채운다. 와이어프레임에서 의사 화면(D1)은 별도 페이지가 아니라 이 탭의
      뒷칸이라, 스탭도 의사도 같은 다섯 칸을 본다 — 가르는 것은 버튼이다. */
-  var TABS = ["basic", "record", "guide", "final", "status"];
+/* **「진료기록」은 이 화면에 판이 없다.** 판독 화면(`/ocr-review.html`)이
+   그 칸이다 — 와이어프레임 S1-6·S1-7.
+
+   전에는 여기에도 업로드 판이 하나 더 있어서 같은 칸에 두 화면이었다.
+   판독이 끝난 환자를 눌러도 빈 업로드 판이 떴고, 판독을 보려면 그 판 안의
+   「판독 결과 확인」을 한 번 더 눌러야 했다. 올리는 일도 판독 화면 머리의
+   「OCR 업로드」가 한다. */
+  var TABS = ["basic", "guide", "final", "status"];
+  var AWAY = { record: "/ocr-review.html" };
 
   /* 늦게 온 응답이 지금 보고 있는 환자를 덮어쓰지 않게 하는 번호.
      `visit_id` 를 쓰면 같은 환자를 빠르게 다시 고를 때(A→B→A) 값이 그대로라
@@ -66,6 +74,10 @@ function timeLabel(isoDatetime) {
   /* ── 탭 ─────────────────────────────────────────────── */
 
   function showTab(name) {
+    /* 다른 화면에 사는 칸이면 그리로 간다. **탭 표시를 먼저 바꾸지 않는다** —
+       주소를 바꾸는 데 시간이 걸려, 그 사이 눌린 칸이 켜졌다 화면이 갈리면
+       「눌렀는데 딴 데로 갔다」로 읽힌다. */
+    if (AWAY[name]) return goAway(name);
     if (TABS.indexOf(name) === -1) return; // 모르는 이름이면 아무것도 하지 않는다
     TABS.forEach(function (t) {
       el("panel-" + t).hidden = t !== name;
@@ -79,6 +91,13 @@ function timeLabel(isoDatetime) {
       tab.querySelector(".tab__mark").textContent =
         typeof stepMark === "function" ? stepMark(tab.dataset.tab, name) : on ? "●" : "○";
     });
+  }
+
+  /* 그 진료를 달고 간다. 안 달면 도착한 화면이 오늘 목록의 맨 위 환자를
+     열어, 누른 사람이 다른 환자를 보게 된다. */
+  function goAway(name) {
+    if (!row || !row.visit_id) return;
+    location.href = AWAY[name] + "?visit=" + encodeURIComponent(row.visit_id) + "&tab=" + encodeURIComponent(name);
   }
 
   el("tabs").addEventListener("click", function (event) {

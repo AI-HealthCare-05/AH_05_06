@@ -31,6 +31,14 @@ body.shell {
   padding: 0 var(--s-24);
   background: var(--card);
   border-bottom: 1px solid var(--line);
+  /* **아주 얕게 띄운다.** 상단바가 아래 내용 위에 있다는 것만 말하면 된다 —
+     진하게 주면 그림자가 먼저 눈에 걸려, 읽어야 할 것(환자 이름·탭)에서
+     눈을 뺏는다. 줄(`border-bottom`)이 경계를 긋고 그림자는 깊이만 준다.
+     `z-index` 를 함께 두는 이유는, 아래 칸이 흰 바탕이면 그림자가 그 아래로
+     들어가 안 보이기 때문이다. */
+  position: relative;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgb(28 31 35 / 6%);
 }
 
 /* **탭은 가운데다** — 와이어프레임 A1 공통 골격: 「로고칸 + 브랜드 / 가운데 탭 /
