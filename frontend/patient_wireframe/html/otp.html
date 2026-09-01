@@ -149,10 +149,17 @@
   </div>
 
   <div class="otp-bottom">
-    <button type="button" class="otp-btn" onclick="location.href='otp-verify.html'">인증번호 받기</button>
+    <button type="button" class="otp-btn" id="otp-request">인증번호 받기</button>
     <button type="button" class="otp-change">번호가 바뀌셨나요?</button>
   </div>
 </div>
+
+<script>
+document.getElementById('otp-request').addEventListener('click', function () {
+  /* 목업 선택과 guide token fragment를 저장소에 복사하지 않고 다음 단계로 잇는다. */
+  location.href = 'otp-verify.html' + location.search + location.hash;
+});
+</script>
 
 </body>
 </html>

@@ -3,9 +3,27 @@
   var bodyRoot = document.getElementById('body') || document.getElementById('guide-body');
   if (!bodyRoot) return;
 
-  /* OTP 인증 가드: 직접 URL 접근 차단 */
-  if (!sessionStorage.getItem('otp_verified')) {
-    location.replace('/patient_wireframe/html/otp.html');
+  /* P1 목업 인증 가드. 실제 안내 조회는 정본 API 계약대로 링크 자체가 접근
+     증명이며, 고정 OTP 목업으로 실제 환자 진입을 막지 않는다. 목업 왕복 중
+     토큰은 fragment로만 전달하고 브라우저 저장소에는 복사하지 않는다. */
+  function otpEntryUrl() {
+    var query = new URLSearchParams(window.location.search);
+    var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+    var token = fragment.get('t') || query.get('t') || query.get('visit') || '';
+    var safeQuery = new URLSearchParams();
+    var mock = query.get('mock');
+    var previewCase = query.get('case');
+    if (mock === '1') safeQuery.set('mock', '1');
+    if (previewCase && /^[a-z0-9_-]{1,32}$/i.test(previewCase)) safeQuery.set('case', previewCase);
+    var safeFragment = new URLSearchParams();
+    if (token) safeFragment.set('t', token);
+    return '/patient_wireframe/html/otp.html' +
+      (safeQuery.toString() ? '?' + safeQuery.toString() : '') +
+      (safeFragment.toString() ? '#' + safeFragment.toString() : '');
+  }
+
+  if (typeof GUIDE_MOCK !== 'undefined' && GUIDE_MOCK && !sessionStorage.getItem('otp_verified')) {
+    location.replace(otpEntryUrl());
     return;
   }
 
@@ -35,13 +53,12 @@
 
   var state = {
     data:          null,
-    tab:           (function () {
-      var saved = sessionStorage.getItem('pw_guide_tab');
-      return TABS.indexOf(saved) >= 0 ? saved : '현황';
-    })(),
+    /* 새 안내 링크는 v3 정본 순서대로 항상 P5 현황에서 시작한다. */
+    tab:           '현황',
     guideExpanded: false,
     careExpanded:  false,
     lifeAxis:      null,
+    lifeExpanded:  false,
     pdfSelected:   ['guide', 'care', 'life', 'stat'],
   };
 
@@ -51,10 +68,11 @@
     if (cls) n.className = cls;
     return n;
   }
-  /* HTML 문자열을 innerHTML 로 삽입 (bold 등 와이어프레임 rich text 지원) */
-  function richEl(tag, cls, html) {
+  /* API 안내문은 평문 계약이다. 줄바꿈은 CSS `white-space: pre-line`으로
+     보존하고, 환자에게 보이는 값은 모두 textContent로 넣는다. */
+  function richEl(tag, cls, value) {
     var n = el(tag, cls);
-    n.innerHTML = html || '';
+    n.textContent = value || '';
     return n;
   }
   function text(tag, cls, txt) {
@@ -86,10 +104,10 @@
       b.type = 'button';
       b.textContent = key;
       b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', key === state.tab ? 'true' : 'false');
       b.addEventListener('click', function () {
         if (key === state.tab) return;
         state.tab = key;
-        sessionStorage.setItem('pw_guide_tab', key);
         buildTabBar(d);
         renderBody(d);
         sayGuide(key);
@@ -101,7 +119,8 @@
 
   /* ── 헤더 메타 ─── */
   function fillHeader(d) {
-    var meta = ['승인된 진료 안내', d.visit, d.clinic].filter(Boolean);
+    /* 공개 응답에는 환자명이 없으므로 와이어프레임의 환자명 자리를 지어내지 않는다. */
+    var meta = [d.visit ? d.visit + ' 진료' : '승인된 진료 안내', d.clinic].filter(Boolean);
     document.getElementById('header-patient').textContent = meta.join(' · ');
   }
 
@@ -120,14 +139,40 @@
     var frag = document.createDocumentFragment();
 
     /* 처방일 힌트 */
-    frag.appendChild(text('div', 'page-hint', d.visit + ' 처방 · ' + d.clinic));
+    var hint = [d.visit ? d.visit + ' 처방' : '', d.clinic].filter(Boolean).join(' · ');
+    if (hint) frag.appendChild(text('div', 'page-hint', hint));
 
     /* 약 카드 */
     var drugCard = el('div', 'card');
-    drugCard.appendChild(text('div', 'stat-drug-name', s.drugName));
-    if (s.prescribed) drugCard.appendChild(text('div', 'stat-drug-sub', s.prescribed + '일분'));
-    if (s.body) drugCard.appendChild(richEl('div', 'care-body-text', s.body.replace(/\n/g, '<br>')));
-    else drugCard.appendChild(emptyState('표시할 승인 복약 안내가 아직 없어요.'));
+    if (s.drugName) drugCard.appendChild(text('div', 'stat-drug-name', s.drugName));
+    if (s.drugSub) drugCard.appendChild(text('div', 'stat-drug-sub', s.drugSub));
+
+    var progressParts = [];
+    if (s.prescribed !== null) progressParts.push(s.prescribed + '일분');
+    if (s.dayOn !== null) progressParts.push(s.dayOn + '일째');
+    if (s.remaining !== null) progressParts.push(s.remaining + '일 남음');
+    if (progressParts.length) {
+      drugCard.appendChild(text('div', 'stat-progress-copy', progressParts.join(' · ')));
+    }
+    if (s.pct !== null) {
+      var progress = el('div', 'stat-bar-wrap');
+      progress.setAttribute('role', 'progressbar');
+      progress.setAttribute('aria-label', '복약 진행률');
+      progress.setAttribute('aria-valuemin', '0');
+      progress.setAttribute('aria-valuemax', '100');
+      progress.setAttribute('aria-valuenow', String(s.pct));
+      var fill = el('span', 'stat-bar-fill');
+      fill.style.width = s.pct + '%';
+      progress.appendChild(fill);
+      drugCard.appendChild(progress);
+      drugCard.appendChild(text('div', 'stat-bar-pct', s.pct + '% 복용했어요'));
+    } else if (s.prescribed !== null && s.prescribed > 0) {
+      drugCard.appendChild(text('div', 'stat-progress-empty',
+        '복약 시작일이 없어 진행률과 남은 일수를 표시하지 않아요.'));
+    }
+    /* v3의 사유 카드가 있으면 같은 승인 문구를 약 카드에 중복 노출하지 않는다. */
+    if (s.body && !s.why) drugCard.appendChild(richEl('div', 'care-body-text', s.body));
+    if (!s.drugName && !s.body) drugCard.appendChild(emptyState('표시할 승인 복약 안내가 아직 없어요.'));
     frag.appendChild(drugCard);
 
     /* 소진 예정 핑크 카드 */
@@ -140,7 +185,7 @@
     }
 
     /* 복약지도 보기 버튼 */
-    frag.appendChild(btn('btn btn--full', '복약지도 보기', function () {
+    frag.appendChild(btn('btn--full btn--accent', '복약지도 보기', function () {
       state.tab = '복약지도';
       buildTabBar(d);
       renderBody(d);
@@ -161,40 +206,43 @@
     var sumCard = el('div', 'card');
     sumCard.appendChild(text('div', 'card__section-title', '오늘 진료 요약'));
     sumCard.appendChild(g.summary
-      ? richEl('div', 'care-body-text', g.summary.replace(/\n/g, '<br>'))
+      ? richEl('div', 'care-body-text', g.summary)
       : emptyState('표시할 승인 복약 안내가 아직 없어요.'));
     frag.appendChild(sumCard);
 
-    /* 나의 목표 */
-    if (g.goals && g.goals.length) {
-      var goalCard = el('div', 'card');
-      var goalHead = el('div');
-      goalHead.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin-bottom:4px';
-      goalHead.appendChild(text('span', 'card__section-title', '나의 목표'));
-      var goalDate = text('span', null, d.visit);
-      goalDate.style.cssText = 'font-size:13px;color:var(--tx-muted);font-variant-numeric:tabular-nums';
-      goalHead.appendChild(goalDate);
-      goalCard.appendChild(goalHead);
+    /* 나의 목표 — 값이 없는 목표도 숨기지 않고 차트 없는 상태로 설명한다. */
+    var goalCard = el('div', 'card');
+    var goalHead = el('div', 'goal-head');
+    goalHead.appendChild(text('span', 'card__section-title', '나의 목표'));
+    if (d.visit) goalHead.appendChild(text('span', 'goal-date', d.visit));
+    goalCard.appendChild(goalHead);
 
-      var visibleGoals = g.goals.filter(function (goal) {
-        return !goal.dim && goal.now !== '─';
-      });
-      visibleGoals.forEach(function (goal, i) {
-      var item = el('div', 'goal-item' + (i === 0 ? ' goal-item--first' : ''));
-      item.appendChild(text('div', 'goal-name' + (goal.dim ? '" style="color:var(--tx-muted)' : ''), goal.n));
-      item.appendChild(text('div', 'goal-range-label', goal.rangeLabel || ''));
+    if (!g.goals || !g.goals.length) {
+      goalCard.appendChild(emptyState('등록된 검사 목표가 없어 차트를 표시하지 않아요.'));
+    } else {
+      g.goals.forEach(function (goal, i) {
+        var item = el('div', 'goal-item' + (i === 0 ? ' goal-item--first' : ''));
+        item.appendChild(text('div', 'goal-name', goal.n));
+        if (goal.rangeLabel) item.appendChild(text('div', 'goal-range-label', goal.rangeLabel));
 
-      if (goal.hasChart) {
+        var nowNum    = parseFloat(goal.now);
+        var startNum  = parseFloat(goal.a);
+        var targetNum = parseFloat(goal.t);
+        var hasStart  = !isNaN(startNum);
+        var hasTarget = !isNaN(targetNum);
+        var chartReady = goal.hasChart && !isNaN(nowNum) && (hasStart || hasTarget);
+
+        if (chartReady) {
         var chart = el('div', 'goal-chart');
 
         /* 목표값을 중앙(50%)에 고정하고 나머지 값을 상대 위치로 계산.
            목표가 없는 경우(추이 관찰)는 시작값을 중앙 기준으로 사용. */
-        var nowNum    = parseFloat(goal.now);
-        var startNum  = parseFloat(goal.a);
-        var targetNum = parseFloat(goal.t);
-        var hasTarget = !isNaN(targetNum);
         var center    = hasTarget ? targetNum : startNum;
-        var maxDiff   = Math.max(Math.abs(nowNum - center), Math.abs(startNum - center), 1);
+        var maxDiff   = Math.max(
+          Math.abs(nowNum - center),
+          hasStart ? Math.abs(startNum - center) : 0,
+          1
+        );
         var half      = maxDiff * 1.5;
         function pctNum(v) {
           return Math.min(95, Math.max(5, 50 + (v - center) / half * 50));
@@ -205,7 +253,6 @@
         var pointerRow = el('div', 'goal-chart__pointer-row');
         var pointer    = el('div', 'goal-chart__pointer');
         pointer.style.left = pct(nowNum);
-        pointer.appendChild(text('span', 'goal-chart__now-label', '현재'));
         pointer.appendChild(text('span', 'goal-chart__now-val', goal.now));
         pointer.appendChild(el('div', 'goal-chart__arrow'));
         pointerRow.appendChild(pointer);
@@ -217,54 +264,55 @@
           var tLine = el('span', 'goal-chart__target-line');
           tLine.style.left = '50%';
           barWrap.appendChild(tLine);
+        }
+        if (hasStart) {
           var sLine = el('span', 'goal-chart__start-line');
-          sLine.style.left = pct(startNum);
-          barWrap.appendChild(sLine);
-        } else {
-          var sLine = el('span', 'goal-chart__start-line');
-          sLine.style.left = '50%';
+          sLine.style.left = hasTarget ? pct(startNum) : '50%';
           barWrap.appendChild(sLine);
         }
         chart.appendChild(barWrap);
 
-        /* 라벨 행 — 가까운 라벨은 위아래 교대 배치로 겹침 방지 */
-        var labelRow = el('div', 'goal-chart__label-row');
-        var labelDefs = [
-          { name: '시작', val: goal.a, p: hasTarget ? pctNum(startNum) : 50 },
-        ];
-        if (hasTarget) labelDefs.push({ name: '목표', val: goal.t, p: 50 });
-
-        labelDefs.sort(function (a, b) { return a.p - b.p; });
-
-        var OVERLAP_THRESHOLD = 15;
-        labelDefs[0].level = 0;
-        for (var li = 1; li < labelDefs.length; li++) {
-          labelDefs[li].level = (labelDefs[li].p - labelDefs[li - 1].p < OVERLAP_THRESHOLD)
-            ? (labelDefs[li - 1].level === 0 ? 1 : 0)
-            : 0;
-        }
-
-        labelDefs.forEach(function (d) {
-          var lbl = el('div', 'goal-chart__label');
-          lbl.style.left = d.p + '%';
-          lbl.style.top  = d.level === 1 ? '20px' : '0';
-          lbl.appendChild(text('span', 'goal-chart__label-name', d.name));
-          lbl.appendChild(text('span', 'goal-chart__label-val',  d.val));
-          labelRow.appendChild(lbl);
+        /* v3 정본은 목표(또는 시작)를 가운데 둔 세 구간과 실제 시작·현재 값을
+           따로 보여 준다. 저장된 값 밖의 임상 기준치는 만들지 않는다. */
+        var scaleLabels = el('div', 'goal-chart__scale-labels');
+        [
+          hasTarget ? '목표보다 낮음' : '시작보다 낮음',
+          hasTarget ? '목표 ' + goal.t : '추이 관찰',
+          hasTarget ? '목표보다 높음' : '시작보다 높음',
+        ].forEach(function (label) {
+          scaleLabels.appendChild(text('span', 'goal-chart__scale-label', label));
         });
-        chart.appendChild(labelRow);
+        chart.appendChild(scaleLabels);
+        var valueSummary = [];
+        if (hasStart) valueSummary.push('시작 ' + goal.a);
+        valueSummary.push('지금 ' + goal.now);
+        chart.appendChild(text('div', 'goal-chart__start-summary', valueSummary.join(' · ')));
         item.appendChild(chart);
-      } else {
-        var noChart = el('div', 'goal-no-chart');
-        noChart.textContent = (goal.note || '') + ' · ' + (goal.startLine || '');
-        item.appendChild(noChart);
-      }
+        } else {
+          var noChart = el('div', 'goal-no-chart');
+          noChart.textContent = goal.now
+            ? '현재 ' + goal.now
+            : '결과가 나오면 채워드릴게요 · 지금 ─';
+          item.appendChild(noChart);
+        }
         goalCard.appendChild(item);
       });
-      frag.appendChild(goalCard);
     }
+    if (g.goalSay) goalCard.appendChild(text('div', 'goal-say', g.goalSay));
+    frag.appendChild(goalCard);
 
-    /* 처방받은 약 */
+    /* 더 자세히 보기 토글 */
+    var expandBtn = el('button', 'expand-btn' + (state.guideExpanded ? ' expand-btn--open' : ''));
+    expandBtn.type = 'button';
+    expandBtn.setAttribute('aria-expanded', state.guideExpanded ? 'true' : 'false');
+    var expandLabel = text('span', null, state.guideExpanded ? '접기' : '더 자세히 보기');
+    var expandIcon  = text('span', 'expand-btn__icon', '⌄');
+    expandBtn.appendChild(expandLabel);
+    expandBtn.appendChild(expandIcon);
+
+    var expandBody = el('div', 'expand-body' + (state.guideExpanded ? ' expand-body--open' : ''));
+
+    /* v3 정본은 처방약 카드부터 430px 접힘 영역에 포함한다. */
     if (g.drug) {
       var drugCard = el('div', 'card');
       drugCard.appendChild(text('div', 'card__section-title', '처방받은 약'));
@@ -273,18 +321,8 @@
       if (g.drug.s) drugRow.appendChild(text('div', 'drug-row__sub', g.drug.s));
       if (g.drug.d) drugRow.appendChild(text('div', 'drug-row__sub', g.drug.d));
       drugCard.appendChild(drugRow);
-      frag.appendChild(drugCard);
+      expandBody.appendChild(drugCard);
     }
-
-    /* 더 자세히 보기 토글 */
-    var expandBtn = el('button', 'expand-btn' + (state.guideExpanded ? ' expand-btn--open' : ''));
-    expandBtn.type = 'button';
-    var expandLabel = text('span', null, state.guideExpanded ? '접기' : '더 자세히 보기');
-    var expandIcon  = text('span', 'expand-btn__icon', '⌄');
-    expandBtn.appendChild(expandLabel);
-    expandBtn.appendChild(expandIcon);
-
-    var expandBody = el('div', 'expand-body' + (state.guideExpanded ? ' expand-body--open' : ''));
 
     /* 이 약을 왜 드시나요 */
     if (g.why && g.why.length) {
@@ -302,14 +340,14 @@
     if (g.how) {
       var howCard = el('div', 'card');
       howCard.appendChild(text('div', 'card__section-title', '약별 복용 방법'));
-      howCard.appendChild(richEl('div', 'care-body-text', g.how.replace(/\n/g, '<br>')));
+      howCard.appendChild(richEl('div', 'care-body-text', g.how));
       expandBody.appendChild(howCard);
     }
 
     /* 다음 방문 */
     if (g.next) {
       var nextCard = el('div', 'card');
-      nextCard.appendChild(text('div', 'card__section-title', '병원 안내'));
+      nextCard.appendChild(text('div', 'card__section-title', '다음 방문 계획'));
       nextCard.appendChild(richEl('div', 'care-body-text', g.next));
       expandBody.appendChild(nextCard);
     }
@@ -318,6 +356,7 @@
       state.guideExpanded = !state.guideExpanded;
       expandLabel.textContent = state.guideExpanded ? '접기' : '더 자세히 보기';
       expandBtn.className = 'expand-btn' + (state.guideExpanded ? ' expand-btn--open' : '');
+      expandBtn.setAttribute('aria-expanded', state.guideExpanded ? 'true' : 'false');
       expandBody.className = 'expand-body' + (state.guideExpanded ? ' expand-body--open' : '');
     });
 
@@ -344,7 +383,7 @@
 
     /* 블록 카드들 */
     var fadeWrap = el('div', 'care-fade-wrap');
-    if (!state.careExpanded && hasCareContent) fadeWrap.style.maxHeight = '420px';
+    if (!state.careExpanded && hasCareContent) fadeWrap.style.maxHeight = '430px';
 
     c.blocks.forEach(function (block) {
       var card = el('div', 'card');
@@ -389,13 +428,13 @@
 
     /* 더 보기 / 접기 버튼 */
     if (!state.careExpanded && hasCareContent) {
-      var moreBtn = btn('btn btn--full', '더 자세히 보기', function () {
+      var moreBtn = btn('btn--full btn--accent', '더 자세히 보기', function () {
         state.careExpanded = true;
         renderBody(d);
       });
       frag.appendChild(moreBtn);
     } else if (hasCareContent) {
-      var collapseBtn = btn('btn btn--full', '접기', function () {
+      var collapseBtn = btn('btn--full btn--accent', '접기', function () {
         state.careExpanded = false;
         renderBody(d);
       });
@@ -440,11 +479,14 @@
       frag.appendChild(chalCard);
     }
 
+    if (!axisKeys.length) {
+      frag.appendChild(emptyState('승인된 세부 생활관리 항목이 아직 없어요.'));
+      return frag;
+    }
+
     /* 축 칩 탭 */
     var axisTabBar = el('div', 'axis-tabs');
     axisTabBar.setAttribute('role', 'tablist');
-
-    var axisSections = {};
     axisKeys.forEach(function (key) {
       var isActive = key === state.lifeAxis;
       var chip = el('button', 'axis-tab ' + (isActive ? 'axis-tab--active' : 'axis-tab--inactive'));
@@ -454,48 +496,48 @@
       chip.setAttribute('aria-selected', isActive ? 'true' : 'false');
       chip.addEventListener('click', function () {
         state.lifeAxis = key;
-        /* 칩 스타일 업데이트 */
-        axisTabBar.querySelectorAll('.axis-tab').forEach(function (c) {
-          c.className = 'axis-tab axis-tab--inactive';
-          c.setAttribute('aria-selected', 'false');
-        });
-        chip.className = 'axis-tab axis-tab--active';
-        chip.setAttribute('aria-selected', 'true');
-        /* 섹션 전환 */
-        Object.keys(axisSections).forEach(function (k) {
-          axisSections[k].style.display = k === key ? 'block' : 'none';
-        });
+        state.lifeExpanded = false;
+        renderBody(d);
       });
       axisTabBar.appendChild(chip);
     });
     frag.appendChild(axisTabBar);
 
-    /* 각 축 내용 카드 */
-    axisKeys.forEach(function (key) {
-      var ax   = life.axes[key];
-      var isActive = key === state.lifeAxis;
-      var sec  = el('div');
-      sec.style.display = isActive ? 'block' : 'none';
-
-      var axCard = el('div', 'card');
-      axCard.appendChild(text('div', 'card__section-title', ax.title || key));
-      if (ax.chal) {
-        axCard.appendChild(text('div', 'axis-chal-label', '★ 이번 챌린지'));
-        var chalRow = el('div', 'axis-chal-row');
-        chalRow.appendChild(text('span', 'axis-chal-text', ax.chal));
-        chalRow.appendChild(text('span', 'axis-chal-freq', ax.goal || ''));
-        axCard.appendChild(chalRow);
-        axCard.appendChild(el('hr', 'card__divider'));
-      }
-      ax.p.forEach(function (p, i) {
-        var pEl = richEl('div', 'axis-body-text', p);
-        if (i === 0 && !ax.chal) pEl.style.marginTop = '0';
-        axCard.appendChild(pEl);
-      });
-      sec.appendChild(axCard);
-      axisSections[key] = sec;
-      frag.appendChild(sec);
+    /* 선택한 축의 본문은 v3처럼 일부를 먼저 보여 주고 펼칠 수 있게 한다. */
+    var activeAxis = life.axes[state.lifeAxis];
+    var hasAxisDetail = activeAxis.p.length > 0;
+    var axisIsOpen = state.lifeExpanded || !hasAxisDetail;
+    var fadeWrap = el('div', 'life-fade-wrap' + (axisIsOpen ? ' life-fade-wrap--open' : ''));
+    var axCard = el('div', 'card');
+    axCard.appendChild(text('div', 'card__section-title', activeAxis.title || state.lifeAxis));
+    if (activeAxis.chal) {
+      axCard.appendChild(text('div', 'axis-chal-label', '★ 이번 챌린지'));
+      var chalRow = el('div', 'axis-chal-row');
+      chalRow.appendChild(text('span', 'axis-chal-text', activeAxis.chal));
+      chalRow.appendChild(text('span', 'axis-chal-freq', activeAxis.goal || ''));
+      axCard.appendChild(chalRow);
+      axCard.appendChild(el('hr', 'card__divider'));
+    }
+    activeAxis.p.forEach(function (p, i) {
+      var pEl = richEl('div', 'axis-body-text', p);
+      if (i === 0 && !activeAxis.chal) pEl.style.marginTop = '0';
+      axCard.appendChild(pEl);
     });
+    if (!activeAxis.chal && !activeAxis.p.length) {
+      axCard.appendChild(emptyState('표시할 승인 생활관리 내용이 아직 없어요.'));
+    }
+    fadeWrap.appendChild(axCard);
+    if (!axisIsOpen) fadeWrap.appendChild(el('div', 'life-fade'));
+    frag.appendChild(fadeWrap);
+
+    if (hasAxisDetail) {
+      var lifeBtn = btn('btn--full btn--accent', state.lifeExpanded ? '접기' : '더 자세히 보기', function () {
+        state.lifeExpanded = !state.lifeExpanded;
+        renderBody(d);
+      });
+      lifeBtn.setAttribute('aria-expanded', state.lifeExpanded ? 'true' : 'false');
+      frag.appendChild(lifeBtn);
+    }
 
     return frag;
   }
@@ -516,14 +558,14 @@
 
     /* 모든 탭 공통 하단 푸터 */
     var footer = (typeof GuideFooter === 'function')
-      ? GuideFooter({ generatedAt: d.visit, onReport: GUIDE_MOCK ? function () { openReport(); } : null })
+      ? GuideFooter({ approvedAt: d.approvedAt, onReport: GUIDE_MOCK ? function () { openReport(); } : null })
       : (function () {
           var f = document.createElement('div');
           f.className = 'guide-footer';
           [
             { cls: 'guide-footer__note', t: 'ⓘ 이 안내는 담당 의료진이 확인한 내용입니다' },
             { cls: 'guide-footer__meta', t: '출처 · 식약처 의약품정보' },
-            { cls: 'guide-footer__meta', t: '승인 · ' + d.visit },
+            { cls: 'guide-footer__meta', t: '승인 · ' + (d.approvedAt || '') },
           ].forEach(function (item) {
             var s = document.createElement('span');
             s.className = item.cls;
@@ -751,7 +793,7 @@
     box.setAttribute('role', 'alert');
     box.appendChild(text('strong', 'guide-load-error__title', '안내를 열 수 없어요'));
     box.appendChild(text('p', 'guide-load-error__message', message));
-    if (TOKEN || GUIDE_MOCK) box.appendChild(btn('btn btn--full', '다시 시도', loadGuide));
+    if (TOKEN || GUIDE_MOCK) box.appendChild(btn('btn--full', '다시 시도', loadGuide));
     bodyRoot.appendChild(box);
     document.getElementById('tab-bar').innerHTML = '';
     sayGuide('안내를 열 수 없어요');

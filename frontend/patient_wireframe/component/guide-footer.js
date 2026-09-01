@@ -1,7 +1,7 @@
 /* 안내 하단 공통 푸터
  *
  * 사용법:
- *   body.appendChild(GuideFooter({ generatedAt: '2026.08.13 10:44', onReport: fn }));
+ *   body.appendChild(GuideFooter({ approvedAt: '2026.08.13', onReport: fn }));
  */
 function GuideFooter(opts) {
   var wrap = document.createElement('div');
@@ -17,10 +17,12 @@ function GuideFooter(opts) {
   source.textContent = '출처 · 식약처 의약품정보';
   wrap.appendChild(source);
 
-  var gen = document.createElement('span');
-  gen.className = 'guide-footer__meta';
-  gen.textContent = '생성 · ' + (opts && opts.generatedAt ? opts.generatedAt : '');
-  wrap.appendChild(gen);
+  if (opts && opts.approvedAt) {
+    var approved = document.createElement('span');
+    approved.className = 'guide-footer__meta';
+    approved.textContent = '승인 · ' + opts.approvedAt;
+    wrap.appendChild(approved);
+  }
 
   /* P9가 연결되기 전 실제 화면에 동작하지 않는 조작 요소를 두지 않는다. */
   if (opts && typeof opts.onReport === 'function') {

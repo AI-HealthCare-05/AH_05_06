@@ -159,6 +159,22 @@
   var resendBtn = document.getElementById('resend-btn');
   var resendTimerEl = document.getElementById('resend-timer');
 
+  function guideReturnUrl() {
+    var query = new URLSearchParams(location.search);
+    var fragment = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    var safeQuery = new URLSearchParams();
+    var mock = query.get('mock');
+    var previewCase = query.get('case');
+    if (mock === '1') safeQuery.set('mock', '1');
+    if (previewCase && /^[a-z0-9_-]{1,32}$/i.test(previewCase)) safeQuery.set('case', previewCase);
+    var token = fragment.get('t') || query.get('t') || query.get('visit') || '';
+    var safeFragment = new URLSearchParams();
+    if (token) safeFragment.set('t', token);
+    return '/guide.html' +
+      (safeQuery.toString() ? '?' + safeQuery.toString() : '') +
+      (safeFragment.toString() ? '#' + safeFragment.toString() : '');
+  }
+
   /* ── 셀 입력 자동 이동 ── */
   cells.forEach(function (cell, i) {
     cell.addEventListener('input', function () {
@@ -198,7 +214,7 @@
     var entered = cells.map(function (c) { return c.value; }).join('');
     if (entered === '000000') {
       sessionStorage.setItem('otp_verified', '1');
-      location.href = 'guide.html';
+      location.href = guideReturnUrl();
     } else {
       cells.forEach(function (c) { c.value = ''; });
       cells[0].focus();
