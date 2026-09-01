@@ -265,8 +265,8 @@
   }
 
   function formatDate(iso) {
-    var d = new Date(iso);
-    return d.getFullYear() + '년 ' + (d.getMonth() + 1) + '월 ' + d.getDate() + '일';
+    var parts = iso.split('-');
+    return parts[0] + '년 ' + parseInt(parts[1], 10) + '월 ' + parseInt(parts[2], 10) + '일';
   }
 
   /* 세션 체크 — 이미 인증됐으면 guide로 이동 */
