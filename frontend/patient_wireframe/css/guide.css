@@ -86,14 +86,14 @@ body {
 /* ── 탭 바 ─── */
 .tab-bar {
   display: flex;
-  gap: 20px;
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .tab-bar::-webkit-scrollbar { display: none; }
 .tab-bar__btn {
-  flex: none;
+  flex: 1;
+  text-align: center;
   font-family: var(--font);
   font-size: 15px;
   letter-spacing: -0.2px;
