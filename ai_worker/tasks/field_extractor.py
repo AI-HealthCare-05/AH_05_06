@@ -102,8 +102,8 @@ _LAB_PATTERNS: dict[str, re.Pattern[str]] = {
         "TESTOSTERONE": r"(?:Testosterone|테스토스테론)\s*[:：]\s*([\d.]+\s*(?:ng/dL)?)",
         "PROLACTIN": r"(?:Prolactin|프로락틴)\s*[:：]\s*([\d.]+\s*(?:ng/mL)?)",
         "TSH": r"\bTSH\b\s*[:：]\s*([\d.]+\s*(?:[µu]IU/mL)?)",
-        "T3": r"\bT3\b\s*[:：]\s*([\d.]+\s*(?:ng/dL)?)",
-        "T4": r"\bT4\b\s*[:：]\s*([\d.]+\s*(?:[µu]g/dL)?)",
+        "T3": r"\bT3\b\s*[:：]\s*([\d.]+\s*(?:pg/mL)?)",
+        "T4": r"\bT4\b\s*[:：]\s*([\d.]+\s*(?:ng/dL)?)",
         "PROGESTERONE": r"(?:Progesterone|프로게스테론)\s*[:：]\s*([\d.]+\s*(?:ng/mL)?)",
     }.items()
 }

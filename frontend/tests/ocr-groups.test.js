@@ -167,9 +167,17 @@ test("**서버에 자리가 없는 묶음은 그렇다고 말한다** — 목업
 
   for (const group of GROUPS_WITHOUT_SERVER) {
     assert.ok(group.title, `${group.key} 에 이름이 없다`);
-    assert.match(group.saying, /아직|없습니다/, `${group.key} 가 되는 것처럼 말한다`);
     assert.ok(group.needs, `${group.key} 에 무엇이 필요한지 안 적혀 있다`);
   }
+
+  /* ③ 은 아직 자리가 없다 — 되는 것처럼 말하면 안 된다 */
+  const carried = GROUPS_WITHOUT_SERVER.filter((g) => g.key === "carried")[0];
+  assert.match(carried.saying, /아직|없습니다/, "③ 이 되는 것처럼 말한다");
+
+  /* **④ 는 이제 된다.** 답을 담는 표가 생겼으므로 「아직 없다」를 그대로 두면
+     켜 놓고도 안 남는 줄 안다 — 안전에 걸리는 항목이라 그 오해가 가장 나쁘다. */
+  const checks = GROUPS_WITHOUT_SERVER.filter((g) => g.key === "checks")[0];
+  assert.equal(checks.saying, "", "④ 가 아직 저장 안 된다고 말한다 — 이제 저장된다");
 
   /* **막힌 곳이 서로 다르다.** 뭉뚱그려 「서버에 자리가 없습니다」로 두면
      판독 API 를 맡는 사람이 둘 다 표부터 만들어야 하는 줄 안다. */
@@ -178,11 +186,12 @@ test("**서버에 자리가 없는 묶음은 그렇다고 말한다** — 목업
   assert.match(byKey.carried.saying, /저장돼 있고|이미/, "③ 은 값이 이미 있다는 것을 말해야 한다");
   assert.match(byKey.carried.needs, /길|꺼내/, "③ 에 필요한 것은 표가 아니라 길이다");
 
-  assert.match(byKey.checks.needs, /표부터|표가 없다/, "④ 는 표부터 없다는 것을 말해야 한다");
-  assert.ok(
-    byKey.carried.saying !== byKey.checks.saying,
-    "두 문구가 같다 — 막힌 곳이 다른데 같은 말을 한다",
-  );
+  /* **④ 에 남은 것은 표가 아니다.** 답을 담는 표(`visit_check_answer`)는
+     생겼고, 남은 것은 무엇을 여쭐지가 처방에 따라 달라지는 것뿐이다 —
+     그 자리(D2-3 처방 세트)가 아직 없다. 「표부터 없다」를 그대로 두면 다음
+     사람이 이미 있는 표를 또 만든다. */
+  assert.match(byKey.checks.needs, /처방 세트|D2-3/, "④ 에 무엇이 남았는지가 낡았다");
+  assert.ok(!/표부터 없다/.test(byKey.checks.needs), "이미 만든 표를 아직 없다고 적어 뒀다");
 });
 
 test("채울 것이 생기면 채운다 — 영영 점선으로 두는 자리가 아니다", () => {
@@ -424,8 +433,8 @@ test("**검사값도 자리를 세운다** — 안 세우면 못 읽은 것과 �
     "HEAVY_BLEEDING",
     "IRREGULAR_CYCLE",
     "ADENOMYOSIS_SIZE",
-    "MYOMA_SIZE",
     "MYOMA_COUNT",
+    "MYOMA_SIZE",
     "ENDOMETRIAL_THICKNESS",
     "ADNEXAL_CYST_LEFT",
     "ADNEXAL_CYST_RIGHT",
@@ -455,18 +464,61 @@ test("**검사값도 자리를 세운다** — 안 세우면 못 읽은 것과 �
   }
 });
 
-test("**확인 항목은 꺼진 채로 세운다** — 켤 수 있으면 저장됐다고 믿는다", () => {
-  const { CHECK_ITEMS } = box();
+test("**확인 항목은 이제 켜지고 저장된다**", () => {
+  /* 담을 표가 없어 꺼 둔 자리였다(`visit_check_answer` 가 생겼다). 켤 수 없으면
+     스탭이 여쭈고도 남길 데가 없고, 켜 두고 안 담기면 남았다고 믿는다 —
+     안전에 걸리는 항목이라 둘 다 나쁘다. */
+  const { CHECK_ITEMS, checkItemLabel } = box();
   const code = codeOnly(source("js/ocr-review.js"));
 
   assert.ok(CHECK_ITEMS.length >= 4, "세울 항목이 없다");
+  /* 서버는 코드로 주고 화면이 사람 말로 옮긴다 — 판독 항목과 같은 규칙 */
+  assert.equal(checkItemLabel("DEPRESSION"), "우울증 병력");
+  assert.equal(checkItemLabel("모르는코드"), "모르는코드", "모르는 코드가 사라진다");
 
   const at = code.indexOf("function checkListHtml");
   assert.notEqual(at, -1, "확인 항목을 세우는 자리가 없다");
 
-  const body = code.slice(at, at + 700);
-  assert.ok(body.includes("disabled"), "체크할 수 있게 두었다 — 저장되지 않는데 저장됐다고 믿는다");
+  const body = code.slice(at, at + 1200);
+  assert.ok(!body.includes("disabled"), "아직 꺼져 있다 — 여쭙고도 남길 데가 없다");
+  assert.ok(body.includes("data-check"), "누름을 받는 자리가 없다");
   assert.ok(body.includes("CHECK_ITEMS"), "항목을 여기서 지어낸다");
+
+  /* **끈 것은 「아직」이다.** 「아니오」라 적었더니 체크를 풀었을 때 글자가
+     나타나는 꼴이라 더 헷갈렸다 — 켜면 예, 끄면 아직. */
+  assert.ok(!body.includes("아니오"), "체크를 풀면 「아니오」가 나타난다");
+  assert.match(body, /answer === true/, "켠 것을 켜진 채로 안 그린다");
+});
+
+test("**누르면 서버로 간다** — 「저장」을 따로 두면 눌러 놓고 안 누른 채 넘어간다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  const at = code.indexOf('getAttribute("data-check")');
+  assert.notEqual(at, -1, "누름을 받는 자리가 없다");
+  assert.match(code.slice(at, at + 300), /saveCheckItems\(\)/, "누르고도 안 보낸다");
+
+  const save = code.indexOf("function saveCheckItems");
+  assert.notEqual(save, -1, "보내는 자리가 없다");
+  const body = code.slice(save, save + 900);
+  assert.match(body, /saveCheckItems\(wanted, answers\)/, "서버로 안 보낸다");
+  /* 한 판을 통째로 — 항목 하나씩 보내면 반쪽 상태가 남는다 */
+  assert.match(body, /CHECK_ITEMS\.map/, "누른 것 하나만 보낸다");
+  /* 안 여쭌 것은 `null` 로 보낸다 — `false` 로 보내면 아니라고 답한 것이 된다 */
+  assert.match(body, /=== undefined \? null/, "안 여쭌 것을 「아니오」로 보낸다");
+
+  /* 늦게 온 답이 다른 환자 화면에 붙으면 안 된다 */
+  assert.match(body, /visit\.visit_id !== wanted/, "다른 환자의 답이 붙는다");
+});
+
+test("확인 항목을 불러온다 — 새로고침하면 사라지면 안 된다", () => {
+  const code = codeOnly(source("js/ocr-review.js"));
+  assert.match(code, /loadCheckItems\(/, "안 불러온다");
+
+  const at = code.indexOf("function loadCheckItems");
+  assert.notEqual(at, -1, "불러오는 자리가 없다");
+  const body = code.slice(at, at + 600);
+  assert.match(body, /checkItems\(/, "서버에 안 묻는다");
+  assert.match(body, /adoptCheckItems\(/, "받아서 화면에 안 넣는다");
 });
 
 test("**원문 칸이 몇 번째 이미지인지 말한다** — 출처 배지와 같은 이름이어야 한다", () => {
@@ -554,15 +606,31 @@ test("**「저장」이라 쓰지 않는다** — 서버로 안 가는데 저장
   assert.ok(!around.includes(">저장</button>"), "「저장」이라 적었다 — 남았다고 믿는다");
 });
 
-test("**저장된 값과 달라 보인다** — 같아 보이면 저장된 줄 안다", () => {
-  const code = codeOnly(source("js/ocr-review.js"));
+test("**적은 값은 판독한 값과 달라 보인다** — 같아 보이면 어느 것이 기계 값인지 모른다", () => {
   const css = source("css/ocr-review.css");
-
-  assert.ok(code.includes("field__tag--local"), "「저장 안 됨」 표시가 없다");
-  assert.ok(code.includes("저장 안 됨"), "무엇이 안 됐는지 안 적는다");
-
   const rule = css.slice(css.indexOf(".field__value--local"), css.indexOf(".field__tag--local"));
   assert.match(rule, /dashed/, "판독한 값과 테두리가 같다");
+});
+
+test("**적은 값은 이제 실제로 담긴다** — 「저장 안 됨」 배지가 필요 없다", () => {
+  /* 판독이 못 읽은 항목은 줄 자체가 없어 보낼 곳이 없었다. 이제 항목 이름으로
+     짚어 만드는 길이 있다(`PUT /visits/{id}/ocr-fields/{type}`).
+     배지를 그대로 두면 담기고도 「안 담겼다」고 말한다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  assert.ok(!code.includes('field__tag--local">저장 안 됨'), "담기는데 「저장 안 됨」이라 적는다");
+
+  const at = code.indexOf('closest("#labs-save")');
+  assert.notEqual(at, -1, "저장 단추를 받는 자리가 없다");
+  const body = code.slice(at, at + 900);
+  assert.match(body, /writeField\(/, "서버로 안 보낸다");
+  /* **한 번에 담는다** — 하나씩 저장하게 하면 어느 줄이 담겼는지 세어야 한다 */
+  assert.match(body, /Object\.keys\(local\)/, "적어 둔 것을 한 번에 안 보낸다");
+  assert.match(body, /local = \{\}/, "담고도 화면에 남겨 둔다 — 서버 값과 두 벌이 된다");
+  assert.match(body, /visit\.visit_id !== wanted/, "다른 환자 화면에 붙는다");
+
+  /* 적은 것이 없으면 누를 것도 없다 */
+  assert.match(code, /Object\.keys\(local\)\.length \? "" : " disabled"/, "빈 채로도 눌린다");
 });
 
 /* ── 맨 위 진단 · 처방 줄 ────────────────────────────────────────────── */

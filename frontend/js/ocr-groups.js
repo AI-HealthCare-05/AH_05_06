@@ -71,8 +71,10 @@ var LAB_GROUPS = [
     title: "초음파 검사",
     types: [
       "ADENOMYOSIS_SIZE",
-      "MYOMA_SIZE",
+      /* 개수가 크기보다 먼저다 — 몇 개인지 세고 나서 그 크기를 적는다.
+         없으면 크기를 물을 일도 없다. */
       "MYOMA_COUNT",
+      "MYOMA_SIZE",
       "ENDOMETRIAL_THICKNESS",
       "ADNEXAL_CYST_LEFT",
       "ADNEXAL_CYST_RIGHT",
@@ -281,9 +283,12 @@ var GROUPS_WITHOUT_SERVER = [
   {
     key: "checks",
     title: "확인 항목",
-    note: "처방별",
-    needs: "처방별 확인 항목 목록과, 스탭이 체크한 답을 진료에 붙여 둘 자리 (둘 다 표부터 없다)",
-    saying: "처방에 따라 여쭐 항목입니다 — 답을 저장할 자리가 아직 없어 지금은 체크되지 않습니다",
+    /* 답은 이제 `visit_check_answer` 에 담긴다. 남은 것은 **무엇을 여쭐지가
+       처방에 따라 달라지는 것**뿐이다 — 그 자리(D2-3 처방 세트)가 아직 없어
+       지금은 다섯을 다 여쭙는다. */
+    note: "처방별 — 지금은 다섯 모두",
+    needs: "처방 세트별 확인 항목 목록 (D2-3). 답을 담을 자리는 생겼다",
+    saying: "",
   },
 ];
 
@@ -292,7 +297,24 @@ var GROUPS_WITHOUT_SERVER = [
  * 처방에 따라 달라지는 것이 맞고(비잔이면 우울증 병력을 여쭙는다), 그것을
  * 주는 자리가 붙으면 이 목록은 서버에서 온다. 그때까지는 **무엇이 올 자리인지**
  * 를 보이기 위한 모양이다 — 화면은 이것을 꺼진 채로 세운다. */
-var CHECK_ITEMS = ["우울증 병력", "고혈압", "골다공증", "당뇨", "임신 계획"];
+/* 서버는 코드로 주고 화면이 사람 말로 옮긴다 — 판독 항목 이름표와 같은 규칙
+   (`js/field-labels.js`). 서버가 한국어를 주면 문구를 바꿀 때 두 곳을 고쳐야
+   하고, 지난 진료의 답이 어느 질문의 답이었는지도 흐려진다.
+
+   **차례가 화면 차례다.** 서버가 준 차례를 그대로 쓰면 열거 정의 순서에 끌려간다. */
+var CHECK_ITEM_LABELS = {
+  DEPRESSION: "우울증 병력",
+  HYPERTENSION: "고혈압",
+  OSTEOPOROSIS: "골다공증",
+  DIABETES: "당뇨",
+  PREGNANCY_PLAN: "임신 계획",
+};
+
+var CHECK_ITEMS = ["DEPRESSION", "HYPERTENSION", "OSTEOPOROSIS", "DIABETES", "PREGNANCY_PLAN"];
+
+function checkItemLabel(key) {
+  return CHECK_ITEM_LABELS[String(key || "")] || String(key || "");
+}
 
 /** 이 묶음을 지금 채울 수 있는가. 채울 수 없으면 화면이 그렇게 말해야 한다. */
 function groupIsReady(key, data) {

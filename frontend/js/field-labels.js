@@ -112,8 +112,10 @@ var FIELD_UNITS = {
   TESTOSTERONE: "ng/dL",
   PROLACTIN: "ng/mL",
   TSH: "µIU/mL",
-  T3: "ng/dL",
-  T4: "µg/dL",
+  /* 유리(free) T3 · T4 를 재는 의원 기준이다 — 총(total) 값이면 단위가 다르다.
+     차트에 적히는 것과 같아야 스탭이 옮겨 적을 때 자릿수를 의심하지 않는다. */
+  T3: "pg/mL",
+  T4: "ng/dL",
   PROGESTERONE: "ng/mL",
   ENDOMETRIOMA_SIZE: "cm",
   ENDOMETRIAL_THICKNESS: "cm",
@@ -135,6 +137,11 @@ var FIELD_UNITS = {
    함께 적고, 값은 「있다 3.2 cm」로 굳는다 — 두 칸으로 갈라 두면 「있다인데
    크기가 빈」 상태가 남는다. */
 var FIELD_CHOICES = {
+  /* 진단은 이 의원이 보는 둘과 그 둘이 겹치는 경우뿐이다. 자유 입력으로 두면
+     「자궁내막증」·「자궁 내막증」·「endometriosis」가 섞여 들어오고, 처방 세트에
+     붙일 주의 문구를 찾지 못한다 — 안내문이 그 값으로 만들어진다. */
+  DIAGNOSIS: ["자궁내막증", "다낭성난소증후군(PCOS)", "둘 다"],
+
   HEAVY_BLEEDING: ["있다", "없다"],
   IRREGULAR_CYCLE: ["있다", "없다"],
   ADNEXAL_CYST_LEFT: ["있다", "없다"],

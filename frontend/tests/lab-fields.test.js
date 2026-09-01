@@ -10,7 +10,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const { load } = require("./browser-shim.js");
-const { read, codeOnly } = require("./source.js");
+const { read, codeOnly, rule } = require("./source.js");
 
 function box() {
   return load("api", "session", "patients-api", "shell", "field-labels", "ocr-groups");
@@ -20,8 +20,8 @@ const WANTED = {
   증상: ["PAIN_SCORE", "HEAVY_BLEEDING", "IRREGULAR_CYCLE"],
   "초음파 검사": [
     "ADENOMYOSIS_SIZE",
-    "MYOMA_SIZE",
     "MYOMA_COUNT",
+    "MYOMA_SIZE",
     "ENDOMETRIAL_THICKNESS",
     "ADNEXAL_CYST_LEFT",
     "ADNEXAL_CYST_RIGHT",
@@ -196,6 +196,9 @@ test("**단위를 아는 항목에는 단위가 있다** — cm 인지 개수인
   assert.equal(fieldUnit("MYOMA_COUNT", ""), "개");
   assert.equal(fieldUnit("PAIN_SCORE", ""), "점");
   assert.equal(fieldUnit("AST", ""), "U/L");
+  /* 유리 T3 · T4 기준 — 총 값이면 단위가 다르다 */
+  assert.equal(fieldUnit("T3", ""), "pg/mL");
+  assert.equal(fieldUnit("T4", ""), "ng/dL");
 
   /* 서버가 준 단위가 있으면 그것이 이긴다 */
   assert.equal(fieldUnit("MYOMA_SIZE", "mm"), "mm", "서버가 준 단위를 무시한다");
@@ -258,6 +261,18 @@ test("**못 읽었다는 말을 한 줄에 두 번 적지 않는다**", () => {
   assert.ok(!table.includes("missing:"), "이름 옆에 「인식 실패」가 다시 붙는다");
   assert.ok(table.includes("skipped:"), "다른 상태까지 사라졌다 — 검사가 헛돈다");
 
-  /* 대신 값 쪽이 말해야 한다 */
-  assert.ok(code.includes("판독 실패"), "왜 비었는지 아무 데서도 안 말한다");
+  /* **값 쪽에도 안 적는다.** 점선 네모 안의 `?` 가 이미 그 말이다 —
+     글자로 또 적으면 한 줄에 같은 말이 두 모양으로 선다. */
+  const drawn = code.split("field__hint");
+  for (let i = 1; i < drawn.length; i++) {
+    assert.ok(
+      !drawn[i].slice(0, 40).includes("판독 실패"),
+      "값 옆에 「판독 실패」를 또 적는다 — 점선 ? 가 이미 말한다",
+    );
+  }
+
+  /* 대신 점선 네모와 `?` 는 있어야 한다 — 그것마저 없으면 빈 줄로 보인다 */
+  assert.ok(code.includes('field__value--missing">?</div>'), "못 읽은 값이 `?` 로 안 선다");
+  const css = read("css/ocr-review.css");
+  assert.match(rule(css, ".field__value--missing"), /border-style:\s*dashed/, "점선이 아니다");
 });

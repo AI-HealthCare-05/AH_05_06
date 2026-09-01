@@ -2,6 +2,7 @@ import builtins
 from datetime import datetime
 
 from tortoise.timezone import now
+from tortoise.transactions import in_transaction
 
 from app.core.api_errors import ApiError
 from app.core.pagination import encode_cursor
@@ -10,7 +11,7 @@ from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import DoctorResponse, VisitCreateRequest, VisitResponse, VisitUpdateRequest
 from app.models.ocr import OcrJob, OcrJobStatus
 from app.models.staffs import Staff, StaffRole
-from app.models.visits import GuideDocument, GuideStatus, Visit
+from app.models.visits import GuideDocument, GuideStatus, Visit, VisitCheckAnswer, VisitCheckKey
 from app.repositories.patient_repository import PatientRepository
 from app.repositories.visit_repository import VisitRepository
 from app.services.patient_visit_scope import hospital_id_of, visit_cursor
@@ -267,3 +268,73 @@ class VisitService:
         if value.tzinfo is None:
             raise ApiError(400, "INVALID_REQUEST", "visited_at에는 시간대가 필요합니다.")
         return value.astimezone(DISPLAY_TIMEZONE)
+
+
+class VisitCheckService:
+    """확인 항목의 답 — 와이어프레임 S1-6 「확인 항목 · 처방별」.
+
+    처방을 내기 전에 스탭이 환자에게 여쭙는 것들이다. 담을 자리가 없어 체크박스가
+    꺼진 채로 서 있었는데, 이제 켠다.
+
+    **안 물어본 것과 「아니오」는 다르다.** 행이 없으면 아직 안 여쭌 것이고,
+    `checked=False` 는 여쭤서 아니라고 한 것이다.
+    """
+
+    async def read(self, actor, visit_id: int) -> dict:
+        """물어볼 항목 **전부**를 준다 — 아직 안 여쭌 것은 `checked` 가 `None`.
+
+        답이 있는 것만 주면 화면이 나머지를 스스로 세워야 하고, 그러면 항목
+        목록이 두 곳에 생겨 한쪽만 바뀐다.
+        """
+        visit = await self._visit(actor, visit_id)
+        rows = {r.item_key: r for r in await VisitCheckAnswer.filter(visit_id=visit.visit_id)}
+
+        return {
+            "visit_id": visit.visit_id,
+            "answers": [
+                {"item_key": key.value, "checked": rows[key].checked if key in rows else None}
+                for key in VisitCheckKey
+            ],
+        }
+
+    async def save(self, actor, visit_id: int, payload) -> dict:
+        """한 판을 통째로 저장한다.
+
+        `checked` 가 `None` 인 항목은 **행을 지운다** — 「안 여쭌 것으로 되돌린다」는
+        뜻이다. `False` 로 담아 두면 여쭤서 아니라고 한 것과 섞인다.
+        """
+        visit = await self._visit(actor, visit_id)
+        moment = now()
+
+        async with in_transaction() as connection:
+            for item in getattr(payload, "answers", []) or []:
+                key = VisitCheckKey(item.item_key)
+                if item.checked is None:
+                    await VisitCheckAnswer.filter(visit_id=visit.visit_id, item_key=key).using_db(
+                        connection
+                    ).delete()
+                    continue
+
+                await VisitCheckAnswer.update_or_create(
+                    visit_id=visit.visit_id,
+                    item_key=key,
+                    defaults={
+                        "checked": bool(item.checked),
+                        "answered_by": actor.user_id,
+                        "answered_at": moment,
+                    },
+                    using_db=connection,
+                )
+
+        return await self.read(actor, visit_id)
+
+    @staticmethod
+    async def _visit(actor, visit_id: int) -> Visit:
+        """**병원 울타리를 여기서 친다.** 다른 병원의 진료는 없는 것과 같다."""
+        visit = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
+        if visit is None:
+            # 이 파일의 `ApiError` 는 **상태가 먼저**다 (`app/core/api_errors`).
+            # 안내문 쪽(`auth_errors.AuthError`)은 코드가 먼저라 순서가 반대다 —
+            # 옮겨 적다 뒤집으면 `status_code` 에 문자열이 들어가 비교에서 터진다.
+            raise ApiError(404, "VISIT_NOT_FOUND", "진료를 찾을 수 없습니다.")
+        return visit

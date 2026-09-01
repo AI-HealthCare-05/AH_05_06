@@ -222,8 +222,10 @@
   background: var(--warn-bg);
 }
 
+/* 이름이 길어졌다 — 「난소 부속기 혹 (왼쪽)」·「E2 (에스트라디올)」.
+   84px 이면 두 줄로 접히면서 옆 줄과 어긋난다. */
 .field__name {
-  width: 84px;
+  width: 132px;
   flex: none;
   color: var(--ink-2);
 }
@@ -896,9 +898,13 @@
  *
  * 원문 치수: 라벨 12px, 칸 높이 34px, 진단 206px, 처방은 남는 폭, 간격 14px.
  */
+/* **위로 맞춘다.** `flex-end` 였더니 칸마다 내용 높이가 달라(진단은 값+단추 두
+   줄, 처방은 고르는 칸 한 줄) 아래만 맞고 **라벨과 값칸이 층층이 어긋났다** —
+   「처방」 라벨이 「진단」 값칸 아래에 서는 식이다. 읽는 순서가 라벨 → 값이라
+   그 둘이 가로로 나란해야 한다. */
 .top {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 14px;
   flex-wrap: wrap;
   margin-bottom: 10px;
@@ -916,14 +922,20 @@
   flex: 1 1 200px;
 }
 
+/* 라벨 높이를 고정한다 — 한 줄짜리와 두 줄짜리가 섞이면 아래 값칸이 어긋난다 */
 .top__label {
+  min-height: 18px;
   color: var(--ink-2);
   font-size: 12px;
+  line-height: 18px;
 }
 
+/* 단위는 값칸 옆에 선다 — 값칸이 34px 이라 그 가운데에 맞춘다 */
 .top__unit {
-  align-self: center;
-  padding-bottom: 8px;
+  align-self: flex-start;
+  height: 34px;
+  display: flex;
+  align-items: center;
   color: var(--ink-2);
   font-size: 13px;
 }
@@ -1063,8 +1075,56 @@
   border-radius: 6px;
 }
 
-/* 「있다」일 때만 따라 나오는 크기 칸 — 숫자만 들어가므로 좁다 */
+/* 「있다」일 때만 따라 나오는 크기 칸. **숫자 몇 자만 들어간다** —
+   `.field__input` 이 남는 자리를 다 먹어서 칸이 화면 절반이 되고, 단위(`cm`)가
+   다음 줄로 밀려 나갔다. 폭을 못박고 뒤에 오는 단위를 옆에 세운다. */
 .field__input--size {
-  flex: 0 0 72px;
-  width: 72px;
+  flex: 0 0 68px;
+  width: 68px;
+  min-width: 0;
+  text-align: center;
+}
+
+/* 크기 칸 바로 뒤의 단위는 그 옆에 붙는다 — 자리를 지키는 빈 칸이 아니다 */
+.field__input--size + .field__unit {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+/* **단위 칸은 늘 자리를 지킨다.** 단위가 있는 줄과 없는 줄이 섞이면 그만큼
+   버튼이 밀려, 줄마다 「직접 입력」이 다른 자리에 선다. 빈 칸으로 세운다. */
+.field__unit {
+  flex: 0 0 52px;
+  width: 52px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+/* 값칸도 폭을 고정한다 — 안 그러면 내용 길이에 따라 뒤가 흔들린다 */
+.field__value {
+  flex: 0 0 68px;
+  justify-content: center;
+}
+
+/* 상태 글은 남는 자리를 다 쓴다. 왼쪽 것들이 자리를 지키므로 여기서 밀리지 않는다 */
+.field__hint {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 맨 위 셋의 단추는 값칸 **아래** 줄로 내려간다. 옆에 붙이면 칸마다 폭이
+   달라 세 칸이 어긋나고, 진단처럼 긴 값이 들어올 때 단추가 밀려 나간다. */
+.top .field__row {
+  flex-wrap: wrap;
+}
+
+.top .field__act {
+  order: 2;
+}
+
+/* 값칸과 단위는 첫 줄에, 단추는 그 아래 — 줄바꿈 지점을 못박는다 */
+.top .field__value,
+.top .field__input,
+.top .top__unit {
+  order: 1;
 }

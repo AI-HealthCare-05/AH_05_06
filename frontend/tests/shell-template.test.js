@@ -830,3 +830,25 @@ test("**접으면 머리 단추 하나만 남는다** — 빠뜨린 것은 48px 
   /* 감추는 규칙이 실제로 감추는가 */
   assert.match(folded.slice(0, folded.indexOf("}") + 40), /display:\s*none/, "감추는 규칙이 없다");
 });
+
+test("**환자 머리는 스크롤해도 붙어 있는다** — 누구인지를 잃으면 잘못 넣는다", () => {
+  const head = rule(read("css/blocks.css"), ".patient-head");
+
+  assert.match(head, /position:\s*sticky/, "스크롤하면 머리가 화면 밖으로 나간다");
+  assert.match(head, /top:/, "붙을 자리를 안 정했다 — sticky 만으로는 안 붙는다");
+  assert.match(head, /z-index:/, "아래 내용이 머리 위로 지나간다");
+
+  /* 붙는 자리는 판의 위 여백만큼 되민 값이라야 한다 — 0 이면 그만큼 늦게 붙어
+     머리 위로 내용이 한 줄 지나간다. */
+  const pane = rule(read("css/shell.css"), ".pane");
+  const padding = /padding:\s*(\d+)px/.exec(pane);
+  assert.ok(padding, "판의 여백을 못 읽었다 — 검사가 헛돈다");
+  assert.match(
+    head,
+    new RegExp(`top:\\s*-${padding[1]}px`),
+    `붙는 자리가 판 여백(${padding[1]}px)과 안 맞는다`,
+  );
+
+  /* 스크롤하는 것이 판이어야 sticky 가 산다 */
+  assert.match(pane, /overflow-y:\s*auto/, "판이 스크롤하지 않는다 — 붙을 곳이 없다");
+});

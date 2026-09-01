@@ -343,7 +343,7 @@ function stateTakesFocus(tone) {
 
   /* 적는 **중**인 값. `local` 과 갈라 두는 이유는, 고르는 항목이 「있다」를
      고른 순간 크기 칸을 내보내려면 다시 그려야 하는데 그때 `local` 에 써
-     버리면 「취소」로 되돌릴 것이 없고 「저장 안 됨」 배지가 미리 뜬다.
+     버리면 「취소」로 되돌릴 것이 없다.
      확인을 눌러야 `local` 로 넘어간다. */
   var localDraft = {};
 
@@ -446,9 +446,10 @@ function stateTakesFocus(tone) {
 
   /* ── 오른쪽 · 구조화 필드 ──────────────────────────────────── */
 
-  /* **못 읽은 것은 이름 옆에 또 적지 않는다.** 오른쪽 줄이 이미 「판독 실패」라
-     말하는데 이름 옆에도 「⚠ 인식 실패」를 붙이면, 같은 말이 한 줄에 두 번
-     서서 항목 이름이 밀려 잘린다. 상태는 값이 서는 쪽에서 말한다. */
+  /* **못 읽었다는 말을 글자로 적지 않는다.** 점선 네모 안의 `?` 가 이미 그
+     말이다. 이름 옆에 「⚠ 인식 실패」, 값 옆에 「판독 실패」까지 붙이면 한 줄에
+     같은 말이 세 가지 모양으로 서고, 그만큼 항목 이름이 밀려 잘린다.
+     보이는 것으로 말할 수 있으면 글자를 더하지 않는다. */
   var STATE_TEXT = {
     low: "⚠ 확인 필요",
     candidates: "값 2개",
@@ -561,7 +562,7 @@ function stateTakesFocus(tone) {
       ' 고르기">' +
       '<option value=""' +
       (now.pick ? "" : " selected") +
-      ">고르세요</option>" +
+      ">선택</option>" +
       picks
         .map(function (pick) {
           return (
@@ -592,13 +593,15 @@ function stateTakesFocus(tone) {
       `?` 만 있으면 cm 인지 개수인지 점수인지 물어봐야 안다.
       고르는 항목(있다/없다)과 단위 없는 항목에는 안 붙인다. */
   function unitHtml(field) {
-    if (fieldChoices(field.field_type)) return "";
+    /* 고르는 항목에도 **빈 칸**을 세운다 — 안 세우면 그 줄만 버튼이 앞으로
+       당겨져 옆 줄과 어긋난다. 자리는 지키고 글자만 없다. */
+    if (fieldChoices(field.field_type)) return '<span class="field__unit"></span>';
     /* **처방 줄은 제 단위를 이미 그린다**(`top__unit`). 여기서 또 붙이면
        「처방일수 ? 일 … 일」처럼 한 줄에 두 번 선다 — 가로줄과 값 줄이 같은
        몸통(`lastBody.body`)을 나눠 쓰기 때문이다. */
     if (PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1) return "";
     var unit = fieldUnit(field.field_type, field.unit);
-    return unit ? '<span class="field__unit">' + escapeHtml(unit) + "</span>" : "";
+    return '<span class="field__unit">' + escapeHtml(unit) + "</span>";
   }
 
   function renderField(field) {
@@ -630,7 +633,32 @@ function stateTakesFocus(tone) {
     var locked = !!field.is_confirmed;
 
     var body;
-    if (locked) {
+    if (!locked && fieldChoices(field.field_type)) {
+      /* **있음 / 없음은 줄에 바로 세운다.**
+       *
+       * 전에는 `?` 와 「직접 입력」이 서 있고, 눌러야 고르개가 나왔다. 칠 것이
+       * 없는 항목인데 「입력」을 한 번 더 누르게 하는 셈이고, 스탭은 그 줄에
+       * 무엇을 넣어야 하는지도 눌러 봐야 알았다.
+       *
+       * 고르면 바로 담긴다 — 서버에 있는 줄은 서버로, 아직 없는 줄은 화면에.
+       * 「저장 안 됨」은 배지가 말한다. */
+      var picked = id
+        ? isEditing(id)
+          ? editing[id]
+          : field.value
+        : localDraft[field.field_type] !== undefined
+          ? localDraft[field.field_type]
+          : local[field.field_type] || "";
+
+      body =
+        choiceHtml(
+          field,
+          id ? 'data-input="' + id + '"' : 'data-local-input="' + escapeHtml(field.field_type) + '"',
+          picked,
+        ) +
+
+        "";
+    } else if (locked) {
       body =
         '<div class="field__value">' +
         escapeHtml(field.value === null || field.value === undefined ? "?" : field.value) +
@@ -659,7 +687,7 @@ function stateTakesFocus(tone) {
     } else if (field.is_absent && localEditing === field.field_type) {
       /* 적는 중. 「저장」이라 쓰지 않는다 — 서버로 안 가는데 저장이라고
          하면 남았다고 믿는다. 「확인」은 이 화면에서 값을 굳힌다는 뜻이고,
-         남지 않는다는 것은 아래 「저장 안 됨」 배지가 말한다. */
+         담는 것은 블록 머리의 「저장」이 한 번에 한다. */
       body =
         (fieldChoices(field.field_type)
           ? choiceHtml(
@@ -689,10 +717,9 @@ function stateTakesFocus(tone) {
         '<span class="field__unit">' +
         escapeHtml(fieldUnit(field.field_type, "")) +
         "</span>" +
-        '<span class="field__tag field__tag--local">저장 안 됨</span>' +
         '<button class="field__act" type="button" data-local-fill="' +
         escapeHtml(field.field_type) +
-        '">고치기</button>';
+        '">수정</button>';
     } else if (state === "missing" && field.is_absent) {
       /* **서버가 이 항목의 줄을 아예 안 만들었다.**
        *
@@ -709,7 +736,7 @@ function stateTakesFocus(tone) {
         '<button class="field__act" type="button" data-local-fill="' +
         escapeHtml(field.field_type) +
         '">직접 입력</button>' +
-        '<span class="field__hint">판독 실패</span>';
+        "";
     } else if (state === "missing") {
       /* 빈 칸이 아니라 「못 읽었다」로 보여야 한다. 빈 칸은 안 읽은 것처럼 보인다. */
       body =
@@ -726,11 +753,14 @@ function stateTakesFocus(tone) {
 
            별도 보고 검사(`pending`)에도 같은 버튼을 두지만 그쪽은 이미 셈에서
            빠져 있어 표시만 바뀐다. 막힌 것을 푸는 것은 이 자리다. */
-        '<button class="field__act field__act--quiet" type="button" data-skip="' +
-        id +
-        '">이번 미시행</button>' +
-        /* 왜 비었는지 여기서 말한다 — 이름 옆의 배지를 뺐기 때문이다 */
-        '<span class="field__hint">판독 실패</span>';
+        /* **「이번 미시행」은 검사값의 말이다.** 진단과 처방은 「이번엔 안
+           했다」가 성립하지 않는다 — 안 한 진료가 아니라 못 읽은 것이고,
+           안내문이 그 값으로 만들어지므로 채워야 끝난다. */
+        (PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1
+          ? ""
+          : '<button class="field__act field__act--quiet" type="button" data-skip="' +
+            id +
+            '">이번 미시행</button>');
     } else if (state === "pending") {
       /* 「이전 값 유지」·「이번 미시행」 버튼이 있었는데 처리기가 없어서 눌러도
          아무 일이 없었다. 둘 다 지금 계약으로는 못 짠다 — 앞 진료 값은 이
@@ -777,7 +807,7 @@ function stateTakesFocus(tone) {
         ' <span class="field__unit">' +
         escapeHtml(field.unit || "") +
         "</span></div>";
-      body += '<button class="field__act" type="button" data-fill="' + id + '">고치기</button>';
+      body += '<button class="field__act" type="button" data-fill="' + id + '">수정</button>';
     }
 
     var tail = isEditing(id) ? "" : sourceChip(field);
@@ -1050,6 +1080,13 @@ function stateTakesFocus(tone) {
       '<section class="box"><div class="box__head">' +
       '<h2 class="box__title">이번 판독 값</h2>' +
       (on ? '<span class="box__note">검사일 ' + escapeHtml(shortDate(on)) + "</span>" : "") +
+      /* **적은 것을 한 번에 담는다.** 스무 줄을 하나씩 저장하게 하면 어느 줄이
+         담겼는지 세어야 하고, 하나만 빼먹으면 안내문에서야 안다. */
+      '<span class="grow"></span>' +
+      (labSaying ? '<span class="box__note">' + escapeHtml(labSaying) + "</span>" : "") +
+      '<button class="button-primary button-primary--sm" type="button" id="labs-save"' +
+      (Object.keys(local).length ? "" : " disabled") +
+      ">저장</button>" +
       "</div>" +
       /* **두 칸으로 세운다.** 왼쪽은 사람이 보고 적는 것(증상 · 초음파),
          오른쪽은 뽑아 잰 것(혈액)이다. 스물한 줄을 한 줄기로 늘어놓으면
@@ -1095,9 +1132,10 @@ function stateTakesFocus(tone) {
         escapeHtml(group.note) +
         "</span></div>" +
         (group.key === "checks" ? checkListHtml() : "") +
-        '<p class="box__soon">' +
-        escapeHtml(group.saying) +
-        "</p></section>"
+        /* 확인 항목은 이제 저장된다 — 「아직 없다」는 말을 그대로 두면 켜 놓고도
+           안 남는 줄 안다. 나머지 블록은 그대로다. */
+        (group.key === "checks" ? "" : '<p class="box__soon">' + escapeHtml(group.saying) + "</p>") +
+        "</section>"
       );
     }).join("");
   }
@@ -1111,19 +1149,93 @@ function stateTakesFocus(tone) {
    * 그래서 **꺼진 채로** 세운다. 켤 수 있게 두면 스탭이 「우울증 병력」을
    * 체크하고 저장됐다고 믿는데 아무 데도 안 남는다 — 안전에 걸리는 항목이라
    * 그 오해가 가장 나쁘다. 눌리지 않고, 왜 아직 안 눌리는지 아래 줄이 말한다. */
+  /* 확인 항목의 답. `null` 은 **아직 안 여쭌 것**이고 `false` 는 여쭤서
+     아니라고 한 것이다 — 하나로 뭉치면 안내문이 「없음」을 확인한 것처럼 적을
+     수 있는데 실제로는 아무도 안 물었을 수 있다. */
+  /* 확인 항목의 답.
+   *
+   * **켠 것만 담는다.** 처음에는 끈 것을 「여쭤서 아니라고 했다」(`false`)로
+   * 담았는데, 화면에서는 안 켠 상자와 끈 상자가 같아 보여서 「아니오」라는
+   * 글자를 옆에 붙여야 했다 — 체크를 풀었더니 글자가 나타나는 꼴이라 더
+   * 헷갈렸다. 켜면 「예」, 끄면 「아직」이다. 표는 셋을 다 담을 수 있으므로
+   * (`checked` 가 `null` 이면 안 여쭌 것), 세 갈래를 제대로 묻는 칸이 필요해질
+   * 때 화면만 바꾸면 된다.
+   */
+  var checkAnswers = {};
+  var checkSaying = "";
+
+  /* 「이번 판독 값」 저장 뒤 한 줄. 눌렀는데 아무 말이 없으면 「됐나」가 된다. */
+  var labSaying = "";
+
   function checkListHtml() {
     return (
-      '<ul class="checks" aria-label="확인 항목 (아직 저장되지 않습니다)">' +
-      CHECK_ITEMS.map(function (item) {
+      '<ul class="checks" aria-label="확인 항목">' +
+      CHECK_ITEMS.map(function (key) {
+        var answer = checkAnswers[key];
         return (
           '<li class="checks__item"><label class="checks__label">' +
-          '<input type="checkbox" disabled />' +
-          escapeHtml(item) +
+          '<input type="checkbox" data-check="' +
+          escapeHtml(key) +
+          '"' +
+          (answer === true ? " checked" : "") +
+          " />" +
+          escapeHtml(checkItemLabel(key)) +
           "</label></li>"
         );
       }).join("") +
-      "</ul>"
+      "</ul>" +
+      (checkSaying ? '<p class="box__meta">' + escapeHtml(checkSaying) + "</p>" : "")
     );
+  }
+
+  /* 눌린 것을 서버로. **한 판을 통째로 보낸다** — 항목 하나씩 보내면 중간에
+     끊겼을 때 반쪽 상태가 남는다. */
+  function saveCheckItems() {
+    if (!visit || !visit.visit_id) return;
+    var wanted = visit.visit_id;
+
+    var answers = CHECK_ITEMS.map(function (key) {
+      return { item_key: key, checked: checkAnswers[key] === undefined ? null : checkAnswers[key] };
+    });
+
+    checkSaying = "저장하는 중…";
+    redraw();
+
+    ocrApi
+      .saveCheckItems(wanted, answers)
+      .then(function (data) {
+        if (!visit || visit.visit_id !== wanted) return;
+        adoptCheckItems(data);
+        checkSaying = "저장했습니다";
+        redraw();
+      })
+      .catch(function () {
+        if (!visit || visit.visit_id !== wanted) return;
+        checkSaying = "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
+        redraw();
+      });
+  }
+
+  function adoptCheckItems(data) {
+    checkAnswers = {};
+    ((data && data.answers) || []).forEach(function (row) {
+      if (row.checked !== null && row.checked !== undefined) checkAnswers[row.item_key] = row.checked;
+    });
+  }
+
+  function loadCheckItems(visitId) {
+    checkAnswers = {};
+    checkSaying = "";
+    ocrApi
+      .checkItems(visitId)
+      .then(function (data) {
+        if (!visit || visit.visit_id !== visitId) return;
+        adoptCheckItems(data);
+        redraw();
+      })
+      .catch(function () {
+        /* 못 읽으면 빈 채로 둔다 — 지어낸 답을 보이지 않는다 */
+      });
   }
 
   /* 위에 몇 개를 봐야 하는지 먼저 말한다. 목록을 훑기 전에 알아야
@@ -1659,6 +1771,49 @@ function stateTakesFocus(tone) {
      다시 그릴 때 화면은 그 값으로 되돌아간다. 저장 타이머는 사람이
      아무것도 안 눌러도 도니까, 친 값이 저 혼자 사라지는 길이 된다.
      검사값 화면에서 제일 나쁜 것은 틀린 값이 조용히 저장되는 쪽이다. */
+  /* 확인 항목 체크. **누르는 순간 담긴다** — 「저장」을 따로 두면 눌러 놓고
+     안 누른 채 넘어가는 길이 생기고, 안전에 걸리는 항목이라 그게 가장 나쁘다. */
+  document.addEventListener("change", function (event) {
+    var key = event.target.getAttribute && event.target.getAttribute("data-check");
+    if (!key) return;
+    if (event.target.checked) checkAnswers[key] = true;
+    else delete checkAnswers[key]; /* 끄면 「아직 안 여쭌 것」으로 되돌린다 */
+    saveCheckItems();
+  });
+
+  /* 적어 둔 값을 **한 번에** 서버로. 판독이 못 읽은 항목은 줄 자체가 없어서
+     항목 이름으로 짚는다(`PUT /visits/{id}/ocr-fields/{type}`). */
+  document.addEventListener("click", function (event) {
+    if (!event.target.closest || !event.target.closest("#labs-save")) return;
+    if (!visit || !visit.visit_id) return;
+
+    var wanted = visit.visit_id;
+    var typed = Object.keys(local);
+    if (!typed.length) return;
+
+    labSaying = "저장하는 중…";
+    redraw();
+
+    Promise.all(
+      typed.map(function (type) {
+        return ocrApi.writeField(wanted, type, local[type]);
+      }),
+    )
+      .then(function () {
+        if (!visit || visit.visit_id !== wanted) return;
+        /* 담겼으니 화면에만 있던 것은 지운다 — 안 지우면 서버 값과 두 벌이 된다 */
+        local = {};
+        localDraft = {};
+        labSaying = "저장했습니다";
+        return loadResult(loadSeq);
+      })
+      .catch(function () {
+        if (!visit || visit.visit_id !== wanted) return;
+        labSaying = "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
+        redraw();
+      });
+  });
+
   document.addEventListener("input", onTyped);
   /* `<select>` 는 브라우저에 따라 `input` 이 안 나기도 한다 — 둘 다 받는다 */
   document.addEventListener("change", onTyped);
@@ -1683,8 +1838,16 @@ function stateTakesFocus(tone) {
        담을 데가 없으면 「있다」를 골라도 화면이 그대로다. */
     var localType = target.getAttribute("data-local-input");
     if (localType) {
-      localDraft[localType] = boxValue(target, localType);
-      if (fieldChoices(localType) && fieldChoiceSized(localType)) redraw();
+      var value = boxValue(target, localType);
+      localDraft[localType] = value;
+
+      /* 고르는 항목은 **누르는 순간 담긴다** — 「확인」을 한 번 더 누르게 하면
+         고른 것이 담겼는지 눌러 봐야 안다. 치는 항목은 그대로 「확인」을 쓴다. */
+      if (fieldChoices(localType)) {
+        if (value) local[localType] = value;
+        else delete local[localType];
+        redraw();
+      }
       return;
     }
 
@@ -1692,10 +1855,16 @@ function stateTakesFocus(tone) {
     if (box === null || box === undefined) return;
 
     var type = typeOfBox(target);
-    editing[Number(box)] = boxValue(target, type);
+    var next = boxValue(target, type);
+    editing[Number(box)] = next;
 
-    /* 「있다」를 고르면 크기 칸이 따라 나와야 한다 — 다시 그려야 보인다 */
-    if (fieldChoices(type) && fieldChoiceSized(type)) redraw();
+    /* 고르는 항목은 누르는 순간 서버로 간다. 크기가 딸린 것은 크기를 적을
+       틈을 줘야 하므로, 크기 칸이 채워졌을 때만 보낸다. */
+    if (fieldChoices(type)) {
+      var needsSize = fieldChoiceSized(type) && splitChoiceValue(type, next).pick === fieldChoices(type)[0];
+      redraw();
+      if (next && !needsSize) saveField(Number(box), { corrected_value: next }, next);
+    }
   }
 
   /* 값 하나 고치는 데 마우스를 두 번 쓰게 하지 않는다 */
@@ -1988,6 +2157,9 @@ function stateTakesFocus(tone) {
     var mine = ++loadSeq;
     renderPatientHead(next);
     renderSteps(); // 단계 줄은 진료가 정해져야 갈 곳을 안다
+    /* 확인 항목은 판독과 **따로** 불러온다 — 판독이 실패해도 여쭌 답은 보여야
+       하고, 반대로 답을 못 읽어도 판독은 보여야 한다. */
+    loadCheckItems(next.visit_id);
     showState("loading", '<p class="state__title">판독 결과를 불러오는 중…</p>');
 
     ocrApi

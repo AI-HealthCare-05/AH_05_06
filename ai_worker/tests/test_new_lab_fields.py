@@ -30,8 +30,8 @@ DHEA-S: 210 ug/dL
 Testosterone: 45 ng/dL
 Prolactin: 18.2 ng/mL
 TSH: 2.1 uIU/mL
-T3: 120 ng/dL
-T4: 8.4 ug/dL
+T3: 3.2 pg/mL
+T4: 1.1 ng/dL
 E2: 42 pg/mL
 Progesterone: 1.2 ng/mL
 """
@@ -57,8 +57,8 @@ WANTED = {
     "TESTOSTERONE": "45 ng/dL",
     "PROLACTIN": "18.2 ng/mL",
     "TSH": "2.1 uIU/mL",
-    "T3": "120 ng/dL",
-    "T4": "8.4 ug/dL",
+    "T3": "3.2 pg/mL",
+    "T4": "1.1 ng/dL",
     "E2": "42 pg/mL",
     "PROGESTERONE": "1.2 ng/mL",
 }

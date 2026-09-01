@@ -309,6 +309,26 @@ class GuideMessageKind(StrEnum):
     RUN_OUT = "RUN_OUT"
 
 
+class VisitCheckKey(StrEnum):
+    """확인 항목 — 와이어프레임 S1-6 「확인 항목 · 처방별」.
+
+    처방을 내기 전에 스탭이 환자에게 여쭙는 것들이다. 비잔이면 우울증 병력을
+    묻고, 다른 처방이면 다른 것을 묻는다 — **처방별로 달라지는 것이 맞지만**,
+    무엇이 어느 처방에 붙는지를 정하는 자리(D2-3 처방 세트)가 아직 없다.
+    그때까지는 다섯을 다 여쭙는다.
+
+    **값을 열거로 못박는다.** 자유 문자열이면 화면 문구가 바뀔 때마다 지난
+    진료의 답이 어느 질문의 답이었는지 알 수 없게 된다 — 「우울증 병력」이
+    「우울증 과거력」으로 바뀌면 옛 행이 미아가 된다.
+    """
+
+    DEPRESSION = "DEPRESSION"
+    HYPERTENSION = "HYPERTENSION"
+    OSTEOPOROSIS = "OSTEOPOROSIS"
+    DIABETES = "DIABETES"
+    PREGNANCY_PLAN = "PREGNANCY_PLAN"
+
+
 class GuideMessageHold(StrEnum):
     """**왜 붙들고 있나** — 와이어프레임 S2-3.
 
@@ -367,6 +387,41 @@ class GuideMessageStatus(StrEnum):
     #: 되어, 스탭이 무엇을 손대야 하는지 안 보인다.
     HELD = "HELD"
     CANCELED = "CANCELED"
+
+
+class VisitCheckAnswer(models.Model):
+    """이 진료에서 확인 항목에 뭐라고 답했나 — 와이어프레임 S1-6.
+
+    **안 물어본 것과 「아니오」는 다르다.** 행이 없으면 아직 안 여쭌 것이고,
+    `checked=False` 는 여쭤서 아니라고 한 것이다. 하나로 뭉치면 안내문이
+    「우울증 병력 없음」을 확인한 것처럼 적을 수 있는데, 실제로는 아무도 안
+    물었을 수 있다 — 안전에 걸리는 항목이라 이 구별이 필요하다.
+
+    답한 사람과 시각을 남긴다. 나중에 「누가 이걸 확인했나」를 물을 자리다.
+    """
+
+    visit_check_answer_id = fields.BigIntField(primary_key=True)
+    visit: fields.ForeignKeyRelation[Visit] = fields.ForeignKeyField(
+        "models.Visit",
+        related_name="check_answers",
+        on_delete=OnDelete.CASCADE,
+        source_field="visit_id",
+    )
+    visit_id: int
+
+    item_key = fields.CharEnumField(enum_type=VisitCheckKey)
+    checked = fields.BooleanField(default=False)
+
+    #: 누가 답했나. 「누가 이걸 확인했나」의 답이다.
+    answered_by = fields.BigIntField(null=True)
+    answered_at = fields.DatetimeField(null=True)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "visit_check_answer"
+        unique_together = (("visit", "item_key"),)
 
 
 class GuideMessageSetting(models.Model):

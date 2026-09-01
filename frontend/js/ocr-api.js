@@ -59,6 +59,30 @@ var ocrApi = {
     return request("/prescription-sets");
   },
 
+  /* 판독이 못 읽은 값을 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
+     **고치기(PATCH)와 다른 길이다.** 저쪽은 있는 줄의 값을 바꾸고, 이쪽은 줄
+     자체가 없는 것을 만든다 — 그래서 번호가 아니라 항목 이름으로 짚는다. */
+  writeField: function (visitId, fieldType, value) {
+    return request(
+      "/visits/" + encodeURIComponent(visitId) + "/ocr-fields/" + encodeURIComponent(fieldType),
+      { method: "PUT", body: { value: value } },
+    );
+  },
+
+  /* 확인 항목 — 처방 전에 여쭙는 것들 (와이어프레임 S1-6).
+     한 판을 통째로 주고받는다. 항목 하나씩 보내면 중간에 끊겼을 때 반쪽 상태가
+     남고, 화면은 그것을 「안 여쭌 것」과 구별하지 못한다. */
+  checkItems: function (visitId) {
+    return request("/visits/" + encodeURIComponent(visitId) + "/check-items");
+  },
+
+  saveCheckItems: function (visitId, answers) {
+    return request("/visits/" + encodeURIComponent(visitId) + "/check-items", {
+      method: "PUT",
+      body: { answers: answers },
+    });
+  },
+
   job: function (jobId) {
     return ocrRequest("/ocr/jobs/" + encodeURIComponent(jobId));
   },

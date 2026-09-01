@@ -836,6 +836,9 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | POST | `/api/v1/visits/{visit_id}/guide/unapprove` | 승인 철회 — 예약 끄기 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/return` | 스탭에 되돌림 (사유 필수) | `doctor` |
 | GET | `/api/v1/visits/{visit_id}/timeline` | 진료 처리 이력 + 발송 예정 | `staff`·`doctor` |
+| GET | `/api/v1/visits/{visit_id}/check-items` | 확인 항목의 답 (S1-6) | `staff`·`doctor` |
+| PUT | `/api/v1/visits/{visit_id}/check-items` | 확인 항목 저장 — 한 판 통째로 | `staff`·`doctor` |
+| PUT | `/api/v1/visits/{visit_id}/ocr-fields/{field_type}` | 판독이 못 읽은 값 직접 입력 (S1-7) | `staff`·`doctor` |
 | GET | `/api/v1/visits/{visit_id}/guide/messages` | 문자 설정 — 회차 · 문구 · 시각 (S1-14) | `staff`·`doctor` |
 | PUT | `/api/v1/visits/{visit_id}/guide/messages` | 문자 설정 저장 — 「이 환자만 적용」 | 상태에 따라 `staff`·`doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/link` | 72시간 개발용 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
@@ -843,6 +846,10 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 `admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
 
 수정은 상태가 가른다. `STAFF_REVIEW` 는 스탭이 고치고, 의사에게 넘긴 뒤(`APPROVAL_PENDING`)로는 의사만 고친다 — 스탭이 그때 고치려 하면 `403` 이다.
+
+**확인 항목의 답은 셋이다.** `checked` 가 `null` 이면 아직 안 여쭌 것이고, `false` 는 여쭤서 아니라고 한 것이다. 하나로 뭉치면 안내문이 「우울증 병력 없음」을 확인한 것처럼 적을 수 있는데 실제로는 아무도 안 물었을 수 있다. 저장은 한 판을 통째로 받고, `null` 로 보낸 항목은 행을 지운다(= 안 여쭌 것으로 되돌린다). 화면은 지금 「예」와 「아직」 둘만 쓴다 — 체크를 풀면 `null` 이다.
+
+**판독 값을 적어 넣는 길은 고치는 길과 다르다.** `PATCH /ocr/fields/{id}` 는 있는 줄의 값을 바꾸고, `PUT /visits/{id}/ocr-fields/{field_type}` 는 **줄 자체가 없는** 것을 만든다 — 판독이 못 찾은 항목은 레코드로 남지 않아 가리킬 번호가 없기 때문이다. 빈 값을 보내면 그 줄을 지운다. 확정된 값은 이 길로도 못 고친다(`409 OCR_FIELD_CONFIRMED`).
 
 **보류(`HELD`)는 실패(`FAILED`)와 다른 축이다.** 실패는 「보내려 했고 안 됐다」(지난 일), 보류는 「아직 안 보냈고 지금 보내면 안 될 것을 안다」(앞일)다. 사유 목록도 갈린다 — 보류는 둘(`INVALID_PHONE` · `NO_CREDIT`, 와이어프레임 S2-3), 실패는 넷(`INVALID_PHONE` · `OPT_OUT` · `CARRIER` · `SENDER_UNREGISTERED`, D1-7). 겹치는 낱말이 있어도 한 목록으로 합치지 않는다. **아직 아무것도 이 두 상태를 만들지 않는다** — 문자를 보내는 것이 없다.
 
