@@ -153,7 +153,7 @@ test("칩은 서버가 준 셈을 그대로 쓴다", () => {
      `deepStrictEqual` 이 걸린다. */
   assert.strictEqual(
     said.join(" | "),
-    "전체 42 | ⚠ 실패 1 | ⏸ 보류 2 | 오늘 2 | 앞으로 7일 18",
+    "전체 42건 | ⚠ 실패 1 | ⏸ 보류 2 | 오늘 2 | 앞으로 7일 18",
   );
 });
 
@@ -436,4 +436,59 @@ test("아직 없는 것을 화면이 말한다", () => {
     markup.indexOf("환자 관리") !== -1 && markup.indexOf("발송 이력") !== -1,
     "S2 의 세 갈래는 보여야 한다",
   );
+});
+
+/* **칩이 거르개다** (팀장 요청 2026-09-01). 세 갈래가 같은 자리를 쓴다 —
+   원문이 「전체 42」를 고른 상태(검정 채움)로 그리는데, 고른 상태가 있다는
+   것은 다른 것도 고를 수 있다는 뜻이다. */
+test("고른 칩만 켜진다", () => {
+  const { scheduleChips } = rules();
+
+  const on = scheduleChips({ total: 9, failed: 1, held: 2, today: 2, window: 6 }, 7, "held")
+    .filter((chip) => chip.on)
+    .map((chip) => chip.key);
+
+  assert.strictEqual(on.join(), "held");
+  assert.strictEqual(
+    scheduleChips({ total: 1 }, 7).filter((chip) => chip.on)[0].key,
+    "total",
+    "아무것도 안 골랐으면 전체다",
+  );
+});
+
+test("칩으로 줄을 좁힌다", () => {
+  const { filterScheduled } = rules();
+  const day = new Date("2026-09-01T12:00:00+09:00");
+  const rows = [
+    a_row({ name: "실패", status: "FAILED", failure_code: "CARRIER" }),
+    a_row({ name: "보류", status: "HELD", hold_reason: "NO_CREDIT" }),
+    a_row({ name: "오늘", scheduled_at: "2026-09-01T18:00:00+09:00" }),
+    a_row({ name: "나중", scheduled_at: "2026-09-05T10:00:00+09:00" }),
+  ];
+
+  assert.strictEqual(filterScheduled(rows, "total", day).length, 4);
+  assert.strictEqual(filterScheduled(rows, "failed", day).map((r) => r.name).join(), "실패");
+  assert.strictEqual(filterScheduled(rows, "held", day).map((r) => r.name).join(), "보류");
+  assert.strictEqual(filterScheduled(rows, "today", day).map((r) => r.name).join(), "오늘");
+  assert.strictEqual(filterScheduled(rows, "window", day).map((r) => r.name).join(), "오늘,나중");
+});
+
+test("창 밖을 다시 물으러 가지 않는다", () => {
+  const code = codeOnly(read("js/manage.js"));
+  const hand = code.slice(code.indexOf('el("chips").addEventListener'), code.indexOf('el("table").addEventListener'));
+
+  assert.ok(hand.indexOf('view === "roster"') !== -1, "환자 관리만 서버에 다시 묻는다");
+  assert.ok(
+    hand.lastIndexOf("render()") > hand.lastIndexOf("load()"),
+    "발송 예정 · 이력은 이미 받은 창 안을 나눈다",
+  );
+});
+
+/* **감추라는 말에 예외가 없다** — 이 저장소에서 세 번 걸렸다: 모달이 처음부터
+   떠 있었고, CSV 단추가 환자 관리에 떴고, 검색칸이 발송 이력에 떴다. 세 번 다
+   그 요소에 `display` 한 줄이 있어서였다. 뿌리에서 막았고 여기서 잰다. */
+test("hidden 이 display 를 이긴다", () => {
+  const css = read("css/style.css");
+
+  assert.match(css, /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/, "감췄는데 보이는 일이 또 생긴다");
 });

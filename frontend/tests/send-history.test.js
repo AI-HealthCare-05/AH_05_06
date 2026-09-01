@@ -114,7 +114,7 @@ test("칩은 원문의 넷이다", () => {
 
   const said = historyChips({ total: 210, failed: 1, viewed: 175, unviewed: 34 }).map((chip) => chip.say);
 
-  assert.strictEqual(said.join(" | "), "전체 210 | ⚠ 실패 1 | 미열람 34 | 열람 175");
+  assert.strictEqual(said.join(" | "), "전체 210건 | ⚠ 실패 1 | 미열람 34 | 열람 175");
 });
 
 test("요약 줄이 원문대로 읽힌다", () => {
@@ -283,4 +283,34 @@ test("낱말을 여기서 다시 적지 않는다", () => {
   for (const word of ["진료 안내문", "소진 임박", "잘못된 번호", "수신 거부"]) {
     assert.ok(code.indexOf(word) === -1, `「${word}」를 여기 다시 적었다 — js/message-words.js 것을 쓴다`);
   }
+});
+
+/* **칩이 거르개다** (팀장 요청 2026-09-01) — 발송 예정 · 환자 관리와 같은 자리. */
+test("고른 칩만 켜진다", () => {
+  const { historyChips } = rules();
+
+  const on = historyChips({ total: 3, failed: 1, viewed: 1, unviewed: 1 }, "viewed")
+    .filter((chip) => chip.on)
+    .map((chip) => chip.key);
+
+  assert.strictEqual(on.join(), "viewed");
+  assert.strictEqual(historyChips({ total: 1 }).filter((chip) => chip.on)[0].key, "total");
+});
+
+test("열람은 나간 것 중에서만 묻는다", () => {
+  const { filterHistory } = rules();
+  const rows = [
+    a_row({ name: "실패", status: "FAILED", failure_code: "CARRIER", viewed: false }),
+    a_row({ name: "열람", viewed: true }),
+    a_row({ name: "미열람", viewed: false }),
+  ];
+
+  assert.strictEqual(filterHistory(rows, "total").length, 3);
+  assert.strictEqual(filterHistory(rows, "failed").map((r) => r.name).join(), "실패");
+  assert.strictEqual(filterHistory(rows, "viewed").map((r) => r.name).join(), "열람");
+  assert.strictEqual(
+    filterHistory(rows, "unviewed").map((r) => r.name).join(),
+    "미열람",
+    "못 나간 문자에 열람을 묻는 것은 뜻이 없다 — 칩의 셈도 그렇게 세었다",
+  );
 });

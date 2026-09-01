@@ -194,7 +194,7 @@ function statusScreenHtml(view) {
       : "") +
     "</div>" +
     sendRowsHtml(view.messages) +
-    '<p class="st__note">ⓘ ⚠ 못 나감은 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 발송기가 붙으면 그 자리에서 고칩니다</p>' +
+    '<p class="st__note">ⓘ ⚠ 발송 실패는 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 발송기가 붙으면 그 자리에서 고칩니다</p>' +
     "</section>" +
     '<section class="box st__side">' +
     '<div class="box__head st__head"><span class="box__title">환자 액션 현황</span></div>' +

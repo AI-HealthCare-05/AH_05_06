@@ -31,7 +31,9 @@ function ymd(day) {
   var pad = function (n) {
     return (n < 10 ? "0" : "") + n;
   };
-  return day.getFullYear() + "-" + pad(day.getMonth() + 1) + "-" + pad(day.getDate());
+  return (
+    day.getFullYear() + "-" + pad(day.getMonth() + 1) + "-" + pad(day.getDate())
+  );
 }
 
 /** 「최근 N일」이 뜻하는 두 날짜. **오늘을 넣어 센다** — 7일이면 오늘까지
@@ -63,15 +65,47 @@ function historyOrder(rows) {
   });
 }
 
-/* 원문의 칩 넷 — 「전체 210 · ⚠ 실패 1 · 미열람 34 · 열람 175」. */
-function historyChips(counts) {
+/* 원문의 칩 넷 — 「전체 210 · ⚠ 실패 1 · 미열람 34 · 열람 175」.
+ **누르면 걸러진다** — 발송 예정 · 환자 관리와 같은 자리다. */
+function historyChips(counts, chosen) {
   if (!counts) return [];
+  var picked = chosen || "total";
   return [
-    { key: "total", say: "전체 " + (counts.total || 0), strong: true },
-    { key: "failed", say: "⚠ 실패 " + (counts.failed || 0), bad: counts.failed > 0 },
+    { key: "total", say: "전체 " + (counts.total || 0) + "건" },
+    {
+      key: "failed",
+      say: "⚠ 실패 " + (counts.failed || 0),
+      bad: counts.failed > 0,
+    },
     { key: "unviewed", say: "미열람 " + (counts.unviewed || 0) },
     { key: "viewed", say: "열람 " + (counts.viewed || 0) },
-  ];
+  ].map(function (chip) {
+    return {
+      key: chip.key,
+      say: chip.say,
+      bad: !!chip.bad,
+      on: chip.key === picked,
+    };
+  });
+}
+
+/* **열람은 나간 것 중에서만 묻는다** — 못 나간 문자에 열람을 묻는 것은 뜻이
+   없고, 칩의 셈도 그렇게 세었다(175 + 34 = 210 − 1). */
+function filterHistory(rows, chosen) {
+  var given = rows || [];
+  if (!chosen || chosen === "total") return given;
+  if (chosen === "failed") return given.filter(isFailed);
+  if (chosen === "viewed") {
+    return given.filter(function (row) {
+      return !isFailed(row) && row.viewed;
+    });
+  }
+  if (chosen === "unviewed") {
+    return given.filter(function (row) {
+      return !isFailed(row) && !row.viewed;
+    });
+  }
+  return given;
 }
 
 /* 아래 요약 줄 — 원문 「기간 내 발송 210건 · 열람 175 · 미열람 34 · 실패 1
@@ -110,6 +144,9 @@ function viewedSaying(row) {
 function historyCsvPath(range) {
   if (!range) return "";
   return (
-    "/messages/history.csv?from=" + encodeURIComponent(range.from) + "&to=" + encodeURIComponent(range.to)
+    "/messages/history.csv?from=" +
+    encodeURIComponent(range.from) +
+    "&to=" +
+    encodeURIComponent(range.to)
   );
 }

@@ -12,6 +12,15 @@
 표현을 다듬는 자리이지 안전 문장을 고치는 자리가 아니다.
 """
 
+# **`list` 를 메서드 이름으로 쓰면 클래스 본문 안에서 내장 `list` 가 가려진다.**
+# 그 뒤에 나오는 `list[Staff]` 같은 애너테이션이 그 메서드를 첨자로 읽어
+# `TypeError: 'function' object is not subscriptable` 로 **import 가 터진다.**
+#
+# 호스트(3.14)는 애너테이션을 늦게 읽어 안 터지고 컨테이너(3.13)는 터졌다 —
+# 검사가 호스트에서 돌아 통과했는데 서버는 아예 안 떴다. 이 한 줄이 판을
+# 가리지 않고 애너테이션을 글자로 두어, 두 곳이 같게 돈다.
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from tortoise.transactions import in_transaction

@@ -281,12 +281,20 @@
  */
 
 .button-primary,
+/* **`<a>` 로도 쓴다.** 다른 화면으로 보내는 단추는 링크라야 새 창으로 열고
+   주소를 볼 수 있다. `display` 없이 두면 `height` 가 안 먹어 글자만큼만
+   높아지고 밑줄까지 그어진다 — 상단바 탭에서 한 번 겪은 자리다. */
 .button-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: var(--button-h);
   padding: 0 var(--s-24);
   font: inherit;
   font-size: 15px;
   font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
   border-radius: var(--radius);
   cursor: pointer;
 }

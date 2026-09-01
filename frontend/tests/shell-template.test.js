@@ -107,7 +107,11 @@ test("**상단바 탭이 가운데다** — 양옆이 같은 폭을 가져야 �
 test("접힌 레일이 48px 다 — 와이어프레임 S1-7 이 그린 폭", () => {
   const css = read("css/shell.css");
   const folded = rule(css, ".list--folded");
-  assert.match(folded, /flex-basis:\s*48px/, "접힌 폭이 48px 가 아니다");
+  /* **축약으로 적는다.** `.list` 가 `flex: 0 0 320px` 라는 축약으로 폭을
+     정하는데 여기서 `flex-basis` 하나만 되돌리면 축약이 남아 안 접힌다 —
+     세 화면에서 실제로 그랬다. */
+  assert.match(folded, /flex:\s*0\s+0\s+48px/, "접힌 폭이 48px 가 아니다");
+  assert.match(folded, /min-width:\s*0/, "flex 항목의 기본 min-width 가 48px 를 막는다");
 });
 
 test("접히면 목록·검색·안내가 숨는다 — 폭이 없으면 글자가 깨진다", () => {
@@ -816,7 +820,7 @@ test("**접으면 머리 단추 하나만 남는다** — 빠뜨린 것은 48px 
   const css = read("css/shell.css");
 
   /* 레일 폭을 먼저 확인한다 — 넓으면 이 검사가 헛돈다 */
-  assert.match(rule(css, ".list--folded"), /flex-basis:\s*48px/, "접힌 폭이 48px 이 아니다");
+  assert.match(rule(css, ".list--folded"), /flex:\s*0\s+0\s+48px/, "접힌 폭이 48px 이 아니다");
 
   /* 접었을 때 감추는 목록에 **목록 머리의 모든 칸**이 들어야 한다.
      하나라도 빠지면 그것만 남아 세로로 쪼개진다 — 「+ 환자 등록」이 그랬다. */

@@ -1230,6 +1230,10 @@
     }
   });
 
+  /* 좌측 접기는 다른 의료진 화면과 같은 것을 쓴다 (js/list-fold.js) —
+     화면은 파일을 싣고 있었는데 손을 안 붙여서 아이콘이 안 눌렸다. */
+  wireFold(false);
+
   requireSession().then(function (me) {
     who = me;
     el("who-name").textContent = me.name;

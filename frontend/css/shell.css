@@ -251,8 +251,16 @@ body.shell {
   background: #eaecee;
 }
 
+/* **축약을 축약으로 이긴다.** `.list` 가 `flex: 0 0 320px` 라는 축약으로
+   폭을 정하는데, 여기서 `flex-basis` 하나만 되돌리면 브라우저에 따라 축약이
+   그대로 남아 접혀도 320px 로 서 있었다 — 환자 · 판독 · 설정 세 화면에서 다
+   안 접혔다.
+   `min-width` 를 함께 0 으로 둔다: flex 항목의 기본 `min-width: auto` 가
+   안에 든 것의 최소 폭만큼 버텨, 48px 로 줄어들 자리를 막는다. */
 .list--folded {
-  flex-basis: 48px;
+  flex: 0 0 48px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* 접히면 머리의 접기 버튼만 남는다. 나머지는 폭이 없어 글자가 깨진다.

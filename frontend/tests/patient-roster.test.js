@@ -198,11 +198,14 @@ test("목업이 서버와 같은 규칙으로 거른다", async () => {
   const attention = await api.patientsApi.roster("", "NEEDS_ATTENTION", null, 50);
 
   /* **수를 못 박는다.** 「거른 것과 센 것이 같다」로만 재면 둘을 함께 틀리게
-     고쳐도 통과한다 — 실제로 그렇게 두었더니 돌연변이가 안 물었다. */
-  assert.strictEqual(all.counts.ALL, 10);
-  assert.strictEqual(all.counts.IN_TREATMENT, 6, "완료가 넷이라 진행 중은 여섯이다");
-  assert.strictEqual(all.counts.NEEDS_ATTENTION, 5, "보완 둘 + 이탈 배지 셋");
-  assert.strictEqual(attention.items.length, 5);
+     고쳐도 통과한다 — 실제로 그렇게 두었더니 돌연변이가 안 물었다.
+
+     아홉인 까닭: 현황 목록의 다섯 줄이 차트번호로 넷으로 접히고(김서연이 두
+     번 뜬다), 오늘이 아닌 다섯 중 넷이 더해진다. */
+  assert.strictEqual(all.counts.ALL, 9);
+  assert.strictEqual(all.counts.IN_TREATMENT, 4, "완료가 다섯이라 진행 중은 넷이다");
+  assert.strictEqual(all.counts.NEEDS_ATTENTION, 4, "보완 하나 + 이탈 배지 셋");
+  assert.strictEqual(attention.items.length, 4);
 
   const finished = attention.items.filter((row) => row.work_category === "COMPLETED");
   assert.strictEqual(
@@ -213,7 +216,7 @@ test("목업이 서버와 같은 규칙으로 거른다", async () => {
   assert.ok(finished.every((row) => row.flags.length > 0));
 
   const treating = await api.patientsApi.roster("", "IN_TREATMENT", null, 50);
-  assert.strictEqual(treating.items.length, 6);
+  assert.strictEqual(treating.items.length, 4);
   assert.ok(
     treating.items.every((row) => row.work_category !== "COMPLETED"),
     "끝난 진료는 진행 중이 아니다",
@@ -226,7 +229,7 @@ test("셈은 거른 뒤에도 의원 전체를 말한다", async () => {
 
   const attention = await api.patientsApi.roster("", "NEEDS_ATTENTION", null, 50);
 
-  assert.strictEqual(attention.counts.ALL, 10, "보이는 쪽만 세면 스탭이 일이 없다고 믿는다");
+  assert.strictEqual(attention.counts.ALL, 9, "보이는 쪽만 세면 스탭이 일이 없다고 믿는다");
 });
 
 test("검색은 이름 · 차트번호 · 휴대폰 셋을 다 본다", async () => {
@@ -293,4 +296,52 @@ test("고른 칩이 지역 변수에 갇히지 않는다", () => {
     handlers.indexOf("var chosen") === -1,
     "기간 핸들러 안에서 `var chosen` 을 다시 선언하면 고른 칩이 그 안에 갇힌다 — `picked` 로 한 번 겪었다",
   );
+});
+
+/* **현황과 관리가 같은 사람을 보인다** (팀장 지적 2026-09-01).
+ *
+ * 관리 표를 손으로 따로 적어 두었더니 두 화면에 다른 사람들이 떴다 — 같은
+ * 의원인데 현황에는 김서연이, 관리에는 유지수가 있었다. 누가 있는지는 한
+ * 곳(`MOCK_TODAY`)에서만 정하고 관리 표는 거기서 만든다.
+ */
+test("현황에 있는 환자는 관리에도 있다", async () => {
+  const api = rules();
+  api.MOCK = true;
+
+  const roster = await api.patientsApi.roster("", "ALL", null, 50);
+  const charts = roster.items.map((row) => row.hospital_patient_no);
+
+  for (const visit of api.MOCK_TODAY) {
+    assert.ok(
+      charts.indexOf(visit.hospital_patient_no) !== -1,
+      `현황의 ${visit.name}(${visit.hospital_patient_no}) 이 관리에 없다`,
+    );
+  }
+});
+
+test("같은 환자가 두 줄로 뜨지 않는다", async () => {
+  const api = rules();
+  api.MOCK = true;
+
+  const charts = (await api.patientsApi.roster("", "ALL", null, 50)).items.map(
+    (row) => row.hospital_patient_no,
+  );
+
+  assert.strictEqual(
+    charts.length,
+    new Set(charts).size,
+    "현황은 진료 한 줄이고 관리는 환자 한 줄이다 — 김서연이 두 번 진료했다",
+  );
+});
+
+test("오늘이 아닌 환자도 관리에는 있다", async () => {
+  const api = rules();
+  api.MOCK = true;
+
+  const roster = await api.patientsApi.roster("", "ALL", null, 50);
+  const today = api.MOCK_TODAY.map((visit) => visit.hospital_patient_no);
+  const past = roster.items.filter((row) => today.indexOf(row.hospital_patient_no) === -1);
+
+  assert.ok(past.length >= 3, "원문 캡션: 「오늘이 아닌 환자도 여기서 찾는다」");
+  assert.ok(past.some((row) => row.flags.length), "이탈 배지가 붙는 줄이 바로 이들이다");
 });

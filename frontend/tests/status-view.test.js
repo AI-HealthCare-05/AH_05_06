@@ -201,7 +201,7 @@ test("**못 나간 것과 예정을 또렷이 가른다** — 못 나간 것은 
 
   const html = sendRowsHtml([{ kind: "CHECK_D7", status: "FAILED", at: "2026-08-20T10:00:00+09:00" }]);
   assert.ok(html.includes("is-bad"), "못 나간 줄이 예정과 같아 보인다");
-  assert.ok(html.includes("못 나감"), "무슨 일인지 안 말한다");
+  assert.ok(html.includes("발송 실패"), "무슨 일인지 안 말한다");
 
   const css = codeOnly(read("css/blocks.css"));
   assert.ok(rule(css, ".sd__row.is-bad"), "못 나간 줄의 모양이 없다");

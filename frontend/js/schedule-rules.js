@@ -51,11 +51,16 @@ function scheduleOrder(rows) {
 }
 
 /* 화면 위의 칩. **셈은 서버 것을 그대로 쓴다** — 화면이 따로 세면 창 밖의
-   것을 못 세어 「전체」가 「보이는 것」이 된다. */
-function scheduleChips(counts, days) {
+   것을 못 세어 「전체」가 「보이는 것」이 된다.
+
+   **누르면 걸러진다.** 원문이 「전체 42」를 고른 상태(검정 채움)로 그리는데,
+   고른 상태가 있다는 것은 다른 것도 고를 수 있다는 뜻이다 — 환자 관리 칩과
+   같은 자리다. */
+function scheduleChips(counts, days, chosen) {
   if (!counts) return [];
+  var picked = chosen || "total";
   return [
-    { key: "total", say: "전체 " + (counts.total || 0), strong: true },
+    { key: "total", say: "전체 " + (counts.total || 0) + "건" },
     {
       key: "failed",
       say: "⚠ 실패 " + (counts.failed || 0),
@@ -64,7 +69,52 @@ function scheduleChips(counts, days) {
     { key: "held", say: "⏸ 보류 " + (counts.held || 0), bad: counts.held > 0 },
     { key: "today", say: "오늘 " + (counts.today || 0) },
     { key: "window", say: windowSaying(days) + " " + (counts.window || 0) },
-  ];
+  ].map(function (chip) {
+    return {
+      key: chip.key,
+      say: chip.say,
+      bad: !!chip.bad,
+      on: chip.key === picked,
+    };
+  });
+}
+
+/* 고른 칩으로 줄을 거른다. **서버가 준 것 안에서만 좁힌다** — 「오늘」을
+   누른다고 창 밖을 다시 물으러 가지 않는다: 창은 기간 칸이 정하고 칩은
+   그 안을 나눈다. */
+function filterScheduled(rows, chosen, today) {
+  var given = rows || [];
+  var when = today || new Date();
+  if (!chosen || chosen === "total") return given;
+  if (chosen === "failed")
+    return given.filter(function (row) {
+      return row.status === "FAILED";
+    });
+  if (chosen === "held")
+    return given.filter(function (row) {
+      return row.status === "HELD";
+    });
+  if (chosen === "today") {
+    return given.filter(function (row) {
+      return row.status === "SCHEDULED" && sameDay(row.scheduled_at, when);
+    });
+  }
+  if (chosen === "window") {
+    return given.filter(function (row) {
+      return row.status === "SCHEDULED";
+    });
+  }
+  return given;
+}
+
+function sameDay(iso, day) {
+  var at = new Date(iso);
+  if (isNaN(at.getTime())) return false;
+  return (
+    at.getFullYear() === day.getFullYear() &&
+    at.getMonth() === day.getMonth() &&
+    at.getDate() === day.getDate()
+  );
 }
 
 /* 아래 요약 줄 — 원문 「안 나간 것 3건 (실패 1 · 보류 2) · 앞으로 7일 예정

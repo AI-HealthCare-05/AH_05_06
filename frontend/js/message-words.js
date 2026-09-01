@@ -51,7 +51,7 @@ var HOLD_SAYING = {
 var MESSAGE_STATE = {
   SCHEDULED: { say: "예정", mark: "○", done: false, bad: false },
   SENT: { say: "발송 완료", mark: "●", done: true, bad: false },
-  FAILED: { say: "못 나감", mark: "⚠", done: false, bad: true },
+  FAILED: { say: "발송 실패", mark: "⚠", done: false, bad: true },
   HELD: { say: "보류", mark: "⏸", done: false, bad: true },
   CANCELED: { say: "꺼짐", mark: "○", done: false, bad: false },
 };
@@ -67,16 +67,19 @@ function messageState(status) {
   );
 }
 
-/** 그 줄에 적을 한 마디 — 「못 나감 · 잘못된 번호」 · 「보류 · 문자 잔량」.
-    모르는 코드는 **적지 않는다** — 코드를 그대로 보이면 사람 말이 아니다. */
+/** 그 줄에 적을 한 마디 — 「발송 실패」 · 「보류 · 문자 잔량」.
+ *
+ * **실패에는 까닭을 붙이지 않는다.** 나간 것이 안 됐다는 것만 우리가 아는
+ * 사실이고, 「잘못된 번호」는 그 번호가 정말 틀렸다는 뜻으로 읽힌다 — 확인할
+ * 방법이 없다. 코드(`failure_code`)는 계속 담아 두되 화면이 단정하지 않는다.
+ *
+ * 보류는 다르다. **우리가 붙들기로 정한 것**이라 그 까닭을 우리가 안다.
+ *
+ * 모르는 코드는 **적지 않는다** — 코드를 그대로 보이면 사람 말이 아니다.
+ */
 function messageSaying(row) {
   var state = messageState(row && row.status);
-  var why =
-    row && row.status === "HELD"
-      ? HOLD_SAYING[row.hold_reason]
-      : row && row.status === "FAILED"
-        ? FAILURE_SAYING[row.failure_code]
-        : null;
+  var why = row && row.status === "HELD" ? HOLD_SAYING[row.hold_reason] : null;
   return why ? state.say + " · " + why : state.say;
 }
 

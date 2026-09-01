@@ -25,6 +25,9 @@
      `var chosen` 을 다시 선언했더니 고른 칩이 그 안에 갇혔다 — 이 저장소에서
      `picked` 로 한 번 겪은 함정이다. */
   var chosen = "ALL";
+  /* 갈래마다 고른 칩이 다르다 — 발송 예정에서 「실패」를 보다 이력으로
+     넘어갔을 때 거기서도 「실패」가 골라져 있으면 놀란다. */
+  var chip = { schedule: "total", history: "total" };
   var keyword = "";
   var opened = null; // 펼친 줄의 환자 번호
 
@@ -43,40 +46,29 @@
 
   /* ── 위쪽 줄 ──────────────────────────────────────── */
 
+  /* **세 갈래가 같은 칩을 쓴다.** 셋 다 누르면 걸러지는 거르개다 — 원문이
+     「전체 42」를 고른 상태로 그리고, 고른 상태가 있다는 것은 다른 것도 고를
+     수 있다는 뜻이다. 그리는 자리를 하나로 두어 모양이 갈리지 않게 한다. */
   function chipsHtml() {
-    /* **환자 관리의 칩만 누르는 것이다.** 나머지 둘은 셈을 보이는 자리라
-       손 모양을 주지 않는다 — 눌러 봐야 아는 일이 없어야 한다. */
-    if (view === "roster") {
-      return rosterChips(page && page.counts, chosen)
-        .map(function (chip) {
-          var mark = chip.on ? " chip--on" : chip.bad ? " chip--bad" : "";
-          return (
-            '<button class="chip' +
-            mark +
-            '" type="button" data-chip="' +
-            esc(chip.key) +
-            '" aria-pressed="' +
-            (chip.on ? "true" : "false") +
-            '">' +
-            esc(chip.say) +
-            "</button>"
-          );
-        })
-        .join("");
-    }
     var chips =
-      view === "schedule"
-        ? scheduleChips(page && page.counts, days)
-        : historyChips(page && page.counts);
+      view === "roster"
+        ? rosterChips(page && page.counts, chosen)
+        : view === "schedule"
+          ? scheduleChips(page && page.counts, days, chip.schedule)
+          : historyChips(page && page.counts, chip.history);
     return chips
-      .map(function (chip) {
-        var mark = chip.strong ? " chip--all" : chip.bad ? " chip--bad" : "";
+      .map(function (one) {
+        var mark = one.on ? " chip--on" : one.bad ? " chip--bad" : "";
         return (
-          '<span class="chip chip--count' +
+          '<button class="chip' +
           mark +
+          '" type="button" data-chip="' +
+          esc(one.key) +
+          '" aria-pressed="' +
+          (one.on ? "true" : "false") +
           '">' +
-          esc(chip.say) +
-          "</span>"
+          esc(one.say) +
+          "</button>"
         );
       })
       .join("");
@@ -322,8 +314,8 @@
       view === "roster"
         ? given
         : view === "schedule"
-          ? scheduleOrder(given)
-          : historyOrder(given);
+          ? scheduleOrder(filterScheduled(given, chip.schedule))
+          : historyOrder(filterHistory(given, chip.history));
     if (!rows.length) {
       var blank =
         BLANK[view] || rangeSaying(range()) + " 발송된 문자가 없습니다";
@@ -355,8 +347,10 @@
     el("days").innerHTML = spanHtml();
     el("table").innerHTML = tableHtml();
 
+    /* 갈래마다 그 줄의 도구가 다르다 — 환자 관리는 검색과 등록, 나머지 둘은
+       기간. 한 자리에서 갈아 끼우면 줄이 흔들리지 않는다. */
     el("roster-top").hidden = view !== "roster";
-    el("days").hidden = view === "roster";
+    el("period-top").hidden = view === "roster";
 
     var period = el("period");
     period.textContent = view === "history" ? rangeSaying(range()) : "";
@@ -516,13 +510,21 @@
 
   /* 칩을 누르면 그 분류만 본다 — 원문에서 상단 칩이 곧 거르개다. */
   el("chips").addEventListener("click", function (event) {
-    var chip = event.target.closest("[data-chip]");
-    if (!chip) return;
-    var key = chip.getAttribute("data-chip");
-    if (key === chosen) return;
-    chosen = key;
-    opened = null;
-    load();
+    var pressed = event.target.closest("[data-chip]");
+    if (!pressed) return;
+    var key = pressed.getAttribute("data-chip");
+
+    /* **환자 관리만 서버에 다시 묻는다.** 저쪽은 의원 전체에서 골라 오는
+       일이라 쪽이 달라지고, 나머지 둘은 이미 받은 창 안을 나누는 일이다. */
+    if (view === "roster") {
+      if (key === chosen) return;
+      chosen = key;
+      opened = null;
+      return load();
+    }
+    if (chip[view] === key) return;
+    chip[view] = key;
+    render();
   });
 
   /* 줄을 누르면 아래에 그 환자가 선다. 다시 누르면 접힌다. */
