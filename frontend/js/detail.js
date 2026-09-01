@@ -534,4 +534,13 @@ function timeLabel(isoDatetime) {
     load(event.detail);
     showTab(event.detail.open_tab || "basic");
   });
+
+  /* **같은 사람인데 줄 값만 새로 왔다** — 상태 탭을 켜고 끄거나, 승인 뒤에
+     목록을 다시 읽었을 때다. 머리의 상태 배지만 고친다.
+     `load()` 를 부르면 열어 둔 칸이 기본정보로 되감기고 받아 둔 것이 날아간다. */
+  document.addEventListener("visit:refreshed", function (event) {
+    if (!row || !event.detail || row.visit_id !== event.detail.visit_id) return;
+    row = event.detail;
+    renderHead();
+  });
 })();

@@ -559,4 +559,12 @@ function patientLinkSaying(error) {
   document.addEventListener("visit:selected", function (event) {
     load(event.detail);
   });
+
+  /* 같은 사람인데 줄 값만 새로 왔다 — 머리만 고친다. `load()` 는 받아 둔
+     안내문을 버리고 치던 문자 문구를 지운다(`smsForget`). */
+  document.addEventListener("visit:refreshed", function (event) {
+    if (!visit || !event.detail || visit.visit_id !== event.detail.visit_id) return;
+    visit = event.detail;
+    renderHead();
+  });
 })();

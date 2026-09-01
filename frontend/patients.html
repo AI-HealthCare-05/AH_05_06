@@ -432,6 +432,10 @@
     <script src="/js/patients.js"></script>
     <script src="/js/detail.js"></script>
     <script src="/js/upload-core.js"></script>
+    <!-- `upload.js` 가 「판독 결과 확인」으로 돌아가는 길을 낼 때 `ocrApi` 를 쓴다.
+         이걸 안 실어서 환자를 고를 때마다 `ocrApi is not defined` 로 조용히
+         죽어 있었다 — 버튼은 그려지는데 상태 줄이 안 붙었다. -->
+    <script src="/js/ocr-api.js"></script>
     <script src="/js/upload.js"></script>
     <script src="/js/frames.js"></script>
     <script src="/js/visit-guide.js"></script>

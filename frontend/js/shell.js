@@ -178,6 +178,11 @@ function blankHtml() {
 }
 
 function renderRows(keepVisitId) {
+  if (keepVisitId) {
+    var asked = rowByVisit(rows, keepVisitId);
+    if (asked) picked = asked;
+  }
+
   var shown = visibleRows();
   var box = document.getElementById("rows");
 
@@ -186,24 +191,15 @@ function renderRows(keepVisitId) {
     return;
   }
 
-  var chosen = selectedVisit();
-  var current = keepVisitId || (chosen ? chosen.visit_id : null);
-
-  if (
-    !shown.some(function (r) {
-      return r.visit_id === current;
-    })
-  ) {
-    /* 고른 줄이 지금 필터에 안 걸린다.
-       아직 아무도 안 골랐을 때만 맨 위를 고르고, 이미 고른 것이 있으면 놓지 않는다 —
-       검색어를 한 글자 칠 때마다 오른쪽이 다른 환자로 넘어가면, 누르지도 않은
-       환자에게 진료기록이 붙는다. 안 보이는 것과 안 고른 것은 다르다. */
-    current = chosen ? null : shown[0].visit_id;
-  }
+  /* 아직 아무도 안 골랐을 때만 맨 위를 고른다. **이미 고른 것이 있으면 지금
+     필터에 안 걸려도 놓지 않는다** — 검색어를 한 글자 칠 때마다, 또 상태 탭을
+     켜고 끌 때마다 오른쪽이 다른 환자로 넘어가면, 누르지도 않은 환자에게
+     진료기록이 붙는다. 줄에 표시(`aria-current`)가 안 될 뿐 고른 것은 그대로다. */
+  picked = nextPicked(picked, shown);
 
   box.innerHTML = shown
     .map(function (r) {
-      return rowHtml(r, r.visit_id === current);
+      return rowHtml(r, r.visit_id === picked.visit_id);
     })
     .join("");
 }
@@ -267,10 +263,26 @@ function syncPane(force) {
   /* 등록 화면은 스스로 닫을 때(force)만 밀어낸다. 탭을 켜고 끄거나 목록을
      다시 그릴 때 빼앗으면 쓰던 것이 날아간다. */
   if (!force && !document.getElementById("view-register").hidden) return;
-  if (!visibleRows().length) return showView("view-none");
-  showView("view-card");
+
+  /* **하루가 빈 것**과 **필터가 가린 것**은 다르다. 예전에는 보이는 줄이 없으면
+     오른쪽을 「할 일 없음」으로 밀었는데, 그래서 상태 탭 하나를 끄는 것만으로
+     보던 환자를 빼앗겼다. 그 날 아무도 없을 때만 민다. */
   var visit = selectedVisit();
-  if (visit) document.dispatchEvent(new CustomEvent("visit:selected", { detail: visit }));
+  var move = paneMove(visit ? visit.visit_id : null, toldId);
+
+  showView(move.view);
+  if (!move.tell) {
+    toldId = null;
+    return;
+  }
+
+  /* 줄 값만 새로 왔다고 알린다 — 승인 뒤에 상태 배지가 「승인 요청」에
+     머무르지 않게 하려면 머리는 다시 그려야 하기 때문이다. */
+  if (move.tell === "refresh") {
+    document.dispatchEvent(new CustomEvent("visit:refreshed", { detail: visit }));
+    return;
+  }
+  tellPane(visit);
 }
 
 function loadDay() {
@@ -278,6 +290,10 @@ function loadDay() {
     .onDay(toIsoDate(listDay))
     .then(function (page) {
       rows = page.items;
+      /* **날짜를 옮겨도 고른 것을 놓지 않는다.** 어제 목록을 보러 갔다고 보던
+         환자를 빼앗으면, 돌아왔을 때 다시 찾아 눌러야 한다. 날짜는 목록의
+         보기이지 무엇을 열어 뒀는지가 아니다 — 상태 탭과 같은 규칙이다.
+         (그 진료의 날짜는 상세 머리에 「8월 31일 진료」로 적혀 있다.) */
       renderChipCounts();
       renderRows();
       syncPane();
@@ -360,9 +376,70 @@ function readRow(row) {
   return found ? Object.assign({}, found) : null;
 }
 
+/* **고른 진료는 DOM 밖에 둔다.**
+ *
+ * 예전에는 고른 사실이 줄의 `aria-current` 한 곳에만 있었다. 그래서 상태 탭
+ * (작성 중 · 보완 · 승인 요청 · 발송 대기 · 완료)을 끄면 그 줄이 목록에서
+ * 빠지면서 **고른 사실까지 함께 사라졌다** — 오른쪽 상세가 통째로 리셋되고,
+ * 탭을 다시 켜도 돌아오지 않았다.
+ *
+ * 목록에 **안 보이는 것**과 **안 고른 것**은 다르다. 상태 탭도 날짜도 목록의
+ * **보기**일 뿐, 무엇을 열어 뒀는지가 아니다. 오른쪽은 **누른 것만** 바꾼다.
+ *
+ * 그래서 `visit_id` 가 아니라 **줄 자체**를 들고 있는다. 다른 날짜를 보는 동안
+ * 그 줄은 오늘 목록(`rows`)에 없기 때문이다 — 아이디만 들고 있으면 날짜를
+ * 옮기는 순간 오른쪽이 빈다.
+ */
+var picked = null;
+
+/* 상세에 「이 사람이다」라고 마지막으로 알린 진료. `visit:selected` 는 상세를
+   처음부터 그리게 하므로, 같은 사람에게 두 번 쏘면 열어 둔 칸이 기본정보로
+   되감기고 치던 문자 문구가 날아간다. */
+var toldId = null;
+
+/* 「지금 고른 것은 무엇인가」 — **화면 밖의 규칙**이라 검사가 부를 수 있다.
+ *
+ * 아직 아무도 안 골랐을 때만 맨 위를 고른다. 이미 고른 것이 있으면 지금 목록에
+ * 안 보여도 놓지 않는다 — 상태 탭을 끄거나 검색어를 한 글자 치는 것으로 고른
+ * 사실이 사라지면, 오른쪽이 누르지도 않은 환자로 넘어간다.
+ */
+function nextPicked(current, shown) {
+  if (current) return current;
+  return shown.length ? shown[0] : null;
+}
+
+/* 「오른쪽 판을 어떻게 할 것인가」 — 이것도 화면 밖의 규칙이다.
+ *
+ *   pickedId  고른 진료. 아무도 안 골랐으면 `null`
+ *   told      상세에 마지막으로 「이 사람이다」라고 알린 진료
+ *
+ * **고른 것이 있으면 무조건 연다.** 그 진료가 지금 목록에 보이는지, 오늘 날짜인지
+ * 는 묻지 않는다 — 날짜를 옮기거나 상태 탭을 끄는 것으로 보던 환자를 빼앗기지
+ * 않아야 한다.
+ *
+ * 같은 사람이면 `refresh` 다. `select` 는 상세를 처음부터 그리게 해서 열어 둔
+ * 칸이 기본정보로 되감기고, 치던 문자 문구가 날아가고, 열어 둔 창이 닫힌다.
+ */
+function paneMove(pickedId, told) {
+  if (pickedId === null) return { view: "view-none", tell: null };
+  return { view: "view-card", tell: pickedId === told ? "refresh" : "select" };
+}
+
 function selectedVisit() {
-  var row = document.querySelector(".row[aria-current='true']");
-  return row ? readRow(row) : null;
+  if (!picked) return null;
+  /* 지금 목록에 그 줄이 있으면 **새로 받은 값**을 준다 — 승인 뒤에 상태 배지가
+     「승인 요청」에 머무르지 않게. 없으면(다른 날을 보는 중) 들고 있던 것을 준다.
+
+     사본을 준다 — `readRow` 와 같은 이유다. 받는 쪽이 고쳐도 목록은
+     `renderRows` 로만 바뀐다. */
+  return Object.assign({}, rowByVisit(rows, picked.visit_id) || picked);
+}
+
+/* 상세에 사람이 바뀌었다고 알린다. 여기 한 곳에서만 `toldId` 를 적어,
+   「알렸는가」와 「알린 것이 누구인가」가 갈리지 않게 한다. */
+function tellPane(visit) {
+  toldId = visit.visit_id;
+  document.dispatchEvent(new CustomEvent("visit:selected", { detail: visit }));
 }
 
 /* 방금 만든 진료 건을 목록에 세우고 고른다. 등록이 끝났다는 것을 목록이 보여 준다. */
@@ -412,7 +489,7 @@ function addVisit(visit) {
     var picked = selectedVisit();
     if (!picked) return; // 그래도 못 고르면 빈 것을 실어 보내지 않는다
     picked.open_tab = "record";
-    document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
+    tellPane(picked);
   });
 }
 
@@ -486,19 +563,23 @@ function bindShell() {
 
     /* 목록에 없는 줄은 누른 것으로 치지 않는다. 목록과 DOM 이 어긋난 상태인데,
        반쪽짜리 값으로 상세를 열면 다른 환자의 화면처럼 보인다. */
-    var picked = readRow(row);
-    if (!picked) return;
+    /* 이름을 `picked` 로 두면 **고른 진료를 담아 두는 전역**을 가린다 —
+       여기서 정한 것이 밖으로 안 나가 오른쪽이 앞사람에 머문다. */
+    var hit = readRow(row);
+    if (!hit) return;
 
     /* 등록 도중에 목록을 눌러도 잃는 것이 없어야 한다.
        막을 수 있는 쪽(등록 화면)이 스스로 되묻고 preventDefault 로 세운다. */
-    var asking = new CustomEvent("visit:selecting", { cancelable: true, detail: picked });
+    var asking = new CustomEvent("visit:selecting", { cancelable: true, detail: hit });
     if (!document.dispatchEvent(asking)) return;
 
+    /* **여기가 오른쪽을 바꾸는 유일한 자리다.** 날짜도 상태 탭도 목록의 보기일 뿐이다. */
+    picked = hit;
     this.querySelectorAll("[data-visit-id]").forEach(function (r) {
       r.setAttribute("aria-current", String(r === row));
     });
     showView("view-card");
-    document.dispatchEvent(new CustomEvent("visit:selected", { detail: picked }));
+    tellPane(hit);
   });
 
   /* 판독 화면은 원문을 넓게 봐야 해서 목록이 저절로 접힌다 (와이어프레임 `S1-7`
@@ -546,7 +627,7 @@ function bindShell() {
         if (asked.tab) row.open_tab = asked.tab;
         showView("view-card");
         renderRows(asked.visitId);
-        document.dispatchEvent(new CustomEvent("visit:selected", { detail: row }));
+        tellPane(row);
       }
       history.replaceState(null, "", location.pathname);
     })
