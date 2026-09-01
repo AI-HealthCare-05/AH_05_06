@@ -3,12 +3,13 @@
 import hashlib
 import secrets
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from tortoise.exceptions import IntegrityError
 from tortoise.timezone import now
 
 from app.core.auth_errors import AuthError as ApiError
+from app.core.time import as_utc
 from app.core.masking import mask_phone
 from app.models.staffs import Hospital
 from app.models.visits import GuideDocument, GuideStatus, PatientGuideLink
@@ -73,7 +74,7 @@ class PatientLinkService:
             raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
 
         timestamp = now()
-        if link.expires_at.replace(tzinfo=UTC) <= timestamp.replace(tzinfo=UTC):
+        if as_utc(link.expires_at) <= as_utc(timestamp):
             raise ApiError("LINK_EXPIRED", 410, "환자 링크가 만료되었습니다.")
 
         guide = link.guide_document
@@ -88,7 +89,7 @@ class PatientLinkService:
             hospital_name=hospital.name if hospital else "",
             masked_phone=mask_phone(patient.phone),
             visited_at=visit.visited_at.date(),
-            expires_at=link.expires_at.replace(tzinfo=UTC),
+            expires_at=as_utc(link.expires_at),
         )
 
     async def re_issue(self, raw_link_token: str) -> None:
@@ -99,7 +100,7 @@ class PatientLinkService:
 
         timestamp = now()
         guide = await GuideDocument.filter(guide_document_id=link.guide_document_id).first()
-        is_expired = link.expires_at.replace(tzinfo=UTC) <= timestamp.replace(tzinfo=UTC)
+        is_expired = as_utc(link.expires_at) <= as_utc(timestamp)
         is_revoked = guide is None or guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None
 
         if not is_expired and not is_revoked:
@@ -118,7 +119,7 @@ class PatientLinkService:
         )
         if link is None:
             raise _link_not_found()
-        if link.expires_at.replace(tzinfo=UTC) <= now().replace(tzinfo=UTC):
+        if as_utc(link.expires_at) <= as_utc(now()):
             raise ApiError("LINK_EXPIRED", 410, "환자 링크가 만료되었습니다.")
 
         guide = link.guide_document
