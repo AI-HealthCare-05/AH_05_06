@@ -7,21 +7,45 @@
 
 /* ── 왼쪽 레일 ────────────────────────────────────────────────────── */
 
-.rail__head {
+/* **큰 갈래 셋** — 안내문 · 처방 · 기타.
+ *
+ * 갈래가 셋뿐이라 눈이 먼저 여기 걸려야 「무엇을 고르는 화면인지」가 보인다.
+ * 그래서 줄 이름보다 크게 하지 않고 **다른 종류로** 만든다 — 진한 바탕 · 작은
+ * 대문자 느낌의 자간 · 위아래 여백. 크기로만 가르면 긴 처방 이름과 섞여
+ * 어느 것이 갈래인지 다시 세어 봐야 한다.
+ */
+.rail__section {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 12px 16px 6px;
-  font-size: 12px;
+  margin-top: var(--s-12);
+  padding: 8px 16px;
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.06em;
   color: var(--ink-2);
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
-/* 「그 밖에」는 처방 목록과 사이를 벌린다 — 붙여 두면 처방의 일부로 읽힌다 */
-.rail__head--rest {
-  margin-top: 10px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
+.rail__section:first-child {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.rail__section-name {
+  flex: 1;
+}
+
+/* 갈래 안의 묶음 — 질환 이름. 갈래보다 한 칸 약하다. */
+.rail__disease {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 16px 4px;
+  font-size: 12px;
+  color: var(--ink-3);
 }
 
 .rail__group {
@@ -168,4 +192,37 @@
 .drug__drop:disabled {
   color: var(--ink-3);
   cursor: default;
+}
+
+/* ── 문자 문구 (D2-5) ─────────────────────────────────── */
+
+.sms__body {
+  width: 100%;
+  min-height: 56px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* 막는 까닭. 저장을 눌러야 아는 것보다 치는 동안 아는 편이 낫다. */
+.sms__problem {
+  margin: var(--s-8) 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* 고칠 수 없는 문자 — 읽는 자리라 입력칸처럼 보이면 안 된다. */
+.sms__fixed {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+/* 90바이트를 넘은 문구 — 단가가 달라진다. */
+.box__note--warn {
+  color: var(--warn);
+  font-weight: 600;
 }

@@ -42,7 +42,7 @@ var FRAMES = [
   {"id": "D2-2", "area": "medic", "name": "안내문 고치기 — 원본 ↔ 원장님 문구", "level": 3, "target": 3, "blocker": "안내문 설정 모델 · API 없음", "role": "원본과 원장님 문구를 비교해 고친다"},
   {"id": "D2-3", "area": "medic", "name": "처방", "level": 2, "target": 1, "url": "/settings.html", "blocker": "안내문 미리보기는 D2-1·D2-2 몫이라 아직 없다"},
   {"id": "D2-4", "area": "medic", "name": "검사 기준선", "level": 3, "target": 3, "blocker": "검사 기준선 모델 · API 없음", "role": "검사 항목의 정상 범위를 설정한다"},
-  {"id": "D2-5", "area": "medic", "name": "문자 문구", "level": 3, "target": 3, "blocker": "문자 템플릿 모델 · API 없음", "role": "문자 기본 문구를 관리한다"},
+  {"id": "D2-5", "area": "medic", "name": "문자 문구", "level": 2, "target": 1, "url": "/settings.html", "blocker": "정한 문구로 실제 발송하는 발송기가 없다 · {예약링크}는 의원 정보(A1-4)가 있어야 채워진다"},
   {"id": "P1-1", "area": "patient", "name": "링크로 들어옴 — 인증번호 보내기", "level": 3, "target": 1, "blocker": "B3 OTP 발송 구현체가 없어 항상 503. 진입 화면도 없음", "role": "안내문 링크로 들어와 인증번호를 받는다"},
   {"id": "P1-2", "area": "patient", "name": "인증번호 입력", "level": 2, "target": 1, "url": "/checkin.html", "blocker": "B3 인증번호를 받을 수 없음"},
   {"id": "P1-3", "area": "patient", "name": "폴백 (링크 만료 · 폐기)", "level": 3, "target": 3, "blocker": "생년월일 재확인 · 링크 재발송 폼 없음", "role": "만료·폐기된 링크에서 본인 확인 후 다시 받는다"},

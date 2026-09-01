@@ -20,14 +20,18 @@
          모르고, 채워 두면 되는 것처럼 보인다. -->
 
     <header class="topbar">
-      <span class="topbar__brand">케어온 <span class="topbar__clinic">도로시여성의원</span></span>
+      <span class="topbar__brand"
+        >케어온 <span class="topbar__clinic">도로시여성의원</span></span
+      >
       <nav class="topbar__nav">
         <!-- **관리는 S2, 설정은 D2 다.** 관리가 지금 담은 것은 발송
              예정(S2-3) 하나이고, 환자 관리 · 발송 이력은 그 화면 안에서
              자리만 세워 두었다. -->
         <a class="topbar__tab" href="/patients.html">현황</a>
         <a class="topbar__tab" href="/manage.html">관리</a>
-        <button class="topbar__tab" type="button" aria-current="page">설정</button>
+        <button class="topbar__tab" type="button" aria-current="page">
+          설정
+        </button>
       </nav>
       <div class="topbar__right">
         <span class="who">
@@ -35,9 +39,56 @@
           <span class="who__roles" id="who-roles"></span>
         </span>
         <button class="icon-button" type="button" aria-label="알림">
-          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <svg
+            class="icon"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M8 15a2 2 0 0 0 4 0"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </svg>
         </button>
-        <button class="icon-button" type="button" id="logout" aria-label="로그아웃"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button
+          class="icon-button"
+          type="button"
+          id="logout"
+          aria-label="로그아웃"
+        >
+          <svg
+            class="icon"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M10 3v6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -46,18 +97,17 @@
         <div class="list__head">
           <div class="list__title">
             <span class="list__label">설정</span>
-            <button class="list__fold" type="button" aria-expanded="true" title="목록 접기">◀</button>
+            <button
+              class="list__fold"
+              type="button"
+              aria-expanded="true"
+              title="목록 접기"
+            >
+              ◀
+            </button>
           </div>
-          <input
-            class="list__search"
-            type="search"
-            id="set-search"
-            placeholder="처방 검색"
-            aria-label="처방 검색"
-          />
         </div>
         <div class="list__rows" id="rail"></div>
-        <p class="list__note">처방을 선택하면 상세 설정이 표시됩니다</p>
       </aside>
 
       <main class="pane" id="pane">
@@ -70,6 +120,8 @@
     <script src="/js/field-labels.js"></script>
     <script src="/js/list-fold.js"></script>
     <script src="/js/catalog-api.js"></script>
+    <script src="/js/message-words.js"></script>
+    <script src="/js/sms-template-rules.js"></script>
     <script src="/js/settings-rail.js"></script>
     <script src="/js/settings.js"></script>
   </body>

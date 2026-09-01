@@ -52,19 +52,15 @@ test("**모르는 질환도 버리지 않는다** — 사라진 것과 없는 �
   assert.deepEqual(rest.sets.map((s) => s.name), ["새 병"]);
 });
 
-test("검색은 **이름만** 본다 — 질환까지 훑으면 「자궁」에 전부가 걸린다", () => {
-  const { filterSets } = box();
-  assert.deepEqual(filterSets(SETS, "야즈"), []);
-  /* 질환까지 훑으면 「자궁내막증」이 이름에 없는 PCOS 줄까지 걸린다 —
-     실제로 `JSON.stringify(row)` 로 훑던 실수를 이 줄이 잡는다. */
-  assert.deepEqual(
-    filterSets([{ name: "PCOS · 초진", disease: "ENDOMETRIOSIS" }], "ENDOMETRIOSIS"),
-    [],
-    "이름 밖의 값까지 훑는다",
-  );
-  assert.deepEqual(filterSets(SETS, "비잔").map((s) => s.prescription_set_id), [1, 2]);
-  assert.equal(filterSets(SETS, "").length, 3, "빈 검색어가 거른다");
-  assert.equal(filterSets(SETS, "  ").length, 3, "공백이 거른다");
+/* 처방 검색은 **없앴다.** 처방이 아홉이라 한 화면에 다 서고, 검색칸이 있으면
+   「검색해야 보이나」로 읽힌다 — 환자 목록과는 다른 자리다. 규칙(`filterSets`)
+   도 함께 지웠다: 안 쓰는 코드를 남겨 두면 다음 사람이 살아 있는 줄 안다. */
+test("설정 레일에 검색칸이 없다", () => {
+  const markup = markupOnly(read("settings.html"));
+  const code = codeOnly(read("js/settings.js")) + codeOnly(read("js/settings-rail.js"));
+
+  assert.ok(markup.indexOf("set-search") === -1);
+  assert.ok(code.indexOf("filterSets") === -1, "쓰지 않는 규칙이 남아 있다");
 });
 
 /* ── 처방일수 셈 ────────────────────────────────────────────────────── */
@@ -165,8 +161,9 @@ test("아직 없는 묶음은 **없다고 적는다** — 빈 자리는 무엇�
 test("설정 화면이 골격을 그대로 쓴다 — 옮길 때 눈이 자리를 새로 찾지 않는다", () => {
   const html = markupOnly(read("settings.html"));
 
-  /* 왼쪽 레일은 다른 화면의 환자 목록 자리다 */
-  for (const part of ['class="list"', 'class="list__head"', 'class="list__search"', 'class="pane"']) {
+  /* 왼쪽 레일은 다른 화면의 환자 목록 자리다. **검색칸은 뺐다** — 처방이
+     아홉이라 한 화면에 다 서고, 검색칸이 있으면 「검색해야 보이나」로 읽힌다. */
+  for (const part of ['class="list"', 'class="list__head"', 'class="pane"']) {
     assert.ok(html.includes(part), `골격이 다르다: ${part}`);
   }
 

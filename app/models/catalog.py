@@ -253,3 +253,53 @@ class DrugCautionContent(models.Model):
     class Meta:
         table = "drug_caution_content"
         indexes = (("prescription_set", "section_key", "approval_status"),)
+
+
+class MessageTemplateKind(StrEnum):
+    """의원이 고칠 수 있는 문자 — 와이어프레임 D2-5.
+
+    **인증번호는 여기 없다.** 원문이 「수정 불가 · 시스템」으로 못박는다 —
+    문구를 잘못 고치면 환자가 인증을 못 하고, 그건 의원이 감당할 일이 아니다.
+    고칠 수 없는 것에 칸을 만들지 않는다.
+
+    `REVISIT` 은 `GuideMessageKind` 에 없다. 저쪽은 **승인이 세워 두는 회차**
+    이고, 재진 안내는 스탭이 그때그때 보내는 것이다(S1-14) — 예약 줄이 생기지
+    않으므로 회차가 아니다.
+    """
+
+    GUIDE = "GUIDE"
+    CHECK_D7 = "CHECK_D7"
+    CHECK_D15 = "CHECK_D15"
+    CHECK_D30 = "CHECK_D30"
+    RUN_OUT = "RUN_OUT"
+    REVISIT = "REVISIT"
+
+
+class MessageTemplate(models.Model):
+    """의원이 고친 문자 본문 — 와이어프레임 D2-5.
+
+    **줄이 없으면 기본 문구다.** 한 번도 안 고친 의원까지 여섯 줄을 미리 깔지
+    않는다 — 안 고쳤다는 것과 기본값으로 정했다는 것이 여기서는 같은 뜻이라,
+    굳이 갈라 적을 이유가 없다 (`GuideMessageSetting` 과 같은 판단이다).
+
+    그래서 「원본으로 되돌리기」가 **줄을 지우는 일**이 된다. 기본 문구를 다시
+    베껴 넣지 않는 이유는, 그러면 나중에 기본 문구를 고쳐도 되돌린 의원은 옛
+    글을 계속 쓰게 되기 때문이다.
+
+    **안내문과 층이 다르다.** 환자 카드의 안내문 탭은 링크로 열리는 안내문
+    (콘텐츠)을 다루고, 이 표는 그 링크를 실어 나르는 **문자 본문**을 다룬다.
+    """
+
+    message_template_id = fields.BigIntField(primary_key=True)
+    hospital_id = fields.BigIntField()
+    kind = fields.CharEnumField(enum_type=MessageTemplateKind)
+    body = fields.TextField()
+    #: 누가 고쳤나. 원문 「바뀐 문구는 다음 발송부터 적용되고 로그에 남는다」.
+    updated_by = fields.BigIntField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "message_template"
+        #: 한 의원에 같은 회차가 둘이면 어느 것으로 보낼지 알 수 없다.
+        unique_together = (("hospital_id", "kind"),)

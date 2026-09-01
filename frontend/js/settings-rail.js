@@ -14,7 +14,11 @@
 /* 질환 코드 → 사람 말. 서버는 코드로 주고 화면이 옮긴다 — 판독 항목 이름표와
    같은 규칙이다(`js/field-labels.js`). */
 var DISEASE_LABELS = { ENDOMETRIOSIS: "자궁내막증", PCOS: "다낭성난소증후군" };
-var PHASE_LABELS = { FIRST: "초회 처방", CONTINUE: "계속 복용", REST: "휴약기" };
+var PHASE_LABELS = {
+  FIRST: "초회 처방",
+  CONTINUE: "계속 복용",
+  REST: "휴약기",
+};
 var DAYS_MODE_LABELS = { PACK: "통 · 상자 수", DAYS: "일수 직접 입력" };
 
 /* 질환 차례. 이름순으로 세우면 「다낭성」이 「자궁내막증」 앞에 와서, 원문의
@@ -40,7 +44,8 @@ function setsByDisease(sets) {
     var mine = all.filter(function (row) {
       return row.disease === code;
     });
-    if (mine.length) out.push({ key: code, title: diseaseLabel(code), sets: mine });
+    if (mine.length)
+      out.push({ key: code, title: diseaseLabel(code), sets: mine });
   }
 
   /* 모르는 질환도 버리지 않는다 — 서버가 값을 늘렸는데 화면이 모르면
@@ -52,49 +57,66 @@ function setsByDisease(sets) {
   var rest = all.filter(function (row) {
     return !known[row.disease];
   });
-  if (rest.length) out.push({ key: "other", title: "그 밖의 질환", sets: rest });
+  if (rest.length)
+    out.push({ key: "other", title: "그 밖의 질환", sets: rest });
 
   return out;
 }
 
-/** 검색어로 거른다. **이름만 본다** — 질환·시점까지 훑으면 「자궁」을 쳤을 때
-    자궁내막증 전부가 걸려 거른 뜻이 없다. */
-function filterSets(sets, keyword) {
-  var want = String(keyword || "").trim();
-  if (!want) return sets || [];
-  return (sets || []).filter(function (row) {
-    return String(row.name || "").indexOf(want) !== -1;
-  });
-}
+/* **왼쪽은 큰 갈래 셋이다** — 안내문 · 처방 · 기타. 원문 D2-1~D2-5 의 레일이
+   그 차례로 서 있다.
+ *
+ * 안내문을 「기타」에 섞어 두었었는데, 그것은 처방과 나란한 큰 갈래다 —
+ * 약마다 한 장씩 확인하는 자리라 「2/5」 같은 진도가 붙는다. 섞어 두면 무엇이
+ * 큰 일이고 무엇이 곁다리인지 화면이 말해 주지 않는다.
+ *
+ * 「그 밖에」를 「기타」로 부른다.
+ */
+var RAIL_SECTIONS = [
+  { key: "guide", title: "안내문" },
+  { key: "sets", title: "처방" },
+  { key: "rest", title: "기타" },
+];
 
-/* 처방 말고 다른 묶음들. **아직 없는 것은 없다고 적는다** — 자리만 비워 두면
-   다음 사람이 무엇을 만들어야 하는지 모르고, 채워 두면 되는 것처럼 보인다. */
+/* 갈래 안의 줄들. **아직 없는 것은 없다고 적는다** — 자리만 비워 두면 다음
+   사람이 무엇을 만들어야 하는지 모르고, 채워 두면 되는 것처럼 보인다. */
 var RAIL_GROUPS = [
   {
     key: "guide",
-    title: "안내문",
+    section: "guide",
+    title: "약별 안내문",
     note: "D2-1 · D2-2",
     saying: "약별 기본 안내문을 관리합니다 · 준비 중",
   },
   {
     key: "baseline",
+    section: "rest",
     title: "검사 기준선",
     note: "D2-4",
     saying: "검사 항목의 기준선을 설정합니다 · 준비 중",
   },
   {
     key: "sms",
+    section: "rest",
     title: "문자 문구",
     note: "D2-5",
-    saying: "의원 공통 문자 문구를 관리합니다 · 준비 중",
+    saying: "의원 공통 문자 문구를 관리합니다",
   },
   {
     key: "clinic",
+    section: "rest",
     title: "의원 정보",
     note: "→ 어드민 A1-4",
     saying: "의원 정보는 어드민 화면에서 관리합니다",
   },
 ];
+
+/** 한 갈래에 드는 줄들. */
+function groupsIn(section) {
+  return RAIL_GROUPS.filter(function (row) {
+    return row.section === section;
+  });
+}
 
 /** 처방일수를 실제 일수로 — **소진 예정일이 이 셈으로 정해진다.**
  *
@@ -113,3 +135,7 @@ function courseDaysOf(setting, written) {
   if (isNaN(per) || per <= 0) return null;
   return n * per;
 }
+
+/* **어느 묶음이 실제로 열리는가.** 자리만 세운 것과 만든 것을 여기서 가른다 —
+   화면 여러 곳이 이 사실을 물으므로 한 곳에 둔다. */
+var RAIL_GROUP_READY = { sms: true };
