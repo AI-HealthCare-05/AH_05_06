@@ -174,7 +174,7 @@ function adminMenuCovers(frames) {
     var name = document.getElementById("who-name");
     var roles = document.getElementById("who-roles");
     if (name) name.textContent = me.name || "—";
-    if (roles) roles.textContent = (me.roles || []).join(" · ");
+    if (roles) roles.textContent = roleLabel(me.roles);
 
     /* **갈 곳 없는 탭은 죽은 채로 두지 않는다.** 제자리로 도로 오는 링크와
        403 을 받는 링크가 가장 나쁘다 — 눌러 보고서야 아는 꼴이다. */
