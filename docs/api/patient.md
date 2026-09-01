@@ -31,12 +31,18 @@
 > 2026-08-24 · 8/27 Walking Skeleton 한정. 응답의 `demo_only: true`는
 > 합성데이터 시연용이며 운영 발송 계약이 아님을 뜻한다.
 
+> ⚠️ 2026-09-01 · 아래 `GET /api/v1/guides/{token}` 예시는 와이어프레임
+> `wireframe-patient-3.0.0.html` 기준 **목표 계약이며 아직 미구현**이다.
+> 현재 실제 응답은 `PatientGuideResponse`(`app/dtos/patient_links.py`) 그대로
+> `version`/`approved_at`/`expires_at`/`sections: [{key, body}]`/`demo_only`
+> 뿐이다. `sections` 기반 계약은 2.4·2.5절에도 그대로 쓰인다.
+
 ```text
 POST /api/v1/visits/{visit_id}/guide/link   직원 인증 필요
 201 { "path": "/api/v1/guides/{token}",
       "expires_at": "…", "demo_only": true }
 
-GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증명
+GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증명 (목표 계약 — 미구현)
 200 {
       "version": 1, "approved_at": "…", "expires_at": "…", "demo_only": true,
       "visit": "2026.08.13",
