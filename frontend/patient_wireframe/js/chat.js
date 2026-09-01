@@ -74,7 +74,7 @@
   /* ── 안내 초기 화면 ─────────────────────── */
   function renderIntro() {
     var g = guide || {};
-    var drugName = g.drugs && g.drugs[0] ? g.drugs[0].name : '처방 약';
+    var drugName = g.drug && g.drug.n ? g.drug.n : '처방 약';
 
     var intro = document.createElement('div');
     intro.className = 'chat-intro';
