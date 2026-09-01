@@ -97,7 +97,7 @@ test("**고치는 것은 의사만** — 스탭은 볼 수만 있다", () => {
 
   /* 선언(`var canEdit = false`)이 아니라 **정하는 자리**를 본다 — 선언만 찾으면
      역할을 안 봐도 통과한다. */
-  assert.match(code, /canEdit = \(who\.roles \|\| \[\]\)\.indexOf\("doctor"\)/, "역할을 안 본다");
+  assert.match(code, /canEdit = \(me\.roles \|\| \[\]\)\.indexOf\("doctor"\)/, "역할을 안 본다");
 
   /* 잠긴 화면이면 저장 단추도 잠긴다 */
   const save = code.indexOf('id="set-save"');

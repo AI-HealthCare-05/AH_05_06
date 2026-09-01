@@ -305,3 +305,67 @@
   padding: 5px 8px;
   font-size: 12px;
 }
+
+/* ── 안내문 문구 (D2-1 · D2-2) ────────────────────────── */
+
+.cp {
+  padding: var(--s-12) 0;
+  border-top: 1px solid var(--line);
+}
+
+.cp__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  margin-bottom: var(--s-8);
+}
+
+.cp__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.cp__label {
+  margin: var(--s-8) 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+/* 원본 — **읽는 자리다.** 입력칸처럼 보이면 고쳐도 되는 줄 안다. */
+.cp__origin {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+.cp__body {
+  width: 100%;
+  min-height: 72px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.cp__acts {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s-8);
+}
+
+/* 한 장의 확인 표시 — 원문 레일의 「✓ 비잔」·「야즈 확인 전」 */
+.cp__mark {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.cp__mark--done {
+  color: var(--done);
+  font-weight: 700;
+}

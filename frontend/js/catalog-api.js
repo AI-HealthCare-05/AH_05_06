@@ -119,6 +119,50 @@ var catalogApi = {
     );
   },
 
+  /* 안내문 문구(D2-1 · D2-2). **원본은 손대지 않는다** — 이 API 가 다루는
+     것은 그 위에 덧씌우는 표현뿐이다. */
+  guideCopy: function (doctorId) {
+    if (MOCK) return mockGuideCopy();
+    return request(
+      "/guide-copy" +
+        (doctorId ? "?doctor_id=" + encodeURIComponent(doctorId) : ""),
+    );
+  },
+
+  saveCopy: function (setId, section, body) {
+    if (MOCK) return mockSaveCopy(setId, section, body);
+    return request(
+      "/guide-copy/" +
+        encodeURIComponent(setId) +
+        "/" +
+        encodeURIComponent(section),
+      {
+        method: "PUT",
+        body: { body: body },
+      },
+    );
+  },
+
+  revertCopy: function (setId, section) {
+    if (MOCK) return mockSaveCopy(setId, section, null);
+    return request(
+      "/guide-copy/" +
+        encodeURIComponent(setId) +
+        "/" +
+        encodeURIComponent(section),
+      {
+        method: "DELETE",
+      },
+    );
+  },
+
+  reviewCopy: function (setId) {
+    if (MOCK) return mockReviewCopy(setId);
+    return request("/guide-copy/" + encodeURIComponent(setId) + "/review", {
+      method: "POST",
+    });
+  },
+
   saveSet: function (id, plan) {
     if (MOCK) return mockSaveSet(id, plan);
     return request("/prescription-sets/" + encodeURIComponent(id), {
@@ -480,4 +524,65 @@ function mockSaveBaselines(doctorId, items) {
     },
   );
   return mockBaselines(doctorId);
+}
+
+/* ── 안내문 문구 목업 (D2-1 · D2-2) ────────────────────────────────────
+ *
+ * 원본은 **씨앗의 합성 문구**를 옮긴다 — `[합성]` 이 붙은 그대로다. 지어낸
+ * 의학 문장을 목업에 넣으면 그것이 진짜처럼 읽힌다.
+ */
+var MOCK_COPY_ORIGIN = {
+  caution:
+    "[합성] 복용 초기에 두통, 구역, 유방압통, 불규칙한 질출혈이 나타날 수 있으며 대개 2~3개월 내 호전됩니다.",
+  emergency:
+    "[합성] 한쪽 다리에 심한 통증·부기·발적이 생기거나, 갑작스러운 흉통·호흡 곤란·시야 이상이 나타나면 즉시 복용을 중단하고 응급실을 방문하세요.",
+};
+
+var mockCopyEdits = null;
+var mockCopyReviews = null;
+
+function mockCopyPage() {
+  if (!mockCopyEdits) mockCopyEdits = {};
+  if (!mockCopyReviews) mockCopyReviews = {};
+  return Promise.resolve({
+    doctor_id: 1,
+    items: MOCK_PRESCRIPTION_SETS.map(function (row) {
+      return {
+        prescription_set_id: row.prescription_set_id,
+        name: row.name,
+        disease: row.name.indexOf("PCOS") === 0 ? "PCOS" : "ENDOMETRIOSIS",
+        reviewed: !!mockCopyReviews[row.prescription_set_id],
+        sections: ["caution", "emergency"].map(function (key) {
+          return {
+            section_key: key,
+            origin: MOCK_COPY_ORIGIN[key],
+            body: (mockCopyEdits[row.prescription_set_id] || {})[key] || null,
+            /* 🚨 는 열리지 않는다 — 원문이 못박는다 */
+            editable: key === "caution",
+          };
+        }),
+      };
+    }),
+  });
+}
+
+function mockGuideCopy() {
+  return mockCopyPage();
+}
+
+function mockSaveCopy(setId, section, body) {
+  if (!mockCopyEdits) mockCopyEdits = {};
+  if (!mockCopyReviews) mockCopyReviews = {};
+  if (!mockCopyEdits[setId]) mockCopyEdits[setId] = {};
+  if (body == null) delete mockCopyEdits[setId][section];
+  else mockCopyEdits[setId][section] = body;
+  /* **고치면 확인이 풀린다** — 서버와 같은 규칙이다. */
+  delete mockCopyReviews[setId];
+  return mockCopyPage();
+}
+
+function mockReviewCopy(setId) {
+  if (!mockCopyReviews) mockCopyReviews = {};
+  mockCopyReviews[setId] = true;
+  return mockCopyPage();
 }

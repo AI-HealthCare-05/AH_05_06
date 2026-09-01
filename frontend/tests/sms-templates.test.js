@@ -201,7 +201,7 @@ test("만든 묶음만 눌린다", () => {
   const rail = load("api", "settings-rail");
 
   assert.strictEqual(rail.RAIL_GROUP_READY.sms, true);
-  assert.ok(!rail.RAIL_GROUP_READY.guide, "안내문(D2-1·D2-2)은 아직 없다");
+  assert.strictEqual(rail.RAIL_GROUP_READY.guide, true, "안내문(D2-1·D2-2)도 열린다");
   assert.strictEqual(rail.RAIL_GROUP_READY.baseline, true, "검사 기준선(D2-4)도 열린다");
 });
 

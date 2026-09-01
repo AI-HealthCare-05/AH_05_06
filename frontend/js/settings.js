@@ -43,6 +43,9 @@
   var group = null; // null 이면 처방을 보고 있다
   var templates = null; // 문자 문구 판
   var baselines = null; // 검사 기준선 판
+  var copy = null; // 안내문 문구 판
+  var openSet = null; // 펼친 한 장
+  var who = null; // 로그인한 사람 — 문구가 누구 이름으로 나가는지 적는다
   var whose = null; // 누구 기준 — 비면 의원 공통
   var drafts = {}; // 아직 저장 안 한 문구 — 다시 그려도 친 값이 남아야 한다
 
@@ -433,7 +436,126 @@
     );
   }
 
+  /* 한 구역 — 원문 D2-2 의 「원본 / 박연 원장님 문구」 두 층. */
+  function copySectionHtml(row, section) {
+    var mine = copyIsMine(section);
+    return (
+      '<div class="cp"><div class="cp__head"><h3 class="cp__title">' +
+      esc(copySectionSaying(section.section_key)) +
+      '</h3><span class="grow"></span>' +
+      (section.editable
+        ? mine
+          ? '<button class="button-ghost button-ghost--sm" type="button" data-revert-copy="' +
+            esc(row.prescription_set_id) +
+            "|" +
+            esc(section.section_key) +
+            '">원본으로 되돌리기</button>'
+          : ""
+        : '<span class="box__note">수정 불가</span>') +
+      "</div>" +
+      /* **원본이 위에 있다** — 원문 「무엇이 사실이고 무엇이 표현인지 보이게
+         한다」. 고친 뒤에도 지워지지 않으므로 언제든 되돌아간다. */
+      '<p class="cp__label">원본</p><p class="cp__origin">' +
+      esc(section.origin || "승인된 원본 문구가 아직 없습니다") +
+      "</p>" +
+      (section.editable
+        ? '<p class="cp__label">' +
+          esc(whoseName()) +
+          " 문구</p>" +
+          '<textarea class="modal__input cp__body" rows="3" data-copy="' +
+          esc(row.prescription_set_id) +
+          "|" +
+          esc(section.section_key) +
+          '"' +
+          (canEdit ? "" : " disabled") +
+          ">" +
+          esc(mine ? section.body : "") +
+          "</textarea>" +
+          (canEdit
+            ? '<div class="cp__acts"><button class="button-primary button-primary--sm" type="button" data-save-copy="' +
+              esc(row.prescription_set_id) +
+              "|" +
+              esc(section.section_key) +
+              '">저장</button></div>'
+            : "") +
+          '<p class="note">ⓘ 표현만 수정해 주세요 — 새로운 의학 정보를 추가할 수 없습니다</p>' +
+          '<p class="note">ⓘ 이 문구는 ' +
+          esc(whoseName()) +
+          " 담당 환자에게만 발송됩니다</p>"
+        : '<p class="note">ⓘ 안전을 위해 모든 안내문에 포함됩니다</p>') +
+      "</div>"
+    );
+  }
+
+  function whoseName() {
+    return who && who.name ? who.name + " 원장님" : "원장님";
+  }
+
+  function copySetHtml(row) {
+    var open = openSet === row.prescription_set_id;
+    return (
+      '<section class="box"><div class="box__head"><h2 class="box__title">' +
+      esc(row.name) +
+      '</h2><span class="cp__mark' +
+      (row.reviewed ? " cp__mark--done" : "") +
+      '">' +
+      esc(copyMark(row)) +
+      '</span><span class="grow"></span>' +
+      '<button class="button-ghost button-ghost--sm" type="button" data-open-copy="' +
+      esc(row.prescription_set_id) +
+      '">' +
+      (open ? "접기" : "열기") +
+      "</button>" +
+      (open && canEdit
+        ? '<button class="button-primary button-primary--sm" type="button" data-review-copy="' +
+          esc(row.prescription_set_id) +
+          '"' +
+          (row.reviewed ? " disabled" : "") +
+          ">확인 완료</button>"
+        : "") +
+      "</div>" +
+      (open
+        ? row.sections
+            .map(function (part) {
+              return copySectionHtml(row, part);
+            })
+            .join("")
+        : "") +
+      "</section>"
+    );
+  }
+
+  function copyHtml() {
+    if (!copy) return '<p class="note">불러오는 중…</p>';
+    var progress = copyProgress(copy.items);
+    return (
+      '<div class="patient-head"><span class="patient-head__name">안내문</span>' +
+      '<span class="box__note">확인 ' +
+      esc(progress.say) +
+      "</span>" +
+      '<span class="grow"></span>' +
+      (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
+      (canEdit
+        ? ""
+        : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
+      "</div>" +
+      '<p class="note">ⓘ 원본은 지워지지 않습니다 — 언제든 되돌아갈 수 있습니다</p>' +
+      copyByDisease(copy.items)
+        .map(function (block) {
+          return (
+            '<div class="rail__disease"><span class="rail__name">' +
+            esc(block.title) +
+            "</span></div>" +
+            block.rows.map(copySetHtml).join("")
+          );
+        })
+        .join("") +
+      '<p class="note">ⓘ 「이 약을 왜 드시나요」와 「먹는 방법」은 환자마다 판독값으로 만들어집니다 — 여기서 고칠 문구가 없습니다</p>'
+    );
+  }
+
   function detailHtml() {
+    if (group === "guide") return copyHtml();
     if (group === "baseline") return baselinesHtml();
     if (group === "sms") return templatesHtml();
     if (!picked) {
@@ -855,6 +977,103 @@
       });
   }
 
+  /* ── 안내문 문구 (D2-1 · D2-2) ─────────────────────────────────── */
+
+  function openCopy() {
+    group = "guide";
+    pickedId = null;
+    picked = null;
+    templates = null;
+    baselines = null;
+    saying = "";
+    render();
+    return loadCopy();
+  }
+
+  function loadCopy() {
+    return catalogApi
+      .guideCopy()
+      .then(function (data) {
+        if (group !== "guide") return; // 그 사이 다른 데로 갔으면 붙이지 않는다
+        copy = data;
+        render();
+      })
+      .catch(function () {
+        if (group !== "guide") return;
+        el("detail").innerHTML =
+          '<p class="note">안내문 문구를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>';
+      });
+  }
+
+  function sectionOf(setId, sectionKey) {
+    var row = ((copy && copy.items) || []).filter(function (item) {
+      return String(item.prescription_set_id) === String(setId);
+    })[0];
+    if (!row) return null;
+    return row.sections.filter(function (part) {
+      return part.section_key === sectionKey;
+    })[0];
+  }
+
+  function saveCopy(key) {
+    var parts = key.split("|");
+    var box = document.querySelector('[data-copy="' + key + '"]');
+    var problem = copyProblem(
+      sectionOf(parts[0], parts[1]),
+      box ? box.value : "",
+    );
+    if (problem) {
+      saying = problem;
+      return render();
+    }
+    saying = "저장하는 중…";
+    catalogApi
+      .saveCopy(parts[0], parts[1], box.value.trim())
+      .then(function (data) {
+        /* **서버가 돌려준 것을 화면으로 삼는다** — 고치면 확인이 풀리는데,
+           그것이 화면에 안 보이면 안 된다. */
+        copy = data;
+        saying = "저장되었습니다";
+        render();
+      })
+      .catch(function (err) {
+        saying =
+          err && err.status === 403
+            ? "의사 계정만 수정할 수 있습니다"
+            : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요";
+        render();
+      });
+  }
+
+  function revertCopy(key) {
+    var parts = key.split("|");
+    saying = "";
+    catalogApi
+      .revertCopy(parts[0], parts[1])
+      .then(function (data) {
+        copy = data;
+        render();
+      })
+      .catch(function () {
+        saying = "되돌리지 못했습니다. 잠시 후 다시 시도해 주세요";
+        render();
+      });
+  }
+
+  function reviewCopy(setId) {
+    saying = "";
+    catalogApi
+      .reviewCopy(setId)
+      .then(function (data) {
+        copy = data;
+        render();
+      })
+      .catch(function () {
+        saying = "확인을 남기지 못했습니다. 잠시 후 다시 시도해 주세요";
+        render();
+      });
+  }
+
   /* ── 손짓 ──────────────────────────────────────────────────────── */
 
   document.addEventListener("click", function (event) {
@@ -866,6 +1085,7 @@
       group = null;
       templates = null;
       baselines = null;
+      copy = null;
       return loadSet(Number(row.getAttribute("data-set")));
     }
 
@@ -874,6 +1094,27 @@
       return openTemplates();
     if (chosenGroup && chosenGroup.getAttribute("data-group") === "baseline")
       return openBaselines();
+    if (chosenGroup && chosenGroup.getAttribute("data-group") === "guide")
+      return openCopy();
+
+    var openCopySet = target.closest("[data-open-copy]");
+    if (openCopySet) {
+      var asked = Number(openCopySet.getAttribute("data-open-copy"));
+      openSet = openSet === asked ? null : asked;
+      saying = "";
+      return render();
+    }
+
+    var saveCopyAt = target.closest("[data-save-copy]");
+    if (saveCopyAt) return saveCopy(saveCopyAt.getAttribute("data-save-copy"));
+
+    var revertCopyAt = target.closest("[data-revert-copy]");
+    if (revertCopyAt)
+      return revertCopy(revertCopyAt.getAttribute("data-revert-copy"));
+
+    var reviewAt = target.closest("[data-review-copy]");
+    if (reviewAt)
+      return reviewCopy(Number(reviewAt.getAttribute("data-review-copy")));
 
     if (target.closest("#bl-save")) return saveBaselines();
 
@@ -989,10 +1230,11 @@
     }
   });
 
-  requireSession().then(function (who) {
-    el("who-name").textContent = who.name;
-    el("who-roles").textContent = roleLabel(who.roles);
-    canEdit = (who.roles || []).indexOf("doctor") !== -1;
+  requireSession().then(function (me) {
+    who = me;
+    el("who-name").textContent = me.name;
+    el("who-roles").textContent = roleLabel(me.roles);
+    canEdit = (me.roles || []).indexOf("doctor") !== -1;
     return loadSets();
   });
 })();

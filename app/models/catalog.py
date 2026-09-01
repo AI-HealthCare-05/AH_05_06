@@ -368,3 +368,74 @@ class LabBaseline(models.Model):
         table = "lab_baseline"
         #: 같은 항목이 둘이면 어느 기준으로 셈할지 알 수 없다.
         unique_together = (("hospital_id", "doctor_id", "disease", "name"),)
+
+
+class DoctorGuideCopy(models.Model):
+    """원장님 문구 — 와이어프레임 D2-2 「안내문 고치기 — 원본 ↔ 원장님 문구」.
+
+    원문 주석: 「의사마다 말하는 방식이 다르고 같은 의사도 일정하지 않다.
+    문구를 하나로 강제하면 원장님이 안 쓰신다. 대신 **원본을 위에 두어 무엇이
+    사실이고 무엇이 표현인지 보이게 한다.** 원본은 지워지지 않으므로 언제든
+    되돌아간다.」
+
+    **원본을 덮어쓰지 않는다.** `DrugCautionContent` 는 근거와 승인이 붙은
+    자료라 손대면 안 되고, 이 표는 그 위에 덧씌우는 표현일 뿐이다. 줄을 지우면
+    원본으로 돌아간다 — 되돌리기가 그것이다.
+
+    **의사마다 따로다.** 원문: 「이 문구는 박연 원장 담당 환자에게만
+    발송됩니다」. 그래서 `doctor_id` 가 비지 않는다.
+
+    **🚨 응급 문구는 여기 들어오지 않는다.** 원문: 「🚨 문구는 이 화면이 열리지
+    않는다」. 표현을 다듬는 자리이지 안전 문장을 고치는 자리가 아니다.
+    """
+
+    doctor_guide_copy_id = fields.BigIntField(primary_key=True)
+    hospital_id = fields.BigIntField()
+    #: 비지 않는다 — 의원 공통 문구라는 것은 곧 원본이다.
+    doctor_id = fields.BigIntField()
+    prescription_set_id: int
+    prescription_set: fields.ForeignKeyRelation[PrescriptionSet] = fields.ForeignKeyField(
+        "models.PrescriptionSet",
+        related_name="doctor_copies",
+        on_delete=OnDelete.CASCADE,
+        source_field="prescription_set_id",
+    )
+    section_key = fields.CharEnumField(enum_type=CautionSectionKey)
+    body = fields.TextField()
+
+    updated_by = fields.BigIntField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "doctor_guide_copy"
+        unique_together = (("hospital_id", "doctor_id", "prescription_set", "section_key"),)
+
+
+class DoctorGuideReview(models.Model):
+    """「확인 완료」 — 와이어프레임 D2-1 아래 단추.
+
+    원문 주석: 「조각을 하나씩 승인하게 하면 확인할 것이 54개가 되지만 **약
+    단위로 묶으면 5장이면 끝난다**」. 그래서 확인은 구역이 아니라 한 장 단위다
+    (우리 자료에서 그 한 장은 처방 세트다).
+
+    **줄이 있으면 확인했다는 뜻이다.** 확인 뒤에 문구를 고치면 그 줄을 지운다 —
+    고친 글은 다시 봐야 하고, 「확인 완료」가 붙은 채로 바뀐 글이 나가면 그
+    표시가 거짓말이 된다.
+    """
+
+    doctor_guide_review_id = fields.BigIntField(primary_key=True)
+    hospital_id = fields.BigIntField()
+    doctor_id = fields.BigIntField()
+    prescription_set_id: int
+    prescription_set: fields.ForeignKeyRelation[PrescriptionSet] = fields.ForeignKeyField(
+        "models.PrescriptionSet",
+        related_name="doctor_reviews",
+        on_delete=OnDelete.CASCADE,
+        source_field="prescription_set_id",
+    )
+    reviewed_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "doctor_guide_review"
+        unique_together = (("hospital_id", "doctor_id", "prescription_set"),)

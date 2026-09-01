@@ -84,9 +84,9 @@ var RAIL_GROUPS = [
   {
     key: "guide",
     section: "guide",
-    title: "약별 안내문",
+    title: "안내문 문구",
     note: "D2-1 · D2-2",
-    saying: "약별 기본 안내문을 관리합니다 · 준비 중",
+    saying: "처방별 안내문 문구를 관리합니다",
   },
   {
     key: "baseline",
@@ -138,4 +138,4 @@ function courseDaysOf(setting, written) {
 
 /* **어느 묶음이 실제로 열리는가.** 자리만 세운 것과 만든 것을 여기서 가른다 —
    화면 여러 곳이 이 사실을 물으므로 한 곳에 둔다. */
-var RAIL_GROUP_READY = { sms: true, baseline: true };
+var RAIL_GROUP_READY = { sms: true, baseline: true, guide: true };
