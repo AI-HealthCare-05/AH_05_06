@@ -12,6 +12,7 @@
 """
 
 from datetime import date, timedelta
+from typing import Any
 
 from tortoise.contrib.test import TestCase
 
@@ -35,8 +36,8 @@ from app.services.patient_flags import (
 TODAY = date(2026, 9, 1)
 
 
-def an_input(**over) -> FlagInput:
-    values = {"checks_sent": 0, "viewed": False, "runs_out_on": None}
+def an_input(**over: Any) -> FlagInput:
+    values: dict[str, Any] = {"checks_sent": 0, "viewed": False, "runs_out_on": None}
     values.update(over)
     return FlagInput(**values)
 

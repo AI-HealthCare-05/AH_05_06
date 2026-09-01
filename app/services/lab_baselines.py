@@ -19,7 +19,7 @@
 """
 
 # **`list` 를 메서드 이름으로 쓰면 클래스 본문 안에서 내장 `list` 가 가려진다.**
-# 그 뒤에 나오는 `list[Staff]` 같은 애너테이션이 그 메서드를 첨자로 읽어
+# 그 뒤에 나오는 `builtins.list[Staff]` 같은 애너테이션이 그 메서드를 첨자로 읽어
 # `TypeError: 'function' object is not subscriptable` 로 **import 가 터진다.**
 #
 # 호스트(3.14)는 애너테이션을 늦게 읽어 안 터지고 컨테이너(3.13)는 터졌다 —
@@ -27,6 +27,15 @@
 # 가리지 않고 애너테이션을 글자로 두어, 두 곳이 같게 돈다.
 from __future__ import annotations
 
+# **이 파일은 `list` 를 메서드 이름으로 쓴다.** 그래서 클래스 안에서는 내장
+# `list` 가 가려지고, `builtins.list[X]` 주석이 「메서드를 타입으로 쓴다」가 된다.
+# 파이썬 3.13 에서는 이것이 **띄우는 중에 터졌다**(`TypeError: 'function' object
+# is not subscriptable`) — 호스트가 3.14 라 PEP 649 지연 평가로 가려져 있었고,
+# 서버가 502 를 내는 동안 검사 1641 개가 전부 초록이었다.
+#
+# `from __future__ import annotations` 가 런타임은 막았지만 덫은 그대로다.
+# 여기서는 어느 `list` 인지 **적어서** 말한다.
+import builtins
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -130,7 +139,7 @@ class LabBaselineService:
         actor: ClinicalActor,
         *,
         doctor_id: int | None,
-    ) -> tuple[list[LabBaseline], list[Staff]]:
+    ) -> tuple[builtins.list[LabBaseline], builtins.list[Staff]]:
         hospital_id = hospital_id_of(actor)
         await self._ensure_seeded(hospital_id)
         # **차례는 `position` 만 본다.** 질환으로 먼저 정렬하면 알파벳순이 되어
@@ -149,7 +158,7 @@ class LabBaselineService:
         return list(rows), await self._doctors(hospital_id)
 
     @staticmethod
-    async def _doctors(hospital_id: int) -> list[Staff]:
+    async def _doctors(hospital_id: int) -> builtins.list[Staff]:
         """**역할은 JSON 칸이라 SQL 로 못 거른다.** 의원 직원이 수십이라
         읽어 와서 고르는 편이 낫고, 억지로 `roles__contains` 를 쓰면 Tortoise
         가 그 값을 JSON 으로 파싱하려다 터진다."""
@@ -161,7 +170,7 @@ class LabBaselineService:
         actor: ClinicalActor,
         *,
         doctor_id: int | None,
-        items: list[dict],
+        items: builtins.list[dict],
     ) -> None:
         """**한 판 통째로 저장한다.**
 

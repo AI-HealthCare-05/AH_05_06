@@ -110,18 +110,18 @@ class PrescriptionSet(models.Model):
     name = fields.CharField(max_length=100, unique=True)
 
     #: ── 설정 화면(D2-3)이 정하는 것들 ────────────────────────────────
-    disease = fields.CharEnumField(enum_type=SetDisease, default=SetDisease.ENDOMETRIOSIS)
+    disease: SetDisease = fields.CharEnumField(enum_type=SetDisease, default=SetDisease.ENDOMETRIOSIS)
     phase = fields.CharEnumField(enum_type=SetPhase, default=SetPhase.CONTINUE)
 
     #: EMR 「총투」 칸의 의미. **소진 예정일이 이 값으로 셈해진다.**
     days_mode = fields.CharEnumField(enum_type=SetDaysMode, default=SetDaysMode.DAYS)
     #: 한 통이 며칠치인가. `days_mode` 가 `PACK` 일 때만 쓴다.
-    days_per_pack = fields.SmallIntField(null=True)
+    days_per_pack: int | None = fields.SmallIntField(null=True)
 
     #: 이 코드가 적힌 진료를 안내 대상으로 본다. 의원이 쓰는 코드를 그대로 적는다.
-    emr_code = fields.CharField(max_length=100, null=True)
+    emr_code: str | None = fields.CharField(max_length=100, null=True)  # type: ignore[assignment]
     #: 「3개월 복용 후 내원」처럼 한 줄. 소견에 다른 조건이 있으면 그쪽이 이긴다.
-    revisit_note = fields.CharField(max_length=200, null=True)
+    revisit_note: str | None = fields.CharField(max_length=200, null=True)  # type: ignore[assignment]
 
     #: ── 자동 발송 기본값 ────────────────────────────────────────────
     #: 「필요하면 켜세요」로 두면 아무도 안 켠다(D2-3 주석). 처방마다 여기서 정해

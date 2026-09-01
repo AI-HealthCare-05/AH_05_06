@@ -1,5 +1,5 @@
 # **`list` 를 메서드 이름으로 쓰면 클래스 본문 안에서 내장 `list` 가 가려진다.**
-# 그 뒤에 나오는 `list[Staff]` 같은 애너테이션이 그 메서드를 첨자로 읽어
+# 그 뒤에 나오는 `builtins.list[Staff]` 같은 애너테이션이 그 메서드를 첨자로 읽어
 # `TypeError: 'function' object is not subscriptable` 로 **import 가 터진다.**
 #
 # 호스트(3.14)는 애너테이션을 늦게 읽어 안 터지고 컨테이너(3.13)는 터졌다 —
@@ -7,6 +7,15 @@
 # 가리지 않고 애너테이션을 글자로 두어, 두 곳이 같게 돈다.
 from __future__ import annotations
 
+# **이 파일은 `list` 를 메서드 이름으로 쓴다.** 그래서 클래스 안에서는 내장
+# `list` 가 가려지고, `builtins.list[X]` 주석이 「메서드를 타입으로 쓴다」가 된다.
+# 파이썬 3.13 에서는 이것이 **띄우는 중에 터졌다**(`TypeError: 'function' object
+# is not subscriptable`) — 호스트가 3.14 라 PEP 649 지연 평가로 가려져 있었고,
+# 서버가 502 를 내는 동안 검사 1641 개가 전부 초록이었다.
+#
+# `from __future__ import annotations` 가 런타임은 막았지만 덫은 그대로다.
+# 여기서는 어느 `list` 인지 **적어서** 말한다.
+import builtins
 import calendar
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -48,7 +57,7 @@ class PatientRow:
     doctor: Staff | None
     work_category: WorkCategory | None
     detail_status: DetailStatus | None
-    flags: list[str]
+    flags: builtins.list[str]
 
 
 class PatientService:
@@ -91,7 +100,7 @@ class PatientService:
         category: PatientCategory,
         cursor: str | None,
         limit: int,
-    ) -> tuple[list[PatientRow], dict[PatientCategory, int], str | None, bool]:
+    ) -> tuple[builtins.list[PatientRow], dict[PatientCategory, int], str | None, bool]:
         """환자 관리 표 — 와이어프레임 S2-1.
 
         **분류가 두 갈래다.**
@@ -151,14 +160,17 @@ class PatientService:
     async def _event_categories(
         self,
         hospital_id: int,
-        patient_ids: list[int],
+        patient_ids: builtins.list[int],
     ) -> dict[PatientCategory, set[int]]:
         """진행 중 · 챙겨주세요에 드는 환자 번호.
 
         **접수대 목록과 같은 규칙으로 낸다**(`work_category.derive`). 여기서
         따로 셈하면 같은 환자가 두 화면에서 다르게 뜬다.
         """
-        empty = {PatientCategory.IN_TREATMENT: set(), PatientCategory.NEEDS_ATTENTION: set()}
+        empty: dict[PatientCategory, set[int]] = {
+            PatientCategory.IN_TREATMENT: set(),
+            PatientCategory.NEEDS_ATTENTION: set(),
+        }
         if not patient_ids:
             return empty
 
@@ -191,7 +203,7 @@ class PatientService:
             PatientCategory.NEEDS_ATTENTION: attention,
         }
 
-    async def _rows(self, patients: list[Patient], hospital_id: int) -> list[PatientRow]:
+    async def _rows(self, patients: builtins.list[Patient], hospital_id: int) -> builtins.list[PatientRow]:
         if not patients:
             return []
         patient_ids = [patient.patient_id for patient in patients]
@@ -226,7 +238,7 @@ class PatientService:
         return found
 
     @staticmethod
-    async def _diagnoses(visit_ids: list[int], hospital_id: int) -> dict[int, str]:
+    async def _diagnoses(visit_ids: builtins.list[int], hospital_id: int) -> dict[int, str]:
         """확정된 진단만 온다 — `front_desk` 와 같은 규칙이다.
 
         판독 중인 값을 표에 올리면 의사가 아직 안 본 글자가 「이 환자의
@@ -301,9 +313,9 @@ class PatientService:
         self,
         actor: ClinicalActor,
         patient: Patient,
-        # `list[str]` 이 아니라 `Sequence[str]` 인 이유 — 이 클래스에 `list()`
+        # `builtins.list[str]` 이 아니라 `Sequence[str]` 인 이유 — 이 클래스에 `list()`
         # 메서드가 있어서, 그 뒤에 정의되는 메서드의 본문 주석에서 `list` 는
-        # 내장 타입이 아니라 **그 메서드**를 가리킨다. `list[str]` 은 그대로
+        # 내장 타입이 아니라 **그 메서드**를 가리킨다. `builtins.list[str]` 은 그대로
         # `TypeError: 'function' object is not subscriptable` 이 된다.
         fields: Sequence[str],
         correction: tuple[str, str],

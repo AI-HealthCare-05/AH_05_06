@@ -34,6 +34,7 @@ from app.models.catalog import (
     DoctorGuideReview,
     DrugCautionContent,
     PrescriptionSet,
+    SetDisease,
 )
 from app.services.patient_visit_scope import hospital_id_of
 
@@ -55,7 +56,9 @@ class CopySection:
 class CopySet:
     prescription_set_id: int
     name: str
-    disease: str
+    #: **코드가 아니라 뜻을 나른다.** DTO(`CopySetItem`)가 열거형을 요구하고,
+    #: 화면은 이 값으로 묶음을 나눈다 — 문자열로 흘리면 오타가 조용히 지난다.
+    disease: SetDisease
     sections: list[CopySection]
     reviewed: bool
 
@@ -74,7 +77,7 @@ class GuideCopyService:
                 CopySet(
                     prescription_set_id=row.prescription_set_id,
                     name=row.name,
-                    disease=str(row.disease),
+                    disease=row.disease,
                     sections=[
                         CopySection(
                             section_key=key,
@@ -199,8 +202,8 @@ class GuideCopyService:
 
     @staticmethod
     async def _reviewed(hospital_id: int, doctor_id: int) -> set[int]:
-        return set(
-            await DoctorGuideReview.filter(hospital_id=hospital_id, doctor_id=doctor_id).values_list(
-                "prescription_set_id", flat=True
-            )
-        )
+        # `flat=True` 면 값이 그대로 오는데 Tortoise 스텁은 늘 튜플 목록이라 한다.
+        rows: list[int] = await DoctorGuideReview.filter(hospital_id=hospital_id, doctor_id=doctor_id).values_list(
+            "prescription_set_id", flat=True
+        )  # type: ignore[assignment]
+        return set(rows)

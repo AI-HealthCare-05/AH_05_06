@@ -68,7 +68,10 @@ class PatientHistoryService:
         for visit in shown:
             document = documents.get(visit.visit_id)
             document_id = document.guide_document_id if document else None
-            sent = messages.get(document_id, {})
+            # **안내문이 없으면 문자도 열람도 없다.** `None` 을 열쇠로 넣으면
+            # 어쩌다 `None` 키가 생긴 날 남의 진료 문자가 붙는다.
+            sent = messages.get(document_id, {}) if document_id else {}
+            seen = views.get(document_id, []) if document_id else []
             course = courses.get(visit.visit_id)
             blocks.append(
                 HistoryVisit(
@@ -77,8 +80,8 @@ class PatientHistoryService:
                     prescription_set=course[0] if course else None,
                     course_days=course[1] if course else None,
                     guide_sent_at=self._guide_sent(sent),
-                    guide_viewed_at=self._first(views.get(document_id, [])),
-                    checks=self._checks(sent, views.get(document_id, []), answers.get(document_id)),
+                    guide_viewed_at=self._first(seen),
+                    checks=self._checks(sent, seen, answers.get(document_id) if document_id else None),
                     runs_out_on=self._runs_out(visit.visited_at.date(), course),
                     revisited=newest is not None and visit.visited_at < newest,
                 )

@@ -136,11 +136,12 @@ async def load_flag_inputs(
     if not visit_ids:
         return {}
 
-    checks = await GuideMessage.filter(
+    # `flat=True` 면 값이 그대로 오는데 스텁은 늘 튜플 목록이라 한다.
+    checks: list[int] = await GuideMessage.filter(
         guide_document__visit_id__in=visit_ids,
         kind__in=CHECK_KINDS,
         status=GuideMessageStatus.SENT,
-    ).values_list("guide_document__visit_id", flat=True)
+    ).values_list("guide_document__visit_id", flat=True)  # type: ignore[assignment]
 
     viewed = set(
         await PatientUsageEvent.filter(
@@ -152,14 +153,17 @@ async def load_flag_inputs(
     #: 한 처방에 약이 여럿이고 처방일수가 빈 줄도 있다 — **가장 긴 것**으로
     #: 잡는다. 「비잔 84일 + 진통제(빈칸)」에서 84 를 잃으면 안 된다.
     longest: dict[int, int] = {}
+    # 스텁이 `values_list` 를 늘 `tuple[Any, ...]` 라 해서 두 칸으로 안 풀린다.
+    # 실제로는 (진료번호, 처방일수) 가 온다.
     rows = await Prescription.filter(visit_id__in=visit_ids).values_list("visit_id", "items__duration_days")
-    for visit_id, duration in rows:
+    for row in rows:
+        visit_id, duration = int(row[0]), row[1]
         if duration and duration > longest.get(visit_id, 0):
             longest[visit_id] = duration
 
     sent: dict[int, int] = {}
-    for visit_id in checks:
-        sent[visit_id] = sent.get(visit_id, 0) + 1
+    for checked in checks:
+        sent[checked] = sent.get(checked, 0) + 1
 
     found = {}
     for patient_id, visit in latest_visits.items():

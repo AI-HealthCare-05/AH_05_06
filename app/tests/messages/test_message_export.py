@@ -17,6 +17,7 @@ import io
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -50,8 +51,8 @@ TODAY = clinic_today()
 WORDS = Path(__file__).resolve().parents[3] / "frontend" / "js" / "message-words.js"
 
 
-def an_item(**over) -> SentMessageItem:
-    values = {
+def an_item(**over: Any) -> SentMessageItem:
+    values: dict[str, Any] = {
         "guide_message_id": 1,
         "visit_id": 11,
         "patient_id": 21,

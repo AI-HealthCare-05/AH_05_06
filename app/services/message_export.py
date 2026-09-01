@@ -53,7 +53,7 @@ GENDER_SAYING = {"FEMALE": "여", "MALE": "남"}
 FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
 
 
-def defuse(value: str) -> str:
+def defuse(value: str | None) -> str:
     """셈식으로 읽힐 값을 글자로 묶는다.
 
     **지우거나 바꾸지 않는다.** 환자 이름이 `-` 로 시작할 수도 있고, 그 이름은

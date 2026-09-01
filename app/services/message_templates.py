@@ -55,7 +55,7 @@ KNOWN_VARIABLES = frozenset({"의원명", "환자명", "만료일", "링크", "�
 _VARIABLE = re.compile(r"\{([^{}]*)\}")
 
 
-def variables_in(body: str) -> list[str]:
+def variables_in(body: str | None) -> list[str]:
     return _VARIABLE.findall(body or "")
 
 
