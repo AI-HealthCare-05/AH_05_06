@@ -128,26 +128,16 @@ test("**본문에 동작하는 척하는 버튼이 없다** — 눌러도 아무
   const html = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
   const js = fs.readFileSync(path.join(ROOT, "js", "admin.js"), "utf8");
 
-  /* 상단바의 관리(S2)는 아직 어느 화면에도 없다. 눌리는 척하지 않도록
-     `tab--later` + `aria-disabled` 로 둔다 — 이 저장소의 기존 관례다.
-     설정(D2)은 `settings.html` 이 생겨 이제 실제로 간다. 어느 탭이 어느
-     쪽인지는 `topbar-tabs-go.test.js` 가 화면 전부에 대고 잰다. */
+  /* 상단바는 이제 넷 다 갈 곳이 있다 — 관리(S2)는 `manage.html`, 설정(D2)은
+     `settings.html`. 어느 탭이 어느 쪽인지는 `topbar-tabs-go.test.js` 가 화면
+     전부에 대고 잰다. 여기서는 **어드민 화면에 잠긴 탭이 남아 있지 않은
+     것**만 본다 — 화면이 생겼는데 잠가 두면 없는 줄 안다. */
   /* **주석이 아니라 요소만 본다.** 위 설명 문단에도 `tab--later` 가 적혀 있어서,
      그냥 글자로 찾으면 검사가 제 주석을 물고 통과한다. */
   const later = html
     .split("\n")
     .filter((line) => line.includes("tab--later") && line.includes("<button"));
-  assert.ok(later.length >= 1, "관리를 눌리는 척하도록 뒀다");
-  assert.ok(
-    later.every((line) => line.includes("관리")),
-    "화면이 있는 탭까지 잠갔다",
-  );
-  for (const line of later) {
-    assert.ok(
-      line.includes('aria-disabled="true"'),
-      `aria-disabled 가 없다: 「${line.trim()}」`,
-    );
-  }
+  assert.deepStrictEqual(later, [], "화면이 있는데 아직 잠가 두었다");
 
   /* 본문이 그리는 것은 카드뿐이어야 한다. 카드 안에 버튼을 넣으면
      서버가 없는데 누를 것이 생긴다. */

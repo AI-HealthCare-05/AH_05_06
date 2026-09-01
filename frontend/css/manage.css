@@ -1,0 +1,93 @@
+/* 관리 (S2) — 발송 예정. KEY-234.
+ *
+ * 표 자체는 `detail.css` 의 `.table-wrap` · `.past` 를 그대로 쓴다. 같은
+ * 의료진 화면에서 표가 두 가지 모양이면 눈이 새로 자리를 찾는다. 여기서는
+ * **이 화면에만 있는 것**만 적는다. */
+
+.send-top {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-16);
+}
+
+.send-top__grow {
+  flex: 1;
+}
+
+.send-days {
+  height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* 셈하는 칩은 **누르는 것이 아니다.** 상태 칩과 나란히 서면 눌러 거를 수
+   있는 것처럼 보이므로, 손 모양을 주지 않는다. */
+.chip--count {
+  cursor: default;
+}
+
+.chip--all {
+  color: var(--card);
+  background: var(--ink);
+  border-color: var(--ink);
+  font-weight: 600;
+}
+
+.chip--bad {
+  border-width: 2px;
+  font-weight: 600;
+}
+
+/* 안 나간 줄. **바탕을 칠하지 않는다** — 여섯 줄 중 셋이 칠해지면 그 색이
+   배경이 되어 아무것도 도드라지지 않는다. 왼쪽 한 줄만 세운다. */
+.send__row--stuck td:first-child {
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.send__row--stuck td {
+  background: var(--bg);
+}
+
+.send__chart {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.send__who {
+  color: var(--ink-2);
+}
+
+.send__state--bad {
+  font-weight: 600;
+}
+
+.send__none {
+  color: var(--ink-3);
+}
+
+.send__blank {
+  padding: var(--s-24);
+  text-align: center;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.send-foot {
+  margin-top: var(--s-12);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.send-cut {
+  margin-top: var(--s-8);
+  font-size: 12px;
+  color: var(--warn);
+}

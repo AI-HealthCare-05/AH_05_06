@@ -36,7 +36,7 @@ var FRAMES = [
   {"id": "D1-7", "area": "medic", "name": "현황 · 못 보냈을 때 + 🔔 알림 패널", "level": 3, "target": 3, "blocker": "발송 실패 상세 · 재시도 · 알림 패널 없음", "role": "발송 실패를 확인하고 다시 보낸다"},
   {"id": "S2-1", "area": "medic", "name": "환자 관리 이탈을 잡는 자리", "level": 2, "target": 2, "url": "/patients.html", "blocker": "이탈 관리 · 후속 조치 없음"},
   {"id": "S2-2", "area": "medic", "name": "환자 이력 모달", "level": 3, "target": 3, "blocker": "환자 이력 모달 없음", "role": "환자의 지난 진료 이력을 모달로 본다"},
-  {"id": "S2-3", "area": "medic", "name": "발송 예정", "level": 3, "target": 3, "blocker": "발송 예약 조회 API 없음", "role": "예약된 발송을 미리 본다"},
+  {"id": "S2-3", "area": "medic", "name": "발송 예정", "level": 2, "target": 1, "url": "/manage.html", "blocker": "시각 변경 · 즉시 발송 · 문자 충전 없음 — 문자를 보내는 발송기 자체가 없다"},
   {"id": "S2-4", "area": "medic", "name": "발송 이력", "level": 3, "target": 3, "blocker": "발송 이력 테이블 · 조회 API 없음", "role": "지난 발송 결과를 조회한다"},
   {"id": "D2-1", "area": "medic", "name": "안내문 — 약 하나에 한 장", "level": 3, "target": 3, "blocker": "병원별 안내문 설정 모델 · API 없음", "role": "약마다 기본 안내문을 관리한다"},
   {"id": "D2-2", "area": "medic", "name": "안내문 고치기 — 원본 ↔ 원장님 문구", "level": 3, "target": 3, "blocker": "안내문 설정 모델 · API 없음", "role": "원본과 원장님 문구를 비교해 고친다"},

@@ -19,7 +19,10 @@ const { load } = require("./browser-shim.js");
 const { read } = require("./source.js");
 
 function box() {
-  return load("api", "session", "sms-plan", "guide-view", "status-view");
+  /* 어휘는 `message-words.js` 로 옮겼다 — 화면 둘(현황 탭 · 관리 · 발송 예정)이
+     같은 낱말을 쓰는데, 현황 탭을 그리는 파일에 두면 관리 화면이 `guide-view.js`
+     까지 물고 와야 했다. 그리는 자리(`sendRowsHtml`)는 아직 저쪽에 있다. */
+  return load("api", "session", "sms-plan", "guide-view", "message-words", "status-view");
 }
 
 /* ── 두 목록이 다르다 ───────────────────────────────────────────────── */

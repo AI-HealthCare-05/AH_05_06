@@ -111,13 +111,9 @@ test("설정은 D2 · 관리는 S2 — 있는 것만 연다", () => {
       `${page}: 설정 화면(/settings.html)이 있는데 탭이 죽어 있다`,
     );
 
-    /* 관리(S2)는 아직 화면이 없다. 생기면 이 검사가 먼저 틀린다 */
-    if (asText.indexOf("관리") !== -1) {
-      assert.ok(
-        !fs.existsSync(path.join(ROOT, "manage.html")),
-        `${page}: S2 화면이 생겼다 — 관리 탭을 tab--later 에서 풀어야 한다`,
-      );
-    }
+    /* 관리(S2)도 `manage.html` 이 생겨 이제 실제로 간다 */
+    const manageIsDead = /<button[^>]*topbar__tab(?![^>]*aria-current)[^>]*>\s*관리/.test(asText);
+    assert.ok(!manageIsDead, `${page}: 관리 화면(/manage.html)이 있는데 탭이 죽어 있다`);
   }
 });
 
