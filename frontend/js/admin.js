@@ -49,7 +49,8 @@ function adminFramesFor(menuKey) {
 function adminMenuCovers(frames) {
   var listed = [];
   for (var i = 0; i < ADMIN_MENU.length; i++) {
-    for (var f = 0; f < ADMIN_MENU[i].frames.length; f++) listed.push(ADMIN_MENU[i].frames[f]);
+    for (var f = 0; f < ADMIN_MENU[i].frames.length; f++)
+      listed.push(ADMIN_MENU[i].frames[f]);
   }
   var missing = [];
   for (var n = 0; n < (frames || []).length; n++) {
@@ -80,11 +81,20 @@ function adminMenuCovers(frames) {
       var item = ADMIN_MENU[i];
       var on = item.key === current;
       html +=
-        '<button class="row admin-row' + (on ? " admin-row--on" : "") + '"' +
-        ' type="button" role="tab" aria-selected="' + (on ? "true" : "false") +
-        '" data-menu="' + escape(item.key) + '">' +
-        '<span class="row__name">' + escape(item.label) + "</span>" +
-        '<span class="row__meta">' + item.frames.length + "화면</span>" +
+        '<button class="row admin-row' +
+        (on ? " admin-row--on" : "") +
+        '"' +
+        ' type="button" role="tab" aria-selected="' +
+        (on ? "true" : "false") +
+        '" data-menu="' +
+        escape(item.key) +
+        '">' +
+        '<span class="row__name">' +
+        escape(item.label) +
+        "</span>" +
+        '<span class="row__meta">' +
+        item.frames.length +
+        "화면</span>" +
         "</button>";
     }
     menuBox.innerHTML = html;
@@ -93,7 +103,8 @@ function adminMenuCovers(frames) {
   function renderBody() {
     var frames = adminFramesFor(current);
     if (!frames.length) {
-      bodyBox.innerHTML = '<p class="pane__lead">고를 수 있는 화면이 없습니다.</p>';
+      bodyBox.innerHTML =
+        '<p class="pane__lead">고를 수 있는 화면이 없습니다.</p>';
       return;
     }
 
@@ -102,19 +113,31 @@ function adminMenuCovers(frames) {
       var frame = frames[i];
       html +=
         '<section class="admin-card">' +
-        '<span class="frame__id">' + escape(frame.id) + "</span>" +
-        '<h2 class="admin-card__name">' + escape(frame.name) + "</h2>" +
-        '<p class="frame__role">' + escape(frame.role || "") + "</p>" +
+        '<span class="frame__id">' +
+        escape(frame.id) +
+        "</span>" +
+        '<h2 class="admin-card__name">' +
+        escape(frame.name) +
+        "</h2>" +
+        '<p class="frame__role">' +
+        escape(frame.role || "") +
+        "</p>" +
         '<dl class="frame__facts">' +
         "<dt>지금 상태</dt>" +
-        '<dd><span class="frames__badge frames__badge--' + frame.level + '">' +
-        escape(FRAME_LEVELS[frame.level]) + "</span></dd>" +
+        '<dd><span class="frames__badge frames__badge--' +
+        frame.level +
+        '">' +
+        escape(FRAME_LEVELS[frame.level]) +
+        "</span></dd>" +
         "<dt>이 화면이 되려면</dt>" +
-        "<dd>" + escape(frame.blocker || "미정") + "</dd>" +
+        "<dd>" +
+        escape(frame.blocker || "미정") +
+        "</dd>" +
         "</dl>" +
         "</section>";
     }
-    bodyBox.innerHTML = '<h1 class="pane__title">' + escape(menuLabel()) + "</h1>" + html;
+    bodyBox.innerHTML =
+      '<h1 class="pane__title">' + escape(menuLabel()) + "</h1>" + html;
   }
 
   function menuLabel() {
@@ -153,26 +176,33 @@ function adminMenuCovers(frames) {
     if (name) name.textContent = me.name || "—";
     if (roles) roles.textContent = (me.roles || []).join(" · ");
 
-    /* 「현황」이 갈 곳은 역할이 정한다. 의사만 가진 계정을 환자 목록으로
-       보내면 빈 화면을 만난다.
+    /* **갈 곳 없는 탭은 죽은 채로 두지 않는다.** 제자리로 도로 오는 링크와
+       403 을 받는 링크가 가장 나쁘다 — 눌러 보고서야 아는 꼴이다. */
+    function park(id, why) {
+      var tab = document.getElementById(id);
+      if (!tab) return;
+      var off = document.createElement("button");
+      off.className = "topbar__tab tab--later";
+      off.type = "button";
+      off.setAttribute("aria-disabled", "true");
+      off.title = why;
+      off.textContent = tab.textContent;
+      tab.parentNode.replaceChild(off, tab);
+    }
 
-       **admin 만 가진 계정에는 갈 곳이 없다** — `landingFor` 가 이 화면을
-       도로 돌려준다. 그때는 링크를 죽은 채로 두지 않고 `tab--later` 로
-       바꾼다. 제자리로 오는 링크가 가장 나쁘다. */
+    /* 「현황」이 갈 곳은 역할이 정한다. 의사만 가진 계정을 환자 목록으로
+       보내면 빈 화면을 만난다. admin 만 가진 계정에는 갈 곳이 없다 —
+       `landingFor` 가 이 화면을 도로 돌려준다. */
+    var goes = landingFor(me.roles);
     var work = document.getElementById("to-work");
-    if (work) {
-      var goes = landingFor(me.roles);
-      if (goes === "/admin.html") {
-        var off = document.createElement("button");
-        off.className = "topbar__tab tab--later";
-        off.type = "button";
-        off.setAttribute("aria-disabled", "true");
-        off.title = "진료 화면은 스탭 또는 의사 역할이 있어야 열립니다";
-        off.textContent = "현황";
-        work.parentNode.replaceChild(off, work);
-      } else {
-        work.setAttribute("href", goes);
-      }
+    if (goes === "/admin.html") {
+      park("to-work", "진료 화면은 스탭 또는 의사 역할이 있어야 열립니다");
+    } else if (work) {
+      work.setAttribute("href", goes);
+    }
+
+    if (!opensSettings(me.roles)) {
+      park("to-settings", "처방 설정은 스탭 또는 의사 역할이 있어야 열립니다");
     }
   });
 })();

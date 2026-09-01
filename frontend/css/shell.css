@@ -70,9 +70,16 @@ body.shell {
   gap: var(--s-4);
 }
 
+/* 탭은 **가는 것과 여기인 것**이 섞인다. 가는 자리는 `<a>` 라야 새 창으로
+   열고 주소를 볼 수 있다 — 그래서 생김새를 링크·버튼 양쪽에 맞춘다.
+   (`display` 없이 두었더니 `<a>` 에 `height` 가 안 먹어 탭이 홀로 낮았고,
+    밑줄까지 그어졌다.) */
 .topbar__tab {
+  display: inline-flex;
+  align-items: center;
   height: 34px;
   padding: 0 12px;
+  text-decoration: none;
   font: inherit;
   font-size: 13px;
   color: var(--ink-2);
