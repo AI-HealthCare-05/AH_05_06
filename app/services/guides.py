@@ -388,7 +388,11 @@ class GuideService:
             # 고쳐서 다시 올리라는 뜻이니, 재제출을 막으면 반려된 안내문은
             # 영영 그 자리에 갇힌다 (Gomin-art 님 `#176` 리뷰).
             if guide.status not in (GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_RETURNED):
-                raise ApiError("GUIDE_NOT_IN_REVIEW", 409, "이미 의사에게 넘긴 안내문입니다.")
+                raise ApiError(
+                    "GUIDE_NOT_IN_REVIEW",
+                    409,
+                    "이미 의사에게 넘겼거나 승인된 안내문입니다.",
+                )
 
             # **지난 반려 사유를 지운다.** 스탭 알림에 그대로 뜨는 문장이라,
             # 고쳐서 다시 올렸는데도 남아 있으면 「아직 반려 상태」로 읽힌다.
@@ -630,7 +634,11 @@ class GuideService:
         async with in_transaction() as connection:
             guide = await self._lock(actor, visit_id, connection)
 
-            if guide.status is GuideStatus.STAFF_REVIEW:
+            # **반려된 것도 스탭 차례다.** 본문 수정과 같은 규칙이어야 한다 —
+            # 반려 사유가 「문자 회차를 고쳐 주세요」인 순간 여기서만 막히면,
+            # 스탭은 본문은 고쳐지는데 문자 설정은 409 를 보는 화면을 만난다.
+            # 본문 쪽만 열었다가 이 자리를 빠뜨렸다.
+            if guide.status in (GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_RETURNED):
                 self._require_staff_or_doctor(actor, "문자 설정은")
             elif guide.status is GuideStatus.APPROVAL_PENDING:
                 self._require_doctor(actor)

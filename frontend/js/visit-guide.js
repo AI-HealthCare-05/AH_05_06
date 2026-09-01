@@ -68,8 +68,15 @@ function guideMissingSaying(error) {
   function canEditNow(prefix) {
     var isDoctor = ((me && me.roles) || []).indexOf("doctor") !== -1;
     if (prefix === "final") return isDoctor;
-    /* 안내문 탭 — 넘기기 전이면 스탭도 고친다 */
-    return isDoctor || (guide && guide.status === "STAFF_REVIEW");
+    /* 안내문 탭 — 넘기기 전이면 스탭도 고친다.
+       **반려된 것도 스탭 차례다.** 반려는 「고쳐서 다시 올려라」는 뜻이라,
+       이 자리에 그 상태가 빠지면 화면이 위에서는 「고친 뒤 다시 넘겨
+       주세요」라 하고 아래서는 「의사 계정에서 할 수 있습니다」라 한다 —
+       한 화면이 두 가지로 말한다 (Gomin-art 님 `#176` 리뷰). */
+    return (
+      isDoctor ||
+      (guide && (guide.status === "STAFF_REVIEW" || guide.status === "APPROVAL_RETURNED"))
+    );
   }
 
   /* 두 탭이 같은 안내문을 그린다 — 다른 것은 편집 권한과 아래 버튼뿐이다. */
@@ -163,12 +170,15 @@ function guideMissingSaying(error) {
       return;
     }
 
-    var can = guideActionsFor(guide.status, me && me.roles);
+    var can = guideActionsFor(guide.status, me && me.roles, guide.returned_reason);
     box.innerHTML =
       '<button class="button-ghost button-ghost--sm" type="button" id="guide-reupload">진료기록 재업로드</button>' +
       '<span class="grow"></span>' +
       '<span class="note">' +
       esc(can.say) +
+      /* **반려 사유를 그 자리에 붙인다.** 「고친 뒤 다시 넘겨 주세요」만 보고는
+         무엇을 고쳐야 하는지 알 길이 없어 의사에게 다시 물어야 한다. */
+      (can.why ? ' <span class="note__why">「' + esc(can.why) + "」</span>" : "") +
       "</span>" +
       (can.canSubmit
         ? '<button class="button-primary button-primary--sm" type="button" id="guide-submit">의사 승인 요청</button>'

@@ -387,15 +387,22 @@ function guideBodyHtml(sections, current, canEdit, editingKey) {
  * 넘긴 뒤에는 스탭이 더 할 일이 없다 — 버튼을 지우고 어디까지 왔는지 말한다.
  * 눌러도 409 로 떨어지는 버튼을 두면 「내가 뭘 잘못했나」로 읽힌다.
  */
-function guideActionsFor(status, roles) {
+function guideActionsFor(status, roles, reason) {
   var isDoctor = (roles || []).indexOf("doctor") !== -1;
 
   if (status === "STAFF_REVIEW") {
     return { canSubmit: true, say: "스탭 확인 후 의사에게 전달됩니다 · 승인은 의사 역할만 가능합니다" };
   }
   if (status === "APPROVAL_RETURNED") {
-    /* 반려된 것은 다시 스탭 차례다 — 고치고 다시 넘긴다. */
-    return { canSubmit: true, say: "반려된 안내문입니다 — 고친 뒤 다시 넘겨 주세요" };
+    /* 반려된 것은 다시 스탭 차례다 — 고치고 다시 넘긴다.
+       **무엇을 고칠지 함께 적는다.** 서버가 `returned_reason` 으로 주는데
+       화면이 안 쓰고 있었다 — 「고친 뒤 다시 넘겨 주세요」만 보면 무엇을
+       고쳐야 하는지 알 길이 없어, 의사에게 다시 물어야 한다. */
+    return {
+      canSubmit: true,
+      say: "반려된 안내문입니다 — 고친 뒤 다시 넘겨 주세요",
+      why: reason || "",
+    };
   }
   if (status === "APPROVAL_PENDING") {
     return {

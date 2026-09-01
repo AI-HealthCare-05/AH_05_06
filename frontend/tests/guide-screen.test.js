@@ -179,9 +179,37 @@ test("**고칠 수 있는지를 서버와 같은 규칙으로 정한다**", () =
   const at = code.indexOf("function canEditNow");
   assert.notEqual(at, -1, "규칙이 한 곳에 없다");
 
-  const body = code.slice(at, at + 400);
+  /* 글자 수로 자르지 않는다 — 주석 한 줄이 늘면 창 밖으로 밀려, 규칙은
+     그대로인데 검사만 빨개진다. 다음 함수 앞까지가 이 함수다. */
+  const body = code.slice(at, code.indexOf("function ", at + 20));
   assert.ok(body.includes("STAFF_REVIEW"), "스탭 차례를 안 본다");
   assert.ok(body.includes("doctor"), "의사 차례를 안 본다");
+
+  /* **반려된 것도 스탭이 고친다** — 서버(`guides.py` 의 `edit_section`)가
+     그 상태를 받는다. 여기 빠지면 서버만 열리고 화면에는 「수정」이 안 뜬다.
+     같은 화면이 위에서는 「고친 뒤 다시 넘겨 주세요」라고 안내하면서. */
+  assert.ok(body.includes("APPROVAL_RETURNED"), "반려된 것을 스탭이 못 고친다");
+});
+
+test("**반려된 안내문은 무엇을 고칠지 함께 보여 준다**", () => {
+  const { guideActionsFor } = load("api", "guide-view");
+
+  const why = "복약 안내에 식후 여부를 적어 주세요";
+  const returned = guideActionsFor("APPROVAL_RETURNED", ["staff"], why);
+  assert.equal(returned.canSubmit, true);
+  assert.equal(returned.why, why, "반려 사유를 안 나른다");
+
+  /* 사유가 없으면 빈 문자열이다 — `undefined` 가 화면에 「undefined」로 뜬다 */
+  assert.equal(guideActionsFor("APPROVAL_RETURNED", ["staff"]).why, "");
+
+  /* 다른 상태에는 붙지 않는다 */
+  assert.equal(guideActionsFor("STAFF_REVIEW", ["staff"], why).why, undefined);
+});
+
+test("**화면이 반려 사유를 실제로 그린다** — 서버가 주는데 안 쓰고 있었다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+  assert.match(code, /guide\.returned_reason/, "서버가 주는 사유를 안 읽는다");
+  assert.match(code, /can\.why/, "읽고서 안 그린다");
 });
 
 test("**모양이 두 화면 모두에 닿는다** — 한쪽 파일에 두면 다른 쪽이 민얼굴이다", () => {
