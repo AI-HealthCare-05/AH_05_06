@@ -31,16 +31,72 @@
 > 2026-08-24 · 8/27 Walking Skeleton 한정. 응답의 `demo_only: true`는
 > 합성데이터 시연용이며 운영 발송 계약이 아님을 뜻한다.
 
+> ⚠️ 2026-09-01 · 아래 `GET /api/v1/guides/{token}` 예시는 와이어프레임
+> `wireframe-patient-3.0.0.html` 기준 **목표 계약이며 아직 미구현**이다.
+> 현재 실제 응답은 `PatientGuideResponse`(`app/dtos/patient_links.py`) 그대로
+> `version`/`approved_at`/`expires_at`/`sections: [{key, body}]`/`demo_only`
+> 뿐이다. `sections` 기반 계약은 2.4·2.5절에도 그대로 쓰인다.
+
 ```text
 POST /api/v1/visits/{visit_id}/guide/link   직원 인증 필요
 201 { "path": "/api/v1/guides/{token}",
       "expires_at": "…", "demo_only": true }
 
-GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증명
-200 { "version": 1, "approved_at": "…", "expires_at": "…",
-      "sections": [{ "key": "medication", "body": "…" }],
-      "demo_only": true }
+GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증명 (목표 계약 — 미구현)
+200 {
+      "version": 1, "approved_at": "…", "expires_at": "…", "demo_only": true,
+      "visit": "2026.08.13",
+      "clinic": "〇〇여성의원",
+      "disease": "자궁내막증 · 비잔정 복용 중",
+      "stat": {
+        "drugName": "비잔정 2mg",
+        "drugSub": "성분 · 디에노게스트 · 1일 1회 · 84일분",
+        "prescribed": 84,
+        "dayOn": 12,
+        "remaining": 72,
+        "pct": 14,
+        "out": "ⓘ 11월 5일경 약이 소진돼요",
+        "why": "…"
+      },
+      "guide": {
+        "summary": "…",
+        "goals": [
+          {
+            "n": "빈혈 Hb", "a": "10.2", "now": "10.4", "t": "12",
+            "hasChart": true, "rangeLabel": "목표를 가운데 두고 본 지금 값"
+          }
+        ],
+        "goalSay": "…",
+        "drug": { "n": "비잔정 2mg", "s": "성분 · 디에노게스트", "d": "1일 1회 · 84일분" },
+        "why": ["…"],
+        "how": "…",
+        "next": "…"
+      },
+      "care": {
+        "title": "…",
+        "blocks": [{ "t": "흔하고 괜찮은 반응", "p": ["…"] }],
+        "danger": ["…"],
+        "ask": "…"
+      },
+      "life": {
+        "sub": "자궁내막증 · 비잔정 복용 중",
+        "challenges": [["· 밤 11시 전에 잠들기", "주 5일"]],
+        "axes": {
+          "수면": {
+            "chal": "· 밤 11시 전에 잠들기",
+            "goal": "주 5일",
+            "p": ["…"]
+          },
+          "통증": { "title": "통증 관리", "p": ["…"] }
+        }
+      },
+      "chat": { "chips": ["내 약이 뭐였죠?", "출혈이 계속돼요", "언제까지 먹나요?"] }
+    }
 ```
+
+- 화면 구조에 맞춰 복약 진행률은 `stat.pct`, 목표 값은 `guide.goals`, 생활관리
+  축은 `life.axes`에서 제공한다. `stat.pct`는 `dayOn / prescribed * 100`을
+  반올림한 정수이며 0~100 범위다.
 
 - 링크는 승인 완료 상태(`SCHEDULED_TO_SEND`)인 안내에만 발급하며 72시간 유효하다.
 - 발급은 같은 병원의 `staff` 또는 `doctor`만 가능하고, 타 병원 안내는 404로 감춘다.
