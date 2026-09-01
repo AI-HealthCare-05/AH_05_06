@@ -114,23 +114,9 @@ function groupsIn(section) {
   });
 }
 
-/** 처방일수를 실제 일수로 — **소진 예정일이 이 셈으로 정해진다.**
- *
- * EMR 「총투」 칸의 「3」이 3통일 수도 3일일 수도 있어서 의원마다 다르다.
- * 통으로 세는데 한 통이 며칠인지 모르면 **셈하지 않는다**(`null`) — 지어낸
- * 날짜로 예약하면 엉뚱한 날 문자가 간다.
- */
-function courseDaysOf(setting, written) {
-  var n = parseInt(String(written), 10);
-  if (isNaN(n) || n <= 0) return null;
-
-  var mode = setting && setting.days_mode;
-  if (mode !== "PACK") return n;
-
-  var per = parseInt(String(setting && setting.days_per_pack), 10);
-  if (isNaN(per) || per <= 0) return null;
-  return n * per;
-}
+/* `courseDaysOf` 는 여기 없다 — 처방일수를 세는 규칙이라 설정 화면만의
+   것이 아니고, 판독 화면(S1-6)의 처방약 내역도 같은 셈을 쓴다.
+   `js/drug-lines.js` 에 있다. */
 
 /* **어느 묶음이 실제로 열리는가.** 자리만 세운 것과 만든 것을 여기서 가른다 —
    화면 여러 곳이 이 사실을 물으므로 한 곳에 둔다.

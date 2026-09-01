@@ -23,41 +23,53 @@ var MOCK_PRESCRIPTION_SETS = [
     prescription_set_id: 1,
     name: "자궁내막증 · 비잔 (처음)",
     check_items: MOCK_CHECK_ITEMS,
+    drugs: [{ name: "비잔정(디에노게스트) 2mg", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
   {
     prescription_set_id: 2,
     name: "자궁내막증 · 비잔 (계속)",
     check_items: MOCK_CHECK_ITEMS,
+    drugs: [{ name: "비잔정(디에노게스트) 2mg", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
   {
     prescription_set_id: 3,
     name: "자궁내막증 · 통증관리",
     check_items: MOCK_CHECK_ITEMS,
+    drugs: [{ name: "진통제", frequency: "필요시", note: "통증이 있을 때만" }],
   },
   {
     prescription_set_id: 4,
     name: "PCOS · 초진",
     check_items: MOCK_CHECK_ITEMS,
+    days_mode: "PACK",
+    days_per_pack: 28,
+    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" },
+      { name: "진통제", frequency: "필요시" }],
   },
   {
     prescription_set_id: 5,
     name: "PCOS · 초진 (야즈 불가)",
     check_items: MOCK_CHECK_ITEMS,
+    drugs: [{ name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
   },
   {
     prescription_set_id: 6,
     name: "PCOS · 야즈 (계속)",
     check_items: MOCK_CHECK_ITEMS,
+    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
   {
     prescription_set_id: 7,
     name: "PCOS · 야즈 + 메트포르민",
     check_items: MOCK_CHECK_ITEMS,
+    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" },
+      { name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
   },
   {
     prescription_set_id: 8,
     name: "PCOS · 대사관리",
     check_items: MOCK_CHECK_ITEMS,
+    drugs: [{ name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
   },
 ];
 
@@ -190,15 +202,18 @@ function mockSetSeed() {
         row.name.indexOf("(처음)") !== -1 || row.name.indexOf("초진") !== -1
           ? "FIRST"
           : "CONTINUE",
-      days_mode: "DAYS",
-      days_per_pack: null,
+      /* **기본 목록이 정한 것을 덮지 않는다.** 여기서 `"DAYS"` 로 못박아
+         두었더니 목록에 적어 둔 「통으로 센다」가 사라져, 화면에서 통 환산을
+         한 번도 못 봤다. */
+      days_mode: row.days_mode || "DAYS",
+      days_per_pack: row.days_per_pack == null ? null : row.days_per_pack,
       emr_code: null,
       revisit_note: null,
       check_d15_on: true,
       check_d30_on: false,
       run_out_on: true,
       run_out_before_days: 3,
-      drugs: [],
+      drugs: (row.drugs || []).slice(),
       check_items: (row.check_items || []).slice(),
     };
   });
@@ -210,7 +225,8 @@ function mockSetStore() {
 }
 
 function mockSetListRow(row) {
-  /* 목록은 **이름과 확인 항목**만 준다 — 서버와 같다 */
+  /* 서버가 목록에 담아 주는 것과 **같은 칸만** 준다. 목업이 더 주면 화면이
+     목업에서만 되는 것을 쓰게 되고, 서버에 붙이는 날 조용히 빈다. */
   var mine = mockSetStore().filter(function (s) {
     return s.prescription_set_id === row.prescription_set_id;
   })[0];
@@ -220,6 +236,11 @@ function mockSetListRow(row) {
     /* 레일이 질환으로 묶는다 — 상세를 받아야 알 수 있게 두면 여덟 번 다녀온다 */
     disease: mine ? mine.disease : "ENDOMETRIOSIS",
     check_items: mine ? mine.check_items.slice() : [],
+    /* 판독 화면이 처방을 고르는 순간 약 목록을 세운다 — 확인 항목과 같은
+       이유로 목록과 함께 준다 (2heej 님 `#176` 리뷰) */
+    drugs: mine ? mine.drugs.slice() : [],
+    days_mode: mine ? mine.days_mode : "DAYS",
+    days_per_pack: mine ? mine.days_per_pack : null,
   };
 }
 

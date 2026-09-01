@@ -12,7 +12,7 @@ const { load } = require("./browser-shim.js");
 const { read, codeOnly, markupOnly, rule } = require("./source.js");
 
 function box() {
-  return load("api", "session", "field-labels", "settings-rail");
+  return load("api", "session", "field-labels", "settings-rail", "drug-lines");
 }
 
 const SETS = [

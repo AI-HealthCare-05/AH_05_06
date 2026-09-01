@@ -17,6 +17,14 @@ from app.models.catalog import SetDaysMode, SetDisease, SetPhase
 from app.models.visits import VisitCheckKey
 
 
+class SetDrug(StrictModel):
+    """처방 세트에 든 약 하나 — 와이어프레임 D2-3 「처방 약」."""
+
+    name: str
+    frequency: str | None = None
+    note: str | None = None
+
+
 class PrescriptionSetResponse(StrictModel):
     prescription_set_id: int
     name: str
@@ -31,13 +39,18 @@ class PrescriptionSetResponse(StrictModel):
     #: 다녀와야 하고, 그 사이 확인 항목 칸이 비었다 찼다 한다.
     check_items: list[VisitCheckKey] = []
 
+    #: 이 처방에 든 약 — 화면 차례대로 (와이어프레임 D2-3 「처방 약」).
+    #:
+    #: **확인 항목과 같은 이유로 함께 준다.** 판독 화면이 처방을 고르는 순간
+    #: 아래에 약 목록을 세워야 하는데, 그때 한 번 더 다녀오면 목록이 비었다
+    #: 찼다 한다 (2heej 님 `#176` 리뷰).
+    drugs: list[SetDrug] = []
 
-class SetDrug(StrictModel):
-    """처방 세트에 든 약 하나 — 와이어프레임 D2-3 「처방 약」."""
-
-    name: str
-    frequency: str | None = None
-    note: str | None = None
+    #: 「총투」 칸의 의미와 한 통의 일수. **약마다 며칠인지가 이 둘로 정해진다** —
+    #: 판독이 읽은 총투 하나를 여기 규칙으로 환산한다. 세트는 「이 처방은 통으로
+    #: 센다」까지만 알고, 몇 통인지는 그 진료의 판독값이 안다.
+    days_mode: SetDaysMode = SetDaysMode.DAYS
+    days_per_pack: int | None = None
 
 
 class PrescriptionSetDetail(StrictModel):

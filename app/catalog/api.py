@@ -51,12 +51,23 @@ async def list_prescription_sets(
     for item in items:
         by_set.setdefault(item.prescription_set_id, []).append(item.item_key)
 
+    # 약도 **한 번에** 읽는다 — 확인 항목과 같은 이유다.
+    drugs = await PrescriptionSetDrug.all().order_by("position", "prescription_set_drug_id")
+    drugs_by_set: dict[int, list[SetDrug]] = {}
+    for drug in drugs:
+        drugs_by_set.setdefault(drug.prescription_set_id, []).append(
+            SetDrug(name=drug.name, frequency=drug.frequency, note=drug.note)
+        )
+
     return [
         PrescriptionSetResponse(
             prescription_set_id=row.prescription_set_id,
             name=row.name,
             disease=row.disease,
             check_items=by_set.get(row.prescription_set_id, []),
+            drugs=drugs_by_set.get(row.prescription_set_id, []),
+            days_mode=row.days_mode,
+            days_per_pack=row.days_per_pack,
         )
         for row in rows
     ]

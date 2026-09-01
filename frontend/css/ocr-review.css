@@ -1139,3 +1139,62 @@
 .top .top__unit {
   order: 1;
 }
+
+/* ── 처방약 내역 (2heej 님 `#176` 리뷰) ─────────────────────────────
+ *
+ * 맨 위 「진단 · 처방」 줄 아래에 붙는다. 세트 **이름** 하나로는 무엇을 며칠
+ * 드시는지가 안 보이는데, 그 값이 안내문에 그대로 나간다.
+ *
+ * 세 칸이 자리로 정렬된다 — 이름 · 일수 · 복용법. 일수를 오른쪽 정렬로 두어야
+ * 「28일」과 「7일」의 끝자리가 맞아 훑을 때 눈이 한 줄로 내려간다.
+ */
+.drugs {
+  /* `.top` 이 `flex-wrap: wrap` 이라 **한 줄을 통째로 차지하려면 밑변이 100%**
+     여야 한다. `grid-column` 은 flex 부모 안에서 아무 일도 안 한다. */
+  flex: 0 0 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr);
+  gap: 2px var(--s-12);
+  margin: var(--s-8) 0 0;
+  padding: var(--s-8) 0 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.drugs__one {
+  display: contents;
+}
+
+.drugs__name {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* 끝자리를 맞춘다 — 셈한 값이라 세로로 읽힌다 */
+.drugs__days {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* **못 셈한 자리는 비운다.** 「필요시」 약에는 기간이 없고, 「0일」이나 「-」를
+   적으면 읽는 사람이 그것을 값으로 센다. 자리는 지켜서 칸이 안 어긋난다. */
+.drugs__days--none {
+  min-width: 1px;
+}
+
+.drugs__saying {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.drugs__none {
+  flex: 0 0 100%;
+  margin: var(--s-8) 0 0;
+  padding: var(--s-8) 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--line);
+}
