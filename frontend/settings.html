@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>설정 · 케어온</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/shell.css" />
+    <link rel="stylesheet" href="/css/blocks.css" />
+    <link rel="stylesheet" href="/css/settings.css" />
+  </head>
+  <body class="shell">
+    <!-- D2 설정 (KEY-234)
+         왼쪽 레일은 다른 화면의 환자 목록 자리다 — 여기서는 설정 묶음이 선다.
+         골격이 같아야 화면을 옮길 때 눈이 새로 자리를 찾지 않는다(KEY-53).
+
+         이번에 만드는 것은 **처방(D2-3)** 하나다. 다른 묶음은 자리만 세우고
+         무엇이 없는지 적는다 — 빈 채로 두면 다음 사람이 무엇을 만들어야 하는지
+         모르고, 채워 두면 되는 것처럼 보인다. -->
+
+    <header class="topbar">
+      <span class="topbar__brand">케어온 <span class="topbar__clinic">도로시여성의원</span></span>
+      <nav class="topbar__nav">
+        <a class="topbar__tab" href="/patients.html">현황</a>
+        <button class="topbar__tab" type="button">관리</button>
+        <button class="topbar__tab" type="button" aria-current="page">설정</button>
+      </nav>
+      <div class="topbar__right">
+        <span class="who">
+          <span class="who__name" id="who-name">—</span>
+          <span class="who__roles" id="who-roles"></span>
+        </span>
+        <button class="icon-button" type="button" aria-label="알림">
+          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button class="icon-button" type="button" id="logout" aria-label="로그아웃"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      </div>
+    </header>
+
+    <div class="main">
+      <aside class="list" aria-label="설정 목록">
+        <div class="list__head">
+          <div class="list__title">
+            <span class="list__label">설정</span>
+            <button class="list__fold" type="button" aria-expanded="true" title="목록 접기">◀</button>
+          </div>
+          <input
+            class="list__search"
+            type="search"
+            id="set-search"
+            placeholder="처방 검색"
+            aria-label="처방 검색"
+          />
+        </div>
+        <div class="list__rows" id="rail"></div>
+        <p class="list__note">고른 처방만 펼쳐집니다 · 다른 묶음은 개수만 보입니다</p>
+      </aside>
+
+      <main class="pane" id="pane">
+        <div id="detail"></div>
+      </main>
+    </div>
+
+    <script src="/js/session.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/field-labels.js"></script>
+    <script src="/js/list-fold.js"></script>
+    <script src="/js/catalog-api.js"></script>
+    <script src="/js/settings-rail.js"></script>
+    <script src="/js/settings.js"></script>
+  </body>
+</html>

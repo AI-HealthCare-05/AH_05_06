@@ -122,3 +122,63 @@ test("**진료기록을 안 올린 진료에는 판독이 없다**", async () =>
   const job = await mockJobForVisit(done.visit_id);
   assert.ok(job && job.ocr_job_id, "판독이 있는 진료에까지 안 내준다");
 });
+
+/* **쓰는 이름이 그 화면에 실려 있는가.**
+ *
+ * 겹침(위)과 반대 방향의 같은 병이다. 파일을 안 실으면 브라우저에서만
+ * `CHECK_ITEMS is not defined` 로 터진다 — 설정 화면을 만들면서 실제로
+ * 그랬다. 어휘를 제자리로 옮기면서 싣는 것을 빠뜨리기 쉽다.
+ *
+ * 완벽하지는 않다. 여기서 보는 것은 **이 저장소가 스스로 얹은 이름**뿐이고,
+ * 브라우저·표준 전역은 안 본다.
+ */
+test("**화면이 쓰는 전역이 그 화면에 실려 있다**", () => {
+  const ROOT2 = path.join(__dirname, "..");
+  const files = fs.readdirSync(path.join(ROOT2, "js")).filter((n) => n.endsWith(".js"));
+
+  /* 어느 파일이 어느 이름을 얹는가 */
+  const home = new Map();
+  for (const file of files) {
+    for (const name of globalsOf(file)) {
+      if (!home.has(name)) home.set(name, file);
+    }
+  }
+
+  const missing = [];
+  for (const page of fs.readdirSync(ROOT2).filter((n) => n.endsWith(".html"))) {
+    const scripts = scriptsOf(page).filter((f) => fs.existsSync(path.join(ROOT2, "js", f)));
+    if (scripts.length < 2) continue;
+
+    const loaded = new Set(scripts);
+    for (const file of scripts) {
+      const code = codeOnly(fs.readFileSync(path.join(ROOT2, "js", file), "utf8"));
+      /* 이 파일이 스스로 만든 이름은 뺀다 — 남는 것이 「남에게서 빌린 것」이다.
+         **함수 안에서 만든 것도 제 것이다** — `detail.js` 는 IIFE 안에 `TABS`
+         를 두는데, 전역만 세면 남의 `TABS` 를 빌려 쓰는 것으로 잘못 읽힌다. */
+      const own = new Set(
+        [...code.matchAll(/(?:var|let|const|function)\s+([A-Za-z_$][\w$]*)/g)].map((d) => d[1]),
+      );
+      /* **두 낱말 이상인 이름만 본다** — `MOCK_STAFF` · `roleLabel` · `catalogApi`.
+       *
+       * 처음에는 대문자 상수와 `xxxApi` 만 봤는데 `roleLabel` 이 빠져 브라우저에서
+       * `roleLabel is not defined` 로 났다. 그래서 모든 이름을 봤더니 이번에는
+       * `section` · `state` 같은 **매개변수**가 남의 것으로 걸렸다 — 이 검사는
+       * 매개변수를 「제 것」으로 못 읽기 때문이다.
+       *
+       * 한 낱말짜리는 빌려 쓰는 일이 드물고 매개변수로는 흔하다. 두 낱말 이상
+       * (대문자가 섞인 이름)만 보면 진짜만 남는다. */
+      for (const m of code.matchAll(/\b([A-Z][A-Za-z0-9_$]*|[a-z][a-z0-9$]*[A-Z][\w$]*)\b/g)) {
+        const name = m[1];
+        if (own.has(name) || !home.has(name)) continue;
+        if (loaded.has(home.get(name))) continue;
+        missing.push(`${page}: ${file} 가 ${name} 을 쓰는데 ${home.get(name)} 을 안 싣는다`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    [...new Set(missing)],
+    [],
+    "안 실은 파일의 이름을 쓴다 — 브라우저에서만 터진다:\n  " + [...new Set(missing)].join("\n  "),
+  );
+});

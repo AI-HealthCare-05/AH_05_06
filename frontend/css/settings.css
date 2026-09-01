@@ -1,0 +1,171 @@
+/* 설정 화면 — 와이어프레임 D2-3.
+ *
+ * 담는 모양(`.box` · `.box__head` · `.patient-head`)은 `blocks.css` 것을 그대로
+ * 쓴다. 화면마다 상자를 새로 그리면 설정으로 옮길 때 눈이 자리를 새로 찾는다 —
+ * 그래서 여기 있는 것은 **이 화면에만 있는 것**뿐이다.
+ */
+
+/* ── 왼쪽 레일 ────────────────────────────────────────────────────── */
+
+.rail__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 16px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+/* 「그 밖에」는 처방 목록과 사이를 벌린다 — 붙여 두면 처방의 일부로 읽힌다 */
+.rail__head--rest {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.rail__group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 16px 4px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.rail__count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.rail__row {
+  display: block;
+  width: 100%;
+  padding: 9px 16px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.rail__row:hover {
+  background: var(--bg);
+}
+
+/* 고른 줄 — 환자 목록의 고른 줄과 같은 표시다(왼쪽 막대 + 굵게) */
+.rail__row.is-on {
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--ink);
+  background: var(--bg);
+}
+
+.rail__soon {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 16px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.rail__note {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.rail__none {
+  margin: 0;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+/* ── 입력 칸 ──────────────────────────────────────────────────────── */
+
+.fld {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fld__label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.fld__input {
+  height: var(--field-h);
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--card);
+}
+
+/* 잠긴 칸 — 스탭이 볼 때다. 흐리게 두어 「지금은 못 고친다」를 눈으로 말한다 */
+.fld__input:disabled {
+  color: var(--ink-2);
+  background: var(--bg);
+}
+
+.fld__hint {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.chk {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+
+/* 확인 항목·회차는 한 줄에 나란히 — 세로로 쌓으면 다섯 줄이 화면을 먹는다 */
+.checks-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-bottom: var(--s-12);
+}
+
+/* ── 처방 약 ──────────────────────────────────────────────────────── */
+
+.drugs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: var(--s-16);
+}
+
+/* 이름이 가장 넓다 — 「메트포르민 500mg」이 잘리면 무슨 약인지 모른다 */
+.drug {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr) 32px;
+  gap: 8px;
+  align-items: center;
+}
+
+.drug__drop {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  font: inherit;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.drug__drop:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}

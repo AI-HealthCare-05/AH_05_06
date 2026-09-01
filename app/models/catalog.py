@@ -62,6 +62,42 @@ class CautionSectionKey(StrEnum):
     EMERGENCY = "emergency"
 
 
+class SetDisease(StrEnum):
+    """이 처방이 어느 병에 쓰이나 — 와이어프레임 D2-3 「질환」.
+
+    이 의원이 보는 둘이다. 판독 확인 화면의 진단 고르개와 같은 어휘를 쓴다 —
+    갈리면 「가장 유사한 처방 세트」를 찾을 때 못 맞춘다.
+    """
+
+    ENDOMETRIOSIS = "ENDOMETRIOSIS"
+    PCOS = "PCOS"
+
+
+class SetPhase(StrEnum):
+    """언제 쓰는 처방인가 — 와이어프레임 D2-3 「적용 시점」.
+
+    같은 약이라도 처음 내는 것과 계속 내는 것은 안내가 다르다. 「비잔 (처음)」과
+    「비잔 (계속)」이 따로 있는 이유다.
+    """
+
+    FIRST = "FIRST"
+    CONTINUE = "CONTINUE"
+    REST = "REST"
+
+
+class SetDaysMode(StrEnum):
+    """EMR 「총투」 칸이 무엇을 뜻하나 — 와이어프레임 D2-3 ★.
+
+    의원마다 다르다. 「3」이 3통일 수도 3일일 수도 있는데, **소진 예정일과 발송
+    시각이 이 값으로 셈해진다** — 틀리면 문자가 엉뚱한 날 간다.
+    """
+
+    #: 통·상자 수. `days_per_pack` 을 곱해 일수를 얻는다.
+    PACK = "PACK"
+    #: 적힌 숫자가 곧 일수다.
+    DAYS = "DAYS"
+
+
 class PrescriptionSet(models.Model):
     """처방 세트 카탈로그 — KEY-165, KEY-180 §1.
 
@@ -72,14 +108,74 @@ class PrescriptionSet(models.Model):
 
     prescription_set_id = fields.BigIntField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)
+
+    #: ── 설정 화면(D2-3)이 정하는 것들 ────────────────────────────────
+    disease = fields.CharEnumField(enum_type=SetDisease, default=SetDisease.ENDOMETRIOSIS)
+    phase = fields.CharEnumField(enum_type=SetPhase, default=SetPhase.CONTINUE)
+
+    #: EMR 「총투」 칸의 의미. **소진 예정일이 이 값으로 셈해진다.**
+    days_mode = fields.CharEnumField(enum_type=SetDaysMode, default=SetDaysMode.DAYS)
+    #: 한 통이 며칠치인가. `days_mode` 가 `PACK` 일 때만 쓴다.
+    days_per_pack = fields.SmallIntField(null=True)
+
+    #: 이 코드가 적힌 진료를 안내 대상으로 본다. 의원이 쓰는 코드를 그대로 적는다.
+    emr_code = fields.CharField(max_length=100, null=True)
+    #: 「3개월 복용 후 내원」처럼 한 줄. 소견에 다른 조건이 있으면 그쪽이 이긴다.
+    revisit_note = fields.CharField(max_length=200, null=True)
+
+    #: ── 자동 발송 기본값 ────────────────────────────────────────────
+    #: 「필요하면 켜세요」로 두면 아무도 안 켠다(D2-3 주석). 처방마다 여기서 정해
+    #: 두고, 환자별로 바꾸는 것은 S1-14 다.
+    #: 일주일 뒤는 칸이 없다 — 어느 처방에서도 못 끄기 때문이다.
+    check_d15_on = fields.BooleanField(default=True)
+    check_d30_on = fields.BooleanField(default=False)
+    run_out_on = fields.BooleanField(default=True)
+    run_out_before_days = fields.SmallIntField(default=3)
+
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
     caution_contents: fields.ReverseRelation["DrugCautionContent"]
     check_items: fields.ReverseRelation["PrescriptionCheckItem"]
+    drugs: fields.ReverseRelation["PrescriptionSetDrug"]
 
     class Meta:
         table = "prescription_set"
+
+
+class PrescriptionSetDrug(models.Model):
+    """처방 세트에 든 약 — 와이어프레임 D2-3 「처방 약」.
+
+    **진료의 처방(`PrescriptionItem`)과 다른 층이다.** 저쪽은 「이 환자에게 이날
+    무엇을 냈나」이고, 이쪽은 「이 세트를 고르면 무엇을 내는가」다. 세트를 고쳐도
+    지난 진료의 처방은 안 바뀐다.
+
+    약이 여럿일 수 있다 — 「야즈 + 메트포르민」이 그렇다. `position` 이 화면
+    차례이고, 안내문에 적히는 차례이기도 하다.
+    """
+
+    prescription_set_drug_id = fields.BigIntField(primary_key=True)
+    prescription_set_id: int
+    prescription_set: fields.ForeignKeyRelation[PrescriptionSet] = fields.ForeignKeyField(
+        "models.PrescriptionSet",
+        related_name="drugs",
+        on_delete=OnDelete.CASCADE,
+        source_field="prescription_set_id",
+    )
+
+    #: 「비잔정 2mg」처럼 용량까지. 안내문에 그대로 나간다.
+    name = fields.CharField(max_length=100)
+    #: 「1일 1회」
+    frequency = fields.CharField(max_length=50, null=True)
+    #: 「매일 같은 시간」처럼 먹는 방법 한 줄
+    note = fields.CharField(max_length=200, null=True)
+    position = fields.SmallIntField(default=0)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "prescription_set_drug"
 
 
 class PrescriptionCheckItem(models.Model):

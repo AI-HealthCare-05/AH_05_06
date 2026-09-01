@@ -112,3 +112,16 @@ function requireSession(options) {
     return bounce("");
   });
 }
+
+/* 역할을 사람 말로 — 상단바 오른쪽에 이름 옆으로 붙는다.
+   **환자 목록이 없는 화면도 쓴다**(설정 · 어드민). `shell.js` 에 두었더니
+   설정 화면이 `roleLabel is not defined` 로 죽었다 — 목록을 그리는 파일을
+   상단바 한 줄 때문에 실을 수는 없다. */
+function roleLabel(roles) {
+  var names = { staff: "스탭", doctor: "의사", admin: "관리자" };
+  return (roles || [])
+    .map(function (r) {
+      return names[r] || r;
+    })
+    .join(" · ");
+}

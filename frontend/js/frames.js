@@ -40,7 +40,7 @@ var FRAMES = [
   {"id": "S2-4", "area": "medic", "name": "발송 이력", "level": 3, "target": 3, "blocker": "발송 이력 테이블 · 조회 API 없음", "role": "지난 발송 결과를 조회한다"},
   {"id": "D2-1", "area": "medic", "name": "안내문 — 약 하나에 한 장", "level": 3, "target": 3, "blocker": "병원별 안내문 설정 모델 · API 없음", "role": "약마다 기본 안내문을 관리한다"},
   {"id": "D2-2", "area": "medic", "name": "안내문 고치기 — 원본 ↔ 원장님 문구", "level": 3, "target": 3, "blocker": "안내문 설정 모델 · API 없음", "role": "원본과 원장님 문구를 비교해 고친다"},
-  {"id": "D2-3", "area": "medic", "name": "처방", "level": 3, "target": 3, "blocker": "처방 설정 모델 · API 없음", "role": "병원에서 쓰는 처방을 관리한다"},
+  {"id": "D2-3", "area": "medic", "name": "처방", "level": 2, "target": 1, "url": "/settings.html", "blocker": "안내문 미리보기는 D2-1·D2-2 몫이라 아직 없다"},
   {"id": "D2-4", "area": "medic", "name": "검사 기준선", "level": 3, "target": 3, "blocker": "검사 기준선 모델 · API 없음", "role": "검사 항목의 정상 범위를 설정한다"},
   {"id": "D2-5", "area": "medic", "name": "문자 문구", "level": 3, "target": 3, "blocker": "문자 템플릿 모델 · API 없음", "role": "문자 기본 문구를 관리한다"},
   {"id": "P1-1", "area": "patient", "name": "링크로 들어옴 — 인증번호 보내기", "level": 3, "target": 1, "blocker": "B3 OTP 발송 구현체가 없어 항상 503. 진입 화면도 없음", "role": "안내문 링크로 들어와 인증번호를 받는다"},
