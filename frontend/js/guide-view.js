@@ -335,8 +335,9 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
   );
 }
 
-/* 문자 설정에 넘길 값. 서버가 회차·문구를 주지 않으므로 **화면이 아는 것만**
-   모은다 — 진료일과 소진 예정일은 판독 값에서 오고, 문구는 기본 템플릿이다. */
+/* 문자 설정에 넘길 값. 진료에서 오는 것(진료일 · 소진 예정일 · 환자 번호)과
+   사람이 만진 것(회차 · 시각 · 문구)을 합친다. 뒤엣것은 이제 서버에 담긴다
+   (`GET·PUT /guide/messages`) — `guideSmsPlan()` 이 저장 가능 여부도 준다. */
 function smsPlanOf(sections, mode) {
   /* 진료에서 오는 값(진료일 · 소진 예정일 · 환자 번호)은 화면이 준다.
      사람이 만진 값(회차 · 시각 · 문구)은 `guideSmsState` 가 들고 있다. */
@@ -504,7 +505,9 @@ function wireGuideEditing(opts) {
  * 않는다 — 켤 수 있게 두면 스탭이 켜 두고 갔다고 믿는다.
  */
 
-var SMS_NOT_SAVED = "회차와 문구를 저장하는 자리가 서버에 아직 없습니다 — 지금은 보기만 됩니다";
+/* 의원 템플릿(D2-5)은 아직 없다. 원문의 「템플릿으로 저장」이 그 자리인데,
+   담을 표가 없어 단추를 그리지 않는다 — 눌러도 아무 일 없는 단추보다 낫다. */
+var SMS_NO_TEMPLATE = "저장은 이 환자에게만 적용됩니다 — 의원 템플릿은 아직 없습니다";
 
 /** 회차 줄 하나. 고른 줄만 진한 테두리에 「◀ 미리보기 중」이 붙는다.
  *
@@ -586,8 +589,14 @@ function smsLeftHtml(plan) {
     '<section class="sms__card">' +
     '<h3 class="sms__title">소진 임박 안내</h3>' +
     '<div class="sms__row">' +
-    '<span class="sms__check" aria-hidden="true">☑</span>소진 ' +
-    '<input class="sms__days" type="number" min="1" max="90" value="' +
+    /* **끌 수 있다.** 예전에는 늘 ☑ 로 그려 둔 글자였다 — 처방일수를 모르는
+       진료에서도 켜진 것처럼 보였고, 끄고 싶어도 누를 데가 없었다. */
+    '<button class="sms__check" type="button" data-sms-runout aria-pressed="' +
+    (plan.runOutOn !== false) +
+    '" aria-label="소진 임박 안내 켜고 끄기">' +
+    (plan.runOutOn !== false ? "☑" : "☐") +
+    "</button>소진 " +
+    '<input class="sms__days" type="number" min="1" max="30" value="' +
     esc(String(before)) +
     '" data-sms-before aria-label="소진 며칠 전에 보낼지" /> 일 전' +
     '<span class="sms__when">' +
@@ -654,8 +663,16 @@ function smsRightHtml(plan) {
       .join("") +
     "</div>" +
     (missing ? '<p class="sms__warn">⚠ ' + esc(missing) + "</p>" : "") +
+    /* 「이 환자만 적용」 — 원문의 저장 단추다. 문구뿐 아니라 회차 · 시각 ·
+       소진 며칠 전을 한 판으로 보낸다. */
+    '<div class="sms__save">' +
+    (plan.saying ? '<span class="sms__said">' + esc(plan.saying) + "</span>" : "") +
+    '<button class="button-primary button-primary--sm" type="button" data-sms-save' +
+    (plan.canSave ? "" : " disabled") +
+    ">이 환자만 적용</button>" +
+    "</div>" +
     '<p class="sms__note">ⓘ {링크}는 지울 수 없습니다 · ' +
-    esc(SMS_NOT_SAVED) +
+    esc(plan.canSave ? SMS_NO_TEMPLATE : plan.lockedSaying || SMS_NO_TEMPLATE) +
     "</p>" +
     "</section>" +
     /* 미리보기 — 환자 휴대폰에 이렇게 간다 */
@@ -701,12 +718,29 @@ function smsScreenHtml(plan) {
 var guideSmsState = null;
 
 /** 지금 상태. 처음 부를 때 화면이 아는 값으로 채운다. */
+/** 서버가 준 설정을 화면 상태로 삼는다. **고르고 있던 회차는 지킨다** —
+    저장한 뒤 다시 읽을 때 보던 문구가 첫 회차로 튀면 안 된다. */
+function smsAdopt(plan) {
+  var next = smsPlanFromServer(plan);
+  var picked = (guideSmsState && guideSmsState.picked) || "d7";
+  guideSmsState = {
+    picked: picked,
+    on: next.on,
+    at: next.at,
+    runOutOn: next.runOutOn !== false,
+    runOutBefore: next.runOutBefore,
+    texts: next.texts,
+  };
+  return guideSmsState;
+}
+
 function smsStateNow(seed) {
   if (!guideSmsState) {
     guideSmsState = {
       picked: "d7",
       on: { d15: true },
       at: "10:00",
+      runOutOn: true,
       runOutBefore: 3,
       texts: {},
     };
@@ -722,7 +756,11 @@ function smsStateNow(seed) {
     picked: st.picked,
     on: st.on,
     at: st.at,
+    runOutOn: st.runOutOn !== false,
     runOutBefore: st.runOutBefore,
+    canSave: base.canSave !== false,
+    lockedSaying: base.lockedSaying || "",
+    saying: base.saying || "",
     text: st.texts[st.picked] !== undefined ? st.texts[st.picked] : smsDefaultText(st.picked),
   };
 }
@@ -769,11 +807,28 @@ function wireSmsSettings(opts) {
     }
 
     /* 고르기 — 오른쪽 문구와 미리보기가 그 회차로 바뀐다 */
+    /* 소진 임박 켜고 끄기 */
+    if (t.closest("[data-sms-runout]")) {
+      state().runOutOn = state().runOutOn === false;
+      say("");
+      reRender();
+      return;
+    }
+
     var pick = t.closest("[data-sms-pick]");
     if (pick) {
       state().picked = pick.getAttribute("data-sms-pick");
       say("");
       reRender();
+      return;
+    }
+
+    /* 「이 환자만 적용」 — 회차 · 시각 · 문구 · 소진 며칠 전을 한 판으로 보낸다 */
+    var save = t.closest("[data-sms-save]");
+    if (save) {
+      if (save.disabled || typeof opts.save !== "function") return;
+      save.disabled = true;
+      opts.save(smsPlanToServer(state()));
       return;
     }
 

@@ -37,6 +37,7 @@ from app.models.visits import (
     GuideEventType,
     GuideMessage,
     GuideMessageKind,
+    GuideMessageSetting,
     GuideMessageStatus,
     GuideSection,
     GuideSectionKey,
@@ -54,17 +55,44 @@ SEND_HOUR = 18
 #: 안내문은 진료 당일 저녁에 받아야 하고, 확인 문자는 며칠 뒤 낮이 낫다.
 CHECK_HOUR = 10
 
-#: 승인이 만드는 회차 — (무엇, 진료일로부터 며칠).
-#: 일주일 뒤는 어느 처방에서도 끌 수 없다(D2-3 「(고정)」) — 복약 첫 주가
-#: 가장 잘 끊기는 구간이다. 보름 뒤는 와이어프레임 기본값이 켜짐이다.
-_CHECK_ROUNDS: tuple[tuple[str, int], ...] = (
-    ("CHECK_D7", 7),
-    ("CHECK_D15", 15),
-)
-
 #: 소진 임박은 며칠 전에 보내나. D2-3 에서 처방별로 정할 값인데 그 자리가
 #: 아직 없어 기본값을 쓴다 (S1-14 의 「소진 3일 전」).
 RUN_OUT_BEFORE_DAYS = 3
+
+#: 확인 회차와 그 날수 — **있는 것 전부**다. 무엇이 켜져 있는지는 `_DEFAULT_ON`
+#: 과 저장된 설정이 정한다. 한 달 뒤는 기본이 꺼짐이지만 스탭이 켤 수 있다(S1-14).
+#: 진료일로부터 세는 이유는, 승인일 기준이면 승인이 하루 늦어질 때 「복약 7일째」
+#: 가 8일째에 가기 때문이다 — 환자에게 적는 숫자다.
+CHECK_DAYS: dict[GuideMessageKind, int] = {
+    GuideMessageKind.CHECK_D7: 7,
+    GuideMessageKind.CHECK_D15: 15,
+    GuideMessageKind.CHECK_D30: 30,
+}
+
+#: 아무도 안 만졌을 때 켜져 있는 회차. 와이어프레임 S1-14 의 체크 상태다 —
+#: 「☑ 일주일 뒤(고정) · ☑ 보름 뒤 · ☐ 한 달 뒤」, 소진 임박은 켜짐.
+_DEFAULT_ON: dict[GuideMessageKind, bool] = {
+    GuideMessageKind.CHECK_D7: True,
+    GuideMessageKind.CHECK_D15: True,
+    GuideMessageKind.CHECK_D30: False,
+    GuideMessageKind.RUN_OUT: True,
+}
+
+#: **일주일 뒤는 끌 수 없다.** 원문이 「(고정)」이라 적고 주석도 「일주일 뒤는
+#: 여기서도 끌 수 없다」고 못박는다 — 복약 첫 주가 가장 잘 끊기는 구간이다.
+#: 화면이 체크박스를 잠그지만, 서버도 막는다. 화면만 막으면 요청 하나로 꺼진다.
+FIXED_ON: frozenset[GuideMessageKind] = frozenset({GuideMessageKind.CHECK_D7})
+
+#: 확인 문자를 몇 시에 보낼지 — 화면이 고르게 하는 값들(S1-14 의 시각 목록).
+#: 아무 시각이나 받으면 새벽 3시에 문자가 갈 수 있다.
+CHECK_HOURS: tuple[int, ...] = (9, 10, 11, 14, 18)
+
+#: 소진 며칠 전. 0이면 소진 당일이라 임박이 아니고, 너무 크면 처방 시작 전이 된다.
+RUN_OUT_BEFORE_MIN = 1
+RUN_OUT_BEFORE_MAX = 30
+
+#: 문구 한 통의 길이. 장문(LMS)도 담아야 해서 넉넉히 두되, 무한은 아니다.
+MESSAGE_BODY_MAX = 2000
 
 #: 반려 사유의 길이. 스탭 알림 한 줄에 들어가야 한다.
 REASON_MAX = 200
@@ -415,17 +443,40 @@ class GuideService:
         visit = await Visit.filter(visit_id=guide.visit_id).using_db(connection).first()
         started = visit.visited_at if visit else moment
 
-        for name, days in _CHECK_ROUNDS:
-            kind = GuideMessageKind(name)
-            if kind in already:
+        # **스탭이 고른 것을 그대로 예약한다** (와이어프레임 S1-14).
+        #
+        # 예전에는 회차도 시각도 코드에 박힌 값(`_CHECK_ROUNDS` · `CHECK_HOUR`)
+        # 이었다. 화면에서 「한 달 뒤」를 켜도 예약은 안 생겼고, 시각을 오후
+        # 2시로 바꿔도 10시에 잡혔다 — **고른 것과 나가는 것이 갈렸다.**
+        #
+        # 설정 행이 없는 회차는 기본값이다(`_DEFAULT_ON`).
+        plan = {
+            r.kind: r
+            for r in await GuideMessageSetting.filter(guide_document_id=guide.guide_document_id)
+            .using_db(connection)
+            .all()
+        }
+
+        def wanted(kind: GuideMessageKind) -> bool:
+            if kind in FIXED_ON:
+                return True  # 일주일 뒤는 끌 수 없다
+            row = plan.get(kind)
+            return _DEFAULT_ON[kind] if row is None else row.enabled
+
+        hour = guide.check_hour
+
+        for kind, days in CHECK_DAYS.items():
+            if kind in already or not wanted(kind):
                 continue
-            rows.append((kind, self.check_at(started, days)))
+            rows.append((kind, self.check_at(started, days, hour)))
 
         # 소진 임박은 **처방일수를 알아야** 셈할 수 있다. 판독이 못 읽었으면
         # 만들지 않는다 — 지어낸 날짜로 예약하면 엉뚱한 날 문자가 간다.
         course = await self._course_days(guide.visit_id, connection)
-        if course and GuideMessageKind.RUN_OUT not in already:
-            rows.append((GuideMessageKind.RUN_OUT, self.check_at(started, course - RUN_OUT_BEFORE_DAYS)))
+        if course and GuideMessageKind.RUN_OUT not in already and wanted(GuideMessageKind.RUN_OUT):
+            run_out = plan.get(GuideMessageKind.RUN_OUT)
+            before = RUN_OUT_BEFORE_DAYS if run_out is None or run_out.days_before is None else run_out.days_before
+            rows.append((GuideMessageKind.RUN_OUT, self.check_at(started, course - before, hour)))
 
         for kind, at in rows:
             if at is None:
@@ -477,17 +528,122 @@ class GuideService:
         return days if days > 0 else None
 
     @staticmethod
-    def check_at(started: datetime, days: int) -> datetime:
-        """확인 · 소진 문자가 나갈 시각 — **병원 시간으로** 그날 오전 10시.
+    def check_at(started: datetime, days: int, hour: int | None = None) -> datetime:
+        """확인 · 소진 문자가 나갈 시각 — **병원 시간으로** 그날 그 시각.
 
         안내문(18:00)과 다르다. 안내문은 진료 당일 저녁에 받아야 차분히 읽고,
         확인 문자는 며칠 뒤 낮에 오는 편이 낫다 (S1-14 「오전 10:00」).
+        시각은 스탭이 고른다 — 안 주면 기본값(10시)이다.
 
         `send_at` 과 같은 이유로 **시간대를 옮겨 판단한다** — 안 옮기면 받은
         값의 시간대에서 10시가 되고, 운영(UTC)에서는 한국 저녁 7시가 된다.
         """
         local = started.astimezone(config.TIMEZONE)
-        return (local + timedelta(days=days)).replace(hour=CHECK_HOUR, minute=0, second=0, microsecond=0)
+        at = CHECK_HOUR if hour is None else hour
+        return (local + timedelta(days=days)).replace(hour=at, minute=0, second=0, microsecond=0)
+
+    # ── 문자 설정 (와이어프레임 S1-14) ────────────────────────────────
+
+    async def message_plan(self, actor, visit_id: int) -> dict:
+        """이 진료의 문자 회차 설정.
+
+        **행이 없는 회차는 기본값이다.** 화면을 한 번도 안 만진 진료까지 미리
+        다섯 줄을 채우지 않는다 — 안 만졌다는 것과 기본값으로 정했다는 것은
+        여기서 같은 뜻이다.
+        """
+        guide = await self.get(actor, visit_id)
+        rows = {r.kind: r for r in await GuideMessageSetting.filter(guide_document_id=guide.guide_document_id)}
+
+        rounds = []
+        for kind in (
+            GuideMessageKind.CHECK_D7,
+            GuideMessageKind.CHECK_D15,
+            GuideMessageKind.CHECK_D30,
+            GuideMessageKind.RUN_OUT,
+        ):
+            row = rows.get(kind)
+            rounds.append(
+                {
+                    "kind": kind.value,
+                    "enabled": _DEFAULT_ON[kind] if row is None else row.enabled,
+                    "body": None if row is None else row.body,
+                    "days_before": (
+                        RUN_OUT_BEFORE_DAYS
+                        if kind is GuideMessageKind.RUN_OUT and (row is None or row.days_before is None)
+                        else (None if row is None else row.days_before)
+                    ),
+                    "fixed": kind in FIXED_ON,
+                }
+            )
+        return {"check_hour": guide.check_hour, "rounds": rounds}
+
+    async def save_message_plan(self, actor, visit_id: int, plan) -> dict:
+        """문자 설정을 저장한다 — 「이 환자만 적용」.
+
+        스탭도 저장한다. 원문의 「저장은 의사 계정만」은 **의원 템플릿**(D2-5)
+        이야기고, 스탭은 「이 환자만 적용」까지 할 수 있다고 같은 줄이 적는다.
+
+        고칠 수 있는 때는 안내문 본문과 **같은 규칙**이다 — 스탭 확인 중이면
+        스탭이, 의사에게 넘어간 뒤로는 의사가. 두 규칙이 갈리면 「문구는
+        고쳐지는데 본문은 403」 같은 화면이 나온다.
+
+        승인 뒤(`SCHEDULED_TO_SEND`)에는 막는다. 그때 고치면 **이미 잡힌 예약과
+        어긋난다** — 화면에는 새 문구가, 예약에는 옛 문구가 남는다. 고치려면
+        승인을 거두고(`unapprove`) 고친 뒤 다시 승인한다.
+        """
+        self._require_staff_or_doctor(actor, "문자 설정은")
+
+        async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+
+            if guide.status is GuideStatus.STAFF_REVIEW:
+                self._require_staff_or_doctor(actor, "문자 설정은")
+            elif guide.status is GuideStatus.APPROVAL_PENDING:
+                self._require_doctor(actor)
+            else:
+                raise ApiError(
+                    "GUIDE_NOT_PENDING",
+                    409,
+                    "확인·승인 요청 상태에서만 문자 설정을 고칠 수 있습니다.",
+                )
+
+            hour = int(getattr(plan, "check_hour", CHECK_HOUR))
+            if hour not in CHECK_HOURS:
+                raise ApiError("BAD_CHECK_HOUR", 422, "고를 수 없는 시각입니다.")
+            guide.check_hour = hour
+            await guide.save(update_fields=["check_hour", "updated_at"], using_db=connection)
+
+            for item in getattr(plan, "rounds", []) or []:
+                kind = GuideMessageKind(item.kind)
+                enabled = bool(item.enabled)
+
+                # **일주일 뒤는 끌 수 없다** — 화면이 잠그지만 요청은 그냥 온다.
+                if kind in FIXED_ON:
+                    enabled = True
+
+                body = item.body
+                if body is not None:
+                    body = body.strip()
+                    if not body:
+                        # 비운 것은 「기본 문구로 되돌린다」는 뜻이다.
+                        body = None
+                    elif len(body) > MESSAGE_BODY_MAX:
+                        raise ApiError("BODY_TOO_LONG", 422, "문구가 너무 깁니다.")
+
+                days_before = None
+                if kind is GuideMessageKind.RUN_OUT:
+                    days_before = RUN_OUT_BEFORE_DAYS if item.days_before is None else int(item.days_before)
+                    if not RUN_OUT_BEFORE_MIN <= days_before <= RUN_OUT_BEFORE_MAX:
+                        raise ApiError("BAD_DAYS_BEFORE", 422, "소진 며칠 전인지가 범위를 벗어났습니다.")
+
+                await GuideMessageSetting.update_or_create(
+                    guide_document_id=guide.guide_document_id,
+                    kind=kind,
+                    defaults={"enabled": enabled, "body": body, "days_before": days_before},
+                    using_db=connection,
+                )
+
+        return await self.message_plan(actor, visit_id)
 
     async def unapprove(self, actor, visit_id: int) -> GuideDocument:
         """승인을 **거둔다** — 승인했는데 잘못된 것을 발견했을 때.

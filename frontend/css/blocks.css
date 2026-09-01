@@ -1339,3 +1339,17 @@ textarea.sms__text:focus-visible {
   gap: 10px;
   justify-content: flex-end;
 }
+
+/* 「이 환자만 적용」 — 문구 카드 오른쪽 끝. 저장했는지가 그 옆에 붙는다. */
+.sms__save {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: var(--s-8);
+}
+
+.sms__said {
+  font-size: 12px;
+  color: var(--ink-2);
+}

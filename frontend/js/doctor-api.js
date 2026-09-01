@@ -6,6 +6,8 @@
  *   PATCH /api/v1/visits/{visit_id}/guide/sections/{key}  그 항목만 고친다
  *   POST  /api/v1/visits/{visit_id}/guide/approve         승인 — 발송 예약
  *   POST  /api/v1/visits/{visit_id}/guide/unapprove       승인 철회 — 예약 끄기
+ *   GET   /api/v1/visits/{visit_id}/guide/messages        문자 설정 읽기
+ *   PUT   /api/v1/visits/{visit_id}/guide/messages        문자 설정 저장
  *   POST  /api/v1/visits/{visit_id}/guide/return          스탭에 되돌린다 (사유 필수)
  *   POST  /api/v1/visits/{visit_id}/guide/link            개발용 환자 링크 한 번 발급
  *
@@ -54,6 +56,20 @@ var doctorApi = {
       body: body || {},
     });
   },
+  /* 문자 설정 — 회차 · 문구 · 시각 (와이어프레임 S1-14).
+     한 판을 통째로 주고받는다. 회차 하나씩 보내면 중간에 끊겼을 때
+     「보름 뒤는 껐는데 한 달 뒤는 안 켜진」 반쪽 상태가 남는다. */
+  messagePlan: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/messages");
+  },
+
+  saveMessagePlan: function (visitId, plan) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/messages", {
+      method: "PUT",
+      body: plan,
+    });
+  },
+
   /* 승인을 거둔다 — 승인했는데 잘못된 것을 발견했을 때 (와이어프레임 D1-6).
      이미 나간 문자가 있으면 서버가 409 `GUIDE_ALREADY_SENT` 로 막는다. */
   unapprove: function (visitId) {
@@ -322,6 +338,39 @@ function mockScheduledAt() {
   return day + "T18:00:00+09:00";
 }
 
+/* 문자 설정 목업. 서버와 **같은 기본값**이어야 한다 — 다르면 목업에서만
+   보이는 화면이 생긴다 (`app/services/guides.py` 의 `_DEFAULT_ON`). */
+var MOCK_PLANS = {};
+var MOCK_PLAN_DEFAULT = [
+  { kind: "CHECK_D7", enabled: true, body: null, days_before: null, fixed: true },
+  { kind: "CHECK_D15", enabled: true, body: null, days_before: null, fixed: false },
+  { kind: "CHECK_D30", enabled: false, body: null, days_before: null, fixed: false },
+  { kind: "RUN_OUT", enabled: true, body: null, days_before: 3, fixed: false },
+];
+
+function mockPlan(visitId) {
+  var saved = MOCK_PLANS[visitId];
+  if (!saved) return { check_hour: 10, rounds: MOCK_PLAN_DEFAULT.slice() };
+
+  var fixedOf = {};
+  MOCK_PLAN_DEFAULT.forEach(function (r) {
+    fixedOf[r.kind] = r.fixed;
+  });
+  return {
+    check_hour: saved.check_hour,
+    rounds: (saved.rounds || []).map(function (r) {
+      return {
+        kind: r.kind,
+        /* 일주일 뒤는 끌 수 없다 — 서버가 그렇게 답한다 */
+        enabled: fixedOf[r.kind] ? true : r.enabled,
+        body: r.body || null,
+        days_before: r.days_before === undefined ? null : r.days_before,
+        fixed: !!fixedOf[r.kind],
+      };
+    }),
+  };
+}
+
 function mockDoctorRequest(path, options) {
   var body = options.body || {};
   return new Promise(function (resolve, reject) {
@@ -340,7 +389,8 @@ function mockDoctorRequest(path, options) {
       var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
       var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
-      var m = get || sec || act || issueLink;
+      var msgs = path.match(/^\/visits\/(\d+)\/guide\/messages$/);
+      var m = get || sec || act || issueLink || msgs;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
 
@@ -383,6 +433,16 @@ function mockDoctorRequest(path, options) {
         approvedState.scheduled_at = approved.scheduled_at;
         approvedState.returned_reason = null;
         return resolve(approved);
+      }
+
+      if (msgs) {
+        /* 목업도 저장한 것을 들고 있는다 — 안 그러면 「저장했습니다」 뒤에
+           다시 읽으면 기본값으로 돌아가, 화면에서만 되는 것처럼 보인다. */
+        if (options.method === "PUT") {
+          MOCK_PLANS[visitId] = body;
+          return resolve(mockPlan(visitId));
+        }
+        return resolve(mockPlan(visitId));
       }
 
       if (options.method === "POST" && /\/unapprove$/.test(path)) {

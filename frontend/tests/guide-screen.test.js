@@ -436,12 +436,17 @@ test("**미리보기는 치환된 실제 발송본이다**", () => {
   assert.ok(html.includes("08-20 (목)"), "언제 가는지 안 말한다");
 });
 
-test("**저장할 자리가 없다는 것을 말한다** — 켤 수 있게 두면 켜 뒀다고 믿는다", () => {
-  const { SMS_NOT_SAVED, smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+test("**의원 템플릿이 아직 없다는 것은 그대로 말한다**", () => {
+  /* 회차·문구를 담는 자리는 이제 서버에 있다(`PUT /guide/messages`). 그런데
+     원문의 「템플릿으로 저장」(D2-5 의원 템플릿)은 아직 없다 — 저장이 **이
+     환자에게만** 미친다는 것을 계속 말해야 한다. 안 말하면 스탭은 다음
+     환자에게도 그 문구가 붙는 줄 안다. */
+  const { SMS_NO_TEMPLATE, smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
 
-  assert.match(SMS_NOT_SAVED, /아직 없습니다/, "되는 것처럼 말한다");
-  const html = smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: "{링크}" });
-  assert.ok(html.includes(SMS_NOT_SAVED), "화면이 그 말을 안 한다");
+  assert.match(SMS_NO_TEMPLATE, /이 환자에게만/, "어디까지 저장되는지 안 말한다");
+  const html = smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: "{링크}", canSave: true });
+  assert.ok(html.includes(SMS_NO_TEMPLATE), "화면이 그 말을 안 한다");
+  assert.ok(!html.includes("템플릿으로 저장"), "없는 것을 누를 수 있게 그린다");
 });
 
 test("**회차를 고르는 것과 켜는 것이 다른 버튼이다** — 보려고 눌렀는데 꺼지면 안 된다", () => {

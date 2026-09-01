@@ -11,7 +11,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.patients import PatientGender
-from app.models.visits import GuideSectionKey, GuideStatus
+from app.models.visits import GuideMessageKind, GuideSectionKey, GuideStatus
 
 
 class StrictModel(BaseModel):
@@ -71,3 +71,37 @@ class SectionEditRequest(StrictModel):
 class ReturnRequest(StrictModel):
     #: 비어 있으면 되돌리지 않는다 — 이 문장이 스탭 알림에 그대로 뜬다.
     reason: str = Field(min_length=1, max_length=200)
+
+
+class MessageRound(StrictModel):
+    """문자 회차 하나 — 와이어프레임 S1-14.
+
+    `body` 가 `null` 이면 **기본 문구**다. 빈 문자열도 같은 뜻으로 받는다 —
+    스탭이 문구를 다 지운 것은 「빈 문자를 보내라」가 아니라 「기본으로
+    되돌려라」이기 때문이다.
+    """
+
+    kind: GuideMessageKind
+    enabled: bool
+    body: str | None = None
+    #: 소진 며칠 전에 보낼지. `RUN_OUT` 에만 쓴다 — 다른 회차는 날수가 이름에 있다.
+    days_before: int | None = None
+
+
+class MessageRoundOut(MessageRound):
+    #: 화면에서 끌 수 없는 회차인가. 「일주일 뒤 (고정)」이 그렇다.
+    #: 서버가 정해 내려 준다 — 화면마다 다르게 알면 한쪽에서만 꺼진다.
+    fixed: bool = False
+
+
+class MessagePlanRequest(StrictModel):
+    """문자 설정 저장 — 「이 환자만 적용」."""
+
+    #: 확인 · 재진 문자를 몇 시에 보낼지. 안내문은 승인 시각 규칙(18:00)을 따른다.
+    check_hour: int
+    rounds: list[MessageRound]
+
+
+class MessagePlanResponse(StrictModel):
+    check_hour: int
+    rounds: list[MessageRoundOut]

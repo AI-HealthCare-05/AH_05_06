@@ -123,13 +123,22 @@ function guideMissingSaying(error) {
   /* 문자 설정(S1-14)에 넘길 값. **화면이 아는 것만** 모은다 — 서버가 회차·문구를
      주지 않으므로, 진료일과 환자 번호처럼 이미 손에 있는 것으로 셈한다.
      처방일수·소진 예정일은 판독 값에서 오는데 그 자리가 아직 없어 비워 둔다. */
-  window.guideSmsPlan = function () {
+  window.guideSmsPlan = function (mode) {
     var p = (guide && guide.patient) || {};
+    /* **고칠 수 있는 때는 안내문 본문과 같은 규칙이다.** 두 규칙이 갈리면
+       「문구는 고쳐지는데 본문은 403」 같은 화면이 나온다. */
+    var canSave = !!guide && canEditNow(mode === "final" ? "final" : "guide");
     return {
       startIso: guide && guide.visited_at ? String(guide.visited_at).slice(0, 10) : "",
       runOutIso: "",
       phone: p.phone || "",
       values: { 환자명: p.name || "", 일차: 7, 의원명: "" },
+      canSave: canSave,
+      lockedSaying:
+        guide && guide.status === "SCHEDULED_TO_SEND"
+          ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
+          : "지금은 고칠 수 없습니다",
+      saying: smsSaying,
     };
   };
 
@@ -317,6 +326,19 @@ function guideMissingSaying(error) {
     renderAll();
     if (!id) return;
 
+    /* 문자 설정은 **따로 불러온다.** 안내문과 한 요청으로 묶으면 한쪽이
+       실패할 때 둘 다 못 보고, 설정이 없어도 안내문은 보여야 한다. */
+    doctorApi
+      .messagePlan(id)
+      .then(function (data) {
+        if (mySeq !== loadSeq) return;
+        smsAdopt(data);
+        renderAll();
+      })
+      .catch(function () {
+        /* 못 읽으면 화면 기본값으로 둔다 — 저장은 눌러 보면 알 수 있다 */
+      });
+
     doctorApi.guide(id).then(
       function (res) {
         if (mySeq !== loadSeq) return; // 그 사이 다른 진료로 갔다
@@ -493,13 +515,43 @@ function guideMissingSaying(error) {
      화면마다 다른 것은 어느 진료인지와 다시 그리는 법뿐이다. */
   /* 문자 설정도 같은 배선을 쓴다 — 두 벌이면 어느 화면에서 만졌느냐에 따라
      되고 안 되고가 갈린다. */
+  /* 저장한 뒤 한 줄. 문자 설정 카드 안에 뜬다 — 눌렀는데 아무 말이 없으면
+     「저장이 됐나」가 된다. */
+  var smsSaying = "";
+
   wireSmsSettings({
     reRender: function (keepCaret) {
       renderOne("guide", canEditNow("guide"), keepCaret);
+      renderOne("final", canEditNow("final"), keepCaret);
     },
     say: say,
     courseDays: function () {
       return 0;
+    },
+    save: function (plan) {
+      var wantedId = visitId;
+      if (!wantedId) return;
+      smsSaying = "저장하는 중…";
+      renderAll();
+
+      doctorApi
+        .saveMessagePlan(wantedId, plan)
+        .then(function (data) {
+          if (visitId !== wantedId) return;
+          /* **서버가 돌려준 것을 화면 상태로 삼는다.** 보낸 것을 그대로 두면,
+             서버가 고쳐 준 값(일주일 뒤는 켜짐으로 되돌림)이 화면에 안 보인다. */
+          smsAdopt(data);
+          smsSaying = "저장했습니다";
+          renderAll();
+        })
+        .catch(function (err) {
+          if (visitId !== wantedId) return;
+          smsSaying =
+            err && err.code === "GUIDE_NOT_PENDING"
+              ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
+              : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
+          renderAll();
+        });
     },
   });
 

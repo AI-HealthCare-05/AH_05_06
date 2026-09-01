@@ -137,6 +137,8 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
         "/api/v1/visits/{visit_id}/guide/return": "app.apis.v1.guide_routers",
         # 스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11 (KEY-234)
         "/api/v1/visits/{visit_id}/guide/submit": "app.apis.v1.guide_routers",
+        # 문자 설정 — 회차 · 문구 · 시각 (와이어프레임 S1-14 · KEY-234)
+        "/api/v1/visits/{visit_id}/guide/messages": "app.apis.v1.guide_routers",
         # 승인을 거둔다 — 승인했는데 잘못된 것을 발견했을 때 (KEY-234)
         "/api/v1/visits/{visit_id}/guide/unapprove": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/sections/{key}": "app.apis.v1.guide_routers",

@@ -205,3 +205,80 @@ function smsClampBefore(value, courseDays) {
   if (!max || isNaN(max)) max = 30;
   return Math.max(1, Math.min(n, max));
 }
+
+/* ── 서버와 주고받는 모양 (와이어프레임 S1-14) ────────────────────────
+ *
+ * 화면은 `d7` · `d15` · `d30` · `runOut` 으로 부르고, 서버는 `CHECK_D7` …
+ * `RUN_OUT` 으로 부른다. 이름을 한쪽에 맞추지 않는 이유는, 화면 키가 회차
+ * 목록(`SMS_ROUNDS`)의 키이고 서버 값은 표의 열거값이기 때문이다 — 한쪽이
+ * 바뀔 때 다른 쪽이 끌려가면 안 된다. 여기 한 곳에서만 옮긴다.
+ */
+var SMS_KIND = { d7: "CHECK_D7", d15: "CHECK_D15", d30: "CHECK_D30", runOut: "RUN_OUT" };
+
+function smsKeyOfKind(kind) {
+  for (var key in SMS_KIND) {
+    if (Object.prototype.hasOwnProperty.call(SMS_KIND, key) && SMS_KIND[key] === kind) return key;
+  }
+  return null;
+}
+
+/** `10` → `"10:00"`. 서버는 시각을 숫자로 담는다 — 분은 고를 자리가 없다. */
+function smsHourText(hour) {
+  var n = parseInt(String(hour), 10);
+  if (isNaN(n) || n < 0 || n > 23) return "10:00";
+  return (n < 10 ? "0" : "") + n + ":00";
+}
+
+/** 서버가 준 설정을 화면 상태로. 모르는 회차는 버린다 — 화면에 그릴 자리가 없다. */
+function smsPlanFromServer(plan) {
+  var out = { at: smsHourText(plan && plan.check_hour), on: {}, texts: {}, runOutBefore: 3 };
+  var rounds = (plan && plan.rounds) || [];
+
+  for (var i = 0; i < rounds.length; i++) {
+    var row = rounds[i];
+    var key = smsKeyOfKind(row.kind);
+    if (!key) continue;
+
+    /* **소진 임박은 회차가 아니다.** `on` 에 섞으면 왼쪽 회차 목록에 「소진」이
+       한 줄 더 생긴다 — 그건 아래 따로 있는 칸이다. */
+    if (key === "runOut") {
+      out.runOutOn = row.enabled !== false;
+      if (row.days_before !== null && row.days_before !== undefined) out.runOutBefore = row.days_before;
+    } else if (key !== "d7") {
+      /* d7 은 늘 켜져 있다 — `on` 에 담지 않는 것이 화면의 규칙이다(`smsRoundOn`) */
+      out.on[key] = row.enabled !== false;
+    }
+
+    if (row.body) out.texts[key] = row.body;
+  }
+  return out;
+}
+
+/** 화면 상태를 서버가 받는 모양으로. **한 판을 통째로 보낸다** — 회차 하나씩
+    보내면 중간에 끊겼을 때 반쪽 상태가 남는다. */
+function smsPlanToServer(state) {
+  var st = state || {};
+  var texts = st.texts || {};
+  var rounds = [];
+
+  for (var i = 0; i < SMS_ROUNDS.length; i++) {
+    var r = SMS_ROUNDS[i];
+    rounds.push({
+      kind: SMS_KIND[r.key],
+      enabled: smsRoundOn({ on: st.on || {} }, r.key),
+      /* 기본 문구 그대로면 안 보낸다 — 보내면 「이 환자만 적용」이 아닌데도
+         고친 것으로 담기고, 나중에 기본 문구가 바뀌어도 안 따라온다. */
+      body: texts[r.key] !== undefined && texts[r.key] !== smsDefaultText(r.key) ? texts[r.key] : null,
+      days_before: null,
+    });
+  }
+
+  rounds.push({
+    kind: SMS_KIND.runOut,
+    enabled: st.runOutOn !== false,
+    body: texts.runOut !== undefined ? texts.runOut : null,
+    days_before: st.runOutBefore === undefined ? 3 : st.runOutBefore,
+  });
+
+  return { check_hour: parseInt(String(st.at || "10:00").slice(0, 2), 10), rounds: rounds };
+}

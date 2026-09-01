@@ -137,6 +137,13 @@ class GuideDocument(models.Model):
     #: 이력 전체는 GuideEvent 가 갖는다.
     returned_reason = fields.CharField(max_length=200, null=True)
 
+    #: 확인 문자를 몇 시에 보낼지 (와이어프레임 S1-14 「확인 문자 시각」).
+    #: 회차마다 따로 두지 않는 이유는 **화면에 고르는 자리가 하나**이기
+    #: 때문이다 — 원문 주석: 「확인 · 재진 문자에 적용」. 회차별로 담아 두면
+    #: 화면이 못 만드는 상태(회차마다 다른 시각)를 표가 허용하게 된다.
+    #: 안내문 자신은 이 값을 따르지 않는다 — 승인 시각 규칙(기본 18:00)이다.
+    check_hour = fields.SmallIntField(default=10)
+
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -316,6 +323,49 @@ class GuideMessageStatus(StrEnum):
     SENT = "SENT"
     FAILED = "FAILED"
     CANCELED = "CANCELED"
+
+
+class GuideMessageSetting(models.Model):
+    """이 진료의 문자 회차 설정 — 와이어프레임 S1-14 「문자 설정」.
+
+    **`GuideMessage` 와 다른 표다.** 저쪽은 「나갈 문자 한 통」이고 승인해야
+    생긴다. 여기는 「이 환자에게 어떤 회차를 어떤 문구로 보낼지」이고, 승인
+    **전에** 스탭이 정한다. 한 표로 합치면 승인 전에는 담을 데가 없다.
+
+    행이 없는 회차는 **기본값**이다 (`_DEFAULT_ON`). 화면을 한 번도 안 만진
+    진료까지 미리 다섯 줄을 채우지 않는다 — 안 만졌다는 것과 기본값으로
+    정했다는 것은 여기서 같은 뜻이라, 굳이 갈라 적을 이유가 없다.
+
+    `body` 가 비면 기본 문구다. 원문의 우선순위는 「이 환자만 적용」 >
+    의원 템플릿(D2-5) > 기본인데, 이 표가 담는 것은 **맨 앞 하나**다 —
+    의원 템플릿은 아직 없다.
+    """
+
+    guide_message_setting_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="message_settings",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    guide_document_id: int
+
+    kind = fields.CharEnumField(enum_type=GuideMessageKind)
+    enabled = fields.BooleanField(default=True)
+
+    #: 이 환자에게만 적용할 문구. 비면 기본 문구를 쓴다.
+    body = fields.TextField(null=True)
+
+    #: 소진 임박을 며칠 전에 보낼지. `RUN_OUT` 에만 쓴다 — 다른 회차는
+    #: 날수가 이름에 박혀 있다(D7 · D15 · D30).
+    days_before = fields.SmallIntField(null=True)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "guide_message_setting"
+        unique_together = (("guide_document", "kind"),)
 
 
 class GuideMessage(models.Model):

@@ -33,7 +33,13 @@ class Actor:
         self.roles = frozenset(staff.roles or [])
 
 
-class SendScheduleTestCase(TestCase):
+class World:
+    """세계를 세우는 도구만. **검사는 없다.**
+
+    이걸 `TestCase` 에 섞어 두면, 물려받는 파일마다 부모의 검사가 통째로 다시
+    돈다 — 같은 것을 세 번 재게 된다. 도구와 검사를 갈라 둔다.
+    """
+
     async def make_world(self, chart: str = "SCH-01") -> tuple[Actor, Visit, GuideDocument]:
         clinic = await Hospital.create(name="여성의원")
         doctor = await Staff.create(
@@ -79,6 +85,8 @@ class SendScheduleTestCase(TestCase):
             is_confirmed=True,
         )
 
+
+class SendScheduleTestCase(World, TestCase):
     async def test_approval_schedules_the_rounds(self) -> None:
         """승인하면 진료 안내문과 확인 회차가 **함께** 선다."""
         actor, visit, guide = await self.make_world()
