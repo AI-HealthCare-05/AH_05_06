@@ -52,7 +52,6 @@ def _otp_digest(code: str, salt: str, secret_key: str) -> str:
     return hmac.new(otp_key, payload, hashlib.sha256).hexdigest()
 
 
-
 def _seconds_until(value: datetime, timestamp: datetime) -> int:
     return max(1, int((as_utc(value) - as_utc(timestamp)).total_seconds() + 0.999))
 
