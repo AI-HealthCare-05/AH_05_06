@@ -96,6 +96,29 @@ var catalogApi = {
     });
   },
 
+  /* 검사 기준선(D2-4). `doctor_id` 가 없으면 의원 공통이다 — 원문의
+     「누구 기준」. 저장은 **한 판 통째로**: 줄마다 번호를 주고받으면 지운 줄을
+     놓쳐 유령이 남는다. */
+  baselines: function (doctorId) {
+    if (MOCK) return mockBaselines(doctorId);
+    return request(
+      "/lab-baselines" +
+        (doctorId ? "?doctor_id=" + encodeURIComponent(doctorId) : ""),
+    );
+  },
+
+  saveBaselines: function (doctorId, items) {
+    if (MOCK) return mockSaveBaselines(doctorId, items);
+    return request(
+      "/lab-baselines" +
+        (doctorId ? "?doctor_id=" + encodeURIComponent(doctorId) : ""),
+      {
+        method: "PUT",
+        body: { items: items },
+      },
+    );
+  },
+
   saveSet: function (id, plan) {
     if (MOCK) return mockSaveSet(id, plan);
     return request("/prescription-sets/" + encodeURIComponent(id), {
@@ -267,4 +290,194 @@ function mockSaveTemplate(kind, body) {
   if (body == null) delete mockTemplateEdits[kind];
   else mockTemplateEdits[kind] = body;
   return mockTemplatePage();
+}
+
+/* ── 검사 기준선 목업 (D2-4) ───────────────────────────────────────────
+ *
+ * 원문의 열세 줄. **서버 기본값과 같은 글이어야 한다** — 다르면 목업에서
+ * 본 기준으로 「목표까지 얼마」를 말하게 된다.
+ */
+function mockBaselineSeed() {
+  return [
+    {
+      disease: "PCOS",
+      name: "월경 주기",
+      direction: "KEEP",
+      low: "21.00",
+      high: "35.00",
+      by_age: false,
+      keywords: "LMP, 월경, 주기",
+      unit: "일",
+      always_shown: true,
+    },
+    {
+      disease: "PCOS",
+      name: "총 테스토스테론",
+      direction: "LOWER",
+      low: null,
+      high: null,
+      by_age: false,
+      keywords: "Testosterone, 테스토스테론",
+      unit: "ng/dL",
+      always_shown: true,
+    },
+    {
+      disease: "PCOS",
+      name: "DHEA-S",
+      direction: "LOWER",
+      low: null,
+      high: null,
+      by_age: false,
+      keywords: "DHEA-S, DHEAS",
+      unit: "µg/dL",
+      always_shown: true,
+    },
+    {
+      disease: "PCOS",
+      name: "AMH",
+      direction: "KEEP",
+      low: null,
+      high: null,
+      by_age: true,
+      keywords: "AMH, 항뮬러관",
+      unit: "ng/mL",
+      always_shown: true,
+    },
+    {
+      disease: "PCOS",
+      name: "LH / FSH",
+      direction: "REFERENCE",
+      low: null,
+      high: null,
+      by_age: false,
+      keywords: "LH, FSH",
+      unit: "비율",
+      always_shown: true,
+    },
+    {
+      disease: "PCOS",
+      name: "HbA1c",
+      direction: "LOWER",
+      low: null,
+      high: null,
+      by_age: false,
+      keywords: "HbA1c, 당화혈색소",
+      unit: "%",
+      always_shown: false,
+    },
+    {
+      disease: "PCOS",
+      name: "BMI",
+      direction: "LOWER",
+      low: null,
+      high: null,
+      by_age: false,
+      keywords: "BMI, 체질량",
+      unit: "",
+      always_shown: false,
+    },
+    {
+      disease: "ENDOMETRIOSIS",
+      name: "혈색소 Hb",
+      direction: "KEEP",
+      low: "12.00",
+      high: null,
+      by_age: false,
+      keywords: "Hb, 혈색소, Hemoglobin",
+      unit: "g/dL",
+      always_shown: true,
+    },
+    {
+      disease: "ENDOMETRIOSIS",
+      name: "자궁내막종 크기",
+      direction: "LOWER",
+      low: null,
+      high: null,
+      by_age: false,
+      keywords: "LO, RO, cyst, 내막종",
+      unit: "cm",
+      always_shown: true,
+    },
+    {
+      disease: "ENDOMETRIOSIS",
+      name: "내막 두께 EM",
+      direction: "KEEP",
+      low: null,
+      high: null,
+      by_age: false,
+      keywords: "EM, 내막두께",
+      unit: "cm",
+      always_shown: true,
+    },
+    {
+      disease: "ENDOMETRIOSIS",
+      name: "AMH",
+      direction: "KEEP",
+      low: null,
+      high: null,
+      by_age: true,
+      keywords: "AMH, 항뮬러관",
+      unit: "ng/mL",
+      always_shown: true,
+    },
+    {
+      disease: "ENDOMETRIOSIS",
+      name: "간수치 AST/ALT",
+      direction: "KEEP",
+      low: null,
+      high: "40.00",
+      by_age: false,
+      keywords: "AST, ALT, SGOT",
+      unit: "U/L",
+      always_shown: true,
+    },
+    {
+      disease: "ENDOMETRIOSIS",
+      name: "CA-125",
+      direction: "LOWER",
+      low: null,
+      high: "35.00",
+      by_age: false,
+      keywords: "CA-125, CA125",
+      unit: "U/mL",
+      always_shown: false,
+    },
+  ];
+}
+
+/* 의사 둘 — 원문의 「누구 기준」이 뜨는 자리를 눈으로 보려면 둘이어야 한다. */
+var MOCK_BASELINE_DOCTORS = [
+  { doctor_id: 1, name: "박연" },
+  { doctor_id: 2, name: "김연우" },
+];
+
+var mockBaselineBoards = null;
+
+function mockBaselineBoard(doctorId) {
+  if (!mockBaselineBoards) mockBaselineBoards = { common: mockBaselineSeed() };
+  var key = doctorId ? "d" + doctorId : "common";
+  /* 그 의사만의 기준을 아직 안 만들었으면 **의원 공통을 보인다** — 빈 화면은
+     「이 의사에게는 기준이 없다」로 읽히는데 실제로는 공통이 쓰인다. */
+  return mockBaselineBoards[key] || mockBaselineBoards.common;
+}
+
+function mockBaselines(doctorId) {
+  return Promise.resolve({
+    doctor_id: doctorId || null,
+    items: mockBaselineBoard(doctorId),
+    doctors: MOCK_BASELINE_DOCTORS,
+  });
+}
+
+function mockSaveBaselines(doctorId, items) {
+  if (!mockBaselineBoards) mockBaselineBoards = { common: mockBaselineSeed() };
+  mockBaselineBoards[doctorId ? "d" + doctorId : "common"] = items.map(
+    function (row) {
+      return Object.assign({}, row, {
+        low: row.by_age ? null : row.low,
+        high: row.by_age ? null : row.high,
+      });
+    },
+  );
+  return mockBaselines(doctorId);
 }

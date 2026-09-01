@@ -42,6 +42,8 @@
      쪽인지 매번 되물어야 한다. */
   var group = null; // null 이면 처방을 보고 있다
   var templates = null; // 문자 문구 판
+  var baselines = null; // 검사 기준선 판
+  var whose = null; // 누구 기준 — 비면 의원 공통
   var drafts = {}; // 아직 저장 안 한 문구 — 다시 그려도 친 값이 남아야 한다
 
   /* ── 왼쪽 레일 ─────────────────────────────────────────────────── */
@@ -278,7 +280,161 @@
     );
   }
 
+  /* 검사 기준선 한 줄 — 원문 D2-4 의 표 한 행. */
+  function baselineRowHtml(row, index) {
+    return (
+      /* **줄이 제 질환을 들고 있어야 한다.** `data-row` 는 그린 차례이고
+         `baselines.items` 는 배열 차례인데, 질환으로 묶어 그리므로 새로 더한
+         줄에서 둘이 어긋난다 — 배열을 되짚지 않고 여기서 읽는다. */
+      '<tr data-row="' +
+      index +
+      '" data-disease="' +
+      esc(row.disease) +
+      '">' +
+      '<td><input class="fld__input bl__name" value="' +
+      esc(row.name) +
+      '"' +
+      (canEdit ? "" : " disabled") +
+      " /></td>" +
+      "<td>" +
+      BASELINE_DIRECTIONS.map(function (option) {
+        return (
+          '<label class="bl__dir"><input type="radio" name="dir' +
+          index +
+          '" value="' +
+          esc(option.key) +
+          '"' +
+          (option.key === row.direction ? " checked" : "") +
+          (canEdit ? "" : " disabled") +
+          " />" +
+          esc(option.say) +
+          "</label>"
+        );
+      }).join("") +
+      "</td>" +
+      '<td class="bl__range">' +
+      '<input class="fld__input bl__num" value="' +
+      esc(trimNumber(row.low)) +
+      '" placeholder="아래"' +
+      (row.by_age || !canEdit ? " disabled" : "") +
+      " />" +
+      '<span class="bl__tilde">~</span>' +
+      '<input class="fld__input bl__num" value="' +
+      esc(trimNumber(row.high)) +
+      '" placeholder="위"' +
+      (row.by_age || !canEdit ? " disabled" : "") +
+      " />" +
+      '<label class="bl__age"><input type="checkbox" class="bl__byage"' +
+      (row.by_age ? " checked" : "") +
+      (canEdit ? "" : " disabled") +
+      " />나이별</label>" +
+      "</td>" +
+      '<td><input class="fld__input bl__keys" value="' +
+      esc(row.keywords) +
+      '"' +
+      (canEdit ? "" : " disabled") +
+      " /></td>" +
+      '<td><input class="fld__input bl__unit" value="' +
+      esc(row.unit) +
+      '"' +
+      (canEdit ? "" : " disabled") +
+      " /></td>" +
+      '<td class="bl__center"><input type="checkbox" class="bl__shown"' +
+      (row.always_shown ? " checked" : "") +
+      (canEdit ? "" : " disabled") +
+      " /></td>" +
+      '<td class="bl__center">' +
+      (canEdit
+        ? '<button class="button-ghost button-ghost--sm" type="button" data-drop-baseline="' +
+          index +
+          '">삭제</button>'
+        : "") +
+      "</td></tr>"
+    );
+  }
+
+  function baselinesHtml() {
+    if (!baselines) return '<p class="note">불러오는 중…</p>';
+    var index = -1;
+    var blocks = baselinesByDisease(baselines.items)
+      .map(function (block) {
+        return (
+          '<section class="box"><div class="box__head"><h2 class="box__title">' +
+          esc(block.title) +
+          "</h2></div>" +
+          '<div class="table-wrap"><table class="past bl"><thead><tr>' +
+          [
+            "검사 항목",
+            "방향",
+            "기준선",
+            "판독 키워드",
+            "단위",
+            "항상 표시",
+            "",
+          ]
+            .map(function (head) {
+              return "<th>" + esc(head) + "</th>";
+            })
+            .join("") +
+          "</tr></thead><tbody>" +
+          block.rows
+            .map(function (row) {
+              index += 1;
+              return baselineRowHtml(row, index);
+            })
+            .join("") +
+          "</tbody></table></div>" +
+          (canEdit
+            ? '<button class="button-ghost button-ghost--sm" type="button" data-add-baseline="' +
+              esc(block.disease) +
+              '">+ 검사 항목 추가</button>'
+            : "") +
+          "</section>"
+        );
+      })
+      .join("");
+
+    return (
+      '<div class="patient-head"><span class="patient-head__name">검사 기준선</span>' +
+      (showsWhosePicker(baselines.doctors)
+        ? '<label class="bl__whose">누구 기준 <select class="fld__input" id="bl-whose">' +
+          '<option value=""' +
+          (whose ? "" : " selected") +
+          ">의원 공통</option>" +
+          baselines.doctors
+            .map(function (doctor) {
+              return (
+                '<option value="' +
+                esc(doctor.doctor_id) +
+                '"' +
+                (String(whose) === String(doctor.doctor_id)
+                  ? " selected"
+                  : "") +
+                ">" +
+                esc(doctor.name) +
+                " 원장</option>"
+              );
+            })
+            .join("") +
+          "</select></label>"
+        : "") +
+      '<span class="grow"></span>' +
+      (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
+      (canEdit
+        ? ""
+        : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
+      '<button class="button-primary button-primary--sm" type="button" id="bl-save"' +
+      (canEdit ? "" : " disabled") +
+      ">저장</button></div>" +
+      blocks +
+      '<p class="note note--warn">⚠ 기준선은 검사기관 · 연령에 따라 다릅니다 · 비워 두면 값과 추이만 표시하고 목표 대비 수치는 계산하지 않습니다</p>' +
+      '<p class="note">ⓘ 「항상 표시」를 해제하면 판독 결과 확인 화면의 「＋ 항목 추가」에서 선택합니다</p>' +
+      '<p class="note">ⓘ 판독 키워드는 EMR 표기를 그대로 적어 주세요 — 판독이 진료기록에서 그 항목을 찾는 데 씁니다</p>'
+    );
+  }
+
   function detailHtml() {
+    if (group === "baseline") return baselinesHtml();
     if (group === "sms") return templatesHtml();
     if (!picked) {
       return '<p class="note">처방을 선택하면 상세 설정이 표시됩니다</p>';
@@ -610,6 +766,95 @@
       });
   }
 
+  /* ── 검사 기준선 (D2-4) ────────────────────────────────────────── */
+
+  function openBaselines() {
+    group = "baseline";
+    pickedId = null;
+    picked = null;
+    templates = null;
+    saying = "";
+    render();
+    return loadBaselines();
+  }
+
+  function loadBaselines() {
+    return catalogApi
+      .baselines(whose)
+      .then(function (data) {
+        if (group !== "baseline") return; // 그 사이 다른 데로 갔으면 붙이지 않는다
+        baselines = data;
+        render();
+      })
+      .catch(function () {
+        if (group !== "baseline") return;
+        el("detail").innerHTML =
+          '<p class="note">검사 기준선을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>';
+      });
+  }
+
+  /* 화면에 적힌 것을 거둔다. **다시 그리기 전에 부른다** — 안 그러면 치던
+     값이 날아간다. */
+  function baselinesNow() {
+    var rows = [];
+    var trs = document.querySelectorAll("#detail [data-row]");
+    for (var i = 0; i < trs.length; i++) {
+      var tr = trs[i];
+      var nums = tr.querySelectorAll(".bl__num");
+      var dir = tr.querySelector("input[type=radio]:checked");
+      rows.push({
+        disease: tr.getAttribute("data-disease"),
+        name: tr.querySelector(".bl__name").value,
+        direction: dir ? dir.value : "KEEP",
+        low: nums[0].value,
+        high: nums[1].value,
+        by_age: tr.querySelector(".bl__byage").checked,
+        keywords: tr.querySelector(".bl__keys").value,
+        unit: tr.querySelector(".bl__unit").value,
+        always_shown: tr.querySelector(".bl__shown").checked,
+      });
+    }
+    return rows;
+  }
+
+  function saveBaselines() {
+    var rows = baselinesNow();
+    baselines = Object.assign({}, baselines, { items: rows });
+    /* **하나라도 막히면 아무것도 안 보낸다.** 반만 저장되면 어느 것이
+       들어갔는지 화면이 말할 수 없다. */
+    for (var i = 0; i < rows.length; i++) {
+      var problem = baselineProblem(rows[i]);
+      if (problem) {
+        saying = problem;
+        return render();
+      }
+    }
+    var twice = duplicateBaselines(rows);
+    if (twice.length) {
+      saying = "같은 질환에 「" + twice[0] + "」가 둘입니다";
+      return render();
+    }
+
+    saying = "저장하는 중…";
+    render();
+    catalogApi
+      .saveBaselines(whose, rows)
+      .then(function (data) {
+        /* **서버가 돌려준 것을 화면으로 삼는다** — 나이별을 켜면 서버가 숫자를
+           비우는데, 그것이 화면에 안 보이면 안 된다. */
+        baselines = data;
+        saying = "저장되었습니다";
+        render();
+      })
+      .catch(function (err) {
+        saying =
+          err && err.status === 403
+            ? "의사 계정만 수정할 수 있습니다"
+            : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요";
+        render();
+      });
+  }
+
   /* ── 손짓 ──────────────────────────────────────────────────────── */
 
   document.addEventListener("click", function (event) {
@@ -620,12 +865,46 @@
     if (row) {
       group = null;
       templates = null;
+      baselines = null;
       return loadSet(Number(row.getAttribute("data-set")));
     }
 
     var chosenGroup = target.closest("[data-group]");
     if (chosenGroup && chosenGroup.getAttribute("data-group") === "sms")
       return openTemplates();
+    if (chosenGroup && chosenGroup.getAttribute("data-group") === "baseline")
+      return openBaselines();
+
+    if (target.closest("#bl-save")) return saveBaselines();
+
+    var addBaseline = target.closest("[data-add-baseline]");
+    if (addBaseline) {
+      var added = baselinesNow();
+      added.push({
+        disease: addBaseline.getAttribute("data-add-baseline"),
+        name: "",
+        direction: "KEEP",
+        low: "",
+        high: "",
+        by_age: false,
+        keywords: "",
+        unit: "",
+        always_shown: true,
+      });
+      baselines = Object.assign({}, baselines, { items: added });
+      saying = "";
+      return render();
+    }
+
+    var dropBaseline = target.closest("[data-drop-baseline]");
+    if (dropBaseline) {
+      /* 지우기 전에 화면에 적힌 것을 거둔다 — 안 그러면 치던 값이 날아간다 */
+      var kept = baselinesNow();
+      kept.splice(Number(dropBaseline.getAttribute("data-drop-baseline")), 1);
+      baselines = Object.assign({}, baselines, { items: kept });
+      saying = "";
+      return render();
+    }
 
     if (target.closest("#sms-save")) return saveTemplates();
     var revert = target.closest("[data-revert]");
@@ -650,8 +929,26 @@
     }
   });
 
-  /* 세는 방법과 소진 임박은 **켜면 칸이 따라 나온다** — 다시 그려야 보인다 */
   document.addEventListener("change", function (event) {
+    /* 나이별을 켜면 숫자칸이 잠긴다 — 숫자 하나로 못 적는 값이라, 남겨 두면
+       어느 쪽으로 셈할지 알 수 없다. 서버도 같은 이유로 지운다. */
+    if (
+      event.target.classList &&
+      event.target.classList.contains("bl__byage")
+    ) {
+      baselines = Object.assign({}, baselines, { items: baselinesNow() });
+      return render();
+    }
+    /* 누구 기준을 바꾸면 그 판을 다시 읽는다. */
+    if (event.target.id === "bl-whose") {
+      whose = event.target.value ? Number(event.target.value) : null;
+      baselines = null;
+      saying = "";
+      render();
+      return loadBaselines();
+    }
+
+    /* 세는 방법과 소진 임박은 **켜면 칸이 따라 나온다** — 다시 그려야 보인다 */
     var id = event.target.id;
     if (id !== "f-days-mode" && id !== "f-runout") return;
     picked = Object.assign({}, picked, planNow());

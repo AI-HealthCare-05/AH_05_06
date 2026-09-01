@@ -202,7 +202,7 @@ test("만든 묶음만 눌린다", () => {
 
   assert.strictEqual(rail.RAIL_GROUP_READY.sms, true);
   assert.ok(!rail.RAIL_GROUP_READY.guide, "안내문(D2-1·D2-2)은 아직 없다");
-  assert.ok(!rail.RAIL_GROUP_READY.baseline, "검사 기준선(D2-4)도 아직 없다");
+  assert.strictEqual(rail.RAIL_GROUP_READY.baseline, true, "검사 기준선(D2-4)도 열린다");
 });
 
 test("설정 화면이 규칙 파일을 싣는다", () => {

@@ -303,3 +303,68 @@ class MessageTemplate(models.Model):
         table = "message_template"
         #: 한 의원에 같은 회차가 둘이면 어느 것으로 보낼지 알 수 없다.
         unique_together = (("hospital_id", "kind"),)
+
+
+class BaselineDirection(StrEnum):
+    """이 값을 **어느 쪽으로** 끌고 가나 — 와이어프레임 D2-4 「방향」.
+
+    D1 「나의 목표」가 남은 거리를 셈할 때 이 값이 부호를 정한다. 「참고」는
+    목표가 없다는 뜻이다 — LH/FSH 비율처럼 보기는 하되 올리고 내릴 값이
+    아닌 것들이 있다.
+    """
+
+    KEEP = "KEEP"
+    LOWER = "LOWER"
+    REFERENCE = "REFERENCE"
+
+
+class LabBaseline(models.Model):
+    """검사 항목 하나의 기준선 — 와이어프레임 D2-4.
+
+    **기준선을 비워 둘 수 있다.** 원문: 「비워 두면 값과 추이만 표시하고 목표
+    대비 수치는 계산하지 않습니다」. 검사기관과 나이에 따라 다르기 때문이고,
+    모르는 채로 셈해 「목표까지 3 남았습니다」라고 말하는 것이 제일 나쁘다.
+
+    **`keywords` 가 이 표의 다른 절반이다.** EMR 마다 표기가 다르다
+    (DHEA-S / DHEAS / 황체호르몬). 판독이 진료기록에서 그 항목을 찾으려면
+    의원이 쓰는 표기를 알아야 한다.
+
+    `doctor_id` 가 비면 **의원 공통**이다. 원문의 「누구 기준」 드롭다운이
+    그것이고, 의사가 둘 이상일 때만 화면에 뜬다.
+    """
+
+    lab_baseline_id = fields.BigIntField(primary_key=True)
+    hospital_id = fields.BigIntField()
+    #: 비면 의원 공통. 차면 그 의사 담당 환자에게만 쓴다.
+    doctor_id = fields.BigIntField(null=True)
+    disease = fields.CharEnumField(enum_type=SetDisease)
+
+    #: 화면에 뜨는 이름 — 「총 테스토스테론」·「간수치 AST/ALT」.
+    name = fields.CharField(max_length=100)
+    direction = fields.CharEnumField(enum_type=BaselineDirection, default=BaselineDirection.KEEP)
+
+    #: 기준선. **둘 다 비면 목표를 셈하지 않는다.**
+    #:   21~35    → low 21 · high 35
+    #:   12.0 이상 → low 12.0
+    #:   40 미만   → high 40
+    low = fields.DecimalField(max_digits=8, decimal_places=2, null=True)
+    high = fields.DecimalField(max_digits=8, decimal_places=2, null=True)
+    #: 나이별 기준 — 숫자 하나로 못 적는 것들(AMH). 켜면 low·high 를 안 쓴다.
+    by_age = fields.BooleanField(default=False)
+
+    #: 판독이 진료기록에서 찾을 표기들. 쉼표로 잇는다.
+    keywords = fields.CharField(max_length=200, default="")
+    #: 「일」·「ng/dL」·「비율」. BMI 처럼 단위가 없는 것도 있다.
+    unit = fields.CharField(max_length=20, default="")
+
+    #: 판독 결과 확인 화면에 늘 보일 것인가. 끄면 「＋ 항목 추가」에서 고른다.
+    always_shown = fields.BooleanField(default=True)
+    position = fields.SmallIntField(default=0)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "lab_baseline"
+        #: 같은 항목이 둘이면 어느 기준으로 셈할지 알 수 없다.
+        unique_together = (("hospital_id", "doctor_id", "disease", "name"),)

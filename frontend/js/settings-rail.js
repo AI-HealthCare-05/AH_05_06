@@ -93,7 +93,7 @@ var RAIL_GROUPS = [
     section: "rest",
     title: "검사 기준선",
     note: "D2-4",
-    saying: "검사 항목의 기준선을 설정합니다 · 준비 중",
+    saying: "검사 항목의 기준선을 설정합니다",
   },
   {
     key: "sms",
@@ -138,4 +138,4 @@ function courseDaysOf(setting, written) {
 
 /* **어느 묶음이 실제로 열리는가.** 자리만 세운 것과 만든 것을 여기서 가른다 —
    화면 여러 곳이 이 사실을 물으므로 한 곳에 둔다. */
-var RAIL_GROUP_READY = { sms: true };
+var RAIL_GROUP_READY = { sms: true, baseline: true };
