@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>인증번호 확인 · 케어온</title>
+<link rel="stylesheet" href="../css/tokens.css" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font);
+    background: var(--surface);
+    color: var(--tx);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
+
+  .app {
+    max-width: 430px;
+    margin: 0 auto;
+    min-height: 100dvh;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    padding: 0 24px 48px;
+  }
+
+  /* 뒤로가기 */
+  .back-btn {
+    background: none; border: none;
+    font-size: 24px; color: var(--tx);
+    cursor: pointer; padding: 16px 8px 16px 0;
+    align-self: flex-start;
+    margin-top: 8px;
+  }
+
+  /* 콘텐츠 */
+  .otp-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-bottom: 12dvh;
+  }
+
+  .otp-title {
+    font-size: 26px; font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 8px;
+  }
+  .otp-sub {
+    font-size: 15px; color: var(--tx-muted);
+    margin-bottom: 32px;
+  }
+
+  /* 6자리 입력 셀 */
+  .otp-cells {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .otp-cell {
+    width: 48px; height: 56px;
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    font-size: 22px; font-weight: 700;
+    text-align: center;
+    color: var(--tx);
+    caret-color: var(--p-dark);
+    outline: none;
+    transition: border-color .15s;
+    -webkit-appearance: none;
+    flex: 1;
+  }
+  .otp-cell:focus {
+    border-color: var(--p-dark);
+    box-shadow: 0 0 0 2px rgba(120,50,100,.12);
+  }
+
+  /* 타이머 */
+  .otp-timer {
+    font-size: 14px; font-weight: 600;
+    color: var(--danger);
+    margin-bottom: 8px;
+  }
+
+  /* 하단 */
+  .otp-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    margin-top: auto;
+  }
+
+  .otp-confirm {
+    width: 100%; padding: 16px;
+    background: #e4c1f5;
+    border: none; border-radius: var(--r-btn);
+    font-family: var(--font);
+    font-size: 17px; font-weight: 600;
+    color: #2d1a3a;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .otp-confirm:hover { opacity: .88; }
+  .otp-confirm:disabled { opacity: .4; cursor: default; }
+
+  .otp-resend {
+    font-size: 14px; color: var(--tx-muted);
+    display: flex; gap: 6px; align-items: center;
+  }
+  .otp-resend__btn {
+    background: none; border: none;
+    font-family: var(--font);
+    font-size: 14px; font-weight: 600;
+    color: var(--p-dark);
+    cursor: pointer;
+  }
+  .otp-resend__btn:disabled { color: var(--tx-muted); cursor: default; }
+</style>
+</head>
+<body>
+<div class="app">
+  <button type="button" class="back-btn" onclick="history.back()">‹</button>
+
+  <div class="otp-content">
+    <h1 class="otp-title">인증번호를<br>넣어주세요</h1>
+    <p class="otp-sub">010-****-1234 로 보냈어요</p>
+
+    <div class="otp-cells" id="otp-cells">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="one-time-code">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+    </div>
+
+    <div class="otp-timer" id="otp-timer">3분 00초 남았어요</div>
+  </div>
+
+  <div class="otp-bottom">
+    <button type="button" class="otp-confirm" id="otp-confirm" disabled>확인</button>
+    <div class="otp-resend">
+      <span>못 받으셨나요?</span>
+      <button type="button" class="otp-resend__btn" id="resend-btn" disabled>다시 받기 (<span id="resend-timer">60</span>초)</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var cells = Array.from(document.querySelectorAll('.otp-cell'));
+  var confirmBtn = document.getElementById('otp-confirm');
+  var timerEl = document.getElementById('otp-timer');
+  var resendBtn = document.getElementById('resend-btn');
+  var resendTimerEl = document.getElementById('resend-timer');
+
+  /* ── 셀 입력 자동 이동 ── */
+  cells.forEach(function (cell, i) {
+    cell.addEventListener('input', function () {
+      var val = cell.value.replace(/\D/g, '');
+      cell.value = val.slice(-1);
+      if (val && i < cells.length - 1) cells[i + 1].focus();
+      updateConfirm();
+    });
+    cell.addEventListener('keydown', function (e) {
+      if (e.key === 'Backspace' && !cell.value && i > 0) {
+        cells[i - 1].focus();
+        cells[i - 1].value = '';
+        updateConfirm();
+      }
+    });
+    cell.addEventListener('paste', function (e) {
+      e.preventDefault();
+      var paste = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+      paste.split('').forEach(function (ch, j) {
+        if (cells[i + j]) cells[i + j].value = ch;
+      });
+      var next = Math.min(i + paste.length, cells.length - 1);
+      cells[next].focus();
+      updateConfirm();
+    });
+  });
+
+  var expired = false;
+
+  function updateConfirm() {
+    var filled = cells.every(function (c) { return c.value.length === 1; });
+    confirmBtn.disabled = !filled || expired;
+  }
+
+  /* ── 확인 버튼: OTP 검증 (와이어프레임 고정값 000000) ── */
+  confirmBtn.addEventListener('click', function () {
+    var entered = cells.map(function (c) { return c.value; }).join('');
+    if (entered === '000000') {
+      sessionStorage.setItem('otp_verified', '1');
+      location.href = 'guide.html';
+    } else {
+      cells.forEach(function (c) { c.value = ''; });
+      cells[0].focus();
+      confirmBtn.disabled = true;
+      var errEl = document.getElementById('otp-error');
+      if (!errEl) {
+        errEl = document.createElement('p');
+        errEl.id = 'otp-error';
+        errEl.style.cssText = 'font-size:13px;color:var(--danger);margin-top:8px;';
+        document.getElementById('otp-cells').after(errEl);
+      }
+      errEl.textContent = '인증번호가 올바르지 않아요. 다시 확인해 주세요.';
+    }
+  });
+
+  /* ── 인증 타이머 (3분) ── */
+  var remaining = 180;
+  var timerInterval;
+
+  function startMainTimer() {
+    clearInterval(timerInterval);
+    remaining = 180;
+    timerEl.textContent = '3분 00초 남았어요';
+    timerInterval = setInterval(function () {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(timerInterval);
+        timerEl.textContent = '시간이 만료되었어요';
+        expired = true;
+        confirmBtn.disabled = true;
+        return;
+      }
+      var m = Math.floor(remaining / 60);
+      var s = remaining % 60;
+      timerEl.textContent = m + '분 ' + (s < 10 ? '0' : '') + s + '초 남았어요';
+    }, 1000);
+  }
+
+  startMainTimer();
+
+  /* ── 다시 받기 쿨다운 (60초) ── */
+  var resendRemaining = 60;
+  var resendInterval = setInterval(function () {
+    resendRemaining--;
+    resendTimerEl.textContent = resendRemaining;
+    if (resendRemaining <= 0) {
+      clearInterval(resendInterval);
+      resendBtn.disabled = false;
+      resendBtn.textContent = '다시 받기';
+    }
+  }, 1000);
+
+  resendBtn.addEventListener('click', function () {
+    resendBtn.disabled = true;
+    resendRemaining = 60;
+    resendBtn.innerHTML = '다시 받기 (<span id="resend-timer">60</span>초)';
+    resendTimerEl = document.getElementById('resend-timer');
+    expired = false;
+    startMainTimer();
+    clearInterval(resendInterval);
+    resendInterval = setInterval(function () {
+      resendRemaining--;
+      resendTimerEl.textContent = resendRemaining;
+      if (resendRemaining <= 0) {
+        clearInterval(resendInterval);
+        resendBtn.disabled = false;
+        resendBtn.textContent = '다시 받기';
+      }
+    }, 1000);
+    cells.forEach(function (c) { c.value = ''; });
+    cells[0].focus();
+    updateConfirm();
+  });
+
+  cells[0].focus();
+})();
+</script>
+</body>
+</html>

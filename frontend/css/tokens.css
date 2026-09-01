@@ -1,5 +1,9 @@
 /* 화면 공통 토큰 — 로그인(L)과 의료진 화면(S·D·A)이 함께 쓴다.
  *
+ * [주의] patient_wireframe/css/tokens.css 와 --bg, --danger, --danger-bg, --font 변수명이 겹친다.
+ * 현재는 두 파일이 별도 HTML에서만 로드되므로 충돌하지 않는다.
+ * 공통 컴포넌트를 합칠 계획이 확정되면 :root → .theme-hospital / .theme-patient 스코프 클래스로 분리한다.
+ *
  * 대비는 카드 안(흰색)과 카드 밖(--bg) 양쪽에서 재야 한다.
  * 판권 줄처럼 카드 밖에 있는 글자는 흰 배경에서만 재면 AA 를 놓친다.
  *
