@@ -324,7 +324,17 @@ class GuideService:
 
             # 이미 승인해 발송을 기다리는 글을 조용히 바꾸면, 환자가 받는 것과
             # 승인한 것이 달라진다. 잠근 채로 보므로 승인과 겹치지 않는다.
-            if guide.status not in (GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_PENDING):
+            #
+            # **반려된 것도 고칠 수 있다.** 아래 주석이 「스탭이 고치려면 반려를
+            # 거쳐 자기 차례로 돌아와야 한다」고 적어 두었는데, 정작 돌아온
+            # 자리가 막혀 있었다 — 화면은 「고친 뒤 다시 넘겨 주세요」라고
+            # 안내하면서 고치려 들면 409 를 냈다. 반려는 **고치라고** 하는
+            # 것이므로 고칠 수 없으면 뜻이 없다 (Gomin-art 님 `#176` 리뷰).
+            if guide.status not in (
+                GuideStatus.STAFF_REVIEW,
+                GuideStatus.APPROVAL_PENDING,
+                GuideStatus.APPROVAL_RETURNED,
+            ):
                 raise ApiError("GUIDE_NOT_PENDING", 409, "확인·승인 요청 상태에서만 고칠 수 있습니다.")
 
             # **승인 요청 중에는 의사만 고친다.** 원장님이 보고 있는 글을 스탭이
@@ -373,11 +383,23 @@ class GuideService:
             # 새로고침 뒤 다시 누른 것이고, 원하던 것은 이미 그 상태다.
             # 조용히 통과시키면 승인 이벤트가 두 번 쌓여 누가 언제 넘겼는지가
             # 흐려진다.
-            if guide.status is not GuideStatus.STAFF_REVIEW:
+            #
+            # **반려된 것은 다시 넘길 수 있다.** 그것이 반려의 목적이다 —
+            # 고쳐서 다시 올리라는 뜻이니, 재제출을 막으면 반려된 안내문은
+            # 영영 그 자리에 갇힌다 (Gomin-art 님 `#176` 리뷰).
+            if guide.status not in (GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_RETURNED):
                 raise ApiError("GUIDE_NOT_IN_REVIEW", 409, "이미 의사에게 넘긴 안내문입니다.")
 
+            # **지난 반려 사유를 지운다.** 스탭 알림에 그대로 뜨는 문장이라,
+            # 고쳐서 다시 올렸는데도 남아 있으면 「아직 반려 상태」로 읽힌다.
+            # **이력은 지우지 않는다** — 무엇을 왜 고쳤는지는 `GuideEvent` 의
+            # RETURNED 줄에 그대로 남아 있다. 지우는 것은 「지금 상태」뿐이다.
+            #
+            # Tortoise 의 `CharField` 는 `null=True` 오버로드가 없어(`**kwargs: Any`)
+            # 비울 수 있다는 것을 타입으로 말할 길이 없다 — 칸은 실제로 nullable 이다.
             guide.status = GuideStatus.APPROVAL_PENDING
-            await guide.save(update_fields=["status", "updated_at"], using_db=connection)
+            guide.returned_reason = None  # type: ignore[assignment]
+            await guide.save(update_fields=["status", "returned_reason", "updated_at"], using_db=connection)
             await GuideEvent.create(
                 guide_document=guide,
                 event_type=GuideEventType.SUBMITTED,
@@ -443,7 +465,10 @@ class GuideService:
         already = {m.kind for m in live if m.status != GuideMessageStatus.CANCELED}
         revive = {m.kind: m for m in live if m.status == GuideMessageStatus.CANCELED}
 
-        rows: list[tuple[GuideMessageKind, datetime]] = []
+        # **시각이 비어 있을 수 있다.** 아래 고리가 `at is None` 이면 건너뛴다 —
+        # 진료일을 모르면 확인 회차를 셈할 수 없고, 그때 없는 날짜를 지어내
+        # 예약하면 엉뚱한 날 문자가 간다. 주석이 그 사실을 말해야 한다.
+        rows: list[tuple[GuideMessageKind, datetime | None]] = []
         if GuideMessageKind.GUIDE not in already:
             rows.append((GuideMessageKind.GUIDE, guide.scheduled_at))
 

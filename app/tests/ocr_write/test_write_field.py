@@ -13,17 +13,12 @@ from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import Visit
+from app.ocr.security import OcrActor
 from app.ocr.service import TortoiseOcrRepository
 
 
-class Actor:
-    def __init__(self, staff: Staff) -> None:
-        self.staff_id = staff.staff_id
-        self.hospital_id = staff.hospital_id
-
-
 class WriteFieldTestCase(TestCase):
-    async def make_world(self, chart: str, *, with_result: bool = True) -> tuple[Actor, Visit]:
+    async def make_world(self, chart: str, *, with_result: bool = True) -> tuple[OcrActor, Visit]:
         clinic = await Hospital.create(name=f"여성의원 {chart}")
         staff = await Staff.create(
             hospital=clinic,
@@ -54,7 +49,14 @@ class WriteFieldTestCase(TestCase):
                 status=OcrJobStatus.COMPLETED,
             )
             await OcrResult.create(ocr_job=job, model_name="test")
-        return Actor(staff), visit
+        # **진짜 `OcrActor` 를 만든다.** 대역을 손으로 만들면 진짜에 있는 칸
+        # (`roles`)이 빠져도 검사는 통과한다 — 그 칸을 보게 되는 날 본 코드가
+        # 아니라 검사만 먼저 깨진다.
+        return OcrActor(
+            staff_id=staff.staff_id,
+            hospital_id=staff.hospital_id,
+            roles=frozenset(staff.roles or []),
+        ), visit
 
     async def test_a_missing_row_is_created(self) -> None:
         """**줄이 없던 항목이 생긴다.** 이것이 없어서 「저장 안 됨」이었다."""

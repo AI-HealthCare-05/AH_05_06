@@ -276,26 +276,47 @@ test("**왼쪽 칸이 한 블록이다** — 오른쪽만 블록이면 두 칸�
   }
 });
 
-test("**블록 머리에 버튼 둘** — 이 칸에서 할 수 있는 일이 맨 위에 보인다", () => {
+test("**블록 머리에 올리는 단추 하나** — 이 칸에서 할 수 있는 일이 맨 위에 보인다", () => {
   const page = markupOnly(source("ocr-review.html"));
   const side = page.slice(page.indexOf('<section class="side"'), page.indexOf('class="main-col"'));
 
   const head = side.indexOf('class="box__head"');
   const tabs = side.indexOf('id="doc-tabs"');
-  for (const id of ["add-doc", "reread"]) {
-    const at = side.indexOf(`id="${id}"`);
-    assert.ok(at !== -1, `${id} 버튼이 없다`);
-    assert.ok(head < at && at < tabs, `${id} 가 블록 머리에 없다`);
-  }
+  const at = side.indexOf('id="add-doc"');
+  assert.ok(at !== -1, "add-doc 버튼이 없다");
+  assert.ok(head < at && at < tabs, "add-doc 가 블록 머리에 없다");
 
   /* 갈래를 묻던 옛 버튼은 사라져야 한다 — 그 답은 쓰이지도 않는다 */
   assert.ok(!page.includes("검사지 추가"), "「검사지 추가」가 아직 남아 있다");
   assert.ok(!page.includes("재업로드"), "「재업로드」가 아직 남아 있다");
 });
 
-test("**「판독 결과 확인」이 판독을 다시 불러온다** — 새로고침하면 화면을 벗어난다", () => {
+/* **같은 일을 하는 단추를 둘 두지 않는다.** 머리의 「판독 결과 확인」과 알림의
+   「다시 확인」이 똑같이 `loadVisit` 만 했다. 늘 떠 있는 쪽은 아무것도 더 해
+   주지 않으면서 「눌러야 하나」를 묻게 만든다 — 2heej 님 `#176` 리뷰. */
+test("**「판독 결과 확인」은 없다** — 「다시 확인」과 같은 일을 했다", () => {
+  /* **화면 이름은 그대로 둔다.** 이 판의 제목과 낭독기 머리글이 「판독 결과
+     확인」이다 — 걷은 것은 단추 하나지 화면 이름이 아니다. 그래서 글자를
+     세지 않고 `<button>` 안에 들어 있는지를 본다. */
+  const page = markupOnly(source("ocr-review.html"));
+  const buttons = page.match(/<button[\s\S]*?<\/button>/g) || [];
+  assert.ok(
+    !buttons.some((one) => one.includes("판독 결과 확인")),
+    "걷은 단추가 화면에 남아 있다",
+  );
+  assert.ok(!codeOnly(source("js/ocr-review.js")).includes("reread"), "손이 남아 있다");
+
+  /* 없는 단추를 누르라고 안내하지 않는다 */
+  /* 주석은 「예전에 이랬다」를 적을 수 있어야 하므로 코드만 본다 */
+  assert.ok(
+    !codeOnly(source("js/ocr-groups.js")).includes("판독 결과 확인"),
+    "없는 단추를 가리키는 안내가 남아 있다",
+  );
+});
+
+test("**「다시 확인」이 판독을 다시 불러온다** — 새로고침하면 화면을 벗어난다", () => {
   const code = codeOnly(source("js/ocr-review.js"));
-  const at = code.indexOf('target.id === "reread"');
+  const at = code.indexOf('target.id === "recheck"');
   assert.notEqual(at, -1, "누른 것을 받는 자리가 없다");
 
   const body = code.slice(at, at + 200);

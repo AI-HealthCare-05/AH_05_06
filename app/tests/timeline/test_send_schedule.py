@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from tortoise.contrib.test import TestCase
 
 from app.core import config
+from app.core.auth_errors import AuthError as ApiError
 from app.models.ocr import OcrField, OcrJob, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
@@ -236,11 +237,11 @@ class UnapproveTestCase(SendScheduleTestCase):
 
         try:
             await GuideService().unapprove(actor, visit.visit_id)
-        except Exception as exc:  # ApiError
-            assert getattr(exc, "status_code", None) == 409, f"막긴 했는데 {exc} 다"
+        except ApiError as exc:
+            assert exc.status_code == 409, f"막긴 했는데 {exc} 다"
             # 화면이 「새 안내를 보내세요」를 띄우려면 이 코드를 봐야 한다 —
             # 상태만 맞고 코드가 다르면 그냥 「알 수 없는 오류」가 뜬다.
-            assert getattr(exc, "code", None) == "GUIDE_ALREADY_SENT", f"코드가 {exc.code} 다"
+            assert exc.code == "GUIDE_ALREADY_SENT", f"코드가 {exc.code} 다"
         else:
             raise AssertionError("이미 나간 문자가 있는데 철회됐다")
 
@@ -253,9 +254,9 @@ class UnapproveTestCase(SendScheduleTestCase):
 
         try:
             await GuideService().unapprove(actor, visit.visit_id)
-        except Exception as exc:
-            assert getattr(exc, "status_code", None) == 409
-            assert getattr(exc, "code", None) == "GUIDE_NOT_SCHEDULED", f"코드가 {exc.code} 다"
+        except ApiError as exc:
+            assert exc.status_code == 409
+            assert exc.code == "GUIDE_NOT_SCHEDULED", f"코드가 {exc.code} 다"
         else:
             raise AssertionError("승인 요청 상태인데 철회됐다")
 
