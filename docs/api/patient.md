@@ -37,9 +37,40 @@ POST /api/v1/visits/{visit_id}/guide/link   직원 인증 필요
       "expires_at": "…", "demo_only": true }
 
 GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증명
-200 { "version": 1, "approved_at": "…", "expires_at": "…",
-      "sections": [{ "key": "medication", "body": "…" }],
-      "demo_only": true }
+200 {
+      "version": 1, "approved_at": "…", "expires_at": "…", "demo_only": true,
+      "visit_date": "2026.08.13",
+      "clinic_name": "〇〇여성의원",
+      "generated_at": "2026.08.13 10:44",
+      "disease_label": "자궁내막증 · 비잔정 복용 중",
+      "summary": "…",
+      "goals": [
+        { "name": "빈혈 Hb", "start": "10.2", "now": "10.4", "target": "12" }
+      ],
+      "goal_note": "…",
+      "drugs": [
+        { "name": "비잔정(디에노게스트) 2mg", "dosage": "1일 1회 · 84일분" }
+      ],
+      "why": ["…"],
+      "how": ["…"],
+      "next_visit": "…",
+      "caution": {
+        "title": "…",
+        "lead": "…",
+        "groups": [{ "title": "…", "strong": true, "items": ["…"] }],
+        "emergency": ["…"],
+        "ask": "…"
+      },
+      "challenge": [{ "text": "…", "freq": "주 5일" }],
+      "axes": [
+        {
+          "name": "…",
+          "challenge": true,
+          "item": { "text": "…", "freq": "주 5일" },
+          "body": ["…"]
+        }
+      ]
+    }
 ```
 
 - 링크는 승인 완료 상태(`SCHEDULED_TO_SEND`)인 안내에만 발급하며 72시간 유효하다.
