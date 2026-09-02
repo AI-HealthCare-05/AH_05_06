@@ -11,7 +11,7 @@ const { load } = require("./browser-shim.js");
 const { markupOnly } = require("./source.js");
 
 function box() {
-  return load("ocr-groups");
+  return load("field-labels", "ocr-groups");
 }
 
 function field(type, value) {
@@ -890,8 +890,15 @@ test("처방을 안 골랐으면 그렇다고 말한다 — 빈 칸으로 두면
 });
 
 test("목업이 서버와 같은 모양을 준다 — 다르면 목업에서만 되는 화면이 생긴다", () => {
-  const api = codeOnly(source("js/ocr-api.js"));
+  /* 카탈로그 목업은 `catalog-api.js` 것이다 — 설정 화면도 같은 값을 쓰는데,
+     그쪽이 판독 API 파일을 실을 이유가 없어 옮겼다. */
+  const api = codeOnly(source("js/catalog-api.js"));
   assert.match(api, /check_items: MOCK_CHECK_ITEMS/, "목업 세트에 확인 항목이 없다");
+
+  /* 판독 화면은 카탈로그를 **빌려 쓴다** — 두 벌로 두면 목업이 갈린다 */
+  const ocr = codeOnly(source("js/ocr-api.js"));
+  assert.match(ocr, /catalogApi\.sets\(\)/, "판독 화면이 제 목록을 따로 갖는다");
+  assert.ok(!ocr.includes("var MOCK_PRESCRIPTION_SETS"), "약속처방 목업이 두 벌이다");
 
   /* 서버 씨앗과 같은 다섯이어야 한다 */
   const at = api.indexOf("var MOCK_CHECK_ITEMS");

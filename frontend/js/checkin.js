@@ -60,13 +60,9 @@ function notifyFor(answers, key) {
   var otpResendAvailableAt = 0;
 
 
-  var LABELS = {
-    taking: "잘 먹고 있어요",
-    uncomfortable: "먹고 있는데 불편해요",
-    missing: "가끔 놓쳐요",
-    stopped_side_effect: "불편해서 중단했어요",
-    stopped_improved: "증상이 좋아져서 그만뒀어요",
-  };
+  /* 낱말은 `js/checkin-words.js` 것을 쓴다 — 의원 화면(S2-2 이력 모달)이
+     같은 말을 써야 하는데, 여기 IIFE 안에 두면 닿지 않는다. */
+  var LABELS = CHECKIN_SAYING;
 
   /* ── 복약 ────────────────────────────────────────────── */
 

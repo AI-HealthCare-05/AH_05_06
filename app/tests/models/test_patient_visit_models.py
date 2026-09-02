@@ -63,7 +63,12 @@ def test_visit_model_keeps_patient_one_to_many_relation() -> None:
 def test_models_are_registered_for_aerich() -> None:
     assert "app.models.patients" in TORTOISE_APP_MODELS
     assert "app.models.visits" in TORTOISE_APP_MODELS
-    assert TORTOISE_ORM["use_tz"] is True
+    #: **`use_tz` 는 꺼져 있어야 한다.** 켜면 `tortoise.timezone.now()` 가 UTC 를
+    #: 주는데, asyncmy 는 넣을 때 tzinfo 를 버리고 벽시계만 적고(KEY-181) 읽을
+    #: 때는 아래 `timezone` 으로 도장을 찍는다 — `auto_now_add` 가 전부 아홉
+    #: 시간 어긋나고, 링크 만료와 인증번호 잠금이 즉시 풀린다.
+    #: 자세한 것은 `app/tests/clock/test_stored_times.py`.
+    assert TORTOISE_ORM["use_tz"] is False
     assert TORTOISE_ORM["timezone"] == "Asia/Seoul"
 
 

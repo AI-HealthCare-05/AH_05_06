@@ -1,0 +1,278 @@
+"""검사 기준선 — 와이어프레임 D2-4.
+
+원문 주석: 「기준선 → D1 「나의 목표」의 남은 거리 계산에 쓰인다」.
+
+**두 가지를 담는다.**
+
+  · **기준선** — 목표까지 얼마 남았나를 셈할 값. 비워 둘 수 있다.
+  · **판독 키워드** — EMR 마다 표기가 다르다(DHEA-S / DHEAS / 황체호르몬).
+    판독이 진료기록에서 그 항목을 찾도록 의원이 쓰는 표기를 넣어 둔다.
+
+**기본 목록은 코드가 갖는다.** 의원이 이 화면을 처음 열 때 그 의원 몫으로 한
+번 깔린다. 문자 문구(D2-5)처럼 「고친 것만 담는다」로 두지 않는 이유는, 여기서는
+**지우고 더할 수 있어야** 하기 때문이다 — 안 쓰는 항목을 지운 것과 아직 안
+고친 것을 구별할 수 없다.
+
+기본값은 **원문 D2-4 에 적힌 그대로**다. 의료 판단이 아니라 화면에 이미 적혀
+있는 것을 표로 옮긴 것이고, 화면이 그 옆에 「기준선은 검사기관 · 연령에 따라
+다릅니다」를 함께 띄운다. 의원이 확인해 고칠 자리다.
+"""
+
+# **`list` 를 메서드 이름으로 쓰면 클래스 본문 안에서 내장 `list` 가 가려진다.**
+# 그 뒤에 나오는 `builtins.list[Staff]` 같은 애너테이션이 그 메서드를 첨자로 읽어
+# `TypeError: 'function' object is not subscriptable` 로 **import 가 터진다.**
+#
+# 호스트(3.14)는 애너테이션을 늦게 읽어 안 터지고 컨테이너(3.13)는 터졌다 —
+# 검사가 호스트에서 돌아 통과했는데 서버는 아예 안 떴다. 이 한 줄이 판을
+# 가리지 않고 애너테이션을 글자로 두어, 두 곳이 같게 돈다.
+from __future__ import annotations
+
+# **이 파일은 `list` 를 메서드 이름으로 쓴다.** 그래서 클래스 안에서는 내장
+# `list` 가 가려지고, `builtins.list[X]` 주석이 「메서드를 타입으로 쓴다」가 된다.
+# 파이썬 3.13 에서는 이것이 **띄우는 중에 터졌다**(`TypeError: 'function' object
+# is not subscriptable`) — 호스트가 3.14 라 PEP 649 지연 평가로 가려져 있었고,
+# 서버가 502 를 내는 동안 검사 1641 개가 전부 초록이었다.
+#
+# `from __future__ import annotations` 가 런타임은 막았지만 덫은 그대로다.
+# 여기서는 어느 `list` 인지 **적어서** 말한다.
+import builtins
+from dataclasses import dataclass
+from decimal import Decimal
+
+from tortoise.transactions import in_transaction
+
+from app.core.api_errors import ApiError
+from app.dependencies.patient_access import ClinicalActor
+from app.models.catalog import BaselineDirection, LabBaseline, SetDisease
+from app.models.staffs import Staff
+from app.services.patient_visit_scope import hospital_id_of
+
+
+@dataclass(frozen=True, slots=True)
+class Seed:
+    disease: SetDisease
+    name: str
+    direction: BaselineDirection
+    low: str | None
+    high: str | None
+    by_age: bool
+    keywords: str
+    unit: str
+    always_shown: bool
+
+
+#: 원문 D2-4 의 열세 줄. **차례도 원문대로다** — 의사가 보던 순서가 바뀌면
+#: 같은 화면이 아니게 된다.
+DEFAULT_BASELINES: tuple[Seed, ...] = (
+    Seed(SetDisease.PCOS, "월경 주기", BaselineDirection.KEEP, "21", "35", False, "LMP, 월경, 주기", "일", True),
+    Seed(
+        SetDisease.PCOS,
+        "총 테스토스테론",
+        BaselineDirection.LOWER,
+        None,
+        None,
+        False,
+        "Testosterone, 테스토스테론",
+        "ng/dL",
+        True,
+    ),
+    Seed(SetDisease.PCOS, "DHEA-S", BaselineDirection.LOWER, None, None, False, "DHEA-S, DHEAS", "µg/dL", True),
+    Seed(SetDisease.PCOS, "AMH", BaselineDirection.KEEP, None, None, True, "AMH, 항뮬러관", "ng/mL", True),
+    Seed(SetDisease.PCOS, "LH / FSH", BaselineDirection.REFERENCE, None, None, False, "LH, FSH", "비율", True),
+    Seed(SetDisease.PCOS, "HbA1c", BaselineDirection.LOWER, None, None, False, "HbA1c, 당화혈색소", "%", False),
+    Seed(SetDisease.PCOS, "BMI", BaselineDirection.LOWER, None, None, False, "BMI, 체질량", "", False),
+    Seed(
+        SetDisease.ENDOMETRIOSIS,
+        "혈색소 Hb",
+        BaselineDirection.KEEP,
+        "12.0",
+        None,
+        False,
+        "Hb, 혈색소, Hemoglobin",
+        "g/dL",
+        True,
+    ),
+    Seed(
+        SetDisease.ENDOMETRIOSIS,
+        "자궁내막종 크기",
+        BaselineDirection.LOWER,
+        None,
+        None,
+        False,
+        "LO, RO, cyst, 내막종",
+        "cm",
+        True,
+    ),
+    Seed(
+        SetDisease.ENDOMETRIOSIS, "내막 두께 EM", BaselineDirection.KEEP, None, None, False, "EM, 내막두께", "cm", True
+    ),
+    Seed(SetDisease.ENDOMETRIOSIS, "AMH", BaselineDirection.KEEP, None, None, True, "AMH, 항뮬러관", "ng/mL", True),
+    Seed(
+        SetDisease.ENDOMETRIOSIS,
+        "간수치 AST/ALT",
+        BaselineDirection.KEEP,
+        None,
+        "40",
+        False,
+        "AST, ALT, SGOT",
+        "U/L",
+        True,
+    ),
+    Seed(
+        SetDisease.ENDOMETRIOSIS, "CA-125", BaselineDirection.LOWER, None, "35", False, "CA-125, CA125", "U/mL", False
+    ),
+)
+
+
+def _decimal(value) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except (ArithmeticError, ValueError) as error:
+        raise ApiError(422, "INVALID_BASELINE", "기준선은 숫자로 적어 주세요.") from error
+
+
+class LabBaselineService:
+    async def list(
+        self,
+        actor: ClinicalActor,
+        *,
+        doctor_id: int | None,
+    ) -> tuple[builtins.list[LabBaseline], builtins.list[Staff]]:
+        hospital_id = hospital_id_of(actor)
+        await self._ensure_seeded(hospital_id)
+        # **차례는 `position` 만 본다.** 질환으로 먼저 정렬하면 알파벳순이 되어
+        # 원문(다낭성 → 자궁내막증)이 뒤집힌다 — 화면이 보여 준 차례가 곧
+        # 저장되는 차례다.
+        rows = await LabBaseline.filter(hospital_id=hospital_id, doctor_id=doctor_id).order_by(
+            "position", "lab_baseline_id"
+        )
+        if not rows and doctor_id is not None:
+            # 그 의사만의 기준을 아직 안 만들었다. **의원 공통을 보여 준다** —
+            # 빈 화면을 띄우면 「이 의사에게는 기준이 없다」로 읽히는데, 실제로는
+            # 의원 공통이 쓰인다.
+            rows = await LabBaseline.filter(hospital_id=hospital_id, doctor_id=None).order_by(
+                "position", "lab_baseline_id"
+            )
+        return list(rows), await self._doctors(hospital_id)
+
+    @staticmethod
+    async def _doctors(hospital_id: int) -> builtins.list[Staff]:
+        """**역할은 JSON 칸이라 SQL 로 못 거른다.** 의원 직원이 수십이라
+        읽어 와서 고르는 편이 낫고, 억지로 `roles__contains` 를 쓰면 Tortoise
+        가 그 값을 JSON 으로 파싱하려다 터진다."""
+        everyone = await Staff.filter(hospital_id=hospital_id).order_by("staff_id")
+        return [staff for staff in everyone if "doctor" in (staff.roles or [])]
+
+    async def save(
+        self,
+        actor: ClinicalActor,
+        *,
+        doctor_id: int | None,
+        items: builtins.list[dict],
+    ) -> None:
+        """**한 판 통째로 저장한다.**
+
+        줄마다 번호를 주고받으면 화면이 그 번호를 들고 다녀야 하고, 지운 줄을
+        놓치면 유령이 남는다 — 처방 설정(D2-3)의 약·확인 항목과 같은 판단이다.
+        """
+        self._require_doctor(actor, doctor_id)
+        hospital_id = hospital_id_of(actor)
+        rows = [self._checked(item, index) for index, item in enumerate(items)]
+
+        seen = {(row["disease"], row["name"]) for row in rows}
+        if len(seen) != len(rows):
+            raise ApiError(422, "DUPLICATE_BASELINE", "같은 질환에 같은 검사 항목이 둘일 수 없습니다.")
+
+        async with in_transaction() as connection:
+            await LabBaseline.filter(hospital_id=hospital_id, doctor_id=doctor_id).using_db(connection).delete()
+            for row in rows:
+                await LabBaseline.create(hospital_id=hospital_id, doctor_id=doctor_id, using_db=connection, **row)
+
+    async def _ensure_seeded(self, hospital_id: int) -> None:
+        """**의원이 이 화면을 처음 열 때 한 번 깔린다.**
+
+        읽는 자리에서 쓰는 것이 낯설지만, 대안이 더 나쁘다 — 마이그레이션에서
+        깔면 나중에 생기는 의원에는 안 깔리고(의원을 만드는 화면이 아직 없다),
+        빈 화면을 보이면 의사가 열세 줄을 손으로 적어야 한다.
+
+        비어 있을 때만 넣으므로 여러 번 불러도 같다.
+        """
+        if await LabBaseline.filter(hospital_id=hospital_id, doctor_id=None).exists():
+            return
+        for index, seed in enumerate(DEFAULT_BASELINES):
+            await LabBaseline.get_or_create(
+                hospital_id=hospital_id,
+                doctor_id=None,
+                disease=seed.disease,
+                name=seed.name,
+                defaults={
+                    "direction": seed.direction,
+                    "low": _decimal(seed.low),
+                    "high": _decimal(seed.high),
+                    "by_age": seed.by_age,
+                    "keywords": seed.keywords,
+                    "unit": seed.unit,
+                    "always_shown": seed.always_shown,
+                    "position": index,
+                },
+            )
+
+    @staticmethod
+    def _require_doctor(actor: ClinicalActor, doctor_id: int | None) -> None:
+        """원문 D2-2 와 같은 규칙이다 — 설정에서 의료 판단이 걸리는 값은
+        의사만 고친다. 기준선은 환자가 보는 「목표까지 얼마」를 정한다.
+
+        **읽는 것과 고치는 것이 다르다.** D2-4 는 의사를 골라 남의 기준선을
+        볼 수 있게 해 두었다(같은 의원 안에서 서로 어떻게 잡았는지 참고한다).
+        고치는 것은 자기 것만이다.
+
+        `save` 가 **지우고 다시 넣는** 방식이라, 남의 `doctor_id` 로 쓸 수
+        있으면 그 의사의 열세 줄이 통째로 사라진다. 역할만 보고 있었다 —
+        2heej 님이 `#183` 리뷰에서 찾아 주셨다.
+
+        **의원 공통(`doctor_id=None`)은 막지 않는다.** 형제 파일
+        `guide_copy.py` 는 `actor.staff_id != doctor_id` 로 딱 잘라 막는데,
+        여기서 같이 막으면 **의원 공통 기준선을 아무도 못 고치게 된다** —
+        D2-4 가 처음 여는 판이 그것이고(`doctor_id` 는 기본이 `None` 이다),
+        개인 판이 없는 의사는 그 값을 쓴다. 두 화면의 「공통」이 다르다:
+        안내 문구는 의사 이름으로 환자에게 나가지만, 기준선은 의원이 함께
+        정하는 값이다.
+
+        그래서 막는 것은 **남의 이름으로 쓰는 것 하나**다.
+        """
+        if "doctor" not in actor.roles:
+            raise ApiError(403, "DOCTOR_ONLY", "검사 기준선은 의사 계정만 수정할 수 있습니다.")
+        if doctor_id is not None and actor.staff_id != doctor_id:
+            raise ApiError(403, "OTHER_DOCTOR", "다른 의사의 검사 기준선은 수정할 수 없습니다.")
+
+    @staticmethod
+    def _checked(item: dict, index: int) -> dict:
+        name = str(item.get("name") or "").strip()
+        if not name:
+            raise ApiError(422, "EMPTY_NAME", "검사 항목 이름을 적어 주세요.")
+
+        low = _decimal(item.get("low"))
+        high = _decimal(item.get("high"))
+        if low is not None and high is not None and low > high:
+            raise ApiError(422, "INVALID_RANGE", "기준선의 아래가 위보다 클 수 없습니다.")
+
+        by_age = bool(item.get("by_age"))
+        if by_age:
+            # 나이별이면 숫자 하나로 못 적는다. 남겨 두면 어느 쪽으로 셈할지
+            # 알 수 없으므로 여기서 지운다.
+            low = high = None
+
+        return {
+            "disease": SetDisease(item["disease"]),
+            "name": name[:100],
+            "direction": BaselineDirection(item.get("direction") or BaselineDirection.KEEP),
+            "low": low,
+            "high": high,
+            "by_age": by_age,
+            "keywords": str(item.get("keywords") or "").strip()[:200],
+            "unit": str(item.get("unit") or "").strip()[:20],
+            "always_shown": bool(item.get("always_shown", True)),
+            "position": index,
+        }
