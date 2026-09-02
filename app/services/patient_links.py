@@ -6,6 +6,7 @@ KEY-219의 링크 상태·재발급 계약과 KEY-241의 P2~P5 공개 응답을 
 
 import asyncio
 import hashlib
+import logging
 import re
 import secrets
 from dataclasses import dataclass
@@ -13,12 +14,13 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from tortoise.exceptions import IntegrityError
+from tortoise.expressions import Q
 from tortoise.timezone import now
 
 from app.core.auth_errors import AuthError as ApiError
 from app.core.masking import mask_phone
 from app.core.time import DISPLAY_TIMEZONE, as_utc
-from app.models.catalog import BaselineDirection, LabBaseline, SetDisease
+from app.models.catalog import BaselineDirection, LabBaseline, PrescriptionSet, SetDisease
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.staffs import Hospital
@@ -29,6 +31,7 @@ ISSUER_ROLES = frozenset({"staff", "doctor"})
 _DRUG_WITH_INGREDIENT = re.compile(r"^(?P<brand>[^()]+?)\((?P<ingredient>[^)]+)\)(?P<suffix>.*)$")
 _LAB_KEY = re.compile(r"[^0-9a-z가-힣]+")
 _NUMBER = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
+LOGGER = logging.getLogger("app.patient_links")
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,23 +162,34 @@ def _normalize_lab_key(value: str) -> str:
     return _LAB_KEY.sub("", value.casefold())
 
 
-def _confirmed_disease(value: str | None) -> SetDisease | None:
+def _confirmed_diseases(value: str | None) -> set[SetDisease]:
     normalized = _normalize_lab_key(value or "")
+    diseases: set[SetDisease] = set()
     if "pcos" in normalized or "다낭성" in normalized:
-        return SetDisease.PCOS
+        diseases.add(SetDisease.PCOS)
     if "endometriosis" in normalized or "자궁내막증" in normalized:
-        return SetDisease.ENDOMETRIOSIS
-    return None
+        diseases.add(SetDisease.ENDOMETRIOSIS)
+    return diseases
 
 
-def _decimal_from_lab(value: str | None) -> Decimal | None:
+def _decimal_from_lab(value: str | None, *, unit: str = "") -> Decimal | None:
     if not value:
         return None
-    matched = _NUMBER.search(value.replace(",", ""))
-    if matched is None:
+    normalized = value.replace(",", "")
+    matches = list(_NUMBER.finditer(normalized))
+    if not matches:
         return None
+
+    # "2차 10.4 g/dL"처럼 검사 회차가 앞에 붙을 수 있다. 단위가 있으면 그
+    # 단위 바로 앞의 숫자를 우선하고, 없으면 마지막 숫자를 측정값으로 본다.
+    matched = matches[-1]
+    if unit := unit.strip():
+        unit_pattern = re.compile(rf"({_NUMBER.pattern})\s*{re.escape(unit)}", re.IGNORECASE)
+        unit_matches = list(unit_pattern.finditer(normalized))
+        if unit_matches:
+            matched = unit_matches[-1]
     try:
-        return Decimal(matched.group())
+        return Decimal(matched.group(1) if matched.lastindex else matched.group())
     except InvalidOperation:
         return None
 
@@ -215,7 +229,7 @@ def _target_for_baseline(baseline: LabBaseline, current: Decimal | None) -> Deci
 
 
 def _goal_data(baseline: LabBaseline, field: OcrField) -> PatientGuideGoalData:
-    current = _decimal_from_lab(field.value)
+    current = _decimal_from_lab(field.value, unit=baseline.unit)
     target = _target_for_baseline(baseline, current)
     return PatientGuideGoalData(
         name=baseline.name,
@@ -230,20 +244,57 @@ def _match_goals(
     baselines: list[LabBaseline],
     confirmed_fields: list[OcrField],
 ) -> list[PatientGuideGoalData]:
-    latest_by_type: dict[str, OcrField] = {}
-    for field in confirmed_fields:
-        latest_by_type.setdefault(_normalize_lab_key(field.field_type), field)
-
     goals: list[PatientGuideGoalData] = []
     for baseline in baselines:
-        aliases = (baseline.name, *baseline.keywords.split(","))
-        matched_field = next(
-            (latest_by_type[key] for alias in aliases if (key := _normalize_lab_key(alias)) and key in latest_by_type),
-            None,
-        )
+        alias_keys = {
+            normalized
+            for alias in (baseline.name, *baseline.keywords.split(","))
+            if (normalized := _normalize_lab_key(alias))
+        }
+        matched_field = None
+        # confirmed_fields는 최신순이다. 별칭 선언 순서가 아니라 모든 별칭을
+        # 통틀어 가장 최근에 확정된 필드를 선택한다.
+        for field in confirmed_fields:
+            if _normalize_lab_key(field.field_type) in alias_keys:
+                matched_field = field
+                break
         if matched_field is not None:
             goals.append(_goal_data(baseline, matched_field))
+        else:
+            LOGGER.warning(
+                "patient guide baseline did not match a confirmed OCR field",
+                extra={
+                    "hospital_id": baseline.hospital_id,
+                    "lab_baseline_id": baseline.lab_baseline_id,
+                    "baseline_name": baseline.name,
+                },
+            )
     return goals
+
+
+def _confirmed_fields_query(*, visit_id: int, hospital_id: int):
+    return OcrField.filter(
+        ocr_result__ocr_job__visit_id=visit_id,
+        ocr_result__ocr_job__hospital_id=hospital_id,
+        is_confirmed=True,
+        confirmed_at__isnull=False,
+    ).order_by("-confirmed_at", "-ocr_field_id")
+
+
+def _select_baselines(
+    baselines: list[LabBaseline],
+    *,
+    diseases: set[SetDisease],
+    doctor_id: int | None,
+) -> list[LabBaseline]:
+    selected: list[LabBaseline] = []
+    for disease in (SetDisease.PCOS, SetDisease.ENDOMETRIOSIS):
+        if disease not in diseases:
+            continue
+        disease_rows = [baseline for baseline in baselines if baseline.disease is disease]
+        doctor_rows = [baseline for baseline in disease_rows if baseline.doctor_id == doctor_id]
+        selected.extend(doctor_rows or [baseline for baseline in disease_rows if baseline.doctor_id is None])
+    return selected
 
 
 @dataclass(frozen=True)
@@ -370,37 +421,31 @@ class PatientLinkService:
         visit = guide.visit
         visit_date = _clinic_date(visit.visited_at)
 
-        # 아래 네 조회는 서로의 결과에 의존하지 않는다. 원격 DB 환경에서
+        # 아래 다섯 조회는 서로의 결과에 의존하지 않는다. 원격 DB 환경에서
         # 순차 RTT가 환자 화면 지연으로 그대로 더해지지 않도록 함께 실행한다.
         hospital_query = Hospital.filter(hospital_id=visit.hospital_id).first()
-        latest_confirmed_field_query = (
-            OcrField.filter(
-                ocr_result__ocr_job__visit_id=guide.visit_id,
-                ocr_result__ocr_job__hospital_id=visit.hospital_id,
-                is_confirmed=True,
-                confirmed_at__isnull=False,
-            )
-            .prefetch_related("ocr_result__ocr_job")
-            .order_by("-confirmed_at", "-ocr_field_id")
-            .first()
-        )
-        diagnosis_query = (
-            OcrField.filter(
-                ocr_result__ocr_job__visit_id=guide.visit_id,
-                ocr_result__ocr_job__hospital_id=visit.hospital_id,
-                field_type="DIAGNOSIS",
-                is_confirmed=True,
-                confirmed_at__isnull=False,
-            )
-            .order_by("-confirmed_at", "-ocr_field_id")
-            .first()
-        )
+        confirmed_fields_query = _confirmed_fields_query(
+            visit_id=guide.visit_id,
+            hospital_id=visit.hospital_id,
+        ).prefetch_related("ocr_result__ocr_job")
         prescription_query = Prescription.filter(visit_id=guide.visit_id).prefetch_related("items").first()
-        hospital, latest_confirmed_field, diagnosis, prescription = await asyncio.gather(
+        prescription_sets_query = PrescriptionSet.all()
+        baselines_query = LabBaseline.filter(
+            Q(doctor_id=visit.doctor_id) | Q(doctor_id=None),
+            hospital_id=visit.hospital_id,
+            disease__in=(SetDisease.PCOS, SetDisease.ENDOMETRIOSIS),
+        ).order_by("position", "lab_baseline_id")
+        hospital, confirmed_fields, prescription, prescription_sets, baselines = await asyncio.gather(
             hospital_query,
-            latest_confirmed_field_query,
-            diagnosis_query,
+            confirmed_fields_query,
             prescription_query,
+            prescription_sets_query,
+            baselines_query,
+        )
+        latest_confirmed_field = confirmed_fields[0] if confirmed_fields else None
+        diagnosis = next(
+            (field for field in confirmed_fields if field.field_type == "DIAGNOSIS"),
+            None,
         )
 
         progress_started_at = (
@@ -424,28 +469,22 @@ class PatientLinkService:
         )
 
         diagnosis_name = diagnosis.value.strip() if diagnosis is not None and diagnosis.value else None
-        disease = _confirmed_disease(diagnosis_name)
+        diseases = _confirmed_diseases(diagnosis_name)
+        if diagnosis_name and prescription is not None:
+            prescription_set = next(
+                (row for row in prescription_sets if row.name == prescription.prescription_set),
+                None,
+            )
+            if prescription_set is not None:
+                diseases.add(prescription_set.disease)
         goals: list[PatientGuideGoalData] = []
-        if disease is not None:
-            confirmed_fields_query = OcrField.filter(
-                ocr_result__ocr_job__visit_id=guide.visit_id,
-                ocr_result__ocr_job__hospital_id=visit.hospital_id,
-                is_confirmed=True,
-                confirmed_at__isnull=False,
-            ).order_by("-confirmed_at", "-ocr_field_id")
-            baselines_query = LabBaseline.filter(
-                hospital_id=visit.hospital_id,
+        if diseases:
+            selected_baselines = _select_baselines(
+                list(baselines),
+                diseases=diseases,
                 doctor_id=visit.doctor_id,
-                disease=disease,
-            ).order_by("position", "lab_baseline_id")
-            confirmed_fields, baselines = await asyncio.gather(confirmed_fields_query, baselines_query)
-            if not baselines and visit.doctor_id is not None:
-                baselines = await LabBaseline.filter(
-                    hospital_id=visit.hospital_id,
-                    doctor_id=None,
-                    disease=disease,
-                ).order_by("position", "lab_baseline_id")
-            goals = _match_goals(list(baselines), list(confirmed_fields))
+            )
+            goals = _match_goals(selected_baselines, list(confirmed_fields))
 
         disease_name: str | None
         if diagnosis_name and medication:

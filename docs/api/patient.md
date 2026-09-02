@@ -112,7 +112,7 @@ GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증�
 | `clinic` | 진료의 `hospital_id`에 연결된 `hospital.name` |
 | `disease` | 같은 병원의 확정 `DIAGNOSIS` OCR 값과, 있으면 첫 정규 처방 약 이름 |
 | `stat`·`guide.drug` | 첫 번째 `duration_days > 0` 처방 항목. 없으면 첫 처방 항목의 약 이름·용법과 `prescribed: 0`을 유지한다. 진행률 기준일은 같은 진료·병원에서 `confirmed_at`이 가장 최신인 확정 `OcrField`가 속한 결과의 `ocr_job.started_at`이다 |
-| `guide.goals` | 확정 진단으로 질환 판을 고른 뒤 담당 의사의 `lab_baseline`(없으면 의원 공통)을 같은 진료의 확정 OCR 필드와 `name`·`keywords`로 연결한다. `confirmed_at`이 없는 값은 제외하고, 기준선이 비어 있거나 연령별이면 현재 값만 표시하며 목표 계산·차트는 만들지 않는다 |
+| `guide.goals` | 확정 진단과, 이름이 일치하는 구조화 `prescription_set.disease`로 질환 판을 고른 뒤 담당 의사의 `lab_baseline`(없으면 의원 공통)을 같은 진료의 확정 OCR 필드와 `name`·`keywords`로 연결한다. 병존 진단은 두 판을 모두 사용하며 모든 별칭 중 최신 확정값을 고른다. `confirmed_at`이 없는 값은 제외하고, 기준선이 비어 있거나 연령별이면 현재 값만 표시하며 목표 계산·차트는 만들지 않는다. 기준선이 확정 OCR과 매칭되지 않으면 서버 경고 로그로 관측한다 |
 | `guide` | 승인 `medication` 최종 문구와 처방 항목. 전용 재진 계획 소스가 없어 현재 `next`는 생략 |
 | `care` | 승인 `caution`·`emergency` 최종 문구. 일반 `messages`를 증상별 문의 기준으로 바꾸지 않으므로 현재 `ask`는 생략 |
 | `life` | 승인 `life` 최종 문구. 구조화 축이 아직 없어 `생활관리` 한 축으로만 제공 |
