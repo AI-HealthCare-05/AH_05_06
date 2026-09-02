@@ -81,21 +81,50 @@ test("일반 주의 문구 수정은 그대로 된다 — 잠금이 옆칸으로
  * 잡으려는 회귀는 하나다: 누가 `TUCKED_UNDER` 를 지우면 **다섯째 탭이 생기고**,
  * 원장님이 그 탭을 안 열고 승인할 수 있게 된다.
  */
-test("화면이 응급 문장에 탭을 만들지 않는다", () => {
-  const source = fs.readFileSync(DOCTOR_JS, "utf8");
+/* 규칙이 `js/guide-view.js` 로 옮겨 갔다 — 환자 카드의 「안내문」·「최종 확인」
+   탭이 같은 안내문을 그리기 때문이다(와이어프레임에서 D1 은 별도 화면이 아니라
+   그 탭 뒷칸이다). 옮겼어도 **잡으려는 회귀는 그대로다.** */
+const GUIDE_VIEW_JS = path.join(__dirname, "..", "js", "guide-view.js");
 
-  assert.match(source, /TUCKED_UNDER\s*=\s*\{\s*emergency:\s*"caution"/, "탭에서 빼는 규칙이 없다");
-  assert.match(source, /function tabSections\(\)/, "탭 목록을 거르는 자리가 없다");
-  assert.doesNotMatch(
+test("화면이 응급 문장에 탭을 만들지 않는다", () => {
+  const source = fs.readFileSync(GUIDE_VIEW_JS, "utf8");
+
+  assert.match(
     source,
-    /var tabs = guide\.sections\s*\n?\s*\.map\(/,
-    "탭을 거르지 않고 섹션 전부로 만들고 있다 — 🚨 탭이 생긴다",
+    /GUIDE_TUCKED_UNDER\s*=\s*\{\s*emergency:\s*"caution"/,
+    "탭에서 빼는 규칙이 없다",
+  );
+  assert.match(source, /function guideTabSections\(/, "탭 목록을 거르는 자리가 없다");
+});
+
+test("**규칙을 부르지 않고 섹션 전부로 탭을 만들지 않는다**", () => {
+  /* 원문 대신 함수를 직접 부른다 — 옮기면서 순수 함수가 되어 검사가 닿는다.
+     원문 검사보다 이쪽이 낫다: 어떻게 쓰였는지가 아니라 무엇이 나오는지를 잰다. */
+  const { load } = require("./browser-shim.js");
+  const { guideTabSections, guideSectionsOf } = load("api", "guide-view");
+
+  const sections = [
+    { key: "medication", body: "약" },
+    { key: "caution", body: "주의" },
+    { key: "emergency", body: "응급", locked: true },
+    { key: "life", body: "생활" },
+  ];
+
+  assert.deepEqual(
+    guideTabSections(sections).map((s) => s.key),
+    ["medication", "caution", "life"],
+    "🚨 탭이 생겼다 — 그 탭을 안 열고 승인할 수 있게 된다",
+  );
+  assert.deepEqual(
+    guideSectionsOf(sections, "caution").map((s) => s.key),
+    ["caution", "emergency"],
+    "응급 문장이 주의사항 본문에 안 딸려 온다",
   );
 });
 
-test("원문 검사가 실제로 doctor.js 를 읽었다", () => {
+test("원문 검사가 실제로 guide-view.js 를 읽었다", () => {
   /* 경로가 틀리면 위 검사가 빈 문자열을 보고 조용히 통과한다. */
-  const source = fs.readFileSync(DOCTOR_JS, "utf8");
-  assert.ok(source.length > 5000, `doctor.js 를 못 읽었다: ${source.length} 자`);
-  assert.match(source, /SECTION_LABEL/, "읽은 것이 doctor.js 가 아니다");
+  const source = fs.readFileSync(GUIDE_VIEW_JS, "utf8");
+  assert.ok(source.length > 2000, `guide-view.js 를 못 읽었다: ${source.length} 자`);
+  assert.match(source, /GUIDE_SECTION_LABEL/, "읽은 것이 guide-view.js 가 아니다");
 });

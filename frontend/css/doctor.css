@@ -7,34 +7,9 @@
  * 색을 더 늘리면 무엇을 봐야 하는지가 사라진다.
  */
 
-.warnline {
-  padding: var(--s-12) var(--s-16);
-  border-radius: var(--radius);
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0 0 var(--s-12);
-}
-
-.warnline--warn {
-  background: var(--warn-bg);
-  color: var(--warn);
-  border: 1px solid var(--warn-line);
-}
-
-.warnline--ok {
-  background: var(--done-bg);
-  color: var(--done);
-  border: 1px solid transparent;
-}
 
 /* ── 뷰 탭 ───────────────────────────────────────────────── */
 
-.vtabs {
-  display: flex;
-  gap: var(--s-4);
-  flex-wrap: wrap;
-  margin-bottom: var(--s-12);
-}
 
 .vtab {
   height: 34px;
@@ -229,38 +204,6 @@
   color: var(--ink-3);
 }
 
-.button-primary,
-.button-ghost {
-  height: var(--button-h);
-  padding: 0 var(--s-24);
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.button-primary {
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-
-.button-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.button-ghost {
-  border: 1px solid var(--line-strong);
-  background: var(--card);
-  color: var(--ink);
-}
-
-.button-primary:disabled,
-.button-ghost:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .grow {
   flex: 1;
 }
@@ -269,78 +212,8 @@
 
 /* 승인은 화면을 갈아끼우지 않는다 — 뒤에 방금 본 안내문이 남아 있어야
    무엇을 승인했는지 확인할 수 있다. */
-/* `hidden` 보다 `display:flex` 가 세다 — 이 한 줄이 없으면 모달이 처음부터 떠 있다. */
-.modal[hidden] {
-  display: none;
-}
-
-.modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(28, 31, 35, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--s-24);
-  z-index: 50;
-}
-
-.modal__card {
-  width: 100%;
-  max-width: 440px;
-  background: var(--card);
-  border-radius: var(--radius);
-  padding: var(--s-24);
-}
-
-.modal__mark {
-  margin: 0 0 var(--s-8);
-  font-size: 32px;
-  color: var(--done);
-}
-
-.modal__title {
-  margin: 0 0 var(--s-8);
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.modal__lead {
-  margin: 0 0 var(--s-12);
-  font-size: 14px;
-  color: var(--ink);
-}
-
-.modal__note {
-  margin: 0 0 var(--s-16);
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--ink-3);
-}
-
-.modal__input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--ink);
-  resize: vertical;
-}
-
-.modal__error {
-  margin: var(--s-8) 0 0;
-  font-size: 12px;
-  color: var(--danger);
-}
-
-.modal__acts {
-  display: flex;
-  align-items: center;
-  margin-top: var(--s-16);
-}
+/* 모달 어휘(`.modal*`)는 `blocks.css` 로 옮겼다 — 최종 확인 탭(`patients.html`)도
+   같은 모달을 쓴다. 두 벌로 두면 한쪽만 고쳐진다. */
 
 /* 되돌리는 이유는 대개 넷 중 하나다 — 진료 중에 문장을 짓게 하지 않는다 */
 .reasons {

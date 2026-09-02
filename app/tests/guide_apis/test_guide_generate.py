@@ -133,7 +133,7 @@ class TestGenerateBlocksUnconfirmedOcr(GenerateGuideTestCase):
         assert response.json()["code"] == "OCR_NOT_CONFIRMED"
 
 
-class TestGenerateCreatesApprovalPendingGuide(GenerateGuideTestCase):
+class TestGenerateCreatesStaffReviewGuide(GenerateGuideTestCase):
     """확정 OCR이 있으면 승인 대기 안내 한 건이 만들어진다."""
 
     async def test_confirmed_ocr_creates_guide(self) -> None:
@@ -147,7 +147,10 @@ class TestGenerateCreatesApprovalPendingGuide(GenerateGuideTestCase):
 
         assert response.status_code == 201
         body = response.json()
-        assert body["status"] == GuideStatus.APPROVAL_PENDING
+        # **만들면 스탭 확인부터다** (와이어프레임 S1-11). 전에는 바로
+        # APPROVAL_PENDING 이라 만들자마자 원장님 목록에 떴다 — 「스탭이
+        # 넘기지 않으면 원장님 목록에 뜨지 않는다」가 지켜지지 않았다.
+        assert body["status"] == GuideStatus.STAFF_REVIEW
         assert body["visit_id"] == visit.visit_id
 
     async def test_all_five_sections_are_created_in_order(self) -> None:
@@ -302,11 +305,17 @@ class TestGenerateThenApproveEndToEnd(GenerateGuideTestCase):
         await attach_confirmed_ocr(visit, staff.staff_id)
 
         async with self.client() as client:
-            gen = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+            staff_headers = await self.sign_in(staff)
+            gen = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=staff_headers)
+            # **스탭이 넘겨야 원장님 차례가 된다** — 이 한 단계가 없으면
+            # 원장님이 아직 아무도 안 본 글을 받는다 (와이어프레임 S1-11).
+            handoff = await client.post(f"{BASE}/{visit.visit_id}/guide/submit", headers=staff_headers)
             approve = await client.post(f"{BASE}/{visit.visit_id}/guide/approve", headers=await self.sign_in(doctor))
 
         assert gen.status_code == 201
-        assert gen.json()["status"] == GuideStatus.APPROVAL_PENDING
+        assert gen.json()["status"] == GuideStatus.STAFF_REVIEW
+        assert handoff.status_code == 200
+        assert handoff.json()["status"] == GuideStatus.APPROVAL_PENDING
         assert approve.status_code == 200
         assert approve.json()["status"] == GuideStatus.SCHEDULED_TO_SEND
 
@@ -325,7 +334,12 @@ class TestGenerateThenApproveEndToEnd(GenerateGuideTestCase):
         assert approve.status_code == 403
 
     async def test_patient_access_blocked_before_approval(self) -> None:
-        """승인 전 안내는 APPROVAL_PENDING 상태다 — 환자 조회 게이트가 이 상태를 본다."""
+        """승인 전 안내는 **승인된 상태가 아니다** — 환자 조회 게이트가 그것을 본다.
+
+        만든 직후는 STAFF_REVIEW 다. 스탭이 넘기면 APPROVAL_PENDING 이 되고,
+        의사가 승인해야 SCHEDULED_TO_SEND 가 된다. 어느 쪽이든 환자에게는
+        아직 안 간다.
+        """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
         visit = await make_visit(clinic)
@@ -337,5 +351,5 @@ class TestGenerateThenApproveEndToEnd(GenerateGuideTestCase):
         from app.models.visits import GuideDocument
 
         saved = await GuideDocument.get(visit_id=visit.visit_id)
-        assert gen.json()["status"] == GuideStatus.APPROVAL_PENDING
+        assert gen.json()["status"] == GuideStatus.STAFF_REVIEW
         assert saved.approved_at is None, "승인 전에는 approved_at 이 비어 있어야 한다"

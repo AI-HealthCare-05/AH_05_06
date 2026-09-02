@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>준비 중인 화면 · 케어온</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/frames.css" />
+  </head>
+  <body class="frame">
+    <!-- 3단계 「안내 화면」 공통 틀 — KEY-234
+         `?id=S1-14` 처럼 프레임 번호를 받아 frames.js 의 그 줄을 그린다.
+         화면 스무 장을 각각 만드는 대신 이 한 장을 쓴다 (인수조건 ①).
+
+         **여기에는 동작하는 조작 요소를 두지 않는다.** 서버도 부르지 않고
+         목업도 쓰지 않는다. 읽는 데이터가 없으면 어긋날 계약도 없다 —
+         지금 화면과 서버가 갈라진 원인이 「화면이 응답 모양을 지어낸 것」이다
+         (구조 진단 §5.1). -->
+    <main class="frame__card" id="card">
+      <!-- frames.js 가 채운다. 스크립트가 막히면 아래가 남는다 — 빈 화면을 두지 않는다. -->
+      <p class="frame__role">화면 정보를 불러오지 못했습니다.</p>
+      <p class="frame__back"><a href="/map.html">화면 지도</a></p>
+    </main>
+
+    <script src="/js/frames.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        function param(name) {
+          var found = new RegExp("[?&]" + name + "=([^&]*)").exec(location.search);
+          return found ? decodeURIComponent(found[1]) : "";
+        }
+
+        /* 프레임 번호는 주소창에서 온다 — 그대로 넣지 않는다. */
+        function escape(text) {
+          return String(text == null ? "" : text)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        }
+
+        var card = document.getElementById("card");
+        if (!card) return;
+
+        var wanted = param("id");
+        var frame = frameById(wanted);
+
+        /* 번호가 틀렸을 때도 무엇이 잘못됐는지 말한다. */
+        if (!frame) {
+          card.innerHTML =
+            '<h1 class="frame__name">없는 화면 번호입니다</h1>' +
+            '<p class="frame__role">' +
+            (wanted ? "<code>" + escape(wanted) + "</code> 는 " : "") +
+            "와이어프레임 2.3.1 의 64프레임에 없습니다.</p>" +
+            '<p class="frame__back"><a href="/map.html">화면 지도로 돌아가기</a></p>';
+          return;
+        }
+
+        document.title = frame.id + " " + frame.name + " · 케어온";
+
+        var goal =
+          frame.target < frame.level
+            ? ' <span class="frames__badge frames__badge--' +
+              frame.target +
+              '">이번 주 목표 · ' +
+              escape(FRAME_LEVELS[frame.target]) +
+              "</span>"
+            : "";
+
+        card.innerHTML =
+          '<span class="frame__id">' + escape(frame.id) + "</span>" +
+          '<h1 class="frame__name">' + escape(frame.name) + "</h1>" +
+          '<p class="frame__role">' + escape(frame.role || "") + "</p>" +
+          '<dl class="frame__facts">' +
+          "<dt>지금 상태</dt>" +
+          '<dd><span class="frames__badge frames__badge--' +
+          frame.level +
+          '">' +
+          escape(FRAME_LEVELS[frame.level]) +
+          "</span>" +
+          goal +
+          "</dd>" +
+          "<dt>이 화면이 되려면</dt>" +
+          "<dd>" + escape(frame.blocker || "미정") + "</dd>" +
+          "<dt>구분</dt>" +
+          "<dd>" + escape(FRAME_AREAS[frame.area]) + "</dd>" +
+          "</dl>" +
+          '<p class="frame__back"><a href="/map.html">화면 지도</a></p>';
+      })();
+    </script>
+  </body>
+</html>
