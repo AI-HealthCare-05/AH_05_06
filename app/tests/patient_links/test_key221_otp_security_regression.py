@@ -13,6 +13,9 @@
        → TestContextMinimalFields
   AC5: 재발송은 만료·폐기 상태와 본인확인 계약을 우회하지 않는다.
        → TestReIssueDoesNotBypassAuth
+         · test_active_link_re_issue_blocked_with_409 : 활성 링크 재발송 시도 → 409 LINK_STILL_ACTIVE
+         · test_old_token_unusable_for_context_and_otp_after_re_issue : 만료 링크 재발송 후 구 토큰 차단
+         · test_revoked_link_re_issue_also_blocks_old_token : 폐기 링크 재발송 후 구 토큰 차단
 """
 
 import unittest
@@ -243,6 +246,18 @@ class TestReIssueDoesNotBypassAuth(AuthTestCase):
 
     def client(self) -> AsyncClient:
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+    async def test_active_link_re_issue_blocked_with_409(self) -> None:
+        """아직 활성 상태인 링크로 재발송을 시도하면 409 LINK_STILL_ACTIVE로 차단된다.
+
+        re_issue()의 핵심 가드: not is_expired and not is_revoked → LINK_STILL_ACTIVE.
+        이 가드가 삭제되면 이 테스트가 깨진다.
+        """
+        await make_link()
+        async with self.client() as c:
+            res = await c.post("/api/v1/patient-auth/link/re-issue", json={"link_token": LINK_TOKEN})
+        assert res.status_code == 409
+        assert res.json()["code"] == "LINK_STILL_ACTIVE"
 
     async def test_old_token_unusable_for_context_and_otp_after_re_issue(self) -> None:
         """재발송 후 구 토큰으로 context 조회·OTP 발급이 LINK_NOT_FOUND로 차단된다."""
