@@ -246,10 +246,26 @@
 <script>
 (function () {
   var API_BASE = '/api/v1';
+  var query = new URLSearchParams(window.location.search);
+  var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+  var isMock = query.get('mock') === '1';
 
-  /* URL에서 link_token 읽기 — 값을 DOM·sessionStorage에 저장하지 않는다 */
+  /* 실제 링크는 KEY-219의 query 계약을 따른다. 개발 목업 토큰만 access log에
+     남지 않는 fragment에서 받으며, 어느 쪽도 저장소로 복사하지 않는다. */
   function getLinkToken() {
-    return new URLSearchParams(window.location.search).get('token') || '';
+    if (isMock) return fragment.get('t') || '';
+    return query.get('token') || '';
+  }
+
+  function mockVerifyUrl(token) {
+    var safeQuery = new URLSearchParams();
+    safeQuery.set('mock', '1');
+    var previewCase = query.get('case');
+    if (previewCase && /^[a-z0-9_-]{1,32}$/i.test(previewCase)) safeQuery.set('case', previewCase);
+    var safeFragment = new URLSearchParams();
+    if (token) safeFragment.set('t', token);
+    return 'otp-verify.html?' + safeQuery.toString() +
+      (safeFragment.toString() ? '#' + safeFragment.toString() : '');
   }
 
   function show(id) {
@@ -273,7 +289,7 @@
     try {
       var res = await fetch(API_BASE + '/patient-auth/session?link_token=' + encodeURIComponent(token));
       if (res.ok) {
-        window.location.replace('guide.html?token=' + encodeURIComponent(token));
+        window.location.replace('/guide.html#t=' + encodeURIComponent(token));
         return true;
       }
     } catch (_) {}
@@ -366,6 +382,16 @@
   async function init() {
     var token = getLinkToken();
     if (!token) { show('view-error'); return; }
+
+    if (isMock) {
+      show('view-normal');
+      document.getElementById('ctx-hospital-date').textContent = '개발용 목업';
+      document.getElementById('ctx-visit-desc').textContent = '목업 진료 안내입니다';
+      document.getElementById('btn-issue').addEventListener('click', function () {
+        window.location.href = mockVerifyUrl(token);
+      });
+      return;
+    }
 
     var redirected = await checkSession(token);
     if (redirected) return;
