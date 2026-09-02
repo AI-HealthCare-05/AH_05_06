@@ -297,18 +297,9 @@ var GROUPS_WITHOUT_SERVER = [
  * 처방에 따라 달라지는 것이 맞고(비잔이면 우울증 병력을 여쭙는다), 그것을
  * 주는 자리가 붙으면 이 목록은 서버에서 온다. 그때까지는 **무엇이 올 자리인지**
  * 를 보이기 위한 모양이다 — 화면은 이것을 꺼진 채로 세운다. */
-/* 서버는 코드로 주고 화면이 사람 말로 옮긴다 — 판독 항목 이름표와 같은 규칙
-   (`js/field-labels.js`). 서버가 한국어를 주면 문구를 바꿀 때 두 곳을 고쳐야
-   하고, 지난 진료의 답이 어느 질문의 답이었는지도 흐려진다.
-
-   **차례가 화면 차례다.** 서버가 준 차례를 그대로 쓰면 열거 정의 순서에 끌려간다. */
-var CHECK_ITEM_LABELS = {
-  DEPRESSION: "우울증 병력",
-  HYPERTENSION: "고혈압",
-  OSTEOPOROSIS: "골다공증",
-  DIABETES: "당뇨",
-  PREGNANCY_PLAN: "임신 계획",
-};
+/* 확인 항목의 이름표(`CHECK_ITEMS` · `checkItemLabel`)는 `field-labels.js` 로
+   옮겼다 — 설정 화면(D2-3)도 같은 이름을 쓰는데, 그쪽이 판독 화면 파일을
+   통째로 실을 이유가 없다. */
 
 /* **무엇을 여쭐지는 처방이 정한다** (와이어프레임 S1-6 「처방별」).
  *
@@ -330,10 +321,6 @@ function checkItemsOf(sets, chosen) {
     if (all[i].name === want) return all[i].check_items || [];
   }
   return [];
-}
-
-function checkItemLabel(key) {
-  return CHECK_ITEM_LABELS[String(key || "")] || String(key || "");
 }
 
 /** 이 묶음을 지금 채울 수 있는가. 채울 수 없으면 화면이 그렇게 말해야 한다. */

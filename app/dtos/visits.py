@@ -3,8 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.dtos.base import BaseSerializerModel
-from app.dtos.patients import CursorPage
+from app.dtos.base import BaseSerializerModel, CursorPage
 from app.models.visits import VisitCheckKey, VisitStatus
 
 

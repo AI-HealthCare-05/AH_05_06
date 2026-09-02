@@ -986,7 +986,55 @@ function stateTakesFocus(tone) {
       );
     }).join("");
 
-    return cells ? '<div class="top">' + cells + "</div>" : "";
+    return cells ? '<div class="top">' + cells + drugsHtml(rows) + "</div>" : "";
+  }
+
+  /* 고른 처방에 든 약 — 맨 위 줄 **바로 아래**에 붙는다.
+   *
+   * 2heej 님 `#176` 리뷰. 「처방」 칸은 세트 **이름** 하나만 보여 주는데,
+   * 「자궁내막증 · 비잔 (처음)」이라는 이름만으로는 무엇을 며칠 드시는지가
+   * 안 보인다 — 그 답이 안내문에 그대로 나가는 값이라 스탭이 여기서 확인할
+   * 수 있어야 한다.
+   *
+   * **아직 안 골랐으면 아무것도 안 그린다.** 고르기 전의 빈 목록은 「약이
+   * 없는 처방」으로 읽힌다.
+   */
+  function drugsHtml(rows) {
+    if (!pickedSet) return "";
+
+    var written = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].field_type === "DURATION_DAYS") written = rows[i].value;
+    }
+
+    var lines = drugLines(pickedSet, written);
+    if (!lines.length) {
+      /* **비었다고 지어내지 않는다.** 어디서 채우는지를 적는다 — 설정(D2-3)의
+         「처방 약」이 그 자리다. */
+      return '<p class="drugs__none">이 처방에 등록된 약이 없습니다 · 설정 › 처방에서 추가할 수 있습니다</p>';
+    }
+
+    return (
+      '<ul class="drugs">' +
+      lines
+        .map(function (line) {
+          return (
+            '<li class="drugs__one"><span class="drugs__name">' +
+            escapeHtml(line.name) +
+            "</span>" +
+            /* 일수를 못 셈했으면 **칸을 비운다.** 「0일」이나 「-」를 적으면
+               읽는 사람이 그것을 값으로 센다. */
+            (line.days === null
+              ? '<span class="drugs__days drugs__days--none"></span>'
+              : '<span class="drugs__days">' + escapeHtml(String(line.days)) + "일</span>") +
+            '<span class="drugs__saying">' +
+            escapeHtml(line.saying) +
+            "</span></li>"
+          );
+        })
+        .join("") +
+      "</ul>"
+    );
   }
 
   /* 다시 그리면 `innerHTML` 이 통째로 바뀌어 커서와 캐럿이 사라진다. 저장

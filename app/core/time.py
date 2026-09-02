@@ -40,3 +40,17 @@ def clinic_day_window(day: date) -> tuple[datetime, datetime]:
     """
     start = datetime.combine(day, time.min, tzinfo=DISPLAY_TIMEZONE)
     return start, start + timedelta(days=1)
+
+
+def clinic_today() -> date:
+    """의원 시간대의 오늘.
+
+    `clinic_day_window` 와 **같은 시간대에서 재야 한다.** 서버가 UTC 로
+    돌면 한국 시각 자정에서 아홉 시까지가 어제로 잡히고, 그 동안 「오늘
+    나갈 문자」가 하루 앞 것으로 뜬다.
+
+    경계를 만드는 곳을 한 곳에 모으는 것이 이 파일의 요점이라 여기 둔다 —
+    부르는 자리(S2-3 · S2-4)마다 `datetime.now(...)` 를 적으면 한쪽만
+    고쳐지는 날이 온다.
+    """
+    return datetime.now(DISPLAY_TIMEZONE).date()

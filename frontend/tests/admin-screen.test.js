@@ -42,7 +42,11 @@ const ADMIN_FRAMES = FRAMES.filter((f) => f.area === "admin");
 /* ── 일곱을 다 품는가 ──────────────────────────────────────────────────── */
 
 test("**어드민 프레임 일곱이 하나도 안 빠진다** — 빠지면 화면에서 사라진다", () => {
-  assert.strictEqual(ADMIN_FRAMES.length, 7, "와이어프레임의 어드민은 일곱 프레임이다");
+  assert.strictEqual(
+    ADMIN_FRAMES.length,
+    7,
+    "와이어프레임의 어드민은 일곱 프레임이다",
+  );
   assert.strictEqual(
     adminMenuCovers(ADMIN_FRAMES).join(", "),
     "",
@@ -54,8 +58,16 @@ test("메뉴가 없는 번호를 가리키지 않는다", () => {
   for (const item of ADMIN_MENU) {
     for (const id of item.frames) {
       const found = FRAMES.filter((f) => f.id === id);
-      assert.strictEqual(found.length, 1, `${item.label} 이 없는 번호를 가리킨다: ${id}`);
-      assert.strictEqual(found[0].area, "admin", `${id} 는 어드민 프레임이 아니다`);
+      assert.strictEqual(
+        found.length,
+        1,
+        `${item.label} 이 없는 번호를 가리킨다: ${id}`,
+      );
+      assert.strictEqual(
+        found[0].area,
+        "admin",
+        `${id} 는 어드민 프레임이 아니다`,
+      );
     }
   }
 });
@@ -75,9 +87,18 @@ test("메뉴를 고르면 그 화면들이 나온다", () => {
     ["A1-1", "A1-2", "A1-3"],
     "직원 메뉴는 목록·추가·수정 셋이다",
   );
-  assert.deepEqual(adminFramesFor("clinic").map((f) => f.id), ["A1-4"]);
-  assert.deepEqual(adminFramesFor("sms").map((f) => f.id), ["A1-5"]);
-  assert.deepEqual(adminFramesFor("log").map((f) => f.id), ["A1-6", "A1-7"]);
+  assert.deepEqual(
+    adminFramesFor("clinic").map((f) => f.id),
+    ["A1-4"],
+  );
+  assert.deepEqual(
+    adminFramesFor("sms").map((f) => f.id),
+    ["A1-5"],
+  );
+  assert.deepEqual(
+    adminFramesFor("log").map((f) => f.id),
+    ["A1-6", "A1-7"],
+  );
 });
 
 test("없는 메뉴를 물으면 빈 목록이다 — 죽지 않는다", () => {
@@ -94,7 +115,10 @@ test("**일곱 다 「화면 없음」이고 무엇이 있어야 되는지 말�
   for (const frame of ADMIN_FRAMES) {
     assert.strictEqual(frame.level, 3, `${frame.id} 이 화면 없음이 아니다`);
     assert.ok(frame.role, `${frame.id} 이 무슨 화면인지 말하지 않는다`);
-    assert.ok(frame.blocker, `${frame.id} 이 무엇이 있어야 되는지 말하지 않는다`);
+    assert.ok(
+      frame.blocker,
+      `${frame.id} 이 무엇이 있어야 되는지 말하지 않는다`,
+    );
   }
 });
 
@@ -104,28 +128,33 @@ test("**본문에 동작하는 척하는 버튼이 없다** — 눌러도 아무
   const html = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
   const js = fs.readFileSync(path.join(ROOT, "js", "admin.js"), "utf8");
 
-  /* 상단바의 관리·설정은 아직 어느 화면에도 없다. 눌리는 척하지 않도록
-     `tab--later` + `aria-disabled` 로 둔다 — 이 저장소의 기존 관례다. */
+  /* 상단바는 이제 넷 다 갈 곳이 있다 — 관리(S2)는 `manage.html`, 설정(D2)은
+     `settings.html`. 어느 탭이 어느 쪽인지는 `topbar-tabs-go.test.js` 가 화면
+     전부에 대고 잰다. 여기서는 **어드민 화면에 잠긴 탭이 남아 있지 않은
+     것**만 본다 — 화면이 생겼는데 잠가 두면 없는 줄 안다. */
   /* **주석이 아니라 요소만 본다.** 위 설명 문단에도 `tab--later` 가 적혀 있어서,
      그냥 글자로 찾으면 검사가 제 주석을 물고 통과한다. */
   const later = html
     .split("\n")
     .filter((line) => line.includes("tab--later") && line.includes("<button"));
-  assert.ok(later.length >= 2, "관리·설정을 눌리는 척하도록 뒀다");
-  for (const line of later) {
-    assert.ok(line.includes('aria-disabled="true"'), `aria-disabled 가 없다: 「${line.trim()}」`);
-  }
+  assert.deepStrictEqual(later, [], "화면이 있는데 아직 잠가 두었다");
 
   /* 본문이 그리는 것은 카드뿐이어야 한다. 카드 안에 버튼을 넣으면
      서버가 없는데 누를 것이 생긴다. */
   const bodyStart = js.indexOf("function renderBody");
   assert.notEqual(bodyStart, -1, "renderBody 가 없다 — 검사가 헛돈다");
   const body = js.slice(bodyStart, js.indexOf("function menuLabel"));
-  assert.ok(!body.includes("<button"), "본문 카드에 버튼을 그린다 — 누를 데가 없는데 눌린다");
+  assert.ok(
+    !body.includes("<button"),
+    "본문 카드에 버튼을 그린다 — 누를 데가 없는데 눌린다",
+  );
 });
 
 test("좌측 메뉴는 진짜로 동작한다 — 그건 죽은 버튼이 아니다", () => {
   const js = fs.readFileSync(path.join(ROOT, "js", "admin.js"), "utf8");
   assert.ok(js.includes('data-menu="'), "메뉴 줄에 고를 표시가 없다");
-  assert.ok(js.includes('closest("[data-menu]")'), "메뉴 클릭을 받는 자리가 없다");
+  assert.ok(
+    js.includes('closest("[data-menu]")'),
+    "메뉴 클릭을 받는 자리가 없다",
+  );
 });
