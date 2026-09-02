@@ -3,10 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>판독 결과 확인 · 복약 안내 도우미</title>
+    <title>판독 결과 확인 · 케어온</title>
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/shell.css" />
+    <link rel="stylesheet" href="/css/blocks.css" />
+    <link rel="stylesheet" href="/css/upload.css" />
     <link rel="stylesheet" href="/css/ocr-review.css" />
   </head>
   <body class="shell">
@@ -16,7 +18,7 @@
          표시는 KEY-62, 값 수정·저장·동시 수정 처리는 KEY-63 이다. -->
 
     <header class="topbar">
-      <span class="topbar__brand">복약 안내 도우미</span>
+      <span class="topbar__brand">케어온 <span class="topbar__clinic">도로시여성의원</span></span>
       <nav class="topbar__nav">
         <button class="topbar__tab" type="button" aria-current="page">현황</button>
         <button class="topbar__tab" type="button">관리</button>
@@ -28,15 +30,19 @@
           <span class="who__roles" id="who-roles"></span>
         </span>
         <button class="icon-button" type="button" aria-label="알림">
-          🔔<span class="icon-button__count" id="alert-count" hidden></span>
+          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="icon-button__count" id="alert-count" hidden></span>
         </button>
-        <button class="icon-button" type="button" id="logout" aria-label="로그아웃">⏻</button>
+        <button class="icon-button" type="button" id="logout" aria-label="로그아웃"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       </div>
     </header>
 
     <div class="main">
       <aside class="list" aria-label="환자 목록">
         <div class="list__head">
+          <div class="list__title">
+            <span class="list__label">환자 리스트</span>
+            <button class="list__fold" type="button" aria-expanded="true" title="목록 접기">◀</button>
+          </div>
           <input
             class="list__search"
             type="search"
@@ -44,11 +50,27 @@
             placeholder="이름 · 차트번호 검색"
             aria-label="환자 검색"
           />
+
+          <!-- **목록 레일은 화면마다 같아야 한다.** 「진료기록」 칸이 이 화면이
+               된 뒤로, 여기 오면 등록 버튼이 사라져 「없어졌다」로 읽혔다.
+               등록 자체는 환자 화면이 하므로 그리로 보낸다 — 판독 화면에
+               등록 폼을 한 벌 더 두면 두 벌이 갈린다. -->
+          <a class="list__add" href="/patients.html?add=1">+ 환자 등록</a>
         </div>
+        <!-- 와이어프레임 S1-1: `padding:9px 12px · gap:6px`, 화살표 `24×24`,
+             날짜는 `flex:1 · 가운데 · 13px/700`.
+
+             날짜를 누르면 달력이 열린다. 직접 그리지 않고 `<input type="date">`
+             를 겹쳐 둔다 — 브라우저·운영체제가 주는 달력이라 키보드로도 되고
+             언어·주 시작 요일도 그 기기 설정을 따른다. 우리가 그린 달력은
+             그 셋을 다시 만들어야 한다. -->
         <div class="list__day">
-          <button class="icon-button" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
-          <span class="grow" id="day">—</span>
-          <button class="icon-button" type="button" id="day-next" aria-label="다음 날짜">›</button>
+          <button class="day__step" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
+          <div class="day__pick">
+            <span class="day__label" id="day">—</span>
+            <input class="day__input" type="date" id="day-input" aria-label="날짜 고르기" />
+          </div>
+          <button class="day__step" type="button" id="day-next" aria-label="다음 날짜">›</button>
         </div>
         <div class="chips" id="chips" role="group" aria-label="상태로 거르기"></div>
         <div class="list__rows" id="rows"></div>
@@ -67,21 +89,27 @@
         <section class="view" id="view-register" hidden></section>
 
         <section class="view" id="view-card" hidden>
+        <!-- 머리말과 5단계 줄은 `patients.html` 과 **같은 것**이다. 전에는 이
+             화면이 자기 것을 따로 갖고 있어서, 화면을 옮기면 머리말 모양이
+             바뀌고 단계 줄은 `<li>` 라 눌리지도 않았다 — 「기본정보」로 돌아갈
+             길이 없었다 (구조 진단 §5.1). 줄은 `js/step-nav.js` 가 그린다. -->
         <div class="patient-head">
-          <div class="patient-head__name" id="p-name">김서연</div>
-          <div class="patient-head__id" id="p-id">차트 12345 · 1990-01-01</div>
-          <div class="patient-head__visit" id="p-visit">산부인과 · 박연 원장 · 2026-08-13 (오늘) 진료</div>
+          <div class="patient-head__who">
+            <div class="patient-head__top">
+              <div class="patient-head__name" id="p-name">—</div>
+              <div class="patient-head__id" id="p-id"></div>
+              <span class="row__state" id="p-state" hidden></span>
+            </div>
+            <div class="patient-head__visit" id="p-visit"></div>
+          </div>
+          <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드"></div>
         </div>
 
-        <ol class="steps">
-          <li class="step step--done"><span class="step__mark">✓</span>기본정보</li>
-          <li class="step step--now"><span class="step__mark">●</span>진료기록</li>
-          <li class="step"><span class="step__mark">○</span>안내문</li>
-          <li class="step"><span class="step__mark">○</span>최종 확인</li>
-          <li class="step"><span class="step__mark">○</span>현황</li>
-        </ol>
-
-        <h1 class="pane__title">③ 판독 결과 확인</h1>
+        <!-- 제목은 눈에 안 보인다. 위 머리말에 환자 이름이 있고 단계 줄이
+             「진료기록」을 짚고 있어, 같은 말을 크게 한 번 더 적으면 화면만
+             밀린다. 다만 문서에 제목이 하나는 있어야 해서(화면낭독기가
+             「이 화면이 무엇인가」를 그것으로 읽는다) 소리로만 남긴다. -->
+        <h1 class="sr-only">판독 결과 확인</h1>
 
         <!-- 판독 중 · 판독 실패 · 결과 없음이 여기로 온다 -->
         <!-- 손대야 하는 상태면 커서가 여기로 온다 (KEY-126).
@@ -93,22 +121,102 @@
 
         <div id="work">
           <div class="review">
-            <!-- 왼쪽 · 원문 -->
-            <section class="panel" aria-label="판독한 원문">
-              <div class="panel__head">원문 텍스트</div>
-              <div class="doc-tabs" id="doc-tabs" role="group" aria-label="문서 고르기"></div>
-              <div class="raw" id="raw" tabindex="0"></div>
-              <p class="purge-note">
-                ⓘ 이 원문과 원본 이미지는 승인과 함께 지워집니다 — 뽑은 값만 남습니다
-              </p>
+            <!-- ── 왼쪽 440px — 한 블록 (와이어프레임 S1-6 원문 치수) ──
+                 전에는 탭 · 미리보기 · 안내줄 · 원문 상자 · 버튼이 각자 떠
+                 있었다. 오른쪽은 블록으로 서는데 왼쪽만 낱개라 두 칸이 다른
+                 화면처럼 보였다. 여기도 기본정보(S1-4)와 같은 블록으로 담는다.
+
+                 **버튼 둘은 블록 머리에.** 이 칸에서 할 수 있는 일이 그 둘이라
+                 (사진을 더 올린다 / 판독을 다시 불러온다), 맨 위에 한 줄로
+                 보이고 아래는 그 결과다 — 진료기록 탭과 같은 짜임이다. -->
+            <section class="side" aria-label="판독 원문">
+              <section class="box box--raw">
+                <div class="box__head">
+                  <h2 class="box__title">진료기록</h2>
+                  <button
+                    class="button-ghost button-ghost--sm"
+                    type="button"
+                    id="add-doc"
+                    aria-expanded="false"
+                    aria-controls="add-panel"
+                  >
+                    OCR 업로드
+                  </button>
+                </div>
+
+                <!-- **여기서 바로 올린다.** 업로드 화면으로 보내지 않는다 —
+                     판독을 보다가 「사진이 흐려서 못 읽었구나」를 알게 되는데,
+                     그때 다른 화면으로 갔다 오면 보던 값을 잃는다. -->
+                <div class="add-panel" id="add-panel" hidden>
+                  <div class="drop drop--sm" id="drop2">
+                    <p class="drop__lead">파일을 끌어다 놓거나</p>
+                    <button class="drop__pick" type="button" id="pick2">파일 고르기</button>
+                    <input type="file" id="file2" multiple accept="image/*,application/pdf" hidden />
+                  </div>
+                  <p class="note note--warn">⚠ 다른 환자의 정보가 함께 촬영되지 않도록 주의해 주세요</p>
+
+                  <!-- **무엇을 찍어 와야 하는지는 여전히 말해 준다.**
+                       종류 고르개를 없앤 것이지 안내를 없앤 것이 아니다.
+                       전에는 진료기록 탭의 업로드 화면에 있었는데, 그 화면을
+                       없애면서 올리는 자리로 함께 옮겼다 — 접힌 판 안이라
+                       평소에는 자리를 안 먹는다. -->
+                  <div class="kinds">
+                    <div class="kind">
+                      <div class="kind__name">EMR 과거기록</div>
+                      <p class="kind__desc">상병 · 처방 · 검사 수치가 함께 보이는 화면 — 이 화면만으로 충분합니다</p>
+                      <p class="kind__when kind__when--must">★ 안내문 생성 필수</p>
+                    </div>
+                    <div class="kind">
+                      <div class="kind__name">소견 · 메모</div>
+                      <p class="kind__desc">초음파 소견 · 특이사항이 표시된 화면</p>
+                      <p class="kind__when">안내문 생성에 사용</p>
+                    </div>
+                    <div class="kind">
+                      <div class="kind__name">검사 결과지</div>
+                      <p class="kind__desc">과거기록에 포함되지 않는 항목만 — AMH는 별도 서식이라 추가 업로드가 필요할 수 있습니다</p>
+                      <p class="kind__when">검사 시행일에만</p>
+                    </div>
+                  </div>
+                  <p class="note">진료기록 종류를 자동으로 분류합니다 · 종류별로 나누어 업로드하지 않아도 됩니다</p>
+                </div>
+                <p class="note" id="add-say" role="status" aria-live="polite" hidden></p>
+
+                <div class="doc-tabs" id="doc-tabs" role="group" aria-label="문서 고르기"></div>
+
+                <!-- 무엇을 보고 읽었는지. 값만 보여 주면 스탭이 원본과 대조할
+                     길이 없다. 이미지를 주는 자리가 아직 없어 자리표시자다 —
+                     빈칸으로 두면 화면이 무너진 것처럼 보인다. -->
+                <div class="doc-view" id="doc-view" aria-label="문서 미리보기">
+                  <p class="doc-view__soon">문서 미리보기는 원본 이미지를 주는 자리가 붙으면 여기에 표시됩니다</p>
+                </div>
+
+                <p class="raw-note">수치 옆 출처를 누르면 해당 진료기록으로 이동합니다</p>
+
+                <div class="raw__head">
+                  <span class="raw__title">원문 텍스트</span>
+                  <span class="box__note" id="raw-note">현재 화면에서 판독한 원문</span>
+                </div>
+                <div class="raw" id="raw" tabindex="0"></div>
+
+                <p class="purge-note">
+                  ⓘ EMR 과거기록의 <b>수 치 : / 참고치 :</b> 줄에서 읽습니다 · 실패 시 직접 입력합니다<br />
+                  ⓘ <b>이 원문과 원본 이미지는 승인과 함께 지워집니다</b> — 뽑은 값만 남습니다
+                </p>
+              </section>
             </section>
 
-            <!-- 오른쪽 · 뽑아낸 값 -->
-            <section class="panel" aria-label="이번 판독 값">
-              <div class="panel__head">이번 판독 값</div>
-              <p class="summary" id="summary" aria-live="polite">—</p>
-              <ul class="fields" id="fields"></ul>
-              <p class="purge-note">ⓘ 값 옆의 출처를 누르면 그 값이 나온 원문 줄로 이동합니다</p>
+            <!-- ── 오른쪽 · 블록 넷 ──────────────────────────────────
+                 와이어프레임은 구획을 가로줄로 나누지만, 우리 화면은 기본정보
+                 (S1-4)와 같은 **블록**으로 세운다 — 같은 프로그램 안에서 화면마다
+                 담는 모양이 다르면 같은 자리인지가 안 보인다. 안의 치수(이름 84px ·
+                 값칸 68px · 단위 46px)는 원문 그대로다. -->
+            <section class="main-col" aria-label="판독 값 확인">
+              <!-- **할 일이 없으면 안 뜬다.** 「모두 읽혔습니다」는 초록 판을
+                   차지하면서 아무 일도 안 시킨다 — 값이 다 읽힌 것은 아래
+                   블록을 보면 안다. 손봐야 하는 것이 있을 때만 뜬다:
+                   확인할 항목, 그리고 다른 사람과 부딪힌 값. -->
+              <p class="summary" id="summary" aria-live="polite" hidden></p>
+              <div class="fields" id="fields"></div>
             </section>
           </div>
 
@@ -128,7 +236,12 @@
     <script src="/js/api.js"></script>
     <script src="/js/patients-api.js"></script>
     <script src="/js/session.js"></script>
+    <script src="/js/field-labels.js"></script>
+    <script src="/js/ocr-groups.js"></script>
+    <script src="/js/step-nav.js"></script>
+    <script src="/js/list-fold.js"></script>
     <script src="/js/shell.js"></script>
+    <script src="/js/upload-core.js"></script>
     <script src="/js/ocr-api.js"></script>
     <script src="/js/ocr-review.js"></script>
   </body>

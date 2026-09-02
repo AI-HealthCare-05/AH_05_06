@@ -92,7 +92,7 @@ body {
 }
 .tab-bar::-webkit-scrollbar { display: none; }
 .tab-bar__btn {
-  flex: 1;
+  flex: none;
   text-align: center;
   font-family: var(--font);
   font-size: 15px;
@@ -101,7 +101,7 @@ body {
   border: 0;
   border-bottom: 2px solid transparent;
   min-height: 44px;
-  padding: 0 0 8px;
+  padding: 0 14px 8px;
   white-space: nowrap;
   cursor: pointer;
   color: var(--tx-muted);
@@ -109,9 +109,9 @@ body {
   transition: color .15s, border-color .15s;
 }
 .tab-bar__btn--active {
-  color: var(--p-dark);
-  font-weight: 700;
-  border-bottom-color: var(--p-dark);
+  color: var(--tx);
+  font-weight: 600;
+  border-bottom-color: #D9AECB;
 }
 
 /* ── 스크롤 바디 ─── */
@@ -188,6 +188,20 @@ body {
   color: var(--tx-sub);
   margin-top: 12px;
 }
+.stat-progress-copy {
+  font-size: 15px; line-height: 21px;
+  color: var(--tx-sub);
+  margin-top: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.stat-progress-empty {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: var(--p-soft);
+  font-size: 13px; line-height: 19px;
+  color: var(--tx-muted);
+}
 .stat-bar-wrap {
   height: 10px;
   background: var(--p-soft);
@@ -253,12 +267,28 @@ body {
   color: var(--tx);
   box-shadow: inset 0 0 0 1px var(--border-str);
 }
+.btn--accent {
+  background: var(--p);
+  color: var(--p-deep);
+  box-shadow: none;
+}
 
 /* ════════════════════════════════════════
    3번 화면: 복약지도 (P2) — 나의 목표 차트
 ════════════════════════════════════════ */
 .goal-item { padding: 18px 0 0; margin-top: 14px; border-top: 1px solid var(--border); }
 .goal-item:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.goal-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.goal-date {
+  font-size: 13px;
+  color: var(--tx-muted);
+  font-variant-numeric: tabular-nums;
+}
 .goal-name {
   font-size: 17px; line-height: 25px;
   font-weight: 600; letter-spacing: -0.2px;
@@ -320,26 +350,23 @@ body {
   width: 2px; border-radius: 1px;
   background: rgba(48,39,44,.20);
 }
-.goal-chart__label-row {
-  position: relative;
-  height: 44px;
-  margin-top: 6px;
+.goal-chart__scale-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  margin-top: 7px;
 }
-.goal-chart__label {
-  position: absolute;
-  transform: translateX(-50%);
-  text-align: center;
-  white-space: nowrap;
-}
-.goal-chart__label-name {
-  display: block;
-  font-size: 11px; line-height: 14px;
+.goal-chart__scale-label {
+  font-size: 11px; line-height: 15px;
   color: var(--tx-muted);
+  text-align: center;
 }
-.goal-chart__label-val {
-  display: block;
-  font-size: 12px; line-height: 16px; font-weight: 600;
-  color: var(--tx);
+.goal-chart__scale-label:first-child { text-align: left; }
+.goal-chart__scale-label:last-child { text-align: right; }
+.goal-chart__start-summary {
+  margin-top: 7px;
+  font-size: 12px; line-height: 16px;
+  color: var(--tx-sub);
   font-variant-numeric: tabular-nums;
 }
 /* 차트 없는 목표 — 핑크 메모 */
@@ -380,10 +407,10 @@ body {
   font-family: var(--font);
   font-size: 16px; font-weight: 600;
   letter-spacing: -0.2px;
-  color: var(--tx);
-  background: var(--surface);
+  color: var(--p-deep);
+  background: var(--p);
   border: 0;
-  box-shadow: inset 0 0 0 1px var(--border-str);
+  box-shadow: none;
   border-radius: var(--r-btn);
   cursor: pointer;
   display: flex;
@@ -395,8 +422,27 @@ body {
 .expand-btn:hover { opacity: .8; }
 .expand-btn__icon { transition: transform .2s; }
 .expand-btn--open .expand-btn__icon { transform: rotate(180deg); }
-.expand-body { display: none; flex-direction: column; gap: 12px; }
-.expand-body--open { display: flex; }
+.expand-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 430px;
+  overflow: hidden;
+}
+.expand-body::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 110px;
+  background: linear-gradient(rgba(255,255,255,0), #fff 72%);
+  pointer-events: none;
+}
+.expand-body--open {
+  max-height: none;
+  overflow: visible;
+}
+.expand-body--open::after { display: none; }
 
 /* ════════════════════════════════════════
    5번 화면: 주의사항 (P3)
@@ -522,6 +568,22 @@ body {
   margin-top: 12px;
 }
 .axis-body-text:first-child { margin-top: 0; }
+.life-fade-wrap {
+  position: relative;
+  max-height: 300px;
+  overflow: hidden;
+}
+.life-fade-wrap--open {
+  max-height: none;
+  overflow: visible;
+}
+.life-fade {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 96px;
+  background: linear-gradient(rgba(255,255,255,0), #fff 72%);
+  pointer-events: none;
+}
 
 /* ════════════════════════════════════════
    공통 / 기타
@@ -656,4 +718,47 @@ b { font-weight: 700; }
   border-color: var(--border-str);
   color: var(--tx-muted);
   cursor: default;
+}
+
+/* ── 실제 API 로딩·빈 값·오류 상태 (KEY-241) ─── */
+.guide-mock-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0 0 8px;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: #fff3cd;
+  color: #6b4d00;
+  font-size: 12px;
+  font-weight: 700;
+}
+.guide-loading,
+.guide-empty,
+.guide-load-error {
+  margin: 20px;
+  padding: 24px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  color: var(--tx-muted);
+  text-align: center;
+}
+.guide-empty { margin: 12px 0 0; }
+.guide-load-error__title {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--tx);
+  font-size: 18px;
+}
+.guide-load-error__message { margin-bottom: 16px; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

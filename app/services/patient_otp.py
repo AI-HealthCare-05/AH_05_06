@@ -13,6 +13,7 @@ from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.core.auth_errors import AuthError as ApiError
+from app.core.time import as_utc
 from app.models.visits import GuideStatus, PatientGuideLink, PatientOtpChallenge
 from app.services.patient_links import digest_link_token
 
@@ -34,6 +35,17 @@ class UnavailableOtpDelivery:
         raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.")
 
 
+class MockOtpDelivery:
+    """local·dev·test 전용 mock 발송 어댑터 — KEY-219.
+
+    실제 SMS를 보내지 않고 발송 성공만 시뮬레이션한다.
+    코드 원문은 로그에 남기지 않는다.
+    """
+
+    async def send(self, phone: str, code: str) -> None:
+        pass
+
+
 def _otp_digest(code: str, salt: str, secret_key: str) -> str:
     otp_key = hmac.new(secret_key.encode("utf-8"), b"patient-otp-hmac-key-v1", hashlib.sha256).digest()
     payload = bytes.fromhex(salt) + code.encode("ascii")
@@ -41,7 +53,7 @@ def _otp_digest(code: str, salt: str, secret_key: str) -> str:
 
 
 def _seconds_until(value: datetime, timestamp: datetime) -> int:
-    return max(1, int((value - timestamp).total_seconds() + 0.999))
+    return max(1, int((as_utc(value) - as_utc(timestamp)).total_seconds() + 0.999))
 
 
 def _locked(challenge: PatientOtpChallenge, timestamp: datetime) -> ApiError:
@@ -78,9 +90,16 @@ class _PreviousOtp:
 
 
 class PatientOtpService:
-    def __init__(self, delivery: OtpDelivery, *, secret_key: str | None = None) -> None:
+    def __init__(
+        self,
+        delivery: OtpDelivery,
+        *,
+        secret_key: str | None = None,
+        fixed_otp_code: str | None = None,
+    ) -> None:
         self.delivery = delivery
         self.secret_key = secret_key or config.SECRET_KEY
+        self.fixed_otp_code = fixed_otp_code
 
     async def _active_link(
         self,
@@ -99,7 +118,7 @@ class PatientOtpService:
         if link is None:
             raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
         timestamp = now()
-        if link.expires_at <= timestamp:
+        if as_utc(link.expires_at) <= as_utc(timestamp):
             raise ApiError("LINK_EXPIRED", 410, "환자 링크가 만료되었습니다.")
         guide = link.guide_document
         if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:
@@ -124,7 +143,7 @@ class PatientOtpService:
         timestamp: datetime,
         connection: BaseDBAsyncClient,
     ) -> None:
-        if challenge.locked_until is not None and challenge.locked_until <= timestamp:
+        if challenge.locked_until is not None and as_utc(challenge.locked_until) <= as_utc(timestamp):
             challenge.locked_until = None
             challenge.failed_attempts = 0
             await challenge.save(
@@ -182,7 +201,7 @@ class PatientOtpService:
                 await self._release_elapsed_lock(challenge, timestamp, connection)
                 if challenge.locked_until is not None:
                     raise _locked(challenge, timestamp)
-                if challenge.issued_at + OTP_RESEND_COOLDOWN > timestamp:
+                if as_utc(challenge.issued_at) + OTP_RESEND_COOLDOWN > as_utc(timestamp):
                     raise _resend_too_soon(challenge, timestamp)
 
                 previous = _PreviousOtp(
@@ -192,7 +211,7 @@ class PatientOtpService:
                     consumed_at=challenge.consumed_at,
                     issued_at=challenge.issued_at,
                 )
-                code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
+                code = self.fixed_otp_code or f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
                 salt = secrets.token_hex(16)
                 challenge.otp_digest = _otp_digest(code, salt, self.secret_key)
                 challenge.otp_salt = salt
@@ -211,7 +230,7 @@ class PatientOtpService:
                     ],
                 )
             else:
-                code = f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
+                code = self.fixed_otp_code or f"{secrets.randbelow(10**OTP_LENGTH):0{OTP_LENGTH}d}"
                 salt = secrets.token_hex(16)
                 challenge = await PatientOtpChallenge.create(
                     patient_guide_link=link,
@@ -249,7 +268,7 @@ class PatientOtpService:
                 raise _locked(challenge, timestamp)
             if challenge.consumed_at is not None:
                 raise ApiError("OTP_ALREADY_USED", 409, "이미 사용한 인증번호입니다. 새 인증번호를 요청해 주세요.")
-            if challenge.expires_at <= timestamp:
+            if as_utc(challenge.expires_at) <= as_utc(timestamp):
                 raise ApiError("OTP_EXPIRED", 410, "인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.")
 
             valid_format = len(code) == OTP_LENGTH and code.isascii() and code.isdigit()

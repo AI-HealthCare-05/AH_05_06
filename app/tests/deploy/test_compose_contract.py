@@ -22,7 +22,6 @@ import re
 import pytest
 
 from app.tests.deploy.conftest import (
-    COMPOSE_VAR,
     ROOT,
     compose,
     compose_vars,
@@ -31,6 +30,7 @@ from app.tests.deploy.conftest import (
     read,
     service,
     service_ports,
+    service_ports_of,
 )
 
 #: compose 파일과 **그 짝인 예시**. 둘을 싸잡아 보면 안 된다 — 로컬 compose 는
@@ -45,13 +45,11 @@ PAIRS = (
 COMPOSES = tuple(c for c, _ in PAIRS)
 PROD = "infra/docker/docker-compose.prod.yml"
 
-#: `${NAME}` · `${NAME:-기본값}` 둘 다.
-
 
 @pytest.mark.parametrize("rel", COMPOSES)
 def test_the_compose_file_actually_asks_for_things(rel: str) -> None:
     """**아래 검사가 조용히 통과하지 않게 한다.**"""
-    found = set(COMPOSE_VAR.findall(read(rel)))
+    found = compose_vars(read(rel))
 
     assert len(found) > 5, f"{rel} 에서 변수를 거의 못 찾았다 — 검사가 헛돈다: {sorted(found)}"
 
@@ -59,7 +57,7 @@ def test_the_compose_file_actually_asks_for_things(rel: str) -> None:
 @pytest.mark.parametrize(("rel", "example"), PAIRS)
 def test_every_compose_variable_is_named_in_its_example(rel: str, example: str) -> None:
     """compose 가 부르는데 예시엔 없는 이름이 있으면 여기서 운다."""
-    missing = sorted(set(COMPOSE_VAR.findall(read(rel))) - declared_names(example))
+    missing = sorted(compose_vars(read(rel)) - declared_names(example))
 
     assert not missing, f"{rel} 이 부르는데 {example} 에 이름조차 없다: {missing}"
 
@@ -87,6 +85,35 @@ def test_the_examples_carry_no_minio_value(example: str) -> None:
     ]
 
     assert not filled, f"{example} 에 MinIO 실값이 적혀 있다: {filled}"
+
+
+class TestTheSharedHelpersDoWhatTheySay:
+    """**검사들이 기대는 조각이 조용히 틀리면 위 전부가 헛돈다** — KEY-194.
+
+    `#155` 리뷰 잔여를 정리하면서 호출부를 헬퍼로 바꿨다. 「같은 일을 한다」는
+    전제 위에서 한 일이라, 그 전제를 여기서 잰다.
+    """
+
+    def test_service_ports_survives_an_empty_ports_key(self) -> None:
+        """**헬퍼가 더 튼튼하다** — 바꾼 자리에서 얻은 것.
+
+        고치기 전 호출부는 이렇게 적혀 있었다.
+
+            [str(p) for p in service(PROD, "minio").get("ports", [])]
+
+        `ports:` 키가 있는데 값이 비면 YAML 은 `None` 을 준다. `.get(k, [])` 는
+        **키가 있으므로 기본값을 안 쓰고** `None` 을 그대로 내주고, 그 자리에서
+        `TypeError` 가 난다. 헬퍼는 `or []` 라 빈 목록으로 간다.
+        """
+        assert service_ports_of({"ports": None}) == [], "ports 가 비면 빈 목록이어야 한다"
+        assert service_ports_of({}) == [], "ports 키가 없으면 빈 목록이어야 한다"
+        assert service_ports_of({"ports": ["80:80"]}) == ["80:80"], "있는 포트를 못 읽는다"
+
+    def test_compose_vars_reads_both_shapes(self) -> None:
+        """`${NAME}` 과 `${NAME:-기본값}` 둘 다 이름만 뽑는다."""
+        found = compose_vars("a:${ONE}:b ${TWO:-9} ${lower} ${THREE_3}")
+
+        assert found == {"ONE", "TWO", "THREE_3"}, f"이름을 잘못 뽑는다: {sorted(found)}"
 
 
 class TestMinioIsInBothPlaces:
@@ -122,7 +149,7 @@ class TestMinioIsInBothPlaces:
         9000(S3 API)·9001(콘솔)이 공개로 붙으면 보안 그룹 한 번 잘못 열린
         것으로 끝난다. `127.0.0.1` 에 묶어 두면 SSH 터널을 지나야 한다.
         """
-        published = [str(p) for p in service(PROD, "minio").get("ports", [])]
+        published = service_ports(PROD, "minio")
 
         assert published, "운영 MinIO 의 포트 줄을 못 찾았다 — 검사가 헛돈다"
         wide_open = [p for p in published if not p.startswith("127.0.0.1:")]

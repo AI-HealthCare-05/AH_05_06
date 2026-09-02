@@ -348,6 +348,33 @@ var MOCK_TODAY = (function () {
   ];
 })();
 
+/* **고정 데이터의 날짜를 오늘에 맞춘다.**
+ *
+ * 고정 값은 「2026-08-20 이 오늘」이라 치고 적혔다. 달력이 지나면 그 날은
+ * 지난 날짜가 되고, 목록은 「오늘 등록된 환자가 없습니다」만 띄운다 — 목업이
+ * 하루가 지날 때마다 조용히 쓸모없어진다.
+ *
+ * 날짜를 지우지 않고 **통째로 민다.** 사이 간격은 뜻이 있기 때문이다 —
+ * 박수빈의 08-11 은 「아홉 날 전에 걸린 채로 남은 보완」이고, 그 간격이
+ * 사라지면 오늘 것과 구분이 안 된다.
+ */
+var MOCK_TODAY_BASE = "2026-08-20";
+
+(function shiftToToday() {
+  var base = new Date(MOCK_TODAY_BASE + "T00:00:00");
+  var now = new Date();
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var days = Math.round((today - base) / 86400000);
+  if (!days) return;
+
+  MOCK_TODAY.forEach(function (v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})(.*)$/.exec(String(v.visited_at));
+    if (!m) return;
+    var at = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days);
+    v.visited_at = toIsoDate(at) + m[4];
+  });
+})();
+
 /* 진료 상세에만 있는 칸. 오늘 목록(§6 S1-1)은 이것들을 주지 않는다 —
    목업 저장소는 하나지만, 아래 두 투영이 각각 자기 계약의 칸만 내보낸다. */
 MOCK_TODAY.forEach(function (v) {
@@ -757,9 +784,76 @@ function ageOf(birthDate) {
   return years;
 }
 
-/* 화면에 전체 번호를 띄우지 않는다 — 같은 이름을 가를 만큼만 보여 준다 */
-function maskPhone(digits) {
-  var d = (digits || "").replace(/\D/g, "");
-  if (d.length < 8) return d;
-  return d.slice(0, 3) + "-****-" + d.slice(-4);
+/* **화면에는 전체 번호를 보여 준다.**
+ *
+ * 전에는 가운데를 `****` 로 가렸다(와이어프레임도 그렇게 그렸다). 그런데 이
+ * 번호를 보는 사람은 그 환자를 방금 접수한 그 의원의 스탭이고, 안내 문자가
+ * 안 가면 **전화를 걸어야 하는 사람**이다. 가려 두면 번호를 확인하려고 EMR 을
+ * 따로 열게 되고, 그 사이에 옮겨 적다 틀린다.
+ *
+ * **로그와 오류 응답의 마스킹은 그대로다** — 그쪽은 KEY-48 이 요구하는 보안
+ * 사항이고 여기와 다른 문제다. 화면은 권한 있는 사람이 보고, 로그는 누가 볼지
+ * 모른다.
+ *
+ * 끊어 쓰는 것은 읽기 위해서다 — `01056785687` 은 눈으로 옮겨 적기 어렵다.
+ */
+/* ── 숫자만 쳐도 하이픈이 붙는다 ─────────────────────────────────────
+ *
+ * 스탭은 EMR 을 보며 옮겨 적는다. 거기 적힌 것은 `19940722` · `01047851256`
+ * 같은 숫자열이라, 하이픈을 손으로 넣게 하면 자리를 세어 가며 친다. 게다가
+ * 안 넣으면 「생년월일은 1994-07-22 처럼 적어 주세요」로 막혀 다시 고친다.
+ *
+ * **화면 밖의 규칙이라 검사가 부른다.** 자리 셈은 눈으로 확인하기 어렵다.
+ */
+
+function onlyDigits(text) {
+  return String(text === null || text === undefined ? "" : text).replace(/\D/g, "");
+}
+
+/** `19940722` → `1994-07-22`. **치는 도중에도 자연스럽게** — 5자면 `1994-0`.
+    다 친 뒤에만 모양을 잡으면 마지막 글자에서 화면이 튄다. */
+function birthMask(text) {
+  var d = onlyDigits(text).slice(0, 8);
+  if (d.length <= 4) return d;
+  if (d.length <= 6) return d.slice(0, 4) + "-" + d.slice(4);
+  return d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6);
+}
+
+/** `01047851256` → `010-4785-1256`.
+
+    가운데 자릿수는 **길이가 정한다** — 11자리는 4, 10자리는 3이다(`011-234-5678`).
+    010 만 보고 4로 박으면 옛 번호가 `011-2345-678` 로 어긋난다. */
+function phoneMask(text) {
+  var d = onlyDigits(text).slice(0, 11);
+  if (d.length <= 3) return d;
+  var mid = d.length > 10 ? 4 : 3;
+  if (d.length <= 3 + mid) return d.slice(0, 3) + "-" + d.slice(3);
+  return d.slice(0, 3) + "-" + d.slice(3, 3 + mid) + "-" + d.slice(3 + mid);
+}
+
+/** 숫자 `n` 개를 지난 자리. 하이픈을 넣으면 글자 수가 늘어 커서가 밀린다 —
+    **몇 번째 숫자 뒤였는지**로 되찾는다. */
+function maskCaret(masked, digits) {
+  if (digits <= 0) return 0;
+  var seen = 0;
+  for (var i = 0; i < masked.length; i++) {
+    if (/\d/.test(masked[i])) {
+      seen += 1;
+      if (seen === digits) return i + 1;
+    }
+  }
+  return masked.length;
+}
+
+/** 지운 것이 하이픈뿐이었나. 그러면 그 앞 숫자를 마저 지운다 — 안 그러면
+    하이픈이 곧바로 다시 붙어 **지운 것이 없어 보이고**, 두 번 눌러야 한다. */
+function maskAfterDelete(digits, at) {
+  if (at <= 0) return { digits: digits, at: at };
+  return { digits: digits.slice(0, at - 1) + digits.slice(at), at: at - 1 };
+}
+
+/** 담아 둔 번호를 읽기 좋게. **치는 중과 같은 규칙을 쓴다** — 두 벌로 두면
+    손으로 친 것과 화면에 뜬 것이 달라 보인다. */
+function formatPhone(digits) {
+  return phoneMask(digits);
 }

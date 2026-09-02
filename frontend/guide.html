@@ -1,47 +1,60 @@
 <!doctype html>
 <html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>진료 안내 · 복약 안내 도우미</title>
-    <link rel="stylesheet" href="/css/style.css" />
-    <link rel="stylesheet" href="/css/tokens.css" />
-    <link rel="stylesheet" href="/css/guide.css" />
-  </head>
-  <body class="guide">
-    <!-- P2 복약지도 · P3 주의사항 · P4 생활관리 · 현황(미구현) · P6 챗봇 —
-         한 화면의 **다섯 탭**이다 (KEY-93, 챗봇은 KEY-95 가 더했다).
-         「세 탭」이라고 적혀 있었는데 실제와 달랐다 (KEY-129).
-         환자는 문자 링크로 들어와 한 번 보고 나간다. 로그인이 없고,
-         탭을 옮겨도 주소가 바뀌지 않는다 — 뒤로가기로 링크 밖으로 나가면
-         다시 인증해야 하기 때문이다. -->
-    <header class="guide__head">
-      <div class="guide__head-row">
-        <h1 class="guide__title">진료 안내</h1>
-        <button class="guide__pdf" type="button" id="pdf-button">PDF 저장</button>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>진료 안내 · 케어온</title>
+  <link rel="stylesheet" href="/patient_wireframe/css/tokens.css" />
+  <link rel="stylesheet" href="/patient_wireframe/css/guide.css?v=9" />
+  <link rel="stylesheet" href="/patient_wireframe/css/chat.css?v=5" />
+</head>
+<body>
+
+<!-- 기존 다섯 탭 계약 중 P2~P5 네 탭은 최종 와이어프레임으로 연결하고,
+     P6 챗봇은 별도 실제 API 연결 전까지 실제 모드에서 숨긴다(KEY-241). -->
+<div class="app" id="app">
+  <header class="header">
+    <div class="header__top">
+      <div class="header__logo">
+        <span class="header__icon"><img src="/patient_wireframe/assets/logo.png" alt="" aria-hidden="true" style="width:100%;height:100%;object-fit:cover;"></span>
+        <span class="header__name">케어온</span>
       </div>
-      <p class="guide__meta" id="visit-meta"></p>
-    </header>
+      <button type="button" class="header__pdf-btn" id="pdf-btn">PDF 저장</button>
+    </div>
+    <p class="header__patient" id="header-patient"></p>
+    <div id="tab-bar" class="tab-bar" role="tablist" aria-label="안내 항목"></div>
+  </header>
 
-    <nav class="tabs" id="tabs" aria-label="안내 항목"></nav>
+  <main class="body" id="guide-body">
+    <div class="guide-loading">안내를 불러오는 중이에요…</div>
+  </main>
+  <p class="sr-only" id="guide-say" role="status" aria-live="polite"></p>
+</div>
 
-    <!-- **라이브 리전이 아니다.** `renderBody()` 가 탭을 누를 때마다 본문을
-         통째로 갈아 끼우는데, 여기 실어 두면 탭을 옮길 때마다 안내문 전체가
-         다시 낭독된다. 실측했더니 탭 3 번에 6 번 읽혔다 (KEY-129).
-         바뀐 것만 아래 `#guide-say` 가 한 줄로 알린다. -->
-    <main class="guide__body" id="guide-body">
-      <p class="guide__loading">안내를 불러오는 중이에요…</p>
-    </main>
-    <p class="sr-only" id="guide-say" role="status" aria-live="polite"></p>
+<div class="chat-backdrop" id="chat-backdrop"></div>
+<div class="chat-panel" id="chat-panel" role="dialog" aria-label="상담 챗봇" aria-modal="true">
+  <div class="chat-panel__handle"></div>
+  <div class="chat-panel__header">
+    <div class="chat-panel__title">
+      <span class="chat-panel__title-icon"><img src="/patient_wireframe/assets/chat_bot.png" alt="" aria-hidden="true"></span>
+      케어온 상담
+    </div>
+    <button type="button" class="chat-panel__close" id="chat-close" aria-label="닫기">✕</button>
+  </div>
+  <div class="chat-messages" id="chat-messages"></div>
+  <div class="chat-input-area">
+    <textarea class="chat-input" id="chat-input" rows="1"
+      placeholder="궁금한 것을 입력하세요" aria-label="질문 입력"></textarea>
+    <button type="button" class="chat-abort" id="chat-abort" aria-label="중단">■</button>
+    <button type="button" class="chat-send" id="chat-send" disabled aria-label="보내기">↑</button>
+  </div>
+</div>
 
-    <footer class="guide__foot">
-      <p class="guide__note">ⓘ 이 안내는 담당 의료진이 확인한 내용입니다</p>
-      <p class="guide__source" id="guide-source"></p>
-      <button class="guide__report" type="button" id="report-button">오류 신고</button>
-    </footer>
-
-    <script src="/js/guide-api.js"></script>
-    <script src="/js/chatbot-api.js"></script>
-    <script src="/js/guide.js"></script>
-  </body>
+<script src="/patient_wireframe/component/fab.js?v=9"></script>
+<script src="/patient_wireframe/component/sheet.js?v=3"></script>
+<script src="/patient_wireframe/component/guide-footer.js?v=9"></script>
+<script src="/patient_wireframe/js/guide-api.js?v=10"></script>
+<script src="/patient_wireframe/js/guide.js?v=10"></script>
+<script src="/patient_wireframe/js/chat.js?v=5"></script>
+</body>
 </html>

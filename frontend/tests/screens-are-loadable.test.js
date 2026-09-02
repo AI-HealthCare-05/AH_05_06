@@ -18,7 +18,6 @@ const { load } = require("./browser-shim.js");
 const SCREENS = {
   "detail.js": ["api", "session", "patients-api", "shell", "patients", "detail"],
   "patients.js": ["api", "session", "patients-api", "shell", "patients"],
-  "upload.js": ["api", "session", "patients-api", "shell", "upload"],
   "doctor.js": ["api", "session", "patients-api", "shell", "doctor-api", "doctor"],
   "ocr-review.js": ["api", "session", "patients-api", "shell", "ocr-api", "ocr-review"],
   "checkin.js": ["api", "checkin-api", "checkin"],
@@ -30,20 +29,20 @@ for (const [file, files] of Object.entries(SCREENS)) {
   });
 }
 
-test("검사 대상 여섯이 실제로 그 파일들이다", () => {
+test("검사 대상 다섯이 실제로 그 파일들이다", () => {
   /* 목록이 비거나 파일명이 바뀌면 위 검사들이 조용히 사라진다. */
   const jsDir = path.join(__dirname, "..", "js");
-  assert.strictEqual(Object.keys(SCREENS).length, 6);
+  assert.strictEqual(Object.keys(SCREENS).length, 5);
   for (const file of Object.keys(SCREENS)) {
     assert.ok(fs.existsSync(path.join(jsDir, file)), `${file} 가 없다`);
   }
 });
 
-test("여섯 모두 자기 뿌리가 없으면 돌아간다", () => {
+test("다섯 모두 자기 뿌리가 없으면 돌아간다", () => {
   /* 가드가 사라지면 검사 환경에서 그리기 시작하고, 껍데기가 던진다.
      위 `doesNotThrow` 가 그것을 잡지만, **왜** 통과하는지도 못 박아 둔다. */
   const jsDir = path.join(__dirname, "..", "js");
-  const guarded = ["detail.js", "patients.js", "upload.js", "doctor.js", "ocr-review.js", "checkin.js"];
+  const guarded = ["detail.js", "patients.js", "doctor.js", "ocr-review.js", "checkin.js"];
   for (const file of guarded) {
     const source = fs.readFileSync(path.join(jsDir, file), "utf8");
     assert.match(source, /if \(!document\.getElementById\("[\w-]+"\)\) return;/, `${file} 에 뿌리 가드가 없다`);
@@ -60,7 +59,6 @@ test("여섯 모두 자기 뿌리가 없으면 돌아간다", () => {
 const GUARD_ID = {
   "detail.js": "patient-facts",
   "patients.js": "find-form",
-  "upload.js": "drop",
   "doctor.js": "approve",
   "ocr-review.js": "fields",
   "checkin.js": "form",
@@ -97,7 +95,7 @@ test("검사에 적힌 가드 id 가 파일에 실제로 박혀 있다", () => {
   }
 });
 
-test("여섯 파일 모두 꺼낼 수 있는 규칙을 하나 이상 갖는다", () => {
+test("다섯 파일 모두 꺼낼 수 있는 규칙을 하나 이상 갖는다", () => {
   /* `doctor.js` 는 가드만 붙고 순수 규칙이 **0개**였다. 파일은 불려도
      검사기가 아무것도 못 부르니, 인수조건(「분리된 순수 규칙을 vm 테스트에서
      불러올 수 있음」)을 형식적으로만 만족했다 (이희진 님 `#103` 리뷰). */

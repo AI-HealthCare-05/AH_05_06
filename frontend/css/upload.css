@@ -19,7 +19,6 @@
 }
 
 .drop__icon {
-  font-size: 28px;
   line-height: 1;
   color: var(--ink-3);
 }
@@ -97,21 +96,6 @@
 .kind__when--must {
   color: var(--warn);
   font-weight: 600;
-}
-
-.note {
-  margin-top: var(--s-12);
-  font-size: 12px;
-  color: var(--ink-3);
-}
-
-/* 남의 정보가 함께 찍히면 되돌릴 수 없다. 다른 안내보다 눈에 띄어야 한다. */
-.note--warn {
-  padding: 10px 12px;
-  color: var(--warn);
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--radius);
 }
 
 /* ── 올린 것 ────────────────────────────────────────── */
@@ -234,39 +218,6 @@
   flex: 1;
 }
 
-.button-ghost {
-  height: var(--button-h);
-  padding: 0 var(--s-24);
-  font: inherit;
-  font-size: 15px;
-  color: var(--ink);
-  background: var(--card);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.button-ghost:hover {
-  background: var(--bg);
-}
-
-.button-primary {
-  height: var(--button-h);
-  padding: 0 var(--s-24);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--on-accent);
-  background: var(--accent);
-  border: 0;
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.button-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
 .button-primary:disabled {
   /* 흰 글자에 #9aa0a7 이면 대비 2.64 로 안 읽혔다. 「지금은 왜 안 되는가」를
      말해 주는 버튼이라 읽히지 않으면 존재 이유가 없다.
@@ -325,4 +276,43 @@
 .drop__pick:active,
 .file__act:active {
   background: var(--line);
+}
+
+/* ── 업로드 화면을 상자 하나로 (S1-5) ────────────────────────────────────
+ *
+ * 기본정보의 「환자 정보」와 같은 상자에 담는다. 화면마다 담는 모양이 다르면
+ * 같은 자리인지가 안 보이고, 탭을 옮길 때마다 눈이 새로 자리를 찾는다.
+ */
+.panel > .box .pane__lead {
+  margin: 0 0 var(--s-12);
+}
+
+/* 상자 안이라 위쪽 경계선은 상자가 이미 갖고 있다 — 줄을 두 번 긋지 않는다. */
+.box .actions {
+  margin-top: var(--s-16);
+  padding-top: var(--s-12);
+}
+
+/* 아래 단추는 작게. 이 화면의 주인공은 드롭존이고, 단추는 그 뒤에 오는 것이다.
+   `--field-h`(44px)를 그대로 쓰면 상자 안에서 드롭존만큼 무거워 보인다.
+   34px 은 WCAG 2.2 의 최소 목표 크기(24px) 위다. */
+.actions--sm {
+  gap: var(--s-8);
+}
+
+/* 그림글자 — 이모지를 걷어냈다(tokens.css: 「장식용 이모지」를 쓰지 않는다).
+   `currentColor` 를 따르므로 드롭존이 활성화될 때 색이 함께 움직인다. */
+.drop__pic {
+  width: 32px;
+  height: 32px;
+  display: block;
+  margin: 0 auto;
+}
+
+/* 미리보기를 못 만들었을 때의 그림 — 이모지를 걷어냈다. */
+.file__pic {
+  width: 20px;
+  height: 20px;
+  display: block;
+  color: var(--ink-3);
 }

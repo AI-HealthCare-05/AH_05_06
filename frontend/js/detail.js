@@ -24,6 +24,15 @@ function dayLabel(isoDatetime) {
   return day + (day === toIsoDate(new Date()) ? " (오늘)" : "");
 }
 
+/* **지난 방문에는 날짜만 쓴다.** 서버는 `2026-05-20T14:32:00+09:00` 을 주는데
+   그대로 찍으면 한 칸이 서른 자가 되어 표가 밀린다. 지난 진료에서 궁금한 것은
+   「언제 왔었나」이지 몇 시였는지가 아니다 — 시각이 필요한 자리는 오늘 진료
+   쪽이고 거기는 따로 적는다 (와이어프레임 S1-4 의 지난 방문도 `2026-05-20` 다). */
+function visitDay(isoDatetime) {
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(isoDatetime || ""));
+  return m ? m[1] : "";
+}
+
 function timeLabel(isoDatetime) {
   var m = String(isoDatetime || "").match(/T(\d{2}:\d{2})/);
   return m ? m[1] + " 등록" : "";
@@ -35,7 +44,18 @@ function timeLabel(isoDatetime) {
      위 순수 규칙은 그대로 남아서 다른 파일도, 검사도 부를 수 있다 (KEY-158). */
   if (!document.getElementById("patient-facts")) return;
 
-  var TABS = ["basic", "record"];
+  /* **다섯 탭이 다 열려 있다.** 안내문 · 최종 확인 · 현황은 `js/visit-guide.js`
+     가 채운다. 와이어프레임에서 의사 화면(D1)은 별도 페이지가 아니라 이 탭의
+     뒷칸이라, 스탭도 의사도 같은 다섯 칸을 본다 — 가르는 것은 버튼이다. */
+/* **「진료기록」은 이 화면에 판이 없다.** 판독 화면(`/ocr-review.html`)이
+   그 칸이다 — 와이어프레임 S1-6·S1-7.
+
+   전에는 여기에도 업로드 판이 하나 더 있어서 같은 칸에 두 화면이었다.
+   판독이 끝난 환자를 눌러도 빈 업로드 판이 떴고, 판독을 보려면 그 판 안의
+   「판독 결과 확인」을 한 번 더 눌러야 했다. 올리는 일도 판독 화면 머리의
+   「OCR 업로드」가 한다. */
+  var TABS = ["basic", "guide", "final", "status"];
+  var AWAY = { record: "/ocr-review.html" };
 
   /* 늦게 온 응답이 지금 보고 있는 환자를 덮어쓰지 않게 하는 번호.
      `visit_id` 를 쓰면 같은 환자를 빠르게 다시 고를 때(A→B→A) 값이 그대로라
@@ -55,15 +75,30 @@ function timeLabel(isoDatetime) {
   /* ── 탭 ─────────────────────────────────────────────── */
 
   function showTab(name) {
-    if (TABS.indexOf(name) === -1) return; // 안내문 · 최종 확인 · 현황은 아직 없다
+    /* 다른 화면에 사는 칸이면 그리로 간다. **탭 표시를 먼저 바꾸지 않는다** —
+       주소를 바꾸는 데 시간이 걸려, 그 사이 눌린 칸이 켜졌다 화면이 갈리면
+       「눌렀는데 딴 데로 갔다」로 읽힌다. */
+    if (AWAY[name]) return goAway(name);
+    if (TABS.indexOf(name) === -1) return; // 모르는 이름이면 아무것도 하지 않는다
     TABS.forEach(function (t) {
       el("panel-" + t).hidden = t !== name;
     });
     document.querySelectorAll(".tab").forEach(function (tab) {
       var on = tab.dataset.tab === name;
       tab.setAttribute("aria-selected", String(on));
-      tab.querySelector(".tab__mark").textContent = on ? "●" : "○";
+      /* 지나온 칸은 ✓, 지금은 ●, 아직은 ○ — 와이어프레임 S1-4·S1-6 의 표시다.
+         규칙은 `js/step-nav.js` 가 갖는다. 판독 화면도 같은 것을 쓰므로 두
+         화면에서 표시가 갈리지 않는다. */
+      tab.querySelector(".tab__mark").textContent =
+        typeof stepMark === "function" ? stepMark(tab.dataset.tab, name) : on ? "●" : "○";
     });
+  }
+
+  /* 그 진료를 달고 간다. 안 달면 도착한 화면이 오늘 목록의 맨 위 환자를
+     열어, 누른 사람이 다른 환자를 보게 된다. */
+  function goAway(name) {
+    if (!row || !row.visit_id) return;
+    location.href = AWAY[name] + "?visit=" + encodeURIComponent(row.visit_id) + "&tab=" + encodeURIComponent(name);
   }
 
   el("tabs").addEventListener("click", function (event) {
@@ -134,7 +169,7 @@ function timeLabel(isoDatetime) {
       ["이름", patient.name],
       ["차트번호", patient.hospital_patient_no],
       ["생년월일", patient.birth_date + " (" + ageOf(patient.birth_date) + "세)"],
-      ["휴대폰", maskPhone(patient.phone), "이 번호로 안내 문자가 발송됩니다"],
+      ["휴대폰", formatPhone(patient.phone), "이 번호로 안내 문자가 발송됩니다"],
       ["문자 수신", consent],
     ]);
   }
@@ -161,7 +196,7 @@ function timeLabel(isoDatetime) {
       .map(function (v) {
         return (
           "<tr><td>" +
-          esc(v.visited_at) +
+          esc(visitDay(v.visited_at)) +
           "</td><td>" +
           esc(v.diagnosis_name) +
           "</td><td>" +
@@ -518,12 +553,8 @@ function timeLabel(isoDatetime) {
     });
   }
 
-  function formatPhone(digits) {
-    var d = (digits || "").replace(/\D/g, "");
-    if (d.length === 11) return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7);
-    if (d.length === 10) return d.slice(0, 3) + "-" + d.slice(3, 6) + "-" + d.slice(6);
-    return d;
-  }
+  /* `formatPhone` 은 `patients-api.js` 것을 쓴다 — 여기 한 벌 더 두었더니
+     글자까지 같은 복사본이 되어, 한쪽만 고치면 화면마다 번호 모양이 갈린다. */
 
   /* ── 들어오기 ────────────────────────────────────────── */
 
@@ -597,5 +628,14 @@ function timeLabel(isoDatetime) {
   document.addEventListener("visit:selected", function (event) {
     load(event.detail);
     showTab(event.detail.open_tab || "basic");
+  });
+
+  /* **같은 사람인데 줄 값만 새로 왔다** — 상태 탭을 켜고 끄거나, 승인 뒤에
+     목록을 다시 읽었을 때다. 머리의 상태 배지만 고친다.
+     `load()` 를 부르면 열어 둔 칸이 기본정보로 되감기고 받아 둔 것이 날아간다. */
+  document.addEventListener("visit:refreshed", function (event) {
+    if (!row || !event.detail || row.visit_id !== event.detail.visit_id) return;
+    row = event.detail;
+    renderHead();
   });
 })();
