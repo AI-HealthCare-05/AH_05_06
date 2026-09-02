@@ -10,7 +10,7 @@ from app.apis.v1.patient_link_routers import (
     patient_guide_router,
     patient_link_management_router,
 )
-from app.apis.v1.patient_otp_routers import patient_otp_router
+from app.apis.v1.patient_otp_routers import patient_auth_router, patient_otp_router
 from app.apis.v1.patient_routers import patient_router
 from app.apis.v1.staff_auth_routers import staff_auth_router
 from app.apis.v1.visit_routers import visit_router
@@ -39,6 +39,7 @@ v1_routers.include_router(guide_router)
 v1_routers.include_router(patient_link_management_router)
 v1_routers.include_router(patient_guide_router)
 v1_routers.include_router(patient_checkin_router)
+v1_routers.include_router(patient_auth_router)
 v1_routers.include_router(patient_otp_router)
 v1_routers.include_router(chatbot_router)
 v1_routers.include_router(patient_feedback_router)

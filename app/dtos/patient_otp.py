@@ -1,9 +1,33 @@
-"""환자 링크 OTP API 계약 — KEY-91."""
+"""환자 링크 OTP·인증·세션·재발급 API 계약 — KEY-91, KEY-219."""
 
-from datetime import datetime
+import datetime as _dt
 from typing import Literal
 
 from app.dtos.base import StrictModel
+
+
+class PatientAuthContextRequest(StrictModel):
+    link_token: str
+
+
+class PatientAuthContextResponse(StrictModel):
+    hospital_name: str
+    masked_phone: str
+    visited_at: _dt.date
+    expires_at: _dt.datetime
+
+
+class PatientSessionResponse(StrictModel):
+    active: Literal[True] = True
+    expires_in_seconds: int
+
+
+class PatientLinkReIssueRequest(StrictModel):
+    link_token: str
+
+
+class PatientLinkReIssueResponse(StrictModel):
+    requested: Literal[True] = True
 
 
 class PatientOtpIssueRequest(StrictModel):
@@ -11,7 +35,7 @@ class PatientOtpIssueRequest(StrictModel):
 
 
 class PatientOtpIssueResponse(StrictModel):
-    expires_at: datetime
+    expires_at: _dt.datetime
     retry_after_seconds: int
 
 

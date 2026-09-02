@@ -7,6 +7,7 @@
 | [`wireframe-medic-2.3.1.html`](wireframe-medic-2.3.1.html) | **33** | 로그인 `L-1~3` · 스탭 `S1-1~14` `S2-1~4` · 의사 `D1-1~7` `D2-1~5` |
 | [`wireframe-admin-2.3.1.html`](wireframe-admin-2.3.1.html) | **7** | 어드민 `A1-1~7` — 직원 · 의원 정보 · 문자 · 기록 |
 | [`wireframe-patient-2.3.1.html`](wireframe-patient-2.3.1.html) | **24** | 환자 모바일 `P1-1~5` · `P2~P6`(질환 2종) · `P7-1~6` · `P8-1~2` · `P9` |
+| [`wireframe-patient-3.0.0.html`](wireframe-patient-3.0.0.html) | — | 환자 모바일 `P2~P5` 차기 개정안. **아직 구현·API 계약에 반영 전** — 현재 구현은 2.3.1 기준이며, 3.0.0 반영 시점의 API 계약은 [`../api/patient.md`](../api/patient.md) §2.1 참고 |
 
 [`PATCH-2.3-to-2.3.1.md`](PATCH-2.3-to-2.3.1.md) — 2.3에서 무엇이 왜 바뀌었는지.
 

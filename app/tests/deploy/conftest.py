@@ -55,9 +55,23 @@ def service(rel: str, name: str) -> dict[str, Any]:
     return svc
 
 
+def service_ports_of(svc: dict[str, Any]) -> list[str]:
+    """서비스 정의 하나에서 **호스트로 여는** 포트 줄들.
+
+    `or []` 인 것이 중요하다. `ports:` 키가 있는데 값이 비면 YAML 은 `None` 을
+    주는데, `.get("ports", [])` 는 **키가 있으므로 기본값을 안 쓰고** `None` 을
+    그대로 내준다. 그 자리에서 `TypeError` 가 난다.
+    """
+    return [str(port) for port in svc.get("ports") or []]
+
+
 def service_ports(rel: str, name: str) -> list[str]:
     """한 서비스가 **호스트로 여는** 포트 줄들."""
-    return [str(port) for port in service(rel, name).get("ports") or []]
+    return service_ports_of(service(rel, name))
+
+
+#: `${NAME}` · `${NAME:-기본값}` 둘 다.
+COMPOSE_VAR = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)")
 
 
 def compose_vars(text: str) -> set[str]:
@@ -69,10 +83,6 @@ def compose_vars(text: str) -> set[str]:
     return set(COMPOSE_VAR.findall(text))
 
 
-#: `${NAME}` · `${NAME:-기본값}` 둘 다.
-COMPOSE_VAR = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)")
-
-
 def host_side(spec: str) -> str:
     """`"127.0.0.1:${A:-1}:${B:-2}"` 에서 **컨테이너 쪽을 뺀 앞부분.**
 
@@ -80,7 +90,16 @@ def host_side(spec: str) -> str:
     기본값이 없어 우연히 맞지만, 붙는 순간 조용히 엉뚱한 데서 잘린다
     (이희진 님 `#155` ⑦). 그래서 `${...}` 를 통째로 가린 뒤 자른다.
     """
-    masked = COMPOSE_VAR.sub("V", re.sub(r"\$\{[^}]*\}", "V", spec))
+    # `${…}` 를 한 글자로 덮어 **그 안의 콜론을 감춘다.** 한 번이면 된다 —
+    # 예전에는 `COMPOSE_VAR.sub()` 를 한 번 더 씌웠는데, 이 `re.sub` 가
+    # `${NAME}` 과 `${NAME:-기본값}` 을 이미 다 지우므로 **두 번째는 아무
+    # 일도 안 했다** (한금준 님 `#155` ③).
+    #
+    # 갈리는 입력이 하나 있긴 하다 — 닫는 괄호가 없는 `${WEIRD`. 그건 compose 가
+    # 먼저 거절하는 꼴이고, 그 경우 아래 `_unmask_index` 가 `}` 를 못 찾아
+    # 어차피 터진다. 저장소의 포트 선언 13 개 전부에서 옛 판과 결과가 같은 것을
+    # 대조해 확인했다. 하는 척하는 줄은 안 남긴다.
+    masked = re.sub(r"\$\{[^}]*\}", "V", spec)
     if ":" not in masked:
         return ""
     cut = masked.rindex(":")
