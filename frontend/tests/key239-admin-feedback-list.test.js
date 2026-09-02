@@ -18,6 +18,16 @@ test('관리자 피드백 목록 화면은 실제 목록 API와 빈 상태·실�
 
 test('목록 화면은 자유 입력 원문을 행에 렌더링하지 않는다', () => {
   const screen = read('js/admin-feedback.js');
-  assert.doesNotMatch(screen, /item\.details/);
-  assert.match(screen, /item\.has_details/);
+  const listRenderer = screen.slice(screen.indexOf('function renderRows'), screen.indexOf('function detailRow'));
+  assert.doesNotMatch(listRenderer, /item\.details/);
+  assert.match(listRenderer, /item\.has_details/);
+});
+
+test('목록 행은 관리자 상세 API를 호출하고 상세 실패를 별도로 표시한다', () => {
+  const api = read('js/admin-feedback-api.js');
+  const screen = read('js/admin-feedback.js');
+  assert.match(api, /request\('\/admin\/patient-feedback\/'/);
+  assert.match(screen, /getPatientFeedback\(feedbackId\)/);
+  assert.match(screen, /상세 내용을 불러오지 못했습니다/);
+  assert.match(screen, /event\.key !== 'Enter' && event\.key !== ' '/);
 });

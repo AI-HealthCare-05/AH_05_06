@@ -9,6 +9,7 @@ from app.core.api_errors import ApiError
 from app.core.rbac import Permission, has_permission
 from app.dependencies.staff_auth import StaffActor
 from app.dtos.patient_feedback import (
+    AdminPatientFeedbackDetailResponse,
     AdminPatientFeedbackListItem,
     AdminPatientFeedbackListResponse,
     PatientFeedbackCreateRequest,
@@ -172,4 +173,30 @@ class AdminPatientFeedbackService:
             page=page,
             page_size=page_size,
             total=total,
+        )
+
+    async def get(self, actor: StaffActor, feedback_id: int) -> AdminPatientFeedbackDetailResponse:
+        self._require_admin(actor)
+        feedback = (
+            await PatientFeedback.filter(
+                patient_feedback_id=feedback_id,
+                hospital_id=actor.hospital_id,
+            )
+            .select_related("guide_document")
+            .first()
+        )
+        if feedback is None:
+            raise ApiError(404, "PATIENT_FEEDBACK_NOT_FOUND", "환자 피드백을 찾을 수 없습니다.")
+        return AdminPatientFeedbackDetailResponse(
+            feedback_id=feedback.patient_feedback_id,
+            visit_id=feedback.guide_document.visit_id,
+            target=feedback.target,
+            source_screen=feedback.source_screen,
+            category=feedback.category,
+            has_details=bool(feedback.details),
+            created_at=feedback.created_at,
+            section_key=feedback.section_key,
+            content_key=feedback.content_key,
+            detected_tab=feedback.detected_tab,
+            details=feedback.details,
         )

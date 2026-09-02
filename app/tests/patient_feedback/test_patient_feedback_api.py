@@ -211,3 +211,27 @@ class TestAdminFeedbackList(PatientFeedbackApiTestCase):
 
         assert response.status_code == 403
         assert response.json()["code"] == "FORBIDDEN"
+
+    async def test_admin_can_read_detail_inside_their_hospital(self) -> None:
+        own = await self.feedback("KEY-239 상세 기준병원", details="합성 상세 내용")
+        actor = StaffActor(user_id=241, hospital_id=own.hospital_id, roles=frozenset({"admin"}))
+        app.dependency_overrides[get_staff_actor] = lambda: actor
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(f"/api/v1/admin/patient-feedback/{own.patient_feedback_id}")
+
+        assert response.status_code == 200
+        assert response.json()["details"] == "합성 상세 내용"
+        assert response.json()["content_key"] == "medication.why"
+        assert "idempotency_digest" not in response.json()
+
+    async def test_feedback_from_another_hospital_is_hidden(self) -> None:
+        other = await self.feedback("KEY-239 상세 타병원", details="타 병원 상세")
+        actor = StaffActor(user_id=242, hospital_id=other.hospital_id + 1, roles=frozenset({"admin"}))
+        app.dependency_overrides[get_staff_actor] = lambda: actor
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(f"/api/v1/admin/patient-feedback/{other.patient_feedback_id}")
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "PATIENT_FEEDBACK_NOT_FOUND"

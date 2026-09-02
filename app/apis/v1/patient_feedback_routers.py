@@ -8,6 +8,7 @@ from app.core.api_errors import ContractRoute
 from app.dependencies.patient_auth import require_patient_feedback_session
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.patient_feedback import (
+    AdminPatientFeedbackDetailResponse,
     AdminPatientFeedbackListResponse,
     PatientFeedbackCreateRequest,
     PatientFeedbackCreateResponse,
@@ -51,3 +52,15 @@ async def list_patient_feedback(
         target=target,
         category=category,
     )
+
+
+@patient_feedback_router.get(
+    "/admin/patient-feedback/{feedback_id}",
+    response_model=AdminPatientFeedbackDetailResponse,
+)
+async def get_patient_feedback(
+    feedback_id: int,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[AdminPatientFeedbackService, Depends(AdminPatientFeedbackService)],
+) -> AdminPatientFeedbackDetailResponse:
+    return await service.get(actor, feedback_id)

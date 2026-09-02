@@ -58,3 +58,10 @@ class AdminPatientFeedbackListResponse(StrictModel):
     page: int
     page_size: int
     total: int
+
+
+class AdminPatientFeedbackDetailResponse(AdminPatientFeedbackListItem):
+    section_key: str | None
+    content_key: str | None
+    detected_tab: str | None
+    details: str | None

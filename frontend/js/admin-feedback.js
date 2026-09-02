@@ -18,13 +18,40 @@
 
   function renderRows(items) {
     document.getElementById('feedback-rows').innerHTML = items.map(function (item) {
-      return '<tr data-feedback-id="' + item.feedback_id + '">' +
+      return '<tr tabindex="0" data-feedback-id="' + item.feedback_id + '">' +
         '<td>' + esc(new Date(item.created_at).toLocaleString('ko-KR')) + '</td>' +
         '<td>#' + item.visit_id + '</td>' +
         '<td>' + (item.target === 'CHATBOT_RESPONSE' ? '챗봇 답변' : '안내 내용') + '</td>' +
         '<td>' + esc(labels[item.category] || item.category) + '</td>' +
         '<td>' + (item.has_details ? '내용 있음' : '—') + '</td></tr>';
     }).join('');
+  }
+
+  function detailRow(label, value) {
+    return '<dt>' + esc(label) + '</dt><dd>' + esc(value == null || value === '' ? '—' : value) + '</dd>';
+  }
+
+  function openDetail(feedbackId) {
+    var panel = document.getElementById('feedback-detail');
+    var status = document.getElementById('detail-state');
+    var fields = document.getElementById('detail-fields');
+    panel.hidden = false;
+    fields.innerHTML = '';
+    status.textContent = '상세 내용을 불러오는 중…';
+    return getPatientFeedback(feedbackId).then(function (item) {
+      status.textContent = '';
+      fields.innerHTML = detailRow('접수 시각', new Date(item.created_at).toLocaleString('ko-KR')) +
+        detailRow('진료 ID', '#' + item.visit_id) +
+        detailRow('대상', item.target === 'CHATBOT_RESPONSE' ? '챗봇 답변' : '안내 내용') +
+        detailRow('화면', item.source_screen) +
+        detailRow('유형', labels[item.category] || item.category) +
+        detailRow('안내 위치', item.content_key) +
+        detailRow('작성 당시 탭', item.detected_tab) +
+        detailRow('상세 내용', item.details);
+    }).catch(function () {
+      status.setAttribute('role', 'alert');
+      status.textContent = '상세 내용을 불러오지 못했습니다.';
+    });
   }
 
   function loadFeedback() {
@@ -55,6 +82,20 @@
   });
   document.getElementById('page-prev').addEventListener('click', function () { state.page -= 1; loadFeedback(); });
   document.getElementById('page-next').addEventListener('click', function () { state.page += 1; loadFeedback(); });
+  document.getElementById('feedback-rows').addEventListener('click', function (event) {
+    var row = event.target.closest('[data-feedback-id]');
+    if (row) openDetail(row.dataset.feedbackId);
+  });
+  document.getElementById('feedback-rows').addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    var row = event.target.closest('[data-feedback-id]');
+    if (!row) return;
+    event.preventDefault();
+    openDetail(row.dataset.feedbackId);
+  });
+  document.getElementById('detail-close').addEventListener('click', function () {
+    document.getElementById('feedback-detail').hidden = true;
+  });
   document.getElementById('logout').addEventListener('click', function () { session.logout(); });
 
   requireSession().then(function (me) {

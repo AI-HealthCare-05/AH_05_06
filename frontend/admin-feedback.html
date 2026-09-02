@@ -49,6 +49,14 @@
         <span id="page-label"></span>
         <button type="button" id="page-next">다음</button>
       </nav>
+      <section class="feedback-detail" id="feedback-detail" hidden aria-labelledby="feedback-detail-title">
+        <div class="feedback-detail__head">
+          <h2 id="feedback-detail-title">피드백 상세</h2>
+          <button type="button" id="detail-close">닫기</button>
+        </div>
+        <p class="feedback-state" id="detail-state" role="status" aria-live="polite"></p>
+        <dl id="detail-fields"></dl>
+      </section>
     </main>
     <script src="/js/api.js"></script>
     <script src="/js/session.js"></script>

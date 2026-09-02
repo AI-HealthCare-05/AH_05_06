@@ -6,3 +6,7 @@ function listPatientFeedback(filters) {
   if (filters.category) params.set('category', filters.category);
   return request('/admin/patient-feedback?' + params.toString());
 }
+
+function getPatientFeedback(feedbackId) {
+  return request('/admin/patient-feedback/' + encodeURIComponent(feedbackId));
+}
