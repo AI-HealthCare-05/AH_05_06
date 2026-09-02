@@ -96,7 +96,7 @@ function filterScheduled(rows, chosen, today) {
     });
   if (chosen === "today") {
     return given.filter(function (row) {
-      return row.status === "SCHEDULED" && sameDay(row.scheduled_at, when);
+      return row.status === "SCHEDULED" && isClinicToday(row.scheduled_at, when);
     });
   }
   if (chosen === "window") {
@@ -107,15 +107,11 @@ function filterScheduled(rows, chosen, today) {
   return given;
 }
 
-function sameDay(iso, day) {
-  var at = new Date(iso);
-  if (isNaN(at.getTime())) return false;
-  return (
-    at.getFullYear() === day.getFullYear() &&
-    at.getMonth() === day.getMonth() &&
-    at.getDate() === day.getDate()
-  );
-}
+/* `sameDay` 가 여기 있었다. `new Date(iso)` 로 감싸 `getFullYear()` 들을
+   비교했는데, 그러면 **보는 사람의 시간대**로 옮겨져 「오늘」이 브라우저마다
+   달라진다. `js/clinic-clock.js` 머리말이 정확히 이 실수를 경고하고 문자열로
+   짚으라고 적어 두었는데 이 함수만 그 규칙 밖에 있었다 — 2heej 님이 `#183`
+   리뷰에서 찾아 주셨다. `isClinicToday` 로 옮겼다. */
 
 /* 아래 요약 줄 — 원문 「안 나간 것 3건 (실패 1 · 보류 2) · 앞으로 7일 예정
    18건 · 오늘 2건」. 안 나간 것이 0이면 그 마디를 **아예 뺀다**: 「안 나간 것

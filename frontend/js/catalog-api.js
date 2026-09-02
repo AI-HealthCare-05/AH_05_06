@@ -2,7 +2,6 @@
  *
  *   GET  /api/v1/prescription-sets                        목록 (고르는 칸이 쓴다)
  *   GET  /api/v1/prescription-sets/{id}                   한 세트 (설정 화면)
- *   PUT  /api/v1/prescription-sets/{id}                   저장 — 의사만
  *
  * **목록과 상세를 가른다.** 목록에 상세를 다 실으면 고르는 칸 하나 그리려고
  * 여덟 세트의 약·문구를 전부 받아 온다.
@@ -174,14 +173,6 @@ var catalogApi = {
       method: "POST",
     });
   },
-
-  saveSet: function (id, plan) {
-    if (MOCK) return mockSaveSet(id, plan);
-    return request("/prescription-sets/" + encodeURIComponent(id), {
-      method: "PUT",
-      body: plan,
-    });
-  },
 };
 
 /* ── 목업 ──────────────────────────────────────────────────────────────
@@ -254,32 +245,6 @@ function mockSetDetail(id) {
         return reject(new ApiError("PRESCRIPTION_SET_NOT_FOUND", 404, {}));
       return resolve(JSON.parse(JSON.stringify(mine)));
     }, 80);
-  });
-}
-
-function mockSaveSet(id, plan) {
-  return new Promise(function (resolve, reject) {
-    setTimeout(function () {
-      /* 서버 규칙 그대로 — 의사만, 통으로 세는데 한 통이 며칠인지 없으면 422 */
-      var who = MOCK_STAFF[sessionStorage.getItem("mockUser")];
-      if (!who || (who.roles || []).indexOf("doctor") === -1) {
-        return reject(new ApiError("FORBIDDEN", 403, {}));
-      }
-      if (plan.days_mode === "PACK" && !plan.days_per_pack) {
-        return reject(new ApiError("DAYS_PER_PACK_REQUIRED", 422, {}));
-      }
-
-      var store = mockSetStore();
-      for (var i = 0; i < store.length; i++) {
-        if (store[i].prescription_set_id !== Number(id)) continue;
-        store[i] = JSON.parse(JSON.stringify(plan));
-        store[i].prescription_set_id = Number(id);
-        /* 일수로 세면 통 크기를 비운다 — 서버와 같다 */
-        if (store[i].days_mode !== "PACK") store[i].days_per_pack = null;
-        return resolve(JSON.parse(JSON.stringify(store[i])));
-      }
-      return reject(new ApiError("PRESCRIPTION_SET_NOT_FOUND", 404, {}));
-    }, 120);
   });
 }
 

@@ -227,6 +227,42 @@ class LabBaselineTestCase(TestCase):
 
         assert response.status_code == 403 and response.json()["code"] == "DOCTOR_ONLY"
 
+    async def test_a_doctor_cannot_write_over_another_doctors_board(self) -> None:
+        """**저장이 지우고 다시 넣는다** — 남의 이름으로 쓸 수 있으면 그 의사의
+        열세 줄이 통째로 사라진다.
+
+        읽는 것은 된다(`test_a_doctor_without_a_board_of_their_own_sees_the_clinic_one`).
+        같은 의원 안에서 서로 어떻게 잡았는지 보라고 D2-4 가 고르는 칸을 둔다.
+        고치는 것만 자기 것이다.
+        """
+        clinic = await Hospital.create(name="도로시여성의원")
+        mine = await self.a_staff(["doctor"], "owner", clinic, name="박연")
+        theirs = await self.a_staff(["doctor"], "intruder", clinic, name="김연우")
+        await self.save(mine, [an_item(name="내 항목")], doctor_id=mine.staff_id)
+
+        response = await self.save(theirs, [an_item(name="덮어쓰기")], doctor_id=mine.staff_id)
+
+        assert response.status_code == 403 and response.json()["code"] == "OTHER_DOCTOR"
+        kept = await self.fetch(mine, doctor_id=mine.staff_id)
+        assert [row["name"] for row in kept["items"]] == ["내 항목"], "남의 판이 그대로 남아야 한다"
+
+    async def test_the_clinic_board_stays_open_to_every_doctor(self) -> None:
+        """**의원 공통은 막지 않는다.** 여기까지 막으면 D2-4 가 처음 여는 판을
+        아무도 못 고친다 — 개인 판이 없는 의사가 쓰는 값이 그것이다.
+
+        안내 문구(`guide_copy`)와 다르다. 그쪽은 의사 이름으로 환자에게
+        나가지만, 기준선은 의원이 함께 정한다.
+        """
+        clinic = await Hospital.create(name="도로시여성의원")
+        one = await self.a_staff(["doctor"], "shared-1", clinic, name="박연")
+        other = await self.a_staff(["doctor"], "shared-2", clinic, name="김연우")
+
+        assert (await self.save(one, [an_item(name="공통 항목")])).status_code == 200
+        response = await self.save(other, [an_item(name="다른 의사가 고침")])
+
+        assert response.status_code == 200, "의원 공통은 같은 의원 의사면 고칠 수 있다"
+        assert [row["name"] for row in (await self.fetch(one))["items"]] == ["다른 의사가 고침"]
+
     async def test_another_clinic_has_its_own_board(self) -> None:
         mine = await Hospital.create(name="도로시여성의원")
         theirs = await Hospital.create(name="다른의원")
