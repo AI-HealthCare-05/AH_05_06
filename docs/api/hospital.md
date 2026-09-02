@@ -1017,7 +1017,6 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 |---|---|---|---|
 | GET | `/api/v1/prescription-sets` | 목록 — 이름 · 질환 · 확인 항목 | `staff`·`doctor` |
 | GET | `/api/v1/prescription-sets/{id}` | 한 세트의 설정 전부 | `staff`·`doctor` |
-| PUT | `/api/v1/prescription-sets/{id}` | 저장 — 한 판 통째로 | `doctor` |
 
 **보는 것은 스탭도, 고치는 것은 의사만이다** (D2-2 「의사 계정만 · 스탭은 볼 수만 있다」). 이 값이 안내문과 문자 발송일을 정하므로 의료 판단에 걸린다.
 
