@@ -21,7 +21,13 @@
 
   var guide = null;
   var linkToken = null;
-  var state = { messages: [], busy: false, draft: '', generation: 0 };
+  var state = {
+  messages: [],
+  busy: false,
+  draft: '',
+  generation: 0,
+  requestController: null,
+  };
 
   /* ── DOM 초기화 ────────────────────────── */
   var backdrop   = document.getElementById('chat-backdrop');
@@ -178,10 +184,9 @@
         actions.appendChild(contact);
         answer.appendChild(actions);
 
-        if (!msg.error && !msg.aborted && msg.responseRef) {
+        if (!msg.error && !msg.aborted && !msg.fallback && msg.responseRef) {
           answer.appendChild(buildFeedbackActions(msg));
         }
-      }
 
       row.appendChild(answer);
     }
@@ -275,26 +280,47 @@
     abortBtn.classList.add('chat-abort--show');
     renderMessages();
 
-    if (!GUIDE_MOCK) {
-      requestChatbotResponse(linkToken, q).then(function (result) {
+  if (!GUIDE_MOCK) {
+    var controller = new AbortController();
+    state.requestController = controller;
+
+    requestChatbotResponse(linkToken, q, controller.signal)
+      .then(function (result) {
         if (gen !== state.generation) return;
+
         answerMsg.text = result.answer || '';
         answerMsg.urgent = !!result.urgent;
         answerMsg.source = result.source;
         answerMsg.responseRef = result.response_ref;
-      }).catch(function () {
+        answerMsg.fallback = !!result.fallback;
+      })
+      .catch(function (error) {
         if (gen !== state.generation) return;
-        answerMsg.error = '답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
-      }).finally(function () {
+
+        if (error.name === 'AbortError') {
+          answerMsg.aborted = true;
+          return;
+        }
+
+        answerMsg.error =
+          '답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+      })
+      .finally(function () {
+        if (state.requestController === controller) {
+          state.requestController = null;
+        }
+
         if (gen !== state.generation) return;
+
         answerMsg.streaming = false;
         state.busy = false;
         abortBtn.classList.remove('chat-abort--show');
         sendBtn.disabled = false;
         renderMessages();
       });
-      return;
-    }
+
+    return;
+  }
 
     /* Mock: 글자를 조금씩 타이핑 */
     var raw  = MOCK_ANSWERS[q] || '담당 의료진이 확인한 내용 안에서만 답해드릴 수 있어요. 더 자세한 내용은 진료 때 여쭤봐 주세요.';
@@ -344,9 +370,20 @@
   sendBtn.addEventListener('click', function () { sendQuestion(input.value); });
 
   abortBtn.addEventListener('click', function () {
-    state.generation++; /* 진행 중인 tick 무효화 */
+    if (state.requestController) {
+      state.requestController.abort();
+      state.requestController = null;
+    }
+
+    state.generation++; /* 진행 중인 요청 또는 tick 무효화 */
+
     var last = state.messages[state.messages.length - 1];
-    if (last && last.streaming) { last.streaming = false; last.aborted = true; }
+
+    if (last && last.streaming) {
+      last.streaming = false;
+      last.aborted = true;
+    }
+
     state.busy = false;
     abortBtn.classList.remove('chat-abort--show');
     sendBtn.disabled = false;
