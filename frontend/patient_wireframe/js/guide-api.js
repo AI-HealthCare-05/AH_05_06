@@ -182,3 +182,31 @@ function fetchGuide(token) {
       .then(function (d) { throw new Error(d.code || 'NOT_FOUND'); });
   });
 }
+
+function createFeedbackSubmissionId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  var bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  var hex = Array.from(bytes, function (value) { return value.toString(16).padStart(2, '0'); }).join('');
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+}
+
+function submitPatientFeedback(payload) {
+  return fetch(GUIDE_API_BASE + '/patient-feedback', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(function (res) {
+    if (res.ok) return res.json();
+    return res.json().catch(function () { return {}; }).then(function (data) {
+      var error = new Error(data.code || 'FEEDBACK_FAILED');
+      error.code = data.code || 'FEEDBACK_FAILED';
+      throw error;
+    });
+  });
+}

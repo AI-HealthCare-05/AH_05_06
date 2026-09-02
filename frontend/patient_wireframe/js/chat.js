@@ -172,11 +172,77 @@
         });
         actions.appendChild(contact);
         answer.appendChild(actions);
+
+        if (!msg.error && !msg.aborted && msg.responseRef) {
+          answer.appendChild(buildFeedbackActions(msg));
+        }
       }
 
       row.appendChild(answer);
     }
     return row;
+  }
+
+  function buildFeedbackActions(msg) {
+    var wrap = document.createElement('div');
+    wrap.className = 'chat-feedback';
+    wrap.setAttribute('aria-label', '답변 도움 평가');
+
+    var prompt = document.createElement('span');
+    prompt.className = 'chat-feedback__prompt';
+    prompt.textContent = '이 답변이 도움됐나요?';
+    wrap.appendChild(prompt);
+
+    [
+      { category: 'HELPFUL', label: '도움됨' },
+      { category: 'UNHELPFUL', label: '도움 안 됨' },
+    ].forEach(function (option) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'chat-feedback__button' +
+        (msg.feedbackCategory === option.category ? ' chat-feedback__button--selected' : '');
+      button.textContent = msg.feedbackState === 'error' && msg.feedbackCategory === option.category
+        ? '다시 시도'
+        : option.label;
+      button.disabled = msg.feedbackState === 'pending' || msg.feedbackState === 'saved' ||
+        (msg.feedbackCategory && msg.feedbackCategory !== option.category);
+      button.addEventListener('click', function () { sendFeedback(msg, option.category); });
+      wrap.appendChild(button);
+    });
+
+    if (msg.feedbackState) {
+      var status = document.createElement('span');
+      status.className = 'chat-feedback__status';
+      status.setAttribute('role', msg.feedbackState === 'error' ? 'alert' : 'status');
+      status.textContent = msg.feedbackState === 'saved'
+        ? '평가를 저장했어요.'
+        : msg.feedbackState === 'error' ? '저장하지 못했어요. 다시 시도해 주세요.' : '저장 중…';
+      wrap.appendChild(status);
+    }
+    return wrap;
+  }
+
+  function sendFeedback(msg, category) {
+    if (msg.feedbackState === 'pending' || msg.feedbackState === 'saved') return;
+    if (msg.feedbackCategory && msg.feedbackCategory !== category) return;
+    msg.feedbackCategory = category;
+    msg.feedbackSubmissionId = msg.feedbackSubmissionId || createFeedbackSubmissionId();
+    msg.feedbackState = 'pending';
+    renderMessages();
+
+    submitPatientFeedback({
+      submission_id: msg.feedbackSubmissionId,
+      target: 'CHATBOT_RESPONSE',
+      source_screen: 'P6',
+      category: category,
+      response_ref: msg.responseRef,
+    }).then(function () {
+      msg.feedbackState = 'saved';
+      renderMessages();
+    }).catch(function () {
+      msg.feedbackState = 'error';
+      renderMessages();
+    });
   }
 
   /* ── 스트리밍 업데이트 ──────────────────── */

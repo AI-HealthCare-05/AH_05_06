@@ -157,6 +157,16 @@
 .chat-contact:hover { background: var(--bg); }
 .chat-contact__icon { width: 14px; height: 14px; object-fit: contain; }
 
+.chat-feedback { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chat-feedback__prompt { width: 100%; font-size: 12px; color: var(--tx-muted); }
+.chat-feedback__button {
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: #fff; color: var(--tx-sub); font-size: 12px; cursor: pointer;
+}
+.chat-feedback__button--selected { border-color: var(--p-dark); color: var(--p-dark); background: #FDF5FF; }
+.chat-feedback__button:disabled { cursor: default; opacity: .65; }
+.chat-feedback__status { width: 100%; font-size: 12px; color: var(--tx-muted); }
+
 /* ── 입력창 ─── */
 .chat-input-area {
   flex-shrink: 0;
