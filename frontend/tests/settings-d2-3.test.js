@@ -90,48 +90,47 @@ test("**모르면 셈하지 않는다** — 지어낸 날짜로 예약하면 엉
 
 /* ── 화면 ───────────────────────────────────────────────────────────── */
 
-test("**고치는 것은 의사만** — 스탭은 볼 수만 있다", () => {
-  /* 와이어프레임 D2-2 가 못박는다. 이 값이 안내문과 문자 발송일을 정하므로
-     의료 판단에 걸린다. 화면에서 잠그는 것은 편의일 뿐 실제 차단은 서버다. */
+test("**처방 설정은 아직 아무도 못 고친다** — 표가 전 의원 공용이다", () => {
+  /* `prescription_set` 에는 `hospital_id` 가 없다 — 여덟 처방 유형을 모든
+     의원이 함께 쓴다. 역할(의사)만 보고 쓰기를 열었더니 어느 의원 의사든
+     다른 의원의 질환 분류 · 총투 해석 · 소진 예정일 셈법을 바꿀 수 있었다.
+     2heej 님이 `#183` 리뷰에서 찾아 주셨다.
+
+     **표를 가르기 전까지는 닫아 둔다.** 고칠 수 있는 것처럼 보이는 화면이
+     조용히 남의 의원 것을 바꾸는 것보다, 못 고치는 편이 낫다. */
   const code = codeOnly(read("js/settings.js"));
 
-  /* 선언(`var canEdit = false`)이 아니라 **정하는 자리**를 본다 — 선언만 찾으면
-     역할을 안 봐도 통과한다. */
-  assert.match(code, /canEdit = \(me\.roles \|\| \[\]\)\.indexOf\("doctor"\)/, "역할을 안 본다");
-
-  /* 잠긴 화면이면 저장 단추도 잠긴다 */
-  const save = code.indexOf('id="set-save"');
-  assert.match(code.slice(save, save + 160), /canEdit \? "" : " disabled"/, "스탭에게도 눌린다");
-
-  /* 왜 못 고치는지 말한다 — 잠긴 단추만 두면 고장으로 읽힌다 */
-  assert.ok(code.includes("의사 계정만 수정할 수 있습니다"), "왜 잠겼는지 안 말한다");
-
-  /* 서버도 막는지 — 화면만 막으면 요청 하나로 뚫린다 */
-  const api = read("../app/catalog/api.py");
-  assert.match(api, /StaffRole\.DOCTOR/, "서버가 역할을 안 본다");
-});
-
-test("**저장이 막혀도 친 값이 남는다** — 고치라는데 고칠 것이 사라지면 안 된다", () => {
-  const code = codeOnly(read("js/settings.js"));
-  const at = code.indexOf("function save()");
-  assert.notEqual(at, -1, "저장하는 자리가 없다");
-
-  const body = code.slice(at, code.indexOf("\n  }", at));
-  /* 다시 그리기 **전에** 화면에 적힌 것을 거둔다 */
-  assert.match(body, /var plan = planNow\(\);/, "화면 값을 안 거둔다");
+  /* 다른 설정(D2-4·D2-5)과 **다른 깃발**을 쓴다 — `canEdit` 을 같이 내리면
+     기준선과 문자 문구까지 못 고치게 된다 */
+  assert.match(code, /var canEditSet = false;/, "처방 전용 깃발이 없다");
   assert.ok(
-    body.indexOf("planNow()") < body.indexOf("render()"),
-    "다시 그린 뒤에 거둔다 — 이미 날아간 값을 거두는 셈이다",
+    !/canEditSet = /.test(code.replace("var canEditSet = false;", "")),
+    "어딘가에서 다시 켠다 — 그러면 닫은 것이 아니다",
   );
-  assert.match(body, /picked = Object\.assign\(\{\}, picked, plan\)/, "거둔 것을 안 붙든다");
 
-  /* **서버가 돌려준 것으로 갈아 끼운다.** 서버가 고쳐 준 값(일수로 바꾸면 통
-     크기를 비운다)이 화면에 안 보이면, 화면과 서버가 다른 값을 들고 있게 된다.
-     성공한 길 안에서 찾아야 한다 — 실패 길의 `picked` 대입에 걸리면 헛돈다. */
-  const ok = body.slice(body.indexOf(".then("), body.indexOf(".catch("));
-  assert.match(ok, /picked = data;/, "저장 뒤 서버 값을 안 쓴다");
-  assert.ok(ok.includes('saying = "저장되었습니다"'), "저장했다고 말은 하는데 값을 안 갈아 끼운다");
-  assert.match(ok, /pickedId !== wanted/, "다른 처방 화면에 붙는다");
+  /* 저장 단추가 잠긴다 */
+  const at = code.indexOf('id="set-save"');
+  assert.notEqual(at, -1, "저장 단추 자리가 없다");
+  assert.match(code.slice(at, at + 160), /canEditSet \? "" : " disabled"/, "단추가 눌린다");
+
+  /* 왜 못 고치는지 말한다 — 잠긴 단추만 두면 고장으로 읽힌다.
+     「의사 계정만」이라 적으면 의사가 눌러 보고 안 되는 것으로 읽는다. */
+  assert.ok(
+    code.includes("모든 의원이 함께 쓰는 값이라 아직 고칠 수 없습니다"),
+    "왜 잠겼는지 안 말하거나, 의사면 된다고 잘못 말한다",
+  );
+
+  /* **부를 길이 아예 없어야 한다.** 단추만 잠그면 화면 하나가 바뀔 때 뚫린다 */
+  assert.ok(!code.includes("catalogApi.saveSet"), "아직 저장 API 를 부른다");
+  assert.ok(!/function save\(\)/.test(code), "저장 함수가 남아 있다");
+
+  /* 서버에도 길이 없어야 한다 */
+  const api = read("../app/catalog/api.py");
+  assert.ok(
+    !/@catalog_router\.put\("\/prescription-sets/.test(api),
+    "서버가 아직 쓰기를 연다 — 화면만 막으면 요청 하나로 뚫린다",
+  );
+  assert.match(api, /@catalog_router\.get\("\/prescription-sets/, "읽기까지 걷으면 판독 화면이 못 고른다");
 });
 
 test("**한 판을 통째로 보낸다** — 조각으로 보내면 반쪽이 남는다", () => {

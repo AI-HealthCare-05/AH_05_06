@@ -33,6 +33,23 @@
   var picked = null; // 고른 세트의 상세
   var pickedId = null;
   var canEdit = false;
+
+  /* **처방 설정(D2-3)은 지금 읽기 전용이다.**
+   *
+   * `prescription_set` 표에는 `hospital_id` 가 없다 — 여덟 처방 유형을 **전
+   * 의원이 함께 쓴다**(`app/models/catalog.py`). 그래서 여기서 저장을 열면
+   * 어느 의원 의사든 다른 모든 의원의 질환 분류 · 총투 해석 · 소진 예정일
+   * 셈법을 바꾸게 된다. 그 값들이 안내문 문구와 문자 발송일을 정한다.
+   *
+   * 2heej 님이 `#183` 리뷰에서 찾아 주셨다. 표를 의원별로 가르는 것이 옳은
+   * 해결인데 씨앗 데이터 · 이름 unique · 기존 참조를 다 손봐야 해서 별도
+   * 일감으로 뺀다. **그때까지는 열지 않는다** — 고칠 수 있는 것처럼 보이는
+   * 화면이 조용히 남의 의원 것을 바꾸는 것보다, 못 고치는 편이 낫다.
+   *
+   * 나머지 설정(D2-4 기준선 · D2-5 문자 문구 · 안내 문구)은 의원별로 갈려
+   * 있어 그대로 고칠 수 있다. 그래서 `canEdit` 과 따로 둔다.
+   */
+  var canEditSet = false;
   var saying = "";
   var loadSeq = 0;
 
@@ -262,7 +279,7 @@
       '</span><select class="fld__input" id="' +
       id +
       '"' +
-      (canEdit ? "" : " disabled") +
+      (canEditSet ? "" : " disabled") +
       ">" +
       options
         .map(function (opt) {
@@ -290,7 +307,7 @@
       '" value="' +
       esc(value || "") +
       '"' +
-      (canEdit ? "" : " disabled") +
+      (canEditSet ? "" : " disabled") +
       " />" +
       (hint ? '<span class="fld__hint">' + esc(hint) + "</span>" : "") +
       "</label>"
@@ -303,7 +320,7 @@
       id +
       '"' +
       (on ? " checked" : "") +
-      (canEdit ? "" : " disabled") +
+      (canEditSet ? "" : " disabled") +
       " />" +
       esc(label) +
       "</label>"
@@ -322,22 +339,22 @@
             '<input class="fld__input drug__name" type="text" value="' +
             esc(drug.name) +
             '" placeholder="비잔정 2mg" aria-label="약 이름"' +
-            (canEdit ? "" : " disabled") +
+            (canEditSet ? "" : " disabled") +
             " />" +
             '<input class="fld__input drug__freq" type="text" value="' +
             esc(drug.frequency) +
             '" placeholder="1일 1회" aria-label="복용 횟수"' +
-            (canEdit ? "" : " disabled") +
+            (canEditSet ? "" : " disabled") +
             " />" +
             '<input class="fld__input drug__note" type="text" value="' +
             esc(drug.note) +
             '" placeholder="매일 같은 시간" aria-label="복용 방법"' +
-            (canEdit ? "" : " disabled") +
+            (canEditSet ? "" : " disabled") +
             " />" +
             '<button class="drug__drop" type="button" data-drop="' +
             i +
             '" aria-label="삭제"' +
-            (canEdit ? "" : " disabled") +
+            (canEditSet ? "" : " disabled") +
             ">✕</button>" +
             "</div>"
           );
@@ -345,7 +362,7 @@
         .join("") +
       (rows.length ? "" : '<p class="fld__hint">등록된 약이 없습니다</p>') +
       '<button class="button-ghost button-ghost--sm" type="button" id="drug-add"' +
-      (canEdit ? "" : " disabled") +
+      (canEditSet ? "" : " disabled") +
       ">+ 약 추가</button>"
     );
   }
@@ -677,11 +694,11 @@
       "</span>" +
       '<span class="grow"></span>' +
       (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
-      (canEdit
+      (canEditSet
         ? ""
-        : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
+        : '<span class="box__note">처방 설정은 모든 의원이 함께 쓰는 값이라 아직 고칠 수 없습니다</span>') +
       '<button class="button-primary button-primary--sm" type="button" id="set-save"' +
-      (canEdit ? "" : " disabled") +
+      (canEditSet ? "" : " disabled") +
       ">저장</button></div>" +
       /* ① 무엇인가 */
       '<section class="box"><div class="box__head"><h2 class="box__title">처방</h2></div>' +
@@ -875,41 +892,9 @@
     };
   }
 
-  function save() {
-    if (!picked || !canEdit) return;
-    var wanted = pickedId;
-
-    /* **화면에 적힌 것을 먼저 거둔다.** 다시 그리면 `picked` 로 되돌아가는데,
-       저장이 막히면(한 통이 며칠인지 안 적었을 때) 방금 친 값이 통째로
-       날아간다 — 고치라는 말을 듣고 보니 고칠 것이 사라진 꼴이다. */
-    var plan = planNow();
-    picked = Object.assign({}, picked, plan);
-
-    saying = "저장하는 중…";
-    render();
-
-    catalogApi
-      .saveSet(wanted, plan)
-      .then(function (data) {
-        if (pickedId !== wanted) return;
-        /* **서버가 돌려준 것을 화면으로 삼는다** — 서버가 고쳐 준 값(일수로
-           바꾸면 통 크기를 비운다)이 화면에 안 보이면 안 된다. */
-        picked = data;
-        saying = "저장되었습니다";
-        render();
-        loadSets(); // 이름이 바뀌었으면 레일도 따라간다
-      })
-      .catch(function (err) {
-        if (pickedId !== wanted) return;
-        saying =
-          err && err.code === "DAYS_PER_PACK_REQUIRED"
-            ? "1통 기준 일수를 입력해 주세요"
-            : err && err.status === 403
-              ? "의사 계정만 수정할 수 있습니다"
-              : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요";
-        render();
-      });
-  }
+  /* 처방 설정을 저장하던 `save()` 가 여기 있었다. 걷었다 — `canEditSet` 주석
+     참고. 서버 쪽 `PUT /prescription-sets/{id}` 도 함께 걷었으므로 부를 곳이
+     없다. 표를 의원별로 가르는 일감에서 둘을 함께 되살린다. */
 
   /* ── 문자 문구 (D2-5) ──────────────────────────────────────────── */
 
@@ -1306,7 +1291,6 @@
     var revert = target.closest("[data-revert]");
     if (revert) return revertTemplate(revert.getAttribute("data-revert"));
 
-    if (target.closest("#set-save")) return save();
 
     if (target.closest("#drug-add")) {
       picked.drugs = (picked.drugs || []).concat([

@@ -18,6 +18,7 @@ from app.core.redis_client import get_redis
 from app.core.time import DISPLAY_TIMEZONE
 from app.core.utils.security import hash_password
 from app.main import app
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient, PatientGender
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.staffs import Hospital, Staff
@@ -150,6 +151,68 @@ class PatientHistoryTestCase(TestCase):
         assert body["hospital_patient_no"] == "10118"
         assert body["phone"] == "01031414410"
         assert body["doctor"]["name"] == "김연우"
+
+    async def a_diagnosis(self, clinic: Hospital, visit_id: int, name: str, job_id: str, by: Staff) -> None:
+        """그 진료에 **확정된 진단** 하나를 붙인다."""
+        job = await OcrJob.create(
+            ocr_job_id=job_id,
+            hospital_id=clinic.hospital_id,
+            visit_id=visit_id,
+            status=OcrJobStatus.COMPLETED,
+            requested_by=by.staff_id,
+        )
+        result = await OcrResult.create(ocr_job=job, model_name="fixture")
+        await OcrField.create(
+            ocr_result=result, field_type="DIAGNOSIS", extracted_value=name, is_confirmed=True
+        )
+
+    async def test_the_diagnosis_comes_from_the_newest_visit(self) -> None:
+        """**옆의 `_doctor` 와 같은 규칙이다** — 가장 최근 진료의 것.
+
+        `visit_id__in` 으로 한꺼번에 가져와 첫 줄을 쓰고 있었다. MySQL 은
+        `ORDER BY` 없이 차례를 보장하지 않아, 과거 진료에서 확정한 진단이
+        최신 진료에서 고친 진단보다 먼저 나올 수 있었다 — 모달 맨 위에 옛
+        진단이 뜬다. 2heej 님이 `#183` 리뷰에서 찾아 주셨다.
+
+        **옛 진료를 먼저 넣는다.** 넣은 차례대로 나오면 옛것이 이기므로,
+        정렬을 안 하면 여기서 걸린다.
+        """
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "dx")
+        patient = await self.a_patient(clinic)
+
+        old = await self.a_visit(clinic, patient, on=date(2025, 11, 7))
+        new = await self.a_visit(clinic, patient, on=TODAY)
+        await self.a_diagnosis(clinic, old.visit_id, "다낭성난소증후군", "job-old", staff)
+        await self.a_diagnosis(clinic, new.visit_id, "자궁내막증", "job-new", staff)
+
+        body = await self.fetch(staff, patient)
+
+        assert body["diagnosis_name"] == "자궁내막증", "옛 진료의 진단이 이겼다"
+
+    async def test_an_unconfirmed_diagnosis_is_not_used(self) -> None:
+        """**확정 안 한 값은 진단이 아니다.** 판독이 읽어 놓기만 한 글자를
+        모달 맨 위에 「이 환자의 진단」으로 세우면 안 된다."""
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "dx-unconfirmed")
+        patient = await self.a_patient(clinic)
+        visit = await self.a_visit(clinic, patient, on=TODAY)
+
+        job = await OcrJob.create(
+            ocr_job_id="job-raw",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            status=OcrJobStatus.COMPLETED,
+            requested_by=staff.staff_id,
+        )
+        result = await OcrResult.create(ocr_job=job, model_name="fixture")
+        await OcrField.create(
+            ocr_result=result, field_type="DIAGNOSIS", extracted_value="자궁내막증", is_confirmed=False
+        )
+
+        body = await self.fetch(staff, patient)
+
+        assert body["diagnosis_name"] is None
 
     # ── 블록 차례 ────────────────────────────────────────
 

@@ -164,6 +164,18 @@ class PatientHistoryService:
 
     @staticmethod
     async def _diagnosis(visit_ids: list[int], hospital_id: int) -> str | None:
+        """**가장 최근 진료에서 확정된 진단**이다 — 옆의 `_doctor` 와 같은 규칙.
+
+        `visit_id__in` 으로 한꺼번에 가져와 첫 줄을 쓰고 있었다. MySQL 은
+        `ORDER BY` 없이 차례를 보장하지 않으므로, 과거 진료에서 확정한 진단
+        (PCOS)이 최신 진료에서 고친 진단(자궁내막증)보다 먼저 나올 수 있었다.
+        S2-2 환자 이력 모달 맨 위에 옛 진단이 뜬다. 2heej 님이 `#183` 리뷰에서
+        찾아 주셨다.
+
+        **부르는 쪽이 이미 최신순이다**(`order_by("-visited_at")`). 그 차례를
+        그대로 쓴다 — 판독 확정 시각으로 다시 재면 「나중에 확정한 옛 진료」가
+        이기게 되는데, 물어본 것은 「지금 이 환자의 진단」이다.
+        """
         if not visit_ids:
             return None
         rows = await OcrField.filter(
@@ -171,8 +183,9 @@ class PatientHistoryService:
             ocr_result__ocr_job__hospital_id=hospital_id,
             field_type="DIAGNOSIS",
             is_confirmed=True,
-        ).values_list("corrected_value", "extracted_value")
-        for corrected, extracted in rows:
+        ).values_list("ocr_result__ocr_job__visit_id", "corrected_value", "extracted_value")
+        newest_first = {visit_id: rank for rank, visit_id in enumerate(visit_ids)}
+        for _, corrected, extracted in sorted(rows, key=lambda row: newest_first.get(row[0], len(newest_first))):
             if corrected or extracted:
                 return corrected or extracted
         return None

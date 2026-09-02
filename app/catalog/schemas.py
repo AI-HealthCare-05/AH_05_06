@@ -79,23 +79,3 @@ class PrescriptionSetDetail(StrictModel):
     check_items: list[VisitCheckKey] = []
 
 
-class PrescriptionSetSaveRequest(StrictModel):
-    """설정 화면이 보내는 한 판.
-
-    **통째로 받는다.** 약을 하나 지우고 확인 항목을 하나 켜는 것이 한 번의
-    「저장」인데, 조각으로 받으면 중간에 끊겼을 때 반쪽이 남는다.
-    """
-
-    name: str
-    disease: SetDisease
-    phase: SetPhase
-    days_mode: SetDaysMode
-    days_per_pack: int | None = None
-    emr_code: str | None = None
-    revisit_note: str | None = None
-    check_d15_on: bool = True
-    check_d30_on: bool = False
-    run_out_on: bool = True
-    run_out_before_days: int = 3
-    drugs: list[SetDrug] = []
-    check_items: list[VisitCheckKey] = []

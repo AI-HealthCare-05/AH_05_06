@@ -101,14 +101,43 @@ test("며칠 전도 의원 기준이다", () => {
 
 /* ── 화면이 실제로 그것을 쓰는가 ─────────────────────────────────────── */
 
-test("관리 화면이 브라우저 시계로 읽지 않는다", () => {
-  const code = codeOnly(read("js/manage.js"));
+test("관리 화면의 **규칙 파일**이 브라우저 시계로 읽지 않는다", () => {
+  /* 이 검사가 `manage.js` 와 `history-rules.js` 둘만 훑고 있었다. 그래서
+     `schedule-rules.js` 의 `sameDay` 가 `new Date(iso).getFullYear()` 로
+     날짜를 비교하는 것을 아무도 못 봤다 — S2-3 「오늘」 거르개가 보는 사람의
+     시간대로 셈해지고 있었다. 2heej 님이 `#183` 리뷰에서 찾아 주셨다.
 
-  for (const local of ["getHours()", "getMinutes()", "getMonth()", "getDate()", "getFullYear()"]) {
-    assert.ok(
-      code.indexOf(local) === -1,
-      `${local} 로 읽으면 보는 사람의 시간대로 옮겨진다 — js/clinic-clock.js 것을 쓴다`,
-    );
+     **목록을 손으로 적으면 새로 싣는 파일이 계속 빠진다.** 화면이 싣는
+     것에서 뽑되, 두 갈래를 뺀다.
+
+       `clinic-clock.js`   시계 자신이다. 며칠 전/후를 셈하려면 `setDate`·
+                           `getDate` 가 필요하고, 그 자리는 `Asia/Seoul` 로
+                           다시 찍어 돌려준다.
+       `*-api.js`·`api.js` 서버를 부르는 자리와 **목업**이다. 화면이 「오늘」을
+                           정하는 곳이 아니고, 목업의 나이 셈은 시간대가
+                           아니라 산수다.
+
+     다만 `api.js` 의 `toIsoDate` 는 **진짜 못 고친 자리다** — 브라우저
+     시간대로 찍는데 `shell.js`·`patients.js`·`detail.js` 열 곳이 쓰고,
+     `api.js` 를 싣는 화면 여덟이 `clinic-clock.js` 를 안 싣는다. 옮기려면
+     적재 순서를 다 손봐야 해서 별도 일감이다. 이 검사가 안 잡는다. */
+  const markup = read("manage.html");
+  const loaded = [...markup.matchAll(/<script src="\/js\/([\w-]+\.js)"/g)].map((m) => m[1]);
+
+  assert.ok(loaded.length >= 5, `관리 화면이 싣는 파일을 못 읽었다: ${loaded}`);
+  assert.ok(loaded.includes("schedule-rules.js"), "발송 예정 규칙이 목록에 없다");
+
+  const rules = loaded.filter((f) => f !== "clinic-clock.js" && !/api\.js$/.test(f));
+  assert.ok(rules.length >= 3, `규칙 파일이 하나도 안 남았다: ${loaded}`);
+
+  for (const file of rules) {
+    const code = codeOnly(read("js/" + file));
+    for (const local of ["getHours()", "getMinutes()", "getMonth()", "getDate()", "getFullYear()"]) {
+      assert.ok(
+        code.indexOf(local) === -1,
+        `js/${file} 가 ${local} 로 읽는다 — 보는 사람의 시간대로 옮겨진다. js/clinic-clock.js 것을 쓴다`,
+      );
+    }
   }
 });
 
@@ -117,10 +146,12 @@ test("기간도 의원의 오늘에서 센다", () => {
 
   assert.ok(code.indexOf("clinicToday(") !== -1);
   assert.ok(code.indexOf("clinicDayShift(") !== -1);
-  assert.ok(
-    code.indexOf("getDate()") === -1,
-    "자정 전후에 하루가 어긋나 「오늘 나간 문자」가 안 보인다",
-  );
+});
+
+test("「오늘 예정」도 의원의 오늘이다", () => {
+  const code = codeOnly(read("js/schedule-rules.js"));
+
+  assert.ok(code.indexOf("isClinicToday(") !== -1, "의원 시계를 안 쓴다");
 });
 
 test("관리 화면이 시계 파일을 싣는다", () => {

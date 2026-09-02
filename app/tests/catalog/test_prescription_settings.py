@@ -1,11 +1,17 @@
 """처방 설정 — KEY-234, 와이어프레임 D2-3.
 
 처방 세트가 이름 하나뿐이었다. 의사가 정할 것들이 표에 없어서 「어느 처방에
-무엇을 여쭐지」도 「소진 예정일을 어떻게 셈할지」도 코드에 박혀 있었다.
+무엇을 여쭐지」도 「소진 예정일을 어떻게 셈할지」도 코드에 박혀 있었다. 그
+값들을 표로 옮기고 설정 화면이 읽게 했다.
 
-**`days_mode` 가 가장 무거운 값이다.** EMR 「총투」 칸의 「3」이 3통일 수도
-3일일 수도 있는데 의원마다 다르다 — 소진 예정일과 소진 임박 문자가 이 값으로
-셈해지므로, 틀리면 문자가 엉뚱한 날 간다.
+**고치는 길은 아직 열지 않았다.** `prescription_set` 에는 `hospital_id` 가
+없다 — 여덟 처방 유형을 전 의원이 함께 쓴다. 한동안 역할(의사)만 확인하고
+`PUT` 을 열어 두었는데, 그러면 어느 의원 의사든 다른 모든 의원의 질환 분류 ·
+총투 해석 · 소진 예정일 셈법을 바꿀 수 있다. 그 값들이 안내문 문구와 문자
+발송일을 정한다. 2heej 님이 `#183` 리뷰에서 찾아 주셨다.
+
+표를 의원별로 가르는 것이 옳은 해결이고 별도 일감이다. 이 파일은 그때까지
+**읽기만 되고 쓰기는 닫혀 있다**는 것을 못 박는다.
 """
 
 from httpx import ASGITransport, AsyncClient
@@ -21,7 +27,7 @@ from app.tests.fakes import FakeRedis
 
 
 def a_plan(**over) -> dict:
-    """설정 화면이 보내는 한 판. 검사마다 한 곳만 바꿔 쓴다."""
+    """설정 화면이 보내던 한 판. 쓰기가 닫힌 것을 재는 데 쓴다."""
     plan = {
         "name": "자궁내막증 · 비잔 (계속)",
         "disease": "ENDOMETRIOSIS",
@@ -69,51 +75,78 @@ class PrescriptionSettingsTestCase(TestCase):
     def client(self) -> AsyncClient:
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
-    async def a_set(self) -> PrescriptionSet:
-        return await PrescriptionSet.create(name="자궁내막증 · 비잔 (계속)")
+    async def a_furnished_set(self) -> PrescriptionSet:
+        """약과 확인 항목이 딸린 세트 하나. **표에 직접 넣는다** — 이 표를
+        채우는 API 가 없으므로(쓰기가 닫혔다) 씨앗 마이그레이션과 같은 길이다."""
+        row = await PrescriptionSet.create(
+            name="자궁내막증 · 비잔 (계속)",
+            disease="ENDOMETRIOSIS",
+            phase="CONTINUE",
+            days_mode="PACK",
+            days_per_pack=28,
+            emr_code="주의사항 비잔",
+            revisit_note="3개월 복용 후 내원",
+        )
+        await PrescriptionSetDrug.create(
+            prescription_set=row, name="비잔정 2mg", frequency="1일 1회", note="매일 같은 시간", position=0
+        )
+        await PrescriptionSetDrug.create(prescription_set=row, name="철분제", position=1)
+        await PrescriptionCheckItem.create(prescription_set=row, item_key="DEPRESSION", position=0)
+        await PrescriptionCheckItem.create(prescription_set=row, item_key="OSTEOPOROSIS", position=1)
+        return row
 
     # ── 읽기 ─────────────────────────────────────────────────────────
 
-    async def test_staff_can_read_but_not_write(self) -> None:
-        """**보는 것은 스탭도, 고치는 것은 의사만.**
-
-        와이어프레임 D2-2 가 「의사 계정만 · 스탭은 볼 수만 있다」로 못박는다.
-        이 값이 안내문과 문자 발송일을 정하므로 의료 판단에 걸린다. 스탭은
-        판독 화면에서 처방을 고를 때 무엇이 딸려 있는지 알아야 한다.
-        """
-        row = await self.a_set()
+    async def test_staff_can_read_the_plan(self) -> None:
+        """**보는 것은 스탭도 된다.** 판독 화면에서 처방을 고를 때 무엇이
+        딸려 있는지 알아야 한다."""
+        row = await self.a_furnished_set()
         staff = await self.make_staff(["staff"])
 
         async with self.client() as client:
-            headers = await self.sign_in(staff)
-            got = await client.get(f"/api/v1/prescription-sets/{row.prescription_set_id}", headers=headers)
-            put = await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}", json=a_plan(), headers=headers
+            got = await client.get(
+                f"/api/v1/prescription-sets/{row.prescription_set_id}", headers=await self.sign_in(staff)
             )
 
-        assert got.status_code == 200, "스탭이 못 본다"
-        assert put.status_code == 403, f"스탭이 고쳤다: {put.status_code}"
+        assert got.status_code == 200, got.text
+        body = got.json()
+        assert [drug["name"] for drug in body["drugs"]] == ["비잔정 2mg", "철분제"], "차례가 `position` 대로다"
+        assert body["check_items"] == ["DEPRESSION", "OSTEOPOROSIS"]
+
+    async def test_the_pack_size_comes_along(self) -> None:
+        """**`days_mode` 가 가장 무거운 값이다.** EMR 「총투」의 「3」이 3통일
+        수도 3일일 수도 있는데 의원마다 다르다 — 소진 예정일과 소진 임박
+        문자가 이 값으로 셈해지므로, 틀리면 문자가 엉뚱한 날 간다."""
+        row = await self.a_furnished_set()
+        doctor = await self.make_staff(["doctor"])
+
+        async with self.client() as client:
+            got = await client.get(
+                f"/api/v1/prescription-sets/{row.prescription_set_id}", headers=await self.sign_in(doctor)
+            )
+
+        body = got.json()
+        assert body["days_mode"] == "PACK" and body["days_per_pack"] == 28
 
     async def test_an_unknown_set_is_not_found(self) -> None:
-        """**읽을 때도 저장할 때도 404 다.**
-
-        저장 쪽에서 안 막으면 없는 세트에 값을 쓰려다 500 으로 터진다 —
-        화면은 「잠시 뒤 다시 시도해 주세요」를 띄우고, 다시 해도 같다.
-        """
         doctor = await self.make_staff(["doctor"])
+
         async with self.client() as client:
-            headers = await self.sign_in(doctor)
-            got = await client.get("/api/v1/prescription-sets/999999", headers=headers)
-            put = await client.put("/api/v1/prescription-sets/999999", json=a_plan(), headers=headers)
+            got = await client.get("/api/v1/prescription-sets/999999", headers=await self.sign_in(doctor))
 
         assert got.status_code == 404
-        assert put.status_code == 404, f"없는 세트에 저장했다: {put.status_code}"
+        assert got.json()["code"] == "PRESCRIPTION_SET_NOT_FOUND"
 
-    # ── 저장 ─────────────────────────────────────────────────────────
+    # ── 쓰기는 닫혀 있다 ─────────────────────────────────────────────
 
-    async def test_a_doctor_saves_the_whole_plan(self) -> None:
-        """**한 판을 통째로 담는다** — 약을 지우고 항목을 켜는 것이 한 번의 저장이다."""
-        row = await self.a_set()
+    async def test_nobody_can_write_the_shared_catalog(self) -> None:
+        """**의사도 못 고친다.** 역할이 문제가 아니라 표가 전 의원 공용인
+        것이 문제다 — `prescription_set` 에는 `hospital_id` 가 없다.
+
+        의사에게만 열어 두면 「우리 의원 설정」처럼 보이는데 실제로는 모든
+        의원이 함께 쓰는 값이 바뀐다. 그래서 길 자체를 닫는다.
+        """
+        row = await self.a_furnished_set()
         doctor = await self.make_staff(["doctor"])
 
         async with self.client() as client:
@@ -123,140 +156,36 @@ class PrescriptionSettingsTestCase(TestCase):
                 headers=await self.sign_in(doctor),
             )
 
-        assert put.status_code == 200, put.text
-        body = put.json()
-        assert body["disease"] == "ENDOMETRIOSIS"
-        assert body["phase"] == "CONTINUE"
-        assert body["emr_code"] == "주의사항 비잔"
-        assert body["drugs"] == [{"name": "비잔정 2mg", "frequency": "1일 1회", "note": "매일 같은 시간"}]
-        assert body["check_items"] == ["DEPRESSION", "OSTEOPOROSIS"]
+        assert put.status_code == 405, f"쓰기가 아직 열려 있다: {put.status_code}"
 
-    async def test_saving_twice_does_not_pile_up(self) -> None:
-        """**지우고 다시 넣는다.** 줄이 쌓이면 안내문에 같은 약이 두 번 적힌다."""
-        row = await self.a_set()
+    async def test_the_write_did_not_move_to_another_verb(self) -> None:
+        """`PUT` 만 걷고 `PATCH`·`POST` 로 옮겨 두면 막은 것이 아니다."""
+        row = await self.a_furnished_set()
         doctor = await self.make_staff(["doctor"])
+        at = f"/api/v1/prescription-sets/{row.prescription_set_id}"
 
         async with self.client() as client:
             headers = await self.sign_in(doctor)
-            for _ in range(3):
-                await client.put(f"/api/v1/prescription-sets/{row.prescription_set_id}", json=a_plan(), headers=headers)
+            answers = {
+                verb: (await client.request(verb, at, json=a_plan(), headers=headers)).status_code
+                for verb in ("PUT", "PATCH", "POST", "DELETE")
+            }
 
-        assert await PrescriptionSetDrug.filter(prescription_set_id=row.prescription_set_id).count() == 1
+        assert all(code == 405 for code in answers.values()), answers
+
+    async def test_the_catalog_is_untouched_after_a_refused_write(self) -> None:
+        """막았다고 말만 하고 반쪽이 들어가면 더 나쁘다."""
+        row = await self.a_furnished_set()
+        doctor = await self.make_staff(["doctor"])
+
+        async with self.client() as client:
+            await client.put(
+                f"/api/v1/prescription-sets/{row.prescription_set_id}",
+                json=a_plan(name="바뀐 이름", drugs=[], check_items=[]),
+                headers=await self.sign_in(doctor),
+            )
+
+        await row.refresh_from_db()
+        assert row.name == "자궁내막증 · 비잔 (계속)"
+        assert await PrescriptionSetDrug.filter(prescription_set_id=row.prescription_set_id).count() == 2
         assert await PrescriptionCheckItem.filter(prescription_set_id=row.prescription_set_id).count() == 2
-
-    async def test_removing_a_drug_removes_the_row(self) -> None:
-        """뺀 약은 사라진다 — 남으면 안내문이 안 내는 약을 적는다."""
-        row = await self.a_set()
-        doctor = await self.make_staff(["doctor"])
-
-        async with self.client() as client:
-            headers = await self.sign_in(doctor)
-            await client.put(f"/api/v1/prescription-sets/{row.prescription_set_id}", json=a_plan(), headers=headers)
-            after = await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(drugs=[], check_items=[]),
-                headers=headers,
-            )
-
-        assert after.json()["drugs"] == []
-        assert after.json()["check_items"] == []
-
-    async def test_pack_mode_needs_days_per_pack(self) -> None:
-        """**통으로 세는데 한 통이 며칠인지 모르면 소진일을 셈할 수 없다.**
-
-        비워 둔 채 저장되면 소진 임박 문자가 영영 안 나가거나 엉뚱한 날 나간다.
-        """
-        row = await self.a_set()
-        doctor = await self.make_staff(["doctor"])
-
-        async with self.client() as client:
-            headers = await self.sign_in(doctor)
-            bad = await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(days_mode="PACK", days_per_pack=None),
-                headers=headers,
-            )
-            good = await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(days_mode="PACK", days_per_pack=28),
-                headers=headers,
-            )
-
-        assert bad.status_code == 422, f"한 통이 며칠인지 없이 저장됐다: {bad.status_code}"
-        assert good.status_code == 200
-        assert good.json()["days_per_pack"] == 28
-
-    async def test_days_mode_clears_the_pack_size(self) -> None:
-        """일수로 바꾸면 통 크기를 비운다 — 남겨 두면 어느 쪽으로 셈하는지 흐려진다."""
-        row = await self.a_set()
-        doctor = await self.make_staff(["doctor"])
-
-        async with self.client() as client:
-            headers = await self.sign_in(doctor)
-            await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(days_mode="PACK", days_per_pack=28),
-                headers=headers,
-            )
-            after = await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(days_mode="DAYS", days_per_pack=28),
-                headers=headers,
-            )
-
-        assert after.json()["days_per_pack"] is None, "일수로 세는데 통 크기가 남았다"
-
-    async def test_the_check_items_reach_the_list(self) -> None:
-        """**설정에서 고른 항목이 판독 화면으로 간다** — 이것이 이 화면의 쓸모다."""
-        row = await self.a_set()
-        doctor = await self.make_staff(["doctor"])
-
-        async with self.client() as client:
-            headers = await self.sign_in(doctor)
-            await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(check_items=["DIABETES"]),
-                headers=headers,
-            )
-            listed = await client.get("/api/v1/prescription-sets", headers=headers)
-
-        mine = [s for s in listed.json() if s["prescription_set_id"] == row.prescription_set_id][0]
-        assert mine["check_items"] == ["DIABETES"], "설정에서 고른 것이 목록에 안 실린다"
-
-    async def test_the_order_of_drugs_and_items_is_kept(self) -> None:
-        """적은 차례가 화면 차례다 — 안내문에 적히는 차례이기도 하다."""
-        row = await self.a_set()
-        doctor = await self.make_staff(["doctor"])
-
-        drugs = [
-            {"name": "야즈정", "frequency": "1일 1회", "note": None},
-            {"name": "메트포르민 500mg", "frequency": "1일 2회", "note": "식후"},
-        ]
-        items = ["PREGNANCY_PLAN", "HYPERTENSION", "DIABETES"]
-
-        async with self.client() as client:
-            got = await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(drugs=drugs, check_items=items),
-                headers=await self.sign_in(doctor),
-            )
-
-        assert [d["name"] for d in got.json()["drugs"]] == ["야즈정", "메트포르민 500mg"]
-        assert got.json()["check_items"] == items
-
-    async def test_blank_text_becomes_nothing(self) -> None:
-        """공백만 적은 것은 안 적은 것이다 — 「 」이 남으면 화면이 값이 있는 줄 안다."""
-        row = await self.a_set()
-        doctor = await self.make_staff(["doctor"])
-
-        async with self.client() as client:
-            got = await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(emr_code="   ", revisit_note="", drugs=[{"name": "  ", "frequency": None, "note": None}]),
-                headers=await self.sign_in(doctor),
-            )
-
-        body = got.json()
-        assert body["emr_code"] is None
-        assert body["revisit_note"] is None
-        assert body["drugs"] == [], "이름 없는 약이 담겼다"
