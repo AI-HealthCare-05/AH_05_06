@@ -117,6 +117,86 @@ $EDITOR envs/.prod.env          # SECRET_KEY·DB_PASSWORD 는 반드시
 5. EC2 에서 `docker compose up -d --pull always --no-deps <고른 서비스>` 후 옛 이미지 정리
    (`scripts/lib.sh:51`. **고른 것만 뜬다** — `--no-deps` 라 mysql·redis 는 딸려 오지 않는다)
 
+## 3-2. 배포가 DB 를 따라오게 한다 (KEY-206)
+
+`scripts/deployment.sh` 를 돌리면 아래 순서가 **원격에서** 돈다. 손으로 할 일은
+없고, 여기 적는 것은 **무엇이 언제 도는지**와 **틀어졌을 때 어디를 보는지**다.
+
+```text
+docker login
+docker compose pull   <고른 서비스>
+docker compose run --rm -T --no-deps fastapi uv run --no-sync aerich upgrade   ← 여기
+docker compose up -d  --no-deps <고른 서비스>
+docker image prune -af
+```
+
+### 왜 `up -d` 앞인가
+
+**뒤에 걸면 실패해도 새 코드는 이미 돌고 있다.** 멈출 것이 남아 있지 않다.
+그래서 이미지만 받아 두고, 그 이미지로 마이그레이션을 한 번 돌리고, 통과하면
+그때 앱을 바꾼다. `set -e` 가 걸려 있으므로 실패하면 **앱은 옛 버전 그대로**
+남는다 — 이게 이 순서의 전부다.
+
+`fastapi` 를 고른 배포에서만 돈다. nginx 만 올리는 배포는 DB 를 안 건드린다.
+
+### 여태 이 단계가 없었다
+
+`KEY-197` 을 하다가 Pilot 에서 `guide_section.drug_caution_content_id` 가 통째로
+없는 것을 발견했다. **사고가 아니라 이 구조의 당연한 결과였다** — 이미지를 새로
+올려도 DB 는 있던 자리에 그대로 있었다.
+
+### 도는 자리에 도구가 있는지 확인했다
+
+시드 스크립트에서 「런북에 적힌 명령이 서버에서는 그런 파일 없음으로 죽는」
+자리를 한 번 밟았다. 그래서 이번에는 **이미지를 지어서** 봤다 (2026-08-28).
+
+```text
+app/Dockerfile 로 지은 이미지 안 (마운트 없음)
+
+  aerich          0.9.2
+  마이그레이션      21 개
+  pyproject.toml  [tool.aerich] 있음
+
+  빈 DB 에 걸었을 때   21 개 적용 · 25 표
+  한 번 더 걸었을 때   No upgrade items found
+```
+
+### 틀어졌을 때
+
+| 화면에 뜨는 것 | 뜻 | 할 일 |
+|---|---|---|
+| `Old format of migration file detected` | 마이그레이션 파일에 `MODELS_STATE` 가 없다 | `aerich fix-migrations`. 검사가 미리 잡게 돼 있다 (`test_migration_file_format.py`) |
+| `No upgrade items found` | **정상이다.** 이미 다 적용돼 있다 | 그대로 진행 |
+| 연결 오류 (`Can't connect`) | DB 가 안 떠 있거나 `.env` 의 DB 값이 틀렸다 | `docker compose ps mysql` · `.env` 확인 |
+| SQL 오류로 중간에 멈춤 | 마이그레이션이 지금 데이터와 안 맞는다 | **앱은 안 바뀐 상태다.** 아래 「되돌릴 때」 |
+
+### 되돌릴 때
+
+앱은 `4. 롤백` 을 따른다. **DB 는 별개다.**
+
+```bash
+# 어디까지 왔는지 먼저 본다
+docker compose run --rm -T --no-deps fastapi uv run --no-sync aerich history
+```
+
+되돌리려면 `aerich downgrade` 이고 `docs/migrations/` 를 따른다.
+**`--delete` 를 쓰지 않는다** — 마이그레이션 파일 자체가 지워진다.
+
+> 실제로 한 번 지워 봤다. `aerich downgrade -v 1 -d` 로 파일 20 개가 사라졌고
+> `git checkout --` 으로 되살렸다. `-d` 는 「delete」다.
+
+### 증적을 남긴다
+
+배포 로그의 이 세 줄이 증적이다. 시연·QA 전에 남겨 둔다.
+
+```text
+Pulling images: …
+Applying migrations
+Success upgrading to 20_20260826000000_key165_drug_caution.py    ← 또는 No upgrade items found
+```
+
+아무것도 안 뜨면 **그 배포는 `fastapi` 를 안 고른 것**이다.
+
 ## 4. 롤백
 
 `docker compose up -d --pull always` 는 **태그가 가리키는 이미지**를 받는다.
