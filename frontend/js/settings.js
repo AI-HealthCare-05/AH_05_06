@@ -189,7 +189,7 @@
       '<span class="rail__name">' +
       esc(railSetName(block, row.name)) +
       '</span><span class="rail__note' +
-      (mark.done ? " rail__note--done" : "") +
+      (mark.done ? " rail__note--done" : mark.say ? " rail__note--todo" : "") +
       '">' +
       esc(mark.say) +
       "</span></button>"

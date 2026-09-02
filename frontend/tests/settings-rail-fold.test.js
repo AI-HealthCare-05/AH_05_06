@@ -10,7 +10,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const { load } = require("./browser-shim.js");
-const { read, codeOnly } = require("./source.js");
+const { read, codeOnly, rule } = require("./source.js");
 
 function rules() {
   return load("api", "settings-rail");
@@ -220,4 +220,28 @@ test("**아직 못 받아 온 것을 「0/3」이라 하지 않는다** — 「�
 test("**빈 묶음은 「다 봤다」가 아니다** — 0/0 을 끝난 것으로 세면 안 된다", () => {
   const { copyBlockMark } = rules();
   assert.deepEqual(copyBlockMark({ items: [] }, []), { say: "0/0", done: false });
+});
+
+test("**안 본 장이 다 본 장보다 눈에 띈다** — 원문이 노린 것", () => {
+  /* 원문 D2-1 레일은 「확인 전」 줄에 굵기와 왼쪽 막대를 주고 「✓」 줄에는
+     아무것도 안 준다 — 이 화면의 일이 「여덟 장을 다 보는 것」이라 남은 것이
+     소리쳐야 한다. 구현은 그것을 뒤집어 두고 있었다: 끝난 것이 초록으로 굵고
+     할 일이 회색이었다. */
+  const css = read("css/settings.css");
+
+  const todo = rule(css, ".rail__note--todo");
+  assert.ok(todo, "안 본 장 표시가 없다");
+  assert.match(todo, /font-weight:\s*700/, "안 본 장이 굵지 않다");
+
+  /* `rule()` 은 못 찾으면 던진다 — 없으면 그 자리에서 빨개진다 */
+  const done = rule(css, ".rail__note--done");
+  assert.doesNotMatch(done, /font-weight:\s*700/, "끝난 것이 남은 것만큼 굵다");
+});
+
+test("**화면이 안 본 장에 그 표시를 붙인다**", () => {
+  const code = codeOnly(read("js/settings.js"));
+  assert.match(code, /rail__note--todo/, "안 본 장 표시를 안 쓴다");
+  /* 아직 목록을 못 받아 왔을 때(`say` 가 빈 문자열)는 아무 표시도 안 붙인다 —
+     「모른다」를 「안 봤다」로 적으면 안 된다 */
+  assert.match(code, /mark\.done \? " rail__note--done" : mark\.say \?/);
 });
