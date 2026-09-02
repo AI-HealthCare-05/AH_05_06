@@ -48,7 +48,7 @@
 
 /* 무엇을 보고 읽었는지. 원문은 `#F3F4F6 · 180px` 의 미리보기 판이다. */
 .doc-view {
-  height: 180px;
+  min-height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -56,6 +56,14 @@
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.doc-view__img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 2px;
 }
 
 .doc-view__soon {

@@ -390,6 +390,8 @@ function stateTakesFocus(tone) {
 
   /* ── 왼쪽 · 원문 ───────────────────────────────────────────── */
 
+  var docView = document.getElementById("doc-view");
+
   function renderDocTabs() {
     docTabs.innerHTML = result.documents
       .map(function (doc) {
@@ -407,6 +409,20 @@ function stateTakesFocus(tone) {
         );
       })
       .join("");
+  }
+
+  function renderDocView() {
+    if (!docView) return;
+    if (!activeDoc) {
+      docView.innerHTML = '<p class="doc-view__soon">문서를 선택하면 여기에 미리보기가 표시됩니다</p>';
+      return;
+    }
+    var src = "/api/v1/ocr/documents/" + encodeURIComponent(activeDoc) + "/image";
+    docView.innerHTML =
+      '<img class="doc-view__img" src="' +
+      src +
+      '" alt="문서 미리보기" ' +
+      'onerror="this.parentNode.innerHTML=\'<p class=&quot;doc-view__soon&quot;>원본 이미지가 삭제됐거나 불러올 수 없습니다</p>\'">';
   }
 
   function renderRaw(highlightLine) {
@@ -436,6 +452,7 @@ function stateTakesFocus(tone) {
     if (!documentId) return;
     activeDoc = documentId;
     renderDocTabs();
+    renderDocView();
     renderRaw(typeof line === "number" ? line : null);
   }
 
@@ -2259,6 +2276,7 @@ function stateTakesFocus(tone) {
         activeDoc = result.documents.length ? result.documents[0].document_id : null;
         showWork();
         renderDocTabs();
+        renderDocView();
         renderRaw(null);
         redraw();
       })
