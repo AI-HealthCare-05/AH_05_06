@@ -3,11 +3,12 @@
 import hashlib
 from uuid import uuid4
 
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
 
 from app.core.redis_client import get_redis
+from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.main import app
 from app.models.feedback import PatientFeedback
 from app.models.visits import (
@@ -165,3 +166,48 @@ class TestChatbotFeedbackReference(PatientFeedbackApiTestCase):
         assert response.status_code == 404
         assert response.json()["code"] == "FEEDBACK_CONTEXT_NOT_FOUND"
         assert await PatientFeedback.all().count() == 0
+
+
+class TestAdminFeedbackList(PatientFeedbackApiTestCase):
+    async def feedback(self, hospital_name: str, *, details: str | None = None) -> PatientFeedback:
+        hospital = await make_hospital(hospital_name)
+        guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        return await PatientFeedback.create(
+            hospital_id=hospital.hospital_id,
+            guide_document=guide,
+            target="GUIDE_SECTION",
+            source_screen="P9",
+            section_key="medication",
+            content_key="medication.why",
+            category="WRONG",
+            details=details,
+            idempotency_digest=hashlib.sha256(f"{hospital_name}-submission".encode()).hexdigest(),
+        )
+
+    async def request_as(self, actor: StaffActor) -> Response:
+        app.dependency_overrides[get_staff_actor] = lambda: actor
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.get("/api/v1/admin/patient-feedback")
+
+    async def test_admin_only_sees_feedback_from_their_hospital(self) -> None:
+        own = await self.feedback("KEY-239 목록 기준병원", details="합성 상세")
+        await self.feedback("KEY-239 목록 타병원", details="타 병원 상세")
+        actor = StaffActor(user_id=239, hospital_id=own.hospital_id, roles=frozenset({"admin"}))
+
+        response = await self.request_as(actor)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["feedback_id"] == own.patient_feedback_id
+        assert body["items"][0]["has_details"] is True
+        assert "details" not in body["items"][0]
+
+    async def test_non_admin_is_forbidden(self) -> None:
+        own = await self.feedback("KEY-239 목록 권한병원")
+        actor = StaffActor(user_id=240, hospital_id=own.hospital_id, roles=frozenset({"staff"}))
+
+        response = await self.request_as(actor)
+
+        assert response.status_code == 403
+        assert response.json()["code"] == "FORBIDDEN"

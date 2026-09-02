@@ -1,5 +1,6 @@
 """Patient feedback request and response contracts for KEY-239."""
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -40,3 +41,20 @@ class PatientFeedbackCreateRequest(StrictModel):
 class PatientFeedbackCreateResponse(StrictModel):
     feedback_id: int
     saved: bool = True
+
+
+class AdminPatientFeedbackListItem(StrictModel):
+    feedback_id: int
+    visit_id: int
+    target: PatientFeedbackTarget
+    source_screen: PatientFeedbackSourceScreen
+    category: PatientFeedbackCategory
+    has_details: bool
+    created_at: datetime
+
+
+class AdminPatientFeedbackListResponse(StrictModel):
+    items: list[AdminPatientFeedbackListItem]
+    page: int
+    page_size: int
+    total: int

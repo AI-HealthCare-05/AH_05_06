@@ -1,0 +1,16 @@
+body { margin: 0; color: #1f2933; background: #f5f7f9; font-family: Arial, sans-serif; }
+button, select { font: inherit; }
+.feedback-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 32px; background: #fff; border-bottom: 1px solid #dfe3e8; }
+.feedback-header h1 { margin: 2px 0 0; font-size: 26px; }
+.feedback-header__eyebrow { margin: 0; color: #52606d; }
+.feedback-main { max-width: 1080px; margin: 0 auto; padding: 28px 24px; }
+.feedback-filters { display: flex; gap: 14px; align-items: end; padding: 18px; background: #fff; border-radius: 12px; }
+.feedback-filters label { display: grid; gap: 6px; color: #52606d; }
+.feedback-filters select, .feedback-filters button, .feedback-header button, .feedback-pagination button { min-height: 40px; padding: 0 14px; border: 1px solid #cbd2d9; border-radius: 8px; background: #fff; }
+.feedback-state { padding: 32px; text-align: center; color: #52606d; }
+.feedback-table-wrap { margin-top: 18px; overflow-x: auto; background: #fff; border-radius: 12px; }
+.feedback-table { width: 100%; border-collapse: collapse; }
+.feedback-table th, .feedback-table td { padding: 14px; border-bottom: 1px solid #e4e7eb; text-align: left; }
+.feedback-table th { color: #52606d; font-weight: 600; }
+.feedback-pagination { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 20px; }
+@media (max-width: 680px) { .feedback-header { padding: 18px; } .feedback-main { padding: 18px 12px; } .feedback-filters { align-items: stretch; flex-direction: column; } }

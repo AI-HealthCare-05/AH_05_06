@@ -6,8 +6,14 @@ from tortoise.exceptions import IntegrityError
 from tortoise.timezone import now
 
 from app.core.api_errors import ApiError
-from app.dtos.patient_feedback import PatientFeedbackCreateRequest
-from app.models.feedback import PatientFeedback, PatientFeedbackTarget
+from app.core.rbac import Permission, has_permission
+from app.dependencies.staff_auth import StaffActor
+from app.dtos.patient_feedback import (
+    AdminPatientFeedbackListItem,
+    AdminPatientFeedbackListResponse,
+    PatientFeedbackCreateRequest,
+)
+from app.models.feedback import PatientFeedback, PatientFeedbackCategory, PatientFeedbackTarget
 from app.models.visits import (
     GuideDocument,
     GuideSection,
@@ -117,3 +123,53 @@ class PatientFeedbackService:
         if not same:
             raise _submission_conflict()
         return existing
+
+
+class AdminPatientFeedbackService:
+    """Read feedback only for an authenticated administrator's hospital."""
+
+    @staticmethod
+    def _require_admin(actor: StaffActor) -> None:
+        if not has_permission(actor.roles, Permission.AUDIT_READ):
+            raise ApiError(403, "FORBIDDEN", "환자 피드백을 조회할 권한이 없습니다.")
+
+    async def list(
+        self,
+        actor: StaffActor,
+        *,
+        page: int,
+        page_size: int,
+        target: PatientFeedbackTarget | None,
+        category: PatientFeedbackCategory | None,
+    ) -> AdminPatientFeedbackListResponse:
+        self._require_admin(actor)
+        query = PatientFeedback.filter(hospital_id=actor.hospital_id)
+        if target is not None:
+            query = query.filter(target=target)
+        if category is not None:
+            query = query.filter(category=category)
+
+        total = await query.count()
+        rows = (
+            await query.select_related("guide_document")
+            .order_by("-created_at", "-patient_feedback_id")
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return AdminPatientFeedbackListResponse(
+            items=[
+                AdminPatientFeedbackListItem(
+                    feedback_id=row.patient_feedback_id,
+                    visit_id=row.guide_document.visit_id,
+                    target=row.target,
+                    source_screen=row.source_screen,
+                    category=row.category,
+                    has_details=bool(row.details),
+                    created_at=row.created_at,
+                )
+                for row in rows
+            ],
+            page=page,
+            page_size=page_size,
+            total=total,
+        )
