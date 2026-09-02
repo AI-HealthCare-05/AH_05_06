@@ -22,6 +22,7 @@ from app.tests.fakes import FakeRedis
 LINK_TOKEN = "SYN-key91-link-token-not-a-real-patient-token"
 OTP = "042731"
 SECRET = "synthetic-key91-test-secret-never-used-outside-tests"
+PHONE = "01000009100"
 
 
 class RecordingDelivery:

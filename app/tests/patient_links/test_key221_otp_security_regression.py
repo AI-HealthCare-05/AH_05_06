@@ -33,6 +33,7 @@ from app.tests.auth_base import AuthTestCase
 from app.tests.patient_links.test_patient_otp import (
     LINK_TOKEN,
     OTP,
+    PHONE,
     SECRET,
     RecordingDelivery,
     make_link,
@@ -40,6 +41,25 @@ from app.tests.patient_links.test_patient_otp import (
 
 MOCK_CODE = "000000"
 _PROD_SECRET = "syn-prod-secret-for-config-validator-test-key-221-xyz"
+
+
+# ── 공통 베이스 ──────────────────────────────────────────────────────────────
+
+
+class _OtpApiBase(AuthTestCase):
+    """client() 중복을 제거하는 최소 베이스 — 직접 인스턴스화하지 않는다."""
+
+    def client(self) -> AsyncClient:
+        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+
+class _OtpWithRecordingBase(_OtpApiBase):
+    """RecordingDelivery + _otp_service override가 필요한 클래스의 공통 베이스."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.delivery = RecordingDelivery()
+        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(self.delivery, secret_key=SECRET)
 
 
 # ── AC1: Config 레벨 우회 차단 ──────────────────────────────────────────────
@@ -91,11 +111,8 @@ class TestOtpServiceFactory(unittest.TestCase):
 # ── AC1: HTTP 레벨 PROD 차단 ────────────────────────────────────────────────
 
 
-class TestProdServiceBlocksOtpIssue(AuthTestCase):
+class TestProdServiceBlocksOtpIssue(_OtpApiBase):
     """실제 _otp_service() 가드가 PROD 환경에서 HTTP 레벨까지 차단한다."""
-
-    def client(self) -> AsyncClient:
-        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     async def test_prod_delivery_blocks_otp_issue(self) -> None:
         """config.ENV=PROD 에서 _otp_service()가 503 OTP_DELIVERY_UNAVAILABLE을 반환한다."""
@@ -126,16 +143,8 @@ class TestProdServiceBlocksOtpIssue(AuthTestCase):
 # ── AC3: 토큰 원문 미노출 ────────────────────────────────────────────────────
 
 
-class TestTokenConfidentiality(AuthTestCase):
+class TestTokenConfidentiality(_OtpWithRecordingBase):
     """OTP·링크·세션 토큰 원문이 API 응답 body에 노출되지 않는다."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        self.delivery = RecordingDelivery()
-        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(self.delivery, secret_key=SECRET)
-
-    def client(self) -> AsyncClient:
-        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     async def test_session_raw_value_not_in_verify_response_body(self) -> None:
         """세션 쿠키 원문은 Set-Cookie 헤더에만 있고 응답 body에 없다."""
@@ -194,11 +203,8 @@ class TestTokenConfidentiality(AuthTestCase):
 # ── AC4: context 최소 정보 ───────────────────────────────────────────────────
 
 
-class TestContextMinimalFields(AuthTestCase):
+class TestContextMinimalFields(_OtpApiBase):
     """context 응답이 화면에 필요한 최소 정보만 반환한다."""
-
-    def client(self) -> AsyncClient:
-        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     async def test_context_response_contains_only_allowed_fields(self) -> None:
         """응답 키가 hospital_name·masked_phone·visited_at·expires_at만 존재한다."""
@@ -217,7 +223,7 @@ class TestContextMinimalFields(AuthTestCase):
 
         assert res.status_code == 200
         masked = res.json()["masked_phone"]
-        assert "01000009100" not in masked
+        assert PHONE not in masked
         assert "****" in masked
 
     async def test_context_does_not_expose_internal_ids_or_link_token(self) -> None:
@@ -236,16 +242,8 @@ class TestContextMinimalFields(AuthTestCase):
 # ── AC5: 재발송 후 본인확인 계약 우회 불가 ───────────────────────────────────
 
 
-class TestReIssueDoesNotBypassAuth(AuthTestCase):
+class TestReIssueDoesNotBypassAuth(_OtpWithRecordingBase):
     """재발송이 본인확인 계약을 우회하지 않는다."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        self.delivery = RecordingDelivery()
-        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(self.delivery, secret_key=SECRET)
-
-    def client(self) -> AsyncClient:
-        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     async def test_active_link_re_issue_blocked_with_409(self) -> None:
         """아직 활성 상태인 링크로 재발송을 시도하면 409 LINK_STILL_ACTIVE로 차단된다.
