@@ -1,18 +1,33 @@
-# AI Healthcare Project Template
+# 케어온 — 복약 안내 도우미
 
-이 프로젝트는 AI 모델 추론(Inference) 워커와 FastAPI API 서버를 통합한 서비스 템플릿입니다. 
-현대적인 Python 패키지 관리 도구인 `uv`와 컨테이너화 도구인 `Docker`를 활용하여 일관된 개발 및 배포 환경을 제공합니다.
+다낭성난소증후군·자궁내막증 환자에게 **약을 어떻게 드시는지**를 진료 뒤에도 이어서
+안내하는 서비스다. 의원이 종이로 주던 복약 안내를 자동으로 만들고, 환자 휴대폰으로
+보내고, 복약 도중 확인 문자를 회차대로 보낸다.
+
+한 진료가 지나가는 길:
+
+```
+진료기록 사진 올림 → OCR 판독 → 스탭 확인 → 의사 승인 → 환자에게 문자
+                                                          ↓
+                                              D+7 · D+15 확인 문자 · 소진 예정 알림
+```
+
+**의료 안전이 이 저장소의 첫 규칙이다.** 안내문에 들어가는 의학 문장은 지어내지
+않고, 판독이 못 읽은 값은 비워 두며(0 이나 「-」로 채우지 않는다), 의사 승인 없이는
+환자에게 아무것도 나가지 않는다.
 
 ---
 
-## 🚀 주요 특징
+## 🚀 무엇으로 만들었나
 
-- **FastAPI Framework**: 고성능 비동기 API 서버 구현.
-- **AI Worker**: 모델 추론 및 학습 작업을 API 서버와 분리하여 처리.
-- **UV Package Manager**: 매우 빠른 의존성 설치 및 가상환경 관리.
-- **Tortoise ORM**: 비동기 방식의 데이터베이스 모델링 및 쿼리 관리.
-- **Docker-Compose**: MySQL, Redis, Nginx를 포함한 전체 서비스 스택을 한 번에 실행.
-- **CI/CD Scripts**: 코드 포맷팅(Ruff), 타입 체크(Mypy), 테스트(Pytest)를 위한 자동화 스크립트 제공.
+- **FastAPI + Tortoise ORM** — 비동기 API 서버와 DB 모델
+- **AI Worker** — OCR 판독을 API 서버와 분리해 처리
+- **프런트엔드 — 빌드가 없다.** HTML·CSS·ES5 JavaScript 를 `<script src>` 로 그대로
+  싣는다. 번들러도 `node_modules` 도 잠금파일도 없다. 그래서 파일을 고치고 새로고침하면
+  끝이고, 대신 전역 이름이 곧 주소라 **이름이 겹치면 서로를 덮는다**(검사가 막는다)
+- **UV Package Manager** — 의존성 설치와 가상환경
+- **Docker-Compose** — MySQL · Redis · Nginx 를 포함한 스택을 한 번에
+- **CI/CD Scripts** — Ruff · Mypy · Pytest 자동화
 
 ---
 
@@ -35,7 +50,11 @@
 ├── envs/               # 환경 변수 파일 관리
 │   ├── example.local.env   # 로컬 환경변수 예시 (버전 관리됨)
 │   └── example.prod.env    # 운영 환경변수 예시 (버전 관리됨)
-├── frontend/           # FE 정적 파일 (HTML·CSS·JS)
+├── frontend/           # 화면 — 빌드 없는 HTML·CSS·ES5 JS
+│   ├── *.html          # 화면 하나에 파일 하나 (login · patients · ocr-review · manage · settings …)
+│   ├── css/            # 화면별 + 공용(tokens · style · shell · blocks)
+│   ├── js/             # 화면 코드와 **순수 규칙 파일**(`*-rules.js` — 검사가 부른다)
+│   └── tests/          # `node --test` 계약 검사. 새 의존성 없이 돈다
 ├── infra/              # 인프라 설정 관련 디렉터리
 │   ├── docker/         # Docker Compose 설정 (운영용)
 │   └── nginx/          # Nginx 설정 파일 (리버스 프록시)
@@ -203,7 +222,7 @@ chmod +x scripts/certbot.sh
 제공된 스크립트를 사용하여 코드의 품질을 검증할 수 있습니다.
 
 ```bash
-# 테스트 실행
+# 서버 테스트
 ./scripts/ci/run_test.sh
 
 # 코드 포맷팅 확인 (Ruff)
@@ -213,6 +232,51 @@ chmod +x scripts/certbot.sh
 ./scripts/ci/check_mypy.sh
 ```
 
+**프런트엔드 검사**는 별도 도구 없이 Node 만으로 돈다.
+
+```bash
+TZ=Asia/Seoul node --test frontend/tests/*.test.js
+```
+
+> `TZ` 를 고정하는 이유: 러너 기본값이 `UTC` 라 그대로 두면 현지 시각 getter 와 UTC
+> getter 가 같은 값을 내서 **「오늘 날짜는 현지 기준이다」를 재는 검사가 아무것도
+> 확인하지 못한다.** CI 도 `Asia/Seoul` 로 고정한다.
+
+> 폴더가 아니라 **파일들**을 넘긴다. Node 22 부터 `--test` 의 위치 인자를 훑을 폴더가
+> 아니라 불러올 모듈로 보기 때문에, 폴더를 주면 `MODULE_NOT_FOUND` 로 죽는다.
+
+---
+
+## 🖥 화면
+
+**화면 정의의 정본은 와이어프레임이다** — [`docs/wireframes/`](docs/wireframes/README.md).
+화면 질문이 생기면 코드가 아니라 거기를 먼저 본다. 프레임마다 「왜 이렇게 생겼는가」가
+화면 옆에 적혀 있다.
+
+**지금 어디까지 됐는지는 화면 지도가 안다** — 띄운 뒤 <http://localhost/map.html>.
+64프레임을 수준(1 완전 · 2 일부 · 3 화면 없음)과 **무엇이 막고 있는지**로 적어 둔
+표다(`frontend/js/frames.js`). 이 표는 **지금 실제 상태**만 적는다 — 목표를 여기
+적지 않는다.
+
+| 화면 | 파일 | 프레임 |
+|---|---|---|
+| 로그인 · 비밀번호 | `login.html` · `password.html` | `L-1~3` |
+| 오늘 목록 · 환자 카드 · 안내문 | `patients.html` | `S1-1~5` · `S1-11~13` · `D1-1~7` |
+| 판독 결과 확인 | `ocr-review.html` | `S1-6~10` |
+| 관리 (환자 · 발송 예정 · 발송 이력) | `manage.html` | `S2-1~4` |
+| 설정 (안내문 · 처방 · 검사 기준선 · 문자 문구) | `settings.html` | `D2-1~5` |
+| 의사 승인 | `doctor.html` | `D1-*` |
+| 어드민 | `admin.html` | `A1-1~7` |
+| 환자 모바일 | `guide.html` · `checkin.html` | `P2~P7` |
+
+**화면 ID 는 팀 공용 이름이다.** 티켓·PR·버그 리포트에서 `S1-6` 처럼 부른다.
+
+### 목업으로 보기
+
+서버 없이 화면만 보려면 주소에 `?mock=1` 을 붙인다. 그 탭에서 유지되고, `?mock=0` 으로
+끈다. **목업은 서버보다 관대하지 않게 만든다** — 목업에서만 되는 화면은 붙이는 날
+조용히 빈다. 검사가 그 계약을 지킨다.
+
 ---
 
 ## 📝 개발 가이드
@@ -220,3 +284,6 @@ chmod +x scripts/certbot.sh
 - **API 추가**: `app/apis/v1/` 아래에 새로운 라우터 파일을 생성하고 `app/apis/v1/__init__.py`에 등록하세요.
 - **DB 모델 추가**: `app/models/`에 Tortoise 모델을 정의하고 `app/db/databases.py`의 `MODELS` 리스트에 추가하세요.
 - **AI 로직 추가**: `ai_worker/tasks/`에 새로운 처리 로직을 작성하고 `ai_worker/main.py`에서 호출하도록 구성하세요.
+- **화면 추가**: `frontend/` 에 HTML 하나와 `js/` 코드 하나. **셈하고 고르는 규칙은
+  IIFE 밖 `*-rules.js` 로 뺀다** — 안에 두면 검사가 못 부르고, 그 규칙이 틀렸을 때
+  브라우저에서 눈으로만 발견된다. 새 화면은 `frontend/js/frames.js` 의 수준도 함께 고친다.
