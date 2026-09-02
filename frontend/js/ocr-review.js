@@ -411,18 +411,44 @@ function stateTakesFocus(tone) {
       .join("");
   }
 
+  /* <img src> 는 Authorization 헤더를 보내지 못해 401 이 된다.
+     fetch 로 직접 받은 뒤 Blob URL 을 생성해 img 에 할당한다. */
+  var _docViewBlobUrl = null;
+
   function renderDocView() {
     if (!docView) return;
     if (!activeDoc) {
       docView.innerHTML = '<p class="doc-view__soon">문서를 선택하면 여기에 미리보기가 표시됩니다</p>';
       return;
     }
-    var src = "/api/v1/ocr/documents/" + encodeURIComponent(activeDoc) + "/image";
-    docView.innerHTML =
-      '<img class="doc-view__img" src="' +
-      src +
-      '" alt="문서 미리보기" ' +
-      'onerror="this.parentNode.innerHTML=\'<p class=&quot;doc-view__soon&quot;>원본 이미지가 삭제됐거나 불러올 수 없습니다</p>\'">';
+
+    docView.innerHTML = '<p class="doc-view__soon">불러오는 중…</p>';
+
+    if (_docViewBlobUrl) {
+      URL.revokeObjectURL(_docViewBlobUrl);
+      _docViewBlobUrl = null;
+    }
+
+    var token = session.token();
+    var headers = token ? { Authorization: "Bearer " + token } : {};
+    var url = "/api/v1/ocr/documents/" + encodeURIComponent(activeDoc) + "/image";
+
+    fetch(url, { headers: headers, credentials: "include" })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.status);
+        return res.blob();
+      })
+      .then(function (blob) {
+        _docViewBlobUrl = URL.createObjectURL(blob);
+        if (docView) {
+          docView.innerHTML = '<img class="doc-view__img" src="' + _docViewBlobUrl + '" alt="문서 미리보기">';
+        }
+      })
+      .catch(function () {
+        if (docView) {
+          docView.innerHTML = '<p class="doc-view__soon">원본 이미지가 삭제됐거나 불러올 수 없습니다</p>';
+        }
+      });
   }
 
   function renderRaw(highlightLine) {
