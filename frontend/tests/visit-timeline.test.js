@@ -7,6 +7,8 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { load } = require("./browser-shim");
 
 const plain = (v) => structuredClone(v);
@@ -122,20 +124,18 @@ test("timelineWhen — 글자에서 의원 시각을 읽는다, 옵셋으로 옮
 });
 
 test("이력 이름표가 서버 사건 어휘(TimelineEvent)를 다 덮는다", () => {
-  // app/dtos/visits.py 의 TimelineEvent 와 같은 목록 — 한쪽이 늘면 여기도 는다.
-  const EVENTS = [
-    "DOCUMENT_UPLOADED",
-    "OCR_STARTED",
-    "OCR_COMPLETED",
-    "OCR_FAILED",
-    "OCR_CONFIRMED",
-    "GUIDE_GENERATED",
-    "GUIDE_EDITED",
-    "GUIDE_APPROVED",
-    "GUIDE_RETURNED",
-    "CHECK_IN_SUBMITTED",
-  ];
-  for (const e of EVENTS) {
+  /* **목록을 손으로 옮기지 않는다** — 한 번 드리프트했다(#182 리뷰 3). 서버의
+     `TimelineEvent` 를 그대로 읽어, 값이 늘었는데 이름표를 안 더한 자리가 여기서
+     걸리게 한다. 이름표가 빠지면 화면에 `GUIDE_UNAPPROVED` 같은 코드가 그대로 뜬다. */
+  const py = fs.readFileSync(path.join(__dirname, "..", "..", "app", "dtos", "visits.py"), "utf8");
+  const enumBody = py.slice(
+    py.indexOf("class TimelineEvent(StrEnum):"),
+    py.indexOf("\nclass ", py.indexOf("class TimelineEvent(StrEnum):") + 1),
+  );
+  const events = [...enumBody.matchAll(/^ {4}([A-Z_]+) = "([A-Z_]+)"$/gm)].map((m) => m[2]);
+  assert.ok(events.length >= 15, `TimelineEvent 를 못 읽었다 — ${events.length}개`);
+
+  for (const e of events) {
     assert.equal(typeof detail.TIMELINE_EVENT_LABEL[e], "string", `${e} 이름표가 없다`);
     assert.ok(detail.TIMELINE_EVENT_LABEL[e].length > 0, `${e} 이름표가 비었다`);
   }
