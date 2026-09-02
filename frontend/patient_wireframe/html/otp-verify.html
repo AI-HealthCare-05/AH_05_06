@@ -78,12 +78,23 @@
     border-color: var(--p-dark);
     box-shadow: 0 0 0 2px rgba(120,50,100,.12);
   }
+  .otp-cell.error {
+    border-color: var(--danger);
+  }
 
   /* 타이머 */
   .otp-timer {
     font-size: 14px; font-weight: 600;
     color: var(--danger);
     margin-bottom: 8px;
+  }
+
+  /* 오류 메시지 */
+  .otp-error {
+    font-size: 13px;
+    color: var(--danger);
+    margin-bottom: 8px;
+    min-height: 18px;
   }
 
   /* 하단 */
@@ -120,15 +131,35 @@
     cursor: pointer;
   }
   .otp-resend__btn:disabled { color: var(--tx-muted); cursor: default; }
+
+  /* 세션 만료 화면 */
+  .status-screen {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    padding: 24px 0;
+  }
+  .status-icon { font-size: 48px; margin-bottom: 24px; }
+  .status-title { font-size: 22px; font-weight: 700; margin-bottom: 12px; line-height: 1.4; }
+  .status-desc { font-size: 15px; color: var(--tx-muted); line-height: 1.6; }
+  .status-btn {
+    margin-top: 32px; width: 100%; padding: 16px;
+    background: var(--p); border: none; border-radius: var(--r-btn);
+    font-family: var(--font); font-size: 17px; font-weight: 600;
+    color: var(--p-deep); cursor: pointer;
+  }
 </style>
 </head>
 <body>
 <div class="app">
-  <button type="button" class="back-btn" onclick="history.back()">‹</button>
+  <button type="button" class="back-btn" id="back-btn">‹</button>
 
-  <div class="otp-content">
+  <!-- 정상 입력 화면 -->
+  <div class="otp-content" id="view-verify">
     <h1 class="otp-title">인증번호를<br>넣어주세요</h1>
-    <p class="otp-sub">010-****-1234 로 보냈어요</p>
+    <p class="otp-sub" id="otp-sub">번호로 보냈어요</p>
 
     <div class="otp-cells" id="otp-cells">
       <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="one-time-code">
@@ -140,31 +171,94 @@
     </div>
 
     <div class="otp-timer" id="otp-timer">3분 00초 남았어요</div>
+    <div class="otp-error" id="otp-error" aria-live="polite"></div>
   </div>
 
-  <div class="otp-bottom">
+  <div class="otp-bottom" id="view-verify-btn">
     <button type="button" class="otp-confirm" id="otp-confirm" disabled>확인</button>
     <div class="otp-resend">
       <span>못 받으셨나요?</span>
       <button type="button" class="otp-resend__btn" id="resend-btn" disabled>다시 받기 (<span id="resend-timer">60</span>초)</button>
     </div>
   </div>
+
+  <!-- 세션 만료 화면 -->
+  <div class="status-screen" id="view-session-expired">
+    <div class="status-icon">🔒</div>
+    <p class="status-title">인증 시간이<br>만료됐어요</p>
+    <p class="status-desc">처음부터 다시 시도해 주세요.</p>
+    <button type="button" class="status-btn" id="btn-restart">처음으로 돌아가기</button>
+  </div>
+
+  <!-- 서버 오류 화면 -->
+  <div class="status-screen" id="view-error">
+    <div class="status-icon">⚠️</div>
+    <p class="status-title">일시적인 오류가<br>생겼어요</p>
+    <p class="status-desc">잠시 후 다시 시도해 주세요.</p>
+    <button type="button" class="status-btn" id="btn-error-retry">다시 시도</button>
+  </div>
 </div>
 
 <script>
 (function () {
+  var API_BASE = '/api/v1';
   var cells = Array.from(document.querySelectorAll('.otp-cell'));
   var confirmBtn = document.getElementById('otp-confirm');
   var timerEl = document.getElementById('otp-timer');
   var resendBtn = document.getElementById('resend-btn');
   var resendTimerEl = document.getElementById('resend-timer');
+  var errorEl = document.getElementById('otp-error');
+
+  /* URL 파라미터 읽기 — 토큰은 메모리에만 둔다 */
+  var params = new URLSearchParams(window.location.search);
+  var token = params.get('token') || '';
+  var expiresAt = params.get('expires_at') ? new Date(params.get('expires_at')) : null;
+  var retryAfterSeconds = parseInt(params.get('retry_after') || '60', 10);
+
+  document.getElementById('back-btn').addEventListener('click', function () {
+    window.location.href = 'otp.html' + (token ? '?token=' + encodeURIComponent(token) : '');
+  });
+
+  document.getElementById('btn-restart').addEventListener('click', function () {
+    window.location.href = 'otp.html' + (token ? '?token=' + encodeURIComponent(token) : '');
+  });
+
+  document.getElementById('btn-error-retry').addEventListener('click', function () {
+    window.location.reload();
+  });
+
+  function showView(id) {
+    ['view-verify', 'view-verify-btn', 'view-session-expired', 'view-error'].forEach(function (v) {
+      var el = document.getElementById(v);
+      if (!el) return;
+      if (v === id || (id === 'view-verify' && v === 'view-verify-btn')) {
+        el.style.display = 'flex';
+        if (v === 'view-verify') el.style.display = 'flex';
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  }
 
   /* ── 셀 입력 자동 이동 ── */
+  var expired = false;
+
+  function updateConfirm() {
+    var filled = cells.every(function (c) { return c.value.length === 1; });
+    confirmBtn.disabled = !filled || expired;
+  }
+
+  function clearError() {
+    errorEl.textContent = '';
+    cells.forEach(function (c) { c.classList.remove('error'); });
+  }
+
   cells.forEach(function (cell, i) {
     cell.addEventListener('input', function () {
       var val = cell.value.replace(/\D/g, '');
       cell.value = val.slice(-1);
       if (val && i < cells.length - 1) cells[i + 1].focus();
+      clearError();
       updateConfirm();
     });
     cell.addEventListener('keydown', function (e) {
@@ -186,44 +280,13 @@
     });
   });
 
-  var expired = false;
-
-  function updateConfirm() {
-    var filled = cells.every(function (c) { return c.value.length === 1; });
-    confirmBtn.disabled = !filled || expired;
-  }
-
-  /* ── 확인 버튼: OTP 검증 (와이어프레임 고정값 000000) ── */
-  confirmBtn.addEventListener('click', function () {
-    var entered = cells.map(function (c) { return c.value; }).join('');
-    if (entered === '000000') {
-      sessionStorage.setItem('otp_verified', '1');
-      location.href = 'guide.html';
-    } else {
-      cells.forEach(function (c) { c.value = ''; });
-      cells[0].focus();
-      confirmBtn.disabled = true;
-      var errEl = document.getElementById('otp-error');
-      if (!errEl) {
-        errEl = document.createElement('p');
-        errEl.id = 'otp-error';
-        errEl.style.cssText = 'font-size:13px;color:var(--danger);margin-top:8px;';
-        document.getElementById('otp-cells').after(errEl);
-      }
-      errEl.textContent = '인증번호가 올바르지 않아요. 다시 확인해 주세요.';
-    }
-  });
-
-  /* ── 인증 타이머 (3분) ── */
-  var remaining = 180;
+  /* ── 인증 타이머 (남은 시간 기반) ── */
   var timerInterval;
 
-  function startMainTimer() {
+  function startMainTimer(targetDate) {
     clearInterval(timerInterval);
-    remaining = 180;
-    timerEl.textContent = '3분 00초 남았어요';
     timerInterval = setInterval(function () {
-      remaining--;
+      var remaining = Math.max(0, Math.round((targetDate - Date.now()) / 1000));
       if (remaining <= 0) {
         clearInterval(timerInterval);
         timerEl.textContent = '시간이 만료되었어요';
@@ -237,27 +300,19 @@
     }, 1000);
   }
 
-  startMainTimer();
+  if (expiresAt) {
+    startMainTimer(expiresAt);
+  }
 
-  /* ── 다시 받기 쿨다운 (60초) ── */
-  var resendRemaining = 60;
-  var resendInterval = setInterval(function () {
-    resendRemaining--;
-    resendTimerEl.textContent = resendRemaining;
-    if (resendRemaining <= 0) {
-      clearInterval(resendInterval);
-      resendBtn.disabled = false;
-      resendBtn.textContent = '다시 받기';
-    }
-  }, 1000);
+  /* ── 다시 받기 쿨다운 ── */
+  var resendRemaining = retryAfterSeconds;
+  var resendInterval;
 
-  resendBtn.addEventListener('click', function () {
+  function startResendCooldown(seconds) {
+    resendRemaining = seconds;
     resendBtn.disabled = true;
-    resendRemaining = 60;
-    resendBtn.innerHTML = '다시 받기 (<span id="resend-timer">60</span>초)';
+    resendBtn.innerHTML = '다시 받기 (<span id="resend-timer">' + seconds + '</span>초)';
     resendTimerEl = document.getElementById('resend-timer');
-    expired = false;
-    startMainTimer();
     clearInterval(resendInterval);
     resendInterval = setInterval(function () {
       resendRemaining--;
@@ -268,9 +323,90 @@
         resendBtn.textContent = '다시 받기';
       }
     }, 1000);
-    cells.forEach(function (c) { c.value = ''; });
-    cells[0].focus();
-    updateConfirm();
+  }
+
+  startResendCooldown(retryAfterSeconds);
+
+  resendBtn.addEventListener('click', async function () {
+    if (!token) return;
+    resendBtn.disabled = true;
+    try {
+      var res = await fetch(API_BASE + '/patient-auth/otp/issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_token: token }),
+      });
+      if (res.ok) {
+        var data = await res.json();
+        expiresAt = new Date(data.expires_at);
+        startMainTimer(expiresAt);
+        startResendCooldown(data.retry_after_seconds || 60);
+        expired = false;
+        cells.forEach(function (c) { c.value = ''; });
+        cells[0].focus();
+        updateConfirm();
+        clearError();
+        return;
+      }
+      var body = {};
+      try { body = await res.json(); } catch (_) {}
+      if (body.code === 'OTP_RESEND_TOO_SOON') {
+        startResendCooldown(body.retry_after_seconds || 60);
+      } else if (body.code === 'LINK_EXPIRED') {
+        showView('view-session-expired');
+      } else {
+        errorEl.textContent = body.message || '재전송 중 오류가 생겼어요.';
+        resendBtn.disabled = false;
+      }
+    } catch (_) {
+      errorEl.textContent = '재전송 중 오류가 생겼어요. 잠시 후 다시 시도해 주세요.';
+      resendBtn.disabled = false;
+    }
+  });
+
+  /* ── OTP 검증 ── */
+  confirmBtn.addEventListener('click', async function () {
+    if (!token || expired) return;
+    var code = cells.map(function (c) { return c.value; }).join('');
+    confirmBtn.disabled = true;
+    clearError();
+
+    try {
+      var res = await fetch(API_BASE + '/patient-auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_token: token, code: code }),
+      });
+
+      if (res.ok) {
+        sessionStorage.setItem('otp_verified', '1');
+        window.location.replace('guide.html?t=' + encodeURIComponent(token));
+        return;
+      }
+
+      var body = {};
+      try { body = await res.json(); } catch (_) {}
+
+      if (body.code === 'PATIENT_SESSION_EXPIRED' || body.code === 'LINK_EXPIRED') {
+        showView('view-session-expired');
+        return;
+      }
+
+      cells.forEach(function (c) { c.value = ''; c.classList.add('error'); });
+      cells[0].focus();
+
+      var msg = body.message || '인증번호가 올바르지 않아요.';
+      if (body.remaining_attempts !== undefined) {
+        msg += ' (' + body.remaining_attempts + '회 남음)';
+      }
+      errorEl.textContent = msg;
+
+      if (body.code !== 'OTP_LOCKED') {
+        confirmBtn.disabled = false;
+      }
+    } catch (_) {
+      showView('view-error');
+    }
   });
 
   cells[0].focus();
