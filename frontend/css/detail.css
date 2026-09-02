@@ -212,7 +212,8 @@
 }
 
 /* 이번 진료의 시간순 이력(S1-4). 왼쪽에 시각, 오른쪽에 무슨 일이 있었는지.
-   갈래(문서·판독·안내문)는 왼쪽 색 띠로만 구분한다 — 글자는 한 줄로 읽힌다. */
+   갈래(문서·판독·안내문·D+7)는 왼쪽 색 띠로만 구분한다 — 글자는 한 줄로 읽힌다.
+   detail.js 의 TIMELINE_CATEGORY_MODIFIER 와 짝이다. */
 .timeline {
   list-style: none;
   margin: 0;
@@ -232,12 +233,21 @@
   border-bottom: 0;
 }
 
+.timeline__row--document {
+  border-left-color: var(--line-strong);
+}
+
 .timeline__row--ocr {
   border-left-color: var(--ink-3);
 }
 
 .timeline__row--guide {
   border-left-color: var(--accent);
+}
+
+/* D+7 응답은 환자가 남긴 것이다 — 병원이 한 일들과 다른 목소리라 눈에 걸려야 한다. */
+.timeline__row--check-in {
+  border-left-color: var(--warn);
 }
 
 .timeline__when {
