@@ -31,3 +31,11 @@ test('목록 행은 관리자 상세 API를 호출하고 상세 실패를 별도
   assert.match(screen, /상세 내용을 불러오지 못했습니다/);
   assert.match(screen, /event\.key !== 'Enter' && event\.key !== ' '/);
 });
+
+test('범위를 벗어난 페이지는 마지막 유효 페이지로 다시 조회한다', () => {
+  const screen = read('js/admin-feedback.js');
+
+  assert.match(screen, /state\.page > lastPage/);
+  assert.match(screen, /state\.page = lastPage/);
+  assert.match(screen, /return loadFeedback\(\)/);
+});

@@ -145,6 +145,37 @@ class TestGuideFeedbackSubmission(PatientFeedbackApiTestCase):
         assert response.json()["code"] == "INVALID_REQUEST"
         assert await PatientFeedback.all().count() == 0
 
+    async def test_chatbot_feedback_from_p9_is_rejected(self) -> None:
+        await self.approved()
+        payload = {
+            "submission_id": str(uuid4()),
+            "target": "CHATBOT_RESPONSE",
+            "source_screen": "P9",
+            "category": "HELPFUL",
+            "response_ref": RESPONSE_REF,
+        }
+
+        async with await self.client() as client:
+            response = await client.post("/api/v1/patient-feedback", json=payload)
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "INVALID_REQUEST"
+        assert await PatientFeedback.all().count() == 0
+
+    async def test_guide_feedback_from_p6_is_rejected(self) -> None:
+        await self.approved()
+        payload = {
+            **self.guide_payload(),
+            "source_screen": "P6",
+        }
+
+        async with await self.client() as client:
+            response = await client.post("/api/v1/patient-feedback", json=payload)
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "INVALID_REQUEST"
+        assert await PatientFeedback.all().count() == 0
+
 
 class TestChatbotFeedbackReference(PatientFeedbackApiTestCase):
     async def test_response_reference_can_only_select_an_event_from_the_session_guide(self) -> None:

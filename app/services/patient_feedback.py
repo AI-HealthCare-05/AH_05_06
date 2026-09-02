@@ -7,6 +7,7 @@ from tortoise.timezone import now
 
 from app.core.api_errors import ApiError
 from app.core.rbac import Permission, has_permission
+from app.core.time import as_utc
 from app.dependencies.staff_auth import StaffActor
 from app.dtos.patient_feedback import (
     AdminPatientFeedbackDetailResponse,
@@ -67,19 +68,18 @@ class PatientFeedbackService:
                 idempotency_digest=idempotency_digest,
             )
         except IntegrityError:
-            # A network retry can race the first request. The unique constraint
-            # decides the winner; the loser returns that same row only when the
-            # submitted content is identical.
-            existing = await PatientFeedback.get(
+            existing = await PatientFeedback.filter(
                 guide_document_id=guide.guide_document_id,
                 idempotency_digest=idempotency_digest,
-            )
+            ).first()
+            if existing is None:
+                raise
             return self._same_or_conflict(existing, data, usage_event_id)
 
     @staticmethod
     async def _approved_guide(link_digest: str) -> GuideDocument:
         link = await PatientGuideLink.filter(token_digest=link_digest).select_related("guide_document").first()
-        if link is None or link.expires_at <= now():
+        if link is None or as_utc(link.expires_at) <= as_utc(now()):
             raise _not_found()
         guide = link.guide_document
         if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:

@@ -67,6 +67,14 @@
       status.hidden = data.items.length > 0;
       wrap.hidden = data.items.length === 0;
       var lastPage = Math.max(1, Math.ceil(data.total / state.pageSize));
+      if (
+        data.items.length === 0 &&
+        data.total > 0 &&
+        state.page > lastPage
+      ) {
+        state.page = lastPage;
+        return loadFeedback();
+      }
       document.getElementById('page-label').textContent = state.page + ' / ' + lastPage;
       document.getElementById('page-prev').disabled = state.page <= 1;
       document.getElementById('page-next').disabled = state.page >= lastPage;
