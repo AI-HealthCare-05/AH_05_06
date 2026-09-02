@@ -911,12 +911,19 @@ function stateTakesFocus(tone) {
     var note = setsMissingSaying(sets, setsFailed);
 
     if (note) {
-      return (
-        '<div class="top__note">' +
-        escapeHtml(note) +
-        "</div>" +
-        (readName ? '<div class="top__read">판독: ' + escapeHtml(readName) + "</div>" : "")
-      );
+      /* 판독된 약품명이 있으면 그것을 처방 칸에 크게 보인다.
+         세트 로드 실패 메시지는 아래 곁말로 내린다. */
+      if (readName) {
+        return (
+          '<div class="top__pick top__pick--static">' +
+          escapeHtml(readName) +
+          "</div>" +
+          '<div class="top__read">' +
+          escapeHtml(note) +
+          "</div>"
+        );
+      }
+      return '<div class="top__note">' + escapeHtml(note) + "</div>";
     }
 
     var options = sets
