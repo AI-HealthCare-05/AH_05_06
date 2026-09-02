@@ -206,7 +206,9 @@ function mockGuideBase(visitId) {
         ? "APPROVAL_RETURNED"
         : DOCTOR_CASE === "approved"
           ? "SCHEDULED_TO_SEND"
-          : "APPROVAL_PENDING",
+          : DOCTOR_CASE === "staff"
+            ? "STAFF_REVIEW"
+            : "APPROVAL_PENDING",
     version: 3,
     approved_at: DOCTOR_CASE === "approved" ? mockScheduledAt() : null,
     scheduled_at: DOCTOR_CASE === "approved" ? mockScheduledAt() : null,
@@ -393,7 +395,7 @@ function mockDoctorRequest(path, options) {
          **「없는 섹션」 검사가 섹션 조회에 닿지도 못했다.**
          `/sections/` 를 요구하므로 approve·return 경로를 삼키지는 않는다. */
       var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
-      var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return|unapprove)$/);
+      var act = path.match(/^\/visits\/(\d+)\/guide\/(submit|approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
       var msgs = path.match(/^\/visits\/(\d+)\/guide\/messages$/);
       var m = get || sec || act || issueLink || msgs;
@@ -416,6 +418,20 @@ function mockDoctorRequest(path, options) {
           expires_at: "2026-08-31T18:00:00+09:00",
           demo_only: true,
         });
+      }
+
+      if (options.method === "POST" && /\/submit$/.test(path)) {
+        var submitted = mockGuide(visitId);
+        if (!submitted) return reject(mockNoGuide());
+        if (submitted.status !== "STAFF_REVIEW" && submitted.status !== "APPROVAL_RETURNED") {
+          return reject(new ApiError("GUIDE_NOT_IN_REVIEW", 409, {}));
+        }
+        submitted.status = "APPROVAL_PENDING";
+        submitted.returned_reason = null;
+        var submittedState = mockGuideState(visitId);
+        submittedState.status = submitted.status;
+        submittedState.returned_reason = null;
+        return resolve(submitted);
       }
 
       if (options.method === "POST" && /\/approve$/.test(path)) {
@@ -492,7 +508,6 @@ function mockDoctorRequest(path, options) {
       }
 
       if (options.method === "PATCH") {
-        if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
         if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
 
         var guide = mockGuide(visitId);
@@ -524,17 +539,24 @@ function mockDoctorRequest(path, options) {
            (`app/services/guides.py`). */
         if (target.locked) return reject(new ApiError("SECTION_LOCKED", 409, {}));
 
-        /* **승인 요청 상태에서만 고칠 수 있다.** 이미 승인해 발송을 기다리는
-           글을 조용히 바꾸면 환자가 받는 것과 의사가 승인한 것이 달라진다.
-           반려된 글도 스탭 손에 있어 의사가 고칠 자리가 아니다 — 서버가
-           `GUIDE_NOT_PENDING` 409 로 막는다.
+        /* **상태와 역할을 함께 본다.** 스탭 확인·반려 상태에서는 스탭과
+           의사가 고칠 수 있고, 승인 요청 뒤에는 의사만 고친다. 이미 승인해
+           발송을 기다리는 글을 조용히 바꾸면 환자가 받는 것과 의사가 승인한
+           것이 달라진다.
 
            `mockPendingBlock()` 을 쓰지 않는 이유: 서버 `edit_section()` 은
            `_require_pending()` 을 부르지 않고, 승인된 글도 `ALREADY_APPROVED`
            가 아니라 `GUIDE_NOT_PENDING` 으로 막는다 — 그리고 잠금을 상태보다
            먼저 보므로 위 `SECTION_LOCKED` 검사가 이 검사보다 앞서야 한다. */
-        if (guide.status !== "APPROVAL_PENDING") {
+        if (
+          guide.status !== "STAFF_REVIEW" &&
+          guide.status !== "APPROVAL_PENDING" &&
+          guide.status !== "APPROVAL_RETURNED"
+        ) {
           return reject(new ApiError("GUIDE_NOT_PENDING", 409, {}));
+        }
+        if (guide.status === "APPROVAL_PENDING" && !mockIsDoctor()) {
+          return reject(new ApiError("FORBIDDEN", 403, {}));
         }
 
         /* 저장한다 — 안 해두면 다음 `GET /guide` 가 고치기 전 본문을 다시
