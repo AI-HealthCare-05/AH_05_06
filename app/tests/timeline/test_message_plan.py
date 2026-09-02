@@ -297,6 +297,7 @@ class HeldTestCase(World, TestCase):
 
     async def test_the_timeline_carries_both(self) -> None:
         """화면이 그릴 수 있게 두 칸을 **함께** 내려 준다."""
+        from app.dependencies.patient_access import ClinicalActor
         from app.models.visits import GuideMessageHold, GuideMessageStatus
         from app.services.visit_timeline import VisitTimelineService
 
@@ -308,7 +309,11 @@ class HeldTestCase(World, TestCase):
         row.hold_reason = GuideMessageHold.INVALID_PHONE
         await row.save(update_fields=["status", "hold_reason"])
 
-        seen = await VisitTimelineService().timeline(actor, visit.visit_id)
+        # `World` 의 가짜 액터는 `user_id` 를 쓴다 — 라우터를 안 거치고 규칙만
+        # 재려고 만든 것이라 서비스가 보는 것만 흉내낸다. 이력 서비스는
+        # `ClinicalActor` 를 요구하므로 여기서 옮겨 준다.
+        who = ClinicalActor(staff_id=actor.user_id, hospital_id=actor.hospital_id, roles=actor.roles)
+        seen = await VisitTimelineService().timeline(who, visit.visit_id)
         held = [m for m in seen.messages if m.status == "HELD"]
         assert held, "보류 줄이 화면까지 안 간다"
         assert held[0].hold_reason == "INVALID_PHONE", "사유가 안 간다 — 화면이 「보류」로만 적는다"
