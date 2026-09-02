@@ -108,7 +108,7 @@ var RETURN_REASONS = [
  * 자궁내막증 · 비잔 2mg · 84일.
  *
  * ?case= 로 다른 상황을 본다.
- *   staff     스탭 계정으로 본 화면 — 승인·되돌리기가 잠긴다
+ *   staff     스탭 확인 중(STAFF_REVIEW) 화면 — 승인·되돌리기가 잠긴다
  *   returned  이미 되돌린 건
  *   clean     ⚠ 가 하나도 없는 건 — 읽지 않고 승인해도 되는 상태
  *   approved  승인 완료 건 — 개발용 환자 화면 연결을 확인하는 상태
