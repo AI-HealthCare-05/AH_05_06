@@ -93,7 +93,7 @@ test("문자 발송 사건은 아직 이력에 없다 — 발송 이력 모델�
    IIFE 밖으로 옮겨 둔(KEY-158) 이름표·되돌림·시각 함수만 잰다. 서버가
    TimelineEvent 를 늘렸을 때 이름표가 빠지면 화면에 코드가 그대로 뜨므로,
    여기서 어휘를 못박는다. */
-const detail = load("api", "session", "patients-api", "shell", "patients", "detail");
+const detail = load("api", "session", "clinic-clock", "patients-api", "shell", "patients", "detail");
 
 test("timelineDetail — 문서 업로드는 종류 이름표, 모르면 원값·빈값", () => {
   assert.equal(detail.timelineDetail({ event: "DOCUMENT_UPLOADED", document_type: "PRESCRIPTION" }), "처방전");
@@ -111,9 +111,12 @@ test("timelineDetail — 안내문 수정은 갈래 이름표, 그 밖은 note �
   assert.equal(detail.timelineDetail({ event: "OCR_STARTED" }), "");
 });
 
-test("timelineWhen — ISO 앞부분(분까지)만, 못 읽으면 원문", () => {
+test("timelineWhen — 글자에서 의원 시각을 읽는다, 옵셋으로 옮기지 않는다 (#182 리뷰 9)", () => {
   assert.equal(detail.timelineWhen("2026-08-20T01:05:00+09:00"), "2026-08-20 01:05");
+  /* `Z`·다른 옵셋이 와도 글자 그대로 읽는다 — `new Date()` 로 감싸 보는 사람의
+     시간대로 옮기면 같은 진료가 사람마다 다른 시각으로 보인다. clinic-clock 규칙. */
   assert.equal(detail.timelineWhen("2026-08-20T01:05:00Z"), "2026-08-20 01:05");
+  assert.equal(detail.timelineWhen("2026-08-20T01:05:00-05:00"), "2026-08-20 01:05");
   assert.equal(detail.timelineWhen(""), "");
   assert.equal(detail.timelineWhen("nonsense"), "nonsense");
 });

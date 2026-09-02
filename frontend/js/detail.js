@@ -83,9 +83,15 @@ var TIMELINE_CATEGORY_MODIFIER = {
   PATIENT: "patient",
 };
 
+/* 이력 줄의 시각. **의원 시각을 글자에서 그대로 읽는다** — 서버가 이미
+   `+09:00` 을 붙여 의원 시각으로 보내므로 `new Date()` 로 감싸 옮기면 보는
+   사람의 시간대로 어긋난다(이 저장소가 정확히 이 부류로 크게 데었다). 규칙은
+   `js/clinic-clock.js` 가 갖는다 — 직렬화가 `Z` 로 바뀌는 날 고칠 자리도
+   거기 한 곳이고, 시간대를 바꿔 가며 재는 검사도 그쪽에 있다 (#182 리뷰 9). */
 function timelineWhen(iso) {
-  var m = String(iso || "").match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
-  return m ? m[1] + " " + m[2] : String(iso || "");
+  var day = clinicDay(iso);
+  var time = clinicTime(iso);
+  return day && time ? day + " " + time : String(iso || "");
 }
 
 /* 사건마다 붙는 한 조각 부연 — 어떤 문서였나, 어느 갈래를 고쳤나, 왜 반려됐나.
