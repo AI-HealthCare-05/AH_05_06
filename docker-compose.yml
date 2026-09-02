@@ -1,3 +1,23 @@
+# **평소에는 셋만 뜬다** — KEY-194.
+#
+# 프로필이 없던 때는 `docker compose up` 이 여섯을 통째로 띄웠다. OCR 픽스처와
+# 무관한 사람도 MinIO 컨테이너와 헬스체크를 매번 함께 띄웠고, 처음 발견한 것도
+# 그 자리다 (이희진 님 `#149` ⑧).
+#
+#     기본 (프로필 없음)   redis · mysql · fastapi     앱을 고치는 데 필요한 최소
+#     --profile web        + nginx                     브라우저로 화면을 볼 때
+#     --profile ocr        + ai-worker · minio         OCR 을 돌려 볼 때
+#
+# 둘 다 주면 예전과 같이 여섯이 전부 뜬다.
+#
+#     docker compose --profile web --profile ocr up -d
+#
+# **walking skeleton smoke 와 종단 검사는 둘 다 줘야 한다.** 화면과 OCR 을 모두
+# 지나가기 때문이다. KEY-191 합성 EMR 픽스처가 MinIO 에 있어서, 그 픽스처를 쓰는
+# 검사도 `ocr` 이 필요하다.
+#
+# **운영(`infra/docker/docker-compose.prod.yml`)에는 넣지 않는다.** 거기서는 항상
+# 전부 떠야 하고, 프로필을 안 준 배포가 조용히 절반만 띄우는 사고가 난다.
 services:
   # 1. Redis (메시지 브로커 및 캐싱)
   redis:
@@ -74,6 +94,7 @@ services:
 
   # 4. AI Worker (Model 학습 및 추론)
   ai-worker:
+    profiles: [ ocr ]  # KEY-194 — OCR 을 볼 때만 필요하다
     container_name: ai-worker
     build:
       context: .  # 프로젝트 루트를 빌드 컨텍스트로 지정
@@ -101,6 +122,7 @@ services:
 
   # 5. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
   nginx:
+    profiles: [ web ]  # KEY-194 — 브라우저로 볼 때만 필요하다
     container_name: nginx
     image: nginx:latest
     volumes:
@@ -125,6 +147,7 @@ services:
   # 태그를 digest 까지 박는다 — 이 저장소가 KEY-190 에서 정한 방식이다.
   # 「누가 언제 올려도 같은 것」이 이 서비스의 존재 이유라 판이 흔들리면 안 된다.
   minio:
+    profiles: [ ocr ]  # KEY-194 — 합성 EMR 이미지 보관, OCR 과 함께 쓴다
     container_name: minio
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
     restart: always
