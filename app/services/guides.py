@@ -28,7 +28,7 @@ from app.core import config
 # 병합되면 이 import 만 갈아 끼우면 된다. 지금 같은 파일을 새로 만들면
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
-from app.models.catalog import CautionSectionKey
+from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription
 from app.models.visits import (
@@ -149,6 +149,28 @@ class GuideService:
         caution_content = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.CAUTION)
         emergency_content = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.EMERGENCY)
 
+        # KEY-243: **의사가 고친 문구가 있으면 그것이 이긴다.**
+        #
+        # D2-2 「안내문 고치기」가 `DoctorGuideCopy` 에 저장하는데, 여기서 읽지
+        # 않고 있었다 — 의사가 고쳐도 환자에게는 원본이 나갔다. 고칠 수 있게
+        # 해 놓고 반영하지 않는 것이 제일 나쁘다: 의사는 고쳤다고 믿는다.
+        #
+        # **담당 의사가 먼저다**(`visit.doctor_id`) — 그 글은 담당 의사 이름으로
+        # 환자에게 간다. 담당이 고쳐 둔 것이 없으면 **안내문을 만든 사람**의
+        # 문구로 내려간다.
+        #
+        # 만든 사람까지 보는 것은 2026-09-02 회의에서 설정 수정을 스탭에게
+        # 열었기 때문이다. 그 전에는 스탭이 고칠 수 없었으니 볼 이유가 없었다.
+        # 지금은 안 보면 **스탭이 고쳐도 아무 환자에게도 안 나간다** — 고칠 수
+        # 있게 해 놓고 반영하지 않는 것이 이 티켓(KEY-243)이 고치는 바로 그
+        # 잘못이라, 같은 잘못을 스탭 쪽에 새로 만들지 않는다.
+        #
+        # 담당이 이기는 차례를 지키는 이유: 안내문에 이름이 실리는 사람이
+        # 담당 의사다. 만든 사람이 이기면 스탭이 의사 문구를 덮게 된다.
+        doctor_copy = await self._doctor_copy(actor.hospital_id, visit.doctor_id, set_name)
+        if doctor_copy is None:
+            doctor_copy = await self._doctor_copy(actor.hospital_id, actor.user_id, set_name)
+
         async with in_transaction() as connection:
             # Visit 행을 잠근 채로 중복을 확인하고 생성한다.
             # 잠금 밖에서 exists()→create() 하면 동시 요청이 둘 다 통과해
@@ -193,10 +215,19 @@ class GuideService:
             #
             # KEY-165: 처방 세트별 승인 문구가 있으면 그것을 쓴다. 없으면 폴백.
             # caution 은 의사가 고칠 수 있어 locked=False, emergency 는 locked=True.
+            # 이기는 차례: 의사가 고친 문구 → 세트별 승인 문구 → 범용 폴백.
+            #
+            # `drug_caution_content_id` 는 **원본을 가리킨 채로 둔다.** 의사가
+            # 고쳤어도 그 글이 어느 승인 문구에서 나왔는지는 남아야 한다 —
+            # 나중에 원본이 개정되면 무엇을 다시 봐야 하는지 알 수 있다.
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.CAUTION,
-                generated_body=caution_content.body if caution_content else _CAUTION_FALLBACK,
+                generated_body=(
+                    doctor_copy
+                    if doctor_copy is not None
+                    else (caution_content.body if caution_content else _CAUTION_FALLBACK)
+                ),
                 drug_caution_content_id=(caution_content.drug_caution_content_id if caution_content else None),
                 using_db=connection,
             )
@@ -789,6 +820,41 @@ class GuideService:
         return guide
 
     # ── 규칙 ────────────────────────────────────────────
+
+    @staticmethod
+    async def _doctor_copy(hospital_id: int, doctor_id: int | None, set_name: str | None) -> str | None:
+        """이 진료의 담당 의사가 이 처방에 대해 고쳐 둔 주의사항 문구.
+
+        없으면 `None` — 부르는 쪽이 세트별 승인 문구로, 그것도 없으면 범용
+        폴백으로 내려간다.
+
+        **`caution` 하나만 본다.** `guide_copy.py` 의 `EDITABLE_SECTIONS` 가
+        그렇게 정해 두었다. `emergency` 는 `locked=True` 이고 사람이 못
+        고치는 글인데(KEY-150), 여기서 갈래를 넓혀 두면 나중에 그 표에 행이
+        생기는 날 **응급 문장이 조용히 바뀐다.** 고칠 수 있는 것만 읽는다.
+
+        **이름으로 세트를 찾는다.** `Prescription.prescription_set` 은
+        스냅샷 문자열이고(KEY-137) `DoctorGuideCopy` 는 세트를 번호로 가리켜
+        서다. `DrugCautionService.get_approved_content` 와 같은 길이다 —
+        한쪽만 다른 방식으로 찾으면 「승인 문구는 붙었는데 의사 문구는 안
+        붙는」 세트가 생긴다.
+
+        트랜잭션 밖에서 읽는다. 락 보유 시간을 늘릴 이유가 없다.
+        """
+        if not set_name or doctor_id is None:
+            return None
+
+        prescription_set = await PrescriptionSet.filter(name=set_name).first()
+        if prescription_set is None:
+            return None
+
+        copy = await DoctorGuideCopy.filter(
+            hospital_id=hospital_id,
+            doctor_id=doctor_id,
+            prescription_set_id=prescription_set.prescription_set_id,
+            section_key=CautionSectionKey.CAUTION,
+        ).first()
+        return copy.body if copy else None
 
     @staticmethod
     def _require_staff_or_doctor(actor, subject: str = "안내 생성은") -> None:
