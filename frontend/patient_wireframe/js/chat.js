@@ -1,5 +1,9 @@
 /* 챗봇 오버레이 — FAB → 하단 패널 */
 (function () {
+  /* P6 실제 API 연결은 KEY-241 범위 밖이다. 실제 화면에서 목업 답변을
+     진짜 의료 안내처럼 보여 주지 않고, ?mock=1 미리보기에서만 연다. */
+  if (typeof GUIDE_MOCK === 'undefined' || !GUIDE_MOCK) return;
+
   var SUGGESTIONS = [
     '약 먹는 시간을 바꿔도 되나요?',
     '부정출혈이 계속돼요',
@@ -167,7 +171,7 @@
         }
         var contact = document.createElement('button');
         contact.type = 'button'; contact.className = 'chat-contact';
-        contact.innerHTML = '<img src="../assets/chat_bot.png" alt="" class="chat-contact__icon" aria-hidden="true"> 문의하기';
+        contact.innerHTML = '<img src="/patient_wireframe/assets/chat_bot.png" alt="" class="chat-contact__icon" aria-hidden="true"> 문의하기';
         contact.addEventListener('click', function () {
           alert('문의 창구는 병원 설정에서 연결됩니다.');
         });
