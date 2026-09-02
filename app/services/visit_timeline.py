@@ -76,10 +76,13 @@ class VisitTimelineService:
                     actor_id=job.requested_by,
                 )
             )
-            if job.status == OcrJobStatus.COMPLETED and job.completed_at is not None:
+            if job.status == OcrJobStatus.COMPLETED:
+                # completed_at 은 null 가능(app/models/ocr.py). 실패 쪽과 같은
+                # 규칙으로 updated_at 을 대비값으로 쓴다 — 없으면 완료 사건이
+                # 조용히 빠져 판독이 아직 도는 것처럼 읽힌다.
                 entries.append(
                     VisitTimelineEntry(
-                        at=job.completed_at,
+                        at=job.completed_at or job.updated_at,
                         category=TimelineCategory.OCR,
                         event=TimelineEvent.OCR_COMPLETED,
                     )
@@ -119,17 +122,24 @@ class VisitTimelineService:
         if guide is None:
             return []
 
-        entries: list[VisitTimelineEntry] = [
-            VisitTimelineEntry(
-                at=event.created_at,
-                category=TimelineCategory.GUIDE,
-                event=_GUIDE_EVENT_NAME[event.event_type],
-                actor_id=event.actor_id,
-                section_key=event.section_key,
-                note=event.reason,
+        entries: list[VisitTimelineEntry] = []
+        for event in await GuideEvent.filter(guide_document_id=guide.guide_document_id).order_by("created_at"):
+            name = _GUIDE_EVENT_NAME.get(event.event_type)
+            if name is None:
+                # 이름표 없는 사건 종류는 건너뛴다 — GuideEventType 이 늘 때마다
+                # (예: SUBMITTED·UNAPPROVED) 이력 한 줄 때문에 패널 전체가 500 이
+                # 되지 않도록. 새 사건을 보이려면 _GUIDE_EVENT_NAME 에 값을 더한다.
+                continue
+            entries.append(
+                VisitTimelineEntry(
+                    at=event.created_at,
+                    category=TimelineCategory.GUIDE,
+                    event=name,
+                    actor_id=event.actor_id,
+                    section_key=event.section_key,
+                    note=event.reason,
+                )
             )
-            for event in await GuideEvent.filter(guide_document_id=guide.guide_document_id).order_by("created_at")
-        ]
 
         check_in = await CheckIn.get_or_none(guide_document_id=guide.guide_document_id)
         if check_in is not None:
