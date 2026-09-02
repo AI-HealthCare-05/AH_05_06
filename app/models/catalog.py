@@ -22,6 +22,8 @@ from enum import StrEnum
 from tortoise import fields, models
 from tortoise.fields import OnDelete
 
+from app.models.visits import VisitCheckKey
+
 
 class SourceGrade(StrEnum):
     """근거 자료 등급 — Notion '의학지식 출처 관리' DB 기준(KEY-180 §2).
@@ -74,9 +76,44 @@ class PrescriptionSet(models.Model):
     updated_at = fields.DatetimeField(auto_now=True)
 
     caution_contents: fields.ReverseRelation["DrugCautionContent"]
+    check_items: fields.ReverseRelation["PrescriptionCheckItem"]
 
     class Meta:
         table = "prescription_set"
+
+
+class PrescriptionCheckItem(models.Model):
+    """처방 세트가 여쭙는 확인 항목 — 와이어프레임 S1-6 「확인 항목 · 처방별」.
+
+    **무엇을 여쭐지는 처방이 정한다.** 비잔이면 우울증 병력을 묻고, 야즈면
+    고혈압을 묻는다 — 약마다 조심할 것이 다르기 때문이다. 전에는 다섯을 모든
+    진료에 똑같이 세웠는데, 그러면 안 물어도 될 것을 묻게 되고 물어야 할 것이
+    빠져도 아무도 모른다.
+
+    답은 진료에 붙는다(`VisitCheckAnswer`). 이 표는 **질문지**이고 저 표는
+    **답안지**다 — 질문이 바뀌어도 지난 답은 그대로 남는다.
+
+    `position` 은 화면 차례다. 이름순으로 세우면 「임신 계획」이 맨 앞에 오는
+    식으로 물어보는 순서가 뒤집힌다.
+    """
+
+    prescription_check_item_id = fields.BigIntField(primary_key=True)
+    prescription_set_id: int
+    prescription_set: fields.ForeignKeyRelation[PrescriptionSet] = fields.ForeignKeyField(
+        "models.PrescriptionSet",
+        related_name="check_items",
+        on_delete=OnDelete.CASCADE,
+        source_field="prescription_set_id",
+    )
+    item_key = fields.CharEnumField(enum_type=VisitCheckKey)
+    position = fields.SmallIntField(default=0)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "prescription_check_item"
+        unique_together = (("prescription_set", "item_key"),)
 
 
 class DrugCautionContent(models.Model):

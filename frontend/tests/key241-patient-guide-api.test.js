@@ -431,16 +431,26 @@ test('P2~P5 렌더러가 v3 진행률·빈 목표·부분 펼침·승인 시각 
   assert.doesNotMatch(FOOTER_SOURCE, /생성 ·/);
 });
 
-test('OTP 왕복 중 목업 선택과 guide token은 저장소가 아닌 안전한 URL 조각으로 이어진다', () => {
+test('KEY-219 실제 OTP 왕복을 보존하고 고정 OTP 우회는 명시적 목업에만 둔다', () => {
   assert.match(GUIDE_SOURCE, /function otpEntryUrl\(\)/);
   assert.match(GUIDE_SOURCE, /safeFragment\.set\('t', token\)/);
   assert.match(GUIDE_SOURCE, /GUIDE_MOCK && !sessionStorage\.getItem\('otp_verified'\)/);
   assert.match(GUIDE_SOURCE, /location\.replace\(otpEntryUrl\(\)\)/);
   assert.doesNotMatch(GUIDE_SOURCE, /sessionStorage\.setItem\([^\n]*token/i);
 
-  assert.match(OTP_SOURCE, /otp-verify\.html' \+ location\.search \+ location\.hash/);
+  assert.match(OTP_SOURCE, /\/patient-auth\/session\?link_token=/);
+  assert.match(OTP_SOURCE, /\/patient-auth\/context/);
+  assert.match(OTP_SOURCE, /\/patient-auth\/otp\/issue/);
+  assert.match(OTP_SOURCE, /if \(isMock\)/);
+  assert.match(OTP_SOURCE, /function mockVerifyUrl\(token\)/);
+  assert.match(OTP_SOURCE, /\/guide\.html#t=/);
+
   assert.match(OTP_VERIFY_SOURCE, /function guideReturnUrl\(\)/);
   assert.match(OTP_VERIFY_SOURCE, /return '\/guide\.html'/);
   assert.match(OTP_VERIFY_SOURCE, /safeFragment\.set\('t', token\)/);
+  assert.match(OTP_VERIFY_SOURCE, /\/patient-auth\/otp\/verify/);
+  assert.match(OTP_VERIFY_SOURCE, /if \(isMock\)[\s\S]*code === '000000'/);
+  assert.match(OTP_VERIFY_SOURCE, /if \(res\.ok\) \{[\s\S]*window\.location\.replace\('\/guide\.html#t='/);
+  assert.equal((OTP_VERIFY_SOURCE.match(/sessionStorage\.setItem\('otp_verified'/g) || []).length, 1);
   assert.doesNotMatch(OTP_VERIFY_SOURCE, /sessionStorage\.setItem\([^\n]*(?:token|visit)/i);
 });

@@ -115,6 +115,7 @@
     transition: opacity .15s;
   }
   .otp-btn:hover { opacity: .88; }
+  .otp-btn:disabled { opacity: .5; cursor: default; }
 
   .otp-change {
     background: none; border: none;
@@ -123,43 +124,300 @@
     cursor: pointer;
     text-decoration: none;
   }
+
+  /* 상태 화면 — 만료·폐기·오류 */
+  .status-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    padding: 24px 0;
+    display: none;
+  }
+  .status-icon {
+    font-size: 48px;
+    margin-bottom: 24px;
+  }
+  .status-title {
+    font-size: 22px; font-weight: 700;
+    margin-bottom: 12px;
+    line-height: 1.4;
+  }
+  .status-desc {
+    font-size: 15px; color: var(--tx-muted);
+    line-height: 1.6;
+  }
+  .status-btn {
+    margin-top: 32px;
+    width: 100%;
+    padding: 16px;
+    background: var(--p);
+    border: none; border-radius: var(--r-btn);
+    font-family: var(--font);
+    font-size: 17px; font-weight: 600;
+    color: var(--p-deep);
+    cursor: pointer;
+  }
+  .status-btn:disabled { opacity: .5; cursor: default; }
+  .status-msg {
+    margin-top: 16px;
+    font-size: 14px; color: var(--tx-muted);
+  }
+
+  /* 로딩 */
+  .loading-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--p-dark);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 
-<div class="app">
-  <div class="otp-top">
+<div class="app" id="app">
+  <!-- 로딩 -->
+  <div class="loading-wrap" id="view-loading">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- 정상 화면 -->
+  <div class="otp-top" id="view-normal" style="display:none">
     <div class="otp-logo">
       <span class="otp-logo__icon">
         <img src="../assets/logo.png" alt="" aria-hidden="true" onerror="this.parentElement.textContent='+'">
       </span>
       <div class="otp-logo__info">
         <span class="otp-logo__name">케어온</span>
-        <span class="otp-logo__sub">여성의원 · 2026.08.13 진료</span>
+        <span class="otp-logo__sub" id="ctx-hospital-date">병원 · 진료일</span>
       </div>
     </div>
 
     <h1 class="otp-title">본인 확인이<br>필요해요</h1>
-    <p class="otp-sub">2026년 8월 13일 진료 안내입니다</p>
+    <p class="otp-sub" id="ctx-visit-desc">진료 안내입니다</p>
 
     <div class="otp-phone-card">
-      <div class="otp-phone-card__number">010-****-1234</div>
+      <div class="otp-phone-card__number" id="ctx-phone">010-****-****</div>
       <div class="otp-phone-card__hint">이 번호로 인증번호를 보내드려요</div>
     </div>
   </div>
 
-  <div class="otp-bottom">
-    <button type="button" class="otp-btn" id="otp-request">인증번호 받기</button>
+  <!-- 정상 하단 버튼 -->
+  <div class="otp-bottom" id="view-normal-btn" style="display:none">
+    <button type="button" class="otp-btn" id="btn-issue">인증번호 받기</button>
     <button type="button" class="otp-change">번호가 바뀌셨나요?</button>
+  </div>
+
+  <!-- 링크 만료 화면 -->
+  <div class="status-screen" id="view-expired">
+    <div class="status-icon">⏰</div>
+    <p class="status-title">링크가 만료됐어요</p>
+    <p class="status-desc">안내 링크의 유효 기간이 지났어요.<br>병원에 새 링크를 요청해 주세요.</p>
+    <button type="button" class="status-btn" id="btn-reissue-expired">새 링크 요청하기</button>
+    <p class="status-msg" id="reissue-msg-expired" style="display:none"></p>
+  </div>
+
+  <!-- 링크 폐기 화면 -->
+  <div class="status-screen" id="view-revoked">
+    <div class="status-icon">🚫</div>
+    <p class="status-title">더 이상 유효하지 않은<br>링크예요</p>
+    <p class="status-desc">안내문이 변경되거나 링크가 폐기됐어요.<br>병원에 문의해 주세요.</p>
+    <button type="button" class="status-btn" id="btn-reissue-revoked">새 링크 요청하기</button>
+    <p class="status-msg" id="reissue-msg-revoked" style="display:none"></p>
+  </div>
+
+  <!-- 서버 오류 화면 -->
+  <div class="status-screen" id="view-error">
+    <div class="status-icon">⚠️</div>
+    <p class="status-title">일시적인 오류가 생겼어요</p>
+    <p class="status-desc">잠시 후 다시 시도해 주세요.<br>문제가 계속되면 병원에 문의해 주세요.</p>
   </div>
 </div>
 
 <script>
-document.getElementById('otp-request').addEventListener('click', function () {
-  /* 목업 선택과 guide token fragment를 저장소에 복사하지 않고 다음 단계로 잇는다. */
-  location.href = 'otp-verify.html' + location.search + location.hash;
-});
-</script>
+(function () {
+  var API_BASE = '/api/v1';
+  var query = new URLSearchParams(window.location.search);
+  var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+  var isMock = query.get('mock') === '1';
 
+  /* 실제 링크는 KEY-219의 query 계약을 따른다. 개발 목업 토큰만 access log에
+     남지 않는 fragment에서 받으며, 어느 쪽도 저장소로 복사하지 않는다. */
+  function getLinkToken() {
+    if (isMock) return fragment.get('t') || '';
+    return query.get('token') || '';
+  }
+
+  function mockVerifyUrl(token) {
+    var safeQuery = new URLSearchParams();
+    safeQuery.set('mock', '1');
+    var previewCase = query.get('case');
+    if (previewCase && /^[a-z0-9_-]{1,32}$/i.test(previewCase)) safeQuery.set('case', previewCase);
+    var safeFragment = new URLSearchParams();
+    if (token) safeFragment.set('t', token);
+    return 'otp-verify.html?' + safeQuery.toString() +
+      (safeFragment.toString() ? '#' + safeFragment.toString() : '');
+  }
+
+  function show(id) {
+    ['view-loading','view-normal','view-normal-btn','view-expired','view-revoked','view-error'].forEach(function (v) {
+      var el = document.getElementById(v);
+      if (el) el.style.display = v === id ? (v === 'view-normal' ? 'flex' : 'block') : 'none';
+    });
+    if (id === 'view-normal') {
+      document.getElementById('view-normal-btn').style.display = 'flex';
+    }
+  }
+
+  function formatDate(iso) {
+    var parts = iso.split('-');
+    return parts[0] + '년 ' + parseInt(parts[1], 10) + '월 ' + parseInt(parts[2], 10) + '일';
+  }
+
+  /* 세션 체크 — 이미 인증됐으면 guide로 이동 */
+  async function checkSession(token) {
+    if (!token) return;
+    try {
+      var res = await fetch(API_BASE + '/patient-auth/session?link_token=' + encodeURIComponent(token));
+      if (res.ok) {
+        window.location.replace('/guide.html#t=' + encodeURIComponent(token));
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /* context API 호출 */
+  async function loadContext(token) {
+    var res = await fetch(API_BASE + '/patient-auth/context', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link_token: token }),
+    });
+
+    if (res.ok) {
+      var data = await res.json();
+      document.getElementById('ctx-hospital-date').textContent =
+        data.hospital_name + ' · ' + formatDate(data.visited_at);
+      document.getElementById('ctx-visit-desc').textContent =
+        formatDate(data.visited_at) + ' 진료 안내입니다';
+      document.getElementById('ctx-phone').textContent = data.masked_phone;
+      show('view-normal');
+      return 'ok';
+    }
+
+    var body = {};
+    try { body = await res.json(); } catch (_) {}
+    if (body.code === 'LINK_EXPIRED') return 'expired';
+    if (body.code === 'LINK_REVOKED') return 'revoked';
+    return 'error';
+  }
+
+  /* re-issue 요청 */
+  async function requestReIssue(token, msgId, btnId) {
+    var btn = document.getElementById(btnId);
+    var msg = document.getElementById(msgId);
+    btn.disabled = true;
+    try {
+      var res = await fetch(API_BASE + '/patient-auth/link/re-issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_token: token }),
+      });
+      if (res.status === 202 || res.ok) {
+        msg.textContent = '새 링크를 요청했어요. 문자로 안내드릴게요.';
+        msg.style.display = 'block';
+        return;
+      }
+      var body = {};
+      try { body = await res.json(); } catch (_) {}
+      msg.textContent = body.message || '요청 중 오류가 생겼어요. 병원에 문의해 주세요.';
+      msg.style.display = 'block';
+      btn.disabled = false;
+    } catch (_) {
+      msg.textContent = '요청 중 오류가 생겼어요. 잠시 후 다시 시도해 주세요.';
+      msg.style.display = 'block';
+      btn.disabled = false;
+    }
+  }
+
+  /* OTP 발급 요청 → otp-verify.html로 이동 */
+  async function issueOtp(token) {
+    var btn = document.getElementById('btn-issue');
+    btn.disabled = true;
+    try {
+      var res = await fetch(API_BASE + '/patient-auth/otp/issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_token: token }),
+      });
+      if (res.ok) {
+        var data = await res.json();
+        window.location.href =
+          'otp-verify.html?token=' + encodeURIComponent(token) +
+          '&expires_at=' + encodeURIComponent(data.expires_at) +
+          '&retry_after=' + encodeURIComponent(data.retry_after_seconds);
+        return;
+      }
+      var body = {};
+      try { body = await res.json(); } catch (_) {}
+      alert(body.message || '인증번호 전송 중 오류가 생겼어요. 잠시 후 다시 시도해 주세요.');
+    } catch (_) {
+      alert('인증번호 전송 중 오류가 생겼어요. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /* 진입 */
+  async function init() {
+    var token = getLinkToken();
+    if (!token) { show('view-error'); return; }
+
+    if (isMock) {
+      show('view-normal');
+      document.getElementById('ctx-hospital-date').textContent = '개발용 목업';
+      document.getElementById('ctx-visit-desc').textContent = '목업 진료 안내입니다';
+      document.getElementById('btn-issue').addEventListener('click', function () {
+        window.location.href = mockVerifyUrl(token);
+      });
+      return;
+    }
+
+    var redirected = await checkSession(token);
+    if (redirected) return;
+
+    var status = await loadContext(token);
+    if (status === 'expired') {
+      show('view-expired');
+      document.getElementById('btn-reissue-expired').addEventListener('click', function () {
+        requestReIssue(token, 'reissue-msg-expired', 'btn-reissue-expired');
+      });
+    } else if (status === 'revoked') {
+      show('view-revoked');
+      document.getElementById('btn-reissue-revoked').addEventListener('click', function () {
+        requestReIssue(token, 'reissue-msg-revoked', 'btn-reissue-revoked');
+      });
+    } else if (status === 'error') {
+      show('view-error');
+    } else {
+      document.getElementById('btn-issue').addEventListener('click', function () {
+        issueOtp(token);
+      });
+    }
+  }
+
+  init();
+})();
+</script>
 </body>
 </html>

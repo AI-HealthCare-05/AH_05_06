@@ -125,6 +125,34 @@ class TestProcessOcrJob(TestCase):
         assert "CA_125" in field_types
         assert "AMH" in field_types
 
+    async def test_lab_only_job_gets_no_empty_prescription_rows(self) -> None:
+        """검사지만 올린 작업에는 처방 항목의 빈 줄을 만들지 않는다.
+
+        EMR이 없으면 처방 항목이 애초에 없다. 그때 빈 줄을 만들면 **안 한 것을
+        못 읽은 것처럼** 보이고, 스탭은 채울 수 없는 물음표 셋을 마주한다.
+        """
+        job = await self._seed("ocr_lab_only_no_blanks")  # _seed 는 LAB_RESULT 하나만 붙인다
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=_FAKE_CLOVA_RESULT),
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.COMPLETED
+
+        result = await OcrResult.filter(ocr_job=job).first()
+        assert result is not None
+        field_types = {f.field_type for f in await OcrField.filter(ocr_result=result).all()}
+
+        for field_type in ("DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"):
+            assert field_type not in field_types, f"검사지만 올렸는데 {field_type} 빈 줄이 생겼다"
+
     # ── CLOVA 실패 → fixture fallback ────────────────────────────────────────
 
     async def test_clova_error_falls_back_to_fixture_and_completes(self) -> None:
@@ -186,10 +214,16 @@ class TestProcessOcrJob(TestCase):
         # 예외가 발생하면 Worker 루프 전체가 멈추므로 조용히 종료해야 한다
         await process_ocr_job("ocr_does_not_exist_key56")
 
-    # ── REQUIRED_FIELD_MISSING → fixture fallback (KEY-187) ──────────────────
+    # ── 필수 필드를 못 읽으면 빈 줄로 남긴다 (KEY-187) ────────────────────────
 
-    async def test_required_field_missing_falls_back_to_fixture(self) -> None:
-        """EMR 문서에서 필수 필드가 누락되면 REQUIRED_FIELD_MISSING으로 fallback한다."""
+    async def test_required_field_missing_leaves_empty_rows(self) -> None:
+        """EMR에서 필수 필드를 못 읽어도 작업은 성공하고, 그 자리는 빈 줄로 남는다.
+
+        예전에는 하나라도 없으면 작업 전체를 FAILED로 보냈다. 그러면 OcrResult
+        자체가 안 생겨서 화면에 채워 넣을 항목 목록이 없었고, 스탭은 「판독하지
+        못했습니다」 앞에서 막혔다 — 사진은 멀쩡한데 표 한 칸을 못 읽어서 진료가
+        멈추는 모양이다.
+        """
         patient = await Patient.create(
             patient_id=910002,
             hospital_id=HOSPITAL_ID,
@@ -246,12 +280,25 @@ class TestProcessOcrJob(TestCase):
             await process_ocr_job(job.ocr_job_id)
 
         await job.refresh_from_db()
-        assert job.failure_code == "REQUIRED_FIELD_MISSING"  # 감사 흔적으로 유지
         assert job.status == OcrJobStatus.COMPLETED
 
+        # fixture 로 덮지 않는다 — 실제로 읽은 것과 못 읽은 것이 그대로 남아야
+        # 스탭이 무엇을 채워야 하는지 안다.
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None
-        assert result.model_name == FIXTURE_MODEL_NAME
+        assert result.model_name != FIXTURE_MODEL_NAME
+
+        # 못 읽은 필수 항목이 **빈 줄로** 있다
+        rows = {f.field_type: f for f in await OcrField.filter(ocr_result=result).all()}
+        for field_type in ("DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"):
+            assert field_type in rows, f"{field_type} 자리가 없다 — 채워 넣을 대상이 없다"
+
+        # **빈 줄과 「값이 0이다」는 다르다.** 값도 신뢰도도 비어 있어야
+        # 화면이 「못 읽음」으로 그린다.
+        blank = rows["DIAGNOSIS"]
+        assert blank.extracted_value is None
+        assert blank.confidence is None
+        assert blank.is_confirmed is False
 
     async def test_already_completed_job_is_skipped(self) -> None:
         job = await self._seed("ocr_key56_already_done")

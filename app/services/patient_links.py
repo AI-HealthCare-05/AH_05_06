@@ -1,8 +1,7 @@
-"""환자 링크 발급·승인 안내 조회 — KEY-90, KEY-241.
+"""환자 링크 발급·조회·재발급·승인 안내 조회 — KEY-90, KEY-219, KEY-241.
 
-실제 SMS·예약 발송·OTP·폐기·재발급은 이 서비스에 넣지 않는다. 링크·승인
-게이트는 기존 Walking Skeleton 계약을 유지하고, P2~P5 공개 응답에는 저장
-모델에서 직접 확인할 수 있는 값만 보탠다.
+KEY-219의 링크 상태·재발급 계약과 KEY-241의 P2~P5 공개 응답을 함께 제공한다.
+공개 안내에는 저장 모델에서 직접 확인할 수 있는 값만 보탠다.
 """
 
 import asyncio
@@ -16,7 +15,8 @@ from tortoise.exceptions import IntegrityError
 from tortoise.timezone import now
 
 from app.core.auth_errors import AuthError as ApiError
-from app.core.time import DISPLAY_TIMEZONE
+from app.core.masking import mask_phone
+from app.core.time import DISPLAY_TIMEZONE, as_utc
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.staffs import Hospital
@@ -141,6 +141,14 @@ def _medication_data(
     )
 
 
+@dataclass(frozen=True)
+class PatientLinkContext:
+    hospital_name: str
+    masked_phone: str
+    visited_at: date
+    expires_at: datetime
+
+
 def digest_link_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
@@ -179,6 +187,53 @@ class PatientLinkService:
             raise ApiError("LINK_ALREADY_ISSUED", 409, "이미 개발용 링크가 발급된 안내문입니다.") from exc
         return link, raw_token
 
+    async def get_context(self, raw_link_token: str) -> "PatientLinkContext":
+        link = (
+            await PatientGuideLink.filter(token_digest=digest_link_token(raw_link_token))
+            .prefetch_related("guide_document__visit__patient")
+            .first()
+        )
+        if link is None:
+            raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
+
+        timestamp = now()
+        if as_utc(link.expires_at) <= as_utc(timestamp):
+            raise ApiError("LINK_EXPIRED", 410, "환자 링크가 만료되었습니다.")
+
+        guide = link.guide_document
+        if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:
+            raise ApiError("LINK_REVOKED", 410, "환자 링크가 폐기되었습니다.")
+
+        visit = guide.visit
+        patient = visit.patient
+        hospital = await Hospital.filter(hospital_id=visit.hospital_id).first()
+
+        return PatientLinkContext(
+            hospital_name=hospital.name if hospital else "",
+            masked_phone=mask_phone(patient.phone),
+            visited_at=visit.visited_at.date(),
+            expires_at=as_utc(link.expires_at),
+        )
+
+    async def re_issue(self, raw_link_token: str) -> None:
+        """만료·폐기 링크에 새 토큰을 발급한다. mock SMS 발송만 수행한다 — KEY-219."""
+        link = await PatientGuideLink.filter(token_digest=digest_link_token(raw_link_token)).first()
+        if link is None:
+            raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
+
+        timestamp = now()
+        guide = await GuideDocument.filter(guide_document_id=link.guide_document_id).first()
+        is_expired = as_utc(link.expires_at) <= as_utc(timestamp)
+        is_revoked = guide is None or guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None
+
+        if not is_expired and not is_revoked:
+            raise ApiError("LINK_STILL_ACTIVE", 409, "현재 유효한 링크가 있습니다.")
+
+        new_raw_token = secrets.token_urlsafe(32)
+        link.token_digest = digest_link_token(new_raw_token)
+        link.expires_at = timestamp + LINK_TTL
+        await link.save(update_fields=["token_digest", "expires_at"])
+
     async def get_approved_guide(self, raw_token: str) -> tuple[PatientGuideLink, GuideDocument]:
         link = (
             await PatientGuideLink.filter(token_digest=digest_link_token(raw_token))
@@ -187,7 +242,7 @@ class PatientLinkService:
         )
         if link is None:
             raise _link_not_found()
-        if link.expires_at <= now():
+        if as_utc(link.expires_at) <= as_utc(now()):
             raise ApiError("LINK_EXPIRED", 410, "환자 링크가 만료되었습니다.")
 
         guide = link.guide_document
