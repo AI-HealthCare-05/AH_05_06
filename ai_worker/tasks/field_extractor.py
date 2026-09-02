@@ -50,6 +50,37 @@ _KNOWN_NON_VALUE_TOKENS: frozenset[str] = (
     | frozenset({"[진단]", "ICD코드", "주/부상병", "주상병", "부상병", "진료과", "투약구분"})
 )
 
+# ---------------------------------------------------------------------------
+# EMR 상병명 표 파서 상수 — 구조: 코드|명칭|과목|수술|주상병|...
+# ---------------------------------------------------------------------------
+
+# 상병명 표 헤더 식별: "코드"와 "명칭" 두 열이 함께 있는 행
+_DIAG_TABLE_HEADER_SET: frozenset[str] = frozenset({"코드", "명칭"})
+_DIAG_NAME_COL_LABEL: str = "명칭"
+
+# 진단 키워드 패턴
+_ENDO_RE = re.compile(r"자궁\s*내막\s*증", re.IGNORECASE)
+# 다낭성(정확한 표기)과 다난성(오타 형태) 모두 인식
+_PCOS_RE = re.compile(r"다[낭난]성\s*난소|PCOS", re.IGNORECASE)
+
+# 상병명 표 열 허용 오차 (px) — 처방 표보다 열이 넓어 오차를 크게 둔다
+_DIAG_COL_MARGIN = 12.0
+
+# ---------------------------------------------------------------------------
+# EMR 처방 표 파서 상수 — 구조: ...명칭|원외|...|총투|...
+# ---------------------------------------------------------------------------
+
+# 처방 표에서 찾아야 할 열 헤더
+_RX_OUTER_LABELS: frozenset[str] = frozenset({"원외"})
+_RX_NAME_LABELS: frozenset[str] = frozenset({"명칭", "품명"})
+_RX_TOTAL_LABELS: frozenset[str] = frozenset({"총투"})
+
+# 원외 미체크로 간주하는 토큰 — 체크 상자 미선택 표현
+_OUTER_UNCHECKED: frozenset[str] = frozenset({"", "□", "○", "-", "0", "ㅁ"})
+
+# 비잔정 패턴 — 이 약의 총투 값에 28을 곱해서 처방일수를 계산한다
+_BIZANJUNG_RE = re.compile(r"비잔\s*정", re.IGNORECASE)
+
 
 # ---------------------------------------------------------------------------
 # 패턴 테이블 — colon-adjacent fallback (와이어프레임 S1-6~9 기준)
@@ -304,31 +335,199 @@ def _extract_lab(clova_result: ClovaOcrResult) -> list[ExtractedField]:
 # ---------------------------------------------------------------------------
 
 
+def _find_diag_name_col(rows: list) -> tuple[int, tuple[float, float]] | None:
+    """상병명 표 헤더 행에서 '명칭' 열 (행 인덱스, (left, right))을 반환한다."""
+    for i, row in enumerate(rows):
+        texts_in_row = {b.text.strip() for b in row}
+        if not _DIAG_TABLE_HEADER_SET.issubset(texts_in_row):
+            continue
+        for b in row:
+            if b.text.strip() == _DIAG_NAME_COL_LABEL:
+                return i, (b.left, b.right)
+    return None
+
+
+def _scan_diag_rows(rows: list, header_row_idx: int, name_l: float, name_r: float) -> tuple[bool, bool, float, int]:
+    """상병명 데이터 행을 훑어 (has_endo, has_pcos, total_conf, block_count)를 반환한다."""
+    has_endo = has_pcos = False
+    total_conf = 0.0
+    block_count = 0
+    for row in rows[header_row_idx + 1 :]:
+        name_blocks = [b for b in row if b.right > name_l and b.left < name_r]
+        if not name_blocks:
+            continue
+        name_text = " ".join(b.text.strip() for b in name_blocks).strip()
+        if not name_text:
+            continue
+        if _ENDO_RE.search(name_text):
+            has_endo = True
+        if _PCOS_RE.search(name_text):
+            has_pcos = True
+        for b in name_blocks:
+            total_conf += b.confidence
+            block_count += 1
+    return has_endo, has_pcos, total_conf, block_count
+
+
+def _extract_emr_diagnosis_table(rows: list) -> list[ExtractedField]:
+    """EMR 상병명 표에서 진단 키워드를 찾아 DIAGNOSIS 필드를 반환한다.
+
+    헤더 행에 '코드'와 '명칭'이 함께 있어야 상병명 표로 인식한다.
+    자궁내막증 → "자궁내막증" / 다낭성·PCOS → "다낭성난소증후군(PCOS)" / 둘 다 → "둘 다"
+    """
+    if not rows:
+        return []
+    info = _find_diag_name_col(rows)
+    if info is None:
+        return []
+    header_row_idx, name_col = info
+    name_l = name_col[0] - _DIAG_COL_MARGIN
+    name_r = name_col[1] + _DIAG_COL_MARGIN
+
+    has_endo, has_pcos, total_conf, block_count = _scan_diag_rows(rows, header_row_idx, name_l, name_r)
+    if not has_endo and not has_pcos:
+        return []
+
+    if has_endo and has_pcos:
+        value = "둘 다"
+    elif has_endo:
+        value = "자궁내막증"
+    else:
+        value = "다낭성난소증후군(PCOS)"
+
+    conf = Decimal(str(round(total_conf / block_count, 4))) if block_count else _DEFAULT_CONFIDENCE
+    return [ExtractedField(field_type="DIAGNOSIS", extracted_value=value, confidence=conf)]
+
+
+def _find_rx_columns(
+    rows: list,
+) -> tuple[int, tuple[float, float], tuple[float, float], tuple[float, float] | None] | None:
+    """처방 표 헤더 행에서 원외·명칭·총투 열 위치를 반환한다."""
+    for i, row in enumerate(rows):
+        found: dict[str, tuple[float, float]] = {}
+        for b in row:
+            t = b.text.strip()
+            if t in _RX_OUTER_LABELS and "원외" not in found:
+                found["원외"] = (b.left, b.right)
+            elif t in _RX_NAME_LABELS and "명칭" not in found:
+                found["명칭"] = (b.left, b.right)
+            elif t in _RX_TOTAL_LABELS and "총투" not in found:
+                found["총투"] = (b.left, b.right)
+        if "원외" in found and "명칭" in found:
+            return i, found["원외"], found["명칭"], found.get("총투")
+    return None
+
+
+def _rx_duration(med_name: str, total_l: float, total_r: float, row: list) -> ExtractedField | None:
+    """원외 행에서 총투 값을 읽어 처방일수 필드를 만든다."""
+    total_blocks = [b for b in row if b.right > total_l and b.left < total_r]
+    if not total_blocks:
+        return None
+    total_text = " ".join(b.text.strip() for b in total_blocks).strip()
+    m = re.search(r"(\d+)", total_text)
+    if not m:
+        return None
+    total_int = int(m.group(1))
+    days = total_int * 28 if _BIZANJUNG_RE.search(med_name) else total_int
+    return ExtractedField(field_type="DURATION_DAYS", extracted_value=str(days), confidence=_DEFAULT_CONFIDENCE)
+
+
+def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
+    """EMR 처방 표에서 원외 체크된 행의 약품명과 처방일수를 추출한다.
+
+    '원외'·'명칭'·'총투' 열을 찾아 원외 체크 행만 처리한다.
+    비잔정: DURATION_DAYS = 총투 × 28 / 그 외: DURATION_DAYS = 총투.
+    여러 원외 행 → MEDICATION_NAME, MEDICATION_NAME_2, MEDICATION_NAME_3 …
+    """
+    if not rows:
+        return []
+    info = _find_rx_columns(rows)
+    if info is None:
+        return []
+    header_row_idx, outer_col, name_col, total_col = info
+
+    outer_l = outer_col[0] - _COL_MARGIN
+    outer_r = outer_col[1] + _COL_MARGIN
+    name_l = name_col[0] - _COL_MARGIN
+    name_r = name_col[1] + _COL_MARGIN
+    total_l = (total_col[0] - _COL_MARGIN) if total_col else None
+    total_r = (total_col[1] + _COL_MARGIN) if total_col else None
+
+    results: list[ExtractedField] = []
+    med_index = 0
+
+    for row in rows[header_row_idx + 1 :]:
+        outer_blocks = [b for b in row if b.right > outer_l and b.left < outer_r]
+        if not outer_blocks:
+            continue
+        outer_text = " ".join(b.text.strip() for b in outer_blocks).strip()
+        if outer_text in _OUTER_UNCHECKED:
+            continue
+
+        name_blocks = [b for b in row if b.right > name_l and b.left < name_r]
+        if not name_blocks:
+            continue
+        med_name = " ".join(b.text.strip() for b in name_blocks).strip()
+        if not med_name:
+            continue
+
+        suffix = "" if med_index == 0 else f"_{med_index + 1}"
+        name_conf = Decimal(str(round(sum(b.confidence for b in name_blocks) / len(name_blocks), 4)))
+        results.append(
+            ExtractedField(field_type=f"MEDICATION_NAME{suffix}", extracted_value=med_name, confidence=name_conf)
+        )
+
+        if total_l is not None and total_r is not None:
+            dur = _rx_duration(med_name, total_l, total_r, row)
+            if dur is not None:
+                results.append(
+                    ExtractedField(
+                        field_type=f"DURATION_DAYS{suffix}",
+                        extracted_value=dur.extracted_value,
+                        confidence=dur.confidence,
+                    )
+                )
+
+        med_index += 1
+
+    return results
+
+
 def _extract_emr(clova_result: ClovaOcrResult) -> list[ExtractedField]:
-    """EMR: CLOVA 블록 파서 우선, 누락 필드를 정규식과 검사결과지 표 파서로 보완.
+    """EMR: 상병명·처방 표 파서 우선, 누락 필드를 블록 파서·정규식·검사 표 파서로 보완.
 
     모든 문서가 EMR 기본값으로 업로드되므로, 검사결과지도 이 경로를 탄다.
     표 헤더가 있으면 표 파서를, 없으면 정규식 fallback을 시도한다.
     """
-    results = _extract_from_clova_blocks(clova_result)
-    found_types = {f.field_type for f in results}
+    results: list[ExtractedField] = []
+    found_types: set[str] = set()
 
-    for field in _extract_by_regex(clova_result, _EMR_PATTERNS):
-        if field.field_type not in found_types:
-            results.append(field)
-            found_types.add(field.field_type)
+    def _add(fields: list[ExtractedField]) -> None:
+        for f in fields:
+            if f.field_type not in found_types:
+                results.append(f)
+                found_types.add(f.field_type)
 
-    # 검사결과지 표 파서 — 표 헤더(검사항목·검사결과)가 있을 때만 실행된다
-    for field in _extract_lab_table(clova_result.rows):
-        if field.field_type not in found_types:
-            results.append(field)
-            found_types.add(field.field_type)
+    # ① EMR 상병명 표 → DIAGNOSIS (구조 기반)
+    _add(_extract_emr_diagnosis_table(clova_result.rows))
 
-    # 검사결과지 정규식 fallback — 콜론 형식 값을 추가로 읽는다
-    for field in _extract_by_regex(clova_result, _LAB_PATTERNS):
-        if field.field_type not in found_types:
-            results.append(field)
-            found_types.add(field.field_type)
+    # ② EMR 처방 표 → MEDICATION_NAME[_N] + DURATION_DAYS[_N] (원외 체크 행)
+    #    인덱스형 필드(MEDICATION_NAME_2 등)는 found_types 충돌 없이 누적된다.
+    for f in _extract_emr_rx_table(clova_result.rows):
+        results.append(f)
+        found_types.add(f.field_type)
+
+    # ③ CLOVA 블록 파서 (헤더→값 레이아웃) — ①②에서 못 찾은 필드 보완
+    _add(_extract_from_clova_blocks(clova_result))
+
+    # ④ 정규식 fallback
+    _add(_extract_by_regex(clova_result, _EMR_PATTERNS))
+
+    # ⑤ 검사결과지 표 파서 — 표 헤더(검사항목·검사결과)가 있을 때만 실행된다
+    _add(_extract_lab_table(clova_result.rows))
+
+    # ⑥ 검사결과지 정규식 fallback
+    _add(_extract_by_regex(clova_result, _LAB_PATTERNS))
 
     return results
 

@@ -10,6 +10,8 @@
   - 처방 표 헤더 비연속 레이아웃에서도 올바른 필드 추출
   - 짧은 숫자값의 블록 부분 매칭 오판정 방지
   - LAB_RESULT 표 파서: 헤더 기반 열 위치로 검사항목→결과 쌍 추출
+  - EMR 상병명 표 파서: 코드·명칭 헤더 기반 진단 키워드 매핑
+  - EMR 처방 표 파서: 원외 체크 행 약품명·처방일수(비잔정 ×28) 추출
 """
 
 from decimal import Decimal
@@ -354,3 +356,129 @@ def test_emr_type_extracts_lab_regex_fields() -> None:
     field_map = {f.field_type: f.extracted_value for f in fields}
     assert field_map.get("CA_125") == "48 U/mL"
     assert field_map.get("AMH") == "2.8 ng/mL"
+
+
+# ---------------------------------------------------------------------------
+# EMR 상병명 표 파서 — 바운딩 박스 기반 진단 키워드 매핑
+# ---------------------------------------------------------------------------
+
+
+def _diag_block(text: str, conf: float, left: float, top: float, right: float, bottom: float) -> ClovaTextField:
+    return ClovaTextField(text=text, confidence=conf, left=left, top=top, right=right, bottom=bottom)
+
+
+# 상병명 표: 코드(x:10-60), 명칭(x:70-300), 과목(x:310-390)
+# 헤더 행 y:10-30 / 데이터 행 y:40-60, 70-90
+_DIAG_TABLE_BLOCKS = [
+    _diag_block("코드", 0.99, 10, 10, 60, 30),
+    _diag_block("명칭", 0.99, 70, 10, 300, 30),
+    _diag_block("과목", 0.99, 310, 10, 390, 30),
+    _diag_block("N801", 0.96, 10, 40, 60, 60),
+    _diag_block("난소의 자궁내막증", 0.94, 70, 40, 300, 60),
+    _diag_block("산부인과", 0.97, 310, 40, 390, 60),
+    _diag_block("D649", 0.95, 10, 70, 60, 90),
+    _diag_block("상세불명의 빈혈", 0.96, 70, 70, 300, 90),
+    _diag_block("산부인과", 0.97, 310, 70, 390, 90),
+]
+
+_DIAG_TABLE_ROWS = _group_fields_by_row(_DIAG_TABLE_BLOCKS)
+_DIAG_TABLE_RESULT = ClovaOcrResult(
+    raw_text="코드\t명칭\t과목\nN801\t난소의 자궁내막증\t산부인과",
+    fields=_DIAG_TABLE_BLOCKS,
+    rows=_DIAG_TABLE_ROWS,
+)
+
+
+def test_diag_table_extracts_endometriosis() -> None:
+    """상병명 표에서 '자궁내막증' 키워드가 DIAGNOSIS='자궁내막증'으로 추출된다."""
+    fields = extract_fields(_DIAG_TABLE_RESULT, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("DIAGNOSIS") == "자궁내막증"
+
+
+def test_diag_table_both_keywords_returns_dul_da() -> None:
+    """상병명 표에 자궁내막증과 다낭성난소 키워드가 모두 있으면 DIAGNOSIS='둘 다'."""
+    blocks = [
+        _diag_block("코드", 0.99, 10, 10, 60, 30),
+        _diag_block("명칭", 0.99, 70, 10, 300, 30),
+        _diag_block("N801", 0.96, 10, 40, 60, 60),
+        _diag_block("난소의 자궁내막증", 0.94, 70, 40, 300, 60),
+        _diag_block("E282", 0.96, 10, 70, 60, 90),
+        _diag_block("다낭성난소증후군", 0.93, 70, 70, 300, 90),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("DIAGNOSIS") == "둘 다"
+
+
+def test_diag_table_no_keyword_returns_no_diagnosis() -> None:
+    """상병명 표에 진단 키워드가 없으면 DIAGNOSIS 필드를 만들지 않는다."""
+    blocks = [
+        _diag_block("코드", 0.99, 10, 10, 60, 30),
+        _diag_block("명칭", 0.99, 70, 10, 300, 30),
+        _diag_block("D649", 0.95, 10, 40, 60, 60),
+        _diag_block("상세불명의 빈혈", 0.96, 70, 40, 300, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_types = {f.field_type for f in fields}
+    assert "DIAGNOSIS" not in field_types
+
+
+# ---------------------------------------------------------------------------
+# EMR 처방 표 파서 — 원외 체크 행 약품명·처방일수 추출
+# ---------------------------------------------------------------------------
+
+
+def _rx_block(text: str, conf: float, left: float, top: float, right: float, bottom: float) -> ClovaTextField:
+    return ClovaTextField(text=text, confidence=conf, left=left, top=top, right=right, bottom=bottom)
+
+
+# 처방 표: 명칭(x:10-200), 원외(x:210-250), 총투(x:350-400)
+# 헤더 행 y:10-30
+# 행1: 비잔정 2mg / ☑(체크) / 1    → MEDICATION_NAME + DURATION_DAYS = 1×28 = 28
+# 행2: 프로베라정 / □(미체크) / 84  → 원외 미체크라 제외
+# 행3: 루프론3.75mg / ■(체크) / 84  → MEDICATION_NAME_2 + DURATION_DAYS_2 = 84
+_RX_TABLE_BLOCKS = [
+    _rx_block("명칭", 0.99, 10, 10, 200, 30),
+    _rx_block("원외", 0.99, 210, 10, 250, 30),
+    _rx_block("총투", 0.99, 350, 10, 400, 30),
+    _rx_block("비잔정(디에노게스트)2mg", 0.95, 10, 40, 200, 60),
+    _rx_block("☑", 0.90, 210, 40, 250, 60),
+    _rx_block("1", 0.98, 350, 40, 400, 60),
+    _rx_block("프로베라정", 0.95, 10, 70, 200, 90),
+    _rx_block("□", 0.90, 210, 70, 250, 90),
+    _rx_block("84", 0.98, 350, 70, 400, 90),
+    _rx_block("루프론3.75mg", 0.94, 10, 100, 200, 120),
+    _rx_block("■", 0.91, 210, 100, 250, 120),
+    _rx_block("84", 0.97, 350, 100, 400, 120),
+]
+
+_RX_TABLE_ROWS = _group_fields_by_row(_RX_TABLE_BLOCKS)
+_RX_TABLE_RESULT = ClovaOcrResult(raw_text="", fields=_RX_TABLE_BLOCKS, rows=_RX_TABLE_ROWS)
+
+
+def test_rx_table_extracts_checked_bizanjung() -> None:
+    """원외 체크된 비잔정의 처방일수를 총투×28로 계산한다."""
+    fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("MEDICATION_NAME") == "비잔정(디에노게스트)2mg"
+    assert field_map.get("DURATION_DAYS") == "28"  # 1 × 28
+
+
+def test_rx_table_extracts_second_medication_with_suffix() -> None:
+    """원외 체크된 두 번째 약은 MEDICATION_NAME_2 / DURATION_DAYS_2 로 추출된다."""
+    fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("MEDICATION_NAME_2") == "루프론3.75mg"
+    assert field_map.get("DURATION_DAYS_2") == "84"
+
+
+def test_rx_table_skips_unchecked_rows() -> None:
+    """원외 미체크(□) 행은 추출하지 않는다."""
+    fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
+    # 프로베라정은 미체크 → 목록에 없어야 한다
+    assert not any("프로베라정" in (f.extracted_value or "") for f in fields)

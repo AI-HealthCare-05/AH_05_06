@@ -91,10 +91,16 @@ var FIELD_LABELS = {
 
 /* 모르는 코드는 **그대로 보여 준다.** 빈칸이나 「알 수 없음」으로 두면 새 항목이
    생겼을 때 화면에서 사라져, 값이 있는데 없는 것처럼 보인다. 영문이라도 보이는
-   편이 낫고, 그것이 이름표에 무엇을 더해야 하는지도 알려 준다. */
+   편이 낫고, 그것이 이름표에 무엇을 더해야 하는지도 알려 준다.
+
+   인덱스형 필드(MEDICATION_NAME_2, DURATION_DAYS_3 등)는 기본 이름에서 접미사를
+   떼어 이름표를 찾는다 — 처방이 여럿일 때 약품명_2 처럼 뜨지 않게 한다. */
 function fieldLabel(fieldType) {
   var key = String(fieldType || "");
-  return FIELD_LABELS[key] || key;
+  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
+  var m = key.match(/^([A-Z_]+)_(\d+)$/);
+  if (m && FIELD_LABELS[m[1]]) return FIELD_LABELS[m[1]];
+  return key;
 }
 
 /* 단위는 값에 붙어 오지만, 서버가 안 줄 때 기본으로 쓸 것을 여기 둔다.
@@ -193,7 +199,11 @@ function joinChoiceValue(fieldType, pick, size) {
 
 function fieldUnit(fieldType, given) {
   if (given) return given;
-  return FIELD_UNITS[String(fieldType || "")] || "";
+  var key = String(fieldType || "");
+  if (FIELD_UNITS[key]) return FIELD_UNITS[key];
+  var m = key.match(/^([A-Z_]+)_(\d+)$/);
+  if (m && FIELD_UNITS[m[1]]) return FIELD_UNITS[m[1]];
+  return "";
 }
 
 /* ── 확인 항목의 이름표 (와이어프레임 S1-6 · D2-3) ────────────────────

@@ -178,25 +178,43 @@ function labGroupsOf(rows) {
 
 var LAB_HEAD_TYPE = "LAB_DATE";
 
-/** 서버가 준 한 줄짜리 목록을 화면의 묶음으로 가른다. */
+/** 서버가 준 한 줄짜리 목록을 화면의 묶음으로 가른다.
+ *
+ * 인덱스형 처방 필드(MEDICATION_NAME_2, DURATION_DAYS_3 등)는 원외 처방이
+ * 여럿일 때 추출기가 만든다. 이것들도 처방 묶음에 넣어야 검사값 묶음에
+ * 섞이지 않는다. */
 function splitFields(fields) {
   var all = fields || [];
   var prescription = [];
   var labs = [];
+  var taken = {};
 
-  /* 처방 항목은 **와이어프레임 차례대로** 세운다. 서버가 준 차례는 추출기가
-     정규식을 훑은 차례라 화면에서 뜻이 없다. */
+  /* ① 처방 항목은 **와이어프레임 차례대로** 세운다. */
   for (var i = 0; i < PRESCRIPTION_TYPES.length; i++) {
     for (var j = 0; j < all.length; j++) {
-      if (all[j].field_type === PRESCRIPTION_TYPES[i]) prescription.push(all[j]);
+      if (all[j].field_type === PRESCRIPTION_TYPES[i]) {
+        prescription.push(all[j]);
+        taken[j] = true;
+      }
     }
   }
 
+  /* ② 인덱스형 처방 필드(MEDICATION_NAME_2 등) — 서버가 준 차례 유지 */
   for (var k = 0; k < all.length; k++) {
+    if (taken[k]) continue;
     var type = all[k].field_type;
-    if (type === LAB_HEAD_TYPE) continue;
-    if (PRESCRIPTION_TYPES.indexOf(type) !== -1) continue;
-    labs.push(all[k]);
+    var m = type.match(/^([A-Z_]+)_(\d+)$/);
+    if (m && PRESCRIPTION_TYPES.indexOf(m[1]) !== -1) {
+      prescription.push(all[k]);
+      taken[k] = true;
+    }
+  }
+
+  /* ③ 나머지는 검사값 묶음 */
+  for (var l = 0; l < all.length; l++) {
+    if (taken[l]) continue;
+    if (all[l].field_type === LAB_HEAD_TYPE) continue;
+    labs.push(all[l]);
   }
 
   return { prescription: prescription, labs: labs };
