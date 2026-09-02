@@ -53,10 +53,20 @@ test('환자 피드백 요청은 세션 쿠키만 사용하고 링크 토큰을 
 
 test('도움 평가 UI는 서버가 준 response_ref가 있는 답변에만 표시된다', () => {
   const source = read('patient_wireframe/js/chat.js');
+  assert.match(source, /requestChatbotResponse\(linkToken, q\)/);
+  assert.match(source, /answerMsg\.responseRef = result\.response_ref/);
+  assert.match(source, /chatSetGuide = function \(g, token\)/);
   assert.match(source, /!msg\.error && !msg\.aborted && msg\.responseRef/);
   assert.match(source, /category: 'HELPFUL'/);
   assert.match(source, /category: 'UNHELPFUL'/);
   assert.match(source, /response_ref: msg\.responseRef/);
+});
+
+test('챗봇 응답 참조값은 URL이 아닌 응답 본문에서 받는다', () => {
+  const api = read('patient_wireframe/js/guide-api.js');
+  assert.match(api, /GUIDE_API_BASE \+ '\/chatbot\/responses'/);
+  assert.match(api, /body: JSON\.stringify\(\{ link_token: linkToken, question: question \}\)/);
+  assert.doesNotMatch(api, /chatbot\/responses\?[^']*link_token/);
 });
 
 test('네트워크 재시도는 같은 submission_id를 다시 사용한다', () => {

@@ -16,6 +16,7 @@
   };
 
   var guide = null;
+  var linkToken = null;
   var state = { messages: [], busy: false, draft: '', generation: 0 };
 
   /* ── DOM 초기화 ────────────────────────── */
@@ -270,6 +271,27 @@
     abortBtn.classList.add('chat-abort--show');
     renderMessages();
 
+    if (!GUIDE_MOCK) {
+      requestChatbotResponse(linkToken, q).then(function (result) {
+        if (gen !== state.generation) return;
+        answerMsg.text = result.answer || '';
+        answerMsg.urgent = !!result.urgent;
+        answerMsg.source = result.source;
+        answerMsg.responseRef = result.response_ref;
+      }).catch(function () {
+        if (gen !== state.generation) return;
+        answerMsg.error = '답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+      }).finally(function () {
+        if (gen !== state.generation) return;
+        answerMsg.streaming = false;
+        state.busy = false;
+        abortBtn.classList.remove('chat-abort--show');
+        sendBtn.disabled = false;
+        renderMessages();
+      });
+      return;
+    }
+
     /* Mock: 글자를 조금씩 타이핑 */
     var raw  = MOCK_ANSWERS[q] || '담당 의료진이 확인한 내용 안에서만 답해드릴 수 있어요. 더 자세한 내용은 진료 때 여쭤봐 주세요.';
     var i    = 0;
@@ -328,5 +350,8 @@
   });
 
   /* ── 외부에서 guide 데이터 주입 ─────────── */
-  window.chatSetGuide = function (g) { guide = g; };
+  window.chatSetGuide = function (g, token) {
+    guide = g;
+    linkToken = token;
+  };
 })();

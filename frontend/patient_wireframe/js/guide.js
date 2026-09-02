@@ -716,7 +716,7 @@
       fillHeader(d);
       buildTabBar(d);
       renderBody(d);
-      if (window.chatSetGuide) chatSetGuide(d);
+      if (window.chatSetGuide) chatSetGuide(d, TOKEN);
     })
     .catch(function (err) {
       document.getElementById('body').innerHTML =
