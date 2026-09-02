@@ -116,18 +116,33 @@ class TestGeneratedAuditEvent(GenerateGuideTestCase):
                 headers=doctor_headers,
                 json={"body": "합성 환자용으로 검토한 복약 안내"},
             )
+            # **승인 앞에 「의사에게 넘김」이 한 단계 있다** (KEY-234, 와이어프레임
+            # D1-5). 전에는 스탭 확인 중인 글을 곧장 승인할 수 있었는데, 그러면
+            # 「누가 언제 의사에게 넘겼는가」가 어디에도 안 남는다. 이 검사가
+            # 재는 것은 **이벤트가 일어난 차례**지 단계 수가 아니므로, 늘어난
+            # 단계를 지나서 같은 것을 잰다.
+            submitted = await client.post(
+                f"{BASE}/{visit.visit_id}/guide/submit",
+                headers=await self.sign_in(staff),
+            )
             approved = await client.post(
                 f"{BASE}/{visit.visit_id}/guide/approve",
                 headers=doctor_headers,
             )
 
-        assert [generated.status_code, edited.status_code, approved.status_code] == [201, 200, 200]
+        assert [
+            generated.status_code,
+            edited.status_code,
+            submitted.status_code,
+            approved.status_code,
+        ] == [201, 200, 200, 200]
         events = await GuideEvent.filter(guide_document__visit_id=visit.visit_id).order_by(
             "created_at", "guide_event_id"
         )
         assert [event.event_type for event in events] == [
             GuideEventType.GENERATED,
             GuideEventType.EDITED,
+            GuideEventType.SUBMITTED,
             GuideEventType.APPROVED,
         ]
         assert [event.created_at for event in events] == sorted(event.created_at for event in events)

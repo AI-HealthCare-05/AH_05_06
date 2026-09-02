@@ -49,6 +49,10 @@ class OcrRepository(Protocol):
         self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
     ) -> tuple[OcrField, Sequence[OcrDocumentText]]: ...
 
+    async def write_field(
+        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+    ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]: ...
+
 
 def _not_found() -> OcrApiError:
     return OcrApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
@@ -185,6 +189,65 @@ class TortoiseOcrRepository:
             await OcrDocumentText.filter(ocr_document_text_id__in=list(doc_text_ids)).all() if doc_text_ids else []
         )
         return field, doc_texts
+
+    async def write_field(
+        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+    ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]:
+        """판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
+
+        **고치기(PATCH)와 다른 길이다.** 저쪽은 있는 줄의 값을 바꾸고, 이쪽은
+        **줄 자체가 없는** 것을 만든다. 판독이 못 찾은 항목은 레코드로 남지
+        않아서, 화면이 값을 적어도 보낼 곳이 없었다.
+
+        `confidence` 는 비운다. 사람이 적은 값에 기계의 확신을 붙이면, 화면이
+        「낮은 확신」으로 다시 물어보거나 반대로 확신한 값처럼 보인다.
+        """
+        job = await self.get_latest_job_by_visit(visit_id, actor)
+        if job is None:
+            raise _not_found()
+
+        result = await OcrResult.filter(ocr_job_id=job.ocr_job_id).first()
+        if result is None:
+            raise _not_found()
+
+        text = value.strip() if value is not None else ""
+
+        async with in_transaction() as connection:
+            field = (
+                await OcrField.filter(ocr_result_id=result.ocr_result_id, field_type=field_type)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+
+            if field is not None and field.is_confirmed:
+                raise OcrApiError(status.HTTP_409_CONFLICT, "OCR_FIELD_CONFIRMED", "이미 확정된 필드입니다.")
+
+            # 비우면 지운다 — 「빈 값으로 적었다」를 남기면 안 적은 것과 구별이 안 된다.
+            if not text:
+                if field is not None:
+                    await field.delete(using_db=connection)
+                return None, []
+
+            changed_at = now()
+            if field is None:
+                field = await OcrField.create(
+                    ocr_result_id=result.ocr_result_id,
+                    field_type=field_type,
+                    corrected_value=text,
+                    modified_by=actor.staff_id,
+                    modified_at=changed_at,
+                    using_db=connection,
+                )
+            else:
+                field.corrected_value = text
+                field.modified_by = actor.staff_id
+                field.modified_at = changed_at
+                field.version += 1
+                await field.save(using_db=connection)
+
+        await field.fetch_related("candidates")
+        return field, []
 
 
 def serialize_job(job: OcrJob) -> OcrJobResponse:
@@ -364,3 +427,12 @@ class OcrService:
         field, doc_texts = await self.repository.update_field(ocr_field_id, request, actor)
         doc_text_map = {d.ocr_document_text_id: d for d in doc_texts}
         return serialize_field(field, doc_text_map)
+
+    async def write_field(
+        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+    ) -> OcrFieldResponse | None:
+        """판독이 못 읽은 값을 적어 넣는다. 비우면 지우고 `None` 을 준다."""
+        field, doc_texts = await self.repository.write_field(visit_id, field_type, value, actor)
+        if field is None:
+            return None
+        return serialize_field(field, {d.ocr_document_text_id: d for d in doc_texts})

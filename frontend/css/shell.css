@@ -31,15 +31,41 @@ body.shell {
   padding: 0 var(--s-24);
   background: var(--card);
   border-bottom: 1px solid var(--line);
+  /* **아주 얕게 띄운다.** 상단바가 아래 내용 위에 있다는 것만 말하면 된다 —
+     진하게 주면 그림자가 먼저 눈에 걸려, 읽어야 할 것(환자 이름·탭)에서
+     눈을 뺏는다. 줄(`border-bottom`)이 경계를 긋고 그림자는 깊이만 준다.
+     `z-index` 를 함께 두는 이유는, 아래 칸이 흰 바탕이면 그림자가 그 아래로
+     들어가 안 보이기 때문이다. */
+  position: relative;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgb(28 31 35 / 6%);
 }
 
+/* **탭은 가운데다** — 와이어프레임 A1 공통 골격: 「로고칸 + 브랜드 / 가운데 탭 /
+   오른쪽 계정·🔔·⏻」. 양옆이 같은 폭을 갖지 않으면 가운데가 가운데로 안 보인다.
+   그래서 브랜드와 오른쪽 칸에 같은 `flex` 를 준다. */
 .topbar__brand {
+  flex: 1 1 0;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* **의원 이름은 한 겹 옅다.** 서비스 이름(케어온)과 쓰는 곳(도로시여성의원)은
+   같은 무게가 아니다 — 둘 다 굵게 두면 무엇이 이 프로그램의 이름인지 흐려진다.
+   구분선은 글자가 아니라 테두리로 긋는다: 「|」를 글자로 적으면 글꼴에 따라
+   높이와 굵기가 제각각이고, 화면낭독기가 「막대」로 읽는다. */
+.topbar__clinic {
+  margin-left: 9px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  font-weight: 500;
+  color: var(--ink-2);
 }
 
 .topbar__nav {
+  flex: 0 0 auto;
   display: flex;
   gap: var(--s-4);
 }
@@ -66,7 +92,19 @@ body.shell {
   background: var(--bg);
 }
 
+/* **아직 만들지 않은 자리.** 눌리는 척하지 않되, 무엇이 있을 자리인지는 보인다.
+   `aria-disabled` 와 함께 쓴다 — 화면낭독기도 알아야 한다.
+
+   `detail.css` 에 있던 것을 여기로 옮겼다. 상단바는 이 파일 것이고, 어드민
+   화면은 `detail.css` 를 싣지 않아 상단바의 「관리·설정」이 스타일 없이 떴다. */
+.tab--later {
+  color: var(--ink-3);
+  cursor: default;
+}
+
 .topbar__right {
+  flex: 1 1 0;
+  justify-content: flex-end;
   margin-left: auto;
   display: flex;
   align-items: center;
@@ -90,37 +128,64 @@ body.shell {
   color: var(--ink-3);
 }
 
+/* **버튼처럼 보인다.** 전에는 테두리도 배경도 없어서 상단바 오른쪽에 놓인
+   글자로 읽혔다 — 누를 수 있는 것인지가 안 보였다.
+
+   그림은 이모지가 아니라 인라인 SVG 다. 이 저장소가 「장식용 이모지」를 안
+   쓰기로 했고(tokens.css), 이모지는 기기마다 다르게 그려져 같은 화면이
+   사람마다 달라 보인다. SVG 는 `currentColor` 를 따라 색도 맞는다. */
 .icon-button {
   position: relative;
-  width: var(--field-h);
-  height: var(--field-h);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font: inherit;
-  font-size: 15px;
   color: var(--ink-2);
-  background: none;
-  border: 0;
-  border-radius: var(--radius);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
+.icon-button .icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
 .icon-button:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
   background: var(--bg);
 }
 
+/* 알림 수 — 칩의 숫자 배지와 같은 자리·같은 모양이다. 한 화면에서 같은 뜻이
+   두 모양이면 읽는 사람이 그때마다 다시 배운다. 바깥으로 띄워 단추 폭을
+   차지하지 않는다. */
 .icon-button__count {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  min-width: 17px;
-  height: 17px;
+  top: -6px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
   padding: 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
   color: var(--on-accent);
   background: var(--danger);
-  /* 높이 17px 이라 브라우저가 8.5px 로 자른다 — 알약이다 */
+  border: 1px solid var(--card);
   border-radius: var(--radius-pill);
+}
+
+.icon-button__count[hidden] {
+  display: none;
 }
 
 /* ── 본문 두 칸 ─────────────────────────────────────── */
@@ -131,17 +196,131 @@ body.shell {
   display: flex;
 }
 
+/* 좌 320px 고정. 접으면 48px 레일이 된다 — 와이어프레임 `S1-7` 이 그 상태를
+   그려 두었다(「좌측 48px 접힌 레일」). 판독 화면처럼 원문을 넓게 봐야 하는
+   자리에서 쓴다. */
 .list {
   flex: 0 0 320px;
   display: flex;
   flex-direction: column;
   background: var(--card);
   border-right: 1px solid var(--line);
+  /* 상단바와 같은 이유로 아주 얕게 띄운다 — 목록이 본문 위에 있다는 것만
+     말하면 된다. 오른쪽으로만 드리운다(가로 1px). `z-index` 가 없으면 본문의
+     흰 바탕 아래로 들어가 안 보인다. */
+  position: relative;
+  z-index: 5;
+  box-shadow: 1px 0 3px rgb(28 31 35 / 6%);
+  transition: flex-basis var(--motion) var(--ease);
 }
 
+/* 「+ 환자 등록」. **목록 레일은 화면마다 같아야 한다** — 판독 화면에서는
+   `<a>` 로 그려 등록 폼이 있는 화면으로 건너간다. 그래서 어휘가 여기 있다.
+   `patients.css` 에 두었더니 판독 화면에서 모양 없이 떴다. */
+/* 와이어프레임 원문: `height:34px · border:2px solid #111827 · radius:6px ·
+   가운데 정렬 · 13px/600`. **좌측 칸의 유일한 주 진입**이라 테두리가 2px 다 —
+   어드민의 [+ 직원 추가]도 같은 규칙이다(「굵은 외곽선(2px) — 이 목록의 유일한
+   주 진입」). 폭을 안 주면 글자만큼 줄어들어 잘린 것처럼 보인다. */
+.list__add {
+  width: 100%;
+  height: var(--field-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--card);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+  /* 판독 화면에서는 `<a>` 다 — 등록 폼이 있는 화면으로 건너간다 */
+  text-decoration: none;
+  text-align: center;
+}
+
+.list__add:hover {
+  background: #eaecee;
+}
+
+.list--folded {
+  flex-basis: 48px;
+}
+
+/* 접히면 머리의 접기 버튼만 남는다. 나머지는 폭이 없어 글자가 깨진다.
+   **여기 빠뜨리면 그 하나만 48px 레일에 끼어 세로로 쪼개진다** —
+   「+ 환자 등록」이 실제로 그랬다(이 목록에 나중에 더해진 것이라 빠졌다). */
+.list--folded .list__search,
+.list--folded .list__add,
+.list--folded .list__rows,
+.list--folded .list__note,
+.list--folded .list__day,
+.list--folded .chips {
+  display: none;
+}
+
+.list__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px; /* 와이어프레임 원문 */
+  font-weight: 700;
+}
+
+.list--folded .list__label {
+  display: none;
+}
+
+/* 접히면 48px 안에 단추 하나만 남는다 — 좌우 여백을 줄여야 안 잘린다. */
+.list--folded .list__head {
+  padding: var(--s-12) 10px;
+}
+
+.list--folded .list__title {
+  margin-bottom: 0;
+}
+
+/* 접기 버튼 — 와이어프레임 원문: 28×28 · radius 6 · 13px · 가운데 정렬. */
+.list__fold {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.list__fold:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+/* 치수는 와이어프레임 원문에서 가져왔다 (`docs/wireframes/wireframe-medic-2.3.1.html`
+   S1-1 좌측 칸) — `padding:14px 14px 12px · flex-direction:column · gap:8px`.
+   색은 이 저장소의 토큰을 쓴다. 두 기준을 섞지 않는다. */
 .list__head {
-  padding: var(--s-12);
+  padding: 14px 14px 12px;
   border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+  flex: none;
+}
+
+/* 제목줄 — 「환자」는 왼쪽에서 늘어나고 `◀` 는 오른쪽 끝. */
+.list__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
 }
 
 .list__search {
@@ -155,42 +334,151 @@ body.shell {
   border-radius: var(--radius);
 }
 
+/* 날짜 줄 — 와이어프레임 원문 `padding:9px 12px · gap:6px`.
+   화살표는 양끝, 날짜는 가운데. */
 .list__day {
   display: flex;
   align-items: center;
-  gap: var(--s-8);
-  padding: var(--s-8) var(--s-12);
-  font-size: 13px;
-  font-weight: 600;
+  gap: 6px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--line);
 }
 
-.list__day .grow {
-  flex: 1;
+/* 화살표 — 원문 `24×24 · border 1px · radius 5 · 12px`.
+   테두리를 줘서 「누를 수 있다」가 보이게 한다. 전에는 글자만 있어서
+   날짜 옆 장식으로 읽혔다. */
+.day__step {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink-2);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
+
+.day__step:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+/* 날짜 — 가운데. 누르면 달력이 열린다. */
+.day__pick {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.day__label {
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* 「오늘」은 날짜보다 약하게 — 읽을 것은 날짜다 */
+.day__label .day__today {
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+/* **달력은 브라우저 것을 쓴다.** 투명하게 겹쳐 두면 누르는 자리는 날짜 글자인데
+   열리는 것은 그 기기의 달력이다 — 우리가 그리면 키보드 이동·언어·주 시작
+   요일을 다시 만들어야 한다.
+
+   `opacity:0` 으로만 두고 `display:none` 을 쓰지 않는다. 숨긴 입력은 초점을
+   못 받아 키보드로 날짜를 못 고른다 (WCAG 2.1.1). */
+.day__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* 초점이 오면 날짜 쪽에 테두리를 보인다 — 입력이 투명해서 초점이 안 보인다. */
+.day__input:focus-visible + .day__label,
+.day__pick:focus-within .day__label {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
 
 /* 상태 탭 — 다중 선택 토글. 역할마다 봐야 할 묶음이 다르다.
    놓치면 안 되는 탭(보완)은 ⚠ 와 개수로 표시한다. */
+/* 다섯 칩이 320px 안에 **한 줄**로 들어가야 한다. 두 줄이 되면 그만큼 목록이
+   짧아지고, 하루치 환자를 보려면 스크롤해야 한다.
+
+   배지가 칩 위로 튀어나오므로 위쪽에 자리를 조금 준다 — `overflow` 를 막으면
+   숫자가 잘린다. */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: var(--s-8) var(--s-12);
+  gap: 4px;
+  padding: 12px 12px 8px;
   border-bottom: 1px solid var(--line);
 }
 
-/* 32px — 320px 폭에 다섯이 들어가야 해서 44px 은 못 쓴다.
-   폭은 그대로 두고 높이만 올려 줄바꿈을 늘리지 않는다. */
+/* 26px · 11px — 다섯이 320px 안에 한 줄로 서야 한다. WCAG 2.2 의 최소 목표
+   크기(2.5.8)는 24px 이라 그 위다. 44px(2.5.5 AAA)은 이 폭에서 못 쓴다.
+
+   숫자는 배지로 띄워 폭을 안 잡아먹게 했다 — 라벨에 섞으면 숫자가 바뀔 때마다
+   칩 폭이 흔들려 줄바꿈이 오갔다. */
 .chip {
-  height: 32px;
-  padding: 0 10px;
+  position: relative;
+  height: 26px;
+  padding: 0 8px;
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
   color: var(--ink-2);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
   cursor: pointer;
+}
+
+/* iOS 앱 아이콘의 알림 수처럼 오른쪽 위에 띄운다.
+   **절대 위치라 칩 폭을 차지하지 않는다** — 숫자가 붙어도 한 줄이 유지된다. */
+.chip__count {
+  position: absolute;
+  top: -6px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--card);
+  border-radius: var(--radius-pill);
+}
+
+/* 손볼 것이 남은 묶음은 숫자도 그 색으로 — 「몇 건인가」보다 「봐야 하는가」가 먼저다 */
+.chip--warn .chip__count {
+  background: var(--warn);
+}
+
+.chip[hidden],
+.chip__count[hidden] {
+  display: none;
 }
 
 .chip[aria-pressed="true"] {
@@ -243,7 +531,14 @@ body.shell {
   font-weight: 600;
 }
 
+/* 진단명은 이름 옆에서 늘어나 상태를 오른쪽 끝으로 민다.
+   진단이 길면 줄여서 보인다 — 밀려나야 하는 것은 상태가 아니라 진단이다. */
 .row__dx {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--ink-3);
 }
@@ -255,7 +550,7 @@ body.shell {
 }
 
 .row__state {
-  margin-top: 6px;
+  flex: none;
   display: inline-block;
   padding: 2px 8px;
   font-size: 12px;
@@ -286,37 +581,20 @@ body.shell {
 
 /* ── 오른쪽 내용 ────────────────────────────────────── */
 
+/* 와이어프레임 본문은 `padding:22px 28px` 이다. 좌우를 조금 넉넉히, 위아래를
+   조금 좁게 — 글은 가로로 읽고 세로로는 훑는다. */
 .pane {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: var(--s-24);
+  padding: 18px 24px;
 }
 
 /* 누구의 기록을 다루는 중인지 늘 붙어 있어야 다른 환자에게 잘못 넣지 않는다 */
-.patient-head {
-  padding-bottom: var(--s-16);
-  border-bottom: 1px solid var(--line);
-}
-
-.patient-head__name {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.patient-head__id {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--ink-2);
-}
-
-.patient-head__visit {
-  margin-top: var(--s-8);
-  font-size: 13px;
-  color: var(--ink-3);
-}
-
+/* 와이어프레임 S1-4: 머리말과 탭이 **한 줄**이다
+   (`padding:11px 26px · flex · align-items:center · gap:18px`).
+   왼쪽에 누구인지, 오른쪽에 어디를 보는지. 탭을 아래 줄로 내리면 본문이
+   그만큼 줄어 1280×800 에서 지난 방문이 잘린다. */
 /* 단계 — 어디까지 왔는지. 지금 단계만 진하게 둔다.
    순서가 있으니 ol 로 적되 번호는 지운다 — ✓ ● ○ 가 이미 어디까지 왔는지 말한다. */
 .steps {
@@ -435,4 +713,11 @@ body.shell {
 
 .chip:active {
   border-color: var(--line-strong);
+}
+
+/* 반려 사유 — 「고친 뒤 다시 넘겨 주세요」 옆에 무엇을 고칠지 붙는다.
+   곁말보다 진하게 둔다: 이건 의사가 사람에게 쓴 문장이지 화면의 설명이 아니다. */
+.note__why {
+  color: var(--warn);
+  font-weight: 700;
 }

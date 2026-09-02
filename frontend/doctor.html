@@ -3,10 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>안내문 승인 · 복약 안내 도우미</title>
+    <title>안내문 승인 · 케어온</title>
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/shell.css" />
+    <link rel="stylesheet" href="/css/blocks.css" />
     <link rel="stylesheet" href="/css/doctor.css" />
   </head>
   <body class="shell">
@@ -16,7 +17,7 @@
          승인 뒤의 현황·발송 이력(D1-6·D1-7)은 이 티켓 밖이다. -->
 
     <header class="topbar">
-      <span class="topbar__brand">복약 안내 도우미</span>
+      <span class="topbar__brand">케어온 <span class="topbar__clinic">도로시여성의원</span></span>
       <nav class="topbar__nav">
         <button class="topbar__tab" type="button" aria-current="page">현황</button>
         <button class="topbar__tab" type="button">관리</button>
@@ -28,21 +29,35 @@
           <span class="who__roles" id="who-roles"></span>
         </span>
         <button class="icon-button" type="button" aria-label="알림">
-          🔔<span class="icon-button__count" id="alert-count" hidden></span>
+          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="icon-button__count" id="alert-count" hidden></span>
         </button>
-        <button class="icon-button" type="button" id="logout" aria-label="로그아웃">⏻</button>
+        <button class="icon-button" type="button" id="logout" aria-label="로그아웃"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       </div>
     </header>
 
     <div class="main">
       <aside class="list" aria-label="환자 목록">
         <div class="list__head">
+          <div class="list__title">
+            <span class="list__label">환자 리스트</span>
+            <button class="list__fold" type="button" aria-expanded="true" title="목록 접기">◀</button>
+          </div>
           <input class="list__search" type="search" id="quick-search" placeholder="이름 · 차트번호 검색" aria-label="환자 검색" />
         </div>
+        <!-- 와이어프레임 S1-1: `padding:9px 12px · gap:6px`, 화살표 `24×24`,
+             날짜는 `flex:1 · 가운데 · 13px/700`.
+
+             날짜를 누르면 달력이 열린다. 직접 그리지 않고 `<input type="date">`
+             를 겹쳐 둔다 — 브라우저·운영체제가 주는 달력이라 키보드로도 되고
+             언어·주 시작 요일도 그 기기 설정을 따른다. 우리가 그린 달력은
+             그 셋을 다시 만들어야 한다. -->
         <div class="list__day">
-          <button class="icon-button" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
-          <span class="grow" id="day">—</span>
-          <button class="icon-button" type="button" id="day-next" aria-label="다음 날짜">›</button>
+          <button class="day__step" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
+          <div class="day__pick">
+            <span class="day__label" id="day">—</span>
+            <input class="day__input" type="date" id="day-input" aria-label="날짜 고르기" />
+          </div>
+          <button class="day__step" type="button" id="day-next" aria-label="다음 날짜">›</button>
         </div>
         <div class="chips" id="chips" role="group" aria-label="상태로 거르기"></div>
         <div class="list__rows" id="rows"></div>
@@ -68,19 +83,22 @@
         <section class="view" id="view-register" hidden></section>
 
         <section class="view" id="view-card" hidden>
+        <!-- 머리말과 단계 줄은 스탭 화면과 **같은 것**이다.
+             전에는 이 화면만 `<ol class="steps">` 로 박아 둔 정적 목록이었다 —
+             `<li>` 라 눌리지도 않았고, 아래 줄을 차지해 이름 밑으로 내려왔다.
+             그래서 의사가 기본정보·진료기록·안내문으로 갈 길이 없었다.
+             줄은 `js/step-nav.js` 가 그린다. -->
         <div class="patient-head">
-          <div class="patient-head__name" id="p-name">—</div>
-          <div class="patient-head__id" id="p-id"></div>
-          <div class="patient-head__visit" id="p-visit"></div>
+          <div class="patient-head__who">
+            <div class="patient-head__top">
+              <div class="patient-head__name" id="p-name">—</div>
+              <div class="patient-head__id" id="p-id"></div>
+              <span class="row__state" id="p-state" hidden></span>
+            </div>
+            <div class="patient-head__visit" id="p-visit"></div>
+          </div>
+          <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드"></div>
         </div>
-
-        <ol class="steps">
-          <li class="step step--done"><span class="step__mark">✓</span>기본정보</li>
-          <li class="step step--done"><span class="step__mark">✓</span>진료기록</li>
-          <li class="step step--done"><span class="step__mark">✓</span>안내문</li>
-          <li class="step step--now"><span class="step__mark">●</span>최종 확인</li>
-          <li class="step"><span class="step__mark">○</span>현황</li>
-        </ol>
 
         <h1 class="pane__title">환자가 받게 될 안내문 · 미리보기</h1>
 
@@ -93,6 +111,10 @@
              다시 읽힌다 — 정상적인 탐색이 시끄러워진다 (이희진 님 `#121` 리뷰).
              환자가 바뀐 것만 아래 `#panel-say` 가 한 줄로 알린다. -->
         <div id="panel"></div>
+
+        <!-- 누른 뒤에 무슨 일이 일어났는지 한 줄. 스탭 화면의 `#guide-say` 와
+             같은 자리다 — 고치기 배선이 두 화면에 같은 것을 쓴다. -->
+        <p class="note" id="say" role="status"></p>
         <p class="sr-only" id="panel-say" role="status" aria-live="polite"></p>
 
         <div class="footbar">
@@ -116,7 +138,12 @@
          「승인 요청」의 행도 그 목업에 있다. -->
     <script src="/js/patients-api.js"></script>
     <script src="/js/session.js"></script>
+    <script src="/js/step-nav.js"></script>
+    <script src="/js/list-fold.js"></script>
     <script src="/js/shell.js"></script>
+    <script src="/js/sms-plan.js"></script>
+    <script src="/js/guide-view.js"></script>
+    <script src="/js/status-view.js"></script>
     <script src="/js/doctor-api.js"></script>
     <script src="/js/doctor.js"></script>
   </body>

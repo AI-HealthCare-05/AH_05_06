@@ -62,11 +62,19 @@ class ChatbotContextService:
         await guide.fetch_related("visit")
         if guide.approved_at is None:
             raise RuntimeError("approved guide has no approved_at")
-        return _to_context(guide, hospital.name, guide.visit.visited_at.astimezone(DISPLAY_TIMEZONE).date())
+        # **좁힌 값을 직접 넘긴다.** `guide` 통째로 넘기면 위에서 확인한 것이
+        # 문 밖에서 풀려, 「승인됐는데 승인 시각이 없다」를 아무도 다시 안 본다.
+        return _to_context(
+            guide,
+            guide.approved_at,
+            hospital.name,
+            guide.visit.visited_at.astimezone(DISPLAY_TIMEZONE).date(),
+        )
 
 
 def _to_context(
     guide: GuideDocument,
+    approved_at: datetime,
     clinic_name: str,
     encounter_date: date,
 ) -> ApprovedChatbotContext:
@@ -78,7 +86,7 @@ def _to_context(
     return ApprovedChatbotContext(
         guide_document_id=guide.guide_document_id,
         visit_id=guide.visit_id,
-        approved_at=guide.approved_at,
+        approved_at=approved_at,
         clinic_name=clinic_name,
         encounter_date=encounter_date,
         medication_sections=_pick(GuideSectionKey.MEDICATION),

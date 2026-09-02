@@ -20,8 +20,11 @@
  * IIFE **밖**에 두는 것은 검사가 부를 수 있게 하려는 것이다 (KEY-158).
  * 그리는 함수는 옮기지 않는다 — 그건 브라우저가 할 일이다.
  *
- * `warnCount` · `alreadyDone` 은 닫힌 값(`guide` · `visit`)을 읽고 있어서
- * **인자를 받도록 바꿨다.** 그래야 검사가 조합을 표처럼 채울 수 있다.
+ * `alreadyDone` 은 닫힌 값(`visit`)을 읽고 있어서 **인자를 받도록 바꿨다.**
+ * 그래야 검사가 조합을 표처럼 채울 수 있다.
+ *
+ * 안내문을 그리는 규칙은 `js/guide-view.js` 로 옮겼다 — 환자 카드의 「안내문」·
+ * 「최종 확인」 탭이 같은 것을 쓴다. 거기 있는 것도 전부 순수 함수다.
  */
 
 /* 서버는 `2026-08-21T18:00:00+09:00` 처럼 **병원 시간대를 달아서** 준다
@@ -43,12 +46,6 @@ function whenText(iso) {
   var m = String(iso).match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
   if (!m) return String(iso);
   return Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3];
-}
-
-function warnCount(sections) {
-  return sections.filter(function (s) {
-    return !!s.warn;
-  }).length;
 }
 
 /* 이미 승인한 진료는 다시 승인하지 않는다.
@@ -142,146 +139,48 @@ function patientLinkSaying(error) {
   }
 
 
-  /* 서버는 `key` 와 `gender` 를 계약대로 주고, **한국어로 옮기는 것은 화면
-     몫이다.** 서버가 한국어를 주면 화면마다 다른 말이 섞이고, 나중에 문구를
-     바꿀 때 서버와 화면 두 곳을 고쳐야 한다. */
-  var SECTION_LABEL = {
-    medication: "복약지도",
-    caution: "주의사항",
-    emergency: "🚨 바로 병원에 연락하세요",
-    life: "생활 안내",
-    messages: "문자 설정",
-  };
+  /* 안내문을 그리는 규칙은 `js/guide-view.js` 가 갖는다 — 환자 카드의
+     「안내문」·「최종 확인」 탭이 같은 것을 쓴다. 와이어프레임에서 D1 은 별도
+     화면이 아니라 그 탭 뒷칸이라, 두 곳이 같은 안내문을 그린다. 코드가 두
+     벌이면 한쪽만 고쳐지고 화면마다 다른 말이 나온다. */
 
-  /* **응급 문장은 탭을 갖지 않는다.** 서버가 주는 다섯 갈래 중 `emergency` 만
-     탭에서 빼고, 「주의사항」 탭 본문 안에 이어 붙인다(와이어프레임 D1-2).
-
-     따로 탭을 만들면 원장님이 그 탭을 안 열고 승인할 수 있다. 열지 않아도
-     되는 문장이 아니다 — 일반 주의 문구를 읽으러 들어온 자리에서 함께 보인다.
-
-     서버에서 나눈 까닭은 **잠금 단위**다. `locked` 는 섹션 단위라, 한 칸에
-     두면 응급 문장을 지키려다 일반 문구까지 잠긴다 (KEY-161). */
-  var TUCKED_UNDER = { emergency: "caution" };
-
-  function tabSections() {
-    return guide.sections.filter(function (s) {
-      return !TUCKED_UNDER[s.key];
-    });
+  /* 가로 탭은 한 판 안에 함께 그려진다(`guideScreenHtml`) — 이 칸은 비운다.
+     와이어프레임 D1-1 이 S1-11 과 같은 화면이라 같은 것을 쓴다. */
+  function renderTabs() {
+    el("vtabs").innerHTML = "";
   }
-
-  /* 이 탭에서 함께 보여 줄 섹션들 — 차례는 서버가 준 그대로다. */
-  function sectionsOf(key) {
-    return guide.sections.filter(function (s) {
-      return s.key === key || TUCKED_UNDER[s.key] === key;
-    });
-  }
-
-  var GENDER_LABEL = { FEMALE: "여", MALE: "남", OTHER: "기타", UNKNOWN: "—" };
-
-  /* **아직 받아 줄 서버가 없는 섹션.**
-
-     `messages` 는 본문 자체는 서버가 주지만, 회차·문구를 **저장할 자리가
-     없다**(구조화된 문자 설정은 `GuideResponse` 에 없고 `S1-14` 후속 계약이다).
-     그래서 [수정] 을 열지 않는다 — 이 저장소가 「고칠 수 있어 보이는데 저장이
-     안 되는 칸이 제일 나쁘다」로 정해 둔 자리다.
-
-     `locked` 로 표현하지 않는다. `locked` 는 「식약처 기준 문장이라 사람이
-     고칠 자리가 아니다」라는 뜻이고, 여기는 「아직 안 만들었다」라서 이유가
-     다르다. 섞으면 나중에 문자 설정이 붙었을 때 무엇을 풀어야 하는지 알 수
-     없다 (`KEY-160`). */
-  var NOT_IMPLEMENTED = { messages: "회차·문구를 저장할 자리가 아직 없습니다 — S1-14 후속 계약입니다" };
-
-  /* ── 안내문 ──────────────────────────────────────────── */
 
   function currentSection() {
-    var tabs = tabSections();
-    for (var i = 0; i < tabs.length; i++) {
-      if (tabs[i].key === section) return tabs[i];
-    }
-    return tabs[0];
+    return guideCurrentSection(guide.sections, section);
   }
 
-  function renderTabs() {
-    var tabs = tabSections()
-      .map(function (s) {
-        return (
-          '<button class="vtab' +
-          (s.key === section ? " is-on" : "") +
-          '" type="button" data-section="' +
-          s.key +
-          '">' +
-          esc(SECTION_LABEL[s.key] || s.key) +
-          (s.warn ? ' <span class="vtab__warn">⚠</span>' : "") +
-          "</button>"
-        );
-      })
-      .join("");
-    /* 예전에는 「문자 설정」을 화면이 따로 붙였다. 서버의 `GuideSectionKey` 에
-       `messages` 가 있으므로 그것도 섹션 하나다 — 화면이 목록을 만들지 않는다. */
-    el("vtabs").innerHTML = tabs;
-  }
-
-  /* 서버는 섹션마다 **본문 한 덩이**(`body`)를 준다. 예전 목업은 제목·표·목록으로
-     쪼갠 `blocks` 를 그렸는데, 그건 렌더 편의로 만든 모양이지 계약이 아니었다.
-
-     8/27 여정에서 안내문은 고정 텍스트다(KEY-150 — 「확정 OCR→고정 안내→의사
-     승인」). 채울 것이 없는 표 구조를 먼저 굳히지 않는다. 실제 생성이 붙을 때
-     「어느 확정값이 어느 칸에 들어갔는가」와 함께 다시 정한다. */
-  function sectionHtml(s) {
-    var title = SECTION_LABEL[s.key] || s.key;
-
-    /* 잠긴 섹션은 왜 잠겼는지를 함께 적는다. 이유 없이 안 눌리는 버튼은
-       「고장났다」로 읽히고, 원장님은 그것을 확인하느라 시간을 쓴다. */
-    var pending = NOT_IMPLEMENTED[s.key];
-    var tail = s.locked
-      ? '<p class="block__locked">🔒 식약처 기준 문장이라 고칠 수 없습니다 — 약이 바뀌면 문장도 바뀝니다</p>'
-      : pending
-        ? '<p class="block__locked">[demo] ' + esc(pending) + "</p>"
-        : '<button class="block__edit" type="button" data-edit="' + esc(title) + '">수정</button>';
-
-    return (
-      '<section class="block' +
-      (s.warn ? " block--warn" : "") +
-      (s.locked ? " block--locked" : "") +
-      '">' +
-      '<h3 class="block__title">' +
-      esc(title) +
-      "</h3>" +
-      (s.warn ? '<p class="block__warnline">⚠ ' + esc(s.warn) + "</p>" : "") +
-      '<p class="block__body">' +
-      esc(s.body) +
-      "</p>" +
-      (s.edited ? '<p class="block__hint">이 항목은 수정되었습니다</p>' : "") +
-      tail +
-      "</section>"
-    );
-  }
-
-  /* 「문자 설정」도 서버가 주는 섹션 하나라, 다른 셋과 같은 길로 그린다.
-
-     예전에는 이 탭만 체크박스·미리보기가 붙은 별도 화면이었는데 **그것을 받아
-     주는 서버가 없었다.** 목업을 끄면 눌러도 저장되지 않는 칸이 되는데, 이
-     저장소가 「고칠 수 있어 보이는데 저장이 안 되는 칸이 제일 나쁘다」로 정해
-     둔 그것이다. 알림 일정 계약은 KEY-138 에서 정한 뒤 다시 붙인다. */
   function renderPanel() {
-    el("panel").innerHTML = sectionsOf(currentSection().key).map(sectionHtml).join("");
+    var now = currentSection();
+    el("panel").innerHTML = now
+      ? guideScreenHtml(guide.sections, now.key, "final", isDoctor(), guideEditingNow())
+      : "";
   }
 
-
-  /* 위에 몇 개를 봐야 하는지 먼저 말한다. 없으면 「없다」고 분명히 말한다 —
-     그래야 읽지 않고 승인해도 된다는 것이 전해진다. */
   function renderSummary() {
-    var n = warnCount(guide.sections);
-    el("warn-line").className = "warnline" + (n ? " warnline--warn" : " warnline--ok");
-    el("warn-line").textContent = n
-      ? "확인 부탁드리는 곳 " + n + "군데 — ⚠ 표시만 보시면 됩니다"
-      : "확인 부탁드릴 곳이 없습니다 — 그대로 승인하셔도 됩니다";
+    var line = guideWarnLine(guide.sections);
+    el("warn-line").className = line.className;
+    el("warn-line").textContent = line.text;
   }
 
   /* 안내문이 없으면 **앞 환자의 이름을 지운다.** 안내문을 불러오는 동안 이름만
      남아 있으면, 화면은 앞 사람을 말하는데 `visit` 은 뒷사람이라 원장님이 읽는
      대상과 누를 대상이 어긋난다. 환자 식별이 걸린 자리라 비워 두는 편이 낫다. */
   function renderHead() {
+    /* 단계 줄은 **스탭 화면과 같은 것**을 쓴다 (`js/step-nav.js`).
+       전에는 이 화면만 정적 `<ol>` 이라 눌리지도 않았고, 그래서 의사가
+       기본정보·진료기록·안내문으로 갈 길이 없었다. 의사가 서는 자리는
+       「최종 확인」이지만 앞 단계를 되짚는 길은 열려 있어야 한다 —
+       무엇을 보고 만든 글인지 확인하고 승인한다. */
+    var steps = el("tabs");
+    if (steps) {
+      steps.innerHTML = stepsHtml("final", "/doctor.html", visit ? visit.visit_id : "");
+    }
+
     if (guide === null) {
       el("p-name").textContent = "—";
       el("p-id").textContent = "";
@@ -298,6 +197,21 @@ function patientLinkSaying(error) {
       (GENDER_LABEL[p.gender] || "—") + " " + p.age + "세 · 차트 " + p.hospital_patient_no;
     el("p-visit").textContent = guide.summary || "";
   }
+
+  /* 단계 줄을 누르면 그 단계로 간다.
+   *
+   * 이 화면에는 그 탭들의 본문이 없다 — 「최종 확인」만 있다. 그래서 같은
+   * 화면에서 바꾸지 않고 `patients.html` 의 그 탭으로 옮긴다.
+   * 어디로 갈지는 `js/step-nav.js` 가 `data-href` 로 붙여 준다 —
+   * 스탭 화면과 같은 규칙을 쓰기 위해서다.
+   *
+   * 지금 서 있는 단계에는 `data-href` 가 없다. **제자리로 오는 링크가 가장
+   * 나쁘다** — 눌렀는데 아무 일도 안 일어나면 고장으로 읽힌다. */
+  document.addEventListener("click", function (event) {
+    var step = event.target.closest && event.target.closest(".tab[data-href]");
+    if (!step) return;
+    location.href = step.getAttribute("data-href");
+  });
 
   /* ── 권한 ───────────────────────────────────────────── */
 
@@ -371,29 +285,16 @@ function patientLinkSaying(error) {
     );
   }
 
+  /* 와이어프레임 D1-5. 본문은 `guide-view.js` 가 그린다 — 최종 확인 탭과
+     **같은 창**이다. 예전에는 여기서만 그려서 두 화면의 승인 확인이 갈렸다.
+
+     「개발용 환자 화면 열기」는 창에서 뺐다. 승인 직후에 개발용 링크를 발급하는
+     자리가 아니고, 그 단추는 화면 아래(`#patient-open`)에 그대로 있다. */
   function approvedModal(result) {
-    return (
-      '<p class="modal__mark">✓</p>' +
-      '<h2 class="modal__title">승인 완료</h2>' +
-      '<p class="modal__lead">' +
-      esc(whenText(result.scheduled_at)) +
-      " 발송 예약</p>" +
-      /* **없는 발송을 약속하지 않는다.**
-
-         예전에는 「발송 예정」 + 「확인 문자와 소진 임박 안내는 자동
-         발송됩니다」였다. 승인이 `scheduled_at` 을 채우는 것은 진짜지만
-         **문자를 보내는 것은 아무것도 없다** — 발송기도 SMS 연동도 아직
-         없다. 원장님이 그 문장을 읽고 「환자에게 갔다」고 믿으면, 안 간 것을
-         갔다고 아는 상태가 된다.
-
-         `KEY-148` §6 이 정한 대로 fallback 을 숨기지 않고 그 자리에 적는다.
-         승인 자체의 뜻(= 발송 예약)은 그대로 두고 **무엇이 아직 없는지만**
-         덧붙인다 (`KEY-160`). */
-      '<p class="modal__note">[demo] 문자 발송은 아직 붙지 않았습니다 — 승인은 <b>발송 예약까지</b>입니다.<br />' +
-      "확인 문자·소진 임박 안내의 실제 발송과 실패 알림은 S1-14 후속 계약입니다.</p>" +
-      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
-      '<button class="button-primary" type="button" data-open-patient>개발용 환자 화면 열기</button></div>'
-    );
+    return approvedModalHtml({
+      scheduledAt: result && result.scheduled_at,
+      name: (visit && visit.name) || "",
+    });
   }
 
   function patientLinkFailedModal(error) {
@@ -475,6 +376,8 @@ function patientLinkSaying(error) {
        쓰던 사유가 뒷 환자의 이름 아래 남는다. 이름·버튼을 거두는 것과 같은
        이유다 — 화면이 말하는 사람과 눌렀을 때 가는 사람이 달라진다. */
     guide = null;
+    /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
+    smsForget();
     closeModal();
     renderHead();
     renderRole();
@@ -600,18 +503,34 @@ function patientLinkSaying(error) {
       return;
     }
 
-    /* 항목 수정은 서버가 붙은 뒤다(KEY-111) — 지금은 어디까지 됐는지 말한다. */
-    var edit = target.closest("[data-edit]");
-    if (edit) {
-      openModal(
-        '<h2 class="modal__title">' +
-          esc(edit.getAttribute("data-edit")) +
-          " 수정</h2>" +
-          '<p class="modal__lead">항목 편집은 승인 API 가 붙은 뒤입니다 (KEY-111).</p>' +
-          '<p class="modal__note">지금은 읽고 승인하거나 되돌리는 것까지 됩니다.</p>' +
-          '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>',
-      );
-    }
+  });
+
+  /* 고치기는 `js/guide-view.js` 가 배선한다 — 스탭 화면과 같은 것을 쓴다.
+     전에는 이 자리가 「항목 편집은 승인 API 가 붙은 뒤입니다」 안내창이었다.
+     그 API 는 그 뒤에 붙었는데 안내창만 남아 있었다. */
+  /* 문자 설정도 스탭 화면과 같은 배선을 쓴다. */
+  wireSmsSettings({
+    reRender: function () {
+      renderPanel();
+    },
+    say: function (text) {
+      var box = el("say");
+      if (box) box.textContent = text;
+    },
+  });
+
+  wireGuideEditing({
+    visitId: function () {
+      return visit ? visit.visit_id : null;
+    },
+    reRender: function (reload) {
+      if (reload && visit) return load(visit);
+      renderPanel();
+    },
+    say: function (text) {
+      var box = el("say");
+      if (box) box.textContent = text;
+    },
   });
 
   document.addEventListener("session:ready", function (event) {
@@ -626,5 +545,13 @@ function patientLinkSaying(error) {
 
   document.addEventListener("visit:selected", function (event) {
     load(event.detail);
+  });
+
+  /* 같은 사람인데 줄 값만 새로 왔다 — 머리만 고친다. `load()` 는 받아 둔
+     안내문을 버리고 치던 문자 문구를 지운다(`smsForget`). */
+  document.addEventListener("visit:refreshed", function (event) {
+    if (!visit || !event.detail || visit.visit_id !== event.detail.visit_id) return;
+    visit = event.detail;
+    renderHead();
   });
 })();
