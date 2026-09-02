@@ -187,6 +187,7 @@
         if (!msg.error && !msg.aborted && !msg.fallback && msg.responseRef) {
           answer.appendChild(buildFeedbackActions(msg));
         }
+      }
 
       row.appendChild(answer);
     }

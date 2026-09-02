@@ -10,6 +10,11 @@ function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
+test('chat.js 전체 파일이 문법 오류 없이 파싱된다', () => {
+  const source = read('patient_wireframe/js/chat.js');
+  assert.doesNotThrow(() => new vm.Script(source, { filename: 'chat.js' }));
+});
+
 test('환자 피드백 요청은 세션 쿠키만 사용하고 링크 토큰을 보내지 않는다', async () => {
   const calls = [];
   const storage = new Map();
