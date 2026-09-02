@@ -187,6 +187,46 @@ function mockGuideState(visitId) {
   );
 }
 
+/* 현황(D1-6)이 읽는 이력. **서버가 만들지 않는 사건은 여기서도 안 만든다** —
+   `app/timeline/api.py` 가 안내문 사건과 예약 문자만 모아 주므로 목업도 그만 준다.
+
+   안내문이 없는 진료는 **빈 이력**이다. 오류가 아니다 — 아직 아무 일도 안
+   일어난 진료와 같은 모양이라, 화면이 「기록이 아직 없습니다」를 그린다. */
+function mockTimeline(visitId) {
+  var guide = mockGuide(visitId);
+  if (!guide) return { visit_id: visitId, entries: [], messages: [] };
+
+  var state = mockGuideState(visitId);
+  var made = [
+    { at: "2026-09-02T09:14:00+09:00", kind: "GENERATED", actor: null },
+    { at: "2026-09-02T09:31:00+09:00", kind: "EDITED", actor: "한소영", section: "caution" },
+    { at: "2026-09-02T09:36:00+09:00", kind: "SUBMITTED", actor: "한소영" },
+  ];
+  if (state.returned_reason) {
+    made.push({
+      at: "2026-09-02T10:02:00+09:00",
+      kind: "RETURNED",
+      actor: "박연",
+      detail: state.returned_reason,
+    });
+  }
+  if (guide.status === "SCHEDULED_TO_SEND") {
+    made.push({ at: "2026-09-02T10:12:00+09:00", kind: "APPROVED", actor: "박연" });
+  }
+
+  /* **예약은 승인이 만든다.** 승인 전에는 비어 있다 — 서버 주석이 그렇게 적었고,
+     미리 채워 두면 「승인 안 했는데 나갈 문자가 있다」로 읽힌다. */
+  var messages =
+    guide.status === "SCHEDULED_TO_SEND"
+      ? [
+          { kind: "GUIDE", scheduled_at: "2026-09-02T18:00:00+09:00", status: "SCHEDULED" },
+          { kind: "CHECK_D7", scheduled_at: "2026-09-09T18:00:00+09:00", status: "SCHEDULED" },
+        ]
+      : [];
+
+  return { visit_id: visitId, entries: made, messages: messages };
+}
+
 /* 모르는 진료는 **없다고 답한다.** 서버(`app/services/guides.py`)가 그 자리에서
    `404 GUIDE_NOT_FOUND` 를 주므로 목업도 같게 한다.
 
@@ -396,9 +436,15 @@ function mockDoctorRequest(path, options) {
       var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
       var msgs = path.match(/^\/visits\/(\d+)\/guide\/messages$/);
-      var m = get || sec || act || issueLink || msgs;
+      /* **현황(D1-6)이 읽는 자리.** 이 분기가 없어서 `?mock=1` 로는 현황 탭이
+         늘 「불러오지 못했습니다」였다 — 서버에는 있는데 목업만 없었다.
+         목업이 서버보다 **좁으면** 화면을 목업으로 검수할 수 없다. */
+      var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
+      var m = get || sec || act || issueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
+
+      if (tl) return resolve(mockTimeline(visitId));
 
       if (issueLink && options.method === "POST") {
         var linkedGuide = mockGuide(visitId);

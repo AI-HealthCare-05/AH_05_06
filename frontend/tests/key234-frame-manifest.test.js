@@ -32,6 +32,14 @@ function loadManifest() {
   return context;
 }
 
+/* **손으로 그린 판만 읽는다.**
+ *
+ * 지금 판(3.0.0)은 손으로 그린 것이 아니라 **화면을 띄워 담은 것**이라, 표와
+ * 대 볼 것이 없다 — 거기 있는 화면은 곧 코드다. 대조가 뜻이 있는 것은 **아직 안 만든 화면의 설계**가 담긴
+ * 손 그림 쪽이다.
+ *
+ * 그래서 여기서 읽는 것은 `docs/wireframes/*.html` 그대로다. 지금 판을 여기 넣지
+ * 않는 이유가 그것이다 — 넣으면 「코드에 있는 화면이 코드에 있다」를 재게 된다. */
 function wireframeIds() {
   const ids = [];
   for (const file of fs.readdirSync(WIREFRAMES)) {
@@ -41,6 +49,25 @@ function wireframeIds() {
   }
   return ids;
 }
+
+test("**지금 판은 그린 것이 아니라 뜬 것이다**", () => {
+  /* 3.0.0 은 손으로 그리지 않는다 — 화면을 띄워 그 결과를 담는다. 화면마다
+     `srcdoc` 문서 하나를 갖고, 그 안에 **그 화면이 실제로 싣는 CSS만** 들어간다.
+     한 벌로 몰아 담았더니 로그인에 `blocks.css` 가 섞여 이름표가 옆으로 붙고
+     단추가 빨개졌다 — 화면마다 싣는 것이 다르다. */
+  const made = fs.readFileSync(path.join(WIREFRAMES, "wireframe-medic-3.0.0.html"), "utf8");
+  assert.match(made, /srcdoc=/, "화면을 문서로 담지 않는다");
+  assert.match(made, /wf__why/, "「왜 이렇게 생겼는가」가 없다");
+
+  /* **서버 없이 열려야 한다.** 절대 주소가 남아 있으면 그 자리가 빈다. */
+  assert.doesNotMatch(made, /(?:src|href)="\/[a-z]/, "서버를 찾는 주소가 남아 있다");
+
+  /* 만드는 자리도 함께 둔다 — 화면을 고치면 여기를 한 번 열어 다시 만든다 */
+  assert.ok(
+    fs.existsSync(path.join(ROOT, "_make-wireframe.html")),
+    "만드는 자리가 없으면 다음 사람이 손으로 고치게 된다",
+  );
+});
 
 const { FRAMES, FRAME_AREAS, FRAME_LEVELS, frameById, needsGuideScreen } = loadManifest();
 
@@ -103,15 +130,18 @@ test("3단계는 무슨 화면인지와 무엇이 필요한지를 말한다", ()
    견준다. 어떤 프레임이 안내 화면 대상에 들어오거나 빠지면 이 검사가 울고,
    목록을 함께 고치게 되므로 그 변화가 리뷰에 보인다.
 
-   지금 25개다. 팀 계획 문서(`docs/work-packages.md`)는 20으로 적혀 있는데,
+   지금 17개다. 팀 계획 문서(`docs/work-packages.md`)는 20으로 적혀 있는데,
    그 숫자는 구조 진단 §6.2 의 **목표치**(완전 36 · 조회 8 · 안내 20)에서 왔고
-   현재 상태로 다시 세면 25다. 문서 쪽을 고쳐야 한다. */
+   현재 상태로 다시 세면 17다. 문서 쪽을 고쳐야 한다.
+
+   S2-1~S2-4 와 D2-1~D2-5 가 여기서 빠졌다 —
+   화면이 생겨 안내할 자리가 아니라 쓰는 자리가 됐다. 이렇게 하나씩 줄어드는
+   것이 맞다. */
 const GUIDE_SCREEN_FRAMES = [
   "A1-2", "A1-3", "A1-5", "A1-6", "A1-7",
   "D1-4", "D1-6", "D1-7",
-  "D2-1", "D2-2", "D2-3", "D2-4", "D2-5",
   "P1-3", "P1-5", "P5-1", "P5-2", "P8-1", "P8-2", "P9",
-  "S1-10", "S1-14", "S2-2", "S2-3", "S2-4",
+  "S1-10", "S1-14",
 ];
 
 test("안내 화면 대상이 정해 둔 목록과 같다", () => {

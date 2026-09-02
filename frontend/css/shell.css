@@ -70,9 +70,16 @@ body.shell {
   gap: var(--s-4);
 }
 
+/* 탭은 **가는 것과 여기인 것**이 섞인다. 가는 자리는 `<a>` 라야 새 창으로
+   열고 주소를 볼 수 있다 — 그래서 생김새를 링크·버튼 양쪽에 맞춘다.
+   (`display` 없이 두었더니 `<a>` 에 `height` 가 안 먹어 탭이 홀로 낮았고,
+    밑줄까지 그어졌다.) */
 .topbar__tab {
+  display: inline-flex;
+  align-items: center;
   height: 34px;
   padding: 0 12px;
+  text-decoration: none;
   font: inherit;
   font-size: 13px;
   color: var(--ink-2);
@@ -244,8 +251,16 @@ body.shell {
   background: #eaecee;
 }
 
+/* **축약을 축약으로 이긴다.** `.list` 가 `flex: 0 0 320px` 라는 축약으로
+   폭을 정하는데, 여기서 `flex-basis` 하나만 되돌리면 브라우저에 따라 축약이
+   그대로 남아 접혀도 320px 로 서 있었다 — 환자 · 판독 · 설정 세 화면에서 다
+   안 접혔다.
+   `min-width` 를 함께 0 으로 둔다: flex 항목의 기본 `min-width: auto` 가
+   안에 든 것의 최소 폭만큼 버텨, 48px 로 줄어들 자리를 막는다. */
 .list--folded {
-  flex-basis: 48px;
+  flex: 0 0 48px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* 접히면 머리의 접기 버튼만 남는다. 나머지는 폭이 없어 글자가 깨진다.
@@ -640,6 +655,8 @@ body.shell {
    안 싣는 화면에서 브라우저 기본 링(1px)으로 떨어졌다. */
 .chip:focus-visible,
 .row:focus-visible,
+.rail__row:focus-visible,
+.rail__disease:focus-visible,
 .icon-button:focus-visible,
 .topbar__tab:focus-visible,
 .list__search:focus-visible,
@@ -679,7 +696,9 @@ body.shell {
    하루에 수십 번 지난다. */
 .topbar__tab,
 .icon-button,
-.row {
+.row,
+.rail__row,
+.rail__disease {
   transition: background-color var(--motion) var(--ease);
 }
 
@@ -707,7 +726,9 @@ body.shell {
 
 .topbar__tab:active,
 .icon-button:active,
-.row:active {
+.row:active,
+.rail__row:active,
+.rail__disease:active {
   background: var(--line);
 }
 

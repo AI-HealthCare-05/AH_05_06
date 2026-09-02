@@ -16,7 +16,7 @@ from tortoise.contrib.test import TestCase
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
-from app.models.catalog import PrescriptionSet
+from app.models.catalog import PrescriptionSet, PrescriptionSetDrug, SetDaysMode
 from app.models.staffs import Hospital, Staff
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
@@ -111,3 +111,53 @@ class PrescriptionSetTestCase(TestCase):
 
         assert res.status_code == 200
         assert res.json() == []
+
+
+class SetListCarriesDrugsTestCase(PrescriptionSetTestCase):
+    """목록이 약과 일수 규칙을 **함께** 준다 — 2heej 님 `#176` 리뷰.
+
+    판독 화면이 처방을 고르는 순간 아래에 약 목록을 세워야 한다. 그때 상세를
+    한 번 더 받아 오면 목록이 비었다 찼다 한다 — `check_items` 를 함께 주는
+    것과 같은 이유다.
+    """
+
+    async def _listed(self, staff: Staff, prescription_set_id: int) -> dict:
+        async with self.client() as client:
+            got = await client.get("/api/v1/prescription-sets", headers=await self.sign_in(staff))
+        assert got.status_code == 200
+        return [one for one in got.json() if one["prescription_set_id"] == prescription_set_id][0]
+
+    async def test_the_list_carries_drugs_in_order(self) -> None:
+        row = await PrescriptionSet.create(name="자궁내막증 · 비잔 (검사)")
+        # **차례가 위치로 정해진다** — 이름순으로 세우면 안내문 차례가 뒤집힌다.
+        # 위치 차례를 이름 차례와 **일부러 어긋나게** 둔다: 위치대로면
+        # 「하약 · 가약」이고 이름대로면 「가약 · 하약」이라 답에서 갈린다.
+        # 같게 두면 이 검사는 아무것도 안 잰다 (뮤테이션 검사가 잡았다).
+        await PrescriptionSetDrug.create(
+            prescription_set=row, name="하약", frequency="1일 1회", note="같은 시간", position=0
+        )
+        await PrescriptionSetDrug.create(prescription_set=row, name="가약", frequency="필요시", position=1)
+
+        mine = await self._listed(await self.make_staff(["staff"]), row.prescription_set_id)
+
+        assert [drug["name"] for drug in mine["drugs"]] == ["하약", "가약"], "설정이 정한 차례가 아니다"
+        assert mine["drugs"][0]["frequency"] == "1일 1회"
+        assert mine["drugs"][0]["note"] == "같은 시간"
+        assert mine["drugs"][1]["note"] is None
+
+    async def test_the_list_carries_the_day_rule(self) -> None:
+        """**일수를 셈하려면 이 둘이 있어야 한다.** 「총투 3」이 3일인지 84일인지."""
+        row = await PrescriptionSet.create(name="다낭성 · 야즈 (검사)", days_mode=SetDaysMode.PACK, days_per_pack=28)
+
+        mine = await self._listed(await self.make_staff(["staff"]), row.prescription_set_id)
+
+        assert mine["days_mode"] == "PACK"
+        assert mine["days_per_pack"] == 28
+
+    async def test_a_set_with_no_drugs_says_so(self) -> None:
+        """**빈 것은 빈 목록이다.** 없는 칸이 아니라 — 화면이 「없습니다」를 적는다."""
+        row = await PrescriptionSet.create(name="약 없는 처방 (검사)")
+
+        mine = await self._listed(await self.make_staff(["staff"]), row.prescription_set_id)
+
+        assert mine["drugs"] == []

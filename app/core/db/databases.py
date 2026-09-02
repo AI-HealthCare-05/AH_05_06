@@ -38,7 +38,25 @@ TORTOISE_ORM = {
             "models": TORTOISE_APP_MODELS,
         },
     },
-    "use_tz": True,
+    #: **의원 시간대(KST) 벽시계로 담는다.**
+    #:
+    #: `use_tz: True` 였는데, 그 설정에서는 `tortoise.timezone.now()` 가 UTC 를
+    #: 준다. 그런데 asyncmy 는 값을 넣을 때 **tzinfo 를 버리고 벽시계만** 적고
+    #: (KEY-181), 읽을 때는 여기 적힌 `timezone` 으로 도장을 찍는다. 그래서
+    #: `auto_now_add` 로 적힌 값은 UTC 벽시계가 KST 라고 읽혀 **아홉 시간**
+    #: 어긋났다 — 직접 KST 로 넣는 `visited_at` 만 멀쩡했다.
+    #:
+    #: 눈에 보이는 것보다 나쁜 것은 **시각 비교**였다. 링크 만료와 인증번호
+    #: 잠금이 `expires_at <= now()` 로 재는데, 왼쪽은 아홉 시간 이른 값이고
+    #: 오른쪽은 UTC 라 **잠금이 즉시 풀렸다.**
+    #:
+    #: `use_tz: False` 로 두면 `now()` 가 KST 를 주고 `auto_now_add` 도 KST
+    #: 벽시계로 적힌다 — 읽는 쪽과 같아진다. 이 저장소가 이미 고른 모양
+    #: (「`visited_at` 열에는 KST 벽시계가 담겨 있다」)에 나머지를 맞추는 것이다.
+    #:
+    #: 저장을 UTC 로 정규화하는 근본 정리는 별건이다. 그때는 MySQL 세션
+    #: 시간대와 이 두 줄을 함께 옮긴다.
+    "use_tz": False,
     "timezone": "Asia/Seoul",
 }
 

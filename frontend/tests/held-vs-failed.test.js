@@ -3,7 +3,7 @@
  *   실패  보내려 했고 안 됐다.        지난 일.
  *   보류  아직 안 보냈고, 지금 보내면 안 될 것을 안다.  앞일.
  *
- * S2-3 에서 박수빈의 08-11 진료 안내문은 「⚠ 잘못된 번호」로 실패했고, 같은
+ * S2-3 에서 박수빈의 08-11 진료 안내문은 실패했고, 같은
  * 번호로 예약된 08-14 것은 「⏸ 보류 · 번호」다 — **같은 원인인데 상태가
  * 다르다.** 한 무더기로 뭉치면 「이미 벌어진 것」과 「고치면 아직 막을 수
  * 있는 것」이 섞여, 스탭이 무엇을 손대야 하는지 안 보인다.
@@ -19,7 +19,10 @@ const { load } = require("./browser-shim.js");
 const { read } = require("./source.js");
 
 function box() {
-  return load("api", "session", "sms-plan", "guide-view", "status-view");
+  /* 어휘는 `message-words.js` 로 옮겼다 — 화면 둘(현황 탭 · 관리 · 발송 예정)이
+     같은 낱말을 쓰는데, 현황 탭을 그리는 파일에 두면 관리 화면이 `guide-view.js`
+     까지 물고 와야 했다. 그리는 자리(`sendRowsHtml`)는 아직 저쪽에 있다. */
+  return load("api", "session", "sms-plan", "guide-view", "message-words", "status-view");
 }
 
 /* ── 두 목록이 다르다 ───────────────────────────────────────────────── */
@@ -59,14 +62,14 @@ test("**같은 원인이라도 지난 것과 앞일을 다르게 적는다**", (
 
   assert.equal(
     messageSaying({ status: "FAILED", failure_code: "INVALID_PHONE" }),
-    "못 나감 · 잘못된 번호",
+    "발송 실패",
   );
   assert.equal(messageSaying({ status: "HELD", hold_reason: "INVALID_PHONE" }), "보류 · 번호");
 });
 
 test("모르는 코드는 적지 않는다 — 코드를 그대로 보이면 사람 말이 아니다", () => {
   const { messageSaying } = box();
-  assert.equal(messageSaying({ status: "FAILED", failure_code: "WAT" }), "못 나감");
+  assert.equal(messageSaying({ status: "FAILED", failure_code: "WAT" }), "발송 실패");
   assert.equal(messageSaying({ status: "HELD", hold_reason: "WAT" }), "보류");
   assert.equal(messageSaying({ status: "HELD" }), "보류");
 });
@@ -82,7 +85,7 @@ test("**보류를 실패의 사유로 읽지 않는다**", () => {
   );
   assert.equal(
     messageSaying({ status: "FAILED", hold_reason: "NO_CREDIT" }),
-    "못 나감",
+    "발송 실패",
     "보류 사유를 실패 줄에 적는다",
   );
 });
@@ -113,7 +116,7 @@ test("발송 줄이 실제로 그 말을 쓴다", () => {
     { kind: "CHECK_D7", status: "HELD", hold_reason: "NO_CREDIT", at: "2026-08-14T10:00:00+09:00" },
   ]);
 
-  assert.ok(html.includes("못 나감 · 잘못된 번호"), "실패 사유가 줄에 안 적힌다");
+  assert.ok(html.includes("발송 실패"), "실패한 줄이 그렇게 안 적힌다");
   assert.ok(html.includes("보류 · 문자 잔량"), "보류 사유가 줄에 안 적힌다");
   assert.ok(html.includes("⚠") && html.includes("⏸"), "표시가 안 붙는다");
 });
@@ -145,4 +148,38 @@ test("서버가 그 두 칸을 화면에 준다", () => {
 
   const service = read("../app/timeline/service.py");
   assert.match(service, /hold_reason=row\.hold_reason/, "읽어 놓고 안 싣는다");
+});
+
+/* **실패에는 까닭을 붙이지 않는다** (팀장 지적 2026-09-01).
+ *
+ * 「잘못된 번호」는 그 번호가 정말 틀렸다는 뜻으로 읽히는데, 우리가 아는 것은
+ * **나간 것이 안 됐다**는 사실뿐이다. 확인할 방법이 없는 것을 화면이 단정하면
+ * 스탭이 멀쩡한 번호를 고치러 간다.
+ *
+ * 보류는 다르다 — 우리가 붙들기로 정한 것이라 그 까닭을 우리가 안다.
+ */
+test("**실패에 까닭을 붙이지 않는다** — 번호가 틀렸는지는 알 수 없다", () => {
+  const { messageSaying } = load("api", "session", "sms-plan", "guide-view", "message-words", "status-view");
+
+  for (const code of ["INVALID_PHONE", "OPT_OUT", "CARRIER", "SENDER_UNREGISTERED"]) {
+    assert.strictEqual(
+      messageSaying({ status: "FAILED", failure_code: code }),
+      "발송 실패",
+      `${code} 를 화면이 단정한다`,
+    );
+  }
+});
+
+test("보류에는 붙인다 — 우리가 붙들기로 정한 까닭이다", () => {
+  const { messageSaying } = load("api", "session", "sms-plan", "guide-view", "message-words", "status-view");
+
+  assert.strictEqual(messageSaying({ status: "HELD", hold_reason: "NO_CREDIT" }), "보류 · 문자 잔량");
+  assert.strictEqual(messageSaying({ status: "HELD", hold_reason: "INVALID_PHONE" }), "보류 · 번호");
+});
+
+test("실패 사유 코드는 계속 담아 둔다 — 화면이 안 보일 뿐이다", () => {
+  const { FAILURE_SAYING } = load("api", "session", "sms-plan", "guide-view", "message-words", "status-view");
+
+  assert.strictEqual(Object.keys(FAILURE_SAYING).length, 4, "D1-7 의 넷은 그대로다");
+  assert.strictEqual(FAILURE_SAYING.SENDER_UNREGISTERED, "발신번호 미등록", "CSV 와 어드민이 쓴다");
 });

@@ -2,8 +2,12 @@ from fastapi import APIRouter
 
 from app.apis.v1.chatbot_routers import chatbot_router
 from app.apis.v1.front_desk_routers import front_desk_router
+from app.apis.v1.guide_copy_routers import guide_copy_router
 from app.apis.v1.guide_routers import guide_router
 from app.apis.v1.health_routers import health_router
+from app.apis.v1.lab_baseline_routers import lab_baseline_router
+from app.apis.v1.message_routers import message_router
+from app.apis.v1.message_template_routers import message_template_router
 from app.apis.v1.patient_feedback_routers import patient_feedback_router
 from app.apis.v1.patient_link_routers import (
     patient_checkin_router,
@@ -40,6 +44,10 @@ v1_routers.include_router(document_router)
 v1_routers.include_router(ocr_router)
 v1_routers.include_router(timeline_router)
 v1_routers.include_router(guide_router)
+v1_routers.include_router(message_router)
+v1_routers.include_router(message_template_router)
+v1_routers.include_router(lab_baseline_router)
+v1_routers.include_router(guide_copy_router)
 v1_routers.include_router(patient_link_management_router)
 v1_routers.include_router(patient_guide_router)
 v1_routers.include_router(patient_checkin_router)

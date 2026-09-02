@@ -14,7 +14,7 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const { codeOnly, markupOnly } = require("./source.js");
+const { read, codeOnly, markupOnly } = require("./source.js");
 
 const JS = path.join(__dirname, "..", "js");
 
@@ -100,4 +100,35 @@ test("**화면이 부르는 API 파일을 실제로 싣는다**", () => {
     [],
     "안 실은 파일의 API 를 부른다 — 브라우저에서만 터진다:\n  " + [...new Set(missing)].join("\n  "),
   );
+});
+
+test("**현황이 읽는 이력을 목업이 준다** — 없으면 `?mock=1` 로 그 화면을 못 본다", () => {
+  /* 이 분기가 없어서 현황 탭(D1-6)이 `?mock=1` 에서 늘 「불러오지 못했습니다」였다.
+     서버(`app/timeline/api.py`)에는 있는데 목업만 없었다 — **목업이 서버보다
+     좁으면 화면을 목업으로 검수할 수 없다.** 2heej 님이 `#162` 에서 같은 부류를
+     짚었다(`generateGuide` 에 목업 분기가 없던 것). */
+  const code = codeOnly(read("js/doctor-api.js"));
+
+  /* **정의만 보지 않는다.** 규칙을 만들어 두고 안 쓰면 아무 일도 안 일어난다 —
+     받는 주소 목록에 실제로 들어 있어야 하고, 걸렸을 때 부르는 자리도 있어야 한다. */
+  const union = code.match(/var m = [^;]+;/);
+  assert.ok(union, "받는 주소를 모으는 자리가 없다");
+  assert.match(union[0], /\btl\b/, "timeline 을 받는 주소 목록에 안 넣었다");
+  assert.match(code, /if \(tl\) return resolve\(mockTimeline\(/, "걸려도 부르지 않는다");
+
+  /* 화면이 읽는 세 칸을 다 준다 */
+  const at = code.indexOf("function mockTimeline(visitId)");
+  assert.notEqual(at, -1, "이력을 만드는 자리가 없다");
+  const body = code.slice(at, code.indexOf("\n}", at));
+  for (const key of ["visit_id", "entries", "messages"]) {
+    assert.ok(body.includes(key), `${key} 를 안 준다`);
+  }
+
+  /* **예약은 승인이 만든다** — 승인 전에 채워 두면 「승인 안 했는데 나갈 문자가
+     있다」로 읽힌다. 서버 주석이 그렇게 못박았다. */
+  const msgs = body.slice(body.indexOf("var messages"));
+  assert.match(msgs, /guide\.status === "SCHEDULED_TO_SEND"/, "승인 여부와 무관하게 예약을 준다");
+
+  /* 안내문이 없는 진료는 빈 이력이다 — 오류가 아니다 */
+  assert.match(body, /if \(!guide\) return \{[^}]*entries: \[\]/, "안내문이 없으면 오류를 낸다");
 });
