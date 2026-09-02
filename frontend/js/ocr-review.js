@@ -657,9 +657,8 @@ function stateTakesFocus(tone) {
       body =
         '<div class="field__value">' +
         escapeHtml(field.value === null || field.value === undefined ? "?" : field.value) +
-        ' <span class="field__unit">' +
-        escapeHtml(field.unit || "") +
-        "</span></div>";
+        "</div>" +
+        unitHtml(field);
     } else if (isEditing(id)) {
       body =
         (fieldChoices(field.field_type)
@@ -799,10 +798,9 @@ function stateTakesFocus(tone) {
       body =
         '<div class="field__value">' +
         escapeHtml(field.value) +
-        ' <span class="field__unit">' +
-        escapeHtml(field.unit || "") +
-        "</span></div>";
-      body += '<button class="field__act" type="button" data-fill="' + id + '">수정</button>';
+        "</div>" +
+        unitHtml(field) +
+        '<button class="field__act" type="button" data-fill="' + id + '">수정</button>';
     }
 
     var tail = isEditing(id) ? "" : sourceChip(field);
