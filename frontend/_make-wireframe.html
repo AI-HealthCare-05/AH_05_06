@@ -1,0 +1,184 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>와이어프레임 생성기</title>
+<body style="font:14px/1.6 system-ui;padding:24px">
+<h1>와이어프레임 3.0.0 — 서버 없이 볼 파일 만들기</h1>
+<p id="log">준비 중…</p>
+<script>
+/* **목업 세션을 먼저 심는다.** 안 심으면 화면 껍데기는 뜨는데 데이터가 다
+   비어서(「전체 0명」) 빈 화면을 떠 오게 된다 — 로그인으로 튕기지 않아서
+   눈에 잘 안 띈다. iframe 은 같은 오리진이라 이 값을 물려받는다. */
+try {
+  sessionStorage.setItem("useMock", "1");
+  sessionStorage.setItem("mockUser", "doctor01");
+  localStorage.setItem("token", "mock.doctor01");
+} catch (e) {}
+
+var FRAMES = [{"id": "L-1", "name": "로그인", "url": "/login.html?mock=1", "prep": "", "why": "역할을 고르게 하지 않는다 — 「의사로 로그인 / 스탭으로 로그인」을 두면 처음 쓰는 사람이 멈춘다. 계정에 역할이 붙어 있다."}, {"id": "L-3", "name": "첫 로그인 — 비밀번호 바꾸기", "url": "/password.html?mock=1", "prep": "", "why": "어드민이 정해 준 첫 비밀번호를 그대로 쓰면 정해 준 사람이 그 비밀번호를 계속 안다."}, {"id": "S1-1", "name": "오늘 목록", "url": "/patients.html?mock=1", "prep": "", "why": "상태 칩을 처음에 하나도 안 켠다 — 켜 두면 목록에 없는 환자가 숨겨진 것인지 없는 것인지 구분이 안 된다. 하루 단위가 기본이라 로그인 직후 이 화면이 뜬다."}, {"id": "S1-2", "name": "환자 등록 — 찾아서 고른다", "url": "/patients.html?mock=1&add=1", "prep": "", "why": "신규/기존 탭을 없앴다 — 스탭이 답할 수 없는 것을 먼저 묻는 화면이었다. 검색 결과가 곧 분기다. 휴대폰은 전체 번호를 보여 준다 — 이 번호를 보는 사람은 전화를 걸어야 하는 사람이다(로그·오류 응답의 가림은 그대로)."}, {"id": "S1-4", "name": "환자 카드 · 기본정보", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();})();", "why": "탭 다섯이 다 열려 있다 — 시연 때 의사와 스탭이 서로의 화면을 못 봐서 막혔다. 가르는 것은 버튼이지 화면이 아니다(차단은 서버가 한다)."}, {"id": "S1-6", "name": "판독 결과 확인", "url": "/ocr-review.html?mock=1", "prep": "var n=0;(function go(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0]||rs[0];if(r){r.click();return;} if(++n<40)setTimeout(go,200);})();", "why": "판독 항목이 스물하나다 — 증상 · 초음파 · 혈액검사 세 묶음. 못 읽은 값은 「?」로 비워 두고 0 이나 「-」로 채우지 않는다. 처방은 설정에 등록된 약속처방에서 고른다 — 세트에 약 목록 · 확인 항목 · 주의 문구가 함께 묶여 있어서, 자유 입력이면 붙일 문구를 못 찾는다."}, {"id": "S1-11", "name": "안내문 — 복약지도", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"guide\"]');if(card&&t){t.click();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "환자가 받는 안내문의 첫 장. **원문과 미리보기를 나란히 둔다** — 고치는 것과 나갈 것이 한 화면에 있어야 무엇이 바뀌는지 보인다. 판독이 못 읽은 값은 「⚠ 값이 빠진 자리입니다」로 남긴다: 지어내지 않는다."}, {"id": "S1-12", "name": "안내문 — 주의사항", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"guide\"]');if(card&&t){t.click();var k=0;(function openSec(){var pane=d.querySelector('#panel-guide');var g=pane&&pane.querySelector('[data-section=\"caution\"]');if(g){g.click();return;} if(++k<30)setTimeout(openSec,200);})();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "약마다 조심할 것. **🚨 응급 문장은 못 고친다** — 식약처 기준 문장이라 약이 바뀌면 문장도 바뀐다. 사람이 손댈 자리가 아니다."}, {"id": "S1-13", "name": "안내문 — 생활지도", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"guide\"]');if(card&&t){t.click();var k=0;(function openSec(){var pane=d.querySelector('#panel-guide');var g=pane&&pane.querySelector('[data-section=\"life\"]');if(g){g.click();return;} if(++k<30)setTimeout(openSec,200);})();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "생활에서 챙길 것. 환자 화면(P4)에서는 「생활관리」로 부른다 — 여기는 의료진이 보는 이름이라 원문 그대로 「생활지도」다."}, {"id": "S1-14", "name": "안내문 — 문자 설정", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"guide\"]');if(card&&t){t.click();var k=0;(function openSec(){var pane=d.querySelector('#panel-guide');var g=pane&&pane.querySelector('[data-section=\"messages\"]');if(g){g.click();return;} if(++k<30)setTimeout(openSec,200);})();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "회차별로 언제 무엇이 나가는지. **문자를 보내는 발송기가 아직 없다** — 정한 값이 실제 발송으로 이어지지 않는다. 자리를 세우고 무엇이 없는지 적는다."}, {"id": "D1-1", "name": "최종 확인 — 복약지도", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"final\"]');if(card&&t){t.click();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "의사가 승인 전에 **환자가 받을 그대로** 본다. 「확인 부탁드리는 곳 N군데」로 볼 자리를 먼저 세어 준다 — 다 읽으라 하면 아무도 안 읽는다."}, {"id": "D1-2", "name": "최종 확인 — 주의사항", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"final\"]');if(card&&t){t.click();var k=0;(function openSec(){var pane=d.querySelector('#panel-final');var g=pane&&pane.querySelector('[data-section=\"caution\"]');if(g){g.click();return;} if(++k<30)setTimeout(openSec,200);})();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "주의할 점. **🚨 응급 문장은 못 고친다** — 식약처 기준 문장이라 약이 바뀌면 문장도 바뀐다. 사람이 손댈 자리가 아니다."}, {"id": "D1-3", "name": "최종 확인 — 생활지도", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"final\"]');if(card&&t){t.click();var k=0;(function openSec(){var pane=d.querySelector('#panel-final');var g=pane&&pane.querySelector('[data-section=\"life\"]');if(g){g.click();return;} if(++k<30)setTimeout(openSec,200);})();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "생활에서 챙길 것. 스탭이 고친 것이 그대로 보인다 — **고치는 화면과 승인하는 화면이 같은 문장을 본다.**"}, {"id": "D1-4", "name": "최종 확인 — 문자 설정", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"final\"]');if(card&&t){t.click();var k=0;(function openSec(){var pane=d.querySelector('#panel-final');var g=pane&&pane.querySelector('[data-section=\"messages\"]');if(g){g.click();return;} if(++k<30)setTimeout(openSec,200);})();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "회차별로 언제 무엇이 나가는지. **승인이 곧 발송 예약이다** — 승인과 발송 사이에 사람이 한 번 더 손대는 자리를 만들지 않는다(와이어프레임 D1-5 「스탭이 발송 버튼을 누르지 않는다」)."}, {"id": "D1-6", "name": "현황 — 이 진료의 발송·열람", "url": "/patients.html?mock=1", "prep": "var n=0;(function pickRow(){var rs=[].slice.call(d.querySelectorAll('.row'));var r=rs.filter(function(x){return x.innerText.indexOf('승인 대기')>=0})[0];if(!r){ if(++n<40) return setTimeout(pickRow,200); r=rs[0]; }if(!r) return; r.click();var m=0;(function openTab(){var card=d.querySelector('#view-card:not([hidden])');var t=d.querySelector('[data-tab=\"status\"]');if(card&&t){t.click();return;} if(++m<40)setTimeout(openTab,200);})();})();", "why": "승인 뒤 무엇이 언제 나갔고 환자가 열었는지. **문자 발송기가 아직 없어** 실제로 나간 줄이 없다 — 자리를 세우고 무엇이 없는지 적는다. 지어낸 발송 기록을 띄우지 않는다."}, {"id": "S2-1", "name": "환자 관리", "url": "/manage.html?mock=1", "prep": "", "why": "세부 상태와 이탈 배지를 같은 칸에 나란히 둔다 — 둘은 다른 축이라 하나가 다른 하나를 대신할 수 없다. 줄을 누르면 그 환자의 이력 모달(S2-2)이 뜬다."}, {"id": "S2-3", "name": "발송 예정", "url": "/manage.html?mock=1", "prep": "[].slice.call(d.querySelectorAll('[data-view]')).filter(function(b){return b.textContent.indexOf('발송 예정')>=0})[0].click();", "why": "「잘못된 번호」라 하지 않고 「발송 실패」라 한다 — 번호가 정말 틀렸는지 확인할 방법이 없다. 안 나간 것은 기간 밖이어도 보이고 자르지 않는다. 문자 충전 · 시각 변경 · 즉시 발송은 발송기가 없어 안 만들었다."}, {"id": "S2-4", "name": "발송 이력", "url": "/manage.html?mock=1", "prep": "[].slice.call(d.querySelectorAll('[data-view]')).filter(function(b){return b.textContent.indexOf('발송 이력')>=0})[0].click();", "why": "실패가 맨 위다. 열람은 안내문 단위로 기록된다 — 같은 안내문의 문자는 다 열람으로 뜬다. CSV 는 셈식 주입을 막고 EUC-KR 로 센다. 재승인은 발송기가 없어 안 만들었다."}, {"id": "D2-3", "name": "설정 — 처방", "url": "/settings.html?mock=1", "prep": "var h=[].slice.call(d.querySelectorAll('[data-fold]')).filter(function(x){return x.getAttribute('data-fold')==='sets|ENDOMETRIOSIS'})[0]; if(h){h.click(); setTimeout(function(){var r=d.querySelector('[data-set]'); r&&r.click();},400);}", "why": "왼쪽은 두 단짜리 나무다. 갈래 머리에서 회색 띠를 걷었다 — 화면에서 제일 조작기처럼 생긴 것이 아무 일도 안 하는 줄이었다. 회색은 이제 「손이 닿았거나 고른 줄」 한 가지만 뜻한다. 한 번에 한 묶음만 펼친다(넷 다 펼치면 937px, 보이는 높이는 689px)."}, {"id": "D2-4", "name": "설정 — 검사 기준선", "url": "/settings.html?mock=1", "prep": "var b=[].slice.call(d.querySelectorAll('[data-group]')).filter(function(x){return x.getAttribute('data-group')==='baseline'})[0]; b&&b.click();", "why": "비워 둘 수 있다 — 비워 두면 값과 추이만 표시하고 목표 대비 수치는 셈하지 않는다. 기준선은 검사기관과 나이에 따라 다르고, 모르는 채로 「목표까지 3 남았습니다」라고 말하는 것이 제일 나쁘다."}, {"id": "D2-5", "name": "설정 — 문자 문구", "url": "/settings.html?mock=1", "prep": "var b=[].slice.call(d.querySelectorAll('[data-group]')).filter(function(x){return x.getAttribute('data-group')==='sms'})[0]; b&&b.click();", "why": "90바이트를 EUC-KR 로 센다 — UTF-8 로 세면 한글이 3바이트라 보낼 수 있는 문구를 못 보낸다고 막는다."}, {"id": "A1-1", "name": "어드민 — 직원", "url": "/admin.html?mock=1", "prep": "", "why": "역할을 사람 말로 적는다 — 화면에 `doctor` 가 그대로 뜨고 있었다."}];
+
+/* `srcdoc` 은 속성값이라 따옴표와 꺾쇠를 묶어야 한다 */
+function esc(t) {
+  return String(t).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function log(t) { document.getElementById("log").textContent = t; }
+
+/* 화면 하나를 띄우고, 상태를 만들고, 그린 결과를 떠 온다. */
+function grab(f) {
+  return new Promise(function (done) {
+    var fr = document.createElement("iframe");
+    fr.style.cssText = "position:fixed;left:-9999px;top:0;width:1280px;height:800px;border:0";
+
+    /* **`onload` 를 먼저 걸고 `src` 를 뒤에 준다.** 순서를 뒤집으면 빨리 뜬 화면의
+       load 를 놓친다. */
+    fr.onload = function () {
+      var d = fr.contentDocument;
+
+      /* **시간을 재지 않고 준비될 때까지 기다린다.** 목록이 서버(목업)에서
+         오는 데 걸리는 시간은 화면마다 다르다 — 초를 찍어 두면 느린 날 빈
+         화면을 떠 오고, 그것이 「데이터가 없는 화면」처럼 보여 눈에 안 띈다. */
+      waitFor(d, function () {
+        return d.querySelector(".row") || d.querySelector(".card") ||
+               d.querySelector(".rail__row") || d.querySelector("tbody tr") ||
+               d.querySelector(".blank__title");
+      }, function () {
+        if (f.prep) { try { new Function("d", f.prep)(d); } catch (e) {} }
+        /* 손짓 뒤에도 그린 것이 붙을 때까지 기다린다 */
+        setTimeout(function () { snap(d); }, f.prep ? 6000 : 500);
+      });
+    };
+
+    function snap(d) {
+      var b = d.body.cloneNode(true);
+      b.querySelectorAll("script,.skip,link,style").forEach(function (n) { n.remove(); });
+      b.querySelectorAll("a[href]").forEach(function (a) {
+        var to = a.getAttribute("href");
+        if (to && to.charAt(0) === "/") { a.setAttribute("title", "→ " + to); a.removeAttribute("href"); }
+      });
+      var cs = fr.contentWindow.getComputedStyle(d.body);
+      var lay = ["display", "flex-direction", "align-items", "justify-content",
+                 "padding", "background-color"]
+        .map(function (k) { return k + ":" + cs.getPropertyValue(k); })
+        .join(";");
+      done({ html: b.innerHTML, cls: d.body.className, style: lay });
+      fr.remove();
+    }
+
+    fr.src = f.url;
+    document.body.appendChild(fr);
+  });
+}
+
+/* 조건이 될 때까지 200ms 마다 본다. 8초가 지나면 그냥 뜬 대로 담는다 —
+   못 뜨는 화면도 「못 떴다」는 사실 그대로 담기는 편이 낫다. */
+function waitFor(d, ready, then) {
+  var tries = 0;
+  (function look() {
+    if (ready() || ++tries > 40) return then();
+    setTimeout(look, 200);
+  })();
+}
+
+/* **화면마다 제 CSS만 담는다.** 한 벌로 몰아 담으면 안 쓰는 파일이 덮어쓴다 —
+   로그인은 `style · tokens · auth` 셋만 싣는데 거기에 `blocks.css` 를 얹었더니
+   이름표가 옆으로 붙고 단추가 빨개졌다. 페이지가 싣는 차례 그대로 준다. */
+var PAGE_CSS = {
+  "login.html":      ["style","tokens","auth"],
+  "password.html":   ["style","tokens","auth"],
+  "patients.html":   ["style","tokens","shell","blocks","upload","patients","detail"],
+  "ocr-review.html": ["style","tokens","shell","blocks","upload","ocr-review"],
+  "manage.html":     ["style","tokens","shell","blocks","detail","manage"],
+  "settings.html":   ["style","tokens","shell","blocks","settings"],
+  "doctor.html":     ["style","tokens","shell","blocks","doctor"],
+  "admin.html":      ["style","tokens","shell","frames","admin"]
+};
+
+var cssCache = {};
+async function cssFor(url) {
+  var page = url.split("?")[0].replace("/", "");
+  var files = PAGE_CSS[page] || ["style","tokens"];
+  var out = "";
+  for (var i = 0; i < files.length; i++) {
+    if (!cssCache[files[i]]) {
+      cssCache[files[i]] = await fetch("/css/" + files[i] + ".css").then(function (r) { return r.text(); });
+    }
+    out += "\n/* ===== " + files[i] + ".css ===== */\n" + cssCache[files[i]];
+  }
+  return out;
+}
+
+async function build() {
+  var cards = "";
+  for (var j = 0; j < FRAMES.length; j++) {
+    log("화면 뜨는 중 " + (j + 1) + "/" + FRAMES.length + " — " + FRAMES[j].id);
+    var got = await grab(FRAMES[j]);
+    /* 화면 하나 = 문서 하나. `srcdoc` 이라 서버가 필요 없고, CSS 가 서로 안 섞인다. */
+    var doc =
+      "<!doctype html><html lang=ko><head><meta charset=utf-8><style>" +
+      (await cssFor(FRAMES[j].url)) +
+      "html,body{width:1280px;height:800px;overflow:hidden;margin:0}</style></head>" +
+      '<body class="' + got.cls + '">' + got.html + "</body></html>";
+    cards +=
+      '<section class="wf" id="' + FRAMES[j].id + '">' +
+      '<div class="wf__head"><span class="wf__id">' + FRAMES[j].id + "</span>" +
+      '<span class="wf__name">' + FRAMES[j].name + "</span>" +
+      '<span class="wf__size">1280 × 800</span></div>' +
+      '<div class="wf__stage"><iframe class="wf__frame" srcdoc="' + esc(doc) + '"></iframe></div>' +
+      '<p class="wf__why">' + FRAMES[j].why + "</p></section>";
+  }
+
+  log("파일 만드는 중…");
+  var out = document.getElementById("tpl").textContent
+    .replace("<!--__CARDS__-->", cards)
+    .replace("<!--__TOC__-->", FRAMES.map(function (f) {
+      return '<a href="#' + f.id + '">' + f.id + "</a>";
+    }).join(""));
+
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([out], { type: "text/html" }));
+  a.download = "wireframe-medic-3.0.0.html";
+  document.body.appendChild(a);
+  a.click();
+  log("만들었습니다 — " + Math.round(out.length / 1024) + "KB. 내려받기가 시작됩니다.");
+  window.__out = out;
+}
+build();
+</script>
+
+<script type="text/plain" id="tpl"><!doctype html>
+<html lang="ko"><head><meta charset="utf-8" />
+<title>와이어프레임 3.0.0 · 의료진 — 케어온</title>
+<style>
+/*__CSS__*/
+
+/* ===== 와이어프레임 껍데기 ===== */
+html { background:#F3F4F6 }
+body.wf-book { margin:0; padding:32px; background:#F3F4F6; color:#111827;
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic","Segoe UI",sans-serif }
+.wf-book h1 { font-size:22px; margin:0 0 6px }
+.wf-lead { max-width:900px; color:#374151; margin:0 0 8px }
+.wf-toc { max-width:1280px; margin:16px 0 28px; display:flex; flex-wrap:wrap; gap:6px }
+.wf-toc a { font-size:12px; padding:3px 9px; border:1px solid #D1D5DB; border-radius:999px;
+  background:#fff; color:#374151; text-decoration:none }
+.wf { margin:0 0 40px }
+.wf__head { display:flex; align-items:baseline; gap:10px; margin-bottom:8px }
+.wf__id { font-size:12px; font-weight:700; padding:2px 8px; border-radius:4px; background:#111827; color:#fff }
+.wf__name { font-size:15px; font-weight:700 }
+.wf__size { font-size:12px; color:#6B7280 }
+.wf__stage { width:1280px; height:800px; border:2px solid #111827; border-radius:8px;
+  overflow:hidden; background:#fff; position:relative }
+/* 화면 하나가 원래 `body` 였다 — 그 자리를 이 칸이 대신한다 */
+.wf__frame { width:1280px; height:800px; border:0; display:block }
+.wf__why { max-width:1280px; margin:10px 0 0; padding:11px 15px; border:1px dashed #6B7280;
+  border-radius:8px; font-size:12px; line-height:18px; color:#374151; background:#fff }
+</style></head>
+<body class="wf-book">
+<h1>와이어프레임 3.0.0 · 의료진</h1>
+<p class="wf-lead"><b>돌아가는 화면을 뜬 것이다.</b> 손으로 그리지 않았다 —
+그린 것은 앱이고, 사람이 쓴 것은 화면마다 붙은 <b>「왜 이렇게 생겼는가」</b> 뿐이다.</p>
+<p class="wf-lead">화면 ID 는 팀 공용 이름이다 — 티켓 · PR · 버그 리포트에서 <code>S1-6</code> 처럼 부른다.
+어디서나 열린다: 서버도 빌드도 필요 없다.</p>
+<div class="wf-toc"><!--__TOC__--></div>
+<!--__CARDS__-->
+</body></html></script>
+</body>

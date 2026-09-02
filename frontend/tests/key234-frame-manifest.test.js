@@ -34,9 +34,8 @@ function loadManifest() {
 
 /* **손으로 그린 판만 읽는다.**
  *
- * 지금 판(3.0.0)은 그림 파일이 아니라 `frontend/wireframe.html` 이 실제 화면을
- * 끼워 넣는다 — 거기엔 `data-screen-label` 이 실려 있지만 **그 화면이 곧 코드**라
- * 표와 대 볼 것이 없다. 대조가 뜻이 있는 것은 **아직 안 만든 화면의 설계**가 담긴
+ * 지금 판(3.0.0)은 손으로 그린 것이 아니라 **화면을 띄워 담은 것**이라, 표와
+ * 대 볼 것이 없다 — 거기 있는 화면은 곧 코드다. 대조가 뜻이 있는 것은 **아직 안 만든 화면의 설계**가 담긴
  * 손 그림 쪽이다.
  *
  * 그래서 여기서 읽는 것은 `docs/wireframes/*.html` 그대로다. 지금 판을 여기 넣지
@@ -51,15 +50,26 @@ function wireframeIds() {
   return ids;
 }
 
-test("**지금 판은 화면을 끼워 넣는다** — 베낀 그림이 아니다", () => {
-  const live = fs.readFileSync(path.join(ROOT, "wireframe.html"), "utf8");
-  assert.match(live, /<iframe/, "화면을 끼워 넣지 않는다 — 베끼면 그 순간부터 낡는다");
-  assert.match(live, /wf__why/, "「왜 이렇게 생겼는가」가 없다");
+test("**지금 판은 그린 것이 아니라 뜬 것이다**", () => {
+  /* 3.0.0 은 손으로 그리지 않는다 — 화면을 띄워 그 결과를 담는다. 화면마다
+     `srcdoc` 문서 하나를 갖고, 그 안에 **그 화면이 실제로 싣는 CSS만** 들어간다.
+     한 벌로 몰아 담았더니 로그인에 `blocks.css` 가 섞여 이름표가 옆으로 붙고
+     단추가 빨개졌다 — 화면마다 싣는 것이 다르다. */
+  const made = fs.readFileSync(path.join(WIREFRAMES, "wireframe-medic-3.0.0.html"), "utf8");
+  assert.match(made, /srcdoc=/, "화면을 문서로 담지 않는다");
+  assert.match(made, /wf__why/, "「왜 이렇게 생겼는가」가 없다");
 
-  /* 그림 파일 쪽에 3.0.0 을 두지 않는다 — 정본이 둘이면 갈린다 */
-  const drawn = fs.readdirSync(WIREFRAMES).filter((f) => f.endsWith(".html"));
-  assert.ok(!drawn.includes("wireframe-medic-3.0.0.html"), "정본이 둘이다");
-});const { FRAMES, FRAME_AREAS, FRAME_LEVELS, frameById, needsGuideScreen } = loadManifest();
+  /* **서버 없이 열려야 한다.** 절대 주소가 남아 있으면 그 자리가 빈다. */
+  assert.doesNotMatch(made, /(?:src|href)="\/[a-z]/, "서버를 찾는 주소가 남아 있다");
+
+  /* 만드는 자리도 함께 둔다 — 화면을 고치면 여기를 한 번 열어 다시 만든다 */
+  assert.ok(
+    fs.existsSync(path.join(ROOT, "_make-wireframe.html")),
+    "만드는 자리가 없으면 다음 사람이 손으로 고치게 된다",
+  );
+});
+
+const { FRAMES, FRAME_AREAS, FRAME_LEVELS, frameById, needsGuideScreen } = loadManifest();
 
 /* 목록을 견줄 때 배열이 아니라 **문자열**로 견준다. vm 컨텍스트에서 만든 배열은
    프로토타입이 이쪽과 달라 `deepStrictEqual` 이 빈 배열끼리도 실패한다. */
