@@ -24,18 +24,35 @@ function courseSaying(block) {
   return parts.join(" · ");
 }
 
-/* 「진료 안내문 — 발송 05-20 18:00 · 열람 05-27」
+/* 「진료 안내문 — 발송 05-20 18:00 · 열람 05-27 (4장 중 2장)」
  *
- * **원문의 「(5장 중 3장)」은 적지 않는다.** 열람 이벤트에 어느 장인지가 남지
- * 않아 셈할 수 없다. 지어낸 분수를 적느니 빼는 편이 낫다.
+ * **한동안 장수를 못 적었다.** 열람 이벤트에 어느 장인지가 안 남아서였다.
+ * 이제 환자 화면이 탭을 넘길 때마다 그 장을 알린다(KEY-256).
+ *
+ * 분수를 적는 까닭: 다 읽은 환자와 첫 장만 열고 닫은 환자는 다음 진료 때 물을
+ * 것이 다르다. 「안내문 보셨어요?」에 둘 다 「네」라고 답한다.
+ *
+ * **분모를 화면이 정하지 않는다.** 서버가 함께 준다 — 장이 늘거나 줄 때
+ * 이 화면과 현황 화면이 따로 놀면 어느 쪽이 맞는지 알 수 없다.
  */
 function guideSaying(block) {
   if (!block) return "";
   if (!block.guide_sent_at) return "진료 안내문 — 아직 발송되지 않았습니다";
   var said = "진료 안내문 — 발송 " + stamp(block.guide_sent_at);
-  return block.guide_viewed_at
-    ? said + " · 열람 " + dayShort(block.guide_viewed_at)
-    : said + " · 미열람";
+  if (!block.guide_viewed_at) return said + " · 미열람";
+  return said + " · 열람 " + dayShort(block.guide_viewed_at) + pagesSaying(block);
+}
+
+/** 「 (4장 중 2장)」 — 앞에 빈칸이 붙는다.
+ *
+ * **모르면 안 적는다.** 장수를 안 주는 서버(옛 판)나 장이 하나도 안 적힌
+ * 열람이면 빈 글자다 — 「4장 중 0장」은 「안 읽었다」로 읽히는데, 실제로는
+ * 열긴 열었고 어느 장인지만 모르는 것이다. 둘은 다르다. */
+function pagesSaying(block) {
+  var total = Number(block && block.guide_pages_total) || 0;
+  var read = Number(block && block.guide_pages_read) || 0;
+  if (!total || !read) return "";
+  return " (" + total + "장 중 " + read + "장)";
 }
 
 /* 「확인 문자 — 일주일 뒤 05-27 미열람 · 보름 뒤 06-04 미열람」

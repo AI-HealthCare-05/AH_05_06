@@ -8,7 +8,15 @@ import pytest
 
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.prescriptions import Prescription, PrescriptionItem
-from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideStatus, Visit
+from app.models.visits import (
+    GuideDocument,
+    GuideSection,
+    GuideSectionKey,
+    GuideStatus,
+    PatientUsageEvent,
+    PatientUsageEventType,
+    Visit,
+)
 from app.services.patient_links import calculate_medication_progress
 from app.tests.patient_links.test_patient_links import (
     PatientLinkTestCase,
@@ -301,3 +309,76 @@ class TestKey241PatientGuideContract(PatientLinkTestCase):
         assert "disease" not in body
         assert "자궁내막증 · 비잔 (계속)" not in response.text
         assert body["stat"]["drugName"] == "비잔정 2mg"
+
+
+class TestKey256PageViews(PatientLinkTestCase):
+    """환자가 **어느 장을 열었는지** 남긴다 — KEY-256, 원문 S2-2 「(4장 중 2장)」.
+
+    안내문은 한 번에 통째로 내려가고 환자 화면은 탭을 브라우저 안에서만
+    넘긴다. 그래서 서버에는 「열었다」한 줄만 남았고, 스탭은 다 읽은 환자와
+    첫 장만 열고 닫은 환자를 구별할 수 없었다 — 다음 진료 때 물을 것이 다른데.
+    """
+
+    async def _open(self, guide, staff):
+        with patch("app.services.patient_links.now", return_value=FIXED_NOW):
+            issued = await self.issue(guide, staff)
+        return issued.json()["path"]
+
+    async def _view(self, path: str, section):
+        """**발급과 같은 시각으로 묶는다.** 링크 만료를 실제 시계로 재면
+        `FIXED_NOW` 로 발급한 링크가 이미 만료다(410)."""
+        with patch("app.services.patient_links.now", return_value=FIXED_NOW):
+            async with self.client() as client:
+                return await client.post(f"{path}/views", json={"section": section})
+
+    async def test_a_page_view_is_recorded_with_its_section(self) -> None:
+        hospital = await make_hospital("KEY-256 합성여성의원")
+        guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        staff = await make_staff(hospital, "key256-staff", ["staff"])
+        path = await self._open(guide, staff)
+
+        answer = await self._view(path, "caution")
+
+        assert answer.status_code == 204, answer.text
+        rows = await PatientUsageEvent.filter(
+            guide_document_id=guide.guide_document_id,
+            event_type=PatientUsageEventType.GUIDE_VIEWED,
+            grounded_section=GuideSectionKey.CAUTION,
+        )
+        assert len(rows) == 1
+
+    async def test_an_unknown_section_is_refused(self) -> None:
+        """**모르는 장 이름을 그대로 담지 않는다.** 담으면 장수 세기가 늘 어긋난다.
+
+        `422` 다. 이 라우터는 봉투(`ContractRoute`) 면제 태그
+        (`patient-guides`)라 검증 오류가 `400 INVALID_REQUEST` 로 안 바뀐다
+        — `app/tests/routing/test_route_ownership.py` 의 `ENVELOPE_EXEMPT_TAGS`
+        가 그렇게 정해 두었다. 여기서 봉투를 입히면 이미 나가 있는
+        `GET /guides/{token}` 의 오류 모양까지 바뀌므로 건드리지 않는다.
+        """
+        hospital = await make_hospital("KEY-256 이상값 의원")
+        guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        staff = await make_staff(hospital, "key256-bad", ["staff"])
+        path = await self._open(guide, staff)
+
+        answer = await self._view(path, "챗봇")
+
+        assert answer.status_code == 422, answer.text
+        assert not await PatientUsageEvent.filter(
+            guide_document_id=guide.guide_document_id,
+            grounded_section__isnull=False,
+        )
+
+    async def test_an_unapproved_guide_records_nothing(self) -> None:
+        """승인 전 안내문에는 이용 기록이 생길 수 없다 — 환자가 볼 수 없는 글이다."""
+        hospital = await make_hospital("KEY-256 미승인 의원")
+        approved = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        staff = await make_staff(hospital, "key256-pending", ["staff"])
+        path = await self._open(approved, staff)
+        await GuideDocument.filter(guide_document_id=approved.guide_document_id).update(
+            status=GuideStatus.APPROVAL_PENDING, approved_at=None
+        )
+
+        answer = await self._view(path, "medication")
+
+        assert answer.status_code != 204

@@ -29,11 +29,12 @@ from app.models.visits import (
     GuideMessage,
     GuideMessageKind,
     GuideMessageStatus,
+    GuideSectionKey,
     PatientUsageEvent,
     PatientUsageEventType,
     Visit,
 )
-from app.services.patient_history import DEFAULT_VISITS
+from app.services.patient_history import DEFAULT_VISITS, GUIDE_PAGES
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 
@@ -211,6 +212,66 @@ class PatientHistoryTestCase(TestCase):
         body = await self.fetch(staff, patient)
 
         assert body["diagnosis_name"] is None
+
+    async def a_page_view(self, document: GuideDocument, section: str | None, when: datetime) -> None:
+        await PatientUsageEvent.create(
+            guide_document=document,
+            event_type=PatientUsageEventType.GUIDE_VIEWED,
+            grounded_section=section,
+            created_at=when,
+        )
+
+    async def test_how_many_pages_the_patient_read(self) -> None:
+        """원문 S2-2 「열람 05-27 (4장 중 2장)」.
+
+        **다 읽은 환자와 첫 장만 열고 닫은 환자는 다음 진료 때 물을 것이
+        다르다.** 둘 다 「안내문 보셨어요?」에 「네」라고 답한다.
+        """
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "pages")
+        patient = await self.a_patient(clinic)
+        document = await self.a_visit(clinic, patient, on=TODAY)
+        await self.a_page_view(document, GuideSectionKey.MEDICATION, at(TODAY, 19, 14))
+        await self.a_page_view(document, GuideSectionKey.CAUTION, at(TODAY, 19, 22))
+
+        block = (await self.fetch(staff, patient))["visits"][0]
+
+        assert block["guide_pages_read"] == 2
+        assert block["guide_pages_total"] == len(GUIDE_PAGES) == 4
+
+    async def test_the_same_page_twice_counts_once(self) -> None:
+        """**다시 열어도 한 장이다.** 회수를 세면 한 장을 다섯 번 연 환자가
+        다 읽은 것으로 뜬다."""
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "twice-page")
+        patient = await self.a_patient(clinic)
+        document = await self.a_visit(clinic, patient, on=TODAY)
+        for hour in (19, 20, 21):
+            await self.a_page_view(document, GuideSectionKey.MEDICATION, at(TODAY, hour))
+
+        block = (await self.fetch(staff, patient))["visits"][0]
+
+        assert block["guide_pages_read"] == 1
+
+    async def test_a_view_without_a_page_is_not_counted(self) -> None:
+        """**어느 장인지 모르는 열람은 장수에 안 넣는다.**
+
+        링크로 처음 들어오는 줄에는 아직 어느 장을 볼지가 없다. 그것을 첫
+        장으로 쳐 주면 **안 읽은 장을 읽은 것으로 센다** — 스탭이 「주의사항도
+        봤구나」로 읽는데 안 봤을 수 있다.
+
+        그래도 「열었다」는 남는다 — `guide_viewed_at` 이 그것이다.
+        """
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "no-page")
+        patient = await self.a_patient(clinic)
+        document = await self.a_visit(clinic, patient, on=TODAY)
+        await self.a_page_view(document, None, at(TODAY, 19, 14))
+
+        block = (await self.fetch(staff, patient))["visits"][0]
+
+        assert block["guide_pages_read"] == 0
+        assert block["guide_viewed_at"] is not None, "열긴 열었다는 것까지 사라지면 안 된다"
 
     # ── 블록 차례 ────────────────────────────────────────
 

@@ -24,6 +24,8 @@ function a_block(over) {
       course_days: 84,
       guide_sent_at: "2026-05-20T18:00:00+09:00",
       guide_viewed_at: "2026-05-27T09:00:00+09:00",
+      guide_pages_read: 2,
+      guide_pages_total: 4,
       checks: [],
       runs_out_on: "2026-08-12",
       revisited: false,
@@ -62,7 +64,7 @@ test("모르는 것은 마디째 뺀다", () => {
 test("발송과 열람을 한 줄로 적는다", () => {
   const { guideSaying } = rules();
 
-  assert.strictEqual(guideSaying(a_block()), "진료 안내문 — 발송 05-20 18:00 · 열람 05-27");
+  assert.strictEqual(guideSaying(a_block()), "진료 안내문 — 발송 05-20 18:00 · 열람 05-27 (4장 중 2장)");
 });
 
 test("안 열었으면 안 열었다고 적는다", () => {
@@ -83,12 +85,56 @@ test("안 나갔으면 발송 시각을 적지 않는다", () => {
   );
 });
 
-test("몇 장까지 읽었는지는 적지 않는다", () => {
-  /* 원문에는 「(5장 중 3장)」이 있지만 열람 이벤트에 어느 장인지가 남지
-     않는다. **지어낸 분수를 적느니 빼는 편이 낫다.** */
+test("**몇 장까지 읽었는지 적는다** — 다 읽은 사람과 첫 장만 연 사람은 다르다", () => {
+  /* 원문 S2-2 「열람 05-27 (5장 중 5장)」. 한동안 못 적었다 — 열람 이벤트에
+     어느 장인지가 안 남아서였다. 이제 환자 화면이 탭을 넘길 때마다 알린다
+     (KEY-256).
+
+     둘 다 「안내문 보셨어요?」에 「네」라고 답한다. 물을 것이 다르다. */
+  const { guideSaying } = rules();
+
+  assert.strictEqual(
+    guideSaying(a_block({ guide_pages_read: 4, guide_pages_total: 4 })),
+    "진료 안내문 — 발송 05-20 18:00 · 열람 05-27 (4장 중 4장)",
+  );
+});
+
+test("**분모를 화면이 정하지 않는다** — 서버가 함께 준다", () => {
+  /* 장이 늘거나 줄 때 이 화면과 현황 화면(D1-6)이 따로 놀면 어느 쪽이 맞는지
+     알 수 없다. 화면에 숫자를 박아 두면 한쪽만 고쳐진다. */
   const code = codeOnly(read("js/history-modal.js"));
 
-  assert.ok(code.indexOf("장 중") === -1 && code.indexOf("sections") === -1);
+  assert.ok(!/장 중 [0-9]/.test(code), "분모나 분자를 화면에 박아 두었다");
+  assert.match(code, /guide_pages_total/, "서버가 준 분모를 안 쓴다");
+
+  const { guideSaying } = rules();
+  assert.match(
+    guideSaying(a_block({ guide_pages_read: 3, guide_pages_total: 5 })),
+    /5장 중 3장/,
+    "서버가 다섯이라 하면 다섯으로 적어야 한다",
+  );
+});
+
+test("**어느 장인지 모르는 열람을 0장으로 적지 않는다**", () => {
+  /* 링크로 처음 들어오는 줄에는 아직 장이 없다. 「4장 중 0장」은 「안
+     읽었다」로 읽히는데, 실제로는 열긴 열었고 어느 장인지만 모른다. */
+  const { guideSaying } = rules();
+
+  assert.strictEqual(
+    guideSaying(a_block({ guide_pages_read: 0, guide_pages_total: 4 })),
+    "진료 안내문 — 발송 05-20 18:00 · 열람 05-27",
+    "0장이라고 적었다",
+  );
+});
+
+test("장수를 안 주는 서버에도 화면이 선다", () => {
+  /* 옛 판 서버나 목업이 칸을 안 주면 분수만 빠지고 나머지는 그대로다. */
+  const { guideSaying } = rules();
+
+  assert.strictEqual(
+    guideSaying(a_block({ guide_pages_read: undefined, guide_pages_total: undefined })),
+    "진료 안내문 — 발송 05-20 18:00 · 열람 05-27",
+  );
 });
 
 /* ── 확인 문자 줄 ───────────────────────────────────────────────────── */

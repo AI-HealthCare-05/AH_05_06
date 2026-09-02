@@ -31,6 +31,18 @@ from app.models.visits import (
 from app.services.patient_flags import CHECK_KINDS
 from app.services.patient_visit_scope import hospital_id_of
 
+GUIDE_PAGES: tuple[str, ...] = ("medication", "caution", "life", "messages")
+"""환자가 **열 수 있는 장**. 원문 S2-2 는 「5장 중 3장」이라 적었는데 넷이다.
+
+`GuideSectionKey` 에는 `emergency` 까지 다섯이 있지만, 그것은 환자 화면의
+탭이 아니라 주의사항 안에 실리는 문단이다. 환자가 넘기는 것은 현황 ·
+복약지도 · 주의사항 · 생활관리 넷이다(`frontend/patient_wireframe/js/guide.js`
+의 `TABS`). **못 여는 장을 분모에 넣으면 다 읽어도 「4장 중 5장」이 안 된다.**
+
+현황 화면(`frontend/js/status-view.js`)이 이미 같은 넷으로 세고 있다 — 두
+화면이 같은 환자를 다르게 세면 어느 쪽이 맞는지 모른다.
+"""
+
 #: 원문이 세 블록을 보인다 — 「지난 안내문 4건 중 3건」. 모달이 800px 이라
 #: 그 이상은 어차피 스크롤이고, 나머지가 몇 건인지는 아래 줄이 말한다.
 DEFAULT_VISITS = 3
@@ -59,7 +71,7 @@ class PatientHistoryService:
 
         documents = {row.visit_id: row for row in await GuideDocument.filter(visit_id__in=visit_ids)}
         messages = await self._messages(list(documents.values()))
-        views = await self._views(list(documents.values()))
+        views, pages = await self._views(list(documents.values()))
         answers = await self._answers(list(documents.values()))
         courses = await self._courses(visit_ids)
 
@@ -72,6 +84,7 @@ class PatientHistoryService:
             # 어쩌다 `None` 키가 생긴 날 남의 진료 문자가 붙는다.
             sent = messages.get(document_id, {}) if document_id else {}
             seen = views.get(document_id, []) if document_id else []
+            read = pages.get(document_id, set()) if document_id else set()
             course = courses.get(visit.visit_id)
             blocks.append(
                 HistoryVisit(
@@ -81,6 +94,8 @@ class PatientHistoryService:
                     course_days=course[1] if course else None,
                     guide_sent_at=self._guide_sent(sent),
                     guide_viewed_at=self._first(seen),
+                    guide_pages_read=len(read),
+                    guide_pages_total=len(GUIDE_PAGES),
                     checks=self._checks(sent, seen, answers.get(document_id) if document_id else None),
                     runs_out_on=self._runs_out(visit.visited_at.date(), course),
                     revisited=newest is not None and visit.visited_at < newest,
@@ -113,19 +128,34 @@ class PatientHistoryService:
         return found
 
     @staticmethod
-    async def _views(documents: list[GuideDocument]) -> dict[int, list[datetime]]:
+    async def _views(
+        documents: list[GuideDocument],
+    ) -> tuple[dict[int, list[datetime]], dict[int, set[str]]]:
+        """언제 열었나 · 어느 장을 열었나 — **한 번에 가져온다.**
+
+        같은 표를 두 번 물으면 두 값이 다른 순간을 보게 된다(그 사이에 환자가
+        한 장 더 열 수 있다). 「열람 05-27 (4장 중 2장)」이 한 줄이라 그 둘이
+        어긋나면 안 된다.
+
+        장이 안 적힌 열람은 **장수에 안 넣는다.** 링크로 처음 들어오는 순간은
+        아직 어느 장을 볼지 모르는 상태라 비어 있다 — 첫 장으로 쳐 주면 안
+        읽은 장을 읽은 것으로 센다.
+        """
         if not documents:
-            return {}
+            return {}, {}
         rows = await PatientUsageEvent.filter(
             guide_document_id__in=[row.guide_document_id for row in documents],
             event_type=PatientUsageEventType.GUIDE_VIEWED,
-        ).values_list("guide_document_id", "created_at")
-        found: dict[int, list[datetime]] = {}
-        for document_id, at in rows:
-            found.setdefault(document_id, []).append(at)
-        for at_list in found.values():
+        ).values_list("guide_document_id", "created_at", "grounded_section")
+        seen: dict[int, list[datetime]] = {}
+        read: dict[int, set[str]] = {}
+        for document_id, at, section in rows:
+            seen.setdefault(document_id, []).append(at)
+            if section is not None:
+                read.setdefault(document_id, set()).add(str(section))
+        for at_list in seen.values():
             at_list.sort()
-        return found
+        return seen, read
 
     @staticmethod
     async def _answers(documents: list[GuideDocument]) -> dict[int, str]:
