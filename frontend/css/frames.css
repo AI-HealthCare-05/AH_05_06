@@ -1,0 +1,244 @@
+/* 화면 지도(map)와 안내 화면(frame) — KEY-234
+ *
+ * 와이어프레임 2.3.1 의 64프레임을 한 자리에서 보여 주고, 아직 만들지 않은
+ * 화면에는 「무엇을 할 화면이고 무엇이 있어야 되는가」를 대신 띄운다.
+ *
+ * **동작하지 않는 조작 요소를 두지 않는다.** 눌러도 아무 일 없는 버튼은
+ * 사용자에게 「된다」고 말한다. 그 자리에 설명을 넣는다 (KEY-234 인수조건 ②).
+ *
+ * 쓰지 않는 것
+ *   보라 · 네온 계열 / 반투명 카드 / 그라데이션 글자 / 장식용 이모지
+ *   뜻 없는 등장 애니메이션 / 넓은 자간 + 초경량 폰트
+ * 위계는 크기가 아니라 굵기와 색으로 만든다.
+ */
+
+/* 색 · 크기 · 여백은 tokens.css 가 갖는다 — 다른 화면과 같은 값을 써야 한다 */
+
+body.frames {
+  margin: 0;
+  padding: var(--s-24) var(--s-16) var(--s-32);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.frames__inner {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+/* ── 머리 ─────────────────────────────────────────────── */
+
+.frames__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.frames__sub {
+  margin: var(--s-4) 0 var(--s-24);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* 「지금」과 「이번 주 목표」를 나란히 둔다 — 목표만 적으면 진척판이
+   사실과 달라지고, 지금만 적으면 무엇을 하려는지 안 보인다. */
+.frames__tally-label {
+  margin: var(--s-16) 0 var(--s-8);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.frames__tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-8);
+}
+
+.frames__count {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--s-8) var(--s-12);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.frames__count b {
+  margin-right: var(--s-4);
+  font-size: 16px;
+  color: var(--ink);
+}
+
+/* ── 구분별 표 ─────────────────────────────────────────── */
+
+.frames__area {
+  margin: var(--s-32) 0 var(--s-8);
+  padding-bottom: var(--s-8);
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.frames__area span {
+  margin-left: var(--s-8);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.frames__table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.frames__table td {
+  padding: var(--s-8) var(--s-12);
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.frames__table tr:first-child td {
+  border-top: 0;
+}
+
+.frames__id {
+  width: 68px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.frames__note {
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.frames__level {
+  width: 168px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ── 수준 표시 ─────────────────────────────────────────── */
+
+.frames__badge {
+  display: inline-block;
+  padding: 1px var(--s-8);
+  border-radius: var(--radius-pill);
+  border: 1px solid;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.frames__badge--1 {
+  background: var(--done-bg);
+  border-color: var(--done-line);
+  color: var(--done);
+}
+
+.frames__badge--2 {
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+  color: var(--warn);
+}
+
+/* 3단계는 「아직 아니다」이지 「문제다」가 아니다 — 경고색을 쓰지 않는다 */
+.frames__badge--3 {
+  background: var(--bg);
+  border-color: var(--line);
+  color: var(--ink-3);
+}
+
+.frames__arrow {
+  margin: 0 var(--s-4);
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.frames__legend {
+  margin-top: var(--s-32);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.frames__legend code,
+.frames__sub code {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* ── 안내 화면 (frame.html) ─────────────────────────────── */
+
+body.frame {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-32) var(--s-16);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.frame__card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s-32);
+}
+
+.frame__id {
+  display: inline-block;
+  padding: 2px var(--s-8);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.frame__name {
+  margin: var(--s-12) 0 0;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.frame__role {
+  margin: var(--s-4) 0 var(--s-24);
+  color: var(--ink-2);
+}
+
+.frame__facts {
+  margin: 0;
+  padding-top: var(--s-16);
+  border-top: 1px solid var(--line);
+}
+
+.frame__facts dt {
+  margin-bottom: var(--s-4);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.frame__facts dd {
+  margin: 0 0 var(--s-16);
+}
+
+.frame__back {
+  margin-top: var(--s-24);
+  font-size: 13px;
+}

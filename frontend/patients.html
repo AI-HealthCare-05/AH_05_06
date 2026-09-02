@@ -3,10 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>환자 · 복약 안내 도우미</title>
+    <title>환자 · 케어온</title>
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/shell.css" />
+    <link rel="stylesheet" href="/css/blocks.css" />
     <link rel="stylesheet" href="/css/upload.css" />
     <!-- 등록 화면은 업로드 화면의 버튼 · 여백 규칙 위에 얹는다 — 뒤에 둬야 덧쓰기가 된다 -->
     <link rel="stylesheet" href="/css/patients.css" />
@@ -22,7 +23,7 @@
          왼쪽 목록은 로그인해 있는 동안 사라지지 않는다. -->
 
     <header class="topbar">
-      <span class="topbar__brand">복약 안내 도우미</span>
+      <span class="topbar__brand">케어온 <span class="topbar__clinic">도로시여성의원</span></span>
       <nav class="topbar__nav">
         <button class="topbar__tab" type="button" aria-current="page">현황</button>
         <button class="topbar__tab" type="button">관리</button>
@@ -34,9 +35,9 @@
           <span class="who__roles" id="who-roles"></span>
         </span>
         <button class="icon-button" type="button" aria-label="알림">
-          🔔<span class="icon-button__count" id="alert-count" hidden></span>
+          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="icon-button__count" id="alert-count" hidden></span>
         </button>
-        <button class="icon-button" type="button" id="logout" aria-label="로그아웃">⏻</button>
+        <button class="icon-button" type="button" id="logout" aria-label="로그아웃"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       </div>
     </header>
 
@@ -44,14 +45,28 @@
       <!-- 왼쪽 목록은 로그인해 있는 동안 사라지지 않는다 -->
       <aside class="list" aria-label="환자 목록">
         <div class="list__head">
+          <div class="list__title">
+            <span class="list__label">환자 리스트</span>
+            <button class="list__fold" type="button" aria-expanded="true" title="목록 접기">◀</button>
+          </div>
           <input class="list__search" type="search" id="quick-search" placeholder="이름 · 차트번호 검색" aria-label="환자 검색" />
           <!-- 등록은 검색 하나로 시작한다 — 「신규냐 기존이냐」를 미리 묻지 않는다 -->
           <button class="list__add" type="button" id="add-patient">+ 환자 등록</button>
         </div>
+        <!-- 와이어프레임 S1-1: `padding:9px 12px · gap:6px`, 화살표 `24×24`,
+             날짜는 `flex:1 · 가운데 · 13px/700`.
+
+             날짜를 누르면 달력이 열린다. 직접 그리지 않고 `<input type="date">`
+             를 겹쳐 둔다 — 브라우저·운영체제가 주는 달력이라 키보드로도 되고
+             언어·주 시작 요일도 그 기기 설정을 따른다. 우리가 그린 달력은
+             그 셋을 다시 만들어야 한다. -->
         <div class="list__day">
-          <button class="icon-button" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
-          <span class="grow" id="day">—</span>
-          <button class="icon-button" type="button" id="day-next" aria-label="다음 날짜">›</button>
+          <button class="day__step" type="button" id="day-prev" aria-label="이전 날짜">‹</button>
+          <div class="day__pick">
+            <span class="day__label" id="day">—</span>
+            <input class="day__input" type="date" id="day-input" aria-label="날짜 고르기" />
+          </div>
+          <button class="day__step" type="button" id="day-next" aria-label="다음 날짜">›</button>
         </div>
 
         <!-- 문자가 나가지 않는 상태는 목록 위에 붙는다. 등록은 되지만 발송이 밀린다. -->
@@ -85,12 +100,20 @@
         <!-- ② 환자 등록 (S1-2 · S1-3) ──────────────────────────────
              두 화면이 아니라 한 화면의 두 상태다. 검색 결과가 곧 분기다. -->
         <section class="view" id="view-register" hidden>
+          <!-- 취소는 **아래 한 곳**이다. 위아래로 두 개를 두면 어느 것을 눌러야
+               하는지 묻게 되고, 같은 일을 하는 단추가 둘이면 하나만 고쳐진다. -->
           <div class="reg__head">
             <h1 class="pane__title">환자 등록</h1>
-            <button class="button-ghost" type="button" id="reg-cancel-top">취소</button>
           </div>
 
-          <section class="box">
+          <!-- **왼쪽에 쓰는 것, 오른쪽에 확인하는 것.**
+               ①로 찾고 ②를 채우는 것은 한 줄기 일이라 위아래로 잇고, 「등록 전
+               확인」은 그 결과를 훑는 자리라 옆에 세운다 — 채우면서 오른쪽이
+               같이 차는 것이 보인다. 전에는 ①②가 좌우로 서고 확인이 아래
+               전폭이라, 다 채운 뒤 스크롤해 내려가야 확인이 보였다. -->
+          <div class="reg__cols">
+            <div class="reg__col">
+<section class="box">
             <h2 class="box__title">① 환자 찾기</h2>
             <form class="find" id="find-form">
               <label class="field field--inline">
@@ -127,7 +150,7 @@
           <section class="box">
             <h2 class="box__title">② 환자 정보</h2>
 
-            <div class="grid2">
+            <div class="fields">
               <label class="field">
                 <span class="field__label">이름 *</span>
                 <input class="field__input" type="text" id="f-name" autocomplete="off" />
@@ -140,12 +163,12 @@
               </label>
               <label class="field">
                 <span class="field__label">생년월일 *</span>
-                <input class="field__input" type="text" id="f-birth" placeholder="1994-07-22" autocomplete="off" />
+                <input class="field__input" type="text" id="f-birth" placeholder="1994-07-22" inputmode="numeric" autocomplete="off" />
                 <span class="field__hint" id="h-birth">환자 본인확인에 사용합니다</span>
               </label>
               <label class="field">
                 <span class="field__label">휴대폰 *</span>
-                <input class="field__input" type="text" id="f-phone" placeholder="010-0000-0000" autocomplete="off" />
+                <input class="field__input" type="text" id="f-phone" placeholder="010-0000-0000" inputmode="numeric" autocomplete="off" />
                 <span class="field__hint" id="h-phone">이 번호로 안내 문자가 발송됩니다</span>
               </label>
               <!-- 진료과 · 담당의사는 고른 환자여도 잠기지 않는다 — 오늘 진료의 값이다 -->
@@ -168,13 +191,17 @@
               ⓘ 기존 정보를 그대로 사용합니다 — 변경 사항은 [ 정보 수정 ]에서 반영해 주세요
             </p>
           </section>
+            </div>
 
-          <section class="box box--confirm">
-            <h2 class="box__title">등록 전 확인</h2>
-            <dl class="recap" id="recap"></dl>
-            <ul class="checks" id="checks"></ul>
-            <p class="field__hint">ⓘ 등록 시 오늘 목록 「작성 중」에 추가됩니다 · 진료기록은 다음 화면에서 업로드합니다</p>
-          </section>
+            <div class="reg__col reg__col--side">
+              <section class="box box--confirm">
+                <h2 class="box__title">등록 전 확인</h2>
+                <dl class="recap" id="recap"></dl>
+                <ul class="checks" id="checks"></ul>
+                <p class="field__hint">ⓘ 등록 시 오늘 목록 「작성 중」에 추가됩니다 · 진료기록은 다음 화면에서 업로드합니다</p>
+              </section>
+            </div>
+          </div>
 
           <p class="note">진료기록은 다음 화면에서 업로드합니다 — 이후 업로드도 가능합니다</p>
 
@@ -189,35 +216,56 @@
              줄을 누르면 먼저 「이 사람이 누구인가」가 뜬다. 머리와 탭은 두 화면이
              함께 쓰고 아래 칸만 바뀐다 — 누구의 기록을 다루는 중인지가 안 끊긴다. -->
         <section class="view" id="view-card" hidden>
+          <!-- 와이어프레임 S1-4: 머리말과 탭이 **한 줄**이다
+               (`padding:11px 26px · flex · align-items:center · gap:18px`).
+               왼쪽에 누구인지, 오른쪽에 어디를 보는지. 탭을 아래 줄로 내리면
+               본문이 그만큼 줄고, 1280×800 에서 지난 방문이 잘린다. -->
           <div class="patient-head">
-            <div class="patient-head__top">
-              <div class="patient-head__name" id="p-name">—</div>
-              <div class="patient-head__id" id="p-id"></div>
-              <span class="row__state" id="p-state" hidden></span>
+            <div class="patient-head__who">
+              <div class="patient-head__top">
+                <div class="patient-head__name" id="p-name">—</div>
+                <div class="patient-head__id" id="p-id"></div>
+                <span class="row__state" id="p-state" hidden></span>
+              </div>
+              <div class="patient-head__visit" id="p-visit"></div>
             </div>
-            <div class="patient-head__visit" id="p-visit"></div>
+            <!-- **다섯 탭이 다 열려 있다** — 역할이 화면을 가르지 않는다.
+               와이어프레임에서 D1(의사)은 별도 화면이 아니라 이 탭의 뒷칸이다
+               (`D1-1` 골격: 「좌 320 목록 / 우 960 본문 → 5단계 탭」). 시연 때
+               의사와 스탭이 서로의 화면을 못 봐서 막힌 자리가 여기다.
+
+               서버도 그렇게 되어 있다 — `app/core/rbac.py` 에서 조회·업로드·
+               안내문 작성은 staff·doctor 둘 다이고, 승인·반려만 doctor 다.
+               **가르는 것은 버튼이지 화면이 아니다.** -->
+            <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드">
+              <button class="tab" type="button" role="tab" data-tab="basic" aria-selected="true">
+                <span class="tab__mark" aria-hidden="true">●</span>기본정보
+              </button>
+              <button class="tab" type="button" role="tab" data-tab="record" aria-selected="false">
+                <span class="tab__mark" aria-hidden="true">○</span>진료기록
+              </button>
+              <button class="tab" type="button" role="tab" data-tab="guide" aria-selected="false">
+                <span class="tab__mark" aria-hidden="true">○</span>안내문
+              </button>
+              <button class="tab" type="button" role="tab" data-tab="final" aria-selected="false">
+                <span class="tab__mark" aria-hidden="true">○</span>최종 확인
+              </button>
+              <button class="tab" type="button" role="tab" data-tab="status" aria-selected="false">
+                <span class="tab__mark" aria-hidden="true">○</span>현황
+              </button>
+            </div>
           </div>
 
-          <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드">
-            <button class="tab" type="button" role="tab" data-tab="basic" aria-selected="true">
-              <span class="tab__mark" aria-hidden="true">●</span>기본정보
-            </button>
-            <button class="tab" type="button" role="tab" data-tab="record" aria-selected="false">
-              <span class="tab__mark" aria-hidden="true">○</span>진료기록
-            </button>
-            <button class="tab tab--later" type="button" role="tab" data-tab="guide" aria-selected="false" aria-disabled="true">
-              <span class="tab__mark" aria-hidden="true">○</span>안내문
-            </button>
-            <button class="tab tab--later" type="button" role="tab" data-tab="final" aria-selected="false" aria-disabled="true">
-              <span class="tab__mark" aria-hidden="true">○</span>최종 확인
-            </button>
-            <button class="tab tab--later" type="button" role="tab" data-tab="status" aria-selected="false" aria-disabled="true">
-              <span class="tab__mark" aria-hidden="true">○</span>현황
-            </button>
-          </div>
 
           <!-- ─ 기본정보 (S1-4) ─────────────────────────────────── -->
           <div class="panel" id="panel-basic">
+          <!-- 와이어프레임 S1-4 는 본문을 **좌우 2단**으로 둔다
+               (`display:flex · gap:26px · flex:1 · min-height:0`).
+               왼쪽은 오늘 손볼 것(환자 정보 · 오늘 진료), 오른쪽은 참고할 것
+               (지난 방문 · 발송 이력). 세로로 쌓으면 지난 방문을 보려고
+               스크롤해야 하는데, 그건 오늘 값을 채우면서 곁눈질할 자리다. -->
+          <div class="cols2">
+            <div class="cols2__side">
             <section class="box">
               <div class="box__head">
                 <h2 class="box__title">환자 정보</h2>
@@ -235,7 +283,8 @@
               <dl class="facts" id="visit-facts"></dl>
               <form class="edit" id="visit-edit" hidden></form>
             </section>
-
+            </div>
+            <div class="cols2__side">
             <!-- 「전에 뭐라고 안내했지?」를 관리 화면에서 찾지 않게 여기 둔다 -->
             <section class="box">
               <h2 class="box__title">지난 방문</h2>
@@ -260,56 +309,50 @@
             </section>
 
             <p class="note">ⓘ 지난 안내문과 발송 이력은 관리 화면에서도 확인할 수 있습니다</p>
-          </div>
-
-          <!-- ─ 진료기록 업로드 (S1-5) ──────────────────────────── -->
-          <div class="panel" id="panel-record" hidden>
-          <h1 class="pane__title">② 진료기록 업로드</h1>
-          <p class="pane__lead">환자를 먼저 등록하고 진료기록은 나중에 업로드할 수 있습니다</p>
-
-          <!-- 한 버튼으로 받는다. 종류는 프로그램이 가려낸다. -->
-          <div class="drop" id="drop">
-            <div class="drop__icon" aria-hidden="true">🖼</div>
-            <div class="drop__title">진료기록 업로드</div>
-            <p class="drop__lead">파일을 끌어다 놓을 수 있습니다</p>
-            <p class="drop__hint">여러 장 동시 업로드 · 순서 무관</p>
-            <button class="drop__pick" type="button" id="pick">파일 고르기</button>
-            <input type="file" id="file" multiple accept="image/*,application/pdf" hidden />
-          </div>
-
-          <div class="kinds">
-            <div class="kind">
-              <div class="kind__name">EMR 과거기록</div>
-              <p class="kind__desc">상병 · 처방 · 검사 수치가 함께 보이는 화면 — 이 화면만으로 충분합니다</p>
-              <p class="kind__when kind__when--must">★ 안내문 생성 필수</p>
-            </div>
-            <div class="kind">
-              <div class="kind__name">소견 · 메모</div>
-              <p class="kind__desc">초음파 소견 · 특이사항이 표시된 화면</p>
-              <p class="kind__when">안내문 생성에 사용</p>
-            </div>
-            <div class="kind">
-              <div class="kind__name">검사 결과지</div>
-              <p class="kind__desc">과거기록에 포함되지 않는 항목만 — AMH는 별도 서식이라 추가 업로드가 필요할 수 있습니다</p>
-              <p class="kind__when">검사 시행일에만</p>
             </div>
           </div>
-
-          <p class="note">진료기록 종류를 자동으로 분류합니다 · 종류별로 나누어 업로드하지 않아도 됩니다</p>
-
-          <section class="files" id="files" aria-live="polite"></section>
-
-          <p class="note note--warn">⚠ 다른 환자의 정보가 함께 촬영되지 않도록 주의해 주세요</p>
-          <p class="note">업로드하지 않으면 「작성 중 · 진료기록 없음」 상태로 유지됩니다</p>
-
-          <div class="actions">
-            <button class="button-ghost" type="button" id="later">나중에 업로드</button>
-            <span class="grow"></span>
-            <button class="button-primary" type="button" id="next" disabled>업로드 후 안내문 생성</button>
           </div>
 
-          <!-- 누른 뒤에 무슨 일이 일어났는지. 작아서 화면낭독기가 읽어도 시끄럽지 않다 -->
-          <p class="note" id="say" role="status"></p>
+          <!-- 「진료기록」 칸은 **판독 화면**(`/ocr-review.html`)이다.
+               전에는 여기에도 업로드 화면이 하나 더 있었다 — 같은 칸에 두 화면이라,
+               판독이 끝난 환자를 눌러도 빈 업로드 판이 떴다. 올리는 일도 판독
+               화면 머리의 「OCR 업로드」가 한다 (`ocr-review.html` 의 `#add-panel`).
+               이 칸을 그리로 보내는 것은 `js/detail.js` 의 `showTab` 이다. -->
+
+          <!-- ─ 안내문 (S1-11 · S1-12 · S1-13) ───────────────────
+               스탭이 안내문을 확인하고 고쳐 의사에게 넘기는 자리.
+               본문은 `js/guide-view.js` 가 그린다 — 「최종 확인」 탭과 같은
+               것을 쓴다. 두 벌이면 한쪽만 고쳐지고 화면마다 다른 말이 나온다. -->
+          <div class="panel" id="panel-guide" hidden>
+            <p class="warnline" id="guide-warn"></p>
+            <div class="vtabs" id="guide-vtabs"></div>
+            <div id="guide-panel"></div>
+
+            <!-- S1-11 하단 — 「스탭 확인 후 의사에게 전달됩니다 · 승인은 의사
+                 역할만 가능합니다」. 넘기는 것은 스탭이 하고, 승인은 의사가
+                 한다 (`POST /guide/submit` → `POST /guide/approve`). -->
+            <div class="actions" id="guide-actions"></div>
+            <p class="note" id="guide-say" role="status"></p>
+          </div>
+
+          <!-- ─ 최종 확인 (D1-1 ~ D1-5) ──────────────────────────
+               같은 안내문을 의사가 보는 자리. **화면은 스탭도 본다** —
+               와이어프레임에서 D1 은 별도 화면이 아니라 이 탭이다.
+               승인·반려 버튼만 의사에게 열린다(rbac.py: GUIDE_APPROVE). -->
+          <div class="panel" id="panel-final" hidden>
+            <p class="warnline" id="final-warn"></p>
+            <div class="vtabs" id="final-vtabs"></div>
+            <div id="final-panel"></div>
+            <div class="actions" id="final-actions"></div>
+            <p class="note" id="final-say" role="status"></p>
+          </div>
+
+          <!-- ─ 현황 (D1-6 · D1-7) ───────────────────────────────
+               발송·열람·응답 타임라인. **줄 API 가 서버에 없다** —
+               발송 이력 테이블 자체가 없다. 값을 지어내지 않고
+               무엇이 있어야 되는지만 말한다. -->
+          <div class="panel" id="panel-status" hidden>
+            <div id="status-body"></div>
           </div>
         </section>
       </main>
@@ -318,9 +361,23 @@
     <script src="/js/session.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/patients-api.js"></script>
+    <script src="/js/sms-plan.js"></script>
+    <script src="/js/guide-view.js"></script>
+    <script src="/js/status-view.js"></script>
+    <script src="/js/doctor-api.js"></script>
+    <script src="/js/step-nav.js"></script>
+    <script src="/js/list-fold.js"></script>
     <script src="/js/shell.js"></script>
     <script src="/js/patients.js"></script>
     <script src="/js/detail.js"></script>
-    <script src="/js/upload.js"></script>
+    <script src="/js/upload-core.js"></script>
+    <!-- 승인 확인 모달(와이어프레임 D1-5). 화면을 갈아끼우지 않는다 —
+         뒤에 최종 확인 탭이 흐려진 채 남아, 무엇을 승인했는지 보인다. -->
+    <div class="modal" id="modal" hidden>
+      <div class="modal__card" role="dialog" aria-modal="true" id="modal-body"></div>
+    </div>
+
+    <script src="/js/frames.js"></script>
+    <script src="/js/visit-guide.js"></script>
   </body>
 </html>

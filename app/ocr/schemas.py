@@ -92,3 +92,18 @@ class UpdateOcrFieldRequest(StrictModel):
         if self.corrected_value is not None and not self.corrected_value.strip():
             raise ValueError("corrected_value는 공백일 수 없습니다")
         return self
+
+
+class WriteOcrFieldRequest(StrictModel):
+    """판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
+
+    **고치기(PATCH)와 다른 길이다.** 저쪽은 이미 있는 줄의 값을 바꾸는 것이고,
+    이쪽은 **줄 자체가 없는** 것을 만든다. 판독이 못 찾은 항목은 레코드로 남지
+    않아서, 화면이 값을 적어도 보낼 곳이 없었다 — 「저장 안 됨」이라 적어 두고
+    새로고침하면 사라졌다.
+
+    `value` 가 비면 **그 줄을 지운다**. 잘못 적은 것을 「빈 값으로 적었다」로
+    남겨 두면, 안 적은 것과 구별이 안 된다.
+    """
+
+    value: str | None = Field(default=None, max_length=10000)

@@ -244,7 +244,7 @@ function tiedBirthDates(items) {
           '</td><td class="' +
           (same ? "hit__key" : "") +
           '">' +
-          esc(maskPhone(p.phone)) +
+          esc(formatPhone(p.phone)) +
           "</td><td>" +
           esc(p.hospital_patient_no) +
           "</td><td>" +
@@ -266,8 +266,10 @@ function tiedBirthDates(items) {
 
     el("f-name").value = picked.name;
     el("f-chart").value = picked.hospital_patient_no;
-    el("f-birth").value = picked.birth_date;
-    el("f-phone").value = maskPhone(picked.phone);
+    /* 고른 환자를 채울 때도 같은 모양으로 — 손으로 친 것과 다르면 「내가 친
+       것이 잘못됐나」로 읽힌다. */
+    el("f-birth").value = birthMask(picked.birth_date);
+    el("f-phone").value = phoneMask(picked.phone);
     lock();
     render();
   }
@@ -370,8 +372,9 @@ function tiedBirthDates(items) {
   }
 
   function phoneOk(text) {
+    /* 고른 환자의 잠긴 칸에도 이제 **진짜 번호**가 들어간다(전에는 가려진 값이라
+       이 검사를 지나칠 수 없었다). 그래서 잠겼든 아니든 같은 규칙으로 잰다. */
     return /^01\d{8,9}$/.test(text.replace(/\D/g, ""));
-    /* 잠긴 칸에는 가려진 값(010-****-1234)이 들어 있다 — 그때는 이 검사를 건너뛴다 */
   }
 
   /* 오늘 이미 서 있는 줄인가. 있으면 또 만들지 않고 그 줄로 보낸다. */
@@ -396,7 +399,7 @@ function tiedBirthDates(items) {
           ok: false,
           block: false,
           text:
-            "생년월일이 같은 분이 또 있습니다 — 휴대폰 " + maskPhone(picked.phone).slice(-4) + " 가 맞는지 확인하세요",
+            "생년월일이 같은 분이 또 있습니다 — 휴대폰 " + formatPhone(picked.phone) + " 가 맞는지 확인하세요",
         });
       } else {
         out.unshift({ ok: true, text: "생년월일 일치 — 동명이인이 아닙니다" });
@@ -526,7 +529,10 @@ function tiedBirthDates(items) {
     chain
       .then(function (visit) {
         reset();
-        addVisit(visit); // 목록 「작성 중 · 진료기록 없음」에 서고 S1-5 로 넘어간다
+        /* **돌려준다.** 목록을 서버에서 다시 받아 오므로 그 사이의 실패도
+           아래 catch 로 와야 한다 — 안 그러면 등록은 됐는데 목록이 안 서고
+           아무 말도 없이 끝난다. */
+        return addVisit(visit); // 목록 「작성 중 · 진료기록 없음」에 서고 S1-5 로 넘어간다
       })
       .catch(function (error) {
         /* 화면에서 막는 것은 편의일 뿐이고 판정은 서버가 한다.
@@ -546,6 +552,14 @@ function tiedBirthDates(items) {
   document.getElementById("add-patient").addEventListener("click", function () {
     open(document.getElementById("quick-search").value.trim());
   });
+
+  /* 다른 화면(판독)에서 「+ 환자 등록」을 누르고 온 길. 등록 폼은 여기에만
+     있으므로 주소로 받는다 — 저쪽에 폼을 한 벌 더 두면 두 벌이 갈린다.
+     주소는 한 번 쓰고 지운다: 남겨 두면 새로고침할 때마다 등록 화면이 뜬다. */
+  if (/[?&]add=1(&|$)/.test(location.search)) {
+    open("");
+    history.replaceState(null, "", location.pathname);
+  }
   document.getElementById("blank-add").addEventListener("click", function () {
     open("");
   });
@@ -567,8 +581,42 @@ function tiedBirthDates(items) {
     if (row) pick(row);
   });
 
+  /* 숫자만 쳐도 하이픈이 붙는 칸. 규칙은 화면 밖에 있고(`birthMask` ·
+     `phoneMask`) 여기서는 **커서 지키기**만 한다 — 다시 그리면 커서가 끝으로
+     튀어, 가운데를 고치던 손이 매번 자리를 잃는다. */
+  var MASKS = { "f-birth": birthMask, "f-phone": phoneMask };
+  var lastDigits = {};
+
+  function applyMask(input, id, event) {
+    var mask = MASKS[id];
+    if (!mask) return;
+
+    var at = typeof input.selectionStart === "number" ? input.selectionStart : input.value.length;
+    var digits = onlyDigits(input.value);
+    var before = onlyDigits(input.value.slice(0, at)).length;
+
+    /* 지운 것이 하이픈뿐이면 숫자 수가 그대로다 — 그 앞 숫자를 마저 지운다 */
+    var wasDelete = event && event.inputType === "deleteContentBackward";
+    if (wasDelete && lastDigits[id] === digits) {
+      var back = maskAfterDelete(digits, before);
+      digits = back.digits;
+      before = back.at;
+    }
+
+    lastDigits[id] = digits;
+    var masked = mask(digits);
+    if (masked === input.value) return;
+
+    input.value = masked;
+    if (typeof input.setSelectionRange === "function") {
+      var caret = maskCaret(masked, before);
+      input.setSelectionRange(caret, caret);
+    }
+  }
+
   FIELDS.forEach(function (id) {
-    el(id).addEventListener("input", function () {
+    el(id).addEventListener("input", function (event) {
+      applyMask(this, id, event);
       if (id === "f-chart" || id === "f-phone") lookupDuplicates();
       else render();
     });
@@ -579,7 +627,6 @@ function tiedBirthDates(items) {
 
   submit.addEventListener("click", register);
   document.getElementById("reg-cancel").addEventListener("click", close);
-  document.getElementById("reg-cancel-top").addEventListener("click", close);
 
   /* 등록 도중에 목록을 눌러도 잃는 것이 없어야 한다 */
   document.addEventListener("visit:selecting", function (event) {

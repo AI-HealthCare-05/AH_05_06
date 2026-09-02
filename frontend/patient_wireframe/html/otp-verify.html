@@ -211,16 +211,24 @@
 
   /* URL 파라미터 읽기 — 토큰은 메모리에만 둔다 */
   var params = new URLSearchParams(window.location.search);
-  var token = params.get('token') || '';
+  var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+  var isMock = params.get('mock') === '1';
+  var token = isMock ? (fragment.get('t') || '') : (params.get('token') || '');
   var expiresAt = params.get('expires_at') ? new Date(params.get('expires_at')) : null;
   var retryAfterSeconds = parseInt(params.get('retry_after') || '60', 10);
+  if (isMock && !expiresAt) expiresAt = new Date(Date.now() + 180000);
+
+  function otpStartUrl() {
+    if (isMock) return 'otp.html' + location.search + location.hash;
+    return 'otp.html' + (token ? '?token=' + encodeURIComponent(token) : '');
+  }
 
   document.getElementById('back-btn').addEventListener('click', function () {
-    window.location.href = 'otp.html' + (token ? '?token=' + encodeURIComponent(token) : '');
+    window.location.href = otpStartUrl();
   });
 
   document.getElementById('btn-restart').addEventListener('click', function () {
-    window.location.href = 'otp.html' + (token ? '?token=' + encodeURIComponent(token) : '');
+    window.location.href = otpStartUrl();
   });
 
   document.getElementById('btn-error-retry').addEventListener('click', function () {
@@ -238,6 +246,22 @@
         el.style.display = 'none';
       }
     });
+  }
+
+  function guideReturnUrl() {
+    var query = new URLSearchParams(location.search);
+    var fragment = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    var safeQuery = new URLSearchParams();
+    var mock = query.get('mock');
+    var previewCase = query.get('case');
+    if (mock === '1') safeQuery.set('mock', '1');
+    if (previewCase && /^[a-z0-9_-]{1,32}$/i.test(previewCase)) safeQuery.set('case', previewCase);
+    var token = fragment.get('t') || query.get('t') || query.get('visit') || '';
+    var safeFragment = new URLSearchParams();
+    if (token) safeFragment.set('t', token);
+    return '/guide.html' +
+      (safeQuery.toString() ? '?' + safeQuery.toString() : '') +
+      (safeFragment.toString() ? '#' + safeFragment.toString() : '');
   }
 
   /* ── 셀 입력 자동 이동 ── */
@@ -330,6 +354,17 @@
   resendBtn.addEventListener('click', async function () {
     if (!token) return;
     resendBtn.disabled = true;
+    if (isMock) {
+      expiresAt = new Date(Date.now() + 180000);
+      startMainTimer(expiresAt);
+      startResendCooldown(60);
+      expired = false;
+      cells.forEach(function (c) { c.value = ''; });
+      cells[0].focus();
+      updateConfirm();
+      clearError();
+      return;
+    }
     try {
       var res = await fetch(API_BASE + '/patient-auth/otp/issue', {
         method: 'POST',
@@ -371,6 +406,19 @@
     confirmBtn.disabled = true;
     clearError();
 
+    if (isMock) {
+      if (code === '000000') {
+        sessionStorage.setItem('otp_verified', '1');
+        window.location.replace(guideReturnUrl());
+        return;
+      }
+      cells.forEach(function (c) { c.value = ''; c.classList.add('error'); });
+      cells[0].focus();
+      errorEl.textContent = '인증번호가 올바르지 않아요. 다시 확인해 주세요.';
+      confirmBtn.disabled = true;
+      return;
+    }
+
     try {
       var res = await fetch(API_BASE + '/patient-auth/otp/verify', {
         method: 'POST',
@@ -379,8 +427,7 @@
       });
 
       if (res.ok) {
-        sessionStorage.setItem('otp_verified', '1');
-        window.location.replace('guide.html?t=' + encodeURIComponent(token));
+        window.location.replace('/guide.html#t=' + encodeURIComponent(token));
         return;
       }
 
