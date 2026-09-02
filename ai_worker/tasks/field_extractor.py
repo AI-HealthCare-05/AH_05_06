@@ -77,9 +77,26 @@ _RX_TOTAL_LABELS: frozenset[str] = frozenset({"총투"})
 # '코드분류' 열에서 약품 행을 식별한다 (내복약·외용약·주사 등).
 _RX_CLASS_LABELS: frozenset[str] = frozenset({"코드분류"})
 _RX_MED_CLASSES: frozenset[str] = frozenset({"내복약"})
+# 명칭 열에 나타나는 비약품 상태 텍스트 — 약품명으로 추출하지 않는다
+_RX_NON_MED_NAMES: frozenset[str] = frozenset({"처방보류", "처방중단", "중단", "보류"})
 
 # 비잔정 패턴 — 이 약의 총투 값에 28을 곱해서 처방일수를 계산한다
 _BIZANJUNG_RE = re.compile(r"비잔\s*정", re.IGNORECASE)
+
+# ---------------------------------------------------------------------------
+# 처방 세트 자동 제안 패턴 — _suggest_prescription_set_from 전용
+# ---------------------------------------------------------------------------
+
+_BIZAN_RE = re.compile(r"비잔", re.IGNORECASE)
+_YAZZ_RE = re.compile(r"야즈", re.IGNORECASE)
+_METFORMIN_RE = re.compile(r"메트포르민|메트포민|Metformin", re.IGNORECASE)
+# 자유 텍스트 영역의 「복용 중」 문구로 계속 복용 여부를 판단한다
+_CONTINUING_RE = re.compile(r"복용\s*중|계속\s*복용|지속\s*복용", re.IGNORECASE)
+_YAZZ_CONTRAINDICATED_RE = re.compile(r"야즈\s*불가|야즈\s*금기", re.IGNORECASE)
+
+# 두 근거(약 + 복용 여부) 모두 확인된 경우 / 약만 확인된 경우
+_SET_SUGGESTION_HIGH_CONF = Decimal("0.90")
+_SET_SUGGESTION_MED_CONF = Decimal("0.75")
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +502,7 @@ def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
         if not name_blocks:
             continue
         med_name = " ".join(b.text.strip() for b in name_blocks).strip()
-        if not med_name:
+        if not med_name or med_name in _RX_NON_MED_NAMES:
             continue
 
         suffix = "" if med_index == 0 else f"_{med_index + 1}"
@@ -508,6 +525,60 @@ def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
         med_index += 1
 
     return results
+
+
+def _suggest_prescription_set_from(
+    extracted: list[ExtractedField],
+    raw_text: str,
+) -> ExtractedField | None:
+    """DIAGNOSIS·MEDICATION_NAME과 EMR raw_text를 결합해 처방 세트 이름을 추론한다.
+
+    판단 기준 (우선순위 순):
+      1. 진단(DIAGNOSIS) 필드가 있으면 그 값으로 질환을 결정한다.
+      2. DIAGNOSIS 가 없으면 약품명(비잔→자궁내막증 / 야즈·메트포르민→PCOS)으로
+         역추론한다 — 상병 표가 없는 메모형 EMR(「비잔 복용중」 등)을 처리한다.
+      3. raw_text의 「복용 중/복용중」 문구로 계속 복용 여부를 판단한다.
+    근거가 부족하면 None — 스탭이 S1-6 드롭다운에서 직접 고른다.
+    """
+    med_texts = " ".join(f.extracted_value for f in extracted if f.field_type.startswith("MEDICATION_NAME"))
+    all_text = raw_text + " " + med_texts
+
+    has_bizan = bool(_BIZAN_RE.search(all_text))
+    has_yazz = bool(_YAZZ_RE.search(all_text))
+    has_metformin = bool(_METFORMIN_RE.search(all_text))
+    has_continuing = bool(_CONTINUING_RE.search(raw_text))
+    has_yazz_contraindicated = bool(_YAZZ_CONTRAINDICATED_RE.search(raw_text))
+
+    diagnosis_field = next((f for f in extracted if f.field_type == "DIAGNOSIS"), None)
+    if diagnosis_field is not None:
+        diagnosis = diagnosis_field.extracted_value
+        is_endo = "자궁내막증" in diagnosis
+        is_pcos = "PCOS" in diagnosis or "다낭성" in diagnosis
+    else:
+        # 상병 표 미인식 시 약품명으로 질환을 역추론한다
+        is_endo = has_bizan
+        is_pcos = (has_yazz or has_metformin or has_yazz_contraindicated) and not has_bizan
+
+    if not is_endo and not is_pcos:
+        return None
+
+    if is_endo:
+        if has_bizan:
+            if has_continuing:
+                return ExtractedField("PRESCRIPTION_SET", "자궁내막증 · 비잔 (계속)", _SET_SUGGESTION_HIGH_CONF)
+            return ExtractedField("PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", _SET_SUGGESTION_MED_CONF)
+        return None
+
+    # is_pcos
+    if has_yazz_contraindicated:
+        return ExtractedField("PRESCRIPTION_SET", "PCOS · 초진 (야즈 불가)", _SET_SUGGESTION_HIGH_CONF)
+    if has_yazz and has_metformin:
+        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 + 메트포르민", _SET_SUGGESTION_HIGH_CONF)
+    if has_yazz:
+        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (계속)", _SET_SUGGESTION_MED_CONF)
+    if has_metformin:
+        return ExtractedField("PRESCRIPTION_SET", "PCOS · 대사관리", _SET_SUGGESTION_HIGH_CONF)
+    return None
 
 
 def _extract_emr(clova_result: ClovaOcrResult) -> list[ExtractedField]:
@@ -545,6 +616,19 @@ def _extract_emr(clova_result: ClovaOcrResult) -> list[ExtractedField]:
 
     # ⑥ 검사결과지 정규식 fallback
     _add(_extract_by_regex(clova_result, _LAB_PATTERNS))
+
+    # ⑦ PRESCRIPTION_SET 제안 — ①②에서 모은 DIAGNOSIS·MEDICATION_NAME과 raw_text 분석
+    suggestion = _suggest_prescription_set_from(results, clova_result.raw_text or "")
+    if suggestion:
+        results.append(suggestion)
+        # DIAGNOSIS 가 없으면 처방 세트에서 역추론해 추가한다.
+        # 상병 표를 못 읽었지만 「비잔 복용중」 같은 메모로 세트를 찾은 경우가 해당한다.
+        if "DIAGNOSIS" not in found_types:
+            set_name = suggestion.extracted_value
+            if "자궁내막증" in set_name:
+                _add([ExtractedField("DIAGNOSIS", "자궁내막증", _SET_SUGGESTION_MED_CONF)])
+            elif "PCOS" in set_name:
+                _add([ExtractedField("DIAGNOSIS", "다낭성난소증후군(PCOS)", _SET_SUGGESTION_MED_CONF)])
 
     return results
 

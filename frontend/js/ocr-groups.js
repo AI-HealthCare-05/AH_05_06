@@ -31,6 +31,10 @@ var PRESCRIPTION_TYPES = [
      없으면 약품명이 「이번 판독 값」(검사) 묶음으로 새어 들어간다. */
   "PRESCRIPTION_NAME",
   "PRESCRIPTION_DURATION",
+
+  /* OCR 추론 힌트 — 처방 세트 자동 제안값. 화면에 별도 줄로 세우지 않고
+     드롭다운 자동 선택에만 쓴다. 여기 없으면 검사값 묶음으로 새어 들어간다. */
+  "PRESCRIPTION_SET",
 ];
 
 /* **늘 세우는 처방 셋.** 무슨 병에 무슨 약을 며칠 치 — 안내문이 이것으로

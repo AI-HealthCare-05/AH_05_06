@@ -462,3 +462,163 @@ def test_rx_table_skips_non_medication_rows() -> None:
     fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
     # 프로베라정은 진찰료 → 목록에 없어야 한다
     assert not any("프로베라정" in (f.extracted_value or "") for f in fields)
+
+
+# ---------------------------------------------------------------------------
+# PRESCRIPTION_SET 자동 제안 — 진단 + 약품명 + raw_text「복용 중」조합
+# ---------------------------------------------------------------------------
+
+# 공통 상병명 표 블록 — 자궁내막증
+_ENDO_DIAG_BLOCKS = [
+    _diag_block("코드", 0.99, 10, 10, 60, 30),
+    _diag_block("명칭", 0.99, 70, 10, 300, 30),
+    _diag_block("N801", 0.96, 10, 40, 60, 60),
+    _diag_block("난소의 자궁내막증", 0.94, 70, 40, 300, 60),
+]
+
+# 공통 상병명 표 블록 — 다낭성난소증후군
+_PCOS_DIAG_BLOCKS = [
+    _diag_block("코드", 0.99, 10, 10, 60, 30),
+    _diag_block("명칭", 0.99, 70, 10, 300, 30),
+    _diag_block("E282", 0.96, 10, 40, 60, 60),
+    _diag_block("다낭성난소증후군", 0.93, 70, 40, 300, 60),
+]
+
+# 처방 표: 비잔정 행
+_BIZAN_RX_BLOCKS = [
+    _rx_block("명칭", 0.99, 10, 100, 200, 120),
+    _rx_block("총투", 0.99, 270, 100, 320, 120),
+    _rx_block("코드분류", 0.99, 400, 100, 480, 120),
+    _rx_block("비잔정(디에노게스트)2mg", 0.95, 10, 130, 200, 150),
+    _rx_block("3", 0.98, 270, 130, 320, 150),
+    _rx_block("내복약", 0.97, 400, 130, 480, 150),
+]
+
+# 처방 표: 야즈 + 메트포르민 행
+_YAZZ_MET_RX_BLOCKS = [
+    _rx_block("명칭", 0.99, 10, 100, 200, 120),
+    _rx_block("총투", 0.99, 270, 100, 320, 120),
+    _rx_block("코드분류", 0.99, 400, 100, 480, 120),
+    _rx_block("야즈정", 0.95, 10, 130, 200, 150),
+    _rx_block("21", 0.98, 270, 130, 320, 150),
+    _rx_block("내복약", 0.97, 400, 130, 480, 150),
+    _rx_block("메트포르민정500mg", 0.94, 10, 160, 200, 180),
+    _rx_block("84", 0.97, 270, 160, 320, 180),
+    _rx_block("내복약", 0.96, 400, 160, 480, 180),
+]
+
+
+def _make_emr_result(diag_blocks: list, rx_blocks: list, raw_text: str) -> ClovaOcrResult:
+    all_blocks = diag_blocks + rx_blocks
+    return ClovaOcrResult(
+        raw_text=raw_text,
+        fields=all_blocks,
+        rows=_group_fields_by_row(all_blocks),
+    )
+
+
+def test_prescription_set_bizan_continuing() -> None:
+    """자궁내막증 + 비잔 + raw_text「복용 중」→ 자궁내막증 · 비잔 (계속), 신뢰도 0.90."""
+    result = _make_emr_result(
+        _ENDO_DIAG_BLOCKS,
+        _BIZAN_RX_BLOCKS,
+        raw_text="자궁 내막증으로 비잔 복용 중, 질출혈 지속",
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f for f in fields}
+    assert "PRESCRIPTION_SET" in field_map
+    ps = field_map["PRESCRIPTION_SET"]
+    assert ps.extracted_value == "자궁내막증 · 비잔 (계속)"
+    assert ps.confidence == Decimal("0.90")
+
+
+def test_prescription_set_bizan_initial() -> None:
+    """자궁내막증 + 비잔 + raw_text「복용 중」없음 → 자궁내막증 · 비잔 (처음), 신뢰도 0.75."""
+    result = _make_emr_result(
+        _ENDO_DIAG_BLOCKS,
+        _BIZAN_RX_BLOCKS,
+        raw_text="",
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f for f in fields}
+    assert "PRESCRIPTION_SET" in field_map
+    ps = field_map["PRESCRIPTION_SET"]
+    assert ps.extracted_value == "자궁내막증 · 비잔 (처음)"
+    assert ps.confidence == Decimal("0.75")
+
+
+def test_prescription_set_syn_ems_01_suggests_bizan_initial() -> None:
+    """SYN-EMS-01 실측 블록(raw_text에 「복용 중」없음) → 자궁내막증 · 비잔 (처음)."""
+    fields = extract_fields(_SYN_EMS_01, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 (처음)"
+
+
+def test_prescription_set_pcos_yazz_metformin() -> None:
+    """PCOS + 야즈 + 메트포르민 → PCOS · 야즈 + 메트포르민, 신뢰도 0.90."""
+    result = _make_emr_result(
+        _PCOS_DIAG_BLOCKS,
+        _YAZZ_MET_RX_BLOCKS,
+        raw_text="",
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f for f in fields}
+    assert "PRESCRIPTION_SET" in field_map
+    ps = field_map["PRESCRIPTION_SET"]
+    assert ps.extracted_value == "PCOS · 야즈 + 메트포르민"
+    assert ps.confidence == Decimal("0.90")
+
+
+def test_prescription_set_pcos_yazz_contraindicated() -> None:
+    """raw_text「야즈 불가」 → PCOS · 초진 (야즈 불가), 신뢰도 0.90."""
+    blocks = _PCOS_DIAG_BLOCKS
+    result = ClovaOcrResult(
+        raw_text="야즈 불가 — 혈전 위험",
+        fields=blocks,
+        rows=_group_fields_by_row(blocks),
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f for f in fields}
+    assert "PRESCRIPTION_SET" in field_map
+    assert field_map["PRESCRIPTION_SET"].extracted_value == "PCOS · 초진 (야즈 불가)"
+
+
+def test_prescription_set_no_suggestion_without_drug() -> None:
+    """자궁내막증 진단만 있고 비잔 없으면 PRESCRIPTION_SET을 제안하지 않는다."""
+    result = ClovaOcrResult(
+        raw_text="",
+        fields=_ENDO_DIAG_BLOCKS,
+        rows=_group_fields_by_row(_ENDO_DIAG_BLOCKS),
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_types = {f.field_type for f in fields}
+    assert "PRESCRIPTION_SET" not in field_types
+
+
+def test_prescription_set_inferred_from_bizan_without_diagnosis() -> None:
+    """DIAGNOSIS 필드 없이 비잔만 있어도 PRESCRIPTION_SET과 DIAGNOSIS를 역추론한다."""
+    fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 (처음)"
+    assert field_map.get("DIAGNOSIS") == "자궁내막증"
+
+
+def test_prescription_set_bizan_in_raw_text_no_disease_table() -> None:
+    """메모 영역「비잔 복용중」만으로 자궁내막증 · 비잔 (계속)을 제안하고 진단도 역추론한다."""
+    result = ClovaOcrResult(
+        raw_text="25.7월 부터 비잔 복용중 (EMA)",
+        fields=[],
+        rows=[],
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 (계속)"
+    assert field_map.get("DIAGNOSIS") == "자궁내막증"
+
+
+def test_prescription_set_no_suggestion_without_any_drug_signal() -> None:
+    """약품명도 없고 raw_text에도 관련 약 없으면 제안하지 않는다."""
+    result = ClovaOcrResult(raw_text="일반 진료 메모", fields=[], rows=[])
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_types = {f.field_type for f in fields}
+    assert "PRESCRIPTION_SET" not in field_types

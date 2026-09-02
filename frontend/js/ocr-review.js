@@ -348,6 +348,22 @@ function stateTakesFocus(tone) {
   var setsFailed = false;
   var pickedSet = null;
 
+  /* OCR 이 추론한 처방 세트 이름(`PRESCRIPTION_SET` 필드)으로 드롭다운을 자동
+     선택한다. sets 와 result 중 나중에 도착하는 쪽에서 호출한다.
+     사람이 이미 고른 뒤에는 건드리지 않는다. */
+  function applyPrescriptionSetSuggestion() {
+    if (pickedSet) return;
+    if (!result || !sets.length) return;
+    var suggested = fieldValueOf(result.fields, "PRESCRIPTION_SET");
+    if (!suggested) return;
+    for (var i = 0; i < sets.length; i++) {
+      if (sets[i].name === suggested) {
+        pickedSet = sets[i];
+        return;
+      }
+    }
+  }
+
   function isEditing(id) {
     return Object.prototype.hasOwnProperty.call(editing, id);
   }
@@ -1000,7 +1016,9 @@ function stateTakesFocus(tone) {
       }
       if (!field) return "";
 
-      /* 약속처방은 값 줄이 아니라 **고르는 칸**이다 */
+      /* 약속처방은 값 줄이 아니라 **고르는 칸**이다.
+         비잔 감지 여부와 무관하게 항상 드롭다운을 표시한다.
+         비잔이 감지되면 자동 선택, 아니면 「처방을 고르세요」 상태로 둔다. */
       if (spec.pick) {
         return (
           '<div class="top__cell top__cell--wide">' +
@@ -1227,6 +1245,28 @@ function stateTakesFocus(tone) {
       return !/^(MEDICATION_NAME|DURATION_DAYS)_\d+$/.test(f.field_type);
     });
 
+    /* 첫 번째 약품(MEDICATION_NAME / DURATION_DAYS)을 드롭다운 아래에
+       텍스트 행으로 표시한다.
+       단, 처방 세트를 역추론한 약(비잔·야즈·메트포르민)이 첫 약품명과
+       일치하는 경우는 드롭다운 힌트 줄에 이미 보이므로 중복 행을 생략한다. */
+    var baseExtraRows = [];
+    var baseMedValue = "";
+    rows.forEach(function (f) {
+      if (f.field_type === "MEDICATION_NAME" && f.value) baseMedValue = String(f.value);
+    });
+    var SET_DRUG_KEYWORDS = ["비잔", "야즈", "메트포르민"];
+    var baseMedIsSetDrug = SET_DRUG_KEYWORDS.some(function (kw) {
+      return baseMedValue.indexOf(kw) !== -1;
+    });
+    if (!baseMedIsSetDrug) {
+      rows.forEach(function (f) {
+        if (f.field_type === "MEDICATION_NAME")
+          baseExtraRows.push(Object.assign({}, f, { field_type: "MEDICATION_NAME_1" }));
+        if (f.field_type === "DURATION_DAYS")
+          baseExtraRows.push(Object.assign({}, f, { field_type: "DURATION_DAYS_1" }));
+      });
+    }
+
     return (
       '<section class="box"><div class="box__head">' +
       '<h2 class="box__title">진단 · 처방</h2>' +
@@ -1242,7 +1282,7 @@ function stateTakesFocus(tone) {
       ">저장</button>" +
       "</div>" +
       topRowHtml(rows) +
-      extraDrugRowsHtml(extraRows) +
+      extraDrugRowsHtml(baseExtraRows.concat(extraRows)) +
       (meta.length ? '<p class="box__meta box__meta--top">' + meta.join(" · ") + "</p>" : "") +
       (otherRest.length ? '<div class="rows">' + otherRest.map(renderField).join("") + "</div>" : "") +
       "</section>"
@@ -2238,7 +2278,10 @@ function stateTakesFocus(tone) {
     .then(function (rows) {
       sets = rows || [];
       setsFailed = false;
-      if (result) redraw();
+      if (result) {
+        applyPrescriptionSetSuggestion();
+        redraw();
+      }
     })
     .catch(function () {
       setsFailed = true;
@@ -2375,6 +2418,7 @@ function stateTakesFocus(tone) {
         renderDocTabs();
         renderDocView();
         renderRaw(null);
+        applyPrescriptionSetSuggestion();
         redraw();
       })
       .catch(function (error) {
