@@ -6,6 +6,7 @@ Worker 저장, OCR 수정·확정, 안내 생성·승인, 링크·OTP, 환자 �
 """
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from tempfile import TemporaryDirectory
@@ -46,6 +47,20 @@ class JourneyEvidence:
     failure_code: str | None
 
 
+class RecordingLogHandler(logging.Handler):
+    """한 여정 동안 애플리케이션 전 계층이 실제로 내보낸 로그를 모은다."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+    def rendered(self) -> str:
+        return "\n".join(record.getMessage() for record in self.records)
+
+
 class TestKey69RealOcrJourney(AuthTestCase):
     """CLOVA 성공과 실패 후 fallback을 같은 E2E 계약으로 잰다."""
 
@@ -61,8 +76,20 @@ class TestKey69RealOcrJourney(AuthTestCase):
             LocalFileStorage(self.upload_dir.name),
             max_upload_bytes=1024 * 1024,
         )
+        # root는 app.* 계층을, 두 non-propagating 로거는 앱 공용 로거와 Worker를
+        # 잡는다. Worker 호출부는 아래에서 Mock으로 구조까지 따로 검사한다.
+        self.log_handler = RecordingLogHandler()
+        self.observed_loggers = [
+            logging.getLogger(),
+            logging.getLogger("ai_worker"),
+            logging.getLogger("AI Worker"),
+        ]
+        for logger in self.observed_loggers:
+            logger.addHandler(self.log_handler)
 
     def tearDown(self) -> None:
+        for logger in self.observed_loggers:
+            logger.removeHandler(self.log_handler)
         app.dependency_overrides.clear()
         self.upload_dir.cleanup()
         super().tearDown()
@@ -159,9 +186,6 @@ class TestKey69RealOcrJourney(AuthTestCase):
             assert log_args[1] == expected_mode
             assert isinstance(log_args[2], int) and log_args[2] >= 0
             assert log_args[5] == job.ocr_job_id
-            for forbidden in ("합성환자", "010000069", SYN_EMS_01_CLOVA_RESULT.raw_text):
-                assert forbidden not in repr(observed_logger.mock_calls)
-
             status_response = await hospital_client.get(
                 f"/api/v1/ocr/jobs/{job.ocr_job_id}",
                 headers=staff_headers,
@@ -262,6 +286,18 @@ class TestKey69RealOcrJourney(AuthTestCase):
             assert hospital_read.status_code == 200, hospital_read.text
             assert hospital_read.json()["medication"] == "taking"
             assert raw_token not in hospital_read.text
+
+            # Worker 구조 검사는 Mock으로, 문서·OCR·안내·OTP 등 API/서비스
+            # 계층은 실제 logging.Handler로 함께 본다. Worker 한 곳만 가로채고
+            # "전체 로그"라고 부르는 거짓 초록불을 만들지 않는다.
+            all_observed_logs = repr(observed_logger.mock_calls) + self.log_handler.rendered()
+            for forbidden in (
+                "합성환자",
+                "010000069",
+                SYN_EMS_01_CLOVA_RESULT.raw_text,
+                raw_token,
+            ):
+                assert forbidden not in all_observed_logs
 
         guide = await GuideDocument.get(visit=visit)
         link = await PatientGuideLink.get(guide_document=guide)
