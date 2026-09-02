@@ -162,9 +162,7 @@ class PatientHistoryTestCase(TestCase):
             requested_by=by.staff_id,
         )
         result = await OcrResult.create(ocr_job=job, model_name="fixture")
-        await OcrField.create(
-            ocr_result=result, field_type="DIAGNOSIS", extracted_value=name, is_confirmed=True
-        )
+        await OcrField.create(ocr_result=result, field_type="DIAGNOSIS", extracted_value=name, is_confirmed=True)
 
     async def test_the_diagnosis_comes_from_the_newest_visit(self) -> None:
         """**옆의 `_doctor` 와 같은 규칙이다** — 가장 최근 진료의 것.

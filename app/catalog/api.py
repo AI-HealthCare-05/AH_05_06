@@ -130,4 +130,3 @@ async def read_prescription_set(
 #
 # 읽기(`GET`)는 그대로다. 어느 처방에 무엇이 딸려 있는지는 판독 화면에서
 # 고를 때 스탭도 알아야 한다.
-

@@ -77,5 +77,3 @@ class PrescriptionSetDetail(StrictModel):
 
     drugs: list[SetDrug] = []
     check_items: list[VisitCheckKey] = []
-
-
