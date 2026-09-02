@@ -99,6 +99,20 @@ class Config(BaseSettings):
     LLM_INPUT_USD_PER_1M_TOKENS: float | None = None
     LLM_OUTPUT_USD_PER_1M_TOKENS: float | None = None
 
+    # local·dev·test 전용 고정 OTP — KEY-219.
+    # 비어 있으면 mock 어댑터가 랜덤 OTP를 생성하되 실제 SMS는 보내지 않는다.
+    # prod에서는 이 값이 설정돼도 고정 OTP 우회가 허용되지 않는다.
+    MOCK_OTP_CODE: str = ""
+
+    @model_validator(mode="after")
+    def _mock_otp_code_is_non_prod_only(self) -> "Config":
+        if self.MOCK_OTP_CODE and self.ENV is Env.PROD:
+            raise ValueError(
+                f"MOCK_OTP_CODE는 prod 환경에서 사용할 수 없습니다 (ENV={self.ENV.value}). "
+                "운영에서 고정 OTP를 허용하면 누구나 인증을 우회한다 (KEY-219)."
+            )
+        return self
+
     @model_validator(mode="after")
     def _fixture_fallback_is_local_only(self) -> "Config":
         if self.OCR_FIXTURE_FALLBACK and self.ENV is not Env.LOCAL:

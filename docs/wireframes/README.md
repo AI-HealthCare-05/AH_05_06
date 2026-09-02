@@ -2,6 +2,9 @@
 
 화면 정의의 **정본**이다. 구현 중 화면 질문이 생기면 여기를 먼저 본다.
 
+의료진은 **3.0.0**(아래), 환자 모바일은 **`P2~P5` 3.0.0 · 나머지 2.3.1**,
+어드민은 **`A1-1` 만 3.0.0 에 실렸고 `A1-2~7` 은 2.3.1** 이다.
+
 ## 지금 판 — 3.0.0 (의료진) · 화면 22
 
 **[`wireframe-medic-3.0.0.html`](wireframe-medic-3.0.0.html)** — 파일 하나를 열기만 하면 된다.
@@ -41,7 +44,7 @@ A1-1
 | [`wireframe-medic-2.3.1.html`](wireframe-medic-2.3.1.html) | 33 | 의료진. **아직 안 만든 화면의 설계가 여기 있다** — `S1-10` 안내문 생성 실패 · `S1-14` 문자 설정 · `D1-4` 등 |
 | [`wireframe-admin-2.3.1.html`](wireframe-admin-2.3.1.html) | 7 | 어드민 `A1-1~7` |
 | [`wireframe-patient-2.3.1.html`](wireframe-patient-2.3.1.html) | 24 | 환자 모바일 |
-| [`wireframe-patient-3.0.0.html`](wireframe-patient-3.0.0.html) | — | 환자 모바일 `P2~P5` 차기 개정안. **아직 구현·API 계약에 반영 전** |
+| [`wireframe-patient-3.0.0.html`](wireframe-patient-3.0.0.html) | 15 | 환자 모바일 `P2~P5` 최종 개정안 + 질환 2종 예시. **계약은 반영됐다** — 실제 응답은 [`../api/patient.md`](../api/patient.md) §2.1 |
 
 **앞 판을 버리지 않는다.** 아직 안 만든 화면은 그 그림이 유일한 설계다 — 만들 때 그것을
 보고 만든다. 만들고 나면 3.0.0 에 실린다.

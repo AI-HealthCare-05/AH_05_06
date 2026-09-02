@@ -1,9 +1,18 @@
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from app.core.config import Config
 
 # 화면·업무 날짜는 병원 표시 시간대를 한 곳에서 사용한다.
 DISPLAY_TIMEZONE = Config().TIMEZONE
+
+
+def as_utc(dt: datetime) -> datetime:
+    """Tortoise + MySQL timezone 불일치 보정 — KEY-219.
+
+    asyncmy가 DB에서 읽은 UTC 값에 +09:00 태그를 잘못 붙인다.
+    now()는 +00:00(UTC)을 반환하므로 timestamp 비교 전에 양쪽을 UTC로 정규화한다.
+    """
+    return dt.replace(tzinfo=UTC)
 
 
 def clinic_day_window(day: date) -> tuple[datetime, datetime]:

@@ -133,8 +133,29 @@ uv sync --group worker --group ai      # AI 워커용
 > ```
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
+
+**셋만 뜹니다** — `redis` · `mysql` · `fastapi`. 앱을 고치는 데 필요한 최소입니다.
+나머지는 필요할 때 프로필로 옵트인합니다 (KEY-194).
+
+| 명령 | 무엇이 더 뜨나 | 언제 |
+|---|---|---|
+| `docker compose up -d --build` | (기본 셋) | 앱 코드를 고칠 때 |
+| `--profile web` | `nginx` | 브라우저로 화면을 볼 때 |
+| `--profile ocr` | `ai-worker` · `minio` | OCR 을 돌려 볼 때 |
+
+```bash
+# 예전처럼 여섯을 전부 띄우려면 둘 다 준다
+docker compose --profile web --profile ocr up -d --build
+```
+
+> **walking skeleton smoke 와 종단 검사는 둘 다 줘야 합니다.** 화면과 OCR 을 모두
+> 지나가기 때문입니다. KEY-191 합성 EMR 픽스처가 MinIO 에 있어서, 그 픽스처를 쓰는
+> 검사도 `ocr` 프로필이 필요합니다. 프로필을 안 주고 돌리면 「연결 거부」로 죽습니다.
+>
+> 운영(`infra/docker/docker-compose.prod.yml`)에는 프로필이 없습니다 — 거기서는
+> 항상 전부 떠야 합니다.
 
 컨테이너가 뜬 후 최초 1회(또는 마이그레이션 파일이 추가된 경우) 테이블을 생성합니다.
 
@@ -174,8 +195,8 @@ docker compose up -d --build app
 **AI Worker 실행:** (먼저 `uv sync --group worker --group ai`)
 ```bash
 uv run python -m ai_worker.main
-# or
-docker compose up -d --build ai_worker
+# or  (ai-worker 는 ocr 프로필이라 함께 줘야 한다)
+docker compose --profile ocr up -d --build ai-worker
 ```
 
 ### 2. EC2 배포 환경 (Production)
