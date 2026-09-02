@@ -20,9 +20,12 @@
          파고드는 자리가 아니라, 의원 전체에서 안 나간 것을 훑어 잡는 자리다.
          원문도 전폭으로 그린다.
 
-         이번에 담는 것은 **발송 예정(S2-3)** 하나다. 환자 관리(S2-1)와 발송
-         이력(S2-4)은 자리만 세우고 눌리지 않게 둔다 — 눌러도 아무 일 없는
-         버튼은 「된다」고 말한다. -->
+         세 칸이 다 열려 있다 — 환자 관리(S2-1) · 발송 예정(S2-3) · 발송
+         이력(S2-4). S2-1 에서 줄을 누르면 그 환자의 이력 모달(S2-2)이 뜬다.
+
+         **못 만든 것은 전부 문자 발송기가 없어서다** — 시각 변경 · 즉시 발송 ·
+         문자 충전 · 재승인 · 재진 안내 발송. 자리를 비워 두고 화면 아래에
+         무엇이 없는지 적는다. 눌러도 아무 일 없는 버튼은 「된다」고 말한다. -->
 
     <header class="topbar">
       <span class="topbar__brand"
@@ -140,7 +143,7 @@
               id="roster-search"
               placeholder="이름 · 차트번호 · 휴대폰"
             />
-            <a class="button-ghost button-ghost--sm" href="/patients.html?new=1"
+            <a class="button-ghost button-ghost--sm" href="/patients.html?add=1"
               >+ 환자 등록</a
             >
           </div>
@@ -183,7 +186,7 @@
         </p>
         <p class="note" id="note-roster" hidden>
           ⓘ 의료 기록은 삭제하지 않고 계속 보관합니다
-          <br />ⓘ 전체 이력 보기 · 재진 안내 발송은 준비 중입니다
+          <br />ⓘ 재진 안내 발송은 준비 중입니다
         </p>
         <p class="note" id="note-history" hidden>
           ⓘ 열람 여부는 안내문 단위로 기록됩니다 · 동일한 안내문의 문자는 모두

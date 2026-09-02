@@ -211,7 +211,7 @@
       '</td><td class="' +
       (badge ? "send__state send__state--bad" : "send__state") +
       '">' +
-      esc(badge || detail || "—") +
+      esc(stateSaying(detail, badge)) +
       "</td></tr>" +
       (opened === row.patient_id ? cardHtml(row) : "")
     );

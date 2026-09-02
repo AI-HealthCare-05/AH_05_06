@@ -345,3 +345,45 @@ test("오늘이 아닌 환자도 관리에는 있다", async () => {
   assert.ok(past.length >= 3, "원문 캡션: 「오늘이 아닌 환자도 여기서 찾는다」");
   assert.ok(past.some((row) => row.flags.length), "이탈 배지가 붙는 줄이 바로 이들이다");
 });
+
+/* ── 세부 상태와 이탈 배지 (원문 S2-1 설계 주석) ─────────────────────── */
+
+test("**상태와 배지를 같은 칸에 나란히 둔다** — 배지가 상태를 덮으면 안 된다", () => {
+  /* 원문: 「세부 상태(12종)를 표기하고, 이탈 배지…는 **상태가 아니므로 같은
+     칸에 병기한다**」. 덮고 있었다 — 「완료·열람인데 이탈 중」이라는 이 화면의
+     핵심 신호가 절반 사라졌다. 둘은 다른 축이라 하나가 다른 하나를 대신할 수 없다. */
+  const { stateSaying } = load("api", "field-labels", "roster-rules");
+
+  assert.equal(stateSaying("열람", "⚠ 3회 연속 미열람"), "열람 · ⚠ 3회 연속 미열람");
+  assert.equal(stateSaying("열람", ""), "열람", "배지가 없으면 상태만");
+  assert.equal(stateSaying("", "⚠ 복약 중단 응답"), "⚠ 복약 중단 응답", "상태가 없으면 배지만");
+  assert.equal(stateSaying("", ""), "—", "둘 다 없으면 빈 칸 표시");
+});
+
+test("**화면이 배지로 상태를 덮지 않는다**", () => {
+  const code = codeOnly(read("js/manage.js"));
+  assert.doesNotMatch(code, /badge \|\| detail/, "배지가 상태를 덮는다");
+  assert.match(code, /stateSaying\(detail, badge\)/, "병기 규칙을 안 쓴다");
+});
+
+test("**「+ 환자 등록」이 실제로 등록 폼을 연다**", () => {
+  /* `?new=1` 이었는데 `patients.js` 는 `?add=1` 만 읽는다 — 눌러도 아무 일이
+     없었다. 같은 저장소의 `ocr-review.html` 은 처음부터 `?add=1` 이다. */
+  const markup = markupOnly(read("manage.html"));
+  const at = markup.indexOf("+ 환자 등록");
+  assert.notEqual(at, -1, "등록 단추가 없다");
+
+  const tag = markup.slice(markup.lastIndexOf("<a", at), at);
+  assert.match(tag, /patients\.html\?add=1/, "등록 폼을 여는 주소가 아니다");
+
+  /* 받는 쪽이 정말 그 열쇠를 읽는지도 함께 못박는다 */
+  assert.match(codeOnly(read("js/patients.js")), /add=1/, "받는 쪽이 그 열쇠를 안 읽는다");
+});
+
+test("**「준비 중」이라 적은 것은 정말 준비 중이어야 한다**", () => {
+  /* 「전체 이력 보기 · 재진 안내 발송은 준비 중입니다」라고 적어 두었는데
+     전체 이력 보기는 동작했다. 되는 것을 안 된다고 적으면 스탭이 안 누른다. */
+  const markup = markupOnly(read("manage.html"));
+  assert.doesNotMatch(markup, /전체 이력 보기[^<]*준비 중/, "되는 것을 준비 중이라 적는다");
+  assert.match(codeOnly(read("js/manage.js")), /function openHistory/, "전체 이력 보기가 없다");
+});
