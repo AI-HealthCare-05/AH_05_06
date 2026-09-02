@@ -17,7 +17,7 @@ var FRAMES = [
   {"id": "S1-2", "area": "medic", "name": "환자 등록 — 찾아서 고른다", "level": 1, "target": 1, "url": "/patients.html"},
   {"id": "S1-3", "area": "medic", "name": "환자 등록 — 없으면 새로 만든다", "level": 1, "target": 1, "url": "/patients.html"},
   {"id": "S1-4", "area": "medic", "name": "환자 카드 · 기본정보", "level": 2, "target": 2, "url": "/patients.html", "blocker": "발송 이력 · 지난 안내문 열기 없음"},
-  {"id": "S1-5", "area": "medic", "name": "진료기록 업로드", "level": 1, "target": 1, "url": "/patients.html"},
+  {"id": "S1-5", "area": "medic", "name": "진료기록 업로드", "level": 1, "target": 1, "url": "/ocr-review.html"},
   {"id": "S1-6", "area": "medic", "name": "판독 확인 — 상태 ① 모두 읽힘", "level": 2, "target": 1, "url": "/ocr-review.html", "blocker": "③이전 값 유지 · ④확인 항목은 서버에 자리가 없다"},
   {"id": "S1-7", "area": "medic", "name": "판독 확인 — 상태 ② 못 읽은 항목이 있을 때", "level": 2, "target": 1, "url": "/ocr-review.html", "blocker": "B2 못 읽은 항목이 레코드로 안 남아 「직접 입력」이 안 뜬다"},
   {"id": "S1-8", "area": "medic", "name": "판독 확인 — 상태 ③ 같은 항목이 두 곳에 있을 때", "level": 2, "target": 2, "url": "/ocr-review.html", "blocker": "후보 테이블을 채우는 코드가 없어 항상 빈 목록"},

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>와이어프레임 3.0.0 · 의료진 — 케어온</title>
+<style>
+  :root { --line:#D1D5DB; --ink:#111827; --ink-2:#374151; --ink-3:#6B7280; --bg:#F3F4F6; }
+  * { box-sizing:border-box }
+  body { margin:0; padding:32px; background:var(--bg); color:var(--ink);
+         font:14px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic","Segoe UI",sans-serif }
+  h1 { font-size:22px; margin:0 0 6px }
+  .lead { max-width:900px; color:var(--ink-2); margin:0 0 8px }
+  .lead b { color:var(--ink) }
+  .warn { max-width:900px; margin:14px 0 28px; padding:12px 16px; border:1px solid #EEDDBC;
+          background:#FDF7EC; border-radius:8px; color:#8A5A10; font-size:13px }
+  .toc { max-width:900px; margin:0 0 28px; display:flex; flex-wrap:wrap; gap:6px }
+  .toc a { font-size:12px; padding:3px 9px; border:1px solid var(--line); border-radius:999px;
+           background:#fff; color:var(--ink-2); text-decoration:none }
+  .toc a:hover { border-color:var(--ink); color:var(--ink) }
+  .wf { margin:0 0 40px }
+  .wf__head { display:flex; align-items:baseline; gap:10px; margin-bottom:8px }
+  .wf__id { font-size:12px; font-weight:700; padding:2px 8px; border-radius:4px;
+            background:var(--ink); color:#fff }
+  .wf__name { font-size:15px; font-weight:700 }
+  .wf__size { font-size:12px; color:var(--ink-3) }
+  .wf__stage { width:1280px; height:800px; border:2px solid var(--ink); border-radius:8px;
+               overflow:hidden; background:#fff }
+  .wf__frame { width:1280px; height:800px; border:0; display:block }
+  .wf__why { max-width:1280px; margin:10px 0 0; padding:11px 15px; border:1px dashed var(--ink-3);
+             border-radius:8px; font-size:12px; line-height:18px; color:var(--ink-2); background:#fff }
+</style>
+</head>
+<body>
+<h1>와이어프레임 3.0.0 · 의료진</h1>
+<p class="lead"><b>구현된 화면을 그대로 담는다.</b> 앞 판(2.3.1)까지는 손으로 그린 그림이었고
+이 판은 <b>돌아가는 화면을 끼워 넣는다</b> — 그래서 그림과 코드가 어긋날 자리가 없다.
+각 화면 아래 점선 상자가 <b>왜 이렇게 생겼는가</b>이고, 이 판에서 사람이 쓰는 부분은 그것뿐이다.</p>
+<p class="lead">화면 ID 는 팀 공용 이름이다 — 티켓 · PR · 버그 리포트에서 <code>S1-6</code> 처럼 부른다.</p>
+<div class="warn"><b>이 파일은 로컬 서버가 떠 있어야 보인다.</b>
+<code>docker compose up -d</code> 로 띄운 뒤 <code>http://localhost/wireframe.html</code> 로 연다.
+화면을 베끼지 않고 끼워 넣기 때문이다 — 베끼면 그 순간부터 낡기 시작한다.
+앞 판처럼 파일 하나만 열어 보려면 <code>wireframe-medic-2.3.1.html</code> 을 쓴다.</div>
+<div class="toc" id="toc"></div>
+<section class="wf" data-screen-label="L-1">
+  <div class="wf__head"><span class="wf__id">L-1</span><span class="wf__name">로그인</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/login.html?mock=1" data-prep=""></iframe></div>
+  <p class="wf__why">역할을 고르게 하지 않는다 — 「의사로 로그인 / 스탭으로 로그인」을 두면 처음 쓰는 사람이 멈춘다. 계정에 역할이 붙어 있다.</p>
+</section>
+<section class="wf" data-screen-label="L-3">
+  <div class="wf__head"><span class="wf__id">L-3</span><span class="wf__name">첫 로그인 — 비밀번호 바꾸기</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/password.html?mock=1" data-prep=""></iframe></div>
+  <p class="wf__why">어드민이 정해 준 첫 비밀번호를 그대로 쓰면 정해 준 사람이 그 비밀번호를 계속 안다.</p>
+</section>
+<section class="wf" data-screen-label="S1-1">
+  <div class="wf__head"><span class="wf__id">S1-1</span><span class="wf__name">오늘 목록</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/patients.html?mock=1" data-prep=""></iframe></div>
+  <p class="wf__why">상태 칩을 처음에 하나도 안 켠다 — 켜 두면 목록에 없는 환자가 숨겨진 것인지 없는 것인지 구분이 안 된다. 하루 단위가 기본이라 로그인 직후 이 화면이 뜬다.</p>
+</section>
+<section class="wf" data-screen-label="S1-2">
+  <div class="wf__head"><span class="wf__id">S1-2</span><span class="wf__name">환자 등록 — 찾아서 고른다</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/patients.html?mock=1&add=1" data-prep=""></iframe></div>
+  <p class="wf__why">신규/기존 탭을 없앴다 — 스탭이 답할 수 없는 것을 먼저 묻는 화면이었다. 검색 결과가 곧 분기다. 휴대폰은 전체 번호를 보여 준다 — 이 번호를 보는 사람은 전화를 걸어야 하는 사람이다(로그·오류 응답의 가림은 그대로).</p>
+</section>
+<section class="wf" data-screen-label="S1-4">
+  <div class="wf__head"><span class="wf__id">S1-4</span><span class="wf__name">환자 카드 · 기본정보</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/patients.html?mock=1" data-prep="d.querySelector(&#x27;.row&#x27;) &amp;&amp; d.querySelector(&#x27;.row&#x27;).click();"></iframe></div>
+  <p class="wf__why">탭 다섯이 다 열려 있다 — 시연 때 의사와 스탭이 서로의 화면을 못 봐서 막혔다. 가르는 것은 버튼이지 화면이 아니다(차단은 서버가 한다).</p>
+</section>
+<section class="wf" data-screen-label="S1-6">
+  <div class="wf__head"><span class="wf__id">S1-6</span><span class="wf__name">판독 결과 확인</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/ocr-review.html?mock=1" data-prep=""></iframe></div>
+  <p class="wf__why">판독 항목이 스물하나다 — 증상 · 초음파 · 혈액검사 세 묶음. 못 읽은 값은 「?」로 비워 두고 0 이나 「-」로 채우지 않는다. 처방은 설정에 등록된 약속처방에서 고른다 — 세트에 약 목록 · 확인 항목 · 주의 문구가 함께 묶여 있어서, 자유 입력이면 붙일 문구를 못 찾는다.</p>
+</section>
+<section class="wf" data-screen-label="S2-1">
+  <div class="wf__head"><span class="wf__id">S2-1</span><span class="wf__name">환자 관리</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/manage.html?mock=1" data-prep=""></iframe></div>
+  <p class="wf__why">세부 상태와 이탈 배지를 같은 칸에 나란히 둔다 — 둘은 다른 축이라 하나가 다른 하나를 대신할 수 없다. 줄을 누르면 그 환자의 이력 모달(S2-2)이 뜬다.</p>
+</section>
+<section class="wf" data-screen-label="S2-3">
+  <div class="wf__head"><span class="wf__id">S2-3</span><span class="wf__name">발송 예정</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/manage.html?mock=1" data-prep="[].slice.call(d.querySelectorAll(&#x27;[data-view]&#x27;)).filter(function(b){return b.textContent.indexOf(&#x27;발송 예정&#x27;)&gt;=0})[0].click();"></iframe></div>
+  <p class="wf__why">「잘못된 번호」라 하지 않고 「발송 실패」라 한다 — 번호가 정말 틀렸는지 확인할 방법이 없다. 안 나간 것은 기간 밖이어도 보이고 자르지 않는다. 문자 충전 · 시각 변경 · 즉시 발송은 발송기가 없어 안 만들었다.</p>
+</section>
+<section class="wf" data-screen-label="S2-4">
+  <div class="wf__head"><span class="wf__id">S2-4</span><span class="wf__name">발송 이력</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/manage.html?mock=1" data-prep="[].slice.call(d.querySelectorAll(&#x27;[data-view]&#x27;)).filter(function(b){return b.textContent.indexOf(&#x27;발송 이력&#x27;)&gt;=0})[0].click();"></iframe></div>
+  <p class="wf__why">실패가 맨 위다. 열람은 안내문 단위로 기록된다 — 같은 안내문의 문자는 다 열람으로 뜬다. CSV 는 셈식 주입을 막고 EUC-KR 로 센다. 재승인은 발송기가 없어 안 만들었다.</p>
+</section>
+<section class="wf" data-screen-label="D1-1">
+  <div class="wf__head"><span class="wf__id">D1-1</span><span class="wf__name">의사 — 최종 확인 · 승인</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/doctor.html?mock=1" data-prep=""></iframe></div>
+  <p class="wf__why">승인이 곧 발송 예약이다 — 승인과 발송 사이에 사람이 한 번 더 손대는 자리를 만들지 않는다.</p>
+</section>
+<section class="wf" data-screen-label="D2-3">
+  <div class="wf__head"><span class="wf__id">D2-3</span><span class="wf__name">설정 — 처방</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/settings.html?mock=1" data-prep="var h=[].slice.call(d.querySelectorAll(&#x27;[data-fold]&#x27;)).filter(function(x){return x.getAttribute(&#x27;data-fold&#x27;)===&#x27;sets|ENDOMETRIOSIS&#x27;})[0]; h&amp;&amp;h.click();"></iframe></div>
+  <p class="wf__why">왼쪽은 두 단짜리 나무다. 갈래 머리에서 회색 띠를 걷었다 — 화면에서 제일 조작기처럼 생긴 것이 아무 일도 안 하는 줄이었다. 회색은 이제 「손이 닿았거나 고른 줄」 한 가지만 뜻한다. 한 번에 한 묶음만 펼친다(넷 다 펼치면 937px, 보이는 높이는 689px).</p>
+</section>
+<section class="wf" data-screen-label="D2-4">
+  <div class="wf__head"><span class="wf__id">D2-4</span><span class="wf__name">설정 — 검사 기준선</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/settings.html?mock=1" data-prep="var b=[].slice.call(d.querySelectorAll(&#x27;[data-group]&#x27;)).filter(function(x){return x.getAttribute(&#x27;data-group&#x27;)===&#x27;baseline&#x27;})[0]; b&amp;&amp;b.click();"></iframe></div>
+  <p class="wf__why">비워 둘 수 있다 — 비워 두면 값과 추이만 표시하고 목표 대비 수치는 셈하지 않는다. 기준선은 검사기관과 나이에 따라 다르고, 모르는 채로 「목표까지 3 남았습니다」라고 말하는 것이 제일 나쁘다.</p>
+</section>
+<section class="wf" data-screen-label="D2-5">
+  <div class="wf__head"><span class="wf__id">D2-5</span><span class="wf__name">설정 — 문자 문구</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/settings.html?mock=1" data-prep="var b=[].slice.call(d.querySelectorAll(&#x27;[data-group]&#x27;)).filter(function(x){return x.getAttribute(&#x27;data-group&#x27;)===&#x27;sms&#x27;})[0]; b&amp;&amp;b.click();"></iframe></div>
+  <p class="wf__why">90바이트를 EUC-KR 로 센다 — UTF-8 로 세면 한글이 3바이트라 보낼 수 있는 문구를 못 보낸다고 막는다.</p>
+</section>
+<section class="wf" data-screen-label="A1-1">
+  <div class="wf__head"><span class="wf__id">A1-1</span><span class="wf__name">어드민 — 직원</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/admin.html?mock=1" data-prep=""></iframe></div>
+  <p class="wf__why">역할을 사람 말로 적는다 — 화면에 `doctor` 가 그대로 뜨고 있었다.</p>
+</section>
+<script>
+  /* 목차 */
+  var toc = document.getElementById("toc");
+  document.querySelectorAll(".wf").forEach(function (s) {
+    var id = s.dataset.screenLabel;
+    s.id = id;
+    var a = document.createElement("a");
+    a.href = "#" + id;
+    a.textContent = id;
+    toc.appendChild(a);
+  });
+
+  /* 화면을 띄우고, 상태가 필요한 것은 그 상태를 만든다.
+     한꺼번에 열넷을 띄우면 목업이 서로 기다리므로 차례로 띄운다. */
+  var frames = [].slice.call(document.querySelectorAll(".wf__frame"));
+  (function next(i) {
+    if (i >= frames.length) return;
+    var f = frames[i];
+    f.addEventListener("load", function () {
+      var d = f.contentDocument;
+      try {
+        f.contentWindow.sessionStorage.setItem("useMock", "1");
+        f.contentWindow.sessionStorage.setItem("mockUser", "doctor01");
+      } catch (e) {}
+      var prep = f.dataset.prep;
+      if (prep) setTimeout(function () { try { new Function("d", prep)(d); } catch (e) {} }, 1200);
+      setTimeout(function () { next(i + 1); }, 700);
+    });
+    try {
+      sessionStorage.setItem("useMock", "1");
+      sessionStorage.setItem("mockUser", "doctor01");
+      localStorage.setItem("token", "mock.doctor01");
+    } catch (e) {}
+    f.src = f.dataset.src;
+  })(0);
+</script>
+</body>
+</html>

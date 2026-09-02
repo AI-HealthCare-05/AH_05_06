@@ -32,6 +32,15 @@ function loadManifest() {
   return context;
 }
 
+/* **손으로 그린 판만 읽는다.**
+ *
+ * 지금 판(3.0.0)은 그림 파일이 아니라 `frontend/wireframe.html` 이 실제 화면을
+ * 끼워 넣는다 — 거기엔 `data-screen-label` 이 실려 있지만 **그 화면이 곧 코드**라
+ * 표와 대 볼 것이 없다. 대조가 뜻이 있는 것은 **아직 안 만든 화면의 설계**가 담긴
+ * 손 그림 쪽이다.
+ *
+ * 그래서 여기서 읽는 것은 `docs/wireframes/*.html` 그대로다. 지금 판을 여기 넣지
+ * 않는 이유가 그것이다 — 넣으면 「코드에 있는 화면이 코드에 있다」를 재게 된다. */
 function wireframeIds() {
   const ids = [];
   for (const file of fs.readdirSync(WIREFRAMES)) {
@@ -42,7 +51,15 @@ function wireframeIds() {
   return ids;
 }
 
-const { FRAMES, FRAME_AREAS, FRAME_LEVELS, frameById, needsGuideScreen } = loadManifest();
+test("**지금 판은 화면을 끼워 넣는다** — 베낀 그림이 아니다", () => {
+  const live = fs.readFileSync(path.join(ROOT, "wireframe.html"), "utf8");
+  assert.match(live, /<iframe/, "화면을 끼워 넣지 않는다 — 베끼면 그 순간부터 낡는다");
+  assert.match(live, /wf__why/, "「왜 이렇게 생겼는가」가 없다");
+
+  /* 그림 파일 쪽에 3.0.0 을 두지 않는다 — 정본이 둘이면 갈린다 */
+  const drawn = fs.readdirSync(WIREFRAMES).filter((f) => f.endsWith(".html"));
+  assert.ok(!drawn.includes("wireframe-medic-3.0.0.html"), "정본이 둘이다");
+});const { FRAMES, FRAME_AREAS, FRAME_LEVELS, frameById, needsGuideScreen } = loadManifest();
 
 /* 목록을 견줄 때 배열이 아니라 **문자열**로 견준다. vm 컨텍스트에서 만든 배열은
    프로토타입이 이쪽과 달라 `deepStrictEqual` 이 빈 배열끼리도 실패한다. */
