@@ -16,13 +16,20 @@
    판독 항목 이름표(`field-labels.js`)와 같은 이유로 한 곳에 둔다. */
 var TIMELINE_SAYING = {
   VISIT_CREATED: "등록",
-  EDITED: "내용 수정",
-  SUBMITTED: "스탭 확인 완료 · 승인 요청",
-  APPROVED: "승인",
-  RETURNED: "스탭에 되돌림",
+  DOCUMENT_UPLOADED: "진료기록 업로드",
+  OCR_STARTED: "판독 시작",
+  OCR_COMPLETED: "판독 완료",
+  OCR_FAILED: "판독 실패",
+  OCR_CONFIRMED: "판독 확정",
+  GUIDE_GENERATED: "안내문 생성",
+  GUIDE_EDITED: "내용 수정",
+  GUIDE_SUBMITTED: "스탭 확인 완료 · 승인 요청",
+  GUIDE_APPROVED: "승인",
+  GUIDE_UNAPPROVED: "승인 철회",
+  GUIDE_RETURNED: "스탭에 되돌림",
   GUIDE_VIEWED: "안내문 열람",
   CHATBOT_ANSWERED: "챗봇 질문",
-  CHECK_IN: "확인 문자 응답",
+  CHECK_IN_SUBMITTED: "확인 문자 응답",
 };
 
 /* 누가 한 일인가. 셋을 가른다 — 사람 · 환자 · 시스템.
@@ -30,24 +37,26 @@ var TIMELINE_SAYING = {
  * 서버는 사람이 한 것에만 이름을 준다. 환자와 시스템은 비어 있는데, **그
  * 둘은 다른 것**이라 화면이 무슨 일이었는지를 보고 가른다. 서버가 「환자」를
  * 적어 보내면 이름이 「환자」인 직원과 구별할 수 없다. */
-var TIMELINE_BY_PATIENT = { GUIDE_VIEWED: true, CHATBOT_ANSWERED: true, CHECK_IN: true };
-
+/* **서버가 갈래로 말해 준다.** 사건 이름을 하나씩 적어 두던 목록이었는데,
+   `category` 가 생기면서 그 목록이 둘로 갈릴 자리가 됐다 — 환자가 하는 일이
+   늘 때마다 여기도 같이 고쳐야 하고, 안 고치면 「시스템」으로 뜬다. */
 function timelineActor(entry) {
   if (entry && entry.actor) return { name: entry.actor, who: "staff" };
-  if (entry && TIMELINE_BY_PATIENT[entry.kind]) return { name: "환자", who: "patient" };
+  if (entry && (entry.category === "PATIENT" || entry.category === "CHECK_IN"))
+    return { name: "환자", who: "patient" };
   return { name: "시스템", who: "system" };
 }
 
 /** 모르는 코드는 **그대로 보여 준다** — 빈칸으로 두면 일이 있었는데 없는
     것처럼 보인다 (판독 항목 이름표와 같은 판단). */
 function timelineSaying(entry) {
-  var kind = String((entry && entry.kind) || "");
-  var base = TIMELINE_SAYING[kind] || kind;
+  var event = String((entry && entry.event) || "");
+  var base = TIMELINE_SAYING[event] || event;
   if (!entry) return base;
   /* 되돌린 사유·수정한 항목은 그 줄에 붙는다 — 흐름에서 보여야 알림을
      다시 찾아가지 않는다. */
-  if (entry.detail) return base + " · " + entry.detail;
-  if (entry.section) return base + " · " + entry.section;
+  if (entry.note) return base + " · " + entry.note;
+  if (entry.section_key) return base + " · " + entry.section_key;
   return base;
 }
 
@@ -69,13 +78,13 @@ var GUIDE_PAGES = ["medication", "caution", "life", "messages"];
 
 function readProgress(entries) {
   var views = (entries || []).filter(function (e) {
-    return e.kind === "GUIDE_VIEWED";
+    return e.event === "GUIDE_VIEWED";
   });
   if (!views.length) return { opened: false, read: 0, total: GUIDE_PAGES.length, last: "", first: "" };
 
   var seen = {};
   for (var i = 0; i < views.length; i++) {
-    if (views[i].section) seen[views[i].section] = true;
+    if (views[i].section_key) seen[views[i].section_key] = true;
   }
   var read = 0;
   var lastRead = "";

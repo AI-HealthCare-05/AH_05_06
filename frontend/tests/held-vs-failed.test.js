@@ -139,10 +139,10 @@ test("**화면과 서버가 같은 낱말을 쓴다**", () => {
 });
 
 test("서버가 그 두 칸을 화면에 준다", () => {
-  const schemas = read("../app/timeline/schemas.py");
+  const schemas = read("../app/dtos/visits.py");
   assert.match(schemas, /hold_reason: str \| None/, "보류 사유를 안 준다");
   assert.match(schemas, /failure_code: str \| None/, "실패 사유를 안 준다");
 
-  const service = read("../app/timeline/service.py");
+  const service = read("../app/services/visit_timeline.py");
   assert.match(service, /hold_reason=row\.hold_reason/, "읽어 놓고 안 싣는다");
 });

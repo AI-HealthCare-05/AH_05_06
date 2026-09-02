@@ -565,16 +565,20 @@ GET /api/v1/patients/{patient_id}/visits?cursor=visit_501&limit=20
 - 응답은 `{items, page: {next_cursor, has_next}}`다.
 - 안내·발송·D+7 요약은 각 도메인의 구조화된 요약만 결합하며 원문 의료문서나 챗봇 대화 원문을 포함하지 않는다.
 
-#### 진료 이력 타임라인 (S1-4)
+#### 진료 이력 타임라인 (S1-4 · D1-6)
 
 ```text
 GET /api/v1/visits/{visit_id}/timeline
 ```
 
 - 진료 한 건이 이미 다른 표에 남긴 사건만 모아 시간 오름차순으로 돌려준다. 이 엔드포인트는 사건을 새로 만들지 않으며 새 모델·마이그레이션이 없다.
-- 응답은 `{visit_id, entries: [...]}`다. 각 항목: `at`, `category`(`DOCUMENT` · `OCR` · `GUIDE` · `CHECK_IN`), `event`, `actor_id`(없으면 `null`), `section_key`(안내문 수정일 때만), `document_type`(문서 업로드일 때만), `note`(반려 사유·OCR 실패 코드 등 스탭용 짧은 부연).
-- `event` 값: `DOCUMENT_UPLOADED` · `OCR_STARTED` · `OCR_COMPLETED` · `OCR_FAILED` · `OCR_CONFIRMED` · `GUIDE_GENERATED` · `GUIDE_EDITED` · `GUIDE_APPROVED` · `GUIDE_RETURNED` · `CHECK_IN_SUBMITTED`.
-- 문자 발송 사건은 포함하지 않는다. 발송 시각·상태를 남기는 모델(`SendLog` 계열)이 아직 없다(D1-5·D1-6, Sprint 5). 그 모델이 생기면 `category`에 `SEND`를 더한다.
+- **KEY-234(D1-6 현황)와 KEY-242(S1-4 환자 카드)가 이 경로를 각자 만들고 있었다.** 한 벌로 합쳤고, 두 화면이 같은 응답을 읽는다. 어느 쪽도 다른 쪽의 상위집합이 아니어서 지울 수 없었다 — 문서·판독은 KEY-242 만, 진료 열림·환자 열람·나갈 문자는 KEY-234 만 읽고 있었다.
+- 응답은 `{visit_id, entries: [...], messages: [...]}`다. 각 항목: `at`, `category`(`VISIT` · `DOCUMENT` · `OCR` · `GUIDE` · `CHECK_IN` · `PATIENT`), `event`, `actor_id`(없으면 `null`), `actor`(직원 이름. 환자·시스템 사건이면 `null`, 지워진 계정도 `null`), `section_key`(안내문 수정·열람일 때만), `document_type`(문서 업로드일 때만), `note`(반려 사유·OCR 실패 코드 등 스탭용 짧은 부연).
+- `event` 값: `VISIT_CREATED` · `DOCUMENT_UPLOADED` · `OCR_STARTED` · `OCR_COMPLETED` · `OCR_FAILED` · `OCR_CONFIRMED` · `GUIDE_GENERATED` · `GUIDE_EDITED` · `GUIDE_SUBMITTED` · `GUIDE_APPROVED` · `GUIDE_UNAPPROVED` · `GUIDE_RETURNED` · `CHECK_IN_SUBMITTED` · `GUIDE_VIEWED` · `CHATBOT_ANSWERED`.
+- **이름은 서버가 붙여 내려 준다.** 번호만 주면 화면이 다시 물어야 하고, D1-6 은 「누가 언제」를 한 줄로 보여 준다. 「환자」·「시스템」은 서버가 적지 않는다 — 이름이 「환자」인 직원과 구별할 수 없어서다. 화면이 `category` 로 가른다.
+- `messages`는 **나갈 문자의 예약**이다(`kind` · `status` · `at` · `sent_at` · `failure_code` · `hold_reason`). 예정 시각 오름차순이고, 안내문 승인 전에는 빈 배열이다 — 예약은 승인이 만든다. 이력(`entries`)과 한 줄로 섞지 않는다: 이미 일어난 일과 앞으로 일어날 일이 같아 보이면 안 된다.
+- 문자가 **실제로 나간 이력**은 아직 없다. 발송 시각·상태를 남기는 모델(`SendLog` 계열)이 없다(D1-7, Sprint 5). 그 모델이 생기면 `category`에 `SEND`를 더한다.
+- **모르는 `event`는 건너뛴다.** `GuideEventType`이 늘 때 이력 전체가 500이 되면 안 된다. 실제로 `SUBMITTED`·`UNAPPROVED`가 늘면서 그럴 뻔했다.
 - `note`에 환자 대화 원문이나 검사값 원문을 담지 않는다. 반려 사유(`GuideEvent.reason`, 최대 200자)와 OCR 실패 코드만 노출한다.
 - 환자정보·검사값·처방이 담긴 화면이므로 `patient:read`가 필요하다 — `admin`만 가진 계정은 접근할 수 없다(KEY-168 회귀).
 - 병원 범위 검증은 단건 조회와 같다: 없거나 타 병원 소유이면 `404 VISIT_NOT_FOUND`.

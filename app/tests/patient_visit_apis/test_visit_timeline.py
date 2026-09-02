@@ -41,11 +41,22 @@ async def make_patient(hospital_id: int, number: str) -> Patient:
 
 
 async def make_visit(hospital_id: int, patient: Patient) -> Visit:
-    return await Visit.create(
-        hospital_id=hospital_id,
-        patient=patient,
-        visited_at=datetime(2026, 8, 20, 9, 0, tzinfo=UTC),
-    )
+    """**진료가 사건들보다 먼저다.**
+
+    `visited_at` 이 `BASE` 보다 여덟 시간 **뒤**(18:00 KST)였다. 문서 업로드가
+    10:00 KST 인데 진료는 18:00 이라, 진료가 열리기도 전에 문서가 올라온 셈이
+    었다. 사건 목록만 보던 때는 드러나지 않다가 `VISIT_CREATED` 가 생기면서
+    맨 뒤로 밀려 걸렸다.
+
+    **`create` 가 아니라 `update` 로 넣는다.** 이 저장소는 지금 둘이 시각을
+    다르게 저장한다 — `create` 는 UTC 를 KST 로 옮겨 넣고, `update` 는 벽시계를
+    그대로 넣는다(`#183` 이 고치는 중이다). 이 파일의 다른 사건들이 전부
+    `update` 로 들어가므로 여기만 `create` 로 넣으면 아홉 시간이 어긋난다.
+    `#183` 이 병합되면 둘이 같아져 이 우회는 필요 없어진다.
+    """
+    visit = await Visit.create(hospital_id=hospital_id, patient=patient, visited_at=BASE)
+    await Visit.filter(visit_id=visit.visit_id).update(visited_at=BASE - timedelta(minutes=30))
+    return await Visit.get(visit_id=visit.visit_id)
 
 
 def override_actor(actor: ClinicalActor) -> None:
@@ -138,6 +149,8 @@ class TestTimelineMerge(TestCase):
         assert body["visit_id"] == visit.visit_id
         events = [(entry["category"], entry["event"]) for entry in body["entries"]]
         assert events == [
+            # 진료가 열린 것이 첫 줄이다 — `#176` 을 합치며 더해졌다.
+            ("VISIT", "VISIT_CREATED"),
             ("DOCUMENT", "DOCUMENT_UPLOADED"),
             ("OCR", "OCR_STARTED"),
             ("OCR", "OCR_COMPLETED"),
@@ -153,7 +166,7 @@ class TestTimelineMerge(TestCase):
         assert edited_entry["actor_id"] == DOCTOR.staff_id
         returned_entry = next(e for e in body["entries"] if e["event"] == "GUIDE_RETURNED")
         assert returned_entry["note"] == "처방전 재업로드 필요"
-        document_entry = body["entries"][0]
+        document_entry = next(e for e in body["entries"] if e["event"] == "DOCUMENT_UPLOADED")
         assert document_entry["document_type"] == "PRESCRIPTION"
         assert document_entry["actor_id"] == STAFF.staff_id
 
@@ -174,16 +187,55 @@ class TestTimelineMerge(TestCase):
 
         assert response.status_code == 200
         events = [(e["event"], e["note"]) for e in response.json()["entries"]]
-        assert events == [("OCR_STARTED", None), ("OCR_FAILED", "TIMEOUT")]
+        assert events == [("VISIT_CREATED", None), ("OCR_STARTED", None), ("OCR_FAILED", "TIMEOUT")]
 
-    async def test_visit_without_events_returns_empty_list(self) -> None:
+    async def test_a_completed_job_without_a_finish_time_still_shows(self) -> None:
+        """**같은 값의 결측을 두 가지로 다루지 않는다.**
+
+        `OcrJob.completed_at` 은 `null=True` 다. 실패 쪽은 `updated_at` 으로
+        대비해 두었는데 완료 쪽만 없었다. 그래서 상태만 `COMPLETED` 로 바뀌고
+        시각이 안 채워진 작업은 이력에 `OCR_STARTED` 만 남았다 — **스탭이
+        판독이 아직 도는 중으로 읽는다.**
+
+        한쪽 규칙을 고칠 때 다른 쪽을 놓치기 쉬운 자리라 검사로 묶어 둔다.
+        """
+        patient = await make_patient(1, "SYN-KEY242-NC")
+        visit = await make_visit(1, patient)
+        job = await OcrJob.create(
+            ocr_job_id="ocr-key242-nc",
+            hospital_id=1,
+            visit=visit,
+            status=OcrJobStatus.COMPLETED,
+            requested_by=STAFF.staff_id,
+        )
+        await OcrJob.filter(ocr_job_id=job.ocr_job_id).update(
+            created_at=BASE, completed_at=None, updated_at=BASE + timedelta(minutes=3)
+        )
+
+        response = await get_timeline(STAFF, visit.visit_id)
+
+        assert response.status_code == 200
+        events = [e["event"] for e in response.json()["entries"]]
+        assert "OCR_COMPLETED" in events, "완료가 이력에서 사라졌다 — 스탭이 도는 중으로 읽는다"
+
+    async def test_a_visit_with_nothing_done_still_has_a_beginning(self) -> None:
+        """**빈 목록을 주면 화면이 통째로 빈다.**
+
+        전에는 `entries: []` 였다. 등록만 하고 아무것도 안 한 환자를 열면
+        「이력 없음」이 뜨는데, 스탭이 보기에 그것은 「기록이 안 남았다」로도
+        읽힌다. 진료가 열린 것 자체가 첫 사건이라 그 줄을 준다.
+
+        `messages` 는 승인 전이라 비어 있다 — 예약은 승인이 만든다.
+        """
         patient = await make_patient(1, "SYN-KEY242-E")
         visit = await make_visit(1, patient)
 
         response = await get_timeline(STAFF, visit.visit_id)
 
         assert response.status_code == 200
-        assert response.json() == {"visit_id": visit.visit_id, "entries": []}
+        body = response.json()
+        assert [(e["category"], e["event"]) for e in body["entries"]] == [("VISIT", "VISIT_CREATED")]
+        assert body["messages"] == []
 
 
 class TestTimelineAccess(TestCase):

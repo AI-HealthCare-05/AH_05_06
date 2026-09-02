@@ -240,7 +240,7 @@ function guideMissingSaying(error) {
 
     var answer = null;
     for (var i = 0; i < timeline.entries.length; i++) {
-      if (timeline.entries[i].kind === "CHECK_IN") answer = timeline.entries[i];
+      if (timeline.entries[i].event === "CHECK_IN_SUBMITTED") answer = timeline.entries[i];
     }
 
     /* 철회는 의사만, 그리고 **승인된 뒤에만** 보인다. 아직 승인 안 한 것에
@@ -252,7 +252,7 @@ function guideMissingSaying(error) {
       canUnapprove: canUnapprove,
       entries: timeline.entries,
       checkInSaying: answer
-        ? timelineClock(answer.at) + " 응답 · " + (answer.detail || "")
+        ? timelineClock(answer.at) + " 응답 · " + (answer.note || "")
         : "아직 없음",
       /* **화면이 따로 셈하지 않는다.** 승인이 잡아 둔 날짜를 그대로 쓴다 —
          두 곳이 셈하면 어느 쪽이 진짜인지 알 수 없다. */

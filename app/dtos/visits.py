@@ -97,10 +97,14 @@ class TimelineCategory(StrEnum):
     추가한다.
     """
 
+    #: 진료가 열린 것. 다른 표가 아니라 `visit` 자신이 갖고 있다.
+    VISIT = "VISIT"
     DOCUMENT = "DOCUMENT"
     OCR = "OCR"
     GUIDE = "GUIDE"
     CHECK_IN = "CHECK_IN"
+    #: **환자가 한 일.** 직원이 한 일과 축이 다르다 — 화면이 「환자」로 적는다.
+    PATIENT = "PATIENT"
 
 
 class TimelineEvent(StrEnum):
@@ -113,6 +117,7 @@ class TimelineEvent(StrEnum):
     그 사건을 남기는 표부터 있어야 한다.
     """
 
+    VISIT_CREATED = "VISIT_CREATED"
     DOCUMENT_UPLOADED = "DOCUMENT_UPLOADED"
     OCR_STARTED = "OCR_STARTED"
     OCR_COMPLETED = "OCR_COMPLETED"
@@ -120,9 +125,18 @@ class TimelineEvent(StrEnum):
     OCR_CONFIRMED = "OCR_CONFIRMED"
     GUIDE_GENERATED = "GUIDE_GENERATED"
     GUIDE_EDITED = "GUIDE_EDITED"
+    #: 스탭이 확인을 마치고 의사에게 넘겼다 (와이어프레임 S1-11).
+    GUIDE_SUBMITTED = "GUIDE_SUBMITTED"
     GUIDE_APPROVED = "GUIDE_APPROVED"
+    #: 승인을 거뒀다. 승인 줄을 지우지 않고 이 줄을 더한다 — 지우면
+    #: 「왜 예약이 사라졌지」에 답할 수 없다.
+    GUIDE_UNAPPROVED = "GUIDE_UNAPPROVED"
     GUIDE_RETURNED = "GUIDE_RETURNED"
     CHECK_IN_SUBMITTED = "CHECK_IN_SUBMITTED"
+    #: 환자가 안내문을 열었다. `section_key` 가 있으면 그 장까지 읽은 것이다.
+    GUIDE_VIEWED = "GUIDE_VIEWED"
+    #: 환자가 챗봇에 묻고 답을 받았다.
+    CHATBOT_ANSWERED = "CHATBOT_ANSWERED"
 
 
 class VisitTimelineEntry(BaseModel):
@@ -137,6 +151,11 @@ class VisitTimelineEntry(BaseModel):
     event: TimelineEvent
     #: 이 사건을 일으킨 직원. 환자 스스로 한 일(체크인)이나 시스템 사건이면 비어 있다.
     actor_id: int | None = None
+    #: 사람 이름. 화면이 그대로 적는다 — 번호만 주면 화면이 다시 물어야 하고,
+    #: D1-6 은 「누가 언제」를 한 줄로 보여 준다. 환자가 한 일이나 시스템
+    #: 사건이면 비어 있다. **모르는 사람은 지어내지 않는다** — 지워진 계정일
+    #: 수 있고, 그때는 화면이 「알 수 없음」이라 적는다.
+    actor: str | None = None
     #: `GUIDE_EDITED` 면 어느 갈래를 고쳤나.
     section_key: GuideSectionKey | None = None
     #: `DOCUMENT_*` 면 어떤 문서였나.
@@ -146,7 +165,32 @@ class VisitTimelineEntry(BaseModel):
     note: str | None = None
 
 
+class ScheduledMessage(BaseModel):
+    """환자에게 나갈 문자 한 통 — 와이어프레임 D1-6 「발송 · 예정」.
+
+    **한 통이 한 줄이다.** 다섯 통 중 어느 것이든 실패할 수 있고, 실패한
+    것만 고쳐 다시 보낸다.
+
+    이력(`entries`)과 **따로 둔다.** 이력은 이미 일어난 일이고 이것은 앞으로
+    일어날 일이라, 한 줄로 섞으면 「보냈다」와 「보낼 것이다」가 같아 보인다.
+    """
+
+    #: GUIDE · CHECK_D7 · CHECK_D15 · CHECK_D30 · RUN_OUT.
+    kind: str
+    #: SCHEDULED · SENT · FAILED · HELD · CANCELED
+    status: str
+    at: datetime
+    sent_at: datetime | None = None
+    #: 못 나간 이유 — 넷뿐이다(D1-7).
+    failure_code: str | None = None
+    #: 왜 붙들고 있나 — 둘뿐이다(S2-3). `status` 가 `HELD` 일 때만 찬다.
+    #: 실패 사유와 **다른 목록**이다 — 재는 것이 다르다.
+    hold_reason: str | None = None
+
+
 class VisitTimelineResponse(BaseModel):
     visit_id: int
     #: 오래된 사건이 먼저다 — 「문서 올림 → 판독 → 생성 → 승인」을 읽는 차례.
     entries: list[VisitTimelineEntry]
+    #: 나갈 문자들. 승인 전에는 비어 있다 — 예약은 승인이 만든다.
+    messages: list[ScheduledMessage] = []

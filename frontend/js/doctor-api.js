@@ -173,6 +173,45 @@ var MOCK_GUIDE_STATE = {};
 /* 이 진료의 저장 칸을 돌려준다. 없으면 만들어서 돌려준다 — 승인·반려·PATCH가
    같은 객체를 부분 갱신하므로, 한쪽이 통째로 덮어써 다른 쪽 값을 지우는 일이
    없다(예: 섹션을 고친 뒤 승인해도 그 수정은 남는다). */
+/* D1-6 현황이 읽는 이력 — 서버 `GET /visits/{id}/timeline` 과 **같은 모양**
+   이어야 한다. 다르면 목업에서만 되는 화면이 생긴다.
+
+   `messages` 는 안내문이 승인된 뒤에만 찬다 — 예약은 승인이 만든다. 그래서
+   여기서도 상태를 보고 낸다. */
+function mockTimeline(visitId) {
+  var guide = mockGuide(visitId);
+  var opened = "2026-08-20T09:14:00+09:00";
+  var entries = [
+    { at: opened, category: "VISIT", event: "VISIT_CREATED", actor_id: 900, actor: "박연", section_key: null, document_type: null, note: null },
+    { at: "2026-08-20T09:20:00+09:00", category: "DOCUMENT", event: "DOCUMENT_UPLOADED", actor_id: 101, actor: "서지현", section_key: null, document_type: "EMR", note: null },
+    { at: "2026-08-20T09:21:00+09:00", category: "OCR", event: "OCR_STARTED", actor_id: 101, actor: "서지현", section_key: null, document_type: null, note: null },
+    { at: "2026-08-20T09:22:30+09:00", category: "OCR", event: "OCR_COMPLETED", actor_id: null, actor: null, section_key: null, document_type: null, note: null },
+    { at: "2026-08-20T09:28:00+09:00", category: "OCR", event: "OCR_CONFIRMED", actor_id: 101, actor: "서지현", section_key: null, document_type: null, note: null },
+    { at: "2026-08-20T09:29:00+09:00", category: "GUIDE", event: "GUIDE_GENERATED", actor_id: null, actor: null, section_key: null, document_type: null, note: null },
+    { at: "2026-08-20T09:41:00+09:00", category: "GUIDE", event: "GUIDE_EDITED", actor_id: 101, actor: "서지현", section_key: "caution", document_type: null, note: null },
+    { at: "2026-08-20T09:50:00+09:00", category: "GUIDE", event: "GUIDE_SUBMITTED", actor_id: 101, actor: "서지현", section_key: null, document_type: null, note: null },
+  ];
+  if (guide && guide.approved_at) {
+    entries.push({ at: guide.approved_at, category: "GUIDE", event: "GUIDE_APPROVED", actor_id: 900, actor: "박연", section_key: null, document_type: null, note: null });
+    entries.push({ at: "2026-08-20T14:12:00+09:00", category: "PATIENT", event: "GUIDE_VIEWED", actor_id: null, actor: null, section_key: "medication", document_type: null, note: null });
+    entries.push({ at: "2026-08-20T14:15:00+09:00", category: "PATIENT", event: "GUIDE_VIEWED", actor_id: null, actor: null, section_key: "caution", document_type: null, note: null });
+  }
+  entries.sort(function (a, b) {
+    return a.at < b.at ? -1 : a.at > b.at ? 1 : 0;
+  });
+
+  var messages = [];
+  if (guide && guide.approved_at) {
+    messages = [
+      { kind: "GUIDE", status: "SENT", at: guide.approved_at, sent_at: guide.approved_at, failure_code: null, hold_reason: null },
+      { kind: "CHECK_D7", status: "SCHEDULED", at: "2026-08-27T18:00:00+09:00", sent_at: null, failure_code: null, hold_reason: null },
+      { kind: "CHECK_D15", status: "SCHEDULED", at: "2026-09-04T18:00:00+09:00", sent_at: null, failure_code: null, hold_reason: null },
+      { kind: "RUN_OUT", status: "SCHEDULED", at: "2026-11-09T18:00:00+09:00", sent_at: null, failure_code: null, hold_reason: null },
+    ];
+  }
+  return { visit_id: visitId, entries: entries, messages: messages };
+}
+
 function mockGuideState(visitId) {
   return (
     MOCK_GUIDE_STATE[visitId] ||
@@ -396,9 +435,15 @@ function mockDoctorRequest(path, options) {
       var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
       var msgs = path.match(/^\/visits\/(\d+)\/guide\/messages$/);
-      var m = get || sec || act || issueLink || msgs;
+      /* D1-6 현황이 읽는 자리. **여기 분기가 없어서 목업에서는 늘 「불러오지
+         못했습니다」 였다** — 서버에는 있는데 목업에만 없으면, 서버가 죽은
+         것과 화면이 못 부르는 것을 구별할 수 없다. */
+      var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
+      var m = get || sec || act || issueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
+
+      if (tl) return resolve(mockTimeline(visitId));
 
       if (issueLink && options.method === "POST") {
         var linkedGuide = mockGuide(visitId);

@@ -298,7 +298,7 @@ class HeldTestCase(World, TestCase):
     async def test_the_timeline_carries_both(self) -> None:
         """화면이 그릴 수 있게 두 칸을 **함께** 내려 준다."""
         from app.models.visits import GuideMessageHold, GuideMessageStatus
-        from app.timeline.service import TimelineService
+        from app.services.visit_timeline import VisitTimelineService
 
         actor, visit, guide = await self.make_world("HD-02")
         await GuideService().approve(actor, visit.visit_id)
@@ -308,7 +308,7 @@ class HeldTestCase(World, TestCase):
         row.hold_reason = GuideMessageHold.INVALID_PHONE
         await row.save(update_fields=["status", "hold_reason"])
 
-        seen = await TimelineService().read(actor, visit.visit_id)
+        seen = await VisitTimelineService().timeline(actor, visit.visit_id)
         held = [m for m in seen.messages if m.status == "HELD"]
         assert held, "보류 줄이 화면까지 안 간다"
         assert held[0].hold_reason == "INVALID_PHONE", "사유가 안 간다 — 화면이 「보류」로만 적는다"
