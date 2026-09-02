@@ -76,7 +76,7 @@ _RX_TOTAL_LABELS: frozenset[str] = frozenset({"총투"})
 # CLOVA OCR이 원외 체크박스 마크를 읽지 못하는 경우가 있으므로,
 # '코드분류' 열에서 약품 행을 식별한다 (내복약·외용약·주사 등).
 _RX_CLASS_LABELS: frozenset[str] = frozenset({"코드분류"})
-_RX_MED_CLASSES: frozenset[str] = frozenset({"내복약", "외용약", "주사약", "주사"})
+_RX_MED_CLASSES: frozenset[str] = frozenset({"내복약"})
 
 # 비잔정 패턴 — 이 약의 총투 값에 28을 곱해서 처방일수를 계산한다
 _BIZANJUNG_RE = re.compile(r"비잔\s*정", re.IGNORECASE)
