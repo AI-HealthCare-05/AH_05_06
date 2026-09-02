@@ -298,7 +298,12 @@ async def seed_fixture_result(
     )
     job.status = OcrJobStatus.COMPLETED
     job.progress = 100
-    job.started_at = completed_at
+    # 업로드 시 즉시 fixture를 심는 데모 경로에는 시작 시각이 없으므로 완료
+    # 시각을 함께 기록한다. 반면 Worker가 실제 CLOVA를 시도한 뒤 fallback으로
+    # 들어온 경우에는 이미 `started_at`이 있다. 그것을 덮어쓰면 처리시간이
+    # 언제나 0ms가 되어 KEY-69 실행 증적이 사라진다.
+    if job.started_at is None:
+        job.started_at = completed_at
     job.completed_at = completed_at
     await job.save(
         update_fields=("status", "progress", "started_at", "completed_at"),
