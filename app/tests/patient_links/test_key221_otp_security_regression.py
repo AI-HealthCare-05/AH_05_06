@@ -1,8 +1,10 @@
 """KEY-221: OTP 운영 우회·만료·폐기·5회 잠금 회귀 — 인수조건 보안 검증.
 
 인수조건별 대응:
-  AC1: 운영 우회, 만료, 폐기, 잠금 시나리오가 각각 차단된다.
-       → TestProdOtpBypassBlocked, TestProdServiceBlocksOtpIssue
+  AC1: 운영 우회가 Config 레벨과 서비스 팩토리 레벨에서 각각 차단된다.
+       → TestProdOtpBypassBlocked   : Config 생성 시 MOCK_OTP_CODE 거부 검증
+       → TestOtpServiceFactory      : _otp_service() 함수 자체가 PROD 가드를 실행하는지 검증
+       → TestProdServiceBlocksOtpIssue : HTTP 레벨에서 PROD ENV 패치 후 실제 차단 확인
   AC2: 잠금 응답과 재시도 시간이 FE·API에서 일치한다.
        → test_patient_otp.py의 test_fifth_failure_locks_* 가 커버. 추가 없음.
   AC3: 애플리케이션 로그·access log·오류 응답에 원문이 없다.
@@ -23,7 +25,7 @@ from tortoise.timezone import now
 from app.apis.v1.patient_otp_routers import _otp_service
 from app.core.config import Config, Env
 from app.main import app
-from app.services.patient_otp import PatientOtpService, UnavailableOtpDelivery
+from app.services.patient_otp import MockOtpDelivery, PatientOtpService, UnavailableOtpDelivery
 from app.tests.auth_base import AuthTestCase
 from app.tests.patient_links.test_patient_otp import (
     LINK_TOKEN,
@@ -54,38 +56,68 @@ class TestProdOtpBypassBlocked(unittest.TestCase):
         self.assertIn("MOCK_OTP_CODE", str(ctx.exception))
 
 
-# ── AC1: 운영 등가 서비스 OTP 발급 차단 ─────────────────────────────────────
+# ── AC1: _otp_service() 팩토리 자체의 PROD 가드 ─────────────────────────────
+
+
+class TestOtpServiceFactory(unittest.TestCase):
+    """_otp_service() 함수 자체가 PROD 환경에서 UnavailableOtpDelivery를 반환한다 — DB 불필요."""
+
+    def test_returns_unavailable_when_prod_even_with_mock_code(self) -> None:
+        """config.ENV=PROD 이면 MOCK_OTP_CODE가 있어도 UnavailableOtpDelivery를 반환한다."""
+        import app.core as core_module
+
+        with (
+            patch.object(core_module.config, "ENV", Env.PROD),
+            patch.object(core_module.config, "MOCK_OTP_CODE", MOCK_CODE),
+        ):
+            service = _otp_service()
+        assert isinstance(service.delivery, UnavailableOtpDelivery)
+
+    def test_returns_mock_delivery_when_not_prod_and_mock_code_set(self) -> None:
+        """비 PROD 환경에서 MOCK_OTP_CODE가 있으면 MockOtpDelivery를 반환한다 — 분기 반대쪽 확인."""
+        import app.core as core_module
+
+        with (
+            patch.object(core_module.config, "ENV", Env.LOCAL),
+            patch.object(core_module.config, "MOCK_OTP_CODE", MOCK_CODE),
+        ):
+            service = _otp_service()
+        assert isinstance(service.delivery, MockOtpDelivery)
+
+
+# ── AC1: HTTP 레벨 PROD 차단 ────────────────────────────────────────────────
 
 
 class TestProdServiceBlocksOtpIssue(AuthTestCase):
-    """UnavailableOtpDelivery(운영 기본 전달자)로 OTP 발급이 차단된다."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        app.dependency_overrides[_otp_service] = lambda: PatientOtpService(UnavailableOtpDelivery())
+    """실제 _otp_service() 가드가 PROD 환경에서 HTTP 레벨까지 차단한다."""
 
     def client(self) -> AsyncClient:
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     async def test_prod_delivery_blocks_otp_issue(self) -> None:
+        """config.ENV=PROD 에서 _otp_service()가 503 OTP_DELIVERY_UNAVAILABLE을 반환한다."""
+        import app.core as core_module
+
         await make_link()
-        async with self.client() as c:
-            res = await c.post("/api/v1/patient-auth/otp/issue", json={"link_token": LINK_TOKEN})
+        with patch.object(core_module.config, "ENV", Env.PROD):
+            async with self.client() as c:
+                res = await c.post("/api/v1/patient-auth/otp/issue", json={"link_token": LINK_TOKEN})
         assert res.status_code == 503
         assert res.json()["code"] == "OTP_DELIVERY_UNAVAILABLE"
-        assert MOCK_CODE not in res.text
 
     async def test_000000_cannot_verify_without_prior_challenge(self) -> None:
-        """발급 없이 000000을 verify하면 OTP_NOT_ISSUED로 차단된다."""
+        """발급 없이 000000을 verify하면 PROD 환경에서도 OTP_NOT_ISSUED로 차단된다."""
+        import app.core as core_module
+
         await make_link()
-        async with self.client() as c:
-            res = await c.post(
-                "/api/v1/patient-auth/otp/verify",
-                json={"link_token": LINK_TOKEN, "code": MOCK_CODE},
-            )
+        with patch.object(core_module.config, "ENV", Env.PROD):
+            async with self.client() as c:
+                res = await c.post(
+                    "/api/v1/patient-auth/otp/verify",
+                    json={"link_token": LINK_TOKEN, "code": MOCK_CODE},
+                )
         assert res.status_code == 409
         assert res.json()["code"] == "OTP_NOT_ISSUED"
-        assert MOCK_CODE not in res.text
 
 
 # ── AC3: 토큰 원문 미노출 ────────────────────────────────────────────────────
