@@ -1013,10 +1013,9 @@
 }
 
 /* 판독값이 있고 세트 목록을 아직 못 불러왔을 때 — 드롭다운과 같은 크기·모양으로
-   약품명을 보여 준다. 고를 수 없으므로 포인터를 기본으로 둔다. */
+   약품명을 보여 준다. line-height 로 단일 줄 텍스트를 세로 중앙 정렬한다. */
 .top__pick--static {
-  display: flex;
-  align-items: center;
+  line-height: 32px; /* height(34px) - border(2px) */
   cursor: default;
   color: var(--ink);
 }
