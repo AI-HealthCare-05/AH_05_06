@@ -429,7 +429,7 @@ def test_diag_table_no_keyword_returns_no_diagnosis() -> None:
 
 
 # ---------------------------------------------------------------------------
-# EMR 처방 표 파서 — 원외 체크 행 약품명·처방일수 추출
+# EMR 처방 표 파서 — 코드분류 기반 약품 행 추출
 # ---------------------------------------------------------------------------
 
 
@@ -437,32 +437,32 @@ def _rx_block(text: str, conf: float, left: float, top: float, right: float, bot
     return ClovaTextField(text=text, confidence=conf, left=left, top=top, right=right, bottom=bottom)
 
 
-# 처방 표: 명칭(x:10-200), 원외(x:210-250), 총투(x:350-400)
+# 처방 표: 명칭(x:10-200), 총투(x:270-320), 코드분류(x:400-480)
 # 헤더 행 y:10-30
-# 행1: 비잔정 2mg / ☑(체크) / 1    → MEDICATION_NAME + DURATION_DAYS = 1×28 = 28
-# 행2: 프로베라정 / □(미체크) / 84  → 원외 미체크라 제외
-# 행3: 루프론3.75mg / ■(체크) / 84  → MEDICATION_NAME_2 + DURATION_DAYS_2 = 84
+# 행1: 비잔정 2mg / 1 / 내복약   → MEDICATION_NAME + DURATION_DAYS = 1×28 = 28
+# 행2: 프로베라정 / 84 / 진찰료  → 코드분류 미해당이라 제외
+# 행3: 루프론3.75mg / 84 / 내복약 → MEDICATION_NAME_2 + DURATION_DAYS_2 = 84
 _RX_TABLE_BLOCKS = [
     _rx_block("명칭", 0.99, 10, 10, 200, 30),
-    _rx_block("원외", 0.99, 210, 10, 250, 30),
-    _rx_block("총투", 0.99, 350, 10, 400, 30),
+    _rx_block("총투", 0.99, 270, 10, 320, 30),
+    _rx_block("코드분류", 0.99, 400, 10, 480, 30),
     _rx_block("비잔정(디에노게스트)2mg", 0.95, 10, 40, 200, 60),
-    _rx_block("☑", 0.90, 210, 40, 250, 60),
-    _rx_block("1", 0.98, 350, 40, 400, 60),
+    _rx_block("1", 0.98, 270, 40, 320, 60),
+    _rx_block("내복약", 0.97, 400, 40, 480, 60),
     _rx_block("프로베라정", 0.95, 10, 70, 200, 90),
-    _rx_block("□", 0.90, 210, 70, 250, 90),
-    _rx_block("84", 0.98, 350, 70, 400, 90),
+    _rx_block("84", 0.98, 270, 70, 320, 90),
+    _rx_block("진찰료", 0.97, 400, 70, 480, 90),
     _rx_block("루프론3.75mg", 0.94, 10, 100, 200, 120),
-    _rx_block("■", 0.91, 210, 100, 250, 120),
-    _rx_block("84", 0.97, 350, 100, 400, 120),
+    _rx_block("84", 0.97, 270, 100, 320, 120),
+    _rx_block("내복약", 0.96, 400, 100, 480, 120),
 ]
 
 _RX_TABLE_ROWS = _group_fields_by_row(_RX_TABLE_BLOCKS)
 _RX_TABLE_RESULT = ClovaOcrResult(raw_text="", fields=_RX_TABLE_BLOCKS, rows=_RX_TABLE_ROWS)
 
 
-def test_rx_table_extracts_checked_bizanjung() -> None:
-    """원외 체크된 비잔정의 처방일수를 총투×28로 계산한다."""
+def test_rx_table_extracts_bizanjung_with_x28() -> None:
+    """코드분류=내복약인 비잔정의 처방일수를 총투×28로 계산한다."""
     fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
     assert field_map.get("MEDICATION_NAME") == "비잔정(디에노게스트)2mg"
@@ -470,15 +470,15 @@ def test_rx_table_extracts_checked_bizanjung() -> None:
 
 
 def test_rx_table_extracts_second_medication_with_suffix() -> None:
-    """원외 체크된 두 번째 약은 MEDICATION_NAME_2 / DURATION_DAYS_2 로 추출된다."""
+    """코드분류=내복약인 두 번째 약은 MEDICATION_NAME_2 / DURATION_DAYS_2 로 추출된다."""
     fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
     assert field_map.get("MEDICATION_NAME_2") == "루프론3.75mg"
     assert field_map.get("DURATION_DAYS_2") == "84"
 
 
-def test_rx_table_skips_unchecked_rows() -> None:
-    """원외 미체크(□) 행은 추출하지 않는다."""
+def test_rx_table_skips_non_medication_rows() -> None:
+    """코드분류가 약품 분류(내복약 등)가 아닌 행은 추출하지 않는다."""
     fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
-    # 프로베라정은 미체크 → 목록에 없어야 한다
+    # 프로베라정은 진찰료 → 목록에 없어야 한다
     assert not any("프로베라정" in (f.extracted_value or "") for f in fields)

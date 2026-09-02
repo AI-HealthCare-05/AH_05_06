@@ -63,20 +63,20 @@ _ENDO_RE = re.compile(r"자궁\s*내막\s*증", re.IGNORECASE)
 # 다낭성(정확한 표기)과 다난성(오타 형태) 모두 인식
 _PCOS_RE = re.compile(r"다[낭난]성\s*난소|PCOS", re.IGNORECASE)
 
-# 상병명 표 열 허용 오차 (px) — 처방 표보다 열이 넓어 오차를 크게 둔다
-_DIAG_COL_MARGIN = 12.0
+# 상병명 표 열 허용 오차 (px) — 헤더 텍스트보다 넓은 데이터 셀 양쪽에 추가
+_DIAG_COL_MARGIN = 5.0
 
 # ---------------------------------------------------------------------------
-# EMR 처방 표 파서 상수 — 구조: ...명칭|원외|...|총투|...
+# EMR 처방 표 파서 상수 — 구조: 처방코드|명칭|용량|일투|총투|...|코드분류
 # ---------------------------------------------------------------------------
 
 # 처방 표에서 찾아야 할 열 헤더
-_RX_OUTER_LABELS: frozenset[str] = frozenset({"원외"})
 _RX_NAME_LABELS: frozenset[str] = frozenset({"명칭", "품명"})
 _RX_TOTAL_LABELS: frozenset[str] = frozenset({"총투"})
-
-# 원외 미체크로 간주하는 토큰 — 체크 상자 미선택 표현
-_OUTER_UNCHECKED: frozenset[str] = frozenset({"", "□", "○", "-", "0", "ㅁ"})
+# CLOVA OCR이 원외 체크박스 마크를 읽지 못하는 경우가 있으므로,
+# '코드분류' 열에서 약품 행을 식별한다 (내복약·외용약·주사 등).
+_RX_CLASS_LABELS: frozenset[str] = frozenset({"코드분류"})
+_RX_MED_CLASSES: frozenset[str] = frozenset({"내복약", "외용약", "주사약", "주사"})
 
 # 비잔정 패턴 — 이 약의 총투 값에 28을 곱해서 처방일수를 계산한다
 _BIZANJUNG_RE = re.compile(r"비잔\s*정", re.IGNORECASE)
@@ -144,8 +144,9 @@ _EMR_PATTERNS: dict[str, re.Pattern[str]] = {
     k: re.compile(v, re.IGNORECASE)
     for k, v in {
         "DIAGNOSIS": r"(?:진단|상병|Dx|diagnosis)\s*[:：]\s*([^\n\r,;]{1,80})",
+        # 콜론을 필수로 요구해 「처방점검」·「처방전View」 같은 복합 토큰을 오추출하지 않는다
         "MEDICATION_NAME": (
-            r"(?:처방|투약|약제|Rx)\s*[:：]?\s*"
+            r"(?:처방|투약|약제|Rx)\s*[:：]\s*"
             r"([가-힣A-Za-z]{2,}(?:\s?\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|정|캡슐))?)"
         ),
         "DURATION_DAYS": r"(\d{1,3})\s*일\s*(?:처방|분|치)",
@@ -336,14 +337,25 @@ def _extract_lab(clova_result: ClovaOcrResult) -> list[ExtractedField]:
 
 
 def _find_diag_name_col(rows: list) -> tuple[int, tuple[float, float]] | None:
-    """상병명 표 헤더 행에서 '명칭' 열 (행 인덱스, (left, right))을 반환한다."""
+    """상병명 표 헤더 행에서 '명칭' 열 범위 (행 인덱스, (left, right))를 반환한다.
+
+    '명칭' 텍스트 블록의 너비는 실제 데이터 셀보다 훨씬 좁다.
+    열 우측 경계는 헤더 행에서 '명칭' 바로 오른쪽에 있는 다음 헤더 블록의
+    left 값으로 결정한다 — 이렇게 해야 '난소의 자궁내막증' 같은 긴 데이터
+    텍스트가 열 범위 안에 들어온다.
+    """
     for i, row in enumerate(rows):
         texts_in_row = {b.text.strip() for b in row}
         if not _DIAG_TABLE_HEADER_SET.issubset(texts_in_row):
             continue
-        for b in row:
-            if b.text.strip() == _DIAG_NAME_COL_LABEL:
-                return i, (b.left, b.right)
+        sorted_row = sorted(row, key=lambda b: b.left)
+        name_block = next((b for b in sorted_row if b.text.strip() == _DIAG_NAME_COL_LABEL), None)
+        if name_block is None:
+            continue
+        # 다음 헤더 블록의 left를 열 우측 경계로 사용한다
+        next_block = next((b for b in sorted_row if b.left > name_block.right), None)
+        col_right = next_block.left if next_block else name_block.right + 200.0
+        return i, (name_block.left, col_right)
     return None
 
 
@@ -401,25 +413,30 @@ def _extract_emr_diagnosis_table(rows: list) -> list[ExtractedField]:
 
 def _find_rx_columns(
     rows: list,
-) -> tuple[int, tuple[float, float], tuple[float, float], tuple[float, float] | None] | None:
-    """처방 표 헤더 행에서 원외·명칭·총투 열 위치를 반환한다."""
+) -> tuple[int, tuple[float, float], tuple[float, float] | None, tuple[float, float]] | None:
+    """처방 표 헤더 행에서 명칭·총투·코드분류 열 위치를 반환한다.
+
+    CLOVA OCR이 원외 체크박스 마크를 읽지 못하는 경우가 많으므로,
+    '코드분류' 열로 약품 행을 식별하는 방식을 사용한다.
+    헤더 행에 '명칭'과 '코드분류'가 함께 있을 때 처방 표로 인식한다.
+    """
     for i, row in enumerate(rows):
         found: dict[str, tuple[float, float]] = {}
         for b in row:
             t = b.text.strip()
-            if t in _RX_OUTER_LABELS and "원외" not in found:
-                found["원외"] = (b.left, b.right)
-            elif t in _RX_NAME_LABELS and "명칭" not in found:
+            if t in _RX_NAME_LABELS and "명칭" not in found:
                 found["명칭"] = (b.left, b.right)
             elif t in _RX_TOTAL_LABELS and "총투" not in found:
                 found["총투"] = (b.left, b.right)
-        if "원외" in found and "명칭" in found:
-            return i, found["원외"], found["명칭"], found.get("총투")
+            elif t in _RX_CLASS_LABELS and "코드분류" not in found:
+                found["코드분류"] = (b.left, b.right)
+        if "명칭" in found and "코드분류" in found:
+            return i, found["명칭"], found.get("총투"), found["코드분류"]
     return None
 
 
 def _rx_duration(med_name: str, total_l: float, total_r: float, row: list) -> ExtractedField | None:
-    """원외 행에서 총투 값을 읽어 처방일수 필드를 만든다."""
+    """처방 행에서 총투 값을 읽어 처방일수 필드를 만든다."""
     total_blocks = [b for b in row if b.right > total_l and b.left < total_r]
     if not total_blocks:
         return None
@@ -433,35 +450,34 @@ def _rx_duration(med_name: str, total_l: float, total_r: float, row: list) -> Ex
 
 
 def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
-    """EMR 처방 표에서 원외 체크된 행의 약품명과 처방일수를 추출한다.
+    """EMR 처방 표에서 약품 행의 약품명과 처방일수를 추출한다.
 
-    '원외'·'명칭'·'총투' 열을 찾아 원외 체크 행만 처리한다.
+    '코드분류' 열 값이 약품 분류(내복약·외용약·주사 등)인 행만 처리한다.
+    CLOVA OCR이 원외 체크박스를 읽지 못하는 문제를 우회하는 방식이다.
     비잔정: DURATION_DAYS = 총투 × 28 / 그 외: DURATION_DAYS = 총투.
-    여러 원외 행 → MEDICATION_NAME, MEDICATION_NAME_2, MEDICATION_NAME_3 …
+    여러 약품 행 → MEDICATION_NAME, MEDICATION_NAME_2, MEDICATION_NAME_3 …
     """
     if not rows:
         return []
     info = _find_rx_columns(rows)
     if info is None:
         return []
-    header_row_idx, outer_col, name_col, total_col = info
+    header_row_idx, name_col, total_col, class_col = info
 
-    outer_l = outer_col[0] - _COL_MARGIN
-    outer_r = outer_col[1] + _COL_MARGIN
-    name_l = name_col[0] - _COL_MARGIN
-    name_r = name_col[1] + _COL_MARGIN
+    name_l, name_r = name_col[0] - _COL_MARGIN, name_col[1] + _COL_MARGIN
     total_l = (total_col[0] - _COL_MARGIN) if total_col else None
     total_r = (total_col[1] + _COL_MARGIN) if total_col else None
+    class_l, class_r = class_col[0] - _COL_MARGIN, class_col[1] + _COL_MARGIN
 
     results: list[ExtractedField] = []
     med_index = 0
 
     for row in rows[header_row_idx + 1 :]:
-        outer_blocks = [b for b in row if b.right > outer_l and b.left < outer_r]
-        if not outer_blocks:
+        class_blocks = [b for b in row if b.right > class_l and b.left < class_r]
+        if not class_blocks:
             continue
-        outer_text = " ".join(b.text.strip() for b in outer_blocks).strip()
-        if outer_text in _OUTER_UNCHECKED:
+        class_text = " ".join(b.text.strip() for b in class_blocks).strip()
+        if class_text not in _RX_MED_CLASSES:
             continue
 
         name_blocks = [b for b in row if b.right > name_l and b.left < name_r]
