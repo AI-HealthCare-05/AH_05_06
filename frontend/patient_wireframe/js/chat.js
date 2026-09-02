@@ -20,7 +20,14 @@
   };
 
   var guide = null;
-  var state = { messages: [], busy: false, draft: '', generation: 0 };
+  var linkToken = null;
+  var state = {
+  messages: [],
+  busy: false,
+  draft: '',
+  generation: 0,
+  requestController: null,
+  };
 
   /* ── DOM 초기화 ────────────────────────── */
   var backdrop   = document.getElementById('chat-backdrop');
@@ -176,11 +183,77 @@
         });
         actions.appendChild(contact);
         answer.appendChild(actions);
+
+        if (!msg.error && !msg.aborted && !msg.fallback && msg.responseRef) {
+          answer.appendChild(buildFeedbackActions(msg));
+        }
       }
 
       row.appendChild(answer);
     }
     return row;
+  }
+
+  function buildFeedbackActions(msg) {
+    var wrap = document.createElement('div');
+    wrap.className = 'chat-feedback';
+    wrap.setAttribute('aria-label', '답변 도움 평가');
+
+    var prompt = document.createElement('span');
+    prompt.className = 'chat-feedback__prompt';
+    prompt.textContent = '이 답변이 도움됐나요?';
+    wrap.appendChild(prompt);
+
+    [
+      { category: 'HELPFUL', label: '도움됨' },
+      { category: 'UNHELPFUL', label: '도움 안 됨' },
+    ].forEach(function (option) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'chat-feedback__button' +
+        (msg.feedbackCategory === option.category ? ' chat-feedback__button--selected' : '');
+      button.textContent = msg.feedbackState === 'error' && msg.feedbackCategory === option.category
+        ? '다시 시도'
+        : option.label;
+      button.disabled = msg.feedbackState === 'pending' || msg.feedbackState === 'saved' ||
+        (msg.feedbackCategory && msg.feedbackCategory !== option.category);
+      button.addEventListener('click', function () { sendFeedback(msg, option.category); });
+      wrap.appendChild(button);
+    });
+
+    if (msg.feedbackState) {
+      var status = document.createElement('span');
+      status.className = 'chat-feedback__status';
+      status.setAttribute('role', msg.feedbackState === 'error' ? 'alert' : 'status');
+      status.textContent = msg.feedbackState === 'saved'
+        ? '평가를 저장했어요.'
+        : msg.feedbackState === 'error' ? '저장하지 못했어요. 다시 시도해 주세요.' : '저장 중…';
+      wrap.appendChild(status);
+    }
+    return wrap;
+  }
+
+  function sendFeedback(msg, category) {
+    if (msg.feedbackState === 'pending' || msg.feedbackState === 'saved') return;
+    if (msg.feedbackCategory && msg.feedbackCategory !== category) return;
+    msg.feedbackCategory = category;
+    msg.feedbackSubmissionId = msg.feedbackSubmissionId || createFeedbackSubmissionId();
+    msg.feedbackState = 'pending';
+    renderMessages();
+
+    submitPatientFeedback({
+      submission_id: msg.feedbackSubmissionId,
+      target: 'CHATBOT_RESPONSE',
+      source_screen: 'P6',
+      category: category,
+      response_ref: msg.responseRef,
+    }).then(function () {
+      msg.feedbackState = 'saved';
+      renderMessages();
+    }).catch(function () {
+      msg.feedbackState = 'error';
+      renderMessages();
+    });
   }
 
   /* ── 스트리밍 업데이트 ──────────────────── */
@@ -207,6 +280,48 @@
     sendBtn.disabled = true;
     abortBtn.classList.add('chat-abort--show');
     renderMessages();
+
+  if (!GUIDE_MOCK) {
+    var controller = new AbortController();
+    state.requestController = controller;
+
+    requestChatbotResponse(linkToken, q, controller.signal)
+      .then(function (result) {
+        if (gen !== state.generation) return;
+
+        answerMsg.text = result.answer || '';
+        answerMsg.urgent = !!result.urgent;
+        answerMsg.source = result.source;
+        answerMsg.responseRef = result.response_ref;
+        answerMsg.fallback = !!result.fallback;
+      })
+      .catch(function (error) {
+        if (gen !== state.generation) return;
+
+        if (error.name === 'AbortError') {
+          answerMsg.aborted = true;
+          return;
+        }
+
+        answerMsg.error =
+          '답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+      })
+      .finally(function () {
+        if (state.requestController === controller) {
+          state.requestController = null;
+        }
+
+        if (gen !== state.generation) return;
+
+        answerMsg.streaming = false;
+        state.busy = false;
+        abortBtn.classList.remove('chat-abort--show');
+        sendBtn.disabled = false;
+        renderMessages();
+      });
+
+    return;
+  }
 
     /* Mock: 글자를 조금씩 타이핑 */
     var raw  = MOCK_ANSWERS[q] || '담당 의료진이 확인한 내용 안에서만 답해드릴 수 있어요. 더 자세한 내용은 진료 때 여쭤봐 주세요.';
@@ -256,9 +371,20 @@
   sendBtn.addEventListener('click', function () { sendQuestion(input.value); });
 
   abortBtn.addEventListener('click', function () {
-    state.generation++; /* 진행 중인 tick 무효화 */
+    if (state.requestController) {
+      state.requestController.abort();
+      state.requestController = null;
+    }
+
+    state.generation++; /* 진행 중인 요청 또는 tick 무효화 */
+
     var last = state.messages[state.messages.length - 1];
-    if (last && last.streaming) { last.streaming = false; last.aborted = true; }
+
+    if (last && last.streaming) {
+      last.streaming = false;
+      last.aborted = true;
+    }
+
     state.busy = false;
     abortBtn.classList.remove('chat-abort--show');
     sendBtn.disabled = false;
@@ -266,5 +392,8 @@
   });
 
   /* ── 외부에서 guide 데이터 주입 ─────────── */
-  window.chatSetGuide = function (g) { guide = g; };
+  window.chatSetGuide = function (g, token) {
+    guide = g;
+    linkToken = token;
+  };
 })();

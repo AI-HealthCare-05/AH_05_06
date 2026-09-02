@@ -21,6 +21,7 @@ import pytest
 from ai_worker.adapters.clova import ClovaOcrResult, ClovaTextField
 from ai_worker.tasks.field_extractor import extract_fields
 from app.models.ocr import OcrDocumentType
+from app.tests.fixtures.ocr import SYN_EMS_01_CLOVA_RESULT
 
 _LOW_CONFIDENCE_THRESHOLD = Decimal("0.75")
 
@@ -30,28 +31,7 @@ _LOW_CONFIDENCE_THRESHOLD = Decimal("0.75")
 # CLOVA General V2가 헤더 블록 → 값 블록 순서로 반환한 표 구조를 재현한다.
 # 진단 표: [진단] / N809 / ICD코드 / 상병명 / 자궁내막증 / 주/부상병 / 주상병
 # 처방 표: 약품명 / 1회량 / 일일횟수 / 처방일수 / 비잔정(디에노게스트)2mg / 1 / 1 / 84
-_SYN_EMS_01_BLOCKS = [
-    ClovaTextField(text="[진단]", confidence=0.99),
-    ClovaTextField(text="N809", confidence=0.96),
-    ClovaTextField(text="ICD코드", confidence=0.98),
-    ClovaTextField(text="상병명", confidence=0.99),
-    ClovaTextField(text="자궁내막증", confidence=0.92),
-    ClovaTextField(text="주/부상병", confidence=0.97),
-    ClovaTextField(text="주상병", confidence=0.95),
-    ClovaTextField(text="약품명", confidence=0.99),
-    ClovaTextField(text="1회량", confidence=0.98),
-    ClovaTextField(text="일일횟수", confidence=0.97),
-    ClovaTextField(text="처방일수", confidence=0.99),
-    ClovaTextField(text="비잔정(디에노게스트)2mg", confidence=0.94),
-    ClovaTextField(text="1", confidence=0.98),
-    ClovaTextField(text="1", confidence=0.97),
-    ClovaTextField(text="84", confidence=0.99),
-]
-
-_SYN_EMS_01 = ClovaOcrResult(
-    raw_text="\n".join(b.text for b in _SYN_EMS_01_BLOCKS),
-    fields=_SYN_EMS_01_BLOCKS,
-)
+_SYN_EMS_01 = SYN_EMS_01_CLOVA_RESULT
 
 # ---------------------------------------------------------------------------
 # 필수 필드 추출 — SYN-EMS-01 실측 블록 레이아웃 (인수조건 핵심)

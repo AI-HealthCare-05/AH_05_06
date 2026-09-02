@@ -8,6 +8,7 @@ from app.apis.v1.health_routers import health_router
 from app.apis.v1.lab_baseline_routers import lab_baseline_router
 from app.apis.v1.message_routers import message_router
 from app.apis.v1.message_template_routers import message_template_router
+from app.apis.v1.patient_feedback_routers import patient_feedback_router
 from app.apis.v1.patient_link_routers import (
     patient_checkin_router,
     patient_guide_router,
@@ -53,3 +54,4 @@ v1_routers.include_router(patient_checkin_router)
 v1_routers.include_router(patient_auth_router)
 v1_routers.include_router(patient_otp_router)
 v1_routers.include_router(chatbot_router)
+v1_routers.include_router(patient_feedback_router)

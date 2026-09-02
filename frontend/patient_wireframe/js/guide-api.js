@@ -388,3 +388,48 @@ function fetchGuide(token) {
       .then(function (data) { throw new GuideError(data.code || GUIDE_ERROR.NOT_FOUND); });
   });
 }
+
+function requestChatbotResponse(linkToken, question, signal) {
+  return fetch(GUIDE_API_BASE + '/chatbot/responses', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ link_token: linkToken, question: question }),
+    signal: signal,
+  }).then(function (res) {
+    return res.json().catch(function () { return {}; }).then(function (data) {
+      if (res.ok) return data;
+      var error = new Error('CHATBOT_FAILED');
+      error.code = data.code || 'CHATBOT_FAILED';
+      throw error;
+    });
+  });
+}
+
+function createFeedbackSubmissionId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  var bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  var hex = Array.from(bytes, function (value) { return value.toString(16).padStart(2, '0'); }).join('');
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+}
+
+function submitPatientFeedback(payload) {
+  return fetch(GUIDE_API_BASE + '/patient-feedback', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(function (res) {
+    if (res.ok) return res.json();
+    return res.json().catch(function () { return {}; }).then(function (data) {
+      var error = new Error(data.code || 'FEEDBACK_FAILED');
+      error.code = data.code || 'FEEDBACK_FAILED';
+      throw error;
+    });
+  });
+}

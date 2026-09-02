@@ -590,28 +590,28 @@
 
   /* ── 오류 신고 오버레이 ─── */
   var REPORT_SCREENS = [
-    '복약지도 · 오늘 진료 요약',
-    '복약지도 · 나의 목표',
-    '복약지도 · 처방받은 약',
-    '복약지도 · 이 약을 왜 드시나요',
-    '복약지도 · 복용 방법',
-    '복약지도 · 다음 방문 계획',
-    '주의사항 · 흔한 반응',
-    '주의사항 · 함께 드시면 안 되는 것',
-    '주의사항 · 바로 병원에 연락할 경우',
-    '생활관리 · 4주 챌린지',
-    '생활관리 · 수면',
-    '생활관리 · 뼈 건강',
-    '생활관리 · 운동',
-    '생활관리 · 통증',
+    { label: '복약지도 · 오늘 진료 요약', sectionKey: 'medication', contentKey: 'medication.summary' },
+    { label: '복약지도 · 나의 목표', sectionKey: 'medication', contentKey: 'medication.goals' },
+    { label: '복약지도 · 처방받은 약', sectionKey: 'medication', contentKey: 'medication.list' },
+    { label: '복약지도 · 이 약을 왜 드시나요', sectionKey: 'medication', contentKey: 'medication.why' },
+    { label: '복약지도 · 복용 방법', sectionKey: 'medication', contentKey: 'medication.how' },
+    { label: '복약지도 · 다음 방문 계획', sectionKey: 'medication', contentKey: 'medication.next_visit' },
+    { label: '주의사항 · 흔한 반응', sectionKey: 'caution', contentKey: 'caution.common' },
+    { label: '주의사항 · 함께 드시면 안 되는 것', sectionKey: 'caution', contentKey: 'caution.interactions' },
+    { label: '주의사항 · 바로 병원에 연락할 경우', sectionKey: 'emergency', contentKey: 'emergency.items' },
+    { label: '생활관리 · 4주 챌린지', sectionKey: 'life', contentKey: 'life.challenges' },
+    { label: '생활관리 · 수면', sectionKey: 'life', contentKey: 'life.sleep' },
+    { label: '생활관리 · 뼈 건강', sectionKey: 'life', contentKey: 'life.bone' },
+    { label: '생활관리 · 운동', sectionKey: 'life', contentKey: 'life.exercise' },
+    { label: '생활관리 · 통증', sectionKey: 'life', contentKey: 'life.pain' },
   ];
   var REPORT_REASONS = [
-    '도움이 됨',
-    '도움이 되지 않음',
-    '안내와 다른 내용',
-    '이해하기 어려움',
-    '부적절한 의료 안내',
-    '기타',
+    { label: '도움이 됨', category: 'HELPFUL' },
+    { label: '도움이 되지 않음', category: 'UNHELPFUL' },
+    { label: '안내와 다른 내용', category: 'WRONG' },
+    { label: '이해하기 어려움', category: 'HARD_TO_UNDERSTAND' },
+    { label: '부적절한 의료 안내', category: 'UNSAFE' },
+    { label: '기타', category: 'OTHER' },
   ];
 
   function buildReportOverlay() {
@@ -651,16 +651,18 @@
 
     var select = document.createElement('select');
     select.className = 'report-select';
-    REPORT_SCREENS.forEach(function (s) {
+    REPORT_SCREENS.forEach(function (screen) {
       var opt = document.createElement('option');
-      opt.value = s; opt.textContent = s;
+      opt.value = screen.contentKey;
+      opt.textContent = screen.label;
       select.appendChild(opt);
     });
     var currentScreen = state.tab === '복약지도' ? '복약지도 · 이 약을 왜 드시나요'
                       : state.tab === '주의사항' ? '주의사항 · 흔한 반응'
                       : state.tab === '생활관리' ? '생활관리 · 4주 챌린지'
                       : '복약지도 · 오늘 진료 요약';
-    select.value = currentScreen;
+    var currentScreenOption = REPORT_SCREENS.find(function (screen) { return screen.label === currentScreen; });
+    select.value = currentScreenOption.contentKey;
     content.appendChild(select);
 
     var screenHint = document.createElement('p');
@@ -675,8 +677,9 @@
     content.appendChild(reasonLabel);
 
     var selectedReason = null;
+    var submissionId = null;
     var reasonBtns = [];
-    REPORT_REASONS.forEach(function (r) {
+    REPORT_REASONS.forEach(function (reason) {
       var row = document.createElement('div');
       row.className = 'report-reason';
 
@@ -685,12 +688,12 @@
 
       var label = document.createElement('span');
       label.className = 'report-reason__label';
-      label.textContent = r;
+      label.textContent = reason.label;
 
       row.appendChild(radio);
       row.appendChild(label);
       row.addEventListener('click', function () {
-        selectedReason = r;
+        selectedReason = reason;
         reasonBtns.forEach(function (b) { b.classList.remove('report-reason--selected'); });
         row.classList.add('report-reason--selected');
         radio.classList.add('report-reason__radio--selected');
@@ -712,7 +715,13 @@
     textarea.className = 'report-textarea';
     textarea.placeholder = '어떤 부분이 다른지 적어주세요';
     textarea.rows = 4;
+    textarea.maxLength = 1000;
     content.appendChild(textarea);
+
+    var submitStatus = document.createElement('p');
+    submitStatus.className = 'report-hint';
+    submitStatus.setAttribute('aria-live', 'polite');
+    content.appendChild(submitStatus);
 
     /* 제출 버튼 */
     var submitBtn = document.createElement('button');
@@ -721,8 +730,33 @@
     submitBtn.textContent = '보내기';
     submitBtn.disabled = true;
     submitBtn.addEventListener('click', function () {
-      alert('[미구현] 오류 신고 기능은 서버 연동 후 동작합니다.');
-      closeReport();
+      if (!selectedReason || submitBtn.disabled) return;
+      var selectedScreen = REPORT_SCREENS.find(function (screen) {
+        return screen.contentKey === select.value;
+      });
+      submissionId = submissionId || createFeedbackSubmissionId();
+      submitBtn.disabled = true;
+      submitBtn.textContent = '보내는 중…';
+      submitStatus.textContent = '';
+      submitPatientFeedback({
+        submission_id: submissionId,
+        target: 'GUIDE_SECTION',
+        source_screen: 'P9',
+        category: selectedReason.category,
+        section_key: selectedScreen.sectionKey,
+        content_key: selectedScreen.contentKey,
+        detected_tab: state.tab,
+        details: textarea.value.trim() || null,
+      }).then(function () {
+        submitBtn.textContent = '저장했어요';
+        submitStatus.textContent = '의견을 보내주셔서 감사해요.';
+        setTimeout(function () { closeReport(); }, 600);
+      }).catch(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '다시 시도';
+        submitStatus.setAttribute('role', 'alert');
+        submitStatus.textContent = '저장하지 못했어요. 입력한 내용을 확인한 뒤 다시 시도해 주세요.';
+      });
     });
     content.appendChild(submitBtn);
 
@@ -812,7 +846,7 @@
         buildTabBar(d);
         renderBody(d);
         sayGuide('승인된 안내를 불러왔어요');
-        if (window.chatSetGuide) chatSetGuide(d.guide || d);
+        if (window.chatSetGuide) chatSetGuide(d.guide || d, TOKEN);
       })
       .catch(renderLoadError);
   }

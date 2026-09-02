@@ -41,7 +41,7 @@ var FRAMES = [
   {"id": "D2-1", "area": "medic", "name": "안내문 — 처방 한 장", "level": 2, "target": 2, "url": "/settings.html", "blocker": "약 단위가 아니라 처방 세트 단위다 — 원본이 세트에 붙어 있고 약 목록이 비어 있다 · 「왜 드시나요」·「먹는 방법」은 판독값으로 만들어져 고칠 문구가 없다"},
   {"id": "D2-2", "area": "medic", "name": "안내문 고치기 — 원본 ↔ 원장님 문구", "level": 2, "target": 1, "url": "/settings.html", "blocker": "고친 문구를 안내문 생성이 아직 안 읽는다 — 지금은 원본만 쓴다"},
   {"id": "D2-3", "area": "medic", "name": "처방", "level": 2, "target": 1, "url": "/settings.html", "blocker": "안내문 미리보기는 D2-1·D2-2 몫이라 아직 없다"},
-  {"id": "D2-4", "area": "medic", "name": "검사 기준선", "level": 2, "target": 1, "url": "/settings.html", "blocker": "D1 「나의 목표」가 이 값을 아직 안 읽는다 · 판독이 「판독 키워드」로 항목을 찾지 않는다"},
+  {"id": "D2-4", "area": "medic", "name": "검사 기준선", "level": 2, "target": 1, "url": "/settings.html", "blocker": "OCR 판독 단계 자체는 의원별 「판독 키워드」로 필드 이름을 아직 정규화하지 않는다"},
   {"id": "D2-5", "area": "medic", "name": "문자 문구", "level": 2, "target": 1, "url": "/settings.html", "blocker": "정한 문구로 실제 발송하는 발송기가 없다 · {예약링크}는 의원 정보(A1-4)가 있어야 채워진다"},
   {"id": "P1-1", "area": "patient", "name": "링크로 들어옴 — 인증번호 보내기", "level": 3, "target": 1, "blocker": "B3 OTP 발송 구현체가 없어 항상 503. 진입 화면도 없음", "role": "안내문 링크로 들어와 인증번호를 받는다"},
   {"id": "P1-2", "area": "patient", "name": "인증번호 입력", "level": 2, "target": 1, "url": "/checkin.html", "blocker": "B3 인증번호를 받을 수 없음"},

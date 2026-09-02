@@ -26,3 +26,4 @@ class ChatbotResponse(BaseModel):
     urgent: bool = False
     fallback: bool = False
     grounded_section: GuideSectionKey | None = None
+    response_ref: str | None = None

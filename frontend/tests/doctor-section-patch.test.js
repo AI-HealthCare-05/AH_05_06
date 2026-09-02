@@ -54,9 +54,9 @@ test("없는 섹션은 404 SECTION_NOT_FOUND 다 — 잠금 판정이 그 앞을
 
 /* 이희진 님 `#76` 리뷰 — `SECTION_LOCKED` 와 같은 기준.
  *
- * 서버는 `APPROVAL_PENDING` 이 아닌 안내문의 섹션 수정을 `GUIDE_NOT_PENDING`
- * 409 로 막는다. 이미 승인해 발송을 기다리는 글을 조용히 바꾸면 **환자가 받는
- * 것과 의사가 승인한 것이 달라진다.**
+ * 서버는 스탭 확인·승인 요청·반려 상태에서만 섹션 수정을 허용하고, 이미 승인해
+ * 발송을 기다리는 글은 `GUIDE_NOT_PENDING` 409 로 막는다. 승인 뒤에 조용히
+ * 바꾸면 **환자가 받는 것과 의사가 승인한 것이 달라진다.**
  *
  * 목업에는 그 검사가 없었고, 더 근본적으로 **안내문 상태를 저장하지 않았다** —
  * 승인해도 다음 조회는 다시 「승인 요청」이라 상태에 걸리는 규칙을 잴 수조차
@@ -86,18 +86,16 @@ test("승인이 상태를 남긴다 — 다시 조회해도 발송 대기다", a
   assert.ok(after.scheduled_at, "발송 예정 시각이 비어 있다");
 });
 
-test("반려 뒤에도 섹션을 못 고친다 — 스탭 손에 있는 글이다", async () => {
+test("반려 뒤에는 섹션을 고칠 수 있다 — 보완 후 재제출할 수 있어야 한다", async () => {
   const api = box();
   const before = await api.doctorApi.guide(VISIT);
   const open = before.sections.find((s) => !s.locked);
 
   await api.doctorApi.returnToStaff(VISIT, "검사 결과지를 다시 올려 주세요");
 
-  await assert.rejects(
-    () => api.doctorApi.editSection(VISIT, open.key, { body: "반려 뒤에 고친다" }),
-    (error) => error.code === "GUIDE_NOT_PENDING" && error.status === 409,
-    "반려된 안내문의 섹션 수정이 통과했다",
-  );
+  const updated = await api.doctorApi.editSection(VISIT, open.key, { body: "반려 뒤에 고친다" });
+  assert.strictEqual(updated.body, "반려 뒤에 고친다");
+  assert.strictEqual(updated.edited, true);
 });
 
 /* ── 두 번 승인 — `ALREADY_APPROVED` (이희진 님 `#76` 리뷰) ───────────────
