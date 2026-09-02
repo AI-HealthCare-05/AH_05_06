@@ -43,6 +43,10 @@ class ClovaTextField:
 
     text: str
     confidence: float
+    left: float = 0.0  # boundingPoly 최소 X
+    top: float = 0.0  # boundingPoly 최소 Y
+    right: float = 0.0  # boundingPoly 최대 X
+    bottom: float = 0.0  # boundingPoly 최대 Y
 
 
 @dataclass
@@ -51,7 +55,51 @@ class ClovaOcrResult:
 
     raw_text: str
     fields: list[ClovaTextField] = field(default_factory=list)
+    rows: list[list[ClovaTextField]] = field(default_factory=list)  # Y축 기준 행 그룹
     elapsed_ms: int = 0  # 실제 CLOVA HTTP 호출 시간 (KEY-175 관측용)
+
+
+_ROW_MERGE_TOLERANCE = 15.0  # px — 같은 행으로 묶을 Y 중심 허용 오차
+
+
+def _parse_clova_field(f: dict) -> ClovaTextField:
+    vertices = f.get("boundingPoly", {}).get("vertices", [])
+    if vertices:
+        xs = [v.get("x", 0.0) for v in vertices]
+        ys = [v.get("y", 0.0) for v in vertices]
+        left, top, right, bottom = min(xs), min(ys), max(xs), max(ys)
+    else:
+        left = top = right = bottom = 0.0
+    return ClovaTextField(
+        text=f["inferText"],
+        confidence=float(f.get("inferConfidence", 0.0)),
+        left=left,
+        top=top,
+        right=right,
+        bottom=bottom,
+    )
+
+
+def _group_fields_by_row(fields: list[ClovaTextField]) -> list[list[ClovaTextField]]:
+    """Y축 중심을 기준으로 블록을 행으로 묶고, 행 내부는 X 순으로 정렬한다.
+
+    바운딩 박스가 없는 경우(모두 0) 빈 리스트를 반환한다.
+    """
+    if not fields or not any(f.top or f.bottom for f in fields):
+        return []
+    rows: list[list[ClovaTextField]] = []
+    for block in sorted(fields, key=lambda f: (f.top + f.bottom) / 2):
+        center_y = (block.top + block.bottom) / 2
+        for row in rows:
+            row_cy = sum((b.top + b.bottom) / 2 for b in row) / len(row)
+            if abs(center_y - row_cy) <= _ROW_MERGE_TOLERANCE:
+                row.append(block)
+                break
+        else:
+            rows.append([block])
+    for row in rows:
+        row.sort(key=lambda f: f.left)
+    return rows
 
 
 async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
@@ -130,14 +178,12 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
         )
 
     raw_fields = image.get("fields", [])
-    text_fields = [
-        ClovaTextField(
-            text=f["inferText"],
-            confidence=float(f.get("inferConfidence", 0.0)),
-        )
-        for f in raw_fields
-        if "inferText" in f
-    ]
-    raw_text = "\n".join(f.text for f in text_fields)
+    text_fields = [_parse_clova_field(f) for f in raw_fields if "inferText" in f]
 
-    return ClovaOcrResult(raw_text=raw_text, fields=text_fields, elapsed_ms=http_elapsed_ms)
+    rows = _group_fields_by_row(text_fields)
+    if rows:
+        raw_text = "\n".join("\t".join(f.text for f in row) for row in rows)
+    else:
+        raw_text = "\n".join(f.text for f in text_fields)
+
+    return ClovaOcrResult(raw_text=raw_text, fields=text_fields, rows=rows, elapsed_ms=http_elapsed_ms)

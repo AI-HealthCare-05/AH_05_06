@@ -147,6 +147,40 @@ _PATTERNS_BY_TYPE: dict[OcrDocumentType, dict[str, re.Pattern[str]]] = {
     OcrDocumentType.PRESCRIPTION: _PRESCRIPTION_PATTERNS,
 }
 
+# ---------------------------------------------------------------------------
+# LAB_RESULT 표 파서 상수
+# ---------------------------------------------------------------------------
+
+_TEST_NAME_COLUMN_KEYWORDS: frozenset[str] = frozenset({"검사항목", "검사명", "항목명"})
+_RESULT_COLUMN_KEYWORDS: frozenset[str] = frozenset({"검사결과", "결과", "측정값"})
+
+# 검사항목 열 텍스트 → field_type 매핑 (순서 중요: 더 구체적인 패턴을 앞에)
+_LAB_TEST_NAME_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"CA[-\s]?19[-\s]?9", re.I), "CA19_9"),
+    (re.compile(r"CA[-\s]?125", re.I), "CA_125"),
+    (re.compile(r"\bROMA\b", re.I), "ROMA_SCORE"),
+    (re.compile(r"\bAMH\b", re.I), "AMH"),
+    (re.compile(r"\bHemoglobin\b|혈색소|헤모글로빈|\bHb\b", re.I), "HEMOGLOBIN"),
+    (re.compile(r"\bCRP\b", re.I), "CRP"),
+    (re.compile(r"\bE2\b", re.I), "E2"),
+    (re.compile(r"\bAST\b(?!\s*/)", re.I), "AST"),
+    (re.compile(r"\bALT\b", re.I), "ALT"),
+    (re.compile(r"LH\s*/\s*FSH", re.I), "LH_FSH_RATIO"),
+    (re.compile(r"\bLH\b", re.I), "LH"),
+    (re.compile(r"\bFSH\b", re.I), "FSH"),
+    (re.compile(r"\bDHEA[-\s]?S\b", re.I), "DHEA_S"),
+    (re.compile(r"Testosterone|테스토스테론", re.I), "TESTOSTERONE"),
+    (re.compile(r"Prolactin|프로락틴", re.I), "PROLACTIN"),
+    (re.compile(r"\bTSH\b", re.I), "TSH"),
+    (re.compile(r"\bT3\b", re.I), "T3"),
+    (re.compile(r"\bT4\b", re.I), "T4"),
+    (re.compile(r"Progesterone|프로게스테론", re.I), "PROGESTERONE"),
+    (re.compile(r"자궁내막종", re.I), "ENDOMETRIOMA_SIZE"),
+    (re.compile(r"내막\s*두께|자궁내막\s*두께", re.I), "ENDOMETRIAL_THICKNESS"),
+]
+
+_COL_MARGIN = 5.0  # px — 열 경계 허용 오차
+
 
 # ---------------------------------------------------------------------------
 # 공개 인터페이스
@@ -160,11 +194,14 @@ def extract_fields(
     """CLOVA 결과에서 문서 유형에 맞는 핵심 필드를 추출한다.
 
     EMR: 블록 파서 우선, 누락 필드는 정규식으로 보완.
+    LAB_RESULT: 표 파서 우선, 누락 필드는 정규식으로 보완.
     그 외: 정규식만 사용.
     동일 field_type은 첫 번째 매칭만 사용한다.
     """
     if document_type == OcrDocumentType.EMR:
         return _extract_emr(clova_result)
+    if document_type == OcrDocumentType.LAB_RESULT:
+        return _extract_lab(clova_result)
 
     patterns = _PATTERNS_BY_TYPE.get(document_type)
     if not patterns:
@@ -173,16 +210,122 @@ def extract_fields(
 
 
 # ---------------------------------------------------------------------------
+# 내부 — LAB_RESULT 추출
+# ---------------------------------------------------------------------------
+
+
+def _match_lab_test_name(test_name: str) -> str | None:
+    """검사항목 텍스트를 field_type으로 변환한다. 매칭 실패 시 None."""
+    for pattern, field_type in _LAB_TEST_NAME_KEYWORDS:
+        if pattern.search(test_name):
+            return field_type
+    return None
+
+
+def _find_lab_columns(rows: list) -> tuple[int, tuple[float, float], tuple[float, float]] | None:
+    """헤더 행에서 '검사항목'과 '검사결과' 열의 (header_row_idx, tn_col, res_col)을 반환한다.
+
+    두 열을 모두 찾지 못하면 None을 반환한다.
+    """
+    tn_col: tuple[float, float] | None = None
+    res_col: tuple[float, float] | None = None
+    header_row_idx: int | None = None
+    for i, row in enumerate(rows):
+        for block in row:
+            text = block.text.strip()
+            if text in _TEST_NAME_COLUMN_KEYWORDS and tn_col is None:
+                tn_col = (block.left, block.right)
+                header_row_idx = i
+            elif text in _RESULT_COLUMN_KEYWORDS and res_col is None:
+                res_col = (block.left, block.right)
+                if header_row_idx is None:
+                    header_row_idx = i
+        if tn_col and res_col:
+            break
+    if header_row_idx is None or tn_col is None or res_col is None:
+        return None
+    return header_row_idx, tn_col, res_col
+
+
+def _extract_lab_table(rows: list) -> list[ExtractedField]:
+    """바운딩 박스 행 그룹에서 검사항목→결과 쌍을 추출한다.
+
+    헤더 행에서 '검사항목'과 '검사결과' 열 위치를 확인한 뒤,
+    각 데이터 행에서 해당 열에 속하는 블록을 골라 (검사명, 결과값) 쌍을 만든다.
+    헤더가 없거나 열 위치를 특정할 수 없으면 빈 리스트를 반환한다.
+    """
+    col_info = _find_lab_columns(rows)
+    if col_info is None:
+        return []
+
+    header_row_idx, tn_col, res_col = col_info
+    tn_l, tn_r = tn_col[0] - _COL_MARGIN, tn_col[1] + _COL_MARGIN
+    res_l, res_r = res_col[0] - _COL_MARGIN, res_col[1] + _COL_MARGIN
+
+    results: list[ExtractedField] = []
+    seen: set[str] = set()
+    for row in rows[header_row_idx + 1 :]:
+        tn_blocks = [b for b in row if b.right > tn_l and b.left < tn_r]
+        res_blocks = [b for b in row if b.right > res_l and b.left < res_r]
+        if not tn_blocks or not res_blocks:
+            continue
+        test_name = " ".join(b.text.strip() for b in tn_blocks).strip()
+        result_value = " ".join(b.text.strip() for b in res_blocks).strip()
+        if not test_name or not result_value:
+            continue
+        field_type = _match_lab_test_name(test_name)
+        if field_type is None or field_type in seen:
+            continue
+        seen.add(field_type)
+        avg_conf = sum(b.confidence for b in res_blocks) / len(res_blocks)
+        results.append(
+            ExtractedField(
+                field_type=field_type,
+                extracted_value=result_value,
+                confidence=Decimal(str(round(avg_conf, 4))),
+            )
+        )
+    return results
+
+
+def _extract_lab(clova_result: ClovaOcrResult) -> list[ExtractedField]:
+    """LAB_RESULT: 표 파서 우선, 누락 필드는 정규식으로 보완."""
+    results = _extract_lab_table(clova_result.rows) if clova_result.rows else []
+    found_types = {f.field_type for f in results}
+    for field in _extract_by_regex(clova_result, _LAB_PATTERNS):
+        if field.field_type not in found_types:
+            results.append(field)
+            found_types.add(field.field_type)
+    return results
+
+
+# ---------------------------------------------------------------------------
 # 내부 — EMR 추출
 # ---------------------------------------------------------------------------
 
 
 def _extract_emr(clova_result: ClovaOcrResult) -> list[ExtractedField]:
-    """EMR: CLOVA 블록 파서 우선, 누락 필드를 정규식으로 보완."""
+    """EMR: CLOVA 블록 파서 우선, 누락 필드를 정규식과 검사결과지 표 파서로 보완.
+
+    모든 문서가 EMR 기본값으로 업로드되므로, 검사결과지도 이 경로를 탄다.
+    표 헤더가 있으면 표 파서를, 없으면 정규식 fallback을 시도한다.
+    """
     results = _extract_from_clova_blocks(clova_result)
     found_types = {f.field_type for f in results}
 
     for field in _extract_by_regex(clova_result, _EMR_PATTERNS):
+        if field.field_type not in found_types:
+            results.append(field)
+            found_types.add(field.field_type)
+
+    # 검사결과지 표 파서 — 표 헤더(검사항목·검사결과)가 있을 때만 실행된다
+    for field in _extract_lab_table(clova_result.rows):
+        if field.field_type not in found_types:
+            results.append(field)
+            found_types.add(field.field_type)
+
+    # 검사결과지 정규식 fallback — 콜론 형식 값을 추가로 읽는다
+    for field in _extract_by_regex(clova_result, _LAB_PATTERNS):
         if field.field_type not in found_types:
             results.append(field)
             found_types.add(field.field_type)

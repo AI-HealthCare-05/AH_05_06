@@ -9,6 +9,7 @@
   - 구버전 필드명(PRESCRIPTION_NAME·PRESCRIPTION_DURATION) 미생성
   - 처방 표 헤더 비연속 레이아웃에서도 올바른 필드 추출
   - 짧은 숫자값의 블록 부분 매칭 오판정 방지
+  - LAB_RESULT 표 파서: 헤더 기반 열 위치로 검사항목→결과 쌍 추출
 """
 
 from decimal import Decimal
@@ -251,3 +252,105 @@ def test_prescription_doc_type_uses_correct_field_names() -> None:
 
     assert "PRESCRIPTION_NAME" not in field_types
     assert "PRESCRIPTION_DURATION" not in field_types
+
+
+# ---------------------------------------------------------------------------
+# LAB_RESULT 표 파서 — 바운딩 박스 기반 행/열 추출
+# ---------------------------------------------------------------------------
+
+
+def _lab_block(text: str, conf: float, left: float, top: float, right: float, bottom: float) -> ClovaTextField:
+    return ClovaTextField(text=text, confidence=conf, left=left, top=top, right=right, bottom=bottom)
+
+
+# 헤더: 검사항목(x:100-200), 검사결과(x:220-320), 참고치(x:340-440)  — y:10-30
+# 행1:  CA19-9 (ECLIA)  / 20.20             / ≤ 34.00 U/mL       — y:40-60
+# 행2:  CA125 (ECLIA)   / 16.20             / ≤ 35.00 U/mL       — y:70-90
+_LAB_TABLE_BLOCKS = [
+    _lab_block("검사항목", 0.99, 100, 10, 200, 30),
+    _lab_block("검사결과", 0.99, 220, 10, 320, 30),
+    _lab_block("참고치", 0.99, 340, 10, 440, 30),
+    _lab_block("CA19-9 (ECLIA)", 0.95, 100, 40, 200, 60),
+    _lab_block("20.20", 0.97, 220, 40, 270, 60),
+    _lab_block("≤ 34.00 U/mL", 0.94, 340, 40, 440, 60),
+    _lab_block("CA125 (ECLIA)", 0.96, 100, 70, 200, 90),
+    _lab_block("16.20", 0.98, 220, 70, 270, 90),
+    _lab_block("≤ 35.00 U/mL", 0.93, 340, 70, 440, 90),
+]
+
+from ai_worker.adapters.clova import _group_fields_by_row  # noqa: E402
+
+_LAB_TABLE_ROWS = _group_fields_by_row(_LAB_TABLE_BLOCKS)
+_LAB_TABLE_RESULT = ClovaOcrResult(
+    raw_text="\n".join("\t".join(f.text for f in row) for row in _LAB_TABLE_ROWS),
+    fields=_LAB_TABLE_BLOCKS,
+    rows=_LAB_TABLE_ROWS,
+)
+
+
+def test_lab_table_extracts_ca19_9() -> None:
+    """표 파서가 CA19-9 검사결과 값을 CA19_9 필드로 추출한다."""
+    fields = extract_fields(_LAB_TABLE_RESULT, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("CA19_9") == "20.20"
+
+
+def test_lab_table_extracts_ca125() -> None:
+    """표 파서가 CA125 검사결과 값을 CA_125 필드로 추출한다."""
+    fields = extract_fields(_LAB_TABLE_RESULT, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("CA_125") == "16.20"
+
+
+def test_lab_table_uses_result_block_confidence() -> None:
+    """표 파서가 검사결과 블록의 실제 confidence를 사용한다."""
+    fields = extract_fields(_LAB_TABLE_RESULT, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f for f in fields}
+    # CA19-9 결과 블록 confidence=0.97
+    assert field_map["CA19_9"].confidence == Decimal("0.97")
+
+
+def test_lab_table_does_not_extract_reference_range_as_value() -> None:
+    """참고치 열이 결과값으로 추출되지 않는다."""
+    fields = extract_fields(_LAB_TABLE_RESULT, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("CA19_9") != "≤ 34.00 U/mL"
+    assert field_map.get("CA_125") != "≤ 35.00 U/mL"
+
+
+def test_lab_table_falls_back_to_regex_when_no_rows() -> None:
+    """rows가 없으면(바운딩 박스 미지원) 정규식 fallback이 동작한다."""
+    result = ClovaOcrResult(
+        raw_text="CA-125 : 48 U/mL",
+        fields=[],
+        rows=[],
+    )
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("CA_125") == "48 U/mL"
+
+
+# ---------------------------------------------------------------------------
+# EMR 타입으로 업로드된 검사결과지 — 표 파서와 LAB 정규식 모두 동작
+# ---------------------------------------------------------------------------
+
+
+def test_emr_type_extracts_lab_table_fields() -> None:
+    """검사결과지를 EMR 타입으로 업로드해도 표 파서가 혈액검사 값을 추출한다."""
+    fields = extract_fields(_LAB_TABLE_RESULT, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("CA19_9") == "20.20"
+    assert field_map.get("CA_125") == "16.20"
+
+
+def test_emr_type_extracts_lab_regex_fields() -> None:
+    """검사결과지를 EMR 타입으로 업로드해도 LAB 정규식 fallback이 동작한다."""
+    result = ClovaOcrResult(
+        raw_text="CA-125 : 48 U/mL\nAMH : 2.8 ng/mL",
+        fields=[],
+        rows=[],
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("CA_125") == "48 U/mL"
+    assert field_map.get("AMH") == "2.8 ng/mL"
