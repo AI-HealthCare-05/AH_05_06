@@ -1,8 +1,10 @@
 """승인 안내 컨텍스트만 사용하는 환자 챗봇 최소 LLM 경로 — KEY-96."""
 
+import hashlib
 import logging
 import re
-from dataclasses import dataclass
+import secrets
+from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Protocol
 
@@ -190,6 +192,7 @@ class ChatbotResult:
     urgent: bool = False
     fallback: bool = False
     grounded_section: GuideSectionKey | None = None
+    response_ref: str | None = None
 
 
 def classify_question(question: str) -> PatientQuestionKind:
@@ -322,13 +325,13 @@ class ChatbotService:
 
         if section is None:
             result = ChatbotResult(answer=NO_CONTEXT_ANSWER, evidence=_evidence(None), fallback=True)
-            await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
+            result = await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
             self._observe(model_name=self._model_name(), success=False, latency_ms=0, reason="context_missing")
             return result
 
         if self._model is None:
             result = self._fallback(MODEL_FAILURE_ANSWER, section)
-            await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
+            result = await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
             self._observe(model_name="unconfigured", success=False, latency_ms=0, reason="model_unconfigured")
             return result
 
@@ -340,7 +343,7 @@ class ChatbotService:
             # 돌려준다. 예외 원문은 민감정보를 포함할 수 있어 기록하지 않는다.
             latency = round((perf_counter() - started) * 1000)
             result = self._fallback(MODEL_FAILURE_ANSWER, section)
-            await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
+            result = await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
             self._observe(model_name=self._model.model_name, success=False, latency_ms=latency, reason="model_failed")
             return result
 
@@ -364,7 +367,7 @@ class ChatbotService:
             outcome = PatientAnswerOutcome.ANSWERED
             reason = None
 
-        await self._record(guide, question_kind, outcome, result)
+        result = await self._record(guide, question_kind, outcome, result)
         self._observe(
             model_name=self._model.model_name,
             success=outcome is PatientAnswerOutcome.ANSWERED,
@@ -390,13 +393,16 @@ class ChatbotService:
         question_kind: PatientQuestionKind,
         outcome: PatientAnswerOutcome,
         result: ChatbotResult,
-    ) -> None:
+    ) -> ChatbotResult:
+        response_ref = secrets.token_urlsafe(24)
         await self._usage.record_chatbot_answer(
             guide.guide_document_id,
             question_kind=question_kind,
             outcome=outcome,
             grounded_section=result.grounded_section,
+            response_ref_digest=hashlib.sha256(response_ref.encode("utf-8")).hexdigest(),
         )
+        return replace(result, response_ref=response_ref)
 
     def _model_name(self) -> str:
         return self._model.model_name if self._model is not None else "unconfigured"

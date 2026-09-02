@@ -255,11 +255,16 @@ class TestApiAndObservability(ChatbotTestCase):
         assert response.status_code == 200
         body = response.json()
         assert body["fallback"] is False
+        assert isinstance(body["response_ref"], str)
+        assert len(body["response_ref"]) >= 16
         assert body["grounded_section"] == "medication"
         assert body["evidence"].startswith("복약 안내 ·")
         assert body["source"] == "담당 의료진이 승인한 진료 안내"
         assert "진단이나 처방 변경" in body["limitation"]
         assert TOKEN not in response.text
+        stored = await PatientUsageEvent.get()
+        assert stored.response_ref_digest == hashlib.sha256(body["response_ref"].encode()).hexdigest()
+        assert body["response_ref"] not in repr(stored.__dict__)
 
     async def test_metrics_have_no_question_answer_or_token(self) -> None:
         await self.approved("KEY-96 로그 합성의원")

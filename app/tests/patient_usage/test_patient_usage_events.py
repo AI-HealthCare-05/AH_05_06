@@ -150,9 +150,14 @@ class TestNothingVerbatimIsStored(PatientUsageTestCase):
         import inspect
 
         params = set(inspect.signature(PatientUsageService.record_chatbot_answer).parameters)
-        assert params == {"self", "guide_document_id", "question_kind", "outcome", "grounded_section"}, (
-            f"인자가 바뀌었다: {sorted(params)}"
-        )
+        assert params == {
+            "self",
+            "guide_document_id",
+            "question_kind",
+            "outcome",
+            "grounded_section",
+            "response_ref_digest",
+        }, f"인자가 바뀌었다: {sorted(params)}"
 
     async def test_a_recorded_answer_keeps_only_the_shape(self) -> None:
         clinic = await make_hospital("챗봇 합성의원")
