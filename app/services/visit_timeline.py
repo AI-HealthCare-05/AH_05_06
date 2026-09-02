@@ -12,14 +12,12 @@
 staff·doctor 만 여는 권한이라 admin 단독 계정은 여기 닿지 못한다(KEY-168).
 """
 
-from app.core.api_errors import ApiError
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import TimelineCategory, TimelineEvent, VisitTimelineEntry, VisitTimelineResponse
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrJob, OcrJobStatus, OcrResult
 from app.models.visits import CheckIn, GuideDocument, GuideEvent, GuideEventType
-from app.repositories.visit_repository import VisitRepository
-from app.services.patient_visit_scope import hospital_id_of
+from app.services.visits import VisitService
 
 _GUIDE_EVENT_NAME: dict[GuideEventType, TimelineEvent] = {
     GuideEventType.GENERATED: TimelineEvent.GUIDE_GENERATED,
@@ -30,23 +28,20 @@ _GUIDE_EVENT_NAME: dict[GuideEventType, TimelineEvent] = {
 
 
 class VisitTimelineService:
-    def __init__(self) -> None:
-        self.repo = VisitRepository()
-
     async def timeline(self, actor: ClinicalActor, visit_id: int) -> VisitTimelineResponse:
-        hospital_id = hospital_id_of(actor)
-        visit = await self.repo.get_scoped(visit_id, hospital_id)
-        if visit is None:
-            # 다른 병원 진료도 같은 응답을 준다 — 리소스가 있는지 없는지를
-            # 상태 코드로 구분해 노출하지 않는다.
-            raise ApiError(404, "VISIT_NOT_FOUND", "진료를 찾을 수 없습니다.")
+        # 존재·병원 범위 확인은 VisitService.get 과 한 규칙을 쓴다 — 없는 진료와
+        # 남의 병원 진료를 똑같이 404 로 답해 존재 여부를 상태 코드로 노출하지
+        # 않는다. 같은 네 줄을 두 곳에 두면 한쪽만 고쳐질 때 정보 노출 구멍이 된다.
+        await VisitService().get(actor, visit_id)
 
+        # 각 표는 visit_id 로만 좁힌다 — 병원 범위는 위 get 이 이미 확인했다.
         entries: list[VisitTimelineEntry] = []
         entries += await self._document_entries(visit_id)
         entries += await self._ocr_entries(visit_id)
         entries += await self._guide_entries(visit_id)
 
-        # 병원 범위는 이미 visit 로 확인했다. 각 표는 visit_id 로만 좁힌다.
+        # at 이 같은 사건은 파이썬 안정 정렬이라 합친 차례(문서 → 판독 → 안내문)로
+        # 남는다 — 같은 시각이면 이 순서로 보이게 하려는 의도다.
         entries.sort(key=lambda entry: entry.at)
         return VisitTimelineResponse(visit_id=visit_id, entries=entries)
 
