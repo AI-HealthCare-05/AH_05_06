@@ -474,11 +474,12 @@ def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
 
     for row in rows[header_row_idx + 1 :]:
         class_blocks = [b for b in row if b.right > class_l and b.left < class_r]
-        if not class_blocks:
-            continue
-        class_text = " ".join(b.text.strip() for b in class_blocks).strip()
-        if class_text not in _RX_MED_CLASSES:
-            continue
+        if class_blocks:
+            class_text = " ".join(b.text.strip() for b in class_blocks).strip()
+            # 코드분류가 명시적으로 약품 분류 밖이면 제외 (예: 진찰료).
+            # 빈 셀(OCR 미검출)은 약품 행으로 간주한다.
+            if class_text and class_text not in _RX_MED_CLASSES:
+                continue
 
         name_blocks = [b for b in row if b.right > name_l and b.left < name_r]
         if not name_blocks:

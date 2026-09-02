@@ -1127,11 +1127,72 @@ function stateTakesFocus(tone) {
   function groupsHtml() {
     var split = splitFields(result.fields);
     /* 처방 여섯은 판독이 못 읽어도 자리에 세운다 — 안내문이 그것으로
-       만들어져서, 화면에서 사라지면 빠진 채로 만들어진다 (S1-7). */
+       만들어져서, 화면에서 사라지면 빠진 채로 만들어진다 (S1-7).
+       인덱스형 필드(MEDICATION_NAME_2 등)는 prescriptionHtml 안에서
+       extraDrugRowsHtml이 별도로 처리한다. */
     var rx = withMissingRows(split.prescription, PRESCRIPTION_CORE);
+    /* 인덱스형 처방 필드를 rx에 추가한다 — prescriptionHtml의 extraDrugRowsHtml이
+       분류해 가로 레이아웃으로 세운다. */
+    for (var i = 0; i < split.prescription.length; i++) {
+      if (/^[A-Z_]+_\d+$/.test(split.prescription[i].field_type)) {
+        rx.push(split.prescription[i]);
+      }
+    }
     /* 검사값도 자리를 세운다 — 안 세우면 못 읽은 것과 안 한 것을 구별할 수 없다 */
     var labs = withMissingRows(split.labs, LAB_CORE);
     return prescriptionHtml(rx) + labsHtml(labs) + notReadyHtml();
+  }
+
+  /* 추가 약품 행 — MEDICATION_NAME_2 / DURATION_DAYS_2 등을 상단 처방 줄과
+     같은 가로 레이아웃으로 세운다. 각 인덱스(2, 3 …)별로 짝을 지어 .top 행을 만든다. */
+  function extraDrugRowsHtml(rows) {
+    var pairs = {};
+    var order = [];
+    for (var i = 0; i < rows.length; i++) {
+      var ft = rows[i].field_type;
+      var m = ft.match(/^(MEDICATION_NAME|DURATION_DAYS)_(\d+)$/);
+      if (!m) continue;
+      var idx = m[2];
+      if (!pairs[idx]) { pairs[idx] = {}; order.push(idx); }
+      pairs[idx][m[1]] = rows[i];
+    }
+    if (!order.length) return "";
+
+    return order.map(function (idx) {
+      var nameField = pairs[idx]["MEDICATION_NAME"];
+      var daysField = pairs[idx]["DURATION_DAYS"];
+
+      /* 약품명 셀 — 첫 번째 처방 행의 setPickerHtml(static) 과 같은 방식으로
+         값만 표시한다. fieldBody를 쓰면 [수정]·[이미지1]이 이 칸에도 붙어
+         오른쪽 처방일수 셀과 중복된다. */
+      var nameCell = "";
+      if (nameField) {
+        var nameVal = nameField.value != null ? String(nameField.value) : "";
+        nameCell = (
+          '<div class="top__cell top__cell--wide">' +
+          '<span class="top__label">처방</span>' +
+          '<div class="top__pick top__pick--static">' + escapeHtml(nameVal) + "</div>" +
+          "</div>"
+        );
+      }
+
+      /* 처방일수 셀 — fieldBody 그대로([수정]·[이미지1] 포함). */
+      var daysCell = "";
+      if (daysField) {
+        var madeDays = fieldBody(daysField);
+        daysCell = (
+          '<div class="top__cell' + (madeDays.clash ? " field--clash" : "") + '">' +
+          '<span class="top__label">처방일수</span>' +
+          '<div class="field field--' + madeDays.state + '">' + madeDays.body + "</div>" +
+          "</div>"
+        );
+      }
+
+      /* 진단 셀(flex: 0 0 206px)과 너비를 맞추는 빈 자리 — 처방 텍스트의
+         왼쪽이 첫 번째 행과 정렬된다. */
+      var spacer = '<div class="top__cell" aria-hidden="true"></div>';
+      return '<div class="top">' + spacer + nameCell + daysCell + "</div>";
+    }).join("");
   }
 
   /* ① 진단 · 처방 */
@@ -1157,6 +1218,15 @@ function stateTakesFocus(tone) {
       return topTypes.indexOf(field.field_type) === -1;
     });
 
+    /* 인덱스형 약품 쌍(MEDICATION_NAME_2 / DURATION_DAYS_2 등)은 .top 가로 행으로,
+       나머지(1회량·일일횟수·처방일 등)는 기존 rows 목록으로 세운다. */
+    var extraRows = rest.filter(function (f) {
+      return /^(MEDICATION_NAME|DURATION_DAYS)_\d+$/.test(f.field_type);
+    });
+    var otherRest = rest.filter(function (f) {
+      return !/^(MEDICATION_NAME|DURATION_DAYS)_\d+$/.test(f.field_type);
+    });
+
     return (
       '<section class="box"><div class="box__head">' +
       '<h2 class="box__title">진단 · 처방</h2>' +
@@ -1172,8 +1242,9 @@ function stateTakesFocus(tone) {
       ">저장</button>" +
       "</div>" +
       topRowHtml(rows) +
+      extraDrugRowsHtml(extraRows) +
       (meta.length ? '<p class="box__meta box__meta--top">' + meta.join(" · ") + "</p>" : "") +
-      (rest.length ? '<div class="rows">' + rest.map(renderField).join("") + "</div>" : "") +
+      (otherRest.length ? '<div class="rows">' + otherRest.map(renderField).join("") + "</div>" : "") +
       "</section>"
     );
   }
