@@ -71,6 +71,11 @@
   <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/ocr-review.html?mock=1" data-prep=""></iframe></div>
   <p class="wf__why">판독 항목이 스물하나다 — 증상 · 초음파 · 혈액검사 세 묶음. 못 읽은 값은 「?」로 비워 두고 0 이나 「-」로 채우지 않는다. 처방은 설정에 등록된 약속처방에서 고른다 — 세트에 약 목록 · 확인 항목 · 주의 문구가 함께 묶여 있어서, 자유 입력이면 붙일 문구를 못 찾는다.</p>
 </section>
+<section class="wf" data-screen-label="D1-1">
+  <div class="wf__head"><span class="wf__id">D1-1</span><span class="wf__name">의사 — 최종 확인 · 승인</span><span class="wf__size">1280 × 800</span></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/doctor.html?mock=1" data-prep=""></iframe></div>
+  <p class="wf__why">승인이 곧 발송 예약이다 — 승인과 발송 사이에 사람이 한 번 더 손대는 자리를 만들지 않는다.</p>
+</section>
 <section class="wf" data-screen-label="S2-1">
   <div class="wf__head"><span class="wf__id">S2-1</span><span class="wf__name">환자 관리</span><span class="wf__size">1280 × 800</span></div>
   <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/manage.html?mock=1" data-prep=""></iframe></div>
@@ -86,14 +91,9 @@
   <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/manage.html?mock=1" data-prep="[].slice.call(d.querySelectorAll(&#x27;[data-view]&#x27;)).filter(function(b){return b.textContent.indexOf(&#x27;발송 이력&#x27;)&gt;=0})[0].click();"></iframe></div>
   <p class="wf__why">실패가 맨 위다. 열람은 안내문 단위로 기록된다 — 같은 안내문의 문자는 다 열람으로 뜬다. CSV 는 셈식 주입을 막고 EUC-KR 로 센다. 재승인은 발송기가 없어 안 만들었다.</p>
 </section>
-<section class="wf" data-screen-label="D1-1">
-  <div class="wf__head"><span class="wf__id">D1-1</span><span class="wf__name">의사 — 최종 확인 · 승인</span><span class="wf__size">1280 × 800</span></div>
-  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/doctor.html?mock=1" data-prep=""></iframe></div>
-  <p class="wf__why">승인이 곧 발송 예약이다 — 승인과 발송 사이에 사람이 한 번 더 손대는 자리를 만들지 않는다.</p>
-</section>
 <section class="wf" data-screen-label="D2-3">
   <div class="wf__head"><span class="wf__id">D2-3</span><span class="wf__name">설정 — 처방</span><span class="wf__size">1280 × 800</span></div>
-  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/settings.html?mock=1" data-prep="var h=[].slice.call(d.querySelectorAll(&#x27;[data-fold]&#x27;)).filter(function(x){return x.getAttribute(&#x27;data-fold&#x27;)===&#x27;sets|ENDOMETRIOSIS&#x27;})[0]; h&amp;&amp;h.click();"></iframe></div>
+  <div class="wf__stage"><iframe class="wf__frame" loading="lazy" data-src="/settings.html?mock=1" data-prep="var h=[].slice.call(d.querySelectorAll(&#x27;[data-fold]&#x27;)).filter(function(x){return x.getAttribute(&#x27;data-fold&#x27;)===&#x27;sets|ENDOMETRIOSIS&#x27;})[0]; if(h){h.click(); setTimeout(function(){var r=d.querySelector(&#x27;[data-set]&#x27;); r&amp;&amp;r.click();},400);}"></iframe></div>
   <p class="wf__why">왼쪽은 두 단짜리 나무다. 갈래 머리에서 회색 띠를 걷었다 — 화면에서 제일 조작기처럼 생긴 것이 아무 일도 안 하는 줄이었다. 회색은 이제 「손이 닿았거나 고른 줄」 한 가지만 뜻한다. 한 번에 한 묶음만 펼친다(넷 다 펼치면 937px, 보이는 높이는 689px).</p>
 </section>
 <section class="wf" data-screen-label="D2-4">
@@ -137,7 +137,7 @@
       } catch (e) {}
       var prep = f.dataset.prep;
       if (prep) setTimeout(function () { try { new Function("d", prep)(d); } catch (e) {} }, 1200);
-      setTimeout(function () { next(i + 1); }, 700);
+      setTimeout(function () { next(i + 1); }, 1100);
     });
     try {
       sessionStorage.setItem("useMock", "1");
