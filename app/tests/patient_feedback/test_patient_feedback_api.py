@@ -123,6 +123,28 @@ class TestGuideFeedbackSubmission(PatientFeedbackApiTestCase):
         assert response.json()["code"] == "PATIENT_SESSION_EXPIRED"
         assert await PatientFeedback.all().count() == 0
 
+    async def test_link_token_and_unknown_fields_cannot_be_submitted(self) -> None:
+        await self.approved()
+        payload = {**self.guide_payload(), "link_token": TOKEN}
+
+        async with await self.client() as client:
+            response = await client.post("/api/v1/patient-feedback", json=payload)
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "INVALID_REQUEST"
+        assert await PatientFeedback.all().count() == 0
+
+    async def test_details_longer_than_the_contract_is_rejected(self) -> None:
+        await self.approved()
+        payload = {**self.guide_payload(), "details": "합" * 1001}
+
+        async with await self.client() as client:
+            response = await client.post("/api/v1/patient-feedback", json=payload)
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "INVALID_REQUEST"
+        assert await PatientFeedback.all().count() == 0
+
 
 class TestChatbotFeedbackReference(PatientFeedbackApiTestCase):
     async def test_response_reference_can_only_select_an_event_from_the_session_guide(self) -> None:
@@ -221,9 +243,16 @@ class TestAdminFeedbackList(PatientFeedbackApiTestCase):
             response = await client.get(f"/api/v1/admin/patient-feedback/{own.patient_feedback_id}")
 
         assert response.status_code == 200
-        assert response.json()["details"] == "합성 상세 내용"
-        assert response.json()["content_key"] == "medication.why"
-        assert "idempotency_digest" not in response.json()
+        body = response.json()
+        assert body["details"] == "합성 상세 내용"
+        assert body["content_key"] == "medication.why"
+        assert not {
+            "idempotency_digest",
+            "response_ref_digest",
+            "patient_session",
+            "link_token",
+            "otp",
+        } & set(body)
 
     async def test_feedback_from_another_hospital_is_hidden(self) -> None:
         other = await self.feedback("KEY-239 상세 타병원", details="타 병원 상세")
