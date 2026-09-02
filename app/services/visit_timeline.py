@@ -27,7 +27,6 @@
 staff·doctor 만 여는 권한이라 admin 단독 계정은 여기 닿지 못한다(KEY-168).
 """
 
-from app.core.api_errors import ApiError
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.visits import (
     ScheduledMessage,
@@ -49,8 +48,7 @@ from app.models.visits import (
     PatientUsageEventType,
     Visit,
 )
-from app.repositories.visit_repository import VisitRepository
-from app.services.patient_visit_scope import hospital_id_of
+from app.services.visits import VisitService
 
 _GUIDE_EVENT_NAME: dict[GuideEventType, TimelineEvent] = {
     GuideEventType.GENERATED: TimelineEvent.GUIDE_GENERATED,
@@ -68,28 +66,24 @@ _PATIENT_EVENT_NAME: dict[PatientUsageEventType, TimelineEvent] = {
 
 
 class VisitTimelineService:
-    def __init__(self) -> None:
-        self.repo = VisitRepository()
-
     async def timeline(self, actor: ClinicalActor, visit_id: int) -> VisitTimelineResponse:
-        hospital_id = hospital_id_of(actor)
-        visit = await self.repo.get_scoped(visit_id, hospital_id)
-        if visit is None:
-            # 다른 병원 진료도 같은 응답을 준다 — 리소스가 있는지 없는지를
-            # 상태 코드로 구분해 노출하지 않는다.
-            raise ApiError(404, "VISIT_NOT_FOUND", "진료를 찾을 수 없습니다.")
+        # 존재·병원 범위 확인은 VisitService.get 과 한 규칙을 쓴다 — 없는 진료와
+        # 남의 병원 진료를 똑같이 404 로 답해 존재 여부를 상태 코드로 노출하지
+        # 않는다. 같은 네 줄을 두 곳에 두면 한쪽만 고쳐질 때 정보 노출 구멍이 된다.
+        # **돌려받은 진료를 버리지 않는다.** 이력의 첫 줄(`VISIT_CREATED`)이
+        # `visited_at` 에서 나오는데, 범위만 확인하고 버리면 그 값을 얻으려고
+        # 같은 진료를 한 번 더 읽게 된다.
+        visit = await VisitService().get(actor, visit_id)
 
-        # 병원 범위는 이미 visit 로 확인했다. 각 표는 visit_id 로만 좁힌다.
+        # 각 표는 visit_id 로만 좁힌다 — 병원 범위는 위 get 이 이미 확인했다.
         entries: list[VisitTimelineEntry] = [self._visit_entry(visit)]
         entries += await self._document_entries(visit_id)
         entries += await self._ocr_entries(visit_id)
         entries += await self._guide_entries(visit_id)
         entries += await self._patient_entries(visit_id)
 
-        # **오래된 것이 위다.** 진료가 어떻게 흘러갔는지 읽는 자리라, 최신순
-        # 으로 뒤집으면 거꾸로 읽게 된다. 파이썬 정렬은 안정 정렬이라 `at` 이
-        # 같은 사건은 위에서 더한 차례(진료 → 문서 → 판독 → 안내문 → 환자)로
-        # 남는다 — 씨앗 데이터처럼 시각이 겹칠 때 그 차례가 자연스럽다.
+        # at 이 같은 사건은 파이썬 안정 정렬이라 합친 차례(진료 → 문서 → 판독 →
+        # 안내문 → 환자)로 남는다 — 같은 시각이면 이 순서로 보이게 하려는 의도다.
         entries.sort(key=lambda entry: entry.at)
         return VisitTimelineResponse(
             visit_id=visit_id,
@@ -200,11 +194,9 @@ class VisitTimelineService:
                 )
             )
             if job.status == OcrJobStatus.COMPLETED:
-                # `completed_at` 은 `null=True` 다. 실패 쪽만 `updated_at` 으로
-                # 대비하고 완료 쪽은 안 하고 있었는데, 그러면 상태만 바뀌고
-                # 시각이 안 채워진 작업은 이력에 `OCR_STARTED` 만 남아
-                # **스탭이 판독이 아직 도는 중으로 읽는다.** 같은 값의 결측을
-                # 두 가지로 다루면 한쪽을 고칠 때 다른 쪽을 놓친다.
+                # completed_at 은 null 가능(app/models/ocr.py). 실패 쪽과 같은
+                # 규칙으로 updated_at 을 대비값으로 쓴다 — 없으면 완료 사건이
+                # 조용히 빠져 판독이 아직 도는 것처럼 읽힌다.
                 entries.append(
                     VisitTimelineEntry(
                         at=job.completed_at or job.updated_at,
@@ -251,11 +243,9 @@ class VisitTimelineService:
         for event in await GuideEvent.filter(guide_document_id=guide.guide_document_id).order_by("created_at"):
             name = _GUIDE_EVENT_NAME.get(event.event_type)
             if name is None:
-                # **모르는 사건은 건너뛴다.** 사전을 `[]` 로 꺼내고 있었는데,
-                # 그러면 `GuideEventType` 에 값이 하나 늘 때마다 이 화면이
-                # 통째로 500 이 된다. 실제로 `SUBMITTED`·`UNAPPROVED` 가
-                # `#176` 으로 늘었고, 제출은 승인 앞에 필수라 거의 모든
-                # 안내문에 남는다 — 드문 경우가 아니었다.
+                # 이름표 없는 사건 종류는 건너뛴다 — GuideEventType 이 늘 때마다
+                # (예: SUBMITTED·UNAPPROVED) 이력 한 줄 때문에 패널 전체가 500 이
+                # 되지 않도록. 새 사건을 보이려면 _GUIDE_EVENT_NAME 에 값을 더한다.
                 continue
             entries.append(
                 VisitTimelineEntry(
