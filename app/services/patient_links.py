@@ -5,6 +5,7 @@
 모델에서 직접 확인할 수 있는 값만 보탠다.
 """
 
+import asyncio
 import hashlib
 import re
 import secrets
@@ -181,7 +182,7 @@ class PatientLinkService:
     async def get_approved_guide(self, raw_token: str) -> tuple[PatientGuideLink, GuideDocument]:
         link = (
             await PatientGuideLink.filter(token_digest=digest_link_token(raw_token))
-            .prefetch_related("guide_document__sections")
+            .prefetch_related("guide_document__sections", "guide_document__visit")
             .first()
         )
         if link is None:
@@ -206,13 +207,14 @@ class PatientLinkService:
         """
 
         link, guide = await self.get_approved_guide(raw_token)
-        await guide.fetch_related("visit")
         visit = guide.visit
         visit_date = _clinic_date(visit.visited_at)
 
-        hospital = await Hospital.filter(hospital_id=visit.hospital_id).first()
-        latest_confirmed_field = (
-            await OcrField.filter(
+        # 아래 네 조회는 서로의 결과에 의존하지 않는다. 원격 DB 환경에서
+        # 순차 RTT가 환자 화면 지연으로 그대로 더해지지 않도록 함께 실행한다.
+        hospital_query = Hospital.filter(hospital_id=visit.hospital_id).first()
+        latest_confirmed_field_query = (
+            OcrField.filter(
                 ocr_result__ocr_job__visit_id=guide.visit_id,
                 ocr_result__ocr_job__hospital_id=visit.hospital_id,
                 is_confirmed=True,
@@ -222,11 +224,8 @@ class PatientLinkService:
             .order_by("-confirmed_at", "-ocr_field_id")
             .first()
         )
-        progress_started_at = (
-            latest_confirmed_field.ocr_result.ocr_job.started_at if latest_confirmed_field is not None else None
-        )
-        diagnosis = (
-            await OcrField.filter(
+        diagnosis_query = (
+            OcrField.filter(
                 ocr_result__ocr_job__visit_id=guide.visit_id,
                 ocr_result__ocr_job__hospital_id=visit.hospital_id,
                 field_type="DIAGNOSIS",
@@ -235,12 +234,19 @@ class PatientLinkService:
             .order_by("-confirmed_at", "-ocr_field_id")
             .first()
         )
+        prescription_query = Prescription.filter(visit_id=guide.visit_id).prefetch_related("items").first()
+        hospital, latest_confirmed_field, diagnosis, prescription = await asyncio.gather(
+            hospital_query,
+            latest_confirmed_field_query,
+            diagnosis_query,
+            prescription_query,
+        )
 
-        prescription = await Prescription.filter(visit_id=guide.visit_id).first()
+        progress_started_at = (
+            latest_confirmed_field.ocr_result.ocr_job.started_at if latest_confirmed_field is not None else None
+        )
         items = (
-            await PrescriptionItem.filter(prescription_id=prescription.prescription_id).order_by("prescription_item_id")
-            if prescription is not None
-            else []
+            sorted(prescription.items, key=lambda item: item.prescription_item_id) if prescription is not None else []
         )
         primary_item = next(
             (item for item in items if item.duration_days is not None and item.duration_days > 0),

@@ -129,6 +129,7 @@ function load(options = {}) {
   const context = vm.createContext({
     URLSearchParams,
     Date,
+    Intl,
     Promise,
     setTimeout,
     sessionStorage: box,
@@ -217,6 +218,19 @@ test('v3 중첩 DTO를 P2~P5 화면 모델로 손실 없이 매핑한다', () =>
     p: ['규칙적인 수면 시간을 유지해 주세요.'],
   });
   assert.deepEqual(result.chat.chips, ['내 약이 뭐였죠?', '언제까지 먹나요?']);
+});
+
+test('UTC 승인 시각은 진료소 시간대의 승인일로 표시한다', () => {
+  const { context } = load();
+  const result = plain(context.adaptGuideResponse(payload([], {
+    approved_at: '2026-08-31T18:00:00+00:00',
+  })));
+
+  assert.equal(result.approvedAt, '2026.09.01');
+  assert.throws(
+    () => context.adaptGuideResponse(payload([], { approved_at: '2026-09-01T03:00:00' })),
+    (error) => error.code === 'GUIDE_CONTRACT_MISMATCH',
+  );
 });
 
 test('기존 sections-only 응답도 승인 문구 기반 안전 모델로 호환한다', () => {
@@ -344,6 +358,16 @@ test('HTML·합성 표식은 제거하되 일반 특수문자는 이중 이스�
   assert.doesNotMatch(serialized, /&(?:amp|lt|gt|quot|#39);/);
 });
 
+test('승인 문장 중간의 합성 계열 의학 표현은 섹션을 지우지 않는다', () => {
+  const { context } = load();
+  const result = plain(context.adaptGuideResponse(payload([
+    { key: 'medication', body: '이 약은 [합성 프로게스틴] 제제입니다.' },
+  ])));
+
+  assert.equal(result.stat.body, '이 약은 [합성 프로게스틴] 제제입니다.');
+  assert.equal(result.guide.summary, '이 약은 [합성 프로게스틴] 제제입니다.');
+});
+
 test('실제 API 요청은 토큰을 인코딩하고 브라우저 저장소에 남기지 않는다', async () => {
   const token = 'synthetic/key?241#토큰';
   const box = storage();
@@ -361,12 +385,15 @@ test('실제 API 요청은 토큰을 인코딩하고 브라우저 저장소에 �
 
 test('실제 /guide.html은 최종 와이어프레임 자산을 사용한다', () => {
   const html = fs.readFileSync(path.join(FRONTEND, 'guide.html'), 'utf8');
+  const preview = fs.readFileSync(path.join(FRONTEND, 'patient_wireframe/html/guide.html'), 'utf8');
   const chat = fs.readFileSync(path.join(FRONTEND, 'patient_wireframe/js/chat.js'), 'utf8');
   const fab = fs.readFileSync(path.join(FRONTEND, 'patient_wireframe/component/fab.js'), 'utf8');
 
   assert.match(html, /\/patient_wireframe\/js\/guide-api\.js/);
   assert.match(html, /\/patient_wireframe\/js\/guide\.js/);
   assert.match(html, /id="guide-body"/);
+  assert.match(preview, /location\.replace\('\.\.\/\.\.\/guide\.html'/);
+  assert.doesNotMatch(preview, /guide-api\.js|guide\.css|id="guide-body"/);
   assert.match(chat, /!GUIDE_MOCK\) return/);
   assert.match(fab, /\/patient_wireframe\/assets\/chat_bot\.png/);
   assert.doesNotMatch(fab, /src="\.\.\/assets\//);
@@ -375,6 +402,9 @@ test('실제 /guide.html은 최종 와이어프레임 자산을 사용한다', (
 test('P2~P5 렌더러가 v3 진행률·빈 목표·부분 펼침·승인 시각 계약을 유지한다', () => {
   assert.match(GUIDE_SOURCE, /stat-bar-wrap/);
   assert.match(GUIDE_SOURCE, /s\.dayOn !== null/);
+  assert.match(GUIDE_SOURCE, /s\.prescribed !== null && s\.prescribed > 0/);
+  assert.match(GUIDE_SOURCE, /처방 일수가 없어 복약 기간을 표시하지 않아요/);
+  assert.doesNotMatch(GUIDE_SOURCE, /if \(s\.prescribed !== null\) progressParts/);
   assert.match(GUIDE_SOURCE, /등록된 검사 목표가 없어 차트를 표시하지 않아요/);
   assert.match(GUIDE_SOURCE, /g\.goalSay/);
   assert.match(GUIDE_SOURCE, /다음 방문 계획/);

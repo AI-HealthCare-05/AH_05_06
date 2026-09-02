@@ -164,9 +164,9 @@ function validKeys(value, allowed, required) {
 
 function publicBody(body) {
   if (typeof body !== 'string') throw new GuideError(GUIDE_ERROR.CONTRACT);
-  var cleaned = body.trim().replace(/^\[합성[^\]]*\]\s*/, '');
-  if (/\[합성[^\]]*\]/.test(cleaned)) return '';
-  return cleaned;
+  /* fixture가 붙이는 선두 표식만 제거한다. 승인 문장 중간의
+     "[합성 프로게스틴]" 같은 실제 의학 표현은 콘텐츠이므로 보존한다. */
+  return body.trim().replace(/^(?:\[합성[^\]]*\]\s*)+/, '');
 }
 
 function optionalBody(value) {
@@ -191,10 +191,17 @@ function bodyLines(body) {
 
 function displayDate(value) {
   var date = new Date(value);
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value) || isNaN(date.getTime())) {
+  if (typeof value !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+      isNaN(date.getTime())) {
     throw new GuideError(GUIDE_ERROR.CONTRACT);
   }
-  return value.slice(0, 10).replace(/-/g, '.');
+  var parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  var values = {};
+  parts.forEach(function (part) { values[part.type] = part.value; });
+  return values.year + '.' + values.month + '.' + values.day;
 }
 
 function displayVisit(value) {

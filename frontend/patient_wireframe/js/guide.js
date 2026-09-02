@@ -148,7 +148,7 @@
     if (s.drugSub) drugCard.appendChild(text('div', 'stat-drug-sub', s.drugSub));
 
     var progressParts = [];
-    if (s.prescribed !== null) progressParts.push(s.prescribed + '일분');
+    if (s.prescribed !== null && s.prescribed > 0) progressParts.push(s.prescribed + '일분');
     if (s.dayOn !== null) progressParts.push(s.dayOn + '일째');
     if (s.remaining !== null) progressParts.push(s.remaining + '일 남음');
     if (progressParts.length) {
@@ -166,6 +166,9 @@
       progress.appendChild(fill);
       drugCard.appendChild(progress);
       drugCard.appendChild(text('div', 'stat-bar-pct', s.pct + '% 복용했어요'));
+    } else if (s.prescribed === 0) {
+      drugCard.appendChild(text('div', 'stat-progress-empty',
+        '처방 일수가 없어 복약 기간을 표시하지 않아요.'));
     } else if (s.prescribed !== null && s.prescribed > 0) {
       drugCard.appendChild(text('div', 'stat-progress-empty',
         '복약 시작일이 없어 진행률과 남은 일수를 표시하지 않아요.'));
