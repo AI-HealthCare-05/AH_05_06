@@ -10,6 +10,7 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from tortoise.exceptions import IntegrityError
 from tortoise.timezone import now
@@ -17,6 +18,7 @@ from tortoise.timezone import now
 from app.core.auth_errors import AuthError as ApiError
 from app.core.masking import mask_phone
 from app.core.time import DISPLAY_TIMEZONE, as_utc
+from app.models.catalog import BaselineDirection, LabBaseline, SetDisease
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.staffs import Hospital
@@ -25,6 +27,8 @@ from app.models.visits import GuideDocument, GuideSectionKey, GuideStatus, Patie
 LINK_TTL = timedelta(hours=72)
 ISSUER_ROLES = frozenset({"staff", "doctor"})
 _DRUG_WITH_INGREDIENT = re.compile(r"^(?P<brand>[^()]+?)\((?P<ingredient>[^)]+)\)(?P<suffix>.*)$")
+_LAB_KEY = re.compile(r"[^0-9a-z가-힣]+")
+_NUMBER = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,11 +52,21 @@ class PatientMedicationData:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientGuideGoalData:
+    name: str
+    current: str | None
+    target: str | None
+    has_chart: bool
+    range_label: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class PatientGuideData:
     visit_date: date
     clinic_name: str | None
     disease_name: str | None
     medication: PatientMedicationData | None
+    goals: list[PatientGuideGoalData]
     sections: dict[GuideSectionKey, str]
 
 
@@ -139,6 +153,97 @@ def _medication_data(
         prescribed=prescribed,
         progress=progress,
     )
+
+
+def _normalize_lab_key(value: str) -> str:
+    return _LAB_KEY.sub("", value.casefold())
+
+
+def _confirmed_disease(value: str | None) -> SetDisease | None:
+    normalized = _normalize_lab_key(value or "")
+    if "pcos" in normalized or "다낭성" in normalized:
+        return SetDisease.PCOS
+    if "endometriosis" in normalized or "자궁내막증" in normalized:
+        return SetDisease.ENDOMETRIOSIS
+    return None
+
+
+def _decimal_from_lab(value: str | None) -> Decimal | None:
+    if not value:
+        return None
+    matched = _NUMBER.search(value.replace(",", ""))
+    if matched is None:
+        return None
+    try:
+        return Decimal(matched.group())
+    except InvalidOperation:
+        return None
+
+
+def _display_decimal(value: Decimal) -> str:
+    return format(value.normalize(), "f")
+
+
+def _baseline_label(baseline: LabBaseline) -> str | None:
+    low = baseline.low
+    high = baseline.high
+    unit = f" {baseline.unit.strip()}" if baseline.unit.strip() else ""
+    if baseline.by_age:
+        return "연령별 기준"
+    if low is not None and high is not None:
+        return f"기준 {_display_decimal(low)}~{_display_decimal(high)}{unit}"
+    if low is not None:
+        return f"기준 {_display_decimal(low)}{unit} 이상"
+    if high is not None:
+        return f"기준 {_display_decimal(high)}{unit} 미만"
+    return None
+
+
+def _target_for_baseline(baseline: LabBaseline, current: Decimal | None) -> Decimal | None:
+    if current is None or baseline.by_age or baseline.direction is BaselineDirection.REFERENCE:
+        return None
+    low = baseline.low
+    high = baseline.high
+    if low is not None and high is not None:
+        if current < low:
+            return low
+        if current > high:
+            return high
+        # 단일 목표점 계약으로 정상 범위를 억지로 한 숫자로 축약하지 않는다.
+        return None
+    return low if low is not None else high
+
+
+def _goal_data(baseline: LabBaseline, field: OcrField) -> PatientGuideGoalData:
+    current = _decimal_from_lab(field.value)
+    target = _target_for_baseline(baseline, current)
+    return PatientGuideGoalData(
+        name=baseline.name,
+        current=_display_decimal(current) if current is not None else None,
+        target=_display_decimal(target) if target is not None else None,
+        has_chart=current is not None and target is not None,
+        range_label=_baseline_label(baseline),
+    )
+
+
+def _match_goals(
+    baselines: list[LabBaseline],
+    confirmed_fields: list[OcrField],
+) -> list[PatientGuideGoalData]:
+    latest_by_type: dict[str, OcrField] = {}
+    for field in confirmed_fields:
+        latest_by_type.setdefault(_normalize_lab_key(field.field_type), field)
+
+    goals: list[PatientGuideGoalData] = []
+    for baseline in baselines:
+        aliases = (baseline.name, *baseline.keywords.split(","))
+        matched_field = next(
+            (latest_by_type[key] for alias in aliases if (key := _normalize_lab_key(alias)) and key in latest_by_type),
+            None,
+        )
+        if matched_field is not None:
+            goals.append(_goal_data(baseline, matched_field))
+    return goals
 
 
 @dataclass(frozen=True)
@@ -285,6 +390,7 @@ class PatientLinkService:
                 ocr_result__ocr_job__hospital_id=visit.hospital_id,
                 field_type="DIAGNOSIS",
                 is_confirmed=True,
+                confirmed_at__isnull=False,
             )
             .order_by("-confirmed_at", "-ocr_field_id")
             .first()
@@ -318,6 +424,29 @@ class PatientLinkService:
         )
 
         diagnosis_name = diagnosis.value.strip() if diagnosis is not None and diagnosis.value else None
+        disease = _confirmed_disease(diagnosis_name)
+        goals: list[PatientGuideGoalData] = []
+        if disease is not None:
+            confirmed_fields_query = OcrField.filter(
+                ocr_result__ocr_job__visit_id=guide.visit_id,
+                ocr_result__ocr_job__hospital_id=visit.hospital_id,
+                is_confirmed=True,
+                confirmed_at__isnull=False,
+            ).order_by("-confirmed_at", "-ocr_field_id")
+            baselines_query = LabBaseline.filter(
+                hospital_id=visit.hospital_id,
+                doctor_id=visit.doctor_id,
+                disease=disease,
+            ).order_by("position", "lab_baseline_id")
+            confirmed_fields, baselines = await asyncio.gather(confirmed_fields_query, baselines_query)
+            if not baselines and visit.doctor_id is not None:
+                baselines = await LabBaseline.filter(
+                    hospital_id=visit.hospital_id,
+                    doctor_id=None,
+                    disease=disease,
+                ).order_by("position", "lab_baseline_id")
+            goals = _match_goals(list(baselines), list(confirmed_fields))
+
         disease_name: str | None
         if diagnosis_name and medication:
             disease_name = f"{diagnosis_name} · {medication.short_name} 복용 중"
@@ -336,6 +465,7 @@ class PatientLinkService:
                 clinic_name=hospital.name if hospital is not None else None,
                 disease_name=disease_name,
                 medication=medication,
+                goals=goals,
                 sections={section.section_key: section.body for section in guide.sections},
             ),
         )
