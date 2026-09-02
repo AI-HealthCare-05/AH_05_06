@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>환자 피드백 관리 · 복약 안내 도우미</title>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/admin-feedback.css" />
+  </head>
+  <body>
+    <header class="feedback-header">
+      <div>
+        <p class="feedback-header__eyebrow">관리</p>
+        <h1>환자 피드백</h1>
+      </div>
+      <button type="button" id="logout">로그아웃</button>
+    </header>
+    <main class="feedback-main">
+      <form class="feedback-filters" id="feedback-filters">
+        <label>대상
+          <select id="target-filter">
+            <option value="">전체</option>
+            <option value="CHATBOT_RESPONSE">챗봇 답변</option>
+            <option value="GUIDE_SECTION">안내 내용</option>
+          </select>
+        </label>
+        <label>유형
+          <select id="category-filter">
+            <option value="">전체</option>
+            <option value="HELPFUL">도움됨</option>
+            <option value="UNHELPFUL">도움 안 됨</option>
+            <option value="WRONG">안내와 다름</option>
+            <option value="HARD_TO_UNDERSTAND">이해하기 어려움</option>
+            <option value="UNSAFE">부적절한 의료 안내</option>
+            <option value="OTHER">기타</option>
+          </select>
+        </label>
+        <button type="submit">조회</button>
+      </form>
+      <p class="feedback-state" id="feedback-state" role="status" aria-live="polite">불러오는 중…</p>
+      <div class="feedback-table-wrap" id="feedback-table-wrap" hidden>
+        <table class="feedback-table">
+          <thead><tr><th>접수 시각</th><th>진료</th><th>화면</th><th>유형</th><th>상세</th></tr></thead>
+          <tbody id="feedback-rows"></tbody>
+        </table>
+      </div>
+      <nav class="feedback-pagination" aria-label="피드백 페이지">
+        <button type="button" id="page-prev">이전</button>
+        <span id="page-label"></span>
+        <button type="button" id="page-next">다음</button>
+      </nav>
+      <section class="feedback-detail" id="feedback-detail" hidden aria-labelledby="feedback-detail-title">
+        <div class="feedback-detail__head">
+          <h2 id="feedback-detail-title">피드백 상세</h2>
+          <button type="button" id="detail-close">닫기</button>
+        </div>
+        <p class="feedback-state" id="detail-state" role="status" aria-live="polite"></p>
+        <dl id="detail-fields"></dl>
+      </section>
+    </main>
+    <script src="/js/api.js"></script>
+    <script src="/js/session.js"></script>
+    <script src="/js/admin-feedback-api.js"></script>
+    <script src="/js/admin-feedback.js"></script>
+  </body>
+</html>

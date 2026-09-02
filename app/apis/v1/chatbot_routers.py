@@ -43,4 +43,5 @@ async def create_chatbot_response(
         urgent=result.urgent,
         fallback=result.fallback,
         grounded_section=result.grounded_section,
+        response_ref=result.response_ref,
     )
