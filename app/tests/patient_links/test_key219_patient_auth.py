@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from tortoise.timezone import now
 
 from app.apis.v1.patient_otp_routers import _otp_service
+from app.core.time import as_utc
 from app.main import app
 from app.models.visits import GuideDocument, GuideStatus
 from app.services.patient_links import digest_link_token
@@ -69,7 +70,7 @@ class TestPatientAuthContext(BaseAuthCase):
         utcoffset = expires_at.utcoffset()
         assert utcoffset is not None, "expires_at must be timezone-aware"
         assert utcoffset.total_seconds() == 0, "expires_at offset must be UTC(+00:00)"
-        expected = now() + timedelta(hours=72)
+        expected = as_utc(now() + timedelta(hours=72))
         assert abs((expires_at - expected).total_seconds()) < 5
 
     async def test_unknown_token_returns_404(self) -> None:
