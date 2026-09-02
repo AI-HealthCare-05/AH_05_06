@@ -96,3 +96,28 @@ def test_the_last_state_matches_the_models_we_have() -> None:
 
     missing = sorted(live - snapshot)
     assert not missing, f"모델은 있는데 스냅샷에 없다 — 마지막 마이그레이션 뒤에 모델이 늘었다: {missing}"
+
+
+def test_the_snapshot_carries_nothing_we_deleted() -> None:
+    """**반대 방향 — 모델을 지웠는데 표를 안 지운 경우** (KEY-206).
+
+    위 검사는 `live - snapshot` 만 본다. 모델이 늘었는데 마이그레이션을 안
+    만든 경우다. 그 반대는 안 본다.
+
+    모델 파일에서 클래스를 지우면 `describe_models` 에서는 사라지지만
+    스냅샷에는 남는다. 그리고 **DB 에도 표가 그대로 남는다** — `DROP TABLE`
+    마이그레이션을 따로 만들어야 하는데, 아무도 안 울어서 그냥 지나간다.
+    남은 표는 다음 사람이 「이건 뭐지」 하고 볼 때까지 산다.
+
+    이희진 님이 `#156` 리뷰에서 짚은 자리다: `extra = sorted(snapshot - live)`.
+    """
+    from tortoise import Tortoise
+
+    from app.core.db.databases import TORTOISE_APP_MODELS
+
+    Tortoise.init_models(TORTOISE_APP_MODELS, "models")
+    live = set(Tortoise.describe_models(serializable=True))
+    snapshot = set(decompress_dict(models_state(version_files()[-1]) or ""))
+
+    extra = sorted(snapshot - live)
+    assert not extra, f"스냅샷에는 있는데 코드에 없는 모델 — 지웠으면 `DROP TABLE` 마이그레이션도 만들어라: {extra}"

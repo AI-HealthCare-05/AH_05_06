@@ -6,8 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 
 from app.core.time import DISPLAY_TIMEZONE
 from app.core.utils.common import normalize_phone_number
-from app.dtos.base import BaseSerializerModel
+from app.dtos.base import BaseSerializerModel, CursorPage
+from app.dtos.visits import DoctorResponse
 from app.models.patients import PatientGender
+from app.services.work_category import DetailStatus, WorkCategory
 
 
 class PatientCategory(StrEnum):
@@ -105,12 +107,24 @@ class PatientResponse(BaseSerializerModel):
 
 
 class PatientListItem(PatientResponse):
+    """환자 관리 표 한 줄 — 와이어프레임 S2-1.
+
+    **목록(S1 · D1)이 칩으로 보이던 것을 여기서는 열로 보인다.** 원문 주석이
+    그렇게 적는다 — 「같은 속성, 표기만 서식에 맞춘다」. 그래서 새 이름을 짓지
+    않고 접수대 목록과 **같은 값**(`WorkCategory` · `DetailStatus`)을 싣는다.
+    두 화면이 같은 환자를 다르게 부르면 어느 쪽이 맞는지 알 수 없다.
+    """
+
     latest_visit: LatestVisitResponse | None = None
-
-
-class CursorPage(BaseModel):
-    next_cursor: str | None
-    has_next: bool
+    #: 최근 진료의 진단명. 판독에서 확정된 것만 온다 — 없으면 비어 있다.
+    diagnosis_name: str | None = None
+    doctor: DoctorResponse | None = None
+    #: 기본 상태 — 목록 상단 탭과 같은 대분류 다섯
+    work_category: WorkCategory | None = None
+    #: 세부 상태 — 「무엇 때문에」
+    detail_status: DetailStatus | None = None
+    #: 이탈 배지. **빈 목록이 정상이다** — 챙길 일이 없다는 뜻이다.
+    flags: list[str] = Field(default_factory=list)
 
 
 class PatientListResponse(BaseModel):

@@ -47,8 +47,27 @@ cd project
 echo "Docker login"
 printf '%s' "$DOCKER_PAT" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
+echo "Pulling images: $DEPLOY_SERVICES"
+docker compose pull $DEPLOY_SERVICES
+
+# **마이그레이션을 앱보다 먼저 건다** (KEY-206).
+#
+# 여태 배포 경로에 이 단계가 아예 없었다. 새 이미지를 올려도 DB 는 그대로
+# 남아서, KEY-197 을 하다가 Pilot 에서 `guide_section.drug_caution_content_id`
+# 가 통째로 없는 것을 발견했다. 사고가 아니라 이 구조의 당연한 결과였다.
+#
+# 순서가 중요하다. `up -d` **뒤**에 걸면 실패해도 새 코드는 이미 돌고 있어
+# 「실패하면 배포가 멈춘다」가 뜻을 잃는다. 멈출 것이 남아 있지 않다.
+# 그래서 이미지만 받아 두고, 그 이미지로 한 번 돌리고, 통과하면 그때 바꾼다.
+#
+# `set -e` 가 위에 있으므로 실패하면 여기서 배포가 끝난다.
+if printf '%s\n' $DEPLOY_SERVICES | grep -qx fastapi; then
+  echo "Applying migrations"
+  docker compose run --rm -T --no-deps fastapi uv run --no-sync aerich upgrade
+fi
+
 echo "Deploying services: $DEPLOY_SERVICES"
-docker compose up -d --pull always --no-deps $DEPLOY_SERVICES
+docker compose up -d --no-deps $DEPLOY_SERVICES
 
 docker image prune -af
 REMOTE

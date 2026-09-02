@@ -55,6 +55,14 @@ function landingFor(roles) {
   return "/login.html";
 }
 
+/* 처방 설정(D2)은 진료하는 사람의 자리다. 어드민 권한만 가진 계정은 목록을
+   부르는 첫 걸음부터 403 을 받으므로, 보내 놓고 막느니 상단바에서 잠근다.
+   `landingFor` 와 같은 물음(역할이 어디까지 가는가)이라 나란히 둔다. */
+function opensSettings(roles) {
+  roles = roles || [];
+  return roles.indexOf("staff") !== -1 || roles.indexOf("doctor") !== -1;
+}
+
 /* 보호 화면 맨 위에서 부른다. 네 가지를 확인한다.
  *   1) 액세스 토큰이 있는가 — 없으면 쿠키로 재발급을 시도한다
  *   2) 서버가 아직 그 토큰을 인정하는가
@@ -96,9 +104,11 @@ function requireSession(options) {
            처음 오는 사람과 구분해 「시간이 지났다」고 알려 준다 —
            점심 먹고 와서 아무 말 없이 로그인 화면을 만나면
            자기가 로그아웃한 줄 안다. */
-        var why = reason || (err && err.code === ERROR.TOKEN_EXPIRED ? "?expired=1" : "");
+        var why =
+          reason ||
+          (err && err.code === ERROR.TOKEN_EXPIRED ? "?expired=1" : "");
         return bounce(why);
-      }
+      },
     );
   }
 
@@ -111,4 +121,17 @@ function requireSession(options) {
     if (err && err.code === ERROR.TOKEN_EXPIRED) return renew("?expired=1");
     return bounce("");
   });
+}
+
+/* 역할을 사람 말로 — 상단바 오른쪽에 이름 옆으로 붙는다.
+   **환자 목록이 없는 화면도 쓴다**(설정 · 어드민). `shell.js` 에 두었더니
+   설정 화면이 `roleLabel is not defined` 로 죽었다 — 목록을 그리는 파일을
+   상단바 한 줄 때문에 실을 수는 없다. */
+function roleLabel(roles) {
+  var names = { staff: "스탭", doctor: "의사", admin: "관리자" };
+  return (roles || [])
+    .map(function (r) {
+      return names[r] || r;
+    })
+    .join(" · ");
 }
