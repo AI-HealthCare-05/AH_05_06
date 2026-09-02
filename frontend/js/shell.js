@@ -46,14 +46,8 @@ function rowByVisit(list, visitId) {
   return null;
 }
 
-function roleLabel(roles) {
-  var names = { staff: "스탭", doctor: "의사", admin: "관리자" };
-  return (roles || [])
-    .map(function (r) {
-      return names[r] || r;
-    })
-    .join(" · ");
-}
+/* `roleLabel` 은 `session.js` 로 옮겼다 — 「누가 보고 있나」는 그 파일의 몫이고,
+   설정 화면처럼 환자 목록이 없는 화면도 상단바에 역할을 적는다. */
 
 function stateClass(workCategory) {
   /* 색을 한글 문자열로 정하면 문구가 바뀔 때마다 색이 조용히 빠진다.

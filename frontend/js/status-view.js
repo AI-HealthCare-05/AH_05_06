@@ -121,70 +121,6 @@ function readSaying(progress, label) {
  * **한 카드 안에** 구분선으로 나뉜다. 아래는 전폭 이력.
  */
 
-/* ① 발송 · 예정 — **이제 서버가 준다.**
- *
- * 승인이 나갈 문자를 전부 세워 둔다(`GuideService._schedule_messages`).
- * 화면은 셈하지 않고 받은 것을 그린다 — 화면이 따로 셈하면 서버가 잡은
- * 날짜와 다른 날짜를 보여 주게 되고, 어느 쪽이 진짜인지 알 수 없다.
- */
-var MESSAGE_SAYING = {
-  GUIDE: "진료 안내문",
-  CHECK_D7: "일주일 뒤 확인",
-  CHECK_D15: "보름 뒤",
-  CHECK_D30: "한 달 뒤",
-  RUN_OUT: "소진 임박",
-};
-
-/* **못 나간 이유는 넷뿐이다** — 와이어프레임 D1-7 「실패 이유 넷 — 잘못된
-   번호 · 수신 거부 · 통신사 오류 · 발신번호 미등록」. 발신번호 미등록만
-   처리 경로가 다르다(어드민 A1-5 에서 등록한다). */
-var FAILURE_SAYING = {
-  INVALID_PHONE: "잘못된 번호",
-  OPT_OUT: "수신 거부",
-  CARRIER: "통신사 오류",
-  SENDER_UNREGISTERED: "발신번호 미등록",
-};
-
-/* **붙들고 있는 이유는 둘뿐이다** — 와이어프레임 S2-3 「스탭이 손댈 일은
-   보류 두 가지뿐이다 — 번호가 잘못됐을 때와 문자가 떨어졌을 때」.
-   원문 표기가 「보류 · 번호」 · 「보류 · 문자 잔량」이라 짧게 적는다. */
-var HOLD_SAYING = {
-  INVALID_PHONE: "번호",
-  NO_CREDIT: "문자 잔량",
-};
-
-/* 한 통이 지금 어디에 있는가. **「예정」과 「못 나감」과 「보류」를 또렷이
-   가른다.**
-
-   실패와 보류를 한 무더기로 뭉치면 「이미 벌어진 것」과 「고치면 아직 막을 수
-   있는 것」이 섞인다 — 스탭이 무엇을 손대야 하는지 안 보인다. 와이어프레임
-   S2-3 도 「안 나간 것 3건 (실패 1 · 보류 2)」로 합쳐 세면서 따로 적는다. */
-var MESSAGE_STATE = {
-  SCHEDULED: { say: "예정", mark: "○", done: false, bad: false },
-  SENT: { say: "발송 완료", mark: "●", done: true, bad: false },
-  FAILED: { say: "못 나감", mark: "⚠", done: false, bad: true },
-  HELD: { say: "보류", mark: "⏸", done: false, bad: true },
-  CANCELED: { say: "꺼짐", mark: "○", done: false, bad: false },
-};
-
-function messageState(status) {
-  return MESSAGE_STATE[status] || { say: String(status || ""), mark: "○", done: false, bad: false };
-}
-
-/** 그 줄에 적을 한 마디 — 「못 나감 · 잘못된 번호」 · 「보류 · 문자 잔량」.
-    모르는 코드는 **적지 않는다** — 코드를 그대로 보이면 사람 말이 아니다. */
-function messageSaying(row) {
-  var state = messageState(row && row.status);
-  var why =
-    row && row.status === "HELD"
-      ? HOLD_SAYING[row.hold_reason]
-      : row && row.status === "FAILED"
-        ? FAILURE_SAYING[row.failure_code]
-        : null;
-  return why ? state.say + " · " + why : state.say;
-}
-
-/** 「08-20 10:00」 — 날짜와 시각을 함께 적는다. 회차는 며칠 뒤라 날짜가 있어야 한다. */
 function messageWhen(iso) {
   var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(iso || ""));
   return m ? m[2] + "-" + m[3] + " " + m[4] + ":" + m[5] : "";
@@ -267,7 +203,7 @@ function statusScreenHtml(view) {
       : "") +
     "</div>" +
     sendRowsHtml(view.messages) +
-    '<p class="st__note">ⓘ ⚠ 못 나감은 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 발송기가 붙으면 그 자리에서 고칩니다</p>' +
+    '<p class="st__note">ⓘ ⚠ 발송 실패는 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 발송기가 붙으면 그 자리에서 고칩니다</p>' +
     "</section>" +
     '<section class="box st__side">' +
     '<div class="box__head st__head"><span class="box__title">환자 액션 현황</span></div>' +

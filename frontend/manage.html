@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>관리 · 케어온</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/shell.css" />
+    <link rel="stylesheet" href="/css/blocks.css" />
+    <link rel="stylesheet" href="/css/detail.css" />
+    <link rel="stylesheet" href="/css/manage.css" />
+  </head>
+  <body class="shell">
+    <!-- S2 관리 (KEY-234)
+         와이어프레임 S2-3 원문 캡션: 「앞으로 나갈 것 · 보류는 맨 위에서
+         이유와 함께」.
+
+         **왼쪽 목록이 없는 화면이다.** 다른 의료진 화면과 달리 한 환자를 골라
+         파고드는 자리가 아니라, 의원 전체에서 안 나간 것을 훑어 잡는 자리다.
+         원문도 전폭으로 그린다.
+
+         세 칸이 다 열려 있다 — 환자 관리(S2-1) · 발송 예정(S2-3) · 발송
+         이력(S2-4). S2-1 에서 줄을 누르면 그 환자의 이력 모달(S2-2)이 뜬다.
+
+         **못 만든 것은 전부 문자 발송기가 없어서다** — 시각 변경 · 즉시 발송 ·
+         문자 충전 · 재승인 · 재진 안내 발송. 자리를 비워 두고 화면 아래에
+         무엇이 없는지 적는다. 눌러도 아무 일 없는 버튼은 「된다」고 말한다. -->
+
+    <header class="topbar">
+      <span class="topbar__brand"
+        >케어온 <span class="topbar__clinic">도로시여성의원</span></span
+      >
+      <nav class="topbar__nav">
+        <!-- **관리는 S2, 설정은 D2 다.** -->
+        <a class="topbar__tab" href="/patients.html">현황</a>
+        <button class="topbar__tab" type="button" aria-current="page">
+          관리
+        </button>
+        <a class="topbar__tab" href="/settings.html">설정</a>
+      </nav>
+      <div class="topbar__right">
+        <span class="who">
+          <span class="who__name" id="who-name">—</span>
+          <span class="who__roles" id="who-roles"></span>
+        </span>
+        <button class="icon-button" type="button" aria-label="알림">
+          <svg
+            class="icon"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M8 15a2 2 0 0 0 4 0"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <button
+          class="icon-button"
+          type="button"
+          id="logout"
+          aria-label="로그아웃"
+        >
+          <svg
+            class="icon"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M10 3v6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="main">
+      <main class="pane">
+        <!-- 원문의 세 갈래 (S2-1 · S2-3 · S2-4)와 검색 · 환자 등록이 **한 줄**이다.
+             원문 레일도 그렇게 그린다 — 갈래를 고르는 일과 환자를 찾는 일이
+             같은 높이에 있어야 눈이 아래로 한 번만 내려간다.
+             `aria-selected` 로 고른 것을 말한다(`css/blocks.css` 의 `.tab`). -->
+        <div class="pane-top">
+          <div class="tabs" id="tabs" role="tablist" aria-label="관리 갈래">
+            <button
+              class="tab"
+              type="button"
+              role="tab"
+              data-view="roster"
+              aria-selected="true"
+            >
+              환자 관리
+            </button>
+            <button
+              class="tab"
+              type="button"
+              role="tab"
+              data-view="schedule"
+              aria-selected="false"
+            >
+              발송 예정
+            </button>
+            <button
+              class="tab"
+              type="button"
+              role="tab"
+              data-view="history"
+              aria-selected="false"
+            >
+              발송 이력
+            </button>
+          </div>
+          <span class="send-top__grow"></span>
+          <div class="pane-top__tools" id="roster-top" hidden>
+            <label class="sr-only" for="roster-search">환자 검색</label>
+            <input
+              class="send-search"
+              type="search"
+              id="roster-search"
+              placeholder="이름 · 차트번호 · 휴대폰"
+            />
+            <a class="button-ghost button-ghost--sm" href="/patients.html?add=1"
+              >+ 환자 등록</a
+            >
+          </div>
+          <!-- 기간도 갈래와 같은 줄이다 — 원문 S2-3·S2-4 가 그 자리에 둔다. -->
+          <div class="pane-top__tools" id="period-top">
+            <span class="send-period" id="period" hidden></span>
+            <label class="sr-only" for="days">기간</label>
+            <select class="send-days" id="days"></select>
+          </div>
+        </div>
+
+        <div class="send-top">
+          <div class="chips" id="chips"></div>
+        </div>
+
+        <div id="table"></div>
+
+        <div class="send-foot">
+          <p class="send-foot__say" id="summary"></p>
+          <span class="send-top__grow"></span>
+          <button
+            class="button-ghost button-ghost--sm"
+            type="button"
+            id="csv"
+            hidden
+          >
+            CSV 내려받기
+          </button>
+        </div>
+        <p class="send-cut" id="cut" hidden></p>
+
+        <!-- **아직 없는 것을 적어 둔다.** 원문 할 일 칸에는 넷이 있는데
+             (고치기 · 문자 충전 · 시각 변경 · 즉시 발송) 그중 갈 데가 있는
+             것은 번호 수정 하나뿐이다. 이력의 「재승인」도 마찬가지다 —
+             다시 보내려면 발송기가 있어야 한다. -->
+        <p class="note" id="note-schedule">
+          ⓘ 예약된 문자는 지정된 시각에 자동 발송됩니다 · 발송 실패 · 보류 건은
+          [번호 수정]에서 환자 연락처를 확인해 주세요
+          <br />ⓘ 시각 변경 · 즉시 발송 · 문자 충전은 준비 중입니다
+        </p>
+        <p class="note" id="note-roster" hidden>
+          ⓘ 의료 기록은 삭제하지 않고 계속 보관합니다
+          <br />ⓘ 재진 안내 발송은 준비 중입니다
+        </p>
+        <p class="note" id="note-history" hidden>
+          ⓘ 열람 여부는 안내문 단위로 기록됩니다 · 동일한 안내문의 문자는 모두
+          열람으로 표시됩니다
+          <br />ⓘ 재승인(재발송)은 준비 중입니다
+        </p>
+      </main>
+    </div>
+
+    <!-- 환자 이력 모달 (S2-2) — 원문 「S2-1 위에 뜬다」 -->
+    <div class="modal" id="modal" hidden>
+      <div
+        class="modal__card modal__card--wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        id="modal-body"
+      ></div>
+    </div>
+
+    <script src="/js/session.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/clinic-clock.js"></script>
+    <script src="/js/message-words.js"></script>
+    <script src="/js/patients-api.js"></script>
+    <script src="/js/checkin-words.js"></script>
+    <script src="/js/roster-rules.js"></script>
+    <script src="/js/history-modal.js"></script>
+    <script src="/js/schedule-rules.js"></script>
+    <script src="/js/history-rules.js"></script>
+    <script src="/js/messages-api.js"></script>
+    <script src="/js/manage.js"></script>
+  </body>
+</html>

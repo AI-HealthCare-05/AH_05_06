@@ -191,3 +191,30 @@ function fieldUnit(fieldType, given) {
   if (given) return given;
   return FIELD_UNITS[String(fieldType || "")] || "";
 }
+
+/* ── 확인 항목의 이름표 (와이어프레임 S1-6 · D2-3) ────────────────────
+ *
+ * 서버는 코드로 주고 화면이 사람 말로 옮긴다 — 위 판독 항목과 같은 규칙이다.
+ * 서버가 한국어를 주면 문구를 바꿀 때 두 곳을 고쳐야 하고, 지난 진료의 답이
+ * 어느 질문의 답이었는지도 흐려진다.
+ *
+ * 판독 화면(S1-6)과 설정 화면(D2-3)이 같은 이름을 쓴다 — 그래서 판독 화면
+ * 파일이 아니라 이름표 파일에 있다.
+
+   **차례가 화면 차례다.** 서버가 준 차례를 그대로 쓰면 열거 정의 순서에 끌려간다. */
+var CHECK_ITEM_LABELS = {
+  DEPRESSION: "우울증 병력",
+  HYPERTENSION: "고혈압",
+  OSTEOPOROSIS: "골다공증",
+  DIABETES: "당뇨",
+  PREGNANCY_PLAN: "임신 계획",
+};
+
+/* 물어볼 수 있는 것 전부 — 설정 화면(D2-3)이 여기서 골라 처방에 단다.
+   **이름표에서 뽑는다.** 목록을 따로 적어 두면 이름표에 더한 항목이 설정
+   화면에 안 뜨고, 왜 안 뜨는지 알기 어렵다. */
+var CHECK_ITEMS = Object.keys(CHECK_ITEM_LABELS);
+
+function checkItemLabel(key) {
+  return CHECK_ITEM_LABELS[String(key || "")] || String(key || "");
+}

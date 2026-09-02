@@ -178,39 +178,6 @@ var MOCK_GUIDE_STATE = {};
 
    `messages` 는 안내문이 승인된 뒤에만 찬다 — 예약은 승인이 만든다. 그래서
    여기서도 상태를 보고 낸다. */
-function mockTimeline(visitId) {
-  var guide = mockGuide(visitId);
-  var opened = "2026-08-20T09:14:00+09:00";
-  var entries = [
-    { at: opened, category: "VISIT", event: "VISIT_CREATED", actor_id: 900, actor: "박연", section_key: null, document_type: null, note: null },
-    { at: "2026-08-20T09:20:00+09:00", category: "DOCUMENT", event: "DOCUMENT_UPLOADED", actor_id: 101, actor: "서지현", section_key: null, document_type: "EMR", note: null },
-    { at: "2026-08-20T09:21:00+09:00", category: "OCR", event: "OCR_STARTED", actor_id: 101, actor: "서지현", section_key: null, document_type: null, note: null },
-    { at: "2026-08-20T09:22:30+09:00", category: "OCR", event: "OCR_COMPLETED", actor_id: null, actor: null, section_key: null, document_type: null, note: null },
-    { at: "2026-08-20T09:28:00+09:00", category: "OCR", event: "OCR_CONFIRMED", actor_id: 101, actor: "서지현", section_key: null, document_type: null, note: null },
-    { at: "2026-08-20T09:29:00+09:00", category: "GUIDE", event: "GUIDE_GENERATED", actor_id: null, actor: null, section_key: null, document_type: null, note: null },
-    { at: "2026-08-20T09:41:00+09:00", category: "GUIDE", event: "GUIDE_EDITED", actor_id: 101, actor: "서지현", section_key: "caution", document_type: null, note: null },
-    { at: "2026-08-20T09:50:00+09:00", category: "GUIDE", event: "GUIDE_SUBMITTED", actor_id: 101, actor: "서지현", section_key: null, document_type: null, note: null },
-  ];
-  if (guide && guide.approved_at) {
-    entries.push({ at: guide.approved_at, category: "GUIDE", event: "GUIDE_APPROVED", actor_id: 900, actor: "박연", section_key: null, document_type: null, note: null });
-    entries.push({ at: "2026-08-20T14:12:00+09:00", category: "PATIENT", event: "GUIDE_VIEWED", actor_id: null, actor: null, section_key: "medication", document_type: null, note: null });
-    entries.push({ at: "2026-08-20T14:15:00+09:00", category: "PATIENT", event: "GUIDE_VIEWED", actor_id: null, actor: null, section_key: "caution", document_type: null, note: null });
-  }
-  entries.sort(function (a, b) {
-    return a.at < b.at ? -1 : a.at > b.at ? 1 : 0;
-  });
-
-  var messages = [];
-  if (guide && guide.approved_at) {
-    messages = [
-      { kind: "GUIDE", status: "SENT", at: guide.approved_at, sent_at: guide.approved_at, failure_code: null, hold_reason: null },
-      { kind: "CHECK_D7", status: "SCHEDULED", at: "2026-08-27T18:00:00+09:00", sent_at: null, failure_code: null, hold_reason: null },
-      { kind: "CHECK_D15", status: "SCHEDULED", at: "2026-09-04T18:00:00+09:00", sent_at: null, failure_code: null, hold_reason: null },
-      { kind: "RUN_OUT", status: "SCHEDULED", at: "2026-11-09T18:00:00+09:00", sent_at: null, failure_code: null, hold_reason: null },
-    ];
-  }
-  return { visit_id: visitId, entries: entries, messages: messages };
-}
 
 function mockGuideState(visitId) {
   return (
@@ -224,6 +191,93 @@ function mockGuideState(visitId) {
       sections: {},
     })
   );
+}
+
+/* 현황(D1-6)이 읽는 이력. **서버가 만들지 않는 사건은 여기서도 안 만든다** —
+   `app/timeline/api.py` 가 안내문 사건과 예약 문자만 모아 주므로 목업도 그만 준다.
+
+   안내문이 없는 진료는 **빈 이력**이다. 오류가 아니다 — 아직 아무 일도 안
+   일어난 진료와 같은 모양이라, 화면이 「기록이 아직 없습니다」를 그린다. */
+function mockTimeline(visitId) {
+  var guide = mockGuide(visitId);
+  if (!guide) return { visit_id: visitId, entries: [], messages: [] };
+
+  var state = mockGuideState(visitId);
+
+  /* 진료가 열린 것이 첫 줄이다 — 등록만 하고 아무것도 안 한 진료의 화면이
+     통째로 비지 않게. 서버가 `visit.visited_at` 에서 만들어 낸다. */
+  var made = [
+    entry("2026-09-02T09:02:00+09:00", "VISIT", "VISIT_CREATED", { actor_id: 900, actor: "박연" }),
+    entry("2026-09-02T09:08:00+09:00", "DOCUMENT", "DOCUMENT_UPLOADED", {
+      actor_id: 101,
+      actor: "한소영",
+      document_type: "EMR",
+    }),
+    entry("2026-09-02T09:09:00+09:00", "OCR", "OCR_STARTED", { actor_id: 101, actor: "한소영" }),
+    entry("2026-09-02T09:11:00+09:00", "OCR", "OCR_COMPLETED", {}),
+    entry("2026-09-02T09:13:00+09:00", "OCR", "OCR_CONFIRMED", { actor_id: 101, actor: "한소영" }),
+    entry("2026-09-02T09:14:00+09:00", "GUIDE", "GUIDE_GENERATED", {}),
+    entry("2026-09-02T09:31:00+09:00", "GUIDE", "GUIDE_EDITED", {
+      actor_id: 101,
+      actor: "한소영",
+      section_key: "caution",
+    }),
+    entry("2026-09-02T09:36:00+09:00", "GUIDE", "GUIDE_SUBMITTED", { actor_id: 101, actor: "한소영" }),
+  ];
+  if (state.returned_reason) {
+    made.push(
+      entry("2026-09-02T10:02:00+09:00", "GUIDE", "GUIDE_RETURNED", {
+        actor_id: 900,
+        actor: "박연",
+        note: state.returned_reason,
+      }),
+    );
+  }
+  if (guide.status === "SCHEDULED_TO_SEND") {
+    made.push(entry("2026-09-02T10:12:00+09:00", "GUIDE", "GUIDE_APPROVED", { actor_id: 900, actor: "박연" }));
+    /* 환자가 한 일 — **행위자는 비운다.** 화면이 `category` 로 「환자」라고
+       적는다. 서버가 「환자」를 적어 보내면 이름이 「환자」인 직원과 못 가른다. */
+    made.push(entry("2026-09-02T14:12:00+09:00", "PATIENT", "GUIDE_VIEWED", { section_key: "medication" }));
+    made.push(entry("2026-09-02T14:15:00+09:00", "PATIENT", "GUIDE_VIEWED", { section_key: "caution" }));
+  }
+
+  /* **예약은 승인이 만든다.** 승인 전에는 비어 있다 — 서버 주석이 그렇게 적었고,
+     미리 채워 두면 「승인 안 했는데 나갈 문자가 있다」로 읽힌다.
+
+     칸 이름은 `at` 이다(`scheduled_at` 이 아니다) — 이력 항목과 같은 이름을
+     쓴다. 화면이 두 목록을 같은 함수로 찍는다. */
+  var messages =
+    guide.status === "SCHEDULED_TO_SEND"
+      ? [
+          sending("GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
+          sending("CHECK_D7", "SCHEDULED", "2026-09-09T18:00:00+09:00", null),
+          sending("CHECK_D15", "SCHEDULED", "2026-09-17T18:00:00+09:00", null),
+          sending("RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
+        ]
+      : [];
+
+  return { visit_id: visitId, entries: made, messages: messages };
+}
+
+/* 이력 한 줄 — **칸을 다 채운다.** 서버는 없는 값도 `null` 로 내려 주는데,
+   목업이 칸을 빼면 「목업에만 있는 `undefined`」가 생겨 화면이 갈린다. */
+function entry(at, category, event, over) {
+  var row = {
+    at: at,
+    category: category,
+    event: event,
+    actor_id: null,
+    actor: null,
+    section_key: null,
+    document_type: null,
+    note: null,
+  };
+  for (var key in over) if (over.hasOwnProperty(key)) row[key] = over[key];
+  return row;
+}
+
+function sending(kind, status, at, sentAt) {
+  return { kind: kind, status: status, at: at, sent_at: sentAt, failure_code: null, hold_reason: null };
 }
 
 /* 모르는 진료는 **없다고 답한다.** 서버(`app/services/guides.py`)가 그 자리에서
@@ -435,9 +489,9 @@ function mockDoctorRequest(path, options) {
       var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
       var msgs = path.match(/^\/visits\/(\d+)\/guide\/messages$/);
-      /* D1-6 현황이 읽는 자리. **여기 분기가 없어서 목업에서는 늘 「불러오지
-         못했습니다」 였다** — 서버에는 있는데 목업에만 없으면, 서버가 죽은
-         것과 화면이 못 부르는 것을 구별할 수 없다. */
+      /* **현황(D1-6)이 읽는 자리.** 이 분기가 없어서 `?mock=1` 로는 현황 탭이
+         늘 「불러오지 못했습니다」였다 — 서버에는 있는데 목업만 없었다.
+         목업이 서버보다 **좁으면** 화면을 목업으로 검수할 수 없다. */
       var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
       var m = get || sec || act || issueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));

@@ -10,7 +10,7 @@ from tortoise import generate_config
 from tortoise.contrib.test import finalizer, initializer
 
 from app.core import config
-from app.core.db.databases import TORTOISE_APP_MODELS
+from app.core.db.databases import TORTOISE_APP_MODELS, TORTOISE_ORM
 
 TEST_BASE_URL = "http://test"
 TEST_DB_LABEL = "models"
@@ -24,7 +24,17 @@ def get_test_db_config() -> dict[str, Any]:
         connection_label=TEST_DB_LABEL,
         testing=True,
     )
-    tortoise_config["timezone"] = TEST_DB_TZ
+    #: **검사 판의 시계를 앱과 같게 맞춘다.**
+    #:
+    #: `generate_config` 는 `use_tz` 를 안 정하고 기본값(False)으로 둔다.
+    #: 앱은 `True` 였다 — 그래서 **검사와 서버가 다른 시계로 돌았고**,
+    #: `auto_now_add` 가 아홉 시간 어긋나는 것을 검사가 통째로 못 봤다
+    #: (링크 만료와 인증번호 잠금이 즉시 풀리던 것도 같은 뿌리다).
+    #:
+    #: 값을 여기 적지 않고 `TORTOISE_ORM` 에서 읽어 온다 — 적어 두면 한쪽만
+    #: 바뀌는 날 같은 일이 되풀이된다.
+    tortoise_config["timezone"] = TORTOISE_ORM.get("timezone", TEST_DB_TZ)
+    tortoise_config["use_tz"] = TORTOISE_ORM["use_tz"]
 
     return tortoise_config
 

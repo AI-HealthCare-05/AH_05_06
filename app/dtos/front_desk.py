@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
-from app.dtos.patients import CursorPage
+from app.dtos.base import CursorPage
 from app.dtos.visits import DoctorResponse
 from app.services.work_category import DetailStatus, WorkCategory
 

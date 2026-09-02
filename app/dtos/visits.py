@@ -4,8 +4,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.dtos.base import BaseSerializerModel
-from app.dtos.patients import CursorPage
+from app.dtos.base import BaseSerializerModel, CursorPage
 from app.models.ocr import OcrDocumentType
 from app.models.visits import GuideSectionKey, VisitCheckKey, VisitStatus
 

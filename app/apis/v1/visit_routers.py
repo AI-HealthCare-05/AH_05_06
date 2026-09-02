@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.core.api_errors import ContractRoute
 from app.dependencies.patient_access import ClinicalActor, require_patient_read, require_patient_write
-from app.dtos.patients import CursorPage
+from app.dtos.base import CursorPage
 from app.dtos.visits import (
     CheckAnswerResponse,
     CheckAnswerSaveRequest,

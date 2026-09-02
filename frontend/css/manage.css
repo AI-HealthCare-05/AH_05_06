@@ -1,0 +1,259 @@
+/* 관리 (S2) — 발송 예정. KEY-234.
+ *
+ * 표 자체는 `detail.css` 의 `.table-wrap` · `.past` 를 그대로 쓴다. 같은
+ * 의료진 화면에서 표가 두 가지 모양이면 눈이 새로 자리를 찾는다. 여기서는
+ * **이 화면에만 있는 것**만 적는다. */
+
+.send-top {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-12);
+}
+
+.send-top__grow {
+  flex: 1;
+}
+
+.send-days {
+  height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* 셈하는 칩은 **누르는 것이 아니다.** 상태 칩과 나란히 서면 눌러 거를 수
+   있는 것처럼 보이므로, 손 모양을 주지 않는다. */
+.chip--count {
+  cursor: default;
+}
+
+.chip--all {
+  color: var(--card);
+  background: var(--ink);
+  border-color: var(--ink);
+  font-weight: 600;
+}
+
+.chip--bad {
+  border-width: 2px;
+  font-weight: 600;
+}
+
+/* 안 나간 줄. **바탕을 칠하지 않는다** — 여섯 줄 중 셋이 칠해지면 그 색이
+   배경이 되어 아무것도 도드라지지 않는다. 왼쪽 한 줄만 세운다. */
+.send__row--stuck td:first-child {
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.send__row--stuck td {
+  background: var(--bg);
+}
+
+.send__chart {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.send__who {
+  color: var(--ink-2);
+}
+
+.send__state--bad {
+  font-weight: 600;
+}
+
+.send__none {
+  color: var(--ink-3);
+}
+
+.send__blank {
+  padding: var(--s-24);
+  text-align: center;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.send-cut {
+  margin-top: var(--s-8);
+  font-size: 12px;
+  color: var(--warn);
+}
+
+/* 이력의 기간 표시 — 「2026-08-05 ~ 2026-08-11」. 고른 폭이 실제로 어느
+   날짜인지 눈에 보여야 한다. 「최근 7일」만으로는 경계를 모른다. */
+.send-period {
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.send-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  margin-top: var(--s-12);
+}
+
+.send-foot__say {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.send__read {
+  white-space: nowrap;
+}
+
+/* ── 환자 관리 (S2-1) ─────────────────────────────────── */
+
+/* 갈래 · 검색 · 환자 등록이 한 줄이다 — 원문 레일도 그렇게 그린다. */
+.pane-top {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-16);
+}
+
+.pane-top__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+}
+
+/* **검색칸은 골격의 것(`.list__search`)을 쓰지 않는다.** 저쪽은 320px 레일을
+   가득 채우는 칸이라 폭 100% · 높이 44px 인데, 여기서는 탭·단추와 같은 줄에
+   서므로 그 높이를 따라야 한다. 같은 줄에서 혼자 10px 높으면 줄이 흔들린다. */
+.send-search {
+  width: 220px;
+  height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.send-search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* **골격의 칩 줄은 아래에 구분선을 긋는다** — 환자 목록 레일에서 칩과 목록을
+   가르는 줄이다. 여기서는 칩 아래가 바로 표라 그 줄이 표 위에 뜬 조각으로
+   보인다. 지운다. */
+.send-top .chips {
+  padding: 0;
+  border-bottom: 0;
+}
+
+/* 줄을 누르면 아래에 서는 카드. 표 안에 들어가므로 테두리 대신 바탕으로
+   묶는다 — 표 줄 사이에 테두리를 하나 더 그으면 줄이 끊겨 보인다. */
+.rostercard {
+  display: flex;
+  align-items: center;
+  gap: var(--s-16);
+  padding: var(--s-12) var(--s-16);
+  background: var(--bg);
+}
+
+.rostercard__lines {
+  flex: 1;
+  min-width: 0;
+}
+
+.rostercard__lines p {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.rostercard__lines p:first-child {
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.rostercard__acts {
+  display: flex;
+  gap: var(--s-8);
+  flex: none;
+}
+
+.send__card td {
+  padding: 0;
+}
+
+/* 고른 칩. 셈만 보이는 칩(`.chip--count`)과 달리 이쪽은 누르는 것이다. */
+.chip--on {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── 환자 이력 모달 (S2-2) ───────────────────────────── */
+
+/* 승인 확인 모달(440px)보다 넓다 — 진료 블록 셋이 서고 각 줄이 한 줄로
+   읽혀야 한다. 좁히면 「확인 문자 — 일주일 뒤 … · 보름 뒤 …」가 세 줄로
+   접혀 회차 차례가 안 보인다. */
+.modal__card--wide {
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal__top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-12);
+  margin-bottom: var(--s-16);
+}
+
+.modal__top > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.hist {
+  padding: var(--s-12) 0;
+  border-top: 1px solid var(--line);
+}
+
+.hist__head {
+  margin: 0 0 var(--s-8);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hist__line {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+/* **표에도 바탕을 준다.** 다른 화면의 블록(`.box`)과 같은 판이어야 한다 —
+   투명한 채로 두면 표가 화면 바닥에 그려진 선처럼 보이고, 기본정보 블록과
+   나란히 놓았을 때 층이 다르게 읽힌다. */
+.table-wrap {
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(28, 31, 35, 0.04);
+}
+
+/* 표 머리도 카드 안이다 — 골격은 회색 바탕이지만 카드 위에서는 한 겹 더
+   어두워 보인다. 줄 하나로 가른다. */
+.send thead th {
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
