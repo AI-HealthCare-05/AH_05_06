@@ -195,6 +195,35 @@ var catalogApi = {
     });
   },
 
+  /* 의원이 쓰는 약 목록. **판독 화면도 이것을 본다** — `ocr-api.js` 가
+     `catalogApi` 를 그대로 부르므로, 여기 한 곳만 두면 둘이 같은 목록을 본다. */
+  drugs: function () {
+    if (MOCK) return mockDrugs();
+    return request("/prescription-drugs");
+  },
+
+  addDrug: function (row) {
+    if (MOCK) return mockAddDrug(row);
+    return request("/prescription-drugs", {
+      method: "POST",
+      body: { name: row.name, frequency: row.frequency, note: row.note },
+    });
+  },
+
+  saveDrug: function (id, row) {
+    if (MOCK) return mockSaveDrug(id, row);
+    return request("/prescription-drugs/" + encodeURIComponent(id), {
+      method: "PUT",
+      body: {
+        /* 제작 중에만 서버가 받는다. 잠기면 409 로 튕긴다. */
+        name: row.name,
+        frequency: row.frequency,
+        note: row.note,
+        hidden: !!row.hidden,
+      },
+    });
+  },
+
   reviewCopy: function (setId) {
     if (MOCK) return mockReviewCopy(setId);
     return request("/guide-copy/" + encodeURIComponent(setId) + "/review", {
@@ -330,6 +359,76 @@ function mockCreateSet(name, disease) {
     };
     store.push(made);
     return resolve(JSON.parse(JSON.stringify(made)));
+  });
+}
+
+/* 서버 씨앗과 같은 넷. 갈라지면 목에서 고른 이름과 실제 이름이 달라진다. */
+var MOCK_DRUGS = [
+  { drug_catalog_id: 1, name: "비잔정(디에노게스트) 2mg", frequency: "1일 1회", note: "매일 같은 시간", hidden: false },
+  { drug_catalog_id: 2, name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간", hidden: false },
+  { drug_catalog_id: 3, name: "메트포르민 500mg", frequency: "1일 2회", note: "식후", hidden: false },
+  { drug_catalog_id: 4, name: "진통제", frequency: "필요시", note: null, hidden: false },
+];
+
+var mockDrugStore = null;
+
+function drugStore() {
+  if (!mockDrugStore) mockDrugStore = JSON.parse(JSON.stringify(MOCK_DRUGS));
+  return mockDrugStore;
+}
+
+function mockDrugs() {
+  /* 서버와 같은 봉투 — `{draft, items}`. 갈라지면 목에서만 되는 화면이 된다. */
+  return Promise.resolve({
+    draft: true,
+    items: JSON.parse(JSON.stringify(drugStore())),
+  });
+}
+
+function clean(raw) {
+  return String(raw || "").split(/\s+/).filter(Boolean).join(" ");
+}
+
+function mockAddDrug(row) {
+  return new Promise(function (resolve, reject) {
+    var name = clean(row.name);
+    if (!name) return reject(new ApiError("NAME_REQUIRED", 422, {}));
+    var store = drugStore();
+    for (var i = 0; i < store.length; i++) {
+      /* **감춘 이름도 못 쓴다** — 서버와 같은 규칙이다 */
+      if (store[i].name === name) return reject(new ApiError("DRUG_EXISTS", 409, {}));
+    }
+    var made = {
+      drug_catalog_id: Math.max.apply(null, store.map(function (d) { return d.drug_catalog_id; })) + 1,
+      name: name,
+      frequency: row.frequency || null,
+      note: row.note || null,
+      hidden: false,
+    };
+    store.push(made);
+    return resolve(JSON.parse(JSON.stringify(made)));
+  });
+}
+
+function mockSaveDrug(id, row) {
+  return new Promise(function (resolve, reject) {
+    var store = drugStore();
+    for (var i = 0; i < store.length; i++) {
+      if (store[i].drug_catalog_id !== Number(id)) continue;
+      var name = clean(row.name);
+      if (!name) return reject(new ApiError("NAME_REQUIRED", 422, {}));
+      for (var j = 0; j < store.length; j++) {
+        if (j !== i && store[j].name === name) {
+          return reject(new ApiError("DRUG_EXISTS", 409, {}));
+        }
+      }
+      store[i].name = name;
+      store[i].frequency = row.frequency || null;
+      store[i].note = row.note || null;
+      store[i].hidden = !!row.hidden;
+      return resolve(JSON.parse(JSON.stringify(store[i])));
+    }
+    return reject(new ApiError("DRUG_NOT_FOUND", 404, {}));
   });
 }
 

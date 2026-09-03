@@ -84,6 +84,15 @@ var RAIL_SECTIONS = [
    목록 바로 아래 같은 자리를 가리키는 줄이 또 있으면, 고른 장과 그 줄이 함께
    굵어져 어느 것을 보고 있는지 화면이 두 가지로 말한다. */
 var RAIL_GROUPS = [
+  /* **「기타」가 아니라 제 갈래다.** 대표 처방 바로 아래에 선다 — 대표 처방에
+     약을 적을 때 여기서 고르므로, 둘이 붙어 있어야 눈이 오가지 않는다.
+     검사 기준선·문자 문구는 처방과 상관없는 참조표라 「기타」에 남는다. */
+  {
+    key: "drugs",
+    section: "drugs",
+    title: "약 목록",
+    saying: "의원이 쓰는 약을 등록합니다 — 대표 처방에서 고를 수 있습니다",
+  },
   {
     key: "baseline",
     section: "rest",
@@ -123,7 +132,7 @@ function groupsIn(section) {
    `guide` 는 여기 없다 — 안내문은 줄 하나가 아니라 갈래 밑에 장이 그대로
    서므로 여닫을 「묶음 줄」이 아예 없다. 안 쓰는 열쇠를 남겨 두면 다음 사람이
    있지도 않은 줄을 찾는다. */
-var RAIL_GROUP_READY = { sms: true, baseline: true };
+var RAIL_GROUP_READY = { drugs: true, sms: true, baseline: true };
 
 /** 한 처방이 **레일에서 어느 묶음에 드는가.**
  *

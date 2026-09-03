@@ -69,6 +69,12 @@
   var templates = null; // 문자 문구 판
   var baselines = null; // 검사 기준선 판
   var copy = null; // 안내문 문구 판
+  var drugs = null; // 약 목록 판 — 의원이 쓰는 약
+
+  /* **제작 중인가.** 서버가 목록 응답에 실어 준다(`draft`). 받기 전에는
+     잠근 쪽으로 둔다 — 열어 두었다가 잠긴 서버에 보내면 409 가 난다.
+     열어 두는 쪽이 안전한 기본값이 아니다. */
+  var DRAFT = false;
   /* **펼친 묶음은 여럿일 수 있다.**
    *
    * 한동안 하나만 열리게 두었다. 원문 D2-3 주석이 「9개가 늘 다 펼쳐져 있으면
@@ -273,6 +279,10 @@
          상세에서 숨기고 여기 머리의 「+」로 새로 만든다. */
       sectionHtml("대표 처방", progress ? progress.say : sets.length, "set-new") +
       (rx || '<p class="rail__none">대표 처방이 없습니다</p>') +
+      /* **처방(약 목록)은 대표 처방 바로 아래다.** 대표 처방에 약을 적을 때
+         여기서 고르므로, 둘이 붙어 있어야 눈이 오가지 않는다. */
+      sectionHtml("처방", drugs ? drugs.length : null) +
+      groupsIn("drugs").map(groupRowHtml).join("") +
       sectionHtml("기타") +
       groupsIn("rest").map(groupRowHtml).join("")
     );
@@ -349,7 +359,7 @@
             '">' +
             '<input class="fld__input drug__name" type="text" value="' +
             esc(drug.name) +
-            '" placeholder="비잔정 2mg" aria-label="약 이름"' +
+            '" placeholder="비잔정 2mg" aria-label="약 이름" list="drug-names"' +
             (canEdit ? "" : " disabled") +
             " />" +
             '<input class="fld__input drug__freq" type="text" value="' +
@@ -671,7 +681,114 @@
   /* 한 장 — 왼쪽에서 고른 것 하나만 선다. 여덟이 한꺼번에 펼쳐져 있으면
      어느 것을 보고 있는지 스크롤로 세어야 한다. */
 
+  /** 약 목록 판 — 의원이 쓰는 약을 등록한다.
+   *
+   * **대표 처방에 약을 적을 때 여기서 고르라고 둔다.** 약 넷이 여덟 세트에
+   * 열세 번 되풀이되고, 손으로 치면 표기가 갈린다 — 이미 갈려 있다
+   * (검사·주석은 「비잔정 2mg」, 판독·CSV 는 「비잔정(디에노게스트) 2mg」).
+   *
+   * **이 목록을 읽는 것은 아직 설정 화면뿐이다.** 안내문·환자 화면·챗봇은 안
+   * 읽는다. 그것들이 읽으려면 판독 확정이 진료에 처방을 붙이는 다리가 먼저
+   * 서야 한다(KEY-66).
+   */
+  function textCell(kind, at, hint, value, locked) {
+    return (
+      '<input class="fld__input ' +
+      kind +
+      '" type="text" data-' +
+      kind +
+      '="' +
+      at +
+      '" value="' +
+      esc(value || "") +
+      '" placeholder="' +
+      esc(hint) +
+      '" aria-label="' +
+      esc(hint) +
+      '"' +
+      (locked ? " readonly" : canEdit ? "" : " disabled") +
+      " />"
+    );
+  }
+
+  /** 대표 처방의 약 이름 칸이 쓰는 자동완성 목록. **감춘 약은 뺀다** —
+   *  새로 고르는 자리이기 때문이다. 이미 저장된 이름은 그대로 남는다. */
+  function drugListHtml() {
+    if (!drugs || !drugs.length) return "";
+    return (
+      '<datalist id="drug-names">' +
+      drugs
+        .filter(function (row) {
+          /* 감춘 것과 **아직 이름 없는 줄**을 뺀다 — 빈 항목이 목록에
+             섞이면 고를 것이 없는 줄이 하나 뜬다. */
+          return !row.hidden && row.name;
+        })
+        .map(function (row) {
+          return '<option value="' + esc(row.name) + '"></option>';
+        })
+        .join("") +
+      "</datalist>"
+    );
+  }
+
+  function drugsPanelHtml() {
+    if (!drugs) {
+      return '<p class="note">약 목록을 불러오는 중…</p>';
+    }
+
+    var rows = drugs
+      .map(function (row, i) {
+        return (
+          '<div class="drug' +
+          (row.hidden ? " drug--hidden" : "") +
+          '" data-drug-row="' +
+          i +
+          '">' +
+          textCell("dg-name", i, "약 이름", row.name, !DRAFT) +
+          textCell("dg-freq", i, "1일 1회", row.frequency) +
+          textCell("dg-note", i, "매일 같은 시간", row.note) +
+          '<button class="drug__drop" type="button" data-drug-hide="' +
+          i +
+          '" title="' +
+          (row.hidden ? "되살리기" : "감추기") +
+          '" aria-label="' +
+          (row.hidden ? "되살리기" : "감추기") +
+          '"' +
+          (canEdit ? "" : " disabled") +
+          ">" +
+          (row.hidden ? "↩" : "✕") +
+          "</button></div>"
+        );
+      })
+      .join("");
+
+    return (
+      '<div class="patient-head"><span class="patient-head__name">약 목록</span>' +
+      '<span class="grow"></span>' +
+      (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
+      '<button class="button-primary button-primary--sm" type="button" id="dg-save"' +
+      (canEdit && !busy ? "" : " disabled") +
+      ">저장</button></div>" +
+      '<section class="box"><div class="box__head">' +
+      '<h2 class="box__title">처방</h2>' +
+      '<span class="box__note">대표 처방에서 고를 수 있습니다</span></div>' +
+      '<div class="drugs">' +
+      (rows || '<p class="fld__hint">등록된 약이 없습니다</p>') +
+      '<button class="button-ghost button-ghost--sm" type="button" id="dg-add"' +
+      (canEdit ? "" : " disabled") +
+      ">+ 약 등록</button></div>" +
+      /* **지우는 단추는 없다.** 감추면 새로 고를 목록에서만 빠지고, 이미 그
+         이름으로 저장된 대표 처방은 그대로다. */
+      '<p class="note">ⓘ 등록한 약은 지우지 않고 감춥니다 — 이미 그 이름으로 저장된 대표 처방이 있기 때문입니다</p>' +
+      (DRAFT
+        ? '<p class="note">ⓘ 지금은 제작 중이라 이름을 고칠 수 있습니다 — 배포 전에 잠깁니다</p>'
+        : "") +
+      "</section>"
+    );
+  }
+
   function detailHtml() {
+    if (group === "drugs") return drugsPanelHtml();
     if (group === "baseline") return baselinesHtml();
     if (group === "sms") return templatesHtml();
     if (!picked) {
@@ -743,6 +860,10 @@
       '<div class="drugs">' +
       '<span class="fld__label">처방</span>' +
       drugsHtml() +
+      /* **등록된 약에서 고른다.** `<datalist>` 는 목록 밖 값을 막지 않는다 —
+         막으면 이미 저장된 「비잔정 2mg」이 목록(「비잔정(디에노게스트) 2mg」)에
+         없어서, 다른 칸만 고치고 저장해도 약 이름이 빈칸으로 떨어진다. */
+      drugListHtml() +
       "</div></section>" +
       /* ② 처방 일수 — 소진 예정일이 이 값으로 셈해진다 */
       '<section class="box"><div class="box__head">' +
@@ -1175,6 +1296,132 @@
 
   /* ── 문자 문구 (D2-5) ──────────────────────────────────────────── */
 
+  /** 다른 판으로 옮긴다. **치우는 것을 한 곳에 모은다** — 판마다 「무엇을
+   *  비울까」를 따로 적으면 판이 늘 때마다 그 목록이 제곱으로 자라고, 하나
+   *  빠뜨리면 옛 판의 값이 새 판에 비쳐 보인다. */
+  function goGroup(key) {
+    closeMaking();
+    group = key;
+    pickedId = null;
+    picked = null;
+    templates = null;
+    baselines = null;
+    saying = "";
+    drafts = {};
+  }
+
+  function openDrugs() {
+    goGroup("drugs");
+    render();
+    return loadDrugs();
+  }
+
+  /** 목록만 다시 받는다. **`goGroup` 을 안 지난다** — 그것이 `saying` 을
+   *  지우기 때문이다. 저장 뒤에 이걸 부르면서 판을 여는 함수를 쓰면
+   *  「이미 등록돼 있습니다」가 그 자리에서 사라져, 막혔는데 화면이 아무 말도
+   *  안 하게 된다. */
+  function loadDrugs() {
+    return catalogApi
+      .drugs()
+      .then(function (page) {
+        /* 서버가 `{draft, items}` 로 준다 — 제작 중인지도 함께 온다. */
+        DRAFT = !!(page && page.draft);
+        drugs = (page && page.items) || [];
+        render();
+      })
+      .catch(function () {
+        drugs = null;
+        saying = "약 목록을 불러오지 못했습니다";
+        render();
+      });
+  }
+
+  /** 판에 적힌 것을 거둔다. `keepScreen()` 과 같은 까닭 — 다시 그리면
+   *  `drugs` 로 되돌아가므로, 거두지 않으면 친 것이 그 자리에서 날아간다. */
+  function drugsNow() {
+    if (!drugs) return [];
+    return drugs.map(function (row, i) {
+      var name = el2("dg-name", i);
+      var freq = el2("dg-freq", i);
+      var note = el2("dg-note", i);
+      return {
+        drug_catalog_id: row.drug_catalog_id,
+        name: name ? name.value : row.name,
+        frequency: freq ? freq.value : row.frequency,
+        note: note ? note.value : row.note,
+        hidden: row.hidden,
+      };
+    });
+  }
+
+  function el2(kind, at) {
+    return document.querySelector("[data-" + kind + '="' + at + '"]');
+  }
+
+  /** 빈 줄을 하나 더한다. **화면에 적힌 것을 먼저 거둔다** — 안 거두면
+   *  다시 그릴 때 친 것이 날아간다(대표 처방에서 났던 그 일). */
+  function addDrug() {
+    if (!canEdit) return;
+    drugs = drugsNow().concat([
+      { drug_catalog_id: null, name: "", frequency: "", note: "", hidden: false },
+    ]);
+    saying = "";
+    render();
+    var box = el2("dg-name", drugs.length - 1);
+    if (box) box.focus();
+  }
+
+  /** 판을 통째로 저장한다. 새 줄은 등록, 있던 줄은 수정.
+   *
+   * **줄마다 따로 보낸다** — 한 판을 통째로 받는 종점이 없고, 이름이 겹치면
+   * 그 줄만 막혀야지 다른 줄까지 되돌릴 이유가 없다. 다만 어느 줄이 막혔는지
+   * 말해 준다: 「저장하지 못했습니다」만 적으면 어디를 고쳐야 할지 모른다.
+   */
+  function saveDrugs() {
+    if (!canEdit || busy) return;
+    var plan = drugsNow();
+    var blank = plan.filter(function (row) {
+      return !row.name.trim();
+    });
+    if (blank.length) {
+      saying = "약 이름을 적어 주세요";
+      return render();
+    }
+
+    busy = true;
+    saying = "저장 중…";
+    render();
+
+    return Promise.all(
+      plan.map(function (row) {
+        return row.drug_catalog_id === null
+          ? catalogApi.addDrug(row).catch(function (err) {
+              return { failed: row.name, code: err && err.code };
+            })
+          : catalogApi.saveDrug(row.drug_catalog_id, row).catch(function (err) {
+              return { failed: row.name, code: err && err.code };
+            });
+      }),
+    ).then(function (answers) {
+      busy = false;
+      var bad = answers.filter(function (row) {
+        return row && row.failed;
+      });
+      saying = bad.length
+        ? bad[0].code === "DRUG_EXISTS"
+          ? "「" + bad[0].failed + "」는 이미 등록돼 있습니다"
+          : "「" + bad[0].failed + "」를 저장하지 못했습니다"
+        : "저장되었습니다";
+      /* 판을 여는 함수가 아니라 **받아 오기만** 부른다 — 위 `saying` 이
+         지워지면 안 된다. */
+      var told = saying;
+      return loadDrugs().then(function () {
+        saying = told;
+        render();
+      });
+    });
+  }
+
   function openTemplates() {
     group = "sms";
     pickedId = null;
@@ -1485,6 +1732,8 @@
     /* 기타 묶음(기준선·문자 문구)으로 옮길 때도 닫되 친 것은 들고 간다 */
     var chosenGroup = target.closest("[data-group]");
     if (chosenGroup) closeMaking();
+    if (chosenGroup && chosenGroup.getAttribute("data-group") === "drugs")
+      return openDrugs();
     if (chosenGroup && chosenGroup.getAttribute("data-group") === "sms")
       return openTemplates();
     if (chosenGroup && chosenGroup.getAttribute("data-group") === "baseline")
@@ -1511,6 +1760,15 @@
     if (target.closest("#set-save")) return save();
     if (target.closest("#set-hide")) return hideSet();
     if (target.closest("#set-new")) return newSet();
+    if (target.closest("#dg-add")) return addDrug();
+    if (target.closest("#dg-save")) return saveDrugs();
+    var hideAt = target.closest("[data-drug-hide]");
+    if (hideAt) {
+      var at = Number(hideAt.getAttribute("data-drug-hide"));
+      drugs = drugsNow();
+      drugs[at].hidden = !drugs[at].hidden;
+      return render();
+    }
     if (target.closest("#make-cancel")) {
       /* **버리는 유일한 길이다.** 나머지는 전부 들고 있는다. */
       making = false;
