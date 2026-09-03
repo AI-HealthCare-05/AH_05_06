@@ -152,7 +152,7 @@ class TestProcessOcrJob(TestCase):
         for field_type in ("DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"):
             assert field_type not in field_types, f"검사지만 올렸는데 {field_type} 빈 줄이 생겼다"
 
-    # ── CLOVA 실패 → fixture fallback ────────────────────────────────────────
+    # ── CLOVA 실패 → FAILED ──────────────────────────────────────────────────
 
     async def test_clova_error_marks_job_failed(self) -> None:
         job = await self._seed("ocr_key56_clova_err")
