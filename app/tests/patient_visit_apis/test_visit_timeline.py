@@ -19,6 +19,7 @@ from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.visits import GuideDocument, GuideEvent, GuideEventType, GuideSectionKey, Visit
+from app.services.patient_history import GUIDE_PAGES
 
 BASE_URL = "http://test"
 STAFF = ClinicalActor(staff_id=101, hospital_id=1, roles=frozenset({"staff"}))
@@ -236,6 +237,24 @@ class TestTimelineMerge(TestCase):
         body = response.json()
         assert [(e["category"], e["event"]) for e in body["entries"]] == [("VISIT", "VISIT_CREATED")]
         assert body["messages"] == []
+
+    async def test_it_says_how_many_guide_pages_there_are(self) -> None:
+        """🚩 **분모를 서버가 준다.**
+
+        D1-6 화면이 제 목록으로 장수를 세고 있었다. S2-2 이력 모달은 서버
+        값을 쓰는데, 장 목록이 바뀌면 **같은 환자를 두 화면이 다르게 센다**
+        (`#189` 리뷰, 2heej).
+
+        이력 모달과 **같은 목록**(`patient_history.GUIDE_PAGES`)에서 온다 —
+        여기서 딴 값을 주면 고치려던 불일치가 그대로다.
+        """
+        patient = await make_patient(1, "SYN-KEY256-T")
+        visit = await make_visit(1, patient)
+
+        response = await get_timeline(STAFF, visit.visit_id)
+
+        assert response.status_code == 200
+        assert response.json()["guide_pages_total"] == len(GUIDE_PAGES) == 4
 
 
 class TestTimelineAccess(TestCase):
