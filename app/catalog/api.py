@@ -217,6 +217,29 @@ def _draft_mode() -> bool:
     return Config().CATALOG_DRAFT_MODE
 
 
+def _require_one_drug(name: str) -> None:
+    """**한 줄에 약 하나.** 묶인 이름은 안 받는다.
+
+    판독이 읽어 오는 값에 실제로 이런 것이 있다 —
+    「야즈정(드로스피레논/에티닐에스트라디올) + 메트포르민 500mg」.
+    이것을 그대로 등록하면 목록에 **약이 아닌 것**이 한 줄 생기고, 자동완성에
+    떠서 사람이 고르고, 그렇게 퍼진다. 목록을 둔 까닭이 표기를 하나로 모으는
+    것인데 정반대가 된다.
+
+    **가르는 것은 `+` 하나다.** `/` 는 성분이 둘인 한 약이라 막으면 안 된다 —
+    「야즈정(드로스피레논/에티닐에스트라디올)」은 제품 하나다.
+
+    대표 처방 이름에는 이 규칙을 걸지 않는다. 「PCOS · 야즈 + 메트포르민」은
+    두 약을 함께 쓰는 **처방 한 벌**의 이름이라 `+` 가 제자리다.
+    """
+    if "+" in name:
+        raise ApiError(
+            422,
+            "ONE_DRUG_PER_ROW",
+            "약은 한 번에 하나씩 등록합니다. 「+」로 묶인 이름은 나눠 주세요.",
+        )
+
+
 def _clean_name(raw: str) -> str:
     """이름을 **한 가지 꼴로 다듬는다.**
 
@@ -343,6 +366,7 @@ async def create_drug(
     name = _clean_name(payload.name)
     if not name:
         raise ApiError(422, "NAME_REQUIRED", "약 이름을 적어 주세요.")
+    _require_one_drug(name)
 
     already = await DrugCatalog.filter(name=name).first()
     if already is not None:
@@ -394,6 +418,7 @@ async def save_drug(
         name = _clean_name(payload.name)
         if not name:
             raise ApiError(422, "NAME_REQUIRED", "약 이름을 적어 주세요.")
+        _require_one_drug(name)
         if await DrugCatalog.filter(name=name).exclude(drug_catalog_id=drug_catalog_id).exists():
             raise ApiError(409, "DRUG_EXISTS", "같은 이름의 약이 이미 있습니다.")
         row.name = name

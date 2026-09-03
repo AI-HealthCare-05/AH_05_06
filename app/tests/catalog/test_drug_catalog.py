@@ -219,3 +219,61 @@ class DrugCatalogTestCase(PrescriptionSettingsTestCase):
 
         assert on.json()["draft"] is True
         assert off.json()["draft"] is False, "잠갔는데 화면에는 열렸다고 말한다"
+
+    async def test_two_drugs_in_one_row_are_refused(self) -> None:
+        """**한 줄에 약 하나.**
+
+        판독이 읽어 오는 값에 실제로 이런 것이 있다 —
+        「야즈정(드로스피레논/에티닐에스트라디올) + 메트포르민 500mg」.
+        그대로 등록하면 목록에 **약이 아닌 것**이 한 줄 생기고, 자동완성에 떠서
+        사람이 고르고, 그렇게 퍼진다. 목록을 둔 까닭이 표기를 하나로 모으는
+        것인데 정반대가 된다.
+        """
+        staff = await self.make_staff(["staff"])
+
+        answer = await self.add(staff, name="야즈정(드로스피레논/에티닐에스트라디올) + 메트포르민 500mg")
+
+        assert answer.status_code == 422, answer.text
+        assert answer.json()["code"] == "ONE_DRUG_PER_ROW"
+        assert not await DrugCatalog.filter(name__contains="+").exists()
+
+    async def test_a_slash_is_not_a_join(self) -> None:
+        """**`/` 는 성분이 둘인 한 약이다.** 막으면 실제 제품을 못 넣는다."""
+        staff = await self.make_staff(["staff"])
+
+        answer = await self.add(staff, name="야즈정(드로스피레논/에티닐에스트라디올)")
+
+        assert answer.status_code == 201, answer.text
+
+    async def test_renaming_cannot_join_two_drugs_either(self) -> None:
+        """등록은 막고 수정은 안 막으면 뒷문이 남는다."""
+        staff = await self.make_staff(["staff"])
+        made = (await self.add(staff)).json()
+
+        async with self.client() as client:
+            answer = await client.put(
+                f"/api/v1/prescription-drugs/{made['drug_catalog_id']}",
+                json={"name": "비잔정 2mg + 진통제", "frequency": None, "note": None, "hidden": False},
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 422, answer.text
+        assert answer.json()["code"] == "ONE_DRUG_PER_ROW"
+
+    async def test_a_prescription_set_may_still_join(self) -> None:
+        """**대표 처방 이름에는 이 규칙을 안 건다.**
+
+        「PCOS · 야즈 + 메트포르민」은 두 약을 함께 쓰는 **처방 한 벌**의
+        이름이라 `+` 가 제자리다. 약에 건 규칙을 세트까지 끌고 가면 씨앗
+        여덟 중 하나를 못 만든다.
+        """
+        staff = await self.make_staff(["staff"])
+
+        async with self.client() as client:
+            answer = await client.post(
+                "/api/v1/prescription-sets",
+                json={"name": "PCOS · 야즈 + 메트포르민 (2026)", "disease": "PCOS"},
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 201, answer.text

@@ -393,6 +393,12 @@ function mockAddDrug(row) {
   return new Promise(function (resolve, reject) {
     var name = clean(row.name);
     if (!name) return reject(new ApiError("NAME_REQUIRED", 422, {}));
+    /* **한 줄에 약 하나.** 판독이 「야즈정(…) + 메트포르민 500mg」처럼 묶어
+       읽어 온다 — 그대로 등록하면 목록에 약이 아닌 것이 한 줄 생긴다.
+       `/` 는 성분이 둘인 한 약이라 막지 않는다. */
+    if (name.indexOf("+") !== -1) {
+      return reject(new ApiError("ONE_DRUG_PER_ROW", 422, {}));
+    }
     var store = drugStore();
     for (var i = 0; i < store.length; i++) {
       /* **감춘 이름도 못 쓴다** — 서버와 같은 규칙이다 */
