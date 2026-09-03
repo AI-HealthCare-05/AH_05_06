@@ -596,15 +596,15 @@ def test_prescription_set_no_suggestion_without_drug() -> None:
 
 
 def test_prescription_set_inferred_from_bizan_without_diagnosis() -> None:
-    """DIAGNOSIS 필드 없이 비잔만 있어도 PRESCRIPTION_SET과 DIAGNOSIS를 역추론한다."""
+    """DIAGNOSIS 없이 비잔만 있으면 PRESCRIPTION_SET을 제안하되 DIAGNOSIS는 역추론하지 않는다."""
     fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
     assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 (처음)"
-    assert field_map.get("DIAGNOSIS") == "자궁내막증"
+    assert "DIAGNOSIS" not in field_map
 
 
 def test_prescription_set_bizan_in_raw_text_no_disease_table() -> None:
-    """메모 영역「비잔 복용중」만으로 자궁내막증 · 비잔 (계속)을 제안하고 진단도 역추론한다."""
+    """메모 영역「비잔 복용중」만으로 자궁내막증 · 비잔 (계속)을 제안하되 DIAGNOSIS는 역추론하지 않는다."""
     result = ClovaOcrResult(
         raw_text="25.7월 부터 비잔 복용중 (EMA)",
         fields=[],
@@ -613,7 +613,7 @@ def test_prescription_set_bizan_in_raw_text_no_disease_table() -> None:
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
     assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 (계속)"
-    assert field_map.get("DIAGNOSIS") == "자궁내막증"
+    assert "DIAGNOSIS" not in field_map
 
 
 def test_prescription_set_no_suggestion_without_any_drug_signal() -> None:

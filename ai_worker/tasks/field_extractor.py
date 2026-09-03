@@ -621,14 +621,9 @@ def _extract_emr(clova_result: ClovaOcrResult) -> list[ExtractedField]:
     suggestion = _suggest_prescription_set_from(results, clova_result.raw_text or "")
     if suggestion:
         results.append(suggestion)
-        # DIAGNOSIS 가 없으면 처방 세트에서 역추론해 추가한다.
-        # 상병 표를 못 읽었지만 「비잔 복용중」 같은 메모로 세트를 찾은 경우가 해당한다.
-        if "DIAGNOSIS" not in found_types:
-            set_name = suggestion.extracted_value
-            if "자궁내막증" in set_name:
-                _add([ExtractedField("DIAGNOSIS", "자궁내막증", _SET_SUGGESTION_MED_CONF)])
-            elif "PCOS" in set_name:
-                _add([ExtractedField("DIAGNOSIS", "다낭성난소증후군(PCOS)", _SET_SUGGESTION_MED_CONF)])
+        # 약품명으로 역추론한 질환명은 DIAGNOSIS 필드로 승격하지 않는다.
+        # PRESCRIPTION_SET 값("자궁내막증 · 비잔 (처음)" 등)이 맥락을 전달하므로
+        # 스탭이 실제 상병을 보고 직접 확정해야 한다(AGENTS.md: 확정된 OCR만 사용).
 
     return results
 
