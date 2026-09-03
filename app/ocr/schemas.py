@@ -13,6 +13,7 @@ class OcrJobResponse(StrictModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     failure_code: str | None = None
+    excluded_from_guide: bool = False
 
 
 class OcrCandidateResponse(StrictModel):
@@ -75,6 +76,7 @@ class OcrJobByDocumentResponse(StrictModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     failure_code: str | None = None
+    excluded_from_guide: bool = False
 
 
 class UpdateOcrFieldRequest(StrictModel):

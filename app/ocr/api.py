@@ -125,6 +125,20 @@ async def get_document_image(
     )
 
 
+@ocr_router.patch("/ocr/jobs/{ocr_job_id}/exclude", response_model=OcrJobResponse)
+async def exclude_ocr_job(
+    ocr_job_id: Annotated[str, Path(min_length=1, max_length=64)],
+    actor: Annotated[OcrActor, Depends(get_ocr_actor)],
+    ocr: Annotated[OcrService, Depends(get_ocr_service)],
+) -> OcrJobResponse:
+    """잘못 올린 문서의 job을 안내 생성 게이트에서 제외한다.
+
+    제외된 job은 안내 생성 시 최신 job 판정에서 건너뛴다.
+    같은 job을 다시 호출해도 멱등 처리된다.
+    """
+    return await ocr.exclude_job(ocr_job_id, actor)
+
+
 @ocr_router.patch("/ocr/fields/{ocr_field_id}", response_model=OcrFieldResponse)
 async def update_ocr_field(
     ocr_field_id: Annotated[int, Path(gt=0)],

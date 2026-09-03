@@ -125,6 +125,18 @@ class FakeOcrService:
             ]
         return []
 
+    async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
+        if ocr_job_id == "ocr_other_hospital":
+            raise OcrApiError(404, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
+        return OcrJobResponse(
+            ocr_job_id=ocr_job_id,
+            status=OcrJobStatus.COMPLETED,
+            progress=100,
+            started_at=NOW,
+            completed_at=NOW,
+            excluded_from_guide=True,
+        )
+
     async def update_field(
         self, ocr_field_id: int, request: UpdateOcrFieldRequest, actor: OcrActor
     ) -> OcrFieldResponse:
@@ -403,3 +415,36 @@ def test_visit_ocr_jobs_returns_empty_list_when_no_documents(api: tuple[TestClie
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_exclude_job_returns_excluded_flag_in_response(api: tuple[TestClient, FakeOcrService]) -> None:
+    """PATCH /ocr/jobs/{id}/exclude 는 excluded_from_guide=True 를 포함한 OcrJobResponse 를 반환한다."""
+    client, _ = api
+    response = client.patch("/api/v1/ocr/jobs/ocr_synthetic_501/exclude")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ocr_job_id"] == "ocr_synthetic_501"
+    assert body["excluded_from_guide"] is True
+
+
+def test_exclude_job_is_idempotent(api: tuple[TestClient, FakeOcrService]) -> None:
+    """같은 job 을 두 번 제외해도 200 을 반환한다 (멱등)."""
+    client, _ = api
+
+    first = client.patch("/api/v1/ocr/jobs/ocr_synthetic_501/exclude")
+    second = client.patch("/api/v1/ocr/jobs/ocr_synthetic_501/exclude")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["excluded_from_guide"] is True
+    assert second.json()["excluded_from_guide"] is True
+
+
+def test_exclude_job_hides_other_hospital_as_not_found(api: tuple[TestClient, FakeOcrService]) -> None:
+    """다른 병원 job 은 존재해도 404 로 숨긴다 (병원 스코핑)."""
+    client, _ = api
+    response = client.patch("/api/v1/ocr/jobs/ocr_other_hospital/exclude")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "NOT_FOUND"

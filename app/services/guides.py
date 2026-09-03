@@ -29,7 +29,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.prescriptions import Prescription
 from app.models.visits import (
     GuideDocument,
@@ -127,11 +127,51 @@ class GuideService:
         if visit is None:
             raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
 
+        # 가장 최근 비제외 completed job을 기준으로 확정 여부를 판정한다.
+        # 새 문서를 추가 업로드했을 때 이전 확정값으로 게이트가 통과되는 것을 막는다.
+        latest_job = (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                hospital_id=actor.hospital_id,
+                excluded_from_guide=False,
+                status=OcrJobStatus.COMPLETED,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+        if latest_job is None:
+            raise ApiError(
+                "OCR_NOT_CONFIRMED",
+                422,
+                "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
+            )
+
+        latest_result = await OcrResult.filter(ocr_job=latest_job).first()
+        if latest_result is None:
+            raise ApiError(
+                "OCR_NOT_CONFIRMED",
+                422,
+                "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
+            )
+
+        unconfirmed = await OcrField.filter(
+            ocr_result=latest_result,
+            is_confirmed=False,
+        ).first()
+        if unconfirmed is not None:
+            raise ApiError(
+                "OCR_NOT_CONFIRMED",
+                422,
+                "가장 최근 판독에 확정되지 않은 항목이 있습니다. 모든 항목을 확정해 주세요.",
+            )
+
         confirmed = await OcrField.filter(
-            ocr_result__ocr_job__visit_id=visit_id,
-            ocr_result__ocr_job__hospital_id=actor.hospital_id,
+            ocr_result=latest_result,
             is_confirmed=True,
         ).first()
+
+        # 미확정 필드가 없더라도 확정된 필드가 하나도 없으면(필드 0개) 안내 생성을 막는다.
         if confirmed is None:
             raise ApiError(
                 "OCR_NOT_CONFIRMED",
@@ -139,7 +179,7 @@ class GuideService:
                 "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
             )
 
-        field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else confirmed.field_type
+        field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else ""
 
         # KEY-165: 처방 세트 이름으로 승인된 caution/emergency 문구를 미리 조회한다.
         # 트랜잭션 밖에서 실행해 락 보유 시간을 줄인다.

@@ -15,7 +15,7 @@ from tortoise.contrib.test import TestCase
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: F401 (OcrResult used in test setup)
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideSectionKey, GuideStatus, Visit
@@ -125,6 +125,32 @@ class TestGenerateBlocksUnconfirmedOcr(GenerateGuideTestCase):
             extracted_value="PCOS",
             is_confirmed=False,
         )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_NOT_CONFIRMED"
+
+    async def test_zero_fields_is_refused(self) -> None:
+        """OcrResult는 있지만 필드가 0개이면 게이트를 통과하지 못한다.
+
+        재현 경로: 필드 값을 빈 문자열로 교체 → write_field가 미확정 row를 삭제
+        → OcrResult에 필드 0개 → unconfirmed 조회도 None, confirmed 조회도 None
+        → 이전 게이트는 그냥 통과했음 (KEY-226 리뷰 지적 #1).
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        job = await OcrJob.create(
+            ocr_job_id=f"syn-zero-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.COMPLETED,
+        )
+        await OcrResult.create(ocr_job=job, model_name="synthetic-fixture")
 
         async with self.client() as client:
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
@@ -353,3 +379,69 @@ class TestGenerateThenApproveEndToEnd(GenerateGuideTestCase):
         saved = await GuideDocument.get(visit_id=visit.visit_id)
         assert gen.json()["status"] == GuideStatus.STAFF_REVIEW
         assert saved.approved_at is None, "승인 전에는 approved_at 이 비어 있어야 한다"
+
+
+class TestGenerateGateLatestJob(GenerateGuideTestCase):
+    """가장 최근 job 기준 게이트 — AC5 (KEY-226)."""
+
+    async def test_new_unconfirmed_job_blocks_generation(self) -> None:
+        """이전 job이 확정돼 있어도 더 최신 미확정 job이 있으면 422로 막힌다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 첫 번째 job — 완료·확정
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        # 두 번째 job — 완료됐지만 미확정
+        second_job = await OcrJob.create(
+            ocr_job_id=f"syn-new-unconf-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.COMPLETED,
+        )
+        second_result = await OcrResult.create(ocr_job=second_job, model_name="synthetic-fixture")
+        await OcrField.create(
+            ocr_result=second_result,
+            field_type="DIAGNOSIS",
+            extracted_value="자궁내막증",
+            is_confirmed=False,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_NOT_CONFIRMED"
+
+    async def test_excluded_job_is_skipped_and_previous_confirmed_passes(self) -> None:
+        """최신 job을 제외 처리하면 이전 확정 job 기준으로 게이트가 통과된다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 첫 번째 job — 완료·확정
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        # 두 번째 job — 잘못 올린 문서, 제외 처리
+        bad_job = await OcrJob.create(
+            ocr_job_id=f"syn-excluded-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.COMPLETED,
+            excluded_from_guide=True,
+        )
+        bad_result = await OcrResult.create(ocr_job=bad_job, model_name="synthetic-fixture")
+        await OcrField.create(
+            ocr_result=bad_result,
+            field_type="DIAGNOSIS",
+            extracted_value="잘못된 문서",
+            is_confirmed=False,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 201

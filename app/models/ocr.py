@@ -45,6 +45,7 @@ class OcrJob(models.Model):
     started_at = fields.DatetimeField(null=True)
     completed_at = fields.DatetimeField(null=True)
     failure_code = fields.CharField(max_length=64, null=True)
+    excluded_from_guide = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
     source_documents: fields.ReverseRelation["OcrJobDocument"]
