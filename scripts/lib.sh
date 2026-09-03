@@ -41,11 +41,25 @@ read -r DOCKER_PAT <<'DOCKER_PAT_EOF'
 ${pat}
 DOCKER_PAT_EOF
 
+
 $(cat <<'REMOTE'
 cd project
 
-echo "Docker login"
-printf '%s' "$DOCKER_PAT" | docker login -u "$DOCKER_USERNAME" --password-stdin
+# **PAT 가 없으면 로그인을 건너뛴다.**
+#
+# 로컬에서 도커 데스크톱 SSO(구글 로그인)로 들어오면 넘겨 줄 PAT 자체가 없다.
+# 그런데 `set -e` 가 위에 있어서, 빈 값으로 `docker login` 을 부르면
+# `password is empty` 로 **배포가 여기서 끝난다** (2026-09-03 에 그랬다).
+#
+# `iljunk/ai-health` 는 **공개 레포**라 아래 `pull` 은 로그인 없이도 된다.
+# 레포를 비공개로 돌리는 날 이 자리가 「pull access denied」로 멈추므로,
+# 그때는 `DOCKER_PAT` 을 주고 돌려야 한다.
+if [ -n "$DOCKER_PAT" ]; then
+  echo "Docker login"
+  printf '%s' "$DOCKER_PAT" | docker login -u "$DOCKER_USERNAME" --password-stdin
+else
+  echo "Docker login 건너뜀 — PAT 없음. 공개 레포는 로그인 없이 받는다."
+fi
 
 echo "Pulling images: $DEPLOY_SERVICES"
 docker compose pull $DEPLOY_SERVICES
@@ -63,7 +77,33 @@ docker compose pull $DEPLOY_SERVICES
 # `set -e` 가 위에 있으므로 실패하면 여기서 배포가 끝난다.
 if printf '%s\n' $DEPLOY_SERVICES | grep -qx fastapi; then
   echo "Applying migrations"
-  docker compose run --rm -T --no-deps fastapi uv run --no-sync aerich upgrade
+  # 🚨 **`< /dev/null` 을 빼면 배포가 여기서 조용히 끝난다.**
+  #
+  # 이 본문 전체가 `bash -s` 의 **stdin** 으로 흘러 들어온다. `docker compose
+  # run -T` 는 stdin 을 컨테이너에 그대로 이어 주므로, 막지 않으면 **아직 안
+  # 읽은 스크립트 나머지**를 aerich 가 통째로 빨아들인다. 그러면 뒤의
+  # `up -d` 와 `image prune` 이 실행되지 않는데, `set -e` 에 걸리지도 않아서
+  # (aerich 는 0 으로 끝난다) **성공한 것처럼 보인다.**
+  #
+  # 2026-09-03 배포가 정확히 이렇게 됐다 — 마이그레이션 16 개가 올라가고
+  # `✅ Deployment finished` 가 찍혔는데 **컨테이너는 하나도 안 바뀌었다.**
+  # 새 이미지는 받아만 놓고 옛 이미지가 계속 돌았다.
+  #
+  # 위 `read -r DOCKER_PAT` 주석이 적어 둔 것과 같은 함정이다. 그때는 `read`
+  # 였고 이번엔 `docker compose run` 이었다 — **stdin 을 쓰는 것은 전부** 이
+  # 자리에서 막아야 한다.
+  #
+  # 🚩 **`exec < /dev/null` 로 한 번에 닫는 방법은 못 쓴다.** `#202` 리뷰에서
+  # 그 편이 구조적으로 안전하다는 제안을 받아 넣어 봤는데, **스크립트 자신이
+  # stdin 에 실려 있어서**(`bash -s`) 닫는 순간 뒤가 통째로 안 읽힌다.
+  #
+  #     printf 'echo A\nexec < /dev/null\necho B\n' | bash -s   # → A 만 나온다
+  #     printf 'echo A\ncat < /dev/null\necho B\n'   | bash -s   # → A B 둘 다
+  #
+  # 그래서 **명령마다** 막는다. 빠뜨리기 쉬운 것이 이 방식의 약점이라,
+  # `test_key263_deploy_actually_ships.py` 가 stdin 을 쓰는 명령을 전부 훑어
+  # 리다이렉션이 없으면 운다.
+  docker compose run --rm -T --no-deps fastapi uv run --no-sync aerich upgrade < /dev/null
 fi
 
 echo "Deploying services: $DEPLOY_SERVICES"

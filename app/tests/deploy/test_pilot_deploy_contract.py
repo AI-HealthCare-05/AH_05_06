@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import PLACEHOLDER
-from app.tests.deploy.conftest import ROOT, read
+from app.tests.deploy.conftest import ROOT, read, shipped_frontend_files
 
 RUNBOOK = ROOT / "docs" / "deploy-runbook.md"
 
@@ -64,30 +64,6 @@ def write_stub(directory: Path, name: str, body: str) -> Path:
     stub.write_text("#!/bin/bash\n" + body, encoding="utf-8")
     stub.chmod(0o755)
     return stub
-
-
-#: `COPY <src> <dst>` 한 줄. 칸이 여러 개여도 잡는다.
-COPY_LINE = re.compile(r"^COPY\s+(?P<src>\S+)\s+\S+\s*$", re.MULTILINE)
-
-
-def shipped_frontend_files() -> set[str]:
-    """이미지에 **실제로 실리는** 프런트 파일 목록.
-
-    Dockerfile 을 문자열로 훑지 않고 `COPY` 의 글롭을 **디스크에 펼친다.**
-    문자열 검사는 「`tests` 라는 낱말이 없다」까지밖에 못 재는데, 정작 알고
-    싶은 것은 「`frontend/tests/contract.test.js` 가 나가느냐」다.
-    """
-    out: set[str] = set()
-    for match in COPY_LINE.finditer(read("infra/nginx/Dockerfile")):
-        src = match.group("src")
-        if not src.startswith("frontend"):
-            continue
-        for hit in ROOT.glob(src):
-            if hit.is_dir():
-                out |= {f.relative_to(ROOT).as_posix() for f in hit.rglob("*") if f.is_file()}
-            elif hit.is_file():
-                out.add(hit.relative_to(ROOT).as_posix())
-    return out
 
 
 def build_and_push_source() -> str:
