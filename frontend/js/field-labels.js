@@ -22,6 +22,7 @@ var FIELD_LABELS = {
   FREQUENCY: "일일횟수",
   DURATION_DAYS: "처방일수",
   PRESCRIPTION_DATE: "처방일",
+  PRESCRIPTION_SET: "약속처방",
 
   /* ── 증상 — 사람이 물어 적는 값 ─────────────────────────────────
      판독이 못 읽으면 진료기록을 다시 보는 것이 아니라 스탭이 직접 적는다. */
@@ -42,8 +43,8 @@ var FIELD_LABELS = {
   AST: "AST",
   ALT: "ALT",
   LH_FSH_RATIO: "LH / FSH 비율",
-  LH: "LH",
-  FSH: "FSH",
+  LH: "LH (황체형성호르몬)",
+  FSH: "FSH (난포자극호르몬)",
   DHEA_S: "DHEA-S",
   TESTOSTERONE: "Testosterone",
   PROLACTIN: "Prolactin",
@@ -66,6 +67,8 @@ var FIELD_LABELS = {
      옮겨 적었더니 두 개를 놓쳤고, 추출기 원문을 대조하는 검사가 잡았다. */
   CA_125: "CA-125",
   CA19_9: "CA 19-9",
+  ROMA_SCORE: "ROMA 점수",
+  PCOS: "다낭성난소증후군(PCOS)",
 
   /* 에스트라디올. 「E2」로 부르는 것이 병원 관례라 그대로 둔다.
      이 항목도 검사가 아니라 **내가 눈으로 훑다가** 놓쳤다 — 두 글자라
