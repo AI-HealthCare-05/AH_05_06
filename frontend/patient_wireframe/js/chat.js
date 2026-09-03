@@ -1,8 +1,8 @@
 /* 챗봇 오버레이 — FAB → 하단 패널 */
 (function () {
-  /* P6 실제 API 연결은 KEY-241 범위 밖이다. 실제 화면에서 목업 답변을
-     진짜 의료 안내처럼 보여 주지 않고, ?mock=1 미리보기에서만 연다. */
-  if (typeof GUIDE_MOCK === 'undefined' || !GUIDE_MOCK) return;
+  /* KEY-259부터 실제 화면은 환자 세션으로 응답 API를 호출한다.
+     합성 답변은 화면 검증용 ?mock=1에서만 사용한다. */
+  if (typeof GUIDE_MOCK === 'undefined') return;
 
   var SUGGESTIONS = [
     '약 먹는 시간을 바꿔도 되나요?',
@@ -20,7 +20,6 @@
   };
 
   var guide = null;
-  var linkToken = null;
   var state = {
   messages: [],
   busy: false,
@@ -165,6 +164,25 @@
         answer.appendChild(meta);
       }
 
+      [
+        ['근거', msg.evidence],
+        ['한계', msg.limitation],
+        ['승인 안내', msg.groundedSection],
+      ].forEach(function (item) {
+        if (!item[1]) return;
+        var detail = document.createElement('p');
+        detail.className = 'chat-answer__meta';
+        detail.textContent = item[0] + ' · ' + item[1];
+        answer.appendChild(detail);
+      });
+
+      if (msg.fallback) {
+        var fallback = document.createElement('p');
+        fallback.className = 'chat-answer__meta';
+        fallback.textContent = '승인된 안내 범위 밖이라 답할 수 없어요.';
+        answer.appendChild(fallback);
+      }
+
       if (!msg.streaming) {
         var actions = document.createElement('div');
         actions.className = 'chat-answer__actions';
@@ -179,6 +197,7 @@
         contact.type = 'button'; contact.className = 'chat-contact';
         contact.innerHTML = '<img src="/patient_wireframe/assets/chat_bot.png" alt="" class="chat-contact__icon" aria-hidden="true"> 문의하기';
         contact.addEventListener('click', function () {
+          /* KEY-259: 병원 연락처 계약 전까지 기존 준비 안내를 유지한다. */
           alert('문의 창구는 병원 설정에서 연결됩니다.');
         });
         actions.appendChild(contact);
@@ -285,13 +304,26 @@
     var controller = new AbortController();
     state.requestController = controller;
 
-    requestChatbotResponse(linkToken, q, controller.signal)
+    streamChatbotAnswer(
+      { question: q, signal: controller.signal },
+      {
+        onDelta: function (chunk) {
+          if (gen !== state.generation) return;
+          answerMsg.text += chunk;
+          updateStream(answerMsg.text);
+          scrollBottom();
+        },
+      },
+    )
       .then(function (result) {
         if (gen !== state.generation) return;
 
-        answerMsg.text = result.answer || '';
+        answerMsg.text = result.answer || answerMsg.text;
         answerMsg.urgent = !!result.urgent;
+        answerMsg.evidence = result.evidence;
         answerMsg.source = result.source;
+        answerMsg.limitation = result.limitation;
+        answerMsg.groundedSection = result.grounded_section;
         answerMsg.responseRef = result.response_ref;
         answerMsg.fallback = !!result.fallback;
       })
@@ -303,8 +335,7 @@
           return;
         }
 
-        answerMsg.error =
-          '답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+        answerMsg.error = chatbotErrorMessage(error && error.code);
       })
       .finally(function () {
         if (state.requestController === controller) {
@@ -392,8 +423,7 @@
   });
 
   /* ── 외부에서 guide 데이터 주입 ─────────── */
-  window.chatSetGuide = function (g, token) {
+  window.chatSetGuide = function (g) {
     guide = g;
-    linkToken = token;
   };
 })();

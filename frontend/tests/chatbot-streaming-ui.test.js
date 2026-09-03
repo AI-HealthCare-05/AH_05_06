@@ -40,7 +40,7 @@ test("합성 승인 안내 답변은 여러 조각으로 스트리밍되고 근�
   let completed = null;
 
   const result = await api.streamChatbotAnswer(
-    { link_token: "synthetic-link", question: "출혈이 있는데 약을 끊어도 되나요?" },
+    { question: "출혈이 있는데 약을 끊어도 되나요?" },
     {
       onDelta: (chunk) => chunks.push(chunk),
       onComplete: (answer) => {
@@ -135,7 +135,7 @@ test("delta 뒤 스트림이 실패하면 잘린 답변 대신 오류를 표시�
   assert.equal(ui.state.chat.busy, false);
 });
 
-test("실제 전송은 토큰을 URL이 아닌 JSON 본문에 넣고 완성 답변을 UI 어댑터로 전달한다", async () => {
+test("실제 전송은 환자 세션 쿠키를 사용하고 질문만 본문에 담아 UI 어댑터로 전달한다", async () => {
   let request = null;
   const response = {
     answer: "합성 승인 안내 기반 답변",
@@ -162,7 +162,7 @@ test("실제 전송은 토큰을 URL이 아닌 JSON 본문에 넣고 완성 답�
   let completed = null;
 
   const result = await context.streamChatbotAnswer(
-    { link_token: "synthetic-link-token", question: "약은 언제 먹나요?" },
+    { question: "약은 언제 먹나요?" },
     {
       onDelta: (chunk) => deltas.push(chunk),
       onComplete: (value) => {
@@ -172,11 +172,10 @@ test("실제 전송은 토큰을 URL이 아닌 JSON 본문에 넣고 완성 답�
   );
 
   assert.equal(request.url, "/api/v1/chatbot/responses");
-  assert.equal(request.url.includes("synthetic-link-token"), false);
   assert.deepEqual(JSON.parse(request.options.body), {
-    link_token: "synthetic-link-token",
     question: "약은 언제 먹나요?",
   });
+  assert.equal(request.options.credentials, "include");
   assert.deepEqual(deltas, [response.answer]);
   assert.equal(completed, result);
 });

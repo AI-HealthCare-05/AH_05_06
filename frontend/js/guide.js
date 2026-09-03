@@ -369,7 +369,7 @@ function sendChatQuestion(question) {
   }
 
   return streamChatbotAnswer(
-    { link_token: state.token, question: question },
+    { question: question },
     {
       onDelta: function (chunk) {
         if (stale()) return;

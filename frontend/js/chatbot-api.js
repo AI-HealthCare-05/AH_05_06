@@ -27,6 +27,8 @@ function mockChatbotResult(question) {
       source: "담당 의료진이 승인한 진료 안내",
       limitation: "화면에서 응급 여부를 진단할 수 없어요.",
       urgent: true,
+      fallback: false,
+      grounded_section: "emergency",
     };
   }
   if (/출혈|끊/.test(question)) {
@@ -36,6 +38,8 @@ function mockChatbotResult(question) {
       source: "담당 의료진이 승인한 진료 안내",
       limitation: "진단이나 처방 변경은 안내할 수 없어요.",
       urgent: false,
+      fallback: false,
+      grounded_section: "caution",
     };
   }
   return {
@@ -44,6 +48,8 @@ function mockChatbotResult(question) {
     source: "담당 의료진이 승인한 진료 안내",
     limitation: "승인된 안내에 근거가 없는 내용은 답하지 않아요.",
     urgent: false,
+    fallback: true,
+    grounded_section: null,
   };
 }
 
@@ -86,7 +92,8 @@ function apiChatbotStreamTransport(request, observer) {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ link_token: request.link_token, question: request.question }),
+    body: JSON.stringify({ question: request.question }),
+    signal: request.signal,
   }).then(function (response) {
     return response
       .json()
@@ -99,6 +106,9 @@ function apiChatbotStreamTransport(request, observer) {
         if (observer.onComplete) observer.onComplete(result);
         return result;
       });
+  }).catch(function (error) {
+    if (error instanceof ChatbotUiError || (error && error.name === "AbortError")) throw error;
+    throw new ChatbotUiError("CHATBOT_API_NOT_READY");
   });
 }
 
@@ -109,6 +119,9 @@ if (!CHATBOT_MOCK && typeof window.chatbotStreamTransport !== "function") {
 function chatbotErrorMessage(code) {
   if (code === "CHATBOT_API_NOT_READY") {
     return "챗봇 연결을 준비하고 있어요. 잠시 뒤 다시 시도해 주세요.";
+  }
+  if (code === "PATIENT_SESSION_EXPIRED") {
+    return "인증 시간이 끝났어요. 안내 화면에서 다시 인증해 주세요.";
   }
   if (code === "LINK_EXPIRED") {
     return "안내 링크가 만료되어 답변을 만들 수 없어요. 새 안내 문자를 받은 뒤 다시 이용해 주세요.";
