@@ -47,9 +47,15 @@ if [[ "${1:-}" == inspect ]]; then
 fi
 if [[ "${1:-}" == compose ]]; then
   case "$*" in
+    *"config --quiet"*) [[ "${COMPOSE_CONFIG_FAIL:-0}" == 1 ]] && exit 42; exit 0 ;;
     *"ps --status running -q"*) [[ "${OWNED_SERVICES:-1}" == 1 ]] && printf 'owned\\n'; exit 0 ;;
     *"ps -q"*) printf 'container-id\\n'; exit 0 ;;
-    *"aerich upgrade"*) [[ "${MIGRATION_FAIL:-0}" == 1 ]] && exit 41 ;;
+    *"aerich upgrade"*)
+      if [[ "${MIGRATION_FAIL:-0}" == 1 ]]; then
+        [[ "${MIGRATION_ACCESS_DENIED:-0}" == 1 ]] && printf '%s\\n' 'Access denied for user test' >&2
+        exit 41
+      fi
+      ;;
   esac
   exit 0
 fi
@@ -125,7 +131,8 @@ def test_default_run_is_idempotent_preserves_env_and_hides_secrets(tmp_path: Pat
     output = first.stdout + first.stderr + second.stdout + second.stderr + calls
     assert secret not in output
     assert "--profile ocr" not in calls
-    assert "up -d --build redis mysql fastapi" in calls
+    assert "up -d redis mysql fastapi" in calls
+    assert "up -d --build" not in calls
     assert calls.index("aerich upgrade") < calls.index("scripts/seed.py")
     assert calls.index("scripts/seed.py") < calls.index("check_schema_drift.py")
     assert calls.index("check_schema_drift.py") < calls.index("scripts/smoke.py")
@@ -137,7 +144,7 @@ def test_ocr_option_starts_only_the_existing_ocr_profile(tmp_path: Path) -> None
     done = _run(root, env, "--with-ocr-worker")
     assert done.returncode == 0, done.stderr
     calls = log.read_text(encoding="utf-8")
-    assert "--profile ocr up -d --build redis mysql fastapi ai-worker minio" in calls
+    assert "--profile ocr up -d redis mysql fastapi ai-worker minio" in calls
     assert "--profile ai" not in calls and "--profile tools" not in calls
     assert "run --rm -T --no-deps minio-init" in calls
 
@@ -153,6 +160,78 @@ def test_migration_failure_stops_before_seed_drift_and_smoke(tmp_path: Path) -> 
     assert "scripts/seed.py" not in calls
     assert "check_schema_drift.py" not in calls
     assert "scripts/smoke.py" not in calls
+
+
+def test_stale_mysql_volume_failure_explains_manual_destructive_recovery(tmp_path: Path) -> None:
+    root, _, env = _sandbox(tmp_path)
+    env.update({"MIGRATION_FAIL": "1", "MIGRATION_ACCESS_DENIED": "1"})
+
+    done = _run(root, env)
+
+    assert done.returncode == 41
+    assert "기존 mysql_data 볼륨" in done.stderr
+    assert "직접 `docker compose down -v`" in done.stderr
+    assert "로컬 볼륨을 삭제" in done.stderr and "백업" in done.stderr
+
+
+def test_rebuild_is_explicit_and_can_be_combined_with_ocr(tmp_path: Path) -> None:
+    root, log, env = _sandbox(tmp_path)
+
+    done = _run(root, env, "--with-ocr-worker", "--rebuild")
+
+    assert done.returncode == 0, done.stderr
+    calls = log.read_text(encoding="utf-8")
+    assert "--profile ocr up -d --build redis mysql fastapi ai-worker minio" in calls
+
+
+def test_compose_validation_failure_names_the_right_stage(tmp_path: Path) -> None:
+    root, _, env = _sandbox(tmp_path)
+    env["COMPOSE_CONFIG_FAIL"] = "1"
+
+    done = _run(root, env)
+
+    assert done.returncode == 42
+    assert "compose 설정 검증 단계" in done.stderr
+
+
+def test_port_probe_covers_ipv4_ipv6_and_reusable_closed_ports() -> None:
+    body = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'socket.AF_INET, "0.0.0.0"' in body
+    assert 'socket.AF_INET6, "::"' in body
+    assert "socket.SO_REUSEADDR" in body
+
+
+def test_minio_init_really_runs_under_posix_sh(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "mc.log"
+    _write_executable(
+        bin_dir / "mc",
+        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$MC_LOG"\n',
+    )
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "MC_LOG": str(log),
+            "MC_HOST_bootstrap": "http://local-only-placeholder@minio:9000",
+            "MINIO_BUCKET": "ocr-fixtures",
+        }
+    )
+
+    done = subprocess.run(
+        ["/bin/sh", str(ROOT / "scripts/minio_init.sh"), "bootstrap"],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert done.returncode == 0, done.stderr
+    calls = log.read_text(encoding="utf-8")
+    assert "mb --ignore-existing bootstrap/ocr-fixtures" in calls
+    assert "anonymous set none bootstrap/ocr-fixtures" in calls
 
 
 def test_preflight_explains_docker_and_port_failures(tmp_path: Path) -> None:

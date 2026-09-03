@@ -3,6 +3,7 @@
 #
 #   ./scripts/bootstrap-local.sh
 #   ./scripts/bootstrap-local.sh --with-ocr-worker
+#   ./scripts/bootstrap-local.sh --rebuild
 #
 # 기존 .env와 볼륨은 절대 지우거나 덮어쓰지 않는다. 생성한 비밀값은 Git이
 # 무시하는 로컬 파일에만 두고 stdout/stderr에는 출력하지 않는다.
@@ -12,6 +13,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ROOT}/.env"
 BOOTSTRAP_ENV="${ROOT}/.bootstrap.local.env"
 WITH_OCR=false
+REBUILD=false
 STAGE="사전 검사"
 TIMEOUT_SECONDS="${BOOTSTRAP_TIMEOUT_SECONDS:-180}"
 
@@ -33,22 +35,24 @@ on_error() {
 trap on_error ERR
 
 usage() {
-  printf '사용법: %s [--with-ocr-worker]\n' "$0"
+  printf '사용법: %s [--with-ocr-worker] [--rebuild]\n' "$0"
 }
 
-case "${1:-}" in
-  "") ;;
-  --with-ocr-worker) WITH_OCR=true ;;
-  -h|--help)
-    usage
-    exit 0
-    ;;
-  *)
-    usage >&2
-    fail "지원하지 않는 옵션입니다: ${1}"
-    ;;
-esac
-[[ $# -le 1 ]] || fail "옵션은 하나만 지정할 수 있습니다."
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --with-ocr-worker) WITH_OCR=true ;;
+    --rebuild) REBUILD=true ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      fail "지원하지 않는 옵션입니다: ${1}"
+      ;;
+  esac
+  shift
+done
 [[ "$TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || fail "BOOTSTRAP_TIMEOUT_SECONDS는 1 이상의 정수여야 합니다."
 
 cd "$ROOT"
@@ -160,6 +164,7 @@ SMOKE_PASSWORD="$(env_value "$BOOTSTRAP_ENV" SMOKE_PASSWORD || true)"
 [[ -n "$SEED_STAFF_PASSWORD" && -n "$SMOKE_LOGIN_ID" && -n "$SMOKE_PASSWORD" ]] || \
   fail ".bootstrap.local.env의 합성 계정 설정이 불완전합니다."
 
+STAGE="compose 설정 검증"
 docker compose config --quiet >/dev/null
 
 service_is_running() {
@@ -171,13 +176,22 @@ port_is_free() {
 import socket
 import sys
 
-sock = socket.socket()
-try:
-    sock.bind(("127.0.0.1", int(sys.argv[1])))
-except OSError:
-    raise SystemExit(1)
-finally:
-    sock.close()
+port = int(sys.argv[1])
+addresses = ((socket.AF_INET, "0.0.0.0"), (socket.AF_INET6, "::"))
+for family, address in addresses:
+    try:
+        sock = socket.socket(family, socket.SOCK_STREAM)
+    except OSError:
+        continue
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if family == socket.AF_INET6:
+            sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        sock.bind((address, port))
+    except OSError:
+        raise SystemExit(1)
+    finally:
+        sock.close()
 PY
 }
 
@@ -230,7 +244,12 @@ fi
 
 STAGE="컨테이너 기동"
 say "${services[*]}를 기동합니다."
-"${compose[@]}" up -d --build "${services[@]}"
+up_args=(up -d)
+if $REBUILD; then
+  up_args+=(--build)
+  say "--rebuild 요청에 따라 이미지를 다시 빌드합니다."
+fi
+"${compose[@]}" "${up_args[@]}" "${services[@]}"
 
 STAGE="의존 서비스 health"
 wait_healthy mysql
@@ -242,7 +261,25 @@ wait_http "http://localhost:8000/api/v1/health"
 
 STAGE="migration"
 say "컨테이너 안에서 migration을 적용합니다."
-docker compose exec -T fastapi uv run --no-sync aerich upgrade
+run_migration() {
+  local output code
+  if output="$(docker compose exec -T fastapi uv run --no-sync aerich upgrade 2>&1)"; then
+    [[ -z "$output" ]] || printf '%s\n' "$output"
+    return 0
+  else
+    code=$?
+  fi
+
+  [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+  if [[ "$output" == *"Access denied for user"* ]]; then
+    printf '%s\n' \
+      '[bootstrap][HELP] 기존 mysql_data 볼륨의 비밀번호가 현재 .env와 다를 수 있습니다.' \
+      '[bootstrap][HELP] 로컬 DB 데이터 삭제가 괜찮을 때만 직접 `docker compose down -v` 후 다시 실행하세요.' \
+      '[bootstrap][HELP] 위 명령은 mysql_data 등 로컬 볼륨을 삭제하므로 필요한 데이터는 먼저 백업하세요.' >&2
+  fi
+  return "$code"
+}
+run_migration
 
 if $WITH_OCR; then
   STAGE="MinIO 초기화"
