@@ -319,7 +319,7 @@ class ScheduledMessagesTestCase(TestCase):
             status=GuideMessageStatus.SCHEDULED,
         )
 
-        invalid_payloads = (
+        invalid_payloads: tuple[tuple[str, dict[str, object]], ...] = (
             (
                 "빈 요청",
                 {},
