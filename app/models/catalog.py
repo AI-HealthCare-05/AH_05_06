@@ -192,6 +192,56 @@ class PrescriptionSet(models.Model):
         table = "prescription_set"
 
 
+class DrugCatalog(models.Model):
+    """의원이 쓰는 **약 목록** — 설정의 「처방」 묶음.
+
+    대표 처방(`PrescriptionSet`)에 약을 적을 때 손으로 치지 않고 고르라고
+    둔다. 약 넷이 여덟 세트에 열세 번 되풀이되고, 손으로 치면 표기가 갈린다 —
+    이미 갈려 있다(검사·주석은 「비잔정 2mg」, OCR·CSV 는
+    「비잔정(디에노게스트) 2mg」).
+
+    **`PrescriptionSetDrug` 와 참조로 잇지 않는다.** 세트를 저장할 때마다 그
+    표의 행을 통째로 지우고 다시 넣기 때문이다(`app/catalog/api.py`) — 참조를
+    걸면 저장 한 번에 끊긴다. 예외도 안 나고 값만 사라진다. 여기서 고른 값도
+    결국 **문자열로** 그 표에 떨어진다.
+
+    같은 까닭으로 `PrescriptionItem`(진료의 약)과도 안 잇는다. 그쪽은 그날
+    판독이 읽은 것의 **스냅샷**이라, 여기서 이름을 고치면 지난 진료가 무엇을
+    근거로 했는지가 바뀐다.
+
+    **이 표를 읽는 것은 아직 설정 화면뿐이다.** 안내문·환자 화면·챗봇은 안
+    읽는다. 그것들이 읽으려면 판독 확정이 `Prescription` 을 만드는 다리가
+    먼저 서야 한다(KEY-66) — 지금은 그 다리가 없다.
+    """
+
+    drug_catalog_id = fields.BigIntField(primary_key=True)
+
+    #: 「비잔정(디에노게스트) 2mg」처럼 용량까지. **100자는 우연이 아니다** —
+    #: `PrescriptionSetDrug.name` 과 같은 값이라야 고른 이름이 세트에 저장될 때
+    #: 안 잘린다.
+    name = fields.CharField(max_length=100, unique=True)
+
+    #: 「1일 1회」. 고를 때 함께 채워 넣는다 — 없으면 이름만 자동완성되고
+    #: 나머지 두 칸은 여전히 손으로 친다.
+    frequency: str | None = fields.CharField(max_length=50, null=True)  # type: ignore[assignment]
+
+    #: 「매일 같은 시간」
+    note: str | None = fields.CharField(max_length=200, null=True)  # type: ignore[assignment]
+
+    #: 감춤. 대표 처방과 **같은 enum 을 쓴다** — 뜻이 같은 것에 갈래를 둘
+    #: 만들면 어느 쪽을 봐야 하는지 매번 되묻게 된다.
+    status = fields.CharEnumField(enum_type=SetStatus, default=SetStatus.ACTIVE)
+
+    #: 언제 감췄나.
+    hidden_at: datetime | None = fields.DatetimeField(null=True)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "drug_catalog"
+
+
 class PrescriptionSetDrug(models.Model):
     """처방 세트에 든 약 — 와이어프레임 D2-3 「처방 약」.
 
