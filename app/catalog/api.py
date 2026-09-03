@@ -12,6 +12,10 @@ from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
 from app.catalog.schemas import (
+    DrugCatalogCreateRequest,
+    DrugCatalogItem,
+    DrugCatalogPage,
+    DrugCatalogSaveRequest,
     PrescriptionSetCreateRequest,
     PrescriptionSetDetail,
     PrescriptionSetResponse,
@@ -19,8 +23,10 @@ from app.catalog.schemas import (
     SetDrug,
 )
 from app.core.api_errors import ApiError, ContractRoute
+from app.core.config import Config
 from app.dependencies.patient_access import ClinicalActor, require_patient_read
 from app.models.catalog import (
+    DrugCatalog,
     PrescriptionCheckItem,
     PrescriptionSet,
     PrescriptionSetDrug,
@@ -198,6 +204,19 @@ async def save_prescription_set(
     return await _load(prescription_set_id)
 
 
+def _draft_mode() -> bool:
+    """**제작 중인가.** 켜져 있으면 이름을 고치고 지울 수 있다.
+
+    왜 잠가야 하는지는 `Config.CATALOG_DRAFT_MODE` 주석에 적었다 — 요약하면
+    이름이 진료기록에 **문자열로** 박혀 나가서다. 지금은 만드는 중이라 열어
+    두었고(2026-09-03 결정), 배포 전에 끈다.
+
+    규칙을 지우지 않고 스위치로 둔 까닭: 지우면 **왜 잠가야 하는지가 함께
+    사라진다.** 나중에 다시 넣는 사람이 그 까닭을 처음부터 다시 알아내야 한다.
+    """
+    return Config().CATALOG_DRAFT_MODE
+
+
 def _clean_name(raw: str) -> str:
     """이름을 **한 가지 꼴로 다듬는다.**
 
@@ -284,3 +303,135 @@ async def unhide_prescription_set(
         await row.save()
 
     return await _load(prescription_set_id)
+
+
+def _drug(row: DrugCatalog) -> DrugCatalogItem:
+    return DrugCatalogItem(
+        drug_catalog_id=row.drug_catalog_id,
+        name=row.name,
+        frequency=row.frequency,
+        note=row.note,
+        hidden=row.status is SetStatus.HIDDEN,
+    )
+
+
+@catalog_router.get("/prescription-drugs", response_model=DrugCatalogPage)
+async def list_drugs(
+    actor: Annotated[ClinicalActor, Depends(require_patient_read)],
+) -> DrugCatalogPage:
+    """의원이 쓰는 약 목록 — 이름순.
+
+    **감춘 것도 다 준다.** 거르면 되살릴 화면이 없어진다. 거르는 것은 새로
+    고르는 칸뿐이고, 그건 화면이 한다 — 대표 처방과 같은 규칙이다.
+    """
+    rows = await DrugCatalog.all().order_by("name")
+    return DrugCatalogPage(draft=_draft_mode(), items=[_drug(row) for row in rows])
+
+
+@catalog_router.post("/prescription-drugs", response_model=DrugCatalogItem, status_code=201)
+async def create_drug(
+    payload: DrugCatalogCreateRequest,
+    actor: Annotated[ClinicalActor, Depends(require_patient_read)],
+) -> DrugCatalogItem:
+    """약을 등록한다.
+
+    **감춘 약의 이름도 못 쓴다.** 이름이 `unique` 라 그대로 두면
+    `IntegrityError` 가 500 으로 나가고, 화면은 「잠시 후 다시 시도해 주세요」만
+    말한다 — 몇 번을 눌러도 같은 500 이고 까닭을 알 길이 없다.
+    409 로 받아 「감춘 것에 있습니다」까지 말해 준다.
+    """
+    name = _clean_name(payload.name)
+    if not name:
+        raise ApiError(422, "NAME_REQUIRED", "약 이름을 적어 주세요.")
+
+    already = await DrugCatalog.filter(name=name).first()
+    if already is not None:
+        raise ApiError(
+            409,
+            "DRUG_EXISTS",
+            "같은 이름의 약이 이미 있습니다 (감춘 것도 포함)."
+            if already.status is SetStatus.HIDDEN
+            else "같은 이름의 약이 이미 있습니다.",
+        )
+
+    try:
+        row = await DrugCatalog.create(
+            name=name,
+            frequency=(payload.frequency or "").strip() or None,
+            note=(payload.note or "").strip() or None,
+        )
+    except IntegrityError as clash:
+        # 위 확인과 여기 사이가 갈릴 수 있다. `unique` 가 마지막 자물쇠다.
+        raise ApiError(409, "DRUG_EXISTS", "같은 이름의 약이 이미 있습니다.") from clash
+
+    return _drug(row)
+
+
+@catalog_router.put("/prescription-drugs/{drug_catalog_id}", response_model=DrugCatalogItem)
+async def save_drug(
+    drug_catalog_id: int,
+    payload: DrugCatalogSaveRequest,
+    actor: Annotated[ClinicalActor, Depends(require_patient_read)],
+) -> DrugCatalogItem:
+    """용법 · 복용법 · 감춤을 고친다. **이름은 안 받는다** — 스키마가 안 받는다.
+
+    역할은 안 본다. 2026-09-02 회의에서 설정 수정을 스탭에게도 열었고,
+    이 표도 설정이다.
+    """
+    row = await DrugCatalog.filter(drug_catalog_id=drug_catalog_id).first()
+    if row is None:
+        raise ApiError(404, "DRUG_NOT_FOUND", "약을 찾을 수 없습니다.")
+
+    if payload.name is not None:
+        # **잠긴 뒤에는 소리 나게 막는다.** 받아 놓고 무시하면 「바꿔 달라
+        # 보냈는데 200 이 오고 안 바뀐」 조용한 성공이 된다.
+        if not _draft_mode():
+            raise ApiError(
+                409,
+                "CATALOG_LOCKED",
+                "등록된 약의 이름은 바꿀 수 없습니다. 감추고 새로 등록해 주세요.",
+            )
+        name = _clean_name(payload.name)
+        if not name:
+            raise ApiError(422, "NAME_REQUIRED", "약 이름을 적어 주세요.")
+        if await DrugCatalog.filter(name=name).exclude(drug_catalog_id=drug_catalog_id).exists():
+            raise ApiError(409, "DRUG_EXISTS", "같은 이름의 약이 이미 있습니다.")
+        row.name = name
+
+    row.frequency = (payload.frequency or "").strip() or None
+    row.note = (payload.note or "").strip() or None
+
+    to = SetStatus.HIDDEN if payload.hidden else SetStatus.ACTIVE
+    if row.status is not to:
+        row.status = to
+        # 두 번 감춰도 처음 시각을 안 덮는다.
+        row.hidden_at = datetime.now(UTC) if payload.hidden else None
+    await row.save()
+
+    return _drug(row)
+
+
+@catalog_router.delete("/prescription-drugs/{drug_catalog_id}", status_code=204)
+async def delete_drug(
+    drug_catalog_id: int,
+    actor: Annotated[ClinicalActor, Depends(require_patient_read)],
+) -> None:
+    """**제작 중에만 지운다.**
+
+    다 만들고 나면 이 길은 닫힌다(`CATALOG_DRAFT_MODE`). 의료 데이터라 삭제가
+    금지되고, 지난 진료기록이 약 이름을 문자열로 들고 있어서다 — 지우면 그
+    기록이 가리키던 것이 사라지는데 화면엔 아무 말도 안 뜬다.
+
+    닫힌 뒤에 잘못 등록한 약은 **감춘다**(`PUT` 의 `hidden`).
+    """
+    if not _draft_mode():
+        raise ApiError(
+            409,
+            "CATALOG_LOCKED",
+            "등록된 약은 지울 수 없습니다. 대신 감춰 주세요.",
+        )
+
+    row = await DrugCatalog.filter(drug_catalog_id=drug_catalog_id).first()
+    if row is None:
+        raise ApiError(404, "DRUG_NOT_FOUND", "약을 찾을 수 없습니다.")
+    await row.delete()

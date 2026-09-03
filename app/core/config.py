@@ -35,6 +35,21 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="allow")
 
     ENV: Env = Env.LOCAL
+    #: **제작 중인가.** 켜져 있으면 설정 카탈로그의 이름을 고칠 수 있고
+    #: 지울 수도 있다. 꺼져 있으면 둘 다 막힌다.
+    #:
+    #: 왜 잠가야 하는가 — 대표 처방과 약 이름은 진료기록·처방 세트에
+    #: **문자열로** 박혀 나간다(스냅샷, KEY-137). 이름을 바꾸거나 행을 지우면
+    #: 지난 기록이 가리키던 것이 사라지고, **화면엔 아무 말도 안 뜬다.**
+    #: 의료 데이터라 삭제도 금지다.
+    #:
+    #: 왜 지금은 열어 두는가 — 아직 만드는 중이라 잘못 지은 이름을 고쳐야 한다
+    #: (2026-09-03 결정). 규칙을 지우지 않고 스위치로 둔 것은, 지워 버리면
+    #: **왜 잠가야 하는지가 함께 사라지기** 때문이다.
+    #:
+    #: 🚩 **배포 전에 `false` 로 바꾼다.** `docs/deploy-runbook.md` 점검표 참고.
+    CATALOG_DRAFT_MODE: bool = True
+
     SECRET_KEY: str = f"default-secret-key{uuid.uuid4().hex}"
     TIMEZONE: zoneinfo.ZoneInfo = field(default_factory=lambda: zoneinfo.ZoneInfo("Asia/Seoul"))
     TEMPLATE_DIR: str = os.path.join(Path(__file__).resolve().parent.parent, "templates")
