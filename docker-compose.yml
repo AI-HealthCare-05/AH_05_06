@@ -79,6 +79,10 @@ services:
       sh -c "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - ./app:/app/app  # 로컬의 app 디렉토리를 컨테이너의 /app/app에 마운트(수정사항 즉시 반영)
+      # bootstrap 이 migration 뒤에 seed·schema drift·smoke 를 **같은 이미지**에서
+      # 실행한다. 운영 이미지에는 넣지 않는 로컬 전용 읽기 마운트다 (KEY-228).
+      - ./scripts:/app/scripts:ro
+      - ./docs/data:/app/docs/data:ro
       - /tmp/medical_uploads:/tmp/medical_uploads  # Worker(로컬)와 업로드 파일 공유 (KEY-56)
       - static_volume:/app/templates
     restart: always
@@ -170,6 +174,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  # OCR 프로필을 고른 경우에만 버킷을 한 번 준비하는 일회성 도구다. 기본
+  # bootstrap 에서는 ai-worker·minio와 함께 전혀 뜨지 않는다 (KEY-228).
+  minio-init:
+    profiles: [ ocr ]
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3
+    restart: "no"
+    environment:
+      MC_HOST_bootstrap: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+      MINIO_BUCKET: ocr-fixtures
+    volumes:
+      - ./scripts/minio_init.sh:/usr/local/bin/minio_init.sh:ro
+    entrypoint: [ "/bin/sh", "/usr/local/bin/minio_init.sh", "bootstrap" ]
+    networks:
+      - ws
+    depends_on:
+      minio:
+        condition: service_healthy
 
 volumes:
   mysql_data:

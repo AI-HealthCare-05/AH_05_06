@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 #
 # 버킷을 만들고 **익명 접근을 명시적으로 닫는다** — KEY-191.
 #
@@ -18,23 +18,29 @@
 # **비밀번호를 인자로 주지 않는다** — `ps` 와 셸 기록에 남는다. `MC_HOST_<별칭>`
 # 환경변수로 넘긴다 (`deployment.sh` 가 PAT 에 대해 같은 이유로 고쳐졌다,
 # KEY-174).
-set -euo pipefail
+set -eu
 
 ALIAS="${1:-team}"
 BUCKET="${MINIO_BUCKET:-ocr-fixtures}"
 
 MC_HOST_VAR="MC_HOST_${ALIAS}"
-if [[ -z "${!MC_HOST_VAR:-}" ]]; then
-  echo "MC_HOST_${ALIAS} 가 없다 — 자격증명을 환경변수로 넘겨라 (명령줄에 쓰면 ps 에 남는다)" >&2
+case "$ALIAS" in
+  ""|*[!A-Za-z0-9_]*)
+    printf '%s\n' "MinIO 별칭에는 영문자·숫자·밑줄만 사용할 수 있다: ${ALIAS}" >&2
+    exit 1
+    ;;
+esac
+if [ -z "$(printenv "$MC_HOST_VAR" 2>/dev/null || true)" ]; then
+  printf '%s\n' "MC_HOST_${ALIAS} 가 없다 — 자격증명을 환경변수로 넘겨라 (명령줄에 쓰면 ps 에 남는다)" >&2
   exit 1
 fi
 
-echo "버킷 준비: ${ALIAS}/${BUCKET}"
+printf '%s\n' "버킷 준비: ${ALIAS}/${BUCKET}"
 mc mb --ignore-existing "${ALIAS}/${BUCKET}"
 
 # **여기가 요점이다.** 만들 때마다 다시 닫는다 — 멱등이라 몇 번 돌려도 된다.
-echo "익명 접근 차단"
+printf '%s\n' "익명 접근 차단"
 mc anonymous set none "${ALIAS}/${BUCKET}"
 
-echo "현재 정책:"
+printf '%s\n' "현재 정책:"
 mc anonymous get "${ALIAS}/${BUCKET}"
