@@ -24,20 +24,25 @@ function box() {
 test("**사람 · 환자 · 시스템 셋을 가른다**", () => {
   const { timelineActor } = box();
 
-  assert.deepEqual(timelineActor({ kind: "APPROVED", actor: "박연" }), { name: "박연", who: "staff" });
-  assert.deepEqual(timelineActor({ kind: "GUIDE_VIEWED" }), { name: "환자", who: "patient" });
-  assert.deepEqual(timelineActor({ kind: "CHECK_IN" }), { name: "환자", who: "patient" });
+  assert.deepEqual(timelineActor({ category: "GUIDE", event: "GUIDE_APPROVED", actor: "박연" }), { name: "박연", who: "staff" });
+  assert.deepEqual(timelineActor({ category: "PATIENT", event: "GUIDE_VIEWED" }), { name: "환자", who: "patient" });
+  assert.deepEqual(timelineActor({ category: "CHECK_IN", event: "CHECK_IN_SUBMITTED" }), { name: "환자", who: "patient" });
 
   /* 이름도 없고 환자 일도 아니면 시스템이다 — 발송·삭제·토큰 */
-  assert.deepEqual(timelineActor({ kind: "SENT" }), { name: "시스템", who: "system" });
+  assert.deepEqual(timelineActor({ category: "GUIDE", event: "GUIDE_GENERATED" }), { name: "시스템", who: "system" });
 });
 
 test("**서버가 「환자」를 적어 보내지 않는다** — 이름이 「환자」인 직원과 못 가른다", () => {
   /* 서버는 사람이 한 것에만 이름을 준다. 환자와 시스템은 비어 있고,
      그 둘을 가르는 것은 화면 몫이다 — 무슨 일이었는지를 보고 정한다. */
-  const service = read("../app/timeline/service.py");
+  const service = read("../app/services/visit_timeline.py");
   assert.ok(!service.includes('actor="환자"'), "서버가 「환자」를 적어 보낸다");
   assert.ok(!service.includes('actor="시스템"'), "서버가 「시스템」을 적어 보낸다");
+
+  /* **갈래로 가른다.** 사건 이름을 하나씩 적어 두면 환자가 하는 일이 늘 때마다
+     화면 목록도 같이 고쳐야 하고, 안 고치면 조용히 「시스템」으로 뜬다. */
+  const view = read("js/status-view.js");
+  assert.match(view, /entry\.category === "PATIENT"/, "갈래를 안 보고 사건 이름을 센다");
 });
 
 /* ── 무엇을 한 일인가 ───────────────────────────────────────────────── */
@@ -45,24 +50,24 @@ test("**서버가 「환자」를 적어 보내지 않는다** — 이름이 「
 test("**서버 코드를 사람 말로 옮긴다**", () => {
   const { timelineSaying } = box();
 
-  assert.equal(timelineSaying({ kind: "APPROVED" }), "승인");
-  assert.equal(timelineSaying({ kind: "SUBMITTED" }), "스탭 확인 완료 · 승인 요청");
-  assert.equal(timelineSaying({ kind: "GUIDE_VIEWED" }), "안내문 열람");
+  assert.equal(timelineSaying({ event: "GUIDE_APPROVED" }), "승인");
+  assert.equal(timelineSaying({ event: "GUIDE_SUBMITTED" }), "스탭 확인 완료 · 승인 요청");
+  assert.equal(timelineSaying({ event: "GUIDE_VIEWED" }), "안내문 열람");
 });
 
 test("**모르는 코드는 그대로 보여 준다** — 빈칸이면 일이 있었는데 없어 보인다", () => {
   const { timelineSaying } = box();
-  assert.equal(timelineSaying({ kind: "SOMETHING_NEW" }), "SOMETHING_NEW");
+  assert.equal(timelineSaying({ event: "SOMETHING_NEW" }), "SOMETHING_NEW");
 });
 
 test("**되돌린 사유가 그 줄에 붙는다** — 알림을 다시 찾아가지 않게", () => {
   const { timelineSaying } = box();
 
   assert.equal(
-    timelineSaying({ kind: "RETURNED", detail: "진료기록 재업로드 필요" }),
+    timelineSaying({ event: "GUIDE_RETURNED", note: "진료기록 재업로드 필요" }),
     "스탭에 되돌림 · 진료기록 재업로드 필요",
   );
-  assert.equal(timelineSaying({ kind: "EDITED", section: "medication" }), "내용 수정 · medication");
+  assert.equal(timelineSaying({ event: "GUIDE_EDITED", section_key: "medication" }), "내용 수정 · medication");
 });
 
 test("시각만 뗀다 — 날짜는 진료 하루치라 줄마다 적으면 자리만 먹는다", () => {
@@ -80,8 +85,8 @@ test("**어느 장에서 멈췄는지가 이 블록의 값이다**", () => {
   const label = (k) => ({ medication: "복약지도", caution: "주의사항", life: "생활지도" })[k];
 
   const p = readProgress([
-    { kind: "GUIDE_VIEWED", section: "medication", at: "2026-08-13T19:14:00+09:00" },
-    { kind: "GUIDE_VIEWED", section: "caution", at: "2026-08-13T19:22:00+09:00" },
+    { event: "GUIDE_VIEWED", section_key: "medication", at: "2026-08-13T19:14:00+09:00" },
+    { event: "GUIDE_VIEWED", section_key: "caution", at: "2026-08-13T19:22:00+09:00" },
   ]);
 
   assert.equal(p.opened, true);
@@ -99,8 +104,8 @@ test("**안 읽은 것과 다 읽은 것은 스탭이 할 일이 다르다**", (
 
   const all = readProgress(
     ["medication", "caution", "life", "messages"].map((s) => ({
-      kind: "GUIDE_VIEWED",
-      section: s,
+      event: "GUIDE_VIEWED",
+      section_key: s,
       at: "2026-08-13T19:00:00+09:00",
     })),
   );
@@ -110,7 +115,7 @@ test("**안 읽은 것과 다 읽은 것은 스탭이 할 일이 다르다**", (
 test("**어느 장인지 모르는 열람은 장수에 안 넣는다** — 열긴 열었다고만 말한다", () => {
   const { readProgress, readSaying } = box();
 
-  const p = readProgress([{ kind: "GUIDE_VIEWED", at: "2026-08-13T19:14:00+09:00" }]);
+  const p = readProgress([{ event: "GUIDE_VIEWED", at: "2026-08-13T19:14:00+09:00" }]);
   assert.equal(p.opened, true, "열었는데 안 열었다고 한다");
   assert.equal(p.read, 0, "어느 장인지 모르는데 읽은 것으로 셌다");
   assert.match(readSaying(p, (k) => k), /어느 항목인지 남지 않았습니다/);
@@ -118,7 +123,7 @@ test("**어느 장인지 모르는 열람은 장수에 안 넣는다** — 열�
 
 test("열람이 아닌 기록은 세지 않는다", () => {
   const { readProgress } = box();
-  const p = readProgress([{ kind: "APPROVED", at: "2026-08-13T11:02:00+09:00" }]);
+  const p = readProgress([{ event: "GUIDE_APPROVED", at: "2026-08-13T11:02:00+09:00" }]);
   assert.equal(p.opened, false, "승인을 열람으로 셌다");
 });
 

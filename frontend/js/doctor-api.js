@@ -173,6 +173,12 @@ var MOCK_GUIDE_STATE = {};
 /* 이 진료의 저장 칸을 돌려준다. 없으면 만들어서 돌려준다 — 승인·반려·PATCH가
    같은 객체를 부분 갱신하므로, 한쪽이 통째로 덮어써 다른 쪽 값을 지우는 일이
    없다(예: 섹션을 고친 뒤 승인해도 그 수정은 남는다). */
+/* D1-6 현황이 읽는 이력 — 서버 `GET /visits/{id}/timeline` 과 **같은 모양**
+   이어야 한다. 다르면 목업에서만 되는 화면이 생긴다.
+
+   `messages` 는 안내문이 승인된 뒤에만 찬다 — 예약은 승인이 만든다. 그래서
+   여기서도 상태를 보고 낸다. */
+
 function mockGuideState(visitId) {
   return (
     MOCK_GUIDE_STATE[visitId] ||
@@ -197,34 +203,81 @@ function mockTimeline(visitId) {
   if (!guide) return { visit_id: visitId, entries: [], messages: [] };
 
   var state = mockGuideState(visitId);
+
+  /* 진료가 열린 것이 첫 줄이다 — 등록만 하고 아무것도 안 한 진료의 화면이
+     통째로 비지 않게. 서버가 `visit.visited_at` 에서 만들어 낸다. */
   var made = [
-    { at: "2026-09-02T09:14:00+09:00", kind: "GENERATED", actor: null },
-    { at: "2026-09-02T09:31:00+09:00", kind: "EDITED", actor: "한소영", section: "caution" },
-    { at: "2026-09-02T09:36:00+09:00", kind: "SUBMITTED", actor: "한소영" },
+    entry("2026-09-02T09:02:00+09:00", "VISIT", "VISIT_CREATED", { actor_id: 900, actor: "박연" }),
+    entry("2026-09-02T09:08:00+09:00", "DOCUMENT", "DOCUMENT_UPLOADED", {
+      actor_id: 101,
+      actor: "한소영",
+      document_type: "EMR",
+    }),
+    entry("2026-09-02T09:09:00+09:00", "OCR", "OCR_STARTED", { actor_id: 101, actor: "한소영" }),
+    entry("2026-09-02T09:11:00+09:00", "OCR", "OCR_COMPLETED", {}),
+    entry("2026-09-02T09:13:00+09:00", "OCR", "OCR_CONFIRMED", { actor_id: 101, actor: "한소영" }),
+    entry("2026-09-02T09:14:00+09:00", "GUIDE", "GUIDE_GENERATED", {}),
+    entry("2026-09-02T09:31:00+09:00", "GUIDE", "GUIDE_EDITED", {
+      actor_id: 101,
+      actor: "한소영",
+      section_key: "caution",
+    }),
+    entry("2026-09-02T09:36:00+09:00", "GUIDE", "GUIDE_SUBMITTED", { actor_id: 101, actor: "한소영" }),
   ];
   if (state.returned_reason) {
-    made.push({
-      at: "2026-09-02T10:02:00+09:00",
-      kind: "RETURNED",
-      actor: "박연",
-      detail: state.returned_reason,
-    });
+    made.push(
+      entry("2026-09-02T10:02:00+09:00", "GUIDE", "GUIDE_RETURNED", {
+        actor_id: 900,
+        actor: "박연",
+        note: state.returned_reason,
+      }),
+    );
   }
   if (guide.status === "SCHEDULED_TO_SEND") {
-    made.push({ at: "2026-09-02T10:12:00+09:00", kind: "APPROVED", actor: "박연" });
+    made.push(entry("2026-09-02T10:12:00+09:00", "GUIDE", "GUIDE_APPROVED", { actor_id: 900, actor: "박연" }));
+    /* 환자가 한 일 — **행위자는 비운다.** 화면이 `category` 로 「환자」라고
+       적는다. 서버가 「환자」를 적어 보내면 이름이 「환자」인 직원과 못 가른다. */
+    made.push(entry("2026-09-02T14:12:00+09:00", "PATIENT", "GUIDE_VIEWED", { section_key: "medication" }));
+    made.push(entry("2026-09-02T14:15:00+09:00", "PATIENT", "GUIDE_VIEWED", { section_key: "caution" }));
   }
 
   /* **예약은 승인이 만든다.** 승인 전에는 비어 있다 — 서버 주석이 그렇게 적었고,
-     미리 채워 두면 「승인 안 했는데 나갈 문자가 있다」로 읽힌다. */
+     미리 채워 두면 「승인 안 했는데 나갈 문자가 있다」로 읽힌다.
+
+     칸 이름은 `at` 이다(`scheduled_at` 이 아니다) — 이력 항목과 같은 이름을
+     쓴다. 화면이 두 목록을 같은 함수로 찍는다. */
   var messages =
     guide.status === "SCHEDULED_TO_SEND"
       ? [
-          { kind: "GUIDE", scheduled_at: "2026-09-02T18:00:00+09:00", status: "SCHEDULED" },
-          { kind: "CHECK_D7", scheduled_at: "2026-09-09T18:00:00+09:00", status: "SCHEDULED" },
+          sending("GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
+          sending("CHECK_D7", "SCHEDULED", "2026-09-09T18:00:00+09:00", null),
+          sending("CHECK_D15", "SCHEDULED", "2026-09-17T18:00:00+09:00", null),
+          sending("RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
         ]
       : [];
 
   return { visit_id: visitId, entries: made, messages: messages };
+}
+
+/* 이력 한 줄 — **칸을 다 채운다.** 서버는 없는 값도 `null` 로 내려 주는데,
+   목업이 칸을 빼면 「목업에만 있는 `undefined`」가 생겨 화면이 갈린다. */
+function entry(at, category, event, over) {
+  var row = {
+    at: at,
+    category: category,
+    event: event,
+    actor_id: null,
+    actor: null,
+    section_key: null,
+    document_type: null,
+    note: null,
+  };
+  for (var key in over) if (over.hasOwnProperty(key)) row[key] = over[key];
+  return row;
+}
+
+function sending(kind, status, at, sentAt) {
+  return { kind: kind, status: status, at: at, sent_at: sentAt, failure_code: null, hold_reason: null };
 }
 
 /* 모르는 진료는 **없다고 답한다.** 서버(`app/services/guides.py`)가 그 자리에서

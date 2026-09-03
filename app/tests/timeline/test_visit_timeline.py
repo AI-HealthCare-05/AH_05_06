@@ -7,6 +7,7 @@
 """
 
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -27,6 +28,7 @@ from app.models.visits import (
     Visit,
 )
 from app.services.staff_auth import StaffSessionService
+from app.services.visit_timeline import _GUIDE_EVENT_NAME
 from app.tests.fakes import FakeRedis
 
 BASE = "/api/v1/visits"
@@ -86,7 +88,7 @@ class TimelineTestCase(TestCase):
         assert res.status_code == 200, res.text
         body = res.json()
         assert body["visit_id"] == visit.visit_id
-        assert [e["kind"] for e in body["entries"]] == ["VISIT_CREATED"]
+        assert [e["event"] for e in body["entries"]] == ["VISIT_CREATED"]
 
     async def test_three_tables_merge_in_time_order(self) -> None:
         """사람이 한 일 · 환자가 한 일 · 확인 응답이 **한 줄기로** 선다.
@@ -122,8 +124,59 @@ class TimelineTestCase(TestCase):
             res = await client.get(f"{BASE}/{visit.visit_id}/timeline", headers=await self.sign_in(staff))
 
         assert res.status_code == 200, res.text
-        kinds = [e["kind"] for e in res.json()["entries"]]
-        assert kinds == ["VISIT_CREATED", "APPROVED", "GUIDE_VIEWED", "CHECK_IN"], kinds
+        kinds = [e["event"] for e in res.json()["entries"]]
+        assert kinds == ["VISIT_CREATED", "GUIDE_APPROVED", "GUIDE_VIEWED", "CHECK_IN_SUBMITTED"], kinds
+
+    async def test_every_guide_event_has_a_name(self) -> None:
+        """**사전이 `GuideEventType` 을 다 덮어야 한다.**
+
+        이 자리가 `_GUIDE_EVENT_NAME[event.event_type]` 이었다. 사전에 없는
+        값이 오면 `KeyError` → 500 이고, 이력 패널이 통째로 죽는다.
+
+        실제로 그 일이 났다 — `#176` 이 `SUBMITTED`·`UNAPPROVED` 를 더했는데
+        사전은 넷뿐이었다. 게다가 `#176` 이후로 **승인 앞에 제출이 필수**라
+        `SUBMITTED` 가 사실상 모든 안내문에 남는다. 드문 경우가 아니라
+        거의 모든 진료의 화면이 깨진다.
+
+        열거형에서 직접 훑는다 — 값이 늘면 여기서 먼저 걸린다.
+        """
+        for event_type in GuideEventType:
+            assert event_type in _GUIDE_EVENT_NAME, (
+                f"{event_type} 에 이름이 없다 — 이 값이 남는 순간 이력이 500 이 된다"
+            )
+
+    async def test_an_unnamed_event_is_skipped_not_fatal(self) -> None:
+        """**모르는 사건은 건너뛴다.** 위 검사가 있어도 사전이 뒤처지는 날은
+        온다(다른 사람이 열거형만 늘릴 수 있다). 그때 한 줄 때문에 화면 전체가
+        죽으면 안 된다 — 나머지 이력은 보여야 스탭이 무슨 일이 있었는지 안다.
+        """
+        clinic = await Hospital.create(name="여성의원")
+        staff = await self.make_staff(clinic, "tl_skip", ["staff"], "서지현")
+        visit = await self.make_visit(clinic, "TL-SKIP")
+        guide = await GuideDocument.create(hospital_id=clinic.hospital_id, visit=visit)
+        await GuideEvent.create(
+            guide_document=guide,
+            event_type=GuideEventType.APPROVED,
+            actor_id=staff.staff_id,
+            created_at=datetime(2026, 8, 13, 11, 2, tzinfo=UTC),
+        )
+        await GuideEvent.create(
+            guide_document=guide,
+            event_type=GuideEventType.EDITED,
+            actor_id=staff.staff_id,
+            created_at=datetime(2026, 8, 13, 11, 5, tzinfo=UTC),
+        )
+
+        # 사전이 한 값을 잃은 상태를 만든다 — 열거형이 앞서 나간 날과 같다.
+        without = {k: v for k, v in _GUIDE_EVENT_NAME.items() if k is not GuideEventType.EDITED}
+        with patch.dict(_GUIDE_EVENT_NAME, without, clear=True):
+            async with self.client() as client:
+                res = await client.get(f"{BASE}/{visit.visit_id}/timeline", headers=await self.sign_in(staff))
+
+        assert res.status_code == 200, f"한 줄 때문에 화면이 죽었다: {res.text}"
+        events = [e["event"] for e in res.json()["entries"]]
+        assert "GUIDE_APPROVED" in events, "멀쩡한 줄까지 사라졌다"
+        assert "GUIDE_EDITED" not in events
 
     async def test_person_gets_a_name_and_system_does_not(self) -> None:
         """사람이 한 것은 이름이 뜨고, 환자가 한 것은 비어 있다.
@@ -151,8 +204,8 @@ class TimelineTestCase(TestCase):
         async with self.client() as client:
             res = await client.get(f"{BASE}/{visit.visit_id}/timeline", headers=await self.sign_in(staff))
 
-        by_kind = {e["kind"]: e for e in res.json()["entries"]}
-        assert by_kind["APPROVED"]["actor"] == "박연"
+        by_kind = {e["event"]: e for e in res.json()["entries"]}
+        assert by_kind["GUIDE_APPROVED"]["actor"] == "박연"
         assert by_kind["GUIDE_VIEWED"]["actor"] is None, "환자가 한 것에 이름이 붙었다"
 
     async def test_deleted_actor_gets_no_invented_name(self) -> None:
@@ -178,7 +231,7 @@ class TimelineTestCase(TestCase):
         async with self.client() as client:
             res = await client.get(f"{BASE}/{visit.visit_id}/timeline", headers=await self.sign_in(staff))
 
-        row = [e for e in res.json()["entries"] if e["kind"] == "EDITED"][0]
+        row = [e for e in res.json()["entries"] if e["event"] == "GUIDE_EDITED"][0]
         assert row["actor"] is None, f"없는 계정에 이름을 지어냈다: {row['actor']!r}"
 
     async def test_returned_reason_rides_along(self) -> None:
@@ -200,8 +253,8 @@ class TimelineTestCase(TestCase):
         async with self.client() as client:
             res = await client.get(f"{BASE}/{visit.visit_id}/timeline", headers=await self.sign_in(doctor))
 
-        row = [e for e in res.json()["entries"] if e["kind"] == "RETURNED"][0]
-        assert row["detail"] == "진료기록 재업로드 필요"
+        row = [e for e in res.json()["entries"] if e["event"] == "GUIDE_RETURNED"][0]
+        assert row["note"] == "진료기록 재업로드 필요"
 
     async def test_another_hospitals_visit_is_not_found(self) -> None:
         """남의 의원 것은 **없는 것이다** — 존재 여부가 새면 그 자체가 정보다."""

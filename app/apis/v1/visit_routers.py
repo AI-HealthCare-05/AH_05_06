@@ -11,8 +11,10 @@ from app.dtos.visits import (
     VisitCreateRequest,
     VisitListResponse,
     VisitResponse,
+    VisitTimelineResponse,
     VisitUpdateRequest,
 )
+from app.services.visit_timeline import VisitTimelineService
 from app.services.visits import VisitCheckService, VisitService
 
 visit_router = APIRouter(tags=["visits"], route_class=ContractRoute)
@@ -61,6 +63,15 @@ async def get_visit(
 ) -> VisitResponse:
     visit = await service.get(actor, visit_id)
     return (await service.responses(actor, [visit]))[0]
+
+
+@visit_router.get("/visits/{visit_id}/timeline", response_model=VisitTimelineResponse)
+async def get_visit_timeline(
+    visit_id: int,
+    actor: Annotated[ClinicalActor, Depends(require_patient_read)],
+    service: Annotated[VisitTimelineService, Depends(VisitTimelineService)],
+) -> VisitTimelineResponse:
+    return await service.timeline(actor, visit_id)
 
 
 @visit_router.patch("/visits/{visit_id}", response_model=VisitResponse)

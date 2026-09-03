@@ -16,7 +16,7 @@ const { load } = require("./browser-shim.js");
 
 /* 파일마다 함께 실어야 하는 것 — 브라우저의 `<script>` 차례와 같다. */
 const SCREENS = {
-  "detail.js": ["api", "session", "patients-api", "shell", "patients", "detail"],
+  "detail.js": ["api", "session", "clinic-clock", "patients-api", "shell", "patients", "detail"],
   "patients.js": ["api", "session", "patients-api", "shell", "patients"],
   "doctor.js": ["api", "session", "patients-api", "shell", "doctor-api", "doctor"],
   "ocr-review.js": ["api", "session", "patients-api", "shell", "ocr-api", "ocr-review"],
