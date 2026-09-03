@@ -49,6 +49,333 @@ def at(day: date, hour: int) -> datetime:
 
 
 class ScheduledMessagesTestCase(TestCase):
+    async def test_staff_can_change_a_scheduled_message_time(self) -> None:
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "change-time")
+
+        original_at = at(TODAY + timedelta(days=1), 10)
+        changed_at = at(TODAY + timedelta(days=2), 14)
+
+        message = await self.a_message(
+            clinic,
+            name="김서연",
+            when=original_at,
+            status=GuideMessageStatus.SCHEDULED,
+        )
+
+        async with self.client() as client:
+            response = await client.patch(
+                f"/api/v1/messages/{message.guide_message_id}",
+                headers=await self.sign_in(staff),
+                json={
+                    "scheduled_at": changed_at.isoformat(),
+                },
+            )
+
+        assert response.status_code == 200, response.text
+
+        body = response.json()
+        assert body["guide_message_id"] == message.guide_message_id
+        assert body["status"] == "SCHEDULED"
+        assert datetime.fromisoformat(body["scheduled_at"]) == changed_at
+
+        saved = await GuideMessage.get(
+            guide_message_id=message.guide_message_id,
+        )
+
+        assert saved.scheduled_at == changed_at
+        assert saved.status is GuideMessageStatus.SCHEDULED
+
+    async def test_staff_can_cancel_a_scheduled_message(self) -> None:
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "cancel-message")
+
+        message = await self.a_message(
+            clinic,
+            name="김서연",
+            when=at(TODAY + timedelta(days=1), 10),
+            status=GuideMessageStatus.SCHEDULED,
+        )
+
+        async with self.client() as client:
+            response = await client.patch(
+                f"/api/v1/messages/{message.guide_message_id}",
+                headers=await self.sign_in(staff),
+                json={
+                    "status": "CANCELED",
+                },
+            )
+
+        assert response.status_code == 200, response.text
+
+        body = response.json()
+        assert body["guide_message_id"] == message.guide_message_id
+        assert body["status"] == "CANCELED"
+
+        saved = await GuideMessage.get(
+            guide_message_id=message.guide_message_id,
+        )
+        assert saved.status is GuideMessageStatus.CANCELED
+
+        scheduled = await self.fetch(staff, days=7)
+        visible_ids = {item["guide_message_id"] for item in scheduled["items"]}
+        assert message.guide_message_id not in visible_ids
+
+    async def test_non_scheduled_messages_cannot_be_changed(self) -> None:
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "cannot-change")
+
+        blocked_statuses = (
+            GuideMessageStatus.SENT,
+            GuideMessageStatus.HELD,
+            GuideMessageStatus.FAILED,
+            GuideMessageStatus.CANCELED,
+        )
+
+        for index, status in enumerate(blocked_statuses):
+            original_at = at(
+                TODAY + timedelta(days=1),
+                9 + index,
+            )
+            changed_at = at(
+                TODAY + timedelta(days=2),
+                14,
+            )
+
+            message = await self.a_message(
+                clinic,
+                name=f"{status.value} 환자",
+                when=original_at,
+                status=status,
+            )
+
+            async with self.client() as client:
+                response = await client.patch(
+                    f"/api/v1/messages/{message.guide_message_id}",
+                    headers=await self.sign_in(staff),
+                    json={
+                        "scheduled_at": changed_at.isoformat(),
+                    },
+                )
+
+            assert response.status_code == 409, (
+                status,
+                response.text,
+            )
+            assert response.json()["code"] == "MESSAGE_NOT_EDITABLE"
+
+            saved = await GuideMessage.get(
+                guide_message_id=message.guide_message_id,
+            )
+            assert saved.status is status
+            assert saved.scheduled_at == original_at
+
+    async def test_another_hospital_message_is_hidden_when_updating(self) -> None:
+        mine = await self.a_clinic("우리의원")
+        theirs = await self.a_clinic("다른의원")
+        staff = await self.a_staff(mine, ["staff"], "scope-update")
+
+        original_at = at(TODAY + timedelta(days=1), 10)
+        changed_at = at(TODAY + timedelta(days=2), 14)
+
+        message = await self.a_message(
+            theirs,
+            name="다른의원 환자",
+            when=original_at,
+            status=GuideMessageStatus.SCHEDULED,
+        )
+
+        async with self.client() as client:
+            response = await client.patch(
+                f"/api/v1/messages/{message.guide_message_id}",
+                headers=await self.sign_in(staff),
+                json={
+                    "scheduled_at": changed_at.isoformat(),
+                },
+            )
+
+        assert response.status_code == 404, response.text
+        assert response.json()["code"] == "NOT_FOUND"
+
+        saved = await GuideMessage.get(
+            guide_message_id=message.guide_message_id,
+        )
+        assert saved.status is GuideMessageStatus.SCHEDULED
+        assert saved.scheduled_at == original_at
+
+    async def test_doctor_can_change_a_scheduled_message(self) -> None:
+        clinic = await self.a_clinic()
+        doctor = await self.a_staff(
+            clinic,
+            ["doctor"],
+            "doctor-change-time",
+        )
+
+        changed_at = at(TODAY + timedelta(days=2), 14)
+        message = await self.a_message(
+            clinic,
+            name="의사 변경 환자",
+            when=at(TODAY + timedelta(days=1), 10),
+            status=GuideMessageStatus.SCHEDULED,
+        )
+
+        async with self.client() as client:
+            response = await client.patch(
+                f"/api/v1/messages/{message.guide_message_id}",
+                headers=await self.sign_in(doctor),
+                json={
+                    "scheduled_at": changed_at.isoformat(),
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "SCHEDULED"
+
+        saved = await GuideMessage.get(
+            guide_message_id=message.guide_message_id,
+        )
+        assert saved.scheduled_at == changed_at
+
+    async def test_admin_only_cannot_change_a_scheduled_message(self) -> None:
+        clinic = await self.a_clinic()
+        admin = await self.a_staff(
+            clinic,
+            ["admin"],
+            "admin-cannot-change",
+        )
+
+        original_at = at(TODAY + timedelta(days=1), 10)
+        message = await self.a_message(
+            clinic,
+            name="관리자 차단 환자",
+            when=original_at,
+            status=GuideMessageStatus.SCHEDULED,
+        )
+
+        async with self.client() as client:
+            response = await client.patch(
+                f"/api/v1/messages/{message.guide_message_id}",
+                headers=await self.sign_in(admin),
+                json={
+                    "scheduled_at": at(
+                        TODAY + timedelta(days=2),
+                        14,
+                    ).isoformat(),
+                },
+            )
+
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "FORBIDDEN"
+
+        saved = await GuideMessage.get(
+            guide_message_id=message.guide_message_id,
+        )
+        assert saved.scheduled_at == original_at
+
+    async def test_signed_out_cannot_change_a_scheduled_message(self) -> None:
+        clinic = await self.a_clinic()
+
+        original_at = at(TODAY + timedelta(days=1), 10)
+        message = await self.a_message(
+            clinic,
+            name="비로그인 차단 환자",
+            when=original_at,
+            status=GuideMessageStatus.SCHEDULED,
+        )
+
+        async with self.client() as client:
+            response = await client.patch(
+                f"/api/v1/messages/{message.guide_message_id}",
+                json={
+                    "scheduled_at": at(
+                        TODAY + timedelta(days=2),
+                        14,
+                    ).isoformat(),
+                },
+            )
+
+        assert response.status_code == 401, response.text
+
+        saved = await GuideMessage.get(
+            guide_message_id=message.guide_message_id,
+        )
+        assert saved.scheduled_at == original_at
+
+    async def test_message_patch_rejects_invalid_requests(self) -> None:
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(
+            clinic,
+            ["staff"],
+            "invalid-message-patch",
+        )
+
+        original_at = at(TODAY + timedelta(days=1), 10)
+        changed_at = at(TODAY + timedelta(days=2), 14)
+
+        message = await self.a_message(
+            clinic,
+            name="잘못된 요청 환자",
+            when=original_at,
+            status=GuideMessageStatus.SCHEDULED,
+        )
+
+        invalid_payloads = (
+            (
+                "빈 요청",
+                {},
+            ),
+            (
+                "시각과 상태를 동시에 요청",
+                {
+                    "scheduled_at": changed_at.isoformat(),
+                    "status": "CANCELED",
+                },
+            ),
+            (
+                "허용되지 않은 상태",
+                {
+                    "status": "SENT",
+                },
+            ),
+            (
+                "시간대 없는 시각",
+                {
+                    "scheduled_at": changed_at.replace(
+                        tzinfo=None,
+                    ).isoformat(),
+                },
+            ),
+            (
+                "알 수 없는 필드",
+                {
+                    "scheduled_at": changed_at.isoformat(),
+                    "hospital_id": clinic.hospital_id,
+                },
+            ),
+        )
+
+        headers = await self.sign_in(staff)
+
+        async with self.client() as client:
+            for label, payload in invalid_payloads:
+                response = await client.patch(
+                    f"/api/v1/messages/{message.guide_message_id}",
+                    headers=headers,
+                    json=payload,
+                )
+
+                assert response.status_code == 400, (
+                    label,
+                    response.text,
+                )
+                assert response.json()["code"] == "INVALID_REQUEST"
+
+        saved = await GuideMessage.get(
+            guide_message_id=message.guide_message_id,
+        )
+        assert saved.status is GuideMessageStatus.SCHEDULED
+        assert saved.scheduled_at == original_at
+
     def setUp(self) -> None:
         super().setUp()
         self.redis = FakeRedis()

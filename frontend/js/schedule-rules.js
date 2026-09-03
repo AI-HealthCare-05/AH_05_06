@@ -9,7 +9,7 @@
  */
 
 /* 기간 — 원문의 「앞으로 7일 ▾」. 서버가 1~90 만 받는다.
-   오늘만 보는 자리를 첫째로 두지 않는다: 이 화면은 「앞으로 무엇이 나가나」를
+  오늘만 보는 자리를 첫째로 두지 않는다: 이 화면은 「앞으로 무엇이 나가나」를
    묻는 자리라, 하루만 보이면 내일 나갈 것을 놓친다. */
 var SCHEDULE_WINDOWS = [
   { days: 7, say: "앞으로 7일" },
@@ -159,6 +159,10 @@ function identityOf(row) {
  * 눌러도 아무 일 없는 버튼은 「된다」고 말한다. 그래서 세우지 않고, 화면
  * 아래에 무엇이 아직 없는지 한 줄로 적는다.
  */
+function canAdjustScheduledMessage(row) {
+  return !!row && row.status === "SCHEDULED";
+}
+
 function rowAction(row) {
   if (!row) return null;
   var phoneIsWrong =

@@ -212,6 +212,33 @@ test("모르는 성별은 적지 않는다", () => {
 
 /* ── 할 일 ───────────────────────────────────────────────────────────── */
 
+test("SCHEDULED 상태만 예약 시각을 변경할 수 있다", () => {
+  const { canAdjustScheduledMessage } = rules();
+
+  assert.strictEqual(
+    canAdjustScheduledMessage(
+      a_row({
+        status: "SCHEDULED",
+      }),
+    ),
+    true,
+  );
+
+  for (const status of ["SENT", "HELD", "FAILED", "CANCELED"]) {
+    assert.strictEqual(
+      canAdjustScheduledMessage(
+        a_row({
+          status,
+        }),
+      ),
+      false,
+      `${status} 상태는 변경할 수 없어야 한다`,
+    );
+  }
+
+  assert.strictEqual(canAdjustScheduledMessage(null), false);
+});
+
 test("번호가 잘못된 줄만 갈 곳이 있다", () => {
   const { rowAction } = rules();
 
@@ -235,13 +262,13 @@ test("번호가 잘못된 줄만 갈 곳이 있다", () => {
   );
 });
 
-test("발송기가 없는 일에는 버튼을 세우지 않는다", () => {
+test("링크로 이동할 수 없는 일은 rowAction에 넣지 않는다", () => {
   const { rowAction } = rules();
 
   assert.strictEqual(
     rowAction(a_row({ status: "SCHEDULED" })),
     null,
-    "시각 변경 · 즉시 발송은 API 가 없다",
+    "시각 변경은 링크가 아니라 조정 버튼으로 처리한다",
   );
   assert.strictEqual(
     rowAction(a_row({ status: "HELD", hold_reason: "NO_CREDIT" })),
@@ -275,6 +302,44 @@ test("조용히 자르지 않는다", () => {
 });
 
 /* ── 목업이 서버와 같은 모양인가 ──────────────────────────────────────── */
+
+test("목업에서도 변경한 예약 시각이 다음 목록 조회에 유지된다", async () => {
+  const api = load(
+    "api",
+    "clinic-clock",
+    "message-words",
+    "schedule-rules",
+    "messages-api",
+  );
+  api.MOCK = true;
+
+  const before = await api.mockScheduled(7, 200);
+  const target = before.items.find(function (row) {
+    return row.status === "SCHEDULED";
+  });
+
+  assert.ok(target, "변경할 예약 문자가 있어야 한다");
+
+  const changedAt = api.mockDay(2, 14);
+
+  const changed = await api.messagesApi.update(
+    target.guide_message_id,
+    {
+      scheduled_at: changedAt,
+    },
+  );
+
+  assert.strictEqual(changed.status, "SCHEDULED");
+  assert.strictEqual(changed.scheduled_at, changedAt);
+
+  const after = await api.mockScheduled(7, 200);
+  const saved = after.items.find(function (row) {
+    return row.guide_message_id === target.guide_message_id;
+  });
+
+  assert.ok(saved, "변경 후에도 선택 기간 안에 있어야 한다");
+  assert.strictEqual(saved.scheduled_at, changedAt);
+});
 
 test("목업도 안 나간 것을 창 밖에서 데려온다", async () => {
   const api = load("api", "clinic-clock", "message-words", "schedule-rules", "messages-api");
@@ -360,13 +425,11 @@ test("목업이 서버 응답과 같은 칸을 갖는다", async () => {
 test("화면이 스스로 세지 않고 서버 셈을 그린다", () => {
   const code = codeOnly(read("js/manage.js"));
 
-  assert.ok(
-    code.indexOf("scheduleChips(") !== -1,
-    "칩을 손으로 만들면 창 밖의 것을 못 센다",
-  );
-  assert.ok(code.indexOf("scheduleSummary(") !== -1);
-  assert.ok(code.indexOf("scheduleOrder(") !== -1);
   assert.ok(code.indexOf("rowAction(") !== -1);
+  assert.ok(code.indexOf("canAdjustScheduledMessage(") !== -1);
+  assert.ok(code.indexOf("scheduleActionHtml(") !== -1);
+  assert.ok(code.indexOf("data-adjust-message") !== -1);
+  assert.match(code, /messagesApi\s*\.\s*update\s*\(/);
 });
 
 test("이름과 세트명은 반드시 막고 그린다", () => {
