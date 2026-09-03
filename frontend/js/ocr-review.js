@@ -335,6 +335,7 @@ function stateTakesFocus(tone) {
      **화면 안에만 있다** — 보낼 자리가 없다 (`js/ocr-groups.js` 의 localSaying). */
   var local = {};
   var localEditing = null;
+  var manualDrugs = [];
 
   /* 적는 **중**인 값. `local` 과 갈라 두는 이유는, 고르는 항목이 「있다」를
      고른 순간 크기 칸을 내보내려면 다시 그려야 하는데 그때 `local` 에 써
@@ -1009,12 +1010,25 @@ function stateTakesFocus(tone) {
   }
 
   function topRowHtml(rows) {
+    /* OCR이 추출한 MEDICATION_NAME[_N] 중 처방 세트 대표 약(비잔·야즈·메트포르민)이
+       하나라도 있으면 true. 없으면 처방일수 셀을 숨긴다 — DURATION_DAYS는 세트 대표
+       약에 연결된 일수인데, 그 약이 없으면 값의 맥락이 모호해진다. */
+    var SET_DRUG_KWS = ["비잔", "야즈", "메트포르민"];
+    var anySetDrugInOcr = rows.some(function (f) {
+      return /^MEDICATION_NAME(_\d+)?$/.test(f.field_type) &&
+        f.value &&
+        SET_DRUG_KWS.some(function (kw) { return String(f.value).indexOf(kw) !== -1; });
+    });
+
     var cells = TOP_ROW.map(function (spec) {
       var field = null;
       for (var i = 0; i < rows.length; i++) {
         if (rows[i].field_type === spec.type) field = rows[i];
       }
       if (!field) return "";
+
+      /* 처방 세트 대표 약이 OCR에 없으면 처방일수 셀을 표시하지 않는다. */
+      if (spec.type === "DURATION_DAYS" && !anySetDrugInOcr) return "";
 
       /* 약속처방은 값 줄이 아니라 **고르는 칸**이다.
          비잔 감지 여부와 무관하게 항상 드롭다운을 표시한다.
@@ -1074,6 +1088,7 @@ function stateTakesFocus(tone) {
     }
 
     var lines = drugLines(pickedSet, written);
+
     if (!lines.length) {
       /* **비었다고 지어내지 않는다.** 어디서 채우는지를 적는다 — 설정(D2-3)의
          「처방 약」이 그 자리다. */
@@ -1101,6 +1116,30 @@ function stateTakesFocus(tone) {
         .join("") +
       "</ul>"
     );
+  }
+
+  /* 수동으로 추가한 약 행 — 비잔 세트가 선택됐지만 등록 약이 없거나 추가가
+     필요할 때 스탭이 직접 입력한 약품명·처방일수를 렌더링한다. */
+  function manualDrugRowsHtml() {
+    return manualDrugs.map(function (drug, i) {
+      return (
+        '<div class="top">' +
+        '<div class="top__cell" aria-hidden="true"></div>' +
+        '<div class="top__cell top__cell--wide">' +
+        '<input class="top__pick drugs__manual-name" type="text" placeholder="약품명 입력" ' +
+        'data-manual-drug-name="' + i + '" value="' + escapeHtml(drug.name) + '" />' +
+        '</div>' +
+        '<div class="top__cell">' +
+        '<span class="top__label">처방일수</span>' +
+        '<div class="field field--confirmed">' +
+        '<input class="field__val drugs__manual-days" type="number" min="1" placeholder="일수" ' +
+        'data-manual-drug-days="' + i + '" value="' + escapeHtml(String(drug.days || "")) + '" />' +
+        '<span class="field__unit">일</span>' +
+        '</div>' +
+        '</div>' +
+        '</div>'
+      );
+    }).join("");
   }
 
   /* 다시 그리면 `innerHTML` 이 통째로 바뀌어 커서와 캐럿이 사라진다. 저장
@@ -1188,7 +1227,6 @@ function stateTakesFocus(tone) {
         var nameVal = nameField.value != null ? String(nameField.value) : "";
         nameCell = (
           '<div class="top__cell top__cell--wide">' +
-          '<span class="top__label">처방</span>' +
           '<div class="top__pick top__pick--static">' + escapeHtml(nameVal) + "</div>" +
           "</div>"
         );
@@ -1278,11 +1316,18 @@ function stateTakesFocus(tone) {
         ? '<span class="box__note">' + escapeHtml(rxSaying || SAVE_LOCKED) + "</span>"
         : "") +
       '<button class="button-primary button-primary--sm" type="button" id="rx-save"' +
-      (canSaveFields() && (localOf(true).length || pickedSet) ? "" : " disabled") +
+      (canSaveFields() && (localOf(true).length || pickedSet || manualDrugs.some(function (d) { return d.name; })) ? "" : " disabled") +
       ">저장</button>" +
       "</div>" +
       topRowHtml(rows) +
       extraDrugRowsHtml(baseExtraRows.concat(extraRows)) +
+      manualDrugRowsHtml() +
+      (pickedSet && canSaveFields()
+        ? '<div class="top top--drug-add">' +
+          '<div class="top__cell" aria-hidden="true"></div>' +
+          '<button class="field__act drugs__add" type="button" id="drug-add">+ 약 추가</button>' +
+          '</div>'
+        : "") +
       (meta.length ? '<p class="box__meta box__meta--top">' + meta.join(" · ") + "</p>" : "") +
       (otherRest.length ? '<div class="rows">' + otherRest.map(renderField).join("") + "</div>" : "") +
       "</section>"
@@ -1826,6 +1871,15 @@ function stateTakesFocus(tone) {
       return;
     }
 
+    /* 수동 약 추가 버튼 — 처방 세트에 등록 약이 없을 때 직접 입력할 행을 추가한다. */
+    if (target.id === "drug-add") {
+      manualDrugs.push({ name: "", days: "" });
+      renderFields();
+      var lastNameInput = fieldsBox.querySelector('[data-manual-drug-name="' + (manualDrugs.length - 1) + '"]');
+      if (lastNameInput) lastNameInput.focus();
+      return;
+    }
+
     /* ── 화면에서 직접 적기 ─────────────────────────────────────────
        판독이 못 찾아 서버에 줄이 없는 항목. 보낼 자리가 없어 화면 안에만
        둔다 — 저장된 척하지 않고, 안내문에 안 실린다는 것을 아래에 적는다. */
@@ -2057,6 +2111,24 @@ function stateTakesFocus(tone) {
     /* 고른 처방은 약품명 칸에 담는다 — 안내문이 그 값으로 만들어진다.
        전에는 화면이 기억만 하고 새로고침하면 사라졌다. */
     var extra = isRx && pickedSet ? { MEDICATION_NAME: pickedSet.name } : {};
+
+    /* 수동 추가 약은 기존 MEDICATION_NAME_N 인덱스 다음 번호로 저장한다. */
+    if (isRx && manualDrugs.length) {
+      var maxIdx = 1;
+      if (result && result.fields) {
+        result.fields.forEach(function (f) {
+          var m = f.field_type.match(/^MEDICATION_NAME_(\d+)$/);
+          if (m) maxIdx = Math.max(maxIdx, parseInt(m[1], 10));
+        });
+      }
+      manualDrugs.forEach(function (drug, i) {
+        if (!drug.name) return;
+        var idx = maxIdx + i + 1;
+        extra["MEDICATION_NAME_" + idx] = drug.name;
+        if (drug.days) extra["DURATION_DAYS_" + idx] = String(drug.days);
+      });
+    }
+
     if (!typed.length && !Object.keys(extra).length) return;
 
     function say(text) {
@@ -2086,6 +2158,7 @@ function stateTakesFocus(tone) {
           delete local[type];
           delete localDraft[type];
         });
+        if (isRx) manualDrugs = [];
         say("저장했습니다");
         return loadResult(loadSeq);
       })
@@ -2103,6 +2176,28 @@ function stateTakesFocus(tone) {
   function onTyped(event) {
     var target = event.target;
     if (!target || !target.getAttribute) return;
+
+    /* 수동 추가 약품명 입력 */
+    var manualName = target.getAttribute("data-manual-drug-name");
+    if (manualName !== null) {
+      var ni = parseInt(manualName, 10);
+      if (!isNaN(ni) && manualDrugs[ni]) {
+        manualDrugs[ni].name = target.value || "";
+        redraw();
+      }
+      return;
+    }
+
+    /* 수동 추가 처방일수 입력 */
+    var manualDays = target.getAttribute("data-manual-drug-days");
+    if (manualDays !== null) {
+      var di = parseInt(manualDays, 10);
+      if (!isNaN(di) && manualDrugs[di]) {
+        manualDrugs[di].days = target.value || "";
+        redraw();
+      }
+      return;
+    }
 
     /* 크기 칸을 고치면 「있다」와 이어서 담아 둔다 — 안 그러면 다시 그릴 때
        크기만 사라진다. */
@@ -2307,6 +2402,7 @@ function stateTakesFocus(tone) {
        그 사람 값이 뜨고, 배지가 「저장 안 됨」이라 더 헷갈린다. */
     local = {};
     localEditing = null;
+    manualDrugs = [];
     /* 앞 환자에게 고른 처방이 남으면 남의 처방으로 안내문이 만들어진다 */
     pickedSet = null;
     if (pollTimer) {

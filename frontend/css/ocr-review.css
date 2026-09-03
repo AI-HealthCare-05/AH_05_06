@@ -1214,3 +1214,31 @@
   color: var(--ink-3);
   border-top: 1px solid var(--line);
 }
+
+.top--drug-add {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.drugs__add {
+  align-self: flex-start;
+}
+
+.drugs__manual-name {
+  font-size: 14px;
+}
+
+.drugs__manual-days {
+  flex: 0 0 68px;
+  width: 68px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}

@@ -662,7 +662,7 @@ test("**적은 값은 이제 실제로 담긴다** — 「저장 안 됨」 배�
 
   /* 적은 것이 없으면 누를 것도 없다 */
   assert.match(code, /localOf\(false\)\.length \?/, "판독 값 단추가 빈 채로 눌린다");
-  assert.match(code, /localOf\(true\)\.length \|\| pickedSet\)/, "처방 단추가 빈 채로 눌린다");
+  assert.match(code, /localOf\(true\)\.length \|\| pickedSet/, "처방 단추가 빈 채로 눌린다");
 });
 
 /* ── 맨 위 진단 · 처방 줄 ────────────────────────────────────────────── */
