@@ -88,7 +88,7 @@ class ChatbotTestCase(TestCase):
         app.dependency_overrides[get_redis] = lambda: self.redis
 
     def tearDown(self) -> None:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_redis, None)
         super().tearDown()
 
     async def approved(self, name: str, token: str = TOKEN) -> GuideDocument:

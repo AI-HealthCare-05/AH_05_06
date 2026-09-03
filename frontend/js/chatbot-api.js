@@ -94,6 +94,9 @@ function apiChatbotStreamTransport(request, observer) {
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ question: request.question }),
     signal: request.signal,
+  }).catch(function (error) {
+    if (error && error.name === "AbortError") throw error;
+    throw new ChatbotUiError("CHATBOT_STREAM_FAILED");
   }).then(function (response) {
     return response
       .json()
@@ -106,9 +109,6 @@ function apiChatbotStreamTransport(request, observer) {
         if (observer.onComplete) observer.onComplete(result);
         return result;
       });
-  }).catch(function (error) {
-    if (error instanceof ChatbotUiError || (error && error.name === "AbortError")) throw error;
-    throw new ChatbotUiError("CHATBOT_API_NOT_READY");
   });
 }
 

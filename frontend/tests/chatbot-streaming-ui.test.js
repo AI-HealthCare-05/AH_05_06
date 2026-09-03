@@ -179,3 +179,43 @@ test("실제 전송은 환자 세션 쿠키를 사용하고 질문만 본문에 
   assert.deepEqual(deltas, [response.answer]);
   assert.equal(completed, result);
 });
+
+test("실환경 네트워크 실패는 재시도 가능한 스트림 실패로 분류한다", async () => {
+  const context = vm.createContext({
+    URLSearchParams,
+    Promise,
+    String,
+    fetch: async () => {
+      throw new TypeError("synthetic network failure");
+    },
+    window: { location: { search: "" } },
+    setTimeout,
+  });
+  vm.runInContext(fs.readFileSync(path.join(JS_DIR, "chatbot-api.js"), "utf8"), context);
+
+  await assert.rejects(
+    () => context.streamChatbotAnswer({ question: "합성 질문" }, {}),
+    (error) => error.code === "CHATBOT_STREAM_FAILED",
+  );
+});
+
+test("응답 관찰자 오류는 API 준비 오류로 바꾸지 않고 그대로 전달한다", async () => {
+  const observerError = new Error("synthetic observer failure");
+  const context = vm.createContext({
+    URLSearchParams,
+    Promise,
+    String,
+    fetch: async () => ({ ok: true, json: async () => ({ answer: "합성 답변" }) }),
+    window: { location: { search: "" } },
+    setTimeout,
+  });
+  vm.runInContext(fs.readFileSync(path.join(JS_DIR, "chatbot-api.js"), "utf8"), context);
+
+  await assert.rejects(
+    () => context.streamChatbotAnswer(
+      { question: "합성 질문" },
+      { onComplete: () => { throw observerError; } },
+    ),
+    (error) => error === observerError,
+  );
+});

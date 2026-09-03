@@ -383,6 +383,9 @@ function sendChatQuestion(question) {
         answer.evidence = result.evidence;
         answer.source = result.source;
         answer.limitation = result.limitation;
+        answer.groundedSection = result.grounded_section;
+        answer.fallback = !!result.fallback;
+        answer.responseRef = result.response_ref;
       },
     },
   )
