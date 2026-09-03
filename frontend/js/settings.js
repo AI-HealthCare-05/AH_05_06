@@ -113,7 +113,7 @@
       (add
         ? '<button class="rail__plus" type="button" id="' +
           add +
-          '" title="새 처방 만들기" aria-label="새 처방 만들기">+</button>'
+          '" title="새 대표 처방 만들기" aria-label="새 대표 처방 만들기">+</button>'
         : "") +
       "</div>"
     );
@@ -271,8 +271,8 @@
       /* **지우는 단추는 없다.** 의료 데이터라 삭제가 금지되고, 지난
          진료기록이 이 이름으로 이 처방을 가리킨다. 잘못 지은 이름은
          상세에서 숨기고 여기 머리의 「+」로 새로 만든다. */
-      sectionHtml("처방", progress ? progress.say : sets.length, "set-new") +
-      (rx || '<p class="rail__none">처방이 없습니다</p>') +
+      sectionHtml("대표 처방", progress ? progress.say : sets.length, "set-new") +
+      (rx || '<p class="rail__none">대표 처방이 없습니다</p>') +
       sectionHtml("기타") +
       groupsIn("rest").map(groupRowHtml).join("")
     );
@@ -705,12 +705,12 @@
     if (group === "baseline") return baselinesHtml();
     if (group === "sms") return templatesHtml();
     if (!picked) {
-      return '<p class="note">처방을 선택하면 상세 설정이 표시됩니다</p>';
+      return '<p class="note">대표 처방을 선택하면 상세 설정이 표시됩니다</p>';
     }
 
     return (
       '<div class="patient-head"><span class="patient-head__name">' +
-      esc(making ? "새 처방" : picked.name) +
+      esc(making ? "새 대표 처방" : picked.name) +
       "</span>" +
       '<span class="grow"></span>' +
       (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
@@ -732,15 +732,15 @@
       (making ? "만들기" : "저장") +
       "</button></div>" +
       (picked.hidden
-        ? '<p class="fld__hint">숨긴 처방입니다 — 새 진료에서 고를 수 없습니다 · ' +
-          "이미 이 처방으로 나간 안내문은 그대로입니다</p>"
+        ? '<p class="fld__hint">숨긴 대표 처방입니다 — 새 진료에서 고를 수 없습니다 · ' +
+          "이미 이 대표 처방으로 나간 안내문은 그대로입니다</p>"
         : "") +
       /* ① 무엇인가 */
       /* **현황·진료기록이 부르는 말을 그대로 쓴다** — 거기서 이 한 쌍을
          「진단 · 처방」이라 부른다. 화면마다 다른 말을 쓰면 같은 것을 두 가지로
          배우게 된다. */
       '<section class="box"><div class="box__head">' +
-      '<h2 class="box__title">진단 · 처방</h2></div>' +
+      '<h2 class="box__title">진단 · 대표 처방</h2></div>' +
       '<div class="cols2">' +
       /* **화면이 부르는 이름을 쓴다.** 「이름」·「질환」이라 적혀 있었는데,
          이 화면을 여는 사람이 셈하는 것은 「어느 진단에 어느 처방인가」다.
@@ -762,16 +762,16 @@
       ) +
       textHtml(
         "f-name",
-        "처방",
+        "대표 처방",
         picked.name,
         making
-          ? "진료기록이 이 이름으로 이 처방을 가리키게 됩니다 · 나중에 바꿀 수 없습니다"
-          : "지난 진료기록이 이 이름으로 이 처방을 가리킵니다 · 바꾸는 대신 숨기고 새로 만듭니다",
+          ? "진료기록이 이 이름으로 이 대표 처방을 가리키게 됩니다 · 나중에 바꿀 수 없습니다"
+          : "지난 진료기록이 이 이름으로 이 대표 처방을 가리킵니다 · 바꾸는 대신 숨기고 새로 만듭니다",
         !making,
       ) +
       "</div>" +
       '<div class="drugs">' +
-      '<span class="fld__label">처방 약</span>' +
+      '<span class="fld__label">처방</span>' +
       drugsHtml() +
       "</div></section>" +
       /* ② 처방 일수 — 소진 예정일이 이 값으로 셈해진다 */
@@ -821,7 +821,7 @@
       (picked.run_out_on
         ? textHtml("f-runout-days", "소진 N일 전", picked.run_out_before_days)
         : "") +
-      '<p class="fld__hint">ⓘ 이 처방 선택 시 기본값으로 적용됩니다 · 환자별 설정은 문자 설정에서 변경합니다</p></section>' +
+      '<p class="fld__hint">ⓘ 이 대표 처방 선택 시 기본값으로 적용됩니다 · 환자별 설정은 문자 설정에서 변경합니다</p></section>' +
       /* ⑤ 「그 밖에」 — **화면에서 걷었다.**
          「EMR 표시 코드」와 「재진 안내」 두 칸은 저장되고 되읽힐 뿐,
          **읽어서 쓰는 데가 한 곳도 없었다.** 안내문 생성도 문자 예약도
@@ -946,7 +946,7 @@
       .catch(function () {
         sets = [];
         el("rail").innerHTML =
-          '<p class="rail__none">처방 목록을 불러오지 못했습니다</p>';
+          '<p class="rail__none">대표 처방 목록을 불러오지 못했습니다</p>';
       });
   }
 
@@ -1132,7 +1132,7 @@
       return render();
     }
     if (making && !picked.name.trim()) {
-      saying = "처방 이름을 적어 주세요";
+      saying = "대표 처방 이름을 적어 주세요";
       return render();
     }
 
@@ -1170,9 +1170,9 @@
           /* 아직 안 만들어졌다 — 친 것이 그대로 있다. */
           saying =
             code === "PRESCRIPTION_SET_EXISTS"
-              ? "같은 이름의 처방이 이미 있습니다 (숨긴 것도 포함)"
+              ? "같은 이름의 대표 처방이 이미 있습니다 (숨긴 것도 포함)"
               : code === "NAME_REQUIRED"
-                ? "처방 이름을 적어 주세요"
+                ? "대표 처방 이름을 적어 주세요"
                 : code === "INVALID_REQUEST"
                   ? "적으신 값이 너무 길거나 범위를 벗어났습니다"
                   : "만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
