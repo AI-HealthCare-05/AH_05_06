@@ -41,27 +41,71 @@ build_and_push () {
 
 # ---------- Docker login ----------
 #
+# **이미 로그인돼 있으면 묻지 않는다.**
+#
+# 도커 데스크톱에 구글(SSO)로 들어온 계정에는 **CLI 에 넣을 비밀번호가 없다.**
+# 이 자리가 받는 것은 비밀번호가 아니라 PAT 인데, 그것을 모르면 「없는 값」을
+# 찾다가 빈 입력으로 `password is empty` 를 맞는다. 2026-09-03 배포가 여기서
+# 두 번 막혔다.
+#
+# 로그인이 이미 돼 있으면 `docker push` 는 키체인의 토큰으로 그냥 된다 —
+# 다시 로그인시킬 이유가 없다. 그래서 **저장된 자격증명을 먼저 본다.**
+# 사용자명은 거기서 읽는다(뒤의 이미지 이름이 이 값을 쓴다). 비밀값은
+# 읽지도 찍지도 않는다 — `sed` 가 `Username` 만 집어 나머지는 흘려보낸다.
+docker_user=""
+# 원격에 넘길 PAT. 로그인을 건너뛰면 빈 값으로 남고, 그때는 원격도 건너뛴다.
+docker_pw=""
+
+# 저장된 도커허브 사용자명. 없으면 빈 문자열.
+stored_docker_user () {
+  local store user
+  [ -f "${HOME}/.docker/config.json" ] || return 0
+  store="$(sed -n 's/.*"credsStore"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${HOME}/.docker/config.json" | head -1)"
+  [ -n "${store}" ] || return 0
+  command -v "docker-credential-${store}" >/dev/null 2>&1 || return 0
+  user="$(printf 'https://index.docker.io/v1/' | "docker-credential-${store}" get 2>/dev/null \
+    | sed -n 's/.*"Username"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  printf '%s' "${user}"
+}
+
+echo "${COLOR_BLUE}Docker login${COLOR_NC}"
+
 # **PAT 를 화면에 찍지 않는다** (KEY-174).
 #   · `read -s` — 입력이 안 보인다. 예전에는 -p 만 있어 그대로 찍혔다
 #   · `--password-stdin` — 예전 `docker login -p` 는 경고를 내고 프로세스
 #     목록(`ps`)에 값이 남는다
 #   · 환경변수로 미리 주면 묻지 않는다 — CI 에서 비대화형으로 돌릴 수 있다
-echo "${COLOR_BLUE}Docker login${COLOR_NC}"
-if [ -z "${DOCKER_USERNAME:-}" ]; then
-  read -r -p "username: " DOCKER_USERNAME
+if [ -n "${DOCKER_USERNAME:-}" ] && [ -n "${DOCKER_PAT:-}" ]; then
+  # 둘 다 환경변수로 왔다 — CI 경로. 그대로 로그인한다.
+  if ! printf '%s' "${DOCKER_PAT}" | docker login -u "${DOCKER_USERNAME}" --password-stdin ; then
+    echo "${COLOR_RED}도커 로그인에 실패했습니다. 유저네임과 PAT 을 확인해주세요.${COLOR_NC}"
+    exit 1
+  fi
+  docker_user="${DOCKER_USERNAME}"
+  docker_pw="${DOCKER_PAT}"
+  echo "${COLOR_GREEN}도커 로그인 성공!${COLOR_NC}"
+else
+  docker_user="$(stored_docker_user)"
+  if [ -n "${docker_user}" ]; then
+    echo "${COLOR_GREEN}이미 로그인돼 있습니다 (${docker_user}) — 건너뜁니다.${COLOR_NC}"
+  else
+    echo "${COLOR_BLUE}로그인된 계정이 없습니다. 도커 데스크톱에 로그인하거나 PAT 을 넣어주세요.${COLOR_NC}"
+    if [ -z "${DOCKER_USERNAME:-}" ]; then
+      read -r -p "username: " DOCKER_USERNAME
+    fi
+    if [ -z "${DOCKER_PAT:-}" ]; then
+      read -r -s -p "password (PAT, 화면에 안 보입니다): " DOCKER_PAT
+      echo ""
+    fi
+    if ! printf '%s' "${DOCKER_PAT}" | docker login -u "${DOCKER_USERNAME}" --password-stdin ; then
+      echo "${COLOR_RED}도커 로그인에 실패했습니다. 유저네임과 PAT 을 확인해주세요.${COLOR_NC}"
+      exit 1
+    fi
+    docker_user="${DOCKER_USERNAME}"
+    docker_pw="${DOCKER_PAT}"
+    echo "${COLOR_GREEN}도커 로그인 성공!${COLOR_NC}"
+  fi
 fi
-if [ -z "${DOCKER_PAT:-}" ]; then
-  read -r -s -p "password (PAT, 화면에 안 보입니다): " DOCKER_PAT
-  echo ""
-fi
-docker_user="${DOCKER_USERNAME}"
-docker_pw="${DOCKER_PAT}"
-
-if ! printf '%s' "${docker_pw}" | docker login -u "${docker_user}" --password-stdin ; then
-  echo "${COLOR_RED}도커 로그인에 실패했습니다. 유저네임과 PAT 을 확인해주세요.${COLOR_NC}"
-  exit 1
-fi
-echo "${COLOR_GREEN}도커 로그인 성공!${COLOR_NC}"
 echo ""
 
 # ---------- Docker Repository Input Prompt ----------

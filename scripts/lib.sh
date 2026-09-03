@@ -44,8 +44,21 @@ DOCKER_PAT_EOF
 $(cat <<'REMOTE'
 cd project
 
-echo "Docker login"
-printf '%s' "$DOCKER_PAT" | docker login -u "$DOCKER_USERNAME" --password-stdin
+# **PAT 가 없으면 로그인을 건너뛴다.**
+#
+# 로컬에서 도커 데스크톱 SSO(구글 로그인)로 들어오면 넘겨 줄 PAT 자체가 없다.
+# 그런데 `set -e` 가 위에 있어서, 빈 값으로 `docker login` 을 부르면
+# `password is empty` 로 **배포가 여기서 끝난다** (2026-09-03 에 그랬다).
+#
+# `iljunk/ai-health` 는 **공개 레포**라 아래 `pull` 은 로그인 없이도 된다.
+# 레포를 비공개로 돌리는 날 이 자리가 「pull access denied」로 멈추므로,
+# 그때는 `DOCKER_PAT` 을 주고 돌려야 한다.
+if [ -n "$DOCKER_PAT" ]; then
+  echo "Docker login"
+  printf '%s' "$DOCKER_PAT" | docker login -u "$DOCKER_USERNAME" --password-stdin
+else
+  echo "Docker login 건너뜀 — PAT 없음. 공개 레포는 로그인 없이 받는다."
+fi
 
 echo "Pulling images: $DEPLOY_SERVICES"
 docker compose pull $DEPLOY_SERVICES
