@@ -252,9 +252,7 @@ class TortoiseOcrRepository:
         return field, []
 
     async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob:
-        job = await OcrJob.filter(ocr_job_id=ocr_job_id, hospital_id=actor.hospital_id).first()
-        if job is None:
-            raise _not_found()
+        job = await self.get_job(ocr_job_id, actor)
         if not job.excluded_from_guide:
             job.excluded_from_guide = True
             await job.save(update_fields=("excluded_from_guide",))
