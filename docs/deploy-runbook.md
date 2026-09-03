@@ -169,6 +169,39 @@ app/Dockerfile 로 지은 이미지 안 (마운트 없음)
 | `No upgrade items found` | **정상이다.** 이미 다 적용돼 있다 | 그대로 진행 |
 | 연결 오류 (`Can't connect`) | DB 가 안 떠 있거나 `.env` 의 DB 값이 틀렸다 | `docker compose ps mysql` · `.env` 확인 |
 | SQL 오류로 중간에 멈춤 | 마이그레이션이 지금 데이터와 안 맞는다 | **앱은 안 바뀐 상태다.** 아래 「되돌릴 때」 |
+| **`✅ Deployment finished` 는 떴는데 컨테이너가 안 바뀜** | **stdin 을 삼켰다** | 아래 「조용히 성공한 것처럼 끝날 때」 |
+
+### 조용히 성공한 것처럼 끝날 때 — stdin (KEY-263)
+
+원격 배포 본문 **전체가 `bash -s` 의 stdin 으로** 흘러 들어간다. 그 안에서
+stdin 을 읽는 명령은 **아직 안 읽은 스크립트 나머지를 먹는다.**
+
+```bash
+docker compose run --rm -T … aerich upgrade < /dev/null   # ← 이 리다이렉션이 필수다
+```
+
+2026-09-03 에 이것을 빼먹어서 이렇게 됐다.
+
+| 돈 것 | 사라진 것 |
+|---|---|
+| `docker compose pull` | `echo "Deploying services"` |
+| `aerich upgrade` (16 개 적용) | **`docker compose up -d`** ← 컨테이너가 안 바뀐 이유 |
+| | `docker image prune -af` |
+
+`aerich` 가 0 으로 끝나므로 **`set -e` 에도 안 걸리고 `✅ Deployment finished` 가
+찍힌다.** 실패했다는 사실 자체가 안 보인다.
+
+🚩 **원격 스크립트에 stdin 을 쓰는 명령을 더할 때는 반드시 막는다** —
+`docker compose run/exec` · `read` · `ssh` 전부 해당한다. `read` 는 예전에
+같은 함정에 걸려 heredoc 으로 바꿨다(`#133` 리뷰, `scripts/lib.sh` 주석).
+
+**확인은 로그가 아니라 상태로 한다.** 배포 전에 찍어 두고 뒤와 맞댄다.
+
+```bash
+ssh -i ~/.ssh/<키>.pem ubuntu@<IP> 'cd ~/project && docker compose ps'
+```
+
+`Up 2 hours` 처럼 **오래 떠 있으면 안 바뀐 것**이다.
 
 ### 되돌릴 때
 
@@ -745,6 +778,15 @@ prod_http · prod_https        location / 이 /vol/web/frontend 를 준다
 `APP_VERSION` 과 같다 — `.env` 의 `WEB_VERSION` 을 직전 값으로 내린다.
 
 프런트는 빌드 단계가 없다(npm·번들러 없는 ES5). `frontend/` 를 그대로 굽는다.
+
+🚩 **`.dockerignore` 에 `frontend/` 를 넣으면 이 이미지가 안 구워진다** (KEY-263).
+`fastapi`·`ai_worker` 는 정말로 `frontend/` 를 안 쓰기 때문에 「이미지가 안 쓰는
+것」으로 보이지만, **이 이미지는 그게 전부다.** 2026-08-31 `fba3c95` 가 넣었고,
+그 뒤로 web 이미지가 한 번도 안 구워져 **서버 화면이 8/28 에 멈춰 있었다.**
+드러나는 데 사흘 걸린 까닭은 그 사이 web 을 구운 사람이 없어서다.
+
+무게로도 뺄 이유가 없다 — `frontend/` 는 2.9MB 인데 그 커밋이 실제로 막으려던
+`.venv`·`.mypy_cache` 는 249MB 다.
 
 **nginx 설정은 안 굽는다.** `deployment.sh` 가 http/https 중 고른 것을 올리고,
 certbot 이 갱신하면서 바꾸기도 한다 — 이미지에 넣으면 그때마다 다시 구워야 한다.
