@@ -160,7 +160,7 @@ _LAB_PATTERNS: dict[str, re.Pattern[str]] = {
 _EMR_PATTERNS: dict[str, re.Pattern[str]] = {
     k: re.compile(v, re.IGNORECASE)
     for k, v in {
-        "DIAGNOSIS": r"(?:진단|상병|Dx|diagnosis)\s*[:：]\s*([^\n\r,;]{1,80})",
+        "DIAGNOSIS": r"(?:진단|상병|Dx|diagnosis)\s*[:：]\s*([^\n\r,;\t]{1,80})",
         # 콜론을 필수로 요구해 「처방점검」·「처방전View」 같은 복합 토큰을 오추출하지 않는다
         "MEDICATION_NAME": (
             r"(?:처방|투약|약제|Rx)\s*[:：]\s*"
@@ -491,12 +491,14 @@ def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
 
     for row in rows[header_row_idx + 1 :]:
         class_blocks = [b for b in row if b.right > class_l and b.left < class_r]
-        if class_blocks:
-            class_text = " ".join(b.text.strip() for b in class_blocks).strip()
-            # 코드분류가 명시적으로 약품 분류 밖이면 제외 (예: 진찰료).
-            # 빈 셀(OCR 미검출)은 약품 행으로 간주한다.
-            if class_text and class_text not in _RX_MED_CLASSES:
-                continue
+        # 코드분류 열 블록이 전혀 없으면 건너뛴다 — 약품인지 비약품인지 알 수 없다.
+        # (예: 초음파검사료처럼 명칭 열 범위에 걸치지만 코드분류 OCR이 누락된 행)
+        if not class_blocks:
+            continue
+        class_text = " ".join(b.text.strip() for b in class_blocks).strip()
+        # 코드분류가 명시적으로 약품 분류 밖이면 제외 (예: 진찰료).
+        if class_text and class_text not in _RX_MED_CLASSES:
+            continue
 
         name_blocks = [b for b in row if b.right > name_l and b.left < name_r]
         if not name_blocks:

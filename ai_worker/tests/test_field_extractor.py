@@ -464,6 +464,26 @@ def test_rx_table_skips_non_medication_rows() -> None:
     assert not any("프로베라정" in (f.extracted_value or "") for f in fields)
 
 
+def test_rx_table_skips_row_with_no_class_block() -> None:
+    """코드분류 열에 OCR 블록이 아예 없는 행은 약품이 아닌 것으로 보고 건너뛴다."""
+    # 초음파검사료 행: 명칭 열에 블록이 있지만 코드분류 열에 블록 없음
+    blocks_with_missing_class = [
+        _rx_block("명칭", 0.99, 10, 10, 200, 30),
+        _rx_block("총투", 0.99, 270, 10, 320, 30),
+        _rx_block("코드분류", 0.99, 400, 10, 480, 30),
+        _rx_block("비잔정(디에노게스트)2mg", 0.95, 10, 40, 200, 60),
+        _rx_block("1", 0.98, 270, 40, 320, 60),
+        _rx_block("내복약", 0.97, 400, 40, 480, 60),
+        # 초음파검사료 행: 코드분류 열 블록 없음(OCR 미검출)
+        _rx_block("초음파검사료", 0.95, 10, 70, 200, 90),
+        _rx_block("1", 0.98, 270, 70, 320, 90),
+    ]
+    rows = _group_fields_by_row(blocks_with_missing_class)
+    result = ClovaOcrResult(raw_text="", fields=blocks_with_missing_class, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    assert not any("초음파검사료" in (f.extracted_value or "") for f in fields)
+
+
 # ---------------------------------------------------------------------------
 # PRESCRIPTION_SET 자동 제안 — 진단 + 약품명 + raw_text「복용 중」조합
 # ---------------------------------------------------------------------------

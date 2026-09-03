@@ -337,6 +337,16 @@ function stateTakesFocus(tone) {
   var localEditing = null;
   var manualDrugs = [];
 
+  /* 처방 세트 대표 약 키워드 — 백엔드 _BIZAN_RE/_YAZZ_RE/_METFORMIN_RE 와 동기화.
+     DURATION_DAYS 표시 여부 및 base 약품 중복 행 판단에 공통으로 사용한다. */
+  var _SET_DRUG_KWS = ["비잔", "야즈", "메트포르민", "메트포민", "metformin"];
+
+  function isSetDrugValue(val) {
+    if (!val) return false;
+    var lower = String(val).toLowerCase();
+    return _SET_DRUG_KWS.some(function (kw) { return lower.indexOf(kw.toLowerCase()) !== -1; });
+  }
+
   /* 적는 **중**인 값. `local` 과 갈라 두는 이유는, 고르는 항목이 「있다」를
      고른 순간 크기 칸을 내보내려면 다시 그려야 하는데 그때 `local` 에 써
      버리면 「취소」로 되돌릴 것이 없다.
@@ -449,6 +459,9 @@ function stateTakesFocus(tone) {
     var token = session.token();
     var headers = token ? { Authorization: "Bearer " + token } : {};
     var url = "/api/v1/ocr/documents/" + encodeURIComponent(activeDoc) + "/image";
+    /* 요청 시점의 문서 id를 클로저로 캡처한다 — 응답 도착 시 activeDoc이 바뀌었으면
+       stale 이미지가 현재 문서 미리보기를 덮어쓰는 레이스 컨디션을 막는다. */
+    var requestedDoc = activeDoc;
 
     fetch(url, { headers: headers, credentials: "include" })
       .then(function (res) {
@@ -456,12 +469,14 @@ function stateTakesFocus(tone) {
         return res.blob();
       })
       .then(function (blob) {
+        if (activeDoc !== requestedDoc) return;
         _docViewBlobUrl = URL.createObjectURL(blob);
         if (docView) {
           docView.innerHTML = '<img class="doc-view__img" src="' + _docViewBlobUrl + '" alt="문서 미리보기">';
         }
       })
       .catch(function () {
+        if (activeDoc !== requestedDoc) return;
         if (docView) {
           docView.innerHTML = '<p class="doc-view__soon">원본 이미지가 삭제됐거나 불러올 수 없습니다</p>';
         }
@@ -1010,14 +1025,11 @@ function stateTakesFocus(tone) {
   }
 
   function topRowHtml(rows) {
-    /* OCR이 추출한 MEDICATION_NAME[_N] 중 처방 세트 대표 약(비잔·야즈·메트포르민)이
-       하나라도 있으면 true. 없으면 처방일수 셀을 숨긴다 — DURATION_DAYS는 세트 대표
-       약에 연결된 일수인데, 그 약이 없으면 값의 맥락이 모호해진다. */
-    var SET_DRUG_KWS = ["비잔", "야즈", "메트포르민"];
+    /* OCR이 추출한 MEDICATION_NAME[_N] 중 처방 세트 대표 약이 하나라도 있으면 true.
+       없으면 처방일수 셀을 숨긴다 — DURATION_DAYS는 세트 대표 약에 연결된 일수인데,
+       그 약이 없으면 값의 맥락이 모호해진다. */
     var anySetDrugInOcr = rows.some(function (f) {
-      return /^MEDICATION_NAME(_\d+)?$/.test(f.field_type) &&
-        f.value &&
-        SET_DRUG_KWS.some(function (kw) { return String(f.value).indexOf(kw) !== -1; });
+      return /^MEDICATION_NAME(_\d+)?$/.test(f.field_type) && isSetDrugValue(f.value);
     });
 
     var cells = TOP_ROW.map(function (spec) {
@@ -1292,10 +1304,7 @@ function stateTakesFocus(tone) {
     rows.forEach(function (f) {
       if (f.field_type === "MEDICATION_NAME" && f.value) baseMedValue = String(f.value);
     });
-    var SET_DRUG_KEYWORDS = ["비잔", "야즈", "메트포르민"];
-    var baseMedIsSetDrug = SET_DRUG_KEYWORDS.some(function (kw) {
-      return baseMedValue.indexOf(kw) !== -1;
-    });
+    var baseMedIsSetDrug = isSetDrugValue(baseMedValue);
     if (!baseMedIsSetDrug) {
       rows.forEach(function (f) {
         if (f.field_type === "MEDICATION_NAME")
@@ -2190,13 +2199,14 @@ function stateTakesFocus(tone) {
     var target = event.target;
     if (!target || !target.getAttribute) return;
 
-    /* 수동 추가 약품명 입력 */
+    /* 수동 추가 약품명 입력 — 값만 저장하고 패널 전체를 다시 그리지 않는다.
+       인접한 data-local-input 경로와 같은 패턴이다. 저장·생성 버튼 상태는
+       submit 핸들러의 가드(manualDrugs 검사)와 저장 시점의 redraw로 보장한다. */
     var manualName = target.getAttribute("data-manual-drug-name");
     if (manualName !== null) {
       var ni = parseInt(manualName, 10);
       if (!isNaN(ni) && manualDrugs[ni]) {
         manualDrugs[ni].name = target.value || "";
-        redraw();
       }
       return;
     }
@@ -2207,7 +2217,6 @@ function stateTakesFocus(tone) {
       var di = parseInt(manualDays, 10);
       if (!isNaN(di) && manualDrugs[di]) {
         manualDrugs[di].days = target.value || "";
-        redraw();
       }
       return;
     }
