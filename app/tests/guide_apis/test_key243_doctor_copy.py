@@ -303,6 +303,37 @@ class TestEmergencyStaysLocked(DrugCautionTestCase):
             "만든 사람 문구가 담당 의사 이름으로 나갔다"
         )
 
+    async def test_an_edited_caution_never_leaks_into_emergency(self) -> None:
+        """🚨 **의사가 고친 주의사항이 응급 칸으로 새지 않는다.**
+
+        위 두 검사로는 못 잡는다. `test_an_emergency_copy_row_is_ignored` 는
+        **응급** 문구만 저장하는데, `_doctor_copies` 가 그 갈래를 아예 안 읽어
+        사전이 비어 있다 — 응급 자리에 사전을 물려도 티가 안 난다.
+        `test_the_locked_section_never_enters_the_lookup` 은 **조회**를 재고,
+        이것은 **환자에게 나가는 값**을 잰다.
+
+        재려면 **고칠 수 있는 갈래에 문구가 있는 상태**여야 한다. 그래야
+        「응급에도 그 사전을 쓴다」는 실수가 값으로 드러난다. 응급은 승인
+        안 거친 문장이 나가면 안 되는 자리다(KEY-150).
+        """
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "k243-leak", ["doctor"])
+        staff = await make_staff(clinic, "k243-leak-s", ["staff"])
+        approved_emergency = "🚨 승인된 응급 문장 — 심한 복통이면 응급실로 가세요."
+        await make_approved_content(SET_NAME, CautionSectionKey.CAUTION, APPROVED)
+        await make_approved_content(SET_NAME, CautionSectionKey.EMERGENCY, approved_emergency)
+        await save_doctor_copy(clinic, doctor, SET_NAME, EDITED, CautionSectionKey.CAUTION)
+        visit = await make_visit_with_doctor(clinic, doctor, chart="KEY243-LEAK")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        await self.generate(visit, staff)
+
+        sections = await self.sections_from_db(visit.visit_id)
+        assert sections[GuideSectionKey.CAUTION].generated_body == EDITED, "의사 문구가 안 나갔다"
+        assert sections[GuideSectionKey.EMERGENCY].generated_body == approved_emergency, (
+            "의사가 고친 주의사항이 응급 칸으로 샜다"
+        )
+
 
 class TestEveryEditableSectionReachesThePatient(DrugCautionTestCase):
     """**고칠 수 있는 갈래는 다 나가야 한다.**
@@ -402,7 +433,9 @@ class TestEveryEditableSectionReachesThePatient(DrugCautionTestCase):
         await save_doctor_copy(clinic, doctor, SET_NAME, "누군가 고친 응급 문장", CautionSectionKey.EMERGENCY)
         await save_doctor_copy(clinic, doctor, SET_NAME, EDITED, CautionSectionKey.CAUTION)
 
-        found = await GuideService._doctor_copies(clinic.hospital_id, doctor.staff_id, SET_NAME)
+        # 세트는 부르는 쪽이 찾아 넘긴다 — `generate()` 와 같은 길이다.
+        prescription_set = await PrescriptionSet.filter(name=SET_NAME).first()
+        found = await GuideService._doctor_copies(clinic.hospital_id, doctor.staff_id, prescription_set)
 
         assert CautionSectionKey.EMERGENCY not in found, "잠긴 갈래가 사전에 들어왔다"
         assert found[CautionSectionKey.CAUTION] == EDITED, "고칠 수 있는 갈래는 들어와야 한다"

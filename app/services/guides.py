@@ -15,6 +15,7 @@
 버튼을 잠그는 것은 편의일 뿐이고, 잠긴 버튼을 우회한 요청도 여기서 막힌다.
 """
 
+import asyncio
 from datetime import datetime, timedelta
 
 from tortoise.timezone import now
@@ -179,27 +180,22 @@ class GuideService:
 
         field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else ""
 
-        # KEY-165: 처방 세트 이름으로 승인된 caution/emergency 문구를 미리 조회한다.
+        # KEY-165: 처방 세트의 승인된 caution/emergency 문구를 미리 조회한다.
         # 트랜잭션 밖에서 실행해 락 보유 시간을 줄인다.
         # 미등록·미승인이면 None → 트랜잭션 안에서 폴백 문구를 사용한다(KEY-180 §4).
+        #
+        # **세트는 한 번만 찾는다.** 갈래마다·의사마다 이름으로 다시 찾으면
+        # 같은 `SELECT` 가 **네 번** 돈다 — 주의·응급·담당 문구·의원 공통 문구가
+        # 전부 같은 세트를 본다 (`#191` 리뷰, 2heej).
         prescription = await Prescription.filter(visit_id=visit_id).first()
         set_name = prescription.prescription_set if prescription else None
-        caution_content = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.CAUTION)
-        emergency_content = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.EMERGENCY)
+        prescription_set = await PrescriptionSet.filter(name=set_name).first() if set_name else None
 
         # KEY-243: **의사가 고친 문구가 있으면 그것이 이긴다.**
         #
         # D2-2 「안내문 고치기」가 `DoctorGuideCopy` 에 저장하는데, 여기서 읽지
         # 않고 있었다 — 의사가 고쳐도 환자에게는 원본이 나갔다. 고칠 수 있게
         # 해 놓고 반영하지 않는 것이 제일 나쁘다: 의사는 고쳤다고 믿는다.
-        #
-        # **담당 의사 것만 본다**(`visit.doctor_id`). 그 글은 담당 의사 이름으로
-        # 환자에게 가기 때문이다.
-        #
-        # 🚨 **「만든 사람」으로 내려가면 안 된다.** 한동안 그렇게 두었다가
-        # 리뷰(`#183` 후속, 2heej)에서 잡혔다. `generate()` 는 담당이 아니어도
-        # 같은 의원의 아무 의사·스탭이나 부를 수 있다 — `_require_staff_or_doctor`
-        # 는 역할만 보고, 진료 조회도 `hospital_id` 로만 범위를 잡는다.
         #
         # **담당 의사 것 → 의원 공통 → 기본 문구.** 갈래마다 따로 내려간다 —
         # 담당이 주의사항만 고치고 의원 공통이 복약지도만 가졌으면 둘 다
@@ -209,13 +205,20 @@ class GuideService:
         # 좁은 것이 넓은 것을 덮는다(2026-09-02 회의: 「기본 설정은 모두
         # 공통으로 두자. 원장별 설정은 나중에」).
         #
-        # 🚨 **「만든 사람」으로 내려가지 않는다.** 한동안 그 층이 있었다가
-        # 리뷰(2heej)에서 잡혔다 — `generate()` 는 담당이 아니어도 같은 의원의
-        # 아무 의사·스탭이나 부를 수 있어서, 담당이 안 고쳐 둔 갈래에
-        # **만든 사람의 글이 담당 이름으로 나갔다.**
-        copies = await self._doctor_copies(actor.hospital_id, visit.doctor_id, set_name)
-        for key, body in (await self._doctor_copies(actor.hospital_id, None, set_name)).items():
-            copies.setdefault(key, body)
+        # **누구 것을 읽는지는 `_doctor_copies` 의 설명에 적혀 있다.** 여기에
+        # 두 벌로 적혀 있었는데, 규칙은 지켜지는 자리에 한 벌만 있어야 고칠 때
+        # 같이 읽힌다.
+        #
+        # **넷을 나란히 돌린다.** 서로를 안 기다린다. 트랜잭션 밖이라 락 보유
+        # 시간과는 무관하고, 지연만 줄어든다.
+        caution_content, emergency_content, own_copies, common_copies = await asyncio.gather(
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.CAUTION),
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.EMERGENCY),
+            self._doctor_copies(actor.hospital_id, visit.doctor_id, prescription_set),
+            self._doctor_copies(actor.hospital_id, None, prescription_set),
+        )
+        # **담당 것이 의원 공통을 덮는다** — 뒤에 오는 쪽이 이긴다.
+        copies = {**common_copies, **own_copies}
 
         async with in_transaction() as connection:
             # Visit 행을 잠근 채로 중복을 확인하고 생성한다.
@@ -875,7 +878,7 @@ class GuideService:
 
     @staticmethod
     async def _doctor_copies(
-        hospital_id: int, doctor_id: int | None, set_name: str | None
+        hospital_id: int, doctor_id: int | None, prescription_set: PrescriptionSet | None
     ) -> dict[CautionSectionKey, str]:
         """이 의사가 이 처방에 대해 고쳐 둔 문구를 **갈래별로.**
 
@@ -889,19 +892,29 @@ class GuideService:
         바뀐다.** 목록을 잎 모듈에 둔 까닭이 이것이다 — 설정이 넓힌 갈래를
         생성이 안 따라가면 「고칠 수 있는데 안 나가는」 갈래가 생긴다.
 
-        **이름으로 세트를 찾는다.** `Prescription.prescription_set` 은
-        스냅샷 문자열이고(KEY-137) `DoctorGuideCopy` 는 세트를 번호로 가리켜
-        서다. `DrugCautionService.get_approved_content` 와 같은 길이다 —
-        한쪽만 다른 방식으로 찾으면 「승인 문구는 붙었는데 의사 문구는 안
-        붙는」 세트가 생긴다.
+        **세트는 부르는 쪽이 찾아 넘긴다.** `Prescription.prescription_set` 은
+        스냅샷 문자열이라(KEY-137) 이름으로 찾아야 하는데, 한 진료에서 이것을
+        담당·의원 공통으로 두 번 부르므로 안에서 찾으면 같은 `SELECT` 가
+        되풀이된다 (`#191` 리뷰, 2heej).
+
+        🚨 **`doctor_id` 에 `visit.doctor_id` 말고 다른 번호를 넣지 마라.**
+
+        여기서 읽은 글은 **담당 의사 이름으로 환자에게 나간다.** 한동안
+        「만든 사람」으로 내려가는 층이 있었다가 리뷰(2heej)에서 잡혔다 —
+        `generate()` 는 담당이 아니어도 같은 의원의 아무 의사·스탭이나 부를
+        수 있다. `_require_staff_or_doctor` 는 역할만 보고, 진료 조회도
+        `hospital_id` 로만 범위를 잡는다.
+
+            의사 B 가 세트 S 문구를 고쳐 둔다
+            담당 의사 A 는 S 를 고친 적이 없다
+            B 가 (담당이 아닌데) A 의 진료로 generate 를 부른다
+            → **B 가 쓴 글이 A 이름으로 환자에게 나간다**
+
+        `doctor_id=None` 은 그것과 다르다 — **의원 공통**을 뜻하고, 없다는
+        뜻이 아니다.
 
         트랜잭션 밖에서 읽는다. 락 보유 시간을 늘릴 이유가 없다.
         """
-        # `doctor_id` 가 `None` 이면 **의원 공통**을 찾는다 — 없다는 뜻이 아니다.
-        if not set_name:
-            return {}
-
-        prescription_set = await PrescriptionSet.filter(name=set_name).first()
         if prescription_set is None:
             return {}
 

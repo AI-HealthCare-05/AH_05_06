@@ -44,6 +44,31 @@ class DrugCautionService:
             LOGGER.info("미등록 처방 세트: %r — %s 범용 문구로 폴백", set_name, section_key)
             return None
 
+        return await DrugCautionService.approved_content_of(ps, section_key)
+
+    @staticmethod
+    async def approved_content_of(
+        prescription_set: PrescriptionSet | None,
+        section_key: CautionSectionKey,
+    ) -> DrugCautionContent | None:
+        """**세트를 이미 찾아 둔 쪽을 위한 갈래.**
+
+        안내 생성은 한 진료에서 갈래를 둘 넘게 묻는다. 갈래마다 이름으로 다시
+        찾으면 같은 `SELECT` 가 그만큼 돈다 — 한 번 찾아 넘겨 쓰면 된다
+        (`#191` 리뷰, 2heej).
+
+        이름으로 부르는 길(`get_approved_content`)은 그대로 둔다. 부르는 쪽이
+        세트를 안 들고 있을 수도 있고, 그 길이 「없는 세트」를 로그로 남기는
+        자리이기도 하다.
+
+        **`None` 을 받는다.** 처방이 아직 안 붙은 진료가 정상 경로라서다
+        (KEY-66 다리가 아직 없어 새 진료는 세트 이름이 비어 있다). 부르는
+        쪽마다 `if` 를 두게 하면 그중 하나를 빠뜨린다.
+        """
+        if prescription_set is None:
+            return None
+        ps = prescription_set
+
         # approved_key 로 조회: 값이 채워진 행이 곧 현재 승인본이며 유니크(KEY-180 §3).
         # approval_status=APPROVED 와 함께 걸어 DRAFT·DEPRECATED 행이 키를 갖더라도 차단한다.
         # source_grade=A 필터: B·C 등급은 caution/emergency 단독 근거 불가(KEY-180 §2).
@@ -57,13 +82,13 @@ class DrugCautionService:
             LOGGER.warning(
                 "승인된 %s 문구 없음 (세트: %r) — 범용 문구로 폴백",
                 section_key,
-                set_name,
+                ps.name,
             )
             return None
 
         # KEY-180 §4: 근거 메타데이터가 하나라도 비어 있으면 생성에 사용하지 않는다.
         if not all([content.source_name, content.source_org, content.source_url, content.content_version]):
-            LOGGER.warning("근거가 비어 있어 폴백 — %s / %r", section_key, set_name)
+            LOGGER.warning("근거가 비어 있어 폴백 — %s / %r", section_key, ps.name)
             return None
 
         return content
