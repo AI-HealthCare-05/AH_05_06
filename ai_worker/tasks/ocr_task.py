@@ -3,8 +3,8 @@
 처리 흐름:
   CLOVA 활성                  : 파일 읽기 → CLOVA 호출 → OcrResult/OcrDocumentText/OcrField 저장 → COMPLETED
   CLOVA 활성 + 필수 필드 누락 : **빈 줄로 저장하고 COMPLETED** — 화면이 물음표로 세우고 사람이 채운다
-  CLOVA 실패                  : CLOVA_API_ERROR 설정 → fixture fallback 또는 FAILED
-  CLOVA 비활성                : OCR_NOT_CONFIGURED 설정 → fixture fallback 또는 FAILED
+  CLOVA 실패                  : CLOVA_API_ERROR 설정 → FAILED
+  CLOVA 비활성                : OCR_NOT_CONFIGURED 설정 → FAILED
   파일/DB 오류                : OcrJob.status → FAILED
 
   필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS) 중 못 읽은 것은
@@ -22,7 +22,7 @@
 
 관측 로그 (KEY-175):
   모든 종료 경로에서 아래 형식의 단일 구조화 로그를 남긴다.
-  ocr_job_complete mode=<clova|fixture|failed> elapsed_ms=<n> clova_elapsed_ms=<n|none> error_code=<code|none> ocr_job_id=<id>
+  ocr_job_complete mode=<clova|failed> elapsed_ms=<n> clova_elapsed_ms=<n|none> error_code=<code|none> ocr_job_id=<id>
   - clova_elapsed_ms: 실제 CLOVA HTTP 호출 시간 합계, 성공 경로에서만 기록
   - 환자정보·OCR 원문·파일 경로·오류 원문은 로그에 포함하지 않는다.
 """

@@ -68,15 +68,6 @@ class TestObserveUnit(TestCase):
         assert "error_code=none" in log
         assert "ocr_job_id=unit-test-001" in log
 
-    def test_fixture_fallback_log_format(self) -> None:
-        t0 = perf_counter()
-        with self.assertLogs(_LOGGER, level="INFO") as cap:
-            _observe(ocr_job_id="unit-test-002", mode="fixture", t0=t0, error_code="CLOVA_TIMEOUT")
-        log = "\n".join(cap.output)
-        assert "mode=fixture" in log
-        assert "clova_elapsed_ms=none" in log
-        assert "error_code=CLOVA_TIMEOUT" in log
-
     def test_failed_log_format(self) -> None:
         t0 = perf_counter()
         with self.assertLogs(_LOGGER, level="INFO") as cap:
@@ -177,7 +168,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
@@ -246,7 +236,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = False
-            mock_cfg.OCR_FIXTURE_FALLBACK = False
             mock_cfg.ENV = "test"
             await process_ocr_job(str(job.ocr_job_id))
 
@@ -266,7 +255,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
@@ -283,7 +271,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
         log = "\n".join(cap.output)
         for raw_line in _FAKE_CLOVA.raw_text.splitlines():
@@ -301,7 +288,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="WARNING") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
@@ -320,7 +306,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         observe_lines = [line for line in cap.output if "ocr_job_complete" in line]

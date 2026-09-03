@@ -4,7 +4,7 @@
   - CLOVA 성공 → OcrResult(clova-ocr-v2) + COMPLETED
   - CLOVA 실패 → FAILED + failure_code=CLOVA_API_ERROR  (워커는 fixture seed 불가 — KEY-199)
   - CLOVA 미설정 → FAILED + failure_code=OCR_NOT_CONFIGURED  (워커는 fixture seed 불가 — KEY-199)
-  - 필수 필드 누락 → FAILED + failure_code=REQUIRED_FIELD_MISSING  (워커는 fixture seed 불가 — KEY-199)
+  - 필수 필드 누락 → COMPLETED + 빈 OcrField 행 생성  (못 읽은 필드는 사람이 채운다 — KEY-187)
   - 존재하지 않는 job_id → 예외 없이 종료
   - 이미 완료된 job → 중복 처리 없이 종료
 """
@@ -187,17 +187,6 @@ class TestProcessOcrJob(TestCase):
         assert job.failure_code == "OCR_NOT_CONFIGURED"
 
         assert await OcrResult.filter(ocr_job=job).count() == 0
-
-    async def test_clova_not_configured_marks_job_failed(self) -> None:
-        job = await self._seed("ocr_key56_not_configured")
-
-        with patch("ai_worker.tasks.ocr_task.config") as mock_cfg:
-            mock_cfg.clova_enabled = False
-            await process_ocr_job(job.ocr_job_id)
-
-        await job.refresh_from_db()
-        assert job.status == OcrJobStatus.FAILED
-        assert job.failure_code == "OCR_NOT_CONFIGURED"
 
     # ── 예외·경계 케이스 ──────────────────────────────────────────────────────
 
