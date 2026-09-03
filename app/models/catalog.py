@@ -17,6 +17,7 @@ MySQL 8.0은 조건부 유니크 인덱스를 지원하지 않아 `unique_togeth
 걸리지 않는다.
 """
 
+from datetime import datetime
 from enum import StrEnum
 
 from tortoise import fields, models
@@ -52,14 +53,27 @@ class ApprovalStatus(StrEnum):
 
 
 class CautionSectionKey(StrEnum):
-    """caution·emergency 두 갈래만 마스터 콘텐츠 대상이다.
+    """설정에서 **문구를 갖는** 안내문 갈래.
 
-    나머지 섹션(medication·life·messages)은 약물별 근거가 필요 없어
-    DrugCautionContent 매핑 대상이 아니다.
+    처음에는 주의사항 둘뿐이었다 — 「나머지(medication·life·messages)는
+    약물별 근거가 필요 없다」고 적혀 있었다. 그런데 원문 D2-2 는 넷 다
+    **[수정]** 으로 두었고, 그 둘의 문장이 `guides.py` 에 박혀 있어 **고칠
+    자리 자체가 없었다.** 근거가 필요 없다는 것과 고칠 수 없다는 것은 다르다.
+
+    `messages`(안내문 안의 「문자 안내」 절)는 아직 없다 — 이름이 D2-5
+    「문자 문구」와 겹쳐 혼동이 있어, 이름을 가른 뒤에 더한다.
+
+    이름이 `Caution…` 인 것은 처음 둘일 때 붙은 것이라 지금은 좁다. 바꾸면
+    두 표와 마이그레이션이 따라 움직여야 해서 따로 뺀다.
     """
 
+    #: 「이 약을 왜 드시나요」·「먹는 방법」이 실리는 자리.
+    MEDICATION = "medication"
     CAUTION = "caution"
+    #: 🚨 누구도 못 고친다 (KEY-150).
     EMERGENCY = "emergency"
+    #: 「이번 4주 챌린지」가 실리는 자리.
+    LIFE = "life"
 
 
 class SetDisease(StrEnum):
@@ -98,6 +112,23 @@ class SetDaysMode(StrEnum):
     DAYS = "DAYS"
 
 
+class SetStatus(StrEnum):
+    """**지우지 않는다. 감춘다.**
+
+    `StaffStatus` 와 같은 꼴이다(`app/models/staffs.py`) — 「삭제하지 않고
+    status 만 바꾼다. 지난 기록이 이 이름을 가리키고 있다.」 의료 데이터라
+    삭제가 금지되고, 여기서는 그 이유가 하나 더 있다: 지난 진료기록이 이
+    세트를 **이름 문자열로** 가리키므로 행이 사라지면 그 진료들의 안내문
+    문구가 조용히 떨어진다.
+
+    **`hidden` 은 「없다」가 아니라 「새로 못 고른다」다.** 숨긴 세트라도
+    이미 그것으로 나간 진료기록에서는 문구가 그대로 붙어야 한다.
+    """
+
+    ACTIVE = "active"
+    HIDDEN = "hidden"
+
+
 class PrescriptionSet(models.Model):
     """처방 세트 카탈로그 — KEY-165, KEY-180 §1.
 
@@ -107,7 +138,25 @@ class PrescriptionSet(models.Model):
     """
 
     prescription_set_id = fields.BigIntField(primary_key=True)
+
+    #: **의원 칸이 없다.** 이 저장소에 `Hospital` 표는 있지만 이 프로젝트는
+    #: 의원 하나를 본다(2026-09-02 회의). 그래서 처방 여덟은 그 의원의 것이고,
+    #: 한 의원 안의 의사들이 **모두 공통으로 쓴다.**
+    #:
+    #: `#183` 리뷰(2heej)가 「어느 의원 의사든 다른 모든 의원 것을 바꾼다」고
+    #: 짚은 자리가 여기다. **고친 것이 아니라 범위 밖으로 둔 것이다** — 의원이
+    #: 둘이 되는 날 이 칸부터 만들어야 한다.
+    #:
+    #: 의사별 처방(원장이 제 처방을 따로 만드는 것)은 나중에 더한다.
     name = fields.CharField(max_length=100, unique=True)
+
+    #: 감춤. **판정은 이 칸으로만 한다** — `hidden_at is None` 을 세는 곳이
+    #: 생기면 셈이 흩어지고, 한 군데 빠지면 숨긴 세트가 새로 골라진다.
+    #: (`Staff.is_active` 가 `status` 만 보는 것과 같다.)
+    status = fields.CharEnumField(enum_type=SetStatus, default=SetStatus.ACTIVE)
+
+    #: 언제 감췄나. 삭제가 금지된 표에서 되돌릴 근거다 — `Staff.left_at` 과 같다.
+    hidden_at: datetime | None = fields.DatetimeField(null=True)
 
     #: ── 설정 화면(D2-3)이 정하는 것들 ────────────────────────────────
     disease: SetDisease = fields.CharEnumField(enum_type=SetDisease, default=SetDisease.ENDOMETRIOSIS)
@@ -382,8 +431,18 @@ class DoctorGuideCopy(models.Model):
     자료라 손대면 안 되고, 이 표는 그 위에 덧씌우는 표현일 뿐이다. 줄을 지우면
     원본으로 돌아간다 — 되돌리기가 그것이다.
 
-    **의사마다 따로다.** 원문: 「이 문구는 박연 원장 담당 환자에게만
-    발송됩니다」. 그래서 `doctor_id` 가 비지 않는다.
+    **`doctor_id` 가 비면 의원 공통이다.** `LabBaseline` 과 같은 꼴이다
+    (「비면 의원 공통. 차면 그 의사 담당 환자에게만 쓴다」).
+
+    원문 D2-2 는 「이 문구는 박연 원장 담당 환자에게만 발송됩니다」라 적어
+    개인 것만 두었다. 그런데 **2026-09-02 회의에서 기본 설정을 의원 공통으로
+    정했다** — 「기본 설정은 모두 공통으로 두자. 원장별 설정은 나중에」.
+
+    개인 것만 두면 이렇게 된다: 원장 A 가 복약지도를 고치면 A 담당 환자에게만
+    나가고, 원장 B 가 같은 처방을 열면 약·일수·확인 항목은 A 가 정한 그대로인데
+    **문구만 기본값으로 보인다.** B 는 「아직 아무도 안 고쳤구나」로 읽는다.
+    처방 세트가 의원 공통인데(이 표에는 의사 칸이 없다) 그 위에 덧씌우는
+    표현만 개인 것이면 화면이 한 처방을 두 가지로 말하게 된다.
 
     **🚨 응급 문구는 여기 들어오지 않는다.** 원문: 「🚨 문구는 이 화면이 열리지
     않는다」. 표현을 다듬는 자리이지 안전 문장을 고치는 자리가 아니다.
@@ -391,8 +450,8 @@ class DoctorGuideCopy(models.Model):
 
     doctor_guide_copy_id = fields.BigIntField(primary_key=True)
     hospital_id = fields.BigIntField()
-    #: 비지 않는다 — 의원 공통 문구라는 것은 곧 원본이다.
-    doctor_id = fields.BigIntField()
+    #: 비면 의원 공통. 차면 그 의사 담당 환자에게만 쓴다 — `LabBaseline` 과 같다.
+    doctor_id: int | None = fields.BigIntField(null=True)  # type: ignore[assignment]
     prescription_set_id: int
     prescription_set: fields.ForeignKeyRelation[PrescriptionSet] = fields.ForeignKeyField(
         "models.PrescriptionSet",
@@ -426,7 +485,9 @@ class DoctorGuideReview(models.Model):
 
     doctor_guide_review_id = fields.BigIntField(primary_key=True)
     hospital_id = fields.BigIntField()
-    doctor_id = fields.BigIntField()
+    #: 비면 의원 공통. 문구와 **같은 짝이어야 한다** — 문구는 공통인데
+    #: 확인 표시만 개인 것이면 「누가 확인했나」와 「무엇을 확인했나」가 어긋난다.
+    doctor_id: int | None = fields.BigIntField(null=True)  # type: ignore[assignment]
     prescription_set_id: int
     prescription_set: fields.ForeignKeyRelation[PrescriptionSet] = fields.ForeignKeyField(
         "models.PrescriptionSet",
