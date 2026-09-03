@@ -1297,15 +1297,14 @@ function stateTakesFocus(tone) {
 
     /* 첫 번째 약품(MEDICATION_NAME / DURATION_DAYS)을 드롭다운 아래에
        텍스트 행으로 표시한다.
-       단, 처방 세트를 역추론한 약(비잔·야즈·메트포르민)이 첫 약품명과
-       일치하는 경우는 드롭다운 힌트 줄에 이미 보이므로 중복 행을 생략한다. */
+       세트 대표 약이 하나라도 검출되면(anySetDrugInOcr) 상단 행에 DURATION_DAYS가
+       이미 표시되므로 base 중복 행을 추가하지 않는다. base가 세트 약인 경우도
+       드롭다운 힌트에 이미 나타나므로 마찬가지로 생략한다. */
     var baseExtraRows = [];
-    var baseMedValue = "";
-    rows.forEach(function (f) {
-      if (f.field_type === "MEDICATION_NAME" && f.value) baseMedValue = String(f.value);
+    var anySetDrug = rows.some(function (f) {
+      return /^MEDICATION_NAME(_\d+)?$/.test(f.field_type) && isSetDrugValue(f.value);
     });
-    var baseMedIsSetDrug = isSetDrugValue(baseMedValue);
-    if (!baseMedIsSetDrug) {
+    if (!anySetDrug) {
       rows.forEach(function (f) {
         if (f.field_type === "MEDICATION_NAME")
           baseExtraRows.push(Object.assign({}, f, { field_type: "MEDICATION_NAME_1" }));
@@ -2199,14 +2198,19 @@ function stateTakesFocus(tone) {
     var target = event.target;
     if (!target || !target.getAttribute) return;
 
-    /* 수동 추가 약품명 입력 — 값만 저장하고 패널 전체를 다시 그리지 않는다.
-       인접한 data-local-input 경로와 같은 패턴이다. 저장·생성 버튼 상태는
-       submit 핸들러의 가드(manualDrugs 검사)와 저장 시점의 redraw로 보장한다. */
+    /* 수동 추가 약품명 입력 — 값만 저장하고 renderSummary만 호출한다.
+       renderFields(패널 전체 재구성)는 행 추가/삭제 시점에만 실행해 성능을 줄인다.
+       rx-save 버튼은 renderFields가 담당하므로, 저장 가능 상태를 직접 동기화한다. */
     var manualName = target.getAttribute("data-manual-drug-name");
     if (manualName !== null) {
       var ni = parseInt(manualName, 10);
       if (!isNaN(ni) && manualDrugs[ni]) {
         manualDrugs[ni].name = target.value || "";
+        renderSummary();
+        var rxBtn = document.getElementById("rx-save");
+        if (rxBtn && canSaveFields()) {
+          rxBtn.disabled = !(localOf(true).length || pickedSet || manualDrugs.some(function (d) { return d.name; }));
+        }
       }
       return;
     }
