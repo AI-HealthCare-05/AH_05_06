@@ -4,6 +4,7 @@ import hashlib
 import logging
 import re
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from time import perf_counter
 from typing import Protocol
@@ -296,8 +297,26 @@ class ChatbotService:
         self._output_rate = output_usd_per_1m_tokens
 
     async def answer(self, *, link_token: str, question: str) -> ChatbotResult:
+        return await self._answer_from(
+            question,
+            lambda: self._links.get_approved_guide(link_token),
+        )
+
+    async def answer_for_link_digest(self, *, link_digest: str, question: str) -> ChatbotResult:
+        """Answer inside the guide selected by the authenticated patient session."""
+
+        return await self._answer_from(
+            question,
+            lambda: self._links.get_approved_guide_by_digest(link_digest),
+        )
+
+    async def _answer_from(
+        self,
+        question: str,
+        load_guide: Callable[[], Awaitable[tuple[object, GuideDocument]]],
+    ) -> ChatbotResult:
         try:
-            _, guide = await self._links.get_approved_guide(link_token)
+            _, guide = await load_guide()
         except AuthError:
             # 만료·미승인·없는 링크는 기존 공개 오류 계약을 유지한다. 화면은
             # 코드만으로 복구 행동을 안내하고, 모델에는 어떤 값도 전달하지 않는다.

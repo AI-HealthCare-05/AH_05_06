@@ -235,8 +235,13 @@ class PatientLinkService:
         await link.save(update_fields=["token_digest", "expires_at"])
 
     async def get_approved_guide(self, raw_token: str) -> tuple[PatientGuideLink, GuideDocument]:
+        return await self.get_approved_guide_by_digest(digest_link_token(raw_token))
+
+    async def get_approved_guide_by_digest(self, token_digest: str) -> tuple[PatientGuideLink, GuideDocument]:
+        """Load the approved guide selected by an authenticated patient session."""
+
         link = (
-            await PatientGuideLink.filter(token_digest=digest_link_token(raw_token))
+            await PatientGuideLink.filter(token_digest=token_digest)
             .prefetch_related("guide_document__sections", "guide_document__visit")
             .first()
         )

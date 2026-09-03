@@ -19,10 +19,14 @@ async def require_patient_session(
     await PatientSessionStore(redis).require(patient_session, token)
 
 
-async def require_patient_feedback_session(
+async def require_patient_session_link(
     redis: Annotated[Redis, Depends(get_redis)],
     patient_session: Annotated[str | None, Cookie(alias=PATIENT_SESSION_COOKIE_NAME)] = None,
 ) -> str:
-    """Resolve feedback scope from the HttpOnly session without accepting a link token."""
+    """Resolve the guide link digest from the HttpOnly patient session."""
 
     return await PatientSessionStore(redis).resolve_link_digest(patient_session)
+
+
+# Keep the KEY-239 dependency name for existing feedback routes.
+require_patient_feedback_session = require_patient_session_link
