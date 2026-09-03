@@ -69,17 +69,24 @@
   var templates = null; // 문자 문구 판
   var baselines = null; // 검사 기준선 판
   var copy = null; // 안내문 문구 판
-  /* **펼친 묶음은 늘 하나다.**
+  /* **펼친 묶음은 여럿일 수 있다.**
    *
-   * 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져 「그 밖에」가
-   * 화면 밖으로 밀린다」. 실제로 재 봤다 — 넷 다 펼치면 내용이 937px 이고
-   * 보이는 높이는 689px 이라 「기타」 세 줄이 통째로 밀려난다. 한 묶음만
-   * 펼치면 546.5px 로 다 보인다. 원문 다섯 프레임이 전부 그 상태다.
+   * 한동안 하나만 열리게 두었다. 원문 D2-3 주석이 「9개가 늘 다 펼쳐져 있으면
+   * 왼쪽이 길어져 「그 밖에」가 화면 밖으로 밀린다」고 적었고, 재 보니 묶음
+   * 넷을 다 펼치면 937px 인데 보이는 높이가 689px 이라 「기타」 세 줄이
+   * 밀려났기 때문이다.
+   *
+   * **그 셈의 전제가 바뀌었다.** 안내문 묶음을 처방 안으로 넣으면서 나무가
+   * 하나가 됐다 — 묶음이 넷에서 둘로 줄었고 줄은 여덟이다. 둘 다 펴도
+   * 「기타」가 안 밀린다.
+   *
+   * 그리고 하나만 열리는 것이 실제로 걸리적거렸다: 다낭성을 펴는 순간
+   * 자궁내막증이 닫혀서, 두 묶음을 견주려면 접었다 폈다를 되풀이해야 했다.
    *
    * 열쇠에 갈래를 함께 담는다(`"guide|ENDOMETRIOSIS"`). 갈래별로 통을 나눠
    * 두었던 것은 두 갈래에 같은 질환이 있어 한 통에 담으면 같이 접히기
    * 때문인데, 열쇠에 갈래가 들어 있으면 그 일이 안 난다. */
-  var opened = null;
+  var opened = {};
   var who = null; // 로그인한 사람 — 문구가 누구 이름으로 나가는지 적는다
   var whose = null; // 누구 기준 — 비면 의원 공통
   var drafts = {}; // 아직 저장 안 한 문구 — 다시 그려도 친 값이 남아야 한다
@@ -163,7 +170,7 @@
    */
   function railGroupHtml(section, block, drawRow, count) {
     var key = railFoldKey(section, block.key);
-    var open = opened === key;
+    var open = !!opened[key];
     /* 갈래를 id 에도 넣는다 — 안내문과 처방에 같은 질환이 있어서 묶음 열쇠만
        으로는 id 가 겹친다. */
     var kids = "rail-kids-" + section + "-" + block.key;
@@ -914,7 +921,7 @@
     var heads = el("rail").querySelectorAll("[data-fold]");
     for (var i = 0; i < heads.length; i++) {
       var head = heads[i];
-      var on = head.getAttribute("data-fold") === opened;
+      var on = !!opened[head.getAttribute("data-fold")];
       var kids = el(head.getAttribute("aria-controls"));
       head.setAttribute("aria-expanded", on ? "true" : "false");
       head.parentNode.classList.toggle("is-open", on);
@@ -1490,7 +1497,7 @@
       templates = null;
       baselines = null;
       var chose = railGroupKey(sets, Number(row.getAttribute("data-set")));
-      if (chose) opened = railFoldKey("sets", chose);
+      if (chose) opened[railFoldKey("sets", chose)] = true;
       return loadSet(Number(row.getAttribute("data-set")));
     }
 
@@ -1514,7 +1521,9 @@
     var fold = target.closest("[data-fold]");
     if (fold) {
       var key = fold.getAttribute("data-fold");
-      opened = opened === key ? null : key;
+      /* **다른 묶음은 건드리지 않는다.** 누른 것만 뒤집는다. */
+      if (opened[key]) delete opened[key];
+      else opened[key] = true;
       return showOpen();
     }
 
