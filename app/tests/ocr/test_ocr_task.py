@@ -276,7 +276,7 @@ class TestProcessOcrJob(TestCase):
         # 스탭이 무엇을 채워야 하는지 안다.
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None
-        assert result.model_name != FIXTURE_MODEL_NAME
+        assert result.model_name != "fixture-v0"
 
         # 못 읽은 필수 항목이 **빈 줄로** 있다
         rows = {f.field_type: f for f in await OcrField.filter(ocr_result=result).all()}
