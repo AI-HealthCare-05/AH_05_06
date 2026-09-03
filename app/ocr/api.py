@@ -1,7 +1,10 @@
+from pathlib import Path as FilePath
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi.responses import FileResponse
 
+from app.models.documents import MedicalDocument
 from app.ocr.schemas import (
     OcrFieldResponse,
     OcrJobByDocumentResponse,
@@ -89,6 +92,37 @@ async def write_ocr_field(
     비우면 그 줄을 지우고 `null` 을 준다.
     """
     return await ocr.write_field(visit_id, field_type, request.value, actor)
+
+
+@ocr_router.get("/ocr/documents/{document_id}/image")
+async def get_document_image(
+    document_id: Annotated[int, Path(gt=0)],
+    actor: Annotated[OcrActor, Depends(get_ocr_actor)],
+) -> FileResponse:
+    """업로드된 원본 이미지를 반환한다 — 판독 확인 화면의 문서 미리보기용.
+
+    - 병원 범위 검증: document.hospital_id == actor.hospital_id
+    - 원본이 삭제된 경우(file_path 없음 또는 파일 부재) 404 반환
+    """
+    from app.ocr.errors import OcrApiError
+
+    doc = await MedicalDocument.filter(
+        document_id=document_id,
+        hospital_id=actor.hospital_id,
+    ).first()
+    if doc is None:
+        raise OcrApiError(404, "NOT_FOUND", "문서를 찾을 수 없습니다.")
+
+    file = FilePath(doc.file_path)
+    if not file.exists():
+        raise OcrApiError(404, "FILE_PURGED", "원본 이미지가 이미 삭제됐습니다.")
+
+    return FileResponse(
+        path=str(file),
+        media_type=doc.mime_type,
+        filename=file.name,
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @ocr_router.patch("/ocr/fields/{ocr_field_id}", response_model=OcrFieldResponse)

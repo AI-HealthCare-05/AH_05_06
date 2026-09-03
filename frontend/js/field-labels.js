@@ -22,6 +22,7 @@ var FIELD_LABELS = {
   FREQUENCY: "일일횟수",
   DURATION_DAYS: "처방일수",
   PRESCRIPTION_DATE: "처방일",
+  PRESCRIPTION_SET: "약속처방",
 
   /* ── 증상 — 사람이 물어 적는 값 ─────────────────────────────────
      판독이 못 읽으면 진료기록을 다시 보는 것이 아니라 스탭이 직접 적는다. */
@@ -42,6 +43,8 @@ var FIELD_LABELS = {
   AST: "AST",
   ALT: "ALT",
   LH_FSH_RATIO: "LH / FSH 비율",
+  LH: "LH (황체형성호르몬)",
+  FSH: "FSH (난포자극호르몬)",
   DHEA_S: "DHEA-S",
   TESTOSTERONE: "Testosterone",
   PROLACTIN: "Prolactin",
@@ -64,6 +67,8 @@ var FIELD_LABELS = {
      옮겨 적었더니 두 개를 놓쳤고, 추출기 원문을 대조하는 검사가 잡았다. */
   CA_125: "CA-125",
   CA19_9: "CA 19-9",
+  ROMA_SCORE: "ROMA 점수",
+  PCOS: "다낭성난소증후군(PCOS)",
 
   /* 에스트라디올. 「E2」로 부르는 것이 병원 관례라 그대로 둔다.
      이 항목도 검사가 아니라 **내가 눈으로 훑다가** 놓쳤다 — 두 글자라
@@ -89,10 +94,16 @@ var FIELD_LABELS = {
 
 /* 모르는 코드는 **그대로 보여 준다.** 빈칸이나 「알 수 없음」으로 두면 새 항목이
    생겼을 때 화면에서 사라져, 값이 있는데 없는 것처럼 보인다. 영문이라도 보이는
-   편이 낫고, 그것이 이름표에 무엇을 더해야 하는지도 알려 준다. */
+   편이 낫고, 그것이 이름표에 무엇을 더해야 하는지도 알려 준다.
+
+   인덱스형 필드(MEDICATION_NAME_2, DURATION_DAYS_3 등)는 기본 이름에서 접미사를
+   떼어 이름표를 찾는다 — 처방이 여럿일 때 약품명_2 처럼 뜨지 않게 한다. */
 function fieldLabel(fieldType) {
   var key = String(fieldType || "");
-  return FIELD_LABELS[key] || key;
+  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
+  var m = key.match(/^([A-Z_]+)_(\d+)$/);
+  if (m && FIELD_LABELS[m[1]]) return FIELD_LABELS[m[1]];
+  return key;
 }
 
 /* 단위는 값에 붙어 오지만, 서버가 안 줄 때 기본으로 쓸 것을 여기 둔다.
@@ -108,6 +119,8 @@ var FIELD_UNITS = {
   MYOMA_COUNT: "개",
   AST: "U/L",
   ALT: "U/L",
+  LH: "mIU/mL",
+  FSH: "mIU/mL",
   DHEA_S: "µg/dL",
   TESTOSTERONE: "ng/dL",
   PROLACTIN: "ng/mL",
@@ -189,7 +202,11 @@ function joinChoiceValue(fieldType, pick, size) {
 
 function fieldUnit(fieldType, given) {
   if (given) return given;
-  return FIELD_UNITS[String(fieldType || "")] || "";
+  var key = String(fieldType || "");
+  if (FIELD_UNITS[key]) return FIELD_UNITS[key];
+  var m = key.match(/^([A-Z_]+)_(\d+)$/);
+  if (m && FIELD_UNITS[m[1]]) return FIELD_UNITS[m[1]];
+  return "";
 }
 
 /* ── 확인 항목의 이름표 (와이어프레임 S1-6 · D2-3) ────────────────────

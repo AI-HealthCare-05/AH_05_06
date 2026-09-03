@@ -48,7 +48,7 @@
 
 /* 무엇을 보고 읽었는지. 원문은 `#F3F4F6 · 180px` 의 미리보기 판이다. */
 .doc-view {
-  height: 180px;
+  min-height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -56,6 +56,14 @@
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.doc-view__img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 2px;
 }
 
 .doc-view__soon {
@@ -1012,6 +1020,14 @@
   outline-offset: 2px;
 }
 
+/* 판독값이 있고 세트 목록을 아직 못 불러왔을 때 — 드롭다운과 같은 크기·모양으로
+   약품명을 보여 준다. line-height 로 단일 줄 텍스트를 세로 중앙 정렬한다. */
+.top__pick--static {
+  line-height: 32px; /* height(34px) - border(2px) */
+  cursor: default;
+  color: var(--ink);
+}
+
 /* 판독이 읽은 약 이름 — 어느 세트를 골라야 하는지의 실마리이지 처방 자체가
    아니다. 고르는 칸보다 약하게 둔다. */
 .top__read {
@@ -1197,4 +1213,32 @@
   font-size: 12px;
   color: var(--ink-3);
   border-top: 1px solid var(--line);
+}
+
+.top--drug-add {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.drugs__add {
+  align-self: flex-start;
+}
+
+.drugs__manual-name {
+  font-size: 14px;
+}
+
+.drugs__manual-days {
+  flex: 0 0 68px;
+  width: 68px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
 }

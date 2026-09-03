@@ -31,6 +31,10 @@ var PRESCRIPTION_TYPES = [
      없으면 약품명이 「이번 판독 값」(검사) 묶음으로 새어 들어간다. */
   "PRESCRIPTION_NAME",
   "PRESCRIPTION_DURATION",
+
+  /* OCR 추론 힌트 — 처방 세트 자동 제안값. 화면에 별도 줄로 세우지 않고
+     드롭다운 자동 선택에만 쓴다. 여기 없으면 검사값 묶음으로 새어 들어간다. */
+  "PRESCRIPTION_SET",
 ];
 
 /* **늘 세우는 처방 셋.** 무슨 병에 무슨 약을 며칠 치 — 안내문이 이것으로
@@ -178,25 +182,43 @@ function labGroupsOf(rows) {
 
 var LAB_HEAD_TYPE = "LAB_DATE";
 
-/** 서버가 준 한 줄짜리 목록을 화면의 묶음으로 가른다. */
+/** 서버가 준 한 줄짜리 목록을 화면의 묶음으로 가른다.
+ *
+ * 인덱스형 처방 필드(MEDICATION_NAME_2, DURATION_DAYS_3 등)는 원외 처방이
+ * 여럿일 때 추출기가 만든다. 이것들도 처방 묶음에 넣어야 검사값 묶음에
+ * 섞이지 않는다. */
 function splitFields(fields) {
   var all = fields || [];
   var prescription = [];
   var labs = [];
+  var taken = {};
 
-  /* 처방 항목은 **와이어프레임 차례대로** 세운다. 서버가 준 차례는 추출기가
-     정규식을 훑은 차례라 화면에서 뜻이 없다. */
+  /* ① 처방 항목은 **와이어프레임 차례대로** 세운다. */
   for (var i = 0; i < PRESCRIPTION_TYPES.length; i++) {
     for (var j = 0; j < all.length; j++) {
-      if (all[j].field_type === PRESCRIPTION_TYPES[i]) prescription.push(all[j]);
+      if (all[j].field_type === PRESCRIPTION_TYPES[i]) {
+        prescription.push(all[j]);
+        taken[j] = true;
+      }
     }
   }
 
+  /* ② 인덱스형 처방 필드(MEDICATION_NAME_2 등) — 서버가 준 차례 유지 */
   for (var k = 0; k < all.length; k++) {
+    if (taken[k]) continue;
     var type = all[k].field_type;
-    if (type === LAB_HEAD_TYPE) continue;
-    if (PRESCRIPTION_TYPES.indexOf(type) !== -1) continue;
-    labs.push(all[k]);
+    var m = type.match(/^([A-Z_]+)_(\d+)$/);
+    if (m && PRESCRIPTION_TYPES.indexOf(m[1]) !== -1) {
+      prescription.push(all[k]);
+      taken[k] = true;
+    }
+  }
+
+  /* ③ 나머지는 검사값 묶음 */
+  for (var l = 0; l < all.length; l++) {
+    if (taken[l]) continue;
+    if (all[l].field_type === LAB_HEAD_TYPE) continue;
+    labs.push(all[l]);
   }
 
   return { prescription: prescription, labs: labs };

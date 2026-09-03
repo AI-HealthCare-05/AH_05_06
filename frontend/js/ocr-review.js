@@ -335,6 +335,17 @@ function stateTakesFocus(tone) {
      **화면 안에만 있다** — 보낼 자리가 없다 (`js/ocr-groups.js` 의 localSaying). */
   var local = {};
   var localEditing = null;
+  var manualDrugs = [];
+
+  /* 처방 세트 대표 약 키워드 — 백엔드 _BIZAN_RE/_YAZZ_RE/_METFORMIN_RE 와 동기화.
+     DURATION_DAYS 표시 여부 및 base 약품 중복 행 판단에 공통으로 사용한다. */
+  var _SET_DRUG_KWS = ["비잔", "야즈", "메트포르민", "메트포민", "metformin"];
+
+  function isSetDrugValue(val) {
+    if (!val) return false;
+    var lower = String(val).toLowerCase();
+    return _SET_DRUG_KWS.some(function (kw) { return lower.indexOf(kw.toLowerCase()) !== -1; });
+  }
 
   /* 적는 **중**인 값. `local` 과 갈라 두는 이유는, 고르는 항목이 「있다」를
      고른 순간 크기 칸을 내보내려면 다시 그려야 하는데 그때 `local` 에 써
@@ -347,6 +358,22 @@ function stateTakesFocus(tone) {
   var sets = [];
   var setsFailed = false;
   var pickedSet = null;
+
+  /* OCR 이 추론한 처방 세트 이름(`PRESCRIPTION_SET` 필드)으로 드롭다운을 자동
+     선택한다. sets 와 result 중 나중에 도착하는 쪽에서 호출한다.
+     사람이 이미 고른 뒤에는 건드리지 않는다. */
+  function applyPrescriptionSetSuggestion() {
+    if (pickedSet) return;
+    if (!result || !sets.length) return;
+    var suggested = fieldValueOf(result.fields, "PRESCRIPTION_SET");
+    if (!suggested) return;
+    for (var i = 0; i < sets.length; i++) {
+      if (sets[i].name === suggested) {
+        pickedSet = sets[i];
+        return;
+      }
+    }
+  }
 
   function isEditing(id) {
     return Object.prototype.hasOwnProperty.call(editing, id);
@@ -390,6 +417,8 @@ function stateTakesFocus(tone) {
 
   /* ── 왼쪽 · 원문 ───────────────────────────────────────────── */
 
+  var docView = document.getElementById("doc-view");
+
   function renderDocTabs() {
     docTabs.innerHTML = result.documents
       .map(function (doc) {
@@ -407,6 +436,51 @@ function stateTakesFocus(tone) {
         );
       })
       .join("");
+  }
+
+  /* <img src> 는 Authorization 헤더를 보내지 못해 401 이 된다.
+     fetch 로 직접 받은 뒤 Blob URL 을 생성해 img 에 할당한다. */
+  var _docViewBlobUrl = null;
+
+  function renderDocView() {
+    if (!docView) return;
+    if (!activeDoc) {
+      docView.innerHTML = '<p class="doc-view__soon">문서를 선택하면 여기에 미리보기가 표시됩니다</p>';
+      return;
+    }
+
+    docView.innerHTML = '<p class="doc-view__soon">불러오는 중…</p>';
+
+    if (_docViewBlobUrl) {
+      URL.revokeObjectURL(_docViewBlobUrl);
+      _docViewBlobUrl = null;
+    }
+
+    var token = session.token();
+    var headers = token ? { Authorization: "Bearer " + token } : {};
+    var url = "/api/v1/ocr/documents/" + encodeURIComponent(activeDoc) + "/image";
+    /* 요청 시점의 문서 id를 클로저로 캡처한다 — 응답 도착 시 activeDoc이 바뀌었으면
+       stale 이미지가 현재 문서 미리보기를 덮어쓰는 레이스 컨디션을 막는다. */
+    var requestedDoc = activeDoc;
+
+    fetch(url, { headers: headers, credentials: "include" })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.status);
+        return res.blob();
+      })
+      .then(function (blob) {
+        if (activeDoc !== requestedDoc) return;
+        _docViewBlobUrl = URL.createObjectURL(blob);
+        if (docView) {
+          docView.innerHTML = '<img class="doc-view__img" src="' + _docViewBlobUrl + '" alt="문서 미리보기">';
+        }
+      })
+      .catch(function () {
+        if (activeDoc !== requestedDoc) return;
+        if (docView) {
+          docView.innerHTML = '<p class="doc-view__soon">원본 이미지가 삭제됐거나 불러올 수 없습니다</p>';
+        }
+      });
   }
 
   function renderRaw(highlightLine) {
@@ -436,6 +510,7 @@ function stateTakesFocus(tone) {
     if (!documentId) return;
     activeDoc = documentId;
     renderDocTabs();
+    renderDocView();
     renderRaw(typeof line === "number" ? line : null);
   }
 
@@ -657,9 +732,8 @@ function stateTakesFocus(tone) {
       body =
         '<div class="field__value">' +
         escapeHtml(field.value === null || field.value === undefined ? "?" : field.value) +
-        ' <span class="field__unit">' +
-        escapeHtml(field.unit || "") +
-        "</span></div>";
+        "</div>" +
+        unitHtml(field);
     } else if (isEditing(id)) {
       body =
         (fieldChoices(field.field_type)
@@ -799,10 +873,9 @@ function stateTakesFocus(tone) {
       body =
         '<div class="field__value">' +
         escapeHtml(field.value) +
-        ' <span class="field__unit">' +
-        escapeHtml(field.unit || "") +
-        "</span></div>";
-      body += '<button class="field__act" type="button" data-fill="' + id + '">수정</button>';
+        "</div>" +
+        unitHtml(field) +
+        '<button class="field__act" type="button" data-fill="' + id + '">수정</button>';
     }
 
     var tail = isEditing(id) ? "" : sourceChip(field);
@@ -913,12 +986,19 @@ function stateTakesFocus(tone) {
     var note = setsMissingSaying(sets, setsFailed);
 
     if (note) {
-      return (
-        '<div class="top__note">' +
-        escapeHtml(note) +
-        "</div>" +
-        (readName ? '<div class="top__read">판독: ' + escapeHtml(readName) + "</div>" : "")
-      );
+      /* 판독된 약품명이 있으면 그것을 처방 칸에 크게 보인다.
+         세트 로드 실패 메시지는 아래 곁말로 내린다. */
+      if (readName) {
+        return (
+          '<div class="top__pick top__pick--static">' +
+          escapeHtml(readName) +
+          "</div>" +
+          '<div class="top__read">' +
+          escapeHtml(note) +
+          "</div>"
+        );
+      }
+      return '<div class="top__note">' + escapeHtml(note) + "</div>";
     }
 
     var options = sets
@@ -945,6 +1025,13 @@ function stateTakesFocus(tone) {
   }
 
   function topRowHtml(rows) {
+    /* OCR이 추출한 MEDICATION_NAME[_N] 중 처방 세트 대표 약이 하나라도 있으면 true.
+       없으면 처방일수 셀을 숨긴다 — DURATION_DAYS는 세트 대표 약에 연결된 일수인데,
+       그 약이 없으면 값의 맥락이 모호해진다. */
+    var anySetDrugInOcr = rows.some(function (f) {
+      return /^MEDICATION_NAME(_\d+)?$/.test(f.field_type) && isSetDrugValue(f.value);
+    });
+
     var cells = TOP_ROW.map(function (spec) {
       var field = null;
       for (var i = 0; i < rows.length; i++) {
@@ -952,7 +1039,12 @@ function stateTakesFocus(tone) {
       }
       if (!field) return "";
 
-      /* 약속처방은 값 줄이 아니라 **고르는 칸**이다 */
+      /* 처방 세트 대표 약이 OCR에 없으면 처방일수 셀을 표시하지 않는다. */
+      if (spec.type === "DURATION_DAYS" && !anySetDrugInOcr) return "";
+
+      /* 약속처방은 값 줄이 아니라 **고르는 칸**이다.
+         비잔 감지 여부와 무관하게 항상 드롭다운을 표시한다.
+         비잔이 감지되면 자동 선택, 아니면 「처방을 고르세요」 상태로 둔다. */
       if (spec.pick) {
         return (
           '<div class="top__cell top__cell--wide">' +
@@ -1008,6 +1100,7 @@ function stateTakesFocus(tone) {
     }
 
     var lines = drugLines(pickedSet, written);
+
     if (!lines.length) {
       /* **비었다고 지어내지 않는다.** 어디서 채우는지를 적는다 — 설정(D2-3)의
          「처방 약」이 그 자리다. */
@@ -1035,6 +1128,30 @@ function stateTakesFocus(tone) {
         .join("") +
       "</ul>"
     );
+  }
+
+  /* 수동으로 추가한 약 행 — 비잔 세트가 선택됐지만 등록 약이 없거나 추가가
+     필요할 때 스탭이 직접 입력한 약품명·처방일수를 렌더링한다. */
+  function manualDrugRowsHtml() {
+    return manualDrugs.map(function (drug, i) {
+      return (
+        '<div class="top">' +
+        '<div class="top__cell" aria-hidden="true"></div>' +
+        '<div class="top__cell top__cell--wide">' +
+        '<input class="top__pick drugs__manual-name" type="text" placeholder="약품명 입력" ' +
+        'data-manual-drug-name="' + i + '" value="' + escapeHtml(drug.name) + '" />' +
+        '</div>' +
+        '<div class="top__cell">' +
+        '<span class="top__label">처방일수</span>' +
+        '<div class="field field--confirmed">' +
+        '<input class="field__val drugs__manual-days" type="number" min="1" placeholder="일수" ' +
+        'data-manual-drug-days="' + i + '" value="' + escapeHtml(String(drug.days || "")) + '" />' +
+        '<span class="field__unit">일</span>' +
+        '</div>' +
+        '</div>' +
+        '</div>'
+      );
+    }).join("");
   }
 
   /* 다시 그리면 `innerHTML` 이 통째로 바뀌어 커서와 캐럿이 사라진다. 저장
@@ -1079,11 +1196,71 @@ function stateTakesFocus(tone) {
   function groupsHtml() {
     var split = splitFields(result.fields);
     /* 처방 여섯은 판독이 못 읽어도 자리에 세운다 — 안내문이 그것으로
-       만들어져서, 화면에서 사라지면 빠진 채로 만들어진다 (S1-7). */
+       만들어져서, 화면에서 사라지면 빠진 채로 만들어진다 (S1-7).
+       인덱스형 필드(MEDICATION_NAME_2 등)는 prescriptionHtml 안에서
+       extraDrugRowsHtml이 별도로 처리한다. */
     var rx = withMissingRows(split.prescription, PRESCRIPTION_CORE);
+    /* 인덱스형 처방 필드를 rx에 추가한다 — prescriptionHtml의 extraDrugRowsHtml이
+       분류해 가로 레이아웃으로 세운다. */
+    for (var i = 0; i < split.prescription.length; i++) {
+      if (/^[A-Z_]+_\d+$/.test(split.prescription[i].field_type)) {
+        rx.push(split.prescription[i]);
+      }
+    }
     /* 검사값도 자리를 세운다 — 안 세우면 못 읽은 것과 안 한 것을 구별할 수 없다 */
     var labs = withMissingRows(split.labs, LAB_CORE);
     return prescriptionHtml(rx) + labsHtml(labs) + notReadyHtml();
+  }
+
+  /* 추가 약품 행 — MEDICATION_NAME_2 / DURATION_DAYS_2 등을 상단 처방 줄과
+     같은 가로 레이아웃으로 세운다. 각 인덱스(2, 3 …)별로 짝을 지어 .top 행을 만든다. */
+  function extraDrugRowsHtml(rows) {
+    var pairs = {};
+    var order = [];
+    for (var i = 0; i < rows.length; i++) {
+      var ft = rows[i].field_type;
+      var m = ft.match(/^(MEDICATION_NAME|DURATION_DAYS)_(\d+)$/);
+      if (!m) continue;
+      var idx = m[2];
+      if (!pairs[idx]) { pairs[idx] = {}; order.push(idx); }
+      pairs[idx][m[1]] = rows[i];
+    }
+    if (!order.length) return "";
+
+    return order.map(function (idx) {
+      var nameField = pairs[idx]["MEDICATION_NAME"];
+      var daysField = pairs[idx]["DURATION_DAYS"];
+
+      /* 약품명 셀 — 첫 번째 처방 행의 setPickerHtml(static) 과 같은 방식으로
+         값만 표시한다. fieldBody를 쓰면 [수정]·[이미지1]이 이 칸에도 붙어
+         오른쪽 처방일수 셀과 중복된다. */
+      var nameCell = "";
+      if (nameField) {
+        var nameVal = nameField.value != null ? String(nameField.value) : "";
+        nameCell = (
+          '<div class="top__cell top__cell--wide">' +
+          '<div class="top__pick top__pick--static">' + escapeHtml(nameVal) + "</div>" +
+          "</div>"
+        );
+      }
+
+      /* 처방일수 셀 — fieldBody 그대로([수정]·[이미지1] 포함). */
+      var daysCell = "";
+      if (daysField) {
+        var madeDays = fieldBody(daysField);
+        daysCell = (
+          '<div class="top__cell' + (madeDays.clash ? " field--clash" : "") + '">' +
+          '<span class="top__label">처방일수</span>' +
+          '<div class="field field--' + madeDays.state + '">' + madeDays.body + "</div>" +
+          "</div>"
+        );
+      }
+
+      /* 진단 셀(flex: 0 0 206px)과 너비를 맞추는 빈 자리 — 처방 텍스트의
+         왼쪽이 첫 번째 행과 정렬된다. */
+      var spacer = '<div class="top__cell" aria-hidden="true"></div>';
+      return '<div class="top">' + spacer + nameCell + daysCell + "</div>";
+    }).join("");
   }
 
   /* ① 진단 · 처방 */
@@ -1109,6 +1286,33 @@ function stateTakesFocus(tone) {
       return topTypes.indexOf(field.field_type) === -1;
     });
 
+    /* 인덱스형 약품 쌍(MEDICATION_NAME_2 / DURATION_DAYS_2 등)은 .top 가로 행으로,
+       나머지(1회량·일일횟수·처방일 등)는 기존 rows 목록으로 세운다. */
+    var extraRows = rest.filter(function (f) {
+      return /^(MEDICATION_NAME|DURATION_DAYS)_\d+$/.test(f.field_type);
+    });
+    var otherRest = rest.filter(function (f) {
+      return !/^(MEDICATION_NAME|DURATION_DAYS)_\d+$/.test(f.field_type);
+    });
+
+    /* 첫 번째 약품(MEDICATION_NAME / DURATION_DAYS)을 드롭다운 아래에
+       텍스트 행으로 표시한다.
+       세트 대표 약이 하나라도 검출되면(anySetDrugInOcr) 상단 행에 DURATION_DAYS가
+       이미 표시되므로 base 중복 행을 추가하지 않는다. base가 세트 약인 경우도
+       드롭다운 힌트에 이미 나타나므로 마찬가지로 생략한다. */
+    var baseExtraRows = [];
+    var anySetDrug = rows.some(function (f) {
+      return /^MEDICATION_NAME(_\d+)?$/.test(f.field_type) && isSetDrugValue(f.value);
+    });
+    if (!anySetDrug) {
+      rows.forEach(function (f) {
+        if (f.field_type === "MEDICATION_NAME")
+          baseExtraRows.push(Object.assign({}, f, { field_type: "MEDICATION_NAME_1" }));
+        if (f.field_type === "DURATION_DAYS")
+          baseExtraRows.push(Object.assign({}, f, { field_type: "DURATION_DAYS_1" }));
+      });
+    }
+
     return (
       '<section class="box"><div class="box__head">' +
       '<h2 class="box__title">진단 · 처방</h2>' +
@@ -1120,12 +1324,20 @@ function stateTakesFocus(tone) {
         ? '<span class="box__note">' + escapeHtml(rxSaying || SAVE_LOCKED) + "</span>"
         : "") +
       '<button class="button-primary button-primary--sm" type="button" id="rx-save"' +
-      (canSaveFields() && (localOf(true).length || pickedSet) ? "" : " disabled") +
+      (canSaveFields() && (localOf(true).length || pickedSet || manualDrugs.some(function (d) { return d.name; })) ? "" : " disabled") +
       ">저장</button>" +
       "</div>" +
       topRowHtml(rows) +
+      extraDrugRowsHtml(baseExtraRows.concat(extraRows)) +
+      manualDrugRowsHtml() +
+      (pickedSet && canSaveFields()
+        ? '<div class="top top--drug-add">' +
+          '<div class="top__cell" aria-hidden="true"></div>' +
+          '<button class="field__act drugs__add" type="button" id="drug-add">+ 약 추가</button>' +
+          '</div>'
+        : "") +
       (meta.length ? '<p class="box__meta box__meta--top">' + meta.join(" · ") + "</p>" : "") +
-      (rest.length ? '<div class="rows">' + rest.map(renderField).join("") + "</div>" : "") +
+      (otherRest.length ? '<div class="rows">' + otherRest.map(renderField).join("") + "</div>" : "") +
       "</section>"
     );
   }
@@ -1387,8 +1599,12 @@ function stateTakesFocus(tone) {
     /* 판독 값이 하나도 없으면 서버가 422 로 되돌린다 — 미리 잠그고 왜인지
        적는다. 그대로 두면 「내가 뭘 잘못했나」로 읽힌다. */
     var noFields = noFieldsSaying(result.fields);
-    submit.disabled = !!noFields || generateBlocked(counts, clashes, generating);
-    submit.title = noFields || generateBlockedSaying(counts, clashes, generating);
+    /* 수동 추가 약이 저장 버튼 없이 남아 있으면 생성을 막는다.
+       저장하지 않으면 안내문에 실리지 않으며, 클릭해도 경고 없이 유실된다. */
+    var unsavedManual = manualDrugs.some(function (d) { return d.name; });
+    submit.disabled = !!noFields || generateBlocked(counts, clashes, generating) || unsavedManual;
+    submit.title = noFields || generateBlockedSaying(counts, clashes, generating) ||
+      (unsavedManual ? "추가한 약을 먼저 저장해 주세요 — 저장 버튼을 눌러야 안내문에 실립니다" : "");
 
     /* **막지 않고 알린다.** 적어 넣은 값은 서버에 없어서 안내문에 안 실리는데,
        말 안 하면 스탭은 실린 줄 안다. 막으면 화면이 거기서 끝나므로, 무슨
@@ -1667,6 +1883,15 @@ function stateTakesFocus(tone) {
       return;
     }
 
+    /* 수동 약 추가 버튼 — 처방 세트에 등록 약이 없을 때 직접 입력할 행을 추가한다. */
+    if (target.id === "drug-add") {
+      manualDrugs.push({ name: "", days: "" });
+      renderFields();
+      var lastNameInput = fieldsBox.querySelector('[data-manual-drug-name="' + (manualDrugs.length - 1) + '"]');
+      if (lastNameInput) lastNameInput.focus();
+      return;
+    }
+
     /* ── 화면에서 직접 적기 ─────────────────────────────────────────
        판독이 못 찾아 서버에 줄이 없는 항목. 보낼 자리가 없어 화면 안에만
        둔다 — 저장된 척하지 않고, 안내문에 안 실린다는 것을 아래에 적는다. */
@@ -1716,6 +1941,15 @@ function stateTakesFocus(tone) {
          B 의 안내문을 만든 것처럼 보이게 된다 — `doctor.js` 가 승인에서 같은
          이유로 `approvingId` 를 따로 잡는다. */
       if (!visit || !visit.visit_id) return;
+
+      /* 수동 추가 약이 저장되지 않은 채로 생성을 시도하면 약이 조용히 유실된다.
+         renderSummary 가 이미 버튼을 잠그지만, DOM 조작으로 우회된 경우도 막는다. */
+      if (manualDrugs.some(function (d) { return d.name; })) {
+        saveNote.textContent = "추가한 약을 먼저 저장해 주세요 — 저장 버튼을 눌러야 안내문에 실립니다";
+        saveNote.hidden = false;
+        return;
+      }
+
       var wantedId = visit.visit_id;
 
       if (generating) return; // 이미 나가 있다
@@ -1898,6 +2132,24 @@ function stateTakesFocus(tone) {
     /* 고른 처방은 약품명 칸에 담는다 — 안내문이 그 값으로 만들어진다.
        전에는 화면이 기억만 하고 새로고침하면 사라졌다. */
     var extra = isRx && pickedSet ? { MEDICATION_NAME: pickedSet.name } : {};
+
+    /* 수동 추가 약은 기존 MEDICATION_NAME_N 인덱스 다음 번호로 저장한다. */
+    if (isRx && manualDrugs.length) {
+      var maxIdx = 1;
+      if (result && result.fields) {
+        result.fields.forEach(function (f) {
+          var m = f.field_type.match(/^MEDICATION_NAME_(\d+)$/);
+          if (m) maxIdx = Math.max(maxIdx, parseInt(m[1], 10));
+        });
+      }
+      manualDrugs.forEach(function (drug, i) {
+        if (!drug.name) return;
+        var idx = maxIdx + i + 1;
+        extra["MEDICATION_NAME_" + idx] = drug.name;
+        if (drug.days) extra["DURATION_DAYS_" + idx] = String(drug.days);
+      });
+    }
+
     if (!typed.length && !Object.keys(extra).length) return;
 
     function say(text) {
@@ -1927,6 +2179,7 @@ function stateTakesFocus(tone) {
           delete local[type];
           delete localDraft[type];
         });
+        if (isRx) manualDrugs = [];
         say("저장했습니다");
         return loadResult(loadSeq);
       })
@@ -1944,6 +2197,33 @@ function stateTakesFocus(tone) {
   function onTyped(event) {
     var target = event.target;
     if (!target || !target.getAttribute) return;
+
+    /* 수동 추가 약품명 입력 — 값만 저장하고 renderSummary만 호출한다.
+       renderFields(패널 전체 재구성)는 행 추가/삭제 시점에만 실행해 성능을 줄인다.
+       rx-save 버튼은 renderFields가 담당하므로, 저장 가능 상태를 직접 동기화한다. */
+    var manualName = target.getAttribute("data-manual-drug-name");
+    if (manualName !== null) {
+      var ni = parseInt(manualName, 10);
+      if (!isNaN(ni) && manualDrugs[ni]) {
+        manualDrugs[ni].name = target.value || "";
+        renderSummary();
+        var rxBtn = document.getElementById("rx-save");
+        if (rxBtn && canSaveFields()) {
+          rxBtn.disabled = !(localOf(true).length || pickedSet || manualDrugs.some(function (d) { return d.name; }));
+        }
+      }
+      return;
+    }
+
+    /* 수동 추가 처방일수 입력 */
+    var manualDays = target.getAttribute("data-manual-drug-days");
+    if (manualDays !== null) {
+      var di = parseInt(manualDays, 10);
+      if (!isNaN(di) && manualDrugs[di]) {
+        manualDrugs[di].days = target.value || "";
+      }
+      return;
+    }
 
     /* 크기 칸을 고치면 「있다」와 이어서 담아 둔다 — 안 그러면 다시 그릴 때
        크기만 사라진다. */
@@ -2119,7 +2399,10 @@ function stateTakesFocus(tone) {
     .then(function (rows) {
       sets = rows || [];
       setsFailed = false;
-      if (result) redraw();
+      if (result) {
+        applyPrescriptionSetSuggestion();
+        redraw();
+      }
     })
     .catch(function () {
       setsFailed = true;
@@ -2145,6 +2428,7 @@ function stateTakesFocus(tone) {
        그 사람 값이 뜨고, 배지가 「저장 안 됨」이라 더 헷갈린다. */
     local = {};
     localEditing = null;
+    manualDrugs = [];
     /* 앞 환자에게 고른 처방이 남으면 남의 처방으로 안내문이 만들어진다 */
     pickedSet = null;
     if (pollTimer) {
@@ -2254,7 +2538,9 @@ function stateTakesFocus(tone) {
         activeDoc = result.documents.length ? result.documents[0].document_id : null;
         showWork();
         renderDocTabs();
+        renderDocView();
         renderRaw(null);
+        applyPrescriptionSetSuggestion();
         redraw();
       })
       .catch(function (error) {
