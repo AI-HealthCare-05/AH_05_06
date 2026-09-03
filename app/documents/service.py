@@ -3,6 +3,7 @@ from pathlib import PurePath
 from uuid import uuid4
 
 from fastapi import UploadFile, status
+from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
 from app.core import config, default_logger
@@ -78,6 +79,7 @@ class DocumentUploadService:
                 await OcrJob.filter(ocr_job_id=ocr_job_id).update(
                     status=OcrJobStatus.FAILED,
                     failure_code="QUEUE_ERROR",
+                    completed_at=now(),
                 )
                 return DocumentUploadResponse(
                     document_ids=document_ids,

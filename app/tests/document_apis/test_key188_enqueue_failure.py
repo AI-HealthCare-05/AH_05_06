@@ -86,6 +86,7 @@ async def test_redis_enqueue_failure_marks_job_failed_and_returns_failed_status(
 
     assert captured.get("status") == OcrJobStatus.FAILED
     assert captured.get("failure_code") == "QUEUE_ERROR"
+    assert captured.get("completed_at") is not None
     assert result.status == OcrJobStatus.FAILED
     assert result.ocr_job_id == "ocr_test_abc123"
 
