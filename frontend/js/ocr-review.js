@@ -1591,8 +1591,12 @@ function stateTakesFocus(tone) {
     /* 판독 값이 하나도 없으면 서버가 422 로 되돌린다 — 미리 잠그고 왜인지
        적는다. 그대로 두면 「내가 뭘 잘못했나」로 읽힌다. */
     var noFields = noFieldsSaying(result.fields);
-    submit.disabled = !!noFields || generateBlocked(counts, clashes, generating);
-    submit.title = noFields || generateBlockedSaying(counts, clashes, generating);
+    /* 수동 추가 약이 저장 버튼 없이 남아 있으면 생성을 막는다.
+       저장하지 않으면 안내문에 실리지 않으며, 클릭해도 경고 없이 유실된다. */
+    var unsavedManual = manualDrugs.some(function (d) { return d.name; });
+    submit.disabled = !!noFields || generateBlocked(counts, clashes, generating) || unsavedManual;
+    submit.title = noFields || generateBlockedSaying(counts, clashes, generating) ||
+      (unsavedManual ? "추가한 약을 먼저 저장해 주세요 — 저장 버튼을 눌러야 안내문에 실립니다" : "");
 
     /* **막지 않고 알린다.** 적어 넣은 값은 서버에 없어서 안내문에 안 실리는데,
        말 안 하면 스탭은 실린 줄 안다. 막으면 화면이 거기서 끝나므로, 무슨
@@ -1929,6 +1933,15 @@ function stateTakesFocus(tone) {
          B 의 안내문을 만든 것처럼 보이게 된다 — `doctor.js` 가 승인에서 같은
          이유로 `approvingId` 를 따로 잡는다. */
       if (!visit || !visit.visit_id) return;
+
+      /* 수동 추가 약이 저장되지 않은 채로 생성을 시도하면 약이 조용히 유실된다.
+         renderSummary 가 이미 버튼을 잠그지만, DOM 조작으로 우회된 경우도 막는다. */
+      if (manualDrugs.some(function (d) { return d.name; })) {
+        saveNote.textContent = "추가한 약을 먼저 저장해 주세요 — 저장 버튼을 눌러야 안내문에 실립니다";
+        saveNote.hidden = false;
+        return;
+      }
+
       var wantedId = visit.visit_id;
 
       if (generating) return; // 이미 나가 있다
