@@ -56,16 +56,49 @@ docker_user=""
 # 원격에 넘길 PAT. 로그인을 건너뛰면 빈 값으로 남고, 그때는 원격도 건너뛴다.
 docker_pw=""
 
+#: 도커허브 레지스트리 키. `config.json` 이 이 이름으로 적는다.
+DOCKER_REGISTRY='https://index.docker.io/v1/'
+
+# base64 해독 — GNU 는 `--decode`/`-d`, BSD 는 `-D` 를 쓴다.
+b64_decode () {
+  printf '%s' "$1" | base64 --decode 2>/dev/null \
+    || printf '%s' "$1" | base64 -d 2>/dev/null \
+    || printf '%s' "$1" | base64 -D 2>/dev/null
+}
+
 # 저장된 도커허브 사용자명. 없으면 빈 문자열.
+#
+# **로그인 방식이 셋이라 셋 다 본다.** 처음에는 `credsStore` 만 봤는데,
+# 그것은 도커 데스크톱(맥·윈도)의 방식이다. 리눅스나 키체인 헬퍼가 없는
+# 환경에서 그냥 `docker login` 하면 자격증명이 `auths` 에 바로 박히고,
+# 그러면 「로그인된 계정이 없습니다」가 뜨면서 **이 수정이 없애려던 바로 그
+# 증상이 그대로 남는다** (`#202` 리뷰, 2heej — 실제로 재현하심).
 stored_docker_user () {
-  local store user
-  [ -f "${HOME}/.docker/config.json" ] || return 0
-  store="$(sed -n 's/.*"credsStore"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${HOME}/.docker/config.json" | head -1)"
-  [ -n "${store}" ] || return 0
-  command -v "docker-credential-${store}" >/dev/null 2>&1 || return 0
-  user="$(printf 'https://index.docker.io/v1/' | "docker-credential-${store}" get 2>/dev/null \
-    | sed -n 's/.*"Username"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
-  printf '%s' "${user}"
+  local cfg store user blob
+  cfg="${HOME}/.docker/config.json"
+  [ -f "${cfg}" ] || return 0
+
+  # ① 레지스트리별 헬퍼가 있으면 그것이 이긴다.
+  store="$(tr -d ' \n' < "${cfg}" \
+    | sed -n 's/.*"credHelpers":{[^}]*"[^"]*index\.docker\.io[^"]*":"\([^"]*\)".*/\1/p' | head -1)"
+  # ② 없으면 공용 저장소.
+  [ -n "${store}" ] || store="$(sed -n 's/.*"credsStore"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${cfg}" | head -1)"
+
+  if [ -n "${store}" ] && command -v "docker-credential-${store}" >/dev/null 2>&1; then
+    user="$(printf '%s' "${DOCKER_REGISTRY}" | "docker-credential-${store}" get 2>/dev/null \
+      | sed -n 's/.*"Username"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+    if [ -n "${user}" ]; then
+      printf '%s' "${user}"
+      return 0
+    fi
+  fi
+
+  # ③ 헬퍼가 없으면 `auths` 에 바로 박혀 있다. **사용자명만 꺼내고**
+  #    뒤의 비밀값은 쓰지도 찍지도 않는다 — `cut` 이 첫 `:` 앞만 남긴다.
+  blob="$(tr -d ' \n' < "${cfg}" \
+    | sed -n 's/.*"auths":{[^}]*"[^"]*index\.docker\.io[^"]*":{[^}]*"auth":"\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "${blob}" ] || return 0
+  b64_decode "${blob}" | cut -d: -f1
 }
 
 echo "${COLOR_BLUE}Docker login${COLOR_NC}"

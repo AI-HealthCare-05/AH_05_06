@@ -24,24 +24,20 @@ from pathlib import Path
 
 import pytest
 
-from app.tests.deploy.conftest import ROOT, read
+from app.tests.deploy.conftest import ROOT, nginx_copy_sources, read
+
+#: **stdin 을 먹는 명령들.** `docker compose run|exec` 하나만 보던 것을 넓혔다 —
+#: 나중에 `ssh` 나 `docker exec -it` 가 하나 더 붙으면 같은 일이 나는데 옛
+#: 패턴은 못 잡았다 (`#202` 리뷰, 2heej).
+#:
+#: 한 번에 닫는 `exec < /dev/null` 은 **못 쓴다.** 스크립트 자신이 stdin 에
+#: 실려 있어서(`bash -s`) 닫는 순간 뒤가 안 읽힌다 — `scripts/lib.sh` 주석 참고.
+EATS_STDIN = re.compile(r"docker\s+compose\s+(run|exec)\b|docker\s+exec\b|^\s*ssh\s|^\s*read\b|^\s*cat\s*$")
 
 NGINX_DOCKERFILE = "infra/nginx/Dockerfile"
 DOCKERIGNORE = ".dockerignore"
 LIB = ROOT / "scripts" / "lib.sh"
 DEPLOYMENT = ROOT / "scripts" / "deployment.sh"
-
-#: `COPY <출처> <목적지>` 의 출처들. 플래그(`--from=…`)는 건너뛴다.
-COPY_LINE = re.compile(r"^COPY\s+(?P<rest>.+)$", re.MULTILINE)
-
-
-def _nginx_copy_sources() -> list[str]:
-    """web 이미지가 컨텍스트에서 **가져가는** 경로들."""
-    sources: list[str] = []
-    for m in COPY_LINE.finditer(read(NGINX_DOCKERFILE)):
-        parts = [p for p in m.group("rest").split() if not p.startswith("--")]
-        sources.extend(parts[:-1])  # 마지막은 목적지
-    return sources
 
 
 def _dockerignore_excludes() -> list[str]:
@@ -70,7 +66,7 @@ class TestTheWebImageCanStillSeeTheFrontend:
         읽는다. 나중에 `frontend/img/` 를 더해도 이 검사가 따라온다.
         """
         excludes = _dockerignore_excludes()
-        sources = _nginx_copy_sources()
+        sources = nginx_copy_sources()
         assert sources, "nginx Dockerfile 에서 COPY 를 하나도 못 읽었다 — 검사가 헛돌고 있다"
 
         for src in sources:
@@ -114,8 +110,9 @@ class TestTheRemoteScriptRunsToTheEnd:
         offenders = [
             line.strip()
             for line in _remote_payload().splitlines()
-            if re.search(r"docker\s+compose\s+(run|exec)\b", line)
+            if EATS_STDIN.search(line)
             and "< /dev/null" not in line
+            and "<<" not in line  # heredoc 은 제 입력을 들고 온다
             and not line.lstrip().startswith("#")
         ]
         assert not offenders, f"원격 스크립트에서 stdin 을 안 막은 줄이 있다 — 뒤가 통째로 안 돈다: {offenders}"
@@ -125,12 +122,11 @@ class TestTheRemoteScriptRunsToTheEnd:
 
         위 검사는 「막았는가」를 재고 이것은 「그래서 도달하는가」를 잰다.
         삼킴 사고의 증상이 바로 이 줄이 안 도는 것이었다.
+        **순서(마이그레이션이 `up -d` 보다 먼저)는 여기서 안 잰다** —
+        `test_key206_deploy_migrates.py` 가 이미 잰다. 같은 것을 두 방식으로
+        재면 둘이 갈린다 (`#202` 리뷰, 2heej).
         """
-        body = _remote_payload()
-        assert "docker compose up -d" in body, "컨테이너를 바꾸는 줄이 없다"
-        assert body.index("aerich upgrade") < body.index("docker compose up -d"), (
-            "마이그레이션이 `up -d` 뒤로 갔다 — 실패해도 새 코드가 이미 돈다 (KEY-206)"
-        )
+        assert "docker compose up -d" in _remote_payload(), "컨테이너를 바꾸는 줄이 없다"
 
     def test_the_pat_never_rides_on_the_command_line(self) -> None:
         """PAT 은 heredoc 으로만 넘어간다 — 원격 `ps` 노출 방지(KEY-174)."""
@@ -141,7 +137,13 @@ class TestTheRemoteScriptRunsToTheEnd:
             assert line.strip() == "SECRET-PAT-VALUE", f"PAT 이 명령 안에 박혔다 — `ps` 에 남는다: {line!r}"
 
 
-def _run_login_block(tmp_path: Path, *, stored_user: str | None, env: dict[str, str]) -> str:
+def _run_login_block(
+    tmp_path: Path,
+    *,
+    stored_user: str | None,
+    env: dict[str, str],
+    config: dict[str, object] | None = None,
+) -> str:
     """`deployment.sh` 의 Docker login 구간만 떼어 돌린다.
 
     통째로 돌릴 수 없다 — 빌드하고 `scp` 한다. 구간 경계는 스크립트에 이미
@@ -161,21 +163,30 @@ def _run_login_block(tmp_path: Path, *, stored_user: str | None, env: dict[str, 
     (bin_dir / "docker").write_text('#!/bin/sh\necho "[stub] docker $*"\ncat >/dev/null\n')
     (bin_dir / "docker").chmod(0o755)
 
-    if stored_user is not None:
-        (home / ".docker" / "config.json").write_text(json.dumps({"credsStore": "teststub"}))
-        helper = bin_dir / "docker-credential-teststub"
-        helper.write_text(f'#!/bin/sh\ncat >/dev/null\nprintf \'{{"Username":"{stored_user}"}}\'\n')
-        helper.chmod(0o755)
-    else:
-        (home / ".docker" / "config.json").write_text(json.dumps({"auths": {}}))
+    # 헬퍼는 늘 둔다 — 어떤 설정이 그것을 부르는지가 검사의 주제다.
+    helper = bin_dir / "docker-credential-teststub"
+    helper.write_text(f'#!/bin/sh\ncat >/dev/null\nprintf \'{{"Username":"{stored_user}"}}\'\n')
+    helper.chmod(0o755)
+
+    if config is None:
+        config = {"credsStore": "teststub"} if stored_user is not None else {"auths": {}}
+    (home / ".docker" / "config.json").write_text(json.dumps(config))
 
     script = 'COLOR_BLUE=""; COLOR_GREEN=""; COLOR_RED=""; COLOR_NC=""\n' + block + '\necho "USER=[${docker_user}]"\n'
+    # 🚩 **실행 환경의 자격증명 변수를 흡수하지 않는다.**
+    #
+    # `os.environ` 을 먼저 펼치면, 돌리는 셸이나 CI 에 `DOCKER_USERNAME` ·
+    # `DOCKER_PAT` 가 이미 export 되어 있을 때(이 저장소 문서에도 나오는
+    # 이름이라 충분히 있을 수 있다) **「아무것도 저장 안 됨」·「이미
+    # 로그인됨」 두 검사가 전부 CI 분기를 타 버린다** — 재려던 갈래를
+    # 아예 안 지난다 (`#202` 리뷰, 2heej — 실제로 재현하심).
+    runtime = {k: v for k, v in os.environ.items() if k not in ("DOCKER_USERNAME", "DOCKER_PAT")}
     out = subprocess.run(
         ["bash", "-c", script],
         capture_output=True,
         text=True,
         stdin=subprocess.DEVNULL,
-        env={**os.environ, **env, "HOME": str(home), "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        env={**runtime, **env, "HOME": str(home), "PATH": f"{bin_dir}:{os.environ['PATH']}"},
     )
     return out.stdout + out.stderr
 
@@ -199,6 +210,37 @@ class TestLoginDoesNotAskForAPasswordThatDoesNotExist:
         """저장된 것이 없으면 **예전처럼 묻는다** — 회귀."""
         out = _run_login_block(tmp_path, stored_user=None, env={})
         assert "로그인된 계정이 없습니다" in out, f"안 물었다: {out!r}"
+
+    def test_it_sees_a_login_that_landed_straight_in_auths(self, tmp_path: Path) -> None:
+        """🚩 **`credsStore` 만 보면 리눅스의 로그인을 못 본다.**
+
+        키체인 헬퍼가 없는 환경에서 그냥 `docker login` 하면 자격증명이
+        `credsStore` 없이 `auths` 에 바로 박힌다. 처음에는 그 경우를 안 봐서
+        **이 수정이 없애려던 「PAT 을 또 묻는」 증상이 그대로 남아 있었다**
+        (`#202` 리뷰, 2heej — 실제로 재현하심).
+
+        `auth` 는 `사용자명:비밀값` 을 base64 로 담는데, **앞의 사용자명만**
+        꺼낸다. 아래 값은 `iljunk:secret` 이다.
+        """
+        out = _run_login_block(
+            tmp_path,
+            stored_user="never-used",
+            env={},
+            config={"auths": {"https://index.docker.io/v1/": {"auth": "aWxqdW5rOnNlY3JldA=="}}},
+        )
+        assert "USER=[iljunk]" in out, f"`auths` 에 있는 로그인을 못 봤다: {out!r}"
+        assert "password" not in out.lower(), "로그인돼 있는데 PAT 을 또 물었다"
+        assert "secret" not in out, "비밀값이 새어 나왔다"
+
+    def test_a_registry_specific_helper_wins(self, tmp_path: Path) -> None:
+        """`credHelpers` 는 레지스트리별 덮어쓰기다 — 그것도 봐야 한다."""
+        out = _run_login_block(
+            tmp_path,
+            stored_user="from-helper",
+            env={},
+            config={"credHelpers": {"index.docker.io": "teststub"}, "auths": {}},
+        )
+        assert "USER=[from-helper]" in out, f"`credHelpers` 를 못 봤다: {out!r}"
 
     def test_environment_variables_still_drive_a_real_login(self, tmp_path: Path) -> None:
         """`DOCKER_USERNAME` · `DOCKER_PAT` 를 둘 다 주면 그대로 로그인한다.

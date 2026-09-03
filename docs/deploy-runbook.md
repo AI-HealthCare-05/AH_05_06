@@ -195,6 +195,19 @@ docker compose run --rm -T … aerich upgrade < /dev/null   # ← 이 리다이�
 `docker compose run/exec` · `read` · `ssh` 전부 해당한다. `read` 는 예전에
 같은 함정에 걸려 heredoc 으로 바꿨다(`#133` 리뷰, `scripts/lib.sh` 주석).
 
+**한 번에 닫는 `exec < /dev/null` 은 못 쓴다.** 구조적으로 안전해 보여
+`#202` 리뷰에서 제안을 받아 넣어 봤는데, **스크립트 자신이 stdin 에 실려
+있어서**(`bash -s`) 닫는 순간 뒤가 통째로 안 읽힌다.
+
+```bash
+printf 'echo A\nexec < /dev/null\necho B\n' | bash -s   # → A 만 나온다
+printf 'echo A\ncat  < /dev/null\necho B\n' | bash -s   # → A B 둘 다
+```
+
+그래서 **명령마다** 막는다. 빠뜨리기 쉬운 것이 이 방식의 약점이라,
+`test_key263_deploy_actually_ships.py` 가 stdin 을 쓰는 명령을 전부 훑어
+리다이렉션이 없으면 운다.
+
 **확인은 로그가 아니라 상태로 한다.** 배포 전에 찍어 두고 뒤와 맞댄다.
 
 ```bash

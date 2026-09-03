@@ -116,3 +116,41 @@ def _unmask_index(original: str, masked: str, index: int) -> int:
             oi += 1
         mi += 1
     return oi
+
+
+#: `COPY <출처…> <목적지>` 한 줄. 출처가 여럿이어도, `--chown=` 같은 플래그가
+#: 붙어도 잡는다.
+#:
+#: **여기 있는 까닭이 이 모듈이 있는 까닭과 같다.** 두 검사 파일이 같은
+#: `infra/nginx/Dockerfile` 의 `COPY` 를 **서로 다른 정규식**으로 읽고 있었다 —
+#: 하나는 출처 하나만, 하나는 여럿+플래그. `COPY --chown=… frontend/x /y` 같은
+#: 줄이 생기면 둘이 다르게 읽는다 (`#202` 리뷰, 2heej).
+COPY_LINE = re.compile(r"^COPY\s+(?P<rest>.+)$", re.MULTILINE)
+
+
+def nginx_copy_sources() -> list[str]:
+    """web 이미지가 빌드 컨텍스트에서 **가져가는** 경로들."""
+    out: list[str] = []
+    for match in COPY_LINE.finditer(read("infra/nginx/Dockerfile")):
+        parts = [p for p in match.group("rest").split() if not p.startswith("--")]
+        out.extend(parts[:-1])  # 마지막은 목적지
+    return out
+
+
+def shipped_frontend_files() -> set[str]:
+    """이미지에 **실제로 실리는** 프런트 파일 목록.
+
+    Dockerfile 을 문자열로 훑지 않고 `COPY` 의 글롭을 **디스크에 펼친다.**
+    문자열 검사는 「`tests` 라는 낱말이 없다」까지밖에 못 재는데, 정작 알고
+    싶은 것은 「`frontend/tests/contract.test.js` 가 나가느냐」다.
+    """
+    out: set[str] = set()
+    for src in nginx_copy_sources():
+        if not src.startswith("frontend"):
+            continue
+        for hit in ROOT.glob(src):
+            if hit.is_dir():
+                out |= {f.relative_to(ROOT).as_posix() for f in hit.rglob("*") if f.is_file()}
+            elif hit.is_file():
+                out.add(hit.relative_to(ROOT).as_posix())
+    return out
