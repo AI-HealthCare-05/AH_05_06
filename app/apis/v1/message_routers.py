@@ -120,25 +120,3 @@ async def download_sent_messages(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{csv_filename(since, until)}"'},
     )
-
-
-@message_router.patch(
-    "/{message_id}",
-    response_model=MessagePatchResponse,
-)
-async def patch_message(
-    message_id: int,
-    payload: MessagePatchRequest,
-    actor: Annotated[ClinicalActor, Depends(require_sms_send)],
-    service: Annotated[
-        MessageScheduleService,
-        Depends(MessageScheduleService),
-    ],
-) -> MessagePatchResponse:
-    """예약 문자 시각 변경 또는 예약 취소 — KEY-257."""
-
-    return await service.update_message(
-        actor,
-        message_id,
-        payload,
-    )
