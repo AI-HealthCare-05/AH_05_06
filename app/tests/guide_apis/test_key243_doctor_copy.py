@@ -266,3 +266,37 @@ class TestEmergencyStaysLocked(DrugCautionTestCase):
         # 첫 줄로 잡혀 응급 문장이 주의사항 자리에 들어간다 — 응급 문장은
         # 그대로인데 엉뚱한 칸에 한 벌 더 생기는 셈이다.
         assert sections[GuideSectionKey.CAUTION].generated_body == APPROVED, "응급 문구가 주의사항 칸으로 샜다"
+
+    async def test_a_doctor_generating_does_not_lend_their_own_wording(self) -> None:
+        """🚨 **담당이 아닌 의사가 만들어도 제 문구를 빌려주지 않는다.**
+
+        `generate()` 는 담당이 아니어도 같은 의원의 아무 의사·스탭이나 부를 수
+        있다 — 역할만 보고, 진료 조회도 `hospital_id` 로만 범위를 잡는다.
+        그래서 「담당 것이 없으면 만든 사람 것」으로 내려가면 이렇게 된다:
+
+            의사 B 가 세트 S 문구를 고쳐 둔다
+            담당 의사 A 는 S 를 고친 적이 없다
+            B 가 (담당이 아닌데) A 의 진료로 generate 를 부른다
+            → **B 가 쓴 글이 A 이름으로 환자에게 나간다**
+
+        **바로 위 검사(`test_another_doctors_wording_is_not_borrowed`)로는 못
+        잡는다.** 그쪽은 생성자가 **스탭**이라 빌려 올 문구가 애초에 없어서,
+        폴백이 헛돌고도 통과한다. 생성자가 **제 문구를 가진 의사 본인**인
+        경우가 진짜 위험 경로다.
+        """
+        clinic = await make_clinic()
+        mine = await make_staff(clinic, "k243-own1", ["doctor"])
+        other = await make_staff(clinic, "k243-own2", ["doctor"])
+        await make_approved_content(SET_NAME, CautionSectionKey.CAUTION, APPROVED)
+        await save_doctor_copy(clinic, other, SET_NAME, EDITED)
+        visit = await make_visit_with_doctor(clinic, mine, chart="KEY243-OWN")
+        await attach_confirmed_ocr(visit, other.staff_id)
+
+        # **담당이 아닌 `other` 가 직접 만든다.** 여기가 갈리는 자리다.
+        response = await self.generate(visit, other)
+
+        assert response.status_code == 201, response.text
+        sections = await self.sections_from_db(visit.visit_id)
+        assert sections[GuideSectionKey.CAUTION].generated_body == APPROVED, (
+            "만든 사람 문구가 담당 의사 이름으로 나갔다"
+        )
