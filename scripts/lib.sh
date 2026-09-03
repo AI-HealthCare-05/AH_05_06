@@ -76,7 +76,22 @@ docker compose pull $DEPLOY_SERVICES
 # `set -e` 가 위에 있으므로 실패하면 여기서 배포가 끝난다.
 if printf '%s\n' $DEPLOY_SERVICES | grep -qx fastapi; then
   echo "Applying migrations"
-  docker compose run --rm -T --no-deps fastapi uv run --no-sync aerich upgrade
+  # 🚨 **`< /dev/null` 을 빼면 배포가 여기서 조용히 끝난다.**
+  #
+  # 이 본문 전체가 `bash -s` 의 **stdin** 으로 흘러 들어온다. `docker compose
+  # run -T` 는 stdin 을 컨테이너에 그대로 이어 주므로, 막지 않으면 **아직 안
+  # 읽은 스크립트 나머지**를 aerich 가 통째로 빨아들인다. 그러면 뒤의
+  # `up -d` 와 `image prune` 이 실행되지 않는데, `set -e` 에 걸리지도 않아서
+  # (aerich 는 0 으로 끝난다) **성공한 것처럼 보인다.**
+  #
+  # 2026-09-03 배포가 정확히 이렇게 됐다 — 마이그레이션 16 개가 올라가고
+  # `✅ Deployment finished` 가 찍혔는데 **컨테이너는 하나도 안 바뀌었다.**
+  # 새 이미지는 받아만 놓고 옛 이미지가 계속 돌았다.
+  #
+  # 위 `read -r DOCKER_PAT` 주석이 적어 둔 것과 같은 함정이다. 그때는 `read`
+  # 였고 이번엔 `docker compose run` 이었다 — **stdin 을 쓰는 것은 전부** 이
+  # 자리에서 막아야 한다.
+  docker compose run --rm -T --no-deps fastapi uv run --no-sync aerich upgrade < /dev/null
 fi
 
 echo "Deploying services: $DEPLOY_SERVICES"
