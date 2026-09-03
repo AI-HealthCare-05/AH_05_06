@@ -10,6 +10,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { load } = require("./browser-shim");
+const { read, codeOnly } = require("./source.js");
 
 const plain = (v) => structuredClone(v);
 const api = load("api", "session", "patients-api");
@@ -121,6 +122,22 @@ test("timelineWhen — 글자에서 의원 시각을 읽는다, 옵셋으로 옮
   assert.equal(detail.timelineWhen("2026-08-20T01:05:00-05:00"), "2026-08-20 01:05");
   assert.equal(detail.timelineWhen(""), "");
   assert.equal(detail.timelineWhen("nonsense"), "nonsense");
+});
+
+test("timelineWhen 이 clinic-clock 을 쓴다 — 정규식으로 되돌아가면 걸린다 (#182 리뷰 9 후속)", () => {
+  /* clinicDay·clinicTime 도 같은 정규식이라, 옛 구현으로 되돌려도 위 값 검사가
+     안 운다 — iljun-sys 님이 09-03 리뷰에서 직접 확인했다. 값으로는 못 가른다,
+     소스로만 가른다: timelineWhen 이 clinicDay·clinicTime 을 실제로 부르는지
+     본다. `visitDay`·`timeLabel`(이 파일)은 아직 자체 정규식이다 — 이 PR 이 만든
+     위험이 아니라 이 검사가 건드리지 않는다(KEY-234 후속). */
+  const code = codeOnly(read("js/detail.js"));
+  const start = code.indexOf("function timelineWhen(");
+  assert.ok(start !== -1, "timelineWhen 을 못 찾았다");
+  const end = code.indexOf("\nfunction ", start + 1);
+  const body = code.slice(start, end === -1 ? code.length : end);
+
+  assert.ok(body.includes("clinicDay("), "timelineWhen 이 clinicDay 를 안 쓴다");
+  assert.ok(body.includes("clinicTime("), "timelineWhen 이 clinicTime 을 안 쓴다");
 });
 
 test("이력 이름표가 서버 사건 어휘(TimelineEvent)를 다 덮는다", () => {
