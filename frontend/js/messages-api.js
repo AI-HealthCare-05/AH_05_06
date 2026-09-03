@@ -16,6 +16,20 @@ var messagesApi = {
     return request("/messages/scheduled" + query);
   },
 
+  update: function (messageId, payload) {
+    if (MOCK) {
+      return mockUpdateScheduledMessage(messageId, payload);
+    }
+
+    return request(
+      "/messages/" + encodeURIComponent(messageId),
+      {
+        method: "PATCH",
+        body: payload,
+      },
+    );
+  },
+
   history: function (range, limit) {
     if (MOCK) return mockHistory(range, limit);
     var query =
@@ -49,6 +63,7 @@ var messagesApi = {
  * 잡는다 — 고정 날짜를 박으면 그 날이 지나는 순간 창 밖으로 나가 목업이
  * 빈 화면이 된다.
  */
+var MOCK_MESSAGE_CHANGES = {};
 function mockDay(offset, hour) {
   var day = new Date();
   day.setDate(day.getDate() + offset);
@@ -187,8 +202,77 @@ function mockScheduledRows() {
   ];
 }
 
+function applyMockMessageChanges(rows) {
+  return rows.map(function (row) {
+    return Object.assign(
+      {},
+      row,
+      MOCK_MESSAGE_CHANGES[row.guide_message_id] || {},
+    );
+  });
+}
+
+function mockUpdateScheduledMessage(messageId, payload) {
+  var id = Number(messageId);
+  var rows = applyMockMessageChanges(mockScheduledRows());
+  var row = rows.find(function (item) {
+    return item.guide_message_id === id;
+  });
+
+  if (!row) {
+    return Promise.reject(
+      new ApiError("NOT_FOUND", 404, {}),
+    );
+  }
+
+  if (row.status !== "SCHEDULED") {
+    return Promise.reject(
+      new ApiError("MESSAGE_NOT_EDITABLE", 409, {}),
+    );
+  }
+
+  var hasScheduledAt = !!(payload && payload.scheduled_at);
+  var hasStatus = !!(payload && payload.status);
+
+  if (hasScheduledAt === hasStatus) {
+    return Promise.reject(
+      new ApiError("INVALID_REQUEST", 400, {}),
+    );
+  }
+
+  var change;
+
+  if (hasScheduledAt) {
+    change = {
+      scheduled_at: payload.scheduled_at,
+    };
+  } else if (payload.status === "CANCELED") {
+    change = {
+      status: "CANCELED",
+    };
+  } else {
+    return Promise.reject(
+      new ApiError("INVALID_REQUEST", 400, {}),
+    );
+  }
+
+  MOCK_MESSAGE_CHANGES[id] = Object.assign(
+    {},
+    MOCK_MESSAGE_CHANGES[id] || {},
+    change,
+  );
+
+  var changed = Object.assign({}, row, change);
+
+  return Promise.resolve({
+    guide_message_id: changed.guide_message_id,
+    scheduled_at: changed.scheduled_at,
+    status: changed.status,
+  });
+}
+
 function mockScheduled(days, limit) {
-  var rows = mockScheduledRows();
+  var rows = applyMockMessageChanges(mockScheduledRows());
   var start = new Date();
   start.setHours(0, 0, 0, 0);
   var end = new Date(start);

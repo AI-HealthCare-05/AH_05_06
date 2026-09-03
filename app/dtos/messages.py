@@ -8,7 +8,8 @@
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, model_validator
+from tortoise.timezone import now
 
 from app.models.patients import PatientGender
 from app.models.visits import (
@@ -66,6 +67,42 @@ class ScheduledMessageListResponse(BaseModel):
     #: 예정이 `limit` 를 넘어 잘렸는가. **안 나간 것은 잘리지 않는다** —
     #: 이 화면의 요점이 그것이라, 잘라 놓고 조용히 있으면 안 된다.
     truncated: bool
+
+
+class MessagePatchRequest(BaseModel):
+    """예약 문자 시각 변경 또는 예약 취소 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    scheduled_at: datetime | None = None
+    status: GuideMessageStatus | None = None
+
+    @model_validator(mode="after")
+    def validate_operation(self) -> "MessagePatchRequest":
+        has_scheduled_at = self.scheduled_at is not None
+        has_status = self.status is not None
+
+        if has_scheduled_at == has_status:
+            raise ValueError("scheduled_at 또는 status 중 하나만 입력해야 합니다.")
+
+        if self.status is not None and self.status is not GuideMessageStatus.CANCELED:
+            raise ValueError("status는 CANCELED만 요청할 수 있습니다.")
+
+        if self.scheduled_at is not None and self.scheduled_at.tzinfo is None:
+            raise ValueError("scheduled_at에는 시간대가 필요합니다.")
+
+        if self.scheduled_at is not None and self.scheduled_at <= now():
+            raise ValueError("scheduled_at은 미래 시각이어야 합니다.")
+
+        return self
+
+
+class MessagePatchResponse(BaseModel):
+    """변경된 예약 문자 응답."""
+
+    guide_message_id: int
+    scheduled_at: datetime
+    status: GuideMessageStatus
 
 
 class SentMessageItem(BaseModel):
