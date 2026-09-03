@@ -132,6 +132,32 @@ class TestGenerateBlocksUnconfirmedOcr(GenerateGuideTestCase):
         assert response.status_code == 422
         assert response.json()["code"] == "OCR_NOT_CONFIRMED"
 
+    async def test_zero_fields_is_refused(self) -> None:
+        """OcrResult는 있지만 필드가 0개이면 게이트를 통과하지 못한다.
+
+        재현 경로: 필드 값을 빈 문자열로 교체 → write_field가 미확정 row를 삭제
+        → OcrResult에 필드 0개 → unconfirmed 조회도 None, confirmed 조회도 None
+        → 이전 게이트는 그냥 통과했음 (KEY-226 리뷰 지적 #1).
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        job = await OcrJob.create(
+            ocr_job_id=f"syn-zero-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.COMPLETED,
+        )
+        await OcrResult.create(ocr_job=job, model_name="synthetic-fixture")
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_NOT_CONFIRMED"
+
 
 class TestGenerateCreatesStaffReviewGuide(GenerateGuideTestCase):
     """확정 OCR이 있으면 승인 대기 안내 한 건이 만들어진다."""

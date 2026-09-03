@@ -171,7 +171,15 @@ class GuideService:
             is_confirmed=True,
         ).first()
 
-        field_label = f"{confirmed.field_type}: {confirmed.value}" if (confirmed and confirmed.value) else ""
+        # 미확정 필드가 없더라도 확정된 필드가 하나도 없으면(필드 0개) 안내 생성을 막는다.
+        if confirmed is None:
+            raise ApiError(
+                "OCR_NOT_CONFIRMED",
+                422,
+                "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
+            )
+
+        field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else ""
 
         # KEY-165: 처방 세트 이름으로 승인된 caution/emergency 문구를 미리 조회한다.
         # 트랜잭션 밖에서 실행해 락 보유 시간을 줄인다.
