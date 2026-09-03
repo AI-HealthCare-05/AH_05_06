@@ -53,6 +53,8 @@ class OcrRepository(Protocol):
         self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
     ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]: ...
 
+    async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
+
 
 def _not_found() -> OcrApiError:
     return OcrApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
@@ -249,6 +251,15 @@ class TortoiseOcrRepository:
         await field.fetch_related("candidates")
         return field, []
 
+    async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob:
+        job = await OcrJob.filter(ocr_job_id=ocr_job_id, hospital_id=actor.hospital_id).first()
+        if job is None:
+            raise _not_found()
+        if not job.excluded_from_guide:
+            job.excluded_from_guide = True
+            await job.save(update_fields=("excluded_from_guide",))
+        return job
+
 
 def serialize_job(job: OcrJob) -> OcrJobResponse:
     return OcrJobResponse(
@@ -258,6 +269,7 @@ def serialize_job(job: OcrJob) -> OcrJobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         failure_code=job.failure_code,
+        excluded_from_guide=job.excluded_from_guide,
     )
 
 
@@ -391,6 +403,7 @@ class OcrService:
                 started_at=job.started_at,
                 completed_at=job.completed_at,
                 failure_code=job.failure_code,
+                excluded_from_guide=job.excluded_from_guide,
             )
             for jd, job in pairs
         ]
@@ -441,3 +454,8 @@ class OcrService:
         if field is None:
             return None
         return serialize_field(field, {d.ocr_document_text_id: d for d in doc_texts})
+
+    async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
+        """잘못 올린 문서의 job을 안내 생성에서 제외한다 — 멱등 처리."""
+        job = await self.repository.exclude_job(ocr_job_id, actor)
+        return serialize_job(job)
