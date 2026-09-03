@@ -85,7 +85,6 @@ class MessageTemplateService:
         return {row.kind: row.body for row in rows}
 
     async def save(self, actor: ClinicalActor, kind: MessageTemplateKind, body: str) -> str:
-        self._require_doctor(actor)
         body = (body or "").strip()
         self._check(kind, body)
 
@@ -100,16 +99,8 @@ class MessageTemplateService:
     async def reset(self, actor: ClinicalActor, kind: MessageTemplateKind) -> str:
         """**줄을 지운다.** 기본 문구를 다시 베껴 넣지 않는 이유는, 그러면
         나중에 기본 문구를 고쳐도 되돌린 의원만 옛 글을 계속 쓰기 때문이다."""
-        self._require_doctor(actor)
         await MessageTemplate.filter(hospital_id=hospital_id_of(actor), kind=kind).delete()
         return DEFAULT_BODY[kind]
-
-    @staticmethod
-    def _require_doctor(actor: ClinicalActor) -> None:
-        """원문: 「수정은 의사 계정만 — **문자도 환자에게 가는 안내다** ·
-        스탭은 열람」. 화면에서도 잠그지만 실제 차단은 여기서 한다."""
-        if "doctor" not in actor.roles:
-            raise ApiError(403, "DOCTOR_ONLY", "문자 문구는 의사 계정만 수정할 수 있습니다.")
 
     @staticmethod
     def _check(kind: MessageTemplateKind, body: str) -> None:

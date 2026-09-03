@@ -177,7 +177,7 @@ class LabBaselineService:
         줄마다 번호를 주고받으면 화면이 그 번호를 들고 다녀야 하고, 지운 줄을
         놓치면 유령이 남는다 — 처방 설정(D2-3)의 약·확인 항목과 같은 판단이다.
         """
-        self._require_doctor(actor, doctor_id)
+        self._require_owner(actor, doctor_id)
         hospital_id = hospital_id_of(actor)
         rows = [self._checked(item, index) for index, item in enumerate(items)]
 
@@ -220,17 +220,19 @@ class LabBaselineService:
             )
 
     @staticmethod
-    def _require_doctor(actor: ClinicalActor, doctor_id: int | None) -> None:
-        """원문 D2-2 와 같은 규칙이다 — 설정에서 의료 판단이 걸리는 값은
-        의사만 고친다. 기준선은 환자가 보는 「목표까지 얼마」를 정한다.
+    def _require_owner(actor: ClinicalActor, doctor_id: int | None) -> None:
+        """**막는 것은 「남의 판을 고치는 것」 하나다.**
+
+        원문 D2-2 는 「의사 계정만」이었는데, 2026-09-02 회의에서 **설정 화면의
+        수정 권한을 스탭에게도 연다**고 정했다. 역할은 더 이상 문을 막지 않는다.
 
         **읽는 것과 고치는 것이 다르다.** D2-4 는 의사를 골라 남의 기준선을
         볼 수 있게 해 두었다(같은 의원 안에서 서로 어떻게 잡았는지 참고한다).
         고치는 것은 자기 것만이다.
 
         `save` 가 **지우고 다시 넣는** 방식이라, 남의 `doctor_id` 로 쓸 수
-        있으면 그 의사의 열세 줄이 통째로 사라진다. 역할만 보고 있었다 —
-        2heej 님이 `#183` 리뷰에서 찾아 주셨다.
+        있으면 그 사람의 열세 줄이 통째로 사라진다. 이 검사가 아예 없었던
+        것을 2heej 님이 `#183` 리뷰에서 찾아 주셨다.
 
         **의원 공통(`doctor_id=None`)은 막지 않는다.** 형제 파일
         `guide_copy.py` 는 `actor.staff_id != doctor_id` 로 딱 잘라 막는데,
@@ -242,10 +244,8 @@ class LabBaselineService:
 
         그래서 막는 것은 **남의 이름으로 쓰는 것 하나**다.
         """
-        if "doctor" not in actor.roles:
-            raise ApiError(403, "DOCTOR_ONLY", "검사 기준선은 의사 계정만 수정할 수 있습니다.")
         if doctor_id is not None and actor.staff_id != doctor_id:
-            raise ApiError(403, "OTHER_DOCTOR", "다른 의사의 검사 기준선은 수정할 수 없습니다.")
+            raise ApiError(403, "OTHER_DOCTOR", "다른 사람의 검사 기준선은 수정할 수 없습니다.")
 
     @staticmethod
     def _checked(item: dict, index: int) -> dict:

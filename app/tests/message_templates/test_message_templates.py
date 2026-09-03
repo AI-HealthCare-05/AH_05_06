@@ -176,8 +176,15 @@ class MessageTemplateTestCase(TestCase):
 
     # ── 권한 ─────────────────────────────────────────────
 
-    async def test_staff_can_read_but_not_write(self) -> None:
-        """원문: 「수정은 의사 계정만 — 문자도 환자에게 가는 안내다 · 스탭은 열람」."""
+    async def test_staff_can_write_too(self) -> None:
+        """**스탭도 고친다** — 2026-09-02 회의에서 설정 수정 권한을 열었다.
+
+        원문 D2-5 는 「수정은 의사 계정만 — 문자도 환자에게 가는 안내다 ·
+        스탭은 열람」이었다. 그 규칙이 바뀌었다.
+
+        문자 문구는 **의원 단위**라 「누구 것」이 없다. 그래서 남는 규칙도
+        없다 — 같은 의원이면 고친다.
+        """
         clinic = await Hospital.create(name="도로시여성의원")
         staff = await self.a_staff(["staff"], "readonly", clinic)
 
@@ -185,8 +192,7 @@ class MessageTemplateTestCase(TestCase):
 
         response = await self.save(staff, MessageTemplateKind.CHECK_D7, "{환자명}님 {링크}")
 
-        assert response.status_code == 403
-        assert response.json()["code"] == "DOCTOR_ONLY"
+        assert response.status_code == 200, response.text
 
     async def test_another_clinic_does_not_see_the_edit(self) -> None:
         mine = await Hospital.create(name="도로시여성의원")

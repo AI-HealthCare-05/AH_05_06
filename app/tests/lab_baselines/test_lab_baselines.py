@@ -217,7 +217,13 @@ class LabBaselineTestCase(TestCase):
 
     # ── 권한 · 격리 ──────────────────────────────────────
 
-    async def test_staff_can_read_but_not_write(self) -> None:
+    async def test_staff_can_write_the_clinic_board_too(self) -> None:
+        """**스탭도 고친다** — 2026-09-02 회의에서 설정 수정 권한을 열었다.
+
+        원문 D2-4 는 「의사 계정만」이었다. 그 규칙이 바뀌었고, 남는 것은
+        「남의 판을 고치지 않는다」 하나다 — 그것은 역할이 아니라 소유로
+        가른다(`test_a_doctor_cannot_write_over_another_doctors_board`).
+        """
         clinic = await Hospital.create(name="도로시여성의원")
         staff = await self.a_staff(["staff"], "readonly", clinic)
 
@@ -225,7 +231,18 @@ class LabBaselineTestCase(TestCase):
 
         response = await self.save(staff, [an_item()])
 
-        assert response.status_code == 403 and response.json()["code"] == "DOCTOR_ONLY"
+        assert response.status_code == 200, response.text
+
+    async def test_staff_still_cannot_write_over_someone_elses_board(self) -> None:
+        """**역할 문은 열렸어도 소유 문은 그대로다.**"""
+        clinic = await Hospital.create(name="도로시여성의원")
+        doctor = await self.a_staff(["doctor"], "owner-doc", clinic, name="박연")
+        staff = await self.a_staff(["staff"], "nosy-staff", clinic, name="한소영")
+        await self.save(doctor, [an_item(name="원장님 항목")], doctor_id=doctor.staff_id)
+
+        response = await self.save(staff, [an_item(name="덮어쓰기")], doctor_id=doctor.staff_id)
+
+        assert response.status_code == 403 and response.json()["code"] == "OTHER_DOCTOR"
 
     async def test_a_doctor_cannot_write_over_another_doctors_board(self) -> None:
         """**저장이 지우고 다시 넣는다** — 남의 이름으로 쓸 수 있으면 그 의사의
