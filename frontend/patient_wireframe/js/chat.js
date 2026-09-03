@@ -1,8 +1,8 @@
 /* 챗봇 오버레이 — FAB → 하단 패널 */
 (function () {
-  /* P6 실제 API 연결은 KEY-241 범위 밖이다. 실제 화면에서 목업 답변을
-     진짜 의료 안내처럼 보여 주지 않고, ?mock=1 미리보기에서만 연다. */
-  if (typeof GUIDE_MOCK === 'undefined' || !GUIDE_MOCK) return;
+  /* KEY-259부터 실제 화면은 환자 세션으로 응답 API를 호출한다.
+     합성 답변은 화면 검증용 ?mock=1에서만 사용한다. */
+  if (typeof GUIDE_MOCK === 'undefined') return;
 
   var SUGGESTIONS = [
     '약 먹는 시간을 바꿔도 되나요?',
@@ -10,17 +10,19 @@
     '약을 깜박 잊었어요',
   ];
 
-  var MOCK_ANSWERS = {
-    '약 먹는 시간을 바꿔도 되나요?':
-      '네, 하루 중 편한 시간 하나를 정해 매일 같은 시간에 드시면 됩니다.\n이미 드셨다면 그날 것은 건너뛰지 말고 생각난 즉시 드세요.',
-    '부정출혈이 계속돼요':
-      '복용 초기 3개월 안에는 소량 출혈이 흔합니다.\n2주 이상 지속되거나 양이 많다면 진료 때 알려주세요.',
-    '약을 깜박 잊었어요':
-      '생각난 즉시 드세요. 다음 복용 시간이 많이 남지 않았다면 그날 것은 건너뛰고 다음 날 정해진 시간에 드세요.\n절대로 두 배로 드시지 마세요.',
+  var CHATBOT_SECTION_LABELS = {
+    medication: '복약 안내',
+    caution: '주의사항',
+    emergency: '응급 안내',
+    life: '생활관리',
+    messages: '담당 의료진 안내',
   };
 
+  function chatbotSectionLabel(key) {
+    return CHATBOT_SECTION_LABELS[key] || '';
+  }
+
   var guide = null;
-  var linkToken = null;
   var state = {
   messages: [],
   busy: false,
@@ -165,6 +167,25 @@
         answer.appendChild(meta);
       }
 
+      [
+        ['근거', msg.evidence],
+        ['한계', msg.limitation],
+        ['승인 안내', chatbotSectionLabel(msg.groundedSection)],
+      ].forEach(function (item) {
+        if (!item[1]) return;
+        var detail = document.createElement('p');
+        detail.className = 'chat-answer__meta';
+        detail.textContent = item[0] + ' · ' + item[1];
+        answer.appendChild(detail);
+      });
+
+      if (msg.fallback) {
+        var fallback = document.createElement('p');
+        fallback.className = 'chat-answer__meta';
+        fallback.textContent = '승인된 안내 범위 밖이라 답할 수 없어요.';
+        answer.appendChild(fallback);
+      }
+
       if (!msg.streaming) {
         var actions = document.createElement('div');
         actions.className = 'chat-answer__actions';
@@ -179,6 +200,7 @@
         contact.type = 'button'; contact.className = 'chat-contact';
         contact.innerHTML = '<img src="/patient_wireframe/assets/chat_bot.png" alt="" class="chat-contact__icon" aria-hidden="true"> 문의하기';
         contact.addEventListener('click', function () {
+          /* KEY-259: 병원 연락처 계약 전까지 기존 준비 안내를 유지한다. */
           alert('문의 창구는 병원 설정에서 연결됩니다.');
         });
         actions.appendChild(contact);
@@ -281,17 +303,29 @@
     abortBtn.classList.add('chat-abort--show');
     renderMessages();
 
-  if (!GUIDE_MOCK) {
     var controller = new AbortController();
     state.requestController = controller;
 
-    requestChatbotResponse(linkToken, q, controller.signal)
+    streamChatbotAnswer(
+      { question: q, signal: controller.signal },
+      {
+        onDelta: function (chunk) {
+          if (gen !== state.generation) return;
+          answerMsg.text += chunk;
+          updateStream(answerMsg.text);
+          scrollBottom();
+        },
+      },
+    )
       .then(function (result) {
         if (gen !== state.generation) return;
 
-        answerMsg.text = result.answer || '';
+        answerMsg.text = result.answer || answerMsg.text;
         answerMsg.urgent = !!result.urgent;
+        answerMsg.evidence = result.evidence;
         answerMsg.source = result.source;
+        answerMsg.limitation = result.limitation;
+        answerMsg.groundedSection = result.grounded_section;
         answerMsg.responseRef = result.response_ref;
         answerMsg.fallback = !!result.fallback;
       })
@@ -303,8 +337,7 @@
           return;
         }
 
-        answerMsg.error =
-          '답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+        answerMsg.error = chatbotErrorMessage(error && error.code);
       })
       .finally(function () {
         if (state.requestController === controller) {
@@ -320,26 +353,6 @@
         renderMessages();
       });
 
-    return;
-  }
-
-    /* Mock: 글자를 조금씩 타이핑 */
-    var raw  = MOCK_ANSWERS[q] || '담당 의료진이 확인한 내용 안에서만 답해드릴 수 있어요. 더 자세한 내용은 진료 때 여쭤봐 주세요.';
-    var i    = 0;
-    var tick = setInterval(function () {
-      if (gen !== state.generation) { clearInterval(tick); return; }
-      answerMsg.text = raw.slice(0, ++i);
-      updateStream(answerMsg.text);
-      scrollBottom();
-      if (i >= raw.length) {
-        clearInterval(tick);
-        answerMsg.streaming = false;
-        state.busy = false;
-        abortBtn.classList.remove('chat-abort--show');
-        sendBtn.disabled = false;
-        renderMessages();
-      }
-    }, 18);
   }
 
   function retryAnswer(msg) {
@@ -392,8 +405,7 @@
   });
 
   /* ── 외부에서 guide 데이터 주입 ─────────── */
-  window.chatSetGuide = function (g, token) {
+  window.chatSetGuide = function (g) {
     guide = g;
-    linkToken = token;
   };
 })();

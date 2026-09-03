@@ -8,6 +8,7 @@ from app.apis.v1.chatbot_routers import get_chatbot_service
 from app.main import app
 from app.models.visits import GuideDocument, GuideStatus, PatientGuideLink
 from app.services.chatbot import ChatbotService, ModelAnswer
+from app.services.patient_sessions import PatientSessionStore
 from app.tests.patient_links.test_patient_links import (
     PatientLinkTestCase,
     make_guide,
@@ -47,9 +48,11 @@ class TestKey205PatientLinkLaunch(PatientLinkTestCase):
                 assert issued.status_code == 201, issued.text
                 path = issued.json()["path"]
                 opened = await client.get(path)
+                raw_session = await PatientSessionStore(self.redis).start(LINK_TOKEN)  # type: ignore[arg-type]
+                client.cookies.set("patient_session", raw_session)
                 chatbot = await client.post(
                     "/api/v1/chatbot/responses",
-                    json={"link_token": LINK_TOKEN, "question": "약은 언제 먹나요?"},
+                    json={"question": "약은 언제 먹나요?"},
                 )
 
         assert path == f"/api/v1/guides/{LINK_TOKEN}"

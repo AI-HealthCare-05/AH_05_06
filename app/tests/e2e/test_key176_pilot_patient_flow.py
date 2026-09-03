@@ -26,6 +26,7 @@ from app.models.visits import (
 )
 from app.services.chatbot import ChatbotService, ChatModelError, ModelAnswer
 from app.services.patient_otp import OTP_RESEND_COOLDOWN, PatientOtpService
+from app.services.patient_sessions import PatientSessionStore
 from app.services.staff_auth import StaffSessionService
 from app.tests.auth_base import AuthTestCase
 from app.tests.patient_links.test_patient_links import make_guide, make_hospital, make_staff
@@ -122,11 +123,11 @@ class TestKey176PilotPatientFlow(AuthTestCase):
 
             failed = await patient.post(
                 "/api/v1/chatbot/responses",
-                json={"link_token": LINK_TOKEN, "question": QUESTION},
+                json={"question": QUESTION},
             )
             retried = await patient.post(
                 "/api/v1/chatbot/responses",
-                json={"link_token": LINK_TOKEN, "question": QUESTION},
+                json={"question": QUESTION},
             )
             assert failed.status_code == retried.status_code == 200
             assert failed.json()["fallback"] is True
@@ -191,9 +192,11 @@ class TestKey176PilotPatientFlow(AuthTestCase):
                 "/api/v1/patient-auth/otp/issue",
                 json={"link_token": LINK_TOKEN},
             )
+            raw_session = await PatientSessionStore(self.redis).start(LINK_TOKEN)  # type: ignore[arg-type]
+            patient.cookies.set("patient_session", raw_session)
             chatbot = await patient.post(
                 "/api/v1/chatbot/responses",
-                json={"link_token": LINK_TOKEN, "question": QUESTION},
+                json={"question": QUESTION},
             )
 
         assert otp.status_code == 404
