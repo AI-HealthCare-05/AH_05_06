@@ -53,14 +53,38 @@ class PatientSessionStore:
         return raw_session
 
     async def require(self, raw_session: str | None, raw_link_token: str) -> None:
+        stored_link = await self.resolve_link_digest(raw_session)
+        link_digest = digest_link_token(raw_link_token)
+        if stored_link != link_digest:
+            raise _expired()
+
+    async def resolve_link_digest(self, raw_session: str | None) -> str:
+        """Return the link digest owned by the current, non-rotated session."""
+
+        if not raw_session:
+            raise _expired()
+        session_digest = digest_session_token(raw_session)
+        link_digest = await self.redis.get(self._session(session_digest))
+        if not link_digest:
+            raise _expired()
+        current_session = await self.redis.get(self._current(link_digest))
+        if current_session != session_digest:
+            raise _expired()
+        return link_digest
+
+    async def check(self, raw_session: str | None, raw_link_token: str) -> int:
+        """세션이 유효하면 남은 초를 반환하고, 만료·없음이면 PATIENT_SESSION_EXPIRED를 올린다."""
         if not raw_session:
             raise _expired()
         session_digest = digest_session_token(raw_session)
         link_digest = digest_link_token(raw_link_token)
-        stored_link = await self.redis.get(self._session(session_digest))
+        session_key = self._session(session_digest)
+        stored_link = await self.redis.get(session_key)
         current_session = await self.redis.get(self._current(link_digest))
         if stored_link != link_digest or current_session != session_digest:
             raise _expired()
+        ttl: int = await self.redis.ttl(session_key)
+        return max(0, ttl)
 
     async def revoke(self, raw_session: str | None) -> None:
         if not raw_session:

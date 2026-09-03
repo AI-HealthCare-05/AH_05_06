@@ -1,5 +1,24 @@
+# **`list` 를 메서드 이름으로 쓰면 클래스 본문 안에서 내장 `list` 가 가려진다.**
+# 그 뒤에 나오는 `builtins.list[Staff]` 같은 애너테이션이 그 메서드를 첨자로 읽어
+# `TypeError: 'function' object is not subscriptable` 로 **import 가 터진다.**
+#
+# 호스트(3.14)는 애너테이션을 늦게 읽어 안 터지고 컨테이너(3.13)는 터졌다 —
+# 검사가 호스트에서 돌아 통과했는데 서버는 아예 안 떴다. 이 한 줄이 판을
+# 가리지 않고 애너테이션을 글자로 두어, 두 곳이 같게 돈다.
+from __future__ import annotations
+
+# **이 파일은 `list` 를 메서드 이름으로 쓴다.** 그래서 클래스 안에서는 내장
+# `list` 가 가려지고, `builtins.list[X]` 주석이 「메서드를 타입으로 쓴다」가 된다.
+# 파이썬 3.13 에서는 이것이 **띄우는 중에 터졌다**(`TypeError: 'function' object
+# is not subscriptable`) — 호스트가 3.14 라 PEP 649 지연 평가로 가려져 있었고,
+# 서버가 502 를 내는 동안 검사 1641 개가 전부 초록이었다.
+#
+# `from __future__ import annotations` 가 런타임은 막았지만 덫은 그대로다.
+# 여기서는 어느 `list` 인지 **적어서** 말한다.
+import builtins
 import calendar
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 
 from tortoise.exceptions import IntegrityError
@@ -11,12 +30,34 @@ from app.core.pagination import decode_cursor, encode_cursor
 from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.patients import PatientCategory, PatientCreateRequest, PatientUpdateRequest
+from app.models.ocr import OcrField
 from app.models.patients import Patient, PatientNumberCorrection
+from app.models.staffs import Staff
 from app.models.visits import Visit
 from app.repositories.patient_repository import PatientRepository
+from app.services.patient_flags import PatientFlag, flags_of, load_flag_inputs, stopped_dosing
 from app.services.patient_visit_scope import hospital_id_of
+from app.services.work_category import DetailStatus, WorkCategory, derive, load_signals
 
+#: 최근 진료의 상태로 갈리는 분류 — 와이어프레임 S2-1 의 칩 둘.
+#:
+#: **환자에 붙은 값이 아니라 진료에서 나온 값이다.** 그래서 표를 걸러 세지
+#: 못하고, 최근 진료들을 읽어 셈해야 한다. 예전에는 그럴 자리가 없어 400 으로
+#: 막고 0 으로 세고 있었다.
 EVENT_PATIENT_CATEGORIES = frozenset({PatientCategory.IN_TREATMENT, PatientCategory.NEEDS_ATTENTION})
+
+
+@dataclass(frozen=True, slots=True)
+class PatientRow:
+    """표 한 줄에 실릴 것 — 환자 · 최근 진료 · 거기서 나온 것들."""
+
+    patient: Patient
+    latest_visit: Visit | None
+    diagnosis_name: str | None
+    doctor: Staff | None
+    work_category: WorkCategory | None
+    detail_status: DetailStatus | None
+    flags: builtins.list[str]
 
 
 class PatientService:
@@ -59,9 +100,18 @@ class PatientService:
         category: PatientCategory,
         cursor: str | None,
         limit: int,
-    ) -> tuple[list[tuple[Patient, Visit | None]], dict[PatientCategory, int], str | None, bool]:
-        if category in EVENT_PATIENT_CATEGORIES:
-            raise ApiError(400, "INVALID_REQUEST", "이벤트 기반 환자 분류는 아직 지원되지 않습니다.")
+    ) -> tuple[builtins.list[PatientRow], dict[PatientCategory, int], str | None, bool]:
+        """환자 관리 표 — 와이어프레임 S2-1.
+
+        **분류가 두 갈래다.**
+
+        환자에 붙은 값(수신 거부 · 6개월 이상 미내원)은 표를 걸러 셀 수 있다.
+        진료에서 나오는 값(진행 중 · 챙겨주세요)은 그럴 수 없다 — 최근 진료를
+        읽어 상태를 내야 알 수 있다. 뒤엣것을 위해 **의원의 최근 진료를 한 번
+        훑는다.** 훑지 않고 화면에 보이는 쪽만 세면 「전체 128명 중 진행 중
+        34」가 아니라 「이 쪽에 보이는 20명 중 진행 중 3」이 되어, 스탭이
+        일이 없다고 믿게 된다.
+        """
         after_id = self._patient_cursor(cursor)
         hospital_id = hospital_id_of(actor)
         keyword = keyword.strip() if keyword else None
@@ -71,13 +121,21 @@ class PatientService:
         inactive_patient_ids = [
             patient_id for patient_id, visited_at in latest_times.items() if visited_at < inactive_before
         ]
+
+        by_event = await self._event_categories(hospital_id, list(latest_times))
+        wanted = by_event.get(category) if category in EVENT_PATIENT_CATEGORIES else None
+
         rows = await self.repo.list_scoped(
             hospital_id,
             keyword=keyword,
             after_id=after_id,
             limit=limit + 1,
             sms_opt_out_only=category is PatientCategory.SMS_OPT_OUT,
-            patient_ids=(inactive_patient_ids if category is PatientCategory.INACTIVE_6_MONTHS else None),
+            patient_ids=(
+                inactive_patient_ids
+                if category is PatientCategory.INACTIVE_6_MONTHS
+                else (sorted(wanted) if wanted is not None else None)
+            ),
         )
         all_count, sms_opt_out_count, inactive_count = await self.repo.category_counts(
             hospital_id,
@@ -86,19 +144,122 @@ class PatientService:
         )
         counts = {
             PatientCategory.ALL: all_count,
-            PatientCategory.IN_TREATMENT: 0,
-            PatientCategory.NEEDS_ATTENTION: 0,
+            PatientCategory.IN_TREATMENT: len(by_event[PatientCategory.IN_TREATMENT]),
+            PatientCategory.NEEDS_ATTENTION: len(by_event[PatientCategory.NEEDS_ATTENTION]),
             PatientCategory.SMS_OPT_OUT: sms_opt_out_count,
             PatientCategory.INACTIVE_6_MONTHS: inactive_count,
         }
         has_next = len(rows) > limit
         selected_rows = rows[:limit]
-        latest = await self.repo.latest_visits([patient.patient_id for patient in selected_rows], hospital_id)
-        items = [(patient, latest.get(patient.patient_id)) for patient in selected_rows]
+        items = await self._rows(selected_rows, hospital_id)
         next_cursor = (
             encode_cursor({"patient_id": selected_rows[-1].patient_id}) if has_next and selected_rows else None
         )
         return items, counts, next_cursor, has_next
+
+    async def _event_categories(
+        self,
+        hospital_id: int,
+        patient_ids: builtins.list[int],
+    ) -> dict[PatientCategory, set[int]]:
+        """진행 중 · 챙겨주세요에 드는 환자 번호.
+
+        **접수대 목록과 같은 규칙으로 낸다**(`work_category.derive`). 여기서
+        따로 셈하면 같은 환자가 두 화면에서 다르게 뜬다.
+        """
+        empty: dict[PatientCategory, set[int]] = {
+            PatientCategory.IN_TREATMENT: set(),
+            PatientCategory.NEEDS_ATTENTION: set(),
+        }
+        if not patient_ids:
+            return empty
+
+        latest = await self.repo.latest_visits(patient_ids, hospital_id)
+        if not latest:
+            return empty
+
+        signals = await load_signals([visit.visit_id for visit in latest.values()], hospital_id)
+        flag_inputs = await load_flag_inputs(latest, hospital_id)
+        stopped = await stopped_dosing(latest)
+        today = now().astimezone(DISPLAY_TIMEZONE).date()
+
+        in_treatment: set[int] = set()
+        attention: set[int] = set()
+        for patient_id, visit in latest.items():
+            found = signals.get(visit.visit_id)
+            category = derive(found)[0] if found else None
+            if category is not None and category is not WorkCategory.COMPLETED:
+                in_treatment.add(patient_id)
+            marks = flags_of(flag_inputs[patient_id], today) if patient_id in flag_inputs else []
+            if patient_id in stopped:
+                marks = marks + [PatientFlag.STOPPED_DOSING]
+            # **이탈도 챙길 일이다.** 원문에서 「완료 · 열람」인 줄에 ⚠ 배지가
+            # 붙어 있다 — 진료는 끝났는데 환자가 이탈하는 자리라, 보완만
+            # 세면 그 줄은 어느 칩에도 안 걸린다.
+            if category is WorkCategory.NEEDS_ATTENTION or marks:
+                attention.add(patient_id)
+        return {
+            PatientCategory.IN_TREATMENT: in_treatment,
+            PatientCategory.NEEDS_ATTENTION: attention,
+        }
+
+    async def _rows(self, patients: builtins.list[Patient], hospital_id: int) -> builtins.list[PatientRow]:
+        if not patients:
+            return []
+        patient_ids = [patient.patient_id for patient in patients]
+        latest = await self.repo.latest_visits(patient_ids, hospital_id)
+        visit_ids = [visit.visit_id for visit in latest.values()]
+
+        signals = await load_signals(visit_ids, hospital_id) if visit_ids else {}
+        flag_inputs = await load_flag_inputs(latest, hospital_id)
+        stopped = await stopped_dosing(latest)
+        diagnoses = await self._diagnoses(visit_ids, hospital_id)
+        doctors = await self._doctors(latest, hospital_id)
+        today = now().astimezone(DISPLAY_TIMEZONE).date()
+
+        found = []
+        for patient in patients:
+            visit = latest.get(patient.patient_id)
+            derived = derive(signals[visit.visit_id]) if visit and visit.visit_id in signals else None
+            marks = flags_of(flag_inputs[patient.patient_id], today) if patient.patient_id in flag_inputs else []
+            if patient.patient_id in stopped:
+                marks = marks + [PatientFlag.STOPPED_DOSING]
+            found.append(
+                PatientRow(
+                    patient=patient,
+                    latest_visit=visit,
+                    diagnosis_name=diagnoses.get(visit.visit_id) if visit else None,
+                    doctor=doctors.get(visit.doctor_id) if visit and visit.doctor_id else None,
+                    work_category=derived[0] if derived else None,
+                    detail_status=derived[1] if derived else None,
+                    flags=marks,
+                )
+            )
+        return found
+
+    @staticmethod
+    async def _diagnoses(visit_ids: builtins.list[int], hospital_id: int) -> dict[int, str]:
+        """확정된 진단만 온다 — `front_desk` 와 같은 규칙이다.
+
+        판독 중인 값을 표에 올리면 의사가 아직 안 본 글자가 「이 환자의
+        진단」으로 읽힌다.
+        """
+        if not visit_ids:
+            return {}
+        rows = await OcrField.filter(
+            ocr_result__ocr_job__visit_id__in=visit_ids,
+            ocr_result__ocr_job__hospital_id=hospital_id,
+            field_type="DIAGNOSIS",
+            is_confirmed=True,
+        ).values_list("ocr_result__ocr_job__visit_id", "corrected_value", "extracted_value")
+        return {visit_id: corrected or extracted for visit_id, corrected, extracted in rows if corrected or extracted}
+
+    @staticmethod
+    async def _doctors(latest: dict[int, Visit], hospital_id: int) -> dict[int, Staff]:
+        doctor_ids = {visit.doctor_id for visit in latest.values() if visit.doctor_id is not None}
+        if not doctor_ids:
+            return {}
+        return {staff.staff_id: staff for staff in await Staff.filter(hospital_id=hospital_id, staff_id__in=doctor_ids)}
 
     async def update(self, actor: ClinicalActor, patient_id: int, data: PatientUpdateRequest) -> Patient:
         patient = await self.get(actor, patient_id)
@@ -152,9 +313,9 @@ class PatientService:
         self,
         actor: ClinicalActor,
         patient: Patient,
-        # `list[str]` 이 아니라 `Sequence[str]` 인 이유 — 이 클래스에 `list()`
+        # `builtins.list[str]` 이 아니라 `Sequence[str]` 인 이유 — 이 클래스에 `list()`
         # 메서드가 있어서, 그 뒤에 정의되는 메서드의 본문 주석에서 `list` 는
-        # 내장 타입이 아니라 **그 메서드**를 가리킨다. `list[str]` 은 그대로
+        # 내장 타입이 아니라 **그 메서드**를 가리킨다. `builtins.list[str]` 은 그대로
         # `TypeError: 'function' object is not subscriptable` 이 된다.
         fields: Sequence[str],
         correction: tuple[str, str],

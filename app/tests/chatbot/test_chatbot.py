@@ -11,6 +11,7 @@ from tortoise.timezone import now
 
 from app.apis.v1.chatbot_routers import get_chatbot_service
 from app.core.auth_errors import AuthError
+from app.core.redis_client import get_redis
 from app.main import app
 from app.models.visits import (
     GuideDocument,
@@ -28,6 +29,8 @@ from app.services.chatbot import (
     OpenAIResponsesModel,
 )
 from app.services.patient_links import PatientLinkService
+from app.services.patient_sessions import PatientSessionStore
+from app.tests.fakes import FakeRedis
 from app.tests.patient_links.test_patient_links import make_guide, make_hospital
 
 TOKEN = "synthetic-key96-link-token"
@@ -79,6 +82,15 @@ async def add_sections(guide: GuideDocument) -> None:
 
 
 class ChatbotTestCase(TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.redis = FakeRedis()
+        app.dependency_overrides[get_redis] = lambda: self.redis
+
+    def tearDown(self) -> None:
+        app.dependency_overrides.pop(get_redis, None)
+        super().tearDown()
+
     async def approved(self, name: str, token: str = TOKEN) -> GuideDocument:
         hospital = await make_hospital(name)
         guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
@@ -96,15 +108,49 @@ class ChatbotTestCase(TestCase):
         app.dependency_overrides[get_chatbot_service] = lambda: service
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                raw_session = await PatientSessionStore(self.redis).start(token)  # type: ignore[arg-type]
+                client.cookies.set("patient_session", raw_session)
                 return await client.post(
                     "/api/v1/chatbot/responses",
-                    json={"link_token": token, "question": question},
+                    json={"question": question},
                 )
         finally:
             app.dependency_overrides.pop(get_chatbot_service, None)
 
 
 class TestApprovedContextOnly(ChatbotTestCase):
+    async def test_api_requires_a_patient_session(self) -> None:
+        await self.approved("KEY-259 세션 없는 요청")
+        app.dependency_overrides[get_chatbot_service] = lambda: ChatbotService(model=FakeModel())
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/chatbot/responses",
+                    json={"question": "약은 언제 먹나요?"},
+                )
+        finally:
+            app.dependency_overrides.pop(get_chatbot_service, None)
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "PATIENT_SESSION_EXPIRED"
+
+    async def test_api_rejects_a_raw_link_token_in_the_request_body(self) -> None:
+        await self.approved("KEY-259 토큰 원문 차단")
+        app.dependency_overrides[get_chatbot_service] = lambda: ChatbotService(model=FakeModel())
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                raw_session = await PatientSessionStore(self.redis).start(TOKEN)  # type: ignore[arg-type]
+                client.cookies.set("patient_session", raw_session)
+                response = await client.post(
+                    "/api/v1/chatbot/responses",
+                    json={"question": "약은 언제 먹나요?", "link_token": TOKEN},
+                )
+        finally:
+            app.dependency_overrides.pop(get_chatbot_service, None)
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "INVALID_REQUEST"
+
     async def test_one_model_call_uses_only_the_linked_approved_guide(self) -> None:
         ours = await self.approved("KEY-96 승인 합성의원")
         theirs = await self.approved("KEY-96 다른 합성의원", OTHER_TOKEN)
@@ -255,11 +301,16 @@ class TestApiAndObservability(ChatbotTestCase):
         assert response.status_code == 200
         body = response.json()
         assert body["fallback"] is False
+        assert isinstance(body["response_ref"], str)
+        assert len(body["response_ref"]) >= 16
         assert body["grounded_section"] == "medication"
         assert body["evidence"].startswith("복약 안내 ·")
         assert body["source"] == "담당 의료진이 승인한 진료 안내"
         assert "진단이나 처방 변경" in body["limitation"]
         assert TOKEN not in response.text
+        stored = await PatientUsageEvent.get()
+        assert stored.response_ref_digest == hashlib.sha256(body["response_ref"].encode()).hexdigest()
+        assert body["response_ref"] not in repr(stored.__dict__)
 
     async def test_metrics_have_no_question_answer_or_token(self) -> None:
         await self.approved("KEY-96 로그 합성의원")

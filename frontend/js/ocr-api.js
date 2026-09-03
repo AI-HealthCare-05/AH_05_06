@@ -31,11 +31,51 @@ function ocrRequest(path, options) {
   return request(path, options);
 }
 
+/* 목업 — 설정(D2-3)에 8종이 사전 등록돼 있다. 이름은 실제 표와 같다. */
+/* 약속처방 목업(`MOCK_PRESCRIPTION_SETS`)은 `catalog-api.js` 로 옮겼다 —
+   설정 화면도 같은 값을 쓰는데, 그쪽이 판독 API 파일을 실을 이유가 없다. */
+
 var ocrApi = {
   /* GET /visits/{visitId}/ocr-job — KEY-133 */
   jobForVisit: function (visitId) {
     if (MOCK) return mockJobForVisit(visitId);
     return request("/visits/" + visitId + "/ocr-job");
+  },
+
+  /* 약속처방 목록 — 의사가 설정(D2-3)에서 정해 둔 것. 판독 확인 화면의
+     「처방」 칸이 여기서 고른다. 자유 입력이면 안 되는 이유는 이름을 고를 때
+     그 세트에 묶인 주의 문구가 안내문에 붙기 때문이다 — 「비잔」과 「비잔정」이
+     다른 값으로 들어오면 붙일 문구를 못 찾는다. */
+  prescriptionSets: function () {
+    /* 카탈로그는 `catalogApi` 것이다 — 두 벌로 두면 목업이 갈린다 */
+    return catalogApi.sets();
+  },
+
+  /* 판독이 못 읽은 값을 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
+     **고치기(PATCH)와 다른 길이다.** 저쪽은 있는 줄의 값을 바꾸고, 이쪽은 줄
+     자체가 없는 것을 만든다 — 그래서 번호가 아니라 항목 이름으로 짚는다. */
+  writeField: function (visitId, fieldType, value) {
+    if (MOCK) return mockWriteField(visitId, fieldType, value);
+    return request(
+      "/visits/" + encodeURIComponent(visitId) + "/ocr-fields/" + encodeURIComponent(fieldType),
+      { method: "PUT", body: { value: value } },
+    );
+  },
+
+  /* 확인 항목 — 처방 전에 여쭙는 것들 (와이어프레임 S1-6).
+     한 판을 통째로 주고받는다. 항목 하나씩 보내면 중간에 끊겼을 때 반쪽 상태가
+     남고, 화면은 그것을 「안 여쭌 것」과 구별하지 못한다. */
+  checkItems: function (visitId) {
+    if (MOCK) return mockCheckItems(visitId);
+    return request("/visits/" + encodeURIComponent(visitId) + "/check-items");
+  },
+
+  saveCheckItems: function (visitId, answers) {
+    if (MOCK) return mockSaveCheckItems(visitId, answers);
+    return request("/visits/" + encodeURIComponent(visitId) + "/check-items", {
+      method: "PUT",
+      body: { answers: answers },
+    });
   },
 
   job: function (jobId) {
@@ -422,10 +462,95 @@ function mockPatch(fieldId, body) {
 
 /* 진료마다 다른 작업 번호를 준다. 고정값을 쓰면 어느 환자를 골라도 같은
    판독 결과가 나온다 — 실제로 그랬다(`#40` 리뷰). */
+/* **진료기록을 안 올린 진료에는 판독이 없다.**
+ *
+ * 예전에는 어느 진료를 물어도 작업 번호를 내줬다. 그래서 목록이 「진료기록
+ * 없음」이라 적은 환자를 눌러도 판독 결과가 떴고, **「판독한 기록이 없습니다」
+ * 화면을 `?mock=1` 로는 한 번도 못 봤다** — 방금 등록한 환자가 처음 만나는
+ * 화면인데도.
+ *
+ * 목록이 들고 있는 `detail_status` 를 그대로 믿는다. 목업이 제 규칙을 따로
+ * 만들면 목록과 판독 화면이 서로 다른 말을 한다.
+ */
+/* **목업도 담아 둔다.** 안 담으면 저장하고 다시 읽을 때 사라져서, 서버가
+   붙기 전에는 「담기는가」를 한 번도 볼 수 없다 — 새로고침하면 사라지던 바로
+   그 증상이 목업에만 남는다. 한 판 동안만 산다. */
+var mockWrittenFields = {};
+var mockCheckAnswers = {};
+
+function mockWriteField(visitId, fieldType, value) {
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      var text = String(value === null || value === undefined ? "" : value).trim();
+      var mine = mockWrittenFields[visitId] || (mockWrittenFields[visitId] = {});
+
+      /* 비우면 지운다 — 서버와 같은 규칙이다 */
+      if (!text) {
+        delete mine[fieldType];
+        return resolve(null);
+      }
+      mine[fieldType] = text;
+      return resolve({
+        ocr_field_id: 900000 + Object.keys(mine).length,
+        field_type: fieldType,
+        value: text,
+        corrected_value: text,
+        extracted_value: null,
+        is_confirmed: false,
+        candidates: [],
+      });
+    }, 80);
+  });
+}
+
+/* 서버 씨앗과 같은 다섯. 처방이 무엇을 여쭐지는 `MOCK_PRESCRIPTION_SETS` 가 준다. */
+function mockCheckItems(visitId) {
+  return new Promise(function (resolve) {
+    setTimeout(function () {
+      var mine = mockCheckAnswers[visitId] || {};
+      resolve({
+        visit_id: Number(visitId),
+        answers: MOCK_CHECK_ITEMS.map(function (key) {
+          return { item_key: key, checked: key in mine ? mine[key] : null };
+        }),
+      });
+    }, 80);
+  });
+}
+
+function mockSaveCheckItems(visitId, answers) {
+  return new Promise(function (resolve) {
+    setTimeout(function () {
+      var mine = mockCheckAnswers[visitId] || (mockCheckAnswers[visitId] = {});
+      (answers || []).forEach(function (row) {
+        /* `null` 은 「안 여쭌 것으로 되돌린다」 — 서버와 같은 규칙 */
+        if (row.checked === null || row.checked === undefined) delete mine[row.item_key];
+        else mine[row.item_key] = !!row.checked;
+      });
+      resolve(mockCheckItems(visitId));
+    }, 80);
+  }).then(function (p) {
+    return p;
+  });
+}
+
 function mockJobForVisit(visitId) {
   return new Promise(function (resolve, reject) {
     setTimeout(function () {
       if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      var row =
+        typeof MOCK_TODAY === "undefined"
+          ? null
+          : MOCK_TODAY.filter(function (v) {
+              return v.visit_id === Number(visitId);
+            })[0];
+      if (row && row.detail_status === "NO_DOCUMENT") {
+        return reject(new ApiError("NOT_FOUND", 404, {}));
+      }
+
       resolve({ ocr_job_id: "ocr_synthetic_" + visitId });
     }, 80);
   });

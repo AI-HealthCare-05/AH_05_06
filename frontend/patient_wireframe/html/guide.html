@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>진료 안내 · 케어온</title>
+</head>
+<body>
+  <p>최종 환자 안내 화면으로 이동하고 있어요…</p>
+  <script>
+    /* 실제 진입점과 개발 프리뷰가 서로 다른 DOM·자산 목록을 관리하지 않도록
+       /guide.html 하나만 정본으로 둔다. query와 fragment는 OTP·링크 흐름을
+       깨뜨리지 않도록 그대로 전달한다. */
+    window.location.replace('../../guide.html' + window.location.search + window.location.hash);
+  </script>
+  <noscript><a href="../../guide.html">진료 안내 화면 열기</a></noscript>
+</body>
+</html>

@@ -1,0 +1,1336 @@
+/* **블록** — 화면 여러 곳이 같은 상자를 쓴다.
+ *
+ * 기본정보(S1-4)가 「환자 정보 · 오늘 진료 · 지난 방문 · 발송 이력」을 네
+ * 블록으로 세우고, 판독 확인(S1-6)도 「진단·처방 · 이번 판독 값 · 이전 값
+ * 유지 · 확인 항목」을 같은 블록으로 세운다.
+ *
+ * 전에는 `.box` 가 `patients.css` 에, `.box__head`·`.facts`·`.cols2` 가
+ * `detail.css` 에 흩어져 있었다. 판독 화면은 그 두 파일을 안 싣기 때문에
+ * 같은 모양을 다시 그려야 했고, 그러면 한쪽만 고쳐져 두 화면이 갈라진다 —
+ * 판독 항목 이름표를 한 곳에 모은 것과 같은 이유다 (WP-S③ 공용 모듈).
+ *
+ * 여기 있는 것은 **어느 화면에서나 같아야 하는 것**만이다. 화면마다 달라야
+ * 하는 여백·너비는 각자의 CSS 가 덮는다 (`detail.css` 가 그렇게 한다).
+ */
+
+.box {
+  margin-top: var(--s-24);
+  padding: var(--s-24);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.box__title {
+  margin-bottom: var(--s-16);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 제목과 오른쪽 것(수정 버튼 · 검사일 따위)을 한 줄에 세운다 */
+.box__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  margin-bottom: var(--s-16);
+}
+
+.box__head .box__title {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* 제목 옆에 붙는 곁말. 제목보다 약하게 둔다 — 읽을 것은 제목이다. */
+.box__note {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+/* ── 이름 / 값 짝 ─────────────────────────────────────────────────────── */
+
+.facts {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: var(--s-12) var(--s-16);
+  margin: 0;
+  font-size: 13px;
+}
+
+.facts dt {
+  color: var(--ink-3);
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* 값 옆에 붙는 설명. 값보다 약하게 둔다 — 읽을 것은 값이다. */
+.facts__note {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* ── 좌우 2단 ─────────────────────────────────────────────────────────
+ *
+ * 화면 너비로 가르지 않는다 (`@media`). 레티나 화면에서 CSS 픽셀이 절반이라
+ * 1100px 로 끊었더니 1280 짜리 화면에서도 2단이 안 섰다 — 그 함정에 이미
+ * 걸렸다. 칸이 좁아지면 저절로 접히게 둔다. */
+
+.cols2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  align-items: flex-start;
+}
+
+.cols2__side {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.cols2 .box {
+  margin-top: 14px;
+  padding: 16px 18px;
+}
+
+.cols2 .box:first-child {
+  margin-top: 0;
+}
+
+
+/* ── 환자 머리말 ─────────────────────────────────────────────────────
+ *
+ * 누구의 기록을 다루는 중인지. 탭을 옮겨도 이 줄은 그대로 있다 — 끊기면
+ * 다른 환자에게 잘못 넣는다.
+ *
+ * 전에는 `.patient-head` 가 `shell.css` 에, `.patient-head__top` 이
+ * `detail.css` 에 갈려 있었다. 판독 확인 화면은 `detail.css` 를 안 싣기
+ * 때문에 이름·차트·상태가 **한 줄로 안 서고 세 줄로 흩어졌다.**
+ *
+ * 와이어프레임 S1-6 원문: 줄은 `gap:18px`, 왼쪽은 `flex:1 · column · gap:3px`,
+ * 첫 줄은 `baseline · gap:10px` 에 이름 `17px/700` · 차트와 생년월일 `13px` ·
+ * 상태 배지 `12px · border 1px · radius 4px · padding 1px 7px`,
+ * 둘째 줄은 `12px`.
+ *
+ * **판 가장자리까지 흰 바탕을 펴고 아래에 선을 하나 긋는다** — 원문의
+ * `border-bottom` 이다.
+ *
+ * 한때 이 선을 뺐었다. 그때는 머리말이 본문과 같은 바탕이라, 선까지 그으면
+ * 아래 블록들의 테두리와 겹쳐 가로줄이 층층이 보였다. 지금은 머리말만 흰
+ * 바탕이라 **선이 겹치는 것이 아니라 나누는 일을 한다** — 누구의 기록인지가
+ * 본문과 확실히 갈린다.
+ *
+ * `.pane` 이 `18px 24px` 여백을 물고 있어서 그만큼 되밀고, 원문 여백
+ * (`11px 26px`)으로 다시 준다. 안 그러면 흰 바탕이 가운데만 뜬 띠가 된다.
+ */
+
+.patient-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin: -18px -24px 18px;
+  padding: 11px 26px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  /* **스크롤해도 붙어 있는다.** 누구의 기록을 다루는 중인지가 화면 밖으로
+     나가면, 스물한 줄을 내려가며 채우는 동안 그 사실을 잃는다 — 다른 환자에게
+     잘못 넣는 길이다. 스크롤하는 것은 `.pane` 이라 그 위쪽에 붙는다.
+
+     `top` 은 판의 위 여백(18px)만큼 되민 자리다. 0 으로 두면 그만큼 늦게
+     붙어 머리 위로 내용이 한 줄 지나간다.
+
+     상단바 · 환자 목록과 같은 그림자 — 아주 얕게. 이 줄이 아래 내용 위에
+     있다는 것만 말한다. 셋이 같은 값이라야 「띄운 것」이 한 가지로 읽힌다. */
+  position: sticky;
+  top: -18px;
+  z-index: 4;
+  box-shadow: 0 1px 3px rgb(28 31 35 / 6%);
+}
+
+.patient-head__who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* 이름 · 차트 · 생년월일 · 상태가 **한 줄에** 선다 */
+.patient-head__top {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.patient-head__name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.patient-head__id {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.patient-head__top .row__state {
+  margin-top: 0;
+}
+
+.patient-head__visit {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* 자리가 모자라면 단계 줄이 아래로 내려간다 — 이름을 밀어내는 것보다 낫다.
+   창 폭으로 자르지 않는다. 좌측 목록을 접으면 같은 창에서도 자리가 늘어난다. */
+
+/* ── 환자 머리말의 단계 줄 ────────────────────────────────────────────
+ *
+ * 전에는 `detail.css` 에만 있었다. 판독 확인 화면은 그 파일을 안 싣기 때문에
+ * 같은 단계 줄이 **아무 모양도 없이** 떴다 — 「판독 화면으로 넘어가면 상단
+ * 레이아웃이 예전 것으로 바뀐다」는 것이 이것이었다. 마크업은 `js/step-nav.js`
+ * 가 한 곳에서 그리는데 모양은 한 화면에만 있었으니, 반쪽만 공용이었던 셈이다.
+ */
+
+/* ── 탭 ─────────────────────────────────────────────── */
+
+/* 머리말 오른쪽에 선다 — 아래 줄을 차지하지 않는다 (S1-4). */
+.tabs {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 단계이자 이동 수단이다 — ● ○ 가 어디까지 왔는지 말하고, 누르면 그리로 간다.
+ *
+ * 와이어프레임 S1-4 는 **버튼 형식**이다 — `height:30px · padding:0 12px ·
+ * radius:6 · gap:5 · 12px · nowrap`. 고른 탭만 검정 채움에 굵은 글씨.
+ *
+ * 안 고른 탭 색은 와이어프레임의 `#D1D5DB` 를 쓰지 않는다 — 흰 배경에서 대비가
+ * 1.6 밖에 안 나와 읽히지 않는다. 토큰의 `--ink-2`(6.35) 를 쓴다. 「지금 여기가
+ * 아니다」는 색이 아니라 채움과 굵기로 말한다 (KEY-106 과 같은 판단이다).
+ */
+.tab {
+  height: 30px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.tab:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+/* 지금 보고 있는 칸 */
+.tab[aria-selected="true"] {
+  font-weight: 700;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tab__mark {
+  font-size: 10px; /* 와이어프레임 원문 */
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* 아직 오지 않은 단계. 흐리게 두되 지우지는 않는다 — 앞으로 무엇이 남았는지가
+   보여야 「여기서 끝인가」를 묻지 않는다.
+
+   #9aa0a7 은 이 바탕(#f4f5f6)에서 대비 2.42 라 읽히지 않았다. 밝기로는 더
+   내릴 여지가 없어서, 단계 셋을 토큰 사다리로 갈랐다 — 지금 단계 --ink(15.15)
+   · 갈 수 있는 단계 --ink-2(5.82) · 아직인 단계 --ink-3(4.85). 셋 다 AA 를
+   넘고 서로 구별된다 (KEY-106). */
+
+
+/* ── 버튼 ─────────────────────────────────────────────────────────────
+ *
+ * 세 파일에 흩어져 있었다. 바탕(`.button-primary`·`.button-ghost`)이
+ * `doctor.css` 와 `upload.css` **양쪽에** 있었고(한 파일 안에서도 두 번),
+ * 작은 것은 `.button-ghost--sm` 이 `detail.css` 에, `.button-primary--sm` 이
+ * `upload.css` 에 갈려 있었다.
+ *
+ * 그래서 판독 확인 화면에서 `button-ghost--sm` 을 붙였는데 **큰 버튼이 떴다** —
+ * 그 화면은 `detail.css` 를 안 싣는다. 단계 줄과 블록이 같은 이유로 안 섰던
+ * 것과 같은 자리다.
+ *
+ * 두 정의는 사실상 같았다 — `border-radius: 8px` 와 `var(--radius)` 가 같은
+ * 값이다. 토큰 쪽으로 모은다.
+ */
+
+.button-primary,
+/* **`<a>` 로도 쓴다.** 다른 화면으로 보내는 단추는 링크라야 새 창으로 열고
+   주소를 볼 수 있다. `display` 없이 두면 `height` 가 안 먹어 글자만큼만
+   높아지고 밑줄까지 그어진다 — 상단바 탭에서 한 번 겪은 자리다. */
+.button-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--button-h);
+  padding: 0 var(--s-24);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.button-primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.button-ghost {
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.button-ghost:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.button-primary:disabled,
+.button-ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 작은 것 — 블록 머리에 서는 버튼. 그 자리는 제목과 한 줄이라, 큰 버튼을
+   두면 머리 줄이 통째로 두꺼워지고 아래 값보다 눈에 먼저 든다. */
+.button-primary--sm,
+.button-ghost--sm {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+
+/* ── 빈 화면 ──────────────────────────────────────────────────────────
+ *
+ * 「왼쪽에서 환자를 고르세요」. 할 일이 없다는 것도 상태다 — 빈 화면으로
+ * 두면 고장으로 읽힌다.
+ *
+ * `patients.css` 에만 있었다. 판독 확인 화면과 의사 화면도 같은 빈 화면을
+ * 쓰는데 그 파일을 안 실어서, **두 화면에서는 모양 없이 떴다.** 블록과 단계
+ * 줄과 버튼이 같은 이유로 안 섰던 것과 같은 자리다.
+ */
+
+.blank {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--s-32);
+}
+
+.blank__mark {
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--s-16);
+  font-size: 22px;
+  line-height: 56px;
+  color: var(--done);
+  background: var(--done-bg);
+  border-radius: 28px;
+}
+
+.blank__title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.blank__lead {
+  margin: var(--s-8) 0 var(--s-24);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+
+/* ── 경고 줄 · 세로 탭 ────────────────────────────────────────────────
+ *
+ * `doctor.css` 에만 있었다. 「안내문」 탭의 경고 줄(`#guide-warn`)과 섹션
+ * 세로 탭은 의사 화면과 진료기록 화면이 **같은 것**을 쓴다 — 본문을
+ * `js/guide-view.js` 가 한 곳에서 그리기 때문이다. 그런데 모양은 한 화면에만
+ * 있었으니 반쪽만 공용이었다.
+ */
+
+.warnline {
+  padding: var(--s-12) var(--s-16);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 var(--s-12);
+}
+
+.warnline--warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 1px solid var(--warn-line);
+}
+
+.warnline--ok {
+  background: var(--done-bg);
+  color: var(--done);
+  border: 1px solid transparent;
+}
+
+.vtabs {
+  display: flex;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-12);
+}
+
+/* ── 안내문 화면 (와이어프레임 S1-11 · D1-1) ──────────────────────────
+ *
+ * 두 프레임은 같은 화면이다 — 제목과 아래 버튼만 다르다. 왼쪽이 원문(고칠
+ * 수 있는 것), 오른쪽이 환자가 받을 모양이고, 나란히 두는 것이 이 화면의
+ * 전부다: 고치면서 환자 눈에 어떻게 보이는지 함께 본다.
+ *
+ * `blocks.css` 에 둔다 — 스탭 화면(patients.html)과 의사 화면(doctor.html)이
+ * 같은 것을 쓴다. 한쪽 파일에 두면 다른 쪽에서 모양 없이 뜬다.
+ */
+
+/* **담는 모양은 `.box` 가 갖는다** — 기본정보의 「환자 정보」와 같은 상자다.
+   여기서는 그 안에서 더할 것만 적는다. 예전에는 회색 머리띠를 두른 제 어휘였는데,
+   한 화면에서 탭을 옮길 때마다 블록 모양이 바뀌어 눈이 자리를 새로 찾았다. */
+.gs {
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.gs__head {
+  flex-wrap: wrap;
+}
+
+/* 칸막이로 이어 붙인 한 덩어리 — 네 항목이 한눈에 든다 */
+.seg {
+  display: flex;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--card);
+}
+
+.seg__one {
+  height: 26px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--card);
+  border: 0;
+  border-left: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.seg__one:first-child {
+  border-left: 0;
+}
+
+.seg__one[aria-selected="true"] {
+  font-weight: 700;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.seg__one:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 「확인 부탁」이다 — 환자에게 나가는 응급 안내(🚨)와 기호를 나눠 쓴다.
+   같은 기호를 쓰면 「누구에게 하는 경고인가」가 섞인다. */
+.seg__warn {
+  color: var(--warn);
+}
+
+.seg__one[aria-selected="true"] .seg__warn {
+  color: var(--warn-line);
+}
+
+/* ── 두 칸 ─────────────────────────────────────────────────────────── */
+
+/* 상자가 이미 여백을 물고 있다 — 여기서 또 주면 두 겹이 된다 */
+.gs__body {
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.gs__pane {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* 안쪽 판. 바깥 상자와 같은 모양이되 한 겹 작다 — 두 겹 다 24px 이면
+   글이 가운데로 몰린다. */
+.gs__paneHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+.gs__paneTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.gs__paneNote {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.gs__paneBody {
+  padding: 9px 11px;
+  overflow: auto;
+  max-height: 520px;
+}
+
+/* 환자 화면 쪽은 바탕을 달리해 「우리 것이 아니다」를 보인다 */
+.gs__pane--pv .gs__paneBody {
+  background: var(--bg);
+  display: flex;
+  justify-content: center;
+}
+
+.gs__memo {
+  margin: 0;
+  padding: 8px 14px 11px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+
+/* ── 곁말 한 줄 ───────────────────────────────────────────────────────
+ *
+ * 「누른 뒤에 무슨 일이 일어났는지」·「지금은 왜 안 되는지」를 적는 자리.
+ * `upload.css` 에만 있어서 의사 화면에서는 모양 없이 떴다 — 그 화면은 그
+ * 파일을 안 싣는다. 블록 · 단계 줄 · 버튼 · 빈 화면이 같은 이유로 어긋났던
+ * 것과 같은 자리다.
+ *
+ * (환자 화면 `checkin.css` 에도 같은 이름이 있지만 그 화면은 이 파일을 안
+ *  실어서 부딪히지 않는다.)
+ */
+
+.note {
+  margin-top: var(--s-12);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* 남의 정보가 함께 찍히면 되돌릴 수 없다. 다른 안내보다 눈에 띄어야 한다. */
+.note--warn {
+  padding: 10px 12px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius);
+}
+
+/* ── 제자리에서 고치기 ────────────────────────────────────────────────
+ *
+ * 창을 띄우지 않는다. 창이 뜨면 옆의 환자 화면 미리보기가 가려져, 무엇이
+ * 나갈지 못 보면서 고치게 된다 — 두 칸을 나란히 둔 이유가 사라진다.
+ */
+
+.block__edit-box {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  margin-top: var(--s-8);
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+}
+
+.block__edit-box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.block__edit-acts {
+  display: flex;
+  gap: var(--s-8);
+  margin-top: var(--s-8);
+}
+
+/* ── 문자 설정 (와이어프레임 S1-14) ───────────────────────────────────
+ *
+ * 왼쪽에서 발송 항목을 고르면 오른쪽에서 그 문자의 문구를 고치고 미리보기로
+ * 확인한다. 원문 비율은 **왼쪽 11 : 오른쪽 9** — 왼쪽에 회차 · 소진 · 재진
+ * 세 묶음이 서고 오른쪽은 문구와 말풍선 둘이라, 왼쪽이 조금 더 넓다.
+ */
+
+.sms {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  flex-wrap: wrap;
+}
+
+.sms__side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sms__side--left {
+  flex: 11 1 320px;
+}
+
+.sms__side--right {
+  flex: 9 1 300px;
+}
+
+/* 원문 `border-radius:10px · padding:14px 18px · gap:8px` */
+.sms__card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card);
+}
+
+.sms__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sms__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sms__sub {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+/* 회차 한 줄 — 원문 `radius:8px · padding:8px 12px · 12.5px` */
+.sms__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+}
+
+/* 지금 미리보기 중인 줄만 진한 테두리 — 오른쪽 문구가 어느 것인지 말한다 */
+.sms__row.is-on {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+/* 꺼진 회차. 지우지 않고 흐리게 둔다 — 켤 수 있다는 것이 보여야 한다 */
+.sms__row.is-off {
+  color: var(--ink-3);
+}
+
+.sms__check {
+  flex: none;
+}
+
+.sms__fixed {
+  color: var(--ink-2);
+}
+
+.sms__when {
+  margin-left: auto;
+  color: var(--ink-2);
+}
+
+.sms__now {
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.sms__note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.sms__tpl {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* 바이트 수 — 90을 넘으면 요금이 갈리므로 한 글자 더 넣기 전에 보여야 한다 */
+.sms__bytes {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.sms__bytes.is-long {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+/* 문구 — 원문 `min-height:74px · 12.5px · line-height:1.7` */
+.sms__text {
+  margin: 0;
+  min-height: 74px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+.sms__warn {
+  margin: 0;
+  font-size: 12px;
+  color: var(--warn);
+}
+
+/* 미리보기 — 환자 휴대폰에 이렇게 간다 */
+.sms__phone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.sms__meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* 말풍선 — 원문 `max-width:290px · radius:12px · 왼쪽 위만 3px` */
+.sms__bubble {
+  margin: 0;
+  max-width: 290px;
+  padding: 10px 13px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  border-top-left-radius: 3px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+
+/* ── 환자 화면 시뮬레이션 (와이어프레임 patient-2.3.1 P2) ──────────────
+ *
+ * 우리가 읽는 원문과 환자가 보는 것이 다르면, 고치는 사람은 무엇이 나갈지
+ * 모른 채 고친다. 그래서 카드 몇 장이 아니라 **기기 화면을 흉내낸다.**
+ *
+ * 원문에서 확인한 것 — 지어낸 값이 하나도 없다:
+ *   폭 375 · 테두리 2px · radius 12 · 본문 padding 16 · 묶음 사이 18
+ *   탭 다섯은 **맨 위** 44px (아래가 아니다)
+ *   제목은 카드가 아니라 3×18 막대 + 18px/600
+ *   본문은 15px/22px
+ *
+ * **상태바 · 노치 · 홈 인디케이터는 그리지 않는다.** 원문에 없다 — 없는 것을
+ * 그리면 「환자가 저렇게 본다」가 거짓이 된다.
+ */
+
+.ph {
+  width: 375px;
+  flex: none;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card);
+  /* 원문이 `zoom:.8` 이다. `transform: scale()` 로 바꾸면 안쪽 폭이 375 가
+     아니라 300 으로 잡혀 **줄바꿈이 달라진다** — 환자가 볼 줄 모양과 다르다. */
+  zoom: 0.8;
+}
+
+.ph__tabs {
+  display: flex;
+  height: 44px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ph__tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.ph__tab.is-on {
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+.ph__body-wrap {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ph__block {
+  margin: 0;
+}
+
+/* 묶음 제목 — 카드가 아니라 막대 + 글자다 */
+.ph__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+
+.ph__bar {
+  width: 3px;
+  height: 18px;
+  flex: none;
+  background: var(--ink);
+}
+
+.ph__body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+/* ── 문자 설정의 조작 요소 ────────────────────────────────────────────
+ *
+ * 줄 전체가 고르는 버튼이고 체크는 따로 켜고 끈다. 둘을 한 버튼에 두면
+ * 「보려고 눌렀는데 꺼졌다」가 생긴다 — 고르는 것과 켜는 것은 다른 일이다.
+ */
+
+.sms__check {
+  flex: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* 끌 수 없는 회차. 흐리게 두되 눌리기는 한다 — 눌러서 왜 안 되는지 듣는다. */
+.sms__check[aria-disabled="true"] {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.sms__pick {
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sms__pick[aria-pressed="true"] {
+  font-weight: 700;
+}
+
+.sms__check:focus-visible,
+.sms__pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sms__time {
+  height: 26px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.sms__days {
+  width: 52px;
+  height: 26px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+/* 문구 — 치는 대로 바이트 수와 미리보기가 따라온다 */
+textarea.sms__text {
+  display: block;
+  width: 100%;
+  min-height: 74px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+textarea.sms__text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sms__acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── 현황 (와이어프레임 D1-6) ─────────────────────────────────────────
+ *
+ * 승인 뒤에 무슨 일이 있었는지. 원문 배치는 **위 2 : 1, 아래 전폭**이다 —
+ * 「안내문 읽음」과 「확인 문자 응답」은 별도 카드가 아니라 한 카드 안에서
+ * 구분선으로 나뉜다.
+ */
+
+.st {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.st__top {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+/* 셋 다 `.box` 를 함께 쓴다 — 담는 모양은 거기 있고 여기서는 자리만 잡는다 */
+.st__send {
+  flex: 2 1 380px;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.st__head {
+  flex-wrap: wrap;
+}
+
+/* 머리띠 오른쪽 끝 — 수정 버튼을 판 머리에 둔 것과 같은 자리다 */
+.st__act {
+  margin-left: auto;
+}
+
+/* 발송 줄 — 원문 `padding:10px 14px · gap:12px · 13px` */
+.sd__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--bg);
+  font-size: 13px;
+}
+
+/* **● 와 ○ 는 크기·색이 같다.** 원문이 그렇다 — 다른 것은 글리프와,
+   보낸 줄만 제목이 굵다는 것뿐이다. 예정을 흐리게 만들면 「아직 안 됐다」가
+   아니라 「안 될 것」으로 읽힌다. */
+.sd__dot {
+  width: 12px;
+  flex: none;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.sd__what {
+  width: 104px;
+  flex: none;
+}
+
+.sd__what.is-done {
+  font-weight: 700;
+}
+
+.sd__when {
+  width: 100px;
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.sd__state {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-2);
+}
+
+/* 오른쪽 — 「환자 액션 현황」 한 카드 안에 안내문 읽음과 확인 문자 응답이
+   구분선으로 나뉜다. 세 블록 다 흰 바탕이라야 회색 바닥 위에서 블록으로
+   읽힌다 — 테두리만으로는 카드가 바닥에 잠긴다. */
+.st__side {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.st__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.st__label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.st__big {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.st__sub {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+
+/* 원문 `margin:8px 0 6px` — 위아래가 다르다 */
+.st__rule {
+  height: 1px;
+  background: var(--line);
+  margin: 8px 0 6px;
+}
+
+.st__note {
+  margin: 0;
+  padding: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+/* ── 진료 처리 이력 ─────────────────────────────────────────────────
+ *
+ * 위 두 블록과 같은 카드다. 전에는 제목과 줄만 있어서 바닥에 얹힌 글처럼
+ * 보였다.
+ */
+
+.tl {
+  margin-top: 0;
+}
+
+.tl__head {
+  align-items: baseline;
+}
+
+.tl__tail {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* 원문 `grid-template-columns:66px 1fr 104px · gap:12px · padding:7px 0` —
+   줄 **위에만** 선이 있다. */
+.tl__row {
+  display: grid;
+  grid-template-columns: 66px 1fr 104px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.tl__at {
+  color: var(--ink-2);
+}
+
+.tl__who {
+  text-align: right;
+}
+
+/* **시스템이 한 일도 숨기지 않는다** — 사람이 한 것만 보면 절반이 빈다.
+   다만 글자색으로 가른다: 아이콘이나 배지를 붙이면 시스템이 한 일이
+   사람이 한 일보다 눈에 먼저 든다. */
+.tl__who--system {
+  color: var(--ink-3);
+}
+
+.tl__who--staff,
+.tl__who--patient {
+  color: var(--ink);
+}
+
+/* 「수정」 — 판 머리 오른쪽 끝. 원문 `margin-left:auto · 11.5px/600 ·
+   border 1px #111827 · radius 5 · padding 3px 11px`.
+   항목 블록 안이 아니라 여기 두는 이유는, 한 탭에 항목이 둘일 때(주의사항 +
+   응급) 버튼도 둘이 되고 그중 하나는 잠겨 있어서다. */
+.gs__edit {
+  margin-left: auto;
+  padding: 3px 11px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.gs__edit:hover {
+  background: var(--bg);
+}
+
+.gs__edit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 못 나간 문자. **「예정」과 또렷이 갈라야 한다** — 못 나간 것은 사람이
+   손대야 하고, 예정은 두면 나간다. */
+.sd__row.is-bad {
+  background: var(--warn-bg);
+}
+
+.sd__row.is-bad .sd__state {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+/* ── 모달 (와이어프레임 D1-5) ────────────────────────────────────────
+ *
+ * 원문 주석: 「화면을 갈아끼우지 않는다 — 뒤에 최종 확인 탭이 흐려진 채 남는다」.
+ * 무엇을 승인했는지 뒤에 그대로 보여야 하기 때문이다.
+ *
+ * 의사 화면(`doctor.html`)과 최종 확인 탭(`patients.html`)이 **같은 모달**을
+ * 쓴다. 예전에는 `doctor.css` 에만 있어서 최종 확인 탭에는 승인 확인이 아예
+ * 없었다.
+ */
+/* `hidden` 보다 `display:flex` 가 세다 — 이 한 줄이 없으면 모달이 처음부터 떠 있다. */
+.modal[hidden] {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 31, 35, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-24);
+  z-index: 50;
+}
+
+.modal__card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: var(--s-24);
+}
+
+.modal__mark {
+  margin: 0 0 var(--s-8);
+  font-size: 32px;
+  color: var(--done);
+}
+
+.modal__title {
+  margin: 0 0 var(--s-8);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.modal__lead {
+  margin: 0 0 var(--s-12);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.modal__note {
+  margin: 0 0 var(--s-16);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+.modal__input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.modal__error {
+  margin: var(--s-8) 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.modal__acts {
+  display: flex;
+  align-items: center;
+  margin-top: var(--s-16);
+}
+
+
+/* 원문은 두 줄을 8px 로 붙여 한 덩이로 둔다 — 「언제 · 누구」와 「그 뒤에 무엇이」 */
+.modal__said {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: var(--s-16);
+}
+
+.modal__said .modal__lead {
+  margin: 0;
+}
+
+/* 원문 13px `#374151` — 안내문 본문보다 한 겹 옅고 각주보다는 진하다 */
+.modal__sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.modal__box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--s-12);
+}
+
+.modal__box span {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+/* 둘째 줄은 한 겹 더 옅다 — 원문이 13px/11px 로 나눠 둔 자리다 */
+.modal__box span + span {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* 원문은 오른쪽 끝에 모아 두고 10px 을 띄운다 */
+.modal__acts {
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* 「이 환자만 적용」 — 문구 카드 오른쪽 끝. 저장했는지가 그 옆에 붙는다. */
+.sms__save {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: var(--s-8);
+}
+
+.sms__said {
+  font-size: 12px;
+  color: var(--ink-2);
+}

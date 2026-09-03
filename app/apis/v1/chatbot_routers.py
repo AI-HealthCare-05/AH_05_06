@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.api_errors import ContractRoute
 from app.core.config import Config
+from app.dependencies.patient_auth import require_patient_session_link
 from app.dtos.chatbot import ChatbotResponse, ChatbotResponseRequest
 from app.services.chatbot import ChatbotService, OpenAIResponsesModel
 
@@ -32,9 +33,10 @@ def get_chatbot_service() -> ChatbotService:
 @chatbot_router.post("/responses", response_model=ChatbotResponse)
 async def create_chatbot_response(
     payload: ChatbotResponseRequest,
+    link_digest: Annotated[str, Depends(require_patient_session_link)],
     service: Annotated[ChatbotService, Depends(get_chatbot_service)],
 ) -> ChatbotResponse:
-    result = await service.answer(link_token=payload.link_token, question=payload.question)
+    result = await service.answer_for_link_digest(link_digest=link_digest, question=payload.question)
     return ChatbotResponse(
         answer=result.answer,
         evidence=result.evidence,
@@ -43,4 +45,5 @@ async def create_chatbot_response(
         urgent=result.urgent,
         fallback=result.fallback,
         grounded_section=result.grounded_section,
+        response_ref=result.response_ref,
     )

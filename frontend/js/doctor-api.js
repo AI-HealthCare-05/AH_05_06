@@ -5,6 +5,9 @@
  *   GET   /api/v1/visits/{visit_id}/guide                안내문 네 갈래 + ⚠ 표시
  *   PATCH /api/v1/visits/{visit_id}/guide/sections/{key}  그 항목만 고친다
  *   POST  /api/v1/visits/{visit_id}/guide/approve         승인 — 발송 예약
+ *   POST  /api/v1/visits/{visit_id}/guide/unapprove       승인 철회 — 예약 끄기
+ *   GET   /api/v1/visits/{visit_id}/guide/messages        문자 설정 읽기
+ *   PUT   /api/v1/visits/{visit_id}/guide/messages        문자 설정 저장
  *   POST  /api/v1/visits/{visit_id}/guide/return          스탭에 되돌린다 (사유 필수)
  *   POST  /api/v1/visits/{visit_id}/guide/link            개발용 환자 링크 한 번 발급
  *
@@ -33,12 +36,48 @@ var doctorApi = {
       body: body,
     });
   },
+  /* 스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11.
+     이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다. */
+  submit: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/submit", {
+      method: "POST",
+    });
+  },
+
+  /* 이 진료에 무슨 일이 있었는지 — 와이어프레임 D1-6.
+     사람이 한 일 · 환자가 한 일 · 확인 응답을 한 줄기로 준다. */
+  timeline: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/timeline");
+  },
+
   approve: function (visitId, body) {
     return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/approve", {
       method: "POST",
       body: body || {},
     });
   },
+  /* 문자 설정 — 회차 · 문구 · 시각 (와이어프레임 S1-14).
+     한 판을 통째로 주고받는다. 회차 하나씩 보내면 중간에 끊겼을 때
+     「보름 뒤는 껐는데 한 달 뒤는 안 켜진」 반쪽 상태가 남는다. */
+  messagePlan: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/messages");
+  },
+
+  saveMessagePlan: function (visitId, plan) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/messages", {
+      method: "PUT",
+      body: plan,
+    });
+  },
+
+  /* 승인을 거둔다 — 승인했는데 잘못된 것을 발견했을 때 (와이어프레임 D1-6).
+     이미 나간 문자가 있으면 서버가 409 `GUIDE_ALREADY_SENT` 로 막는다. */
+  unapprove: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/unapprove", {
+      method: "POST",
+    });
+  },
+
   issuePatientLink: function (visitId) {
     return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/link", {
       method: "POST",
@@ -69,7 +108,7 @@ var RETURN_REASONS = [
  * 자궁내막증 · 비잔 2mg · 84일.
  *
  * ?case= 로 다른 상황을 본다.
- *   staff     스탭 계정으로 본 화면 — 승인·되돌리기가 잠긴다
+ *   staff     스탭 확인 중(STAFF_REVIEW) 화면 — 승인·되돌리기가 잠긴다
  *   returned  이미 되돌린 건
  *   clean     ⚠ 가 하나도 없는 건 — 읽지 않고 승인해도 되는 상태
  *   approved  승인 완료 건 — 개발용 환자 화면 연결을 확인하는 상태
@@ -85,7 +124,7 @@ var DOCTOR_CASE = (function () {
    보인다. 실제 서버는 visit_id 로 갈라 주므로 목업도 그렇게 한다.
 
    **여기 없는 진료는 없는 것으로 답한다** (`mockGuideBase` 참고). 예전에는
-   `|| MOCK_PATIENTS[8801]` 로 김서연을 대신 돌려줬는데, 목록에서 박수빈
+   `|| MOCK_GUIDE_PATIENTS[8801]` 로 김서연을 대신 돌려줬는데, 목록에서 박수빈
    (`8798`)을 눌러도 오른쪽에 김서연이 떴다 — **의무기록 화면이 다른 사람을
    보여 주는 것**이라 「고르기가 고장난 것처럼」보다 나쁘다.
 
@@ -93,8 +132,14 @@ var DOCTOR_CASE = (function () {
      8798  박수빈  NEEDS_ATTENTION       보완 탭
      8801  김서연  APPROVAL_REQUESTED    승인 요청 탭
      8802  최다인  APPROVAL_REQUESTED    승인 요청 탭
-   값은 목록 쪽과 같은 것을 쓴다 — 두 곳이 다르면 그 자체가 또 어긋남이다. */
-var MOCK_PATIENTS = {
+   값은 목록 쪽과 같은 것을 쓴다 — 두 곳이 다르면 그 자체가 또 어긋남이다.
+
+   **이름을 `MOCK_PATIENTS` 로 두면 안 된다.** `patients-api.js` 가 같은 이름의
+   **배열**을 이미 전역에 얹는데, 한 화면이 둘 다 싣는다(`patients.html`).
+   나중에 실린 이쪽이 앞의 것을 통째로 덮어서, 목록 목업이 `.find is not a
+   function` 으로 죽었다 — 화면은 「환자가 없습니다」만 띄웠다. 파일은 모듈이
+   아니라 전역에 얹히는 스크립트라, 이름이 곧 자리다. */
+var MOCK_GUIDE_PATIENTS = {
   8798: {
     patient: { name: "박수빈", birth_date: "1992-09-18", age: 34, gender: "FEMALE", hospital_patient_no: "09871" },
     summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 08-11",
@@ -142,15 +187,55 @@ function mockGuideState(visitId) {
   );
 }
 
+/* 현황(D1-6)이 읽는 이력. **서버가 만들지 않는 사건은 여기서도 안 만든다** —
+   `app/timeline/api.py` 가 안내문 사건과 예약 문자만 모아 주므로 목업도 그만 준다.
+
+   안내문이 없는 진료는 **빈 이력**이다. 오류가 아니다 — 아직 아무 일도 안
+   일어난 진료와 같은 모양이라, 화면이 「기록이 아직 없습니다」를 그린다. */
+function mockTimeline(visitId) {
+  var guide = mockGuide(visitId);
+  if (!guide) return { visit_id: visitId, entries: [], messages: [] };
+
+  var state = mockGuideState(visitId);
+  var made = [
+    { at: "2026-09-02T09:14:00+09:00", kind: "GENERATED", actor: null },
+    { at: "2026-09-02T09:31:00+09:00", kind: "EDITED", actor: "한소영", section: "caution" },
+    { at: "2026-09-02T09:36:00+09:00", kind: "SUBMITTED", actor: "한소영" },
+  ];
+  if (state.returned_reason) {
+    made.push({
+      at: "2026-09-02T10:02:00+09:00",
+      kind: "RETURNED",
+      actor: "박연",
+      detail: state.returned_reason,
+    });
+  }
+  if (guide.status === "SCHEDULED_TO_SEND") {
+    made.push({ at: "2026-09-02T10:12:00+09:00", kind: "APPROVED", actor: "박연" });
+  }
+
+  /* **예약은 승인이 만든다.** 승인 전에는 비어 있다 — 서버 주석이 그렇게 적었고,
+     미리 채워 두면 「승인 안 했는데 나갈 문자가 있다」로 읽힌다. */
+  var messages =
+    guide.status === "SCHEDULED_TO_SEND"
+      ? [
+          { kind: "GUIDE", scheduled_at: "2026-09-02T18:00:00+09:00", status: "SCHEDULED" },
+          { kind: "CHECK_D7", scheduled_at: "2026-09-09T18:00:00+09:00", status: "SCHEDULED" },
+        ]
+      : [];
+
+  return { visit_id: visitId, entries: made, messages: messages };
+}
+
 /* 모르는 진료는 **없다고 답한다.** 서버(`app/services/guides.py`)가 그 자리에서
    `404 GUIDE_NOT_FOUND` 를 주므로 목업도 같게 한다.
 
-   예전에는 `|| MOCK_PATIENTS[8801]` 로 김서연을 대신 돌려줬다. 조용히 남의
+   예전에는 `|| MOCK_GUIDE_PATIENTS[8801]` 로 김서연을 대신 돌려줬다. 조용히 남의
    이름을 그리는 쪽이라 **화면은 멀쩡해 보이는데 다른 사람의 안내문**이 된다 —
    의무기록에서 제일 나쁜 실패다. 없으면 없다고 하는 편이 낫다. */
 function mockGuideBase(visitId) {
   var warn = DOCTOR_CASE !== "clean";
-  var who = MOCK_PATIENTS[visitId];
+  var who = MOCK_GUIDE_PATIENTS[visitId];
   if (!who) return null;
   return {
     visit_id: visitId,
@@ -161,7 +246,9 @@ function mockGuideBase(visitId) {
         ? "APPROVAL_RETURNED"
         : DOCTOR_CASE === "approved"
           ? "SCHEDULED_TO_SEND"
-          : "APPROVAL_PENDING",
+          : DOCTOR_CASE === "staff"
+            ? "STAFF_REVIEW"
+            : "APPROVAL_PENDING",
     version: 3,
     approved_at: DOCTOR_CASE === "approved" ? mockScheduledAt() : null,
     scheduled_at: DOCTOR_CASE === "approved" ? mockScheduledAt() : null,
@@ -299,6 +386,39 @@ function mockScheduledAt() {
   return day + "T18:00:00+09:00";
 }
 
+/* 문자 설정 목업. 서버와 **같은 기본값**이어야 한다 — 다르면 목업에서만
+   보이는 화면이 생긴다 (`app/services/guides.py` 의 `_DEFAULT_ON`). */
+var MOCK_PLANS = {};
+var MOCK_PLAN_DEFAULT = [
+  { kind: "CHECK_D7", enabled: true, body: null, days_before: null, fixed: true },
+  { kind: "CHECK_D15", enabled: true, body: null, days_before: null, fixed: false },
+  { kind: "CHECK_D30", enabled: false, body: null, days_before: null, fixed: false },
+  { kind: "RUN_OUT", enabled: true, body: null, days_before: 3, fixed: false },
+];
+
+function mockPlan(visitId) {
+  var saved = MOCK_PLANS[visitId];
+  if (!saved) return { check_hour: 10, rounds: MOCK_PLAN_DEFAULT.slice() };
+
+  var fixedOf = {};
+  MOCK_PLAN_DEFAULT.forEach(function (r) {
+    fixedOf[r.kind] = r.fixed;
+  });
+  return {
+    check_hour: saved.check_hour,
+    rounds: (saved.rounds || []).map(function (r) {
+      return {
+        kind: r.kind,
+        /* 일주일 뒤는 끌 수 없다 — 서버가 그렇게 답한다 */
+        enabled: fixedOf[r.kind] ? true : r.enabled,
+        body: r.body || null,
+        days_before: r.days_before === undefined ? null : r.days_before,
+        fixed: !!fixedOf[r.kind],
+      };
+    }),
+  };
+}
+
 function mockDoctorRequest(path, options) {
   var body = options.body || {};
   return new Promise(function (resolve, reject) {
@@ -315,11 +435,18 @@ function mockDoctorRequest(path, options) {
          **「없는 섹션」 검사가 섹션 조회에 닿지도 못했다.**
          `/sections/` 를 요구하므로 approve·return 경로를 삼키지는 않는다. */
       var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
-      var act = path.match(/^\/visits\/(\d+)\/guide\/(approve|return)$/);
+      var act = path.match(/^\/visits\/(\d+)\/guide\/(submit|approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
-      var m = get || sec || act || issueLink;
+      var msgs = path.match(/^\/visits\/(\d+)\/guide\/messages$/);
+      /* **현황(D1-6)이 읽는 자리.** 이 분기가 없어서 `?mock=1` 로는 현황 탭이
+         늘 「불러오지 못했습니다」였다 — 서버에는 있는데 목업만 없었다.
+         목업이 서버보다 **좁으면** 화면을 목업으로 검수할 수 없다. */
+      var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
+      var m = get || sec || act || issueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
+
+      if (tl) return resolve(mockTimeline(visitId));
 
       if (issueLink && options.method === "POST") {
         var linkedGuide = mockGuide(visitId);
@@ -337,6 +464,20 @@ function mockDoctorRequest(path, options) {
           expires_at: "2026-08-31T18:00:00+09:00",
           demo_only: true,
         });
+      }
+
+      if (options.method === "POST" && /\/submit$/.test(path)) {
+        var submitted = mockGuide(visitId);
+        if (!submitted) return reject(mockNoGuide());
+        if (submitted.status !== "STAFF_REVIEW" && submitted.status !== "APPROVAL_RETURNED") {
+          return reject(new ApiError("GUIDE_NOT_IN_REVIEW", 409, {}));
+        }
+        submitted.status = "APPROVAL_PENDING";
+        submitted.returned_reason = null;
+        var submittedState = mockGuideState(visitId);
+        submittedState.status = submitted.status;
+        submittedState.returned_reason = null;
+        return resolve(submitted);
       }
 
       if (options.method === "POST" && /\/approve$/.test(path)) {
@@ -362,6 +503,35 @@ function mockDoctorRequest(path, options) {
         return resolve(approved);
       }
 
+      if (msgs) {
+        /* 목업도 저장한 것을 들고 있는다 — 안 그러면 「저장했습니다」 뒤에
+           다시 읽으면 기본값으로 돌아가, 화면에서만 되는 것처럼 보인다. */
+        if (options.method === "PUT") {
+          MOCK_PLANS[visitId] = body;
+          return resolve(mockPlan(visitId));
+        }
+        return resolve(mockPlan(visitId));
+      }
+
+      if (options.method === "POST" && /\/unapprove$/.test(path)) {
+        if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
+        var taken = mockGuide(visitId);
+        if (!taken) return reject(mockNoGuide());
+        /* 서버는 승인된 것만 거둔다 — 목업이 헐거우면 화면이 아무 상태에서나
+           눌리게 만들어 놓고도 멀쩡해 보인다. */
+        if (taken.status !== "SCHEDULED_TO_SEND") {
+          return reject(new ApiError("GUIDE_NOT_SCHEDULED", 409, {}));
+        }
+        taken.status = "APPROVAL_PENDING";
+        taken.approved_at = null;
+        taken.scheduled_at = null;
+        var takenState = mockGuideState(visitId);
+        takenState.status = taken.status;
+        takenState.approved_at = null;
+        takenState.scheduled_at = null;
+        return resolve(taken);
+      }
+
       if (options.method === "POST" && /\/return$/.test(path)) {
         if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
         if (!body.reason || !String(body.reason).trim()) {
@@ -384,7 +554,6 @@ function mockDoctorRequest(path, options) {
       }
 
       if (options.method === "PATCH") {
-        if (!mockIsDoctor()) return reject(new ApiError("FORBIDDEN", 403, {}));
         if (!sec) return reject(new ApiError("NOT_FOUND", 404, {}));
 
         var guide = mockGuide(visitId);
@@ -416,17 +585,24 @@ function mockDoctorRequest(path, options) {
            (`app/services/guides.py`). */
         if (target.locked) return reject(new ApiError("SECTION_LOCKED", 409, {}));
 
-        /* **승인 요청 상태에서만 고칠 수 있다.** 이미 승인해 발송을 기다리는
-           글을 조용히 바꾸면 환자가 받는 것과 의사가 승인한 것이 달라진다.
-           반려된 글도 스탭 손에 있어 의사가 고칠 자리가 아니다 — 서버가
-           `GUIDE_NOT_PENDING` 409 로 막는다.
+        /* **상태와 역할을 함께 본다.** 스탭 확인·반려 상태에서는 스탭과
+           의사가 고칠 수 있고, 승인 요청 뒤에는 의사만 고친다. 이미 승인해
+           발송을 기다리는 글을 조용히 바꾸면 환자가 받는 것과 의사가 승인한
+           것이 달라진다.
 
            `mockPendingBlock()` 을 쓰지 않는 이유: 서버 `edit_section()` 은
            `_require_pending()` 을 부르지 않고, 승인된 글도 `ALREADY_APPROVED`
            가 아니라 `GUIDE_NOT_PENDING` 으로 막는다 — 그리고 잠금을 상태보다
            먼저 보므로 위 `SECTION_LOCKED` 검사가 이 검사보다 앞서야 한다. */
-        if (guide.status !== "APPROVAL_PENDING") {
+        if (
+          guide.status !== "STAFF_REVIEW" &&
+          guide.status !== "APPROVAL_PENDING" &&
+          guide.status !== "APPROVAL_RETURNED"
+        ) {
           return reject(new ApiError("GUIDE_NOT_PENDING", 409, {}));
+        }
+        if (guide.status === "APPROVAL_PENDING" && !mockIsDoctor()) {
+          return reject(new ApiError("FORBIDDEN", 403, {}));
         }
 
         /* 저장한다 — 안 해두면 다음 `GET /guide` 가 고치기 전 본문을 다시

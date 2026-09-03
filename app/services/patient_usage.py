@@ -70,6 +70,7 @@ class PatientUsageService:
         question_kind: PatientQuestionKind,
         outcome: PatientAnswerOutcome,
         grounded_section: GuideSectionKey | None = None,
+        response_ref_digest: str | None = None,
     ) -> PatientUsageEvent:
         """챗봇이 답했다 · 막았다 · 못 했다.
 
@@ -86,4 +87,5 @@ class PatientUsageService:
             question_kind=question_kind,
             answer_outcome=outcome,
             grounded_section=grounded_section,
+            response_ref_digest=response_ref_digest,
         )

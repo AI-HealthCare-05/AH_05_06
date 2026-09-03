@@ -31,23 +31,104 @@
 > 2026-08-24 · 8/27 Walking Skeleton 한정. 응답의 `demo_only: true`는
 > 합성데이터 시연용이며 운영 발송 계약이 아님을 뜻한다.
 
+> 2026-09-01 · KEY-241에서 `wireframe-patient-3.0.0.html`의 P2~P5 응답
+> 계약을 구현했다. 기존 `sections: [{key, body}]`는 D+7·챗봇과 기존 화면의
+> 승인 문구 정본이므로 제거하지 않고 함께 제공한다.
+
 ```text
 POST /api/v1/visits/{visit_id}/guide/link   직원 인증 필요
 201 { "path": "/api/v1/guides/{token}",
       "expires_at": "…", "demo_only": true }
 
 GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증명
-200 { "version": 1, "approved_at": "…", "expires_at": "…",
-      "sections": [{ "key": "medication", "body": "…" }],
-      "demo_only": true }
+200 {
+      "version": 1, "approved_at": "…", "expires_at": "…", "demo_only": true,
+      "visit": "2026.08.13",
+      "clinic": "〇〇여성의원",
+      "disease": "자궁내막증 · 비잔정 복용 중",
+      "stat": {
+        "drugName": "비잔정 2mg",
+        "drugSub": "성분 · 디에노게스트 · 1일 1회 · 84일분",
+        "prescribed": 84,
+        "dayOn": 12,
+        "remaining": 72,
+        "pct": 14,
+        "out": "ⓘ 11월 5일경 약이 소진돼요",
+        "why": "…"
+      },
+      "guide": {
+        "summary": "…",
+        "goals": [
+          {
+            "n": "빈혈 Hb", "a": "10.2", "now": "10.4", "t": "12",
+            "hasChart": true, "rangeLabel": "목표를 가운데 두고 본 지금 값"
+          }
+        ],
+        "goalSay": "…",
+        "drug": { "n": "비잔정 2mg", "s": "성분 · 디에노게스트", "d": "1일 1회 · 84일분" },
+        "why": ["…"],
+        "how": "…",
+        "next": "…"
+      },
+      "care": {
+        "title": "…",
+        "blocks": [{ "t": "흔하고 괜찮은 반응", "p": ["…"] }],
+        "danger": ["…"],
+        "ask": "…"
+      },
+      "life": {
+        "sub": "자궁내막증 · 비잔정 복용 중",
+        "challenges": [["· 밤 11시 전에 잠들기", "주 5일"]],
+        "axes": {
+          "수면": {
+            "chal": "· 밤 11시 전에 잠들기",
+            "goal": "주 5일",
+            "p": ["…"]
+          },
+          "통증": { "title": "통증 관리", "p": ["…"] }
+        }
+      },
+      "chat": { "chips": ["내 약이 뭐였죠?", "출혈이 계속돼요", "언제까지 먹나요?"] }
+    }
 ```
+
+- 화면 구조에 맞춰 복약 진행률은 `stat.pct`, 목표 값은 `guide.goals`, 생활관리
+  축은 `life.axes`에서 제공한다. `stat.pct`는 `dayOn / prescribed * 100`을
+  반올림한 정수이며 0~100 범위다. 같은 진료에서 `confirmed_at`이 가장 최신인
+  확정 `OcrField`가 속한 OCR 결과의 `ocr_job.started_at` 날짜를 복용 1일째로
+  계산하고, 미래 시작일은 0%, 처방
+  기간을 지난 경우는 100%에서 멈춘다. 그 `started_at`이 없거나 `prescribed`가
+  0이면 약 이름과 처방일수 등 `stat` 자체는 유지하되 `dayOn`·`remaining`·
+  `pct`·`out`은 생략한다.
+
+- `visit`·`clinic`·`disease`·`stat`·`guide`·`care`·`life`·`chat`은 모두
+  선택 필드다. 저장 모델에 근거가 없으면 임의의 목업 문구를 만들지 않고 필드를
+  생략하거나 해당 목록·맵을 비운다. 현재 구조화 저장소가 없는 4주 챌린지·챗봇
+  질문 칩이 이에 해당한다.
+
+| 응답 영역 | 현재 매핑 근거 |
+|---|---|
+| `visit` | `visit.visited_at`을 의원 표시 시간대의 `YYYY.MM.DD`로 변환 |
+| `clinic` | 진료의 `hospital_id`에 연결된 `hospital.name` |
+| `disease` | 같은 병원의 확정 `DIAGNOSIS` OCR 값과, 있으면 첫 정규 처방 약 이름 |
+| `stat`·`guide.drug` | 첫 번째 `duration_days > 0` 처방 항목. 없으면 첫 처방 항목의 약 이름·용법과 `prescribed: 0`을 유지한다. 진행률 기준일은 같은 진료·병원에서 `confirmed_at`이 가장 최신인 확정 `OcrField`가 속한 결과의 `ocr_job.started_at`이다 |
+| `guide.goals` | 확정 진단과, 이름이 일치하는 구조화 `prescription_set.disease`로 질환 판을 고른 뒤 담당 의사의 `lab_baseline`(없으면 의원 공통)을 같은 진료의 확정 OCR 필드와 `name`·`keywords`로 연결한다. 병존 진단은 두 판을 모두 사용하며 모든 별칭 중 최신 확정값을 고른다. `confirmed_at`이 없는 값은 제외하고, 기준선이 비어 있거나 연령별이면 현재 값만 표시하며 목표 계산·차트는 만들지 않는다. 기준선이 확정 OCR과 매칭되지 않으면 서버 경고 로그로 관측한다 |
+| `guide` | 승인 `medication` 최종 문구와 처방 항목. 전용 재진 계획 소스가 없어 현재 `next`는 생략 |
+| `care` | 승인 `caution`·`emergency` 최종 문구. 일반 `messages`를 증상별 문의 기준으로 바꾸지 않으므로 현재 `ask`는 생략 |
+| `life` | 승인 `life` 최종 문구. 구조화 축이 아직 없어 `생활관리` 한 축으로만 제공 |
+| `chat` | 질문 칩 저장소가 없어 현재 생략 |
+
+`messages`는 병원 안내·발송 관련 평문 정본으로 `sections`에 그대로 남긴다. 이를
+`guide.next`(다음 방문 계획)나 `care.ask`(증상별 문의 기준)로 의미 변환하지 않는다.
+각 필드에 맞는 구조화 소스가 생긴 뒤에만 별도로 매핑한다.
 
 - 링크는 승인 완료 상태(`SCHEDULED_TO_SEND`)인 안내에만 발급하며 72시간 유효하다.
 - 발급은 같은 병원의 `staff` 또는 `doctor`만 가능하고, 타 병원 안내는 404로 감춘다.
 - 원문 토큰은 발급 응답에서 한 번만 제공하고 DB에는 SHA-256 digest만 저장한다.
 - 한 안내에 개발용 링크 하나만 허용한다. 반복 발급은 `409 LINK_ALREADY_ISSUED`다.
-- 조회 응답에는 승인된 섹션의 최종 문구만 포함한다. 환자정보, OCR·의료문서 원문,
-  생성 원문, 내부 경고와 승인자 식별자는 포함하지 않는다.
+- 조회 응답에는 공개 계약에 명시된 진료일·의원명·확정 질환명·처방 요약과
+  승인된 섹션의 최종 문구만 포함한다. 환자 이름·생년월일·전화번호·차트번호,
+  OCR·의료문서 원문, 생성 원문, 내부 경고와 승인자 식별자는 포함하지 않는다.
 - 없는 토큰은 `404 LINK_NOT_FOUND`, 만료 토큰은 `410 LINK_EXPIRED`다.
 - 실제 SMS·예약 발송·폐기·재발급 전체 흐름은 이번 계약 범위 밖이다. OTP는
   아래 KEY-91 계약을 사용하며, 환자 세션이 연결되기 전까지 개발 링크 조회
@@ -201,7 +282,8 @@ await PatientUsageService().record_chatbot_answer(
 
 ```text
 POST /api/v1/chatbot/responses
-     { "link_token": "…", "question": "약은 언제 먹나요?" }
+Cookie: patient_session=…
+     { "question": "약은 언제 먹나요?" }
 200  { "answer": "…", "evidence": "복약 안내 · …",
        "source": "담당 의료진이 승인한 진료 안내",
        "limitation": "승인된 안내 범위에서만 답하며 …",
@@ -209,8 +291,14 @@ POST /api/v1/chatbot/responses
        "grounded_section": "medication" }
 ```
 
-- 링크 토큰은 URL·로그에 노출하지 않고 요청 본문으로만 받는다. 기존 KEY-90의
-  만료 검증과 승인 완료 게이트를 그대로 통과해야 한다.
+- 챗봇의 안내 범위는 `patient_session` HttpOnly 쿠키에서 찾은 링크 digest로
+  결정한다. 요청 본문은 질문만 받으며 링크 토큰 원문을 다시 받거나 저장하지 않는다.
+- 환자 세션이 만료되면 `401 PATIENT_SESSION_EXPIRED`로 재인증을 안내한다.
+- 환자 안내 화면 정본은 `frontend/guide.html`과 그 화면이 불러오는
+  `frontend/patient_wireframe/` 자산이다. `frontend/js/chatbot-api.js`는 이 화면의
+  공용 전송 모듈이며 `?mock=1`에서만 합성 응답을 사용한다.
+- P6의 `문의하기`는 병원 연락처 계약이 확정될 때까지 기존 준비 안내를 유지한다.
+  이 일감에서는 새 연락 기능을 추가하지 않는다.
 - 컨텍스트 선택 대상은 해당 링크의 승인 완료 `GuideSection.body`뿐이다. 환자정보,
   다른 병원 안내, 미승인 안내, OCR·의료문서 원문은 컨텍스트에 넣지 않는다.
 - 모델에는 응답 저장을 끈 단일 요청을 보내며, 모델명·성공 여부·지연시간과

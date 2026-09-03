@@ -11,7 +11,15 @@ from fastapi import APIRouter, Depends, status
 
 from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
-from app.dtos.guides import GuideResponse, PatientHead, ReturnRequest, SectionEditRequest, SectionResponse
+from app.dtos.guides import (
+    GuideResponse,
+    MessagePlanRequest,
+    MessagePlanResponse,
+    PatientHead,
+    ReturnRequest,
+    SectionEditRequest,
+    SectionResponse,
+)
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey
 from app.services.guides import GuideService
 
@@ -115,6 +123,22 @@ async def edit_section(
     return _section(await service.edit_section(actor, visit_id, key, body.body))
 
 
+@guide_router.post("/{visit_id}/guide/submit", response_model=GuideResponse, status_code=status.HTTP_200_OK)
+async def submit_guide(
+    visit_id: int,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> GuideResponse:
+    """스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11.
+
+    이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다.
+    승인은 여전히 의사만 한다 (`/guide/approve`).
+    """
+    guide = await service.submit(actor, visit_id)
+    await guide.fetch_related("sections", "visit__patient")
+    return _to_response(guide)
+
+
 @guide_router.post("/{visit_id}/guide/approve", response_model=GuideResponse, status_code=status.HTTP_200_OK)
 async def approve_guide(
     visit_id: int,
@@ -122,6 +146,50 @@ async def approve_guide(
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
     guide = await service.approve(actor, visit_id)
+    await guide.fetch_related("sections", "visit__patient")
+    return _to_response(guide)
+
+
+@guide_router.get("/{visit_id}/guide/messages", response_model=MessagePlanResponse, status_code=status.HTTP_200_OK)
+async def read_message_plan(
+    visit_id: int,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> MessagePlanResponse:
+    """이 진료의 문자 회차 설정 — 와이어프레임 S1-14.
+
+    한 번도 안 만진 진료도 기본값으로 답한다. 「설정이 없다」와 「기본값이다」를
+    화면이 가를 이유가 없다.
+    """
+    return MessagePlanResponse(**await service.message_plan(actor, visit_id))
+
+
+@guide_router.put("/{visit_id}/guide/messages", response_model=MessagePlanResponse, status_code=status.HTTP_200_OK)
+async def save_message_plan(
+    visit_id: int,
+    payload: MessagePlanRequest,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> MessagePlanResponse:
+    """문자 설정을 저장한다 — 「이 환자만 적용」.
+
+    **한 판을 통째로 받는다.** 회차 하나씩 PATCH 로 받으면, 중간에 끊겼을 때
+    「보름 뒤는 껐는데 한 달 뒤는 안 켜진」 반쪽 상태가 남는다.
+    """
+    return MessagePlanResponse(**await service.save_message_plan(actor, visit_id, payload))
+
+
+@guide_router.post("/{visit_id}/guide/unapprove", response_model=GuideResponse, status_code=status.HTTP_200_OK)
+async def unapprove_guide(
+    visit_id: int,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> GuideResponse:
+    """승인을 거둔다 — 승인했는데 잘못된 것을 발견했을 때.
+
+    이미 나간 문자가 있으면 거두지 않는다. 예약된 문자는 꺼진다.
+    """
+    guide = await service.unapprove(actor, visit_id)
     await guide.fetch_related("sections", "visit__patient")
     return _to_response(guide)
 

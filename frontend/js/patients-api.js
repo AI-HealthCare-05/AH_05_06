@@ -46,7 +46,9 @@ var patientsApi = {
   /* 등록 화면의 ① 환자 찾기. 이름 한 글자 · 차트번호 · 정규화한 휴대폰을 서버가 본다.
      `category` 는 기본 ALL 이라 보내지 않는다 — 등록은 「모든 환자」에서 찾는다. */
   search: function (keyword, cursor) {
-    return patientsRequest("/patients?" + query({ keyword: keyword, cursor: cursor }));
+    return patientsRequest(
+      "/patients?" + query({ keyword: keyword, cursor: cursor }),
+    );
   },
 
   /* 오늘 목록(S1-1). 날짜는 **병원 표시 시간대(Asia/Seoul)의 현지 날짜**다.
@@ -60,6 +62,33 @@ var patientsApi = {
           categories: (categories || []).join(","),
           cursor: cursor,
         }),
+    );
+  },
+
+  /* 환자 관리 표(S2-1). 검색과 같은 자리를 부르되 **분류와 쪽 크기를 함께
+     보낸다** — 등록 화면의 찾기는 「모든 환자」에서 이름으로 좁히는 일이고,
+     이쪽은 의원 전체를 훑으며 챙길 환자를 고르는 일이라 묻는 것이 다르다. */
+  roster: function (keyword, category, cursor, limit) {
+    return patientsRequest(
+      "/patients?" +
+        query({
+          keyword: keyword,
+          category: category,
+          cursor: cursor,
+          limit: limit,
+        }),
+    );
+  },
+
+  /* 환자 이력 모달(S2-2). **환자 단위다** — 진료 타임라인(D1-6)은 진료
+     하나짜리라 「이 환자가 지난 세 번 어떻게 했나」를 물을 수 없다. */
+  history: function (patientId, limit) {
+    if (MOCK) return mockPatientHistory(patientId, limit);
+    return patientsRequest(
+      "/patients/" +
+        encodeURIComponent(patientId) +
+        "/history?" +
+        query({ limit: limit }),
     );
   },
 
@@ -82,7 +111,10 @@ var patientsApi = {
   /* 차트번호는 못 고친다 — 생성 후 변경 불가(계약 §4·§6).
      보낼 수 있는 것은 name · birth_date · gender · phone · sms_consent 뿐이다. */
   update: function (patientId, patch) {
-    return patientsRequest("/patients/" + patientId, { method: "PATCH", body: patch });
+    return patientsRequest("/patients/" + patientId, {
+      method: "PATCH",
+      body: patch,
+    });
   },
   visits: function (patientId) {
     return patientsRequest("/patients/" + patientId + "/visits");
@@ -94,7 +126,10 @@ var patientsApi = {
     return patientsRequest("/visits/" + visitId);
   },
   updateVisit: function (visitId, patch) {
-    return patientsRequest("/visits/" + visitId, { method: "PATCH", body: patch });
+    return patientsRequest("/visits/" + visitId, {
+      method: "PATCH",
+      body: patch,
+    });
   },
 };
 
@@ -153,6 +188,16 @@ var DETAIL_STATUS_LABEL = {
 
 function statusLabel(detailStatus) {
   return DETAIL_STATUS_LABEL[detailStatus] || detailStatus || "";
+}
+
+/* 기본 상태를 사람 말로. 목록(S1)은 탭 이름으로 쓰고 환자 관리 표(S2-1)는
+   열로 쓰는데, **같은 값이라 이름도 같아야 한다.** */
+function categoryLabel(workCategory) {
+  for (var i = 0; i < WORK_CATEGORIES.length; i++) {
+    if (WORK_CATEGORIES[i].key === workCategory)
+      return WORK_CATEGORIES[i].label;
+  }
+  return workCategory || "—";
 }
 
 /* ── 목업 ──────────────────────────────────────────────────────
@@ -342,6 +387,33 @@ var MOCK_TODAY = (function () {
   ];
 })();
 
+/* **고정 데이터의 날짜를 오늘에 맞춘다.**
+ *
+ * 고정 값은 「2026-08-20 이 오늘」이라 치고 적혔다. 달력이 지나면 그 날은
+ * 지난 날짜가 되고, 목록은 「오늘 등록된 환자가 없습니다」만 띄운다 — 목업이
+ * 하루가 지날 때마다 조용히 쓸모없어진다.
+ *
+ * 날짜를 지우지 않고 **통째로 민다.** 사이 간격은 뜻이 있기 때문이다 —
+ * 박수빈의 08-11 은 「아홉 날 전에 걸린 채로 남은 보완」이고, 그 간격이
+ * 사라지면 오늘 것과 구분이 안 된다.
+ */
+var MOCK_TODAY_BASE = "2026-08-20";
+
+(function shiftToToday() {
+  var base = new Date(MOCK_TODAY_BASE + "T00:00:00");
+  var now = new Date();
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var days = Math.round((today - base) / 86400000);
+  if (!days) return;
+
+  MOCK_TODAY.forEach(function (v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})(.*)$/.exec(String(v.visited_at));
+    if (!m) return;
+    var at = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days);
+    v.visited_at = toIsoDate(at) + m[4];
+  });
+})();
+
 /* 진료 상세에만 있는 칸. 오늘 목록(§6 S1-1)은 이것들을 주지 않는다 —
    목업 저장소는 하나지만, 아래 두 투영이 각각 자기 계약의 칸만 내보낸다. */
 MOCK_TODAY.forEach(function (v) {
@@ -410,6 +482,329 @@ function patientPage(items) {
     items: items,
     page: { next_cursor: null, has_next: false },
   };
+}
+
+/* ── 환자 관리 표 목업 (S2-4 · 와이어프레임 S2-1) ────────────────────────
+ *
+ * 원문의 열 줄을 그대로 옮긴다. `MOCK_PATIENTS` 를 다시 쓰지 않는 이유는
+ * 저쪽이 **동명이인 찾기**를 보이려고 만든 자료라(김서연 셋) 상태·담당·이탈이
+ * 하나도 없기 때문이다. 표가 보여야 할 것이 다르다.
+ */
+/* ── 환자 관리 표 목업 (와이어프레임 S2-1) ─────────────────────────────
+ *
+ * **현황 목록(`MOCK_TODAY`)에서 만든다.** 손으로 따로 적어 두었더니 두 화면에
+ * 다른 사람들이 떴다 — 같은 의원인데 현황에는 김서연이, 관리에는 유지수가
+ * 있었다. 누가 있는지는 한 곳에서만 정한다.
+ *
+ * 관리에만 있는 칸(전화번호 · 문자 동의 · 이탈 배지)은 아래 표에서 붙인다.
+ * 현황 응답(계약 §6)에 그 칸들이 없기 때문이고, 억지로 넣으면 서버가 붙었을
+ * 때 없는 값을 그리게 된다.
+ */
+var MOCK_ROSTER_EXTRA = {
+  12345: { phone: "01056781234", consented: "2026-05-20" },
+  11204: { phone: "01077421234", consented: "2026-08-13" },
+  "09871": { phone: "01062908901", consented: "2026-08-11" },
+  10982: { phone: "01044373456", consented: "2026-08-13" },
+};
+
+/* **오늘이 아닌 환자.** 원문 캡션이 「오늘이 아닌 환자도 여기서 찾는다」이고,
+   이탈 배지가 붙는 줄이 바로 이들이다 — 진료는 끝났는데 환자가 멀어진 자리라
+   현황에는 안 뜬다. */
+var MOCK_ROSTER_PAST = [
+  {
+    patient_id: 2001,
+    hospital_patient_no: "10118",
+    name: "유지수",
+    birth_date: "1996-04-10",
+    age: 30,
+    phone: "01031414410",
+    consented: "2026-05-20",
+    diagnosis_name: "자궁내막증",
+    doctor: { doctor_id: 13, name: "김연우 원장" },
+    visited_at: "2026-05-20T10:00:00+09:00",
+    flags: ["UNREAD_STREAK"],
+  },
+  {
+    patient_id: 2002,
+    hospital_patient_no: "09660",
+    name: "백소라",
+    birth_date: "1990-11-02",
+    age: 35,
+    phone: "01026487203",
+    consented: "2026-06-02",
+    diagnosis_name: "다낭성",
+    doctor: { doctor_id: 12, name: "박연 원장" },
+    visited_at: "2026-06-02T10:00:00+09:00",
+    flags: ["STOPPED_DOSING"],
+  },
+  {
+    patient_id: 2003,
+    hospital_patient_no: "08455",
+    name: "문지원",
+    birth_date: "1993-02-18",
+    age: 33,
+    phone: "01081159034",
+    consented: "2026-05-12",
+    diagnosis_name: "자궁내막증",
+    doctor: { doctor_id: 12, name: "박연 원장" },
+    visited_at: "2026-05-12T10:00:00+09:00",
+    flags: ["RUN_OUT_OVERDUE"],
+  },
+  {
+    patient_id: 2005,
+    hospital_patient_no: "11550",
+    name: "한소영",
+    birth_date: "1999-06-25",
+    age: 27,
+    phone: "01029055678",
+    optedOut: "2026-07-28",
+    diagnosis_name: "자궁내막증",
+    doctor: { doctor_id: 13, name: "김연우 원장" },
+    visited_at: "2026-07-28T10:00:00+09:00",
+    flags: [],
+  },
+  {
+    patient_id: 2010,
+    hospital_patient_no: "09102",
+    name: "서다은",
+    birth_date: "1995-07-19",
+    age: 31,
+    phone: "01091866120",
+    consented: "2026-02-02",
+    diagnosis_name: "다낭성",
+    doctor: { doctor_id: 12, name: "박연 원장" },
+    visited_at: "2026-02-02T10:00:00+09:00",
+    flags: [],
+  },
+];
+
+function rosterRow(row, extra, flags) {
+  var stamp = function (day) {
+    return day ? day + "T10:00:00+09:00" : null;
+  };
+  return {
+    patient_id: row.patient_id,
+    hospital_patient_no: row.hospital_patient_no,
+    name: row.name,
+    birth_date: row.birth_date,
+    gender: "FEMALE",
+    age: row.age,
+    phone: extra.phone,
+    sms_consent: !extra.optedOut,
+    sms_consented_at: stamp(extra.consented),
+    sms_opted_out_at: stamp(extra.optedOut),
+    diagnosis_name: row.diagnosis_name,
+    doctor: row.doctor,
+    latest_visit: {
+      visit_id: row.visit_id,
+      visited_at: row.visited_at,
+      status: "COMPLETED",
+    },
+    work_category: row.work_category,
+    detail_status: row.detail_status,
+    flags: flags || [],
+  };
+}
+
+/* 현황에 같은 환자가 두 줄로 뜰 수 있다(진료가 둘) — 표는 **환자 한 줄**이라
+   차트번호로 접는다. 남기는 것은 **가장 최근 진료**다. */
+function mockRoster() {
+  var byChart = {};
+  var order = [];
+  MOCK_TODAY.forEach(function (visit) {
+    var chart = visit.hospital_patient_no;
+    var was = byChart[chart];
+    if (was && was.latest_visit.visited_at >= visit.visited_at) return;
+    var extra = MOCK_ROSTER_EXTRA[chart] || { phone: "010" + chart + "0000" };
+    byChart[chart] = rosterRow(visit, extra, []);
+    if (order.indexOf(chart) === -1) order.push(chart);
+  });
+  MOCK_ROSTER_PAST.forEach(function (row) {
+    if (byChart[row.hospital_patient_no]) return;
+    byChart[row.hospital_patient_no] = rosterRow(
+      Object.assign(
+        {
+          visit_id: 9000 + row.patient_id,
+          work_category: "COMPLETED",
+          detail_status: "VIEWED",
+        },
+        row,
+      ),
+      row,
+      row.flags,
+    );
+    order.push(row.hospital_patient_no);
+  });
+  return order.map(function (chart) {
+    return byChart[chart];
+  });
+}
+
+/* 서버와 **같은 규칙**으로 거른다. 다르면 목업에서만 되는 화면이 생긴다. */
+function rosterHits(row, category) {
+  if (category === "IN_TREATMENT")
+    return row.work_category && row.work_category !== "COMPLETED";
+  if (category === "NEEDS_ATTENTION") {
+    return (
+      row.work_category === "NEEDS_ATTENTION" || (row.flags || []).length > 0
+    );
+  }
+  if (category === "SMS_OPT_OUT") return !!row.sms_opted_out_at;
+  if (category === "INACTIVE_6_MONTHS") {
+    var when = new Date(row.latest_visit && row.latest_visit.visited_at);
+    var edge = new Date();
+    edge.setMonth(edge.getMonth() - 6);
+    return !isNaN(when.getTime()) && when < edge;
+  }
+  return true;
+}
+
+function rosterPage(keyword, params) {
+  var category = params.get("category") || "ALL";
+  var limit = Number(params.get("limit")) || 20;
+  var digits = keyword.replace(/\D/g, "");
+  var searched = mockRoster().filter(function (row) {
+    if (!keyword) return true;
+    if (row.name.indexOf(keyword) === 0) return true;
+    if (!digits) return false;
+    return (
+      row.hospital_patient_no.indexOf(digits) !== -1 ||
+      row.phone.indexOf(digits) !== -1
+    );
+  });
+  var shown = searched.filter(function (row) {
+    return rosterHits(row, category);
+  });
+  var counted = function (name) {
+    return searched.filter(function (row) {
+      return rosterHits(row, name);
+    }).length;
+  };
+  return {
+    counts: {
+      ALL: searched.length,
+      IN_TREATMENT: counted("IN_TREATMENT"),
+      NEEDS_ATTENTION: counted("NEEDS_ATTENTION"),
+      SMS_OPT_OUT: counted("SMS_OPT_OUT"),
+      INACTIVE_6_MONTHS: counted("INACTIVE_6_MONTHS"),
+    },
+    selected_category: category,
+    items: shown.slice(0, limit),
+    page: { next_cursor: null, has_next: shown.length > limit },
+  };
+}
+
+/* ── 환자 이력 모달 목업 (S2-2) ─────────────────────────────────────────
+ *
+ * 원문의 세 블록을 그대로 옮긴다 — 「3회 연속 미열람」인 최근 코스, 응답이
+ * 있는 지난 코스, 「먹고 있는데 불편해요」로 답한 첫 코스.
+ */
+var MOCK_PATIENT_HISTORY = {
+  2001: {
+    patient_id: 2001,
+    name: "유지수",
+    hospital_patient_no: "10118",
+    phone: "01031414410",
+    diagnosis_name: "자궁내막증",
+    doctor: { doctor_id: 2, name: "김연우" },
+    total: 4,
+    visits: [
+      {
+        visit_id: 9101,
+        visited_at: "2026-05-20T10:00:00+09:00",
+        prescription_set: "비잔 (계속)",
+        course_days: 84,
+        guide_sent_at: "2026-05-20T18:00:00+09:00",
+        guide_viewed_at: "2026-05-27T09:00:00+09:00",
+        checks: [
+          {
+            kind: "CHECK_D7",
+            at: "2026-05-27T10:00:00+09:00",
+            sent: true,
+            viewed_at: null,
+            answer: null,
+          },
+          {
+            kind: "CHECK_D15",
+            at: "2026-06-04T10:00:00+09:00",
+            sent: true,
+            viewed_at: null,
+            answer: null,
+          },
+          {
+            kind: "CHECK_D30",
+            at: "2026-06-19T10:00:00+09:00",
+            sent: true,
+            viewed_at: null,
+            answer: null,
+          },
+        ],
+        runs_out_on: "2026-08-12",
+        revisited: false,
+      },
+      {
+        visit_id: 9111,
+        visited_at: "2026-02-14T10:00:00+09:00",
+        prescription_set: "비잔 (계속)",
+        course_days: 90,
+        guide_sent_at: "2026-02-14T18:00:00+09:00",
+        guide_viewed_at: "2026-02-15T09:00:00+09:00",
+        checks: [
+          {
+            kind: "CHECK_D7",
+            at: "2026-02-21T10:00:00+09:00",
+            sent: true,
+            viewed_at: "2026-02-21T20:00:00+09:00",
+            answer: "taking",
+          },
+        ],
+        runs_out_on: "2026-05-15",
+        revisited: true,
+      },
+      {
+        visit_id: 9112,
+        visited_at: "2025-11-07T10:00:00+09:00",
+        prescription_set: "비잔 (초회)",
+        course_days: 84,
+        guide_sent_at: "2025-11-07T18:00:00+09:00",
+        guide_viewed_at: "2025-11-07T20:00:00+09:00",
+        checks: [
+          {
+            kind: "CHECK_D7",
+            at: "2025-11-14T10:00:00+09:00",
+            sent: true,
+            viewed_at: "2025-11-14T21:00:00+09:00",
+            answer: "uncomfortable",
+          },
+        ],
+        runs_out_on: "2026-01-30",
+        revisited: true,
+      },
+    ],
+  },
+};
+
+function mockPatientHistory(patientId, limit) {
+  var found = MOCK_PATIENT_HISTORY[patientId];
+  if (!found) {
+    /* 목업에 없는 환자도 모달이 열려야 한다 — 이력이 없는 것도 답이다. */
+    var row = mockRoster().filter(function (item) {
+      return item.patient_id === Number(patientId);
+    })[0];
+    if (!row) return Promise.reject(new ApiError("PATIENT_NOT_FOUND", 404, {}));
+    return Promise.resolve({
+      patient_id: row.patient_id,
+      name: row.name,
+      hospital_patient_no: row.hospital_patient_no,
+      phone: row.phone,
+      diagnosis_name: row.diagnosis_name,
+      doctor: row.doctor,
+      visits: [],
+      total: 0,
+    });
+  }
+  var shown = found.visits.slice(0, limit || 3);
+  return Promise.resolve(Object.assign({}, found, { visits: shown }));
 }
 
 function deskPage(isoDate, categories) {
@@ -524,20 +919,31 @@ function mockPatientsRequest(path, options) {
       if (path.indexOf("/patients?") === 0) {
         var params = new URLSearchParams(path.slice("/patients?".length));
         var keyword = (params.get("keyword") || "").trim();
+        /* **환자 관리 표(S2-1)는 빈 검색어에도 답한다.** 등록 화면의 찾기는
+           아무 말 없이 온 세상을 돌려주면 안 되지만, 이쪽은 「의원 전체를
+           훑는 자리」라 빈 목록이 답이 아니다 — `category` 가 그 갈림이다. */
+        if (params.get("category")) return resolve(rosterPage(keyword, params));
         if (!keyword) return resolve(patientPage([]));
         var digits = keyword.replace(/\D/g, "");
         var hits = MOCK_PATIENTS.filter(function (p) {
           if (p.name.indexOf(keyword) === 0) return true;
           if (!digits) return false;
-          return p.hospital_patient_no.indexOf(digits) !== -1 || p.phone.indexOf(digits) !== -1;
+          return (
+            p.hospital_patient_no.indexOf(digits) !== -1 ||
+            p.phone.indexOf(digits) !== -1
+          );
         });
         return resolve(patientPage(hits));
       }
 
       /* 오늘 목록(S1-1). NEEDS_ATTENTION 은 날짜와 무관하게 딸려 온다. */
       if (path.indexOf("/front-desk/visits?") === 0) {
-        var deskParams = new URLSearchParams(path.slice("/front-desk/visits?".length));
-        return resolve(deskPage(deskParams.get("date"), deskParams.get("categories")));
+        var deskParams = new URLSearchParams(
+          path.slice("/front-desk/visits?".length),
+        );
+        return resolve(
+          deskPage(deskParams.get("date"), deskParams.get("categories")),
+        );
       }
 
       if (path === "/patients" && options.method === "POST") {
@@ -545,7 +951,8 @@ function mockPatientsRequest(path, options) {
         var taken = MOCK_PATIENTS.some(function (p) {
           return p.hospital_patient_no === body.hospital_patient_no;
         });
-        if (taken) return reject(new ApiError("DUPLICATE_HOSPITAL_PATIENT_NO", 409, {}));
+        if (taken)
+          return reject(new ApiError("DUPLICATE_HOSPITAL_PATIENT_NO", 409, {}));
 
         var created = {
           patient_id: ++MOCK_NEXT_ID.patient,
@@ -577,17 +984,21 @@ function mockPatientsRequest(path, options) {
           return p.patient_id === Number(onePatient[1]);
         });
         if (!target) return reject(new ApiError("PATIENT_NOT_FOUND", 404, {}));
-        if (!Object.keys(body).length) return reject(new ApiError("EMPTY_UPDATE_FIELDS", 400, {}));
+        if (!Object.keys(body).length)
+          return reject(new ApiError("EMPTY_UPDATE_FIELDS", 400, {}));
         /* 서버가 거부하는 것을 목업도 거부한다 — 화면이 못 보낼 것을 보내고 있으면
            목업에서 통과해 버리면 서버에 붙는 날 처음 알게 된다. */
         var illegal = Object.keys(body).filter(function (k) {
           return PATIENT_EDITABLE.indexOf(k) === -1;
         });
         if (illegal.length) {
-          return reject(new ApiError("INVALID_REQUEST", 400, { field_errors: illegal }));
+          return reject(
+            new ApiError("INVALID_REQUEST", 400, { field_errors: illegal }),
+          );
         }
         Object.keys(body).forEach(function (k) {
-          target[k] = k === "phone" ? String(body[k]).replace(/\D/g, "") : body[k];
+          target[k] =
+            k === "phone" ? String(body[k]).replace(/\D/g, "") : body[k];
         });
         return resolve(target);
       }
@@ -595,11 +1006,16 @@ function mockPatientsRequest(path, options) {
       /* 지난 방문 — visited_at DESC, visit_id DESC 안정 정렬(계약 §6) */
       var visitList = path.match(/^\/patients\/(\d+)\/visits$/);
       if (visitList && !options.method) {
-        var history = (MOCK_HISTORY[Number(visitList[1])] || []).slice().sort(function (a, b) {
-          if (a.visited_at === b.visited_at) return b.visit_id - a.visit_id;
-          return a.visited_at < b.visited_at ? 1 : -1;
+        var history = (MOCK_HISTORY[Number(visitList[1])] || [])
+          .slice()
+          .sort(function (a, b) {
+            if (a.visited_at === b.visited_at) return b.visit_id - a.visit_id;
+            return a.visited_at < b.visited_at ? 1 : -1;
+          });
+        return resolve({
+          items: history,
+          page: { next_cursor: null, has_next: false },
         });
-        return resolve({ items: history, page: { next_cursor: null, has_next: false } });
       }
 
       var oneVisit = path.match(/^\/visits\/(\d+)$/);
@@ -616,13 +1032,16 @@ function mockPatientsRequest(path, options) {
 
       if (oneVisit && options.method === "PATCH") {
         if (!visitRow) return reject(new ApiError("VISIT_NOT_FOUND", 404, {}));
-        if (!Object.keys(body).length) return reject(new ApiError("EMPTY_UPDATE_FIELDS", 400, {}));
+        if (!Object.keys(body).length)
+          return reject(new ApiError("EMPTY_UPDATE_FIELDS", 400, {}));
 
         var offLimits = Object.keys(body).filter(function (k) {
           return VISIT_EDITABLE.indexOf(k) === -1;
         });
         if (offLimits.length) {
-          return reject(new ApiError("INVALID_REQUEST", 400, { field_errors: offLimits }));
+          return reject(
+            new ApiError("INVALID_REQUEST", 400, { field_errors: offLimits }),
+          );
         }
 
         /* 서버가 진료과·의사를 검증한 뒤 이름을 스냅샷으로 저장한다(계약 §6).
@@ -630,7 +1049,8 @@ function mockPatientsRequest(path, options) {
            다르게 띄우는지 여기서 밖에 볼 데가 없다. */
         if ("department_id" in body) {
           var deptName = departmentOf(body.department_id);
-          if (!deptName) return reject(new ApiError("INVALID_DEPARTMENT", 400, {}));
+          if (!deptName)
+            return reject(new ApiError("INVALID_DEPARTMENT", 400, {}));
           visitRow.department = deptName;
         }
         if ("doctor_id" in body) {
@@ -638,13 +1058,22 @@ function mockPatientsRequest(path, options) {
             return d.doctor_id === Number(body.doctor_id);
           });
           if (!picked) return reject(new ApiError("INVALID_REQUEST", 400, {}));
-          var wantDept = "department_id" in body ? Number(body.department_id) : picked.department_id;
+          var wantDept =
+            "department_id" in body
+              ? Number(body.department_id)
+              : picked.department_id;
           if (picked.department_id !== wantDept) {
             return reject(new ApiError("DOCTOR_DEPARTMENT_MISMATCH", 400, {}));
           }
           visitRow.doctor = { doctor_id: picked.doctor_id, name: picked.name };
         }
-        ["visited_at", "visit_summary", "doctor_note", "status", "planned_stop"].forEach(function (k) {
+        [
+          "visited_at",
+          "visit_summary",
+          "doctor_note",
+          "status",
+          "planned_stop",
+        ].forEach(function (k) {
           if (k in body) visitRow[k] = body[k];
         });
         return resolve(visitResource(visitRow));
@@ -673,7 +1102,9 @@ function mockPatientsRequest(path, options) {
           birth_date: who.birth_date,
           age: ageOf(who.birth_date),
           diagnosis_name: who.last_dx || null,
-          doctor: doctor ? { doctor_id: doctor.doctor_id, name: doctor.name } : null,
+          doctor: doctor
+            ? { doctor_id: doctor.doctor_id, name: doctor.name }
+            : null,
           /* 화면은 department_id 를 보내고 이름은 서버가 붙인다 — 계약 §4 「검증된
              진료과 명칭을 저장한 진료 당시 스냅샷」. 진료과 이름이 나중에 바뀌어도
              지난 진료는 그날의 이름으로 남아야 한다. */
@@ -701,13 +1132,84 @@ function ageOf(birthDate) {
   var now = new Date();
   var years = now.getFullYear() - born.getFullYear();
   var monthDiff = now.getMonth() - born.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < born.getDate())) years -= 1;
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < born.getDate()))
+    years -= 1;
   return years;
 }
 
-/* 화면에 전체 번호를 띄우지 않는다 — 같은 이름을 가를 만큼만 보여 준다 */
-function maskPhone(digits) {
-  var d = (digits || "").replace(/\D/g, "");
-  if (d.length < 8) return d;
-  return d.slice(0, 3) + "-****-" + d.slice(-4);
+/* **화면에는 전체 번호를 보여 준다.**
+ *
+ * 전에는 가운데를 `****` 로 가렸다(와이어프레임도 그렇게 그렸다). 그런데 이
+ * 번호를 보는 사람은 그 환자를 방금 접수한 그 의원의 스탭이고, 안내 문자가
+ * 안 가면 **전화를 걸어야 하는 사람**이다. 가려 두면 번호를 확인하려고 EMR 을
+ * 따로 열게 되고, 그 사이에 옮겨 적다 틀린다.
+ *
+ * **로그와 오류 응답의 마스킹은 그대로다** — 그쪽은 KEY-48 이 요구하는 보안
+ * 사항이고 여기와 다른 문제다. 화면은 권한 있는 사람이 보고, 로그는 누가 볼지
+ * 모른다.
+ *
+ * 끊어 쓰는 것은 읽기 위해서다 — `01056785687` 은 눈으로 옮겨 적기 어렵다.
+ */
+/* ── 숫자만 쳐도 하이픈이 붙는다 ─────────────────────────────────────
+ *
+ * 스탭은 EMR 을 보며 옮겨 적는다. 거기 적힌 것은 `19940722` · `01047851256`
+ * 같은 숫자열이라, 하이픈을 손으로 넣게 하면 자리를 세어 가며 친다. 게다가
+ * 안 넣으면 「생년월일은 1994-07-22 처럼 적어 주세요」로 막혀 다시 고친다.
+ *
+ * **화면 밖의 규칙이라 검사가 부른다.** 자리 셈은 눈으로 확인하기 어렵다.
+ */
+
+function onlyDigits(text) {
+  return String(text === null || text === undefined ? "" : text).replace(
+    /\D/g,
+    "",
+  );
+}
+
+/** `19940722` → `1994-07-22`. **치는 도중에도 자연스럽게** — 5자면 `1994-0`.
+    다 친 뒤에만 모양을 잡으면 마지막 글자에서 화면이 튄다. */
+function birthMask(text) {
+  var d = onlyDigits(text).slice(0, 8);
+  if (d.length <= 4) return d;
+  if (d.length <= 6) return d.slice(0, 4) + "-" + d.slice(4);
+  return d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6);
+}
+
+/** `01047851256` → `010-4785-1256`.
+
+    가운데 자릿수는 **길이가 정한다** — 11자리는 4, 10자리는 3이다(`011-234-5678`).
+    010 만 보고 4로 박으면 옛 번호가 `011-2345-678` 로 어긋난다. */
+function phoneMask(text) {
+  var d = onlyDigits(text).slice(0, 11);
+  if (d.length <= 3) return d;
+  var mid = d.length > 10 ? 4 : 3;
+  if (d.length <= 3 + mid) return d.slice(0, 3) + "-" + d.slice(3);
+  return d.slice(0, 3) + "-" + d.slice(3, 3 + mid) + "-" + d.slice(3 + mid);
+}
+
+/** 숫자 `n` 개를 지난 자리. 하이픈을 넣으면 글자 수가 늘어 커서가 밀린다 —
+ **몇 번째 숫자 뒤였는지**로 되찾는다. */
+function maskCaret(masked, digits) {
+  if (digits <= 0) return 0;
+  var seen = 0;
+  for (var i = 0; i < masked.length; i++) {
+    if (/\d/.test(masked[i])) {
+      seen += 1;
+      if (seen === digits) return i + 1;
+    }
+  }
+  return masked.length;
+}
+
+/** 지운 것이 하이픈뿐이었나. 그러면 그 앞 숫자를 마저 지운다 — 안 그러면
+    하이픈이 곧바로 다시 붙어 **지운 것이 없어 보이고**, 두 번 눌러야 한다. */
+function maskAfterDelete(digits, at) {
+  if (at <= 0) return { digits: digits, at: at };
+  return { digits: digits.slice(0, at - 1) + digits.slice(at), at: at - 1 };
+}
+
+/** 담아 둔 번호를 읽기 좋게. **치는 중과 같은 규칙을 쓴다** — 두 벌로 두면
+    손으로 친 것과 화면에 뜬 것이 달라 보인다. */
+function formatPhone(digits) {
+  return phoneMask(digits);
 }

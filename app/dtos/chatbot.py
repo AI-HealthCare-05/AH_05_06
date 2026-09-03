@@ -6,10 +6,9 @@ from app.models.visits import GuideSectionKey
 class ChatbotResponseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    link_token: str = Field(min_length=1, max_length=200)
     question: str = Field(min_length=1, max_length=500)
 
-    @field_validator("link_token", "question")
+    @field_validator("question")
     @classmethod
     def non_blank(cls, value: str) -> str:
         stripped = value.strip()
@@ -26,3 +25,4 @@ class ChatbotResponse(BaseModel):
     urgent: bool = False
     fallback: bool = False
     grounded_section: GuideSectionKey | None = None
+    response_ref: str | None = None

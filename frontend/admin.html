@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>어드민 · 케어온</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/shell.css" />
+    <link rel="stylesheet" href="/css/frames.css" />
+    <link rel="stylesheet" href="/css/admin.css" />
+  </head>
+  <body class="shell">
+    <a class="skip" href="#work">본문으로 건너뛰기</a>
+
+    <!-- 어드민 화면 (A1-1 ~ A1-7) — KEY-234
+         와이어프레임 `docs/wireframes/wireframe-admin-2.3.1.html` 의 일곱 프레임은
+         **별도 화면이 아니라 이 한 화면의 좌측 목록 전환**이다.
+
+         `js/session.js:54` 가 admin 계정을 여기로 보내는데 이 파일이 없어
+         **로그인하면 404 가 떴다.** 시드에 admin 단독 계정이 셋 있다
+         (`admin01` · `lastadmin01` · `admin21`).
+
+         **골격은 진짜로 만들고 본문은 아직이라고 말한다.** 직원 목록·의원 정보·
+         문자 잔량·감사 로그를 줄 API 가 하나도 없다 — `GET /staffs` 도
+         `GET /hospital` 도 서버에 없다. 없는 데이터를 화면이 지어내면
+         지금 다른 화면들이 겪는 어긋남이 여기서 다시 생긴다.
+
+         그래서 **동작하지 않는 버튼을 두지 않는다.** 좌측 목록은 실제로
+         본문을 바꾸고, 본문은 그 자리가 무엇을 할 곳이고 무엇이 있어야
+         되는지를 말한다. -->
+
+    <header class="topbar">
+      <span class="topbar__brand">케어온 <span class="topbar__clinic">도로시여성의원</span></span>
+      <nav class="topbar__nav">
+        <!-- **관리는 S2, 설정은 D2 다.** 관리가 지금 담은 것은 발송
+             예정(S2-3) 하나이고, 환자 관리 · 발송 이력은 그 화면 안에서
+             자리만 세워 두었다. -->
+        <a class="topbar__tab" id="to-work" href="/patients.html">현황</a>
+        <a class="topbar__tab" id="to-manage" href="/manage.html">관리</a>
+        <a class="topbar__tab" id="to-settings" href="/settings.html">설정</a>
+        <button class="topbar__tab" type="button" aria-current="page">어드민</button>
+      </nav>
+      <div class="topbar__right">
+        <span class="who">
+          <span class="who__name" id="who-name">—</span>
+          <span class="who__roles" id="who-roles"></span>
+        </span>
+        <button class="icon-button" type="button" id="logout" aria-label="로그아웃"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      </div>
+    </header>
+
+    <div class="main">
+      <aside class="list" aria-label="어드민 메뉴">
+        <div class="list__head">
+          <div class="list__title">
+            <span class="list__label">어드민</span>
+            <button class="list__fold" type="button" aria-expanded="true" title="목록 접기">◀</button>
+          </div>
+        </div>
+        <div class="list__rows" id="admin-menu" role="tablist" aria-label="어드민 메뉴"></div>
+        <p class="list__note">ⓘ 관리자 권한 보유자에게만 표시되는 메뉴입니다</p>
+      </aside>
+
+      <main class="pane" id="work">
+        <div id="admin-body"></div>
+      </main>
+    </div>
+
+    <script src="/js/session.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/frames.js"></script>
+    <script src="/js/list-fold.js"></script>
+    <script src="/js/admin.js"></script>
+  </body>
+</html>

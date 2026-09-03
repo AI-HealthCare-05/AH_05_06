@@ -35,6 +35,10 @@ from app.models.visits import (
     GuideDocument,
     GuideEvent,
     GuideEventType,
+    GuideMessage,
+    GuideMessageKind,
+    GuideMessageSetting,
+    GuideMessageStatus,
     GuideSection,
     GuideSectionKey,
     GuideStatus,
@@ -45,6 +49,50 @@ from app.services.drug_caution import DrugCautionService
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
 #: 진료가 끝난 저녁에 받아야 환자가 차분히 읽는다 — 진료 중에 오면 안 본다.
 SEND_HOUR = 18
+
+#: 확인 · 소진 문자가 나가는 시각. 안내문(18:00)과 다르다 —
+#: 와이어프레임 S1-14 가 「확인 문자 시각 오전 10:00」이라 적는다.
+#: 안내문은 진료 당일 저녁에 받아야 하고, 확인 문자는 며칠 뒤 낮이 낫다.
+CHECK_HOUR = 10
+
+#: 소진 임박은 며칠 전에 보내나. D2-3 에서 처방별로 정할 값인데 그 자리가
+#: 아직 없어 기본값을 쓴다 (S1-14 의 「소진 3일 전」).
+RUN_OUT_BEFORE_DAYS = 3
+
+#: 확인 회차와 그 날수 — **있는 것 전부**다. 무엇이 켜져 있는지는 `_DEFAULT_ON`
+#: 과 저장된 설정이 정한다. 한 달 뒤는 기본이 꺼짐이지만 스탭이 켤 수 있다(S1-14).
+#: 진료일로부터 세는 이유는, 승인일 기준이면 승인이 하루 늦어질 때 「복약 7일째」
+#: 가 8일째에 가기 때문이다 — 환자에게 적는 숫자다.
+CHECK_DAYS: dict[GuideMessageKind, int] = {
+    GuideMessageKind.CHECK_D7: 7,
+    GuideMessageKind.CHECK_D15: 15,
+    GuideMessageKind.CHECK_D30: 30,
+}
+
+#: 아무도 안 만졌을 때 켜져 있는 회차. 와이어프레임 S1-14 의 체크 상태다 —
+#: 「☑ 일주일 뒤(고정) · ☑ 보름 뒤 · ☐ 한 달 뒤」, 소진 임박은 켜짐.
+_DEFAULT_ON: dict[GuideMessageKind, bool] = {
+    GuideMessageKind.CHECK_D7: True,
+    GuideMessageKind.CHECK_D15: True,
+    GuideMessageKind.CHECK_D30: False,
+    GuideMessageKind.RUN_OUT: True,
+}
+
+#: **일주일 뒤는 끌 수 없다.** 원문이 「(고정)」이라 적고 주석도 「일주일 뒤는
+#: 여기서도 끌 수 없다」고 못박는다 — 복약 첫 주가 가장 잘 끊기는 구간이다.
+#: 화면이 체크박스를 잠그지만, 서버도 막는다. 화면만 막으면 요청 하나로 꺼진다.
+FIXED_ON: frozenset[GuideMessageKind] = frozenset({GuideMessageKind.CHECK_D7})
+
+#: 확인 문자를 몇 시에 보낼지 — 화면이 고르게 하는 값들(S1-14 의 시각 목록).
+#: 아무 시각이나 받으면 새벽 3시에 문자가 갈 수 있다.
+CHECK_HOURS: tuple[int, ...] = (9, 10, 11, 14, 18)
+
+#: 소진 며칠 전. 0이면 소진 당일이라 임박이 아니고, 너무 크면 처방 시작 전이 된다.
+RUN_OUT_BEFORE_MIN = 1
+RUN_OUT_BEFORE_MAX = 30
+
+#: 문구 한 통의 길이. 장문(LMS)도 담아야 해서 넉넉히 두되, 무한은 아니다.
+MESSAGE_BODY_MAX = 2000
 
 #: 반려 사유의 길이. 스탭 알림 한 줄에 들어가야 한다.
 REASON_MAX = 200
@@ -120,7 +168,17 @@ class GuideService:
             guide = await GuideDocument.create(
                 hospital_id=actor.hospital_id,
                 visit_id=visit_id,
-                status=GuideStatus.APPROVAL_PENDING,
+                # **스탭 확인부터다** (와이어프레임 S1-11).
+                #
+                # 전에는 여기서 바로 APPROVAL_PENDING 으로 보냈다 — 만들자마자
+                # 원장님 목록에 떴다는 뜻이다. 그런데 와이어프레임은
+                # 「스탭이 넘기지 않으면 원장님 목록에 뜨지 않는다」고 못 박는다.
+                # 스탭이 먼저 보는 이유는 원장님 시간을 아끼기 위해서다 —
+                # 진료기록이 잘못 올라갔거나 다른 환자 것이 섞인 것은 스탭이 잡는다.
+                #
+                # `GuideDocument.status` 의 기본값이 이미 STAFF_REVIEW 다.
+                # 그것을 덮어쓰던 한 줄이 흐름을 건너뛰고 있었다.
+                status=GuideStatus.STAFF_REVIEW,
                 using_db=connection,
             )
             await GuideSection.create(
@@ -161,6 +219,15 @@ class GuideService:
                 guide_document=guide,
                 section_key=GuideSectionKey.MESSAGES,
                 generated_body="복약 안내가 발송될 예정입니다. 궁금한 점은 진료실로 문의해 주세요.",
+                using_db=connection,
+            )
+            # 안내문과 다섯 섹션이 생겼는데 이 행만 빠지면 「누가 생성했나」에
+            # 답할 수 없다. 같은 트랜잭션에 둬서 감사 기록 저장이 실패하면
+            # 안내문·섹션도 함께 되돌린다 — 생성 성공과 감사 성공은 한 사건이다.
+            await GuideEvent.create(
+                guide_document=guide,
+                event_type=GuideEventType.GENERATED,
+                actor_id=actor.user_id,
                 using_db=connection,
             )
 
@@ -223,7 +290,14 @@ class GuideService:
 
     async def edit_section(self, actor, visit_id: int, key: str, body: str) -> GuideSection:
         """한 갈래만 고친다. 생성 원문은 지우지 않는다."""
-        self._require_doctor(actor)
+        # **스탭도 고친다** (와이어프레임 S1-11 — 「스탭은 내용을 고칠 수
+        # 있지만 승인은 못 한다」). RBAC 도 이미 그렇게 적혀 있다:
+        # GUIDE_DRAFT = {staff, doctor}. 여기만 의사로 좁혀 두어서, 스탭이
+        # 확인 화면에서 고칠 수가 없었다.
+        #
+        # **누가 고치느냐가 아니라 언제 고치느냐로 가른다** — 아래 상태 검사가
+        # 그 몫이다. 스탭 확인 중이면 스탭이, 승인 요청 중이면 의사가 고친다.
+        self._require_staff_or_doctor(actor, "안내문 수정은")
 
         try:
             section_key = GuideSectionKey(key)
@@ -248,10 +322,34 @@ class GuideService:
                 # 약이 바뀌면 문장도 함께 바뀐다 — 사람이 고칠 자리가 아니다.
                 raise ApiError("SECTION_LOCKED", 409, "응급 안내 문장은 고칠 수 없습니다.")
 
-            if guide.status is not GuideStatus.APPROVAL_PENDING:
-                # 이미 승인해 발송을 기다리는 글을 조용히 바꾸면, 환자가 받는 것과
-                # 승인한 것이 달라진다. 잠근 채로 보므로 승인과 겹치지 않는다.
-                raise ApiError("GUIDE_NOT_PENDING", 409, "승인 요청 상태에서만 고칠 수 있습니다.")
+            # 이미 승인해 발송을 기다리는 글을 조용히 바꾸면, 환자가 받는 것과
+            # 승인한 것이 달라진다. 잠근 채로 보므로 승인과 겹치지 않는다.
+            #
+            # **반려된 것도 고칠 수 있다.** 아래 주석이 「스탭이 고치려면 반려를
+            # 거쳐 자기 차례로 돌아와야 한다」고 적어 두었는데, 정작 돌아온
+            # 자리가 막혀 있었다 — 화면은 「고친 뒤 다시 넘겨 주세요」라고
+            # 안내하면서 고치려 들면 409 를 냈다. 반려는 **고치라고** 하는
+            # 것이므로 고칠 수 없으면 뜻이 없다 (Gomin-art 님 `#176` 리뷰).
+            if guide.status not in (
+                GuideStatus.STAFF_REVIEW,
+                GuideStatus.APPROVAL_PENDING,
+                GuideStatus.APPROVAL_RETURNED,
+            ):
+                raise ApiError("GUIDE_NOT_PENDING", 409, "확인·승인 요청 상태에서만 고칠 수 있습니다.")
+
+            # **승인 요청 중에는 의사만 고친다.** 원장님이 보고 있는 글을 스탭이
+            # 바꾸면, 승인한 것과 읽은 것이 달라진다. 스탭이 고치려면 반려를
+            # 거쳐 자기 차례로 돌아와야 한다.
+            if guide.status is GuideStatus.APPROVAL_PENDING and not self._is_doctor(actor):
+                # **403 이다, 409 가 아니다.** 「지금은 때가 아니다」가 아니라
+                # 「당신은 못 한다」이기 때문이다 — 스탭은 기다린다고 이 글을
+                # 고칠 수 있게 되지 않는다. 고치려면 의사가 반려해서 자기
+                # 차례로 돌아와야 한다.
+                raise ApiError(
+                    "FORBIDDEN",
+                    403,
+                    "의사에게 넘긴 뒤에는 의사 계정에서만 고칠 수 있습니다.",
+                )
 
             section.edited_body = text
             await section.save(update_fields=["edited_body", "updated_at"], using_db=connection)
@@ -265,6 +363,54 @@ class GuideService:
                 using_db=connection,
             )
         return section
+
+    async def submit(self, actor, visit_id: int) -> GuideDocument:
+        """스탭이 확인을 마치고 **의사에게 넘긴다** (와이어프레임 S1-11).
+
+        이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다. 스탭이
+        먼저 보는 이유는 원장님 시간을 아끼기 위해서다 — 진료기록이 잘못
+        올라갔거나 다른 환자 것이 섞인 것은 스탭이 잡는다.
+
+        의사도 부를 수 있다. 의사가 직접 만들고 바로 승인으로 넘어가는 길을
+        막을 이유가 없다 — 승인 자체는 여전히 의사만 한다.
+        """
+        self._require_staff_or_doctor(actor, "의사 승인 요청은")
+
+        async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+
+            # **이미 넘긴 것을 또 넘기지 않는다.** 두 사람이 같이 눌렀거나
+            # 새로고침 뒤 다시 누른 것이고, 원하던 것은 이미 그 상태다.
+            # 조용히 통과시키면 승인 이벤트가 두 번 쌓여 누가 언제 넘겼는지가
+            # 흐려진다.
+            #
+            # **반려된 것은 다시 넘길 수 있다.** 그것이 반려의 목적이다 —
+            # 고쳐서 다시 올리라는 뜻이니, 재제출을 막으면 반려된 안내문은
+            # 영영 그 자리에 갇힌다 (Gomin-art 님 `#176` 리뷰).
+            if guide.status not in (GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_RETURNED):
+                raise ApiError(
+                    "GUIDE_NOT_IN_REVIEW",
+                    409,
+                    "이미 의사에게 넘겼거나 승인된 안내문입니다.",
+                )
+
+            # **지난 반려 사유를 지운다.** 스탭 알림에 그대로 뜨는 문장이라,
+            # 고쳐서 다시 올렸는데도 남아 있으면 「아직 반려 상태」로 읽힌다.
+            # **이력은 지우지 않는다** — 무엇을 왜 고쳤는지는 `GuideEvent` 의
+            # RETURNED 줄에 그대로 남아 있다. 지우는 것은 「지금 상태」뿐이다.
+            #
+            # Tortoise 의 `CharField` 는 `null=True` 오버로드가 없어(`**kwargs: Any`)
+            # 비울 수 있다는 것을 타입으로 말할 길이 없다 — 칸은 실제로 nullable 이다.
+            guide.status = GuideStatus.APPROVAL_PENDING
+            guide.returned_reason = None  # type: ignore[assignment]
+            await guide.save(update_fields=["status", "returned_reason", "updated_at"], using_db=connection)
+            await GuideEvent.create(
+                guide_document=guide,
+                event_type=GuideEventType.SUBMITTED,
+                actor_id=actor.user_id,
+                using_db=connection,
+            )
+        return guide
 
     async def approve(self, actor, visit_id: int) -> GuideDocument:
         """승인 — 그리고 **곧 발송 예약**이다.
@@ -291,6 +437,321 @@ class GuideService:
             await GuideEvent.create(
                 guide_document=guide,
                 event_type=GuideEventType.APPROVED,
+                actor_id=actor.user_id,
+                using_db=connection,
+            )
+            # **예약도 같은 트랜잭션이다.** 갈라 두면 승인은 됐는데 예약이
+            # 빈 건이 생기고, 그 환자만 조용히 아무 문자도 못 받는다.
+            await self._schedule_messages(guide, moment, connection)
+        return guide
+
+    async def _schedule_messages(self, guide: GuideDocument, moment: datetime, connection) -> None:
+        """승인 순간에 **나갈 문자를 전부 세워 둔다** — 와이어프레임 D1-6.
+
+        전에는 `guide.scheduled_at` 하나뿐이라 진료 안내문 한 통만 예약됐다.
+        확인 회차와 소진 임박은 담길 데가 없어서, 화면이 「예정」이라 적어도
+        실제로는 아무것도 예약돼 있지 않았다.
+
+        **다시 승인해도 두 번 만들지 않는다.** 반려됐다가 다시 올라오는 길이
+        있어서(`return_to_staff` → 다시 `approve`), 그때마다 새로 만들면
+        환자가 같은 문자를 두 번 받는다. 표의 유니크가 마지막으로 막지만,
+        여기서 먼저 본다 — 예외로 막으면 승인 자체가 실패한다.
+
+        **거뒀다가 다시 승인하면 껐던 줄을 되살린다.** 유니크 때문에 새로
+        만들 수 없기도 하고, 껐던 것도 기록이라 지우지 않기 때문이다.
+        """
+        live = await GuideMessage.filter(guide_document_id=guide.guide_document_id).using_db(connection).all()
+
+        # **껐던 줄은 「이미 있다」가 아니다.** 승인을 거두면 예약을 CANCELED 로
+        # 꺼 두는데, 그 줄까지 있는 것으로 세면 다시 승인해도 꺼진 채 남는다 —
+        # 화면은 「발송 예정」이라 적고 실제로는 아무것도 안 나간다. 유니크가
+        # (안내문, 종류) 라 새로 만들 수도 없어서, 여기서 되살린다.
+        already = {m.kind for m in live if m.status != GuideMessageStatus.CANCELED}
+        revive = {m.kind: m for m in live if m.status == GuideMessageStatus.CANCELED}
+
+        # **시각이 비어 있을 수 있다.** 아래 고리가 `at is None` 이면 건너뛴다 —
+        # 진료일을 모르면 확인 회차를 셈할 수 없고, 그때 없는 날짜를 지어내
+        # 예약하면 엉뚱한 날 문자가 간다. 주석이 그 사실을 말해야 한다.
+        rows: list[tuple[GuideMessageKind, datetime | None]] = []
+        if GuideMessageKind.GUIDE not in already:
+            rows.append((GuideMessageKind.GUIDE, guide.scheduled_at))
+
+        # 확인 회차는 **진료일** 기준이다. 승인일 기준으로 세면 승인이 하루
+        # 늦어질 때 「복약 7일째」가 8일째에 간다 — 환자에게 적는 숫자다.
+        visit = await Visit.filter(visit_id=guide.visit_id).using_db(connection).first()
+        started = visit.visited_at if visit else moment
+
+        # **스탭이 고른 것을 그대로 예약한다** (와이어프레임 S1-14).
+        #
+        # 예전에는 회차도 시각도 코드에 박힌 값(`_CHECK_ROUNDS` · `CHECK_HOUR`)
+        # 이었다. 화면에서 「한 달 뒤」를 켜도 예약은 안 생겼고, 시각을 오후
+        # 2시로 바꿔도 10시에 잡혔다 — **고른 것과 나가는 것이 갈렸다.**
+        #
+        # 설정 행이 없는 회차는 기본값이다(`_DEFAULT_ON`).
+        plan = {
+            r.kind: r
+            for r in await GuideMessageSetting.filter(guide_document_id=guide.guide_document_id)
+            .using_db(connection)
+            .all()
+        }
+
+        def wanted(kind: GuideMessageKind) -> bool:
+            if kind in FIXED_ON:
+                return True  # 일주일 뒤는 끌 수 없다
+            row = plan.get(kind)
+            return _DEFAULT_ON[kind] if row is None else row.enabled
+
+        hour = guide.check_hour
+
+        for kind, days in CHECK_DAYS.items():
+            if kind in already or not wanted(kind):
+                continue
+            rows.append((kind, self.check_at(started, days, hour)))
+
+        # 소진 임박은 **처방일수를 알아야** 셈할 수 있다. 판독이 못 읽었으면
+        # 만들지 않는다 — 지어낸 날짜로 예약하면 엉뚱한 날 문자가 간다.
+        course = await self._course_days(guide.visit_id, connection)
+        if course and GuideMessageKind.RUN_OUT not in already and wanted(GuideMessageKind.RUN_OUT):
+            run_out = plan.get(GuideMessageKind.RUN_OUT)
+            before = RUN_OUT_BEFORE_DAYS if run_out is None or run_out.days_before is None else run_out.days_before
+            rows.append((GuideMessageKind.RUN_OUT, self.check_at(started, course - before, hour)))
+
+        for kind, at in rows:
+            if at is None:
+                continue
+            back = revive.get(kind)
+            if back is not None:
+                back.status = GuideMessageStatus.SCHEDULED
+                back.scheduled_at = at
+                back.failure_code = None
+                await back.save(
+                    update_fields=["status", "scheduled_at", "failure_code", "updated_at"],
+                    using_db=connection,
+                )
+                continue
+            await GuideMessage.create(
+                guide_document=guide,
+                kind=kind,
+                scheduled_at=at,
+                using_db=connection,
+            )
+
+    @staticmethod
+    async def _course_days(visit_id: int, connection) -> int | None:
+        """처방일수 — 판독이 확정한 값에서 읽는다.
+
+        **확정된 것만 본다.** 스탭이 아직 확인하지 않은 값으로 발송일을 잡으면,
+        고친 뒤에도 옛 날짜로 예약된 채 남는다.
+        """
+        row = (
+            await OcrField.filter(
+                ocr_result__ocr_job__visit_id=visit_id,
+                field_type="DURATION_DAYS",
+                is_confirmed=True,
+            )
+            .using_db(connection)
+            .first()
+        )
+        if row is None or not row.value:
+            return None
+        try:
+            days = int(str(row.value).strip())
+        except ValueError:
+            # 「84일」처럼 단위가 붙어 오면 숫자만 뗀다. 그래도 안 되면 포기한다 —
+            # 지어낸 값으로 예약하는 것보다 안 만드는 편이 낫다.
+            digits = "".join(ch for ch in str(row.value) if ch.isdigit())
+            if not digits:
+                return None
+            days = int(digits)
+        return days if days > 0 else None
+
+    @staticmethod
+    def check_at(started: datetime, days: int, hour: int | None = None) -> datetime:
+        """확인 · 소진 문자가 나갈 시각 — **병원 시간으로** 그날 그 시각.
+
+        안내문(18:00)과 다르다. 안내문은 진료 당일 저녁에 받아야 차분히 읽고,
+        확인 문자는 며칠 뒤 낮에 오는 편이 낫다 (S1-14 「오전 10:00」).
+        시각은 스탭이 고른다 — 안 주면 기본값(10시)이다.
+
+        `send_at` 과 같은 이유로 **시간대를 옮겨 판단한다** — 안 옮기면 받은
+        값의 시간대에서 10시가 되고, 운영(UTC)에서는 한국 저녁 7시가 된다.
+        """
+        local = started.astimezone(config.TIMEZONE)
+        at = CHECK_HOUR if hour is None else hour
+        return (local + timedelta(days=days)).replace(hour=at, minute=0, second=0, microsecond=0)
+
+    # ── 문자 설정 (와이어프레임 S1-14) ────────────────────────────────
+
+    async def message_plan(self, actor, visit_id: int) -> dict:
+        """이 진료의 문자 회차 설정.
+
+        **행이 없는 회차는 기본값이다.** 화면을 한 번도 안 만진 진료까지 미리
+        다섯 줄을 채우지 않는다 — 안 만졌다는 것과 기본값으로 정했다는 것은
+        여기서 같은 뜻이다.
+        """
+        guide = await self.get(actor, visit_id)
+        rows = {r.kind: r for r in await GuideMessageSetting.filter(guide_document_id=guide.guide_document_id)}
+
+        rounds = []
+        for kind in (
+            GuideMessageKind.CHECK_D7,
+            GuideMessageKind.CHECK_D15,
+            GuideMessageKind.CHECK_D30,
+            GuideMessageKind.RUN_OUT,
+        ):
+            row = rows.get(kind)
+            rounds.append(
+                {
+                    "kind": kind.value,
+                    "enabled": _DEFAULT_ON[kind] if row is None else row.enabled,
+                    "body": None if row is None else row.body,
+                    "days_before": (
+                        RUN_OUT_BEFORE_DAYS
+                        if kind is GuideMessageKind.RUN_OUT and (row is None or row.days_before is None)
+                        else (None if row is None else row.days_before)
+                    ),
+                    "fixed": kind in FIXED_ON,
+                }
+            )
+        return {"check_hour": guide.check_hour, "rounds": rounds}
+
+    async def save_message_plan(self, actor, visit_id: int, plan) -> dict:
+        """문자 설정을 저장한다 — 「이 환자만 적용」.
+
+        스탭도 저장한다. 원문의 「저장은 의사 계정만」은 **의원 템플릿**(D2-5)
+        이야기고, 스탭은 「이 환자만 적용」까지 할 수 있다고 같은 줄이 적는다.
+
+        고칠 수 있는 때는 안내문 본문과 **같은 규칙**이다 — 스탭 확인 중이면
+        스탭이, 의사에게 넘어간 뒤로는 의사가. 두 규칙이 갈리면 「문구는
+        고쳐지는데 본문은 403」 같은 화면이 나온다.
+
+        승인 뒤(`SCHEDULED_TO_SEND`)에는 막는다. 그때 고치면 **이미 잡힌 예약과
+        어긋난다** — 화면에는 새 문구가, 예약에는 옛 문구가 남는다. 고치려면
+        승인을 거두고(`unapprove`) 고친 뒤 다시 승인한다.
+        """
+        self._require_staff_or_doctor(actor, "문자 설정은")
+
+        async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+
+            # **반려된 것도 스탭 차례다.** 본문 수정과 같은 규칙이어야 한다 —
+            # 반려 사유가 「문자 회차를 고쳐 주세요」인 순간 여기서만 막히면,
+            # 스탭은 본문은 고쳐지는데 문자 설정은 409 를 보는 화면을 만난다.
+            # 본문 쪽만 열었다가 이 자리를 빠뜨렸다.
+            if guide.status in (GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_RETURNED):
+                self._require_staff_or_doctor(actor, "문자 설정은")
+            elif guide.status is GuideStatus.APPROVAL_PENDING:
+                self._require_doctor(actor)
+            else:
+                raise ApiError(
+                    "GUIDE_NOT_PENDING",
+                    409,
+                    "확인·승인 요청 상태에서만 문자 설정을 고칠 수 있습니다.",
+                )
+
+            hour = int(getattr(plan, "check_hour", CHECK_HOUR))
+            if hour not in CHECK_HOURS:
+                raise ApiError("BAD_CHECK_HOUR", 422, "고를 수 없는 시각입니다.")
+            guide.check_hour = hour
+            await guide.save(update_fields=["check_hour", "updated_at"], using_db=connection)
+
+            for item in getattr(plan, "rounds", []) or []:
+                kind = GuideMessageKind(item.kind)
+                await GuideMessageSetting.update_or_create(
+                    guide_document_id=guide.guide_document_id,
+                    kind=kind,
+                    defaults=self._round_values(kind, item),
+                    using_db=connection,
+                )
+
+        return await self.message_plan(actor, visit_id)
+
+    @staticmethod
+    def _round_values(kind: GuideMessageKind, item) -> dict:
+        """회차 한 줄이 담길 모양. **한 줄을 재는 규칙을 여기 모은다** —
+        저장 함수 안에 두었더니 트랜잭션·권한·검사가 한 덩이가 됐다.
+        """
+        # **일주일 뒤는 끌 수 없다** — 화면이 잠그지만 요청은 그냥 온다.
+        enabled = True if kind in FIXED_ON else bool(item.enabled)
+
+        body = item.body
+        if body is not None:
+            body = body.strip()
+            if not body:
+                # 비운 것은 「기본 문구로 되돌린다」는 뜻이다.
+                body = None
+            elif len(body) > MESSAGE_BODY_MAX:
+                raise ApiError("BODY_TOO_LONG", 422, "문구가 너무 깁니다.")
+
+        days_before = None
+        if kind is GuideMessageKind.RUN_OUT:
+            days_before = RUN_OUT_BEFORE_DAYS if item.days_before is None else int(item.days_before)
+            if not RUN_OUT_BEFORE_MIN <= days_before <= RUN_OUT_BEFORE_MAX:
+                raise ApiError("BAD_DAYS_BEFORE", 422, "소진 며칠 전인지가 범위를 벗어났습니다.")
+
+        return {"enabled": enabled, "body": body, "days_before": days_before}
+
+    async def unapprove(self, actor, visit_id: int) -> GuideDocument:
+        """승인을 **거둔다** — 승인했는데 잘못된 것을 발견했을 때.
+
+        의사만 한다. 승인한 사람이 거두는 것이라 같은 권한이다.
+
+        **이미 나간 문자가 있으면 거두지 않는다.** 환자가 이미 받았는데
+        「승인 안 한 것」으로 되돌리면, 화면에 안 보이는 글이 환자 손에 있는
+        상태가 된다 — 그때 할 일은 철회가 아니라 새 안내를 보내는 것이다.
+
+        거두면 **예약된 문자를 끈다.** 줄을 지우지 않고 `CANCELED` 로 둔다 —
+        껐다는 것도 기록이다. 나중에 「왜 안 갔지」를 물을 때 답이 있어야 한다.
+
+        상태는 `APPROVAL_PENDING` 으로 돌아간다. 스탭까지 되돌리지 않는 이유는,
+        **잘못을 본 사람이 의사이기 때문**이다 — 스탭에게 넘기려면 사유를 적어
+        `return_to_staff` 로 보낸다.
+        """
+        self._require_doctor(actor)
+
+        async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+
+            if guide.status is not GuideStatus.SCHEDULED_TO_SEND:
+                raise ApiError("GUIDE_NOT_SCHEDULED", 409, "승인된 안내문만 철회할 수 있습니다.")
+
+            sent = (
+                await GuideMessage.filter(
+                    guide_document_id=guide.guide_document_id,
+                    status=GuideMessageStatus.SENT,
+                )
+                .using_db(connection)
+                .exists()
+            )
+            if sent:
+                raise ApiError(
+                    "GUIDE_ALREADY_SENT",
+                    409,
+                    "이미 환자에게 나간 문자가 있어 철회할 수 없습니다. 새 안내를 보내 주세요.",
+                )
+
+            guide.status = GuideStatus.APPROVAL_PENDING
+            guide.approved_by = None
+            guide.approved_at = None
+            guide.scheduled_at = None
+            await guide.save(
+                update_fields=["status", "approved_by", "approved_at", "scheduled_at", "updated_at"],
+                using_db=connection,
+            )
+
+            # 예약을 끈다. **지우지 않는다** — 껐다는 것도 기록이다.
+            await (
+                GuideMessage.filter(
+                    guide_document_id=guide.guide_document_id,
+                    status=GuideMessageStatus.SCHEDULED,
+                )
+                .using_db(connection)
+                .update(status=GuideMessageStatus.CANCELED)
+            )
+
+            await GuideEvent.create(
+                guide_document=guide,
+                event_type=GuideEventType.UNAPPROVED,
                 actor_id=actor.user_id,
                 using_db=connection,
             )
@@ -342,6 +803,16 @@ class GuideService:
         """
         if not ({"staff", "doctor"} & set(actor.roles)):
             raise ApiError("FORBIDDEN", 403, f"{subject} 스탭 또는 의사 계정만 할 수 있습니다.")
+
+    @staticmethod
+    def _is_doctor(actor) -> bool:
+        """`_require_doctor` 와 같은 판정을 **막지 않고 묻기만** 한다.
+
+        고칠 수 있는지를 상태와 함께 봐야 하는 자리가 있어서다 — 스탭 확인
+        중이면 스탭이, 승인 요청 중이면 의사가 고친다. 두 곳이 서로 다른
+        기준을 쓰면 한쪽만 고쳐진다.
+        """
+        return "doctor" in actor.roles
 
     @staticmethod
     def _require_doctor(actor) -> None:

@@ -8,6 +8,7 @@ from app.ocr.schemas import (
     OcrJobResponse,
     OcrResultResponse,
     UpdateOcrFieldRequest,
+    WriteOcrFieldRequest,
 )
 from app.ocr.security import OcrActor, get_ocr_actor
 from app.ocr.service import (
@@ -69,6 +70,25 @@ async def get_ocr_fields(
     field_type: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
 ) -> list[OcrFieldResponse]:
     return await ocr.fields(ocr_job_id, actor, field_type)
+
+
+@ocr_router.put("/visits/{visit_id}/ocr-fields/{field_type}", response_model=OcrFieldResponse | None)
+async def write_ocr_field(
+    visit_id: Annotated[int, Path(gt=0)],
+    field_type: Annotated[str, Path(min_length=1, max_length=64)],
+    request: WriteOcrFieldRequest,
+    actor: Annotated[OcrActor, Depends(get_ocr_actor)],
+    ocr: Annotated[OcrService, Depends(get_ocr_service)],
+) -> OcrFieldResponse | None:
+    """판독이 못 읽은 값을 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
+
+    **고치기(PATCH)와 다른 길이다.** 저쪽은 있는 줄의 값을 바꾸고, 이쪽은 줄
+    자체가 없는 것을 만든다. 그래서 항목 이름(`field_type`)으로 짚는다 — 줄이
+    없으면 가리킬 번호도 없기 때문이다.
+
+    비우면 그 줄을 지우고 `null` 을 준다.
+    """
+    return await ocr.write_field(visit_id, field_type, request.value, actor)
 
 
 @ocr_router.patch("/ocr/fields/{ocr_field_id}", response_model=OcrFieldResponse)

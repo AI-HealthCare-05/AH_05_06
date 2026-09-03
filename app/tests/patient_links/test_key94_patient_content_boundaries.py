@@ -1,7 +1,21 @@
 """환자 경로가 원문·내부 메타데이터·미승인 안내를 내보내지 않는가 — KEY-94."""
 
+from pydantic import BaseModel
+
 from app.dtos.checkins import CheckInAnswerContent, CheckInPainTypeResponse, CheckInReadResponse
-from app.dtos.patient_links import PatientGuideResponse, PatientGuideSectionResponse
+from app.dtos.patient_links import (
+    PatientCareBlockResponse,
+    PatientCareResponse,
+    PatientChatResponse,
+    PatientGuideDetailResponse,
+    PatientGuideDrugResponse,
+    PatientGuideGoalResponse,
+    PatientGuideResponse,
+    PatientGuideSectionResponse,
+    PatientLifeAxisResponse,
+    PatientLifeResponse,
+    PatientMedicationStatResponse,
+)
 from app.models.visits import GuideDocument, GuideStatus, PatientGuideLink
 from app.tests.patient_links.test_patient_links import (
     TOKEN,
@@ -11,8 +25,32 @@ from app.tests.patient_links.test_patient_links import (
     make_staff,
 )
 
-GUIDE_FIELDS = {"version", "approved_at", "expires_at", "sections", "demo_only"}
+GUIDE_FIELDS = {
+    "version",
+    "approved_at",
+    "expires_at",
+    "sections",
+    "visit",
+    "clinic",
+    "disease",
+    "stat",
+    "guide",
+    "care",
+    "life",
+    "chat",
+    "demo_only",
+}
+GUIDE_REQUIRED_FIELDS = {"version", "approved_at", "expires_at", "sections", "demo_only"}
 GUIDE_SECTION_FIELDS = {"key", "body"}
+STAT_FIELDS = {"drugName", "drugSub", "prescribed", "dayOn", "remaining", "pct", "out", "why"}
+GUIDE_DETAIL_FIELDS = {"summary", "goals", "goalSay", "drug", "why", "how", "next"}
+GUIDE_GOAL_FIELDS = {"n", "a", "now", "t", "hasChart", "rangeLabel"}
+GUIDE_DRUG_FIELDS = {"n", "s", "d"}
+CARE_FIELDS = {"title", "blocks", "danger", "ask"}
+CARE_BLOCK_FIELDS = {"t", "p"}
+LIFE_FIELDS = {"sub", "challenges", "axes"}
+LIFE_AXIS_FIELDS = {"chal", "goal", "title", "p"}
+CHAT_FIELDS = {"chips"}
 CHECKIN_FIELDS = {
     "round_label",
     "drug_name",
@@ -27,11 +65,24 @@ CHECKIN_ANSWER_FIELDS = {"lead", "body", "ask", "notify"}
 PAIN_TYPE_FIELDS = {"key", "label"}
 
 
+def _serialized_fields(model: type[BaseModel]) -> set[str]:
+    return {field.serialization_alias or name for name, field in model.model_fields.items()}
+
+
 def test_patient_response_contracts_allow_only_reviewed_fields() -> None:
     """원문·문서 ID·승인자 필드가 DTO에 추가되는 순간 실패한다."""
 
-    assert set(PatientGuideResponse.model_fields) == GUIDE_FIELDS
-    assert set(PatientGuideSectionResponse.model_fields) == GUIDE_SECTION_FIELDS
+    assert _serialized_fields(PatientGuideResponse) == GUIDE_FIELDS
+    assert _serialized_fields(PatientGuideSectionResponse) == GUIDE_SECTION_FIELDS
+    assert _serialized_fields(PatientMedicationStatResponse) == STAT_FIELDS
+    assert _serialized_fields(PatientGuideDetailResponse) == GUIDE_DETAIL_FIELDS
+    assert _serialized_fields(PatientGuideGoalResponse) == GUIDE_GOAL_FIELDS
+    assert _serialized_fields(PatientGuideDrugResponse) == GUIDE_DRUG_FIELDS
+    assert _serialized_fields(PatientCareResponse) == CARE_FIELDS
+    assert _serialized_fields(PatientCareBlockResponse) == CARE_BLOCK_FIELDS
+    assert _serialized_fields(PatientLifeResponse) == LIFE_FIELDS
+    assert _serialized_fields(PatientLifeAxisResponse) == LIFE_AXIS_FIELDS
+    assert _serialized_fields(PatientChatResponse) == CHAT_FIELDS
     assert set(CheckInReadResponse.model_fields) == CHECKIN_FIELDS
     assert set(CheckInAnswerContent.model_fields) == CHECKIN_ANSWER_FIELDS
     assert set(CheckInPainTypeResponse.model_fields) == PAIN_TYPE_FIELDS
@@ -52,7 +103,7 @@ class TestPatientContentBoundaries(PatientLinkTestCase):
 
         assert patient_guide.status_code == 200
         guide_body = patient_guide.json()
-        assert set(guide_body) == GUIDE_FIELDS
+        assert GUIDE_REQUIRED_FIELDS <= set(guide_body) <= GUIDE_FIELDS
         assert guide_body["sections"] == [{"key": "medication", "body": "합성 승인 복약 안내"}]
         assert all(set(section) == GUIDE_SECTION_FIELDS for section in guide_body["sections"])
 

@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>인증번호 확인 · 케어온</title>
+<link rel="stylesheet" href="../css/tokens.css" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font);
+    background: var(--surface);
+    color: var(--tx);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
+
+  .app {
+    max-width: 430px;
+    margin: 0 auto;
+    min-height: 100dvh;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    padding: 0 24px 48px;
+  }
+
+  /* 뒤로가기 */
+  .back-btn {
+    background: none; border: none;
+    font-size: 24px; color: var(--tx);
+    cursor: pointer; padding: 16px 8px 16px 0;
+    align-self: flex-start;
+    margin-top: 8px;
+  }
+
+  /* 콘텐츠 */
+  .otp-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-bottom: 12dvh;
+  }
+
+  .otp-title {
+    font-size: 26px; font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 8px;
+  }
+  .otp-sub {
+    font-size: 15px; color: var(--tx-muted);
+    margin-bottom: 32px;
+  }
+
+  /* 6자리 입력 셀 */
+  .otp-cells {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .otp-cell {
+    width: 48px; height: 56px;
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    font-size: 22px; font-weight: 700;
+    text-align: center;
+    color: var(--tx);
+    caret-color: var(--p-dark);
+    outline: none;
+    transition: border-color .15s;
+    -webkit-appearance: none;
+    flex: 1;
+  }
+  .otp-cell:focus {
+    border-color: var(--p-dark);
+    box-shadow: 0 0 0 2px rgba(120,50,100,.12);
+  }
+  .otp-cell.error {
+    border-color: var(--danger);
+  }
+
+  /* 타이머 */
+  .otp-timer {
+    font-size: 14px; font-weight: 600;
+    color: var(--danger);
+    margin-bottom: 8px;
+  }
+
+  /* 오류 메시지 */
+  .otp-error {
+    font-size: 13px;
+    color: var(--danger);
+    margin-bottom: 8px;
+    min-height: 18px;
+  }
+
+  /* 하단 */
+  .otp-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    margin-top: auto;
+  }
+
+  .otp-confirm {
+    width: 100%; padding: 16px;
+    background: #e4c1f5;
+    border: none; border-radius: var(--r-btn);
+    font-family: var(--font);
+    font-size: 17px; font-weight: 600;
+    color: #2d1a3a;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .otp-confirm:hover { opacity: .88; }
+  .otp-confirm:disabled { opacity: .4; cursor: default; }
+
+  .otp-resend {
+    font-size: 14px; color: var(--tx-muted);
+    display: flex; gap: 6px; align-items: center;
+  }
+  .otp-resend__btn {
+    background: none; border: none;
+    font-family: var(--font);
+    font-size: 14px; font-weight: 600;
+    color: var(--p-dark);
+    cursor: pointer;
+  }
+  .otp-resend__btn:disabled { color: var(--tx-muted); cursor: default; }
+
+  /* 세션 만료 화면 */
+  .status-screen {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    padding: 24px 0;
+  }
+  .status-icon { font-size: 48px; margin-bottom: 24px; }
+  .status-title { font-size: 22px; font-weight: 700; margin-bottom: 12px; line-height: 1.4; }
+  .status-desc { font-size: 15px; color: var(--tx-muted); line-height: 1.6; }
+  .status-btn {
+    margin-top: 32px; width: 100%; padding: 16px;
+    background: var(--p); border: none; border-radius: var(--r-btn);
+    font-family: var(--font); font-size: 17px; font-weight: 600;
+    color: var(--p-deep); cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <button type="button" class="back-btn" id="back-btn">‹</button>
+
+  <!-- 정상 입력 화면 -->
+  <div class="otp-content" id="view-verify">
+    <h1 class="otp-title">인증번호를<br>넣어주세요</h1>
+    <p class="otp-sub" id="otp-sub">번호로 보냈어요</p>
+
+    <div class="otp-cells" id="otp-cells">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="one-time-code">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input class="otp-cell" type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]">
+    </div>
+
+    <div class="otp-timer" id="otp-timer">3분 00초 남았어요</div>
+    <div class="otp-error" id="otp-error" aria-live="polite"></div>
+  </div>
+
+  <div class="otp-bottom" id="view-verify-btn">
+    <button type="button" class="otp-confirm" id="otp-confirm" disabled>확인</button>
+    <div class="otp-resend">
+      <span>못 받으셨나요?</span>
+      <button type="button" class="otp-resend__btn" id="resend-btn" disabled>다시 받기 (<span id="resend-timer">60</span>초)</button>
+    </div>
+  </div>
+
+  <!-- 세션 만료 화면 -->
+  <div class="status-screen" id="view-session-expired">
+    <div class="status-icon">🔒</div>
+    <p class="status-title">인증 시간이<br>만료됐어요</p>
+    <p class="status-desc">처음부터 다시 시도해 주세요.</p>
+    <button type="button" class="status-btn" id="btn-restart">처음으로 돌아가기</button>
+  </div>
+
+  <!-- 서버 오류 화면 -->
+  <div class="status-screen" id="view-error">
+    <div class="status-icon">⚠️</div>
+    <p class="status-title">일시적인 오류가<br>생겼어요</p>
+    <p class="status-desc">잠시 후 다시 시도해 주세요.</p>
+    <button type="button" class="status-btn" id="btn-error-retry">다시 시도</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var API_BASE = '/api/v1';
+  var cells = Array.from(document.querySelectorAll('.otp-cell'));
+  var confirmBtn = document.getElementById('otp-confirm');
+  var timerEl = document.getElementById('otp-timer');
+  var resendBtn = document.getElementById('resend-btn');
+  var resendTimerEl = document.getElementById('resend-timer');
+  var errorEl = document.getElementById('otp-error');
+
+  /* URL 파라미터 읽기 — 토큰은 메모리에만 둔다 */
+  var params = new URLSearchParams(window.location.search);
+  var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+  var isMock = params.get('mock') === '1';
+  var token = isMock ? (fragment.get('t') || '') : (params.get('token') || '');
+  var expiresAt = params.get('expires_at') ? new Date(params.get('expires_at')) : null;
+  var retryAfterSeconds = parseInt(params.get('retry_after') || '60', 10);
+  if (isMock && !expiresAt) expiresAt = new Date(Date.now() + 180000);
+
+  function otpStartUrl() {
+    if (isMock) return 'otp.html' + location.search + location.hash;
+    return 'otp.html' + (token ? '?token=' + encodeURIComponent(token) : '');
+  }
+
+  document.getElementById('back-btn').addEventListener('click', function () {
+    window.location.href = otpStartUrl();
+  });
+
+  document.getElementById('btn-restart').addEventListener('click', function () {
+    window.location.href = otpStartUrl();
+  });
+
+  document.getElementById('btn-error-retry').addEventListener('click', function () {
+    window.location.reload();
+  });
+
+  function showView(id) {
+    ['view-verify', 'view-verify-btn', 'view-session-expired', 'view-error'].forEach(function (v) {
+      var el = document.getElementById(v);
+      if (!el) return;
+      if (v === id || (id === 'view-verify' && v === 'view-verify-btn')) {
+        el.style.display = 'flex';
+        if (v === 'view-verify') el.style.display = 'flex';
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  }
+
+  function guideReturnUrl() {
+    var query = new URLSearchParams(location.search);
+    var fragment = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    var safeQuery = new URLSearchParams();
+    var mock = query.get('mock');
+    var previewCase = query.get('case');
+    if (mock === '1') safeQuery.set('mock', '1');
+    if (previewCase && /^[a-z0-9_-]{1,32}$/i.test(previewCase)) safeQuery.set('case', previewCase);
+    var token = fragment.get('t') || query.get('t') || query.get('visit') || '';
+    var safeFragment = new URLSearchParams();
+    if (token) safeFragment.set('t', token);
+    return '/guide.html' +
+      (safeQuery.toString() ? '?' + safeQuery.toString() : '') +
+      (safeFragment.toString() ? '#' + safeFragment.toString() : '');
+  }
+
+  /* ── 셀 입력 자동 이동 ── */
+  var expired = false;
+
+  function updateConfirm() {
+    var filled = cells.every(function (c) { return c.value.length === 1; });
+    confirmBtn.disabled = !filled || expired;
+  }
+
+  function clearError() {
+    errorEl.textContent = '';
+    cells.forEach(function (c) { c.classList.remove('error'); });
+  }
+
+  cells.forEach(function (cell, i) {
+    cell.addEventListener('input', function () {
+      var val = cell.value.replace(/\D/g, '');
+      cell.value = val.slice(-1);
+      if (val && i < cells.length - 1) cells[i + 1].focus();
+      clearError();
+      updateConfirm();
+    });
+    cell.addEventListener('keydown', function (e) {
+      if (e.key === 'Backspace' && !cell.value && i > 0) {
+        cells[i - 1].focus();
+        cells[i - 1].value = '';
+        updateConfirm();
+      }
+    });
+    cell.addEventListener('paste', function (e) {
+      e.preventDefault();
+      var paste = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+      paste.split('').forEach(function (ch, j) {
+        if (cells[i + j]) cells[i + j].value = ch;
+      });
+      var next = Math.min(i + paste.length, cells.length - 1);
+      cells[next].focus();
+      updateConfirm();
+    });
+  });
+
+  /* ── 인증 타이머 (남은 시간 기반) ── */
+  var timerInterval;
+
+  function startMainTimer(targetDate) {
+    clearInterval(timerInterval);
+    timerInterval = setInterval(function () {
+      var remaining = Math.max(0, Math.round((targetDate - Date.now()) / 1000));
+      if (remaining <= 0) {
+        clearInterval(timerInterval);
+        timerEl.textContent = '시간이 만료되었어요';
+        expired = true;
+        confirmBtn.disabled = true;
+        return;
+      }
+      var m = Math.floor(remaining / 60);
+      var s = remaining % 60;
+      timerEl.textContent = m + '분 ' + (s < 10 ? '0' : '') + s + '초 남았어요';
+    }, 1000);
+  }
+
+  if (expiresAt) {
+    startMainTimer(expiresAt);
+  }
+
+  /* ── 다시 받기 쿨다운 ── */
+  var resendRemaining = retryAfterSeconds;
+  var resendInterval;
+
+  function startResendCooldown(seconds) {
+    resendRemaining = seconds;
+    resendBtn.disabled = true;
+    resendBtn.innerHTML = '다시 받기 (<span id="resend-timer">' + seconds + '</span>초)';
+    resendTimerEl = document.getElementById('resend-timer');
+    clearInterval(resendInterval);
+    resendInterval = setInterval(function () {
+      resendRemaining--;
+      resendTimerEl.textContent = resendRemaining;
+      if (resendRemaining <= 0) {
+        clearInterval(resendInterval);
+        resendBtn.disabled = false;
+        resendBtn.textContent = '다시 받기';
+      }
+    }, 1000);
+  }
+
+  startResendCooldown(retryAfterSeconds);
+
+  resendBtn.addEventListener('click', async function () {
+    if (!token) return;
+    resendBtn.disabled = true;
+    if (isMock) {
+      expiresAt = new Date(Date.now() + 180000);
+      startMainTimer(expiresAt);
+      startResendCooldown(60);
+      expired = false;
+      cells.forEach(function (c) { c.value = ''; });
+      cells[0].focus();
+      updateConfirm();
+      clearError();
+      return;
+    }
+    try {
+      var res = await fetch(API_BASE + '/patient-auth/otp/issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_token: token }),
+      });
+      if (res.ok) {
+        var data = await res.json();
+        expiresAt = new Date(data.expires_at);
+        startMainTimer(expiresAt);
+        startResendCooldown(data.retry_after_seconds || 60);
+        expired = false;
+        cells.forEach(function (c) { c.value = ''; });
+        cells[0].focus();
+        updateConfirm();
+        clearError();
+        return;
+      }
+      var body = {};
+      try { body = await res.json(); } catch (_) {}
+      if (body.code === 'OTP_RESEND_TOO_SOON') {
+        startResendCooldown(body.retry_after_seconds || 60);
+      } else if (body.code === 'LINK_EXPIRED') {
+        showView('view-session-expired');
+      } else {
+        errorEl.textContent = body.message || '재전송 중 오류가 생겼어요.';
+        resendBtn.disabled = false;
+      }
+    } catch (_) {
+      errorEl.textContent = '재전송 중 오류가 생겼어요. 잠시 후 다시 시도해 주세요.';
+      resendBtn.disabled = false;
+    }
+  });
+
+  /* ── OTP 검증 ── */
+  confirmBtn.addEventListener('click', async function () {
+    if (!token || expired) return;
+    var code = cells.map(function (c) { return c.value; }).join('');
+    confirmBtn.disabled = true;
+    clearError();
+
+    if (isMock) {
+      if (code === '000000') {
+        sessionStorage.setItem('otp_verified', '1');
+        window.location.replace(guideReturnUrl());
+        return;
+      }
+      cells.forEach(function (c) { c.value = ''; c.classList.add('error'); });
+      cells[0].focus();
+      errorEl.textContent = '인증번호가 올바르지 않아요. 다시 확인해 주세요.';
+      confirmBtn.disabled = true;
+      return;
+    }
+
+    try {
+      var res = await fetch(API_BASE + '/patient-auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_token: token, code: code }),
+      });
+
+      if (res.ok) {
+        window.location.replace('/guide.html#t=' + encodeURIComponent(token));
+        return;
+      }
+
+      var body = {};
+      try { body = await res.json(); } catch (_) {}
+
+      if (body.code === 'PATIENT_SESSION_EXPIRED' || body.code === 'LINK_EXPIRED') {
+        showView('view-session-expired');
+        return;
+      }
+
+      cells.forEach(function (c) { c.value = ''; c.classList.add('error'); });
+      cells[0].focus();
+
+      var msg = body.message || '인증번호가 올바르지 않아요.';
+      if (body.remaining_attempts !== undefined) {
+        msg += ' (' + body.remaining_attempts + '회 남음)';
+      }
+      errorEl.textContent = msg;
+
+      if (body.code !== 'OTP_LOCKED') {
+        confirmBtn.disabled = false;
+      }
+    } catch (_) {
+      showView('view-error');
+    }
+  });
+
+  cells[0].focus();
+})();
+</script>
+</body>
+</html>

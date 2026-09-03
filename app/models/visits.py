@@ -92,8 +92,16 @@ class GuideSectionKey(StrEnum):
 
 
 class GuideEventType(StrEnum):
+    GENERATED = "GENERATED"
     EDITED = "EDITED"
+    #: 스탭이 확인을 마치고 의사에게 넘겼다 (와이어프레임 S1-11).
+    #: 누가 언제 넘겼는지가 남아야, 승인이 늦을 때 어디서 멈췄는지 안다.
+    SUBMITTED = "SUBMITTED"
     APPROVED = "APPROVED"
+    #: 승인을 거뒀다 — 승인했는데 잘못된 것을 발견했을 때.
+    #: 승인 줄을 지우지 않고 이 줄을 더한다: 승인했다가 거뒀다는 것이
+    #: 기록이고, 지우면 「왜 예약이 사라졌지」에 답할 수 없다.
+    UNAPPROVED = "UNAPPROVED"
     RETURNED = "RETURNED"
 
 
@@ -121,14 +129,31 @@ class GuideDocument(models.Model):
     version = fields.IntField(default=1)
 
     #: 승인한 사람과 시각. 「누가 이 글을 환자에게 내보냈는가」의 답이다.
-    approved_by = fields.BigIntField(null=True)
-    approved_at = fields.DatetimeField(null=True)
+    #:
+    #: **`| None` 을 손으로 적는다.** `null=True` 만으로는 mypy 가 이 칸을
+    #: 비울 수 있다는 것을 모른다 — 승인 철회(`unapprove`)가 셋을 다 `None` 으로
+    #: 되돌리는데, 그때마다 「없는 값을 넣는다」고 잘못 짚었다. 칸이 비는 것이
+    #: 이 셋의 요점이라 주석이 그것을 말해야 한다(`PrescriptionItem.duration_days`
+    #: 와 같은 방식).
+    approved_by: int | None = fields.BigIntField(null=True)
+    approved_at: datetime | None = fields.DatetimeField(null=True)
     #: 발송 예정 시각. 승인이 이 값을 채운다 — 승인과 예약이 한 동작이다.
-    scheduled_at = fields.DatetimeField(null=True)
+    scheduled_at: datetime | None = fields.DatetimeField(null=True)
 
     #: 마지막 반려 사유. 스탭 알림에 그대로 뜨는 문장이라 여기 남긴다.
     #: 이력 전체는 GuideEvent 가 갖는다.
+    #:
+    #: **재제출이 이 칸을 비운다.** 고쳐서 다시 올렸는데 사유가 남아 있으면
+    #: 화면이 아직 반려된 것으로 읽는다 — 지우는 것은 「지금 상태」뿐이고
+    #: 이력은 GuideEvent 에 그대로 있다.
     returned_reason = fields.CharField(max_length=200, null=True)
+
+    #: 확인 문자를 몇 시에 보낼지 (와이어프레임 S1-14 「확인 문자 시각」).
+    #: 회차마다 따로 두지 않는 이유는 **화면에 고르는 자리가 하나**이기
+    #: 때문이다 — 원문 주석: 「확인 · 재진 문자에 적용」. 회차별로 담아 두면
+    #: 화면이 못 만드는 상태(회차마다 다른 시각)를 표가 허용하게 된다.
+    #: 안내문 자신은 이 값을 따르지 않는다 — 승인 시각 규칙(기본 18:00)이다.
+    check_hour = fields.SmallIntField(default=10)
 
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
@@ -192,7 +217,7 @@ class GuideSection(models.Model):
 
 
 class GuideEvent(models.Model):
-    """승인 · 반려 · 수정 이력.
+    """생성 · 수정 · 승인 · 반려 이력.
 
     「누가 언제 무엇을 했나」가 남아야 나중에 되짚을 수 있다. 특히 반려는
     **사유가 함께 남아야** 한다 — 스탭이 무엇을 고쳐야 하는지가 그 문장이다.
@@ -208,7 +233,7 @@ class GuideEvent(models.Model):
         on_delete=OnDelete.CASCADE,
     )
     event_type = fields.CharEnumField(enum_type=GuideEventType)
-    #: 수정이면 어느 갈래를 고쳤는가. 승인 · 반려면 비어 있다.
+    #: 수정이면 어느 갈래를 고쳤는가. 생성 · 승인 · 반려면 비어 있다.
     section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
     #: 반려 사유. 반려가 아니면 비어 있다.
     reason = fields.CharField(max_length=200, null=True)
@@ -276,6 +301,227 @@ class PatientOtpChallenge(models.Model):
     class Meta:
         table = "patient_otp_challenge"
         indexes = (("expires_at",), ("locked_until",))
+
+
+class GuideMessageKind(StrEnum):
+    """문자 한 통이 무엇인가 — 와이어프레임 D1-6 「발송 · 예정」.
+
+    회차를 값으로 두는 것이 중요하다. 「일곱째 날」을 시각에서 되계산하면
+    진료일이 고쳐질 때 어느 회차였는지를 잃는다.
+    """
+
+    #: 승인 직후 나가는 진료 안내문. 링크가 이것으로 간다.
+    GUIDE = "GUIDE"
+    #: 확인 문자 — 복약을 이어 가고 있는지 묻는다.
+    CHECK_D7 = "CHECK_D7"
+    CHECK_D15 = "CHECK_D15"
+    CHECK_D30 = "CHECK_D30"
+    #: 약이 떨어지기 전에 알린다. 처방일수를 알아야 셈할 수 있다.
+    RUN_OUT = "RUN_OUT"
+
+
+class VisitCheckKey(StrEnum):
+    """확인 항목 — 와이어프레임 S1-6 「확인 항목 · 처방별」.
+
+    처방을 내기 전에 스탭이 환자에게 여쭙는 것들이다. 비잔이면 우울증 병력을
+    묻고, 다른 처방이면 다른 것을 묻는다 — **처방별로 달라지는 것이 맞지만**,
+    무엇이 어느 처방에 붙는지를 정하는 자리(D2-3 처방 세트)가 아직 없다.
+    그때까지는 다섯을 다 여쭙는다.
+
+    **값을 열거로 못박는다.** 자유 문자열이면 화면 문구가 바뀔 때마다 지난
+    진료의 답이 어느 질문의 답이었는지 알 수 없게 된다 — 「우울증 병력」이
+    「우울증 과거력」으로 바뀌면 옛 행이 미아가 된다.
+    """
+
+    DEPRESSION = "DEPRESSION"
+    HYPERTENSION = "HYPERTENSION"
+    OSTEOPOROSIS = "OSTEOPOROSIS"
+    DIABETES = "DIABETES"
+    PREGNANCY_PLAN = "PREGNANCY_PLAN"
+
+
+class GuideMessageHold(StrEnum):
+    """**왜 붙들고 있나** — 와이어프레임 S2-3.
+
+    원문이 딱 둘로 못박는다: 「스탭이 손댈 일은 보류 두 가지뿐이다 — 번호가
+    잘못됐을 때와 문자가 떨어졌을 때.」
+
+    실패 사유(`GuideMessageFailure`)와 **다른 목록**이다. 겹치는 낱말이 있어
+    한 목록으로 합치고 싶어지지만, 재는 것이 다르다 — 이쪽은 「보내기 전에
+    이미 아는 것」이고 저쪽은 「보내 보고 안 것」이다.
+    """
+
+    #: 이 환자 번호로는 못 보낸다는 것을 이미 안다 (앞 통이 그 번호로 실패했다).
+    INVALID_PHONE = "INVALID_PHONE"
+    #: 의원의 문자 잔량이 없다. **환자마다 다르지 않다** — 그래서 실패가 아니다.
+    NO_CREDIT = "NO_CREDIT"
+
+
+class GuideMessageFailure(StrEnum):
+    """**보내 봤는데 안 됐다** — 와이어프레임 D1-7 「실패 이유 넷」.
+
+    원문: 「ⓘ 실패 이유 넷 — 잘못된 번호 · 수신 거부 · 통신사 오류 ·
+    발신번호 미등록」. 넷으로 못박혀 있으므로 자유 문자열로 두지 않는다 —
+    자유롭게 두면 발송기를 붙이는 사람마다 다른 낱말을 넣고, 화면은 그중
+    아는 것만 사람 말로 옮긴다.
+    """
+
+    INVALID_PHONE = "INVALID_PHONE"
+    OPT_OUT = "OPT_OUT"
+    CARRIER = "CARRIER"
+    #: 이것만 처리 경로가 다르다 — 어드민 A1-5 에서 발신번호를 등록한다(D1-7).
+    SENDER_UNREGISTERED = "SENDER_UNREGISTERED"
+
+
+class GuideMessageStatus(StrEnum):
+    """문자 한 통이 지금 어디에 있는가.
+
+    **한 통 단위다.** 다섯 통 중 어느 것이든 실패할 수 있고, 실패한 것만
+    고쳐 다시 보낸다 (D1-6 캡션 — 「발송 상태는 문자 한 통 단위다」).
+
+    `CANCELED` 는 사람이 회차를 끈 것이다. 줄을 지우지 않는 이유는, 껐다는
+    것도 기록이기 때문이다 — 나중에 「왜 안 갔지」를 물을 때 답이 있어야 한다.
+    """
+
+    SCHEDULED = "SCHEDULED"
+    SENT = "SENT"
+    #: **보내려 했고 안 됐다.** 지난 일이다 — 사유는 `GuideMessageFailure`.
+    FAILED = "FAILED"
+    #: **아직 안 보냈고, 지금 보내면 안 될 것을 안다.** 앞일이다.
+    #:
+    #: 와이어프레임 S2-3 이 실패와 나란히 두고 따로 센다(「안 나간 것 3건
+    #: (실패 1 · 보류 2)」). 박수빈의 08-11 진료 안내문은 「⚠ 잘못된 번호」로
+    #: 실패했고, 같은 번호로 예약된 08-14 것은 「⏸ 보류 · 번호」다 — **같은
+    #: 원인인데 상태가 다르다.** 지난 것은 실패, 앞으로 나갈 것은 보류다.
+    #:
+    #: 실패로 뭉치면 「고칠 수 있는 것」과 「이미 벌어진 것」이 한 무더기가
+    #: 되어, 스탭이 무엇을 손대야 하는지 안 보인다.
+    HELD = "HELD"
+    CANCELED = "CANCELED"
+
+
+class VisitCheckAnswer(models.Model):
+    """이 진료에서 확인 항목에 뭐라고 답했나 — 와이어프레임 S1-6.
+
+    **안 물어본 것과 「아니오」는 다르다.** 행이 없으면 아직 안 여쭌 것이고,
+    `checked=False` 는 여쭤서 아니라고 한 것이다. 하나로 뭉치면 안내문이
+    「우울증 병력 없음」을 확인한 것처럼 적을 수 있는데, 실제로는 아무도 안
+    물었을 수 있다 — 안전에 걸리는 항목이라 이 구별이 필요하다.
+
+    답한 사람과 시각을 남긴다. 나중에 「누가 이걸 확인했나」를 물을 자리다.
+    """
+
+    visit_check_answer_id = fields.BigIntField(primary_key=True)
+    visit: fields.ForeignKeyRelation[Visit] = fields.ForeignKeyField(
+        "models.Visit",
+        related_name="check_answers",
+        on_delete=OnDelete.CASCADE,
+        source_field="visit_id",
+    )
+    visit_id: int
+
+    item_key = fields.CharEnumField(enum_type=VisitCheckKey)
+    checked = fields.BooleanField(default=False)
+
+    #: 누가 답했나. 「누가 이걸 확인했나」의 답이다.
+    answered_by = fields.BigIntField(null=True)
+    answered_at = fields.DatetimeField(null=True)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "visit_check_answer"
+        unique_together = (("visit", "item_key"),)
+
+
+class GuideMessageSetting(models.Model):
+    """이 진료의 문자 회차 설정 — 와이어프레임 S1-14 「문자 설정」.
+
+    **`GuideMessage` 와 다른 표다.** 저쪽은 「나갈 문자 한 통」이고 승인해야
+    생긴다. 여기는 「이 환자에게 어떤 회차를 어떤 문구로 보낼지」이고, 승인
+    **전에** 스탭이 정한다. 한 표로 합치면 승인 전에는 담을 데가 없다.
+
+    행이 없는 회차는 **기본값**이다 (`_DEFAULT_ON`). 화면을 한 번도 안 만진
+    진료까지 미리 다섯 줄을 채우지 않는다 — 안 만졌다는 것과 기본값으로
+    정했다는 것은 여기서 같은 뜻이라, 굳이 갈라 적을 이유가 없다.
+
+    `body` 가 비면 기본 문구다. 원문의 우선순위는 「이 환자만 적용」 >
+    의원 템플릿(D2-5) > 기본인데, 이 표가 담는 것은 **맨 앞 하나**다 —
+    의원 템플릿은 아직 없다.
+    """
+
+    guide_message_setting_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="message_settings",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    guide_document_id: int
+
+    kind = fields.CharEnumField(enum_type=GuideMessageKind)
+    enabled = fields.BooleanField(default=True)
+
+    #: 이 환자에게만 적용할 문구. 비면 기본 문구를 쓴다.
+    body = fields.TextField(null=True)
+
+    #: 소진 임박을 며칠 전에 보낼지. `RUN_OUT` 에만 쓴다 — 다른 회차는
+    #: 날수가 이름에 박혀 있다(D7 · D15 · D30).
+    days_before = fields.SmallIntField(null=True)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "guide_message_setting"
+        unique_together = (("guide_document", "kind"),)
+
+
+class GuideMessage(models.Model):
+    """환자에게 나갈 문자 한 통 — 와이어프레임 D1-6 · S1-14.
+
+    승인이 이 줄들을 만든다. 「승인했는데 왜 안 나갔지」가 생기지 않게
+    승인과 예약을 한 동작으로 두는 것과 같은 이유다 (`GuideService.approve`).
+
+    **문구를 여기 담지 않는다.** 보낼 때 그 시점의 템플릿으로 만든다 —
+    미리 굳혀 두면 의원이 문구를 고쳐도 예약된 것만 옛 글로 나간다.
+    보낸 뒤에는 `sent_body` 에 남긴다: 그때는 이미 나간 글이라 바뀌면 안 된다.
+    """
+
+    guide_message_id = fields.BigIntField(primary_key=True)
+    guide_document_id: int
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="messages",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    kind = fields.CharEnumField(enum_type=GuideMessageKind)
+    status = fields.CharEnumField(enum_type=GuideMessageStatus, default=GuideMessageStatus.SCHEDULED)
+    scheduled_at = fields.DatetimeField()
+    sent_at = fields.DatetimeField(null=True)
+    #: 못 나간 이유 — **넷뿐이다**(D1-7). 자유 문자열로 두면 발송기를 붙이는
+    #: 사람마다 다른 낱말을 넣고, 화면은 그중 아는 것만 사람 말로 옮긴다.
+    #: 화면이 코드를 그대로 보여 주지는 않는다.
+    #:
+    #: **비울 수 있다.** 다시 예약하면 지난 실패 사유를 지운다 — 새로 잡은
+    #: 발송에 옛 실패가 붙어 있으면 화면이 「실패」로 읽는다.
+    failure_code: GuideMessageFailure | None = fields.CharEnumField(enum_type=GuideMessageFailure, null=True)
+
+    #: 왜 붙들고 있나 — **둘뿐이다**(S2-3). `status` 가 `HELD` 일 때만 찬다.
+    #: 실패 사유와 목록이 다르다 — 재는 것이 다르기 때문이다.
+    hold_reason = fields.CharEnumField(enum_type=GuideMessageHold, null=True)
+    #: 실제로 나간 글. 보내기 전에는 비어 있다.
+    sent_body = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "guide_message"
+        #: 한 안내문에 같은 회차가 둘이면 환자가 같은 문자를 두 번 받는다.
+        unique_together = (("guide_document", "kind"),)
+        indexes = (("status", "scheduled_at"),)
 
 
 class CheckInMedication(StrEnum):
@@ -378,6 +624,9 @@ class PatientUsageEvent(models.Model):
     answer_outcome = fields.CharEnumField(enum_type=PatientAnswerOutcome, null=True)
     #: 답의 근거가 된 안내 갈래. **원문이 아니라 어디를 봤는지**만 남긴다.
     grounded_section = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
+    #: Random response references are returned once to the patient. Only their
+    #: digest is stored so feedback can be linked without retaining chat text.
+    response_ref_digest = fields.CharField(max_length=64, null=True, unique=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:

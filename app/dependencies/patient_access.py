@@ -43,5 +43,11 @@ async def require_patient_write(
     return _require_patient_permission(actor, Permission.PATIENT_WRITE)
 
 
+async def require_sms_send(
+    actor: Annotated[ClinicalActor, Depends(get_clinical_actor)],
+) -> ClinicalActor:
+    return _require_patient_permission(actor, Permission.SMS_SEND)
+
+
 # 이전 이름을 쓰는 코드가 권한 검사를 우회하지 않도록 읽기 가드로 유지한다.
 require_patient_access = require_patient_read

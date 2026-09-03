@@ -64,9 +64,12 @@ class TestPatientListContract(TestCase):
         body = response.json()
         assert response.status_code == 200
         assert body["selected_category"] == "SMS_OPT_OUT"
+        # 「진행 중」은 최근 진료가 완료가 아닌 환자다. 여기서는 둘 다 진료기록도
+        # 안내문도 없어 「작성 중」에 머물러 있으므로 2 다 — S2-1 이 이 칩을
+        # 요구하기 전에는 0 으로 굳어 있었다(KEY-234).
         assert body["counts"] == {
             "ALL": 3,
-            "IN_TREATMENT": 0,
+            "IN_TREATMENT": 2,
             "NEEDS_ATTENTION": 0,
             "SMS_OPT_OUT": 1,
             "INACTIVE_6_MONTHS": 1,
@@ -126,9 +129,20 @@ class TestPatientListContract(TestCase):
         assert counts[PatientCategory.ALL] == 25
         assert has_next is True
 
-    async def test_event_categories_fail_explicitly_until_the_follow_up_contract_exists(self) -> None:
+    async def test_event_categories_now_answer(self) -> None:
+        """**예전에는 400 이었다.**
+
+        「진행 중」과 「챙겨주세요」는 환자에 붙은 값이 아니라 최근 진료에서
+        나오는 값이라, 표를 걸러 셀 자리가 없어 막아 두고 0 으로 세고 있었다.
+        S2-1 환자 관리 화면이 이 둘을 칩으로 요구하므로 열었다 (KEY-234).
+
+        진료가 없는 환자만 있으면 둘 다 0 이다 — 그것이 맞는 답이다.
+        """
+
         async def actor_override() -> ClinicalActor:
             return ACTOR
+
+        await create_patient("SYN-KEY51-EVT")
 
         app.dependency_overrides[get_clinical_actor] = actor_override
         try:
@@ -140,9 +154,12 @@ class TestPatientListContract(TestCase):
         finally:
             app.dependency_overrides.pop(get_clinical_actor, None)
 
-        assert response.status_code == 400
-        assert response.json()["code"] == "INVALID_REQUEST"
-        assert "아직 지원되지 않습니다" in response.json()["message"]
+        assert response.status_code == 200
+        body = response.json()
+        assert body["selected_category"] == PatientCategory.NEEDS_ATTENTION.value
+        assert body["items"] == [], "진료가 없으면 챙길 일도 없다"
+        assert body["counts"][PatientCategory.NEEDS_ATTENTION.value] == 0
+        assert body["counts"][PatientCategory.IN_TREATMENT.value] == 0
 
     async def test_inactive_cutoff_uses_the_hospital_calendar_day(self) -> None:
         patient = await create_patient("SYN-KEY51-KST")
@@ -165,7 +182,7 @@ class TestPatientListContract(TestCase):
                 limit=20,
             )
 
-        assert [row.patient_id for row, _ in rows] == [patient.patient_id]
+        assert [row.patient.patient_id for row in rows] == [patient.patient_id]
 
 
 class TestFrontDeskContract(TestCase):

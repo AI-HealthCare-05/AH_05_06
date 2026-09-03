@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.api_errors import ContractRoute
 from app.dependencies.patient_access import ClinicalActor, require_patient_read
+from app.dtos.base import CursorPage
 from app.dtos.front_desk import FrontDeskVisitListResponse
-from app.dtos.patients import CursorPage
 from app.services.front_desk import FrontDeskService
 
 front_desk_router = APIRouter(prefix="/front-desk", tags=["front-desk"], route_class=ContractRoute)

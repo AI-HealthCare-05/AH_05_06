@@ -1,9 +1,18 @@
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from app.core.config import Config
 
 # 화면·업무 날짜는 병원 표시 시간대를 한 곳에서 사용한다.
 DISPLAY_TIMEZONE = Config().TIMEZONE
+
+
+def as_utc(dt: datetime) -> datetime:
+    """Tortoise + MySQL timezone 불일치 보정 — KEY-219.
+
+    asyncmy가 DB에서 읽은 UTC 값에 +09:00 태그를 잘못 붙인다.
+    now()는 +00:00(UTC)을 반환하므로 timestamp 비교 전에 양쪽을 UTC로 정규화한다.
+    """
+    return dt.replace(tzinfo=UTC)
 
 
 def clinic_day_window(day: date) -> tuple[datetime, datetime]:
@@ -31,3 +40,17 @@ def clinic_day_window(day: date) -> tuple[datetime, datetime]:
     """
     start = datetime.combine(day, time.min, tzinfo=DISPLAY_TIMEZONE)
     return start, start + timedelta(days=1)
+
+
+def clinic_today() -> date:
+    """의원 시간대의 오늘.
+
+    `clinic_day_window` 와 **같은 시간대에서 재야 한다.** 서버가 UTC 로
+    돌면 한국 시각 자정에서 아홉 시까지가 어제로 잡히고, 그 동안 「오늘
+    나갈 문자」가 하루 앞 것으로 뜬다.
+
+    경계를 만드는 곳을 한 곳에 모으는 것이 이 파일의 요점이라 여기 둔다 —
+    부르는 자리(S2-3 · S2-4)마다 `datetime.now(...)` 를 적으면 한쪽만
+    고쳐지는 날이 온다.
+    """
+    return datetime.now(DISPLAY_TIMEZONE).date()
