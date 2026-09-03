@@ -3,8 +3,8 @@
 처리 흐름:
   CLOVA 활성                  : 파일 읽기 → CLOVA 호출 → OcrResult/OcrDocumentText/OcrField 저장 → COMPLETED
   CLOVA 활성 + 필수 필드 누락 : **빈 줄로 저장하고 COMPLETED** — 화면이 물음표로 세우고 사람이 채운다
-  CLOVA 실패                  : CLOVA_API_ERROR 설정 → fixture fallback 또는 FAILED
-  CLOVA 비활성                : OCR_NOT_CONFIGURED 설정 → fixture fallback 또는 FAILED
+  CLOVA 실패                  : CLOVA_API_ERROR 설정 → FAILED
+  CLOVA 비활성                : OCR_NOT_CONFIGURED 설정 → FAILED
   파일/DB 오류                : OcrJob.status → FAILED
 
   필수 필드(DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS) 중 못 읽은 것은
@@ -22,7 +22,7 @@
 
 관측 로그 (KEY-175):
   모든 종료 경로에서 아래 형식의 단일 구조화 로그를 남긴다.
-  ocr_job_complete mode=<clova|fixture|failed> elapsed_ms=<n> clova_elapsed_ms=<n|none> error_code=<code|none> ocr_job_id=<id>
+  ocr_job_complete mode=<clova|failed> elapsed_ms=<n> clova_elapsed_ms=<n|none> error_code=<code|none> ocr_job_id=<id>
   - clova_elapsed_ms: 실제 CLOVA HTTP 호출 시간 합계, 성공 경로에서만 기록
   - 환자정보·OCR 원문·파일 경로·오류 원문은 로그에 포함하지 않는다.
 """
@@ -47,7 +47,6 @@ from app.models.ocr import (
     OcrJobStatus,
     OcrResult,
 )
-from app.ocr.service import seed_fixture_result
 
 _CLOVA_MODEL_NAME = "clova-ocr-v2"
 
@@ -108,18 +107,11 @@ async def process_ocr_job(ocr_job_id: str) -> None:
                 clova_elapsed_ms=clova_elapsed_ms,
             )
         except ClovaOcrError as exc:
-            job.failure_code = "CLOVA_API_ERROR"
-            await job.save(update_fields=("failure_code",))
-            used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
-            default_logger.warning(
-                "CLOVA 오류 → %s — ocr_job_id=%s, code=%s",
-                "fixture fallback" if used_fixture else "FAILED",
-                ocr_job_id,
-                exc.code,
-            )
+            await _mark_failed(job, "CLOVA_API_ERROR")
+            default_logger.warning("CLOVA 오류 → FAILED — ocr_job_id=%s, code=%s", ocr_job_id, exc.code)
             _observe(
                 ocr_job_id=ocr_job_id,
-                mode="fixture" if used_fixture else "failed",
+                mode="failed",
                 t0=t0,
                 error_code=exc.code,
                 clova_elapsed_ms=exc.elapsed_ms,
@@ -134,17 +126,11 @@ async def process_ocr_job(ocr_job_id: str) -> None:
             await _mark_failed(job, "PROCESSING_ERROR")
             _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR")
     else:
-        job.failure_code = "OCR_NOT_CONFIGURED"
-        await job.save(update_fields=("failure_code",))
-        used_fixture = await _fallback_or_fail(job, job_documents, ocr_job_id)
-        default_logger.warning(
-            "CLOVA 미설정 → %s — ocr_job_id=%s",
-            "fixture fallback" if used_fixture else "FAILED",
-            ocr_job_id,
-        )
+        await _mark_failed(job, "OCR_NOT_CONFIGURED")
+        default_logger.warning("CLOVA 미설정 → FAILED — ocr_job_id=%s", ocr_job_id)
         _observe(
             ocr_job_id=ocr_job_id,
-            mode="fixture" if used_fixture else "failed",
+            mode="failed",
             t0=t0,
             error_code="OCR_NOT_CONFIGURED",
         )
@@ -300,43 +286,6 @@ async def _save_clova_result(
     return set(missing)
 
 
-async def _fallback_or_fail(
-    job: OcrJob,
-    job_documents: list[OcrJobDocument],
-    ocr_job_id: str,
-) -> bool:
-    """fixture fallback을 시도한다. fixture 성공이면 True, FAILED 전환이면 False를 반환한다.
-
-    OCR_FIXTURE_FALLBACK이 비활성(로컬 외 환경 또는 명시적으로 꺼진 경우)이면
-    fixture를 심지 않고 즉시 FAILED로 전환한다.
-    """
-    if not config.OCR_FIXTURE_FALLBACK:
-        default_logger.warning(
-            "fixture fallback 비활성 → FAILED 처리 — ocr_job_id=%s, ENV=%s",
-            ocr_job_id,
-            config.ENV,
-        )
-        await _mark_failed(job, job.failure_code or "PROCESSING_ERROR")
-        return False
-    try:
-        async with in_transaction() as conn:
-            await seed_fixture_result(
-                job,
-                [(jd.document_id, OcrDocumentType(jd.document_type)) for jd in job_documents],
-                conn,
-            )
-        return True
-    except Exception as exc:
-        default_logger.error(
-            "fixture fallback도 실패 — ocr_job_id=%s, error_type=%s",
-            ocr_job_id,
-            type(exc).__name__,
-            exc_info=False,
-        )
-        await _mark_failed(job, "FALLBACK_ERROR")
-        return False
-
-
 async def _mark_failed(job: OcrJob, failure_code: str) -> None:
     job.status = OcrJobStatus.FAILED
     job.failure_code = failure_code
@@ -354,7 +303,7 @@ def _observe(
 ) -> None:
     """모든 OCR 종료 경로에서 단일 구조화 메트릭 로그를 남긴다 (KEY-175).
 
-    mode: clova | fixture | failed
+    mode: clova | failed
     clova_elapsed_ms: 실제 CLOVA HTTP 호출 시간 합계 (성공 경로에서만 제공)
     환자정보·OCR 원문·파일 경로·오류 원문은 포함하지 않는다.
     """

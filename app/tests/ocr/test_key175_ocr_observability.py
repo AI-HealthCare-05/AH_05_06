@@ -7,8 +7,8 @@
 
   구조화 로그 형식
     - 성공(mode=clova): elapsed_ms·clova_elapsed_ms·error_code=none 확인
-    - fallback(mode=fixture): error_code=CLOVA_TIMEOUT·CLOVA_NETWORK_ERROR 확인
-    - 실패(mode=failed): fallback 비활성 시 error_code=OCR_NOT_CONFIGURED 확인
+    - CLOVA 오류(mode=failed): error_code=CLOVA_TIMEOUT·CLOVA_NETWORK_ERROR 확인 (KEY-199: 워커는 fixture seed 불가)
+    - 실패(mode=failed): error_code=OCR_NOT_CONFIGURED 확인
 
   모든 종료 경로에서 ocr_job_complete 한 줄만 남긴다.
 """
@@ -67,15 +67,6 @@ class TestObserveUnit(TestCase):
         assert "clova_elapsed_ms=1800" in log
         assert "error_code=none" in log
         assert "ocr_job_id=unit-test-001" in log
-
-    def test_fixture_fallback_log_format(self) -> None:
-        t0 = perf_counter()
-        with self.assertLogs(_LOGGER, level="INFO") as cap:
-            _observe(ocr_job_id="unit-test-002", mode="fixture", t0=t0, error_code="CLOVA_TIMEOUT")
-        log = "\n".join(cap.output)
-        assert "mode=fixture" in log
-        assert "clova_elapsed_ms=none" in log
-        assert "error_code=CLOVA_TIMEOUT" in log
 
     def test_failed_log_format(self) -> None:
         t0 = perf_counter()
@@ -177,7 +168,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
@@ -186,10 +176,10 @@ class TestOcrObservabilityIntegration(TestCase):
         assert "clova_elapsed_ms=1800" in log
         assert "error_code=none" in log
 
-    # --- CLOVA 오류 → fixture fallback ---
+    # --- CLOVA 오류 → FAILED (KEY-199: 워커는 fixture seed 불가) ---
 
-    async def test_clova_timeout_logs_mode_fixture_with_error_code(self) -> None:
-        """CLOVA_TIMEOUT 발생 시 mode=fixture, error_code=CLOVA_TIMEOUT 로그."""
+    async def test_clova_timeout_logs_mode_failed_with_error_code(self) -> None:
+        """CLOVA_TIMEOUT 발생 시 mode=failed, error_code=CLOVA_TIMEOUT 로그."""
         job = await self._seed("obs-175-timeout-001")
         timeout_err = ClovaOcrError("CLOVA_TIMEOUT", "CLOVA OCR 요청 시간 초과")
         with (
@@ -198,12 +188,11 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
         assert "ocr_job_complete" in log
-        assert "mode=fixture" in log
+        assert "mode=failed" in log
         assert "error_code=CLOVA_TIMEOUT" in log
 
     async def test_clova_timeout_records_clova_elapsed_ms(self) -> None:
@@ -216,14 +205,13 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
         assert "clova_elapsed_ms=29800" in log, "타임아웃 시 elapsed_ms가 로그에 없으면 P95 계산에서 제외됨"
 
-    async def test_clova_network_error_logs_mode_fixture(self) -> None:
-        """CLOVA_NETWORK_ERROR 발생 시 mode=fixture, error_code=CLOVA_NETWORK_ERROR 로그."""
+    async def test_clova_network_error_logs_mode_failed(self) -> None:
+        """CLOVA_NETWORK_ERROR 발생 시 mode=failed, error_code=CLOVA_NETWORK_ERROR 로그."""
         job = await self._seed("obs-175-network-001")
         net_err = ClovaOcrError("CLOVA_NETWORK_ERROR", "CLOVA OCR 네트워크 오류")
         with (
@@ -232,11 +220,10 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
-        assert "mode=fixture" in log
+        assert "mode=failed" in log
         assert "error_code=CLOVA_NETWORK_ERROR" in log
 
     # --- fallback 비활성 → FAILED ---
@@ -249,7 +236,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = False
-            mock_cfg.OCR_FIXTURE_FALLBACK = False
             mock_cfg.ENV = "test"
             await process_ocr_job(str(job.ocr_job_id))
 
@@ -269,7 +255,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
@@ -286,7 +271,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
         log = "\n".join(cap.output)
         for raw_line in _FAKE_CLOVA.raw_text.splitlines():
@@ -304,7 +288,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="WARNING") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         log = "\n".join(cap.output)
@@ -323,7 +306,6 @@ class TestOcrObservabilityIntegration(TestCase):
             self.assertLogs(_LOGGER, level="INFO") as cap,
         ):
             mock_cfg.clova_enabled = True
-            mock_cfg.OCR_FIXTURE_FALLBACK = True
             await process_ocr_job(str(job.ocr_job_id))
 
         observe_lines = [line for line in cap.output if "ocr_job_complete" in line]

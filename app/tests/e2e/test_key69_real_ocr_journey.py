@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from httpx import ASGITransport, AsyncClient
 
-from ai_worker.adapters.clova import ClovaOcrError
 from ai_worker.tasks.ocr_task import _CLOVA_MODEL_NAME, process_ocr_job
 from app.apis.v1.patient_otp_routers import _otp_service
 from app.core.storage import LocalFileStorage
@@ -132,60 +131,68 @@ class TestKey69RealOcrJourney(AuthTestCase):
             staff_headers = await login_headers(hospital_client, staff.login_id)
             doctor_headers = await login_headers(hospital_client, doctor.login_id)
 
-            # 업로드 단계에서는 즉시 fixture를 심지 않는다. 두 경우 모두 실제
-            # Worker가 파일을 읽은 뒤 성공 또는 fallback을 선택해야 한다.
-            with patch("app.documents.service.config.OCR_FIXTURE_FALLBACK", False):
-                uploaded = await hospital_client.post(
-                    f"/api/v1/front-desk/visits/{visit.visit_id}/documents",
-                    headers=staff_headers,
-                    files={"files": ("SYN-EMS-01.emr.v1.jpg", EMR_UPLOAD_BYTES, "image/jpeg")},
-                    data={"document_type": "EMR"},
-                )
-            assert uploaded.status_code == 201, uploaded.text
-            upload_body = uploaded.json()
-            assert upload_body["status"] == OcrJobStatus.PROCESSING
-
-            clova_call = AsyncMock()
             if fallback:
-                clova_call.side_effect = ClovaOcrError(
-                    "CLOVA_TIMEOUT",
-                    "synthetic timeout without credentials or patient data",
-                    elapsed_ms=41,
-                )
+                # KEY-199: fixture seed는 업로드(_persist)가 단독 소유한다.
+                # OCR_FIXTURE_FALLBACK=True이면 _persist가 직접 seed하고 COMPLETED로 전환한다.
+                # 워커는 관여하지 않는다.
+                observed_logger = Mock()  # 워커 없음 — 보안 로그는 self.log_handler로만 확인
+                with patch("app.documents.service.config.OCR_FIXTURE_FALLBACK", True):
+                    uploaded = await hospital_client.post(
+                        f"/api/v1/front-desk/visits/{visit.visit_id}/documents",
+                        headers=staff_headers,
+                        files={"files": ("SYN-EMS-01.emr.v1.jpg", EMR_UPLOAD_BYTES, "image/jpeg")},
+                        data={"document_type": "EMR"},
+                    )
+                assert uploaded.status_code == 201, uploaded.text
+                upload_body = uploaded.json()
+                job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_id"])
+                result = await OcrResult.get(ocr_job=job)
             else:
-                clova_call.return_value = SYN_EMS_01_CLOVA_RESULT
-            observed_logger = Mock()
-            with (
-                patch("ai_worker.tasks.ocr_task.config") as worker_config,
-                patch("ai_worker.tasks.ocr_task.call_clova_ocr", clova_call),
-                patch("ai_worker.tasks.ocr_task.default_logger", observed_logger),
-            ):
-                worker_config.clova_enabled = True
-                worker_config.OCR_FIXTURE_FALLBACK = True
-                await process_ocr_job(upload_body["ocr_job_id"])
+                # OCR_FIXTURE_FALLBACK=False → 큐잉 → Worker → CLOVA
+                with patch("app.documents.service.config.OCR_FIXTURE_FALLBACK", False):
+                    uploaded = await hospital_client.post(
+                        f"/api/v1/front-desk/visits/{visit.visit_id}/documents",
+                        headers=staff_headers,
+                        files={"files": ("SYN-EMS-01.emr.v1.jpg", EMR_UPLOAD_BYTES, "image/jpeg")},
+                        data={"document_type": "EMR"},
+                    )
+                assert uploaded.status_code == 201, uploaded.text
+                upload_body = uploaded.json()
+                assert upload_body["status"] == OcrJobStatus.PROCESSING
 
-            clova_call.assert_awaited_once_with(EMR_UPLOAD_BYTES, "image/jpeg")
-            job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_id"])
-            result = await OcrResult.get(ocr_job=job)
+                clova_call = AsyncMock(return_value=SYN_EMS_01_CLOVA_RESULT)
+                observed_logger = Mock()
+                with (
+                    patch("ai_worker.tasks.ocr_task.config") as worker_config,
+                    patch("ai_worker.tasks.ocr_task.call_clova_ocr", clova_call),
+                    patch("ai_worker.tasks.ocr_task.default_logger", observed_logger),
+                ):
+                    worker_config.clova_enabled = True
+                    await process_ocr_job(upload_body["ocr_job_id"])
+
+                clova_call.assert_awaited_once_with(EMR_UPLOAD_BYTES, "image/jpeg")
+                job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_id"])
+                result = await OcrResult.get(ocr_job=job)
+
+                # 외부 API 응답의 원문이나 합성 환자 값 대신 mode·시간·코드·job id만
+                # 한 줄로 남기는 운영 관측 계약을 확인한다.
+                completion_calls = [
+                    call
+                    for call in observed_logger.info.call_args_list
+                    if call.args and call.args[0].startswith("ocr_job_complete")
+                ]
+                assert len(completion_calls) == 1
+                log_args = completion_calls[0].args
+                assert log_args[1] == "clova"
+                assert isinstance(log_args[2], int) and log_args[2] >= 0
+                assert log_args[5] == job.ocr_job_id
+
             assert job.status == OcrJobStatus.COMPLETED
             assert job.started_at is not None
             assert job.completed_at is not None
             assert job.completed_at >= job.started_at
             elapsed_ms = round((job.completed_at - job.started_at).total_seconds() * 1000)
 
-            # 외부 API 응답의 원문이나 합성 환자 값 대신 mode·시간·코드·job id만
-            # 한 줄로 남기는 운영 관측 계약을 확인한다.
-            completion_calls = [
-                call
-                for call in observed_logger.info.call_args_list
-                if call.args and call.args[0].startswith("ocr_job_complete")
-            ]
-            assert len(completion_calls) == 1
-            log_args = completion_calls[0].args
-            expected_mode = "fixture" if fallback else "clova"
-            assert log_args[1] == expected_mode
-            assert isinstance(log_args[2], int) and log_args[2] >= 0
-            assert log_args[5] == job.ocr_job_id
             status_response = await hospital_client.get(
                 f"/api/v1/ocr/jobs/{job.ocr_job_id}",
                 headers=staff_headers,
@@ -324,11 +331,13 @@ class TestKey69RealOcrJourney(AuthTestCase):
         assert SYN_EMS_01_REQUIRED_FIELDS <= evidence.field_types
         assert evidence.elapsed_ms >= 0
 
-    async def test_clova_failure_falls_back_and_completes_the_same_journey(self) -> None:
+    async def test_upload_fixture_fallback_completes_the_same_journey(self) -> None:
+        # KEY-199: fixture seed는 업로드(_persist)가 단독 소유한다.
+        # OCR_FIXTURE_FALLBACK=True이면 업로드 시 COMPLETED — 워커는 관여하지 않는다.
         evidence = await self._run_journey(fallback=True)
 
         assert evidence.mode == "fixture"
         assert evidence.model_name == FIXTURE_MODEL_NAME
-        assert evidence.failure_code == "CLOVA_API_ERROR"
+        assert evidence.failure_code is None
         assert evidence.field_types == {"DIAGNOSIS"}
         assert evidence.elapsed_ms >= 0

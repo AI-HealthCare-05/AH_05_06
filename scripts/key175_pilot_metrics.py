@@ -139,12 +139,10 @@ def report_ocr(records: list[OcrRecord]) -> None:
 
     total = len(records)
     clova = [r for r in records if r.mode == "clova"]
-    fixture = [r for r in records if r.mode == "fixture"]
     failed = [r for r in records if r.mode == "failed"]
 
     print(f"  전체        {total}건")
     print(f"  성공(CLOVA) {len(clova)}건")
-    print(f"  fallback    {len(fixture)}건  ({len(fixture) / total * 100:.1f}%)")
     print(f"  실패        {len(failed)}건  ({len(failed) / total * 100:.1f}%)")
 
     if clova:
@@ -159,9 +157,8 @@ def report_ocr(records: list[OcrRecord]) -> None:
                 f"  clova_http    P50={_fmt(_pct(ct, 50))}  P95={_fmt(_pct(ct, 95))}  max={_fmt(max(ct))}  ({len(ct)}건)"
             )
 
-    non_clova = fixture + failed
-    if non_clova:
-        errors = Counter(r.error_code for r in non_clova if r.error_code)
+    if failed:
+        errors = Counter(r.error_code for r in failed if r.error_code)
         print()
         print(f"  오류 분류   {dict(errors)}")
 
