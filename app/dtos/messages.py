@@ -9,6 +9,7 @@
 from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, model_validator
+from tortoise.timezone import now
 
 from app.models.patients import PatientGender
 from app.models.visits import (
@@ -89,6 +90,9 @@ class MessagePatchRequest(BaseModel):
 
         if self.scheduled_at is not None and self.scheduled_at.tzinfo is None:
             raise ValueError("scheduled_at에는 시간대가 필요합니다.")
+
+        if self.scheduled_at is not None and self.scheduled_at <= now():
+            raise ValueError("scheduled_at은 미래 시각이어야 합니다.")
 
         return self
 

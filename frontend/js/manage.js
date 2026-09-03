@@ -153,10 +153,21 @@
     );
   }
 
-    function scheduleInputValue(iso) {
+  function scheduleInputValue(iso) {
     var day = clinicDay(iso);
     var time = clinicTime(iso);
     return day && time ? day + "T" + time : "";
+  }
+
+  function scheduleInputMin(at) {
+    var when = at || new Date();
+    var time = when.toLocaleTimeString("en-GB", {
+      timeZone: CLINIC_ZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    return clinicToday(when) + "T" + time;
   }
 
   function scheduleAdjustmentHtml(row) {
@@ -170,7 +181,9 @@
       "</p>" +
       '<label for="schedule-adjust-at">새 발송 시각</label>' +
       '<input id="schedule-adjust-at" name="scheduled_at" ' +
-      'type="datetime-local" step="60" required value="' +
+      'type="datetime-local" step="60" required min="' +
+      esc(scheduleInputMin()) +
+      '" value="' +
       esc(scheduleInputValue(row.scheduled_at)) +
       '">' +
       '<p class="modal__note" id="schedule-adjust-error" ' +

@@ -121,8 +121,12 @@ class MessageScheduleService:
 
         if payload.scheduled_at is not None:
             updates["scheduled_at"] = payload.scheduled_at
+            response_scheduled_at = payload.scheduled_at
+            response_status = GuideMessageStatus.SCHEDULED
         else:
             updates["status"] = GuideMessageStatus.CANCELED
+            response_scheduled_at = message.scheduled_at
+            response_status = GuideMessageStatus.CANCELED
 
         affected = await GuideMessage.filter(
             guide_message_id=message_id,
@@ -136,14 +140,10 @@ class MessageScheduleService:
                 "이미 발송되었거나 상태가 변경된 문자입니다.",
             )
 
-        changed = await GuideMessage.get(
-            guide_message_id=message_id,
-        )
-
         return MessagePatchResponse(
-            guide_message_id=changed.guide_message_id,
-            scheduled_at=changed.scheduled_at,
-            status=changed.status,
+            guide_message_id=message.guide_message_id,
+            scheduled_at=response_scheduled_at,
+            status=response_status,
         )
 
     @staticmethod

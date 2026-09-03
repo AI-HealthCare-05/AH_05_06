@@ -429,6 +429,8 @@ test("화면이 스스로 세지 않고 서버 셈을 그린다", () => {
   assert.ok(code.indexOf("canAdjustScheduledMessage(") !== -1);
   assert.ok(code.indexOf("scheduleActionHtml(") !== -1);
   assert.ok(code.indexOf("data-adjust-message") !== -1);
+  assert.ok(code.indexOf("scheduleInputMin(") !== -1);
+  assert.match(code, /required min=/);
   assert.match(code, /messagesApi\s*\.\s*update\s*\(/);
 });
 

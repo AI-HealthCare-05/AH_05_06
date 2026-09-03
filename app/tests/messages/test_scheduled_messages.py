@@ -13,6 +13,7 @@
 """
 
 from datetime import date, datetime, timedelta
+from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -85,6 +86,33 @@ class ScheduledMessagesTestCase(TestCase):
 
         assert saved.scheduled_at == changed_at
         assert saved.status is GuideMessageStatus.SCHEDULED
+
+    async def test_success_response_uses_the_value_written_by_that_request(self) -> None:
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "stable-response")
+        changed_at = at(TODAY + timedelta(days=2), 14)
+        message = await self.a_message(
+            clinic,
+            name="응답 정합성 환자",
+            when=at(TODAY + timedelta(days=1), 10),
+            status=GuideMessageStatus.SCHEDULED,
+        )
+
+        with patch.object(
+            GuideMessage,
+            "get",
+            side_effect=AssertionError("성공한 UPDATE 뒤에 행을 다시 조회하면 경쟁 요청 값이 섞일 수 있습니다."),
+        ):
+            async with self.client() as client:
+                response = await client.patch(
+                    f"/api/v1/messages/{message.guide_message_id}",
+                    headers=await self.sign_in(staff),
+                    json={"scheduled_at": changed_at.isoformat()},
+                )
+
+        assert response.status_code == 200, response.text
+        assert datetime.fromisoformat(response.json()["scheduled_at"]) == changed_at
+        assert response.json()["status"] == "SCHEDULED"
 
     async def test_staff_can_cancel_a_scheduled_message(self) -> None:
         clinic = await self.a_clinic()
@@ -342,6 +370,15 @@ class ScheduledMessagesTestCase(TestCase):
                 {
                     "scheduled_at": changed_at.replace(
                         tzinfo=None,
+                    ).isoformat(),
+                },
+            ),
+            (
+                "과거 시각",
+                {
+                    "scheduled_at": at(
+                        TODAY - timedelta(days=1),
+                        14,
                     ).isoformat(),
                 },
             ),
