@@ -21,6 +21,7 @@ from app.dtos.patient_links import (
     PatientCareResponse,
     PatientGuideDetailResponse,
     PatientGuideDrugResponse,
+    PatientGuideGoalResponse,
     PatientGuideResponse,
     PatientGuideSectionResponse,
     PatientLifeAxisResponse,
@@ -105,6 +106,16 @@ def _patient_response(
     guide_detail = (
         PatientGuideDetailResponse(
             summary=medication_body,
+            goals=[
+                PatientGuideGoalResponse(
+                    n=goal.name,
+                    now=goal.current,
+                    t=goal.target,
+                    has_chart=goal.has_chart,
+                    range_label=goal.range_label,
+                )
+                for goal in data.goals
+            ],
             drug=(
                 PatientGuideDrugResponse(
                     n=medication.drug_name,
@@ -120,7 +131,7 @@ def _patient_response(
             # 생기기 전에는 P2의 `next`로 의미를 바꿔 내보내지 않는다.
             next=None,
         )
-        if medication_body or medication is not None
+        if medication_body or medication is not None or data.goals
         else None
     )
     care = (
