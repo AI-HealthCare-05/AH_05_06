@@ -26,7 +26,12 @@ PROD = "infra/docker/docker-compose.prod.yml"
 DEFAULT_SERVICES = frozenset({"redis", "mysql", "fastapi"})
 
 #: 프로필 뒤로 뺀 것.
-GATED = {"nginx": "web", "ai-worker": "ocr", "minio": "ocr"}
+GATED = {"nginx": "web", "ai-worker": "ocr", "minio": "ocr", "minio-init": "ocr"}
+
+# minio-init은 bootstrap이 필요할 때 한 번 실행하고 사라지는 내부 도구다. README의
+# 사용자용 프로필 표에는 계속 떠 있는 서비스만 설명한다(KEY-228; README 개편은
+# KEY-229 범위).
+DOCUMENTED_GATED = frozenset({"nginx", "ai-worker", "minio"})
 
 
 def _profiles(rel: str, name: str) -> list[str]:
@@ -111,7 +116,7 @@ class TestTheReadmeTellsYouHowToGetTheRest:
         """이름만 있고 무엇이 뜨는지 안 적으면 표가 소용없다."""
         table = self._table()
 
-        for name in sorted(GATED):
+        for name in sorted(DOCUMENTED_GATED):
             assert name in table, f"프로필 표가 `{name}` 이 뜬다는 것을 안 적었다"
 
     def test_the_readme_says_how_to_get_all_six_back(self) -> None:

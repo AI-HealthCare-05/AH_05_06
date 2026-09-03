@@ -16,7 +16,7 @@
 
 | WP | 이름 | 오너 | 리뷰어 | Jira | 기한 |
 |---|---|---|---|---|---|
-| WP-A | 로컬 부트스트랩·환경 재현 | 한금준 | 이희진 | KEY-216 (KEY-194 대체, PR #160 close) | bootstrap 9/2 · 문서·CI 9/4 |
+| WP-A | 로컬 부트스트랩·환경 재현 | 유가은 | 이희진 | KEY-228 (KEY-194/216 후속) | bootstrap 9/3 · 문서·CI는 KEY-229/230 |
 | WP-B | 환자 진입 인증·OTP | 권일준 | 유가은 | KEY-212 | 9/2 (데모 임계분 + 운영 우회 차단 확인) · 추가 회귀는 후속 티켓 |
 | WP-C | 스탭 검토 → 의사 승인 → 환자 링크 | 김고은 | 이희진 | KEY-213 | ①②·B8 9/2 · ③·B5 9/4 |
 | WP-D | OCR 판독 안정화 | 한금준 | 이희진 | KEY-214 | 9/2 |
@@ -43,13 +43,13 @@
 
 ## 3. WP별 하위작업
 
-### WP-A 로컬 부트스트랩·환경 재현 — 한금준 / 이희진 — KEY-216
+### WP-A 로컬 부트스트랩·환경 재현 — 유가은 / 이희진 — KEY-228
 
-근거: 한금준 개선안 §7.1. KEY-216이 KEY-194를 대체한다(KEY-194는 완료 처리, PR #160 close).
+근거: 한금준 개선안 §7.1과 PR #160. 현재 구현 일감은 KEY-228이며, 사용법 문서는 KEY-229, clean-clone CI 검증은 KEY-230으로 분리한다.
 
-1. **Compose 로컬 변경** — `ai-worker`에 `profiles: ["ai"]`, `minio-init`(image `minio/mc`, `profiles: ["tools"]`, `restart: "no"`) 추가, `fastapi`에 `./scripts:/app/scripts:ro`·`./docs/data:/app/docs/data:ro` 마운트(로컬 전용, 운영 이미지 미포함).
-2. **`scripts/bootstrap-local.sh`** — Docker·유효 포트 검사 → `.env` 생성·검증(`SECRET_KEY` 난수, MySQL·MinIO 로컬 비밀값 생성, 기존 `.env` 미덮어쓰기) → 의존 컨테이너 healthcheck 대기 → FastAPI HTTP 대기 → 컨테이너 내부 `aerich upgrade`(실패 시 중단) → `minio-init` 일회성 실행 → `seed.py --mode staff` → `check_schema_drift.py` → Nginx HTTP 대기 → `smoke.py` health·auth·core. 멱등, 실패 단계와 해결 방법 출력.
-3. **`scripts/dev.sh`**(start/stop/logs/check/check-e2e/reset --confirm-reset) + `README.md` 재작성(사전요구: Git·Docker·Compose v2, 그 외 설치 불필요) + `envs/example.local.env` 공백 값 채움 + `frontend` `index.html` 리다이렉트(admin 계정 `/admin.html` 404 해소, WP-F와 조율) + CI에 깨끗한 환경 bootstrap 재현성 검증.
+1. **Compose 로컬 변경** — PR #160에서 확정한 `web`/`ocr` 프로필을 유지하고 `minio-init`도 `ocr` 프로필의 일회성 도구로 추가, `fastapi`에 `./scripts:/app/scripts:ro`·`./docs/data:/app/docs/data:ro` 마운트(로컬 전용, 운영 이미지 미포함). 기존 `ai`/`tools` 초안은 별도 프로필로 늘리지 않고 `--with-ocr-worker` 한 옵션에 흡수한다.
+2. **`scripts/bootstrap-local.sh`** — Docker·유효 포트 검사 → `.env` 생성·검증(`SECRET_KEY` 난수, MySQL·MinIO 로컬 비밀값 생성, 기존 `.env` 미덮어쓰기) → 의존 컨테이너 healthcheck 대기 → FastAPI HTTP 대기 → 컨테이너 내부 `aerich upgrade`(실패 시 중단) → 선택 시 `minio-init` 일회성 실행 → `seed.py --mode staff` → `check_schema_drift.py` → `smoke.py` health·auth·core. 멱등, 실패 단계와 해결 방법 출력.
+3. **후속 범위** — `scripts/dev.sh`·`README.md`·`envs/example.local.env` 정리는 KEY-229, 깨끗한 환경 bootstrap CI 재현성 검증은 KEY-230에서 진행한다.
 
 기본 bootstrap은 AI Worker·OCR E2E를 요구하지 않는다. OCR 흐름은 `--with-ocr-worker` / `dev.sh check-e2e` 선택 옵션.
 최초 빌드 목표: AI Worker 제외 10분 이내. 5분은 사전 빌드 이미지 pull 시 적용(데모 안정화 후).
