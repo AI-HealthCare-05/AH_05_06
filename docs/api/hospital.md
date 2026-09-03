@@ -1130,10 +1130,15 @@ Content-Type: application/json
 
 | Method | Path | 용도 | 권한 |
 |---|---|---|---|
-| GET | `/api/v1/prescription-sets` | 목록 — 이름 · 질환 · 확인 항목 | `staff`·`doctor` |
+| GET | `/api/v1/prescription-sets` | 목록 — 이름 · 진단 · 확인 항목 | `staff`·`doctor` |
 | GET | `/api/v1/prescription-sets/{id}` | 한 세트의 설정 전부 | `staff`·`doctor` |
+| PUT | `/api/v1/prescription-sets/{id}` | 저장 — **진단 · 약 · 일수 · 확인 항목 · 자동 발송** | `staff`·`doctor` |
 
-**보는 것은 스탭도, 고치는 것은 의사만이다** (D2-2 「의사 계정만 · 스탭은 볼 수만 있다」). 이 값이 안내문과 문자 발송일을 정하므로 의료 판단에 걸린다.
+**스탭도 고친다** (2026-09-02 회의 결정). 그 전에는 「의사 계정만」이었는데, 원문 D2-2 의 그 문장은 더는 사실이 아니다.
+
+**이름은 안 받는다.** `name` 을 담아 보내면 `400 INVALID_REQUEST` 로 튕긴다 — 받아 놓고 무시하면 「바꿔 달라 보냈는데 200 이 오고 안 바뀐」 조용한 성공이 된다.
+
+까닭: `Prescription.prescription_set` 은 **스냅샷 문자열**이고(`app/models/prescriptions.py`), 안내 생성이 그 문자열로 세트를 찾아 문구를 붙인다(`app/services/guides.py` · `app/services/drug_caution.py` 의 `filter(name=…)`). 이름을 바꾸면 **지난 진료기록의 안내문 문구가 통째로 떨어져 나가고 화면엔 아무 말도 안 뜬다.** 잘못 지은 이름은 바꾸는 대신 숨기고 새로 만든다 — 의료 데이터라 지우지도 않는다.
 
 **`days_mode` 가 가장 무거운 값이다.** EMR 「총투」 칸의 「3」이 3통일 수도 3일일 수도 있고 의원마다 다르다 — 소진 예정일과 소진 임박 문자가 이 값으로 셈해진다. `PACK` 인데 `days_per_pack` 이 없으면 `422 DAYS_PER_PACK_REQUIRED` 로 막는다: 비워 둔 채 저장되면 문자가 엉뚱한 날 가거나 영영 안 간다.
 

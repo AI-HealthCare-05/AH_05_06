@@ -1001,7 +1001,20 @@ function stateTakesFocus(tone) {
       return '<div class="top__note">' + escapeHtml(note) + "</div>";
     }
 
+    /* **여기가 감춤을 거르는 유일한 자리다.**
+       감춤은 「없다」가 아니라 「새로 못 고른다」는 뜻이다. 목록 자체는 감춘
+       것까지 다 받는다 — 이미 그 처방으로 저장된 진료를 다시 열 때 확인
+       항목을 이름으로 되찾고(`ocr-groups.js`), 설정에서 되살려야 하기
+       때문이다. 서버 쪽 조회(`filter(name=…)`)도 거르지 않는다. 거기서
+       거르면 지난 환자들의 안내문 문구가 조용히 범용으로 바뀐다. */
     var options = sets
+      .filter(function (set) {
+        /* 이미 고른 것이면 감췄어도 남긴다 — 안 그러면 고른 값이 풀린다 */
+        return (
+          !set.hidden ||
+          (pickedSet && pickedSet.prescription_set_id === set.prescription_set_id)
+        );
+      })
       .map(function (set) {
         return (
           '<option value="' +

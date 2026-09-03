@@ -12,17 +12,26 @@
 여덟 세트의 약·문구를 전부 받아 온다.
 """
 
+from pydantic import Field
+
 from app.dtos.base import StrictModel
 from app.models.catalog import SetDaysMode, SetDisease, SetPhase
 from app.models.visits import VisitCheckKey
 
 
 class SetDrug(StrictModel):
-    """처방 세트에 든 약 하나 — 와이어프레임 D2-3 「처방 약」."""
+    """처방 세트에 든 약 하나 — 와이어프레임 D2-3 「처방 약」.
 
-    name: str
-    frequency: str | None = None
-    note: str | None = None
+    **길이를 여기서 막는다.** 표의 한계와 같은 값이다(`models/catalog.py`).
+    안 막으면 MySQL 이 `DataError` 를 던지고 그것을 잡는 자리가 없어 **500**
+    이 난다 — 화면은 「잠시 후 다시 시도해 주세요」라고 하는데 몇 번을 눌러도
+    같은 500 이고, 어느 칸이 문제인지 말해 주지 않는다. EMR 에서 성분명을
+    통째로 붙여 넣으면 100자는 쉽게 넘는다.
+    """
+
+    name: str = Field(max_length=100)
+    frequency: str | None = Field(default=None, max_length=50)
+    note: str | None = Field(default=None, max_length=200)
 
 
 class PrescriptionSetResponse(StrictModel):
@@ -39,6 +48,11 @@ class PrescriptionSetResponse(StrictModel):
     #: 다녀와야 하고, 그 사이 확인 항목 칸이 비었다 찼다 한다.
     check_items: list[VisitCheckKey] = []
 
+    #: **감춘 처방인가.** 「없다」가 아니라 「새로 못 고른다」는 뜻이다 —
+    #: 이미 이 처방으로 나간 진료기록에서는 문구가 그대로 붙는다.
+    #: 그래서 목록은 **감춘 것도 다 준다.** 거르는 것은 새로 고르는 칸뿐이다.
+    hidden: bool = False
+
     #: 이 처방에 든 약 — 화면 차례대로 (와이어프레임 D2-3 「처방 약」).
     #:
     #: **확인 항목과 같은 이유로 함께 준다.** 판독 화면이 처방을 고르는 순간
@@ -50,7 +64,38 @@ class PrescriptionSetResponse(StrictModel):
     #: 판독이 읽은 총투 하나를 여기 규칙으로 환산한다. 세트는 「이 처방은 통으로
     #: 센다」까지만 알고, 몇 통인지는 그 진료의 판독값이 안다.
     days_mode: SetDaysMode = SetDaysMode.DAYS
+    #: 한 통이 며칠치인가. 표가 `SmallIntField` 라 범위를 넘으면 500 이 난다.
     days_per_pack: int | None = None
+
+
+class PrescriptionSetSaveRequest(StrictModel):
+    """설정 화면이 보내는 한 판.
+
+    **통째로 받는다.** 약을 하나 지우고 확인 항목을 하나 켜는 것이 한 번의
+    「저장」인데, 조각으로 받으면 중간에 끊겼을 때 반쪽이 남는다.
+    """
+
+    # **이름은 받지 않는다.** `StrictModel` 이 `extra="forbid"` 라, 담아 보내면
+    # 400 `INVALID_REQUEST` 로 튕긴다 — 받아 놓고 무시하면 「바꿔 달라 보냈는데
+    # 200 이 오고 안 바뀐」 조용한 성공이 된다.
+    #
+    # 왜 못 바꾸나: `Prescription.prescription_set` 은 스냅샷 **문자열**이고
+    # (KEY-137) `guides.py`·`drug_caution.py` 가 그 문자열로 세트를 찾아
+    # 안내문 문구를 붙인다. 이름을 바꾸면 **기존 진료기록의 문구가 통째로
+    # 떨어져 나가고** 화면엔 아무 말도 안 뜬다. 바꾸는 대신 숨기고 새로 만든다.
+    disease: SetDisease
+    phase: SetPhase
+    days_mode: SetDaysMode
+    #: 한 통이 며칠치인가. 표가 `SmallIntField` 라 범위를 넘으면 500 이 난다.
+    days_per_pack: int | None = Field(default=None, ge=1, le=32767)
+    emr_code: str | None = None
+    revisit_note: str | None = None
+    check_d15_on: bool = True
+    check_d30_on: bool = False
+    run_out_on: bool = True
+    run_out_before_days: int = Field(default=3, ge=1, le=365)
+    drugs: list[SetDrug] = []
+    check_items: list[VisitCheckKey] = []
 
 
 class PrescriptionSetDetail(StrictModel):
@@ -58,6 +103,9 @@ class PrescriptionSetDetail(StrictModel):
 
     prescription_set_id: int
     name: str
+
+    #: 감춘 처방인가. 화면이 「숨기기」와 「되살리기」를 가른다.
+    hidden: bool = False
     disease: SetDisease
     phase: SetPhase
 
@@ -77,3 +125,15 @@ class PrescriptionSetDetail(StrictModel):
 
     drugs: list[SetDrug] = []
     check_items: list[VisitCheckKey] = []
+
+
+class PrescriptionSetCreateRequest(StrictModel):
+    """새 처방 만들기 — **이름과 진단만 받는다.**
+
+    나머지는 만든 뒤 설정 화면에서 고친다. 한 번에 다 받으면 「만들기」가
+    저장과 같아지고, 잘못 지은 이름을 되돌릴 길이 없는데(이름은 못 바꾼다)
+    긴 판을 다 채운 뒤에야 그것을 알게 된다.
+    """
+
+    name: str = Field(max_length=100)
+    disease: SetDisease
