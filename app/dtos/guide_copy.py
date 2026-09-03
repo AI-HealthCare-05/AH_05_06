@@ -24,9 +24,26 @@ class CopySetItem(BaseModel):
     reviewed: bool
 
 
+class CopyDefaultItem(BaseModel):
+    """아직 아무도 안 고쳤을 때 쓰는 **기본 문구.**
+
+    아직 만들지 않은 처방에도 이 글이 쓰인다 — 그래서 만들기 화면이 미리
+    보여 줄 수 있어야 한다. 화면이 문장을 베껴 두면 두 곳이 갈라진다:
+    한동안 `guides.py` 가 제 것을 따로 들고 있어서 설정 화면이 **실제로는
+    나가지 않는 글**을 원본이라며 보였다.
+    """
+
+    section_key: CautionSectionKey
+    body: str
+    editable: bool
+
+
 class GuideCopyListResponse(BaseModel):
-    doctor_id: int
+    #: 비면 의원 공통 문구다.
+    doctor_id: int | None = None
     items: list[CopySetItem]
+    #: 갈래별 기본 문구. **아직 없는 처방**의 화면이 이것을 보인다.
+    defaults: list[CopyDefaultItem] = []
 
 
 class GuideCopySaveRequest(BaseModel):

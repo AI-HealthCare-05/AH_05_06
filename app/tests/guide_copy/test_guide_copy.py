@@ -27,6 +27,7 @@ from app.models.catalog import (
     SourceGrade,
 )
 from app.models.staffs import Hospital, Staff
+from app.services import guide_defaults
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 
@@ -120,14 +121,20 @@ class GuideCopyTestCase(TestCase):
         assert part["body"] is None, "고치기 전에는 원본이 그대로 나간다"
 
     async def test_only_an_approved_origin_counts(self) -> None:
-        """초안을 「원본」이라 보이면 의사가 그것을 사실로 읽는다."""
+        """초안을 「원본」이라 보이면 의사가 그것을 사실로 읽는다.
+
+        승인 안 된 자리는 **기본 문구**로 내려간다(`guide_defaults`). 빈칸이
+        아니다 — 안내문 생성이 그때 쓰는 글이 그것이라, 빈칸을 보이면
+        「원본이 없다」로 읽히는데 실제로는 나갈 글이 있다.
+        """
         row = await self.a_set()
         await self.an_origin(row, approved=False)
         doctor = await self.a_staff(["doctor"], "draft")
 
         part = self.section(await self.fetch(doctor), row.prescription_set_id)
 
-        assert part["origin"] is None
+        assert part["origin"] != ORIGIN, "초안이 원본으로 나갔다"
+        assert part["origin"] == guide_defaults.CAUTION, "기본 문구가 아니다"
 
     async def test_saving_does_not_touch_the_origin(self) -> None:
         """**여기가 이 화면의 핵심이다.** 원본이 바뀌면 무엇이 사실인지 잃는다."""
@@ -174,8 +181,19 @@ class GuideCopyTestCase(TestCase):
         assert await DoctorGuideCopy.all().count() == 0
         assert self.section(response.json(), row.prescription_set_id)["body"] is None
 
-    async def test_another_doctor_keeps_their_own(self) -> None:
-        """원문: 「이 문구는 박연 원장 담당 환자에게만 발송됩니다」."""
+    async def test_every_doctor_sees_the_same_wording(self) -> None:
+        """**문구는 의원 공통이다** (2026-09-02 회의).
+
+        원문 D2-2 는 「이 문구는 박연 원장 담당 환자에게만 발송됩니다」라 적어
+        의사마다 따로 두었다. 그런데 회의에서 「기본 설정은 모두 공통으로 두자.
+        원장별 설정은 나중에」로 정했다.
+
+        개인 것만 두면 이렇게 됐다: 원장 A 가 고치면 A 담당 환자에게만 나가고,
+        원장 B 가 같은 처방을 열면 약·일수·확인 항목은 A 가 정한 그대로인데
+        **문구만 기본값으로 보인다.** B 는 「아직 아무도 안 고쳤구나」로 읽는다.
+        처방 세트가 의원 공통인데 그 위에 덧씌우는 표현만 개인 것이면 화면이
+        한 처방을 두 가지로 말하게 된다.
+        """
         clinic = await Hospital.create(name="도로시여성의원")
         row = await self.a_set()
         await self.an_origin(row)
@@ -185,7 +203,7 @@ class GuideCopyTestCase(TestCase):
 
         part = self.section(await self.fetch(theirs), row.prescription_set_id)
 
-        assert part["body"] is None, "의사마다 따로다"
+        assert part["body"] == MINE, "다른 원장에게 안 보인다 — 의원 공통이 아니다"
 
     # ── 🚨 잠금 ──────────────────────────────────────────
 
@@ -245,27 +263,69 @@ class GuideCopyTestCase(TestCase):
 
     # ── 권한 ─────────────────────────────────────────────
 
-    async def test_staff_can_read_but_must_say_whose(self) -> None:
-        """원문 부제: 「의사 계정만 · 스탭은 볼 수만 있다」."""
+    async def test_staff_opens_their_own_and_can_write_it(self) -> None:
+        """**스탭도 제 문구를 갖는다** — 2026-09-02 회의에서 설정 수정 권한을
+        열었다. 원문 D2-2 는 「의사 계정만 · 스탭은 볼 수만 있다」였다.
+
+        전에는 스탭이 번호 없이 열면 `400 DOCTOR_REQUIRED` 였다. 그런데
+        **화면에는 고르는 칸이 없어서**, 스탭이 이 화면을 열면 그냥
+        「불러오지 못했습니다」가 떴다 — 아무도 못 쓰는 화면이었다.
+        """
         clinic = await Hospital.create(name="도로시여성의원")
         row = await self.a_set()
         await self.an_origin(row)
         staff = await self.a_staff(["staff"], "readonly", clinic)
-        doctor = await self.a_staff(["doctor"], "readonly-doc", clinic)
 
         async with self.client() as client:
-            without = await client.get("/api/v1/guide-copy", headers=await self.headers(staff))
+            mine = await client.get("/api/v1/guide-copy", headers=await self.headers(staff))
 
-        assert without.status_code == 400 and without.json()["code"] == "DOCTOR_REQUIRED", (
-            "「의원 공통 문구」라는 것이 없다 — 그 자리는 원본이다"
-        )
-        assert self.section(await self.fetch(staff, doctor_id=doctor.staff_id), row.prescription_set_id)["origin"]
+        assert mine.status_code == 200, "번호를 안 줘도 제 것을 준다"
+        assert self.section(mine.json(), row.prescription_set_id)["origin"], "원본이 보여야 한다"
 
         response = await self.save(staff, row, MINE)
-        assert response.status_code == 403 and response.json()["code"] == "DOCTOR_ONLY"
+        assert response.status_code == 200, response.text
 
-    async def test_a_doctor_cannot_write_in_another_doctors_name(self) -> None:
-        """문구가 그 의사 담당 환자에게 나간다 — 남의 이름으로 말하는 일이다."""
+    async def test_someone_elses_wording_cannot_even_be_addressed(self) -> None:
+        """**역할 문은 열렸어도 남의 것은 못 고친다.**
+
+        막는 방식이 검사가 아니라 **모양**이다 — 저장 경로가 `doctor_id` 를
+        아예 안 받는다(`_writer(actor)` 가 늘 자기 번호를 준다). 겨눌 수
+        없으면 실수로도 못 고친다. 물어보는 칸을 두고 검사로 막는 것보다
+        낫다: 검사는 빠질 수 있어도 없는 칸은 안 생긴다.
+
+        지금은 **모든 저장이 의원 공통 줄로 간다**(2026-09-02 회의). 그래도
+        이 모양은 그대로 값이 있다 — 원장별 문구를 나중에 열 때, 겨누는 칸을
+        새로 만들지 않으면 남의 이름으로 쓸 길이 생기지 않는다.
+        """
+        clinic = await Hospital.create(name="도로시여성의원")
+        row = await self.a_set()
+        await self.an_origin(row)
+        staff = await self.a_staff(["staff"], "nosy", clinic)
+        doctor = await self.a_staff(["doctor"], "owner-doc", clinic)
+
+        async with self.client() as client:
+            # 남의 번호를 붙여 봐도 무시된다 — 받는 칸이 없다.
+            # (지금은 의원 공통 줄에 앉는다.)
+            response = await client.put(
+                f"/api/v1/guide-copy/{row.prescription_set_id}/caution",
+                headers=await self.headers(staff),
+                params={"doctor_id": doctor.staff_id},
+                json={"body": MINE},
+            )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["doctor_id"] is None, "남의 번호가 먹혔다 — 의원 공통이어야 한다"
+
+        # 그 의사 **개인** 자리는 비어 있어야 한다.
+        theirs = await self.fetch(doctor, doctor_id=doctor.staff_id)
+        assert not self.section(theirs, row.prescription_set_id)["body"], "스탭이 고친 글이 의사 개인 자리에 들어갔다"
+
+    async def test_writing_lands_on_the_clinic_row_not_a_personal_one(self) -> None:
+        """**고친 것은 의원 공통 줄에 앉는다.**
+
+        개인 줄에 앉으면 고친 사람만 보게 되고, 다시 열었을 때 화면은 공통을
+        보이므로 **안 바뀐 것처럼 읽힌다.** 읽는 자리와 쓰는 자리가 같아야 한다.
+        """
         clinic = await Hospital.create(name="도로시여성의원")
         row = await self.a_set()
         mine = await self.a_staff(["doctor"], "name-mine", clinic)
@@ -273,8 +333,9 @@ class GuideCopyTestCase(TestCase):
 
         await self.save(mine, row, MINE)
 
-        assert self.section(await self.fetch(theirs), row.prescription_set_id)["body"] is None
-        assert await DoctorGuideCopy.filter(doctor_id=mine.staff_id).count() == 1
+        assert self.section(await self.fetch(theirs), row.prescription_set_id)["body"] == MINE
+        assert await DoctorGuideCopy.filter(doctor_id=None).count() == 1, "의원 공통 줄이 아니다"
+        assert await DoctorGuideCopy.filter(doctor_id=mine.staff_id).count() == 0, "개인 줄이 생겼다"
 
     async def test_another_clinic_does_not_see_the_words(self) -> None:
         mine = await Hospital.create(name="도로시여성의원")
@@ -304,3 +365,25 @@ class GuideCopyTestCase(TestCase):
         async with self.client() as client:
             response = await client.get("/api/v1/guide-copy")
         assert response.status_code == 401
+
+    async def test_the_page_carries_the_base_wording(self) -> None:
+        """**아직 없는 처방도 무슨 글이 나갈지 보여야 한다.**
+
+        만들기 화면은 세트 번호가 없어 `items` 에서 제 줄을 못 찾는다. 그래서
+        갈래별 기본 문구를 따로 싣는다.
+
+        화면이 문장을 베껴 두면 두 곳이 갈라진다 — 한동안 `guides.py` 가 제
+        것을 따로 들고 있어서 설정 화면이 **실제로는 나가지 않는 글**을
+        원본이라며 보였다. 그 사고를 되풀이하지 않으려고 서버가 준다.
+        """
+        clinic = await Hospital.create(name="도로시여성의원")
+        staff = await self.a_staff(["staff"], "defaults", clinic)
+
+        page = await self.fetch(staff)
+
+        got = {row["section_key"]: row for row in page["defaults"]}
+        assert set(got) == {"medication", "caution", "emergency", "life"}
+        assert got["medication"]["body"] == guide_defaults.MEDICATION
+        assert got["life"]["body"] == guide_defaults.LIFE
+        assert got["emergency"]["editable"] is False, "🚨 는 고칠 수 없다(KEY-150)"
+        assert got["caution"]["editable"] is True

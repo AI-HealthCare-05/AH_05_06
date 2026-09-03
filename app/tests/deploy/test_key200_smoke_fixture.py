@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from app.services import guide_defaults
+
 ROOT = Path(__file__).resolve().parents[3]
 SEED = ROOT / "scripts" / "seed.py"
 
@@ -297,7 +299,14 @@ class TestTheFixtureInventsNoMedicalText:
 
     @staticmethod
     def _generated_body(section: str) -> str:
-        """`guides.generate` 가 그 섹션에 넣는 문자열 원문."""
+        """`guides.generate` 가 그 섹션에 넣는 글.
+
+        **두 곳을 함께 본다.** 문장이 `guides.py` 에 박혀 있던 때는 그 파일만
+        긁으면 됐는데, 지금은 기본 문구가 `guide_defaults` 에 있고 `guides.py`
+        는 그것을 부른다 — 설정 화면이 「원본」으로 보이는 글과 실제로 나가는
+        글을 하나로 묶느라 그렇게 됐다. 한쪽만 보면 시드가 지어낸 문장을
+        「진짜」로 착각한다.
+        """
         guides = (ROOT / "app" / "services" / "guides.py").read_text(encoding="utf-8")
         lines = guides.splitlines()
         at = next(
@@ -305,9 +314,15 @@ class TestTheFixtureInventsNoMedicalText:
             None,
         )
         assert at is not None, f"guides.py 에 {section} 섹션이 없다"
-        body = next((ln for ln in lines[at : at + 6] if "generated_body=" in ln), "")
-        assert body, f"{section} 의 generated_body 를 못 찾았다"
-        return body
+        block = "\n".join(lines[at : at + 12])
+        assert "generated_body=" in block, f"{section} 의 generated_body 를 못 찾았다"
+
+        # 그 자리가 부르는 기본 문구까지 합쳐야 「지어낸 문장」을 가릴 수 있다.
+        # **그 갈래 것만 합친다.** 넷을 다 넣으면 생활지도 문장이 복약지도에서도
+        # 통과해 검사가 헐거워진다 — 갈래를 섞어 적은 시드를 못 잡는다.
+        key = next((k for k in guide_defaults.BY_SECTION if k.value.upper() == section), None)
+        default = guide_defaults.BY_SECTION[key] if key else ""
+        return block + "\n" + default
 
     @pytest.mark.parametrize(("const", "section"), BODIES)
     def test_every_line_it_writes_exists_in_the_real_one(self, const: str, section: str) -> None:

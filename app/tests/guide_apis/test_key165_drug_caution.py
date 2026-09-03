@@ -24,7 +24,8 @@ from app.models.prescriptions import Prescription
 from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideSection, GuideSectionKey, Visit
 from app.services.drug_caution import DrugCautionService
-from app.services.guides import _CAUTION_FALLBACK, _EMERGENCY_FALLBACK
+from app.services.guide_defaults import CAUTION as _CAUTION_FALLBACK
+from app.services.guide_defaults import EMERGENCY as _EMERGENCY_FALLBACK
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 from app.tests.ocr_fixture import complete_ocr

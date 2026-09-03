@@ -36,10 +36,18 @@ from app.models.catalog import (
     PrescriptionSet,
     SetDisease,
 )
+from app.services import guide_defaults
 from app.services.patient_visit_scope import hospital_id_of
 
 #: 의사가 고칠 수 있는 구역. **응급은 없다** — 원문이 못박는다.
-EDITABLE_SECTIONS = (CautionSectionKey.CAUTION,)
+EDITABLE_SECTIONS = guide_defaults.EDITABLE_SECTIONS
+"""고칠 수 있는 갈래 셋. **응급만 빠진다.**
+
+원문 D2-2 가 「이 약을 왜 드시나요 [수정] · 먹는 방법 [수정] · 주의할 점
+[수정] · 🚨 바로 병원에 오셔야 하는 경우 **수정 불가**」로 넷을 적어 두었다.
+한동안 주의사항 하나만 열려 있었다 — 나머지 둘은 `guides.py` 에 문장이 박혀
+있어 고칠 자리가 아예 없었다.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +72,7 @@ class CopySet:
 
 
 class GuideCopyService:
-    async def list(self, actor: ClinicalActor, *, doctor_id: int) -> list[CopySet]:
+    async def list(self, actor: ClinicalActor, *, doctor_id: int | None) -> list[CopySet]:
         hospital_id = hospital_id_of(actor)
         sets = await PrescriptionSet.all().order_by("disease", "prescription_set_id")
         origins = await self._origins()
@@ -96,7 +104,7 @@ class GuideCopyService:
         self,
         actor: ClinicalActor,
         *,
-        doctor_id: int,
+        doctor_id: int | None,
         prescription_set_id: int,
         section_key: CautionSectionKey,
         body: str,
@@ -107,7 +115,7 @@ class GuideCopyService:
         의학 정보인지 기계가 가릴 수 없기 때문이다. 그래서 막는 것은 셋뿐이다:
         의사인가 · 고칠 수 있는 구역인가 · 비어 있지 않은가.
         """
-        self._require_doctor(actor, doctor_id)
+        self._require_owner(actor, doctor_id)
         if section_key not in EDITABLE_SECTIONS:
             raise ApiError(422, "SECTION_LOCKED", "이 문구는 안전을 위해 수정할 수 없습니다.")
         body = (body or "").strip()
@@ -139,13 +147,13 @@ class GuideCopyService:
         self,
         actor: ClinicalActor,
         *,
-        doctor_id: int,
+        doctor_id: int | None,
         prescription_set_id: int,
         section_key: CautionSectionKey,
     ) -> None:
         """**줄을 지운다.** 원본을 베껴 넣지 않는 이유는, 그러면 원본이 개정돼도
         되돌린 의사만 옛 글을 계속 쓰기 때문이다."""
-        self._require_doctor(actor, doctor_id)
+        self._require_owner(actor, doctor_id)
         hospital_id = hospital_id_of(actor)
         await DoctorGuideCopy.filter(
             hospital_id=hospital_id,
@@ -157,9 +165,9 @@ class GuideCopyService:
             hospital_id=hospital_id, doctor_id=doctor_id, prescription_set_id=prescription_set_id
         ).delete()
 
-    async def review(self, actor: ClinicalActor, *, doctor_id: int, prescription_set_id: int) -> None:
+    async def review(self, actor: ClinicalActor, *, doctor_id: int | None, prescription_set_id: int) -> None:
         """원문 「확인 완료」 — 한 장을 다 봤다는 표시다."""
-        self._require_doctor(actor, doctor_id)
+        self._require_owner(actor, doctor_id)
         await self._exists(prescription_set_id)
         await DoctorGuideReview.get_or_create(
             hospital_id=hospital_id_of(actor),
@@ -173,35 +181,58 @@ class GuideCopyService:
             raise ApiError(404, "PRESCRIPTION_SET_NOT_FOUND", "처방을 찾을 수 없습니다.")
 
     @staticmethod
-    def _require_doctor(actor: ClinicalActor, doctor_id: int) -> None:
-        """원문 부제: 「의사 계정만 · 스탭은 볼 수만 있다」.
+    def _require_owner(actor: ClinicalActor, doctor_id: int | None) -> None:
+        """**막는 것은 「남의 이름으로 고치는 것」 하나다.**
 
-        **남의 이름으로 고치는 것도 막는다.** 문구가 그 의사 담당 환자에게
-        나가므로, 다른 의사 문구를 고치는 것은 그 사람 이름으로 말하는 일이다.
+        원문 D2-2 는 「의사 계정만 · 스탭은 볼 수만 있다」였는데, 2026-09-02
+        회의에서 **설정 화면의 수정 권한을 스탭에게도 연다**고 정했다. 그래서
+        역할은 더 이상 문을 막지 않는다.
+
+        남는 규칙 하나는 그대로다 — 개인 문구는 **그 사람 이름으로** 환자에게
+        가므로, 남의 것을 고치는 것은 그 사람 이름으로 말하는 일이다.
+
+        **의원 공통(`None`)은 같은 의원 사람이면 고친다.** 그것은 누구의
+        이름도 아니고 의원의 기준선이다 — `lab_baselines.py` 가 같은 규칙을
+        쓴다. 막아 두면 **아무도 못 고치는 판**이 되어, 설정에서 처음 여는
+        문구를 어느 계정으로도 손댈 수 없게 된다.
         """
-        if "doctor" not in actor.roles:
-            raise ApiError(403, "DOCTOR_ONLY", "안내문 문구는 의사 계정만 수정할 수 있습니다.")
+        if doctor_id is None:
+            return
         if actor.staff_id != doctor_id:
-            raise ApiError(403, "OTHER_DOCTOR", "다른 의사의 문구는 수정할 수 없습니다.")
+            raise ApiError(403, "OTHER_DOCTOR", "다른 사람의 문구는 수정할 수 없습니다.")
 
     @staticmethod
     async def _origins() -> dict[tuple[int, CautionSectionKey], str]:
         """**승인된 것만 원본이다.** 초안이나 폐기된 문구를 「원본」이라 보이면
-        의사가 그것을 사실로 읽는다."""
+        의사가 그것을 사실로 읽는다.
+
+        세트별 승인 문구가 없는 자리는 **기본 문구**를 보인다
+        (`guide_defaults.BY_SECTION`). 안내문 생성이 그때 쓰는 글이 그것이라,
+        여기서 빈칸을 보이면 「원본이 없다」로 읽히는데 실제로는 나갈 글이 있다.
+        복약지도·생활지도는 아직 세트별 문구가 하나도 없어서 늘 이쪽이다.
+        """
         rows = await DrugCautionContent.filter(approval_status=ApprovalStatus.APPROVED).values_list(
             "prescription_set_id", "section_key", "body"
         )
-        return {(set_id, CautionSectionKey(key)): body for set_id, key, body in rows}
+        approved = {(set_id, CautionSectionKey(key)): body for set_id, key, body in rows}
+
+        found: dict[tuple[int, CautionSectionKey], str] = {}
+        for row in await PrescriptionSet.all().only("prescription_set_id"):
+            set_id = row.prescription_set_id
+            for key, fallback in guide_defaults.BY_SECTION.items():
+                found[(set_id, key)] = approved.get((set_id, key), fallback)
+
+        return found
 
     @staticmethod
-    async def _edits(hospital_id: int, doctor_id: int) -> dict[tuple[int, CautionSectionKey], str]:
+    async def _edits(hospital_id: int, doctor_id: int | None) -> dict[tuple[int, CautionSectionKey], str]:
         rows = await DoctorGuideCopy.filter(hospital_id=hospital_id, doctor_id=doctor_id).values_list(
             "prescription_set_id", "section_key", "body"
         )
         return {(set_id, CautionSectionKey(key)): body for set_id, key, body in rows}
 
     @staticmethod
-    async def _reviewed(hospital_id: int, doctor_id: int) -> set[int]:
+    async def _reviewed(hospital_id: int, doctor_id: int | None) -> set[int]:
         # `flat=True` 면 값이 그대로 오는데 Tortoise 스텁은 늘 튜플 목록이라 한다.
         rows: list[int] = await DoctorGuideReview.filter(hospital_id=hospital_id, doctor_id=doctor_id).values_list(
             "prescription_set_id", flat=True
