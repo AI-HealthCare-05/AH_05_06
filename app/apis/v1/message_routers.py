@@ -8,8 +8,17 @@ from fastapi.responses import StreamingResponse
 
 from app.core.api_errors import ContractRoute
 from app.core.time import clinic_today
-from app.dependencies.patient_access import ClinicalActor, require_patient_read
-from app.dtos.messages import ScheduledMessageListResponse, SentMessageListResponse
+from app.dependencies.patient_access import (
+    ClinicalActor,
+    require_patient_read,
+    require_sms_send,
+)
+from app.dtos.messages import (
+    MessagePatchRequest,
+    MessagePatchResponse,
+    ScheduledMessageListResponse,
+    SentMessageListResponse,
+)
 from app.services.message_export import csv_filename, csv_rows
 from app.services.message_history import MessageHistoryService
 from app.services.message_schedule import MessageScheduleService
@@ -35,6 +44,25 @@ async def list_scheduled_messages(
         counts=page.counts,
         items=page.items,
         truncated=page.truncated,
+    )
+
+
+@message_router.patch(
+    "/{message_id}",
+    response_model=MessagePatchResponse,
+)
+async def update_scheduled_message(
+    message_id: int,
+    payload: MessagePatchRequest,
+    actor: Annotated[ClinicalActor, Depends(require_sms_send)],
+    service: Annotated[MessageScheduleService, Depends(MessageScheduleService)],
+) -> MessagePatchResponse:
+    """예약 문자 시각 변경 또는 예약 취소 — KEY-257."""
+
+    return await service.update_message(
+        actor,
+        message_id,
+        payload,
     )
 
 

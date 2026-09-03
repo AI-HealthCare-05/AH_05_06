@@ -30,6 +30,8 @@
   var chip = { schedule: "total", history: "total" };
   var keyword = "";
   var opened = null; // 펼친 줄의 환자 번호
+  var adjustingMessage = null;
+  var adjustingMessageSaving = false;
 
   var ROSTER_PAGE = 50;
   var HISTORY_BLOCKS = 3;
@@ -136,6 +138,74 @@
     );
   }
 
+  function scheduleActionHtml(row) {
+    if (!canAdjustScheduledMessage(row)) {
+      return actionHtml(row);
+    }
+
+    return (
+      '<button class="button-ghost button-ghost--sm" type="button" ' +
+      'data-adjust-message="' +
+      esc(row.guide_message_id) +
+      '">' +
+      "시각 변경" +
+      "</button>"
+    );
+  }
+
+  function scheduleInputValue(iso) {
+    var day = clinicDay(iso);
+    var time = clinicTime(iso);
+    return day && time ? day + "T" + time : "";
+  }
+
+  function scheduleInputMin(at) {
+    var when = at || new Date();
+    var time = when.toLocaleTimeString("en-GB", {
+      timeZone: CLINIC_ZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    return clinicToday(when) + "T" + time;
+  }
+
+  function scheduleAdjustmentHtml(row) {
+    return (
+      '<form id="schedule-adjust-form">' +
+      '<h2 class="modal__title" id="modal-title">예약 시각 변경</h2>' +
+      '<p class="modal__note">' +
+      esc(row.name) +
+      " · " +
+      esc(MESSAGE_SAYING[row.kind] || row.kind) +
+      "</p>" +
+      '<label for="schedule-adjust-at">새 발송 시각</label>' +
+      '<input id="schedule-adjust-at" name="scheduled_at" ' +
+      'type="datetime-local" step="60" required min="' +
+      esc(scheduleInputMin()) +
+      '" value="' +
+      esc(scheduleInputValue(row.scheduled_at)) +
+      '">' +
+      '<p class="modal__note" id="schedule-adjust-error" ' +
+      'role="alert" hidden></p>' +
+      '<div class="modal__acts">' +
+      '<button class="button-ghost" type="button" data-close>취소</button>' +
+      '<button class="button-primary" type="submit" ' +
+      'id="schedule-adjust-save">저장</button>' +
+      "</div>" +
+      "</form>"
+    );
+  }
+
+  function openScheduleAdjustment(row) {
+    adjustingMessage = row;
+    adjustingMessageSaving = false;
+
+    el("modal-body").innerHTML = scheduleAdjustmentHtml(row);
+    el("modal").hidden = false;
+    el("schedule-adjust-at").focus();
+  }
+
   function stateHtml(row) {
     var state = messageState(row.status);
     return (
@@ -160,7 +230,7 @@
       "</td>" +
       stateHtml(row) +
       "<td>" +
-      actionHtml(row) +
+      scheduleActionHtml(row) +
       "</td></tr>"
     );
   }
@@ -453,12 +523,67 @@
   function closeHistory() {
     el("modal").hidden = true;
     el("modal-body").innerHTML = "";
+    adjustingMessage = null;
+    adjustingMessageSaving = false;
   }
 
   /* 배경을 눌러도 닫힌다 — 원문 「배경 클릭도 닫기」. */
   el("modal").addEventListener("click", function (event) {
     if (event.target === el("modal") || event.target.closest("[data-close]"))
       closeHistory();
+  });
+
+  el("modal").addEventListener("submit", function (event) {
+    var form = event.target.closest("#schedule-adjust-form");
+    if (!form) return;
+
+    event.preventDefault();
+
+    if (!adjustingMessage || adjustingMessageSaving) return;
+
+    var input = el("schedule-adjust-at");
+    var errorBox = el("schedule-adjust-error");
+    var saveButton = el("schedule-adjust-save");
+    var value = input.value;
+
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
+      errorBox.hidden = false;
+      errorBox.textContent = "발송 날짜와 시각을 입력해 주세요.";
+      return;
+    }
+
+    adjustingMessageSaving = true;
+    saveButton.disabled = true;
+    errorBox.hidden = true;
+    errorBox.textContent = "";
+
+    messagesApi
+      .update(adjustingMessage.guide_message_id, {
+        scheduled_at: value + ":00+09:00",
+      })
+      .then(function () {
+        closeHistory();
+        return load();
+      })
+      .catch(function (error) {
+        adjustingMessageSaving = false;
+        saveButton.disabled = false;
+        errorBox.hidden = false;
+        errorBox.textContent = errorMessage(
+          error,
+          [
+            {
+              status: 404,
+              say: "예약 문자를 찾을 수 없습니다.",
+            },
+            {
+              status: 409,
+              say: "이미 발송되었거나 상태가 변경되어 수정할 수 없습니다.",
+            },
+          ],
+          "예약 시각을 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+        );
+      });
   });
 
   document.addEventListener("keydown", function (event) {
@@ -525,6 +650,23 @@
 
   /* 줄을 누르면 아래에 그 환자가 선다. 다시 누르면 접힌다. */
   el("table").addEventListener("click", function (event) {
+    var adjustButton = event.target.closest("[data-adjust-message]");
+
+    if (adjustButton) {
+      var messageId = Number(
+        adjustButton.getAttribute("data-adjust-message"),
+      );
+      var rows = (page && page.items) || [];
+      var message = rows.find(function (row) {
+        return row.guide_message_id === messageId;
+      });
+
+      if (message && canAdjustScheduledMessage(message)) {
+        openScheduleAdjustment(message);
+      }
+      return;
+    }
+
     if (view !== "roster") return;
     var asked = event.target.closest("[data-history]");
     if (asked) return openHistory(Number(asked.getAttribute("data-history")));

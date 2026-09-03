@@ -14,9 +14,17 @@ SQL 안에 넣게 되는데, 그러면 읽는 사람이 창의 뜻을 오해한�
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from tortoise.timezone import now
+
+from app.core.api_errors import ApiError
 from app.core.time import clinic_day_window
 from app.dependencies.patient_access import ClinicalActor
-from app.dtos.messages import ScheduledMessageCounts, ScheduledMessageItem
+from app.dtos.messages import (
+    MessagePatchRequest,
+    MessagePatchResponse,
+    ScheduledMessageCounts,
+    ScheduledMessageItem,
+)
 from app.dtos.patients import calculate_age
 from app.models.prescriptions import Prescription
 from app.models.visits import GuideMessage, GuideMessageStatus
@@ -78,6 +86,64 @@ class MessageScheduleService:
             items=await self._items(shown, today),
             counts=counts,
             truncated=len(in_window) > limit,
+        )
+
+    async def update_message(
+        self,
+        actor: ClinicalActor,
+        message_id: int,
+        payload: MessagePatchRequest,
+    ) -> MessagePatchResponse:
+        hospital_id = hospital_id_of(actor)
+
+        message = await GuideMessage.filter(
+            guide_message_id=message_id,
+            guide_document__visit__hospital_id=hospital_id,
+        ).first()
+
+        if message is None:
+            raise ApiError(
+                404,
+                "NOT_FOUND",
+                "예약 문자를 찾을 수 없습니다.",
+            )
+
+        if message.status is not GuideMessageStatus.SCHEDULED:
+            raise ApiError(
+                409,
+                "MESSAGE_NOT_EDITABLE",
+                "발송 예정 상태의 문자만 변경할 수 있습니다.",
+            )
+
+        updates: dict[str, object] = {
+            "updated_at": now(),
+        }
+
+        if payload.scheduled_at is not None:
+            updates["scheduled_at"] = payload.scheduled_at
+            response_scheduled_at = payload.scheduled_at
+            response_status = GuideMessageStatus.SCHEDULED
+        else:
+            updates["status"] = GuideMessageStatus.CANCELED
+            response_scheduled_at = message.scheduled_at
+            response_status = GuideMessageStatus.CANCELED
+
+        affected = await GuideMessage.filter(
+            guide_message_id=message_id,
+            status=GuideMessageStatus.SCHEDULED,
+        ).update(**updates)
+
+        if affected != 1:
+            raise ApiError(
+                409,
+                "MESSAGE_NOT_EDITABLE",
+                "이미 발송되었거나 상태가 변경된 문자입니다.",
+            )
+
+        return MessagePatchResponse(
+            guide_message_id=message.guide_message_id,
+            scheduled_at=response_scheduled_at,
+            status=response_status,
         )
 
     @staticmethod
