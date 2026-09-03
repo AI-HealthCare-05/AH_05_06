@@ -1324,12 +1324,17 @@
     return catalogApi
       .drugs()
       .then(function (page) {
+        /* 그 사이 다른 묶음으로 옮겨 갔으면 붙이지 않는다. 형제 로더
+           (`loadTemplates`·`loadBaselines`)에는 있는데 여기만 빠져 있었다
+           (`#197` 리뷰, 2heej) — 늦게 온 답이 남의 화면을 덮는다. */
+        if (group !== "drugs") return;
         /* 서버가 `{draft, items}` 로 준다 — 제작 중인지도 함께 온다. */
         DRAFT = !!(page && page.draft);
         drugs = (page && page.items) || [];
         render();
       })
       .catch(function () {
+        if (group !== "drugs") return;
         drugs = null;
         saying = "약 목록을 불러오지 못했습니다";
         render();

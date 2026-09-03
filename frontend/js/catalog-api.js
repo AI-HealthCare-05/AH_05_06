@@ -206,7 +206,14 @@ var catalogApi = {
     if (MOCK) return mockAddDrug(row);
     return request("/prescription-drugs", {
       method: "POST",
-      body: { name: row.name, frequency: row.frequency, note: row.note },
+      /* 저장 전에 감추기를 눌러 둔 줄도 그 뜻이 남아야 한다 — 안 보내면
+         등록이 그냥 보이는 상태로 되고 사용자는 알 길이 없다 (`#197` 리뷰). */
+      body: {
+        name: row.name,
+        frequency: row.frequency,
+        note: row.note,
+        hidden: !!row.hidden,
+      },
     });
   },
 
@@ -215,7 +222,9 @@ var catalogApi = {
     return request("/prescription-drugs/" + encodeURIComponent(id), {
       method: "PUT",
       body: {
-        /* 제작 중에만 서버가 받는다. 잠기면 409 로 튕긴다. */
+        /* 줄 전체를 보낸다. 서버는 **이름이 바뀌는지**로 개명을 가리므로,
+           같은 이름을 실어 보내도 감추기·용법 수정은 안 막힌다. 진짜 개명은
+           잠긴 뒤 409 로 튕긴다 (`#197` 리뷰). */
         name: row.name,
         frequency: row.frequency,
         note: row.note,
@@ -409,7 +418,8 @@ function mockAddDrug(row) {
       name: name,
       frequency: row.frequency || null,
       note: row.note || null,
-      hidden: false,
+      /* 저장 전에 감추기를 눌러 둔 줄 — 서버와 같은 규칙이다 (`#197` 리뷰) */
+      hidden: !!row.hidden,
     };
     store.push(made);
     return resolve(JSON.parse(JSON.stringify(made)));
@@ -421,17 +431,25 @@ function mockSaveDrug(id, row) {
     var store = drugStore();
     for (var i = 0; i < store.length; i++) {
       if (store[i].drug_catalog_id !== Number(id)) continue;
-      var name = clean(row.name);
-      if (!name) return reject(new ApiError("NAME_REQUIRED", 422, {}));
-      for (var j = 0; j < store.length; j++) {
-        if (j !== i && store[j].name === name) {
-          return reject(new ApiError("DRUG_EXISTS", 409, {}));
+      /* **서버와 같은 판정.** 같은 이름은 개명이 아니고, 안 보낸 `hidden` 은
+         안 건드린다. 목이 서버와 갈리면 목에서만 되는 화면이 된다 —
+         실제로 이 갈래가 갈려 있어서 「잠긴 뒤 저장이 전부 막히는」 버그를
+         CI 가 못 잡았다 (`#197` 리뷰, 2heej). */
+      if (row.name !== undefined && row.name !== null) {
+        var name = clean(row.name);
+        if (!name) return reject(new ApiError("NAME_REQUIRED", 422, {}));
+        if (name !== store[i].name) {
+          for (var j = 0; j < store.length; j++) {
+            if (j !== i && store[j].name === name) {
+              return reject(new ApiError("DRUG_EXISTS", 409, {}));
+            }
+          }
+          store[i].name = name;
         }
       }
-      store[i].name = name;
       store[i].frequency = row.frequency || null;
       store[i].note = row.note || null;
-      store[i].hidden = !!row.hidden;
+      if (row.hidden !== undefined) store[i].hidden = !!row.hidden;
       return resolve(JSON.parse(JSON.stringify(store[i])));
     }
     return reject(new ApiError("DRUG_NOT_FOUND", 404, {}));

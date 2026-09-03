@@ -166,6 +166,11 @@ class DrugCatalogCreateRequest(StrictModel):
     frequency: str | None = Field(default=None, max_length=50)
     note: str | None = Field(default=None, max_length=200)
 
+    #: **저장 전에 감추기를 누른 줄**도 그 뜻이 남아야 한다. 예전에는 이 칸이
+    #: 없어서, 아직 등록 안 된 줄에서 감추기를 눌러도 등록은 그냥 보이는
+    #: 상태로 됐고 **사용자는 알 길이 없었다** (`#197` 리뷰, 2heej).
+    hidden: bool = False
+
 
 class DrugCatalogSaveRequest(StrictModel):
     """등록된 약 고치기 — **이름은 안 받는다.**
@@ -180,7 +185,12 @@ class DrugCatalogSaveRequest(StrictModel):
     name: str | None = Field(default=None, max_length=100)
     frequency: str | None = Field(default=None, max_length=50)
     note: str | None = Field(default=None, max_length=200)
-    hidden: bool = False
+
+    #: 🚨 **안 보내면 안 건드린다.** 예전에는 기본값이 `False` 였다 — 지금
+    #: 화면은 늘 명시해서 안 걸렸지만, `hidden` 을 빼고 부르는 다음 호출자가
+    #: 생기면 **감춘 약이 조용히 되살아난다** (`#197` 리뷰, 2heej).
+    #: 나머지 셋과 같이 「안 보냄 = 그대로」로 맞춘다.
+    hidden: bool | None = None
 
 
 class DrugCatalogPage(StrictModel):

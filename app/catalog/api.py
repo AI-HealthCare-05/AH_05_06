@@ -351,6 +351,20 @@ async def list_drugs(
     return DrugCatalogPage(draft=_draft_mode(), items=[_drug(row) for row in rows])
 
 
+def _checked_drug_name(raw: str) -> str:
+    """적어 보낸 약 이름을 다듬고 **한 줄에 하나인지**까지 본다.
+
+    등록과 수정이 이 흐름을 각자 인라인으로 들고 있었다. 그래서 개명 경로에만
+    `IntegrityError` 가드가 빠져 **한쪽만 고쳐진 채** 남았다 (`#197` 리뷰,
+    2heej). 한 곳에 두면 다음에 규칙이 늘어도 한 번만 고친다.
+    """
+    name = _clean_name(raw)
+    if not name:
+        raise ApiError(422, "NAME_REQUIRED", "약 이름을 적어 주세요.")
+    _require_one_drug(name)
+    return name
+
+
 @catalog_router.post("/prescription-drugs", response_model=DrugCatalogItem, status_code=201)
 async def create_drug(
     payload: DrugCatalogCreateRequest,
@@ -363,10 +377,7 @@ async def create_drug(
     말한다 — 몇 번을 눌러도 같은 500 이고 까닭을 알 길이 없다.
     409 로 받아 「감춘 것에 있습니다」까지 말해 준다.
     """
-    name = _clean_name(payload.name)
-    if not name:
-        raise ApiError(422, "NAME_REQUIRED", "약 이름을 적어 주세요.")
-    _require_one_drug(name)
+    name = _checked_drug_name(payload.name)
 
     already = await DrugCatalog.filter(name=name).first()
     if already is not None:
@@ -383,6 +394,9 @@ async def create_drug(
             name=name,
             frequency=(payload.frequency or "").strip() or None,
             note=(payload.note or "").strip() or None,
+            # 저장 전에 감추기를 눌러 둔 줄이면 그대로 감춘 채 등록한다.
+            status=SetStatus.HIDDEN if payload.hidden else SetStatus.ACTIVE,
+            hidden_at=datetime.now(UTC) if payload.hidden else None,
         )
     except IntegrityError as clash:
         # 위 확인과 여기 사이가 갈릴 수 있다. `unique` 가 마지막 자물쇠다.
@@ -397,16 +411,27 @@ async def save_drug(
     payload: DrugCatalogSaveRequest,
     actor: Annotated[ClinicalActor, Depends(require_patient_read)],
 ) -> DrugCatalogItem:
-    """용법 · 복용법 · 감춤을 고친다. **이름은 안 받는다** — 스키마가 안 받는다.
+    """용법 · 메모 · 감춤을 고친다. **이름은 제작 중에만 바꾼다.**
 
     역할은 안 본다. 2026-09-02 회의에서 설정 수정을 스탭에게도 열었고,
     이 표도 설정이다.
+
+    🚨 **보낸 이름이 지금 이름과 같으면 개명이 아니다.**
+
+    화면은 고친 칸만 골라 보내지 않고 **줄 전체**를 보낸다 — `name` 이 늘
+    실려 온다. 그것을 「개명 시도」로 읽으면 잠긴 뒤에는 **감추기도 용법
+    수정도 전부 `409` 로 막힌다** (`#197` 리뷰, 2heej). 이 종점이 열어 두려던
+    「닫힌 뒤엔 `hidden` 으로 감춘다」는 길 자체가 죽는다.
+
+    그래서 **바뀌는지**를 보고 판단한다. 클라이언트가 무엇을 보내는지에
+    기대지 않는다 — 다음 호출자가 또 줄 전체를 보내도 안 깨진다.
     """
     row = await DrugCatalog.filter(drug_catalog_id=drug_catalog_id).first()
     if row is None:
         raise ApiError(404, "DRUG_NOT_FOUND", "약을 찾을 수 없습니다.")
 
-    if payload.name is not None:
+    wanted = _checked_drug_name(payload.name) if payload.name is not None else None
+    if wanted is not None and wanted != row.name:
         # **잠긴 뒤에는 소리 나게 막는다.** 받아 놓고 무시하면 「바꿔 달라
         # 보냈는데 200 이 오고 안 바뀐」 조용한 성공이 된다.
         if not _draft_mode():
@@ -415,23 +440,30 @@ async def save_drug(
                 "CATALOG_LOCKED",
                 "등록된 약의 이름은 바꿀 수 없습니다. 감추고 새로 등록해 주세요.",
             )
-        name = _clean_name(payload.name)
-        if not name:
-            raise ApiError(422, "NAME_REQUIRED", "약 이름을 적어 주세요.")
-        _require_one_drug(name)
-        if await DrugCatalog.filter(name=name).exclude(drug_catalog_id=drug_catalog_id).exists():
+        if await DrugCatalog.filter(name=wanted).exclude(drug_catalog_id=drug_catalog_id).exists():
             raise ApiError(409, "DRUG_EXISTS", "같은 이름의 약이 이미 있습니다.")
-        row.name = name
+        row.name = wanted
 
     row.frequency = (payload.frequency or "").strip() or None
     row.note = (payload.note or "").strip() or None
 
-    to = SetStatus.HIDDEN if payload.hidden else SetStatus.ACTIVE
-    if row.status is not to:
-        row.status = to
-        # 두 번 감춰도 처음 시각을 안 덮는다.
-        row.hidden_at = datetime.now(UTC) if payload.hidden else None
-    await row.save()
+    # **안 보내면 안 건드린다.** 예전에는 기본값이 `False` 라, `hidden` 을
+    # 빼고 부르는 호출자가 생기면 **감춘 약이 조용히 되살아났다**
+    # (`#197` 리뷰, 2heej).
+    if payload.hidden is not None:
+        to = SetStatus.HIDDEN if payload.hidden else SetStatus.ACTIVE
+        if row.status is not to:
+            row.status = to
+            # 두 번 감춰도 처음 시각을 안 덮는다.
+            row.hidden_at = datetime.now(UTC) if payload.hidden else None
+
+    try:
+        await row.save()
+    except IntegrityError as clash:
+        # 개명 경합. 위 확인과 여기 사이가 갈릴 수 있다 — `unique` 가 마지막
+        # 자물쇠다. `create_drug` 에만 있던 가드가 여기 없어서, 이 PR 이
+        # 없애려던 바로 그 500 이 개명 경로에 남아 있었다 (`#197` 리뷰).
+        raise ApiError(409, "DRUG_EXISTS", "같은 이름의 약이 이미 있습니다.") from clash
 
     return _drug(row)
 

@@ -133,6 +133,99 @@ class DrugCatalogTestCase(PrescriptionSettingsTestCase):
         assert answer.json()["code"] == "CATALOG_LOCKED"
         assert await DrugCatalog.filter(name=NAME).exists(), "튕겼는데 이름이 바뀌었다"
 
+    async def test_saving_after_the_lock_still_works_when_the_name_did_not_change(self) -> None:
+        """🚨 **잠긴 뒤에도 감추기·용법 수정은 되어야 한다.**
+
+        화면은 고친 칸만 골라 보내지 않고 **줄 전체**를 보낸다 — `name` 이 늘
+        실려 온다. 그것을 「개명 시도」로 읽으면 잠긴 뒤에는 **감추기도 용법
+        수정도 전부 409** 로 막힌다. `delete_drug` 가 「닫힌 뒤엔 `hidden` 으로
+        감춘다」고 안내하는 그 길이 통째로 죽는다 (`#197` 리뷰, 2heej).
+
+        기존 잠금 검사는 **이름을 바꿔서** 보내므로 이 조합을 안 지난다.
+        """
+        staff = await self.make_staff(["staff"])
+        made = (await self.add(staff)).json()
+
+        with patch.dict(os.environ, {"CATALOG_DRAFT_MODE": "false"}):
+            async with self.client() as client:
+                answer = await client.put(
+                    f"/api/v1/prescription-drugs/{made['drug_catalog_id']}",
+                    json={"name": NAME, "frequency": "1일 2회", "note": "식후", "hidden": True},
+                    headers=await self.sign_in(staff),
+                )
+
+        assert answer.status_code == 200, answer.text
+        row = await DrugCatalog.filter(drug_catalog_id=made["drug_catalog_id"]).first()
+        assert row is not None
+        assert row.status is SetStatus.HIDDEN, "잠겼다고 감추기까지 막혔다"
+        assert row.frequency == "1일 2회", "잠겼다고 용법 수정까지 막혔다"
+
+    async def test_the_lock_still_catches_a_real_rename(self) -> None:
+        """위 완화가 잠금을 뚫지는 않는다 — **이름이 바뀌면** 그대로 막는다."""
+        staff = await self.make_staff(["staff"])
+        made = (await self.add(staff)).json()
+
+        with patch.dict(os.environ, {"CATALOG_DRAFT_MODE": "false"}):
+            async with self.client() as client:
+                answer = await client.put(
+                    f"/api/v1/prescription-drugs/{made['drug_catalog_id']}",
+                    json={"name": NAME + " 다른", "frequency": None, "note": None, "hidden": False},
+                    headers=await self.sign_in(staff),
+                )
+
+        assert answer.status_code == 409, answer.text
+        assert answer.json()["code"] == "CATALOG_LOCKED"
+
+    async def test_leaving_hidden_out_does_not_bring_a_hidden_drug_back(self) -> None:
+        """🚩 **안 보내면 안 건드린다.**
+
+        예전에는 `hidden` 기본값이 `False` 라, 그 칸을 빼고 부르는 호출자가
+        생기면 **감춘 약이 조용히 되살아났다** (`#197` 리뷰, 2heej). 지금
+        화면은 늘 명시해서 안 걸렸지만 계약 자체의 함정이었다.
+        """
+        staff = await self.make_staff(["staff"])
+        made = (await self.add(staff)).json()
+        drug_id = made["drug_catalog_id"]
+
+        async with self.client() as client:
+            head = await self.sign_in(staff)
+            await client.put(
+                f"/api/v1/prescription-drugs/{drug_id}",
+                json={"name": NAME, "hidden": True},
+                headers=head,
+            )
+            # `hidden` 을 빼고 용법만 고친다.
+            answer = await client.put(
+                f"/api/v1/prescription-drugs/{drug_id}",
+                json={"name": NAME, "frequency": "1일 3회"},
+                headers=head,
+            )
+
+        assert answer.status_code == 200, answer.text
+        row = await DrugCatalog.filter(drug_catalog_id=drug_id).first()
+        assert row is not None
+        assert row.status is SetStatus.HIDDEN, "안 보낸 칸이 약을 되살렸다"
+        assert row.frequency == "1일 3회"
+
+    async def test_a_row_hidden_before_it_was_saved_is_registered_hidden(self) -> None:
+        """저장 전에 감추기를 눌러 둔 줄도 그 뜻이 남는다.
+
+        예전에는 등록 요청에 `hidden` 칸이 없어서, 눌러도 **그냥 보이는
+        상태로 등록**됐고 사용자는 알 길이 없었다 (`#197` 리뷰, 2heej).
+        """
+        staff = await self.make_staff(["staff"])
+        async with self.client() as client:
+            answer = await client.post(
+                "/api/v1/prescription-drugs",
+                json={"name": "감춘 채 등록", "frequency": None, "note": None, "hidden": True},
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 201, answer.text
+        row = await DrugCatalog.filter(name="감춘 채 등록").first()
+        assert row is not None
+        assert row.status is SetStatus.HIDDEN, "감추기를 눌렀는데 보이는 채로 등록됐다"
+
     async def test_hiding_keeps_the_row_and_the_list_still_shows_it(self) -> None:
         """**지우지 않는다. 감춘다.** 목록은 감춘 것도 다 준다 —
         거르면 되살릴 화면이 없어진다."""
