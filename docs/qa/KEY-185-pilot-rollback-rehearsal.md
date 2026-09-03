@@ -69,6 +69,10 @@ downgrade는 수행하지 않았다. 합성 smoke 계정은 팀 Notion에서 확
 
 ## 리허설 절차와 증적
 
+아래 표는 승인된 변경 시간에 사람이 확인한 운영 증적이다. 저장소의 자동
+테스트는 과거 Pilot 작업을 재실행했다고 주장하지 않으며, 이 기록의 버전 왕복,
+시간 순서, 런북·실행기 일치와 민감정보 비노출만 독립적으로 검사한다.
+
 ### 1. 기준 상태 확인
 
 1. 서버의 `.env`에서 세 이미지 태그의 **이름과 값만** 확인한다. 파일 전체를
@@ -88,10 +92,11 @@ uv run python scripts/smoke.py http://<Pilot 주소>
 
 ### 2. 이전 정상 버전으로 롤백
 
-1. 런북 4절에 따라 세 버전 태그를 승인된 이전 정상 태그로 변경한다.
-2. 해당 이미지를 먼저 pull해 태그 존재 여부를 확인한다.
-3. `docker compose up -d --pull always`로 앱을 교체한다.
-4. `docker compose ps`와 smoke로 복구 여부를 판정한다.
+1. 런북 4절에 따라 `docker compose down`으로 기존 컨테이너를 중지한다.
+2. 세 버전 태그를 승인된 이전 정상 태그로 변경한다.
+3. 해당 이미지를 먼저 pull해 태그 존재 여부를 확인한다.
+4. `docker compose up -d --pull always`로 앱을 교체한다.
+5. `docker compose ps`와 smoke로 복구 여부를 판정한다.
 
 | 항목 | 시작 | 종료 | 결과·제한사항 |
 |---|---|---|---|
@@ -100,9 +105,10 @@ uv run python scripts/smoke.py http://<Pilot 주소>
 
 ### 3. 현재 정상 버전으로 재배포
 
-1. 시작 전에 기록한 세 정상 태그로 되돌린다.
-2. `docker compose up -d --pull always`로 다시 기동한다.
-3. `docker compose ps`와 smoke가 모두 통과하는지 확인한다.
+1. `docker compose down`으로 롤백 컨테이너를 중지한다.
+2. 시작 전에 기록한 세 정상 태그로 되돌린다.
+3. `docker compose up -d --pull always`로 다시 기동한다.
+4. `docker compose ps`와 smoke가 모두 통과하는지 확인한다.
 
 | 항목 | 시작 | 종료 | 결과·제한사항 |
 |---|---|---|---|
