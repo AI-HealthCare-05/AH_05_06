@@ -846,7 +846,7 @@
         buildTabBar(d);
         renderBody(d);
         sayGuide('승인된 안내를 불러왔어요');
-        if (window.chatSetGuide) chatSetGuide(d.guide || d, TOKEN);
+        if (window.chatSetGuide) chatSetGuide(d.guide || d);
       })
       .catch(renderLoadError);
   }

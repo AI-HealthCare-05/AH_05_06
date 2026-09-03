@@ -58,9 +58,9 @@ test('환자 피드백 요청은 세션 쿠키만 사용하고 링크 토큰을 
 
 test('도움 평가 UI는 서버가 준 response_ref가 있는 답변에만 표시된다', () => {
   const source = read('patient_wireframe/js/chat.js');
-  assert.match(source, /requestChatbotResponse\(linkToken, q, controller\.signal\)/,);
+  assert.match(source, /streamChatbotAnswer\(/);
   assert.match(source, /answerMsg\.responseRef = result\.response_ref/);
-  assert.match(source, /chatSetGuide = function \(g, token\)/);
+  assert.match(source, /chatSetGuide = function \(g\)/);
   assert.match(source, /!msg\.error && !msg\.aborted && !msg\.fallback && msg\.responseRef/,);
   assert.match(source, /category: 'HELPFUL'/);
   assert.match(source, /category: 'UNHELPFUL'/);
@@ -68,9 +68,10 @@ test('도움 평가 UI는 서버가 준 response_ref가 있는 답변에만 표�
 });
 
 test('챗봇 응답 참조값은 URL이 아닌 응답 본문에서 받는다', () => {
-  const api = read('patient_wireframe/js/guide-api.js');
-  assert.match(api, /GUIDE_API_BASE \+ '\/chatbot\/responses'/);
-  assert.match(api, /body: JSON\.stringify\(\{ link_token: linkToken, question: question \}\)/);
+  const api = read('js/chatbot-api.js');
+  assert.match(api, /\/api\/v1\/chatbot\/responses/);
+  assert.match(api, /body: JSON\.stringify\(\{ question: request\.question \}\)/);
+  assert.doesNotMatch(api, /link_token/);
   assert.doesNotMatch(api, /chatbot\/responses\?[^']*link_token/);
 });
 
@@ -83,19 +84,19 @@ test('네트워크 재시도는 같은 submission_id를 다시 사용한다', ()
 
 test('중단 버튼은 실제 챗봇 요청을 취소한다', () => {
   const source = read('patient_wireframe/js/chat.js');
-  const api = read('patient_wireframe/js/guide-api.js');
+  const api = read('js/chatbot-api.js');
 
   assert.match(source, /new AbortController\(\)/);
   assert.match(source, /state\.requestController = controller/);
   assert.match(source, /state\.requestController\.abort\(\)/);
   assert.match(
     source,
-    /requestChatbotResponse\(linkToken, q, controller\.signal\)/,
+    /streamChatbotAnswer\(/,
   );
 
   assert.match(
     api,
-    /function requestChatbotResponse\(linkToken, question, signal\)/,
+    /function apiChatbotStreamTransport\(request, observer\)/,
   );
-  assert.match(api, /signal: signal/);
+  assert.match(api, /signal: request\.signal/);
 });

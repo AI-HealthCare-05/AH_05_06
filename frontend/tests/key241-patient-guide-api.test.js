@@ -391,10 +391,12 @@ test('실제 /guide.html은 최종 와이어프레임 자산을 사용한다', (
 
   assert.match(html, /\/patient_wireframe\/js\/guide-api\.js/);
   assert.match(html, /\/patient_wireframe\/js\/guide\.js/);
+  assert.match(html, /\/js\/chatbot-api\.js/);
   assert.match(html, /id="guide-body"/);
   assert.match(preview, /location\.replace\('\.\.\/\.\.\/guide\.html'/);
   assert.doesNotMatch(preview, /guide-api\.js|guide\.css|id="guide-body"/);
-  assert.match(chat, /!GUIDE_MOCK\) return/);
+  assert.doesNotMatch(chat, /!GUIDE_MOCK\) return/);
+  assert.match(chat, /streamChatbotAnswer/);
   assert.match(fab, /\/patient_wireframe\/assets\/chat_bot\.png/);
   assert.doesNotMatch(fab, /src="\.\.\/assets\//);
 });

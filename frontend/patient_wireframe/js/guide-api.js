@@ -389,23 +389,6 @@ function fetchGuide(token) {
   });
 }
 
-function requestChatbotResponse(linkToken, question, signal) {
-  return fetch(GUIDE_API_BASE + '/chatbot/responses', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ link_token: linkToken, question: question }),
-    signal: signal,
-  }).then(function (res) {
-    return res.json().catch(function () { return {}; }).then(function (data) {
-      if (res.ok) return data;
-      var error = new Error('CHATBOT_FAILED');
-      error.code = data.code || 'CHATBOT_FAILED';
-      throw error;
-    });
-  });
-}
-
 function createFeedbackSubmissionId() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') {
     return window.crypto.randomUUID();

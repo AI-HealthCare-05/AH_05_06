@@ -282,7 +282,8 @@ await PatientUsageService().record_chatbot_answer(
 
 ```text
 POST /api/v1/chatbot/responses
-     { "link_token": "…", "question": "약은 언제 먹나요?" }
+Cookie: patient_session=…
+     { "question": "약은 언제 먹나요?" }
 200  { "answer": "…", "evidence": "복약 안내 · …",
        "source": "담당 의료진이 승인한 진료 안내",
        "limitation": "승인된 안내 범위에서만 답하며 …",
@@ -290,8 +291,14 @@ POST /api/v1/chatbot/responses
        "grounded_section": "medication" }
 ```
 
-- 링크 토큰은 URL·로그에 노출하지 않고 요청 본문으로만 받는다. 기존 KEY-90의
-  만료 검증과 승인 완료 게이트를 그대로 통과해야 한다.
+- 챗봇의 안내 범위는 `patient_session` HttpOnly 쿠키에서 찾은 링크 digest로
+  결정한다. 요청 본문은 질문만 받으며 링크 토큰 원문을 다시 받거나 저장하지 않는다.
+- 환자 세션이 만료되면 `401 PATIENT_SESSION_EXPIRED`로 재인증을 안내한다.
+- 환자 안내 화면 정본은 `frontend/guide.html`과 그 화면이 불러오는
+  `frontend/patient_wireframe/` 자산이다. `frontend/js/chatbot-api.js`는 이 화면의
+  공용 전송 모듈이며 `?mock=1`에서만 합성 응답을 사용한다.
+- P6의 `문의하기`는 병원 연락처 계약이 확정될 때까지 기존 준비 안내를 유지한다.
+  이 일감에서는 새 연락 기능을 추가하지 않는다.
 - 컨텍스트 선택 대상은 해당 링크의 승인 완료 `GuideSection.body`뿐이다. 환자정보,
   다른 병원 안내, 미승인 안내, OCR·의료문서 원문은 컨텍스트에 넣지 않는다.
 - 모델에는 응답 저장을 끈 단일 요청을 보내며, 모델명·성공 여부·지연시간과
