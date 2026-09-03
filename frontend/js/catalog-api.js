@@ -2,6 +2,7 @@
  *
  *   GET  /api/v1/prescription-sets                        목록 (고르는 칸이 쓴다)
  *   GET  /api/v1/prescription-sets/{id}                   한 세트 (설정 화면)
+ *   PUT  /api/v1/prescription-sets/{id}                   저장 — 진단·약·일수 (이름은 못 바꾼다)
  *
  * **목록과 상세를 가른다.** 목록에 상세를 다 실으면 고르는 칸 하나 그리려고
  * 여덟 세트의 약·문구를 전부 받아 온다.
@@ -74,8 +75,9 @@ var MOCK_PRESCRIPTION_SETS = [
 
 var catalogApi = {
   sets: function () {
-    if (MOCK)
-      return Promise.resolve(MOCK_PRESCRIPTION_SETS.map(mockSetListRow));
+    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 여덟만 훑으면 새로 만든 처방이
+       레일에 안 나타난다 — 목업에서만 나는 차이라 CI 가 못 잡는다. */
+    if (MOCK) return Promise.resolve(mockSetStore().map(mockSetListRow));
     return request("/prescription-sets");
   },
 
@@ -167,6 +169,32 @@ var catalogApi = {
     );
   },
 
+  saveSet: function (id, plan) {
+    if (MOCK) return mockSaveSet(id, plan);
+    return request("/prescription-sets/" + encodeURIComponent(id), {
+      method: "PUT",
+      body: plan,
+    });
+  },
+
+  /* **지우는 길은 없다.** 의료 데이터라 삭제가 금지되고, 지난 진료기록이
+     이름 문자열로 이 세트를 가리킨다. 숨기면 새로 고를 수만 없어진다. */
+  hideSet: function (id, hidden) {
+    if (MOCK) return mockHideSet(id, hidden);
+    return request(
+      "/prescription-sets/" + encodeURIComponent(id) + (hidden ? "/hide" : "/unhide"),
+      { method: "POST" },
+    );
+  },
+
+  createSet: function (name, disease) {
+    if (MOCK) return mockCreateSet(name, disease);
+    return request("/prescription-sets", {
+      method: "POST",
+      body: { name: name, disease: disease },
+    });
+  },
+
   reviewCopy: function (setId) {
     if (MOCK) return mockReviewCopy(setId);
     return request("/guide-copy/" + encodeURIComponent(setId) + "/review", {
@@ -224,6 +252,10 @@ function mockSetListRow(row) {
   return {
     prescription_set_id: row.prescription_set_id,
     name: mine ? mine.name : row.name,
+    /* **감춘 것도 목록에 담는다.** 거르면 되살릴 화면이 없어지고, 감춘
+       처방으로 저장된 진료를 다시 열 때 확인 항목이 이름으로 안 찾아진다.
+       거르는 것은 판독 확인의 **고르는 칸** 하나뿐이다. */
+    hidden: mine ? !!mine.hidden : false,
     /* 레일이 질환으로 묶는다 — 상세를 받아야 알 수 있게 두면 여덟 번 다녀온다 */
     disease: mine ? mine.disease : "ENDOMETRIOSIS",
     check_items: mine ? mine.check_items.slice() : [],
@@ -245,6 +277,90 @@ function mockSetDetail(id) {
         return reject(new ApiError("PRESCRIPTION_SET_NOT_FOUND", 404, {}));
       return resolve(JSON.parse(JSON.stringify(mine)));
     }, 80);
+  });
+}
+
+function mockHideSet(id, hidden) {
+  return new Promise(function (resolve, reject) {
+    var store = mockSetStore();
+    for (var i = 0; i < store.length; i++) {
+      if (store[i].prescription_set_id !== Number(id)) continue;
+      store[i].hidden = !!hidden;
+      return resolve(JSON.parse(JSON.stringify(store[i])));
+    }
+    return reject(new ApiError("PRESCRIPTION_SET_NOT_FOUND", 404, {}));
+  });
+}
+
+function mockCreateSet(name, disease) {
+  return new Promise(function (resolve, reject) {
+    /* 서버와 같은 다듬기 — 앞뒤 공백은 `unique` 가 안 막는다 */
+    var clean = String(name || "").split(/\s+/).filter(Boolean).join(" ");
+    if (!clean) return reject(new ApiError("NAME_REQUIRED", 422, {}));
+
+    var store = mockSetStore();
+    for (var i = 0; i < store.length; i++) {
+      /* **감춘 이름도 못 쓴다** — 그 이름을 든 진료기록이 이미 있다 */
+      if (store[i].name === clean) {
+        return reject(new ApiError("PRESCRIPTION_SET_EXISTS", 409, {}));
+      }
+    }
+
+    var made = {
+      prescription_set_id: Math.max.apply(
+        null,
+        store.map(function (s) {
+          return s.prescription_set_id;
+        }),
+      ) + 1,
+      name: clean,
+      disease: disease,
+      hidden: false,
+      phase: "CONTINUE",
+      days_mode: "DAYS",
+      days_per_pack: null,
+      emr_code: null,
+      revisit_note: null,
+      check_d15_on: true,
+      check_d30_on: false,
+      run_out_on: true,
+      run_out_before_days: 3,
+      drugs: [],
+      check_items: [],
+    };
+    store.push(made);
+    return resolve(JSON.parse(JSON.stringify(made)));
+  });
+}
+
+function mockSaveSet(id, plan) {
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      /* 서버 규칙 그대로 — 의사만, 통으로 세는데 한 통이 며칠인지 없으면 422 */
+      var who = MOCK_STAFF[sessionStorage.getItem("mockUser")];
+      if (!who || (who.roles || []).indexOf("doctor") === -1) {
+        return reject(new ApiError("FORBIDDEN", 403, {}));
+      }
+      if (plan.days_mode === "PACK" && !plan.days_per_pack) {
+        return reject(new ApiError("DAYS_PER_PACK_REQUIRED", 422, {}));
+      }
+
+      var store = mockSetStore();
+      for (var i = 0; i < store.length; i++) {
+        if (store[i].prescription_set_id !== Number(id)) continue;
+        /* **이름을 지켜서 덮는다.** 서버가 이름을 안 받으므로 `plan` 에는
+           `name` 이 없다. 그대로 덮으면 목에서 이름 키가 사라져 상세 머리와
+           레일이 빈칸이 된다 — 목이라 CI 가 못 잡고 눌러 봐야 보인다. */
+        var keptName = store[i].name;
+        store[i] = JSON.parse(JSON.stringify(plan));
+        store[i].prescription_set_id = Number(id);
+        store[i].name = keptName;
+        /* 일수로 세면 통 크기를 비운다 — 서버와 같다 */
+        if (store[i].days_mode !== "PACK") store[i].days_per_pack = null;
+        return resolve(JSON.parse(JSON.stringify(store[i])));
+      }
+      return reject(new ApiError("PRESCRIPTION_SET_NOT_FOUND", 404, {}));
+    }, 120);
   });
 }
 
@@ -524,6 +640,23 @@ var MOCK_COPY_ORIGIN = {
     "[합성] 한쪽 다리에 심한 통증·부기·발적이 생기거나, 갑작스러운 흉통·호흡 곤란·시야 이상이 나타나면 즉시 복용을 중단하고 응급실을 방문하세요.",
 };
 
+/* **서버 `app/services/guide_defaults.py` 와 같은 글이어야 한다.**
+   갈라지면 목에서 보던 글과 실제로 나가는 글이 달라진다 — 서버가 이 값을
+   응답에 실어 주므로 화면은 베끼지 않지만, 목은 서버가 없어 여기 둔다. */
+var MOCK_COPY_DEFAULT = {
+  medication: "복약 지시에 따라 정해진 시간에 복용해 주세요.",
+  caution:
+    "[합성 주의 안내]\n복용 중 의사 또는 약사에게 미리 안내받지 않은 증상이나 " +
+    "불편감이 나타나면 의료진에게 알려 주세요.\n미리 안내받은 증상이라도 심해지거나 " +
+    "계속되면 알려 주세요.",
+  emergency:
+    "처방약 복용 중 두드러기, 호흡 곤란, 심한 복통이 생기면 즉시 복용을 중단하고 응급실을 방문하세요.",
+  life: "처방 기간 중 음주는 피해 주세요. 충분한 수분 섭취와 규칙적인 수면을 유지해 주세요.",
+};
+
+/* 고칠 수 있는 갈래 — 응급만 빠진다(KEY-150). 서버 `EDITABLE_SECTIONS` 와 같다. */
+var MOCK_COPY_SECTIONS = ["medication", "caution", "emergency", "life"];
+
 var mockCopyEdits = null;
 var mockCopyReviews = null;
 
@@ -531,20 +664,32 @@ function mockCopyPage() {
   if (!mockCopyEdits) mockCopyEdits = {};
   if (!mockCopyReviews) mockCopyReviews = {};
   return Promise.resolve({
-    doctor_id: 1,
-    items: MOCK_PRESCRIPTION_SETS.map(function (row) {
+    /* 비면 의원 공통 — 2026-09-02 회의 결정 */
+    doctor_id: null,
+    defaults: MOCK_COPY_SECTIONS.map(function (key) {
+      return {
+        section_key: key,
+        body: MOCK_COPY_DEFAULT[key],
+        editable: key !== "emergency",
+      };
+    }),
+    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 여덟만 훑으면 새로 만든 처방이
+       문구 목록에 없어, 만든 직후 안내문 절이 통째로 안 보인다 — 목업에서만
+       나는 차이라 CI 가 못 잡는다. `sets()` 에서도 같은 자리를 고쳤다. */
+    items: mockSetStore().map(function (row) {
       return {
         prescription_set_id: row.prescription_set_id,
         name: row.name,
-        disease: row.name.indexOf("PCOS") === 0 ? "PCOS" : "ENDOMETRIOSIS",
+        disease: row.disease,
         reviewed: !!mockCopyReviews[row.prescription_set_id],
-        sections: ["caution", "emergency"].map(function (key) {
+        sections: MOCK_COPY_SECTIONS.map(function (key) {
           return {
             section_key: key,
-            origin: MOCK_COPY_ORIGIN[key],
+            /* 승인 문구가 있으면 그것, 없으면 기본 문구 — 서버와 같다 */
+            origin: MOCK_COPY_ORIGIN[key] || MOCK_COPY_DEFAULT[key],
             body: (mockCopyEdits[row.prescription_set_id] || {})[key] || null,
             /* 🚨 는 열리지 않는다 — 원문이 못박는다 */
-            editable: key === "caution",
+            editable: key !== "emergency",
           };
         }),
       };

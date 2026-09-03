@@ -108,6 +108,33 @@
   color: var(--ink-3);
 }
 
+/* 묶음 머리의 「+」 — **더하는 자리가 곧 더해지는 묶음이다.**
+   목록 아래 한 줄로 두었더니 여덟 줄과 접힌 묶음을 지나야 보였고, 거기서는
+   목록의 마지막 항목처럼 읽혔다.
+   개수 뒤 오른쪽 끝에 붙인다(`margin-left:auto`). 개수는 이름 바로 옆에
+   남아야 「자궁내막증 0/3」처럼 읽히므로 밀어내지 않는다. */
+.rail__plus {
+  flex: none;
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--ink-3);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.rail__plus:hover {
+  color: var(--ink);
+  background: var(--bg);
+}
+
 /* 묶음 머리 — 누르면 아래로 펼쳐진다.
  *
  * 자식과 **같은 13px**, 굵기만 한 단 위다. 600 이 아니라 700 인 것은
@@ -231,6 +258,14 @@
 
 .rail__row:hover {
   background: var(--bg);
+}
+
+
+/* 감춘 처방. **지운 것이 아니라 감춘 것이다** — 흐리게 두되 지운 것처럼
+   보이지 않게 취소선은 쓰지 않는다. 이름 뒤의 「(숨김)」이 말을 하고,
+   여기서는 눈에 덜 걸리게만 한다. */
+.rail__row--hidden .rail__name {
+  color: var(--ink-3);
 }
 
 /* 고른 줄 — 환자 목록의 고른 줄과 **같은 값**이다(`shell.css` 의

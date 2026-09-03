@@ -160,7 +160,14 @@ test("목업도 🚨 를 잠근다", async () => {
   const page = await box.catalogApi.guideCopy();
   const sections = page.items[0].sections;
 
-  assert.strictEqual(sections.filter((s) => s.editable).length, 1, "고칠 수 있는 것은 주의할 점 하나다");
+  /* 갈래가 넷이 됐다 — 복약지도·생활지도는 문구가 `guides.py` 에 박혀 있어
+     **고칠 자리 자체가 없었다.** 응급만 잠긴다(KEY-150). */
+  /* 값으로 견준다 — 목 안의 배열은 프로토타입이 달라 `deepStrictEqual` 이 운다. */
+  assert.strictEqual(
+    sections.map((s) => s.section_key).join(","),
+    "medication,caution,emergency,life",
+  );
+  assert.strictEqual(sections.filter((s) => s.editable).length, 3, "응급만 잠겨야 한다");
   assert.strictEqual(sections.filter((s) => s.section_key === "emergency")[0].editable, false);
 });
 
@@ -169,10 +176,40 @@ test("목업의 원본이 씨앗의 합성 문구다", async () => {
 
   const page = await box.catalogApi.guideCopy();
 
-  assert.ok(
-    page.items[0].sections[0].origin.indexOf("[합성]") === 0,
-    "지어낸 의학 문장을 목업에 넣으면 그것이 진짜처럼 읽힌다",
+  /* 승인 문구가 있는 갈래는 「[합성]」으로 시작한다 — 지어낸 의학 문장을
+     목업에 넣으면 그것이 진짜처럼 읽힌다. 승인 문구가 없는 갈래는 기본
+     문구가 그 자리를 채운다(서버와 같은 규칙). */
+  const bySection = {};
+  for (const part of page.items[0].sections) bySection[part.section_key] = part;
+
+  assert.ok(bySection.caution.origin.indexOf("[합성]") === 0);
+  assert.ok(bySection.emergency.origin.indexOf("[합성]") === 0);
+  assert.strictEqual(
+    bySection.medication.origin,
+    box.MOCK_COPY_DEFAULT.medication,
+    "승인 문구가 없는 갈래는 기본 문구가 원본이다",
   );
+});
+
+test("**목의 기본 문구가 서버 것과 같은 글이다**", async () => {
+  /* 갈라지면 목에서 보던 글과 실제로 나가는 글이 달라진다. 서버는 응답에
+     실어 주므로 화면이 베끼지 않지만, 목은 서버가 없어 들고 있다. */
+  const box = api();
+  const server = read("../app/services/guide_defaults.py");
+
+  const page = await box.catalogApi.guideCopy();
+  const got = {};
+  for (const part of page.defaults) got[part.section_key] = part;
+
+  assert.strictEqual(Object.keys(got).sort().join(","), "caution,emergency,life,medication");
+  assert.strictEqual(got.emergency.editable, false, "🚨 는 고칠 수 없다");
+
+  for (const key of ["medication", "life"]) {
+    assert.ok(
+      server.indexOf(got[key].body) !== -1,
+      `목의 ${key} 기본 문구가 서버에 없는 글이다 — 두 곳이 갈라졌다`,
+    );
+  }
 });
 
 test("고치면 확인이 풀린다", async () => {
@@ -235,11 +272,34 @@ test("서버가 돌려준 것을 화면으로 삼는다", () => {
   assert.ok(save.indexOf("copy = data") !== -1, "고치면 확인이 풀리는데 그것이 보여야 한다");
 });
 
-test("왜 약이 아니라 처방인지 화면이 말한다", () => {
+test("**네 갈래가 다 선다** — 복약지도 · 주의사항 · 응급 · 생활지도", () => {
+  /* 한동안 주의사항 둘뿐이었다. 「복약지도·생활지도는 환자마다 판독값으로
+     만들어지는 것이라 고칠 문구가 없다」고 화면에 적어 두었는데, **그것이
+     틀렸다** — 원문 D2-2 는 넷 다 [수정] 이고, 두 갈래의 문장이 `guides.py`
+     에 박혀 있었을 뿐이다.
+
+     차례는 환자가 읽는 차례다. */
+  const { COPY_SECTION_SAYING } = rules();
+
+  assert.deepEqual(Object.keys(COPY_SECTION_SAYING), [
+    "medication",
+    "caution",
+    "emergency",
+    "life",
+  ]);
+});
+
+test("**판독값이 든다는 것과 못 고친다는 것은 다르다**", () => {
+  /* 옛 안내가 둘을 뭉쳐 「고칠 문구가 없습니다」라 적고 있었다. 값이 채워지는
+     자리와 그 값이 들어갈 문장을 정하는 자리는 다르다. */
   const code = codeOnly(read("js/settings.js"));
 
   assert.ok(
-    code.indexOf("판독값으로 만들어집니다") !== -1,
-    "「왜 드시나요」·「먹는 방법」이 없는 까닭을 적지 않으면 빠뜨린 것으로 읽힌다",
+    code.indexOf("여기서 고칠 문구가 없습니다") === -1,
+    "이제 고칠 수 있는데 못 고친다고 적혀 있다",
+  );
+  assert.ok(
+    code.indexOf("그 값이 들어갈 문장을 정합니다") !== -1,
+    "판독값이 어디에 채워지는지 안 알려 준다",
   );
 });

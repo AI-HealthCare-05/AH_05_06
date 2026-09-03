@@ -1,7 +1,8 @@
 /* 설정 화면 — 와이어프레임 D2-3 「처방」.
  *
  * 왼쪽 레일에서 처방을 고르면 오른쪽에 그 세트가 펼쳐진다. 고치는 것은 **의사만**
- * 이다(D2-2 「의사 계정만 · 스탭은 볼 수만 있다」) — 이 값이 안내문과 문자
+ * 이다(D2-2 원문은 「의사 계정만」이었으나 2026-09-02 회의로 스탭도 고친다) —
+ * 이 값이 안내문과 문자
  * 발송일을 정하므로 의료 판단에 걸린다. 화면에서 잠그는 것은 편의일 뿐이고
  * 실제 차단은 서버가 한다.
  *
@@ -31,25 +32,32 @@
 
   var sets = [];
   var picked = null; // 고른 세트의 상세
+  /* 새 처방을 만드는 중인가. `null` 이면 아니다.
+     **이름과 진단을 한 자리에서 정한다.** 이름은 만들고 나면 못 바꾸므로
+     (지난 진료기록이 그 이름으로 이 처방을 가리킨다) 만들기 전에 다 보여
+     주고 한 번에 받는다. */
+  var making = null;
+
+  /* 보내는 중. **다시 그려도 살아남아야 한다** — DOM 의 `disabled` 는
+     `render()` 가 판을 통째로 갈아치우면서 지워진다. */
+  var busy = false;
+
+  /* 만들다 말고 딴 데 갔을 때 들고 있는 판. 다시 「+ 새 처방」을 누르면
+     되살린다 — 잘못 눌러 나갔다고 다시 치게 하면 안 된다. */
+  var draft = null;
   var pickedId = null;
   var canEdit = false;
 
-  /* **처방 설정(D2-3)은 지금 읽기 전용이다.**
-   *
-   * `prescription_set` 표에는 `hospital_id` 가 없다 — 여덟 처방 유형을 **전
-   * 의원이 함께 쓴다**(`app/models/catalog.py`). 그래서 여기서 저장을 열면
-   * 어느 의원 의사든 다른 모든 의원의 질환 분류 · 총투 해석 · 소진 예정일
-   * 셈법을 바꾸게 된다. 그 값들이 안내문 문구와 문자 발송일을 정한다.
-   *
-   * 2heej 님이 `#183` 리뷰에서 찾아 주셨다. 표를 의원별로 가르는 것이 옳은
-   * 해결인데 씨앗 데이터 · 이름 unique · 기존 참조를 다 손봐야 해서 별도
-   * 일감으로 뺀다. **그때까지는 열지 않는다** — 고칠 수 있는 것처럼 보이는
-   * 화면이 조용히 남의 의원 것을 바꾸는 것보다, 못 고치는 편이 낫다.
-   *
-   * 나머지 설정(D2-4 기준선 · D2-5 문자 문구 · 안내 문구)은 의원별로 갈려
-   * 있어 그대로 고칠 수 있다. 그래서 `canEdit` 과 따로 둔다.
-   */
-  var canEditSet = false;
+
+
+  /* 지금 고치는 중인 문구 칸 하나. `null` 이면 전부 잠겨 있다.
+     **한 번에 하나만 연다** — 여럿을 열어 두면 어느 것을 저장하는지
+     헷갈리고, 저장 실패 문구가 어느 칸 것인지도 알 수 없다. */
+  var copyOpen = null;
+
+  function copyKey(row, section) {
+    return row.prescription_set_id + "|" + section.section_key;
+  }
   var saying = "";
   var loadSeq = 0;
 
@@ -61,7 +69,6 @@
   var templates = null; // 문자 문구 판
   var baselines = null; // 검사 기준선 판
   var copy = null; // 안내문 문구 판
-  var copyPick = null; // 안내문에서 고른 한 장
   /* **펼친 묶음은 늘 하나다.**
    *
    * 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져 「그 밖에」가
@@ -82,7 +89,13 @@
   /* 갈래 머리 — **눌리지 않는 이름표다.** 개수를 이름 바로 옆에 붙인다:
      오른쪽 끝으로 밀면 「오른쪽에 표시를 단 줄」이 되어, 아무 일도 안 하는
      것이 화면에서 제일 눌러 보고 싶게 생긴다. */
-  function sectionHtml(title, count) {
+  /** 묶음 머리. `add` 를 주면 오른쪽 끝에 더하기 단추가 붙는다.
+   *
+   * **더하는 자리는 머리다.** 목록 아래 한 줄로 두었더니 눈에 안 걸렸다 —
+   * 여덟 줄을 지나 접힌 묶음 밑까지 내려가야 보이고, 거기서는 「목록의
+   * 마지막 항목」처럼 읽힌다. 머리에 두면 그 묶음에 더한다는 것이 자리로
+   * 말해진다. */
+  function sectionHtml(title, count, add) {
     return (
       '<div class="rail__section"><span class="rail__section-name">' +
       esc(title) +
@@ -90,6 +103,11 @@
       (count == null
         ? ""
         : '<span class="rail__section-count">' + esc(count) + "</span>") +
+      (add
+        ? '<button class="rail__plus" type="button" id="' +
+          add +
+          '" title="새 처방 만들기" aria-label="새 처방 만들기">+</button>'
+        : "") +
       "</div>"
     );
   }
@@ -189,35 +207,18 @@
 
   /* 안내문 한 장. 이름은 **보이는 것만** 줄인다(§4). 전체 이름은 `title` 에
      남긴다 — 320px 에서 잘렸을 때 확인할 곳이 필요하다. */
-  function copyRailRow(row, block) {
-    var mark = copyRailMark(copy, row.prescription_set_id);
-    var on = row.prescription_set_id === copyPick;
-    return (
-      '<button class="rail__row' +
-      (on ? " is-on" : "") +
-      '" type="button"' +
-      (on ? ' aria-current="true"' : "") +
-      ' data-copy-set="' +
-      row.prescription_set_id +
-      '" title="' +
-      esc(row.name) +
-      '">' +
-      RAIL_MARK +
-      '<span class="rail__name">' +
-      esc(railSetName(block, row.name)) +
-      '</span><span class="rail__note' +
-      (mark.done ? " rail__note--done" : mark.say ? " rail__note--todo" : "") +
-      '">' +
-      esc(mark.say) +
-      "</span></button>"
-    );
-  }
-
+  /** 처방 한 줄. **문구 확인 상태를 함께 단다.**
+   *
+   * 안내문 묶음이 따로 있던 때는 그쪽 줄이 「확인 전 / ✓」를 달았다. 묶음을
+   * 걷으면서 그 표시를 여기로 가져온다 — 어느 처방의 문구를 아직 안 봤는지는
+   * 레일에서 보여야 하고, 그것 때문에 나무를 둘로 세울 이유는 없다. */
   function setRailRow(row, block) {
     var on = row.prescription_set_id === pickedId;
+    var mark = copyRailMark(copy, row.prescription_set_id);
     return (
       '<button class="rail__row' +
       (on ? " is-on" : "") +
+      (row.hidden ? " rail__row--hidden" : "") +
       '" type="button"' +
       (on ? ' aria-current="true"' : "") +
       ' data-set="' +
@@ -228,42 +229,42 @@
       RAIL_MARK +
       '<span class="rail__name">' +
       esc(railSetName(block, row.name)) +
+      (row.hidden ? " (숨김)" : "") +
+      '</span><span class="rail__note' +
+      (mark.done ? " rail__note--done" : mark.say ? " rail__note--todo" : "") +
+      '">' +
+      esc(mark.say) +
       "</span></button>"
     );
   }
 
+  /** 레일은 **처방 하나로 선다.**
+   *
+   * 안내문 묶음이 따로 있었다. 같은 처방을 두 번 오가야 했다 — 왼쪽에서
+   * 「비잔 (계속)」을 고르고 약을 보다가, 그 처방의 문구를 고치려면 위쪽
+   * 안내문 묶음에서 「비잔 (계속)」을 **다시** 찾아 눌러야 했다.
+   *
+   * **둘의 열쇠가 같은 처방 세트다.** 안내문은 처방과 처방일수로 만들어지므로
+   * 처방이 기준이고, 문구는 그 처방의 한 속성이다. 나무를 둘로 세우면 같은
+   * 것을 두 번 세운 셈이 된다.
+   *
+   * 묶음 머리의 진도(`2/5`)는 남긴다 — 어느 질환에 확인 안 한 문구가 몇 개
+   * 남았는지는 접혀 있을 때도 알아야 한다. */
   function railHtml() {
     var blocks = setsByDisease(sets);
     var progress = copy ? copyProgress(copy.items) : null;
 
-    /* **안내문 묶음은 진도를 단다(`1/3`), 처방 묶음은 개수를 단다(`3`).**
-         접두사를 떼고 나면 두 갈래가 글자까지 똑같은 나무 두 그루가 된다 —
-         가르는 것이 갈래 머리 하나뿐이면 스크롤 중에 어느 갈래인지 잃는다.
-         숫자의 뜻이 다르면 접혀 있을 때도 두 갈래가 다르게 읽히고, 이건
-         꾸밈이 아니라 볼 사람이 실제로 알고 싶은 값이다. */
-    var guide = blocks
-      .map(function (block) {
-        return railGroupHtml(
-          "guide",
-          block,
-          copyRailRow,
-          copyBlockMark(copy, block.sets),
-        );
-      })
-      .join("");
     var rx = blocks
       .map(function (block) {
-        return railGroupHtml("sets", block, setRailRow, {
-          say: String(block.sets.length),
-          done: false,
-        });
+        return railGroupHtml("sets", block, setRailRow, copyBlockMark(copy, block.sets));
       })
       .join("");
 
     return (
-      sectionHtml("안내문", progress ? progress.say : null) +
-      (guide || '<p class="rail__none">안내문이 없습니다</p>') +
-      sectionHtml("처방", sets.length) +
+      /* **지우는 단추는 없다.** 의료 데이터라 삭제가 금지되고, 지난
+         진료기록이 이 이름으로 이 처방을 가리킨다. 잘못 지은 이름은
+         상세에서 숨기고 여기 머리의 「+」로 새로 만든다. */
+      sectionHtml("처방", progress ? progress.say : sets.length, "set-new") +
       (rx || '<p class="rail__none">처방이 없습니다</p>') +
       sectionHtml("기타") +
       groupsIn("rest").map(groupRowHtml).join("")
@@ -279,7 +280,7 @@
       '</span><select class="fld__input" id="' +
       id +
       '"' +
-      (canEditSet ? "" : " disabled") +
+      (canEdit ? "" : " disabled") +
       ">" +
       options
         .map(function (opt) {
@@ -298,7 +299,10 @@
     );
   }
 
-  function textHtml(id, label, value, hint) {
+  /* `locked` 는 `disabled` 와 **뜻이 다르다.** 이 화면에서 `disabled` 는
+     「당신에게 권한이 없다」(`canEdit`)는 뜻이라, 누구에게도 안 열리는 칸에
+     그것을 쓰면 「의사면 되나」로 읽힌다. `readonly` 로 두고 까닭을 적는다. */
+  function textHtml(id, label, value, hint, locked) {
     return (
       '<label class="fld"><span class="fld__label">' +
       esc(label) +
@@ -307,7 +311,7 @@
       '" value="' +
       esc(value || "") +
       '"' +
-      (canEditSet ? "" : " disabled") +
+      (locked ? " readonly" : canEdit ? "" : " disabled") +
       " />" +
       (hint ? '<span class="fld__hint">' + esc(hint) + "</span>" : "") +
       "</label>"
@@ -320,7 +324,7 @@
       id +
       '"' +
       (on ? " checked" : "") +
-      (canEditSet ? "" : " disabled") +
+      (canEdit ? "" : " disabled") +
       " />" +
       esc(label) +
       "</label>"
@@ -339,22 +343,22 @@
             '<input class="fld__input drug__name" type="text" value="' +
             esc(drug.name) +
             '" placeholder="비잔정 2mg" aria-label="약 이름"' +
-            (canEditSet ? "" : " disabled") +
+            (canEdit ? "" : " disabled") +
             " />" +
             '<input class="fld__input drug__freq" type="text" value="' +
             esc(drug.frequency) +
             '" placeholder="1일 1회" aria-label="복용 횟수"' +
-            (canEditSet ? "" : " disabled") +
+            (canEdit ? "" : " disabled") +
             " />" +
             '<input class="fld__input drug__note" type="text" value="' +
             esc(drug.note) +
             '" placeholder="매일 같은 시간" aria-label="복용 방법"' +
-            (canEditSet ? "" : " disabled") +
+            (canEdit ? "" : " disabled") +
             " />" +
             '<button class="drug__drop" type="button" data-drop="' +
             i +
             '" aria-label="삭제"' +
-            (canEditSet ? "" : " disabled") +
+            (canEdit ? "" : " disabled") +
             ">✕</button>" +
             "</div>"
           );
@@ -362,7 +366,7 @@
         .join("") +
       (rows.length ? "" : '<p class="fld__hint">등록된 약이 없습니다</p>') +
       '<button class="button-ghost button-ghost--sm" type="button" id="drug-add"' +
-      (canEditSet ? "" : " disabled") +
+      (canEdit ? "" : " disabled") +
       ">+ 약 추가</button>"
     );
   }
@@ -411,7 +415,7 @@
       (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
       (canEdit
         ? ""
-        : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
+        : "") +
       '<button class="button-primary button-primary--sm" type="button" id="sms-save"' +
       (canEdit ? "" : " disabled") +
       ">저장</button></div>" +
@@ -571,7 +575,7 @@
       (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
       (canEdit
         ? ""
-        : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
+        : "") +
       '<button class="button-primary button-primary--sm" type="button" id="bl-save"' +
       (canEdit ? "" : " disabled") +
       ">저장</button></div>" +
@@ -605,36 +609,56 @@
       esc(section.origin || "승인된 원본 문구가 아직 없습니다") +
       "</p>" +
       (section.editable
-        ? '<p class="cp__label">' +
-          esc(whoseName()) +
-          " 문구</p>" +
+        ? '<p class="cp__label">고친 문구</p>' +
           '<textarea class="modal__input cp__body" rows="3" data-copy="' +
           esc(row.prescription_set_id) +
           "|" +
           esc(section.section_key) +
           '"' +
-          (canEdit ? "" : " disabled") +
+          (canEdit && copyOpen === copyKey(row, section) ? "" : " readonly") +
           ">" +
           esc(mine ? section.body : "") +
           "</textarea>" +
+          /* **누르기 전에는 안 열린다.** 환자에게 나가는 의료 문구라, 스치듯
+             친 글자가 그대로 저장되면 안 된다. 설정 수정이 스탭에게까지
+             열리면서(2026-09-02) 이 화면을 여는 사람이 늘었다. */
           (canEdit
-            ? '<div class="cp__acts"><button class="button-primary button-primary--sm" type="button" data-save-copy="' +
-              esc(row.prescription_set_id) +
-              "|" +
-              esc(section.section_key) +
-              '">저장</button></div>'
+            ? '<div class="cp__acts">' +
+              (copyOpen === copyKey(row, section)
+                ? '<button class="button-ghost button-ghost--sm" type="button" data-cancel-copy="1">취소</button>' +
+                  '<button class="button-primary button-primary--sm" type="button" data-save-copy="' +
+                  esc(row.prescription_set_id) +
+                  "|" +
+                  esc(section.section_key) +
+                  '">저장</button>'
+                : '<button class="button-ghost button-ghost--sm" type="button" data-edit-copy="' +
+                  esc(row.prescription_set_id) +
+                  "|" +
+                  esc(section.section_key) +
+                  '">수정</button>') +
+              "</div>"
             : "") +
           '<p class="note">ⓘ 표현만 수정해 주세요 — 새로운 의학 정보를 추가할 수 없습니다</p>' +
-          '<p class="note">ⓘ 이 문구는 ' +
-          esc(whoseName()) +
-          " 담당 환자에게만 발송됩니다</p>"
+          /* **누구에게 나가는지 정확히 적는다.** 전에는 「○○ 원장님 담당
+             환자에게만」이었는데, 스탭도 고치게 되면서 틀린 말이 됐다 —
+             스탭에게는 담당 환자가 없다. 서버가 실제로 고르는 차례를 적는다
+             (`app/services/guides.py` 의 `_doctor_copy`). */
+          '<p class="note">ⓘ 담당 의사가 고친 문구가 먼저 쓰이고, 없으면 안내문을 만든 사람의 문구가 쓰입니다</p>'
         : '<p class="note">ⓘ 안전을 위해 모든 안내문에 포함됩니다</p>') +
       "</div>"
     );
   }
 
+  /** 이 문구의 주인. **직함을 붙이지 않는다.**
+   *
+   * 「원장님」을 늘 붙이고 있었다 — 로그인한 사람이 스탭이어도 「한소영
+   * 원장님」이 됐다. 설정 수정이 스탭에게 열리면서(2026-09-02 회의) 그 오기가
+   * 더 자주 보인다.
+   *
+   * 직함을 역할에서 지어내지도 않는다. 「원장」인지 「과장」인지는 이 저장소가
+   * 모르는 것이고, 모르는 것을 화면이 지어내면 그것도 오기다. */
   function whoseName() {
-    return who && who.name ? who.name + " 원장님" : "원장님";
+    return who && who.name ? who.name : "내";
   }
 
   /* 한 장 — 왼쪽에서 고른 것 하나만 선다. 여덟이 한꺼번에 펼쳐져 있으면
@@ -651,7 +675,7 @@
       (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
       (canEdit
         ? ""
-        : '<span class="box__note">의사 계정만 수정할 수 있습니다</span>') +
+        : "") +
       (canEdit
         ? '<button class="button-primary button-primary--sm" type="button" data-review-copy="' +
           esc(row.prescription_set_id) +
@@ -666,22 +690,11 @@
           return copySectionHtml(row, part);
         })
         .join("") +
-      '<p class="note">ⓘ 「이 약을 왜 드시나요」와 「먹는 방법」은 환자마다 판독값으로 만들어집니다 — 여기서 고칠 문구가 없습니다</p>'
+      '<p class="note">ⓘ 판독값(약 이름 · 용법 · 처방일수)은 환자마다 채워집니다 — 여기서는 그 값이 들어갈 문장을 정합니다</p>'
     );
   }
 
-  function copyHtml() {
-    if (!copy) return '<p class="note">불러오는 중…</p>';
-    var row = copy.items.filter(function (item) {
-      return item.prescription_set_id === copyPick;
-    })[0];
-    if (!row)
-      return '<p class="note">왼쪽에서 안내문을 선택하면 원본과 문구가 표시됩니다</p>';
-    return copySetHtml(row);
-  }
-
   function detailHtml() {
-    if (group === "guide") return copyHtml();
     if (group === "baseline") return baselinesHtml();
     if (group === "sms") return templatesHtml();
     if (!picked) {
@@ -690,38 +703,64 @@
 
     return (
       '<div class="patient-head"><span class="patient-head__name">' +
-      esc(picked.name) +
+      esc(making ? "새 처방" : picked.name) +
       "</span>" +
       '<span class="grow"></span>' +
       (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
-      (canEditSet
-        ? ""
-        : '<span class="box__note">처방 설정은 모든 의원이 함께 쓰는 값이라 아직 고칠 수 없습니다</span>') +
+      /* **지우는 단추는 없다.** 의료 데이터라 삭제가 금지되고, 지난
+         진료기록이 이 이름으로 이 처방을 가리킨다 — 행이 사라지면 그
+         진료들의 안내문 문구가 조용히 떨어진다. 숨기면 새로 고를 수만
+         없어지고, 지난 진료기록에는 그대로 붙는다. */
+      (canEdit && !making
+        ? '<button class="button-ghost button-ghost--sm" type="button" id="set-hide">' +
+          (picked.hidden ? "되살리기" : "숨기기") +
+          "</button>"
+        : "") +
+      (making
+        ? '<button class="button-ghost button-ghost--sm" type="button" id="make-cancel">취소</button>'
+        : "") +
       '<button class="button-primary button-primary--sm" type="button" id="set-save"' +
-      (canEditSet ? "" : " disabled") +
-      ">저장</button></div>" +
+      (canEdit && !busy ? "" : " disabled") +
+      ">" +
+      (making ? "만들기" : "저장") +
+      "</button></div>" +
+      (picked.hidden
+        ? '<p class="fld__hint">숨긴 처방입니다 — 새 진료에서 고를 수 없습니다 · ' +
+          "이미 이 처방으로 나간 안내문은 그대로입니다</p>"
+        : "") +
       /* ① 무엇인가 */
-      '<section class="box"><div class="box__head"><h2 class="box__title">처방</h2></div>' +
+      /* **현황·진료기록이 부르는 말을 그대로 쓴다** — 거기서 이 한 쌍을
+         「진단 · 처방」이라 부른다. 화면마다 다른 말을 쓰면 같은 것을 두 가지로
+         배우게 된다. */
+      '<section class="box"><div class="box__head">' +
+      '<h2 class="box__title">진단 · 처방</h2></div>' +
       '<div class="cols2">' +
-      textHtml("f-name", "이름", picked.name) +
+      /* **화면이 부르는 이름을 쓴다.** 「이름」·「질환」이라 적혀 있었는데,
+         이 화면을 여는 사람이 셈하는 것은 「어느 진단에 어느 처방인가」다.
+         「이름」은 무엇의 이름인지 안 말하고, 「질환」은 진료기록·판독 화면이
+         쓰는 말(「진단」)과 갈린다 — 같은 것을 두 말로 부르면 안 된다. */
+      /* **칸을 없애지 않는다.** 무엇을 고치는 중인지 보여야 하고,
+         `keepScreen()` 이 이 칸을 「처방 판이 떠 있나」의 탐침으로 쓴다.
+         없애면 조용히 no-op 이 되어 값 유실 버그가 되살아난다. */
+      /* **진단이 앞이다.** 진단이 처방을 고르는 기준이지 그 반대가
+         아니다 — 진료기록도 그 차례로 읽는다. */
       pickHtml(
         "f-disease",
-        "질환",
+        "진단",
         [
           ["ENDOMETRIOSIS", diseaseLabel("ENDOMETRIOSIS")],
           ["PCOS", diseaseLabel("PCOS")],
         ],
         picked.disease,
       ) +
-      pickHtml(
-        "f-phase",
-        "적용 시점",
-        [
-          ["FIRST", phaseLabel("FIRST")],
-          ["CONTINUE", phaseLabel("CONTINUE")],
-          ["REST", phaseLabel("REST")],
-        ],
-        picked.phase,
+      textHtml(
+        "f-name",
+        "처방",
+        picked.name,
+        making
+          ? "진료기록이 이 이름으로 이 처방을 가리키게 됩니다 · 나중에 바꿀 수 없습니다"
+          : "지난 진료기록이 이 이름으로 이 처방을 가리킵니다 · 바꾸는 대신 숨기고 새로 만듭니다",
+        !making,
       ) +
       "</div>" +
       '<div class="drugs">' +
@@ -776,22 +815,94 @@
         ? textHtml("f-runout-days", "소진 N일 전", picked.run_out_before_days)
         : "") +
       '<p class="fld__hint">ⓘ 이 처방 선택 시 기본값으로 적용됩니다 · 환자별 설정은 문자 설정에서 변경합니다</p></section>' +
-      /* ⑤ 그 밖에 */
-      '<section class="box"><div class="box__head"><h2 class="box__title">그 밖에</h2></div>' +
-      '<div class="cols2">' +
-      textHtml(
-        "f-emr",
-        "EMR 표시 코드",
-        picked.emr_code,
-        "이 코드가 기록된 진료를 안내 대상으로 인식합니다",
-      ) +
-      textHtml(
-        "f-revisit",
-        "재진 안내",
-        picked.revisit_note,
-        "진료기록 소견에 다른 조건이 기재된 경우 해당 조건을 우선 적용합니다",
-      ) +
-      "</div></section>"
+      /* ⑤ 「그 밖에」 — **화면에서 걷었다.**
+         「EMR 표시 코드」와 「재진 안내」 두 칸은 저장되고 되읽힐 뿐,
+         **읽어서 쓰는 데가 한 곳도 없었다.** 안내문 생성도 문자 예약도
+         OCR 대조도 안 본다. 와이어프레임 2.3.1·3.0.0 어디에도 없다
+         (2.3.1 의 「재진 안내」는 S1-14 문자 발송으로 다른 것이다).
+         도움말은 「이 코드가 기록된 진료를 안내 대상으로 인식합니다」라며
+         **아직 없는 기능을 설명하고 있었다** — 적어 넣은 사람은 무언가
+         달라질 줄 알았을 것이다. 값과 컬럼은 그대로 두었다(2026-09-02 결정).
+         EMR 코드 대조를 만들 때 이 자리를 되살리면 된다. */
+      /* ⑥ 안내문 문구 — **같은 처방의 한 속성이다.**
+         묶음을 따로 두던 때는 여기까지 보고 나서 왼쪽 위로 올라가 같은 처방을
+         다시 찾아야 했다. 안내문은 이 처방과 처방일수로 만들어지므로, 약과
+         확인 항목을 정한 자리에서 그 문구까지 본다. */
+      copySectionsHtml(picked.prescription_set_id)
+    );
+  }
+
+  /** 이 처방의 안내문 문구 묶음. 처방 상세 맨 아래에 붙는다.
+   *
+   * 문구는 처방 설정(`sets`)과 **다른 API** 로 온다(`guide-copy`) — 원본은
+   * 의원 공통이고 고친 글은 사람마다라, 한 응답에 담기지 않는다. 그래서 아직
+   * 안 왔을 수 있고, 그때는 자리만 비워 둔다. */
+  /** 아직 만들지 않은 처방의 안내문 절 — **기본 문구를 보이되 못 고친다.**
+   *
+   * 고칠 수 있게 하면 저장할 데가 없다: 문구는 세트 번호로 저장되는데
+   * (`PUT /guide-copy/{id}/{section}`) 그 번호가 아직 없다. 만들기가 막히면
+   * 친 문구가 그 자리에서 사라진다.
+   *
+   * 안 보이면 안 되는 이유는 그 반대다 — 무슨 글이 나갈지 모르고 만들게 된다.
+   */
+  function draftCopyHtml() {
+    if (!copy || !copy.defaults) return "";
+    return (
+      '<section class="box"><div class="box__head">' +
+      '<h2 class="box__title">안내문 문구</h2>' +
+      '<span class="box__note">만든 뒤 고칠 수 있습니다</span></div>' +
+      '<p class="note">ⓘ 이 문구로 시작합니다 — 의원이 함께 쓰는 기본 글입니다</p>' +
+      copy.defaults
+        .map(function (part) {
+          return (
+            '<div class="cp"><div class="cp__head"><span class="cp__name">' +
+            esc(copySectionSaying(part.section_key)) +
+            "</span>" +
+            (part.editable ? "" : '<span class="cp__lock">수정 불가</span>') +
+            "</div>" +
+            '<p class="cp__origin">' +
+            esc(part.body) +
+            "</p></div>"
+          );
+        })
+        .join("") +
+      '<p class="note">ⓘ 판독값(약 이름 · 용법 · 처방일수)은 환자마다 채워집니다 — 여기서는 그 값이 들어갈 문장을 정합니다</p>' +
+      "</section>"
+    );
+  }
+
+  function copySectionsHtml(setId) {
+    if (making) return draftCopyHtml();
+    if (!copy) return '<section class="box"><p class="note">안내문 문구를 불러오는 중…</p></section>';
+    var row = copy.items.filter(function (item) {
+      return item.prescription_set_id === setId;
+    })[0];
+    if (!row) return "";
+    return (
+      '<section class="box"><div class="box__head">' +
+      '<h2 class="box__title">안내문 문구</h2>' +
+      '<span class="cp__mark' +
+      (row.reviewed ? " cp__mark--done" : "") +
+      '">' +
+      esc(copyMark(row)) +
+      "</span>" +
+      '<span class="grow"></span>' +
+      (canEdit
+        ? '<button class="button-primary button-primary--sm" type="button" data-review-copy="' +
+          esc(row.prescription_set_id) +
+          '"' +
+          (row.reviewed ? " disabled" : "") +
+          ">확인 완료</button>"
+        : "") +
+      "</div>" +
+      '<p class="note">ⓘ 원본은 지워지지 않습니다 — 언제든 되돌아갈 수 있습니다</p>' +
+      row.sections
+        .map(function (part) {
+          return copySectionHtml(row, part);
+        })
+        .join("") +
+      '<p class="note">ⓘ 판독값(약 이름 · 용법 · 처방일수)은 환자마다 채워집니다 — 여기서는 그 값이 들어갈 문장을 정합니다</p>' +
+      "</section>"
     );
   }
 
@@ -837,7 +948,13 @@
     pickedId = id;
     picked = null;
     saying = "";
+    copyOpen = null;
     render();
+
+    /* **문구도 함께 받아 둔다.** 처방 상세 맨 아래에 그 처방의 안내문 문구가
+       붙으므로, 처방만 받아 오면 그 자리가 계속 「불러오는 중」이다.
+       한 번 받으면 다른 처방을 눌러도 그대로 쓴다(응답이 전 처방 것을 담는다). */
+    if (!copy) loadCopy();
 
     catalogApi
       .set(id)
@@ -874,13 +991,20 @@
     var per = el("f-days-per-pack");
 
     return {
-      name: el("f-name").value.trim(),
+      /* 이름은 안 보낸다 — 서버가 아예 안 받는다(400 INVALID_REQUEST).
+         담아 보내면 저장 전체가 죽는다. */
       disease: el("f-disease").value,
-      phase: el("f-phase").value,
+      /* **화면에서 걷었지만 값은 그대로 싣는다.** 「적용 시점」은 처방
+         이름이 이미 담고 있어(「비잔 (처음)」·「(계속)」) 칸을 없앴다. 그런데
+         서버 계약에는 남아 있고, 안 보내면 저장이 막힌다. 있던 값을 그대로
+         돌려보내 **저장할 때마다 조용히 기본값으로 되돌아가는 것**을 막는다. */
+      phase: picked.phase,
       days_mode: mode,
       days_per_pack: mode === "PACK" && per ? Number(per.value) || null : null,
-      emr_code: el("f-emr").value,
-      revisit_note: el("f-revisit").value,
+      /* 화면에서 걷은 두 칸 — 「적용 시점」과 같다. 안 보내면 저장이 막히고,
+         빈 값을 보내면 적어 둔 것이 조용히 지워진다. */
+      emr_code: picked.emr_code,
+      revisit_note: picked.revisit_note,
       check_d15_on: el("f-d15").checked,
       check_d30_on: el("f-d30").checked,
       run_out_on: el("f-runout").checked,
@@ -892,9 +1016,174 @@
     };
   }
 
-  /* 처방 설정을 저장하던 `save()` 가 여기 있었다. 걷었다 — `canEditSet` 주석
-     참고. 서버 쪽 `PUT /prescription-sets/{id}` 도 함께 걷었으므로 부를 곳이
-     없다. 표를 의원별로 가르는 일감에서 둘을 함께 되살린다. */
+  /* **다시 그리기 전에 화면에 적힌 것을 거둔다.**
+     `render()` 는 판을 `picked` 로 되돌려 그린다. 그래서 아직 저장하지 않은
+     값은 거두지 않으면 **그 자리에서 소리 없이 사라진다** — 약을 한 줄 적고
+     「+ 약 추가」를 누르면 적은 것이 날아가던 것이 이것이었다.
+     삭제(`data-drop`)에만 이 방어가 있었고 나머지 셋에는 없었다. */
+  /** 아직 서버에 없는 처방 한 판. **서버가 갓 만든 세트와 같은 기본값**이다
+   *  (`app/models/catalog.py` 의 필드 기본값). 지어내면 만들자마자 화면이
+   *  달라 보인다. */
+  function draftSet() {
+    return {
+      prescription_set_id: null,
+      name: "",
+      hidden: false,
+      disease: "ENDOMETRIOSIS",
+      phase: "CONTINUE",
+      days_mode: "DAYS",
+      days_per_pack: null,
+      emr_code: null,
+      revisit_note: null,
+      check_d15_on: true,
+      check_d30_on: false,
+      run_out_on: true,
+      run_out_before_days: 3,
+      drugs: [],
+      check_items: [],
+    };
+  }
+
+  function keepScreen() {
+    if (!picked || !canEdit || !el("f-name")) return;
+    var kept = planNow();
+    /* **초안일 때는 이름도 거둔다.** `planNow()` 는 이름을 안 담는다 — 저장
+       계약이 안 받기 때문이다. 그런데 `textHtml` 은 값을 모델에서만 그리므로,
+       거두지 않으면 다시 그릴 때마다 친 이름이 빈칸으로 되돌아간다.
+       「+ 약 추가」 한 번에 이름이 사라지던 그 함정이다. */
+    if (making) kept.name = el("f-name").value;
+    picked = Object.assign({}, picked, kept);
+  }
+
+  /* **지우지 않고 감춘다.** 지난 진료기록이 이 이름으로 이 처방을 가리키므로
+     행이 사라지면 그 진료들의 안내문 문구가 조용히 떨어진다. */
+  function hideSet() {
+    if (!picked || !canEdit || making) return;
+    var to = !picked.hidden;
+    saying = to ? "숨기는 중…" : "되살리는 중…";
+    render();
+    return catalogApi
+      .hideSet(picked.prescription_set_id, to)
+      .then(function (data) {
+        picked = data;
+        saying = to ? "숨겼습니다" : "되살렸습니다";
+        render();
+        return loadSets();
+      })
+      .catch(function () {
+        saying = "바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.";
+        render();
+      });
+  }
+
+  /** 만들기 판을 연다.
+   *
+   * 초안을 `picked` 에 넣는다 — 본문이 스물세 곳에서 `picked` 를 읽으므로,
+   * 따로 모델을 두면 그 전부에 배관을 새로 놔야 한다. `making` 은 「이 판이
+   * 아직 서버에 없다」는 깃발로만 남는다.
+   */
+  function newSet() {
+    if (!canEdit) return;
+    /* **두 번 누르면 친 것이 전멸한다.** 단추는 만드는 중에도 레일에 서 있다. */
+    if (making) return;
+
+    keepScreen(); // 보던 처방에 친 것을 잃지 않는다
+    making = true;
+    pickedId = null;
+    picked = draft || draftSet();
+    saying = "";
+    render();
+    var box = el("f-name");
+    if (box) box.focus();
+  }
+
+  /** 만들기 판을 닫는다. **친 것은 버리지 않고 들고 있는다** — 잘못 눌러
+   *  나갔다가 돌아왔을 때 다시 치게 하면 안 된다. 버리는 길은 「취소」뿐이다. */
+  function closeMaking() {
+    if (!making) return;
+    keepScreen();
+    draft = picked;
+    making = false;
+  }
+
+  /** 저장. **만들기면 두 번 부른다** — 서버가 이름·진단으로 만들고(POST),
+   *  나머지 한 판을 얹는다(PUT). 세트 번호가 있어야 나머지를 보낼 수 있다.
+   *
+   * 실패해도 친 것을 잃지 않는 것이 이 함수의 첫째 일이다. 이름은 만들고
+   * 나면 못 바꾸고 세트는 못 지우므로, 반쪽만 만들어지면 되돌릴 길이 없다.
+   */
+  function save() {
+    if (!picked || !canEdit || busy) return;
+
+    keepScreen();
+    var plan = planNow();
+
+    /* **보내기 전에 막는다.** 세트를 만든 뒤에 막히면 이름이 이미 타 버린다.
+       `Number("28일")` 은 `NaN` 이라 「빈 값」 검사로는 안 걸린다. */
+    if (plan.days_mode === "PACK" && !(plan.days_per_pack > 0)) {
+      saying = "한 통이 며칠치인지 적어 주세요";
+      return render();
+    }
+    if (making && !picked.name.trim()) {
+      saying = "처방 이름을 적어 주세요";
+      return render();
+    }
+
+    busy = true;
+    saying = making ? "만드는 중…" : "저장 중…";
+    render();
+
+    var first = making
+      ? catalogApi.createSet(picked.name, plan.disease)
+      : Promise.resolve({ prescription_set_id: pickedId });
+
+    return first
+      .then(function (made) {
+        /* **여기서부터는 세트가 이미 있다.** 뒤가 막혀도 「저장」으로 이어
+           한다 — 되돌리기가 아니라 이어 하기다. */
+        if (making) {
+          making = false;
+          draft = null;
+          pickedId = made.prescription_set_id;
+        }
+        return catalogApi.saveSet(pickedId, plan);
+      })
+      .then(function (data) {
+        busy = false;
+        picked = data;
+        saying = "저장되었습니다";
+        render();
+        /* 새로 만든 처방은 문구 판에 없다 — 다시 받아야 안내문 절이 선다. */
+        return Promise.all([loadSets(), loadCopy()]);
+      })
+      .catch(function (err) {
+        busy = false;
+        var code = err && err.code;
+        if (making) {
+          /* 아직 안 만들어졌다 — 친 것이 그대로 있다. */
+          saying =
+            code === "PRESCRIPTION_SET_EXISTS"
+              ? "같은 이름의 처방이 이미 있습니다 (숨긴 것도 포함)"
+              : code === "NAME_REQUIRED"
+                ? "처방 이름을 적어 주세요"
+                : code === "INVALID_REQUEST"
+                  ? "적으신 값이 너무 길거나 범위를 벗어났습니다"
+                  : "만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
+          return render();
+        }
+        /* **만들어졌는데 나머지가 안 들어갔다.** 이름은 이미 정해졌으니
+           「저장」을 다시 누르면 이어진다. 어느 칸이 문제인지 말해 준다 —
+           「잠시 후 다시」만 적으면 몇 번을 눌러도 같은 실패가 난다. */
+        saying =
+          code === "DAYS_PER_PACK_REQUIRED"
+            ? "한 통이 며칠치인지 적어 주세요"
+            : code === "INVALID_REQUEST"
+              ? "적으신 값이 너무 길거나 범위를 벗어났습니다 — 고치고 저장해 주세요"
+              : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+        render();
+        return loadSets();
+      });
+  }
 
   /* ── 문자 문구 (D2-5) ──────────────────────────────────────────── */
 
@@ -975,7 +1264,7 @@
     one(0).catch(function (err) {
       saying =
         err && err.status === 403
-          ? "의사 계정만 수정할 수 있습니다"
+          ? "다른 사람의 것은 수정할 수 없습니다"
           : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요";
       render();
     });
@@ -1081,27 +1370,18 @@
       .catch(function (err) {
         saying =
           err && err.status === 403
-            ? "의사 계정만 수정할 수 있습니다"
+            ? "다른 사람의 것은 수정할 수 없습니다"
             : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요";
         render();
       });
   }
 
-  /* ── 안내문 문구 (D2-1 · D2-2) ─────────────────────────────────── */
-
-  function openCopy() {
-    group = "guide";
-    /* 고른 장이 든 묶음은 펴 둔다 — 접힌 채로 두면 방금 고른 것이 안 보인다 */
-    var mine = copyPick ? railGroupKey(sets, copyPick) : null;
-    if (mine) opened = railFoldKey("guide", mine);
-    pickedId = null;
-    picked = null;
-    templates = null;
-    baselines = null;
-    saying = "";
-    render();
-    return loadCopy();
-  }
+  /* ── 안내문 문구 (D2-1 · D2-2) ───────────────────────────────────
+   *
+   * 묶음이 따로 없다. 문구는 처방 상세 맨 아래에 붙는다(`copySectionsHtml`) —
+   * 안내문이 그 처방과 처방일수로 만들어지기 때문이다. `openCopy` 와
+   * `copyHtml` · `copyPick` 이 여기 있었는데, 레일에서 들어갈 길이 없어져
+   * 함께 걷었다. */
 
   /* **레일이 늘 쓴다.** 안내문 목록은 왼쪽에 상시 서 있고 진도(「1/8」)와 ✓ 가
      거기서 나오므로, 안내문 갈래를 열지 않아도 한 번 받아 둔다. 그래서 값을
@@ -1151,13 +1431,17 @@
         /* **서버가 돌려준 것을 화면으로 삼는다** — 고치면 확인이 풀리는데,
            그것이 화면에 안 보이면 안 된다. */
         copy = data;
+        /* **저장했으면 닫는다.** 열어 둔 채로 두면 「저장되었습니다」가 뜬
+           칸이 아직 고칠 수 있는 상태라, 한 번 더 친 글자가 저장된 줄로
+           읽힌다. 실패하면 **열어 둔다** — 친 것을 잃지 않아야 한다. */
+        copyOpen = null;
         saying = "저장되었습니다";
         render();
       })
       .catch(function (err) {
         saying =
           err && err.status === 403
-            ? "의사 계정만 수정할 수 있습니다"
+            ? "다른 사람의 것은 수정할 수 없습니다"
             : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요";
         render();
       });
@@ -1200,25 +1484,23 @@
 
     var row = target.closest("[data-set]");
     if (row) {
+      /* 다른 처방을 고르면 만들기 판을 닫되 **친 것은 들고 간다.** */
+      closeMaking();
       group = null;
       templates = null;
       baselines = null;
-      /* **안내문 고름을 놓는다.** 오른쪽이 처방을 보고 있는데 안내문 줄이 굵게
-         남아 있으면 화면이 두 곳을 동시에 가리킨다. 목록(`copy`)은 그대로 둔다 —
-         레일의 진도와 ✓ 는 어느 갈래를 보고 있든 서 있어야 한다. */
-      copyPick = null;
       var chose = railGroupKey(sets, Number(row.getAttribute("data-set")));
       if (chose) opened = railFoldKey("sets", chose);
       return loadSet(Number(row.getAttribute("data-set")));
     }
 
+    /* 기타 묶음(기준선·문자 문구)으로 옮길 때도 닫되 친 것은 들고 간다 */
     var chosenGroup = target.closest("[data-group]");
+    if (chosenGroup) closeMaking();
     if (chosenGroup && chosenGroup.getAttribute("data-group") === "sms")
       return openTemplates();
     if (chosenGroup && chosenGroup.getAttribute("data-group") === "baseline")
       return openBaselines();
-    if (chosenGroup && chosenGroup.getAttribute("data-group") === "guide")
-      return openCopy();
 
     /* 묶음 머리 — 그 자리에서 여닫는다. **다시 그리지 않는다.**
      *
@@ -1236,15 +1518,39 @@
       return showOpen();
     }
 
-    /* 안내문 한 장 고르기 */
-    var pickedCopy = target.closest("[data-copy-set]");
-    if (pickedCopy) {
-      copyPick = Number(pickedCopy.getAttribute("data-copy-set"));
+    if (target.closest("#set-save")) return save();
+    if (target.closest("#set-hide")) return hideSet();
+    if (target.closest("#set-new")) return newSet();
+    if (target.closest("#make-cancel")) {
+      /* **버리는 유일한 길이다.** 나머지는 전부 들고 있는다. */
+      making = false;
+      draft = null;
+      picked = null;
+      pickedId = null;
       saying = "";
-      if (group !== "guide") return openCopy();
       return render();
     }
 
+    var editCopyAt = target.closest("[data-edit-copy]");
+    if (editCopyAt) {
+      keepScreen();
+      copyOpen = editCopyAt.getAttribute("data-edit-copy");
+      saying = "";
+      render();
+      /* 열자마자 커서를 넣는다 — 누르고 또 눌러야 하면 두 번 일이다 */
+      var box = document.querySelector('[data-copy="' + copyOpen + '"]');
+      if (box) box.focus();
+      return;
+    }
+    if (target.closest("[data-cancel-copy]")) {
+      /* **문구에 친 것만 버린다.** 다시 그리면 서버에서 받은 값으로 돌아간다 —
+         「취소」가 취소가 아니면 안 된다. 다만 무르는 것은 문구뿐이라,
+         처방 칸에 적어 둔 것은 거두어 들고 간다. */
+      keepScreen();
+      copyOpen = null;
+      saying = "";
+      return render();
+    }
     var saveCopyAt = target.closest("[data-save-copy]");
     if (saveCopyAt) return saveCopy(saveCopyAt.getAttribute("data-save-copy"));
 
@@ -1293,6 +1599,7 @@
 
 
     if (target.closest("#drug-add")) {
+      keepScreen();
       picked.drugs = (picked.drugs || []).concat([
         { name: "", frequency: "", note: "" },
       ]);
@@ -1301,10 +1608,8 @@
 
     var drop = target.closest("[data-drop]");
     if (drop) {
-      /* 지우기 전에 화면에 적힌 것을 거둔다 — 안 그러면 치던 값이 날아간다 */
-      var kept = planNow();
-      kept.drugs.splice(Number(drop.getAttribute("data-drop")), 1);
-      picked = Object.assign({}, picked, kept);
+      keepScreen();
+      picked.drugs.splice(Number(drop.getAttribute("data-drop")), 1);
       return render();
     }
   });
@@ -1331,7 +1636,7 @@
     /* 세는 방법과 소진 임박은 **켜면 칸이 따라 나온다** — 다시 그려야 보인다 */
     var id = event.target.id;
     if (id !== "f-days-mode" && id !== "f-runout") return;
-    picked = Object.assign({}, picked, planNow());
+    keepScreen();
     render();
   });
 
@@ -1377,7 +1682,15 @@
     who = me;
     el("who-name").textContent = me.name;
     el("who-roles").textContent = roleLabel(me.roles);
-    canEdit = (me.roles || []).indexOf("doctor") !== -1;
+    /* **설정은 스탭도 고친다** (2026-09-02 회의). 원문 D2-2 의 「의사 계정만」이
+       여기였다. 남는 규칙은 「남의 것을 고치지 않는다」 하나이고 그것은
+       서버가 소유권으로 막는다 — 화면이 아니라 서버가 판정한다.
+
+       **안내문 승인은 여전히 의사만이다.** 그건 설정이 아니라 진료 판단이라
+       `guides.py` 가 따로 막는다. */
+    canEdit = (me.roles || []).some(function (role) {
+      return role === "doctor" || role === "staff";
+    });
     /* 안내문 목록도 같이 — 레일이 처음부터 진도를 보여 준다 */
     return Promise.all([loadSets(), loadCopy()]);
   });
