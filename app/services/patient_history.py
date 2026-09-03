@@ -94,7 +94,11 @@ class PatientHistoryService:
                     course_days=course[1] if course else None,
                     guide_sent_at=self._guide_sent(sent),
                     guide_viewed_at=self._first(seen),
-                    guide_pages_read=len(read),
+                    # **분모와 같은 목록으로만 센다.** `read` 는 기록된
+                    # `grounded_section` 을 다 담는데 `emergency` 처럼
+                    # `GUIDE_PAGES` 에 없는 값도 온다(계약이 받는다) — 그대로
+                    # 세면 「4장 중 5장」이 나온다 (`#189` 리뷰, 2heej).
+                    guide_pages_read=len(read & set(GUIDE_PAGES)),
                     guide_pages_total=len(GUIDE_PAGES),
                     checks=self._checks(sent, seen, answers.get(document_id) if document_id else None),
                     runs_out_on=self._runs_out(visit.visited_at.date(), course),

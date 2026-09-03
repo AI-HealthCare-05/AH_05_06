@@ -324,3 +324,77 @@ test("철회 버튼은 블록 머리 오른쪽 끝으로 밀린다", () => {
   /* 줄로 세우는 것은 공용 머리(`.box__head`)가 한다 — 기본정보의 「수정」과 같다 */
   assert.match(rule(css, ".box__head"), /display:\s*flex/, "블록 머리가 줄이 아니다");
 });
+
+/* ── 열람이 타임라인을 도배하지 않는다 (`#189` 리뷰) ──────────────────── */
+
+test("**같은 장을 여러 번 읽어도 한 줄이다** — 탭마다 쌓이면 이력이 도배된다", () => {
+  const { foldViews } = box();
+
+  /* 환자가 링크로 들어와 탭 넷을 넘기고 복약지도로 돌아온 경우 */
+  const raw = [
+    { event: "GUIDE_APPROVED", at: "2026-09-01T09:00:00+09:00" },
+    { event: "GUIDE_VIEWED", at: "2026-09-01T10:00:00+09:00" },
+    { event: "GUIDE_VIEWED", at: "2026-09-01T10:01:00+09:00", section_key: "medication" },
+    { event: "GUIDE_VIEWED", at: "2026-09-01T10:02:00+09:00", section_key: "caution" },
+    { event: "GUIDE_VIEWED", at: "2026-09-01T10:03:00+09:00", section_key: "life" },
+    { event: "GUIDE_VIEWED", at: "2026-09-01T10:04:00+09:00", section_key: "medication" },
+  ];
+
+  const kept = foldViews(raw);
+  const views = kept.filter((e) => e.event === "GUIDE_VIEWED");
+
+  assert.equal(views.length, 4, "장마다 한 줄 + 장 없는 열람 한 줄이어야 한다");
+  assert.equal(kept.length, 5, "열람 아닌 사건은 그대로 남아야 한다");
+
+  /* 같은 장은 **마지막** 것을 남긴다 — 「언제까지 보고 있었나」에 가깝다 */
+  const med = views.filter((e) => e.section_key === "medication");
+  assert.equal(med.length, 1);
+  assert.match(med[0].at, /10:04/, "먼저 읽은 것이 남았다");
+});
+
+test("**접는 것은 목록뿐** — 진도의 처음·마지막 시각은 원본으로 센다", () => {
+  const { readProgress, foldViews } = box();
+
+  const raw = [
+    { event: "GUIDE_VIEWED", at: "2026-09-01T10:00:00+09:00", section_key: "medication" },
+    { event: "GUIDE_VIEWED", at: "2026-09-01T10:05:00+09:00", section_key: "caution" },
+    { event: "GUIDE_VIEWED", at: "2026-09-01T10:09:00+09:00", section_key: "medication" },
+  ];
+
+  const p = readProgress(raw);
+  assert.match(p.first, /10:00/, "처음 열람이 접힌 목록에서 왔다");
+  assert.match(p.last, /10:09/, "마지막 열람이 접힌 목록에서 왔다");
+
+  /* 접힌 목록으로 세면 값이 달라진다 — 그래서 원본을 봐야 한다 */
+  assert.notEqual(foldViews(raw).length, raw.length, "접히긴 해야 한다");
+});
+
+test("**분모는 서버가 준다** — 장이 늘면 화면과 서버가 갈린다", () => {
+  const { readProgress } = box();
+
+  const views = [{ event: "GUIDE_VIEWED", at: "2026-09-01T10:00:00+09:00", section_key: "medication" }];
+
+  assert.equal(readProgress(views, 6).total, 6, "서버가 준 분모를 안 썼다");
+  assert.equal(readProgress(views).total, 4, "안 오면 제 목록으로 물러서야 한다");
+  assert.equal(readProgress([], 6).total, 6, "안 열었을 때도 서버 분모를 쓴다");
+});
+
+test("**화면이 실제로 접어서 그린다** — 접기 함수만 있고 안 쓰면 소용없다", () => {
+  const { statusScreenHtml } = box();
+
+  const view = {
+    visit_id: 1,
+    guide_pages_total: 4,
+    messages: [],
+    entries: [
+      { category: "PATIENT", event: "GUIDE_VIEWED", at: "2026-09-01T10:01:00+09:00", section_key: "medication" },
+      { category: "PATIENT", event: "GUIDE_VIEWED", at: "2026-09-01T10:02:00+09:00", section_key: "medication" },
+      { category: "PATIENT", event: "GUIDE_VIEWED", at: "2026-09-01T10:03:00+09:00", section_key: "medication" },
+    ],
+  };
+
+  const html = statusScreenHtml(view);
+  const rows = (html.match(/class="tl__row"/g) || []).length;
+
+  assert.equal(rows, 1, `같은 장 세 번을 세 줄로 그렸다 — ${rows}줄`);
+});

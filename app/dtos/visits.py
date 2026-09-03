@@ -193,3 +193,9 @@ class VisitTimelineResponse(BaseModel):
     entries: list[VisitTimelineEntry]
     #: 나갈 문자들. 승인 전에는 비어 있다 — 예약은 승인이 만든다.
     messages: list[ScheduledMessage] = []
+    #: 안내문이 몇 장인가 — **분모를 서버가 준다.**
+    #:
+    #: 화면이 제 목록으로 세면 장이 늘 때 서버와 갈린다. 실제로 S2-2 는
+    #: 서버 값을 쓰고 D1-6 은 제 사본을 써서 같은 환자를 다르게 셀 수
+    #: 있었다 (`#189` 리뷰, 2heej).
+    guide_pages_total: int = 0

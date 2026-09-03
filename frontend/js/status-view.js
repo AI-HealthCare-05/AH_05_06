@@ -76,11 +76,15 @@ function timelineClock(iso) {
  */
 var GUIDE_PAGES = ["medication", "caution", "life", "messages"];
 
-function readProgress(entries) {
+/* **분모는 서버가 준다.** 장 목록이 바뀌면 여기와 서버가 같이 틀어지는데,
+   서버 값을 받으면 한 곳만 고치면 된다 (`#189` 리뷰, 2heej). 안 오면 아래
+   목록으로 물러선다 — 옛 응답과도 돌아가야 한다. */
+function readProgress(entries, serverTotal) {
+  var total = serverTotal || GUIDE_PAGES.length;
   var views = (entries || []).filter(function (e) {
     return e.event === "GUIDE_VIEWED";
   });
-  if (!views.length) return { opened: false, read: 0, total: GUIDE_PAGES.length, last: "", first: "" };
+  if (!views.length) return { opened: false, read: 0, total: total, last: "", first: "" };
 
   var seen = {};
   for (var i = 0; i < views.length; i++) {
@@ -98,7 +102,7 @@ function readProgress(entries) {
   return {
     opened: true,
     read: read,
-    total: GUIDE_PAGES.length,
+    total: total,
     lastSection: lastRead,
     first: views[0].at,
     last: views[views.length - 1].at,
@@ -163,13 +167,42 @@ function sendRowsHtml(messages) {
     .join("");
 }
 
+/* **열람은 장마다 한 줄로 접는다.**
+
+   탭을 넘길 때마다 `GUIDE_VIEWED` 가 한 건씩 쌓이는데, 접지 않으면 진료
+   하나에 「안내문 열람」이 여섯 줄 넘게 뜬다 — 이전엔 한 줄이었다
+   (`#189` 리뷰, 2heej).
+
+   **접는 것은 이 목록뿐이다.** `readProgress` 는 원본을 그대로 본다 —
+   거기서 접으면 「처음 열람」·「마지막」 시각이 틀어진다.
+
+   같은 장을 여러 번 읽었으면 **마지막 것**을 남긴다. 그것이 「언제까지
+   보고 있었나」에 가깝다. 장이 안 남은 열람(그냥 열기)도 한 줄로 접는다. */
+function foldViews(entries) {
+  var last = {};
+  var kept = [];
+  var i;
+  for (i = 0; i < (entries || []).length; i++) {
+    if (entries[i].event !== "GUIDE_VIEWED") continue;
+    last[entries[i].section_key || ""] = entries[i];
+  }
+  for (i = 0; i < (entries || []).length; i++) {
+    if (entries[i].event !== "GUIDE_VIEWED") {
+      kept.push(entries[i]);
+    } else if (last[entries[i].section_key || ""] === entries[i]) {
+      kept.push(entries[i]);
+    }
+  }
+  return kept;
+}
+
 function statusScreenHtml(view) {
-  var progress = readProgress(view.entries);
+  var progress = readProgress(view.entries, view.guide_pages_total);
   var label = function (key) {
     return GUIDE_SECTION_LABEL[key];
   };
 
-  var rows = (view.entries || [])
+  var rows = foldViews(view.entries)
     .map(function (e) {
       var who = timelineActor(e);
       return (

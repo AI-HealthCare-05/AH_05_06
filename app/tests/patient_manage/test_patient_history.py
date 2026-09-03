@@ -239,6 +239,29 @@ class PatientHistoryTestCase(TestCase):
         assert block["guide_pages_read"] == 2
         assert block["guide_pages_total"] == len(GUIDE_PAGES) == 4
 
+    async def test_a_section_outside_the_list_does_not_push_the_count_past_the_total(self) -> None:
+        """🚩 **분자가 분모를 넘으면 안 된다.**
+
+        `grounded_section` 은 `emergency` 를 받는다 — 계약(`docs/api/patient.md`)에
+        유효값으로 적혀 있다. 그런데 `GUIDE_PAGES` 에는 없다. 기록된 값을 그냥
+        세면 네 장을 다 읽고 응급까지 본 환자가 **「4장 중 5장」**으로 뜬다.
+
+        같은 환자를 D1-6 은 제 목록과 교집합해 「4장 중 4장」으로 센다 — 이
+        일감이 없애려던 두 화면 불일치가 그대로 난다 (`#189` 리뷰, 2heej).
+        """
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "over")
+        patient = await self.a_patient(clinic)
+        document = await self.a_visit(clinic, patient, on=TODAY)
+        for n, section in enumerate(GUIDE_PAGES):
+            await self.a_page_view(document, section, at(TODAY, 19, n))
+        await self.a_page_view(document, "emergency", at(TODAY, 19, 30))
+
+        block = (await self.fetch(staff, patient))["visits"][0]
+
+        assert block["guide_pages_read"] == len(GUIDE_PAGES), "목록에 없는 장이 분자에 들어갔다"
+        assert block["guide_pages_read"] <= block["guide_pages_total"], "분자가 분모를 넘었다"
+
     async def test_the_same_page_twice_counts_once(self) -> None:
         """**다시 열어도 한 장이다.** 회수를 세면 한 장을 다섯 번 연 환자가
         다 읽은 것으로 뜬다."""
