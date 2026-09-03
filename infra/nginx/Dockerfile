@@ -24,6 +24,7 @@ FROM nginx:latest
 COPY frontend/*.html /vol/web/frontend/
 COPY frontend/css/   /vol/web/frontend/css/
 COPY frontend/js/    /vol/web/frontend/js/
+COPY frontend/patient_wireframe/ /vol/web/frontend/patient_wireframe/
 
 # 설정은 굽지 않는다. `deployment.sh` 가 http/https 중 고른 것을 올려 주고,
 # certbot 이 갱신하면서 바꾸기도 한다 — 이미지에 넣으면 그때마다 다시 구워야
