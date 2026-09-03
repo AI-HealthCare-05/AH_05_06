@@ -17,6 +17,7 @@ from app.dtos.checkins import (
     PainType,
 )
 from app.dtos.patient_links import (
+    GuidePageViewRequest,
     PatientCareBlockResponse,
     PatientCareResponse,
     PatientGuideDetailResponse,
@@ -194,6 +195,31 @@ async def read_patient_guide(
     # 붙을 때 분리 여부를 다시 본다.
     await usage.record_guide_view(guide.guide_document_id)
     return _patient_response(link, guide, data)
+
+
+@patient_guide_router.post("/{token}/views", status_code=204)
+async def record_guide_page_view(
+    token: str,
+    payload: GuidePageViewRequest,
+    service: Annotated[PatientLinkService, Depends(_service)],
+    usage: Annotated[PatientUsageService, Depends(_usage_service)],
+) -> None:
+    """환자가 안내문의 **한 장**을 열었다 — KEY-256, 원문 S2-2·D1-6.
+
+    링크로 들어오는 `GET /{token}` 은 안내문을 통째로 내려 주고, 환자 화면은
+    탭을 **브라우저 안에서만** 넘긴다. 그래서 서버에는 「열었다」한 줄만 남고
+    「어디까지 읽었나」가 없었다. 스탭은 다 읽은 환자와 첫 장만 열고 닫은
+    환자를 구별할 수 없었는데, 다음 진료 때 물을 것이 서로 다르다.
+
+    **본문에 원문이 없다.** 어느 장을 열었는지 하나뿐이다 — 이 저장소가
+    이용 기록에 두는 선(`app/services/patient_usage.py`)을 그대로 지킨다.
+
+    **`204` 로 답한다.** 환자 화면이 받을 것이 없다. 그리고 이 호출이 실패해도
+    화면은 계속 읽혀야 한다 — 통계가 환자의 안내 열람을 막으면 안 된다.
+    같은 이유로 화면 쪽은 이 호출을 기다리지 않는다.
+    """
+    _, guide, _ = await service.get_patient_guide_data(token)
+    await usage.record_guide_view(guide.guide_document_id, section=payload.section)
 
 
 def _pain_response(check_in: CheckIn) -> CheckInPainResponse | None:

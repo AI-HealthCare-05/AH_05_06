@@ -9,6 +9,18 @@ from app.dtos.base import StrictModel
 from app.models.visits import GuideSectionKey
 
 
+class GuidePageViewRequest(StrictModel):
+    """환자가 연 장 하나 — KEY-256.
+
+    **칸이 하나뿐이다.** 언제 열었는지는 서버가 찍고, 누가 열었는지는 토큰이
+    말한다. 화면이 시각을 보내면 브라우저 시계를 믿는 셈이 되고, 이 저장소는
+    그 부류로 이미 크게 데었다(저장 시각이 아홉 시간 어긋나 링크 만료 비교가
+    깨져 있었다).
+    """
+
+    section: GuideSectionKey
+
+
 class PatientLinkIssueResponse(StrictModel):
     path: str
     expires_at: datetime

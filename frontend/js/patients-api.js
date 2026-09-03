@@ -722,6 +722,8 @@ var MOCK_PATIENT_HISTORY = {
         course_days: 84,
         guide_sent_at: "2026-05-20T18:00:00+09:00",
         guide_viewed_at: "2026-05-27T09:00:00+09:00",
+        guide_pages_read: 4,
+        guide_pages_total: 4,
         checks: [
           {
             kind: "CHECK_D7",
@@ -755,6 +757,8 @@ var MOCK_PATIENT_HISTORY = {
         course_days: 90,
         guide_sent_at: "2026-02-14T18:00:00+09:00",
         guide_viewed_at: "2026-02-15T09:00:00+09:00",
+        guide_pages_read: 4,
+        guide_pages_total: 4,
         checks: [
           {
             kind: "CHECK_D7",
@@ -774,6 +778,8 @@ var MOCK_PATIENT_HISTORY = {
         course_days: 84,
         guide_sent_at: "2025-11-07T18:00:00+09:00",
         guide_viewed_at: "2025-11-07T20:00:00+09:00",
+        guide_pages_read: 2,
+        guide_pages_total: 4,
         checks: [
           {
             kind: "CHECK_D7",

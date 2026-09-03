@@ -367,6 +367,33 @@ function adaptGuideResponse(payload) {
   };
 }
 
+/* 탭 이름 → 서버가 아는 장 이름. **화면 글자를 그대로 보내지 않는다** —
+   탭 이름은 언제든 바뀌는 글이고, 바뀌는 날 조용히 안 세어진다. */
+var GUIDE_PAGE_KEY = {
+  '현황': 'messages',
+  '복약지도': 'medication',
+  '주의사항': 'caution',
+  '생활관리': 'life',
+};
+
+/* 환자가 한 장을 열었다고 알린다 — KEY-256, 원문 S2-2 「(4장 중 2장)」.
+
+   **기다리지 않는다.** 이 호출이 늦거나 실패해도 환자는 계속 읽어야 한다 —
+   통계가 안내 열람을 막으면 안 된다. 그래서 답을 안 보고, 실패도 삼킨다.
+   서버 쪽도 같은 이유로 `204` 만 준다. */
+function markGuidePageRead(token, tabName) {
+  var section = GUIDE_PAGE_KEY[tabName];
+  if (!section || GUIDE_MOCK || !token) return;
+  fetch(GUIDE_API_BASE + '/guides/' + encodeURIComponent(token) + '/views', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ section: section }),
+  }).catch(function () {
+    /* 삼킨다 — 읽기를 막지 않는다 */
+  });
+}
+
 function fetchGuide(token) {
   if (GUIDE_MOCK) {
     var q = new URLSearchParams(window.location.search);

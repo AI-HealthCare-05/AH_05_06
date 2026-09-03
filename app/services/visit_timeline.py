@@ -48,6 +48,7 @@ from app.models.visits import (
     PatientUsageEventType,
     Visit,
 )
+from app.services.patient_history import GUIDE_PAGES
 from app.services.visits import VisitService
 
 _GUIDE_EVENT_NAME: dict[GuideEventType, TimelineEvent] = {
@@ -89,6 +90,8 @@ class VisitTimelineService:
             visit_id=visit_id,
             entries=await self._named(entries),
             messages=await self._messages(visit_id),
+            # 이력 모달(S2-2)과 **같은 목록**을 쓴다 — 두 화면이 갈리지 않게.
+            guide_pages_total=len(GUIDE_PAGES),
         )
 
     @staticmethod

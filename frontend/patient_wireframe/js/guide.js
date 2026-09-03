@@ -108,6 +108,9 @@
       b.addEventListener('click', function () {
         if (key === state.tab) return;
         state.tab = key;
+        /* 서버에 「이 장을 열었다」를 남긴다 (KEY-256). 그리기 전에 부르되
+           **기다리지 않는다** — 통계가 화면을 늦추면 안 된다. */
+        markGuidePageRead(TOKEN, key);
         buildTabBar(d);
         renderBody(d);
         sayGuide(key);
@@ -190,6 +193,9 @@
     /* 복약지도 보기 버튼 */
     frag.appendChild(btn('btn--full btn--accent', '복약지도 보기', function () {
       state.tab = '복약지도';
+      /* 탭을 바꾸는 길이 둘이다 — 탭 단추와 이 버튼. 한쪽만 남기면
+         「버튼으로 넘어간 환자」가 안 세어진다. */
+      markGuidePageRead(TOKEN, state.tab);
       buildTabBar(d);
       renderBody(d);
       window.scrollTo(0, 0);
@@ -845,6 +851,9 @@
         fillHeader(d);
         buildTabBar(d);
         renderBody(d);
+        /* **처음 열리는 장도 읽은 것이다.** 클릭이 없어 탭 손잡이를 안 타므로
+           여기서 한 번 남긴다 — 빼면 「현황만 보고 닫은 환자」가 0장으로 뜬다. */
+        markGuidePageRead(TOKEN, state.tab);
         sayGuide('승인된 안내를 불러왔어요');
         if (window.chatSetGuide) chatSetGuide(d.guide || d);
       })

@@ -55,12 +55,31 @@ class PatientUsageService:
             raise _not_recordable()
         return guide
 
-    async def record_guide_view(self, guide_document_id: int) -> PatientUsageEvent:
-        """환자가 승인 안내를 열었다."""
+    async def record_guide_view(
+        self,
+        guide_document_id: int,
+        *,
+        section: GuideSectionKey | None = None,
+    ) -> PatientUsageEvent:
+        """환자가 승인 안내를 열었다.
+
+        **어느 장을 열었는지도 남긴다**(KEY-256). 안 남기던 동안은 스탭이
+        「열었다」까지만 알 수 있었고, 원문 S2-2·D1-6 이 요구하는 「4장 중
+        2장 · 주의사항까지 읽고 멈췄습니다」를 셈할 수가 없었다.
+
+        **왜 그게 필요한가**: 다 읽은 환자와 첫 장만 열고 닫은 환자는 다음
+        진료 때 물을 것이 다르다. 「안내문 보셨어요?」에 둘 다 「네」라고
+        답하지만, 뒤엣사람은 주의사항을 못 봤다.
+
+        `section` 은 **비어 있을 수 있다.** 링크로 처음 들어오는 순간에는
+        아직 어느 장을 볼지 모른다 — 그 줄은 「열었다」까지만 뜻하고 장수에
+        안 들어간다. 지어내서 첫 장으로 치면 안 읽은 장을 읽은 것으로 센다.
+        """
         guide = await self._approved(guide_document_id)
         return await PatientUsageEvent.create(
             guide_document=guide,
             event_type=PatientUsageEventType.GUIDE_VIEWED,
+            grounded_section=section,
         )
 
     async def record_chatbot_answer(
