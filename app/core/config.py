@@ -17,6 +17,11 @@ class Env(StrEnum):
     PROD = "prod"
 
 
+class SmsProvider(StrEnum):
+    MOCK = "mock"
+    ALIGO = "aligo"
+
+
 # 예시 파일이 「여기에 무엇을 넣는지」 알려 주려고 쓰는 자리표시자 모양.
 #
 # **이 정의는 여기 하나뿐이다.** 예전에는 검증기·배포 검사·비밀 검사가 각자
@@ -104,6 +109,15 @@ class Config(BaseSettings):
     # prod에서는 이 값이 설정돼도 고정 OTP 우회가 허용되지 않는다.
     MOCK_OTP_CODE: str = ""
 
+    # 문자 발송 어댑터 — KEY-248. 자격증명 없이도 개발·테스트가 돌아가도록
+    # mock이 기본값이다. 실제 값은 env/secret에서만 주입한다.
+    SMS_PROVIDER: SmsProvider = SmsProvider.MOCK
+    ALIGO_KEY: SecretStr = SecretStr("")
+    ALIGO_USER_ID: SecretStr = SecretStr("")
+    ALIGO_SENDER_NUMBER: SecretStr = SecretStr("")
+    ALIGO_BASE_URL: str = "https://apis.aligo.in"
+    ALIGO_TIMEOUT_SECONDS: float = 10.0
+
     @model_validator(mode="after")
     def _mock_otp_code_is_non_prod_only(self) -> "Config":
         if self.MOCK_OTP_CODE and self.ENV is Env.PROD:
@@ -111,6 +125,20 @@ class Config(BaseSettings):
                 f"MOCK_OTP_CODE는 prod 환경에서 사용할 수 없습니다 (ENV={self.ENV.value}). "
                 "운영에서 고정 OTP를 허용하면 누구나 인증을 우회한다 (KEY-219)."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _aligo_credentials_are_complete(self) -> "Config":
+        if self.SMS_PROVIDER is not SmsProvider.ALIGO:
+            return self
+        required = {
+            "ALIGO_KEY": self.ALIGO_KEY,
+            "ALIGO_USER_ID": self.ALIGO_USER_ID,
+            "ALIGO_SENDER_NUMBER": self.ALIGO_SENDER_NUMBER,
+        }
+        missing = [name for name, value in required.items() if not value.get_secret_value().strip()]
+        if missing:
+            raise ValueError("SMS_PROVIDER=aligo 설정에 필요한 환경변수가 비어 있다: " + ", ".join(missing))
         return self
 
     @model_validator(mode="after")

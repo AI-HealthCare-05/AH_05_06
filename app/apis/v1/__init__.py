@@ -21,7 +21,6 @@ from app.apis.v1.visit_routers import visit_router
 from app.catalog.api import catalog_router
 from app.documents.api import document_router
 from app.ocr.api import ocr_router
-from app.timeline.api import timeline_router
 
 # `auth_routers.py` 는 지웠다. 남아 있던 `POST /auth/signup` 은 email·password 로
 # `User` 를 만드는데, 로그인은 이제 `login_id` 로 `Staff` 를 찾는다 — 그래서
@@ -42,7 +41,6 @@ v1_routers.include_router(front_desk_router)
 v1_routers.include_router(catalog_router)
 v1_routers.include_router(document_router)
 v1_routers.include_router(ocr_router)
-v1_routers.include_router(timeline_router)
 v1_routers.include_router(guide_router)
 v1_routers.include_router(message_router)
 v1_routers.include_router(message_template_router)
