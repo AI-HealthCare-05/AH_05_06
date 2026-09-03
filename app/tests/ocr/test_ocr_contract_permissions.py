@@ -107,6 +107,7 @@ class TestOcrResultStateContracts(OcrContractTestCase):
             "started_at": "2026-08-24T18:01:00+09:00",
             "completed_at": None,
             "failure_code": None,
+            "excluded_from_guide": False,
         }
         for response in (result_response, fields_response):
             assert response.status_code == 409
