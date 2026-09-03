@@ -838,7 +838,13 @@ test("**목록이 없으면 빈 드롭다운을 두지 않는다** — 열어도
 test("**판독이 읽은 약 이름을 버리지 않는다** — 어느 세트인지의 실마리다", () => {
   const code = codeOnly(source("js/ocr-review.js"));
   const at = code.indexOf("function setPickerHtml");
-  const body = code.slice(at, at + 1400);
+  /* **글자 수로 자르지 않고 함수 끝까지 본다.** 원래 `at + 1400` 이었는데,
+     KEY-255 가 감춘 세트를 거르는 갈래를 이 함수에 더하자 `판독:` 이 1170자
+     에서 1672자로 밀려 **창 밖으로 나가 검사가 깨졌다.** 함수는 그대로인데
+     검사만 운 것이라, 숫자를 늘리면 다음에 또 같은 일이 난다. */
+  const rest = code.slice(at + 10);
+  const next = rest.search(/\n {2}function \w/);
+  const body = next < 0 ? code.slice(at) : code.slice(at, at + 10 + next);
 
   assert.ok(body.includes("top__read"), "판독한 이름을 안 보여 준다");
   assert.ok(body.includes("판독:"), "그것이 판독한 값이라고 안 밝힌다");
