@@ -1,0 +1,7422 @@
+{
+  "components": {
+    "schemas": {
+      "BaselineDirection": {
+        "description": "이 값을 **어느 쪽으로** 끌고 가나 — 와이어프레임 D2-4 「방향」.\n\nD1 「나의 목표」가 남은 거리를 셈할 때 이 값이 부호를 정한다. 「참고」는\n목표가 없다는 뜻이다 — LH/FSH 비율처럼 보기는 하되 올리고 내릴 값이\n아닌 것들이 있다.",
+        "enum": [
+          "KEEP",
+          "LOWER",
+          "REFERENCE"
+        ],
+        "title": "BaselineDirection",
+        "type": "string"
+      },
+      "Body_upload_documents_api_v1_front_desk_visits__visit_id__documents_post": {
+        "properties": {
+          "document_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OcrDocumentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "description": "진료기록 이미지 또는 PDF (JPEG·PNG·PDF)",
+            "items": {
+              "format": "binary",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "Body_upload_documents_api_v1_front_desk_visits__visit_id__documents_post",
+        "type": "object"
+      },
+      "CautionSectionKey": {
+        "description": "caution·emergency 두 갈래만 마스터 콘텐츠 대상이다.\n\n나머지 섹션(medication·life·messages)은 약물별 근거가 필요 없어\nDrugCautionContent 매핑 대상이 아니다.",
+        "enum": [
+          "caution",
+          "emergency"
+        ],
+        "title": "CautionSectionKey",
+        "type": "string"
+      },
+      "ChatbotResponse": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "fallback": {
+            "default": false,
+            "title": "Fallback",
+            "type": "boolean"
+          },
+          "grounded_section": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuideSectionKey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limitation": {
+            "title": "Limitation",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "urgent": {
+            "default": false,
+            "title": "Urgent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "answer",
+          "evidence",
+          "source",
+          "limitation"
+        ],
+        "title": "ChatbotResponse",
+        "type": "object"
+      },
+      "ChatbotResponseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "link_token": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Link Token",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_token",
+          "question"
+        ],
+        "title": "ChatbotResponseRequest",
+        "type": "object"
+      },
+      "CheckAnswer": {
+        "description": "확인 항목 하나의 답 — 와이어프레임 S1-6.\n\n`checked` 가 `null` 이면 **아직 안 여쭌 것**이다. `false` 는 여쭤서 아니라고\n한 것이다. 하나로 뭉치면 안내문이 「우울증 병력 없음」을 확인한 것처럼 적을\n수 있는데, 실제로는 아무도 안 물었을 수 있다 — 안전에 걸리는 항목이라 이\n구별이 필요하다.",
+        "properties": {
+          "checked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked"
+          },
+          "item_key": {
+            "$ref": "#/components/schemas/VisitCheckKey"
+          }
+        },
+        "required": [
+          "item_key"
+        ],
+        "title": "CheckAnswer",
+        "type": "object"
+      },
+      "CheckAnswerResponse": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/CheckAnswer"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "visit_id",
+          "answers"
+        ],
+        "title": "CheckAnswerResponse",
+        "type": "object"
+      },
+      "CheckAnswerSaveRequest": {
+        "description": "확인 항목 저장 — **한 판을 통째로** 받는다.\n\n항목 하나씩 받으면 중간에 끊겼을 때 「우울증은 답했는데 당뇨는 안 답한」\n반쪽 상태가 남고, 화면은 그것을 「안 여쭌 것」과 구별하지 못한다.",
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/CheckAnswer"
+            },
+            "title": "Answers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "answers"
+        ],
+        "title": "CheckAnswerSaveRequest",
+        "type": "object"
+      },
+      "CheckInAnswerContent": {
+        "additionalProperties": false,
+        "properties": {
+          "ask": {
+            "default": false,
+            "title": "Ask",
+            "type": "boolean"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "lead": {
+            "title": "Lead",
+            "type": "string"
+          },
+          "notify": {
+            "default": false,
+            "title": "Notify",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "lead"
+        ],
+        "title": "CheckInAnswerContent",
+        "type": "object"
+      },
+      "CheckInCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "medication": {
+            "$ref": "#/components/schemas/CheckInMedication"
+          },
+          "pain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckInPainRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "medication"
+        ],
+        "title": "CheckInCreateRequest",
+        "type": "object"
+      },
+      "CheckInMedication": {
+        "enum": [
+          "taking",
+          "uncomfortable",
+          "missing",
+          "stopped_side_effect",
+          "stopped_improved"
+        ],
+        "title": "CheckInMedication",
+        "type": "string"
+      },
+      "CheckInPainRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "had": {
+            "title": "Had",
+            "type": "boolean"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "types": {
+            "items": {
+              "enum": [
+                "menstrual",
+                "intercourse",
+                "defecation",
+                "chronic_pelvic"
+              ],
+              "type": "string"
+            },
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "had"
+        ],
+        "title": "CheckInPainRequest",
+        "type": "object"
+      },
+      "CheckInPainResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "had": {
+            "title": "Had",
+            "type": "boolean"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "types": {
+            "items": {
+              "enum": [
+                "menstrual",
+                "intercourse",
+                "defecation",
+                "chronic_pelvic"
+              ],
+              "type": "string"
+            },
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "had",
+          "score",
+          "types"
+        ],
+        "title": "CheckInPainResponse",
+        "type": "object"
+      },
+      "CheckInPainTypeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "enum": [
+              "menstrual",
+              "intercourse",
+              "defecation",
+              "chronic_pelvic"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "CheckInPainTypeResponse",
+        "type": "object"
+      },
+      "CheckInReadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "answered": {
+            "title": "Answered",
+            "type": "boolean"
+          },
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CheckInAnswerContent"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/CheckInMedication"
+            },
+            "title": "Answers",
+            "type": "object"
+          },
+          "demo_only": {
+            "const": true,
+            "default": true,
+            "title": "Demo Only",
+            "type": "boolean"
+          },
+          "drug_name": {
+            "title": "Drug Name",
+            "type": "null"
+          },
+          "next_checkin": {
+            "title": "Next Checkin",
+            "type": "null"
+          },
+          "next_visit": {
+            "title": "Next Visit",
+            "type": "null"
+          },
+          "pain_types": {
+            "items": {
+              "$ref": "#/components/schemas/CheckInPainTypeResponse"
+            },
+            "title": "Pain Types",
+            "type": "array"
+          },
+          "round_label": {
+            "const": "복약 7일째 · 첫 확인",
+            "default": "복약 7일째 · 첫 확인",
+            "title": "Round Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answers",
+          "pain_types",
+          "answered"
+        ],
+        "title": "CheckInReadResponse",
+        "type": "object"
+      },
+      "CheckInSaveResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "check_in_id": {
+            "title": "Check In Id",
+            "type": "integer"
+          },
+          "demo_only": {
+            "const": true,
+            "default": true,
+            "title": "Demo Only",
+            "type": "boolean"
+          },
+          "guide_url": {
+            "title": "Guide Url",
+            "type": "null"
+          },
+          "medication": {
+            "$ref": "#/components/schemas/CheckInMedication"
+          },
+          "next_checkin": {
+            "title": "Next Checkin",
+            "type": "null"
+          },
+          "next_visit": {
+            "title": "Next Visit",
+            "type": "null"
+          },
+          "pain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckInPainResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "saved": {
+            "const": true,
+            "default": true,
+            "title": "Saved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "check_in_id",
+          "medication",
+          "pain"
+        ],
+        "title": "CheckInSaveResponse",
+        "type": "object"
+      },
+      "CopySectionItem": {
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "section_key": {
+            "$ref": "#/components/schemas/CautionSectionKey"
+          }
+        },
+        "required": [
+          "section_key",
+          "origin",
+          "body",
+          "editable"
+        ],
+        "title": "CopySectionItem",
+        "type": "object"
+      },
+      "CopySetItem": {
+        "properties": {
+          "disease": {
+            "$ref": "#/components/schemas/SetDisease"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prescription_set_id": {
+            "title": "Prescription Set Id",
+            "type": "integer"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "boolean"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/CopySectionItem"
+            },
+            "title": "Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prescription_set_id",
+          "name",
+          "disease",
+          "sections",
+          "reviewed"
+        ],
+        "title": "CopySetItem",
+        "type": "object"
+      },
+      "CursorPage": {
+        "description": "쪽 나눔 — 다음 쪽으로 가는 열쇠와 「더 있나」.\n\n**환자 DTO 에 있던 것을 여기로 옮겼다.** 담는 것이 환자와 아무 상관 없는\n쪽 나눔 모양인데 `dtos/patients.py` 에 살고 있어서, 환자 DTO 가 다른 DTO\n를 부르는 순간 고리가 생겼다 — `patients → visits → patients`.",
+        "properties": {
+          "has_next": {
+            "title": "Has Next",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "next_cursor",
+          "has_next"
+        ],
+        "title": "CursorPage",
+        "type": "object"
+      },
+      "DetailStatus": {
+        "description": "줄에 뜨는 글자. 카테고리 안에서 「무엇 때문에」를 말한다.",
+        "enum": [
+          "NO_DOCUMENT",
+          "OCR_REVIEW",
+          "GUIDE_GENERATING",
+          "STAFF_REVIEW",
+          "GENERATION_FAILED",
+          "INVALID_PHONE",
+          "SMS_OPT_OUT",
+          "APPROVAL_RETURNED",
+          "APPROVAL_PENDING",
+          "SCHEDULED_TO_SEND",
+          "SENT",
+          "VIEWED"
+        ],
+        "title": "DetailStatus",
+        "type": "string"
+      },
+      "DoctorResponse": {
+        "properties": {
+          "doctor_id": {
+            "title": "Doctor Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doctor_id",
+          "name"
+        ],
+        "title": "DoctorResponse",
+        "type": "object"
+      },
+      "DocumentUploadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "document_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Document Ids",
+            "type": "array"
+          },
+          "ocr_job_id": {
+            "title": "Ocr Job Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OcrJobStatus"
+          }
+        },
+        "required": [
+          "document_ids",
+          "ocr_job_id",
+          "status"
+        ],
+        "title": "DocumentUploadResponse",
+        "type": "object"
+      },
+      "FrontDeskVisitItem": {
+        "properties": {
+          "age": {
+            "title": "Age",
+            "type": "integer"
+          },
+          "birth_date": {
+            "format": "date",
+            "title": "Birth Date",
+            "type": "string"
+          },
+          "detail_status": {
+            "$ref": "#/components/schemas/DetailStatus"
+          },
+          "diagnosis_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis Name"
+          },
+          "doctor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DoctorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hospital_patient_no": {
+            "title": "Hospital Patient No",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          },
+          "visited_at": {
+            "format": "date-time",
+            "title": "Visited At",
+            "type": "string"
+          },
+          "work_category": {
+            "$ref": "#/components/schemas/WorkCategory"
+          }
+        },
+        "required": [
+          "visit_id",
+          "patient_id",
+          "name",
+          "hospital_patient_no",
+          "birth_date",
+          "age",
+          "diagnosis_name",
+          "doctor",
+          "visited_at",
+          "work_category",
+          "detail_status"
+        ],
+        "title": "FrontDeskVisitItem",
+        "type": "object"
+      },
+      "FrontDeskVisitListResponse": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/WorkCategory"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FrontDeskVisitItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          },
+          "selected_categories": {
+            "items": {
+              "$ref": "#/components/schemas/WorkCategory"
+            },
+            "title": "Selected Categories",
+            "type": "array"
+          },
+          "timezone": {
+            "default": "Asia/Seoul",
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "counts",
+          "selected_categories",
+          "items",
+          "page"
+        ],
+        "title": "FrontDeskVisitListResponse",
+        "type": "object"
+      },
+      "GuideCopyListResponse": {
+        "properties": {
+          "doctor_id": {
+            "title": "Doctor Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CopySetItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "doctor_id",
+          "items"
+        ],
+        "title": "GuideCopyListResponse",
+        "type": "object"
+      },
+      "GuideCopySaveRequest": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "GuideCopySaveRequest",
+        "type": "object"
+      },
+      "GuideMessageFailure": {
+        "description": "**보내 봤는데 안 됐다** — 와이어프레임 D1-7 「실패 이유 넷」.\n\n원문: 「ⓘ 실패 이유 넷 — 잘못된 번호 · 수신 거부 · 통신사 오류 ·\n발신번호 미등록」. 넷으로 못박혀 있으므로 자유 문자열로 두지 않는다 —\n자유롭게 두면 발송기를 붙이는 사람마다 다른 낱말을 넣고, 화면은 그중\n아는 것만 사람 말로 옮긴다.",
+        "enum": [
+          "INVALID_PHONE",
+          "OPT_OUT",
+          "CARRIER",
+          "SENDER_UNREGISTERED"
+        ],
+        "title": "GuideMessageFailure",
+        "type": "string"
+      },
+      "GuideMessageHold": {
+        "description": "**왜 붙들고 있나** — 와이어프레임 S2-3.\n\n원문이 딱 둘로 못박는다: 「스탭이 손댈 일은 보류 두 가지뿐이다 — 번호가\n잘못됐을 때와 문자가 떨어졌을 때.」\n\n실패 사유(`GuideMessageFailure`)와 **다른 목록**이다. 겹치는 낱말이 있어\n한 목록으로 합치고 싶어지지만, 재는 것이 다르다 — 이쪽은 「보내기 전에\n이미 아는 것」이고 저쪽은 「보내 보고 안 것」이다.",
+        "enum": [
+          "INVALID_PHONE",
+          "NO_CREDIT"
+        ],
+        "title": "GuideMessageHold",
+        "type": "string"
+      },
+      "GuideMessageKind": {
+        "description": "문자 한 통이 무엇인가 — 와이어프레임 D1-6 「발송 · 예정」.\n\n회차를 값으로 두는 것이 중요하다. 「일곱째 날」을 시각에서 되계산하면\n진료일이 고쳐질 때 어느 회차였는지를 잃는다.",
+        "enum": [
+          "GUIDE",
+          "CHECK_D7",
+          "CHECK_D15",
+          "CHECK_D30",
+          "RUN_OUT"
+        ],
+        "title": "GuideMessageKind",
+        "type": "string"
+      },
+      "GuideMessageStatus": {
+        "description": "문자 한 통이 지금 어디에 있는가.\n\n**한 통 단위다.** 다섯 통 중 어느 것이든 실패할 수 있고, 실패한 것만\n고쳐 다시 보낸다 (D1-6 캡션 — 「발송 상태는 문자 한 통 단위다」).\n\n`CANCELED` 는 사람이 회차를 끈 것이다. 줄을 지우지 않는 이유는, 껐다는\n것도 기록이기 때문이다 — 나중에 「왜 안 갔지」를 물을 때 답이 있어야 한다.",
+        "enum": [
+          "SCHEDULED",
+          "SENT",
+          "FAILED",
+          "HELD",
+          "CANCELED"
+        ],
+        "title": "GuideMessageStatus",
+        "type": "string"
+      },
+      "GuideResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "patient": {
+            "$ref": "#/components/schemas/PatientHead"
+          },
+          "returned_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Returned Reason"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionResponse"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuideStatus"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "visit_id",
+          "patient",
+          "status",
+          "version",
+          "sections"
+        ],
+        "title": "GuideResponse",
+        "type": "object"
+      },
+      "GuideSectionKey": {
+        "description": "환자 화면의 차례와 같다 — P2 · P3 · P4, 그리고 문자 설정.\n\n`EMERGENCY` 는 `CAUTION` 바로 뒤다. **화면에서 둘은 같은 「주의사항」 탭\n안에 이어 붙는다** — 응급 문장만 따로 탭을 만들면 원장님이 그 탭을 안 열고\n넘길 수 있고, 그 문장은 넘겨도 되는 문장이 아니다.\n\n나눈 까닭은 잠금 단위 때문이다. `locked` 는 섹션 단위라, 🚨 응급 문장을\n지키려고 `caution` 전체를 잠그면 **고칠 수 있어야 할 일반 주의 문구까지\n잠긴다**(와이어프레임 D1-2 — 「🚨 응급 문장만 수정 불가」).",
+        "enum": [
+          "medication",
+          "caution",
+          "emergency",
+          "life",
+          "messages"
+        ],
+        "title": "GuideSectionKey",
+        "type": "string"
+      },
+      "GuideStatus": {
+        "description": "안내문이 지금 어디에 있는가.\n\n**새 이름을 만들지 않는다.** `docs/contracts/patient-visit-api-v1.md` §6 이\n화면 탭과 `detail_status` 를 이미 얼려 두었고, 이 값들이 그대로 그 탭으로\n파생된다. 같은 것을 두 어휘로 부르기 시작하면 어느 쪽이 정본인지 흐려진다.\n\n    STAFF_REVIEW        스탭 확인 중        → 작성 중\n    APPROVAL_PENDING    승인 요청           → 승인 요청\n    SCHEDULED_TO_SEND   발송 예약됨         → 발송 대기\n    APPROVAL_RETURNED   승인 반려           → 보완\n\n승인의 결과가 `APPROVED` 가 아니라 `SCHEDULED_TO_SEND` 인 것이 중요하다 —\n**승인이 곧 발송 예약이다**(와이어프레임 D1-5 「스탭이 발송 버튼을 누르지\n않는다」). 승인과 발송 사이에 사람이 한 번 더 손대는 자리를 만들지 않는다.",
+        "enum": [
+          "STAFF_REVIEW",
+          "APPROVAL_PENDING",
+          "SCHEDULED_TO_SEND",
+          "APPROVAL_RETURNED"
+        ],
+        "title": "GuideStatus",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoryCheck": {
+        "description": "확인 문자 한 통 — 원문 「일주일 뒤 05-27 미열람」·「… 응답 「잘 먹고 있어요」」.",
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GuideMessageKind"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "boolean"
+          },
+          "viewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewed At"
+          }
+        },
+        "required": [
+          "kind",
+          "at",
+          "sent",
+          "viewed_at",
+          "answer"
+        ],
+        "title": "HistoryCheck",
+        "type": "object"
+      },
+      "HistoryVisit": {
+        "description": "진료 한 건 — 원문의 블록 하나.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "course_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Days"
+          },
+          "guide_sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guide Sent At"
+          },
+          "guide_viewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guide Viewed At"
+          },
+          "prescription_set": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prescription Set"
+          },
+          "revisited": {
+            "title": "Revisited",
+            "type": "boolean"
+          },
+          "runs_out_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runs Out On"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          },
+          "visited_at": {
+            "format": "date-time",
+            "title": "Visited At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visit_id",
+          "visited_at",
+          "prescription_set",
+          "course_days",
+          "guide_sent_at",
+          "guide_viewed_at",
+          "checks",
+          "runs_out_on",
+          "revisited"
+        ],
+        "title": "HistoryVisit",
+        "type": "object"
+      },
+      "HospitalCheckInResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "check_in_id": {
+            "title": "Check In Id",
+            "type": "integer"
+          },
+          "demo_only": {
+            "const": true,
+            "default": true,
+            "title": "Demo Only",
+            "type": "boolean"
+          },
+          "medication": {
+            "$ref": "#/components/schemas/CheckInMedication"
+          },
+          "pain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckInPainResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "check_in_id",
+          "visit_id",
+          "medication",
+          "pain",
+          "submitted_at"
+        ],
+        "title": "HospitalCheckInResponse",
+        "type": "object"
+      },
+      "LabBaselineItem-Input": {
+        "properties": {
+          "always_shown": {
+            "default": true,
+            "title": "Always Shown",
+            "type": "boolean"
+          },
+          "by_age": {
+            "default": false,
+            "title": "By Age",
+            "type": "boolean"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/BaselineDirection"
+          },
+          "disease": {
+            "$ref": "#/components/schemas/SetDisease"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "keywords": {
+            "default": "",
+            "title": "Keywords",
+            "type": "string"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "default": "",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disease",
+          "name",
+          "direction"
+        ],
+        "title": "LabBaselineItem",
+        "type": "object"
+      },
+      "LabBaselineItem-Output": {
+        "properties": {
+          "always_shown": {
+            "default": true,
+            "title": "Always Shown",
+            "type": "boolean"
+          },
+          "by_age": {
+            "default": false,
+            "title": "By Age",
+            "type": "boolean"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/BaselineDirection"
+          },
+          "disease": {
+            "$ref": "#/components/schemas/SetDisease"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "keywords": {
+            "default": "",
+            "title": "Keywords",
+            "type": "string"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "default": "",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disease",
+          "name",
+          "direction"
+        ],
+        "title": "LabBaselineItem",
+        "type": "object"
+      },
+      "LabBaselineListResponse": {
+        "properties": {
+          "doctor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doctor Id"
+          },
+          "doctors": {
+            "items": {
+              "$ref": "#/components/schemas/DoctorResponse"
+            },
+            "title": "Doctors",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LabBaselineItem-Output"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "doctor_id",
+          "items",
+          "doctors"
+        ],
+        "title": "LabBaselineListResponse",
+        "type": "object"
+      },
+      "LabBaselineSaveRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LabBaselineItem-Input"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LabBaselineSaveRequest",
+        "type": "object"
+      },
+      "LatestVisitResponse": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          },
+          "visited_at": {
+            "format": "date-time",
+            "title": "Visited At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visit_id",
+          "visited_at",
+          "status"
+        ],
+        "title": "LatestVisitResponse",
+        "type": "object"
+      },
+      "MessagePlanRequest": {
+        "additionalProperties": false,
+        "description": "문자 설정 저장 — 「이 환자만 적용」.",
+        "properties": {
+          "check_hour": {
+            "title": "Check Hour",
+            "type": "integer"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/MessageRound"
+            },
+            "title": "Rounds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "check_hour",
+          "rounds"
+        ],
+        "title": "MessagePlanRequest",
+        "type": "object"
+      },
+      "MessagePlanResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "check_hour": {
+            "title": "Check Hour",
+            "type": "integer"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/MessageRoundOut"
+            },
+            "title": "Rounds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "check_hour",
+          "rounds"
+        ],
+        "title": "MessagePlanResponse",
+        "type": "object"
+      },
+      "MessageRound": {
+        "additionalProperties": false,
+        "description": "문자 회차 하나 — 와이어프레임 S1-14.\n\n`body` 가 `null` 이면 **기본 문구**다. 빈 문자열도 같은 뜻으로 받는다 —\n스탭이 문구를 다 지운 것은 「빈 문자를 보내라」가 아니라 「기본으로\n되돌려라」이기 때문이다.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "days_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Before"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GuideMessageKind"
+          }
+        },
+        "required": [
+          "kind",
+          "enabled"
+        ],
+        "title": "MessageRound",
+        "type": "object"
+      },
+      "MessageRoundOut": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "days_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Before"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fixed": {
+            "default": false,
+            "title": "Fixed",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GuideMessageKind"
+          }
+        },
+        "required": [
+          "kind",
+          "enabled"
+        ],
+        "title": "MessageRoundOut",
+        "type": "object"
+      },
+      "MessageTemplateItem": {
+        "description": "문구 한 칸.\n\n**기본 문구를 함께 보낸다.** 화면의 「원본으로 되돌리기」가 무엇으로\n돌아가는지 보여 줘야 하고, 「지금 기본값인가」도 그 둘을 견줘 알 수 있다.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "default_body": {
+            "title": "Default Body",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MessageTemplateKind"
+          },
+          "required_variables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Variables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "body",
+          "default_body",
+          "is_default",
+          "required_variables"
+        ],
+        "title": "MessageTemplateItem",
+        "type": "object"
+      },
+      "MessageTemplateKind": {
+        "description": "의원이 고칠 수 있는 문자 — 와이어프레임 D2-5.\n\n**인증번호는 여기 없다.** 원문이 「수정 불가 · 시스템」으로 못박는다 —\n문구를 잘못 고치면 환자가 인증을 못 하고, 그건 의원이 감당할 일이 아니다.\n고칠 수 없는 것에 칸을 만들지 않는다.\n\n`REVISIT` 은 `GuideMessageKind` 에 없다. 저쪽은 **승인이 세워 두는 회차**\n이고, 재진 안내는 스탭이 그때그때 보내는 것이다(S1-14) — 예약 줄이 생기지\n않으므로 회차가 아니다.",
+        "enum": [
+          "GUIDE",
+          "CHECK_D7",
+          "CHECK_D15",
+          "CHECK_D30",
+          "RUN_OUT",
+          "REVISIT"
+        ],
+        "title": "MessageTemplateKind",
+        "type": "string"
+      },
+      "MessageTemplateListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MessageTemplateItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "known_variables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known Variables",
+            "type": "array"
+          },
+          "sms_limit": {
+            "title": "Sms Limit",
+            "type": "integer"
+          },
+          "system_body": {
+            "title": "System Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "known_variables",
+          "sms_limit",
+          "system_body"
+        ],
+        "title": "MessageTemplateListResponse",
+        "type": "object"
+      },
+      "MessageTemplateSaveRequest": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "MessageTemplateSaveRequest",
+        "type": "object"
+      },
+      "OcrCandidateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "is_selected": {
+            "title": "Is Selected",
+            "type": "boolean"
+          },
+          "ocr_field_candidate_id": {
+            "title": "Ocr Field Candidate Id",
+            "type": "integer"
+          },
+          "rank": {
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "source_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Date"
+          },
+          "source_line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Line"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ocr_field_candidate_id",
+          "value",
+          "rank",
+          "is_selected"
+        ],
+        "title": "OcrCandidateResponse",
+        "type": "object"
+      },
+      "OcrDocumentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "integer"
+          },
+          "document_type": {
+            "$ref": "#/components/schemas/OcrDocumentType"
+          },
+          "raw_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Text"
+          },
+          "raw_text_purged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Text Purged At"
+          }
+        },
+        "required": [
+          "document_id",
+          "document_type",
+          "raw_text"
+        ],
+        "title": "OcrDocumentResponse",
+        "type": "object"
+      },
+      "OcrDocumentType": {
+        "enum": [
+          "EMR",
+          "PRESCRIPTION",
+          "LAB_RESULT"
+        ],
+        "title": "OcrDocumentType",
+        "type": "string"
+      },
+      "OcrFieldResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/OcrCandidateResponse"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "confirmed_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed By"
+          },
+          "corrected_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected Value"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "extracted_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extracted Value"
+          },
+          "field_type": {
+            "title": "Field Type",
+            "type": "string"
+          },
+          "is_confirmed": {
+            "title": "Is Confirmed",
+            "type": "boolean"
+          },
+          "is_low_confidence": {
+            "default": false,
+            "title": "Is Low Confidence",
+            "type": "boolean"
+          },
+          "is_pending_report": {
+            "default": false,
+            "title": "Is Pending Report",
+            "type": "boolean"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "modified_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified By"
+          },
+          "ocr_field_id": {
+            "title": "Ocr Field Id",
+            "type": "integer"
+          },
+          "source_line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Line"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ocr_field_id",
+          "field_type",
+          "extracted_value",
+          "corrected_value",
+          "value",
+          "version",
+          "is_confirmed"
+        ],
+        "title": "OcrFieldResponse",
+        "type": "object"
+      },
+      "OcrJobByDocumentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "integer"
+          },
+          "document_type": {
+            "$ref": "#/components/schemas/OcrDocumentType"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "ocr_job_id": {
+            "title": "Ocr Job Id",
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OcrJobStatus"
+          }
+        },
+        "required": [
+          "document_id",
+          "document_type",
+          "ocr_job_id",
+          "status",
+          "progress"
+        ],
+        "title": "OcrJobByDocumentResponse",
+        "type": "object"
+      },
+      "OcrJobResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "ocr_job_id": {
+            "title": "Ocr Job Id",
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OcrJobStatus"
+          }
+        },
+        "required": [
+          "ocr_job_id",
+          "status",
+          "progress"
+        ],
+        "title": "OcrJobResponse",
+        "type": "object"
+      },
+      "OcrJobStatus": {
+        "enum": [
+          "PROCESSING",
+          "COMPLETED",
+          "FAILED"
+        ],
+        "title": "OcrJobStatus",
+        "type": "string"
+      },
+      "OcrResultResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "confirmed_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed By"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/OcrDocumentResponse"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/OcrFieldResponse"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "ocr_job_id": {
+            "title": "Ocr Job Id",
+            "type": "string"
+          },
+          "ocr_result_id": {
+            "title": "Ocr Result Id",
+            "type": "integer"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ocr_result_id",
+          "ocr_job_id",
+          "model_name",
+          "model_version",
+          "version",
+          "documents",
+          "fields"
+        ],
+        "title": "OcrResultResponse",
+        "type": "object"
+      },
+      "PasswordChangeRequest": {
+        "description": "두 경우가 요청 조건이 다르다(계약 4절).\n\n최초 로그인 — `{ new_password }` 만 온다. 방금 그 비밀번호로 로그인했는데\n              한 화면에서 같은 값을 두 번 넣게 하면 거기서부터 막힌다.\n일반 변경   — `{ current_password, new_password }`. 자리를 비운 사이 남이\n              바꾸는 것을 막는다.\n\n**어느 쪽인지는 서버가 `must_change_password` 로 정한다.** 요청이 정하게\n두면 최초 로그인이 아닌 사람도 `current_password` 를 빼고 보내면 통과한다.",
+        "properties": {
+          "current_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Password"
+          },
+          "new_password": {
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_password"
+        ],
+        "title": "PasswordChangeRequest",
+        "type": "object"
+      },
+      "PatientCategory": {
+        "enum": [
+          "ALL",
+          "IN_TREATMENT",
+          "NEEDS_ATTENTION",
+          "SMS_OPT_OUT",
+          "INACTIVE_6_MONTHS"
+        ],
+        "title": "PatientCategory",
+        "type": "string"
+      },
+      "PatientCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "birth_date": {
+            "format": "date",
+            "title": "Birth Date",
+            "type": "string"
+          },
+          "gender": {
+            "$ref": "#/components/schemas/PatientGender",
+            "default": "UNKNOWN"
+          },
+          "hospital_patient_no": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Hospital Patient No",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "maxLength": 20,
+            "minLength": 10,
+            "title": "Phone",
+            "type": "string"
+          },
+          "sms_consent": {
+            "title": "Sms Consent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hospital_patient_no",
+          "name",
+          "birth_date",
+          "phone",
+          "sms_consent"
+        ],
+        "title": "PatientCreateRequest",
+        "type": "object"
+      },
+      "PatientGender": {
+        "enum": [
+          "FEMALE",
+          "MALE",
+          "OTHER",
+          "UNKNOWN"
+        ],
+        "title": "PatientGender",
+        "type": "string"
+      },
+      "PatientGuideResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_at": {
+            "format": "date-time",
+            "title": "Approved At",
+            "type": "string"
+          },
+          "demo_only": {
+            "const": true,
+            "default": true,
+            "title": "Demo Only",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/PatientGuideSectionResponse"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "approved_at",
+          "expires_at",
+          "sections"
+        ],
+        "title": "PatientGuideResponse",
+        "type": "object"
+      },
+      "PatientGuideSectionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "key": {
+            "$ref": "#/components/schemas/GuideSectionKey"
+          }
+        },
+        "required": [
+          "key",
+          "body"
+        ],
+        "title": "PatientGuideSectionResponse",
+        "type": "object"
+      },
+      "PatientHead": {
+        "additionalProperties": false,
+        "description": "승인 화면 머리에 서는 환자. **누구의 안내문인지**를 말한다.\n\n이것이 없으면 원장님은 화면에 이름 없이 뜬 본문을 승인하게 된다. 승인은\n곧 그 환자에게 발송이라, 누구인지 모르고 누르는 자리를 만들면 안 된다.\n\n`birth_date` 와 `age` 를 **함께** 준다 — 계약 §4 가 「동명이인 확인과 계산\n근거를 위해 두 값을 함께 제공한다」로 정해 둔 그대로다. `age` 는 저장값이\n아니라 조회 시점의 현지 날짜로 계산한 읽기 전용 값이다.\n\n`phone` 은 넣지 않는다. 이 화면은 「누구인지」만 알면 되고, 발송 번호는\n서버가 안다. 응답에 실으면 승인할 때마다 전화번호가 화면과 로그를 지난다.",
+        "properties": {
+          "age": {
+            "title": "Age",
+            "type": "integer"
+          },
+          "birth_date": {
+            "format": "date",
+            "title": "Birth Date",
+            "type": "string"
+          },
+          "gender": {
+            "$ref": "#/components/schemas/PatientGender"
+          },
+          "hospital_patient_no": {
+            "title": "Hospital Patient No",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "birth_date",
+          "age",
+          "gender",
+          "hospital_patient_no"
+        ],
+        "title": "PatientHead",
+        "type": "object"
+      },
+      "PatientHistoryResponse": {
+        "properties": {
+          "diagnosis_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis Name"
+          },
+          "doctor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DoctorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hospital_patient_no": {
+            "title": "Hospital Patient No",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
+          },
+          "phone": {
+            "title": "Phone",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "visits": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryVisit"
+            },
+            "title": "Visits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "patient_id",
+          "name",
+          "hospital_patient_no",
+          "phone",
+          "diagnosis_name",
+          "doctor",
+          "visits",
+          "total"
+        ],
+        "title": "PatientHistoryResponse",
+        "type": "object"
+      },
+      "PatientLinkIssueResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "demo_only": {
+            "const": true,
+            "default": true,
+            "title": "Demo Only",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "expires_at"
+        ],
+        "title": "PatientLinkIssueResponse",
+        "type": "object"
+      },
+      "PatientListItem": {
+        "description": "환자 관리 표 한 줄 — 와이어프레임 S2-1.\n\n**목록(S1 · D1)이 칩으로 보이던 것을 여기서는 열로 보인다.** 원문 주석이\n그렇게 적는다 — 「같은 속성, 표기만 서식에 맞춘다」. 그래서 새 이름을 짓지\n않고 접수대 목록과 **같은 값**(`WorkCategory` · `DetailStatus`)을 싣는다.\n두 화면이 같은 환자를 다르게 부르면 어느 쪽이 맞는지 알 수 없다.",
+        "properties": {
+          "age": {
+            "readOnly": true,
+            "title": "Age",
+            "type": "integer"
+          },
+          "birth_date": {
+            "format": "date",
+            "title": "Birth Date",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetailStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnosis_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis Name"
+          },
+          "doctor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DoctorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "gender": {
+            "$ref": "#/components/schemas/PatientGender"
+          },
+          "hospital_patient_no": {
+            "title": "Hospital Patient No",
+            "type": "string"
+          },
+          "latest_visit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestVisitResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
+          },
+          "phone": {
+            "title": "Phone",
+            "type": "string"
+          },
+          "sms_consent": {
+            "title": "Sms Consent",
+            "type": "boolean"
+          },
+          "sms_consented_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sms Consented At"
+          },
+          "sms_opted_out_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sms Opted Out At"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "work_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "patient_id",
+          "hospital_patient_no",
+          "name",
+          "birth_date",
+          "gender",
+          "phone",
+          "sms_consent",
+          "sms_consented_at",
+          "sms_opted_out_at",
+          "created_at",
+          "updated_at",
+          "age"
+        ],
+        "title": "PatientListItem",
+        "type": "object"
+      },
+      "PatientListResponse": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PatientCategory"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PatientListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          },
+          "selected_category": {
+            "$ref": "#/components/schemas/PatientCategory"
+          }
+        },
+        "required": [
+          "counts",
+          "selected_category",
+          "items",
+          "page"
+        ],
+        "title": "PatientListResponse",
+        "type": "object"
+      },
+      "PatientOtpIssueRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "link_token": {
+            "title": "Link Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_token"
+        ],
+        "title": "PatientOtpIssueRequest",
+        "type": "object"
+      },
+      "PatientOtpIssueResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "retry_after_seconds": {
+            "title": "Retry After Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expires_at",
+          "retry_after_seconds"
+        ],
+        "title": "PatientOtpIssueResponse",
+        "type": "object"
+      },
+      "PatientOtpVerifyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "link_token": {
+            "title": "Link Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_token",
+          "code"
+        ],
+        "title": "PatientOtpVerifyRequest",
+        "type": "object"
+      },
+      "PatientOtpVerifyResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "session_expires_in_seconds": {
+            "title": "Session Expires In Seconds",
+            "type": "integer"
+          },
+          "verified": {
+            "const": true,
+            "default": true,
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "session_expires_in_seconds"
+        ],
+        "title": "PatientOtpVerifyResponse",
+        "type": "object"
+      },
+      "PatientResponse": {
+        "properties": {
+          "age": {
+            "readOnly": true,
+            "title": "Age",
+            "type": "integer"
+          },
+          "birth_date": {
+            "format": "date",
+            "title": "Birth Date",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "gender": {
+            "$ref": "#/components/schemas/PatientGender"
+          },
+          "hospital_patient_no": {
+            "title": "Hospital Patient No",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
+          },
+          "phone": {
+            "title": "Phone",
+            "type": "string"
+          },
+          "sms_consent": {
+            "title": "Sms Consent",
+            "type": "boolean"
+          },
+          "sms_consented_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sms Consented At"
+          },
+          "sms_opted_out_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sms Opted Out At"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "hospital_patient_no",
+          "name",
+          "birth_date",
+          "gender",
+          "phone",
+          "sms_consent",
+          "sms_consented_at",
+          "sms_opted_out_at",
+          "created_at",
+          "updated_at",
+          "age"
+        ],
+        "title": "PatientResponse",
+        "type": "object"
+      },
+      "PatientUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "birth_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
+          "correction_reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correction Reason"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PatientGender"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hospital_patient_no": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hospital Patient No"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 10,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "sms_consent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sms Consent"
+          }
+        },
+        "title": "PatientUpdateRequest",
+        "type": "object"
+      },
+      "PrescriptionSetDetail": {
+        "additionalProperties": false,
+        "description": "설정 화면(D2-3)이 읽고 쓰는 한 세트.",
+        "properties": {
+          "check_d15_on": {
+            "default": true,
+            "title": "Check D15 On",
+            "type": "boolean"
+          },
+          "check_d30_on": {
+            "default": false,
+            "title": "Check D30 On",
+            "type": "boolean"
+          },
+          "check_items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VisitCheckKey"
+            },
+            "title": "Check Items",
+            "type": "array"
+          },
+          "days_mode": {
+            "$ref": "#/components/schemas/SetDaysMode"
+          },
+          "days_per_pack": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Per Pack"
+          },
+          "disease": {
+            "$ref": "#/components/schemas/SetDisease"
+          },
+          "drugs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SetDrug"
+            },
+            "title": "Drugs",
+            "type": "array"
+          },
+          "emr_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emr Code"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/SetPhase"
+          },
+          "prescription_set_id": {
+            "title": "Prescription Set Id",
+            "type": "integer"
+          },
+          "revisit_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revisit Note"
+          },
+          "run_out_before_days": {
+            "default": 3,
+            "title": "Run Out Before Days",
+            "type": "integer"
+          },
+          "run_out_on": {
+            "default": true,
+            "title": "Run Out On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "prescription_set_id",
+          "name",
+          "disease",
+          "phase",
+          "days_mode"
+        ],
+        "title": "PrescriptionSetDetail",
+        "type": "object"
+      },
+      "PrescriptionSetResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "check_items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VisitCheckKey"
+            },
+            "title": "Check Items",
+            "type": "array"
+          },
+          "days_mode": {
+            "$ref": "#/components/schemas/SetDaysMode",
+            "default": "DAYS"
+          },
+          "days_per_pack": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Per Pack"
+          },
+          "disease": {
+            "$ref": "#/components/schemas/SetDisease",
+            "default": "ENDOMETRIOSIS"
+          },
+          "drugs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SetDrug"
+            },
+            "title": "Drugs",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prescription_set_id": {
+            "title": "Prescription Set Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prescription_set_id",
+          "name"
+        ],
+        "title": "PrescriptionSetResponse",
+        "type": "object"
+      },
+      "PrescriptionSetSaveRequest": {
+        "additionalProperties": false,
+        "description": "설정 화면이 보내는 한 판.\n\n**통째로 받는다.** 약을 하나 지우고 확인 항목을 하나 켜는 것이 한 번의\n「저장」인데, 조각으로 받으면 중간에 끊겼을 때 반쪽이 남는다.",
+        "properties": {
+          "check_d15_on": {
+            "default": true,
+            "title": "Check D15 On",
+            "type": "boolean"
+          },
+          "check_d30_on": {
+            "default": false,
+            "title": "Check D30 On",
+            "type": "boolean"
+          },
+          "check_items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VisitCheckKey"
+            },
+            "title": "Check Items",
+            "type": "array"
+          },
+          "days_mode": {
+            "$ref": "#/components/schemas/SetDaysMode"
+          },
+          "days_per_pack": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Per Pack"
+          },
+          "disease": {
+            "$ref": "#/components/schemas/SetDisease"
+          },
+          "drugs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SetDrug"
+            },
+            "title": "Drugs",
+            "type": "array"
+          },
+          "emr_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emr Code"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/SetPhase"
+          },
+          "revisit_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revisit Note"
+          },
+          "run_out_before_days": {
+            "default": 3,
+            "title": "Run Out Before Days",
+            "type": "integer"
+          },
+          "run_out_on": {
+            "default": true,
+            "title": "Run Out On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "disease",
+          "phase",
+          "days_mode"
+        ],
+        "title": "PrescriptionSetSaveRequest",
+        "type": "object"
+      },
+      "ReturnRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReturnRequest",
+        "type": "object"
+      },
+      "ScheduledMessage": {
+        "additionalProperties": false,
+        "description": "환자에게 나갈 문자 한 통 — 와이어프레임 D1-6 「발송 · 예정」.\n\n**한 통이 한 줄이다.** 다섯 통 중 어느 것이든 실패할 수 있고, 실패한\n것만 고쳐 다시 보낸다.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "hold_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Reason"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "status",
+          "at"
+        ],
+        "title": "ScheduledMessage",
+        "type": "object"
+      },
+      "ScheduledMessageCounts": {
+        "description": "화면 위의 칩과 아래 요약 줄이 같은 값을 쓰게 한다.\n\n**`total` 과 `window` 는 세는 범위가 다르다.** 위는 창과 무관한 전부이고\n아래는 고른 기간 안의 예정이다 — 원문의 「전체 42」와 「이번 주 18」이\n그 둘이다. 한 이름으로 뭉치면 화면이 42 를 「이번 주」라고 말하게 된다.",
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "held": {
+            "title": "Held",
+            "type": "integer"
+          },
+          "today": {
+            "title": "Today",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "window": {
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "failed",
+          "held",
+          "today",
+          "window"
+        ],
+        "title": "ScheduledMessageCounts",
+        "type": "object"
+      },
+      "ScheduledMessageItem": {
+        "description": "표 한 줄 — 예정 시각 · 환자 · 식별정보 · 세트명 · 종류 · 상태.",
+        "properties": {
+          "age": {
+            "title": "Age",
+            "type": "integer"
+          },
+          "birth_date": {
+            "format": "date",
+            "title": "Birth Date",
+            "type": "string"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuideMessageFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gender": {
+            "$ref": "#/components/schemas/PatientGender"
+          },
+          "guide_message_id": {
+            "title": "Guide Message Id",
+            "type": "integer"
+          },
+          "hold_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuideMessageHold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hospital_patient_no": {
+            "title": "Hospital Patient No",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GuideMessageKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
+          },
+          "prescription_set": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prescription Set"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuideMessageStatus"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "guide_message_id",
+          "visit_id",
+          "patient_id",
+          "scheduled_at",
+          "kind",
+          "status",
+          "hold_reason",
+          "failure_code",
+          "name",
+          "hospital_patient_no",
+          "gender",
+          "birth_date",
+          "age",
+          "prescription_set"
+        ],
+        "title": "ScheduledMessageItem",
+        "type": "object"
+      },
+      "ScheduledMessageListResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ScheduledMessageCounts"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledMessageItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "timezone": {
+            "default": "Asia/Seoul",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "days",
+          "counts",
+          "items",
+          "truncated"
+        ],
+        "title": "ScheduledMessageListResponse",
+        "type": "object"
+      },
+      "SectionEditRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "SectionEditRequest",
+        "type": "object"
+      },
+      "SectionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "edited": {
+            "title": "Edited",
+            "type": "boolean"
+          },
+          "key": {
+            "$ref": "#/components/schemas/GuideSectionKey"
+          },
+          "locked": {
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "warn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warn"
+          }
+        },
+        "required": [
+          "key",
+          "body",
+          "edited",
+          "locked"
+        ],
+        "title": "SectionResponse",
+        "type": "object"
+      },
+      "SentMessageCounts": {
+        "description": "원문의 칩 넷 — 「전체 210 · ⚠ 실패 1 · 미열람 34 · 열람 175」.\n\n**열람과 미열람은 나간 것 중에서만 센다.** 못 나간 문자에 열람을 묻는 것은\n뜻이 없다. 원문의 수가 그렇게 맞는다 — 175 + 34 = 209 = 210 − 1.",
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unviewed": {
+            "title": "Unviewed",
+            "type": "integer"
+          },
+          "viewed": {
+            "title": "Viewed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "failed",
+          "viewed",
+          "unviewed"
+        ],
+        "title": "SentMessageCounts",
+        "type": "object"
+      },
+      "SentMessageItem": {
+        "description": "발송 이력 한 줄 — 와이어프레임 S2-4.\n\n**`happened_at` 은 `sent_at` 이 있으면 그것, 없으면 `scheduled_at` 이다.**\n못 나간 줄에는 보낸 시각이 없는데, 원문은 실패 줄에도 시각을 적는다\n(「08-11 10:06 · ⚠ 발송 실패」) — 「언제 일이 있었나」를 묻는 칸이다.",
+        "properties": {
+          "age": {
+            "title": "Age",
+            "type": "integer"
+          },
+          "birth_date": {
+            "format": "date",
+            "title": "Birth Date",
+            "type": "string"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuideMessageFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gender": {
+            "$ref": "#/components/schemas/PatientGender"
+          },
+          "guide_message_id": {
+            "title": "Guide Message Id",
+            "type": "integer"
+          },
+          "happened_at": {
+            "format": "date-time",
+            "title": "Happened At",
+            "type": "string"
+          },
+          "hospital_patient_no": {
+            "title": "Hospital Patient No",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GuideMessageKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
+          },
+          "prescription_set": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prescription Set"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuideMessageStatus"
+          },
+          "viewed": {
+            "title": "Viewed",
+            "type": "boolean"
+          },
+          "viewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewed At"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "guide_message_id",
+          "visit_id",
+          "patient_id",
+          "happened_at",
+          "kind",
+          "status",
+          "failure_code",
+          "name",
+          "hospital_patient_no",
+          "gender",
+          "birth_date",
+          "age",
+          "prescription_set",
+          "viewed",
+          "viewed_at"
+        ],
+        "title": "SentMessageItem",
+        "type": "object"
+      },
+      "SentMessageListResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/SentMessageCounts"
+          },
+          "from_date": {
+            "format": "date",
+            "title": "From Date",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SentMessageItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "timezone": {
+            "default": "Asia/Seoul",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to_date": {
+            "format": "date",
+            "title": "To Date",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date",
+          "counts",
+          "items",
+          "truncated"
+        ],
+        "title": "SentMessageListResponse",
+        "type": "object"
+      },
+      "SetDaysMode": {
+        "description": "EMR 「총투」 칸이 무엇을 뜻하나 — 와이어프레임 D2-3 ★.\n\n의원마다 다르다. 「3」이 3통일 수도 3일일 수도 있는데, **소진 예정일과 발송\n시각이 이 값으로 셈해진다** — 틀리면 문자가 엉뚱한 날 간다.",
+        "enum": [
+          "PACK",
+          "DAYS"
+        ],
+        "title": "SetDaysMode",
+        "type": "string"
+      },
+      "SetDisease": {
+        "description": "이 처방이 어느 병에 쓰이나 — 와이어프레임 D2-3 「질환」.\n\n이 의원이 보는 둘이다. 판독 확인 화면의 진단 고르개와 같은 어휘를 쓴다 —\n갈리면 「가장 유사한 처방 세트」를 찾을 때 못 맞춘다.",
+        "enum": [
+          "ENDOMETRIOSIS",
+          "PCOS"
+        ],
+        "title": "SetDisease",
+        "type": "string"
+      },
+      "SetDrug": {
+        "additionalProperties": false,
+        "description": "처방 세트에 든 약 하나 — 와이어프레임 D2-3 「처방 약」.",
+        "properties": {
+          "frequency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SetDrug",
+        "type": "object"
+      },
+      "SetPhase": {
+        "description": "언제 쓰는 처방인가 — 와이어프레임 D2-3 「적용 시점」.\n\n같은 약이라도 처음 내는 것과 계속 내는 것은 안내가 다르다. 「비잔 (처음)」과\n「비잔 (계속)」이 따로 있는 이유다.",
+        "enum": [
+          "FIRST",
+          "CONTINUE",
+          "REST"
+        ],
+        "title": "SetPhase",
+        "type": "string"
+      },
+      "StaffLoginRequest": {
+        "description": "계약 4절 — `{ \"login_id\": \"staff01\", \"password\": \"…\" }`\n\n`login_id` 규칙은 `^[a-z0-9]{4,}$` 이지만 **로그인에서는 검사하지 않는다.**\n형식으로 걸러 422 를 주면, 규칙에 안 맞는 문자열이 「없는 아이디」와 다른\n답을 받아 계정 존재 여부를 흘린다. 형식 검사는 계정을 만들 때 한다.",
+        "properties": {
+          "login_id": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Login Id",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "login_id",
+          "password"
+        ],
+        "title": "StaffLoginRequest",
+        "type": "object"
+      },
+      "StaffLoginResponse": {
+        "description": "본문에는 액세스 토큰만 온다. 리프레시는 HttpOnly 쿠키로만 내려간다.",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "access_token",
+          "must_change_password"
+        ],
+        "title": "StaffLoginResponse",
+        "type": "object"
+      },
+      "StaffMeResponse": {
+        "description": "세션 복원과 화면 분기의 근거. 새로고침할 때마다 부른다(계약 4절).\n\n`roles` 로 FE 가 초기 화면(`S1`/`D1`/`A1`)과 어드민 메뉴 노출을 정한다.\n**노출 여부는 편의일 뿐이고 실제 차단은 서버가 한다**(KEY-9).",
+        "properties": {
+          "clinic_name": {
+            "title": "Clinic Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "login_id": {
+            "title": "Login Id",
+            "type": "string"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "login_id",
+          "roles",
+          "must_change_password",
+          "clinic_name"
+        ],
+        "title": "StaffMeResponse",
+        "type": "object"
+      },
+      "TimelineEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          }
+        },
+        "required": [
+          "at",
+          "kind"
+        ],
+        "title": "TimelineEntry",
+        "type": "object"
+      },
+      "TimelineResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "messages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ScheduledMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "visit_id",
+          "entries"
+        ],
+        "title": "TimelineResponse",
+        "type": "object"
+      },
+      "TokenRefreshResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token"
+        ],
+        "title": "TokenRefreshResponse",
+        "type": "object"
+      },
+      "UpdateOcrFieldRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "base_version": {
+            "minimum": 1.0,
+            "title": "Base Version",
+            "type": "integer"
+          },
+          "candidate_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Id"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "corrected_value": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected Value"
+          }
+        },
+        "required": [
+          "base_version"
+        ],
+        "title": "UpdateOcrFieldRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VisitCheckKey": {
+        "description": "확인 항목 — 와이어프레임 S1-6 「확인 항목 · 처방별」.\n\n처방을 내기 전에 스탭이 환자에게 여쭙는 것들이다. 비잔이면 우울증 병력을\n묻고, 다른 처방이면 다른 것을 묻는다 — **처방별로 달라지는 것이 맞지만**,\n무엇이 어느 처방에 붙는지를 정하는 자리(D2-3 처방 세트)가 아직 없다.\n그때까지는 다섯을 다 여쭙는다.\n\n**값을 열거로 못박는다.** 자유 문자열이면 화면 문구가 바뀔 때마다 지난\n진료의 답이 어느 질문의 답이었는지 알 수 없게 된다 — 「우울증 병력」이\n「우울증 과거력」으로 바뀌면 옛 행이 미아가 된다.",
+        "enum": [
+          "DEPRESSION",
+          "HYPERTENSION",
+          "OSTEOPOROSIS",
+          "DIABETES",
+          "PREGNANCY_PLAN"
+        ],
+        "title": "VisitCheckKey",
+        "type": "string"
+      },
+      "VisitCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "department_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Id"
+          },
+          "doctor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doctor Id"
+          },
+          "doctor_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doctor Note"
+          },
+          "planned_stop": {
+            "default": false,
+            "title": "Planned Stop",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VisitStatus",
+            "default": "COMPLETED"
+          },
+          "visit_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Summary"
+          },
+          "visited_at": {
+            "format": "date-time",
+            "title": "Visited At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visited_at"
+        ],
+        "title": "VisitCreateRequest",
+        "type": "object"
+      },
+      "VisitListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VisitResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPage"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ],
+        "title": "VisitListResponse",
+        "type": "object"
+      },
+      "VisitResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "doctor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DoctorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doctor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doctor Id"
+          },
+          "doctor_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doctor Note"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
+          },
+          "planned_stop": {
+            "title": "Planned Stop",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VisitStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          },
+          "visit_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Summary"
+          },
+          "visited_at": {
+            "format": "date-time",
+            "title": "Visited At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visit_id",
+          "patient_id",
+          "doctor_id",
+          "department",
+          "visited_at",
+          "visit_summary",
+          "doctor_note",
+          "status",
+          "planned_stop",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "VisitResponse",
+        "type": "object"
+      },
+      "VisitStatus": {
+        "enum": [
+          "SCHEDULED",
+          "COMPLETED",
+          "CANCELED"
+        ],
+        "title": "VisitStatus",
+        "type": "string"
+      },
+      "VisitUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "department_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Id"
+          },
+          "doctor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doctor Id"
+          },
+          "doctor_note": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doctor Note"
+          },
+          "planned_stop": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Stop"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VisitStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visit_summary": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Summary"
+          },
+          "visited_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visited At"
+          }
+        },
+        "title": "VisitUpdateRequest",
+        "type": "object"
+      },
+      "WorkCategory": {
+        "description": "화면 탭. 계약 §3 의 다섯 값 그대로다.",
+        "enum": [
+          "IN_PROGRESS",
+          "NEEDS_ATTENTION",
+          "APPROVAL_REQUESTED",
+          "SEND_PENDING",
+          "COMPLETED"
+        ],
+        "title": "WorkCategory",
+        "type": "string"
+      },
+      "WriteOcrFieldRequest": {
+        "additionalProperties": false,
+        "description": "판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.\n\n**고치기(PATCH)와 다른 길이다.** 저쪽은 이미 있는 줄의 값을 바꾸는 것이고,\n이쪽은 **줄 자체가 없는** 것을 만든다. 판독이 못 찾은 항목은 레코드로 남지\n않아서, 화면이 값을 적어도 보낼 곳이 없었다 — 「저장 안 됨」이라 적어 두고\n새로고침하면 사라졌다.\n\n`value` 가 비면 **그 줄을 지운다**. 잘못 적은 것을 「빈 값으로 적었다」로\n남겨 두면, 안 적은 것과 구별이 안 된다.",
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "title": "WriteOcrFieldRequest",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "FastAPI",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffLoginResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "invalid_credentials",
+                  "fail_count": 2,
+                  "max_failures": 5,
+                  "message": "아이디 또는 비밀번호가 올바르지 않습니다."
+                }
+              }
+            },
+            "description": "아이디 또는 비밀번호가 올바르지 않습니다. 어느 쪽이 틀렸는지는 구분하지 않습니다."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "ACCOUNT_LOCKED",
+                  "message": "로그인 시도가 많아 잠시 잠겼습니다. 잠시 뒤 다시 시도해 주세요.",
+                  "retry_after_seconds": 600
+                }
+              }
+            },
+            "description": "5회 이상 실패해 잠겼습니다.",
+            "headers": {
+              "Retry-After": {
+                "description": "초 단위 재시도 대기 시간",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "액세스와 리프레시를 함께 무효로 만들고 쿠키를 지운다.\n\n`get_current_staff` 도 같은 의존성을 거치므로 토큰은 한 번만 검증된다.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "refresh_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "token_expired",
+                  "message": "세션이 만료되었습니다. 다시 로그인해 주세요."
+                }
+              }
+            },
+            "description": "인증이 없거나, 만료·로그아웃·폐기된 토큰입니다. 다시 로그인해야 합니다."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ],
+        "x-password-gate-exempt": true
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "세션 복원과 화면 분기의 근거. 새로고침할 때마다 부른다.",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffMeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "token_expired",
+                  "message": "세션이 만료되었습니다. 다시 로그인해 주세요."
+                }
+              }
+            },
+            "description": "인증이 없거나, 만료·로그아웃·폐기된 토큰입니다. 다시 로그인해야 합니다."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me",
+        "tags": [
+          "auth"
+        ],
+        "x-password-gate-exempt": true
+      }
+    },
+    "/api/v1/auth/password": {
+      "patch": {
+        "description": "성공하면 기존 세션을 전부 폐기한다 — 자기 것까지.\n\n화면은 로그인으로 돌아가 새 비밀번호로 다시 들어온다. 쿠키를 남겨 두면\n죽은 토큰을 계속 들고 다니게 된다.",
+        "operationId": "change_password_api_v1_auth_password_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "token_expired",
+                  "message": "세션이 만료되었습니다. 다시 로그인해 주세요."
+                }
+              }
+            },
+            "description": "인증이 없거나, 만료·로그아웃·폐기된 토큰입니다. 다시 로그인해야 합니다."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "invalid_request",
+                  "message": "지금 쓰시는 비밀번호를 함께 입력해 주세요."
+                }
+              }
+            },
+            "description": "현재 비밀번호가 빠졌거나 맞지 않거나, 새 비밀번호가 지금 것과 같습니다."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change Password",
+        "tags": [
+          "auth"
+        ],
+        "x-password-gate-exempt": true
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "요청 본문이 없다. 쿠키로 온 리프레시 토큰만 본다.",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "refresh_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenRefreshResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "token_expired",
+                  "message": "세션이 만료되었습니다. 다시 로그인해 주세요."
+                }
+              }
+            },
+            "description": "인증이 없거나, 만료·로그아웃·폐기된 토큰입니다. 다시 로그인해야 합니다."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/chatbot/responses": {
+      "post": {
+        "operationId": "create_chatbot_response_api_v1_chatbot_responses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatbotResponseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatbotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Chatbot Response",
+        "tags": [
+          "patient-chatbot"
+        ]
+      }
+    },
+    "/api/v1/checkins/{token}": {
+      "get": {
+        "operationId": "read_patient_checkin_api_v1_checkins__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInReadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Patient Checkin",
+        "tags": [
+          "patient-checkins"
+        ]
+      },
+      "post": {
+        "operationId": "save_patient_checkin_api_v1_checkins__token__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "patient_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patient Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInSaveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Patient Checkin",
+        "tags": [
+          "patient-checkins"
+        ]
+      }
+    },
+    "/api/v1/front-desk/visits": {
+      "get": {
+        "operationId": "list_front_desk_visits_api_v1_front_desk_visits_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "categories",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Categories"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontDeskVisitListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Front Desk Visits",
+        "tags": [
+          "front-desk"
+        ]
+      }
+    },
+    "/api/v1/front-desk/visits/{visit_id}/documents": {
+      "post": {
+        "operationId": "upload_documents_api_v1_front_desk_visits__visit_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_documents_api_v1_front_desk_visits__visit_id__documents_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload Documents",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/guide-copy": {
+      "get": {
+        "description": "안내문 — 와이어프레임 D2-1 · D2-2.\n\n**원본은 손대지 않는다.** 이 응답의 `origin` 은 승인된 자료\n(`drug_caution_content`)이고, `body` 는 그 위에 덧씌운 표현이다.",
+        "operationId": "list_guide_copy_api_v1_guide_copy_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "doctor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Doctor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideCopyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Guide Copy",
+        "tags": [
+          "guide-copy"
+        ]
+      }
+    },
+    "/api/v1/guide-copy/{prescription_set_id}/review": {
+      "post": {
+        "description": "원문 「확인 완료 → 다음 약으로 · 5장이면 끝난다」.",
+        "operationId": "review_guide_copy_api_v1_guide_copy__prescription_set_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prescription_set_id",
+            "required": true,
+            "schema": {
+              "title": "Prescription Set Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideCopyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Review Guide Copy",
+        "tags": [
+          "guide-copy"
+        ]
+      }
+    },
+    "/api/v1/guide-copy/{prescription_set_id}/{section_key}": {
+      "delete": {
+        "description": "원문 「원본으로 되돌리기 → 덮어쓴 것을 지우고 원본으로 되돌린다」.",
+        "operationId": "revert_guide_copy_api_v1_guide_copy__prescription_set_id___section_key__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prescription_set_id",
+            "required": true,
+            "schema": {
+              "title": "Prescription Set Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "section_key",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CautionSectionKey"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideCopyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revert Guide Copy",
+        "tags": [
+          "guide-copy"
+        ]
+      },
+      "put": {
+        "description": "원문 「저장 → D2-1 로 · 그 자리에 원장님 문구가 들어간다」.",
+        "operationId": "save_guide_copy_api_v1_guide_copy__prescription_set_id___section_key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prescription_set_id",
+            "required": true,
+            "schema": {
+              "title": "Prescription Set Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "section_key",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CautionSectionKey"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuideCopySaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideCopyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Guide Copy",
+        "tags": [
+          "guide-copy"
+        ]
+      }
+    },
+    "/api/v1/guides/{token}": {
+      "get": {
+        "operationId": "read_patient_guide_api_v1_guides__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientGuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Patient Guide",
+        "tags": [
+          "patient-guides"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_check_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "헬스체크",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/lab-baselines": {
+      "get": {
+        "description": "검사 기준선 — 와이어프레임 D2-4.\n\n**보는 것은 스탭도, 고치는 것은 의사만이다.** 판독 결과 확인 화면이 이\n목록으로 항목을 세우므로 스탭도 무엇이 뜰지 알아야 한다.",
+        "operationId": "list_lab_baselines_api_v1_lab_baselines_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "doctor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Doctor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabBaselineListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Lab Baselines",
+        "tags": [
+          "lab-baselines"
+        ]
+      },
+      "put": {
+        "description": "**한 판 통째로 저장한다** — 줄마다 번호를 주고받으면 지운 줄을 놓친다.",
+        "operationId": "save_lab_baselines_api_v1_lab_baselines_put",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "doctor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Doctor Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabBaselineSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabBaselineListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Lab Baselines",
+        "tags": [
+          "lab-baselines"
+        ]
+      }
+    },
+    "/api/v1/message-templates": {
+      "get": {
+        "description": "문자 문구 — 와이어프레임 D2-5.\n\n**보는 것은 스탭도, 고치는 것은 의사만이다.** 원문: 「수정은 의사 계정만\n— 문자도 환자에게 가는 안내다 · 스탭은 열람」.",
+        "operationId": "list_message_templates_api_v1_message_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageTemplateListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Message Templates",
+        "tags": [
+          "message-templates"
+        ]
+      }
+    },
+    "/api/v1/message-templates/{kind}": {
+      "delete": {
+        "description": "원문 「원본으로 되돌리기」 — **줄을 지운다.**",
+        "operationId": "reset_message_template_api_v1_message_templates__kind__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MessageTemplateKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageTemplateListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset Message Template",
+        "tags": [
+          "message-templates"
+        ]
+      },
+      "put": {
+        "description": "원문: 「저장 → 다음 발송부터 적용」. 이미 예약된 문자도 그 문구로 나간다 —\n`GuideMessage` 가 본문을 미리 굳혀 두지 않기 때문이다.",
+        "operationId": "save_message_template_api_v1_message_templates__kind__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MessageTemplateKind"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageTemplateSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageTemplateListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Message Template",
+        "tags": [
+          "message-templates"
+        ]
+      }
+    },
+    "/api/v1/messages/history": {
+      "get": {
+        "description": "발송 이력 — 와이어프레임 S2-4.\n\n기간의 **시작과 끝**을 받는다. 발송 예정(S2-3)의 「앞으로 며칠」과 다른\n까닭은 묻는 것이 다르기 때문이다 — 저쪽은 앞일이고 이쪽은 지난 일이다.",
+        "operationId": "list_sent_messages_api_v1_messages_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "To",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SentMessageListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Sent Messages",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/messages/history.csv": {
+      "get": {
+        "description": "CSV 내려받기 — 와이어프레임 S2-4 하단.\n\n**화면과 달리 자르지 않는다.** 표는 「일부 행만 표시」한다고 원문이 적어\n두었고, 이 받기가 그 나머지를 가져가는 자리다 — 여기서도 자르면 둘 다\n일부인 셈이 된다.\n\n**환자 이름 · 차트번호 · 생년월일이 파일로 나간다.** 화면에 보이는 것과\n같은 값이지만 나가는 방식이 다르므로, 누가 받을 수 있는지는 의원이 정할\n일이다. 지금은 환자 정보를 읽을 수 있는 사람과 같은 권한으로 둔다.",
+        "operationId": "download_sent_messages_api_v1_messages_history_csv_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "To",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Sent Messages",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/messages/scheduled": {
+      "get": {
+        "description": "발송 예정 — 와이어프레임 S2-3.\n\n**스탭도 본다.** 이 화면이 잡으라는 것(잘못된 번호 · 문자 잔량)이 스탭이\n손댈 일이라, 의사만 여는 자리로 두면 화면의 뜻이 없어진다.",
+        "operationId": "list_scheduled_messages_api_v1_messages_scheduled_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledMessageListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Scheduled Messages",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/ocr/fields/{ocr_field_id}": {
+      "patch": {
+        "operationId": "update_ocr_field_api_v1_ocr_fields__ocr_field_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ocr_field_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Ocr Field Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOcrFieldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrFieldResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Ocr Field",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
+    "/api/v1/ocr/jobs/{ocr_job_id}": {
+      "get": {
+        "operationId": "get_ocr_status_api_v1_ocr_jobs__ocr_job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ocr_job_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Ocr Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ocr Status",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
+    "/api/v1/ocr/jobs/{ocr_job_id}/fields": {
+      "get": {
+        "operationId": "get_ocr_fields_api_v1_ocr_jobs__ocr_job_id__fields_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ocr_job_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Ocr Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "field_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Field Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OcrFieldResponse"
+                  },
+                  "title": "Response Get Ocr Fields Api V1 Ocr Jobs  Ocr Job Id  Fields Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ocr Fields",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
+    "/api/v1/ocr/jobs/{ocr_job_id}/result": {
+      "get": {
+        "operationId": "get_ocr_result_api_v1_ocr_jobs__ocr_job_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ocr_job_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Ocr Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ocr Result",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
+    "/api/v1/patient-auth/otp/issue": {
+      "post": {
+        "operationId": "issue_patient_otp_api_v1_patient_auth_otp_issue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientOtpIssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientOtpIssueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Patient Otp",
+        "tags": [
+          "patient-auth"
+        ]
+      }
+    },
+    "/api/v1/patient-auth/otp/session": {
+      "delete": {
+        "operationId": "revoke_patient_session_api_v1_patient_auth_otp_session_delete",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "patient_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patient Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Patient Session",
+        "tags": [
+          "patient-auth"
+        ]
+      }
+    },
+    "/api/v1/patient-auth/otp/verify": {
+      "post": {
+        "operationId": "verify_patient_otp_api_v1_patient_auth_otp_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientOtpVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientOtpVerifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Patient Otp",
+        "tags": [
+          "patient-auth"
+        ]
+      }
+    },
+    "/api/v1/patients": {
+      "get": {
+        "operationId": "list_patients_api_v1_patients_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PatientCategory",
+              "default": "ALL"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Patients",
+        "tags": [
+          "patients"
+        ]
+      },
+      "post": {
+        "operationId": "create_patient_api_v1_patients_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Patient",
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v1/patients/{patient_id}": {
+      "get": {
+        "operationId": "get_patient_api_v1_patients__patient_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Patient",
+        "tags": [
+          "patients"
+        ]
+      },
+      "patch": {
+        "operationId": "update_patient_api_v1_patients__patient_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Patient",
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v1/patients/{patient_id}/history": {
+      "get": {
+        "description": "환자 이력 — 와이어프레임 S2-2.\n\n**스탭 · 의사 공통이다.** 원문 주석이 층을 못박는다 — 관리에 필요한\n만큼(발송 · 열람 · 응답)은 여기서 둘 다 보고, 감사 수준(누가 열어봤나 ·\n토큰 · 버전 이력)은 어드민 A1-7 로 관리자에게만 간다.",
+        "operationId": "read_patient_history_api_v1_patients__patient_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Patient History",
+        "tags": [
+          "patients"
+        ]
+      }
+    },
+    "/api/v1/patients/{patient_id}/visits": {
+      "get": {
+        "operationId": "list_visits_api_v1_patients__patient_id__visits_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Visits",
+        "tags": [
+          "visits"
+        ]
+      },
+      "post": {
+        "operationId": "create_visit_api_v1_patients__patient_id__visits_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "title": "Patient Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Visit",
+        "tags": [
+          "visits"
+        ]
+      }
+    },
+    "/api/v1/prescription-sets": {
+      "get": {
+        "description": "약속처방 목록을 이름순으로 준다.\n\n**병원별로 가르지 않는다.** `prescription_set` 표에 `hospital_id` 가 없다 —\n지금은 8종이 전 병원 공통이다. 병원마다 다르게 두려면 표에 칸을 더하고\n여기서 걸러야 한다. 그때까지 이 주석이 그 사실을 붙잡아 둔다.\n\n로그인은 필요하다. 처방 세트 이름 자체가 이 의원이 무엇을 다루는지를\n말해 주고, 그건 밖에 흘릴 것이 아니다.",
+        "operationId": "list_prescription_sets_api_v1_prescription_sets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PrescriptionSetResponse"
+                  },
+                  "title": "Response List Prescription Sets Api V1 Prescription Sets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Prescription Sets",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/prescription-sets/{prescription_set_id}": {
+      "get": {
+        "description": "설정 화면(D2-3)이 읽는 한 세트.\n\n**보는 것은 스탭도 된다.** 어느 처방에 무엇이 딸려 있는지는 스탭이 판독\n화면에서 고를 때 알아야 하는 것이고, 고치는 것만 의사다.",
+        "operationId": "read_prescription_set_api_v1_prescription_sets__prescription_set_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prescription_set_id",
+            "required": true,
+            "schema": {
+              "title": "Prescription Set Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrescriptionSetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Prescription Set",
+        "tags": [
+          "catalog"
+        ]
+      },
+      "put": {
+        "description": "설정을 저장한다 — **의사만**.\n\n와이어프레임 D2-2 가 「의사 계정만 · 스탭은 볼 수만 있다」로 못박는다.\n이 값이 안내문과 문자 발송일을 정하므로 의료 판단에 걸린다.\n\n**한 판을 통째로 받는다.** 약을 지우고 확인 항목을 켜는 것이 한 번의\n「저장」인데, 조각으로 받으면 중간에 끊겼을 때 반쪽이 남는다.",
+        "operationId": "save_prescription_set_api_v1_prescription_sets__prescription_set_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prescription_set_id",
+            "required": true,
+            "schema": {
+              "title": "Prescription Set Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrescriptionSetSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrescriptionSetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Prescription Set",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}": {
+      "get": {
+        "operationId": "get_visit_api_v1_visits__visit_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Visit",
+        "tags": [
+          "visits"
+        ]
+      },
+      "patch": {
+        "operationId": "update_visit_api_v1_visits__visit_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Visit",
+        "tags": [
+          "visits"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/check-items": {
+      "get": {
+        "description": "확인 항목의 답 — 와이어프레임 S1-6.\n\n물어볼 항목 **전부**를 준다. 아직 안 여쭌 것은 `checked` 가 `null` 이다 —\n답이 있는 것만 주면 화면이 나머지를 스스로 세워야 하고, 그러면 항목 목록이\n두 곳에 생겨 한쪽만 바뀐다.",
+        "operationId": "read_check_items_api_v1_visits__visit_id__check_items_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckAnswerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Check Items",
+        "tags": [
+          "visits"
+        ]
+      },
+      "put": {
+        "description": "확인 항목을 저장한다 — **한 판을 통째로**.\n\n항목 하나씩 받으면 중간에 끊겼을 때 반쪽 상태가 남고, 화면은 그것을\n「안 여쭌 것」과 구별하지 못한다.",
+        "operationId": "save_check_items_api_v1_visits__visit_id__check_items_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckAnswerSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckAnswerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Check Items",
+        "tags": [
+          "visits"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/checkin": {
+      "get": {
+        "operationId": "read_hospital_checkin_api_v1_visits__visit_id__checkin_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HospitalCheckInResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Hospital Checkin",
+        "tags": [
+          "patient-links"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide": {
+      "get": {
+        "operationId": "read_guide_api_v1_visits__visit_id__guide_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/approve": {
+      "post": {
+        "operationId": "approve_guide_api_v1_visits__visit_id__guide_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/generate": {
+      "post": {
+        "operationId": "generate_guide_api_v1_visits__visit_id__guide_generate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Generate Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/link": {
+      "post": {
+        "operationId": "issue_patient_guide_link_api_v1_visits__visit_id__guide_link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientLinkIssueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Issue Patient Guide Link",
+        "tags": [
+          "patient-links"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/messages": {
+      "get": {
+        "description": "이 진료의 문자 회차 설정 — 와이어프레임 S1-14.\n\n한 번도 안 만진 진료도 기본값으로 답한다. 「설정이 없다」와 「기본값이다」를\n화면이 가를 이유가 없다.",
+        "operationId": "read_message_plan_api_v1_visits__visit_id__guide_messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePlanResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Message Plan",
+        "tags": [
+          "guides"
+        ]
+      },
+      "put": {
+        "description": "문자 설정을 저장한다 — 「이 환자만 적용」.\n\n**한 판을 통째로 받는다.** 회차 하나씩 PATCH 로 받으면, 중간에 끊겼을 때\n「보름 뒤는 껐는데 한 달 뒤는 안 켜진」 반쪽 상태가 남는다.",
+        "operationId": "save_message_plan_api_v1_visits__visit_id__guide_messages_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePlanResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Message Plan",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/return": {
+      "post": {
+        "operationId": "return_guide_api_v1_visits__visit_id__guide_return_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Return Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/sections/{key}": {
+      "patch": {
+        "operationId": "edit_section_api_v1_visits__visit_id__guide_sections__key__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionEditRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Edit Section",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/submit": {
+      "post": {
+        "description": "스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11.\n\n이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다.\n승인은 여전히 의사만 한다 (`/guide/approve`).",
+        "operationId": "submit_guide_api_v1_visits__visit_id__guide_submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/unapprove": {
+      "post": {
+        "description": "승인을 거둔다 — 승인했는데 잘못된 것을 발견했을 때.\n\n이미 나간 문자가 있으면 거두지 않는다. 예약된 문자는 꺼진다.",
+        "operationId": "unapprove_guide_api_v1_visits__visit_id__guide_unapprove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unapprove Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/ocr-fields/{field_type}": {
+      "put": {
+        "description": "판독이 못 읽은 값을 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.\n\n**고치기(PATCH)와 다른 길이다.** 저쪽은 있는 줄의 값을 바꾸고, 이쪽은 줄\n자체가 없는 것을 만든다. 그래서 항목 이름(`field_type`)으로 짚는다 — 줄이\n없으면 가리킬 번호도 없기 때문이다.\n\n비우면 그 줄을 지우고 `null` 을 준다.",
+        "operationId": "write_ocr_field_api_v1_visits__visit_id__ocr_fields__field_type__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field_type",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Field Type",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteOcrFieldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OcrFieldResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Write Ocr Field Api V1 Visits  Visit Id  Ocr Fields  Field Type  Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Write Ocr Field",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/ocr-job": {
+      "get": {
+        "operationId": "get_visit_ocr_job_api_v1_visits__visit_id__ocr_job_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Visit Ocr Job",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/ocr-jobs": {
+      "get": {
+        "operationId": "get_visit_ocr_jobs_api_v1_visits__visit_id__ocr_jobs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OcrJobByDocumentResponse"
+                  },
+                  "title": "Response Get Visit Ocr Jobs Api V1 Visits  Visit Id  Ocr Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Visit Ocr Jobs",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/timeline": {
+      "get": {
+        "description": "이 진료에 무슨 일이 있었는지 시간 순으로 준다.\n\n**스탭도 본다.** 무엇이 밀려 있는지 알아야 하는 것은 스탭도 같다\n(D1-6 캡션 — 「스탭도 이 화면을 볼 수 있다」).",
+        "operationId": "read_timeline_api_v1_visits__visit_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Timeline",
+        "tags": [
+          "timeline"
+        ]
+      }
+    }
+  }
+}
