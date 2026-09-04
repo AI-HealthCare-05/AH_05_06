@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>진료 안내 · 케어온</title>
   <link rel="stylesheet" href="/patient_wireframe/css/tokens.css" />
-  <link rel="stylesheet" href="/patient_wireframe/css/guide.css?v=9" />
+  <link rel="stylesheet" href="/patient_wireframe/css/guide.css?v=11" />
   <link rel="stylesheet" href="/patient_wireframe/css/chat.css?v=5" />
 </head>
 <body>
 
-<!-- 기존 다섯 탭 계약 중 P2~P5 네 탭은 최종 와이어프레임으로 연결하고,
-     P6 챗봇은 별도 실제 API 연결 전까지 실제 모드에서 숨긴다(KEY-241). -->
+<!-- 다섯 탭 계약: P2~P5 네 탭(복약·주의·생활·현황)은 patient_wireframe/js/guide.js 의
+     TABS 로 그리고, P6 챗봇은 별도 패널(chat.js)로 KEY-259 때 실연동됐다. -->
 <div class="app" id="app">
   <header class="header">
     <div class="header__top">
@@ -53,9 +53,9 @@
 <script src="/patient_wireframe/component/fab.js?v=9"></script>
 <script src="/patient_wireframe/component/sheet.js?v=3"></script>
 <script src="/patient_wireframe/component/guide-footer.js?v=9"></script>
-<script src="/patient_wireframe/js/guide-api.js?v=10"></script>
-<script src="/js/chatbot-api.js?v=6"></script>
-<script src="/patient_wireframe/js/guide.js?v=10"></script>
+<script src="/patient_wireframe/js/guide-api.js?v=12"></script>
+<script src="/js/chatbot-api.js?v=7"></script>
+<script src="/patient_wireframe/js/guide.js?v=12"></script>
 <script src="/patient_wireframe/js/chat.js?v=6"></script>
 </body>
 </html>

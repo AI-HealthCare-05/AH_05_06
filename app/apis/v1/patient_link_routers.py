@@ -2,7 +2,7 @@
 
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from app.dependencies.patient_auth import require_patient_session
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
@@ -170,6 +170,8 @@ def _patient_response(
         ],
         visit=data.visit_date.strftime("%Y.%m.%d"),
         clinic=data.clinic_name,
+        # 세션이 있어야만 이 라우트에 온다(KEY-178) — 뷰어는 항상 인증됐다.
+        patient_name=data.patient_name,
         disease=data.disease_name,
         stat=stat,
         guide=guide_detail,
@@ -191,6 +193,7 @@ async def _guide_data(
     response_model_exclude_none=True,
 )
 async def read_patient_guide(
+    response: Response,
     guide_data: Annotated[tuple[PatientGuideLink, GuideDocument, PatientGuideData], Depends(_guide_data)],
     # 링크 자체가 유효한지 위 _guide_data 에서 먼저 확인한다. 세션 체크를
     # 먼저 하면 만료·폐기된 링크도 401(세션 없음)로 가려져서 기존 410/404
@@ -198,6 +201,10 @@ async def read_patient_guide(
     _session: Annotated[None, Depends(require_patient_session)],
     usage: Annotated[PatientUsageService, Depends(_usage_service)],
 ) -> PatientGuideResponse:
+    # 세션이 있어야만 여기 온다(KEY-178) — 항상 인증된 뷰어라 이름을 늘
+    # 싣는다. 캐시에 남으면 세션 만료 뒤에도 재사용될 수 있어 매번
+    # no-store 로 답한다(기술 리드 리뷰, PR #211, KEY-268).
+    response.headers["Cache-Control"] = "no-store"
     link, guide, data = guide_data
     # 승인 확인을 통과한 뒤에 남긴다 (KEY-170).
     # 지금은 **같은 요청 안에서** 남기므로, 기록이 실패하면 열람도 실패한다.

@@ -1,0 +1,16 @@
+# Pilot 전용 오버레이 (KEY-264). docker-compose.prod.yml은 그대로 두고,
+# 배포할 때만 이 파일을 같이 준다.
+#
+#   PILOT_ALLOW_MOCK_OTP=1 docker compose \
+#     -f infra/docker/docker-compose.prod.yml \
+#     -f infra/docker/docker-compose.pilot.yml \
+#     up -d --build fastapi
+#
+# PILOT_ALLOW_MOCK_OTP는 여기·서버 .env 어디에도 적어두지 않는다.
+# 배포 명령 앞에 그때그때 붙인다 — .env에 적으면 다음 배포부터 영구히 켜진다.
+
+services:
+  fastapi:
+    environment:
+      - PILOT_ALLOW_MOCK_OTP
+    command: ["uv", "run", "--no-sync", "python", "-m", "app.pilot_server", "--pilot-confirm-mock-otp"]

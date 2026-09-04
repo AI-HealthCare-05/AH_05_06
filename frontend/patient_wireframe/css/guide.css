@@ -30,7 +30,7 @@ body {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
-  top: 0;
+  top: var(--guide-mock-offset, 0px);
   z-index: 40;
 }
 .header__top {
@@ -84,15 +84,17 @@ body {
 }
 
 /* ── 탭 바 ─── */
+/* 탭이 네 개로 고정이라(현황·복약지도·주의사항·생활관리) 왼쪽에 몰지 않고
+   한 줄을 4등분해 각 칸을 채운다. 칸 안에서 글자는 가운데 정렬. */
 .tab-bar {
   display: flex;
-  overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .tab-bar::-webkit-scrollbar { display: none; }
 .tab-bar__btn {
-  flex: none;
+  flex: 1 1 0;
+  min-width: 0;
   text-align: center;
   font-family: var(--font);
   font-size: 15px;
@@ -101,7 +103,7 @@ body {
   border: 0;
   border-bottom: 2px solid transparent;
   min-height: 44px;
-  padding: 0 14px 8px;
+  padding: 0 4px 8px;
   white-space: nowrap;
   cursor: pointer;
   color: var(--tx-muted);
@@ -722,15 +724,16 @@ b { font-weight: 700; }
 
 /* ── 실제 API 로딩·빈 값·오류 상태 (KEY-241) ─── */
 .guide-mock-badge {
-  display: inline-flex;
-  width: fit-content;
-  margin: 0 0 8px;
-  padding: 3px 9px;
-  border-radius: var(--r-pill);
-  background: #fff3cd;
-  color: #6b4d00;
-  font-size: 12px;
+  position: fixed;
+  z-index: 10000;
+  inset: 0 0 auto;
+  padding: 8px 16px;
+  background: #7a2e00;
+  color: #fff;
+  text-align: center;
+  font-size: 14px;
   font-weight: 700;
+  pointer-events: none;
 }
 .guide-loading,
 .guide-empty,

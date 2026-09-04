@@ -762,7 +762,7 @@ PATCH /api/v1/ocr/fields/{ocr_field_id}
 
 #### 남은 몫
 
-- `PENDING_REPORT`를 **서버가 내려주는 것** — [KEY-134](https://leehee.atlassian.net/browse/KEY-134). 지금은 목업만 `pending_report`를 줍니다.
+- `PENDING_REPORT`를 **서버가 내려주는 것** — [KEY-134](https://leehee.atlassian.net/browse/KEY-134). 지금은 목업만 `is_pending_report`를 줍니다.
 - `field_status` **모델·마이그레이션·`PATCH` 구현** — 서버 몫.
 
 ### 권한·개인정보

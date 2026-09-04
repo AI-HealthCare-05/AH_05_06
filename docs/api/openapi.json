@@ -3186,6 +3186,17 @@
               }
             ]
           },
+          "patient_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patient Name"
+          },
           "sections": {
             "items": {
               "$ref": "#/components/schemas/PatientGuideSectionResponse"

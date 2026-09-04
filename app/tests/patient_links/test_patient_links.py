@@ -130,7 +130,18 @@ class TestIssueAndRead(PatientLinkTestCase):
         assert body["expires_at"] == expires_at
         assert body["sections"] == [{"key": "medication", "body": "합성 승인 복약 안내"}]
         serialized = read.text
-        for forbidden in ("합성 생성 원문", "내부 검수용 경고", "phone", "patient", "approved_by"):
+        # 인증 전(세션 쿠키 없음) 응답이라 이름도 없어야 한다. 이름은 KEY-268 에서
+        # OTP 인증한 뷰어에게만 실리므로 여기서는 환자 원본 식별자 전반을 막는다.
+        for forbidden in (
+            "합성 생성 원문",
+            "내부 검수용 경고",
+            "phone",
+            "patient_name",
+            "hospital_patient_no",
+            "birth_date",
+            "합성환자",
+            "approved_by",
+        ):
             assert forbidden not in serialized
 
     async def test_the_same_guide_does_not_silently_create_multiple_links(self) -> None:

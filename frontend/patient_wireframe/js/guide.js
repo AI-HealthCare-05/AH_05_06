@@ -122,16 +122,23 @@
 
   /* ── 헤더 메타 ─── */
   function fillHeader(d) {
-    /* 공개 응답에는 환자명이 없으므로 와이어프레임의 환자명 자리를 지어내지 않는다. */
-    var meta = [d.visit ? d.visit + ' 진료' : '승인된 진료 안내', d.clinic].filter(Boolean);
+    /* 이름은 서버가 OTP 인증한 뷰어에게만 넣어 준다(KEY-268). 없으면 진료일·의원명만. */
+    var meta = [d.patient || null, d.visit ? d.visit + ' 진료' : '승인된 진료 안내', d.clinic].filter(Boolean);
     document.getElementById('header-patient').textContent = meta.join(' · ');
   }
 
   function showMockBadge() {
-    if (!GUIDE_MOCK || document.getElementById('guide-mock-badge')) return;
-    var badge = text('div', 'guide-mock-badge', '개발용 목업 화면');
-    badge.id = 'guide-mock-badge';
-    document.querySelector('.header').appendChild(badge);
+    if (!GUIDE_MOCK || document.getElementById('mock-mode-banner')) return;
+    var badge = text('div', 'guide-mock-badge', '개발용 MOCK 모드 — 실제 서버 데이터가 아닙니다');
+    badge.id = 'mock-mode-banner';
+    badge.setAttribute('role', 'status');
+    document.body.prepend(badge);
+    /* fixed 배너가 sticky 헤더와 PDF 저장 버튼을 덮지 않도록 실제 높이만큼
+       본문을 내린다. 좁은 화면에서 문구가 두 줄이 되어도 고정값에 기대지 않는다. */
+    var badgeHeight = badge.getBoundingClientRect ? Math.ceil(badge.getBoundingClientRect().height) : 0;
+    var offset = badgeHeight || 36;
+    document.body.style.paddingTop = offset + 'px';
+    document.documentElement.style.setProperty('--guide-mock-offset', offset + 'px');
   }
 
   /* ════════════════════════

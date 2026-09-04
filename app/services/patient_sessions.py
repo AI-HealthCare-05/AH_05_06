@@ -72,18 +72,23 @@ class PatientSessionStore:
             raise _expired()
         return link_digest
 
+    async def _is_current(self, session_digest: str, link_digest: str) -> bool:
+        """`session_digest` 가 이 링크에 지금 살아 있는 세션인지만 본다 — 예외 없음."""
+        stored_link = await self.redis.get(self._session(session_digest))
+        if stored_link != link_digest:
+            return False
+        current_session = await self.redis.get(self._current(link_digest))
+        return current_session == session_digest
+
     async def check(self, raw_session: str | None, raw_link_token: str) -> int:
         """세션이 유효하면 남은 초를 반환하고, 만료·없음이면 PATIENT_SESSION_EXPIRED를 올린다."""
         if not raw_session:
             raise _expired()
         session_digest = digest_session_token(raw_session)
         link_digest = digest_link_token(raw_link_token)
-        session_key = self._session(session_digest)
-        stored_link = await self.redis.get(session_key)
-        current_session = await self.redis.get(self._current(link_digest))
-        if stored_link != link_digest or current_session != session_digest:
+        if not await self._is_current(session_digest, link_digest):
             raise _expired()
-        ttl: int = await self.redis.ttl(session_key)
+        ttl: int = await self.redis.ttl(self._session(session_digest))
         return max(0, ttl)
 
     async def revoke(self, raw_session: str | None) -> None:
