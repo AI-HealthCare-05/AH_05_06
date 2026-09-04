@@ -76,16 +76,22 @@ class TestAgainstTheRealSyntheticData:
             items_from_row(row["약"], row["용법"], row["처방일수"])
 
     def test_the_row_and_item_counts_are_what_we_measured(self) -> None:
-        """처방 99건 · 항목 103건. 숫자가 바뀌면 CSV 가 바뀐 것이다.
+        """처방 99건 · 항목 104건. 숫자가 바뀌면 CSV 가 바뀐 것이다.
 
         112 였다가 103 이 됐다 — 「비잔정 + 진통제」 9줄에서 **진통제를 뺐다**.
         팀 스펙(노션 「처방 세트 정의」)의 `SET-EMS-01` 처방이 「비잔 1개월」
         뿐이고, 「진통제」는 약명이 아니라 자리표시였다 (2026-09-04 권일준).
+
+        그리고 104 가 됐다 — `SYN-EMS-08` 한 줄에 **록소펜정을 되돌렸다.** 그
+        줄은 「세트에 없는 약」 시나리오(MED-01)의 유일한 근거 데이터인데,
+        진통제를 빼면서 시나리오까지 함께 사라졌다. 자리표시를 지운 것은 맞고
+        **시나리오를 지운 것은 틀렸다** — 실제 약명으로 되살렸다
+        (이희진 님 `#214` ②).
         """
         rows = [r for r in ROWS if r["약"].strip() and r["처방세트"].strip()]
         items = [i for r in rows for i in items_from_row(r["약"], r["용법"], r["처방일수"])]
         assert len(rows) == 99
-        assert len(items) == 103
+        assert len(items) == 104
 
     def test_exactly_the_as_needed_items_have_no_duration(self) -> None:
         """비어 있는 기간과 `필요시` 가 정확히 같은 집합이어야 한다.
