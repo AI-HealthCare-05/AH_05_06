@@ -1,4 +1,6 @@
 import asyncio
+import os
+import re
 from collections.abc import Generator
 from typing import Any
 from unittest.mock import Mock, patch
@@ -17,9 +19,26 @@ TEST_DB_LABEL = "models"
 TEST_DB_TZ = "Asia/Seoul"
 
 
+def _xdist_worker_index() -> int | None:
+    """pytest-xdist 워커 번호. xdist 없이 돌면 `None`(기존 동작 그대로).
+
+    `tortoise.contrib.test.initializer()/finalizer()`는 세션마다 고정된 DB
+    이름을 통째로 drop→재생성한다 — 워커마다 그대로 두면 서로 남의 스키마를
+    지운다. 실 Redis 를 쓰는 세션/로그인시도 검사들도 `staff_id`·`login_id`
+    같은 워커 무관 키를 쓰므로, DB 이름과 Redis 논리 DB를 같은 번호로 나눈다.
+    """
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    if not worker_id:
+        return None
+    match = re.search(r"\d+", worker_id)
+    return int(match.group()) if match else 0
+
+
 def get_test_db_config() -> dict[str, Any]:
+    worker_index = _xdist_worker_index()
+    db_name = "test" if worker_index is None else f"test_gw{worker_index}"
     tortoise_config = generate_config(
-        db_url=f"mysql://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/test",
+        db_url=f"mysql://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/{db_name}",
         app_modules={TEST_DB_LABEL: TORTOISE_APP_MODELS},
         connection_label=TEST_DB_LABEL,
         testing=True,
@@ -41,6 +60,12 @@ def get_test_db_config() -> dict[str, Any]:
 
 @pytest.fixture(scope="session", autouse=True)
 def initialize(request: FixtureRequest) -> Generator[None, None]:
+    worker_index = _xdist_worker_index()
+    if worker_index is not None:
+        # Redis 는 논리 DB가 16개(0~15)뿐이라 워커 수가 그보다 많아지면 겹친다 —
+        # `-n auto` 는 러너 코어 수만큼만 띄우므로 지금 CI 규모에서는 안전하다.
+        config.REDIS_DB = worker_index % 16
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     with patch("tortoise.contrib.test.getDBConfig", Mock(return_value=get_test_db_config())):
