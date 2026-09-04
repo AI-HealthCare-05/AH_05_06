@@ -17,8 +17,10 @@ from app.core.utils.security import hash_password
 from app.main import app
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: F401 (OcrResult used in test setup)
 from app.models.patients import Patient
+from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideSectionKey, GuideStatus, Visit
+from app.services import guide_defaults
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 from app.tests.ocr_fixture import complete_ocr
@@ -71,6 +73,25 @@ async def attach_confirmed_ocr(visit: Visit, staff_id: int) -> OcrField:
         confirmed_by=staff_id,
     )
     return await OcrField.get(ocr_field_id=done.field_id)
+
+
+async def attach_prescription(
+    visit: Visit,
+    items: list[tuple[str, str, int | None]],
+) -> Prescription:
+    """KEY-66 완료 뒤와 같은 구조화 처방을 진료에 연결한다."""
+    prescription = await Prescription.create(
+        visit=visit,
+        prescription_set="자궁내막증 · 비잔 (계속)",
+    )
+    for name, frequency, duration_days in items:
+        await PrescriptionItem.create(
+            prescription=prescription,
+            name=name,
+            frequency=frequency,
+            duration_days=duration_days,
+        )
+    return prescription
 
 
 class GenerateGuideTestCase(TestCase):
@@ -224,23 +245,59 @@ class TestGenerateCreatesStaffReviewGuide(GenerateGuideTestCase):
         assert sections[GuideSectionKey.LIFE]["locked"] is False
         assert sections[GuideSectionKey.MESSAGES]["locked"] is False
 
-    async def test_medication_body_includes_confirmed_field_value(self) -> None:
-        """확정 OCR 값(field_type: value)이 복약 안내 본문에 반영된다."""
+    async def test_medication_body_uses_structured_prescription(self) -> None:
+        """OCR 첫 필드가 아니라 구조화 처방의 약명·빈도·기간을 사용한다."""
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
         visit = await make_visit(clinic)
+        field = await attach_confirmed_ocr(visit, staff.staff_id)
+        await attach_prescription(visit, [("비잔정 2mg", "1일 1회", 84)])
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        medication = next(s for s in response.json()["sections"] if s["key"] == GuideSectionKey.MEDICATION)
+        assert "비잔정 2mg · 1일 1회 · 84일분" in medication["body"]
+        assert field.field_type not in medication["body"], "첫 OCR 필드를 처방처럼 표시하면 안 된다"
+        assert "[합성]" not in medication["body"]
+
+    async def test_multiple_medications_keep_their_own_duration(self) -> None:
+        """복수 약제의 용법·기간을 서로 섞지 않는다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff02", ["staff"])
+        visit = await make_visit(clinic, "SYN-GEN-MULTI")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+        await attach_prescription(
+            visit,
+            [
+                ("비잔정 2mg", "1일 1회", 84),
+                ("이부프로펜 400mg", "필요시", None),
+            ],
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        medication = next(s for s in response.json()["sections"] if s["key"] == GuideSectionKey.MEDICATION)
+        assert "1. 비잔정 2mg · 1일 1회 · 84일분" in medication["body"]
+        assert "2. 이부프로펜 400mg · 필요시" in medication["body"]
+        second_line = next(line for line in medication["body"].splitlines() if line.startswith("2."))
+        assert "84일분" not in second_line, "첫 약의 기간을 필요시 약에 복제하면 안 된다"
+
+    async def test_no_prescription_does_not_invent_medication_facts(self) -> None:
+        """구조화 처방이 없으면 OCR 값을 약 정보로 둔갑시키지 않는다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff03", ["staff"])
+        visit = await make_visit(clinic, "SYN-GEN-NO-RX")
         field = await attach_confirmed_ocr(visit, staff.staff_id)
 
         async with self.client() as client:
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
         medication = next(s for s in response.json()["sections"] if s["key"] == GuideSectionKey.MEDICATION)
-        # **픽스처가 넣은 값을 그대로 읽어 견준다.** 예전에는 `"PCOS"` 를 박아
-        # 뒀는데, 그러면 픽스처가 값을 바꾸는 순간 이 검사가 「안내가 깨졌다」로
-        # 잘못 운다. 재려는 것은 「확정된 값이 본문에 실린다」이지 그 값이
-        # 무엇인지가 아니다 (KEY-172).
-        assert field.field_type in medication["body"]
-        assert field.extracted_value in medication["body"]
+        assert medication["body"] == guide_defaults.MEDICATION
+        assert field.extracted_value not in medication["body"]
+        assert "[합성]" not in medication["body"]
 
 
 class TestGenerateDuplicateIsRefused(GenerateGuideTestCase):
