@@ -28,15 +28,14 @@ from tortoise.transactions import in_transaction
 from app.core.api_errors import ApiError
 from app.dependencies.patient_access import ClinicalActor
 from app.models.catalog import (
-    ApprovalStatus,
     CautionSectionKey,
     DoctorGuideCopy,
     DoctorGuideReview,
-    DrugCautionContent,
     PrescriptionSet,
     SetDisease,
 )
 from app.services import guide_defaults
+from app.services.drug_caution import DrugCautionService
 from app.services.patient_visit_scope import hospital_id_of
 
 #: 의사가 고칠 수 있는 구역. **응급은 없다** — 원문이 못박는다.
@@ -203,18 +202,24 @@ class GuideCopyService:
 
     @staticmethod
     async def _origins() -> dict[tuple[int, CautionSectionKey], str]:
-        """**승인된 것만 원본이다.** 초안이나 폐기된 문구를 「원본」이라 보이면
-        의사가 그것을 사실로 읽는다.
+        """**생성이 쓸 글만 원본이다.** 초안이나 폐기된 문구를 「원본」이라
+        보이면 의사가 그것을 사실로 읽는다.
 
-        세트별 승인 문구가 없는 자리는 **기본 문구**를 보인다
+        세트별 문구가 없는 자리는 **기본 문구**를 보인다
         (`guide_defaults.BY_SECTION`). 안내문 생성이 그때 쓰는 글이 그것이라,
         여기서 빈칸을 보이면 「원본이 없다」로 읽히는데 실제로는 나갈 글이 있다.
-        복약지도·생활지도는 아직 세트별 문구가 하나도 없어서 늘 이쪽이다.
+
+        **잣대는 생성과 같은 것을 쓴다** — `DrugCautionService.generation_ready()`
+        와 `has_evidence()`. 예전에는 여기서 `approval_status=APPROVED` 하나만
+        봤는데, 생성은 거기에 등급 A 와 근거 넷을 더 요구한다(KEY-180 §2·§4).
+        등급이 A 가 아닌 자문 문구가 들어오면 **화면은 그것을 「원본」이라 보여
+        주고 환자에게는 기본 한 줄이 나갔다** — 이 파일이 없애려던 바로 그
+        갈림이 한 칸 옆에 남아 있었다 (이희진 님 `#214` ③).
         """
-        rows = await DrugCautionContent.filter(approval_status=ApprovalStatus.APPROVED).values_list(
-            "prescription_set_id", "section_key", "body"
-        )
-        approved = {(set_id, CautionSectionKey(key)): body for set_id, key, body in rows}
+        rows = await DrugCautionService.generation_ready().filter(approved_key__isnull=False)
+        approved = {
+            (row.prescription_set_id, row.section_key): row.body for row in rows if DrugCautionService.has_evidence(row)
+        }
 
         found: dict[tuple[int, CautionSectionKey], str] = {}
         for row in await PrescriptionSet.all().only("prescription_set_id"):
