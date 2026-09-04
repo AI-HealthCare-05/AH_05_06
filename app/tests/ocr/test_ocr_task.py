@@ -167,14 +167,13 @@ class TestProcessOcrJob(TestCase):
     # ── CLOVA 실패 → FAILED ──────────────────────────────────────────────────
 
     async def test_clova_error_marks_job_failed(self) -> None:
+        """비재시도 오류(CLOVA_INFER_FAILED)는 즉시 FAILED — call_clova_ocr는 1번만 호출된다."""
         job = await self._seed("ocr_key56_clova_err")
+        mock_clova = AsyncMock(side_effect=ClovaOcrError("CLOVA_INFER_FAILED", "infer failed"))
 
         with (
             patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
-            patch(
-                "ai_worker.tasks.ocr_task.call_clova_ocr",
-                AsyncMock(side_effect=ClovaOcrError("CLOVA_TIMEOUT", "timeout")),
-            ),
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", mock_clova),
         ):
             mock_cfg.clova_enabled = True
             await process_ocr_job(job.ocr_job_id)
@@ -182,7 +181,7 @@ class TestProcessOcrJob(TestCase):
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.FAILED
         assert job.failure_code == "CLOVA_API_ERROR"
-
+        assert mock_clova.call_count == 1
         assert await OcrResult.filter(ocr_job=job).count() == 0
 
     # ── CLOVA 비활성 → FAILED (KEY-199: 워커는 fixture seed 불가) ───────────

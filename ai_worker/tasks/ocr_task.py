@@ -54,8 +54,12 @@ _CLOVA_MODEL_NAME = "clova-ocr-v2"
 _REQUIRED_OCR_FIELDS: frozenset[str] = frozenset({"DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"})
 
 # CLOVA 일시 오류 — 재시도 대상 코드 (KEY-227)
-# CLOVA_PARSE_ERROR·UNSUPPORTED_FORMAT 같은 구조적 실패는 재시도 없이 즉시 FAILED
-_RETRYABLE_CLOVA_CODES: frozenset[str] = frozenset({"CLOVA_TIMEOUT", "CLOVA_HTTP_ERROR"})
+# 5xx·429·timeout·connection-error는 일시적, 4xx는 확정 실패로 재시도하지 않는다
+_RETRYABLE_CLOVA_CODES: frozenset[str] = frozenset({
+    "CLOVA_TIMEOUT",       # httpx.TimeoutException
+    "CLOVA_NETWORK_ERROR", # httpx.RequestError (연결 리셋·DNS·read)
+    "CLOVA_SERVER_ERROR",  # HTTP 5xx / 429
+})
 _MAX_CLOVA_RETRIES = 2
 
 
@@ -89,9 +93,10 @@ async def process_ocr_job(ocr_job_id: str) -> None:
 
     if config.clova_enabled:
         retry_count = 0
+        partial_results: dict[int, ClovaOcrResult] = {}
         while True:
             try:
-                clova_results = await _call_clova_for_documents(job_documents, doc_map)
+                clova_results = await _call_clova_for_documents(job_documents, doc_map, partial_results)
                 clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
                 missing = await _save_clova_result(job, job_documents, clova_results)
                 if missing:
@@ -125,6 +130,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
                         retry_count,
                         _MAX_CLOVA_RETRIES,
                     )
+                    await asyncio.sleep(0.5 * retry_count)
                     continue
                 await _mark_failed(job, "CLOVA_API_ERROR")
                 default_logger.warning(
@@ -150,7 +156,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
                     exc_info=False,
                 )
                 await _mark_failed(job, "PROCESSING_ERROR")
-                _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR")
+                _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR", retry_count=retry_count)
                 break
     else:
         await _mark_failed(job, "OCR_NOT_CONFIGURED")
@@ -171,11 +177,19 @@ async def process_ocr_job(ocr_job_id: str) -> None:
 async def _call_clova_for_documents(
     job_documents: list[OcrJobDocument],
     doc_map: dict[int, MedicalDocument],
+    results: dict[int, ClovaOcrResult] | None = None,
 ) -> dict[int, ClovaOcrResult]:
-    """문서마다 CLOVA OCR을 호출해 결과를 document_id → ClovaOcrResult로 반환한다."""
-    results: dict[int, ClovaOcrResult] = {}
-    accumulated_ms = 0
+    """문서마다 CLOVA OCR을 호출해 결과를 document_id → ClovaOcrResult로 반환한다.
+
+    results에 이미 성공한 문서가 있으면 해당 문서는 재호출하지 않는다.
+    재시도 시 같은 dict를 전달하면 성공한 문서를 중복 호출하지 않는다.
+    """
+    if results is None:
+        results = {}
+    accumulated_ms = sum(r.elapsed_ms for r in results.values())
     for jd in job_documents:
+        if jd.document_id in results:
+            continue
         med_doc = doc_map.get(jd.document_id)
         if med_doc is None:
             raise RuntimeError(f"MedicalDocument 없음 — document_id={jd.document_id}")
