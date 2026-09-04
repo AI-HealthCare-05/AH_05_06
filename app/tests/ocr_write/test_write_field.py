@@ -93,11 +93,17 @@ class WriteFieldTestCase(TestCase):
         assert field is None, "지웠는데 값을 돌려준다"
         assert not await OcrField.filter(field_type="TSH").exists(), "지웠는데 줄이 남았다"
 
-    async def test_a_confirmed_field_is_not_overwritten(self) -> None:
-        """**확정된 값은 이 길로도 못 고친다.**
+    async def test_a_confirmed_field_can_still_be_corrected(self) -> None:
+        """**확정돼도 고칠 수 있다** — KEY-273.
 
-        고치기(PATCH)가 막는 것을 여기서 안 막으면, 확정한 값을 우회로 덮어쓸
-        수 있다 — 확정은 「이 값으로 안내문을 만든다」는 뜻이라 그러면 안 된다.
+        예전에는 이 길도 고치기(PATCH)도 확정된 값을 409 로 막았다. 「확정은
+        이 값으로 안내문을 만든다는 뜻」이라는 까닭이었는데, **판독이 틀리는
+        것이 정상**이라 확정 뒤에 알아차리면 그 진료는 손쓸 방법이 없었다 —
+        진단과 처방이 어긋난 채 확정돼 안내문이 승인까지 간 일이 실제로 났고,
+        DB 를 직접 고쳐야 풀렸다 (2026-09-04 권일준 결정).
+
+        이미 만들어진 안내문은 영향받지 않는다 — `GuideSection` 이 본문을 제
+        사본으로 들고 있다.
         """
         actor, visit = await self.make_world("WF-04")
         repo = TortoiseOcrRepository()
@@ -107,15 +113,10 @@ class WriteFieldTestCase(TestCase):
         row.is_confirmed = True
         await row.save(update_fields=["is_confirmed"])
 
-        try:
-            await repo.write_field(visit.visit_id, "TSH", "9.9", actor)
-        except Exception as exc:
-            assert getattr(exc, "status_code", None) == 409, f"막긴 했는데 {exc} 다"
-        else:
-            raise AssertionError("확정된 값이 덮어써졌다")
+        await repo.write_field(visit.visit_id, "TSH", "9.9", actor)
 
         again = await OcrField.get(field_type="TSH")
-        assert again.corrected_value == "2.1", "막았는데 값이 바뀌었다"
+        assert again.corrected_value == "9.9", "확정됐다고 고치기를 막았다"
 
     async def test_a_visit_without_a_reading_is_refused(self) -> None:
         """판독한 적이 없으면 붙일 자리가 없다 — 지어내지 않고 404 다."""

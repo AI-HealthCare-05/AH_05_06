@@ -173,8 +173,14 @@ class TortoiseOcrRepository:
             )
             if field is None:
                 raise _not_found()
-            if field.is_confirmed:
-                raise OcrApiError(status.HTTP_409_CONFLICT, "OCR_FIELD_CONFIRMED", "이미 확정된 필드입니다.")
+            # **확정돼도 고칠 수 있다** (KEY-273, 2026-09-04 권일준 결정).
+            #
+            # 예전에는 여기서 409 를 냈다. 그런데 **판독이 틀리는 것이 정상**이고,
+            # 확정 뒤에 알아차리면 그 진료는 손쓸 방법이 없었다 — 진단과 처방이
+            # 어긋난 채 확정돼 안내문이 승인까지 갔고, DB 를 직접 고쳐야 풀렸다.
+            #
+            # 이미 만들어진 안내문은 영향받지 않는다. `GuideSection` 이 본문을
+            # 제 사본으로 들고 있어서, 여기를 고쳐도 승인된 글은 그대로다.
             if field.version != request.base_version:
                 raise OcrApiError(status.HTTP_409_CONFLICT, "VERSION_CONFLICT", "필드 버전이 변경되었습니다.")
 
@@ -254,8 +260,7 @@ class TortoiseOcrRepository:
                 .first()
             )
 
-            if field is not None and field.is_confirmed:
-                raise OcrApiError(status.HTTP_409_CONFLICT, "OCR_FIELD_CONFIRMED", "이미 확정된 필드입니다.")
+            # 확정된 줄도 다시 적을 수 있다 — 위 `edit_field` 와 같은 까닭이다 (KEY-273).
 
             # 비우면 지운다 — 「빈 값으로 적었다」를 남기면 안 적은 것과 구별이 안 된다.
             if not text:
