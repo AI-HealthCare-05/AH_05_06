@@ -1493,7 +1493,9 @@ function stateTakesFocus(tone) {
    * **눌러도 아무 일 없는 버튼을 두지 않는다** — 그 자리에 무엇이 없는지 쓴다.
    * 목업 값을 채워 두면 되는 것처럼 보이고, 그게 1차 시연이 멈춘 방식이다. */
   function notReadyHtml() {
-    return GROUPS_WITHOUT_SERVER.map(function (group) {
+    return GROUPS_WITHOUT_SERVER.filter(function (group) {
+      return group.key !== "carried";
+    }).map(function (group) {
       return (
         '<section class="box box--waiting"><div class="box__head">' +
         '<h2 class="box__title">' +
