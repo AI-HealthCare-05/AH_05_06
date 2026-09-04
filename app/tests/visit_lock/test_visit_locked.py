@@ -97,7 +97,10 @@ class TestLockedAfterFollowUpData(VisitLockTestCase):
         )
         for ocr_status in (OcrJobStatus.PROCESSING, OcrJobStatus.COMPLETED):
             for index, (field, body) in enumerate(cases):
-                with self.subTest(status=ocr_status, field=field):
+                # `subTest` 표식은 pytest-xdist 워커→마스터 보고 시 execnet 으로
+                # 직렬화된다. execnet 은 타입을 정확히 맞춰 보므로 `StrEnum` 값을
+                # 그대로 주면 `str` 로 안 잡히고 `DumpError` 로 죽는다 — `.value` 로 편다.
+                with self.subTest(status=ocr_status.value, field=field):
                     visit = await make_visit(chart=f"SYN-OCR-{ocr_status}-{index}")
                     if field == "department_id":
                         visit.department = "합성진료과"
@@ -117,7 +120,7 @@ class TestLockedAfterFollowUpData(VisitLockTestCase):
         )
         for guide_status in (GuideStatus.APPROVAL_PENDING, GuideStatus.SCHEDULED_TO_SEND):
             for index, (field, body) in enumerate(cases):
-                with self.subTest(status=guide_status, field=field):
+                with self.subTest(status=guide_status.value, field=field):
                     visit = await make_visit(chart=f"SYN-GUIDE-{guide_status}-{index}")
                     if field == "department_id":
                         visit.department = "합성진료과"

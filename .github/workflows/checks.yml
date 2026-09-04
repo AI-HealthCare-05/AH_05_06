@@ -161,11 +161,15 @@ jobs:
         if: steps.check_tests.outputs.has_tests == 'true'
         # `DB_PASSWORD` 는 코드 기본값이 없다(KEY-110). 위 서비스 컨테이너와
         # 같은 값을 여기서 명시한다 — 기본값에 기대면 그 값이 곧 공유 비밀이 된다.
+        #
+        # `-n auto` 로 pytest-xdist 병렬화 시험 중 — 워커별 DB 이름·Redis 논리
+        # DB 분리는 `app/tests/conftest.py`/`app/core/redis_client.py` 가 맡는다.
+        # 커버리지는 `coverage run` 대신 `pytest-cov` 를 쓴다 — xdist 워커는
+        # 별도 프로세스라 `coverage run` 하나로는 워커 안 실행분을 못 잡는다.
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
           DB_PASSWORD: ci-throwaway-not-a-secret
           DB_NAME: ai_health
         run: |
-          uv run coverage run -m pytest app ai_worker
-          uv run coverage report -m
+          uv run pytest -n auto --cov=app --cov=ai_worker --cov-report=term-missing app ai_worker

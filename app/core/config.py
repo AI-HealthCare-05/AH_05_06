@@ -89,6 +89,10 @@ class Config(BaseSettings):
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    # pytest-xdist 워커별로 논리 DB(0~15)를 나눠 쓰기 위한 자리 — 평소엔 0.
+    # `app/tests/conftest.py` 가 워커 프로세스 시작 시 이 값을 바꿔서, 세션·
+    # 로그인시도 실패횟수 같은 실 Redis 키를 워커끼리 안 밟게 한다.
+    REDIS_DB: int = 0
 
     # 비워 두면 쿠키가 **그 호스트에만** 붙는다(host-only). 이게 안전한 기본값이다.
     # 값을 박아 두면 다른 호스트에서 브라우저가 쿠키를 통째로 버려서
