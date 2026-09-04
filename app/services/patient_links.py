@@ -68,6 +68,8 @@ class PatientGuideData:
     visit_date: date
     clinic_name: str | None
     disease_name: str | None
+    #: 환자 전체 이름. 응답에 넣을지(= OTP 인증 여부)는 라우터가 정한다 — KEY-268.
+    patient_name: str | None
     medication: PatientMedicationData | None
     goals: list[PatientGuideGoalData]
     sections: dict[GuideSectionKey, str]
@@ -398,7 +400,7 @@ class PatientLinkService:
 
         link = (
             await PatientGuideLink.filter(token_digest=token_digest)
-            .prefetch_related("guide_document__sections", "guide_document__visit")
+            .prefetch_related("guide_document__sections", "guide_document__visit__patient")
             .first()
         )
         if link is None:
@@ -508,6 +510,7 @@ class PatientLinkService:
                 visit_date=visit_date,
                 clinic_name=hospital.name if hospital is not None else None,
                 disease_name=disease_name,
+                patient_name=(visit.patient.name or None),
                 medication=medication,
                 goals=goals,
                 sections={section.section_key: section.body for section in guide.sections},
