@@ -88,17 +88,23 @@ function patientGuideUrl(result) {
   var path = result && result.path;
   var matched = typeof path === "string" && path.match(/^\/api\/v1\/guides\/([A-Za-z0-9_-]+)$/);
   if (!matched) throw new Error("invalid patient guide link response");
-  return "/guide.html" + (typeof MOCK !== "undefined" && MOCK ? "?mock=1" : "") + "#t=" + encodeURIComponent(matched[1]);
+  return (
+    "/patient_wireframe/html/otp.html" +
+    (typeof MOCK !== "undefined" && MOCK ? "?mock=1" : "") +
+    "#t=" +
+    encodeURIComponent(matched[1])
+  );
 }
 
 var PATIENT_LINK_SAYINGS = [
-  { code: "GUIDE_NOT_APPROVED", say: "승인 완료된 안내에서만 개발용 환자 화면을 열 수 있어요." },
+  { code: "GUIDE_NOT_APPROVED", say: "승인 완료된 안내에서만 환자 링크를 발급할 수 있어요." },
   {
     code: "LINK_ALREADY_ISSUED",
-    say: "이미 개발용 링크가 발급됐어요. 보관해 둔 기존 환자 화면을 이용해 주세요. 이 화면에서는 토큰을 다시 보여주지 않아요.",
+    say: "이미 환자 링크가 발급됐어요. 기존 원문은 다시 보여주지 않으며, 필요하면 새 링크로 교체해 주세요.",
   },
   { code: "GUIDE_NOT_FOUND", say: "이 진료의 안내문을 찾지 못했어요." },
-  { status: 403, say: "이 진료의 개발용 링크를 발급할 권한이 없어요." },
+  { code: "LINK_NOT_ISSUED", say: "먼저 환자 링크를 발급해 주세요." },
+  { status: 403, say: "이 진료의 환자 링크를 관리할 권한이 없어요." },
 ];
 
 function patientLinkSaying(error) {
@@ -128,6 +134,9 @@ function patientLinkSaying(error) {
   var section = "medication";
   var loadSeq = 0;
   var patientLinkOpening = false;
+  /* 원문 URL은 발급 모달이 열린 동안 메모리에만 둔다. DOM·저장소·로그에는
+     쓰지 않고, 복사하거나 새 인증 탭을 열 때 브라우저 API로 바로 넘긴다. */
+  var patientLinkUrl = null;
 
   function isDoctor() {
     return !!(me && (me.roles || []).indexOf("doctor") !== -1);
@@ -263,6 +272,7 @@ function patientLinkSaying(error) {
 
   function closeModal() {
     el("modal").hidden = true;
+    patientLinkUrl = null;
   }
 
   /* 권한 문제와 그 밖을 가른다.
@@ -288,7 +298,7 @@ function patientLinkSaying(error) {
   /* 와이어프레임 D1-5. 본문은 `guide-view.js` 가 그린다 — 최종 확인 탭과
      **같은 창**이다. 예전에는 여기서만 그려서 두 화면의 승인 확인이 갈렸다.
 
-     「개발용 환자 화면 열기」는 창에서 뺐다. 승인 직후에 개발용 링크를 발급하는
+     「환자 링크 발급」은 창에서 뺐다. 승인 직후에 링크를 발급하는
      자리가 아니고, 그 단추는 화면 아래(`#patient-open`)에 그대로 있다. */
   function approvedModal(result) {
     return approvedModalHtml({
@@ -298,48 +308,56 @@ function patientLinkSaying(error) {
   }
 
   function patientLinkFailedModal(error) {
+    var management =
+      error && error.code === "LINK_ALREADY_ISSUED"
+        ? '<button class="button-ghost" type="button" id="patient-link-revoke">기존 링크 폐기</button>' +
+          '<span class="grow"></span><button class="button-primary" type="button" id="patient-link-reissue">새 링크로 교체</button>'
+        : '<span class="grow"></span>';
     return (
       '<h2 class="modal__title">환자 화면을 열지 못했어요</h2>' +
       '<p class="modal__lead">' +
       esc(patientLinkSaying(error)) +
       "</p>" +
-      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'
+      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
+      management +
+      "</div>"
     );
   }
 
-  /* 팝업 차단을 피하려고 클릭 순간 빈 탭을 만들고, 링크 발급이 성공한 뒤에만
-     환자 화면으로 바꾼다. 실패하면 빈 탭을 닫고 병원 화면에는 안전한 사유만
-     표시한다. 토큰은 console·DOM·저장소에 쓰지 않는다. */
+  function patientLinkModal(result, label) {
+    patientLinkUrl = patientGuideUrl(result);
+    return (
+      '<h2 class="modal__title">' + esc(label) + '</h2>' +
+      '<p class="modal__lead">환자 본인 확인 화면으로 연결되는 링크입니다.</p>' +
+      '<p class="modal__note">유효기간: ' + esc(whenText(result.expires_at)) +
+      '<br>보안을 위해 주소 원문은 화면에 표시하거나 저장하지 않습니다.</p>' +
+      '<p class="modal__error" id="patient-link-error" role="status" hidden></p>' +
+      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
+      '<button class="button-ghost" type="button" id="patient-link-revoke">폐기</button>' +
+      '<span class="grow"></span><button class="button-ghost" type="button" id="patient-link-copy">링크 복사</button>' +
+      '<button class="button-primary" type="button" id="patient-link-open">본인 확인 열기</button></div>' +
+      '<div class="modal__acts"><span class="grow"></span>' +
+      '<button class="button-ghost" type="button" id="patient-link-reissue">새 링크로 교체</button></div>'
+    );
+  }
+
+  /* 승인된 안내에 링크를 발급한 뒤 원문은 메모리에만 둔다. 사용자는 같은
+     모달에서 복사하거나 P1 본인 확인 화면을 열 수 있다. */
   function openPatientGuide() {
     if (patientLinkOpening || !visit || !guide || guide.status !== "SCHEDULED_TO_SEND") return;
     patientLinkOpening = true;
     var openingId = visit.visit_id;
-    var popup = window.open("about:blank", "_blank");
-    /* 비동기 발급 뒤 다시 window.open()을 부르면 브라우저가 팝업으로 막는다.
-       더 중요한 점은 `noopener`로 성공해도 반환값이 null일 수 있어 성공 여부를
-       판정할 수 없다는 것이다. 클릭 순간 빈 탭을 못 만들었으면 링크를 발급하지
-       않고 끝낸다 — 일회용 링크를 화면 없이 소진하지 않는다. */
-    if (!popup) {
-      patientLinkOpening = false;
-      renderRole();
-      openModal(patientLinkFailedModal(new Error("patient guide popup blocked")));
-      return;
-    }
-    popup.opener = null;
     el("patient-open").disabled = true;
 
     doctorApi
       .issuePatientLink(openingId)
       .then(function (result) {
-        var url = patientGuideUrl(result);
-        popup.location.replace(url);
         patientLinkOpening = false;
         if (visit && visit.visit_id === openingId) renderRole();
-        closeModal();
+        openModal(patientLinkModal(result, "환자 링크를 발급했습니다"));
       })
       .catch(function (error) {
         patientLinkOpening = false;
-        if (popup) popup.close();
         if (visit && visit.visit_id === openingId) renderRole();
         openModal(patientLinkFailedModal(error));
       });
@@ -426,6 +444,64 @@ function patientLinkSaying(error) {
 
     if (target.id === "patient-open" || target.closest("[data-open-patient]")) {
       openPatientGuide();
+      return;
+    }
+
+    if (target.id === "patient-link-open" && patientLinkUrl) {
+      window.open(patientLinkUrl, "_blank", "noopener");
+      return;
+    }
+
+    if (target.id === "patient-link-copy" && patientLinkUrl) {
+      var copyError = el("patient-link-error");
+      var copyUrl = new URL(patientLinkUrl, window.location.href).href;
+      navigator.clipboard
+        .writeText(copyUrl)
+        .then(function () {
+          copyError.textContent = "링크를 복사했습니다.";
+          copyError.hidden = false;
+        })
+        .catch(function () {
+          copyError.textContent = "복사 권한을 허용한 뒤 다시 눌러 주세요.";
+          copyError.hidden = false;
+        });
+      return;
+    }
+
+    if (target.id === "patient-link-reissue" && visit) {
+      target.disabled = true;
+      var reissuingId = visit.visit_id;
+      doctorApi
+        .reIssuePatientLink(reissuingId)
+        .then(function (result) {
+          if (visit && visit.visit_id === reissuingId) {
+            openModal(patientLinkModal(result, "새 환자 링크로 교체했습니다"));
+          }
+        })
+        .catch(function (error) {
+          if (visit && visit.visit_id === reissuingId) openModal(patientLinkFailedModal(error));
+        });
+      return;
+    }
+
+    if (target.id === "patient-link-revoke" && visit) {
+      target.disabled = true;
+      var revokingId = visit.visit_id;
+      doctorApi
+        .revokePatientLink(revokingId)
+        .then(function () {
+          if (!visit || visit.visit_id !== revokingId) return;
+          patientLinkUrl = null;
+          openModal(
+            '<h2 class="modal__title">환자 링크를 폐기했습니다</h2>' +
+              '<p class="modal__lead">기존 링크로는 더 이상 본인 확인이나 안내 열람을 할 수 없습니다.</p>' +
+              '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
+              '<span class="grow"></span><button class="button-primary" type="button" id="patient-link-reissue">새 링크 발급</button></div>',
+          );
+        })
+        .catch(function (error) {
+          if (visit && visit.visit_id === revokingId) openModal(patientLinkFailedModal(error));
+        });
       return;
     }
 

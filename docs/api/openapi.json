@@ -9141,6 +9141,45 @@
       }
     },
     "/api/v1/visits/{visit_id}/guide/link": {
+      "delete": {
+        "description": "병원에서 현재 환자 링크를 즉시 폐기한다 — KEY-223.",
+        "operationId": "revoke_patient_guide_link_api_v1_visits__visit_id__guide_link_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Patient Guide Link",
+        "tags": [
+          "patient-links"
+        ]
+      },
       "post": {
         "operationId": "issue_patient_guide_link_api_v1_visits__visit_id__guide_link_post",
         "parameters": [
@@ -9182,6 +9221,54 @@
           }
         ],
         "summary": "Issue Patient Guide Link",
+        "tags": [
+          "patient-links"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/link/re-issue": {
+      "post": {
+        "description": "병원에서 링크를 교체하고 새 원문을 이번 응답에만 돌려준다 — KEY-223.",
+        "operationId": "re_issue_patient_guide_link_api_v1_visits__visit_id__guide_link_re_issue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientLinkIssueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Re Issue Patient Guide Link",
         "tags": [
           "patient-links"
         ]

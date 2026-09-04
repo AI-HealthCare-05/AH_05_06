@@ -41,13 +41,13 @@ test("목업도 승인 완료 건 한 번만 발급하고 중복은 안전하게
   );
 });
 
-test("환자 주소는 API path를 서버 로그에 남지 않는 fragment로 바꾼다", () => {
+test("환자 주소는 API path를 본인 확인 화면의 fragment로 바꾼다", () => {
   const box = load("api", "session", "patients-api", "shell", "doctor-api", "doctor");
   const token = "synthetic-key205-browser-token";
 
   const url = box.patientGuideUrl({ path: "/api/v1/guides/" + token });
 
-  assert.equal(url, "/guide.html?mock=1#t=" + token);
+  assert.equal(url, "/patient_wireframe/html/otp.html?mock=1#t=" + token);
   assert.throws(() => box.patientGuideUrl({ path: "https://outside.invalid/steal" }), /invalid patient guide link response/);
 });
 
@@ -83,7 +83,7 @@ test("환자 화면은 fragment 토큰을 메모리로 옮긴 직후 주소에�
   assert.equal(Array.from(stored.values()).includes(token), false, "링크 토큰을 sessionStorage에 남겼다");
 });
 
-test("병원 화면은 토큰을 DOM·console·localStorage에 쓰지 않는다", () => {
+test("병원 화면은 토큰을 DOM·console·브라우저 저장소에 쓰지 않는다", () => {
   const doctor = read("js/doctor.js");
   const launch = doctor.slice(
     doctor.indexOf("function openPatientGuide"),
@@ -95,34 +95,63 @@ test("병원 화면은 토큰을 DOM·console·localStorage에 쓰지 않는다"
   );
   const html = read("doctor.html");
 
-  assert.match(html, /id="patient-open"[^>]*hidden>개발용 환자 화면 열기<\/button>/);
+  assert.match(html, /id="patient-open"[^>]*hidden>환자 링크 발급<\/button>/);
   assert.doesNotMatch(launch, /console\.|localStorage|sessionStorage|innerHTML|textContent/);
   assert.doesNotMatch(urlFn, /console\.|localStorage|sessionStorage|innerHTML|textContent/);
-  assert.match(launch, /if \(!popup\)[\s\S]*return;/);
-  assert.ok(
-    launch.indexOf("if (!popup)") < launch.indexOf("doctorApi") && launch.indexOf("doctorApi") < launch.indexOf("issuePatientLink"),
-    "팝업 차단을 링크 발급 뒤에 판정해 일회용 링크를 소진한다",
-  );
-  assert.match(launch, /popup\.location\.replace\(url\)/);
-  assert.doesNotMatch(launch, /window\.open\(url/);
+  assert.match(launch, /patientLinkModal\(result/);
+  assert.doesNotMatch(launch, /window\.open|popup/);
   assert.match(launch, /if \(patientLinkOpening \|\|/);
+});
+
+test("병원 링크 관리 API는 발급·교체·폐기 경로를 구분한다", async () => {
+  const box = load("api", "doctor-api");
+  const calls = [];
+  box.mockDoctorRequest = function (requestPath, options) {
+    calls.push({ path: requestPath, method: options.method });
+    return Promise.resolve({});
+  };
+
+  await box.doctorApi.issuePatientLink(223);
+  await box.doctorApi.reIssuePatientLink(223);
+  await box.doctorApi.revokePatientLink(223);
+
+  assert.deepStrictEqual(calls, [
+    { path: "/visits/223/guide/link", method: "POST" },
+    { path: "/visits/223/guide/link/re-issue", method: "POST" },
+    { path: "/visits/223/guide/link", method: "DELETE" },
+  ]);
+});
+
+test("발급 모달은 원문 링크를 HTML에 넣지 않고 메모리 복사·열기만 제공한다", () => {
+  const source = read("js/doctor.js");
+  const modal = source.slice(source.indexOf("function patientLinkModal"), source.indexOf("function openPatientGuide"));
+  const events = source.slice(
+    source.indexOf('if (target.id === "patient-link-open"'),
+    source.indexOf('var reason = target.closest("[data-reason]")'),
+  );
+
+  assert.doesNotMatch(modal, /patientLinkUrl[^\n]*\+|innerHTML|localStorage|sessionStorage/);
+  assert.match(events, /new URL\(patientLinkUrl, window\.location\.href\)[\s\S]*navigator\.clipboard[\s\S]*writeText\(copyUrl\)/);
+  assert.match(events, /window\.open\(patientLinkUrl, "_blank", "noopener"\)/);
+  assert.match(events, /reIssuePatientLink/);
+  assert.match(events, /revokePatientLink/);
 });
 
 test("클릭 가드에 걸려도 누른 버튼을 선행 비활성화해 고착시키지 않는다", () => {
   const doctor = read("js/doctor.js");
   const clickBranch = doctor.slice(
     doctor.indexOf('if (target.id === "patient-open"'),
-    doctor.indexOf("var reason", doctor.indexOf('if (target.id === "patient-open"')),
+    doctor.indexOf('if (target.id === "patient-link-open"', doctor.indexOf('if (target.id === "patient-open"')),
   );
 
   assert.match(clickBranch, /openPatientGuide\(\)/);
   assert.doesNotMatch(clickBranch, /target\.disabled\s*=\s*true/);
 });
 
-test("미승인·중복·권한 오류는 재발급 없이 다음 행동만 안내한다", () => {
+test("미승인·중복·권한 오류는 상태에 맞는 다음 행동을 안내한다", () => {
   const box = load("api", "session", "patients-api", "shell", "doctor-api", "doctor");
 
   assert.match(box.patientLinkSaying(new box.ApiError("GUIDE_NOT_APPROVED", 409, {})), /승인 완료/);
-  assert.match(box.patientLinkSaying(new box.ApiError("LINK_ALREADY_ISSUED", 409, {})), /기존 환자 화면/);
+  assert.match(box.patientLinkSaying(new box.ApiError("LINK_ALREADY_ISSUED", 409, {})), /새 링크로 교체/);
   assert.match(box.patientLinkSaying(new box.ApiError("FORBIDDEN", 403, {})), /권한/);
 });
