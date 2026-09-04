@@ -75,7 +75,10 @@ from app.models.visits import (  # noqa: E402
 from app.services.drug_caution import DrugCautionService  # noqa: E402
 from app.services.guides import GuideService  # noqa: E402
 from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
-from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS  # noqa: E402
+from app.tests.fixtures.catalog import (  # noqa: E402
+    DRUG_CAUTION_CONTENTS,
+    PRESCRIPTION_SETS,
+)
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
 from app.tests.fixtures.staff import (  # noqa: E402
     StaffDataError,
@@ -571,7 +574,10 @@ async def seed_catalog() -> None:
     # 처방 세트 8종
     created_sets = 0
     for row in PRESCRIPTION_SETS:
-        _, was_created = await PrescriptionSet.get_or_create(name=row.name)
+        # **`disease` 를 함께 넣는다.** 모델 기본값이 ENDOMETRIOSIS 라 안 넣으면
+        # PCOS 세트가 자궁내막증 묶음에 들어가고, 설정 레일에서 다낭성난소증후군
+        # 묶음이 통째로 사라진다 — 새로 부어 보기 전에는 안 보이는 어긋남이다.
+        _, was_created = await PrescriptionSet.get_or_create(name=row.name, defaults={"disease": row.disease})
         if was_created:
             created_sets += 1
     print(f"[catalog] prescription_set created={created_sets} skipped={len(PRESCRIPTION_SETS) - created_sets}")
@@ -626,11 +632,26 @@ async def seed_catalog() -> None:
     # ── 의원이 쓰는 약 ───────────────────────────────────────────────
     # 대표 처방에 약을 적을 때 여기서 고른다. **표기를 판독·CSV 쪽에 맞춘다**
     # — 실제로 들어오는 값이 그쪽이라, 나중에 이름으로 이어 붙일 여지를 남긴다.
+    # **의원 EMR 에 실제로 등록돼 있는 이름 그대로 적는다.** 판독이 읽어 오는
+    # 값이 이 표기라, 나중에 이름으로 이어 붙이려면 여기가 같아야 한다.
+    # 아래 여섯은 2026-09-04 에 의원 EMR 화면에서 받아 옮겼다.
     for name, frequency, note in (
         ("비잔정(디에노게스트) 2mg", "1일 1회", "매일 같은 시간"),
         ("야즈정(드로스피레논/에티닐에스트라디올)", "1일 1회", "매일 같은 시간"),
         ("메트포르민 500mg", "1일 2회", "식후"),
-        ("진통제", "필요시", None),
+        ("록소펜정(록소프로펜나트륨수화물)", "1일 3회", None),
+        ("세파클리어캡슐(세파클러수화물)", "1일 3회", None),
+        ("바이독시정(독시사이클린수화물)", "1일 2회", None),
+        ("씨제이후라시닐정(씨제이제일제당)", "1일 2회", None),
+        ("(위장) 광동 레바미피드정", "1일 2회", None),
+        ("겐트리손크림_(12.8mg, 0.2g, 20mg/20g)", "1일 1회", None),
+        ("에피나온정10밀리그램(에피나스틴염산염)", "1일 3회", None),
+        # 🚩 EMR 화면에서 **이름이 잘려 보인 것**을 옮겼다. 실제 등록명과 글자가
+        # 다를 수 있으니 의원 EMR 로 한 번 맞춰야 한다 — 판독이 이름으로 이어
+        # 붙일 때 한 글자만 달라도 못 찾는다.
+        ("아목틴정375밀리그램(아목시실린수화물)", "1일 3회", None),
+        # 「원내)카마졸질정」은 **원내 처방이라 뺐다** — 이 목록은 원외로 나가는
+        # 약이고, 원내 것은 안내문에 실릴 자리가 없다 (2026-09-04 권일준).
     ):
         await DrugCatalog.get_or_create(name=name, defaults={"frequency": frequency, "note": note})
 
@@ -802,7 +823,7 @@ async def main(mode: str) -> None:
             print("[seed] 빈 상태 — 아무것도 적재하지 않습니다.")
         case "staff":
             password = _require_password()
-            await seed_staff(password)
+            hospitals = await seed_staff(password)
             await seed_catalog()
         case "full":
             password = _require_password()
