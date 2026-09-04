@@ -49,7 +49,7 @@ class TestKey268PatientName(PatientLinkTestCase):
 
     async def test_full_name_is_shown_to_a_verified_viewer(self) -> None:
         await self._issue_approved_link()
-        raw_session = await PatientSessionStore(self.redis).start(TOKEN)
+        raw_session = await PatientSessionStore(self.redis).start(TOKEN)  # type: ignore[arg-type]
 
         async with _client_with_session(raw_session) as client:
             response = await client.get(f"/api/v1/guides/{TOKEN}")
@@ -60,7 +60,9 @@ class TestKey268PatientName(PatientLinkTestCase):
 
     async def test_session_for_another_link_does_not_reveal_the_name(self) -> None:
         await self._issue_approved_link()
-        raw_session = await PatientSessionStore(self.redis).start(OTHER_LINK_TOKEN)
+        raw_session = await PatientSessionStore(self.redis).start(  # type: ignore[arg-type]
+            OTHER_LINK_TOKEN
+        )
 
         async with _client_with_session(raw_session) as client:
             response = await client.get(f"/api/v1/guides/{TOKEN}")
