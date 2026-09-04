@@ -443,6 +443,8 @@ function stateTakesFocus(tone) {
   var _docViewBlobUrl = null;
 
   function _openLightbox(src) {
+    var prevFocus = document.activeElement;
+
     var overlay = document.createElement("div");
     overlay.className = "doc-lightbox";
     overlay.setAttribute("role", "dialog");
@@ -456,22 +458,50 @@ function stateTakesFocus(tone) {
     img.alt = "문서 미리보기 확대";
     overlay.appendChild(img);
 
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "doc-lightbox__close";
+    closeBtn.setAttribute("aria-label", "닫기");
+    closeBtn.textContent = "✕";
+    overlay.appendChild(closeBtn);
+
     document.body.appendChild(overlay);
-    overlay.focus();
+    closeBtn.focus();
 
     function close() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       document.removeEventListener("keydown", onKey);
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
     }
+
+    closeBtn.addEventListener("click", close);
 
     overlay.addEventListener("click", function (e) {
       if (e.target === overlay) close();
     });
 
+    function getFocusable() {
+      return Array.from(
+        overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      ).filter(function (el) { return !el.disabled; });
+    }
+
     function onKey(e) {
       if (e.key === "Escape") {
         e.stopPropagation();
         close();
+        return;
+      }
+      if (e.key === "Tab") {
+        var focusable = getFocusable();
+        if (!focusable.length) { e.preventDefault(); return; }
+        var first = focusable[0];
+        var last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+        } else {
+          if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
       }
     }
     document.addEventListener("keydown", onKey);
