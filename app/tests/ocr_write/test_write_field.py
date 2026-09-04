@@ -13,6 +13,7 @@ from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import Visit
+from app.ocr.schemas import UpdateOcrFieldRequest
 from app.ocr.security import OcrActor
 from app.ocr.service import TortoiseOcrRepository
 
@@ -117,6 +118,108 @@ class WriteFieldTestCase(TestCase):
 
         again = await OcrField.get(field_type="TSH")
         assert again.corrected_value == "9.9", "확정됐다고 고치기를 막았다"
+
+    async def test_changing_a_confirmed_value_takes_the_stamp_off(self) -> None:
+        """**값이 바뀌면 확정 도장을 뗀다** — 도장이 옛 값을 가리키면 안 된다.
+
+        확정은 「이 값을 사람이 봤다」는 도장이다. KEY-273 이 확정 뒤에도 고칠
+        수 있게 열면서 도장을 그대로 두면, 기록은 「A 가 T1 에 확인」인데 화면의
+        값은 B 가 T2 에 친 것이고 **그 값은 아무도 확인한 적이 없다.** 생성의
+        미확정 게이트는 통과하므로 조용하다 (이희진 님 `#221` ②).
+
+        도장을 새 사람 이름으로 다시 찍지 않는다 — **값을 친 것과 값을 확인한
+        것은 다른 행위다.** 뗀 뒤 스탭이 보고 다시 확정한다.
+        """
+        actor, visit = await self.make_world("WF-06")
+        repo = TortoiseOcrRepository()
+        await repo.write_field(visit.visit_id, "TSH", "2.1", actor)
+
+        row = await OcrField.get(field_type="TSH")
+        row.is_confirmed = True
+        row.confirmed_by = actor.staff_id
+        row.confirmed_at = datetime(2026, 9, 4, tzinfo=UTC)
+        await row.save(update_fields=["is_confirmed", "confirmed_by", "confirmed_at"])
+
+        await repo.write_field(visit.visit_id, "TSH", "9.9", actor)
+
+        again = await OcrField.get(field_type="TSH")
+        assert again.corrected_value == "9.9"
+        assert again.is_confirmed is False, "값이 바뀌었는데 확정으로 남았다"
+        assert again.confirmed_by is None, "옛 값을 확인한 사람이 새 값의 확인자로 남았다"
+        assert again.confirmed_at is None, "옛 확인 시각이 새 값에 붙어 있다"
+        assert again.modified_by == actor.staff_id, "고친 기록까지 지우면 안 된다"
+
+    async def test_the_patch_path_takes_the_stamp_off_too(self) -> None:
+        """**화면이 실제로 쓰는 길**에도 같은 규칙이 걸린다.
+
+        판독 확인 화면의 `saveField` 는 `corrected_value` 만 실어 PATCH 로
+        보낸다(`ocr-review.js`). 이 길에 규칙이 없으면 ②의 고침이 화면에서는
+        아무 일도 안 한 것이 된다 — 정작 사람이 밟는 길이 여기다.
+        """
+        actor, visit = await self.make_world("WF-08")
+        repo = TortoiseOcrRepository()
+        await repo.write_field(visit.visit_id, "TSH", "2.1", actor)
+
+        row = await OcrField.get(field_type="TSH")
+        row.is_confirmed = True
+        row.confirmed_by = actor.staff_id
+        row.confirmed_at = datetime(2026, 9, 4, tzinfo=UTC)
+        await row.save(update_fields=["is_confirmed", "confirmed_by", "confirmed_at"])
+
+        await repo.update_field(
+            row.ocr_field_id,
+            UpdateOcrFieldRequest(base_version=row.version, corrected_value="9.9"),
+            actor,
+        )
+
+        again = await OcrField.get(field_type="TSH")
+        assert again.corrected_value == "9.9"
+        assert again.is_confirmed is False, "PATCH 로 고쳤는데 확정으로 남았다"
+        assert again.confirmed_by is None
+        assert again.confirmed_at is None
+
+    async def test_confirming_while_correcting_keeps_the_new_stamp(self) -> None:
+        """**고치면서 확정하면** 새 사람 이름으로 도장이 찍힌다 — 떨어지지 않는다.
+
+        「값이 바뀌면 뗀다」가 「확정하겠다고 보냈는데도 뗀다」가 되면, 스탭이
+        고치고 확인 완료를 눌러도 확인 전으로 돌아간다.
+        """
+        actor, visit = await self.make_world("WF-09")
+        repo = TortoiseOcrRepository()
+        await repo.write_field(visit.visit_id, "TSH", "2.1", actor)
+
+        row = await OcrField.get(field_type="TSH")
+        await repo.update_field(
+            row.ocr_field_id,
+            UpdateOcrFieldRequest(base_version=row.version, corrected_value="9.9", confirm=True),
+            actor,
+        )
+
+        again = await OcrField.get(field_type="TSH")
+        assert again.is_confirmed is True, "고치면서 확정했는데 확정이 안 됐다"
+        assert again.confirmed_by == actor.staff_id
+
+    async def test_rewriting_the_same_value_keeps_the_stamp(self) -> None:
+        """**같은 값을 다시 쓰면 도장은 그대로다** — 확인이 취소될 일이 아니다.
+
+        화면이 저장을 두 번 보내는 경우가 있다(같은 값). 그때마다 확정이
+        떨어지면 스탭은 「눌렀는데 확인 전으로 돌아가는」 화면을 만난다.
+        """
+        actor, visit = await self.make_world("WF-07")
+        repo = TortoiseOcrRepository()
+        await repo.write_field(visit.visit_id, "TSH", "2.1", actor)
+
+        row = await OcrField.get(field_type="TSH")
+        row.is_confirmed = True
+        row.confirmed_by = actor.staff_id
+        row.confirmed_at = datetime(2026, 9, 4, tzinfo=UTC)
+        await row.save(update_fields=["is_confirmed", "confirmed_by", "confirmed_at"])
+
+        await repo.write_field(visit.visit_id, "TSH", "2.1", actor)
+
+        again = await OcrField.get(field_type="TSH")
+        assert again.is_confirmed is True, "값이 안 바뀌었는데 확정이 떨어졌다"
+        assert again.confirmed_by == actor.staff_id
 
     async def test_a_visit_without_a_reading_is_refused(self) -> None:
         """판독한 적이 없으면 붙일 자리가 없다 — 지어내지 않고 404 다."""

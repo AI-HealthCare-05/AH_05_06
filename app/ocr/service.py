@@ -39,6 +39,26 @@ def _resolved_value(row: dict) -> str | None:
     return row["corrected_value"] if row["corrected_value"] is not None else row["extracted_value"]
 
 
+def _drop_confirmation(field: OcrField) -> None:
+    """**값이 바뀌면 확정 도장을 뗀다** — KEY-273 뒤처리.
+
+    확정은 「이 값을 사람이 봤다」는 도장이다. KEY-273 이 확정 뒤에도 고칠 수
+    있게 열면서 도장을 그대로 두었더니, 도장이 **옛 값**을 가리킨 채 남았다.
+    기록은 「스탭 A 가 T1 에 확인」인데 화면의 값은 스탭 B 가 T2 에 친 것이고,
+    **그 값은 아무도 확인한 적이 없다.** 생성의 미확정 게이트는 통과한다.
+
+    도장을 새 사람 이름으로 다시 찍는 것은 답이 아니다 — **값을 친 것과 값을
+    확인한 것은 다른 행위다.** 뗀 뒤에는 화면에 「확인 전」으로 다시 서고,
+    스탭이 보고 다시 확정한다 (이희진 님 `#221` ②).
+
+    누가 언제 고쳤는지는 `modified_by`·`modified_at` 이 따로 든다 — 확인 기록만
+    떨어지고 수정 기록은 남는다.
+    """
+    field.is_confirmed = False
+    field.confirmed_by = None
+    field.confirmed_at = None
+
+
 class OcrRepository(Protocol):
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
 
@@ -211,7 +231,8 @@ class TortoiseOcrRepository:
                 await selected_candidate.save(update_fields=("is_selected",), using_db=connection)
 
             changed_at = now()
-            if request.corrected_value is not None or selected_candidate is not None:
+            value_changed = request.corrected_value is not None or selected_candidate is not None
+            if value_changed:
                 field.corrected_value = corrected_value
                 field.modified_by = actor.staff_id
                 field.modified_at = changed_at
@@ -220,6 +241,8 @@ class TortoiseOcrRepository:
                 field.is_confirmed = True
                 field.confirmed_by = actor.staff_id
                 field.confirmed_at = changed_at
+            elif value_changed and field.is_confirmed:
+                _drop_confirmation(field)
             await field.save(using_db=connection)
         await field.fetch_related("candidates")
 
@@ -279,10 +302,13 @@ class TortoiseOcrRepository:
                     using_db=connection,
                 )
             else:
+                changed = field.corrected_value != text
                 field.corrected_value = text
                 field.modified_by = actor.staff_id
                 field.modified_at = changed_at
                 field.version += 1
+                if changed and field.is_confirmed:
+                    _drop_confirmation(field)
                 await field.save(using_db=connection)
 
         await field.fetch_related("candidates")
