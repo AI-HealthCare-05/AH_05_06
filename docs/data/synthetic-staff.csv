@@ -3,10 +3,8 @@ SYN-STAFF-01,H1,staff01,한소영,staff,N,active,,2026-08-19 08:42,기준 스탭
 SYN-STAFF-02,H1,doctor01,박연,doctor,N,active,,2026-08-19 09:05,기준 의사 — 환자 CSV 담당의 대부분이 이 사람이다
 SYN-STAFF-03,H1,doctor02,김연우,doctor,N,active,,2026-08-18 14:20,두 번째 의사 — 본인 소유 처방 세트 검사(D2-3)에 둘이 필요하다
 SYN-STAFF-04,H1,admin01,정미래,admin,N,active,,2026-08-19 08:10,운영만 — 진료 화면이 열리지 않아야 한다
-SYN-STAFF-05,H1,both01,오은비,staff|doctor,N,active,,2026-08-18 17:33,겸직 — 작성도 승인도 한다
 SYN-STAFF-06,H1,adminstaff01,서지원,staff|admin,N,active,,2026-08-19 08:55,★ 의료 승인 차단의 그 계정 — 스탭 일은 되고 승인만 막힌다
 SYN-STAFF-07,H1,admindoc01,최다온,doctor|admin,N,active,,2026-08-17 11:02,원장이 관리자를 겸함 — admin이 승인을 방해하지 않는다
-SYN-STAFF-08,H1,allthree01,윤하람,staff|doctor|admin,N,active,,2026-08-16 09:48,셋 다 — 합집합이 제대로 도는가
 SYN-STAFF-09,H1,newbie01,임채운,staff,Y,active,,,★ 첫 로그인 스탭 — L-3을 지나지 않으면 아무 데도 못 간다
 SYN-STAFF-10,H1,newdoc01,강시후,doctor,Y,active,,,첫 로그인 의사 — 역할이 있어도 L-3이 먼저다
 SYN-STAFF-11,H1,left01,문가람,staff,N,left,2026-06-30 18:00,2026-06-30 09:12,★ 퇴사자 — roles가 남아 있어도 로그인이 거부된다

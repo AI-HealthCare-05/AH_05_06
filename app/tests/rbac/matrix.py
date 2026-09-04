@@ -91,16 +91,28 @@ CLINIC_OPERATION = frozenset(
 #: 역할 검사를 통과했다고 끝이 아니라는 뜻이다.
 OWNERSHIP_REQUIRED = frozenset({Permission.PRESCRIPTION_SET_WRITE})
 
-#: 실제로 존재할 수 있는 역할 조합. A1-2 화면이 중복 선택을 허용한다.
+#: 실제로 존재할 수 있는 역할 조합 — **다섯**.
+#:
+#: 예전에는 일곱이었다. A1-2 가 중복 선택을 허용하므로 `2^3 - 1 = 7` 이라고
+#: 멱집합을 채운 것인데, 조합마다 필요가 있어서 고른 것이 아니었다.
+#:
+#: **`staff` ⊂ `doctor` 다.** `MATRIX` 에서 staff 가 가진 권한
+#: (`patient:read/write` · `ocr:upload` · `guide:draft` · `sms:send`)을 doctor 가
+#: 그대로 가진다. 그래서 `staff|doctor` 는 `doctor` 하나와 **권한이 완전히
+#: 같고**, 조합으로 둘 이유가 없다. `staff|doctor|admin` 도 마찬가지다
+#: (2026-09-04 이희진 결정, KEY-269).
+#:
+#: 남은 멀티롤 둘은 **admin 오버레이**다 — 각각 날카로운 물음이 있다.
+#:   `staff+admin`  스탭 일은 되고 의료 승인만 막히는가 (KEY-9)
+#:   `doctor+admin` admin 이 의사의 승인을 방해하지 않는가
+#:
 #: 빈 조합은 「역할과 권한을 합쳐 하나 이상」 규칙에 걸려 저장될 수 없다.
 VALID_COMBINATIONS: tuple[frozenset[Role], ...] = (
     frozenset({Role.STAFF}),
     frozenset({Role.DOCTOR}),
     frozenset({Role.ADMIN}),
-    frozenset({Role.STAFF, Role.DOCTOR}),
     frozenset({Role.STAFF, Role.ADMIN}),
     frozenset({Role.DOCTOR, Role.ADMIN}),
-    frozenset({Role.STAFF, Role.DOCTOR, Role.ADMIN}),
 )
 
 
