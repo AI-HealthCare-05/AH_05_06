@@ -158,5 +158,5 @@ jobs:
           DB_PASSWORD: ci-throwaway-not-a-secret
           DB_NAME: ai_health
         run: |
-          uv run coverage run -m pytest app
+          uv run coverage run -m pytest app ai_worker
           uv run coverage report -m

@@ -53,6 +53,11 @@ _CLOVA_MODEL_NAME = "clova-ocr-v2"
 # EMR 문서가 포함된 작업에서 COMPLETED로 인정하려면 이 필드를 모두 추출해야 한다 (KEY-163 §4, KEY-187)
 _REQUIRED_OCR_FIELDS: frozenset[str] = frozenset({"DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"})
 
+# CLOVA 일시 오류 — 재시도 대상 코드 (KEY-227)
+# CLOVA_PARSE_ERROR·UNSUPPORTED_FORMAT 같은 구조적 실패는 재시도 없이 즉시 FAILED
+_RETRYABLE_CLOVA_CODES: frozenset[str] = frozenset({"CLOVA_TIMEOUT", "CLOVA_HTTP_ERROR"})
+_MAX_CLOVA_RETRIES = 2
+
 
 async def process_ocr_job(ocr_job_id: str) -> None:
     """Redis 큐에서 수신한 OCR 작업을 처리한다."""
@@ -83,48 +88,70 @@ async def process_ocr_job(ocr_job_id: str) -> None:
     doc_map = {doc.document_id: doc for doc in medical_docs}
 
     if config.clova_enabled:
-        try:
-            clova_results = await _call_clova_for_documents(job_documents, doc_map)
-            clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
-            missing = await _save_clova_result(job, job_documents, clova_results)
-            if missing:
-                # **작업은 성공이다.** 못 읽은 항목은 빈 줄로 남아 있고, 화면이
-                # 그 자리를 물음표로 세워 사람이 채운다. 판독은 거들 뿐이라,
-                # 표 한 칸을 못 읽었다고 진료를 멈추지 않는다.
-                #
-                # 다만 **얼마나 자주 못 읽는지는 남긴다.** 이것이 안 보이면
-                # 추출기가 나빠지는 것을 아무도 모른 채 스탭 손이 늘어난다.
-                default_logger.warning(
-                    "필수 OCR 필드 누락 — 빈 줄로 저장 · ocr_job_id=%s, fields=%s",
-                    ocr_job_id,
-                    ",".join(sorted(missing)),
+        retry_count = 0
+        while True:
+            try:
+                clova_results = await _call_clova_for_documents(job_documents, doc_map)
+                clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
+                missing = await _save_clova_result(job, job_documents, clova_results)
+                if missing:
+                    # **작업은 성공이다.** 못 읽은 항목은 빈 줄로 남아 있고, 화면이
+                    # 그 자리를 물음표로 세워 사람이 채운다. 판독은 거들 뿐이라,
+                    # 표 한 칸을 못 읽었다고 진료를 멈추지 않는다.
+                    #
+                    # 다만 **얼마나 자주 못 읽는지는 남긴다.** 이것이 안 보이면
+                    # 추출기가 나빠지는 것을 아무도 모른 채 스탭 손이 늘어난다.
+                    default_logger.warning(
+                        "필수 OCR 필드 누락 — 빈 줄로 저장 · ocr_job_id=%s, fields=%s",
+                        ocr_job_id,
+                        ",".join(sorted(missing)),
+                    )
+                _observe(
+                    ocr_job_id=ocr_job_id,
+                    mode="clova",
+                    t0=t0,
+                    error_code="REQUIRED_FIELD_MISSING" if missing else None,
+                    clova_elapsed_ms=clova_elapsed_ms,
+                    retry_count=retry_count,
                 )
-            _observe(
-                ocr_job_id=ocr_job_id,
-                mode="clova",
-                t0=t0,
-                error_code="REQUIRED_FIELD_MISSING" if missing else None,
-                clova_elapsed_ms=clova_elapsed_ms,
-            )
-        except ClovaOcrError as exc:
-            await _mark_failed(job, "CLOVA_API_ERROR")
-            default_logger.warning("CLOVA 오류 → FAILED — ocr_job_id=%s, code=%s", ocr_job_id, exc.code)
-            _observe(
-                ocr_job_id=ocr_job_id,
-                mode="failed",
-                t0=t0,
-                error_code=exc.code,
-                clova_elapsed_ms=exc.elapsed_ms,
-            )
-        except Exception as exc:
-            default_logger.error(
-                "OCR 처리 오류 — ocr_job_id=%s, error_type=%s",
-                ocr_job_id,
-                type(exc).__name__,
-                exc_info=False,
-            )
-            await _mark_failed(job, "PROCESSING_ERROR")
-            _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR")
+                break
+            except ClovaOcrError as exc:
+                if exc.code in _RETRYABLE_CLOVA_CODES and retry_count < _MAX_CLOVA_RETRIES:
+                    retry_count += 1
+                    default_logger.warning(
+                        "CLOVA 일시 오류 재시도 — ocr_job_id=%s, code=%s, attempt=%d/%d",
+                        ocr_job_id,
+                        exc.code,
+                        retry_count,
+                        _MAX_CLOVA_RETRIES,
+                    )
+                    continue
+                await _mark_failed(job, "CLOVA_API_ERROR")
+                default_logger.warning(
+                    "CLOVA 오류 → FAILED — ocr_job_id=%s, code=%s, retry_count=%d",
+                    ocr_job_id,
+                    exc.code,
+                    retry_count,
+                )
+                _observe(
+                    ocr_job_id=ocr_job_id,
+                    mode="failed",
+                    t0=t0,
+                    error_code=exc.code,
+                    clova_elapsed_ms=exc.elapsed_ms,
+                    retry_count=retry_count,
+                )
+                break
+            except Exception as exc:
+                default_logger.error(
+                    "OCR 처리 오류 — ocr_job_id=%s, error_type=%s",
+                    ocr_job_id,
+                    type(exc).__name__,
+                    exc_info=False,
+                )
+                await _mark_failed(job, "PROCESSING_ERROR")
+                _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR")
+                break
     else:
         await _mark_failed(job, "OCR_NOT_CONFIGURED")
         default_logger.warning("CLOVA 미설정 → FAILED — ocr_job_id=%s", ocr_job_id)
@@ -300,19 +327,22 @@ def _observe(
     t0: float,
     error_code: str | None,
     clova_elapsed_ms: int | None = None,
+    retry_count: int = 0,
 ) -> None:
     """모든 OCR 종료 경로에서 단일 구조화 메트릭 로그를 남긴다 (KEY-175).
 
     mode: clova | failed
     clova_elapsed_ms: 실제 CLOVA HTTP 호출 시간 합계 (성공 경로에서만 제공)
+    retry_count: 재시도 횟수 (KEY-227)
     환자정보·OCR 원문·파일 경로·오류 원문은 포함하지 않는다.
     """
     elapsed_ms = round((perf_counter() - t0) * 1000)
     default_logger.info(
-        "ocr_job_complete mode=%s elapsed_ms=%s clova_elapsed_ms=%s error_code=%s ocr_job_id=%s",
+        "ocr_job_complete mode=%s elapsed_ms=%s clova_elapsed_ms=%s error_code=%s retry_count=%s ocr_job_id=%s",
         mode,
         elapsed_ms,
         clova_elapsed_ms if clova_elapsed_ms is not None else "none",
         error_code or "none",
+        retry_count,
         ocr_job_id,
     )
