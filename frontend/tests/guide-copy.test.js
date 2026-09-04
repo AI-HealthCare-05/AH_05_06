@@ -268,12 +268,35 @@ test("되돌리면 원본으로 간다", async () => {
 
 /* ── 화면이 그 규칙을 쓰는가 ────────────────────────────────────────── */
 
-test("원본이 위에 있다", () => {
+test("고칠 수 있는 갈래는 **칸 하나**로 보인다 — 나갈 글만", () => {
   const code = codeOnly(read("js/settings.js"));
   const part = code.slice(code.indexOf("function copySectionHtml"), code.indexOf("function whoseName"));
 
-  assert.ok(part.indexOf("cp__origin") < part.indexOf("cp__body"), "무엇이 사실이고 무엇이 표현인지 보인다");
+  /* 원문 D2-2 는 원본·고친문구 두 층을 나란히 두었는데, 쓰는 사람에게는 같은
+     글이 두 번 보이는 화면이었다. 지금은 나갈 글 한 칸만 보인다 — 아직 안
+     고쳤으면 원본이, 고쳤으면 고친 글이 그 칸에 들어 있다. */
+  assert.ok(part.indexOf("mine ? section.body : section.origin") !== -1, "안 고쳤으면 원본이 그 칸에 차 있다");
   assert.ok(part.indexOf("표현만 수정해 주세요") !== -1, "원문의 ⓘ 줄이다");
+  assert.ok(part.indexOf("원본은 지워지지 않습니다") !== -1, "덧씌우기라는 것을 화면이 말한다");
+});
+
+test("🚨 응급은 여전히 읽는 자리다 — 칸을 안 준다", () => {
+  const code = codeOnly(read("js/settings.js"));
+  const part = code.slice(code.indexOf("function copySectionHtml"), code.indexOf("function whoseName"));
+  const locked = part.slice(part.lastIndexOf("cp__origin"));
+
+  assert.ok(locked.indexOf("cp__body") === -1, "못 고치는 글에 입력칸을 주면 고쳐도 되는 줄 안다");
+  assert.ok(locked.indexOf("안전을 위해 모든 안내문에 포함됩니다") !== -1);
+});
+
+test("원본을 덮어쓰지 않는다 — 저장은 덧씌우기다", () => {
+  const code = codeOnly(read("js/settings.js"));
+
+  /* 화면이 한 칸으로 보인다고 해서 원본을 고치는 것이 아니다. 저장은
+     `saveCopy` 가 `DoctorGuideCopy` 로 보내고, 원본은 근거·승인이 붙은
+     `DrugCautionContent` 에 그대로 남는다(KEY-180). 되돌리기가 그것을 되살린다. */
+  assert.ok(code.indexOf("function revertCopy") !== -1, "되돌릴 길이 없으면 덧씌우기가 아니다");
+  assert.ok(code.indexOf("data-revert-copy") !== -1, "되돌리기 단추가 화면에 있어야 한다");
 });
 
 test("원본을 읽는 자리로 그린다", () => {
