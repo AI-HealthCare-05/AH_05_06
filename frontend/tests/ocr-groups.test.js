@@ -656,8 +656,8 @@ test("**적은 값은 이제 실제로 담긴다** — 「저장 안 됨」 배�
   assert.match(body, /localOf\(isRx\)/, "적어 둔 것을 한 번에 안 보낸다");
   assert.match(body, /visit\.visit_id !== wanted/, "다른 환자 화면에 붙는다");
 
-  /* **내 블록 것만 지운다** — 옆 블록은 아직 안 담겼는데 함께 지우면 사라진다 */
-  assert.match(body, /typed\.forEach/, "담고 나서 옆 블록 값까지 지우거나 안 지운다");
+  /* **담긴 것만 지운다** — 막힌 줄까지 지우면 적어 둔 값이 사라진다. */
+  assert.match(body, /if \(!r\.ok\) return;/, "막힌 줄까지 지워 적은 값이 사라진다");
 
   /* 🚩 **같은 값을 다시 보내지 않는다.** `PUT` 은 확정된 줄에 409 를 내는데,
      고른 처방을 무조건 다시 보내면 그 한 줄의 409 가 `Promise.all` 을 통째로
@@ -993,6 +993,22 @@ test("**두 블록이 각자 제 것만 담는다** — 안 만진 칸이 저장
 
   assert.ok(PRESCRIPTION_TYPES.indexOf("DIAGNOSIS") !== -1, "검사가 헛돈다");
   assert.equal(PRESCRIPTION_TYPES.indexOf("TSH"), -1, "혈액 항목이 처방으로 세어진다");
+});
+
+test("**한 줄이 막혀도 나머지는 담는다** — 그리고 무엇이 막혔는지 말한다", () => {
+  /* 예전에는 `Promise.all` 이라 한 줄만 거절돼도 묶음이 통째로 깨졌다.
+     확정된 처방을 다시 보내다 409 가 나면 같이 보낸 진단까지 안 담겼다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf('"#labs-save, #rx-save"');
+  const body = code.slice(at, at + 3200);
+
+  assert.match(body, /\.catch\(function \(err\)/, "한 줄의 실패가 묶음을 깨뜨린다");
+  assert.match(body, /stuckSaying\(stuck\)/, "무엇이 막혔는지 안 말한다");
+
+  /* **「잠시 뒤 다시」라고 하지 않는다.** 확정된 항목은 기다려도 안 된다. */
+  const saying = code.slice(code.indexOf("function stuckSaying"), code.indexOf("function serverFieldValue"));
+  assert.match(saying, /OCR_FIELD_CONFIRMED/, "확정된 항목이라는 까닭을 안 가른다");
+  assert.ok(!saying.includes("잠시 뒤"), "기다리면 될 것처럼 말한다");
 });
 
 test("**고른 처방도 담긴다** — 화면이 기억만 하면 새로고침에 사라진다", () => {

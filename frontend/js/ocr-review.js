@@ -2126,6 +2126,24 @@ function stateTakesFocus(tone) {
     saveCheckItems();
   });
 
+  /** 막힌 줄을 사람 말로. **까닭을 감추지 않는다.**
+   *
+   * 예전에는 무엇이 막혔든 「저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요」
+   * 였다. 「잠시 뒤 다시」는 기다리면 될 것처럼 읽히는데, 확정된 항목은
+   * 기다려도 안 된다 — 그 말 때문에 같은 것을 되풀이해 누르게 됐다. */
+  function stuckSaying(stuck) {
+    var names = stuck
+      .map(function (r) {
+        return fieldLabel(r.type);
+      })
+      .join(" · ");
+    var confirmed = stuck.some(function (r) {
+      return r.code === "OCR_FIELD_CONFIRMED";
+    });
+    if (confirmed) return names + " 은 이미 확정돼 여기서는 못 바꿉니다";
+    return names + " 을 저장하지 못했습니다";
+  }
+
   /** 서버가 지금 들고 있는 값. 없으면 `null`.
    *
    * 보낼지 말지를 가르는 데 쓴다 — 같은 값을 다시 `PUT` 하면 확정된 줄에서
@@ -2190,34 +2208,58 @@ function stateTakesFocus(tone) {
     say("저장하는 중…");
     redraw();
 
-    Promise.all(
-      typed
-        .map(function (type) {
-          return ocrApi.writeField(wanted, type, local[type]);
-        })
-        .concat(
-          Object.keys(extra).map(function (type) {
-            return ocrApi.writeField(wanted, type, extra[type]);
-          }),
-        ),
-    )
-      .then(function () {
-        if (!visit || visit.visit_id !== wanted) return;
-        /* 담겼으니 화면에만 있던 것은 지운다 — 안 지우면 서버 값과 두 벌이 된다.
-           **내 블록 것만** 지운다: 옆 블록은 아직 안 담겼다. */
-        typed.forEach(function (type) {
-          delete local[type];
-          delete localDraft[type];
-        });
-        if (isRx) manualDrugs = [];
-        say("저장했습니다");
-        return loadResult(loadSeq);
+    /* **한 줄이 막혀도 나머지는 담는다.**
+     *
+     * 예전에는 `Promise.all` 이라 한 줄만 거절돼도 묶음이 통째로 깨졌다.
+     * 확정된 처방을 다시 보내다 409 가 나면 **같이 보낸 진단까지 안 담겼고**,
+     * 화면은 「저장하지 못했습니다」 한 줄만 말해서 무엇이 막혔는지 알 수
+     * 없었다. 담길 수 있는 것은 담고, 막힌 것만 이름을 대고 말한다. */
+    var jobs = typed
+      .map(function (type) {
+        return { type: type, value: local[type] };
       })
-      .catch(function () {
-        if (!visit || visit.visit_id !== wanted) return;
-        say("저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요");
-        redraw();
+      .concat(
+        Object.keys(extra).map(function (type) {
+          return { type: type, value: extra[type] };
+        }),
+      );
+
+    Promise.all(
+      jobs.map(function (job) {
+        return ocrApi
+          .writeField(wanted, job.type, job.value)
+          .then(function () {
+            return { type: job.type, ok: true };
+          })
+          .catch(function (err) {
+            return { type: job.type, ok: false, code: (err && err.code) || "" };
+          });
+      }),
+    ).then(function (results) {
+      if (!visit || visit.visit_id !== wanted) return;
+
+      var stuck = results.filter(function (r) {
+        return !r.ok;
       });
+
+      /* 담긴 것만 화면에서 지운다 — 막힌 줄을 지우면 적은 값이 사라진다. */
+      results.forEach(function (r) {
+        if (!r.ok) return;
+        delete local[r.type];
+        delete localDraft[r.type];
+      });
+      if (isRx && !stuck.length) manualDrugs = [];
+
+      if (!stuck.length) {
+        say("저장했습니다");
+      } else if (stuck.length === results.length) {
+        say(stuckSaying(stuck));
+      } else {
+        /* 일부만 담겼을 때가 제일 헷갈린다 — 담긴 수를 먼저 말한다. */
+        say(results.length - stuck.length + "개 담았습니다 · " + stuckSaying(stuck));
+      }
+      return loadResult(loadSeq);
+    });
   });
 
   document.addEventListener("input", onTyped);
