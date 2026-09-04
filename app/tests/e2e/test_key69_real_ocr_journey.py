@@ -185,7 +185,7 @@ class TestKey69RealOcrJourney(AuthTestCase):
                 log_args = completion_calls[0].args
                 assert log_args[1] == "clova"
                 assert isinstance(log_args[2], int) and log_args[2] >= 0
-                assert log_args[5] == job.ocr_job_id
+                assert log_args[6] == job.ocr_job_id
 
             assert job.status == OcrJobStatus.COMPLETED
             assert job.started_at is not None

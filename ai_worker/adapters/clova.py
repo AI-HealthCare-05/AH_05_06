@@ -154,8 +154,11 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
     http_elapsed_ms = round((perf_counter() - t_http) * 1000)
 
     if response.status_code != 200:
+        code = (
+            "CLOVA_SERVER_ERROR" if (response.status_code >= 500 or response.status_code == 429) else "CLOVA_HTTP_ERROR"
+        )
         raise ClovaOcrError(
-            "CLOVA_HTTP_ERROR",
+            code,
             f"CLOVA OCR HTTP {response.status_code}",
             elapsed_ms=http_elapsed_ms,
         )

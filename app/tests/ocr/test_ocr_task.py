@@ -1,12 +1,19 @@
-"""OCR Worker 태스크 통합 테스트 — KEY-56 · KEY-199.
+"""OCR Worker 태스크 통합 테스트 — KEY-56 · KEY-199 · KEY-227.
 
 실제 DB를 사용해 process_ocr_job의 경로를 검증한다.
   - CLOVA 성공 → OcrResult(clova-ocr-v2) + COMPLETED
+  - CLOVA 저신뢰 → COMPLETED + 저신뢰 OcrField (confidence < 0.75)
   - CLOVA 실패 → FAILED + failure_code=CLOVA_API_ERROR  (워커는 fixture seed 불가 — KEY-199)
   - CLOVA 미설정 → FAILED + failure_code=OCR_NOT_CONFIGURED  (워커는 fixture seed 불가 — KEY-199)
   - 필수 필드 누락 → COMPLETED + 빈 OcrField 행 생성  (못 읽은 필드는 사람이 채운다 — KEY-187)
   - 존재하지 않는 job_id → 예외 없이 종료
-  - 이미 완료된 job → 중복 처리 없이 종료
+  - 이미 완료된 job → 중복 처리 없이 종료, 관측 로그에 ALREADY_PROCESSED
+  재시도 (KEY-227):
+  - 타임아웃(CLOVA_TIMEOUT) → 최대 2회 재시도 후 FAILED
+  - 타임아웃 후 성공 → COMPLETED (재시도로 회복)
+  - 구조적 실패(CLOVA_PARSE_ERROR) → 재시도 없이 즉시 FAILED
+  멱등성 (KEY-227, KEY-58):
+  - 큐에 중복 투입된 job → 두 번째 처리에서 OcrResult 추가 생성 없음
 """
 
 import os
@@ -17,7 +24,7 @@ from unittest.mock import AsyncMock, patch
 from tortoise.contrib.test import TestCase
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, ClovaTextField
-from ai_worker.tasks.ocr_task import _CLOVA_MODEL_NAME, process_ocr_job
+from ai_worker.tasks.ocr_task import _CLOVA_MODEL_NAME, _MAX_CLOVA_RETRIES, process_ocr_job
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentType,
@@ -29,6 +36,11 @@ from app.models.ocr import (
 )
 from app.models.patients import Patient
 from app.models.visits import Visit
+from app.tests.fixtures.ocr import (
+    SYN_FAIL_CLOVA_CODE,
+    SYN_LOW_CONF_CLOVA_RESULT,
+    SYN_TIMEOUT_CLOVA_CODE,
+)
 
 HOSPITAL_ID = 9100
 PATIENT_ID = 910001
@@ -155,14 +167,13 @@ class TestProcessOcrJob(TestCase):
     # ── CLOVA 실패 → FAILED ──────────────────────────────────────────────────
 
     async def test_clova_error_marks_job_failed(self) -> None:
+        """비재시도 오류(CLOVA_INFER_FAILED)는 즉시 FAILED — call_clova_ocr는 1번만 호출된다."""
         job = await self._seed("ocr_key56_clova_err")
+        mock_clova = AsyncMock(side_effect=ClovaOcrError("CLOVA_INFER_FAILED", "infer failed"))
 
         with (
             patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
-            patch(
-                "ai_worker.tasks.ocr_task.call_clova_ocr",
-                AsyncMock(side_effect=ClovaOcrError("CLOVA_TIMEOUT", "timeout")),
-            ),
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", mock_clova),
         ):
             mock_cfg.clova_enabled = True
             await process_ocr_job(job.ocr_job_id)
@@ -170,7 +181,7 @@ class TestProcessOcrJob(TestCase):
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.FAILED
         assert job.failure_code == "CLOVA_API_ERROR"
-
+        assert mock_clova.call_count == 1
         assert await OcrResult.filter(ocr_job=job).count() == 0
 
     # ── CLOVA 비활성 → FAILED (KEY-199: 워커는 fixture seed 불가) ───────────
@@ -291,3 +302,146 @@ class TestProcessOcrJob(TestCase):
         # 중복 처리가 없어야 한다
         count = await OcrResult.filter(ocr_job=job).count()
         assert count == 0
+
+    # ── 저신뢰 fixture (KEY-227) ──────────────────────────────────────────────
+
+    async def test_low_confidence_result_completes_job(self) -> None:
+        """저신뢰 CLOVA 결과도 OcrJob을 COMPLETED로 끝낸다.
+
+        confidence < 0.75 항목은 화면이 저신뢰로 표시하지만, job 자체는 성공이다.
+        사람이 판단해 확정하면 안내 생성에 쓸 수 있다.
+        """
+        job = await self._seed("ocr_key227_low_conf")
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=SYN_LOW_CONF_CLOVA_RESULT),
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.COMPLETED
+
+        result = await OcrResult.filter(ocr_job=job).first()
+        assert result is not None
+
+        fields = await OcrField.filter(ocr_result=result).all()
+        conf_map = {f.field_type: f.confidence for f in fields if f.confidence is not None}
+        # 저신뢰 블록에서 추출된 DIAGNOSIS는 0.75 미만이어야 한다
+        assert any(c < 0.75 for c in conf_map.values()), "저신뢰 필드가 없다"
+
+    # ── 재시도 로직 (KEY-227) ─────────────────────────────────────────────────
+
+    async def test_timeout_retries_then_fails(self) -> None:
+        """CLOVA_TIMEOUT은 재시도 대상이다 — _MAX_CLOVA_RETRIES 소진 후 FAILED.
+
+        call_clova_ocr가 매번 CLOVA_TIMEOUT을 올리면
+        총 1 + _MAX_CLOVA_RETRIES 번 호출되고 최종적으로 FAILED가 된다.
+        """
+        job = await self._seed("ocr_key227_timeout_retry")
+        mock_clova = AsyncMock(side_effect=ClovaOcrError(SYN_TIMEOUT_CLOVA_CODE, "timeout"))
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", mock_clova),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.FAILED
+        assert job.failure_code == "CLOVA_API_ERROR"
+        assert mock_clova.call_count == 1 + _MAX_CLOVA_RETRIES
+
+    async def test_timeout_retry_succeeds_on_second_attempt(self) -> None:
+        """첫 번째 CLOVA 호출이 타임아웃돼도 재시도에서 성공하면 COMPLETED.
+
+        재시도 후 성공 시 OcrResult·OcrField가 단 한 번만 생성된다 (인수조건 6).
+        """
+        job = await self._seed("ocr_key227_retry_ok")
+        mock_clova = AsyncMock(
+            side_effect=[
+                ClovaOcrError(SYN_TIMEOUT_CLOVA_CODE, "timeout"),
+                _FAKE_CLOVA_RESULT,
+            ]
+        )
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", mock_clova),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.COMPLETED
+        assert mock_clova.call_count == 2
+
+        # 재시도 성공 후에도 OcrResult는 한 건만 생성된다
+        assert await OcrResult.filter(ocr_job=job).count() == 1
+
+    async def test_non_retryable_error_fails_immediately(self) -> None:
+        """CLOVA_PARSE_ERROR 같은 구조적 실패는 재시도 없이 즉시 FAILED.
+
+        call_clova_ocr는 정확히 1번만 호출된다.
+        """
+        job = await self._seed("ocr_key227_parse_err")
+        mock_clova = AsyncMock(side_effect=ClovaOcrError(SYN_FAIL_CLOVA_CODE, "parse error"))
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", mock_clova),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.FAILED
+        assert job.failure_code == "CLOVA_API_ERROR"
+        assert mock_clova.call_count == 1
+
+    # ── 중복 실행 방지 / 멱등성 (KEY-227, KEY-58) ─────────────────────────────
+
+    async def test_already_processed_is_logged(self) -> None:
+        """이미 COMPLETED인 job이 큐에 재투입돼도 재처리되지 않는다.
+
+        _observe가 error_code="ALREADY_PROCESSED"로 호출되고 OcrResult는 추가 생성되지 않는다.
+        """
+        job = await self._seed("ocr_key227_dup_queue")
+        job.status = OcrJobStatus.COMPLETED
+        await job.save(update_fields=("status",))
+
+        with patch("ai_worker.tasks.ocr_task._observe") as mock_observe:
+            await process_ocr_job(job.ocr_job_id)
+
+        observed_codes = [c.kwargs.get("error_code") for c in mock_observe.call_args_list]
+        assert "ALREADY_PROCESSED" in observed_codes, "ALREADY_PROCESSED가 관측 로그에 없다"
+        assert await OcrResult.filter(ocr_job=job).count() == 0
+
+    async def test_duplicate_queue_entry_creates_single_result(self) -> None:
+        """같은 job_id가 큐에 두 번 들어와도 OcrResult·OcrField는 한 건만 생성된다.
+
+        첫 번째 처리 후 job.status=COMPLETED가 되므로,
+        두 번째 process_ocr_job 호출은 ALREADY_PROCESSED로 종료된다 (인수조건 6).
+        """
+        job = await self._seed("ocr_key227_dup_result")
+        mock_clova = AsyncMock(return_value=_FAKE_CLOVA_RESULT)
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", mock_clova),
+        ):
+            mock_cfg.clova_enabled = True
+            # 첫 번째 처리
+            await process_ocr_job(job.ocr_job_id)
+            # 두 번째 처리 — 큐에 중복 투입된 상황
+            await process_ocr_job(job.ocr_job_id)
+
+        # CLOVA 호출은 첫 번째 처리에서만 발생해야 한다
+        assert mock_clova.call_count == 1
+        # OcrResult는 단 한 건
+        assert await OcrResult.filter(ocr_job=job).count() == 1
