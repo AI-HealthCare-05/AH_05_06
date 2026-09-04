@@ -22,7 +22,7 @@ from app.core.masking import mask_phone
 from app.core.time import DISPLAY_TIMEZONE, as_utc
 from app.models.catalog import BaselineDirection, LabBaseline, PrescriptionSet, SetDisease
 from app.models.ocr import OcrField
-from app.models.prescriptions import Prescription, PrescriptionItem
+from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.staffs import Hospital
 from app.models.visits import GuideDocument, GuideSectionKey, GuideStatus, PatientGuideLink
 
@@ -458,9 +458,7 @@ class PatientLinkService:
         progress_started_at = (
             latest_confirmed_field.ocr_result.ocr_job.started_at if latest_confirmed_field is not None else None
         )
-        items = (
-            sorted(prescription.items, key=lambda item: item.prescription_item_id) if prescription is not None else []
-        )
+        items = ordered_prescription_items(prescription)
         primary_item = next(
             (item for item in items if item.duration_days is not None and item.duration_days > 0),
             items[0] if items else None,
