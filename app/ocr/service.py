@@ -29,9 +29,14 @@ from app.ocr.schemas import (
     OcrJobResponse,
     OcrResultResponse,
     PrescriptionItemResponse,
+    PreviousOcrFieldResponse,
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor
+
+
+def _resolved_value(row: dict) -> str | None:
+    return row["corrected_value"] if row["corrected_value"] is not None else row["extracted_value"]
 
 
 class OcrRepository(Protocol):
@@ -59,6 +64,7 @@ class OcrRepository(Protocol):
 
     async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
 
+    async def get_previous_fields(self, visit_id: int, actor: OcrActor) -> list[PreviousOcrFieldResponse]: ...
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription: ...
 
 
@@ -283,6 +289,79 @@ class TortoiseOcrRepository:
             job.excluded_from_guide = True
             await job.save(update_fields=("excluded_from_guide",))
         return job
+
+    async def get_previous_fields(self, visit_id: int, actor: OcrActor) -> list[PreviousOcrFieldResponse]:
+        """같은 환자의 이전 visit에서 확정된 OCR 필드를 field_type별로 최신 하나씩 반환.
+
+        - 같은 병원(hospital_id) 범위만 조회한다 — 타 병원 데이터 차단.
+        - excluded_from_guide=True job의 필드는 포함하지 않는다.
+        - is_confirmed=True 필드만 포함한다.
+        - field_type이 중복될 경우 가장 최근 방문의 값을 택한다.
+        """
+        current = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
+        if current is None:
+            raise _not_found()
+
+        prev_visits = (
+            await Visit.filter(
+                hospital_id=actor.hospital_id,
+                patient_id=current.patient_id,
+                visited_at__lt=current.visited_at,
+            )
+            .order_by("-visited_at")
+            .limit(20)
+            .values("visit_id", "visited_at")
+        )
+
+        if not prev_visits:
+            return []
+
+        prev_visit_ids = [v["visit_id"] for v in prev_visits]
+        visit_date_map = {v["visit_id"]: v["visited_at"].date() for v in prev_visits}
+        visit_order = {vid: i for i, vid in enumerate(prev_visit_ids)}
+
+        field_rows = await OcrField.filter(
+            ocr_result__ocr_job__visit_id__in=prev_visit_ids,
+            ocr_result__ocr_job__hospital_id=actor.hospital_id,
+            ocr_result__ocr_job__excluded_from_guide=False,
+            is_confirmed=True,
+        ).values(
+            "field_type",
+            "corrected_value",
+            "extracted_value",
+            "unit",
+            "confirmed_at",
+            visit_id="ocr_result__ocr_job__visit_id",
+        )
+
+        sorted_rows = sorted(
+            field_rows,
+            key=lambda r: (
+                visit_order.get(r["visit_id"], 9999),
+                -(r["confirmed_at"].timestamp() if r["confirmed_at"] else 0),
+            ),
+        )
+
+        seen: set[str] = set()
+        out: list[PreviousOcrFieldResponse] = []
+        for row in sorted_rows:
+            if row["field_type"] in seen:
+                continue
+            value = _resolved_value(row)
+            if value is None:
+                continue
+            seen.add(row["field_type"])
+            out.append(
+                PreviousOcrFieldResponse(
+                    field_type=row["field_type"],
+                    value=value,
+                    unit=row["unit"],
+                    confirmed_at=row["confirmed_at"],
+                    visit_date=visit_date_map[row["visit_id"]],
+                )
+            )
+
+        return out
 
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription:
         # GuideService.generate()와 동일한 기준으로 job을 선택한다.
@@ -574,6 +653,10 @@ class OcrService:
         """잘못 올린 문서의 job을 안내 생성에서 제외한다 — 멱등 처리."""
         job = await self.repository.exclude_job(ocr_job_id, actor)
         return serialize_job(job)
+
+    async def previous_fields(self, visit_id: int, actor: OcrActor) -> list[PreviousOcrFieldResponse]:
+        """같은 환자·같은 병원의 이전 방문에서 확정된 OCR 값을 반환한다."""
+        return await self.repository.get_previous_fields(visit_id, actor)
 
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> FinalizeOcrResponse:
         """확정된 OcrField에서 Prescription·PrescriptionItem을 생성하거나 재확정한다."""

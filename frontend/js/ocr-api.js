@@ -105,6 +105,13 @@ var ocrApi = {
   generateGuide: function (visitId) {
     return ocrRequest("/visits/" + encodeURIComponent(visitId) + "/guide/generate", { method: "POST" });
   },
+
+  /* GET /visits/{visitId}/ocr-fields/previous — KEY-246.
+     같은 환자의 이전 방문에서 확정된 OCR 값. 와이어프레임 S1-6 「이전 값 유지」. */
+  previousFields: function (visitId) {
+    if (MOCK) return mockPreviousFields(visitId);
+    return request("/visits/" + encodeURIComponent(visitId) + "/ocr-fields/previous");
+  },
 };
 
 /* 필드 하나가 넷 중 어느 상태인지. 화면 전체가 이 함수 하나로 갈린다.
@@ -629,5 +636,26 @@ function mockOcrRequest(path, options) {
        * 조용한 성공은 검사가 재는 척만 하게 만든다. 여기서 크게 운다. */
       return reject(new ApiError("MOCK_ROUTE_MISSING", 501, { path: path }));
     }, 200);
+  });
+}
+
+/* 이전 확정 OCR 값 목업 — KEY-246.
+ *
+ * 기본은 EMR 05-20 진료의 대표 검사 값 세 개다. ?case=no-prev 이면 빈 배열.
+ * 화면에서 「이전 값 유지」 박스가 채워지는지 확인할 수 있다. */
+function mockPreviousFields(visitId) {
+  return new Promise(function (resolve) {
+    setTimeout(function () {
+      if (MOCK_CASE === "no-prev" || !visitId) return resolve([]);
+      resolve([
+        { field_type: "HEMOGLOBIN",         value: "10.4", unit: "g/dL",   confirmed_at: "2026-05-20T09:10:00+09:00", visit_date: "2026-05-20" },
+        { field_type: "ENDOMETRIOMA_SIZE",  value: "2.8",  unit: "cm",    confirmed_at: "2026-05-20T09:10:00+09:00", visit_date: "2026-05-20" },
+        { field_type: "CA_125",             value: "52",   unit: "U/mL",  confirmed_at: "2026-05-20T09:10:00+09:00", visit_date: "2026-05-20" },
+        { field_type: "AMH",                value: "1.1",  unit: "ng/mL", confirmed_at: "2026-05-20T09:10:00+09:00", visit_date: "2026-05-20" },
+        { field_type: "ENDOMETRIAL_THICKNESS", value: "0.5", unit: "cm", confirmed_at: "2026-05-20T09:10:00+09:00", visit_date: "2026-05-20" },
+        { field_type: "AST",                value: "24",   unit: "U/L",   confirmed_at: "2026-05-20T09:10:00+09:00", visit_date: "2026-05-20" },
+        { field_type: "ALT",                value: "34",   unit: "U/L",   confirmed_at: "2026-05-20T09:10:00+09:00", visit_date: "2026-05-20" },
+      ]);
+    }, 120);
   });
 }

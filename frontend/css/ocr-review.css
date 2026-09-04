@@ -1287,3 +1287,56 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
+
+/* ── 이전 값 유지 — KEY-246 ──────────────────────────────────────────────
+ *
+ * 와이어프레임 S1-6 원문: 이번에 안 한 검사의 지난 값을 흐리게 세운다.
+ * 줄 치수는 기존 .field 줄(gap:18px · name:132px · value:68px · unit:46px)과 맞춘다.
+ */
+
+.carried {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.carried__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.carried__date {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* 이름 · 값 · 단위가 기존 .field 줄과 같은 가로 배치 */
+.carried__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.carried__name {
+  width: 132px;
+  flex: none;
+}
+
+/* 값은 기존 .field__value 치수를 따르되 테두리 없이 흐리게 */
+.carried__value {
+  min-width: 68px;
+  padding: 0 8px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.carried__unit {
+  width: 46px;
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-3);
+}

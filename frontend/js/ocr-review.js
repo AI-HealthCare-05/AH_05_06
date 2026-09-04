@@ -45,6 +45,7 @@ function blankReviewState() {
     conflict: {}, // 409 — { mine, theirs }
     focusOn: null, // 방금 연 입력칸. 다시 그린 뒤 여기로 커서를 돌려준다
     generating: false, // 안내문 생성 요청이 나가 있다 (KEY-204)
+    prevFields: null, // KEY-246: 이전 방문 확정 OCR 값. null=로딩중, []=없음
   };
 }
 
@@ -327,6 +328,7 @@ function stateTakesFocus(tone) {
   var conflict = view.conflict;
   var focusOn = view.focusOn;
   var generating = view.generating; // 안내문 생성 요청이 나가 있다 (KEY-204)
+  var prevFields = view.prevFields; // KEY-246: 이전 방문 확정 OCR 값
 
   /* 칸이 열려 있는지는 **키가 있는지**로 본다. 값으로 보면 칸을 비웠을 때
      ""(falsy)가 되어 입력칸이 저 혼자 닫힌다 — 지우고 다시 치는 것이 값
@@ -1323,7 +1325,7 @@ function stateTakesFocus(tone) {
     }
     /* 검사값도 자리를 세운다 — 안 세우면 못 읽은 것과 안 한 것을 구별할 수 없다 */
     var labs = withMissingRows(split.labs, LAB_CORE);
-    return prescriptionHtml(rx) + labsHtml(labs) + notReadyHtml();
+    return prescriptionHtml(rx) + labsHtml(labs) + carriedHtml() + notReadyHtml();
   }
 
   /* 추가 약품 행 — MEDICATION_NAME_2 / DURATION_DAYS_2 등을 상단 처방 줄과
@@ -1504,12 +1506,76 @@ function stateTakesFocus(tone) {
     );
   }
 
-  /* ③④ 아직 서버에 자리가 없는 블록.
+  /* ③ 이전 값 유지 — KEY-246.
+   *
+   * 같은 환자의 이전 방문에서 확정된 OCR 값을 방문일별로 흐리게 세운다.
+   * prevFields === null 이면 아직 불러오는 중이고, [] 이면 이전 데이터가 없다.
+   * 판독 로딩과 병렬로 불러오므로 판독이 끝난 뒤에도 잠깐 로딩 중일 수 있다. */
+  function carriedHtml() {
+    var HEAD =
+      '<div class="box__head"><h2 class="box__title">이전 값 유지</h2>' +
+      '<span class="box__note">이번 미시행</span></div>';
+
+    if (prevFields === null) {
+      return '<section class="box box--waiting">' + HEAD + '<p class="box__soon">불러오는 중…</p></section>';
+    }
+    if (!prevFields.length) {
+      return (
+        '<section class="box box--waiting">' +
+        HEAD +
+        '<p class="box__soon">이전 방문의 확정된 검사 값이 없습니다</p></section>'
+      );
+    }
+
+    /* 방문일별로 묶는다. 서버가 field_type별 최신 방문값을 주므로 같은 날짜가
+       여러 field에서 나올 수 있다. 최신 날짜를 맨 위에 둔다. */
+    var groups = {};
+    var groupOrder = [];
+    prevFields.forEach(function (f) {
+      if (!groups[f.visit_date]) {
+        groups[f.visit_date] = [];
+        groupOrder.push(f.visit_date);
+      }
+      groups[f.visit_date].push(f);
+    });
+    groupOrder.sort(function (a, b) { return a < b ? 1 : a > b ? -1 : 0; });
+
+    var bodyHtml = groupOrder
+      .map(function (vd) {
+        var dateLabel = "지난 방문 " + shortDate(vd);
+        var rows = groups[vd]
+          .map(function (f) {
+            return (
+              '<div class="carried__row">' +
+              '<span class="carried__name">' + escapeHtml(fieldLabel(f.field_type)) + "</span>" +
+              '<span class="carried__value">' + escapeHtml(f.value) + "</span>" +
+              '<span class="carried__unit">' + escapeHtml(f.unit || "") + "</span>" +
+              "</div>"
+            );
+          })
+          .join("");
+        return (
+          '<div class="carried__group">' +
+          '<p class="carried__date">' + escapeHtml(dateLabel) + "</p>" +
+          rows +
+          "</div>"
+        );
+      })
+      .join("");
+
+    return '<section class="box"><div class="box__head"><h2 class="box__title">이전 값 유지</h2>' +
+      '<span class="box__note">이번 미시행</span></div>' +
+      '<div class="carried">' + bodyHtml + "</div></section>";
+  }
+
+  /* ④ 아직 서버에 자리가 없는 블록.
    *
    * **눌러도 아무 일 없는 버튼을 두지 않는다** — 그 자리에 무엇이 없는지 쓴다.
    * 목업 값을 채워 두면 되는 것처럼 보이고, 그게 1차 시연이 멈춘 방식이다. */
   function notReadyHtml() {
-    return GROUPS_WITHOUT_SERVER.map(function (group) {
+    return GROUPS_WITHOUT_SERVER.filter(function (group) {
+      return group.key !== "carried";
+    }).map(function (group) {
       return (
         '<section class="box box--waiting"><div class="box__head">' +
         '<h2 class="box__title">' +
@@ -1667,6 +1733,27 @@ function stateTakesFocus(tone) {
       })
       .catch(function () {
         /* 못 읽으면 빈 채로 둔다 — 지어낸 답을 보이지 않는다 */
+      });
+  }
+
+  /* KEY-246 — 같은 환자의 이전 방문 확정 OCR 값을 불러온다.
+   *
+   * loadSeq 세대(`mine`)를 들고 들어간다. 응답이 오는 사이 진료가 바뀌면
+   * `mine !== loadSeq` 가 되어 버린다 — 그 응답은 지금 화면의 것이 아니다.
+   * 실패해도 빈 배열로 내려 둔다. 이 칸을 못 채운다고 판독 화면이 멈히면 안 된다. */
+  function loadPreviousFields(visitId, mine) {
+    prevFields = null;
+    ocrApi
+      .previousFields(visitId)
+      .then(function (data) {
+        if (mine !== loadSeq) return;
+        prevFields = Array.isArray(data) ? data : [];
+        if (result) redraw();
+      })
+      .catch(function () {
+        if (mine !== loadSeq) return;
+        prevFields = [];
+        if (result) redraw();
       });
   }
 
@@ -2656,6 +2743,7 @@ function stateTakesFocus(tone) {
     conflict = blank.conflict;
     focusOn = blank.focusOn;
     generating = blank.generating;
+    prevFields = blank.prevFields;
     fieldsBox.innerHTML = "";
     rawBox.innerHTML = "";
     docTabs.innerHTML = "";
@@ -2773,9 +2861,10 @@ function stateTakesFocus(tone) {
     var mine = ++loadSeq;
     renderPatientHead(next);
     renderSteps(); // 단계 줄은 진료가 정해져야 갈 곳을 안다
-    /* 확인 항목은 판독과 **따로** 불러온다 — 판독이 실패해도 여쭌 답은 보여야
-       하고, 반대로 답을 못 읽어도 판독은 보여야 한다. */
+    /* 확인 항목·이전 확정값은 판독과 **따로** 불러온다 — 판독이 실패해도 이 값들은
+       보여야 하고, 반대로 이 값을 못 읽어도 판독은 보여야 한다. */
     loadCheckItems(next.visit_id);
+    loadPreviousFields(next.visit_id, mine);
     showState("loading", '<p class="state__title">판독 결과를 불러오는 중…</p>');
 
     ocrApi
