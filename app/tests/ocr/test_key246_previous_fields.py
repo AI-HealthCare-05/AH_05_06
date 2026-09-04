@@ -49,6 +49,7 @@ class TestKey246PreviousFields(OcrAuthWiringTestCase):
         *,
         job_suffix: str = "",
         confirmed: bool = True,
+        excluded_from_guide: bool = False,
     ) -> OcrField:
         job = await OcrJob.create(
             ocr_job_id=f"syn-246-{visit.visit_id}-{field_type}{job_suffix}",
@@ -57,6 +58,7 @@ class TestKey246PreviousFields(OcrAuthWiringTestCase):
             requested_by=9999,
             status=OcrJobStatus.COMPLETED,
             progress=100,
+            excluded_from_guide=excluded_from_guide,
         )
         result = await OcrResult.create(ocr_job=job, model_name="test-model")
         return await OcrField.create(
@@ -186,6 +188,22 @@ class TestKey246PreviousFields(OcrAuthWiringTestCase):
         """인증 없이 호출하면 401을 반환한다."""
         response = await self.get("/visits/1/ocr-fields/previous", token=None)
         assert response.status_code == 401
+
+    async def test_excludes_fields_from_excluded_job(self) -> None:
+        """excluded_from_guide=True job의 확정 필드는 반환하지 않는다."""
+        staff = await self.make_staff(login_id="k246i", roles=["staff"], hospital_name="이오타의원")
+        patient = await self._make_patient(staff.hospital_id, "i")
+
+        prev_visit = await self._make_visit(staff.hospital_id, patient, datetime(2026, 5, 20, 9, 0, tzinfo=UTC))
+        await self._make_confirmed_field(prev_visit, "HEMOGLOBIN", "10.4", job_suffix="-excl", excluded_from_guide=True)
+
+        curr_visit = await self._make_visit(staff.hospital_id, patient, datetime(2026, 8, 13, 9, 0, tzinfo=UTC))
+
+        token = await self.login(staff.login_id)
+        response = await self.get(f"/visits/{curr_visit.visit_id}/ocr-fields/previous", token)
+
+        assert response.status_code == 200
+        assert response.json() == []
 
     async def test_multiple_field_types_all_returned(self) -> None:
         """여러 field_type이 각각 반환된다."""

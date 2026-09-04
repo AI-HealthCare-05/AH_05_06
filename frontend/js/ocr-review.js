@@ -1462,7 +1462,7 @@ function stateTakesFocus(tone) {
 
     var bodyHtml = groupOrder
       .map(function (vd) {
-        var dateLabel = "지난 방문 " + vd.slice(5); /* "2026-05-20" → "05-20" */
+        var dateLabel = "지난 방문 " + shortDate(vd);
         var rows = groups[vd]
           .map(function (f) {
             return (
@@ -1666,12 +1666,12 @@ function stateTakesFocus(tone) {
       .then(function (data) {
         if (mine !== loadSeq) return;
         prevFields = Array.isArray(data) ? data : [];
-        redraw();
+        if (result) redraw();
       })
       .catch(function () {
         if (mine !== loadSeq) return;
         prevFields = [];
-        redraw();
+        if (result) redraw();
       });
   }
 

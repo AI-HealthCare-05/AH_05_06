@@ -35,6 +35,10 @@ from app.ocr.schemas import (
 from app.ocr.security import OcrActor
 
 
+def _resolved_value(row: dict) -> str | None:
+    return row["corrected_value"] if row["corrected_value"] is not None else row["extracted_value"]
+
+
 class OcrRepository(Protocol):
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
 
@@ -290,18 +294,14 @@ class TortoiseOcrRepository:
         """같은 환자의 이전 visit에서 확정된 OCR 필드를 field_type별로 최신 하나씩 반환.
 
         - 같은 병원(hospital_id) 범위만 조회한다 — 타 병원 데이터 차단.
+        - excluded_from_guide=True job의 필드는 포함하지 않는다.
         - is_confirmed=True 필드만 포함한다.
         - field_type이 중복될 경우 가장 최근 방문의 값을 택한다.
         """
-        from datetime import date
-
-        from app.models.visits import Visit
-
         current = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
         if current is None:
             raise _not_found()
 
-        # 1. 이 환자의 이전 방문 (최신순)
         prev_visits = (
             await Visit.filter(
                 hospital_id=actor.hospital_id,
@@ -309,6 +309,7 @@ class TortoiseOcrRepository:
                 visited_at__lt=current.visited_at,
             )
             .order_by("-visited_at")
+            .limit(20)
             .values("visit_id", "visited_at")
         )
 
@@ -316,34 +317,13 @@ class TortoiseOcrRepository:
             return []
 
         prev_visit_ids = [v["visit_id"] for v in prev_visits]
-        visit_date_map: dict[int, date] = {v["visit_id"]: v["visited_at"].date() for v in prev_visits}
-        # 0이 가장 최근
-        visit_order: dict[int, int] = {vid: i for i, vid in enumerate(prev_visit_ids)}
+        visit_date_map = {v["visit_id"]: v["visited_at"].date() for v in prev_visits}
+        visit_order = {vid: i for i, vid in enumerate(prev_visit_ids)}
 
-        # 2. 해당 방문들의 OCR 작업 (제외된 작업 포함 — 확정 필드는 사람이 직접 승인한 것)
-        job_rows = await OcrJob.filter(
-            visit_id__in=prev_visit_ids,
-            hospital_id=actor.hospital_id,
-        ).values("ocr_job_id", "visit_id")
-
-        if not job_rows:
-            return []
-
-        job_visit_map: dict[str, int] = {jr["ocr_job_id"]: jr["visit_id"] for jr in job_rows}
-        job_ids = list(job_visit_map.keys())
-
-        # 3. 해당 작업들의 OCR 결과
-        result_rows = await OcrResult.filter(ocr_job_id__in=job_ids).values("ocr_result_id", "ocr_job_id")
-
-        if not result_rows:
-            return []
-
-        result_job_map: dict[int, str] = {rr["ocr_result_id"]: rr["ocr_job_id"] for rr in result_rows}
-        result_ids = list(result_job_map.keys())
-
-        # 4. 확정된 필드만
         field_rows = await OcrField.filter(
-            ocr_result_id__in=result_ids,
+            ocr_result__ocr_job__visit_id__in=prev_visit_ids,
+            ocr_result__ocr_job__hospital_id=actor.hospital_id,
+            ocr_result__ocr_job__excluded_from_guide=False,
             is_confirmed=True,
         ).values(
             "field_type",
@@ -351,37 +331,33 @@ class TortoiseOcrRepository:
             "extracted_value",
             "unit",
             "confirmed_at",
-            "ocr_result_id",
+            visit_id="ocr_result__ocr_job__visit_id",
         )
 
-        # 방문 최신순으로 정렬 후 field_type별 중복 제거
-        def _visit_order(row: dict) -> int:
-            job_id = result_job_map.get(row["ocr_result_id"])
-            if job_id is None:
-                return 9999
-            vis_id = job_visit_map.get(job_id)
-            return visit_order.get(vis_id, 9999) if vis_id is not None else 9999
-
-        sorted_rows = sorted(field_rows, key=_visit_order)
+        sorted_rows = sorted(
+            field_rows,
+            key=lambda r: (
+                visit_order.get(r["visit_id"], 9999),
+                -(r["confirmed_at"].timestamp() if r["confirmed_at"] else 0),
+            ),
+        )
 
         seen: set[str] = set()
         out: list[PreviousOcrFieldResponse] = []
         for row in sorted_rows:
             if row["field_type"] in seen:
                 continue
-            value = row["corrected_value"] if row["corrected_value"] is not None else row["extracted_value"]
+            value = _resolved_value(row)
             if value is None:
                 continue
             seen.add(row["field_type"])
-            job_id = result_job_map[row["ocr_result_id"]]
-            vis_id = job_visit_map[job_id]
             out.append(
                 PreviousOcrFieldResponse(
                     field_type=row["field_type"],
                     value=value,
                     unit=row["unit"],
                     confirmed_at=row["confirmed_at"],
-                    visit_date=visit_date_map[vis_id],
+                    visit_date=visit_date_map[row["visit_id"]],
                 )
             )
 
