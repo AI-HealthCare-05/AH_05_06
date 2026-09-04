@@ -141,6 +141,8 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
         "/api/v1/visits/{visit_id}/guide/submit": "app.apis.v1.guide_routers",
         # 판독이 못 읽은 값을 적어 넣는다 — 줄이 없어 항목 이름으로 짚는다 (S1-7)
         "/api/v1/visits/{visit_id}/ocr-fields/{field_type}": "app.ocr.api",
+        # 확정 OCR 필드 → Prescription 구조화 저장 (KEY-66)
+        "/api/v1/visits/{visit_id}/ocr-finalize": "app.ocr.api",
         # 확인 항목 — 처방 전에 여쭙는 것들 (와이어프레임 S1-6 · KEY-234)
         "/api/v1/visits/{visit_id}/check-items": "app.apis.v1.visit_routers",
         # 문자 설정 — 회차 · 문구 · 시각 (와이어프레임 S1-14 · KEY-234)
