@@ -31,14 +31,38 @@ class TestMatrixShape:
         orphans = [p.value for p, roles in MATRIX.items() if not roles]
         assert not orphans, f"어떤 역할로도 열리지 않는 권한: {orphans}"
 
-    def test_combinations_cover_everything_but_the_empty_set(self) -> None:
-        """A1-2가 중복 선택을 허용하므로 조합은 2^3 - 1 = 7가지다.
+    def test_the_combinations_are_the_five_we_chose(self) -> None:
+        """조합은 **다섯**이다 — 멱집합을 채운 일곱이 아니다 (KEY-269).
+
+        `staff` ⊂ `doctor` 라 `staff|doctor` 는 `doctor` 하나와 권한이 완전히
+        같다. 남은 멀티롤 둘은 admin 오버레이이고 각각 물음이 있다.
 
         빈 조합은 「역할과 권한을 합쳐 하나 이상」 규칙에 걸려 저장될 수 없다.
         """
-        assert len(VALID_COMBINATIONS) == 7
-        assert len(set(VALID_COMBINATIONS)) == 7, "중복된 조합이 있다"
+        assert len(VALID_COMBINATIONS) == 5
+        assert len(set(VALID_COMBINATIONS)) == 5, "중복된 조합이 있다"
         assert frozenset() not in VALID_COMBINATIONS
+
+    def test_staff_and_doctor_never_sit_in_the_same_account(self) -> None:
+        """**둘을 한 계정에 같이 주지 않는다** — 개수만 세면 무엇이 빠졌는지 모른다.
+
+        `staff` 권한이 `doctor` 권한에 통째로 들어 있으므로, 둘을 함께 주는 것은
+        `doctor` 하나와 같은 말이면서 「겸직」이라는 없는 뜻을 만든다.
+        """
+        both = [combo for combo in VALID_COMBINATIONS if {Role.STAFF, Role.DOCTOR} <= combo]
+        assert not both, f"staff 와 doctor 가 함께 있는 조합: {[sorted(r.value for r in c) for c in both]}"
+
+    def test_staff_permissions_are_a_subset_of_doctor(self) -> None:
+        """조합을 줄인 **근거 자체**를 잰다.
+
+        `staff` ⊂ `doctor` 가 깨지면 `staff|doctor` 를 뺀 것이 틀린 결정이 된다 —
+        그때는 조합을 되살려야 하고, 이 검사가 그것을 알려 준다.
+        """
+        staff_can = {p for p, roles in MATRIX.items() if Role.STAFF in roles}
+        doctor_can = {p for p, roles in MATRIX.items() if Role.DOCTOR in roles}
+
+        missing = sorted(p.value for p in staff_can - doctor_can)
+        assert not missing, f"의사가 못 하는 스탭 권한이 생겼다: {missing} — staff|doctor 조합을 되살려야 한다"
 
     def test_permission_groups_do_not_overlap(self) -> None:
         assert not (MEDICAL_JUDGEMENT & CLINIC_OPERATION)

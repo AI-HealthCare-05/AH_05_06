@@ -65,12 +65,14 @@
 | `alpha_doctor` | `SYN-STAFF-02` | H1 | `doctor` · active | 안내문 검토·최종 승인 |
 | `alpha_staff` | `SYN-STAFF-01` | H1 | `staff` · active | 환자·진료 등록과 문서 업로드 |
 | `alpha_admin_staff` | `SYN-STAFF-06` | H1 | `admin`, `staff` · active | 복수 role 합집합과 의료 승인 차단 |
-| `alpha_doctor_staff` | `SYN-STAFF-05` | H1 | `doctor`, `staff` · active | OCR 확인 후 의사 승인 흐름 |
 | `alpha_left_staff` | `SYN-STAFF-11` | H1 | `staff` · left | 퇴사 계정 로그인 차단과 기록 보존 |
 | `alpha_new_staff` | `SYN-STAFF-09` | H1 | `staff` · first login | 최초 비밀번호 변경 흐름 |
 | `beta_admin` | `SYN-STAFF-17` | H2 | `admin` · active | 타 병원 관리자 접근 차단 |
 | `beta_doctor` | `SYN-STAFF-16` | H2 | `doctor` · active | 타 병원 의사 접근 차단 |
 | `beta_staff` | `SYN-STAFF-15` | H2 | `staff` · active | 타 병원 스탭 접근 차단 |
+
+`alpha_doctor_staff`(`SYN-STAFF-05`, `doctor`·`staff`)는 없앴다 — `staff` ⊂ `doctor`라
+그 조합이 `doctor` 하나와 권한이 같기 때문이다 (2026-09-04 이희진 결정, KEY-269).
 
 ### 직원 공통 필드
 

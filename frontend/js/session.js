@@ -46,11 +46,19 @@ var session = {
 
 /* 로그인한 사람이 갈 첫 화면. 계정에 붙은 역할이 정한다.
  * 화면을 고르게 하지 않는다 — 스탭은 환자 목록, 의사는 안내문 확인이 첫 일이다.
- * 관리자 권한은 별도 축이라 첫 화면을 바꾸지 않고 메뉴만 늘린다. */
+ * 관리자 권한은 별도 축이라 첫 화면을 바꾸지 않고 메뉴만 늘린다.
+ *
+ * **의사를 먼저 본다** (KEY-269). 예전에는 스탭이 앞이라 `staff|doctor` 계정이
+ * 환자 목록으로 떨어졌다 — 승인하러 들어온 원장이 주소창을 손으로 고쳐야 했다.
+ *
+ * 그 조합 자체는 이제 유효 조합에서 빠졌지만(`VALID_COMBINATIONS` 다섯), 이
+ * 차례는 **방어선**으로 남긴다. 옛 데이터나 손으로 고친 DB 에서 `staff|doctor`
+ * 가 생겨도 의사 화면으로 보낸다. 「doctor 롤이면 언제나 `/doctor.html`」이라는
+ * 뜻을 코드에 고정하는 값도 있다. */
 function landingFor(roles) {
   roles = roles || [];
+  if (roles.indexOf("doctor") !== -1) return "/doctor.html"; // D1 — 의사는 승인이 첫 일
   if (roles.indexOf("staff") !== -1) return "/patients.html"; // S1
-  if (roles.indexOf("doctor") !== -1) return "/doctor.html"; // D1
   if (roles.indexOf("admin") !== -1) return "/admin.html"; // A1 — 관리자 권한만 가진 계정
   return "/login.html";
 }

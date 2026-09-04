@@ -254,13 +254,13 @@ GET /api/docs             ← 사람이 보는 화면
 
 `AGENTS.md` — 「비밀번호를 코드 · 화면 · 로그 · 커밋에 남기지 않는다」.
 
-시드가 **환경변수 `SEED_STAFF_PASSWORD`에서 받아** 17개 계정에 같은 값을 넣는다.
+시드가 **환경변수 `SEED_STAFF_PASSWORD`에서 받아** 15개 계정에 같은 값을 넣는다.
 **기본값을 두지 않는다** — 값이 없으면 시드가 실패한다.
 
 이러면 합성 계정이 실수로 운영 DB에 들어가도 **아무도 로그인할 수 없다.**
 저장소에 비밀번호가 없으니 새어 나갈 것도 없다.
 
-### 17개 계정
+### 15개 계정
 
 | ID | 병원 | login_id | roles | 무엇을 보는가 |
 |---|---|---|---|---|
@@ -268,10 +268,8 @@ GET /api/docs             ← 사람이 보는 화면
 | `SYN-STAFF-02` | H1 | `doctor01` | doctor | **기준 의사** — 환자 CSV 담당의 대부분(박연) |
 | `SYN-STAFF-03` | H1 | `doctor02` | doctor | 두 번째 의사 — `D2-3` 본인 소유 검사에 둘이 필요하다 |
 | `SYN-STAFF-04` | H1 | `admin01` | admin | **운영만** — 진료 화면이 열리지 않아야 한다 |
-| `SYN-STAFF-05` | H1 | `both01` | staff·doctor | 겸직 |
 | **`SYN-STAFF-06`** | H1 | `adminstaff01` | **staff·admin** | ★ **의료 승인 차단의 그 계정** |
 | `SYN-STAFF-07` | H1 | `admindoc01` | doctor·admin | admin이 승인을 방해하지 않는다 |
-| `SYN-STAFF-08` | H1 | `allthree01` | staff·doctor·admin | 합집합이 제대로 도는가 |
 | **`SYN-STAFF-09`** | H1 | `newbie01` | staff | ★ **첫 로그인** — `L-3` 없이는 아무 데도 못 간다 |
 | `SYN-STAFF-10` | H1 | `newdoc01` | doctor | 첫 로그인 의사 — 역할이 있어도 `L-3`이 먼저다 |
 | **`SYN-STAFF-11`** | H1 | `left01` | staff | ★ **퇴사자** — `roles`가 남아 있어도 거부된다 |
@@ -283,7 +281,11 @@ GET /api/docs             ← 사람이 보는 화면
 | `SYN-STAFF-17` | **H2** | `admin21` | admin | 다른 의원 관리자 — `H1` 직원 목록에 닿으면 안 된다 |
 
 `roles`는 CSV 한 칸에 `|`로 이어 적는다(`staff|admin`). 쉼표는 CSV 구분자와 겹친다.
-**역할 조합 7가지가 모두 들어 있다** — `KEY-23` 매트릭스의 `VALID_COMBINATIONS`와 같다.
+**역할 조합 5가지가 모두 들어 있다** — `KEY-23` 매트릭스의 `VALID_COMBINATIONS`와 같다.
+
+예전에는 일곱이었다. `staff` 권한이 `doctor` 권한에 통째로 들어 있어
+`staff|doctor` 는 `doctor` 하나와 권한이 같으므로, 그 둘을 뺐다
+(`both01` · `allthree01`, 2026-09-04 이희진 결정 · KEY-269).
 
 ### 의원이 둘이다 — `H1` · `H2`
 

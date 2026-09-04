@@ -30,7 +30,9 @@ def build_key36_fixture_set() -> Key36FixtureSet:
         "alpha_staff": by_id("SYN-STAFF-01"),
         "alpha_doctor": by_id("SYN-STAFF-02"),
         "alpha_admin": by_id("SYN-STAFF-04"),
-        "alpha_doctor_staff": by_id("SYN-STAFF-05"),
+        # `SYN-STAFF-05`(both01, staff|doctor) 는 없앴다 — staff ⊂ doctor 라
+        # 그 조합이 doctor 하나와 권한이 같기 때문이다 (KEY-269). 이 손잡이를
+        # 쓰는 자리는 없었다.
         "alpha_admin_staff": by_id("SYN-STAFF-06"),
         "alpha_new_staff": by_id("SYN-STAFF-09"),
         "alpha_left_staff": by_id("SYN-STAFF-11"),
