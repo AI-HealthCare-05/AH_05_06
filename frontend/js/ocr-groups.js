@@ -289,7 +289,7 @@ function courseWarn(days) {
         확정 값이 그대로 들어 있고, 없는 것은 그것을 꺼내 주는 **길**이다.
         판독 API 는 전부 `ocr_job_id` 나 이번 진료로만 열려 있다.
 
-     ④ 확인 항목 — 여기는 **담을 표부터 없다.** `prescription_set`(8종)과
+     ④ 확인 항목 — 여기는 **담을 표부터 없다.** `prescription_set`(넷)과
         `drug_caution_content`(문구)는 있지만, 처방별로 무엇을 여쭐지의
         목록도, 스탭이 체크한 답을 진료에 붙여 둘 자리도 없다.
         (`visit.doctor_note` 는 의사 소견 칸이라 이것과 다르다.) */

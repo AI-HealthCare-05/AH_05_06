@@ -5,10 +5,10 @@
  *   PUT  /api/v1/prescription-sets/{id}                   저장 — 진단·약·일수 (이름은 못 바꾼다)
  *
  * **목록과 상세를 가른다.** 목록에 상세를 다 실으면 고르는 칸 하나 그리려고
- * 여덟 세트의 약·문구를 전부 받아 온다.
+ * 세트마다 약·문구를 전부 받아 온다 — 세트는 의사가 만드는 만큼 늘어난다.
  */
-/* 확인 항목은 **처방이 정한다**(와이어프레임 S1-6 「처방별」). 지금은 여덟
-   세트 모두 다섯을 여쭙는다 — 서버 씨앗과 같은 값이다. 어느 처방에 무엇을
+/* 확인 항목은 **처방이 정한다**(와이어프레임 S1-6 「처방별」). 지금은 씨앗
+   넷 모두 다섯을 여쭙는다 — 서버 씨앗과 같은 값이다. 어느 처방에 무엇을
    여쭐지는 의사가 설정(D2-3)에서 정하고, 그때 이 목업도 따라가야 한다. */
 var MOCK_CHECK_ITEMS = [
   "DEPRESSION",
@@ -57,7 +57,7 @@ var MOCK_PRESCRIPTION_SETS = [
 
 var catalogApi = {
   sets: function () {
-    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 여덟만 훑으면 새로 만든 처방이
+    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 넷만 훑으면 새로 만든 처방이
        레일에 안 나타난다 — 목업에서만 나는 차이라 CI 가 못 잡는다. */
     if (MOCK) return Promise.resolve(mockSetStore().map(mockSetListRow));
     return request("/prescription-sets");
@@ -276,7 +276,7 @@ function mockSetListRow(row) {
        처방으로 저장된 진료를 다시 열 때 확인 항목이 이름으로 안 찾아진다.
        거르는 것은 판독 확인의 **고르는 칸** 하나뿐이다. */
     hidden: mine ? !!mine.hidden : false,
-    /* 레일이 질환으로 묶는다 — 상세를 받아야 알 수 있게 두면 여덟 번 다녀온다 */
+    /* 레일이 질환으로 묶는다 — 상세를 받아야 알 수 있게 두면 세트 수만큼 다녀온다 */
     disease: mine ? mine.disease : "ENDOMETRIOSIS",
     check_items: mine ? mine.check_items.slice() : [],
     /* 판독 화면이 처방을 고르는 순간 약 목록을 세운다 — 확인 항목과 같은
@@ -780,7 +780,7 @@ function mockCopyPage() {
         editable: key !== "emergency",
       };
     }),
-    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 여덟만 훑으면 새로 만든 처방이
+    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 넷만 훑으면 새로 만든 처방이
        문구 목록에 없어, 만든 직후 안내문 절이 통째로 안 보인다 — 목업에서만
        나는 차이라 CI 가 못 잡는다. `sets()` 에서도 같은 자리를 고쳤다. */
     items: mockSetStore().map(function (row) {

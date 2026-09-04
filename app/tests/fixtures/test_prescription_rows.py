@@ -399,3 +399,35 @@ class TestEveryVisitPointsAtASetThatExists:
             assert int(said) == len(PRESCRIPTION_SETS), (
                 f"명세는 {said}종이라는데 픽스처는 {len(PRESCRIPTION_SETS)}종이다"
             )
+
+    def test_the_browser_mock_names_the_same_sets(self) -> None:
+        """목업과 씨앗이 **같은 이름**을 든다.
+
+        `catalog-api.js` 주석이 「서버 픽스처와 같은 넷이어야 한다. 갈라지면
+        목에서 고르던 처방이 서버에 없다」고 적어 두었는데, **그 말을 지키는
+        검사가 없었다.** 이번(KEY-262)에도 양쪽을 손으로 맞췄고, 한쪽만
+        고쳤다면 MOCK 을 끈 순간에야 드러났을 것이다 — 목업에서만 나는
+        차이라 화면 검사도 못 잡는다 (`#207` 리뷰).
+        """
+        from app.tests.fixtures.catalog import PRESCRIPTION_SETS
+
+        src = (FRONTEND / "catalog-api.js").read_text(encoding="utf-8")
+        block = re.search(r"var MOCK_PRESCRIPTION_SETS = \[(.*?)\n\];", src, re.S)
+
+        assert block, "catalog-api.js 에서 MOCK_PRESCRIPTION_SETS 를 못 찾았다 — 검사가 헛돈다"
+        # `prescription_set_id` 로 앵커한다 — 그냥 `name:` 을 훑으면 안에 든
+        # `drugs: [{ name: … }]` 의 **약 이름**까지 딸려 온다.
+        body = block.group(1)
+        mocked = set(re.findall(r'prescription_set_id: \d+,\s*name: "([^"]+)"', body))
+
+        # **읽어 낸 수가 든 수와 같아야 한다.** 앵커가 한 줄짜리 항목을 놓치면
+        # 목업에 더해진 세트가 검사에 안 보이고, 검사는 조용히 통과한다.
+        assert len(mocked) == body.count("prescription_set_id:"), (
+            "목업 항목 수와 읽어 낸 이름 수가 다르다 — 앵커가 항목 하나를 놓쳤다"
+        )
+        seeded = {row.name for row in PRESCRIPTION_SETS}
+
+        assert mocked, "목업에서 세트 이름을 하나도 못 읽었다 — 검사가 헛돈다"
+        assert mocked == seeded, (
+            f"목업에만 있는 이름 {sorted(mocked - seeded)}, 씨앗에만 있는 이름 {sorted(seeded - mocked)}"
+        )
