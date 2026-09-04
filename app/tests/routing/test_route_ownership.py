@@ -139,6 +139,8 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
         "/api/v1/visits/{visit_id}/guide/return": "app.apis.v1.guide_routers",
         # 스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11 (KEY-234)
         "/api/v1/visits/{visit_id}/guide/submit": "app.apis.v1.guide_routers",
+        # 이전 방문 확정 OCR 값 조회 — 와이어프레임 S1-6 「이전 값 유지」 (KEY-246)
+        "/api/v1/visits/{visit_id}/ocr-fields/previous": "app.ocr.api",
         # 판독이 못 읽은 값을 적어 넣는다 — 줄이 없어 항목 이름으로 짚는다 (S1-7)
         "/api/v1/visits/{visit_id}/ocr-fields/{field_type}": "app.ocr.api",
         # 확정 OCR 필드 → Prescription 구조화 저장 (KEY-66)
