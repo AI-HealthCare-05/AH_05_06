@@ -162,20 +162,26 @@ test('localhost와 file 화면도 현재 URL의 mock=1 없이는 목업을 켜�
   assert.doesNotMatch(API_SOURCE, /sessionStorage\.setItem/);
 });
 
-test('v3 목업 응답도 공개 DTO로 검증되며 환자 PII를 만들지 않는다', () => {
+test('v3 목업 응답도 공개 DTO 계약을 지키고, patient_name은 표시 모델로 그대로 옮긴다', () => {
   const { context } = load({ search: '?mock=1' });
   const allowed = [
     'approved_at', 'care', 'chat', 'clinic', 'demo_only', 'disease',
-    'expires_at', 'guide', 'life', 'sections', 'stat', 'version', 'visit',
+    'expires_at', 'guide', 'life', 'patient_name', 'sections', 'stat', 'version', 'visit',
   ];
 
   Object.values(context.MOCK_GUIDES).forEach((guide) => {
     assert.equal(Object.keys(guide).every((key) => allowed.includes(key)), true);
+    // 목업은 OTP 우회 미리보기라 이름을 담는다. 실서버는 인증한 뷰어에게만 준다(KEY-268).
     assert.equal(Object.hasOwn(guide, 'patient'), false);
-    assert.equal(Object.hasOwn(guide, 'patient_name'), false);
     assert.doesNotThrow(() => context.adaptGuideResponse(guide));
-    assert.equal(context.adaptGuideResponse(guide).patient, '');
+    assert.equal(context.adaptGuideResponse(guide).patient, guide.patient_name || '');
   });
+});
+
+test('patient_name은 있으면 표시 모델에 그대로, 없으면 빈 문자열이다', () => {
+  const { context } = load();
+  assert.equal(plain(context.adaptGuideResponse(richPayload({ patient_name: '김철수' }))).patient, '김철수');
+  assert.equal(plain(context.adaptGuideResponse(richPayload())).patient, '');
 });
 
 test('v3 중첩 DTO를 P2~P5 화면 모델로 손실 없이 매핑한다', () => {
@@ -313,7 +319,11 @@ test('알 수 없는 루트·중첩 필드와 중복 sections를 계약 오류�
     (error) => error.code === 'GUIDE_CONTRACT_MISMATCH',
   );
 
-  assertContractError(payload([], { patient_name: '노출 금지' }));
+  // patient_name 은 이제 계약에 있는 필드다(인증 뷰어용 — KEY-268). 계약 오류가 아니다.
+  assert.equal(
+    plain(context.adaptGuideResponse(payload([], { patient_name: '홍길동' }))).patient,
+    '홍길동',
+  );
   assertContractError(richPayload({
     stat: { drugName: '비잔정', prescribed: 84, patientName: '노출 금지' },
   }));
@@ -425,6 +435,13 @@ test('P2~P5 렌더러가 v3 진행률·빈 목표·부분 펼침·승인 시각 
   assert.doesNotMatch(GUIDE_SOURCE, /n\.innerHTML = html/);
   assert.match(GUIDE_SOURCE, /GuideFooter\(\{ approvedAt: d\.approvedAt/);
   assert.doesNotMatch(GUIDE_SOURCE, /goal\.dim/);
+
+  // 헤더는 서버가 준 이름만 쓴다 — 지어내지 않고, 없으면 진료일·의원명만 (KEY-268).
+  assert.match(GUIDE_SOURCE, /var meta = \[d\.patient \|\| null,/);
+
+  // 탭 네 개가 한 줄을 4등분해 채운다 (KEY-268 후속 배치 정리).
+  assert.match(GUIDE_CSS, /\.tab-bar__btn\s*\{[\s\S]*flex:\s*1 1 0/);
+  assert.doesNotMatch(GUIDE_CSS, /\.tab-bar\s*\{[^}]*overflow-x:\s*auto/);
 
   assert.match(GUIDE_CSS, /\.expand-body[\s\S]*max-height:\s*430px/);
   assert.match(GUIDE_CSS, /\.life-fade-wrap[\s\S]*max-height:\s*300px/);

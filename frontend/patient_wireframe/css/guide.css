@@ -84,15 +84,17 @@ body {
 }
 
 /* ── 탭 바 ─── */
+/* 탭이 네 개로 고정이라(현황·복약지도·주의사항·생활관리) 왼쪽에 몰지 않고
+   한 줄을 4등분해 각 칸을 채운다. 칸 안에서 글자는 가운데 정렬. */
 .tab-bar {
   display: flex;
-  overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .tab-bar::-webkit-scrollbar { display: none; }
 .tab-bar__btn {
-  flex: none;
+  flex: 1 1 0;
+  min-width: 0;
   text-align: center;
   font-family: var(--font);
   font-size: 15px;
@@ -101,7 +103,7 @@ body {
   border: 0;
   border-bottom: 2px solid transparent;
   min-height: 44px;
-  padding: 0 14px 8px;
+  padding: 0 4px 8px;
   white-space: nowrap;
   cursor: pointer;
   color: var(--tx-muted);

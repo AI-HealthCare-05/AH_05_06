@@ -19,6 +19,19 @@ async def require_patient_session(
     await PatientSessionStore(redis).require(patient_session, token)
 
 
+async def optional_patient_session(
+    token: str,
+    redis: Annotated[Redis, Depends(get_redis)],
+    patient_session: Annotated[str | None, Cookie(alias=PATIENT_SESSION_COOKIE_NAME)] = None,
+) -> bool:
+    """OTP 인증 세션이 이 링크에 유효한지 여부. 없거나 만료여도 막지 않는다 — KEY-268.
+
+    안내 조회 자체는 링크 토큰만으로 열리고(KEY-178), 이 값은 환자명처럼 인증한
+    뷰어에게만 보태는 필드를 켤지 정하는 데만 쓴다.
+    """
+    return await PatientSessionStore(redis).has_valid_session(patient_session, token)
+
+
 async def require_patient_session_link(
     redis: Annotated[Redis, Depends(get_redis)],
     patient_session: Annotated[str | None, Cookie(alias=PATIENT_SESSION_COOKIE_NAME)] = None,

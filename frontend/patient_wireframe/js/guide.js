@@ -122,8 +122,8 @@
 
   /* ── 헤더 메타 ─── */
   function fillHeader(d) {
-    /* 공개 응답에는 환자명이 없으므로 와이어프레임의 환자명 자리를 지어내지 않는다. */
-    var meta = [d.visit ? d.visit + ' 진료' : '승인된 진료 안내', d.clinic].filter(Boolean);
+    /* 이름은 서버가 OTP 인증한 뷰어에게만 넣어 준다(KEY-268). 없으면 진료일·의원명만. */
+    var meta = [d.patient || null, d.visit ? d.visit + ' 진료' : '승인된 진료 안내', d.clinic].filter(Boolean);
     document.getElementById('header-patient').textContent = meta.join(' · ');
   }
 
