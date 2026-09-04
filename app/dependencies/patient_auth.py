@@ -26,8 +26,9 @@ async def optional_patient_session(
 ) -> bool:
     """OTP 인증 세션이 이 링크에 유효한지 여부. 없거나 만료여도 막지 않는다 — KEY-268.
 
-    안내 조회 자체는 링크 토큰만으로 열리고(KEY-178), 이 값은 환자명처럼 인증한
-    뷰어에게만 보태는 필드를 켤지 정하는 데만 쓴다.
+    require_patient_session과 독립적으로 실제 쿠키를 확인한다. require_patient_session이
+    테스트에서 override로 우회되는 경우에도, 이 값은 override와 무관하게 실제 세션
+    유무를 그대로 반영해야 patient_name 노출 여부가 정확하다 (KEY-178 리뷰로 발견).
     """
     return await PatientSessionStore(redis).has_valid_session(patient_session, token)
 

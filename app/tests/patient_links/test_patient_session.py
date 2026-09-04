@@ -1,4 +1,4 @@
-"""환자 OTP 뒤 30분 세션이 D+7 저장에 강제되는가 — KEY-92."""
+"""환자 OTP 뒤 30분 세션이 안내 조회·D+7 조회·저장에 강제되는가 — KEY-92, KEY-178."""
 
 import asyncio
 from datetime import timedelta
@@ -83,7 +83,8 @@ class TestPatientSessionJourney(PatientSessionTestCase):
             assert raw_cookie
             assert raw_cookie not in repr(self.redis.values)
 
-    async def test_guide_and_checkin_reads_need_only_the_link_token(self) -> None:
+    async def test_guide_and_checkin_reads_now_require_a_session(self) -> None:
+        """KEY-178 — 링크 토큰만으로는 더 이상 안 열린다. 세션이 있어야 열린다."""
         link = await make_link()
         await GuideSection.create(
             guide_document_id=link.guide_document_id,
@@ -95,9 +96,19 @@ class TestPatientSessionJourney(PatientSessionTestCase):
             section_key=GuideSectionKey.CAUTION,
             generated_body="합성 승인 주의 안내",
         )
-        async with self.client() as new_browser:
-            guide = await new_browser.get(f"/api/v1/guides/{LINK_TOKEN}")
-            checkin = await new_browser.get(f"/api/v1/checkins/{LINK_TOKEN}")
+        async with self.client() as no_session:
+            guide_blocked = await no_session.get(f"/api/v1/guides/{LINK_TOKEN}")
+            checkin_blocked = await no_session.get(f"/api/v1/checkins/{LINK_TOKEN}")
+
+        assert guide_blocked.status_code == 401, guide_blocked.text
+        assert guide_blocked.json()["code"] == "PATIENT_SESSION_EXPIRED"
+        assert checkin_blocked.status_code == 401, checkin_blocked.text
+        assert checkin_blocked.json()["code"] == "PATIENT_SESSION_EXPIRED"
+
+        async with self.client() as with_session:
+            await self.authenticate(with_session)
+            guide = await with_session.get(f"/api/v1/guides/{LINK_TOKEN}")
+            checkin = await with_session.get(f"/api/v1/checkins/{LINK_TOKEN}")
 
         assert guide.status_code == 200, guide.text
         assert checkin.status_code == 200, checkin.text

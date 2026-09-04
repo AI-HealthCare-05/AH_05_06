@@ -1,7 +1,9 @@
 """OTP 인증한 뷰어에게만 환자 전체 이름을 보여준다 — KEY-268.
 
-안내 조회 자체는 링크 토큰만으로 열리지만(KEY-178), `patient_name` 은 이 링크로
-OTP 인증을 마친 세션이 있을 때만 응답에 실린다. 마스킹하지 않고 전체 이름을 준다.
+안내 조회 자체는 세션이 있어야 열리지만(KEY-178), require_patient_session이
+override로 우회되는 테스트 맥락도 있다. patient_name 노출 여부는 그 override와
+무관하게 실제 세션이 이 링크에 유효한지를 독립적으로 다시 본다
+(optional_patient_session, PR #215 리뷰로 재확인).
 """
 
 from httpx import ASGITransport, AsyncClient

@@ -175,13 +175,6 @@ class TestKey152WalkingSkeleton(AuthTestCase):
             guide_path = issued.json()["path"]
             raw_token = guide_path.rsplit("/", 1)[-1]
 
-            patient_guide = await client.get(guide_path)
-            assert patient_guide.status_code == 200, patient_guide.text
-            sections = patient_guide.json()["sections"]
-            assert sections
-            assert all(section["body"].strip() for section in sections)
-            assert edited_text in [section["body"] for section in sections]
-
             checkin_path = f"/api/v1/checkins/{raw_token}"
             with patch("app.services.patient_otp.secrets.randbelow", return_value=int(PATIENT_OTP)):
                 otp_issued = await client.post(
@@ -194,6 +187,14 @@ class TestKey152WalkingSkeleton(AuthTestCase):
                 json={"link_token": raw_token, "code": PATIENT_OTP},
             )
             assert otp_verified.status_code == 200, otp_verified.text
+
+            # KEY-178 — 안내 조회도 세션이 있어야 열린다. OTP 인증 뒤로 옮겼다.
+            patient_guide = await client.get(guide_path)
+            assert patient_guide.status_code == 200, patient_guide.text
+            sections = patient_guide.json()["sections"]
+            assert sections
+            assert all(section["body"].strip() for section in sections)
+            assert edited_text in [section["body"] for section in sections]
 
             submitted = await client.post(
                 checkin_path,
