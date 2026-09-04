@@ -97,8 +97,16 @@ async def generate_guide(
     visit_id: int,
     actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
+    discard_edits: bool = False,
 ) -> GuideResponse:
-    guide = await service.generate(actor, visit_id)
+    """**고친 문구가 있으면 묻고 멈춘다** — `discard_edits=true` 로 다시 부른다.
+
+    다시 만들면 절이 통째로 새로 써진다. 스탭이 이미 바로잡은 문장이 붙어
+    있으면 그것이 말없이 사라지므로, 기본값은 **멈추는 쪽**이다(409
+    `GUIDE_HAS_EDITS`). 화면이 「고친 것을 버리고 다시 만들까요」를 묻고, 사람이
+    그렇다고 하면 이 값을 켜서 다시 부른다 (이희진 님 `#221` ①).
+    """
+    guide = await service.generate(actor, visit_id, discard_edits=discard_edits)
     await guide.fetch_related("sections", "visit__patient")
     return _to_response(guide)
 

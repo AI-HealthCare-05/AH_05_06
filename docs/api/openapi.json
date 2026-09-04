@@ -5073,6 +5073,7 @@
           "GUIDE_SUBMITTED",
           "GUIDE_APPROVED",
           "GUIDE_UNAPPROVED",
+          "GUIDE_REGENERATED",
           "GUIDE_RETURNED",
           "CHECK_IN_SUBMITTED",
           "GUIDE_VIEWED",
@@ -9095,6 +9096,7 @@
     },
     "/api/v1/visits/{visit_id}/guide/generate": {
       "post": {
+        "description": "**고친 문구가 있으면 묻고 멈춘다** — `discard_edits=true` 로 다시 부른다.\n\n다시 만들면 절이 통째로 새로 써진다. 스탭이 이미 바로잡은 문장이 붙어\n있으면 그것이 말없이 사라지므로, 기본값은 **멈추는 쪽**이다(409\n`GUIDE_HAS_EDITS`). 화면이 「고친 것을 버리고 다시 만들까요」를 묻고, 사람이\n그렇다고 하면 이 값을 켜서 다시 부른다 (이희진 님 `#221` ①).",
         "operationId": "generate_guide_api_v1_visits__visit_id__guide_generate_post",
         "parameters": [
           {
@@ -9104,6 +9106,16 @@
             "schema": {
               "title": "Visit Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "discard_edits",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Discard Edits",
+              "type": "boolean"
             }
           }
         ],
