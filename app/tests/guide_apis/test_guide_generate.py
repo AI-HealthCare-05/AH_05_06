@@ -7,7 +7,7 @@
   · 생성 후 승인은 의사만 할 수 있다 (기존 규칙 유지)
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -15,11 +15,19 @@ from tortoise.contrib.test import TestCase
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
+from app.models.catalog import (
+    ApprovalStatus,
+    CautionSectionKey,
+    DrugCautionContent,
+    PrescriptionSet,
+    SetDisease,
+    SourceGrade,
+)
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: F401 (OcrResult used in test setup)
 from app.models.patients import Patient
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.staffs import Hospital, Staff
-from app.models.visits import GuideSectionKey, GuideStatus, Visit
+from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideStatus, Visit
 from app.services import guide_defaults
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
@@ -300,10 +308,180 @@ class TestGenerateCreatesStaffReviewGuide(GenerateGuideTestCase):
         assert "[합성]" not in medication["body"]
 
 
-class TestGenerateDuplicateIsRefused(GenerateGuideTestCase):
-    """같은 진료에 안내를 두 번 만들 수 없다."""
+class TestTheConfirmedReadingPicksTheSet(GenerateGuideTestCase):
+    """**확정된 판독이 처방을 정한다** — KEY-273.
 
-    async def test_second_generate_returns_409(self) -> None:
+    `Prescription` 행을 만드는 곳이 씨앗뿐이라, 판독으로 만든 진료에는 그 행이
+    아예 없었고 안내문이 늘 기본 문구로 나갔다(KEY-271). 판독에서 처방을 고쳐도
+    그 행은 안 따라와서, 본문은 옛 세트인데 「확정된 항목」 줄만 새 값인 **섞인
+    안내문**이 났다 — 복약지도는 자궁내막증인데 생활지도는 다낭성이었다.
+    """
+
+    async def test_it_uses_the_confirmed_reading_over_a_stale_prescription_row(self) -> None:
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        # 두 세트를 세우고, **새 세트에만** 승인된 생활지도를 붙인다.
+        # 어느 쪽을 봤는지 본문으로 갈린다.
+        old_set = await PrescriptionSet.create(name="자궁내막증 · 비잔 (처음)", disease=SetDisease.ENDOMETRIOSIS)
+        new_set = await PrescriptionSet.create(name="PCOS · 야즈 (계속)", disease=SetDisease.PCOS)
+        await DrugCautionContent.create(
+            prescription_set=new_set,
+            # **주의사항으로 잰다.** `life` 가 카탈로그를 읽는 것은 #214 의
+            # 변경이라 아직 여기 없다 — 어느 세트를 봤는지는 이쪽으로도 갈린다.
+            section_key=CautionSectionKey.CAUTION,
+            body="다낭성난소증후군 · 이 세트의 승인 주의사항입니다.",
+            source_name="박영 산부인과 전문의 복약지도 — 자문 내용",
+            source_org="박영 산부인과",
+            source_url="https://example.test/advice",
+            verified_at=date(2026, 9, 4),
+            content_version="2026-09-04",
+            source_grade=SourceGrade.A,
+            approval_status=ApprovalStatus.APPROVED,
+            approved_key=f"{new_set.prescription_set_id}:caution",
+        )
+
+        # 처방 행은 **옛 세트**를 들고 있다 — 씨앗이 부어 둔 값이다.
+        await Prescription.create(visit_id=visit.visit_id, prescription_set=old_set.name)
+
+        # 판독은 **다른 세트**로 확정돼 있다 — 판독 확인 화면에서 사람이 고른 값이
+        # `MEDICATION_NAME` 에 담기는 그 모양이다. 픽스처는 `DIAGNOSIS` 하나만
+        # 만들므로 여기서 더한다.
+        seeded = await OcrField.get(ocr_result__ocr_job__visit_id=visit.visit_id, field_type="DIAGNOSIS")
+        await OcrField.create(
+            ocr_result=await seeded.ocr_result,
+            field_type="MEDICATION_NAME",
+            corrected_value="PCOS · 야즈 (계속)",
+            is_confirmed=True,
+        )
+
+        async with self.client() as client:
+            headers = await self.sign_in(staff)
+            made = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+        assert made.status_code == 201
+
+        row = await Prescription.filter(visit_id=visit.visit_id).first()
+        assert row is not None and row.prescription_set == "자궁내막증 · 비잔 (처음)", (
+            "처방 행이 옛 세트를 들고 있어야 이 검사가 뜻을 갖는다"
+        )
+
+        guide = await GuideDocument.get(visit_id=visit.visit_id)
+        bodies = {s.section_key: s.generated_body for s in await GuideSection.filter(guide_document=guide)}
+        caution = bodies.get(GuideSectionKey.CAUTION) or ""
+        assert "다낭성난소증후군" in caution, f"확정된 판독이 아니라 옛 처방 행을 봤다 — {caution[:40]}"
+
+    async def test_the_staff_pick_wins_over_the_prescription_row(self) -> None:
+        """**차례가 있다** — 스탭이 고른 것 → 판독 제안 → 처방 행.
+
+        둘 다 표에 있을 때 어느 것을 쓰는지가 갈린다. 위 검사는 한쪽에만 문구를
+        붙여서 **DB 가 돌려주는 순서에 기대고** 있었다 — 순서가 뒤집히면 조용히
+        통과한다. 여기서는 양쪽에 서로 다른 문구를 붙여 차례 자체를 잰다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        async def a_set_with_caution(name: str, body: str) -> PrescriptionSet:
+            row = await PrescriptionSet.create(name=name)
+            await DrugCautionContent.create(
+                prescription_set=row,
+                section_key=CautionSectionKey.CAUTION,
+                body=body,
+                source_name="박영 산부인과 전문의 복약지도 — 자문 내용",
+                source_org="박영 산부인과",
+                source_url="https://example.test/advice",
+                verified_at=date(2026, 9, 4),
+                content_version="2026-09-04",
+                source_grade=SourceGrade.A,
+                approval_status=ApprovalStatus.APPROVED,
+                approved_key=f"{row.prescription_set_id}:caution",
+            )
+            return row
+
+        # **틀린 후보가 먼저 나오도록** 이름을 고른다. 표는 이름 색인 순서로
+        # 돌려주므로 「PCOS…」가 「자궁내막증…」보다 앞선다 — 차례를 안 지키는
+        # 구현이면 처방 행 쪽을 집게 된다.
+        from_row = await a_set_with_caution("PCOS · 야즈 (계속)", "처방행쪽 주의사항입니다.")
+        from_pick = await a_set_with_caution("자궁내막증 · 비잔 (처음)", "스탭이고른쪽 주의사항입니다.")
+
+        await Prescription.create(visit_id=visit.visit_id, prescription_set=from_row.name)
+        seeded = await OcrField.get(ocr_result__ocr_job__visit_id=visit.visit_id, field_type="DIAGNOSIS")
+        await OcrField.create(
+            ocr_result=await seeded.ocr_result,
+            field_type="MEDICATION_NAME",
+            corrected_value=from_pick.name,
+            is_confirmed=True,
+        )
+
+        async with self.client() as client:
+            headers = await self.sign_in(staff)
+            made = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+        assert made.status_code == 201
+        guide = await GuideDocument.get(visit_id=visit.visit_id)
+        bodies = {s.section_key: s.generated_body for s in await GuideSection.filter(guide_document=guide)}
+        caution = bodies.get(GuideSectionKey.CAUTION) or ""
+        assert "스탭이고른쪽" in caution, f"차례를 안 지켰다 — {caution[:40]}"
+        assert "처방행쪽" not in caution
+
+    async def test_a_drug_name_in_the_confirmed_field_does_not_hide_the_prescription(self) -> None:
+        """**확정 칸에 약품명이 들어 있어도 처방 행을 본다.**
+
+        `MEDICATION_NAME` 은 판독의 약품명 칸이다. 세트 이름이 담기는 것은
+        스탭이 처방 블록을 저장했을 때뿐이고, 안 저장한 진료에는 OCR 이 뽑은
+        약품명이 그대로 확정으로 남는다. 그것을 세트 이름으로 보면 단락이
+        일어나 **멀쩡한 세트를 가진 진료가 말없이 기본 문구로 내려간다**
+        (이희진 님 `#221` ③).
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        real_set = await PrescriptionSet.create(name="자궁내막증 · 비잔 (처음)")
+        await DrugCautionContent.create(
+            prescription_set=real_set,
+            section_key=CautionSectionKey.CAUTION,
+            body="자궁내막증 · 이 세트의 승인 주의사항입니다.",
+            source_name="박영 산부인과 전문의 복약지도 — 자문 내용",
+            source_org="박영 산부인과",
+            source_url="https://example.test/advice",
+            verified_at=date(2026, 9, 4),
+            content_version="2026-09-04",
+            source_grade=SourceGrade.A,
+            approval_status=ApprovalStatus.APPROVED,
+            approved_key=f"{real_set.prescription_set_id}:caution",
+        )
+        await Prescription.create(visit_id=visit.visit_id, prescription_set=real_set.name)
+
+        # 확정된 칸에는 **약품명**이 들어 있다 — 세트 이름이 아니다.
+        seeded = await OcrField.get(ocr_result__ocr_job__visit_id=visit.visit_id, field_type="DIAGNOSIS")
+        await OcrField.create(
+            ocr_result=await seeded.ocr_result,
+            field_type="MEDICATION_NAME",
+            corrected_value="비잔정(디에노게스트) 2mg",
+            is_confirmed=True,
+        )
+
+        async with self.client() as client:
+            headers = await self.sign_in(staff)
+            made = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+        assert made.status_code == 201
+        guide = await GuideDocument.get(visit_id=visit.visit_id)
+        bodies = {s.section_key: s.generated_body for s in await GuideSection.filter(guide_document=guide)}
+        caution = bodies.get(GuideSectionKey.CAUTION) or ""
+        assert "이 세트의 승인 주의사항" in caution, f"약품명에 막혀 처방 행을 안 봤다 — {caution[:40]}"
+
+
+class TestGenerateAgainWhileStillInReview(GenerateGuideTestCase):
+    """**작성 중이면 다시 만든다** — 판독을 고쳤는데 옛 글이 나가면 안 된다 (KEY-273)."""
+
+    async def test_generating_again_replaces_the_sections(self) -> None:
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
         visit = await make_visit(clinic)
@@ -315,8 +493,147 @@ class TestGenerateDuplicateIsRefused(GenerateGuideTestCase):
             second = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
 
         assert first.status_code == 201
-        assert second.status_code == 409
-        assert second.json()["code"] == "GUIDE_ALREADY_EXISTS"
+        assert second.status_code == 201, "작성 중인데 다시 못 만든다"
+
+        # **옛 문서의 절이 남지 않는다.** 진료 전체로 세어야 잡힌다 — 새 문서
+        # 안에서만 세면 옛 절은 딴 문서에 붙어 있어 안 보인다.
+        guide = await GuideDocument.get(visit_id=visit.visit_id)
+        mine = await GuideSection.filter(guide_document=guide).count()
+        loose = await GuideSection.filter(guide_document__visit_id=visit.visit_id).count()
+        assert loose == mine, f"옛 안내문의 절이 {loose - mine}개 남았다"
+
+    async def test_it_stops_when_staff_words_would_be_lost(self) -> None:
+        """**말없이 지우지 않는다** — 스탭이 고친 문장이 있으면 묻고 멈춘다.
+
+        「작성 중」이 「아직 아무도 안 봤다」는 뜻이 아니다. `edit_section` 이
+        그 상태에서 절 고치기를 열어 두므로, 다시 만들 때 문서를 지우면
+        `on_delete=CASCADE` 가 그 문장까지 지운다 — 승인 대기에 대해 막아 둔
+        사고가 여기서는 안 막혀 있었다 (이희진 님 `#221` ①).
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        async with self.client() as client:
+            headers = await self.sign_in(staff)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+            edited = await client.patch(
+                f"{BASE}/{visit.visit_id}/guide/sections/{GuideSectionKey.LIFE.value}",
+                headers=headers,
+                json={"body": "스탭이 바로잡은 생활지도"},
+            )
+            assert edited.status_code == 200, edited.text
+
+            again = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+        assert again.status_code == 409
+        assert again.json()["code"] == "GUIDE_HAS_EDITS"
+
+        guide = await GuideDocument.get(visit_id=visit.visit_id)
+        kept = await GuideSection.get(guide_document=guide, section_key=GuideSectionKey.LIFE)
+        assert kept.edited_body == "스탭이 바로잡은 생활지도", "멈춘다고 했는데 이미 지워졌다"
+
+    async def test_it_remakes_when_the_person_says_to_drop_them(self) -> None:
+        """**버릴 길이 있어야 멈추는 것이 막다른 길이 아니다.**
+
+        판독 자체가 틀렸다면 그 위에 고친 문장도 함께 버려야 한다. 사람이
+        그렇다고 하면 그때 다시 만든다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        async with self.client() as client:
+            headers = await self.sign_in(staff)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+            await client.patch(
+                f"{BASE}/{visit.visit_id}/guide/sections/{GuideSectionKey.LIFE.value}",
+                headers=headers,
+                json={"body": "스탭이 바로잡은 생활지도"},
+            )
+            again = await client.post(f"{BASE}/{visit.visit_id}/guide/generate?discard_edits=true", headers=headers)
+
+        assert again.status_code == 201, again.text
+        guide = await GuideDocument.get(visit_id=visit.visit_id)
+        fresh = await GuideSection.get(guide_document=guide, section_key=GuideSectionKey.LIFE)
+        assert fresh.edited_body is None, "버리고 다시 만들었는데 옛 문장이 남았다"
+
+    async def test_a_returned_guide_can_be_remade(self) -> None:
+        """**반려된 것도 스탭 차례다** — 다시 만들 수 있어야 한다.
+
+        반려(보완)는 이미 스탭에게 돌아와 있어 「거둘」 승인이 없다. 그런데
+        생성만 STAFF_REVIEW 로 좁혀 두어서, 반려 뒤 판독 자체가 틀렸음을 안
+        스탭에게 **할 수 없는 일**(「승인을 먼저 거둬 주세요」)을 시켰다
+        (이희진 님 `#221` ⑤).
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        async with self.client() as client:
+            headers = await self.sign_in(staff)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+            guide = await GuideDocument.get(visit_id=visit.visit_id)
+            guide.status = GuideStatus.APPROVAL_RETURNED
+            await guide.save()
+
+            again = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+        assert again.status_code == 201, again.text
+        back = await GuideDocument.get(visit_id=visit.visit_id)
+        assert back.status is GuideStatus.STAFF_REVIEW, "다시 만들었으면 스탭 차례로 선다"
+
+    async def test_the_saying_names_what_to_do_next(self) -> None:
+        """**막힌 까닭마다 다음에 할 일이 다르다.**
+
+        승인 대기 중에 「승인을 거둬 주세요」라고 하면 `unapprove()` 는
+        `SCHEDULED_TO_SEND` 만 받아 또 409 로 떨어진다 — 할 수 없는 일을
+        시키는 문장이다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        async with self.client() as client:
+            headers = await self.sign_in(staff)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+            guide = await GuideDocument.get(visit_id=visit.visit_id)
+            guide.status = GuideStatus.APPROVAL_PENDING
+            await guide.save()
+            pending = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+            guide.status = GuideStatus.SCHEDULED_TO_SEND
+            await guide.save()
+            approved = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+        assert "의사가 먼저 반려" in pending.json()["message"], pending.json()["message"]
+        assert "승인을 먼저 거둬" in approved.json()["message"], approved.json()["message"]
+
+    async def test_it_refuses_once_someone_has_moved_it_along(self) -> None:
+        """넘긴 뒤에는 안 만든다 — 사람이 손댄 것이 날아가면 안 된다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        async with self.client() as client:
+            headers = await self.sign_in(staff)
+            await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+            guide = await GuideDocument.get(visit_id=visit.visit_id)
+            guide.status = GuideStatus.APPROVAL_PENDING
+            await guide.save()
+
+            again = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
+
+        assert again.status_code == 409
+        assert again.json()["code"] == "GUIDE_ALREADY_EXISTS"
 
 
 class TestGenerateRoleGuard(GenerateGuideTestCase):

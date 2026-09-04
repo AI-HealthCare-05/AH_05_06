@@ -43,7 +43,19 @@ class TestGeneratedAuditEvent(GenerateGuideTestCase):
         assert events[0].section_key is None
         assert events[0].reason is None
 
-    async def test_duplicate_failure_does_not_add_an_event(self) -> None:
+    async def test_making_it_again_adds_a_line_and_keeps_the_old_one(self) -> None:
+        """다시 만들면 **줄이 하나 더 붙는다** — 옛 줄은 지우지 않는다.
+
+        처음에는 옛 문서를 통째로 지우고 다시 만들었고, 이 검사는 그래서
+        기록이 하나만 남는 것을 **정답으로 못박고 있었다.** 그런데 감사 로그는
+        덧쓰기만 한다(`docs/project_workflow.md` §6·§7.5). 지우면 「내가 고친
+        문구가 왜 사라졌지」에 답할 수 없다 — `UNAPPROVED` 가 승인 줄을
+        지우지 않는 것과 같은 판단이다 (이희진 님 `#221` ④).
+
+        지금은 문서를 지우지 않고 **속만 갈아 끼운다.** 모델 독스트링이 원래
+        그렇게 적어 두었다 — 「다시 만들면 같은 행의 내용이 바뀌고 `version` 이
+        오른다」.
+        """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "key84duplicate", ["staff"])
         visit = await make_visit(clinic, "SYN-KEY84-DUPLICATE")
@@ -55,9 +67,15 @@ class TestGeneratedAuditEvent(GenerateGuideTestCase):
             second = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
 
         assert first.status_code == 201
-        assert second.status_code == 409
-        assert second.json()["code"] == "GUIDE_ALREADY_EXISTS"
-        assert await GuideEvent.filter(event_type=GuideEventType.GENERATED).count() == 1
+        assert second.status_code == 201
+
+        guide = await GuideDocument.get(visit_id=visit.visit_id)
+        events = await GuideEvent.filter(guide_document=guide).order_by("guide_event_id").all()
+        kinds = [event.event_type for event in events]
+        assert kinds == [GuideEventType.GENERATED, GuideEventType.REGENERATED], (
+            f"처음 만든 줄과 다시 만든 줄이 차례로 남아야 한다 — {kinds}"
+        )
+        assert guide.version == 2, "같은 행을 갈아 끼웠으면 판이 오른다"
 
     async def test_unconfirmed_ocr_failure_leaves_no_guide_or_audit(self) -> None:
         clinic = await make_clinic()

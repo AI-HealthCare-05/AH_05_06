@@ -775,17 +775,20 @@ function stateTakesFocus(tone) {
       (STATE_TEXT[state]
         ? ' <span class="field__tag field__tag--' + state + '">' + STATE_TEXT[state] + "</span>"
         : "") +
+      /* 🔒 배지는 **「사람이 확인했다」는 표시**이지 잠금이 아니다 (KEY-273).
+         예전에는 확정되면 아무 데서도 못 고쳤다. 그런데 **판독이 틀리는 것이
+         정상**이고, 확정 뒤에 알아차리면 그 진료는 손쓸 방법이 없었다 — 진단과
+         처방이 어긋난 채 확정돼 안내문이 승인까지 간 일이 실제로 났고, DB 를
+         직접 고쳐야 풀렸다 (2026-09-04 권일준 결정).
+         응급 문구처럼 **정말로 못 고치는 것**은 따로 있다(KEY-150). 그것과
+         헷갈리지 않게 여기서는 잠그지 않는다 — 그래서 아래 어느 가지에도
+         「확정이라 못 고친다」가 없다. */
       (field.is_confirmed ? ' <span class="field__tag field__tag--locked">🔒 확정</span>' : "") +
       "</div>";
 
-    /* 확정된 값은 아무 데서도 못 고친다. 예전에는 이 검사가 **정상 상태의
-       「고치기」에만** 걸려 있어서, 확정됐는데 못 읽은 항목이면 「직접 입력」이,
-       후보가 여럿이면 「이 값 사용」이 그대로 떴다 (`#40` 리뷰).
-       상태별로 다시 챙기면 또 빠뜨린다 — 맨 위에서 한 번에 가른다. */
-    var locked = !!field.is_confirmed;
 
     var body;
-    if (!locked && fieldChoices(field.field_type)) {
+    if (fieldChoices(field.field_type)) {
       /* **있음 / 없음은 줄에 바로 세운다.**
        *
        * 전에는 `?` 와 「직접 입력」이 서 있고, 눌러야 고르개가 나왔다. 칠 것이
@@ -810,12 +813,6 @@ function stateTakesFocus(tone) {
         ) +
 
         "";
-    } else if (locked) {
-      body =
-        '<div class="field__value">' +
-        escapeHtml(field.value === null || field.value === undefined ? "?" : field.value) +
-        "</div>" +
-        unitHtml(field);
     } else if (isEditing(id)) {
       body =
         (fieldChoices(field.field_type)
@@ -980,7 +977,7 @@ function stateTakesFocus(tone) {
     }
 
     var more = "";
-    if (state === "candidates" && !isEditing(id) && !locked) {
+    if (state === "candidates" && !isEditing(id)) {
       var open = !!openCandidates[id];
       more =
         '<button class="field__more" type="button" data-more="' +
@@ -1762,9 +1759,9 @@ function stateTakesFocus(tone) {
   function renderSummary() {
     var counts = { missing: 0, low: 0, candidates: 0 };
     result.fields.forEach(function (field) {
-      /* 확정된 항목은 더 볼 것이 없다 — 못 읽었든 후보가 여럿이든, 이미
-         끝난 항목을 「확인할 항목」에 넣으면 고칠 방법이 없는데도 생성이
-         막힌 채로 남는다 (`renderField()` 의 `locked` 와 같은 이유). */
+      /* 확정된 항목은 **더 볼 것이 없다** — 못 읽었든 후보가 여럿이든 사람이
+         이미 봤다는 뜻이라 「확인할 항목」에서 뺀다. 못 고쳐서 빼는 것이
+         아니다(KEY-273 뒤로는 확정돼도 고칠 수 있다) — **이미 봤으니** 뺀다. */
       /* 「안 했다」고 표시한 항목도 뺀다. 비어 있는 게 맞는 것을 세면 스탭이
          할 일이 없는데도 생성이 막힌 채로 남는다 (`pending_report` 와 같은 이유). */
       if (field.is_confirmed || field.is_pending_report || field.field_status === "NOT_PERFORMED") return;
