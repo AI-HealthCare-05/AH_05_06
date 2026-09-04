@@ -31,6 +31,12 @@
 
 ## 📝 기타 참고 사항
 
+## 🔌 API 계약 영향
+
+- [ ] API 계약 변경 없음
+- [ ] DTO·라우터 변경에 맞춰 `docs/api/openapi.json`을 재생성했고, `uv run --group app python scripts/generate_openapi.py --check`를 통과시켰습니다.
+- [ ] 계약 결정·호환성 영향은 관련 `docs/api/*.md`와 Jira에 기록했습니다.
+
 ## 🧪 PR Checklist
 - [ ] 커밋 메시지 컨벤션에 맞게 작성했습니다.
 - [ ] 변경 사항에 대한 테스트를 했습니다.(버그 수정/기능에 대한 테스트).
