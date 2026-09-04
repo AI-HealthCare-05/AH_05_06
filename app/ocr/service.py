@@ -28,8 +28,8 @@ from app.ocr.schemas import (
     OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
-    PreviousOcrFieldResponse,
     PrescriptionItemResponse,
+    PreviousOcrFieldResponse,
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor
