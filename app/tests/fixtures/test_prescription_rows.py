@@ -76,19 +76,34 @@ class TestAgainstTheRealSyntheticData:
             items_from_row(row["약"], row["용법"], row["처방일수"])
 
     def test_the_row_and_item_counts_are_what_we_measured(self) -> None:
-        """처방 99건 · 항목 112건. 숫자가 바뀌면 CSV 가 바뀐 것이다."""
+        """처방 99건 · 항목 104건. 숫자가 바뀌면 CSV 가 바뀐 것이다.
+
+        112 였다가 103 이 됐다 — 「비잔정 + 진통제」 9줄에서 **진통제를 뺐다**.
+        팀 스펙(노션 「처방 세트 정의」)의 `SET-EMS-01` 처방이 「비잔 1개월」
+        뿐이고, 「진통제」는 약명이 아니라 자리표시였다 (2026-09-04 권일준).
+
+        그리고 104 가 됐다 — `SYN-EMS-08` 한 줄에 **록소펜정을 되돌렸다.** 그
+        줄은 「세트에 없는 약」 시나리오(MED-01)의 유일한 근거 데이터인데,
+        진통제를 빼면서 시나리오까지 함께 사라졌다. 자리표시를 지운 것은 맞고
+        **시나리오를 지운 것은 틀렸다** — 실제 약명으로 되살렸다
+        (이희진 님 `#214` ②).
+        """
         rows = [r for r in ROWS if r["약"].strip() and r["처방세트"].strip()]
         items = [i for r in rows for i in items_from_row(r["약"], r["용법"], r["처방일수"])]
         assert len(rows) == 99
-        assert len(items) == 112
+        assert len(items) == 104
 
     def test_exactly_the_as_needed_items_have_no_duration(self) -> None:
-        """비어 있는 기간과 `필요시` 가 정확히 같은 집합이어야 한다."""
+        """비어 있는 기간과 `필요시` 가 정확히 같은 집합이어야 한다.
+
+        **개수는 안 박는다.** 예전에는 「9개」가 박혀 있었는데, 진통제를 빼자
+        `필요시` 줄이 하나도 안 남아 검사가 규칙과 무관하게 깨졌다. 재는 것은
+        「둘이 같은 집합인가」이지 몇 개인가가 아니다.
+        """
         items = [i for r in ROWS if r["약"].strip() for i in items_from_row(r["약"], r["용법"], r["처방일수"])]
         empty = {id(i) for i in items if i.duration_days is None}
         as_needed = {id(i) for i in items if i.frequency == AS_NEEDED}
         assert empty == as_needed, "기간이 빈 줄과 `필요시` 줄이 어긋난다"
-        assert len(as_needed) == 9, "필요시 줄이 9개가 아니다 — CSV 가 바뀌었는가"
 
 
 # ── 약품명 표기 — KEY-183 ─────────────────────────────────────────────────────
@@ -430,4 +445,127 @@ class TestEveryVisitPointsAtASetThatExists:
         assert mocked, "목업에서 세트 이름을 하나도 못 읽었다 — 검사가 헛돈다"
         assert mocked == seeded, (
             f"목업에만 있는 이름 {sorted(mocked - seeded)}, 씨앗에만 있는 이름 {sorted(seeded - mocked)}"
+        )
+
+
+class TestTheApprovedWordingIsWhole:
+    """**승인 정본 열두 칸이 다 있고 제 길로 간다** — KEY-265.
+
+    2026-09-04 원장님이 초안 그대로 승인하셨다. 그 뒤로 이 픽스처가 정본이다.
+
+    🚩 **갈래마다 길이 다른 것이 이 검사의 까닭이다.** `guides.py` 의
+    `generate()` 는 `DrugCautionService` 를 `caution`·`emergency` 에만 묻고,
+    `medication`·`life` 는 카탈로그를 아예 안 본다. 그래서 여덟 칸을 카탈로그에
+    넣으면 **DB 에는 들어가고 환자에게는 안 나간다** — 터지지 않으므로 검사가
+    없으면 아무도 모른다. 처음 문서가 그렇게 적어 두었다가 고쳤다.
+    """
+
+    def test_every_set_has_all_three_approved_sections(self) -> None:
+        """네 세트 × 세 갈래 = 열두 칸이 하나도 안 빈다."""
+        from app.models.catalog import CautionSectionKey
+        from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS
+
+        filled = {(r.prescription_set_name, r.section_key) for r in DRUG_CAUTION_CONTENTS}
+        wanted = {
+            (row.name, key)
+            for row in PRESCRIPTION_SETS
+            for key in (
+                CautionSectionKey.MEDICATION,
+                CautionSectionKey.CAUTION,
+                CautionSectionKey.LIFE,
+            )
+        }
+
+        assert len(wanted) == 12, f"네 세트 × 갈래 셋이 아니다 — {len(wanted)}칸"
+        missing = sorted(f"{n} / {k.value}" for n, k in wanted - filled)
+        assert not missing, f"승인 정본이 없는 칸: {missing}"
+
+    def test_generate_reads_every_section_it_shows_as_origin(self) -> None:
+        """**설정이 「원본」이라 보이는 갈래를 생성이 다 읽어야 한다.**
+
+        `guide_copy.py` 의 `_origins()` 는 네 갈래 모두 승인된 카탈로그 행을
+        원본으로 삼는다. 그런데 한동안 `generate()` 는 `caution`·`emergency`
+        둘만 물었다 — 화면은 정본을 「원본」이라 보이는데 환자에게는 기본 한
+        줄이 나갔다. 둘이 같은 갈래를 봐야 한다.
+        """
+        source = (Path(__file__).resolve().parents[2] / "services" / "guides.py").read_text(encoding="utf-8")
+        asked = set(re.findall(r"approved_content_of\(prescription_set, CautionSectionKey\.(\w+)\)", source))
+
+        assert asked >= {"MEDICATION", "CAUTION", "EMERGENCY", "LIFE"}, (
+            f"생성이 묻지 않는 갈래가 있다 — 물은 것: {sorted(asked)}. 설정이 원본이라 보이는 글이 환자에게 안 간다"
+        )
+
+    def test_the_locked_section_stays_out_of_the_editable_list(self) -> None:
+        """🚨 응급은 고칠 수 있는 갈래 목록에 없어야 한다 — 누구도 못 고치는 글이다(KEY-150)."""
+        from app.models.catalog import CautionSectionKey
+        from app.services import guide_defaults
+
+        assert CautionSectionKey.EMERGENCY not in guide_defaults.EDITABLE_SECTIONS, (
+            "응급이 고칠 수 있는 갈래에 들어왔다 — 설정 화면이 안전 문장을 열어 준다"
+        )
+
+    def test_the_approved_wording_carries_no_draft_marker(self) -> None:
+        """정본에 `[합성]` 이 남아 있으면 안 된다 — 「아직 정본이 아님」 표시다."""
+        from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
+
+        marked = sorted(
+            f"{r.prescription_set_name} / {r.section_key.value}" for r in DRUG_CAUTION_CONTENTS if "[합성" in r.body
+        )
+        assert not marked, f"정본에 초안 표시가 남았다: {marked}"
+
+    def test_the_caution_wording_points_at_the_advice_record(self) -> None:
+        """주의사항의 근거는 **자문**이다 — 허가사항 주소를 붙이면 출처가 틀린다."""
+        from app.models.catalog import CautionSectionKey
+        from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
+
+        for row in DRUG_CAUTION_CONTENTS:
+            if row.section_key != CautionSectionKey.CAUTION:
+                continue
+            where = f"{row.prescription_set_name} / caution"
+            assert "자문" in row.source_name, f"{where} 의 출처가 자문이 아니다 — {row.source_name!r}"
+            assert "TEST-ONLY" not in row.source_url, f"{where} 에 시험용 주소가 남았다"
+            assert row.source_url.startswith("https://"), f"{where} 의 주소가 비었다"
+            # KEY-180 §4 — 넷 중 하나라도 비면 `guides.py` 가 조용히 폴백한다
+            assert all([row.source_name, row.source_org, row.source_url, row.content_version]), (
+                f"{where} 의 근거 넷 중 빈 것이 있다 — 폴백으로 떨어진다"
+            )
+
+    def test_the_medication_body_is_not_prefixed_as_synthetic(self) -> None:
+        """`guides.py` 가 복약지도 앞에 `[합성 …]` 을 다시 박지 않는다.
+
+        승인 정본이 「[합성 복약 안내]」로 시작해 환자에게 나가고 있었다.
+        """
+        source = (Path(__file__).resolve().parents[2] / "services" / "guides.py").read_text(encoding="utf-8")
+        # **주석은 뺀다.** 왜 뗐는지가 그 자리에 적혀 있어서, 통째로 훑으면
+        # 설명 자체가 검사를 깨뜨린다.
+        code = "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("#"))
+
+        assert "[합성" not in code, "복약지도에 초안 표시가 다시 박혔다 — 승인 정본이 그것을 달고 나간다"
+
+    def test_every_set_declares_the_disease_its_name_says(self) -> None:
+        """**세트 이름과 질환이 어긋나면 안 된다.**
+
+        모델 기본값이 `ENDOMETRIOSIS` 라, 씨앗이 `disease` 를 안 넘기면 PCOS
+        세트가 조용히 자궁내막증 밑으로 들어간다. 설정 레일이 질환으로 묶으므로
+        **다낭성난소증후군 묶음이 통째로 사라지는데**, 터지지 않아서 씨앗을 새로
+        부어 보기 전에는 아무도 모른다 — 실제로 그렇게 났다.
+        """
+        from app.models.catalog import SetDisease
+        from app.tests.fixtures.catalog import PRESCRIPTION_SETS
+
+        wrong = [
+            f"{row.name} → {row.disease.value}"
+            for row in PRESCRIPTION_SETS
+            if (SetDisease.PCOS if "PCOS" in row.name else SetDisease.ENDOMETRIOSIS) != row.disease
+        ]
+        assert not wrong, f"이름과 질환이 어긋난 세트: {wrong}"
+
+    def test_the_seed_passes_the_disease_through(self) -> None:
+        """씨앗이 `disease` 를 실제로 넘기는지 본다 — 픽스처에만 있으면 소용없다."""
+        seed = (Path(__file__).resolve().parents[3] / "scripts" / "seed.py").read_text(encoding="utf-8")
+        call = re.search(r"PrescriptionSet\.get_or_create\((.*?)\)\n", seed, re.S)
+
+        assert call, "씨앗에서 PrescriptionSet.get_or_create 를 못 찾았다 — 검사가 헛돈다"
+        assert "disease" in call.group(1), (
+            "씨앗이 disease 를 안 넘긴다 — 모델 기본값(ENDOMETRIOSIS)으로 떨어져 PCOS 세트가 자궁내막증 묶음에 들어간다"
         )

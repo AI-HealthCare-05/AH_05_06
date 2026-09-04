@@ -174,10 +174,12 @@ class GuideSection(models.Model):
     `locked` 는 🚨 응급 문장이다. 식약처 의약품정보를 근거로 미리 써 둔
     문장이라 약이 바뀌면 문장도 함께 바뀐다 — 사람이 손댈 자리가 아니다.
 
-    `drug_caution_content_id` 는 caution·emergency 섹션 생성 시 사용한
-    `DrugCautionContent` 버전의 ID다(KEY-165, KEY-180 §6). null 이면 범용 문구를
-    사용했거나 caution/emergency 가 아닌 섹션이다. 근거 버전은 `generated_body`
-    기준이며 의사가 고친 `edited_body` 와는 무관하다.
+    `drug_caution_content_id` 는 그 절을 지을 때 쓴 `DrugCautionContent`
+    버전의 ID다(KEY-165, KEY-180 §6). **네 갈래 모두** 채울 수 있다 — 예전에는
+    caution·emergency 만 카탈로그에서 왔지만, 승인 정본이 복약지도·생활지도까지
+    덮으면서 그 둘도 근거를 갖게 됐다(KEY-265). null 이면 그 절이 카탈로그가
+    아니라 범용 문구에서 왔다는 뜻이다. 근거 버전은 `generated_body` 기준이며
+    의사가 고친 `edited_body` 와는 무관하다.
     """
 
     guide_section_id = fields.BigIntField(primary_key=True)

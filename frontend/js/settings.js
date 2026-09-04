@@ -607,65 +607,77 @@
     );
   }
 
-  /* 한 구역 — 원문 D2-2 의 「원본 / 박연 원장님 문구」 두 층. */
+  /* 한 구역 — **칸 하나로 보인다.**
+   *
+   * 원문 D2-2 는 「원본 / 원장님 문구」 두 층을 나란히 두었다. 뜻은 맞는데
+   * 쓰는 사람에게는 **같은 글이 두 번 보이는 화면**이었다 — 위 칸은 못 고치고
+   * 아래 칸은 비어 있어서, 「어느 것이 나가는 글인가」를 매번 되물었다.
+   *
+   * 그래서 **나갈 글 한 칸만 보인다.** 아직 안 고쳤으면 원본이 채워져 있고,
+   * 고쳤으면 고친 글이 채워져 있다. 화면에서는 「원본을 직접 고치는 것」처럼
+   * 읽히지만 **저장은 여전히 덧씌우기다** — 원본은 `DrugCautionContent` 에
+   * 그대로 남아 있고 「원본으로 되돌리기」가 언제든 되살린다.
+   *
+   * 🚩 **원본을 진짜로 덮어쓰지 않는 까닭.** 그 표에는 출처·승인일·등급이
+   * 붙어 있다(KEY-180). 글만 바꾸면 그 딱지가 실제와 어긋나고, 승인 버전
+   * 관리(`approved_key`)를 지나친다. 되돌아갈 자리도 없어진다.
+   */
   function copySectionHtml(row, section) {
     var mine = copyIsMine(section);
+    /* **나갈 글은 한 군데서 정한다.** 「고친 것이 있으면 그것, 없으면 원본」은
+       `guide-copy-rules.js` 의 `copyShown` 이 이미 정본으로 갖고 있다. 여기서
+       같은 식을 다시 쓰면 두 벌이 갈라진다 — 갈라지면 설정 화면이 보여 주는
+       글과 환자에게 나가는 글이 달라진다. */
+    var shown = copyShown(section);
+    var open = canEdit && copyOpen === copyKey(row, section);
+    var handle = esc(row.prescription_set_id) + "|" + esc(section.section_key);
+
+    /* **단추를 머리에 모은다.** 예전에는 칸 아래 제 줄(`cp__acts`)에 있었는데,
+       그 줄 하나 때문에 칸과 ⓘ 안내가 갈라져 한 덩이로 안 읽혔다. 머리에는
+       이미 「원본으로 되돌리기」가 있어 **같은 성격의 것이 한자리에 선다.**
+       고치는 단추가 앞, 되돌리는 단추가 뒤다 — 자주 쓰는 것이 앞이다. */
+    var acts = "";
+    if (section.editable && canEdit) {
+      acts = open
+        ? '<button class="button-ghost button-ghost--sm" type="button" data-cancel-copy="1">취소</button>' +
+          '<button class="button-primary button-primary--sm" type="button" data-save-copy="' +
+          handle +
+          '">저장</button>'
+        : '<button class="button-ghost button-ghost--sm" type="button" data-edit-copy="' + handle + '">수정</button>';
+    }
+    if (section.editable && mine) {
+      acts += '<button class="button-ghost button-ghost--sm" type="button" data-revert-copy="' + handle + '">원본으로 되돌리기</button>';
+    }
+    if (!section.editable) acts = '<span class="box__note">수정 불가</span>';
+
     return (
       '<div class="cp"><div class="cp__head"><h3 class="cp__title">' +
       esc(copySectionSaying(section.section_key)) +
       '</h3><span class="grow"></span>' +
-      (section.editable
-        ? mine
-          ? '<button class="button-ghost button-ghost--sm" type="button" data-revert-copy="' +
-            esc(row.prescription_set_id) +
-            "|" +
-            esc(section.section_key) +
-            '">원본으로 되돌리기</button>'
-          : ""
-        : '<span class="box__note">수정 불가</span>') +
+      acts +
       "</div>" +
-      /* **원본이 위에 있다** — 원문 「무엇이 사실이고 무엇이 표현인지 보이게
-         한다」. 고친 뒤에도 지워지지 않으므로 언제든 되돌아간다. */
-      '<p class="cp__label">원본</p><p class="cp__origin">' +
-      esc(section.origin || "승인된 원본 문구가 아직 없습니다") +
-      "</p>" +
       (section.editable
-        ? '<p class="cp__label">고친 문구</p>' +
-          '<textarea class="modal__input cp__body" rows="3" data-copy="' +
-          esc(row.prescription_set_id) +
-          "|" +
-          esc(section.section_key) +
+        ? /* **라벨을 안 붙인다.** 칸이 하나뿐이라 이름표가 없어도 헷갈리지 않고,
+             고친 글인지는 머리의 「원본으로 되돌리기」 단추가 있고 없고로
+             드러난다 — 같은 것을 두 자리에서 말하지 않는다. */
+          '<textarea class="modal__input cp__body" rows="4" data-copy="' +
+          handle +
           '"' +
-          (canEdit && copyOpen === copyKey(row, section) ? "" : " readonly") +
-          ">" +
-          esc(mine ? section.body : "") +
-          "</textarea>" +
           /* **누르기 전에는 안 열린다.** 환자에게 나가는 의료 문구라, 스치듯
              친 글자가 그대로 저장되면 안 된다. 설정 수정이 스탭에게까지
              열리면서(2026-09-02) 이 화면을 여는 사람이 늘었다. */
-          (canEdit
-            ? '<div class="cp__acts">' +
-              (copyOpen === copyKey(row, section)
-                ? '<button class="button-ghost button-ghost--sm" type="button" data-cancel-copy="1">취소</button>' +
-                  '<button class="button-primary button-primary--sm" type="button" data-save-copy="' +
-                  esc(row.prescription_set_id) +
-                  "|" +
-                  esc(section.section_key) +
-                  '">저장</button>'
-                : '<button class="button-ghost button-ghost--sm" type="button" data-edit-copy="' +
-                  esc(row.prescription_set_id) +
-                  "|" +
-                  esc(section.section_key) +
-                  '">수정</button>') +
-              "</div>"
-            : "") +
+          (open ? "" : " readonly") +
+          ">" +
+          esc(shown) +
+          "</textarea>" +
           '<p class="note">ⓘ 표현만 수정해 주세요 — 새로운 의학 정보를 추가할 수 없습니다</p>' +
-          /* **누구에게 나가는지 정확히 적는다.** 전에는 「○○ 원장님 담당
-             환자에게만」이었는데, 스탭도 고치게 되면서 틀린 말이 됐다 —
-             스탭에게는 담당 환자가 없다. 서버가 실제로 고르는 차례를 적는다
-             (`app/services/guides.py` 의 `_doctor_copy`). */
-          '<p class="note">ⓘ 담당 의사가 고친 문구가 먼저 쓰이고, 없으면 안내문을 만든 사람의 문구가 쓰입니다</p>'
-        : '<p class="note">ⓘ 안전을 위해 모든 안내문에 포함됩니다</p>') +
+          '<p class="note">ⓘ 원본은 지워지지 않습니다 — 「원본으로 되돌리기」로 언제든 돌아갑니다</p>'
+        : /* 🚨 응급은 고칠 수 없다(KEY-150) — 읽기 칸으로만 보인다.
+             머리에 「수정 불가」가 붙어 있어 이름표가 따로 필요 없다. */
+          '<p class="cp__origin">' +
+          esc(section.origin || "승인된 원본 문구가 아직 없습니다") +
+          "</p>" +
+          '<p class="note">ⓘ 안전을 위해 모든 안내문에 포함됩니다</p>') +
       "</div>"
     );
   }
