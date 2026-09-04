@@ -8,23 +8,37 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
+const { read, codeOnly, markupOnly } = require("./source.js");
 
 const ROOT = path.join(__dirname, "..");
 const INVENTORY = JSON.parse(fs.readFileSync(path.join(__dirname, "key233-unimplemented-actions.json"), "utf8"));
+const SCRIPT_CACHE = new Map();
 
 function attr(tag, name) {
-  const match = tag.match(new RegExp("\\b" + name + "=[\\\"']([^\\\"']+)[\\\"']"));
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = tag.match(new RegExp("(?:^|\\s)" + escaped + "\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']"));
   return match ? match[1] : "";
 }
 
+function scriptCode(src) {
+  const rel = src.split("?")[0].replace(/^\/?frontend\//, "").replace(/^\//, "");
+  if (!SCRIPT_CACHE.has(rel)) SCRIPT_CACHE.set(rel, codeOnly(read(rel)));
+  return SCRIPT_CACHE.get(rel);
+}
+
 function loadedCode(html) {
-  let code = html;
-  for (const match of html.matchAll(/<script\s+[^>]*src=["']([^"']+)["'][^>]*>/g)) {
-    const src = match[1].split("?")[0];
-    const full = path.join(ROOT, src.replace(/^\//, ""));
-    if (fs.existsSync(full)) code += "\n" + fs.readFileSync(full, "utf8");
+  const markup = markupOnly(html);
+  const chunks = [];
+  for (const match of markup.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
+    const src = attr(match[1], "src");
+    if (src) {
+      const rel = src.split("?")[0].replace(/^\/?frontend\//, "").replace(/^\//, "");
+      if (fs.existsSync(path.join(ROOT, rel))) chunks.push(scriptCode(src));
+    } else {
+      chunks.push(codeOnly(match[2]));
+    }
   }
-  return code;
+  return chunks.join("\n");
 }
 
 function variableForId(code, id) {
@@ -52,6 +66,12 @@ function hasHandler(tag, code) {
     const variable = variableForId(code, id);
     if (variable && new RegExp("\\b" + variable + "\\.addEventListener\\s*\\(").test(code)) return true;
     if (new RegExp("[#]" + escaped + "(?:[\\\"'])").test(code) && /addEventListener\s*\(/.test(code)) return true;
+    /* 페이지 전체에 건 위임 리스너는 대상의 id를 비교한다. 단순히 id 문자열이
+       있다는 것만 보지 않고, 클릭 대상을 실제로 판별하는 식까지 확인한다. */
+    const delegatedId = new RegExp(
+      "(?:\\.id\\s*===?\\s*[\\\"']" + escaped + "[\\\"']|closest\\(\\s*[\\\"']#" + escaped + "(?:[^A-Za-z0-9_-]|$))",
+    );
+    if (delegatedId.test(code) && /addEventListener\s*\(\s*["']click["']/.test(code)) return true;
   }
 
   const dataAttrs = [...tag.matchAll(/\b(data-[\w-]+)=/g)].map((match) => match[1]);
@@ -62,7 +82,17 @@ function hasHandler(tag, code) {
   }
 
   for (const className of attr(tag, "class").split(/\s+/).filter(Boolean)) {
-    if ((code.includes("." + className) || code.includes(className)) && /addEventListener\s*\(/.test(code)) return true;
+    const escaped = className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const selector = new RegExp(
+      "(?:querySelector(?:All)?\\(\\s*[\\\"'][^\\\"']*\\." +
+        escaped +
+        "(?:[^A-Za-z0-9_-]|$)|closest\\(\\s*[\\\"'][^\\\"']*\\." +
+        escaped +
+        "(?:[^A-Za-z0-9_-]|$)|getElementsByClassName\\(\\s*[\\\"']" +
+        escaped +
+        "[\\\"'])",
+    );
+    if (selector.test(code) && /addEventListener\s*\(/.test(code)) return true;
   }
   return false;
 }
@@ -98,5 +128,30 @@ test("검사기는 새 핸들러 없는 버튼을 실제로 탐지한다", () =>
   assert.equal(
     hasHandler('<button id="new-action" type="button">실행</button>', 'document.getElementById("new-action").addEventListener("click", run);'),
     true,
+  );
+  assert.equal(
+    hasHandler('<button class="new-action" type="button">실행</button>', 'document.addEventListener("click", run);'),
+    false,
+    "페이지에 다른 리스너가 있다는 이유만으로 클래스 버튼을 처리됐다고 보면 안 된다",
+  );
+  assert.equal(
+    hasHandler(
+      '<button class="new-action" type="button">실행</button>',
+      'document.querySelector(".new-action").addEventListener("click", run);',
+    ),
+    true,
+  );
+  assert.equal(attr('<button data-id="wrong" class="x">', "id"), "", "data-id를 id로 읽으면 안 된다");
+});
+
+test("주석에 적힌 핸들러는 구현으로 세지 않는다", () => {
+  const code = codeOnly('// document.querySelector(".new-action").addEventListener("click", run);');
+  assert.equal(hasHandler('<button class="new-action" type="button">실행</button>', code), false);
+});
+
+test("체크인 뒤로 버튼처럼 실제 핸들러 없는 버튼을 놓치지 않는다", () => {
+  assert.ok(
+    auditPage("checkin.html").some((item) => item.action === "sheet__back"),
+    "checkin.html의 뒤로 버튼이 미구현 목록에서 빠졌다",
   );
 });

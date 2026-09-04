@@ -103,6 +103,12 @@ function timelineDetail(entry) {
   return entry.note || "";
 }
 
+/* 공용 단계 모듈이 만든 결과를 실제 환자 화면의 탭 자리에 넣는 한 통로.
+   화면 껍데기 없이도 이 연결 자체를 검사할 수 있게 순수하게 둔다. */
+function renderVisitSteps(tabs, current, visitId) {
+  tabs.innerHTML = stepsHtml(current, "/patients.html", visitId);
+}
+
 (function () {
   /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
      이 파일은 `patients.html` 의 오른쪽 상세 칸에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
@@ -119,8 +125,11 @@ function timelineDetail(entry) {
    판독이 끝난 환자를 눌러도 빈 업로드 판이 떴고, 판독을 보려면 그 판 안의
    「판독 결과 확인」을 한 번 더 눌러야 했다. 올리는 일도 판독 화면 머리의
    「OCR 업로드」가 한다. */
-  var TABS = ["basic", "guide", "final", "status"];
-  var AWAY = { record: "/ocr-review.html" };
+  var TABS = VISIT_STEPS.filter(function (step) {
+    return step.page === "/patients.html";
+  }).map(function (step) {
+    return step.key;
+  });
 
   /* 늦게 온 응답이 지금 보고 있는 환자를 덮어쓰지 않게 하는 번호.
      `visit_id` 를 쓰면 같은 환자를 빠르게 다시 고를 때(A→B→A) 값이 그대로라
@@ -140,10 +149,6 @@ function timelineDetail(entry) {
   /* ── 탭 ─────────────────────────────────────────────── */
 
   function showTab(name) {
-    /* 다른 화면에 사는 칸이면 그리로 간다. **탭 표시를 먼저 바꾸지 않는다** —
-       주소를 바꾸는 데 시간이 걸려, 그 사이 눌린 칸이 켜졌다 화면이 갈리면
-       「눌렀는데 딴 데로 갔다」로 읽힌다. */
-    if (AWAY[name]) return goAway(name);
     if (TABS.indexOf(name) === -1) return; // 모르는 이름이면 아무것도 하지 않는다
     TABS.forEach(function (t) {
       el("panel-" + t).hidden = t !== name;
@@ -159,17 +164,17 @@ function timelineDetail(entry) {
     });
   }
 
-  /* 그 진료를 달고 간다. 안 달면 도착한 화면이 오늘 목록의 맨 위 환자를
-     열어, 누른 사람이 다른 환자를 보게 된다. */
-  function goAway(name) {
-    if (!row || !row.visit_id) return;
-    location.href = AWAY[name] + "?visit=" + encodeURIComponent(row.visit_id) + "&tab=" + encodeURIComponent(name);
-  }
-
   el("tabs").addEventListener("click", function (event) {
     var tab = event.target.closest(".tab");
     if (!tab) return;
     if (tab.getAttribute("aria-disabled") === "true") return;
+    /* 다른 화면에 사는 단계의 주소는 공용 모듈이 `data-href`로 정한다.
+       화면마다 별도의 이동표를 두면 단계 정의와 실제 이동이 다시 갈린다. */
+    var href = tab.getAttribute("data-href");
+    if (href) {
+      location.href = href;
+      return;
+    }
     showTab(tab.dataset.tab);
   });
 
@@ -661,7 +666,7 @@ function timelineDetail(entry) {
     var current = event.detail.open_tab || "basic";
     /* 단계 버튼은 HTML에 복사해 두지 않고 공용 모듈에서 매번 만든다. 그래야
        이름·순서·이동 규칙이 판독·의사 화면과 갈리지 않는다 (KEY-233). */
-    el("tabs").innerHTML = stepsHtml(current, "/patients.html", event.detail.visit_id);
+    renderVisitSteps(el("tabs"), current, event.detail.visit_id);
     load(event.detail);
     showTab(current);
   });

@@ -112,9 +112,22 @@ test("**다섯 단계의 정의는 공용 모듈에만 있다** — 화면 HTML�
 test("환자 카드는 빈 단계 자리를 공용 모듈로 실제 채운다", () => {
   const source = read("js/detail.js");
   const selected = source.slice(source.indexOf('document.addEventListener("visit:selected"'));
-  assert.match(selected.slice(0, 600), /el\("tabs"\)\.innerHTML\s*=\s*stepsHtml\(/, "공용 단계 렌더가 없다");
-  assert.match(selected.slice(0, 600), /"\/patients\.html"/, "환자 화면 경로를 공용 단계에 넘기지 않는다");
-  assert.match(selected.slice(0, 600), /event\.detail\.visit_id/, "고른 진료 번호를 공용 단계에 넘기지 않는다");
+  assert.match(
+    selected.slice(0, 600),
+    /renderVisitSteps\(\s*el\("tabs"\)\s*,\s*current\s*,\s*event\.detail\.visit_id\s*\)/,
+    "탭 자리·현재 단계·고른 진료 번호를 정확한 순서로 공용 렌더에 넘기지 않는다",
+  );
+});
+
+test("공용 단계 결과가 detail.js를 거쳐 실제 DOM 자리에 들어간다", () => {
+  const { renderVisitSteps } = load("api", "step-nav", "detail");
+  const tabs = { innerHTML: "" };
+
+  renderVisitSteps(tabs, "guide", 42);
+
+  assert.equal((tabs.innerHTML.match(/role="tab"/g) || []).length, 5, "다섯 단계가 DOM에 들어가지 않았다");
+  assert.match(tabs.innerHTML, /data-tab="guide" aria-selected="true"/, "현재 단계가 다르게 표시된다");
+  assert.match(tabs.innerHTML, /data-tab="record"[^>]*data-href="\/ocr-review\.html\?visit=42&amp;tab=record"/);
 });
 
 test("판독 화면의 머리말이 환자 카드와 같은 모양이다", () => {
