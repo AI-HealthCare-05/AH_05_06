@@ -155,9 +155,7 @@ async def call_clova_ocr(content: bytes, mime_type: str) -> ClovaOcrResult:
 
     if response.status_code != 200:
         code = (
-            "CLOVA_SERVER_ERROR"
-            if (response.status_code >= 500 or response.status_code == 429)
-            else "CLOVA_HTTP_ERROR"
+            "CLOVA_SERVER_ERROR" if (response.status_code >= 500 or response.status_code == 429) else "CLOVA_HTTP_ERROR"
         )
         raise ClovaOcrError(
             code,

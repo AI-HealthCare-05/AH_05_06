@@ -55,11 +55,13 @@ _REQUIRED_OCR_FIELDS: frozenset[str] = frozenset({"DIAGNOSIS", "MEDICATION_NAME"
 
 # CLOVA 일시 오류 — 재시도 대상 코드 (KEY-227)
 # 5xx·429·timeout·connection-error는 일시적, 4xx는 확정 실패로 재시도하지 않는다
-_RETRYABLE_CLOVA_CODES: frozenset[str] = frozenset({
-    "CLOVA_TIMEOUT",       # httpx.TimeoutException
-    "CLOVA_NETWORK_ERROR", # httpx.RequestError (연결 리셋·DNS·read)
-    "CLOVA_SERVER_ERROR",  # HTTP 5xx / 429
-})
+_RETRYABLE_CLOVA_CODES: frozenset[str] = frozenset(
+    {
+        "CLOVA_TIMEOUT",  # httpx.TimeoutException
+        "CLOVA_NETWORK_ERROR",  # httpx.RequestError (연결 리셋·DNS·read)
+        "CLOVA_SERVER_ERROR",  # HTTP 5xx / 429
+    }
+)
 _MAX_CLOVA_RETRIES = 2
 
 
@@ -156,7 +158,9 @@ async def process_ocr_job(ocr_job_id: str) -> None:
                     exc_info=False,
                 )
                 await _mark_failed(job, "PROCESSING_ERROR")
-                _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR", retry_count=retry_count)
+                _observe(
+                    ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="PROCESSING_ERROR", retry_count=retry_count
+                )
                 break
     else:
         await _mark_failed(job, "OCR_NOT_CONFIGURED")
