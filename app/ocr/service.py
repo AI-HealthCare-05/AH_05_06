@@ -386,6 +386,7 @@ class TortoiseOcrRepository:
             )
 
         return out
+
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription:
         # GuideService.generate()와 동일한 기준으로 job을 선택한다.
         # excluded된 job이나 COMPLETED가 아닌 job으로 처방을 만드는 것을 막는다.
@@ -680,6 +681,7 @@ class OcrService:
     async def previous_fields(self, visit_id: int, actor: OcrActor) -> list[PreviousOcrFieldResponse]:
         """같은 환자·같은 병원의 이전 방문에서 확정된 OCR 값을 반환한다."""
         return await self.repository.get_previous_fields(visit_id, actor)
+
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> FinalizeOcrResponse:
         """확정된 OcrField에서 Prescription·PrescriptionItem을 생성하거나 재확정한다."""
         prescription = await self.repository.finalize_ocr(visit_id, actor)
