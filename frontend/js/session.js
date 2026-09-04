@@ -71,6 +71,24 @@ function opensSettings(roles) {
   return roles.indexOf("staff") !== -1 || roles.indexOf("doctor") !== -1;
 }
 
+/* 환자 목록·등록(S1)은 스탭의 자리다. `staff` 롤이 없는 계정이 이 주소로 곧장
+ * 오면 — 옛 북마크·탭 복원·주소창 직접 입력 — `landingFor` 로 제 첫 화면에
+ * 돌려보낸다. 착지점만 의사 우선으로 바꿔서는(KEY-269) 이미 세션이 살아 있는
+ * 채로 들어오는 길을 못 막는다.
+ *
+ * `doctor` 롤이 있으면 `staff` 를 겸해도 들이지 않는다 — 「doctor 면 언제나
+ * `/doctor.html`」(KEY-269)을 이 화면에서도 지킨다. 그 조합은 유효 조합에서
+ * 빠졌지만(`VALID_COMBINATIONS` 다섯) 손으로 고친 DB 에서 생겨도 승인 화면으로
+ * 보낸다.
+ *
+ * 서버 차단이 아니다 — 의사는 스탭 API 권한을 포함해 호출이 403 이 나지 않는다.
+ * 잘못 온 사람을 제 화면으로 보내는 화면단 처리이고, 실제 권한 검증은 서버가
+ * 그대로 한다(KEY-9). */
+function showsPatientList(roles) {
+  roles = roles || [];
+  return roles.indexOf("doctor") === -1 && roles.indexOf("staff") !== -1;
+}
+
 /* 보호 화면 맨 위에서 부른다. 네 가지를 확인한다.
  *   1) 액세스 토큰이 있는가 — 없으면 쿠키로 재발급을 시도한다
  *   2) 서버가 아직 그 토큰을 인정하는가
