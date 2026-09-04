@@ -18,6 +18,12 @@ var MOCK_CHECK_ITEMS = [
   "PREGNANCY_PLAN",
 ];
 
+/* **대표 처방 넷** (KEY-262, 팀 회의 결정). 질환 둘 × 처음·계속이다.
+   여덟이던 것을 줄이면서, 나머지 다섯이 가리키던 진료 25 건은 각자의
+   「처음」으로 옮겼다 — `docs/data/synthetic-patients.csv`.
+
+   서버 픽스처(`app/tests/fixtures/catalog.py`)와 **같은 넷**이어야 한다.
+   갈라지면 목에서 고르던 처방이 서버에 없다. */
 var MOCK_PRESCRIPTION_SETS = [
   {
     prescription_set_id: 1,
@@ -33,43 +39,19 @@ var MOCK_PRESCRIPTION_SETS = [
   },
   {
     prescription_set_id: 3,
-    name: "자궁내막증 · 통증관리",
-    check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "진통제", frequency: "필요시", note: "통증이 있을 때만" }],
-  },
-  {
-    prescription_set_id: 4,
-    name: "PCOS · 초진",
+    name: "PCOS · 야즈 (처음)",
     check_items: MOCK_CHECK_ITEMS,
     days_mode: "PACK",
     days_per_pack: 28,
-    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" },
-      { name: "진통제", frequency: "필요시" }],
-  },
-  {
-    prescription_set_id: 5,
-    name: "PCOS · 초진 (야즈 불가)",
-    check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
-  },
-  {
-    prescription_set_id: 6,
-    name: "PCOS · 야즈 (계속)",
-    check_items: MOCK_CHECK_ITEMS,
     drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
   {
-    prescription_set_id: 7,
-    name: "PCOS · 야즈 + 메트포르민",
+    prescription_set_id: 4,
+    name: "PCOS · 야즈 (계속)",
     check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" },
-      { name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
-  },
-  {
-    prescription_set_id: 8,
-    name: "PCOS · 대사관리",
-    check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
+    days_mode: "PACK",
+    days_per_pack: 28,
+    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
 ];
 

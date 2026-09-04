@@ -341,3 +341,61 @@ class TestDrugNamesCarryTheirIngredient:
                 checked += 1
                 assert expected_name(brand) in line, f"{name} 에 옛 표기가 남았다: {line.strip()}"
         assert checked, f"{name} 에서 약품명 줄을 하나도 못 찾았다 — 검사가 헛돈다"
+
+
+class TestEveryVisitPointsAtASetThatExists:
+    """**짝 잃은 진료가 없어야 한다** — `KEY-262` 완료 조건 1·4.
+
+    `Prescription.prescription_set` 은 스냅샷 **문자열**이다(KEY-137).
+    세트를 빼면 그 이름을 든 진료는 문구를 못 찾아 **범용 폴백으로 조용히
+    떨어진다** — 터지지 않으므로 검사가 없으면 아무도 모른다.
+
+    DB 없이 잰다. 씨앗을 붓기 전에 이미 알 수 있는 어긋남이다.
+    """
+
+    def test_no_visit_names_a_set_that_is_not_in_the_catalog(self) -> None:
+        from app.tests.fixtures.catalog import PRESCRIPTION_SETS
+
+        known = {row.name for row in PRESCRIPTION_SETS}
+        used = {r["처방세트"].strip() for r in ROWS if r["처방세트"].strip()}
+
+        assert used, "CSV 에서 처방 세트를 하나도 못 읽었다 — 검사가 헛돈다"
+        orphans = sorted(used - known)
+        assert not orphans, f"카탈로그에 없는 세트를 가리키는 진료가 있다: {orphans}"
+
+    def test_every_set_in_the_catalog_is_actually_used(self) -> None:
+        """반대쪽도 본다 — 아무 진료도 안 쓰는 세트는 화면에서 빈 칸이 된다."""
+        from app.tests.fixtures.catalog import PRESCRIPTION_SETS
+
+        known = {row.name for row in PRESCRIPTION_SETS}
+        used = {r["처방세트"].strip() for r in ROWS if r["처방세트"].strip()}
+
+        unused = sorted(known - used)
+        assert not unused, f"어느 진료도 안 쓰는 세트: {unused}"
+
+    def test_every_set_carries_its_wording(self) -> None:
+        """세트마다 승인 문구가 붙어 있어야 한다 — 안 붙으면 범용 폴백이다."""
+        from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS
+
+        known = {row.name for row in PRESCRIPTION_SETS}
+        with_copy = {row.prescription_set_name for row in DRUG_CAUTION_CONTENTS}
+
+        bare = sorted(known - with_copy)
+        assert not bare, f"승인 문구가 없는 세트: {bare} — 안내문이 범용 문구로 나간다"
+
+    def test_the_spec_says_the_same_number_of_sets(self) -> None:
+        """명세와 픽스처가 같은 수를 말한다.
+
+        예전에는 명세가 「9세트」라 적어 두었는데 실제는 여덟이었다 —
+        아무도 안 셌기 때문이다 (`#262` 범위 3번).
+        """
+        from app.tests.fixtures.catalog import PRESCRIPTION_SETS
+
+        spec = (DOCS / "synthetic-data-spec.md").read_text(encoding="utf-8")
+        wrong = re.findall(r"처방 세트 (\d+)종", spec)
+
+        assert wrong, "명세에서 세트 개수를 못 읽었다 — 검사가 헛돈다"
+        for said in wrong:
+            assert int(said) == len(PRESCRIPTION_SETS), (
+                f"명세는 {said}종이라는데 픽스처는 {len(PRESCRIPTION_SETS)}종이다"
+            )
