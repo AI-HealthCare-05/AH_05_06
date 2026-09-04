@@ -441,15 +441,44 @@ function stateTakesFocus(tone) {
   /* <img src> 는 Authorization 헤더를 보내지 못해 401 이 된다.
      fetch 로 직접 받은 뒤 Blob URL 을 생성해 img 에 할당한다. */
   var _docViewBlobUrl = null;
-  /* 0 = 원본, 1 = 3.5배. renderDocView() 호출마다 0으로 초기화된다. */
-  var _docZoom = 0;
+
+  function _openLightbox(src) {
+    var overlay = document.createElement("div");
+    overlay.className = "doc-lightbox";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "문서 원본 확대");
+    overlay.tabIndex = -1;
+
+    var img = document.createElement("img");
+    img.className = "doc-lightbox__img";
+    img.src = src;
+    img.alt = "문서 미리보기 확대";
+    overlay.appendChild(img);
+
+    document.body.appendChild(overlay);
+    overlay.focus();
+
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+    }
+
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    function onKey(e) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+  }
 
   function renderDocView() {
     if (!docView) return;
-
-    _docZoom = 0;
-    docView.classList.remove("doc-view--zoomed");
-
     if (!activeDoc) {
       docView.innerHTML = '<p class="doc-view__soon">문서를 선택하면 여기에 미리보기가 표시됩니다</p>';
       return;
@@ -485,21 +514,12 @@ function stateTakesFocus(tone) {
           var img = docView.querySelector(".doc-view__img");
           if (img) {
             img.addEventListener("click", function () {
-              _docZoom = _docZoom === 0 ? 1 : 0;
-              if (_docZoom === 1) {
-                docView.classList.add("doc-view--zoomed");
-              } else {
-                docView.classList.remove("doc-view--zoomed");
-              }
+              _openLightbox(_docViewBlobUrl);
             });
             img.addEventListener("keydown", function (e) {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                _docZoom = 1;
-                docView.classList.add("doc-view--zoomed");
-              } else if (e.key === "Escape") {
-                _docZoom = 0;
-                docView.classList.remove("doc-view--zoomed");
+                _openLightbox(_docViewBlobUrl);
               }
             });
           }
