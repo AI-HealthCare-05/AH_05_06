@@ -28,6 +28,7 @@ from app.models.catalog import (
 )
 from app.models.staffs import Hospital, Staff
 from app.services import guide_defaults
+from app.services.drug_caution import DrugCautionService
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 
@@ -135,6 +136,63 @@ class GuideCopyTestCase(TestCase):
 
         assert part["origin"] != ORIGIN, "초안이 원본으로 나갔다"
         assert part["origin"] == guide_defaults.CAUTION, "기본 문구가 아니다"
+
+    async def test_a_low_grade_origin_is_not_shown_as_the_origin(self) -> None:
+        """**화면이 「원본」이라 부르는 글은 생성이 실제로 쓰는 글이어야 한다.**
+
+        승인 도장만으로는 모자라다. 등급이 B·C 인 근거는 주의·응급의 단독
+        근거가 못 된다(KEY-180 §2). 예전에는 이 화면이 승인 여부만 보아서,
+        **등급 B 자문 문구를 「원본」이라 보여 주는데 환자에게는 기본 한 줄이
+        나갔다** — 고치라고 만든 화면이 거짓말을 하는 셈이다 (`#214` ③).
+        """
+        row = await self.a_set()
+        content = await self.an_origin(row)
+        content.source_grade = SourceGrade.B
+        await content.save()
+        doctor = await self.a_staff(["doctor"], "gradeb")
+
+        part = self.section(await self.fetch(doctor), row.prescription_set_id)
+
+        assert part["origin"] != ORIGIN, "생성이 안 쓸 글을 원본이라 보였다"
+        assert part["origin"] == guide_defaults.CAUTION, "생성이 쓸 글과 달라졌다"
+
+    async def test_an_origin_without_evidence_is_not_shown_as_the_origin(self) -> None:
+        """**근거가 비면 생성이 안 쓴다** — 화면도 안 보여야 한다 (KEY-180 §4).
+
+        출처를 못 대는 글이 환자에게 나가면 「누가 그렇게 말했나」에 답할 수
+        없다. 그래서 생성은 넷(`source_name`·`source_org`·`source_url`·
+        `content_version`) 중 하나라도 비면 기본 문구로 내려간다. 화면이 그
+        조건을 안 보면 같은 갈림이 생긴다.
+        """
+        row = await self.a_set()
+        content = await self.an_origin(row)
+        content.source_url = ""
+        await content.save()
+        doctor = await self.a_staff(["doctor"], "noevi")
+
+        part = self.section(await self.fetch(doctor), row.prescription_set_id)
+
+        assert part["origin"] == guide_defaults.CAUTION, "근거 없는 글을 원본이라 보였다"
+
+    async def test_the_screen_and_the_guide_read_the_same_words(self) -> None:
+        """**두 잣대가 갈리지 않는다** — 화면이 부른 원본 = 생성이 고른 글.
+
+        갈래마다 하나씩 짚지 않고 **같은 문을 지나는지**를 잰다. 조건이 하나
+        더 붙는 날 그 조건을 두 군데에 적어야 한다는 것을 여기서 알게 된다.
+        """
+        row = await self.a_set()
+        for section in (CautionSectionKey.MEDICATION, CautionSectionKey.CAUTION, CautionSectionKey.LIFE):
+            await self.an_origin(row, section, body=f"{section.value} 승인 원본")
+        doctor = await self.a_staff(["doctor"], "same")
+
+        body = await self.fetch(doctor)
+        listed = [item for item in body["items"] if item["prescription_set_id"] == row.prescription_set_id][0]
+        shown = {part["section_key"]: part["origin"] for part in listed["sections"]}
+
+        for section in (CautionSectionKey.MEDICATION, CautionSectionKey.CAUTION, CautionSectionKey.LIFE):
+            picked = await DrugCautionService.approved_content_of(row, section)
+            assert picked is not None, f"{section.value}: 생성이 승인 원본을 못 찾았다"
+            assert shown[section.value] == picked.body, f"{section.value}: 화면과 생성이 다른 글을 본다"
 
     async def test_saving_does_not_touch_the_origin(self) -> None:
         """**여기가 이 화면의 핵심이다.** 원본이 바뀌면 무엇이 사실인지 잃는다."""
