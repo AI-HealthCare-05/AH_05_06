@@ -1068,9 +1068,21 @@ function stateTakesFocus(tone) {
 
       var made = fieldBody(field);
       return (
+        /* 🚩 **`data-field-type` 을 여기서도 붙인다.**
+         *
+         * 값을 읽는 자리(`typeOfBox`)가 `closest("[data-field-type]")` 로 항목
+         * 이름을 찾는데, 그 속성은 `renderField` 가 만드는 `<li>` 에 붙는다.
+         * 맨 윗줄은 `made.body` 만 꺼내 제 `<div>` 로 감싸므로 **그 속성이
+         * 없었다.**
+         *
+         * 그래서 진단을 골라도 `fieldChoices("")` 가 거짓이 돼 **서버로 보내는
+         * 분기를 통째로 건너뛰었다.** 값은 화면에만 남고 탭을 옮기면 사라졌고,
+         * 확정이 안 되니 안내문 생성이 계속 막혔다. */
         '<div class="top__cell' +
         (spec.wide ? " top__cell--wide" : "") +
         (made.clash ? " field--clash" : "") +
+        '" data-field-type="' +
+        escapeHtml(field.field_type) +
         '">' +
         '<span class="top__label">' +
         escapeHtml(spec.label) +

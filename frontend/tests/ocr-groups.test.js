@@ -995,6 +995,22 @@ test("**두 블록이 각자 제 것만 담는다** — 안 만진 칸이 저장
   assert.equal(PRESCRIPTION_TYPES.indexOf("TSH"), -1, "혈액 항목이 처방으로 세어진다");
 });
 
+test("**맨 윗줄도 제 항목 이름을 들고 있다** — 없으면 고른 값이 서버로 안 간다", () => {
+  /* 값을 읽는 자리(`typeOfBox`)가 `closest("[data-field-type]")` 로 항목 이름을
+     찾는다. 그 속성은 `renderField` 가 만드는 `<li>` 에 붙는데, 맨 윗줄은
+     몸통만 꺼내 제 `<div>` 로 감싼다 — 붙여 주지 않으면 이름이 빈 문자열이 되고
+     `fieldChoices("")` 가 거짓이라 **서버로 보내는 분기를 통째로 건너뛴다.**
+
+     그러면 진단을 골라도 화면에만 남고, 탭을 옮기면 사라지고, 확정이 안 되니
+     안내문 생성이 계속 막힌다. 실제로 그렇게 났다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("var made = fieldBody(field);");
+  assert.notEqual(at, -1, "맨 윗줄을 그리는 자리가 없다");
+
+  const cell = code.slice(at, at + 700);
+  assert.match(cell, /data-field-type="/, "맨 윗줄 칸이 항목 이름을 안 들고 있다");
+});
+
 test("**한 줄이 막혀도 나머지는 담는다** — 그리고 무엇이 막혔는지 말한다", () => {
   /* 예전에는 `Promise.all` 이라 한 줄만 거절돼도 묶음이 통째로 깨졌다.
      확정된 처방을 다시 보내다 409 가 나면 같이 보낸 진단까지 안 담겼다. */
