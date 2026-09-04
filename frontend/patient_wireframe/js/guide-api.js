@@ -13,6 +13,7 @@ var GUIDE_ERROR = {
   NOT_APPROVED: 'GUIDE_NOT_APPROVED',
   NOT_FOUND: 'LINK_NOT_FOUND',
   LINK_EXPIRED: 'LINK_EXPIRED',
+  SESSION_EXPIRED: 'PATIENT_SESSION_EXPIRED',
 };
 
 /* 목업은 현재 주소에 ?mock=1이 명시된 경우에만 쓴다. 세션에 남기면 실제

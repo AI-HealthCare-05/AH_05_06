@@ -1,4 +1,4 @@
-"""환자 링크·승인 안내 API — KEY-90, KEY-241."""
+"""환자 링크·승인 안내 API — KEY-90, KEY-241, KEY-178."""
 
 from typing import Annotated, cast
 
@@ -178,17 +178,27 @@ def _patient_response(
     )
 
 
+async def _guide_data(
+    token: str,
+    service: Annotated[PatientLinkService, Depends(_service)],
+) -> tuple[PatientGuideLink, GuideDocument, PatientGuideData]:
+    return await service.get_patient_guide_data(token)
+
+
 @patient_guide_router.get(
     "/{token}",
     response_model=PatientGuideResponse,
     response_model_exclude_none=True,
 )
 async def read_patient_guide(
-    token: str,
-    service: Annotated[PatientLinkService, Depends(_service)],
+    guide_data: Annotated[tuple[PatientGuideLink, GuideDocument, PatientGuideData], Depends(_guide_data)],
+    # 링크 자체가 유효한지 위 _guide_data 에서 먼저 확인한다. 세션 체크를
+    # 먼저 하면 만료·폐기된 링크도 401(세션 없음)로 가려져서 기존 410/404
+    # 계약이 깨진다 — 그래서 순서가 중요하다 (KEY-178).
+    _session: Annotated[None, Depends(require_patient_session)],
     usage: Annotated[PatientUsageService, Depends(_usage_service)],
 ) -> PatientGuideResponse:
-    link, guide, data = await service.get_patient_guide_data(token)
+    link, guide, data = guide_data
     # 승인 확인을 통과한 뒤에 남긴다 (KEY-170).
     # 지금은 **같은 요청 안에서** 남기므로, 기록이 실패하면 열람도 실패한다.
     # 통계가 환자의 안내 열람을 막는 모양이라 KEY-95·KEY-96 에서 챗봇 호출부가
@@ -232,12 +242,20 @@ def _pain_response(check_in: CheckIn) -> CheckInPainResponse | None:
     )
 
 
-@patient_checkin_router.get("/{token}", response_model=CheckInReadResponse)
-async def read_patient_checkin(
+async def _checkin_form_data(
     token: str,
     service: Annotated[CheckInService, Depends(_checkin_service)],
+) -> tuple[GuideDocument, bool]:
+    return await service.read_form(token)
+
+
+@patient_checkin_router.get("/{token}", response_model=CheckInReadResponse)
+async def read_patient_checkin(
+    form_data: Annotated[tuple[GuideDocument, bool], Depends(_checkin_form_data)],
+    # read_patient_guide 와 같은 이유로 순서가 중요하다 (KEY-178).
+    _session: Annotated[None, Depends(require_patient_session)],
 ) -> CheckInReadResponse:
-    guide, answered = await service.read_form(token)
+    guide, answered = form_data
     medication, caution = approved_answer_bodies(guide)
     return CheckInReadResponse(
         answers={

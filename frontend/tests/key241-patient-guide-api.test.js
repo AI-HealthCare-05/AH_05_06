@@ -433,6 +433,12 @@ test('P2~P5 렌더러가 v3 진행률·빈 목표·부분 펼침·승인 시각 
   assert.doesNotMatch(FOOTER_SOURCE, /생성 ·/);
 });
 
+test('KEY-178 실서버 경로에서 세션 만료를 받으면 오류 대신 OTP 화면으로 보낸다', () => {
+  assert.match(API_SOURCE, /SESSION_EXPIRED: 'PATIENT_SESSION_EXPIRED'/);
+  assert.match(GUIDE_SOURCE, /error\.code === GUIDE_ERROR\.SESSION_EXPIRED/);
+  assert.match(GUIDE_SOURCE, /location\.replace\(otpEntryUrl\(\)\);\s*\n\s*return;/);
+});
+
 test('KEY-219 실제 OTP 왕복을 보존하고 고정 OTP 우회는 명시적 목업에만 둔다', () => {
   assert.match(GUIDE_SOURCE, /function otpEntryUrl\(\)/);
   assert.match(GUIDE_SOURCE, /safeFragment\.set\('t', token\)/);

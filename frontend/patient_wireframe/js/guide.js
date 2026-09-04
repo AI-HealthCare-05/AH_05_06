@@ -857,7 +857,15 @@
         sayGuide('승인된 안내를 불러왔어요');
         if (window.chatSetGuide) chatSetGuide(d.guide || d);
       })
-      .catch(renderLoadError);
+      .catch(function (error) {
+        // 링크는 살아 있는데 세션만 없거나 끝난 상태다 — 오류로 보여주지
+        // 않고 OTP 화면으로 보낸다 (KEY-178). 목업 모드는 이미 위에서 걸러진다.
+        if (error && error.code === GUIDE_ERROR.SESSION_EXPIRED) {
+          location.replace(otpEntryUrl());
+          return;
+        }
+        renderLoadError(error);
+      });
   }
 
   showMockBadge();

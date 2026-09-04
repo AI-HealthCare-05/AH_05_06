@@ -45,7 +45,16 @@ function notifyFor(answers, key) {
   /* 실제 화면에서 토큰이 없으면 합성 기본값으로 요청하지 않는다. 새로고침·
      잘못된 주소는 서버 인증 상태를 추측하지 않고 닫힌 링크 안내로 보낸다. */
   var token =
-    new URLSearchParams(location.search).get("t") || (MOCK && CHECKIN_CASE ? "synthetic-link-token" : "");
+    new URLSearchParams(String(location.hash || "").replace(/^#/, "")).get("t") ||
+    new URLSearchParams(location.search).get("t") ||
+    (MOCK && CHECKIN_CASE ? "synthetic-link-token" : "");
+
+  /* OTP 화면 진입 주소 — guide.js의 otpEntryUrl()과 같은 모양이다 (KEY-178). */
+  function otpEntryUrl() {
+    var safeFragment = new URLSearchParams();
+    if (token) safeFragment.set("t", token);
+    return "/patient_wireframe/html/otp.html" + (safeFragment.toString() ? "#" + safeFragment.toString() : "");
+  }
 
   var picked = null; // 복약 답
   /* 신호를 언제 보낼지 정하는 것은 `checkin-api.js` 의 `createSignalTracker` 다.
@@ -536,6 +545,11 @@ function notifyFor(answers, key) {
       renderSave();
     })
     .catch(function (error) {
+      /* 세션만 없거나 끝난 상태다 — 링크는 살아 있다. 오류로 보여주지 않고
+         OTP 화면으로 보낸다 (KEY-178). */
+      if (error && error.code === "PATIENT_SESSION_EXPIRED") {
+        return location.replace(otpEntryUrl());
+      }
       /* 링크는 3일 뒤 닫힌다. **오류가 아니라 안내다** — 환자가 잘못한 것이
          아니므로 「오류」라고 말하지 않는다. */
       if (isPatientLinkClosed(error)) {

@@ -47,9 +47,9 @@ class TestKey205PatientLinkLaunch(PatientLinkTestCase):
                 )
                 assert issued.status_code == 201, issued.text
                 path = issued.json()["path"]
-                opened = await client.get(path)
                 raw_session = await PatientSessionStore(self.redis).start(LINK_TOKEN)  # type: ignore[arg-type]
                 client.cookies.set("patient_session", raw_session)
+                opened = await client.get(path)
                 chatbot = await client.post(
                     "/api/v1/chatbot/responses",
                     json={"question": "약은 언제 먹나요?"},

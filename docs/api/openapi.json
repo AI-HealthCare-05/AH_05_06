@@ -6001,6 +6001,22 @@
               "title": "Token",
               "type": "string"
             }
+          },
+          {
+            "in": "cookie",
+            "name": "patient_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patient Session"
+            }
           }
         ],
         "responses": {
@@ -6481,6 +6497,22 @@
             "schema": {
               "title": "Token",
               "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "patient_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patient Session"
             }
           }
         ],

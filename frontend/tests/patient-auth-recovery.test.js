@@ -225,6 +225,23 @@ test("새로고침 때 인증 성공을 브라우저 저장소에서 추측하�
   assert.match(source, /if \(isPatientLinkClosed\(error\)\)/, "초기 조회가 공통 닫힌 링크 분류를 사용하지 않는다");
 });
 
+test("KEY-178 초기 조회에서 세션 만료를 받으면 오류 대신 OTP 화면으로 보낸다", () => {
+  const source = fs.readFileSync(path.join(JS_DIR, "checkin.js"), "utf8");
+
+  assert.match(source, /function otpEntryUrl\(\)/, "checkin.js에 OTP 진입 주소 헬퍼가 없다");
+  assert.match(source, /"\/patient_wireframe\/html\/otp\.html"/, "OTP 화면 경로가 guide.js와 다르다");
+  assert.match(
+    source,
+    /error && error\.code === "PATIENT_SESSION_EXPIRED"[\s\S]{0,80}location\.replace\(otpEntryUrl\(\)\)/,
+    "세션 만료를 받아도 OTP 화면으로 보내지 않는다",
+  );
+  assert.match(
+    source,
+    /new URLSearchParams\(String\(location\.hash \|\| ""\)\.replace\(\/\^#\/, ""\)\)\.get\("t"\)/,
+    "토큰을 fragment(#t=)에서 먼저 읽지 않는다 (KEY-267)",
+  );
+});
+
 test("정상 저장은 라이브 상태를 두 번 읽지 않고 버튼에서 진행 상태를 알린다", () => {
   const source = fs.readFileSync(path.join(JS_DIR, "checkin.js"), "utf8");
 
