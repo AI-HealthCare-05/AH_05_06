@@ -2170,28 +2170,30 @@ function stateTakesFocus(tone) {
    * 였다. 「잠시 뒤 다시」는 기다리면 될 것처럼 읽히는데, 확정된 항목은
    * 기다려도 안 된다 — 그 말 때문에 같은 것을 되풀이해 누르게 됐다. */
   function stuckSaying(stuck) {
-    var names = stuck
-      .map(function (r) {
-        return fieldLabel(r.type);
-      })
-      .join(" · ");
-    var confirmed = stuck.some(function (r) {
+    /* **까닭이 다르면 따로 말한다.**
+     *
+     * 예전에는 막힌 것 중 하나라도 확정이면 **전부** 「이미 확정돼」로 뭉뚱그렸다.
+     * 확정된 약품명과 그물이 끊겨 못 간 1회량이 같이 막히면, 다시 하면 될
+     * 1회량까지 「못 바꿉니다」로 읽혀 스탭이 엉뚱한 조치를 한다 (`#216` 리뷰). */
+    function named(rows) {
+      return rows
+        .map(function (r) {
+          return fieldLabel(r.type);
+        })
+        .join(" · ");
+    }
+
+    var confirmed = stuck.filter(function (r) {
       return r.code === "OCR_FIELD_CONFIRMED";
     });
-    if (confirmed) return names + " 은 이미 확정돼 여기서는 못 바꿉니다";
-    return names + " 을 저장하지 못했습니다";
-  }
+    var others = stuck.filter(function (r) {
+      return r.code !== "OCR_FIELD_CONFIRMED";
+    });
 
-  /** 서버가 지금 들고 있는 값. 없으면 `null`.
-   *
-   * 보낼지 말지를 가르는 데 쓴다 — 같은 값을 다시 `PUT` 하면 확정된 줄에서
-   * 409 가 나고, 한 줄의 409 가 같이 보낸 다른 줄까지 못 담게 만든다. */
-  function serverFieldValue(type) {
-    var rows = (result && result.fields) || [];
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i].field_type === type) return rows[i].value;
-    }
-    return null;
+    var says = [];
+    if (confirmed.length) says.push(named(confirmed) + " 은 이미 확정돼 여기서는 못 바꿉니다");
+    if (others.length) says.push(named(others) + " 을 저장하지 못했습니다");
+    return says.join(" · ");
   }
 
   /* 적어 둔 값을 **한 번에** 서버로. 판독이 못 읽은 항목은 줄 자체가 없어서
@@ -2215,9 +2217,14 @@ function stateTakesFocus(tone) {
        `Promise.all` 이 통째로 깨져 **같이 보낸 진단이 영영 저장되지 않았다.**
        처방을 한 번 저장하고 나면 그 뒤로 진단을 못 넣는 상태가 됐다. */
     var extra = {};
-    if (isRx && pickedSet && serverFieldValue("MEDICATION_NAME") !== pickedSet.name) {
+    if (isRx && pickedSet && fieldValueOf(result.fields, "MEDICATION_NAME") !== pickedSet.name) {
       extra.MEDICATION_NAME = pickedSet.name;
     }
+
+    /* 수동 추가 약이 쓰는 항목 이름. **담겼는지는 이것으로만 판단한다** —
+       옆에서 딴 항목이 막혔다고 수동 약을 안 비우면, 다시 저장할 때 그 약이
+       새 번호로 **한 번 더** 들어간다 (`#216` 리뷰). */
+    var manualTypes = [];
 
     /* 수동 추가 약은 기존 MEDICATION_NAME_N 인덱스 다음 번호로 저장한다. */
     if (isRx && manualDrugs.length) {
@@ -2232,7 +2239,11 @@ function stateTakesFocus(tone) {
         if (!drug.name) return;
         var idx = maxIdx + i + 1;
         extra["MEDICATION_NAME_" + idx] = drug.name;
-        if (drug.days) extra["DURATION_DAYS_" + idx] = String(drug.days);
+        manualTypes.push("MEDICATION_NAME_" + idx);
+        if (drug.days) {
+          extra["DURATION_DAYS_" + idx] = String(drug.days);
+          manualTypes.push("DURATION_DAYS_" + idx);
+        }
       });
     }
 
@@ -2286,7 +2297,13 @@ function stateTakesFocus(tone) {
         delete local[r.type];
         delete localDraft[r.type];
       });
-      if (isRx && !stuck.length) manualDrugs = [];
+      /* **수동 약 자신이 다 담겼을 때만 비운다.** 묶음 전체가 성공했는지가
+         아니다 — 이미 확정된 진단이 같이 막혔다고 수동 약을 안 비우면, 스탭이
+         다시 저장할 때 `maxIdx` 가 새로 세어져 같은 약이 다음 번호로 또 들어간다. */
+      var manualStuck = results.some(function (r) {
+        return !r.ok && manualTypes.indexOf(r.type) !== -1;
+      });
+      if (isRx && manualTypes.length && !manualStuck) manualDrugs = [];
 
       if (!stuck.length) {
         say("저장했습니다");
