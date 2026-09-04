@@ -4,7 +4,7 @@ from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.dependencies.patient_auth import require_patient_session
+from app.dependencies.patient_auth import optional_patient_session, require_patient_session
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.checkins import (
     CheckInAnswerContent,
@@ -73,6 +73,8 @@ def _patient_response(
     link: PatientGuideLink,
     guide: GuideDocument,
     data: PatientGuideData,
+    *,
+    verified: bool,
 ) -> PatientGuideResponse:
     if guide.approved_at is None:
         # 서비스가 앞에서 막아야 하는 불변식이다. 최적화 모드에서 사라지는
@@ -170,8 +172,10 @@ def _patient_response(
         ],
         visit=data.visit_date.strftime("%Y.%m.%d"),
         clinic=data.clinic_name,
-        # 세션이 있어야만 이 라우트에 온다(KEY-178) — 뷰어는 항상 인증됐다.
-        patient_name=data.patient_name,
+        # require_patient_session이 있어야 여기 온다(KEY-178)지만, 그 검증이
+        # override로 우회되는 테스트 맥락에서도 실제 세션 유무를 그대로
+        # 반영해야 한다 — verified가 그 자리다 (KEY-268, PR #215 리뷰로 발견).
+        patient_name=data.patient_name if verified else None,
         disease=data.disease_name,
         stat=stat,
         guide=guide_detail,
@@ -199,11 +203,12 @@ async def read_patient_guide(
     # 먼저 하면 만료·폐기된 링크도 401(세션 없음)로 가려져서 기존 410/404
     # 계약이 깨진다 — 그래서 순서가 중요하다 (KEY-178).
     _session: Annotated[None, Depends(require_patient_session)],
+    verified: Annotated[bool, Depends(optional_patient_session)],
     usage: Annotated[PatientUsageService, Depends(_usage_service)],
 ) -> PatientGuideResponse:
-    # 세션이 있어야만 여기 온다(KEY-178) — 항상 인증된 뷰어라 이름을 늘
-    # 싣는다. 캐시에 남으면 세션 만료 뒤에도 재사용될 수 있어 매번
-    # no-store 로 답한다(기술 리드 리뷰, PR #211, KEY-268).
+    # OTP 세션 쿠키 유무로 patient_name 포함 여부가 갈린다(KEY-268). 캐시에
+    # 인증 시점 응답이 남으면 로그아웃·세션 만료 뒤에도 이름이 재사용될 수
+    # 있어 매번 no-store 로 답한다(기술 리드 리뷰, PR #211).
     response.headers["Cache-Control"] = "no-store"
     link, guide, data = guide_data
     # 승인 확인을 통과한 뒤에 남긴다 (KEY-170).
@@ -211,7 +216,7 @@ async def read_patient_guide(
     # 통계가 환자의 안내 열람을 막는 모양이라 KEY-95·KEY-96 에서 챗봇 호출부가
     # 붙을 때 분리 여부를 다시 본다.
     await usage.record_guide_view(guide.guide_document_id)
-    return _patient_response(link, guide, data)
+    return _patient_response(link, guide, data, verified=verified)
 
 
 @patient_guide_router.post("/{token}/views", status_code=204)

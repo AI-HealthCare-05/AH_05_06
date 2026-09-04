@@ -1,14 +1,9 @@
-"""OTP 인증한 뷰어에게 환자 전체 이름을 보여준다 — KEY-268.
+"""OTP 인증한 뷰어에게만 환자 전체 이름을 보여준다 — KEY-268.
 
-KEY-268을 만들 당시엔 안내 조회가 링크 토큰만으로 열렸어서(KEY-178 이전),
-`patient_name`을 "인증한 뷰어에게만" 보태는 선택적 필드로 뒀다. 이후
-KEY-178이 조회 자체에 세션을 강제하면서, 이 라우트에 도달한 시점엔 이미
-항상 인증된 뷰어다 — "선택적 표시"가 "항상 표시"로 접힌다.
-
-세션이 없거나 다른 링크의 세션인 경우는 이제 401(PATIENT_SESSION_EXPIRED)로
-막힌다 — test_patient_session.py 가 그 경계를 본다. 이 파일은 인증을 통과한
-뒤 patient_name 이 실제로 마스킹 없이 실리는지, 그리고 no-store 헤더가
-붙는지만 확인한다.
+안내 조회 자체는 세션이 있어야 열리지만(KEY-178), require_patient_session이
+override로 우회되는 테스트 맥락도 있다. patient_name 노출 여부는 그 override와
+무관하게 실제 세션이 이 링크에 유효한지를 독립적으로 다시 본다
+(optional_patient_session, PR #215 리뷰로 재확인).
 """
 
 from httpx import ASGITransport, AsyncClient
@@ -33,12 +28,29 @@ def _client_with_session(raw_session: str) -> AsyncClient:
     )
 
 
+OTHER_LINK_TOKEN = "z9Y8x7W6v5U4t3S2r1Q0p9O8n7M6l5K4j3I2h1G0fE1"
+
+
 class TestKey268PatientName(PatientLinkTestCase):
     async def _issue_approved_link(self) -> None:
         hospital = await make_hospital("KEY-268 합성의원")
         guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
         staff = await make_staff(hospital, "key268-staff", ["staff"])
         assert (await self.issue(guide, staff)).status_code == 201
+
+    async def test_name_is_absent_without_an_otp_session(self) -> None:
+        await self._issue_approved_link()
+
+        async with self.client() as client:
+            response = await client.get(f"/api/v1/guides/{TOKEN}")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert "patient_name" not in body
+        assert "합성환자" not in response.text
+        # 이 응답도 캐시되면 세션이 생긴 뒤 patient_name 이 실린 응답과
+        # 뒤섞일 여지가 있다 — 인증·미인증 모두 no-store 로 답한다.
+        assert response.headers["cache-control"] == "no-store"
 
     async def test_full_name_is_shown_to_a_verified_viewer(self) -> None:
         await self._issue_approved_link()
@@ -53,3 +65,15 @@ class TestKey268PatientName(PatientLinkTestCase):
         # 로그아웃·세션 만료 뒤에도 캐시된 이 응답이 재사용되면 안 된다
         # (기술 리드 리뷰, PR #211).
         assert response.headers["cache-control"] == "no-store"
+
+    async def test_session_for_another_link_does_not_reveal_the_name(self) -> None:
+        await self._issue_approved_link()
+        raw_session = await PatientSessionStore(self.redis).start(  # type: ignore[arg-type]
+            OTHER_LINK_TOKEN
+        )
+
+        async with _client_with_session(raw_session) as client:
+            response = await client.get(f"/api/v1/guides/{TOKEN}")
+
+        assert response.status_code == 200
+        assert "patient_name" not in response.json()

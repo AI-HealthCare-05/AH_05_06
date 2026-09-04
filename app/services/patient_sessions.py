@@ -91,6 +91,18 @@ class PatientSessionStore:
         ttl: int = await self.redis.ttl(self._session(session_digest))
         return max(0, ttl)
 
+    async def has_valid_session(self, raw_session: str | None, raw_link_token: str) -> bool:
+        """세션이 이 링크에 유효한지 여부만 돌려준다 — 없거나 만료여도 예외를 올리지 않는다.
+
+        `require`·`check` 는 관문이지만 이것은 「인증했는가」 표시용이다. 환자명처럼
+        인증한 뷰어에게만 보태는 필드를 켤지 정하는 데만 쓴다 (KEY-268).
+        """
+        if not raw_session:
+            return False
+        session_digest = digest_session_token(raw_session)
+        link_digest = digest_link_token(raw_link_token)
+        return await self._is_current(session_digest, link_digest)
+
     async def revoke(self, raw_session: str | None) -> None:
         if not raw_session:
             return
