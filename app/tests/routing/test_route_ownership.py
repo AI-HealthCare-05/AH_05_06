@@ -153,6 +153,7 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
         "/api/v1/visits/{visit_id}/guide/unapprove": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/sections/{key}": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/link": "app.apis.v1.patient_link_routers",
+        "/api/v1/visits/{visit_id}/guide/link/re-issue": "app.apis.v1.patient_link_routers",
         "/api/v1/visits/{visit_id}/checkin": "app.apis.v1.patient_link_routers",
         "/api/v1/visits/{visit_id}/ocr-job": "app.ocr.api",
         "/api/v1/visits/{visit_id}/ocr-jobs": "app.ocr.api",
