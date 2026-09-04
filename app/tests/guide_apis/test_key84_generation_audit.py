@@ -43,7 +43,13 @@ class TestGeneratedAuditEvent(GenerateGuideTestCase):
         assert events[0].section_key is None
         assert events[0].reason is None
 
-    async def test_duplicate_failure_does_not_add_an_event(self) -> None:
+    async def test_making_it_again_leaves_one_event_for_the_guide_that_stands(self) -> None:
+        """다시 만들면 **선 안내문의 기록만** 남는다 (KEY-273).
+
+        작성 중이면 다시 만들 수 있게 됐다. 옛 문서를 지우면서 그 기록도 함께
+        지우므로(`on_delete=CASCADE`), 남는 것은 지금 서 있는 안내문의 것
+        하나다 — 지워진 문서의 기록이 남으면 「무엇의 기록인가」에 답할 수 없다.
+        """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "key84duplicate", ["staff"])
         visit = await make_visit(clinic, "SYN-KEY84-DUPLICATE")
@@ -55,9 +61,15 @@ class TestGeneratedAuditEvent(GenerateGuideTestCase):
             second = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=headers)
 
         assert first.status_code == 201
-        assert second.status_code == 409
-        assert second.json()["code"] == "GUIDE_ALREADY_EXISTS"
-        assert await GuideEvent.filter(event_type=GuideEventType.GENERATED).count() == 1
+        assert second.status_code == 201
+
+        guide = await GuideDocument.get(visit_id=visit.visit_id)
+        events = await GuideEvent.filter(guide_document=guide).all()
+        assert len(events) == 1, "선 안내문에 기록이 하나가 아니다"
+        assert events[0].event_type is GuideEventType.GENERATED
+        assert await GuideEvent.filter(event_type=GuideEventType.GENERATED).count() == 1, (
+            "지워진 문서의 기록이 남아 있다"
+        )
 
     async def test_unconfirmed_ocr_failure_leaves_no_guide_or_audit(self) -> None:
         clinic = await make_clinic()

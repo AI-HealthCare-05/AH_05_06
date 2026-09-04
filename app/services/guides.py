@@ -205,9 +205,30 @@ class GuideService:
         # **세트는 한 번만 찾는다.** 갈래마다·의사마다 이름으로 다시 찾으면
         # 같은 `SELECT` 가 **네 번** 돈다 — 주의·응급·담당 문구·의원 공통 문구가
         # 전부 같은 세트를 본다 (`#191` 리뷰, 2heej).
+        # **확정된 판독이 처방을 정한다** (KEY-273).
+        #
+        # 예전에는 `Prescription` 행에서만 세트 이름을 꺼냈다. 그런데 그 행을
+        # 만드는 곳이 씨앗뿐이라 **판독으로 만든 진료에는 아예 없었고**, 안내문이
+        # 늘 기본 문구로 나갔다(KEY-271). 판독에서 처방을 고쳐도 그 행은 안
+        # 따라와서, 본문은 옛 세트인데 「확정된 항목」 줄만 새 값인 **섞인
+        # 안내문**이 났다 — 복약지도는 자궁내막증인데 생활지도는 다낭성이었다.
+        #
+        # 판독 확인 화면이 고른 세트는 `MEDICATION_NAME` 에 확정으로 담긴다.
+        # 그것을 먼저 보고, 없을 때만 `Prescription` 행으로 내려간다 — 씨앗이
+        # 부은 진료는 판독이 없어 그쪽이 유일한 실마리다.
+        #
+        # **약 항목은 여전히 처방 행에서 온다**(KEY-224). 세트 이름만 판독이
+        # 정하고, 그 진료에 실제로 나간 약은 처방 행이 갖는다.
+        confirmed_set = await OcrField.filter(
+            ocr_result=latest_result,
+            field_type="MEDICATION_NAME",
+            is_confirmed=True,
+        ).first()
+        picked_name = confirmed_set.value if confirmed_set else None
+
         prescription = await Prescription.filter(visit_id=visit_id).prefetch_related("items").first()
         prescription_items = ordered_prescription_items(prescription)
-        set_name = prescription.prescription_set if prescription else None
+        set_name = picked_name or (prescription.prescription_set if prescription else None)
         prescription_set = await PrescriptionSet.filter(name=set_name).first() if set_name else None
 
         # KEY-243: **의사가 고친 문구가 있으면 그것이 이긴다.**
@@ -252,8 +273,32 @@ class GuideService:
             ) is None:
                 raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
 
-            if await GuideDocument.filter(visit_id=visit_id).using_db(connection).exists():
-                raise ApiError("GUIDE_ALREADY_EXISTS", 409, "이미 안내문이 생성되어 있습니다.")
+            # **작성 중이면 다시 만든다** (KEY-273).
+            #
+            # 판독을 고쳐도 안내문이 안 따라오고 있었다 — 한 번 만들면 그것으로
+            # 끝이라, 진단·처방을 바로잡아도 환자에게는 옛 글이 나갔다.
+            #
+            # **다시 만드는 것은 아직 아무도 안 본 것뿐이다.** 안내문은 만들어진
+            # 뒤 사람이 손대는 물건이다 — 스탭이 문구를 고치고 원장님이 승인하면
+            # 발송 예약까지 걸린다. 그 뒤에 밑에서 갈아 끼우면 손댄 것이 날아가고,
+            # 원장님이 승인한 글과 나가는 글이 달라진다.
+            existing = await GuideDocument.filter(visit_id=visit_id).using_db(connection).select_for_update().first()
+            if existing is not None:
+                if existing.status != GuideStatus.STAFF_REVIEW:
+                    raise ApiError(
+                        "GUIDE_ALREADY_EXISTS",
+                        409,
+                        "이미 넘긴 안내문입니다. 다시 만들려면 승인을 먼저 거둬 주세요.",
+                    )
+                # **작성 중에는 붙어 있는 것이 없어 통째로 지운다.** 환자
+                # 링크(`PatientGuideLink`)는 승인 완료에만 발급되고
+                # (`patient_links.py` 가 `SCHEDULED_TO_SEND` 를 요구한다),
+                # 확인 기록(`CheckIn`)도 그 링크를 지나야 생긴다.
+                #
+                # 절과 기록은 따로 안 지운다 — 둘 다 `on_delete=CASCADE` 라
+                # 문서를 지우면 딸려 간다(`app/models/visits.py`). 손으로 한 번
+                # 더 지우면 **지우는 규칙이 두 곳에 생겨** 한쪽만 고쳐진다.
+                await existing.delete(using_db=connection)
 
             guide = await GuideDocument.create(
                 hospital_id=actor.hospital_id,
