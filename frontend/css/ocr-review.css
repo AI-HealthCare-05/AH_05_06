@@ -64,6 +64,19 @@
   height: auto;
   display: block;
   border-radius: 2px;
+  cursor: zoom-in;
+}
+
+.doc-view--zoomed {
+  overflow: auto;
+  align-items: flex-start;
+  justify-content: flex-start;
+  max-height: 80vh;
+}
+
+.doc-view--zoomed .doc-view__img {
+  width: 350%;
+  cursor: zoom-out;
 }
 
 .doc-view__soon {
