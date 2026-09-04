@@ -1118,9 +1118,21 @@ function stateTakesFocus(tone) {
 
       var made = fieldBody(field);
       return (
+        /* 🚩 **`data-field-type` 을 여기서도 붙인다.**
+         *
+         * 값을 읽는 자리(`typeOfBox`)가 `closest("[data-field-type]")` 로 항목
+         * 이름을 찾는데, 그 속성은 `renderField` 가 만드는 `<li>` 에 붙는다.
+         * 맨 윗줄은 `made.body` 만 꺼내 제 `<div>` 로 감싸므로 **그 속성이
+         * 없었다.**
+         *
+         * 그래서 진단을 골라도 `fieldChoices("")` 가 거짓이 돼 **서버로 보내는
+         * 분기를 통째로 건너뛰었다.** 값은 화면에만 남고 탭을 옮기면 사라졌고,
+         * 확정이 안 되니 안내문 생성이 계속 막혔다. */
         '<div class="top__cell' +
         (spec.wide ? " top__cell--wide" : "") +
         (made.clash ? " field--clash" : "") +
+        '" data-field-type="' +
+        escapeHtml(field.field_type) +
         '">' +
         '<span class="top__label">' +
         escapeHtml(spec.label) +
@@ -1226,7 +1238,17 @@ function stateTakesFocus(tone) {
       active && active.getAttribute && active.getAttribute("data-input") !== null
         ? Number(active.getAttribute("data-input"))
         : null;
-    var caret = typingIn === null ? null : [active.selectionStart, active.selectionEnd];
+    /* 🚩 **커서는 글 치는 칸에만 있다.**
+     *
+     * `<select>` 에는 `selectionStart` 가 없어 `undefined` 가 나오는데, 배열로
+     * 감싸면 `[undefined, undefined]` 가 되어 **참으로 읽힌다.** 그 뒤 복원에서
+     * `box.setSelectionRange` 를 부르면 `<select>` 에 그 함수가 없어 터진다.
+     *
+     * 그 예외가 `renderFields` → `redraw` → `onTyped` 를 통째로 중단시켜,
+     * **고른 값을 서버로 보내는 줄이 아예 안 돌았다** — 진단을 골라도 화면에만
+     * 남고 탭을 옮기면 사라졌다. 고르는 칸이 늘면서 드러난 자리다. */
+    var canCaret = !!active && typeof active.selectionStart === "number";
+    var caret = typingIn === null || !canCaret ? null : [active.selectionStart, active.selectionEnd];
 
     fieldsBox.innerHTML = groupsHtml();
 
@@ -1239,7 +1261,9 @@ function stateTakesFocus(tone) {
     var box = fieldsBox.querySelector('[data-input="' + wanted + '"]');
     if (!box) return;
     box.focus();
-    if (caret && typingIn === wanted) box.setSelectionRange(caret[0], caret[1]);
+    if (caret && typingIn === wanted && typeof box.setSelectionRange === "function") {
+      box.setSelectionRange(caret[0], caret[1]);
+    }
   }
 
   /* ── 오른쪽 블록 넷 (와이어프레임 S1-6) ──────────────────────────────
@@ -1919,7 +1943,21 @@ function stateTakesFocus(tone) {
   }
 
   function typeOfBox(box) {
-    var row = box && box.closest ? box.closest("[data-field-type]") : null;
+    if (!box) return "";
+
+    /* **줄이 제 이름을 들고 있으면 그것부터 본다.**
+     *
+     * 고르는 칸(`choiceHtml`)은 `data-owns` 에 제 항목 이름을 달고 나온다.
+     * 조상만 뒤지면 감싸는 자리마다 `data-field-type` 을 붙여 줘야 하는데,
+     * 맨 윗줄이 그것을 빠뜨려 **이름이 빈 문자열이 됐다** — 그러면
+     * `fieldChoices("")` 가 거짓이라 서버로 보내는 분기를 통째로 건너뛰고,
+     * 진단을 골라도 화면에만 남았다.
+     *
+     * 자기 이름을 먼저 읽으면 누가 감싸든 상관없다. */
+    var own = box.getAttribute ? box.getAttribute("data-owns") : null;
+    if (own) return own;
+
+    var row = box.closest ? box.closest("[data-field-type]") : null;
     return row ? row.getAttribute("data-field-type") : "";
   }
 
@@ -2176,6 +2214,38 @@ function stateTakesFocus(tone) {
     saveCheckItems();
   });
 
+  /** 막힌 줄을 사람 말로. **까닭을 감추지 않는다.**
+   *
+   * 예전에는 무엇이 막혔든 「저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요」
+   * 였다. 「잠시 뒤 다시」는 기다리면 될 것처럼 읽히는데, 확정된 항목은
+   * 기다려도 안 된다 — 그 말 때문에 같은 것을 되풀이해 누르게 됐다. */
+  function stuckSaying(stuck) {
+    /* **까닭이 다르면 따로 말한다.**
+     *
+     * 예전에는 막힌 것 중 하나라도 확정이면 **전부** 「이미 확정돼」로 뭉뚱그렸다.
+     * 확정된 약품명과 그물이 끊겨 못 간 1회량이 같이 막히면, 다시 하면 될
+     * 1회량까지 「못 바꿉니다」로 읽혀 스탭이 엉뚱한 조치를 한다 (`#216` 리뷰). */
+    function named(rows) {
+      return rows
+        .map(function (r) {
+          return fieldLabel(r.type);
+        })
+        .join(" · ");
+    }
+
+    var confirmed = stuck.filter(function (r) {
+      return r.code === "OCR_FIELD_CONFIRMED";
+    });
+    var others = stuck.filter(function (r) {
+      return r.code !== "OCR_FIELD_CONFIRMED";
+    });
+
+    var says = [];
+    if (confirmed.length) says.push(named(confirmed) + " 은 이미 확정돼 여기서는 못 바꿉니다");
+    if (others.length) says.push(named(others) + " 을 저장하지 못했습니다");
+    return says.join(" · ");
+  }
+
   /* 적어 둔 값을 **한 번에** 서버로. 판독이 못 읽은 항목은 줄 자체가 없어서
      항목 이름으로 짚는다(`PUT /visits/{id}/ocr-fields/{type}`). */
   document.addEventListener("click", function (event) {
@@ -2190,8 +2260,21 @@ function stateTakesFocus(tone) {
     var typed = localOf(isRx);
 
     /* 고른 처방은 약품명 칸에 담는다 — 안내문이 그 값으로 만들어진다.
-       전에는 화면이 기억만 하고 새로고침하면 사라졌다. */
-    var extra = isRx && pickedSet ? { MEDICATION_NAME: pickedSet.name } : {};
+       전에는 화면이 기억만 하고 새로고침하면 사라졌다.
+
+       🚩 **이미 그 값이면 안 보낸다.** `PUT` 은 확정된 줄에 409
+       (`OCR_FIELD_CONFIRMED`)를 내는데, 무조건 다시 보내면 그 하나 때문에
+       `Promise.all` 이 통째로 깨져 **같이 보낸 진단이 영영 저장되지 않았다.**
+       처방을 한 번 저장하고 나면 그 뒤로 진단을 못 넣는 상태가 됐다. */
+    var extra = {};
+    if (isRx && pickedSet && fieldValueOf(result.fields, "MEDICATION_NAME") !== pickedSet.name) {
+      extra.MEDICATION_NAME = pickedSet.name;
+    }
+
+    /* 수동 추가 약이 쓰는 항목 이름. **담겼는지는 이것으로만 판단한다** —
+       옆에서 딴 항목이 막혔다고 수동 약을 안 비우면, 다시 저장할 때 그 약이
+       새 번호로 **한 번 더** 들어간다 (`#216` 리뷰). */
+    var manualTypes = [];
 
     /* 수동 추가 약은 기존 MEDICATION_NAME_N 인덱스 다음 번호로 저장한다. */
     if (isRx && manualDrugs.length) {
@@ -2206,7 +2289,11 @@ function stateTakesFocus(tone) {
         if (!drug.name) return;
         var idx = maxIdx + i + 1;
         extra["MEDICATION_NAME_" + idx] = drug.name;
-        if (drug.days) extra["DURATION_DAYS_" + idx] = String(drug.days);
+        manualTypes.push("MEDICATION_NAME_" + idx);
+        if (drug.days) {
+          extra["DURATION_DAYS_" + idx] = String(drug.days);
+          manualTypes.push("DURATION_DAYS_" + idx);
+        }
       });
     }
 
@@ -2220,34 +2307,64 @@ function stateTakesFocus(tone) {
     say("저장하는 중…");
     redraw();
 
-    Promise.all(
-      typed
-        .map(function (type) {
-          return ocrApi.writeField(wanted, type, local[type]);
-        })
-        .concat(
-          Object.keys(extra).map(function (type) {
-            return ocrApi.writeField(wanted, type, extra[type]);
-          }),
-        ),
-    )
-      .then(function () {
-        if (!visit || visit.visit_id !== wanted) return;
-        /* 담겼으니 화면에만 있던 것은 지운다 — 안 지우면 서버 값과 두 벌이 된다.
-           **내 블록 것만** 지운다: 옆 블록은 아직 안 담겼다. */
-        typed.forEach(function (type) {
-          delete local[type];
-          delete localDraft[type];
-        });
-        if (isRx) manualDrugs = [];
-        say("저장했습니다");
-        return loadResult(loadSeq);
+    /* **한 줄이 막혀도 나머지는 담는다.**
+     *
+     * 예전에는 `Promise.all` 이라 한 줄만 거절돼도 묶음이 통째로 깨졌다.
+     * 확정된 처방을 다시 보내다 409 가 나면 **같이 보낸 진단까지 안 담겼고**,
+     * 화면은 「저장하지 못했습니다」 한 줄만 말해서 무엇이 막혔는지 알 수
+     * 없었다. 담길 수 있는 것은 담고, 막힌 것만 이름을 대고 말한다. */
+    var jobs = typed
+      .map(function (type) {
+        return { type: type, value: local[type] };
       })
-      .catch(function () {
-        if (!visit || visit.visit_id !== wanted) return;
-        say("저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요");
-        redraw();
+      .concat(
+        Object.keys(extra).map(function (type) {
+          return { type: type, value: extra[type] };
+        }),
+      );
+
+    Promise.all(
+      jobs.map(function (job) {
+        return ocrApi
+          .writeField(wanted, job.type, job.value)
+          .then(function () {
+            return { type: job.type, ok: true };
+          })
+          .catch(function (err) {
+            return { type: job.type, ok: false, code: (err && err.code) || "" };
+          });
+      }),
+    ).then(function (results) {
+      if (!visit || visit.visit_id !== wanted) return;
+
+      var stuck = results.filter(function (r) {
+        return !r.ok;
       });
+
+      /* 담긴 것만 화면에서 지운다 — 막힌 줄을 지우면 적은 값이 사라진다. */
+      results.forEach(function (r) {
+        if (!r.ok) return;
+        delete local[r.type];
+        delete localDraft[r.type];
+      });
+      /* **수동 약 자신이 다 담겼을 때만 비운다.** 묶음 전체가 성공했는지가
+         아니다 — 이미 확정된 진단이 같이 막혔다고 수동 약을 안 비우면, 스탭이
+         다시 저장할 때 `maxIdx` 가 새로 세어져 같은 약이 다음 번호로 또 들어간다. */
+      var manualStuck = results.some(function (r) {
+        return !r.ok && manualTypes.indexOf(r.type) !== -1;
+      });
+      if (isRx && manualTypes.length && !manualStuck) manualDrugs = [];
+
+      if (!stuck.length) {
+        say("저장했습니다");
+      } else if (stuck.length === results.length) {
+        say(stuckSaying(stuck));
+      } else {
+        /* 일부만 담겼을 때가 제일 헷갈린다 — 담긴 수를 먼저 말한다. */
+        say(results.length - stuck.length + "개 담았습니다 · " + stuckSaying(stuck));
+      }
+      return loadResult(loadSeq);
+    });
   });
 
   document.addEventListener("input", onTyped);
