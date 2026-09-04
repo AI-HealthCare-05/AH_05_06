@@ -658,8 +658,12 @@ function timelineDetail(entry) {
   }
 
   document.addEventListener("visit:selected", function (event) {
+    var current = event.detail.open_tab || "basic";
+    /* 단계 버튼은 HTML에 복사해 두지 않고 공용 모듈에서 매번 만든다. 그래야
+       이름·순서·이동 규칙이 판독·의사 화면과 갈리지 않는다 (KEY-233). */
+    el("tabs").innerHTML = stepsHtml(current, "/patients.html", event.detail.visit_id);
     load(event.detail);
-    showTab(event.detail.open_tab || "basic");
+    showTab(current);
   });
 
   /* **같은 사람인데 줄 값만 새로 왔다** — 상태 탭을 켜고 끄거나, 승인 뒤에

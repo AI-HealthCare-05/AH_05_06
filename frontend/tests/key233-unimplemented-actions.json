@@ -1,0 +1,38 @@
+[
+  {
+    "page": "patients.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "doctor.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "ocr-review.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "manage.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "settings.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "patients.html",
+    "action": "open-settings",
+    "disposition": "follow_up",
+    "evidence": "설정 이동 버튼에 현재 핸들러나 링크가 없다"
+  }
+]

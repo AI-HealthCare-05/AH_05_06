@@ -29,8 +29,9 @@ test("환자 화면에는 그 판이 없다 — 같은 칸에 두 화면이 되�
   assert.ok(!html.includes('id="panel-record"'), "업로드 판이 남아 있다");
   assert.ok(!html.includes("/js/upload.js"), "없어진 파일을 아직 싣는다");
 
-  /* 탭 단추는 그대로 있어야 한다 — 다섯 칸이 보여야 어디까지 왔는지 읽힌다 */
-  assert.ok(html.includes('data-tab="record"'), "진료기록 칸이 화면에서 사라졌다");
+  /* 탭 단추는 공용 모듈이 그린다 — 다섯 칸의 정본에서 진료기록이 살아 있어야 한다. */
+  const { VISIT_STEPS } = load("api", "session", "patients-api", "step-nav");
+  assert.ok(VISIT_STEPS.some((step) => step.key === "record"), "진료기록 칸이 공용 단계에서 사라졌다");
 });
 
 test("**그 칸을 누르면 판독 화면으로 간다**", () => {

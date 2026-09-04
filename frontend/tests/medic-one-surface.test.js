@@ -28,19 +28,15 @@ function read(rel) {
 /* ── 다섯 탭이 다 열려 있는가 ─────────────────────────────────────────── */
 
 test("**환자 카드의 다섯 탭이 하나도 잠겨 있지 않다**", () => {
-  const html = read("patients.html");
-
-  /* 탭 줄만 본다 — 설명 주석에도 `tab--later` 가 적혀 있어, 글자로 찾으면
-     검사가 제 주석을 물고 통과한다. */
-  const tabs = html.split("\n").filter((line) => line.includes('role="tab"'));
+  const { VISIT_STEPS, stepsHtml } = load("api", "step-nav");
+  const tabs = VISIT_STEPS;
   assert.strictEqual(tabs.length, 5, `탭이 다섯이 아니다: ${tabs.length}`);
 
-  for (const line of tabs) {
-    assert.ok(
-      !line.includes("tab--later") && !line.includes('aria-disabled="true"'),
-      `탭이 잠겨 있다 — 의사·스탭이 서로의 화면을 못 본다: 「${line.trim()}」`,
-    );
-  }
+  /* 공용 모듈이 실제로 그리는 결과를 본다. patients.html의 정적 복사본을 세면
+     공용 정의와 HTML이 어긋나도 검사하지 못한다. */
+  const rendered = stepsHtml("basic", "/patients.html", 12);
+  assert.strictEqual((rendered.match(/role="tab"/g) || []).length, 5);
+  assert.ok(!rendered.includes("tab--later") && !rendered.includes('aria-disabled="true"'));
 });
 
 test("탭에 붙일 패널이 실제로 있다 — 없으면 눌러도 빈 화면이다", () => {
@@ -68,7 +64,8 @@ test("**다섯 칸을 다 안다 — 넷은 판으로, 하나는 다른 화면�
 
   /* 화면에 그려진 다섯 칸이 모두 어딘가로 이어져야 한다 — 하나라도 빠지면
      눌러도 아무 일이 없다. */
-  const drawn = [...read("patients.html").matchAll(/data-tab="(\w+)"/g)].map((m) => m[1]);
+  const { VISIT_STEPS } = load("api", "step-nav");
+  const drawn = VISIT_STEPS.map((step) => step.key);
   const known = new Set([...drawn].filter((k) => tabs.includes(`"${k}"`) || away.includes(`${k}:`)));
   assert.deepEqual([...new Set(drawn)].sort(), [...known].sort(), "갈 곳 없는 탭이 그려져 있다");
 });
