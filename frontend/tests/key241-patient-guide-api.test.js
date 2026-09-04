@@ -450,6 +450,39 @@ test('P2~P5 렌더러가 v3 진행률·빈 목표·부분 펼침·승인 시각 
   assert.doesNotMatch(FOOTER_SOURCE, /생성 ·/);
 });
 
+test('fillHeader: 인증 뷰어에게는 이름이 붙고, 아니면 진료일·의원명만 남는다 (KEY-268)', () => {
+  /* 위 정적 검사(`var meta = [d.patient || null, ...`)는 코드 모양만 본다.
+     실제로 뷰어 화면에 뜨는 최종 문자열이 맞는지는 이 검사가 잡는다 —
+     기술 리드 리뷰(PR #211) 제안. */
+  const at = GUIDE_SOURCE.indexOf('function fillHeader(d) {');
+  assert.notStrictEqual(at, -1, 'fillHeader 를 못 찾았다 — 검사가 헛돈다');
+  const fnSource = GUIDE_SOURCE.slice(at, GUIDE_SOURCE.indexOf('\n  }', at) + 4);
+
+  function headerTextFor(d) {
+    let captured = null;
+    const fakeDocument = {
+      getElementById(id) {
+        assert.strictEqual(id, 'header-patient');
+        return { set textContent(value) { captured = value; } };
+      },
+    };
+    const fillHeader = new Function('document', 'd', fnSource + '\nfillHeader(d);');
+    fillHeader(fakeDocument, d);
+    return captured;
+  }
+
+  assert.strictEqual(
+    headerTextFor({ patient: '신짱구', visit: '2026.09.03', clinic: '기준의원' }),
+    '신짱구 · 2026.09.03 진료 · 기준의원',
+    '인증 뷰어에게는 이름이 맨 앞에 붙어야 한다',
+  );
+  assert.strictEqual(
+    headerTextFor({ patient: null, visit: '2026.09.03', clinic: '기준의원' }),
+    '2026.09.03 진료 · 기준의원',
+    '미인증 뷰어에게 이름이 붙으면 KEY-268 회귀',
+  );
+});
+
 test('KEY-219 실제 OTP 왕복을 보존하고 고정 OTP 우회는 명시적 목업에만 둔다', () => {
   assert.match(GUIDE_SOURCE, /function otpEntryUrl\(\)/);
   assert.match(GUIDE_SOURCE, /safeFragment\.set\('t', token\)/);
