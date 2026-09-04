@@ -624,7 +624,11 @@
    */
   function copySectionHtml(row, section) {
     var mine = copyIsMine(section);
-    var shown = mine ? section.body : section.origin || "";
+    /* **나갈 글은 한 군데서 정한다.** 「고친 것이 있으면 그것, 없으면 원본」은
+       `guide-copy-rules.js` 의 `copyShown` 이 이미 정본으로 갖고 있다. 여기서
+       같은 식을 다시 쓰면 두 벌이 갈라진다 — 갈라지면 설정 화면이 보여 주는
+       글과 환자에게 나가는 글이 달라진다. */
+    var shown = copyShown(section);
     var open = canEdit && copyOpen === copyKey(row, section);
     var handle = esc(row.prescription_set_id) + "|" + esc(section.section_key);
 
