@@ -295,14 +295,6 @@ function courseWarn(days) {
         (`visit.doctor_note` 는 의사 소견 칸이라 이것과 다르다.) */
 var GROUPS_WITHOUT_SERVER = [
   {
-    key: "carried",
-    title: "이전 값 유지",
-    note: "이번 미시행",
-    /* 무엇이 있어야 이 묶음이 사는지 — 다음 사람이 읽을 자리다 */
-    needs: "지난 진료의 확정 판독 값을 꺼내 주는 길. 표(ocr_field)에 값은 이미 있다",
-    saying: "이번에 안 한 검사의 지난 값을 여기 흐리게 세웁니다 — 값은 이미 저장돼 있고, 꺼내 오는 길이 아직 없습니다",
-  },
-  {
     key: "checks",
     title: "확인 항목",
     /* 답은 이제 `visit_check_answer` 에 담긴다. 남은 것은 **무엇을 여쭐지가

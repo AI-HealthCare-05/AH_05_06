@@ -25,6 +25,7 @@ from app.ocr.schemas import (
     OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
+    PreviousOcrFieldResponse,
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor
@@ -54,6 +55,8 @@ class OcrRepository(Protocol):
     ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]: ...
 
     async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
+
+    async def get_previous_fields(self, visit_id: int, actor: OcrActor) -> list[PreviousOcrFieldResponse]: ...
 
 
 def _not_found() -> OcrApiError:
@@ -258,6 +261,107 @@ class TortoiseOcrRepository:
             await job.save(update_fields=("excluded_from_guide",))
         return job
 
+    async def get_previous_fields(self, visit_id: int, actor: OcrActor) -> list[PreviousOcrFieldResponse]:
+        """같은 환자의 이전 visit에서 확정된 OCR 필드를 field_type별로 최신 하나씩 반환.
+
+        - 같은 병원(hospital_id) 범위만 조회한다 — 타 병원 데이터 차단.
+        - is_confirmed=True 필드만 포함한다.
+        - field_type이 중복될 경우 가장 최근 방문의 값을 택한다.
+        """
+        from datetime import date
+
+        from app.models.visits import Visit
+
+        current = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
+        if current is None:
+            raise _not_found()
+
+        # 1. 이 환자의 이전 방문 (최신순)
+        prev_visits = (
+            await Visit.filter(
+                hospital_id=actor.hospital_id,
+                patient_id=current.patient_id,
+                visited_at__lt=current.visited_at,
+            )
+            .order_by("-visited_at")
+            .values("visit_id", "visited_at")
+        )
+
+        if not prev_visits:
+            return []
+
+        prev_visit_ids = [v["visit_id"] for v in prev_visits]
+        visit_date_map: dict[int, date] = {v["visit_id"]: v["visited_at"].date() for v in prev_visits}
+        # 0이 가장 최근
+        visit_order: dict[int, int] = {vid: i for i, vid in enumerate(prev_visit_ids)}
+
+        # 2. 해당 방문들의 OCR 작업 (제외된 작업 포함 — 확정 필드는 사람이 직접 승인한 것)
+        job_rows = await OcrJob.filter(
+            visit_id__in=prev_visit_ids,
+            hospital_id=actor.hospital_id,
+        ).values("ocr_job_id", "visit_id")
+
+        if not job_rows:
+            return []
+
+        job_visit_map: dict[str, int] = {jr["ocr_job_id"]: jr["visit_id"] for jr in job_rows}
+        job_ids = list(job_visit_map.keys())
+
+        # 3. 해당 작업들의 OCR 결과
+        result_rows = await OcrResult.filter(ocr_job_id__in=job_ids).values("ocr_result_id", "ocr_job_id")
+
+        if not result_rows:
+            return []
+
+        result_job_map: dict[int, str] = {rr["ocr_result_id"]: rr["ocr_job_id"] for rr in result_rows}
+        result_ids = list(result_job_map.keys())
+
+        # 4. 확정된 필드만
+        field_rows = await OcrField.filter(
+            ocr_result_id__in=result_ids,
+            is_confirmed=True,
+        ).values(
+            "field_type",
+            "corrected_value",
+            "extracted_value",
+            "unit",
+            "confirmed_at",
+            "ocr_result_id",
+        )
+
+        # 방문 최신순으로 정렬 후 field_type별 중복 제거
+        def _visit_order(row: dict) -> int:
+            job_id = result_job_map.get(row["ocr_result_id"])
+            if job_id is None:
+                return 9999
+            vis_id = job_visit_map.get(job_id)
+            return visit_order.get(vis_id, 9999) if vis_id is not None else 9999
+
+        sorted_rows = sorted(field_rows, key=_visit_order)
+
+        seen: set[str] = set()
+        out: list[PreviousOcrFieldResponse] = []
+        for row in sorted_rows:
+            if row["field_type"] in seen:
+                continue
+            value = row["corrected_value"] if row["corrected_value"] is not None else row["extracted_value"]
+            if value is None:
+                continue
+            seen.add(row["field_type"])
+            job_id = result_job_map[row["ocr_result_id"]]
+            vis_id = job_visit_map[job_id]
+            out.append(
+                PreviousOcrFieldResponse(
+                    field_type=row["field_type"],
+                    value=value,
+                    unit=row["unit"],
+                    confirmed_at=row["confirmed_at"],
+                    visit_date=visit_date_map[vis_id],
+                )
+            )
+
+        return out
+
 
 def serialize_job(job: OcrJob) -> OcrJobResponse:
     return OcrJobResponse(
@@ -457,3 +561,7 @@ class OcrService:
         """잘못 올린 문서의 job을 안내 생성에서 제외한다 — 멱등 처리."""
         job = await self.repository.exclude_job(ocr_job_id, actor)
         return serialize_job(job)
+
+    async def previous_fields(self, visit_id: int, actor: OcrActor) -> list[PreviousOcrFieldResponse]:
+        """같은 환자·같은 병원의 이전 방문에서 확정된 OCR 값을 반환한다."""
+        return await self.repository.get_previous_fields(visit_id, actor)

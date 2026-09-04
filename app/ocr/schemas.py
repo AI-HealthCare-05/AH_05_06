@@ -109,3 +109,18 @@ class WriteOcrFieldRequest(StrictModel):
     """
 
     value: str | None = Field(default=None, max_length=10000)
+
+
+class PreviousOcrFieldResponse(StrictModel):
+    """같은 환자의 이전 visit에서 확정된 OCR 필드 — 와이어프레임 S1-6 「이전 값 유지」.
+
+    field_type은 서버 코드(예: HEMOGLOBIN). 화면이 fieldLabel()로 사람 말로 바꾼다.
+    value는 corrected_value 우선, 없으면 extracted_value. 확정된 필드만 반환하므로
+    항상 비어 있지 않다.
+    """
+
+    field_type: str
+    value: str
+    unit: str | None = None
+    confirmed_at: datetime | None = None
+    visit_date: date

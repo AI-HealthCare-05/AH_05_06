@@ -10,6 +10,7 @@ from app.ocr.schemas import (
     OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
+    PreviousOcrFieldResponse,
     UpdateOcrFieldRequest,
     WriteOcrFieldRequest,
 )
@@ -137,6 +138,21 @@ async def exclude_ocr_job(
     같은 job을 다시 호출해도 멱등 처리된다.
     """
     return await ocr.exclude_job(ocr_job_id, actor)
+
+
+@ocr_router.get("/visits/{visit_id}/ocr-fields/previous", response_model=list[PreviousOcrFieldResponse])
+async def get_previous_ocr_fields(
+    visit_id: Annotated[int, Path(gt=0)],
+    actor: Annotated[OcrActor, Depends(get_ocr_actor)],
+    ocr: Annotated[OcrService, Depends(get_ocr_service)],
+) -> list[PreviousOcrFieldResponse]:
+    """같은 환자·같은 병원의 이전 방문에서 확정된 OCR 값 — 와이어프레임 S1-6 「이전 값 유지」.
+
+    field_type별로 가장 최근 방문의 확정값 하나씩 반환한다.
+    미확정·타 병원 값은 서버에서 차단한다.
+    이전 방문이 없거나 확정 필드가 없으면 빈 배열을 반환한다.
+    """
+    return await ocr.previous_fields(visit_id, actor)
 
 
 @ocr_router.patch("/ocr/fields/{ocr_field_id}", response_model=OcrFieldResponse)
