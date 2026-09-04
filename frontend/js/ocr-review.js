@@ -682,7 +682,7 @@ function stateTakesFocus(tone) {
     var state =
       field.field_status === "NOT_PERFORMED"
         ? "skipped"
-        : field.pending_report
+        : field.is_pending_report
           ? "pending"
           : fieldState(field, threshold);
     var head =
@@ -1579,7 +1579,7 @@ function stateTakesFocus(tone) {
          막힌 채로 남는다 (`renderField()` 의 `locked` 와 같은 이유). */
       /* 「안 했다」고 표시한 항목도 뺀다. 비어 있는 게 맞는 것을 세면 스탭이
          할 일이 없는데도 생성이 막힌 채로 남는다 (`pending_report` 와 같은 이유). */
-      if (field.is_confirmed || field.pending_report || field.field_status === "NOT_PERFORMED") return;
+      if (field.is_confirmed || field.is_pending_report || field.field_status === "NOT_PERFORMED") return;
       var state = fieldState(field, threshold);
       if (counts[state] !== undefined) counts[state]++;
     });
@@ -2055,7 +2055,7 @@ function stateTakesFocus(tone) {
       var current = fieldById(fillId);
       /* 별도 보고 검사의 `value` 는 값이 아니라 「추후 보고 예정」이라는 안내다.
          그걸 채워 두면 결과지를 보고 치려는 사람이 먼저 지워야 한다. */
-      var seed = current && !current.pending_report && current.value !== null && current.value !== undefined;
+      var seed = current && !current.is_pending_report && current.value !== null && current.value !== undefined;
       editing[fillId] = seed ? String(current.value) : "";
       delete failed[fillId];
       focusOn = fillId; // 방금 연 칸으로 커서를 보낸다 — 첫 칸이 아니라

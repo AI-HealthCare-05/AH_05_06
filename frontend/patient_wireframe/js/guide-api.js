@@ -19,7 +19,9 @@ var GUIDE_ERROR = {
    링크로 다시 들어와도 목업이 보이는 위험한 상태가 된다. */
 var GUIDE_MOCK = (function () {
   try {
-    return new URLSearchParams(window.location.search).get('mock') === '1';
+    var host = String(window.location.hostname || '').toLowerCase();
+    var local = window.location.protocol === 'file:' || host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+    return local && new URLSearchParams(window.location.search).get('mock') === '1';
   } catch (e) {
     return false;
   }
@@ -145,9 +147,10 @@ var MOCK_GUIDES = {
   },
 };
 
-function GuideError(code) {
+function GuideError(code, status) {
   this.name = 'GuideError';
   this.code = code;
+  this.status = status || 0;
 }
 GuideError.prototype = Object.create(Error.prototype);
 
@@ -400,8 +403,10 @@ function fetchGuide(token) {
     var key = q.get('case') || 'ems';
     return new Promise(function (resolve, reject) {
       setTimeout(function () {
-        if (key === 'none') return reject(new GuideError(GUIDE_ERROR.NOT_APPROVED));
-        if (!MOCK_GUIDES[key]) return reject(new GuideError(GUIDE_ERROR.NOT_FOUND));
+        /* 승인 전에는 공개 링크 자체를 발급할 수 없다. 환자 조회 경로에서는
+           서버처럼 존재하지 않는 링크(404)로만 보인다. */
+        if (key === 'none') return reject(new GuideError(GUIDE_ERROR.NOT_FOUND, 404));
+        if (!MOCK_GUIDES[key]) return reject(new GuideError(GUIDE_ERROR.NOT_FOUND, 404));
         try { resolve(adaptGuideResponse(MOCK_GUIDES[key])); } catch (error) { reject(error); }
       }, 100);
     });
@@ -412,7 +417,7 @@ function fetchGuide(token) {
   }).then(function (res) {
     if (res.ok) return res.json().then(adaptGuideResponse);
     return res.json().catch(function () { return {}; })
-      .then(function (data) { throw new GuideError(data.code || GUIDE_ERROR.NOT_FOUND); });
+      .then(function (data) { throw new GuideError(data.code || GUIDE_ERROR.NOT_FOUND, res.status); });
   });
 }
 

@@ -43,14 +43,39 @@ function ApiError(code, status, data) {
 }
 ApiError.prototype = Object.create(Error.prototype);
 
-/* 목업 — 개발 중에만 쓴다.
- * 주소에 ?mock=1 을 붙이면 켜지고, 한 번 켜면 그 탭에서 유지된다.
- * 서버가 붙으면 ?mock=0 으로 끄거나 이 파일에서 지운다. */
+/* 목업 — 로컬 개발 중에만 쓴다.
+ * localhost/file 미리보기에서 ?mock=1 로 켜며 같은 탭의 화면 이동 동안 유지한다.
+ * 배포/Pilot 호스트에서는 저장된 값이 있어도 무조건 꺼진다. */
+function localMockRequested(target) {
+  target = target || location;
+  try {
+    var host = String(target.hostname || "").toLowerCase();
+    var local = target.protocol === "file:" || host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+    if (!local) return false;
+    var query = new URLSearchParams(target.search).get("mock");
+    if (query !== null) sessionStorage.setItem("useMock", query === "1" ? "1" : "0");
+    return sessionStorage.getItem("useMock") === "1";
+  } catch (_error) {
+    return false;
+  }
+}
+
+function showMockBanner() {
+  if (!MOCK || !document.body || !document.body.dataset || document.getElementById("mock-mode-banner")) return;
+  var banner = document.createElement("div");
+  banner.id = "mock-mode-banner";
+  banner.setAttribute("role", "status");
+  banner.textContent = "개발용 MOCK 모드 — 실제 서버 데이터가 아닙니다";
+  banner.style.cssText = "position:fixed;inset:0 0 auto;z-index:10000;padding:8px 16px;background:#7a2e00;color:#fff;text-align:center;font:700 14px/1.4 sans-serif";
+  document.body.prepend(banner);
+  document.body.style.paddingTop = Math.max(36, parseInt(document.body.style.paddingTop || "0", 10) || 0) + "px";
+}
+
 var MOCK = (function () {
-  var q = new URLSearchParams(location.search).get("mock");
-  if (q !== null) sessionStorage.setItem("useMock", q === "1" ? "1" : "0");
-  return sessionStorage.getItem("useMock") === "1";
+  return localMockRequested(location);
 })();
+
+showMockBanner();
 
 function request(path, options) {
   options = options || {};
@@ -116,11 +141,11 @@ var api = {
  * 실패 횟수는 서버와 같은 규칙으로 센다: 계정이 아니라 입력된 아이디 문자열에 붙인다.
  * (없는 아이디에서 횟수가 안 오르면 그 사실이 「없는 아이디」라는 답이 된다) */
 var MOCK_STAFF = {
-  staff01: { name: "한소영", roles: ["staff"], must_change_password: false },
-  doctor01: { name: "박연", roles: ["doctor"], must_change_password: false },
-  adminstaff01: { name: "서지원", roles: ["staff", "admin"], must_change_password: false },
-  newbie01: { name: "임채운", roles: ["staff"], must_change_password: true },
-  left01: { name: "문가람", roles: ["staff"], status: "left" },
+  staff01: { id: 101, name: "한소영", roles: ["staff"], must_change_password: false },
+  doctor01: { id: 900, name: "박연", roles: ["doctor"], must_change_password: false },
+  adminstaff01: { id: 102, name: "서지원", roles: ["staff", "admin"], must_change_password: false },
+  newbie01: { id: 103, name: "임채운", roles: ["staff"], must_change_password: true },
+  left01: { id: 104, name: "문가람", roles: ["staff"], status: "left" },
 };
 var MOCK_MAX_FAILURES = 5;
 var MOCK_LOCK_SECONDS = 600;
@@ -165,7 +190,9 @@ function mockRequest(path, options) {
         var who = MOCK_STAFF[sessionStorage.getItem("mockUser")];
         if (!who) return reject(new ApiError(ERROR.TOKEN_EXPIRED, 401, {}));
         return resolve({
+          id: who.id,
           name: who.name,
+          login_id: sessionStorage.getItem("mockUser"),
           roles: who.roles,
           must_change_password: !!who.must_change_password,
           clinic_name: "여성의원",

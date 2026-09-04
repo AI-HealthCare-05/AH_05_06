@@ -128,10 +128,11 @@
   }
 
   function showMockBadge() {
-    if (!GUIDE_MOCK || document.getElementById('guide-mock-badge')) return;
-    var badge = text('div', 'guide-mock-badge', '개발용 목업 화면');
-    badge.id = 'guide-mock-badge';
-    document.querySelector('.header').appendChild(badge);
+    if (!GUIDE_MOCK || document.getElementById('mock-mode-banner')) return;
+    var badge = text('div', 'guide-mock-badge', '개발용 MOCK 모드 — 실제 서버 데이터가 아닙니다');
+    badge.id = 'mock-mode-banner';
+    badge.setAttribute('role', 'status');
+    document.body.prepend(badge);
   }
 
   /* ════════════════════════

@@ -198,12 +198,11 @@ function mockField(id, type, value, confidence, extra) {
 
 function mockFields() {
   return [
-    mockField(9101, "혈색소", "10.2", 0.97, { unit: "g/dL", document_id: 8803, source_line: 6, source_date: "2026-08-05" }),
+    mockField(9101, "혈색소", "10.2", 0.97, { unit: "g/dL", document_id: 8803, source_line: 6 }),
     mockField(9102, "자궁내막종", "2.4", 0.94, {
       unit: "cm",
       document_id: 8804,
       source_line: 1,
-      source_date: "2026-08-05",
       /* 검사일이 최근인 쪽이 rank 1 이고 is_selected 다.
          정렬을 화면에서 다시 하지 않는다 — 서버가 정한 순서를 그대로 믿는다. */
       candidates: [
@@ -232,22 +231,20 @@ function mockFields() {
     /* 못 읽은 항목도 행은 남는다 — #31 에서 계약으로 정한 것이다.
        행이 없으면 화면은 이 항목이 있어야 한다는 사실 자체를 모른다. */
     mockField(9103, "CA-125", null, null, { unit: "U/mL", document_id: 8803, source_line: 4 }),
-    mockField(9104, "CA19-9", "21", 0.62, { unit: "U/mL", document_id: 8803, source_line: 4, source_date: "2026-08-05" }),
+    mockField(9104, "CA19-9", "21", 0.62, { unit: "U/mL", document_id: 8803, source_line: 4 }),
     /* 값이 아니라 상태가 오는 항목. 「못 읽음」과 다르다 —
        검사는 했고 결과가 아직 안 나온 것이라 다시 판독해도 값이 없다. */
     mockField(9105, "AMH", "추후 보고 예정", 0.96, {
       unit: "",
       document_id: 8803,
       source_line: 5,
-      source_date: "2026-08-05",
-      pending_report: true,
+      is_pending_report: true,
     }),
-    mockField(9106, "내막 두께", "0.5", 0.95, { unit: "cm", document_id: 8801, source_line: 3, source_date: "2026-05-20" }),
+    mockField(9106, "내막 두께", "0.5", 0.95, { unit: "cm", document_id: 8801, source_line: 3 }),
     mockField(9107, "간수치 AST/ALT", "24 / 34", 0.93, {
       unit: "U/L",
       document_id: 8801,
       source_line: 4,
-      source_date: "2026-05-20",
     }),
   ];
 }

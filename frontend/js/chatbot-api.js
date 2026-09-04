@@ -7,7 +7,10 @@
 
 var CHATBOT_MOCK = (function () {
   try {
-    return new URLSearchParams(window.location.search).get("mock") === "1";
+    if (typeof GUIDE_MOCK !== "undefined") return GUIDE_MOCK;
+    var host = String(window.location.hostname || "").toLowerCase();
+    var local = window.location.protocol === "file:" || host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+    return local && new URLSearchParams(window.location.search).get("mock") === "1";
   } catch (e) {
     return false;
   }
