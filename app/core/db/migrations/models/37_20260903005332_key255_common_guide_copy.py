@@ -11,7 +11,28 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
+    """🚨 **의원 공통 줄을 그냥 지우지 않는다 — 먼저 옮겨 둔다.**
+
+    `doctor_id` 를 다시 `NOT NULL` 로 되돌리려면 빈 줄을 치워야 한다. 그런데
+    예전 판은 `DELETE` 만 했다 — 되돌리는 순간 **의원이 고쳐 둔 공통 문구가
+    통째로 사라지고 되찾을 길이 없었다** (`#192` 리뷰 ③, 2heej).
+
+    되돌리기는 무언가 잘못됐을 때 하는 일이라, 그 자리에서 자료를 잃으면
+    안 된다. 백업 표로 옮긴 뒤 지운다.
+
+        -- 되살리려면 (다시 upgrade 한 뒤)
+        INSERT INTO doctor_guide_copy (hospital_id, doctor_id, prescription_set_id, section_key, body, updated_by)
+        SELECT hospital_id, doctor_id, prescription_set_id, section_key, body, updated_by
+          FROM doctor_guide_copy_common_backup;
+
+    백업 표는 **지우지 않는다.** 되돌린 사람이 확인하고 손으로 치운다 —
+    자동으로 치우면 이 안전장치가 뜻을 잃는다.
+    """
     return """
+        CREATE TABLE IF NOT EXISTS `doctor_guide_copy_common_backup` LIKE `doctor_guide_copy`;
+        INSERT INTO `doctor_guide_copy_common_backup` SELECT * FROM `doctor_guide_copy` WHERE `doctor_id` IS NULL;
+        CREATE TABLE IF NOT EXISTS `doctor_guide_review_common_backup` LIKE `doctor_guide_review`;
+        INSERT INTO `doctor_guide_review_common_backup` SELECT * FROM `doctor_guide_review` WHERE `doctor_id` IS NULL;
         DELETE FROM `doctor_guide_copy` WHERE `doctor_id` IS NULL;
         DELETE FROM `doctor_guide_review` WHERE `doctor_id` IS NULL;
         ALTER TABLE `doctor_guide_copy` MODIFY COLUMN `doctor_id` BIGINT NOT NULL;

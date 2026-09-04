@@ -336,11 +336,13 @@ function mockCreateSet(name, disease) {
 function mockSaveSet(id, plan) {
   return new Promise(function (resolve, reject) {
     setTimeout(function () {
-      /* 서버 규칙 그대로 — 의사만, 통으로 세는데 한 통이 며칠인지 없으면 422 */
-      var who = MOCK_STAFF[sessionStorage.getItem("mockUser")];
-      if (!who || (who.roles || []).indexOf("doctor") === -1) {
-        return reject(new ApiError("FORBIDDEN", 403, {}));
-      }
+      /* 서버 규칙 그대로 — **스탭도 고친다.** 2026-09-02 회의에서 설정 수정을
+         스탭에게 열었고 서버는 `require_patient_read` 로 바뀌었는데, 목만
+         의사를 요구한 채 남아 있었다. 주석은 「서버 규칙 그대로」라 적혀
+         있었지만 실제로는 갈려서, 목으로 보면 스탭이 403 을 맞았다
+         (`#192` 리뷰 ④, 2heej).
+
+         통으로 세는데 한 통이 며칠인지 없으면 422 인 것은 그대로다. */
       if (plan.days_mode === "PACK" && !plan.days_per_pack) {
         return reject(new ApiError("DAYS_PER_PACK_REQUIRED", 422, {}));
       }

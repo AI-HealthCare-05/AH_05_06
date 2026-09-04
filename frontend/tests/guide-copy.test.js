@@ -204,12 +204,31 @@ test("**목의 기본 문구가 서버 것과 같은 글이다**", async () => {
   assert.strictEqual(Object.keys(got).sort().join(","), "caution,emergency,life,medication");
   assert.strictEqual(got.emergency.editable, false, "🚨 는 고칠 수 없다");
 
-  for (const key of ["medication", "life"]) {
+  /* **넷을 다 본다.** 예전에는 `medication`·`life` 둘만 봤다 — 여러 줄인
+     `caution` 과 `emergency` 가 빠져 있어서, 그 둘은 갈라져도 아무도 몰랐다
+     (`#192` 리뷰 ⑧, 2heej).
+
+     빠졌던 까닭은 파이썬 원본이 인접 리터럴을 여러 줄로 이어 쓰고 `\n` 을
+     글자 둘로 적기 때문이다. 원본을 실행 시 문자열과 같은 꼴로 펴서 잰다. */
+  const flat = server.replace(/"\s*\n\s*"/g, "").replace(/\\n/g, "\n");
+
+  for (const key of ["medication", "caution", "emergency", "life"]) {
     assert.ok(
-      server.indexOf(got[key].body) !== -1,
+      flat.indexOf(got[key].body) !== -1,
       `목의 ${key} 기본 문구가 서버에 없는 글이다 — 두 곳이 갈라졌다`,
     );
   }
+});
+
+test("**그 대조가 헛돌지 않는다** — 서버 글을 바꾸면 운다", () => {
+  /* 위 검사가 늘 통과하면 지키는 것이 없다. 서버 원본을 한 글자 바꾼 것으로
+     흉내내어, 대조가 실제로 걸리는지 본다. */
+  const server = read("../app/services/guide_defaults.py");
+  const flat = server.replace(/"\s*\n\s*"/g, "").replace(/\\n/g, "\n");
+
+  assert.ok(flat.indexOf("복약 지시에 따라 정해진 시간에 복용해 주세요.") !== -1, "펴는 것부터 안 된다");
+  assert.ok(flat.indexOf("[합성 주의 안내]\n복용 중") !== -1, "여러 줄 문구가 안 펴진다");
+  assert.strictEqual(flat.indexOf("복약 지시에 따라 정해진 시각에 복용해 주세요."), -1, "안 바뀐 글도 찾는다");
 });
 
 test("고치면 확인이 풀린다", async () => {

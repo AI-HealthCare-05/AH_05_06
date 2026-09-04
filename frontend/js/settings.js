@@ -670,36 +670,6 @@
 
   /* 한 장 — 왼쪽에서 고른 것 하나만 선다. 여덟이 한꺼번에 펼쳐져 있으면
      어느 것을 보고 있는지 스크롤로 세어야 한다. */
-  function copySetHtml(row) {
-    return (
-      '<div class="patient-head"><span class="patient-head__name">' +
-      esc(row.name) +
-      '</span><span class="cp__mark' +
-      (row.reviewed ? " cp__mark--done" : "") +
-      '">' +
-      esc(copyMark(row)) +
-      '</span><span class="grow"></span>' +
-      (saying ? '<span class="box__note">' + esc(saying) + "</span>" : "") +
-      (canEdit
-        ? ""
-        : "") +
-      (canEdit
-        ? '<button class="button-primary button-primary--sm" type="button" data-review-copy="' +
-          esc(row.prescription_set_id) +
-          '"' +
-          (row.reviewed ? " disabled" : "") +
-          ">확인 완료</button>"
-        : "") +
-      "</div>" +
-      '<p class="note">ⓘ 원본은 지워지지 않습니다 — 언제든 되돌아갈 수 있습니다</p>' +
-      row.sections
-        .map(function (part) {
-          return copySectionHtml(row, part);
-        })
-        .join("") +
-      '<p class="note">ⓘ 판독값(약 이름 · 용법 · 처방일수)은 환자마다 채워집니다 — 여기서는 그 값이 들어갈 문장을 정합니다</p>'
-    );
-  }
 
   function detailHtml() {
     if (group === "baseline") return baselinesHtml();
@@ -1120,6 +1090,7 @@
    * 나면 못 바꾸고 세트는 못 지우므로, 반쪽만 만들어지면 되돌릴 길이 없다.
    */
   function save() {
+    var createdNew = false;
     if (!picked || !canEdit || busy) return;
 
     keepScreen();
@@ -1149,6 +1120,7 @@
         /* **여기서부터는 세트가 이미 있다.** 뒤가 막혀도 「저장」으로 이어
            한다 — 되돌리기가 아니라 이어 하기다. */
         if (making) {
+          createdNew = true;
           making = false;
           draft = null;
           pickedId = made.prescription_set_id;
@@ -1160,7 +1132,16 @@
         picked = data;
         saying = "저장되었습니다";
         render();
-        /* 새로 만든 처방은 문구 판에 없다 — 다시 받아야 안내문 절이 선다. */
+        /* **새로 만들었을 때만 다시 받는다.**
+
+           새 처방은 레일 목록에도 문구 판에도 없으니 받아야 한다. 그런데
+           그냥 고친 것뿐이면 받을 것이 없다 — 서버가 돌려준 것을 위에서
+           이미 `picked` 로 삼았고, 이름은 잠겨 있어 레일 줄도 그대로이며,
+           안내문 문구는 이 종점이 손대지 않는다(`saveCopy` 가 따로 있다).
+
+           예전에는 저장할 때마다 둘을 무조건 다시 받았다 — 칸 하나 고칠
+           때마다 세트 전체와 문구 전체가 다시 왔다 (`#192` 리뷰 ⑥, 2heej). */
+        if (!createdNew) return;
         return Promise.all([loadSets(), loadCopy()]);
       })
       .catch(function (err) {

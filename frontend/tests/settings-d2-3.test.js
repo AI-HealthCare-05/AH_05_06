@@ -292,3 +292,41 @@ test("고른 처방을 실제로 불러온다 — 안 넣으면 늘 빈 화면�
   /* 늦게 온 답이 다른 처방 화면에 붙으면 안 된다 */
   assert.match(body, /mine !== loadSeq/, "차례를 안 본다");
 });
+
+/* ── `#192` 리뷰 반영 ────────────────────────────────────────────────── */
+
+test("**목도 스탭의 저장을 받는다** — 서버는 여는데 목만 막으면 목이 거짓말한다", async () => {
+  const box = load("api", "settings-rail", "field-labels", "catalog-api");
+  box.MOCK = true;
+  box.sessionStorage.setItem("mockUser", "staff01");
+
+  const sets = await box.catalogApi.sets();
+  const id = sets[0].prescription_set_id;
+
+  /* 2026-09-02 회의에서 설정 수정을 스탭에게 열었고 서버는
+     `require_patient_read` 로 바뀌었는데, 목만 의사를 요구한 채 남아 있었다
+     (`#192` 리뷰 ④). 목으로 보면 스탭이 403 을 맞았다. */
+  const saved = await box.catalogApi.saveSet(id, { days_mode: "DAYS", days: 30 });
+
+  assert.strictEqual(saved.prescription_set_id, id, "스탭이 저장했는데 안 돌아왔다");
+});
+
+test("**저장이 매번 전체를 다시 받지 않는다** — 새로 만들 때만 받는다", () => {
+  /* `save()` 는 IIFE 안이라 밖에서 못 부른다 — 원본을 본다.
+
+     예전에는 저장할 때마다 세트 전체와 문구 전체를 무조건 다시 받았다.
+     칸 하나 고칠 때마다 두 번의 왕복이 더 있었다 (`#192` 리뷰 ⑥). */
+  const code = codeOnly(read("js/settings.js"));
+  const at = code.indexOf("function save()");
+  assert.ok(at >= 0, "save() 를 못 찾았다 — 검사가 헛돈다");
+
+  const next = code.slice(at + 10).search(/\n {2}function \w/);
+  const body = next < 0 ? code.slice(at) : code.slice(at, at + 10 + next);
+
+  const reload = body.indexOf("Promise.all([loadSets(), loadCopy()])");
+  assert.ok(reload >= 0, "다시 받는 줄이 아예 없다 — 새로 만들면 목록에 안 뜬다");
+
+  const guard = body.indexOf("if (!createdNew) return;");
+  assert.ok(guard >= 0, "무조건 다시 받는다 — 새로 만들 때만 받아야 한다");
+  assert.ok(guard < reload, "가드가 다시 받는 줄보다 뒤에 있다 — 소용이 없다");
+});
