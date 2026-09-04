@@ -138,7 +138,11 @@ function load(options = {}) {
       hostname: options.hostname || 'localhost',
     },
     window: {
-      location: { search: options.search || '' },
+      location: {
+        search: options.search || '',
+        hostname: options.hostname || 'localhost',
+        protocol: options.protocol || 'https:',
+      },
     },
     fetch(url, requestOptions) {
       requested = { url, requestOptions };

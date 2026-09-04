@@ -72,6 +72,8 @@ function load(...files) {
       search: options.search || "?mock=1",
       href: "http://test/patients.html" + (options.search || "?mock=1"),
       pathname: "/patients.html",
+      hostname: options.hostname || "localhost",
+      protocol: options.protocol || "http:",
 
       /* `session.js` 의 `bounce()` 가 부른다. 없으면 `TypeError` 가 나는데,
          `requireSession().catch(function(){})` 가 조용히 삼켜서 **검사는 그냥

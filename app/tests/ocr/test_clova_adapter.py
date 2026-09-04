@@ -122,7 +122,7 @@ async def test_network_error_raises_clova_network_error() -> None:
     assert exc_info.value.code == "CLOVA_NETWORK_ERROR"
 
 
-async def test_http_500_raises_clova_http_error() -> None:
+async def test_http_500_raises_clova_server_error() -> None:
     with patch(
         "ai_worker.adapters.clova.httpx.AsyncClient",
         return_value=_make_mock_client(500, {}),
@@ -130,7 +130,7 @@ async def test_http_500_raises_clova_http_error() -> None:
         with pytest.raises(ClovaOcrError) as exc_info:
             await call_clova_ocr(JPEG_BYTES, "image/jpeg")
 
-    assert exc_info.value.code == "CLOVA_HTTP_ERROR"
+    assert exc_info.value.code == "CLOVA_SERVER_ERROR"
 
 
 async def test_infer_failed_raises_clova_infer_failed() -> None:

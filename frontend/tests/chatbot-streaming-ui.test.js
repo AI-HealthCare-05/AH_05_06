@@ -13,7 +13,7 @@ function loadApi(search = "?mock=1") {
     URLSearchParams,
     Promise,
     String,
-    window: { location: { search } },
+    window: { location: { search, hostname: "localhost", protocol: "http:" } },
     setTimeout: (fn, _ms, ...args) => setTimeout(fn, 0, ...args),
   });
   vm.runInContext(fs.readFileSync(path.join(JS_DIR, "chatbot-api.js"), "utf8"), context);
@@ -27,7 +27,7 @@ function loadGuideUi() {
     URLSearchParams,
     document: { addEventListener() {} },
     setTimeout,
-    window: { location: { search: "?mock=1" } },
+    window: { location: { search: "?mock=1", hostname: "localhost", protocol: "http:" } },
   });
   vm.runInContext(fs.readFileSync(path.join(JS_DIR, "chatbot-api.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(JS_DIR, "guide.js"), "utf8"), context);
