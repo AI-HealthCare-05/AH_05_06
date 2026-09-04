@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation
 from tortoise.exceptions import IntegrityError
 from tortoise.expressions import Q
 from tortoise.timezone import now
+from tortoise.transactions import in_transaction
 
 from app.core.auth_errors import AuthError as ApiError
 from app.core.masking import mask_phone
@@ -24,9 +25,9 @@ from app.models.catalog import BaselineDirection, LabBaseline, PrescriptionSet, 
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.staffs import Hospital
-from app.models.visits import GuideDocument, GuideSectionKey, GuideStatus, PatientGuideLink
+from app.models.visits import GuideDocument, GuideSectionKey, GuideStatus, PatientGuideLink, PatientOtpChallenge
 
-LINK_TTL = timedelta(hours=72)
+LINK_TTL = timedelta(hours=168)
 ISSUER_ROLES = frozenset({"staff", "doctor"})
 _DRUG_WITH_INGREDIENT = re.compile(r"^(?P<brand>[^()]+?)\((?P<ingredient>[^)]+)\)(?P<suffix>.*)$")
 _LAB_KEY = re.compile(r"[^0-9a-z가-힣]+")
@@ -316,34 +317,119 @@ def _link_not_found() -> ApiError:
 
 
 class PatientLinkService:
-    async def issue(self, actor, visit_id: int) -> tuple[PatientGuideLink, str]:
+    @staticmethod
+    def _require_issuer(actor) -> None:
         if not ISSUER_ROLES.intersection(actor.roles):
-            raise ApiError("FORBIDDEN", 403, "환자 링크를 발급할 권한이 없습니다.")
+            raise ApiError("FORBIDDEN", 403, "환자 링크를 관리할 권한이 없습니다.")
 
-        guide = await GuideDocument.filter(
-            visit_id=visit_id,
-            visit__hospital_id=actor.hospital_id,
-        ).first()
+    @staticmethod
+    async def _lock_guide(actor, visit_id: int, connection) -> GuideDocument:
+        guide = (
+            await GuideDocument.filter(
+                visit_id=visit_id,
+                visit__hospital_id=actor.hospital_id,
+            )
+            .select_for_update()
+            .using_db(connection)
+            .first()
+        )
         if guide is None:
             # 없는 진료와 타 병원 진료를 같은 응답으로 감춘다.
             raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
-        if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:
-            raise ApiError("GUIDE_NOT_APPROVED", 409, "승인 완료된 안내문만 링크를 발급할 수 있습니다.")
-        if await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).exists():
-            raise ApiError("LINK_ALREADY_ISSUED", 409, "이미 개발용 링크가 발급된 안내문입니다.")
+        return guide
 
-        raw_token = secrets.token_urlsafe(32)
-        try:
-            link = await PatientGuideLink.create(
-                guide_document=guide,
-                token_digest=digest_link_token(raw_token),
-                expires_at=now() + LINK_TTL,
-                issued_by=actor.user_id,
+    @staticmethod
+    def _require_approved(guide: GuideDocument) -> None:
+        if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:
+            # 기존 발급 오류 문구도 공개 계약이다(KEY-94). 재발급에서도 같은
+            # 코드·문구를 유지해 화면이 작업 종류마다 새 예외를 만들지 않는다.
+            raise ApiError("GUIDE_NOT_APPROVED", 409, "승인 완료된 안내문만 링크를 발급할 수 있습니다.")
+
+    @staticmethod
+    async def _invalidate_otp(link: PatientGuideLink, connection, timestamp: datetime) -> None:
+        """링크 회전 전에 종전 OTP를 만료하되 실패 횟수·잠금은 보존한다."""
+
+        await (
+            PatientOtpChallenge.filter(patient_guide_link_id=link.patient_guide_link_id)
+            .using_db(connection)
+            .update(
+                otp_digest=digest_link_token(secrets.token_urlsafe(32)),
+                otp_salt=secrets.token_hex(16),
+                expires_at=timestamp,
+                consumed_at=timestamp,
             )
-        except IntegrityError as exc:
-            # 동시에 두 요청이 들어와도 한 링크만 남긴다.
-            raise ApiError("LINK_ALREADY_ISSUED", 409, "이미 개발용 링크가 발급된 안내문입니다.") from exc
-        return link, raw_token
+        )
+
+    async def issue(self, actor, visit_id: int) -> tuple[PatientGuideLink, str]:
+        self._require_issuer(actor)
+
+        async with in_transaction() as connection:
+            guide = await self._lock_guide(actor, visit_id, connection)
+            self._require_approved(guide)
+            if await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).using_db(connection).exists():
+                raise ApiError("LINK_ALREADY_ISSUED", 409, "이미 환자 링크가 발급된 안내문입니다.")
+
+            raw_token = secrets.token_urlsafe(32)
+            try:
+                link = await PatientGuideLink.create(
+                    guide_document=guide,
+                    token_digest=digest_link_token(raw_token),
+                    expires_at=now() + LINK_TTL,
+                    issued_by=actor.user_id,
+                    using_db=connection,
+                )
+            except IntegrityError as exc:
+                # 동시에 두 요청이 들어와도 한 링크만 남긴다.
+                raise ApiError("LINK_ALREADY_ISSUED", 409, "이미 환자 링크가 발급된 안내문입니다.") from exc
+            return link, raw_token
+
+    async def manual_re_issue(self, actor, visit_id: int) -> tuple[PatientGuideLink, str]:
+        """병원 사용자가 새 원문을 한 번만 받아 기존 링크를 교체한다 — KEY-223."""
+
+        self._require_issuer(actor)
+        async with in_transaction() as connection:
+            guide = await self._lock_guide(actor, visit_id, connection)
+            self._require_approved(guide)
+            link = (
+                await PatientGuideLink.filter(guide_document_id=guide.guide_document_id)
+                .select_for_update()
+                .using_db(connection)
+                .first()
+            )
+            if link is None:
+                raise ApiError("LINK_NOT_ISSUED", 404, "아직 발급된 환자 링크가 없습니다.")
+
+            timestamp = now()
+            raw_token = secrets.token_urlsafe(32)
+            await self._invalidate_otp(link, connection, timestamp)
+            link.token_digest = digest_link_token(raw_token)
+            link.expires_at = timestamp + LINK_TTL
+            link.issued_by = actor.user_id
+            await link.save(using_db=connection, update_fields=["token_digest", "expires_at", "issued_by"])
+            return link, raw_token
+
+    async def revoke(self, actor, visit_id: int) -> None:
+        """원문을 보관하지 않고 digest를 회전해 현재 링크를 즉시 폐기한다."""
+
+        self._require_issuer(actor)
+        async with in_transaction() as connection:
+            guide = await self._lock_guide(actor, visit_id, connection)
+            link = (
+                await PatientGuideLink.filter(guide_document_id=guide.guide_document_id)
+                .select_for_update()
+                .using_db(connection)
+                .first()
+            )
+            if link is None:
+                raise ApiError("LINK_NOT_ISSUED", 404, "아직 발급된 환자 링크가 없습니다.")
+
+            # 원문을 별도 보관하지 않으므로 이 digest에 대응하는 URL은 세상에 없다.
+            # 기존 토큰은 즉시 404가 되고, 재발급은 같은 행을 다시 회전한다.
+            timestamp = now()
+            await self._invalidate_otp(link, connection, timestamp)
+            link.token_digest = digest_link_token(secrets.token_urlsafe(32))
+            link.expires_at = timestamp
+            await link.save(using_db=connection, update_fields=["token_digest", "expires_at"])
 
     async def get_context(self, raw_link_token: str) -> "PatientLinkContext":
         link = (

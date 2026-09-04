@@ -9,7 +9,9 @@
  *   GET   /api/v1/visits/{visit_id}/guide/messages        문자 설정 읽기
  *   PUT   /api/v1/visits/{visit_id}/guide/messages        문자 설정 저장
  *   POST  /api/v1/visits/{visit_id}/guide/return          스탭에 되돌린다 (사유 필수)
- *   POST  /api/v1/visits/{visit_id}/guide/link            개발용 환자 링크 한 번 발급
+ *   POST  /api/v1/visits/{visit_id}/guide/link            환자 링크 한 번 발급
+ *   POST  /api/v1/visits/{visit_id}/guide/link/re-issue   기존 링크 교체
+ *   DELETE /api/v1/visits/{visit_id}/guide/link            현재 링크 폐기
  *
  * **서버가 생겼습니다(KEY-111).** 이 파일은 이제 그 응답 모양을 그대로 흉내
  * 냅니다 — 예전에는 화면이 바라는 모양을 적어 두었는데 서버와 달라서
@@ -83,6 +85,16 @@ var doctorApi = {
       method: "POST",
     });
   },
+  reIssuePatientLink: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/link/re-issue", {
+      method: "POST",
+    });
+  },
+  revokePatientLink: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/link", {
+      method: "DELETE",
+    });
+  },
   /* 되돌리기에는 **사유가 반드시 붙는다.** 스탭의 알림에 그대로 뜨는 문장이라
      (와이어프레임 D1-7 「승인 반려 — 진료기록 재업로드 필요」) 없으면
      받는 사람이 무엇을 고쳐야 하는지 알 수 없다. */
@@ -111,7 +123,7 @@ var RETURN_REASONS = [
  *   staff     스탭 확인 중(STAFF_REVIEW) 화면 — 승인·되돌리기가 잠긴다
  *   returned  이미 되돌린 건
  *   clean     ⚠ 가 하나도 없는 건 — 읽지 않고 승인해도 되는 상태
- *   approved  승인 완료 건 — 개발용 환자 화면 연결을 확인하는 상태
+ *   approved  승인 완료 건 — 환자 본인 확인 연결을 확인하는 상태
  */
 var DOCTOR_CASE = (function () {
   var q = new URLSearchParams(location.search).get("case");
@@ -479,7 +491,7 @@ function mockDoctorRequest(path, options) {
       /* **목업이 서버보다 헐거우면 경로 오류를 못 잡는다.** 예전 정규식은
          `/guide/{무엇이든}` 을 다 받아서, 화면이 없는 주소를 불러도 `?mock=1`
          에서는 멀쩡해 보였다. 서버가 실제로 가진 안내 조회·수정·승인·반려와
-         개발용 링크 발급 경로만 받는다. */
+         환자 링크 관리 경로만 받는다. */
       var get = path.match(/^\/visits\/(\d+)\/guide$/);
       /* 키의 **모양**은 여기서 보지 않는다. 서버 경로도 `{key}: str` 이라
          무엇이든 받고, 그 키가 실제로 있는지는 핸들러가 판정해
@@ -490,12 +502,13 @@ function mockDoctorRequest(path, options) {
       var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
       var act = path.match(/^\/visits\/(\d+)\/guide\/(submit|approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
+      var reIssueLink = path.match(/^\/visits\/(\d+)\/guide\/link\/re-issue$/);
       var msgs = path.match(/^\/visits\/(\d+)\/guide\/messages$/);
       /* **현황(D1-6)이 읽는 자리.** 이 분기가 없어서 `?mock=1` 로는 현황 탭이
          늘 「불러오지 못했습니다」였다 — 서버에는 있는데 목업만 없었다.
          목업이 서버보다 **좁으면** 화면을 목업으로 검수할 수 없다. */
       var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
-      var m = get || sec || act || issueLink || msgs || tl;
+      var m = get || sec || act || issueLink || reIssueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
 
@@ -513,10 +526,37 @@ function mockDoctorRequest(path, options) {
         }
         linkedState.patient_link_issued = true;
         return resolve({
-          path: "/api/v1/guides/demo-key205-link",
-          expires_at: "2026-08-31T18:00:00+09:00",
+          path: "/api/v1/guides/demo-key223-link",
+          expires_at: "2026-09-11T18:00:00+09:00",
           demo_only: true,
         });
+      }
+
+      if (reIssueLink && options.method === "POST") {
+        var replacementGuide = mockGuide(visitId);
+        if (!replacementGuide) return reject(mockNoGuide());
+        if (replacementGuide.status !== "SCHEDULED_TO_SEND" || !replacementGuide.approved_at) {
+          return reject(new ApiError("GUIDE_NOT_APPROVED", 409, {}));
+        }
+        var replacementState = mockGuideState(visitId);
+        if (!replacementState.patient_link_issued) {
+          return reject(new ApiError("LINK_NOT_ISSUED", 404, {}));
+        }
+        replacementState.patient_link_revoked = false;
+        return resolve({
+          path: "/api/v1/guides/demo-key223-reissued-link",
+          expires_at: "2026-09-11T18:00:00+09:00",
+          demo_only: true,
+        });
+      }
+
+      if (issueLink && options.method === "DELETE") {
+        var revokeState = mockGuideState(visitId);
+        if (!revokeState.patient_link_issued) {
+          return reject(new ApiError("LINK_NOT_ISSUED", 404, {}));
+        }
+        revokeState.patient_link_revoked = true;
+        return resolve({});
       }
 
       if (options.method === "POST" && /\/submit$/.test(path)) {

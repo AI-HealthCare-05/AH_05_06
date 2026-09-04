@@ -20,8 +20,10 @@ from app.models.visits import (
     GuideSectionKey,
     GuideStatus,
     PatientGuideLink,
+    PatientOtpChallenge,
     Visit,
 )
+from app.services.patient_links import digest_link_token
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 
@@ -103,7 +105,7 @@ class PatientLinkTestCase(TestCase):
 
 
 class TestIssueAndRead(PatientLinkTestCase):
-    async def test_approved_guide_is_opened_for_72_hours_without_storing_raw_token(self) -> None:
+    async def test_approved_guide_is_opened_for_168_hours_without_storing_raw_token(self) -> None:
         hospital = await make_hospital("KEY-90 합성의원")
         guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
         staff = await make_staff(hospital, "key90-staff", ["staff"])
@@ -120,7 +122,7 @@ class TestIssueAndRead(PatientLinkTestCase):
         saved = await PatientGuideLink.get(guide_document_id=guide.guide_document_id)
         assert saved.token_digest == hashlib.sha256(TOKEN.encode()).hexdigest()
         assert TOKEN not in repr(saved.__dict__)
-        assert before + timedelta(hours=72) <= saved.expires_at <= now() + timedelta(hours=72)
+        assert before + timedelta(hours=168) <= saved.expires_at <= now() + timedelta(hours=168)
 
         async with self.client() as client:
             read = await client.get(payload["path"])
@@ -209,3 +211,91 @@ class TestLinkBoundaries(PatientLinkTestCase):
         assert invalid.json()["code"] == "LINK_NOT_FOUND"
         assert expired.status_code == 410
         assert expired.json()["code"] == "LINK_EXPIRED"
+
+
+class TestManualLinkLifecycle(PatientLinkTestCase):
+    async def test_manual_re_issue_rotates_the_only_link_and_blocks_the_old_token(self) -> None:
+        hospital = await make_hospital("KEY-223 재발급 합성의원")
+        guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        staff = await make_staff(hospital, "key223-reissue", ["staff"])
+        assert (await self.issue(guide, staff)).status_code == 201
+        link = await PatientGuideLink.get(guide_document_id=guide.guide_document_id)
+        challenge = await PatientOtpChallenge.create(
+            patient_guide_link=link,
+            otp_digest=digest_link_token("123456"),
+            otp_salt="synthetic-salt-123456789012345",
+            expires_at=now() + timedelta(minutes=3),
+            failed_attempts=3,
+            issued_at=now(),
+        )
+
+        replacement = "synthetic-key223-replacement-token"
+        with patch("app.services.patient_links.secrets.token_urlsafe", return_value=replacement):
+            async with self.client() as client:
+                response = await client.post(
+                    f"/api/v1/visits/{guide.visit_id}/guide/link/re-issue",
+                    headers=await self.headers(staff),
+                )
+                old_context = await client.post(
+                    "/api/v1/patient-auth/context",
+                    json={"link_token": TOKEN},
+                )
+                new_context = await client.post(
+                    "/api/v1/patient-auth/context",
+                    json={"link_token": replacement},
+                )
+
+        assert response.status_code == 200
+        assert response.json()["path"] == f"/api/v1/guides/{replacement}"
+        assert old_context.status_code == 404
+        assert old_context.json()["code"] == "LINK_NOT_FOUND"
+        assert new_context.status_code == 200
+        assert await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).count() == 1
+        await challenge.refresh_from_db()
+        assert challenge.consumed_at is not None
+        assert challenge.expires_at <= now()
+        assert challenge.otp_digest != digest_link_token("123456")
+        assert challenge.failed_attempts == 3, "수동 재발급으로 OTP 실패 제한을 우회했다"
+
+    async def test_manual_revoke_makes_the_previous_token_unusable(self) -> None:
+        hospital = await make_hospital("KEY-223 폐기 합성의원")
+        guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
+        doctor = await make_staff(hospital, "key223-revoke", ["doctor"])
+        assert (await self.issue(guide, doctor)).status_code == 201
+
+        with patch("app.services.patient_links.secrets.token_urlsafe", return_value="unrecoverable-revoke-token"):
+            async with self.client() as client:
+                response = await client.delete(
+                    f"/api/v1/visits/{guide.visit_id}/guide/link",
+                    headers=await self.headers(doctor),
+                )
+                context = await client.post(
+                    "/api/v1/patient-auth/context",
+                    json={"link_token": TOKEN},
+                )
+
+        assert response.status_code == 204
+        assert context.status_code == 404
+        assert context.json()["code"] == "LINK_NOT_FOUND"
+
+    async def test_manual_re_issue_requires_an_existing_approved_same_hospital_link(self) -> None:
+        owner = await make_hospital("KEY-223 소유 합성의원")
+        outsider = await make_hospital("KEY-223 외부 합성의원")
+        guide = await make_guide(owner, GuideStatus.SCHEDULED_TO_SEND)
+        owner_staff = await make_staff(owner, "key223-owner", ["staff"])
+        outsider_staff = await make_staff(outsider, "key223-outsider", ["staff"])
+
+        async with self.client() as client:
+            absent = await client.post(
+                f"/api/v1/visits/{guide.visit_id}/guide/link/re-issue",
+                headers=await self.headers(owner_staff),
+            )
+            hidden = await client.post(
+                f"/api/v1/visits/{guide.visit_id}/guide/link/re-issue",
+                headers=await self.headers(outsider_staff),
+            )
+
+        assert absent.status_code == 404
+        assert absent.json()["code"] == "LINK_NOT_ISSUED"
+        assert hidden.status_code == 404
+        assert hidden.json()["code"] == "GUIDE_NOT_FOUND"
