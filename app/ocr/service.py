@@ -17,7 +17,8 @@ from app.models.ocr import (
     OcrJobStatus,
     OcrResult,
 )
-from app.models.prescriptions import Prescription, PrescriptionItem
+from app.models.prescriptions import AS_NEEDED, Prescription, PrescriptionItem
+from app.models.visits import Visit
 from app.ocr.errors import OcrApiError
 from app.ocr.schemas import (
     FinalizeOcrResponse,
@@ -62,18 +63,22 @@ class OcrRepository(Protocol):
 
 
 def _collect_item_rows(
-    fields_by_type: dict[str, "OcrField"], shared_frequency: str
+    fields_by_type: dict[str, "OcrField"],
 ) -> list[tuple[str, str, int | None]]:
     rows: list[tuple[str, str, int | None]] = []
     for suffix in ("", "_2", "_3", "_4", "_5"):
         med_field = fields_by_type.get(f"MEDICATION_NAME{suffix}")
         if med_field is None or not med_field.value:
-            break
+            continue
+        freq_field = fields_by_type.get(f"FREQUENCY{suffix}")
+        frequency = freq_field.value if freq_field is not None and freq_field.value else ""
         dur_field = fields_by_type.get(f"DURATION_DAYS{suffix}")
         duration_days: int | None = None
-        if dur_field is not None and dur_field.value and dur_field.value.strip().isdigit():
-            duration_days = int(dur_field.value.strip())
-        rows.append((med_field.value, shared_frequency, duration_days))
+        if frequency != AS_NEEDED and dur_field is not None and dur_field.value:
+            digits = "".join(ch for ch in dur_field.value if ch.isdigit())
+            if digits:
+                duration_days = int(digits)
+        rows.append((med_field.value, frequency, duration_days))
     return rows
 
 
@@ -280,7 +285,18 @@ class TortoiseOcrRepository:
         return job
 
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription:
-        job = await self.get_latest_job_by_visit(visit_id, actor)
+        # GuideService.generate()와 동일한 기준으로 job을 선택한다.
+        # excluded된 job이나 COMPLETED가 아닌 job으로 처방을 만드는 것을 막는다.
+        job = (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                hospital_id=actor.hospital_id,
+                excluded_from_guide=False,
+                status=OcrJobStatus.COMPLETED,
+            )
+            .order_by("-created_at")
+            .first()
+        )
         if job is None:
             raise _not_found()
 
@@ -290,18 +306,19 @@ class TortoiseOcrRepository:
 
         fields_by_type: dict[str, OcrField] = {f.field_type: f for f in result.fields}
 
+        if not fields_by_type:
+            raise OcrApiError(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "OCR_NOT_CONFIRMED",
+                "확정된 OCR 항목이 없습니다.",
+            )
+
         unconfirmed = next((f for f in result.fields if not f.is_confirmed), None)
         if unconfirmed is not None:
             raise OcrApiError(
-                status.HTTP_409_CONFLICT,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "OCR_NOT_CONFIRMED",
                 "확정되지 않은 OCR 항목이 있습니다. 모든 항목을 먼저 확정해 주세요.",
-            )
-        if not fields_by_type:
-            raise OcrApiError(
-                status.HTTP_409_CONFLICT,
-                "OCR_NOT_CONFIRMED",
-                "확정된 OCR 항목이 없습니다.",
             )
 
         ps_field = fields_by_type.get("PRESCRIPTION_SET")
@@ -312,12 +329,29 @@ class TortoiseOcrRepository:
                 "처방 세트(PRESCRIPTION_SET) 필드가 없습니다.",
             )
 
-        frequency_field = fields_by_type.get("FREQUENCY")
-        shared_frequency = frequency_field.value if frequency_field is not None and frequency_field.value else ""
-        item_rows = _collect_item_rows(fields_by_type, shared_frequency)
+        freq_field = fields_by_type.get("FREQUENCY")
+        if freq_field is None or not freq_field.value:
+            raise OcrApiError(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "MISSING_FREQUENCY",
+                "복용법(FREQUENCY) 필드가 없습니다.",
+            )
+
+        item_rows = _collect_item_rows(fields_by_type)
 
         async with in_transaction() as connection:
-            prescription = await Prescription.filter(visit_id=visit_id).using_db(connection).select_for_update().first()
+            # Visit 행을 먼저 잠가서 동시 finalize를 직렬화한다.
+            # select_for_update()는 매칭 행이 없으면 락을 걸지 못하므로
+            # 항상 존재하는 Visit을 진입점으로 쓴다 (guides.py 동일 패턴).
+            if (
+                await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            ) is None:
+                raise _not_found()
+
+            prescription = await Prescription.filter(visit_id=visit_id).using_db(connection).first()
             if prescription is None:
                 prescription = await Prescription.create(
                     visit_id=visit_id,

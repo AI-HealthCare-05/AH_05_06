@@ -7,7 +7,7 @@ from tortoise.contrib.test import TestCase
 
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
-from app.models.prescriptions import Prescription
+from app.models.prescriptions import AS_NEEDED, Prescription
 from app.models.staffs import Hospital, Staff
 from app.models.visits import Visit
 from app.ocr.errors import OcrApiError
@@ -190,6 +190,18 @@ class FinalizeOcrTestCase(TestCase):
 
         assert exc.value.code == "MISSING_PRESCRIPTION_SET"
 
+    async def test_missing_frequency_blocks_finalize(self) -> None:
+        """FREQUENCY 필드가 없으면 422를 돌려준다."""
+        actor, visit, result = await self.make_world("FO-13")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "DURATION_DAYS", "84", actor)
+
+        with pytest.raises(OcrApiError) as exc:
+            await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        assert exc.value.code == "MISSING_FREQUENCY"
+
     async def test_prescription_is_hospital_scoped(self) -> None:
         """다른 병원의 visit_id를 넘기면 404가 나온다."""
         actor, visit, _ = await self.make_world("FO-08")
@@ -213,3 +225,69 @@ class FinalizeOcrTestCase(TestCase):
             await TortoiseOcrRepository().finalize_ocr(visit.visit_id, other_actor)
 
         assert exc.value.status_code == 404
+
+    async def test_excluded_job_does_not_create_prescription(self) -> None:
+        """excluded_from_guide=True인 job으로는 finalize_ocr이 404를 반환한다."""
+        actor, visit, result = await self.make_world("FO-09")
+        job = await OcrJob.filter(visit_id=visit.visit_id).first()
+        assert job is not None
+        job.excluded_from_guide = True
+        await job.save(update_fields=("excluded_from_guide",))
+
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        await self._add_confirmed_field(result, "DURATION_DAYS", "84", actor)
+
+        with pytest.raises(OcrApiError) as exc:
+            await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        assert exc.value.status_code == 404
+
+    async def test_mixed_frequency_as_needed_drug_has_no_duration(self) -> None:
+        """비잔정(1일 1회, 84일) + 진통제(필요시) — 필요시 약은 duration_days=None."""
+        actor, visit, result = await self.make_world("FO-10")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        await self._add_confirmed_field(result, "DURATION_DAYS", "84", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME_2", "이부프로펜 400mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY_2", AS_NEEDED, actor)
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        items = sorted(prescription.items, key=lambda i: i.prescription_item_id)
+        assert len(items) == 2
+        assert items[0].frequency == "1일 1회"
+        assert items[0].duration_days == 84
+        assert items[1].frequency == AS_NEEDED
+        assert items[1].duration_days is None, "필요시 약에 기간을 붙이면 안 된다"
+
+    async def test_suffix_gap_does_not_drop_later_drugs(self) -> None:
+        """MEDICATION_NAME_2 없이 _3만 있어도 _3 약이 누락되지 않는다."""
+        actor, visit, result = await self.make_world("FO-11")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        await self._add_confirmed_field(result, "DURATION_DAYS", "84", actor)
+        # _2 없이 _3만 있는 gap 상황
+        await self._add_confirmed_field(result, "MEDICATION_NAME_3", "엽산정", actor)
+        await self._add_confirmed_field(result, "FREQUENCY_3", "1일 1회", actor)
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        names = {item.name for item in prescription.items}
+        assert "엽산정" in names, "suffix gap이 있어도 _3 약이 포함되어야 한다"
+
+    async def test_duration_days_with_korean_suffix_is_parsed(self) -> None:
+        """DURATION_DAYS 값이 '84일'처럼 한글이 섞여도 84로 파싱된다."""
+        actor, visit, result = await self.make_world("FO-12")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        await self._add_confirmed_field(result, "DURATION_DAYS", "84일", actor)
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        items = list(prescription.items)
+        assert items[0].duration_days == 84
