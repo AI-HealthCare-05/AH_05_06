@@ -11,4 +11,6 @@
 
 services:
   fastapi:
+    environment:
+      - PILOT_ALLOW_MOCK_OTP
     command: ["uv", "run", "--no-sync", "python", "-m", "app.pilot_server", "--pilot-confirm-mock-otp"]

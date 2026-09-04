@@ -15,12 +15,17 @@ import uvicorn
 
 from app.core.config import PILOT_ALLOW_MOCK_OTP_FLAG
 
-parser = argparse.ArgumentParser()
-parser.add_argument(PILOT_ALLOW_MOCK_OTP_FLAG, action="store_true")
-parser.add_argument("--host", default="0.0.0.0")
-parser.add_argument("--port", type=int, default=8000)
-parser.add_argument("--workers", type=int, default=3)
-args = parser.parse_args()
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(PILOT_ALLOW_MOCK_OTP_FLAG, action="store_true")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--workers", type=int, default=3)
+    args = parser.parse_args()
+
+    uvicorn.run("app.main:app", host=args.host, port=args.port, workers=args.workers)
+
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host=args.host, port=args.port, workers=args.workers)
+    main()

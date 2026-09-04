@@ -12,6 +12,7 @@ from pydantic.types import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.logger import default_logger
+from app.core.utils.narrow_gate import is_flag_env_value_true
 
 
 class Env(StrEnum):
@@ -24,7 +25,6 @@ class Env(StrEnum):
 # 환경변수 하나만으로는 안 열린다: .env에 적어두면 배포 때마다 영구히 켜지기
 # 때문에, 실행할 때마다 넣어야 하는 CLI 플래그를 같이 요구한다.
 PILOT_ALLOW_MOCK_OTP_ENV = "PILOT_ALLOW_MOCK_OTP"
-PILOT_ALLOW_MOCK_OTP_TRUE_VALUES = frozenset({"1", "true"})
 PILOT_ALLOW_MOCK_OTP_FLAG = "--pilot-confirm-mock-otp"
 
 
@@ -32,8 +32,7 @@ def pilot_mock_otp_gate_open() -> bool:
     """PILOT_ALLOW_MOCK_OTP 환경변수와 --pilot-confirm-mock-otp 플래그가
     둘 다 있어야 True. Config가 아니라 os.environ, sys.argv를 직접 본다.
     """
-    env_value = os.environ.get(PILOT_ALLOW_MOCK_OTP_ENV, "").strip().lower()
-    has_env = env_value in PILOT_ALLOW_MOCK_OTP_TRUE_VALUES
+    has_env = is_flag_env_value_true(os.environ.get(PILOT_ALLOW_MOCK_OTP_ENV))
     has_flag = PILOT_ALLOW_MOCK_OTP_FLAG in sys.argv[1:]
     return has_env and has_flag
 
