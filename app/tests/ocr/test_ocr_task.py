@@ -410,25 +410,17 @@ class TestProcessOcrJob(TestCase):
     async def test_already_processed_is_logged(self) -> None:
         """이미 COMPLETED인 job이 큐에 재투입돼도 재처리되지 않는다.
 
-        관측 로그에 ALREADY_PROCESSED가 기록되고 OcrResult가 추가 생성되지 않는다.
+        _observe가 error_code="ALREADY_PROCESSED"로 호출되고 OcrResult는 추가 생성되지 않는다.
         """
         job = await self._seed("ocr_key227_dup_queue")
         job.status = OcrJobStatus.COMPLETED
         await job.save(update_fields=("status",))
 
-        log_records: list[str] = []
-        real_logger = __import__("ai_worker.core", fromlist=["default_logger"]).default_logger
-
-        original_warning = real_logger.warning
-
-        def capture_warning(msg: str, *args: object, **kwargs: object) -> None:
-            log_records.append(msg % args if args else msg)
-            original_warning(msg, *args, **kwargs)
-
-        with patch.object(real_logger, "warning", side_effect=capture_warning):
+        with patch("ai_worker.tasks.ocr_task._observe") as mock_observe:
             await process_ocr_job(job.ocr_job_id)
 
-        assert any("ALREADY_PROCESSED" in r for r in log_records), "ALREADY_PROCESSED가 관측 로그에 없다"
+        observed_codes = [c.kwargs.get("error_code") for c in mock_observe.call_args_list]
+        assert "ALREADY_PROCESSED" in observed_codes, "ALREADY_PROCESSED가 관측 로그에 없다"
         assert await OcrResult.filter(ocr_job=job).count() == 0
 
     async def test_duplicate_queue_entry_creates_single_result(self) -> None:
