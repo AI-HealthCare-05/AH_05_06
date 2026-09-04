@@ -169,6 +169,93 @@ async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
         await _sql(None, f"DROP DATABASE IF EXISTS {SCRATCH}")
 
 
+async def _one_session(database: str, statements: list[str]) -> list[Any]:
+    """**한 연결에서** 여러 문장을 돌리고 커밋한다.
+
+    `_sql` 은 문장마다 새 연결을 열고 커밋 없이 닫는다 — 읽기에는 맞지만
+    넣은 것이 남지 않는다. 여기서는 넣고 그 값을 다시 봐야 한다.
+
+    마지막 문장의 결과를 돌려준다. 문장이 죽으면 그대로 올린다 — 유니크가
+    막는 것을 재는 것이 이 도구의 쓸모다.
+    """
+    import asyncmy  # type: ignore[import-untyped]
+
+    creds = TORTOISE_ORM["connections"]["default"]["credentials"]  # type: ignore[index]
+    conn = await asyncmy.connect(
+        host=creds["host"],
+        port=creds["port"],
+        user=creds["user"],
+        password=creds["password"],
+        database=database,
+        autocommit=True,
+    )
+    try:
+        rows: list[Any] = []
+        async with conn.cursor() as cur:
+            for statement in statements:
+                await cur.execute(statement)
+                rows = list(await cur.fetchall())
+        return rows
+    finally:
+        conn.close()
+
+
+async def test_the_clinic_wide_wording_cannot_be_written_twice() -> None:
+    """🚨 **`doctor_id` 가 비면 `unique_together` 가 안 먹는다.**
+
+    37 번이 `doctor_id` 를 `NULL` 로 열면서 「의원 공통」을 만들었는데, MySQL
+    에서 `NULL` 은 서로 같지 않다. 그래서 그 유니크가 **의원 공통 줄에
+    대해서만 통째로 무력**해졌다 (`#192` 리뷰 ①, 2heej). 같은 처방의 문구가
+    두 줄 생기면 `.first()` 가 아무거나 집어 **새로고침마다 글이 달라진다.**
+
+    38 번이 `COALESCE(doctor_id, 0)` 로 「빈 것」을 하나로 접는 인덱스를
+    얹었다. 그런데 **보통 검사로는 이걸 못 잰다** — 검사 DB 는 모델에서
+    `generate_schemas()` 로 세워서 그 인덱스가 아예 없다. 마이그레이션을
+    진짜로 돌리는 이 자리에서만 잴 수 있다.
+    """
+    await _make_scratch_database()
+
+    try:
+        done = _aerich(SCRATCH, "upgrade")
+        assert done.returncode == 0, f"upgrade 가 실패했다 — {done.stderr[-400:]}"
+
+        rows = await _one_session(
+            SCRATCH,
+            [
+                "INSERT INTO prescription_set (name) VALUES ('검사용 세트')",
+                "SELECT prescription_set_id FROM prescription_set LIMIT 1",
+            ],
+        )
+        assert rows, "세트를 넣었는데 안 보인다 — 검사가 헛돈다"
+        set_id = rows[0][0]
+
+        common = (
+            "INSERT INTO doctor_guide_copy "
+            "(hospital_id, doctor_id, prescription_set_id, section_key, body) "
+            f"VALUES (1, NULL, {set_id}, 'caution', '의원 공통')"
+        )
+        await _one_session(SCRATCH, [common])
+
+        with pytest.raises(Exception) as clash:  # noqa: PT011 - 드라이버 예외형을 안 묶는다
+            await _one_session(SCRATCH, [common])
+        assert "Duplicate" in str(clash.value), (
+            f"같은 (병원 · 빈 의사 · 세트 · 갈래) 가 두 줄 들어갔다 — 유니크가 안 먹는다: {clash.value}"
+        )
+
+        # 의사가 **찬** 줄은 서로 달라야 하니 막히면 안 된다.
+        await _one_session(
+            SCRATCH,
+            [
+                "INSERT INTO doctor_guide_copy "
+                "(hospital_id, doctor_id, prescription_set_id, section_key, body) "
+                f"VALUES (1, {doctor}, {set_id}, 'caution', '개인 문구')"
+                for doctor in (11, 12)
+            ],
+        )
+    finally:
+        await _sql(None, f"DROP DATABASE IF EXISTS {SCRATCH}")
+
+
 def test_the_migration_runs_in_its_own_process() -> None:
     """**이 검사가 남의 검사를 깨뜨리지 않게 한다.**
 

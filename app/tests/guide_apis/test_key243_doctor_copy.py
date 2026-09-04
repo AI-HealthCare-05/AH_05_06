@@ -18,6 +18,8 @@ from app.models.patients import Patient
 from app.models.prescriptions import Prescription
 from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideSectionKey, Visit
+from app.services import guide_defaults
+from app.services.guides import GuideService
 from app.tests.guide_apis.test_key165_drug_caution import (
     DrugCautionTestCase,
     attach_confirmed_ocr,
@@ -59,7 +61,7 @@ async def make_visit_with_doctor(
 
 async def save_doctor_copy(
     hospital: Hospital,
-    doctor: Staff,
+    doctor: Staff | None,
     set_name: str,
     body: str,
     section_key: CautionSectionKey = CautionSectionKey.CAUTION,
@@ -68,11 +70,11 @@ async def save_doctor_copy(
     prescription_set, _ = await PrescriptionSet.get_or_create(name=set_name)
     return await DoctorGuideCopy.create(
         hospital_id=hospital.hospital_id,
-        doctor_id=doctor.staff_id,
+        doctor_id=doctor.staff_id if doctor else None,
         prescription_set_id=prescription_set.prescription_set_id,
         section_key=section_key,
         body=body,
-        updated_by=doctor.staff_id,
+        updated_by=doctor.staff_id if doctor else None,
     )
 
 
@@ -300,3 +302,184 @@ class TestEmergencyStaysLocked(DrugCautionTestCase):
         assert sections[GuideSectionKey.CAUTION].generated_body == APPROVED, (
             "만든 사람 문구가 담당 의사 이름으로 나갔다"
         )
+
+    async def test_an_edited_caution_never_leaks_into_emergency(self) -> None:
+        """🚨 **의사가 고친 주의사항이 응급 칸으로 새지 않는다.**
+
+        위 두 검사로는 못 잡는다. `test_an_emergency_copy_row_is_ignored` 는
+        **응급** 문구만 저장하는데, `_doctor_copies` 가 그 갈래를 아예 안 읽어
+        사전이 비어 있다 — 응급 자리에 사전을 물려도 티가 안 난다.
+        `test_the_locked_section_never_enters_the_lookup` 은 **조회**를 재고,
+        이것은 **환자에게 나가는 값**을 잰다.
+
+        재려면 **고칠 수 있는 갈래에 문구가 있는 상태**여야 한다. 그래야
+        「응급에도 그 사전을 쓴다」는 실수가 값으로 드러난다. 응급은 승인
+        안 거친 문장이 나가면 안 되는 자리다(KEY-150).
+        """
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "k243-leak", ["doctor"])
+        staff = await make_staff(clinic, "k243-leak-s", ["staff"])
+        approved_emergency = "🚨 승인된 응급 문장 — 심한 복통이면 응급실로 가세요."
+        await make_approved_content(SET_NAME, CautionSectionKey.CAUTION, APPROVED)
+        await make_approved_content(SET_NAME, CautionSectionKey.EMERGENCY, approved_emergency)
+        await save_doctor_copy(clinic, doctor, SET_NAME, EDITED, CautionSectionKey.CAUTION)
+        visit = await make_visit_with_doctor(clinic, doctor, chart="KEY243-LEAK")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        await self.generate(visit, staff)
+
+        sections = await self.sections_from_db(visit.visit_id)
+        assert sections[GuideSectionKey.CAUTION].generated_body == EDITED, "의사 문구가 안 나갔다"
+        assert sections[GuideSectionKey.EMERGENCY].generated_body == approved_emergency, (
+            "의사가 고친 주의사항이 응급 칸으로 샜다"
+        )
+
+
+class TestEveryEditableSectionReachesThePatient(DrugCautionTestCase):
+    """**고칠 수 있는 갈래는 다 나가야 한다.**
+
+    설정이 고칠 수 있는 갈래를 셋으로 넓혔는데(복약지도·주의사항·생활지도)
+    생성은 `caution` 하나만 읽고 있었다. 복약지도를 고치면 **저장은 200 이고
+    환자에게는 안 갔다** — 고칠 수 있게 해 놓고 반영하지 않는 것이 제일
+    나쁘다. 의사는 고쳤다고 믿는다.
+    """
+
+    async def test_medication_wording_reaches_the_patient(self) -> None:
+        """복약지도를 고치면 그 글이 나간다 — **진료별 줄은 남는다.**"""
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "k243-med", ["doctor"])
+        staff = await make_staff(clinic, "k243-med-s", ["staff"])
+        await save_doctor_copy(clinic, doctor, SET_NAME, "고친 복약 문장", CautionSectionKey.MEDICATION)
+        visit = await make_visit_with_doctor(clinic, doctor, chart="KEY243-M1")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        response = await self.generate(visit, staff)
+
+        assert response.status_code == 201, response.text
+        body = (await self.sections_from_db(visit.visit_id))[GuideSectionKey.MEDICATION].generated_body
+        assert body.endswith("고친 복약 문장"), f"고친 문구가 안 나갔다: {body!r}"
+        assert "확정된 항목:" in body, "진료별 줄이 사라졌다 — 판독으로 확정된 사실이다"
+
+    async def test_life_wording_reaches_the_patient(self) -> None:
+        """생활지도를 고치면 그 글이 통째로 나간다."""
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "k243-life", ["doctor"])
+        staff = await make_staff(clinic, "k243-life-s", ["staff"])
+        await save_doctor_copy(clinic, doctor, SET_NAME, "고친 생활 문장", CautionSectionKey.LIFE)
+        visit = await make_visit_with_doctor(clinic, doctor, chart="KEY243-L1")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        response = await self.generate(visit, staff)
+
+        assert response.status_code == 201, response.text
+        sections = await self.sections_from_db(visit.visit_id)
+        assert sections[GuideSectionKey.LIFE].generated_body == "고친 생활 문장"
+
+    async def test_sections_fall_back_one_by_one(self) -> None:
+        """**갈래마다 따로 내려간다.**
+
+        담당이 주의사항만 고치고 의원 공통이 복약지도만 가졌으면 둘 다 나가야
+        한다. 통째로 한 벌만 고르면 한쪽이 통째로 묻힌다.
+
+        **「만든 사람」 층으로는 재지 않는다.** 그 층은 오귀속이라 걷었다 —
+        담당이 아닌 사람이 만들면 그 사람 글이 담당 이름으로 나갔다.
+        """
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "k243-mix", ["doctor"])
+        staff = await make_staff(clinic, "k243-mix-s", ["staff"])
+        await save_doctor_copy(clinic, doctor, SET_NAME, "담당의 주의", CautionSectionKey.CAUTION)
+        await save_doctor_copy(clinic, None, SET_NAME, "의원 공통 복약", CautionSectionKey.MEDICATION)
+        visit = await make_visit_with_doctor(clinic, doctor, chart="KEY243-X1")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        response = await self.generate(visit, staff)
+
+        assert response.status_code == 201, response.text
+        sections = await self.sections_from_db(visit.visit_id)
+        assert sections[GuideSectionKey.CAUTION].generated_body == "담당의 주의"
+        assert sections[GuideSectionKey.MEDICATION].generated_body.endswith("의원 공통 복약")
+
+    async def test_the_screen_shows_what_actually_goes_out(self) -> None:
+        """**설정 화면의 「원본」이 실제로 나가는 글이어야 한다.**
+
+        한동안 `guides.py` 가 기본 문구를 따로 들고 있었다. 셋은 우연히 같았고
+        복약지도만 어긋나서, 설정 화면이 「원본」이라며 **실제로는 나가지 않는
+        글**을 보였다. 고치는 사람이 그것을 기준으로 판단한다.
+        """
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "k243-org", ["doctor"])
+        staff = await make_staff(clinic, "k243-org-s", ["staff"])
+        visit = await make_visit_with_doctor(clinic, doctor, chart="KEY243-O1")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        response = await self.generate(visit, staff)
+
+        assert response.status_code == 201, response.text
+        sections = await self.sections_from_db(visit.visit_id)
+        assert sections[GuideSectionKey.MEDICATION].generated_body.endswith(guide_defaults.MEDICATION)
+        assert sections[GuideSectionKey.LIFE].generated_body == guide_defaults.LIFE
+        assert sections[GuideSectionKey.CAUTION].generated_body == guide_defaults.CAUTION
+
+    async def test_the_locked_section_never_enters_the_lookup(self) -> None:
+        """**응급은 사전에 들어오지도 않는다.**
+
+        지금은 응급 자리가 `copies` 를 안 보므로 사전에 섞여도 겉으로는 아무
+        일이 없다. 그래서 결과만 보는 검사로는 못 잡는다 — 조회 자체를 잰다.
+        누군가 나중에 응급 자리에 `copies` 를 물리는 날, **승인도 안 거친
+        문장이 응급 안내로 나간다**(KEY-150). 그 날 걸려야 한다.
+        """
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "k243-lock", ["doctor"])
+        await save_doctor_copy(clinic, doctor, SET_NAME, "누군가 고친 응급 문장", CautionSectionKey.EMERGENCY)
+        await save_doctor_copy(clinic, doctor, SET_NAME, EDITED, CautionSectionKey.CAUTION)
+
+        # 세트는 부르는 쪽이 찾아 넘긴다 — `generate()` 와 같은 길이다.
+        prescription_set = await PrescriptionSet.filter(name=SET_NAME).first()
+        found = await GuideService._doctor_copies(clinic.hospital_id, doctor.staff_id, prescription_set)
+
+        assert CautionSectionKey.EMERGENCY not in found, "잠긴 갈래가 사전에 들어왔다"
+        assert found[CautionSectionKey.CAUTION] == EDITED, "고칠 수 있는 갈래는 들어와야 한다"
+
+    async def test_the_clinic_wording_reaches_every_doctors_patients(self) -> None:
+        """**의원 공통 문구가 모든 의사의 환자에게 나간다** (2026-09-02 회의).
+
+        전에는 문구가 고친 사람 개인 것이라, 원장 A 가 고치면 A 담당 환자에게만
+        나갔다. 원장 B 는 같은 처방을 열어도 문구만 기본값으로 보여
+        「아직 아무도 안 고쳤구나」로 읽었다. 처방 세트는 의원 공통인데 그 위에
+        덧씌우는 표현만 개인 것이면 한 처방이 두 가지로 말해진다.
+        """
+        clinic = await make_clinic()
+        wrote = await make_staff(clinic, "k255-a", ["doctor"])
+        other = await make_staff(clinic, "k255-b", ["doctor"])
+        staff = await make_staff(clinic, "k255-s", ["staff"])
+        await save_doctor_copy(clinic, None, SET_NAME, "의원이 정한 주의")
+        visit = await make_visit_with_doctor(clinic, other, chart="KEY255-C1")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        response = await self.generate(visit, staff)
+
+        assert response.status_code == 201, response.text
+        sections = await self.sections_from_db(visit.visit_id)
+        assert sections[GuideSectionKey.CAUTION].generated_body == "의원이 정한 주의", (
+            f"{wrote.staff_id} 가 고친 의원 공통 문구가 다른 의사 환자에게 안 나갔다"
+        )
+
+    async def test_a_personal_wording_still_wins_over_the_clinic_one(self) -> None:
+        """**좁은 것이 넓은 것을 덮는다.**
+
+        원장별 문구는 나중에 열 자리인데, 그때 의원 공통이 개인 것을 덮으면
+        고쳐 둔 것이 조용히 묻힌다. 차례를 지금 못 박아 둔다.
+        """
+        clinic = await make_clinic()
+        doctor = await make_staff(clinic, "k255-p", ["doctor"])
+        staff = await make_staff(clinic, "k255-ps", ["staff"])
+        await save_doctor_copy(clinic, None, SET_NAME, "의원 공통")
+        await save_doctor_copy(clinic, doctor, SET_NAME, "담당 의사 것")
+        visit = await make_visit_with_doctor(clinic, doctor, chart="KEY255-P1")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        response = await self.generate(visit, staff)
+
+        assert response.status_code == 201, response.text
+        sections = await self.sections_from_db(visit.visit_id)
+        assert sections[GuideSectionKey.CAUTION].generated_body == "담당 의사 것"

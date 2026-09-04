@@ -4,14 +4,13 @@
 무엇을 여쭐지」도 「소진 예정일을 어떻게 셈할지」도 코드에 박혀 있었다. 그
 값들을 표로 옮기고 설정 화면이 읽게 했다.
 
-**고치는 길은 아직 열지 않았다.** `prescription_set` 에는 `hospital_id` 가
-없다 — 여덟 처방 유형을 전 의원이 함께 쓴다. 한동안 역할(의사)만 확인하고
-`PUT` 을 열어 두었는데, 그러면 어느 의원 의사든 다른 모든 의원의 질환 분류 ·
-총투 해석 · 소진 예정일 셈법을 바꿀 수 있다. 그 값들이 안내문 문구와 문자
-발송일을 정한다. 2heej 님이 `#183` 리뷰에서 찾아 주셨다.
+**의원 하나를 보는 프로그램이다**(2026-09-02 회의). 처방 여덟은 그 의원의
+것이고, 한 의원 안의 의사들이 모두 공통으로 쓴다. 그래서 「누구 것인가」를
+묻지 않고 역할도 안 본다 — 같은 회의에서 설정 수정을 스탭에게도 열었다.
 
-표를 의원별로 가르는 것이 옳은 해결이고 별도 일감이다. 이 파일은 그때까지
-**읽기만 되고 쓰기는 닫혀 있다**는 것을 못 박는다.
+한동안 쓰기가 닫혀 있었다. 여러 의원이 한 표를 나눠 쓰는 모양이라 남의 의원
+것까지 바뀌었기 때문이다(`#183` 리뷰, 2heej). 의원이 하나라는 것이 정해지면서
+그 걱정이 범위 밖으로 갔다 — **고친 것이 아니라 범위가 줄어든 것이다.**
 """
 
 from httpx import ASGITransport, AsyncClient
@@ -29,7 +28,6 @@ from app.tests.fakes import FakeRedis
 def a_plan(**over) -> dict:
     """설정 화면이 보내던 한 판. 쓰기가 닫힌 것을 재는 데 쓴다."""
     plan = {
-        "name": "자궁내막증 · 비잔 (계속)",
         "disease": "ENDOMETRIOSIS",
         "phase": "CONTINUE",
         "days_mode": "DAYS",
@@ -137,55 +135,128 @@ class PrescriptionSettingsTestCase(TestCase):
         assert got.status_code == 404
         assert got.json()["code"] == "PRESCRIPTION_SET_NOT_FOUND"
 
-    # ── 쓰기는 닫혀 있다 ─────────────────────────────────────────────
+    # ── 쓰기 ─────────────────────────────────────────────────────────
 
-    async def test_nobody_can_write_the_shared_catalog(self) -> None:
-        """**의사도 못 고친다.** 역할이 문제가 아니라 표가 전 의원 공용인
-        것이 문제다 — `prescription_set` 에는 `hospital_id` 가 없다.
+    async def test_the_name_is_refused_loudly(self) -> None:
+        """**이름은 못 바꾼다 — 소리 나게 막는다.**
 
-        의사에게만 열어 두면 「우리 의원 설정」처럼 보이는데 실제로는 모든
-        의원이 함께 쓰는 값이 바뀐다. 그래서 길 자체를 닫는다.
+        지난 진료기록이 그 이름으로 이 세트를 가리키고 있다(스냅샷 문자열).
+        바꾸면 그 진료들의 안내문 문구가 조용히 떨어져 나간다.
+
+        받아 놓고 무시하면 안 된다 — 「바꿔 달라 보냈는데 200 이 오고 안 바뀐」
+        조용한 성공이 제일 나쁘다. `StrictModel` 의 `extra="forbid"` 가 튕긴다.
         """
         row = await self.a_furnished_set()
-        doctor = await self.make_staff(["doctor"])
+        staff = await self.make_staff(["staff"])
+        was = row.name
 
         async with self.client() as client:
-            put = await client.put(
+            answer = await client.put(
                 f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(),
-                headers=await self.sign_in(doctor),
+                json=a_plan(name="자궁내막증 · 비잔 (유지)"),
+                headers=await self.sign_in(staff),
             )
 
-        assert put.status_code == 405, f"쓰기가 아직 열려 있다: {put.status_code}"
-
-    async def test_the_write_did_not_move_to_another_verb(self) -> None:
-        """`PUT` 만 걷고 `PATCH`·`POST` 로 옮겨 두면 막은 것이 아니다."""
-        row = await self.a_furnished_set()
-        doctor = await self.make_staff(["doctor"])
-        at = f"/api/v1/prescription-sets/{row.prescription_set_id}"
-
-        async with self.client() as client:
-            headers = await self.sign_in(doctor)
-            answers = {
-                verb: (await client.request(verb, at, json=a_plan(), headers=headers)).status_code
-                for verb in ("PUT", "PATCH", "POST", "DELETE")
-            }
-
-        assert all(code == 405 for code in answers.values()), answers
-
-    async def test_the_catalog_is_untouched_after_a_refused_write(self) -> None:
-        """막았다고 말만 하고 반쪽이 들어가면 더 나쁘다."""
-        row = await self.a_furnished_set()
-        doctor = await self.make_staff(["doctor"])
-
-        async with self.client() as client:
-            await client.put(
-                f"/api/v1/prescription-sets/{row.prescription_set_id}",
-                json=a_plan(name="바뀐 이름", drugs=[], check_items=[]),
-                headers=await self.sign_in(doctor),
-            )
-
+        # 422 가 아니다 — `ContractRoute` 가 400 봉투로 바꾼다(`core/api_errors.py`).
+        assert answer.status_code == 400, answer.text
+        assert answer.json()["code"] == "INVALID_REQUEST"
         await row.refresh_from_db()
-        assert row.name == "자궁내막증 · 비잔 (계속)"
-        assert await PrescriptionSetDrug.filter(prescription_set_id=row.prescription_set_id).count() == 2
-        assert await PrescriptionCheckItem.filter(prescription_set_id=row.prescription_set_id).count() == 2
+        assert row.name == was, "튕겼는데 이름이 바뀌었다"
+
+    async def test_everything_else_still_saves(self) -> None:
+        """**이름만 잠갔다.** 진단·약·일수·확인 항목은 그대로 고쳐진다."""
+        row = await self.a_furnished_set()
+        staff = await self.make_staff(["staff"])
+
+        async with self.client() as client:
+            answer = await client.put(
+                f"/api/v1/prescription-sets/{row.prescription_set_id}",
+                json=a_plan(disease="PCOS", check_items=["DIABETES"]),
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 200, answer.text
+        assert answer.json()["disease"] == "PCOS"
+        assert answer.json()["check_items"] == ["DIABETES"]
+
+    async def test_staff_can_write_too(self) -> None:
+        """스탭도 고친다 — 역할은 안 본다."""
+        row = await self.a_furnished_set()
+        staff = await self.make_staff(["staff"])
+
+        async with self.client() as client:
+            answer = await client.put(
+                f"/api/v1/prescription-sets/{row.prescription_set_id}",
+                json=a_plan(days_mode="PACK", days_per_pack=28),
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 200, answer.text
+        assert answer.json()["days_per_pack"] == 28
+
+    async def test_pack_mode_still_needs_a_pack_size(self) -> None:
+        """**한 통이 며칠인지 모르면 소진 예정일을 못 셈한다.**
+
+        그 값으로 소진 임박 문자가 나갈 날이 정해지므로, 비운 채 저장되면
+        문자가 엉뚱한 날 간다.
+        """
+        row = await self.a_furnished_set()
+        staff = await self.make_staff(["staff"])
+
+        async with self.client() as client:
+            answer = await client.put(
+                f"/api/v1/prescription-sets/{row.prescription_set_id}",
+                json=a_plan(days_mode="PACK", days_per_pack=None),
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 422
+        assert answer.json()["code"] == "DAYS_PER_PACK_REQUIRED"
+
+    async def test_an_unknown_set_is_not_found_on_write(self) -> None:
+        staff = await self.make_staff(["staff"])
+
+        async with self.client() as client:
+            answer = await client.put(
+                "/api/v1/prescription-sets/999999",
+                json=a_plan(),
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 404
+        assert answer.json()["code"] == "PRESCRIPTION_SET_NOT_FOUND"
+
+    async def test_a_long_drug_name_is_refused_not_crashed(self) -> None:
+        """**표 한계를 넘으면 계약에서 막는다 — 500 이 아니라.**
+
+        안 막으면 MySQL 이 `DataError` 를 던지는데 그것을 잡는 자리가 없어
+        500 이 난다. 화면은 「잠시 후 다시 시도해 주세요」라고 하지만 몇 번을
+        눌러도 같은 500 이고, **어느 칸이 문제인지 말해 주지 않는다.**
+        EMR 에서 성분명을 통째로 붙여 넣으면 100자는 쉽게 넘는다.
+        """
+        row = await self.a_furnished_set()
+        staff = await self.make_staff(["staff"])
+
+        async with self.client() as client:
+            answer = await client.put(
+                f"/api/v1/prescription-sets/{row.prescription_set_id}",
+                json=a_plan(drugs=[{"name": "가" * 101, "frequency": None, "note": None}]),
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 400, answer.text
+        assert answer.json()["code"] == "INVALID_REQUEST"
+
+    async def test_an_absurd_pack_size_is_refused(self) -> None:
+        """`SmallIntField` 범위를 넘으면 같은 자리에서 500 이 난다."""
+        row = await self.a_furnished_set()
+        staff = await self.make_staff(["staff"])
+
+        async with self.client() as client:
+            answer = await client.put(
+                f"/api/v1/prescription-sets/{row.prescription_set_id}",
+                json=a_plan(days_mode="PACK", days_per_pack=99999),
+                headers=await self.sign_in(staff),
+            )
+
+        assert answer.status_code == 400, answer.text

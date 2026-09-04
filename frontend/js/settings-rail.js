@@ -74,7 +74,7 @@ function setsByDisease(sets) {
  */
 var RAIL_SECTIONS = [
   { key: "guide", title: "안내문" },
-  { key: "sets", title: "처방" },
+  { key: "sets", title: "대표 처방" },
   { key: "rest", title: "기타" },
 ];
 

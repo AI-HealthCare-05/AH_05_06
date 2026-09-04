@@ -15,6 +15,7 @@
 버튼을 잠그는 것은 편의일 뿐이고, 잠긴 버튼을 우회한 요청도 여기서 막힌다.
 """
 
+import asyncio
 from datetime import datetime, timedelta
 
 from tortoise.timezone import now
@@ -44,6 +45,7 @@ from app.models.visits import (
     GuideStatus,
     Visit,
 )
+from app.services import guide_defaults
 from app.services.drug_caution import DrugCautionService
 
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
@@ -100,12 +102,9 @@ REASON_MAX = 200
 # KEY-165: DrugCautionContent 승인 문구가 없을 때 사용하는 범용 폴백.
 # caution 은 어떤 약물·증상도 특정하지 않는 안전한 문장이다(PR #100 이희진 검수).
 # emergency 폴백은 약물 비특이적 일반 응급 지시다. 세트별 승인 문구가 없을 때만 쓴다.
-_CAUTION_FALLBACK = (
-    "[합성 주의 안내]\n복용 중 의사 또는 약사에게 미리 안내받지 않은 증상이나 "
-    "불편감이 나타나면 의료진에게 알려 주세요.\n미리 안내받은 증상이라도 심해지거나 "
-    "계속되면 알려 주세요."
-)
-_EMERGENCY_FALLBACK = "처방약 복용 중 두드러기, 호흡 곤란, 심한 복통이 생기면 즉시 복용을 중단하고 응급실을 방문하세요."
+# 기본 문구는 `guide_defaults` 하나에서만 온다. 여기에 따로 들고 있었더니
+# 설정 화면이 「원본」이라며 보이는 글과 **실제로 나가는 글이 달랐다** —
+# 셋은 우연히 같았고 복약지도만 어긋나 있었다.
 
 
 def _not_found() -> ApiError:
@@ -181,13 +180,16 @@ class GuideService:
 
         field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else ""
 
-        # KEY-165: 처방 세트 이름으로 승인된 caution/emergency 문구를 미리 조회한다.
+        # KEY-165: 처방 세트의 승인된 caution/emergency 문구를 미리 조회한다.
         # 트랜잭션 밖에서 실행해 락 보유 시간을 줄인다.
         # 미등록·미승인이면 None → 트랜잭션 안에서 폴백 문구를 사용한다(KEY-180 §4).
+        #
+        # **세트는 한 번만 찾는다.** 갈래마다·의사마다 이름으로 다시 찾으면
+        # 같은 `SELECT` 가 **네 번** 돈다 — 주의·응급·담당 문구·의원 공통 문구가
+        # 전부 같은 세트를 본다 (`#191` 리뷰, 2heej).
         prescription = await Prescription.filter(visit_id=visit_id).first()
         set_name = prescription.prescription_set if prescription else None
-        caution_content = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.CAUTION)
-        emergency_content = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.EMERGENCY)
+        prescription_set = await PrescriptionSet.filter(name=set_name).first() if set_name else None
 
         # KEY-243: **의사가 고친 문구가 있으면 그것이 이긴다.**
         #
@@ -195,24 +197,28 @@ class GuideService:
         # 않고 있었다 — 의사가 고쳐도 환자에게는 원본이 나갔다. 고칠 수 있게
         # 해 놓고 반영하지 않는 것이 제일 나쁘다: 의사는 고쳤다고 믿는다.
         #
-        # **담당 의사 것만 본다**(`visit.doctor_id`). 그 글은 담당 의사 이름으로
-        # 환자에게 가기 때문이다.
+        # **담당 의사 것 → 의원 공통 → 기본 문구.** 갈래마다 따로 내려간다 —
+        # 담당이 주의사항만 고치고 의원 공통이 복약지도만 가졌으면 둘 다
+        # 나가야 한다. 통째로 한 벌만 고르면 한쪽이 통째로 묻힌다.
         #
-        # 🚨 **「만든 사람」으로 내려가면 안 된다.** 한동안 그렇게 두었다가
-        # 리뷰(`#183` 후속, 2heej)에서 잡혔다. `generate()` 는 담당이 아니어도
-        # 같은 의원의 아무 의사·스탭이나 부를 수 있다 — `_require_staff_or_doctor`
-        # 는 역할만 보고, 진료 조회도 `hospital_id` 로만 범위를 잡는다.
+        # 의원 공통이 뒤인 것은 개인 문구가 더 좁은 뜻이기 때문이다 —
+        # 좁은 것이 넓은 것을 덮는다(2026-09-02 회의: 「기본 설정은 모두
+        # 공통으로 두자. 원장별 설정은 나중에」).
         #
-        #     의사 B 가 세트 S 문구를 고쳐 둔다
-        #     담당 의사 A 는 S 를 고친 적이 없다
-        #     B 가 (담당이 아닌데) A 의 진료로 generate 를 부른다
-        #     → **B 가 쓴 글이 A 이름으로 환자에게 나간다**
+        # **누구 것을 읽는지는 `_doctor_copies` 의 설명에 적혀 있다.** 여기에
+        # 두 벌로 적혀 있었는데, 규칙은 지켜지는 자리에 한 벌만 있어야 고칠 때
+        # 같이 읽힌다.
         #
-        # 그 폴백을 넣은 명분은 「스탭이 고쳐도 안 나간다」였는데, 이 시점의
-        # `guide_copy.py` 는 `_require_doctor` 로 **의사 전용**이라 스탭은 문구를
-        # 저장할 수조차 없었다. 명분이 처음부터 없었고, 뒤 작업(KEY-255)에서
-        # 정할 일을 앞당겨 근거로 적어 두어 **진짜 위험을 가렸다.**
-        doctor_copy = await self._doctor_copy(actor.hospital_id, visit.doctor_id, set_name)
+        # **넷을 나란히 돌린다.** 서로를 안 기다린다. 트랜잭션 밖이라 락 보유
+        # 시간과는 무관하고, 지연만 줄어든다.
+        caution_content, emergency_content, own_copies, common_copies = await asyncio.gather(
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.CAUTION),
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.EMERGENCY),
+            self._doctor_copies(actor.hospital_id, visit.doctor_id, prescription_set),
+            self._doctor_copies(actor.hospital_id, None, prescription_set),
+        )
+        # **담당 것이 의원 공통을 덮는다** — 뒤에 오는 쪽이 이긴다.
+        copies = {**common_copies, **own_copies}
 
         async with in_transaction() as connection:
             # Visit 행을 잠근 채로 중복을 확인하고 생성한다.
@@ -249,7 +255,13 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.MEDICATION,
-                generated_body=f"[합성 복약 안내]\n확정된 항목: {field_label}\n복약 지시에 따라 정해진 시간에 복용해 주세요.",
+                # **진료별 줄은 고쳐도 남는다.** 「확정된 항목」은 이 진료에서
+                # 판독으로 확정된 사실이라 설정에서 고칠 것이 아니다. 고치는
+                # 것은 그 아래 지도 문장이다.
+                generated_body=(
+                    f"[합성 복약 안내]\n확정된 항목: {field_label}\n"
+                    + copies.get(CautionSectionKey.MEDICATION, guide_defaults.MEDICATION)
+                ),
                 using_db=connection,
             )
             # 주의사항은 **두 갈래로 저장한다.** 예전에는 `caution` 한 줄에 응급
@@ -266,10 +278,9 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.CAUTION,
-                generated_body=(
-                    doctor_copy
-                    if doctor_copy is not None
-                    else (caution_content.body if caution_content else _CAUTION_FALLBACK)
+                generated_body=copies.get(
+                    CautionSectionKey.CAUTION,
+                    caution_content.body if caution_content else guide_defaults.CAUTION,
                 ),
                 drug_caution_content_id=(caution_content.drug_caution_content_id if caution_content else None),
                 using_db=connection,
@@ -278,7 +289,8 @@ class GuideService:
                 guide_document=guide,
                 section_key=GuideSectionKey.EMERGENCY,
                 # 🚨 승인된 세트별 응급 문장 또는 범용 폴백 — 사람이 고칠 수 없다(KEY-150, KEY-165).
-                generated_body=emergency_content.body if emergency_content else _EMERGENCY_FALLBACK,
+                # `copies` 를 보지 않는다 — 고칠 수 없는 글이다(KEY-150).
+                generated_body=emergency_content.body if emergency_content else guide_defaults.EMERGENCY,
                 drug_caution_content_id=(emergency_content.drug_caution_content_id if emergency_content else None),
                 locked=True,
                 using_db=connection,
@@ -286,7 +298,7 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.LIFE,
-                generated_body="처방 기간 중 음주는 피해 주세요. 충분한 수분 섭취와 규칙적인 수면을 유지해 주세요.",
+                generated_body=copies.get(CautionSectionKey.LIFE, guide_defaults.LIFE),
                 using_db=connection,
             )
             await GuideSection.create(
@@ -865,39 +877,54 @@ class GuideService:
     # ── 규칙 ────────────────────────────────────────────
 
     @staticmethod
-    async def _doctor_copy(hospital_id: int, doctor_id: int | None, set_name: str | None) -> str | None:
-        """이 진료의 담당 의사가 이 처방에 대해 고쳐 둔 주의사항 문구.
+    async def _doctor_copies(
+        hospital_id: int, doctor_id: int | None, prescription_set: PrescriptionSet | None
+    ) -> dict[CautionSectionKey, str]:
+        """이 의사가 이 처방에 대해 고쳐 둔 문구를 **갈래별로.**
 
-        없으면 `None` — 부르는 쪽이 세트별 승인 문구로, 그것도 없으면 범용
-        폴백으로 내려간다.
+        빈 사전이면 부르는 쪽이 세트별 승인 문구로, 그것도 없으면 기본 문구로
+        내려간다. 갈래마다 따로 내려간다 — 담당이 주의사항만 고치고 스탭이
+        복약지도만 고쳤으면 **둘 다 나가야 한다.**
 
-        **`caution` 하나만 본다.** `guide_copy.py` 의 `EDITABLE_SECTIONS` 가
-        그렇게 정해 두었다. `emergency` 는 `locked=True` 이고 사람이 못
-        고치는 글인데(KEY-150), 여기서 갈래를 넓혀 두면 나중에 그 표에 행이
-        생기는 날 **응급 문장이 조용히 바뀐다.** 고칠 수 있는 것만 읽는다.
+        **고칠 수 있는 갈래만 읽는다**(`guide_defaults.EDITABLE_SECTIONS`).
+        `emergency` 는 `locked=True` 로 사람이 못 고치는 글이라(KEY-150)
+        여기서 읽어 버리면 그 표에 행이 생기는 날 **응급 문장이 조용히
+        바뀐다.** 목록을 잎 모듈에 둔 까닭이 이것이다 — 설정이 넓힌 갈래를
+        생성이 안 따라가면 「고칠 수 있는데 안 나가는」 갈래가 생긴다.
 
-        **이름으로 세트를 찾는다.** `Prescription.prescription_set` 은
-        스냅샷 문자열이고(KEY-137) `DoctorGuideCopy` 는 세트를 번호로 가리켜
-        서다. `DrugCautionService.get_approved_content` 와 같은 길이다 —
-        한쪽만 다른 방식으로 찾으면 「승인 문구는 붙었는데 의사 문구는 안
-        붙는」 세트가 생긴다.
+        **세트는 부르는 쪽이 찾아 넘긴다.** `Prescription.prescription_set` 은
+        스냅샷 문자열이라(KEY-137) 이름으로 찾아야 하는데, 한 진료에서 이것을
+        담당·의원 공통으로 두 번 부르므로 안에서 찾으면 같은 `SELECT` 가
+        되풀이된다 (`#191` 리뷰, 2heej).
+
+        🚨 **`doctor_id` 에 `visit.doctor_id` 말고 다른 번호를 넣지 마라.**
+
+        여기서 읽은 글은 **담당 의사 이름으로 환자에게 나간다.** 한동안
+        「만든 사람」으로 내려가는 층이 있었다가 리뷰(2heej)에서 잡혔다 —
+        `generate()` 는 담당이 아니어도 같은 의원의 아무 의사·스탭이나 부를
+        수 있다. `_require_staff_or_doctor` 는 역할만 보고, 진료 조회도
+        `hospital_id` 로만 범위를 잡는다.
+
+            의사 B 가 세트 S 문구를 고쳐 둔다
+            담당 의사 A 는 S 를 고친 적이 없다
+            B 가 (담당이 아닌데) A 의 진료로 generate 를 부른다
+            → **B 가 쓴 글이 A 이름으로 환자에게 나간다**
+
+        `doctor_id=None` 은 그것과 다르다 — **의원 공통**을 뜻하고, 없다는
+        뜻이 아니다.
 
         트랜잭션 밖에서 읽는다. 락 보유 시간을 늘릴 이유가 없다.
         """
-        if not set_name or doctor_id is None:
-            return None
-
-        prescription_set = await PrescriptionSet.filter(name=set_name).first()
         if prescription_set is None:
-            return None
+            return {}
 
-        copy = await DoctorGuideCopy.filter(
+        rows = await DoctorGuideCopy.filter(
             hospital_id=hospital_id,
             doctor_id=doctor_id,
             prescription_set_id=prescription_set.prescription_set_id,
-            section_key=CautionSectionKey.CAUTION,
-        ).first()
-        return copy.body if copy else None
+            section_key__in=list(guide_defaults.EDITABLE_SECTIONS),
+        )
+        return {row.section_key: row.body for row in rows}
 
     @staticmethod
     def _require_staff_or_doctor(actor, subject: str = "안내 생성은") -> None:

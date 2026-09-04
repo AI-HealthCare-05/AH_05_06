@@ -90,47 +90,151 @@ test("**모르면 셈하지 않는다** — 지어낸 날짜로 예약하면 엉
 
 /* ── 화면 ───────────────────────────────────────────────────────────── */
 
-test("**처방 설정은 아직 아무도 못 고친다** — 표가 전 의원 공용이다", () => {
-  /* `prescription_set` 에는 `hospital_id` 가 없다 — 여덟 처방 유형을 모든
-     의원이 함께 쓴다. 역할(의사)만 보고 쓰기를 열었더니 어느 의원 의사든
-     다른 의원의 질환 분류 · 총투 해석 · 소진 예정일 셈법을 바꿀 수 있었다.
-     2heej 님이 `#183` 리뷰에서 찾아 주셨다.
-
-     **표를 가르기 전까지는 닫아 둔다.** 고칠 수 있는 것처럼 보이는 화면이
-     조용히 남의 의원 것을 바꾸는 것보다, 못 고치는 편이 낫다. */
+test("**설정은 스탭도 고친다** — 이름부터 일수까지", () => {
+  /* 한동안 아무도 못 고쳤다. 여러 의원이 한 표를 나눠 쓰는 모양이라 남의
+     의원 것까지 바뀌었기 때문이다(`#183` 리뷰). **의원 하나를 보는
+     프로그램**이라는 것이 정해지면서(2026-09-02 회의) 그 걱정이 범위 밖으로
+     갔고, 같은 회의에서 설정 수정을 스탭에게도 열었다. */
   const code = codeOnly(read("js/settings.js"));
 
-  /* 다른 설정(D2-4·D2-5)과 **다른 깃발**을 쓴다 — `canEdit` 을 같이 내리면
-     기준선과 문자 문구까지 못 고치게 된다 */
-  assert.match(code, /var canEditSet = false;/, "처방 전용 깃발이 없다");
-  assert.ok(
-    !/canEditSet = /.test(code.replace("var canEditSet = false;", "")),
-    "어딘가에서 다시 켠다 — 그러면 닫은 것이 아니다",
-  );
+  assert.doesNotMatch(code, /canEditSet/, "처방 전용 잠금이 남아 있다");
+  assert.match(code, /canEdit = \(me\.roles \|\| \[\]\)/, "역할에서 정하지 않는다");
 
-  /* 저장 단추가 잠긴다 */
   const at = code.indexOf('id="set-save"');
-  assert.notEqual(at, -1, "저장 단추 자리가 없다");
-  assert.match(code.slice(at, at + 160), /canEditSet \? "" : " disabled"/, "단추가 눌린다");
-
-  /* 왜 못 고치는지 말한다 — 잠긴 단추만 두면 고장으로 읽힌다.
-     「의사 계정만」이라 적으면 의사가 눌러 보고 안 되는 것으로 읽는다. */
-  assert.ok(
-    code.includes("모든 의원이 함께 쓰는 값이라 아직 고칠 수 없습니다"),
-    "왜 잠겼는지 안 말하거나, 의사면 된다고 잘못 말한다",
+  assert.notEqual(at, -1, "저장 단추가 없다");
+  /* 보내는 중에만 잠긴다(`busy`) — 역할로는 안 잠근다. */
+  assert.match(
+    code.slice(at, at + 160),
+    /canEdit && !busy \? "" : " disabled"/,
+    "단추가 늘 잠겨 있거나, 보내는 중에도 열려 있다",
   );
 
-  /* **부를 길이 아예 없어야 한다.** 단추만 잠그면 화면 하나가 바뀔 때 뚫린다 */
-  assert.ok(!code.includes("catalogApi.saveSet"), "아직 저장 API 를 부른다");
-  assert.ok(!/function save\(\)/.test(code), "저장 함수가 남아 있다");
+  assert.match(code, /catalogApi\s*\.saveSet/, "저장 API 를 안 부른다");
 
-  /* 서버에도 길이 없어야 한다 */
   const api = read("../app/catalog/api.py");
+  assert.match(api, /@catalog_router\.put\("\/prescription-sets/, "서버에 쓰기 경로가 없다");
+});
+
+test("**「의사 계정만」이라 적지 않는다** — 이제 사실이 아니다", () => {
+  const code = codeOnly(read("js/settings.js"));
+
   assert.ok(
-    !/@catalog_router\.put\("\/prescription-sets/.test(api),
-    "서버가 아직 쓰기를 연다 — 화면만 막으면 요청 하나로 뚫린다",
+    code.indexOf("의사 계정만 수정할 수 있습니다") === -1,
+    "스탭도 고치는데 못 고친다고 적혀 있다",
   );
-  assert.match(api, /@catalog_router\.get\("\/prescription-sets/, "읽기까지 걷으면 판독 화면이 못 고른다");
+  assert.ok(
+    code.indexOf("모든 의원이 함께 쓰는 값이라") === -1,
+    "의원 하나를 보는 프로그램인데 여러 의원 얘기가 남아 있다",
+  );
+});
+
+test("**다시 그리기 전에 화면에 적힌 것을 거둔다**", () => {
+  /* `render()` 는 판을 `picked` 로 되돌려 그린다. 그래서 아직 저장 안 한 값은
+     거두지 않으면 **소리 없이 사라진다.** 약을 한 줄 적고 「+ 약 추가」를
+     누르면 적은 것이 날아갔다 — 삭제에만 방어가 있었고 나머지에는 없었다.
+     사라지는 것이 가장 나쁘다: 저장이 성공했다고 뜨는데 값만 없다. */
+  const code = codeOnly(read("js/settings.js"));
+
+  assert.match(code, /function keepScreen\(\)/, "거두는 자리가 없다");
+
+  /* 다시 그리기 전에 거두어야 하는 네 자리 */
+  const beforeRender = [
+    ["#drug-add", /#drug-add"\)\) \{\s*keepScreen\(\);/],
+    ["data-drop", /data-drop\]"\);[\s\S]{0,80}?keepScreen\(\);/],
+    ["data-edit-copy", /editCopyAt\) \{\s*keepScreen\(\);/],
+    ["data-cancel-copy", /data-cancel-copy\]"\)\)[\s\S]{0,400}?keepScreen\(\);/],
+  ];
+  for (const [what, re] of beforeRender) {
+    assert.match(code, re, `${what} 가 화면 값을 안 거두고 다시 그린다`);
+  }
+
+  /* 거두는 것은 처방 판이 떠 있을 때뿐 — 기준선·문자 문구 화면에는 그 칸이
+     없어 그냥 부르면 null 을 읽는다. */
+  assert.match(code, /!picked \|\| !canEdit \|\| !el\("f-name"\)/, "거두기 전에 판이 떠 있는지 안 본다");
+});
+
+test("**화면이 부르는 이름으로 적는다** — 진단 · 대표 처방", () => {
+  /* 「이름」·「질환」이라 적혀 있었다. 「이름」은 무엇의 이름인지 안 말하고,
+     「질환」은 진료기록·판독 화면이 쓰는 말(「진단」)과 갈린다 — 같은 것을 두
+     말로 부르면 화면마다 다른 것으로 읽힌다. */
+  const code = codeOnly(read("js/settings.js"));
+
+  /* **8가지 세트는 「대표 처방」이고, 그 안의 약이 「처방」이다.**
+     진료기록에서 원외 처방된 약을 아래에 덧붙이는데, 그것들이 곧 처방이다.
+     세트는 그 처방들의 대표 꼴이라 이름이 갈려야 한다. */
+  assert.match(code, /"f-name",\s*"대표 처방"/, "이름 칸을 「대표 처방」이라 안 부른다");
+  assert.match(code, /fld__label">처방</, "약 목록을 「처방」이라 안 부른다");
+  assert.match(code, /"f-disease",\s*"진단"/, "진단 칸을 「질환」이라 부른다");
+
+  /* **절 이름도 현황·진료기록과 같아야 한다** — 거기서 이 한 쌍을
+     「진단 · 처방」이라 부른다. 화면마다 다른 말이면 같은 것을 두 가지로 배운다. */
+  assert.match(code, /box__title">진단 · 대표 처방</, "절 이름이 진료기록과 다르다");
+
+  /* **진단이 앞이다.** 진단이 처방을 고르는 기준이지 그 반대가 아니다. */
+  assert.ok(
+    code.indexOf('"f-disease"') < code.indexOf('"f-name"'),
+    "처방이 진단보다 앞에 그려진다 — 고르는 차례가 뒤집혔다",
+  );
+});
+
+test("**처방 이름은 잠근다** — 지난 진료기록이 그 이름으로 가리킨다", () => {
+  /* `Prescription.prescription_set` 은 스냅샷 문자열이고 서버가 그 문자열로
+     세트를 찾아 안내문 문구를 붙인다. 이름을 바꾸면 **기존 진료기록의 문구가
+     통째로 떨어져 나가고** 화면엔 아무 말도 안 뜬다. */
+  const code = codeOnly(read("js/settings.js"));
+
+  /* 보내지 않는다 — 서버는 `name` 을 아예 안 받아 400 으로 튕긴다.
+     담아 보내면 저장 전체가 죽는다. */
+  assert.ok(
+    !/name:\s*el\("f-name"\)/.test(code),
+    "아직 이름을 보낸다 — 저장이 통째로 400 이 된다",
+  );
+
+  /* 칸은 남긴다. 무엇을 고치는 중인지 보여야 하고, keepScreen() 이 이 칸을
+     탐침으로 쓴다 — 없애면 값 유실 버그가 되살아난다. */
+  assert.match(code, /"f-name",\s*"대표 처방"/, "이름 칸이 통째로 사라졌다");
+  assert.match(code, /locked \? " readonly"/, "잠금이 readonly 가 아니다");
+  assert.ok(
+    !/textHtml\(\s*"f-name"[\s\S]{0,300}?disabled/.test(code),
+    "disabled 로 잠갔다 — 이 화면에서 그것은 「권한이 없다」는 뜻이라 갈린다",
+  );
+
+  /* 까닭을 말한다. 힌트 없이 잠그면 「고장」으로 읽힌다. */
+  assert.match(code, /지난 진료기록이 이 이름으로 이 대표 처방을/, "왜 못 바꾸는지 화면이 말하지 않는다");
+});
+
+test("**목이 저장하면서 이름을 잃지 않는다**", () => {
+  /* 서버가 이름을 안 받으므로 보내는 판에 `name` 이 없다. 그대로 덮으면
+     목에서 이름 키가 사라져 상세 머리와 레일이 빈칸이 된다 — 목이라 CI 가
+     못 잡고 사람이 눌러 봐야 보인다. */
+  const code = codeOnly(read("js/catalog-api.js"));
+
+  assert.match(code, /var keptName = store\[i\]\.name;/, "덮기 전에 이름을 안 뜬다");
+  assert.match(code, /store\[i\]\.name = keptName;/, "덮은 뒤 이름을 안 되살린다");
+});
+
+test("**적용 시점 칸은 없애되 값은 잃지 않는다**", () => {
+  /* 「초회 처방 · 계속 복용 · 휴약기」는 처방 이름이 이미 담고 있다
+     (「비잔 (처음)」·「(계속)」). 칸을 없앴는데 저장할 때 안 보내면 서버가
+     막고, 기본값을 보내면 **저장할 때마다 조용히 되돌아간다.** */
+  const code = codeOnly(read("js/settings.js"));
+
+  assert.ok(code.indexOf('"f-phase"') === -1, "적용 시점 칸이 아직 그려진다");
+  assert.match(code, /phase: picked\.phase/, "있던 값을 안 싣는다 — 저장하면 사라진다");
+});
+
+test("**읽는 데 없는 칸은 화면에 두지 않는다** — 그 밖에", () => {
+  /* 「EMR 표시 코드」·「재진 안내」는 저장되고 되읽힐 뿐 **읽어서 쓰는 데가
+     한 곳도 없었다.** 그런데 도움말은 「이 코드가 기록된 진료를 안내 대상으로
+     인식합니다」라며 아직 없는 기능을 설명했다 — 적어 넣으면 무언가 달라질
+     줄 안다. 값과 컬럼은 남겼으니 되살릴 때 잃은 것이 없어야 한다. */
+  const code = codeOnly(read("js/settings.js"));
+
+  for (const gone of ['"f-emr"', '"f-revisit"', "그 밖에</h2>"]) {
+    assert.ok(code.indexOf(gone) === -1, `${gone} 가 아직 화면에 있다`);
+  }
+  assert.match(code, /emr_code: picked\.emr_code/, "있던 값을 안 싣는다 — 저장하면 지워진다");
+  assert.match(code, /revisit_note: picked\.revisit_note/, "있던 값을 안 싣는다 — 저장하면 지워진다");
 });
 
 test("**한 판을 통째로 보낸다** — 조각으로 보내면 반쪽이 남는다", () => {
@@ -187,4 +291,42 @@ test("고른 처방을 실제로 불러온다 — 안 넣으면 늘 빈 화면�
   assert.match(body, /picked = data;/, "받아서 화면에 안 넣는다");
   /* 늦게 온 답이 다른 처방 화면에 붙으면 안 된다 */
   assert.match(body, /mine !== loadSeq/, "차례를 안 본다");
+});
+
+/* ── `#192` 리뷰 반영 ────────────────────────────────────────────────── */
+
+test("**목도 스탭의 저장을 받는다** — 서버는 여는데 목만 막으면 목이 거짓말한다", async () => {
+  const box = load("api", "settings-rail", "field-labels", "catalog-api");
+  box.MOCK = true;
+  box.sessionStorage.setItem("mockUser", "staff01");
+
+  const sets = await box.catalogApi.sets();
+  const id = sets[0].prescription_set_id;
+
+  /* 2026-09-02 회의에서 설정 수정을 스탭에게 열었고 서버는
+     `require_patient_read` 로 바뀌었는데, 목만 의사를 요구한 채 남아 있었다
+     (`#192` 리뷰 ④). 목으로 보면 스탭이 403 을 맞았다. */
+  const saved = await box.catalogApi.saveSet(id, { days_mode: "DAYS", days: 30 });
+
+  assert.strictEqual(saved.prescription_set_id, id, "스탭이 저장했는데 안 돌아왔다");
+});
+
+test("**저장이 매번 전체를 다시 받지 않는다** — 새로 만들 때만 받는다", () => {
+  /* `save()` 는 IIFE 안이라 밖에서 못 부른다 — 원본을 본다.
+
+     예전에는 저장할 때마다 세트 전체와 문구 전체를 무조건 다시 받았다.
+     칸 하나 고칠 때마다 두 번의 왕복이 더 있었다 (`#192` 리뷰 ⑥). */
+  const code = codeOnly(read("js/settings.js"));
+  const at = code.indexOf("function save()");
+  assert.ok(at >= 0, "save() 를 못 찾았다 — 검사가 헛돈다");
+
+  const next = code.slice(at + 10).search(/\n {2}function \w/);
+  const body = next < 0 ? code.slice(at) : code.slice(at, at + 10 + next);
+
+  const reload = body.indexOf("Promise.all([loadSets(), loadCopy()])");
+  assert.ok(reload >= 0, "다시 받는 줄이 아예 없다 — 새로 만들면 목록에 안 뜬다");
+
+  const guard = body.indexOf("if (!createdNew) return;");
+  assert.ok(guard >= 0, "무조건 다시 받는다 — 새로 만들 때만 받아야 한다");
+  assert.ok(guard < reload, "가드가 다시 받는 줄보다 뒤에 있다 — 소용이 없다");
 });

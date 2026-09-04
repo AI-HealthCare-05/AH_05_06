@@ -76,18 +76,45 @@ test("**묶음 머리는 접힘을 화면 낭독기에도 알린다**", () => {
   assert.match(src, /aria-expanded="/, "aria-expanded 가 없으면 낭독기는 늘 펼쳐진 줄로 읽는다");
 });
 
-test("**펼친 묶음은 하나다** — 넷 다 펼치면 「기타」가 화면 밖으로 밀린다", () => {
-  /* 원문 D2-3 주석: 「9개가 늘 다 펼쳐져 있으면 왼쪽이 길어져 「그 밖에」가
-     화면 밖으로 밀린다」. 실측으로도 넷 다 937px vs 보이는 높이 689px 이다. */
+test("**펼친 묶음은 여럿일 수 있다** — 누른 것만 뒤집는다", () => {
+  /* 한동안 하나만 열리게 두었다. 원문 D2-3 주석이 「9개가 늘 다 펼쳐져 있으면
+     왼쪽이 길어져 「그 밖에」가 화면 밖으로 밀린다」고 적었고, 실측도 넷 다
+     937px vs 보이는 높이 689px 이었다.
+
+     **그 셈의 전제가 바뀌었다.** 안내문 묶음을 처방 안으로 넣으면서 묶음이
+     넷에서 둘로 줄었다. 둘 다 펴도 「기타」가 안 밀린다.
+
+     그리고 하나만 열리는 것이 걸리적거렸다 — 다낭성을 펴면 자궁내막증이 닫혀
+     두 묶음을 견주려면 접었다 폈다를 되풀이해야 했다. */
   const src = codeOnly(read("js/settings.js"));
-  assert.match(src, /var opened = null;/, "펼친 것을 여럿 담고 있다");
-  assert.match(src, /opened = opened === key \? null : key/, "아코디언이 아니다");
+
+  assert.match(src, /var opened = \{\};/, "펼친 것을 하나만 담는다");
+  assert.match(src, /if \(opened\[key\]\) delete opened\[key\];/, "누른 것을 못 닫는다");
+  assert.ok(
+    !/opened = opened === key/.test(src),
+    "아직 아코디언이다 — 다른 묶음이 같이 닫힌다",
+  );
+
+  /* 처방을 고르면 그 묶음이 펴지되 **다른 묶음은 그대로**여야 한다. */
+  assert.match(
+    src,
+    /opened\[railFoldKey\("sets", chose\)\] = true;/,
+    "처방을 고르면 다른 묶음이 닫힌다",
+  );
 });
 
-test("**갈래가 열쇠에 들어 있다** — 두 갈래에 같은 질환이 있다", () => {
+test("**레일은 처방 하나로 선다** — 안내문 묶음을 따로 두지 않는다", () => {
+  /* 같은 처방을 두 번 오가야 했다 — 「비잔 (계속)」의 약을 보다가 그 문구를
+     고치려면 위쪽 안내문 묶음에서 「비잔 (계속)」을 다시 찾아야 했다.
+
+     **둘의 열쇠가 같은 처방 세트다.** 안내문은 처방과 처방일수로 만들어지므로
+     문구는 그 처방의 한 속성이고, 나무를 둘로 세우면 같은 것을 두 번 세운
+     셈이 된다. */
   const src = codeOnly(read("js/settings.js"));
-  assert.match(src, /railFoldKey\("guide"/, "안내문 쪽이 갈래를 안 담는다");
+
   assert.match(src, /railFoldKey\("sets"/, "처방 쪽이 갈래를 안 담는다");
+  assert.doesNotMatch(src, /railFoldKey\("guide"/, "안내문 묶음이 아직 남아 있다");
+  assert.doesNotMatch(src, /data-copy-set/, "안내문 줄을 아직 그린다");
 });
 
 test("**여닫을 때 레일을 다시 안 그린다** — 화살표 회전과 키보드 초점이 사라진다", () => {
@@ -106,11 +133,26 @@ test("**접힌 자식을 지우지 않고 감춘다** — 가리킬 것이 없�
   assert.match(body, /open \? "" : " hidden"/, "접힐 때 노드를 지운다");
 });
 
-test("**처방을 고르면 안내문 고름을 놓는다** — 두 곳이 동시에 굵으면 안 된다", () => {
+test("**고르는 자리가 하나다** — 두 곳이 동시에 굵을 수 없다", () => {
+  /* `copyPick` 과 `pickedId` 두 상태가 있었다. 갈래가 하나가 되면서 고름도
+     하나다 — 상태를 남겨 두면 언젠가 둘이 어긋난다. */
   const src = codeOnly(read("js/settings.js"));
-  const pick = src.slice(src.indexOf('target.closest("[data-set]")'));
-  const body = pick.slice(0, pick.indexOf("return loadSet"));
-  assert.match(body, /copyPick = null/, "처방으로 옮기면서 안내문 고름을 안 놓는다");
+
+  assert.doesNotMatch(src, /copyPick/, "안내문 전용 고름 상태가 남아 있다");
+  assert.match(src, /pickedId = id/, "처방 고름이 없다");
+});
+
+test("**처방을 고르면 그 문구도 함께 받는다** — 자리가 비어 있으면 안 된다", () => {
+  /* 문구는 처방과 **다른 API** 로 온다(`guide-copy`). 처방만 받아 오면
+     상세 맨 아래 문구 자리가 계속 「불러오는 중」이다. */
+  const src = codeOnly(read("js/settings.js"));
+  /* `loadSets`(목록)가 아니라 `loadSet(`(한 장)이다 — 앞엣것이 먼저 잡혀
+     엉뚱한 자리를 보고 있었다. */
+  const at = src.indexOf("function loadSet(id)");
+  assert.notEqual(at, -1, "처방 한 장을 여는 자리가 없다");
+  const body = src.slice(at, src.indexOf("catalogApi", at));
+
+  assert.match(body, /if \(!copy\) loadCopy\(\)/, "문구를 안 받아 온다");
 });
 
 test("**갈래를 옮겨도 안내문 목록은 안 버린다** — 레일의 진도와 ✓ 가 거기서 나온다", () => {
