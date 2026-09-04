@@ -102,7 +102,7 @@ test("질환으로 묶되 받은 차례를 지킨다", () => {
   const { copyByDisease } = rules();
 
   const blocks = copyByDisease([
-    a_set({ prescription_set_id: 4, disease: "PCOS", name: "PCOS · 초진" }),
+    a_set({ prescription_set_id: 4, disease: "PCOS", name: "PCOS · 야즈 (처음)" }),
     a_set({ prescription_set_id: 1 }),
   ]);
 
