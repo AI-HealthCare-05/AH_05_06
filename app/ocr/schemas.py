@@ -96,6 +96,19 @@ class UpdateOcrFieldRequest(StrictModel):
         return self
 
 
+class PrescriptionItemResponse(StrictModel):
+    prescription_item_id: int
+    name: str
+    frequency: str
+    duration_days: int | None = None
+
+
+class FinalizeOcrResponse(StrictModel):
+    prescription_id: int
+    prescription_set: str
+    items: list[PrescriptionItemResponse]
+
+
 class WriteOcrFieldRequest(StrictModel):
     """판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
 

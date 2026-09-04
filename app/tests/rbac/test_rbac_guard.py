@@ -11,7 +11,7 @@ KEY-21이 만들어야 하는 것
     def has_permission(roles: Iterable[str], permission: Permission | str) -> bool
 
 `has_permission`은 **순수 함수**여야 한다 — DB도 요청 객체도 건드리지 않는다.
-그래야 91가지 조합을 DB 없이 돌릴 수 있고, 판정 규칙이 한 곳에 모인다.
+그래야 65가지 조합을 DB 없이 돌릴 수 있고, 판정 규칙이 한 곳에 모인다.
 FastAPI 의존성은 이 함수를 감싸기만 한다.
 
 엔드포인트에서 실제로 403이 나오는지는 엔드포인트가 생긴 뒤에 붙인다.
@@ -47,7 +47,7 @@ class TestContract:
 @pytest.mark.parametrize("permission", sorted(Permission), ids=lambda p: p.value)
 @pytest.mark.parametrize("roles", VALID_COMBINATIONS, ids=label)
 class TestEveryCombination:
-    """7개 조합 × 13개 권한 = 91가지를 전수로 확인한다.
+    """5개 조합 × 13개 권한 = 65가지를 전수로 확인한다.
 
     표를 눈으로 읽는 대신 전부 돌린다. 권한이 늘어도 검사가 저절로 따라 늘어난다.
     """

@@ -32,6 +32,8 @@ GUIDE_FIELDS = {
     "sections",
     "visit",
     "clinic",
+    # OTP 인증한 뷰어에게만 실린다(KEY-268). 인증 전 응답에는 없다.
+    "patient_name",
     "disease",
     "stat",
     "guide",

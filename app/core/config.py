@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import uuid
 import zoneinfo
 from dataclasses import field
@@ -10,11 +11,30 @@ from pydantic import field_validator, model_validator
 from pydantic.types import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.logger import default_logger
+from app.core.utils.narrow_gate import is_flag_env_value_true
+
 
 class Env(StrEnum):
     LOCAL = "local"
     DEV = "dev"
     PROD = "prod"
+
+
+# Pilot 좁은문 (KEY-264) — KEY-200(SEED_ALLOW_PROD)과 같은 패턴.
+# 환경변수 하나만으로는 안 열린다: .env에 적어두면 배포 때마다 영구히 켜지기
+# 때문에, 실행할 때마다 넣어야 하는 CLI 플래그를 같이 요구한다.
+PILOT_ALLOW_MOCK_OTP_ENV = "PILOT_ALLOW_MOCK_OTP"
+PILOT_ALLOW_MOCK_OTP_FLAG = "--pilot-confirm-mock-otp"
+
+
+def pilot_mock_otp_gate_open() -> bool:
+    """PILOT_ALLOW_MOCK_OTP 환경변수와 --pilot-confirm-mock-otp 플래그가
+    둘 다 있어야 True. Config가 아니라 os.environ, sys.argv를 직접 본다.
+    """
+    has_env = is_flag_env_value_true(os.environ.get(PILOT_ALLOW_MOCK_OTP_ENV))
+    has_flag = PILOT_ALLOW_MOCK_OTP_FLAG in sys.argv[1:]
+    return has_env and has_flag
 
 
 class SmsProvider(StrEnum):
@@ -136,9 +156,19 @@ class Config(BaseSettings):
     @model_validator(mode="after")
     def _mock_otp_code_is_non_prod_only(self) -> "Config":
         if self.MOCK_OTP_CODE and self.ENV is Env.PROD:
+            if pilot_mock_otp_gate_open():
+                # 감사로그: 좁은문이 열린 채로 부팅했다는 사실만 남긴다.
+                # OTP 값, 토큰 원문은 남기지 않는다.
+                default_logger.warning(
+                    "MOCK_OTP_CODE 좁은문 열림 (ENV=prod, %s + %s) — Pilot 전용 (KEY-264)",
+                    PILOT_ALLOW_MOCK_OTP_ENV,
+                    PILOT_ALLOW_MOCK_OTP_FLAG,
+                )
+                return self
             raise ValueError(
                 f"MOCK_OTP_CODE는 prod 환경에서 사용할 수 없습니다 (ENV={self.ENV.value}). "
-                "운영에서 고정 OTP를 허용하면 누구나 인증을 우회한다 (KEY-219)."
+                "운영에서 고정 OTP를 허용하면 누구나 인증을 우회한다 (KEY-219). "
+                f"Pilot이면 {PILOT_ALLOW_MOCK_OTP_ENV}=1과 {PILOT_ALLOW_MOCK_OTP_FLAG}가 둘 다 필요하다 (KEY-264)."
             )
         return self
 

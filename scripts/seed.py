@@ -8,7 +8,7 @@
 
 옵션:
     --mode empty   아무것도 적재하지 않음 (S1-1 빈 화면 확인용)
-    --mode staff   직원 계정 17개와 병원 2개만 적재 (기본값)
+    --mode staff   직원 계정 15개와 병원 2개만 적재 (기본값)
     --mode full    직원 + 환자·진료 데이터 전체 적재
 
 전제:
@@ -48,6 +48,7 @@ from tortoise.timezone import now  # noqa: E402
 from app.core.config import Config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.common import normalize_phone_number  # noqa: E402
+from app.core.utils.narrow_gate import is_flag_env_value_true  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
 from app.models.catalog import (  # noqa: E402
     ApprovalStatus,
@@ -99,9 +100,9 @@ SEED_PASSWORD_ENV = "SEED_STAFF_PASSWORD"
 #: `os.environ` 만 보면 그 길이 막힌다 — 명령줄에 그때그때 적어야만 켜진다.
 SEED_ALLOW_PROD_ENV = "SEED_ALLOW_PROD"
 
-#: 정확히 이 둘만 켠다. `yes` · `Y` · `2` · `true ` 는 안 켜진다 — 「대충 참으로
-#: 보이는 값」을 받아 주면 오타가 운영 DB 를 여는 열쇠가 된다.
-SEED_ALLOW_PROD_TRUE = frozenset({"1", "true"})
+#: 정확히 `1` · `true` 만 켠다 (`yes` · `Y` · `2` · `true ` 는 안 켜진다 —
+#: 「대충 참으로 보이는 값」을 받아 주면 오타가 운영 DB 를 여는 열쇠가 된다).
+#: 값 집합은 app/core/utils/narrow_gate.py 에 하나만 둔다(KEY-264 가 같이 쓴다).
 
 #: **환경변수만으로는 안 연다 — 이 인자가 함께 있어야 한다** (가드레일 ① 개정,
 #: 이희진 님 2026-08-28 결정 · 한금준 님 `#158` 제안).
@@ -241,7 +242,7 @@ def _prod_override_granted() -> bool:
     한 곳만 빠뜨려도 그 자리가 조용히 열린다.
     """
     raw = os.environ.get(SEED_ALLOW_PROD_ENV)
-    from_env = raw is not None and raw.strip().lower() in SEED_ALLOW_PROD_TRUE
+    from_env = is_flag_env_value_true(raw)
     from_argv = SEED_ALLOW_PROD_ARGV in sys.argv[1:]
     return from_env and from_argv
 
