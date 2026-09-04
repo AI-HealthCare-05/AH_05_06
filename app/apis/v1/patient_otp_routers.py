@@ -6,7 +6,7 @@ from fastapi import APIRouter, Cookie, Depends, Query, Response, status
 from redis.asyncio import Redis
 
 from app.core import config
-from app.core.config import Env
+from app.core.config import Env, pilot_mock_otp_gate_open
 from app.core.redis_client import get_redis
 from app.dependencies.patient_auth import PATIENT_SESSION_COOKIE_NAME
 from app.dtos.patient_otp import (
@@ -34,7 +34,9 @@ patient_otp_router = APIRouter(prefix="/patient-auth/otp", tags=["patient-auth"]
 
 
 def _otp_service() -> PatientOtpService:
-    if config.ENV is not Env.PROD and config.MOCK_OTP_CODE:
+    # prod에서는 KEY-264 좁은문이 열렸을 때만 고정 OTP를 허용한다.
+    prod_allowed = config.ENV is not Env.PROD or pilot_mock_otp_gate_open()
+    if config.MOCK_OTP_CODE and prod_allowed:
         return PatientOtpService(
             MockOtpDelivery(),
             fixed_otp_code=config.MOCK_OTP_CODE,

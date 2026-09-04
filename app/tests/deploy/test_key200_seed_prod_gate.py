@@ -368,11 +368,15 @@ class TestTheRunbookSaysWhatTheCodeDoes:
         assert "~/project/.env" in section, "4-3 절이 서버 쪽 `.env` 를 안 짚는다"
 
     def test_the_runbook_lists_the_values_that_actually_work(self) -> None:
-        """적어 둔 값과 코드가 받는 값이 같아야 한다."""
-        section = self._section()
-        seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
+        """적어 둔 값과 코드가 받는 값이 같아야 한다.
 
-        line = next(ln for ln in seed.splitlines() if "SEED_ALLOW_PROD_TRUE = " in ln)
+        값 집합은 이제 app/core/utils/narrow_gate.py 에 하나만 있다(KEY-264
+        리뷰 반영) — seed.py 는 그 값을 그대로 가져다 쓴다.
+        """
+        section = self._section()
+        narrow_gate = (ROOT / "app" / "core" / "utils" / "narrow_gate.py").read_text(encoding="utf-8")
+
+        line = next(ln for ln in narrow_gate.splitlines() if "TRUE_VALUES = " in ln)
         accepted = {piece.strip().strip("\"'") for piece in line.split("{", 1)[1].rstrip("})").split(",")}
 
         assert accepted == {"1", "true"}, f"코드가 받는 값이 바뀌었다 — {accepted}"

@@ -35,6 +35,7 @@ var MOCK_GUIDES = {
     expires_at: '2026-09-04T09:00:00+09:00',
     visit: '2026.08.13',
     clinic: '여성의원',
+    patient_name: '김서연',
     disease: '자궁내막증 · 비잔정 복용 중',
     stat: {
       drugName: '비잔정 2mg',
@@ -102,6 +103,7 @@ var MOCK_GUIDES = {
     expires_at: '2026-09-04T09:00:00+09:00',
     visit: '2026.08.13',
     clinic: '여성의원',
+    patient_name: '이지우',
     disease: '다낭성난소증후군 · 야즈정 복용 중',
     stat: { drugName: '야즈정', drugSub: '성분 · 드로스피레논 · 에티닐에스트라디올 · 1일 1회 · 84일분', prescribed: 84, dayOn: 12, remaining: 72, pct: 14 },
     guide: {
@@ -348,7 +350,7 @@ function mapChat(value) {
 }
 
 function adaptGuideResponse(payload) {
-  var rootFields = ['approved_at', 'care', 'chat', 'clinic', 'demo_only', 'disease', 'expires_at', 'guide', 'life', 'sections', 'stat', 'version', 'visit'];
+  var rootFields = ['approved_at', 'care', 'chat', 'clinic', 'demo_only', 'disease', 'expires_at', 'guide', 'life', 'patient_name', 'sections', 'stat', 'version', 'visit'];
   var required = ['approved_at', 'demo_only', 'expires_at', 'sections', 'version'];
   if (!validKeys(payload, rootFields, required) || typeof payload.version !== 'number' || payload.demo_only !== true) {
     throw new GuideError(GUIDE_ERROR.CONTRACT);
@@ -359,7 +361,8 @@ function adaptGuideResponse(payload) {
   var medication = sections.medication || '';
   var disease = safeText(payload.disease);
   return {
-    visit: displayVisit(payload.visit), clinic: safeText(payload.clinic), patient: '', disease: disease,
+    // 서버가 OTP 인증한 뷰어에게만 patient_name 을 실어 준다(KEY-268). 없으면 ''.
+    visit: displayVisit(payload.visit), clinic: safeText(payload.clinic), patient: safeText(payload.patient_name), disease: disease,
     approvedAt: approvedDate, expiresAt: payload.expires_at,
     stat: mapStat(payload.stat, medication),
     guide: mapGuide(payload.guide, medication),

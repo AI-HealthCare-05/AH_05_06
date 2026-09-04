@@ -2,9 +2,9 @@
 
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
-from app.dependencies.patient_auth import require_patient_session
+from app.dependencies.patient_auth import optional_patient_session, require_patient_session
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.checkins import (
     CheckInAnswerContent,
@@ -73,6 +73,8 @@ def _patient_response(
     link: PatientGuideLink,
     guide: GuideDocument,
     data: PatientGuideData,
+    *,
+    verified: bool,
 ) -> PatientGuideResponse:
     if guide.approved_at is None:
         # 서비스가 앞에서 막아야 하는 불변식이다. 최적화 모드에서 사라지는
@@ -170,6 +172,8 @@ def _patient_response(
         ],
         visit=data.visit_date.strftime("%Y.%m.%d"),
         clinic=data.clinic_name,
+        # OTP 인증한 뷰어에게만 이름을 실어 준다. 링크만 전달받은 사람에게는 생략된다 — KEY-268.
+        patient_name=data.patient_name if verified else None,
         disease=data.disease_name,
         stat=stat,
         guide=guide_detail,
@@ -185,16 +189,22 @@ def _patient_response(
 )
 async def read_patient_guide(
     token: str,
+    response: Response,
     service: Annotated[PatientLinkService, Depends(_service)],
     usage: Annotated[PatientUsageService, Depends(_usage_service)],
+    verified: Annotated[bool, Depends(optional_patient_session)],
 ) -> PatientGuideResponse:
+    # OTP 세션 쿠키 유무로 patient_name 포함 여부가 갈린다(KEY-268). 캐시에
+    # 인증 시점 응답이 남으면 로그아웃·세션 만료 뒤에도 이름이 재사용될 수
+    # 있어 매번 no-store 로 답한다(기술 리드 리뷰, PR #211).
+    response.headers["Cache-Control"] = "no-store"
     link, guide, data = await service.get_patient_guide_data(token)
     # 승인 확인을 통과한 뒤에 남긴다 (KEY-170).
     # 지금은 **같은 요청 안에서** 남기므로, 기록이 실패하면 열람도 실패한다.
     # 통계가 환자의 안내 열람을 막는 모양이라 KEY-95·KEY-96 에서 챗봇 호출부가
     # 붙을 때 분리 여부를 다시 본다.
     await usage.record_guide_view(guide.guide_document_id)
-    return _patient_response(link, guide, data)
+    return _patient_response(link, guide, data, verified=verified)
 
 
 @patient_guide_router.post("/{token}/views", status_code=204)

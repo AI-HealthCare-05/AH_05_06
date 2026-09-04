@@ -104,6 +104,8 @@ class PatientGuideResponse(StrictModel):
     sections: list[PatientGuideSectionResponse]
     visit: str | None = None
     clinic: str | None = None
+    # OTP 인증한 뷰어에게만 전체 이름을 채운다. 인증 전에는 생략한다 — KEY-268 / KEY-94.
+    patient_name: str | None = None
     disease: str | None = None
     stat: PatientMedicationStatResponse | None = None
     guide: PatientGuideDetailResponse | None = None

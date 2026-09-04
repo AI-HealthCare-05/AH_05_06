@@ -517,6 +517,37 @@ smoke 가 ⑤ 에서 제출하면 fixture 가 **소진된다** — 제출 기록
 `seed.py` 는 전부 `get_or_create` 라 같은 명령을 여러 번 돌려도 쌓이지 않는다.
 비밀번호를 바꾸고 다시 돌리면 직원 계정의 비밀번호가 갱신된다.
 
+## 4-3-1. Pilot 고정 OTP 좁은문 (KEY-264)
+
+Pilot은 `ENV=prod`로 뜨기 때문에 KEY-219 가드가 기본적으로 `MOCK_OTP_CODE`를
+막는다. 아래 둘 다 있어야 Pilot에서 고정 OTP(`000000`)를 쓸 수 있다.
+
+```text
+PILOT_ALLOW_MOCK_OTP=1     환경변수
+--pilot-confirm-mock-otp   실행 플래그
+```
+
+하나만 있으면 예전과 동일하게 부팅이 막힌다 — `SEED_ALLOW_PROD`(4-3절)와 같은
+이유다.
+
+```bash
+PILOT_ALLOW_MOCK_OTP=1 docker compose \
+  -f infra/docker/docker-compose.prod.yml \
+  -f infra/docker/docker-compose.pilot.yml \
+  up -d --build fastapi
+```
+
+좁은문이 열렸는지는 fastapi 컨테이너 로그에서 확인한다.
+
+```text
+MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm-mock-otp) — Pilot 전용 (KEY-264)
+```
+
+일반 운영 배포에는 `docker-compose.pilot.yml`을 절대 함께 주지 않는다.
+
+Aligo 어댑터(KEY-248)를 `OtpDelivery`에 실배선하는 작업은 이 티켓 범위 밖이다
+— 후속 티켓으로 남긴다.
+
 ## 4-4. 시연 전 재프로비저닝 — 한 번에 따라가는 순서 (KEY-203)
 
 **시연 당일에 읽는 절이다.** 위의 3·4·4-2·4-3 은 각각 「무엇을 할 수 있는가」를

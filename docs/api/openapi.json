@@ -3213,6 +3213,17 @@
               }
             ]
           },
+          "patient_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patient Name"
+          },
           "sections": {
             "items": {
               "$ref": "#/components/schemas/PatientGuideSectionResponse"
@@ -6543,6 +6554,22 @@
             "schema": {
               "title": "Token",
               "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "patient_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patient Session"
             }
           }
         ],
