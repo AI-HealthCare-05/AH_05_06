@@ -1000,6 +1000,33 @@
         "title": "DrugCatalogSaveRequest",
         "type": "object"
       },
+      "FinalizeOcrResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrescriptionItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "prescription_id": {
+            "title": "Prescription Id",
+            "type": "integer"
+          },
+          "prescription_set": {
+            "title": "Prescription Set",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prescription_id",
+          "prescription_set",
+          "items"
+        ],
+        "title": "FinalizeOcrResponse",
+        "type": "object"
+      },
       "FrontDeskVisitItem": {
         "properties": {
           "age": {
@@ -4030,6 +4057,41 @@
           }
         },
         "title": "PatientUpdateRequest",
+        "type": "object"
+      },
+      "PrescriptionItemResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Days"
+          },
+          "frequency": {
+            "title": "Frequency",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prescription_item_id": {
+            "title": "Prescription Item Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prescription_item_id",
+          "name",
+          "frequency"
+        ],
+        "title": "PrescriptionItemResponse",
         "type": "object"
       },
       "PrescriptionSetCreateRequest": {
@@ -9456,6 +9518,55 @@
           }
         ],
         "summary": "Write Ocr Field",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/ocr-finalize": {
+      "post": {
+        "description": "확정된 OCR 필드에서 처방 정보를 구조화 저장한다.\n\n모든 OCR 필드가 확정된 상태여야 한다. 이미 처방이 있으면 재확정으로 덮어쓴다.",
+        "operationId": "finalize_ocr_api_v1_visits__visit_id__ocr_finalize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizeOcrResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Finalize Ocr",
         "tags": [
           "ocr"
         ]

@@ -17,14 +17,18 @@ from app.models.ocr import (
     OcrJobStatus,
     OcrResult,
 )
+from app.models.prescriptions import AS_NEEDED, Prescription, PrescriptionItem
+from app.models.visits import Visit
 from app.ocr.errors import OcrApiError
 from app.ocr.schemas import (
+    FinalizeOcrResponse,
     OcrCandidateResponse,
     OcrDocumentResponse,
     OcrFieldResponse,
     OcrJobByDocumentResponse,
     OcrJobResponse,
     OcrResultResponse,
+    PrescriptionItemResponse,
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor
@@ -54,6 +58,28 @@ class OcrRepository(Protocol):
     ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]: ...
 
     async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
+
+    async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription: ...
+
+
+def _collect_item_rows(
+    fields_by_type: dict[str, "OcrField"],
+) -> list[tuple[str, str, int | None]]:
+    rows: list[tuple[str, str, int | None]] = []
+    for suffix in ("", "_2", "_3", "_4", "_5"):
+        med_field = fields_by_type.get(f"MEDICATION_NAME{suffix}")
+        if med_field is None or not med_field.value:
+            continue
+        freq_field = fields_by_type.get(f"FREQUENCY{suffix}")
+        frequency = freq_field.value if freq_field is not None and freq_field.value else ""
+        dur_field = fields_by_type.get(f"DURATION_DAYS{suffix}")
+        duration_days: int | None = None
+        if frequency != AS_NEEDED and dur_field is not None and dur_field.value:
+            digits = "".join(ch for ch in dur_field.value if ch.isdigit())
+            if digits:
+                duration_days = int(digits)
+        rows.append((med_field.value, frequency, duration_days))
+    return rows
 
 
 def _not_found() -> OcrApiError:
@@ -258,6 +284,97 @@ class TortoiseOcrRepository:
             await job.save(update_fields=("excluded_from_guide",))
         return job
 
+    async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription:
+        # GuideService.generate()와 동일한 기준으로 job을 선택한다.
+        # excluded된 job이나 COMPLETED가 아닌 job으로 처방을 만드는 것을 막는다.
+        job = (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                hospital_id=actor.hospital_id,
+                excluded_from_guide=False,
+                status=OcrJobStatus.COMPLETED,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if job is None:
+            raise _not_found()
+
+        result = await OcrResult.filter(ocr_job_id=job.ocr_job_id).prefetch_related("fields").first()
+        if result is None:
+            raise _not_found()
+
+        fields_by_type: dict[str, OcrField] = {f.field_type: f for f in result.fields}
+
+        if not fields_by_type:
+            raise OcrApiError(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "OCR_NOT_CONFIRMED",
+                "확정된 OCR 항목이 없습니다.",
+            )
+
+        unconfirmed = next((f for f in result.fields if not f.is_confirmed), None)
+        if unconfirmed is not None:
+            raise OcrApiError(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "OCR_NOT_CONFIRMED",
+                "확정되지 않은 OCR 항목이 있습니다. 모든 항목을 먼저 확정해 주세요.",
+            )
+
+        ps_field = fields_by_type.get("PRESCRIPTION_SET")
+        if ps_field is None or not ps_field.value:
+            raise OcrApiError(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "MISSING_PRESCRIPTION_SET",
+                "처방 세트(PRESCRIPTION_SET) 필드가 없습니다.",
+            )
+
+        freq_field = fields_by_type.get("FREQUENCY")
+        if freq_field is None or not freq_field.value:
+            raise OcrApiError(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "MISSING_FREQUENCY",
+                "복용법(FREQUENCY) 필드가 없습니다.",
+            )
+
+        item_rows = _collect_item_rows(fields_by_type)
+
+        async with in_transaction() as connection:
+            # Visit 행을 먼저 잠가서 동시 finalize를 직렬화한다.
+            # select_for_update()는 매칭 행이 없으면 락을 걸지 못하므로
+            # 항상 존재하는 Visit을 진입점으로 쓴다 (guides.py 동일 패턴).
+            if (
+                await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            ) is None:
+                raise _not_found()
+
+            prescription = await Prescription.filter(visit_id=visit_id).using_db(connection).first()
+            if prescription is None:
+                prescription = await Prescription.create(
+                    visit_id=visit_id,
+                    prescription_set=ps_field.value,
+                    using_db=connection,
+                )
+            else:
+                prescription.prescription_set = ps_field.value
+                await prescription.save(update_fields=("prescription_set",), using_db=connection)
+
+            await PrescriptionItem.filter(prescription_id=prescription.prescription_id).using_db(connection).delete()
+            for name, frequency, duration_days in item_rows:
+                await PrescriptionItem.create(
+                    prescription=prescription,
+                    name=name,
+                    frequency=frequency,
+                    duration_days=duration_days,
+                    using_db=connection,
+                )
+
+        await prescription.fetch_related("items")
+        return prescription
+
 
 def serialize_job(job: OcrJob) -> OcrJobResponse:
     return OcrJobResponse(
@@ -457,3 +574,20 @@ class OcrService:
         """잘못 올린 문서의 job을 안내 생성에서 제외한다 — 멱등 처리."""
         job = await self.repository.exclude_job(ocr_job_id, actor)
         return serialize_job(job)
+
+    async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> FinalizeOcrResponse:
+        """확정된 OcrField에서 Prescription·PrescriptionItem을 생성하거나 재확정한다."""
+        prescription = await self.repository.finalize_ocr(visit_id, actor)
+        return FinalizeOcrResponse(
+            prescription_id=prescription.prescription_id,
+            prescription_set=prescription.prescription_set,
+            items=[
+                PrescriptionItemResponse(
+                    prescription_item_id=item.prescription_item_id,
+                    name=item.name,
+                    frequency=item.frequency,
+                    duration_days=item.duration_days,
+                )
+                for item in prescription.items
+            ],
+        )
