@@ -1,0 +1,50 @@
+[
+  {
+    "page": "checkin.html",
+    "action": "sheet__back",
+    "disposition": "follow_up",
+    "evidence": "D+7 체크인 시트의 뒤로 버튼에 현재 핸들러나 이동 경로가 없다"
+  },
+  {
+    "page": "patients.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "doctor.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "ocr-review.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "manage.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "settings.html",
+    "action": "notifications",
+    "disposition": "wp_f_handoff",
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+  },
+  {
+    "page": "patients.html",
+    "action": "open-settings",
+    "disposition": "follow_up",
+    "evidence": "설정 이동 버튼에 현재 핸들러나 링크가 없다"
+  },
+  {
+    "page": "settings.html",
+    "action": "logout",
+    "disposition": "follow_up",
+    "evidence": "설정 화면의 로그아웃 버튼은 shell.js를 싣지 않고 settings.js에도 핸들러가 없다"
+  }
+]

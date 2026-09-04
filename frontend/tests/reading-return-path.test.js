@@ -29,36 +29,24 @@ test("환자 화면에는 그 판이 없다 — 같은 칸에 두 화면이 되�
   assert.ok(!html.includes('id="panel-record"'), "업로드 판이 남아 있다");
   assert.ok(!html.includes("/js/upload.js"), "없어진 파일을 아직 싣는다");
 
-  /* 탭 단추는 그대로 있어야 한다 — 다섯 칸이 보여야 어디까지 왔는지 읽힌다 */
-  assert.ok(html.includes('data-tab="record"'), "진료기록 칸이 화면에서 사라졌다");
+  /* 탭 단추는 공용 모듈이 그린다 — 다섯 칸의 정본에서 진료기록이 살아 있어야 한다. */
+  const { VISIT_STEPS } = load("api", "session", "patients-api", "step-nav");
+  assert.ok(VISIT_STEPS.some((step) => step.key === "record"), "진료기록 칸이 공용 단계에서 사라졌다");
 });
 
 test("**그 칸을 누르면 판독 화면으로 간다**", () => {
   const code = codeOnly(read("js/detail.js"));
-
-  const at = code.indexOf("var AWAY");
-  assert.notEqual(at, -1, "다른 화면에 사는 칸을 모른다");
-  assert.match(code.slice(at, at + 200), /record:\s*"\/ocr-review\.html"/, "갈 곳이 없다");
-
-  /* `showTab` 이 먼저 보내야 한다 — TABS 검사에 먼저 걸리면 조용히 돌아간다 */
-  const show = code.indexOf("function showTab");
-  const body = code.slice(show, code.indexOf("\n  }", show));
-  assert.ok(body.indexOf("AWAY[name]") !== -1, "showTab 이 다른 화면으로 안 보낸다");
-  assert.ok(
-    body.indexOf("AWAY[name]") < body.indexOf("TABS.indexOf"),
-    "TABS 검사가 먼저다 — 모르는 이름으로 보고 조용히 돌아간다",
-  );
+  const at = code.indexOf('el("tabs").addEventListener');
+  assert.notEqual(at, -1, "단계 클릭을 받는 자리가 없다");
+  const body = code.slice(at, at + 700);
+  assert.match(body, /getAttribute\("data-href"\)/, "공용 모듈이 만든 이동 주소를 읽지 않는다");
+  assert.match(body, /location\.href\s*=\s*href/, "다른 화면으로 이동하지 않는다");
 });
 
 test("**그 진료를 달고 간다** — 안 달면 도착한 화면이 다른 환자를 연다", () => {
-  const code = codeOnly(read("js/detail.js"));
-  const at = code.indexOf("function goAway");
-  assert.notEqual(at, -1, "보내는 자리가 없다");
-
-  const body = code.slice(at, code.indexOf("\n  }", at));
-  assert.match(body, /visit=/, "진료를 안 달고 간다");
-  assert.match(body, /encodeURIComponent\(row\.visit_id\)/, "진료 번호를 안 싣는다");
-  assert.match(body, /if \(!row/, "고른 환자가 없을 때도 간다");
+  const { stepsHtml } = load("api", "session", "patients-api", "step-nav");
+  const rendered = stepsHtml("basic", "/patients.html", 37);
+  assert.match(rendered, /data-tab="record"[^>]*data-href="\/ocr-review\.html\?visit=37&amp;tab=record"/);
 });
 
 /* ── 날짜를 잃지 않는다 ─────────────────────────────────────────────── */
