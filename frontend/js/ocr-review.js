@@ -442,6 +442,71 @@ function stateTakesFocus(tone) {
      fetch 로 직접 받은 뒤 Blob URL 을 생성해 img 에 할당한다. */
   var _docViewBlobUrl = null;
 
+  function _openLightbox(src) {
+    var prevFocus = document.activeElement;
+
+    var overlay = document.createElement("div");
+    overlay.className = "doc-lightbox";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "문서 원본 확대");
+    overlay.tabIndex = -1;
+
+    var img = document.createElement("img");
+    img.className = "doc-lightbox__img";
+    img.src = src;
+    img.alt = "문서 미리보기 확대";
+    overlay.appendChild(img);
+
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "doc-lightbox__close";
+    closeBtn.setAttribute("aria-label", "닫기");
+    closeBtn.textContent = "✕";
+    overlay.appendChild(closeBtn);
+
+    document.body.appendChild(overlay);
+    closeBtn.focus();
+
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
+    }
+
+    closeBtn.addEventListener("click", close);
+
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+
+    function getFocusable() {
+      return Array.from(
+        overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      ).filter(function (el) { return !el.disabled; });
+    }
+
+    function onKey(e) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+        return;
+      }
+      if (e.key === "Tab") {
+        var focusable = getFocusable();
+        if (!focusable.length) { e.preventDefault(); return; }
+        var first = focusable[0];
+        var last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+        } else {
+          if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      }
+    }
+    document.addEventListener("keydown", onKey);
+  }
+
   function renderDocView() {
     if (!docView) return;
     if (!activeDoc) {
@@ -472,7 +537,22 @@ function stateTakesFocus(tone) {
         if (activeDoc !== requestedDoc) return;
         _docViewBlobUrl = URL.createObjectURL(blob);
         if (docView) {
-          docView.innerHTML = '<img class="doc-view__img" src="' + _docViewBlobUrl + '" alt="문서 미리보기">';
+          docView.innerHTML =
+            '<img class="doc-view__img" src="' +
+            _docViewBlobUrl +
+            '" alt="문서 미리보기" tabindex="0">';
+          var img = docView.querySelector(".doc-view__img");
+          if (img) {
+            img.addEventListener("click", function () {
+              _openLightbox(_docViewBlobUrl);
+            });
+            img.addEventListener("keydown", function (e) {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                _openLightbox(_docViewBlobUrl);
+              }
+            });
+          }
         }
       })
       .catch(function () {
