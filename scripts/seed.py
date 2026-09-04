@@ -49,7 +49,13 @@ from app.core.config import Config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
 from app.core.utils.common import normalize_phone_number  # noqa: E402
 from app.core.utils.security import hash_password  # noqa: E402
-from app.models.catalog import ApprovalStatus, CautionSectionKey, DrugCautionContent, PrescriptionSet  # noqa: E402
+from app.models.catalog import (  # noqa: E402
+    ApprovalStatus,
+    CautionSectionKey,
+    DrugCatalog,
+    DrugCautionContent,
+    PrescriptionSet,
+)
 from app.models.patients import Patient  # noqa: E402
 from app.models.prescriptions import Prescription, PrescriptionItem  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
@@ -615,6 +621,17 @@ async def seed_catalog() -> None:
         created_contents += 1
 
     print(f"[catalog] drug_caution_content created={created_contents} skipped={skipped_contents}")
+
+    # ── 의원이 쓰는 약 ───────────────────────────────────────────────
+    # 대표 처방에 약을 적을 때 여기서 고른다. **표기를 판독·CSV 쪽에 맞춘다**
+    # — 실제로 들어오는 값이 그쪽이라, 나중에 이름으로 이어 붙일 여지를 남긴다.
+    for name, frequency, note in (
+        ("비잔정(디에노게스트) 2mg", "1일 1회", "매일 같은 시간"),
+        ("야즈정(드로스피레논/에티닐에스트라디올)", "1일 1회", "매일 같은 시간"),
+        ("메트포르민 500mg", "1일 2회", "식후"),
+        ("진통제", "필요시", None),
+    ):
+        await DrugCatalog.get_or_create(name=name, defaults={"frequency": frequency, "note": note})
 
 
 async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:

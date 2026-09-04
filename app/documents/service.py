@@ -3,6 +3,7 @@ from pathlib import PurePath
 from uuid import uuid4
 
 from fastapi import UploadFile, status
+from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
 from app.core import config, default_logger
@@ -73,9 +74,18 @@ class DocumentUploadService:
             try:
                 await get_redis().rpush(OCR_JOB_QUEUE, ocr_job_id)  # type: ignore[misc]
             except Exception:
-                # 큐 push 실패는 업로드 응답을 막지 않는다 — job은 PROCESSING으로 남고
-                # Worker 재시작 또는 재시도 정책이 복구한다.
+                # reconciliation·재시도 없이 즉시 FAILED — 숨긴 실패보다 명시적 실패가 안전하다 (KEY-188)
                 default_logger.exception("OCR 큐 enqueue 실패 — ocr_job_id=%s", ocr_job_id)
+                await OcrJob.filter(ocr_job_id=ocr_job_id).update(
+                    status=OcrJobStatus.FAILED,
+                    failure_code="QUEUE_ERROR",
+                    completed_at=now(),
+                )
+                return DocumentUploadResponse(
+                    document_ids=document_ids,
+                    ocr_job_id=ocr_job_id,
+                    status=OcrJobStatus.FAILED,
+                )
 
         return DocumentUploadResponse(
             document_ids=document_ids,

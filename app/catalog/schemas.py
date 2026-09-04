@@ -137,3 +137,70 @@ class PrescriptionSetCreateRequest(StrictModel):
 
     name: str = Field(max_length=100)
     disease: SetDisease
+
+
+class DrugCatalogItem(StrictModel):
+    """의원이 쓰는 약 하나 — 설정의 「처방」 묶음."""
+
+    drug_catalog_id: int
+    name: str
+    frequency: str | None = None
+    note: str | None = None
+
+    #: 감춘 약인가. **「없다」가 아니라 「새로 고를 목록에 안 뜬다」**는 뜻이다.
+    hidden: bool = False
+
+
+class DrugCatalogCreateRequest(StrictModel):
+    """새 약 등록 — **이름은 여기서 한 번만 정한다.**
+
+    한 번 등록한 이름은 못 바꾼다. 대표 처방 세트에 **문자열로** 박혀 나가기
+    때문이다 — 여기서 고치면 이미 저장된 세트의 약과 짝이 갈린다.
+    잘못 지었으면 감추고 새로 등록한다.
+
+    길이는 `SetDrug` 와 같은 값이다. 다르면 **고른 이름이 세트에 저장될 때
+    잘린다.**
+    """
+
+    name: str = Field(max_length=100)
+    frequency: str | None = Field(default=None, max_length=50)
+    note: str | None = Field(default=None, max_length=200)
+
+    #: **저장 전에 감추기를 누른 줄**도 그 뜻이 남아야 한다. 예전에는 이 칸이
+    #: 없어서, 아직 등록 안 된 줄에서 감추기를 눌러도 등록은 그냥 보이는
+    #: 상태로 됐고 **사용자는 알 길이 없었다** (`#197` 리뷰, 2heej).
+    hidden: bool = False
+
+
+class DrugCatalogSaveRequest(StrictModel):
+    """등록된 약 고치기 — **이름은 안 받는다.**
+
+    감춤도 여기서 함께 받는다. 대표 처방은 감추기를 따로 뒀는데(`/hide`),
+    이 표는 고칠 것이 두 칸뿐이라 종점을 하나 더 두는 것이 의식(儀式)이 된다.
+    """
+
+    #: **제작 중에만 받는다.** 다 만들고 나면 이름은 못 바꾼다 — 대표 처방
+    #: 세트에 문자열로 박혀 나가서, 여기서 고치면 짝이 갈린다.
+    #: 잠긴 뒤에는 이 칸을 담아 보내면 `409 CATALOG_LOCKED` 로 튕긴다.
+    name: str | None = Field(default=None, max_length=100)
+    frequency: str | None = Field(default=None, max_length=50)
+    note: str | None = Field(default=None, max_length=200)
+
+    #: 🚨 **안 보내면 안 건드린다.** 예전에는 기본값이 `False` 였다 — 지금
+    #: 화면은 늘 명시해서 안 걸렸지만, `hidden` 을 빼고 부르는 다음 호출자가
+    #: 생기면 **감춘 약이 조용히 되살아난다** (`#197` 리뷰, 2heej).
+    #: 나머지 셋과 같이 「안 보냄 = 그대로」로 맞춘다.
+    hidden: bool | None = None
+
+
+class DrugCatalogPage(StrictModel):
+    """약 목록 한 판.
+
+    **제작 중인지도 함께 준다.** 화면이 그것을 상수로 들고 있으면 서버와
+    갈린다 — 열어 둔 화면이 잠긴 서버에 이름을 보내면 409 가 나고, 사용자는
+    까닭을 모른다.
+    """
+
+    #: 제작 중이면 이름을 고치고 지울 수 있다. 배포에서는 꺼진다.
+    draft: bool
+    items: list[DrugCatalogItem]
