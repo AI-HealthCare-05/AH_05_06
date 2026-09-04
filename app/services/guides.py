@@ -211,9 +211,25 @@ class GuideService:
         #
         # **넷을 나란히 돌린다.** 서로를 안 기다린다. 트랜잭션 밖이라 락 보유
         # 시간과는 무관하고, 지연만 줄어든다.
-        caution_content, emergency_content, own_copies, common_copies = await asyncio.gather(
+        # **네 갈래 다 승인 원본을 묻는다** (KEY-265).
+        #
+        # 한동안 `caution`·`emergency` 둘만 물었다. 그래서 설정 화면이
+        # `guide_copy.py` 로 보여 주는 「원본」과 실제로 나가는 글이 **갈렸다** —
+        # 복약지도·생활지도는 세트별 승인 문구가 있어도 안 읽혀서, 화면은
+        # 정본을 「원본」이라 보이는데 환자에게는 기본 한 줄이 나갔다.
+        # `guide_defaults` 주석이 경고한 바로 그 모양이다.
+        (
+            medication_content,
+            caution_content,
+            emergency_content,
+            life_content,
+            own_copies,
+            common_copies,
+        ) = await asyncio.gather(
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.MEDICATION),
             DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.CAUTION),
             DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.EMERGENCY),
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.LIFE),
             self._doctor_copies(actor.hospital_id, visit.doctor_id, prescription_set),
             self._doctor_copies(actor.hospital_id, None, prescription_set),
         )
@@ -258,10 +274,18 @@ class GuideService:
                 # **진료별 줄은 고쳐도 남는다.** 「확정된 항목」은 이 진료에서
                 # 판독으로 확정된 사실이라 설정에서 고칠 것이 아니다. 고치는
                 # 것은 그 아래 지도 문장이다.
+                # **「[합성 …]」 접두를 뗐다** (KEY-265). 원장님이 2026-09-04 에
+                # 복약지도 정본을 승인하셨는데, 그 글이 「[합성 복약 안내]」로
+                # 시작해 환자에게 나가고 있었다. 접두는 씨앗 문구가 지어낸
+                # 것임을 표시하려고 붙은 것이라, 정본이 들어온 지금은 틀린 말이다.
                 generated_body=(
-                    f"[합성 복약 안내]\n확정된 항목: {field_label}\n"
-                    + copies.get(CautionSectionKey.MEDICATION, guide_defaults.MEDICATION)
+                    f"확정된 항목: {field_label}\n"
+                    + copies.get(
+                        CautionSectionKey.MEDICATION,
+                        medication_content.body if medication_content else guide_defaults.MEDICATION,
+                    )
                 ),
+                drug_caution_content_id=(medication_content.drug_caution_content_id if medication_content else None),
                 using_db=connection,
             )
             # 주의사항은 **두 갈래로 저장한다.** 예전에는 `caution` 한 줄에 응급
@@ -298,7 +322,11 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.LIFE,
-                generated_body=copies.get(CautionSectionKey.LIFE, guide_defaults.LIFE),
+                generated_body=copies.get(
+                    CautionSectionKey.LIFE,
+                    life_content.body if life_content else guide_defaults.LIFE,
+                ),
+                drug_caution_content_id=(life_content.drug_caution_content_id if life_content else None),
                 using_db=connection,
             )
             await GuideSection.create(
