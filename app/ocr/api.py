@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 
 from app.models.documents import MedicalDocument
 from app.ocr.schemas import (
+    FinalizeOcrResponse,
     OcrFieldResponse,
     OcrJobByDocumentResponse,
     OcrJobResponse,
@@ -73,6 +74,19 @@ async def get_ocr_fields(
     field_type: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
 ) -> list[OcrFieldResponse]:
     return await ocr.fields(ocr_job_id, actor, field_type)
+
+
+@ocr_router.post("/visits/{visit_id}/ocr-finalize", response_model=FinalizeOcrResponse)
+async def finalize_ocr(
+    visit_id: Annotated[int, Path(gt=0)],
+    actor: Annotated[OcrActor, Depends(get_ocr_actor)],
+    ocr: Annotated[OcrService, Depends(get_ocr_service)],
+) -> FinalizeOcrResponse:
+    """확정된 OCR 필드에서 처방 정보를 구조화 저장한다.
+
+    모든 OCR 필드가 확정된 상태여야 한다. 이미 처방이 있으면 재확정으로 덮어쓴다.
+    """
+    return await ocr.finalize_ocr(visit_id, actor)
 
 
 @ocr_router.put("/visits/{visit_id}/ocr-fields/{field_type}", response_model=OcrFieldResponse | None)
