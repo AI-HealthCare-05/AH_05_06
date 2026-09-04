@@ -256,7 +256,11 @@ test("아직 없는 묶음은 **없다고 적는다** — 빈 자리는 무엇�
   assert.ok(RAIL_GROUPS.length >= 3, "그 밖의 묶음이 없다");
   for (const group of RAIL_GROUPS) {
     assert.ok(group.title, `${group.key} 에 이름이 없다`);
-    assert.ok(group.note, `${group.key} 에 어느 프레임인지 안 적혀 있다`);
+    /* `note` 는 **원문 프레임 번호**다. 원문에 없던 판(약 목록)은 비어 있고,
+       그 사실 자체가 「이건 우리가 더한 것」이라는 표시다. */
+    if (group.key !== "drugs") {
+      assert.ok(group.note, `${group.key} 에 어느 프레임인지 안 적혀 있다`);
+    }
     assert.ok(group.saying, `${group.key} 에 무엇이 없는지 안 적혀 있다`);
   }
 });
