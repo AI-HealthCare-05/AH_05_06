@@ -4,7 +4,8 @@
  *
  * 실제 경로는 KEY-90 개발용 링크 토큰을 사용한다. 아래 목업은 화면 정본을
  * 서버 없이 확인할 때만 사용한다.
- * 주소에 ?mock=1 을 붙이면 켜지고 한 번 켜면 그 탭에서 유지된다 — js/api.js 와 같은 방식이다.
+ * localhost/file 주소에 ?mock=1 을 붙이면 켜지고 한 번 켜면 그 탭에서 유지된다.
+ * 배포/Pilot 호스트에서는 저장된 값이 있어도 항상 꺼진다.
  *
  * 환자는 원문 의료문서를 볼 수 없다. 이 응답에는 승인된 안내 문구와
  * 처방·검사 값만 담기고 업로드 원본이나 OCR 원문은 담기지 않는다(KEY-94 가 검사한다).
@@ -20,6 +21,13 @@ var GUIDE_ERROR = {
 
 var GUIDE_MOCK = (function () {
   try {
+    var host = String(window.location.hostname || "").toLowerCase();
+    var local =
+      window.location.protocol === "file:" ||
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "[::1]";
+    if (!local) return false;
     var q = new URLSearchParams(window.location.search);
     if (q.has("mock")) {
       sessionStorage.setItem("guide_mock", q.get("mock") === "0" ? "0" : "1");

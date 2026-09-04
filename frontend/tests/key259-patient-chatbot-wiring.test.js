@@ -15,7 +15,7 @@ function loadTransport(search = '?mock=1') {
     URLSearchParams,
     Promise,
     String,
-    window: { location: { search } },
+    window: { location: { search, hostname: 'localhost', protocol: 'http:' } },
     setTimeout: (callback, _delay, ...args) => setTimeout(callback, 0, ...args),
   });
   vm.runInContext(read('js/chatbot-api.js'), context);
