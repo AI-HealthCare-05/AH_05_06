@@ -307,7 +307,7 @@ class TortoiseOcrRepository:
         ps_field = fields_by_type.get("PRESCRIPTION_SET")
         if ps_field is None or not ps_field.value:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "MISSING_PRESCRIPTION_SET",
                 "처방 세트(PRESCRIPTION_SET) 필드가 없습니다.",
             )
