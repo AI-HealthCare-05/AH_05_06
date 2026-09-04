@@ -30,7 +30,7 @@ body {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
-  top: 0;
+  top: var(--guide-mock-offset, 0px);
   z-index: 40;
 }
 .header__top {
@@ -722,15 +722,16 @@ b { font-weight: 700; }
 
 /* ── 실제 API 로딩·빈 값·오류 상태 (KEY-241) ─── */
 .guide-mock-badge {
-  display: inline-flex;
-  width: fit-content;
-  margin: 0 0 8px;
-  padding: 3px 9px;
-  border-radius: var(--r-pill);
-  background: #fff3cd;
-  color: #6b4d00;
-  font-size: 12px;
+  position: fixed;
+  z-index: 10000;
+  inset: 0 0 auto;
+  padding: 8px 16px;
+  background: #7a2e00;
+  color: #fff;
+  text-align: center;
+  font-size: 14px;
   font-weight: 700;
+  pointer-events: none;
 }
 .guide-loading,
 .guide-empty,
