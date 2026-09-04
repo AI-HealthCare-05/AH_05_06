@@ -5,10 +5,10 @@
  *   PUT  /api/v1/prescription-sets/{id}                   저장 — 진단·약·일수 (이름은 못 바꾼다)
  *
  * **목록과 상세를 가른다.** 목록에 상세를 다 실으면 고르는 칸 하나 그리려고
- * 여덟 세트의 약·문구를 전부 받아 온다.
+ * 세트마다 약·문구를 전부 받아 온다 — 세트는 의사가 만드는 만큼 늘어난다.
  */
-/* 확인 항목은 **처방이 정한다**(와이어프레임 S1-6 「처방별」). 지금은 여덟
-   세트 모두 다섯을 여쭙는다 — 서버 씨앗과 같은 값이다. 어느 처방에 무엇을
+/* 확인 항목은 **처방이 정한다**(와이어프레임 S1-6 「처방별」). 지금은 씨앗
+   넷 모두 다섯을 여쭙는다 — 서버 씨앗과 같은 값이다. 어느 처방에 무엇을
    여쭐지는 의사가 설정(D2-3)에서 정하고, 그때 이 목업도 따라가야 한다. */
 var MOCK_CHECK_ITEMS = [
   "DEPRESSION",
@@ -18,6 +18,12 @@ var MOCK_CHECK_ITEMS = [
   "PREGNANCY_PLAN",
 ];
 
+/* **대표 처방 넷** (KEY-262, 팀 회의 결정). 질환 둘 × 처음·계속이다.
+   여덟이던 것을 줄이면서, 나머지 다섯이 가리키던 진료 25 건은 각자의
+   「처음」으로 옮겼다 — `docs/data/synthetic-patients.csv`.
+
+   서버 픽스처(`app/tests/fixtures/catalog.py`)와 **같은 넷**이어야 한다.
+   갈라지면 목에서 고르던 처방이 서버에 없다. */
 var MOCK_PRESCRIPTION_SETS = [
   {
     prescription_set_id: 1,
@@ -33,49 +39,25 @@ var MOCK_PRESCRIPTION_SETS = [
   },
   {
     prescription_set_id: 3,
-    name: "자궁내막증 · 통증관리",
-    check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "진통제", frequency: "필요시", note: "통증이 있을 때만" }],
-  },
-  {
-    prescription_set_id: 4,
-    name: "PCOS · 초진",
+    name: "PCOS · 야즈 (처음)",
     check_items: MOCK_CHECK_ITEMS,
     days_mode: "PACK",
     days_per_pack: 28,
-    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" },
-      { name: "진통제", frequency: "필요시" }],
-  },
-  {
-    prescription_set_id: 5,
-    name: "PCOS · 초진 (야즈 불가)",
-    check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
-  },
-  {
-    prescription_set_id: 6,
-    name: "PCOS · 야즈 (계속)",
-    check_items: MOCK_CHECK_ITEMS,
     drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
   {
-    prescription_set_id: 7,
-    name: "PCOS · 야즈 + 메트포르민",
+    prescription_set_id: 4,
+    name: "PCOS · 야즈 (계속)",
     check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" },
-      { name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
-  },
-  {
-    prescription_set_id: 8,
-    name: "PCOS · 대사관리",
-    check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "메트포르민 500mg", frequency: "1일 2회", note: "아침 · 저녁 식후" }],
+    days_mode: "PACK",
+    days_per_pack: 28,
+    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
 ];
 
 var catalogApi = {
   sets: function () {
-    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 여덟만 훑으면 새로 만든 처방이
+    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 넷만 훑으면 새로 만든 처방이
        레일에 안 나타난다 — 목업에서만 나는 차이라 CI 가 못 잡는다. */
     if (MOCK) return Promise.resolve(mockSetStore().map(mockSetListRow));
     return request("/prescription-sets");
@@ -294,7 +276,7 @@ function mockSetListRow(row) {
        처방으로 저장된 진료를 다시 열 때 확인 항목이 이름으로 안 찾아진다.
        거르는 것은 판독 확인의 **고르는 칸** 하나뿐이다. */
     hidden: mine ? !!mine.hidden : false,
-    /* 레일이 질환으로 묶는다 — 상세를 받아야 알 수 있게 두면 여덟 번 다녀온다 */
+    /* 레일이 질환으로 묶는다 — 상세를 받아야 알 수 있게 두면 세트 수만큼 다녀온다 */
     disease: mine ? mine.disease : "ENDOMETRIOSIS",
     check_items: mine ? mine.check_items.slice() : [],
     /* 판독 화면이 처방을 고르는 순간 약 목록을 세운다 — 확인 항목과 같은
@@ -798,7 +780,7 @@ function mockCopyPage() {
         editable: key !== "emergency",
       };
     }),
-    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 여덟만 훑으면 새로 만든 처방이
+    /* **판을 훑는다, 씨앗이 아니라.** 씨앗 넷만 훑으면 새로 만든 처방이
        문구 목록에 없어, 만든 직후 안내문 절이 통째로 안 보인다 — 목업에서만
        나는 차이라 CI 가 못 잡는다. `sets()` 에서도 같은 자리를 고쳤다. */
     items: mockSetStore().map(function (row) {

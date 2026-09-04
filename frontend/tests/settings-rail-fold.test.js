@@ -190,9 +190,9 @@ test("**묶음 안에서는 되풀이되는 앞머리를 뗀다** — 「자궁�
 test("**앞머리가 코드로 붙은 것도 뗀다** — 실제 DB 가 그렇다", () => {
   const { railSetName } = rules();
   /* 다낭성난소증후군 묶음의 이름은 「PCOS · 」로 시작한다 — 묶음 이름이
-     아니라 질환 **코드**다. 이름으로만 자르면 다섯 줄이 그대로 남는다. */
+     아니라 질환 **코드**다. 이름으로만 자르면 그 묶음이 통째로 남는다. */
   const block = { key: "PCOS", title: "다낭성난소증후군" };
-  assert.equal(railSetName(block, "PCOS · 야즈 + 메트포르민"), "야즈 + 메트포르민");
+  assert.equal(railSetName(block, "PCOS · 야즈 (계속)"), "야즈 (계속)");
   assert.equal(railSetName(block, "다낭성난소증후군 · 야즈"), "야즈");
 });
 
@@ -214,7 +214,7 @@ test("**벗기면 빈 줄이 되는 이름은 그대로 둔다** — 이름 없�
   assert.equal(railSetName(block, "PCOS · "), "PCOS · ");
   /* 사이 공백이 없으면 앞머리가 아니다 */
   assert.equal(railSetName(block, "PCOS·초진"), "PCOS·초진");
-  assert.equal(railSetName(null, "PCOS · 초진"), "PCOS · 초진");
+  assert.equal(railSetName(null, "PCOS · 야즈 (처음)"), "PCOS · 야즈 (처음)");
 });
 
 /* ── 묶음 열쇠 ────────────────────────────────────────────────────── */
