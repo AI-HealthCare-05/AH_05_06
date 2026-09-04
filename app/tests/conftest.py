@@ -18,6 +18,10 @@ TEST_BASE_URL = "http://test"
 TEST_DB_LABEL = "models"
 TEST_DB_TZ = "Asia/Seoul"
 
+#: Redis 논리 DB는 0~15, 16개뿐이다. 이보다 많은 워커가 뜨면 `% 16`으로
+#: 조용히 겹치게 두지 않고 아래 `initialize`에서 바로 실패시킨다.
+REDIS_LOGICAL_DB_COUNT = 16
+
 
 def _xdist_worker_index() -> int | None:
     """pytest-xdist 워커 번호. xdist 없이 돌면 `None`(기존 동작 그대로).
@@ -62,9 +66,16 @@ def get_test_db_config() -> dict[str, Any]:
 def initialize(request: FixtureRequest) -> Generator[None, None]:
     worker_index = _xdist_worker_index()
     if worker_index is not None:
-        # Redis 는 논리 DB가 16개(0~15)뿐이라 워커 수가 그보다 많아지면 겹친다 —
-        # `-n auto` 는 러너 코어 수만큼만 띄우므로 지금 CI 규모에서는 안전하다.
-        config.REDIS_DB = worker_index % 16
+        if worker_index >= REDIS_LOGICAL_DB_COUNT:
+            # `% 16`으로 감싸면 17번째 워커부터 남의 세션·로그인시도 카운터를
+            # 조용히 밟는다 — 시간이 지나 CI 러너 코어가 늘면 재발할 수 있는
+            # 자리라, 겹치게 두지 않고 여기서 바로 죽인다(한금준 님 리뷰).
+            raise RuntimeError(
+                f"pytest-xdist 워커가 {REDIS_LOGICAL_DB_COUNT}개를 넘었다(gw{worker_index}) — "
+                f"Redis 논리 DB는 0~{REDIS_LOGICAL_DB_COUNT - 1}뿐이라 그 이상은 워커끼리 겹친다. "
+                f"`-n {REDIS_LOGICAL_DB_COUNT}` 이하로 낮춰서 돌려라."
+            )
+        config.REDIS_DB = worker_index
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
