@@ -36,7 +36,8 @@ from tortoise.transactions import in_transaction
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, call_clova_ocr
 from ai_worker.core import config, default_logger
-from ai_worker.tasks.field_extractor import ExtractedField, extract_fields
+from ai_worker.tasks.field_extractor import ExtractedField, build_lab_keywords, extract_fields
+from app.models.catalog import LabBaseline
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentText,
@@ -93,6 +94,10 @@ async def process_ocr_job(ocr_job_id: str) -> None:
     medical_docs = await MedicalDocument.filter(document_id__in=document_ids).all()
     doc_map = {doc.document_id: doc for doc in medical_docs}
 
+    # 병원 맞춤 판독 키워드 로드 — EMR 표기 편차(DHEA-S/DHEAS 등)를 판독에 반영한다(KEY-245)
+    baselines = await LabBaseline.filter(hospital_id=job.hospital_id).all()
+    lab_kw = build_lab_keywords(baselines)
+
     if config.clova_enabled:
         retry_count = 0
         partial_results: dict[int, ClovaOcrResult] = {}
@@ -100,7 +105,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
             try:
                 clova_results = await _call_clova_for_documents(job_documents, doc_map, partial_results)
                 clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
-                missing = await _save_clova_result(job, job_documents, clova_results)
+                missing = await _save_clova_result(job, job_documents, clova_results, lab_kw)
                 if missing:
                     # **작업은 성공이다.** 못 읽은 항목은 빈 줄로 남아 있고, 화면이
                     # 그 자리를 물음표로 세워 사람이 채운다. 판독은 거들 뿐이라,
@@ -212,6 +217,7 @@ async def _call_clova_for_documents(
 def _extract_fields_per_doc(
     job_documents: list[OcrJobDocument],
     clova_results: dict[int, ClovaOcrResult],
+    lab_keywords: dict[str, list[str]] | None = None,
 ) -> tuple[list[tuple[OcrJobDocument, list[ExtractedField]]], set[str], bool]:
     """문서별로 필드를 추출해 (fields_by_doc, emr_field_types, has_emr)을 반환한다.
 
@@ -227,7 +233,7 @@ def _extract_fields_per_doc(
         clova_result = clova_results.get(jd.document_id)
         if clova_result is None:
             continue
-        fields = extract_fields(clova_result, doc_type)
+        fields = extract_fields(clova_result, doc_type, lab_keywords)
         fields_by_doc.append((jd, fields))
         if doc_type == OcrDocumentType.EMR:
             emr_field_types.update(f.field_type for f in fields)
@@ -238,6 +244,7 @@ async def _save_clova_result(
     job: OcrJob,
     job_documents: list[OcrJobDocument],
     clova_results: dict[int, ClovaOcrResult],
+    lab_keywords: dict[str, list[str]] | None = None,
 ) -> set[str]:
     """CLOVA 결과를 OcrResult / OcrDocumentText / OcrField로 트랜잭션 안에 저장한다.
 
@@ -260,7 +267,7 @@ async def _save_clova_result(
     안 실린다(`is_confirmed=False`).
     """
     # Phase 1: 필드 추출 — 트랜잭션 밖에서 수행해 불필요한 롤백 방지
-    fields_by_doc, emr_field_types, has_emr = _extract_fields_per_doc(job_documents, clova_results)
+    fields_by_doc, emr_field_types, has_emr = _extract_fields_per_doc(job_documents, clova_results, lab_keywords)
 
     # Phase 2: EMR이 포함된 경우 못 읽은 필수 필드를 센다 (KEY-163 §4)
     #

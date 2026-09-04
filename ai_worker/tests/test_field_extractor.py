@@ -642,3 +642,94 @@ def test_prescription_set_no_suggestion_without_any_drug_signal() -> None:
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_types = {f.field_type for f in fields}
     assert "PRESCRIPTION_SET" not in field_types
+
+
+# ---------------------------------------------------------------------------
+# KEY-245 — 판독 키워드(lab_keywords) 기반 매칭 (인수조건 1·2·3)
+# ---------------------------------------------------------------------------
+
+
+from ai_worker.tasks.field_extractor import build_lab_keywords  # noqa: E402
+
+
+def _make_lab_table_result(test_name: str, result_value: str) -> ClovaOcrResult:
+    """검사항목/검사결과 두 열짜리 단순 표 픽스처를 만든다."""
+    blocks = [
+        _lab_block("검사항목", 0.99, 10, 10, 110, 30),
+        _lab_block("검사결과", 0.99, 130, 10, 230, 30),
+        _lab_block(test_name, 0.95, 10, 40, 110, 60),
+        _lab_block(result_value, 0.97, 130, 40, 230, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    return ClovaOcrResult(
+        raw_text=f"{test_name}\t{result_value}",
+        fields=blocks,
+        rows=rows,
+    )
+
+
+class _FakeBaseline:
+    """LabBaseline 모델 대신 쓰는 단순 더미 — DB 없이 build_lab_keywords 테스트."""
+
+    def __init__(self, name: str, keywords: str) -> None:
+        self.name = name
+        self.keywords = keywords
+
+
+def test_dheas_matched_via_lab_keyword() -> None:
+    """DHEAS(하이픈 없는 표기)가 판독 키워드로 DHEA_S 필드에 매칭된다(인수조건 1·3)."""
+    baselines = [_FakeBaseline("DHEA-S", "DHEA-S, DHEAS")]
+    lab_kw = build_lab_keywords(baselines)
+
+    result = _make_lab_table_result("DHEAS", "120.5 µg/dL")
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT, lab_kw)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "DHEA_S" in field_map, "DHEAS 표기가 DHEA_S 필드로 매칭되어야 한다"
+    assert field_map["DHEA_S"] == "120.5 µg/dL"
+
+
+def test_dhea_hyphen_still_matched_by_regex_without_lab_keywords() -> None:
+    """키워드가 없어도 기존 정규식이 DHEA-S를 매칭한다(인수조건 2)."""
+    result = _make_lab_table_result("DHEA-S", "98.0 µg/dL")
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)  # lab_keywords=None
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "DHEA_S" in field_map, "lab_keywords 없이도 정규식으로 DHEA-S가 매칭되어야 한다"
+
+
+def test_custom_korean_notation_matched_via_lab_keyword() -> None:
+    """한글 커스텀 표기(항뮬러관)가 판독 키워드로 AMH 필드에 매칭된다(인수조건 1)."""
+    baselines = [_FakeBaseline("AMH", "AMH, 항뮬러관")]
+    lab_kw = build_lab_keywords(baselines)
+
+    result = _make_lab_table_result("항뮬러관 호르몬", "2.5 ng/mL")
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT, lab_kw)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "AMH" in field_map, "항뮬러관 표기가 AMH 필드로 매칭되어야 한다"
+    assert field_map["AMH"] == "2.5 ng/mL"
+
+
+def test_build_lab_keywords_skips_baseline_without_keywords() -> None:
+    """keywords가 빈 기준선은 lab_keywords 결과에 포함되지 않는다(인수조건 2)."""
+    baselines = [
+        _FakeBaseline("AMH", ""),
+        _FakeBaseline("DHEA-S", "DHEA-S, DHEAS"),
+    ]
+    lab_kw = build_lab_keywords(baselines)
+
+    assert "AMH" not in lab_kw, "키워드 없는 AMH 기준선은 결과에 없어야 한다"
+    assert "DHEA_S" in lab_kw
+
+
+def test_lab_keyword_matched_in_emr_type_document() -> None:
+    """EMR 유형으로 업로드된 검사결과지에서도 판독 키워드가 적용된다."""
+    baselines = [_FakeBaseline("DHEA-S", "DHEA-S, DHEAS")]
+    lab_kw = build_lab_keywords(baselines)
+
+    result = _make_lab_table_result("DHEAS", "115.0 µg/dL")
+    fields = extract_fields(result, OcrDocumentType.EMR, lab_kw)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "DHEA_S" in field_map, "EMR 타입 문서에서도 DHEAS 키워드가 적용되어야 한다"
