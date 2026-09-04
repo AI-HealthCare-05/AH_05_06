@@ -2,7 +2,7 @@
 
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from app.dependencies.patient_auth import optional_patient_session, require_patient_session
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
@@ -189,10 +189,15 @@ def _patient_response(
 )
 async def read_patient_guide(
     token: str,
+    response: Response,
     service: Annotated[PatientLinkService, Depends(_service)],
     usage: Annotated[PatientUsageService, Depends(_usage_service)],
     verified: Annotated[bool, Depends(optional_patient_session)],
 ) -> PatientGuideResponse:
+    # OTP 세션 쿠키 유무로 patient_name 포함 여부가 갈린다(KEY-268). 캐시에
+    # 인증 시점 응답이 남으면 로그아웃·세션 만료 뒤에도 이름이 재사용될 수
+    # 있어 매번 no-store 로 답한다(기술 리드 리뷰, PR #211).
+    response.headers["Cache-Control"] = "no-store"
     link, guide, data = await service.get_patient_guide_data(token)
     # 승인 확인을 통과한 뒤에 남긴다 (KEY-170).
     # 지금은 **같은 요청 안에서** 남기므로, 기록이 실패하면 열람도 실패한다.

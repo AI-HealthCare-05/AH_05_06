@@ -46,6 +46,9 @@ class TestKey268PatientName(PatientLinkTestCase):
         body = response.json()
         assert "patient_name" not in body
         assert "합성환자" not in response.text
+        # 이 응답도 캐시되면 세션이 생긴 뒤 patient_name 이 실린 응답과
+        # 뒤섞일 여지가 있다 — 인증·미인증 모두 no-store 로 답한다.
+        assert response.headers["cache-control"] == "no-store"
 
     async def test_full_name_is_shown_to_a_verified_viewer(self) -> None:
         await self._issue_approved_link()
@@ -57,6 +60,9 @@ class TestKey268PatientName(PatientLinkTestCase):
         assert response.status_code == 200
         # 마스킹하지 않은 전체 이름.
         assert response.json()["patient_name"] == "합성환자"
+        # 로그아웃·세션 만료 뒤에도 캐시된 이 응답이 재사용되면 안 된다
+        # (기술 리드 리뷰, PR #211).
+        assert response.headers["cache-control"] == "no-store"
 
     async def test_session_for_another_link_does_not_reveal_the_name(self) -> None:
         await self._issue_approved_link()
