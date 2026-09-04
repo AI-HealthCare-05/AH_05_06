@@ -12,9 +12,11 @@
 - OTP 발급·검증: `POST /api/v1/patient-auth/otp/issue`, `/verify`
 - 환자 안내 조회: `GET /api/v1/guides/{token}`
 
-`frontend/tests/key232-mock-contract.test.js`가 mock 응답의 필수 필드, 타입, enum,
-추가 필드 금지를 OpenAPI와 직접 대조한다. 서버 계약이 바뀌고 기준선을 갱신하면
-mock이 함께 바뀌지 않은 경우 이 검사가 실패한다.
+`frontend/tests/key232-mock-contract.test.js`가 mock 응답의 필수 필드, 타입, enum을
+OpenAPI와 직접 대조한다. `additionalProperties: false`인 DTO는 추가 필드도 금지하고,
+그 설정이 없는 직원 로그인·내 정보 응답은 OpenAPI의 필드 목록과 정확히 같은지
+별도로 검사한다. 서버 계약이 바뀌고 기준선을 갱신하면 mock이 함께 바뀌지 않은
+경우 이 검사가 실패한다.
 
 ## 자동 대조 밖의 mock
 

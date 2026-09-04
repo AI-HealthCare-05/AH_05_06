@@ -879,9 +879,6 @@ function stateTakesFocus(tone) {
     }
 
     var tail = isEditing(id) ? "" : sourceChip(field);
-    if (field.source_date && !isEditing(id)) {
-      tail += '<span class="field__date">' + escapeHtml(shortDate(field.source_date)) + "</span>";
-    }
     /* 사람이 고친 값에는 그 사실이 남아야 한다 — 나중에 「기계가 이렇게
        읽었다」와 「사람이 이렇게 고쳤다」를 가르려면.
 

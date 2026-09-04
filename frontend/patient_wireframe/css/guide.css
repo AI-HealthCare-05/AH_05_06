@@ -30,7 +30,7 @@ body {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
-  top: 0;
+  top: var(--guide-mock-offset, 0px);
   z-index: 40;
 }
 .header__top {
@@ -731,6 +731,7 @@ b { font-weight: 700; }
   text-align: center;
   font-size: 14px;
   font-weight: 700;
+  pointer-events: none;
 }
 .guide-loading,
 .guide-empty,

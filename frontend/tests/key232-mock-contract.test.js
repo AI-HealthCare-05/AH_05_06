@@ -61,6 +61,11 @@ function schema(name) {
   return found;
 }
 
+function validateExactProperties(value, rawSchema, at) {
+  const expected = Object.keys(dereference(rawSchema).properties || {}).sort();
+  assert.deepEqual(Object.keys(value).sort(), expected, `${at}: 서버 응답 필드 목록과 정확히 일치해야 함`);
+}
+
 test("배포/Pilot 주소에서는 ?mock=1을 무시하고 로컬에서만 고정 배너를 사용한다", () => {
   const local = load("api", { search: "?mock=1", hostname: "localhost" });
   const deployed = load("api", { search: "?mock=1", hostname: "pilot.example.com" });
@@ -90,6 +95,35 @@ test("배포/Pilot 주소에서는 ?mock=1을 무시하고 로컬에서만 고�
   assert.equal(inserted.id, "mock-mode-banner");
   assert.equal(inserted.role, "status");
   assert.match(inserted.textContent, /실제 서버 데이터가 아닙니다/);
+
+  const guideSource = fs.readFileSync(path.join(ROOT, "frontend/patient_wireframe/js/guide.js"), "utf8");
+  const guideCss = fs.readFileSync(path.join(ROOT, "frontend/patient_wireframe/css/guide.css"), "utf8");
+  assert.match(guideSource, /document\.body\.style\.paddingTop\s*=/);
+  assert.match(guideSource, /getBoundingClientRect\(\)\.height/);
+  assert.match(guideSource, /--guide-mock-offset/);
+  assert.match(guideCss, /top:\s*var\(--guide-mock-offset,\s*0px\)/);
+  assert.match(guideCss, /\.guide-mock-badge\s*\{[\s\S]*pointer-events:\s*none/);
+});
+
+test("사용하지 않는 구 안내 API도 배포/Pilot 주소에서는 mock을 켜지 않는다", () => {
+  const source = fs.readFileSync(path.join(ROOT, "frontend/js/guide-api.js"), "utf8");
+  function enabledAt(hostname, protocol = "https:") {
+    const stored = new Map([["guide_mock", "1"]]);
+    const context = vm.createContext({
+      URLSearchParams,
+      window: { location: { search: "?mock=1", hostname, protocol } },
+      sessionStorage: {
+        getItem(key) { return stored.has(key) ? stored.get(key) : null; },
+        setItem(key, value) { stored.set(key, String(value)); },
+      },
+    });
+    vm.runInContext(source, context);
+    return context.GUIDE_MOCK;
+  }
+
+  assert.equal(enabledAt("localhost", "http:"), true);
+  assert.equal(enabledAt("127.0.0.1", "http:"), true);
+  assert.equal(enabledAt("pilot.example.com"), false);
 });
 
 test("로그인 mock 응답은 StaffLoginResponse·StaffMeResponse와 일치한다", async () => {
@@ -98,6 +132,10 @@ test("로그인 mock 응답은 StaffLoginResponse·StaffMeResponse와 일치한�
   const me = plain(await box.api.me(login.access_token));
   validate(login, schema("StaffLoginResponse"), "login");
   validate(me, schema("StaffMeResponse"), "me");
+  /* 두 DTO는 현재 OpenAPI에 additionalProperties:false가 없어 공통 validator만으로는
+     초과 필드를 잡지 못한다. mock은 실제 응답 필드 목록과 정확히 맞춘다. */
+  validateExactProperties(login, schema("StaffLoginResponse"), "login");
+  validateExactProperties(me, schema("StaffMeResponse"), "me");
 });
 
 test("OCR 확정 mock 응답은 OcrFieldResponse와 일치한다", async () => {

@@ -133,6 +133,12 @@
     badge.id = 'mock-mode-banner';
     badge.setAttribute('role', 'status');
     document.body.prepend(badge);
+    /* fixed 배너가 sticky 헤더와 PDF 저장 버튼을 덮지 않도록 실제 높이만큼
+       본문을 내린다. 좁은 화면에서 문구가 두 줄이 되어도 고정값에 기대지 않는다. */
+    var badgeHeight = badge.getBoundingClientRect ? Math.ceil(badge.getBoundingClientRect().height) : 0;
+    var offset = badgeHeight || 36;
+    document.body.style.paddingTop = offset + 'px';
+    document.documentElement.style.setProperty('--guide-mock-offset', offset + 'px');
   }
 
   /* ════════════════════════

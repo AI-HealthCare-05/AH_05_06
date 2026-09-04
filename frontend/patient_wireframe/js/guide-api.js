@@ -147,10 +147,9 @@ var MOCK_GUIDES = {
   },
 };
 
-function GuideError(code, status) {
+function GuideError(code) {
   this.name = 'GuideError';
   this.code = code;
-  this.status = status || 0;
 }
 GuideError.prototype = Object.create(Error.prototype);
 
@@ -405,8 +404,8 @@ function fetchGuide(token) {
       setTimeout(function () {
         /* 승인 전에는 공개 링크 자체를 발급할 수 없다. 환자 조회 경로에서는
            서버처럼 존재하지 않는 링크(404)로만 보인다. */
-        if (key === 'none') return reject(new GuideError(GUIDE_ERROR.NOT_FOUND, 404));
-        if (!MOCK_GUIDES[key]) return reject(new GuideError(GUIDE_ERROR.NOT_FOUND, 404));
+        if (key === 'none') return reject(new GuideError(GUIDE_ERROR.NOT_FOUND));
+        if (!MOCK_GUIDES[key]) return reject(new GuideError(GUIDE_ERROR.NOT_FOUND));
         try { resolve(adaptGuideResponse(MOCK_GUIDES[key])); } catch (error) { reject(error); }
       }, 100);
     });
@@ -417,7 +416,7 @@ function fetchGuide(token) {
   }).then(function (res) {
     if (res.ok) return res.json().then(adaptGuideResponse);
     return res.json().catch(function () { return {}; })
-      .then(function (data) { throw new GuideError(data.code || GUIDE_ERROR.NOT_FOUND, res.status); });
+      .then(function (data) { throw new GuideError(data.code || GUIDE_ERROR.NOT_FOUND); });
   });
 }
 
