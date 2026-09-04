@@ -227,7 +227,8 @@ test("**그 대조가 헛돌지 않는다** — 서버 글을 바꾸면 운다",
   const flat = server.replace(/"\s*\n\s*"/g, "").replace(/\\n/g, "\n");
 
   assert.ok(flat.indexOf("복약 지시에 따라 정해진 시간에 복용해 주세요.") !== -1, "펴는 것부터 안 된다");
-  assert.ok(flat.indexOf("[합성 주의 안내]\n복용 중") !== -1, "여러 줄 문구가 안 펴진다");
+  assert.ok(flat.indexOf("복용 중 의사 또는 약사에게") !== -1, "여러 줄 문구가 안 펴진다");
+  assert.strictEqual(flat.indexOf("[합성 주의 안내]"), -1, "개발용 표지가 기본 문구에 남았다");
   assert.strictEqual(flat.indexOf("복약 지시에 따라 정해진 시각에 복용해 주세요."), -1, "안 바뀐 글도 찾는다");
 });
 

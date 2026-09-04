@@ -282,9 +282,8 @@ class TestTheFixtureInventsNoMedicalText:
     """**시드가 새 의학 문장을 지어내지 않는다** — 이희진 님 `#158` ⑤.
 
     카탈로그 밖 세 섹션(medication · life · messages)의 본문은 `guides.generate`
-    가 쓰는 말이어야 한다. 주석은 「그대로 옮긴 것」이라 적혀 있었는데 실제로는
-    `확정된 항목: {field_label}` 줄이 빠져 있었다 — **지어낸 말은 없었지만 같지도
-    않았다.**
+    가 쓰는 말이어야 한다. 구조화 처방을 만들지 않는 smoke fixture 는 없는
+    약명·빈도·기간을 채우지 않고 범용 지도 문장만 사용한다.
 
     주석은 다시 어긋날 수 있으므로, 여기서는 말이 아니라 **문장 단위로** 잰다.
     시드가 쓰는 모든 줄이 `guides.py` 의 그 자리에 실제로 있는지 본다.
@@ -338,23 +337,14 @@ class TestTheFixtureInventsNoMedicalText:
                 f"{const} 의 「{sentence}」 가 guides.py 의 {section} 본문에 없다 — 시드가 새 문장을 지어냈다"
             )
 
-    def test_the_comment_says_what_was_left_out(self) -> None:
-        """**무엇을 왜 뺐는지 적혀 있어야 한다.**
-
-        앞의 두 검사가 「지어낸 문장이 없다」를 이미 재므로, 여기서는 다음 사람이
-        대조를 건너뛰지 않도록 **빠진 줄이 무엇인지** 적혀 있는지만 본다.
-
-        「그대로 옮겼다고 말하지 않는가」도 재려 했는데 접었다. 지금 주석은 과거
-        오류를 설명하느라 그 표현을 **인용**하는데, 글자만 훑는 검사는 주장과
-        회고를 못 가른다 — 제 설명에 제가 걸려 빨간불이 났다. 실질은 위 두
-        검사가 잡으니 여기서 산문을 더 재지 않는다.
-        """
+    def test_the_comment_explains_why_prescription_facts_are_absent(self) -> None:
+        """처방 사실을 비운 이유가 주석에 남아 있어야 한다."""
         seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
         head = seed.split("_SMOKE_MEDICATION_BODY = ", 1)[0]
         note = head[head.rindex("SMOKE_CHART_NO") :]
 
-        assert "확정된 항목" in note, "무엇을 왜 뺐는지 적혀 있지 않다"
-        assert "field_label" in note, "그 값이 어디서 오는지 적혀 있지 않다"
+        assert "구조화 처방" in note, "약 정보를 비운 근거가 적혀 있지 않다"
+        assert "임의로 채우지" in note, "없는 처방 사실을 만들지 않는다는 설명이 없다"
 
     def test_it_does_not_write_an_empty_confirmed_line(self) -> None:
         """빈 「확정된 항목: 」이 환자 화면에 나가면 안 된다."""
@@ -365,3 +355,4 @@ class TestTheFixtureInventsNoMedicalText:
         assert "확정된 항목" not in value, (
             "확정된 OCR 항목이 없는 fixture 인데 그 줄을 넣었다 — 빈 값이 환자에게 나간다"
         )
+        assert "[합성" not in value, "개발용 표지가 환자용 smoke 안내에 남아 있다"

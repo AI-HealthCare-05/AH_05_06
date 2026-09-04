@@ -113,5 +113,17 @@ class PrescriptionItem(models.Model):
         table = "prescription_item"
 
 
+def ordered_prescription_items(prescription: Prescription | None) -> list[PrescriptionItem]:
+    """미리 불러온 처방 항목을 안정적인 저장 순서로 돌려준다.
+
+    안내 생성과 환자 공개 화면이 같은 약 순서를 써야 한다. 두 서비스에서
+    정렬식을 각각 들고 있으면 한쪽만 기준이 바뀌는 순간 화면과 승인 원문이
+    달라지므로 처방 도메인의 한 규칙으로 둔다.
+    """
+    if prescription is None:
+        return []
+    return sorted(prescription.items, key=lambda item: item.prescription_item_id)
+
+
 #: 기간이 붙지 않는 용법. 「필요할 때만」 먹는 약은 정해진 복용 기간이 없다.
 AS_NEEDED = "필요시"

@@ -345,7 +345,7 @@ class TestEveryEditableSectionReachesThePatient(DrugCautionTestCase):
     """
 
     async def test_medication_wording_reaches_the_patient(self) -> None:
-        """복약지도를 고치면 그 글이 나간다 — **진료별 줄은 남는다.**"""
+        """복약지도를 고치면 그 글이 나간다."""
         clinic = await make_clinic()
         doctor = await make_staff(clinic, "k243-med", ["doctor"])
         staff = await make_staff(clinic, "k243-med-s", ["staff"])
@@ -358,7 +358,7 @@ class TestEveryEditableSectionReachesThePatient(DrugCautionTestCase):
         assert response.status_code == 201, response.text
         body = (await self.sections_from_db(visit.visit_id))[GuideSectionKey.MEDICATION].generated_body
         assert body.endswith("고친 복약 문장"), f"고친 문구가 안 나갔다: {body!r}"
-        assert "확정된 항목:" in body, "진료별 줄이 사라졌다 — 판독으로 확정된 사실이다"
+        assert "확정된 항목:" not in body, "OCR 첫 필드를 처방 정보처럼 노출하면 안 된다"
 
     async def test_life_wording_reaches_the_patient(self) -> None:
         """생활지도를 고치면 그 글이 통째로 나간다."""
