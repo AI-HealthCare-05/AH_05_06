@@ -18,6 +18,16 @@ wheels/
 .pytest_cache/
 htmlcov/
 
+# 로컬에서 scripts/ci/run_test.sh 결과를 파일로 남길 때 쓰는 이름 —
+# rootdir 에 로컬 사용자명·경로가 그대로 찍혀서 커밋하면 안 된다 (PR #215 리뷰).
+test_result.txt
+test_result2.txt
+
+# UPLOAD_DIR(기본 /tmp/medical_uploads)이 로컬에서 상대경로로 잘못 잡히면
+# OCR 업로드 테스트 픽스처가 여기(저장소 루트)에 떨어진다. `/` 로 루트만
+# 가리킨다 — 아래 `/main.py` 규칙과 같은 이유다 (PR #215 리뷰).
+/*.jpg
+
 # IDE
 .vscode/
 .idea/

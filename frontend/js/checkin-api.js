@@ -40,8 +40,7 @@ var checkinApi = {
 
   /* D+7 저장에서 세션이 끝났을 때만 쓰는 재인증 경로 — KEY-128.
 
-     안내·양식 조회는 링크 자체가 접근 증명이고, 쓰기만 30분 환자 세션을
-     요구한다(KEY-92 확정 계약). 화면은 이 둘을 섞어 조회까지 새로 막지 않는다. */
+     안내 조회·D+7 조회·저장 모두 30분 환자 세션을 요구한다 (KEY-178). */
   issueOtp: function (token) {
     return checkinRequest("/patient-auth/otp/issue", {
       method: "POST",

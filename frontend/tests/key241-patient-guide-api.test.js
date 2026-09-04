@@ -454,6 +454,12 @@ test('P2~P5 렌더러가 v3 진행률·빈 목표·부분 펼침·승인 시각 
   assert.doesNotMatch(FOOTER_SOURCE, /생성 ·/);
 });
 
+test('KEY-178 실서버 경로에서 세션 만료를 받으면 오류 대신 OTP 화면으로 보낸다', () => {
+  assert.match(API_SOURCE, /SESSION_EXPIRED: 'PATIENT_SESSION_EXPIRED'/);
+  assert.match(GUIDE_SOURCE, /error\.code === GUIDE_ERROR\.SESSION_EXPIRED/);
+  assert.match(GUIDE_SOURCE, /location\.replace\(otpEntryUrl\(\)\);\s*\n\s*return;/);
+});
+
 test('fillHeader: 인증 뷰어에게는 이름이 붙고, 아니면 진료일·의원명만 남는다 (KEY-268)', () => {
   /* 위 정적 검사(`var meta = [d.patient || null, ...`)는 코드 모양만 본다.
      실제로 뷰어 화면에 뜨는 최종 문자열이 맞는지는 이 검사가 잡는다 —

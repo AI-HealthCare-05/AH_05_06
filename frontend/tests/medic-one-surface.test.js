@@ -28,19 +28,15 @@ function read(rel) {
 /* ── 다섯 탭이 다 열려 있는가 ─────────────────────────────────────────── */
 
 test("**환자 카드의 다섯 탭이 하나도 잠겨 있지 않다**", () => {
-  const html = read("patients.html");
-
-  /* 탭 줄만 본다 — 설명 주석에도 `tab--later` 가 적혀 있어, 글자로 찾으면
-     검사가 제 주석을 물고 통과한다. */
-  const tabs = html.split("\n").filter((line) => line.includes('role="tab"'));
+  const { VISIT_STEPS, stepsHtml } = load("api", "step-nav");
+  const tabs = VISIT_STEPS;
   assert.strictEqual(tabs.length, 5, `탭이 다섯이 아니다: ${tabs.length}`);
 
-  for (const line of tabs) {
-    assert.ok(
-      !line.includes("tab--later") && !line.includes('aria-disabled="true"'),
-      `탭이 잠겨 있다 — 의사·스탭이 서로의 화면을 못 본다: 「${line.trim()}」`,
-    );
-  }
+  /* 공용 모듈이 실제로 그리는 결과를 본다. patients.html의 정적 복사본을 세면
+     공용 정의와 HTML이 어긋나도 검사하지 못한다. */
+  const rendered = stepsHtml("basic", "/patients.html", 12);
+  assert.strictEqual((rendered.match(/role="tab"/g) || []).length, 5);
+  assert.ok(!rendered.includes("tab--later") && !rendered.includes('aria-disabled="true"'));
 });
 
 test("탭에 붙일 패널이 실제로 있다 — 없으면 눌러도 빈 화면이다", () => {
@@ -56,21 +52,14 @@ test("탭에 붙일 패널이 실제로 있다 — 없으면 눌러도 빈 화�
 
 test("**다섯 칸을 다 안다 — 넷은 판으로, 하나는 다른 화면으로**", () => {
   const source = read("js/detail.js");
-  const tabs = source.split("\n").find((l) => l.includes("var TABS ="));
-  const away = source.split("\n").find((l) => l.includes("var AWAY ="));
-  assert.ok(tabs && away, "TABS · AWAY 가 없다 — 검사가 헛돈다");
-
-  for (const name of ["basic", "guide", "final", "status"]) {
-    assert.ok(tabs.includes(`"${name}"`), `TABS 에 ${name} 이 없다: 「${tabs.trim()}」`);
-  }
-  assert.ok(!tabs.includes('"record"'), "판이 없는 칸이 TABS 에 남아 있다 — 눌러도 빈 화면이다");
-  assert.match(away, /record:\s*"\/ocr-review\.html"/, "진료기록이 갈 곳을 모른다");
+  assert.match(source, /VISIT_STEPS\.filter\(/, "환자 화면의 탭 목록이 공용 단계 정의에서 나오지 않는다");
 
   /* 화면에 그려진 다섯 칸이 모두 어딘가로 이어져야 한다 — 하나라도 빠지면
      눌러도 아무 일이 없다. */
-  const drawn = [...read("patients.html").matchAll(/data-tab="(\w+)"/g)].map((m) => m[1]);
-  const known = new Set([...drawn].filter((k) => tabs.includes(`"${k}"`) || away.includes(`${k}:`)));
-  assert.deepEqual([...new Set(drawn)].sort(), [...known].sort(), "갈 곳 없는 탭이 그려져 있다");
+  const { VISIT_STEPS, stepsHtml } = load("api", "step-nav");
+  const samePage = VISIT_STEPS.filter((step) => step.page === "/patients.html").map((step) => step.key);
+  assert.deepEqual(Array.from(samePage), ["basic", "guide", "final", "status"]);
+  assert.match(stepsHtml("basic", "/patients.html", 12), /data-tab="record"[^>]*data-href=/, "진료기록의 이동 주소가 없다");
 });
 
 /* ── 역할은 버튼만 가른다 ─────────────────────────────────────────────── */

@@ -137,6 +137,33 @@ test("**화면이 이름표 파일을 싣는다** — 안 실으면 브라우저
   );
 });
 
+test("**이름표 정의는 공용 모듈에만 있다** — 화면별 복사본을 만들면 실패한다", () => {
+  const jsDir = path.join(ROOT, "js");
+  const definitions = [];
+  for (const name of fs.readdirSync(jsDir).filter((entry) => entry.endsWith(".js"))) {
+    const source = fs.readFileSync(path.join(jsDir, name), "utf8");
+    if (/\bvar\s+(?:FIELD_LABELS|CHECK_ITEM_LABELS)\s*=/.test(source)) definitions.push(name);
+    if (name !== "field-labels.js") {
+      assert.doesNotMatch(source, /\bfunction\s+(?:fieldLabel|checkItemLabel)\s*\(/, `${name} 가 이름표 함수를 다시 정의한다`);
+    }
+  }
+  assert.deepEqual(definitions, ["field-labels.js"], "이름표 객체가 여러 파일에 있다");
+});
+
+test("이름표를 쓰는 화면은 호출 파일보다 먼저 공용 모듈을 싣는다", () => {
+  for (const [page, caller] of [
+    ["ocr-review.html", "ocr-review.js"],
+    ["settings.html", "settings.js"],
+  ]) {
+    const html = fs.readFileSync(path.join(ROOT, page), "utf8");
+    const labelsAt = html.indexOf('/js/field-labels.js');
+    const callerAt = html.indexOf('/js/' + caller);
+    assert.notEqual(labelsAt, -1, `${page} 가 field-labels.js 를 안 싣는다`);
+    assert.notEqual(callerAt, -1, `${page} 가 ${caller} 를 안 싣는다`);
+    assert.ok(labelsAt < callerAt, `${page} 가 이름표보다 ${caller} 를 먼저 싣는다`);
+  }
+});
+
 test("단위는 서버 값이 우선이다 — 여기 것은 없을 때만 쓴다", () => {
   const { fieldUnit } = box();
 

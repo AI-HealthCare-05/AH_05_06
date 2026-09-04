@@ -94,9 +94,8 @@ class PatientSessionStore:
     async def has_valid_session(self, raw_session: str | None, raw_link_token: str) -> bool:
         """세션이 이 링크에 유효한지 여부만 돌려준다 — 없거나 만료여도 예외를 올리지 않는다.
 
-        `require`·`check` 는 관문이지만 이것은 「인증했는가」 표시용이다. OTP 인증 전
-        환자도 안내를 열 수 있으므로(KEY-178), 환자명처럼 인증한 뷰어에게만 보태는
-        필드를 켤지 정하는 데만 쓴다 (KEY-268).
+        `require`·`check` 는 관문이지만 이것은 「인증했는가」 표시용이다. 환자명처럼
+        인증한 뷰어에게만 보태는 필드를 켤지 정하는 데만 쓴다 (KEY-268).
         """
         if not raw_session:
             return False

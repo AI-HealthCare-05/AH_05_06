@@ -37,7 +37,7 @@
           <span class="who__name" id="who-name">—</span>
           <span class="who__roles" id="who-roles"></span>
         </span>
-        <button class="icon-button" type="button" aria-label="알림">
+        <button class="icon-button" type="button" aria-label="알림" data-unimplemented-action="notifications">
           <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="icon-button__count" id="alert-count" hidden></span>
         </button>
         <button class="icon-button" type="button" id="logout" aria-label="로그아웃"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
@@ -78,7 +78,7 @@
             <div class="banner__title">⚠ 발신번호 미등록</div>
             <p class="banner__lead">문자가 발송되지 않고 대기합니다</p>
           </div>
-          <button class="banner__act" type="button">설정 열기</button>
+          <button class="banner__act" type="button" data-unimplemented-action="open-settings">설정 열기</button>
         </div>
 
         <div class="chips" id="chips" role="group" aria-label="상태로 거르기"></div>
@@ -240,23 +240,9 @@
                서버도 그렇게 되어 있다 — `app/core/rbac.py` 에서 조회·업로드·
                안내문 작성은 staff·doctor 둘 다이고, 승인·반려만 doctor 다.
                **가르는 것은 버튼이지 화면이 아니다.** -->
-            <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드">
-              <button class="tab" type="button" role="tab" data-tab="basic" aria-selected="true">
-                <span class="tab__mark" aria-hidden="true">●</span>기본정보
-              </button>
-              <button class="tab" type="button" role="tab" data-tab="record" aria-selected="false">
-                <span class="tab__mark" aria-hidden="true">○</span>진료기록
-              </button>
-              <button class="tab" type="button" role="tab" data-tab="guide" aria-selected="false">
-                <span class="tab__mark" aria-hidden="true">○</span>안내문
-              </button>
-              <button class="tab" type="button" role="tab" data-tab="final" aria-selected="false">
-                <span class="tab__mark" aria-hidden="true">○</span>최종 확인
-              </button>
-              <button class="tab" type="button" role="tab" data-tab="status" aria-selected="false">
-                <span class="tab__mark" aria-hidden="true">○</span>현황
-              </button>
-            </div>
+            <!-- 단계·이름·순서는 `js/step-nav.js` 한 곳에서만 만든다. 정적 복사본을
+                 남기면 첫 렌더와 갱신 뒤의 단계가 서로 달라질 수 있다. -->
+            <div class="tabs" id="tabs" role="tablist" aria-label="환자 카드"></div>
           </div>
 
 
