@@ -31,7 +31,7 @@ from app.core import config
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
-from app.models.prescriptions import Prescription
+from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
     GuideEvent,
@@ -112,6 +112,26 @@ def _not_found() -> ApiError:
     return ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
 
 
+def _medication_body(items: list[PrescriptionItem], guidance: str) -> str:
+    """구조화 처방 항목을 환자가 읽는 복약 안내로 옮긴다.
+
+    약명·복용 빈도·기간은 ``PrescriptionItem`` 에 실제로 저장된 값만 쓴다.
+    기간이 없는 필요시 약에 다른 약의 기간을 붙이지 않고, 처방 항목 자체가
+    없으면 승인된 기본 지도 문장만 내보낸다 — 없는 값을 OCR 원문이나 임의
+    문장으로 대신 만들지 않는다(KEY-224).
+    """
+    lines: list[str] = []
+    for index, item in enumerate(items, start=1):
+        facts = [item.name.strip(), item.frequency.strip()]
+        if item.duration_days is not None:
+            facts.append(f"{item.duration_days}일분")
+        lines.append(f"{index}. {' · '.join(fact for fact in facts if fact)}")
+
+    if not lines:
+        return guidance
+    return "\n".join(("처방된 복약 정보", *lines, guidance))
+
+
 class GuideService:
     async def generate(self, actor, visit_id: int) -> GuideDocument:
         """확정 OCR 필드가 있어야 고정 템플릿 안내를 만들 수 있다.
@@ -178,8 +198,6 @@ class GuideService:
                 "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
             )
 
-        field_label = f"{confirmed.field_type}: {confirmed.value}" if confirmed.value else ""
-
         # KEY-165: 처방 세트의 승인된 caution/emergency 문구를 미리 조회한다.
         # 트랜잭션 밖에서 실행해 락 보유 시간을 줄인다.
         # 미등록·미승인이면 None → 트랜잭션 안에서 폴백 문구를 사용한다(KEY-180 §4).
@@ -187,7 +205,8 @@ class GuideService:
         # **세트는 한 번만 찾는다.** 갈래마다·의사마다 이름으로 다시 찾으면
         # 같은 `SELECT` 가 **네 번** 돈다 — 주의·응급·담당 문구·의원 공통 문구가
         # 전부 같은 세트를 본다 (`#191` 리뷰, 2heej).
-        prescription = await Prescription.filter(visit_id=visit_id).first()
+        prescription = await Prescription.filter(visit_id=visit_id).prefetch_related("items").first()
+        prescription_items = ordered_prescription_items(prescription)
         set_name = prescription.prescription_set if prescription else None
         prescription_set = await PrescriptionSet.filter(name=set_name).first() if set_name else None
 
@@ -255,12 +274,12 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.MEDICATION,
-                # **진료별 줄은 고쳐도 남는다.** 「확정된 항목」은 이 진료에서
-                # 판독으로 확정된 사실이라 설정에서 고칠 것이 아니다. 고치는
-                # 것은 그 아래 지도 문장이다.
-                generated_body=(
-                    f"[합성 복약 안내]\n확정된 항목: {field_label}\n"
-                    + copies.get(CautionSectionKey.MEDICATION, guide_defaults.MEDICATION)
+                # KEY-224: 첫 OCR 필드 하나가 아니라 KEY-66이 만든 구조화 처방을
+                # 전부 싣는다. 복수 약제의 빈도·기간을 서로 섞지 않고, 없는 값은
+                # 지어내지 않는다. 의사/의원별 지도 문구 우선순위는 그대로다.
+                generated_body=_medication_body(
+                    prescription_items,
+                    copies.get(CautionSectionKey.MEDICATION, guide_defaults.MEDICATION),
                 ),
                 using_db=connection,
             )
