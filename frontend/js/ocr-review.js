@@ -2126,6 +2126,18 @@ function stateTakesFocus(tone) {
     saveCheckItems();
   });
 
+  /** 서버가 지금 들고 있는 값. 없으면 `null`.
+   *
+   * 보낼지 말지를 가르는 데 쓴다 — 같은 값을 다시 `PUT` 하면 확정된 줄에서
+   * 409 가 나고, 한 줄의 409 가 같이 보낸 다른 줄까지 못 담게 만든다. */
+  function serverFieldValue(type) {
+    var rows = (result && result.fields) || [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].field_type === type) return rows[i].value;
+    }
+    return null;
+  }
+
   /* 적어 둔 값을 **한 번에** 서버로. 판독이 못 읽은 항목은 줄 자체가 없어서
      항목 이름으로 짚는다(`PUT /visits/{id}/ocr-fields/{type}`). */
   document.addEventListener("click", function (event) {
@@ -2140,8 +2152,16 @@ function stateTakesFocus(tone) {
     var typed = localOf(isRx);
 
     /* 고른 처방은 약품명 칸에 담는다 — 안내문이 그 값으로 만들어진다.
-       전에는 화면이 기억만 하고 새로고침하면 사라졌다. */
-    var extra = isRx && pickedSet ? { MEDICATION_NAME: pickedSet.name } : {};
+       전에는 화면이 기억만 하고 새로고침하면 사라졌다.
+
+       🚩 **이미 그 값이면 안 보낸다.** `PUT` 은 확정된 줄에 409
+       (`OCR_FIELD_CONFIRMED`)를 내는데, 무조건 다시 보내면 그 하나 때문에
+       `Promise.all` 이 통째로 깨져 **같이 보낸 진단이 영영 저장되지 않았다.**
+       처방을 한 번 저장하고 나면 그 뒤로 진단을 못 넣는 상태가 됐다. */
+    var extra = {};
+    if (isRx && pickedSet && serverFieldValue("MEDICATION_NAME") !== pickedSet.name) {
+      extra.MEDICATION_NAME = pickedSet.name;
+    }
 
     /* 수동 추가 약은 기존 MEDICATION_NAME_N 인덱스 다음 번호로 저장한다. */
     if (isRx && manualDrugs.length) {
