@@ -571,22 +571,43 @@ async def seed_catalog() -> None:
     같은 명령을 반복 실행해도 데이터가 쌓이지 않는다(name 기준 get_or_create).
     APPROVED 문구는 `approved_key` 를 채워 "세트·섹션당 하나" 제약을 DB 가 지키게 한다.
     """
-    # 처방 세트 8종
+    # 처방 세트
     created_sets = 0
+    fixed_sets = 0
     for row in PRESCRIPTION_SETS:
         # **`disease` 를 함께 넣는다.** 모델 기본값이 ENDOMETRIOSIS 라 안 넣으면
         # PCOS 세트가 자궁내막증 묶음에 들어가고, 설정 레일에서 다낭성난소증후군
-        # 묶음이 통째로 사라진다 — 새로 부어 보기 전에는 안 보이는 어긋남이다.
-        _, was_created = await PrescriptionSet.get_or_create(name=row.name, defaults={"disease": row.disease})
+        # 묶음이 통째로 사라진다(`settings-rail.js` 의 `setsByDisease` 가 빈
+        # 묶음을 안 낸다) — 새로 부어 보기 전에는 안 보이는 어긋남이다.
+        found, was_created = await PrescriptionSet.get_or_create(name=row.name, defaults={"disease": row.disease})
         if was_created:
             created_sets += 1
-    print(f"[catalog] prescription_set created={created_sets} skipped={len(PRESCRIPTION_SETS) - created_sets}")
+            continue
+
+        # **`defaults` 는 INSERT 때만 쓴다 — 그래서 한 번 더 본다** (이희진 님
+        # `#214` ⑦). 29 번 마이그레이션이 이름으로 백필을 하지만 그건 **그때
+        # 이미 있던 줄**만 고친다. 그 뒤에 기본값으로 심긴 줄은 재시드해도 안
+        # 고쳐져, 다시 부어 봐도 PCOS 가 자궁내막증 밑에 남는다.
+        #
+        # 백필 마이그레이션을 또 넣지 않는 까닭: 29 번이 쓴 이름 패턴
+        # (`name LIKE 'PCOS%' … ELSE 'ENDOMETRIOSIS'`)을 지금 다시 돌리면
+        # **의사가 직접 만든 세트**(KEY-255)까지 자궁내막증으로 덮는다. 씨앗은
+        # 제가 아는 줄만 손대므로 그 위험이 없다.
+        if found.disease != row.disease:
+            found.disease = row.disease
+            await found.save(update_fields=["disease", "updated_at"])
+            fixed_sets += 1
+    print(
+        f"[catalog] prescription_set created={created_sets} "
+        f"fixed={fixed_sets} skipped={len(PRESCRIPTION_SETS) - created_sets - fixed_sets}"
+    )
 
     # 세트 이름 → id 역색인 (콘텐츠 삽입에 사용)
     sets_by_name: dict[str, PrescriptionSet] = {ps.name: ps async for ps in PrescriptionSet.all()}
 
     created_contents = 0
     skipped_contents = 0
+    deprecated_contents = 0
     for content_row in DRUG_CAUTION_CONTENTS:
         ps = sets_by_name.get(content_row.prescription_set_name)
         if ps is None:
@@ -596,13 +617,8 @@ async def seed_catalog() -> None:
             )
             continue
 
-        approved_key = (
-            f"{ps.prescription_set_id}:{content_row.section_key.value}"
-            if content_row.approval_status == ApprovalStatus.APPROVED
-            else None
-        )
-
-        # (세트, 섹션, 버전) 단위로 중복 방지 — content_version 이 같으면 건너뛴다
+        # (세트, 섹션, 버전) 단위로 중복 방지 — content_version 이 같으면 건너뛴다.
+        # 다르면 아래에서 **옛 승인본을 내리고 새 판으로 갈아 끼운다.**
         exists = await DrugCautionContent.filter(
             prescription_set=ps,
             section_key=content_row.section_key,
@@ -612,7 +628,11 @@ async def seed_catalog() -> None:
             skipped_contents += 1
             continue
 
-        await DrugCautionContent.create(
+        # **초안으로 먼저 앉힌다.** 승인 도장(`approved_key`)은 아래에서 서비스가
+        # 찍는다 — 여기서 바로 찍으면 옛 승인 행이 같은 값을 든 채라 unique 에
+        # 걸려 **씨앗이 통째로 멈춘다.** 위 검사가 (세트, 섹션, **버전**) 단위라
+        # 버전만 올라가면 그대로 여기까지 온다 (이희진 님 `#214` ①).
+        made = await DrugCautionContent.create(
             prescription_set=ps,
             section_key=content_row.section_key,
             body=content_row.body,
@@ -622,12 +642,33 @@ async def seed_catalog() -> None:
             verified_at=content_row.verified_at,
             content_version=content_row.content_version,
             source_grade=content_row.source_grade,
-            approval_status=content_row.approval_status,
-            approved_key=approved_key,
+            approval_status=ApprovalStatus.DRAFT,
+            approved_key=None,
         )
+
+        if content_row.approval_status == ApprovalStatus.APPROVED:
+            # **규칙은 한 군데에만 산다.** 「세트·섹션당 승인은 하나」와 그
+            # 갈아 끼우는 절차(옛 판 폐기 → 새 판 승인, 한 트랜잭션)는
+            # `DrugCautionService.approve_version` 이 이미 갖고 있다
+            # (KEY-180 §3). 여기서 같은 절차를 다시 적으면 두 벌이 갈라진다.
+            #
+            # 지우지 않고 폐기로 내린다 — 이미 나간 안내문이
+            # `GuideSection.drug_caution_content_id` 로 옛 행을 가리켜서,
+            # 지우면 「무슨 근거로 그 글이 나갔나」에 답할 수 없다.
+            before = await DrugCautionContent.filter(
+                prescription_set=ps,
+                section_key=content_row.section_key,
+                approval_status=ApprovalStatus.APPROVED,
+            ).count()
+            await DrugCautionService.approve_version(made.drug_caution_content_id)
+            deprecated_contents += before
+
         created_contents += 1
 
-    print(f"[catalog] drug_caution_content created={created_contents} skipped={skipped_contents}")
+    print(
+        f"[catalog] drug_caution_content created={created_contents} "
+        f"skipped={skipped_contents} deprecated={deprecated_contents}"
+    )
 
     # ── 의원이 쓰는 약 ───────────────────────────────────────────────
     # 대표 처방에 약을 적을 때 여기서 고른다. **표기를 판독·CSV 쪽에 맞춘다**
