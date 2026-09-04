@@ -650,14 +650,22 @@ test("**적은 값은 이제 실제로 담긴다** — 「저장 안 됨」 배�
 
   const at = code.indexOf('"#labs-save, #rx-save"');
   assert.notEqual(at, -1, "저장 단추를 받는 자리가 없다");
-  const body = code.slice(at, at + 1600);
+  const body = code.slice(at, at + 3600);
   assert.match(body, /writeField\(/, "서버로 안 보낸다");
   /* **한 번에 담는다** — 하나씩 저장하게 하면 어느 줄이 담겼는지 세어야 한다 */
   assert.match(body, /localOf\(isRx\)/, "적어 둔 것을 한 번에 안 보낸다");
   assert.match(body, /visit\.visit_id !== wanted/, "다른 환자 화면에 붙는다");
 
-  /* **내 블록 것만 지운다** — 옆 블록은 아직 안 담겼는데 함께 지우면 사라진다 */
-  assert.match(body, /typed\.forEach/, "담고 나서 옆 블록 값까지 지우거나 안 지운다");
+  /* **담긴 것만 지운다** — 막힌 줄까지 지우면 적어 둔 값이 사라진다.
+     창(`body`)이 아니라 파일 전체에서 찾는다 — 주석이 길어지면 창이 밀려
+     규칙과 무관하게 깨진다(`codeOnly` 는 주석을 공백으로 바꿔 길이를 지킨다). */
+  assert.match(code, /if \(!r\.ok\) return;/, "막힌 줄까지 지워 적은 값이 사라진다");
+
+  /* 🚩 **같은 값을 다시 보내지 않는다.** `PUT` 은 확정된 줄에 409 를 내는데,
+     고른 처방을 무조건 다시 보내면 그 한 줄의 409 가 `Promise.all` 을 통째로
+     깨뜨려 **같이 보낸 진단이 영영 안 담겼다** — 처방을 한 번 저장하면 그 뒤로
+     진단을 못 넣는 상태가 됐다. */
+  assert.match(code, /fieldValueOf\(result\.fields, "MEDICATION_NAME"\) !== pickedSet\.name/, "같은 값을 다시 보내 409 를 부른다");
   assert.ok(!body.includes("local = {}"), "옆 블록의 적어 둔 값까지 지운다");
 
   /* 적은 것이 없으면 누를 것도 없다 */
@@ -989,14 +997,104 @@ test("**두 블록이 각자 제 것만 담는다** — 안 만진 칸이 저장
   assert.equal(PRESCRIPTION_TYPES.indexOf("TSH"), -1, "혈액 항목이 처방으로 세어진다");
 });
 
-test("**고른 처방도 담긴다** — 화면이 기억만 하면 새로고침에 사라진다", () => {
-  /* 안내문이 이 값으로 만들어진다. 화면에만 두면 「골랐는데 안 골라진」 채로
-     승인까지 간다. */
+test("**고르는 칸은 제 이름을 스스로 읽는다** — 감싸는 자리에 기대지 않는다", () => {
+  /* `choiceHtml` 은 `data-owns` 에 제 항목 이름을 달고 나온다. 값을 읽는
+     `typeOfBox` 가 조상(`data-field-type`)만 뒤지면, 감싸는 자리마다 그 속성을
+     붙여 줘야 하고 하나만 빠뜨려도 **이름이 빈 문자열**이 된다.
+
+     그러면 `fieldChoices("")` 가 거짓이라 서버로 보내는 분기를 통째로 건너뛰고,
+     골라도 화면에만 남는다 — 맨 윗줄에서 실제로 그렇게 났다. 자기 이름을 먼저
+     읽으면 누가 감싸든 상관없다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const fn = code.slice(code.indexOf("function typeOfBox"), code.indexOf("function inputValue"));
+
+  assert.match(fn, /getAttribute\("data-owns"\)/, "제 이름을 안 읽고 조상만 뒤진다");
+  assert.ok(
+    fn.indexOf('data-owns') < fn.indexOf("closest"),
+    "조상을 먼저 뒤지면 감싸는 자리가 이름을 가로챈다",
+  );
+});
+
+test("**맨 윗줄도 제 항목 이름을 들고 있다** — 없으면 고른 값이 서버로 안 간다", () => {
+  /* 값을 읽는 자리(`typeOfBox`)가 `closest("[data-field-type]")` 로 항목 이름을
+     찾는다. 그 속성은 `renderField` 가 만드는 `<li>` 에 붙는데, 맨 윗줄은
+     몸통만 꺼내 제 `<div>` 로 감싼다 — 붙여 주지 않으면 이름이 빈 문자열이 되고
+     `fieldChoices("")` 가 거짓이라 **서버로 보내는 분기를 통째로 건너뛴다.**
+
+     그러면 진단을 골라도 화면에만 남고, 탭을 옮기면 사라지고, 확정이 안 되니
+     안내문 생성이 계속 막힌다. 실제로 그렇게 났다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("var made = fieldBody(field);");
+  assert.notEqual(at, -1, "맨 윗줄을 그리는 자리가 없다");
+
+  const cell = code.slice(at, at + 700);
+  assert.match(cell, /data-field-type="/, "맨 윗줄 칸이 항목 이름을 안 들고 있다");
+});
+
+test("**수동 약은 제가 담겼을 때만 비운다** — 옆이 막혔다고 남기면 다음에 또 들어간다", () => {
+  /* 묶음 전체가 성공했는지로 비우면, 이미 확정된 진단이 같이 막혔을 때 수동 약이
+     안 비워진다. 스탭이 다시 저장하면 `maxIdx` 가 새로 세어져 **같은 약이 다음
+     번호로 또 들어간다** — 안내문 데이터에 같은 약이 두 벌 생긴다 (2heej `#216` 리뷰). */
   const code = codeOnly(source("js/ocr-review.js"));
   const at = code.indexOf('"#labs-save, #rx-save"');
-  const body = code.slice(at, at + 1600);
+  const body = code.slice(at, at + 3600);
 
-  assert.match(body, /pickedSet \? \{ MEDICATION_NAME/, "고른 처방을 안 담는다");
+  assert.match(code, /manualTypes/, "수동 약이 쓰는 항목 이름을 안 들고 있다");
+  assert.match(code, /!manualStuck/, "묶음 전체로 판단하면 같은 약이 두 번 들어간다");
+  assert.ok(!/if \(isRx && !stuck\.length\) manualDrugs = \[\];/.test(code), "옛 판단이 남아 있다");
+});
+
+test("**막힌 까닭이 다르면 따로 말한다** — 다시 하면 될 것을 못 한다고 하지 않는다", () => {
+  /* 예전에는 막힌 것 중 하나라도 확정이면 전부 「이미 확정돼」로 뭉뚱그렸다.
+     확정된 약품명과 그물이 끊겨 못 간 1회량이 같이 막히면, 다시 하면 될 1회량까지
+     「못 바꿉니다」로 읽혀 스탭이 엉뚱한 조치를 한다 (2heej `#216` 리뷰). */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const fn = code.slice(code.indexOf("function stuckSaying"), code.indexOf("function copyKey"));
+
+  assert.match(fn, /stuck\.filter/, "까닭별로 안 가른다");
+  assert.ok(!/stuck\.some/.test(fn), "하나라도 확정이면 전부 확정으로 말한다");
+  assert.match(fn, /says\.join/, "두 까닭을 함께 말하지 않는다");
+});
+
+test("**값을 찾는 길은 하나다** — 공통 모듈을 복제하지 않는다", () => {
+  /* `field_type` 으로 값을 찾는 루프는 `ocr-groups.js` 의 `fieldValueOf` 가 이미
+     갖는다. 같은 것을 또 만들면 한쪽만 고쳐진다 — AGENTS.md 의 공통 모듈 규칙이다
+     (2heej `#216` 리뷰). */
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  assert.ok(!code.includes("function serverFieldValue"), "값 찾는 길을 한 벌 더 만들었다");
+  assert.match(code, /fieldValueOf\(result\.fields, "MEDICATION_NAME"\)/, "공통 모듈을 안 쓴다");
+});
+
+test("**한 줄이 막혀도 나머지는 담는다** — 그리고 무엇이 막혔는지 말한다", () => {
+  /* 예전에는 `Promise.all` 이라 한 줄만 거절돼도 묶음이 통째로 깨졌다.
+     확정된 처방을 다시 보내다 409 가 나면 같이 보낸 진단까지 안 담겼다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf('"#labs-save, #rx-save"');
+  const body = code.slice(at, at + 3600);
+
+  assert.match(code, /\.catch\(function \(err\)/, "한 줄의 실패가 묶음을 깨뜨린다");
+  assert.match(code, /stuckSaying\(stuck\)/, "무엇이 막혔는지 안 말한다");
+
+  /* **「잠시 뒤 다시」라고 하지 않는다.** 확정된 항목은 기다려도 안 된다. */
+  const saying = code.slice(code.indexOf("function stuckSaying"), code.indexOf("function serverFieldValue"));
+  assert.match(saying, /OCR_FIELD_CONFIRMED/, "확정된 항목이라는 까닭을 안 가른다");
+  assert.ok(!saying.includes("잠시 뒤"), "기다리면 될 것처럼 말한다");
+});
+
+test("**고른 처방도 담긴다** — 화면이 기억만 하면 새로고침에 사라진다", () => {
+  /* 안내문이 이 값으로 만들어진다. 화면에만 두면 「골랐는데 안 골라진」 채로
+     승인까지 간다.
+
+     **바뀌었을 때만 담는다.** 예전에는 `pickedSet` 이 있으면 무조건 담았는데,
+     그러면 확정된 줄에 다시 `PUT` 이 가 409 가 났다. 담는다는 것은 그대로이고
+     조건만 붙었다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf('"#labs-save, #rx-save"');
+  const body = code.slice(at, at + 3600);
+
+  assert.match(body, /extra\.MEDICATION_NAME = pickedSet\.name/, "고른 처방을 안 담는다");
+  assert.match(body, /isRx && pickedSet/, "처방 블록에서만 담아야 한다");
 });
 
 test("**판독이 없으면 저장 단추가 잠긴다** — 눌러서 실패하면 적은 것이 날아간 줄 안다", () => {
