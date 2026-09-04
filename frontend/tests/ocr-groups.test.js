@@ -995,6 +995,24 @@ test("**두 블록이 각자 제 것만 담는다** — 안 만진 칸이 저장
   assert.equal(PRESCRIPTION_TYPES.indexOf("TSH"), -1, "혈액 항목이 처방으로 세어진다");
 });
 
+test("**고르는 칸은 제 이름을 스스로 읽는다** — 감싸는 자리에 기대지 않는다", () => {
+  /* `choiceHtml` 은 `data-owns` 에 제 항목 이름을 달고 나온다. 값을 읽는
+     `typeOfBox` 가 조상(`data-field-type`)만 뒤지면, 감싸는 자리마다 그 속성을
+     붙여 줘야 하고 하나만 빠뜨려도 **이름이 빈 문자열**이 된다.
+
+     그러면 `fieldChoices("")` 가 거짓이라 서버로 보내는 분기를 통째로 건너뛰고,
+     골라도 화면에만 남는다 — 맨 윗줄에서 실제로 그렇게 났다. 자기 이름을 먼저
+     읽으면 누가 감싸든 상관없다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+  const fn = code.slice(code.indexOf("function typeOfBox"), code.indexOf("function inputValue"));
+
+  assert.match(fn, /getAttribute\("data-owns"\)/, "제 이름을 안 읽고 조상만 뒤진다");
+  assert.ok(
+    fn.indexOf('data-owns') < fn.indexOf("closest"),
+    "조상을 먼저 뒤지면 감싸는 자리가 이름을 가로챈다",
+  );
+});
+
 test("**맨 윗줄도 제 항목 이름을 들고 있다** — 없으면 고른 값이 서버로 안 간다", () => {
   /* 값을 읽는 자리(`typeOfBox`)가 `closest("[data-field-type]")` 로 항목 이름을
      찾는다. 그 속성은 `renderField` 가 만드는 `<li>` 에 붙는데, 맨 윗줄은

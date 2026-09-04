@@ -1188,7 +1188,17 @@ function stateTakesFocus(tone) {
       active && active.getAttribute && active.getAttribute("data-input") !== null
         ? Number(active.getAttribute("data-input"))
         : null;
-    var caret = typingIn === null ? null : [active.selectionStart, active.selectionEnd];
+    /* 🚩 **커서는 글 치는 칸에만 있다.**
+     *
+     * `<select>` 에는 `selectionStart` 가 없어 `undefined` 가 나오는데, 배열로
+     * 감싸면 `[undefined, undefined]` 가 되어 **참으로 읽힌다.** 그 뒤 복원에서
+     * `box.setSelectionRange` 를 부르면 `<select>` 에 그 함수가 없어 터진다.
+     *
+     * 그 예외가 `renderFields` → `redraw` → `onTyped` 를 통째로 중단시켜,
+     * **고른 값을 서버로 보내는 줄이 아예 안 돌았다** — 진단을 골라도 화면에만
+     * 남고 탭을 옮기면 사라졌다. 고르는 칸이 늘면서 드러난 자리다. */
+    var canCaret = !!active && typeof active.selectionStart === "number";
+    var caret = typingIn === null || !canCaret ? null : [active.selectionStart, active.selectionEnd];
 
     fieldsBox.innerHTML = groupsHtml();
 
@@ -1201,7 +1211,9 @@ function stateTakesFocus(tone) {
     var box = fieldsBox.querySelector('[data-input="' + wanted + '"]');
     if (!box) return;
     box.focus();
-    if (caret && typingIn === wanted) box.setSelectionRange(caret[0], caret[1]);
+    if (caret && typingIn === wanted && typeof box.setSelectionRange === "function") {
+      box.setSelectionRange(caret[0], caret[1]);
+    }
   }
 
   /* ── 오른쪽 블록 넷 (와이어프레임 S1-6) ──────────────────────────────
@@ -1881,7 +1893,21 @@ function stateTakesFocus(tone) {
   }
 
   function typeOfBox(box) {
-    var row = box && box.closest ? box.closest("[data-field-type]") : null;
+    if (!box) return "";
+
+    /* **줄이 제 이름을 들고 있으면 그것부터 본다.**
+     *
+     * 고르는 칸(`choiceHtml`)은 `data-owns` 에 제 항목 이름을 달고 나온다.
+     * 조상만 뒤지면 감싸는 자리마다 `data-field-type` 을 붙여 줘야 하는데,
+     * 맨 윗줄이 그것을 빠뜨려 **이름이 빈 문자열이 됐다** — 그러면
+     * `fieldChoices("")` 가 거짓이라 서버로 보내는 분기를 통째로 건너뛰고,
+     * 진단을 골라도 화면에만 남았다.
+     *
+     * 자기 이름을 먼저 읽으면 누가 감싸든 상관없다. */
+    var own = box.getAttribute ? box.getAttribute("data-owns") : null;
+    if (own) return own;
+
+    var row = box.closest ? box.closest("[data-field-type]") : null;
     return row ? row.getAttribute("data-field-type") : "";
   }
 
