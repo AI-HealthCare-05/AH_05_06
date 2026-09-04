@@ -31,7 +31,7 @@ from app.core import config
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
-from app.models.prescriptions import Prescription, PrescriptionItem
+from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
     GuideEvent,
@@ -206,9 +206,7 @@ class GuideService:
         # 같은 `SELECT` 가 **네 번** 돈다 — 주의·응급·담당 문구·의원 공통 문구가
         # 전부 같은 세트를 본다 (`#191` 리뷰, 2heej).
         prescription = await Prescription.filter(visit_id=visit_id).prefetch_related("items").first()
-        prescription_items = (
-            sorted(prescription.items, key=lambda item: item.prescription_item_id) if prescription else []
-        )
+        prescription_items = ordered_prescription_items(prescription)
         set_name = prescription.prescription_set if prescription else None
         prescription_set = await PrescriptionSet.filter(name=set_name).first() if set_name else None
 
