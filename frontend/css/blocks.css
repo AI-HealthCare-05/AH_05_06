@@ -1334,3 +1334,58 @@ textarea.sms__text:focus-visible {
   font-size: 12px;
   color: var(--ink-2);
 }
+
+/* ── 환자 링크 블록 — KEY-275 ─────────────────────────────────────────
+   안내문의 「문자 설정」과 현황이 **같은 블록**을 그린다. 그래서 모양도 여기
+   한 군데다 — `blocks.css` 는 두 화면이 다 싣는다. `doctor.css` 에 두면
+   스탭 화면에서만 안 먹는다(`.grow` 가 그렇게 갈려 있다). */
+.pl {
+  margin-top: var(--s-12);
+}
+.pl__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+}
+.pl__tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--done-bg);
+  color: var(--done);
+}
+.pl--expired .pl__tag {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.pl__body {
+  padding: var(--s-12);
+}
+.pl__when {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.pl--not_yet .pl__when {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.pl__sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+/* 「이 자리에서만 한 번」 — 놓치면 다시 못 본다. 눈에 띄어야 한다. */
+.pl__once {
+  margin: var(--s-8) 0 0;
+  font-size: 12px;
+  color: var(--accent);
+}
+.pl__acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: var(--s-12);
+}
