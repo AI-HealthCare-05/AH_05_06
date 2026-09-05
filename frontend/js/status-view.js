@@ -258,6 +258,11 @@ function statusScreenHtml(view) {
     esc(view.checkInSaying || "아직 없음") +
     "</p></div></section>" +
     "</div>" +
+    /* **환자 액션 현황 아래에 링크 블록** — 원문 배치가 맨 아래에
+       「[링크 무효화] [재발송]」 자리를 잡아 둔 그 자리다(KEY-275).
+       재발송은 발송기가 붙을 때 온다(KEY-247) — 지금은 링크만.
+       안내문의 문자 설정과 **같은 블록**을 그린다. */
+    patientLinkBlockHtml(view.link || null, view.guideStatus, new Date()) +
     /* 아래 전폭 */
     '<section class="box tl">' +
     '<div class="box__head tl__head"><span class="box__title tl__title">진료 처리 이력</span>' +

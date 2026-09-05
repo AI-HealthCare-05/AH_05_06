@@ -712,6 +712,10 @@ function smsScreenHtml(plan) {
     "</div>" +
     '<div class="sms__side sms__side--right">' +
     smsRightHtml(plan) +
+    /* **문구 블록 아래에 링크 블록** — 문구의 `{링크}` 가 이것이다(KEY-275).
+       규칙도 모양도 `patient-link-view.js` 가 갖는다. 현황 화면도 같은 것을
+       그린다 — 두 벌이면 같은 링크가 화면마다 다르게 보인다. */
+    patientLinkBlockHtml(plan.link || null, plan.guideStatus, new Date()) +
     "</div></div>"
   );
 }
