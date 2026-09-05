@@ -88,11 +88,37 @@ class OcrRepository(Protocol):
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription: ...
 
 
+def _medication_suffixes(fields_by_type: dict[str, "OcrField"]) -> list[str]:
+    """**있는 만큼 다 본다** — 다섯으로 끊지 않는다.
+
+    예전에는 `("", "_2", "_3", "_4", "_5")` 를 손으로 적어 두었다. 그런데 판독
+    확인 화면은 수동으로 더한 약을 **기존 최대 번호 다음**으로 담는다
+    (`ocr-review.js` 의 `maxIdx + i + 1`) — 상한이 없다. 판독이 `_5` 까지 냈으면
+    수동 약은 `_6` 이 되어 **여기서 조용히 빠졌다.**
+
+    여태 티가 안 난 것은 이 함수의 결과가 어디에도 안 실렸기 때문이다. 화면이
+    `ocr-finalize` 를 부르기 시작하면(KEY-271) 화면은 「저장했습니다」라 말하고
+    안내문 복약 목록에서 그 약만 사라진다.
+
+    차례는 번호 순이다 — 접미사 없는 것이 첫 약이고, 그 뒤로 `_2`, `_3` … 이다.
+    화면이 그 차례로 보여 주므로 안내문도 같아야 한다.
+    """
+    found: list[tuple[int, str]] = []
+    for name in fields_by_type:
+        if name == "MEDICATION_NAME":
+            found.append((1, ""))
+            continue
+        rest = name.removeprefix("MEDICATION_NAME_") if name.startswith("MEDICATION_NAME_") else None
+        if rest is not None and rest.isdigit():
+            found.append((int(rest), f"_{rest}"))
+    return [suffix for _, suffix in sorted(found)]
+
+
 def _collect_item_rows(
     fields_by_type: dict[str, "OcrField"],
 ) -> list[tuple[str, str, int | None]]:
     rows: list[tuple[str, str, int | None]] = []
-    for suffix in ("", "_2", "_3", "_4", "_5"):
+    for suffix in _medication_suffixes(fields_by_type):
         med_field = fields_by_type.get(f"MEDICATION_NAME{suffix}")
         if med_field is None or not med_field.value:
             continue
