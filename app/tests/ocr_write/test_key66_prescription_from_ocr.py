@@ -69,6 +69,51 @@ class FinalizeOcrTestCase(TestCase):
             confirmed_at=datetime(2026, 9, 3, 10, 0, tzinfo=UTC),
         )
 
+    async def test_a_manually_added_drug_past_the_fifth_still_lands(self) -> None:
+        """**여섯 번째 약이 조용히 빠지지 않는다** — KEY-271.
+
+        판독 확인 화면은 수동으로 더한 약을 **기존 최대 번호 다음**으로 담는다
+        (`ocr-review.js` 의 `maxIdx + i + 1`). 상한이 없다. 그런데 서버는
+        `("", "_2", "_3", "_4", "_5")` 다섯만 보고 있었다 — 판독이 `_5` 까지
+        냈으면 수동 약은 `_6` 이 되어 **여기서 사라졌다.**
+
+        여태 티가 안 난 것은 이 결과가 어디에도 안 실렸기 때문이다. 화면이
+        `ocr-finalize` 를 부르기 시작하면 화면은 「저장했습니다」라 말하고
+        안내문 복약 목록에서 그 약만 없다.
+        """
+        actor, visit, result = await self.make_world("FO-11")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        for i in range(2, 6):
+            await self._add_confirmed_field(result, f"MEDICATION_NAME_{i}", f"판독약{i}", actor)
+        # 스탭이 손으로 더한 약 — 여섯 번째 자리에 담긴다
+        await self._add_confirmed_field(result, "MEDICATION_NAME_6", "록소펜정", actor)
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        names = [item.name for item in await prescription.items.all()]
+        assert "록소펜정" in names, f"여섯 번째 약이 빠졌다 — {names}"
+        assert len(names) == 6, f"약이 {len(names)}개다 — {names}"
+
+    async def test_the_drugs_keep_their_order(self) -> None:
+        """**차례는 번호 순이다** — 화면이 보여 준 차례와 안내문이 같아야 한다."""
+        actor, visit, result = await self.make_world("FO-12")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        # 일부러 뒤섞어 넣는다 — 표에 든 차례가 아니라 번호가 차례를 정해야 한다
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME_3", "셋째약", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "첫째약", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME_10", "열째약", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME_2", "둘째약", actor)
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        names = [item.name for item in await prescription.items.all()]
+        assert names[:4] == ["첫째약", "둘째약", "셋째약", "열째약"], (
+            f"번호 순이 아니다 — {names}. 10 을 2 보다 앞에 두면 글자 비교를 한 것이다"
+        )
+
     async def test_prescription_created_from_confirmed_fields(self) -> None:
         """정상 케이스 — PRESCRIPTION_SET·MEDICATION_NAME·DURATION_DAYS 확정 후 Prescription 생성."""
         actor, visit, result = await self.make_world("FO-01")

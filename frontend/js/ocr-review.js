@@ -164,6 +164,24 @@ function fieldsToConfirm(fields) {
   return out;
 }
 
+/* **처방을 못 세워도 안내문은 만든다** — KEY-271.
+ *
+ * `ocr-finalize` 는 안내문 생성보다 조건이 둘 더 많다. `PRESCRIPTION_SET` 과
+ * `FREQUENCY` 가 없으면 422 로 막는다. 그런데 그런 진료도 **여태 안내문은
+ * 만들어졌다** — 세트를 못 찾아 기본 문구로 나갔을 뿐이다.
+ *
+ * 그 둘을 사슬에서 죽게 두면 이 다리가 **없던 것보다 나쁜 것**이 된다. 처방
+ * 행을 세우려다 안내문 자체를 못 만들게 되기 때문이다.
+ *
+ * 그래서 **더 나아지는 쪽으로만 쓴다** — 세울 수 있으면 세우고, 못 세우면
+ * 여태처럼 넘어간다. 진짜 막아야 하는 것(미확정·권한·없는 진료)은 그대로
+ * 던진다. */
+function finalizeMayPass(error) {
+  var code = error && error.code;
+  if (code === "MISSING_PRESCRIPTION_SET" || code === "MISSING_FREQUENCY") return null;
+  throw error;
+}
+
 /* 안내문 생성이 실패했을 때 화면에 뭐라고 쓸 것인가 — KEY-204.
  *
  * **서버 `message` 를 그대로 흘리지 않는다.** 그 자리에 OCR 원문이나 값이
@@ -2178,7 +2196,7 @@ function stateTakesFocus(tone) {
          `ocr-review-confirm-before-generate` 의 1600 자 창을 먹는다. */
       confirmShownFields()
         .then(function () {
-          return ocrApi.finalizeOcr(wantedId);
+          return ocrApi.finalizeOcr(wantedId).catch(finalizeMayPass);
         })
         .then(function () {
           return ocrApi.generateGuide(wantedId);
