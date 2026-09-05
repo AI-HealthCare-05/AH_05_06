@@ -2172,10 +2172,14 @@ function stateTakesFocus(tone) {
       saveNote.textContent = "안내문을 만드는 중입니다…";
       saveNote.hidden = false;
 
-      /* **확정을 먼저 보내고 생성한다.** 버튼이 「확인 완료 · 안내문 생성」인
-         이유다 — 스탭이 화면의 값을 다 봤다는 뜻이므로, 그 값을 확정으로
-         굳힌 뒤에 만든다. 확정이 실패하면 생성으로 넘어가지 않는다. */
+      /* **확정 → 처방 → 생성** 순서다. 앞이 실패하면 뒤로 안 넘어간다.
+         가운데 `finalizeOcr` 가 KEY-271 에서 놓은 다리다 — 까닭은
+         `ocr-api.js` 의 `finalizeOcr` 주석에 적었다. 여기에 길게 적으면
+         `ocr-review-confirm-before-generate` 의 1600 자 창을 먹는다. */
       confirmShownFields()
+        .then(function () {
+          return ocrApi.finalizeOcr(wantedId);
+        })
         .then(function () {
           return ocrApi.generateGuide(wantedId);
         })
