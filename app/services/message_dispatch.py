@@ -21,11 +21,9 @@ from app.models.visits import (
     GuideMessage,
     GuideMessageKind,
     GuideMessageStatus,
-    PatientGuideLink,
     Visit,
 )
 from app.services.message_templates import DEFAULT_BODY, MessageTemplateKind
-from app.services.patient_links import LINK_TTL, digest_link_token
 from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError, SmsSendResult
 
 #: 최대 재시도 횟수. 이걸 넘기면 일시 실패도 영구 실패(FAILED)로 종료한다.
@@ -53,31 +51,19 @@ class DispatchResult:
     status: GuideMessageStatus
 
 
-async def _mint_link_token(guide_document_id: int) -> str:
-    """발송 직전 링크 원문을 새로 만든다 — 저장은 항상 digest뿐이다.
+class LinkNotAvailableError(RuntimeError):
+    """`{링크}`/`{예약링크}`를 채울 원문 토큰을 얻을 방법이 없을 때.
 
-    이미 링크가 있으면 갈아 끼운다. 원문은 발급 순간에만 존재하고 어디에도
-    남지 않아 이전 원문을 다시 쓸 방법이 없다 — 확인 문자(D7·D15·D30)는
-    최초 72시간 창을 이미 넘겨 나가므로 매번 새로 만드는 수밖에 없다.
+    `PatientLinkService.issue()`는 스탭 인증(actor)을 전제하고, 이미 링크가
+    발급된 안내문은 재발급을 막는다 — `PatientGuideLink` 모델 docstring이
+    스스로 「폐기·재발급 정책이 확정되기 전」이라고 적어 둔 대로, 이 정책은
+    아직 팀 차원에서 결정되지 않았다.
+
+    발송 직전 원문을 새로 발급/교체하는 방법도 있지만, 그건 링크 보안
+    모델(원문을 저장하지 않는다는 원칙)에 손대는 결정이라 이 파이프라인이
+    대신 정하지 않는다 — PR 코멘트로 의견만 남기고, 정책이 정해지면 여기를
+    채운다. 그때까지는 조용히 깨진 링크를 보내는 대신 명시적으로 실패시킨다.
     """
-    raw_token = secrets.token_urlsafe(32)
-    link = await PatientGuideLink.filter(guide_document_id=guide_document_id).first()
-    if link is None:
-        await PatientGuideLink.create(
-            guide_document_id=guide_document_id,
-            token_digest=digest_link_token(raw_token),
-            expires_at=now() + LINK_TTL,
-            issued_by=0,  # 사람이 아니라 발송 파이프라인이 발급했다는 표시.
-        )
-    else:
-        link.token_digest = digest_link_token(raw_token)
-        link.expires_at = now() + LINK_TTL
-        await link.save(update_fields=["token_digest", "expires_at"])
-    return raw_token
-
-
-def _link_url(raw_token: str) -> str:
-    return f"/patient_wireframe/html/otp.html#t={raw_token}"
 
 
 async def _template_body(hospital_id: int, kind: MessageTemplateKind) -> str:
@@ -108,7 +94,12 @@ async def _course_days(visit_id: int) -> int | None:
 
 
 async def render_message_body(message: GuideMessage) -> str:
-    """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로."""
+    """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
+
+    `{링크}`/`{예약링크}`는 채우지 않는다 — 이유는 `LinkNotAvailableError`
+    docstring을 본다. 남은 변수만 채운 뒤, 그 둘이 아직도 문구에 남아
+    있으면 `LinkNotAvailableError`를 던진다.
+    """
     guide = await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
     if guide is None:
         raise ValueError(f"guide_document not found for message {message.guide_message_id}")
@@ -116,15 +107,10 @@ async def render_message_body(message: GuideMessage) -> str:
     patient = await Patient.filter(patient_id=visit.patient_id).first() if visit else None
     hospital = await Hospital.filter(hospital_id=guide.hospital_id).first()
 
-    raw_token = await _mint_link_token(guide.guide_document_id)
-    link = _link_url(raw_token)
-
     body = await _template_body(guide.hospital_id, MessageTemplateKind(message.kind.value))
     values = {
         "의원명": hospital.name if hospital else "",
         "환자명": patient.name if patient else "",
-        "링크": link,
-        "예약링크": link,
     }
     if message.kind in _CHECK_DAY_NUMBER:
         values["일차"] = str(_CHECK_DAY_NUMBER[message.kind])
@@ -136,6 +122,9 @@ async def render_message_body(message: GuideMessage) -> str:
 
     for name, value in values.items():
         body = body.replace("{" + name + "}", value)
+
+    if "{링크}" in body or "{예약링크}" in body:
+        raise LinkNotAvailableError(f"guide_message_id={message.guide_message_id} kind={message.kind.value}")
     return body
 
 
@@ -177,6 +166,9 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
 
         body = await render_message_body(message)
         result = await sender.send(patient.phone, body)
+    except LinkNotAvailableError:
+        # 재시도해도 정책이 정해지기 전엔 같은 결과다 — 5번 돌 필요 없이 바로 종료한다.
+        return await _finish_failed(message, token, provider_detail="link_not_available_pending_policy")
     except SmsSendError as exc:
         return await _finish_retryable(message, token, moment, provider_detail=exc.reason)
     except Exception:
@@ -206,21 +198,34 @@ async def _finish_sent(
         attempt_count=message.attempt_count + 1,
         claim_token=None,
     )
-    if affected == 0:
-        default_logger.warning(
-            "발송 성공을 기록하지 못했다 — claim_token 불일치, guide_message_id=%s", message.guide_message_id
-        )
+    if affected != 1:
+        raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
     return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.SENT)
 
 
-async def _finish_failed(message: GuideMessage, token: str, *, provider_detail: str | None) -> DispatchResult:
-    await GuideMessage.filter(guide_message_id=message.guide_message_id, claim_token=token).update(
+async def _finish_failed(
+    message: GuideMessage,
+    token: str,
+    *,
+    provider_detail: str | None,
+) -> DispatchResult:
+    affected = await GuideMessage.filter(
+        guide_message_id=message.guide_message_id,
+        claim_token=token,
+    ).update(
         status=GuideMessageStatus.FAILED,
         provider_detail=provider_detail,
         attempt_count=message.attempt_count + 1,
         claim_token=None,
     )
-    return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.FAILED)
+
+    if affected != 1:
+        raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
+
+    return DispatchResult(
+        guide_message_id=message.guide_message_id,
+        status=GuideMessageStatus.FAILED,
+    )
 
 
 async def _finish_retryable(
@@ -230,26 +235,35 @@ async def _finish_retryable(
     *,
     provider_detail: str,
 ) -> DispatchResult:
-    """일시 실패 — 재시도 여지가 남았으면 다시 SCHEDULED, 아니면 FAILED로 종료."""
+    """일시 실패 — 재시도 여지가 남았으면 다시 예약한다."""
     attempt = message.attempt_count + 1
+
     if attempt >= MAX_ATTEMPTS:
-        await GuideMessage.filter(guide_message_id=message.guide_message_id, claim_token=token).update(
-            status=GuideMessageStatus.FAILED,
+        return await _finish_failed(
+            message,
+            token,
             provider_detail=provider_detail,
-            attempt_count=attempt,
-            claim_token=None,
         )
-        return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.FAILED)
 
     next_at = moment + timedelta(seconds=backoff_seconds(attempt))
-    await GuideMessage.filter(guide_message_id=message.guide_message_id, claim_token=token).update(
+    affected = await GuideMessage.filter(
+        guide_message_id=message.guide_message_id,
+        claim_token=token,
+    ).update(
         status=GuideMessageStatus.SCHEDULED,
         scheduled_at=next_at,
         provider_detail=provider_detail,
         attempt_count=attempt,
         claim_token=None,
     )
-    return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.SCHEDULED)
+
+    if affected != 1:
+        raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
+
+    return DispatchResult(
+        guide_message_id=message.guide_message_id,
+        status=GuideMessageStatus.SCHEDULED,
+    )
 
 
 async def dispatch_due_messages(sender: SmsSender, *, limit: int = 100) -> list[DispatchResult]:
