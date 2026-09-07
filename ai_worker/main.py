@@ -56,7 +56,7 @@ async def _run_ocr_loop() -> None:
 async def _run_message_dispatch_loop() -> None:
     """`_MESSAGE_POLL_SECONDS`마다 나갈 때가 된 안내·확인 문자를 찾아서 보낸다 — KEY-249.
 
-    SMS 설정 오류(SMS_PROVIDER=aligo인데 시크릿이 비어 있는 등)로 발송기
+    SMS 설정 오류(SMS_PROVIDER=solapi인데 시크릿이 비어 있는 등)로 발송기
     생성 자체가 실패해도, 그건 이 루프만 못 뛰는 것이지 OCR 처리까지 죽을
     이유는 없다 — 두 파이프라인은 서로 독립적이어야 한다(2heej 리뷰).
     """

@@ -39,7 +39,7 @@ def pilot_mock_otp_gate_open() -> bool:
 
 class SmsProvider(StrEnum):
     MOCK = "mock"
-    ALIGO = "aligo"
+    SOLAPI = "solapi"
 
 
 # 예시 파일이 「여기에 무엇을 넣는지」 알려 주려고 쓰는 자리표시자 모양.
@@ -151,11 +151,11 @@ class Config(BaseSettings):
     # 문자 발송 어댑터 — KEY-248. 자격증명 없이도 개발·테스트가 돌아가도록
     # mock이 기본값이다. 실제 값은 env/secret에서만 주입한다.
     SMS_PROVIDER: SmsProvider = SmsProvider.MOCK
-    ALIGO_KEY: SecretStr = SecretStr("")
-    ALIGO_USER_ID: SecretStr = SecretStr("")
-    ALIGO_SENDER_NUMBER: SecretStr = SecretStr("")
-    ALIGO_BASE_URL: str = "https://apis.aligo.in"
-    ALIGO_TIMEOUT_SECONDS: float = 10.0
+    SOLAPI_API_KEY: SecretStr = SecretStr("")
+    SOLAPI_API_SECRET: SecretStr = SecretStr("")
+    SOLAPI_SENDER_NUMBER: SecretStr = SecretStr("")
+    SOLAPI_BASE_URL: str = "https://api.solapi.com"
+    SOLAPI_TIMEOUT_SECONDS: float = 10.0
 
     @model_validator(mode="after")
     def _mock_otp_code_is_non_prod_only(self) -> "Config":
@@ -177,17 +177,17 @@ class Config(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _aligo_credentials_are_complete(self) -> "Config":
-        if self.SMS_PROVIDER is not SmsProvider.ALIGO:
+    def _solapi_credentials_are_complete(self) -> "Config":
+        if self.SMS_PROVIDER is not SmsProvider.SOLAPI:
             return self
         required = {
-            "ALIGO_KEY": self.ALIGO_KEY,
-            "ALIGO_USER_ID": self.ALIGO_USER_ID,
-            "ALIGO_SENDER_NUMBER": self.ALIGO_SENDER_NUMBER,
+            "SOLAPI_API_KEY": self.SOLAPI_API_KEY,
+            "SOLAPI_API_SECRET": self.SOLAPI_API_SECRET,
+            "SOLAPI_SENDER_NUMBER": self.SOLAPI_SENDER_NUMBER,
         }
         missing = [name for name, value in required.items() if not value.get_secret_value().strip()]
         if missing:
-            raise ValueError("SMS_PROVIDER=aligo 설정에 필요한 환경변수가 비어 있다: " + ", ".join(missing))
+            raise ValueError("SMS_PROVIDER=solapi 설정에 필요한 환경변수가 비어 있다: " + ", ".join(missing))
         return self
 
     @model_validator(mode="after")
