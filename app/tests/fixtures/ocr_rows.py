@@ -35,11 +35,14 @@ CSV 칸 중 **담을 `field_type` 이 있는 것만** 필드로 만든다. 없�
 안 만든다. S1-7 의 「못 읽음」 표본은 실제 업로드로 만들어야 한다.
 """
 
+import csv
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
+from pathlib import Path
 
 from app.models.ocr import DurationUnit, course_days
+from app.models.prescriptions import AS_NEEDED
 from app.tests.fixtures.mapping import PENDING
 from app.tests.fixtures.prescriptions import SEPARATOR
 
@@ -118,6 +121,27 @@ class ReadRow:
     dropped: tuple[str, ...] = field(default=(), repr=False)
 
 
+#: **CSV 조회는 여기 한 곳에 둔다** — 이희진 님 `#236` ⑤.
+#:
+#: 검사 두 파일이 같은 열 줄을 각자 복사해 두고 있었다. 경로가 바뀌면 한쪽만
+#: 고쳐지고, 그때 우는 것은 검사라 원인을 찾는 데 시간이 든다.
+PATIENT_CSV = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-patients.csv"
+
+
+def patient_rows() -> list[dict[str, str]]:
+    """합성 환자 CSV 전부."""
+    with PATIENT_CSV.open(encoding="utf-8-sig") as handle:
+        return list(csv.DictReader(handle))
+
+
+def patient_row(scenario: str) -> dict[str, str]:
+    """시나리오 하나. 없으면 그 자리에서 멈춘다 — 못 찾은 채 도는 검사가 더 나쁘다."""
+    for row in patient_rows():
+        if row["시나리오ID"] == scenario:
+            return row
+    raise AssertionError(f"CSV 에 {scenario} 가 없다 — 검사가 헛돈다")
+
+
 def stage_for(visit_state: str) -> ReadStage:
     """`진료상태` 를 판독 단계로 옮긴다."""
     key = visit_state.strip()
@@ -130,7 +154,7 @@ def stage_for(visit_state: str) -> ReadStage:
     return _STAGE_BY_VISIT_STATE[key]
 
 
-def duration_row(total_raw: str, unit_label: str, days_column: str) -> FieldRow | None:
+def duration_row(total_raw: str, unit_label: str, days_column: str, suffix: str = "") -> FieldRow | None:
     """`총투원문` 과 `총투단위` 로 처방일수 한 줄을 만든다.
 
     **판독은 원문 숫자를 읽는다.** `1/1/3` 의 `3` 이 그것이다. 그것이 3통인지
@@ -160,7 +184,7 @@ def duration_row(total_raw: str, unit_label: str, days_column: str) -> FieldRow 
             f"총투 {read}{unit} 을 {days}일로 셌는데 CSV 처방일수는 {wanted}일이다 — 환산 규칙과 데이터가 어긋난다"
         )
 
-    return FieldRow(field_type="DURATION_DAYS", value=str(read), confidence=Decimal("0.96"), unit=unit)
+    return FieldRow(field_type=f"DURATION_DAYS{suffix}", value=str(read), confidence=Decimal("0.96"), unit=unit)
 
 
 def _lab_rows(row: dict[str, str]) -> tuple[list[FieldRow], list[str]]:
@@ -209,9 +233,20 @@ def read_from_row(row: dict[str, str]) -> ReadRow:
         rows.append(FieldRow(field_type=f"MEDICATION_NAME{suffix}", value=name, confidence=Decimal("0.94")))
         rows.append(FieldRow(field_type=f"FREQUENCY{suffix}", value=frequency, confidence=Decimal("0.93")))
 
-    duration = duration_row(row.get("총투원문", ""), row.get("총투단위", ""), row.get("처방일수", ""))
-    if duration is not None:
-        rows.append(duration)
+        #: **약마다 심는다** — 이희진 님 `#236` ①.
+        #:
+        #: 여태 행마다 한 번만 심어서 접미사 없는 `DURATION_DAYS` 하나만 났다.
+        #: 그러면 둘째 약은 `_collect_item_rows` 가 `DURATION_DAYS_2` 를 못 찾아
+        #: `duration_days=None` 이 되고, **소진 예정일이 통째로 안 잡힌다.**
+        #: CSV 에 그런 행이 넷 있다(`SYN-PCOS-07`·`SYN-DUP-09`·`SYN-BULK-037`·
+        #: `SYN-BULK-039`).
+        #:
+        #: 「필요시」는 일부러 건너뛴다 — 소비하는 `_collect_item_rows` 도 같은
+        #: 규칙이다(`frequency != AS_NEEDED`). 필요할 때 먹는 약에 소진일은 없다.
+        if frequency != AS_NEEDED:
+            duration = duration_row(row.get("총투원문", ""), row.get("총투단위", ""), row.get("처방일수", ""), suffix)
+            if duration is not None:
+                rows.append(duration)
 
     lab, dropped = _lab_rows(row)
     rows.extend(lab)

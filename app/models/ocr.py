@@ -225,10 +225,28 @@ def course_days(value: str | None, unit: str | None) -> int | None:
     """
     if value is None:
         return None
-    digits = "".join(ch for ch in str(value) if ch.isdigit())
-    if not digits:
-        return None
-    read = int(digits)
+
+    text = str(value).strip()
+    try:
+        read = int(text)
+    except ValueError:
+        #: **숫자만 뽑는 것은 마지막 수단이다** — 이희진 님 `#236` ③.
+        #:
+        #: 판독 원문에 단위 글자가 붙어 올 수 있어서(`"56일"`) 뽑아 쓰는 길을
+        #: 남긴다. 그런데 곧장 뽑으면 **값의 뜻을 바꾸는 글자까지 지운다** —
+        #: `"-5"` 가 `5`(통수면 140)로, `"1.5"` 가 `15` 로 조용히 통과했다.
+        #: 옛 `_course_days` 는 `int()` 를 먼저 해서 부호를 지켰는데, 그 순서를
+        #: 잃은 것이 이 회귀다.
+        #:
+        #: 부호나 소수점이 보이면 읽지 않는다. 소진 예정일을 지어내는 것보다
+        #: 안 만드는 편이 낫다 — 위 독스트링이 정한 태도 그대로다.
+        if any(mark in text for mark in ("-", "−", ".", ",")):
+            return None
+        digits = "".join(ch for ch in text if ch.isdigit())
+        if not digits:
+            return None
+        read = int(digits)
+
     if read <= 0:
         return None
     return read * DAYS_PER_PACK if unit == DurationUnit.PACK else read

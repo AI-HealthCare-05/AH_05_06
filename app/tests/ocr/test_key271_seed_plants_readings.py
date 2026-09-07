@@ -4,9 +4,7 @@
 상태, 확정 도장, 재실행, 그리고 심은 것으로 실제 처방이 서는지.
 """
 
-import csv
 from datetime import UTC, datetime
-from pathlib import Path
 
 from tortoise.contrib.test import TestCase
 
@@ -16,21 +14,9 @@ from app.models.staffs import Hospital, Staff
 from app.models.visits import Visit
 from app.ocr.security import OcrActor
 from app.ocr.service import TortoiseOcrRepository
+from app.services.message_dispatch import _course_days as dispatch_course_days
+from app.tests.fixtures.ocr_rows import patient_row, patient_rows
 from scripts.seed import _seed_ocr
-
-CSV_PATH = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-patients.csv"
-
-
-def _rows() -> list[dict[str, str]]:
-    with CSV_PATH.open(encoding="utf-8-sig") as handle:
-        return list(csv.DictReader(handle))
-
-
-def row_for(scenario: str) -> dict[str, str]:
-    for row in _rows():
-        if row["시나리오ID"] == scenario:
-            return row
-    raise AssertionError(f"CSV 에 {scenario} 가 없다 — 검사가 헛돈다")
 
 
 class SeedPlantsReadingsTestCase(TestCase):
@@ -68,7 +54,7 @@ class SeedPlantsReadingsTestCase(TestCase):
         """
         clinic, _, visit = await self.make_world("NO-DOC")
 
-        planted = await _seed_ocr(visit, row_for("SYN-PCOS-06"), clinic.hospital_id)
+        planted = await _seed_ocr(visit, patient_row("SYN-PCOS-06"), clinic.hospital_id)
 
         assert planted == (0, 0)
         assert not await OcrJob.filter(visit_id=visit.visit_id).exists()
@@ -81,7 +67,7 @@ class SeedPlantsReadingsTestCase(TestCase):
         """
         clinic, _, visit = await self.make_world("DONE")
 
-        await _seed_ocr(visit, row_for("SYN-PCOS-02"), clinic.hospital_id)
+        await _seed_ocr(visit, patient_row("SYN-PCOS-02"), clinic.hospital_id)
 
         job = await OcrJob.filter(visit_id=visit.visit_id).first()
         assert job is not None
@@ -97,7 +83,7 @@ class SeedPlantsReadingsTestCase(TestCase):
         """
         clinic, _, visit = await self.make_world("REVIEW")
 
-        await _seed_ocr(visit, row_for("SYN-PCOS-08"), clinic.hospital_id)
+        await _seed_ocr(visit, patient_row("SYN-PCOS-08"), clinic.hospital_id)
 
         fields = await OcrField.filter(ocr_result__ocr_job__visit_id=visit.visit_id)
         assert fields, "필드를 하나도 안 심었다"
@@ -113,7 +99,7 @@ class SeedPlantsReadingsTestCase(TestCase):
         """
         clinic, doctor, visit = await self.make_world("STAMP")
 
-        await _seed_ocr(visit, row_for("SYN-PCOS-02"), clinic.hospital_id)
+        await _seed_ocr(visit, patient_row("SYN-PCOS-02"), clinic.hospital_id)
 
         fields = await OcrField.filter(ocr_result__ocr_job__visit_id=visit.visit_id)
         assert all(field.is_confirmed for field in fields)
@@ -128,7 +114,7 @@ class SeedPlantsReadingsTestCase(TestCase):
         여기서 잰다.
         """
         clinic, doctor, visit = await self.make_world("BUILD")
-        await _seed_ocr(visit, row_for("SYN-PCOS-02"), clinic.hospital_id)
+        await _seed_ocr(visit, patient_row("SYN-PCOS-02"), clinic.hospital_id)
         actor = OcrActor(staff_id=doctor.staff_id, hospital_id=clinic.hospital_id, roles=frozenset(["doctor"]))
 
         prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
@@ -144,7 +130,7 @@ class SeedPlantsReadingsTestCase(TestCase):
         읽는 쪽 몫이다 — 안 하면 소진 문자가 81일 일찍 예약된다.
         """
         clinic, doctor, visit = await self.make_world("PACK")
-        row = row_for("SYN-PCOS-02")
+        row = patient_row("SYN-PCOS-02")
         assert (row["총투원문"], row["총투단위"], row["처방일수"]) == ("1/1/3", "통수", "84")
         await _seed_ocr(visit, row, clinic.hospital_id)
 
@@ -161,7 +147,9 @@ class SeedPlantsReadingsTestCase(TestCase):
         """같은 세트라도 일수 처방은 그대로다 — 단위는 세트가 아니라 그 줄의 성질이다."""
         clinic, doctor, visit = await self.make_world("DAYS")
         row = next(
-            r for r in _rows() if r["총투단위"] == "일수" and r["처방일수"] == "84" and r["진료상태"] == "발송 완료"
+            r
+            for r in patient_rows()
+            if r["총투단위"] == "일수" and r["처방일수"] == "84" and r["진료상태"] == "발송 완료"
         )
         await _seed_ocr(visit, row, clinic.hospital_id)
         actor = OcrActor(staff_id=doctor.staff_id, hospital_id=clinic.hospital_id, roles=frozenset(["doctor"]))
@@ -170,24 +158,74 @@ class SeedPlantsReadingsTestCase(TestCase):
 
         assert (await prescription.items.all())[0].duration_days == 84
 
-    async def test_the_second_drug_lands_too(self) -> None:
-        """약이 둘인 행이 13건 있다 — 번호 접미사가 실제로 도는지 잰다."""
+    async def test_the_second_drug_gets_its_own_course_days(self) -> None:
+        """**둘째 약도 처방일수를 받는다** — 이희진 님 `#236` ①.
+
+        예전 판은 `next(...)` 로 CSV 에서 처음 걸리는 2약 행을 집고 **개수만** 셌다.
+        하필 그 행(`SYN-EMS-08`)의 둘째 약이 「필요시」라, 접미사 없는
+        `DURATION_DAYS` 하나만 심던 결함을 통째로 못 봤다 — 개수는 늘 맞았으니까.
+
+        그래서 행을 **이름으로** 집고 소진일까지 잰다. `SYN-PCOS-07` 은 통수(3통)
+        처방이라 84일이 되어야 하고, 둘째 약(메트포르민)도 같은 기간을 받는다.
+        """
         clinic, doctor, visit = await self.make_world("TWO")
-        two = next(r for r in _rows() if " + " in r["약"] and r["진료상태"] not in ("진료기록 없음", ""))
-        await _seed_ocr(visit, two, clinic.hospital_id)
+        await _seed_ocr(visit, patient_row("SYN-PCOS-07"), clinic.hospital_id)
         actor = OcrActor(staff_id=doctor.staff_id, hospital_id=clinic.hospital_id, roles=frozenset(["doctor"]))
 
         prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
 
-        names = [item.name for item in await prescription.items.all()]
-        assert len(names) == 2, f"약이 {len(names)}개다 — {names}"
+        got = [(item.name, item.duration_days) for item in await prescription.items.all()]
+        assert len(got) == 2, f"약이 {len(got)}개다 — {got}"
+        for name, days in got:
+            assert days == 84, f"{name} 의 처방일수가 {days} 다 — 3통은 84일이어야 한다"
+
+    async def test_the_message_pipeline_reads_the_same_days(self) -> None:
+        """**문자도 같은 셈을 쓴다** — 이희진 님 `#236` ②.
+
+        `message_dispatch._course_days` 에 사본이 하나 더 있었고, 독스트링이
+        「`guides.py` 의 같은 이름과 동일 로직」이라 적어 두었는데 그 짝만 고쳐졌다.
+        그러면 예약은 84일 뒤로 맞게 잡히는데 `{일수}` 를 쓰는 RUN_OUT 문구에는
+        원문 「3」이 그대로 들어가 **문자가 「3일분」이라고 말한다.**
+
+        같은 규칙을 세 곳에 적어 두면 한 곳만 고쳐진다 — 그것이 이미 한 번 났다.
+        """
+        clinic, _, visit = await self.make_world("MSG")
+        await _seed_ocr(visit, patient_row("SYN-PCOS-07"), clinic.hospital_id)
+
+        assert await dispatch_course_days(visit.visit_id) == 84, "문자 쪽이 통수를 안 보고 원문 숫자를 쓴다"
+
+    async def test_an_as_needed_drug_gets_no_course_days(self) -> None:
+        """**「필요시」 약에는 소진일이 없다** — 심는 쪽도 그 규칙을 따른다.
+
+        `_collect_item_rows` 가 `frequency != AS_NEEDED` 로 거르는데, 시드가 그
+        약에도 처방일수를 심으면 두 규칙이 어긋난 채로 굴러간다.
+        """
+        clinic, doctor, visit = await self.make_world("ASNEED")
+        await _seed_ocr(visit, patient_row("SYN-EMS-08"), clinic.hospital_id)
+        actor = OcrActor(staff_id=doctor.staff_id, hospital_id=clinic.hospital_id, roles=frozenset(["doctor"]))
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        by_frequency = {item.frequency: item.duration_days for item in await prescription.items.all()}
+        assert by_frequency.get("1일 1회") == 56, f"정기 복용 약이 56일을 못 받았다 — {by_frequency}"
+        assert by_frequency.get("필요시") is None, f"필요시 약에 소진일이 붙었다 — {by_frequency}"
+
+        #: **심은 것 자체를 본다.** 위 단언만으로는 부족하다 — `_collect_item_rows`
+        #: 가 「필요시」를 스스로 거르므로, 시드가 잘못 심어도 결과는 같다. 그러면
+        #: 두 규칙이 어긋난 채로 굴러가고, 소비 쪽 가드가 언젠가 바뀌면 그때 드러난다.
+        planted = {
+            field.field_type
+            for field in await OcrField.filter(ocr_result__ocr_job__visit_id=visit.visit_id)
+            if field.field_type.startswith("DURATION_DAYS")
+        }
+        assert planted == {"DURATION_DAYS"}, f"필요시 약에도 처방일수를 심었다 — {sorted(planted)}"
 
     async def test_seeding_twice_does_not_stack(self) -> None:
         """**같은 명령을 반복해도 쌓이지 않는다** — 시드 전체가 그 규칙으로 짜여 있다."""
         clinic, _, visit = await self.make_world("AGAIN")
-        first = await _seed_ocr(visit, row_for("SYN-PCOS-02"), clinic.hospital_id)
+        first = await _seed_ocr(visit, patient_row("SYN-PCOS-02"), clinic.hospital_id)
 
-        second = await _seed_ocr(visit, row_for("SYN-PCOS-02"), clinic.hospital_id)
+        second = await _seed_ocr(visit, patient_row("SYN-PCOS-02"), clinic.hospital_id)
 
         assert second == (0, 0), "두 번째 실행이 또 심었다"
         assert await OcrJob.filter(visit_id=visit.visit_id).count() == 1
@@ -213,7 +251,7 @@ class SeedPlantsReadingsTestCase(TestCase):
             visited_at=datetime(2026, 9, 3, 3, 0, tzinfo=UTC),
         )
 
-        planted = await _seed_ocr(visit, row_for("SYN-PCOS-02"), clinic.hospital_id)
+        planted = await _seed_ocr(visit, patient_row("SYN-PCOS-02"), clinic.hospital_id)
 
         assert planted == (0, 0)
         assert not await OcrJob.filter(visit_id=visit.visit_id).exists()

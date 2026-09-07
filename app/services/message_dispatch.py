@@ -13,7 +13,7 @@ from tortoise.timezone import now
 
 from app.core.logger import default_logger
 from app.models.catalog import MessageTemplate
-from app.models.ocr import OcrField
+from app.models.ocr import OcrField, course_days
 from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import (
@@ -73,25 +73,28 @@ async def _template_body(hospital_id: int, kind: MessageTemplateKind) -> str:
 
 
 async def _course_days(visit_id: int) -> int | None:
-    """처방일수 — 판독이 확정한 값에서 읽는다 (app/services/guides.py의 같은 이름과 동일 로직).
+    """처방일수 — 판독이 확정한 값에서 읽는다.
 
     **확정된 것만 본다.** 스탭이 아직 확인하지 않은 값을 문구에 쓰면 안 된다.
+
+    **셈은 `app/models/ocr.py` 의 `course_days` 것이다** — 이희진 님 `#236` ②.
+
+    여기 사본이 따로 있었고, 독스트링이 「`guides.py` 의 같은 이름과 동일 로직」
+    이라 적어 두었는데 그 짝이 KEY-271 에서 `unit` 을 보게 바뀌면서 **이 자리만
+    낡았다.** 그러면 통수 처방에서 예약은 84일 뒤로 맞게 잡히는데 `{일수}` 를 쓰는
+    RUN_OUT 문구에는 원문 숫자 「3」이 그대로 들어가, 문자가 「3일분」이라고 말한다.
+
+    같은 규칙을 세 곳에 적어 두면 한 곳만 고쳐진다 — 그것이 이미 한 번 났다.
     """
     row = await OcrField.filter(
         ocr_result__ocr_job__visit_id=visit_id,
         field_type="DURATION_DAYS",
         is_confirmed=True,
     ).first()
-    if row is None or not row.value:
+    if row is None:
         return None
-    try:
-        days = int(str(row.value).strip())
-    except ValueError:
-        digits = "".join(ch for ch in str(row.value) if ch.isdigit())
-        if not digits:
-            return None
-        days = int(digits)
-    return days if days > 0 else None
+    # 판독이 읽은 숫자가 총투(통)일 수 있다 — `unit` 이 그것을 말한다.
+    return course_days(row.value, row.unit)
 
 
 async def render_message_body(message: GuideMessage) -> str:
