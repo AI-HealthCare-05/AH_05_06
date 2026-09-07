@@ -518,6 +518,23 @@ class GuideMessage(models.Model):
     hold_reason = fields.CharEnumField(enum_type=GuideMessageHold, null=True)
     #: 실제로 나간 글. 보내기 전에는 비어 있다.
     sent_body = fields.TextField(null=True)
+
+    #: 발송기(Aligo 등)가 접수하면서 돌려준 메시지 ID — KEY-249.
+    #: 사람에게 안 보인다. 문의가 왔을 때 공급자 쪽과 대조하는 용도다.
+    provider_message_id = fields.CharField(max_length=64, null=True)
+    #: 발송기가 돌려준 원문 실패 코드 — KEY-249. `failure_code` 는 화면에
+    #: 보이는 넷 중 하나로만 못박히므로, 그 넷에 안 들어맞는 원인은 여기
+    #: 원본 코드로만 남긴다. 사람에게 안 보인다.
+    provider_detail = fields.CharField(max_length=200, null=True)
+    #: 몇 번째 시도인가 — KEY-249. 지수 백오프 계산과 최대 재시도 판정에 쓴다.
+    attempt_count = fields.SmallIntField(default=0)
+    #: 지금 어느 Worker가 이 문자를 붙잡고 있는지 — KEY-249 멱등키.
+    #: 집을 때 채우고 끝나면(성공·재시도·최종실패 무엇이든) 곧바로 비운다.
+    #: 채워진 채로 오래 남아 있으면 그 사이 워커가 죽은 것이다 — 재시도
+    #: 판정에서 `claim_token` 값이 그때와 같은지만 보고, 이 필드 자체로
+    #: 화면에 뭔가를 보여주지 않는다.
+    claim_token = fields.CharField(max_length=32, null=True)
+
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
