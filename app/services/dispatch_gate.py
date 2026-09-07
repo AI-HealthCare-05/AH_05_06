@@ -8,7 +8,7 @@
 from dataclasses import dataclass
 
 from app.core import config
-from app.core.storage import LocalFileStorage, StorageBackend
+from app.core.storage import LocalFileStorage, StorageProbe
 from app.models.documents import MedicalDocument
 from app.models.visits import GuideDocument, GuideMessage, GuideMessageHold
 
@@ -22,7 +22,7 @@ class DispatchGateDecision:
 async def evaluate_dispatch_gate(
     message: GuideMessage,
     *,
-    storage: StorageBackend | None = None,
+    storage: StorageProbe | None = None,
 ) -> DispatchGateDecision:
     """게이트 판정과 그때 읽은 안내문을 함께 돌려준다."""
     guide = await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
@@ -44,13 +44,13 @@ async def evaluate_dispatch_gate(
 async def gate_hold_reason(
     message: GuideMessage,
     *,
-    storage: StorageBackend | None = None,
+    storage: StorageProbe | None = None,
 ) -> GuideMessageHold | None:
     """막을 이유가 있으면 그 사유를, 없으면 `None`을 돌려준다."""
     return (await evaluate_dispatch_gate(message, storage=storage)).hold_reason
 
 
-async def _source_documents_are_deleted(visit_id: int, storage: StorageBackend) -> bool:
+async def _source_documents_are_deleted(visit_id: int, storage: StorageProbe) -> bool:
     """이 진료에 딸린 원본 의료문서 파일이 전부 지워졌는가.
 
     저장소 조회가 실패하면 삭제됐다고 추측하지 않고 발송을 막는다. 상대

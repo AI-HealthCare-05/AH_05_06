@@ -33,6 +33,11 @@ _MIME_TO_EXT: dict[str, str] = {
 class StorageBackend(Protocol):
     async def save(self, content: bytes, mime_type: str) -> str: ...
     async def delete(self, path: str) -> None: ...
+
+
+class StorageProbe(Protocol):
+    """저장된 객체의 존재 여부만 확인하는 읽기 전용 계약."""
+
     async def exists(self, path: str) -> bool: ...
 
 
@@ -43,6 +48,8 @@ class LocalFileStorage:
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def _stored_path(self, path: str) -> Path:
+        if "://" in path:
+            raise ValueError("LocalFileStorage cannot inspect a non-local object key")
         candidate = Path(path)
         if candidate.is_absolute():
             return candidate
