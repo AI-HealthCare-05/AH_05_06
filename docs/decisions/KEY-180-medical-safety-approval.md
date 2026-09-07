@@ -101,8 +101,14 @@ Notion "의학지식 출처 관리" DB에 **A 핵심·이용조건 확인 완료
 ### 근거
 
 - 팀이 이미 Notion DB로 등급 체계를 관리 중이라 외부 문헌 축은 새 기준을 만들 필요가 없다. 식약처 발행·이용조건 확인 완료 자료로 한정하면 "공신력 있는 근거"라는 인수조건을 가장 보수적으로 만족한다.
-- KEY-265(PR #214)에서 medication/caution/life 12칸이 병원 전문의(박영 산부인과) 직접 자문 문구로 채워졌다. 이는 출처 우선순위표로 A가 아니라 C(병원 설명 템플릿·임상 자문)에 해당하며, 단일 등급 축만으로는 "등급 미달"로 차단되어 폴백 안전망이 사라진다. 전문의 문장 단위 승인을 별도 축으로 두면 등급 기준을 흐리지 않으면서 이 문구를 최종 폴백으로 쓸 수 있다.
-- 게이트 코드(`app/services/drug_caution.py`의 `approved_content_of()` 등)와 `SourceGrade` enum·fixture를 이 두 축에 맞게 고치는 일은 **[KEY-283](https://leehee.atlassian.net/browse/KEY-283)**에서 한다. 이 문서는 정책만 확정한다.
+- KEY-265(PR #214)에서 medication/caution/life 12칸이 병원 전문의(박영 산부인과) 직접 자문 문구로 채워졌다. 이는 출처 우선순위표로는 A가 아니라 C(병원 설명 템플릿·임상 자문)에 해당한다. **그러나 현재 코드에서 이 12칸은 `A`로 찍혀 게이트를 통과하고 있다** — `app/tests/fixtures/catalog.py`의 `source_grade` 기본값이 `SourceGrade.A`이고 자문 행이 이 칸을 덮지 않아, 아무도 등급을 판단하지 않은 채 기본값이 흘러든 결과다. `generation_ready()`(`approval_status=APPROVED` AND `source_grade=A`)를 그대로 통과하므로 환자에게 나가고 있다. 즉 이 개정이 막으려는 상황(전문의 자문 문구가 A등급 감사에 섞여 기준이 오염되는 것)은 **이미 발생해 있다.**
+- 전문의 문장 단위 승인을 별도 축으로 두면, 이 잘못 붙은 A 라벨을 떼고도 같은 문구를 축 2(전문의 승인) 조건으로 다시 통과시킬 수 있다 — 등급 기준을 흐리지 않으면서 최종 폴백을 유지한다.
+- **[KEY-283](https://leehee.atlassian.net/browse/KEY-283)에서 반영할 코드 변경**:
+  1. `app/tests/fixtures/catalog.py`의 `source_grade` 기본값 `SourceGrade.A`를 **제거**해 다음 등록자가 반드시 등급을 명시하게 하고, 자문 12칸에 잘못 흘러든 A 라벨을 뗀다.
+  2. 게이트(`app/services/drug_caution.py`의 `generation_ready()` / `approved_content_of()`)와 `SourceGrade` enum·독스트링을 두 축에 맞게 고쳐, 축 2 조건을 만족한 문구를 통과시킨다.
+  3. 관련 정상·예외·의료 안전 회귀 테스트를 갱신한다(예: `C등급 APPROVED → 폴백`을 인코딩한 `app/tests/guide_apis/test_key165_drug_caution.py`).
+
+  이 문서는 정책만 확정한다.
 
 ---
 
