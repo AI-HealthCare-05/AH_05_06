@@ -2843,10 +2843,15 @@ function stateTakesFocus(tone) {
 
   function renderMultiJobProgress(jobs) {
     var total = jobs.length;
-    var doneCount = jobs.filter(function (j) { return j.status !== "PROCESSING"; }).length;
-    var avgProgress = Math.round(
-      jobs.reduce(function (sum, j) { return sum + (Number(j.progress) || 0); }, 0) / total,
-    );
+    var doneCount = jobs.filter(function (j) { return j.status !== "PROCESSING" && j.status !== "FAILED"; }).length;
+    var activeJobs = jobs.filter(function (j) { return j.status !== "FAILED"; });
+    var avgProgress = activeJobs.length
+      ? Math.round(
+          activeJobs.reduce(function (sum, j) {
+            return sum + (j.status === "PROCESSING" ? (Number(j.progress) || 0) : 100);
+          }, 0) / activeJobs.length,
+        )
+      : 0;
     var countLabel = total > 1 ? " (" + doneCount + "/" + total + "장)" : "";
     showState(
       "processing",
