@@ -252,7 +252,7 @@ worker 관점(컨테이너 내부) mc stat 조회 → Size·ETag 확인됨
 미추출     Glucose · BUN · Creatinine  (패턴 범위 밖 — 위와 동일한 이유)
 ```
 
-기대값 명세: `docs/data/ocr-fixtures/SYN-LAB-01.lab_result.v1.toml`
+기대값 명세: `docs/data/ocr-fixtures/lab/SYN-LAB-01.lab_result.v1.toml`
 
 ## 6. 실제 환자정보 미포함 — 검수 기록
 

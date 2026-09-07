@@ -696,6 +696,8 @@ def test_detect_lab_result_without_rows_stays_emr() -> None:
 
     result = ClovaOcrResult(raw_text="검사항목 검사결과\nAST 21", fields=[], rows=[])
     assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
 # KEY-245 — 판독 키워드(lab_keywords) 기반 매칭 (인수조건 1·2·3)
 # ---------------------------------------------------------------------------
 
