@@ -29,6 +29,9 @@ REDIS_LOGICAL_DB_COUNT = 16
 #: 실행끼리 자리를 나누고 싶을 때 준다 — `TEST_SLOT=1 uv run pytest`.
 TEST_SLOT_ENV = "TEST_SLOT"
 
+#: MySQL 「Access denied for user ... to database ...」 — 자리별 DB 를 만들 권한이 없을 때.
+_ACCESS_DENIED_DB = 1044
+
 
 def _xdist_worker_index() -> int | None:
     """pytest-xdist 워커 번호. xdist 없이 돌면 `None`(기존 동작 그대로).
@@ -92,18 +95,25 @@ def _hold_slot(db_name: str) -> None:
     `% 16` 으로 감싸지 않고 죽이는 것과 같은 태도다 — 겹치는 것보다 우는 편이 낫다.
     """
     global _slot_lock
-    handle = _slot_lock_path(db_name).open("w")
+    #: **`"w"` 로 열면 안 된다** — 이희진 님 `#240` ⑤. 그것은 `flock` 을 걸기 전에
+    #: 이미 파일을 비워서, **지는 쪽이 여는 것만으로** 보유자가 적어 둔 PID 를
+    #: 지운다. 정작 충돌한 그 순간에 누가 들고 있는지 알 길이 사라진다.
+    handle = _slot_lock_path(db_name).open("a+")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
+        handle.seek(0)
+        holder = handle.read().strip()
         handle.close()
         raise RuntimeError(
             f"검사 DB `{db_name}` 을 이미 다른 pytest 실행이 쓰고 있다 "
-            f"({config.DB_HOST}:{config.DB_PORT}).\n"
+            f"({config.DB_HOST}:{config.DB_PORT}" + (f", pid {holder}" if holder else "") + ").\n"
             f"  그대로 두면 늦게 시작한 쪽이 먼저 돌던 쪽의 스키마를 지워, "
             f"둘 다 틀린 결과를 낸다 (KEY-282).\n"
             f"  나란히 돌리려면 자리를 달리 준다 — `{TEST_SLOT_ENV}=1 uv run pytest ...`"
         ) from None
+    handle.seek(0)
+    handle.truncate()
     handle.write(str(os.getpid()))
     handle.flush()
     _slot_lock = handle
@@ -124,7 +134,15 @@ def _explained(error: BaseException, db_name: str) -> BaseException:
     한 번만** 돌아서, 이미 MySQL 을 띄워 둔 사람에게는 안 적용된다. 그대로 두면
     `(1044, "Access denied ...")` 한 줄과 setup 오류 수십 개만 보인다.
     """
-    if f"to database '{db_name}'" not in str(error):
+    #: **문자열이 아니라 오류코드로 가른다** — 이희진 님 `#240` ④.
+    #:
+    #: 서버 메시지를 부분일치로 보면 locale·드라이버가 바뀔 때 조용히 안 걸린다.
+    #: 같은 저장소의 `test_upgrade_builds_the_whole_schema.py` 가 이미
+    #: `asyncmy.errors.OperationalError` 를 잡는 방식을 쓴다 — 그쪽에 맞춘다.
+    #: 1044 는 「그 DB 에 접근 거부」다.
+    from asyncmy.errors import OperationalError  # type: ignore[import-untyped]
+
+    if not isinstance(error, OperationalError) or not error.args or error.args[0] != _ACCESS_DENIED_DB:
         return error
     return RuntimeError(
         f"검사 DB `{db_name}` 을 만들 권한이 없다.\n"
@@ -171,10 +189,18 @@ def initialize(request: FixtureRequest) -> Generator[None, None]:
             f"Redis 논리 DB는 0~{REDIS_LOGICAL_DB_COUNT - 1}뿐이라 그 이상은 서로 겹친다. "
             f"워커 수를 줄이거나 `{TEST_SLOT_ENV}` 를 낮춰라."
         )
-    #: 자리 0 은 값이 이미 0 이라 넣으나 마나지만, **한 곳에서 정한다**는 것이
-    #: 중요하다. 예전에는 xdist 안에서만 넣어서, 따로 띄운 두 실행이 둘 다
-    #: 0번 논리 DB 를 밟았다.
-    config.REDIS_DB = slot
+    #: **설정한 값을 밑자리로 삼는다** — 이희진 님 `#240` ⑥.
+    #:
+    #: 예전에는 xdist 안에서만 넣어서 따로 띄운 두 실행이 둘 다 0번을 밟았다.
+    #: 그렇다고 무조건 `= slot` 으로 덮으면, `REDIS_DB` 를 손수 정해 두고 그냥
+    #: `pytest` 를 돌리는 사람의 값이 조용히 0이 된다. 더해서 둘 다 산다.
+    base_redis = config.REDIS_DB or 0
+    if base_redis + slot >= REDIS_LOGICAL_DB_COUNT:
+        raise RuntimeError(
+            f"Redis 논리 DB 가 모자란다 — 밑자리 {base_redis} + 자리 {slot} 이 "
+            f"{REDIS_LOGICAL_DB_COUNT} 를 넘는다. `REDIS_DB` 를 낮추거나 워커를 줄여라."
+        )
+    config.REDIS_DB = base_redis + slot
 
     db_name = test_db_name(slot)
     _hold_slot(db_name)
@@ -188,9 +214,18 @@ def initialize(request: FixtureRequest) -> Generator[None, None]:
         _release_slot()  # 초기화가 죽어도 자리를 붙들고 있지 않는다
         raise _explained(error, db_name) from error
     yield
-    finalizer()
-    loop.close()
-    _release_slot()
+
+    #: **자리를 놓는 일은 반드시 한다** — 이희진 님 `#240` ①.
+    #:
+    #: `finalizer()` 나 `loop.close()` 가 예외를 던지면 `_release_slot()` 이 안
+    #: 돌았다. pytest 는 teardown 예외에도 곧장 안 죽고 다른 finalizer·커버리지
+    #: 리포트·요약까지 마치므로, 그 사이 같은 자리를 쓰는 두 번째 실행이 「이미
+    #: 다른 pytest 실행이 쓰고 있다」를 맞는다 — 이 파일이 막으려던 그 상황이다.
+    try:
+        finalizer()
+        loop.close()
+    finally:
+        _release_slot()
 
 
 @pytest_asyncio.fixture(autouse=True, scope="session")  # type: ignore[type-var]

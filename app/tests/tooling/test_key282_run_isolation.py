@@ -11,8 +11,10 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -71,19 +73,128 @@ def _spawn(slot: int, target: str) -> subprocess.Popen[str]:
     )
 
 
+def _drain_with(child: "subprocess.Popen[str]", timeout: int) -> tuple[bool, int, str]:
+    """한 자식을 끝까지 읽는다. 시간이 지나면 **죽이고** 그 사실을 함께 돌려준다.
+
+    여기서 `pytest.fail()` 을 부르지 않는다 — 스레드 안에서 던지면 다른 자식이
+    거둬지지 않은 채 남는다. 판정은 둘을 다 거둔 뒤 부르는 쪽이 한다.
+    """
+    try:
+        text = child.communicate(timeout=timeout)[0]
+    except subprocess.TimeoutExpired:
+        child.kill()
+        return True, -9, child.communicate()[0]
+    return False, child.returncode, text
+
+
+def _drain(child: "subprocess.Popen[str]") -> tuple[bool, int, str]:
+    return _drain_with(child, CHILD_TIMEOUT)
+
+
 def _run_both(slot_a: int, slot_b: int, target: str = CHILD_TARGET) -> list[tuple[int, str]]:
-    """둘을 **겹쳐** 띄운다 — 하나씩 돌리면 이 결함은 안 난다."""
+    """둘을 **겹쳐** 띄운다 — 하나씩 돌리면 이 결함은 안 난다.
+
+    **둘을 나란히 읽는다** — 이희진 님 `#240` ②③.
+
+    예전 판은 순서대로 `communicate()` 했다. 두 가지가 걸렸다.
+
+    ⓐ 첫 자식이 시간을 넘기면 그 자식만 죽이고 `pytest.fail()` 로 곧장 빠져나가,
+      **둘째는 죽지도 기다려지지도 않은 채 남았다.** 세션 픽스처에 도달을 못 하니
+      제 자리의 잠금을 계속 들고 있다 — 이 검사가 잡으려는 그 상황을 스스로 만든다.
+    ⓑ 둘 다 `stdout=PIPE` 인데 순서대로 비우면, 아직 안 읽는 쪽이 파이프를 채웠을 때
+      서로를 막는다. 「GRANT 없으면 36 errors」처럼 말이 많아지는 갈래가 실제로 있다.
+
+    스레드 둘로 나란히 읽고, 무슨 일이 있어도 살아남은 자식은 `finally` 에서 죽인다.
+    """
     children = [_spawn(slot_a, target), _spawn(slot_b, target)]
-    out = []
-    for child in children:
+    try:
+        with ThreadPoolExecutor(max_workers=len(children)) as pool:
+            drained = list(pool.map(_drain, children))
+    finally:
+        for child in children:
+            if child.poll() is None:  # 여기 오면 위에서 못 거둔 것이다
+                child.kill()
+                child.wait()
+
+    late = [text for timed_out, _, text in drained if timed_out]
+    if late:
+        pytest.fail(f"자식이 {CHILD_TIMEOUT}초 안에 안 끝났다 — 서로 막고 있는 것 같다\n{late[0][-2000:]}")
+    return [(code, text) for _, code, text in drained]
+
+
+class TestTheHarnessCleansUpAfterItself:
+    """이 검사 도구가 **스스로 이 결함을 만들지 않는지** 잰다 — 이희진 님 `#240` ①②⑤."""
+
+    def test_a_stuck_child_is_never_left_behind(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """시간을 넘겨도 **둘 다** 거둔다.
+
+        예전 판은 첫 자식이 시간을 넘기면 그 자식만 죽이고 곧장 빠져나가, 둘째가
+        살아남아 제 자리의 잠금을 계속 들었다 — 이 파일이 잡으려는 그 상황을
+        스스로 만들었다.
+
+        **`_run_both` 을 실제로 지난다.** 처음에는 `_drain_with` 만 따로 불러 봤는데,
+        그러면 `_run_both` 의 거두는 코드를 걷어내도 검사가 안 울었다.
+        """
+        module = sys.modules[__name__]
+        spawned: list[subprocess.Popen[str]] = []
+
+        def never_finishes(_slot: int, _target: str) -> "subprocess.Popen[str]":
+            child = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(120)"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            spawned.append(child)
+            return child
+
+        monkeypatch.setattr(module, "_spawn", never_finishes)
+        monkeypatch.setattr(module, "CHILD_TIMEOUT", 1)
+
         try:
-            text = child.communicate(timeout=CHILD_TIMEOUT)[0]
-        except subprocess.TimeoutExpired:
-            child.kill()
-            text = child.communicate()[0]
-            pytest.fail(f"자식이 {CHILD_TIMEOUT}초 안에 안 끝났다 — 서로 막고 있는 것 같다\n{text[-2000:]}")
-        out.append((child.returncode, text))
-    return out
+            with pytest.raises(BaseException):  # noqa: B017 — pytest.fail 의 예외를 붙잡는다
+                _run_both(0, 1)
+
+            assert len(spawned) == 2, f"자식을 {len(spawned)}개만 띄웠다"
+            for child in spawned:
+                assert child.poll() is not None, f"자식 {child.pid} 이 살아남았다 — 자리를 계속 들고 있다"
+        finally:
+            for child in spawned:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait()
+
+    def test_the_loser_can_say_who_is_holding_the_slot(self) -> None:
+        """**진 쪽이 보유자를 지우지 않는다** — `"w"` 로 열면 여는 것만으로 지운다.
+
+        정작 충돌한 그 순간에 「누가 들고 있는지」를 알 수 없으면, 사람은 터미널을
+        하나씩 뒤져야 한다.
+        """
+        slot = _free_slots()[0]
+        first, second = _run_both(slot, slot)
+        _skip_if_ungranted([first, second])
+
+        stopped = next((text for code, text in (first, second) if code != 0 and LOCK_MARK in text), None)
+        assert stopped is not None, "겹쳤는데 아무도 안 멈췄다"
+        assert re.search(r"pid \d+", stopped), f"보유자를 못 말한다 — {stopped[-400:]}"
+
+    def test_the_slot_is_released_even_when_teardown_blows_up(self) -> None:
+        """**놓는 일은 `finally` 에서 한다.**
+
+        pytest 는 teardown 예외에도 곧장 안 죽고 다른 finalizer·리포트까지 마친다.
+        그 사이 같은 자리를 쓰는 두 번째 실행이 막힌다 — 이 파일이 막으려던 그 상황이다.
+
+        실제로 `finalizer()` 를 터뜨려 확인했고(그때도 다음 실행이 안 막혔다), 여기서는
+        그 구조가 남아 있는지를 잰다 — 터뜨리는 상황은 검사 안에서 만들 수 없다.
+        """
+        source = (Path(__file__).resolve().parents[1] / "conftest.py").read_text(encoding="utf-8")
+
+        #: **코드 모양으로 못 박는다.** 「`finally:` 가 `_release_slot()` 보다 앞에
+        #: 있는가」로 재면 그 위 주석에 적힌 같은 이름을 먼저 잡아 헛돈다 —
+        #: 실제로 처음에 그렇게 썼다가 걸렸다.
+        assert "    finally:\n        _release_slot()" in source, (
+            "teardown 이 터지면 자리를 붙든 채 남는다 — 놓는 일이 `finally` 안에 없다"
+        )
 
 
 class TestTwoRunsDoNotEatEachOther:
