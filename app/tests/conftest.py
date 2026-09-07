@@ -1,9 +1,11 @@
 import asyncio
+import contextlib
 import fcntl
 import hashlib
 import os
 import re
 import tempfile
+import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import IO, Any
@@ -31,6 +33,10 @@ TEST_SLOT_ENV = "TEST_SLOT"
 
 #: MySQL 「Access denied for user ... to database ...」 — 자리별 DB 를 만들 권한이 없을 때.
 _ACCESS_DENIED_DB = 1044
+
+#: 보유자 PID 를 다시 읽어 보는 횟수와 간격 — 빈 창은 마이크로초 단위다.
+_HOLDER_READ_TRIES = 5
+_HOLDER_READ_WAIT = 0.02
 
 
 def _xdist_worker_index() -> int | None:
@@ -88,6 +94,24 @@ def _slot_lock_path(db_name: str) -> Path:
 _slot_lock: IO[str] | None = None
 
 
+def _holder_pid(handle: IO[str]) -> str:
+    """잠금을 쥔 쪽의 PID — **잠깐 기다렸다 다시 읽는다.**
+
+    `O_CREAT` 로 파일이 **생긴 순간**과 이긴 쪽이 PID 를 **쓰는 순간** 사이에
+    빈 창이 있다. 지는 쪽이 하필 그때 읽으면 보유자가 빈다 — 여섯이 동시에
+    달려들면 실제로 난다(고치기 전 60판에 102회, 쓰기 순서를 바로잡은 뒤에도 60회).
+    쓰는 쪽이 잠금을 이미 쥐고 있으므로 **반드시 곧 쓴다.** 그래서 짧게 몇 번만
+    다시 본다. 못 읽어도 그냥 없이 간다 — 진단용이지 잠금의 정확성이 아니다.
+    """
+    for _ in range(_HOLDER_READ_TRIES):
+        handle.seek(0)
+        found = handle.read().strip()
+        if found:
+            return found
+        time.sleep(_HOLDER_READ_WAIT)
+    return ""
+
+
 def _hold_slot(db_name: str) -> None:
     """이 자리를 이미 누가 쓰고 있으면 **그 자리에서 멈춘다.**
 
@@ -95,15 +119,22 @@ def _hold_slot(db_name: str) -> None:
     `% 16` 으로 감싸지 않고 죽이는 것과 같은 태도다 — 겹치는 것보다 우는 편이 낫다.
     """
     global _slot_lock
-    #: **`"w"` 로 열면 안 된다** — 이희진 님 `#240` ⑤. 그것은 `flock` 을 걸기 전에
-    #: 이미 파일을 비워서, **지는 쪽이 여는 것만으로** 보유자가 적어 둔 PID 를
-    #: 지운다. 정작 충돌한 그 순간에 누가 들고 있는지 알 길이 사라진다.
-    handle = _slot_lock_path(db_name).open("a+")
+    #: **`"w"` 도 `"a+"` 도 안 된다** — 이희진 님 `#240` ⑤.
+    #:
+    #: `"w"` 는 `flock` 을 걸기 **전에** 파일을 비워서, 지는 쪽이 여는 것만으로
+    #: 보유자가 적어 둔 PID 를 지운다. 그래서 `"a+"` 로 바꿨는데 그것도 틀렸다 —
+    #: 덧붙이기 모드는 `seek(0)` 을 무시하고 **끝에** 쓰므로, 이긴 쪽이 먼저
+    #: `truncate()` 를 해야 했고 그 사이 **0바이트 창**이 생겼다. 진 쪽이 하필
+    #: 그때 읽으면 보유자가 빈다(이희진 님이 26회에 1회로 재현하셨다).
+    #:
+    #: `O_RDWR | O_CREAT` 는 비우지도, 끝으로 밀지도 않는다. 그래서 **쓰고 나서
+    #: 자르면** 창이 아예 없다.
+    fd = os.open(_slot_lock_path(db_name), os.O_RDWR | os.O_CREAT, 0o600)
+    handle = os.fdopen(fd, "r+")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        handle.seek(0)
-        holder = handle.read().strip()
+        holder = _holder_pid(handle)
         handle.close()
         raise RuntimeError(
             f"검사 DB `{db_name}` 을 이미 다른 pytest 실행이 쓰고 있다 "
@@ -112,9 +143,10 @@ def _hold_slot(db_name: str) -> None:
             f"둘 다 틀린 결과를 낸다 (KEY-282).\n"
             f"  나란히 돌리려면 자리를 달리 준다 — `{TEST_SLOT_ENV}=1 uv run pytest ...`"
         ) from None
+    #: **쓰고 나서 자른다** — 그 반대로 하면 0바이트 창이 생긴다.
     handle.seek(0)
-    handle.truncate()
     handle.write(str(os.getpid()))
+    handle.truncate()
     handle.flush()
     _slot_lock = handle
 
@@ -122,8 +154,38 @@ def _hold_slot(db_name: str) -> None:
 def _release_slot() -> None:
     global _slot_lock
     if _slot_lock is not None:
+        #: **비우고 놓는다.** 안 그러면 다음에 지는 쪽이 **이미 죽은 실행의 PID** 를
+        #: 보유자로 읽는다 (이희진 님 `#240` ⑤). 아직 잠금을 쥔 채라 안전하다.
+        with contextlib.suppress(OSError, ValueError):
+            _slot_lock.seek(0)
+            _slot_lock.truncate()
         _slot_lock.close()  # 닫으면 flock 도 풀린다
         _slot_lock = None
+
+
+def _is_access_denied(error: BaseException, db_name: str) -> bool:
+    """이 예외가 「그 DB 에 접근 거부(1044)」인가 — **감싸여 있어도 알아본다.**
+
+    처음에는 `isinstance(error, asyncmy.errors.OperationalError)` 로 갈랐는데
+    (이희진 님 `#240` ④) **실제 경로에서 한 번도 안 걸렸다.** 검사 DB 는
+    `db_create()` → `execute_script()` 로 만들어지고 그 메서드에는 tortoise 의
+    `@translate_exceptions` 가 붙어 있어, asyncmy 예외를
+    `tortoise.exceptions.OperationalError(exc)` 로 **다시 던진다.** 그러면
+    타입도 다르고 `args[0]` 도 코드가 아니라 감싼 예외 객체다.
+
+    그래서 **껍질을 벗겨 가며** 코드를 찾는다. 그러고도 못 찾으면 서버 메시지를
+    본다 — 드라이버가 또 바뀌어도 `str()` 은 래핑을 통과한다. 고치기 전의 문자열
+    매칭이 이 점에서는 오히려 견고했다.
+    """
+    node: BaseException | None = error
+    for _ in range(5):  # 껍질이 무한히 깊을 리는 없다
+        if node is None:
+            break
+        if node.args and node.args[0] == _ACCESS_DENIED_DB:
+            return True
+        inner = node.args[0] if node.args and isinstance(node.args[0], BaseException) else None
+        node = inner or node.__cause__
+    return f"to database '{db_name}'" in str(error)
 
 
 def _explained(error: BaseException, db_name: str) -> BaseException:
@@ -134,15 +196,7 @@ def _explained(error: BaseException, db_name: str) -> BaseException:
     한 번만** 돌아서, 이미 MySQL 을 띄워 둔 사람에게는 안 적용된다. 그대로 두면
     `(1044, "Access denied ...")` 한 줄과 setup 오류 수십 개만 보인다.
     """
-    #: **문자열이 아니라 오류코드로 가른다** — 이희진 님 `#240` ④.
-    #:
-    #: 서버 메시지를 부분일치로 보면 locale·드라이버가 바뀔 때 조용히 안 걸린다.
-    #: 같은 저장소의 `test_upgrade_builds_the_whole_schema.py` 가 이미
-    #: `asyncmy.errors.OperationalError` 를 잡는 방식을 쓴다 — 그쪽에 맞춘다.
-    #: 1044 는 「그 DB 에 접근 거부」다.
-    from asyncmy.errors import OperationalError  # type: ignore[import-untyped]
-
-    if not isinstance(error, OperationalError) or not error.args or error.args[0] != _ACCESS_DENIED_DB:
+    if not _is_access_denied(error, db_name):
         return error
     return RuntimeError(
         f"검사 DB `{db_name}` 을 만들 권한이 없다.\n"
