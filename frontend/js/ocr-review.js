@@ -2167,7 +2167,21 @@ function stateTakesFocus(tone) {
      * 이미 여기 있고 판도 여기 있으니 나갈 이유가 없다. 화면을 새로 받으면
      * 보던 것이 사라지는 것은 덤이다. */
     if (target.id === "reupload") {
-      if (typeof ocrRequestUpload === "function") ocrRequestUpload();
+      if (typeof ocrRequestUpload === "function") {
+        ocrRequestUpload();
+        return;
+      }
+      /* **아무 일도 안 일어나는 채로 두지 않는다** — 이희진 님 `#241` ②.
+       *
+       * `ocrRequestUpload` 는 `wireAddPanel()` 안에서만 정의되고, 그 함수는 판을
+       * 이루는 다섯 칸 중 하나라도 없으면 **조용히 돌아간다.** 지금은 다섯이 항상
+       * 마크업에 있어 안 걸리지만, 이 판을 조건부로 그리게 되면(예: 권한별)
+       * 재업로드가 **이 PR 이 고치려던 것과 똑같이** 다시 죽은 단추가 된다.
+       *
+       * 그때 할 수 있는 말이 이것뿐이다 — 올리는 판이 화면에 없으니 여기서
+       * 펼 수 없다. 판 안의 `#add-say` 도 함께 없으므로 상태 줄에 적는다. */
+      var told = document.getElementById("state-say");
+      if (told) told.textContent = "지금은 진료기록을 올릴 수 없습니다 — 화면을 새로 고쳐 주세요";
       return;
     }
 

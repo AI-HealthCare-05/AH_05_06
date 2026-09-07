@@ -507,6 +507,12 @@ function addVisit(visit) {
       location.href = toRecord;
       return;
     }
+    /* **여기는 오늘 도달할 수 없다** — 이희진 님 `#241` ①.
+     *
+     * 「진료기록」이 `/ocr-review.html` 에 사는 한 위 값은 늘 주소를 준다. 그래도
+     * 남겨 두는 것은, 그 칸이 언젠가 이 화면으로 돌아오면 **그때는 이 줄이 맞기**
+     * 때문이다 — 화면을 새로 받지 않고 탭으로 옮기는 것이 옳다. 이 결함 자체가
+     * 「칸이 옮겨졌는데 보내는 쪽이 안 따라갔다」였다. */
     tellPane(picked);
   });
 }
@@ -674,8 +680,9 @@ function bindShell() {
      * 마지막으로 아는 자리다.
      *
      * `stepHref` 는 그 칸이 이 화면에 살면 `null` 을 준다 — 그때는 여느 때처럼
-     * 탭으로 옮긴다. 어느 칸이 어디 사는지를 이 파일이 따로 알 필요가 없다. */
-    var elsewhere = tab ? stepHref(tab, null, location.pathname, row.visit_id) : null;
+     * 탭으로 옮긴다. 어느 칸이 어디 사는지를 이 파일이 따로 알 필요가 없다.
+     * `tab` 이 비어도 `null` 을 주므로 앞에서 따로 가릴 것이 없다. */
+    var elsewhere = stepHref(tab, null, location.pathname, row.visit_id);
     if (elsewhere) {
       clearAsked();
       location.href = elsewhere;

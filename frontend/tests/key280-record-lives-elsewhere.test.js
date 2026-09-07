@@ -107,6 +107,24 @@ test("⑤ 판독 화면의 재업로드는 나가지 않고 제자리에서 판�
   );
 });
 
+test("⑤' 판을 못 펴면 아무 일도 안 일어나는 채로 두지 않는다", () => {
+  /* `ocrRequestUpload` 는 `wireAddPanel()` 안에서만 정의되는데, 그 함수는 판을
+     이루는 다섯 칸 중 하나라도 없으면 조용히 돌아간다. 지금은 다섯이 항상
+     마크업에 있어 안 걸리지만, 이 판을 조건부로 그리게 되면 재업로드가 **이 PR 이
+     고치려던 것과 똑같이** 다시 죽은 단추가 된다 (#241 이희진 ②). */
+  const code = codeOnly(read("js/ocr-review.js"));
+  const at = code.indexOf('target.id === "reupload"');
+  const branch = code.slice(at, code.indexOf("\n    }", at));
+
+  assert.match(branch, /typeof ocrRequestUpload === "function"/, "함수가 없을 때를 안 가린다");
+  assert.match(branch, /textContent\s*=/, "못 펴는 경우에 아무 말도 안 한다");
+
+  /* 그 말이 사람이 할 일을 담아야 한다 — 「안 됩니다」만으로는 갇힌다. */
+  const said = branch.match(/textContent\s*=\s*"([^"]+)"/);
+  assert.ok(said, "적는 문구를 못 찾았다");
+  assert.match(said[1], /새로 고/, `다음에 무엇을 하라는 말이 없다 — ${said[1]}`);
+});
+
 test("⑥ 손으로 누른 판 펴기는 접지도, 초점을 두고 가지도 않는다", () => {
   /* 저절로 부르는 `ocrOpenAddPanel` 은 (ⓐ 펴져 있으면 아무 일도 안 하고
      ⓑ 초점을 안 옮긴다) — 화면에 막 들어온 참이라 둘 다 맞다. 눌러 온 사람에게는
