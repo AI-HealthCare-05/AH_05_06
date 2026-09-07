@@ -110,6 +110,56 @@ PRESCRIPTION_SETS: tuple[PrescriptionSetRow, ...] = (
 # 바뀌면서 그 접두어를 걷었다(KEY-265). 출처·승인일·판 번호가 아래 상수에
 # 붙어 있고, 그것이 채워져 있어야 생성이 이 글을 쓴다(KEY-180 §4).
 #
+# ── 두 판이 글자까지 같은 문구 ─────────────────────────────────────────────
+#
+# 문서가 「(처음) 과 (계속) 이 같다」로 못박은 자리다. 예전에는 같은 글을 **두 번
+# 따로 적어** 두고 주석으로만 「같다」고 했다. 문구가 또 수정되면 한쪽만 고치고
+# 지나칠 수 있고, 그 어긋남은 **환자에게 나가는 글**에서 드러난다
+# (이희진 님 `#214` ⑨).
+#
+# 이름을 하나 두면 갈라질 수가 없다. 정말 갈라져야 할 날이 오면 그때 이름을
+# 풀면 된다 — 그때는 푸는 것이 결정이라 눈에 띈다.
+
+_BIJAN_CAUTION = (
+    "질출혈이 가장 흔해요. 팬티라이너에 묻을 정도로 나왔다 안 나왔다 합니다. 가슴이 단단해지는 "
+    "느낌, 몸이 붓는 느낌도 시간이 지나면 좋아져요.\n\n"
+    "드물게 기분이 가라앉는 분들이 있어요. 우울감이나 감정 기복이 평소와 다르게 느껴지면 참지 "
+    "마시고 알려주세요. 약을 조절하거나 바꿀 수 있어요.\n\n"
+    "비잔을 드시면 생리가 없어지는데, 이건 폐경이 아니에요. 호르몬을 일정하게 유지시켜서 생리가 "
+    "안 나오게 하는 것뿐이고, 약을 끊으면 다시 돌아옵니다."
+)
+
+_BIJAN_EMERGENCY = (
+    "한쪽 다리에 심한 통증·부기·발적이 생기거나, "
+    "갑작스러운 흉통·호흡 곤란·시야 이상이 나타나면 "
+    "즉시 복용을 중단하고 응급실을 방문하세요."
+)
+
+_YAZ_CAUTION = (
+    "예상치 못한 질출혈이 가장 흔해요. 특히 처음 몇 달 동안 그렇습니다. 대부분 시간이 지나면서 "
+    "줄어드니 그러려니 하셔도 괜찮아요.\n\n"
+    "약을 한두 알 드시고 구역질·구토가 심하게 나면 다음 방문 때 알려주세요. 약을 드시기 "
+    "시작하자마자 온몸에 두드러기가 나는 경우도 알려주세요. 3주 이상 잘 드시다가 두드러기가 "
+    "생겼다면 약보다 다른 원인일 가능성이 높지만, 그래도 알려주세요.\n\n"
+    "흡연을 하시거나 전조증상이 있는 편두통이 있으시면 미리 꼭 말씀해 주세요."
+)
+
+_YAZ_EMERGENCY = (
+    "한쪽 다리에 심한 통증·부기·발적, 갑작스러운 흉통, 호흡 곤란, "
+    "심한 두통 또는 시야 이상이 나타나면 즉시 복용을 중단하고 응급실을 방문하세요."
+)
+
+_YAZ_LIFE = (
+    "다낭성난소증후군에서 가장 중요한 것은 수면 습관입니다. 하루 7~8시간, 자기 전 두 "
+    "시간은 휴대폰을 보지 않기, 방을 어둡게 하기, 그리고 밤 10시에서 새벽 2시 사이에 "
+    "잠들어 계시는 것이 중요해요. 같은 8시간을 자도 시간대에 따라 수면의 질이 크게 "
+    "다릅니다.\n\n"
+    "배달 음식 용기에서 나오는 물질이 호르몬을 교란할 수 있어 배달 음식은 줄이시는 편이 "
+    "좋아요. 채소와 기름기 적은 단백질을 챙겨 드시고, 운동을 곁들이면 인슐린 저항성을 줄이는 "
+    "데 도움이 됩니다."
+)
+
+
 # 응급 네 행은 여전히 KEY-150 에서 잠근 글이다 — 세트별로 갈리지 않는다.
 DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
     # ── 자궁내막증 · 비잔 (처음) ─────────────────────────────────────────────
@@ -117,14 +167,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="자궁내막증 · 비잔 (처음)",
         section_key=CautionSectionKey.CAUTION,
         # 정본 A-2 — 정리본 2.4 의 ✅+🔶, 원장님 승인 2026-09-04
-        body=(
-            "질출혈이 가장 흔해요. 팬티라이너에 묻을 정도로 나왔다 안 나왔다 합니다. 가슴이 단단해지는 "
-            "느낌, 몸이 붓는 느낌도 시간이 지나면 좋아져요.\n\n"
-            "드물게 기분이 가라앉는 분들이 있어요. 우울감이나 감정 기복이 평소와 다르게 느껴지면 참지 "
-            "마시고 알려주세요. 약을 조절하거나 바꿀 수 있어요.\n\n"
-            "비잔을 드시면 생리가 없어지는데, 이건 폐경이 아니에요. 호르몬을 일정하게 유지시켜서 생리가 "
-            "안 나오게 하는 것뿐이고, 약을 끊으면 다시 돌아옵니다."
-        ),
+        body=_BIJAN_CAUTION,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -134,11 +177,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 (처음)",
         section_key=CautionSectionKey.EMERGENCY,
-        body=(
-            "한쪽 다리에 심한 통증·부기·발적이 생기거나, "
-            "갑작스러운 흉통·호흡 곤란·시야 이상이 나타나면 "
-            "즉시 복용을 중단하고 응급실을 방문하세요."
-        ),
+        body=_BIJAN_EMERGENCY,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/dienogest-emergency",
     ),
     # ── 자궁내막증 · 비잔 (계속) ─────────────────────────────────────────────
@@ -146,14 +185,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="자궁내막증 · 비잔 (계속)",
         section_key=CautionSectionKey.CAUTION,
         # 정본 B-2 — 문서가 「A-2 와 같다」로 못박았다
-        body=(
-            "질출혈이 가장 흔해요. 팬티라이너에 묻을 정도로 나왔다 안 나왔다 합니다. 가슴이 단단해지는 "
-            "느낌, 몸이 붓는 느낌도 시간이 지나면 좋아져요.\n\n"
-            "드물게 기분이 가라앉는 분들이 있어요. 우울감이나 감정 기복이 평소와 다르게 느껴지면 참지 "
-            "마시고 알려주세요. 약을 조절하거나 바꿀 수 있어요.\n\n"
-            "비잔을 드시면 생리가 없어지는데, 이건 폐경이 아니에요. 호르몬을 일정하게 유지시켜서 생리가 "
-            "안 나오게 하는 것뿐이고, 약을 끊으면 다시 돌아옵니다."
-        ),
+        body=_BIJAN_CAUTION,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -163,11 +195,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 (계속)",
         section_key=CautionSectionKey.EMERGENCY,
-        body=(
-            "한쪽 다리에 심한 통증·부기·발적이 생기거나, "
-            "갑작스러운 흉통·호흡 곤란·시야 이상이 나타나면 "
-            "즉시 복용을 중단하고 응급실을 방문하세요."
-        ),
+        body=_BIJAN_EMERGENCY,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/dienogest-long-emergency",
     ),
     # ── PCOS · 야즈 (계속) ──────────────────────────────────────────────────
@@ -175,14 +203,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="PCOS · 야즈 (계속)",
         section_key=CautionSectionKey.CAUTION,
         # 정본 D-2 — 문서가 「C-2 와 같다」로 못박았다
-        body=(
-            "예상치 못한 질출혈이 가장 흔해요. 특히 처음 몇 달 동안 그렇습니다. 대부분 시간이 지나면서 "
-            "줄어드니 그러려니 하셔도 괜찮아요.\n\n"
-            "약을 한두 알 드시고 구역질·구토가 심하게 나면 다음 방문 때 알려주세요. 약을 드시기 "
-            "시작하자마자 온몸에 두드러기가 나는 경우도 알려주세요. 3주 이상 잘 드시다가 두드러기가 "
-            "생겼다면 약보다 다른 원인일 가능성이 높지만, 그래도 알려주세요.\n\n"
-            "흡연을 하시거나 전조증상이 있는 편두통이 있으시면 미리 꼭 말씀해 주세요."
-        ),
+        body=_YAZ_CAUTION,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -192,10 +213,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 (계속)",
         section_key=CautionSectionKey.EMERGENCY,
-        body=(
-            "한쪽 다리에 심한 통증·부기·발적, 갑작스러운 흉통, 호흡 곤란, "
-            "심한 두통 또는 시야 이상이 나타나면 즉시 복용을 중단하고 응급실을 방문하세요."
-        ),
+        body=_YAZ_EMERGENCY,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
     ),
     # ── PCOS · 야즈 (처음) ──────────────────────────────────────────────────
@@ -205,14 +223,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="PCOS · 야즈 (처음)",
         section_key=CautionSectionKey.CAUTION,
         # 정본 C-2 — 정리본 1.4 의 ✅+🔶, 원장님 승인 2026-09-04
-        body=(
-            "예상치 못한 질출혈이 가장 흔해요. 특히 처음 몇 달 동안 그렇습니다. 대부분 시간이 지나면서 "
-            "줄어드니 그러려니 하셔도 괜찮아요.\n\n"
-            "약을 한두 알 드시고 구역질·구토가 심하게 나면 다음 방문 때 알려주세요. 약을 드시기 "
-            "시작하자마자 온몸에 두드러기가 나는 경우도 알려주세요. 3주 이상 잘 드시다가 두드러기가 "
-            "생겼다면 약보다 다른 원인일 가능성이 높지만, 그래도 알려주세요.\n\n"
-            "흡연을 하시거나 전조증상이 있는 편두통이 있으시면 미리 꼭 말씀해 주세요."
-        ),
+        body=_YAZ_CAUTION,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -222,10 +233,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 (처음)",
         section_key=CautionSectionKey.EMERGENCY,
-        body=(
-            "한쪽 다리에 심한 통증·부기·발적, 갑작스러운 흉통, 호흡 곤란, "
-            "심한 두통 또는 시야 이상이 나타나면 즉시 복용을 중단하고 응급실을 방문하세요."
-        ),
+        body=_YAZ_EMERGENCY,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
     ),
     # ── 복약지도·생활지도 — 원장님 승인 정본 (KEY-265) ─────────────────
@@ -329,15 +337,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 (처음)",
         section_key=CautionSectionKey.LIFE,
-        body=(
-            "다낭성난소증후군에서 가장 중요한 것은 수면 습관입니다. 하루 7~8시간, 자기 전 두 "
-            "시간은 휴대폰을 보지 않기, 방을 어둡게 하기, 그리고 밤 10시에서 새벽 2시 사이에 "
-            "잠들어 계시는 것이 중요해요. 같은 8시간을 자도 시간대에 따라 수면의 질이 크게 "
-            "다릅니다.\n\n"
-            "배달 음식 용기에서 나오는 물질이 호르몬을 교란할 수 있어 배달 음식은 줄이시는 편이 "
-            "좋아요. 채소와 기름기 적은 단백질을 챙겨 드시고, 운동을 곁들이면 인슐린 저항성을 줄이는 "
-            "데 도움이 됩니다."
-        ),
+        body=_YAZ_LIFE,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -367,15 +367,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 (계속)",
         section_key=CautionSectionKey.LIFE,
-        body=(
-            "다낭성난소증후군에서 가장 중요한 것은 수면 습관입니다. 하루 7~8시간, 자기 전 두 "
-            "시간은 휴대폰을 보지 않기, 방을 어둡게 하기, 그리고 밤 10시에서 새벽 2시 사이에 "
-            "잠들어 계시는 것이 중요해요. 같은 8시간을 자도 시간대에 따라 수면의 질이 크게 "
-            "다릅니다.\n\n"
-            "배달 음식 용기에서 나오는 물질이 호르몬을 교란할 수 있어 배달 음식은 줄이시는 편이 "
-            "좋아요. 채소와 기름기 적은 단백질을 챙겨 드시고, 운동을 곁들이면 인슐린 저항성을 줄이는 "
-            "데 도움이 됩니다."
-        ),
+        body=_YAZ_LIFE,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,

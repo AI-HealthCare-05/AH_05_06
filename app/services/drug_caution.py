@@ -14,7 +14,7 @@
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from tortoise.transactions import in_transaction
 
@@ -24,6 +24,27 @@ if TYPE_CHECKING:
     from tortoise.queryset import QuerySet
 
 LOGGER = logging.getLogger("app.drug_caution")
+
+
+class HasEvidenceFields(Protocol):
+    """근거 넷을 가진 것 — DB 행이든 픽스처 행이든.
+
+    **읽기 전용으로 선언한다.** 픽스처 행은 `frozen=True` 인 dataclass 라 쓰기가
+    막혀 있다. 속성으로 적으면 「고칠 수 있어야 한다」는 뜻이 되어 그 행이 안
+    들어온다 — 여기서 필요한 것은 읽는 것뿐이다.
+    """
+
+    @property
+    def source_name(self) -> str: ...
+
+    @property
+    def source_org(self) -> str: ...
+
+    @property
+    def source_url(self) -> str: ...
+
+    @property
+    def content_version(self) -> str: ...
 
 
 class DrugCautionService:
@@ -67,12 +88,18 @@ class DrugCautionService:
         )
 
     @staticmethod
-    def has_evidence(content: DrugCautionContent) -> bool:
+    def has_evidence(content: HasEvidenceFields) -> bool:
         """**근거가 다 채워졌는가** — KEY-180 §4.
 
         하나라도 비면 생성에 쓰지 않는다. 출처를 못 대는 글이 환자에게 나가면
         「누가 그렇게 말했나」에 답할 수 없다. `generation_ready()` 와 짝이다 —
         표로 거를 수 없는 조건이라 파이썬에서 본다.
+
+        **DB 행만 받지 않는다.** 이것은 네 칸의 성질이지 ORM 모델의 성질이
+        아니다. 픽스처 행(`DrugCautionContentRow`)도 같은 넷을 갖는데, 타입을
+        모델로 좁혀 두면 검사가 같은 조건을 **다시 적게** 된다 — 그러면 규칙이
+        바뀔 때 서비스만 바뀌고 검사는 옛 규칙으로 계속 초록이다
+        (이희진 님 `#214` ⑦).
         """
         return all([content.source_name, content.source_org, content.source_url, content.content_version])
 

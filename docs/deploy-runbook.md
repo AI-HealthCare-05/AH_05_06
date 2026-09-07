@@ -514,8 +514,17 @@ smoke 가 ⑤ 에서 제출하면 fixture 가 **소진된다** — 제출 기록
 
 ### 다시 돌려도 안전하다
 
-`seed.py` 는 전부 `get_or_create` 라 같은 명령을 여러 번 돌려도 쌓이지 않는다.
-비밀번호를 바꾸고 다시 돌리면 직원 계정의 비밀번호가 갱신된다.
+`seed.py` 는 같은 명령을 여러 번 돌려도 쌓이지 않는다. 병원·직원·환자·진료·처방은
+`get_or_create` 다. 비밀번호를 바꾸고 다시 돌리면 직원 계정의 비밀번호가 갱신된다.
+
+**안내 문구(`drug_caution_content`)만 다르다.** 「쌓지 않는다」가 아니라 **도장을
+옮긴다** — `content_version` 이 오르면 옛 승인본을 `DEPRECATED` 로 내리고 새 판을
+승인한다(KEY-180 §3). 지우지 않는 것은 이미 나간 안내문이
+`GuideSection.drug_caution_content_id` 로 옛 행을 가리키기 때문이다.
+
+그래서 재시드 뒤 그 표에는 **행이 는다.** 「안 쌓인다」만 보고 디버깅하면 헷갈리는
+자리라 적어 둔다 (이희진 님 `#214` ⑧). 검증은
+`app/tests/catalog/test_seed_is_rerunnable.py` 가 한다.
 
 ## 4-3-1. Pilot 고정 OTP 좁은문 (KEY-264)
 

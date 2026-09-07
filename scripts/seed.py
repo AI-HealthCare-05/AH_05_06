@@ -72,6 +72,7 @@ from app.models.visits import (  # noqa: E402
     Visit,
     VisitStatus,
 )
+from app.services import guide_defaults  # noqa: E402
 from app.services.drug_caution import DrugCautionService  # noqa: E402
 from app.services.guides import GuideService  # noqa: E402
 from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
@@ -148,8 +149,6 @@ SMOKE_CHART_NO = "08424"
 #: 새 의학 문장을 지어내지 않는다. 이 fixture 는 판독·구조화 처방을 거치지
 #: 않고 승인 안내를 바로 세우므로 약명·빈도·기간을 임의로 채우지 않고,
 #: `guide_defaults.MEDICATION` 과 같은 범용 지도 문장만 사용한다(KEY-224).
-_SMOKE_MEDICATION_BODY = "복약 지시에 따라 정해진 시간에 복용해 주세요."
-_SMOKE_LIFE_BODY = "처방 기간 중 음주는 피해 주세요. 충분한 수분 섭취와 규칙적인 수면을 유지해 주세요."
 _SMOKE_MESSAGES_BODY = "복약 안내가 발송될 예정입니다. 궁금한 점은 진료실로 문의해 주세요."
 
 # CSV 의 H1/H2 레이블 → seed 전용 병원 이름
@@ -553,6 +552,23 @@ async def _seed_prescription(visit: Visit, row: dict[str, str]) -> tuple[int, in
     return 1, len(items)
 
 
+async def _settle_unapproved(content: DrugCautionContent, wanted: ApprovalStatus) -> None:
+    """**승인 말고 다른 상태도 제자리에 세운다** — 이희진 님 `#214` ⑥.
+
+    시드는 문구를 무조건 `DRAFT` 로 앉힌 뒤 `APPROVED` 인 것만 서비스로 갈아
+    끼운다. 그래서 픽스처에 `DEPRECATED` 행을 넣으면 **DRAFT 인 채 영영 안
+    바뀐다.** 지금은 그런 행이 없어 잠복이지만, 「폐기된 판」 시나리오를 넣는
+    순간 조용히 틀린다.
+
+    `APPROVED` 는 여기서 안 건드린다 — 그 절차는 도장을 옮기는 일이라
+    `DrugCautionService.approve_version` 것이다(KEY-180 §3).
+    """
+    if wanted is ApprovalStatus.APPROVED or content.approval_status is wanted:
+        return
+    content.approval_status = wanted
+    await content.save(update_fields=["approval_status", "updated_at"])
+
+
 async def seed_catalog() -> None:
     """처방 세트 8종과 주의·응급 문구 마스터를 적재한다 — KEY-165.
 
@@ -634,6 +650,8 @@ async def seed_catalog() -> None:
             approved_key=None,
         )
 
+        await _settle_unapproved(made, content_row.approval_status)
+
         if content_row.approval_status == ApprovalStatus.APPROVED:
             # **규칙은 한 군데에만 산다.** 「세트·섹션당 승인은 하나」와 그
             # 갈아 끼우는 절차(옛 판 폐기 → 새 판 승인, 한 트랜잭션)는
@@ -682,7 +700,16 @@ async def seed_catalog() -> None:
         # 「원내)카마졸질정」은 **원내 처방이라 뺐다** — 이 목록은 원외로 나가는
         # 약이고, 원내 것은 안내문에 실릴 자리가 없다 (2026-09-04 권일준).
     ):
-        await DrugCatalog.get_or_create(name=name, defaults={"frequency": frequency, "note": note})
+        # **`defaults` 는 INSERT 때만 먹는다** — 이희진 님 `#214` ⑤.
+        #
+        # `PrescriptionSet.disease` 에서 고친 것과 같은 버그다. 이미 있는 행에는
+        # 새 `frequency`·`note` 가 안 들어간다. 바로 위 주석이 「EMR 이름·용법을
+        # 다시 맞춘다」고 예고해 두었는데, 그때 재시드해도 옛 값이 남는다.
+        drug, drug_is_new = await DrugCatalog.get_or_create(name=name, defaults={"frequency": frequency, "note": note})
+        if not drug_is_new and (drug.frequency != frequency or drug.note != note):
+            drug.frequency = frequency
+            drug.note = note
+            await drug.save(update_fields=["frequency", "note", "updated_at"])
 
 
 async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
@@ -695,11 +722,21 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
 
     ## 의학 문구를 지어내지 않는다
 
-    caution·emergency 는 `DrugCautionService.get_approved_content` 로 **이미
-    승인된 카탈로그 문구**를 그대로 가져온다 — `app/services/guides.py` 의
-    `generate` 가 하는 것과 같은 길이다. 「확정 승인 지식 외 내용 추가 금지」
-    (이희진 님, PR #150)를 코드로 지키는 자리다. 승인 문구가 없는 세트를 고르면
-    폴백으로 서기 때문에, 세트에 둘 다 있는 행을 골라 두었다.
+    **네 갈래 다** `DrugCautionService.get_approved_content` 로 이미 승인된
+    카탈로그 문구를 가져온다 — `app/services/guides.py` 의 `generate` 가 하는
+    것과 같은 길이다. 「확정 승인 지식 외 내용 추가 금지」(이희진 님, PR #150)를
+    코드로 지키는 자리다.
+
+    **예전에는 둘뿐이었다.** caution·emergency 만 카탈로그를 묻고 medication·life
+    는 `guide_defaults` 의 폴백 문구를 **이 파일에 복사해** 두고 썼다. KEY-265 가
+    생성 쪽을 네 갈래로 고쳤는데 이 함수만 남아서, smoke·시연이 만드는 안내는
+    원장님이 확인한 복약지도 대신 범용 문장을 실었다 (이희진 님 `#214` ①).
+
+    폴백은 이제 `guide_defaults` 에서 가져온다. 같은 글을 두 곳에 두면 한쪽만
+    고쳐지고, 그 어긋남이 **환자에게 나가는 글**에서 드러난다.
+
+    승인 문구가 없는 세트를 고르면 폴백으로 서기 때문에, caution·emergency 가
+    둘 다 있는 행을 골라 두었다 — 그 둘은 없으면 아예 멈춘다.
 
     ## 다시 돌릴 수 있다
 
@@ -735,6 +772,11 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
 
     caution = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.CAUTION)
     emergency = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.EMERGENCY)
+    # 나머지 둘도 같은 길로 묻는다. 없으면 `generate` 와 **같은 폴백**으로 선다 —
+    # 여기서 멈추지 않는 것은 caution·emergency 와 달리 이 둘은 폴백 문구가
+    # 의학적으로 안전한 범용 문장이기 때문이다(`guide_defaults`).
+    medication = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.MEDICATION)
+    life = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.LIFE)
     if caution is None or emergency is None:
         print(
             f"[smoke] 처방세트 {set_name!r} 에 승인된 주의·응급 문구가 없습니다 — "
@@ -801,11 +843,21 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
         )
 
     sections: tuple[tuple[GuideSectionKey, str, int | None, bool], ...] = (
-        (GuideSectionKey.MEDICATION, _SMOKE_MEDICATION_BODY, None, False),
+        (
+            GuideSectionKey.MEDICATION,
+            medication.body if medication else guide_defaults.MEDICATION,
+            medication.drug_caution_content_id if medication else None,
+            False,
+        ),
         (GuideSectionKey.CAUTION, caution.body, caution.drug_caution_content_id, False),
         # 🚨 응급 문장은 사람이 못 고친다 (KEY-150, KEY-165).
         (GuideSectionKey.EMERGENCY, emergency.body, emergency.drug_caution_content_id, True),
-        (GuideSectionKey.LIFE, _SMOKE_LIFE_BODY, None, False),
+        (
+            GuideSectionKey.LIFE,
+            life.body if life else guide_defaults.LIFE,
+            life.drug_caution_content_id if life else None,
+            False,
+        ),
         (GuideSectionKey.MESSAGES, _SMOKE_MESSAGES_BODY, None, False),
     )
     for key, body, content_id, locked in sections:

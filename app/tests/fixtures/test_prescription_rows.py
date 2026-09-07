@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from app.models.prescriptions import AS_NEEDED
+from app.services.drug_caution import DrugCautionService
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row
 
 CSV_PATH = Path(__file__).resolve().parents[3] / "docs" / "data" / "synthetic-patients.csv"
@@ -96,14 +97,26 @@ class TestAgainstTheRealSyntheticData:
     def test_exactly_the_as_needed_items_have_no_duration(self) -> None:
         """비어 있는 기간과 `필요시` 가 정확히 같은 집합이어야 한다.
 
-        **개수는 안 박는다.** 예전에는 「9개」가 박혀 있었는데, 진통제를 빼자
-        `필요시` 줄이 하나도 안 남아 검사가 규칙과 무관하게 깨졌다. 재는 것은
-        「둘이 같은 집합인가」이지 몇 개인가가 아니다.
+        **집합 비교만으로는 모자란다** — 이희진 님 `#214` ④.
+
+        예전 주석은 「진통제를 빼자 `필요시` 줄이 하나도 안 남았다」고 적었는데
+        **사실이 아니다.** `SYN-EMS-08`(록소펜정)에 한 줄 남아 있다. 「9개」가
+        틀린 것이지 개수를 재는 것이 틀린 것이 아니었다 — 9를 1로 고쳤어야 했다.
+
+        집합끼리만 대면 **분류가 통째로 깨져도 조용히 통과한다.** 전부 `필요시`
+        로 잘못 갈리면 두 집합이 같이 틀려서 여전히 같다. 그래서 개수를 함께
+        박는다 — 「몇 개인가」가 아니라 「분류가 실제로 갈리고 있는가」를 재는 것이다.
         """
         items = [i for r in ROWS if r["약"].strip() for i in items_from_row(r["약"], r["용법"], r["처방일수"])]
         empty = {id(i) for i in items if i.duration_days is None}
         as_needed = {id(i) for i in items if i.frequency == AS_NEEDED}
+
         assert empty == as_needed, "기간이 빈 줄과 `필요시` 줄이 어긋난다"
+        assert len(as_needed) == 1, (
+            f"`필요시` 줄이 {len(as_needed)}개다 — 정본 CSV 는 SYN-EMS-08 한 줄뿐이다. "
+            "0이면 분류가 안 걸린 것이고, 많으면 전부 `필요시` 로 잘못 갈린 것이다"
+        )
+        assert len(items) > len(as_needed), "모든 줄이 `필요시` 로 갈렸다 — 분류가 깨졌다"
 
 
 # ── 약품명 표기 — KEY-183 ─────────────────────────────────────────────────────
@@ -525,10 +538,13 @@ class TestTheApprovedWordingIsWhole:
             assert "자문" in row.source_name, f"{where} 의 출처가 자문이 아니다 — {row.source_name!r}"
             assert "TEST-ONLY" not in row.source_url, f"{where} 에 시험용 주소가 남았다"
             assert row.source_url.startswith("https://"), f"{where} 의 주소가 비었다"
-            # KEY-180 §4 — 넷 중 하나라도 비면 `guides.py` 가 조용히 폴백한다
-            assert all([row.source_name, row.source_org, row.source_url, row.content_version]), (
-                f"{where} 의 근거 넷 중 빈 것이 있다 — 폴백으로 떨어진다"
-            )
+            # **서비스의 술어를 그대로 쓴다** — 이희진 님 `#214` ⑦.
+            #
+            # 같은 조건(`all([source_name, source_org, source_url, content_version])`)을
+            # 여기에 다시 적어 두었었다. 근거 규칙이 바뀌면 서비스만 바뀌고 이
+            # 검사는 옛 규칙으로 계속 초록이 된다 — 재는 척만 하게 된다.
+            # KEY-180 §4 — 넷 중 하나라도 비면 `guides.py` 가 조용히 폴백한다.
+            assert DrugCautionService.has_evidence(row), f"{where} 의 근거 넷 중 빈 것이 있다 — 폴백으로 떨어진다"
 
     def test_the_medication_body_is_not_prefixed_as_synthetic(self) -> None:
         """`guides.py` 가 복약지도 앞에 `[합성 …]` 을 다시 박지 않는다.
