@@ -14,13 +14,14 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
     CONSTRAINT `fk_guide_me_guide_me_66e419a4` FOREIGN KEY (`guide_message_id`) REFERENCES `guide_message` (`guide_message_id`) ON DELETE CASCADE,
     KEY `idx_guide_messa_guide_m_80fd4c` (`guide_message_id`, `created_at`)
 ) CHARACTER SET utf8mb4 COMMENT='예약 문자 한 통의 발송 시도·성공·실패·보류 이력 — KEY-250, append-only.';
-        ALTER TABLE `guide_message` MODIFY COLUMN `hold_reason` VARCHAR(19) COMMENT 'INVALID_PHONE: INVALID_PHONE\nNO_CREDIT: NO_CREDIT\nNOT_APPROVED: NOT_APPROVED\nSAFETY_CHECK_FAILED: SAFETY_CHECK_FAILED\nSOURCE_NOT_DELETED: SOURCE_NOT_DELETED';
         ALTER TABLE `guide_message` MODIFY COLUMN `hold_reason` VARCHAR(19) COMMENT 'INVALID_PHONE: INVALID_PHONE\nNO_CREDIT: NO_CREDIT\nNOT_APPROVED: NOT_APPROVED\nSAFETY_CHECK_FAILED: SAFETY_CHECK_FAILED\nSOURCE_NOT_DELETED: SOURCE_NOT_DELETED';"""
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
     return """
-        ALTER TABLE `guide_message` MODIFY COLUMN `hold_reason` VARCHAR(13) COMMENT 'INVALID_PHONE: INVALID_PHONE\nNO_CREDIT: NO_CREDIT';
+        UPDATE `guide_message`
+        SET `hold_reason` = NULL
+        WHERE `hold_reason` IN ('NOT_APPROVED', 'SAFETY_CHECK_FAILED', 'SOURCE_NOT_DELETED');
         ALTER TABLE `guide_message` MODIFY COLUMN `hold_reason` VARCHAR(13) COMMENT 'INVALID_PHONE: INVALID_PHONE\nNO_CREDIT: NO_CREDIT';
         DROP TABLE IF EXISTS `guide_message_event`;"""
 

@@ -28,7 +28,7 @@ from app.models.visits import (
     GuideMessageStatus,
     Visit,
 )
-from app.services.dispatch_gate import gate_hold_reason
+from app.services.dispatch_gate import evaluate_dispatch_gate
 from app.services.message_templates import DEFAULT_BODY, MessageTemplateKind
 from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError, SmsSendResult
 
@@ -102,17 +102,22 @@ async def _course_days(visit_id: int) -> int | None:
     return course_days(row.value, row.unit)
 
 
-async def render_message_body(message: GuideMessage) -> str:
+async def render_message_body(
+    message: GuideMessage,
+    *,
+    guide: GuideDocument | None = None,
+    visit: Visit | None = None,
+) -> str:
     """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
 
     `{링크}`/`{예약링크}`는 채우지 않는다 — 이유는 `LinkNotAvailableError`
     docstring을 본다. 남은 변수만 채운 뒤, 그 둘이 아직도 문구에 남아
     있으면 `LinkNotAvailableError`를 던진다.
     """
-    guide = await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
+    guide = guide or await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
     if guide is None:
         raise ValueError(f"guide_document not found for message {message.guide_message_id}")
-    visit = await Visit.filter(visit_id=guide.visit_id).first()
+    visit = visit or await Visit.filter(visit_id=guide.visit_id).first()
     patient = await Patient.filter(patient_id=visit.patient_id).first() if visit else None
     hospital = await Hospital.filter(hospital_id=guide.hospital_id).first()
 
@@ -175,20 +180,24 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         return None
 
     message = await GuideMessage.get(guide_message_id=message_id)
-    await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
+    try:
+        await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
+        gate = await evaluate_dispatch_gate(message)
+    except Exception:
+        default_logger.exception("문자 발송 게이트 처리 중 예상치 못한 예외 — guide_message_id=%s", message_id)
+        return await _finish_retryable(message, token, moment, provider_detail="worker_exception")
 
-    hold_reason = await gate_hold_reason(message)
-    if hold_reason is not None:
-        return await _finish_held(message, token, hold_reason)
+    if gate.hold_reason is not None:
+        return await _finish_held(message, token, gate.hold_reason)
 
     try:
-        guide = await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
+        guide = gate.guide
         visit = await Visit.filter(visit_id=guide.visit_id).first() if guide else None
         patient = await Patient.filter(patient_id=visit.patient_id).first() if visit else None
         if patient is None:
             raise ValueError(f"patient not found for message {message_id}")
 
-        body = await render_message_body(message)
+        body = await render_message_body(message, guide=guide, visit=visit)
         result = await sender.send(patient.phone, body)
     except LinkNotAvailableError:
         # 재시도해도 정책이 정해지기 전엔 같은 결과다 — 5번 돌 필요 없이 바로 종료한다.

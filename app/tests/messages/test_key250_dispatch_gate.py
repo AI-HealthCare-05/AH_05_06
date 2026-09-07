@@ -5,8 +5,10 @@
 감사 이벤트 네 갈래(시도·성공·실패·보류)만 검사한다.
 """
 
+import ast
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from unittest.mock import AsyncMock, patch
 
 from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
@@ -52,6 +54,17 @@ async def _attach_document(message: GuideMessage, *, file_exists: bool) -> Path:
     return path
 
 
+class _UnavailableStorage:
+    async def save(self, content: bytes, mime_type: str) -> str:
+        raise NotImplementedError
+
+    async def delete(self, path: str) -> None:
+        raise NotImplementedError
+
+    async def exists(self, path: str) -> bool:
+        raise PermissionError(path)
+
+
 class TestGateBlocksUnapprovedGuides(TestCase):
     async def test_gate_returns_not_approved_for_an_unapproved_guide(self) -> None:
         message = await make_due_message(approved=False)
@@ -95,6 +108,13 @@ class TestGateBlocksUndeletedSourceDocuments(TestCase):
         message = await make_due_message(approved=True)
 
         assert await gate_hold_reason(message) is None
+
+    async def test_storage_lookup_failure_is_not_mistaken_for_deletion(self) -> None:
+        """권한·저장소 장애 때는 fail-safe로 발송을 막는다."""
+        message = await make_due_message(approved=True)
+        await _attach_document(message, file_exists=False)
+
+        assert await gate_hold_reason(message, storage=_UnavailableStorage()) is GuideMessageHold.SOURCE_NOT_DELETED
 
     async def test_dispatch_holds_with_source_not_deleted(self) -> None:
         message = await make_due_message(approved=True, link_free_template=True)
@@ -192,3 +212,63 @@ class TestAuditEventsAreAppendOnly(TestCase):
                 assert "http" not in event.reason
                 assert "otp.html" not in event.reason
                 assert "#t=" not in event.reason
+
+    def test_application_code_never_updates_or_deletes_message_events(self) -> None:
+        """감사 행은 create만 허용한다 — QuerySet 변조를 원문 대조로 막는다."""
+
+        def root_name(node: ast.AST) -> str | None:
+            while isinstance(node, (ast.Attribute, ast.Call)):
+                node = node.value if isinstance(node, ast.Attribute) else node.func
+            return node.id if isinstance(node, ast.Name) else None
+
+        violations: list[str] = []
+        for path in Path("app").rglob("*.py"):
+            if "tests" in path.parts:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in {"update", "delete"}
+                    and root_name(node.func.value) == "GuideMessageEvent"
+                ):
+                    violations.append(f"{path}:{node.lineno}")
+
+        assert violations == [], f"GuideMessageEvent 감사 행을 변경·삭제한다: {violations}"
+
+
+class TestClaimIsReleasedAfterPreSendFailure(TestCase):
+    async def _assert_retryable(self, message: GuideMessage) -> None:
+        saved = await GuideMessage.get(guide_message_id=message.guide_message_id)
+        assert saved.status is GuideMessageStatus.SCHEDULED
+        assert saved.claim_token is None
+        assert saved.attempt_count == 1
+        assert saved.provider_detail == "worker_exception"
+        assert saved.scheduled_at > now()
+
+    async def test_attempt_event_failure_releases_the_claim(self) -> None:
+        message = await make_due_message(link_free_template=True)
+
+        with patch(
+            "app.services.message_dispatch._log_event",
+            new=AsyncMock(side_effect=RuntimeError("audit unavailable")),
+        ):
+            result = await dispatch_message(message.guide_message_id, MockSmsSender())
+
+        assert result is not None
+        assert result.status is GuideMessageStatus.SCHEDULED
+        await self._assert_retryable(message)
+
+    async def test_gate_failure_releases_the_claim(self) -> None:
+        message = await make_due_message(link_free_template=True)
+
+        with patch(
+            "app.services.message_dispatch.evaluate_dispatch_gate",
+            new=AsyncMock(side_effect=RuntimeError("storage unavailable")),
+        ):
+            result = await dispatch_message(message.guide_message_id, MockSmsSender())
+
+        assert result is not None
+        assert result.status is GuideMessageStatus.SCHEDULED
+        await self._assert_retryable(message)

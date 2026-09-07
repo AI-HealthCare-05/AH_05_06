@@ -372,6 +372,8 @@ class GuideMessageHold(StrEnum):
     #: 뒤(`UNAPPROVED`)에도 예약 줄이 CANCELED로 안 꺼지는 경합을 방어한다.
     NOT_APPROVED = "NOT_APPROVED"
     #: 생성 전·후 안전검증을 통과하지 못했다 — KEY-250.
+    #: 현재 생성 후 안전검증을 나타내는 확정 필드·이벤트가 없어 게이트가 이
+    #: 값을 만들지는 않는다. 안전검증 계약이 확정되기 전까지 도달 불가다.
     SAFETY_CHECK_FAILED = "SAFETY_CHECK_FAILED"
     #: 원본 의료문서가 아직 삭제되지 않았다 — KEY-250. 환자에게 안내가
     #: 나가기 전에, 그 근거가 된 원본 파일이 우리 서버에서 지워졌는지
