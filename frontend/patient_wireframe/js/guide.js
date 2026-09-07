@@ -6,10 +6,23 @@
   /* P1 목업 인증 가드. 실제 안내 조회는 정본 API 계약대로 링크 자체가 접근
      증명이며, 고정 OTP 목업으로 실제 환자 진입을 막지 않는다. 목업 왕복 중
      토큰은 fragment로만 전달하고 브라우저 저장소에는 복사하지 않는다. */
+  /* **주소에서 지운 뒤에도 토큰을 찾을 수 있어야 한다** — KEY-260.
+   *
+   * 아래 `takeGuideToken()` 이 access log 에 안 남기려고 토큰을 주소에서 지우고
+   * `TOKEN` 에 담는다(KEY-205). 그런데 이 함수가 **주소를 다시 읽고** 있어서, 그
+   * 뒤에 부르면 빈 손으로 돌아온다.
+   *
+   * 실제로 그런 자리가 있다 — 세션만 끝난 401 에서 OTP 화면으로 돌려보내는 갈래
+   * (KEY-178). 거기서 토큰을 잃으면 환자는 **어느 안내로 돌아가야 하는지 모르는**
+   * OTP 화면에 떨어져, 받았던 문자를 다시 찾아야 한다.
+   *
+   * `TOKEN` 을 먼저 본다. 이 함수는 그것이 담기기 **전에도** 한 번 불리므로
+   * (목업 갈래) 주소 읽기를 폴백으로 남긴다 — `var` 는 끌어올려져 그때는
+   * `undefined` 다. */
   function otpEntryUrl() {
     var query = new URLSearchParams(window.location.search);
     var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
-    var token = fragment.get('t') || query.get('t') || query.get('visit') || '';
+    var token = TOKEN || fragment.get('t') || query.get('t') || query.get('visit') || '';
     var safeQuery = new URLSearchParams();
     var mock = query.get('mock');
     var previewCase = query.get('case');
