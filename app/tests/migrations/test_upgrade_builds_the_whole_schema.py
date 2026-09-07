@@ -173,6 +173,12 @@ async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
         missing_dispatch_columns = sorted(required_dispatch_columns - message_columns)
         assert not missing_dispatch_columns, f"KEY-249 발송 컬럼이 누락됐다: {missing_dispatch_columns}"
 
+        # KEY-250: 발송 감사 이벤트 표가 실제로 생성됐는가.
+        event_columns = {row[0] for row in await _sql(SCRATCH, "SHOW COLUMNS FROM guide_message_event")}
+        required_event_columns = {"guide_message_event_id", "event_type", "reason", "guide_message_id", "created_at"}
+        missing_event_columns = sorted(required_event_columns - event_columns)
+        assert not missing_event_columns, f"KEY-250 감사 이벤트 컬럼이 누락됐다: {missing_event_columns}"
+
         # ② 배포는 이걸 매번 돈다. 두 번째가 뭔가 한다면 굴릴 수 없다.
         again = _aerich(SCRATCH, "upgrade")
         assert again.returncode == 0, f"두 번째 upgrade 가 죽었다 — {again.stderr[-600:]}"
