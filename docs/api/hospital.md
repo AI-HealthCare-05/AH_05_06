@@ -860,7 +860,9 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | PUT | `/api/v1/visits/{visit_id}/ocr-fields/{field_type}` | 판독이 못 읽은 값 직접 입력 (S1-7) | `staff`·`doctor` |
 | GET | `/api/v1/visits/{visit_id}/guide/messages` | 문자 설정 — 회차 · 문구 · 시각 (S1-14) | `staff`·`doctor` |
 | PUT | `/api/v1/visits/{visit_id}/guide/messages` | 문자 설정 저장 — 「이 환자만 적용」 | 상태에 따라 `staff`·`doctor` |
-| POST | `/api/v1/visits/{visit_id}/guide/link` | 72시간 개발용 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/link` | 승인 안내의 168시간 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/link/re-issue` | 기존 링크 즉시 교체, 새 원문 1회 반환 | `staff`·`doctor` |
+| DELETE | `/api/v1/visits/{visit_id}/guide/link` | 현재 링크 즉시 폐기 | `staff`·`doctor` |
 
 `admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
 

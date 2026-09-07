@@ -18,7 +18,7 @@
 
 | 영역 | 현재 최소 계약 | 관련 Jira |
 |---|---|---|
-| 환자 링크 | 개발용 링크 한 건으로 승인 안내 조회. 실제 SMS·예약 발송은 후속 범위 | [KEY-90](https://leehee.atlassian.net/browse/KEY-90) |
+| 환자 링크 | 승인 안내에 168시간 링크 한 건, 병원 수동 재발급·폐기 | [KEY-223](https://leehee.atlassian.net/browse/KEY-223) |
 | OTP | 6자리·3분 유효, 5회 실패 시 10분 잠금 | [KEY-91](https://leehee.atlassian.net/browse/KEY-91) |
 | 환자 세션 | OTP 성공 뒤 HttpOnly 쿠키로 30분 유지, 로그아웃·재인증 시 폐기·회전 | [KEY-92](https://leehee.atlassian.net/browse/KEY-92) |
 | 승인 안내 조회 | 승인 완료 안내만 제공하고 원본·미승인 안내는 차단 | [KEY-151](https://leehee.atlassian.net/browse/KEY-151) |
@@ -39,6 +39,13 @@
 POST /api/v1/visits/{visit_id}/guide/link   직원 인증 필요
 201 { "path": "/api/v1/guides/{token}",
       "expires_at": "…", "demo_only": true }
+
+POST /api/v1/visits/{visit_id}/guide/link/re-issue
+200 { "path": "/api/v1/guides/{new_token}",
+      "expires_at": "…", "demo_only": true }
+
+DELETE /api/v1/visits/{visit_id}/guide/link
+204
 
 GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증명
 200 {
@@ -122,17 +129,20 @@ GET  /api/v1/guides/{token}                 환자 링크 자체가 접근 증�
 `guide.next`(다음 방문 계획)나 `care.ask`(증상별 문의 기준)로 의미 변환하지 않는다.
 각 필드에 맞는 구조화 소스가 생긴 뒤에만 별도로 매핑한다.
 
-- 링크는 승인 완료 상태(`SCHEDULED_TO_SEND`)인 안내에만 발급하며 72시간 유효하다.
+- 링크는 승인 완료 상태(`SCHEDULED_TO_SEND`)인 안내에만 발급하며 168시간 유효하다.
 - 발급은 같은 병원의 `staff` 또는 `doctor`만 가능하고, 타 병원 안내는 404로 감춘다.
 - 원문 토큰은 발급 응답에서 한 번만 제공하고 DB에는 SHA-256 digest만 저장한다.
-- 한 안내에 개발용 링크 하나만 허용한다. 반복 발급은 `409 LINK_ALREADY_ISSUED`다.
+- 한 안내에 링크 하나만 허용한다. 반복 발급은 `409 LINK_ALREADY_ISSUED`다.
+- 병원 수동 재발급은 같은 행의 digest를 회전하고 새 원문을 응답에서 한 번만
+  제공한다. 폐기도 복구 불가능한 digest로 회전하므로 종전 URL은 즉시 404가 된다.
+  재발급 전 링크 행이 없으면 `404 LINK_NOT_ISSUED`다.
 - 조회 응답에는 공개 계약에 명시된 진료일·의원명·확정 질환명·처방 요약과
   승인된 섹션의 최종 문구만 포함한다. 환자 이름·생년월일·전화번호·차트번호,
   OCR·의료문서 원문, 생성 원문, 내부 경고와 승인자 식별자는 포함하지 않는다.
 - 없는 토큰은 `404 LINK_NOT_FOUND`, 만료 토큰은 `410 LINK_EXPIRED`다.
-- 실제 SMS·예약 발송·폐기·재발급 전체 흐름은 이번 계약 범위 밖이다. OTP는
-  아래 KEY-91 계약을 사용하며, 환자 세션이 연결되기 전까지 개발 링크 조회
-  자체를 OTP로 차단하지 않는다.
+- 실제 SMS·예약 발송과 `SendLog` 이력은 범위 밖이다. 병원 화면은 링크 원문을
+  DOM·브라우저 저장소·로그에 남기지 않고 메모리에서 복사 또는 P1 본인 확인
+  화면으로만 넘긴다. 승인 안내 조회에는 아래 KEY-91 OTP 세션이 필요하다.
 
 ### 2.2 환자 OTP — KEY-91
 

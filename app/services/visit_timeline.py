@@ -59,6 +59,8 @@ _GUIDE_EVENT_NAME: dict[GuideEventType, TimelineEvent] = {
     GuideEventType.UNAPPROVED: TimelineEvent.GUIDE_UNAPPROVED,
     GuideEventType.RETURNED: TimelineEvent.GUIDE_RETURNED,
     GuideEventType.REGENERATED: TimelineEvent.GUIDE_REGENERATED,
+    GuideEventType.LINK_REISSUED: TimelineEvent.PATIENT_LINK_REISSUED,
+    GuideEventType.LINK_REVOKED: TimelineEvent.PATIENT_LINK_REVOKED,
 }
 
 _PATIENT_EVENT_NAME: dict[PatientUsageEventType, TimelineEvent] = {
