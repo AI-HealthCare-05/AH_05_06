@@ -2922,9 +2922,12 @@ function stateTakesFocus(tone) {
             renderMultiJobProgress(jobs);
             return pollAllJobs(mine, jobs);
           }
-          var failed = jobs.find(function (j) { return j.status === "FAILED"; });
-          if (failed && !renderJobState(failed)) return;
-          return loadAllResults(mine);
+          var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
+          var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
+          if (anyFailed && !hasSuccess) { renderJobState(anyFailed); return; }
+          return loadAllResults(mine).then(function () {
+            if (anyFailed) renderJobState(anyFailed);
+          });
         })
         .catch(function () {
           if (mine !== loadSeq) return;
@@ -3008,8 +3011,11 @@ function stateTakesFocus(tone) {
           return pollAllJobs(mine, jobs);
         }
         var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
-        if (anyFailed && !renderJobState(anyFailed)) return null;
-        return loadAllResults(mine);
+        var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
+        if (anyFailed && !hasSuccess) { renderJobState(anyFailed); return null; }
+        return loadAllResults(mine).then(function () {
+          if (anyFailed) renderJobState(anyFailed);
+        });
       })
       .catch(function (error) {
         if (mine !== loadSeq) return;
