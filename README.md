@@ -193,7 +193,7 @@ OCR 흐름까지 재현하려면:
 ```bash
 uv sync                                 # 전체
 uv sync --group app                     # API 서버만
-uv sync --group worker --group ai       # AI 워커 (둘 다 필요)
+uv sync --group worker --group ai       # AI 워커용 (worker·ai 둘 다)
 ```
 
 > **`--group ai` 만으로는 워커가 안 뜬다.** 그 그룹에는 모델 쪽 패키지만 있고
@@ -226,7 +226,7 @@ docker compose up -d --build            # redis · mysql · fastapi (기본 셋)
 docker compose --profile web --profile ocr up -d --build   # 여섯 개 전부
 ```
 
-> Walking Skeleton smoke 와 종단 검사는 화면과 OCR 을 모두 지나므로 **두 프로필을 다** 줘야
+> walking skeleton smoke 와 종단 검사는 화면과 OCR 을 모두 지나므로 **두 프로필을 다** 줘야
 > 한다. 프로필 없이 돌리면 「연결 거부」로 죽는다.
 
 ### 4. 테이블 생성 + 스키마 대조
