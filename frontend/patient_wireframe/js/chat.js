@@ -292,16 +292,25 @@
   }
 
   /* ── 질문 전송 ───────────────────────────── */
+  /* **보내는 함수는 입력칸을 안 지운다** — KEY-281.
+   *
+   * 여기서 지우면 **다시 시도**와 **제안 질문**도 이 길로 들어오면서 남의 초안을
+   * 함께 지운다. 답이 실패해 다음 질문을 치던 환자가 「다시 시도」를 누르면 치던
+   * 글자가 사라진다 — 지우려던 것은 방금 보낸 질문인데.
+   *
+   * 이 계약은 원래 옛 화면 코드에 있었고 검사가 붙잡고 있었는데, 그 검사가
+   * **아무도 안 싣는 파일**을 재고 있어서 여기로 오면서 조용히 깨졌다.
+   * 지우는 일은 **입력칸에서 꺼내 보낸 자리**(`sendFromInput`)가 한다.
+   *
+   * 보냈으면 `true` 를 준다 — 안 보낸 것까지 지우면 같은 사고가 된다. */
   function sendQuestion(q) {
-    if (state.busy || !q.trim()) return;
+    if (state.busy || !q.trim()) return false;
     var gen = ++state.generation;
 
     state.messages.push({ role: 'user', text: q });
     var answerMsg = { role: 'assistant', text: '', streaming: true };
     state.messages.push(answerMsg);
     state.busy = true;
-    state.draft = '';
-    input.value = '';
     sendBtn.disabled = true;
     abortBtn.classList.add('chat-abort--show');
     renderMessages();
@@ -356,6 +365,15 @@
         renderMessages();
       });
 
+    return true;
+  }
+
+  /* **입력칸에서 꺼내 보낸 자리만 입력칸을 비운다** — KEY-281.
+     다시 시도·제안 질문은 이 길로 안 들어오므로 치던 글자가 남는다. */
+  function sendFromInput() {
+    if (!sendQuestion(input.value)) return; // 안 보냈으면 지우지도 않는다
+    state.draft = '';
+    input.value = '';
   }
 
   function retryAnswer(msg) {
@@ -380,11 +398,11 @@
   input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendQuestion(input.value);
+      sendFromInput();
     }
   });
 
-  sendBtn.addEventListener('click', function () { sendQuestion(input.value); });
+  sendBtn.addEventListener('click', sendFromInput);
 
   abortBtn.addEventListener('click', function () {
     if (state.requestController) {
