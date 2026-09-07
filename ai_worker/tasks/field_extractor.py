@@ -282,10 +282,9 @@ def _match_lab_test_name(
         if pattern.search(test_name):
             return field_type
     if lab_keywords:
-        test_lower = test_name.lower()
         for field_type, kw_list in lab_keywords.items():
             for kw in kw_list:
-                if kw and kw.lower() in test_lower:
+                if kw and re.search(r"\b" + re.escape(kw) + r"\b", test_name, re.IGNORECASE):
                     return field_type
     return None
 

@@ -677,7 +677,12 @@ class _FakeBaseline:
 
 
 def test_dheas_matched_via_lab_keyword() -> None:
-    """DHEAS(하이픈 없는 표기)가 판독 키워드로 DHEA_S 필드에 매칭된다(인수조건 1·3)."""
+    """DHEAS(하이픈 없는 표기)가 판독 키워드로 DHEA_S 필드에 매칭된다(인수조건 1·3).
+
+    주의: "DHEAS"는 기존 정규식 \\bDHEA[-\\s]?S\\b 에서도 매칭되므로,
+    이 테스트는 정규식 경로의 회귀를 검증하며 fallback 로직은 검증하�� 않는다.
+    fallback 검증은 test_dheas_custom_notation_matched_via_lab_keyword_fallback 참조.
+    """
     baselines = [_FakeBaseline("DHEA-S", "DHEA-S, DHEAS")]
     lab_kw = build_lab_keywords(baselines)
 
@@ -686,6 +691,23 @@ def test_dheas_matched_via_lab_keyword() -> None:
     field_map = {f.field_type: f.extracted_value for f in fields}
 
     assert "DHEA_S" in field_map, "DHEAS 표기가 DHEA_S 필드로 매칭되어야 한다"
+    assert field_map["DHEA_S"] == "120.5 µg/dL"
+
+
+def test_dheas_custom_notation_matched_via_lab_keyword_fallback() -> None:
+    """기존 정규식이 전혀 잡지 못하는 커스텀 표기가 fallback 키워드로 DHEA_S에 매칭된다(인수조건 1·3).
+
+    "황산탈수소에피안드로스테론"은 _LAB_TEST_NAME_KEYWORDS 어떤 패턴과도 매칭되지 않으므로,
+    이 테스트가 통과하려면 lab_keywords fallback 로직이 반드시 실행되어야 한다.
+    """
+    baselines = [_FakeBaseline("DHEA-S", "황산탈수소에피안드로스테론")]
+    lab_kw = build_lab_keywords(baselines)
+
+    result = _make_lab_table_result("황산탈수소에피안드로스테론", "120.5 µg/dL")
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT, lab_kw)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "DHEA_S" in field_map, "기존 정규식이 아닌 fallback 키워드 경로로 DHEA_S에 매칭되어야 한다"
     assert field_map["DHEA_S"] == "120.5 µg/dL"
 
 
@@ -724,12 +746,15 @@ def test_build_lab_keywords_skips_baseline_without_keywords() -> None:
 
 
 def test_lab_keyword_matched_in_emr_type_document() -> None:
-    """EMR 유형으로 업로드된 검사결과지에서도 판독 키워드가 적용된다."""
-    baselines = [_FakeBaseline("DHEA-S", "DHEA-S, DHEAS")]
+    """EMR 유형으로 업로드된 검사결과지에서도 fallback 키워드가 적용된다.
+
+    기존 정규식��� 잡지 못하는 커스텀 표기를 사용해 fallback 경로를 검증한다(인수조건 3).
+    """
+    baselines = [_FakeBaseline("DHEA-S", "황산탈수소에피안드로스테론")]
     lab_kw = build_lab_keywords(baselines)
 
-    result = _make_lab_table_result("DHEAS", "115.0 µg/dL")
+    result = _make_lab_table_result("황산탈수소에피안드로스테론", "115.0 µg/dL")
     fields = extract_fields(result, OcrDocumentType.EMR, lab_kw)
     field_map = {f.field_type: f.extracted_value for f in fields}
 
-    assert "DHEA_S" in field_map, "EMR 타입 문서에서도 DHEAS 키워드가 적용되어야 한다"
+    assert "DHEA_S" in field_map, "EMR 타입 문서에서도 fallback 키워드가 적용되어야 한다"

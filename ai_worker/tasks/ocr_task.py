@@ -31,6 +31,7 @@ import asyncio
 from pathlib import Path
 from time import perf_counter
 
+from tortoise.expressions import Q
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
@@ -48,6 +49,7 @@ from app.models.ocr import (
     OcrJobStatus,
     OcrResult,
 )
+from app.models.visits import Visit
 
 _CLOVA_MODEL_NAME = "clova-ocr-v2"
 
@@ -94,11 +96,18 @@ async def process_ocr_job(ocr_job_id: str) -> None:
     medical_docs = await MedicalDocument.filter(document_id__in=document_ids).all()
     doc_map = {doc.document_id: doc for doc in medical_docs}
 
-    # 병원 맞춤 판독 키워드 로드 — EMR 표기 편차(DHEA-S/DHEAS 등)를 판독에 반영한다(KEY-245)
-    baselines = await LabBaseline.filter(hospital_id=job.hospital_id).all()
-    lab_kw = build_lab_keywords(baselines)
-
     if config.clova_enabled:
+        # 병원 맞춤 판독 키워드 로드 — EMR 표기 편차(DHEA-S/DHEAS 등)를 판독에 반영한다(KEY-245)
+        # 병원 공통(doctor_id IS NULL) + 이 진료의 담당 의사 전용 기준선만 포함한다.
+        visit = await Visit.get(visit_id=job.visit_id)
+        baselines = (
+            await LabBaseline.filter(
+                Q(hospital_id=job.hospital_id) & (Q(doctor_id__isnull=True) | Q(doctor_id=visit.doctor_id))
+            )
+            .order_by("lab_baseline_id")
+            .all()
+        )
+        lab_kw = build_lab_keywords(baselines)
         retry_count = 0
         partial_results: dict[int, ClovaOcrResult] = {}
         while True:
