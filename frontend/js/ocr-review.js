@@ -771,11 +771,51 @@ function stateTakesFocus(tone) {
        당겨져 옆 줄과 어긋난다. 자리는 지키고 글자만 없다. */
     if (fieldChoices(field.field_type)) return '<span class="field__unit"></span>';
 
+    /* **처방일수의 단위는 고르는 칸이다** — KEY-285.
+
+       「3」이 3일이면 3일이고 3통이면 84일이다. 그 차이가 소진 예정일을 81일
+       움직이고, 확인 문자가 엉뚱한 날 나간다. 여태 서버가 준 글자를 그대로
+       **보여주기만** 해서, 잘못 심긴 단위를 고치려면 DB 를 직접 만져야 했다. */
+    if (isDurationField(field.field_type) && field.ocr_field_id) return durationUnitHtml(field);
+
     var unit = fieldUnit(field.field_type, field.unit);
     /* 맨 위 줄(진단 · 처방)은 자리를 지킬 필요가 없다 — 세 칸이 각자 서 있어
        빈 칸을 두면 값과 단추 사이가 까닭 없이 벌어진다. */
     if (!unit && PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1) return "";
     return '<span class="field__unit">' + escapeHtml(unit) + "</span>";
+  }
+
+  /** 처방일수 줄인가. 둘째 약부터는 접미사가 붙는다(`DURATION_DAYS_2`). */
+  function isDurationField(fieldType) {
+    return /^DURATION_DAYS(_\d+)?$/.test(String(fieldType || ""));
+  }
+
+  /* 일 · 통 둘뿐이다. **서버가 아는 값만 낸다** — `DurationUnit` 이 그 둘이고,
+     다른 글자는 서버가 422 로 막는다.
+
+     **비었을 때 「일」을 미리 고르지 않는다.** 판독이 단위를 모른다는 것은
+     실제 상태이고, 화면이 그것을 「일」로 보이면 스탭은 확인 없이 넘긴다 —
+     3통짜리가 3일로 조용히 지나가는 자리가 바로 그것이다. */
+  function durationUnitHtml(field) {
+    /* 무엇을 미리 고를지는 **규칙**이라 `field-labels.js` 가 갖는다 — 이 안에
+       두면 IIFE 에 갇혀 검사가 못 닿고, 「모르면 모르는 채로」가 조용히
+       「일」로 바뀌어도 아무것도 울지 않는다. */
+    var picked = durationUnitChoice(field.unit);
+    var busy = saving[field.ocr_field_id] ? " disabled" : "";
+    var options = ['<option value=""' + (picked ? "" : " selected") + ">단위?</option>"].concat(
+      DURATION_UNITS.map(function (unit) {
+        return '<option value="' + unit + '"' + (picked === unit ? " selected" : "") + ">" + unit + "</option>";
+      }),
+    ).join("");
+    return (
+      '<select class="field__unit field__unit--pick" data-field-unit="' +
+      field.ocr_field_id +
+      '" aria-label="처방일수 단위"' +
+      busy +
+      ">" +
+      options +
+      "</select>"
+    );
   }
 
   function renderField(field) {
@@ -2370,6 +2410,23 @@ function stateTakesFocus(tone) {
   /* 확인 항목 체크. **누르는 순간 담긴다** — 「저장」을 따로 두면 눌러 놓고
      안 누른 채 넘어가는 길이 생기고, 안전에 걸리는 항목이라 그게 가장 나쁘다. */
   document.addEventListener("change", function (event) {
+    /* 처방일수 단위를 고른 순간 저장한다 — KEY-285.
+
+       **[저장] 을 따로 두지 않는다.** 이 칸은 값이 둘뿐이라 고르는 것이 곧
+       뜻이고, 단추를 두면 「골랐는데 왜 안 바뀌지」가 생긴다. 값 수정과 달리
+       오타가 날 자리가 없다.
+
+       빈 값(「단위?」)으로 되돌리는 것은 **안 보낸다.** 서버가 `unit` 을 지우는
+       길을 안 열어 두었고(모르는 상태로 되돌리는 것이 무슨 뜻인지 아직 정한
+       바가 없다), 열지 않은 길을 화면이 먼저 부르면 422 만 받는다. */
+    var unitFor = event.target.getAttribute && event.target.getAttribute("data-field-unit");
+    if (unitFor) {
+      var unitId = parseInt(unitFor, 10);
+      var chosen = event.target.value;
+      if (!isNaN(unitId) && chosen) saveField(unitId, { unit: chosen });
+      return;
+    }
+
     var key = event.target.getAttribute && event.target.getAttribute("data-check");
     if (!key) return;
     if (event.target.checked) checkAnswers[key] = true;

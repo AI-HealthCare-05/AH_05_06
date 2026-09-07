@@ -200,6 +200,23 @@ function joinChoiceValue(fieldType, pick, size) {
   return chosen + " " + cm + " cm";
 }
 
+/* 처방일수 단위로 고를 수 있는 것 — KEY-285. `DurationUnit` 과 같은 둘이다.
+   화면이 그 밖의 값을 내면 고른 순간 422 다. */
+var DURATION_UNITS = ["일", "통"];
+
+/** 단위 칸에 **미리 골라 둘** 값.
+ *
+ * **모르면 모르는 채로 둔다.** 판독이 단위를 못 정한 것은 실제 상태이고,
+ * 화면이 그것을 「일」로 보이면 스탭은 확인 없이 넘어간다 — 3통짜리가 조용히
+ * 3일이 되는 자리가 바로 그것이다(합성 100행 중 33행이 통수다).
+ *
+ * 서버가 모르는 글자가 들어와도 빈 값으로 떨어뜨린다. 고를 수 없는 값이
+ * 골라진 채 서 있으면, 스탭은 이미 정해진 것으로 읽는다.
+ */
+function durationUnitChoice(given) {
+  return DURATION_UNITS.indexOf(given) === -1 ? "" : given;
+}
+
 function fieldUnit(fieldType, given) {
   if (given) return given;
   var key = String(fieldType || "");

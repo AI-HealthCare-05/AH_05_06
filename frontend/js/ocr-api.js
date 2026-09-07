@@ -404,7 +404,10 @@ function mockGhostEdit() {
 function mockPatch(fieldId, body) {
   var field = mockFieldById(fieldId);
   if (!field) return new ApiError("NOT_FOUND", 404, {});
-  if (field.is_confirmed) return new ApiError("OCR_FIELD_CONFIRMED", 409, {});
+  /* **확정돼도 고칠 수 있다** — 서버가 KEY-273 에서 그렇게 바뀌었는데
+     (`app/ocr/service.py` 의 「확정돼도 고칠 수 있다」 주석) 목업만 409 로
+     남아 있었다. 목업이 서버보다 **좁으면** 그 갈래를 `?mock=1` 로 검수할 수
+     없다 — 확정 뒤에 단위가 틀린 것을 알아차리는 것이 KEY-285 의 한복판이다. */
   if (field.version !== body.base_version) return new ApiError("VERSION_CONFLICT", 409, {});
 
   /* 사람이 보낼 수 있는 상태는 둘뿐이다 — 「이번엔 안 했다」와 그 되돌리기.
@@ -435,9 +438,21 @@ function mockPatch(fieldId, body) {
 
      진짜 서버로는 `JSON.stringify` 가 `undefined` 키를 버려 `422` 로 거절되는데,
      목업만 조용히 삼켰다. **틀리는 방식이 다르면 목업으로 잡을 수 없다.** */
+  /* 처방일수 단위 — KEY-285. 서버가 두 문으로 막는다:
+     DTO 가 값의 **모양**(`DurationUnit` — 일 · 통)을, 서비스가 붙일 **자리**를.
+     목업도 둘 다 흉내낸다 — 한쪽만 있으면 `?mock=1` 이 통과시키는 요청을
+     진짜 서버가 거절한다. */
+  if (body.unit !== undefined && body.unit !== null) {
+    if (["일", "통"].indexOf(body.unit) === -1) return new ApiError("VALIDATION_ERROR", 422, {});
+    if (!/^DURATION_DAYS(_\d+)?$/.test(String(field.field_type))) {
+      return new ApiError("UNIT_NOT_ALLOWED", 400, {});
+    }
+  }
+
   if (
     (body.corrected_value === undefined || body.corrected_value === null) &&
     (body.candidate_id === undefined || body.candidate_id === null) &&
+    (body.unit === undefined || body.unit === null) &&
     !body.confirm
   ) {
     return new ApiError("INVALID_REQUEST", 400, {});
@@ -462,8 +477,16 @@ function mockPatch(fieldId, body) {
     changed = true;
   }
 
+  /* **단위를 고치는 것은 값을 고치는 것이다.** 숫자가 그대로여도 소진 예정일이
+     통째로 바뀐다(3 → 84). 서버가 그것을 값 수정과 같이 다루므로 목업도 같이
+     다룬다 — 판올림도, 고친 사람 도장도. */
+  var unitChanged = body.unit !== undefined && body.unit !== null && field.unit !== body.unit;
+  if (unitChanged) field.unit = body.unit;
+
   if (changed) {
     field.value = field.corrected_value;
+  }
+  if (changed || unitChanged) {
     field.modified_by = 101;
     field.modified_at = "2026-08-13T10:42:00+09:00";
   }
