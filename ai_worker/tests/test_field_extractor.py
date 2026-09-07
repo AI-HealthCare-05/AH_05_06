@@ -747,6 +747,24 @@ def test_detect_lab_keywords_in_different_rows_stays_emr() -> None:
     assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
 
 
+def test_detect_lab_keywords_different_rows_nonoverlapping_x_stays_emr() -> None:
+    """검사항목·검사결과 키워드가 다른 행에 있고 x 범위가 안 겹쳐도 LAB_RESULT로 재분류하지 않는다.
+
+    같은 행 조건이 없으면 x 비겹침만으로 True가 반환돼 오분류된다.
+    이 픽스처는 「같은 행」 제약을 죽였을 때 유일하게 실패해야 한다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row0 = [ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=10.0, right=110.0, bottom=30.0)]
+    row1 = [ClovaTextField(text="검사결과", confidence=1.0, left=120.0, top=40.0, right=220.0, bottom=60.0)]
+    result = ClovaOcrResult(
+        raw_text="검사항목\n검사결과",
+        fields=[*row0, *row1],
+        rows=[row0, row1],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
 def test_detect_lab_keywords_same_row_overlapping_x_stays_emr() -> None:
     """같은 행이라도 두 열의 x 범위가 겹치면 LAB_RESULT로 재분류하지 않는다.
 

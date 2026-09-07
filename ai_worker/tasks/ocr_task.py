@@ -307,13 +307,12 @@ async def _save_clova_result(
             clova_result = clova_results.get(jd.document_id)
             actual_type = actual_type_map.get(jd.document_id, OcrDocumentType(jd.document_type))
             if actual_type != OcrDocumentType(jd.document_type):
+                # 판정은 이 판독 회차(OcrJobDocument)에만 기록한다.
+                # MedicalDocument(원본)은 사람이 올린 그대로 두어야 오분류 시 재판독으로 되돌릴 수 있다.
                 await (
                     OcrJobDocument.filter(ocr_job_document_id=jd.ocr_job_document_id)
                     .using_db(conn)
                     .update(document_type=actual_type)
-                )
-                await (
-                    MedicalDocument.filter(document_id=jd.document_id).using_db(conn).update(document_type=actual_type)
                 )
             doc_text = await OcrDocumentText.create(
                 ocr_result=ocr_result,
