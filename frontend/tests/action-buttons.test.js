@@ -166,10 +166,31 @@ test("적어 둔 처리가 마크업에 실제로 있다", () => {
 test("잠근 자리는 보이는 것과 들리는 것이 한 값으로 정해진다", () => {
   /* 클래스로 회색만 칠하면 화면은 잠긴 것처럼 보이는데 낭독기는 멀쩡한 단추라고
      말한다. 그 반대도 생긴다. 그래서 `aria-disabled` 하나가 둘을 정하게 했다 —
-     인수조건 「접근성 상태와 안내 문구가 일관된다」가 막으려던 것이다. */
+     인수조건 「접근성 상태와 안내 문구가 일관된다」가 막으려던 것이다.
+
+     **부품 이름을 함께 적었는지까지 잰다.** `[aria-disabled="true"]` 만 쓰면
+     특정도가 `.icon-button` 과 같아서(둘 다 0,1,0) 파일에서 뒤에 오는 쪽이
+     이긴다 — 처음에 그렇게 짰다가 종 아이콘의 `cursor: pointer` 가 그대로
+     남았고, 브라우저로 열어 보고서야 알았다. 규칙이 **있다**는 것과 **이긴다**는
+     것은 다르다. */
   const css = fs.readFileSync(path.join(ROOT, "css/shell.css"), "utf8");
-  assert.match(css, /\[aria-disabled="true"\]\s*\{[^}]*cursor:\s*default/, "잠근 자리에 손 모양이 그대로다");
-  assert.match(css, /\[aria-disabled="true"\]\s*\{[^}]*color:\s*var\(--disabled\)/, "잠근 자리가 멀쩡한 색이다");
+
+  for (const part of ["icon-button", "banner__act"]) {
+    const scoped = new RegExp("\\." + part + '\\[aria-disabled="true"\\]');
+    assert.match(css, scoped, `${part} 에 부품 이름 없이 잠금을 걸었다 — 특정도가 같아 부품 규칙에 진다`);
+  }
+
+  const muted = css.match(/\.icon-button\[aria-disabled="true"\][^{]*\{[^}]*\}/g) || [];
+  assert.ok(
+    muted.some((rule) => /cursor:\s*default/.test(rule)),
+    "잠근 아이콘에 손 모양이 그대로다",
+  );
+  assert.match(css, /\[aria-disabled="true"\][^{]*\{[^}]*color:\s*var\(--disabled\)/, "잠근 자리가 멀쩡한 색이다");
+  assert.match(
+    css,
+    /\.icon-button\[aria-disabled="true"\]:hover/,
+    "손이 올라가면 반응한다 — 눌리는 척하는 마지막 자리가 호버다",
+  );
 });
 
 test("설정 화면의 로그아웃은 이제 이어져 있다", () => {

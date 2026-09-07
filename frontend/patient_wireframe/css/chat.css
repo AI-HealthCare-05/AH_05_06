@@ -152,6 +152,9 @@
 .chat-retry:hover { background: #FDF5FF; }
 .chat-contact { color: var(--tx-sub); display: inline-flex; align-items: center; gap: 4px; }
 .chat-contact:hover { background: var(--bg); }
+/* 잠근 자리는 손이 올라가도 반응하지 않는다 — 마지막까지 눌리는 척하는 자리가 호버다 (KEY-236). */
+.chat-contact[aria-disabled="true"] { color: var(--tx-sub); opacity: 0.6; cursor: default; }
+.chat-contact[aria-disabled="true"]:hover { background: transparent; }
 .chat-contact__icon { width: 14px; height: 14px; object-fit: contain; }
 
 .chat-feedback { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

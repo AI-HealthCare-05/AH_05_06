@@ -196,13 +196,20 @@
           retry.addEventListener('click', function () { retryAnswer(msg); });
           actions.appendChild(retry);
         }
+        /* **눌러 보고서야 아는 꼴을 없앤다** — KEY-236.
+         *
+         * 여태 이 단추는 멀쩡한 모양으로 답변마다 붙어 있다가, 누르면
+         * `alert('문의 창구는 병원 설정에서 연결됩니다.')` 를 띄웠다. 병원
+         * 연락처 종점이 아직 계약에 없어서다(KEY-259 가 남겨 둔 자리).
+         *
+         * 눌리는 척은 안 하되 **자리는 보인다** — 곧 붙을 것이라 없애면 그런
+         * 길이 있다는 사실까지 사라진다. 왜 아직 못 쓰는지는 눌러 보기 **전에**
+         * 말한다. */
         var contact = document.createElement('button');
         contact.type = 'button'; contact.className = 'chat-contact';
+        contact.setAttribute('aria-disabled', 'true');
+        contact.title = '문의 창구는 아직 연결되지 않았습니다 — 급하시면 병원으로 전화해 주세요';
         contact.innerHTML = '<img src="/patient_wireframe/assets/chat_bot.png" alt="" class="chat-contact__icon" aria-hidden="true"> 문의하기';
-        contact.addEventListener('click', function () {
-          /* KEY-259: 병원 연락처 계약 전까지 기존 준비 안내를 유지한다. */
-          alert('문의 창구는 병원 설정에서 연결됩니다.');
-        });
         actions.appendChild(contact);
         answer.appendChild(actions);
 
