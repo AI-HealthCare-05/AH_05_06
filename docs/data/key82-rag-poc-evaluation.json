@@ -1,0 +1,77 @@
+[
+  {
+    "query_id": "medication-exact",
+    "query_embedding": [1.0, 0.0, 0.0],
+    "hospital_id": 1,
+    "allowed_sections": ["medication"],
+    "expected_outcome": "found",
+    "expected_hit_ids": ["synthetic-medication-current"],
+    "expected_admission": "search_context",
+    "forbidden_hit_ids": [
+      "synthetic-medication-old",
+      "synthetic-medication-draft",
+      "synthetic-other-hospital",
+      "synthetic-stale-source",
+      "synthetic-unverified-license"
+    ]
+  },
+  {
+    "query_id": "medication-similar",
+    "query_embedding": [0.98, 0.2, 0.0],
+    "hospital_id": 1,
+    "allowed_sections": ["medication"],
+    "expected_outcome": "found",
+    "expected_hit_ids": ["synthetic-medication-current"],
+    "expected_admission": "search_context",
+    "forbidden_hit_ids": [
+      "synthetic-medication-old",
+      "synthetic-medication-draft",
+      "synthetic-other-hospital",
+      "synthetic-stale-source",
+      "synthetic-unverified-license"
+    ]
+  },
+  {
+    "query_id": "lifestyle-exact",
+    "query_embedding": [0.0, 1.0, 0.0],
+    "hospital_id": 1,
+    "allowed_sections": ["life"],
+    "expected_outcome": "found",
+    "expected_hit_ids": ["synthetic-lifestyle-current"],
+    "expected_admission": "search_context",
+    "forbidden_hit_ids": []
+  },
+  {
+    "query_id": "irrelevant-question",
+    "query_embedding": [-1.0, 0.0, 0.0],
+    "hospital_id": 1,
+    "allowed_sections": ["medication", "caution", "emergency", "life"],
+    "expected_outcome": "no_evidence",
+    "expected_hit_ids": [],
+    "expected_admission": "approved_template_fallback",
+    "forbidden_hit_ids": []
+  },
+  {
+    "query_id": "empty-allowed-section",
+    "query_embedding": [1.0, 0.0, 0.0],
+    "hospital_id": 1,
+    "allowed_sections": ["caution"],
+    "expected_outcome": "no_evidence",
+    "expected_hit_ids": [],
+    "expected_admission": "approved_template_fallback",
+    "forbidden_hit_ids": []
+  },
+  {
+    "query_id": "approved-source-conflict",
+    "query_embedding": [0.0, 0.0, 1.0],
+    "hospital_id": 1,
+    "allowed_sections": ["emergency"],
+    "expected_outcome": "source_conflict",
+    "expected_hit_ids": [],
+    "expected_admission": "generation_blocked",
+    "forbidden_hit_ids": [
+      "synthetic-emergency-conflict-a",
+      "synthetic-emergency-conflict-b"
+    ]
+  }
+]
