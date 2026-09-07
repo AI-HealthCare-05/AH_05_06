@@ -107,6 +107,45 @@ test("**생성보다 확정이 먼저다** — 순서가 뒤집히면 첫 요청
   );
 });
 
+test("**처방을 못 세워도 안내문은 만든다** — 다리가 막는 쪽이 되면 안 된다", () => {
+  /* `ocr-finalize` 는 생성보다 조건이 둘 더 많다 — `PRESCRIPTION_SET` 과
+     `FREQUENCY`. 그 둘이 없는 진료도 **여태 안내문은 만들어졌다**(세트를 못
+     찾아 기본 문구로 나갔을 뿐이다).
+
+     그 둘을 사슬에서 죽게 두면 이 다리가 **없던 것보다 나빠진다** — 처방 행을
+     세우려다 안내문 자체를 못 만들게 된다. */
+  const { finalizeMayPass } = box();
+
+  assert.equal(finalizeMayPass({ code: "MISSING_PRESCRIPTION_SET" }), null);
+  assert.equal(finalizeMayPass({ code: "MISSING_FREQUENCY" }), null);
+});
+
+test("**진짜 막아야 하는 것은 그대로 던진다** — 미확정을 넘기면 확정의 뜻이 없다", () => {
+  const { finalizeMayPass } = box();
+
+  [{ code: "OCR_NOT_CONFIRMED" }, { code: "FORBIDDEN" }, { code: "VISIT_NOT_FOUND" }, {}].forEach((e) => {
+    assert.throws(
+      () => finalizeMayPass(e),
+      `${e.code || "코드 없음"} 을 삼켰다 — 사슬이 조용히 이어진다`,
+    );
+  });
+});
+
+test("사슬이 확정 → 처방 → 생성 차례다 — 처방이 확정보다 먼저면 늘 422 다", () => {
+  const text = source();
+  const at = text.indexOf('target.id === "submit"');
+  assert.notEqual(at, -1, "생성 버튼 핸들러가 없다 — 검사가 헛돈다");
+  const handler = text.slice(at, at + 1600);
+
+  const confirmAt = handler.indexOf("confirmShownFields()");
+  const finalizeAt = handler.indexOf(".finalizeOcr(");
+  const generateAt = handler.indexOf(".generateGuide(");
+
+  assert.notEqual(finalizeAt, -1, "핸들러가 처방을 안 세운다 — KEY-271 다리가 없다");
+  assert.ok(confirmAt < finalizeAt, "처방이 확정보다 먼저다 — finalize 가 늘 422 다");
+  assert.ok(finalizeAt < generateAt, "안내문을 먼저 만든다 — 처방 행이 없는 채로 나간다");
+});
+
 test("확정 요청이 `confirm` 을 싣는다 — 이게 없으면 서버가 아무것도 안 굳힌다", () => {
   const text = source();
 

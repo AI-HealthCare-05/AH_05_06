@@ -161,6 +161,52 @@ class TestGenerateBlocksUnconfirmedOcr(GenerateGuideTestCase):
         assert response.status_code == 422
         assert response.json()["code"] == "OCR_NOT_CONFIRMED"
 
+    async def test_an_unread_field_does_not_block_the_guide(self) -> None:
+        """**못 읽은 칸은 길을 막지 않는다** — 와이어프레임 S1-7 · KEY-271.
+
+        화면은 값이 있는 항목만 확정한다(`ocr-review.js` 의 `fieldsToConfirm`).
+        못 읽은 칸은 미확정으로 남는데, 화면은 그것을 일부러 안 막는다
+        (`generateBlocked` 가 `counts.missing` 을 안 본다).
+
+        **이 게이트와 `finalize_ocr` 의 게이트가 어긋나면 더 나쁘다.** 화면
+        사슬이 `확정 → finalize → generate` 라서, 가운데만 통과하면 **처방은
+        섰는데 안내문은 없는 진료**가 남는다. 둘은 같은 규칙을 봐야 한다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        job = await OcrJob.create(
+            ocr_job_id=f"syn-unread-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.COMPLETED,
+        )
+        result = await OcrResult.create(ocr_job=job, model_name="synthetic-fixture")
+        await OcrField.create(
+            ocr_result=result,
+            field_type="DIAGNOSIS",
+            extracted_value="PCOS",
+            is_confirmed=True,
+            confirmed_by=staff.staff_id,
+        )
+        # 판독이 못 읽은 칸 — 워커가 이렇게 남긴다
+        # (`ai_worker/tasks/ocr_task.py` 의 missing 갈래).
+        await OcrField.create(
+            ocr_result=result,
+            field_type="HEMOGLOBIN",
+            extracted_value=None,
+            is_confirmed=False,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 201, (
+            f"못 읽은 칸 하나가 안내문을 막았다 — {response.status_code} {response.json()}"
+        )
+
     async def test_zero_fields_is_refused(self) -> None:
         """OcrResult는 있지만 필드가 0개이면 게이트를 통과하지 못한다.
 

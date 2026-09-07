@@ -69,6 +69,106 @@ class FinalizeOcrTestCase(TestCase):
             confirmed_at=datetime(2026, 9, 3, 10, 0, tzinfo=UTC),
         )
 
+    async def test_an_unread_field_does_not_block_the_prescription(self) -> None:
+        """**못 읽은 값은 길을 막지 않는다** — KEY-271, 와이어프레임 S1-7.
+
+        화면은 **값이 있는 항목만** 확정한다(`ocr-review.js` 의 `fieldsToConfirm`).
+        못 읽은 칸은 확정하지 않는다 — 빈 값을 확정하면 그 빈 값이 안내문에
+        그대로 나가기 때문이다. 그래서 「확인 완료」를 눌러도 그 칸은 미확정으로
+        남는다. 화면도 그것을 막지 않는다(`generateBlocked` 가 `counts.missing`
+        을 일부러 안 본다) — S1-7 이 그린 그대로다.
+
+        그런데 여기 게이트는 **모든** 필드의 확정을 요구했다. 그래서 판독이 한
+        칸이라도 못 읽으면 이 진료는 처방을 영영 못 세운다. 화면이 이 API 를
+        부르기 시작한 지금(KEY-271 다리) 그것은 **안내문 자체를 못 만드는 것**이
+        된다 — 「이번 미시행」 버튼은 서버에 담을 칸이 없어 실서버에서 그려지지도
+        않으므로, 스탭에게는 푸는 길이 없다.
+
+        **값이 있는데 안 본 것**만 막는다. 그것이 확정의 뜻이다.
+        """
+        actor, visit, result = await self.make_world("FO-13")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        # 판독이 못 읽은 칸 — 값도 없고 확정도 없다. 워커가 이렇게 만든다
+        # (`ai_worker/tasks/ocr_task.py` 의 missing 갈래).
+        await OcrField.create(
+            ocr_result=result,
+            field_type="HEMOGLOBIN",
+            extracted_value=None,
+            is_confirmed=False,
+        )
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        names = [item.name for item in await prescription.items.all()]
+        assert names == ["비잔정 2mg"], f"못 읽은 칸 하나가 처방을 통째로 막았다 — {names}"
+
+    async def test_a_read_but_unconfirmed_field_still_blocks(self) -> None:
+        """**값이 있는데 안 본 것은 그대로 막는다** — 위 완화가 확정의 뜻까지 지우면 안 된다."""
+        actor, visit, result = await self.make_world("FO-14")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        await OcrField.create(
+            ocr_result=result,
+            field_type="HEMOGLOBIN",
+            extracted_value="10.2",
+            is_confirmed=False,
+        )
+
+        with pytest.raises(OcrApiError) as caught:
+            await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        assert caught.value.code == "OCR_NOT_CONFIRMED", (
+            f"읽었는데 아무도 안 본 값을 그냥 통과시켰다 — {caught.value.code}"
+        )
+
+    async def test_a_manually_added_drug_past_the_fifth_still_lands(self) -> None:
+        """**여섯 번째 약이 조용히 빠지지 않는다** — KEY-271.
+
+        판독 확인 화면은 수동으로 더한 약을 **기존 최대 번호 다음**으로 담는다
+        (`ocr-review.js` 의 `maxIdx + i + 1`). 상한이 없다. 그런데 서버는
+        `("", "_2", "_3", "_4", "_5")` 다섯만 보고 있었다 — 판독이 `_5` 까지
+        냈으면 수동 약은 `_6` 이 되어 **여기서 사라졌다.**
+
+        여태 티가 안 난 것은 이 결과가 어디에도 안 실렸기 때문이다. 화면이
+        `ocr-finalize` 를 부르기 시작하면 화면은 「저장했습니다」라 말하고
+        안내문 복약 목록에서 그 약만 없다.
+        """
+        actor, visit, result = await self.make_world("FO-11")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        for i in range(2, 6):
+            await self._add_confirmed_field(result, f"MEDICATION_NAME_{i}", f"판독약{i}", actor)
+        # 스탭이 손으로 더한 약 — 여섯 번째 자리에 담긴다
+        await self._add_confirmed_field(result, "MEDICATION_NAME_6", "록소펜정", actor)
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        names = [item.name for item in await prescription.items.all()]
+        assert "록소펜정" in names, f"여섯 번째 약이 빠졌다 — {names}"
+        assert len(names) == 6, f"약이 {len(names)}개다 — {names}"
+
+    async def test_the_drugs_keep_their_order(self) -> None:
+        """**차례는 번호 순이다** — 화면이 보여 준 차례와 안내문이 같아야 한다."""
+        actor, visit, result = await self.make_world("FO-12")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        # 일부러 뒤섞어 넣는다 — 표에 든 차례가 아니라 번호가 차례를 정해야 한다
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME_3", "셋째약", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "첫째약", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME_10", "열째약", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME_2", "둘째약", actor)
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        names = [item.name for item in await prescription.items.all()]
+        assert names[:4] == ["첫째약", "둘째약", "셋째약", "열째약"], (
+            f"번호 순이 아니다 — {names}. 10 을 2 보다 앞에 두면 글자 비교를 한 것이다"
+        )
+
     async def test_prescription_created_from_confirmed_fields(self) -> None:
         """정상 케이스 — PRESCRIPTION_SET·MEDICATION_NAME·DURATION_DAYS 확정 후 Prescription 생성."""
         actor, visit, result = await self.make_world("FO-01")
@@ -203,7 +303,13 @@ class FinalizeOcrTestCase(TestCase):
         assert exc.value.code == "MISSING_FREQUENCY"
 
     async def test_prescription_is_hospital_scoped(self) -> None:
-        """다른 병원의 visit_id를 넘기면 404가 나온다."""
+        """다른 병원의 visit_id를 넘기면 404가 나온다.
+
+        **「없다」와 「아직 안 봤다」를 같은 말로 하면 안 된다.** 위 `#233` 고침을
+        「job 이 없으면 무조건 422」로 뭉쳐 놓으면, 남의 병원 진료를 물었을 때도
+        「확정된 항목이 없습니다」가 나가 그 진료가 있다는 사실이 새어 나간다.
+        그래서 코드까지 못 박는다.
+        """
         actor, visit, _ = await self.make_world("FO-08")
 
         other_clinic = await Hospital.create(name="타병원")
@@ -225,9 +331,26 @@ class FinalizeOcrTestCase(TestCase):
             await TortoiseOcrRepository().finalize_ocr(visit.visit_id, other_actor)
 
         assert exc.value.status_code == 404
+        assert exc.value.code == "VISIT_NOT_FOUND", (
+            f"남의 병원 진료에 {exc.value.code} 를 냈다 — 없는 진료와 아직 안 본 진료가 같은 말이 된다"
+        )
 
-    async def test_excluded_job_does_not_create_prescription(self) -> None:
-        """excluded_from_guide=True인 job으로는 finalize_ocr이 404를 반환한다."""
+    async def test_excluded_job_says_not_confirmed_like_generate_does(self) -> None:
+        """**두 문이 같은 조건을 보면 같은 말을 해야 한다** — 이희진 님 `#233` 리뷰.
+
+        `finalize_ocr` 과 `GuideService.generate()` 는 job 선택 조건이 같다
+        (`excluded_from_guide=False` · `COMPLETED` · 최신). 그런데 고를 job 이
+        없을 때 하나는 404 `NOT_FOUND`, 다른 하나는 422 `OCR_NOT_CONFIRMED`
+        였다.
+
+        **화면에서 글자가 갈린다.** `GENERATE_SAYINGS` 에 `NOT_FOUND` 가 없어서
+        스탭은 「확정한 항목이 아직 없습니다 — 값을 확인해 저장한 뒤 다시 눌러
+        주세요」 대신 「안내문을 만들지 못했습니다」를 받는다. 무엇을 해야 하는지가
+        사라진다.
+
+        지금은 `exclude` 를 부르는 화면이 없어 손으로는 못 닿는다 — **그래서 이
+        검사가 유일한 방어다.**
+        """
         actor, visit, result = await self.make_world("FO-09")
         job = await OcrJob.filter(visit_id=visit.visit_id).first()
         assert job is not None
@@ -242,7 +365,10 @@ class FinalizeOcrTestCase(TestCase):
         with pytest.raises(OcrApiError) as exc:
             await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
 
-        assert exc.value.status_code == 404
+        assert exc.value.code == "OCR_NOT_CONFIRMED", (
+            f"생성 쪽과 다른 코드를 냈다 — {exc.value.code}. 화면이 무엇을 해야 하는지 못 말한다"
+        )
+        assert exc.value.status_code == 422
 
     async def test_mixed_frequency_as_needed_drug_has_no_duration(self) -> None:
         """비잔정(1일 1회, 84일) + 진통제(필요시) — 필요시 약은 duration_days=None."""
