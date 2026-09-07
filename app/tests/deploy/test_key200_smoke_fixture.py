@@ -96,11 +96,31 @@ class TestTheSeedNeverInventsALinkToken:
 class TestTheFixtureUsesApprovedKnowledgeOnly:
     """**의학 문구를 지어내지 않는다** — 이희진 님 「확정 승인 지식 외 내용 추가 금지」."""
 
-    def test_caution_and_emergency_come_from_the_catalog(self) -> None:
+    def test_every_section_comes_from_the_catalog(self) -> None:
+        """**네 갈래를 다 묻는지 센다** — 이희진 님 `#214` ③.
+
+        예전에는 `get_approved_content` 라는 이름이 함수 어딘가에 **한 번이라도**
+        있으면 통과했다. 그래서 caution·emergency 둘만 묻고 medication·life 는
+        폴백 문구를 복사해 쓰던 것을 못 잡았다 — KEY-265 가 생성 쪽을 네 갈래로
+        고쳤는데 이 시드만 둘에 멈춰 있었고, 검사는 초록이었다.
+
+        「불렀는가」가 아니라 **「무엇을 물었는가」**를 센다.
+        """
         fn = _func("seed_smoke_fixture")
-        names = {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
-        assert "get_approved_content" in names, (
-            "주의·응급 문구를 승인 카탈로그에서 안 가져온다 — 지어낸 문장이 환자에게 간다"
+        asked = set()
+        for node in ast.walk(fn):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            if node.func.attr != "get_approved_content":
+                continue
+            for arg in node.args:
+                if isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name):
+                    if arg.value.id == "CautionSectionKey":
+                        asked.add(arg.attr)
+
+        assert asked == {"MEDICATION", "CAUTION", "EMERGENCY", "LIFE"}, (
+            f"승인 카탈로그에 묻지 않는 갈래가 있다 — 물은 것은 {sorted(asked)} 뿐이다. "
+            "안 물은 갈래는 지어낸 문장이나 범용 폴백이 환자에게 간다"
         )
 
     def test_it_refuses_to_fall_back_silently(self) -> None:
@@ -290,11 +310,15 @@ class TestTheFixtureInventsNoMedicalText:
     """
 
     #: (시드 상수 이름, `guides.py` 의 섹션 키)
-    BODIES = (
-        ("_SMOKE_MEDICATION_BODY", "MEDICATION"),
-        ("_SMOKE_LIFE_BODY", "LIFE"),
-        ("_SMOKE_MESSAGES_BODY", "MESSAGES"),
-    )
+    #:
+    #: **medication·life 가 빠졌다** — 이제 시드가 그 문장을 갖고 있지 않다.
+    #: 카탈로그에 묻고, 없으면 `guide_defaults` 에서 가져온다(`#214` ①). 같은 글을
+    #: 두 곳에 두지 않으므로 「어긋났는가」를 잴 것이 없다 — 어긋날 수가 없다.
+    #:
+    #: `messages` 만 남았다. 그 갈래는 `guides.py` 가 아직 문자열 리터럴로 들고
+    #: 있어서(`guide_defaults` 밖) 시드도 제 사본을 갖는다. 둘이 어긋날 수 있는
+    #: 유일한 자리라 여기서 잰다.
+    BODIES = (("_SMOKE_MESSAGES_BODY", "MESSAGES"),)
 
     @staticmethod
     def _generated_body(section: str) -> str:
@@ -340,19 +364,44 @@ class TestTheFixtureInventsNoMedicalText:
     def test_the_comment_explains_why_prescription_facts_are_absent(self) -> None:
         """처방 사실을 비운 이유가 주석에 남아 있어야 한다."""
         seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
-        head = seed.split("_SMOKE_MEDICATION_BODY = ", 1)[0]
+        head = seed.split("_SMOKE_MESSAGES_BODY = ", 1)[0]
         note = head[head.rindex("SMOKE_CHART_NO") :]
 
         assert "구조화 처방" in note, "약 정보를 비운 근거가 적혀 있지 않다"
         assert "임의로 채우지" in note, "없는 처방 사실을 만들지 않는다는 설명이 없다"
 
     def test_it_does_not_write_an_empty_confirmed_line(self) -> None:
-        """빈 「확정된 항목: 」이 환자 화면에 나가면 안 된다."""
-        seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
-        line = next((ln for ln in seed.splitlines() if ln.startswith("_SMOKE_MEDICATION_BODY = ")), "")
-        value = ast.literal_eval(line.split("=", 1)[1].strip())
+        """빈 「확정된 항목: 」이나 개발용 표지가 환자 화면에 나가면 안 된다.
 
-        assert "확정된 항목" not in value, (
-            "확정된 OCR 항목이 없는 fixture 인데 그 줄을 넣었다 — 빈 값이 환자에게 나간다"
-        )
-        assert "[합성" not in value, "개발용 표지가 환자용 smoke 안내에 남아 있다"
+        **시드 상수가 아니라 실제로 나갈 글을 잰다** — 시드가 제 사본을 버리고
+        `guide_defaults` 로 폴백하게 됐으므로(`#214` ①), 검사도 그 글을 봐야 한다.
+        """
+        seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
+        line = next((ln for ln in seed.splitlines() if ln.startswith("_SMOKE_MESSAGES_BODY = ")), "")
+        assert line, "seed.py 에 _SMOKE_MESSAGES_BODY 가 없다"
+
+        going_out = [
+            ast.literal_eval(line.split("=", 1)[1].strip()),
+            guide_defaults.MEDICATION,
+            guide_defaults.LIFE,
+        ]
+        for value in going_out:
+            assert "확정된 항목" not in value, (
+                "확정된 OCR 항목이 없는 fixture 인데 그 줄을 넣었다 — 빈 값이 환자에게 나간다"
+            )
+            assert "[합성" not in value, "개발용 표지가 환자용 smoke 안내에 남아 있다"
+
+    def test_the_seed_keeps_no_copy_of_the_fallback_wording(self) -> None:
+        """**같은 글을 두 곳에 두지 않는다** — 이희진 님 `#214` ①.
+
+        예전에는 `guide_defaults.MEDICATION`·`LIFE` 와 **글자까지 같은** 상수를
+        시드가 따로 들고 있었다. 그래서 카탈로그를 아예 안 물었고, KEY-265 가
+        생성 쪽을 네 갈래로 고쳤을 때 이 시드만 남았다. 한쪽만 고쳐지는 그
+        어긋남이 **환자에게 나가는 글**에서 드러난다.
+        """
+        seed = (ROOT / "scripts" / "seed.py").read_text(encoding="utf-8")
+        for name, body in (("MEDICATION", guide_defaults.MEDICATION), ("LIFE", guide_defaults.LIFE)):
+            assert body not in seed, (
+                f"시드가 `guide_defaults.{name}` 를 글자 그대로 복사해 두었다 — "
+                "카탈로그를 안 묻고 그 사본이 나갈 수 있다"
+            )
