@@ -30,6 +30,7 @@ class OcrJob(models.Model):
 
     ocr_job_id = fields.CharField(max_length=64, primary_key=True)
     hospital_id = fields.BigIntField()
+    visit_id: int
     visit: fields.ForeignKeyRelation[Visit] = fields.ForeignKeyField(
         "models.Visit",
         related_name="ocr_jobs",
