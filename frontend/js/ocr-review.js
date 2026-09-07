@@ -2884,9 +2884,7 @@ function stateTakesFocus(tone) {
             return pollAllJobs(mine, jobs);
           }
           var failed = jobs.find(function (j) { return j.status === "FAILED"; });
-          var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
-          if (failed) renderJobState(failed);
-          if (failed && !hasSuccess) return;
+          if (failed && !renderJobState(failed)) return;
           return loadAllResults(mine);
         })
         .catch(function () {
@@ -2971,9 +2969,7 @@ function stateTakesFocus(tone) {
           return pollAllJobs(mine, jobs);
         }
         var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
-        var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
-        if (anyFailed) renderJobState(anyFailed);
-        if (anyFailed && !hasSuccess) return null;
+        if (anyFailed && !renderJobState(anyFailed)) return null;
         return loadAllResults(mine);
       })
       .catch(function (error) {
