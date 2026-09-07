@@ -221,7 +221,7 @@ test("**같은 진료로 돌아오면 결과를 보여 준다** — 세대 번�
   /* 이희진 님 `#162` ③. 예전 판은 `mine !== loadSeq` 로 갈랐다. A 에서 누르고
      B 로 갔다가 다시 A 로 오면 세대가 달라져 결과를 버렸다 — 안내문은 실제로
      만들어졌는데 화면은 아무 말이 없고, 다시 눌러 409 를 받아야 알았다. */
-  const box = load("ocr-review");
+  const box = load("api", "ocr-review");
 
   assert.equal(box.outcomeBelongsToScreen(8801, { visit_id: 8801 }), true, "같은 진료인데 버린다");
   assert.equal(box.outcomeBelongsToScreen(8801, { visit_id: 8802 }), false, "다른 진료인데 쓴다");
@@ -248,7 +248,7 @@ test("**잠금은 내가 쥔 것일 때만 푼다** — 늦게 온 옛 응답이
        → req1 응답 도착 → generating=false → **req2 가 나가 있는데 버튼이 열린다**
 
      물어야 할 것은 「끝났는가」가 아니라 **「내가 지금 나가 있는 그 요청인가」**다. */
-  const box = load("ocr-review");
+  const box = load("api", "ocr-review");
 
   assert.equal(box.generateLockIsMine(3, 3), true, "내가 최신인데 잠금을 안 푼다");
   assert.equal(box.generateLockIsMine(2, 3), false, "옛 요청이 새 잠금을 푼다");
@@ -260,7 +260,7 @@ test("재현 순서 — 돌아와 다시 누른 뒤 옛 응답이 와도 잠금�
 
        req1 = 1세대 · A         req2 = 2세대 · A (재클릭)
        지금 나가 있는 것은 2세대, 화면은 A */
-  const box = load("ocr-review");
+  const box = load("api", "ocr-review");
   const latest = 2;
   const shown = { visit_id: 8801 };
 
@@ -276,7 +276,7 @@ test("재현 순서 — 돌아와 다시 누른 뒤 옛 응답이 와도 잠금�
 
 test("떠났다 돌아온 정상 케이스는 그대로다 — 재클릭이 없으면 결과를 보여 준다", () => {
   /* `KEY-210` 인수조건 ③ — KEY-204 회귀를 유지한다. */
-  const box = load("ocr-review");
+  const box = load("api", "ocr-review");
 
   const stillMine = box.generateLockIsMine(1, 1);
   const sameVisit = box.outcomeBelongsToScreen(8801, { visit_id: 8801 });
@@ -335,18 +335,31 @@ test("**`saveNote` 는 글자와 숨김을 늘 짝지어 다룬다**", () => {
   assert.equal(shows, writes, `글자를 ${writes} 곳에서 다루는데 숨김은 ${shows} 곳뿐이다 — 한쪽이 빠졌다`);
 });
 
-test("문구 표에 **절대 안 걸리는 규칙**을 두지 않는다", () => {
-  /* 이희진 님 `#162` ⑤. `{ status: 0 }` 규칙이 있었는데 `request()` 는
-     `ApiError` 에 `res.status` 만 싣는다 — `fetch` 가 던지는 `TypeError` 에는
-     `.status` 자체가 없다. 그 규칙은 한 번도 안 걸렸다.
+test("문구 표의 규칙은 **실제로 걸리는 것만** 둔다", () => {
+  /* 이희진 님 `#162` ⑤ 에서 시작한 자리다. `{ status: 0 }` 규칙이 있었는데
+     `request()` 는 `ApiError` 에 `res.status` 만 실었다 — `fetch` 가 던지는
+     `TypeError` 에는 `.status` 자체가 없어 그 규칙은 한 번도 안 걸렸다. 그때는
+     「안 걸리는 규칙은 착각만 남긴다」며 없앴고, 주석에 이렇게 적어 두었다.
 
-     안 걸리는 규칙은 「이 경우도 챙겼다」는 착각만 남긴다. 진짜로 챙기려면
-     `request()` 가 네트워크 실패를 `status: 0` 으로 정규화해야 하는데, 그건
-     모든 화면의 오류 모양을 바꾸는 일이라 이 PR 밖이다. 여기서는 없앤다. */
-  const box = load("ocr-review");
+       진짜로 챙기려면 `request()` 가 네트워크 실패를 `status: 0` 으로 정규화해야
+       하는데, 그건 모든 화면의 오류 모양을 바꾸는 일이라 이 PR 밖이다.
+
+     **KEY-211 이 그 후속이다.** 이제 `request()` 가 낸다. 그래서 재는 방향이
+     뒤집힌다 — 「없는가」가 아니라 「걸리는가」다.
+
+     다만 표만 봐서는 걸리는지 알 수 없다(앞 규칙이 가로챌 수 있다). 그래서 규칙을
+     세는 데 그치지 않고 **그 말이 실제로 나오는지**까지 본다. `fetch` 를 정말로
+     거절시켜 끝까지 흘려 보는 쪽은 `key211-network-failure.test.js` 가 맡는다. */
+  const box = load("api", "ocr-review");
   const rules = box.GENERATE_SAYINGS;
 
   assert.ok(Array.isArray(rules) && rules.length > 2, `문구 표를 못 찾았다 — ${JSON.stringify(rules)}`);
+
   const unreachable = rules.filter((rule) => rule.status === 0);
-  assert.deepEqual(unreachable, [], "request() 가 status 0 을 안 만든다 — 이 규칙은 안 걸린다");
+  assert.equal(unreachable.length, 1, `네트워크 실패 규칙이 없거나 둘이다 — ${unreachable.length}개`);
+  assert.equal(
+    box.generateFailureSaying({ status: 0, code: "NETWORK_UNREACHABLE" }),
+    unreachable[0].say,
+    "규칙은 있는데 그 말이 안 나온다 — 앞 규칙이 가로챈다",
+  );
 });

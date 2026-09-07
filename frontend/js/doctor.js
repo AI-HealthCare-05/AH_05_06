@@ -71,6 +71,7 @@ function alreadyDone(visit) {
  * 정확히 말한다.
  */
 var GUIDE_LOAD_SAYINGS = [
+  NETWORK_SAYING, // 서버에 닿지도 못한 것 — KEY-211
   { status: 404, say: "아직 안내문이 없습니다. 판독 결과 확인이 끝나고 안내문이 만들어지면 여기에 보입니다." },
   { status: 403, say: "안내문을 볼 수 없습니다. 의사 계정으로 로그인했는지 확인해 주세요." },
 ];
@@ -97,6 +98,7 @@ function patientGuideUrl(result) {
 }
 
 var PATIENT_LINK_SAYINGS = [
+  NETWORK_SAYING, // 서버에 닿지도 못한 것 — KEY-211
   { code: "GUIDE_NOT_APPROVED", say: "승인 완료된 안내에서만 환자 링크를 발급할 수 있어요." },
   {
     code: "LINK_ALREADY_ISSUED",
