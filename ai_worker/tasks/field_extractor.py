@@ -252,7 +252,14 @@ def detect_document_type(
     if stored_type != OcrDocumentType.EMR:
         return stored_type
     if clova_result.rows and _find_lab_columns(clova_result.rows) is not None:
-        return OcrDocumentType.LAB_RESULT
+        # 검사 표가 감지되어도 EMR 파서가 핵심 필드(진단·처방)를 뽑아냈으면 EMR로 유지한다.
+        # 검사결과 요약표가 섞인 EMR을 LAB_RESULT로 오분류하면 필수 필드 게이트가 통째로 건너뛰어진다.
+        has_emr_fields = bool(
+            _extract_emr_diagnosis_table(clova_result.rows)
+            or _extract_emr_rx_table(clova_result.rows)
+        )
+        if not has_emr_fields:
+            return OcrDocumentType.LAB_RESULT
     return stored_type
 
 

@@ -698,6 +698,38 @@ def test_detect_lab_result_without_rows_stays_emr() -> None:
     assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
 
 
+def test_detect_emr_with_embedded_lab_table_stays_emr() -> None:
+    """진단 표(코드·명칭)와 검사결과 표가 함께 있는 EMR은 LAB_RESULT로 재분류하지 않는다.
+
+    검사결과 요약표가 섞인 실제 EMR이 오분류되면 필수 필드 게이트(DIAGNOSIS·MEDICATION_NAME·
+    DURATION_DAYS)가 통째로 건너뛰어진다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    diag_header_row = [
+        ClovaTextField(text="코드", confidence=1.0, left=10.0, top=10.0, right=60.0, bottom=30.0),
+        ClovaTextField(text="명칭", confidence=1.0, left=70.0, top=10.0, right=200.0, bottom=30.0),
+    ]
+    diag_data_row = [
+        ClovaTextField(text="N80.0", confidence=1.0, left=10.0, top=35.0, right=60.0, bottom=55.0),
+        ClovaTextField(text="난소의 자궁내막증", confidence=1.0, left=70.0, top=35.0, right=200.0, bottom=55.0),
+    ]
+    lab_header_row = [
+        ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=70.0, right=110.0, bottom=90.0),
+        ClovaTextField(text="검사결과", confidence=1.0, left=120.0, top=70.0, right=220.0, bottom=90.0),
+    ]
+    lab_data_row = [
+        ClovaTextField(text="AST(GOT)", confidence=1.0, left=10.0, top=95.0, right=110.0, bottom=115.0),
+        ClovaTextField(text="21", confidence=1.0, left=120.0, top=95.0, right=220.0, bottom=115.0),
+    ]
+    result = ClovaOcrResult(
+        raw_text="코드 명칭\nN80.0 난소의 자궁내막증\n검사항목 검사결과\nAST(GOT) 21",
+        fields=[*diag_header_row, *diag_data_row, *lab_header_row, *lab_data_row],
+        rows=[diag_header_row, diag_data_row, lab_header_row, lab_data_row],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
 # KEY-245 — 판독 키워드(lab_keywords) 기반 매칭 (인수조건 1·2·3)
 # ---------------------------------------------------------------------------
 
