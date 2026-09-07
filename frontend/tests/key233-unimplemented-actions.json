@@ -3,48 +3,56 @@
     "page": "checkin.html",
     "action": "sheet__back",
     "disposition": "follow_up",
-    "evidence": "D+7 체크인 시트의 뒤로 버튼에 현재 핸들러나 이동 경로가 없다"
+    "evidence": "D+7 체크인 시트의 뒤로 버튼에 현재 핸들러나 이동 경로가 없다",
+    "treatment": "hidden",
+    "treatment_why": "환자는 문자 링크로 곧장 이 화면에 들어온다 — 뒤로 갈 앞 화면이 없고 만들 계획도 없다. 「아직 없는 자리」가 아니라 없는 자리라 잠그지 않고 숨긴다"
   },
   {
     "page": "patients.html",
     "action": "notifications",
     "disposition": "wp_f_handoff",
-    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다",
+    "treatment": "parked",
+    "treatment_why": "알림 패널은 D1-7 로 예정된 자리다 — 무엇이 있을 자리인지는 보여 둔다"
   },
   {
     "page": "doctor.html",
     "action": "notifications",
     "disposition": "wp_f_handoff",
-    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다",
+    "treatment": "parked",
+    "treatment_why": "알림 패널은 D1-7 로 예정된 자리다 — 무엇이 있을 자리인지는 보여 둔다"
   },
   {
     "page": "ocr-review.html",
     "action": "notifications",
     "disposition": "wp_f_handoff",
-    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다",
+    "treatment": "parked",
+    "treatment_why": "알림 패널은 D1-7 로 예정된 자리다 — 무엇이 있을 자리인지는 보여 둔다"
   },
   {
     "page": "manage.html",
     "action": "notifications",
     "disposition": "wp_f_handoff",
-    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다",
+    "treatment": "parked",
+    "treatment_why": "알림 패널은 D1-7 로 예정된 자리다 — 무엇이 있을 자리인지는 보여 둔다"
   },
   {
     "page": "settings.html",
     "action": "notifications",
     "disposition": "wp_f_handoff",
-    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다"
+    "evidence": "알림 패널은 D1-7/KEY-235 대상이며 현재 핸들러가 없다",
+    "treatment": "parked",
+    "treatment_why": "알림 패널은 D1-7 로 예정된 자리다 — 무엇이 있을 자리인지는 보여 둔다"
   },
   {
     "page": "patients.html",
     "action": "open-settings",
     "disposition": "follow_up",
-    "evidence": "설정 이동 버튼에 현재 핸들러나 링크가 없다"
-  },
-  {
-    "page": "settings.html",
-    "action": "logout",
-    "disposition": "follow_up",
-    "evidence": "설정 화면의 로그아웃 버튼은 shell.js를 싣지 않고 settings.js에도 핸들러가 없다"
+    "evidence": "설정 이동 버튼에 현재 핸들러나 링크가 없다",
+    "treatment": "parked",
+    "treatment_why": "발신번호는 의원 정보(A1-4)에서 등록하는데 그 화면도 조회 API 도 없다. 배너 자체가 목업에서만 뜬다"
   }
 ]

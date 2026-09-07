@@ -1935,6 +1935,19 @@
      화면은 파일을 싣고 있었는데 손을 안 붙여서 아이콘이 안 눌렸다. */
   wireFold(false);
 
+  /* **로그아웃은 여기서 잇는다** — KEY-236.
+   *
+   * `session.logout()` 은 있고 `shell.js` 의 `bindShell()` 이 `#logout` 에
+   * 붙여 준다. 그런데 이 화면은 `shell.js` 를 안 싣는다 — 그 파일은 의료진
+   * 골격(왼쪽 목록 · 날짜 이동 · 빠른 검색)을 가진 화면 것이고, 여기서 싣게
+   * 하면 `#quick-search` 가 없어 그 줄에서 죽는다.
+   *
+   * 그래서 **기능이 없어서가 아니라 연결이 빠져서** 안 눌리던 것이다. 잠글
+   * 자리가 아니라 이을 자리다. */
+  el("logout").addEventListener("click", function () {
+    session.logout();
+  });
+
   requireSession().then(function (me) {
     who = me;
     el("who-name").textContent = me.name;

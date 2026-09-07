@@ -123,6 +123,69 @@ test("핸들러 없는 정적 동작 버튼은 모두 근거와 함께 분류된
   }
 });
 
+/* KEY-236 — 분류만으로는 화면이 안 바뀐다. **적어 둔 처리가 마크업에 실제로
+   있는지** 잰다.
+
+   `parked`  아직 만들지 않은 자리. 무엇이 있을 자리인지는 보이되 눌리는 척은
+             안 한다 — `aria-disabled="true"` 와 까닭을 담은 `title`.
+             `disabled` 속성은 쓰지 않는다. 초점에서 통째로 빠져 낭독기가 그런
+             자리가 있다는 것조차 못 알린다 (`css/shell.css` 의 같은 주석).
+   `hidden`  없는 자리. 만들 계획이 아니라서 자리를 보여 줄 까닭이 없다. */
+function tagFor(page, action) {
+  const html = fs.readFileSync(path.join(ROOT, page), "utf8");
+  for (const match of html.matchAll(/<button\b[^>]*>/g)) {
+    if (attr(match[0], "data-unimplemented-action") === action) return match[0];
+  }
+  return "";
+}
+
+test("적어 둔 처리가 마크업에 실제로 있다", () => {
+  for (const item of INVENTORY) {
+    const tag = tagFor(item.page, item.action);
+    assert.ok(tag, `${item.page}/${item.action} 를 마크업에서 못 찾았다`);
+    assert.ok(item.treatment, `${item.page}/${item.action} 에 처리가 없다`);
+    assert.ok(item.treatment_why, `${item.page}/${item.action} 에 그 처리를 고른 까닭이 없다`);
+
+    if (item.treatment === "parked") {
+      assert.match(tag, /aria-disabled="true"/, `${item.page}/${item.action} 가 눌리는 모양 그대로다`);
+      assert.match(tag, /\btitle="[^"]{10,}"/, `${item.page}/${item.action} 에 왜 못 쓰는지가 없다`);
+      assert.doesNotMatch(tag, /\bhidden\b/, `${item.page}/${item.action} 는 자리를 보여 주기로 한 것이다`);
+      assert.doesNotMatch(
+        tag,
+        /(?<![-\w])disabled(?![-\w])/,
+        `${item.page}/${item.action} 에 disabled 를 썼다 — 초점에서 빠져 낭독기가 그 자리를 못 알린다`,
+      );
+    } else if (item.treatment === "hidden") {
+      assert.match(tag, /\bhidden\b/, `${item.page}/${item.action} 가 아직 보인다`);
+    } else {
+      assert.fail(`${item.page}/${item.action} 의 처리 ${item.treatment} 를 모른다`);
+    }
+  }
+});
+
+test("잠근 자리는 보이는 것과 들리는 것이 한 값으로 정해진다", () => {
+  /* 클래스로 회색만 칠하면 화면은 잠긴 것처럼 보이는데 낭독기는 멀쩡한 단추라고
+     말한다. 그 반대도 생긴다. 그래서 `aria-disabled` 하나가 둘을 정하게 했다 —
+     인수조건 「접근성 상태와 안내 문구가 일관된다」가 막으려던 것이다. */
+  const css = fs.readFileSync(path.join(ROOT, "css/shell.css"), "utf8");
+  assert.match(css, /\[aria-disabled="true"\]\s*\{[^}]*cursor:\s*default/, "잠근 자리에 손 모양이 그대로다");
+  assert.match(css, /\[aria-disabled="true"\]\s*\{[^}]*color:\s*var\(--disabled\)/, "잠근 자리가 멀쩡한 색이다");
+});
+
+test("설정 화면의 로그아웃은 이제 이어져 있다", () => {
+  /* KEY-236 — 기능이 없어서가 아니라 연결이 빠져 안 눌리던 것이다.
+     `shell.js` 의 `bindShell()` 이 `#logout` 을 잇는데 설정 화면은 그 파일을
+     안 싣는다(`#quick-search` 가 없어 그 줄에서 죽는다). 그래서 여기서 잇는다.
+     잠글 자리가 아니라 이을 자리였다. */
+  const code = codeOnly(read("js/settings.js"));
+  assert.match(code, /el\("logout"\)\.addEventListener/, "설정 화면 로그아웃이 다시 죽었다");
+  assert.match(code, /session\.logout\(\)/, "로그아웃이 세션을 안 끊는다");
+  assert.ok(
+    !INVENTORY.some((item) => item.page === "settings.html" && item.action === "logout"),
+    "고친 것이 미구현 분류표에 그대로 남아 있다",
+  );
+});
+
 test("검사기는 새 핸들러 없는 버튼을 실제로 탐지한다", () => {
   assert.equal(hasHandler('<button id="new-action" type="button">실행</button>', ""), false);
   assert.equal(
