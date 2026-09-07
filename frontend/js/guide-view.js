@@ -253,43 +253,67 @@ var PATIENT_TABS = [
   { key: "chat", label: "챗봇" },
 ];
 
-function guidePreviewHtml(sections, current) {
-  var rows = guideSectionsOf(sections, current);
+/* **환자가 받는 그대로** — KEY-286.
+ *
+ * 여태 이 자리는 `.ph__block` 이라는 **제 목업**이었다. 「환자가 받는 그대로」
+ * 라고 적어 두었는데 환자는 `.card` 레이아웃을 받았다 — 라벨이 거짓이었다.
+ *
+ * ## 왜 iframe 인가
+ *
+ * 모양이 같으려면 **환자 자신의 스타일시트**를 써야 한다. 그런데 그 파일은
+ * `.card` · `.btn` · `body` 같은 흔한 이름을 쓴다 — 스탭 화면에 그냥 실으면
+ * 그 화면을 덮는다.
+ *
+ * 골라 베껴 오는 길도 있는데, 그러면 **모양이 두 벌**이 된다. 환자 화면이
+ * 바뀌는 날 미리보기만 옛 모양으로 남고, 그것이 바로 이 티켓이 없애려는 것이다.
+ *
+ * iframe 은 그 둘을 다 피한다 — 환자 CSS 를 **그대로** 신되 스탭 화면과 안
+ * 섞인다. 그리고 `srcdoc` 은 문자열이라, 이 함수는 여전히 문자열을 돌려주고
+ * 검사도 그 문자열을 그대로 읽는다.
+ *
+ * **스크립트를 안 싣는다.** 미리보기는 읽는 자리다 — 탭·펼치기 같은 환자 화면의
+ * 손놀림은 여기서 필요 없고, 넣으면 스탭 화면 안에서 도는 코드가 하나 더 는다.
+ *
+ * 모래상자는 `allow-same-origin` 하나만 연다. **`allow-scripts` 는 안 준다** —
+ * 그 둘을 함께 주면 모래상자가 제 스스로를 풀 수 있게 되고, 하나만이면 안에서
+ * 코드가 아예 안 돈다. 여는 까닭은 스타일시트 때문이다: 안 열면 문서가 opaque
+ * origin 이 되어 `/patient_wireframe/css/guide.css` 를 못 싣고, 그러면 이
+ * 티켓이 하려던 「같은 모양」이 통째로 무너진다(브라우저에서 실제로 그랬다).
+ *
+ * ## 못 채우는 카드는 안 그린다
+ *
+ * 이 화면이 가진 것은 `sections` 와 `summary` 뿐이다. 「나의 목표」·「처방받은
+ * 약」·「약별 복용 방법」은 환자 종점의 파생(`medication`·`goals`)에서 오는데
+ * 스탭 종점은 그것을 안 준다.
+ *
+ * 빈 카드를 세우면 승인 전에 「목표가 안 잡혔네」로 읽힌다 — **모양은 같은데
+ * 내용이 비어 보이는 것**이 지금(모양이 다른 것)보다 나쁘다. 안 그리는 것은
+ * 환자 렌더러 자신의 규칙이기도 하다(`if (g.drug)` …).
+ */
+function guidePreviewHtml(sections, current, summary) {
+  var bodyOf = function (key) {
+    var row = guideSectionsOf(sections, key)[0];
+    return row && row.body ? row.body : "";
+  };
+  var inner = patientPreviewBodyHtml(bodyOf, current, summary || "");
 
-  var tabs = PATIENT_TABS.map(function (t) {
-    return (
-      '<span class="ph__tab' +
-      (t.key === current || (current === "emergency" && t.key === "caution") ? " is-on" : "") +
-      '">' +
-      esc(t.label) +
-      "</span>"
-    );
-  }).join("");
-
-  var body = rows.length
-    ? rows
-        .map(function (s) {
-          return (
-            '<section class="ph__block">' +
-            '<h4 class="ph__title"><span class="ph__bar" aria-hidden="true"></span>' +
-            esc(GUIDE_SECTION_LABEL[s.key] || s.key) +
-            "</h4>" +
-            '<p class="ph__body">' +
-            esc(s.body) +
-            "</p></section>"
-          );
-        })
-        .join("")
-    : '<p class="ph__body">이 항목에는 아직 내용이 없습니다</p>';
+  /* `srcdoc` 안에서 큰따옴표가 속성을 닫는다. 본문은 이미 `esc` 를 지났고,
+     여기서는 그 결과 문자열을 속성에 담기 위해 한 번 더 감싼다. */
+  var doc =
+    '<!doctype html><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<link rel="stylesheet" href="/patient_wireframe/css/tokens.css">' +
+    '<link rel="stylesheet" href="/patient_wireframe/css/guide.css">' +
+    '<style>body{margin:0;padding:16px;background:var(--bg,#fff)}</style>' +
+    '<div class="guide-body">' +
+    inner +
+    "</div>";
 
   return (
-    '<div class="ph" aria-label="환자 화면 미리보기">' +
-    '<div class="ph__tabs">' +
-    tabs +
-    "</div>" +
-    '<div class="ph__body-wrap">' +
-    body +
-    "</div></div>"
+    '<iframe class="pv" title="환자 화면 미리보기" aria-label="환자 화면 미리보기"' +
+    ' sandbox="allow-same-origin" loading="lazy" srcdoc="' +
+    doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;") +
+    '"></iframe>'
   );
 }
 
@@ -315,7 +339,7 @@ function guideHeadEditHtml(sections, current, canEdit, editingKey) {
   return '<button class="gs__edit" type="button" data-edit="' + esc(own.key) + '">수정</button>';
 }
 
-function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
+function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary) {
   var title = GUIDE_SCREEN_TITLE[mode] || GUIDE_SCREEN_TITLE.guide;
 
   return (
@@ -333,7 +357,7 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
        회차·문구를 다루는 자리라, 그 탭에서는 통째로 갈아 끼운다. */
     (current === "messages"
       ? smsScreenHtml(smsPlanOf(sections, mode))
-      : guideBodyHtml(sections, current, canEdit, editingKey)) +
+      : guideBodyHtml(sections, current, canEdit, editingKey, summary)) +
     "</section>"
   );
 }
@@ -348,7 +372,7 @@ function smsPlanOf(sections, mode) {
   return smsStateNow(seed);
 }
 
-function guideBodyHtml(sections, current, canEdit, editingKey) {
+function guideBodyHtml(sections, current, canEdit, editingKey, summary) {
   return (
     '<div class="gs__body">' +
     /* 왼쪽 — 원문 */
@@ -369,7 +393,7 @@ function guideBodyHtml(sections, current, canEdit, editingKey) {
     '<span class="gs__paneNote">환자가 받는 그대로</span>' +
     "</div>" +
     '<div class="gs__paneBody">' +
-    guidePreviewHtml(sections, current) +
+    guidePreviewHtml(sections, current, summary) +
     "</div>" +
     "</section>" +
     "</div>" +
