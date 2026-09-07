@@ -54,7 +54,7 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 | API 계약 (공통·병원·환자) | [`docs/api/README.md`](docs/api/README.md) → `common.md` · `hospital.md` · `patient.md` |
 | 라우터가 어느 경로를 갖나 | [`docs/router-ownership.md`](docs/router-ownership.md) |
 | DB 모델 배치 | [`docs/models-layout.md`](docs/models-layout.md) |
-| AI 워커 연동 (Redis Stream) | [`docs/ai-worker.md`](docs/ai-worker.md) |
+| AI 워커 연동 설계 메모 | [`docs/ai-worker.md`](docs/ai-worker.md) (Stream 서술은 현행 리스트 큐와 차이 있음) |
 | 합성 데이터 규격 (환자·진료·처방·검사) | [`docs/synthetic-data-spec.md`](docs/synthetic-data-spec.md) |
 | OCR 샘플·기대값 규격 | [`docs/ocr-fixtures.md`](docs/ocr-fixtures.md) |
 | 안내 문구 정본 | [`docs/guide-copy-worksheet.md`](docs/guide-copy-worksheet.md) |
@@ -72,9 +72,11 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 ## 🚀 무엇으로 만들었나
 
 - **FastAPI + Tortoise ORM** — 비동기 API 서버와 DB 모델. 마이그레이션은 `aerich`
-- **AI Worker** — OCR 판독을 API 서버와 분리해 처리. API 와는 Redis Stream 으로
-  주고받는다 ([`docs/ai-worker.md`](docs/ai-worker.md)). 지금은 스텁이라 `OCR_FIXTURE_FALLBACK` 로
-  합성 결과를 잇는다
+- **AI Worker** — OCR 판독을 API 서버와 분리해 처리하는 **장기 실행 프로세스**.
+  Redis 리스트 큐(`ocr:jobs`)를 `blpop` 으로 계속 소비한다 (FastAPI 가 `rpush` 로 넣음).
+  예약 안내·확인 문자 발송도 같은 프로세스가 맡는다 (KEY-249). 설계 메모는
+  [`docs/ai-worker.md`](docs/ai-worker.md) — 단 그 문서의 Stream·Consumer Group 서술은
+  아직 현행 구현(리스트 큐)과 다르다
 - **프런트엔드 — 빌드가 없다.** HTML·CSS·ES5 JavaScript 를 `<script src>` 로 그대로
   싣는다. 번들러도 `node_modules` 도 잠금파일도 없다. 파일을 고치고 새로고침하면
   끝이고, 대신 전역 이름이 곧 주소라 **이름이 겹치면 서로를 덮는다**(검사가 막는다)
@@ -125,7 +127,7 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 | 서비스 | 역할 | 포트(로컬) | 프로필 |
 |---|---|---|---|
 | `mysql` | 데이터 저장 (MySQL 8.0, utf8mb4) | `3306` | 기본 |
-| `redis` | 세션·비동기 작업 큐 (Redis Stream) | `6379` | 기본 |
+| `redis` | 세션 · OCR 작업 큐 (리스트 `ocr:jobs`, `rpush`/`blpop`) | `6379` | 기본 |
 | `fastapi` | API 서버 (`app.main:app`) | `8000` | 기본 |
 | `nginx` | 정적 화면 서빙 + API 프록시 | `80` | `web` |
 | `ai-worker` | OCR 판독 워커 | — | `ocr` |
@@ -244,7 +246,9 @@ uv run python scripts/check_schema_drift.py
 - **API 문서**: <http://localhost/api/docs> 또는 <http://localhost:8000/api/docs> (Swagger)
 - **헬스체크**: `curl -s http://localhost:8000/api/v1/health | python3 -m json.tool`
 
-> `ai-worker` 는 현재 스텁이라 `docker compose ps` 에서 `Restarting` 으로 보일 수 있다 — 정상.
+> `ai-worker` 는 `--profile ocr` 로 띄우면 `docker compose ps` 에서 `Up` 으로 유지돼야 한다.
+> `restart: always` 라서 계속 죽고 되살아나며 `Restarting` 이 보이면 정상이 아니다 — 설정·DB·Redis
+> 연결 오류다. `docker compose logs ai-worker` 로 확인한다.
 
 ### 6. 개별 실행 (개발용)
 
@@ -292,8 +296,8 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 |---|---|---|
 | `UPLOAD_DIR` | 업로드 임시 경로 | `/tmp/medical_uploads` |
 | `MAX_UPLOAD_SIZE_MB` | 업로드 최대 크기 | `20` |
-| `OCR_FIXTURE_FALLBACK` | 판독 워커가 없을 때 합성 결과로 흐름을 잇는 **로컬 전용 스위치**. `prod` 에서 켜면 서버가 안 뜬다 | `false` |
-| `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY` | CLOVA OCR 자격증명. 비우면 fixture fallback (KEY-56) | (비움) |
+| `OCR_FIXTURE_FALLBACK` | `true` 면 FastAPI 업로드 경로가 합성 판독값을 바로 넣어 COMPLETED 처리하고 **워커 큐잉을 건너뛴다**. 워커 없이 흐름을 잇는 **로컬 전용 스위치** — `prod` 에서 켜면 서버가 안 뜬다 | `false` |
+| `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY` | CLOVA OCR 자격증명. **비우고 큐에 들어간 작업은 워커가 `OCR_NOT_CONFIGURED` 로 실패시킨다** (fixture 로 대체되지 않음). 합성 판독은 위 `OCR_FIXTURE_FALLBACK` 이 담당 (KEY-56) | (비움) |
 | `CLOVA_OCR_TIMEOUT_SECONDS` | CLOVA 타임아웃 | `10` |
 
 ### OpenAI (환자 챗봇)
@@ -334,8 +338,10 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 실제 키·비밀번호는 **로컬 `.env` 에만** 넣는다. 코드·화면·로그·커밋에 남기지 않는다.
 
 - **CLOVA OCR** — NAVER Cloud 콘솔에서 OCR 도메인을 만들고 `Invoke URL` 과 `Secret Key`
-  를 받아 `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY` 에 넣는다. 비워 두면 워커가
-  fixture fallback 으로 동작한다 (KEY-56 · 계약: [`docs/decisions/KEY-163-ocr-real-contract.md`](docs/decisions/KEY-163-ocr-real-contract.md)).
+  를 받아 `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY` 에 넣는다. 비운 채 큐에 들어간
+  판독 작업은 워커가 `OCR_NOT_CONFIGURED` 로 **실패**시킨다 — fixture 로 자동 대체되지 않는다.
+  워커·CLOVA 없이 흐름을 보려면 `OCR_FIXTURE_FALLBACK=true` 로 두어 업로드 경로에서 합성
+  판독값을 넣는다 (KEY-56 · 계약: [`docs/decisions/KEY-163-ocr-real-contract.md`](docs/decisions/KEY-163-ocr-real-contract.md)).
 - **OpenAI** — 환자 챗봇 응답 생성에 쓴다. `app/apis/v1/chatbot_routers.py` 가 이 키를 읽는
   유일한 자리다. `OPENAI_API_KEY` 를 넣고, 필요하면 `OPENAI_MODEL` · `OPENAI_BASE_URL` 로
   바꾼다. 비우면 챗봇이 고정 폴백 문구만 답하고([`docs/local-demo-accounts.md`](docs/local-demo-accounts.md) §3-7),
@@ -502,6 +508,8 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | `Unknown column '...'` 이 한참 뒤 엉뚱한 자리에서 | 스키마 드리프트 — `uv run python scripts/check_schema_drift.py` |
 | `ModuleNotFoundError: No module named 'tortoise'` (워커) | `uv sync --group worker --group ai` (둘 다). `--group ai` 만으로는 안 된다 |
 | OCR·픽스처 검사가 「연결 거부」로 죽음 | `--profile ocr` (또는 `web`+`ocr`) 를 안 줬다 |
+| `ai-worker` 가 `docker compose ps` 에서 계속 `Restarting` | 스텁 아님 — DB·Redis 연결이나 `.env` 설정 오류다. `docker compose logs ai-worker` |
+| 판독이 `OCR_NOT_CONFIGURED` 로 실패 | CLOVA 키가 비었다. 합성 판독만 볼 거면 `OCR_FIXTURE_FALLBACK=true` (워커 큐 안 씀) |
 | MinIO 컨테이너가 안 뜸 | `MINIO_ROOT_USER`·`MINIO_ROOT_PASSWORD` 가 비었다. 비밀번호 8자 이상 |
 | pytest 가 `test` DB 없음 / 비밀번호 불일치로 실패 | 기존 mysql 볼륨이 옛 비밀번호를 잡고 있다 — `docker compose down -v` 후 재기동 (데이터 삭제됨) |
 | `node --test` 가 `MODULE_NOT_FOUND` | 폴더 말고 `frontend/tests/*.test.js` 파일 글롭을 넘긴다 |
