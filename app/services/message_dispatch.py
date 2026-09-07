@@ -1,8 +1,9 @@
-"""예약 문자 발송 파이프라인 — KEY-249.
+"""예약 문자 발송 파이프라인 — KEY-249, KEY-250.
 
-`GuideMessage(SCHEDULED)` 를 집어서 실제로 보내고 `SENT`/`FAILED` 로 전이시킨다.
-`HELD` 는 게이트가 미리 막아 둔 상태만 있다 — 이 파이프라인은 HELD로 만들지
-않는다(그 판단은 별도 게이트 작업의 몫이다).
+`GuideMessage(SCHEDULED)` 를 집어서 발송 직전 게이트(`dispatch_gate.py`)를
+먼저 거친다. 막히면 `HELD`, 통과하면 실제로 보내고 `SENT`/`FAILED` 로
+전이시킨다. 시도·성공·실패·보류 네 갈래를 전부 append-only 감사 이벤트로
+남긴다(`GuideMessageEvent`) — KEY-250.
 """
 
 import secrets
@@ -19,11 +20,15 @@ from app.models.staffs import Hospital
 from app.models.visits import (
     GuideDocument,
     GuideMessage,
+    GuideMessageEvent,
+    GuideMessageEventType,
     GuideMessageFailure,
+    GuideMessageHold,
     GuideMessageKind,
     GuideMessageStatus,
     Visit,
 )
+from app.services.dispatch_gate import gate_hold_reason
 from app.services.message_templates import DEFAULT_BODY, MessageTemplateKind
 from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError, SmsSendResult
 
@@ -132,6 +137,15 @@ async def render_message_body(message: GuideMessage) -> str:
     return body
 
 
+async def _log_event(message_id: int, event_type: GuideMessageEventType, *, reason: str | None = None) -> None:
+    """감사 이벤트 한 줄을 남긴다 — append-only(KEY-250). update·delete는 안 쓴다.
+
+    `reason`은 못박힌 값(`GuideMessageHold`·`GuideMessageFailure`)이나 짧은
+    내부 코드 문자열만 받는다 — 예외 메시지·본문을 그대로 옮기지 않는다.
+    """
+    await GuideMessageEvent.create(guide_message_id=message_id, event_type=event_type, reason=reason)
+
+
 async def _claim(message_id: int, *, at: datetime) -> str | None:
     """SCHEDULED·시각 도래·미점유 행을 원자적으로 붙잡는다 — 멱등키.
 
@@ -161,6 +175,12 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         return None
 
     message = await GuideMessage.get(guide_message_id=message_id)
+    await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
+
+    hold_reason = await gate_hold_reason(message)
+    if hold_reason is not None:
+        return await _finish_held(message, token, hold_reason)
+
     try:
         guide = await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
         visit = await Visit.filter(visit_id=guide.visit_id).first() if guide else None
@@ -204,7 +224,24 @@ async def _finish_sent(
     )
     if affected != 1:
         raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
+    # sent_body(원문 링크 포함)를 절대 여기 남기지 않는다 — reason 없이 SENT만 남긴다.
+    await _log_event(message.guide_message_id, GuideMessageEventType.SENT)
     return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.SENT)
+
+
+async def _finish_held(message: GuideMessage, token: str, hold_reason: GuideMessageHold) -> DispatchResult:
+    affected = await GuideMessage.filter(
+        guide_message_id=message.guide_message_id,
+        claim_token=token,
+    ).update(
+        status=GuideMessageStatus.HELD,
+        hold_reason=hold_reason,
+        claim_token=None,
+    )
+    if affected != 1:
+        raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
+    await _log_event(message.guide_message_id, GuideMessageEventType.HELD, reason=hold_reason.value)
+    return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.HELD)
 
 
 def _failure_code_for(provider_detail: str | None) -> GuideMessageFailure:
@@ -247,6 +284,7 @@ async def _finish_failed(
     if affected != 1:
         raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
 
+    await _log_event(message.guide_message_id, GuideMessageEventType.FAILED, reason=failure_code.value)
     return DispatchResult(
         guide_message_id=message.guide_message_id,
         status=GuideMessageStatus.FAILED,

@@ -353,8 +353,10 @@ class VisitCheckKey(StrEnum):
 class GuideMessageHold(StrEnum):
     """**왜 붙들고 있나** — 와이어프레임 S2-3.
 
-    원문이 딱 둘로 못박는다: 「스탭이 손댈 일은 보류 두 가지뿐이다 — 번호가
-    잘못됐을 때와 문자가 떨어졌을 때.」
+    원래는 「스탭이 손댈 일은 보류 두 가지뿐이다 — 번호가 잘못됐을 때와
+    문자가 떨어졌을 때」였다. KEY-250이 발송 직전 게이트를 셋 더한다 —
+    안내가 미승인이거나, 안전검증을 통과 못 했거나, 원본 의료문서가 아직
+    안 지워졌으면 환자에게 아무것도 나가면 안 된다.
 
     실패 사유(`GuideMessageFailure`)와 **다른 목록**이다. 겹치는 낱말이 있어
     한 목록으로 합치고 싶어지지만, 재는 것이 다르다 — 이쪽은 「보내기 전에
@@ -365,6 +367,16 @@ class GuideMessageHold(StrEnum):
     INVALID_PHONE = "INVALID_PHONE"
     #: 의원의 문자 잔량이 없다. **환자마다 다르지 않다** — 그래서 실패가 아니다.
     NO_CREDIT = "NO_CREDIT"
+    #: 안내가 아직 승인되지 않았다 — KEY-250. 예약 줄은 승인과 함께 세워지므로
+    #: (`GuideService.approve`) 정상적으로는 안 나와야 하지만, 승인을 거둔
+    #: 뒤(`UNAPPROVED`)에도 예약 줄이 CANCELED로 안 꺼지는 경합을 방어한다.
+    NOT_APPROVED = "NOT_APPROVED"
+    #: 생성 전·후 안전검증을 통과하지 못했다 — KEY-250.
+    SAFETY_CHECK_FAILED = "SAFETY_CHECK_FAILED"
+    #: 원본 의료문서가 아직 삭제되지 않았다 — KEY-250. 환자에게 안내가
+    #: 나가기 전에, 그 근거가 된 원본 파일이 우리 서버에서 지워졌는지
+    #: 확인한다(`app/ocr/api.py`가 이미 같은 방식으로 삭제 여부를 잰다).
+    SOURCE_NOT_DELETED = "SOURCE_NOT_DELETED"
 
 
 class GuideMessageFailure(StrEnum):
@@ -519,8 +531,9 @@ class GuideMessage(models.Model):
     #: 발송에 옛 실패가 붙어 있으면 화면이 「실패」로 읽는다.
     failure_code: GuideMessageFailure | None = fields.CharEnumField(enum_type=GuideMessageFailure, null=True)
 
-    #: 왜 붙들고 있나 — **둘뿐이다**(S2-3). `status` 가 `HELD` 일 때만 찬다.
-    #: 실패 사유와 목록이 다르다 — 재는 것이 다르기 때문이다.
+    #: 왜 붙들고 있나 — KEY-250에서 다섯으로 늘었다(S2-3). `status` 가
+    #: `HELD` 일 때만 찬다. 실패 사유와 목록이 다르다 — 재는 것이 다르기
+    #: 때문이다.
     hold_reason = fields.CharEnumField(enum_type=GuideMessageHold, null=True)
     #: 실제로 나간 글. 보내기 전에는 비어 있다.
     sent_body = fields.TextField(null=True)
@@ -549,6 +562,52 @@ class GuideMessage(models.Model):
         #: 한 안내문에 같은 회차가 둘이면 환자가 같은 문자를 두 번 받는다.
         unique_together = (("guide_document", "kind"),)
         indexes = (("status", "scheduled_at"),)
+
+
+class GuideMessageEventType(StrEnum):
+    """감사 이벤트 한 줄이 무엇을 남기는가 — KEY-250.
+
+    발송 파이프라인(KEY-249)이 문자 한 통을 처리하며 반드시 거치는 네
+    갈래와 그대로 대응한다 — `ATTEMPTED`(집어서 보내려 했다)만 그 넷에
+    없던 새 갈래고, 나머지 셋은 `GuideMessage.status` 전이와 같은 순간에
+    남는다.
+    """
+
+    ATTEMPTED = "ATTEMPTED"
+    SENT = "SENT"
+    FAILED = "FAILED"
+    HELD = "HELD"
+
+
+class GuideMessageEvent(models.Model):
+    """예약 문자 한 통의 발송 시도·성공·실패·보류 이력 — KEY-250, append-only.
+
+    `GuideEvent`(안내문 생성·승인 이력)와 같은 원칙이다 — 「누가 언제 무엇을
+    했나」가 남아야 나중에 되짚을 수 있고, 지우거나 고치면 감사가 성립하지
+    않는다. 이 표에는 update·delete를 쓰는 코드가 없어야 한다.
+
+    **링크 토큰 원문을 절대 담지 않는다.** `reason`은 `GuideMessageHold`·
+    `GuideMessageFailure`처럼 못박힌 값이나 짧은 내부 코드 문자열만
+    허용한다 — 예외 메시지를 그대로 옮기지 않는다. 원문이 예외 메시지에
+    실려 있을 수 있는 자리이기 때문이다.
+    """
+
+    guide_message_event_id = fields.BigIntField(primary_key=True)
+    guide_message: fields.ForeignKeyRelation[GuideMessage] = fields.ForeignKeyField(
+        "models.GuideMessage",
+        related_name="events",
+        on_delete=OnDelete.CASCADE,
+    )
+    event_type = fields.CharEnumField(enum_type=GuideMessageEventType)
+    #: HELD·FAILED일 때만 찬다. GuideMessageHold 값이거나(HELD),
+    #: failure_code 값 또는 provider_detail과 같은 내부 코드 문자열이다(FAILED).
+    #: 절대 원문 토큰·예외 스택트레이스를 담지 않는다.
+    reason = fields.CharField(max_length=200, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "guide_message_event"
+        indexes = (("guide_message", "created_at"),)
 
 
 class CheckInMedication(StrEnum):
