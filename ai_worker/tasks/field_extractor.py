@@ -238,6 +238,22 @@ _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
 # ---------------------------------------------------------------------------
 
 
+def _has_lab_table_header(rows: list) -> bool:
+    """분류 전용: 검사항목·검사결과 열 헤더가 같은 행 안에, x 범위 비겹침으로 존재하는지 확인한다.
+
+    _find_lab_columns는 행을 넘나드는 탐색을 허용하므로 분류기에 쓰기에 조건이 느슨하다.
+    진료기록에도 '검사명'·'결과' 낱말이 흔하기 때문에 두 조건을 모두 만족할 때만 True를 반환한다.
+    """
+    for row in rows:
+        tn = next((b for b in row if b.text.strip() in _TEST_NAME_COLUMN_KEYWORDS), None)
+        res = next((b for b in row if b.text.strip() in _RESULT_COLUMN_KEYWORDS), None)
+        if tn is None or res is None:
+            continue
+        if tn.right <= res.left or res.right <= tn.left:
+            return True
+    return False
+
+
 def detect_document_type(
     clova_result: ClovaOcrResult,
     stored_type: OcrDocumentType,
@@ -251,7 +267,7 @@ def detect_document_type(
     """
     if stored_type != OcrDocumentType.EMR:
         return stored_type
-    if clova_result.rows and _find_lab_columns(clova_result.rows) is not None:
+    if clova_result.rows and _has_lab_table_header(clova_result.rows):
         # 검사 표가 감지되어도 EMR 파서가 핵심 필드(진단·처방)를 뽑아냈으면 EMR로 유지한다.
         # 검사결과 요약표가 섞인 EMR을 LAB_RESULT로 오분류하면 필수 필드 게이트가 통째로 건너뛰어진다.
         has_emr_fields = bool(

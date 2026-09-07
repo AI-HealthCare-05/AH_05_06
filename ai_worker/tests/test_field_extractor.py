@@ -730,6 +730,42 @@ def test_detect_emr_with_embedded_lab_table_stays_emr() -> None:
     assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
 
 
+def test_detect_lab_keywords_in_different_rows_stays_emr() -> None:
+    """검사항목·검사결과 키워드가 서로 다른 행에 있으면 LAB_RESULT로 재분류하지 않는다.
+
+    진료기록에도 '검사명'·'결과' 낱말이 흔하다. 같은 행 안에 있을 때만 검사결과지 표로 판정한다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row0 = [ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=10.0, right=110.0, bottom=30.0)]
+    row1 = [ClovaTextField(text="검사결과", confidence=1.0, left=10.0, top=40.0, right=110.0, bottom=60.0)]
+    result = ClovaOcrResult(
+        raw_text="검사항목\n검사결과",
+        fields=[*row0, *row1],
+        rows=[row0, row1],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_keywords_same_row_overlapping_x_stays_emr() -> None:
+    """같은 행이라도 두 열의 x 범위가 겹치면 LAB_RESULT로 재분류하지 않는다.
+
+    표의 두 열이라면 x 범위가 겹칠 수 없다. 겹치는 경우는 오탐이다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row = [
+        ClovaTextField(text="검사항목", confidence=1.0, left=0.0, top=10.0, right=50.0, bottom=30.0),
+        ClovaTextField(text="검사결과", confidence=1.0, left=0.0, top=10.0, right=40.0, bottom=30.0),
+    ]
+    result = ClovaOcrResult(
+        raw_text="검사항목 검사결과",
+        fields=row,
+        rows=[row],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
 # KEY-245 — 판독 키워드(lab_keywords) 기반 매칭 (인수조건 1·2·3)
 # ---------------------------------------------------------------------------
 
