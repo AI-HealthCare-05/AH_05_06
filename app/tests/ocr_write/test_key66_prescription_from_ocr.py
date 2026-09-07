@@ -303,7 +303,13 @@ class FinalizeOcrTestCase(TestCase):
         assert exc.value.code == "MISSING_FREQUENCY"
 
     async def test_prescription_is_hospital_scoped(self) -> None:
-        """다른 병원의 visit_id를 넘기면 404가 나온다."""
+        """다른 병원의 visit_id를 넘기면 404가 나온다.
+
+        **「없다」와 「아직 안 봤다」를 같은 말로 하면 안 된다.** 위 `#233` 고침을
+        「job 이 없으면 무조건 422」로 뭉쳐 놓으면, 남의 병원 진료를 물었을 때도
+        「확정된 항목이 없습니다」가 나가 그 진료가 있다는 사실이 새어 나간다.
+        그래서 코드까지 못 박는다.
+        """
         actor, visit, _ = await self.make_world("FO-08")
 
         other_clinic = await Hospital.create(name="타병원")
@@ -325,9 +331,26 @@ class FinalizeOcrTestCase(TestCase):
             await TortoiseOcrRepository().finalize_ocr(visit.visit_id, other_actor)
 
         assert exc.value.status_code == 404
+        assert exc.value.code == "VISIT_NOT_FOUND", (
+            f"남의 병원 진료에 {exc.value.code} 를 냈다 — 없는 진료와 아직 안 본 진료가 같은 말이 된다"
+        )
 
-    async def test_excluded_job_does_not_create_prescription(self) -> None:
-        """excluded_from_guide=True인 job으로는 finalize_ocr이 404를 반환한다."""
+    async def test_excluded_job_says_not_confirmed_like_generate_does(self) -> None:
+        """**두 문이 같은 조건을 보면 같은 말을 해야 한다** — 이희진 님 `#233` 리뷰.
+
+        `finalize_ocr` 과 `GuideService.generate()` 는 job 선택 조건이 같다
+        (`excluded_from_guide=False` · `COMPLETED` · 최신). 그런데 고를 job 이
+        없을 때 하나는 404 `NOT_FOUND`, 다른 하나는 422 `OCR_NOT_CONFIRMED`
+        였다.
+
+        **화면에서 글자가 갈린다.** `GENERATE_SAYINGS` 에 `NOT_FOUND` 가 없어서
+        스탭은 「확정한 항목이 아직 없습니다 — 값을 확인해 저장한 뒤 다시 눌러
+        주세요」 대신 「안내문을 만들지 못했습니다」를 받는다. 무엇을 해야 하는지가
+        사라진다.
+
+        지금은 `exclude` 를 부르는 화면이 없어 손으로는 못 닿는다 — **그래서 이
+        검사가 유일한 방어다.**
+        """
         actor, visit, result = await self.make_world("FO-09")
         job = await OcrJob.filter(visit_id=visit.visit_id).first()
         assert job is not None
@@ -342,7 +365,10 @@ class FinalizeOcrTestCase(TestCase):
         with pytest.raises(OcrApiError) as exc:
             await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
 
-        assert exc.value.status_code == 404
+        assert exc.value.code == "OCR_NOT_CONFIRMED", (
+            f"생성 쪽과 다른 코드를 냈다 — {exc.value.code}. 화면이 무엇을 해야 하는지 못 말한다"
+        )
+        assert exc.value.status_code == 422
 
     async def test_mixed_frequency_as_needed_drug_has_no_duration(self) -> None:
         """비잔정(1일 1회, 84일) + 진통제(필요시) — 필요시 약은 duration_days=None."""
