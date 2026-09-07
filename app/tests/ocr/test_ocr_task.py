@@ -38,6 +38,7 @@ from app.models.patients import Patient
 from app.models.visits import Visit
 from app.tests.fixtures.ocr import (
     SYN_FAIL_CLOVA_CODE,
+    SYN_LAB_01_CLOVA_RESULT,
     SYN_LOW_CONF_CLOVA_RESULT,
     SYN_TIMEOUT_CLOVA_CODE,
 )
@@ -421,6 +422,76 @@ class TestProcessOcrJob(TestCase):
         observed_codes = [c.kwargs.get("error_code") for c in mock_observe.call_args_list]
         assert "ALREADY_PROCESSED" in observed_codes, "ALREADY_PROCESSED가 관측 로그에 없다"
         assert await OcrResult.filter(ocr_job=job).count() == 0
+
+    # ── EMR로 업로드된 검사결과지 자동 재분류 (KEY-278) ──────────────────────────
+
+    async def test_lab_result_uploaded_as_emr_is_reclassified(self) -> None:
+        """검사결과지를 EMR로 업로드해도 OCR 후 LAB_RESULT로 자동 재분류된다.
+
+        업로드 시 document_type을 보내지 않아 EMR로 저장된 검사결과지가
+        CLOVA 판독 후 올바른 유형으로 갱신되어야 한다 (KEY-278 인수조건).
+        """
+        patient = await Patient.create(
+            patient_id=910010,
+            hospital_id=HOSPITAL_ID,
+            hospital_patient_no="TEST-KEY278",
+            name="테스트환자278",
+            birth_date=date(1990, 1, 1),
+            phone="01000000010",
+        )
+        visit = await Visit.create(
+            visit_id=910010,
+            hospital_id=HOSPITAL_ID,
+            patient=patient,
+            visited_at=datetime(2026, 9, 7, 9, 0, tzinfo=UTC),
+        )
+        med_doc = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.EMR,  # 업로드 시 기본값
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        job = await OcrJob.create(
+            ocr_job_id="ocr_key278_auto_reclassify",
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            requested_by=1,
+        )
+        job_doc = await OcrJobDocument.create(
+            ocr_job=job,
+            document_id=med_doc.document_id,
+            document_type=OcrDocumentType.EMR,  # 업로드 시 기본값
+        )
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=SYN_LAB_01_CLOVA_RESULT),
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.COMPLETED
+
+        await med_doc.refresh_from_db()
+        assert med_doc.document_type == OcrDocumentType.LAB_RESULT, "검사결과지가 LAB_RESULT로 재분류되지 않았다"
+
+        await job_doc.refresh_from_db()
+        assert job_doc.document_type == OcrDocumentType.LAB_RESULT, "OcrJobDocument의 document_type이 갱신되지 않았다"
+
+        result = await OcrResult.filter(ocr_job=job).first()
+        assert result is not None
+        fields = await OcrField.filter(ocr_result=result).all()
+        field_types = {f.field_type for f in fields}
+        assert "AST" in field_types, "LAB_RESULT 파서가 실행되지 않았다"
+        for emr_field in ("DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"):
+            assert emr_field not in field_types, f"검사결과지에 EMR 필드 {emr_field}가 생성됐다"
 
     async def test_duplicate_queue_entry_creates_single_result(self) -> None:
         """같은 job_id가 큐에 두 번 들어와도 OcrResult·OcrField는 한 건만 생성된다.

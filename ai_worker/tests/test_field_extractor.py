@@ -657,3 +657,42 @@ def test_prescription_set_no_suggestion_without_any_drug_signal() -> None:
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_types = {f.field_type for f in fields}
     assert "PRESCRIPTION_SET" not in field_types
+
+
+# ---------------------------------------------------------------------------
+# detect_document_type — 판독 구조 기반 문서 유형 자동 감지 (KEY-278)
+# ---------------------------------------------------------------------------
+
+
+def test_detect_emr_uploaded_as_emr_stays_emr() -> None:
+    """EMR 구조를 가진 문서는 EMR로 유지된다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    result = ClovaOcrResult(raw_text="진단: 자궁내막증", fields=[], rows=[])
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_table_in_emr_uploaded_doc_reclassifies_to_lab_result() -> None:
+    """검사결과지 표(검사항목+검사결과 열)가 있으면 EMR로 업로드된 문서도 LAB_RESULT로 재분류한다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+    from app.tests.fixtures.ocr import SYN_LAB_01_CLOVA_RESULT
+
+    detected = detect_document_type(SYN_LAB_01_CLOVA_RESULT, OcrDocumentType.EMR)
+    assert detected == OcrDocumentType.LAB_RESULT
+
+
+def test_detect_non_emr_stored_type_is_not_changed() -> None:
+    """PRESCRIPTION 등 비EMR 유형은 판독 구조와 무관하게 유지된다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+    from app.tests.fixtures.ocr import SYN_LAB_01_CLOVA_RESULT
+
+    detected = detect_document_type(SYN_LAB_01_CLOVA_RESULT, OcrDocumentType.PRESCRIPTION)
+    assert detected == OcrDocumentType.PRESCRIPTION
+
+
+def test_detect_lab_result_without_rows_stays_emr() -> None:
+    """바운딩 박스 없이 rows가 빈 경우(텍스트 전용 응답) 유형을 변경하지 않는다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    result = ClovaOcrResult(raw_text="검사항목 검사결과\nAST 21", fields=[], rows=[])
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR

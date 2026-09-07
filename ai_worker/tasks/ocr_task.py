@@ -36,7 +36,7 @@ from tortoise.transactions import in_transaction
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, call_clova_ocr
 from ai_worker.core import config, default_logger
-from ai_worker.tasks.field_extractor import ExtractedField, extract_fields
+from ai_worker.tasks.field_extractor import ExtractedField, detect_document_type, extract_fields
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
     OcrDocumentText,
@@ -212,24 +212,26 @@ async def _call_clova_for_documents(
 def _extract_fields_per_doc(
     job_documents: list[OcrJobDocument],
     clova_results: dict[int, ClovaOcrResult],
-) -> tuple[list[tuple[OcrJobDocument, list[ExtractedField]]], set[str], bool]:
+) -> tuple[list[tuple[OcrJobDocument, list[ExtractedField], OcrDocumentType]], set[str], bool]:
     """문서별로 필드를 추출해 (fields_by_doc, emr_field_types, has_emr)을 반환한다.
 
+    CLOVA 결과 구조로 실제 문서 유형을 자동 감지한다 (판독이 실제 종류를 가려낸다).
     emr_field_types는 EMR 문서에서 추출된 field_type만 포함한다 (필수 필드 게이트 전용).
     """
-    fields_by_doc: list[tuple[OcrJobDocument, list[ExtractedField]]] = []
+    fields_by_doc: list[tuple[OcrJobDocument, list[ExtractedField], OcrDocumentType]] = []
     emr_field_types: set[str] = set()
     has_emr = False
     for jd in job_documents:
-        doc_type = OcrDocumentType(jd.document_type)
-        if doc_type == OcrDocumentType.EMR:
-            has_emr = True
+        stored_type = OcrDocumentType(jd.document_type)
         clova_result = clova_results.get(jd.document_id)
         if clova_result is None:
             continue
-        fields = extract_fields(clova_result, doc_type)
-        fields_by_doc.append((jd, fields))
-        if doc_type == OcrDocumentType.EMR:
+        actual_type = detect_document_type(clova_result, stored_type)
+        if actual_type == OcrDocumentType.EMR:
+            has_emr = True
+        fields = extract_fields(clova_result, actual_type)
+        fields_by_doc.append((jd, fields, actual_type))
+        if actual_type == OcrDocumentType.EMR:
             emr_field_types.update(f.field_type for f in fields)
     return fields_by_doc, emr_field_types, has_emr
 
@@ -269,6 +271,7 @@ async def _save_clova_result(
     missing = sorted(_REQUIRED_OCR_FIELDS - emr_field_types) if has_emr else []
 
     # Phase 3: 트랜잭션 안에서 DB 저장
+    actual_type_map: dict[int, OcrDocumentType] = {jd.document_id: actual_type for jd, _, actual_type in fields_by_doc}
     async with in_transaction() as conn:
         ocr_result = await OcrResult.create(
             ocr_job=job,
@@ -278,17 +281,27 @@ async def _save_clova_result(
         doc_text_map: dict[int, OcrDocumentText] = {}
         for jd in job_documents:
             clova_result = clova_results.get(jd.document_id)
+            actual_type = actual_type_map.get(jd.document_id, OcrDocumentType(jd.document_type))
+            if actual_type != OcrDocumentType(jd.document_type):
+                await (
+                    OcrJobDocument.filter(ocr_job_document_id=jd.ocr_job_document_id)
+                    .using_db(conn)
+                    .update(document_type=actual_type)
+                )
+                await (
+                    MedicalDocument.filter(document_id=jd.document_id).using_db(conn).update(document_type=actual_type)
+                )
             doc_text = await OcrDocumentText.create(
                 ocr_result=ocr_result,
                 document_id=jd.document_id,
-                document_type=jd.document_type,
+                document_type=actual_type,
                 raw_text=clova_result.raw_text if clova_result else None,
                 using_db=conn,
             )
             doc_text_map[jd.document_id] = doc_text
 
         seen_types: set[str] = set()
-        for jd, fields in fields_by_doc:
+        for jd, fields, _ in fields_by_doc:
             if jd.document_id not in doc_text_map:
                 continue
             doc_text = doc_text_map[jd.document_id]

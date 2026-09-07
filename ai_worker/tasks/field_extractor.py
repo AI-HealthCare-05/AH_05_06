@@ -236,6 +236,24 @@ _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
 # ---------------------------------------------------------------------------
 
 
+def detect_document_type(
+    clova_result: ClovaOcrResult,
+    stored_type: OcrDocumentType,
+) -> OcrDocumentType:
+    """CLOVA 결과 구조로 실제 문서 유형을 결정한다.
+
+    업로드 시 EMR 기본값으로 들어온 문서를 판독 구조로 재분류한다.
+    검사결과지 표(검사항목+검사결과 열)가 있으면 LAB_RESULT로 분류하고,
+    그 외는 stored_type을 그대로 반환한다.
+    PRESCRIPTION은 별도 감지 없이 유지한다.
+    """
+    if stored_type != OcrDocumentType.EMR:
+        return stored_type
+    if clova_result.rows and _find_lab_columns(clova_result.rows) is not None:
+        return OcrDocumentType.LAB_RESULT
+    return stored_type
+
+
 def extract_fields(
     clova_result: ClovaOcrResult,
     document_type: OcrDocumentType,
