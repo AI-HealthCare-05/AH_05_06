@@ -289,7 +289,7 @@ function courseWarn(days) {
         API(KEY-246 `/visits/{id}/ocr-fields/previous`)도 완성됐다.
         아직 남은 것은 이 패널과 API 를 연결하는 화면 작업이다.
 
-     ④ 확인 항목 — 여기는 **담을 표부터 없다.** `prescription_set`(8종)과
+     ④ 확인 항목 — 여기는 **담을 표부터 없다.** `prescription_set`(넷)과
         `drug_caution_content`(문구)는 있지만, 처방별로 무엇을 여쭐지의
         목록도, 스탭이 체크한 답을 진료에 붙여 둘 자리도 없다.
         (`visit.doctor_note` 는 의사 소견 칸이라 이것과 다르다.) */

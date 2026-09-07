@@ -31,7 +31,7 @@ function ocrRequest(path, options) {
   return request(path, options);
 }
 
-/* 목업 — 설정(D2-3)에 8종이 사전 등록돼 있다. 이름은 실제 표와 같다. */
+/* 목업 — 설정(D2-3)에 대표 처방 넷이 사전 등록돼 있다. 이름은 실제 표와 같다. */
 /* 약속처방 목업(`MOCK_PRESCRIPTION_SETS`)은 `catalog-api.js` 로 옮겼다 —
    설정 화면도 같은 값을 쓰는데, 그쪽이 판독 API 파일을 실을 이유가 없다. */
 

@@ -163,7 +163,7 @@ function mockScheduledRows() {
       gender: "FEMALE",
       birth_date: "1998-12-01",
       age: 27,
-      prescription_set: "PCOS · 야즈 + 메트포르민",
+      prescription_set: "PCOS · 야즈 (계속)",
     },
     /* **창 밖의 예정.** 기간을 7일에서 30일로 넓히면 이 줄이 나타난다 —
        목업이 규칙을 눈으로 보여 주지 못하면 화면을 눌러 봐도 모른다. */
@@ -181,7 +181,7 @@ function mockScheduledRows() {
       gender: "FEMALE",
       birth_date: "1998-12-01",
       age: 27,
-      prescription_set: "PCOS · 야즈 + 메트포르민",
+      prescription_set: "PCOS · 야즈 (계속)",
     },
     {
       guide_message_id: 9006,
@@ -388,7 +388,7 @@ function mockHistoryRows() {
       gender: "FEMALE",
       birth_date: "1997-02-03",
       age: 29,
-      prescription_set: "PCOS · 대사관리",
+      prescription_set: "PCOS · 야즈 (처음)",
       viewed: true,
       viewed_at: mockDay(-19, 12),
     },

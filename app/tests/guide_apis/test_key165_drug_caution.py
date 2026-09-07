@@ -283,7 +283,10 @@ class TestGenerateFallsBackWhenNoContent(DrugCautionTestCase):
     async def test_emergency_only_approved_uses_caution_fallback(self) -> None:
         """emergency 만 승인되고 caution 이 없을 때 caution 은 폴백을 쓴다.
 
-        PCOS · 초진 (야즈 불가) 케이스 재현 — seed 의 '근거 누락' 시나리오.
+        예전에는 seed 픽스처에 이 모양의 세트가 있어 그것을 재현했다.
+        KEY-262 로 대표 처방이 넷이 되면서 seed 는 고르게 완비됐고, 이 테스트가
+        쓰는 상태는 **여기서 직접 만든다.** 세트 이름은 그때의 이름을 남겨 둔
+        것뿐이라, 지금은 카탈로그에 없는 이름이다 — 그래서 오히려 안전하다.
         """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])

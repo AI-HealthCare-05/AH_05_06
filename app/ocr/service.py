@@ -39,6 +39,26 @@ def _resolved_value(row: dict) -> str | None:
     return row["corrected_value"] if row["corrected_value"] is not None else row["extracted_value"]
 
 
+def _drop_confirmation(field: OcrField) -> None:
+    """**값이 바뀌면 확정 도장을 뗀다** — KEY-273 뒤처리.
+
+    확정은 「이 값을 사람이 봤다」는 도장이다. KEY-273 이 확정 뒤에도 고칠 수
+    있게 열면서 도장을 그대로 두었더니, 도장이 **옛 값**을 가리킨 채 남았다.
+    기록은 「스탭 A 가 T1 에 확인」인데 화면의 값은 스탭 B 가 T2 에 친 것이고,
+    **그 값은 아무도 확인한 적이 없다.** 생성의 미확정 게이트는 통과한다.
+
+    도장을 새 사람 이름으로 다시 찍는 것은 답이 아니다 — **값을 친 것과 값을
+    확인한 것은 다른 행위다.** 뗀 뒤에는 화면에 「확인 전」으로 다시 서고,
+    스탭이 보고 다시 확정한다 (이희진 님 `#221` ②).
+
+    누가 언제 고쳤는지는 `modified_by`·`modified_at` 이 따로 든다 — 확인 기록만
+    떨어지고 수정 기록은 남는다.
+    """
+    field.is_confirmed = False
+    field.confirmed_by = None
+    field.confirmed_at = None
+
+
 class OcrRepository(Protocol):
     async def get_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
 
@@ -173,8 +193,14 @@ class TortoiseOcrRepository:
             )
             if field is None:
                 raise _not_found()
-            if field.is_confirmed:
-                raise OcrApiError(status.HTTP_409_CONFLICT, "OCR_FIELD_CONFIRMED", "이미 확정된 필드입니다.")
+            # **확정돼도 고칠 수 있다** (KEY-273, 2026-09-04 권일준 결정).
+            #
+            # 예전에는 여기서 409 를 냈다. 그런데 **판독이 틀리는 것이 정상**이고,
+            # 확정 뒤에 알아차리면 그 진료는 손쓸 방법이 없었다 — 진단과 처방이
+            # 어긋난 채 확정돼 안내문이 승인까지 갔고, DB 를 직접 고쳐야 풀렸다.
+            #
+            # 이미 만들어진 안내문은 영향받지 않는다. `GuideSection` 이 본문을
+            # 제 사본으로 들고 있어서, 여기를 고쳐도 승인된 글은 그대로다.
             if field.version != request.base_version:
                 raise OcrApiError(status.HTTP_409_CONFLICT, "VERSION_CONFLICT", "필드 버전이 변경되었습니다.")
 
@@ -205,7 +231,8 @@ class TortoiseOcrRepository:
                 await selected_candidate.save(update_fields=("is_selected",), using_db=connection)
 
             changed_at = now()
-            if request.corrected_value is not None or selected_candidate is not None:
+            value_changed = request.corrected_value is not None or selected_candidate is not None
+            if value_changed:
                 field.corrected_value = corrected_value
                 field.modified_by = actor.staff_id
                 field.modified_at = changed_at
@@ -214,6 +241,8 @@ class TortoiseOcrRepository:
                 field.is_confirmed = True
                 field.confirmed_by = actor.staff_id
                 field.confirmed_at = changed_at
+            elif value_changed and field.is_confirmed:
+                _drop_confirmation(field)
             await field.save(using_db=connection)
         await field.fetch_related("candidates")
 
@@ -254,8 +283,7 @@ class TortoiseOcrRepository:
                 .first()
             )
 
-            if field is not None and field.is_confirmed:
-                raise OcrApiError(status.HTTP_409_CONFLICT, "OCR_FIELD_CONFIRMED", "이미 확정된 필드입니다.")
+            # 확정된 줄도 다시 적을 수 있다 — 위 `edit_field` 와 같은 까닭이다 (KEY-273).
 
             # 비우면 지운다 — 「빈 값으로 적었다」를 남기면 안 적은 것과 구별이 안 된다.
             if not text:
@@ -274,10 +302,13 @@ class TortoiseOcrRepository:
                     using_db=connection,
                 )
             else:
+                changed = field.corrected_value != text
                 field.corrected_value = text
                 field.modified_by = actor.staff_id
                 field.modified_at = changed_at
                 field.version += 1
+                if changed and field.is_confirmed:
+                    _drop_confirmation(field)
                 await field.save(using_db=connection)
 
         await field.fetch_related("candidates")

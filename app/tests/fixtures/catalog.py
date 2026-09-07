@@ -1,18 +1,23 @@
 """처방 세트·주의·응급 문구 합성 픽스처 — KEY-165.
 
-합성 데이터 CSV(docs/data/synthetic-patients.csv)에 등장하는 8종 처방 세트와
+합성 데이터 CSV(docs/data/synthetic-patients.csv)에 등장하는 4종 처방 세트와
 각 세트의 caution·emergency 마스터 콘텐츠를 정의한다.
 
 **이 파일의 모든 값은 테스트·개발용 합성 데이터다.**
 실제 환자정보·운영 비밀값·인증된 처방 원문을 포함하지 않는다.
 
-드러그 콘텐츠 커버리지:
-  - APPROVED 완비(caution+emergency): 비잔 계열 3종, 야즈 계열 2종, 대사관리 1종
-  - APPROVED emergency만:           PCOS · 초진 (야즈 불가) — caution 미승인 케이스 재현
-  - 콘텐츠 없음:                     PCOS · 초진 — 미등록 콘텐츠 폴백 케이스 재현
+드러그 콘텐츠 커버리지 — **네 세트 모두 APPROVED 완비**(caution+emergency 8행):
+  - 자궁내막증 · 비잔 (처음) / (계속) — 각자의 문구
+  - PCOS · 야즈 (처음) / (계속)      — 약이 같아 문구도 같다
 
-이 분포 덕에 D-1(정상)·D-2(미등록·미승인·근거 누락 차단) 테스트가
-별도 DB 조작 없이 seed 상태로 동작한다.
+**KEY-262 전에는 일부러 빈 자리를 두었다.** 「emergency만 승인」·「콘텐츠 없음」인
+세트를 seed 에 남겨 D-2(미등록·미승인 폴백)를 재현했었다. 세트를 넷으로 줄이면서
+그 두 세트가 사라졌고, 지금은 커버리지가 고르다.
+
+D-2 는 그 빈 자리에 기대지 않는다. `test_key165_drug_caution.py` 의 D-2 는
+없는 세트 이름(`"미등록세트XYZ"`)과 DRAFT 콘텐츠를 테스트 안에서 직접 만들어
+쓴다. seed 분포와 무관하게 서므로 이 픽스처를 줄여도 그대로 동작한다.
+D-1(정상 생성)만 이 seed 를 그대로 쓴다.
 """
 
 from dataclasses import dataclass, field
@@ -46,17 +51,22 @@ class DrugCautionContentRow:
     approval_status: ApprovalStatus = ApprovalStatus.APPROVED
 
 
-# ── 처방 세트 8종 ────────────────────────────────────────────────────────────
+# ── 처방 세트 4종 ────────────────────────────────────────────────────────────
 # 합성 CSV 에 실제로 등장하는 이름을 그대로 사용한다.
+#
+# **여덟에서 넷으로 줄였다** (KEY-262, 팀 회의 결정). 질환 둘 × 처음·계속이다.
+# 나머지 다섯이 가리키던 진료 25 건은 각자의 「처음」으로 옮겼다
+# (`docs/data/synthetic-patients.csv`).
+#
+# 🚩 **`PCOS · 초진 (야즈 불가)` 도 「야즈 (처음)」으로 옮겼다.** 흡연으로 야즈가
+# 금기인 환자(`SYN-PCOS-06`)라 야즈 세트가 맞지 않는데, 팀에서 그렇게 정했다.
+# 그래서 **「금기로 처방 경로가 바뀐다」 시나리오는 이제 데이터로 재현되지
+# 않는다** — 명세에도 적어 두었다.
 PRESCRIPTION_SETS: tuple[PrescriptionSetRow, ...] = (
     PrescriptionSetRow("자궁내막증 · 비잔 (처음)"),
     PrescriptionSetRow("자궁내막증 · 비잔 (계속)"),
-    PrescriptionSetRow("자궁내막증 · 통증관리"),
-    PrescriptionSetRow("PCOS · 초진"),
-    PrescriptionSetRow("PCOS · 초진 (야즈 불가)"),
+    PrescriptionSetRow("PCOS · 야즈 (처음)"),
     PrescriptionSetRow("PCOS · 야즈 (계속)"),
-    PrescriptionSetRow("PCOS · 야즈 + 메트포르민"),
-    PrescriptionSetRow("PCOS · 대사관리"),
 )
 
 # ── 주의·응급 문구 마스터 ────────────────────────────────────────────────────
@@ -105,36 +115,6 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         ),
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/dienogest-long-emergency",
     ),
-    # ── 자궁내막증 · 통증관리 ────────────────────────────────────────────────
-    # 비잔 기준 안내. 진통제(대증약)는 범용 caution 으로 커버 (KEY-180 §1).
-    DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 통증관리",
-        section_key=CautionSectionKey.CAUTION,
-        body=(
-            "[합성] 복용 중 두통, 구역, 통증 부위 변화가 나타날 수 있습니다. "
-            "진통제는 음식과 함께 복용하면 위장 불편감을 줄일 수 있습니다. "
-            "통증이 이전보다 심해지거나 새로운 부위에 생기면 알려 주세요."
-        ),
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/pain-management-caution",
-    ),
-    DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 통증관리",
-        section_key=CautionSectionKey.EMERGENCY,
-        body=(
-            "[합성] 심한 복통, 혈변, 검은 변, 또는 토혈이 나타나면 "
-            "즉시 복용을 중단하고 응급실을 방문하세요. "
-            "한쪽 다리의 갑작스러운 부기·통증도 즉시 알려 주세요."
-        ),
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/pain-management-emergency",
-    ),
-    # ── PCOS · 초진 (야즈 불가) ─────────────────────────────────────────────
-    # caution 없음(DRAFT 없음) — 테스트에서 "caution 근거 누락 → 범용 문구 폴백" 재현
-    DrugCautionContentRow(
-        prescription_set_name="PCOS · 초진 (야즈 불가)",
-        section_key=CautionSectionKey.EMERGENCY,
-        body=("[합성] 갑작스러운 흉통, 심한 두통, 시야 이상, 호흡 곤란이 나타나면 즉시 응급실을 방문하세요."),
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/pcos-alt-emergency",
-    ),
     # ── PCOS · 야즈 (계속) ──────────────────────────────────────────────────
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 (계속)",
@@ -156,46 +136,27 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         ),
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
     ),
-    # ── PCOS · 야즈 + 메트포르민 ────────────────────────────────────────────
+    # ── PCOS · 야즈 (처음) ──────────────────────────────────────────────────
+    # **약이 같으니 글도 같다.** 「처음」과 「계속」을 가르는 것은 방문 주기이지
+    # 약이 아니다 — 문구가 갈릴 근거가 생기면 그때 나눈다 (KEY-265).
     DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 + 메트포르민",
+        prescription_set_name="PCOS · 야즈 (처음)",
         section_key=CautionSectionKey.CAUTION,
         body=(
-            "[합성] 야즈 복용 중 구역·두통·유방압통, 메트포르민 복용 중 소화기계 "
-            "불편감(구역·설사·복통)이 나타날 수 있습니다. 메트포르민은 식사와 함께 "
-            "복용하면 위장 증상이 줄어듭니다. 조영제를 사용하는 검사 전에 반드시 "
-            "의료진에게 알려 주세요."
+            "[합성] 복용 중 구역, 두통, 유방압통이 나타날 수 있으며 대개 호전됩니다. "
+            "칼륨을 높이는 약(스피로노락톤, ACEI, NSAID 등)을 함께 복용 중이면 "
+            "반드시 의료진에게 알려 주세요. "
+            "혈압이 갑자기 오르거나 다리가 부으면 알려 주세요."
         ),
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-metformin-caution",
+        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-caution",
     ),
     DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 + 메트포르민",
+        prescription_set_name="PCOS · 야즈 (처음)",
         section_key=CautionSectionKey.EMERGENCY,
         body=(
-            "[합성] 심한 피로감·근육 통증·호흡 곤란·복통이 동시에 나타나거나 소변량이 "
-            "크게 줄면 즉시 응급실을 방문하세요. "
-            "한쪽 다리의 심한 부기·통증·발적이나 갑작스러운 흉통도 즉시 알려 주세요."
+            "[합성] 한쪽 다리에 심한 통증·부기·발적, 갑작스러운 흉통, 호흡 곤란, "
+            "심한 두통 또는 시야 이상이 나타나면 즉시 복용을 중단하고 응급실을 방문하세요."
         ),
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-metformin-emergency",
-    ),
-    # ── PCOS · 대사관리 ──────────────────────────────────────────────────────
-    DrugCautionContentRow(
-        prescription_set_name="PCOS · 대사관리",
-        section_key=CautionSectionKey.CAUTION,
-        body=(
-            "[합성] 메트포르민 복용 초기에 구역, 설사, 복통이 나타날 수 있으며 "
-            "식사와 함께 복용하면 줄어듭니다. 음주는 젖산산증 위험을 높이므로 "
-            "복용 기간 중 삼가 주세요."
-        ),
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/metformin-metabolic-caution",
-    ),
-    DrugCautionContentRow(
-        prescription_set_name="PCOS · 대사관리",
-        section_key=CautionSectionKey.EMERGENCY,
-        body=(
-            "[합성] 심한 피로감, 근육 통증, 호흡 곤란, 위장 불편감이 동시에 나타나거나 "
-            "소변량이 크게 줄면 즉시 복용을 중단하고 응급실을 방문하세요."
-        ),
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/metformin-metabolic-emergency",
+        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
     ),
 )

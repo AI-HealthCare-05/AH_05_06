@@ -163,8 +163,11 @@ class OcrField(models.Model):
     is_confirmed = fields.BooleanField(default=False)
     modified_by = fields.BigIntField(null=True)
     modified_at = fields.DatetimeField(null=True)
-    confirmed_by = fields.BigIntField(null=True)
-    confirmed_at = fields.DatetimeField(null=True)
+    # **비울 수 있다고 적어 둔다.** 칼럼은 처음부터 nullable 인데 형만 안 적혀
+    # 있어서, 값이 바뀔 때 확정 도장을 떼는 자리(`_drop_confirmation`)가 mypy 에
+    # 걸렸다. 뗄 수 있다는 것이 이 두 칸의 성질이다 (KEY-273).
+    confirmed_by: int | None = fields.BigIntField(null=True)  # type: ignore[assignment]
+    confirmed_at: datetime | None = fields.DatetimeField(null=True)  # type: ignore[assignment]
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
