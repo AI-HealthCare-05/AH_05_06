@@ -490,12 +490,23 @@ function addVisit(visit) {
     renderRows(visit.visit_id);
     showView("view-card");
 
-    /* 방금 등록한 사람은 기본정보를 다시 볼 이유가 없다 — 진료기록 올리러 간다.
-       줄을 눌러 들어올 때(기본정보)와 다른 자리라 어느 탭을 열지 실어 보낸다.
-       `tab` 은 목록의 상태 묶음(작성 중 · 보완 …)이 이미 쓰고 있어서 이름을 달리한다. */
+    /* 방금 등록한 사람은 기본정보를 다시 볼 이유가 없다 — **진료기록 올리러 간다.**
+     *
+     * 여태 `picked.open_tab = "record"` 를 실어 보냈는데, 그 칸은 이 화면에 없다
+     * (KEY-233 이 판독 화면으로 옮겼다). 받는 `detail.js` 의 `showTab` 이 모르는
+     * 이름이라 조용히 돌아가서, 등록을 마친 스탭이 기본정보 앞에 남았다 — 주석이
+     * 적어 둔 뜻과 정반대로 (KEY-280).
+     *
+     * 그 칸이 사는 화면으로 곧장 간다. 여기서 세운 목록을 버리는 셈이지만,
+     * 도착지가 판독 기록 없는 진료를 알아보고 올리는 판을 펴 준다
+     * (`ocr-review.js` 의 `NOT_FOUND` 갈래). 목적지는 `step-nav.js` 가 정한다. */
     var picked = selectedVisit();
     if (!picked) return; // 그래도 못 고르면 빈 것을 실어 보내지 않는다
-    picked.open_tab = "record";
+    var toRecord = stepHref("record", "basic", "/patients.html", picked.visit_id);
+    if (toRecord) {
+      location.href = toRecord;
+      return;
+    }
     tellPane(picked);
   });
 }
@@ -655,6 +666,22 @@ function bindShell() {
   }
 
   function openRow(row, tab) {
+    /* **이 화면에 없는 칸을 달라고 하면 그 칸이 사는 화면으로 보낸다** — KEY-280.
+     *
+     * 보내는 자리를 다 고쳐도 이 길은 남는다 — 옛 주소, 즐겨찾기, 남이 붙여 준
+     * 링크. 그때 `detail.js` 의 `showTab` 이 모르는 이름이라 조용히 돌아가서
+     * **엉뚱한 칸이 열린 채 아무 말도 안 한다.** 무엇을 달라고 했는지는 여기가
+     * 마지막으로 아는 자리다.
+     *
+     * `stepHref` 는 그 칸이 이 화면에 살면 `null` 을 준다 — 그때는 여느 때처럼
+     * 탭으로 옮긴다. 어느 칸이 어디 사는지를 이 파일이 따로 알 필요가 없다. */
+    var elsewhere = tab ? stepHref(tab, null, location.pathname, row.visit_id) : null;
+    if (elsewhere) {
+      clearAsked();
+      location.href = elsewhere;
+      return;
+    }
+
     if (tab) row.open_tab = tab;
     showView("view-card");
     renderRows(row.visit_id);
