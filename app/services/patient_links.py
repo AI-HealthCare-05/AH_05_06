@@ -401,6 +401,52 @@ class PatientLinkService:
 
         await invalidate_otp_challenge(link.patient_guide_link_id, connection, timestamp)
 
+    async def read_state(self, actor, visit_id: int) -> tuple[bool, datetime | None]:
+        """이 진료의 링크가 있는가 · 언제까지인가 — KEY-275.
+
+        **주소는 안 준다.** 서버는 원문을 안 갖는다(`token_digest` 뿐). 화면
+        둘이 나눠 갖는 것은 상태뿐이고, 상태가 서버에 있으니 두 화면은 저절로
+        맞는다.
+
+        ## 링크가 없는 것은 오류가 아니다
+
+        `_lock_link` 는 없으면 `LINK_NOT_ISSUED` 404 를 던지는데, 여기서는
+        **200 에 `issued=False`** 로 답한다. 재발급·폐기는 「있는 것을 다루는」
+        동작이라 없으면 오류지만, 이 길은 「있나?」를 묻는 길이다. 없다는 것이
+        답이지 실패가 아니다.
+
+        404 로 만들면 승인 전 진료마다 화면이 오류를 받는다 — 그러면 화면은
+        **오류를 정상으로 삼키는 갈래**를 갖게 되고, 그 갈래는 진짜 오류(권한·
+        타 병원)도 함께 삼킨다.
+
+        진료 자체가 없거나 남의 의원 것이면 그때는 `GUIDE_NOT_FOUND` 다 —
+        「없는 진료」와 「남의 진료」를 같은 답으로 감추는 이 파일의 규칙 그대로다.
+
+        잠그지 않는다. 읽기뿐이라 `select_for_update` 는 쓸데없이 쓰기를
+        막는다 — 링크 상태를 보는 화면 둘이 재발급을 붙잡고 있게 된다.
+        """
+
+        self._require_issuer(actor)
+
+        link = (
+            await PatientGuideLink.filter(
+                guide_document__visit_id=visit_id,
+                guide_document__visit__hospital_id=actor.hospital_id,
+            )
+            .select_related("guide_document")
+            .first()
+        )
+        if link is not None:
+            return True, link.expires_at
+
+        guide = await GuideDocument.filter(
+            visit_id=visit_id,
+            visit__hospital_id=actor.hospital_id,
+        ).first()
+        if guide is None:
+            raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
+        return False, None
+
     async def issue(self, actor, visit_id: int) -> tuple[PatientGuideLink, str]:
         self._require_issuer(actor)
 

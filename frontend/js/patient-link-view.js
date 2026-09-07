@@ -31,7 +31,13 @@ var LINK_READY_STATUS = "SCHEDULED_TO_SEND";
 
 /* 상태 넷. 화면은 이 값으로만 갈린다 — 조건을 화면에서 다시 세지 않는다. */
 var LINK_STATE = {
-  NOT_YET: "NOT_YET", // 아직 없다 — 승인 전이거나 발급 전
+  NOT_YET: "NOT_YET", // 승인 전 — 링크라는 것이 아직 없을 때다
+  /* **승인은 됐는데 아직 안 만들었다.** 서버의 `approve()` 는 링크를 자동으로
+     만들지 않는다(`guides.py` — 만드는 코드가 없다). 그래서 이 상태가 실제로
+     지나가는 자리인데, 앞서는 승인 전과 한 덩어리라 화면이 「의사가 승인하면
+     자동으로 발급됩니다」라고 **이미 승인된 건에 대고** 말했고 단추도 안 냈다.
+     스탭이 첫 링크를 만들 길이 화면에서 사라져 있었다(인수조건 ③). */
+  NOT_ISSUED: "NOT_ISSUED",
   LIVE: "LIVE", // 살아 있다
   FRESH: "FRESH", // 방금 만들었다 — 주소가 이 화면에만 잠깐 있다
   EXPIRED: "EXPIRED", // 기한이 지났다
@@ -46,7 +52,7 @@ var LINK_STATE = {
  * 사라진다 — 서버가 원문을 안 갖고 있으니 되찾을 길이 없다. */
 function patientLinkState(link, guideStatus, now) {
   if (guideStatus !== LINK_READY_STATUS) return LINK_STATE.NOT_YET;
-  if (!link || !link.expiresAt) return LINK_STATE.NOT_YET;
+  if (!link || !link.expiresAt) return LINK_STATE.NOT_ISSUED;
   if (patientLinkExpired(link, now)) return LINK_STATE.EXPIRED;
   return link.fresh ? LINK_STATE.FRESH : LINK_STATE.LIVE;
 }
@@ -73,7 +79,8 @@ function patientLinkDaysLeft(link, now) {
 /* 상태마다 사람이 읽을 말. **각 상태가 다음에 무엇을 할지 말해야 한다** —
    「링크 없음」만 있으면 스탭은 자기가 뭘 잘못했는지 묻는다. */
 function patientLinkStateNote(state, link, now) {
-  if (state === LINK_STATE.NOT_YET) return "의사가 승인하면 자동으로 발급됩니다";
+  if (state === LINK_STATE.NOT_YET) return "의사가 승인하면 발급할 수 있습니다";
+  if (state === LINK_STATE.NOT_ISSUED) return "승인됐습니다 — [새 링크] 를 누르면 환자에게 보낼 주소가 생깁니다";
   if (state === LINK_STATE.EXPIRED) {
     return "기한이 지났습니다 — 환자가 지금 열면 안내문이 안 보입니다";
   }
@@ -122,6 +129,7 @@ function patientLinkBlockHtml(link, guideStatus, now) {
 
 /* 배지 — 상태를 한 낱말로. 「없음」은 배지를 안 단다(없는 것을 굳이 표시 안 한다). */
 function patientLinkTag(state) {
+  if (state === LINK_STATE.NOT_ISSUED) return "발급 전";
   if (state === LINK_STATE.EXPIRED) return "기한 지남";
   return state === LINK_STATE.FRESH ? "방금 만듦" : "사용 중";
 }
@@ -129,7 +137,8 @@ function patientLinkTag(state) {
 /* 언제까지인가. **시각까지 적는다** — 168 시간짜리라 날짜만 적으면
    「오늘 만료」와 「오늘 아침에 이미 만료」가 안 갈린다. */
 function patientLinkWhen(link, state) {
-  if (state === LINK_STATE.NOT_YET) return "아직 발급되지 않았습니다";
+  if (state === LINK_STATE.NOT_YET) return "아직 승인 전입니다";
+  if (state === LINK_STATE.NOT_ISSUED) return "아직 발급되지 않았습니다";
   if (!link || !link.expiresAt) return "";
   var at = new Date(link.expiresAt);
   if (isNaN(at.getTime())) return "";
@@ -150,5 +159,162 @@ function patientLinkActionHtml(action) {
     '">' +
     saying[action] +
     "</button>"
+  );
+}
+
+/* ── 화면이 쥔 링크 — 한 벌이다 ─────────────────────────────────────────
+ *
+ * 상태는 서버가 갖고 화면은 **다시 물어서** 쓴다. 두 화면이 저절로 맞는
+ * 까닭이 그것이다 — 한쪽에서 새로 만들면 다른 쪽도 다음에 물을 때 새
+ * 만료일을 읽는다.
+ *
+ * 서버가 못 주는 것이 딱 하나, **주소**다. 재발급 응답에 한 번 실려 오고 그
+ * 뒤로는 세상 어디에도 없다(서버는 해시만 갖는다). 그래서 「방금 만들었다」는
+ * 이 창의 기억이고, 새로고침하면 사라진다.
+ *
+ * ## 🚩 진료 번호를 함께 쥔다
+ *
+ * 환자를 옮겼는데 쥔 것이 남아 있으면 **앞 사람의 주소를 다음 사람 화면에서
+ * 복사한다.** 이 저장소가 가장 두려워하는 부류의 사고다. 그래서 꺼낼 때마다
+ * 번호를 대조하고, 안 맞으면 없는 것으로 답한다 — 「지우는 것을 잊었나」를
+ * 걱정하지 않아도 되게.
+ */
+var patientLinkHeldOne = null;
+
+/** 쥔다. `link` 가 없으면 놓는다. */
+function patientLinkKeep(visitId, link) {
+  patientLinkHeldOne = link ? { visitId: visitId, expiresAt: link.expiresAt, fresh: !!link.fresh, url: link.url || "" } : null;
+}
+
+/** 이 진료의 것만 돌려준다. **번호가 다르면 없는 것이다.** */
+function patientLinkOf(visitId) {
+  if (!patientLinkHeldOne) return null;
+  if (String(patientLinkHeldOne.visitId) !== String(visitId)) return null;
+  return patientLinkHeldOne;
+}
+
+function patientLinkForget() {
+  patientLinkHeldOne = null;
+}
+
+/** 상태 응답 → 블록이 읽는 모양. **주소는 안 온다.** */
+function patientLinkFromServer(answer) {
+  if (!answer || !answer.issued) return null;
+  return { expiresAt: answer.expires_at || null, fresh: false, url: "" };
+}
+
+/* 상태를 다시 읽어 쥔다.
+ *
+ * **방금 만든 주소는 지킨다** — 다시 읽었다고 그 주소를 버리면, 스탭이 새
+ * 링크를 만든 직후 화면이 한 번 갱신되는 것만으로 [복사] 가 사라진다.
+ * 만료 시각은 서버 것을 쓴다(그쪽이 정본이다).
+ *
+ * 서버가 `issued: false` 라고 하면 정말 없는 것이라 쥔 것도 놓는다. */
+function patientLinkAdopt(visitId, answer) {
+  var held = patientLinkOf(visitId);
+  var next = patientLinkFromServer(answer);
+  if (next && held && held.fresh) {
+    next.fresh = true;
+    next.url = held.url;
+  }
+  patientLinkKeep(visitId, next);
+  return next;
+}
+
+/** 재발급 응답 → 방금 만든 것. 주소는 **이 창의 기억에만** 둔다. */
+function patientLinkFromIssue(answer) {
+  return { expiresAt: (answer && answer.expires_at) || null, fresh: true, url: patientGuideUrl(answer) };
+}
+
+/* ── 배선 — 두 화면이 같은 것을 쓴다 ────────────────────────────────────
+ *
+ * `wireSmsSettings` 와 같은 모양이다. 두 벌이면 어느 화면에서 눌렀느냐에
+ * 따라 되고 안 되고가 갈린다.
+ *
+ *   visitId()  지금 보고 있는 진료. 없으면 아무것도 안 한다
+ *   reRender() 블록을 다시 그린다
+ *   say(text)  무슨 일이 일어났는지 한 줄
+ */
+function wirePatientLink(opts) {
+  var reRender = opts.reRender || function () {};
+  var say = opts.say || function () {};
+
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var pressed = target.closest("[data-patient-link]");
+    if (!pressed) return;
+
+    var visitId = opts.visitId && opts.visitId();
+    if (!visitId) return;
+    var action = pressed.getAttribute("data-patient-link");
+
+    if (action === "new") {
+      /* **첫 발급과 교체는 다른 종점이다.** 없는 링크에 `re-issue` 를 부르면
+         서버가 `LINK_NOT_ISSUED` 404 로 막는다 — 스탭에게는 「새 링크가 안
+         만들어진다」로 보인다. 쥔 것이 있느냐로 가른다. */
+      var making = patientLinkOf(visitId) ? doctorApi.reIssuePatientLink : doctorApi.issuePatientLink;
+      /* **두 번 눌러 두 개가 생기지 않게 한다.** 재발급은 옛것을 폐기하므로
+         두 번 누르면 첫 번째로 만든 주소가 이미 죽은 채 화면에 남는다. */
+      if (pressed.disabled) return;
+      pressed.disabled = true;
+      say("새 링크를 만드는 중입니다…");
+      making
+        .call(doctorApi, visitId)
+        .then(function (answer) {
+          patientLinkKeep(visitId, patientLinkFromIssue(answer));
+          say(
+            making === doctorApi.issuePatientLink
+              ? "환자 링크를 만들었습니다 — 주소는 이 자리에서만 보입니다"
+              : "새 링크를 만들었습니다 — 옛 링크와 인증번호는 지금 막혔습니다",
+          );
+          reRender();
+        })
+        .catch(function (error) {
+          pressed.disabled = false;
+          say(patientLinkSaying(error));
+        });
+      return;
+    }
+
+    var held = patientLinkOf(visitId);
+    if (!held || !held.url) {
+      /* 새로고침하면 주소가 사라진다 — 「눌러도 아무 일 없는 단추」로 두지
+         않고 왜 없는지 말한다. */
+      say("주소는 만든 그 자리에서만 보입니다 — 보내시려면 새 링크를 만들어 주세요");
+      return;
+    }
+
+    if (action === "copy") {
+      patientLinkCopy(held.url, say);
+      return;
+    }
+    if (action === "open") {
+      window.open(held.url, "_blank", "noopener");
+      say("환자 화면을 새 탭에서 열었습니다");
+    }
+  });
+}
+
+/* 클립보드로만 보낸다 — **DOM 에 그리지 않는다.** 주소가 화면에 있으면
+   화면 갈무리·화면낭독기·개발자도구 어디로든 샌다(#224 가 의사 화면에서 쓴
+   방식과 같다).
+
+   클립보드를 못 쓰는 환경이 있다(권한 거부·비보안 컨텍스트). 그때 조용히
+   실패하면 스탭은 붙여넣기를 하고 나서야 안다. */
+function patientLinkCopy(url, say) {
+  var full = location.origin + url;
+  var clip = navigator.clipboard;
+  if (!clip || !clip.writeText) {
+    say("이 브라우저에서는 자동 복사가 안 됩니다 — [열기] 로 연 뒤 주소창에서 복사해 주세요");
+    return;
+  }
+  clip.writeText(full).then(
+    function () {
+      say("환자 링크를 복사했습니다");
+    },
+    function () {
+      say("복사하지 못했습니다 — [열기] 로 연 뒤 주소창에서 복사해 주세요");
+    },
   );
 }

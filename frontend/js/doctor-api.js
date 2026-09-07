@@ -9,6 +9,7 @@
  *   GET   /api/v1/visits/{visit_id}/guide/messages        문자 설정 읽기
  *   PUT   /api/v1/visits/{visit_id}/guide/messages        문자 설정 저장
  *   POST  /api/v1/visits/{visit_id}/guide/return          스탭에 되돌린다 (사유 필수)
+ *   GET   /api/v1/visits/{visit_id}/guide/link            링크 상태 (주소는 안 온다)
  *   POST  /api/v1/visits/{visit_id}/guide/link            환자 링크 한 번 발급
  *   POST  /api/v1/visits/{visit_id}/guide/link/re-issue   기존 링크 교체
  *   DELETE /api/v1/visits/{visit_id}/guide/link            현재 링크 폐기
@@ -21,6 +22,50 @@
  * `docs/api/hospital.md` §6 의 `APPROVAL_PENDING`(승인 요청) ·
  * `APPROVAL_RETURNED`(보완). 화면이 새 이름을 만들지 않습니다.
  */
+
+/* ── 환자 링크 규칙 — 두 화면이 함께 쓴다 ─────────────────────────────────
+ *
+ * **`doctor.js` 에서 옮겨 왔다 (KEY-275).** 링크 블록이 안내문(`guide-view.js`)
+ * 과 현황(`status-view.js`) 두 곳에 서는데 `patients.html` 은 `doctor.js` 를
+ * 안 싣는다 — 거기 두면 스탭 화면에서 그 이름이 `undefined` 이고,
+ * `globals-collide.test.js` 가 그 자리를 잡는다.
+ *
+ * 두 화면이 다 싣는 파일이 이 파일이라 여기로 옮긴다. AGENTS.md 「공통 모듈로
+ * 한 번만」과 같은 방향이다.
+ */
+
+/* 링크 응답의 API 경로에서 토큰만 꺼내 환자 화면의 fragment 로 옮긴다.
+
+   fragment 는 서버 요청과 access log 에 실리지 않는다. 병원 화면의 주소나
+   DOM 에도 토큰을 쓰지 않고, 새 환자 탭의 메모리로만 넘긴다. 서버가 정한
+   `path` 모양이 아니면 임의 주소를 열지 않는다. */
+function patientGuideUrl(result) {
+  var path = result && result.path;
+  var matched = typeof path === "string" && path.match(/^\/api\/v1\/guides\/([A-Za-z0-9_-]+)$/);
+  if (!matched) throw new Error("invalid patient guide link response");
+  return (
+    "/patient_wireframe/html/otp.html" +
+    (typeof MOCK !== "undefined" && MOCK ? "?mock=1" : "") +
+    "#t=" +
+    encodeURIComponent(matched[1])
+  );
+}
+
+var PATIENT_LINK_SAYINGS = [
+  NETWORK_SAYING, // 서버에 닿지도 못한 것 — KEY-211
+  { code: "GUIDE_NOT_APPROVED", say: "승인 완료된 안내에서만 환자 링크를 발급할 수 있어요." },
+  {
+    code: "LINK_ALREADY_ISSUED",
+    say: "이미 환자 링크가 발급됐어요. 기존 원문은 다시 보여주지 않으며, 필요하면 새 링크로 교체해 주세요.",
+  },
+  { code: "GUIDE_NOT_FOUND", say: "이 진료의 안내문을 찾지 못했어요." },
+  { code: "LINK_NOT_ISSUED", say: "먼저 환자 링크를 발급해 주세요." },
+  { status: 403, say: "이 진료의 환자 링크를 관리할 권한이 없어요." },
+];
+
+function patientLinkSaying(error) {
+  return errorMessage(error, PATIENT_LINK_SAYINGS, "환자 화면을 열지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+}
 
 function doctorRequest(path, options) {
   options = options || {};
@@ -80,6 +125,19 @@ var doctorApi = {
     });
   },
 
+  /* 링크가 있는가 · 언제까지인가 — KEY-275.
+
+     **주소는 안 온다.** 서버가 원문을 안 갖는다(`token_digest` 뿐). 두 화면이
+     나눠 갖는 것은 상태뿐이고, 상태는 서버에 있으니 두 화면이 저절로 맞는다.
+
+     링크가 없는 것은 오류가 아니라 `issued: false` 다 — 승인 전 진료마다
+     화면이 오류를 받으면, 화면은 오류를 정상으로 삼키는 갈래를 갖게 되고
+     그 갈래가 진짜 오류까지 함께 삼킨다. */
+  readPatientLink: function (visitId) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/link", {
+      method: "GET",
+    });
+  },
   issuePatientLink: function (visitId) {
     return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/link", {
       method: "POST",
@@ -200,6 +258,7 @@ function mockGuideState(visitId) {
       scheduled_at: null,
       returned_reason: null,
       patient_link_issued: false,
+      patient_link_expires_at: null,
       sections: {},
     })
   );
@@ -426,6 +485,19 @@ function mockPendingBlock(guide) {
    찍고 있어서 KST 브라우저에서는 18:00 으로 맞아 보였지만, **두 오류가 서로
    상쇄된 것**이라 다른 시간대에서 열면 둘 다 틀렸다. 목업이 서버보다 헐거우면
    `?mock=1` 에서 멀쩡해 보이는 것을 이 파일이 이미 한 번 겪었다. */
+/* 링크 만료 시각 — KEY-275. 서버의 `LINK_TTL`(168 시간)과 같은 셈이다.
+
+   **박아 두지 않는다.** 앞서는 `"2026-09-11T18:00:00+09:00"` 이 적혀 있었는데,
+   그 날이 지나면 목업이 만드는 링크가 **태어나자마자 「기한 지남」** 이 된다.
+   블록이 만료를 읽어 상태를 가르는 순간(KEY-275) 그 값이 화면을 거짓말하게
+   만든다 — `mockScheduledAt` 이 같은 이유로 셈해서 준다. */
+var MOCK_LINK_TTL_HOURS = 168;
+
+function mockLinkExpiresAt(hoursFromNow) {
+  var at = new Date(Date.now() + hoursFromNow * 3600000);
+  return at.toISOString();
+}
+
 function mockScheduledAt() {
   var now = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
@@ -514,6 +586,16 @@ function mockDoctorRequest(path, options) {
 
       if (tl) return resolve(mockTimeline(visitId));
 
+      if (issueLink && options.method === "GET") {
+        /* 링크 상태 — KEY-275. **주소는 안 준다**(서버가 원문을 안 갖는다).
+           안내문이 없으면 그때만 오류다. 링크가 없는 것은 `issued: false` 라는
+           정상 답이다 — 승인 전 진료마다 화면이 오류를 받으면 안 된다. */
+        if (!mockGuide(visitId)) return reject(mockNoGuide());
+        var linkState = mockGuideState(visitId);
+        if (!linkState.patient_link_issued) return resolve({ issued: false, expires_at: null });
+        return resolve({ issued: true, expires_at: linkState.patient_link_expires_at || null });
+      }
+
       if (issueLink && options.method === "POST") {
         var linkedGuide = mockGuide(visitId);
         if (!linkedGuide) return reject(mockNoGuide());
@@ -525,9 +607,10 @@ function mockDoctorRequest(path, options) {
           return reject(new ApiError("LINK_ALREADY_ISSUED", 409, {}));
         }
         linkedState.patient_link_issued = true;
+        linkedState.patient_link_expires_at = mockLinkExpiresAt(MOCK_LINK_TTL_HOURS);
         return resolve({
           path: "/api/v1/guides/demo-key223-link",
-          expires_at: "2026-09-11T18:00:00+09:00",
+          expires_at: linkedState.patient_link_expires_at,
           demo_only: true,
         });
       }
@@ -543,9 +626,10 @@ function mockDoctorRequest(path, options) {
           return reject(new ApiError("LINK_NOT_ISSUED", 404, {}));
         }
         replacementState.patient_link_revoked = false;
+        replacementState.patient_link_expires_at = mockLinkExpiresAt(MOCK_LINK_TTL_HOURS);
         return resolve({
           path: "/api/v1/guides/demo-key223-reissued-link",
-          expires_at: "2026-09-11T18:00:00+09:00",
+          expires_at: replacementState.patient_link_expires_at,
           demo_only: true,
         });
       }
@@ -556,6 +640,10 @@ function mockDoctorRequest(path, options) {
           return reject(new ApiError("LINK_NOT_ISSUED", 404, {}));
         }
         revokeState.patient_link_revoked = true;
+        /* 서버는 행을 지우지 않고 `expires_at` 을 지금으로 당긴다
+           (`patient_links.py` 의 `revoke`). 목업이 행을 지우면 화면이
+           「아직 없음」을 그려, **방금 폐기한 것을 못 만든 것으로** 보인다. */
+        revokeState.patient_link_expires_at = mockLinkExpiresAt(0);
         return resolve({});
       }
 
