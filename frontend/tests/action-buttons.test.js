@@ -197,10 +197,14 @@ test("설정 화면의 로그아웃은 이제 이어져 있다", () => {
   /* KEY-236 — 기능이 없어서가 아니라 연결이 빠져 안 눌리던 것이다.
      `shell.js` 의 `bindShell()` 이 `#logout` 을 잇는데 설정 화면은 그 파일을
      안 싣는다(`#quick-search` 가 없어 그 줄에서 죽는다). 그래서 여기서 잇는다.
-     잠글 자리가 아니라 이을 자리였다. */
+     잠글 자리가 아니라 이을 자리였다.
+
+     **어떻게 꺼내는지는 안 잰다** — 예전엔 `el("logout").addEventListener` 라는
+     글자를 그대로 못 박아서, 널 가드를 다는 것만으로도 울었다(#237). 재야 할
+     것은 「로그아웃이 이어져 있는가」이지 그 두 줄의 생김새가 아니다. */
   const code = codeOnly(read("js/settings.js"));
-  assert.match(code, /el\("logout"\)\.addEventListener/, "설정 화면 로그아웃이 다시 죽었다");
-  assert.match(code, /session\.logout\(\)/, "로그아웃이 세션을 안 끊는다");
+  assert.match(code, /el\("logout"\)/, "설정 화면이 로그아웃 단추를 안 찾는다");
+  assert.match(code, /addEventListener\("click"[^]{0,80}session\.logout\(\)/, "설정 화면 로그아웃이 다시 죽었다");
   assert.ok(
     !INVENTORY.some((item) => item.page === "settings.html" && item.action === "logout"),
     "고친 것이 미구현 분류표에 그대로 남아 있다",

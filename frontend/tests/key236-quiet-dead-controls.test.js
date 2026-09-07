@@ -63,6 +63,30 @@ test("② 갈 곳 없는 상단바 탭 셋을 모두 잠근다", () => {
   assert.match(code, /off\.title = why/, "왜 못 가는지를 말하지 않는다");
 });
 
+test("② 설정 화면 로그아웃은 단추가 없어도 초기화를 멈추지 않는다", () => {
+  /* `settings.js` 는 KEY-158 대로 뿌리(`#rail`)가 없으면 조용히 돌아간다. 그런데
+     뿌리는 있는데 `#logout` 만 이름이 바뀌면 이야기가 다르다 — 그 줄은
+     `requireSession()` **앞**의 최상위라, 거기서 터지면 세션 확인도 폼 배선도
+     시작을 못 하고 설정 화면이 통째로 죽는다 (#237 이희진).
+
+     이 파일의 다른 무가드 `el()` 열일곱 곳은 다 함수 안이라 기능 하나가 죽고
+     만다. 그래서 여기 한 자리만 잰다.
+
+     **꺼내는 모양은 안 잰다** — `el("logout").addEventListener` 라는 글자를 그대로
+     못 박았던 앞선 검사가, 널 가드를 다는 것만으로 울었다. 재는 것은 「쓰기 전에
+     확인하는가」다. */
+  const code = codeOnly(read("js/settings.js"));
+  const at = code.indexOf('el("logout")');
+  assert.notEqual(at, -1, "설정 화면이 로그아웃 단추를 안 찾는다");
+
+  const around = code.slice(Math.max(0, at - 40), at + 220);
+  assert.match(
+    around,
+    /(if\s*\(\s*\w+\s*\)|\w+\s*&&|\?\.)\s*[\s\S]{0,60}addEventListener/,
+    "로그아웃을 확인 없이 곧장 만진다 — 단추가 사라지면 설정 화면 전체가 죽는다",
+  );
+});
+
 test("③ 환자 인증 화면의 「번호가 바뀌셨나요?」는 숨어 있다", () => {
   /* 이 버튼을 듣는 코드가 저장소에 없고 번호를 고치는 종점도 없다(P1-3).
      환자 화면이라 잠근 단추를 보여 줘도 손쓸 방법이 없다 — 그래서 숨긴다. */
@@ -75,24 +99,61 @@ test("③ 환자 인증 화면의 「번호가 바뀌셨나요?」는 숨어 있
   assert.doesNotMatch(wired, /otp-change[^]{0,400}addEventListener/, "손이 붙었으면 숨길 것이 아니라 살릴 것이다");
 });
 
-test("④ 챗봇 「문의하기」는 눌러 보기 전에 말한다", () => {
+test("④ 챗봇에 「문의하기」 가짜 단추가 남아 있지 않다", () => {
   /* 여태 멀쩡한 모양으로 답변마다 붙어 있다가, 누르면 「문의 창구는 병원
      설정에서 연결됩니다」를 띄웠다. `admin.js` 가 말한 「눌러 보고서야 아는
-     꼴」이 바로 이것이다. */
-  const code = codeOnly(read("patient_wireframe/js/chat.js"));
-  const at = code.indexOf("chat-contact");
-  assert.notEqual(at, -1, "문의하기 버튼이 사라졌다");
-  const around = code.slice(at, at + 700);
+     꼴」이 바로 이것이다.
 
-  assert.match(around, /setAttribute\('aria-disabled', 'true'\)/, "문의하기가 아직 멀쩡한 모양이다");
-  assert.match(around, /contact\.title = '[^']{10,}'/, "왜 아직 못 쓰는지를 안 말한다");
-  assert.doesNotMatch(around, /contact\.addEventListener/, "눌러 보고서야 아는 꼴이 그대로다");
+     처음 고칠 때는 잠그고 `title` 로 사정을 적었는데, **이 화면은 휴대폰이라
+     툴팁이 안 뜬다**(#237 이희진). 그래서 단추 자체를 없앴다. */
+  const code = codeOnly(read("patient_wireframe/js/chat.js"));
+
+  assert.doesNotMatch(code, /chat-contact/, "잠근 단추가 그대로 남아 있다");
   assert.doesNotMatch(code, /alert\('문의 창구는/, "누른 뒤에 알리는 경고가 남아 있다");
 });
 
-test("④ 잠근 문의하기는 손이 올라가도 반응하지 않는다", () => {
-  /* 마지막까지 눌리는 척하는 자리가 호버다 — 색이 변하면 눌러 본다. */
-  const css = fs.readFileSync(path.join(ROOT, "patient_wireframe/css/chat.css"), "utf8");
-  assert.match(css, /\.chat-contact\[aria-disabled="true"\][^{]*\{[^}]*cursor:\s*default/, "손 모양이 그대로다");
-  assert.match(css, /\.chat-contact\[aria-disabled="true"\]:hover[^{]*\{[^}]*background:\s*transparent/, "호버가 반응한다");
+test("④ 문의 사정은 툴팁이 아니라 보이는 글로 있다", () => {
+  /* **손가락에게는 호버가 없다.** `title` 로 적은 사정은 휴대폰에서 한 글자도
+     안 보이므로, 환자는 회색 자리를 눌러 보고도 아무 답을 못 받는다.
+     그리고 이 줄은 환자 화면에서 **병원에 닿는 길을 알려 주는 유일한 자리**다. */
+  const html = fs.readFileSync(path.join(ROOT, "guide.html"), "utf8");
+  const at = html.indexOf('class="chat-note"');
+  assert.notEqual(at, -1, "안내가 사라졌다 — 환자가 병원에 닿을 길이 없다");
+
+  /* **그 문단 안까지만 본다** — 고정 길이로 자르면 바로 아래 입력 영역의
+     보내기·중단 단추까지 삼켜서, 엉뚱한 것을 보고 우는 검사가 된다. */
+  const closeAt = html.indexOf("</p>", at);
+  assert.notEqual(closeAt, -1, "안내 문단이 닫히지 않았다");
+  const note = html.slice(at, closeAt);
+  assert.match(note, /병원으로 전화/, "어디로 연락하라는 말이 없다");
+  assert.doesNotMatch(note, /title=/, "사정을 다시 툴팁에 숨겼다");
+  assert.doesNotMatch(note, /<button/, "읽는 글 자리에 누르는 것이 다시 들어왔다");
+
+  /* **챗봇 패널 안에 있어야 읽힌다** — 패널 밖으로 새면 상담을 여는 사람에게는
+     안 보인다.
+
+     「패널 시작보다 뒤」만 재면 부족하다. 패널을 일찍 닫아 버려도 글자 위치는
+     그대로라 그 검사는 통과한다. 그래서 **`div` 균형**을 센다 — 여는 것보다
+     닫는 것이 많아지는 순간 그 자리는 이미 패널 밖이다. */
+  const panelAt = html.indexOf('id="chat-panel"');
+  assert.notEqual(panelAt, -1, "챗봇 패널이 없다");
+  assert.ok(at > panelAt, "안내가 챗봇 패널보다 앞에 있다");
+
+  const between = html.slice(panelAt, at);
+  const depth = (between.match(/<div\b/g) || []).length - (between.match(/<\/div>/g) || []).length;
+  assert.ok(depth >= 0, `안내가 챗봇 패널 밖으로 나왔다 — 패널이 ${-depth}겹 먼저 닫혔다`);
+});
+
+test("④ 안내 줄은 단추 꼴을 흉내 내지 않는다", () => {
+  /* 테두리와 알약 모양이 남아 있으면 읽으라고 둔 글을 눌러 본다. */
+  /* 주석은 지우고 본다 — 없앤 까닭을 적어 둔 글까지 「남아 있다」로 읽으면
+     기록을 지워야 검사가 통과하는 꼴이 된다. */
+  const css = codeOnly(fs.readFileSync(path.join(ROOT, "patient_wireframe/css/chat.css"), "utf8"));
+  assert.doesNotMatch(css, /\.chat-contact/, "잠근 단추 스타일이 그대로 남아 있다");
+
+  const at = css.indexOf(".chat-note {");
+  assert.notEqual(at, -1, "안내 줄 스타일이 없다");
+  const rule = css.slice(at, css.indexOf("}", at));
+  assert.doesNotMatch(rule, /cursor:\s*pointer/, "손 모양이 붙어 눌러 보게 생겼다");
+  assert.doesNotMatch(rule, /border(?!-)/, "테두리가 있어 단추로 보인다");
 });
