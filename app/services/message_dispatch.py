@@ -19,6 +19,7 @@ from app.models.staffs import Hospital
 from app.models.visits import (
     GuideDocument,
     GuideMessage,
+    GuideMessageFailure,
     GuideMessageKind,
     GuideMessageStatus,
     Visit,
@@ -203,17 +204,38 @@ async def _finish_sent(
     return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.SENT)
 
 
+def _failure_code_for(provider_detail: str | None) -> GuideMessageFailure:
+    """`provider_detail`(내부 전용 원시 사유)을 화면·CSV export에 보이는
+    4값(GuideMessageFailure) 중 하나로 옮긴다.
+
+    실제 알리고 result_code별 의미를 담은 공식 표가 없어서, 지금은 전부
+    `CARRIER`(「통신사 오류」)로 본다 — 그중 어느 것도 「이 번호가
+    잘못됐다」·「수신 거부됐다」·「발신번호가 미등록이다」라고 확신할
+    근거가 없기 때문이다. 틀린 확신을 화면에 내보내는 것보다는 모호하게
+    맞는 말을 하는 쪽을 골랐다(2heej 리뷰).
+
+    `link_not_available_pending_policy`(PR 코멘트 참고)도 여기로
+    떨어지는데, 이건 사실 통신사 문제가 전혀 아니다 — 정책이 아직
+    확정되지 않아 우리 쪽에서 링크를 못 만든 것이다. 넷 중 아무것도 안
+    맞아서 어쩔 수 없이 여기 둔다 — 실제 원인은 `provider_detail`(내부
+    전용, 화면에 안 보임)로 구분한다.
+    """
+    return GuideMessageFailure.CARRIER
+
+
 async def _finish_failed(
     message: GuideMessage,
     token: str,
     *,
     provider_detail: str | None,
 ) -> DispatchResult:
+    failure_code = _failure_code_for(provider_detail)
     affected = await GuideMessage.filter(
         guide_message_id=message.guide_message_id,
         claim_token=token,
     ).update(
         status=GuideMessageStatus.FAILED,
+        failure_code=failure_code,
         provider_detail=provider_detail,
         attempt_count=message.attempt_count + 1,
         claim_token=None,
@@ -281,7 +303,14 @@ async def dispatch_due_messages(sender: SmsSender, *, limit: int = 100) -> list[
     )  # type: ignore[assignment]
     results = []
     for message_id in due_ids:
-        outcome = await dispatch_message(message_id, sender)
+        try:
+            outcome = await dispatch_message(message_id, sender)
+        except Exception:
+            # 한 통 처리 중 예상치 못한 예외(예: claim_token 불일치 RuntimeError)가
+            # 나머지 배치까지 이번 주기에서 밀어내면 안 된다 — 메시지끼리는
+            # 서로 독립적이다(2heej 리뷰).
+            default_logger.exception("문자 한 통 처리 중 예상치 못한 예외 — guide_message_id=%s", message_id)
+            continue
         if outcome is not None:
             results.append(outcome)
     return results

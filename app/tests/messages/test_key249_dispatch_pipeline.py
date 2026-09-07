@@ -25,6 +25,7 @@ from app.models.staffs import Hospital
 from app.models.visits import (
     GuideDocument,
     GuideMessage,
+    GuideMessageFailure,
     GuideMessageHold,
     GuideMessageKind,
     GuideMessageStatus,
@@ -133,6 +134,8 @@ class TestLinkVariableNotYetAvailable(TestCase):
         assert updated.status is GuideMessageStatus.FAILED
         assert updated.attempt_count == 1  # 5번 돌지 않고 바로 종료.
         assert updated.provider_detail == "link_not_available_pending_policy"
+        # AC2 — 화면에 실패 사유가 빈 값으로 보이면 안 된다(2heej 리뷰).
+        assert updated.failure_code is GuideMessageFailure.CARRIER
 
     async def test_a_link_free_custom_template_is_unaffected(self) -> None:
         """의원이 링크 없는 커스텀 문구를 쓰면(파이프라인 검사 전용) 정상 발송된다."""
@@ -270,6 +273,8 @@ class TestRetryAndBackoff(TestCase):
         assert updated.status is GuideMessageStatus.FAILED
         assert updated.attempt_count == MAX_ATTEMPTS
         assert updated.claim_token is None
+        # AC2 — 화면에 실패 사유가 빈 값으로 보이면 안 된다(2heej 리뷰).
+        assert updated.failure_code is GuideMessageFailure.CARRIER
 
     async def test_provider_rejection_fails_immediately_without_retry(self) -> None:
         """공급자가 명시적으로 거절하면(예: 잘못된 번호) 재시도해도 같은 결과다."""
@@ -286,6 +291,20 @@ class TestRetryAndBackoff(TestCase):
         assert updated.status is GuideMessageStatus.FAILED
         assert updated.attempt_count == 1
         assert updated.provider_detail == "-101"
+        # AC2 — 화면에 실패 사유가 빈 값으로 보이면 안 된다(2heej 리뷰).
+        assert updated.failure_code is GuideMessageFailure.CARRIER
+
+    async def test_provider_rejection_without_a_code_still_gets_a_failure_reason(self) -> None:
+        """MockSmsSender(FAILED)처럼 provider_code가 아예 없어도 failure_code는 채운다."""
+        message = await make_due_message(link_free_template=True)
+        sender = _CountingSender(result=SmsSendResult(status=SmsDeliveryStatus.FAILED, provider=SmsProvider.MOCK))
+
+        result = await dispatch_message(message.guide_message_id, sender)
+
+        assert result is not None
+        assert result.status is GuideMessageStatus.FAILED
+        updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
+        assert updated.failure_code is GuideMessageFailure.CARRIER
 
     def test_backoff_grows_exponentially_and_caps(self) -> None:
         assert backoff_seconds(1) == 60

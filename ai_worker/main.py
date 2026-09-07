@@ -54,8 +54,18 @@ async def _run_ocr_loop() -> None:
 
 
 async def _run_message_dispatch_loop() -> None:
-    """`_MESSAGE_POLL_SECONDS`마다 나갈 때가 된 안내·확인 문자를 찾아서 보낸다 — KEY-249."""
-    sender = build_sms_sender(Config())
+    """`_MESSAGE_POLL_SECONDS`마다 나갈 때가 된 안내·확인 문자를 찾아서 보낸다 — KEY-249.
+
+    SMS 설정 오류(SMS_PROVIDER=aligo인데 시크릿이 비어 있는 등)로 발송기
+    생성 자체가 실패해도, 그건 이 루프만 못 뛰는 것이지 OCR 처리까지 죽을
+    이유는 없다 — 두 파이프라인은 서로 독립적이어야 한다(2heej 리뷰).
+    """
+    try:
+        sender = build_sms_sender(Config())
+    except Exception:
+        default_logger.exception("문자 발송기 생성 실패 — 이 프로세스에서는 예약 문자 발송을 하지 않는다")
+        return
+
     while not _shutdown:
         try:
             results = await dispatch_due_messages(sender)
@@ -81,7 +91,13 @@ async def _run() -> None:
     default_logger.info("DB 연결 완료")
 
     try:
-        await asyncio.gather(_run_ocr_loop(), _run_message_dispatch_loop())
+        # return_exceptions=True — 한쪽이 예상치 못하게 죽어도 다른 쪽까지
+        # asyncio.gather가 취소시키지 않는다. OCR과 문자 발송은 서로 남의
+        # 사정으로 멈추면 안 되는 별개 파이프라인이다(2heej 리뷰).
+        results = await asyncio.gather(_run_ocr_loop(), _run_message_dispatch_loop(), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                default_logger.exception("Worker 루프가 예상치 못하게 종료됨", exc_info=result)
     finally:
         await Tortoise.close_connections()
         await close_redis()
