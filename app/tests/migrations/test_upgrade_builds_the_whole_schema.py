@@ -67,6 +67,9 @@ def _aerich(database: str, *args: str) -> subprocess.CompletedProcess[str]:
         "SECRET_KEY": "synthetic-key206-not-a-secret",
         "ENV": "local",  # `Config` 는 local·dev·prod 만 받는다
     }
+    # Windows 자식 프로세스 실행에 필요한 시스템 환경을 유지한다.
+    if os.name == "nt":
+        env["SystemRoot"] = os.environ["SystemRoot"]
     return subprocess.run(
         [sys.executable, "-m", "aerich", *args],
         cwd=ROOT,
@@ -158,6 +161,17 @@ async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
         built = {row[0] for row in await _sql(SCRATCH, "SHOW TABLES")}
         missing = sorted(wanted - built)
         assert not missing, f"모델은 아는데 upgrade 가 안 만든 표: {missing}"
+
+        # KEY-249: 발송 파이프라인에 필요한 컬럼이 실제로 생성됐는가.
+        message_columns = {row[0] for row in await _sql(SCRATCH, "SHOW COLUMNS FROM guide_message")}
+        required_dispatch_columns = {
+            "claim_token",
+            "provider_detail",
+            "provider_message_id",
+            "attempt_count",
+        }
+        missing_dispatch_columns = sorted(required_dispatch_columns - message_columns)
+        assert not missing_dispatch_columns, f"KEY-249 발송 컬럼이 누락됐다: {missing_dispatch_columns}"
 
         # ② 배포는 이걸 매번 돈다. 두 번째가 뭔가 한다면 굴릴 수 없다.
         again = _aerich(SCRATCH, "upgrade")
