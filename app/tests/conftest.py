@@ -1,8 +1,12 @@
 import asyncio
+import fcntl
+import hashlib
 import os
 import re
+import tempfile
 from collections.abc import Generator
-from typing import Any
+from pathlib import Path
+from typing import IO, Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -22,6 +26,9 @@ TEST_DB_TZ = "Asia/Seoul"
 #: 조용히 겹치게 두지 않고 아래 `initialize`에서 바로 실패시킨다.
 REDIS_LOGICAL_DB_COUNT = 16
 
+#: 실행끼리 자리를 나누고 싶을 때 준다 — `TEST_SLOT=1 uv run pytest`.
+TEST_SLOT_ENV = "TEST_SLOT"
+
 
 def _xdist_worker_index() -> int | None:
     """pytest-xdist 워커 번호. xdist 없이 돌면 `None`(기존 동작 그대로).
@@ -38,9 +45,99 @@ def _xdist_worker_index() -> int | None:
     return int(match.group()) if match else 0
 
 
+def run_slot() -> int:
+    """이 실행이 쓸 자리 — **DB 이름과 Redis 논리 DB를 함께** 정한다.
+
+    위 독스트링이 적은 사고는 워커끼리만 막혀 있었다. `PYTEST_XDIST_WORKER` 는
+    **한** `pytest` 프로세스 안의 워커에만 붙으므로, 따로 띄운 두 실행은 둘 다
+    `worker_index is None` 이라 **둘 다** `test` 를 쓴다. 그래서 늦게 시작한 쪽이
+    먼저 돌던 쪽의 스키마를 통째로 지운다 (KEY-282 — 실제로 겪었다. 멀쩡한 검사가
+    빨갛게 나왔고, 두 실행이 22분을 서로 막았다).
+
+    자리를 **하나의 번호**로 모은다. 둘을 따로 정하면 「이름은 갈렸는데 Redis 는
+    겹친」 조합이 생기고, 그것은 세션·로그인시도 카운터에서만 드러나 찾기 어렵다.
+
+        TEST_SLOT 없음 · xdist 없음   →  0
+        TEST_SLOT 없음 · gw3          →  3        (예전과 같다)
+        TEST_SLOT=4    · xdist 없음   →  4
+        TEST_SLOT=4    · gw3          →  7        (겹치지 않게 더한다)
+    """
+    raw = os.environ.get(TEST_SLOT_ENV, "0").strip() or "0"
+    if not raw.isdigit():
+        raise RuntimeError(f"{TEST_SLOT_ENV} 는 0 이상의 정수여야 한다 — 받은 값 {raw!r}")
+    return int(raw) + (_xdist_worker_index() or 0)
+
+
+def test_db_name(slot: int | None = None) -> str:
+    """자리 0 은 예전 그대로 `test` — 아무것도 안 주고 돌리던 사람에게 영향이 없다."""
+    slot = run_slot() if slot is None else slot
+    return "test" if slot == 0 else f"test_{slot}"
+
+
+def _slot_lock_path(db_name: str) -> Path:
+    """**서버까지 포함해 잠근다** — 다른 MySQL 을 보는 실행끼리는 안 막아야 한다."""
+    key = f"{config.DB_HOST}:{config.DB_PORT}/{db_name}"
+    return Path(tempfile.gettempdir()) / f"ah05-test-db-{hashlib.sha256(key.encode()).hexdigest()[:16]}.lock"
+
+
+#: 잡은 잠금을 세션 끝까지 들고 있는다. 프로세스가 죽으면 OS 가 알아서 푼다 —
+#: 그래서 `kill -9` 로 끊긴 실행이 남긴 잠금을 사람이 치울 일이 없다.
+_slot_lock: IO[str] | None = None
+
+
+def _hold_slot(db_name: str) -> None:
+    """이 자리를 이미 누가 쓰고 있으면 **그 자리에서 멈춘다.**
+
+    조용히 진행하면 남의 스키마를 지운다. 같은 파일 아래쪽에서 워커가 16을 넘을 때
+    `% 16` 으로 감싸지 않고 죽이는 것과 같은 태도다 — 겹치는 것보다 우는 편이 낫다.
+    """
+    global _slot_lock
+    handle = _slot_lock_path(db_name).open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise RuntimeError(
+            f"검사 DB `{db_name}` 을 이미 다른 pytest 실행이 쓰고 있다 "
+            f"({config.DB_HOST}:{config.DB_PORT}).\n"
+            f"  그대로 두면 늦게 시작한 쪽이 먼저 돌던 쪽의 스키마를 지워, "
+            f"둘 다 틀린 결과를 낸다 (KEY-282).\n"
+            f"  나란히 돌리려면 자리를 달리 준다 — `{TEST_SLOT_ENV}=1 uv run pytest ...`"
+        ) from None
+    handle.write(str(os.getpid()))
+    handle.flush()
+    _slot_lock = handle
+
+
+def _release_slot() -> None:
+    global _slot_lock
+    if _slot_lock is not None:
+        _slot_lock.close()  # 닫으면 flock 도 풀린다
+        _slot_lock = None
+
+
+def _explained(error: BaseException, db_name: str) -> BaseException:
+    """권한이 없어 죽은 것이면 **무엇을 하면 되는지**까지 얹어 준다.
+
+    앱 유저는 `CREATE DATABASE` 를 못 하고 권한은 이름마다 따로 있어야 한다
+    (`infra/docker/initdb.d/01-test-db.sql`). 그런데 그 파일은 **볼륨이 빌 때
+    한 번만** 돌아서, 이미 MySQL 을 띄워 둔 사람에게는 안 적용된다. 그대로 두면
+    `(1044, "Access denied ...")` 한 줄과 setup 오류 수십 개만 보인다.
+    """
+    if f"to database '{db_name}'" not in str(error):
+        return error
+    return RuntimeError(
+        f"검사 DB `{db_name}` 을 만들 권한이 없다.\n"
+        f"  `initdb.d` 는 MySQL 볼륨이 빌 때 한 번만 도는데, 이미 띄워 둔 판에는 안 적용된다.\n"
+        f"  한 번만 넣어 주면 된다 —\n"
+        f'    docker exec mysql mysql -u root -p"$DB_ROOT_PASSWORD" \\\n'
+        f"      -e \"GRANT ALL ON \\`test\\\\_%\\`.* TO '{config.DB_USER}'@'%'; FLUSH PRIVILEGES;\"\n"
+        f"  ({TEST_SLOT_ENV} 없이 그냥 돌리면 `test` 를 쓰므로 이 권한이 필요 없다.)"
+    )
+
+
 def get_test_db_config() -> dict[str, Any]:
-    worker_index = _xdist_worker_index()
-    db_name = "test" if worker_index is None else f"test_gw{worker_index}"
+    db_name = test_db_name()
     tortoise_config = generate_config(
         db_url=f"mysql://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/{db_name}",
         app_modules={TEST_DB_LABEL: TORTOISE_APP_MODELS},
@@ -64,26 +161,36 @@ def get_test_db_config() -> dict[str, Any]:
 
 @pytest.fixture(scope="session", autouse=True)
 def initialize(request: FixtureRequest) -> Generator[None, None]:
-    worker_index = _xdist_worker_index()
-    if worker_index is not None:
-        if worker_index >= REDIS_LOGICAL_DB_COUNT:
-            # `% 16`으로 감싸면 17번째 워커부터 남의 세션·로그인시도 카운터를
-            # 조용히 밟는다 — 시간이 지나 CI 러너 코어가 늘면 재발할 수 있는
-            # 자리라, 겹치게 두지 않고 여기서 바로 죽인다(한금준 님 리뷰).
-            raise RuntimeError(
-                f"pytest-xdist 워커가 {REDIS_LOGICAL_DB_COUNT}개를 넘었다(gw{worker_index}) — "
-                f"Redis 논리 DB는 0~{REDIS_LOGICAL_DB_COUNT - 1}뿐이라 그 이상은 워커끼리 겹친다. "
-                f"`-n {REDIS_LOGICAL_DB_COUNT}` 이하로 낮춰서 돌려라."
-            )
-        config.REDIS_DB = worker_index
+    slot = run_slot()
+    if slot >= REDIS_LOGICAL_DB_COUNT:
+        # `% 16`으로 감싸면 17번째 자리부터 남의 세션·로그인시도 카운터를
+        # 조용히 밟는다 — 시간이 지나 CI 러너 코어가 늘면 재발할 수 있는
+        # 자리라, 겹치게 두지 않고 여기서 바로 죽인다(한금준 님 리뷰).
+        raise RuntimeError(
+            f"검사 자리가 {REDIS_LOGICAL_DB_COUNT}개를 넘었다(자리 {slot}) — "
+            f"Redis 논리 DB는 0~{REDIS_LOGICAL_DB_COUNT - 1}뿐이라 그 이상은 서로 겹친다. "
+            f"워커 수를 줄이거나 `{TEST_SLOT_ENV}` 를 낮춰라."
+        )
+    #: 자리 0 은 값이 이미 0 이라 넣으나 마나지만, **한 곳에서 정한다**는 것이
+    #: 중요하다. 예전에는 xdist 안에서만 넣어서, 따로 띄운 두 실행이 둘 다
+    #: 0번 논리 DB 를 밟았다.
+    config.REDIS_DB = slot
+
+    db_name = test_db_name(slot)
+    _hold_slot(db_name)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    with patch("tortoise.contrib.test.getDBConfig", Mock(return_value=get_test_db_config())):
-        initializer(modules=TORTOISE_APP_MODELS)
+    try:
+        with patch("tortoise.contrib.test.getDBConfig", Mock(return_value=get_test_db_config())):
+            initializer(modules=TORTOISE_APP_MODELS)
+    except BaseException as error:
+        _release_slot()  # 초기화가 죽어도 자리를 붙들고 있지 않는다
+        raise _explained(error, db_name) from error
     yield
     finalizer()
     loop.close()
+    _release_slot()
 
 
 @pytest_asyncio.fixture(autouse=True, scope="session")  # type: ignore[type-var]

@@ -266,6 +266,31 @@ TZ=Asia/Seoul node --test frontend/tests/*.test.js
 > 폴더가 아니라 **파일들**을 넘긴다. Node 22 부터 `--test` 의 위치 인자를 훑을 폴더가
 > 아니라 불러올 모듈로 보기 때문에, 폴더를 주면 `MODULE_NOT_FOUND` 로 죽는다.
 
+### pytest 를 두 번 겹쳐 돌릴 때 — `TEST_SLOT`
+
+검사는 DB 이름과 Redis 논리 DB 를 **자리 번호** 하나로 정한다. 아무것도 안 주면
+자리 0(`test` DB · Redis 0)이라 예전과 같다. 두 실행을 나란히 돌리려면 다른 자리를 준다.
+
+```bash
+uv run pytest -q app                          # 자리 0 — test
+TEST_SLOT=1 uv run pytest -q app/tests/ocr    # 자리 1 — test_1
+```
+
+자리를 안 주고 겹쳐 띄우면 **뒤에 뜬 쪽이 그 자리에서 멈춘다.** 그대로 두면 늦게
+시작한 쪽이 먼저 돌던 쪽의 스키마를 지워 **둘 다 틀린 결과**를 낸다 (KEY-282).
+`pytest -n auto` 의 워커 번호도 같은 자리 축을 쓰므로 `TEST_SLOT` 과 함께 줘도 안 겹친다.
+
+> **⚠️ 기존 팀원 주의**: 자리별 DB(`test_1` …)는 권한이 따로 있어야 만들어지는데,
+> 그 권한을 넣는 `infra/docker/initdb.d/01-test-db.sql` 은 **MySQL 볼륨이 빌 때 한 번만**
+> 돈다. 이미 띄워 둔 판에는 아래를 한 번 넣는다. (`TEST_SLOT` 없이 그냥 돌리면 필요 없다.)
+>
+> ```bash
+> docker exec mysql mysql -u root -p"$DB_ROOT_PASSWORD" -e "GRANT ALL ON \`test\\_%\`.* TO 'ozcoding'@'%'; FLUSH PRIVILEGES;"
+> ```
+>
+> 이 권한이 없으면 **`pytest -n auto` 도 로컬에서 안 돈다** — `test_gw0` 을 못 만들어
+> 전건이 setup 에서 죽는다. CI 는 root 로 돌아 이 자리가 오래 안 보였다.
+
 ---
 
 ## 🖥 화면
