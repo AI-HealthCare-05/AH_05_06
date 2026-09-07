@@ -10,6 +10,7 @@
 import argparse
 import asyncio
 import json
+import sys
 from datetime import date
 from pathlib import Path
 from statistics import median, quantiles
@@ -19,18 +20,23 @@ from typing import Any
 import asyncmy  # type: ignore[import-untyped]
 from asyncmy.cursors import DictCursor  # type: ignore[import-untyped]
 
-from app.core.config import Config
-from app.models.catalog import ApprovalStatus, SourceGrade
-from app.services.knowledge_search import (
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from app.models.catalog import ApprovalStatus, SourceGrade  # noqa: E402
+from app.services.knowledge_search import (  # noqa: E402
     EMBEDDING_DIMENSION,
     KnowledgeChunk,
+    KnowledgeSearchOutcome,
+    KnowledgeSearchResult,
     KnowledgeSearchScope,
     search_approved_knowledge,
 )
 
-FIXTURE_PATH = Path(__file__).resolve().parents[1] / "docs" / "data" / "key82-rag-poc-chunks.json"
+FIXTURE_PATH = ROOT / "docs" / "data" / "key82-rag-poc-chunks.json"
 TEMP_TABLE = "key82_rag_poc_chunk"
 ALLOWED_SECTIONS = frozenset({"medication", "caution", "emergency", "life"})
+EXPECTED_HIT_IDS = ("synthetic-medication-current",)
 
 
 def _poc_embedding(values: list[float]) -> tuple[float, ...]:
@@ -64,7 +70,16 @@ def _chunk(row: dict[str, Any]) -> KnowledgeChunk:
     )
 
 
-async def _run(iterations: int, hospital_id: int) -> None:
+def _poc_passed(result: KnowledgeSearchResult) -> bool:
+    return (
+        result.outcome is KnowledgeSearchOutcome.FOUND
+        and tuple(hit.chunk.chunk_id for hit in result.hits) == EXPECTED_HIT_IDS
+    )
+
+
+async def _run(iterations: int, hospital_id: int) -> bool:
+    from app.core.config import Config
+
     settings = Config()
     connection = await asyncmy.connect(
         host=settings.DB_HOST,
@@ -142,8 +157,7 @@ async def _run(iterations: int, hospital_id: int) -> None:
                   AND license_verified = TRUE
                   AND (hospital_id IS NULL OR hospital_id = %s)
                   AND section_key IN ({placeholders})
-                  AND review_due_at IS NOT NULL
-                  AND review_due_at >= %s
+                  AND (review_due_at IS NULL OR review_due_at >= %s)
             """
             params = (
                 ApprovalStatus.APPROVED.value,
@@ -172,6 +186,7 @@ async def _run(iterations: int, hospital_id: int) -> None:
 
         assert result is not None
         p95 = quantiles(elapsed_ms, n=20, method="inclusive")[18] if len(elapsed_ms) > 1 else elapsed_ms[0]
+        passed = _poc_passed(result)
         print(
             json.dumps(
                 {
@@ -182,10 +197,12 @@ async def _run(iterations: int, hospital_id: int) -> None:
                     "hit_ids": [hit.chunk.chunk_id for hit in result.hits],
                     "scores": [round(hit.score, 4) for hit in result.hits],
                     "latency_ms": {"p50": round(median(elapsed_ms), 3), "p95": round(p95, 3)},
+                    "passed": passed,
                 },
                 ensure_ascii=False,
             )
         )
+        return passed
     finally:
         connection.close()
 
@@ -197,7 +214,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.iterations < 1:
         parser.error("--iterations must be at least 1")
-    asyncio.run(_run(args.iterations, args.hospital_id))
+    if not asyncio.run(_run(args.iterations, args.hospital_id)):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

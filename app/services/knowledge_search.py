@@ -136,8 +136,7 @@ def _eligible(chunk: KnowledgeChunk, scope: KnowledgeSearchScope) -> bool:
         and chunk.license_verified
         and (chunk.hospital_id is None or chunk.hospital_id == scope.hospital_id)
         and chunk.section_key in scope.allowed_sections
-        and chunk.review_due_at is not None
-        and chunk.review_due_at >= scope.searched_at
+        and (chunk.review_due_at is None or chunk.review_due_at >= scope.searched_at)
         and bool(chunk.body.strip())
     )
 
@@ -199,12 +198,14 @@ def admit_generation_context(
     evaluation_approval: PocEvaluationApproval | None,
     fallback_template: ApprovedFallbackTemplate | None = None,
 ) -> GenerationContextAdmission:
-    """검색 결과를 생성 컨텍스트 또는 승인 fallback으로 들이는 최종 좁은문.
+    """검증된 검색 결과를 생성 컨텍스트 또는 승인 fallback으로 들이는 진입 관문.
 
-    PoC 평가가 통과하기 전에는 검색 성공 여부와 관계없이 생성 연결을 막는다.
-    통과 후에도 검증이 끝난 ``FOUND`` 결과만 컨텍스트로 들어간다. 근거가 없는
-    경우에는 승인된 현재 버전의 고정 템플릿만 허용하며, 충돌이나 인덱스 오류는
-    템플릿으로 덮지 않고 차단한다.
+    ``search_result``는 동일 요청의 병원·섹션·검색일 범위로
+    :func:`search_approved_knowledge`가 반환한 결과여야 한다. 이 함수에는 해당 범위가
+    없으므로 hit의 승인·병원 경계를 다시 판정하지 않는다. PoC 평가가 통과하기
+    전에는 검색 성공 여부와 관계없이 생성 연결을 막는다. 통과 후에도 검증이 끝난
+    ``FOUND`` 결과만 컨텍스트로 들어간다. 근거가 없는 경우에는 승인된 현재 버전의
+    고정 템플릿만 허용하며, 충돌이나 인덱스 오류는 템플릿으로 덮지 않고 차단한다.
     """
 
     if (

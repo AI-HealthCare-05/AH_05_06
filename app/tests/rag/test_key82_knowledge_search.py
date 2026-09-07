@@ -25,6 +25,7 @@ from app.services.knowledge_search import (
     search_approved_knowledge,
 )
 from scripts.key82_rag_evaluate import evaluate
+from scripts.key82_rag_poc import _poc_passed
 
 TODAY = date(2026, 9, 7)
 SCOPE = KnowledgeSearchScope(
@@ -289,14 +290,25 @@ def test_fixed_embedding_dimension_and_zero_query_fail_closed() -> None:
     )
 
 
-def test_missing_review_due_date_is_not_eligible() -> None:
+def test_missing_review_due_date_uses_current_version_as_primary_time_axis() -> None:
     result = search_approved_knowledge(
         embedding(1.0, 0.0, 0.0),
         [chunk("undated", review_due_at=None)],
         SCOPE,
     )
 
-    assert result.outcome is KnowledgeSearchOutcome.NO_EVIDENCE
+    assert result.outcome is KnowledgeSearchOutcome.FOUND
+
+
+def test_mysql_poc_passes_only_for_the_expected_found_result() -> None:
+    expected = KnowledgeSearchResult(
+        KnowledgeSearchOutcome.FOUND,
+        (KnowledgeSearchHit(chunk("synthetic-medication-current"), 1.0),),
+    )
+
+    assert _poc_passed(expected) is True
+    assert _poc_passed(KnowledgeSearchResult(KnowledgeSearchOutcome.NO_EVIDENCE)) is False
+    assert _poc_passed(KnowledgeSearchResult(KnowledgeSearchOutcome.INDEX_INVALID)) is False
 
 
 def test_conflict_above_threshold_blocks_even_when_outside_top_k() -> None:

@@ -29,7 +29,7 @@ MySQL 9의 `VECTOR` 저장 기능만을 이유로 메이저 업그레이드하�
 
 - 안내 섹션 `medication`, `caution`, `emergency`, `life`를 뒷받침하는 승인 의료지식
 - 식약처·공공기관 자료와 병원 의료진이 검수·승인한 내부 교육 문서
-- `APPROVED`이면서 현재 버전이고, 이용조건이 확인되었으며 다음 검토일이 존재하고 유효한 청크
+- `APPROVED`이면서 현재 버전이고, 이용조건과 설정된 검토 기한이 유효한 청크
 
 ### 검색하지 않는 것
 
@@ -70,7 +70,7 @@ MySQL `TEMPORARY TABLE`을 사용한다.
 | `knowledge_chunk` | 청크 UUID, 버전 UUID, 섹션, 순서, 본문, claim key/value, 임베딩 JSON, 모델·차원 |
 
 - 공공 공통 자료의 `hospital_id`는 `NULL`, 병원 자체 자료는 해당 `hospital_id`를 갖는다.
-- 후보 SQL은 `APPROVED + current + A + 이용조건 확인 + 다음 검토일 존재·미도래 + 병원 + 섹션`을 먼저 거른다.
+- 후보 SQL은 `APPROVED + current + A + 이용조건 확인 + 설정된 검토기한 + 병원 + 섹션`을 먼저 거른다.
 - 애플리케이션은 같은 조건을 다시 확인한다. 타 병원 행은 점수 계산 전 제외한다.
 - 임베딩 모델은
   [`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2),
@@ -96,7 +96,7 @@ MySQL `TEMPORARY TABLE`을 사용한다.
 | 상황 | 결과 |
 |---|---|
 | 임계값 이상 근거 없음 | `NO_EVIDENCE`; 사전 승인된 현재 버전의 고정 템플릿만 사용 |
-| 미승인·폐기·다음 검토일 없음·만료·이용조건 미확인 | 후보에서 제외 |
+| 미승인·폐기·만료·이용조건 미확인 | 후보에서 제외 |
 | 같은 claim의 상충된 값이 동시에 검색됨 | `SOURCE_CONFLICT`; 결과 전체 차단 |
 | 타 병원 자료 | 점수 계산 전에 제외하고 원문·존재 여부를 응답에 노출하지 않음 |
 | 임베딩 차원 불일치·0 벡터 | `INDEX_INVALID`; 부분 검색하지 않고 재색인 요청 |
@@ -123,6 +123,8 @@ uv run --no-sync python scripts/key82_rag_evaluate.py
 
 PoC는 `docs/data/key82-rag-poc-chunks.json`의 합성 데이터만 임시 테이블에 넣는다. 기존 테이블과
 볼륨을 만들거나 지우지 않는다. 출력에는 결과 코드·청크 ID·점수·p50/p95만 포함한다.
+결과가 `FOUND`가 아니거나 기대 청크가 정확히 선택되지 않으면 종료코드 1을 반환하므로 CI와
+배포 점검에서 PoC 실패를 자동 판정할 수 있다.
 
 2026-09-07 로컬 Docker MySQL 8.0.46에서 9개 합성 행, 50회 반복 결과는 `FOUND`, 현재 승인 청크
 1건만 선택, p50 0.352ms·p95 0.567ms였다. 작은 기능 재현 결과이며 운영 용량 성능을 뜻하지 않는다.
