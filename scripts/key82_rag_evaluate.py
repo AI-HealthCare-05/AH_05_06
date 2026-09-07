@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 from app.models.catalog import ApprovalStatus, SourceGrade  # noqa: E402
 from app.services.knowledge_search import (  # noqa: E402
+    EMBEDDING_DIMENSION,
     ApprovedFallbackTemplate,
     ContextAdmissionOutcome,
     KnowledgeChunk,
@@ -36,6 +37,15 @@ PASS_CRITERIA = {
 }
 
 
+def _poc_embedding(values: list[float]) -> tuple[float, ...]:
+    """3차원 합성값을 운영 검색 계약의 384차원 벡터로 확장한다."""
+
+    embedding = tuple(float(value) for value in values)
+    if len(embedding) > EMBEDDING_DIMENSION:
+        raise ValueError("PoC embedding exceeds the fixed embedding dimension")
+    return embedding + (0.0,) * (EMBEDDING_DIMENSION - len(embedding))
+
+
 def _chunk(row: dict[str, Any]) -> KnowledgeChunk:
     return KnowledgeChunk(
         chunk_id=row["chunk_id"],
@@ -43,7 +53,7 @@ def _chunk(row: dict[str, Any]) -> KnowledgeChunk:
         hospital_id=row["hospital_id"],
         section_key=row["section_key"],
         body=row["body"],
-        embedding=tuple(float(value) for value in row["embedding"]),
+        embedding=_poc_embedding(row["embedding"]),
         approval_status=ApprovalStatus(row["approval_status"]),
         is_current=bool(row["is_current"]),
         source_grade=SourceGrade(row["source_grade"]),
@@ -95,7 +105,7 @@ def evaluate(cases: list[dict[str, Any]] | None = None) -> dict[str, Any]:
 
     for case in cases:
         result = search_approved_knowledge(
-            tuple(float(value) for value in case["query_embedding"]),
+            _poc_embedding(case["query_embedding"]),
             chunks,
             KnowledgeSearchScope(
                 hospital_id=case["hospital_id"],

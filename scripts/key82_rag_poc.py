@@ -21,11 +21,25 @@ from asyncmy.cursors import DictCursor  # type: ignore[import-untyped]
 
 from app.core.config import Config
 from app.models.catalog import ApprovalStatus, SourceGrade
-from app.services.knowledge_search import KnowledgeChunk, KnowledgeSearchScope, search_approved_knowledge
+from app.services.knowledge_search import (
+    EMBEDDING_DIMENSION,
+    KnowledgeChunk,
+    KnowledgeSearchScope,
+    search_approved_knowledge,
+)
 
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "docs" / "data" / "key82-rag-poc-chunks.json"
 TEMP_TABLE = "key82_rag_poc_chunk"
 ALLOWED_SECTIONS = frozenset({"medication", "caution", "emergency", "life"})
+
+
+def _poc_embedding(values: list[float]) -> tuple[float, ...]:
+    """3차원 합성값을 운영 검색 계약의 384차원 벡터로 확장한다."""
+
+    embedding = tuple(float(value) for value in values)
+    if len(embedding) > EMBEDDING_DIMENSION:
+        raise ValueError("PoC embedding exceeds the fixed embedding dimension")
+    return embedding + (0.0,) * (EMBEDDING_DIMENSION - len(embedding))
 
 
 def _chunk(row: dict[str, Any]) -> KnowledgeChunk:
@@ -38,7 +52,7 @@ def _chunk(row: dict[str, Any]) -> KnowledgeChunk:
         hospital_id=row["hospital_id"],
         section_key=row["section_key"],
         body=row["body"],
-        embedding=tuple(float(value) for value in embedding),
+        embedding=_poc_embedding(embedding),
         approval_status=ApprovalStatus(row["approval_status"]),
         is_current=bool(row["is_current"]),
         source_grade=SourceGrade(row["source_grade"]),
@@ -128,7 +142,8 @@ async def _run(iterations: int, hospital_id: int) -> None:
                   AND license_verified = TRUE
                   AND (hospital_id IS NULL OR hospital_id = %s)
                   AND section_key IN ({placeholders})
-                  AND (review_due_at IS NULL OR review_due_at >= %s)
+                  AND review_due_at IS NOT NULL
+                  AND review_due_at >= %s
             """
             params = (
                 ApprovalStatus.APPROVED.value,
@@ -148,7 +163,11 @@ async def _run(iterations: int, hospital_id: int) -> None:
                 started = perf_counter()
                 await cursor.execute(candidate_sql, params)
                 rows = await cursor.fetchall()
-                result = search_approved_knowledge((1.0, 0.0, 0.0), [_chunk(row) for row in rows], scope)
+                result = search_approved_knowledge(
+                    _poc_embedding([1.0, 0.0, 0.0]),
+                    [_chunk(row) for row in rows],
+                    scope,
+                )
                 elapsed_ms.append((perf_counter() - started) * 1000)
 
         assert result is not None

@@ -34,14 +34,20 @@ SCOPE = KnowledgeSearchScope(
 )
 
 
-def chunk(chunk_id: str, embedding: tuple[float, ...] = (1.0, 0.0, 0.0), **changes: object) -> KnowledgeChunk:
+def embedding(*values: float) -> tuple[float, ...]:
+    if len(values) > EMBEDDING_DIMENSION:
+        raise ValueError("test embedding exceeds the fixed dimension")
+    return values + (0.0,) * (EMBEDDING_DIMENSION - len(values))
+
+
+def chunk(chunk_id: str, vector: tuple[float, ...] | None = None, **changes: object) -> KnowledgeChunk:
     base = KnowledgeChunk(
         chunk_id=chunk_id,
         document_id=f"document-{chunk_id}",
         hospital_id=None,
         section_key="medication",
         body=f"[합성] {chunk_id}",
-        embedding=embedding,
+        embedding=vector if vector is not None else embedding(1.0, 0.0, 0.0),
         approval_status=ApprovalStatus.APPROVED,
         is_current=True,
         source_grade=SourceGrade.A,
@@ -79,14 +85,14 @@ def test_only_current_approved_a_grade_licensed_fresh_and_scoped_chunks_are_retu
         chunk("wrong-section", section_key="messages"),
     ]
 
-    result = search_approved_knowledge((1.0, 0.0, 0.0), candidates, SCOPE)
+    result = search_approved_knowledge(embedding(1.0, 0.0, 0.0), candidates, SCOPE)
 
     assert result.outcome is KnowledgeSearchOutcome.FOUND
     assert [hit.chunk.chunk_id for hit in result.hits] == [allowed.chunk_id]
 
 
 def test_below_threshold_returns_no_evidence() -> None:
-    result = search_approved_knowledge((1.0, 0.0, 0.0), [chunk("unrelated", (0.0, 1.0, 0.0))], SCOPE)
+    result = search_approved_knowledge(embedding(1.0, 0.0, 0.0), [chunk("unrelated", embedding(0.0, 1.0, 0.0))], SCOPE)
 
     assert result.outcome is KnowledgeSearchOutcome.NO_EVIDENCE
     assert result.hits == ()
@@ -95,17 +101,17 @@ def test_below_threshold_returns_no_evidence() -> None:
 def test_conflicting_high_similarity_claims_fail_closed() -> None:
     candidates = [
         chunk("claim-a", claim_key="synthetic-rule", claim_value="A"),
-        chunk("claim-b", (0.99, 0.01, 0.0), claim_key="synthetic-rule", claim_value="B"),
+        chunk("claim-b", embedding(0.99, 0.01, 0.0), claim_key="synthetic-rule", claim_value="B"),
     ]
 
-    result = search_approved_knowledge((1.0, 0.0, 0.0), candidates, SCOPE)
+    result = search_approved_knowledge(embedding(1.0, 0.0, 0.0), candidates, SCOPE)
 
     assert result.outcome is KnowledgeSearchOutcome.SOURCE_CONFLICT
     assert result.hits == ()
 
 
 def test_embedding_dimension_drift_fails_closed() -> None:
-    result = search_approved_knowledge((1.0, 0.0, 0.0), [chunk("old-index", (1.0, 0.0))], SCOPE)
+    result = search_approved_knowledge(embedding(1.0, 0.0, 0.0), [chunk("old-index", (1.0, 0.0))], SCOPE)
 
     assert result.outcome is KnowledgeSearchOutcome.INDEX_INVALID
     assert result.hits == ()
@@ -114,7 +120,7 @@ def test_embedding_dimension_drift_fails_closed() -> None:
 def test_top_k_is_deterministic() -> None:
     candidates = [chunk("c"), chunk("a"), chunk("d"), chunk("b")]
 
-    result = search_approved_knowledge((1.0, 0.0, 0.0), candidates, SCOPE)
+    result = search_approved_knowledge(embedding(1.0, 0.0, 0.0), candidates, SCOPE)
 
     assert result.outcome is KnowledgeSearchOutcome.FOUND
     assert [hit.chunk.chunk_id for hit in result.hits] == ["a", "b", "c"]
@@ -147,7 +153,7 @@ def evaluation_approval(**changes: object) -> PocEvaluationApproval:
 
 
 def test_generation_is_blocked_before_poc_evaluation_passes() -> None:
-    found = search_approved_knowledge((1.0, 0.0, 0.0), [chunk("allowed")], SCOPE)
+    found = search_approved_knowledge(embedding(1.0, 0.0, 0.0), [chunk("allowed")], SCOPE)
 
     admission = admit_generation_context(found, evaluation_approval=None)
 
@@ -156,7 +162,7 @@ def test_generation_is_blocked_before_poc_evaluation_passes() -> None:
 
 
 def test_only_validated_found_result_enters_generation_context() -> None:
-    found = search_approved_knowledge((1.0, 0.0, 0.0), [chunk("allowed")], SCOPE)
+    found = search_approved_knowledge(embedding(1.0, 0.0, 0.0), [chunk("allowed")], SCOPE)
 
     admission = admit_generation_context(found, evaluation_approval=evaluation_approval())
 
@@ -166,7 +172,7 @@ def test_only_validated_found_result_enters_generation_context() -> None:
 
 
 def test_no_evidence_uses_only_current_approved_fallback_template() -> None:
-    no_evidence = search_approved_knowledge((1.0, 0.0, 0.0), [], SCOPE)
+    no_evidence = search_approved_knowledge(embedding(1.0, 0.0, 0.0), [], SCOPE)
 
     admitted = admit_generation_context(
         no_evidence,
@@ -224,6 +230,7 @@ def test_failed_or_incomplete_evaluation_approval_does_not_open_generation() -> 
         evaluation_approval(approved_by=""),
         evaluation_approval(result_sha256="missing"),
         evaluation_approval(result_sha256="x" * 64),
+        evaluation_approval(result_sha256="ab" + " " * 62),
     ):
         admission = admit_generation_context(found, evaluation_approval=approval)
         assert admission.outcome is ContextAdmissionOutcome.GENERATION_BLOCKED
@@ -262,3 +269,45 @@ def test_negative_only_evaluation_is_reported_as_failed_instead_of_dividing_by_z
     assert result["metrics"]["precision_at_3"] is None
     assert "evaluation-set:no-positive-expected-hits" in result["failed_cases"]
     assert "evaluation-set:no-retrieved-hits" in result["failed_cases"]
+
+
+def test_fixed_embedding_dimension_and_zero_query_fail_closed() -> None:
+    assert (
+        search_approved_knowledge((1.0, 0.0), [chunk("allowed")], SCOPE).outcome is KnowledgeSearchOutcome.INDEX_INVALID
+    )
+    assert (
+        search_approved_knowledge((0.0,) * EMBEDDING_DIMENSION, [chunk("allowed")], SCOPE).outcome
+        is KnowledgeSearchOutcome.INDEX_INVALID
+    )
+    assert (
+        search_approved_knowledge(
+            embedding(1.0, 0.0, 0.0),
+            [chunk("zero-index", (0.0,) * EMBEDDING_DIMENSION)],
+            SCOPE,
+        ).outcome
+        is KnowledgeSearchOutcome.INDEX_INVALID
+    )
+
+
+def test_missing_review_due_date_is_not_eligible() -> None:
+    result = search_approved_knowledge(
+        embedding(1.0, 0.0, 0.0),
+        [chunk("undated", review_due_at=None)],
+        SCOPE,
+    )
+
+    assert result.outcome is KnowledgeSearchOutcome.NO_EVIDENCE
+
+
+def test_conflict_above_threshold_blocks_even_when_outside_top_k() -> None:
+    candidates = [
+        chunk("a"),
+        chunk("b"),
+        chunk("c"),
+        chunk("d", claim_key="synthetic-rule", claim_value="A"),
+        chunk("e", claim_key="synthetic-rule", claim_value="B"),
+    ]
+
+    result = search_approved_knowledge(embedding(1.0, 0.0, 0.0), candidates, SCOPE, top_k=3)
+
+    assert result.outcome is KnowledgeSearchOutcome.SOURCE_CONFLICT

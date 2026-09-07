@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from hashlib import sha256
-from math import sqrt
+from math import isfinite, sqrt
 
 from app.models.catalog import ApprovalStatus, SourceGrade
 
@@ -105,13 +105,7 @@ def fallback_body_checksum(body: str) -> str:
 
 
 def _is_sha256_hex(value: str) -> bool:
-    if len(value) != 64:
-        return False
-    try:
-        bytes.fromhex(value)
-    except ValueError:
-        return False
-    return True
+    return len(value) == 64 and all(character in "0123456789abcdefABCDEF" for character in value)
 
 
 def cosine_similarity(left: tuple[float, ...], right: tuple[float, ...]) -> float:
@@ -126,6 +120,14 @@ def cosine_similarity(left: tuple[float, ...], right: tuple[float, ...]) -> floa
     return sum(a * b for a, b in zip(left, right, strict=True)) / (left_norm * right_norm)
 
 
+def _is_valid_embedding(embedding: tuple[float, ...]) -> bool:
+    return (
+        len(embedding) == EMBEDDING_DIMENSION
+        and all(isfinite(value) for value in embedding)
+        and any(value != 0 for value in embedding)
+    )
+
+
 def _eligible(chunk: KnowledgeChunk, scope: KnowledgeSearchScope) -> bool:
     return (
         chunk.approval_status is ApprovalStatus.APPROVED
@@ -134,7 +136,8 @@ def _eligible(chunk: KnowledgeChunk, scope: KnowledgeSearchScope) -> bool:
         and chunk.license_verified
         and (chunk.hospital_id is None or chunk.hospital_id == scope.hospital_id)
         and chunk.section_key in scope.allowed_sections
-        and (chunk.review_due_at is None or chunk.review_due_at >= scope.searched_at)
+        and chunk.review_due_at is not None
+        and chunk.review_due_at >= scope.searched_at
         and bool(chunk.body.strip())
     )
 
@@ -159,25 +162,26 @@ def search_approved_knowledge(
 ) -> KnowledgeSearchResult:
     """승인·현재 버전·출처·병원 경계를 통과한 청크만 검색한다.
 
-    임베딩 차원이 하나라도 현재 계약과 다르면 그 청크만 무시하지 않고 전체
-    검색을 차단한다. 부분 재색인 중 오래된 벡터를 조용히 섞는 것보다 근거 없음
-    처리로 안전하게 실패하는 편이 낫다.
+    질의 또는 검색 대상 청크의 임베딩 차원이 현재 계약(384)과 다르거나 0 벡터면
+    그 청크만 무시하지 않고 전체 검색을 차단한다. 부분 재색인 중 오래된 벡터를
+    조용히 섞는 것보다 안전하게 실패하는 편이 낫다. 출처 충돌은 실제 반환되는
+    ``top_k``뿐 아니라 최소 유사도를 넘은 전체 후보에서 검사한다.
     """
 
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
     if not 0 <= min_similarity <= 1:
         raise ValueError("min_similarity must be between 0 and 1")
-    cosine_similarity(query_embedding, query_embedding)
+    if not _is_valid_embedding(query_embedding):
+        return KnowledgeSearchResult(KnowledgeSearchOutcome.INDEX_INVALID)
 
     ranked: list[KnowledgeSearchHit] = []
     for chunk in chunks:
         if not _eligible(chunk, scope):
             continue
-        try:
-            score = cosine_similarity(query_embedding, chunk.embedding)
-        except ValueError:
+        if not _is_valid_embedding(chunk.embedding):
             return KnowledgeSearchResult(KnowledgeSearchOutcome.INDEX_INVALID)
+        score = cosine_similarity(query_embedding, chunk.embedding)
         if score >= min_similarity:
             ranked.append(KnowledgeSearchHit(chunk=chunk, score=score))
 
