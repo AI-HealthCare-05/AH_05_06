@@ -197,6 +197,10 @@ var GENERATE_SAYINGS = [
   { code: "VERSION_CONFLICT", say: "그 사이 값이 바뀌었습니다 — 화면을 새로 고쳐 확인해 주세요" },
   { code: "OCR_FIELD_CONFIRMED", say: "이미 확정된 항목이 있습니다 — 화면을 새로 고쳐 주세요" },
   { status: 401, say: "로그인이 풀렸습니다 — 다시 로그인해 주세요" },
+  /* **서버가 거절한 것과 닿지도 못한 것은 다르다** — KEY-211. #162 에서 이 규칙을
+     걷어낸 것은 그때 `request()` 가 `status: 0` 을 낼 줄 몰라 한 번도 안 걸렸기
+     때문이다. 이제 낸다. */
+  NETWORK_SAYING,
 ];
 
 function generateFailureSaying(error) {
@@ -2160,11 +2164,34 @@ function stateTakesFocus(tone) {
       return;
     }
 
-    /* 판독 실패 상태 상자의 「재업로드」. 왼쪽 판의 「진료기록 추가」와 같은
-       일을 하되, 실패 화면에서는 `#work` 가 숨겨져 그 판이 안 보인다. */
+    /* 판독 실패 상태 상자의 「재업로드」 — **제자리에서 왼쪽 판을 편다.**
+     *
+     * 여태 `/patients.html?tab=record` 로 화면을 옮겼다. 까닭으로 「실패 화면에서는
+     * `#work` 가 숨겨져 그 판이 안 보인다」고 적혀 있었는데 **지금은 사실이 아니다** —
+     * `STATE_RULES.job_failed` 가 `keepsWork: true` 라 `showState` 가 `#work` 를
+     * 살려 두고, 올리는 판은 그 안에 있다.
+     *
+     * 게다가 옮겨 가던 그 주소가 틀렸다. 「진료기록」의 집은 이 화면이지
+     * `/patients.html` 이 아니라서, 재업로드하러 간 사람이 기본정보를 봤다 (KEY-280).
+     *
+     * 이미 여기 있고 판도 여기 있으니 나갈 이유가 없다. 화면을 새로 받으면
+     * 보던 것이 사라지는 것은 덤이다. */
     if (target.id === "reupload") {
-      if (!visit) return;
-      location.href = "/patients.html?visit=" + encodeURIComponent(visit.visit_id) + "&tab=record";
+      if (typeof ocrRequestUpload === "function") {
+        ocrRequestUpload();
+        return;
+      }
+      /* **아무 일도 안 일어나는 채로 두지 않는다** — 이희진 님 `#241` ②.
+       *
+       * `ocrRequestUpload` 는 `wireAddPanel()` 안에서만 정의되고, 그 함수는 판을
+       * 이루는 다섯 칸 중 하나라도 없으면 **조용히 돌아간다.** 지금은 다섯이 항상
+       * 마크업에 있어 안 걸리지만, 이 판을 조건부로 그리게 되면(예: 권한별)
+       * 재업로드가 **이 PR 이 고치려던 것과 똑같이** 다시 죽은 단추가 된다.
+       *
+       * 그때 할 수 있는 말이 이것뿐이다 — 올리는 판이 화면에 없으니 여기서
+       * 펼 수 없다. 판 안의 `#add-say` 도 함께 없으므로 상태 줄에 적는다. */
+      var told = document.getElementById("state-say");
+      if (told) told.textContent = "지금은 진료기록을 올릴 수 없습니다 — 화면을 새로 고쳐 주세요";
       return;
     }
 
@@ -2650,6 +2677,18 @@ function stateTakesFocus(tone) {
        초점은 안 옮긴다 — 화면에 막 들어온 참이라 읽을 것이 먼저다. */
     window.ocrOpenAddPanel = function () {
       if (panel.hidden) openPanel(true, false);
+    };
+
+    /* **손으로 눌러 온 길은 위와 다르다** — KEY-280.
+     *
+     * 위 것은 화면에 막 들어왔을 때 저절로 부르는 것이라 (ⓐ 이미 펴져 있으면
+     * 아무것도 안 하고 ⓑ 초점을 안 옮긴다) 두 가지가 다 맞다. 그런데 「재업로드」를
+     * **누른** 사람에게는 둘 다 틀리다 — 펴져 있는데 아무 일도 안 나면 죽은 단추가
+     * 되고, 누른 뜻이 「지금 올리겠다」인데 초점이 안 가면 한 번 더 찾아야 한다.
+     *
+     * 그래서 접는 일이 없다. 「올리는 판을 열어라」만 뜻하는 자리다. */
+    window.ocrRequestUpload = function () {
+      openPanel(true, true);
     };
 
     button.addEventListener("click", function () {

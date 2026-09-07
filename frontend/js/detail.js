@@ -59,6 +59,8 @@ var TIMELINE_EVENT_LABEL = {
   GUIDE_UNAPPROVED: "안내문 승인 철회",
   GUIDE_RETURNED: "안내문 반려",
   GUIDE_REGENERATED: "안내문 다시 생성",
+  PATIENT_LINK_REISSUED: "환자 링크 교체",
+  PATIENT_LINK_REVOKED: "환자 링크 폐기",
   CHECK_IN_SUBMITTED: "D+7 복약·통증 응답",
   GUIDE_VIEWED: "환자가 안내문 열람",
   CHATBOT_ANSWERED: "환자가 챗봇에 질문",
@@ -451,6 +453,9 @@ function renderVisitSteps(tabs, current, visitId) {
      `api.js` 의 `errorMessage()` 가 갖는다. 같은 모양을 세 파일이 각자 적고
      있어서 기본 문구를 바꿀 때 세 곳을 고쳐야 했다 (이희진 님 `#121` 리뷰). */
   var SAVE_SAYINGS = [
+    /* 서버에 닿지도 못한 것 — KEY-211. 「저장하지 못했습니다」로만 말하면
+       입력을 의심하게 되는데, 고칠 것은 연결이다. */
+    NETWORK_SAYING,
     { status: 403, say: "이 환자를 수정할 권한이 없습니다 — 스탭 또는 의사 계정으로 로그인해 주세요." },
     { status: 404, say: "이 환자를 찾을 수 없습니다. 목록을 새로 고쳐 주세요." },
     { code: "EMPTY_UPDATE_FIELDS", say: "바뀐 내용이 없습니다." },

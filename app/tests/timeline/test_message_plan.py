@@ -319,7 +319,7 @@ class HeldTestCase(World, TestCase):
         assert held[0].hold_reason == "INVALID_PHONE", "사유가 안 간다 — 화면이 「보류」로만 적는다"
 
     async def test_the_two_lists_are_not_the_same(self) -> None:
-        """**사유 목록이 갈려 있다** — 보류는 둘(S2-3), 실패는 넷(D1-7).
+        """**사유 목록이 갈려 있다** — 보류는 다섯(S2-3, KEY-250), 실패는 넷(D1-7).
 
         한 목록으로 합치고 싶어지는 자리다. 겹치는 낱말이 있기 때문이다.
         그러나 재는 것이 다르다 — 「보내기 전에 이미 아는 것」과 「보내 보고
@@ -327,7 +327,13 @@ class HeldTestCase(World, TestCase):
         """
         from app.models.visits import GuideMessageFailure, GuideMessageHold
 
-        assert {m.value for m in GuideMessageHold} == {"INVALID_PHONE", "NO_CREDIT"}
+        assert {m.value for m in GuideMessageHold} == {
+            "INVALID_PHONE",
+            "NO_CREDIT",
+            "NOT_APPROVED",
+            "SAFETY_CHECK_FAILED",
+            "SOURCE_NOT_DELETED",
+        }
         assert {m.value for m in GuideMessageFailure} == {
             "INVALID_PHONE",
             "OPT_OUT",

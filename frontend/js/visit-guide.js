@@ -494,8 +494,15 @@ function guideMissingSaying(error) {
     var t = event.target;
     if (!t || !t.closest) return;
 
+    /* **목적지를 여기서 짓지 않는다** — KEY-280.
+     *
+     * 여태 `/patients.html?tab=record` 를 손으로 만들었는데, 「진료기록」의 집은
+     * KEY-233 이후 `/ocr-review.html` 이다. 이 화면에는 그 칸이 없으므로
+     * `showTab("record")` 가 조용히 돌아가고, 재업로드하러 간 사람이 기본정보를
+     * 보게 됐다. 어느 칸이 어느 화면에 사는지는 `step-nav.js` 가 안다. */
     if (t.closest("#guide-reupload")) {
-      if (visitId) location.href = "/patients.html?visit=" + encodeURIComponent(visitId) + "&tab=record";
+      var goRecord = visitId ? stepHref("record", "guide", "/patients.html", visitId) : null;
+      if (goRecord) location.href = goRecord;
       return;
     }
 

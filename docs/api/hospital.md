@@ -807,7 +807,7 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | `extracted_value` | `string \| null` | OCR 엔진 추출값 |
 | `corrected_value` | `string \| null` | 사람이 수정한 값 |
 | `value` | `string \| null` | 표시값 — `corrected_value` 우선, 없으면 `extracted_value` |
-| `unit` | `string \| null` | 검사값 단위 (예: `mg/dL`, `cm`) |
+| `unit` | `string \| null` | 값의 단위. 검사값은 `mg/dL`·`cm` 등. **`DURATION_DAYS` 는 이 칸이 「일」인지 「통」인지를 정한다** — EMR 「총투」 칸의 `3` 이 3일인지 3통(=84일)인지가 숫자에 안 적혀 있어서, 읽은 자리에 남긴다. 소진 예정일과 확인 문자 시각이 이 값으로 셈해진다 (KEY-271) |
 | `confidence` | `float \| null` | OCR 신뢰도 0–1 |
 | `is_low_confidence` | `bool` | 서버 판정 저신뢰 여부 — 임계값 0.75, 화면이 임의로 정하지 않는다 |
 | `version` | `int` | 낙관적 잠금 버전 — PATCH 요청 시 `base_version`으로 전달 |
@@ -860,7 +860,9 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | PUT | `/api/v1/visits/{visit_id}/ocr-fields/{field_type}` | 판독이 못 읽은 값 직접 입력 (S1-7) | `staff`·`doctor` |
 | GET | `/api/v1/visits/{visit_id}/guide/messages` | 문자 설정 — 회차 · 문구 · 시각 (S1-14) | `staff`·`doctor` |
 | PUT | `/api/v1/visits/{visit_id}/guide/messages` | 문자 설정 저장 — 「이 환자만 적용」 | 상태에 따라 `staff`·`doctor` |
-| POST | `/api/v1/visits/{visit_id}/guide/link` | 72시간 개발용 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/link` | 승인 안내의 168시간 환자 링크 1회 발급 (`demo_only`) | `staff`·`doctor` |
+| POST | `/api/v1/visits/{visit_id}/guide/link/re-issue` | 기존 링크 즉시 교체, 새 원문 1회 반환 | `staff`·`doctor` |
+| DELETE | `/api/v1/visits/{visit_id}/guide/link` | 현재 링크 즉시 폐기 | `staff`·`doctor` |
 
 `admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
 
