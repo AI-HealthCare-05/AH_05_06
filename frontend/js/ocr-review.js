@@ -2865,16 +2865,23 @@ function stateTakesFocus(tone) {
     );
   }
 
-  function pollAllJobs(mine) {
+  function pollAllJobs(mine, prevJobs) {
     pollTimer = setTimeout(function () {
       if (mine !== loadSeq) return;
-      Promise.all(jobIds.map(function (id) { return ocrApi.job(id); }))
-        .then(function (jobs) {
+      var pendingIds = prevJobs
+        ? prevJobs.filter(function (j) { return j.status === "PROCESSING"; }).map(function (j) { return j.ocr_job_id; })
+        : jobIds;
+      Promise.all(pendingIds.map(function (id) { return ocrApi.job(id); }))
+        .then(function (freshJobs) {
           if (mine !== loadSeq) return;
+          var cachedFinished = prevJobs
+            ? prevJobs.filter(function (j) { return j.status !== "PROCESSING"; })
+            : [];
+          var jobs = cachedFinished.concat(freshJobs);
           var processing = jobs.find(function (j) { return j.status === "PROCESSING"; });
           if (processing) {
             renderMultiJobProgress(jobs);
-            return pollAllJobs(mine);
+            return pollAllJobs(mine, jobs);
           }
           var failed = jobs.find(function (j) { return j.status === "FAILED"; });
           var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
@@ -2961,7 +2968,7 @@ function stateTakesFocus(tone) {
         var processing = jobs.find(function (j) { return j.status === "PROCESSING"; });
         if (processing) {
           renderMultiJobProgress(jobs);
-          return pollAllJobs(mine);
+          return pollAllJobs(mine, jobs);
         }
         var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
         var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
