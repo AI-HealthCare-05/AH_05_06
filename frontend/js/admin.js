@@ -201,6 +201,15 @@ function adminMenuCovers(frames) {
       work.setAttribute("href", goes);
     }
 
+    /* **「관리」도 같은 자리다** — KEY-236.
+     *
+     * 「현황」과 「설정」은 잠그면서 이것만 빠져 있었다. 관리 화면은 환자 관리·
+     * 발송이라 스탭 일인데, admin 만 가진 계정에도 눌리는 모양 그대로였다 —
+     * 위 주석이 말한 「403 을 받는 링크가 가장 나쁘다」가 여기에도 걸린다. */
+    if (goes === "/admin.html") {
+      park("to-manage", "관리 화면은 스탭 또는 의사 역할이 있어야 열립니다");
+    }
+
     if (!opensSettings(me.roles)) {
       park("to-settings", "처방 설정은 스탭 또는 의사 역할이 있어야 열립니다");
     }

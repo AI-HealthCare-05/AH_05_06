@@ -140,7 +140,7 @@
 .chat-answer__text { font-size: 15px; line-height: 23px; color: var(--tx); white-space: pre-wrap; }
 .chat-answer__meta { font-size: 12px; color: var(--tx-muted); }
 .chat-answer__actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.chat-retry, .chat-contact {
+.chat-retry {
   font-size: 12px; font-weight: 600;
   border: 1px solid var(--border-str);
   background: var(--surface);
@@ -150,9 +150,18 @@
 }
 .chat-retry { color: var(--p-dark); border-color: var(--p-dark); }
 .chat-retry:hover { background: #FDF5FF; }
-.chat-contact { color: var(--tx-sub); display: inline-flex; align-items: center; gap: 4px; }
-.chat-contact:hover { background: var(--bg); }
-.chat-contact__icon { width: 14px; height: 14px; object-fit: contain; }
+
+/* **읽는 글이지 누르는 자리가 아니다** — KEY-236 / #237.
+   여기 있던 `.chat-contact` 는 잠근 단추였는데, 휴대폰에서는 잠갔다는 사실이
+   `title` 로만 보여서 안 보였다. 단추 꼴을 아예 버리고 글로 남긴다 —
+   테두리도 알약도 없어야 눌러 볼 생각이 안 든다. */
+.chat-note {
+  flex-shrink: 0;
+  margin: 0; padding: 0 16px 10px;
+  font-size: 12px; line-height: 1.5;
+  color: var(--tx-muted);
+}
+.chat-note strong { color: var(--tx-sub); font-weight: 600; }
 
 .chat-feedback { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .chat-feedback__prompt { width: 100%; font-size: 12px; color: var(--tx-muted); }

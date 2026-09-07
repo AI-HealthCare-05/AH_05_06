@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 
@@ -183,6 +184,23 @@ class OcrField(models.Model):
     # 역참조 어노테이션은 클래스 마지막에 둔다 — 위에 두면 이후의 `fields.XField(...)`가
     # 이 어노테이션의 `fields` 속성으로 가려져 mypy가 tortoise fields 모듈을 못 찾는다.
     candidates: fields.ReverseRelation["OcrFieldCandidate"]
+
+
+def read_but_unconfirmed(fields: "Iterable[OcrField]") -> "OcrField | None":
+    """**값이 있는데 아무도 안 본 줄** — 확정 게이트가 막아야 하는 것.
+
+    두 곳이 이 판정을 한다. `finalize_ocr` 이 처방 행을 세우기 전에, `generate`
+    가 안내문을 만들기 전에. **둘이 어긋나면 처방은 섰는데 안내문은 없는 진료가
+    생긴다** — 화면 사슬이 `확정 → finalize → generate` 라서 가운데만 통과한다.
+    그래서 규칙을 한 벌로 둔다.
+
+    빈 칸은 세지 않는다. 화면이 값 있는 항목만 확정하기 때문이다
+    (`ocr-review.js` 의 `fieldsToConfirm`) — 빈 칸을 확정하면 그 빈 값이 안내문에
+    그대로 나간다. 못 읽은 칸까지 요구하면 그 진료는 안내문을 영영 못 만들고,
+    푸는 길도 없다(「이번 미시행」은 담을 칸이 서버에 없어 그려지지 않는다).
+    와이어프레임 S1-7 이 「못 읽은 값 없이 생성」이라 적은 자리다.
+    """
+    return next((field for field in fields if field.value and not field.is_confirmed), None)
 
 
 class OcrFieldCandidate(models.Model):

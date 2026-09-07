@@ -16,6 +16,7 @@ from app.models.ocr import (
     OcrJobDocument,
     OcrJobStatus,
     OcrResult,
+    read_but_unconfirmed,
 )
 from app.models.prescriptions import AS_NEEDED, Prescription, PrescriptionItem
 from app.models.visits import Visit
@@ -88,11 +89,37 @@ class OcrRepository(Protocol):
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription: ...
 
 
+def _medication_suffixes(fields_by_type: dict[str, "OcrField"]) -> list[str]:
+    """**있는 만큼 다 본다** — 다섯으로 끊지 않는다.
+
+    예전에는 `("", "_2", "_3", "_4", "_5")` 를 손으로 적어 두었다. 그런데 판독
+    확인 화면은 수동으로 더한 약을 **기존 최대 번호 다음**으로 담는다
+    (`ocr-review.js` 의 `maxIdx + i + 1`) — 상한이 없다. 판독이 `_5` 까지 냈으면
+    수동 약은 `_6` 이 되어 **여기서 조용히 빠졌다.**
+
+    여태 티가 안 난 것은 이 함수의 결과가 어디에도 안 실렸기 때문이다. 화면이
+    `ocr-finalize` 를 부르기 시작하면(KEY-271) 화면은 「저장했습니다」라 말하고
+    안내문 복약 목록에서 그 약만 사라진다.
+
+    차례는 번호 순이다 — 접미사 없는 것이 첫 약이고, 그 뒤로 `_2`, `_3` … 이다.
+    화면이 그 차례로 보여 주므로 안내문도 같아야 한다.
+    """
+    found: list[tuple[int, str]] = []
+    for name in fields_by_type:
+        if name == "MEDICATION_NAME":
+            found.append((1, ""))
+            continue
+        rest = name.removeprefix("MEDICATION_NAME_") if name.startswith("MEDICATION_NAME_") else None
+        if rest is not None and rest.isdigit():
+            found.append((int(rest), f"_{rest}"))
+    return [suffix for _, suffix in sorted(found)]
+
+
 def _collect_item_rows(
     fields_by_type: dict[str, "OcrField"],
 ) -> list[tuple[str, str, int | None]]:
     rows: list[tuple[str, str, int | None]] = []
-    for suffix in ("", "_2", "_3", "_4", "_5"):
+    for suffix in _medication_suffixes(fields_by_type):
         med_field = fields_by_type.get(f"MEDICATION_NAME{suffix}")
         if med_field is None or not med_field.value:
             continue
@@ -106,6 +133,20 @@ def _collect_item_rows(
                 duration_days = int(digits)
         rows.append((med_field.value, frequency, duration_days))
     return rows
+
+
+async def _result_of(job: OcrJob) -> "OcrResult | None":
+    """그 판독 작업의 결과를 필드까지 붙여 가져온다."""
+    return await OcrResult.filter(ocr_job_id=job.ocr_job_id).prefetch_related("fields").first()
+
+
+def _not_confirmed() -> OcrApiError:
+    """쓸 판독이 아직 없다 — `GuideService.generate()` 와 같은 말을 쓴다."""
+    return OcrApiError(
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "OCR_NOT_CONFIRMED",
+        "확정된 OCR 항목이 없습니다. 먼저 판독을 확정해 주세요.",
+    )
 
 
 def _not_found() -> OcrApiError:
@@ -395,6 +436,17 @@ class TortoiseOcrRepository:
         return out
 
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription:
+        # 진료 소유권을 먼저 본다 — `generate()` 와 같은 차례다. 남의 병원
+        # 진료는 「없다」로 답해야지 「확정이 아직 안 됐다」로 답하면 그 진료가
+        # 있다는 사실이 새어 나간다.
+        visit = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
+        if visit is None:
+            raise OcrApiError(
+                status.HTTP_404_NOT_FOUND,
+                "VISIT_NOT_FOUND",
+                "진료 건을 찾을 수 없습니다.",
+            )
+
         # GuideService.generate()와 동일한 기준으로 job을 선택한다.
         # excluded된 job이나 COMPLETED가 아닌 job으로 처방을 만드는 것을 막는다.
         job = (
@@ -407,12 +459,28 @@ class TortoiseOcrRepository:
             .order_by("-created_at")
             .first()
         )
-        if job is None:
-            raise _not_found()
 
-        result = await OcrResult.filter(ocr_job_id=job.ocr_job_id).prefetch_related("fields").first()
+        # **소유권과 판독 상태를 나눠서 말한다** — 이희진 님 `#233` 리뷰.
+        #
+        # 「동일 기준」이라 적어 두고 코드가 갈려 있었다. `generate()` 는 진료
+        # 소유권을 **먼저** 보고 404 `VISIT_NOT_FOUND`, 그다음 job 이 없으면
+        # 422 `OCR_NOT_CONFIRMED` 를 낸다. 여기는 둘을 한 질의에 뭉쳐 어느
+        # 쪽이든 404 `NOT_FOUND` 였다.
+        #
+        # **화면에서 글자가 갈린다.** `GENERATE_SAYINGS` 에 `NOT_FOUND` 항목이
+        # 없어서, 스탭은 「확정한 항목이 아직 없습니다 — 값을 확인해 저장한 뒤
+        # 다시 눌러 주세요」 대신 「안내문을 만들지 못했습니다 — 잠시 뒤 다시
+        # 눌러 주세요」를 받는다. 무엇을 해야 하는지가 사라진다.
+        #
+        # 지금은 `PATCH /ocr/jobs/{id}/exclude` 를 부르는 화면이 없어 못 닿는
+        # 자리다. 그 기능이 화면에 붙는 순간 드러난다.
+        #
+        # **뭉쳐서 422 로 바꾸면 안 된다.** 그러면 남의 병원 진료를 물었을 때도
+        # 「확정된 항목이 없다」고 답해, 없는 진료와 아직 안 본 진료가 같은 말이
+        # 된다. 그래서 `generate()` 와 **같은 차례**로 가른다.
+        result = await _result_of(job) if job is not None else None
         if result is None:
-            raise _not_found()
+            raise _not_confirmed()
 
         fields_by_type: dict[str, OcrField] = {f.field_type: f for f in result.fields}
 
@@ -423,7 +491,20 @@ class TortoiseOcrRepository:
                 "확정된 OCR 항목이 없습니다.",
             )
 
-        unconfirmed = next((f for f in result.fields if not f.is_confirmed), None)
+        # **못 읽은 칸은 길을 막지 않는다** — 와이어프레임 S1-7 · KEY-271.
+        #
+        # 화면은 **값이 있는 항목만** 확정한다(`ocr-review.js` 의 `fieldsToConfirm`).
+        # 빈 칸을 확정하면 그 빈 값이 안내문에 그대로 나가기 때문이다. 그래서
+        # 「확인 완료」를 눌러도 못 읽은 칸은 미확정으로 남고, 화면은 그것을
+        # 일부러 안 막는다(`generateBlocked` 가 `counts.missing` 을 안 본다).
+        #
+        # 여기서 **모든** 필드를 요구하면 판독이 한 칸이라도 못 읽은 진료는
+        # 처방을 영영 못 세운다. 화면이 이 API 를 부르기 시작한 지금(KEY-271
+        # 다리)은 그것이 곧 **안내문 자체를 못 만드는 것**이다. 푸는 길도 없다 —
+        # 「이번 미시행」을 담을 칸이 서버에 없어 실서버에서는 버튼조차 안 그려진다.
+        #
+        # **값이 있는데 아무도 안 본 것**만 막는다. 그것이 확정의 뜻이다.
+        unconfirmed = read_but_unconfirmed(result.fields)
         if unconfirmed is not None:
             raise OcrApiError(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,

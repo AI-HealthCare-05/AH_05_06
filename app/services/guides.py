@@ -31,7 +31,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, read_but_unconfirmed
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
@@ -245,10 +245,10 @@ class GuideService:
                 "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
             )
 
-        unconfirmed = await OcrField.filter(
-            ocr_result=latest_result,
-            is_confirmed=False,
-        ).first()
+        # **여기와 `finalize_ocr` 이 같은 규칙을 봐야 한다.** 화면 사슬이
+        # `확정 → finalize → generate` 라서, 가운데만 통과하면 처방은 섰는데
+        # 안내문이 없는 진료가 남는다 (KEY-271).
+        unconfirmed = read_but_unconfirmed(await OcrField.filter(ocr_result=latest_result, is_confirmed=False))
         if unconfirmed is not None:
             raise ApiError(
                 "OCR_NOT_CONFIRMED",
@@ -314,9 +314,25 @@ class GuideService:
         #
         # **넷을 나란히 돌린다.** 서로를 안 기다린다. 트랜잭션 밖이라 락 보유
         # 시간과는 무관하고, 지연만 줄어든다.
-        caution_content, emergency_content, own_copies, common_copies = await asyncio.gather(
+        # **네 갈래 다 승인 원본을 묻는다** (KEY-265).
+        #
+        # 한동안 `caution`·`emergency` 둘만 물었다. 그래서 설정 화면이
+        # `guide_copy.py` 로 보여 주는 「원본」과 실제로 나가는 글이 **갈렸다** —
+        # 복약지도·생활지도는 세트별 승인 문구가 있어도 안 읽혀서, 화면은
+        # 정본을 「원본」이라 보이는데 환자에게는 기본 한 줄이 나갔다.
+        # `guide_defaults` 주석이 경고한 바로 그 모양이다.
+        (
+            medication_content,
+            caution_content,
+            emergency_content,
+            life_content,
+            own_copies,
+            common_copies,
+        ) = await asyncio.gather(
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.MEDICATION),
             DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.CAUTION),
             DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.EMERGENCY),
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.LIFE),
             self._doctor_copies(actor.hospital_id, visit.doctor_id, prescription_set),
             self._doctor_copies(actor.hospital_id, None, prescription_set),
         )
@@ -409,13 +425,23 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.MEDICATION,
-                # KEY-224: 첫 OCR 필드 하나가 아니라 KEY-66이 만든 구조화 처방을
+                # KEY-224: 첫 OCR 필드 하나가 아니라 KEY-66 이 만든 구조화 처방을
                 # 전부 싣는다. 복수 약제의 빈도·기간을 서로 섞지 않고, 없는 값은
-                # 지어내지 않는다. 의사/의원별 지도 문구 우선순위는 그대로다.
+                # 지어내지 않는다.
+                #
+                # **지도 문장의 마지막 기댈 곳이 승인 정본이다** (KEY-265).
+                # 의사가 고친 글(`copies`)이 먼저고, 없으면 그 세트의 승인
+                # 복약지도, 그것도 없을 때만 범용 문구다. 예전에는 승인 정본을
+                # 아예 안 물어서, 원장님이 2026-09-04 에 확인하신 열두 칸 중
+                # 복약지도가 환자에게 한 번도 안 나갔다.
                 generated_body=_medication_body(
                     prescription_items,
-                    copies.get(CautionSectionKey.MEDICATION, guide_defaults.MEDICATION),
+                    copies.get(
+                        CautionSectionKey.MEDICATION,
+                        medication_content.body if medication_content else guide_defaults.MEDICATION,
+                    ),
                 ),
+                drug_caution_content_id=(medication_content.drug_caution_content_id if medication_content else None),
                 using_db=connection,
             )
             # 주의사항은 **두 갈래로 저장한다.** 예전에는 `caution` 한 줄에 응급
@@ -452,7 +478,11 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.LIFE,
-                generated_body=copies.get(CautionSectionKey.LIFE, guide_defaults.LIFE),
+                generated_body=copies.get(
+                    CautionSectionKey.LIFE,
+                    life_content.body if life_content else guide_defaults.LIFE,
+                ),
+                drug_caution_content_id=(life_content.drug_caution_content_id if life_content else None),
                 using_db=connection,
             )
             await GuideSection.create(

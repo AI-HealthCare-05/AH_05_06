@@ -145,13 +145,23 @@ function renderChipCounts() {
    ② 탭을 다 꺼서 안 보인다      → 탭을 켠다
    ③ 오늘 아무도 등록되지 않았다  → 등록하거나 지난 날짜로 간다
    「환자가 없습니다」 하나로 뭉치면 무엇을 해야 하는지가 사라진다. */
-function blankHtml() {
+function blankHtml(canRegister) {
   var q = listQuery.trim();
   if (q) {
+    /* **등록할 수 없는 화면에서는 등록을 권하지 않는다** — KEY-236.
+     *
+     * 이 버튼을 듣는 곳은 `patients.js` 하나뿐인데(`[data-register-with]`),
+     * 같은 목록을 쓰는 의사·판독 화면은 그 파일을 안 싣는다. 거기서는 **눌러도
+     * 아무 일이 없었다.**
+     *
+     * 이어 주는 것으로 고칠 수도 없다 — 그 두 화면의 `#view-register` 는
+     * 내용이 없는 빈 껍데기라(`<section ... ></section>`), 보여 줘도 빈 판이
+     * 뜬다. 등록 판이 있는 화면에서만 권한다. 판독 화면에는 목록 머리의
+     * 「+ 환자 등록」 링크가 따로 있어 길이 막히지 않는다. */
+    var title = '<p class="rows-blank__title">「' + esc(q) + "」로<br>오늘 등록된 환자가 없습니다</p>";
+    if (!canRegister) return title;
     return (
-      '<p class="rows-blank__title">「' +
-      esc(q) +
-      "」로<br>오늘 등록된 환자가 없습니다</p>" +
+      title +
       '<button class="rows-blank__act" type="button" data-register-with="' +
       esc(q) +
       '">+ 「' +
@@ -181,7 +191,10 @@ function renderRows(keepVisitId) {
   var box = document.getElementById("rows");
 
   if (!shown.length) {
-    box.innerHTML = '<div class="rows-blank">' + blankHtml() + "</div>";
+    /* 등록 판을 실제로 채우는 화면인지 본다. 빈 껍데기(`#view-register` 만
+       있고 폼이 없는 화면)와 구별해야 하므로 폼의 확인 단추로 가른다. */
+    box.innerHTML =
+      '<div class="rows-blank">' + blankHtml(!!document.getElementById("reg-submit")) + "</div>";
     return;
   }
 

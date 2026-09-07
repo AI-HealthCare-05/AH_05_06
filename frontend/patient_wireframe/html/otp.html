@@ -214,7 +214,11 @@
   <!-- 정상 하단 버튼 -->
   <div class="otp-bottom" id="view-normal-btn" style="display:none">
     <button type="button" class="otp-btn" id="btn-issue">인증번호 받기</button>
-    <button type="button" class="otp-change">번호가 바뀌셨나요?</button>
+    <!-- **번호를 바꿀 길이 없다.** 이 버튼을 듣는 코드가 저장소에 없고, 번호를
+           고치는 종점도 없다(P1-3 「생년월일 재확인 · 링크 재발송 폼 없음」).
+           환자 화면이라 잠근 단추를 보여 줘도 손쓸 방법이 없으므로 숨긴다 —
+           번호가 바뀌었으면 병원에 연락하는 것이 지금의 길이다 (KEY-236). -->
+      <button type="button" class="otp-change" hidden>번호가 바뀌셨나요?</button>
   </div>
 
   <!-- 링크 만료 화면 -->
