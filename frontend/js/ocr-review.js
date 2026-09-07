@@ -2819,6 +2819,25 @@ function stateTakesFocus(tone) {
     };
   }
 
+  function renderMultiJobProgress(jobs) {
+    var total = jobs.length;
+    var doneCount = jobs.filter(function (j) { return j.status !== "PROCESSING"; }).length;
+    var avgProgress = Math.round(
+      jobs.reduce(function (sum, j) { return sum + (Number(j.progress) || 0); }, 0) / total,
+    );
+    var countLabel = total > 1 ? " (" + doneCount + "/" + total + "장)" : "";
+    showState(
+      "processing",
+      '<p class="state__title">판독 중입니다' + countLabel + "</p>" +
+        '<div class="bar bar--pulse"><div class="bar__fill" style="width:' +
+        avgProgress +
+        '%"></div></div>' +
+        '<p class="state__body">' +
+        avgProgress +
+        "% · 끝나면 이 화면이 저절로 바뀝니다</p>",
+    );
+  }
+
   function pollAllJobs(mine) {
     pollTimer = setTimeout(function () {
       if (mine !== loadSeq) return;
@@ -2827,7 +2846,7 @@ function stateTakesFocus(tone) {
           if (mine !== loadSeq) return;
           var processing = jobs.find(function (j) { return j.status === "PROCESSING"; });
           if (processing) {
-            renderJobState(processing);
+            renderMultiJobProgress(jobs);
             return pollAllJobs(mine);
           }
           var failed = jobs.find(function (j) { return j.status === "FAILED"; });
@@ -2909,7 +2928,7 @@ function stateTakesFocus(tone) {
         if (mine !== loadSeq || !jobs) return null;
         var processing = jobs.find(function (j) { return j.status === "PROCESSING"; });
         if (processing) {
-          renderJobState(processing);
+          renderMultiJobProgress(jobs);
           return pollAllJobs(mine);
         }
         var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });

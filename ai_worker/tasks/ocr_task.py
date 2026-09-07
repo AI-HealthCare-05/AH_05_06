@@ -112,7 +112,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         partial_results: dict[int, ClovaOcrResult] = {}
         while True:
             try:
-                clova_results = await _call_clova_for_documents(job_documents, doc_map, partial_results)
+                clova_results = await _call_clova_for_documents(job, job_documents, doc_map, partial_results)
                 clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
                 missing = await _save_clova_result(job, job_documents, clova_results, lab_kw)
                 if missing:
@@ -193,6 +193,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
 
 
 async def _call_clova_for_documents(
+    job: OcrJob,
     job_documents: list[OcrJobDocument],
     doc_map: dict[int, MedicalDocument],
     results: dict[int, ClovaOcrResult] | None = None,
@@ -201,10 +202,14 @@ async def _call_clova_for_documents(
 
     results에 이미 성공한 문서가 있으면 해당 문서는 재호출하지 않는다.
     재시도 시 같은 dict를 전달하면 성공한 문서를 중복 호출하지 않는다.
+
+    파일마다 CLOVA 완료 시 job.progress를 단계적으로 업데이트한다.
+    CLOVA 완료 구간은 0~70%, DB 저장 완료는 100% (_save_clova_result 담당).
     """
     if results is None:
         results = {}
     accumulated_ms = sum(r.elapsed_ms for r in results.values())
+    total = len(job_documents)
     for jd in job_documents:
         if jd.document_id in results:
             continue
@@ -220,6 +225,9 @@ async def _call_clova_for_documents(
             raise ClovaOcrError(exc.code, str(exc), elapsed_ms=elapsed_ms) from exc
         accumulated_ms += result.elapsed_ms
         results[jd.document_id] = result
+        done = len(results)
+        job.progress = round(done / total * 70)
+        await job.save(update_fields=("progress",))
     return results
 
 
