@@ -103,6 +103,10 @@ class GuideEventType(StrEnum):
     #: 기록이고, 지우면 「왜 예약이 사라졌지」에 답할 수 없다.
     UNAPPROVED = "UNAPPROVED"
     RETURNED = "RETURNED"
+    #: 초안을 다시 만들었다 (KEY-273). 옛 `GENERATED` 줄을 **지우지 않고** 이
+    #: 줄을 더한다 — 언제 무엇이 갈렸는지가 남아야 「내가 고친 문구가 왜
+    #: 사라졌지」에 답할 수 있다. `UNAPPROVED` 와 같은 판단이다.
+    REGENERATED = "REGENERATED"
 
 
 class GuideDocument(models.Model):
