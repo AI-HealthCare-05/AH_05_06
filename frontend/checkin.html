@@ -14,7 +14,13 @@
          링크 토큰 발급·검증은 P1 몫이라 여기서는 ?t= 로 받는다. -->
     <main class="sheet">
       <header class="sheet__head">
-        <button class="sheet__back" type="button" aria-label="뒤로">‹</button>
+        <!-- **뒤로 갈 곳이 없다.** 환자는 문자 링크로 **곧장** 이 화면에 들어온다
+             (위 주석) — 앞 화면이 없으므로 이 화살표가 가리킬 자리가 없고,
+             만들 계획도 없다. 「아직 없는 자리」가 아니라 **없는 자리**라
+             잠그지 않고 숨긴다 (KEY-236). 마크업을 지우지 않는 것은
+             `sheet__head` 의 세 칸 배치를 그대로 두기 위해서다. -->
+        <button class="sheet__back" type="button" aria-label="뒤로" hidden
+                data-unimplemented-action="sheet__back">‹</button>
         <h1 class="sheet__title">오늘 확인</h1>
         <span class="sheet__round" id="round">—</span>
       </header>

@@ -108,6 +108,46 @@ body.shell {
   color: var(--ink-3);
   cursor: default;
 }
+/* **아직 만들지 않은 자리는 한 가지 표시로만 산다** — KEY-236.
+ *
+ * 보이는 것과 들리는 것을 `aria-disabled` **하나가** 정한다. 클래스로 회색만
+ * 칠하면 화면은 잠긴 것처럼 보이는데 낭독기는 멀쩡한 단추라고 말하는 상태가
+ * 생기고, 그 반대도 생긴다 — 인수조건 「접근성 상태와 안내 문구가 일관된다」가
+ * 막으려는 것이 그것이다.
+ *
+ * `disabled` 속성을 안 쓰는 것은 위 `.tab--later` 주석과 같은 까닭이다.
+ * `disabled` 는 초점에서 통째로 빠져 **낭독기가 그런 자리가 있다는 것조차 못
+ * 알린다.** 무엇이 있을 자리인지는 보여야 하므로 초점은 남기고, 왜 아직
+ * 못 쓰는지는 `title` 로 말한다.
+ *
+ * **부품 이름을 함께 적는다.** `[aria-disabled="true"]` 하나만 쓰면 특정도가
+ * `.icon-button` 과 같아서(둘 다 0,1,0) **파일에서 뒤에 오는 쪽이 이긴다** —
+ * 실제로 그렇게 짰다가 종 아이콘의 `cursor: pointer` 가 그대로 남았고,
+ * 브라우저로 열어 보고서야 알았다. 부품을 붙이면 0,2,0 이라 순서와 무관하다. */
+[aria-disabled="true"] {
+  cursor: default;
+}
+
+.icon-button[aria-disabled="true"],
+.banner__act[aria-disabled="true"],
+.tab[aria-disabled="true"] {
+  color: var(--disabled);
+  cursor: default;
+}
+
+.icon-button[aria-disabled="true"] {
+  background: var(--bg);
+  border-color: var(--line);
+}
+
+/* 눌리는 척하는 마지막 자리가 호버다 — 손이 올라갔을 때 색이 변하면 눌러 본다. */
+.icon-button[aria-disabled="true"]:hover,
+.banner__act[aria-disabled="true"]:hover,
+.tab[aria-disabled="true"]:hover {
+  color: var(--disabled);
+  border-color: var(--line);
+  background: var(--bg);
+}
 
 .topbar__right {
   flex: 1 1 0;

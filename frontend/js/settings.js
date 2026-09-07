@@ -1947,6 +1947,28 @@
      화면은 파일을 싣고 있었는데 손을 안 붙여서 아이콘이 안 눌렸다. */
   wireFold(false);
 
+  /* **로그아웃은 여기서 잇는다** — KEY-236.
+   *
+   * `session.logout()` 은 있고 `shell.js` 의 `bindShell()` 이 `#logout` 에
+   * 붙여 준다. 그런데 이 화면은 `shell.js` 를 안 싣는다 — 그 파일은 의료진
+   * 골격(왼쪽 목록 · 날짜 이동 · 빠른 검색)을 가진 화면 것이고, 여기서 싣게
+   * 하면 `#quick-search` 가 없어 그 줄에서 죽는다.
+   *
+   * 그래서 **기능이 없어서가 아니라 연결이 빠져서** 안 눌리던 것이다. 잠글
+   * 자리가 아니라 이을 자리다.
+   *
+   * **여기만 가드를 단다** (#237 이희진). 이 파일에는 가드 없는 `el()` 이
+   * 열일곱 군데 있지만 그것들은 다 함수 안이라, 없으면 그 기능 하나가 죽는다.
+   * 이 줄은 다르다 — 바로 아래 `requireSession()` **앞**의 최상위라, 여기서
+   * 터지면 세션 확인도 폼 배선도 시작을 못 한다. 단추 하나 없어진 값으로
+   * 설정 화면이 통째로 죽는 것은 너무 비싸다. */
+  var logout = el("logout");
+  if (logout) {
+    logout.addEventListener("click", function () {
+      session.logout();
+    });
+  }
+
   requireSession().then(function (me) {
     who = me;
     el("who-name").textContent = me.name;

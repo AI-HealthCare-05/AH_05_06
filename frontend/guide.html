@@ -42,6 +42,14 @@
     <button type="button" class="chat-panel__close" id="chat-close" aria-label="닫기">✕</button>
   </div>
   <div class="chat-messages" id="chat-messages"></div>
+  <!-- **환자가 병원에 닿는 길은 이 화면에서 이 줄뿐이다** — KEY-236.
+       연락처 종점이 아직 계약에 없어(KEY-259), 답변마다 붙던 「문의하기」는
+       눌러도 아무 일이 안 났다. 그 사정을 `title` 로 적으면 손가락으로 보는
+       사람에게는 **아무것도 안 보인다** — 툴팁은 호버가 있어야 뜬다.
+       그래서 보이는 글로, 답변마다 말고 한 번 둔다. -->
+  <p class="chat-note">
+    문의 창구는 아직 준비 중이에요. 급하시면 <strong>병원으로 전화</strong>해 주세요.
+  </p>
   <div class="chat-input-area">
     <textarea class="chat-input" id="chat-input" rows="1"
       placeholder="궁금한 것을 입력하세요" aria-label="질문 입력"></textarea>
