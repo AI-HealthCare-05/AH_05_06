@@ -110,6 +110,7 @@ docker compose exec -T fastapi uv run --no-sync python scripts/check_schema_drif
 | 환자 OTP | 고정 `000000` (`MOCK_OTP_CODE`). 실제 SMS 발송 없음 |
 | 문자 발송 | `SMS_PROVIDER=mock`. 링크는 담당자가 화면에서 복사해 수동 전달 |
 | 안내문 생성 | 확정 OCR 값 한 줄 + 처방세트별 승인 문구/의사 수정 문구/기본 문구 조합. LLM 생성은 미착수(KEY-75) |
+| 환자 챗봇 | `OPENAI_API_KEY` 가 비면 3-7 의 챗봇 응답이 고정 폴백 문구로만 나온다. 실제 응답을 보려면 키가 필요하다 (`app/apis/v1/chatbot_routers.py`) |
 | OCR (fixture 모드) | 업로드 이미지를 실제로 판독하지 않고 합성 판독값 주입. 실판독은 2-2 에서 `OCR_FIXTURE_FALLBACK=0` + CLOVA 키 + `--with-ocr-worker` |
 
 ## 5. 알아둘 것

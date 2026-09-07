@@ -272,6 +272,7 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `JWT_ALGORITHM` | JWT 알고리즘 | `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 액세스 토큰 수명 | `60` |
 | `REFRESH_TOKEN_EXPIRE_MINUTES` | 리프레시 토큰 수명 | `20160` (14일) |
+| `TIMEZONE` | 서버 벽시계 시간대 (검사·서버 시계가 어긋나면 날짜 오류) | `Asia/Seoul` |
 
 ### DB / Redis
 
@@ -295,11 +296,11 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY` | CLOVA OCR 자격증명. 비우면 fixture fallback (KEY-56) | (비움) |
 | `CLOVA_OCR_TIMEOUT_SECONDS` | CLOVA 타임아웃 | `10` |
 
-### OpenAI (안내문 생성)
+### OpenAI (환자 챗봇)
 
 | 변수 | 목적 | 예시·기본값 |
 |---|---|---|
-| `OPENAI_API_KEY` | 안내문 생성용 키. 비우면 관련 기능 비활성 | (비움) |
+| `OPENAI_API_KEY` | 환자 챗봇 응답 생성 키 (`app/apis/v1/chatbot_routers.py` 가 읽는 유일한 자리). 비우면 챗봇이 고정 폴백 문구만 답한다. 안내문 생성에는 안 쓰인다 | (비움) |
 | `OPENAI_MODEL` | 모델 이름 | `gpt-4o-mini` |
 | `OPENAI_BASE_URL` | API 엔드포인트 | `https://api.openai.com/v1` |
 | `OPENAI_TIMEOUT_SECONDS` | 타임아웃 | `20` |
@@ -335,8 +336,11 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 - **CLOVA OCR** — NAVER Cloud 콘솔에서 OCR 도메인을 만들고 `Invoke URL` 과 `Secret Key`
   를 받아 `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY` 에 넣는다. 비워 두면 워커가
   fixture fallback 으로 동작한다 (KEY-56 · 계약: [`docs/decisions/KEY-163-ocr-real-contract.md`](docs/decisions/KEY-163-ocr-real-contract.md)).
-- **OpenAI** — 안내문 생성에 쓴다. `OPENAI_API_KEY` 를 넣고, 필요하면 `OPENAI_MODEL` ·
-  `OPENAI_BASE_URL` 로 바꾼다. 비우면 생성 기능이 비활성이고 나머지 흐름은 그대로 돈다.
+- **OpenAI** — 환자 챗봇 응답 생성에 쓴다. `app/apis/v1/chatbot_routers.py` 가 이 키를 읽는
+  유일한 자리다. `OPENAI_API_KEY` 를 넣고, 필요하면 `OPENAI_MODEL` · `OPENAI_BASE_URL` 로
+  바꾼다. 비우면 챗봇이 고정 폴백 문구만 답하고([`docs/local-demo-accounts.md`](docs/local-demo-accounts.md) §3-7),
+  나머지 흐름은 그대로 돈다. **안내문 생성은 이 키를 쓰지 않는다** — 확정 OCR + 승인 문구
+  조합이고 LLM 생성은 미착수(KEY-75).
 - **MinIO** — 합성 EMR 이미지를 담는다. `--profile ocr` 로 뜨며, 최초 1회
   `minio-init` 이 버킷을 만들고 **익명 접근을 차단**한다. 수동으로 돌릴 때는:
 
