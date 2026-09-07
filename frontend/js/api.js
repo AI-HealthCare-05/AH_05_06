@@ -43,6 +43,21 @@ function ApiError(code, status, data) {
 }
 ApiError.prototype = Object.create(Error.prototype);
 
+/* **서버에 닿지도 못한 것** — KEY-211.
+ *
+ * HTTP 응답이 온 오류는 서버가 `status` 와 `code` 를 준다. 그런데 오프라인 ·
+ * DNS 실패 · 연결 끊김 · CORS 차단은 `fetch` 자체가 거절하고, 브라우저가 주는 것은
+ * `.status` 도 `.code` 도 없는 날것 `TypeError` 다. 그대로 올려 보내면 화면은 그것을
+ * 「서버가 거절했다」와 구별할 수 없어 제 기본 문구를 낸다 — 시연·Pilot 에서 원인을
+ * 찾는 시간이 여기서 늘어난다.
+ *
+ * `status = 0` 은 「HTTP 왕복이 아예 없었다」는 뜻이다. 화면의 문구 표가 이미 그
+ * 규칙 모양을 다룰 줄 안다(`errorMessage`). */
+var NETWORK_ERROR_CODE = "NETWORK_UNREACHABLE";
+
+/* **말은 한 곳에서 정한다.** 네 화면에 같은 문장을 따로 적으면 한쪽만 고쳐진다. */
+var NETWORK_SAYING = { status: 0, say: "서버에 닿지 못했습니다 — 연결을 확인하고 다시 눌러 주세요" };
+
 /* 목업 — 로컬 개발 중에만 쓴다.
  * localhost/file 미리보기에서 ?mock=1 로 켜며 같은 탭의 화면 이동 동안 유지한다.
  * 배포/Pilot 호스트에서는 저장된 값이 있어도 무조건 꺼진다. */
@@ -83,7 +98,16 @@ function request(path, options) {
 
   var headers = { Accept: "application/json" };
   if (options.body) headers["Content-Type"] = "application/json";
-  var token = options.token || session.token();
+  /* **환자 화면은 `session.js` 를 안 싣는다** — KEY-211.
+   *
+   * 체크인(`checkin.html`)은 의료진 세션 없이 링크 토큰으로 들어온다. 그런데
+   * 여기서 `session` 을 곧장 부르면 `ReferenceError` 가 나고, 그건 프라미스 거절이
+   * 아니라 **동기 예외**라 부르는 쪽의 `.catch` 가 아예 안 걸린다. 환자는 내용이 빈
+   * 반쪽 화면을 보고, 왜 안 되는지는 콘솔에만 남는다.
+   *
+   * 이 종점들은 주소의 링크 토큰으로 스스로를 증명하므로 `Authorization` 이
+   * 필요 없다. 없으면 없는 대로 보낸다. */
+  var token = options.token || (typeof session !== "undefined" ? session.token() : null);
   if (token) headers["Authorization"] = "Bearer " + token;
 
   return fetch(API_BASE + path, {
@@ -106,7 +130,16 @@ function request(path, options) {
         if (retry && !data.retry_after_seconds) data.retry_after_seconds = retry;
         throw new ApiError(data.code || data.detail || "unknown", res.status, data);
       });
-  });
+    })
+    .catch(function (error) {
+      /* 서버가 답한 오류는 그대로 올린다 — `code` 와 `status` 가 이미 붙어 있다. */
+      if (error instanceof ApiError) throw error;
+      /* 여기 오는 것은 `fetch` 단계의 거절뿐이다. 브라우저마다 말이 달라서
+         (`Failed to fetch` · `NetworkError when attempting to fetch resource`)
+         메시지를 화면에 올리지 않는다 — 어차피 사람이 읽을 말이 아니고,
+         무엇보다 그 문장이 주소를 담을 수 있다. */
+      throw new ApiError(NETWORK_ERROR_CODE, 0, {});
+    });
 }
 
 var api = {

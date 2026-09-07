@@ -197,6 +197,10 @@ var GENERATE_SAYINGS = [
   { code: "VERSION_CONFLICT", say: "그 사이 값이 바뀌었습니다 — 화면을 새로 고쳐 확인해 주세요" },
   { code: "OCR_FIELD_CONFIRMED", say: "이미 확정된 항목이 있습니다 — 화면을 새로 고쳐 주세요" },
   { status: 401, say: "로그인이 풀렸습니다 — 다시 로그인해 주세요" },
+  /* **서버가 거절한 것과 닿지도 못한 것은 다르다** — KEY-211. #162 에서 이 규칙을
+     걷어낸 것은 그때 `request()` 가 `status: 0` 을 낼 줄 몰라 한 번도 안 걸렸기
+     때문이다. 이제 낸다. */
+  NETWORK_SAYING,
 ];
 
 function generateFailureSaying(error) {
