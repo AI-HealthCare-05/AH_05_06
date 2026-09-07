@@ -1,5 +1,6 @@
 from dataclasses import replace
 from datetime import date
+from typing import Any, cast
 
 import pytest
 
@@ -48,7 +49,7 @@ def chunk(chunk_id: str, embedding: tuple[float, ...] = (1.0, 0.0, 0.0), **chang
         verified_at=TODAY,
         review_due_at=date(2099, 12, 31),
     )
-    return replace(base, **changes)
+    return replace(base, **cast(dict[str, Any], changes))
 
 
 def test_fixed_retrieval_parameters() -> None:
@@ -131,7 +132,7 @@ def approved_fallback(**changes: object) -> ApprovedFallbackTemplate:
         approved_by="synthetic-medical-safety-reviewer",
         approved_at=TODAY,
     )
-    return replace(template, **changes)
+    return replace(template, **cast(dict[str, Any], changes))
 
 
 def evaluation_approval(**changes: object) -> PocEvaluationApproval:
@@ -142,7 +143,7 @@ def evaluation_approval(**changes: object) -> PocEvaluationApproval:
         approved_at=TODAY,
         result_sha256="a" * 64,
     )
-    return replace(approval, **changes)
+    return replace(approval, **cast(dict[str, Any], changes))
 
 
 def test_generation_is_blocked_before_poc_evaluation_passes() -> None:

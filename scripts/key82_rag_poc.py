@@ -16,8 +16,8 @@ from statistics import median, quantiles
 from time import perf_counter
 from typing import Any
 
-import asyncmy
-from asyncmy.cursors import DictCursor
+import asyncmy  # type: ignore[import-untyped]
+from asyncmy.cursors import DictCursor  # type: ignore[import-untyped]
 
 from app.core.config import Config
 from app.models.catalog import ApprovalStatus, SourceGrade
