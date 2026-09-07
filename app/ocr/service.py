@@ -16,6 +16,7 @@ from app.models.ocr import (
     OcrJobDocument,
     OcrJobStatus,
     OcrResult,
+    read_but_unconfirmed,
 )
 from app.models.prescriptions import AS_NEEDED, Prescription, PrescriptionItem
 from app.models.visits import Visit
@@ -462,7 +463,7 @@ class TortoiseOcrRepository:
         # 「이번 미시행」을 담을 칸이 서버에 없어 실서버에서는 버튼조차 안 그려진다.
         #
         # **값이 있는데 아무도 안 본 것**만 막는다. 그것이 확정의 뜻이다.
-        unconfirmed = next((f for f in result.fields if f.value and not f.is_confirmed), None)
+        unconfirmed = read_but_unconfirmed(result.fields)
         if unconfirmed is not None:
             raise OcrApiError(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,

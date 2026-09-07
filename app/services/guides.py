@@ -31,7 +31,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, read_but_unconfirmed
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
@@ -245,10 +245,10 @@ class GuideService:
                 "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
             )
 
-        unconfirmed = await OcrField.filter(
-            ocr_result=latest_result,
-            is_confirmed=False,
-        ).first()
+        # **여기와 `finalize_ocr` 이 같은 규칙을 봐야 한다.** 화면 사슬이
+        # `확정 → finalize → generate` 라서, 가운데만 통과하면 처방은 섰는데
+        # 안내문이 없는 진료가 남는다 (KEY-271).
+        unconfirmed = read_but_unconfirmed(await OcrField.filter(ocr_result=latest_result, is_confirmed=False))
         if unconfirmed is not None:
             raise ApiError(
                 "OCR_NOT_CONFIRMED",
