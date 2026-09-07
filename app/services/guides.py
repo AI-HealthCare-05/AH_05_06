@@ -31,7 +31,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, read_but_unconfirmed
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, course_days, read_but_unconfirmed
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
@@ -825,18 +825,13 @@ class GuideService:
             .using_db(connection)
             .first()
         )
-        if row is None or not row.value:
+        if row is None:
             return None
-        try:
-            days = int(str(row.value).strip())
-        except ValueError:
-            # 「84일」처럼 단위가 붙어 오면 숫자만 뗀다. 그래도 안 되면 포기한다 —
-            # 지어낸 값으로 예약하는 것보다 안 만드는 편이 낫다.
-            digits = "".join(ch for ch in str(row.value) if ch.isdigit())
-            if not digits:
-                return None
-            days = int(digits)
-        return days if days > 0 else None
+        # 「84일」처럼 단위가 붙어 와도 숫자만 뗀다. 총투(통)로 읽은 값이면
+        # `unit` 을 보고 일수로 환산한다 — 안 하면 3통 처방의 소진 문자가
+        # 81일 일찍 예약된다. 못 세면 포기한다: 지어낸 값으로 예약하는 것보다
+        # 안 만드는 편이 낫다.
+        return course_days(row.value, row.unit)
 
     @staticmethod
     def check_at(started: datetime, days: int, hour: int | None = None) -> datetime:

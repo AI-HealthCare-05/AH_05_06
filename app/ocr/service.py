@@ -16,6 +16,7 @@ from app.models.ocr import (
     OcrJobDocument,
     OcrJobStatus,
     OcrResult,
+    course_days,
     read_but_unconfirmed,
 )
 from app.models.prescriptions import AS_NEEDED, Prescription, PrescriptionItem
@@ -127,10 +128,9 @@ def _collect_item_rows(
         frequency = freq_field.value if freq_field is not None and freq_field.value else ""
         dur_field = fields_by_type.get(f"DURATION_DAYS{suffix}")
         duration_days: int | None = None
-        if frequency != AS_NEEDED and dur_field is not None and dur_field.value:
-            digits = "".join(ch for ch in dur_field.value if ch.isdigit())
-            if digits:
-                duration_days = int(digits)
+        if frequency != AS_NEEDED and dur_field is not None:
+            # 판독이 읽은 숫자가 총투(통)일 수 있다 — `unit` 이 그것을 말한다.
+            duration_days = course_days(dur_field.value, dur_field.unit)
         rows.append((med_field.value, frequency, duration_days))
     return rows
 

@@ -186,6 +186,54 @@ class OcrField(models.Model):
     candidates: fields.ReverseRelation["OcrFieldCandidate"]
 
 
+class DurationUnit(StrEnum):
+    """`DURATION_DAYS` 칸의 숫자가 무엇인가 — 「3」이 3일인지 3통인지.
+
+    **소진 예정일과 확인 문자 시각이 이 값으로 셈해진다.** 틀리면 문자가
+    엉뚱한 날 나간다.
+
+    **세트에 붙이지 않는다.** 카탈로그에 같은 뜻의 칸이 있지만
+    (`PrescriptionSet.days_mode` — 「의원마다 다르다」) 합성 100행에서 네 세트가
+    **전부** 두 단위로 다 나온다. `자궁내막증 · 비잔 (계속)` 만 해도 일수 23 ·
+    통수 11 이다. 단위는 세트의 성질이 아니라 **그 진료의 그 줄**의 성질이다.
+
+    값이 화면에 그대로 나간다 — `frontend/js/field-labels.js` 의 `fieldUnit` 이
+    서버가 준 단위를 무조건 우선한다. 숫자 뒤에 붙는 접미사이므로 「일수」가
+    아니라 「일」이다.
+    """
+
+    DAYS = "일"
+    PACK = "통"
+
+
+#: 한 통이 며칠치인가. `docs/synthetic-data-spec.md` 의 불변식 —
+#: 「`총투원문 × 단위 = 처방일수` — 통수면 `× 28`」. `app/tests/fixtures/mapping.py`
+#: 도 같은 말을 적어 두었다.
+DAYS_PER_PACK = 28
+
+
+def course_days(value: str | None, unit: str | None) -> int | None:
+    """판독이 읽은 숫자를 **일수**로.
+
+    EMR 「총투」 칸의 「3」이 3통이면 84일이고 3일로 읽으면 3일이다. 그 차이가
+    소진 예정일 81일을 만든다.
+
+    **모르면 곱하지 않는다.** `unit` 이 빈 행은 여태 다 그렇게 살았고(이 칸에
+    값을 쓰는 코드가 없었다), 지어낸 값으로 발송일을 잡는 것보다 하던 대로가
+    낫다 — `_course_days` 가 「지어낸 값으로 예약하는 것보다 안 만드는 편이
+    낫다」고 적어 둔 것과 같은 태도다.
+    """
+    if value is None:
+        return None
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    if not digits:
+        return None
+    read = int(digits)
+    if read <= 0:
+        return None
+    return read * DAYS_PER_PACK if unit == DurationUnit.PACK else read
+
+
 def read_but_unconfirmed(fields: "Iterable[OcrField]") -> "OcrField | None":
     """**값이 있는데 아무도 안 본 줄** — 확정 게이트가 막아야 하는 것.
 
