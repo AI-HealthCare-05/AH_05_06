@@ -223,6 +223,7 @@ def test_failed_or_incomplete_evaluation_approval_does_not_open_generation() -> 
         evaluation_approval(passed=False),
         evaluation_approval(approved_by=""),
         evaluation_approval(result_sha256="missing"),
+        evaluation_approval(result_sha256="x" * 64),
     ):
         admission = admit_generation_context(found, evaluation_approval=approval)
         assert admission.outcome is ContextAdmissionOutcome.GENERATION_BLOCKED
@@ -240,3 +241,24 @@ def test_synthetic_evaluation_dataset_meets_fixed_gates() -> None:
         "admission_accuracy": 1.0,
         "unsafe_context_entries": 0,
     }
+
+
+def test_negative_only_evaluation_is_reported_as_failed_instead_of_dividing_by_zero() -> None:
+    negative_case = {
+        "query_id": "negative-only",
+        "query_embedding": [-1.0, 0.0, 0.0],
+        "hospital_id": 1,
+        "allowed_sections": ["medication"],
+        "expected_outcome": "no_evidence",
+        "expected_hit_ids": [],
+        "expected_admission": "approved_template_fallback",
+        "forbidden_hit_ids": [],
+    }
+
+    result = evaluate([negative_case])
+
+    assert result["passed"] is False
+    assert result["metrics"]["recall_at_3"] is None
+    assert result["metrics"]["precision_at_3"] is None
+    assert "evaluation-set:no-positive-expected-hits" in result["failed_cases"]
+    assert "evaluation-set:no-retrieved-hits" in result["failed_cases"]

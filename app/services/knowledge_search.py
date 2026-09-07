@@ -104,6 +104,16 @@ def fallback_body_checksum(body: str) -> str:
     return sha256(body.encode("utf-8")).hexdigest()
 
 
+def _is_sha256_hex(value: str) -> bool:
+    if len(value) != 64:
+        return False
+    try:
+        bytes.fromhex(value)
+    except ValueError:
+        return False
+    return True
+
+
 def cosine_similarity(left: tuple[float, ...], right: tuple[float, ...]) -> float:
     """같은 차원의 0이 아닌 두 벡터의 코사인 유사도를 계산한다."""
 
@@ -198,7 +208,7 @@ def admit_generation_context(
         or not evaluation_approval.passed
         or not evaluation_approval.evaluation_id.strip()
         or not evaluation_approval.approved_by.strip()
-        or len(evaluation_approval.result_sha256) != 64
+        or not _is_sha256_hex(evaluation_approval.result_sha256)
     ):
         return GenerationContextAdmission(ContextAdmissionOutcome.GENERATION_BLOCKED)
     if search_result.outcome is KnowledgeSearchOutcome.FOUND and search_result.hits:

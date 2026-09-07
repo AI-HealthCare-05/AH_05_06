@@ -79,9 +79,12 @@ def _synthetic_evaluation_approval() -> PocEvaluationApproval:
     )
 
 
-def evaluate() -> dict[str, Any]:
+def evaluate(cases: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     chunks = [_chunk(row) for row in json.loads(CHUNKS_PATH.read_text(encoding="utf-8"))]
-    cases = json.loads(EVALUATION_PATH.read_text(encoding="utf-8"))
+    if cases is None:
+        cases = json.loads(EVALUATION_PATH.read_text(encoding="utf-8"))
+    if not cases:
+        raise ValueError("evaluation cases must not be empty")
     outcome_correct = 0
     admission_correct = 0
     expected_hits = 0
@@ -121,19 +124,30 @@ def evaluate() -> dict[str, Any]:
         if not outcome_matches or not admission_matches or actual_ids != expected_ids:
             failures.append(case["query_id"])
 
+    recall_at_3 = relevant_hits / expected_hits if expected_hits else None
+    precision_at_3 = relevant_hits / retrieved_hits if retrieved_hits else None
+    if recall_at_3 is None:
+        failures.append("evaluation-set:no-positive-expected-hits")
+    if precision_at_3 is None:
+        failures.append("evaluation-set:no-retrieved-hits")
+
+    outcome_accuracy = outcome_correct / len(cases)
+    admission_accuracy = admission_correct / len(cases)
     metrics = {
-        "outcome_accuracy": outcome_correct / len(cases),
-        "recall_at_3": relevant_hits / expected_hits,
-        "precision_at_3": relevant_hits / retrieved_hits,
-        "admission_accuracy": admission_correct / len(cases),
+        "outcome_accuracy": outcome_accuracy,
+        "recall_at_3": recall_at_3,
+        "precision_at_3": precision_at_3,
+        "admission_accuracy": admission_accuracy,
         "unsafe_context_entries": unsafe_context_entries,
     }
     passed = (
-        metrics["outcome_accuracy"] >= PASS_CRITERIA["outcome_accuracy_min"]
-        and metrics["recall_at_3"] >= PASS_CRITERIA["recall_at_3_min"]
-        and metrics["precision_at_3"] >= PASS_CRITERIA["precision_at_3_min"]
-        and metrics["admission_accuracy"] >= PASS_CRITERIA["admission_accuracy_min"]
-        and metrics["unsafe_context_entries"] <= PASS_CRITERIA["unsafe_context_entries_max"]
+        outcome_accuracy >= PASS_CRITERIA["outcome_accuracy_min"]
+        and recall_at_3 is not None
+        and recall_at_3 >= PASS_CRITERIA["recall_at_3_min"]
+        and precision_at_3 is not None
+        and precision_at_3 >= PASS_CRITERIA["precision_at_3_min"]
+        and admission_accuracy >= PASS_CRITERIA["admission_accuracy_min"]
+        and unsafe_context_entries <= PASS_CRITERIA["unsafe_context_entries_max"]
         and not failures
     )
     report = {
