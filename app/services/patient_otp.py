@@ -80,6 +80,25 @@ def _resend_too_soon(challenge: PatientOtpChallenge, timestamp: datetime) -> Api
     )
 
 
+async def invalidate_otp_challenge(
+    patient_guide_link_id: int,
+    connection: BaseDBAsyncClient,
+    timestamp: datetime,
+) -> None:
+    """링크가 회전할 때 기존 OTP를 소비 처리한다.
+
+    OTP digest·salt 생성 규칙은 이 모듈만 소유한다. 링크 폐기·재발급에서는
+    원문 검증을 더 시도할 수 없게 만료·소비 시각만 닫고, 실패 횟수와 잠금은
+    그대로 보존한다.
+    """
+
+    await (
+        PatientOtpChallenge.filter(patient_guide_link_id=patient_guide_link_id)
+        .using_db(connection)
+        .update(expires_at=timestamp, consumed_at=timestamp)
+    )
+
+
 @dataclass(frozen=True)
 class _PreviousOtp:
     otp_digest: str

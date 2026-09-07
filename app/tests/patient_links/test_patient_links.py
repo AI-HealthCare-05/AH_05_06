@@ -16,6 +16,8 @@ from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import (
     GuideDocument,
+    GuideEvent,
+    GuideEventType,
     GuideSection,
     GuideSectionKey,
     GuideStatus,
@@ -254,8 +256,11 @@ class TestManualLinkLifecycle(PatientLinkTestCase):
         await challenge.refresh_from_db()
         assert challenge.consumed_at is not None
         assert challenge.expires_at <= now()
-        assert challenge.otp_digest != digest_link_token("123456")
+        assert challenge.otp_digest == digest_link_token("123456"), "링크 서비스가 OTP digest 소유 규칙을 건드렸다"
         assert challenge.failed_attempts == 3, "수동 재발급으로 OTP 실패 제한을 우회했다"
+        event = await GuideEvent.get(guide_document_id=guide.guide_document_id)
+        assert event.event_type is GuideEventType.LINK_REISSUED
+        assert event.actor_id == staff.staff_id
 
     async def test_manual_revoke_makes_the_previous_token_unusable(self) -> None:
         hospital = await make_hospital("KEY-223 폐기 합성의원")
@@ -277,6 +282,9 @@ class TestManualLinkLifecycle(PatientLinkTestCase):
         assert response.status_code == 204
         assert context.status_code == 404
         assert context.json()["code"] == "LINK_NOT_FOUND"
+        event = await GuideEvent.get(guide_document_id=guide.guide_document_id)
+        assert event.event_type is GuideEventType.LINK_REVOKED
+        assert event.actor_id == doctor.staff_id
 
     async def test_manual_re_issue_requires_an_existing_approved_same_hospital_link(self) -> None:
         owner = await make_hospital("KEY-223 소유 합성의원")

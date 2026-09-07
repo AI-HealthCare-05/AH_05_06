@@ -131,10 +131,60 @@ test("발급 모달은 원문 링크를 HTML에 넣지 않고 메모리 복사·
   );
 
   assert.doesNotMatch(modal, /patientLinkUrl[^\n]*\+|innerHTML|localStorage|sessionStorage/);
-  assert.match(events, /new URL\(patientLinkUrl, window\.location\.href\)[\s\S]*navigator\.clipboard[\s\S]*writeText\(copyUrl\)/);
+  assert.match(events, /new URL\(patientLinkUrl, window\.location\.href\)[\s\S]*copyPatientLink\(navigator\.clipboard, copyUrl\)/);
   assert.match(events, /window\.open\(patientLinkUrl, "_blank", "noopener"\)/);
   assert.match(events, /reIssuePatientLink/);
   assert.match(events, /revokePatientLink/);
+});
+
+test("다른 환자로 전환된 뒤 도착한 링크 응답은 현재 화면에 표시하지 않는다", () => {
+  const box = load("api", "session", "patients-api", "shell", "doctor-api", "doctor");
+
+  assert.equal(box.isCurrentPatientLinkRequest({ visit_id: 223 }, 223, 8, 8), true);
+  assert.equal(box.isCurrentPatientLinkRequest({ visit_id: 224 }, 223, 9, 8), false);
+  assert.equal(box.isCurrentPatientLinkRequest({ visit_id: 223 }, 223, 9, 8), false);
+
+  const source = read("js/doctor.js");
+  const launch = source.slice(source.indexOf("function openPatientGuide"), source.indexOf("function returnModal"));
+  assert.match(launch, /isCurrentPatientLinkRequest[\s\S]*openModal\(patientLinkModal/);
+});
+
+test("복사하거나 열지 않은 일회용 링크는 확인 없이 닫히지 않는다", () => {
+  const box = load("api", "session", "patients-api", "shell", "doctor-api", "doctor");
+  let confirmations = 0;
+  const reject = () => {
+    confirmations += 1;
+    return false;
+  };
+
+  assert.equal(box.canDiscardPatientLink("/one-time", false, reject), false);
+  assert.equal(confirmations, 1);
+  assert.equal(box.canDiscardPatientLink("/one-time", true, reject), true);
+  assert.equal(box.canDiscardPatientLink(null, false, reject), true);
+  assert.equal(confirmations, 1);
+});
+
+test("clipboard API가 없거나 동기로 실패해도 복사 실패 Promise로 처리한다", async () => {
+  const box = load("api", "session", "patients-api", "shell", "doctor-api", "doctor");
+
+  await assert.rejects(box.copyPatientLink(undefined, "http://test/link"), /clipboard unavailable/);
+  await assert.rejects(
+    box.copyPatientLink({ writeText() { throw new Error("denied"); } }, "http://test/link"),
+    /denied/,
+  );
+});
+
+test("교체·폐기 응답은 시작한 모달이 닫힌 뒤 다시 모달을 열지 않는다", () => {
+  const source = read("js/doctor.js");
+  const events = source.slice(
+    source.indexOf('if (target.id === "patient-link-reissue"'),
+    source.indexOf('var reason = target.closest("[data-reason]")'),
+  );
+
+  assert.match(events, /reissuingModalSeq = patientLinkModalSeq/);
+  assert.match(events, /patientLinkModalSeq === reissuingModalSeq/);
+  assert.match(events, /revokingModalSeq = patientLinkModalSeq/);
+  assert.match(events, /patientLinkModalSeq !== revokingModalSeq/);
 });
 
 test("클릭 가드에 걸려도 누른 버튼을 선행 비활성화해 고착시키지 않는다", () => {

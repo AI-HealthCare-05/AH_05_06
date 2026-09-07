@@ -8,7 +8,7 @@ from tortoise.timezone import now
 from app.apis.v1.patient_otp_routers import _otp_service
 from app.core.time import as_utc
 from app.main import app
-from app.models.visits import GuideDocument, GuideStatus
+from app.models.visits import GuideDocument, GuideStatus, PatientOtpChallenge
 from app.services.patient_links import digest_link_token
 from app.services.patient_otp import MockOtpDelivery, PatientOtpService
 from app.tests.auth_base import AuthTestCase
@@ -163,6 +163,14 @@ class TestPatientLinkReIssue(BaseAuthCase):
         link = await make_link()
         link.expires_at = now() - timedelta(seconds=1)
         await link.save(update_fields=["expires_at"])
+        challenge = await PatientOtpChallenge.create(
+            patient_guide_link=link,
+            otp_digest=digest_link_token("123456"),
+            otp_salt="synthetic-salt-123456789012345",
+            expires_at=now() + timedelta(minutes=3),
+            failed_attempts=2,
+            issued_at=now(),
+        )
 
         res = await self.call_re_issue()
 
@@ -171,6 +179,11 @@ class TestPatientLinkReIssue(BaseAuthCase):
         await link.refresh_from_db()
         assert link.expires_at > now()
         assert link.token_digest != digest_link_token(LINK_TOKEN)
+        await challenge.refresh_from_db()
+        assert challenge.consumed_at is not None
+        assert challenge.expires_at <= now()
+        assert challenge.otp_digest == digest_link_token("123456")
+        assert challenge.failed_attempts == 2
 
     async def test_revoked_link_is_re_issued(self) -> None:
         link = await make_link()

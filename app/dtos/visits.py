@@ -133,6 +133,8 @@ class TimelineEvent(StrEnum):
     #: 초안을 다시 만들었다 (KEY-273). 옛 생성 줄을 지우지 않고 이 줄을 더한다.
     GUIDE_REGENERATED = "GUIDE_REGENERATED"
     GUIDE_RETURNED = "GUIDE_RETURNED"
+    PATIENT_LINK_REISSUED = "PATIENT_LINK_REISSUED"
+    PATIENT_LINK_REVOKED = "PATIENT_LINK_REVOKED"
     CHECK_IN_SUBMITTED = "CHECK_IN_SUBMITTED"
     #: 환자가 안내문을 열었다. `section_key` 가 있으면 그 장까지 읽은 것이다.
     GUIDE_VIEWED = "GUIDE_VIEWED"

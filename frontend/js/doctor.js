@@ -111,6 +111,30 @@ function patientLinkSaying(error) {
   return errorMessage(error, PATIENT_LINK_SAYINGS, "환자 화면을 열지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
 }
 
+function isCurrentPatientLinkRequest(currentVisit, expectedVisitId, currentLoadSeq, expectedLoadSeq) {
+  return !!(
+    currentVisit &&
+    currentVisit.visit_id === expectedVisitId &&
+    currentLoadSeq === expectedLoadSeq
+  );
+}
+
+function copyPatientLink(clipboard, url) {
+  /* writeText 접근과 호출을 Promise 안에서 한다. clipboard가 없거나 구현이
+     동기로 던지는 브라우저에서도 호출부의 catch가 같은 안내를 보여 준다. */
+  return Promise.resolve().then(function () {
+    if (!clipboard || typeof clipboard.writeText !== "function") {
+      throw new Error("clipboard unavailable");
+    }
+    return clipboard.writeText(url);
+  });
+}
+
+function canDiscardPatientLink(url, handled, confirmDiscard) {
+  if (!url || handled) return true;
+  return confirmDiscard("아직 링크를 복사하거나 열지 않았습니다. 닫으면 이 주소는 다시 확인할 수 없습니다. 닫을까요?");
+}
+
 (function () {
   /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
      이 파일은 `doctor.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
@@ -137,6 +161,10 @@ function patientLinkSaying(error) {
   /* 원문 URL은 발급 모달이 열린 동안 메모리에만 둔다. DOM·저장소·로그에는
      쓰지 않고, 복사하거나 새 인증 탭을 열 때 브라우저 API로 바로 넘긴다. */
   var patientLinkUrl = null;
+  var patientLinkHandled = false;
+  /* 비동기 링크 작업은 시작한 모달 세대와 결과를 받을 때의 세대가 같아야
+     화면을 다시 연다. 사용자가 닫거나 환자를 바꾸면 세대가 바뀐다. */
+  var patientLinkModalSeq = 0;
 
   function isDoctor() {
     return !!(me && (me.roles || []).indexOf("doctor") !== -1);
@@ -266,13 +294,16 @@ function patientLinkSaying(error) {
   /* ── 모달 ───────────────────────────────────────────── */
 
   function openModal(html) {
+    patientLinkModalSeq += 1;
     el("modal-body").innerHTML = html;
     el("modal").hidden = false;
   }
 
   function closeModal() {
+    patientLinkModalSeq += 1;
     el("modal").hidden = true;
     patientLinkUrl = null;
+    patientLinkHandled = false;
   }
 
   /* 권한 문제와 그 밖을 가른다.
@@ -326,6 +357,7 @@ function patientLinkSaying(error) {
 
   function patientLinkModal(result, label) {
     patientLinkUrl = patientGuideUrl(result);
+    patientLinkHandled = false;
     return (
       '<h2 class="modal__title">' + esc(label) + '</h2>' +
       '<p class="modal__lead">환자 본인 확인 화면으로 연결되는 링크입니다.</p>' +
@@ -347,18 +379,21 @@ function patientLinkSaying(error) {
     if (patientLinkOpening || !visit || !guide || guide.status !== "SCHEDULED_TO_SEND") return;
     patientLinkOpening = true;
     var openingId = visit.visit_id;
+    var openingLoadSeq = loadSeq;
     el("patient-open").disabled = true;
 
     doctorApi
       .issuePatientLink(openingId)
       .then(function (result) {
+        if (!isCurrentPatientLinkRequest(visit, openingId, loadSeq, openingLoadSeq)) return;
         patientLinkOpening = false;
-        if (visit && visit.visit_id === openingId) renderRole();
+        renderRole();
         openModal(patientLinkModal(result, "환자 링크를 발급했습니다"));
       })
       .catch(function (error) {
+        if (!isCurrentPatientLinkRequest(visit, openingId, loadSeq, openingLoadSeq)) return;
         patientLinkOpening = false;
-        if (visit && visit.visit_id === openingId) renderRole();
+        renderRole();
         openModal(patientLinkFailedModal(error));
       });
   }
@@ -394,6 +429,7 @@ function patientLinkSaying(error) {
        쓰던 사유가 뒷 환자의 이름 아래 남는다. 이름·버튼을 거두는 것과 같은
        이유다 — 화면이 말하는 사람과 눌렀을 때 가는 사람이 달라진다. */
     guide = null;
+    patientLinkOpening = false;
     /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
     smsForget();
     closeModal();
@@ -440,7 +476,16 @@ function patientLinkSaying(error) {
       return;
     }
 
-    if (target.closest("[data-close]")) return closeModal();
+    if (target.closest("[data-close]")) {
+      if (
+        !canDiscardPatientLink(patientLinkUrl, patientLinkHandled, function (message) {
+          return window.confirm(message);
+        })
+      ) {
+        return;
+      }
+      return closeModal();
+    }
 
     if (target.id === "patient-open" || target.closest("[data-open-patient]")) {
       openPatientGuide();
@@ -448,6 +493,7 @@ function patientLinkSaying(error) {
     }
 
     if (target.id === "patient-link-open" && patientLinkUrl) {
+      patientLinkHandled = true;
       window.open(patientLinkUrl, "_blank", "noopener");
       return;
     }
@@ -455,9 +501,9 @@ function patientLinkSaying(error) {
     if (target.id === "patient-link-copy" && patientLinkUrl) {
       var copyError = el("patient-link-error");
       var copyUrl = new URL(patientLinkUrl, window.location.href).href;
-      navigator.clipboard
-        .writeText(copyUrl)
+      copyPatientLink(navigator.clipboard, copyUrl)
         .then(function () {
+          patientLinkHandled = true;
           copyError.textContent = "링크를 복사했습니다.";
           copyError.hidden = false;
         })
@@ -471,15 +517,25 @@ function patientLinkSaying(error) {
     if (target.id === "patient-link-reissue" && visit) {
       target.disabled = true;
       var reissuingId = visit.visit_id;
+      var reissuingLoadSeq = loadSeq;
+      var reissuingModalSeq = patientLinkModalSeq;
       doctorApi
         .reIssuePatientLink(reissuingId)
         .then(function (result) {
-          if (visit && visit.visit_id === reissuingId) {
+          if (
+            isCurrentPatientLinkRequest(visit, reissuingId, loadSeq, reissuingLoadSeq) &&
+            patientLinkModalSeq === reissuingModalSeq
+          ) {
             openModal(patientLinkModal(result, "새 환자 링크로 교체했습니다"));
           }
         })
         .catch(function (error) {
-          if (visit && visit.visit_id === reissuingId) openModal(patientLinkFailedModal(error));
+          if (
+            isCurrentPatientLinkRequest(visit, reissuingId, loadSeq, reissuingLoadSeq) &&
+            patientLinkModalSeq === reissuingModalSeq
+          ) {
+            openModal(patientLinkFailedModal(error));
+          }
         });
       return;
     }
@@ -487,10 +543,17 @@ function patientLinkSaying(error) {
     if (target.id === "patient-link-revoke" && visit) {
       target.disabled = true;
       var revokingId = visit.visit_id;
+      var revokingLoadSeq = loadSeq;
+      var revokingModalSeq = patientLinkModalSeq;
       doctorApi
         .revokePatientLink(revokingId)
         .then(function () {
-          if (!visit || visit.visit_id !== revokingId) return;
+          if (
+            !isCurrentPatientLinkRequest(visit, revokingId, loadSeq, revokingLoadSeq) ||
+            patientLinkModalSeq !== revokingModalSeq
+          ) {
+            return;
+          }
           patientLinkUrl = null;
           openModal(
             '<h2 class="modal__title">환자 링크를 폐기했습니다</h2>' +
@@ -500,7 +563,12 @@ function patientLinkSaying(error) {
           );
         })
         .catch(function (error) {
-          if (visit && visit.visit_id === revokingId) openModal(patientLinkFailedModal(error));
+          if (
+            isCurrentPatientLinkRequest(visit, revokingId, loadSeq, revokingLoadSeq) &&
+            patientLinkModalSeq === revokingModalSeq
+          ) {
+            openModal(patientLinkFailedModal(error));
+          }
         });
       return;
     }

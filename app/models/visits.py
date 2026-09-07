@@ -107,6 +107,10 @@ class GuideEventType(StrEnum):
     #: 줄을 더한다 — 언제 무엇이 갈렸는지가 남아야 「내가 고친 문구가 왜
     #: 사라졌지」에 답할 수 있다. `UNAPPROVED` 와 같은 판단이다.
     REGENERATED = "REGENERATED"
+    #: 직원이 환자용 원문 링크를 새 값으로 교체했다 — KEY-223.
+    LINK_REISSUED = "LINK_REISSUED"
+    #: 직원이 환자용 링크를 즉시 폐기했다 — KEY-223.
+    LINK_REVOKED = "LINK_REVOKED"
 
 
 class GuideDocument(models.Model):

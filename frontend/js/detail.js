@@ -59,6 +59,8 @@ var TIMELINE_EVENT_LABEL = {
   GUIDE_UNAPPROVED: "안내문 승인 철회",
   GUIDE_RETURNED: "안내문 반려",
   GUIDE_REGENERATED: "안내문 다시 생성",
+  PATIENT_LINK_REISSUED: "환자 링크 교체",
+  PATIENT_LINK_REVOKED: "환자 링크 폐기",
   CHECK_IN_SUBMITTED: "D+7 복약·통증 응답",
   GUIDE_VIEWED: "환자가 안내문 열람",
   CHATBOT_ANSWERED: "환자가 챗봇에 질문",

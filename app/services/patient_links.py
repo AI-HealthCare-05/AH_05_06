@@ -25,7 +25,7 @@ from app.models.catalog import BaselineDirection, LabBaseline, PrescriptionSet, 
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.staffs import Hospital
-from app.models.visits import GuideDocument, GuideSectionKey, GuideStatus, PatientGuideLink, PatientOtpChallenge
+from app.models.visits import GuideDocument, GuideEvent, GuideEventType, GuideSectionKey, GuideStatus, PatientGuideLink
 
 LINK_TTL = timedelta(hours=168)
 ISSUER_ROLES = frozenset({"staff", "doctor"})
@@ -339,6 +339,52 @@ class PatientLinkService:
         return guide
 
     @staticmethod
+    async def _lock_link(
+        actor,
+        visit_id: int,
+        connection,
+        *,
+        require_approved: bool,
+    ) -> PatientGuideLink:
+        """병원 범위의 링크를 한 번의 성공 경로 조회로 잠근다.
+
+        링크가 없을 때만 안내문을 별도로 확인해 GUIDE_NOT_FOUND와
+        LINK_NOT_ISSUED 계약을 구분한다. 정상 재발급·폐기는 guide/link를
+        차례로 잠그는 두 번의 왕복을 하지 않는다.
+        """
+
+        link = (
+            await PatientGuideLink.filter(
+                guide_document__visit_id=visit_id,
+                guide_document__visit__hospital_id=actor.hospital_id,
+            )
+            .select_related("guide_document")
+            .select_for_update()
+            .using_db(connection)
+            .first()
+        )
+        if link is not None:
+            if require_approved:
+                PatientLinkService._require_approved(link.guide_document)
+            return link
+
+        # 없는 진료와 타 병원 진료는 같은 응답으로 감춘다. 안내가 보이는데
+        # 링크만 없을 때에만 LINK_NOT_ISSUED를 돌려준다.
+        guide = (
+            await GuideDocument.filter(
+                visit_id=visit_id,
+                visit__hospital_id=actor.hospital_id,
+            )
+            .using_db(connection)
+            .first()
+        )
+        if guide is None:
+            raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
+        if require_approved:
+            PatientLinkService._require_approved(guide)
+        raise ApiError("LINK_NOT_ISSUED", 404, "아직 발급된 환자 링크가 없습니다.")
+
+    @staticmethod
     def _require_approved(guide: GuideDocument) -> None:
         if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:
             # 기존 발급 오류 문구도 공개 계약이다(KEY-94). 재발급에서도 같은
@@ -349,16 +395,11 @@ class PatientLinkService:
     async def _invalidate_otp(link: PatientGuideLink, connection, timestamp: datetime) -> None:
         """링크 회전 전에 종전 OTP를 만료하되 실패 횟수·잠금은 보존한다."""
 
-        await (
-            PatientOtpChallenge.filter(patient_guide_link_id=link.patient_guide_link_id)
-            .using_db(connection)
-            .update(
-                otp_digest=digest_link_token(secrets.token_urlsafe(32)),
-                otp_salt=secrets.token_hex(16),
-                expires_at=timestamp,
-                consumed_at=timestamp,
-            )
-        )
+        # patient_otp가 이 모듈의 digest 함수를 쓰므로 순환 import를 피하려고
+        # 호출 시점에 가져온다. OTP 스키마와 무효화 규칙의 소유권은 그쪽에 둔다.
+        from app.services.patient_otp import invalidate_otp_challenge
+
+        await invalidate_otp_challenge(link.patient_guide_link_id, connection, timestamp)
 
     async def issue(self, actor, visit_id: int) -> tuple[PatientGuideLink, str]:
         self._require_issuer(actor)
@@ -388,16 +429,7 @@ class PatientLinkService:
 
         self._require_issuer(actor)
         async with in_transaction() as connection:
-            guide = await self._lock_guide(actor, visit_id, connection)
-            self._require_approved(guide)
-            link = (
-                await PatientGuideLink.filter(guide_document_id=guide.guide_document_id)
-                .select_for_update()
-                .using_db(connection)
-                .first()
-            )
-            if link is None:
-                raise ApiError("LINK_NOT_ISSUED", 404, "아직 발급된 환자 링크가 없습니다.")
+            link = await self._lock_link(actor, visit_id, connection, require_approved=True)
 
             timestamp = now()
             raw_token = secrets.token_urlsafe(32)
@@ -406,6 +438,12 @@ class PatientLinkService:
             link.expires_at = timestamp + LINK_TTL
             link.issued_by = actor.user_id
             await link.save(using_db=connection, update_fields=["token_digest", "expires_at", "issued_by"])
+            await GuideEvent.create(
+                guide_document_id=link.guide_document_id,
+                event_type=GuideEventType.LINK_REISSUED,
+                actor_id=actor.user_id,
+                using_db=connection,
+            )
             return link, raw_token
 
     async def revoke(self, actor, visit_id: int) -> None:
@@ -413,15 +451,7 @@ class PatientLinkService:
 
         self._require_issuer(actor)
         async with in_transaction() as connection:
-            guide = await self._lock_guide(actor, visit_id, connection)
-            link = (
-                await PatientGuideLink.filter(guide_document_id=guide.guide_document_id)
-                .select_for_update()
-                .using_db(connection)
-                .first()
-            )
-            if link is None:
-                raise ApiError("LINK_NOT_ISSUED", 404, "아직 발급된 환자 링크가 없습니다.")
+            link = await self._lock_link(actor, visit_id, connection, require_approved=False)
 
             # 원문을 별도 보관하지 않으므로 이 digest에 대응하는 URL은 세상에 없다.
             # 기존 토큰은 즉시 404가 되고, 재발급은 같은 행을 다시 회전한다.
@@ -430,6 +460,12 @@ class PatientLinkService:
             link.token_digest = digest_link_token(secrets.token_urlsafe(32))
             link.expires_at = timestamp
             await link.save(using_db=connection, update_fields=["token_digest", "expires_at"])
+            await GuideEvent.create(
+                guide_document_id=link.guide_document_id,
+                event_type=GuideEventType.LINK_REVOKED,
+                actor_id=actor.user_id,
+                using_db=connection,
+            )
 
     async def get_context(self, raw_link_token: str) -> "PatientLinkContext":
         link = (
@@ -461,22 +497,32 @@ class PatientLinkService:
 
     async def re_issue(self, raw_link_token: str) -> None:
         """만료·폐기 링크에 새 토큰을 발급한다. mock SMS 발송만 수행한다 — KEY-219."""
-        link = await PatientGuideLink.filter(token_digest=digest_link_token(raw_link_token)).first()
-        if link is None:
-            raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
+        async with in_transaction() as connection:
+            link = (
+                await PatientGuideLink.filter(token_digest=digest_link_token(raw_link_token))
+                .select_related("guide_document")
+                .select_for_update()
+                .using_db(connection)
+                .first()
+            )
+            if link is None:
+                raise ApiError("LINK_NOT_FOUND", 404, "환자 링크를 찾을 수 없습니다.")
 
-        timestamp = now()
-        guide = await GuideDocument.filter(guide_document_id=link.guide_document_id).first()
-        is_expired = as_utc(link.expires_at) <= as_utc(timestamp)
-        is_revoked = guide is None or guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None
+            # 직원 재발급·폐기와 같은 링크 행을 잠근 뒤 판정하고 회전한다. 어느
+            # 요청이 먼저든 마지막 잠금 보유자의 회전만 남아 lost update가 없다.
+            timestamp = now()
+            guide = link.guide_document
+            is_expired = as_utc(link.expires_at) <= as_utc(timestamp)
+            is_revoked = guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None
 
-        if not is_expired and not is_revoked:
-            raise ApiError("LINK_STILL_ACTIVE", 409, "현재 유효한 링크가 있습니다.")
+            if not is_expired and not is_revoked:
+                raise ApiError("LINK_STILL_ACTIVE", 409, "현재 유효한 링크가 있습니다.")
 
-        new_raw_token = secrets.token_urlsafe(32)
-        link.token_digest = digest_link_token(new_raw_token)
-        link.expires_at = timestamp + LINK_TTL
-        await link.save(update_fields=["token_digest", "expires_at"])
+            new_raw_token = secrets.token_urlsafe(32)
+            await self._invalidate_otp(link, connection, timestamp)
+            link.token_digest = digest_link_token(new_raw_token)
+            link.expires_at = timestamp + LINK_TTL
+            await link.save(using_db=connection, update_fields=["token_digest", "expires_at"])
 
     async def get_approved_guide(self, raw_token: str) -> tuple[PatientGuideLink, GuideDocument]:
         return await self.get_approved_guide_by_digest(digest_link_token(raw_token))
