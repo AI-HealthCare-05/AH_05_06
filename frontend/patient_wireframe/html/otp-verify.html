@@ -213,14 +213,18 @@
   var params = new URLSearchParams(window.location.search);
   var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
   var isMock = params.get('mock') === '1';
-  var token = isMock ? (fragment.get('t') || '') : (params.get('token') || '');
+  /* **목업인지와 무관하게 조각을 먼저 읽는다** — KEY-292. `otp.html` 과 똑같은
+     결함이 여기에도 있었다: 실서버에서는 `MOCK` 이 항상 거짓이라 `?token=` 만
+     봤고, 그래서 앞 화면이 토큰을 주소창에 실어 보낼 수밖에 없었다. `?token=`
+     은 그 사이에 열려 있던 옛 주소를 위해 읽어만 준다. */
+  var token = fragment.get('t') || params.get('token') || '';
   var expiresAt = params.get('expires_at') ? new Date(params.get('expires_at')) : null;
   var retryAfterSeconds = parseInt(params.get('retry_after') || '60', 10);
   if (isMock && !expiresAt) expiresAt = new Date(Date.now() + 180000);
 
   function otpStartUrl() {
     if (isMock) return 'otp.html' + location.search + location.hash;
-    return 'otp.html' + (token ? '?token=' + encodeURIComponent(token) : '');
+    return 'otp.html' + (token ? '#t=' + encodeURIComponent(token) : '');
   }
 
   document.getElementById('back-btn').addEventListener('click', function () {
