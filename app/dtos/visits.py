@@ -130,6 +130,8 @@ class TimelineEvent(StrEnum):
     #: 승인을 거뒀다. 승인 줄을 지우지 않고 이 줄을 더한다 — 지우면
     #: 「왜 예약이 사라졌지」에 답할 수 없다.
     GUIDE_UNAPPROVED = "GUIDE_UNAPPROVED"
+    #: 초안을 다시 만들었다 (KEY-273). 옛 생성 줄을 지우지 않고 이 줄을 더한다.
+    GUIDE_REGENERATED = "GUIDE_REGENERATED"
     GUIDE_RETURNED = "GUIDE_RETURNED"
     CHECK_IN_SUBMITTED = "CHECK_IN_SUBMITTED"
     #: 환자가 안내문을 열었다. `section_key` 가 있으면 그 장까지 읽은 것이다.

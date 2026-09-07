@@ -103,6 +103,10 @@ class GuideEventType(StrEnum):
     #: 기록이고, 지우면 「왜 예약이 사라졌지」에 답할 수 없다.
     UNAPPROVED = "UNAPPROVED"
     RETURNED = "RETURNED"
+    #: 초안을 다시 만들었다 (KEY-273). 옛 `GENERATED` 줄을 **지우지 않고** 이
+    #: 줄을 더한다 — 언제 무엇이 갈렸는지가 남아야 「내가 고친 문구가 왜
+    #: 사라졌지」에 답할 수 있다. `UNAPPROVED` 와 같은 판단이다.
+    REGENERATED = "REGENERATED"
 
 
 class GuideDocument(models.Model):
@@ -174,10 +178,12 @@ class GuideSection(models.Model):
     `locked` 는 🚨 응급 문장이다. 식약처 의약품정보를 근거로 미리 써 둔
     문장이라 약이 바뀌면 문장도 함께 바뀐다 — 사람이 손댈 자리가 아니다.
 
-    `drug_caution_content_id` 는 caution·emergency 섹션 생성 시 사용한
-    `DrugCautionContent` 버전의 ID다(KEY-165, KEY-180 §6). null 이면 범용 문구를
-    사용했거나 caution/emergency 가 아닌 섹션이다. 근거 버전은 `generated_body`
-    기준이며 의사가 고친 `edited_body` 와는 무관하다.
+    `drug_caution_content_id` 는 그 절을 지을 때 쓴 `DrugCautionContent`
+    버전의 ID다(KEY-165, KEY-180 §6). **네 갈래 모두** 채울 수 있다 — 예전에는
+    caution·emergency 만 카탈로그에서 왔지만, 승인 정본이 복약지도·생활지도까지
+    덮으면서 그 둘도 근거를 갖게 됐다(KEY-265). null 이면 그 절이 카탈로그가
+    아니라 범용 문구에서 왔다는 뜻이다. 근거 버전은 `generated_body` 기준이며
+    의사가 고친 `edited_body` 와는 무관하다.
     """
 
     guide_section_id = fields.BigIntField(primary_key=True)
@@ -514,6 +520,23 @@ class GuideMessage(models.Model):
     hold_reason = fields.CharEnumField(enum_type=GuideMessageHold, null=True)
     #: 실제로 나간 글. 보내기 전에는 비어 있다.
     sent_body = fields.TextField(null=True)
+
+    #: 발송기(Aligo 등)가 접수하면서 돌려준 메시지 ID — KEY-249.
+    #: 사람에게 안 보인다. 문의가 왔을 때 공급자 쪽과 대조하는 용도다.
+    provider_message_id = fields.CharField(max_length=64, null=True)
+    #: 발송기가 돌려준 원문 실패 코드 — KEY-249. `failure_code` 는 화면에
+    #: 보이는 넷 중 하나로만 못박히므로, 그 넷에 안 들어맞는 원인은 여기
+    #: 원본 코드로만 남긴다. 사람에게 안 보인다.
+    provider_detail = fields.CharField(max_length=200, null=True)
+    #: 몇 번째 시도인가 — KEY-249. 지수 백오프 계산과 최대 재시도 판정에 쓴다.
+    attempt_count = fields.SmallIntField(default=0)
+    #: 지금 어느 Worker가 이 문자를 붙잡고 있는지 — KEY-249 멱등키.
+    #: 집을 때 채우고 끝나면(성공·재시도·최종실패 무엇이든) 곧바로 비운다.
+    #: 채워진 채로 오래 남아 있으면 그 사이 워커가 죽은 것이다 — 재시도
+    #: 판정에서 `claim_token` 값이 그때와 같은지만 보고, 이 필드 자체로
+    #: 화면에 뭔가를 보여주지 않는다.
+    claim_token = fields.CharField(max_length=32, null=True)
+
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

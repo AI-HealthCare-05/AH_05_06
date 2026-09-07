@@ -16,6 +16,7 @@
 """
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 
 from tortoise.timezone import now
@@ -30,7 +31,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, read_but_unconfirmed
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
@@ -132,8 +133,78 @@ def _medication_body(items: list[PrescriptionItem], guidance: str) -> str:
     return "\n".join(("처방된 복약 정보", *lines, guidance))
 
 
+LOGGER = logging.getLogger("app.guides")
+
+
+async def _pick_prescription_set(
+    latest_result: "OcrResult", prescription: "Prescription | None", visit_id: int
+) -> "PrescriptionSet | None":
+    """**어느 대표 처방의 안내문인가** — 후보를 세우고 표에 있는 첫 번째를 쓴다.
+
+    예전에는 「확정된 `MEDICATION_NAME` 값이 있으면 그것이 세트 이름」이었다.
+    그런데 그 칸은 판독의 **약품명** 칸이다(「비잔정(디에노게스트) 2mg」).
+    판독 확인 화면이 그 칸을 세트 고르는 자리로 그리지만, 세트 이름이 실제로
+    담기는 것은 **스탭이 처방 블록을 저장했을 때뿐**이다.
+
+    안 저장한 진료에서는 OCR 이 뽑은 약품명이 그대로 확정으로 남는다. 그것을
+    세트 이름으로 보면 `or` 가 단락되어 **처방 행을 아예 안 본다** — 멀쩡한
+    세트를 가진 진료가 말없이 기본 문구로 내려간다 (이희진 님 `#221` ③).
+
+    차례는 **스탭이 고른 것 → 판독이 제안한 세트 → 처방 행 스냅샷**이다.
+    조회는 한 번이다(`#191` 리뷰) — 후보를 한꺼번에 묻고 차례로 고른다.
+    """
+    confirmed = {
+        row.field_type: row.value
+        for row in await OcrField.filter(
+            ocr_result=latest_result,
+            field_type__in=("MEDICATION_NAME", "PRESCRIPTION_SET"),
+            is_confirmed=True,
+        )
+    }
+    wanted = [
+        name
+        for name in (
+            confirmed.get("MEDICATION_NAME"),
+            confirmed.get("PRESCRIPTION_SET"),
+            prescription.prescription_set if prescription else None,
+        )
+        if name
+    ]
+    if not wanted:
+        return None
+
+    found = {row.name: row for row in await PrescriptionSet.filter(name__in=wanted)}
+    picked = next((found[name] for name in wanted if name in found), None)
+    if picked is None:
+        # **조용히 내려가지 않는다.** 후보가 있었는데 표에 없다는 것은 이름이
+        # 어긋났다는 뜻이고, 화면에는 아무 말도 안 뜬다.
+        LOGGER.warning("세트를 못 찾았다 — 후보 %r (진료 %s) · 범용 문구로 폴백", wanted, visit_id)
+    return picked
+
+
+#: **다시 만들 수 있는 상태 — 아직 스탭 차례인 것뿐이다.**
+#:
+#: 반려(보완)도 스탭 차례다. `edit_section`·`submit` 이 이미 그렇게 세고 있는데
+#: 생성만 빠져 있었다. 세 곳이 「스탭 차례」라 하고 한 곳이 아니면, 스탭은
+#: 「고치라고 해서 고쳤는데 다시 만들 수는 없는」 화면을 만난다
+#: (이희진 님 `#221` ⑤).
+REGENERABLE: frozenset[GuideStatus] = frozenset({GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_RETURNED})
+
+
+def _no_regenerate_saying(status: GuideStatus) -> str:
+    """**막힌 까닭마다 다음에 할 일이 다르다.**
+
+    한 문장으로 뭉쳐 두었더니 그중 하나만 맞고 나머지는 **할 수 없는 일을
+    시켰다** — 승인 대기 중에 「승인을 거둬 주세요」라고 해도 `unapprove()` 는
+    `SCHEDULED_TO_SEND` 만 받아 또 409 로 떨어진다.
+    """
+    if status is GuideStatus.APPROVAL_PENDING:
+        return "의사에게 넘긴 안내문입니다. 다시 만들려면 의사가 먼저 반려해야 합니다."
+    return "이미 승인된 안내문입니다. 다시 만들려면 승인을 먼저 거둬 주세요."
+
+
 class GuideService:
-    async def generate(self, actor, visit_id: int) -> GuideDocument:
+    async def generate(self, actor, visit_id: int, *, discard_edits: bool = False) -> GuideDocument:
         """확정 OCR 필드가 있어야 고정 템플릿 안내를 만들 수 있다.
 
         LLM·RAG 없이 출처가 고정된 합성 템플릿을 사용한다 — KEY-150 W1 범위.
@@ -174,10 +245,10 @@ class GuideService:
                 "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
             )
 
-        unconfirmed = await OcrField.filter(
-            ocr_result=latest_result,
-            is_confirmed=False,
-        ).first()
+        # **여기와 `finalize_ocr` 이 같은 규칙을 봐야 한다.** 화면 사슬이
+        # `확정 → finalize → generate` 라서, 가운데만 통과하면 처방은 섰는데
+        # 안내문이 없는 진료가 남는다 (KEY-271).
+        unconfirmed = read_but_unconfirmed(await OcrField.filter(ocr_result=latest_result, is_confirmed=False))
         if unconfirmed is not None:
             raise ApiError(
                 "OCR_NOT_CONFIRMED",
@@ -205,10 +276,23 @@ class GuideService:
         # **세트는 한 번만 찾는다.** 갈래마다·의사마다 이름으로 다시 찾으면
         # 같은 `SELECT` 가 **네 번** 돈다 — 주의·응급·담당 문구·의원 공통 문구가
         # 전부 같은 세트를 본다 (`#191` 리뷰, 2heej).
+        # **확정된 판독이 처방을 정한다** (KEY-273).
+        #
+        # 예전에는 `Prescription` 행에서만 세트 이름을 꺼냈다. 그런데 그 행을
+        # 만드는 곳이 씨앗뿐이라 **판독으로 만든 진료에는 아예 없었고**, 안내문이
+        # 늘 기본 문구로 나갔다(KEY-271). 판독에서 처방을 고쳐도 그 행은 안
+        # 따라와서, 본문은 옛 세트인데 「확정된 항목」 줄만 새 값인 **섞인
+        # 안내문**이 났다 — 복약지도는 자궁내막증인데 생활지도는 다낭성이었다.
+        #
+        # 판독 확인 화면이 고른 세트는 `MEDICATION_NAME` 에 확정으로 담긴다.
+        # 그것을 먼저 보고, 없을 때만 `Prescription` 행으로 내려간다 — 씨앗이
+        # 부은 진료는 판독이 없어 그쪽이 유일한 실마리다.
+        #
+        # **약 항목은 여전히 처방 행에서 온다**(KEY-224). 세트 이름만 판독이
+        # 정하고, 그 진료에 실제로 나간 약은 처방 행이 갖는다.
         prescription = await Prescription.filter(visit_id=visit_id).prefetch_related("items").first()
         prescription_items = ordered_prescription_items(prescription)
-        set_name = prescription.prescription_set if prescription else None
-        prescription_set = await PrescriptionSet.filter(name=set_name).first() if set_name else None
+        prescription_set = await _pick_prescription_set(latest_result, prescription, visit_id)
 
         # KEY-243: **의사가 고친 문구가 있으면 그것이 이긴다.**
         #
@@ -230,9 +314,25 @@ class GuideService:
         #
         # **넷을 나란히 돌린다.** 서로를 안 기다린다. 트랜잭션 밖이라 락 보유
         # 시간과는 무관하고, 지연만 줄어든다.
-        caution_content, emergency_content, own_copies, common_copies = await asyncio.gather(
+        # **네 갈래 다 승인 원본을 묻는다** (KEY-265).
+        #
+        # 한동안 `caution`·`emergency` 둘만 물었다. 그래서 설정 화면이
+        # `guide_copy.py` 로 보여 주는 「원본」과 실제로 나가는 글이 **갈렸다** —
+        # 복약지도·생활지도는 세트별 승인 문구가 있어도 안 읽혀서, 화면은
+        # 정본을 「원본」이라 보이는데 환자에게는 기본 한 줄이 나갔다.
+        # `guide_defaults` 주석이 경고한 바로 그 모양이다.
+        (
+            medication_content,
+            caution_content,
+            emergency_content,
+            life_content,
+            own_copies,
+            common_copies,
+        ) = await asyncio.gather(
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.MEDICATION),
             DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.CAUTION),
             DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.EMERGENCY),
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.LIFE),
             self._doctor_copies(actor.hospital_id, visit.doctor_id, prescription_set),
             self._doctor_copies(actor.hospital_id, None, prescription_set),
         )
@@ -252,35 +352,96 @@ class GuideService:
             ) is None:
                 raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
 
-            if await GuideDocument.filter(visit_id=visit_id).using_db(connection).exists():
-                raise ApiError("GUIDE_ALREADY_EXISTS", 409, "이미 안내문이 생성되어 있습니다.")
+            # **작성 중이면 다시 만든다** (KEY-273).
+            #
+            # 판독을 고쳐도 안내문이 안 따라오고 있었다 — 한 번 만들면 그것으로
+            # 끝이라, 진단·처방을 바로잡아도 환자에게는 옛 글이 나갔다.
+            #
+            # **다시 만드는 것은 아직 아무도 안 본 것뿐이다.** 안내문은 만들어진
+            # 뒤 사람이 손대는 물건이다 — 스탭이 문구를 고치고 원장님이 승인하면
+            # 발송 예약까지 걸린다. 그 뒤에 밑에서 갈아 끼우면 손댄 것이 날아가고,
+            # 원장님이 승인한 글과 나가는 글이 달라진다.
+            existing = await GuideDocument.filter(visit_id=visit_id).using_db(connection).select_for_update().first()
+            if existing is not None:
+                if existing.status not in REGENERABLE:
+                    raise ApiError("GUIDE_ALREADY_EXISTS", 409, _no_regenerate_saying(existing.status))
 
-            guide = await GuideDocument.create(
-                hospital_id=actor.hospital_id,
-                visit_id=visit_id,
-                # **스탭 확인부터다** (와이어프레임 S1-11).
+                # **「작성 중」이 「아직 아무도 안 봤다」는 뜻이 아니다.**
                 #
-                # 전에는 여기서 바로 APPROVAL_PENDING 으로 보냈다 — 만들자마자
-                # 원장님 목록에 떴다는 뜻이다. 그런데 와이어프레임은
-                # 「스탭이 넘기지 않으면 원장님 목록에 뜨지 않는다」고 못 박는다.
-                # 스탭이 먼저 보는 이유는 원장님 시간을 아끼기 위해서다 —
-                # 진료기록이 잘못 올라갔거나 다른 환자 것이 섞인 것은 스탭이 잡는다.
+                # `edit_section()` 은 STAFF_REVIEW·반려 상태에서 스탭이 절을
+                # 고치도록 열어 둔다(와이어프레임 S1-11). 그러니 여기까지 온
+                # 안내문에는 **스탭이 바로잡은 문장이 이미 붙어 있을 수 있다.**
+                # 문서를 지우면 `on_delete=CASCADE` 가 그 문장을 함께 지운다 —
+                # 승인 대기에 대해 막아 둔 사고가 여기서는 안 막혀 있었다
+                # (이희진 님 `#221` ①).
                 #
-                # `GuideDocument.status` 의 기본값이 이미 STAFF_REVIEW 다.
-                # 그것을 덮어쓰던 한 줄이 흐름을 건너뛰고 있었다.
-                status=GuideStatus.STAFF_REVIEW,
-                using_db=connection,
-            )
+                # 말없이 지우지 않는다. 고친 것이 있으면 **묻고 멈춘다.**
+                touched = (
+                    await GuideSection.filter(guide_document=existing, edited_body__isnull=False)
+                    .using_db(connection)
+                    .exists()
+                )
+                if touched and not discard_edits:
+                    raise ApiError(
+                        "GUIDE_HAS_EDITS",
+                        409,
+                        "고친 문구가 있어 다시 만들지 않았습니다. 고친 것을 버리고 다시 만들까요?",
+                    )
+
+                # **문서는 지우지 않는다 — 속만 갈아 끼운다.**
+                #
+                # 모델이 그렇게 적어 두었다: 「다시 만들면 같은 행의 내용이
+                # 바뀌고 `version` 이 오른다」(`GuideDocument` 독스트링).
+                # 지우면 `GuideEvent` 가 CASCADE 로 딸려 가서 **누가 언제
+                # 만들었고 무엇을 고쳤는지가 통째로 사라진다** — 감사 로그는
+                # 덧쓰기만 한다는 규칙(`docs/project_workflow.md` §6·§7.5)에
+                # 어긋나고, `UNAPPROVED` 주석이 적어 둔 판단과도 어긋난다
+                # (이희진 님 `#221` ④).
+                await GuideSection.filter(guide_document=existing).using_db(connection).delete()
+                existing.status = GuideStatus.STAFF_REVIEW
+                existing.version += 1
+                await existing.save(update_fields=("status", "version", "updated_at"), using_db=connection)
+                guide = existing
+                remade = True
+            else:
+                remade = False
+                guide = await GuideDocument.create(
+                    hospital_id=actor.hospital_id,
+                    visit_id=visit_id,
+                    # **스탭 확인부터다** (와이어프레임 S1-11).
+                    #
+                    # 전에는 여기서 바로 APPROVAL_PENDING 으로 보냈다 —
+                    # 만들자마자 원장님 목록에 떴다는 뜻이다. 그런데
+                    # 와이어프레임은 「스탭이 넘기지 않으면 원장님 목록에 뜨지
+                    # 않는다」고 못 박는다. 스탭이 먼저 보는 이유는 원장님
+                    # 시간을 아끼기 위해서다 — 진료기록이 잘못 올라갔거나 다른
+                    # 환자 것이 섞인 것은 스탭이 잡는다.
+                    #
+                    # `GuideDocument.status` 의 기본값이 이미 STAFF_REVIEW 다.
+                    # 그것을 덮어쓰던 한 줄이 흐름을 건너뛰고 있었다.
+                    status=GuideStatus.STAFF_REVIEW,
+                    using_db=connection,
+                )
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.MEDICATION,
-                # KEY-224: 첫 OCR 필드 하나가 아니라 KEY-66이 만든 구조화 처방을
+                # KEY-224: 첫 OCR 필드 하나가 아니라 KEY-66 이 만든 구조화 처방을
                 # 전부 싣는다. 복수 약제의 빈도·기간을 서로 섞지 않고, 없는 값은
-                # 지어내지 않는다. 의사/의원별 지도 문구 우선순위는 그대로다.
+                # 지어내지 않는다.
+                #
+                # **지도 문장의 마지막 기댈 곳이 승인 정본이다** (KEY-265).
+                # 의사가 고친 글(`copies`)이 먼저고, 없으면 그 세트의 승인
+                # 복약지도, 그것도 없을 때만 범용 문구다. 예전에는 승인 정본을
+                # 아예 안 물어서, 원장님이 2026-09-04 에 확인하신 열두 칸 중
+                # 복약지도가 환자에게 한 번도 안 나갔다.
                 generated_body=_medication_body(
                     prescription_items,
-                    copies.get(CautionSectionKey.MEDICATION, guide_defaults.MEDICATION),
+                    copies.get(
+                        CautionSectionKey.MEDICATION,
+                        medication_content.body if medication_content else guide_defaults.MEDICATION,
+                    ),
                 ),
+                drug_caution_content_id=(medication_content.drug_caution_content_id if medication_content else None),
                 using_db=connection,
             )
             # 주의사항은 **두 갈래로 저장한다.** 예전에는 `caution` 한 줄에 응급
@@ -317,7 +478,11 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.LIFE,
-                generated_body=copies.get(CautionSectionKey.LIFE, guide_defaults.LIFE),
+                generated_body=copies.get(
+                    CautionSectionKey.LIFE,
+                    life_content.body if life_content else guide_defaults.LIFE,
+                ),
+                drug_caution_content_id=(life_content.drug_caution_content_id if life_content else None),
                 using_db=connection,
             )
             await GuideSection.create(
@@ -331,7 +496,10 @@ class GuideService:
             # 안내문·섹션도 함께 되돌린다 — 생성 성공과 감사 성공은 한 사건이다.
             await GuideEvent.create(
                 guide_document=guide,
-                event_type=GuideEventType.GENERATED,
+                # **다시 만든 것은 그렇다고 적는다.** 옛 `GENERATED` 줄은
+                # 그대로 남고 이 줄이 더해진다 — 「내가 고친 문구가 왜
+                # 사라졌지」에 답하려면 언제 갈렸는지가 있어야 한다.
+                event_type=GuideEventType.REGENERATED if remade else GuideEventType.GENERATED,
                 actor_id=actor.user_id,
                 using_db=connection,
             )

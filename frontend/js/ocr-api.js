@@ -31,7 +31,7 @@ function ocrRequest(path, options) {
   return request(path, options);
 }
 
-/* 목업 — 설정(D2-3)에 8종이 사전 등록돼 있다. 이름은 실제 표와 같다. */
+/* 목업 — 설정(D2-3)에 대표 처방 넷이 사전 등록돼 있다. 이름은 실제 표와 같다. */
 /* 약속처방 목업(`MOCK_PRESCRIPTION_SETS`)은 `catalog-api.js` 로 옮겼다 —
    설정 화면도 같은 값을 쓰는데, 그쪽이 판독 API 파일을 실을 이유가 없다. */
 
@@ -104,6 +104,20 @@ var ocrApi = {
      된다 — 보낸 값을 믿게 되는 순간 남의 병원 진료를 부를 여지가 생긴다. */
   generateGuide: function (visitId) {
     return ocrRequest("/visits/" + encodeURIComponent(visitId) + "/guide/generate", { method: "POST" });
+  },
+
+  /* POST /visits/{visitId}/ocr-finalize — KEY-66, 화면 배선은 KEY-271.
+     확정된 판독에서 `Prescription` 과 약 항목을 세운다.
+
+     **서버는 진작 있었고 화면이 안 불렀다.** 그래서 판독으로 만든 진료에는
+     처방 행이 없었고, 안내문 생성이 그 행에서 세트 이름을 꺼내므로 네 갈래가
+     다 기본 문구로 내려갔다 — 세트별 승인 문구가 하나도 안 실렸다(KEY-271).
+
+     **확정 뒤에 부른다.** 서버가 미확정 필드를 하나라도 보면 422 로 막는다
+     (`app/ocr/service.py`). 그 가드가 「사람이 검증한 값만 쓴다」를 지키는
+     자리라 순서를 바꾸지 않는다. */
+  finalizeOcr: function (visitId) {
+    return ocrRequest("/visits/" + encodeURIComponent(visitId) + "/ocr-finalize", { method: "POST" });
   },
 
   /* GET /visits/{visitId}/ocr-fields/previous — KEY-246.
@@ -592,6 +606,33 @@ function mockGenerateGuide(visitId) {
   return { visit_id: Number(visitId), status: "DRAFT", version: 1, sections: [] };
 }
 
+/* 확정된 판독에서 처방 행을 세운다 — 서버 `finalize_ocr` 의 목업.
+ *
+ * **미확정이 남아 있으면 실서버처럼 막는다.** 서버는 그때 422 `OCR_NOT_CONFIRMED`
+ * 를 낸다(`app/ocr/service.py`). 목업이 무조건 성공하면 화면은 순서를 잘못
+ * 짜 놓고도 잘 도는 것처럼 보인다 — 안내문 생성이 딱 그렇게 1차 시연을
+ * 통과했다(`mockGenerateGuide` 위 주석과 같은 사고).
+ *
+ * 여기서도 **약 이름을 지어 넣지 않는다**(AGENTS.md). 화면은 성공 여부만 쓴다. */
+function mockFinalizeOcr(visitId) {
+  if (MOCK_CASE === "forbidden") return new ApiError("FORBIDDEN", 403, {});
+  if (MOCK_CASE === "novisit") return new ApiError("VISIT_NOT_FOUND", 404, {});
+
+  /* **막는 것은 「값이 있는데 아무도 안 본 것」 하나다.** 서버와 같은 규칙이다
+     (`app/ocr/service.py` 의 finalize 게이트). 못 읽어 빈 칸은 화면이 확정하지
+     않으므로(`fieldsToConfirm`) 여기서 막으면 S1-7 진료는 안내문을 영영 못
+     만든다 — 목업이 서버보다 엄하면 화면은 실서버에서 되는 일을 여기서 못 하고,
+     느슨하면 여기서 되는 일이 실서버에서 막힌다. 둘 다 거짓말이다. */
+  var state = mockState();
+  var pending = (state.fields || []).filter(function (f) {
+    var read = f.corrected_value === null || f.corrected_value === undefined ? f.extracted_value : f.corrected_value;
+    return read !== null && read !== undefined && read !== "" && !f.is_confirmed;
+  });
+  if (pending.length) return new ApiError("OCR_NOT_CONFIRMED", 422, { pending: pending.length });
+
+  return { prescription_id: 1, visit_id: Number(visitId), items: [] };
+}
+
 function mockOcrRequest(path, options) {
   var body = (options && options.body) || {};
   return new Promise(function (resolve, reject) {
@@ -600,6 +641,12 @@ function mockOcrRequest(path, options) {
       if (patch) {
         var out = mockPatch(Number(patch[1]), body);
         return out instanceof ApiError ? reject(out) : resolve(mockCopy(out));
+      }
+
+      var finalize = path.match(/^\/visits\/([^/]+)\/ocr-finalize$/);
+      if (finalize) {
+        var rx = mockFinalizeOcr(decodeURIComponent(finalize[1]));
+        return rx instanceof ApiError ? reject(rx) : resolve(rx);
       }
 
       var generate = path.match(/^\/visits\/([^/]+)\/guide\/generate$/);

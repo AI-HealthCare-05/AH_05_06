@@ -18,7 +18,7 @@ function box() {
 const SETS = [
   { prescription_set_id: 1, name: "자궁내막증 · 비잔 (처음)", disease: "ENDOMETRIOSIS" },
   { prescription_set_id: 2, name: "자궁내막증 · 비잔 (계속)", disease: "ENDOMETRIOSIS" },
-  { prescription_set_id: 4, name: "PCOS · 초진", disease: "PCOS" },
+  { prescription_set_id: 4, name: "PCOS · 야즈 (처음)", disease: "PCOS" },
 ];
 
 /* ── 왼쪽 레일 ──────────────────────────────────────────────────────── */

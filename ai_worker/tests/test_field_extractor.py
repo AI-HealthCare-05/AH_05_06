@@ -575,7 +575,12 @@ def test_prescription_set_syn_ems_01_suggests_bizan_initial() -> None:
 
 
 def test_prescription_set_pcos_yazz_metformin() -> None:
-    """PCOS + 야즈 + 메트포르민 → PCOS · 야즈 + 메트포르민, 신뢰도 0.90."""
+    """PCOS + 야즈 + 메트포르민 → PCOS · 야즈 (처음).
+
+    **대표 처방이 넷으로 줄면서 「야즈 + 메트포르민」 세트가 없어졌다**
+    (KEY-262). 야즈를 먹는 것은 맞으니 야즈 세트를 제안하되, 「복용 중」
+    문구가 없으므로 「처음」이다 — 비잔 갈래와 같은 규칙이다.
+    """
     result = _make_emr_result(
         _PCOS_DIAG_BLOCKS,
         _YAZZ_MET_RX_BLOCKS,
@@ -585,12 +590,23 @@ def test_prescription_set_pcos_yazz_metformin() -> None:
     field_map = {f.field_type: f for f in fields}
     assert "PRESCRIPTION_SET" in field_map
     ps = field_map["PRESCRIPTION_SET"]
-    assert ps.extracted_value == "PCOS · 야즈 + 메트포르민"
-    assert ps.confidence == Decimal("0.90")
+    assert ps.extracted_value == "PCOS · 야즈 (처음)"
+    assert ps.confidence == Decimal("0.75")
 
 
 def test_prescription_set_pcos_yazz_contraindicated() -> None:
-    """raw_text「야즈 불가」 → PCOS · 초진 (야즈 불가), 신뢰도 0.90."""
+    """🚩 **야즈가 금기면 아무것도 제안하지 않는다.**
+
+    대표 처방이 넷으로 줄면서 「초진 (야즈 불가)」 세트가 없어졌다(KEY-262).
+    남은 넷 중 PCOS 쪽은 야즈뿐이라 **맞는 세트가 없다.**
+
+    야즈를 못 쓰는 사람에게 야즈 세트를 제안하는 것은 근거가 부족한 정도가
+    아니라 **틀린 제안**이다. 이 함수의 원래 규칙대로 `None` 을 낸다 —
+    「근거가 부족하면 스탭이 S1-6 에서 직접 고른다」.
+
+    (합성 데이터의 그 진료 자체는 팀 결정에 따라 야즈(처음)으로 옮겼다.
+    데이터를 옮기는 것과 화면에 제안을 띄우는 것은 다르다.)
+    """
     blocks = _PCOS_DIAG_BLOCKS
     result = ClovaOcrResult(
         raw_text="야즈 불가 — 혈전 위험",
@@ -599,8 +615,7 @@ def test_prescription_set_pcos_yazz_contraindicated() -> None:
     )
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_map = {f.field_type: f for f in fields}
-    assert "PRESCRIPTION_SET" in field_map
-    assert field_map["PRESCRIPTION_SET"].extracted_value == "PCOS · 초진 (야즈 불가)"
+    assert "PRESCRIPTION_SET" not in field_map, f"야즈 금기인데 세트를 제안했다 — {field_map.get('PRESCRIPTION_SET')}"
 
 
 def test_prescription_set_no_suggestion_without_drug() -> None:
@@ -642,3 +657,119 @@ def test_prescription_set_no_suggestion_without_any_drug_signal() -> None:
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_types = {f.field_type for f in fields}
     assert "PRESCRIPTION_SET" not in field_types
+
+
+# ---------------------------------------------------------------------------
+# KEY-245 — 판독 키워드(lab_keywords) 기반 매칭 (인수조건 1·2·3)
+# ---------------------------------------------------------------------------
+
+
+from ai_worker.tasks.field_extractor import build_lab_keywords  # noqa: E402
+
+
+def _make_lab_table_result(test_name: str, result_value: str) -> ClovaOcrResult:
+    """검사항목/검사결과 두 열짜리 단순 표 픽스처를 만든다."""
+    blocks = [
+        _lab_block("검사항목", 0.99, 10, 10, 110, 30),
+        _lab_block("검사결과", 0.99, 130, 10, 230, 30),
+        _lab_block(test_name, 0.95, 10, 40, 110, 60),
+        _lab_block(result_value, 0.97, 130, 40, 230, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    return ClovaOcrResult(
+        raw_text=f"{test_name}\t{result_value}",
+        fields=blocks,
+        rows=rows,
+    )
+
+
+class _FakeBaseline:
+    """LabBaseline 모델 대신 쓰는 단순 더미 — DB 없이 build_lab_keywords 테스트."""
+
+    def __init__(self, name: str, keywords: str) -> None:
+        self.name = name
+        self.keywords = keywords
+
+
+def test_dheas_matched_via_lab_keyword() -> None:
+    """DHEAS(하이픈 없는 표기)가 판독 키워드로 DHEA_S 필드에 매칭된다(인수조건 1·3).
+
+    주의: "DHEAS"는 기존 정규식 \\bDHEA[-\\s]?S\\b 에서도 매칭되므로,
+    이 테스트는 정규식 경로의 회귀를 검증하며 fallback 로직은 검증하�� 않는다.
+    fallback 검증은 test_dheas_custom_notation_matched_via_lab_keyword_fallback 참조.
+    """
+    baselines = [_FakeBaseline("DHEA-S", "DHEA-S, DHEAS")]
+    lab_kw = build_lab_keywords(baselines)
+
+    result = _make_lab_table_result("DHEAS", "120.5 µg/dL")
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT, lab_kw)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "DHEA_S" in field_map, "DHEAS 표기가 DHEA_S 필드로 매칭되어야 한다"
+    assert field_map["DHEA_S"] == "120.5 µg/dL"
+
+
+def test_dheas_custom_notation_matched_via_lab_keyword_fallback() -> None:
+    """기존 정규식이 전혀 잡지 못하는 커스텀 표기가 fallback 키워드로 DHEA_S에 매칭된다(인수조건 1·3).
+
+    "황산탈수소에피안드로스테론"은 _LAB_TEST_NAME_KEYWORDS 어떤 패턴과도 매칭되지 않으므로,
+    이 테스트가 통과하려면 lab_keywords fallback 로직이 반드시 실행되어야 한다.
+    """
+    baselines = [_FakeBaseline("DHEA-S", "황산탈수소에피안드로스테론")]
+    lab_kw = build_lab_keywords(baselines)
+
+    result = _make_lab_table_result("황산탈수소에피안드로스테론", "120.5 µg/dL")
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT, lab_kw)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "DHEA_S" in field_map, "기존 정규식이 아닌 fallback 키워드 경로로 DHEA_S에 매칭되어야 한다"
+    assert field_map["DHEA_S"] == "120.5 µg/dL"
+
+
+def test_dhea_hyphen_still_matched_by_regex_without_lab_keywords() -> None:
+    """키워드가 없어도 기존 정규식이 DHEA-S를 매칭한다(인수조건 2)."""
+    result = _make_lab_table_result("DHEA-S", "98.0 µg/dL")
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)  # lab_keywords=None
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "DHEA_S" in field_map, "lab_keywords 없이도 정규식으로 DHEA-S가 매칭되어야 한다"
+
+
+def test_custom_korean_notation_matched_via_lab_keyword() -> None:
+    """한글 커스텀 표기(항뮬러관)가 판독 키워드로 AMH 필드에 매칭된다(인수조건 1)."""
+    baselines = [_FakeBaseline("AMH", "AMH, 항뮬러관")]
+    lab_kw = build_lab_keywords(baselines)
+
+    result = _make_lab_table_result("항뮬러관 호르몬", "2.5 ng/mL")
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT, lab_kw)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "AMH" in field_map, "항뮬러관 표기가 AMH 필드로 매칭되어야 한다"
+    assert field_map["AMH"] == "2.5 ng/mL"
+
+
+def test_build_lab_keywords_skips_baseline_without_keywords() -> None:
+    """keywords가 빈 기준선은 lab_keywords 결과에 포함되지 않는다(인수조건 2)."""
+    baselines = [
+        _FakeBaseline("AMH", ""),
+        _FakeBaseline("DHEA-S", "DHEA-S, DHEAS"),
+    ]
+    lab_kw = build_lab_keywords(baselines)
+
+    assert "AMH" not in lab_kw, "키워드 없는 AMH 기준선은 결과에 없어야 한다"
+    assert "DHEA_S" in lab_kw
+
+
+def test_lab_keyword_matched_in_emr_type_document() -> None:
+    """EMR 유형으로 업로드된 검사결과지에서도 fallback 키워드가 적용된다.
+
+    기존 정규식��� 잡지 못하는 커스텀 표기를 사용해 fallback 경로를 검증한다(인수조건 3).
+    """
+    baselines = [_FakeBaseline("DHEA-S", "황산탈수소에피안드로스테론")]
+    lab_kw = build_lab_keywords(baselines)
+
+    result = _make_lab_table_result("황산탈수소에피안드로스테론", "115.0 µg/dL")
+    fields = extract_fields(result, OcrDocumentType.EMR, lab_kw)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert "DHEA_S" in field_map, "EMR 타입 문서에서도 fallback 키워드가 적용되어야 한다"

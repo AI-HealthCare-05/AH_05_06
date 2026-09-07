@@ -10,8 +10,10 @@ EMR 문서는 CLOVA 블록 파서(헤더→값 레이아웃)를 우선 사용하
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from ai_worker.adapters.clova import ClovaOcrResult
 from app.models.ocr import OcrDocumentType
@@ -239,6 +241,7 @@ _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
 def extract_fields(
     clova_result: ClovaOcrResult,
     document_type: OcrDocumentType,
+    lab_keywords: dict[str, list[str]] | None = None,
 ) -> list[ExtractedField]:
     """CLOVA 결과에서 문서 유형에 맞는 핵심 필드를 추출한다.
 
@@ -246,11 +249,14 @@ def extract_fields(
     LAB_RESULT: 표 파서 우선, 누락 필드는 정규식으로 보완.
     그 외: 정규식만 사용.
     동일 field_type은 첫 번째 매칭만 사용한다.
+
+    lab_keywords: build_lab_keywords()로 만든 field_type → 키워드 목록.
+    None이면 기존 정규식 전용 동작을 유지한다(하위 호환).
     """
     if document_type == OcrDocumentType.EMR:
-        return _extract_emr(clova_result)
+        return _extract_emr(clova_result, lab_keywords)
     if document_type == OcrDocumentType.LAB_RESULT:
-        return _extract_lab(clova_result)
+        return _extract_lab(clova_result, lab_keywords)
 
     patterns = _PATTERNS_BY_TYPE.get(document_type)
     if not patterns:
@@ -263,12 +269,46 @@ def extract_fields(
 # ---------------------------------------------------------------------------
 
 
-def _match_lab_test_name(test_name: str) -> str | None:
-    """검사항목 텍스트를 field_type으로 변환한다. 매칭 실패 시 None."""
+def _match_lab_test_name(
+    test_name: str,
+    lab_keywords: dict[str, list[str]] | None = None,
+) -> str | None:
+    """검사항목 텍스트를 field_type으로 변환한다. 매칭 실패 시 None.
+
+    정규식 패턴을 먼저 시도하고, 매칭되지 않으면 lab_keywords(DB 키워드)로 fallback한다.
+    키워드가 설정되지 않은 항목은 기존 정규식 동작을 그대로 유지한다(인수조건 2).
+    """
     for pattern, field_type in _LAB_TEST_NAME_KEYWORDS:
         if pattern.search(test_name):
             return field_type
+    if lab_keywords:
+        for field_type, kw_list in lab_keywords.items():
+            for kw in kw_list:
+                if kw and re.search(r"\b" + re.escape(kw) + r"\b", test_name, re.IGNORECASE):
+                    return field_type
     return None
+
+
+def build_lab_keywords(baselines: Sequence[Any]) -> dict[str, list[str]]:
+    """LabBaseline 목록에서 field_type → 판독 키워드 목록 매핑을 만든다.
+
+    각 기준선의 name을 기존 정규식으로 field_type에 대응시킨 뒤,
+    keywords 필드의 쉼표 구분 문자열을 그 field_type의 추가 매칭 후보로 등록한다.
+    name이 정규식에 매칭되지 않거나 keywords가 비어 있는 기준선은 건너뛴다.
+    """
+    result: dict[str, list[str]] = {}
+    for baseline in baselines:
+        keywords_str: str = getattr(baseline, "keywords", "") or ""
+        if not keywords_str.strip():
+            continue
+        field_type = _match_lab_test_name(getattr(baseline, "name", ""))
+        if field_type is None:
+            continue
+        for kw in keywords_str.split(","):
+            kw = kw.strip()
+            if kw and kw not in result.setdefault(field_type, []):
+                result[field_type].append(kw)
+    return result
 
 
 def _find_lab_columns(rows: list) -> tuple[int, tuple[float, float], tuple[float, float]] | None:
@@ -296,7 +336,10 @@ def _find_lab_columns(rows: list) -> tuple[int, tuple[float, float], tuple[float
     return header_row_idx, tn_col, res_col
 
 
-def _extract_lab_table(rows: list) -> list[ExtractedField]:
+def _extract_lab_table(
+    rows: list,
+    lab_keywords: dict[str, list[str]] | None = None,
+) -> list[ExtractedField]:
     """바운딩 박스 행 그룹에서 검사항목→결과 쌍을 추출한다.
 
     헤더 행에서 '검사항목'과 '검사결과' 열 위치를 확인한 뒤,
@@ -322,7 +365,7 @@ def _extract_lab_table(rows: list) -> list[ExtractedField]:
         result_value = " ".join(b.text.strip() for b in res_blocks).strip()
         if not test_name or not result_value:
             continue
-        field_type = _match_lab_test_name(test_name)
+        field_type = _match_lab_test_name(test_name, lab_keywords)
         if field_type is None or field_type in seen:
             continue
         seen.add(field_type)
@@ -337,9 +380,12 @@ def _extract_lab_table(rows: list) -> list[ExtractedField]:
     return results
 
 
-def _extract_lab(clova_result: ClovaOcrResult) -> list[ExtractedField]:
+def _extract_lab(
+    clova_result: ClovaOcrResult,
+    lab_keywords: dict[str, list[str]] | None = None,
+) -> list[ExtractedField]:
     """LAB_RESULT: 표 파서 우선, 누락 필드는 정규식으로 보완."""
-    results = _extract_lab_table(clova_result.rows) if clova_result.rows else []
+    results = _extract_lab_table(clova_result.rows, lab_keywords) if clova_result.rows else []
     found_types = {f.field_type for f in results}
     for field in _extract_by_regex(clova_result, _LAB_PATTERNS):
         if field.field_type not in found_types:
@@ -572,18 +618,29 @@ def _suggest_prescription_set_from(
         return None
 
     # is_pcos
-    if has_yazz_contraindicated:
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 초진 (야즈 불가)", _SET_SUGGESTION_HIGH_CONF)
-    if has_yazz and has_metformin:
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 + 메트포르민", _SET_SUGGESTION_HIGH_CONF)
+    #
+    # **대표 처방이 넷으로 줄었다** (KEY-262) — PCOS 쪽은 「야즈 (처음)」과
+    # 「야즈 (계속)」뿐이다. 예전에 갈라 주던 「초진 (야즈 불가)」·「야즈 +
+    # 메트포르민」·「대사관리」가 없다.
+    #
+    # 🚩 **맞는 세트가 없으면 제안하지 않는다.** 이 함수의 규칙이 원래
+    # 그렇다 — 「근거가 부족하면 None, 스탭이 S1-6 에서 직접 고른다」.
+    # 야즈가 금기인 사람에게 야즈 세트를 제안하는 것은 근거가 부족한 정도가
+    # 아니라 **틀린 제안**이다. 합성 데이터의 그 진료는 넷 중 하나로
+    # 옮겼지만(팀 결정), 화면에 뜨는 제안까지 그렇게 둘 수는 없다.
+    if has_yazz_contraindicated or (has_metformin and not has_yazz):
+        return None
     if has_yazz:
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (계속)", _SET_SUGGESTION_MED_CONF)
-    if has_metformin:
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 대사관리", _SET_SUGGESTION_HIGH_CONF)
+        if has_continuing:
+            return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (계속)", _SET_SUGGESTION_HIGH_CONF)
+        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (처음)", _SET_SUGGESTION_MED_CONF)
     return None
 
 
-def _extract_emr(clova_result: ClovaOcrResult) -> list[ExtractedField]:
+def _extract_emr(
+    clova_result: ClovaOcrResult,
+    lab_keywords: dict[str, list[str]] | None = None,
+) -> list[ExtractedField]:
     """EMR: 상병명·처방 표 파서 우선, 누락 필드를 블록 파서·정규식·검사 표 파서로 보완.
 
     모든 문서가 EMR 기본값으로 업로드되므로, 검사결과지도 이 경로를 탄다.
@@ -614,7 +671,7 @@ def _extract_emr(clova_result: ClovaOcrResult) -> list[ExtractedField]:
     _add(_extract_by_regex(clova_result, _EMR_PATTERNS))
 
     # ⑤ 검사결과지 표 파서 — 표 헤더(검사항목·검사결과)가 있을 때만 실행된다
-    _add(_extract_lab_table(clova_result.rows))
+    _add(_extract_lab_table(clova_result.rows, lab_keywords))
 
     # ⑥ 검사결과지 정규식 fallback
     _add(_extract_by_regex(clova_result, _LAB_PATTERNS))

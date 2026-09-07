@@ -636,7 +636,16 @@ function tiedBirthDates(items) {
     event.preventDefault();
   });
 
-  document.addEventListener("session:ready", function () {
+  document.addEventListener("session:ready", function (event) {
+    /* 스탭 화면에 스탭이 아닌 사람이 왔다 — 의사가 주소를 직접 치거나 옛
+       북마크·탭 복원으로 들어온 경우다. 목록을 그리기 전에 제 첫 화면으로
+       돌려보낸다: 의사는 승인 화면, 어드민만 있으면 어드민 화면. */
+    var me = (event && event.detail) || {};
+    if (!showsPatientList(me.roles)) {
+      location.replace(landingFor(me.roles || []));
+      return;
+    }
+
     /* 사람에게는 이름을 보이고 서버에는 id 를 보낸다.
        계약이 `department_id` · `doctor_id` 를 받는다 — 이름을 보내면 폐지된
        진료과인지, 그 의사가 거기 소속인지 서버가 볼 수 없다. */

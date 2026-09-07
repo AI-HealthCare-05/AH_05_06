@@ -214,12 +214,29 @@ class TestGenerateUsesApprovedContent(DrugCautionTestCase):
         assert db[GuideSectionKey.CAUTION].drug_caution_content_id == caution.drug_caution_content_id
         assert db[GuideSectionKey.EMERGENCY].drug_caution_content_id == emergency.drug_caution_content_id
 
-    async def test_non_caution_sections_have_no_content_id(self) -> None:
-        """medication·life·messages 섹션은 drug_caution_content_id 가 NULL 이다."""
+    async def test_a_section_from_the_catalog_carries_its_evidence(self) -> None:
+        """**근거는 글을 따라간다** — 카탈로그에서 온 절은 그 판을 가리킨다.
+
+        예전 이 검사는 「medication·life 는 `drug_caution_content_id` 가 NULL
+        이다」를 불변식으로 적어 두었다. 그때는 주의·응급만 카탈로그에서 왔기
+        때문이다. 승인 정본이 복약지도·생활지도까지 덮으면서(KEY-265) 그 말은
+        사실이 아니게 됐는데, **검사는 그 문구를 안 심어서 우연히 통과했다** —
+        규칙으로 읽으면 오해를 부르고 새 동작은 아무도 안 재고 있었다
+        (이희진 님 `#214` ④).
+
+        지금 재는 것은 「어느 갈래냐」가 아니라 **「그 글이 어디서 왔느냐」**다.
+        """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
-        await make_approved_content("자궁내막증 · 비잔 (계속)", CautionSectionKey.CAUTION, "[합성]")
-        await make_approved_content("자궁내막증 · 비잔 (계속)", CautionSectionKey.EMERGENCY, "[합성]")
+        picked = {}
+        for section in (
+            CautionSectionKey.MEDICATION,
+            CautionSectionKey.CAUTION,
+            CautionSectionKey.LIFE,
+        ):
+            picked[section] = await make_approved_content(
+                "자궁내막증 · 비잔 (계속)", section, f"[합성] {section.value} 승인 원본"
+            )
         visit = await make_visit(clinic, set_name="자궁내막증 · 비잔 (계속)")
         await attach_confirmed_ocr(visit, staff.staff_id)
 
@@ -227,8 +244,36 @@ class TestGenerateUsesApprovedContent(DrugCautionTestCase):
         assert resp.status_code == 201
 
         db = await self.sections_from_db(visit.visit_id)
+        pairs = (
+            (GuideSectionKey.MEDICATION, CautionSectionKey.MEDICATION),
+            (GuideSectionKey.CAUTION, CautionSectionKey.CAUTION),
+            (GuideSectionKey.LIFE, CautionSectionKey.LIFE),
+        )
+        for guide_key, caution_key in pairs:
+            assert db[guide_key].drug_caution_content_id == picked[caution_key].drug_caution_content_id, (
+                f"{guide_key} 가 제 근거를 안 가리킨다"
+            )
+
+    async def test_a_section_that_fell_back_carries_no_evidence(self) -> None:
+        """**범용 문구로 내려간 절은 가리킬 근거가 없다** — NULL 이 그 뜻이다.
+
+        주의만 승인해 두고 복약지도·생활지도는 비워 둔다. 그 둘은
+        `guide_defaults` 에서 오므로 근거가 없어야 한다. NULL 이 「카탈로그에서
+        안 왔다」를 뜻한다는 것을 여기서 못박는다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        await make_approved_content("자궁내막증 · 비잔 (계속)", CautionSectionKey.CAUTION, "[합성] 주의만")
+        visit = await make_visit(clinic, set_name="자궁내막증 · 비잔 (계속)")
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        resp = await self.generate(visit, staff)
+        assert resp.status_code == 201
+
+        db = await self.sections_from_db(visit.visit_id)
+        assert db[GuideSectionKey.CAUTION].drug_caution_content_id is not None, "승인해 둔 절이 근거를 잃었다"
         for key in (GuideSectionKey.MEDICATION, GuideSectionKey.LIFE, GuideSectionKey.MESSAGES):
-            assert db[key].drug_caution_content_id is None, f"{key} 는 content_id 가 없어야 한다"
+            assert db[key].drug_caution_content_id is None, f"{key} 는 범용 문구에서 왔는데 근거를 달았다"
 
 
 # ── D-2: 미등록·미승인·근거 누락 → 폴백 ──────────────────────────────────────
@@ -283,7 +328,10 @@ class TestGenerateFallsBackWhenNoContent(DrugCautionTestCase):
     async def test_emergency_only_approved_uses_caution_fallback(self) -> None:
         """emergency 만 승인되고 caution 이 없을 때 caution 은 폴백을 쓴다.
 
-        PCOS · 초진 (야즈 불가) 케이스 재현 — seed 의 '근거 누락' 시나리오.
+        예전에는 seed 픽스처에 이 모양의 세트가 있어 그것을 재현했다.
+        KEY-262 로 대표 처방이 넷이 되면서 seed 는 고르게 완비됐고, 이 테스트가
+        쓰는 상태는 **여기서 직접 만든다.** 세트 이름은 그때의 이름을 남겨 둔
+        것뿐이라, 지금은 카탈로그에 없는 이름이다 — 그래서 오히려 안전하다.
         """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])

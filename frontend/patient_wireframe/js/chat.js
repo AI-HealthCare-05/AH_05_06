@@ -196,14 +196,17 @@
           retry.addEventListener('click', function () { retryAnswer(msg); });
           actions.appendChild(retry);
         }
-        var contact = document.createElement('button');
-        contact.type = 'button'; contact.className = 'chat-contact';
-        contact.innerHTML = '<img src="/patient_wireframe/assets/chat_bot.png" alt="" class="chat-contact__icon" aria-hidden="true"> 문의하기';
-        contact.addEventListener('click', function () {
-          /* KEY-259: 병원 연락처 계약 전까지 기존 준비 안내를 유지한다. */
-          alert('문의 창구는 병원 설정에서 연결됩니다.');
-        });
-        actions.appendChild(contact);
+        /* **답변마다 붙던 「문의하기」를 여기서 없앴다** — KEY-236.
+         *
+         * 누르면 `alert('문의 창구는 병원 설정에서 연결됩니다.')` 를 띄우던
+         * 자리다. 병원 연락처 종점이 아직 계약에 없어서다(KEY-259).
+         *
+         * 처음에는 잠그고 `title` 로 사정을 적었는데, 이 화면은 **휴대폰**이다.
+         * 툴팁은 호버가 있어야 뜨므로 손가락에게는 안 보이고, 그러면 회색 단추를
+         * 눌러 보고도 아무 답을 못 받는다 — 없애려던 바로 그 꼴이다(#237 이희진).
+         *
+         * 그래서 사정은 패널에 **보이는 글**(`.chat-note`)로 한 번 적고, 여기서는
+         * 자리를 비운다. 답변마다 같은 문장을 되풀이하지 않으려는 것이기도 하다. */
         answer.appendChild(actions);
 
         if (!msg.error && !msg.aborted && !msg.fallback && msg.responseRef) {

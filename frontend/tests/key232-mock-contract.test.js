@@ -190,3 +190,34 @@ test("mock 오류 상태는 실제 서버 분기와 같은 HTTP status를 보존
   const otp = load("api", "checkin-api", { search: "?mock=1&case=locked" });
   await assert.rejects(otp.checkinApi.issueOtp("synthetic-link"), (error) => error.status === 429);
 });
+
+test("finalize mock 은 서버와 같은 것만 막는다 — 값이 있는데 안 본 것", async () => {
+  /* **관대해도 엄해도 거짓말이다** — KEY-271.
+   *
+   * 서버 `finalize_ocr` 는 「값이 있는데 미확정」 하나만 막는다
+   * (`app/ocr/service.py`). 못 읽어 빈 칸은 화면이 확정하지 않으므로
+   * (`fieldsToConfirm`) 그것까지 막으면 S1-7 진료는 안내문을 영영 못 만든다.
+   *
+   * 목업이 서버보다 **엄하면** 실서버에서 되는 일을 `?mock=1` 로 못 해 보고,
+   * **느슨하면** 여기서 되는 일이 실서버에서 막힌다. 이 검사는 그 둘을 다 잰다. */
+  const blocked = load("api", "ocr-api");
+  await assert.rejects(
+    blocked.ocrApi.finalizeOcr(8801),
+    (error) => error.status === 422 && error.code === "OCR_NOT_CONFIRMED",
+    "아무것도 확정 안 한 판독을 그냥 통과시켰다 — 확정의 뜻이 없어진다",
+  );
+
+  const box = load("api", "ocr-api");
+  const before = await box.ocrApi.result("mock-8801");
+  const unread = before.fields.filter((field) => field.value === null || field.value === "");
+  assert.ok(unread.length > 0, "목업에 못 읽은 칸이 없다 — 이 검사가 헛돈다");
+
+  for (const field of before.fields) {
+    if (field.value === null || field.value === "") continue;
+    await box.ocrApi.updateField(field.ocr_field_id, { base_version: field.version, confirm: true });
+  }
+
+  /* 못 읽은 칸은 여전히 미확정으로 남아 있다. 그래도 통과해야 한다. */
+  const made = await box.ocrApi.finalizeOcr(8801);
+  assert.equal(made.visit_id, 8801, "못 읽은 칸 하나가 처방을 통째로 막았다 — S1-7 이 죽는다");
+});

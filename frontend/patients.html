@@ -37,7 +37,14 @@
           <span class="who__name" id="who-name">—</span>
           <span class="who__roles" id="who-roles"></span>
         </span>
-        <button class="icon-button" type="button" aria-label="알림" data-unimplemented-action="notifications">
+        <button
+          class="icon-button"
+          type="button"
+          aria-label="알림"
+          aria-disabled="true"
+          title="알림 패널은 아직 없습니다 — 발송 실패·재시도와 함께 붙습니다 (D1-7)"
+          data-unimplemented-action="notifications"
+        >
           <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5v3L4 12.5h12L14.5 10V7A4.5 4.5 0 0 0 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 15a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="icon-button__count" id="alert-count" hidden></span>
         </button>
         <button class="icon-button" type="button" id="logout" aria-label="로그아웃"><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 3v6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 5.6a6.5 6.5 0 1 1-9.2 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
@@ -78,7 +85,15 @@
             <div class="banner__title">⚠ 발신번호 미등록</div>
             <p class="banner__lead">문자가 발송되지 않고 대기합니다</p>
           </div>
-          <button class="banner__act" type="button" data-unimplemented-action="open-settings">설정 열기</button>
+          <button
+            class="banner__act"
+            type="button"
+            aria-disabled="true"
+            title="발신번호는 의원 정보에서 등록합니다 — 그 화면은 아직 없습니다 (A1-4)"
+            data-unimplemented-action="open-settings"
+          >
+            설정 열기
+          </button>
         </div>
 
         <div class="chips" id="chips" role="group" aria-label="상태로 거르기"></div>
