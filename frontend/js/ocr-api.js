@@ -42,6 +42,12 @@ var ocrApi = {
     return request("/visits/" + visitId + "/ocr-job");
   },
 
+  /* GET /visits/{visitId}/ocr-jobs — KEY-278: 파일별 Job 목록 */
+  jobsForVisit: function (visitId) {
+    if (MOCK) return mockJobsForVisit(visitId);
+    return request("/visits/" + visitId + "/ocr-jobs");
+  },
+
   /* 약속처방 목록 — 의사가 설정(D2-3)에서 정해 둔 것. 판독 확인 화면의
      「처방」 칸이 여기서 고른다. 자유 입력이면 안 되는 이유는 이름을 고를 때
      그 세트에 묶인 주의 문구가 안내문에 붙기 때문이다 — 「비잔」과 「비잔정」이
@@ -556,6 +562,38 @@ function mockJobForVisit(visitId) {
       }
 
       resolve({ ocr_job_id: "ocr_synthetic_" + visitId });
+    }, 80);
+  });
+}
+
+function mockJobsForVisit(visitId) {
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      var row =
+        typeof MOCK_TODAY === "undefined"
+          ? null
+          : MOCK_TODAY.filter(function (v) {
+              return v.visit_id === Number(visitId);
+            })[0];
+      if (row && row.detail_status === "NO_DOCUMENT") {
+        return reject(new ApiError("NOT_FOUND", 404, {}));
+      }
+
+      resolve([
+        {
+          document_id: 1,
+          document_type: "EMR",
+          ocr_job_id: "ocr_synthetic_" + visitId,
+          status: "COMPLETED",
+          progress: 100,
+          started_at: null,
+          completed_at: null,
+          failure_code: null,
+          excluded_from_guide: false,
+        },
+      ]);
     }, 80);
   });
 }

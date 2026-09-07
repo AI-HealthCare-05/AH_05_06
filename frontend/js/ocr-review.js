@@ -301,6 +301,7 @@ function stateTakesFocus(tone) {
 
   var visit = null;
   var jobId = null;
+  var jobIds = [];
 
   /* 진료를 바꾸면 앞의 요청이 아직 날아오고 있다. 그 응답이 새 화면을 덮으면
      또 남의 값이 뜬다. 세대를 세어 **지금 것만** 그린다 —
@@ -1902,12 +1903,17 @@ function stateTakesFocus(tone) {
      보낼 값이 없어 `undefined` 가 그대로 나갔다(이희진 님 `#81` 리뷰). */
   function onConflict(fieldId, mine, body) {
     var seq = loadSeq;
-    ocrApi
-      .fields(jobId)
-      .then(function (fields) {
+    var ids = jobIds.length ? jobIds : (jobId ? [jobId] : []);
+    Promise.all(
+      ids.map(function (id) {
+        return ocrApi.fields(id).catch(function () { return []; });
+      }),
+    )
+      .then(function (fieldLists) {
         if (seq !== loadSeq) return;
+        var allFields = fieldLists.reduce(function (acc, list) { return acc.concat(list); }, []);
         var theirs = null;
-        fields.forEach(function (item) {
+        allFields.forEach(function (item) {
           if (item.ocr_field_id === fieldId) theirs = item;
         });
         if (!theirs) {
@@ -2795,19 +2801,38 @@ function stateTakesFocus(tone) {
 
   /* 판독 중이면 끝날 때까지 되묻는다. 화면이 「저절로 바뀝니다」라고 말하는데
      아무것도 안 하고 있었다 (`#40` 리뷰). 진료를 바꾸면 `resetState()` 가 끈다. */
-  function pollJob(mine) {
+  function mergeResults(results) {
+    if (!results.length) return { ocr_result_id: null, documents: [], fields: [] };
+    if (results.length === 1) return results[0];
+    var base = results[0];
+    return {
+      ocr_result_id: base.ocr_result_id,
+      ocr_job_id: base.ocr_job_id,
+      model_name: base.model_name,
+      model_version: base.model_version,
+      version: base.version,
+      confirmed_by: base.confirmed_by,
+      confirmed_at: base.confirmed_at,
+      low_confidence_threshold: base.low_confidence_threshold,
+      documents: results.reduce(function (acc, r) { return acc.concat(r.documents || []); }, []),
+      fields: results.reduce(function (acc, r) { return acc.concat(r.fields || []); }, []),
+    };
+  }
+
+  function pollAllJobs(mine) {
     pollTimer = setTimeout(function () {
       if (mine !== loadSeq) return;
-      ocrApi
-        .job(jobId)
-        .then(function (job) {
+      Promise.all(jobIds.map(function (id) { return ocrApi.job(id); }))
+        .then(function (jobs) {
           if (mine !== loadSeq) return;
-          if (job.status === "PROCESSING") {
-            renderJobState(job);
-            return pollJob(mine);
+          var processing = jobs.find(function (j) { return j.status === "PROCESSING"; });
+          if (processing) {
+            renderJobState(processing);
+            return pollAllJobs(mine);
           }
-          if (!renderJobState(job)) return;
-          return loadResult(mine);
+          var failed = jobs.find(function (j) { return j.status === "FAILED"; });
+          if (failed) renderJobState(failed);
+          return loadAllResults(mine);
         })
         .catch(function () {
           if (mine !== loadSeq) return;
@@ -2820,12 +2845,16 @@ function stateTakesFocus(tone) {
     }, POLL_MS);
   }
 
-  function loadResult(mine) {
-    return ocrApi
-      .result(jobId)
-      .then(function (data) {
+  function loadAllResults(mine) {
+    return Promise.all(
+      jobIds.map(function (id) {
+        return ocrApi.result(id).catch(function () { return null; });
+      }),
+    )
+      .then(function (results) {
         if (mine !== loadSeq) return;
-        result = data;
+        var valid = results.filter(Boolean);
+        result = mergeResults(valid);
         if (typeof result.low_confidence_threshold === "number") threshold = result.low_confidence_threshold;
         activeDoc = result.documents.length ? result.documents[0].document_id : null;
         showWork();
@@ -2851,47 +2880,47 @@ function stateTakesFocus(tone) {
       });
   }
 
+  /* backward compat — 단일 job 폴링이 필요한 경로에서 사용 */
+  function pollJob(mine) { return pollAllJobs(mine); }
+  function loadResult(mine) { return loadAllResults(mine); }
+
   function loadVisit(next) {
     resetState();
     visit = next;
     jobId = null;
+    jobIds = [];
     var mine = ++loadSeq;
     renderPatientHead(next);
-    renderSteps(); // 단계 줄은 진료가 정해져야 갈 곳을 안다
-    /* 확인 항목·이전 확정값은 판독과 **따로** 불러온다 — 판독이 실패해도 이 값들은
-       보여야 하고, 반대로 이 값을 못 읽어도 판독은 보여야 한다. */
+    renderSteps();
     loadCheckItems(next.visit_id);
     loadPreviousFields(next.visit_id, mine);
     showState("loading", '<p class="state__title">판독 결과를 불러오는 중…</p>');
 
     ocrApi
-      .jobForVisit(next.visit_id)
-      .then(function (link) {
+      .jobsForVisit(next.visit_id)
+      .then(function (docJobs) {
         if (mine !== loadSeq) return null;
-        jobId = link.ocr_job_id;
-        return ocrApi.job(jobId);
+        if (!docJobs || !docJobs.length) throw { code: "NOT_FOUND" };
+        jobIds = docJobs.map(function (dj) { return dj.ocr_job_id; });
+        jobId = jobIds[0];
+        return Promise.all(jobIds.map(function (id) { return ocrApi.job(id); }));
       })
-      .then(function (job) {
-        if (mine !== loadSeq || !job) return null;
-        if (job.status === "PROCESSING") {
-          renderJobState(job);
-          return pollJob(mine);
+      .then(function (jobs) {
+        if (mine !== loadSeq || !jobs) return null;
+        var processing = jobs.find(function (j) { return j.status === "PROCESSING"; });
+        if (processing) {
+          renderJobState(processing);
+          return pollAllJobs(mine);
         }
-        if (!renderJobState(job)) return null;
-        return loadResult(mine);
+        var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
+        if (anyFailed) renderJobState(anyFailed);
+        return loadAllResults(mine);
       })
       .catch(function (error) {
         if (mine !== loadSeq) return;
         if (error && error.code === "NOT_FOUND") {
-          /* **아직 안 올린 것은 「상태」가 아니다.**
-           *
-           * 「판독한 기록이 없습니다」를 화면 가득 띄웠더니, 방금 등록한 환자는
-           * 그 안내를 한 번 보고 → 올리고 → 그제야 판독 화면으로 **넘어가야**
-           * 했다. 화면이 두 번 바뀌는데 두 번 다 할 일은 같다.
-           *
-           * 판을 그냥 세운다. 왼쪽은 올리는 자리, 오른쪽은 채울 칸이 빈 채로.
-           * 무엇을 하는 화면인지가 첫눈에 보이고, 올리면 그 자리에서 값이
-           * 찬다 — 넘어가는 순간이 없다. */
+          /* 아직 안 올린 것은 「상태」가 아니다. 판을 세워 두면 올리는 자리와
+             채울 칸이 한 화면에 함께 보인다 — 넘어가는 순간이 없다. */
           if (typeof ocrOpenAddPanel === "function") ocrOpenAddPanel();
           result = { ocr_result_id: null, documents: [], fields: [] };
           showWork();
