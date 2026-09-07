@@ -807,7 +807,7 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | `extracted_value` | `string \| null` | OCR 엔진 추출값 |
 | `corrected_value` | `string \| null` | 사람이 수정한 값 |
 | `value` | `string \| null` | 표시값 — `corrected_value` 우선, 없으면 `extracted_value` |
-| `unit` | `string \| null` | 검사값 단위 (예: `mg/dL`, `cm`) |
+| `unit` | `string \| null` | 값의 단위. 검사값은 `mg/dL`·`cm` 등. **`DURATION_DAYS` 는 이 칸이 「일」인지 「통」인지를 정한다** — EMR 「총투」 칸의 `3` 이 3일인지 3통(=84일)인지가 숫자에 안 적혀 있어서, 읽은 자리에 남긴다. 소진 예정일과 확인 문자 시각이 이 값으로 셈해진다 (KEY-271) |
 | `confidence` | `float \| null` | OCR 신뢰도 0–1 |
 | `is_low_confidence` | `bool` | 서버 판정 저신뢰 여부 — 임계값 0.75, 화면이 임의로 정하지 않는다 |
 | `version` | `int` | 낙관적 잠금 버전 — PATCH 요청 시 `base_version`으로 전달 |

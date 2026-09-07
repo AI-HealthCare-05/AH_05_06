@@ -57,6 +57,7 @@ from app.models.catalog import (  # noqa: E402
     DrugCautionContent,
     PrescriptionSet,
 )
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.prescriptions import Prescription, PrescriptionItem  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
@@ -80,6 +81,7 @@ from app.tests.fixtures.catalog import (  # noqa: E402
     DRUG_CAUTION_CONTENTS,
     PRESCRIPTION_SETS,
 )
+from app.tests.fixtures.ocr_rows import ReadStage, read_from_row  # noqa: E402
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
 from app.tests.fixtures.staff import (  # noqa: E402
     StaffDataError,
@@ -465,6 +467,7 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
     # 2단계: 진료 upsert
     created_v = skipped_v = error_v = 0
     created_presc = created_item = 0
+    created_job = created_field = 0
 
     for row in rows:
         visit_date_str = row["진료일"].strip()
@@ -512,8 +515,96 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         created_presc += created_p
         created_item += created_i
 
+        created_j, created_f = await _seed_ocr(visit, row, h1.hospital_id)
+        created_job += created_j
+        created_field += created_f
+
     print(f"[visits] created={created_v} skipped={skipped_v} error={error_v} total={len(rows)}")
     print(f"[prescriptions] created={created_presc} items={created_item}")
+    print(f"[ocr] jobs={created_job} fields={created_field}")
+
+
+#: 시드가 부은 판독임을 표에서 알아볼 수 있게 한다. 업로드 데모가 부은 것
+#: (`FIXTURE_MODEL_NAME = "fixture-v0"`)과 구별되어야 나중에 갈라 지울 수 있다.
+SEED_OCR_MODEL_NAME = "seed-v0"
+
+
+async def _seed_ocr(visit: Visit, row: dict[str, str], hospital_id: int) -> tuple[int, int]:
+    """한 진료에 판독을 심는다 — KEY-271 P1.
+
+    규칙은 `app/tests/fixtures/ocr_rows.py` 가 안다. 여기 두지 않는 이유는
+    `_seed_prescription` 과 같다 — **검사가 닿아야 한다.**
+
+    ## 판독을 심으면 그 진료는 잠긴다
+
+    `VisitService._refuse_if_locked` 가 `PROCESSING`·`COMPLETED` 판독 작업이
+    하나라도 있으면 담당의·진료일·진료과 변경을 409 `VISIT_LOCKED` 로 막는다.
+    **확정 여부와 무관하다.** 그래서 판독을 심은 진료는 식별 관계를 못 고친다 —
+    올바른 동작이지만(EMR 을 읽은 뒤에 진료를 옮기면 안 된다) 시연에서 「진료
+    정보 고치기」를 보이려면 판독 없는 진료를 써야 한다.
+
+    ## 확정은 사람이 한 것으로 남긴다
+
+    확정 도장은 담당의가 찍은 것으로 적는다. 담당의가 없으면 **심지 않는다** —
+    `seed_smoke_fixture` 가 「승인자 없이 승인 상태를 만들 수 없어 멈춘다」고 한
+    것과 같은 까닭이다. 사람 없이 사람이 한 일을 만들면 안 된다.
+    """
+    made = read_from_row(row)
+    if made.stage is ReadStage.NONE:
+        return 0, 0
+
+    # **사람 없이 사람이 한 일을 만들지 않는다.** `requested_by` 는 「누가 읽어
+    # 달라고 했는가」이고 확정 도장은 「누가 봤는가」다. 담당의가 없으면 둘 다
+    # 적을 사람이 없다 — `0` 같은 값을 넣으면 아무도 아닌 사람이 판독을 요청하고
+    # 확정한 것이 된다. `seed_smoke_fixture` 가 승인자 없이 승인 상태를 안 만드는
+    # 것과 같은 까닭이다.
+    if visit.doctor_id is None:
+        print(
+            f"[ocr] 진료 {visit.visit_id} 에 담당의가 없습니다 — 읽어 달라고 한 사람도 "
+            f"확인한 사람도 적을 수 없어 건너뜁니다 (시나리오 {row['시나리오ID']})",
+            file=sys.stderr,
+        )
+        return 0, 0
+
+    confirmed = made.stage is ReadStage.CONFIRMED
+
+    job, was_created = await OcrJob.get_or_create(
+        ocr_job_id=f"ocr_seed_{visit.visit_id}",
+        defaults={
+            "hospital_id": hospital_id,
+            "visit": visit,
+            # **기본값이 `PROCESSING` 이다.** 그대로 두면 판독 결과 조회가
+            # 409 `OCR_RESULT_NOT_READY` 로 떨어져 확인 화면이 아예 안 뜬다.
+            "status": OcrJobStatus.COMPLETED,
+            "progress": 100,
+            "requested_by": visit.doctor_id,
+            "completed_at": visit.visited_at,
+            "excluded_from_guide": False,
+        },
+    )
+    if not was_created:
+        return 0, 0  # 이미 심은 진료다. 다시 실행해도 쌓이지 않는다
+
+    stamped_at = visit.visited_at
+    result = await OcrResult.create(
+        ocr_job=job,
+        model_name=SEED_OCR_MODEL_NAME,
+        confirmed_by=visit.doctor_id if confirmed else None,
+        confirmed_at=stamped_at if confirmed else None,
+    )
+    for field in made.fields:
+        await OcrField.create(
+            ocr_result=result,
+            field_type=field.field_type,
+            extracted_value=field.value,
+            unit=field.unit,
+            confidence=field.confidence,
+            is_pending_report=field.is_pending_report,
+            is_confirmed=confirmed,
+            confirmed_by=visit.doctor_id if confirmed else None,
+            confirmed_at=stamped_at if confirmed else None,
+        )
+    return 1, len(made.fields)
 
 
 async def _seed_prescription(visit: Visit, row: dict[str, str]) -> tuple[int, int]:
