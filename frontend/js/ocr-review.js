@@ -2891,7 +2891,10 @@ function stateTakesFocus(tone) {
   function loadAllResults(mine) {
     return Promise.all(
       jobIds.map(function (id) {
-        return ocrApi.result(id).catch(function () { return null; });
+        return ocrApi.result(id).catch(function (err) {
+          if (err && err.code === "OCR_RESULT_NOT_READY") throw err;
+          return null;
+        });
       }),
     )
       .then(function (results) {
