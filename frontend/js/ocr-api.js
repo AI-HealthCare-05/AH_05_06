@@ -618,9 +618,15 @@ function mockFinalizeOcr(visitId) {
   if (MOCK_CASE === "forbidden") return new ApiError("FORBIDDEN", 403, {});
   if (MOCK_CASE === "novisit") return new ApiError("VISIT_NOT_FOUND", 404, {});
 
+  /* **막는 것은 「값이 있는데 아무도 안 본 것」 하나다.** 서버와 같은 규칙이다
+     (`app/ocr/service.py` 의 finalize 게이트). 못 읽어 빈 칸은 화면이 확정하지
+     않으므로(`fieldsToConfirm`) 여기서 막으면 S1-7 진료는 안내문을 영영 못
+     만든다 — 목업이 서버보다 엄하면 화면은 실서버에서 되는 일을 여기서 못 하고,
+     느슨하면 여기서 되는 일이 실서버에서 막힌다. 둘 다 거짓말이다. */
   var state = mockState();
   var pending = (state.fields || []).filter(function (f) {
-    return !f.is_confirmed && !f.is_pending_report && f.field_status !== "NOT_PERFORMED";
+    var read = f.corrected_value === null || f.corrected_value === undefined ? f.extracted_value : f.corrected_value;
+    return read !== null && read !== undefined && read !== "" && !f.is_confirmed;
   });
   if (pending.length) return new ApiError("OCR_NOT_CONFIRMED", 422, { pending: pending.length });
 

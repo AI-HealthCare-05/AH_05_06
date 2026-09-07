@@ -449,7 +449,20 @@ class TortoiseOcrRepository:
                 "확정된 OCR 항목이 없습니다.",
             )
 
-        unconfirmed = next((f for f in result.fields if not f.is_confirmed), None)
+        # **못 읽은 칸은 길을 막지 않는다** — 와이어프레임 S1-7 · KEY-271.
+        #
+        # 화면은 **값이 있는 항목만** 확정한다(`ocr-review.js` 의 `fieldsToConfirm`).
+        # 빈 칸을 확정하면 그 빈 값이 안내문에 그대로 나가기 때문이다. 그래서
+        # 「확인 완료」를 눌러도 못 읽은 칸은 미확정으로 남고, 화면은 그것을
+        # 일부러 안 막는다(`generateBlocked` 가 `counts.missing` 을 안 본다).
+        #
+        # 여기서 **모든** 필드를 요구하면 판독이 한 칸이라도 못 읽은 진료는
+        # 처방을 영영 못 세운다. 화면이 이 API 를 부르기 시작한 지금(KEY-271
+        # 다리)은 그것이 곧 **안내문 자체를 못 만드는 것**이다. 푸는 길도 없다 —
+        # 「이번 미시행」을 담을 칸이 서버에 없어 실서버에서는 버튼조차 안 그려진다.
+        #
+        # **값이 있는데 아무도 안 본 것**만 막는다. 그것이 확정의 뜻이다.
+        unconfirmed = next((f for f in result.fields if f.value and not f.is_confirmed), None)
         if unconfirmed is not None:
             raise OcrApiError(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,

@@ -69,6 +69,61 @@ class FinalizeOcrTestCase(TestCase):
             confirmed_at=datetime(2026, 9, 3, 10, 0, tzinfo=UTC),
         )
 
+    async def test_an_unread_field_does_not_block_the_prescription(self) -> None:
+        """**못 읽은 값은 길을 막지 않는다** — KEY-271, 와이어프레임 S1-7.
+
+        화면은 **값이 있는 항목만** 확정한다(`ocr-review.js` 의 `fieldsToConfirm`).
+        못 읽은 칸은 확정하지 않는다 — 빈 값을 확정하면 그 빈 값이 안내문에
+        그대로 나가기 때문이다. 그래서 「확인 완료」를 눌러도 그 칸은 미확정으로
+        남는다. 화면도 그것을 막지 않는다(`generateBlocked` 가 `counts.missing`
+        을 일부러 안 본다) — S1-7 이 그린 그대로다.
+
+        그런데 여기 게이트는 **모든** 필드의 확정을 요구했다. 그래서 판독이 한
+        칸이라도 못 읽으면 이 진료는 처방을 영영 못 세운다. 화면이 이 API 를
+        부르기 시작한 지금(KEY-271 다리) 그것은 **안내문 자체를 못 만드는 것**이
+        된다 — 「이번 미시행」 버튼은 서버에 담을 칸이 없어 실서버에서 그려지지도
+        않으므로, 스탭에게는 푸는 길이 없다.
+
+        **값이 있는데 안 본 것**만 막는다. 그것이 확정의 뜻이다.
+        """
+        actor, visit, result = await self.make_world("FO-13")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        # 판독이 못 읽은 칸 — 값도 없고 확정도 없다. 워커가 이렇게 만든다
+        # (`ai_worker/tasks/ocr_task.py` 의 missing 갈래).
+        await OcrField.create(
+            ocr_result=result,
+            field_type="HEMOGLOBIN",
+            extracted_value=None,
+            is_confirmed=False,
+        )
+
+        prescription = await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        names = [item.name for item in await prescription.items.all()]
+        assert names == ["비잔정 2mg"], f"못 읽은 칸 하나가 처방을 통째로 막았다 — {names}"
+
+    async def test_a_read_but_unconfirmed_field_still_blocks(self) -> None:
+        """**값이 있는데 안 본 것은 그대로 막는다** — 위 완화가 확정의 뜻까지 지우면 안 된다."""
+        actor, visit, result = await self.make_world("FO-14")
+        await self._add_confirmed_field(result, "PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", actor)
+        await self._add_confirmed_field(result, "MEDICATION_NAME", "비잔정 2mg", actor)
+        await self._add_confirmed_field(result, "FREQUENCY", "1일 1회", actor)
+        await OcrField.create(
+            ocr_result=result,
+            field_type="HEMOGLOBIN",
+            extracted_value="10.2",
+            is_confirmed=False,
+        )
+
+        with pytest.raises(OcrApiError) as caught:
+            await TortoiseOcrRepository().finalize_ocr(visit.visit_id, actor)
+
+        assert caught.value.code == "OCR_NOT_CONFIRMED", (
+            f"읽었는데 아무도 안 본 값을 그냥 통과시켰다 — {caught.value.code}"
+        )
+
     async def test_a_manually_added_drug_past_the_fifth_still_lands(self) -> None:
         """**여섯 번째 약이 조용히 빠지지 않는다** — KEY-271.
 
