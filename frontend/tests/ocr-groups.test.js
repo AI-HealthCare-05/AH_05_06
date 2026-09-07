@@ -811,12 +811,13 @@ test("**하나로 좁혀질 때만 고른다** — 둘이면 사람이 골라야
   assert.equal(guessPrescriptionSet(sets, "없는약"), null);
 });
 
-test("글자 몇 개가 겹친다고 고르지 않는다", () => {
+test("**목록에 하나뿐이면 그것을 고른다** — 좁힐 것이 없으면 후보가 곧 답이다", () => {
   const { guessPrescriptionSet } = box();
-  const sets = [{ prescription_set_id: 5, name: "PCOS · 초진 (야즈 불가)" }];
+  const sets = [{ prescription_set_id: 5, name: "PCOS · 야즈 (처음)" }];
 
-  /* 「야즈」가 「야즈 불가」에 들어 있다 — 통째로 들어 있으면 후보다.
-     그래도 하나뿐이라 고른다: 사람이 보고 바꿀 수 있는 자리다. */
+  /* 「야즈」가 통째로 들어 있으니 후보고, 하나뿐이라 고른다. 위의 셋짜리
+     목록과 달리 여기서는 **좁힐 것이 없다** — 한 줄짜리 목록에서도 고르는지
+     따로 잰다. 기계가 고른 것은 사람이 보고 바꿀 수 있다. */
   assert.equal(guessPrescriptionSet(sets, "야즈").prescription_set_id, 5);
 });
 

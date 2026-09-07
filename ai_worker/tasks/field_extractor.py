@@ -572,14 +572,22 @@ def _suggest_prescription_set_from(
         return None
 
     # is_pcos
-    if has_yazz_contraindicated:
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 초진 (야즈 불가)", _SET_SUGGESTION_HIGH_CONF)
-    if has_yazz and has_metformin:
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 + 메트포르민", _SET_SUGGESTION_HIGH_CONF)
+    #
+    # **대표 처방이 넷으로 줄었다** (KEY-262) — PCOS 쪽은 「야즈 (처음)」과
+    # 「야즈 (계속)」뿐이다. 예전에 갈라 주던 「초진 (야즈 불가)」·「야즈 +
+    # 메트포르민」·「대사관리」가 없다.
+    #
+    # 🚩 **맞는 세트가 없으면 제안하지 않는다.** 이 함수의 규칙이 원래
+    # 그렇다 — 「근거가 부족하면 None, 스탭이 S1-6 에서 직접 고른다」.
+    # 야즈가 금기인 사람에게 야즈 세트를 제안하는 것은 근거가 부족한 정도가
+    # 아니라 **틀린 제안**이다. 합성 데이터의 그 진료는 넷 중 하나로
+    # 옮겼지만(팀 결정), 화면에 뜨는 제안까지 그렇게 둘 수는 없다.
+    if has_yazz_contraindicated or (has_metformin and not has_yazz):
+        return None
     if has_yazz:
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (계속)", _SET_SUGGESTION_MED_CONF)
-    if has_metformin:
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 대사관리", _SET_SUGGESTION_HIGH_CONF)
+        if has_continuing:
+            return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (계속)", _SET_SUGGESTION_HIGH_CONF)
+        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (처음)", _SET_SUGGESTION_MED_CONF)
     return None
 
 

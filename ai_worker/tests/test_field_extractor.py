@@ -575,7 +575,12 @@ def test_prescription_set_syn_ems_01_suggests_bizan_initial() -> None:
 
 
 def test_prescription_set_pcos_yazz_metformin() -> None:
-    """PCOS + 야즈 + 메트포르민 → PCOS · 야즈 + 메트포르민, 신뢰도 0.90."""
+    """PCOS + 야즈 + 메트포르민 → PCOS · 야즈 (처음).
+
+    **대표 처방이 넷으로 줄면서 「야즈 + 메트포르민」 세트가 없어졌다**
+    (KEY-262). 야즈를 먹는 것은 맞으니 야즈 세트를 제안하되, 「복용 중」
+    문구가 없으므로 「처음」이다 — 비잔 갈래와 같은 규칙이다.
+    """
     result = _make_emr_result(
         _PCOS_DIAG_BLOCKS,
         _YAZZ_MET_RX_BLOCKS,
@@ -585,12 +590,23 @@ def test_prescription_set_pcos_yazz_metformin() -> None:
     field_map = {f.field_type: f for f in fields}
     assert "PRESCRIPTION_SET" in field_map
     ps = field_map["PRESCRIPTION_SET"]
-    assert ps.extracted_value == "PCOS · 야즈 + 메트포르민"
-    assert ps.confidence == Decimal("0.90")
+    assert ps.extracted_value == "PCOS · 야즈 (처음)"
+    assert ps.confidence == Decimal("0.75")
 
 
 def test_prescription_set_pcos_yazz_contraindicated() -> None:
-    """raw_text「야즈 불가」 → PCOS · 초진 (야즈 불가), 신뢰도 0.90."""
+    """🚩 **야즈가 금기면 아무것도 제안하지 않는다.**
+
+    대표 처방이 넷으로 줄면서 「초진 (야즈 불가)」 세트가 없어졌다(KEY-262).
+    남은 넷 중 PCOS 쪽은 야즈뿐이라 **맞는 세트가 없다.**
+
+    야즈를 못 쓰는 사람에게 야즈 세트를 제안하는 것은 근거가 부족한 정도가
+    아니라 **틀린 제안**이다. 이 함수의 원래 규칙대로 `None` 을 낸다 —
+    「근거가 부족하면 스탭이 S1-6 에서 직접 고른다」.
+
+    (합성 데이터의 그 진료 자체는 팀 결정에 따라 야즈(처음)으로 옮겼다.
+    데이터를 옮기는 것과 화면에 제안을 띄우는 것은 다르다.)
+    """
     blocks = _PCOS_DIAG_BLOCKS
     result = ClovaOcrResult(
         raw_text="야즈 불가 — 혈전 위험",
@@ -599,8 +615,7 @@ def test_prescription_set_pcos_yazz_contraindicated() -> None:
     )
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_map = {f.field_type: f for f in fields}
-    assert "PRESCRIPTION_SET" in field_map
-    assert field_map["PRESCRIPTION_SET"].extracted_value == "PCOS · 초진 (야즈 불가)"
+    assert "PRESCRIPTION_SET" not in field_map, f"야즈 금기인데 세트를 제안했다 — {field_map.get('PRESCRIPTION_SET')}"
 
 
 def test_prescription_set_no_suggestion_without_drug() -> None:

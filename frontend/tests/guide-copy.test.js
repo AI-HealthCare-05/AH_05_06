@@ -102,7 +102,7 @@ test("질환으로 묶되 받은 차례를 지킨다", () => {
   const { copyByDisease } = rules();
 
   const blocks = copyByDisease([
-    a_set({ prescription_set_id: 4, disease: "PCOS", name: "PCOS · 초진" }),
+    a_set({ prescription_set_id: 4, disease: "PCOS", name: "PCOS · 야즈 (처음)" }),
     a_set({ prescription_set_id: 1 }),
   ]);
 
@@ -145,13 +145,19 @@ function api() {
   return box;
 }
 
-test("목업이 여덟 장을 세운다", async () => {
+test("목업이 처방 세트 수만큼 장을 세운다", async () => {
   const box = api();
 
   const page = await box.catalogApi.guideCopy();
 
-  assert.strictEqual(page.items.length, 8, "처방 세트 여덟이 곧 여덟 장이다");
-  assert.strictEqual(box.copyProgress(page.items).say, "0/8");
+  /* **개수를 적어 두지 않는다.** 예전에는 「여덟」이 박혀 있어서, 대표 처방을
+     넷으로 줄이자(KEY-262) 이 검사가 코드와 무관하게 깨졌다. 세는 대상이
+     처방 세트이므로 그 목록에서 받아 온다. */
+  const sets = await box.catalogApi.sets();
+
+  assert.ok(sets.length > 0, "세트가 없다 — 검사가 헛돈다");
+  assert.strictEqual(page.items.length, sets.length, "처방 세트 하나가 곧 한 장이다");
+  assert.strictEqual(box.copyProgress(page.items).say, "0/" + sets.length);
 });
 
 test("목업도 🚨 를 잠근다", async () => {
