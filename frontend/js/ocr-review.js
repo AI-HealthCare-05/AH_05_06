@@ -2872,7 +2872,9 @@ function stateTakesFocus(tone) {
             return pollAllJobs(mine);
           }
           var failed = jobs.find(function (j) { return j.status === "FAILED"; });
+          var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
           if (failed) renderJobState(failed);
+          if (failed && !hasSuccess) return;
           return loadAllResults(mine);
         })
         .catch(function () {
@@ -2942,7 +2944,7 @@ function stateTakesFocus(tone) {
       .then(function (docJobs) {
         if (mine !== loadSeq) return null;
         if (!docJobs || !docJobs.length) throw { code: "NOT_FOUND" };
-        jobIds = docJobs.map(function (dj) { return dj.ocr_job_id; });
+        jobIds = Array.from(new Set(docJobs.map(function (dj) { return dj.ocr_job_id; })));
         jobId = jobIds[0];
         return Promise.all(jobIds.map(function (id) { return ocrApi.job(id); }));
       })
@@ -2954,7 +2956,9 @@ function stateTakesFocus(tone) {
           return pollAllJobs(mine);
         }
         var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
+        var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
         if (anyFailed) renderJobState(anyFailed);
+        if (anyFailed && !hasSuccess) return null;
         return loadAllResults(mine);
       })
       .catch(function (error) {
