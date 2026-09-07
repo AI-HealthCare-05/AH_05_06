@@ -693,6 +693,10 @@
             ],
             "title": "Origin"
           },
+          "preview": {
+            "title": "Preview",
+            "type": "string"
+          },
           "section_key": {
             "$ref": "#/components/schemas/CautionSectionKey"
           }
@@ -701,7 +705,8 @@
           "section_key",
           "origin",
           "body",
-          "editable"
+          "editable",
+          "preview"
         ],
         "title": "CopySectionItem",
         "type": "object"
