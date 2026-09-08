@@ -429,8 +429,7 @@ class TestProcessOcrJob(TestCase):
         """검사결과지를 EMR로 업로드해도 OCR 후 LAB_RESULT로 자동 재분류된다.
 
         업로드 시 document_type을 보내지 않아 EMR로 저장된 검사결과지가
-        CLOVA 판독 후 OcrJobDocument는 LAB_RESULT로 재분류된다.
-        MedicalDocument(원본)은 사람이 올린 그대로 유지되어 오분류 시 재판독으로 되돌릴 수 있다.
+        CLOVA 판독 후 올바른 유형으로 갱신되어야 한다 (KEY-278 인수조건).
         """
         patient = await Patient.create(
             patient_id=910010,
@@ -480,11 +479,9 @@ class TestProcessOcrJob(TestCase):
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.COMPLETED
 
-        # 원본은 사람이 올린 그대로 유지 — 오분류 시 재판독으로 되돌릴 수 있어야 한다
         await med_doc.refresh_from_db()
-        assert med_doc.document_type == OcrDocumentType.EMR, "MedicalDocument 원본 타입이 바뀌면 안 된다"
+        assert med_doc.document_type == OcrDocumentType.LAB_RESULT, "검사결과지가 LAB_RESULT로 재분류되지 않았다"
 
-        # 판정은 이 판독 회차(OcrJobDocument)에만 기록
         await job_doc.refresh_from_db()
         assert job_doc.document_type == OcrDocumentType.LAB_RESULT, "OcrJobDocument의 document_type이 갱신되지 않았다"
 
