@@ -90,6 +90,7 @@ async def test_solapi_uses_the_existing_euc_kr_90_byte_boundary() -> None:
         body = json.loads(request.content)
         message = body["messages"][0]
         message_types.append(message["type"])
+        assert message["autoTypeDetect"] is False
         assert message["to"] == RECEIVER
         assert message["from"] == SENDER
         return httpx.Response(

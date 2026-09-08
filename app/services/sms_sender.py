@@ -119,6 +119,9 @@ class SolapiSmsSender:
                     "from": self._sender_number,
                     "text": body,
                     "type": "SMS" if sms_bytes(body) <= SMS_LIMIT else "LMS",
+                    # 솔라피 SDK의 기본값은 True다. 필드를 생략했을 때 서버가
+                    # 명시한 type을 다시 판별하지 않도록 반드시 끈다.
+                    "autoTypeDetect": False,
                 }
             ]
         }
