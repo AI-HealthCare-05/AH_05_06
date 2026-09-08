@@ -28,6 +28,18 @@ class ExtractedField:
     field_type: str
     extracted_value: str
     confidence: Decimal
+    #: 값의 **단위** — 지금은 처방일수(일/통)에만 뜻이 있다. KEY-291.
+    #:
+    #: 읽는 쪽(`app.models.ocr.course_days`)이 KEY-271 부터 이 칸을 보고 통↔일을
+    #: 환산하는데, **쓰는 쪽이 여태 안 채웠다.** 그래서 시드로 부은 진료는 맞고
+    #: 실제 판독으로 들어온 진료는 「3통」이 3일로 나갔다.
+    #:
+    #: 지금 우리가 받는 문서에는 단위 글자가 **안 찍혀 온다** — `총투` 칸 원문이
+    #: `1/1/84` 처럼 숫자뿐이고, `docs/synthetic-data-spec.md:248` 이 총투단위를
+    #: 「DB에 넣지 않는다 — OCR이 읽어야 할 원문이다」로 못 박아 두었다. 그래서
+    #: 지금은 늘 `None` 이다. **그래도 칸을 낸다** — 단위가 실제로 찍히는 EMR 이
+    #: 오면 그때 채우면 되고, 그 전까지는 `None` 이 「모른다」를 정직하게 말한다.
+    unit: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -81,9 +93,6 @@ _RX_CLASS_LABELS: frozenset[str] = frozenset({"코드분류"})
 _RX_MED_CLASSES: frozenset[str] = frozenset({"내복약"})
 # 명칭 열에 나타나는 비약품 상태 텍스트 — 약품명으로 추출하지 않는다
 _RX_NON_MED_NAMES: frozenset[str] = frozenset({"처방보류", "처방중단", "중단", "보류"})
-
-# 비잔정 패턴 — 이 약의 총투 값에 28을 곱해서 처방일수를 계산한다
-_BIZANJUNG_RE = re.compile(r"비잔\s*정", re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # 처방 세트 자동 제안 패턴 — _suggest_prescription_set_from 전용
@@ -290,6 +299,45 @@ def detect_document_type(
     return stored_type
 
 
+#: 총투 칸의 숫자를 **일수로 단정할 수 없는 경계** — KEY-291.
+#:
+#: `docs/synthetic-data-spec.md:75` 이 「`duration_days < 28` 이면 확인을 여쭙는다」
+#: 로 정해 둔 값이다. 합성 99행도 그대로 갈린다 — 통수는 원문이 1·2·3 뿐이고
+#: 일수는 28·56·84 뿐이라 이 선이 99/99 로 나뉜다.
+#:
+#: **그래도 이 선으로 곱하지 않는다.** 실제 의원이 7일치를 처방하면
+#: `7 × 28 = 196일` 짜리 안내문이 나간다 — 방금 걷어낸 `× 28` 과 같은 부류를
+#: 방향만 바꿔 다시 만드는 셈이다. 곱하는 대신 **사람 눈에 걸리게** 한다.
+_DURATION_AMBIGUOUS_BELOW = 28
+
+
+def _flag_ambiguous_duration(fields: list[ExtractedField]) -> list[ExtractedField]:
+    """단위를 모르는 짧은 처방일수를 「확인 필요」로 내린다 — KEY-291.
+
+    **`is_pending_report` 를 안 쓴다.** 그 칸의 뜻은 「추후 보고 예정」이고,
+    화면은 그것을 **확인할 항목에서 빼는** 표시로 쓴다 (`ocr-review.js` 의
+    `renderSummary` — 「할 일이 없는데도 생성이 막힌 채로 남는다」). 여기서
+    하려는 것은 정반대다: 사람이 **보게** 하는 것.
+
+    쓰는 것은 이미 있는 저신뢰 신호다. 서버 임계값(`LOW_CONFIDENCE_THRESHOLD`
+    0.75) 아래로 내리면 화면이 「확인 필요」로 세고, KEY-285 가 붙인 단위
+    선택자에서 사람이 일/통을 고른다. 그 답이 `OcrField.unit` 에 들어가면
+    읽는 쪽 `course_days` 가 비로소 환산한다.
+
+    **신뢰도를 올리지는 않는다** — 이미 더 낮으면 그대로 둔다.
+    """
+    for field in fields:
+        if field.field_type != "DURATION_DAYS" or field.unit is not None:
+            continue
+        try:
+            read = int(str(field.extracted_value).strip())
+        except (TypeError, ValueError):
+            continue
+        if 0 < read < _DURATION_AMBIGUOUS_BELOW:
+            field.confidence = min(field.confidence, _DEFAULT_CONFIDENCE)
+    return fields
+
+
 def extract_fields(
     clova_result: ClovaOcrResult,
     document_type: OcrDocumentType,
@@ -306,14 +354,14 @@ def extract_fields(
     None이면 기존 정규식 전용 동작을 유지한다(하위 호환).
     """
     if document_type == OcrDocumentType.EMR:
-        return _extract_emr(clova_result, lab_keywords)
+        return _flag_ambiguous_duration(_extract_emr(clova_result, lab_keywords))
     if document_type == OcrDocumentType.LAB_RESULT:
-        return _extract_lab(clova_result, lab_keywords)
+        return _flag_ambiguous_duration(_extract_lab(clova_result, lab_keywords))
 
     patterns = _PATTERNS_BY_TYPE.get(document_type)
     if not patterns:
         return []
-    return _extract_by_regex(clova_result, patterns)
+    return _flag_ambiguous_duration(_extract_by_regex(clova_result, patterns))
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +598,7 @@ def _find_rx_columns(
     return None
 
 
-def _rx_duration(med_name: str, total_l: float, total_r: float, row: list) -> ExtractedField | None:
+def _rx_duration(total_l: float, total_r: float, row: list) -> ExtractedField | None:
     """처방 행에서 총투 값을 읽어 처방일수 필드를 만든다."""
     total_blocks = [b for b in row if b.right > total_l and b.left < total_r]
     if not total_blocks:
@@ -559,9 +607,23 @@ def _rx_duration(med_name: str, total_l: float, total_r: float, row: list) -> Ex
     m = re.search(r"(\d+)", total_text)
     if not m:
         return None
+    #: **원값을 그대로 남긴다** — KEY-291.
+    #:
+    #: 여기는 `총투 × 28 if 비잔정 else 총투` 였다. 약 이름으로 통수를 가르려던
+    #: 것인데, 합성 99행에 그대로 돌려 보니 **54행이 틀렸다.**
+    #:
+    #:     비잔정 · 일수 37건   → `× 28` 이 붙어 84일이 2352일
+    #:     그 외 · 통수 17건    → 안 붙어 3통이 3일
+    #:
+    #: 약 이름에 단위 신호가 아예 없다(비잔정 37/16, 그 외 29/17). 환산은
+    #: 읽는 쪽 `course_days(value, unit)` 한 곳에서만 한다 — 두 곳이 하면 어느
+    #: 쪽이 진짜인지 알 수 없고, 그 칸이 빈 채로 곱하면 **지어낸 값**이다.
     total_int = int(m.group(1))
-    days = total_int * 28 if _BIZANJUNG_RE.search(med_name) else total_int
-    return ExtractedField(field_type="DURATION_DAYS", extracted_value=str(days), confidence=_DEFAULT_CONFIDENCE)
+    return ExtractedField(
+        field_type="DURATION_DAYS",
+        extracted_value=str(total_int),
+        confidence=_DEFAULT_CONFIDENCE,
+    )
 
 
 def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
@@ -569,7 +631,8 @@ def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
 
     '코드분류' 열 값이 약품 분류(내복약·외용약·주사 등)인 행만 처리한다.
     CLOVA OCR이 원외 체크박스를 읽지 못하는 문제를 우회하는 방식이다.
-    비잔정: DURATION_DAYS = 총투 × 28 / 그 외: DURATION_DAYS = 총투.
+    DURATION_DAYS 는 총투 칸의 **원값 그대로**다 — 통↔일 환산은 읽는 쪽
+    (`app.models.ocr.course_days`)이 `unit` 을 보고 한 곳에서만 한다 (KEY-291).
     여러 약품 행 → MEDICATION_NAME, MEDICATION_NAME_2, MEDICATION_NAME_3 …
     """
     if not rows:
@@ -612,7 +675,7 @@ def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
         )
 
         if total_l is not None and total_r is not None:
-            dur = _rx_duration(med_name, total_l, total_r, row)
+            dur = _rx_duration(total_l, total_r, row)
             if dur is not None:
                 results.append(
                     ExtractedField(

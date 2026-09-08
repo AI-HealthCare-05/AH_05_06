@@ -19,11 +19,13 @@
 import os
 import tempfile
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 from tortoise.contrib.test import TestCase
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, ClovaTextField
+from ai_worker.tasks.field_extractor import ExtractedField
 from ai_worker.tasks.ocr_task import _CLOVA_MODEL_NAME, _MAX_CLOVA_RETRIES, process_ocr_job
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
@@ -136,6 +138,47 @@ class TestProcessOcrJob(TestCase):
         # raw_text "CA-125 : 48 U/mL\nAMH : 2.8 ng/mL" 에서 두 필드 모두 추출되어야 한다
         assert "CA_125" in field_types
         assert "AMH" in field_types
+
+    async def test_the_worker_carries_the_unit_into_the_field_row(self) -> None:
+        """**추출기가 읽은 단위가 `OcrField.unit` 까지 간다** — KEY-291.
+
+        읽는 쪽(`course_days`)은 KEY-271 부터 이 칸으로 통↔일을 환산하는데,
+        **쓰는 쪽이 여태 안 채웠다.** 그래서 시드로 부은 진료는 맞고 실제
+        판독으로 들어온 진료는 「3통」이 3일로 나갔다.
+
+        지금 오는 문서에는 단위가 안 찍혀 와서 실제로는 늘 `None` 이다. 그래서
+        이 검사는 **추출기가 단위를 읽었다고 가정하고** 그 값이 행까지 가는지만
+        본다 — 안 그러면 이 한 줄(`unit=field.unit`)을 지워도 아무도 안 운다.
+        """
+        job = await self._seed("ocr_key291_unit_carried")
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=_FAKE_CLOVA_RESULT),
+            ),
+            patch(
+                "ai_worker.tasks.ocr_task.extract_fields",
+                return_value=[
+                    ExtractedField(
+                        field_type="DURATION_DAYS",
+                        extracted_value="3",
+                        confidence=Decimal("0.70"),
+                        unit="통",
+                    ),
+                ],
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        result = await OcrResult.filter(ocr_job=job).first()
+        assert result is not None
+        row = await OcrField.filter(ocr_result=result, field_type="DURATION_DAYS").first()
+        assert row is not None, "처방일수 행이 아예 안 생겼다"
+        assert row.extracted_value == "3"
+        assert row.unit == "통", f"추출기가 읽은 단위가 행까지 안 갔다 — {row.unit!r}"
 
     async def test_lab_only_job_gets_no_empty_prescription_rows(self) -> None:
         """검사지만 올린 작업에는 처방 항목의 빈 줄을 만들지 않는다.

@@ -419,7 +419,7 @@ def _rx_block(text: str, conf: float, left: float, top: float, right: float, bot
 
 # 처방 표: 명칭(x:10-200), 총투(x:270-320), 코드분류(x:400-480)
 # 헤더 행 y:10-30
-# 행1: 비잔정 2mg / 1 / 내복약   → MEDICATION_NAME + DURATION_DAYS = 1×28 = 28
+# 행1: 비잔정 2mg / 1 / 내복약   → MEDICATION_NAME + DURATION_DAYS = 1 (원값 그대로)
 # 행2: 프로베라정 / 84 / 진찰료  → 코드분류 미해당이라 제외
 # 행3: 루프론3.75mg / 84 / 내복약 → MEDICATION_NAME_2 + DURATION_DAYS_2 = 84
 _RX_TABLE_BLOCKS = [
@@ -441,12 +441,86 @@ _RX_TABLE_ROWS = _group_fields_by_row(_RX_TABLE_BLOCKS)
 _RX_TABLE_RESULT = ClovaOcrResult(raw_text="", fields=_RX_TABLE_BLOCKS, rows=_RX_TABLE_ROWS)
 
 
-def test_rx_table_extracts_bizanjung_with_x28() -> None:
-    """코드분류=내복약인 비잔정의 처방일수를 총투×28로 계산한다."""
+def test_rx_table_keeps_the_total_as_written() -> None:
+    """**총투 칸을 원값 그대로 남긴다** — KEY-291.
+
+    여기는 `총투 × 28 if 비잔정 else 총투` 였다. 합성 99행에 돌려 보니 54행이
+    틀렸다 — 비잔정인데 일수인 37건은 84일이 2352일이 됐고, 비잔정이 아닌데
+    통수인 17건은 3통이 3일로 남았다. 약 이름에 단위 신호가 없다.
+
+    환산은 읽는 쪽 `course_days(value, unit)` 한 곳에서만 한다. 여기서 곱하면
+    `unit` 이 빈 채로 곱하는 것이라 **지어낸 값**이다.
+    """
     fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
+
     assert field_map.get("MEDICATION_NAME") == "비잔정(디에노게스트)2mg"
-    assert field_map.get("DURATION_DAYS") == "28"  # 1 × 28
+    assert field_map.get("DURATION_DAYS") == "1", "총투 1 을 곱해서 남겼다"
+
+
+def test_the_extractor_does_not_claim_a_unit_it_cannot_read() -> None:
+    """단위는 **모른다고 말한다** — KEY-291.
+
+    지금 오는 문서에는 단위 글자가 안 찍혀 온다(`총투` 원문이 `1/1/84` 처럼
+    숫자뿐). `None` 이라야 읽는 쪽이 곱하지 않는다 — 「일」을 기본값으로 골라
+    두면 3통이 조용히 3일이 된다.
+    """
+    fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
+    durations = [f for f in fields if f.field_type.startswith("DURATION_DAYS")]
+
+    assert durations, "처방일수를 아예 못 뽑았다"
+    for field in durations:
+        assert field.unit is None, f"안 찍혀 온 단위를 지어냈다 — {field.unit!r}"
+
+
+def _blocks_with_duration(total: str, conf: float) -> ClovaOcrResult:
+    """처방 표 머리 넷 + 값 넷짜리 블록 문서 — 처방일수만 갈아 끼운다."""
+    blocks = [
+        ClovaTextField(text="약품명", confidence=0.99),
+        ClovaTextField(text="1회량", confidence=0.99),
+        ClovaTextField(text="일일횟수", confidence=0.99),
+        ClovaTextField(text="처방일수", confidence=0.99),
+        ClovaTextField(text="비잔정(디에노게스트)2mg", confidence=0.94),
+        ClovaTextField(text="1", confidence=0.98),
+        ClovaTextField(text="1", confidence=0.97),
+        ClovaTextField(text=total, confidence=conf),
+    ]
+    return ClovaOcrResult(raw_text="\n".join(b.text for b in blocks), fields=blocks)
+
+
+def _duration_of(result: ClovaOcrResult):
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    return next((f for f in fields if f.field_type == "DURATION_DAYS"), None)
+
+
+def test_a_short_duration_is_put_in_front_of_a_human() -> None:
+    """**28 미만은 사람에게 보인다** — KEY-291.
+
+    명세가 「`duration_days < 28` 이면 확인을 여쭙는다」로 정해 둔 선이다
+    (`docs/synthetic-data-spec.md:75`). 합성 데이터도 그대로 갈린다 — 통수는
+    1·2·3 뿐이고 일수는 28·56·84 뿐이다.
+
+    **곱하지는 않는다.** 실제 의원이 7일치를 처방하면 `7 × 28 = 196일` 짜리
+    안내문이 나간다. 대신 신뢰도를 서버 임계값(0.75) 아래로 내려 화면이
+    「확인 필요」로 세게 한다 — 블록에서 읽은 값은 원래 0.99 라 그냥 두면
+    「다 맞다」로 지나간다.
+    """
+    field = _duration_of(_blocks_with_duration("3", 0.99))
+
+    assert field is not None, "처방일수를 아예 못 뽑았다"
+    assert field.extracted_value == "3", "값을 건드렸다 — 내리는 것은 신뢰도뿐이다"
+    assert field.confidence < Decimal("0.75"), (
+        f"3통일 수도 있는 값이 「확인 필요」로 안 뜬다 — 신뢰도 {field.confidence}"
+    )
+
+
+def test_a_full_course_keeps_the_confidence_the_reader_gave_it() -> None:
+    """**28 이상은 안 건드린다.** 모든 처방일수를 내리면 신호가 뜻을 잃는다."""
+    field = _duration_of(_blocks_with_duration("84", 0.99))
+
+    assert field is not None
+    assert field.extracted_value == "84"
+    assert field.confidence == Decimal("0.99"), f"멀쩡한 값의 신뢰도를 내렸다 — {field.confidence}"
 
 
 def test_rx_table_extracts_second_medication_with_suffix() -> None:
