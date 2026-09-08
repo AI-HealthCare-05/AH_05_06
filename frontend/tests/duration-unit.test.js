@@ -165,3 +165,108 @@ test("**모르면 모르는 채로 둔다** — 「일」을 미리 골라 두�
   assert.equal(durationUnitChoice("박스"), "");
   assert.equal(durationUnitChoice("days"), "");
 });
+
+/* ── 판독이 줄 자체를 못 만든 자리 — 이희진 님 `#251` 리뷰 ① ────────────────
+ *
+ * 위 검사들은 **줄이 있는** 경우만 쟀다. 그런데 이 티켓이 막으려던 상황은
+ * 판독이 처방일수를 **통째로 못 읽어** 스탭이 손으로 「3」을 치는 자리다.
+ * 그때는 `ocr_field_id` 가 없어 단위 칸이 아예 안 그려졌고, 저장도
+ * `writeField` 로 나가는데 그 함수에 단위를 실을 인자가 없었다.
+ * 서버는 문을 열어 두었는데(`WriteOcrFieldRequest.unit`) 화면이 안 보냈다.
+ */
+
+test("직접입력도 단위를 실어 보낸다 — 서버가 연 문을 화면이 쓴다", async () => {
+  const box = load("api", "ocr-api", { search: "?mock=1" });
+  const sent = [];
+  const real = box.request;
+  box.request = function (path, options) {
+    sent.push({ path, body: options && options.body });
+    return Promise.resolve({});
+  };
+  box.MOCK = false;
+  try {
+    await box.ocrApi.writeField(77, "DURATION_DAYS", "3", "통");
+  } finally {
+    box.request = real;
+  }
+
+  assert.equal(sent.length, 1, "요청이 안 나갔다");
+  assert.equal(sent[0].body.value, "3");
+  assert.equal(sent[0].body.unit, "통", "손으로 적은 줄의 단위가 안 실렸다");
+});
+
+test("단위를 안 고르면 아예 안 싣는다 — 빈 값은 서버가 「모른다로 되돌려라」로 읽는다", async () => {
+  const box = load("api", "ocr-api", { search: "?mock=1" });
+  const sent = [];
+  const real = box.request;
+  box.request = function (path, options) {
+    sent.push(options && options.body);
+    return Promise.resolve({});
+  };
+  box.MOCK = false;
+  try {
+    await box.ocrApi.writeField(77, "DURATION_DAYS", "3");
+  } finally {
+    box.request = real;
+  }
+
+  assert.ok(!("unit" in sent[0]), `안 고른 단위를 실어 보냈다 — ${JSON.stringify(sent[0])}`);
+});
+
+test("직접입력의 단위도 목업이 보정과 같은 규칙으로 막는다", async () => {
+  const box = load("api", "ocr-api", { search: "?mock=1" });
+
+  await assert.rejects(
+    box.ocrApi.writeField(77, "DURATION_DAYS", "3", "박스"),
+    (e) => e.status === 422,
+    "서버가 아는 값이 아닌데 목업이 통과시켰다",
+  );
+  await assert.rejects(
+    box.ocrApi.writeField(77, "HEMOGLOBIN", "10.2", "통"),
+    (e) => e.code === "UNIT_NOT_ALLOWED" && e.status === 400,
+    "검사값 줄에 단위를 붙였는데 목업이 통과시켰다",
+  );
+});
+
+test("줄이 없어도 단위 칸이 선다 — 그리고 담는 길이 갈린다", () => {
+  const src = read("js/ocr-review.js");
+
+  /* `&& field.ocr_field_id` 가 붙어 있으면 판독이 못 읽은 줄에는 칸이 안 선다.
+     이 티켓이 막으려던 바로 그 줄이다. */
+  assert.doesNotMatch(
+    src,
+    /isDurationField\(field\.field_type\) && field\.ocr_field_id/,
+    "줄이 있을 때만 단위 칸을 세운다 — 손으로 적는 자리에 칸이 없다",
+  );
+  assert.match(src, /if \(isDurationField\(field\.field_type\)\) return durationUnitHtml\(field\)/);
+
+  /* 담는 길이 둘이라야 한다 — 줄이 있으면 번호로 즉시, 없으면 [저장] 때 함께. */
+  assert.ok(src.includes("data-field-unit-new"), "줄 없는 칸을 짚는 표시가 없다");
+  assert.match(src, /function pickedUnitFor\(fieldType\)/, "저장할 때 고른 단위를 읽는 자리가 없다");
+  assert.match(
+    src,
+    /writeField\(wanted, job\.type, job\.value, pickedUnitFor\(job\.type\)\)/,
+    "직접입력 저장이 단위를 같이 안 보낸다",
+  );
+});
+
+test("잘못된 단위 + 낡은 판이 같이 오면 422 다 — 실서버가 그렇다", async () => {
+  /* 이희진 님 `#251` 리뷰 ②. 실서버는 pydantic 이 **DB 를 건드리기 전에**
+     요청 전체를 검증하므로 늘 422 다. 목업이 409 를 먼저 내면 `?mock=1` 로
+     이 조합을 검수한 사람이 실서버와 다른 코드를 본다. */
+  const box = load("api", "ocr-api", { search: "?mock=1" });
+  withDurationRow(box, { version: 7 });
+
+  await assert.rejects(
+    box.ocrApi.updateField(9500, { base_version: 1, unit: "박스" }),
+    (e) => e.status === 422,
+    "낡은 판이 먼저 걸려 409 가 났다 — 실서버는 422 를 준다",
+  );
+
+  /* 반대쪽도 잰다 — 단위가 멀쩡하면 낡은 판은 여전히 409 다. */
+  await assert.rejects(
+    box.ocrApi.updateField(9500, { base_version: 1, unit: "통" }),
+    (e) => e.status === 409,
+    "멀쩡한 단위인데 판 충돌을 안 막았다",
+  );
+});

@@ -776,7 +776,17 @@ function stateTakesFocus(tone) {
        「3」이 3일이면 3일이고 3통이면 84일이다. 그 차이가 소진 예정일을 81일
        움직이고, 확인 문자가 엉뚱한 날 나간다. 여태 서버가 준 글자를 그대로
        **보여주기만** 해서, 잘못 심긴 단위를 고치려면 DB 를 직접 만져야 했다. */
-    if (isDurationField(field.field_type) && field.ocr_field_id) return durationUnitHtml(field);
+    /* 🚩 **줄이 없을 때도 세운다** (이희진 님 `#251` 리뷰 ①).
+     *
+     * 여기는 `&& field.ocr_field_id` 였다. 그래서 판독이 처방일수를 통째로 못
+     * 읽어 줄 자체가 없는 진료 — 스탭이 손으로 「3」을 치는, 이 티켓이 막으려던
+     * **바로 그 자리** — 에는 단위를 고를 칸이 없었다. 「3」이 3통이어도
+     * `unit=None` 으로 저장돼 소진 예정일이 81일 어긋난다.
+     *
+     * 줄이 있는 것과 없는 것은 **담는 길이 다르다.** 있으면 고른 순간
+     * `PATCH` 로 보내고, 없으면 보낼 번호가 아직 없으므로 [저장] 때 값과 함께
+     * `PUT` 으로 나간다. 그 차이를 표시로 남긴다. */
+    if (isDurationField(field.field_type)) return durationUnitHtml(field);
 
     var unit = fieldUnit(field.field_type, field.unit);
     /* 맨 위 줄(진단 · 처방)은 자리를 지킬 필요가 없다 — 세 칸이 각자 서 있어
@@ -788,6 +798,18 @@ function stateTakesFocus(tone) {
   /** 처방일수 줄인가. 둘째 약부터는 접미사가 붙는다(`DURATION_DAYS_2`). */
   function isDurationField(fieldType) {
     return /^DURATION_DAYS(_\d+)?$/.test(String(fieldType || ""));
+  }
+
+  /** 줄이 없는 처방일수에 사람이 고른 단위 — 없으면 `undefined`.
+   *
+   * 직접입력은 [저장] 때 값과 **함께** 보낸다. 줄이 아직 없어 보낼 번호가
+   * 없기 때문이다 (`data-field-unit-new`). 처방일수가 아닌 항목에는 아예
+   * 안 붙으므로 여기서도 늘 `undefined` 다 — 서버가 그 밖의 자리에 단위가
+   * 오면 400 (`UNIT_NOT_ALLOWED`)으로 막는다. */
+  function pickedUnitFor(fieldType) {
+    if (!isDurationField(fieldType)) return undefined;
+    var box = document.querySelector('[data-field-unit-new="' + fieldType + '"]');
+    return (box && box.value) || undefined;
   }
 
   /* 일 · 통 둘뿐이다. **서버가 아는 값만 낸다** — `DurationUnit` 이 그 둘이고,
@@ -807,10 +829,17 @@ function stateTakesFocus(tone) {
         return '<option value="' + unit + '"' + (picked === unit ? " selected" : "") + ">" + unit + "</option>";
       }),
     ).join("");
+    /* 줄이 있으면 번호로 짚어 고른 순간 보내고(`data-field-unit`), 없으면
+       항목 이름으로 짚어 [저장] 때 값과 함께 보낸다(`data-field-unit-new`).
+       표시가 둘이라야 바꾸는 손이 어느 길로 갈지 안다 — 한 이름으로 두면
+       줄 없는 칸에 `PATCH` 를 쏘고 404 를 받는다. */
+    var mark = field.ocr_field_id
+      ? 'data-field-unit="' + field.ocr_field_id + '"'
+      : 'data-field-unit-new="' + escapeHtml(field.field_type) + '"';
     return (
-      '<select class="field__unit field__unit--pick" data-field-unit="' +
-      field.ocr_field_id +
-      '" aria-label="처방일수 단위"' +
+      '<select class="field__unit field__unit--pick" ' +
+      mark +
+      ' aria-label="처방일수 단위"' +
       busy +
       ">" +
       options +
@@ -2546,7 +2575,7 @@ function stateTakesFocus(tone) {
     Promise.all(
       jobs.map(function (job) {
         return ocrApi
-          .writeField(wanted, job.type, job.value)
+          .writeField(wanted, job.type, job.value, pickedUnitFor(job.type))
           .then(function () {
             return { type: job.type, ok: true };
           })
