@@ -53,12 +53,56 @@
 
 ## 실행과 검증
 
+### 실제 자료 적재
+
+노션 「RAG 전환 위한 서치」 하단에서 지정한 실제 입력은 다음 다섯 건이다.
+
+| 입력 | 출처 | 적재 방식 |
+|---|---|---|
+| 2023 PCOS 국제 가이드라인 | Monash University·International PCOS Network | 텍스트 PDF |
+| ESHRE guideline: endometriosis 공개 논문 | Human Reproduction Open | 텍스트 PDF |
+| 의약품 제품 허가정보 | 식품의약품안전처 OpenAPI | JSON snapshot |
+| DUR 성분정보 | 식품의약품안전처 OpenAPI | JSON snapshot |
+| DUR 품목정보 | 식품의약품안전처 OpenAPI | JSON snapshot |
+
+원문 PDF와 실제 JSON snapshot은 저장소에 넣지 않는다. 로컬 manifest는
+`key276-ingestion-manifest.local.json` 이름으로 만들며 `.gitignore`가 이를 막는다.
+형식은 `docs/data/key276-ingestion-manifest.example.json`을 복사해 사용한다. 식약처
+인증키는 manifest·argv·문서에 적지 않고 실행 프로세스의 `MFDS_SERVICE_KEY`로만 넘긴다.
+
+```bash
+cp docs/data/key276-ingestion-manifest.example.json key276-ingestion-manifest.local.json
+
+# PDF만 검토 대기 상태로 적재
+DB_HOST=127.0.0.1 \
+KNOWLEDGE_MINIO_ENDPOINT=http://127.0.0.1:9000 \
+uv run python scripts/ingest_approved_knowledge.py \
+  key276-ingestion-manifest.local.json --only=text_pdf
+
+# 식약처 3종 snapshot만 검토 대기 상태로 적재
+MFDS_SERVICE_KEY='실행할 때만 주입' \
+DB_HOST=127.0.0.1 \
+KNOWLEDGE_MINIO_ENDPOINT=http://127.0.0.1:9000 \
+uv run python scripts/ingest_approved_knowledge.py \
+  key276-ingestion-manifest.local.json --only=mfds_api
+```
+
+기본 실행 결과는 `ready_for_review`다. `approve: true`인 A등급 자료라도
+`--approved-by`를 명시한 경우에만 현재 승인본으로 전환된다. 즉 자료 적재와 의료
+검수 승인을 같은 행위로 취급하지 않는다.
+
+2026-09-08 로컬 실제 적재 확인에서는 두 공개 PDF가 private MinIO에 저장됐고,
+MySQL에 문서 2건·버전 2건·검색 청크 1,351건·READY 실행 2건이 생성됐다. 원문,
+로컬 경로, 자격증명은 실행 출력과 이 문서에 기록하지 않았다. 식약처 snapshot은
+인증키를 로컬 프로세스에 주입한 뒤 같은 명령으로 별도 적재한다.
+
 ```bash
 uv sync --group app --group dev
 DB_HOST=127.0.0.1 uv run aerich upgrade
 DB_HOST=127.0.0.1 uv run pytest -q \
   app/tests/rag/test_key82_knowledge_search.py \
-  app/tests/rag/test_key276_approved_knowledge_pipeline.py
+  app/tests/rag/test_key276_approved_knowledge_pipeline.py \
+  app/tests/rag/test_key276_real_sources.py
 ```
 
 환경변수 `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `KNOWLEDGE_MINIO_ENDPOINT`,
