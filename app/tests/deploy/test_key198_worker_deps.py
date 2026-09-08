@@ -23,7 +23,11 @@ DOCKERFILE = ROOT / "ai_worker" / "Dockerfile"
 PYPROJECT = ROOT / "pyproject.toml"
 
 #: 워커 이미지에 있으면 안 되는 것.
-UNWANTED = ("aerich", "passlib", "bcrypt")
+#:
+#: `uvicorn` 은 KEY-207 에서 더한 것이다. KEY-198 이 명시 목록에서 뺐지만
+#: `fastapi[standard]` 가 계속 끌고 와서 이미지에는 남아 있었다 — 그 extra 를
+#: 없앤 지금은 이름으로 다시 들어오는 길만 막으면 된다.
+UNWANTED = ("aerich", "passlib", "bcrypt", "uvicorn")
 
 
 def _groups() -> dict[str, list[str]]:
@@ -60,12 +64,39 @@ class TestTheWorkerImageInstallsOnlyWhatItNeeds:
             " (그리고 스키마를 갈아엎는 CLI 가 워커 이미지에 들어간다)" if package == "aerich" else ""
         )
 
+    def test_the_worker_group_asks_for_no_extras(self) -> None:
+        """**이름만 재면 부족하다** — KEY-207.
+
+        위 검사는 그룹에 적힌 **이름**을 본다. 그런데 `uvicorn` 은 이름으로 들어온
+        적이 없다. `fastapi[standard]` 라는 **extra** 를 타고 들어왔다 —
+        `uvicorn[standard]`(watchfiles·websockets·httptools·uvloop) ·
+        `python-multipart` · `jinja2` · `email-validator` 가 한 덩이로 딸려 왔고,
+        KEY-198 의 「uvicorn 을 뺐다」는 명시 목록에서만 참이었다.
+
+        그래서 여기서는 **대괄호 자체**를 막는다. extra 는 한 줄로 열 개를 끌고
+        오므로, 워커 그룹에 붙이려면 임포트 그래프를 다시 재고 이 검사를 손으로
+        고치게 한다.
+        """
+        worker = _groups()["worker"]
+        with_extras = [entry for entry in worker if "[" in entry]
+
+        assert not with_extras, (
+            f"`worker` 그룹이 extra 를 달고 있다 — {with_extras}. "
+            "extra 는 이름에 안 적힌 것을 한 덩이로 끌고 온다 "
+            "(`fastapi[standard]` → uvicorn·watchfiles·websockets·httptools·uvloop·"
+            "python-multipart·jinja2·email-validator). 정말 필요하면 "
+            "`ai_worker.main` 임포트 그래프를 재서 근거를 남기고 이 검사를 고쳐라."
+        )
+
     def test_it_still_keeps_what_the_worker_does_need(self) -> None:
         """**반대쪽도 잰다.** 이것이 없으면 위 검사는 「그룹을 비워라」로도 통과한다."""
         worker = _groups()["worker"]
         names = {re.split(r"[<>=!\[]", entry, maxsplit=1)[0].strip() for entry in worker}
 
-        for needed in ("tortoise-orm", "asyncmy", "pyjwt", "httpx", "orjson"):
+        # `fastapi` 는 KEY-207 에서 더했다 — extra 를 떼면서 이름까지 지우고 싶어지는
+        # 자리인데, `app/core/db/databases.py` 가 `initialize_tortoise(app: FastAPI)`
+        # 로 실제로 쓴다. 지우면 워커가 임포트에서 죽는다.
+        for needed in ("tortoise-orm", "asyncmy", "pyjwt", "httpx", "orjson", "fastapi"):
             assert needed in names, f"`worker` 그룹에 {needed} 가 없다 — 워커가 실제로 쓴다"
 
 

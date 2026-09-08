@@ -178,6 +178,12 @@ _EMR_PATTERNS: dict[str, re.Pattern[str]] = {
     }.items()
 }
 
+# 분류 전용: 검사표와 공존하는 EMR임을 확인하는 핵심 패턴
+# DOSAGE·FREQUENCY·PRESCRIPTION_DATE는 검사결과지에도 흔해 분류 기준에서 제외한다
+_EMR_CLASSIFY_PATTERNS: dict[str, re.Pattern[str]] = {
+    k: v for k, v in _EMR_PATTERNS.items() if k in {"DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"}
+}
+
 _PRESCRIPTION_PATTERNS: dict[str, re.Pattern[str]] = {
     k: re.compile(v, re.IGNORECASE)
     for k, v in {
@@ -236,6 +242,52 @@ _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
 # ---------------------------------------------------------------------------
 # 공개 인터페이스
 # ---------------------------------------------------------------------------
+
+
+def _has_lab_table_header(rows: list) -> bool:
+    """분류 전용: 검사항목·검사결과 열 헤더가 같은 행 안에, x 범위 비겹침으로 존재하는지 확인한다.
+
+    _find_lab_columns는 행을 넘나드는 탐색을 허용하므로 분류기에 쓰기에 조건이 느슨하다.
+    진료기록에도 '검사명'·'결과' 낱말이 흔하기 때문에 두 조건을 모두 만족할 때만 True를 반환한다.
+    """
+    for row in rows:
+        tn = next((b for b in row if b.text.strip() in _TEST_NAME_COLUMN_KEYWORDS), None)
+        res = next((b for b in row if b.text.strip() in _RESULT_COLUMN_KEYWORDS), None)
+        if tn is None or res is None:
+            continue
+        if tn.right <= res.left or res.right <= tn.left:
+            return True
+    return False
+
+
+def detect_document_type(
+    clova_result: ClovaOcrResult,
+    stored_type: OcrDocumentType,
+) -> OcrDocumentType:
+    """CLOVA 결과 구조로 실제 문서 유형을 결정한다.
+
+    업로드 시 EMR 기본값으로 들어온 문서를 판독 구조로 재분류한다.
+    검사결과지 표(검사항목+검사결과 열)가 있으면 LAB_RESULT로 분류하고,
+    그 외는 stored_type을 그대로 반환한다.
+    PRESCRIPTION은 별도 감지 없이 유지한다.
+    """
+    if stored_type != OcrDocumentType.EMR:
+        return stored_type
+    if clova_result.rows and _has_lab_table_header(clova_result.rows):
+        # 검사 표가 감지되어도 EMR 파서가 핵심 필드(진단·처방)를 뽑아냈으면 EMR로 유지한다.
+        # 검사결과 요약표가 섞인 EMR을 LAB_RESULT로 오분류하면 필수 필드 게이트가 통째로 건너뛰어진다.
+        # ①② 표 파서 외에 ③ 블록 파서·④ 핵심 필드 정규식도 확인한다.
+        # ④ 는 DIAGNOSIS·MEDICATION_NAME·DURATION_DAYS만 — DOSAGE·FREQUENCY 등은
+        # 검사결과지에도 흔해 분류 기준에 쓰면 오분류가 늘어난다.
+        has_emr_fields = bool(
+            _extract_emr_diagnosis_table(clova_result.rows)
+            or _extract_emr_rx_table(clova_result.rows)
+            or _extract_from_clova_blocks(clova_result)
+            or _extract_by_regex(clova_result, _EMR_CLASSIFY_PATTERNS)
+        )
+        if not has_emr_fields:
+            return OcrDocumentType.LAB_RESULT
+    return stored_type
 
 
 def extract_fields(

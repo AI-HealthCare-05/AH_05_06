@@ -42,6 +42,12 @@ var ocrApi = {
     return request("/visits/" + visitId + "/ocr-job");
   },
 
+  /* GET /visits/{visitId}/ocr-jobs — KEY-278: 파일별 Job 목록 */
+  jobsForVisit: function (visitId) {
+    if (MOCK) return mockJobsForVisit(visitId);
+    return request("/visits/" + visitId + "/ocr-jobs");
+  },
+
   /* 약속처방 목록 — 의사가 설정(D2-3)에서 정해 둔 것. 판독 확인 화면의
      「처방」 칸이 여기서 고른다. 자유 입력이면 안 되는 이유는 이름을 고를 때
      그 세트에 묶인 주의 문구가 안내문에 붙기 때문이다 — 「비잔」과 「비잔정」이
@@ -156,11 +162,13 @@ function fieldState(field, threshold) {
  *   AMH        별도 보고 검사 — 값이 아니라 「추후 보고 예정」이 온다
  *
  * ?case= 로 예외를 본다.
- *   processing  아직 판독 중        — 409 OCR_RESULT_NOT_READY
- *   failed      판독이 실패로 끝남  — 직접 입력으로 넘어가야 한다
- *   clean       다 읽혔을 때        — 강조가 하나도 없는 화면
- *   conflict    옆자리가 먼저 고침   — 409 VERSION_CONFLICT (KEY-63)
- *   confirmed   이미 확정된 항목     — 409 OCR_FIELD_CONFIRMED (KEY-63)
+ *   processing    아직 판독 중        — 409 OCR_RESULT_NOT_READY
+ *   failed        판독이 실패로 끝남  — 직접 입력으로 넘어가야 한다
+ *   clean         다 읽혔을 때        — 강조가 하나도 없는 화면
+ *   conflict      옆자리가 먼저 고침   — 409 VERSION_CONFLICT (KEY-63)
+ *   confirmed     이미 확정된 항목     — 409 OCR_FIELD_CONFIRMED (KEY-63)
+ *   multi         문서 2장 모두 성공  — 다중 업로드 정상 경로 검수
+ *   partial-fail  문서 2장 중 1장 실패 — 성공 결과 위에 실패 띠가 뜨는지 확인
  */
 var MOCK_CASE = (function () {
   var q = new URLSearchParams(location.search).get("case");
@@ -302,6 +310,17 @@ function mockJob(jobId) {
     }
   }
   if (MOCK_CASE === "failed") {
+    return {
+      ocr_job_id: id,
+      status: "FAILED",
+      progress: 100,
+      started_at: "2026-08-13T10:33:00+09:00",
+      completed_at: "2026-08-13T10:33:40+09:00",
+      failure_code: "OCR_ENGINE_TIMEOUT",
+    };
+  }
+  /* partial-fail: 두 번째 job(_2 suffix)만 실패로 반환한다. */
+  if (MOCK_CASE === "partial-fail" && id.endsWith("_2")) {
     return {
       ocr_job_id: id,
       status: "FAILED",
@@ -574,6 +593,67 @@ function mockJobForVisit(visitId) {
   });
 }
 
+function mockJobsForVisit(visitId) {
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      var row =
+        typeof MOCK_TODAY === "undefined"
+          ? null
+          : MOCK_TODAY.filter(function (v) {
+              return v.visit_id === Number(visitId);
+            })[0];
+      if (row && row.detail_status === "NO_DOCUMENT") {
+        return reject(new ApiError("NOT_FOUND", 404, {}));
+      }
+
+      /* multi · partial-fail: 문서 2장 케이스. 두 번째 job ID에 _2 suffix를 붙여
+         mockJob이 case별로 다른 상태를 반환할 수 있게 한다. */
+      if (MOCK_CASE === "multi" || MOCK_CASE === "partial-fail") {
+        return resolve([
+          {
+            document_id: 1,
+            document_type: "EMR",
+            ocr_job_id: "ocr_synthetic_" + visitId,
+            status: "COMPLETED",
+            progress: 100,
+            started_at: null,
+            completed_at: null,
+            failure_code: null,
+            excluded_from_guide: false,
+          },
+          {
+            document_id: 2,
+            document_type: "LAB_RESULT",
+            ocr_job_id: "ocr_synthetic_" + visitId + "_2",
+            status: "COMPLETED",
+            progress: 100,
+            started_at: null,
+            completed_at: null,
+            failure_code: null,
+            excluded_from_guide: false,
+          },
+        ]);
+      }
+
+      resolve([
+        {
+          document_id: 1,
+          document_type: "EMR",
+          ocr_job_id: "ocr_synthetic_" + visitId,
+          status: "COMPLETED",
+          progress: 100,
+          started_at: null,
+          completed_at: null,
+          failure_code: null,
+          excluded_from_guide: false,
+        },
+      ]);
+    }, 80);
+  });
+}
+
 /* 안내문을 이미 만든 진료. 새로고침하면 사라진다 — 목업 한 판 동안만 산다. */
 var mockGuides = {};
 
@@ -660,6 +740,11 @@ function mockOcrRequest(path, options) {
       if (onJob) {
         var job = mockJob(onJob[1]);
         if (/\/(result|fields)$/.test(path)) {
+          /* FAILED job은 결과가 없다. NOT_READY(409)를 주면 loadAllResults가 전체를
+             실패 처리하므로, 실서버처럼 404를 반환해 해당 job만 null로 건너뛰게 한다. */
+          if (job.status === "FAILED") {
+            return reject(new ApiError("OCR_RESULT_NOT_FOUND", 404, {}));
+          }
           if (job.status !== "COMPLETED") {
             /* #32 계약 그대로. 화면은 이 코드를 보고 「아직」과 「실패」를 가른다. */
             return reject(new ApiError("OCR_RESULT_NOT_READY", 409, {}));

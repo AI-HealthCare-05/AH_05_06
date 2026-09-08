@@ -51,11 +51,35 @@ app = [
 #               `aerich upgrade`·`downgrade` CLI 가 워커 이미지에서 빠진다
 #     uvicorn   워커는 HTTP 를 안 연다. `fastapi[standard]` 가 어차피 끌고 온다
 #
+# **그 `[standard]` 도 뺐다** — KEY-207. 위 줄이 적어 둔 그대로, 명시 목록에서만
+# 빠지고 이미지에는 남아 있었다. extra 가 끌고 오던 것을 임포트 그래프에 대고
+# 하나씩 쟀다 (`ai_worker.main` 을 임포트한 뒤 `sys.modules` 를 본다).
+#
+#     uvicorn · watchfiles · websockets · httptools · uvloop · jinja2
+#               **임포트 그래프에 아예 없다.** 워커는 HTTP 를 안 열고 CMD 도
+#               `python -m ai_worker.main` 이다.
+#               (`jinja2` 는 이미지에는 남는다 — `ai` 그룹의 torch 가 쓴다.
+#                여기서 없어지는 것은 `fastapi[standard]` 를 타고 오던 길이다)
+#     python-multipart
+#               실리기는 하는데 **starlette 이 제 발로 끌어온다**
+#               (`starlette/formparsers.py` — `try: import python_multipart`).
+#               없으면 `multipart = None` 로 스스로 물러선다. 폼을 파싱하는
+#               자리는 라우터인데 워커 사슬에는 라우터가 하나도 안 실린다
+#     email-validator
+#               같다. `fastapi/openapi/models.py` 가
+#               `try: import email_validator` 로 가져오고 없으면 제 `EmailStr`
+#               대체를 쓴다. `pydantic.EmailStr` 을 실제로 쓰는 우리 모듈
+#               (`dtos/auth.py`·`services/auth.py`·`repositories/user_repository.py`)
+#               은 **워커 사슬에 없다** — 그것이 실렸다면 pydantic 이 클래스를
+#               세우는 자리에서 이 패키지를 요구했을 것이다
+#
 # `fastapi` 는 남는다 — 워커가 서버를 띄우진 않지만 `app.*` 의 DTO·오류 타입이
-# 그것을 타고 들어온다. `pyjwt` 도 남는다 (`app.core.jwt.*` 경유로 실제 사용).
+# 그것을 타고 들어온다. 임포트를 실제로 여는 자리는 `app/core/db/databases.py:1`
+# 이고, 그 파일이 `initialize_tortoise(app: FastAPI)` 로 그 이름을 쓴다.
+# `pyjwt` 도 남는다 (`app.core.jwt.*` 경유로 실제 사용).
 worker = [
     "asyncmy>=0.2.11",
-    "fastapi[standard]>=0.128.0",
+    "fastapi>=0.128.0",
     "httpx>=0.28.1",
     "minio>=7.2.16",
     "orjson>=3.11.5",

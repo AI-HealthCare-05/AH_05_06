@@ -37,7 +37,7 @@ from tortoise.transactions import in_transaction
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, call_clova_ocr
 from ai_worker.core import config, default_logger
-from ai_worker.tasks.field_extractor import ExtractedField, build_lab_keywords, extract_fields
+from ai_worker.tasks.field_extractor import ExtractedField, build_lab_keywords, detect_document_type, extract_fields
 from app.models.catalog import LabBaseline
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
@@ -112,7 +112,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         partial_results: dict[int, ClovaOcrResult] = {}
         while True:
             try:
-                clova_results = await _call_clova_for_documents(job_documents, doc_map, partial_results)
+                clova_results = await _call_clova_for_documents(job, job_documents, doc_map, partial_results)
                 clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
                 missing = await _save_clova_result(job, job_documents, clova_results, lab_kw)
                 if missing:
@@ -193,6 +193,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
 
 
 async def _call_clova_for_documents(
+    job: OcrJob,
     job_documents: list[OcrJobDocument],
     doc_map: dict[int, MedicalDocument],
     results: dict[int, ClovaOcrResult] | None = None,
@@ -201,10 +202,14 @@ async def _call_clova_for_documents(
 
     results에 이미 성공한 문서가 있으면 해당 문서는 재호출하지 않는다.
     재시도 시 같은 dict를 전달하면 성공한 문서를 중복 호출하지 않는다.
+
+    파일마다 CLOVA 완료 시 job.progress를 단계적으로 업데이트한다.
+    CLOVA 완료 구간은 0~70%, DB 저장 완료는 100% (_save_clova_result 담당).
     """
     if results is None:
         results = {}
     accumulated_ms = sum(r.elapsed_ms for r in results.values())
+    total = len(job_documents)
     for jd in job_documents:
         if jd.document_id in results:
             continue
@@ -220,6 +225,9 @@ async def _call_clova_for_documents(
             raise ClovaOcrError(exc.code, str(exc), elapsed_ms=elapsed_ms) from exc
         accumulated_ms += result.elapsed_ms
         results[jd.document_id] = result
+        done = len(results)
+        job.progress = round(done / total * 70)
+        await job.save(update_fields=("progress",))
     return results
 
 
@@ -227,24 +235,26 @@ def _extract_fields_per_doc(
     job_documents: list[OcrJobDocument],
     clova_results: dict[int, ClovaOcrResult],
     lab_keywords: dict[str, list[str]] | None = None,
-) -> tuple[list[tuple[OcrJobDocument, list[ExtractedField]]], set[str], bool]:
+) -> tuple[list[tuple[OcrJobDocument, list[ExtractedField], OcrDocumentType]], set[str], bool]:
     """문서별로 필드를 추출해 (fields_by_doc, emr_field_types, has_emr)을 반환한다.
 
+    CLOVA 결과 구조로 실제 문서 유형을 자동 감지한다 (판독이 실제 종류를 가려낸다).
     emr_field_types는 EMR 문서에서 추출된 field_type만 포함한다 (필수 필드 게이트 전용).
     """
-    fields_by_doc: list[tuple[OcrJobDocument, list[ExtractedField]]] = []
+    fields_by_doc: list[tuple[OcrJobDocument, list[ExtractedField], OcrDocumentType]] = []
     emr_field_types: set[str] = set()
     has_emr = False
     for jd in job_documents:
-        doc_type = OcrDocumentType(jd.document_type)
-        if doc_type == OcrDocumentType.EMR:
-            has_emr = True
+        stored_type = OcrDocumentType(jd.document_type)
         clova_result = clova_results.get(jd.document_id)
         if clova_result is None:
             continue
-        fields = extract_fields(clova_result, doc_type, lab_keywords)
-        fields_by_doc.append((jd, fields))
-        if doc_type == OcrDocumentType.EMR:
+        actual_type = detect_document_type(clova_result, stored_type)
+        if actual_type == OcrDocumentType.EMR:
+            has_emr = True
+        fields = extract_fields(clova_result, actual_type, lab_keywords)
+        fields_by_doc.append((jd, fields, actual_type))
+        if actual_type == OcrDocumentType.EMR:
             emr_field_types.update(f.field_type for f in fields)
     return fields_by_doc, emr_field_types, has_emr
 
@@ -285,6 +295,7 @@ async def _save_clova_result(
     missing = sorted(_REQUIRED_OCR_FIELDS - emr_field_types) if has_emr else []
 
     # Phase 3: 트랜잭션 안에서 DB 저장
+    actual_type_map: dict[int, OcrDocumentType] = {jd.document_id: actual_type for jd, _, actual_type in fields_by_doc}
     async with in_transaction() as conn:
         ocr_result = await OcrResult.create(
             ocr_job=job,
@@ -294,17 +305,27 @@ async def _save_clova_result(
         doc_text_map: dict[int, OcrDocumentText] = {}
         for jd in job_documents:
             clova_result = clova_results.get(jd.document_id)
+            actual_type = actual_type_map.get(jd.document_id, OcrDocumentType(jd.document_type))
+            if actual_type != OcrDocumentType(jd.document_type):
+                await (
+                    OcrJobDocument.filter(ocr_job_document_id=jd.ocr_job_document_id)
+                    .using_db(conn)
+                    .update(document_type=actual_type)
+                )
+                await (
+                    MedicalDocument.filter(document_id=jd.document_id).using_db(conn).update(document_type=actual_type)
+                )
             doc_text = await OcrDocumentText.create(
                 ocr_result=ocr_result,
                 document_id=jd.document_id,
-                document_type=jd.document_type,
+                document_type=actual_type,
                 raw_text=clova_result.raw_text if clova_result else None,
                 using_db=conn,
             )
             doc_text_map[jd.document_id] = doc_text
 
         seen_types: set[str] = set()
-        for jd, fields in fields_by_doc:
+        for jd, fields, _ in fields_by_doc:
             if jd.document_id not in doc_text_map:
                 continue
             doc_text = doc_text_map[jd.document_id]
