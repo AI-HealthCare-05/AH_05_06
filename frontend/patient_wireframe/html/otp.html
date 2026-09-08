@@ -247,18 +247,35 @@
   </div>
 </div>
 
+<script src="/js/link-token.js"></script>
 <script>
 (function () {
   var API_BASE = '/api/v1';
   var query = new URLSearchParams(window.location.search);
-  var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
   var isMock = query.get('mock') === '1';
 
-  /* 실제 링크는 KEY-219의 query 계약을 따른다. 개발 목업 토큰만 access log에
-     남지 않는 fragment에서 받으며, 어느 쪽도 저장소로 복사하지 않는다. */
+  /* **토큰은 fragment 로 온다** — KEY-292.
+   *
+   * 여기는 목업일 때만 fragment 를 읽고 아니면 `?token=` 을 봤다. 그런데
+   * **이 화면으로 보내는 쪽은 모두 `#t=` 다.** 세 곳이다.
+   *
+   *     frontend/js/doctor-api.js            patientGuideUrl()  (의사 화면의 「본인 확인 열기」)
+   *     frontend/js/checkin.js               otpEntryUrl()      (체크인에서 인증이 풀렸을 때)
+   *     frontend/patient_wireframe/js/guide.js  otpEntryUrl()   (안내 화면 401 복귀 — KEY-178)
+   *
+   * 그리고 실서버에서 `MOCK` 은 **항상 거짓**이다 — `frontend/js/api.js` 가
+   * `file:` · localhost · 127.0.0.1 · [::1] 에서만 켠다. 그래서 디벨롭·운영에서
+   * 의사가 「본인 확인 열기」를 누르면 토큰을 못 읽고 곧장 「일시적인 오류가
+   * 생겼어요」로 떨어졌다.
+   *
+   * 읽는 규칙 자체는 `frontend/js/link-token.js` 한 곳에 있다 — 이 버그가 바로
+   * 그 줄이 네 벌이라 생겼다 (이희진 님 `#255` ③).
+   *
+   * `?token=` 은 **받아만 준다.** 이 화면이 그 모양을 만들던 자리 두 곳
+   * (`issueOtp`, `otp-verify.html` 의 `otpStartUrl`)은 이번에 조각으로 옮겼지만,
+   * 그 사이에 열려 있던 옛 주소가 아직 살아 있을 수 있어 읽는 쪽은 남긴다. */
   function getLinkToken() {
-    if (isMock) return fragment.get('t') || '';
-    return query.get('token') || '';
+    return linkTokenFrom(window.location, ['token']);
   }
 
   function mockVerifyUrl(token) {
@@ -291,7 +308,20 @@
   async function checkSession(token) {
     if (!token) return;
     try {
-      var res = await fetch(API_BASE + '/patient-auth/session?link_token=' + encodeURIComponent(token));
+      /* 🚩 **토큰을 주소에 안 싣는다** (유가은 님 `#255` 리뷰).
+       *
+       * 여기는 `?link_token=<원문>` 이었다. 조각 토큰을 읽게 고치기 전에는
+       * 실서버가 이 자리에 도달하지 못했는데, 그 고침이 길을 여는 순간 정상
+       * 진입마다 이 요청이 나가고 **nginx access log 에 원문이 남는다** —
+       * uvicorn 쪽 마스킹으로는 그 로그를 못 막는다.
+       *
+       * 이 화면의 다른 요청(`/context`·`/otp/issue`·`/otp/verify`)이 이미
+       * 같은 까닭으로 본문을 쓴다. 읽기인데 POST 인 것은 그 계약을 따르는 것이다. */
+      var res = await fetch(API_BASE + '/patient-auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_token: token }),
+      });
       if (res.ok) {
         window.location.replace('/guide.html#t=' + encodeURIComponent(token));
         return true;
@@ -366,10 +396,14 @@
       });
       if (res.ok) {
         var data = await res.json();
+        /* 토큰은 **조각으로만** 넘긴다 — 주소창·access log·Referer 어디에도 안
+           남는다. 만료·재시도 시각은 비밀이 아니라 query 에 그대로 둔다. 여태
+           `?token=` 이던 자리인데, 이 갈래는 실서버에서 열린 적이 없어
+           (`getLinkToken` 이 먼저 막았다) 드러나지 않았다 — KEY-292. */
         window.location.href =
-          'otp-verify.html?token=' + encodeURIComponent(token) +
-          '&expires_at=' + encodeURIComponent(data.expires_at) +
-          '&retry_after=' + encodeURIComponent(data.retry_after_seconds);
+          'otp-verify.html?expires_at=' + encodeURIComponent(data.expires_at) +
+          '&retry_after=' + encodeURIComponent(data.retry_after_seconds) +
+          '#t=' + encodeURIComponent(token);
         return;
       }
       var body = {};

@@ -42,6 +42,20 @@ function clinicStamp(iso) {
   return day && time ? day + " " + time : day || time;
 }
 
+/** 「9월 1일 18:00」 — 사람에게 읽어 주는 모양. 못 읽으면 빈 글자.
+ *
+ * `clinicStamp` 와 같은 값을 다른 옷으로 낸다. 표·목록은 짧은 `09-01 18:00`
+ * 이 맞고, 한 줄로 말해 주는 자리(「9월 1일 18:00 까지」)는 이쪽이 맞다.
+ *
+ * `doctor.js` 의 `whenText` 가 같은 일을 하고 있었다 — 그 파일 안에 있어서
+ * 다른 화면이 못 썼고, `patient-link-view.js` 가 제 손으로 `Date` 를 만들다
+ * 시간대 버그를 다시 넣었다(`#250` 리뷰 ①). 여기 한 벌만 둔다.
+ */
+function clinicWhenText(iso) {
+  var m = /^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(String(iso == null ? "" : iso));
+  return m ? Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3] : "";
+}
+
 /** 의원의 오늘 — 「2026-09-01」. **보는 사람의 오늘이 아니다.** */
 function clinicToday(at) {
   var when = at || new Date();

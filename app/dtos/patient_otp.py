@@ -17,6 +17,27 @@ class PatientAuthContextResponse(StrictModel):
     expires_at: _dt.datetime
 
 
+class PatientSessionCheckRequest(StrictModel):
+    """세션 확인도 **본문으로 받는다** — KEY-292.
+
+    여태 `GET /patient-auth/session?link_token=<원문>` 이었다. 그러면 링크
+    토큰이 **주소에 실려** nginx access log 에 원문 그대로 남는다 — 실제로
+    확인했다.
+
+        "GET /api/v1/patient-auth/session?link_token=<원문> HTTP/1.1" 401
+
+    `app/core/masking.py` 가 `token` 을 가려야 할 값으로 두고 uvicorn 로그를
+    막아 두었지만, **그것으로 nginx 로그는 못 막는다.** AGENTS.md 「환자 링크
+    토큰을 코드·화면·로그·커밋에 남기지 않는다」에 정면으로 걸린다.
+
+    읽기인데 `POST` 인 것이 어색해 보일 수 있다. 그런데 이 저장소의 다른
+    링크 종점(`/context`·`/otp/issue`·`/otp/verify`)이 모두 같은 까닭으로
+    본문을 쓴다 — 토큰을 주소에 안 싣는 것이 이 화면의 계약이다.
+    """
+
+    link_token: str
+
+
 class PatientSessionResponse(StrictModel):
     active: Literal[True] = True
     expires_in_seconds: int
