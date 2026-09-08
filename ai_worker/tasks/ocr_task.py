@@ -291,6 +291,8 @@ async def _save_clova_result(
     # Phase 2: 필드 추출 완료 진행률 기록 (대기→파일 판독→필드 추출→저장→완료 중 세 번째 단계)
     # CLOVA 완료 구간(0~70%)과 저장 완료(100%) 사이에 명시적 단계를 두어
     # 장시간 문서에서 진행 단계가 2회 이상 갱신되는 것을 보장한다.
+    # 의도적으로 트랜잭션 밖에서 저장 — 롤백 시 PROCESSING+80으로 남지만
+    # except 경로의 _mark_failed가 progress=0으로 self-heal한다.
     job.progress = 80
     await job.save(update_fields=("progress",))
 
