@@ -161,8 +161,31 @@ class TortoiseOcrRepository:
         return job
 
     async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None:
-        # 진행 중인 작업이 있으면 그것이 현재 작업이다.
-        # 없으면 같은 진료의 가장 최근 작업을 반환한다.
+        # 두 단계 쿼리 — 단일 쿼리 전환 여부 검토 결과 (KEY-125)
+        #
+        # 규칙: PROCESSING 우선, 없으면 created_at 내림차순 최신.
+        #
+        # 단일 쿼리 후보:
+        #   SELECT * FROM ocr_job
+        #   WHERE visit_id=? AND hospital_id=?
+        #   ORDER BY (status='PROCESSING') DESC, created_at DESC
+        #   LIMIT 1;
+        #
+        # 전환하지 않은 이유 세 가지:
+        #   1. Tortoise ORM이 ORDER BY 식 표현을 기본 지원하지 않아 Raw SQL이 필요하다.
+        #      가독성과 타입 안전성이 낮아진다.
+        #   2. 두 쿼리는 각자 한 규칙만 담아 독립적으로 테스트할 수 있다.
+        #      test_ocr_repository.py가 PROCESSING-우선과 최신순을 서로 다른 행으로
+        #      검증하는데, 단일 쿼리로 합치면 그 독립성이 사라진다.
+        #   3. 성능 차이가 없다. PROCESSING job이 없는 일반 경우에 쿼리 1은
+        #      인덱스 레인지 스캔으로 즉시 빈 결과를 반환하고, 쿼리 2만 행을 읽는다.
+        #      PROCESSING job이 있으면 쿼리 1만 행을 읽고 쿼리 2는 실행되지 않는다.
+        #
+        # 생성 SQL (Tortoise → MySQL):
+        #   쿼리 1: SELECT … WHERE visit_id=? AND hospital_id=? AND status='PROCESSING'
+        #            ORDER BY created_at DESC LIMIT 1;
+        #   쿼리 2: SELECT … WHERE visit_id=? AND hospital_id=?
+        #            ORDER BY created_at DESC LIMIT 1;
         job = (
             await OcrJob.filter(
                 visit_id=visit_id,
