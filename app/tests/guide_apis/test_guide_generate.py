@@ -927,6 +927,7 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
 
         제외 처리된 FAILED job은 게이트 판정에서 건너뛴다.
         그 이후에 생성된 확정 job이 게이트를 통과시킨다.
+        created_at을 명시 고정해 순차 INSERT의 암묵적 시계 순서에 의존하지 않는다.
         """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
@@ -934,6 +935,9 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
 
         # 1st: 완료·확정 (가장 오래된)
         await attach_confirmed_ocr(visit, staff.staff_id)
+        await OcrJob.filter(ocr_job_id=f"syn-gen-{visit.visit_id}").update(
+            created_at=datetime(2026, 8, 1, 0, 0, tzinfo=UTC),
+        )
 
         # 2nd: excluded FAILED (중간, 잘못 올린 뒤 제외)
         await OcrJob.create(
@@ -944,6 +948,9 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
             status=OcrJobStatus.FAILED,
             excluded_from_guide=True,
         )
+        await OcrJob.filter(ocr_job_id=f"syn-excl-fail-mid-{visit.visit_id}").update(
+            created_at=datetime(2026, 8, 10, 0, 0, tzinfo=UTC),
+        )
 
         # 3rd: 완료·확정 (가장 최신) — 게이트가 이 job을 기준으로 판정해야 한다
         third_job = await OcrJob.create(
@@ -952,6 +959,9 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
             visit_id=visit.visit_id,
             requested_by=staff.staff_id,
             status=OcrJobStatus.COMPLETED,
+        )
+        await OcrJob.filter(ocr_job_id=third_job.ocr_job_id).update(
+            created_at=datetime(2026, 8, 20, 0, 0, tzinfo=UTC),
         )
         third_result = await OcrResult.create(ocr_job=third_job, model_name="synthetic-fixture")
         await OcrField.create(
@@ -970,13 +980,17 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
         """oldest confirmed → middle confirmed → newest FAILED → OCR_FAILED 422.
 
         여러 개의 확정 job이 있어도 가장 최신 job이 FAILED면 차단한다.
+        created_at을 명시 고정해 순차 INSERT의 암묵적 시계 순서에 의존하지 않는다.
         """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
         visit = await make_visit(clinic)
 
-        # 1st: 완료·확정
+        # 1st: 완료·확정 (가장 오래된)
         await attach_confirmed_ocr(visit, staff.staff_id)
+        await OcrJob.filter(ocr_job_id=f"syn-gen-{visit.visit_id}").update(
+            created_at=datetime(2026, 8, 1, 0, 0, tzinfo=UTC),
+        )
 
         # 2nd: 완료·확정 (두 번째)
         second_job = await OcrJob.create(
@@ -985,6 +999,9 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
             visit_id=visit.visit_id,
             requested_by=staff.staff_id,
             status=OcrJobStatus.COMPLETED,
+        )
+        await OcrJob.filter(ocr_job_id=second_job.ocr_job_id).update(
+            created_at=datetime(2026, 8, 10, 0, 0, tzinfo=UTC),
         )
         second_result = await OcrResult.create(ocr_job=second_job, model_name="synthetic-fixture")
         await OcrField.create(
@@ -1001,6 +1018,9 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
             visit_id=visit.visit_id,
             requested_by=staff.staff_id,
             status=OcrJobStatus.FAILED,
+        )
+        await OcrJob.filter(ocr_job_id=f"syn-new-failed-{visit.visit_id}").update(
+            created_at=datetime(2026, 8, 20, 0, 0, tzinfo=UTC),
         )
 
         async with self.client() as client:
