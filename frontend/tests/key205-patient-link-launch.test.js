@@ -42,7 +42,9 @@ test("목업도 승인 완료 건 한 번만 발급하고 중복은 안전하게
 });
 
 test("환자 주소는 API path를 본인 확인 화면의 fragment로 바꾼다", () => {
-  const box = load("api", "session", "patients-api", "shell", "doctor-api", "doctor");
+  /* `doctor.js` 없이도 선다 — 규칙이 `doctor-api.js` 로 옮겨졌기 때문이다
+     (KEY-275). 스탭 화면이 그 파일까지만 싣는다. */
+  const box = load("api", "session", "patients-api", "shell", "doctor-api");
   const token = "synthetic-key205-browser-token";
 
   const url = box.patientGuideUrl({ path: "/api/v1/guides/" + token });
@@ -89,10 +91,16 @@ test("병원 화면은 토큰을 DOM·console·브라우저 저장소에 쓰지 
     doctor.indexOf("function openPatientGuide"),
     doctor.indexOf("function returnModal", doctor.indexOf("function openPatientGuide")),
   );
-  const urlFn = doctor.slice(
-    doctor.indexOf("function patientGuideUrl"),
-    doctor.indexOf("function patientLinkSaying"),
-  );
+  /* **`doctor-api.js` 로 옮겼다** — KEY-275. 스탭 화면이 `doctor.js` 를 안
+     싣는데 링크 블록이 그 화면에도 서기 때문이다.
+
+     여기를 안 옮기면 `indexOf` 가 둘 다 `-1` 이라 슬라이스가 **빈 문자열**이
+     되고, 아래 `doesNotMatch` 넷이 빈 문자열을 검사하며 **조용히 통과**한다 —
+     토큰 유출을 막는 자리가 아무것도 안 막게 된다. */
+  const api = read("js/doctor-api.js");
+  const urlFn = api.slice(api.indexOf("function patientGuideUrl"), api.indexOf("var PATIENT_LINK_SAYINGS"));
+  assert.ok(urlFn.length > 100, "규칙 함수를 못 찾았다 — 빈 문자열을 검사하고 있다");
+  assert.ok(launch.length > 100, "발급 흐름을 못 찾았다 — 빈 문자열을 검사하고 있다");
   const html = read("doctor.html");
 
   assert.match(html, /id="patient-open"[^>]*hidden>환자 링크 발급<\/button>/);
