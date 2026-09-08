@@ -31,7 +31,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrResult, course_days, read_but_unconfirmed
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, course_days, read_but_unconfirmed
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
@@ -49,6 +49,7 @@ from app.models.visits import (
 from app.ocr.utils import assert_latest_ocr_job_ready
 from app.services import guide_defaults
 from app.services.drug_caution import DrugCautionService
+from app.services.guide_body import medication_body, resolved_copy
 
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
 #: 진료가 끝난 저녁에 받아야 환자가 차분히 읽는다 — 진료 중에 오면 안 본다.
@@ -418,10 +419,14 @@ class GuideService:
                 # 복약지도, 그것도 없을 때만 범용 문구다. 예전에는 승인 정본을
                 # 아예 안 물어서, 원장님이 2026-09-04 에 확인하신 열두 칸 중
                 # 복약지도가 환자에게 한 번도 안 나갔다.
-                generated_body=_medication_body(
+                #: **고르는 규칙은 `guide_body` 한 벌이다** — KEY-258.
+                #: 설정 화면의 미리보기가 같은 함수를 부른다. 여기서 식을 다시
+                #: 쓰면 「보이는 글」과 「나가는 글」이 갈릴 자리가 다시 생긴다.
+                generated_body=medication_body(
                     prescription_items,
-                    copies.get(
+                    resolved_copy(
                         CautionSectionKey.MEDICATION,
+                        copies,
                         medication_content.body if medication_content else guide_defaults.MEDICATION,
                     ),
                 ),
@@ -442,8 +447,9 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.CAUTION,
-                generated_body=copies.get(
+                generated_body=resolved_copy(
                     CautionSectionKey.CAUTION,
+                    copies,
                     caution_content.body if caution_content else guide_defaults.CAUTION,
                 ),
                 drug_caution_content_id=(caution_content.drug_caution_content_id if caution_content else None),
@@ -454,7 +460,13 @@ class GuideService:
                 section_key=GuideSectionKey.EMERGENCY,
                 # 🚨 승인된 세트별 응급 문장 또는 범용 폴백 — 사람이 고칠 수 없다(KEY-150, KEY-165).
                 # `copies` 를 보지 않는다 — 고칠 수 없는 글이다(KEY-150).
-                generated_body=emergency_content.body if emergency_content else guide_defaults.EMERGENCY,
+                #: `resolved_copy` 를 지나되 `FIXED_SECTIONS` 가 문구를 막는다 —
+                #: 「응급은 안 얹는다」를 두 곳에 적지 않으려는 것이다.
+                generated_body=resolved_copy(
+                    CautionSectionKey.EMERGENCY,
+                    copies,
+                    emergency_content.body if emergency_content else guide_defaults.EMERGENCY,
+                ),
                 drug_caution_content_id=(emergency_content.drug_caution_content_id if emergency_content else None),
                 locked=True,
                 using_db=connection,
@@ -462,8 +474,9 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.LIFE,
-                generated_body=copies.get(
+                generated_body=resolved_copy(
                     CautionSectionKey.LIFE,
+                    copies,
                     life_content.body if life_content else guide_defaults.LIFE,
                 ),
                 drug_caution_content_id=(life_content.drug_caution_content_id if life_content else None),

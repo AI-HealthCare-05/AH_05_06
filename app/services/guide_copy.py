@@ -36,6 +36,7 @@ from app.models.catalog import (
 )
 from app.services import guide_defaults
 from app.services.drug_caution import DrugCautionService
+from app.services.guide_body import preview_body
 from app.services.patient_visit_scope import hospital_id_of
 
 #: 의사가 고칠 수 있는 구역. **응급은 없다** — 원문이 못박는다.
@@ -57,6 +58,8 @@ class CopySection:
     #: 원장님 문구. 없으면 원본이 그대로 나간다.
     body: str | None
     editable: bool
+    #: 실제로 나가는 글 — `guide_body.preview_body` 가 짓는다 (KEY-258).
+    preview: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +79,17 @@ class GuideCopyService:
         sets = await PrescriptionSet.all().order_by("disease", "prescription_set_id")
         origins = await self._origins()
         edits = await self._edits(hospital_id, doctor_id)
+        #: **미리보기는 생성과 같은 겹침을 본다** — KEY-258.
+        #:
+        #: 생성은 `{**의원공통, **담당의사}` 로 겹친다(`guides.py`). 이 화면은
+        #: 한 벌(`doctor_id` 이 가리키는 쪽)만 읽는데, 그것이 `body`(고친 글,
+        #: 「원본으로 되돌리기」가 되돌릴 대상)의 뜻이라 그대로 둔다.
+        #:
+        #: 대신 **미리보기는 겹친 것을 본다.** 지금은 화면이 늘 의원 공통으로
+        #: 물어 둘이 같지만(`_whose` — 「지금 화면에는 고르는 칸이 없어 늘 의원
+        #: 공통이다」), 원장별 문구가 열리는 날 미리보기만 조용히 어긋나는 것을
+        #: 막는다.
+        common = edits if doctor_id is None else await self._edits(hospital_id, None)
         reviewed = await self._reviewed(hospital_id, doctor_id)
 
         found = []
@@ -86,18 +100,35 @@ class GuideCopyService:
                     name=row.name,
                     disease=row.disease,
                     sections=[
-                        CopySection(
-                            section_key=key,
-                            origin=origins.get((row.prescription_set_id, key)),
-                            body=edits.get((row.prescription_set_id, key)),
-                            editable=key in EDITABLE_SECTIONS,
-                        )
-                        for key in CautionSectionKey
+                        self._section(row.prescription_set_id, key, origins, edits, common) for key in CautionSectionKey
                     ],
                     reviewed=row.prescription_set_id in reviewed,
                 )
             )
         return found
+
+    @staticmethod
+    def _section(
+        set_id: int,
+        key: CautionSectionKey,
+        origins: dict[tuple[int, CautionSectionKey], str],
+        edits: dict[tuple[int, CautionSectionKey], str],
+        common: dict[tuple[int, CautionSectionKey], str],
+    ) -> CopySection:
+        origin = origins.get((set_id, key))
+        #: 생성과 같은 차례 — 의원 공통 위에 담당 의사 것을 덮는다.
+        overlaid = {}
+        if (set_id, key) in common:
+            overlaid[key] = common[(set_id, key)]
+        if (set_id, key) in edits:
+            overlaid[key] = edits[(set_id, key)]
+        return CopySection(
+            section_key=key,
+            origin=origin,
+            body=edits.get((set_id, key)),
+            editable=key in EDITABLE_SECTIONS,
+            preview=preview_body(key, overlaid, origin or ""),
+        )
 
     async def save(
         self,

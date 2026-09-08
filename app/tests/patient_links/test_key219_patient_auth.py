@@ -124,7 +124,7 @@ class TestPatientSession(BaseAuthCase):
             _, code = delivery.sent[0]
             await c.post("/api/v1/patient-auth/otp/verify", json={"link_token": LINK_TOKEN, "code": code})
 
-            res = await c.get("/api/v1/patient-auth/session", params={"link_token": LINK_TOKEN})
+            res = await c.post("/api/v1/patient-auth/session", json={"link_token": LINK_TOKEN})
 
         assert res.status_code == 200
         body = res.json()
@@ -134,7 +134,7 @@ class TestPatientSession(BaseAuthCase):
     async def test_no_session_cookie_returns_401(self) -> None:
         await make_link()
         async with self.client() as c:
-            res = await c.get("/api/v1/patient-auth/session", params={"link_token": LINK_TOKEN})
+            res = await c.post("/api/v1/patient-auth/session", json={"link_token": LINK_TOKEN})
         assert res.status_code == 401
         assert res.json()["code"] == "PATIENT_SESSION_EXPIRED"
 
@@ -149,7 +149,7 @@ class TestPatientSession(BaseAuthCase):
             _, code = delivery.sent[0]
             await c.post("/api/v1/patient-auth/otp/verify", json={"link_token": LINK_TOKEN, "code": code})
 
-            res = await c.get("/api/v1/patient-auth/session", params={"link_token": "wrong-token"})
+            res = await c.post("/api/v1/patient-auth/session", json={"link_token": "wrong-token"})
 
         assert res.status_code == 401
         assert res.json()["code"] == "PATIENT_SESSION_EXPIRED"

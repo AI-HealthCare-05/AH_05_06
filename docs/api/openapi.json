@@ -693,6 +693,10 @@
             ],
             "title": "Origin"
           },
+          "preview": {
+            "title": "Preview",
+            "type": "string"
+          },
           "section_key": {
             "$ref": "#/components/schemas/CautionSectionKey"
           }
@@ -701,7 +705,8 @@
           "section_key",
           "origin",
           "body",
-          "editable"
+          "editable",
+          "preview"
         ],
         "title": "CopySectionItem",
         "type": "object"
@@ -999,6 +1004,15 @@
         },
         "title": "DrugCatalogSaveRequest",
         "type": "object"
+      },
+      "DurationUnit": {
+        "description": "`DURATION_DAYS` 칸의 숫자가 무엇인가 — 「3」이 3일인지 3통인지.\n\n**소진 예정일과 확인 문자 시각이 이 값으로 셈해진다.** 틀리면 문자가\n엉뚱한 날 나간다.\n\n**세트에 붙이지 않는다.** 카탈로그에 같은 뜻의 칸이 있지만\n(`PrescriptionSet.days_mode` — 「의원마다 다르다」) 합성 100행에서 네 세트가\n**전부** 두 단위로 다 나온다. `자궁내막증 · 비잔 (계속)` 만 해도 일수 23 ·\n통수 11 이다. 단위는 세트의 성질이 아니라 **그 진료의 그 줄**의 성질이다.\n\n값이 화면에 그대로 나간다 — `frontend/js/field-labels.js` 의 `fieldUnit` 이\n서버가 준 단위를 무조건 우선한다. 숫자 뒤에 붙는 접미사이므로 「일수」가\n아니라 「일」이다.",
+        "enum": [
+          "일",
+          "통"
+        ],
+        "title": "DurationUnit",
+        "type": "string"
       },
       "FinalizeOcrResponse": {
         "additionalProperties": false,
@@ -3977,6 +3991,21 @@
         "title": "PatientResponse",
         "type": "object"
       },
+      "PatientSessionCheckRequest": {
+        "additionalProperties": false,
+        "description": "세션 확인도 **본문으로 받는다** — KEY-292.\n\n여태 `GET /patient-auth/session?link_token=<원문>` 이었다. 그러면 링크\n토큰이 **주소에 실려** nginx access log 에 원문 그대로 남는다 — 실제로\n확인했다.\n\n    \"GET /api/v1/patient-auth/session?link_token=<원문> HTTP/1.1\" 401\n\n`app/core/masking.py` 가 `token` 을 가려야 할 값으로 두고 uvicorn 로그를\n막아 두었지만, **그것으로 nginx 로그는 못 막는다.** AGENTS.md 「환자 링크\n토큰을 코드·화면·로그·커밋에 남기지 않는다」에 정면으로 걸린다.\n\n읽기인데 `POST` 인 것이 어색해 보일 수 있다. 그런데 이 저장소의 다른\n링크 종점(`/context`·`/otp/issue`·`/otp/verify`)이 모두 같은 까닭으로\n본문을 쓴다 — 토큰을 주소에 안 싣는 것이 이 화면의 계약이다.",
+        "properties": {
+          "link_token": {
+            "title": "Link Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_token"
+        ],
+        "title": "PatientSessionCheckRequest",
+        "type": "object"
+      },
       "PatientSessionResponse": {
         "additionalProperties": false,
         "properties": {
@@ -5163,6 +5192,16 @@
               }
             ],
             "title": "Corrected Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DurationUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5626,8 +5665,18 @@
       },
       "WriteOcrFieldRequest": {
         "additionalProperties": false,
-        "description": "판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.\n\n**고치기(PATCH)와 다른 길이다.** 저쪽은 이미 있는 줄의 값을 바꾸는 것이고,\n이쪽은 **줄 자체가 없는** 것을 만든다. 판독이 못 찾은 항목은 레코드로 남지\n않아서, 화면이 값을 적어도 보낼 곳이 없었다 — 「저장 안 됨」이라 적어 두고\n새로고침하면 사라졌다.\n\n`value` 가 비면 **그 줄을 지운다**. 잘못 적은 것을 「빈 값으로 적었다」로\n남겨 두면, 안 적은 것과 구별이 안 된다.",
+        "description": "판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.\n\n**고치기(PATCH)와 다른 길이다.** 저쪽은 이미 있는 줄의 값을 바꾸는 것이고,\n이쪽은 **줄 자체가 없는** 것을 만든다. 판독이 못 찾은 항목은 레코드로 남지\n않아서, 화면이 값을 적어도 보낼 곳이 없었다 — 「저장 안 됨」이라 적어 두고\n새로고침하면 사라졌다.\n\n`value` 가 비면 **그 줄을 지운다**. 잘못 적은 것을 「빈 값으로 적었다」로\n남겨 두면, 안 적은 것과 구별이 안 된다.\n\n`unit` 은 처방일수를 적을 때 함께 온다 — KEY-285. 「3」만 적고 단위를 안\n말하면 소진 예정일이 81일 어긋난다(3통 = 84일).",
         "properties": {
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DurationUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "value": {
             "anyOf": [
               {
@@ -7791,18 +7840,10 @@
       }
     },
     "/api/v1/patient-auth/session": {
-      "get": {
-        "operationId": "check_patient_session_api_v1_patient_auth_session_get",
+      "post": {
+        "description": "**주소에 토큰을 안 싣는다** — KEY-292 (유가은 님 `#255` 리뷰).\n\n여기는 `GET …/session?link_token=<원문>` 이었다. `#255` 가 화면에서 조각\n토큰을 읽게 고치기 전에는 실서버가 이 자리에 **도달하지 못했는데**, 그\n고침이 길을 여는 순간 정상 진입마다 이 요청이 나가고 토큰이 nginx access\nlog 에 원문으로 남는다. 그래서 후속으로 미루지 않고 같은 PR 에서 걷는다.",
+        "operationId": "check_patient_session_api_v1_patient_auth_session_post",
         "parameters": [
-          {
-            "in": "query",
-            "name": "link_token",
-            "required": true,
-            "schema": {
-              "title": "Link Token",
-              "type": "string"
-            }
-          },
           {
             "in": "cookie",
             "name": "patient_session",
@@ -7820,6 +7861,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientSessionCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

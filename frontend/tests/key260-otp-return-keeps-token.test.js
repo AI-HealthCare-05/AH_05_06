@@ -28,12 +28,16 @@ function otpEntryUrlWith(captured, search, hash) {
   assert.notEqual(at, -1, "otpEntryUrl 이 사라졌다");
   const body = source.slice(at, source.indexOf("\n  }", at) + 4);
 
+  /* 토큰을 읽는 규칙은 `js/link-token.js` 것이다 — `guide.html` 이 `guide.js`
+     보다 먼저 싣는다(KEY-292). 여기서도 같은 차례로 태운다. */
+  const rule = fs.readFileSync(path.join(__dirname, "..", "js", "link-token.js"), "utf8");
+
   /* `TOKEN` 은 같은 IIFE 의 `var` 라 끌어올려진다 — 담기기 전에는 `undefined`. */
   const make = new Function(
     "URLSearchParams",
     "window",
     "TOKEN",
-    body + "\nreturn otpEntryUrl();",
+    rule + "\n" + body + "\nreturn otpEntryUrl();",
   );
   return make(URLSearchParams, { location: { search, hash } }, captured);
 }
