@@ -204,7 +204,7 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
   function renderPanel() {
     var now = currentSection();
     el("panel").innerHTML = now
-      ? guideScreenHtml(guide.sections, now.key, "final", isDoctor(), guideEditingNow())
+      ? guideScreenHtml(guide.sections, now.key, "final", isDoctor(), guideEditingNow(), guide.summary)
       : "";
   }
 
