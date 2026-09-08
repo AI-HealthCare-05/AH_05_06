@@ -158,7 +158,7 @@ class TestLinkVariableNotYetAvailable(TestCase):
 class TestDispatchSendsAndTransitions(TestCase):
     async def test_a_due_message_is_sent_and_marked_sent(self) -> None:
         message = await make_due_message(link_free_template=True)
-        sender = MockSmsSender(provider_message_id="aligo-999")
+        sender = MockSmsSender(provider_message_id="solapi-999")
 
         result = await dispatch_message(message.guide_message_id, sender)
 
@@ -167,7 +167,7 @@ class TestDispatchSendsAndTransitions(TestCase):
         updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
         assert updated.status is GuideMessageStatus.SENT
         assert updated.sent_at is not None
-        assert updated.provider_message_id == "aligo-999"
+        assert updated.provider_message_id == "solapi-999"
         assert updated.claim_token is None
         assert updated.attempt_count == 1
         assert updated.sent_body is not None
@@ -288,7 +288,7 @@ class TestRetryAndBackoff(TestCase):
         """공급자가 명시적으로 거절하면(예: 잘못된 번호) 재시도해도 같은 결과다."""
         message = await make_due_message(link_free_template=True)
         sender = _CountingSender(
-            result=SmsSendResult(status=SmsDeliveryStatus.FAILED, provider=SmsProvider.ALIGO, provider_code="-101")
+            result=SmsSendResult(status=SmsDeliveryStatus.FAILED, provider=SmsProvider.SOLAPI, provider_code="-101")
         )
 
         result = await dispatch_message(message.guide_message_id, sender)

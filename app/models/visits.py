@@ -540,7 +540,7 @@ class GuideMessage(models.Model):
     #: 실제로 나간 글. 보내기 전에는 비어 있다.
     sent_body = fields.TextField(null=True)
 
-    #: 발송기(Aligo 등)가 접수하면서 돌려준 메시지 ID — KEY-249.
+    #: 발송기(솔라피 등)가 접수하면서 돌려준 메시지 ID — KEY-249.
     #: 사람에게 안 보인다. 문의가 왔을 때 공급자 쪽과 대조하는 용도다.
     provider_message_id = fields.CharField(max_length=64, null=True)
     #: 발송기가 돌려준 원문 실패 코드 — KEY-249. `failure_code` 는 화면에
