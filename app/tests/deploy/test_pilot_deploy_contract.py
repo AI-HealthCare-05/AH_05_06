@@ -249,10 +249,16 @@ class TestTheEnvExampleMatchesWhatTheCodeAsks:
     @pytest.mark.parametrize("example", ["envs/example.prod.env", "envs/example.local.env"])
     def test_the_openai_key_is_only_ever_commented(self, example: str) -> None:
         """빈 `OPENAI_API_KEY=` 는 `SecretStr("")` 이 되어 `is not None` 이 참이다 —
-        LLM 호출이 켜진 채 빈 키로 나가고, 챗봇 질문마다 환자 질문 원문과 승인
-        안내문이 밖으로 간다. 끄는 방법은 값이 아니라 **줄을 주석으로 두는 것**뿐이라
-        두 예시 다 그렇게 되어 있어야 한다. `bootstrap-local.sh` 가 로컬 예시를
-        그대로 `.env` 로 복사하므로 로컬도 prod 와 같은 계약을 받는다."""
+        모델 객체가 만들어져 질문마다 호출을 시도하다 예외가 나고, 관측에
+        `model_failed` 로 남아 **설정을 안 한 것과 구분되지 않는다.** 끄는 방법은
+        값이 아니라 **줄을 주석으로 두는 것**뿐이라 두 예시 다 그렇게 되어 있어야
+        한다. `bootstrap-local.sh` 가 로컬 예시를 그대로 `.env` 로 복사하므로
+        로컬도 prod 와 같은 계약을 받는다.
+
+        전에 이 독스트링이 「환자 질문 원문이 밖으로 간다」고 적었는데 사실이
+        아니었다 — 빈 키면 헤더가 `Bearer ` 가 되어 h11 이 불법 헤더 값으로
+        거부하고, 바이트가 0 이다 (KEY-308). 계약은 그대로 지킨다: 값이 아니라
+        줄이 없어야 꺼진다."""
         text = read(example)
         live = [ln for ln in text.splitlines() if re.match(r"\s*OPENAI_API_KEY\s*=", ln)]
 
