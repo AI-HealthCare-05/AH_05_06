@@ -59,6 +59,33 @@ function patientTabOf(sectionKey) {
   return "복약지도";
 }
 
+/* 미리보기 iframe 이 실을 스타일시트 — **`frontend/guide.html` 과 같은 벌.**
+ *
+ * 여기는 `tokens.css` + `guide.css`(버전 없음) 둘뿐이었다. 환자 화면은
+ * `guide.css?v=11` 과 `chat.css?v=5` 까지 신는다. 버전 쿼리가 없으면 미리보기만
+ * **옛 캐시본**을 볼 수 있다 — 이 티켓이 없애려던 drift 의 축소판이다
+ * (이희진 님 `#253` ②).
+ *
+ * 손으로 적은 목록이라 또 갈릴 수 있다. 그래서 검사가 `frontend/guide.html`
+ * 을 읽어 이 목록과 대 본다 — 환자 화면이 스타일시트를 더하거나 버전을 올리면
+ * 그 검사가 운다.
+ *
+ * `chat.css` 는 미리보기에 챗봇 마크업이 없어 그리는 것이 없다. 그래도 뺀
+ * 목록을 따로 들면 「무엇을 빼도 되는가」를 사람이 판단해야 하고, 그 판단이
+ * 다음 drift 다. **같은 벌**이라는 규칙 하나만 둔다.
+ */
+var PATIENT_STYLESHEETS = [
+  "/patient_wireframe/css/tokens.css",
+  "/patient_wireframe/css/guide.css?v=11",
+  "/patient_wireframe/css/chat.css?v=5",
+];
+
+function patientStylesheetLinks() {
+  return PATIENT_STYLESHEETS.map(function (href) {
+    return '<link rel="stylesheet" href="' + href + '">';
+  }).join("");
+}
+
 function patientTabBarHtml(current) {
   var on = patientTabOf(current);
   return (
@@ -78,14 +105,18 @@ function patientTabBarHtml(current) {
   );
 }
 
-/** 환자 화면의 카드 하나. */
+/** 환자 화면의 카드 하나.
+ *
+ * 제목이 없으면 **제목 칸 자체를 안 세운다.** 빈 `<div>` 를 두면 환자 CSS 가
+ * 그 자리에 여백을 주어 🚨 카드 위가 벌어진다. 전에는 세워 두고 만든 문자열을
+ * 다시 `.replace` 로 도려냈는데, 그리는 규칙이 두 곳으로 갈라진다 —
+ * 제목 칸 모양이 바뀌면 그 치환이 조용히 안 맞게 된다 (이희진 님 `#253` ③). */
 function patientCardHtml(title, bodyHtml, extraClass) {
   return (
     '<div class="card' +
     (extraClass ? " " + extraClass : "") +
-    '"><div class="card__section-title">' +
-    esc(title) +
-    "</div>" +
+    '">' +
+    (title ? '<div class="card__section-title">' + esc(title) + "</div>" : "") +
     bodyHtml +
     "</div>"
   );
@@ -128,7 +159,7 @@ function patientCautionHtml(caution, emergency) {
         esc(emergency) +
         "</div>",
       "card--danger",
-    ).replace('<div class="card__section-title"></div>', "");
+    );
   }
   return body;
 }
@@ -141,15 +172,16 @@ function patientLifeHtml(life) {
   return body + patientCardHtml("생활관리", '<div class="axis-body-text">' + esc(life) + "</div>");
 }
 
-/** 지금 탭의 환자 화면 본문. `sections` 에서 나오는 것만 그린다. */
+/** 지금 탭의 환자 화면 **본문**. `sections` 에서 나오는 것만 그린다.
+ *
+ * **탭 바는 여기 안 붙인다.** 환자 화면에서 탭 줄은 `.header` 안에 있고 카드는
+ * `<main class="body">` 안에 있다 — 둘을 한 자루에 담으면 `.body` 의
+ * `gap: 12px` 가 탭 줄에도 걸려 카드 간격이 환자 화면과 달라진다.
+ * 골격은 부르는 쪽(`guidePreviewHtml`)이 환자 것 그대로 세운다. */
 function patientPreviewBodyHtml(bodyOf, current, summary) {
-  var body;
-  if (current === "life") body = patientLifeHtml(bodyOf("life"));
-  else if (current === "caution" || current === "emergency") {
-    body = patientCautionHtml(bodyOf("caution"), bodyOf("emergency"));
-  } else body = patientMedicationHtml(summary, bodyOf("medication"));
-
-  /* 탭 바는 **끌 수 없다**(`disabled`). 미리보기는 읽는 자리이고, 여기서 탭이
-     움직이면 스탭 화면의 항목 탭과 어느 쪽이 진짜인지 흐려진다. */
-  return patientTabBarHtml(current) + body;
+  if (current === "life") return patientLifeHtml(bodyOf("life"));
+  if (current === "caution" || current === "emergency") {
+    return patientCautionHtml(bodyOf("caution"), bodyOf("emergency"));
+  }
+  return patientMedicationHtml(summary, bodyOf("medication"));
 }

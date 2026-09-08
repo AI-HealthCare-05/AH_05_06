@@ -37,9 +37,11 @@ test("**쓰는 클래스가 환자 렌더러에 실제로 있다** — 하나만
   const html = ["medication", "caution", "life"].map((k) => guidePreviewHtml(SECTIONS, k)).join("");
   const used = new Set([...html.matchAll(/class=&quot;([^&]+)&quot;|class="([^"]+)"/g)].flatMap((m) => (m[1] || m[2] || "").split(/\s+/)).filter(Boolean));
 
-  /* 기기 틀(`pv`)과 iframe 은 스탭 쪽 것이라 뺀다 — 나머지는 전부 환자 것이어야 한다. */
+  /* 기기 틀(`pv`)만 뺀다 — 그것 하나가 스탭 쪽 것이고 나머지는 전부 환자 것이다.
+     전에는 `guide-body` 도 함께 뺐는데, 그 예외가 바로 **환자 화면에 없는 래퍼를
+     써도 검사가 안 우는** 구멍이었다 (유가은 님 `#253`). 예외를 늘리지 않는다. */
   for (const name of used) {
-    if (name === "pv" || name === "guide-body") continue;
+    if (name === "pv") continue;
     const inPatient = source.includes(`'${name}'`) || source.includes(`"${name}"`) || source.includes(`${name}'`);
     const inCss = css.includes("." + name);
     assert.ok(inPatient || inCss, `환자 화면에 없는 이름을 쓴다: ${name}`);
@@ -127,4 +129,99 @@ test("**따옴표가 srcdoc 을 안 깨뜨린다** — 본문에 큰따옴표가
   /* `srcdoc` 은 속성이라 큰따옴표 하나가 그 자리에서 문서를 닫는다. */
   assert.ok(!/srcdoc="[^"]*"[^>]*"/.test(html.replace(/&quot;/g, "")), "srcdoc 이 중간에 닫힌다");
   assert.ok(html.includes("&quot;"), "따옴표를 안 감쌌다");
+});
+
+/* ── 골격이 환자 것과 같은가 — 유가은 님 `#253` ────────────────────────────
+ *
+ * 환자 CSS 를 싣기만 해서는 모자란다. 카드 간격(`gap: 12px`)·좌우 여백·스크롤을
+ * 만드는 규칙은 `<main class="body">` 에 붙어 있어서, 그 이름을 안 쓰면
+ * **CSS 는 실었는데 배치만 환자와 다른** 상태가 된다.
+ */
+
+/** `srcdoc` 속성 안의 문서를 되돌린다. 실은 순서가 `&`→`&amp;`, `"`→`&quot;`
+    였으므로 푸는 순서는 그 반대다. */
+function srcdocOf(html) {
+  const m = /srcdoc="([\s\S]*?)"><\/iframe>/.exec(html);
+  assert.ok(m, "srcdoc 을 못 찾았다");
+  return m[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+}
+
+/** 어떤 조각의 **바로 아래 자식**들의 class 목록. 태그 깊이를 세어 고른다 —
+    안쪽 카드까지 세면 형제인지 아닌지를 못 가른다. */
+function directChildClasses(inner) {
+  const out = [];
+  let depth = 0;
+  const tag = /<(\/?)([a-z]+)([^>]*)>/g;
+  let m;
+  while ((m = tag.exec(inner))) {
+    const closing = m[1] === "/";
+    if (!closing) {
+      if (depth === 0) {
+        const cls = /class="([^"]*)"/.exec(m[3]);
+        out.push(cls ? cls[1] : "");
+      }
+      depth += 1;
+    } else {
+      depth -= 1;
+    }
+  }
+  return out;
+}
+
+test("**iframe 본문이 환자의 `.body` 다** — 없는 래퍼로 감싸면 배치가 갈린다", () => {
+  const { guidePreviewHtml } = box();
+  const doc = srcdocOf(guidePreviewHtml(SECTIONS, "caution", "요약"));
+
+  assert.ok(!doc.includes("guide-body"), "환자 CSS 에 없는 래퍼로 감쌌다");
+  assert.match(doc, /<main class="body">/, "카드를 담는 자리가 환자의 `.body` 가 아니다");
+
+  /* 골격도 환자 것 그대로 — `.app` 안에 탭 줄을 인 `.header`, 그 아래 `.body`. */
+  assert.match(doc, /<div class="app"><header class="header">/, "환자 골격(`.app` · `.header`)이 아니다");
+  assert.match(doc, /<header class="header"><div class="tab-bar"/, "탭 줄이 머리 안에 없다");
+});
+
+test("**카드가 `.body` 의 직계 형제다** — 그래야 12px 간격이 붙는다", () => {
+  const { guidePreviewHtml } = box();
+  const doc = srcdocOf(guidePreviewHtml(SECTIONS, "caution", "요약"));
+
+  const inner = /<main class="body">([\s\S]*)<\/main>/.exec(doc);
+  assert.ok(inner, "`.body` 안을 못 읽었다");
+
+  /* 주의사항 탭이 이 차이가 가장 잘 드러나는 자리다 — 제목·주의 카드·응급 카드
+     셋이 이어 붙는다. 사이에 래퍼가 하나라도 끼면 `gap` 이 그 래퍼에만 걸린다. */
+  const kids = directChildClasses(inner[1]);
+  assert.deepEqual(kids, ["tab-title", "card", "card card--danger"], `직계 자식이 환자 화면과 다르다 — ${JSON.stringify(kids)}`);
+
+  /* 간격을 만드는 규칙이 실제로 환자 CSS 의 `.body` 에 있는지도 함께 본다.
+     여기만 맞고 저쪽 규칙이 사라지면 이 검사는 거짓으로 통과한다. */
+  const rule = /\.body\s*\{([^}]*)\}/.exec(patientCss());
+  assert.ok(rule, "환자 CSS 에서 `.body` 규칙을 못 찾았다");
+  assert.match(rule[1], /gap:\s*12px/, "환자 화면의 카드 간격이 12px 가 아니다 — 미리보기 기대값을 고쳐야 한다");
+  assert.match(rule[1], /overflow-y:\s*auto/, "환자 화면의 본문이 스크롤 영역이 아니다");
+});
+
+test("**제목 없는 카드는 제목 칸을 안 세운다** — 도려내지 않는다", () => {
+  const { guidePreviewHtml } = box();
+  const doc = srcdocOf(guidePreviewHtml(SECTIONS, "caution"));
+
+  assert.ok(!doc.includes('<div class="card__section-title"></div>'), "빈 제목 칸이 남았다");
+  assert.match(doc, /<div class="card card--danger"><div class="danger-title">/, "🚨 카드가 곧바로 제목으로 시작하지 않는다");
+});
+
+test("**스타일시트가 환자 화면과 같은 벌이다** — 버전이 어긋나면 옛 캐시본이 뜬다", () => {
+  const { guidePreviewHtml } = box();
+  const doc = srcdocOf(guidePreviewHtml(SECTIONS, "medication"));
+
+  const hrefsIn = (text) =>
+    [...text.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g)].map((m) => m[1]);
+
+  const page = fs.readFileSync(path.join(ROOT, "guide.html"), "utf8");
+  const want = hrefsIn(page.replace(/\s*\/?>/g, ">").replace(/href="([^"]+)"\s*/g, 'href="$1" '));
+
+  assert.ok(want.length >= 2, `환자 화면의 스타일시트를 못 읽었다 — ${JSON.stringify(want)}`);
+  assert.deepEqual(
+    hrefsIn(doc),
+    want,
+    "미리보기가 신는 스타일시트가 `frontend/guide.html` 과 다르다 — 버전 쿼리까지 같아야 한다",
+  );
 });
