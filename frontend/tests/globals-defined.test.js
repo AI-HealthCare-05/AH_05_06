@@ -27,95 +27,12 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const { markupOnly } = require("./source.js");
+const { read, bareCode, scriptsOf } = require("./source.js");
 
 const ROOT = path.join(__dirname, "..");
 
 /** 브라우저·언어가 주는 대문자 이름. 화면이 얹지 않아도 있는 것들. */
 const BUILT_IN = new Set(["JSON", "URL", "URLSearchParams", "NaN", "Infinity", "DOMParser", "Intl", "Math", "Promise"]);
-
-function scriptsOf(page) {
-  const html = markupOnly(fs.readFileSync(path.join(ROOT, page), "utf8"));
-  return [...html.matchAll(/<script\s+src="\/js\/([\w-]+\.js)"/g)].map((m) => m[1]);
-}
-
-/* 글자열도 주석도 걷어 낸 코드.
- *
- * **`codeOnly` 를 안 쓴다.** 그쪽은 글자열을 모른다 — `"https://…"` 의 `//` 를
- * 주석 시작으로 보고 그 줄 끝까지 삼키고, 그러다 뒤엣것의 `/*` 짝이 어긋나
- * **진짜 주석이 코드로 남는다.** 실제로 `ocr-review.js` 의 주석 속
- * 「MEDICATION_NAME」이 그렇게 새어 나왔다.
- *
- * 여기서는 한 번만 훑으며 상태를 들고 간다 — 글자열 안의 `//` 는 주석이
- * 아니고, 주석 안의 따옴표는 글자열이 아니다.
- */
-function bareCode(file) {
-  const text = fs.readFileSync(path.join(ROOT, "js", file), "utf8");
-  let out = "";
-  let i = 0;
-
-  while (i < text.length) {
-    const two = text.slice(i, i + 2);
-
-    if (two === "/*") {
-      const end = text.indexOf("*/", i + 2);
-      const stop = end === -1 ? text.length : end + 2;
-      out += text.slice(i, stop).replace(/[^\n]/g, " ");
-      i = stop;
-      continue;
-    }
-    if (two === "//") {
-      const end = text.indexOf("\n", i);
-      const stop = end === -1 ? text.length : end;
-      out += " ".repeat(stop - i);
-      i = stop;
-      continue;
-    }
-
-    /* 정규식 리터럴도 글자열이다 — `/^MEDICATION_NAME(_\\d+)?$/` 안의 이름을
-       「이 파일이 쓰는 이름」으로 세면 안 된다. 나눗셈과 가르는 규칙은 앞의
-       마지막 글자다: 값이 올 자리(`(`, `=`, `,`, `return` …)면 정규식이다. */
-    if (text[i] === "/") {
-      const before = out.replace(/\s+$/, "");
-      const last = before.slice(-1);
-      const opensValue = last === "" || "(,=:[!&|?{};+-*%~^".includes(last) || /\breturn$/.test(before);
-      if (opensValue) {
-        let j = i + 1;
-        let inClass = false;
-        while (j < text.length) {
-          if (text[j] === "\\") j += 2;
-          else if (text[j] === "[") (inClass = true), (j += 1);
-          else if (text[j] === "]") (inClass = false), (j += 1);
-          else if (text[j] === "/" && !inClass) break;
-          else if (text[j] === "\n") break; // 정규식이 아니었다
-          else j += 1;
-        }
-        if (text[j] === "/") {
-          out += text.slice(i, j + 1).replace(/[^\n]/g, " ");
-          i = j + 1;
-          continue;
-        }
-      }
-    }
-
-    const quote = text[i];
-    if (quote === '"' || quote === "'" || quote === "`") {
-      let j = i + 1;
-      while (j < text.length && text[j] !== quote) {
-        if (text[j] === "\\") j += 1;
-        if (quote !== "`" && text[j] === "\n") break; // 안 닫힌 따옴표에 끌려가지 않는다
-        j += 1;
-      }
-      out += text.slice(i, j + 1).replace(/[^\n]/g, " ");
-      i = j + 1;
-      continue;
-    }
-
-    out += text[i];
-    i += 1;
-  }
-  return out;
-}
 
 function declaredIn(code) {
   const names = new Set();
@@ -152,7 +69,7 @@ test("**화면이 쓰는 대문자 이름이 그 화면에 실려 있다**", () 
     const known = new Set(BUILT_IN);
     const codes = new Map();
     for (const file of files) {
-      const code = bareCode(file);
+      const code = bareCode(read(path.join("js", file)));
       codes.set(file, code);
       for (const name of declaredIn(code)) known.add(name);
     }
