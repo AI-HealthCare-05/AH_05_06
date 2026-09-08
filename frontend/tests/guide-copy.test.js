@@ -359,3 +359,94 @@ test("**판독값이 든다는 것과 못 고친다는 것은 다르다**", () =
     "판독값이 어디에 채워지는지 안 알려 준다",
   );
 });
+
+/* ── 실제로 나가는 글 — KEY-258 ─────────────────────────────────────────
+ *
+ * 고칠 수 있게 해 놓고 **그 글이 안내문에 어떻게 나가는지 볼 길이 없었다.**
+ * 저장만 되고, 확인하려면 진료를 하나 열어 봐야 했다.
+ *
+ * 여기서 재는 것은 **화면이 셈하지 않는다**는 것이다. 셈하는 순간 규칙이 두
+ * 벌이 되고, 이 저장소는 그 갈림으로 이미 여러 번 데었다.
+ */
+
+test("미리보기는 서버가 준 값을 그대로 쓴다 — 화면이 셈하지 않는다", () => {
+  const { copyPreview } = load("api", "settings-rail", "guide-copy-rules");
+
+  /* 서버가 「나갈 글」과 다른 답을 줄 수 있다 — 복약지도가 그렇다. 화면이
+     `body || origin` 을 다시 셈하면 그 차이를 지운다. */
+  const section = { section_key: "medication", origin: "원본", body: "고친 글", preview: "서버가 지은 글" };
+
+  assert.equal(copyPreview(section), "서버가 지은 글");
+});
+
+test("옛 응답에는 그 칸이 없다 — 그때는 나갈 글로 떨어진다", () => {
+  const { copyPreview, copyShown } = load("api", "settings-rail", "guide-copy-rules");
+
+  /* 빈 칸을 「나갈 글이 없다」로 보이는 것보다 낫다. */
+  const section = { section_key: "caution", origin: "원본", body: "고친 글" };
+
+  assert.equal(copyPreview(section), copyShown(section));
+  assert.equal(copyPreview({ section_key: "caution", origin: "원본", body: null }), "원본");
+  assert.equal(copyPreview(null), "");
+});
+
+test("목업이 서버와 같은 규칙으로 짓는다 — 🚨 응급에는 고친 글이 안 얹힌다", async () => {
+  const box = load("api", "settings-rail", "guide-copy-rules", "catalog-api", { search: "?mock=1" });
+  const page = await box.catalogApi.guideCopy();
+  const row = page.items[0];
+  const at = (key) => row.sections.find((s) => s.section_key === key);
+
+  /* 안 고쳤을 때 — 넷 다 원본이 나간다 */
+  for (const key of ["medication", "caution", "emergency", "life"]) {
+    assert.equal(at(key).preview, at(key).origin, `${key} 가 원본과 다르다`);
+  }
+
+  await box.catalogApi.saveCopy(row.prescription_set_id, "caution", "원장님이 고친 주의사항");
+  const after = (await box.catalogApi.guideCopy()).items[0];
+  const pick = (key) => after.sections.find((s) => s.section_key === key);
+
+  assert.equal(pick("caution").preview, "원장님이 고친 주의사항", "고친 글이 미리보기에 안 왔다");
+  assert.equal(pick("life").preview, pick("life").origin, "안 고친 갈래가 바뀌었다");
+
+  /* 🚨 **응급에 문구를 억지로 심어도 안 바뀐다.** 화면이 그 갈래를 잠그지만
+     (`editable: false`), 잠금이 풀리는 날 조용히 바뀌면 안 된다 — 서버의
+     `FIXED_SECTIONS` 가 하는 일을 목업도 해야 `?mock=1` 이 같은 답을 낸다. */
+  await box.catalogApi.saveCopy(row.prescription_set_id, "emergency", "원장님이 고친 응급 문장");
+  const last = (await box.catalogApi.guideCopy()).items[0].sections.find((s) => s.section_key === "emergency");
+
+  assert.equal(last.preview, last.origin, "안전 문장에 문구가 얹혔다");
+});
+
+test("화면이 미리보기의 **범위**를 말한다 — 진료가 없다는 사실을 감추지 않는다", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const { codeOnly } = require("./source.js");
+  const src = codeOnly(fs.readFileSync(path.join(__dirname, "..", "js", "settings.js"), "utf8"));
+
+  /* 이 화면에는 진료가 없어 둘을 모른다 — 약 목록과 「누구 문구가 이기나」.
+     「환자가 받는 그대로」라고만 적으면 그 라벨이 거짓이 된다. */
+  assert.ok(src.includes("의원 공통 문구 기준입니다"), "누구 기준인지 안 말한다");
+  assert.ok(src.includes("이 자리에 그 환자의 약이 들어갑니다"), "약 목록이 진료마다 붙는다는 말이 없다");
+  assert.ok(src.includes("이미 승인된 안내문은 다시 만들지 않습니다"), "소급 안 된다는 말이 없다 (인수조건 3)");
+
+  /* 화면이 셈하지 않는다 — `copyPreview` 를 부를 뿐이다. */
+  assert.ok(src.includes("copyPreview(section)"), "미리보기를 규칙 파일에서 안 가져온다");
+});
+
+test("**미리보기가 저장된 글 기준임을 화면이 말한다** — 한금준 님 `#252` 리뷰 ①", () => {
+  /* 미리보기는 서버가 준 `section.preview` 라 **저장해야 움직인다** — 치고 있는
+     글자는 안 비친다(`data-copy` 칸에 미리보기를 다시 그리는 손이 없다).
+     그런데 화면이 그 말을 안 해서, 고치는 사람은 「왜 안 바뀌지」에서 멈춘다.
+
+     **열려 있을 때만** 말한다 — 안 고치는 중에는 「저장하면」이 무슨 소린지 알
+     수 없다. 그 조건까지 함께 잰다. */
+  const src = codeOnly(read("js/settings.js"));
+  const at = src.indexOf("function copyPreviewHtml");
+  assert.notEqual(at, -1, "미리보기를 그리는 자리가 없다");
+  const body = src.slice(at, src.indexOf("\n  }", at)).replace(/\s+/g, " ");
+
+  assert.match(body, /function copyPreviewHtml\(section, open\)/, "열렸는지를 안 받는다");
+  assert.match(body, /저장한 글 기준입니다/, "미리보기가 무엇 기준인지 안 말한다");
+  assert.match(body, /저장해야<\/b> 이 미리보기에 반영됩니다/, "저장해야 반영된다는 말이 없다");
+  assert.match(body, /open \?/, "안 고치는 중에도 「저장하면」이라고 말한다");
+});
