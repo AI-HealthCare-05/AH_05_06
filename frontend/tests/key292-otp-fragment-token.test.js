@@ -96,7 +96,11 @@ async function run(file, { search = "", hash = "", answer = () => ({ ok: false, 
     window: { location, clipboardData: undefined },
     location,
     fetch(url, options) {
-      sent.push({ url, body: options && options.body ? JSON.parse(options.body) : null });
+      sent.push({
+        url,
+        method: (options && options.method) || "GET",
+        body: options && options.body ? JSON.parse(options.body) : null,
+      });
       return Promise.resolve(answer(url, options));
     },
   });
@@ -232,4 +236,70 @@ test("⑦ 저장소에 토큰을 query 로 만드는 자리가 남아 있지 않
       });
   }
   assert.deepStrictEqual(made, [], `토큰을 query 로 만드는 자리가 남았다:\n${made.join("\n")}`);
+});
+
+test("⑨ 여정 어느 요청 주소에도 토큰 원문이 없다 — 유가은 님 `#255` 리뷰", () => {
+  /* 🚩 **이 PR 이 그 유출을 살아 있게 만든다.**
+   *
+   * `checkSession` 이 `GET …/session?link_token=<원문>` 을 보내고 있었다.
+   * 고치기 전에는 실서버가 이 자리에 **도달하지 못해서**(①이 먼저 막았다)
+   * 안 드러났는데, 길을 여는 순간 정상 진입마다 그 요청이 나가고 **nginx
+   * access log 에 원문이 남는다** — 실제 스택에서 확인했다.
+   *
+   *     "GET /api/v1/patient-auth/session?link_token=<원문> HTTP/1.1" 401
+   *
+   * `app/core/masking.py` 가 `token` 을 가려도 그것은 uvicorn 쪽이라 nginx
+   * 로그를 못 막는다. 그래서 후속으로 미루지 않고 여기서 걷는다.
+   *
+   * **한 자리만 재지 않는다** — 화면이 부르는 자리가 늘어나도 잡히도록
+   * 여정에서 나간 **모든** 요청과 이동 주소를 훑는다. */
+  const seen = [];
+  const collect = (ran) => {
+    ran.sent.forEach((call) => seen.push({ what: "요청", url: call.url }));
+    ran.went.forEach((url) => seen.push({ what: "이동", url: url }));
+  };
+
+  return (async () => {
+    const first = await run("otp.html", { search: "?mock=0", hash: "#t=" + TOKEN, answer: liveServer });
+    await first.node("btn-issue").listeners.click();
+    await new Promise((resolve) => setImmediate(resolve));
+    collect(first);
+
+    const next = await run("otp-verify.html", {
+      search: "?expires_at=2026-09-08T12:03:00%2B09:00&retry_after=60",
+      hash: "#t=" + TOKEN,
+      answer: liveServer,
+    });
+    await next.node("resend-btn").listeners.click();
+    await new Promise((resolve) => setImmediate(resolve));
+    collect(next);
+
+    assert.ok(seen.length >= 4, `여정을 못 지났다 — ${seen.length}건`);
+
+    for (const one of seen) {
+      /* 조각(`#t=`)은 **서버로 안 간다** — 브라우저가 안 싣고 access log 에도
+         안 남는다. 그것이 이 화면이 조각을 쓰는 까닭이라 여기서는 빼고 본다. */
+      const addressed = String(one.url).split("#")[0];
+      assert.ok(
+        !addressed.includes(TOKEN),
+        `${one.what} 주소에 토큰 원문이 실렸다 — ${addressed}`,
+      );
+    }
+
+    /* 반대쪽도 잰다 — 안 싣기만 하고 안 보내면 화면이 아예 안 도는 것이다. */
+    const bodies = seen.filter((one) => one.what === "요청");
+    assert.ok(bodies.length >= 3, "서버를 부르는 자리가 사라졌다");
+  })();
+});
+
+test("⑩ 세션 확인은 본문으로 보낸다 — 주소에 실을 자리를 아예 안 만든다", () => {
+  return (async () => {
+    const ran = await run("otp.html", { search: "?mock=0", hash: "#t=" + TOKEN, answer: liveServer });
+    const session = ran.sent.find((call) => call.url.includes("/patient-auth/session"));
+
+    assert.ok(session, "세션 확인을 아예 안 물었다");
+    assert.equal(session.method, "POST", `주소에 실리는 방식으로 되돌아갔다 — ${session.method} ${session.url}`);
+    assert.equal(session.url, "/api/v1/patient-auth/session", "주소에 무언가 붙었다");
+    assert.equal(session.body && session.body.link_token, TOKEN, "본문으로 토큰을 안 보낸다");
+  })();
 });

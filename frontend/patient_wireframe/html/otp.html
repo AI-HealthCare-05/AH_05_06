@@ -310,7 +310,20 @@
   async function checkSession(token) {
     if (!token) return;
     try {
-      var res = await fetch(API_BASE + '/patient-auth/session?link_token=' + encodeURIComponent(token));
+      /* 🚩 **토큰을 주소에 안 싣는다** (유가은 님 `#255` 리뷰).
+       *
+       * 여기는 `?link_token=<원문>` 이었다. 조각 토큰을 읽게 고치기 전에는
+       * 실서버가 이 자리에 도달하지 못했는데, 그 고침이 길을 여는 순간 정상
+       * 진입마다 이 요청이 나가고 **nginx access log 에 원문이 남는다** —
+       * uvicorn 쪽 마스킹으로는 그 로그를 못 막는다.
+       *
+       * 이 화면의 다른 요청(`/context`·`/otp/issue`·`/otp/verify`)이 이미
+       * 같은 까닭으로 본문을 쓴다. 읽기인데 POST 인 것은 그 계약을 따르는 것이다. */
+      var res = await fetch(API_BASE + '/patient-auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_token: token }),
+      });
       if (res.ok) {
         window.location.replace('/guide.html#t=' + encodeURIComponent(token));
         return true;
