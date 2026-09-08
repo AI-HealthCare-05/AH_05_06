@@ -11,7 +11,7 @@ import pytest
 
 from app.models.knowledge import KnowledgeSourceKind
 from app.services.knowledge_sources import MFDS_ENDPOINTS, MfdsDataset, MfdsSnapshotClient, MfdsSnapshotError
-from scripts.ingest_approved_knowledge import _build_request, _read_manifest
+from scripts.ingest_approved_knowledge import _build_request, _mfds_client_for, _read_manifest
 
 
 @pytest.mark.asyncio
@@ -95,6 +95,15 @@ def test_manifest_refuses_embedded_service_key(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="KNOWLEDGE_MANIFEST_SECRET_FORBIDDEN"):
         _read_manifest(manifest)
+
+
+def test_mfds_dataset_key_takes_precedence_over_shared_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MFDS_SERVICE_KEY", "shared-key")
+    monkeypatch.setenv("MFDS_DUR_PRODUCT_SERVICE_KEY", "dataset-key")
+
+    client = _mfds_client_for({"dataset": "dur_product"})
+
+    assert client._service_key == "dataset-key"  # noqa: SLF001 - key selection contract
 
 
 @pytest.mark.asyncio

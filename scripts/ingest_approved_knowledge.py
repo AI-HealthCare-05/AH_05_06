@@ -38,6 +38,11 @@ from app.services.knowledge_sources import MFDS_ENDPOINTS, MfdsDataset, MfdsSnap
 from app.services.knowledge_storage import build_configured_knowledge_store  # noqa: E402
 
 MFDS_SERVICE_KEY_ENV = "MFDS_SERVICE_KEY"
+MFDS_DATASET_SERVICE_KEY_ENVS = {
+    MfdsDataset.DRUG_PRODUCT_APPROVAL: "MFDS_DRUG_PRODUCT_APPROVAL_SERVICE_KEY",
+    MfdsDataset.DUR_INGREDIENT: "MFDS_DUR_INGREDIENT_SERVICE_KEY",
+    MfdsDataset.DUR_PRODUCT: "MFDS_DUR_PRODUCT_SERVICE_KEY",
+}
 _FORBIDDEN_MANIFEST_KEYS = frozenset({"service_key", "servicekey", "api_key", "secret", "password"})
 
 
@@ -61,6 +66,13 @@ def _required_text(source: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"KNOWLEDGE_MANIFEST_{key.upper()}_REQUIRED")
     return value.strip()
+
+
+def _mfds_client_for(source: dict[str, Any]) -> MfdsSnapshotClient:
+    dataset = MfdsDataset(_required_text(source, "dataset"))
+    dataset_key = os.environ.get(MFDS_DATASET_SERVICE_KEY_ENVS[dataset], "")
+    fallback_key = os.environ.get(MFDS_SERVICE_KEY_ENV, "")
+    return MfdsSnapshotClient(service_key=dataset_key or fallback_key)
 
 
 async def _build_request(
@@ -131,10 +143,6 @@ async def run(
         sources = [source for source in sources if source.get("input_type") == only_input_type]
         if not sources:
             raise ValueError("KNOWLEDGE_MANIFEST_FILTER_EMPTY")
-    service_key = os.environ.get(MFDS_SERVICE_KEY_ENV, "")
-    needs_mfds = any(source.get("input_type") == "mfds_api" for source in sources)
-    mfds_client = MfdsSnapshotClient(service_key=service_key) if needs_mfds else None
-
     await Tortoise.init(config=TORTOISE_ORM)
     try:
         ingestion = KnowledgeIngestionService(
@@ -144,6 +152,7 @@ async def run(
             ocr_extractor=ClovaKnowledgeOcrExtractor() if config.clova_enabled else None,
         )
         for source in sources:
+            mfds_client = _mfds_client_for(source) if source.get("input_type") == "mfds_api" else None
             request = await _build_request(source, manifest_dir=manifest_path.parent, mfds_client=mfds_client)
             prepared = await ingestion.ingest(request)
             grade = SourceGrade(str(source.get("source_grade", "C")).upper())

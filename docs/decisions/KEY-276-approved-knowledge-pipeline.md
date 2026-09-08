@@ -68,7 +68,8 @@
 원문 PDF와 실제 JSON snapshot은 저장소에 넣지 않는다. 로컬 manifest는
 `key276-ingestion-manifest.local.json` 이름으로 만들며 `.gitignore`가 이를 막는다.
 형식은 `docs/data/key276-ingestion-manifest.example.json`을 복사해 사용한다. 식약처
-인증키는 manifest·argv·문서에 적지 않고 실행 프로세스의 `MFDS_SERVICE_KEY`로만 넘긴다.
+인증키는 manifest·argv·문서에 적지 않고 실행 프로세스 환경변수로만 넘긴다. 세 API의
+키가 같으면 `MFDS_SERVICE_KEY` 하나를 쓰고, 다르면 아래 데이터셋별 변수를 사용한다.
 
 ```bash
 cp docs/data/key276-ingestion-manifest.example.json key276-ingestion-manifest.local.json
@@ -80,7 +81,9 @@ uv run python scripts/ingest_approved_knowledge.py \
   key276-ingestion-manifest.local.json --only=text_pdf
 
 # 식약처 3종 snapshot만 검토 대기 상태로 적재
-MFDS_SERVICE_KEY='실행할 때만 주입' \
+MFDS_DRUG_PRODUCT_APPROVAL_SERVICE_KEY='실행할 때만 주입' \
+MFDS_DUR_INGREDIENT_SERVICE_KEY='실행할 때만 주입' \
+MFDS_DUR_PRODUCT_SERVICE_KEY='실행할 때만 주입' \
 DB_HOST=127.0.0.1 \
 KNOWLEDGE_MINIO_ENDPOINT=http://127.0.0.1:9000 \
 uv run python scripts/ingest_approved_knowledge.py \
