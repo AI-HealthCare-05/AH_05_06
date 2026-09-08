@@ -22,7 +22,7 @@ set -eu
 
 ALIAS="${1:-team}"
 BUCKET="${MINIO_BUCKET:-ocr-fixtures}"
-KNOWLEDGE_BUCKET="${KNOWLEDGE_MINIO_BUCKET:-}"
+KNOWLEDGE_BUCKET="${KNOWLEDGE_MINIO_BUCKET:-approved-knowledge}"
 
 MC_HOST_VAR="MC_HOST_${ALIAS}"
 case "$ALIAS" in

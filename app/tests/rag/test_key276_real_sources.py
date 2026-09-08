@@ -13,6 +13,8 @@ from app.models.knowledge import KnowledgeSourceKind
 from app.services.knowledge_sources import MFDS_ENDPOINTS, MfdsDataset, MfdsSnapshotClient, MfdsSnapshotError
 from scripts.ingest_approved_knowledge import _build_request, _mfds_client_for, _read_manifest
 
+ROOT = Path(__file__).resolve().parents[3]
+
 
 @pytest.mark.asyncio
 async def test_mfds_snapshot_uses_allowlisted_endpoint_and_never_persists_key() -> None:
@@ -60,6 +62,46 @@ async def test_mfds_failure_exposes_only_safe_error_code() -> None:
 
     assert str(caught.value) == "MFDS_FETCH_FAILED"
     assert marker not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response_json",
+    (
+        {"response": {"body": {"items": [], "totalCount": 0}}},
+        {"response": {"header": {}, "body": {"items": [], "totalCount": 0}}},
+        {"response": {"header": {"resultCode": "00"}}},
+        {"header": {"resultCode": "00"}, "body": {"items": [], "totalCount": 0}},
+    ),
+)
+async def test_mfds_http_200_without_complete_success_envelope_is_rejected(response_json) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=response_json, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(MfdsSnapshotError, match="MFDS_RESPONSE_INVALID"):
+            await MfdsSnapshotClient(service_key="secret", client=client).fetch_snapshot(MfdsDataset.DUR_PRODUCT)
+
+
+@pytest.mark.asyncio
+async def test_mfds_http_200_error_result_is_rejected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "response": {
+                    "header": {"resultCode": "30", "resultMsg": "SERVICE KEY IS NOT REGISTERED"},
+                    "body": {"items": [], "totalCount": 0},
+                }
+            },
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(MfdsSnapshotError, match="MFDS_RESPONSE_REJECTED"):
+            await MfdsSnapshotClient(service_key="secret", client=client).fetch_snapshot(MfdsDataset.DUR_PRODUCT)
 
 
 @pytest.mark.asyncio
@@ -104,6 +146,13 @@ def test_mfds_dataset_key_takes_precedence_over_shared_fallback(monkeypatch: pyt
     client = _mfds_client_for({"dataset": "dur_product"})
 
     assert client._service_key == "dataset-key"  # noqa: SLF001 - key selection contract
+
+
+def test_minio_initializer_always_closes_configured_default_knowledge_bucket() -> None:
+    initializer = (ROOT / "scripts/minio_init.sh").read_text(encoding="utf-8")
+
+    assert 'KNOWLEDGE_BUCKET="${KNOWLEDGE_MINIO_BUCKET:-approved-knowledge}"' in initializer
+    assert 'prepare_private_bucket "$KNOWLEDGE_BUCKET"' in initializer
 
 
 @pytest.mark.asyncio

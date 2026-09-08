@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any, Protocol
 
+from tortoise.timezone import now as db_now
 from tortoise.transactions import in_transaction
 
 from app.models.catalog import ApprovalStatus, SourceGrade
@@ -239,6 +240,8 @@ class TortoiseKnowledgeRepository:
             )
             if not created and version.source_sha256 != source_sha256:
                 raise ValueError("VERSION_CONTENT_MISMATCH")
+            if not created and version.extractor_version != EXTRACTOR_VERSION:
+                raise ValueError("VERSION_EXTRACTOR_MISMATCH")
             attempt = await KnowledgeIngestionAttempt.create(version=version, using_db=connection)
         return PreparedVersion(
             document_id=str(document.document_id),
@@ -258,11 +261,21 @@ class TortoiseKnowledgeRepository:
             raise ValueError("EMBEDDING_DIMENSION_MISMATCH")
         hashes = [sha256(chunk.body.encode("utf-8")).hexdigest() for chunk in chunks]
         async with in_transaction() as connection:
+            version = (
+                await KnowledgeVersion.filter(version_id=prepared.version_id)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if version is None:
+                raise ValueError("KNOWLEDGE_VERSION_NOT_FOUND")
             existing = (
                 await KnowledgeChunkRecord.filter(version_id=prepared.version_id)
                 .using_db(connection)
                 .order_by("position")
             )
+            if version.approval_status is not ApprovalStatus.DRAFT or version.approved_at is not None:
+                raise ValueError("APPROVED_VERSION_IMMUTABLE")
             if len(existing) == len(chunks) and all(
                 row.position == chunk.position
                 and row.body_sha256 == digest
@@ -310,7 +323,7 @@ class TortoiseKnowledgeRepository:
             attempt = await KnowledgeIngestionAttempt.get(attempt_id=attempt_id)
             values["attempt_count"] = attempt.attempt_count + 1
         if retryable:
-            values["next_retry_at"] = datetime.now(UTC) + timedelta(minutes=5)
+            values["next_retry_at"] = db_now() + timedelta(minutes=5)
         await KnowledgeIngestionAttempt.filter(attempt_id=attempt_id).update(**values)
 
 
@@ -325,7 +338,7 @@ class KnowledgeApprovalService:
         verified_at: datetime,
         review_due_at: datetime | None,
     ) -> None:
-        now = datetime.now(UTC)
+        now = db_now()
         if review_due_at is not None and review_due_at <= now:
             raise ValueError("REVIEW_ALREADY_EXPIRED")
         async with in_transaction() as connection:
@@ -334,6 +347,8 @@ class KnowledgeApprovalService:
             )
             if version is None:
                 raise ValueError("KNOWLEDGE_VERSION_NOT_FOUND")
+            if version.approval_status is not ApprovalStatus.DRAFT or version.approved_at is not None:
+                raise ValueError("KNOWLEDGE_VERSION_ALREADY_REVIEWED")
             document = await KnowledgeDocument.filter(document_id=version.document_id).using_db(connection).get()
             if version.source_grade is not SourceGrade.A:
                 raise ValueError("SOURCE_GRADE_NOT_APPROVABLE")

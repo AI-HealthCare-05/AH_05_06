@@ -13,7 +13,7 @@ import json
 import os
 import re
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tortoise import Tortoise  # noqa: E402
+from tortoise.timezone import now as db_now  # noqa: E402
 
 from ai_worker.adapters.knowledge_ocr import ClovaKnowledgeOcrExtractor  # noqa: E402
 from app.core import config  # noqa: E402
@@ -170,11 +171,12 @@ async def run(
             )
             approved = False
             if approved_by is not None and source.get("approve") is True:
+                reviewed_at = db_now()
                 await KnowledgeApprovalService().approve(
                     prepared.version_id,
                     approved_by=approved_by,
-                    verified_at=datetime.now(UTC),
-                    review_due_at=datetime.now(UTC) + timedelta(days=review_days),
+                    verified_at=reviewed_at,
+                    review_due_at=reviewed_at + timedelta(days=review_days),
                 )
                 approved = True
             # 경로·원문·인증키는 출력하지 않는다.

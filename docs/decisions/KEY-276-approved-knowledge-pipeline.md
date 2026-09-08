@@ -22,7 +22,10 @@
 문서 버전은 `DRAFT → APPROVED → DEPRECATED`로 이동한다. 현재 승인본에만
 `current_approved_key=document_id`를 채우고 unique 제약을 걸어 문서당 현행 승인본이
 두 개 생기지 않게 한다. 같은 문서·버전에 다른 바이트를 덮어쓰는 요청은
-`VERSION_CONTENT_MISMATCH`로 막는다. 같은 바이트 재처리는 청크를 중복 생성하지 않는다.
+`VERSION_CONTENT_MISMATCH`로 막는다. 같은 바이트라도 추출기 버전이 바뀌면
+`VERSION_EXTRACTOR_MISMATCH`로 막고 새 `version_label`을 요구한다. 같은 추출기로
+동일하게 재처리한 결과는 청크를 중복 생성하지 않지만, 현재 승인본의 청크 집합이
+달라지는 재처리는 `APPROVED_VERSION_IMMUTABLE`로 거절한다.
 
 ## 입력 계약
 
@@ -31,6 +34,13 @@
 1. 텍스트 PDF: `pypdf`로 페이지별 텍스트와 페이지 번호를 보존한다.
 2. 스캔/이미지: Worker의 CLOVA 어댑터가 텍스트, 좌표, 평균 신뢰도를 넘긴다.
 3. 구조화 API: 원본 JSON snapshot을 MinIO에 보관하고 정렬된 `경로 = 값` 행으로 정규화한다.
+
+현재 CLOVA 공통 어댑터는 단일 이미지만 반환하므로 여러 페이지 스캔 PDF를 조용히
+일부 적재하지 않는다. 2페이지 이상이면 `OCR_MULTIPAGE_NOT_SUPPORTED`로 실패 폐쇄하며,
+페이지별 OCR 어댑터가 도입된 뒤에만 이 제한을 해제한다. `claim_key`·`claim_value`를
+이용한 상충 근거 차단은 검색 계약에 존재하지만, 비정형 원문에서 의미론적 claim을
+자동 추출하는 기능은 이번 티켓 범위가 아니다. 따라서 자동 claim 추출 전까지 claim이
+없는 자료를 상충 판정이 끝난 자료라고 해석하지 않는다.
 
 원문/snapshot은 `approved-knowledge` 버킷의
 `knowledge/{scope}/{source_key}/{version}/{sha256}.source`에 둔다. object key는 URL이
@@ -45,6 +55,10 @@
 - 라이선스 확인이 끝났다.
 - 적재 실행이 `READY`이고 청크가 있다.
 - 검토 만료일을 이미 지난 자료가 아니다.
+
+승인은 최초 의료 검수에서 한 번만 기록한다. 이미 승인·폐기된 버전을 다시 승인하여
+`verified_at`이나 `review_due_at`을 연장할 수 없으며, 갱신이 필요하면 새 버전을 적재하고
+다시 검수한다.
 
 검색은 승인 상태, 현행 버전, A등급, 라이선스, 검증일, 병원 범위, section, 검토
 유효기간, 고정 임베딩 모델·revision·차원을 모두 검사한다. 결과에는 문서/청크 ID,
@@ -70,6 +84,9 @@
 형식은 `docs/data/key276-ingestion-manifest.example.json`을 복사해 사용한다. 식약처
 인증키는 manifest·argv·문서에 적지 않고 실행 프로세스 환경변수로만 넘긴다. 세 API의
 키가 같으면 `MFDS_SERVICE_KEY` 하나를 쓰고, 다르면 아래 데이터셋별 변수를 사용한다.
+식약처가 HTTP 200을 반환하더라도 정상 `response.header.resultCode`와 `response.body`가
+모두 확인되지 않으면 snapshot으로 저장하지 않는다. 오류 예외에는 요청 URL이나 인증키를
+원인 예외 사슬로도 남기지 않는다.
 
 ```bash
 cp docs/data/key276-ingestion-manifest.example.json key276-ingestion-manifest.local.json
@@ -94,10 +111,15 @@ uv run python scripts/ingest_approved_knowledge.py \
 `--approved-by`를 명시한 경우에만 현재 승인본으로 전환된다. 즉 자료 적재와 의료
 검수 승인을 같은 행위로 취급하지 않는다.
 
-2026-09-08 로컬 실제 적재 확인에서는 두 공개 PDF가 private MinIO에 저장됐고,
-MySQL에 문서 2건·버전 2건·검색 청크 1,351건·READY 실행 2건이 생성됐다. 원문,
-로컬 경로, 자격증명은 실행 출력과 이 문서에 기록하지 않았다. 식약처 snapshot은
-인증키를 로컬 프로세스에 주입한 뒤 같은 명령으로 별도 적재한다.
+2026-09-08 로컬 실제 적재 확인에서는 두 공개 PDF와 식약처 API 3종 snapshot이
+private MinIO에 저장됐다. MySQL에는 문서 5건·버전 5건·검색 청크 2,030건·READY 실행
+5건이 생성됐다. 이는 의료 검수 전 `ready_for_review` 상태이며 승인 완료를 뜻하지 않는다.
+원문, 로컬 경로, API 응답 원본, 자격증명은 실행 출력·문서·커밋에 기록하지 않았다.
+
+KEY-82 합성 검색 평가는 결과 코드·Recall@3·Precision@3·경로 정확도 100%, 금지 근거
+진입 0건으로 통과했고 결과 checksum은
+`0a6c9161d77a65dbf860c3d4d7eaf9c0efe5ee768bced68db514f5716da87bb5`다. 다만 지정
+리뷰어의 생성 연결 승인은 아직 전이므로 생성·챗봇 연결 차단은 계속 유지한다.
 
 ```bash
 uv sync --group app --group dev

@@ -61,15 +61,19 @@ class MfdsSnapshotError(RuntimeError):
 def _response_body(parsed: Any) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise MfdsSnapshotError("MFDS_RESPONSE_INVALID")
-    response = parsed.get("response", parsed)
+    response = parsed.get("response")
     if not isinstance(response, dict):
         raise MfdsSnapshotError("MFDS_RESPONSE_INVALID")
-    header = response.get("header", {})
-    if isinstance(header, dict):
-        code = str(header.get("resultCode", header.get("result_code", "00")))
-        if code not in {"00", "0", "0000"}:
-            raise MfdsSnapshotError("MFDS_RESPONSE_REJECTED")
-    body = response.get("body", response)
+    header = response.get("header")
+    if not isinstance(header, dict):
+        raise MfdsSnapshotError("MFDS_RESPONSE_INVALID")
+    raw_code = header.get("resultCode", header.get("result_code"))
+    if raw_code is None:
+        raise MfdsSnapshotError("MFDS_RESPONSE_INVALID")
+    code = str(raw_code)
+    if code not in {"00", "0", "0000"}:
+        raise MfdsSnapshotError("MFDS_RESPONSE_REJECTED")
+    body = response.get("body")
     if not isinstance(body, dict):
         raise MfdsSnapshotError("MFDS_RESPONSE_INVALID")
     return body
@@ -79,8 +83,12 @@ def _total_count(body: dict[str, Any]) -> int:
     value = body.get("totalCount", body.get("total_count", 0))
     try:
         total = int(value or 0)
-    except (TypeError, ValueError) as exc:
-        raise MfdsSnapshotError("MFDS_RESPONSE_INVALID") from exc
+    except (TypeError, ValueError):
+        invalid_count = True
+    else:
+        invalid_count = False
+    if invalid_count:
+        raise MfdsSnapshotError("MFDS_RESPONSE_INVALID")
     if total < 0:
         raise MfdsSnapshotError("MFDS_RESPONSE_INVALID")
     return total
@@ -133,8 +141,14 @@ class MfdsSnapshotClient:
                     )
                     response.raise_for_status()
                     body = _response_body(response.json())
-                except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
-                    raise MfdsSnapshotError("MFDS_FETCH_FAILED") from exc
+                except (httpx.HTTPError, ValueError, json.JSONDecodeError):
+                    fetch_failed = True
+                else:
+                    fetch_failed = False
+                if fetch_failed:
+                    # 예외를 except 블록 밖에서 새로 만들어 URL(serviceKey 포함)이
+                    # __cause__/__context__ 사슬로 붙는 것까지 막는다.
+                    raise MfdsSnapshotError("MFDS_FETCH_FAILED")
                 pages.append(body)
                 total_count = _total_count(body)
                 if total_count <= page_no * page_size:

@@ -148,6 +148,17 @@ async def extract_scanned_document(
     mime_type: str,
     ocr_extractor: OcrExtractor,
 ) -> tuple[ExtractedChunk, ...]:
+    if mime_type == "application/pdf":
+        try:
+            from pypdf import PdfReader
+
+            page_count = len(PdfReader(BytesIO(payload)).pages)
+        except Exception as exc:
+            raise ValueError("OCR_PDF_INVALID") from exc
+        # 현재 CLOVA 공용 어댑터는 응답 images[0]만 반환한다. 여러 장을 조용히
+        # 일부 적재하는 대신 새 다중 페이지 어댑터가 생길 때까지 실패 폐쇄한다.
+        if page_count != 1:
+            raise ValueError("OCR_MULTIPAGE_NOT_SUPPORTED")
     blocks = await ocr_extractor.extract(payload, mime_type)
     chunks: list[ExtractedChunk] = []
     for block in blocks:
