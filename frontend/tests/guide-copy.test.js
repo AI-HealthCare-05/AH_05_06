@@ -432,3 +432,21 @@ test("화면이 미리보기의 **범위**를 말한다 — 진료가 없다는 
   /* 화면이 셈하지 않는다 — `copyPreview` 를 부를 뿐이다. */
   assert.ok(src.includes("copyPreview(section)"), "미리보기를 규칙 파일에서 안 가져온다");
 });
+
+test("**미리보기가 저장된 글 기준임을 화면이 말한다** — 한금준 님 `#252` 리뷰 ①", () => {
+  /* 미리보기는 서버가 준 `section.preview` 라 **저장해야 움직인다** — 치고 있는
+     글자는 안 비친다(`data-copy` 칸에 미리보기를 다시 그리는 손이 없다).
+     그런데 화면이 그 말을 안 해서, 고치는 사람은 「왜 안 바뀌지」에서 멈춘다.
+
+     **열려 있을 때만** 말한다 — 안 고치는 중에는 「저장하면」이 무슨 소린지 알
+     수 없다. 그 조건까지 함께 잰다. */
+  const src = codeOnly(read("js/settings.js"));
+  const at = src.indexOf("function copyPreviewHtml");
+  assert.notEqual(at, -1, "미리보기를 그리는 자리가 없다");
+  const body = src.slice(at, src.indexOf("\n  }", at)).replace(/\s+/g, " ");
+
+  assert.match(body, /function copyPreviewHtml\(section, open\)/, "열렸는지를 안 받는다");
+  assert.match(body, /저장한 글 기준입니다/, "미리보기가 무엇 기준인지 안 말한다");
+  assert.match(body, /저장해야<\/b> 이 미리보기에 반영됩니다/, "저장해야 반영된다는 말이 없다");
+  assert.match(body, /open \?/, "안 고치는 중에도 「저장하면」이라고 말한다");
+});

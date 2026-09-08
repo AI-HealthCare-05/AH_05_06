@@ -672,7 +672,7 @@
           "</textarea>" +
           '<p class="note">ⓘ 표현만 수정해 주세요 — 새로운 의학 정보를 추가할 수 없습니다</p>' +
           '<p class="note">ⓘ 원본은 지워지지 않습니다 — 「원본으로 되돌리기」로 언제든 돌아갑니다</p>' +
-          copyPreviewHtml(section)
+          copyPreviewHtml(section, open)
         : /* 🚨 응급은 고칠 수 없다(KEY-150) — 읽기 칸으로만 보인다.
              머리에 「수정 불가」가 붙어 있어 이름표가 따로 필요 없다. */
           '<p class="cp__origin">' +
@@ -706,7 +706,7 @@
    *
    * 모르는 것을 아는 척하지 않는다. 지금 보는 것이 무엇 기준인지 적는다 —
    * 「환자가 받는 그대로」라고만 적어 두면 그 라벨이 거짓이 된다. */
-  function copyPreviewHtml(section) {
+  function copyPreviewHtml(section, open) {
     var shown = copyPreview(section);
     if (!shown) return "";
     var isDrug = section.section_key === "medication";
@@ -714,7 +714,11 @@
       '<div class="cp__pv">' +
       '<div class="cp__pvHead"><span class="cp__pvTitle">환자가 받게 될 안내문</span>' +
       '<span class="box__note">' +
+      /* **저장된 글을 보여준다** — 서버가 준 `preview` 라 지금 치고 있는 글자는
+         안 비친다 (한금준 님 `#252` 리뷰 ①). 열려 있을 때만 말한다 — 안 고치는
+         중에는 「저장하면」이 무슨 소린지 알 수 없다. */
       (copyIsMine(section) ? "고치신 문구가 반영된 모습입니다" : "아직 안 고쳤을 때의 모습입니다") +
+      (open ? " · 저장한 글 기준입니다" : "") +
       "</span></div>" +
       (isDrug ? '<p class="cp__pvGhost">처방된 복약 정보<br>1. (약 이름) · (용법) · (처방일수)일분</p>' : "") +
       '<p class="cp__pvBody">' +
@@ -724,6 +728,7 @@
         ? '<p class="note">ⓘ 회색 줄은 진료마다 판독값으로 채워집니다 — 이 자리에 그 환자의 약이 들어갑니다</p>'
         : "") +
       '<p class="note">ⓘ 의원 공통 문구 기준입니다 — 담당 원장님이 따로 고친 문구가 있으면 그 진료에는 그것이 나갑니다</p>' +
+      (open ? '<p class="note">ⓘ 지금 고치고 계신 글은 <b>저장해야</b> 이 미리보기에 반영됩니다</p>' : "") +
       '<p class="note">ⓘ 이미 승인된 안내문은 다시 만들지 않습니다 — 다음에 만드는 안내문부터 반영됩니다</p>' +
       "</div>"
     );

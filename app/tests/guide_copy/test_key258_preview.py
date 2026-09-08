@@ -30,6 +30,7 @@ from tortoise.contrib.test import TestCase
 
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
+from app.dependencies.patient_access import ClinicalActor
 from app.main import app
 from app.models.catalog import (
     ApprovalStatus,
@@ -45,6 +46,7 @@ from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideSection, GuideSectionKey, Visit
 from app.services import guide_defaults
+from app.services.guide_copy import GuideCopyService
 from app.services.guides import GuideService
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
@@ -265,6 +267,119 @@ class PreviewTestCase(TestCase):
         )
         assert written.generated_body.startswith("처방된 복약 정보"), "약 목록 머리가 없다"
         assert "84일분" in written.generated_body, "처방일수가 안 실렸다"
+
+    async def revert(self, staff: Staff, row: PrescriptionSet, section: str = "caution"):
+        async with self.client() as client:
+            return await client.delete(
+                f"/api/v1/guide-copy/{row.prescription_set_id}/{section}",
+                headers=await self.headers(staff),
+            )
+
+    async def test_reverting_a_doctors_wording_falls_back_to_the_clinic_copy(self) -> None:
+        """🚩 **되돌린 뒤에도 미리보기와 생성이 같다** — 한금준 님 `#252` 리뷰 ②.
+
+        겹치는 규칙(`{**의원공통, **담당의사}`)이 이 티켓에서 새로 생겼다. 그
+        규칙은 **덮을 때**만 재고 있었다 — 덮은 것을 걷었을 때 두 쪽이 같이
+        내려오는지는 아무도 안 봤다. `revert()` 는 원본을 베껴 넣지 않고 **줄을
+        지우므로**(`guide_copy.py`) 그 아래 있던 의원 공통이 드러나야 한다.
+
+        **서비스로 부른다.** 원장별 문구는 아직 화면에 안 열려 있어서
+        (`guide_copy_routers.py` 의 `_writer` 가 늘 `None` 을 준다 — 「지금 화면에는
+        고르는 칸이 없어 늘 의원 공통이다」) HTTP 로는 그 줄을 만들 길이 없다.
+        **읽기는 이미 `doctor_id` 를 받으므로** 겹치는 규칙 자체는 지금도 산다 —
+        그 규칙을 여기서 못 박아 두면 원장별 문구가 열리는 날 조용히 안 어긋난다.
+        """
+        row = await self.a_set(SET_NAME)
+        for section in (CautionSectionKey.CAUTION, CautionSectionKey.LIFE, CautionSectionKey.MEDICATION):
+            await self.an_origin(row, section, body=f"[합성] 승인된 {section.value} 문구")
+        await self.an_origin(row, CautionSectionKey.EMERGENCY, body="[합성] 승인된 응급 문장")
+
+        doctor = await self.a_staff(["doctor"], "key258-revert-doc")
+        #: **부르는 자리마다 형이 다르다.** `GuideCopyService` 는 `ClinicalActor`
+        #: 를 받고, `GuideService.generate` 는 `user_id` 까지 본다 — 그래서 이
+        #: 파일에 `_Actor` 가 따로 있다.
+        actor = ClinicalActor(
+            staff_id=doctor.staff_id,
+            hospital_id=doctor.hospital_id,
+            roles=frozenset(doctor.roles or []),
+        )
+        service = GuideCopyService()
+        set_id = row.prescription_set_id
+        key = CautionSectionKey.CAUTION
+
+        await service.save(
+            actor, doctor_id=None, prescription_set_id=set_id, section_key=key, body="의원 공통 주의 문구"
+        )
+        await service.save(
+            actor,
+            doctor_id=doctor.staff_id,
+            prescription_set_id=set_id,
+            section_key=key,
+            body="원장님이 고친 주의 문구",
+        )
+
+        async def preview_for(doctor_id: int | None) -> str:
+            rows = await service.list(actor, doctor_id=doctor_id)
+            for item in rows:
+                if item.prescription_set_id == set_id:
+                    for part in item.sections:
+                        if part.section_key is key:
+                            return part.preview
+            raise AssertionError("그 절이 없다")
+
+        #: ① 덮여 있는 동안 — 원장님 것이 보인다.
+        assert await preview_for(doctor.staff_id) == "원장님이 고친 주의 문구"
+        #: 의원 공통 쪽은 그대로다 — 덮은 것이 아래를 지우지 않는다.
+        assert await preview_for(None) == "의원 공통 주의 문구"
+
+        #: ② 걷는다.
+        await service.revert(actor, doctor_id=doctor.staff_id, prescription_set_id=set_id, section_key=key)
+
+        after = await preview_for(doctor.staff_id)
+        assert after == "의원 공통 주의 문구", f"되돌렸는데 의원 공통으로 안 내려왔다 — {after!r}"
+
+        #: ③ **생성도 같이 내려왔는가.** 이것이 이 검사의 값이다.
+        visit = await self.a_visit_ready_for_generation(doctor, row)
+        guide = await GuideService().generate(_Actor(doctor), visit.visit_id)
+        written = {
+            str(part.section_key): part.generated_body
+            for part in await GuideSection.filter(guide_document_id=guide.guide_document_id)
+        }
+        assert written[GuideSectionKey.CAUTION.value] == after, (
+            f"되돌린 뒤 미리보기와 생성이 갈렸다 — "
+            f"미리보기 {after!r} vs 생성 {written[GuideSectionKey.CAUTION.value]!r}"
+        )
+
+    async def test_reverting_when_there_is_no_clinic_copy_shows_the_origin(self) -> None:
+        """공통 문구가 없으면 **승인된 원본**까지 내려간다 — 그 끝도 같아야 한다.
+
+        이쪽은 화면으로 갈 수 있는 길이라 HTTP 로 잰다 — `_writer` 가 주는
+        의원 공통 자리가 곧 지금 화면이 고치는 그 자리다.
+        """
+        row = await self.a_set(SET_NAME)
+        for section in (CautionSectionKey.CAUTION, CautionSectionKey.LIFE, CautionSectionKey.MEDICATION):
+            await self.an_origin(row, section, body=f"[합성] 승인된 {section.value} 문구")
+        await self.an_origin(row, CautionSectionKey.EMERGENCY, body="[합성] 승인된 응급 문장")
+
+        doctor = await self.a_staff(["doctor"], "key258-revert-bare")
+        await self.save(doctor, row, "화면에서 고친 주의 문구", "caution")
+        assert (await self.sections_of(doctor, row))["caution"]["preview"] == "화면에서 고친 주의 문구"
+
+        assert (await self.revert(doctor, row, "caution")).status_code == 200
+        after = await self.sections_of(doctor, row)
+
+        origin = f"[합성] 승인된 {CautionSectionKey.CAUTION.value} 문구"
+        assert after["caution"]["preview"] == origin, f"원본까지 안 내려왔다 — {after['caution']['preview']!r}"
+
+        visit = await self.a_visit_ready_for_generation(doctor, row)
+        guide = await GuideService().generate(_Actor(doctor), visit.visit_id)
+        written = {
+            str(part.section_key): part.generated_body
+            for part in await GuideSection.filter(guide_document_id=guide.guide_document_id)
+        }
+        assert written[GuideSectionKey.CAUTION.value] == origin, (
+            f"생성이 원본으로 안 내려왔다 — {written[GuideSectionKey.CAUTION.value]!r}"
+        )
 
     async def a_visit_ready_for_generation(self, staff: Staff, row: PrescriptionSet) -> Visit:
         """생성이 통과할 만큼만 세운다 — **처방 행은 안 만든다.**
