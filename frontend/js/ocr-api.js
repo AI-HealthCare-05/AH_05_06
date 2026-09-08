@@ -60,11 +60,21 @@ var ocrApi = {
   /* 판독이 못 읽은 값을 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
      **고치기(PATCH)와 다른 길이다.** 저쪽은 있는 줄의 값을 바꾸고, 이쪽은 줄
      자체가 없는 것을 만든다 — 그래서 번호가 아니라 항목 이름으로 짚는다. */
-  writeField: function (visitId, fieldType, value) {
-    if (MOCK) return mockWriteField(visitId, fieldType, value);
+  /* `unit` 은 **처방일수 줄에만** 뜻이 있다 — 서버가 그 밖에는 400
+     (`UNIT_NOT_ALLOWED`)을 낸다. 안 주면 아예 안 싣는다: 빈 값을 보내면
+     서버가 「모른다로 되돌려 달라」로 읽는데 그 길은 아직 안 열려 있다.
+
+     🚩 **이 인자가 없어서 반쪽이었다** (이희진 님 `#251` 리뷰 ①). 서버는
+     `WriteOcrFieldRequest` 로 문을 열어 두었는데 화면 클라이언트가 안 보내서,
+     판독이 처방일수를 통째로 못 읽은 진료 — 스탭이 손으로 「3」을 치는, 이
+     티켓이 막으려던 바로 그 자리 — 에서 단위가 `None` 으로 저장됐다. */
+  writeField: function (visitId, fieldType, value, unit) {
+    if (MOCK) return mockWriteField(visitId, fieldType, value, unit);
+    var body = { value: value };
+    if (unit) body.unit = unit;
     return request(
       "/visits/" + encodeURIComponent(visitId) + "/ocr-fields/" + encodeURIComponent(fieldType),
-      { method: "PUT", body: { value: value } },
+      { method: "PUT", body: body },
     );
   },
 
@@ -420,10 +430,40 @@ function mockGhostEdit() {
   field.modified_at = "2026-08-13T10:41:00+09:00";
 }
 
+/** 단위가 서버에서 거절될 요청인가 — 거절이면 그 `ApiError`, 아니면 `null`.
+ *
+ * **두 문을 다 흉내낸다.** DTO 가 값의 **모양**(`DurationUnit` — 일·통)을,
+ * 서비스가 붙일 **자리**(처방일수 줄만)를 막는다. 한쪽만 있으면 `?mock=1` 이
+ * 통과시키는 요청을 진짜 서버가 거절한다.
+ *
+ * 보정(PATCH)과 직접입력(PUT) **둘이 같은 규칙을 쓴다** — 서버도 그렇다
+ * (`UpdateOcrFieldRequest`·`WriteOcrFieldRequest` 가 같은 `DurationUnit` 을
+ * 쓰고, 자리 검사는 서비스 한 곳에 있다). 두 벌로 두면 한쪽만 고쳐진다.
+ */
+function unitRefusal(fieldType, unit) {
+  if (unit === undefined || unit === null) return null;
+  if (["일", "통"].indexOf(unit) === -1) return new ApiError("VALIDATION_ERROR", 422, {});
+  if (!/^DURATION_DAYS(_\d+)?$/.test(String(fieldType))) return new ApiError("UNIT_NOT_ALLOWED", 400, {});
+  return null;
+}
+
 function mockPatch(fieldId, body) {
   var field = mockFieldById(fieldId);
   if (!field) return new ApiError("NOT_FOUND", 404, {});
-  if (field.is_confirmed) return new ApiError("OCR_FIELD_CONFIRMED", 409, {});
+  /* **확정돼도 고칠 수 있다** — 서버가 KEY-273 에서 그렇게 바뀌었는데
+     (`app/ocr/service.py` 의 「확정돼도 고칠 수 있다」 주석) 목업만 409 로
+     남아 있었다. 목업이 서버보다 **좁으면** 그 갈래를 `?mock=1` 로 검수할 수
+     없다 — 확정 뒤에 단위가 틀린 것을 알아차리는 것이 KEY-285 의 한복판이다. */
+  /* 처방일수 단위 — KEY-285. 서버가 두 문으로 막는다:
+     DTO 가 값의 **모양**(`DurationUnit` — 일 · 통)을, 서비스가 붙일 **자리**를.
+
+     🚩 **버전 확인보다 앞이다** (이희진 님 `#251` 리뷰 ②). 실서버는 pydantic 이
+     DB 를 건드리기 전에 요청 전체를 검증하므로, 잘못된 단위 + 낡은 base_version
+     이 같이 오면 **늘 422** 다. 목업이 409 를 먼저 내면 `?mock=1` 로 그 조합을
+     검수한 사람이 실서버와 다른 코드를 보게 된다. */
+  var refused = unitRefusal(field.field_type, body.unit);
+  if (refused) return refused;
+
   if (field.version !== body.base_version) return new ApiError("VERSION_CONFLICT", 409, {});
 
   /* 사람이 보낼 수 있는 상태는 둘뿐이다 — 「이번엔 안 했다」와 그 되돌리기.
@@ -457,6 +497,7 @@ function mockPatch(fieldId, body) {
   if (
     (body.corrected_value === undefined || body.corrected_value === null) &&
     (body.candidate_id === undefined || body.candidate_id === null) &&
+    (body.unit === undefined || body.unit === null) &&
     !body.confirm
   ) {
     return new ApiError("INVALID_REQUEST", 400, {});
@@ -481,8 +522,16 @@ function mockPatch(fieldId, body) {
     changed = true;
   }
 
+  /* **단위를 고치는 것은 값을 고치는 것이다.** 숫자가 그대로여도 소진 예정일이
+     통째로 바뀐다(3 → 84). 서버가 그것을 값 수정과 같이 다루므로 목업도 같이
+     다룬다 — 판올림도, 고친 사람 도장도. */
+  var unitChanged = body.unit !== undefined && body.unit !== null && field.unit !== body.unit;
+  if (unitChanged) field.unit = body.unit;
+
   if (changed) {
     field.value = field.corrected_value;
+  }
+  if (changed || unitChanged) {
     field.modified_by = 101;
     field.modified_at = "2026-08-13T10:42:00+09:00";
   }
@@ -515,10 +564,15 @@ function mockPatch(fieldId, body) {
 var mockWrittenFields = {};
 var mockCheckAnswers = {};
 
-function mockWriteField(visitId, fieldType, value) {
+function mockWriteField(visitId, fieldType, value, unit) {
   return new Promise(function (resolve, reject) {
     setTimeout(function () {
       if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      /* 보정(PATCH)과 **같은 규칙**으로 막는다 — 서버도 두 문이 같은
+         `DurationUnit` 을 쓰고 자리 검사는 한 곳에 있다. */
+      var refused = unitRefusal(fieldType, unit);
+      if (refused) return reject(refused);
 
       var text = String(value === null || value === undefined ? "" : value).trim();
       var mine = mockWrittenFields[visitId] || (mockWrittenFields[visitId] = {});
@@ -533,6 +587,9 @@ function mockWriteField(visitId, fieldType, value) {
         ocr_field_id: 900000 + Object.keys(mine).length,
         field_type: fieldType,
         value: text,
+        /* 적어 넣은 줄도 단위를 갖는다 — 안 그러면 화면이 다시 그릴 때
+           「단위?」로 돌아가 방금 고른 것이 사라진 것처럼 보인다. */
+        unit: unit || null,
         corrected_value: text,
         extracted_value: null,
         is_confirmed: false,

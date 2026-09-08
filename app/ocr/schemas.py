@@ -3,7 +3,7 @@ from datetime import date, datetime
 from pydantic import Field, model_validator
 
 from app.dtos.base import StrictModel
-from app.models.ocr import OcrDocumentType, OcrJobStatus
+from app.models.ocr import DurationUnit, OcrDocumentType, OcrJobStatus
 
 
 class OcrJobResponse(StrictModel):
@@ -83,13 +83,23 @@ class UpdateOcrFieldRequest(StrictModel):
     base_version: int = Field(ge=1)
     corrected_value: str | None = Field(default=None, max_length=10000)
     candidate_id: int | None = Field(default=None, gt=0)
+    #: **「3」이 3일인지 3통인지** — KEY-285.
+    #:
+    #: `DurationUnit` 으로 받는다. 모르는 글자는 여기서 422 로 막힌다 — 화면의
+    #: `fieldUnit` 이 **서버가 준 단위를 무조건 우선**하므로, 아무 글자나
+    #: 받아 두면 그것이 그대로 사람 눈에 붙는다.
+    #:
+    #: 값과 **따로 보낼 수 있어야 한다.** 숫자는 맞게 읽혔는데 단위만 틀린 것이
+    #: 이 칸이 생긴 까닭이라, `corrected_value` 를 함께 요구하면 스탭이 같은
+    #: 숫자를 굳이 다시 적어야 한다.
+    unit: DurationUnit | None = None
     confirm: bool = False
 
     @model_validator(mode="after")
     def require_one_value_source(self) -> "UpdateOcrFieldRequest":
         if self.corrected_value is not None and self.candidate_id is not None:
             raise ValueError("corrected_value와 candidate_id는 함께 보낼 수 없습니다")
-        if not self.confirm and self.corrected_value is None and self.candidate_id is None:
+        if not self.confirm and self.corrected_value is None and self.candidate_id is None and self.unit is None:
             raise ValueError("수정값 또는 후보를 선택해 주세요")
         if self.corrected_value is not None and not self.corrected_value.strip():
             raise ValueError("corrected_value는 공백일 수 없습니다")
@@ -119,9 +129,13 @@ class WriteOcrFieldRequest(StrictModel):
 
     `value` 가 비면 **그 줄을 지운다**. 잘못 적은 것을 「빈 값으로 적었다」로
     남겨 두면, 안 적은 것과 구별이 안 된다.
+
+    `unit` 은 처방일수를 적을 때 함께 온다 — KEY-285. 「3」만 적고 단위를 안
+    말하면 소진 예정일이 81일 어긋난다(3통 = 84일).
     """
 
     value: str | None = Field(default=None, max_length=10000)
+    unit: DurationUnit | None = None
 
 
 class PreviousOcrFieldResponse(StrictModel):

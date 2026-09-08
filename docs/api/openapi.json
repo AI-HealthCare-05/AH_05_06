@@ -1000,6 +1000,15 @@
         "title": "DrugCatalogSaveRequest",
         "type": "object"
       },
+      "DurationUnit": {
+        "description": "`DURATION_DAYS` 칸의 숫자가 무엇인가 — 「3」이 3일인지 3통인지.\n\n**소진 예정일과 확인 문자 시각이 이 값으로 셈해진다.** 틀리면 문자가\n엉뚱한 날 나간다.\n\n**세트에 붙이지 않는다.** 카탈로그에 같은 뜻의 칸이 있지만\n(`PrescriptionSet.days_mode` — 「의원마다 다르다」) 합성 100행에서 네 세트가\n**전부** 두 단위로 다 나온다. `자궁내막증 · 비잔 (계속)` 만 해도 일수 23 ·\n통수 11 이다. 단위는 세트의 성질이 아니라 **그 진료의 그 줄**의 성질이다.\n\n값이 화면에 그대로 나간다 — `frontend/js/field-labels.js` 의 `fieldUnit` 이\n서버가 준 단위를 무조건 우선한다. 숫자 뒤에 붙는 접미사이므로 「일수」가\n아니라 「일」이다.",
+        "enum": [
+          "일",
+          "통"
+        ],
+        "title": "DurationUnit",
+        "type": "string"
+      },
       "FinalizeOcrResponse": {
         "additionalProperties": false,
         "properties": {
@@ -5163,6 +5172,16 @@
               }
             ],
             "title": "Corrected Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DurationUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5626,8 +5645,18 @@
       },
       "WriteOcrFieldRequest": {
         "additionalProperties": false,
-        "description": "판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.\n\n**고치기(PATCH)와 다른 길이다.** 저쪽은 이미 있는 줄의 값을 바꾸는 것이고,\n이쪽은 **줄 자체가 없는** 것을 만든다. 판독이 못 찾은 항목은 레코드로 남지\n않아서, 화면이 값을 적어도 보낼 곳이 없었다 — 「저장 안 됨」이라 적어 두고\n새로고침하면 사라졌다.\n\n`value` 가 비면 **그 줄을 지운다**. 잘못 적은 것을 「빈 값으로 적었다」로\n남겨 두면, 안 적은 것과 구별이 안 된다.",
+        "description": "판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.\n\n**고치기(PATCH)와 다른 길이다.** 저쪽은 이미 있는 줄의 값을 바꾸는 것이고,\n이쪽은 **줄 자체가 없는** 것을 만든다. 판독이 못 찾은 항목은 레코드로 남지\n않아서, 화면이 값을 적어도 보낼 곳이 없었다 — 「저장 안 됨」이라 적어 두고\n새로고침하면 사라졌다.\n\n`value` 가 비면 **그 줄을 지운다**. 잘못 적은 것을 「빈 값으로 적었다」로\n남겨 두면, 안 적은 것과 구별이 안 된다.\n\n`unit` 은 처방일수를 적을 때 함께 온다 — KEY-285. 「3」만 적고 단위를 안\n말하면 소진 예정일이 81일 어긋난다(3통 = 84일).",
         "properties": {
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DurationUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "value": {
             "anyOf": [
               {
