@@ -31,7 +31,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, course_days, read_but_unconfirmed
+from app.models.ocr import OcrField, OcrResult, course_days, read_but_unconfirmed
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
@@ -46,6 +46,7 @@ from app.models.visits import (
     GuideStatus,
     Visit,
 )
+from app.ocr.utils import assert_latest_ocr_job_ready
 from app.services import guide_defaults
 from app.services.drug_caution import DrugCautionService
 
@@ -112,33 +113,6 @@ def _not_found() -> ApiError:
     """없는 것과 **남의 의원 것**을 같게 답한다 — 존재 여부를 감춘다(계약 §5)."""
     return ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
 
-
-async def _assert_latest_ocr_job_ready(visit_id: int, hospital_id: int) -> OcrJob:
-    """안내 생성 전 최신 비제외 job의 상태를 검증하고 COMPLETED job을 반환한다.
-
-    재업로드가 처리 중·실패이면 이전 확정값만으로 안내가 생성되는 것을 막는다.
-    excluded_from_guide=True job은 직원이 "잘못 올린 문서"로 처리한 것이므로 건너뛴다.
-    """
-    latest_job = (
-        await OcrJob.filter(
-            visit_id=visit_id,
-            hospital_id=hospital_id,
-            excluded_from_guide=False,
-        )
-        .order_by("-created_at")
-        .first()
-    )
-
-    if latest_job is None:
-        raise ApiError("OCR_NOT_CONFIRMED", 422, "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.")
-
-    if latest_job.status == OcrJobStatus.PROCESSING:
-        raise ApiError("OCR_RESULT_NOT_READY", 422, "가장 최근 판독이 아직 처리 중입니다. 완료 후 확정해 주세요.")
-
-    if latest_job.status == OcrJobStatus.FAILED:
-        raise ApiError("OCR_FAILED", 422, "가장 최근 판독이 실패했습니다. 재시도하거나 해당 판독을 제외해 주세요.")
-
-    return latest_job
 
 
 def _medication_body(items: list[PrescriptionItem], guidance: str) -> str:
@@ -245,7 +219,7 @@ class GuideService:
         if visit is None:
             raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
 
-        latest_job = await _assert_latest_ocr_job_ready(visit_id, actor.hospital_id)
+        latest_job = await assert_latest_ocr_job_ready(visit_id, actor.hospital_id)
 
         latest_result = await OcrResult.filter(ocr_job=latest_job).first()
         if latest_result is None:

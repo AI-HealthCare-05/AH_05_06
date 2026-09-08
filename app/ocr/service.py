@@ -35,6 +35,7 @@ from app.ocr.schemas import (
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor
+from app.ocr.utils import assert_latest_ocr_job_ready
 
 
 def _resolved_value(row: dict) -> str | None:
@@ -470,38 +471,12 @@ class TortoiseOcrRepository:
                 "진료 건을 찾을 수 없습니다.",
             )
 
-        # GuideService.generate()와 동일한 기준으로 job을 선택한다.
-        # excluded된 job이나 COMPLETED가 아닌 job으로 처방을 만드는 것을 막는다.
-        job = (
-            await OcrJob.filter(
-                visit_id=visit_id,
-                hospital_id=actor.hospital_id,
-                excluded_from_guide=False,
-                status=OcrJobStatus.COMPLETED,
-            )
-            .order_by("-created_at")
-            .first()
-        )
+        # generate()와 동일한 기준 — assert_latest_ocr_job_ready(app/ocr/utils.py).
+        # PROCESSING·FAILED job이 있으면 여기서 차단해 처방만 서고 안내문은
+        # 영구 차단되는 진료가 생기는 것을 막는다 (KEY-271).
+        job = await assert_latest_ocr_job_ready(visit_id, actor.hospital_id)
 
-        # **소유권과 판독 상태를 나눠서 말한다** — 이희진 님 `#233` 리뷰.
-        #
-        # 「동일 기준」이라 적어 두고 코드가 갈려 있었다. `generate()` 는 진료
-        # 소유권을 **먼저** 보고 404 `VISIT_NOT_FOUND`, 그다음 job 이 없으면
-        # 422 `OCR_NOT_CONFIRMED` 를 낸다. 여기는 둘을 한 질의에 뭉쳐 어느
-        # 쪽이든 404 `NOT_FOUND` 였다.
-        #
-        # **화면에서 글자가 갈린다.** `GENERATE_SAYINGS` 에 `NOT_FOUND` 항목이
-        # 없어서, 스탭은 「확정한 항목이 아직 없습니다 — 값을 확인해 저장한 뒤
-        # 다시 눌러 주세요」 대신 「안내문을 만들지 못했습니다 — 잠시 뒤 다시
-        # 눌러 주세요」를 받는다. 무엇을 해야 하는지가 사라진다.
-        #
-        # 지금은 `PATCH /ocr/jobs/{id}/exclude` 를 부르는 화면이 없어 못 닿는
-        # 자리다. 그 기능이 화면에 붙는 순간 드러난다.
-        #
-        # **뭉쳐서 422 로 바꾸면 안 된다.** 그러면 남의 병원 진료를 물었을 때도
-        # 「확정된 항목이 없다」고 답해, 없는 진료와 아직 안 본 진료가 같은 말이
-        # 된다. 그래서 `generate()` 와 **같은 차례**로 가른다.
-        result = await _result_of(job) if job is not None else None
+        result = await _result_of(job)
         if result is None:
             raise _not_confirmed()
 
