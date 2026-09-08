@@ -168,6 +168,32 @@ test("이번 주에 올라갈 프레임은 안내 화면 대상이 아니다", (
   assert.strictEqual(wrong.join(", "), "", "이번 주에 올라가는데 안내 화면 대상인 프레임");
 });
 
+test("**주석의 예시가 표와 같다** — 갈리면 다음 사람이 표 대신 주석을 믿는다", () => {
+  /* `needsGuideScreen` 주석이 S1-11~13 을 「target < 3 라서 제외되는」 예로 들고
+     있었다. KEY-235 로 다시 재면서 그 셋은 level 2 가 되어 `level === 3` 에
+     애초에 안 걸린다 — 예시가 표와 갈린 채로 남아 있었다 (이희진 님 `#254`).
+
+     주석은 검사가 안 재는 자리라 이렇게 조용히 낡는다. 그러니 잰다. */
+  const src = fs.readFileSync(path.join(ROOT, "js", "frames.js"), "utf8");
+  const note = /\*\*안내 화면을 씌울 대상\*\*([\s\S]*?)\*\//.exec(src);
+  assert.ok(note, "needsGuideScreen 주석을 못 찾았다");
+
+  const climbing = FRAMES.filter((f) => f.level === 3 && f.target < 3).map((f) => f.id);
+  assert.ok(climbing.length, "제외되는 프레임이 하나도 없다 — 주석이 들 예시가 없다");
+  for (const id of climbing) {
+    assert.ok(note[1].includes(id), `주석이 제외 대상 ${id} 를 안 든다`);
+  }
+
+  /* 옛 예시가 되살아나면 주석을 다시 볼 일이다. */
+  for (const id of ["S1-11", "S1-12", "S1-13"]) {
+    assert.notStrictEqual(
+      frameById(id).level,
+      3,
+      `${id} 이 다시 화면 없음이다 — 주석의 옛 예시를 되살릴지 정해야 한다`,
+    );
+  }
+});
+
 test("안내 화면 대상은 지금 화면이 없는 것뿐이다", () => {
   for (const id of GUIDE_SCREEN_FRAMES) {
     const frame = frameById(id);
