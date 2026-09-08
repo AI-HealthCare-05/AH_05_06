@@ -90,11 +90,12 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 
 ```text
 .
-├── ai_worker/          # OCR 판독 워커 (API 서버와 분리)
+├── ai_worker/          # OCR 판독 워커 (API 서버와 분리, 장기 실행 프로세스)
+│   ├── adapters/       # CLOVA OCR 등 외부 어댑터
 │   ├── core/           # 워커 설정 및 로거
-│   ├── models/         # AI 모델 파일 보관
-│   ├── tasks/          # 실제 처리할 작업 정의
-│   └── main.py         # 워커 진입점
+│   ├── schemas/        # 워커 입출력 스키마
+│   ├── tasks/          # OCR 판독·필드 추출 로직
+│   └── main.py         # 워커 진입점 (blpop 루프)
 ├── app/                # FastAPI 서버 코드
 │   ├── apis/           # API 라우터 (v1 버전 관리)
 │   ├── core/           # 서버 설정(pydantic-settings), DB 설정, JWT, Validator
@@ -193,10 +194,15 @@ OCR 흐름까지 재현하려면:
 ### 1. 의존성 설치
 
 ```bash
-uv sync                                 # 전체
-uv sync --group app                     # API 서버만
+uv sync --group app                     # API 서버 — aerich·uvicorn 포함, 로컬 개발의 기본
 uv sync --group worker --group ai       # AI 워커용 (worker·ai 둘 다)
+uv sync                                 # dev 도구(ruff·mypy·pytest)만 — 기본 그룹 설정이 없어 app 은 안 깔린다
 ```
+
+> **`uv sync` 만으로는 `aerich`·`uvicorn` 이 안 깔린다.** 둘 다 `[dependency-groups]` 의
+> `app` 그룹이고 `[tool.uv] default-groups` 가 없어서, 그냥 `uv sync` 는 `dev` 만 설치한다.
+> 아래 `aerich upgrade` 와 `uvicorn` 실행 전에 `uv sync --group app` 을 먼저 돌린다. CI 도
+> `uv sync --group app --frozen` 으로 시작한다.
 
 > **`--group ai` 만으로는 워커가 안 뜬다.** 그 그룹에는 모델 쪽 패키지만 있고
 > `tortoise-orm` 이 없어서 `ModuleNotFoundError: No module named 'tortoise'` 로
@@ -424,13 +430,15 @@ SEED_STAFF_PASSWORD=<로컬전용PW> uv run python scripts/seed.py --mode full  
 
 ## 🧪 테스트 및 품질 관리
 
+스크립트에 실행 권한이 없으므로 `bash` 로 부른다. `--group app` 이 먼저 깔려 있어야 한다.
+
 ```bash
-./scripts/ci/run_test.sh            # pytest + coverage (MySQL 컨테이너 필요)
-./scripts/ci/code_fommatting.sh     # Ruff 포맷 확인
-./scripts/ci/check_mypy.sh          # Mypy 타입 검사
+bash scripts/ci/run_test.sh            # pytest + coverage (MySQL 컨테이너 필요)
+bash scripts/ci/code_fommatting.sh     # Ruff — check --fix + format, 즉 작업 트리를 고친다 (CI 는 --check)
+bash scripts/ci/check_mypy.sh          # Mypy 타입 검사
 ```
 
-**프런트엔드 검사** — 별도 도구 없이 Node 만으로 (파일 73개):
+**프런트엔드 검사** — 별도 도구 없이 Node 만으로:
 
 ```bash
 TZ=Asia/Seoul node --test frontend/tests/*.test.js
