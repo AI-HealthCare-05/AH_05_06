@@ -27,6 +27,28 @@ class PatientLinkIssueResponse(StrictModel):
     demo_only: Literal[True] = True
 
 
+class PatientLinkStateResponse(StrictModel):
+    """링크가 있는가 · 언제까지인가 — KEY-275.
+
+    **주소가 없다.** 서버는 원문을 저장하지 않고 `token_digest` 만 갖는다.
+    원문은 발급·재발급 응답에 한 번만 실려 나가고, 그 뒤로는 세상 어디에도
+    되물을 데가 없다. 늘 보이게 하려면 원문을 저장해야 하는데, 그러면 DB 가
+    새는 순간 **살아 있는 환자 링크가 통째로 넘어간다.**
+
+    그래서 두 화면(문자 설정 S1-14 · 현황 D1-6)이 나눠 갖는 것은 상태뿐이다.
+    상태는 서버가 갖고 있으므로 두 화면이 저절로 맞는다 — 한쪽에서 새로
+    만들면 다른 쪽도 새 만료일로 바뀐다.
+
+    **폐기한 링크도 `issued=True` 다.** `revoke` 는 행을 지우지 않고
+    `expires_at` 을 지금으로 당긴다(`patient_links.py`). 화면은 그것을 「기한
+    지남」으로 읽고 [새 링크] 를 내민다 — 「아직 없음」으로 보이면 스탭이
+    **방금 자기가 폐기한 것을 못 만든 것으로** 읽는다.
+    """
+
+    issued: bool
+    expires_at: datetime | None = None
+
+
 class PatientGuideSectionResponse(StrictModel):
     key: GuideSectionKey
     body: str

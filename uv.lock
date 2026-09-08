@@ -68,7 +68,7 @@ dev = [
 ]
 worker = [
     { name = "asyncmy" },
-    { name = "fastapi", extra = ["standard"] },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "orjson" },
     { name = "pyjwt" },
@@ -118,7 +118,7 @@ dev = [
 ]
 worker = [
     { name = "asyncmy", specifier = ">=0.2.11" },
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.128.0" },
+    { name = "fastapi", specifier = ">=0.128.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "orjson", specifier = ">=3.11.5" },
     { name = "pyjwt", specifier = ">=2.10.1" },

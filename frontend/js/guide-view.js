@@ -698,7 +698,10 @@ function smsRightHtml(plan) {
     '<p class="sms__meta">변수 치환 후 ' +
     esc(kind.bytes + "바이트 · " + kind.label) +
     "</p></div>" +
-    '<p class="sms__note">ⓘ 링크는 발송 시 이 환자 · 이 건의 고유 주소로 발급됩니다 (3일 만료) — 미리보기는 예시입니다</p>' +
+    /* **「3일」이 아니다** — `LINK_TTL` 이 168 시간(7일)이다(KEY-223, `#224`).
+       바로 아래 링크 블록이 실제 만료일을 띄우므로, 이 줄이 3일이라고 하면
+       **같은 화면 안에서 대놓고 어긋난다.** */
+    '<p class="sms__note">ⓘ 링크는 발송 시 이 환자 · 이 건의 고유 주소로 발급됩니다 (7일 만료) — 미리보기는 예시입니다</p>' +
     "</section>"
   );
 }
@@ -712,6 +715,10 @@ function smsScreenHtml(plan) {
     "</div>" +
     '<div class="sms__side sms__side--right">' +
     smsRightHtml(plan) +
+    /* **문구 블록 아래에 링크 블록** — 문구의 `{링크}` 가 이것이다(KEY-275).
+       규칙도 모양도 `patient-link-view.js` 가 갖는다. 현황 화면도 같은 것을
+       그린다 — 두 벌이면 같은 링크가 화면마다 다르게 보인다. */
+    patientLinkBlockHtml(plan.link || null, plan.guideStatus, new Date()) +
     "</div></div>"
   );
 }
@@ -771,6 +778,10 @@ function smsStateNow(seed) {
     canSave: base.canSave !== false,
     lockedSaying: base.lockedSaying || "",
     saying: base.saying || "",
+    /* 링크 블록이 읽는 둘 — KEY-275. **이 함수가 안 통과시키면 블록이 늘
+       「아직 없음」이다**(안 넘긴 값은 `undefined` 라 승인 여부를 못 본다). */
+    guideStatus: base.guideStatus || "",
+    link: base.link || null,
     text: st.texts[st.picked] !== undefined ? st.texts[st.picked] : smsDefaultText(st.picked),
   };
 }
