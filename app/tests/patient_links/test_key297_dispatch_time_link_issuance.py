@@ -109,10 +109,11 @@ class TestRotationInvalidatesTheOldOtpChallenge(TestCase):
         link = await PatientGuideLink.get(guide_document_id=guide.guide_document_id)
 
         secret = "synthetic-key297-test-secret"
+        salt = "aa" * 16  # 유효한 hex 문자열 — _otp_digest가 bytes.fromhex로 읽는다
         await PatientOtpChallenge.create(
             patient_guide_link_id=link.patient_guide_link_id,
-            otp_digest=_otp_digest("000000", "synthetic-salt", secret),
-            otp_salt="synthetic-salt",
+            otp_digest=_otp_digest("000000", salt, secret),
+            otp_salt=salt,
             expires_at=now() + OTP_TTL,
             issued_at=now(),
         )
