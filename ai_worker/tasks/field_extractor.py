@@ -16,11 +16,18 @@ from decimal import Decimal
 from typing import Any
 
 from ai_worker.adapters.clova import ClovaOcrResult
-from app.models.ocr import OcrDocumentType
+from app.models.ocr import DAYS_PER_PACK, OcrDocumentType
 
 # 정규식 단독 매칭값의 신뢰도 (KEY-187: is_low_confidence 임계값 0.75보다 낮게 설정).
 # CLOVA 블록에서 직접 읽은 값은 해당 블록의 inferConfidence를 사용한다.
 _DEFAULT_CONFIDENCE = Decimal("0.70")
+
+#: 문서가 스스로 「일」이라고 말한 자리에 적어 두는 단위 — KEY-291.
+#:
+#: 환산은 읽는 쪽 `app.models.ocr.course_days` 한 곳에서만 한다. 추출기가 할
+#: 일은 **문서가 무엇이라 말했는지 그대로 적는 것**뿐이다. 말하지 않은 자리
+#: (EMR 「총투」)는 `None` 으로 두어 사람이 고르게 한다.
+_UNIT_DAYS = "일"
 
 
 @dataclass
@@ -308,34 +315,65 @@ def detect_document_type(
 #: **그래도 이 선으로 곱하지 않는다.** 실제 의원이 7일치를 처방하면
 #: `7 × 28 = 196일` 짜리 안내문이 나간다 — 방금 걷어낸 `× 28` 과 같은 부류를
 #: 방향만 바꿔 다시 만드는 셈이다. 곱하는 대신 **사람 눈에 걸리게** 한다.
-_DURATION_AMBIGUOUS_BELOW = 28
+_DURATION_AMBIGUOUS_BELOW = DAYS_PER_PACK
+
+#: 처방일수 항목 이름. 둘째 약부터 접미사가 붙는다(`DURATION_DAYS_2`).
+_DURATION_FIELD = re.compile(r"^DURATION_DAYS(_\d+)?$")
 
 
 def _flag_ambiguous_duration(fields: list[ExtractedField]) -> list[ExtractedField]:
-    """단위를 모르는 짧은 처방일수를 「확인 필요」로 내린다 — KEY-291.
+    """**단위를 모르는** 짧은 처방일수를 「확인 필요」로 내린다 — KEY-291.
+
+    명세가 정한 선이다 — `docs/synthetic-data-spec.md:247` 「`28` 미만이면
+    확인을 여쭙는다」. 뜻은 `SYN-PCOS-02` 가 말해 준다: 총투 원문 `1/1/3` 이
+    통수면 84일인데 일수로 읽으면 3일이다. **작은 수가 수상한 까닭은 단위를
+    모르기 때문**이다.
+
+    그래서 **아는 자리는 안 묻는다** (이희진 님 `#259` 리뷰). 헤더가
+    「처방일수」인 표나 「84일 처방」 같은 글자에서 온 값은 단위가 확실하고,
+    그 값에는 `unit` 이 찍혀 있다. 확실한 것을 물으면 물음이 값을 잃는다 —
+    판독 신뢰도 0.99 짜리 멀쩡한 3일 처방이 「확인 필요」로 떴다.
 
     **`is_pending_report` 를 안 쓴다.** 그 칸의 뜻은 「추후 보고 예정」이고,
-    화면은 그것을 **확인할 항목에서 빼는** 표시로 쓴다 (`ocr-review.js` 의
-    `renderSummary` — 「할 일이 없는데도 생성이 막힌 채로 남는다」). 여기서
-    하려는 것은 정반대다: 사람이 **보게** 하는 것.
-
-    쓰는 것은 이미 있는 저신뢰 신호다. 서버 임계값(`LOW_CONFIDENCE_THRESHOLD`
-    0.75) 아래로 내리면 화면이 「확인 필요」로 세고, KEY-285 가 붙인 단위
-    선택자에서 사람이 일/통을 고른다. 그 답이 `OcrField.unit` 에 들어가면
-    읽는 쪽 `course_days` 가 비로소 환산한다.
+    화면은 그것을 **확인할 항목에서 빼는** 표시로 쓴다. 여기서 하려는 것은
+    정반대다: 사람이 **보게** 하는 것. 쓰는 것은 이미 있는 저신뢰 신호다
+    (서버 임계값 `LOW_CONFIDENCE_THRESHOLD` 0.75).
 
     **신뢰도를 올리지는 않는다** — 이미 더 낮으면 그대로 둔다.
     """
     for field in fields:
-        if field.field_type != "DURATION_DAYS" or field.unit is not None:
+        #: 둘째 약(`DURATION_DAYS_2`)도 같은 위험을 진다 — 이름이 정확히
+        #: 같을 때만 보면 그 자리에서 안전장치가 조용히 빠진다.
+        if not _DURATION_FIELD.match(field.field_type) or field.unit is not None:
             continue
-        try:
-            read = int(str(field.extracted_value).strip())
-        except (TypeError, ValueError):
-            continue
-        if 0 < read < _DURATION_AMBIGUOUS_BELOW:
+        read = _as_day_count(field.extracted_value)
+        if read is not None and 0 < read < _DURATION_AMBIGUOUS_BELOW:
             field.confidence = min(field.confidence, _DEFAULT_CONFIDENCE)
     return fields
+
+
+def _as_day_count(value: object) -> int | None:
+    """판독 원문에서 일수 숫자를 읽는다. 못 읽으면 `None`.
+
+    `app.models.ocr.course_days` 와 같은 태도다 — 단위 글자가 붙어 올 수 있어
+    (`"3통"`) 숫자만 뽑는 길을 남기되, **값의 뜻을 바꾸는 글자가 붙은 것은
+    거절한다**: `"-5"` 가 `5` 로, `"1.5"` 가 `15` 로 지나가면 안 된다.
+    """
+    text = str(value).strip()
+    #: **먼저 거절한다.** `int("-5")` 는 그냥 통과하므로 뒤에서 걸러서는 늦다 —
+    #: 일수에 음수도 소수도 없다.
+    if _SIGNED_OR_DECIMAL.search(text):
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        pass
+    m = re.search(r"\d+", text)
+    return int(m.group()) if m else None
+
+
+#: 앞에 부호가 붙거나 소수점이 있는 값 — 숫자만 뽑으면 뜻이 바뀐다.
+_SIGNED_OR_DECIMAL = re.compile(r"[-+]\s*\d|\d\s*[.,]\s*\d")
 
 
 def extract_fields(
@@ -681,6 +719,11 @@ def _extract_emr_rx_table(rows: list) -> list[ExtractedField]:
                     ExtractedField(
                         field_type=f"DURATION_DAYS{suffix}",
                         extracted_value=dur.extracted_value,
+                        #: **`_rx_duration` 이 읽은 단위를 여기서 흘리지 않는다.**
+                        #: 지금은 총투 칸에 단위 글자가 안 찍혀 와 늘 `None` 이지만,
+                        #: 그 칸이 언젠가 「3통」을 주기 시작하면 이 자리에서 조용히
+                        #: 지워진다 — KEY-291 이 막으려는 바로 그 종류의 사고다.
+                        unit=dur.unit,
                         confidence=dur.confidence,
                     )
                 )
@@ -877,6 +920,11 @@ def _extract_prescription_fields(
             ExtractedField(
                 field_type=field_type,
                 extracted_value=value,
+                #: **헤더가 단위를 말한다** — 이희진 님 `#259` 리뷰.
+                #: 이 표의 열 이름은 「처방일수」다. 그 아래 「3」은 3일이지
+                #: 3통이 아니다. 안 적어 두면 아래 `_flag_ambiguous_duration`
+                #: 이 확실한 값까지 「확인 필요」로 내린다.
+                unit=_UNIT_DAYS if field_type == "DURATION_DAYS" else None,
                 confidence=Decimal(str(round(fields[value_idx].confidence, 4))),
             )
         )
@@ -907,6 +955,10 @@ def _extract_by_regex(
             ExtractedField(
                 field_type=field_type,
                 extracted_value=value,
+                #: 처방일수 패턴 둘은 글자 「일」을 **요구한다**
+                #: (`(\d{1,3})\s*일\s*(?:처방|분|치)` · `(\d{1,3})\s*일`).
+                #: 그 글자에 걸려 뽑힌 값이니 단위는 확실하다 — KEY-291.
+                unit=_UNIT_DAYS if field_type == "DURATION_DAYS" else None,
                 confidence=_confidence_for(value, clova_result),
             )
         )
