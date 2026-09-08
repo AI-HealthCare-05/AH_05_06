@@ -429,13 +429,15 @@ test("**머리말과 탭이 한 줄이다** — 탭을 아래로 내리면 지�
   assert.match(css, /background:/, "머리말 바탕이 본문과 같다");
 
   /* 판 가장자리까지 펴야 한다 — 안 그러면 가운데만 뜬 띠가 된다.
-     `.pane` 이 18px 24px 을 물고 있으므로 그만큼 되민다. */
+     **숫자를 베끼지 않는다** (KEY-296): 여기 `-18px -24px` 를 적어 두었더니
+     좁은 창에서 판 여백만 12px 로 줄이고 이쪽을 안 고쳐, 머리말이 판 밖으로
+     12px 씩 삐져나갔다. 판이 내놓은 값을 그대로 되민다. */
   const pane = rule(read("css/shell.css"), ".pane");
-  const pad = /padding:\s*(\d+)px\s+(\d+)px/.exec(pane);
-  assert.ok(pad, ".pane 여백을 못 읽었다 — 검사가 헛돈다");
-  assert.ok(
-    css.includes("-" + pad[1] + "px -" + pad[2] + "px"),
-    `머리말이 판 가장자리까지 안 펴진다 — .pane 이 ${pad[1]}px ${pad[2]}px 을 물고 있다`,
+  assert.match(pane, /padding:\s*var\(--pane-pad-y\) var\(--pane-pad-x\)/, "판이 여백을 변수로 안 내놓는다");
+  assert.match(
+    css,
+    /margin:\s*calc\(-1 \* var\(--pane-pad-y[^)]*\)\) calc\(-1 \* var\(--pane-pad-x[^)]*\)\)/,
+    "머리말이 판 가장자리까지 안 펴진다 — 판이 내놓은 여백만큼 되밀어야 한다",
   );
 });
 
@@ -843,14 +845,14 @@ test("**환자 머리는 스크롤해도 붙어 있는다** — 누구인지를 
   assert.match(head, /z-index:/, "아래 내용이 머리 위로 지나간다");
 
   /* 붙는 자리는 판의 위 여백만큼 되민 값이라야 한다 — 0 이면 그만큼 늦게 붙어
-     머리 위로 내용이 한 줄 지나간다. */
+     머리 위로 내용이 한 줄 지나간다. 숫자가 아니라 판이 내놓은 값을 쓴다
+     (KEY-296) — 좁은 창에서 여백이 14px 로 줄어도 따라와야 한다. */
   const pane = rule(read("css/shell.css"), ".pane");
-  const padding = /padding:\s*(\d+)px/.exec(pane);
-  assert.ok(padding, "판의 여백을 못 읽었다 — 검사가 헛돈다");
+  assert.match(pane, /--pane-pad-y:\s*\d+px/, "판이 위 여백을 변수로 안 내놓는다");
   assert.match(
     head,
-    new RegExp(`top:\\s*-${padding[1]}px`),
-    `붙는 자리가 판 여백(${padding[1]}px)과 안 맞는다`,
+    /top:\s*calc\(-1 \* var\(--pane-pad-y[^)]*\)\)/,
+    "붙는 자리가 판 여백을 따라가지 않는다",
   );
 
   /* 스크롤하는 것이 판이어야 sticky 가 산다 */
