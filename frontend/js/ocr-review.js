@@ -2926,6 +2926,7 @@ function stateTakesFocus(tone) {
           var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
           if (anyFailed && !hasSuccess) { renderJobState(anyFailed); return; }
           return loadAllResults(mine).then(function () {
+            if (mine !== loadSeq) return;
             if (anyFailed) renderJobState(anyFailed);
           });
         })
@@ -3014,6 +3015,7 @@ function stateTakesFocus(tone) {
         var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
         if (anyFailed && !hasSuccess) { renderJobState(anyFailed); return null; }
         return loadAllResults(mine).then(function () {
+          if (mine !== loadSeq) return;
           if (anyFailed) renderJobState(anyFailed);
         });
       })
