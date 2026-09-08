@@ -715,7 +715,7 @@ GET /api/v1/visits/{visit_id}/timeline
 
 한 진료에 여러 `OcrJob`이 존재할 때, 화면에 표시할 유효 결과는 **`document_id`별 최신 job** 하나입니다.
 
-- `excluded_from_guide=False` 인 job만 대상으로 합니다.
+- 제외 여부와 관계없이 **모든 job**을 반환하며, 각 job의 응답에 `excluded_from_guide` 플래그가 포함됩니다.
 - 같은 `document_id`에 여러 job이 있으면 `created_at` 내림차순으로 첫 번째(가장 최신)를 선택합니다.
 - EMR·처방전·검사결과지 등 서로 다른 문서 종류의 유효 결과는 각각 독립적으로 선택합니다.  
   예: EMR은 job-A, 검사결과지는 job-B에서 결과를 가져올 수 있습니다.

@@ -19,6 +19,7 @@
 import os
 import tempfile
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 from tortoise.contrib.test import TestCase
@@ -465,20 +466,21 @@ class TestProcessOcrJob(TestCase):
         fields = await OcrField.filter(ocr_result=result).all()
         by_type = {f.field_type: f for f in fields}
 
-        # 기대 필드·실제 값·confidence·저신뢰 판정 근거
+        # 기대 필드·실제 값·confidence — fixture 정의와 일치해야 한다
+        # SYN_LOW_CONF_EMR_CLOVA_BLOCKS: DIAGNOSIS confidence=0.62, MEDICATION_NAME confidence=0.58
         diag = by_type.get("DIAGNOSIS")
         assert diag is not None, "DIAGNOSIS 필드 없음"
         assert diag.extracted_value == "자궁내막증"
-        assert diag.confidence is not None and diag.confidence < 0.75, (
-            f"DIAGNOSIS confidence={diag.confidence} — 저신뢰 판정 기준(0.75) 미만이어야 한다"
+        assert diag.confidence == Decimal("0.62"), (
+            f"DIAGNOSIS confidence={diag.confidence} — fixture 정의(0.62)와 일치해야 한다"
         )
         assert not diag.is_confirmed, "저신뢰 필드는 직원 확인 전 is_confirmed=False 여야 한다"
 
         med = by_type.get("MEDICATION_NAME")
         assert med is not None, "MEDICATION_NAME 필드 없음"
-        assert "비잔" in (med.extracted_value or ""), f"약품명 불일치: {med.extracted_value}"
-        assert med.confidence is not None and med.confidence < 0.75, (
-            f"MEDICATION_NAME confidence={med.confidence} — 저신뢰 판정 기준(0.75) 미만이어야 한다"
+        assert med.extracted_value == "비잔정(디에노게스트)2mg", f"약품명 불일치: {med.extracted_value}"
+        assert med.confidence == Decimal("0.58"), (
+            f"MEDICATION_NAME confidence={med.confidence} — fixture 정의(0.58)와 일치해야 한다"
         )
         assert not med.is_confirmed, "저신뢰 필드는 직원 확인 전 is_confirmed=False 여야 한다"
 
