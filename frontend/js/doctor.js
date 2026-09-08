@@ -43,9 +43,10 @@
    화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
 function whenText(iso) {
   if (!iso) return "곧";
-  var m = String(iso).match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
-  if (!m) return String(iso);
-  return Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3];
+  /* 읽는 규칙은 `clinic-clock.js` 가 갖는다 — 여기 있던 같은 정규식을 옮겼다.
+     이 파일 안에만 있어서 다른 화면이 못 썼고, `patient-link-view.js` 가 제
+     손으로 `Date` 를 만들다 시간대 버그를 다시 넣었다 (`#250` 리뷰 ①). */
+  return clinicWhenText(iso) || String(iso);
 }
 
 /* 이미 승인한 진료는 다시 승인하지 않는다.
@@ -179,17 +180,13 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
 
   /* 링크 상태를 읽어 쥔다. 안내문 요청에 안 묶는다 — 링크를 못 읽어도
      안내문은 보여야 한다(스탭 화면과 같은 판단). */
+  /* 읽는 규칙은 `patient-link-view.js` 의 `patientLinkLoad` 가 갖는다 — 이 배선이
+     `visit-guide.js` 에도 똑같이 있었다(`#250` 리뷰 ⑤). 화면이 정하는 것은
+     「늦게 온 답인가」와 「어떻게 다시 그리는가」 둘뿐이다. */
   function loadPatientLink(id, mine) {
-    doctorApi
-      .readPatientLink(id)
-      .then(function (answer) {
-        if (mine !== loadSeq) return; // 늦게 온 답이 새 환자 화면에 붙으면 안 된다
-        patientLinkAdopt(id, answer);
-        if (guide) renderPanel();
-      })
-      .catch(function () {
-        /* 못 읽으면 블록이 「아직 없음」으로 선다 — 없는 것을 있다고 하지 않는다 */
-      });
+    patientLinkLoad(patientLinkOpts, id, function () {
+      return mine !== loadSeq;
+    });
   }
 
   function renderPanel() {
@@ -676,7 +673,9 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
      `#224` 의 발급 모달과 겹치지 않는다. 모달은 **첫 발급**을 맡고, 블록은
      이미 있는 링크의 상태와 교체를 맡는다. 둘 다 서버를 다시 읽으므로 어느
      쪽으로 만들든 다음 그림에서 같은 값이 선다. */
-  wirePatientLink({
+  /* 로드와 배선이 **같은 옵션**을 쓴다 — 「지금 어느 진료인가」와 「어떻게 다시
+     그리는가」가 두 곳에서 갈리면 늦게 온 답의 판정이 서로 달라진다. */
+  var patientLinkOpts = {
     visitId: function () {
       return visit ? visit.visit_id : null;
     },
@@ -687,7 +686,9 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
       var box = el("say");
       if (box) box.textContent = text;
     },
-  });
+  };
+
+  wirePatientLink(patientLinkOpts);
 
   wireGuideEditing({
     visitId: function () {

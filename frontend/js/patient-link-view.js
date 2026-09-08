@@ -29,7 +29,12 @@
    그 앞에서는 링크 자체가 없다(`patient_links.py` 가 그 상태만 발급한다). */
 var LINK_READY_STATUS = "SCHEDULED_TO_SEND";
 
-/* 상태 넷. 화면은 이 값으로만 갈린다 — 조건을 화면에서 다시 세지 않는다. */
+/* 상태 여섯 — NOT_YET · NOT_ISSUED · LIVE · FRESH · EXPIRED · ORPHAN.
+   화면은 이 값으로만 갈린다 — 조건을 화면에서 다시 세지 않는다.
+
+   **이름을 함께 적는다.** 「넷」이라고만 적어 두었더니 `NOT_ISSUED` 를 더할 때
+   따라 안 고쳐졌다(`#250` 리뷰 ⑧). 이름이 있으면 값이 늘 때 눈에 띄고 grep 에도
+   걸린다. */
 var LINK_STATE = {
   NOT_YET: "NOT_YET", // 승인 전 — 링크라는 것이 아직 없을 때다
   /* **승인은 됐는데 아직 안 만들었다.** 서버의 `approve()` 는 링크를 자동으로
@@ -41,6 +46,13 @@ var LINK_STATE = {
   LIVE: "LIVE", // 살아 있다
   FRESH: "FRESH", // 방금 만들었다 — 주소가 이 화면에만 잠깐 있다
   EXPIRED: "EXPIRED", // 기한이 지났다
+  /* **승인이 철회됐는데 링크는 아직 살아 있다.** — `#250` 리뷰 ②
+     `guides.py` 의 `unapprove()` 는 상태만 되돌리고 `PatientGuideLink` 를 안
+     건드린다. 그런데 화면은 승인 상태만 보고 전부 `NOT_YET` 으로 접어서,
+     **살아 있는 링크가 아무에게도 안 보였다** — 스탭이 그것을 폐기할 길도
+     사라졌고, 나중에 재승인되면 회전된 적 없는 옛 토큰이 조용히 다시 산다.
+     서버는 이미 열려 있다 — `revoke()` 가 `require_approved=False` 로 부른다. */
+  ORPHAN: "ORPHAN",
 };
 
 /* **지금 어느 상태인가.**
@@ -51,7 +63,12 @@ var LINK_STATE = {
  * `fresh` 는 「이 창에서 방금 만들어 주소를 쥐고 있다」는 뜻이다. 새로고침하면
  * 사라진다 — 서버가 원문을 안 갖고 있으니 되찾을 길이 없다. */
 function patientLinkState(link, guideStatus, now) {
-  if (guideStatus !== LINK_READY_STATUS) return LINK_STATE.NOT_YET;
+  if (guideStatus !== LINK_READY_STATUS) {
+    /* 승인이 아니어도 **살아 있는 링크는 감추지 않는다.** 감추면 스탭이
+       그것이 있다는 것도, 폐기할 길도 모른다 (`#250` 리뷰 ②). */
+    var alive = link && link.expiresAt && !patientLinkExpired(link, now);
+    return alive ? LINK_STATE.ORPHAN : LINK_STATE.NOT_YET;
+  }
   if (!link || !link.expiresAt) return LINK_STATE.NOT_ISSUED;
   if (patientLinkExpired(link, now)) return LINK_STATE.EXPIRED;
   return link.fresh ? LINK_STATE.FRESH : LINK_STATE.LIVE;
@@ -80,6 +97,9 @@ function patientLinkDaysLeft(link, now) {
    「링크 없음」만 있으면 스탭은 자기가 뭘 잘못했는지 묻는다. */
 function patientLinkStateNote(state, link, now) {
   if (state === LINK_STATE.NOT_YET) return "의사가 승인하면 발급할 수 있습니다";
+  if (state === LINK_STATE.ORPHAN) {
+    return "승인이 철회됐는데 이 링크는 아직 열립니다 — 폐기하거나, 다시 승인한 뒤 새 링크를 만들어 주세요";
+  }
   if (state === LINK_STATE.NOT_ISSUED) return "승인됐습니다 — [새 링크] 를 누르면 환자에게 보낼 주소가 생깁니다";
   if (state === LINK_STATE.EXPIRED) {
     return "기한이 지났습니다 — 환자가 지금 열면 안내문이 안 보입니다";
@@ -92,6 +112,9 @@ function patientLinkStateNote(state, link, now) {
 /* 이 상태에서 눌러도 되는 것. 화면이 단추를 세지 않게 여기서 답한다. */
 function patientLinkActions(state) {
   if (state === LINK_STATE.NOT_YET) return [];
+  /* 폐기만 낸다. 「새 링크」는 서버가 승인을 요구해 409 (`GUIDE_NOT_APPROVED`)
+     로 막는다 — 눌러도 안 되는 단추를 두지 않는다. */
+  if (state === LINK_STATE.ORPHAN) return ["revoke"];
   if (state === LINK_STATE.EXPIRED) return ["new"];
   return state === LINK_STATE.FRESH ? ["copy", "open", "new"] : ["new"];
 }
@@ -129,6 +152,7 @@ function patientLinkBlockHtml(link, guideStatus, now) {
 
 /* 배지 — 상태를 한 낱말로. 「없음」은 배지를 안 단다(없는 것을 굳이 표시 안 한다). */
 function patientLinkTag(state) {
+  if (state === LINK_STATE.ORPHAN) return "승인 철회됨";
   if (state === LINK_STATE.NOT_ISSUED) return "발급 전";
   if (state === LINK_STATE.EXPIRED) return "기한 지남";
   return state === LINK_STATE.FRESH ? "방금 만듦" : "사용 중";
@@ -140,19 +164,31 @@ function patientLinkWhen(link, state) {
   if (state === LINK_STATE.NOT_YET) return "아직 승인 전입니다";
   if (state === LINK_STATE.NOT_ISSUED) return "아직 발급되지 않았습니다";
   if (!link || !link.expiresAt) return "";
-  var at = new Date(link.expiresAt);
-  if (isNaN(at.getTime())) return "";
-  var when =
-    at.getMonth() + 1 + "월 " + at.getDate() + "일 " + String(at.getHours()).padStart(2, "0") + ":" +
-    String(at.getMinutes()).padStart(2, "0");
+  /* 🚩 **보는 사람의 시계로 읽지 않는다** (이희진 님 `#250` 리뷰 ①).
+   *
+   * 여기는 `new Date(...).getMonth()/getDate()/getHours()` 였다. 그 넷은 전부
+   * **브라우저 시간대**로 답한다 — 같은 만료 시각이 이렇게 갈렸다.
+   *
+   *     TZ=Asia/Seoul       9월 10일 18:00 까지
+   *     TZ=UTC              9월 10일 09:00 까지
+   *     TZ=America/New_York 9월 10일 05:00 까지
+   *
+   * 이 저장소가 이미 그 자리를 한 번 밟고 고쳤다 (`clinic-clock.js` —
+   * 「KST 아닌 자리에서 열면 18시가 09시로 뜬다」). **그 해법을 그대로 쓴다** —
+   * `Date` 를 안 만들고 ISO 문자열을 그대로 읽으므로 시계에 안 흔들린다.
+   *
+   * 판정(`patientLinkExpired`·`patientLinkDaysLeft`)은 `getTime()` 으로 하니
+   * 원래 맞았다. 틀린 것은 **사람에게 보이는 글자**뿐이었다. */
+  var when = clinicWhenText(link.expiresAt);
+  if (!when) return "";
   return state === LINK_STATE.EXPIRED ? when + " 에 닫혔습니다" : when + " 까지";
 }
 
 /* 단추. **주소를 DOM 에 안 싣는다** — `data-*` 에도 안 담는다. 누른 뒤에
    화면이 제 손에 쥔 값으로 복사·열기를 한다(#224 가 의사 화면에서 쓴 방식). */
 function patientLinkActionHtml(action) {
-  var saying = { copy: "복사", open: "열기", new: "새 링크 만들기" };
-  var kind = action === "new" ? "button-primary" : "button-ghost";
+  var saying = { copy: "복사", open: "열기", new: "새 링크 만들기", revoke: "링크 폐기" };
+  var kind = action === "new" || action === "revoke" ? "button-primary" : "button-ghost";
   return (
     '<button class="' + kind + ' ' + kind + '--sm" type="button" data-patient-link="' +
     action +
@@ -226,6 +262,49 @@ function patientLinkFromIssue(answer) {
   return { expiresAt: (answer && answer.expires_at) || null, fresh: true, url: patientGuideUrl(answer) };
 }
 
+/** 링크 상태를 읽어 쥔다 — 두 화면이 같은 길로.
+ *
+ * 🚩 이 배선이 `doctor.js` 와 `visit-guide.js` 에 **거의 그대로 두 번** 있었다
+ * (`#250` 리뷰 ⑤). 이 파일이 정확히 그 중복을 막으려고 있는데 로드만 빠져
+ * 있었다. 두 벌이면 한쪽만 고쳐지고, 그러면 같은 링크가 화면마다 다르게 보인다.
+ *
+ * 🚩 그리고 두 `.catch` 가 **아무것도 안 받고 통째로 삼켰다** (리뷰 ④).
+ * 서버는 「없다」(200 · `issued:false`)와 「못 준다」(403 · 404 · 연결 실패)를
+ * 갈라 놓았는데 화면이 둘을 같은 그림으로 뭉갰다 — 권한이 없어 못 읽은 것도
+ * 「아직 발급 안 함」으로 보였다. 이제 **모르는 것은 모른다고 말한다.**
+ *
+ * `isStale` 은 화면이 준다. 화면마다 세대 번호(`loadSeq`)를 제 방식으로 세고
+ * 있어서, 여기서 진료 번호로만 가르면 **같은 진료를 두 번 부른 경우**를 놓친다.
+ */
+/** 늦게 온 답이 **지금 화면의 것인가.**
+ *
+ * 이름을 붙여 밖에 낸다 — 안에 인라인으로 두면 검사가 못 닿고, 지워져도
+ * 아무것도 안 운다(실제로 그렇게 빠져 있었다 — `#250` 리뷰 ③).
+ * `doctor.js` 의 `isCurrentPatientLinkRequest` 와 같은 판정이다.
+ */
+function patientLinkStillCurrent(opts, visitId) {
+  return String(opts && opts.visitId && opts.visitId()) === String(visitId);
+}
+
+function patientLinkLoad(opts, visitId, isStale) {
+  var reRender = opts.reRender || function () {};
+  var say = opts.say || function () {};
+  var stale = function () {
+    return !!(isStale && isStale());
+  };
+  return doctorApi
+    .readPatientLink(visitId)
+    .then(function (answer) {
+      if (stale()) return;
+      patientLinkAdopt(visitId, answer);
+      reRender();
+    })
+    .catch(function (error) {
+      if (stale()) return;
+      say(patientLinkSaying(error));
+    });
+}
+
 /* ── 배선 — 두 화면이 같은 것을 쓴다 ────────────────────────────────────
  *
  * `wireSmsSettings` 와 같은 모양이다. 두 벌이면 어느 화면에서 눌렀느냐에
@@ -262,6 +341,22 @@ function wirePatientLink(opts) {
       making
         .call(doctorApi, visitId)
         .then(function (answer) {
+          /* 🚩 **늦게 온 답은 지금 화면의 것이 아니다** (이희진 님 `#250` 리뷰 ③).
+           *
+           * 여기에 가드가 없었다. 쥔 자리(`patientLinkHeldOne`)가 지도가 아니라
+           * **칸 하나**라서, 진료 A 의 답이 늦게 오면 `patientLinkKeep(A, …)` 이
+           * B 가 방금 만든 링크를 **통째로 밀어낸다** — B 화면은 그 뒤로
+           * 「주소는 만든 그 자리에서만 보입니다」만 말한다. 문구와 다시그리기도
+           * B 화면에 A 의 것으로 뜬다.
+           *
+           * `doctor.js` 의 `isCurrentPatientLinkRequest` 와 같은 판정이다.
+           * 여기서는 세대 번호 대신 **지금 고른 진료**를 다시 물어 본다 —
+           * `opts.visitId()` 가 그 답을 준다.
+           *
+           * 늦은 답은 **아무것도 안 한다.** 그 주소는 이 자리에서만 보이는
+           * 것이라 잃지만, 남의 것을 지우는 것보다 낫다 — 스탭은 A 로 돌아가
+           * 새 링크를 만들면 된다. */
+          if (!patientLinkStillCurrent(opts, visitId)) return;
           patientLinkKeep(visitId, patientLinkFromIssue(answer));
           say(
             making === doctorApi.issuePatientLink
@@ -271,7 +366,34 @@ function wirePatientLink(opts) {
           reRender();
         })
         .catch(function (error) {
+          /* 단추는 되살린다 — 화면이 바뀌었으면 이미 떨어져 나간 조각이라
+             아무 일도 안 일어난다. **말은 지금 화면의 것만 한다** — A 의 실패를
+             B 화면에 적으면 B 에서 뭔가 잘못된 것으로 읽힌다. */
           pressed.disabled = false;
+          if (!patientLinkStillCurrent(opts, visitId)) return;
+          say(patientLinkSaying(error));
+        });
+      return;
+    }
+
+    if (action === "revoke") {
+      /* 승인이 철회됐는데 살아 있는 링크를 끊는다 (`#250` 리뷰 ②).
+         서버가 `require_approved=False` 로 열어 둔 자리다 — 승인 상태와
+         무관하게 digest 를 회전해 그 자리에서 죽인다. */
+      if (pressed.disabled) return;
+      pressed.disabled = true;
+      say("링크를 폐기하는 중입니다…");
+      doctorApi
+        .revokePatientLink(visitId)
+        .then(function () {
+          if (!patientLinkStillCurrent(opts, visitId)) return;
+          patientLinkForget();
+          say("링크를 폐기했습니다 — 환자가 열면 이제 안 보입니다");
+          reRender();
+        })
+        .catch(function (error) {
+          pressed.disabled = false;
+          if (!patientLinkStillCurrent(opts, visitId)) return;
           say(patientLinkSaying(error));
         });
       return;

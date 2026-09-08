@@ -5,23 +5,48 @@
  */
 const { test } = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
 const { load } = require("./browser-shim.js");
 const { codeOnly } = require("./source.js");
 
 function rules() {
-  return load("api", "patient-link-view");
+  /* `clinic-clock` 을 함께 싣는다 — 만료 시각을 의원 시계로 읽는다(KEY-275).
+     화면 둘(`doctor.html`·`patients.html`)도 이 차례로 싣는다. */
+  return load("api", "clinic-clock", "patient-link-view");
 }
 
 const AT = (s) => new Date(s);
 
-test("승인 전에는 링크가 없다 — 스탭이 만들 수 있는 것이 아니다", () => {
+test("승인 전이고 링크도 없으면 만들 것이 없다", () => {
   const { patientLinkState, LINK_STATE } = rules();
   assert.equal(patientLinkState(null, "STAFF_REVIEW", AT("2026-09-05T10:00:00+09:00")), LINK_STATE.NOT_YET);
-  assert.equal(
-    patientLinkState({ expiresAt: "2026-09-12T18:00:00+09:00" }, "APPROVAL_PENDING", AT("2026-09-05T10:00:00+09:00")),
-    LINK_STATE.NOT_YET,
-    "승인 대기인데 링크가 산 것처럼 보였다",
-  );
+  assert.equal(patientLinkState(null, "APPROVAL_PENDING", AT("2026-09-05T10:00:00+09:00")), LINK_STATE.NOT_YET);
+});
+
+test("**승인이 철회돼도 살아 있는 링크는 감추지 않는다** — 이희진 님 `#250` 리뷰 ②", () => {
+  /* 여기 있던 단언이 정반대였다 — 「승인 대기인데 링크가 산 것처럼 보였다」를
+     실패로 적어 두어서, **감추는 것**이 계약이 돼 있었다. 그런데 서버의
+     `unapprove()` 는 상태만 되돌리고 `PatientGuideLink` 를 안 건드린다.
+     그래서 그 링크는 여전히 열리는데 화면에서만 사라졌다 — 스탭이 그것을
+     폐기할 길도 함께 사라졌고, 나중에 재승인되면 회전된 적 없는 옛 토큰이
+     아무 신호 없이 다시 산다. */
+  const { patientLinkState, patientLinkActions, patientLinkTag, LINK_STATE } = rules();
+  const alive = { expiresAt: "2026-09-12T18:00:00+09:00" };
+  const now = AT("2026-09-05T10:00:00+09:00");
+
+  assert.equal(patientLinkState(alive, "APPROVAL_PENDING", now), LINK_STATE.ORPHAN);
+  assert.equal(patientLinkState(alive, "STAFF_REVIEW", now), LINK_STATE.ORPHAN);
+
+  /* 기한이 지난 것까지 되살리지는 않는다 — 그건 이미 아무도 못 연다. */
+  const dead = { expiresAt: "2026-09-01T18:00:00+09:00" };
+  assert.equal(patientLinkState(dead, "APPROVAL_PENDING", now), LINK_STATE.NOT_YET);
+
+  /* **보이기만 하면 소용이 없다 — 끊을 길이 함께 있어야 한다.** */
+  /* `join` 으로 견준다 — 상자 안에서 만든 배열이라 프로토타입이 달라
+     `deepStrictEqual` 이 값이 같아도 걸린다. */
+  assert.equal(patientLinkActions(LINK_STATE.ORPHAN).join(","), "revoke", "폐기할 단추가 없다");
+  assert.equal(patientLinkTag(LINK_STATE.ORPHAN), "승인 철회됨");
 });
 
 test("기한이 지나면 살아 있는 것으로 안 보인다", () => {
@@ -263,4 +288,80 @@ test("첫 발급은 issue, 교체는 re-issue — 없는 링크에 교체를 부
   assert.ok(src.includes("doctorApi.issuePatientLink"), "첫 발급 종점을 안 쓴다");
   assert.ok(src.includes("doctorApi.reIssuePatientLink"), "교체 종점을 안 쓴다");
   assert.match(src, /patientLinkOf\(visitId\)\s*\?\s*doctorApi\.reIssuePatientLink\s*:\s*doctorApi\.issuePatientLink/);
+});
+
+/* ── 이희진 님 `#250` 리뷰 반영을 잰다 ────────────────────────────────── */
+
+test("**만료 시각을 보는 사람의 시계로 읽지 않는다** — 리뷰 ①", () => {
+  /* `new Date(...).getHours()` 는 **브라우저 시간대**로 답한다. 이 저장소가
+     `clinic-clock.js` 에서 한 번 밟고 고친 자리인데(「KST 아닌 자리에서 열면
+     18시가 09시로 뜬다」) 이 파일이 제 손으로 `Date` 를 만들며 되돌려 넣었다.
+
+     **검사를 돌리는 시계와 무관하게** 재려면 글자에 박힌 옵셋을 그대로 읽는지
+     보면 된다 — `+00:00` 짜리를 주고 그 자리의 숫자가 그대로 나오는지 본다.
+     로컬 시계로 옮기는 코드라면 KST 러너에서 다음 날 03:00 이 된다. */
+  const { patientLinkWhen, LINK_STATE } = rules();
+
+  assert.equal(patientLinkWhen({ expiresAt: "2026-09-10T18:00:00+09:00" }, LINK_STATE.LIVE), "9월 10일 18:00 까지");
+  assert.equal(
+    patientLinkWhen({ expiresAt: "2026-09-10T18:00:00+00:00" }, LINK_STATE.LIVE),
+    "9월 10일 18:00 까지",
+    "글자에 박힌 시각이 아니라 보는 사람의 시계로 옮겼다",
+  );
+  assert.equal(patientLinkWhen({ expiresAt: "2026-09-01T09:05:00+09:00" }, LINK_STATE.EXPIRED), "9월 1일 09:05 에 닫혔습니다");
+  assert.equal(patientLinkWhen({ expiresAt: "쓰레기" }, LINK_STATE.LIVE), "", "못 읽는 값을 그대로 뱉었다");
+});
+
+test("**늦게 온 답은 지금 화면의 것만 그린다** — 리뷰 ③", () => {
+  /* 쥔 자리가 지도가 아니라 칸 하나라, 진료 A 의 늦은 답이 B 가 방금 만든
+     링크를 통째로 밀어낸다. 그 판정을 이름 있는 함수로 두어 여기서 잰다. */
+  const { patientLinkStillCurrent } = rules();
+  const on = (id) => ({ visitId: () => id });
+
+  assert.equal(patientLinkStillCurrent(on(7), 7), true);
+  assert.equal(patientLinkStillCurrent(on(9), 7), false, "다른 진료로 넘어갔는데 제 것이라고 한다");
+  assert.equal(patientLinkStillCurrent(on("7"), 7), true, "글자와 숫자를 다르게 본다");
+  assert.equal(patientLinkStillCurrent(on(null), 7), false, "고른 진료가 없는데 그린다");
+  assert.equal(patientLinkStillCurrent({}, 7), false, "물을 곳이 없으면 그리지 않는다");
+});
+
+test("상태 주석이 실제 상태를 다 적는다 — 리뷰 ⑧ 이 다시 안 나게", () => {
+  /* 「상태 넷」이라 적어 둔 것이 `NOT_ISSUED` 를 더할 때 안 따라 고쳐졌다.
+     숫자만 고치면 다음에 또 뒤쳐진다 — **이름을 다 적었는지**를 잰다. */
+  const { LINK_STATE } = rules();
+  /* **주석을 재는 검사라 `codeOnly` 를 안 쓴다** — 그 함수가 걷어내는 것이
+     바로 여기서 봐야 할 글이다. */
+  const src = fs.readFileSync(path.join(__dirname, "..", "js", "patient-link-view.js"), "utf8");
+  const head = src.slice(0, src.indexOf("var LINK_STATE"));
+
+  for (const name of Object.keys(LINK_STATE)) {
+    assert.ok(head.includes(name), `상태 주석에 ${name} 이 빠졌다`);
+  }
+});
+
+test("서버를 부르고 돌아오는 자리마다 그 관문이 있다 — 리뷰 ③", () => {
+  /* 위 검사는 판정 **함수**를 잰다. 그 함수를 안 부르면 못 잡는다 —
+     실제로 빠져 있던 것이 「함수가 틀렸다」가 아니라 「자리에 없다」였다.
+
+     이벤트를 흘려 재는 것이 낫지만 `browser-shim` 은 일부러 안 흘린다
+     (「그리는 것은 브라우저가 할 일」). 그래서 저장소가 같은 걱정에 쓰는 방식을
+     따른다 — `key205-patient-link-launch.test.js` 가 `isCurrentPatientLinkRequest`
+     를 이렇게 잰다. **이음매를 세어** 하나도 빠지지 않게 한다. */
+  const src = codeOnly(fs.readFileSync(path.join(__dirname, "..", "js", "patient-link-view.js"), "utf8"));
+
+  const joints = [...src.matchAll(/\.(then|catch)\(function \([^)]*\) \{/g)];
+  assert.ok(joints.length >= 5, `이음매를 못 찾았다 — ${joints.length}개`);
+
+  for (const joint of joints) {
+    /* 주석을 걷어낸 자리가 공백으로 남아 창을 밀어낸다 — 접고 나서 본다. */
+    const after = src.slice(joint.index, joint.index + 900).replace(/\s+/g, " ");
+    /* 관문은 둘 중 하나다 — 진료 번호로 견주거나(`patientLinkStillCurrent`),
+       화면이 준 세대 번호로 견주거나(`stale()`). 뒤쪽이 더 강하다: 같은 진료를
+       두 번 부른 경우까지 가른다. */
+    assert.match(
+      after,
+      /patientLinkStillCurrent\(opts, visitId\)|if \(stale\(\)\) return;/,
+      `서버에서 돌아오는 자리에 관문이 없다 — 「${joint[0]}」 뒤`,
+    );
+  }
 });

@@ -325,18 +325,36 @@ class PatientLinkService:
     @staticmethod
     async def _lock_guide(actor, visit_id: int, connection) -> GuideDocument:
         guide = (
-            await GuideDocument.filter(
-                visit_id=visit_id,
-                visit__hospital_id=actor.hospital_id,
-            )
-            .select_for_update()
-            .using_db(connection)
-            .first()
+            await PatientLinkService._guides_in_scope(actor, visit_id).select_for_update().using_db(connection).first()
         )
         if guide is None:
             # 없는 진료와 타 병원 진료를 같은 응답으로 감춘다.
             raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
         return guide
+
+    @staticmethod
+    def _links_in_scope(actor, visit_id: int):
+        """이 의원의 그 진료 링크 — **범위를 한 곳에서만 정한다.**
+
+        같은 필터가 `_lock_link` 와 `read_state` 에 두 벌로 있었다
+        (`#250` 리뷰 ⑥). 의원 경계가 걸린 자리라 한쪽만 고쳐지면
+        `test_another_clinics_live_link_is_invisible` 이 막던 구멍이 조용히
+        다시 열린다. **잠글지·무엇을 실어 올지는 부르는 쪽이 정한다** —
+        갈리는 것은 그 둘뿐이다.
+        """
+        return PatientGuideLink.filter(
+            guide_document__visit_id=visit_id,
+            guide_document__visit__hospital_id=actor.hospital_id,
+        )
+
+    @staticmethod
+    def _guides_in_scope(actor, visit_id: int):
+        """같은 이유로 안내문 범위도 한 곳에 둔다 — 없는 진료와 타 의원 진료를
+        같은 응답으로 감추는 그 필터다."""
+        return GuideDocument.filter(
+            visit_id=visit_id,
+            visit__hospital_id=actor.hospital_id,
+        )
 
     @staticmethod
     async def _lock_link(
@@ -354,10 +372,8 @@ class PatientLinkService:
         """
 
         link = (
-            await PatientGuideLink.filter(
-                guide_document__visit_id=visit_id,
-                guide_document__visit__hospital_id=actor.hospital_id,
-            )
+            await PatientLinkService._links_in_scope(actor, visit_id)
+            #: 여기는 `guide_document` 를 **쓴다** — `_require_approved` 가 그 행을 본다.
             .select_related("guide_document")
             .select_for_update()
             .using_db(connection)
@@ -370,14 +386,7 @@ class PatientLinkService:
 
         # 없는 진료와 타 병원 진료는 같은 응답으로 감춘다. 안내가 보이는데
         # 링크만 없을 때에만 LINK_NOT_ISSUED를 돌려준다.
-        guide = (
-            await GuideDocument.filter(
-                visit_id=visit_id,
-                visit__hospital_id=actor.hospital_id,
-            )
-            .using_db(connection)
-            .first()
-        )
+        guide = await PatientLinkService._guides_in_scope(actor, visit_id).using_db(connection).first()
         if guide is None:
             raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
         if require_approved:
@@ -428,21 +437,19 @@ class PatientLinkService:
 
         self._require_issuer(actor)
 
-        link = (
-            await PatientGuideLink.filter(
-                guide_document__visit_id=visit_id,
-                guide_document__visit__hospital_id=actor.hospital_id,
-            )
-            .select_related("guide_document")
-            .first()
-        )
+        link = await PatientLinkService._links_in_scope(actor, visit_id).first()
         if link is not None:
+            #: `expires_at` 하나만 쓴다 — `guide_document` 를 만지려면
+            #: `select_related` 를 되살려라. 안 되살리면 조용히 lazy 로 뜬다.
+            #:
+            #: 여기 `.select_related("guide_document")` 가 있었다(`#250` 리뷰 ⑨).
+            #: **조인이 그것 때문은 아니었다** — 위 필터가 `guide_document__visit__
+            #: hospital_id` 로 병원 범위를 가르므로 조인 둘은 어차피 필수고, 빼도
+            #: EXPLAIN 이 같다. 줄어드는 것은 **안 쓰는 칸 열둘과 버려지는
+            #: GuideDocument 객체**다. 두 화면이 자주 부르는 읽기 경로다.
             return True, link.expires_at
 
-        guide = await GuideDocument.filter(
-            visit_id=visit_id,
-            visit__hospital_id=actor.hospital_id,
-        ).first()
+        guide = await PatientLinkService._guides_in_scope(actor, visit_id).first()
         if guide is None:
             raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
         return False, None

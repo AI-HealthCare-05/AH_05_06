@@ -361,17 +361,9 @@ function guideMissingSaying(error) {
     /* 링크 상태도 따로 읽는다 — KEY-275. 안내문 요청에 묶지 않는 것은
        문자 설정과 같은 이유다. 링크를 못 읽어도 안내문은 보여야 하고,
        현황 탭은 안내문 API 를 아예 안 부른다. */
-    doctorApi
-      .readPatientLink(id)
-      .then(function (answer) {
-        if (mySeq !== loadSeq) return; // 늦게 온 답이 새 환자 화면에 붙으면 안 된다
-        patientLinkAdopt(id, answer);
-        renderAll();
-      })
-      .catch(function () {
-        /* 못 읽으면 블록이 「아직 없음」으로 선다 — 없는 것을 있다고 하지
-           않는 쪽이다. [새 링크] 는 눌러 보면 서버가 답한다. */
-      });
+    patientLinkLoad(patientLinkOpts, id, function () {
+      return mySeq !== loadSeq;
+    });
 
     doctorApi.guide(id).then(
       function (res) {
@@ -607,13 +599,17 @@ function guideMissingSaying(error) {
     say: say,
   });
 
-  wirePatientLink({
+  /* 로드와 배선이 **같은 옵션**을 쓴다 — 「지금 어느 진료인가」와 「어떻게 다시
+     그리는가」가 두 곳에서 갈리면 늦게 온 답의 판정이 서로 달라진다. */
+  var patientLinkOpts = {
     visitId: function () {
       return visitId;
     },
     reRender: renderAll,
     say: say,
-  });
+  };
+
+  wirePatientLink(patientLinkOpts);
 
   document.addEventListener("visit:selected", function (event) {
     /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */

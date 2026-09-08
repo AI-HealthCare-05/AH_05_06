@@ -109,11 +109,38 @@ test("문자 설정 재료가 링크 둘을 통과시킨다 — 안 흘리면 �
 test("**두 화면이 다 상태를 읽고 배선한다** — 한쪽만 하면 그 화면 블록이 죽는다", () => {
   for (const screen of ["visit-guide.js", "doctor.js"]) {
     const source = read("js/" + screen);
-    assert.ok(source.includes("readPatientLink"), `${screen} 이 링크 상태를 안 읽는다`);
+    assert.ok(source.includes("patientLinkLoad"), `${screen} 이 링크 상태를 안 읽는다`);
     assert.ok(source.includes("wirePatientLink"), `${screen} 이 블록 단추를 안 건다 — 눌러도 아무 일 없다`);
     assert.ok(source.includes("patientLinkForget"), `${screen} 이 환자를 옮길 때 앞 사람 주소를 안 놓는다`);
     assert.ok(source.includes("patientLinkOf"), `${screen} 이 쥔 링크를 블록에 안 넘긴다`);
   }
+});
+
+test("**읽는 배선은 한 벌이다** — 두 화면이 각자 부르면 한쪽만 고쳐진다", () => {
+  /* 이 배선이 두 화면에 거의 그대로 두 번 있었다 (이희진 님 `#250` 리뷰 ⑤).
+     `patient-link-view.js` 가 정확히 그 중복을 막으려고 있는 파일인데 로드만
+     빠져 있었다. 부르는 자리를 여기 한 곳으로 못 박는다. */
+  assert.ok(read("js/patient-link-view.js").includes("readPatientLink"), "공용 모듈이 상태를 안 읽는다");
+  for (const screen of ["visit-guide.js", "doctor.js"]) {
+    assert.ok(
+      !read("js/" + screen).includes("readPatientLink"),
+      `${screen} 이 아직 제 손으로 읽는다 — 규칙이 두 벌이 된다`,
+    );
+  }
+});
+
+test("읽다 막힌 것을 「아직 없음」으로 삼키지 않는다 — 이희진 님 `#250` 리뷰 ④", () => {
+  /* 두 `.catch` 가 인자조차 안 받고 통째로 삼켰다. 서버는 「없다」(200 ·
+     issued:false)와 「못 준다」(403 · 404 · 연결 실패)를 갈라 놓았는데 화면이
+     둘을 같은 그림으로 뭉갰다 — 권한이 없어 못 읽은 것도 「아직 발급 안 함」
+     으로 보였다. */
+  const src = read("js/patient-link-view.js");
+  const at = src.indexOf("function patientLinkLoad");
+  assert.notEqual(at, -1, "공용 로더가 없다");
+  const body = src.slice(at, src.indexOf("\n}", at));
+
+  assert.match(body, /\.catch\(function \(error\)/, "오류를 받지도 않는다");
+  assert.match(body, /say\(patientLinkSaying\(error\)\)/, "못 읽은 것을 말하지 않는다");
 });
 
 test("문자 설정의 만료 안내가 실제 수명과 같다 — 같은 화면에서 어긋나면 안 된다", () => {
