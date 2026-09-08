@@ -20,12 +20,31 @@ const HTML_DIR = path.join(__dirname, "..", "patient_wireframe/html");
 const TOKEN = "synthetic-key292-browser-token";
 const VIEWS = ["view-loading", "view-normal", "view-normal-btn", "view-expired", "view-revoked", "view-error"];
 
+function pageHtml(file) {
+  return fs.readFileSync(path.join(HTML_DIR, file), "utf8");
+}
+
 function inlineScript(file) {
-  const html = fs.readFileSync(path.join(HTML_DIR, file), "utf8");
+  const html = pageHtml(file);
   const open = html.indexOf("<script>");
   const close = html.indexOf("</script>", open);
   assert.ok(open >= 0 && close > open, `${file} 에서 인라인 스크립트를 못 찾았다`);
   return html.slice(open + "<script>".length, close);
+}
+
+/** 이 페이지가 **실제로 싣는** 외부 스크립트를 그 차례대로.
+ *
+ * 페이지가 `<script src>` 를 빠뜨리면 브라우저에서는 `ReferenceError` 로
+ * 화면이 통째로 안 뜨는데, 인라인 조각만 태우던 예전 방식에서는 그것이 안
+ * 보였다. 페이지에게 물어 싣는다 — 태그를 빼면 여기서 똑같이 깨진다. */
+function pageScripts(file) {
+  const html = pageHtml(file);
+  return [...html.matchAll(/<script\s+src="([^"]+)"/g)].map((m) => {
+    const href = m[1].replace(/\?.*$/, "");
+    const full = path.join(__dirname, "..", href.replace(/^\//, ""));
+    assert.ok(fs.existsSync(full), `${file} 이 싣는 ${href} 가 없다`);
+    return fs.readFileSync(full, "utf8");
+  });
 }
 
 /** 화면 대신 **눌린 흔적만** 받아 두는 문서 — 무엇이 보이는지만 알면 된다. */
@@ -105,6 +124,7 @@ async function run(file, { search = "", hash = "", answer = () => ({ ok: false, 
     },
   });
 
+  for (const source of pageScripts(file)) vm.runInContext(source, context);
   vm.runInContext(inlineScript(file), context);
   /* `init()` 안의 await 들이 다 풀리도록 큰 틱 하나를 준다 —
      가짜 fetch 가 이미 풀린 약속을 주므로 마이크로태스크가 여기서 다 빠진다. */
@@ -302,4 +322,68 @@ test("⑩ 세션 확인은 본문으로 보낸다 — 주소에 실을 자리를
     assert.equal(session.url, "/api/v1/patient-auth/session", "주소에 무언가 붙었다");
     assert.equal(session.body && session.body.link_token, TOKEN, "본문으로 토큰을 안 보낸다");
   })();
+});
+
+/* ── 이희진 님 `#255` 리뷰 ①②③ ────────────────────────────────────────── */
+
+test("⑪ 목업도 같은 규칙을 탄다 — 갈래를 다시 두지 않는다", () => {
+  return (async () => {
+    /* `isMock` 갈래를 없애면서 목업도 `?token=` 폴백을 받게 넓어졌다.
+       **의도한 것이다** — 갈래를 다시 두면 「목업에서는 되는데 실서버에서는
+       안 되는」 거리가 또 생기고, 그 거리가 바로 이 티켓의 버그였다.
+       넓어졌다는 사실 자체를 여기 못 박아 둔다. */
+    const legacy = await run("otp.html", { search: "?mock=1&token=" + TOKEN, hash: "" });
+    assert.ok(
+      !shownView(legacy.document).includes("view-error"),
+      "목업에서 옛 주소를 열면 오류 화면으로 떨어진다 — 실서버와 규칙이 갈렸다",
+    );
+
+    /* 조각이 있으면 목업에서도 조각이 이긴다. */
+    const both = await run("otp.html", { search: "?mock=1&token=old", hash: "#t=" + TOKEN });
+    const next = both.went.find((url) => url.includes("otp-verify"));
+    if (next) assert.ok(next.includes(TOKEN), `목업에서 옛 주소가 조각을 덮었다 — ${next}`);
+  })();
+});
+
+test("⑫ 토큰 읽는 규칙은 한 벌이다 — 조각이 먼저, 옛 이름은 순서대로", () => {
+  const rule = fs.readFileSync(path.join(__dirname, "..", "js", "link-token.js"), "utf8");
+  const linkTokenFrom = new Function("URLSearchParams", rule + "\nreturn linkTokenFrom;")(URLSearchParams);
+
+  assert.equal(linkTokenFrom({ search: "?token=old", hash: "#t=new" }, ["token"]), "new", "조각이 먼저가 아니다");
+  assert.equal(linkTokenFrom({ search: "?token=old", hash: "" }, ["token"]), "old", "옛 주소를 안 받아 준다");
+  assert.equal(linkTokenFrom({ search: "", hash: "#t=new" }, []), "new", "옛 이름이 없어도 조각은 읽어야 한다");
+  assert.equal(linkTokenFrom({ search: "?t=a&visit=b", hash: "" }, ["t", "visit"]), "a", "옛 이름 차례가 틀렸다");
+  assert.equal(linkTokenFrom({ search: "?visit=b", hash: "" }, ["t", "visit"]), "b", "둘째 옛 이름을 못 읽는다");
+  assert.equal(linkTokenFrom({ search: "?token=x", hash: "" }, ["t"]), "", "그 화면이 안 쓰던 옛 이름까지 받아 준다");
+  assert.equal(linkTokenFrom({ search: "", hash: "" }, ["token"]), "", "없는데 무언가를 준다");
+  assert.equal(linkTokenFrom(undefined, ["token"]), "", "주소가 없으면 터진다");
+});
+
+test("⑬ 주석이 실제 발신자를 그대로 든다 — 틀린 주석은 엉뚱한 파일을 보게 한다", () => {
+  /* 이 주석은 재발 방지용이라 근거가 틀리면 그 자체로 해롭다. 그래서 잰다 —
+     `otp.html` 주소를 만드는 파일이 전부 주석에 적혀 있어야 한다. */
+  const note = /\*\*토큰은 fragment 로 온다\*\*([\s\S]*?)\*\//.exec(pageHtml("otp.html"));
+  assert.ok(note, "발신자를 적어 둔 주석을 못 찾았다");
+
+  const root = path.join(__dirname, "..");
+  const senders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "tests" && entry.name !== "node_modules") walk(full);
+      } else if (entry.name.endsWith(".js")) {
+        const text = fs.readFileSync(full, "utf8");
+        if (/["']\/patient_wireframe\/html\/otp\.html/.test(text)) {
+          senders.push(path.relative(root, full).replace(/\\/g, "/"));
+        }
+      }
+    }
+  };
+  walk(root);
+
+  assert.ok(senders.length >= 3, `발신자를 못 찾았다 — ${JSON.stringify(senders)}`);
+  for (const file of senders) {
+    assert.ok(note[1].includes(file), `주석이 발신자 ${file} 를 안 든다`);
+  }
 });

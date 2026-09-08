@@ -235,11 +235,20 @@ test("KEY-178 초기 조회에서 세션 만료를 받으면 오류 대신 OTP �
     /error && error\.code === "PATIENT_SESSION_EXPIRED"[\s\S]{0,80}location\.replace\(otpEntryUrl\(\)\)/,
     "세션 만료를 받아도 OTP 화면으로 보내지 않는다",
   );
-  assert.match(
+  /* 토큰 읽기는 `js/link-token.js` 한 곳이 한다 — 이 줄이 네 화면에 베껴져
+     있었고, KEY-267 이 여기만 고치고 나머지가 안 따라와서 실서버에서 본인
+     확인 화면이 토큰을 못 읽었다 (이희진 님 `#255` ③). */
+  assert.match(source, /linkTokenFrom\(location, \["t"\]\)/, "토큰을 공통 규칙으로 읽지 않는다 (KEY-267 · KEY-292)");
+  assert.doesNotMatch(
     source,
-    /new URLSearchParams\(String\(location\.hash \|\| ""\)\.replace\(\/\^#\/, ""\)\)\.get\("t"\)/,
-    "토큰을 fragment(#t=)에서 먼저 읽지 않는다 (KEY-267)",
+    /location\.hash[\s\S]{0,40}\.get\("t"\)/,
+    "조각 읽기를 다시 이 파일에 베꼈다 — 규칙은 한 곳이다",
   );
+
+  /* 규칙을 쓰려면 화면이 그것을 실어야 한다. 안 실으면 브라우저에서
+     `ReferenceError` 로 화면이 통째로 안 뜬다. */
+  const page = fs.readFileSync(path.join(JS_DIR, "..", "checkin.html"), "utf8");
+  assert.match(page, /<script src="\/js\/link-token\.js">/, "checkin.html 이 공통 규칙을 안 싣는다");
 });
 
 test("정상 저장은 라이브 상태를 두 번 읽지 않고 버튼에서 진행 상태를 알린다", () => {

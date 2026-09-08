@@ -247,37 +247,35 @@
   </div>
 </div>
 
+<script src="/js/link-token.js"></script>
 <script>
 (function () {
   var API_BASE = '/api/v1';
   var query = new URLSearchParams(window.location.search);
-  var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
   var isMock = query.get('mock') === '1';
 
   /* **토큰은 fragment 로 온다** — KEY-292.
    *
    * 여기는 목업일 때만 fragment 를 읽고 아니면 `?token=` 을 봤다. 그런데
-   * **이 화면으로 보내는 쪽은 모두 `#t=` 다.**
+   * **이 화면으로 보내는 쪽은 모두 `#t=` 다.** 세 곳이다.
    *
-   *     frontend/js/doctor.js    patientGuideUrl()  → "…otp.html" + "#t=" + 토큰
-   *     frontend/js/checkin.js   otpEntryUrl()      → "…otp.html" + "#" + safeFragment
+   *     frontend/js/doctor.js                patientGuideUrl()  (의사 화면의 「본인 확인 열기」)
+   *     frontend/js/checkin.js               otpEntryUrl()      (체크인에서 인증이 풀렸을 때)
+   *     frontend/patient_wireframe/js/guide.js  otpEntryUrl()   (안내 화면 401 복귀 — KEY-178)
    *
    * 그리고 실서버에서 `MOCK` 은 **항상 거짓**이다 — `frontend/js/api.js` 가
    * `file:` · localhost · 127.0.0.1 · [::1] 에서만 켠다. 그래서 디벨롭·운영에서
    * 의사가 「본인 확인 열기」를 누르면 토큰을 못 읽고 곧장 「일시적인 오류가
    * 생겼어요」로 떨어졌다.
    *
-   * **조각을 쓰는 것이 의도다.** 그 값은 서버 요청과 access log 에 안 실린다
-   * (`doctor.js` 주석). 주소창에 남기는 순간 AGENTS.md 「환자 링크 토큰을
-   * 코드·화면·로그·커밋에 남기지 않는다」와 어긋나고, `app/core/masking.py` 가
-   * `token` 을 가려야 할 값으로 둔 것과도 반대로 간다. `checkin.js` 는 KEY-267
-   * 에서 이미 이 규칙으로 옮겼다 — **목업인지와 무관하게 조각을 먼저 읽는다.**
+   * 읽는 규칙 자체는 `frontend/js/link-token.js` 한 곳에 있다 — 이 버그가 바로
+   * 그 줄이 네 벌이라 생겼다 (이희진 님 `#255` ③).
    *
    * `?token=` 은 **받아만 준다.** 이 화면이 그 모양을 만들던 자리 두 곳
    * (`issueOtp`, `otp-verify.html` 의 `otpStartUrl`)은 이번에 조각으로 옮겼지만,
    * 그 사이에 열려 있던 옛 주소가 아직 살아 있을 수 있어 읽는 쪽은 남긴다. */
   function getLinkToken() {
-    return fragment.get('t') || query.get('token') || '';
+    return linkTokenFrom(window.location, ['token']);
   }
 
   function mockVerifyUrl(token) {
