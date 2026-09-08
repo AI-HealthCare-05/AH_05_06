@@ -128,10 +128,10 @@ class FakeOcrService:
         job = _VISIT_JOB_MAP.get(visit_id)
         if job is None:
             raise OcrApiError(404, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
-        return job
+        return job.model_copy()
 
     async def jobs_for_visit(self, visit_id: int, actor: OcrActor) -> list[OcrJobByDocumentResponse]:
-        return _VISIT_JOBS_MAP.get(visit_id, [])
+        return [j.model_copy() for j in _VISIT_JOBS_MAP.get(visit_id, [])]
 
     async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
         if ocr_job_id == "ocr_other_hospital":
