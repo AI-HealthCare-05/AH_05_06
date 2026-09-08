@@ -243,53 +243,90 @@ function guideSegmentsHtml(sections, current) {
  *     아니라 300 이 되어 **줄바꿈이 달라진다** — 환자가 볼 줄 모양과 다르다
  */
 
-/* 환자 화면의 탭. 의료진 화면과 이름이 다르다 — 「생활지도」가 환자에게는
-   「생활관리」다. 각자 자기 쪽 이름을 쓴다. */
-var PATIENT_TABS = [
-  { key: "medication", label: "복약지도" },
-  { key: "caution", label: "주의사항" },
-  { key: "life", label: "생활관리" },
-  { key: "status", label: "현황" },
-  { key: "chat", label: "챗봇" },
-];
+/* **환자가 받는 그대로** — KEY-286.
+ *
+ * 여태 이 자리는 `.ph__block` 이라는 **제 목업**이었다. 「환자가 받는 그대로」
+ * 라고 적어 두었는데 환자는 `.card` 레이아웃을 받았다 — 라벨이 거짓이었다.
+ *
+ * ## 왜 iframe 인가
+ *
+ * 모양이 같으려면 **환자 자신의 스타일시트**를 써야 한다. 그런데 그 파일은
+ * `.card` · `.btn` · `body` 같은 흔한 이름을 쓴다 — 스탭 화면에 그냥 실으면
+ * 그 화면을 덮는다.
+ *
+ * 골라 베껴 오는 길도 있는데, 그러면 **모양이 두 벌**이 된다. 환자 화면이
+ * 바뀌는 날 미리보기만 옛 모양으로 남고, 그것이 바로 이 티켓이 없애려는 것이다.
+ *
+ * iframe 은 그 둘을 다 피한다 — 환자 CSS 를 **그대로** 신되 스탭 화면과 안
+ * 섞인다. 그리고 `srcdoc` 은 문자열이라, 이 함수는 여전히 문자열을 돌려주고
+ * 검사도 그 문자열을 그대로 읽는다.
+ *
+ * **스크립트를 안 싣는다.** 미리보기는 읽는 자리다 — 탭·펼치기 같은 환자 화면의
+ * 손놀림은 여기서 필요 없고, 넣으면 스탭 화면 안에서 도는 코드가 하나 더 는다.
+ *
+ * 모래상자는 `allow-same-origin` 하나만 연다. **`allow-scripts` 는 안 준다** —
+ * 그 둘을 함께 주면 모래상자가 제 스스로를 풀 수 있게 되고, 하나만이면 안에서
+ * 코드가 아예 안 돈다. 여는 까닭은 스타일시트 때문이다: 안 열면 문서가 opaque
+ * origin 이 되어 `/patient_wireframe/css/guide.css` 를 못 싣고, 그러면 이
+ * 티켓이 하려던 「같은 모양」이 통째로 무너진다(브라우저에서 실제로 그랬다).
+ *
+ * ## 못 채우는 카드는 안 그린다
+ *
+ * 이 화면이 가진 것은 `sections` 와 `summary` 뿐이다. 「나의 목표」·「처방받은
+ * 약」·「약별 복용 방법」은 환자 종점의 파생(`medication`·`goals`)에서 오는데
+ * 스탭 종점은 그것을 안 준다.
+ *
+ * 빈 카드를 세우면 승인 전에 「목표가 안 잡혔네」로 읽힌다 — **모양은 같은데
+ * 내용이 비어 보이는 것**이 지금(모양이 다른 것)보다 나쁘다. 안 그리는 것은
+ * 환자 렌더러 자신의 규칙이기도 하다(`if (g.drug)` …).
+ */
+function guidePreviewHtml(sections, current, summary) {
+  var bodyOf = function (key) {
+    var row = guideSectionsOf(sections, key)[0];
+    return row && row.body ? row.body : "";
+  };
+  var inner = patientPreviewBodyHtml(bodyOf, current, summary || "");
 
-function guidePreviewHtml(sections, current) {
-  var rows = guideSectionsOf(sections, current);
-
-  var tabs = PATIENT_TABS.map(function (t) {
-    return (
-      '<span class="ph__tab' +
-      (t.key === current || (current === "emergency" && t.key === "caution") ? " is-on" : "") +
-      '">' +
-      esc(t.label) +
-      "</span>"
-    );
-  }).join("");
-
-  var body = rows.length
-    ? rows
-        .map(function (s) {
-          return (
-            '<section class="ph__block">' +
-            '<h4 class="ph__title"><span class="ph__bar" aria-hidden="true"></span>' +
-            esc(GUIDE_SECTION_LABEL[s.key] || s.key) +
-            "</h4>" +
-            '<p class="ph__body">' +
-            esc(s.body) +
-            "</p></section>"
-          );
-        })
-        .join("")
-    : '<p class="ph__body">이 항목에는 아직 내용이 없습니다</p>';
+  /* **골격도 환자 것을 그대로 세운다** (유가은 님 `#253`).
+   *
+   * 여기는 `<div class="guide-body">` 하나로 감싸고 있었다. 환자 CSS 에는 그런
+   * 이름이 없다 — 카드 사이 간격(`gap: 12px`)·좌우 여백·스크롤을 만드는 규칙은
+   * `<main class="body">` 에 붙어 있고, 그 이름을 안 쓰면 **CSS 는 실었는데
+   * 본문 배치만 환자와 다른** 상태가 된다. 카드가 서로 붙고, 주의사항 탭처럼
+   * 카드가 여럿 이어지는 자리에서 바로 드러난다.
+   *
+   * 그래서 `frontend/guide.html` 의 골격을 그대로 쓴다 — `.app` 안에 탭 줄을
+   * 이고 있는 `.header`, 그 아래 `<main class="body">`.
+   *
+   * 머리의 로고·환자 이름·[PDF 저장] 은 안 넣는다. 스탭 종점이 안 주는 값이라
+   * 넣으려면 지어내야 하고, 이 티켓이 없애려는 것이 바로 그 종류의 거짓이다.
+   *
+   * 탭 바는 **끌 수 없다**(`disabled`). 미리보기는 읽는 자리이고, 여기서 탭이
+   * 움직이면 스탭 화면의 항목 탭과 어느 쪽이 진짜인지 흐려진다.
+   *
+   * `<style>` 로 `body` 를 다시 손대지 않는다. `guide.css` 가 이미 여백을
+   * 0 으로 두고 배경을 정한다 — 여기서 덧칠하면 그것이 곧 새 drift 다.
+   *
+   * `srcdoc` 안에서 큰따옴표가 속성을 닫는다. 본문은 이미 `esc` 를 지났고,
+   * 여기서는 그 결과 문자열을 속성에 담기 위해 한 번 더 감싼다. */
+  var doc =
+    '<!doctype html><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+    patientStylesheetLinks() +
+    '<div class="app">' +
+    '<header class="header">' +
+    patientTabBarHtml(current) +
+    "</header>" +
+    '<main class="body">' +
+    inner +
+    "</main>" +
+    "</div>";
 
   return (
-    '<div class="ph" aria-label="환자 화면 미리보기">' +
-    '<div class="ph__tabs">' +
-    tabs +
-    "</div>" +
-    '<div class="ph__body-wrap">' +
-    body +
-    "</div></div>"
+    '<iframe class="pv" title="환자 화면 미리보기" aria-label="환자 화면 미리보기"' +
+    ' sandbox="allow-same-origin" loading="lazy" srcdoc="' +
+    doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;") +
+    '"></iframe>'
   );
 }
 
@@ -315,7 +352,7 @@ function guideHeadEditHtml(sections, current, canEdit, editingKey) {
   return '<button class="gs__edit" type="button" data-edit="' + esc(own.key) + '">수정</button>';
 }
 
-function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
+function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary) {
   var title = GUIDE_SCREEN_TITLE[mode] || GUIDE_SCREEN_TITLE.guide;
 
   return (
@@ -333,7 +370,7 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey) {
        회차·문구를 다루는 자리라, 그 탭에서는 통째로 갈아 끼운다. */
     (current === "messages"
       ? smsScreenHtml(smsPlanOf(sections, mode))
-      : guideBodyHtml(sections, current, canEdit, editingKey)) +
+      : guideBodyHtml(sections, current, canEdit, editingKey, summary)) +
     "</section>"
   );
 }
@@ -348,7 +385,7 @@ function smsPlanOf(sections, mode) {
   return smsStateNow(seed);
 }
 
-function guideBodyHtml(sections, current, canEdit, editingKey) {
+function guideBodyHtml(sections, current, canEdit, editingKey, summary) {
   return (
     '<div class="gs__body">' +
     /* 왼쪽 — 원문 */
@@ -369,7 +406,7 @@ function guideBodyHtml(sections, current, canEdit, editingKey) {
     '<span class="gs__paneNote">환자가 받는 그대로</span>' +
     "</div>" +
     '<div class="gs__paneBody">' +
-    guidePreviewHtml(sections, current) +
+    guidePreviewHtml(sections, current, summary) +
     "</div>" +
     "</section>" +
     "</div>" +
@@ -698,7 +735,10 @@ function smsRightHtml(plan) {
     '<p class="sms__meta">변수 치환 후 ' +
     esc(kind.bytes + "바이트 · " + kind.label) +
     "</p></div>" +
-    '<p class="sms__note">ⓘ 링크는 발송 시 이 환자 · 이 건의 고유 주소로 발급됩니다 (3일 만료) — 미리보기는 예시입니다</p>' +
+    /* **「3일」이 아니다** — `LINK_TTL` 이 168 시간(7일)이다(KEY-223, `#224`).
+       바로 아래 링크 블록이 실제 만료일을 띄우므로, 이 줄이 3일이라고 하면
+       **같은 화면 안에서 대놓고 어긋난다.** */
+    '<p class="sms__note">ⓘ 링크는 발송 시 이 환자 · 이 건의 고유 주소로 발급됩니다 (7일 만료) — 미리보기는 예시입니다</p>' +
     "</section>"
   );
 }
@@ -712,6 +752,10 @@ function smsScreenHtml(plan) {
     "</div>" +
     '<div class="sms__side sms__side--right">' +
     smsRightHtml(plan) +
+    /* **문구 블록 아래에 링크 블록** — 문구의 `{링크}` 가 이것이다(KEY-275).
+       규칙도 모양도 `patient-link-view.js` 가 갖는다. 현황 화면도 같은 것을
+       그린다 — 두 벌이면 같은 링크가 화면마다 다르게 보인다. */
+    patientLinkBlockHtml(plan.link || null, plan.guideStatus, new Date()) +
     "</div></div>"
   );
 }
@@ -771,6 +815,10 @@ function smsStateNow(seed) {
     canSave: base.canSave !== false,
     lockedSaying: base.lockedSaying || "",
     saying: base.saying || "",
+    /* 링크 블록이 읽는 둘 — KEY-275. **이 함수가 안 통과시키면 블록이 늘
+       「아직 없음」이다**(안 넘긴 값은 `undefined` 라 승인 여부를 못 본다). */
+    guideStatus: base.guideStatus || "",
+    link: base.link || null,
     text: st.texts[st.picked] !== undefined ? st.texts[st.picked] : smsDefaultText(st.picked),
   };
 }

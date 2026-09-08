@@ -338,6 +338,11 @@ async def _save_clova_result(
                     document_text=doc_text,
                     field_type=field.field_type,
                     extracted_value=field.extracted_value,
+                    #: **단위를 옮긴다** — KEY-291. 읽는 쪽(`course_days`)이 KEY-271
+                    #: 부터 이 칸으로 통↔일을 환산하는데 쓰는 쪽이 여태 안 채웠다.
+                    #: 지금 오는 문서에는 단위가 안 찍혀 늘 `None` 이지만, 그
+                    #: `None` 이 「모른다」를 정직하게 말한다 — 곱하지 않는다.
+                    unit=field.unit,
                     confidence=field.confidence,
                     using_db=conn,
                 )

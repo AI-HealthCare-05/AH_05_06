@@ -615,6 +615,47 @@
   margin-top: 2px;
 }
 
+/* 환자가 받게 될 안내문 — KEY-258.
+   **칸 아래 세로로 붙는다.** 옆에 세우면 편집 칸이 860px 에서 274px 로 줄어
+   한 줄이던 주의 문구가 세 줄이 된다(1280 폭에서 실측). */
+.cp__pv {
+  margin-top: var(--s-12);
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  border-left: 3px solid var(--line);
+}
+
+.cp__pvHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-8);
+  margin-bottom: 6px;
+}
+
+.cp__pvTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.cp__pvBody {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+/* 진료마다 채워지는 자리. **흐리게 둔다** — 지금 값이 아니라 자리라는 뜻이다.
+   진하게 두면 스탭이 이 약이 실제로 나가는 줄 안다. */
+.cp__pvGhost {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
 /* 한 장의 확인 표시 — 원문 레일의 「✓ 비잔」·「야즈 확인 전」 */
 .cp__mark {
   font-size: 11px;

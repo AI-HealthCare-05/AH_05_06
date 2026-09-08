@@ -43,9 +43,10 @@
    화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
 function whenText(iso) {
   if (!iso) return "곧";
-  var m = String(iso).match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
-  if (!m) return String(iso);
-  return Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3];
+  /* 읽는 규칙은 `clinic-clock.js` 가 갖는다 — 여기 있던 같은 정규식을 옮겼다.
+     이 파일 안에만 있어서 다른 화면이 못 썼고, `patient-link-view.js` 가 제
+     손으로 `Date` 를 만들다 시간대 버그를 다시 넣었다 (`#250` 리뷰 ①). */
+  return clinicWhenText(iso) || String(iso);
 }
 
 /* 이미 승인한 진료는 다시 승인하지 않는다.
@@ -78,39 +79,6 @@ var GUIDE_LOAD_SAYINGS = [
 
 function guideLoadSaying(error) {
   return errorMessage(error, GUIDE_LOAD_SAYINGS, "안내문을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
-}
-
-/* 링크 응답의 API 경로에서 토큰만 꺼내 환자 화면의 fragment 로 옮긴다.
-
-   fragment 는 서버 요청과 access log 에 실리지 않는다. 병원 화면의 주소나
-   DOM 에도 토큰을 쓰지 않고, 새 환자 탭의 메모리로만 넘긴다. 서버가 정한
-   `path` 모양이 아니면 임의 주소를 열지 않는다. */
-function patientGuideUrl(result) {
-  var path = result && result.path;
-  var matched = typeof path === "string" && path.match(/^\/api\/v1\/guides\/([A-Za-z0-9_-]+)$/);
-  if (!matched) throw new Error("invalid patient guide link response");
-  return (
-    "/patient_wireframe/html/otp.html" +
-    (typeof MOCK !== "undefined" && MOCK ? "?mock=1" : "") +
-    "#t=" +
-    encodeURIComponent(matched[1])
-  );
-}
-
-var PATIENT_LINK_SAYINGS = [
-  NETWORK_SAYING, // 서버에 닿지도 못한 것 — KEY-211
-  { code: "GUIDE_NOT_APPROVED", say: "승인 완료된 안내에서만 환자 링크를 발급할 수 있어요." },
-  {
-    code: "LINK_ALREADY_ISSUED",
-    say: "이미 환자 링크가 발급됐어요. 기존 원문은 다시 보여주지 않으며, 필요하면 새 링크로 교체해 주세요.",
-  },
-  { code: "GUIDE_NOT_FOUND", say: "이 진료의 안내문을 찾지 못했어요." },
-  { code: "LINK_NOT_ISSUED", say: "먼저 환자 링크를 발급해 주세요." },
-  { status: 403, say: "이 진료의 환자 링크를 관리할 권한이 없어요." },
-];
-
-function patientLinkSaying(error) {
-  return errorMessage(error, PATIENT_LINK_SAYINGS, "환자 화면을 열지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
 }
 
 function isCurrentPatientLinkRequest(currentVisit, expectedVisitId, currentLoadSeq, expectedLoadSeq) {
@@ -205,10 +173,38 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
     return guideCurrentSection(guide.sections, section);
   }
 
+  /* 문자 설정 탭이 읽는 값 — KEY-275.
+   *
+   * **이 화면에는 없던 것이다.** `guide-view.js` 를 두 HTML 이 싣는데 이 함수는
+   * `visit-guide.js`(스탭 화면)에만 있었다. 그래서 의사 화면의 문자 설정 탭은
+   * 재료를 못 받았고, 링크 블록도 늘 「아직 없음」으로 섰다.
+   *
+   * 여기서는 **링크에 필요한 둘만** 준다. 회차·문구는 스탭이 정하는 것이라
+   * (S1-14) 의사 화면이 같은 값을 또 셈할 이유가 없다 — `smsStateNow` 의
+   * 기본값이 그대로 선다.
+   */
+  window.guideSmsPlan = function () {
+    return {
+      guideStatus: (guide && guide.status) || "",
+      link: patientLinkOf(visit && visit.visit_id),
+    };
+  };
+
+  /* 링크 상태를 읽어 쥔다. 안내문 요청에 안 묶는다 — 링크를 못 읽어도
+     안내문은 보여야 한다(스탭 화면과 같은 판단). */
+  /* 읽는 규칙은 `patient-link-view.js` 의 `patientLinkLoad` 가 갖는다 — 이 배선이
+     `visit-guide.js` 에도 똑같이 있었다(`#250` 리뷰 ⑤). 화면이 정하는 것은
+     「늦게 온 답인가」와 「어떻게 다시 그리는가」 둘뿐이다. */
+  function loadPatientLink(id, mine) {
+    patientLinkLoad(patientLinkOpts, id, function () {
+      return mine !== loadSeq;
+    });
+  }
+
   function renderPanel() {
     var now = currentSection();
     el("panel").innerHTML = now
-      ? guideScreenHtml(guide.sections, now.key, "final", isDoctor(), guideEditingNow())
+      ? guideScreenHtml(guide.sections, now.key, "final", isDoctor(), guideEditingNow(), guide.summary)
       : "";
   }
 
@@ -446,12 +442,17 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
     patientLinkOpening = false;
     /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
     smsForget();
+    /* **앞 사람의 링크 주소도 놓는다** — 남으면 다음 사람 화면에서 앞 사람의
+       주소를 복사한다 (KEY-275). */
+    patientLinkForget();
     closeModal();
     renderHead();
     renderRole();
 
     el("panel").innerHTML = '<p class="block__hint">불러오는 중…</p>';
     el("warn-line").textContent = "";
+
+    loadPatientLink(visit.visit_id, mine);
 
     doctorApi
       .guide(visit.visit_id)
@@ -676,6 +677,30 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
       if (box) box.textContent = text;
     },
   });
+
+  /* 링크 블록도 스탭 화면과 **같은 배선**을 쓴다 (KEY-275).
+     안 걸면 블록의 단추가 눌러도 아무 일 없는 단추가 된다 — 이 화면에도
+     블록이 서기 때문이다(`guide-view.js` 를 두 HTML 이 싣는다).
+
+     `#224` 의 발급 모달과 겹치지 않는다. 모달은 **첫 발급**을 맡고, 블록은
+     이미 있는 링크의 상태와 교체를 맡는다. 둘 다 서버를 다시 읽으므로 어느
+     쪽으로 만들든 다음 그림에서 같은 값이 선다. */
+  /* 로드와 배선이 **같은 옵션**을 쓴다 — 「지금 어느 진료인가」와 「어떻게 다시
+     그리는가」가 두 곳에서 갈리면 늦게 온 답의 판정이 서로 달라진다. */
+  var patientLinkOpts = {
+    visitId: function () {
+      return visit ? visit.visit_id : null;
+    },
+    reRender: function () {
+      if (guide) renderPanel();
+    },
+    say: function (text) {
+      var box = el("say");
+      if (box) box.textContent = text;
+    },
+  };
+
+  wirePatientLink(patientLinkOpts);
 
   wireGuideEditing({
     visitId: function () {

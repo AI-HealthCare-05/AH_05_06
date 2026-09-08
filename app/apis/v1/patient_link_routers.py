@@ -28,6 +28,7 @@ from app.dtos.patient_links import (
     PatientLifeAxisResponse,
     PatientLifeResponse,
     PatientLinkIssueResponse,
+    PatientLinkStateResponse,
     PatientMedicationStatResponse,
 )
 from app.models.visits import CheckIn, CheckInMedication, GuideDocument, GuideSectionKey, PatientGuideLink
@@ -67,6 +68,26 @@ async def issue_patient_guide_link(
         path=f"/api/v1/guides/{raw_token}",
         expires_at=link.expires_at,
     )
+
+
+@patient_link_management_router.get(
+    "/{visit_id}/guide/link",
+    response_model=PatientLinkStateResponse,
+)
+async def read_patient_guide_link_state(
+    visit_id: int,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[PatientLinkService, Depends(_service)],
+) -> PatientLinkStateResponse:
+    """링크 상태를 읽는다 — KEY-275. **주소는 안 나간다.**
+
+    두 화면(문자 설정 S1-14 · 현황 D1-6)이 같은 블록을 그리는데, 지금까지는
+    링크가 살아 있는지 볼 길이 아예 없었다. 현황 화면은 안내문 API 를 안
+    부르므로 `GuideResponse` 에 얹지 않고 이 길을 따로 냈다.
+    """
+
+    issued, expires_at = await service.read_state(actor, visit_id)
+    return PatientLinkStateResponse(issued=issued, expires_at=expires_at)
 
 
 @patient_link_management_router.post(

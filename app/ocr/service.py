@@ -41,6 +41,42 @@ def _resolved_value(row: dict) -> str | None:
     return row["corrected_value"] if row["corrected_value"] is not None else row["extracted_value"]
 
 
+#: 처방일수 칸의 이름. 접미사(`_2`, `_3` …)가 붙어 약마다 하나씩 온다.
+#: 「3」이 3일인지 3통인지가 이 칸의 `unit` 에 붙는다 (KEY-271 · KEY-285).
+_DURATION_FIELD = "DURATION_DAYS"
+
+
+def _takes_duration_unit(field_type: str) -> bool:
+    """단위를 붙일 수 있는 칸인가 — KEY-285.
+
+    처방일수뿐이다. 접미사가 붙은 둘째 약(`DURATION_DAYS_2`)도 같은 칸이라
+    함께 받는다 — 한 진료에 약이 둘이면 각자의 총투가 따로 온다.
+
+    검사값(`HEMOGLOBIN` 등)의 단위는 **항목의 성질**이라 화면의 `FIELD_UNITS`
+    가 갖는다. 그것을 요청으로 덮게 두면 같은 항목이 진료마다 다른 단위로
+    보인다.
+    """
+    return field_type == _DURATION_FIELD or field_type.startswith(f"{_DURATION_FIELD}_")
+
+
+def _refuse_unit_on_other_fields(unit: object, field_type: str) -> None:
+    """**단위는 처방일수 줄에만 붙는다** — KEY-285.
+
+    화면의 `fieldUnit` 이 **서버가 준 단위를 무조건 우선**하므로, 헤모글로빈
+    줄에 「통」이 박히면 그 글자가 그대로 사람 눈에 붙는다. DTO 가 값의
+    **모양**(`DurationUnit`)을 막고, 이 문이 붙일 **자리**를 막는다.
+
+    고치기와 직접입력 두 길이 같은 문을 지난다 — 한쪽만 막으면 다른 쪽으로
+    같은 값이 들어온다.
+    """
+    if unit is not None and not _takes_duration_unit(field_type):
+        raise OcrApiError(
+            status.HTTP_400_BAD_REQUEST,
+            "UNIT_NOT_ALLOWED",
+            "처방일수 항목에만 단위를 지정할 수 있습니다.",
+        )
+
+
 def _drop_confirmation(field: OcrField) -> None:
     """**값이 바뀌면 확정 도장을 뗀다** — KEY-273 뒤처리.
 
@@ -81,7 +117,12 @@ class OcrRepository(Protocol):
     ) -> tuple[OcrField, Sequence[OcrDocumentText]]: ...
 
     async def write_field(
-        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+        self,
+        visit_id: int,
+        field_type: str,
+        value: str | None,
+        actor: OcrActor,
+        unit: str | None = None,
     ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]: ...
 
     async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
@@ -126,7 +167,7 @@ def _collect_item_rows(
             continue
         freq_field = fields_by_type.get(f"FREQUENCY{suffix}")
         frequency = freq_field.value if freq_field is not None and freq_field.value else ""
-        dur_field = fields_by_type.get(f"DURATION_DAYS{suffix}")
+        dur_field = fields_by_type.get(f"{_DURATION_FIELD}{suffix}")
         duration_days: int | None = None
         if frequency != AS_NEEDED and dur_field is not None:
             # 판독이 읽은 숫자가 총투(통)일 수 있다 — `unit` 이 그것을 말한다.
@@ -271,10 +312,20 @@ class TortoiseOcrRepository:
                 selected_candidate.is_selected = True
                 await selected_candidate.save(update_fields=("is_selected",), using_db=connection)
 
+            _refuse_unit_on_other_fields(request.unit, field.field_type)
+
             changed_at = now()
-            value_changed = request.corrected_value is not None or selected_candidate is not None
-            if value_changed:
+            unit_changed = request.unit is not None and field.unit != request.unit.value
+            #: **단위를 고치는 것은 값을 고치는 것이다.** 숫자가 그대로여도
+            #: 소진 예정일과 문자 발송일이 통째로 바뀐다(3 → 84). 그래서 확정
+            #: 도장을 떼는 것도, 판올림도 값 수정과 같이 다룬다 — 안 그러면
+            #: 「확정됐다」가 확정한 사람이 못 본 일수를 가리키게 된다.
+            value_changed = request.corrected_value is not None or selected_candidate is not None or unit_changed
+            if request.corrected_value is not None or selected_candidate is not None:
                 field.corrected_value = corrected_value
+            if request.unit is not None:
+                field.unit = request.unit.value
+            if value_changed:
                 field.modified_by = actor.staff_id
                 field.modified_at = changed_at
             field.version += 1
@@ -295,7 +346,12 @@ class TortoiseOcrRepository:
         return field, doc_texts
 
     async def write_field(
-        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+        self,
+        visit_id: int,
+        field_type: str,
+        value: str | None,
+        actor: OcrActor,
+        unit: str | None = None,
     ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]:
         """판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
 
@@ -306,6 +362,8 @@ class TortoiseOcrRepository:
         `confidence` 는 비운다. 사람이 적은 값에 기계의 확신을 붙이면, 화면이
         「낮은 확신」으로 다시 물어보거나 반대로 확신한 값처럼 보인다.
         """
+        _refuse_unit_on_other_fields(unit, field_type)
+
         job = await self.get_latest_job_by_visit(visit_id, actor)
         if job is None:
             raise _not_found()
@@ -338,13 +396,16 @@ class TortoiseOcrRepository:
                     ocr_result_id=result.ocr_result_id,
                     field_type=field_type,
                     corrected_value=text,
+                    unit=unit,
                     modified_by=actor.staff_id,
                     modified_at=changed_at,
                     using_db=connection,
                 )
             else:
-                changed = field.corrected_value != text
+                changed = field.corrected_value != text or (unit is not None and field.unit != unit)
                 field.corrected_value = text
+                if unit is not None:
+                    field.unit = unit
                 field.modified_by = actor.staff_id
                 field.modified_at = changed_at
                 field.version += 1
@@ -753,10 +814,15 @@ class OcrService:
         return serialize_field(field, doc_text_map)
 
     async def write_field(
-        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+        self,
+        visit_id: int,
+        field_type: str,
+        value: str | None,
+        actor: OcrActor,
+        unit: str | None = None,
     ) -> OcrFieldResponse | None:
         """판독이 못 읽은 값을 적어 넣는다. 비우면 지우고 `None` 을 준다."""
-        field, doc_texts = await self.repository.write_field(visit_id, field_type, value, actor)
+        field, doc_texts = await self.repository.write_field(visit_id, field_type, value, actor, unit=unit)
         if field is None:
             return None
         return serialize_field(field, {d.ocr_document_text_id: d for d in doc_texts})
