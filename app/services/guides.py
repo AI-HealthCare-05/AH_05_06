@@ -31,8 +31,8 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrResult, course_days, read_but_unconfirmed
-from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, course_days, read_but_unconfirmed
+from app.models.prescriptions import Prescription, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
     GuideEvent,
@@ -113,26 +113,6 @@ REASON_MAX = 200
 def _not_found() -> ApiError:
     """없는 것과 **남의 의원 것**을 같게 답한다 — 존재 여부를 감춘다(계약 §5)."""
     return ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
-
-
-def _medication_body(items: list[PrescriptionItem], guidance: str) -> str:
-    """구조화 처방 항목을 환자가 읽는 복약 안내로 옮긴다.
-
-    약명·복용 빈도·기간은 ``PrescriptionItem`` 에 실제로 저장된 값만 쓴다.
-    기간이 없는 필요시 약에 다른 약의 기간을 붙이지 않고, 처방 항목 자체가
-    없으면 승인된 기본 지도 문장만 내보낸다 — 없는 값을 OCR 원문이나 임의
-    문장으로 대신 만들지 않는다(KEY-224).
-    """
-    lines: list[str] = []
-    for index, item in enumerate(items, start=1):
-        facts = [item.name.strip(), item.frequency.strip()]
-        if item.duration_days is not None:
-            facts.append(f"{item.duration_days}일분")
-        lines.append(f"{index}. {' · '.join(fact for fact in facts if fact)}")
-
-    if not lines:
-        return guidance
-    return "\n".join(("처방된 복약 정보", *lines, guidance))
 
 
 LOGGER = logging.getLogger("app.guides")
@@ -807,14 +787,27 @@ class GuideService:
 
     @staticmethod
     async def _course_days(visit_id: int, connection) -> int | None:
-        """처방일수 — 판독이 확정한 값에서 읽는다.
+        """처방일수 — **최신 비제외 COMPLETED job**의 확정 값에서 읽는다.
 
-        **확정된 것만 본다.** 스탭이 아직 확인하지 않은 값으로 발송일을 잡으면,
-        고친 뒤에도 옛 날짜로 예약된 채 남는다.
+        제외·이전 job의 값이 섞이면 소진 문자 날짜가 틀려진다.
+        예: job1(84일)→job2(28일) 재판독 후 job1을 제외해도
+        필터 없이 first()하면 84일 기준으로 소진 문자가 잡힌다.
         """
+        latest_job = (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                excluded_from_guide=False,
+                status=OcrJobStatus.COMPLETED,
+            )
+            .using_db(connection)
+            .order_by("-created_at")
+            .first()
+        )
+        if latest_job is None:
+            return None
         row = (
             await OcrField.filter(
-                ocr_result__ocr_job__visit_id=visit_id,
+                ocr_result__ocr_job=latest_job,
                 field_type="DURATION_DAYS",
                 is_confirmed=True,
             )

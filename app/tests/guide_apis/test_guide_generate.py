@@ -923,52 +923,36 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
     """
 
     async def test_excluded_failed_in_middle_does_not_block(self) -> None:
-        """oldest confirmed → middle excluded FAILED → newest confirmed → 통과.
+        """oldest confirmed → newest excluded FAILED → 통과.
 
-        제외 처리된 FAILED job은 게이트 판정에서 건너뛴다.
-        그 이후에 생성된 확정 job이 게이트를 통과시킨다.
+        제외 처리된 FAILED job이 가장 최신이어도 게이트가 건너뛰고
+        이전 확정 job 기준으로 통과해야 한다.
+
+        excluded_from_guide 필터를 지우면 최신 job이 FAILED라 422가 떠야 하므로
+        이 테스트가 제외 필터를 실제로 검증한다.
         created_at을 명시 고정해 순차 INSERT의 암묵적 시계 순서에 의존하지 않는다.
         """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
         visit = await make_visit(clinic)
 
-        # 1st: 완료·확정 (가장 오래된)
+        # 1st: 완료·확정 (오래된)
         await attach_confirmed_ocr(visit, staff.staff_id)
         await OcrJob.filter(ocr_job_id=f"syn-gen-{visit.visit_id}").update(
             created_at=datetime(2026, 8, 1, 0, 0, tzinfo=UTC),
         )
 
-        # 2nd: excluded FAILED (중간, 잘못 올린 뒤 제외)
+        # 2nd: excluded FAILED (가장 최신) — 제외 필터 없이는 이 job이 선택돼 422가 뜬다
         await OcrJob.create(
-            ocr_job_id=f"syn-excl-fail-mid-{visit.visit_id}",
+            ocr_job_id=f"syn-excl-fail-newest-{visit.visit_id}",
             hospital_id=clinic.hospital_id,
             visit_id=visit.visit_id,
             requested_by=staff.staff_id,
             status=OcrJobStatus.FAILED,
             excluded_from_guide=True,
         )
-        await OcrJob.filter(ocr_job_id=f"syn-excl-fail-mid-{visit.visit_id}").update(
-            created_at=datetime(2026, 8, 10, 0, 0, tzinfo=UTC),
-        )
-
-        # 3rd: 완료·확정 (가장 최신) — 게이트가 이 job을 기준으로 판정해야 한다
-        third_job = await OcrJob.create(
-            ocr_job_id=f"syn-new-confirmed-{visit.visit_id}",
-            hospital_id=clinic.hospital_id,
-            visit_id=visit.visit_id,
-            requested_by=staff.staff_id,
-            status=OcrJobStatus.COMPLETED,
-        )
-        await OcrJob.filter(ocr_job_id=third_job.ocr_job_id).update(
+        await OcrJob.filter(ocr_job_id=f"syn-excl-fail-newest-{visit.visit_id}").update(
             created_at=datetime(2026, 8, 20, 0, 0, tzinfo=UTC),
-        )
-        third_result = await OcrResult.create(ocr_job=third_job, model_name="synthetic-fixture")
-        await OcrField.create(
-            ocr_result=third_result,
-            field_type="DIAGNOSIS",
-            extracted_value="자궁내막증",
-            is_confirmed=True,
         )
 
         async with self.client() as client:
