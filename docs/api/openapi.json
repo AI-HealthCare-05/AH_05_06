@@ -3991,6 +3991,21 @@
         "title": "PatientResponse",
         "type": "object"
       },
+      "PatientSessionCheckRequest": {
+        "additionalProperties": false,
+        "description": "세션 확인도 **본문으로 받는다** — KEY-292.\n\n여태 `GET /patient-auth/session?link_token=<원문>` 이었다. 그러면 링크\n토큰이 **주소에 실려** nginx access log 에 원문 그대로 남는다 — 실제로\n확인했다.\n\n    \"GET /api/v1/patient-auth/session?link_token=<원문> HTTP/1.1\" 401\n\n`app/core/masking.py` 가 `token` 을 가려야 할 값으로 두고 uvicorn 로그를\n막아 두었지만, **그것으로 nginx 로그는 못 막는다.** AGENTS.md 「환자 링크\n토큰을 코드·화면·로그·커밋에 남기지 않는다」에 정면으로 걸린다.\n\n읽기인데 `POST` 인 것이 어색해 보일 수 있다. 그런데 이 저장소의 다른\n링크 종점(`/context`·`/otp/issue`·`/otp/verify`)이 모두 같은 까닭으로\n본문을 쓴다 — 토큰을 주소에 안 싣는 것이 이 화면의 계약이다.",
+        "properties": {
+          "link_token": {
+            "title": "Link Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_token"
+        ],
+        "title": "PatientSessionCheckRequest",
+        "type": "object"
+      },
       "PatientSessionResponse": {
         "additionalProperties": false,
         "properties": {
@@ -7825,18 +7840,10 @@
       }
     },
     "/api/v1/patient-auth/session": {
-      "get": {
-        "operationId": "check_patient_session_api_v1_patient_auth_session_get",
+      "post": {
+        "description": "**주소에 토큰을 안 싣는다** — KEY-292 (유가은 님 `#255` 리뷰).\n\n여기는 `GET …/session?link_token=<원문>` 이었다. `#255` 가 화면에서 조각\n토큰을 읽게 고치기 전에는 실서버가 이 자리에 **도달하지 못했는데**, 그\n고침이 길을 여는 순간 정상 진입마다 이 요청이 나가고 토큰이 nginx access\nlog 에 원문으로 남는다. 그래서 후속으로 미루지 않고 같은 PR 에서 걷는다.",
+        "operationId": "check_patient_session_api_v1_patient_auth_session_post",
         "parameters": [
-          {
-            "in": "query",
-            "name": "link_token",
-            "required": true,
-            "schema": {
-              "title": "Link Token",
-              "type": "string"
-            }
-          },
           {
             "in": "cookie",
             "name": "patient_session",
@@ -7854,6 +7861,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientSessionCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

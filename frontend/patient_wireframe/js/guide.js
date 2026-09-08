@@ -21,8 +21,7 @@
    * `undefined` 다. */
   function otpEntryUrl() {
     var query = new URLSearchParams(window.location.search);
-    var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
-    var token = TOKEN || fragment.get('t') || query.get('t') || query.get('visit') || '';
+    var token = TOKEN || linkTokenFrom(window.location, ['t', 'visit']);
     var safeQuery = new URLSearchParams();
     var mock = query.get('mock');
     var previewCase = query.get('case');
@@ -45,7 +44,10 @@
   function takeGuideToken() {
     var query = new URLSearchParams(window.location.search);
     var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
-    var token = fragment.get('t') || query.get('t') || query.get('visit') || '';
+    /* 읽는 규칙은 `frontend/js/link-token.js` 한 곳에 있다 (이희진 님 `#255` ③).
+       지우는 일은 이 화면만 한다 — 안내 화면은 토큰을 주소에서 **떼어** 내고
+       기억에만 둔다(KEY-205). */
+    var token = linkTokenFrom(window.location, ['t', 'visit']);
 
     fragment.delete('t');
     query.delete('t');

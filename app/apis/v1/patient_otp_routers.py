@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, Query, Response, status
+from fastapi import APIRouter, Cookie, Depends, Response, status
 from redis.asyncio import Redis
 
 from app.core import config
@@ -18,6 +18,7 @@ from app.dtos.patient_otp import (
     PatientOtpIssueResponse,
     PatientOtpVerifyRequest,
     PatientOtpVerifyResponse,
+    PatientSessionCheckRequest,
     PatientSessionResponse,
 )
 from app.services.patient_links import PatientLinkService
@@ -79,13 +80,20 @@ async def get_patient_auth_context(
     )
 
 
-@patient_auth_router.get("/session", response_model=PatientSessionResponse)
+@patient_auth_router.post("/session", response_model=PatientSessionResponse)
 async def check_patient_session(
+    payload: PatientSessionCheckRequest,
     sessions: Annotated[PatientSessionStore, Depends(_patient_sessions)],
-    link_token: Annotated[str, Query()],
     patient_session: Annotated[str | None, Cookie(alias=PATIENT_SESSION_COOKIE_NAME)] = None,
 ) -> PatientSessionResponse:
-    expires_in = await sessions.check(patient_session, link_token)
+    """**주소에 토큰을 안 싣는다** — KEY-292 (유가은 님 `#255` 리뷰).
+
+    여기는 `GET …/session?link_token=<원문>` 이었다. `#255` 가 화면에서 조각
+    토큰을 읽게 고치기 전에는 실서버가 이 자리에 **도달하지 못했는데**, 그
+    고침이 길을 여는 순간 정상 진입마다 이 요청이 나가고 토큰이 nginx access
+    log 에 원문으로 남는다. 그래서 후속으로 미루지 않고 같은 PR 에서 걷는다.
+    """
+    expires_in = await sessions.check(patient_session, payload.link_token)
     return PatientSessionResponse(expires_in_seconds=expires_in)
 
 

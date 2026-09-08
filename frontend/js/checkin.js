@@ -45,9 +45,7 @@ function notifyFor(answers, key) {
   /* 실제 화면에서 토큰이 없으면 합성 기본값으로 요청하지 않는다. 새로고침·
      잘못된 주소는 서버 인증 상태를 추측하지 않고 닫힌 링크 안내로 보낸다. */
   var token =
-    new URLSearchParams(String(location.hash || "").replace(/^#/, "")).get("t") ||
-    new URLSearchParams(location.search).get("t") ||
-    (MOCK && CHECKIN_CASE ? "synthetic-link-token" : "");
+    linkTokenFrom(location, ["t"]) || (MOCK && CHECKIN_CASE ? "synthetic-link-token" : "");
 
   /* OTP 화면 진입 주소 — guide.js의 otpEntryUrl()과 같은 모양이다 (KEY-178). */
   function otpEntryUrl() {
