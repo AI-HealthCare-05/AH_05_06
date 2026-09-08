@@ -157,6 +157,18 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
   var guide = null;
   var visit = null;
   var me = null;
+
+  /* **다시 세운다.** `e6c214c`(KEY-234)가 안내문 그리는 규칙을 `guide-view.js`
+     로 옮기면서 이 줄까지 함께 지웠는데, **쓰는 자리(`renderHead`)는 남았다.**
+
+     그래서 `load()` 가 안내문을 받아 머리를 그리는 순간
+     `ReferenceError: GENDER_LABEL is not defined` 로 죽고, `.catch` 가 그것을
+     통신 오류로 오해해 **「안내문을 불러오지 못했습니다」**를 띄웠다. 서버는
+     멀쩡히 답하고 있었다 — 의사 승인 화면이 안내문 있는 진료를 하나도 못 열었다.
+
+     옮기지 않고 여기 둔다. 쓰는 곳이 이 파일 하나뿐이라 공용으로 낼 이유가
+     없고, 공용으로 내면 「어느 화면이 싣나」를 또 따져야 한다. */
+  var GENDER_LABEL = { FEMALE: "여", MALE: "남", OTHER: "기타", UNKNOWN: "—" };
   var section = "medication";
   var loadSeq = 0;
   var patientLinkOpening = false;

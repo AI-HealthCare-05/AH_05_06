@@ -15,16 +15,10 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const { codeOnly, markupOnly } = require("./source.js");
+const { codeOnly, scriptsOf } = require("./source.js");
 const { load } = require("./browser-shim.js");
 
 const ROOT = path.join(__dirname, "..");
-
-/** 그 화면이 싣는 스크립트를 실리는 차례대로. */
-function scriptsOf(page) {
-  const html = markupOnly(fs.readFileSync(path.join(ROOT, page), "utf8"));
-  return [...html.matchAll(/<script\s+src="\/js\/([\w-]+\.js)"/g)].map((m) => m[1]);
-}
 
 /** 그 파일이 전역에 얹는 이름들 — 맨 왼쪽에서 시작하는 선언만 본다.
     함수 안의 `var` 는 들여쓰기가 있어 걸리지 않는다. */

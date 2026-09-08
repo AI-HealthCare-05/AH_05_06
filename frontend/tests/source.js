@@ -26,7 +26,12 @@ function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-/** 주석과 문자열 밖의 코드만 남긴다. 주석 자리는 빈칸으로 채워 줄 수를 지킨다. */
+/** **주석만** 걷는다. 주석 자리는 빈칸으로 채워 줄 수를 지킨다.
+ *
+ * 여기는 **글자열을 모른다** — `"https://…"` 의 `//` 를 주석 시작으로 본다.
+ * 글자열 안의 낱말까지 세면 안 되는 자리에는 아래 `bareCode` 를 쓴다.
+ * (이 주석이 「주석과 문자열 밖의 코드만 남긴다」라고 적혀 있었다 — 사실이
+ *  아니라서 고쳤다. `#249` 리뷰 ②를 파다 나온 것이다.) */
 function codeOnly(text) {
   let out = "";
   let i = 0;
@@ -58,6 +63,83 @@ function codeOnly(text) {
   return out;
 }
 
+/* 글자열도 주석도 걷어 낸 코드.
+ *
+ * **`codeOnly` 를 안 쓴다.** 그쪽은 글자열을 모른다 — `"https://…"` 의 `//` 를
+ * 주석 시작으로 보고 그 줄 끝까지 삼키고, 그러다 뒤엣것의 `/*` 짝이 어긋나
+ * **진짜 주석이 코드로 남는다.** 실제로 `ocr-review.js` 의 주석 속
+ * 「MEDICATION_NAME」이 그렇게 새어 나왔다.
+ *
+ * 여기서는 한 번만 훑으며 상태를 들고 간다 — 글자열 안의 `//` 는 주석이
+ * 아니고, 주석 안의 따옴표는 글자열이 아니다.
+ */
+function bareCode(text) {
+  let out = "";
+  let i = 0;
+
+  while (i < text.length) {
+    const two = text.slice(i, i + 2);
+
+    if (two === "/*") {
+      const end = text.indexOf("*/", i + 2);
+      const stop = end === -1 ? text.length : end + 2;
+      out += text.slice(i, stop).replace(/[^\n]/g, " ");
+      i = stop;
+      continue;
+    }
+    if (two === "//") {
+      const end = text.indexOf("\n", i);
+      const stop = end === -1 ? text.length : end;
+      out += " ".repeat(stop - i);
+      i = stop;
+      continue;
+    }
+
+    /* 정규식 리터럴도 글자열이다 — `/^MEDICATION_NAME(_\\d+)?$/` 안의 이름을
+       「이 파일이 쓰는 이름」으로 세면 안 된다. 나눗셈과 가르는 규칙은 앞의
+       마지막 글자다: 값이 올 자리(`(`, `=`, `,`, `return` …)면 정규식이다. */
+    if (text[i] === "/") {
+      const before = out.replace(/\s+$/, "");
+      const last = before.slice(-1);
+      const opensValue = last === "" || "(,=:[!&|?{};+-*%~^".includes(last) || /\breturn$/.test(before);
+      if (opensValue) {
+        let j = i + 1;
+        let inClass = false;
+        while (j < text.length) {
+          if (text[j] === "\\") j += 2;
+          else if (text[j] === "[") (inClass = true), (j += 1);
+          else if (text[j] === "]") (inClass = false), (j += 1);
+          else if (text[j] === "/" && !inClass) break;
+          else if (text[j] === "\n") break; // 정규식이 아니었다
+          else j += 1;
+        }
+        if (text[j] === "/") {
+          out += text.slice(i, j + 1).replace(/[^\n]/g, " ");
+          i = j + 1;
+          continue;
+        }
+      }
+    }
+
+    const quote = text[i];
+    if (quote === '"' || quote === "'" || quote === "`") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== quote) {
+        if (text[j] === "\\") j += 1;
+        if (quote !== "`" && text[j] === "\n") break; // 안 닫힌 따옴표에 끌려가지 않는다
+        j += 1;
+      }
+      out += text.slice(i, j + 1).replace(/[^\n]/g, " ");
+      i = j + 1;
+      continue;
+    }
+
+    out += text[i];
+    i += 1;
+  }
+  return out;
+}
+
 /** HTML 주석을 뺀다. 같은 함정이 화면 파일에도 있다. */
 function markupOnly(text) {
   return text.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, " "));
@@ -78,4 +160,14 @@ function rule(css, selector) {
   throw new Error(`${selector} 규칙이 없다 — 검사가 헛돈다`);
 }
 
-module.exports = { read, codeOnly, markupOnly, rule };
+/** 그 화면이 싣는 `/js/*.js` 목록 — 실린 차례 그대로.
+ *
+ * `globals-defined` · `globals-collide` 두 검사에 **글자까지 같은 사본**이
+ * 있었다 (`#249` 리뷰 ①). 스크립트 태그 모양이 바뀌는 날 한쪽만 고쳐진다.
+ */
+function scriptsOf(page) {
+  const html = markupOnly(read(page));
+  return [...html.matchAll(/<script\s+src="\/js\/([\w-]+\.js)"/g)].map((m) => m[1]);
+}
+
+module.exports = { read, codeOnly, bareCode, markupOnly, scriptsOf, rule };
