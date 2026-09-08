@@ -835,6 +835,54 @@ class TestGenerateGateLatestJob(GenerateGuideTestCase):
         assert response.status_code == 422
         assert response.json()["code"] == "OCR_NOT_CONFIRMED"
 
+    async def test_new_processing_job_blocks_generation(self) -> None:
+        """이전 job이 확정돼 있어도 더 최신 PROCESSING job이 있으면 422로 막힌다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 첫 번째 job — 완료·확정
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        # 두 번째 job — 재업로드 후 아직 처리 중
+        await OcrJob.create(
+            ocr_job_id=f"syn-processing-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.PROCESSING,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_RESULT_NOT_READY"
+
+    async def test_new_failed_job_blocks_generation(self) -> None:
+        """이전 job이 확정돼 있어도 더 최신 FAILED job이 있으면 422로 막힌다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 첫 번째 job — 완료·확정
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        # 두 번째 job — 재업로드 후 실패
+        await OcrJob.create(
+            ocr_job_id=f"syn-failed-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.FAILED,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_FAILED"
+
     async def test_excluded_job_is_skipped_and_previous_confirmed_passes(self) -> None:
         """최신 job을 제외 처리하면 이전 확정 job 기준으로 게이트가 통과된다."""
         clinic = await make_clinic()
@@ -860,6 +908,136 @@ class TestGenerateGateLatestJob(GenerateGuideTestCase):
             extracted_value="잘못된 문서",
             is_confirmed=False,
         )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 201
+
+
+class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
+    """생성 시각·상태가 섞인 다중 job 혼합 회귀 — KEY-125.
+
+    가장 최근 비제외 job을 기준으로 게이트를 판정하는 규칙이
+    시각·상태 조합에서도 일관되게 동작하는지 검증한다.
+    """
+
+    async def test_excluded_failed_in_middle_does_not_block(self) -> None:
+        """oldest confirmed → newest excluded FAILED → 통과.
+
+        제외 처리된 FAILED job이 가장 최신이어도 게이트가 건너뛰고
+        이전 확정 job 기준으로 통과해야 한다.
+
+        excluded_from_guide 필터를 지우면 최신 job이 FAILED라 422가 떠야 하므로
+        이 테스트가 제외 필터를 실제로 검증한다.
+        created_at을 명시 고정해 순차 INSERT의 암묵적 시계 순서에 의존하지 않는다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 1st: 완료·확정 (오래된)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+        await OcrJob.filter(ocr_job_id=f"syn-gen-{visit.visit_id}").update(
+            created_at=datetime(2026, 8, 1, 0, 0, tzinfo=UTC),
+        )
+
+        # 2nd: excluded FAILED (가장 최신) — 제외 필터 없이는 이 job이 선택돼 422가 뜬다
+        await OcrJob.create(
+            ocr_job_id=f"syn-excl-fail-newest-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.FAILED,
+            excluded_from_guide=True,
+        )
+        await OcrJob.filter(ocr_job_id=f"syn-excl-fail-newest-{visit.visit_id}").update(
+            created_at=datetime(2026, 8, 20, 0, 0, tzinfo=UTC),
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 201
+
+    async def test_new_failed_blocks_after_multiple_confirmed_jobs(self) -> None:
+        """oldest confirmed → middle confirmed → newest FAILED → OCR_FAILED 422.
+
+        여러 개의 확정 job이 있어도 가장 최신 job이 FAILED면 차단한다.
+        created_at을 명시 고정해 순차 INSERT의 암묵적 시계 순서에 의존하지 않는다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 1st: 완료·확정 (가장 오래된)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+        await OcrJob.filter(ocr_job_id=f"syn-gen-{visit.visit_id}").update(
+            created_at=datetime(2026, 8, 1, 0, 0, tzinfo=UTC),
+        )
+
+        # 2nd: 완료·확정 (두 번째)
+        second_job = await OcrJob.create(
+            ocr_job_id=f"syn-confirmed-2nd-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.COMPLETED,
+        )
+        await OcrJob.filter(ocr_job_id=second_job.ocr_job_id).update(
+            created_at=datetime(2026, 8, 10, 0, 0, tzinfo=UTC),
+        )
+        second_result = await OcrResult.create(ocr_job=second_job, model_name="synthetic-fixture")
+        await OcrField.create(
+            ocr_result=second_result,
+            field_type="DIAGNOSIS",
+            extracted_value="자궁내막증",
+            is_confirmed=True,
+        )
+
+        # 3rd: 재업로드 후 FAILED (가장 최신) — 게이트를 차단해야 한다
+        await OcrJob.create(
+            ocr_job_id=f"syn-new-failed-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.FAILED,
+        )
+        await OcrJob.filter(ocr_job_id=f"syn-new-failed-{visit.visit_id}").update(
+            created_at=datetime(2026, 8, 20, 0, 0, tzinfo=UTC),
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_FAILED"
+
+    async def test_old_abandoned_processing_does_not_block_newer_confirmed(self) -> None:
+        """oldest PROCESSING(방치) → newest COMPLETED confirmed → 통과.
+
+        오래된 PROCESSING job이 남아 있어도 더 최신 COMPLETED confirmed job이
+        있으면 게이트가 통과된다. 최신 job 기준으로 판정하므로 과거의
+        방치된 PROCESSING은 영향을 주지 않는다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 1st: 오래된 PROCESSING job (방치·고착) — created_at을 명시적으로 과거로 설정
+        old_processing = await OcrJob.create(
+            ocr_job_id=f"syn-old-proc-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.PROCESSING,
+        )
+        await OcrJob.filter(ocr_job_id=old_processing.ocr_job_id).update(
+            created_at=datetime(2026, 8, 1, 0, 0, tzinfo=UTC),
+        )
+
+        # 2nd: 최신 COMPLETED confirmed — 게이트가 이 job을 기준으로 판정해야 한다
+        await attach_confirmed_ocr(visit, staff.staff_id)
 
         async with self.client() as client:
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))

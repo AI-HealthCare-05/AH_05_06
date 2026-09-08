@@ -25,6 +25,47 @@ from app.ocr.service import LOW_CONFIDENCE_THRESHOLD, serialize_field
 NOW = datetime(2026, 8, 19, 8, 0, tzinfo=UTC)
 STAFF = OcrActor(staff_id=17, hospital_id=3, roles=frozenset({"staff"}))
 
+# visit_id → 단일 job 응답 매핑.  id 999는 매핑 없음 → 404 케이스에 사용한다.
+_VISIT_JOB_MAP: dict[int, OcrJobResponse] = {
+    501: OcrJobResponse(
+        ocr_job_id="ocr_synthetic_501",
+        status=OcrJobStatus.COMPLETED,
+        progress=100,
+        started_at=NOW,
+        completed_at=NOW,
+    ),
+    502: OcrJobResponse(
+        ocr_job_id="ocr_synthetic_502",
+        status=OcrJobStatus.PROCESSING,
+        progress=40,
+        started_at=NOW,
+    ),
+}
+
+# visit_id → 문서별 job 목록 매핑.  매핑 없는 id는 빈 목록을 반환한다.
+_VISIT_JOBS_MAP: dict[int, list[OcrJobByDocumentResponse]] = {
+    503: [
+        OcrJobByDocumentResponse(
+            document_id=801,
+            document_type=OcrDocumentType.EMR,
+            ocr_job_id="ocr_synthetic_503_emr",
+            status=OcrJobStatus.COMPLETED,
+            progress=100,
+            started_at=NOW,
+            completed_at=NOW,
+        ),
+        OcrJobByDocumentResponse(
+            document_id=802,
+            document_type=OcrDocumentType.LAB_RESULT,
+            ocr_job_id="ocr_synthetic_503_lab",
+            status=OcrJobStatus.FAILED,
+            progress=0,
+            started_at=NOW,
+            failure_code="OCR_ENGINE_ERROR",
+        ),
+    ],
+}
+
 
 class FakeOcrService:
     def __init__(self) -> None:
@@ -84,46 +125,13 @@ class FakeOcrService:
         return [self.field(pending=self.pending)]
 
     async def job_for_visit(self, visit_id: int, actor: OcrActor) -> OcrJobResponse:
-        if visit_id == 501:
-            return OcrJobResponse(
-                ocr_job_id="ocr_synthetic_501",
-                status=OcrJobStatus.COMPLETED,
-                progress=100,
-                started_at=NOW,
-                completed_at=NOW,
-            )
-        if visit_id == 502:
-            return OcrJobResponse(
-                ocr_job_id="ocr_synthetic_502",
-                status=OcrJobStatus.PROCESSING,
-                progress=40,
-                started_at=NOW,
-            )
-        raise OcrApiError(404, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
+        job = _VISIT_JOB_MAP.get(visit_id)
+        if job is None:
+            raise OcrApiError(404, "NOT_FOUND", "OCR 리소스를 찾을 수 없습니다.")
+        return job.model_copy()
 
     async def jobs_for_visit(self, visit_id: int, actor: OcrActor) -> list[OcrJobByDocumentResponse]:
-        if visit_id == 503:
-            return [
-                OcrJobByDocumentResponse(
-                    document_id=801,
-                    document_type=OcrDocumentType.EMR,
-                    ocr_job_id="ocr_synthetic_503_emr",
-                    status=OcrJobStatus.COMPLETED,
-                    progress=100,
-                    started_at=NOW,
-                    completed_at=NOW,
-                ),
-                OcrJobByDocumentResponse(
-                    document_id=802,
-                    document_type=OcrDocumentType.LAB_RESULT,
-                    ocr_job_id="ocr_synthetic_503_lab",
-                    status=OcrJobStatus.FAILED,
-                    progress=0,
-                    started_at=NOW,
-                    failure_code="OCR_ENGINE_ERROR",
-                ),
-            ]
-        return []
+        return [j.model_copy() for j in _VISIT_JOBS_MAP.get(visit_id, [])]
 
     async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJobResponse:
         if ocr_job_id == "ocr_other_hospital":

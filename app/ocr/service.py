@@ -35,6 +35,7 @@ from app.ocr.schemas import (
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor
+from app.ocr.utils import assert_latest_ocr_job_ready
 
 
 def _resolved_value(row: dict) -> str | None:
@@ -184,7 +185,7 @@ async def _result_of(job: OcrJob) -> "OcrResult | None":
 def _not_confirmed() -> OcrApiError:
     """쓸 판독이 아직 없다 — `GuideService.generate()` 와 같은 말을 쓴다."""
     return OcrApiError(
-        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
         "OCR_NOT_CONFIRMED",
         "확정된 OCR 항목이 없습니다. 먼저 판독을 확정해 주세요.",
     )
@@ -202,8 +203,29 @@ class TortoiseOcrRepository:
         return job
 
     async def get_latest_job_by_visit(self, visit_id: int, actor: OcrActor) -> OcrJob | None:
-        # 진행 중인 작업이 있으면 그것이 현재 작업이다.
-        # 없으면 같은 진료의 가장 최근 작업을 반환한다.
+        # 두 단계 쿼리 — 단일 쿼리 전환 여부 검토 결과 (KEY-125)
+        #
+        # 규칙: PROCESSING 우선, 없으면 created_at 내림차순 최신.
+        #
+        # 단일 쿼리 후보:
+        #   SELECT * FROM ocr_job
+        #   WHERE visit_id=? AND hospital_id=?
+        #   ORDER BY (status='PROCESSING') DESC, created_at DESC
+        #   LIMIT 1;
+        #
+        # 전환하지 않은 이유 두 가지:
+        #   1. 두 쿼리는 각자 한 규칙만 담아 독립적으로 테스트할 수 있다.
+        #      test_ocr_repository.py가 PROCESSING-우선과 최신순을 서로 다른 행으로
+        #      검증하는데, 단일 쿼리로 합치면 그 독립성이 사라진다.
+        #   2. 성능 차이가 없다. PROCESSING job이 없는 일반 경우에 쿼리 1은
+        #      인덱스 레인지 스캔으로 즉시 빈 결과를 반환하고, 쿼리 2만 행을 읽는다.
+        #      PROCESSING job이 있으면 쿼리 1만 행을 읽고 쿼리 2는 실행되지 않는다.
+        #
+        # 생성 SQL (Tortoise → MySQL):
+        #   쿼리 1: SELECT … WHERE visit_id=? AND hospital_id=? AND status='PROCESSING'
+        #            ORDER BY created_at DESC LIMIT 1;
+        #   쿼리 2: SELECT … WHERE visit_id=? AND hospital_id=?
+        #            ORDER BY created_at DESC LIMIT 1;
         job = (
             await OcrJob.filter(
                 visit_id=visit_id,
@@ -508,38 +530,12 @@ class TortoiseOcrRepository:
                 "진료 건을 찾을 수 없습니다.",
             )
 
-        # GuideService.generate()와 동일한 기준으로 job을 선택한다.
-        # excluded된 job이나 COMPLETED가 아닌 job으로 처방을 만드는 것을 막는다.
-        job = (
-            await OcrJob.filter(
-                visit_id=visit_id,
-                hospital_id=actor.hospital_id,
-                excluded_from_guide=False,
-                status=OcrJobStatus.COMPLETED,
-            )
-            .order_by("-created_at")
-            .first()
-        )
+        # generate()와 동일한 기준 — assert_latest_ocr_job_ready(app/ocr/utils.py).
+        # PROCESSING·FAILED job이 있으면 여기서 차단해 처방만 서고 안내문은
+        # 영구 차단되는 진료가 생기는 것을 막는다 (KEY-271).
+        job = await assert_latest_ocr_job_ready(visit_id, actor.hospital_id)
 
-        # **소유권과 판독 상태를 나눠서 말한다** — 이희진 님 `#233` 리뷰.
-        #
-        # 「동일 기준」이라 적어 두고 코드가 갈려 있었다. `generate()` 는 진료
-        # 소유권을 **먼저** 보고 404 `VISIT_NOT_FOUND`, 그다음 job 이 없으면
-        # 422 `OCR_NOT_CONFIRMED` 를 낸다. 여기는 둘을 한 질의에 뭉쳐 어느
-        # 쪽이든 404 `NOT_FOUND` 였다.
-        #
-        # **화면에서 글자가 갈린다.** `GENERATE_SAYINGS` 에 `NOT_FOUND` 항목이
-        # 없어서, 스탭은 「확정한 항목이 아직 없습니다 — 값을 확인해 저장한 뒤
-        # 다시 눌러 주세요」 대신 「안내문을 만들지 못했습니다 — 잠시 뒤 다시
-        # 눌러 주세요」를 받는다. 무엇을 해야 하는지가 사라진다.
-        #
-        # 지금은 `PATCH /ocr/jobs/{id}/exclude` 를 부르는 화면이 없어 못 닿는
-        # 자리다. 그 기능이 화면에 붙는 순간 드러난다.
-        #
-        # **뭉쳐서 422 로 바꾸면 안 된다.** 그러면 남의 병원 진료를 물었을 때도
-        # 「확정된 항목이 없다」고 답해, 없는 진료와 아직 안 본 진료가 같은 말이
-        # 된다. 그래서 `generate()` 와 **같은 차례**로 가른다.
-        result = await _result_of(job) if job is not None else None
+        result = await _result_of(job)
         if result is None:
             raise _not_confirmed()
 
@@ -547,7 +543,7 @@ class TortoiseOcrRepository:
 
         if not fields_by_type:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "OCR_NOT_CONFIRMED",
                 "확정된 OCR 항목이 없습니다.",
             )
@@ -568,7 +564,7 @@ class TortoiseOcrRepository:
         unconfirmed = read_but_unconfirmed(result.fields)
         if unconfirmed is not None:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "OCR_NOT_CONFIRMED",
                 "확정되지 않은 OCR 항목이 있습니다. 모든 항목을 먼저 확정해 주세요.",
             )
@@ -576,7 +572,7 @@ class TortoiseOcrRepository:
         ps_field = fields_by_type.get("PRESCRIPTION_SET")
         if ps_field is None or not ps_field.value:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "MISSING_PRESCRIPTION_SET",
                 "처방 세트(PRESCRIPTION_SET) 필드가 없습니다.",
             )
@@ -584,7 +580,7 @@ class TortoiseOcrRepository:
         freq_field = fields_by_type.get("FREQUENCY")
         if freq_field is None or not freq_field.value:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "MISSING_FREQUENCY",
                 "복용법(FREQUENCY) 필드가 없습니다.",
             )

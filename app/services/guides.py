@@ -46,6 +46,7 @@ from app.models.visits import (
     GuideStatus,
     Visit,
 )
+from app.ocr.utils import assert_latest_ocr_job_ready
 from app.services import guide_defaults
 from app.services.drug_caution import DrugCautionService
 from app.services.guide_body import medication_body, resolved_copy
@@ -198,25 +199,7 @@ class GuideService:
         if visit is None:
             raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
 
-        # 가장 최근 비제외 completed job을 기준으로 확정 여부를 판정한다.
-        # 새 문서를 추가 업로드했을 때 이전 확정값으로 게이트가 통과되는 것을 막는다.
-        latest_job = (
-            await OcrJob.filter(
-                visit_id=visit_id,
-                hospital_id=actor.hospital_id,
-                excluded_from_guide=False,
-                status=OcrJobStatus.COMPLETED,
-            )
-            .order_by("-created_at")
-            .first()
-        )
-
-        if latest_job is None:
-            raise ApiError(
-                "OCR_NOT_CONFIRMED",
-                422,
-                "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
-            )
+        latest_job = await assert_latest_ocr_job_ready(visit_id, actor.hospital_id)
 
         latest_result = await OcrResult.filter(ocr_job=latest_job).first()
         if latest_result is None:
@@ -804,14 +787,27 @@ class GuideService:
 
     @staticmethod
     async def _course_days(visit_id: int, connection) -> int | None:
-        """처방일수 — 판독이 확정한 값에서 읽는다.
+        """처방일수 — **최신 비제외 COMPLETED job**의 확정 값에서 읽는다.
 
-        **확정된 것만 본다.** 스탭이 아직 확인하지 않은 값으로 발송일을 잡으면,
-        고친 뒤에도 옛 날짜로 예약된 채 남는다.
+        제외·이전 job의 값이 섞이면 소진 문자 날짜가 틀려진다.
+        예: job1(84일)→job2(28일) 재판독 후 job1을 제외해도
+        필터 없이 first()하면 84일 기준으로 소진 문자가 잡힌다.
         """
+        latest_job = (
+            await OcrJob.filter(
+                visit_id=visit_id,
+                excluded_from_guide=False,
+                status=OcrJobStatus.COMPLETED,
+            )
+            .using_db(connection)
+            .order_by("-created_at")
+            .first()
+        )
+        if latest_job is None:
+            return None
         row = (
             await OcrField.filter(
-                ocr_result__ocr_job__visit_id=visit_id,
+                ocr_result__ocr_job=latest_job,
                 field_type="DURATION_DAYS",
                 is_confirmed=True,
             )

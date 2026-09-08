@@ -11,7 +11,7 @@ from tortoise.contrib.test import TestCase
 
 from app.core import config
 from app.core.auth_errors import AuthError as ApiError
-from app.models.ocr import OcrField, OcrJob, OcrResult
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.staffs import Hospital, Staff
 from app.models.visits import (
@@ -77,6 +77,7 @@ class World:
             hospital_id=visit.hospital_id,
             visit=visit,
             requested_by=1,
+            status=OcrJobStatus.COMPLETED,
         )
         result = await OcrResult.create(ocr_job=job, model_name="test")
         await OcrField.create(

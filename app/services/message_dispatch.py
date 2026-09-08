@@ -14,7 +14,7 @@ from tortoise.timezone import now
 
 from app.core.logger import default_logger
 from app.models.catalog import MessageTemplate
-from app.models.ocr import OcrField, course_days
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, course_days
 from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import (
@@ -78,21 +78,27 @@ async def _template_body(hospital_id: int, kind: MessageTemplateKind) -> str:
 
 
 async def _course_days(visit_id: int) -> int | None:
-    """처방일수 — 판독이 확정한 값에서 읽는다.
+    """처방일수 — **최신 비제외 COMPLETED job** 의 확정 값에서 읽는다.
 
-    **확정된 것만 본다.** 스탭이 아직 확인하지 않은 값을 문구에 쓰면 안 된다.
-
-    **셈은 `app/models/ocr.py` 의 `course_days` 것이다** — 이희진 님 `#236` ②.
-
-    여기 사본이 따로 있었고, 독스트링이 「`guides.py` 의 같은 이름과 동일 로직」
-    이라 적어 두었는데 그 짝이 KEY-271 에서 `unit` 을 보게 바뀌면서 **이 자리만
-    낡았다.** 그러면 통수 처방에서 예약은 84일 뒤로 맞게 잡히는데 `{일수}` 를 쓰는
-    RUN_OUT 문구에는 원문 숫자 「3」이 그대로 들어가, 문자가 「3일분」이라고 말한다.
-
-    같은 규칙을 세 곳에 적어 두면 한 곳만 고쳐진다 — 그것이 이미 한 번 났다.
+    제외·이전 job 이 섞이면 소진 문자 날짜와 {일수} 변수가 어긋난다.
+    예: job1(84일)→job2(28일) 재판독 후 job1 을 제외해도
+    필터 없이 first() 하면 84일 기준으로 문자 본문이 채워진다.
+    `guides.py` 의 같은 이름과 동일 로직 — 두 함수가 다르면 발송 날짜와
+    문자 본문이 달라진다.
     """
+    latest_job = (
+        await OcrJob.filter(
+            visit_id=visit_id,
+            excluded_from_guide=False,
+            status=OcrJobStatus.COMPLETED,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if latest_job is None:
+        return None
     row = await OcrField.filter(
-        ocr_result__ocr_job__visit_id=visit_id,
+        ocr_result__ocr_job=latest_job,
         field_type="DURATION_DAYS",
         is_confirmed=True,
     ).first()
