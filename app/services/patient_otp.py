@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -23,6 +24,26 @@ OTP_LOCK_DURATION = timedelta(minutes=10)
 OTP_RESEND_COOLDOWN = timedelta(seconds=60)
 OTP_MAX_FAILURES = 5
 OTP_LENGTH = 6
+LOGGER = logging.getLogger("app.patient_otp")
+
+
+async def _record_otp_event(
+    patient_guide_link_id: int,
+    event_type: PatientOtpEventType,
+) -> None:
+    """Record audit data without changing the OTP operation's outcome."""
+    try:
+        await PatientOtpEvent.create(
+            patient_guide_link_id=patient_guide_link_id,
+            event_type=event_type,
+        )
+    except Exception:
+        # The OTP state or external delivery may already be committed. Do not
+        # report a false authentication result when only audit storage failed.
+        LOGGER.error(
+            "patient OTP audit event could not be stored: event_type=%s",
+            event_type.value,
+        )
 
 
 class OtpDelivery(Protocol):
@@ -315,17 +336,14 @@ class PatientOtpService:
                 challenge.otp_digest,
                 previous,
             )
-            await PatientOtpEvent.create(
-                patient_guide_link_id=link.patient_guide_link_id,
-                event_type=PatientOtpEventType.DELIVERY_FAILED,
+            await _record_otp_event(
+                link.patient_guide_link_id,
+                PatientOtpEventType.DELIVERY_FAILED,
             )
             if isinstance(exc, ApiError):
                 raise
             raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.") from exc
-        await PatientOtpEvent.create(
-            patient_guide_link_id=link.patient_guide_link_id,
-            event_type=PatientOtpEventType.ISSUED,
-        )
+        await _record_otp_event(link.patient_guide_link_id, PatientOtpEventType.ISSUED)
         return challenge
 
     async def verify(self, raw_link_token: str, code: str) -> PatientGuideLink:
@@ -377,7 +395,7 @@ class PatientOtpService:
 
         # 실패 횟수와 잠금을 먼저 커밋한 뒤 응답 예외를 올린다. 트랜잭션 안에서
         # 예외를 던지면 보안 상태까지 롤백되어 무제한 재시도가 가능해진다.
-        await PatientOtpEvent.create(patient_guide_link_id=link.patient_guide_link_id, event_type=event_type)
+        await _record_otp_event(link.patient_guide_link_id, event_type)
         if failure is not None:
             raise failure
         return link

@@ -1,10 +1,11 @@
 """OTP 발급·발송·검증·잠금 감사 이벤트 — KEY-284, append-only."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from tortoise.contrib.test import TestCase
 
-from app.models.visits import PatientOtpEvent, PatientOtpEventType
+from app.core.auth_errors import AuthError
+from app.models.visits import PatientOtpChallenge, PatientOtpEvent, PatientOtpEventType
 from app.services.patient_otp import OTP_MAX_FAILURES, PatientOtpService
 from app.tests.patient_links.test_patient_otp import (
     LINK_TOKEN,
@@ -104,3 +105,57 @@ class TestEventsNeverCarrySensitiveValues(TestCase):
         assert "otp_digest" not in field_names
         assert "otp_salt" not in field_names
         assert "code" not in field_names
+
+
+class TestAuditStorageFailurePolicy(TestCase):
+    async def test_issue_stays_successful_after_the_sms_was_sent(self) -> None:
+        await make_link()
+        delivery = RecordingDelivery()
+        service = PatientOtpService(delivery, secret_key=SECRET)
+
+        with (
+            patch("app.services.patient_otp.secrets.randbelow", return_value=int(OTP)),
+            patch(
+                "app.services.patient_otp.PatientOtpEvent.create",
+                new=AsyncMock(side_effect=RuntimeError("audit storage unavailable")),
+            ),
+        ):
+            challenge = await service.issue(LINK_TOKEN)
+
+        assert delivery.sent == [("01000009100", OTP)]
+        assert challenge.patient_guide_link_id is not None
+        assert await PatientOtpChallenge.all().count() == 1
+
+    async def test_verify_stays_successful_after_the_otp_was_consumed(self) -> None:
+        await make_link()
+        service = PatientOtpService(RecordingDelivery(), secret_key=SECRET)
+        with patch("app.services.patient_otp.secrets.randbelow", return_value=int(OTP)):
+            await service.issue(LINK_TOKEN)
+
+        with patch(
+            "app.services.patient_otp.PatientOtpEvent.create",
+            new=AsyncMock(side_effect=RuntimeError("audit storage unavailable")),
+        ):
+            verified_link = await service.verify(LINK_TOKEN, OTP)
+
+        assert verified_link.patient_guide_link_id is not None
+        challenge = await PatientOtpChallenge.get()
+        assert challenge.consumed_at is not None
+
+    async def test_audit_failure_does_not_replace_the_expected_otp_error(self) -> None:
+        await make_link()
+        service = PatientOtpService(RecordingDelivery(), secret_key=SECRET)
+        with patch("app.services.patient_otp.secrets.randbelow", return_value=int(OTP)):
+            await service.issue(LINK_TOKEN)
+
+        wrong_code = "000000" if OTP != "000000" else "111111"
+        with patch(
+            "app.services.patient_otp.PatientOtpEvent.create",
+            new=AsyncMock(side_effect=RuntimeError("audit storage unavailable")),
+        ):
+            try:
+                await service.verify(LINK_TOKEN, wrong_code)
+            except AuthError as exc:
+                assert exc.code == "OTP_INVALID"
+            else:
+                raise AssertionError("잘못된 OTP가 허용되었습니다")
