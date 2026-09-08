@@ -24,6 +24,8 @@ from app.ocr.service import seed_fixture_result
 # Worker가 동일한 키를 구독한다. 변경 시 ai_worker/tasks/ocr_task.py와 함께 수정한다.
 OCR_JOB_QUEUE = "ocr:jobs"
 
+MAX_DOCUMENTS_PER_UPLOAD = 10
+
 
 class DocumentUploadService:
     def __init__(self, storage: StorageBackend, max_upload_bytes: int) -> None:
@@ -159,6 +161,12 @@ class DocumentUploadService:
     async def _read_and_validate(self, files: list[UploadFile]) -> list[tuple[bytes, str]]:
         if not files:
             raise ApiError(status.HTTP_400_BAD_REQUEST, "INVALID_REQUEST", "파일을 하나 이상 업로드해 주세요.")
+        if len(files) > MAX_DOCUMENTS_PER_UPLOAD:
+            raise ApiError(
+                status.HTTP_400_BAD_REQUEST,
+                "TOO_MANY_FILES",
+                f"파일은 최대 {MAX_DOCUMENTS_PER_UPLOAD}개까지 업로드할 수 있습니다.",
+            )
 
         result: list[tuple[bytes, str]] = []
         for upload in files:

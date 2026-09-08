@@ -1,0 +1,80 @@
+# SYN-LAB-01 · 혈액 검사결과지 판독 기대값 — KEY-278
+#
+# 이 파일이 **갖는 것**   LAB_RESULT 화면에 있는 것. 검사항목명과 「어느 표
+#                        어느 칸에서 읽는가」다.
+# 이 파일이 **안 갖는 것** 실제 환자 정보. 이미지의 수치는 합성 데이터이며
+#                        실제 환자와 관련이 없다.
+#
+# 원본 이미지: SYN-LAB-01.lab_result.v1.png
+# SHA-256    : 7133f6f4a9f34a71979c1e6ef571da34519bafb353f314356d7e9ae1bbd9b517
+# MinIO 경로 : ocr-fixtures/SYN-LAB-01.lab_result.v1.png
+# 검체 종류  : SST Serum, EDTA Blood (합성)
+# 판독 검증일: 2026-09-07 (CLOVA 실판독 — scripts/test_clova_ocr.py)
+
+scenario = "SYN-LAB-01"
+document_type = "LAB_RESULT"
+version = "v1"
+
+intent = "정상 — 검사항목·검사결과 표 구조에서 합의된 9개 혈액 필드가 모두 읽힘"
+
+# 판독 성공으로 인정하는 최소 필드 집합
+# (EMR의 success_requires와 달리 REQUIRED가 아닌 존재 여부로 판정)
+success_requires = ["AST", "ALT", "FSH", "LH", "PROLACTIN", "T3", "T4", "TSH", "E2"]
+
+[minio]
+bucket = "ocr-fixtures"
+object_key = "SYN-LAB-01.lab_result.v1.png"
+sha256 = "7133f6f4a9f34a71979c1e6ef571da34519bafb353f314356d7e9ae1bbd9b517"
+size_bytes = 1061869
+endpoint_local = "http://localhost:9000"   # 로컬·app
+endpoint_docker = "http://minio:9000"      # worker 컨테이너
+
+# CLOVA 실판독 추출 기대값 (2026-09-07, confidence 전부 1.00)
+# 표 파서(_extract_lab_table) 경로로 추출됨 — 정규식 fallback 미사용
+
+[fields.AST]
+extracted_value = "21"
+table_col_header = "검사항목"
+table_row_label = "AST(GOT)"
+note = "U/L 단위가 결과 열 외부에 표기됨"
+
+[fields.ALT]
+extracted_value = "10"
+table_row_label = "ALT(GPT)"
+
+[fields.FSH]
+extracted_value = "3.41"
+table_row_label = "FSH (ECLIA)"
+note = "참고치는 여포기·배란기·황체기·폐경기 별도 표기"
+
+[fields.LH]
+extracted_value = "1.95"
+table_row_label = "LH (ECLIA)"
+
+[fields.PROLACTIN]
+extracted_value = "13.10"
+table_row_label = "Prolactin (ECLIA)"
+
+[fields.T3]
+extracted_value = "2.72"
+table_row_label = "Free T3 (ECLIA)"
+note = "Free T3 → T3 필드로 매핑"
+
+[fields.T4]
+extracted_value = "1.19"
+table_row_label = "Free T4 (ECLIA)"
+note = "Free T4 → T4 필드로 매핑"
+
+[fields.TSH]
+extracted_value = "0.85"
+table_row_label = "TSH (ECLIA)"
+
+[fields.E2]
+extracted_value = "195.00"
+table_row_label = "Estradiol (E2) (ECLIA)"
+note = "E2 필드로 매핑; 참고치는 단계별 별도 표기"
+
+["미추출_항목"]
+Glucose = "패턴 없음 — PCOS·자궁내막증 진료 범위 밖"
+BUN     = "패턴 없음 — 위와 동일"
+Creatinine = "패턴 없음 — 위와 동일"
