@@ -377,6 +377,10 @@ function stateTakesFocus(tone) {
      확인을 눌러야 `local` 로 넘어간다. */
   var localDraft = {};
 
+  /* 줄이 아직 없는 처방일수에 사람이 고른 단위. `local` 과 같은 자리에 두는
+     까닭은 `field-labels.js` 의 `holdDurationUnit` 에 적어 두었다. */
+  var localUnit = {};
+
   /* 의사가 설정(D2-3)에서 정해 둔 약속처방. 화면이 뜰 때 한 번 불러 둔다 —
      환자를 옮길 때마다 다시 부르면 같은 목록을 하루에 수십 번 받는다. */
   var sets = [];
@@ -795,21 +799,17 @@ function stateTakesFocus(tone) {
     return '<span class="field__unit">' + escapeHtml(unit) + "</span>";
   }
 
-  /** 처방일수 줄인가. 둘째 약부터는 접미사가 붙는다(`DURATION_DAYS_2`). */
-  function isDurationField(fieldType) {
-    return /^DURATION_DAYS(_\d+)?$/.test(String(fieldType || ""));
-  }
-
   /** 줄이 없는 처방일수에 사람이 고른 단위 — 없으면 `undefined`.
    *
    * 직접입력은 [저장] 때 값과 **함께** 보낸다. 줄이 아직 없어 보낼 번호가
-   * 없기 때문이다 (`data-field-unit-new`). 처방일수가 아닌 항목에는 아예
-   * 안 붙으므로 여기서도 늘 `undefined` 다 — 서버가 그 밖의 자리에 단위가
-   * 오면 400 (`UNIT_NOT_ALLOWED`)으로 막는다. */
+   * 없기 때문이다 (`data-field-unit-new`).
+   *
+   * **칸에서 읽지 않는다.** 전에는 `document.querySelector` 로 그 자리의
+   * `select` 를 짚었는데, [저장] 핸들러가 먼저 `redraw()` 를 부르는 바람에
+   * 읽는 시점에는 칸이 이미 미선택으로 새로 그려져 있었다 — 스탭이 고른
+   * 단위가 **한 번도 서버에 가지 않았다** (이희진 님 `#251` 리뷰). */
   function pickedUnitFor(fieldType) {
-    if (!isDurationField(fieldType)) return undefined;
-    var box = document.querySelector('[data-field-unit-new="' + fieldType + '"]');
-    return (box && box.value) || undefined;
+    return heldDurationUnit(localUnit, fieldType);
   }
 
   /* 일 · 통 둘뿐이다. **서버가 아는 값만 낸다** — `DurationUnit` 이 그 둘이고,
@@ -822,7 +822,11 @@ function stateTakesFocus(tone) {
     /* 무엇을 미리 고를지는 **규칙**이라 `field-labels.js` 가 갖는다 — 이 안에
        두면 IIFE 에 갇혀 검사가 못 닿고, 「모르면 모르는 채로」가 조용히
        「일」로 바뀌어도 아무것도 울지 않는다. */
-    var picked = durationUnitChoice(field.unit);
+    /* 줄이 있으면 서버가 준 값이, 없으면 **사람이 방금 고른 값**이 맞다.
+       뒤쪽을 화면 상태에서 되찾아야 다시 그려도 고른 것이 남는다. */
+    var picked = durationUnitChoice(
+      field.ocr_field_id ? field.unit : heldDurationUnit(localUnit, field.field_type),
+    );
     var busy = saving[field.ocr_field_id] ? " disabled" : "";
     var options = ['<option value=""' + (picked ? "" : " selected") + ">단위?</option>"].concat(
       DURATION_UNITS.map(function (unit) {
@@ -949,13 +953,20 @@ function stateTakesFocus(tone) {
         '<button class="field__act" type="button" data-local-cancel="1">취소</button>';
     } else if (field.is_absent && local[field.field_type]) {
       /* 적어 둔 값. **저장된 척하지 않는다** — 배지로 못 박는다. */
+      /* 🚩 여기는 단위를 **글자로 박아** 두고 있었다(`fieldUnit(type, "")`).
+       *
+       * 처방일수에서 그 글자는 「일」이다. 그래서 스탭이 「3」을 적고 [확인]을
+       * 누르는 순간 고르개가 사라지고 화면이 **「3 일」이라고 단언했다** —
+       * 3통짜리가 조용히 3일이 되는, 이 티켓이 막으려던 바로 그 자리다.
+       * 값을 적기 **전에만** 고를 수 있고 적고 나면 못 고쳤다.
+       *
+       * 그리는 규칙은 `unitHtml` 한 곳에 있다. 여기서 따로 그리면 그 규칙이
+       * 두 벌이 되고, 한쪽만 고쳐진다. */
       body =
         '<div class="field__value field__value--local">' +
         escapeHtml(local[field.field_type]) +
         "</div>" +
-        '<span class="field__unit">' +
-        escapeHtml(fieldUnit(field.field_type, "")) +
-        "</span>" +
+        unitHtml(field) +
         '<button class="field__act" type="button" data-local-fill="' +
         escapeHtml(field.field_type) +
         '">수정</button>';
@@ -2456,6 +2467,15 @@ function stateTakesFocus(tone) {
       return;
     }
 
+    /* 줄이 아직 없는 처방일수. 지금 보낼 번호가 없으니 **화면이 들고 있다가**
+       [저장] 때 값과 함께 보낸다. 여기서 다시 그리지 않는다 — 고른 칸은 이미
+       그 값을 보이고 있고, 다시 그리면 옆에서 적던 칸의 커서가 튄다. */
+    var newUnitFor = event.target.getAttribute && event.target.getAttribute("data-field-unit-new");
+    if (newUnitFor) {
+      holdDurationUnit(localUnit, newUnitFor, event.target.value);
+      return;
+    }
+
     var key = event.target.getAttribute && event.target.getAttribute("data-check");
     if (!key) return;
     if (event.target.checked) checkAnswers[key] = true;
@@ -2595,6 +2615,9 @@ function stateTakesFocus(tone) {
         if (!r.ok) return;
         delete local[r.type];
         delete localDraft[r.type];
+        /* 담긴 뒤에도 들고 있으면, 그 줄이 이제 서버 값을 갖는데도 화면은
+           옛 선택을 계속 덮어 보인다. */
+        delete localUnit[r.type];
       });
       /* **수동 약 자신이 다 담겼을 때만 비운다.** 묶음 전체가 성공했는지가
          아니다 — 이미 확정된 진단이 같이 막혔다고 수동 약을 안 비우면, 스탭이
@@ -2865,6 +2888,9 @@ function stateTakesFocus(tone) {
     /* **앞 환자에게 적은 값을 따라가면 안 된다.** 남겨 두면 새 환자 화면에
        그 사람 값이 뜨고, 배지가 「저장 안 됨」이라 더 헷갈린다. */
     local = {};
+    /* 앞 환자에게 고른 단위가 남으면, 새 환자의 「3」이 그 사람의 「통」으로
+       나간다 — 소진 예정일이 81일 어긋난다. */
+    localUnit = {};
     localEditing = null;
     manualDrugs = [];
     /* 앞 환자에게 고른 처방이 남으면 남의 처방으로 안내문이 만들어진다 */

@@ -217,6 +217,44 @@ function durationUnitChoice(given) {
   return DURATION_UNITS.indexOf(given) === -1 ? "" : given;
 }
 
+/** 처방일수 줄인가. 둘째 약부터는 접미사가 붙는다(`DURATION_DAYS_2`). */
+function isDurationField(fieldType) {
+  return /^DURATION_DAYS(_\d+)?$/.test(String(fieldType || ""));
+}
+
+/* ── 아직 줄이 없는 처방일수의 단위 ──────────────────────────────────────
+ *
+ * 판독이 처방일수를 **통째로 못 읽으면** 붙일 번호가 없어, 고른 단위를
+ * [저장] 때 값과 **함께** 보내야 한다. 그때까지 그 값을 **DOM 에 맡기면
+ * 안 된다** — [저장] 은 먼저 `redraw()` 로 이 칸을 새로 그리고, 다시 그려진
+ * 칸은 미선택이라 고른 것이 지워진 **뒤에** 읽힌다. 그래서 스탭이 「통」을
+ * 골라도 서버로는 늘 빈 값이 갔다 (이희진 님 `#251` 리뷰).
+ *
+ * 값은 `local` · `localDraft` 처럼 **화면이 들고 있는다.** 규칙만 여기 두는
+ * 것은 그리는 파일의 IIFE 안에 있으면 검사가 못 부르기 때문이다 — 앞선
+ * 검사가 「`pickedUnitFor` 를 부르는가」만 글자로 재고 **무엇이 나오는가**를
+ * 못 재서 이 버그가 그대로 통과했다.
+ */
+
+/** 고른 단위를 담는다. 담은 자리를 그대로 돌려준다.
+ *
+ * 빈 값은 **지운다** — 「단위?」로 되돌리는 것은 「모른다」이지 「빈 글자를
+ * 보내라」가 아니고, 서버는 단위를 지우는 길을 안 열어 두었다. 서버가 모르는
+ * 글자도 담지 않는다(`durationUnitChoice`). 처방일수가 아닌 자리는 아예
+ * 받지 않는다 — 서버가 400(`UNIT_NOT_ALLOWED`)으로 막는 자리다. */
+function holdDurationUnit(held, fieldType, chosen) {
+  if (!isDurationField(fieldType)) return held;
+  if (durationUnitChoice(chosen)) held[fieldType] = chosen;
+  else delete held[fieldType];
+  return held;
+}
+
+/** 담아 둔 단위 — 안 골랐거나 처방일수가 아니면 `undefined`. */
+function heldDurationUnit(held, fieldType) {
+  if (!isDurationField(fieldType)) return undefined;
+  return (held && held[fieldType]) || undefined;
+}
+
 function fieldUnit(fieldType, given) {
   if (given) return given;
   var key = String(fieldType || "");

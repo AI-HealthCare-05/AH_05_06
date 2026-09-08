@@ -115,8 +115,9 @@ test("화면이 단위를 보내는 길이 있고, 처방일수에만 있다", (
 
   /* 그리는 것은 브라우저에서 보지만, **어느 줄에 다는가**는 순수 규칙이라
      여기서 잰다 — 검사값 줄에 달면 서버가 400 을 주고 화면은 고장으로 읽힌다. */
-  assert.match(src, /function isDurationField\(fieldType\)/);
-  assert.match(src, /\^DURATION_DAYS\(_\\d\+\)\?\$/);
+  /* `isDurationField` 는 `field-labels.js` 로 옮겼다 — 규칙이라 그 자리다. */
+  assert.match(read("js/field-labels.js"), /function isDurationField\(fieldType\)/);
+  assert.match(read("js/field-labels.js"), /\^DURATION_DAYS\(_\\d\+\)\?\$/);
   assert.ok(src.includes("data-field-unit"), "단위를 고르는 자리가 없다");
   assert.match(src, /saveField\(unitId, \{ unit: chosen \}\)/, "고른 값을 서버로 안 보낸다");
 
@@ -269,4 +270,117 @@ test("잘못된 단위 + 낡은 판이 같이 오면 422 다 — 실서버가 �
     (e) => e.status === 409,
     "멀쩡한 단위인데 판 충돌을 안 막았다",
   );
+});
+
+/* ── 고른 단위가 다시 그려도 남는가 — 이희진 님 `#251` 리뷰(둘째 판) ────────
+ *
+ * 앞 검사는 「[저장]이 `pickedUnitFor(job.type)` 를 부르는가」를 **글자로만**
+ * 재고 그것이 **무엇을 내놓는지**는 안 봤다. 그 사이에 [저장] 핸들러가
+ * `say(); redraw();` 를 먼저 부르고, `pickedUnitFor` 는 그 자리의 `select` 를
+ * DOM 에서 읽었다 — 다시 그려진 칸은 미선택이라 늘 `undefined` 였다.
+ * 스탭이 「통」을 골라도 서버에는 한 번도 안 갔다.
+ *
+ * 그래서 값을 들고 있는 규칙을 IIFE 밖(`field-labels.js`)에 두고 여기서 잰다.
+ */
+
+test("고른 단위는 화면이 들고 있는다 — 다시 그려도 남아야 [저장]이 싣는다", () => {
+  const { holdDurationUnit, heldDurationUnit } = load("api", "field-labels");
+  const held = {};
+
+  holdDurationUnit(held, "DURATION_DAYS", "통");
+  assert.equal(heldDurationUnit(held, "DURATION_DAYS"), "통", "고른 단위가 남지 않았다");
+
+  /* 다시 그리는 것은 이 자리를 건드리지 않는다 — DOM 이 아니라 상태다. */
+  assert.equal(heldDurationUnit(held, "DURATION_DAYS"), "통", "두 번 읽으면 사라졌다");
+
+  /* 둘째 약도 같은 자리에 각각 담긴다 — 접미사가 붙을 뿐이다. */
+  holdDurationUnit(held, "DURATION_DAYS_2", "일");
+  assert.equal(heldDurationUnit(held, "DURATION_DAYS"), "통", "둘째 약이 첫째를 덮었다");
+  assert.equal(heldDurationUnit(held, "DURATION_DAYS_2"), "일");
+});
+
+test("「단위?」로 되돌리면 안 싣는다 — 빈 글자를 보내라는 뜻이 아니다", () => {
+  const { holdDurationUnit, heldDurationUnit } = load("api", "field-labels");
+  const held = {};
+
+  holdDurationUnit(held, "DURATION_DAYS", "통");
+  holdDurationUnit(held, "DURATION_DAYS", "");
+
+  assert.equal(heldDurationUnit(held, "DURATION_DAYS"), undefined, "빈 값을 고른 것으로 들고 있었다");
+  assert.ok(!("DURATION_DAYS" in held), "지우지 않고 빈 글자로 남겨 뒀다 — 그대로 실려 422 가 난다");
+});
+
+test("담을 수 없는 것은 담지 않는다 — 서버가 막는 자리를 화면이 먼저 안다", () => {
+  const { holdDurationUnit, heldDurationUnit } = load("api", "field-labels");
+  const held = {};
+
+  /* 서버가 모르는 글자. 담아 두면 [저장] 때 실려 나가 422 를 받는다. */
+  holdDurationUnit(held, "DURATION_DAYS", "박스");
+  assert.equal(heldDurationUnit(held, "DURATION_DAYS"), undefined, "모르는 단위를 들고 있었다");
+
+  /* 처방일수가 아닌 자리. 서버는 400(`UNIT_NOT_ALLOWED`)으로 막는다. */
+  holdDurationUnit(held, "HEMOGLOBIN", "통");
+  assert.equal(heldDurationUnit(held, "HEMOGLOBIN"), undefined, "검사값에 단위를 들고 있었다");
+  assert.ok(!("HEMOGLOBIN" in held), "검사값 자리에 단위를 담아 뒀다");
+
+  /* **읽는 쪽도 따로 막는다.** 담는 쪽만 막으면, 어쩌다 들어간 값이 그대로
+     실려 나간다 — 문이 둘이면 둘 다 잠가야 한다. */
+  const poisoned = { HEMOGLOBIN: "통", MEDICATION_NAME: "일" };
+  assert.equal(heldDurationUnit(poisoned, "HEMOGLOBIN"), undefined, "담긴 값을 그대로 내줬다");
+  assert.equal(heldDurationUnit(poisoned, "MEDICATION_NAME"), undefined, "약품명에 단위를 실어 줬다");
+});
+
+test("[저장]이 읽는 자리가 DOM 이 아니다 — 다시 그리기와 순서를 다투지 않는다", () => {
+  const src = read("js/ocr-review.js");
+
+  /* 이 한 줄이 버그였다. 되돌아오면 `redraw()` 뒤에 읽혀 늘 빈 값이 나간다. */
+  assert.doesNotMatch(
+    src,
+    /querySelector\('\[data-field-unit-new=/,
+    "고른 단위를 다시 DOM 에서 읽는다 — [저장]이 먼저 다시 그리므로 늘 미선택이다",
+  );
+  assert.match(
+    src,
+    /function pickedUnitFor\(fieldType\) \{\s*return heldDurationUnit\(localUnit, fieldType\);/,
+    "[저장]이 화면 상태에서 단위를 읽지 않는다",
+  );
+
+  /* 고른 순간 상태에 담는 자리가 있어야 한다. */
+  assert.match(src, /holdDurationUnit\(localUnit, newUnitFor, event\.target\.value\)/, "고른 단위를 담는 자리가 없다");
+
+  /* 다시 그릴 때 그 값을 되살려야 스탭 눈에도 남는다. */
+  assert.match(
+    src,
+    /field\.ocr_field_id \? field\.unit : heldDurationUnit\(localUnit, field\.field_type\)/,
+    "다시 그릴 때 고른 단위를 안 되살린다 — 골라도 화면에서 사라진다",
+  );
+
+  /* 적어 둔 값 옆의 단위도 **고르개**여야 한다.
+   *
+   * 여기는 `fieldUnit(field.field_type, "")` 로 글자를 박아 두고 있었고,
+   * 처방일수에서 그 글자는 「일」이다 — 스탭이 「3」을 적고 [확인]을 누르는
+   * 순간 고르개가 사라지고 화면이 「3 일」이라고 단언했다. 3통짜리가 조용히
+   * 3일이 되는, 이 티켓이 막으려던 바로 그 자리다. */
+  assert.doesNotMatch(
+    src,
+    /fieldUnit\(field\.field_type, ""\)/,
+    "적어 둔 값 옆의 단위를 글자로 박아 뒀다 — 처방일수는 「일」로 굳는다",
+  );
+  assert.match(
+    src,
+    /field__value--local[\s\S]{0,200}?unitHtml\(field\)/,
+    "적어 둔 값 옆에 단위 고르개가 안 선다 — 값을 적기 전에만 고를 수 있다",
+  );
+
+  /* 담긴 줄은 **셋 다** 놓는다. 하나만 남으면 다음에 그 자리에 다시 값을
+     적을 때 앞 선택이 되살아난다 — 위 둘과 짝이 맞아야 한다. */
+  assert.match(
+    src,
+    /delete local\[r\.type\];\s*delete localDraft\[r\.type\];[\s\S]{0,200}?delete localUnit\[r\.type\];/,
+    "저장에 성공한 뒤에도 고른 단위를 계속 들고 있는다",
+  );
+
+  /* 환자를 바꾸면 버린다 — 남으면 새 환자의 「3」이 앞 사람의 「통」으로 나간다. */
+  const reset = src.slice(src.indexOf("function resetState()"));
+  assert.match(reset.slice(0, reset.indexOf("\n  }")), /localUnit = \{\};/, "환자를 바꿔도 고른 단위가 남는다");
 });
