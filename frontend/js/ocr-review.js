@@ -2944,29 +2944,17 @@ function stateTakesFocus(tone) {
 
   /* 진료 객체는 평평하다 — 목록이 내주는 그 모양 그대로 쓴다
      (`patients-api.js`: name · hospital_patient_no · birth_date · doctor …). */
+  /* 세 줄을 만드는 규칙은 `js/step-nav.js` 의 `visitHeadLines` 것이다 —
+     의사 화면이 같은 머리말을 안내문에서 뽑다가 안내문 없는 진료에서
+     이름을 통째로 지웠다(KEY-300). 한 벌로 모았다. */
   function renderPatientHead(next) {
     var name = document.getElementById("p-name");
     var chart = document.getElementById("p-id");
     var line = document.getElementById("p-visit");
-    if (name) name.textContent = next.name || "—";
-    if (chart) {
-      chart.textContent = [
-        next.hospital_patient_no ? "차트 " + next.hospital_patient_no : "",
-        next.birth_date || "",
-        next.age ? next.age + "세" : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    }
-    if (line) {
-      line.textContent = [
-        next.diagnosis_name,
-        next.doctor && next.doctor.name,
-        next.visited_at ? shortDate(next.visited_at) + " 진료" : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    }
+    var head = visitHeadLines(next);
+    if (name) name.textContent = head.name;
+    if (chart) chart.textContent = head.id;
+    if (line) line.textContent = head.line;
 
     /* 상태 배지 — `patients.html` 의 머리말과 같은 자리다. 전에는 이 화면에만
        없어서, 화면을 옮기면 「작성 중 · 판독 결과 확인」이 사라졌다
