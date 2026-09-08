@@ -182,8 +182,73 @@ class TestProcessOcrJob(TestCase):
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.FAILED
         assert job.failure_code == "CLOVA_API_ERROR"
+        assert job.progress == 0
         assert mock_clova.call_count == 1
         assert await OcrResult.filter(ocr_job=job).count() == 0
+
+    async def test_failed_job_progress_resets_to_zero_after_partial_clova(self) -> None:
+        """다중 문서 중 첫 번째 CLOVA 성공(진행률 중간값)→ 두 번째 실패 시 progress가 0으로 재설정된다."""
+        patient = await Patient.create(
+            patient_id=910090,
+            hospital_id=HOSPITAL_ID,
+            hospital_patient_no="TEST-KEY125-PROGRESS",
+            name="테스트환자125",
+            birth_date=date(1990, 1, 1),
+            phone="01000000099",
+        )
+        visit = await Visit.create(
+            visit_id=910090,
+            hospital_id=HOSPITAL_ID,
+            patient=patient,
+            visited_at=datetime(2026, 8, 25, 9, 0, tzinfo=UTC),
+        )
+        doc1 = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.LAB_RESULT,
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        doc2 = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.LAB_RESULT,
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        job = await OcrJob.create(
+            ocr_job_id="ocr_key125_partial_progress",
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            requested_by=1,
+        )
+        await OcrJobDocument.create(ocr_job=job, document_id=doc1.document_id, document_type=OcrDocumentType.LAB_RESULT)
+        await OcrJobDocument.create(ocr_job=job, document_id=doc2.document_id, document_type=OcrDocumentType.LAB_RESULT)
+
+        # 첫 번째 문서는 성공(진행률 35%), 두 번째는 비재시도 오류로 실패
+        call_count = 0
+
+        async def clova_first_ok_then_fail(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _FAKE_CLOVA_RESULT
+            raise ClovaOcrError("CLOVA_INFER_FAILED", "second doc failed")
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", side_effect=clova_first_ok_then_fail),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.FAILED
+        assert job.progress == 0
 
     # ── CLOVA 비활성 → FAILED (KEY-199: 워커는 fixture seed 불가) ───────────
 
@@ -197,6 +262,7 @@ class TestProcessOcrJob(TestCase):
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.FAILED
         assert job.failure_code == "OCR_NOT_CONFIGURED"
+        assert job.progress == 0
 
         assert await OcrResult.filter(ocr_job=job).count() == 0
 

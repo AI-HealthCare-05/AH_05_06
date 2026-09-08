@@ -371,8 +371,9 @@ async def _save_clova_result(
 async def _mark_failed(job: OcrJob, failure_code: str) -> None:
     job.status = OcrJobStatus.FAILED
     job.failure_code = failure_code
+    job.progress = 0
     job.completed_at = now()
-    await job.save(update_fields=("status", "failure_code", "completed_at"))
+    await job.save(update_fields=("status", "failure_code", "progress", "completed_at"))
 
 
 def _observe(
