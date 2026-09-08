@@ -14,7 +14,7 @@ const { load } = require("./browser-shim.js");
 const { read, codeOnly, markupOnly, rule } = require("./source.js");
 
 function box() {
-  return load("api", "session", "guide-view");
+  return load("api", "session", "patient-link-view", "guide-view");
 }
 
 const SECTIONS = [
@@ -192,7 +192,7 @@ test("**고칠 수 있는지를 서버와 같은 규칙으로 정한다**", () =
 });
 
 test("**반려된 안내문은 무엇을 고칠지 함께 보여 준다**", () => {
-  const { guideActionsFor } = load("api", "guide-view");
+  const { guideActionsFor } = load("api", "patient-link-view", "guide-view");
 
   const why = "복약 안내에 식후 여부를 적어 주세요";
   const returned = guideActionsFor("APPROVAL_RETURNED", ["staff"], why);
@@ -422,7 +422,7 @@ test("**축소는 `zoom` 이다** — `scale` 로 바꾸면 줄바꿈이 달라�
 /* ── 문자 설정 (S1-14) ───────────────────────────────────────────────── */
 
 test("**「문자 설정」은 다른 화면이다** — 원문·미리보기 두 칸이 아니다", () => {
-  const { guideScreenHtml } = load("api", "session", "sms-plan", "guide-view");
+  const { guideScreenHtml } = load("api", "session", "sms-plan", "patient-link-view", "guide-view");
 
   const sms = guideScreenHtml(SECTIONS, "messages", "guide", true, null);
   assert.ok(sms.includes("확인 문자"), "회차가 없다");
@@ -436,7 +436,7 @@ test("**「문자 설정」은 다른 화면이다** — 원문·미리보기 �
 });
 
 test("**일주일 뒤는 켜진 채로 그려진다** — 끌 수 없는 회차다", () => {
-  const { smsLeftHtml } = load("api", "session", "sms-plan", "guide-view");
+  const { smsLeftHtml } = load("api", "session", "sms-plan", "patient-link-view", "guide-view");
   const html = smsLeftHtml({ startIso: "2026-08-13", picked: "d7", on: {} });
 
   /* `on` 이 비어 있어도 일주일 뒤는 켜져야 한다.
@@ -451,7 +451,7 @@ test("**일주일 뒤는 켜진 채로 그려진다** — 끌 수 없는 회차�
 });
 
 test("**미리보기는 치환된 실제 발송본이다**", () => {
-  const { smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+  const { smsRightHtml } = load("api", "session", "sms-plan", "patient-link-view", "guide-view");
   const html = smsRightHtml({
     startIso: "2026-08-13",
     picked: "d7",
@@ -469,7 +469,7 @@ test("**의원 템플릿이 아직 없다는 것은 그대로 말한다**", () =
      원문의 「템플릿으로 저장」(D2-5 의원 템플릿)은 아직 없다 — 저장이 **이
      환자에게만** 미친다는 것을 계속 말해야 한다. 안 말하면 스탭은 다음
      환자에게도 그 문구가 붙는 줄 안다. */
-  const { SMS_NO_TEMPLATE, smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+  const { SMS_NO_TEMPLATE, smsRightHtml } = load("api", "session", "sms-plan", "patient-link-view", "guide-view");
 
   assert.match(SMS_NO_TEMPLATE, /이 환자에게만/, "어디까지 저장되는지 안 말한다");
   const html = smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: "{링크}", canSave: true });
@@ -478,7 +478,7 @@ test("**의원 템플릿이 아직 없다는 것은 그대로 말한다**", () =
 });
 
 test("**회차를 고르는 것과 켜는 것이 다른 버튼이다** — 보려고 눌렀는데 꺼지면 안 된다", () => {
-  const { smsLeftHtml } = load("api", "session", "sms-plan", "guide-view");
+  const { smsLeftHtml } = load("api", "session", "sms-plan", "patient-link-view", "guide-view");
   const html = smsLeftHtml({ startIso: "2026-08-13", picked: "d7", on: { d15: true } });
 
   assert.ok(html.includes('data-sms-toggle="d15"'), "켜고 끄는 버튼이 없다");
@@ -486,7 +486,7 @@ test("**회차를 고르는 것과 켜는 것이 다른 버튼이다** — 보�
 });
 
 test("**문구를 고칠 수 있다** — 읽기 전용이면 화면이 거기서 끝난다", () => {
-  const { smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+  const { smsRightHtml } = load("api", "session", "sms-plan", "patient-link-view", "guide-view");
   const html = smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: "{링크}" });
 
   assert.ok(html.includes("<textarea"), "문구가 읽기 전용이다");
@@ -495,7 +495,7 @@ test("**문구를 고칠 수 있다** — 읽기 전용이면 화면이 거기�
 });
 
 test("**「일차」는 고른 회차의 날수다** — 7일째 문자에 15가 뜨면 안 된다", () => {
-  const { smsRightHtml } = load("api", "session", "sms-plan", "guide-view");
+  const { smsRightHtml } = load("api", "session", "sms-plan", "patient-link-view", "guide-view");
 
   const tpl = "복약 {일차}일째";
   assert.ok(smsRightHtml({ startIso: "2026-08-13", picked: "d7", text: tpl }).includes("복약 7일째"));
@@ -618,7 +618,7 @@ test("이미 나간 문자로 막히면 그 이유를 말한다", () => {
 test("**안내문 블록도 기본정보와 같은 상자다**", () => {
   /* 담는 모양을 제 어휘로 따로 두면, 한 화면에서 탭을 옮길 때마다 블록 모양이
      바뀌어 눈이 자리를 새로 찾는다. */
-  const { guideScreenHtml } = load("api", "session", "sms-plan", "guide-view");
+  const { guideScreenHtml } = load("api", "session", "sms-plan", "patient-link-view", "guide-view");
   const html = guideScreenHtml(SECTIONS, "medication", "staff", true);
 
   assert.match(html, /class="box gs"/, "공용 상자를 안 쓴다");
