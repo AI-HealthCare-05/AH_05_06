@@ -242,9 +242,7 @@ class TestGenerateBlocksUnconfirmedOcr(GenerateGuideTestCase):
         )
 
         async with self.client() as client:
-            response = await client.post(
-                f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff)
-            )
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
         assert response.status_code == 422
         assert response.json()["code"] == "OCR_NOT_CONFIRMED"
@@ -284,9 +282,7 @@ class TestGenerateBlocksUnconfirmedOcr(GenerateGuideTestCase):
         )
 
         async with self.client() as client:
-            response = await client.post(
-                f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff)
-            )
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
         assert response.status_code == 201, (
             f"미판독 DURATION_DAYS 가 generate 를 막았다 — {response.status_code} {response.json()}"
