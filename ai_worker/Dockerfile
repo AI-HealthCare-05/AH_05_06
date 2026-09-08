@@ -3,8 +3,12 @@ FROM python:3.13-slim
 WORKDIR /app
 
 # **빌드 도구를 먼저 깐다** — `app/Dockerfile` 과 같다.
-# `app` 그룹의 `asyncmy` 는 arm64 에 미리 만든 휠이 없어 소스에서 빌드된다.
+# `worker` 그룹의 `asyncmy` 는 arm64 에 미리 만든 휠이 없어 소스에서 빌드된다.
 # 이것이 없으면 `uv sync` 가 거기서 죽는다 (KEY-197).
+#
+# 그룹 이름을 고쳐 적는다 — KEY-198 이 `--group app` 을 `--group worker` 로
+# 바꾸면서 이 줄을 안 따라 고쳐서, 이 이미지가 더는 깔지 않는 그룹을 가리키고
+# 있었다 (KEY-207).
 RUN apt-get update && apt-get install -y \
     build-essential \
     python3-dev \
