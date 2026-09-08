@@ -239,8 +239,16 @@ docker compose --profile web --profile ocr up -d --build   # 여섯 개 전부
 
 ### 4. 테이블 생성 + 스키마 대조
 
+예시 파일은 `DB_HOST=mysql`·`REDIS_HOST=redis`(컨테이너 이름)로 되어 있다. 아래를
+**호스트에서** 돌리려면 `.env` 의 두 값을 `localhost` 로 바꾼다 — 안 바꾸면
+`aerich upgrade` 가 `mysql` 을 못 풀어 멈춘다. 컨테이너 안에서 돌리면 그대로 둔다:
+
 ```bash
-uv run aerich upgrade
+docker compose exec fastapi uv run --no-sync aerich upgrade
+```
+
+```bash
+uv run aerich upgrade                          # 호스트 실행 시 .env 의 DB_HOST=localhost
 uv run python scripts/check_schema_drift.py
 ```
 
@@ -384,7 +392,8 @@ SEED_STAFF_PASSWORD=<로컬전용PW> uv run python scripts/seed.py --mode full  
 - `--mode full` 은 `docs/data/synthetic-patients.csv` 가 있어야 한다.
 - 로그인 아이디는 `docs/data/synthetic-staff.csv` 에서 온다. `SEED_STAFF_PASSWORD` 로 넘긴
   값이 곧 모든 합성 직원의 비밀번호다. 계정 표는 [`docs/local-demo-accounts.md`](docs/local-demo-accounts.md).
-- 운영(`ENV=prod`)에서는 `--mode` 를 반드시 손으로 적어야 하고 `--allow-prod-seed` 가 필요하다.
+- 운영(`ENV=prod`)에서는 `--mode` 를 반드시 손으로 적어야 하고, `SEED_ALLOW_PROD=1`(환경변수)과
+  `--allow-prod-seed`(명령줄)가 **둘 다** 있어야 열린다.
 
 ### 초기화 / 재실행
 
@@ -523,7 +532,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | `node --test` 가 `MODULE_NOT_FOUND` | 폴더 말고 `frontend/tests/*.test.js` 파일 글롭을 넘긴다 |
 | 현지 날짜 검사가 항상 통과 | `TZ=Asia/Seoul` 을 안 붙였다 |
 | `bootstrap-local.sh` 가 `ENV=local 에서만` 이라며 멈춤 | `.env` 의 `ENV` 가 `local` 이 아니다 |
-| 포트 `3306`·`6379`·`8000` 사용 중 | 해당 프로그램 종료 또는 `.env` 의 노출 포트 변경 |
+| 포트 `3306`·`6379`·`8000` 사용 중 | 해당 프로그램을 종료한다. `3306` 만 `.env` 의 `DB_EXPOSE_PORT` 로 바꿀 수 있고, `6379`·`8000` 은 `docker-compose.yml` 에 박혀 있어 그 파일을 고쳐야 한다 |
 
 로컬 헬스체크 정본 절차: [`docs/local-health-check.md`](docs/local-health-check.md).
 

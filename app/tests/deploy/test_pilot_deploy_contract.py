@@ -237,6 +237,24 @@ class TestTheEnvExampleMatchesWhatTheCodeAsks:
         assert "OCR_FIXTURE_FALLBACK" in text, "운영에 두면 안 되는 값인데 경고가 없다"
         assert re.search(r"#[^\n]*OCR_FIXTURE_FALLBACK", text), "경고가 주석이 아니다 — 설정처럼 읽힌다"
 
+    @pytest.mark.parametrize("example", ["envs/example.prod.env", "envs/example.local.env"])
+    def test_the_openai_key_is_only_ever_commented(self, example: str) -> None:
+        """빈 `OPENAI_API_KEY=` 는 `SecretStr("")` 이 되어 `is not None` 이 참이다 —
+        LLM 호출이 켜진 채 빈 키로 나가고, 챗봇 질문마다 환자 질문 원문과 승인
+        안내문이 밖으로 간다. 끄는 방법은 값이 아니라 **줄을 주석으로 두는 것**뿐이라
+        두 예시 다 그렇게 되어 있어야 한다. `bootstrap-local.sh` 가 로컬 예시를
+        그대로 `.env` 로 복사하므로 로컬도 prod 와 같은 계약을 받는다."""
+        text = read(example)
+        live = [ln for ln in text.splitlines() if re.match(r"\s*OPENAI_API_KEY\s*=", ln)]
+
+        assert not live, (
+            f"{example}: OPENAI_API_KEY 가 주석 없이 있다 — 빈 값이면 LLM 호출이 켜진 채 "
+            f"빈 키로 나간다. `# OPENAI_API_KEY=` 로 둔다. {live}"
+        )
+        assert re.search(r"#[^\n]*OPENAI_API_KEY", text), (
+            f"{example}: OPENAI_API_KEY 이름이 아예 없다 — 베낀 사람이 이 설정을 모른다"
+        )
+
 
 class TestTheProcedureIsNotMacOnly:
     """「새 환경에서 재현」이 인수조건인데 특정인의 맥에서만 돌면 안 된다.

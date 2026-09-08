@@ -52,7 +52,9 @@ Notion 자격증명 표에 있다. 아래의 `<공용PW>` 는 그 값으로 읽�
 
 ### 2-2. 데모에 필요한 값 세 개 추가
 
-`bootstrap` 은 아래를 세팅하지 않으므로 `envs/.local.env` 에 직접 넣는다.
+`bootstrap` 은 아래를 세팅하지 않으므로 저장소 루트의 **`.env`** 에 직접 넣는다.
+(2-1 의 `bootstrap` 이 만든 파일이고, 컨테이너가 읽는 것도 이 파일 하나다 —
+`envs/.local.env` 는 수동 설치 경로에서만 쓰는 이름이라 여기서는 건드리지 않는다.)
 
 | 값 | 넣을 것 | 이유 |
 |---|---|---|
@@ -75,7 +77,8 @@ docker compose up -d --force-recreate --no-deps fastapi
 docker compose --profile web up -d
 
 # 직원 + 환자 + 진료 + 처방, 비밀번호를 <공용PW> 로 통일
-docker compose exec -T -e SEED_STAFF_PASSWORD='<공용PW>' fastapi \
+# 값은 셸 환경변수로만 넘기고 -e 에는 이름만 준다 (명령줄에 적으면 ps·셸 기록에 남는다)
+SEED_STAFF_PASSWORD='<공용PW>' docker compose exec -T -e SEED_STAFF_PASSWORD fastapi \
   uv run --no-sync python scripts/seed.py --mode full
 
 # 확인
