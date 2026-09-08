@@ -148,17 +148,78 @@ test("쥔 주소는 그 진료의 것일 때만 나온다 — 환자를 옮기�
   assert.equal(patientLinkOf(11), null);
 });
 
-test("다시 읽어도 방금 만든 주소는 안 버린다 — 만료만 서버 것으로", () => {
+test("같은 링크를 다시 읽으면 방금 만든 주소는 안 버린다", () => {
   const { patientLinkKeep, patientLinkAdopt, patientLinkOf, patientLinkForget } = rules();
   patientLinkForget();
 
+  /* 같은 링크의 **단순 재조회**다 — 만료 시각이 그대로다. */
   patientLinkKeep(7, { expiresAt: "2026-09-10T18:00:00+09:00", fresh: true, url: "/x#t=bbb" });
-  patientLinkAdopt(7, { issued: true, expires_at: "2026-09-14T18:00:00+09:00" });
+  patientLinkAdopt(7, { issued: true, expires_at: "2026-09-10T18:00:00+09:00" });
 
   const held = patientLinkOf(7);
   assert.equal(held.url, "/x#t=bbb", "다시 읽었다고 주소를 버리면 [복사] 가 사라진다");
   assert.equal(held.fresh, true);
-  assert.equal(held.expiresAt, "2026-09-14T18:00:00+09:00", "만료는 서버가 정본이다");
+  assert.equal(held.expiresAt, "2026-09-10T18:00:00+09:00", "만료는 서버가 정본이다");
+});
+
+/* ── 다른 창·다른 직원이 링크를 돌렸을 때 — 유가은 님 `#250` ────────────────
+ *
+ * 여기 있던 단언이 **버그를 계약으로 적어 두고 있었다**: 만료 시각이 달라졌는데도
+ * 옛 주소를 지키는 것을 「통과」로 셌다. 그래서 다음 흐름이 검사에 안 걸렸다.
+ *
+ *   ① 화면 A 가 링크를 발급해 원문 주소를 쥔다
+ *   ② 화면 B(또는 다른 직원)가 같은 진료의 링크를 다시 발급한다
+ *   ③ 화면 A 가 상태를 다시 읽는다
+ *   ④ 화면 A 에는 **새 링크의 만료일**이 뜨는데 [복사]·[열기] 에는
+ *      **폐기된 옛 주소**가 남는다 — 환자는 안 열리는 링크를 받는다
+ */
+
+test("**다른 곳에서 링크가 돌면 옛 주소를 놓는다** — 세대가 다르다", () => {
+  const { patientLinkKeep, patientLinkAdopt, patientLinkOf, patientLinkForget } = rules();
+  patientLinkForget();
+
+  patientLinkKeep(7, { expiresAt: "2026-09-10T18:00:00+09:00", fresh: true, url: "/otp.html#t=old" });
+  /* 다른 창이 재발급했다 — 새 토큰과 함께 만료 시각도 새로 잡힌다. */
+  const next = patientLinkAdopt(7, { issued: true, expires_at: "2026-09-15T10:00:00+09:00" });
+
+  assert.equal(next.url, "", "폐기된 주소를 계속 쥐고 있다 — 스탭이 복사하면 환자가 못 연다");
+  assert.equal(next.fresh, false, "남의 세대 링크를 「방금 만든 것」으로 보였다");
+  assert.equal(next.expiresAt, "2026-09-15T10:00:00+09:00", "만료는 서버가 정본이다");
+  assert.equal(patientLinkOf(7).url, "", "쥔 자리에도 옛 주소가 남았다");
+});
+
+test("만료 시각은 **글자가 아니라 시각**으로 견준다", () => {
+  const { patientLinkSameGeneration } = rules();
+
+  /* 같은 순간을 다른 모양으로 적어 보내도 같은 세대다 — 여기서 갈라 버리면
+     서버가 표기만 바꿔도 [복사] 가 사라진다. */
+  assert.equal(patientLinkSameGeneration("2026-09-10T18:00:00+09:00", "2026-09-10T09:00:00Z"), true);
+  assert.equal(patientLinkSameGeneration("2026-09-10T18:00:00+09:00", "2026-09-10T18:00:00+09:00"), true);
+
+  assert.equal(patientLinkSameGeneration("2026-09-10T18:00:00+09:00", "2026-09-15T10:00:00+09:00"), false);
+
+  /* **못 읽는 값은 다른 세대로 친다.** 「모르겠으니 쥔 것을 쓰자」로 기울면
+     폐기된 주소가 살아남고, 그 값이 환자에게 그대로 간다. */
+  assert.equal(patientLinkSameGeneration(null, "2026-09-10T18:00:00+09:00"), false);
+  assert.equal(patientLinkSameGeneration("2026-09-10T18:00:00+09:00", null), false);
+  assert.equal(patientLinkSameGeneration("어제", "2026-09-10T18:00:00+09:00"), false);
+  assert.equal(patientLinkSameGeneration(null, null), false);
+});
+
+test("**옛 링크를 복사·열기 할 수 없다** — 세대가 돈 뒤의 화면", () => {
+  const { patientLinkKeep, patientLinkAdopt, patientLinkForget, patientLinkState, patientLinkActions, LINK_STATE } =
+    rules();
+  patientLinkForget();
+
+  patientLinkKeep(7, { expiresAt: "2026-09-10T18:00:00+09:00", fresh: true, url: "/otp.html#t=old" });
+  const next = patientLinkAdopt(7, { issued: true, expires_at: "2026-09-15T10:00:00+09:00" });
+
+  const state = patientLinkState(next, "APPROVED", AT("2026-09-11T10:00:00+09:00"));
+  assert.notEqual(state, LINK_STATE.FRESH, "돌아간 링크를 「방금 만든 것」으로 그린다");
+
+  const acts = patientLinkActions(state);
+  assert.ok(!acts.includes("copy"), `폐기된 주소에 [복사] 가 남았다 — ${acts.join(",")}`);
+  assert.ok(!acts.includes("open"), `폐기된 주소에 [열기] 가 남았다 — ${acts.join(",")}`);
 });
 
 test("서버가 「없다」고 하면 쥔 것도 놓는다", () => {

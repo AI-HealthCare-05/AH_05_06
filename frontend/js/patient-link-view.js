@@ -239,17 +239,46 @@ function patientLinkFromServer(answer) {
   return { expiresAt: answer.expires_at || null, fresh: false, url: "" };
 }
 
+/** 쥐고 있는 것과 서버가 준 것이 **같은 세대의 링크인가.**
+ *
+ * 재발급은 새 토큰과 새 만료 시각을 함께 만든다. 그래서 만료 시각이 달라졌다면
+ * 그 사이에 **다른 창이나 다른 직원이 링크를 돌린 것**이고, 이 창이 쥔 주소는
+ * 이미 폐기된 것이다.
+ *
+ * 글자가 아니라 **시각으로** 견준다 — 서버가 같은 순간을 다른 모양
+ * (`+09:00` · `Z`)으로 적어 보내도 같은 세대다.
+ *
+ * 못 읽는 값은 **다른 세대로 친다.** 「모르겠으니 그냥 쥔 것을 쓰자」로 기울면
+ * 폐기된 주소가 살아남고, 그 값이 환자에게 그대로 간다. */
+function patientLinkSameGeneration(held, fromServer) {
+  var a = Date.parse(String(held == null ? "" : held));
+  var b = Date.parse(String(fromServer == null ? "" : fromServer));
+  if (isNaN(a) || isNaN(b)) return false;
+  return a === b;
+}
+
 /* 상태를 다시 읽어 쥔다.
  *
  * **방금 만든 주소는 지킨다** — 다시 읽었다고 그 주소를 버리면, 스탭이 새
  * 링크를 만든 직후 화면이 한 번 갱신되는 것만으로 [복사] 가 사라진다.
  * 만료 시각은 서버 것을 쓴다(그쪽이 정본이다).
  *
+ * 🚩 **단, 같은 세대일 때만이다** (유가은 님 `#250`).
+ *
+ * 여태는 만료 시각이 달라져도 쥔 `fresh` · `url` 을 그대로 새 상태에 옮겼다.
+ * 그래서 다른 창(또는 다른 직원)이 같은 진료의 링크를 다시 발급한 뒤 이 화면이
+ * 상태를 한 번 더 읽으면, **만료 시각은 새 링크의 것인데 주소는 폐기된 옛
+ * 것**인 상태가 만들어졌다. 스탭이 그걸 복사하면 환자는 열리지 않는 링크를
+ * 받는다 — 화면에는 아무 이상이 없어 보인다.
+ *
+ * 세대가 달라졌으면 주소를 놓는다. [복사] 가 사라지는 편이, 안 열리는 주소를
+ * 쥐고 있는 것보다 낫다.
+ *
  * 서버가 `issued: false` 라고 하면 정말 없는 것이라 쥔 것도 놓는다. */
 function patientLinkAdopt(visitId, answer) {
   var held = patientLinkOf(visitId);
   var next = patientLinkFromServer(answer);
-  if (next && held && held.fresh) {
+  if (next && held && held.fresh && patientLinkSameGeneration(held.expiresAt, next.expiresAt)) {
     next.fresh = true;
     next.url = held.url;
   }
