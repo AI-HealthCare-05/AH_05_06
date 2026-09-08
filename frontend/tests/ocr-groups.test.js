@@ -992,10 +992,89 @@ test("**두 블록이 각자 제 것만 담는다** — 안 만진 칸이 저장
   const at = code.indexOf("function localOf");
   assert.notEqual(at, -1, "블록별로 가르는 자리가 없다");
   const body = code.slice(at, code.indexOf("\n  }", at));
-  assert.match(body, /PRESCRIPTION_TYPES\.indexOf/, "처방 항목인지를 안 가른다");
+
+  /* 🚩 **그리는 쪽과 같은 함수로 재야 한다.**
+     여기서 `PRESCRIPTION_TYPES.indexOf` 로 직접 재면 접미사가 붙은 이름
+     (`DURATION_DAYS_1`)을 못 알아본다 — `splitFields` 는 접미사를 벗겨 재서
+     「진단 · 처방」에 그리는데, 담는 쪽만 못 알아보면 그 줄이 옆 블록 단추에
+     걸린다. 규칙을 두 번 적었다가 갈라진 자리다. */
+  assert.match(body, /isPrescriptionType\(/, "그리는 쪽과 다른 규칙으로 잰다");
+  assert.ok(!/PRESCRIPTION_TYPES\.indexOf/.test(body), "접미사를 못 보는 옛 규칙으로 되돌아갔다");
 
   assert.ok(PRESCRIPTION_TYPES.indexOf("DIAGNOSIS") !== -1, "검사가 헛돈다");
   assert.equal(PRESCRIPTION_TYPES.indexOf("TSH"), -1, "혈액 항목이 처방으로 세어진다");
+});
+
+/* ── 처방인지 재는 규칙 ─────────────────────────────────────────────────
+ *
+ * 앞선 검사는 「`localOf` 가 `PRESCRIPTION_TYPES.indexOf` 를 부르는가」를
+ * **글자로만** 쟀다. 그래서 그 자리가 접미사를 못 알아본 채로 통과했다
+ * (`#251` 리뷰에서 같은 함정에 한 번 걸렸다 — 부르는지는 재고 **무엇을
+ * 내놓는지**는 안 쟀다).
+ *
+ * 규칙을 순수 함수로 빼 두었으니 여기서는 **값으로** 잰다.
+ */
+
+test("**접미사가 붙어도 처방이다** — 원외 처방이 여럿이면 추출기가 그렇게 만든다", () => {
+  const { isPrescriptionType, prescriptionBaseType } = box();
+
+  /* 화면이 실제로 만드는 이름 — 맨 윗줄 처방일수는 `DURATION_DAYS_1` 로 그려진다 */
+  assert.ok(isPrescriptionType("DURATION_DAYS_1"), "처방일수가 검사값으로 세어진다");
+  assert.ok(isPrescriptionType("MEDICATION_NAME_2"), "둘째 약품명이 검사값으로 세어진다");
+  assert.ok(isPrescriptionType("DOSAGE_2"), "둘째 1회량이 검사값으로 세어진다");
+
+  /* 접미사가 없어도 그대로 처방이다 */
+  assert.ok(isPrescriptionType("DIAGNOSIS"), "진단이 처방 묶음에서 빠진다");
+  assert.ok(isPrescriptionType("DURATION_DAYS"), "처방일수가 처방 묶음에서 빠진다");
+
+  /* **자릿수를 세지 않는다.** 인덱스는 추출기가 매기는 것이고 한 자리라는
+     약속이 없다 — `_1` 만 보게 좁히면 열 번째 처방이 검사값으로 샌다. */
+  assert.ok(isPrescriptionType("MEDICATION_NAME_10"), "두 자리 인덱스를 못 알아본다");
+  assert.equal(prescriptionBaseType("DURATION_DAYS_12"), "DURATION_DAYS", "두 자리 인덱스를 못 벗긴다");
+
+  /* 기본 이름을 돌려준다 — 이름표·단위를 그 이름으로 찾는다 */
+  assert.equal(prescriptionBaseType("DURATION_DAYS_1"), "DURATION_DAYS", "기본 이름을 못 찾는다");
+  assert.equal(prescriptionBaseType("DIAGNOSIS"), "DIAGNOSIS", "접미사 없는 이름이 뭉개진다");
+});
+
+test("**검사값까지 처방으로 끌어오지는 않는다** — 넓게 재면 반대로 샌다", () => {
+  const { isPrescriptionType, prescriptionBaseType } = box();
+
+  /* 혈액 항목도 인덱스가 붙을 수 있다. 접미사만 보고 재면 이것이 처방이 된다 */
+  assert.ok(!isPrescriptionType("TSH"), "혈액 항목이 처방으로 세어진다");
+  assert.ok(!isPrescriptionType("TSH_2"), "인덱스 붙은 혈액 항목이 처방으로 세어진다");
+  assert.ok(!isPrescriptionType("HEMOGLOBIN_1"), "인덱스 붙은 혈색소가 처방으로 세어진다");
+
+  /* 접미사가 숫자가 아니면 벗기지 않는다 — `DURATION_DAYS_X` 는 모르는 이름이다 */
+  assert.ok(!isPrescriptionType("DURATION_DAYS_X"), "숫자가 아닌 꼬리를 벗겨 낸다");
+  assert.equal(prescriptionBaseType("TSH_2"), "", "처방이 아닌데 기본 이름을 내놓는다");
+
+  /* 빈 값·없는 값에 걸려 넘어지지 않는다 */
+  assert.ok(!isPrescriptionType(""), "빈 이름이 처방으로 세어진다");
+  assert.ok(!isPrescriptionType(null), "없는 이름이 처방으로 세어진다");
+  assert.ok(!isPrescriptionType(undefined), "없는 이름이 처방으로 세어진다");
+});
+
+test("**인덱스형 처방은 처방 묶음으로 간다** — 그리는 쪽도 같은 규칙을 쓴다", () => {
+  const { splitFields } = box();
+
+  const split = splitFields([
+    field("HEMOGLOBIN", "10.2"),
+    field("DURATION_DAYS_1", "84"),
+    field("MEDICATION_NAME_2", "야즈"),
+    field("TSH_2", "1.1"),
+  ]);
+
+  assert.deepEqual(
+    split.prescription.map((f) => f.field_type),
+    ["DURATION_DAYS_1", "MEDICATION_NAME_2"],
+    "인덱스형 처방이 처방 묶음에 없다",
+  );
+  assert.deepEqual(
+    split.labs.map((f) => f.field_type),
+    ["HEMOGLOBIN", "TSH_2"],
+    "인덱스 붙은 혈액 항목까지 처방으로 끌려갔다",
+  );
 });
 
 test("**고르는 칸은 제 이름을 스스로 읽는다** — 감싸는 자리에 기대지 않는다", () => {
