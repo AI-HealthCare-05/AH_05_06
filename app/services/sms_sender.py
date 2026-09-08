@@ -64,16 +64,20 @@ class MockSmsSender:
 
 
 def _solapi_authorization_header(api_key: str, api_secret: str) -> str:
-    """HMAC-SHA256 서명 헤더값 — 솔라피 공식 SDK(solapi-python)의 방식과 같다.
+    """HMAC-SHA256 서명 헤더값 — 솔라피 공식 구현의 표기를 고정한다.
 
     date + salt를 이어붙인 문자열을 api_secret으로 HMAC-SHA256 서명한다.
     salt는 요청마다 새로 만든다(재전송 방지) — 값 자체의 알고리즘은 서버가
     검증하지 않으므로, MAC 주소가 섞이는 uuid1 대신 secrets.token_hex를 쓴다.
+
+    공식 SDK 사이에도 대소문자 차이가 있다. Python SDK는 `ApiKey`/`Date`,
+    Node·Go SDK는 `apiKey`/`date`를 쓴다. 공급자 전환 직후 인증 실패를
+    피하도록 여러 공식 구현이 공통으로 쓰는 후자를 문자 그대로 고정한다.
     """
     date = datetime.now().astimezone().isoformat()
     salt = secrets.token_hex(16)
     signature = hmac.new(api_secret.encode(), (date + salt).encode(), hashlib.sha256).hexdigest()
-    return f"HMAC-SHA256 ApiKey={api_key}, Date={date}, salt={salt}, signature={signature}"
+    return f"HMAC-SHA256 apiKey={api_key}, date={date}, salt={salt}, signature={signature}"
 
 
 class SolapiSmsSender:
@@ -169,13 +173,13 @@ def _parse_send_result(result: object) -> SmsSendResult:
     if not isinstance(first_sent, dict):
         raise SmsSendError("provider_invalid_response")
     message_id = first_sent.get("messageId")
-    if not isinstance(message_id, str) or not message_id.strip():
+    if isinstance(message_id, bool) or not isinstance(message_id, (str, int)) or not str(message_id).strip():
         raise SmsSendError("provider_invalid_response")
     status_code = first_sent.get("statusCode")
     return SmsSendResult(
         status=SmsDeliveryStatus.SENT,
         provider=SmsProvider.SOLAPI,
-        provider_message_id=message_id,
+        provider_message_id=str(message_id),
         provider_code=str(status_code) if status_code is not None else None,
     )
 

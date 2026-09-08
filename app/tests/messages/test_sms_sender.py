@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+from datetime import datetime
 
 import httpx
 import pytest
@@ -61,26 +62,74 @@ def _parse_authorization(header: str) -> dict[str, str]:
 
 
 async def test_solapi_signs_requests_with_hmac_sha256() -> None:
-    """서명값을 같은 방식으로 다시 계산해서 실제로 맞는지 확인한다."""
-    captured: dict[str, str] = {}
+    """factory 배선부터 URL·헤더·본문까지 공급자 계약을 문자 그대로 잠근다."""
+    captured: dict[str, object] = {}
+    sent_text = "합성 안내 본문"
+    before = datetime.now().astimezone()
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["authorization"] = request.headers["Authorization"]
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content)
         return httpx.Response(
             200,
             json={"messageList": [{"messageId": "msg-1", "statusCode": "2000"}]},
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        sender = SolapiSmsSender(api_key=API_KEY, api_secret=API_SECRET, sender_number=SENDER, client=client)
-        await sender.send(RECEIVER, "합성 안내")
+        sender = build_sms_sender(
+            settings(
+                SMS_PROVIDER=SmsProvider.SOLAPI,
+                SOLAPI_API_KEY=SecretStr(API_KEY),
+                SOLAPI_API_SECRET=SecretStr(API_SECRET),
+                SOLAPI_SENDER_NUMBER=SecretStr(SENDER),
+                SOLAPI_BASE_URL="https://gateway.example",
+            ),
+            client=client,
+        )
+        await sender.send(RECEIVER, sent_text)
 
+    after = datetime.now().astimezone()
+    assert captured["url"] == "https://gateway.example/messages/v4/send-many/detail"
+    assert isinstance(captured["authorization"], str)
     parts = _parse_authorization(captured["authorization"])
-    assert parts["ApiKey"] == API_KEY
+    assert set(parts) == {"apiKey", "date", "salt", "signature"}
+    assert parts["apiKey"] == API_KEY
+    signed_at = datetime.fromisoformat(parts["date"])
+    assert before <= signed_at <= after
     expected_signature = hmac.new(
-        API_SECRET.encode(), (parts["Date"] + parts["salt"]).encode(), hashlib.sha256
+        API_SECRET.encode(), (parts["date"] + parts["salt"]).encode(), hashlib.sha256
     ).hexdigest()
     assert parts["signature"] == expected_signature
+
+    assert captured["body"] == {
+        "messages": [
+            {
+                "to": RECEIVER,
+                "from": SENDER,
+                "text": sent_text,
+                "type": "SMS",
+                "autoTypeDetect": False,
+            }
+        ]
+    }
+
+
+async def test_solapi_uses_a_fresh_salt_for_each_request() -> None:
+    authorizations: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        authorizations.append(request.headers["Authorization"])
+        return httpx.Response(200, json={"messageList": [{"messageId": "msg-1", "statusCode": "2000"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        sender = SolapiSmsSender(api_key=API_KEY, api_secret=API_SECRET, sender_number=SENDER, client=client)
+        await sender.send(RECEIVER, "첫 요청")
+        await sender.send(RECEIVER, "두 번째 요청")
+
+    first = _parse_authorization(authorizations[0])
+    second = _parse_authorization(authorizations[1])
+    assert first["salt"] != second["salt"]
 
 
 async def test_solapi_uses_the_existing_euc_kr_90_byte_boundary() -> None:
@@ -88,6 +137,7 @@ async def test_solapi_uses_the_existing_euc_kr_90_byte_boundary() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
+        assert len(body["messages"]) == 1
         message = body["messages"][0]
         message_types.append(message["type"])
         assert message["autoTypeDetect"] is False
@@ -169,19 +219,71 @@ async def test_transport_error_is_sanitized_and_has_no_chained_secret() -> None:
     assert RECEIVER not in str(caught.value)
 
 
-def test_solapi_requires_all_credentials_without_printing_values() -> None:
+@pytest.mark.parametrize(
+    "missing_name",
+    [
+        "SOLAPI_API_KEY",
+        "SOLAPI_API_SECRET",
+        "SOLAPI_SENDER_NUMBER",
+    ],
+)
+def test_solapi_requires_every_credential_without_printing_values(missing_name: str) -> None:
+    credentials = {
+        "SOLAPI_API_KEY": SecretStr(API_KEY),
+        "SOLAPI_API_SECRET": SecretStr(API_SECRET),
+        "SOLAPI_SENDER_NUMBER": SecretStr(SENDER),
+    }
+    credentials[missing_name] = SecretStr("")
+
     with pytest.raises(ValidationError) as caught:
         settings(
             SMS_PROVIDER=SmsProvider.SOLAPI,
-            SOLAPI_API_KEY=SecretStr(API_KEY),
-            SOLAPI_API_SECRET=SecretStr(API_SECRET),
-            SOLAPI_SENDER_NUMBER=SecretStr(""),
+            **credentials,
         )
 
     rendered = str(caught.value)
-    assert "SOLAPI_SENDER_NUMBER" in rendered
+    assert missing_name in rendered
     assert API_KEY not in rendered
     assert API_SECRET not in rendered
+    assert SENDER not in rendered
+
+
+@pytest.mark.parametrize("message_id", [12345, "msg-12345"])
+async def test_solapi_accepts_string_and_integer_message_ids(message_id: int | str) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"messageList": [{"messageId": message_id, "statusCode": "2000"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await SolapiSmsSender(
+            api_key=API_KEY,
+            api_secret=API_SECRET,
+            sender_number=SENDER,
+            client=client,
+        ).send(RECEIVER, "합성 안내")
+
+    assert result.provider_message_id == str(message_id)
+
+
+@pytest.mark.parametrize(
+    "response_body",
+    [
+        [],
+        {},
+        {"messageList": []},
+        {"messageList": [{}]},
+        {"messageList": [{"messageId": True}]},
+    ],
+)
+async def test_solapi_rejects_invalid_provider_responses(response_body: object) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=response_body)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        sender = SolapiSmsSender(api_key=API_KEY, api_secret=API_SECRET, sender_number=SENDER, client=client)
+        with pytest.raises(SmsSendError) as caught:
+            await sender.send(RECEIVER, "합성 안내")
+
+    assert caught.value.reason == "provider_invalid_response"
 
 
 def test_solapi_factory_keeps_credentials_out_of_repr() -> None:
