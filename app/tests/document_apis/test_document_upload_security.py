@@ -76,6 +76,24 @@ async def test_path_manipulation_filename_is_rejected(filename: str) -> None:
     assert exc_info.value.code == "INVALID_FILE_TYPE"
 
 
+async def test_11_files_are_rejected_without_partial_save() -> None:
+    service = DocumentUploadService(storage=UnusedStorage(), max_upload_bytes=1024)
+    uploads = [_upload(f"page{i}.jpg", JPEG_BYTES, "image/jpeg") for i in range(11)]
+
+    with pytest.raises(ApiError) as exc_info:
+        await service._read_and_validate(uploads)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.code == "TOO_MANY_FILES"
+
+
+async def test_10_files_are_accepted() -> None:
+    service = DocumentUploadService(storage=UnusedStorage(), max_upload_bytes=1024)
+    uploads = [_upload(f"page{i}.jpg", JPEG_BYTES, "image/jpeg") for i in range(10)]
+    result = await service._read_and_validate(uploads)
+    assert len(result) == 10
+
+
 async def test_actual_oversized_file_is_rejected() -> None:
     with pytest.raises(ApiError) as exc_info:
         await _validate("large.jpg", JPEG_BYTES, "image/jpeg", max_bytes=8)
