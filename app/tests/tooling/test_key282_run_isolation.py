@@ -34,17 +34,29 @@ LOCK_MARK = "이미 다른 pytest 실행이 쓰고 있다"
 GRANT_MARK = "만들 권한이 없다"
 
 
-def _free_slots() -> tuple[int, int]:
-    """부모가 안 쓰는 자리 둘.
+def _free_slots(lane: int = 0) -> tuple[int, int]:
+    """부모도 **형제도** 안 쓰는 자리 둘.
 
     부모가 `-n auto` 로 돌면 워커들이 `base … base+N-1` 을 이미 잡고 있다. 그 위를
     골라야 자식이 부모를 물지 않는다 — 안 그러면 이 검사가 **자기 자신을 막는다.**
+
+    형제를 피하는 것이 `lane` 이다 (KEY-309). 전에는 호출자 모두에게 같은 쌍을
+    돌려줬다. `-n auto` 면 이 파일의 검사들이 서로 다른 워커로 흩어져 나란히 도는데,
+    그중 하나(`test_the_same_slot_stops_instead_of_overlapping`)는 그 자리를
+    **일부러 물고 있다.** 그 사이 다른 검사가 같은 자리를 잡으려다 잠금에 걸려,
+    상관없는 PR 의 CI 가 빨개졌다 — 2,248 통과에 이것 하나만 실패하는 모양이라
+    사람이 원인을 자기 변경에서 찾게 된다. 부모만 피하고 형제는 안 피했던 것이다.
+
+    한 검사가 최대 두 자리를 쓰므로 `lane` 은 둘씩 벌려 준다.
     """
     base = int(os.environ.get(TEST_SLOT_ENV, "0") or "0")
     workers = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1") or "1")
-    first = base + workers
+    first = base + workers + lane
     if first + 1 >= REDIS_LOGICAL_DB_COUNT:
-        pytest.skip(f"자리가 모자라 자식을 띄울 수 없다 — 부모가 {first}번까지 쓰고 있다")
+        pytest.skip(
+            f"자리가 모자라 자식을 띄울 수 없다 — 부모가 {base + workers - 1}번까지 쓰고, "
+            f"이 검사는 {first}·{first + 1}번이 필요하다"
+        )
     return first, first + 1
 
 
@@ -170,7 +182,7 @@ class TestTheHarnessCleansUpAfterItself:
         정작 충돌한 그 순간에 「누가 들고 있는지」를 알 수 없으면, 사람은 터미널을
         하나씩 뒤져야 한다.
         """
-        slot = _free_slots()[0]
+        slot = _free_slots(lane=0)[0]
         first, second = _run_both(slot, slot)
         _skip_if_ungranted([first, second])
 
@@ -204,7 +216,7 @@ class TestTwoRunsDoNotEatEachOther:
         조용히 진행하면 늦게 시작한 쪽이 먼저 돌던 쪽의 스키마를 지운다. 겹치는
         것보다 우는 편이 낫다는 것은 이 파일 위쪽(워커 16개 초과)이 이미 정한 태도다.
         """
-        slot = _free_slots()[0]
+        slot = _free_slots(lane=2)[0]
         results = _run_both(slot, slot)
 
         stopped = [text for code, text in results if code != 0 and LOCK_MARK in text]
@@ -218,7 +230,7 @@ class TestTwoRunsDoNotEatEachOther:
 
     def test_different_slots_both_finish(self) -> None:
         """자리를 달리 주면 둘 다 끝까지 간다 — 서로의 결과를 바꾸지 않는다."""
-        slot_a, slot_b = _free_slots()
+        slot_a, slot_b = _free_slots(lane=4)
         results = _run_both(slot_a, slot_b)
         _skip_if_ungranted(results)
 
@@ -233,7 +245,7 @@ class TestTwoRunsDoNotEatEachOther:
         `0 == 0` 이라 늘 참이고, Redis 를 자리와 따로 두는 회귀가 그대로 통과한다.
         겹치는지는 프로세스가 둘일 때만 드러난다.
         """
-        slot_a, slot_b = _free_slots()
+        slot_a, slot_b = _free_slots(lane=6)
         for slot in (slot_a, slot_b):
             probe_path(slot).unlink(missing_ok=True)
 
