@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -34,7 +35,12 @@ from app.services.knowledge_pipeline import (  # noqa: E402
     LocalSentenceTransformerEmbeddingProvider,
     TortoiseKnowledgeRepository,
 )
-from app.services.knowledge_sources import MFDS_ENDPOINTS, MfdsDataset, MfdsSnapshotClient  # noqa: E402
+from app.services.knowledge_sources import (  # noqa: E402
+    MFDS_ENDPOINTS,
+    MfdsDataset,
+    MfdsSnapshotClient,
+    MfdsSnapshotError,
+)
 from app.services.knowledge_storage import build_configured_knowledge_store  # noqa: E402
 
 MFDS_SERVICE_KEY_ENV = "MFDS_SERVICE_KEY"
@@ -44,6 +50,7 @@ MFDS_DATASET_SERVICE_KEY_ENVS = {
     MfdsDataset.DUR_PRODUCT: "MFDS_DUR_PRODUCT_SERVICE_KEY",
 }
 _FORBIDDEN_MANIFEST_KEYS = frozenset({"service_key", "servicekey", "api_key", "secret", "password"})
+_SAFE_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{2,80}$")
 
 
 def _read_manifest(path: Path) -> list[dict[str, Any]]:
@@ -199,14 +206,21 @@ def main() -> int:
     args = parser.parse_args()
     if not 1 <= args.review_days <= 3650:
         parser.error("--review-days는 1~3650이어야 합니다")
-    asyncio.run(
-        run(
-            args.manifest.resolve(),
-            approved_by=args.approved_by,
-            review_days=args.review_days,
-            only_input_type=args.only,
+    try:
+        asyncio.run(
+            run(
+                args.manifest.resolve(),
+                approved_by=args.approved_by,
+                review_days=args.review_days,
+                only_input_type=args.only,
+            )
         )
-    )
+    except (MfdsSnapshotError, ValueError) as exc:
+        code = str(exc)
+        if _SAFE_ERROR_CODE.fullmatch(code) is None:
+            code = "KNOWLEDGE_INGEST_FAILED"
+        print(json.dumps({"error": code}), file=sys.stderr)
+        return 1
     return 0
 
 
