@@ -22,6 +22,7 @@ set -eu
 
 ALIAS="${1:-team}"
 BUCKET="${MINIO_BUCKET:-ocr-fixtures}"
+KNOWLEDGE_BUCKET="${KNOWLEDGE_MINIO_BUCKET:-}"
 
 MC_HOST_VAR="MC_HOST_${ALIAS}"
 case "$ALIAS" in
@@ -35,12 +36,27 @@ if [ -z "$(printenv "$MC_HOST_VAR" 2>/dev/null || true)" ]; then
   exit 1
 fi
 
-printf '%s\n' "버킷 준비: ${ALIAS}/${BUCKET}"
-mc mb --ignore-existing "${ALIAS}/${BUCKET}"
+prepare_private_bucket() {
+  target="$1"
+  case "$target" in
+    ""|*[!A-Za-z0-9.-]*)
+      printf '%s\n' "MinIO 버킷 이름이 안전하지 않다: ${target}" >&2
+      exit 1
+      ;;
+  esac
 
-# **여기가 요점이다.** 만들 때마다 다시 닫는다 — 멱등이라 몇 번 돌려도 된다.
-printf '%s\n' "익명 접근 차단"
-mc anonymous set none "${ALIAS}/${BUCKET}"
+  printf '%s\n' "버킷 준비: ${ALIAS}/${target}"
+  mc mb --ignore-existing "${ALIAS}/${target}"
 
-printf '%s\n' "현재 정책:"
-mc anonymous get "${ALIAS}/${BUCKET}"
+  # **여기가 요점이다.** 만들 때마다 다시 닫는다 — 멱등이라 몇 번 돌려도 된다.
+  printf '%s\n' "익명 접근 차단"
+  mc anonymous set none "${ALIAS}/${target}"
+
+  printf '%s\n' "현재 정책:"
+  mc anonymous get "${ALIAS}/${target}"
+}
+
+prepare_private_bucket "$BUCKET"
+if [ -n "$KNOWLEDGE_BUCKET" ] && [ "$KNOWLEDGE_BUCKET" != "$BUCKET" ]; then
+  prepare_private_bucket "$KNOWLEDGE_BUCKET"
+fi

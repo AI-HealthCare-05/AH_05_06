@@ -28,9 +28,11 @@ app = [
     "bcrypt<=4.0.1",
     "fastapi[standard]>=0.128.0",
     "httpx>=0.28.1",
+    "minio>=7.2.16",
     "orjson>=3.11.5",
     "passlib[bcrypt]>=1.7.4",
     "pyjwt>=2.10.1",
+    "pypdf>=6.0.0",
     "tortoise-orm>=0.25.3",
     "uvicorn>=0.40.0",
 ]
@@ -54,8 +56,10 @@ worker = [
     "asyncmy>=0.2.11",
     "fastapi[standard]>=0.128.0",
     "httpx>=0.28.1",
+    "minio>=7.2.16",
     "orjson>=3.11.5",
     "pyjwt>=2.10.1",
+    "pypdf>=6.0.0",
     "tortoise-orm>=0.25.3",
 ]
 dev = [

@@ -127,6 +127,13 @@ class Config(BaseSettings):
     # KEY-163 §8 기준값 10초. 실제 응답 시간은 8/27 멘토링 후 확인 예정.
     CLOVA_OCR_TIMEOUT_SECONDS: float = 10.0
 
+    # 승인 의료지식 원문/snapshot 전용 private MinIO — KEY-276.
+    # 자격증명은 SecretStr로 가리고, DB·응답·로그에는 object key만 남긴다.
+    KNOWLEDGE_MINIO_ENDPOINT: str = "http://minio:9000"
+    KNOWLEDGE_MINIO_BUCKET: str = "approved-knowledge"
+    MINIO_ROOT_USER: SecretStr = SecretStr("")
+    MINIO_ROOT_PASSWORD: SecretStr = SecretStr("")
+
     @property
     def clova_enabled(self) -> bool:
         return bool(self.CLOVA_OCR_INVOKE_URL and self.CLOVA_OCR_SECRET_KEY.get_secret_value())
