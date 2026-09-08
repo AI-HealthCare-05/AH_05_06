@@ -31,7 +31,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, course_days, read_but_unconfirmed
+from app.models.ocr import OcrField, OcrResult, course_days, read_but_unconfirmed
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
