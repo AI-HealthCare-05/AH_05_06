@@ -185,7 +185,7 @@ async def _result_of(job: OcrJob) -> "OcrResult | None":
 def _not_confirmed() -> OcrApiError:
     """쓸 판독이 아직 없다 — `GuideService.generate()` 와 같은 말을 쓴다."""
     return OcrApiError(
-        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
         "OCR_NOT_CONFIRMED",
         "확정된 OCR 항목이 없습니다. 먼저 판독을 확정해 주세요.",
     )
@@ -543,7 +543,7 @@ class TortoiseOcrRepository:
 
         if not fields_by_type:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "OCR_NOT_CONFIRMED",
                 "확정된 OCR 항목이 없습니다.",
             )
@@ -564,7 +564,7 @@ class TortoiseOcrRepository:
         unconfirmed = read_but_unconfirmed(result.fields)
         if unconfirmed is not None:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "OCR_NOT_CONFIRMED",
                 "확정되지 않은 OCR 항목이 있습니다. 모든 항목을 먼저 확정해 주세요.",
             )
@@ -572,7 +572,7 @@ class TortoiseOcrRepository:
         ps_field = fields_by_type.get("PRESCRIPTION_SET")
         if ps_field is None or not ps_field.value:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "MISSING_PRESCRIPTION_SET",
                 "처방 세트(PRESCRIPTION_SET) 필드가 없습니다.",
             )
@@ -580,7 +580,7 @@ class TortoiseOcrRepository:
         freq_field = fields_by_type.get("FREQUENCY")
         if freq_field is None or not freq_field.value:
             raise OcrApiError(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "MISSING_FREQUENCY",
                 "복용법(FREQUENCY) 필드가 없습니다.",
             )
