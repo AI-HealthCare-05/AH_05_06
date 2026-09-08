@@ -660,6 +660,130 @@ def test_prescription_set_no_suggestion_without_any_drug_signal() -> None:
 
 
 # ---------------------------------------------------------------------------
+# detect_document_type — 판독 구조 기반 문서 유형 자동 감지 (KEY-278)
+# ---------------------------------------------------------------------------
+
+
+def test_detect_emr_uploaded_as_emr_stays_emr() -> None:
+    """EMR 구조를 가진 문서는 EMR로 유지된다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    result = ClovaOcrResult(raw_text="진단: 자궁내막증", fields=[], rows=[])
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_table_in_emr_uploaded_doc_reclassifies_to_lab_result() -> None:
+    """검사결과지 표(검사항목+검사결과 열)가 있으면 EMR로 업로드된 문서도 LAB_RESULT로 재분류한다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+    from app.tests.fixtures.ocr import SYN_LAB_01_CLOVA_RESULT
+
+    detected = detect_document_type(SYN_LAB_01_CLOVA_RESULT, OcrDocumentType.EMR)
+    assert detected == OcrDocumentType.LAB_RESULT
+
+
+def test_detect_non_emr_stored_type_is_not_changed() -> None:
+    """PRESCRIPTION 등 비EMR 유형은 판독 구조와 무관하게 유지된다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+    from app.tests.fixtures.ocr import SYN_LAB_01_CLOVA_RESULT
+
+    detected = detect_document_type(SYN_LAB_01_CLOVA_RESULT, OcrDocumentType.PRESCRIPTION)
+    assert detected == OcrDocumentType.PRESCRIPTION
+
+
+def test_detect_lab_result_without_rows_stays_emr() -> None:
+    """바운딩 박스 없이 rows가 빈 경우(텍스트 전용 응답) 유형을 변경하지 않는다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    result = ClovaOcrResult(raw_text="검사항목 검사결과\nAST 21", fields=[], rows=[])
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_emr_with_embedded_lab_table_stays_emr() -> None:
+    """진단 표(코드·명칭)와 검사결과 표가 함께 있는 EMR은 LAB_RESULT로 재분류하지 않는다.
+
+    검사결과 요약표가 섞인 실제 EMR이 오분류되면 필수 필드 게이트(DIAGNOSIS·MEDICATION_NAME·
+    DURATION_DAYS)가 통째로 건너뛰어진다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    diag_header_row = [
+        ClovaTextField(text="코드", confidence=1.0, left=10.0, top=10.0, right=60.0, bottom=30.0),
+        ClovaTextField(text="명칭", confidence=1.0, left=70.0, top=10.0, right=200.0, bottom=30.0),
+    ]
+    diag_data_row = [
+        ClovaTextField(text="N80.0", confidence=1.0, left=10.0, top=35.0, right=60.0, bottom=55.0),
+        ClovaTextField(text="난소의 자궁내막증", confidence=1.0, left=70.0, top=35.0, right=200.0, bottom=55.0),
+    ]
+    lab_header_row = [
+        ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=70.0, right=110.0, bottom=90.0),
+        ClovaTextField(text="검사결과", confidence=1.0, left=120.0, top=70.0, right=220.0, bottom=90.0),
+    ]
+    lab_data_row = [
+        ClovaTextField(text="AST(GOT)", confidence=1.0, left=10.0, top=95.0, right=110.0, bottom=115.0),
+        ClovaTextField(text="21", confidence=1.0, left=120.0, top=95.0, right=220.0, bottom=115.0),
+    ]
+    result = ClovaOcrResult(
+        raw_text="코드 명칭\nN80.0 난소의 자궁내막증\n검사항목 검사결과\nAST(GOT) 21",
+        fields=[*diag_header_row, *diag_data_row, *lab_header_row, *lab_data_row],
+        rows=[diag_header_row, diag_data_row, lab_header_row, lab_data_row],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_keywords_in_different_rows_stays_emr() -> None:
+    """검사항목·검사결과 키워드가 서로 다른 행에 있으면 LAB_RESULT로 재분류하지 않는다.
+
+    진료기록에도 '검사명'·'결과' 낱말이 흔하다. 같은 행 안에 있을 때만 검사결과지 표로 판정한다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row0 = [ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=10.0, right=110.0, bottom=30.0)]
+    row1 = [ClovaTextField(text="검사결과", confidence=1.0, left=10.0, top=40.0, right=110.0, bottom=60.0)]
+    result = ClovaOcrResult(
+        raw_text="검사항목\n검사결과",
+        fields=[*row0, *row1],
+        rows=[row0, row1],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_keywords_different_rows_nonoverlapping_x_stays_emr() -> None:
+    """검사항목·검사결과 키워드가 다른 행에 있고 x 범위가 안 겹쳐도 LAB_RESULT로 재분류하지 않는다.
+
+    같은 행 조건이 없으면 x 비겹침만으로 True가 반환돼 오분류된다.
+    이 픽스처는 「같은 행」 제약을 죽였을 때 유일하게 실패해야 한다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row0 = [ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=10.0, right=110.0, bottom=30.0)]
+    row1 = [ClovaTextField(text="검사결과", confidence=1.0, left=120.0, top=40.0, right=220.0, bottom=60.0)]
+    result = ClovaOcrResult(
+        raw_text="검사항목\n검사결과",
+        fields=[*row0, *row1],
+        rows=[row0, row1],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_keywords_same_row_overlapping_x_stays_emr() -> None:
+    """같은 행이라도 두 열의 x 범위가 겹치면 LAB_RESULT로 재분류하지 않는다.
+
+    표의 두 열이라면 x 범위가 겹칠 수 없다. 겹치는 경우는 오탐이다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row = [
+        ClovaTextField(text="검사항목", confidence=1.0, left=0.0, top=10.0, right=50.0, bottom=30.0),
+        ClovaTextField(text="검사결과", confidence=1.0, left=0.0, top=10.0, right=40.0, bottom=30.0),
+    ]
+    result = ClovaOcrResult(
+        raw_text="검사항목 검사결과",
+        fields=row,
+        rows=[row],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
 # KEY-245 — 판독 키워드(lab_keywords) 기반 매칭 (인수조건 1·2·3)
 # ---------------------------------------------------------------------------
 

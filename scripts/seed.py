@@ -803,6 +803,43 @@ async def seed_catalog() -> None:
             await drug.save(update_fields=["frequency", "note", "updated_at"])
 
 
+SmokeSection = tuple[GuideSectionKey, str, int | None, bool]
+
+
+async def _plant_guide_sections(guide: GuideDocument, sections: tuple[SmokeSection, ...]) -> None:
+    """절 다섯을 세운다 — 이미 있으면 **원문을 카탈로그에 맞춘다** (KEY-208).
+
+    여태 `get_or_create` 뿐이라, 승인 문구를 고친 뒤 같은 명령을 다시 돌려도 이미
+    시드된 진료의 본문은 **옛 글 그대로**였다. 같은 함수의 `GuideDocument`·
+    `PatientGuideLink` 는 이미 갱신 분기를 갖고 있다 — 이 자리만 빠져 있었다
+    (이희진 님 `#158` 리뷰 ④).
+
+    **`edited_body` 는 안 건드린다.** 모델이 생성 원문과 사람이 고친 것을 일부러
+    따로 둔다 — 「AI 가 이렇게 썼는데 원장님이 이렇게 고쳤다」를 다음 초안에
+    쓰려는 것이다(D1-2). 재시드가 그것을 덮으면 원장님이 손으로 고친 글이 소리
+    없이 사라지고, 사라졌다는 사실조차 남지 않는다.
+
+    `locked` 도 함께 쓴다 — 🚨 응급 절의 잠금을 흘리면 사람이 못 고쳐야 할 문장이
+    고칠 수 있는 상태로 열린다.
+
+    부모에서 떼어 둔 것은 길이 때문이 아니라 **`seed_smoke_fixture` 가 이미 갈래
+    열한 개**라 한 갈래를 더할 자리가 없어서다(ruff C901).
+    """
+    for key, body, content_id, locked in sections:
+        section, section_created = await GuideSection.get_or_create(
+            guide_document=guide,
+            section_key=key,
+            defaults={"generated_body": body, "drug_caution_content_id": content_id, "locked": locked},
+        )
+        if section_created:
+            continue
+        await GuideSection.filter(guide_section_id=section.guide_section_id).update(
+            generated_body=body,
+            drug_caution_content_id=content_id,
+            locked=locked,
+        )
+
+
 async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
     """KEY-176 smoke 가 쓸 **승인 완료 안내 1건 + 미제출 D+7 상태**를 만든다.
 
@@ -933,7 +970,7 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
             actor_id=doctor_id,
         )
 
-    sections: tuple[tuple[GuideSectionKey, str, int | None, bool], ...] = (
+    sections: tuple[SmokeSection, ...] = (
         (
             GuideSectionKey.MEDICATION,
             medication.body if medication else guide_defaults.MEDICATION,
@@ -951,12 +988,7 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
         ),
         (GuideSectionKey.MESSAGES, _SMOKE_MESSAGES_BODY, None, False),
     )
-    for key, body, content_id, locked in sections:
-        await GuideSection.get_or_create(
-            guide_document=guide,
-            section_key=key,
-            defaults={"generated_body": body, "drug_caution_content_id": content_id, "locked": locked},
-        )
+    await _plant_guide_sections(guide, sections)
 
     digest = digest_link_token(raw_token)
     link = await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).first()

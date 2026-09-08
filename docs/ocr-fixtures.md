@@ -96,6 +96,7 @@ rsvg-convert -w 1600 build/ocr-fixtures/SYN-EMS-01.emr.v1.svg -o emr.png
 |---|---|
 | `SYN-EMS-01.emr.v1.png` | `7dcf8d6af074f45e313b7b8ab0a9d7768f77df808ea39a1181015e7470b73238` |
 | `SYN-EMS-01.emr.v1.svg` | `524ee09b79ead7ba532875cbf0f1460cd2c3dac0f6a36716a0db4f3aecaf3bd3` |
+| `SYN-LAB-01.lab_result.v1.png` | `7133f6f4a9f34a71979c1e6ef571da34519bafb353f314356d7e9ae1bbd9b517` |
 | `docs/data/synthetic-patients.csv` | `37374ea3a501690a3841ca47228df649f50440788aaf4281a763780ce075c77e` |
 
 `develop` `136f5ec` 기준. **셋을 함께 적는 이유가 있다** — 이미지 해시만 두면
@@ -215,6 +216,43 @@ shasum -a 256 ./받은것.png     # §4-1 의 해시와 같아야 한다
 **PDF 는 안 올린다.** 만들 때마다 바이트가 달라(압축 스트림에 시각이 들어간다)
 「같은 것」을 주장할 수 없다 — §4-1 이 그렇게 정했다. 필요하면 PNG 에서 각자
 만든다.
+
+### 실행 기록 — 2026-09-07 (KEY-278: 검사결과지 추가)
+
+EMR·검사결과지 2종 혼합 업로드 E2E 인수조건 충족을 위해
+`SYN-LAB-01.lab_result.v1.png` 를 추가 등록했다.
+
+```text
+버킷            ocr-fixtures  (기존 버킷 재사용)
+업로드 (EMR)    SYN-EMS-01.emr.v1.png          33.54 KiB
+                sha256=7dcf8d6af074f45e313b7b8ab0a9d7768f77df808ea39a1181015e7470b73238
+업로드 (LAB)    SYN-LAB-01.lab_result.v1.png    1.01 MiB
+                sha256=7133f6f4a9f34a71979c1e6ef571da34519bafb353f314356d7e9ae1bbd9b517
+
+되받은 바이트 (EMR)  sha256=7dcf8d6af074f45e…  → 업로드 해시와 같다
+되받은 바이트 (LAB)  sha256=7133f6f4a9f34a71…  → 업로드 해시와 같다
+
+worker 관점(컨테이너 내부) mc stat 조회 → Size·ETag 확인됨
+```
+
+**CLOVA 실판독 결과 (scripts/test_clova_ocr.py, LAB_RESULT 모드)**
+
+```text
+추출 필드  9개 (전부 신뢰도 1.00)
+  AST        21
+  ALT        10
+  FSH        3.41
+  LH         1.95
+  PROLACTIN  13.10
+  T3         2.72   (Free T3)
+  T4         1.19   (Free T4)
+  TSH        0.85
+  E2         195.00 (Estradiol)
+
+미추출     Glucose · BUN · Creatinine  (패턴 범위 밖 — 위와 동일한 이유)
+```
+
+기대값 명세: `docs/data/ocr-fixtures/lab/SYN-LAB-01.lab_result.v1.toml`
 
 ## 6. 실제 환자정보 미포함 — 검수 기록
 

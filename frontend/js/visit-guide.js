@@ -141,6 +141,11 @@ function guideMissingSaying(error) {
       phone: p.phone || "",
       values: { 환자명: p.name || "", 일차: 7, 의원명: "" },
       canSave: canSave,
+      /* 링크 블록이 읽는 둘 — KEY-275. 승인 전에는 링크 자체가 없으므로
+         상태를 함께 넘겨야 블록이 「의사가 승인하면 자동으로 발급됩니다」를
+         그린다. */
+      guideStatus: (guide && guide.status) || "",
+      link: patientLinkOf(visitId),
       lockedSaying:
         guide && guide.status === "SCHEDULED_TO_SEND"
           ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
@@ -257,6 +262,10 @@ function guideMissingSaying(error) {
       /* **화면이 따로 셈하지 않는다.** 승인이 잡아 둔 날짜를 그대로 쓴다 —
          두 곳이 셈하면 어느 쪽이 진짜인지 알 수 없다. */
       messages: timeline.messages || [],
+      /* **현황에도 같은 블록이 선다** (D1-6). 규칙·모양이 `patient-link-view.js`
+         한 벌이라 두 화면이 저절로 같다 — 여기서 다시 판단하지 않는다. */
+      guideStatus: (guide && guide.status) || "",
+      link: patientLinkOf(visitId),
     });
 
     wireUnapprove();
@@ -348,6 +357,13 @@ function guideMissingSaying(error) {
       .catch(function () {
         /* 못 읽으면 화면 기본값으로 둔다 — 저장은 눌러 보면 알 수 있다 */
       });
+
+    /* 링크 상태도 따로 읽는다 — KEY-275. 안내문 요청에 묶지 않는 것은
+       문자 설정과 같은 이유다. 링크를 못 읽어도 안내문은 보여야 하고,
+       현황 탭은 안내문 API 를 아예 안 부른다. */
+    patientLinkLoad(patientLinkOpts, id, function () {
+      return mySeq !== loadSeq;
+    });
 
     doctorApi.guide(id).then(
       function (res) {
@@ -583,9 +599,25 @@ function guideMissingSaying(error) {
     say: say,
   });
 
+  /* 로드와 배선이 **같은 옵션**을 쓴다 — 「지금 어느 진료인가」와 「어떻게 다시
+     그리는가」가 두 곳에서 갈리면 늦게 온 답의 판정이 서로 달라진다. */
+  var patientLinkOpts = {
+    visitId: function () {
+      return visitId;
+    },
+    reRender: renderAll,
+    say: say,
+  };
+
+  wirePatientLink(patientLinkOpts);
+
   document.addEventListener("visit:selected", function (event) {
     /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
     smsForget();
+    /* **앞 사람의 링크 주소도 놓는다.** 남아 있으면 다음 사람 화면에서 앞
+       사람의 주소를 복사한다 (KEY-275). `patientLinkOf` 가 진료 번호를
+       대조하지만, 놓는 것을 함께 두어 두 겹으로 막는다. */
+    patientLinkForget();
     var id = event.detail && (event.detail.visit_id || event.detail);
     if (!id) return;
     loadGuide(id);
