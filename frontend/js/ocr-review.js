@@ -800,7 +800,7 @@ function stateTakesFocus(tone) {
     var unit = fieldUnit(field.field_type, field.unit);
     /* 맨 위 줄(진단 · 처방)은 자리를 지킬 필요가 없다 — 세 칸이 각자 서 있어
        빈 칸을 두면 값과 단추 사이가 까닭 없이 벌어진다. */
-    if (!unit && PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1) return "";
+    if (!unit && isPrescriptionType(field.field_type)) return "";
     return '<span class="field__unit">' + escapeHtml(unit) + "</span>";
   }
 
@@ -1011,7 +1011,7 @@ function stateTakesFocus(tone) {
         /* **「이번 미시행」은 검사값의 말이다.** 진단과 처방은 「이번엔 안
            했다」가 성립하지 않는다 — 안 한 진료가 아니라 못 읽은 것이고,
            안내문이 그 값으로 만들어지므로 채워야 끝난다. */
-        (PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1
+        (isPrescriptionType(field.field_type)
           ? ""
           : '<button class="field__act field__act--quiet" type="button" data-skip="' +
             id +
@@ -1746,7 +1746,10 @@ function stateTakesFocus(tone) {
     var out = [];
     for (var type in local) {
       if (!Object.prototype.hasOwnProperty.call(local, type)) continue;
-      var isRx = PRESCRIPTION_TYPES.indexOf(type) !== -1;
+      /* **그리는 쪽과 같은 규칙으로 잰다** (`ocr-groups.js`). 여기서 `indexOf`
+         로만 재면 `DURATION_DAYS_1` 이 검사값으로 세어져, 「진단 · 처방」에
+         그려 놓고 저장은 「이번 판독 값」 단추에 걸린다. */
+      var isRx = isPrescriptionType(type);
       if (isRx === !!wantPrescription) out.push(type);
     }
     return out;

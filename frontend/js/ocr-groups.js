@@ -37,6 +37,32 @@ var PRESCRIPTION_TYPES = [
   "PRESCRIPTION_SET",
 ];
 
+/* **처방 항목인가.** 접미사가 붙은 이름(`DURATION_DAYS_1` · `MEDICATION_NAME_2`)
+   도 처방이다 — 원외 처방이 여럿일 때 추출기가 그렇게 만든다.
+
+   이 자리를 따로 둔 까닭이 있다. 규칙이 두 곳에 손으로 적혀 있었고, 그 둘이
+   갈라졌다. `splitFields` 는 접미사를 벗겨 재서 처방일수를 「진단 · 처방」에
+   **그렸고**, 값을 **담는** 쪽(`ocr-review.js` 의 `localOf`)은 `indexOf` 로만
+   재서 같은 줄을 검사값으로 셌다. 화면은 처방 자리에 그려 놓고 저장은 옆
+   블록 단추에 걸어 둔 것이다 — 스탭 눈에는 「이 블록의 저장이 안 눌린다」로
+   보인다.
+
+   그래서 **재는 자리를 하나로 둔다.** 그리는 쪽과 담는 쪽이 같은 함수를
+   부르면 둘이 다시 갈라질 수 없다. */
+function prescriptionBaseType(type) {
+  var key = String(type || "");
+  if (PRESCRIPTION_TYPES.indexOf(key) !== -1) return key;
+
+  var m = key.match(/^([A-Z_]+)_(\d+)$/);
+  if (m && PRESCRIPTION_TYPES.indexOf(m[1]) !== -1) return m[1];
+  return "";
+}
+
+/** 처방 묶음에 드는 이름인가. 접미사가 붙어도 같다. */
+function isPrescriptionType(type) {
+  return prescriptionBaseType(type) !== "";
+}
+
 /* **늘 세우는 처방 셋.** 무슨 병에 무슨 약을 며칠 치 — 안내문이 이것으로
    만들어진다. 서버가 필수로 보는 셋과 같고(`ocr_task.py` 의
    `_REQUIRED_OCR_FIELDS`), 맨 위 가로줄에 서는 셋과도 같다.
@@ -206,9 +232,7 @@ function splitFields(fields) {
   /* ② 인덱스형 처방 필드(MEDICATION_NAME_2 등) — 서버가 준 차례 유지 */
   for (var k = 0; k < all.length; k++) {
     if (taken[k]) continue;
-    var type = all[k].field_type;
-    var m = type.match(/^([A-Z_]+)_(\d+)$/);
-    if (m && PRESCRIPTION_TYPES.indexOf(m[1]) !== -1) {
+    if (isPrescriptionType(all[k].field_type)) {
       prescription.push(all[k]);
       taken[k] = true;
     }
