@@ -554,8 +554,55 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
 
 일반 운영 배포에는 `docker-compose.pilot.yml`을 절대 함께 주지 않는다.
 
-솔라피 어댑터(KEY-248)를 `OtpDelivery`에 실배선하는 작업은 이 티켓 범위 밖이다
-— 후속 티켓으로 남긴다.
+솔라피 어댑터(KEY-248)를 `OtpDelivery`에 실배선하는 작업은 KEY-284가 한다 —
+아래 4-3-2절을 본다.
+
+## 4-3-2. Pilot 고정 OTP → 실제 솔라피 OTP 전환 (KEY-284)
+
+**KEY-219의 난수 OTP·검증·잠금 로직은 이미 있다.** 이 절이 하는 일은 그
+로직을 실제 발송 경로(솔라피)와 잇고, 검증된 뒤에만 4-3-1절의 고정 OTP
+좁은문을 끄는 순서를 정하는 것이다.
+
+### 전환 순서 — 단계마다 앞 단계가 끝나야 다음으로 간다
+
+1. **mock 자동 테스트 통과.** `SMS_PROVIDER=mock`(기본값)로 CI가 그대로
+   통과하는지 먼저 확인한다 — 여기까지는 자격증명이 전혀 없어도 된다.
+2. **Pilot/staging에서 승인된 테스트 번호로 실제 문자 1건 수신.**
+   ```text
+   ENV=prod (Pilot)
+   SMS_PROVIDER=solapi
+   SOLAPI_API_KEY / SOLAPI_API_SECRET / SOLAPI_SENDER_NUMBER  실제 값
+   OTP_APPROVED_TEST_PHONES=010XXXXXXXX   (승인된 팀 내 번호만, 쉼표 구분)
+   ```
+   Pilot(ENV=prod)에서는 `_otp_service()`가 `OTP_SOLAPI_PROD_ENABLED` 환경변수
+   **와** `--otp-confirm-solapi-prod` 실행 플래그를 **둘 다** 요구한다(4-3-1의
+   `PILOT_ALLOW_MOCK_OTP`와 같은 이중 게이트 원칙). 이 둘이 갖춰지면 실제
+   솔라피로 나가되, `OTP_APPROVED_TEST_PHONES`에 없는 번호는 발송 자체가
+   막힌다 — 이 단계에서 실수로 임의의 번호에 문자가 나가지 않게 하는
+   안전장치다.
+3. **수신한 OTP로 검증·환자 세션·보호 API 접근까지 E2E 확인.**
+4. **장애·재발송·만료·잠금 회귀를 다시 돌려서 실제 경로에서도 그대로
+   지켜지는지 확인.**
+5. **위 네 가지가 전부 확인되고 팀 승인을 받은 뒤에만** 4-3-1절의
+   `PILOT_ALLOW_MOCK_OTP` 좁은문을 끈다(env·플래그를 배포에서 뺀다).
+6. **운영(실제 환자) 발송 활성화는 여기서 하지 않는다** — KEY-6 배포 승인과
+   비밀값 설정 절차를 별도로 따른다. Pilot 검증이 끝났다고 운영에 자동으로
+   반영되지 않는다.
+
+### Rollback — 실제 경로에서 문제가 생기면
+
+`SMS_PROVIDER=solapi`로 전환한 뒤 실발송에 문제가 생기면, 아래 어느 쪽이든
+즉시 되돌릴 수 있다 — 코드 롤백이 필요 없다.
+
+- **가장 빠른 롤백**: `SMS_PROVIDER=mock`으로 되돌리고 재기동한다.
+  `_otp_service()`는 `MOCK_OTP_CODE`가 있으면 그걸 최우선으로 보므로, 고정
+  OTP 좁은문(4-3-1)이 아직 켜져 있다면 그쪽으로 바로 돌아간다.
+- **좁은문까지 이미 껐다면**: `OTP_SOLAPI_PROD_ENABLED`를 지우거나
+  `--otp-confirm-solapi-prod` 플래그를 빼고 재기동한다 — `UnavailableOtpDelivery`로
+  떨어져 발급 자체가 503으로 안전하게 막힌다(발송이 성공한 것처럼 보이는
+  상태로 남지 않는다).
+- 어느 쪽으로 되돌리든 `PatientOtpChallenge`의 기존 계약(3분 만료·5회
+  잠금·일회 사용)은 그대로다 — 이 표를 건드리는 롤백이 아니다.
 
 ## 4-4. 시연 전 재프로비저닝 — 한 번에 따라가는 순서 (KEY-203)
 

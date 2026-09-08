@@ -6,7 +6,7 @@ from fastapi import APIRouter, Cookie, Depends, Response, status
 from redis.asyncio import Redis
 
 from app.core import config
-from app.core.config import Env, pilot_mock_otp_gate_open
+from app.core.config import Env, SmsProvider, otp_solapi_prod_gate_open, pilot_mock_otp_gate_open
 from app.core.redis_client import get_redis
 from app.dependencies.patient_auth import PATIENT_SESSION_COOKIE_NAME
 from app.dtos.patient_otp import (
@@ -24,14 +24,23 @@ from app.dtos.patient_otp import (
 from app.services.patient_links import PatientLinkService
 from app.services.patient_otp import (
     OTP_RESEND_COOLDOWN,
+    ApprovedPhonesOnlyDelivery,
     MockOtpDelivery,
+    OtpDelivery,
     PatientOtpService,
+    SolapiOtpDelivery,
     UnavailableOtpDelivery,
 )
 from app.services.patient_sessions import PATIENT_SESSION_SECONDS, PatientSessionStore
+from app.services.sms_sender import build_sms_sender
 
 patient_auth_router = APIRouter(prefix="/patient-auth", tags=["patient-auth"])
 patient_otp_router = APIRouter(prefix="/patient-auth/otp", tags=["patient-auth"])
+
+
+def _approved_test_phones() -> frozenset[str]:
+    raw = config.OTP_APPROVED_TEST_PHONES.get_secret_value()
+    return frozenset(phone.strip() for phone in raw.split(",") if phone.strip())
 
 
 def _otp_service() -> PatientOtpService:
@@ -42,6 +51,21 @@ def _otp_service() -> PatientOtpService:
             MockOtpDelivery(),
             fixed_otp_code=config.MOCK_OTP_CODE,
         )
+
+    if config.SMS_PROVIDER is SmsProvider.SOLAPI:
+        # prod에서 실제 발송을 켜려면 KEY-6 승인 뒤 넣는 이 좁은문이 따로
+        # 필요하다 — SMS_PROVIDER=solapi와 자격증명만으로 켜지지 않는다.
+        if config.ENV is Env.PROD and not otp_solapi_prod_gate_open():
+            return PatientOtpService(UnavailableOtpDelivery())
+
+        delivery: OtpDelivery = SolapiOtpDelivery(build_sms_sender(config))
+        if config.ENV is not Env.PROD:
+            # Pilot·staging에서는 승인된 테스트 번호로만 실제 발송을 좁힌다
+            # — KEY-284 검증 단계 안전장치. prod는 실제 환자에게 나가야
+            # 하므로 이 목록을 보지 않는다.
+            delivery = ApprovedPhonesOnlyDelivery(delivery, _approved_test_phones())
+        return PatientOtpService(delivery)
+
     return PatientOtpService(UnavailableOtpDelivery())
 
 

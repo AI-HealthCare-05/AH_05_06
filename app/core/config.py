@@ -37,6 +37,23 @@ def pilot_mock_otp_gate_open() -> bool:
     return has_env and has_flag
 
 
+# 실제 환자 OTP 발송 좁은문(prod) — KEY-284, 같은 이유로 같은 모양이다.
+# SMS_PROVIDER=solapi와 자격증명만으로 운영에서 실제 발송이 켜지면 KEY-6
+# 배포 승인 없이도 켜질 수 있다 — 그래서 실행할 때마다 넣어야 하는 CLI
+# 플래그를 하나 더 요구한다.
+OTP_SOLAPI_PROD_ENABLED_ENV = "OTP_SOLAPI_PROD_ENABLED"
+OTP_SOLAPI_PROD_ENABLED_FLAG = "--otp-confirm-solapi-prod"
+
+
+def otp_solapi_prod_gate_open() -> bool:
+    """OTP_SOLAPI_PROD_ENABLED 환경변수와 --otp-confirm-solapi-prod 플래그가
+    둘 다 있어야 True — KEY-6 배포 승인 뒤 이 둘을 함께 넣는다.
+    """
+    has_env = is_flag_env_value_true(os.environ.get(OTP_SOLAPI_PROD_ENABLED_ENV))
+    has_flag = OTP_SOLAPI_PROD_ENABLED_FLAG in sys.argv[1:]
+    return has_env and has_flag
+
+
 class SmsProvider(StrEnum):
     MOCK = "mock"
     SOLAPI = "solapi"
@@ -162,6 +179,10 @@ class Config(BaseSettings):
     SOLAPI_SENDER_NUMBER: SecretStr = SecretStr("")
     SOLAPI_BASE_URL: str = "https://api.solapi.com"
     SOLAPI_TIMEOUT_SECONDS: float = 10.0
+    # Pilot/staging에서 실제 솔라피로 OTP를 보낼 때, 이 목록에 있는 번호로만
+    # 보낸다 — KEY-284. 운영(prod)에서는 안 본다(그때는 실제 환자에게 나가야
+    # 하니까). 쉼표로 구분한 전화번호 원문.
+    OTP_APPROVED_TEST_PHONES: SecretStr = SecretStr("")
 
     @model_validator(mode="after")
     def _mock_otp_code_is_non_prod_only(self) -> "Config":
