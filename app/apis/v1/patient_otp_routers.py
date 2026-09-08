@@ -58,12 +58,17 @@ def _otp_service() -> PatientOtpService:
         if config.ENV is Env.PROD and not otp_solapi_prod_gate_open():
             return PatientOtpService(UnavailableOtpDelivery())
 
-        delivery: OtpDelivery = SolapiOtpDelivery(build_sms_sender(config))
-        if config.ENV is not Env.PROD:
-            # Pilot·staging에서는 승인된 테스트 번호로만 실제 발송을 좁힌다
-            # — KEY-284 검증 단계 안전장치. prod는 실제 환자에게 나가야
-            # 하므로 이 목록을 보지 않는다.
-            delivery = ApprovedPhonesOnlyDelivery(delivery, _approved_test_phones())
+        # 승인된 테스트 번호로만 실제 발송을 좁힌다 — KEY-284 검증 단계
+        # 안전장치. **환경으로 갈라 두지 않는다** — Pilot도 ENV=prod로
+        # 뜬다(KEY-264). "ENV가 prod가 아닐 때만" 이라고 두면, Pilot에서
+        # 좁은문이 열리는 순간 이 래퍼가 통째로 빠져 임의 번호로 나간다
+        # (yugaeun821 리뷰). 실제 운영 활성화(KEY-6)는 이 티켓 범위 밖이라,
+        # 그 승인 절차가 생기기 전까지는 이 경로에 도달하는 모든 실행이
+        # "검증 단계"다 — 항상 승인 번호로 좁힌다.
+        delivery: OtpDelivery = ApprovedPhonesOnlyDelivery(
+            SolapiOtpDelivery(build_sms_sender(config)),
+            _approved_test_phones(),
+        )
         return PatientOtpService(delivery)
 
     return PatientOtpService(UnavailableOtpDelivery())

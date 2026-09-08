@@ -118,8 +118,13 @@ class TestProdRequiresItsOwnNarrowGate(unittest.TestCase):
 
         self.assertIsInstance(service.delivery, UnavailableOtpDelivery)
 
-    def test_both_together_open_it_without_the_test_phone_wrapper(self) -> None:
-        """prod는 실제 환자에게 나가야 하므로 승인 번호 목록으로 좁히지 않는다."""
+    def test_both_together_open_it_but_still_wrapped_in_the_approved_phones_gate(self) -> None:
+        """운영 활성화(KEY-6)가 아직 없다 — 이 좁은문은 Pilot 검증용이다.
+
+        Pilot도 ENV=prod로 뜬다(KEY-264). "prod니까 승인 번호 제한을
+        빼도 된다"고 두면, Pilot에서 이 좁은문을 여는 순간 임의 번호로
+        발송된다(yugaeun821 리뷰) — 그래서 여기서도 래퍼가 그대로 있다.
+        """
         with (
             patch.object(core_module.config, "MOCK_OTP_CODE", ""),
             patch.object(core_module.config, "ENV", Env.PROD),
@@ -129,4 +134,5 @@ class TestProdRequiresItsOwnNarrowGate(unittest.TestCase):
         ):
             service = _otp_service()
 
-        self.assertIsInstance(service.delivery, SolapiOtpDelivery)
+        self.assertIsInstance(service.delivery, ApprovedPhonesOnlyDelivery)
+        self.assertIsInstance(service.delivery._delivery, SolapiOtpDelivery)  # type: ignore[attr-defined]
