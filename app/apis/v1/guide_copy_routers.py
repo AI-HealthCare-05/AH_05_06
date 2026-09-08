@@ -68,6 +68,7 @@ async def _page(service: GuideCopyService, actor: ClinicalActor, doctor_id: int 
                         origin=part.origin,
                         body=part.body,
                         editable=part.editable,
+                        preview=part.preview,
                     )
                     for part in row.sections
                 ],

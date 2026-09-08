@@ -199,6 +199,7 @@
   </div>
 </div>
 
+<script src="/js/link-token.js"></script>
 <script>
 (function () {
   var API_BASE = '/api/v1';
@@ -211,16 +212,22 @@
 
   /* URL 파라미터 읽기 — 토큰은 메모리에만 둔다 */
   var params = new URLSearchParams(window.location.search);
-  var fragment = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
   var isMock = params.get('mock') === '1';
-  var token = isMock ? (fragment.get('t') || '') : (params.get('token') || '');
+  /* **목업인지와 무관하게 조각을 먼저 읽는다** — KEY-292. `otp.html` 과 똑같은
+     결함이 여기에도 있었다: 실서버에서는 `MOCK` 이 항상 거짓이라 `?token=` 만
+     봤고, 그래서 앞 화면이 토큰을 주소창에 실어 보낼 수밖에 없었다. `?token=`
+     은 그 사이에 열려 있던 옛 주소를 위해 읽어만 준다.
+
+     읽는 규칙은 `frontend/js/link-token.js` 한 곳에 있다 — 이 결함이 「같은 줄이
+     네 벌」이라 생겼다 (이희진 님 `#255` ③). */
+  var token = linkTokenFrom(window.location, ['token']);
   var expiresAt = params.get('expires_at') ? new Date(params.get('expires_at')) : null;
   var retryAfterSeconds = parseInt(params.get('retry_after') || '60', 10);
   if (isMock && !expiresAt) expiresAt = new Date(Date.now() + 180000);
 
   function otpStartUrl() {
     if (isMock) return 'otp.html' + location.search + location.hash;
-    return 'otp.html' + (token ? '?token=' + encodeURIComponent(token) : '');
+    return 'otp.html' + (token ? '#t=' + encodeURIComponent(token) : '');
   }
 
   document.getElementById('back-btn').addEventListener('click', function () {
@@ -250,13 +257,14 @@
 
   function guideReturnUrl() {
     var query = new URLSearchParams(location.search);
-    var fragment = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
     var safeQuery = new URLSearchParams();
     var mock = query.get('mock');
     var previewCase = query.get('case');
     if (mock === '1') safeQuery.set('mock', '1');
     if (previewCase && /^[a-z0-9_-]{1,32}$/i.test(previewCase)) safeQuery.set('case', previewCase);
-    var token = fragment.get('t') || query.get('t') || query.get('visit') || '';
+    /* 옛 이름이 위쪽 `token` 과 다르다(`?t=`·`?visit=`) — 여기가 만드는 것은
+       안내 화면 주소라 **안내 화면이 쓰던 옛 이름**을 본다. 그대로 둔다. */
+    var token = linkTokenFrom(location, ['t', 'visit']);
     var safeFragment = new URLSearchParams();
     if (token) safeFragment.set('t', token);
     return '/guide.html' +

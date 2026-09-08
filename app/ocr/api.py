@@ -106,7 +106,9 @@ async def write_ocr_field(
 
     비우면 그 줄을 지우고 `null` 을 준다.
     """
-    return await ocr.write_field(visit_id, field_type, request.value, actor)
+    return await ocr.write_field(
+        visit_id, field_type, request.value, actor, unit=request.unit.value if request.unit else None
+    )
 
 
 @ocr_router.get("/ocr/documents/{document_id}/image")

@@ -500,7 +500,10 @@ test('KEY-219 실제 OTP 왕복을 보존하고 고정 OTP 우회는 명시적 �
   assert.match(GUIDE_SOURCE, /location\.replace\(otpEntryUrl\(\)\)/);
   assert.doesNotMatch(GUIDE_SOURCE, /sessionStorage\.setItem\([^\n]*token/i);
 
-  assert.match(OTP_SOURCE, /\/patient-auth\/session\?link_token=/);
+  /* 세션 확인은 **본문으로** 묻는다 — KEY-292. 주소에 토큰을 실으면 nginx
+   * access log 에 원문이 그대로 남는다. */
+  assert.match(OTP_SOURCE, /\/patient-auth\/session'/);
+  assert.doesNotMatch(OTP_SOURCE, /\/patient-auth\/session\?/);
   assert.match(OTP_SOURCE, /\/patient-auth\/context/);
   assert.match(OTP_SOURCE, /\/patient-auth\/otp\/issue/);
   assert.match(OTP_SOURCE, /if \(isMock\)/);

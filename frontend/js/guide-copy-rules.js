@@ -37,6 +37,23 @@ function copyShown(section) {
     : section.origin || "";
 }
 
+/** **실제로 환자에게 나가는 글** — KEY-258.
+ *
+ * 서버가 지어 준 값을 그대로 쓴다. **여기서 셈하지 않는다** — 셈하는 순간
+ * 규칙이 두 벌이 되고, 이 저장소는 그 갈림으로 이미 여러 번 데었다
+ * (`guides.py` 의 「설정 화면이 보여 주는 원본과 실제로 나가는 글이 갈렸다」).
+ *
+ * 서버 쪽 짝은 `app/services/guide_body.py` 의 `preview_body()` 이고, 안내
+ * 생성이 부르는 것과 **같은 함수**다.
+ *
+ * 옛 응답에는 이 칸이 없다 — 그때는 나갈 글(`copyShown`)로 떨어진다. 화면이
+ * 빈 칸을 「나갈 글이 없다」로 보이는 것보다 낫다.
+ */
+function copyPreview(section) {
+  if (!section) return "";
+  return typeof section.preview === "string" && section.preview !== "" ? section.preview : copyShown(section);
+}
+
 /** 고친 자리인가 — 화면이 「원장님 문구」 표를 붙일지 정한다. */
 function copyIsMine(section) {
   return !!section && section.body != null && section.body !== "";
