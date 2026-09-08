@@ -1,15 +1,16 @@
-"""예약 문자 발송 파이프라인 — KEY-249.
+"""예약 문자 발송 파이프라인 — KEY-249, KEY-297.
 
 `app/tests/messages/test_scheduled_messages.py` 의 주석이 이미 말해 둔 그대로다:
 「아직 아무도 HELD·FAILED 를 만들지 않는다. 발송기 자체가 없어서 SCHEDULED 와
 CANCELED 만 실제로 쓰인다.」이 파일이 그 발송기다.
 
-`{링크}` 를 채우는 문제는 이 티켓 범위 밖으로 남겼다(PR 코멘트 참고) — 그래서
-파이프라인 자체(claim·발송·상태전이·재시도·멱등성)를 검사하는 테스트는
-`{링크}` 가 없는 커스텀 템플릿을 만들어서 그 문제를 우회한다. 실서비스
-화면(스탭 UI)에서는 `{링크}` 를 지울 수 없지만(`MessageTemplateService`가
-막는다), 여기서는 모델을 직접 써서 그 검사를 건너뛴다 — 파이프라인 검사와
-링크 문제를 갈라 보기 위해서다.
+`{링크}` 를 채우는 문제는 KEY-297이 풀었다 — 발송 직전에
+`PatientLinkService.issue_for_dispatch()`가 원문을 새로 발급한다. 그 경로
+자체는 `test_key297_dispatch_time_link_issuance.py`가 따로 검사하고, 여기
+파이프라인 검사(claim·발송·상태전이·재시도·멱등성)는 여전히 `{링크}` 가
+없는 커스텀 템플릿으로 그 관심사를 갈라 둔다 — 링크 발급이 매번 DB에
+쓰기(link 생성/회전)를 하나 더 만들어서, 파이프라인 자체의 재시도·멱등성
+검사와 섞이면 어느 쪽이 실패했는지 알기 어려워진다.
 """
 
 import asyncio
@@ -18,6 +19,7 @@ from datetime import timedelta
 from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
 
+from app.core import config
 from app.core.config import SmsProvider
 from app.models.catalog import MessageTemplate
 from app.models.patients import Patient, PatientGender
@@ -30,11 +32,11 @@ from app.models.visits import (
     GuideMessageKind,
     GuideMessageStatus,
     GuideStatus,
+    PatientGuideLink,
     Visit,
 )
 from app.services.message_dispatch import (
     MAX_ATTEMPTS,
-    LinkNotAvailableError,
     _finish_failed,
     _finish_retryable,
     _finish_sent,
@@ -111,39 +113,37 @@ async def make_due_message(
     )
 
 
-class TestLinkVariableNotYetAvailable(TestCase):
-    """{링크}/{예약링크}를 채울 방법이 아직 없다 — PR 코멘트로 남긴 그 문제.
+class TestLinkVariableIsIssuedAtDispatchTime(TestCase):
+    """{링크}/{예약링크}/{만료일}는 발송 직전에 실제로 채워진다 — KEY-297.
 
-    발송기가 없어서가 아니라, 원문 토큰을 다시 얻을 방법이 없어서다
-    (PatientGuideLink는 재발급 정책이 미확정). 조용히 깨진 링크를 보내는
-    대신, 명시적으로 실패시킨다.
+    구체적인 발급/회전 규칙(digest 교체, OTP 무효화, TTL)은
+    `test_key297_dispatch_time_link_issuance.py`가 `PatientLinkService`
+    수준에서 따로 검사한다. 여기서는 파이프라인이 그 경로를 실제로
+    부르고, 결과가 문구에 제대로 섞여 나가는지만 본다.
     """
 
-    async def test_render_raises_when_link_variable_is_required(self) -> None:
+    async def test_render_fills_link_and_expiry_and_creates_a_real_link_row(self) -> None:
         message = await make_due_message(kind=GuideMessageKind.GUIDE)
 
-        try:
-            await render_message_body(message)
-            raised = False
-        except LinkNotAvailableError:
-            raised = True
-        assert raised, "{링크}를 채울 수 없는데도 조용히 문구를 만들었다"
+        body = await render_message_body(message)
 
-    async def test_dispatch_fails_immediately_without_retry(self) -> None:
+        assert "{링크}" not in body
+        assert "{만료일}" not in body
+        assert config.PATIENT_WEB_BASE_URL in body
+        link = await PatientGuideLink.get(guide_document_id=message.guide_document_id)
+        assert link.last_message_id == message.guide_message_id
+
+    async def test_dispatch_succeeds_all_the_way_through(self) -> None:
         message = await make_due_message(kind=GuideMessageKind.GUIDE)
         sender = _CountingSender()
 
         result = await dispatch_message(message.guide_message_id, sender)
 
         assert result is not None
-        assert result.status is GuideMessageStatus.FAILED
-        assert sender.calls == []  # 발송기까지 가지도 않았다.
+        assert result.status is GuideMessageStatus.SENT
+        assert len(sender.calls) == 1
         updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
-        assert updated.status is GuideMessageStatus.FAILED
-        assert updated.attempt_count == 1  # 5번 돌지 않고 바로 종료.
-        assert updated.provider_detail == "link_not_available_pending_policy"
-        # AC2 — 화면에 실패 사유가 빈 값으로 보이면 안 된다(2heej 리뷰).
-        assert updated.failure_code is GuideMessageFailure.CARRIER
+        assert updated.status is GuideMessageStatus.SENT
 
     async def test_a_link_free_custom_template_is_unaffected(self) -> None:
         """의원이 링크 없는 커스텀 문구를 쓰면(파이프라인 검사 전용) 정상 발송된다."""

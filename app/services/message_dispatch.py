@@ -1,9 +1,13 @@
-"""예약 문자 발송 파이프라인 — KEY-249, KEY-250.
+"""예약 문자 발송 파이프라인 — KEY-249, KEY-250, KEY-297.
 
 `GuideMessage(SCHEDULED)` 를 집어서 발송 직전 게이트(`dispatch_gate.py`)를
 먼저 거친다. 막히면 `HELD`, 통과하면 실제로 보내고 `SENT`/`FAILED` 로
 전이시킨다. 시도·성공·실패·보류 네 갈래를 전부 append-only 감사 이벤트로
 남긴다(`GuideMessageEvent`) — KEY-250.
+
+`{링크}`/`{예약링크}`가 든 문구는 보내는 그 순간 원문을 새로 발급한다
+(`PatientLinkService.issue_for_dispatch`) — 예약 승인 시점에 미리 만들어
+두지 않는다. 원문은 워커 메모리에서 문구를 만드는 동안에만 살아 있다.
 """
 
 import secrets
@@ -12,7 +16,9 @@ from datetime import datetime, timedelta
 
 from tortoise.timezone import now
 
+from app.core import config
 from app.core.logger import default_logger
+from app.core.time import DISPLAY_TIMEZONE
 from app.models.catalog import MessageTemplate
 from app.models.ocr import OcrField, course_days
 from app.models.patients import Patient
@@ -30,6 +36,7 @@ from app.models.visits import (
 )
 from app.services.dispatch_gate import evaluate_dispatch_gate
 from app.services.message_templates import DEFAULT_BODY, MessageTemplateKind
+from app.services.patient_links import DISPATCH_LINK_TTL, PatientLinkService
 from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError, SmsSendResult
 
 #: 최대 재시도 횟수. 이걸 넘기면 일시 실패도 영구 실패(FAILED)로 종료한다.
@@ -57,19 +64,21 @@ class DispatchResult:
     status: GuideMessageStatus
 
 
-class LinkNotAvailableError(RuntimeError):
-    """`{링크}`/`{예약링크}`를 채울 원문 토큰을 얻을 방법이 없을 때.
+#: 환자 링크가 여는 화면 경로 — `frontend/js/link-token.js`의 조각(`#t=`) 규칙과
+#: 맞춘다. 질의문자열이 아니라 조각을 쓰는 이유는 그 파일 docstring을 본다 —
+#: 조각은 서버 요청·access log에 안 남는다.
+_LINK_PATH = "/patient_wireframe/html/otp.html#t={token}"
 
-    `PatientLinkService.issue()`는 스탭 인증(actor)을 전제하고, 이미 링크가
-    발급된 안내문은 재발급을 막는다 — `PatientGuideLink` 모델 docstring이
-    스스로 「폐기·재발급 정책이 확정되기 전」이라고 적어 둔 대로, 이 정책은
-    아직 팀 차원에서 결정되지 않았다.
 
-    발송 직전 원문을 새로 발급/교체하는 방법도 있지만, 그건 링크 보안
-    모델(원문을 저장하지 않는다는 원칙)에 손대는 결정이라 이 파이프라인이
-    대신 정하지 않는다 — PR 코멘트로 의견만 남기고, 정책이 정해지면 여기를
-    채운다. 그때까지는 조용히 깨진 링크를 보내는 대신 명시적으로 실패시킨다.
-    """
+def _absolute_link_url(raw_token: str) -> str:
+    base = config.PATIENT_WEB_BASE_URL.rstrip("/")
+    return base + _LINK_PATH.format(token=raw_token)
+
+
+def _format_expiry(expires_at: datetime) -> str:
+    """환자에게 보이는 만료 시각 — "9월 8일 15시" 모양."""
+    local = expires_at.astimezone(DISPLAY_TIMEZONE)
+    return f"{local.month}월 {local.day}일 {local.hour}시"
 
 
 async def _template_body(hospital_id: int, kind: MessageTemplateKind) -> str:
@@ -110,9 +119,10 @@ async def render_message_body(
 ) -> str:
     """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
 
-    `{링크}`/`{예약링크}`는 채우지 않는다 — 이유는 `LinkNotAvailableError`
-    docstring을 본다. 남은 변수만 채운 뒤, 그 둘이 아직도 문구에 남아
-    있으면 `LinkNotAvailableError`를 던진다.
+    `{링크}`/`{예약링크}`가 문구에 있으면 그때 원문을 새로 발급한다(KEY-297)
+    — 예약 승인 시점에 미리 만들어 두지 않는다. 원문은 이 함수 안에서만
+    살아 있다가 완성된 문자열(`body`)에 섞여 나갈 뿐, 어디에도 따로
+    저장하지 않는다.
     """
     guide = guide or await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
     if guide is None:
@@ -134,11 +144,18 @@ async def render_message_body(
         remaining = (message.scheduled_at.date() - now().date()).days if visit else None
         values["D"] = str(max(remaining, 0)) if remaining is not None else ""
 
+    if "{링크}" in body or "{예약링크}" in body:
+        raw_token = await PatientLinkService().issue_for_dispatch(
+            guide.guide_document_id,
+            message.guide_message_id,
+        )
+        link = _absolute_link_url(raw_token)
+        values["링크"] = link
+        values["예약링크"] = link
+        values["만료일"] = _format_expiry(now() + DISPATCH_LINK_TTL)
+
     for name, value in values.items():
         body = body.replace("{" + name + "}", value)
-
-    if "{링크}" in body or "{예약링크}" in body:
-        raise LinkNotAvailableError(f"guide_message_id={message.guide_message_id} kind={message.kind.value}")
     return body
 
 
@@ -199,9 +216,6 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
 
         body = await render_message_body(message, guide=guide, visit=visit)
         result = await sender.send(patient.phone, body)
-    except LinkNotAvailableError:
-        # 재시도해도 정책이 정해지기 전엔 같은 결과다 — 5번 돌 필요 없이 바로 종료한다.
-        return await _finish_failed(message, token, provider_detail="link_not_available_pending_policy")
     except SmsSendError as exc:
         return await _finish_retryable(message, token, moment, provider_detail=exc.reason)
     except Exception:
@@ -262,12 +276,6 @@ def _failure_code_for(provider_detail: str | None) -> GuideMessageFailure:
     잘못됐다」·「수신 거부됐다」·「발신번호가 미등록이다」라고 확신할
     근거가 없기 때문이다. 틀린 확신을 화면에 내보내는 것보다는 모호하게
     맞는 말을 하는 쪽을 골랐다(2heej 리뷰).
-
-    `link_not_available_pending_policy`(PR 코멘트 참고)도 여기로
-    떨어지는데, 이건 사실 통신사 문제가 전혀 아니다 — 정책이 아직
-    확정되지 않아 우리 쪽에서 링크를 못 만든 것이다. 넷 중 아무것도 안
-    맞아서 어쩔 수 없이 여기 둔다 — 실제 원인은 `provider_detail`(내부
-    전용, 화면에 안 보임)로 구분한다.
     """
     return GuideMessageFailure.CARRIER
 

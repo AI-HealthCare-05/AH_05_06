@@ -24,7 +24,7 @@ from app.models.visits import (
 )
 from app.services.dispatch_gate import gate_hold_reason
 from app.services.message_dispatch import dispatch_message
-from app.services.sms_sender import MockSmsSender, SmsSendError, SmsSendResult
+from app.services.sms_sender import MockSmsSender, SmsDeliveryStatus, SmsSendError, SmsSendResult
 from app.tests.messages.test_key249_dispatch_pipeline import make_due_message
 
 
@@ -160,11 +160,12 @@ class TestAuditEventsAreAppendOnly(TestCase):
         assert events[-1].reason == GuideMessageHold.NOT_APPROVED.value
 
     async def test_a_permanent_failure_logs_attempted_then_failed_with_reason(self) -> None:
-        # link_free_template 없이 기본 템플릿을 쓰면 {링크}를 못 채워
-        # LinkNotAvailableError로 즉시 FAILED가 된다 — 실패 경로 확인용으로 그대로 쓴다.
-        message = await make_due_message()
+        # 공급자가 명시적으로 거절하면(FAILED) 재시도 없이 바로 종료한다 —
+        # 실패 경로 확인용으로 link_free_template을 써서 링크 발급과는
+        # 무관하게 이 경로만 본다.
+        message = await make_due_message(link_free_template=True)
 
-        await dispatch_message(message.guide_message_id, MockSmsSender())
+        await dispatch_message(message.guide_message_id, MockSmsSender(SmsDeliveryStatus.FAILED))
 
         events = await self._events_for(message.guide_message_id)
         assert [e.event_type for e in events] == [
