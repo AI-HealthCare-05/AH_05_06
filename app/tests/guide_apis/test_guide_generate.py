@@ -835,6 +835,54 @@ class TestGenerateGateLatestJob(GenerateGuideTestCase):
         assert response.status_code == 422
         assert response.json()["code"] == "OCR_NOT_CONFIRMED"
 
+    async def test_new_processing_job_blocks_generation(self) -> None:
+        """이전 job이 확정돼 있어도 더 최신 PROCESSING job이 있으면 422로 막힌다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 첫 번째 job — 완료·확정
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        # 두 번째 job — 재업로드 후 아직 처리 중
+        await OcrJob.create(
+            ocr_job_id=f"syn-processing-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.PROCESSING,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_RESULT_NOT_READY"
+
+    async def test_new_failed_job_blocks_generation(self) -> None:
+        """이전 job이 확정돼 있어도 더 최신 FAILED job이 있으면 422로 막힌다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 첫 번째 job — 완료·확정
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        # 두 번째 job — 재업로드 후 실패
+        await OcrJob.create(
+            ocr_job_id=f"syn-failed-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.FAILED,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_FAILED"
+
     async def test_excluded_job_is_skipped_and_previous_confirmed_passes(self) -> None:
         """최신 job을 제외 처리하면 이전 확정 job 기준으로 게이트가 통과된다."""
         clinic = await make_clinic()

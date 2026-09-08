@@ -113,6 +113,34 @@ def _not_found() -> ApiError:
     return ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
 
 
+async def _assert_latest_ocr_job_ready(visit_id: int, hospital_id: int) -> OcrJob:
+    """안내 생성 전 최신 비제외 job의 상태를 검증하고 COMPLETED job을 반환한다.
+
+    재업로드가 처리 중·실패이면 이전 확정값만으로 안내가 생성되는 것을 막는다.
+    excluded_from_guide=True job은 직원이 "잘못 올린 문서"로 처리한 것이므로 건너뛴다.
+    """
+    latest_job = (
+        await OcrJob.filter(
+            visit_id=visit_id,
+            hospital_id=hospital_id,
+            excluded_from_guide=False,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+    if latest_job is None:
+        raise ApiError("OCR_NOT_CONFIRMED", 422, "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.")
+
+    if latest_job.status == OcrJobStatus.PROCESSING:
+        raise ApiError("OCR_RESULT_NOT_READY", 422, "가장 최근 판독이 아직 처리 중입니다. 완료 후 확정해 주세요.")
+
+    if latest_job.status == OcrJobStatus.FAILED:
+        raise ApiError("OCR_FAILED", 422, "가장 최근 판독이 실패했습니다. 재시도하거나 해당 판독을 제외해 주세요.")
+
+    return latest_job
+
+
 def _medication_body(items: list[PrescriptionItem], guidance: str) -> str:
     """구조화 처방 항목을 환자가 읽는 복약 안내로 옮긴다.
 
@@ -217,25 +245,7 @@ class GuideService:
         if visit is None:
             raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
 
-        # 가장 최근 비제외 completed job을 기준으로 확정 여부를 판정한다.
-        # 새 문서를 추가 업로드했을 때 이전 확정값으로 게이트가 통과되는 것을 막는다.
-        latest_job = (
-            await OcrJob.filter(
-                visit_id=visit_id,
-                hospital_id=actor.hospital_id,
-                excluded_from_guide=False,
-                status=OcrJobStatus.COMPLETED,
-            )
-            .order_by("-created_at")
-            .first()
-        )
-
-        if latest_job is None:
-            raise ApiError(
-                "OCR_NOT_CONFIRMED",
-                422,
-                "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
-            )
+        latest_job = await _assert_latest_ocr_job_ready(visit_id, actor.hospital_id)
 
         latest_result = await OcrResult.filter(ocr_job=latest_job).first()
         if latest_result is None:
