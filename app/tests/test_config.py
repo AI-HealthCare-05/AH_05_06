@@ -1,7 +1,7 @@
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
-from app.core.config import Config, Env
+from app.core.config import Config, Env, SmsProvider
 
 
 def test_fixture_fallback_is_allowed_in_local() -> None:
@@ -34,6 +34,10 @@ def test_disabled_fixture_fallback_is_allowed_outside_local() -> None:
         # 운영에서는 `SECRET_KEY` 가 있어야 뜬다(KEY-174). 여기서 재는 것은
         # fixture 스위치이지 비밀값이 아니므로 합성값을 준다.
         SECRET_KEY="synthetic-for-this-test",
+        SMS_PROVIDER=SmsProvider.SOLAPI,
+        SOLAPI_API_KEY=SecretStr("synthetic-api-key"),
+        SOLAPI_API_SECRET=SecretStr("synthetic-api-secret"),
+        SOLAPI_SENDER_NUMBER=SecretStr("0200000000"),
         OCR_FIXTURE_FALLBACK=False,
     )
 

@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
 from app.core.config import PLACEHOLDER
 from app.tests.deploy.conftest import ROOT, read, shipped_frontend_files
@@ -203,9 +204,17 @@ class TestTheServerRefusesToStartQuietly:
             Config(ENV=Env.PROD, DB_PASSWORD="synthetic", SECRET_KEY=written)
 
     def test_a_real_secret_key_passes(self) -> None:
-        from app.core.config import Config, Env
+        from app.core.config import Config, Env, SmsProvider
 
-        assert Config(ENV=Env.PROD, DB_PASSWORD="synthetic", SECRET_KEY="synthetic-not-a-default")
+        assert Config(
+            ENV=Env.PROD,
+            DB_PASSWORD="synthetic",
+            SECRET_KEY="synthetic-not-a-default",
+            SMS_PROVIDER=SmsProvider.SOLAPI,
+            SOLAPI_API_KEY=SecretStr("synthetic-api-key"),
+            SOLAPI_API_SECRET=SecretStr("synthetic-api-secret"),
+            SOLAPI_SENDER_NUMBER=SecretStr("0200000000"),
+        )
 
 
 class TestTheEnvExampleMatchesWhatTheCodeAsks:
@@ -422,7 +431,7 @@ class TestTheExampleEnvActuallyBoots:
     (이희진 님 `#133` 리뷰). 이름만 대조하던 검사로는 안 잡혔다.
     """
 
-    def test_filling_only_the_two_required_blanks_is_enough(self) -> None:
+    def test_filling_every_required_secret_is_enough(self) -> None:
         from app.core.config import Config
 
         values = {}
@@ -435,6 +444,9 @@ class TestTheExampleEnvActuallyBoots:
 
         values["SECRET_KEY"] = "synthetic-random-value-for-this-check"
         values["DB_PASSWORD"] = "synthetic"
+        values["SOLAPI_API_KEY"] = "synthetic-api-key"
+        values["SOLAPI_API_SECRET"] = "synthetic-api-secret"
+        values["SOLAPI_SENDER_NUMBER"] = "0200000000"
 
         # `.env` 에서 온 값은 전부 문자열이다 — pydantic 이 변환하는 것이 요점이라
         # 여기서는 그대로 넘긴다.

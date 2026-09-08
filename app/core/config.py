@@ -148,8 +148,9 @@ class Config(BaseSettings):
     # prod에서는 이 값이 설정돼도 고정 OTP 우회가 허용되지 않는다.
     MOCK_OTP_CODE: str = ""
 
-    # 문자 발송 어댑터 — KEY-248. 자격증명 없이도 개발·테스트가 돌아가도록
-    # mock이 기본값이다. 실제 값은 env/secret에서만 주입한다.
+    # 문자 발송 어댑터 — KEY-248. 자격증명 없이도 로컬·개발·테스트가
+    # 돌아가도록 mock이 기본값이다. prod는 아래 검증기가 mock을 거부하고,
+    # 실제 값은 env/secret에서만 주입한다.
     SMS_PROVIDER: SmsProvider = SmsProvider.MOCK
     SOLAPI_API_KEY: SecretStr = SecretStr("")
     SOLAPI_API_SECRET: SecretStr = SecretStr("")
@@ -231,6 +232,21 @@ class Config(BaseSettings):
                 f"SECRET_KEY 가 예시 파일의 자리표시자 그대로다 (ENV={self.ENV.value}). "
                 "공개 저장소에 적힌 값이라 아무나 토큰을 위조할 수 있다 — "
                 "진짜 무작위 값으로 바꿔라 (KEY-174)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _mock_sms_provider_is_non_prod_only(self) -> "Config":
+        """운영에서 mock 발송을 성공으로 기록하는 구성을 거부한다.
+
+        mock은 외부 문자를 보내지 않지만 실제 파이프라인은 성공 결과를 받아
+        `SENT`로 저장한다. 개발 기본값은 유지하되 prod에서만 fail-fast 한다.
+        다른 운영 설정 오류가 먼저 자기 이름을 말하도록 검증 순서는 뒤에 둔다.
+        """
+        if self.ENV is Env.PROD and self.SMS_PROVIDER is SmsProvider.MOCK:
+            raise ValueError(
+                "SMS_PROVIDER=mock은 prod 환경에서 사용할 수 없습니다. "
+                "실제 문자를 보내지 않고 SENT로 기록되어 발송 누락을 숨긴다 (KEY-248)."
             )
         return self
 

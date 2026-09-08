@@ -9,7 +9,7 @@ import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from app.core.config import Config, SmsProvider
+from app.core.config import Config, Env, SmsProvider
 from app.services.sms_sender import (
     MockSmsSender,
     SmsDeliveryStatus,
@@ -246,6 +246,15 @@ def test_solapi_requires_every_credential_without_printing_values(missing_name: 
     assert API_KEY not in rendered
     assert API_SECRET not in rendered
     assert SENDER not in rendered
+
+
+def test_prod_cannot_start_with_mock_sms_provider() -> None:
+    with pytest.raises(ValidationError, match="SMS_PROVIDER=mock은 prod 환경"):
+        settings(
+            ENV=Env.PROD,
+            SECRET_KEY="prod-secret-key-that-is-not-a-placeholder",
+            SMS_PROVIDER=SmsProvider.MOCK,
+        )
 
 
 @pytest.mark.parametrize("message_id", [12345, "msg-12345"])
