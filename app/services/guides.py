@@ -115,7 +115,6 @@ def _not_found() -> ApiError:
     return ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
 
 
-
 def _medication_body(items: list[PrescriptionItem], guidance: str) -> str:
     """구조화 처방 항목을 환자가 읽는 복약 안내로 옮긴다.
 
