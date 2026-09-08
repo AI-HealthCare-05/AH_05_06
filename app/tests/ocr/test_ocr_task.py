@@ -19,11 +19,13 @@
 import os
 import tempfile
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 from tortoise.contrib.test import TestCase
 
 from ai_worker.adapters.clova import ClovaOcrError, ClovaOcrResult, ClovaTextField
+from ai_worker.tasks.field_extractor import ExtractedField
 from ai_worker.tasks.ocr_task import _CLOVA_MODEL_NAME, _MAX_CLOVA_RETRIES, process_ocr_job
 from app.models.documents import MedicalDocument
 from app.models.ocr import (
@@ -38,6 +40,7 @@ from app.models.patients import Patient
 from app.models.visits import Visit
 from app.tests.fixtures.ocr import (
     SYN_FAIL_CLOVA_CODE,
+    SYN_LAB_01_CLOVA_RESULT,
     SYN_LOW_CONF_CLOVA_RESULT,
     SYN_TIMEOUT_CLOVA_CODE,
 )
@@ -135,6 +138,51 @@ class TestProcessOcrJob(TestCase):
         # raw_text "CA-125 : 48 U/mL\nAMH : 2.8 ng/mL" 에서 두 필드 모두 추출되어야 한다
         assert "CA_125" in field_types
         assert "AMH" in field_types
+
+    async def test_the_worker_carries_the_unit_into_the_field_row(self) -> None:
+        """**추출기가 읽은 단위가 `OcrField.unit` 까지 간다** — KEY-291.
+
+        읽는 쪽(`course_days`)은 KEY-271 부터 이 칸으로 통↔일을 환산하는데,
+        **쓰는 쪽이 여태 안 채웠다.** 그래서 시드로 부은 진료는 맞고 실제
+        판독으로 들어온 진료는 「3통」이 3일로 나갔다.
+
+        추출기는 **문서가 스스로 말한 자리**에만 단위를 적는다 — 헤더가
+        「처방일수」인 표, 「84일 처방」 같은 글자(이희진 님 `#259` 리뷰).
+        EMR 「총투」 칸처럼 말하지 않은 자리는 `None` 으로 두어 사람이 고른다.
+
+        이 검사는 그 둘 중 **어느 쪽이 오든 행까지 그대로 간다**는 것만 본다 —
+        안 그러면 이 한 줄(`unit=field.unit`)을 지워도 아무도 안 운다. 어느
+        자리에 무엇을 적는지는 `ai_worker/tests/test_field_extractor.py` 가 잰다.
+        """
+        job = await self._seed("ocr_key291_unit_carried")
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=_FAKE_CLOVA_RESULT),
+            ),
+            patch(
+                "ai_worker.tasks.ocr_task.extract_fields",
+                return_value=[
+                    ExtractedField(
+                        field_type="DURATION_DAYS",
+                        extracted_value="3",
+                        confidence=Decimal("0.70"),
+                        unit="통",
+                    ),
+                ],
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        result = await OcrResult.filter(ocr_job=job).first()
+        assert result is not None
+        row = await OcrField.filter(ocr_result=result, field_type="DURATION_DAYS").first()
+        assert row is not None, "처방일수 행이 아예 안 생겼다"
+        assert row.extracted_value == "3"
+        assert row.unit == "통", f"추출기가 읽은 단위가 행까지 안 갔다 — {row.unit!r}"
 
     async def test_lab_only_job_gets_no_empty_prescription_rows(self) -> None:
         """검사지만 올린 작업에는 처방 항목의 빈 줄을 만들지 않는다.
@@ -421,6 +469,76 @@ class TestProcessOcrJob(TestCase):
         observed_codes = [c.kwargs.get("error_code") for c in mock_observe.call_args_list]
         assert "ALREADY_PROCESSED" in observed_codes, "ALREADY_PROCESSED가 관측 로그에 없다"
         assert await OcrResult.filter(ocr_job=job).count() == 0
+
+    # ── EMR로 업로드된 검사결과지 자동 재분류 (KEY-278) ──────────────────────────
+
+    async def test_lab_result_uploaded_as_emr_is_reclassified(self) -> None:
+        """검사결과지를 EMR로 업로드해도 OCR 후 LAB_RESULT로 자동 재분류된다.
+
+        업로드 시 document_type을 보내지 않아 EMR로 저장된 검사결과지가
+        CLOVA 판독 후 올바른 유형으로 갱신되어야 한다 (KEY-278 인수조건).
+        """
+        patient = await Patient.create(
+            patient_id=910010,
+            hospital_id=HOSPITAL_ID,
+            hospital_patient_no="TEST-KEY278",
+            name="테스트환자278",
+            birth_date=date(1990, 1, 1),
+            phone="01000000010",
+        )
+        visit = await Visit.create(
+            visit_id=910010,
+            hospital_id=HOSPITAL_ID,
+            patient=patient,
+            visited_at=datetime(2026, 9, 7, 9, 0, tzinfo=UTC),
+        )
+        med_doc = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.EMR,  # 업로드 시 기본값
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        job = await OcrJob.create(
+            ocr_job_id="ocr_key278_auto_reclassify",
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            requested_by=1,
+        )
+        job_doc = await OcrJobDocument.create(
+            ocr_job=job,
+            document_id=med_doc.document_id,
+            document_type=OcrDocumentType.EMR,  # 업로드 시 기본값
+        )
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=SYN_LAB_01_CLOVA_RESULT),
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.COMPLETED
+
+        await med_doc.refresh_from_db()
+        assert med_doc.document_type == OcrDocumentType.LAB_RESULT, "검사결과지가 LAB_RESULT로 재분류되지 않았다"
+
+        await job_doc.refresh_from_db()
+        assert job_doc.document_type == OcrDocumentType.LAB_RESULT, "OcrJobDocument의 document_type이 갱신되지 않았다"
+
+        result = await OcrResult.filter(ocr_job=job).first()
+        assert result is not None
+        fields = await OcrField.filter(ocr_result=result).all()
+        field_types = {f.field_type for f in fields}
+        assert "AST" in field_types, "LAB_RESULT 파서가 실행되지 않았다"
+        for emr_field in ("DIAGNOSIS", "MEDICATION_NAME", "DURATION_DAYS"):
+            assert emr_field not in field_types, f"검사결과지에 EMR 필드 {emr_field}가 생성됐다"
 
     async def test_duplicate_queue_entry_creates_single_result(self) -> None:
         """같은 job_id가 큐에 두 번 들어와도 OcrResult·OcrField는 한 건만 생성된다.

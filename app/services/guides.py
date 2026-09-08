@@ -31,8 +31,8 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
-from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, course_days, read_but_unconfirmed
+from app.models.prescriptions import Prescription, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
     GuideEvent,
@@ -48,6 +48,7 @@ from app.models.visits import (
 )
 from app.services import guide_defaults
 from app.services.drug_caution import DrugCautionService
+from app.services.guide_body import medication_body, resolved_copy
 
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
 #: 진료가 끝난 저녁에 받아야 환자가 차분히 읽는다 — 진료 중에 오면 안 본다.
@@ -111,26 +112,6 @@ REASON_MAX = 200
 def _not_found() -> ApiError:
     """없는 것과 **남의 의원 것**을 같게 답한다 — 존재 여부를 감춘다(계약 §5)."""
     return ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
-
-
-def _medication_body(items: list[PrescriptionItem], guidance: str) -> str:
-    """구조화 처방 항목을 환자가 읽는 복약 안내로 옮긴다.
-
-    약명·복용 빈도·기간은 ``PrescriptionItem`` 에 실제로 저장된 값만 쓴다.
-    기간이 없는 필요시 약에 다른 약의 기간을 붙이지 않고, 처방 항목 자체가
-    없으면 승인된 기본 지도 문장만 내보낸다 — 없는 값을 OCR 원문이나 임의
-    문장으로 대신 만들지 않는다(KEY-224).
-    """
-    lines: list[str] = []
-    for index, item in enumerate(items, start=1):
-        facts = [item.name.strip(), item.frequency.strip()]
-        if item.duration_days is not None:
-            facts.append(f"{item.duration_days}일분")
-        lines.append(f"{index}. {' · '.join(fact for fact in facts if fact)}")
-
-    if not lines:
-        return guidance
-    return "\n".join(("처방된 복약 정보", *lines, guidance))
 
 
 LOGGER = logging.getLogger("app.guides")
@@ -245,10 +226,10 @@ class GuideService:
                 "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
             )
 
-        unconfirmed = await OcrField.filter(
-            ocr_result=latest_result,
-            is_confirmed=False,
-        ).first()
+        # **여기와 `finalize_ocr` 이 같은 규칙을 봐야 한다.** 화면 사슬이
+        # `확정 → finalize → generate` 라서, 가운데만 통과하면 처방은 섰는데
+        # 안내문이 없는 진료가 남는다 (KEY-271).
+        unconfirmed = read_but_unconfirmed(await OcrField.filter(ocr_result=latest_result, is_confirmed=False))
         if unconfirmed is not None:
             raise ApiError(
                 "OCR_NOT_CONFIRMED",
@@ -314,9 +295,25 @@ class GuideService:
         #
         # **넷을 나란히 돌린다.** 서로를 안 기다린다. 트랜잭션 밖이라 락 보유
         # 시간과는 무관하고, 지연만 줄어든다.
-        caution_content, emergency_content, own_copies, common_copies = await asyncio.gather(
+        # **네 갈래 다 승인 원본을 묻는다** (KEY-265).
+        #
+        # 한동안 `caution`·`emergency` 둘만 물었다. 그래서 설정 화면이
+        # `guide_copy.py` 로 보여 주는 「원본」과 실제로 나가는 글이 **갈렸다** —
+        # 복약지도·생활지도는 세트별 승인 문구가 있어도 안 읽혀서, 화면은
+        # 정본을 「원본」이라 보이는데 환자에게는 기본 한 줄이 나갔다.
+        # `guide_defaults` 주석이 경고한 바로 그 모양이다.
+        (
+            medication_content,
+            caution_content,
+            emergency_content,
+            life_content,
+            own_copies,
+            common_copies,
+        ) = await asyncio.gather(
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.MEDICATION),
             DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.CAUTION),
             DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.EMERGENCY),
+            DrugCautionService.approved_content_of(prescription_set, CautionSectionKey.LIFE),
             self._doctor_copies(actor.hospital_id, visit.doctor_id, prescription_set),
             self._doctor_copies(actor.hospital_id, None, prescription_set),
         )
@@ -409,13 +406,27 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.MEDICATION,
-                # KEY-224: 첫 OCR 필드 하나가 아니라 KEY-66이 만든 구조화 처방을
+                # KEY-224: 첫 OCR 필드 하나가 아니라 KEY-66 이 만든 구조화 처방을
                 # 전부 싣는다. 복수 약제의 빈도·기간을 서로 섞지 않고, 없는 값은
-                # 지어내지 않는다. 의사/의원별 지도 문구 우선순위는 그대로다.
-                generated_body=_medication_body(
+                # 지어내지 않는다.
+                #
+                # **지도 문장의 마지막 기댈 곳이 승인 정본이다** (KEY-265).
+                # 의사가 고친 글(`copies`)이 먼저고, 없으면 그 세트의 승인
+                # 복약지도, 그것도 없을 때만 범용 문구다. 예전에는 승인 정본을
+                # 아예 안 물어서, 원장님이 2026-09-04 에 확인하신 열두 칸 중
+                # 복약지도가 환자에게 한 번도 안 나갔다.
+                #: **고르는 규칙은 `guide_body` 한 벌이다** — KEY-258.
+                #: 설정 화면의 미리보기가 같은 함수를 부른다. 여기서 식을 다시
+                #: 쓰면 「보이는 글」과 「나가는 글」이 갈릴 자리가 다시 생긴다.
+                generated_body=medication_body(
                     prescription_items,
-                    copies.get(CautionSectionKey.MEDICATION, guide_defaults.MEDICATION),
+                    resolved_copy(
+                        CautionSectionKey.MEDICATION,
+                        copies,
+                        medication_content.body if medication_content else guide_defaults.MEDICATION,
+                    ),
                 ),
+                drug_caution_content_id=(medication_content.drug_caution_content_id if medication_content else None),
                 using_db=connection,
             )
             # 주의사항은 **두 갈래로 저장한다.** 예전에는 `caution` 한 줄에 응급
@@ -432,8 +443,9 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.CAUTION,
-                generated_body=copies.get(
+                generated_body=resolved_copy(
                     CautionSectionKey.CAUTION,
+                    copies,
                     caution_content.body if caution_content else guide_defaults.CAUTION,
                 ),
                 drug_caution_content_id=(caution_content.drug_caution_content_id if caution_content else None),
@@ -444,7 +456,13 @@ class GuideService:
                 section_key=GuideSectionKey.EMERGENCY,
                 # 🚨 승인된 세트별 응급 문장 또는 범용 폴백 — 사람이 고칠 수 없다(KEY-150, KEY-165).
                 # `copies` 를 보지 않는다 — 고칠 수 없는 글이다(KEY-150).
-                generated_body=emergency_content.body if emergency_content else guide_defaults.EMERGENCY,
+                #: `resolved_copy` 를 지나되 `FIXED_SECTIONS` 가 문구를 막는다 —
+                #: 「응급은 안 얹는다」를 두 곳에 적지 않으려는 것이다.
+                generated_body=resolved_copy(
+                    CautionSectionKey.EMERGENCY,
+                    copies,
+                    emergency_content.body if emergency_content else guide_defaults.EMERGENCY,
+                ),
                 drug_caution_content_id=(emergency_content.drug_caution_content_id if emergency_content else None),
                 locked=True,
                 using_db=connection,
@@ -452,7 +470,12 @@ class GuideService:
             await GuideSection.create(
                 guide_document=guide,
                 section_key=GuideSectionKey.LIFE,
-                generated_body=copies.get(CautionSectionKey.LIFE, guide_defaults.LIFE),
+                generated_body=resolved_copy(
+                    CautionSectionKey.LIFE,
+                    copies,
+                    life_content.body if life_content else guide_defaults.LIFE,
+                ),
+                drug_caution_content_id=(life_content.drug_caution_content_id if life_content else None),
                 using_db=connection,
             )
             await GuideSection.create(
@@ -795,18 +818,13 @@ class GuideService:
             .using_db(connection)
             .first()
         )
-        if row is None or not row.value:
+        if row is None:
             return None
-        try:
-            days = int(str(row.value).strip())
-        except ValueError:
-            # 「84일」처럼 단위가 붙어 오면 숫자만 뗀다. 그래도 안 되면 포기한다 —
-            # 지어낸 값으로 예약하는 것보다 안 만드는 편이 낫다.
-            digits = "".join(ch for ch in str(row.value) if ch.isdigit())
-            if not digits:
-                return None
-            days = int(digits)
-        return days if days > 0 else None
+        # 「84일」처럼 단위가 붙어 와도 숫자만 뗀다. 총투(통)로 읽은 값이면
+        # `unit` 을 보고 일수로 환산한다 — 안 하면 3통 처방의 소진 문자가
+        # 81일 일찍 예약된다. 못 세면 포기한다: 지어낸 값으로 예약하는 것보다
+        # 안 만드는 편이 낫다.
+        return course_days(row.value, row.unit)
 
     @staticmethod
     def check_at(started: datetime, days: int, hour: int | None = None) -> datetime:

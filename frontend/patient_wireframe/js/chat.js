@@ -196,14 +196,17 @@
           retry.addEventListener('click', function () { retryAnswer(msg); });
           actions.appendChild(retry);
         }
-        var contact = document.createElement('button');
-        contact.type = 'button'; contact.className = 'chat-contact';
-        contact.innerHTML = '<img src="/patient_wireframe/assets/chat_bot.png" alt="" class="chat-contact__icon" aria-hidden="true"> 문의하기';
-        contact.addEventListener('click', function () {
-          /* KEY-259: 병원 연락처 계약 전까지 기존 준비 안내를 유지한다. */
-          alert('문의 창구는 병원 설정에서 연결됩니다.');
-        });
-        actions.appendChild(contact);
+        /* **답변마다 붙던 「문의하기」를 여기서 없앴다** — KEY-236.
+         *
+         * 누르면 `alert('문의 창구는 병원 설정에서 연결됩니다.')` 를 띄우던
+         * 자리다. 병원 연락처 종점이 아직 계약에 없어서다(KEY-259).
+         *
+         * 처음에는 잠그고 `title` 로 사정을 적었는데, 이 화면은 **휴대폰**이다.
+         * 툴팁은 호버가 있어야 뜨므로 손가락에게는 안 보이고, 그러면 회색 단추를
+         * 눌러 보고도 아무 답을 못 받는다 — 없애려던 바로 그 꼴이다(#237 이희진).
+         *
+         * 그래서 사정은 패널에 **보이는 글**(`.chat-note`)로 한 번 적고, 여기서는
+         * 자리를 비운다. 답변마다 같은 문장을 되풀이하지 않으려는 것이기도 하다. */
         answer.appendChild(actions);
 
         if (!msg.error && !msg.aborted && !msg.fallback && msg.responseRef) {
@@ -289,16 +292,25 @@
   }
 
   /* ── 질문 전송 ───────────────────────────── */
+  /* **보내는 함수는 입력칸을 안 지운다** — KEY-281.
+   *
+   * 여기서 지우면 **다시 시도**와 **제안 질문**도 이 길로 들어오면서 남의 초안을
+   * 함께 지운다. 답이 실패해 다음 질문을 치던 환자가 「다시 시도」를 누르면 치던
+   * 글자가 사라진다 — 지우려던 것은 방금 보낸 질문인데.
+   *
+   * 이 계약은 원래 옛 화면 코드에 있었고 검사가 붙잡고 있었는데, 그 검사가
+   * **아무도 안 싣는 파일**을 재고 있어서 여기로 오면서 조용히 깨졌다.
+   * 지우는 일은 **입력칸에서 꺼내 보낸 자리**(`sendFromInput`)가 한다.
+   *
+   * 보냈으면 `true` 를 준다 — 안 보낸 것까지 지우면 같은 사고가 된다. */
   function sendQuestion(q) {
-    if (state.busy || !q.trim()) return;
+    if (state.busy || !q.trim()) return false;
     var gen = ++state.generation;
 
     state.messages.push({ role: 'user', text: q });
     var answerMsg = { role: 'assistant', text: '', streaming: true };
     state.messages.push(answerMsg);
     state.busy = true;
-    state.draft = '';
-    input.value = '';
     sendBtn.disabled = true;
     abortBtn.classList.add('chat-abort--show');
     renderMessages();
@@ -353,6 +365,15 @@
         renderMessages();
       });
 
+    return true;
+  }
+
+  /* **입력칸에서 꺼내 보낸 자리만 입력칸을 비운다** — KEY-281.
+     다시 시도·제안 질문은 이 길로 안 들어오므로 치던 글자가 남는다. */
+  function sendFromInput() {
+    if (!sendQuestion(input.value)) return; // 안 보냈으면 지우지도 않는다
+    state.draft = '';
+    input.value = '';
   }
 
   function retryAnswer(msg) {
@@ -377,11 +398,11 @@
   input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendQuestion(input.value);
+      sendFromInput();
     }
   });
 
-  sendBtn.addEventListener('click', function () { sendQuestion(input.value); });
+  sendBtn.addEventListener('click', sendFromInput);
 
   abortBtn.addEventListener('click', function () {
     if (state.requestController) {

@@ -13,6 +13,16 @@ class CopySectionItem(BaseModel):
     body: str | None
     #: 🚨 응급은 열리지 않는다 — 원문이 못박는다.
     editable: bool
+    #: **실제로 환자에게 나가는 글** — KEY-258.
+    #:
+    #: 화면이 `body or origin` 을 다시 셈하지 않게 서버가 지어 준다. 짓는 것은
+    #: `guide_body.preview_body` 이고 **안내 생성이 부르는 바로 그 함수**라,
+    #: 「보이는 글」과 「나가는 글」이 갈릴 자리가 없다.
+    #:
+    #: 복약지도는 진료의 처방 행이 앞에 붙는다 — 여기에는 그 행이 없다
+    #: (설정 화면에는 진료가 없다). 그래서 이 값은 **처방 행이 없는 진료의
+    #: 실제 결과**와 글자까지 같고, 화면이 그 사실을 말한다.
+    preview: str
 
 
 class CopySetItem(BaseModel):

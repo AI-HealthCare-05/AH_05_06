@@ -164,6 +164,24 @@ function fieldsToConfirm(fields) {
   return out;
 }
 
+/* **처방을 못 세워도 안내문은 만든다** — KEY-271.
+ *
+ * `ocr-finalize` 는 안내문 생성보다 조건이 둘 더 많다. `PRESCRIPTION_SET` 과
+ * `FREQUENCY` 가 없으면 422 로 막는다. 그런데 그런 진료도 **여태 안내문은
+ * 만들어졌다** — 세트를 못 찾아 기본 문구로 나갔을 뿐이다.
+ *
+ * 그 둘을 사슬에서 죽게 두면 이 다리가 **없던 것보다 나쁜 것**이 된다. 처방
+ * 행을 세우려다 안내문 자체를 못 만들게 되기 때문이다.
+ *
+ * 그래서 **더 나아지는 쪽으로만 쓴다** — 세울 수 있으면 세우고, 못 세우면
+ * 여태처럼 넘어간다. 진짜 막아야 하는 것(미확정·권한·없는 진료)은 그대로
+ * 던진다. */
+function finalizeMayPass(error) {
+  var code = error && error.code;
+  if (code === "MISSING_PRESCRIPTION_SET" || code === "MISSING_FREQUENCY") return null;
+  throw error;
+}
+
 /* 안내문 생성이 실패했을 때 화면에 뭐라고 쓸 것인가 — KEY-204.
  *
  * **서버 `message` 를 그대로 흘리지 않는다.** 그 자리에 OCR 원문이나 값이
@@ -179,6 +197,10 @@ var GENERATE_SAYINGS = [
   { code: "VERSION_CONFLICT", say: "그 사이 값이 바뀌었습니다 — 화면을 새로 고쳐 확인해 주세요" },
   { code: "OCR_FIELD_CONFIRMED", say: "이미 확정된 항목이 있습니다 — 화면을 새로 고쳐 주세요" },
   { status: 401, say: "로그인이 풀렸습니다 — 다시 로그인해 주세요" },
+  /* **서버가 거절한 것과 닿지도 못한 것은 다르다** — KEY-211. #162 에서 이 규칙을
+     걷어낸 것은 그때 `request()` 가 `status: 0` 을 낼 줄 몰라 한 번도 안 걸렸기
+     때문이다. 이제 낸다. */
+  NETWORK_SAYING,
 ];
 
 function generateFailureSaying(error) {
@@ -301,6 +323,7 @@ function stateTakesFocus(tone) {
 
   var visit = null;
   var jobId = null;
+  var jobIds = [];
 
   /* 진료를 바꾸면 앞의 요청이 아직 날아오고 있다. 그 응답이 새 화면을 덮으면
      또 남의 값이 뜬다. 세대를 세어 **지금 것만** 그린다 —
@@ -354,6 +377,10 @@ function stateTakesFocus(tone) {
      버리면 「취소」로 되돌릴 것이 없다.
      확인을 눌러야 `local` 로 넘어간다. */
   var localDraft = {};
+
+  /* 줄이 아직 없는 처방일수에 사람이 고른 단위. `local` 과 같은 자리에 두는
+     까닭은 `field-labels.js` 의 `holdDurationUnit` 에 적어 두었다. */
+  var localUnit = {};
 
   /* 의사가 설정(D2-3)에서 정해 둔 약속처방. 화면이 뜰 때 한 번 불러 둔다 —
      환자를 옮길 때마다 다시 부르면 같은 목록을 하루에 수십 번 받는다. */
@@ -749,11 +776,80 @@ function stateTakesFocus(tone) {
        당겨져 옆 줄과 어긋난다. 자리는 지키고 글자만 없다. */
     if (fieldChoices(field.field_type)) return '<span class="field__unit"></span>';
 
+    /* **처방일수의 단위는 고르는 칸이다** — KEY-285.
+
+       「3」이 3일이면 3일이고 3통이면 84일이다. 그 차이가 소진 예정일을 81일
+       움직이고, 확인 문자가 엉뚱한 날 나간다. 여태 서버가 준 글자를 그대로
+       **보여주기만** 해서, 잘못 심긴 단위를 고치려면 DB 를 직접 만져야 했다. */
+    /* 🚩 **줄이 없을 때도 세운다** (이희진 님 `#251` 리뷰 ①).
+     *
+     * 여기는 `&& field.ocr_field_id` 였다. 그래서 판독이 처방일수를 통째로 못
+     * 읽어 줄 자체가 없는 진료 — 스탭이 손으로 「3」을 치는, 이 티켓이 막으려던
+     * **바로 그 자리** — 에는 단위를 고를 칸이 없었다. 「3」이 3통이어도
+     * `unit=None` 으로 저장돼 소진 예정일이 81일 어긋난다.
+     *
+     * 줄이 있는 것과 없는 것은 **담는 길이 다르다.** 있으면 고른 순간
+     * `PATCH` 로 보내고, 없으면 보낼 번호가 아직 없으므로 [저장] 때 값과 함께
+     * `PUT` 으로 나간다. 그 차이를 표시로 남긴다. */
+    if (isDurationField(field.field_type)) return durationUnitHtml(field);
+
     var unit = fieldUnit(field.field_type, field.unit);
     /* 맨 위 줄(진단 · 처방)은 자리를 지킬 필요가 없다 — 세 칸이 각자 서 있어
        빈 칸을 두면 값과 단추 사이가 까닭 없이 벌어진다. */
-    if (!unit && PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1) return "";
+    if (!unit && isPrescriptionType(field.field_type)) return "";
     return '<span class="field__unit">' + escapeHtml(unit) + "</span>";
+  }
+
+  /** 줄이 없는 처방일수에 사람이 고른 단위 — 없으면 `undefined`.
+   *
+   * 직접입력은 [저장] 때 값과 **함께** 보낸다. 줄이 아직 없어 보낼 번호가
+   * 없기 때문이다 (`data-field-unit-new`).
+   *
+   * **칸에서 읽지 않는다.** 전에는 `document.querySelector` 로 그 자리의
+   * `select` 를 짚었는데, [저장] 핸들러가 먼저 `redraw()` 를 부르는 바람에
+   * 읽는 시점에는 칸이 이미 미선택으로 새로 그려져 있었다 — 스탭이 고른
+   * 단위가 **한 번도 서버에 가지 않았다** (이희진 님 `#251` 리뷰). */
+  function pickedUnitFor(fieldType) {
+    return heldDurationUnit(localUnit, fieldType);
+  }
+
+  /* 일 · 통 둘뿐이다. **서버가 아는 값만 낸다** — `DurationUnit` 이 그 둘이고,
+     다른 글자는 서버가 422 로 막는다.
+
+     **비었을 때 「일」을 미리 고르지 않는다.** 판독이 단위를 모른다는 것은
+     실제 상태이고, 화면이 그것을 「일」로 보이면 스탭은 확인 없이 넘긴다 —
+     3통짜리가 3일로 조용히 지나가는 자리가 바로 그것이다. */
+  function durationUnitHtml(field) {
+    /* 무엇을 미리 고를지는 **규칙**이라 `field-labels.js` 가 갖는다 — 이 안에
+       두면 IIFE 에 갇혀 검사가 못 닿고, 「모르면 모르는 채로」가 조용히
+       「일」로 바뀌어도 아무것도 울지 않는다. */
+    /* 줄이 있으면 서버가 준 값이, 없으면 **사람이 방금 고른 값**이 맞다.
+       뒤쪽을 화면 상태에서 되찾아야 다시 그려도 고른 것이 남는다. */
+    var picked = durationUnitChoice(
+      field.ocr_field_id ? field.unit : heldDurationUnit(localUnit, field.field_type),
+    );
+    var busy = saving[field.ocr_field_id] ? " disabled" : "";
+    var options = ['<option value=""' + (picked ? "" : " selected") + ">단위?</option>"].concat(
+      DURATION_UNITS.map(function (unit) {
+        return '<option value="' + unit + '"' + (picked === unit ? " selected" : "") + ">" + unit + "</option>";
+      }),
+    ).join("");
+    /* 줄이 있으면 번호로 짚어 고른 순간 보내고(`data-field-unit`), 없으면
+       항목 이름으로 짚어 [저장] 때 값과 함께 보낸다(`data-field-unit-new`).
+       표시가 둘이라야 바꾸는 손이 어느 길로 갈지 안다 — 한 이름으로 두면
+       줄 없는 칸에 `PATCH` 를 쏘고 404 를 받는다. */
+    var mark = field.ocr_field_id
+      ? 'data-field-unit="' + field.ocr_field_id + '"'
+      : 'data-field-unit-new="' + escapeHtml(field.field_type) + '"';
+    return (
+      '<select class="field__unit field__unit--pick" ' +
+      mark +
+      ' aria-label="처방일수 단위"' +
+      busy +
+      ">" +
+      options +
+      "</select>"
+    );
   }
 
   function renderField(field) {
@@ -858,13 +954,20 @@ function stateTakesFocus(tone) {
         '<button class="field__act" type="button" data-local-cancel="1">취소</button>';
     } else if (field.is_absent && local[field.field_type]) {
       /* 적어 둔 값. **저장된 척하지 않는다** — 배지로 못 박는다. */
+      /* 🚩 여기는 단위를 **글자로 박아** 두고 있었다(`fieldUnit(type, "")`).
+       *
+       * 처방일수에서 그 글자는 「일」이다. 그래서 스탭이 「3」을 적고 [확인]을
+       * 누르는 순간 고르개가 사라지고 화면이 **「3 일」이라고 단언했다** —
+       * 3통짜리가 조용히 3일이 되는, 이 티켓이 막으려던 바로 그 자리다.
+       * 값을 적기 **전에만** 고를 수 있고 적고 나면 못 고쳤다.
+       *
+       * 그리는 규칙은 `unitHtml` 한 곳에 있다. 여기서 따로 그리면 그 규칙이
+       * 두 벌이 되고, 한쪽만 고쳐진다. */
       body =
         '<div class="field__value field__value--local">' +
         escapeHtml(local[field.field_type]) +
         "</div>" +
-        '<span class="field__unit">' +
-        escapeHtml(fieldUnit(field.field_type, "")) +
-        "</span>" +
+        unitHtml(field) +
         '<button class="field__act" type="button" data-local-fill="' +
         escapeHtml(field.field_type) +
         '">수정</button>';
@@ -904,7 +1007,7 @@ function stateTakesFocus(tone) {
         /* **「이번 미시행」은 검사값의 말이다.** 진단과 처방은 「이번엔 안
            했다」가 성립하지 않는다 — 안 한 진료가 아니라 못 읽은 것이고,
            안내문이 그 값으로 만들어지므로 채워야 끝난다. */
-        (PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1
+        (isPrescriptionType(field.field_type)
           ? ""
           : '<button class="field__act field__act--quiet" type="button" data-skip="' +
             id +
@@ -1639,7 +1742,10 @@ function stateTakesFocus(tone) {
     var out = [];
     for (var type in local) {
       if (!Object.prototype.hasOwnProperty.call(local, type)) continue;
-      var isRx = PRESCRIPTION_TYPES.indexOf(type) !== -1;
+      /* **그리는 쪽과 같은 규칙으로 잰다** (`ocr-groups.js`). 여기서 `indexOf`
+         로만 재면 `DURATION_DAYS_1` 이 검사값으로 세어져, 「진단 · 처방」에
+         그려 놓고 저장은 「이번 판독 값」 단추에 걸린다. */
+      var isRx = isPrescriptionType(type);
       if (isRx === !!wantPrescription) out.push(type);
     }
     return out;
@@ -1902,12 +2008,17 @@ function stateTakesFocus(tone) {
      보낼 값이 없어 `undefined` 가 그대로 나갔다(이희진 님 `#81` 리뷰). */
   function onConflict(fieldId, mine, body) {
     var seq = loadSeq;
-    ocrApi
-      .fields(jobId)
-      .then(function (fields) {
+    var ids = jobIds.length ? jobIds : (jobId ? [jobId] : []);
+    Promise.all(
+      ids.map(function (id) {
+        return ocrApi.fields(id).catch(function () { return []; });
+      }),
+    )
+      .then(function (fieldLists) {
         if (seq !== loadSeq) return;
+        var allFields = fieldLists.reduce(function (acc, list) { return acc.concat(list); }, []);
         var theirs = null;
-        fields.forEach(function (item) {
+        allFields.forEach(function (item) {
           if (item.ocr_field_id === fieldId) theirs = item;
         });
         if (!theirs) {
@@ -2136,11 +2247,34 @@ function stateTakesFocus(tone) {
       return;
     }
 
-    /* 판독 실패 상태 상자의 「재업로드」. 왼쪽 판의 「진료기록 추가」와 같은
-       일을 하되, 실패 화면에서는 `#work` 가 숨겨져 그 판이 안 보인다. */
+    /* 판독 실패 상태 상자의 「재업로드」 — **제자리에서 왼쪽 판을 편다.**
+     *
+     * 여태 `/patients.html?tab=record` 로 화면을 옮겼다. 까닭으로 「실패 화면에서는
+     * `#work` 가 숨겨져 그 판이 안 보인다」고 적혀 있었는데 **지금은 사실이 아니다** —
+     * `STATE_RULES.job_failed` 가 `keepsWork: true` 라 `showState` 가 `#work` 를
+     * 살려 두고, 올리는 판은 그 안에 있다.
+     *
+     * 게다가 옮겨 가던 그 주소가 틀렸다. 「진료기록」의 집은 이 화면이지
+     * `/patients.html` 이 아니라서, 재업로드하러 간 사람이 기본정보를 봤다 (KEY-280).
+     *
+     * 이미 여기 있고 판도 여기 있으니 나갈 이유가 없다. 화면을 새로 받으면
+     * 보던 것이 사라지는 것은 덤이다. */
     if (target.id === "reupload") {
-      if (!visit) return;
-      location.href = "/patients.html?visit=" + encodeURIComponent(visit.visit_id) + "&tab=record";
+      if (typeof ocrRequestUpload === "function") {
+        ocrRequestUpload();
+        return;
+      }
+      /* **아무 일도 안 일어나는 채로 두지 않는다** — 이희진 님 `#241` ②.
+       *
+       * `ocrRequestUpload` 는 `wireAddPanel()` 안에서만 정의되고, 그 함수는 판을
+       * 이루는 다섯 칸 중 하나라도 없으면 **조용히 돌아간다.** 지금은 다섯이 항상
+       * 마크업에 있어 안 걸리지만, 이 판을 조건부로 그리게 되면(예: 권한별)
+       * 재업로드가 **이 PR 이 고치려던 것과 똑같이** 다시 죽은 단추가 된다.
+       *
+       * 그때 할 수 있는 말이 이것뿐이다 — 올리는 판이 화면에 없으니 여기서
+       * 펼 수 없다. 판 안의 `#add-say` 도 함께 없으므로 상태 줄에 적는다. */
+      var told = document.getElementById("state-say");
+      if (told) told.textContent = "지금은 진료기록을 올릴 수 없습니다 — 화면을 새로 고쳐 주세요";
       return;
     }
 
@@ -2172,10 +2306,14 @@ function stateTakesFocus(tone) {
       saveNote.textContent = "안내문을 만드는 중입니다…";
       saveNote.hidden = false;
 
-      /* **확정을 먼저 보내고 생성한다.** 버튼이 「확인 완료 · 안내문 생성」인
-         이유다 — 스탭이 화면의 값을 다 봤다는 뜻이므로, 그 값을 확정으로
-         굳힌 뒤에 만든다. 확정이 실패하면 생성으로 넘어가지 않는다. */
+      /* **확정 → 처방 → 생성** 순서다. 앞이 실패하면 뒤로 안 넘어간다.
+         가운데 `finalizeOcr` 가 KEY-271 에서 놓은 다리다 — 까닭은
+         `ocr-api.js` 의 `finalizeOcr` 주석에 적었다. 여기에 길게 적으면
+         `ocr-review-confirm-before-generate` 의 1600 자 창을 먹는다. */
       confirmShownFields()
+        .then(function () {
+          return ocrApi.finalizeOcr(wantedId).catch(finalizeMayPass);
+        })
         .then(function () {
           return ocrApi.generateGuide(wantedId);
         })
@@ -2321,6 +2459,32 @@ function stateTakesFocus(tone) {
   /* 확인 항목 체크. **누르는 순간 담긴다** — 「저장」을 따로 두면 눌러 놓고
      안 누른 채 넘어가는 길이 생기고, 안전에 걸리는 항목이라 그게 가장 나쁘다. */
   document.addEventListener("change", function (event) {
+    /* 처방일수 단위를 고른 순간 저장한다 — KEY-285.
+
+       **[저장] 을 따로 두지 않는다.** 이 칸은 값이 둘뿐이라 고르는 것이 곧
+       뜻이고, 단추를 두면 「골랐는데 왜 안 바뀌지」가 생긴다. 값 수정과 달리
+       오타가 날 자리가 없다.
+
+       빈 값(「단위?」)으로 되돌리는 것은 **안 보낸다.** 서버가 `unit` 을 지우는
+       길을 안 열어 두었고(모르는 상태로 되돌리는 것이 무슨 뜻인지 아직 정한
+       바가 없다), 열지 않은 길을 화면이 먼저 부르면 422 만 받는다. */
+    var unitFor = event.target.getAttribute && event.target.getAttribute("data-field-unit");
+    if (unitFor) {
+      var unitId = parseInt(unitFor, 10);
+      var chosen = event.target.value;
+      if (!isNaN(unitId) && chosen) saveField(unitId, { unit: chosen });
+      return;
+    }
+
+    /* 줄이 아직 없는 처방일수. 지금 보낼 번호가 없으니 **화면이 들고 있다가**
+       [저장] 때 값과 함께 보낸다. 여기서 다시 그리지 않는다 — 고른 칸은 이미
+       그 값을 보이고 있고, 다시 그리면 옆에서 적던 칸의 커서가 튄다. */
+    var newUnitFor = event.target.getAttribute && event.target.getAttribute("data-field-unit-new");
+    if (newUnitFor) {
+      holdDurationUnit(localUnit, newUnitFor, event.target.value);
+      return;
+    }
+
     var key = event.target.getAttribute && event.target.getAttribute("data-check");
     if (!key) return;
     if (event.target.checked) checkAnswers[key] = true;
@@ -2440,7 +2604,7 @@ function stateTakesFocus(tone) {
     Promise.all(
       jobs.map(function (job) {
         return ocrApi
-          .writeField(wanted, job.type, job.value)
+          .writeField(wanted, job.type, job.value, pickedUnitFor(job.type))
           .then(function () {
             return { type: job.type, ok: true };
           })
@@ -2460,6 +2624,9 @@ function stateTakesFocus(tone) {
         if (!r.ok) return;
         delete local[r.type];
         delete localDraft[r.type];
+        /* 담긴 뒤에도 들고 있으면, 그 줄이 이제 서버 값을 갖는데도 화면은
+           옛 선택을 계속 덮어 보인다. */
+        delete localUnit[r.type];
       });
       /* **수동 약 자신이 다 담겼을 때만 비운다.** 묶음 전체가 성공했는지가
          아니다 — 이미 확정된 진단이 같이 막혔다고 수동 약을 안 비우면, 스탭이
@@ -2624,6 +2791,18 @@ function stateTakesFocus(tone) {
       if (panel.hidden) openPanel(true, false);
     };
 
+    /* **손으로 눌러 온 길은 위와 다르다** — KEY-280.
+     *
+     * 위 것은 화면에 막 들어왔을 때 저절로 부르는 것이라 (ⓐ 이미 펴져 있으면
+     * 아무것도 안 하고 ⓑ 초점을 안 옮긴다) 두 가지가 다 맞다. 그런데 「재업로드」를
+     * **누른** 사람에게는 둘 다 틀리다 — 펴져 있는데 아무 일도 안 나면 죽은 단추가
+     * 되고, 누른 뜻이 「지금 올리겠다」인데 초점이 안 가면 한 번 더 찾아야 한다.
+     *
+     * 그래서 접는 일이 없다. 「올리는 판을 열어라」만 뜻하는 자리다. */
+    window.ocrRequestUpload = function () {
+      openPanel(true, true);
+    };
+
     button.addEventListener("click", function () {
       openPanel(panel.hidden, true);
     });
@@ -2718,6 +2897,9 @@ function stateTakesFocus(tone) {
     /* **앞 환자에게 적은 값을 따라가면 안 된다.** 남겨 두면 새 환자 화면에
        그 사람 값이 뜨고, 배지가 「저장 안 됨」이라 더 헷갈린다. */
     local = {};
+    /* 앞 환자에게 고른 단위가 남으면, 새 환자의 「3」이 그 사람의 「통」으로
+       나간다 — 소진 예정일이 81일 어긋난다. */
+    localUnit = {};
     localEditing = null;
     manualDrugs = [];
     /* 앞 환자에게 고른 처방이 남으면 남의 처방으로 안내문이 만들어진다 */
@@ -2795,19 +2977,73 @@ function stateTakesFocus(tone) {
 
   /* 판독 중이면 끝날 때까지 되묻는다. 화면이 「저절로 바뀝니다」라고 말하는데
      아무것도 안 하고 있었다 (`#40` 리뷰). 진료를 바꾸면 `resetState()` 가 끈다. */
-  function pollJob(mine) {
+  function mergeResults(results) {
+    if (!results.length) return { ocr_result_id: null, documents: [], fields: [] };
+    if (results.length === 1) return results[0];
+    var base = results[0];
+    return {
+      ocr_result_id: base.ocr_result_id,
+      ocr_job_id: base.ocr_job_id,
+      model_name: base.model_name,
+      model_version: base.model_version,
+      version: base.version,
+      confirmed_by: base.confirmed_by,
+      confirmed_at: base.confirmed_at,
+      low_confidence_threshold: base.low_confidence_threshold,
+      documents: results.reduce(function (acc, r) { return acc.concat(r.documents || []); }, []),
+      fields: results.reduce(function (acc, r) { return acc.concat(r.fields || []); }, []),
+    };
+  }
+
+  function renderMultiJobProgress(jobs) {
+    var total = jobs.length;
+    var doneCount = jobs.filter(function (j) { return j.status !== "PROCESSING" && j.status !== "FAILED"; }).length;
+    var activeJobs = jobs.filter(function (j) { return j.status !== "FAILED"; });
+    var avgProgress = activeJobs.length
+      ? Math.round(
+          activeJobs.reduce(function (sum, j) {
+            return sum + (j.status === "PROCESSING" ? (Number(j.progress) || 0) : 100);
+          }, 0) / activeJobs.length,
+        )
+      : 0;
+    var countLabel = total > 1 ? " (" + doneCount + "/" + total + "장)" : "";
+    showState(
+      "processing",
+      '<p class="state__title">판독 중입니다' + countLabel + "</p>" +
+        '<div class="bar bar--pulse"><div class="bar__fill" style="width:' +
+        avgProgress +
+        '%"></div></div>' +
+        '<p class="state__body">' +
+        avgProgress +
+        "% · 끝나면 이 화면이 저절로 바뀝니다</p>",
+    );
+  }
+
+  function pollAllJobs(mine, prevJobs) {
     pollTimer = setTimeout(function () {
       if (mine !== loadSeq) return;
-      ocrApi
-        .job(jobId)
-        .then(function (job) {
+      var pendingIds = prevJobs
+        ? prevJobs.filter(function (j) { return j.status === "PROCESSING"; }).map(function (j) { return j.ocr_job_id; })
+        : jobIds;
+      Promise.all(pendingIds.map(function (id) { return ocrApi.job(id); }))
+        .then(function (freshJobs) {
           if (mine !== loadSeq) return;
-          if (job.status === "PROCESSING") {
-            renderJobState(job);
-            return pollJob(mine);
+          var cachedFinished = prevJobs
+            ? prevJobs.filter(function (j) { return j.status !== "PROCESSING"; })
+            : [];
+          var jobs = cachedFinished.concat(freshJobs);
+          var processing = jobs.find(function (j) { return j.status === "PROCESSING"; });
+          if (processing) {
+            renderMultiJobProgress(jobs);
+            return pollAllJobs(mine, jobs);
           }
-          if (!renderJobState(job)) return;
-          return loadResult(mine);
+          var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
+          var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
+          if (anyFailed && !hasSuccess) { renderJobState(anyFailed); return; }
+          return loadAllResults(mine).then(function () {
+            if (mine !== loadSeq) return;
+            if (anyFailed) renderJobState(anyFailed);
+          });
         })
         .catch(function () {
           if (mine !== loadSeq) return;
@@ -2820,12 +3056,19 @@ function stateTakesFocus(tone) {
     }, POLL_MS);
   }
 
-  function loadResult(mine) {
-    return ocrApi
-      .result(jobId)
-      .then(function (data) {
+  function loadAllResults(mine) {
+    return Promise.all(
+      jobIds.map(function (id) {
+        return ocrApi.result(id).catch(function (err) {
+          if (err && err.code === "OCR_RESULT_NOT_READY") throw err;
+          return null;
+        });
+      }),
+    )
+      .then(function (results) {
         if (mine !== loadSeq) return;
-        result = data;
+        var valid = results.filter(Boolean);
+        result = mergeResults(valid);
         if (typeof result.low_confidence_threshold === "number") threshold = result.low_confidence_threshold;
         activeDoc = result.documents.length ? result.documents[0].document_id : null;
         showWork();
@@ -2851,47 +3094,51 @@ function stateTakesFocus(tone) {
       });
   }
 
+  /* backward compat — 단일 job 폴링이 필요한 경로에서 사용 */
+  function pollJob(mine) { return pollAllJobs(mine); }
+  function loadResult(mine) { return loadAllResults(mine); }
+
   function loadVisit(next) {
     resetState();
     visit = next;
     jobId = null;
+    jobIds = [];
     var mine = ++loadSeq;
     renderPatientHead(next);
-    renderSteps(); // 단계 줄은 진료가 정해져야 갈 곳을 안다
-    /* 확인 항목·이전 확정값은 판독과 **따로** 불러온다 — 판독이 실패해도 이 값들은
-       보여야 하고, 반대로 이 값을 못 읽어도 판독은 보여야 한다. */
+    renderSteps();
     loadCheckItems(next.visit_id);
     loadPreviousFields(next.visit_id, mine);
     showState("loading", '<p class="state__title">판독 결과를 불러오는 중…</p>');
 
     ocrApi
-      .jobForVisit(next.visit_id)
-      .then(function (link) {
+      .jobsForVisit(next.visit_id)
+      .then(function (docJobs) {
         if (mine !== loadSeq) return null;
-        jobId = link.ocr_job_id;
-        return ocrApi.job(jobId);
+        if (!docJobs || !docJobs.length) throw { code: "NOT_FOUND" };
+        jobIds = Array.from(new Set(docJobs.map(function (dj) { return dj.ocr_job_id; })));
+        jobId = jobIds[0];
+        return Promise.all(jobIds.map(function (id) { return ocrApi.job(id); }));
       })
-      .then(function (job) {
-        if (mine !== loadSeq || !job) return null;
-        if (job.status === "PROCESSING") {
-          renderJobState(job);
-          return pollJob(mine);
+      .then(function (jobs) {
+        if (mine !== loadSeq || !jobs) return null;
+        var processing = jobs.find(function (j) { return j.status === "PROCESSING"; });
+        if (processing) {
+          renderMultiJobProgress(jobs);
+          return pollAllJobs(mine, jobs);
         }
-        if (!renderJobState(job)) return null;
-        return loadResult(mine);
+        var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
+        var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
+        if (anyFailed && !hasSuccess) { renderJobState(anyFailed); return null; }
+        return loadAllResults(mine).then(function () {
+          if (mine !== loadSeq) return;
+          if (anyFailed) renderJobState(anyFailed);
+        });
       })
       .catch(function (error) {
         if (mine !== loadSeq) return;
         if (error && error.code === "NOT_FOUND") {
-          /* **아직 안 올린 것은 「상태」가 아니다.**
-           *
-           * 「판독한 기록이 없습니다」를 화면 가득 띄웠더니, 방금 등록한 환자는
-           * 그 안내를 한 번 보고 → 올리고 → 그제야 판독 화면으로 **넘어가야**
-           * 했다. 화면이 두 번 바뀌는데 두 번 다 할 일은 같다.
-           *
-           * 판을 그냥 세운다. 왼쪽은 올리는 자리, 오른쪽은 채울 칸이 빈 채로.
-           * 무엇을 하는 화면인지가 첫눈에 보이고, 올리면 그 자리에서 값이
-           * 찬다 — 넘어가는 순간이 없다. */
+          /* 아직 안 올린 것은 「상태」가 아니다. 판을 세워 두면 올리는 자리와
+             채울 칸이 한 화면에 함께 보인다 — 넘어가는 순간이 없다. */
           if (typeof ocrOpenAddPanel === "function") ocrOpenAddPanel();
           result = { ocr_result_id: null, documents: [], fields: [] };
           showWork();

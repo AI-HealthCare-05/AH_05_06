@@ -16,6 +16,8 @@ from app.models.ocr import (
     OcrJobDocument,
     OcrJobStatus,
     OcrResult,
+    course_days,
+    read_but_unconfirmed,
 )
 from app.models.prescriptions import AS_NEEDED, Prescription, PrescriptionItem
 from app.models.visits import Visit
@@ -37,6 +39,42 @@ from app.ocr.security import OcrActor
 
 def _resolved_value(row: dict) -> str | None:
     return row["corrected_value"] if row["corrected_value"] is not None else row["extracted_value"]
+
+
+#: 처방일수 칸의 이름. 접미사(`_2`, `_3` …)가 붙어 약마다 하나씩 온다.
+#: 「3」이 3일인지 3통인지가 이 칸의 `unit` 에 붙는다 (KEY-271 · KEY-285).
+_DURATION_FIELD = "DURATION_DAYS"
+
+
+def _takes_duration_unit(field_type: str) -> bool:
+    """단위를 붙일 수 있는 칸인가 — KEY-285.
+
+    처방일수뿐이다. 접미사가 붙은 둘째 약(`DURATION_DAYS_2`)도 같은 칸이라
+    함께 받는다 — 한 진료에 약이 둘이면 각자의 총투가 따로 온다.
+
+    검사값(`HEMOGLOBIN` 등)의 단위는 **항목의 성질**이라 화면의 `FIELD_UNITS`
+    가 갖는다. 그것을 요청으로 덮게 두면 같은 항목이 진료마다 다른 단위로
+    보인다.
+    """
+    return field_type == _DURATION_FIELD or field_type.startswith(f"{_DURATION_FIELD}_")
+
+
+def _refuse_unit_on_other_fields(unit: object, field_type: str) -> None:
+    """**단위는 처방일수 줄에만 붙는다** — KEY-285.
+
+    화면의 `fieldUnit` 이 **서버가 준 단위를 무조건 우선**하므로, 헤모글로빈
+    줄에 「통」이 박히면 그 글자가 그대로 사람 눈에 붙는다. DTO 가 값의
+    **모양**(`DurationUnit`)을 막고, 이 문이 붙일 **자리**를 막는다.
+
+    고치기와 직접입력 두 길이 같은 문을 지난다 — 한쪽만 막으면 다른 쪽으로
+    같은 값이 들어온다.
+    """
+    if unit is not None and not _takes_duration_unit(field_type):
+        raise OcrApiError(
+            status.HTTP_400_BAD_REQUEST,
+            "UNIT_NOT_ALLOWED",
+            "처방일수 항목에만 단위를 지정할 수 있습니다.",
+        )
 
 
 def _drop_confirmation(field: OcrField) -> None:
@@ -79,7 +117,12 @@ class OcrRepository(Protocol):
     ) -> tuple[OcrField, Sequence[OcrDocumentText]]: ...
 
     async def write_field(
-        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+        self,
+        visit_id: int,
+        field_type: str,
+        value: str | None,
+        actor: OcrActor,
+        unit: str | None = None,
     ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]: ...
 
     async def exclude_job(self, ocr_job_id: str, actor: OcrActor) -> OcrJob: ...
@@ -88,24 +131,63 @@ class OcrRepository(Protocol):
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription: ...
 
 
+def _medication_suffixes(fields_by_type: dict[str, "OcrField"]) -> list[str]:
+    """**있는 만큼 다 본다** — 다섯으로 끊지 않는다.
+
+    예전에는 `("", "_2", "_3", "_4", "_5")` 를 손으로 적어 두었다. 그런데 판독
+    확인 화면은 수동으로 더한 약을 **기존 최대 번호 다음**으로 담는다
+    (`ocr-review.js` 의 `maxIdx + i + 1`) — 상한이 없다. 판독이 `_5` 까지 냈으면
+    수동 약은 `_6` 이 되어 **여기서 조용히 빠졌다.**
+
+    여태 티가 안 난 것은 이 함수의 결과가 어디에도 안 실렸기 때문이다. 화면이
+    `ocr-finalize` 를 부르기 시작하면(KEY-271) 화면은 「저장했습니다」라 말하고
+    안내문 복약 목록에서 그 약만 사라진다.
+
+    차례는 번호 순이다 — 접미사 없는 것이 첫 약이고, 그 뒤로 `_2`, `_3` … 이다.
+    화면이 그 차례로 보여 주므로 안내문도 같아야 한다.
+    """
+    found: list[tuple[int, str]] = []
+    for name in fields_by_type:
+        if name == "MEDICATION_NAME":
+            found.append((1, ""))
+            continue
+        rest = name.removeprefix("MEDICATION_NAME_") if name.startswith("MEDICATION_NAME_") else None
+        if rest is not None and rest.isdigit():
+            found.append((int(rest), f"_{rest}"))
+    return [suffix for _, suffix in sorted(found)]
+
+
 def _collect_item_rows(
     fields_by_type: dict[str, "OcrField"],
 ) -> list[tuple[str, str, int | None]]:
     rows: list[tuple[str, str, int | None]] = []
-    for suffix in ("", "_2", "_3", "_4", "_5"):
+    for suffix in _medication_suffixes(fields_by_type):
         med_field = fields_by_type.get(f"MEDICATION_NAME{suffix}")
         if med_field is None or not med_field.value:
             continue
         freq_field = fields_by_type.get(f"FREQUENCY{suffix}")
         frequency = freq_field.value if freq_field is not None and freq_field.value else ""
-        dur_field = fields_by_type.get(f"DURATION_DAYS{suffix}")
+        dur_field = fields_by_type.get(f"{_DURATION_FIELD}{suffix}")
         duration_days: int | None = None
-        if frequency != AS_NEEDED and dur_field is not None and dur_field.value:
-            digits = "".join(ch for ch in dur_field.value if ch.isdigit())
-            if digits:
-                duration_days = int(digits)
+        if frequency != AS_NEEDED and dur_field is not None:
+            # 판독이 읽은 숫자가 총투(통)일 수 있다 — `unit` 이 그것을 말한다.
+            duration_days = course_days(dur_field.value, dur_field.unit)
         rows.append((med_field.value, frequency, duration_days))
     return rows
+
+
+async def _result_of(job: OcrJob) -> "OcrResult | None":
+    """그 판독 작업의 결과를 필드까지 붙여 가져온다."""
+    return await OcrResult.filter(ocr_job_id=job.ocr_job_id).prefetch_related("fields").first()
+
+
+def _not_confirmed() -> OcrApiError:
+    """쓸 판독이 아직 없다 — `GuideService.generate()` 와 같은 말을 쓴다."""
+    return OcrApiError(
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "OCR_NOT_CONFIRMED",
+        "확정된 OCR 항목이 없습니다. 먼저 판독을 확정해 주세요.",
+    )
 
 
 def _not_found() -> OcrApiError:
@@ -230,10 +312,20 @@ class TortoiseOcrRepository:
                 selected_candidate.is_selected = True
                 await selected_candidate.save(update_fields=("is_selected",), using_db=connection)
 
+            _refuse_unit_on_other_fields(request.unit, field.field_type)
+
             changed_at = now()
-            value_changed = request.corrected_value is not None or selected_candidate is not None
-            if value_changed:
+            unit_changed = request.unit is not None and field.unit != request.unit.value
+            #: **단위를 고치는 것은 값을 고치는 것이다.** 숫자가 그대로여도
+            #: 소진 예정일과 문자 발송일이 통째로 바뀐다(3 → 84). 그래서 확정
+            #: 도장을 떼는 것도, 판올림도 값 수정과 같이 다룬다 — 안 그러면
+            #: 「확정됐다」가 확정한 사람이 못 본 일수를 가리키게 된다.
+            value_changed = request.corrected_value is not None or selected_candidate is not None or unit_changed
+            if request.corrected_value is not None or selected_candidate is not None:
                 field.corrected_value = corrected_value
+            if request.unit is not None:
+                field.unit = request.unit.value
+            if value_changed:
                 field.modified_by = actor.staff_id
                 field.modified_at = changed_at
             field.version += 1
@@ -254,7 +346,12 @@ class TortoiseOcrRepository:
         return field, doc_texts
 
     async def write_field(
-        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+        self,
+        visit_id: int,
+        field_type: str,
+        value: str | None,
+        actor: OcrActor,
+        unit: str | None = None,
     ) -> tuple[OcrField | None, Sequence[OcrDocumentText]]:
         """판독이 못 읽은 값을 사람이 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
 
@@ -265,6 +362,8 @@ class TortoiseOcrRepository:
         `confidence` 는 비운다. 사람이 적은 값에 기계의 확신을 붙이면, 화면이
         「낮은 확신」으로 다시 물어보거나 반대로 확신한 값처럼 보인다.
         """
+        _refuse_unit_on_other_fields(unit, field_type)
+
         job = await self.get_latest_job_by_visit(visit_id, actor)
         if job is None:
             raise _not_found()
@@ -297,13 +396,16 @@ class TortoiseOcrRepository:
                     ocr_result_id=result.ocr_result_id,
                     field_type=field_type,
                     corrected_value=text,
+                    unit=unit,
                     modified_by=actor.staff_id,
                     modified_at=changed_at,
                     using_db=connection,
                 )
             else:
-                changed = field.corrected_value != text
+                changed = field.corrected_value != text or (unit is not None and field.unit != unit)
                 field.corrected_value = text
+                if unit is not None:
+                    field.unit = unit
                 field.modified_by = actor.staff_id
                 field.modified_at = changed_at
                 field.version += 1
@@ -395,6 +497,17 @@ class TortoiseOcrRepository:
         return out
 
     async def finalize_ocr(self, visit_id: int, actor: OcrActor) -> Prescription:
+        # 진료 소유권을 먼저 본다 — `generate()` 와 같은 차례다. 남의 병원
+        # 진료는 「없다」로 답해야지 「확정이 아직 안 됐다」로 답하면 그 진료가
+        # 있다는 사실이 새어 나간다.
+        visit = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
+        if visit is None:
+            raise OcrApiError(
+                status.HTTP_404_NOT_FOUND,
+                "VISIT_NOT_FOUND",
+                "진료 건을 찾을 수 없습니다.",
+            )
+
         # GuideService.generate()와 동일한 기준으로 job을 선택한다.
         # excluded된 job이나 COMPLETED가 아닌 job으로 처방을 만드는 것을 막는다.
         job = (
@@ -407,12 +520,28 @@ class TortoiseOcrRepository:
             .order_by("-created_at")
             .first()
         )
-        if job is None:
-            raise _not_found()
 
-        result = await OcrResult.filter(ocr_job_id=job.ocr_job_id).prefetch_related("fields").first()
+        # **소유권과 판독 상태를 나눠서 말한다** — 이희진 님 `#233` 리뷰.
+        #
+        # 「동일 기준」이라 적어 두고 코드가 갈려 있었다. `generate()` 는 진료
+        # 소유권을 **먼저** 보고 404 `VISIT_NOT_FOUND`, 그다음 job 이 없으면
+        # 422 `OCR_NOT_CONFIRMED` 를 낸다. 여기는 둘을 한 질의에 뭉쳐 어느
+        # 쪽이든 404 `NOT_FOUND` 였다.
+        #
+        # **화면에서 글자가 갈린다.** `GENERATE_SAYINGS` 에 `NOT_FOUND` 항목이
+        # 없어서, 스탭은 「확정한 항목이 아직 없습니다 — 값을 확인해 저장한 뒤
+        # 다시 눌러 주세요」 대신 「안내문을 만들지 못했습니다 — 잠시 뒤 다시
+        # 눌러 주세요」를 받는다. 무엇을 해야 하는지가 사라진다.
+        #
+        # 지금은 `PATCH /ocr/jobs/{id}/exclude` 를 부르는 화면이 없어 못 닿는
+        # 자리다. 그 기능이 화면에 붙는 순간 드러난다.
+        #
+        # **뭉쳐서 422 로 바꾸면 안 된다.** 그러면 남의 병원 진료를 물었을 때도
+        # 「확정된 항목이 없다」고 답해, 없는 진료와 아직 안 본 진료가 같은 말이
+        # 된다. 그래서 `generate()` 와 **같은 차례**로 가른다.
+        result = await _result_of(job) if job is not None else None
         if result is None:
-            raise _not_found()
+            raise _not_confirmed()
 
         fields_by_type: dict[str, OcrField] = {f.field_type: f for f in result.fields}
 
@@ -423,7 +552,20 @@ class TortoiseOcrRepository:
                 "확정된 OCR 항목이 없습니다.",
             )
 
-        unconfirmed = next((f for f in result.fields if not f.is_confirmed), None)
+        # **못 읽은 칸은 길을 막지 않는다** — 와이어프레임 S1-7 · KEY-271.
+        #
+        # 화면은 **값이 있는 항목만** 확정한다(`ocr-review.js` 의 `fieldsToConfirm`).
+        # 빈 칸을 확정하면 그 빈 값이 안내문에 그대로 나가기 때문이다. 그래서
+        # 「확인 완료」를 눌러도 못 읽은 칸은 미확정으로 남고, 화면은 그것을
+        # 일부러 안 막는다(`generateBlocked` 가 `counts.missing` 을 안 본다).
+        #
+        # 여기서 **모든** 필드를 요구하면 판독이 한 칸이라도 못 읽은 진료는
+        # 처방을 영영 못 세운다. 화면이 이 API 를 부르기 시작한 지금(KEY-271
+        # 다리)은 그것이 곧 **안내문 자체를 못 만드는 것**이다. 푸는 길도 없다 —
+        # 「이번 미시행」을 담을 칸이 서버에 없어 실서버에서는 버튼조차 안 그려진다.
+        #
+        # **값이 있는데 아무도 안 본 것**만 막는다. 그것이 확정의 뜻이다.
+        unconfirmed = read_but_unconfirmed(result.fields)
         if unconfirmed is not None:
             raise OcrApiError(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -672,10 +814,15 @@ class OcrService:
         return serialize_field(field, doc_text_map)
 
     async def write_field(
-        self, visit_id: int, field_type: str, value: str | None, actor: OcrActor
+        self,
+        visit_id: int,
+        field_type: str,
+        value: str | None,
+        actor: OcrActor,
+        unit: str | None = None,
     ) -> OcrFieldResponse | None:
         """판독이 못 읽은 값을 적어 넣는다. 비우면 지우고 `None` 을 준다."""
-        field, doc_texts = await self.repository.write_field(visit_id, field_type, value, actor)
+        field, doc_texts = await self.repository.write_field(visit_id, field_type, value, actor, unit=unit)
         if field is None:
             return None
         return serialize_field(field, {d.ocr_document_text_id: d for d in doc_texts})

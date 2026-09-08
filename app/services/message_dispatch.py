@@ -1,8 +1,9 @@
-"""예약 문자 발송 파이프라인 — KEY-249.
+"""예약 문자 발송 파이프라인 — KEY-249, KEY-250.
 
-`GuideMessage(SCHEDULED)` 를 집어서 실제로 보내고 `SENT`/`FAILED` 로 전이시킨다.
-`HELD` 는 게이트가 미리 막아 둔 상태만 있다 — 이 파이프라인은 HELD로 만들지
-않는다(그 판단은 별도 게이트 작업의 몫이다).
+`GuideMessage(SCHEDULED)` 를 집어서 발송 직전 게이트(`dispatch_gate.py`)를
+먼저 거친다. 막히면 `HELD`, 통과하면 실제로 보내고 `SENT`/`FAILED` 로
+전이시킨다. 시도·성공·실패·보류 네 갈래를 전부 append-only 감사 이벤트로
+남긴다(`GuideMessageEvent`) — KEY-250.
 """
 
 import secrets
@@ -13,17 +14,21 @@ from tortoise.timezone import now
 
 from app.core.logger import default_logger
 from app.models.catalog import MessageTemplate
-from app.models.ocr import OcrField
+from app.models.ocr import OcrField, course_days
 from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import (
     GuideDocument,
     GuideMessage,
+    GuideMessageEvent,
+    GuideMessageEventType,
     GuideMessageFailure,
+    GuideMessageHold,
     GuideMessageKind,
     GuideMessageStatus,
     Visit,
 )
+from app.services.dispatch_gate import evaluate_dispatch_gate
 from app.services.message_templates import DEFAULT_BODY, MessageTemplateKind
 from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError, SmsSendResult
 
@@ -73,38 +78,46 @@ async def _template_body(hospital_id: int, kind: MessageTemplateKind) -> str:
 
 
 async def _course_days(visit_id: int) -> int | None:
-    """처방일수 — 판독이 확정한 값에서 읽는다 (app/services/guides.py의 같은 이름과 동일 로직).
+    """처방일수 — 판독이 확정한 값에서 읽는다.
 
     **확정된 것만 본다.** 스탭이 아직 확인하지 않은 값을 문구에 쓰면 안 된다.
+
+    **셈은 `app/models/ocr.py` 의 `course_days` 것이다** — 이희진 님 `#236` ②.
+
+    여기 사본이 따로 있었고, 독스트링이 「`guides.py` 의 같은 이름과 동일 로직」
+    이라 적어 두었는데 그 짝이 KEY-271 에서 `unit` 을 보게 바뀌면서 **이 자리만
+    낡았다.** 그러면 통수 처방에서 예약은 84일 뒤로 맞게 잡히는데 `{일수}` 를 쓰는
+    RUN_OUT 문구에는 원문 숫자 「3」이 그대로 들어가, 문자가 「3일분」이라고 말한다.
+
+    같은 규칙을 세 곳에 적어 두면 한 곳만 고쳐진다 — 그것이 이미 한 번 났다.
     """
     row = await OcrField.filter(
         ocr_result__ocr_job__visit_id=visit_id,
         field_type="DURATION_DAYS",
         is_confirmed=True,
     ).first()
-    if row is None or not row.value:
+    if row is None:
         return None
-    try:
-        days = int(str(row.value).strip())
-    except ValueError:
-        digits = "".join(ch for ch in str(row.value) if ch.isdigit())
-        if not digits:
-            return None
-        days = int(digits)
-    return days if days > 0 else None
+    # 판독이 읽은 숫자가 총투(통)일 수 있다 — `unit` 이 그것을 말한다.
+    return course_days(row.value, row.unit)
 
 
-async def render_message_body(message: GuideMessage) -> str:
+async def render_message_body(
+    message: GuideMessage,
+    *,
+    guide: GuideDocument | None = None,
+    visit: Visit | None = None,
+) -> str:
     """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
 
     `{링크}`/`{예약링크}`는 채우지 않는다 — 이유는 `LinkNotAvailableError`
     docstring을 본다. 남은 변수만 채운 뒤, 그 둘이 아직도 문구에 남아
     있으면 `LinkNotAvailableError`를 던진다.
     """
-    guide = await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
+    guide = guide or await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
     if guide is None:
         raise ValueError(f"guide_document not found for message {message.guide_message_id}")
-    visit = await Visit.filter(visit_id=guide.visit_id).first()
+    visit = visit or await Visit.filter(visit_id=guide.visit_id).first()
     patient = await Patient.filter(patient_id=visit.patient_id).first() if visit else None
     hospital = await Hospital.filter(hospital_id=guide.hospital_id).first()
 
@@ -127,6 +140,15 @@ async def render_message_body(message: GuideMessage) -> str:
     if "{링크}" in body or "{예약링크}" in body:
         raise LinkNotAvailableError(f"guide_message_id={message.guide_message_id} kind={message.kind.value}")
     return body
+
+
+async def _log_event(message_id: int, event_type: GuideMessageEventType, *, reason: str | None = None) -> None:
+    """감사 이벤트 한 줄을 남긴다 — append-only(KEY-250). update·delete는 안 쓴다.
+
+    `reason`은 못박힌 값(`GuideMessageHold`·`GuideMessageFailure`)이나 짧은
+    내부 코드 문자열만 받는다 — 예외 메시지·본문을 그대로 옮기지 않는다.
+    """
+    await GuideMessageEvent.create(guide_message_id=message_id, event_type=event_type, reason=reason)
 
 
 async def _claim(message_id: int, *, at: datetime) -> str | None:
@@ -159,13 +181,23 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
 
     message = await GuideMessage.get(guide_message_id=message_id)
     try:
-        guide = await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
+        await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
+        gate = await evaluate_dispatch_gate(message)
+    except Exception:
+        default_logger.exception("문자 발송 게이트 처리 중 예상치 못한 예외 — guide_message_id=%s", message_id)
+        return await _finish_retryable(message, token, moment, provider_detail="worker_exception")
+
+    if gate.hold_reason is not None:
+        return await _finish_held(message, token, gate.hold_reason)
+
+    try:
+        guide = gate.guide
         visit = await Visit.filter(visit_id=guide.visit_id).first() if guide else None
         patient = await Patient.filter(patient_id=visit.patient_id).first() if visit else None
         if patient is None:
             raise ValueError(f"patient not found for message {message_id}")
 
-        body = await render_message_body(message)
+        body = await render_message_body(message, guide=guide, visit=visit)
         result = await sender.send(patient.phone, body)
     except LinkNotAvailableError:
         # 재시도해도 정책이 정해지기 전엔 같은 결과다 — 5번 돌 필요 없이 바로 종료한다.
@@ -201,7 +233,24 @@ async def _finish_sent(
     )
     if affected != 1:
         raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
+    # sent_body(원문 링크 포함)를 절대 여기 남기지 않는다 — reason 없이 SENT만 남긴다.
+    await _log_event(message.guide_message_id, GuideMessageEventType.SENT)
     return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.SENT)
+
+
+async def _finish_held(message: GuideMessage, token: str, hold_reason: GuideMessageHold) -> DispatchResult:
+    affected = await GuideMessage.filter(
+        guide_message_id=message.guide_message_id,
+        claim_token=token,
+    ).update(
+        status=GuideMessageStatus.HELD,
+        hold_reason=hold_reason,
+        claim_token=None,
+    )
+    if affected != 1:
+        raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
+    await _log_event(message.guide_message_id, GuideMessageEventType.HELD, reason=hold_reason.value)
+    return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.HELD)
 
 
 def _failure_code_for(provider_detail: str | None) -> GuideMessageFailure:
@@ -244,6 +293,7 @@ async def _finish_failed(
     if affected != 1:
         raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
 
+    await _log_event(message.guide_message_id, GuideMessageEventType.FAILED, reason=failure_code.value)
     return DispatchResult(
         guide_message_id=message.guide_message_id,
         status=GuideMessageStatus.FAILED,

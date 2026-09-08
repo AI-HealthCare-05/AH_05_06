@@ -29,6 +29,7 @@ from app.models.visits import (
     GuideMessageHold,
     GuideMessageKind,
     GuideMessageStatus,
+    GuideStatus,
     Visit,
 )
 from app.services.message_dispatch import (
@@ -75,6 +76,7 @@ async def make_due_message(
     hold: GuideMessageHold | None = None,
     hospital_name: str = "KEY-249 합성의원",
     link_free_template: bool = False,
+    approved: bool = True,
 ) -> GuideMessage:
     hospital = await Hospital.create(name=hospital_name)
     if link_free_template:
@@ -92,7 +94,13 @@ async def make_due_message(
         phone="01000009249",
     )
     visit = await Visit.create(hospital_id=hospital.hospital_id, patient=patient, visited_at=now() - timedelta(days=1))
-    guide = await GuideDocument.create(hospital_id=hospital.hospital_id, visit=visit)
+    guide = await GuideDocument.create(
+        hospital_id=hospital.hospital_id,
+        visit=visit,
+        status=GuideStatus.SCHEDULED_TO_SEND if approved else GuideStatus.STAFF_REVIEW,
+        approved_by=1 if approved else None,
+        approved_at=now() if approved else None,
+    )
     return await GuideMessage.create(
         guide_document=guide,
         kind=kind,

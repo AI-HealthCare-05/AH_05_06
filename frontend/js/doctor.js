@@ -43,9 +43,10 @@
    화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
 function whenText(iso) {
   if (!iso) return "곧";
-  var m = String(iso).match(/^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
-  if (!m) return String(iso);
-  return Number(m[1]) + "월 " + Number(m[2]) + "일 " + m[3];
+  /* 읽는 규칙은 `clinic-clock.js` 가 갖는다 — 여기 있던 같은 정규식을 옮겼다.
+     이 파일 안에만 있어서 다른 화면이 못 썼고, `patient-link-view.js` 가 제
+     손으로 `Date` 를 만들다 시간대 버그를 다시 넣었다 (`#250` 리뷰 ①). */
+  return clinicWhenText(iso) || String(iso);
 }
 
 /* 이미 승인한 진료는 다시 승인하지 않는다.
@@ -71,6 +72,7 @@ function alreadyDone(visit) {
  * 정확히 말한다.
  */
 var GUIDE_LOAD_SAYINGS = [
+  NETWORK_SAYING, // 서버에 닿지도 못한 것 — KEY-211
   { status: 404, say: "아직 안내문이 없습니다. 판독 결과 확인이 끝나고 안내문이 만들어지면 여기에 보입니다." },
   { status: 403, say: "안내문을 볼 수 없습니다. 의사 계정으로 로그인했는지 확인해 주세요." },
 ];
@@ -79,30 +81,28 @@ function guideLoadSaying(error) {
   return errorMessage(error, GUIDE_LOAD_SAYINGS, "안내문을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
 }
 
-/* 링크 응답의 API 경로에서 토큰만 꺼내 환자 화면의 fragment 로 옮긴다.
-
-   fragment 는 서버 요청과 access log 에 실리지 않는다. 병원 화면의 주소나
-   DOM 에도 토큰을 쓰지 않고, 새 환자 탭의 메모리로만 넘긴다. 서버가 정한
-   `path` 모양이 아니면 임의 주소를 열지 않는다. */
-function patientGuideUrl(result) {
-  var path = result && result.path;
-  var matched = typeof path === "string" && path.match(/^\/api\/v1\/guides\/([A-Za-z0-9_-]+)$/);
-  if (!matched) throw new Error("invalid patient guide link response");
-  return "/guide.html" + (typeof MOCK !== "undefined" && MOCK ? "?mock=1" : "") + "#t=" + encodeURIComponent(matched[1]);
+function isCurrentPatientLinkRequest(currentVisit, expectedVisitId, currentLoadSeq, expectedLoadSeq) {
+  return !!(
+    currentVisit &&
+    currentVisit.visit_id === expectedVisitId &&
+    currentLoadSeq === expectedLoadSeq
+  );
 }
 
-var PATIENT_LINK_SAYINGS = [
-  { code: "GUIDE_NOT_APPROVED", say: "승인 완료된 안내에서만 개발용 환자 화면을 열 수 있어요." },
-  {
-    code: "LINK_ALREADY_ISSUED",
-    say: "이미 개발용 링크가 발급됐어요. 보관해 둔 기존 환자 화면을 이용해 주세요. 이 화면에서는 토큰을 다시 보여주지 않아요.",
-  },
-  { code: "GUIDE_NOT_FOUND", say: "이 진료의 안내문을 찾지 못했어요." },
-  { status: 403, say: "이 진료의 개발용 링크를 발급할 권한이 없어요." },
-];
+function copyPatientLink(clipboard, url) {
+  /* writeText 접근과 호출을 Promise 안에서 한다. clipboard가 없거나 구현이
+     동기로 던지는 브라우저에서도 호출부의 catch가 같은 안내를 보여 준다. */
+  return Promise.resolve().then(function () {
+    if (!clipboard || typeof clipboard.writeText !== "function") {
+      throw new Error("clipboard unavailable");
+    }
+    return clipboard.writeText(url);
+  });
+}
 
-function patientLinkSaying(error) {
-  return errorMessage(error, PATIENT_LINK_SAYINGS, "환자 화면을 열지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+function canDiscardPatientLink(url, handled, confirmDiscard) {
+  if (!url || handled) return true;
+  return confirmDiscard("아직 링크를 복사하거나 열지 않았습니다. 닫으면 이 주소는 다시 확인할 수 없습니다. 닫을까요?");
 }
 
 (function () {
@@ -125,9 +125,28 @@ function patientLinkSaying(error) {
   var guide = null;
   var visit = null;
   var me = null;
+
+  /* **다시 세운다.** `e6c214c`(KEY-234)가 안내문 그리는 규칙을 `guide-view.js`
+     로 옮기면서 이 줄까지 함께 지웠는데, **쓰는 자리(`renderHead`)는 남았다.**
+
+     그래서 `load()` 가 안내문을 받아 머리를 그리는 순간
+     `ReferenceError: GENDER_LABEL is not defined` 로 죽고, `.catch` 가 그것을
+     통신 오류로 오해해 **「안내문을 불러오지 못했습니다」**를 띄웠다. 서버는
+     멀쩡히 답하고 있었다 — 의사 승인 화면이 안내문 있는 진료를 하나도 못 열었다.
+
+     옮기지 않고 여기 둔다. 쓰는 곳이 이 파일 하나뿐이라 공용으로 낼 이유가
+     없고, 공용으로 내면 「어느 화면이 싣나」를 또 따져야 한다. */
+  var GENDER_LABEL = { FEMALE: "여", MALE: "남", OTHER: "기타", UNKNOWN: "—" };
   var section = "medication";
   var loadSeq = 0;
   var patientLinkOpening = false;
+  /* 원문 URL은 발급 모달이 열린 동안 메모리에만 둔다. DOM·저장소·로그에는
+     쓰지 않고, 복사하거나 새 인증 탭을 열 때 브라우저 API로 바로 넘긴다. */
+  var patientLinkUrl = null;
+  var patientLinkHandled = false;
+  /* 비동기 링크 작업은 시작한 모달 세대와 결과를 받을 때의 세대가 같아야
+     화면을 다시 연다. 사용자가 닫거나 환자를 바꾸면 세대가 바뀐다. */
+  var patientLinkModalSeq = 0;
 
   function isDoctor() {
     return !!(me && (me.roles || []).indexOf("doctor") !== -1);
@@ -154,10 +173,38 @@ function patientLinkSaying(error) {
     return guideCurrentSection(guide.sections, section);
   }
 
+  /* 문자 설정 탭이 읽는 값 — KEY-275.
+   *
+   * **이 화면에는 없던 것이다.** `guide-view.js` 를 두 HTML 이 싣는데 이 함수는
+   * `visit-guide.js`(스탭 화면)에만 있었다. 그래서 의사 화면의 문자 설정 탭은
+   * 재료를 못 받았고, 링크 블록도 늘 「아직 없음」으로 섰다.
+   *
+   * 여기서는 **링크에 필요한 둘만** 준다. 회차·문구는 스탭이 정하는 것이라
+   * (S1-14) 의사 화면이 같은 값을 또 셈할 이유가 없다 — `smsStateNow` 의
+   * 기본값이 그대로 선다.
+   */
+  window.guideSmsPlan = function () {
+    return {
+      guideStatus: (guide && guide.status) || "",
+      link: patientLinkOf(visit && visit.visit_id),
+    };
+  };
+
+  /* 링크 상태를 읽어 쥔다. 안내문 요청에 안 묶는다 — 링크를 못 읽어도
+     안내문은 보여야 한다(스탭 화면과 같은 판단). */
+  /* 읽는 규칙은 `patient-link-view.js` 의 `patientLinkLoad` 가 갖는다 — 이 배선이
+     `visit-guide.js` 에도 똑같이 있었다(`#250` 리뷰 ⑤). 화면이 정하는 것은
+     「늦게 온 답인가」와 「어떻게 다시 그리는가」 둘뿐이다. */
+  function loadPatientLink(id, mine) {
+    patientLinkLoad(patientLinkOpts, id, function () {
+      return mine !== loadSeq;
+    });
+  }
+
   function renderPanel() {
     var now = currentSection();
     el("panel").innerHTML = now
-      ? guideScreenHtml(guide.sections, now.key, "final", isDoctor(), guideEditingNow())
+      ? guideScreenHtml(guide.sections, now.key, "final", isDoctor(), guideEditingNow(), guide.summary)
       : "";
   }
 
@@ -257,12 +304,16 @@ function patientLinkSaying(error) {
   /* ── 모달 ───────────────────────────────────────────── */
 
   function openModal(html) {
+    patientLinkModalSeq += 1;
     el("modal-body").innerHTML = html;
     el("modal").hidden = false;
   }
 
   function closeModal() {
+    patientLinkModalSeq += 1;
     el("modal").hidden = true;
+    patientLinkUrl = null;
+    patientLinkHandled = false;
   }
 
   /* 권한 문제와 그 밖을 가른다.
@@ -288,7 +339,7 @@ function patientLinkSaying(error) {
   /* 와이어프레임 D1-5. 본문은 `guide-view.js` 가 그린다 — 최종 확인 탭과
      **같은 창**이다. 예전에는 여기서만 그려서 두 화면의 승인 확인이 갈렸다.
 
-     「개발용 환자 화면 열기」는 창에서 뺐다. 승인 직후에 개발용 링크를 발급하는
+     「환자 링크 발급」은 창에서 뺐다. 승인 직후에 링크를 발급하는
      자리가 아니고, 그 단추는 화면 아래(`#patient-open`)에 그대로 있다. */
   function approvedModal(result) {
     return approvedModalHtml({
@@ -298,49 +349,61 @@ function patientLinkSaying(error) {
   }
 
   function patientLinkFailedModal(error) {
+    var management =
+      error && error.code === "LINK_ALREADY_ISSUED"
+        ? '<button class="button-ghost" type="button" id="patient-link-revoke">기존 링크 폐기</button>' +
+          '<span class="grow"></span><button class="button-primary" type="button" id="patient-link-reissue">새 링크로 교체</button>'
+        : '<span class="grow"></span>';
     return (
       '<h2 class="modal__title">환자 화면을 열지 못했어요</h2>' +
       '<p class="modal__lead">' +
       esc(patientLinkSaying(error)) +
       "</p>" +
-      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'
+      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
+      management +
+      "</div>"
     );
   }
 
-  /* 팝업 차단을 피하려고 클릭 순간 빈 탭을 만들고, 링크 발급이 성공한 뒤에만
-     환자 화면으로 바꾼다. 실패하면 빈 탭을 닫고 병원 화면에는 안전한 사유만
-     표시한다. 토큰은 console·DOM·저장소에 쓰지 않는다. */
+  function patientLinkModal(result, label) {
+    patientLinkUrl = patientGuideUrl(result);
+    patientLinkHandled = false;
+    return (
+      '<h2 class="modal__title">' + esc(label) + '</h2>' +
+      '<p class="modal__lead">환자 본인 확인 화면으로 연결되는 링크입니다.</p>' +
+      '<p class="modal__note">유효기간: ' + esc(whenText(result.expires_at)) +
+      '<br>보안을 위해 주소 원문은 화면에 표시하거나 저장하지 않습니다.</p>' +
+      '<p class="modal__error" id="patient-link-error" role="status" hidden></p>' +
+      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
+      '<button class="button-ghost" type="button" id="patient-link-revoke">폐기</button>' +
+      '<span class="grow"></span><button class="button-ghost" type="button" id="patient-link-copy">링크 복사</button>' +
+      '<button class="button-primary" type="button" id="patient-link-open">본인 확인 열기</button></div>' +
+      '<div class="modal__acts"><span class="grow"></span>' +
+      '<button class="button-ghost" type="button" id="patient-link-reissue">새 링크로 교체</button></div>'
+    );
+  }
+
+  /* 승인된 안내에 링크를 발급한 뒤 원문은 메모리에만 둔다. 사용자는 같은
+     모달에서 복사하거나 P1 본인 확인 화면을 열 수 있다. */
   function openPatientGuide() {
     if (patientLinkOpening || !visit || !guide || guide.status !== "SCHEDULED_TO_SEND") return;
     patientLinkOpening = true;
     var openingId = visit.visit_id;
-    var popup = window.open("about:blank", "_blank");
-    /* 비동기 발급 뒤 다시 window.open()을 부르면 브라우저가 팝업으로 막는다.
-       더 중요한 점은 `noopener`로 성공해도 반환값이 null일 수 있어 성공 여부를
-       판정할 수 없다는 것이다. 클릭 순간 빈 탭을 못 만들었으면 링크를 발급하지
-       않고 끝낸다 — 일회용 링크를 화면 없이 소진하지 않는다. */
-    if (!popup) {
-      patientLinkOpening = false;
-      renderRole();
-      openModal(patientLinkFailedModal(new Error("patient guide popup blocked")));
-      return;
-    }
-    popup.opener = null;
+    var openingLoadSeq = loadSeq;
     el("patient-open").disabled = true;
 
     doctorApi
       .issuePatientLink(openingId)
       .then(function (result) {
-        var url = patientGuideUrl(result);
-        popup.location.replace(url);
+        if (!isCurrentPatientLinkRequest(visit, openingId, loadSeq, openingLoadSeq)) return;
         patientLinkOpening = false;
-        if (visit && visit.visit_id === openingId) renderRole();
-        closeModal();
+        renderRole();
+        openModal(patientLinkModal(result, "환자 링크를 발급했습니다"));
       })
       .catch(function (error) {
+        if (!isCurrentPatientLinkRequest(visit, openingId, loadSeq, openingLoadSeq)) return;
         patientLinkOpening = false;
-        if (popup) popup.close();
-        if (visit && visit.visit_id === openingId) renderRole();
+        renderRole();
         openModal(patientLinkFailedModal(error));
       });
   }
@@ -376,14 +439,20 @@ function patientLinkSaying(error) {
        쓰던 사유가 뒷 환자의 이름 아래 남는다. 이름·버튼을 거두는 것과 같은
        이유다 — 화면이 말하는 사람과 눌렀을 때 가는 사람이 달라진다. */
     guide = null;
+    patientLinkOpening = false;
     /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
     smsForget();
+    /* **앞 사람의 링크 주소도 놓는다** — 남으면 다음 사람 화면에서 앞 사람의
+       주소를 복사한다 (KEY-275). */
+    patientLinkForget();
     closeModal();
     renderHead();
     renderRole();
 
     el("panel").innerHTML = '<p class="block__hint">불러오는 중…</p>';
     el("warn-line").textContent = "";
+
+    loadPatientLink(visit.visit_id, mine);
 
     doctorApi
       .guide(visit.visit_id)
@@ -422,10 +491,100 @@ function patientLinkSaying(error) {
       return;
     }
 
-    if (target.closest("[data-close]")) return closeModal();
+    if (target.closest("[data-close]")) {
+      if (
+        !canDiscardPatientLink(patientLinkUrl, patientLinkHandled, function (message) {
+          return window.confirm(message);
+        })
+      ) {
+        return;
+      }
+      return closeModal();
+    }
 
     if (target.id === "patient-open" || target.closest("[data-open-patient]")) {
       openPatientGuide();
+      return;
+    }
+
+    if (target.id === "patient-link-open" && patientLinkUrl) {
+      patientLinkHandled = true;
+      window.open(patientLinkUrl, "_blank", "noopener");
+      return;
+    }
+
+    if (target.id === "patient-link-copy" && patientLinkUrl) {
+      var copyError = el("patient-link-error");
+      var copyUrl = new URL(patientLinkUrl, window.location.href).href;
+      copyPatientLink(navigator.clipboard, copyUrl)
+        .then(function () {
+          patientLinkHandled = true;
+          copyError.textContent = "링크를 복사했습니다.";
+          copyError.hidden = false;
+        })
+        .catch(function () {
+          copyError.textContent = "복사 권한을 허용한 뒤 다시 눌러 주세요.";
+          copyError.hidden = false;
+        });
+      return;
+    }
+
+    if (target.id === "patient-link-reissue" && visit) {
+      target.disabled = true;
+      var reissuingId = visit.visit_id;
+      var reissuingLoadSeq = loadSeq;
+      var reissuingModalSeq = patientLinkModalSeq;
+      doctorApi
+        .reIssuePatientLink(reissuingId)
+        .then(function (result) {
+          if (
+            isCurrentPatientLinkRequest(visit, reissuingId, loadSeq, reissuingLoadSeq) &&
+            patientLinkModalSeq === reissuingModalSeq
+          ) {
+            openModal(patientLinkModal(result, "새 환자 링크로 교체했습니다"));
+          }
+        })
+        .catch(function (error) {
+          if (
+            isCurrentPatientLinkRequest(visit, reissuingId, loadSeq, reissuingLoadSeq) &&
+            patientLinkModalSeq === reissuingModalSeq
+          ) {
+            openModal(patientLinkFailedModal(error));
+          }
+        });
+      return;
+    }
+
+    if (target.id === "patient-link-revoke" && visit) {
+      target.disabled = true;
+      var revokingId = visit.visit_id;
+      var revokingLoadSeq = loadSeq;
+      var revokingModalSeq = patientLinkModalSeq;
+      doctorApi
+        .revokePatientLink(revokingId)
+        .then(function () {
+          if (
+            !isCurrentPatientLinkRequest(visit, revokingId, loadSeq, revokingLoadSeq) ||
+            patientLinkModalSeq !== revokingModalSeq
+          ) {
+            return;
+          }
+          patientLinkUrl = null;
+          openModal(
+            '<h2 class="modal__title">환자 링크를 폐기했습니다</h2>' +
+              '<p class="modal__lead">기존 링크로는 더 이상 본인 확인이나 안내 열람을 할 수 없습니다.</p>' +
+              '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button>' +
+              '<span class="grow"></span><button class="button-primary" type="button" id="patient-link-reissue">새 링크 발급</button></div>',
+          );
+        })
+        .catch(function (error) {
+          if (
+            isCurrentPatientLinkRequest(visit, revokingId, loadSeq, revokingLoadSeq) &&
+            patientLinkModalSeq === revokingModalSeq
+          ) {
+            openModal(patientLinkFailedModal(error));
+          }
+        });
       return;
     }
 
@@ -518,6 +677,30 @@ function patientLinkSaying(error) {
       if (box) box.textContent = text;
     },
   });
+
+  /* 링크 블록도 스탭 화면과 **같은 배선**을 쓴다 (KEY-275).
+     안 걸면 블록의 단추가 눌러도 아무 일 없는 단추가 된다 — 이 화면에도
+     블록이 서기 때문이다(`guide-view.js` 를 두 HTML 이 싣는다).
+
+     `#224` 의 발급 모달과 겹치지 않는다. 모달은 **첫 발급**을 맡고, 블록은
+     이미 있는 링크의 상태와 교체를 맡는다. 둘 다 서버를 다시 읽으므로 어느
+     쪽으로 만들든 다음 그림에서 같은 값이 선다. */
+  /* 로드와 배선이 **같은 옵션**을 쓴다 — 「지금 어느 진료인가」와 「어떻게 다시
+     그리는가」가 두 곳에서 갈리면 늦게 온 답의 판정이 서로 달라진다. */
+  var patientLinkOpts = {
+    visitId: function () {
+      return visit ? visit.visit_id : null;
+    },
+    reRender: function () {
+      if (guide) renderPanel();
+    },
+    say: function (text) {
+      var box = el("say");
+      if (box) box.textContent = text;
+    },
+  };
+
+  wirePatientLink(patientLinkOpts);
 
   wireGuideEditing({
     visitId: function () {

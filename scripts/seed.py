@@ -57,6 +57,7 @@ from app.models.catalog import (  # noqa: E402
     DrugCautionContent,
     PrescriptionSet,
 )
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.prescriptions import Prescription, PrescriptionItem  # noqa: E402
 from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
@@ -72,10 +73,15 @@ from app.models.visits import (  # noqa: E402
     Visit,
     VisitStatus,
 )
+from app.services import guide_defaults  # noqa: E402
 from app.services.drug_caution import DrugCautionService  # noqa: E402
 from app.services.guides import GuideService  # noqa: E402
 from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
-from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS  # noqa: E402
+from app.tests.fixtures.catalog import (  # noqa: E402
+    DRUG_CAUTION_CONTENTS,
+    PRESCRIPTION_SETS,
+)
+from app.tests.fixtures.ocr_rows import ReadStage, read_from_row  # noqa: E402
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
 from app.tests.fixtures.staff import (  # noqa: E402
     StaffDataError,
@@ -145,8 +151,6 @@ SMOKE_CHART_NO = "08424"
 #: 새 의학 문장을 지어내지 않는다. 이 fixture 는 판독·구조화 처방을 거치지
 #: 않고 승인 안내를 바로 세우므로 약명·빈도·기간을 임의로 채우지 않고,
 #: `guide_defaults.MEDICATION` 과 같은 범용 지도 문장만 사용한다(KEY-224).
-_SMOKE_MEDICATION_BODY = "복약 지시에 따라 정해진 시간에 복용해 주세요."
-_SMOKE_LIFE_BODY = "처방 기간 중 음주는 피해 주세요. 충분한 수분 섭취와 규칙적인 수면을 유지해 주세요."
 _SMOKE_MESSAGES_BODY = "복약 안내가 발송될 예정입니다. 궁금한 점은 진료실로 문의해 주세요."
 
 # CSV 의 H1/H2 레이블 → seed 전용 병원 이름
@@ -463,6 +467,7 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
     # 2단계: 진료 upsert
     created_v = skipped_v = error_v = 0
     created_presc = created_item = 0
+    created_job = created_field = 0
 
     for row in rows:
         visit_date_str = row["진료일"].strip()
@@ -510,8 +515,96 @@ async def seed_patients(hospitals: dict[str, Hospital]) -> None:
         created_presc += created_p
         created_item += created_i
 
+        created_j, created_f = await _seed_ocr(visit, row, h1.hospital_id)
+        created_job += created_j
+        created_field += created_f
+
     print(f"[visits] created={created_v} skipped={skipped_v} error={error_v} total={len(rows)}")
     print(f"[prescriptions] created={created_presc} items={created_item}")
+    print(f"[ocr] jobs={created_job} fields={created_field}")
+
+
+#: 시드가 부은 판독임을 표에서 알아볼 수 있게 한다. 업로드 데모가 부은 것
+#: (`FIXTURE_MODEL_NAME = "fixture-v0"`)과 구별되어야 나중에 갈라 지울 수 있다.
+SEED_OCR_MODEL_NAME = "seed-v0"
+
+
+async def _seed_ocr(visit: Visit, row: dict[str, str], hospital_id: int) -> tuple[int, int]:
+    """한 진료에 판독을 심는다 — KEY-271 P1.
+
+    규칙은 `app/tests/fixtures/ocr_rows.py` 가 안다. 여기 두지 않는 이유는
+    `_seed_prescription` 과 같다 — **검사가 닿아야 한다.**
+
+    ## 판독을 심으면 그 진료는 잠긴다
+
+    `VisitService._refuse_if_locked` 가 `PROCESSING`·`COMPLETED` 판독 작업이
+    하나라도 있으면 담당의·진료일·진료과 변경을 409 `VISIT_LOCKED` 로 막는다.
+    **확정 여부와 무관하다.** 그래서 판독을 심은 진료는 식별 관계를 못 고친다 —
+    올바른 동작이지만(EMR 을 읽은 뒤에 진료를 옮기면 안 된다) 시연에서 「진료
+    정보 고치기」를 보이려면 판독 없는 진료를 써야 한다.
+
+    ## 확정은 사람이 한 것으로 남긴다
+
+    확정 도장은 담당의가 찍은 것으로 적는다. 담당의가 없으면 **심지 않는다** —
+    `seed_smoke_fixture` 가 「승인자 없이 승인 상태를 만들 수 없어 멈춘다」고 한
+    것과 같은 까닭이다. 사람 없이 사람이 한 일을 만들면 안 된다.
+    """
+    made = read_from_row(row)
+    if made.stage is ReadStage.NONE:
+        return 0, 0
+
+    # **사람 없이 사람이 한 일을 만들지 않는다.** `requested_by` 는 「누가 읽어
+    # 달라고 했는가」이고 확정 도장은 「누가 봤는가」다. 담당의가 없으면 둘 다
+    # 적을 사람이 없다 — `0` 같은 값을 넣으면 아무도 아닌 사람이 판독을 요청하고
+    # 확정한 것이 된다. `seed_smoke_fixture` 가 승인자 없이 승인 상태를 안 만드는
+    # 것과 같은 까닭이다.
+    if visit.doctor_id is None:
+        print(
+            f"[ocr] 진료 {visit.visit_id} 에 담당의가 없습니다 — 읽어 달라고 한 사람도 "
+            f"확인한 사람도 적을 수 없어 건너뜁니다 (시나리오 {row['시나리오ID']})",
+            file=sys.stderr,
+        )
+        return 0, 0
+
+    confirmed = made.stage is ReadStage.CONFIRMED
+
+    job, was_created = await OcrJob.get_or_create(
+        ocr_job_id=f"ocr_seed_{visit.visit_id}",
+        defaults={
+            "hospital_id": hospital_id,
+            "visit": visit,
+            # **기본값이 `PROCESSING` 이다.** 그대로 두면 판독 결과 조회가
+            # 409 `OCR_RESULT_NOT_READY` 로 떨어져 확인 화면이 아예 안 뜬다.
+            "status": OcrJobStatus.COMPLETED,
+            "progress": 100,
+            "requested_by": visit.doctor_id,
+            "completed_at": visit.visited_at,
+            "excluded_from_guide": False,
+        },
+    )
+    if not was_created:
+        return 0, 0  # 이미 심은 진료다. 다시 실행해도 쌓이지 않는다
+
+    stamped_at = visit.visited_at
+    result = await OcrResult.create(
+        ocr_job=job,
+        model_name=SEED_OCR_MODEL_NAME,
+        confirmed_by=visit.doctor_id if confirmed else None,
+        confirmed_at=stamped_at if confirmed else None,
+    )
+    for field in made.fields:
+        await OcrField.create(
+            ocr_result=result,
+            field_type=field.field_type,
+            extracted_value=field.value,
+            unit=field.unit,
+            confidence=field.confidence,
+            is_pending_report=field.is_pending_report,
+            is_confirmed=confirmed,
+            confirmed_by=visit.doctor_id if confirmed else None,
+            confirmed_at=stamped_at if confirmed else None,
+        )
+    return 1, len(made.fields)
 
 
 async def _seed_prescription(visit: Visit, row: dict[str, str]) -> tuple[int, int]:
@@ -550,25 +643,66 @@ async def _seed_prescription(visit: Visit, row: dict[str, str]) -> tuple[int, in
     return 1, len(items)
 
 
+async def _settle_unapproved(content: DrugCautionContent, wanted: ApprovalStatus) -> None:
+    """**승인 말고 다른 상태도 제자리에 세운다** — 이희진 님 `#214` ⑥.
+
+    시드는 문구를 무조건 `DRAFT` 로 앉힌 뒤 `APPROVED` 인 것만 서비스로 갈아
+    끼운다. 그래서 픽스처에 `DEPRECATED` 행을 넣으면 **DRAFT 인 채 영영 안
+    바뀐다.** 지금은 그런 행이 없어 잠복이지만, 「폐기된 판」 시나리오를 넣는
+    순간 조용히 틀린다.
+
+    `APPROVED` 는 여기서 안 건드린다 — 그 절차는 도장을 옮기는 일이라
+    `DrugCautionService.approve_version` 것이다(KEY-180 §3).
+    """
+    if wanted is ApprovalStatus.APPROVED or content.approval_status is wanted:
+        return
+    content.approval_status = wanted
+    await content.save(update_fields=["approval_status", "updated_at"])
+
+
 async def seed_catalog() -> None:
     """처방 세트 8종과 주의·응급 문구 마스터를 적재한다 — KEY-165.
 
     같은 명령을 반복 실행해도 데이터가 쌓이지 않는다(name 기준 get_or_create).
     APPROVED 문구는 `approved_key` 를 채워 "세트·섹션당 하나" 제약을 DB 가 지키게 한다.
     """
-    # 처방 세트 8종
+    # 처방 세트
     created_sets = 0
+    fixed_sets = 0
     for row in PRESCRIPTION_SETS:
-        _, was_created = await PrescriptionSet.get_or_create(name=row.name)
+        # **`disease` 를 함께 넣는다.** 모델 기본값이 ENDOMETRIOSIS 라 안 넣으면
+        # PCOS 세트가 자궁내막증 묶음에 들어가고, 설정 레일에서 다낭성난소증후군
+        # 묶음이 통째로 사라진다(`settings-rail.js` 의 `setsByDisease` 가 빈
+        # 묶음을 안 낸다) — 새로 부어 보기 전에는 안 보이는 어긋남이다.
+        found, was_created = await PrescriptionSet.get_or_create(name=row.name, defaults={"disease": row.disease})
         if was_created:
             created_sets += 1
-    print(f"[catalog] prescription_set created={created_sets} skipped={len(PRESCRIPTION_SETS) - created_sets}")
+            continue
+
+        # **`defaults` 는 INSERT 때만 쓴다 — 그래서 한 번 더 본다** (이희진 님
+        # `#214` ⑦). 29 번 마이그레이션이 이름으로 백필을 하지만 그건 **그때
+        # 이미 있던 줄**만 고친다. 그 뒤에 기본값으로 심긴 줄은 재시드해도 안
+        # 고쳐져, 다시 부어 봐도 PCOS 가 자궁내막증 밑에 남는다.
+        #
+        # 백필 마이그레이션을 또 넣지 않는 까닭: 29 번이 쓴 이름 패턴
+        # (`name LIKE 'PCOS%' … ELSE 'ENDOMETRIOSIS'`)을 지금 다시 돌리면
+        # **의사가 직접 만든 세트**(KEY-255)까지 자궁내막증으로 덮는다. 씨앗은
+        # 제가 아는 줄만 손대므로 그 위험이 없다.
+        if found.disease != row.disease:
+            found.disease = row.disease
+            await found.save(update_fields=["disease", "updated_at"])
+            fixed_sets += 1
+    print(
+        f"[catalog] prescription_set created={created_sets} "
+        f"fixed={fixed_sets} skipped={len(PRESCRIPTION_SETS) - created_sets - fixed_sets}"
+    )
 
     # 세트 이름 → id 역색인 (콘텐츠 삽입에 사용)
     sets_by_name: dict[str, PrescriptionSet] = {ps.name: ps async for ps in PrescriptionSet.all()}
 
     created_contents = 0
     skipped_contents = 0
+    deprecated_contents = 0
     for content_row in DRUG_CAUTION_CONTENTS:
         ps = sets_by_name.get(content_row.prescription_set_name)
         if ps is None:
@@ -578,13 +712,8 @@ async def seed_catalog() -> None:
             )
             continue
 
-        approved_key = (
-            f"{ps.prescription_set_id}:{content_row.section_key.value}"
-            if content_row.approval_status == ApprovalStatus.APPROVED
-            else None
-        )
-
-        # (세트, 섹션, 버전) 단위로 중복 방지 — content_version 이 같으면 건너뛴다
+        # (세트, 섹션, 버전) 단위로 중복 방지 — content_version 이 같으면 건너뛴다.
+        # 다르면 아래에서 **옛 승인본을 내리고 새 판으로 갈아 끼운다.**
         exists = await DrugCautionContent.filter(
             prescription_set=ps,
             section_key=content_row.section_key,
@@ -594,7 +723,11 @@ async def seed_catalog() -> None:
             skipped_contents += 1
             continue
 
-        await DrugCautionContent.create(
+        # **초안으로 먼저 앉힌다.** 승인 도장(`approved_key`)은 아래에서 서비스가
+        # 찍는다 — 여기서 바로 찍으면 옛 승인 행이 같은 값을 든 채라 unique 에
+        # 걸려 **씨앗이 통째로 멈춘다.** 위 검사가 (세트, 섹션, **버전**) 단위라
+        # 버전만 올라가면 그대로 여기까지 온다 (이희진 님 `#214` ①).
+        made = await DrugCautionContent.create(
             prescription_set=ps,
             section_key=content_row.section_key,
             body=content_row.body,
@@ -604,23 +737,107 @@ async def seed_catalog() -> None:
             verified_at=content_row.verified_at,
             content_version=content_row.content_version,
             source_grade=content_row.source_grade,
-            approval_status=content_row.approval_status,
-            approved_key=approved_key,
+            approval_status=ApprovalStatus.DRAFT,
+            approved_key=None,
         )
+
+        await _settle_unapproved(made, content_row.approval_status)
+
+        if content_row.approval_status == ApprovalStatus.APPROVED:
+            # **규칙은 한 군데에만 산다.** 「세트·섹션당 승인은 하나」와 그
+            # 갈아 끼우는 절차(옛 판 폐기 → 새 판 승인, 한 트랜잭션)는
+            # `DrugCautionService.approve_version` 이 이미 갖고 있다
+            # (KEY-180 §3). 여기서 같은 절차를 다시 적으면 두 벌이 갈라진다.
+            #
+            # 지우지 않고 폐기로 내린다 — 이미 나간 안내문이
+            # `GuideSection.drug_caution_content_id` 로 옛 행을 가리켜서,
+            # 지우면 「무슨 근거로 그 글이 나갔나」에 답할 수 없다.
+            before = await DrugCautionContent.filter(
+                prescription_set=ps,
+                section_key=content_row.section_key,
+                approval_status=ApprovalStatus.APPROVED,
+            ).count()
+            await DrugCautionService.approve_version(made.drug_caution_content_id)
+            deprecated_contents += before
+
         created_contents += 1
 
-    print(f"[catalog] drug_caution_content created={created_contents} skipped={skipped_contents}")
+    print(
+        f"[catalog] drug_caution_content created={created_contents} "
+        f"skipped={skipped_contents} deprecated={deprecated_contents}"
+    )
 
     # ── 의원이 쓰는 약 ───────────────────────────────────────────────
     # 대표 처방에 약을 적을 때 여기서 고른다. **표기를 판독·CSV 쪽에 맞춘다**
     # — 실제로 들어오는 값이 그쪽이라, 나중에 이름으로 이어 붙일 여지를 남긴다.
+    # **의원 EMR 에 실제로 등록돼 있는 이름 그대로 적는다.** 판독이 읽어 오는
+    # 값이 이 표기라, 나중에 이름으로 이어 붙이려면 여기가 같아야 한다.
+    # 아래 여섯은 2026-09-04 에 의원 EMR 화면에서 받아 옮겼다.
     for name, frequency, note in (
         ("비잔정(디에노게스트) 2mg", "1일 1회", "매일 같은 시간"),
         ("야즈정(드로스피레논/에티닐에스트라디올)", "1일 1회", "매일 같은 시간"),
         ("메트포르민 500mg", "1일 2회", "식후"),
-        ("진통제", "필요시", None),
+        ("록소펜정(록소프로펜나트륨수화물)", "1일 3회", None),
+        ("세파클리어캡슐(세파클러수화물)", "1일 3회", None),
+        ("바이독시정(독시사이클린수화물)", "1일 2회", None),
+        ("씨제이후라시닐정(씨제이제일제당)", "1일 2회", None),
+        ("(위장) 광동 레바미피드정", "1일 2회", None),
+        ("겐트리손크림_(12.8mg, 0.2g, 20mg/20g)", "1일 1회", None),
+        ("에피나온정10밀리그램(에피나스틴염산염)", "1일 3회", None),
+        # 🚩 EMR 화면에서 **이름이 잘려 보인 것**을 옮겼다. 실제 등록명과 글자가
+        # 다를 수 있으니 의원 EMR 로 한 번 맞춰야 한다 — 판독이 이름으로 이어
+        # 붙일 때 한 글자만 달라도 못 찾는다.
+        ("아목틴정375밀리그램(아목시실린수화물)", "1일 3회", None),
+        # 「원내)카마졸질정」은 **원내 처방이라 뺐다** — 이 목록은 원외로 나가는
+        # 약이고, 원내 것은 안내문에 실릴 자리가 없다 (2026-09-04 권일준).
     ):
-        await DrugCatalog.get_or_create(name=name, defaults={"frequency": frequency, "note": note})
+        # **`defaults` 는 INSERT 때만 먹는다** — 이희진 님 `#214` ⑤.
+        #
+        # `PrescriptionSet.disease` 에서 고친 것과 같은 버그다. 이미 있는 행에는
+        # 새 `frequency`·`note` 가 안 들어간다. 바로 위 주석이 「EMR 이름·용법을
+        # 다시 맞춘다」고 예고해 두었는데, 그때 재시드해도 옛 값이 남는다.
+        drug, drug_is_new = await DrugCatalog.get_or_create(name=name, defaults={"frequency": frequency, "note": note})
+        if not drug_is_new and (drug.frequency != frequency or drug.note != note):
+            drug.frequency = frequency
+            drug.note = note
+            await drug.save(update_fields=["frequency", "note", "updated_at"])
+
+
+SmokeSection = tuple[GuideSectionKey, str, int | None, bool]
+
+
+async def _plant_guide_sections(guide: GuideDocument, sections: tuple[SmokeSection, ...]) -> None:
+    """절 다섯을 세운다 — 이미 있으면 **원문을 카탈로그에 맞춘다** (KEY-208).
+
+    여태 `get_or_create` 뿐이라, 승인 문구를 고친 뒤 같은 명령을 다시 돌려도 이미
+    시드된 진료의 본문은 **옛 글 그대로**였다. 같은 함수의 `GuideDocument`·
+    `PatientGuideLink` 는 이미 갱신 분기를 갖고 있다 — 이 자리만 빠져 있었다
+    (이희진 님 `#158` 리뷰 ④).
+
+    **`edited_body` 는 안 건드린다.** 모델이 생성 원문과 사람이 고친 것을 일부러
+    따로 둔다 — 「AI 가 이렇게 썼는데 원장님이 이렇게 고쳤다」를 다음 초안에
+    쓰려는 것이다(D1-2). 재시드가 그것을 덮으면 원장님이 손으로 고친 글이 소리
+    없이 사라지고, 사라졌다는 사실조차 남지 않는다.
+
+    `locked` 도 함께 쓴다 — 🚨 응급 절의 잠금을 흘리면 사람이 못 고쳐야 할 문장이
+    고칠 수 있는 상태로 열린다.
+
+    부모에서 떼어 둔 것은 길이 때문이 아니라 **`seed_smoke_fixture` 가 이미 갈래
+    열한 개**라 한 갈래를 더할 자리가 없어서다(ruff C901).
+    """
+    for key, body, content_id, locked in sections:
+        section, section_created = await GuideSection.get_or_create(
+            guide_document=guide,
+            section_key=key,
+            defaults={"generated_body": body, "drug_caution_content_id": content_id, "locked": locked},
+        )
+        if section_created:
+            continue
+        await GuideSection.filter(guide_section_id=section.guide_section_id).update(
+            generated_body=body,
+            drug_caution_content_id=content_id,
+            locked=locked,
+        )
 
 
 async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
@@ -633,11 +850,21 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
 
     ## 의학 문구를 지어내지 않는다
 
-    caution·emergency 는 `DrugCautionService.get_approved_content` 로 **이미
-    승인된 카탈로그 문구**를 그대로 가져온다 — `app/services/guides.py` 의
-    `generate` 가 하는 것과 같은 길이다. 「확정 승인 지식 외 내용 추가 금지」
-    (이희진 님, PR #150)를 코드로 지키는 자리다. 승인 문구가 없는 세트를 고르면
-    폴백으로 서기 때문에, 세트에 둘 다 있는 행을 골라 두었다.
+    **네 갈래 다** `DrugCautionService.get_approved_content` 로 이미 승인된
+    카탈로그 문구를 가져온다 — `app/services/guides.py` 의 `generate` 가 하는
+    것과 같은 길이다. 「확정 승인 지식 외 내용 추가 금지」(이희진 님, PR #150)를
+    코드로 지키는 자리다.
+
+    **예전에는 둘뿐이었다.** caution·emergency 만 카탈로그를 묻고 medication·life
+    는 `guide_defaults` 의 폴백 문구를 **이 파일에 복사해** 두고 썼다. KEY-265 가
+    생성 쪽을 네 갈래로 고쳤는데 이 함수만 남아서, smoke·시연이 만드는 안내는
+    원장님이 확인한 복약지도 대신 범용 문장을 실었다 (이희진 님 `#214` ①).
+
+    폴백은 이제 `guide_defaults` 에서 가져온다. 같은 글을 두 곳에 두면 한쪽만
+    고쳐지고, 그 어긋남이 **환자에게 나가는 글**에서 드러난다.
+
+    승인 문구가 없는 세트를 고르면 폴백으로 서기 때문에, caution·emergency 가
+    둘 다 있는 행을 골라 두었다 — 그 둘은 없으면 아예 멈춘다.
 
     ## 다시 돌릴 수 있다
 
@@ -673,6 +900,11 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
 
     caution = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.CAUTION)
     emergency = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.EMERGENCY)
+    # 나머지 둘도 같은 길로 묻는다. 없으면 `generate` 와 **같은 폴백**으로 선다 —
+    # 여기서 멈추지 않는 것은 caution·emergency 와 달리 이 둘은 폴백 문구가
+    # 의학적으로 안전한 범용 문장이기 때문이다(`guide_defaults`).
+    medication = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.MEDICATION)
+    life = await DrugCautionService.get_approved_content(set_name, CautionSectionKey.LIFE)
     if caution is None or emergency is None:
         print(
             f"[smoke] 처방세트 {set_name!r} 에 승인된 주의·응급 문구가 없습니다 — "
@@ -738,20 +970,25 @@ async def seed_smoke_fixture(hospitals: dict[str, Hospital]) -> None:
             actor_id=doctor_id,
         )
 
-    sections: tuple[tuple[GuideSectionKey, str, int | None, bool], ...] = (
-        (GuideSectionKey.MEDICATION, _SMOKE_MEDICATION_BODY, None, False),
+    sections: tuple[SmokeSection, ...] = (
+        (
+            GuideSectionKey.MEDICATION,
+            medication.body if medication else guide_defaults.MEDICATION,
+            medication.drug_caution_content_id if medication else None,
+            False,
+        ),
         (GuideSectionKey.CAUTION, caution.body, caution.drug_caution_content_id, False),
         # 🚨 응급 문장은 사람이 못 고친다 (KEY-150, KEY-165).
         (GuideSectionKey.EMERGENCY, emergency.body, emergency.drug_caution_content_id, True),
-        (GuideSectionKey.LIFE, _SMOKE_LIFE_BODY, None, False),
+        (
+            GuideSectionKey.LIFE,
+            life.body if life else guide_defaults.LIFE,
+            life.drug_caution_content_id if life else None,
+            False,
+        ),
         (GuideSectionKey.MESSAGES, _SMOKE_MESSAGES_BODY, None, False),
     )
-    for key, body, content_id, locked in sections:
-        await GuideSection.get_or_create(
-            guide_document=guide,
-            section_key=key,
-            defaults={"generated_body": body, "drug_caution_content_id": content_id, "locked": locked},
-        )
+    await _plant_guide_sections(guide, sections)
 
     digest = digest_link_token(raw_token)
     link = await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).first()
@@ -790,7 +1027,7 @@ async def main(mode: str) -> None:
             print("[seed] 빈 상태 — 아무것도 적재하지 않습니다.")
         case "staff":
             password = _require_password()
-            await seed_staff(password)
+            hospitals = await seed_staff(password)
             await seed_catalog()
         case "full":
             password = _require_password()

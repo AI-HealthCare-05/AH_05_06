@@ -419,7 +419,7 @@ def _rx_block(text: str, conf: float, left: float, top: float, right: float, bot
 
 # 처방 표: 명칭(x:10-200), 총투(x:270-320), 코드분류(x:400-480)
 # 헤더 행 y:10-30
-# 행1: 비잔정 2mg / 1 / 내복약   → MEDICATION_NAME + DURATION_DAYS = 1×28 = 28
+# 행1: 비잔정 2mg / 1 / 내복약   → MEDICATION_NAME + DURATION_DAYS = 1 (원값 그대로)
 # 행2: 프로베라정 / 84 / 진찰료  → 코드분류 미해당이라 제외
 # 행3: 루프론3.75mg / 84 / 내복약 → MEDICATION_NAME_2 + DURATION_DAYS_2 = 84
 _RX_TABLE_BLOCKS = [
@@ -441,12 +441,171 @@ _RX_TABLE_ROWS = _group_fields_by_row(_RX_TABLE_BLOCKS)
 _RX_TABLE_RESULT = ClovaOcrResult(raw_text="", fields=_RX_TABLE_BLOCKS, rows=_RX_TABLE_ROWS)
 
 
-def test_rx_table_extracts_bizanjung_with_x28() -> None:
-    """코드분류=내복약인 비잔정의 처방일수를 총투×28로 계산한다."""
+def test_rx_table_keeps_the_total_as_written() -> None:
+    """**총투 칸을 원값 그대로 남긴다** — KEY-291.
+
+    여기는 `총투 × 28 if 비잔정 else 총투` 였다. 합성 99행에 돌려 보니 54행이
+    틀렸다 — 비잔정인데 일수인 37건은 84일이 2352일이 됐고, 비잔정이 아닌데
+    통수인 17건은 3통이 3일로 남았다. 약 이름에 단위 신호가 없다.
+
+    환산은 읽는 쪽 `course_days(value, unit)` 한 곳에서만 한다. 여기서 곱하면
+    `unit` 이 빈 채로 곱하는 것이라 **지어낸 값**이다.
+    """
     fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
+
     assert field_map.get("MEDICATION_NAME") == "비잔정(디에노게스트)2mg"
-    assert field_map.get("DURATION_DAYS") == "28"  # 1 × 28
+    assert field_map.get("DURATION_DAYS") == "1", "총투 1 을 곱해서 남겼다"
+
+
+def test_the_extractor_does_not_claim_a_unit_it_cannot_read() -> None:
+    """단위는 **모른다고 말한다** — KEY-291.
+
+    지금 오는 문서에는 단위 글자가 안 찍혀 온다(`총투` 원문이 `1/1/84` 처럼
+    숫자뿐). `None` 이라야 읽는 쪽이 곱하지 않는다 — 「일」을 기본값으로 골라
+    두면 3통이 조용히 3일이 된다.
+    """
+    fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
+    durations = [f for f in fields if f.field_type.startswith("DURATION_DAYS")]
+
+    assert durations, "처방일수를 아예 못 뽑았다"
+    for field in durations:
+        assert field.unit is None, f"안 찍혀 온 단위를 지어냈다 — {field.unit!r}"
+
+
+def _blocks_with_duration(total: str, conf: float) -> ClovaOcrResult:
+    """처방 표 머리 넷 + 값 넷짜리 블록 문서 — 처방일수만 갈아 끼운다."""
+    blocks = [
+        ClovaTextField(text="약품명", confidence=0.99),
+        ClovaTextField(text="1회량", confidence=0.99),
+        ClovaTextField(text="일일횟수", confidence=0.99),
+        ClovaTextField(text="처방일수", confidence=0.99),
+        ClovaTextField(text="비잔정(디에노게스트)2mg", confidence=0.94),
+        ClovaTextField(text="1", confidence=0.98),
+        ClovaTextField(text="1", confidence=0.97),
+        ClovaTextField(text=total, confidence=conf),
+    ]
+    return ClovaOcrResult(raw_text="\n".join(b.text for b in blocks), fields=blocks)
+
+
+def _duration_of(result: ClovaOcrResult):
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    return next((f for f in fields if f.field_type == "DURATION_DAYS"), None)
+
+
+def test_the_prescription_table_records_the_unit_its_header_states() -> None:
+    """**헤더가 단위를 말한 자리는 확실하다** — 이희진 님 `#259` 리뷰.
+
+    이 표의 열 이름은 「처방일수」다. 그 아래 「3」은 3일이지 3통이 아니다.
+
+    앞 판은 여기서도 `unit` 을 안 채우고, 대신 「28 미만이면 신뢰도를 내린다」는
+    관문을 두었다. 그래서 **판독 신뢰도 0.99 짜리 멀쩡한 3일 처방**이 0.70 으로
+    깎여 스탭에게 「확인 필요」로 떴다. 확실한 것을 물으면 물음이 값을 잃는다.
+    """
+    field = _duration_of(_blocks_with_duration("3", 0.99))
+
+    assert field is not None, "처방일수를 아예 못 뽑았다"
+    assert field.extracted_value == "3", "값을 건드렸다"
+    assert field.unit == "일", f"헤더가 말한 단위를 안 적었다 — {field.unit!r}"
+    assert field.confidence == Decimal("0.99"), f"확실한 값의 신뢰도를 내렸다 — {field.confidence}"
+
+
+def test_a_full_course_keeps_the_confidence_the_reader_gave_it() -> None:
+    """긴 처방도 마찬가지다. 표에서 온 값은 길이와 무관하게 단위가 확실하다."""
+    field = _duration_of(_blocks_with_duration("84", 0.99))
+
+    assert field is not None
+    assert field.extracted_value == "84"
+    assert field.unit == "일"
+    assert field.confidence == Decimal("0.99"), f"멀쩡한 값의 신뢰도를 내렸다 — {field.confidence}"
+
+
+def test_the_emr_total_column_stays_unknown_and_asks_a_human() -> None:
+    """**단위를 말하지 않은 자리만 사람에게 묻는다** — KEY-291.
+
+    EMR 처방 표의 「총투」는 열 이름이 단위를 안 말한다. 「3」이 3통이면 84일이고
+    3일이면 3일이다. 그 자리는 `unit` 을 비운 채 신뢰도를 서버 임계값(0.75)
+    아래로 두어, KEY-285 가 붙인 단위 고르개에서 사람이 답하게 한다.
+
+    표 경로와 대비해 두는 것이 요점이다 — 확실한 곳은 안 묻고 여기만 묻는다.
+    """
+    fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
+    field = next((f for f in fields if f.field_type == "DURATION_DAYS"), None)
+
+    assert field is not None, "총투를 아예 못 뽑았다"
+    assert field.extracted_value == "1", "환산은 읽는 쪽이 한다 — 여기서 곱하지 않는다"
+    assert field.unit is None, f"말한 적 없는 단위를 지어냈다 — {field.unit!r}"
+    assert field.confidence < Decimal("0.75"), (
+        f"1통일 수도 있는 값이 「확인 필요」로 안 뜬다 — 신뢰도 {field.confidence}"
+    )
+
+
+def test_the_unknown_total_column_wins_over_a_regex_that_says_days() -> None:
+    """**모르는 자리가 이긴다** — KEY-291.
+
+    같은 문서에 총투 표(단위 모름)와 「84일 처방」 같은 글자(단위 확실)가 함께
+    있을 수 있다. 그때 뒤쪽 정규식이 앞의 값을 덮으면, 통수일지도 모르는 총투가
+    「일」이라는 딱지를 달고 지나간다 — 3통이 3일이 되는 바로 그 길이다.
+
+    `_extract_emr` 의 차례가 그것을 막는다(② 처방 표 → ④ 정규식, `_add` 는
+    이미 찾은 항목을 건너뛴다). 차례가 뒤집히면 여기서 운다.
+    """
+    laced = ClovaOcrResult(
+        raw_text="비잔정(디에노게스트)2mg 84일 처방",
+        fields=_RX_TABLE_BLOCKS,
+        rows=_RX_TABLE_ROWS,
+    )
+    fields = extract_fields(laced, OcrDocumentType.EMR)
+    field = next((f for f in fields if f.field_type == "DURATION_DAYS"), None)
+
+    assert field is not None
+    assert field.extracted_value == "1", "정규식이 총투 값을 덮었다"
+    assert field.unit is None, "모르는 자리에 「일」 딱지가 붙었다 — 3통이 3일이 된다"
+
+
+def test_the_regex_path_records_the_unit_its_pattern_demanded() -> None:
+    """글자 「일」에 걸려 뽑은 값도 단위가 확실하다 — 이희진 님 `#259` 리뷰.
+
+    패턴이 `(\\d{1,3})\\s*일\\s*(?:처방|분|치)` 라 **글자 「일」이 없으면 애초에
+    안 걸린다.** 그러니 걸린 값은 일수다. 안 적어 두면 표 경로와 같은 이유로
+    확실한 단기 처방이 「확인 필요」로 뜬다.
+    """
+    result = ClovaOcrResult(
+        raw_text="처방: 비잔정 2mg\n7일 처방",
+        fields=[ClovaTextField(text="7", confidence=0.96)],
+    )
+    field = _duration_of(result)
+
+    assert field is not None, "정규식 경로에서 처방일수를 못 뽑았다"
+    assert field.extracted_value == "7"
+    assert field.unit == "일", f"패턴이 요구한 단위를 안 적었다 — {field.unit!r}"
+    assert field.confidence >= Decimal("0.75"), f"확실한 7일 처방이 「확인 필요」로 떴다 — 신뢰도 {field.confidence}"
+
+
+def test_only_the_duration_field_carries_a_unit() -> None:
+    """**단위는 처방일수 칸의 것이다.** 다른 칸에 붙이면 서버가 400 으로 막는다
+    (`UNIT_NOT_ALLOWED`) — KEY-285 가 세운 계약이다.
+
+    표 경로와 정규식 경로를 **둘 다** 지난다. 한쪽만 재면 다른 쪽에서 모든
+    칸에 단위를 달아도 안 걸린다.
+    """
+    from_table = extract_fields(_blocks_with_duration("28", 0.99), OcrDocumentType.EMR)
+
+    #: 표 헤더가 없어 정규식만 걸리는 메모형 문서 — 약품명·1회량·일일횟수·
+    #: 처방일까지 한 번에 뽑힌다.
+    memo = ClovaOcrResult(
+        raw_text=("처방: 비잔정 2mg\n1회량: 1정\n일일 1회\n7일 처방\n처방일: 2026-09-08"),
+        fields=[ClovaTextField(text="7", confidence=0.96)],
+    )
+    from_regex = extract_fields(memo, OcrDocumentType.EMR)
+
+    others = [f for f in from_regex if not f.field_type.startswith("DURATION_DAYS")]
+    assert len(others) >= 2, f"정규식 경로가 다른 칸을 못 뽑아 검사가 헛돈다 — {[f.field_type for f in from_regex]}"
+
+    for field in [*from_table, *from_regex]:
+        if field.field_type.startswith("DURATION_DAYS"):
+            continue
+        assert field.unit is None, f"{field.field_type} 에 단위가 붙었다 — {field.unit!r}"
 
 
 def test_rx_table_extracts_second_medication_with_suffix() -> None:
@@ -660,6 +819,130 @@ def test_prescription_set_no_suggestion_without_any_drug_signal() -> None:
 
 
 # ---------------------------------------------------------------------------
+# detect_document_type — 판독 구조 기반 문서 유형 자동 감지 (KEY-278)
+# ---------------------------------------------------------------------------
+
+
+def test_detect_emr_uploaded_as_emr_stays_emr() -> None:
+    """EMR 구조를 가진 문서는 EMR로 유지된다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    result = ClovaOcrResult(raw_text="진단: 자궁내막증", fields=[], rows=[])
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_table_in_emr_uploaded_doc_reclassifies_to_lab_result() -> None:
+    """검사결과지 표(검사항목+검사결과 열)가 있으면 EMR로 업로드된 문서도 LAB_RESULT로 재분류한다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+    from app.tests.fixtures.ocr import SYN_LAB_01_CLOVA_RESULT
+
+    detected = detect_document_type(SYN_LAB_01_CLOVA_RESULT, OcrDocumentType.EMR)
+    assert detected == OcrDocumentType.LAB_RESULT
+
+
+def test_detect_non_emr_stored_type_is_not_changed() -> None:
+    """PRESCRIPTION 등 비EMR 유형은 판독 구조와 무관하게 유지된다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+    from app.tests.fixtures.ocr import SYN_LAB_01_CLOVA_RESULT
+
+    detected = detect_document_type(SYN_LAB_01_CLOVA_RESULT, OcrDocumentType.PRESCRIPTION)
+    assert detected == OcrDocumentType.PRESCRIPTION
+
+
+def test_detect_lab_result_without_rows_stays_emr() -> None:
+    """바운딩 박스 없이 rows가 빈 경우(텍스트 전용 응답) 유형을 변경하지 않는다."""
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    result = ClovaOcrResult(raw_text="검사항목 검사결과\nAST 21", fields=[], rows=[])
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_emr_with_embedded_lab_table_stays_emr() -> None:
+    """진단 표(코드·명칭)와 검사결과 표가 함께 있는 EMR은 LAB_RESULT로 재분류하지 않는다.
+
+    검사결과 요약표가 섞인 실제 EMR이 오분류되면 필수 필드 게이트(DIAGNOSIS·MEDICATION_NAME·
+    DURATION_DAYS)가 통째로 건너뛰어진다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    diag_header_row = [
+        ClovaTextField(text="코드", confidence=1.0, left=10.0, top=10.0, right=60.0, bottom=30.0),
+        ClovaTextField(text="명칭", confidence=1.0, left=70.0, top=10.0, right=200.0, bottom=30.0),
+    ]
+    diag_data_row = [
+        ClovaTextField(text="N80.0", confidence=1.0, left=10.0, top=35.0, right=60.0, bottom=55.0),
+        ClovaTextField(text="난소의 자궁내막증", confidence=1.0, left=70.0, top=35.0, right=200.0, bottom=55.0),
+    ]
+    lab_header_row = [
+        ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=70.0, right=110.0, bottom=90.0),
+        ClovaTextField(text="검사결과", confidence=1.0, left=120.0, top=70.0, right=220.0, bottom=90.0),
+    ]
+    lab_data_row = [
+        ClovaTextField(text="AST(GOT)", confidence=1.0, left=10.0, top=95.0, right=110.0, bottom=115.0),
+        ClovaTextField(text="21", confidence=1.0, left=120.0, top=95.0, right=220.0, bottom=115.0),
+    ]
+    result = ClovaOcrResult(
+        raw_text="코드 명칭\nN80.0 난소의 자궁내막증\n검사항목 검사결과\nAST(GOT) 21",
+        fields=[*diag_header_row, *diag_data_row, *lab_header_row, *lab_data_row],
+        rows=[diag_header_row, diag_data_row, lab_header_row, lab_data_row],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_keywords_in_different_rows_stays_emr() -> None:
+    """검사항목·검사결과 키워드가 서로 다른 행에 있으면 LAB_RESULT로 재분류하지 않는다.
+
+    진료기록에도 '검사명'·'결과' 낱말이 흔하다. 같은 행 안에 있을 때만 검사결과지 표로 판정한다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row0 = [ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=10.0, right=110.0, bottom=30.0)]
+    row1 = [ClovaTextField(text="검사결과", confidence=1.0, left=10.0, top=40.0, right=110.0, bottom=60.0)]
+    result = ClovaOcrResult(
+        raw_text="검사항목\n검사결과",
+        fields=[*row0, *row1],
+        rows=[row0, row1],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_keywords_different_rows_nonoverlapping_x_stays_emr() -> None:
+    """검사항목·검사결과 키워드가 다른 행에 있고 x 범위가 안 겹쳐도 LAB_RESULT로 재분류하지 않는다.
+
+    같은 행 조건이 없으면 x 비겹침만으로 True가 반환돼 오분류된다.
+    이 픽스처는 「같은 행」 제약을 죽였을 때 유일하게 실패해야 한다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row0 = [ClovaTextField(text="검사항목", confidence=1.0, left=10.0, top=10.0, right=110.0, bottom=30.0)]
+    row1 = [ClovaTextField(text="검사결과", confidence=1.0, left=120.0, top=40.0, right=220.0, bottom=60.0)]
+    result = ClovaOcrResult(
+        raw_text="검사항목\n검사결과",
+        fields=[*row0, *row1],
+        rows=[row0, row1],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
+def test_detect_lab_keywords_same_row_overlapping_x_stays_emr() -> None:
+    """같은 행이라도 두 열의 x 범위가 겹치면 LAB_RESULT로 재분류하지 않는다.
+
+    표의 두 열이라면 x 범위가 겹칠 수 없다. 겹치는 경우는 오탐이다.
+    """
+    from ai_worker.tasks.field_extractor import detect_document_type
+
+    row = [
+        ClovaTextField(text="검사항목", confidence=1.0, left=0.0, top=10.0, right=50.0, bottom=30.0),
+        ClovaTextField(text="검사결과", confidence=1.0, left=0.0, top=10.0, right=40.0, bottom=30.0),
+    ]
+    result = ClovaOcrResult(
+        raw_text="검사항목 검사결과",
+        fields=row,
+        rows=[row],
+    )
+    assert detect_document_type(result, OcrDocumentType.EMR) == OcrDocumentType.EMR
+
+
 # KEY-245 — 판독 키워드(lab_keywords) 기반 매칭 (인수조건 1·2·3)
 # ---------------------------------------------------------------------------
 
@@ -773,3 +1056,111 @@ def test_lab_keyword_matched_in_emr_type_document() -> None:
     field_map = {f.field_type: f.extracted_value for f in fields}
 
     assert "DHEA_S" in field_map, "EMR 타입 문서에서도 fallback 키워드가 적용되어야 한다"
+
+
+# ── 관문 자체를 잰다 — 이희진 님 `#259` 리뷰 ────────────────────────────────
+#
+# `_flag_ambiguous_duration` 은 **지금 어느 경로에서도 발동하지 않는다.** 문서가
+# 단위를 말한 자리는 `unit` 이 찍혀 건너뛰고, 말하지 않은 자리(총투)는 이미
+# `_DEFAULT_CONFIDENCE` 라 더 내릴 것이 없다.
+#
+# 그래도 지우지 않는다 — `docs/synthetic-data-spec.md:247` 이 「28 미만이고 단위를
+# 모르면 확인을 여쭙는다」를 계약으로 두고 있고, 단위를 못 읽는 새 경로가 붙는
+# 날 이것이 그물이 된다. 대신 **그물이 실제로 있는지**를 여기서 직접 잰다.
+from ai_worker.tasks.field_extractor import (  # noqa: E402
+    ExtractedField,  # noqa: E402
+    _as_day_count,
+    _flag_ambiguous_duration,
+)
+
+
+def _dur(field_type: str, value: str, unit: str | None, conf: str) -> ExtractedField:
+    return ExtractedField(field_type=field_type, extracted_value=value, unit=unit, confidence=Decimal(conf))
+
+
+def test_the_net_catches_a_short_duration_with_no_unit() -> None:
+    """단위를 모르는 28 미만은 서버 임계값 아래로 내린다."""
+    field = _dur("DURATION_DAYS", "3", None, "0.99")
+    _flag_ambiguous_duration([field])
+
+    assert field.confidence < Decimal("0.75"), f"안 내렸다 — {field.confidence}"
+    assert field.extracted_value == "3", "값을 건드렸다 — 내리는 것은 신뢰도뿐이다"
+
+
+def test_the_net_covers_the_second_medication_too() -> None:
+    """**둘째 약도 같은 위험을 진다** — 이희진 님 `#259` 참고 ②.
+
+    이름이 정확히 `DURATION_DAYS` 인 것만 보면 `DURATION_DAYS_2` 부터는
+    그물이 조용히 빠진다.
+    """
+    field = _dur("DURATION_DAYS_2", "3", None, "0.99")
+    _flag_ambiguous_duration([field])
+
+    assert field.confidence < Decimal("0.75"), f"둘째 약이 그물을 빠져나갔다 — {field.confidence}"
+
+
+def test_the_net_leaves_alone_what_the_document_already_said() -> None:
+    """단위를 아는 값은 짧아도 안 묻는다 — 확실한 것을 물으면 물음이 값을 잃는다."""
+    field = _dur("DURATION_DAYS", "3", "일", "0.99")
+    _flag_ambiguous_duration([field])
+
+    assert field.confidence == Decimal("0.99"), f"확실한 값을 내렸다 — {field.confidence}"
+
+
+def test_the_net_leaves_alone_a_full_course_and_other_fields() -> None:
+    """28 이상은 안 건드린다. 처방일수가 아닌 칸도 안 건드린다."""
+    full = _dur("DURATION_DAYS", "84", None, "0.99")
+    other = _dur("MEDICATION_NAME", "3", None, "0.99")
+    already_low = _dur("DURATION_DAYS", "3", None, "0.40")
+    _flag_ambiguous_duration([full, other, already_low])
+
+    assert full.confidence == Decimal("0.99"), "모든 처방일수를 내리면 신호가 뜻을 잃는다"
+    assert other.confidence == Decimal("0.99"), "처방일수가 아닌 칸을 내렸다"
+    assert already_low.confidence == Decimal("0.40"), "신뢰도를 **올렸다**"
+
+
+def test_reading_a_day_count_refuses_what_would_change_its_meaning() -> None:
+    """숫자만 뽑는 것은 마지막 수단이다 — `course_days` 와 같은 태도.
+
+    단위 글자가 붙어 올 수 있어(`"3통"`) 뽑는 길은 남기되, 뽑으면 **뜻이 바뀌는**
+    글자가 붙은 것은 거절한다.
+    """
+    assert _as_day_count("3") == 3
+    assert _as_day_count(" 28 ") == 28
+    assert _as_day_count("3통") == 3, "단위 글자가 붙었다고 통째로 놓쳤다"
+    assert _as_day_count("56일") == 56
+
+    assert _as_day_count("-5") is None, "`-5` 가 5 로 지나갔다"
+    assert _as_day_count("1.5") is None, "`1.5` 가 15 로 지나갔다"
+    assert _as_day_count("") is None
+    assert _as_day_count("없음") is None
+
+
+def test_the_indexed_field_keeps_whatever_unit_the_reader_found(monkeypatch) -> None:
+    """**다시 만들면서 칸을 흘리지 않는다** — KEY-291.
+
+    `_extract_emr_rx_table` 은 `_rx_duration` 이 만든 필드를 접미사 이름으로
+    다시 만든다. 그때 `unit` 을 안 옮기면, 총투 칸이 언젠가 「3통」을 주기
+    시작하는 날 그 단위가 이 자리에서 조용히 지워진다.
+
+    지금은 총투에 단위 글자가 안 찍혀 와 늘 `None` 이라 눈에 안 띈다. 그래서
+    판독기가 단위를 읽었다고 가정하고 **옮겨지는지만** 잰다.
+    """
+    from ai_worker.tasks import field_extractor as fe
+
+    real = fe._rx_duration
+
+    def _with_unit(total_l, total_r, row):
+        found = real(total_l, total_r, row)
+        if found is None:
+            return None
+        found.unit = "통"
+        return found
+
+    monkeypatch.setattr(fe, "_rx_duration", _with_unit)
+    fields = fe._extract_emr_rx_table(_RX_TABLE_ROWS)
+    durations = [f for f in fields if f.field_type.startswith("DURATION_DAYS")]
+
+    assert durations, "처방일수를 아예 못 뽑았다"
+    for field in durations:
+        assert field.unit == "통", f"{field.field_type} 이 단위를 흘렸다 — {field.unit!r}"

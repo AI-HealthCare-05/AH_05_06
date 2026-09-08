@@ -42,6 +42,12 @@ var ocrApi = {
     return request("/visits/" + visitId + "/ocr-job");
   },
 
+  /* GET /visits/{visitId}/ocr-jobs — KEY-278: 파일별 Job 목록 */
+  jobsForVisit: function (visitId) {
+    if (MOCK) return mockJobsForVisit(visitId);
+    return request("/visits/" + visitId + "/ocr-jobs");
+  },
+
   /* 약속처방 목록 — 의사가 설정(D2-3)에서 정해 둔 것. 판독 확인 화면의
      「처방」 칸이 여기서 고른다. 자유 입력이면 안 되는 이유는 이름을 고를 때
      그 세트에 묶인 주의 문구가 안내문에 붙기 때문이다 — 「비잔」과 「비잔정」이
@@ -54,11 +60,21 @@ var ocrApi = {
   /* 판독이 못 읽은 값을 적어 넣는다 — 와이어프레임 S1-7 「직접 입력」.
      **고치기(PATCH)와 다른 길이다.** 저쪽은 있는 줄의 값을 바꾸고, 이쪽은 줄
      자체가 없는 것을 만든다 — 그래서 번호가 아니라 항목 이름으로 짚는다. */
-  writeField: function (visitId, fieldType, value) {
-    if (MOCK) return mockWriteField(visitId, fieldType, value);
+  /* `unit` 은 **처방일수 줄에만** 뜻이 있다 — 서버가 그 밖에는 400
+     (`UNIT_NOT_ALLOWED`)을 낸다. 안 주면 아예 안 싣는다: 빈 값을 보내면
+     서버가 「모른다로 되돌려 달라」로 읽는데 그 길은 아직 안 열려 있다.
+
+     🚩 **이 인자가 없어서 반쪽이었다** (이희진 님 `#251` 리뷰 ①). 서버는
+     `WriteOcrFieldRequest` 로 문을 열어 두었는데 화면 클라이언트가 안 보내서,
+     판독이 처방일수를 통째로 못 읽은 진료 — 스탭이 손으로 「3」을 치는, 이
+     티켓이 막으려던 바로 그 자리 — 에서 단위가 `None` 으로 저장됐다. */
+  writeField: function (visitId, fieldType, value, unit) {
+    if (MOCK) return mockWriteField(visitId, fieldType, value, unit);
+    var body = { value: value };
+    if (unit) body.unit = unit;
     return request(
       "/visits/" + encodeURIComponent(visitId) + "/ocr-fields/" + encodeURIComponent(fieldType),
-      { method: "PUT", body: { value: value } },
+      { method: "PUT", body: body },
     );
   },
 
@@ -106,6 +122,20 @@ var ocrApi = {
     return ocrRequest("/visits/" + encodeURIComponent(visitId) + "/guide/generate", { method: "POST" });
   },
 
+  /* POST /visits/{visitId}/ocr-finalize — KEY-66, 화면 배선은 KEY-271.
+     확정된 판독에서 `Prescription` 과 약 항목을 세운다.
+
+     **서버는 진작 있었고 화면이 안 불렀다.** 그래서 판독으로 만든 진료에는
+     처방 행이 없었고, 안내문 생성이 그 행에서 세트 이름을 꺼내므로 네 갈래가
+     다 기본 문구로 내려갔다 — 세트별 승인 문구가 하나도 안 실렸다(KEY-271).
+
+     **확정 뒤에 부른다.** 서버가 미확정 필드를 하나라도 보면 422 로 막는다
+     (`app/ocr/service.py`). 그 가드가 「사람이 검증한 값만 쓴다」를 지키는
+     자리라 순서를 바꾸지 않는다. */
+  finalizeOcr: function (visitId) {
+    return ocrRequest("/visits/" + encodeURIComponent(visitId) + "/ocr-finalize", { method: "POST" });
+  },
+
   /* GET /visits/{visitId}/ocr-fields/previous — KEY-246.
      같은 환자의 이전 방문에서 확정된 OCR 값. 와이어프레임 S1-6 「이전 값 유지」. */
   previousFields: function (visitId) {
@@ -142,11 +172,13 @@ function fieldState(field, threshold) {
  *   AMH        별도 보고 검사 — 값이 아니라 「추후 보고 예정」이 온다
  *
  * ?case= 로 예외를 본다.
- *   processing  아직 판독 중        — 409 OCR_RESULT_NOT_READY
- *   failed      판독이 실패로 끝남  — 직접 입력으로 넘어가야 한다
- *   clean       다 읽혔을 때        — 강조가 하나도 없는 화면
- *   conflict    옆자리가 먼저 고침   — 409 VERSION_CONFLICT (KEY-63)
- *   confirmed   이미 확정된 항목     — 409 OCR_FIELD_CONFIRMED (KEY-63)
+ *   processing    아직 판독 중        — 409 OCR_RESULT_NOT_READY
+ *   failed        판독이 실패로 끝남  — 직접 입력으로 넘어가야 한다
+ *   clean         다 읽혔을 때        — 강조가 하나도 없는 화면
+ *   conflict      옆자리가 먼저 고침   — 409 VERSION_CONFLICT (KEY-63)
+ *   confirmed     이미 확정된 항목     — 409 OCR_FIELD_CONFIRMED (KEY-63)
+ *   multi         문서 2장 모두 성공  — 다중 업로드 정상 경로 검수
+ *   partial-fail  문서 2장 중 1장 실패 — 성공 결과 위에 실패 띠가 뜨는지 확인
  */
 var MOCK_CASE = (function () {
   var q = new URLSearchParams(location.search).get("case");
@@ -297,6 +329,17 @@ function mockJob(jobId) {
       failure_code: "OCR_ENGINE_TIMEOUT",
     };
   }
+  /* partial-fail: 두 번째 job(_2 suffix)만 실패로 반환한다. */
+  if (MOCK_CASE === "partial-fail" && id.endsWith("_2")) {
+    return {
+      ocr_job_id: id,
+      status: "FAILED",
+      progress: 100,
+      started_at: "2026-08-13T10:33:00+09:00",
+      completed_at: "2026-08-13T10:33:40+09:00",
+      failure_code: "OCR_ENGINE_TIMEOUT",
+    };
+  }
   return {
     ocr_job_id: id,
     status: "COMPLETED",
@@ -387,10 +430,40 @@ function mockGhostEdit() {
   field.modified_at = "2026-08-13T10:41:00+09:00";
 }
 
+/** 단위가 서버에서 거절될 요청인가 — 거절이면 그 `ApiError`, 아니면 `null`.
+ *
+ * **두 문을 다 흉내낸다.** DTO 가 값의 **모양**(`DurationUnit` — 일·통)을,
+ * 서비스가 붙일 **자리**(처방일수 줄만)를 막는다. 한쪽만 있으면 `?mock=1` 이
+ * 통과시키는 요청을 진짜 서버가 거절한다.
+ *
+ * 보정(PATCH)과 직접입력(PUT) **둘이 같은 규칙을 쓴다** — 서버도 그렇다
+ * (`UpdateOcrFieldRequest`·`WriteOcrFieldRequest` 가 같은 `DurationUnit` 을
+ * 쓰고, 자리 검사는 서비스 한 곳에 있다). 두 벌로 두면 한쪽만 고쳐진다.
+ */
+function unitRefusal(fieldType, unit) {
+  if (unit === undefined || unit === null) return null;
+  if (["일", "통"].indexOf(unit) === -1) return new ApiError("VALIDATION_ERROR", 422, {});
+  if (!/^DURATION_DAYS(_\d+)?$/.test(String(fieldType))) return new ApiError("UNIT_NOT_ALLOWED", 400, {});
+  return null;
+}
+
 function mockPatch(fieldId, body) {
   var field = mockFieldById(fieldId);
   if (!field) return new ApiError("NOT_FOUND", 404, {});
-  if (field.is_confirmed) return new ApiError("OCR_FIELD_CONFIRMED", 409, {});
+  /* **확정돼도 고칠 수 있다** — 서버가 KEY-273 에서 그렇게 바뀌었는데
+     (`app/ocr/service.py` 의 「확정돼도 고칠 수 있다」 주석) 목업만 409 로
+     남아 있었다. 목업이 서버보다 **좁으면** 그 갈래를 `?mock=1` 로 검수할 수
+     없다 — 확정 뒤에 단위가 틀린 것을 알아차리는 것이 KEY-285 의 한복판이다. */
+  /* 처방일수 단위 — KEY-285. 서버가 두 문으로 막는다:
+     DTO 가 값의 **모양**(`DurationUnit` — 일 · 통)을, 서비스가 붙일 **자리**를.
+
+     🚩 **버전 확인보다 앞이다** (이희진 님 `#251` 리뷰 ②). 실서버는 pydantic 이
+     DB 를 건드리기 전에 요청 전체를 검증하므로, 잘못된 단위 + 낡은 base_version
+     이 같이 오면 **늘 422** 다. 목업이 409 를 먼저 내면 `?mock=1` 로 그 조합을
+     검수한 사람이 실서버와 다른 코드를 보게 된다. */
+  var refused = unitRefusal(field.field_type, body.unit);
+  if (refused) return refused;
+
   if (field.version !== body.base_version) return new ApiError("VERSION_CONFLICT", 409, {});
 
   /* 사람이 보낼 수 있는 상태는 둘뿐이다 — 「이번엔 안 했다」와 그 되돌리기.
@@ -424,6 +497,7 @@ function mockPatch(fieldId, body) {
   if (
     (body.corrected_value === undefined || body.corrected_value === null) &&
     (body.candidate_id === undefined || body.candidate_id === null) &&
+    (body.unit === undefined || body.unit === null) &&
     !body.confirm
   ) {
     return new ApiError("INVALID_REQUEST", 400, {});
@@ -448,8 +522,16 @@ function mockPatch(fieldId, body) {
     changed = true;
   }
 
+  /* **단위를 고치는 것은 값을 고치는 것이다.** 숫자가 그대로여도 소진 예정일이
+     통째로 바뀐다(3 → 84). 서버가 그것을 값 수정과 같이 다루므로 목업도 같이
+     다룬다 — 판올림도, 고친 사람 도장도. */
+  var unitChanged = body.unit !== undefined && body.unit !== null && field.unit !== body.unit;
+  if (unitChanged) field.unit = body.unit;
+
   if (changed) {
     field.value = field.corrected_value;
+  }
+  if (changed || unitChanged) {
     field.modified_by = 101;
     field.modified_at = "2026-08-13T10:42:00+09:00";
   }
@@ -482,10 +564,15 @@ function mockPatch(fieldId, body) {
 var mockWrittenFields = {};
 var mockCheckAnswers = {};
 
-function mockWriteField(visitId, fieldType, value) {
+function mockWriteField(visitId, fieldType, value, unit) {
   return new Promise(function (resolve, reject) {
     setTimeout(function () {
       if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      /* 보정(PATCH)과 **같은 규칙**으로 막는다 — 서버도 두 문이 같은
+         `DurationUnit` 을 쓰고 자리 검사는 한 곳에 있다. */
+      var refused = unitRefusal(fieldType, unit);
+      if (refused) return reject(refused);
 
       var text = String(value === null || value === undefined ? "" : value).trim();
       var mine = mockWrittenFields[visitId] || (mockWrittenFields[visitId] = {});
@@ -500,6 +587,9 @@ function mockWriteField(visitId, fieldType, value) {
         ocr_field_id: 900000 + Object.keys(mine).length,
         field_type: fieldType,
         value: text,
+        /* 적어 넣은 줄도 단위를 갖는다 — 안 그러면 화면이 다시 그릴 때
+           「단위?」로 돌아가 방금 고른 것이 사라진 것처럼 보인다. */
+        unit: unit || null,
         corrected_value: text,
         extracted_value: null,
         is_confirmed: false,
@@ -560,6 +650,67 @@ function mockJobForVisit(visitId) {
   });
 }
 
+function mockJobsForVisit(visitId) {
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      if (!visitId) return reject(new ApiError("NOT_FOUND", 404, {}));
+
+      var row =
+        typeof MOCK_TODAY === "undefined"
+          ? null
+          : MOCK_TODAY.filter(function (v) {
+              return v.visit_id === Number(visitId);
+            })[0];
+      if (row && row.detail_status === "NO_DOCUMENT") {
+        return reject(new ApiError("NOT_FOUND", 404, {}));
+      }
+
+      /* multi · partial-fail: 문서 2장 케이스. 두 번째 job ID에 _2 suffix를 붙여
+         mockJob이 case별로 다른 상태를 반환할 수 있게 한다. */
+      if (MOCK_CASE === "multi" || MOCK_CASE === "partial-fail") {
+        return resolve([
+          {
+            document_id: 1,
+            document_type: "EMR",
+            ocr_job_id: "ocr_synthetic_" + visitId,
+            status: "COMPLETED",
+            progress: 100,
+            started_at: null,
+            completed_at: null,
+            failure_code: null,
+            excluded_from_guide: false,
+          },
+          {
+            document_id: 2,
+            document_type: "LAB_RESULT",
+            ocr_job_id: "ocr_synthetic_" + visitId + "_2",
+            status: "COMPLETED",
+            progress: 100,
+            started_at: null,
+            completed_at: null,
+            failure_code: null,
+            excluded_from_guide: false,
+          },
+        ]);
+      }
+
+      resolve([
+        {
+          document_id: 1,
+          document_type: "EMR",
+          ocr_job_id: "ocr_synthetic_" + visitId,
+          status: "COMPLETED",
+          progress: 100,
+          started_at: null,
+          completed_at: null,
+          failure_code: null,
+          excluded_from_guide: false,
+        },
+      ]);
+    }, 80);
+  });
+}
+
 /* 안내문을 이미 만든 진료. 새로고침하면 사라진다 — 목업 한 판 동안만 산다. */
 var mockGuides = {};
 
@@ -592,6 +743,33 @@ function mockGenerateGuide(visitId) {
   return { visit_id: Number(visitId), status: "DRAFT", version: 1, sections: [] };
 }
 
+/* 확정된 판독에서 처방 행을 세운다 — 서버 `finalize_ocr` 의 목업.
+ *
+ * **미확정이 남아 있으면 실서버처럼 막는다.** 서버는 그때 422 `OCR_NOT_CONFIRMED`
+ * 를 낸다(`app/ocr/service.py`). 목업이 무조건 성공하면 화면은 순서를 잘못
+ * 짜 놓고도 잘 도는 것처럼 보인다 — 안내문 생성이 딱 그렇게 1차 시연을
+ * 통과했다(`mockGenerateGuide` 위 주석과 같은 사고).
+ *
+ * 여기서도 **약 이름을 지어 넣지 않는다**(AGENTS.md). 화면은 성공 여부만 쓴다. */
+function mockFinalizeOcr(visitId) {
+  if (MOCK_CASE === "forbidden") return new ApiError("FORBIDDEN", 403, {});
+  if (MOCK_CASE === "novisit") return new ApiError("VISIT_NOT_FOUND", 404, {});
+
+  /* **막는 것은 「값이 있는데 아무도 안 본 것」 하나다.** 서버와 같은 규칙이다
+     (`app/ocr/service.py` 의 finalize 게이트). 못 읽어 빈 칸은 화면이 확정하지
+     않으므로(`fieldsToConfirm`) 여기서 막으면 S1-7 진료는 안내문을 영영 못
+     만든다 — 목업이 서버보다 엄하면 화면은 실서버에서 되는 일을 여기서 못 하고,
+     느슨하면 여기서 되는 일이 실서버에서 막힌다. 둘 다 거짓말이다. */
+  var state = mockState();
+  var pending = (state.fields || []).filter(function (f) {
+    var read = f.corrected_value === null || f.corrected_value === undefined ? f.extracted_value : f.corrected_value;
+    return read !== null && read !== undefined && read !== "" && !f.is_confirmed;
+  });
+  if (pending.length) return new ApiError("OCR_NOT_CONFIRMED", 422, { pending: pending.length });
+
+  return { prescription_id: 1, visit_id: Number(visitId), items: [] };
+}
+
 function mockOcrRequest(path, options) {
   var body = (options && options.body) || {};
   return new Promise(function (resolve, reject) {
@@ -600,6 +778,12 @@ function mockOcrRequest(path, options) {
       if (patch) {
         var out = mockPatch(Number(patch[1]), body);
         return out instanceof ApiError ? reject(out) : resolve(mockCopy(out));
+      }
+
+      var finalize = path.match(/^\/visits\/([^/]+)\/ocr-finalize$/);
+      if (finalize) {
+        var rx = mockFinalizeOcr(decodeURIComponent(finalize[1]));
+        return rx instanceof ApiError ? reject(rx) : resolve(rx);
       }
 
       var generate = path.match(/^\/visits\/([^/]+)\/guide\/generate$/);
@@ -613,6 +797,11 @@ function mockOcrRequest(path, options) {
       if (onJob) {
         var job = mockJob(onJob[1]);
         if (/\/(result|fields)$/.test(path)) {
+          /* FAILED job은 결과가 없다. NOT_READY(409)를 주면 loadAllResults가 전체를
+             실패 처리하므로, 실서버처럼 404를 반환해 해당 job만 null로 건너뛰게 한다. */
+          if (job.status === "FAILED") {
+            return reject(new ApiError("OCR_RESULT_NOT_FOUND", 404, {}));
+          }
           if (job.status !== "COMPLETED") {
             /* #32 계약 그대로. 화면은 이 코드를 보고 「아직」과 「실패」를 가른다. */
             return reject(new ApiError("OCR_RESULT_NOT_READY", 409, {}));

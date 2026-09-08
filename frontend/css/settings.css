@@ -579,14 +579,6 @@
   color: var(--ink);
 }
 
-.cp__label {
-  margin: var(--s-8) 0 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--ink-3);
-}
-
 /* 원본 — **읽는 자리다.** 입력칸처럼 보이면 고쳐도 되는 줄 안다. */
 .cp__origin {
   margin: 0;
@@ -605,10 +597,63 @@
   line-height: 1.7;
 }
 
-.cp__acts {
+/* 단추는 `.cp__head` 로 옮겼다 — 칸 아래 제 줄을 두면 칸과 ⓘ 안내가 갈라져
+   한 덩이로 안 읽힌다. 머리의 「원본으로 되돌리기」와 같은 자리에 선다. */
+
+/* 안내 줄은 칸에 딸린 것이라 바깥 `.note` 의 간격을 물려받지 않는다. */
+.cp .note {
+  margin-top: 6px;
+}
+
+.cp .note + .note {
+  margin-top: 2px;
+}
+
+/* 이름표를 뺐으므로 칸이 머리 바로 밑에 온다 — 붙지 않게 조금 띄운다. */
+.cp__body,
+.cp__origin {
+  margin-top: 2px;
+}
+
+/* 환자가 받게 될 안내문 — KEY-258.
+   **칸 아래 세로로 붙는다.** 옆에 세우면 편집 칸이 860px 에서 274px 로 줄어
+   한 줄이던 주의 문구가 세 줄이 된다(1280 폭에서 실측). */
+.cp__pv {
+  margin-top: var(--s-12);
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  border-left: 3px solid var(--line);
+}
+
+.cp__pvHead {
   display: flex;
-  justify-content: flex-end;
-  margin-top: var(--s-8);
+  align-items: baseline;
+  gap: var(--s-8);
+  margin-bottom: 6px;
+}
+
+.cp__pvTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.cp__pvBody {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+/* 진료마다 채워지는 자리. **흐리게 둔다** — 지금 값이 아니라 자리라는 뜻이다.
+   진하게 두면 스탭이 이 약이 실제로 나가는 줄 안다. */
+.cp__pvGhost {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-3);
 }
 
 /* 한 장의 확인 표시 — 원문 레일의 「✓ 비잔」·「야즈 확인 전」 */

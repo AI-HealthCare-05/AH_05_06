@@ -62,3 +62,22 @@ SYN_LOW_CONF_CLOVA_RESULT = ClovaOcrResult(
 # 반복 실행해도 같은 오류 코드를 사용한다 (인수조건 1).
 SYN_FAIL_CLOVA_CODE = "CLOVA_PARSE_ERROR"  # 구조적 실패 — 재시도 없이 즉시 FAILED
 SYN_TIMEOUT_CLOVA_CODE = "CLOVA_TIMEOUT"  # 일시 오류 — 재시도 대상, 소진 후 FAILED
+
+# ── LAB_RESULT 자동 분류 fixture (KEY-278) ───────────────────────────────────
+# "검사항목" + "검사결과" 헤더가 있는 표 구조 — _find_lab_columns 이 LAB_RESULT 로 감지한다.
+# 바운딩 박스를 부여해야 rows 가 생성되고, detect_document_type 이 작동한다.
+_LAB_HEADER_ROW = [
+    ClovaTextField(text="검사항목", confidence=1.0, left=100.0, top=10.0, right=200.0, bottom=30.0),
+    ClovaTextField(text="검사결과", confidence=1.0, left=210.0, top=10.0, right=310.0, bottom=30.0),
+]
+_LAB_DATA_ROW = [
+    ClovaTextField(text="AST(GOT)", confidence=1.0, left=100.0, top=40.0, right=200.0, bottom=60.0),
+    ClovaTextField(text="21", confidence=1.0, left=210.0, top=40.0, right=310.0, bottom=60.0),
+]
+
+SYN_LAB_01_CLOVA_RESULT = ClovaOcrResult(
+    raw_text="검사항목\t검사결과\nAST(GOT)\t21",
+    fields=[*_LAB_HEADER_ROW, *_LAB_DATA_ROW],
+    rows=[_LAB_HEADER_ROW, _LAB_DATA_ROW],
+    elapsed_ms=40,
+)

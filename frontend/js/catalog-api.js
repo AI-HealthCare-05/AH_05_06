@@ -790,13 +790,20 @@ function mockCopyPage() {
         disease: row.disease,
         reviewed: !!mockCopyReviews[row.prescription_set_id],
         sections: MOCK_COPY_SECTIONS.map(function (key) {
+          /* 승인 문구가 있으면 그것, 없으면 기본 문구 — 서버와 같다 */
+          var origin = MOCK_COPY_ORIGIN[key] || MOCK_COPY_DEFAULT[key];
+          var edited = (mockCopyEdits[row.prescription_set_id] || {})[key] || null;
           return {
             section_key: key,
-            /* 승인 문구가 있으면 그것, 없으면 기본 문구 — 서버와 같다 */
-            origin: MOCK_COPY_ORIGIN[key] || MOCK_COPY_DEFAULT[key],
-            body: (mockCopyEdits[row.prescription_set_id] || {})[key] || null,
+            origin: origin,
+            body: edited,
             /* 🚨 는 열리지 않는다 — 원문이 못박는다 */
             editable: key !== "emergency",
+            /* 실제로 나가는 글 — KEY-258. **서버가 짓는 규칙을 그대로 흉내낸다.**
+               🚨 응급은 고친 글을 안 얹고(`FIXED_SECTIONS`), 나머지는 「고친 글이
+               있으면 그것, 없으면 원본」이다. 목업이 서버보다 좁거나 넓으면
+               `?mock=1` 로 이 화면을 검수할 수 없다. */
+            preview: key === "emergency" ? origin : edited || origin,
           };
         }),
       };

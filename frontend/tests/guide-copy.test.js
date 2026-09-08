@@ -269,12 +269,42 @@ test("되돌리면 원본으로 간다", async () => {
 
 /* ── 화면이 그 규칙을 쓰는가 ────────────────────────────────────────── */
 
-test("원본이 위에 있다", () => {
+test("고칠 수 있는 갈래는 **칸 하나**로 보인다 — 나갈 글만", () => {
   const code = codeOnly(read("js/settings.js"));
   const part = code.slice(code.indexOf("function copySectionHtml"), code.indexOf("function whoseName"));
 
-  assert.ok(part.indexOf("cp__origin") < part.indexOf("cp__body"), "무엇이 사실이고 무엇이 표현인지 보인다");
+  /* 원문 D2-2 는 원본·고친문구 두 층을 나란히 두었는데, 쓰는 사람에게는 같은
+     글이 두 번 보이는 화면이었다. 지금은 나갈 글 한 칸만 보인다 — 아직 안
+     고쳤으면 원본이, 고쳤으면 고친 글이 그 칸에 들어 있다.
+
+     **그 판단을 화면이 제 손으로 하지 않는다.** 「고친 것이 있으면 그것,
+     없으면 원본」은 `copyShown` 이 정본으로 갖고 있다(`guide-copy-rules.js`).
+     화면이 같은 식을 다시 적으면 두 벌이 갈라지고, 갈라지면 **설정이 보여
+     주는 글과 환자에게 나가는 글이 달라진다.** 그래서 식이 아니라 **부름**을
+     잰다 (이희진 님 `#214` ⑧). */
+  assert.ok(part.indexOf("copyShown(section)") !== -1, "나갈 글은 공통 규칙이 정한다 — 화면이 같은 식을 다시 쓰지 않는다");
+  assert.ok(part.indexOf("mine ? section.body") === -1, "판정을 인라인으로 되풀이하지 않는다 — 두 벌이 되면 갈라져도 조용하다");
   assert.ok(part.indexOf("표현만 수정해 주세요") !== -1, "원문의 ⓘ 줄이다");
+  assert.ok(part.indexOf("원본은 지워지지 않습니다") !== -1, "덧씌우기라는 것을 화면이 말한다");
+});
+
+test("🚨 응급은 여전히 읽는 자리다 — 칸을 안 준다", () => {
+  const code = codeOnly(read("js/settings.js"));
+  const part = code.slice(code.indexOf("function copySectionHtml"), code.indexOf("function whoseName"));
+  const locked = part.slice(part.lastIndexOf("cp__origin"));
+
+  assert.ok(locked.indexOf("cp__body") === -1, "못 고치는 글에 입력칸을 주면 고쳐도 되는 줄 안다");
+  assert.ok(locked.indexOf("안전을 위해 모든 안내문에 포함됩니다") !== -1);
+});
+
+test("원본을 덮어쓰지 않는다 — 저장은 덧씌우기다", () => {
+  const code = codeOnly(read("js/settings.js"));
+
+  /* 화면이 한 칸으로 보인다고 해서 원본을 고치는 것이 아니다. 저장은
+     `saveCopy` 가 `DoctorGuideCopy` 로 보내고, 원본은 근거·승인이 붙은
+     `DrugCautionContent` 에 그대로 남는다(KEY-180). 되돌리기가 그것을 되살린다. */
+  assert.ok(code.indexOf("function revertCopy") !== -1, "되돌릴 길이 없으면 덧씌우기가 아니다");
+  assert.ok(code.indexOf("data-revert-copy") !== -1, "되돌리기 단추가 화면에 있어야 한다");
 });
 
 test("원본을 읽는 자리로 그린다", () => {
@@ -328,4 +358,95 @@ test("**판독값이 든다는 것과 못 고친다는 것은 다르다**", () =
     code.indexOf("그 값이 들어갈 문장을 정합니다") !== -1,
     "판독값이 어디에 채워지는지 안 알려 준다",
   );
+});
+
+/* ── 실제로 나가는 글 — KEY-258 ─────────────────────────────────────────
+ *
+ * 고칠 수 있게 해 놓고 **그 글이 안내문에 어떻게 나가는지 볼 길이 없었다.**
+ * 저장만 되고, 확인하려면 진료를 하나 열어 봐야 했다.
+ *
+ * 여기서 재는 것은 **화면이 셈하지 않는다**는 것이다. 셈하는 순간 규칙이 두
+ * 벌이 되고, 이 저장소는 그 갈림으로 이미 여러 번 데었다.
+ */
+
+test("미리보기는 서버가 준 값을 그대로 쓴다 — 화면이 셈하지 않는다", () => {
+  const { copyPreview } = load("api", "settings-rail", "guide-copy-rules");
+
+  /* 서버가 「나갈 글」과 다른 답을 줄 수 있다 — 복약지도가 그렇다. 화면이
+     `body || origin` 을 다시 셈하면 그 차이를 지운다. */
+  const section = { section_key: "medication", origin: "원본", body: "고친 글", preview: "서버가 지은 글" };
+
+  assert.equal(copyPreview(section), "서버가 지은 글");
+});
+
+test("옛 응답에는 그 칸이 없다 — 그때는 나갈 글로 떨어진다", () => {
+  const { copyPreview, copyShown } = load("api", "settings-rail", "guide-copy-rules");
+
+  /* 빈 칸을 「나갈 글이 없다」로 보이는 것보다 낫다. */
+  const section = { section_key: "caution", origin: "원본", body: "고친 글" };
+
+  assert.equal(copyPreview(section), copyShown(section));
+  assert.equal(copyPreview({ section_key: "caution", origin: "원본", body: null }), "원본");
+  assert.equal(copyPreview(null), "");
+});
+
+test("목업이 서버와 같은 규칙으로 짓는다 — 🚨 응급에는 고친 글이 안 얹힌다", async () => {
+  const box = load("api", "settings-rail", "guide-copy-rules", "catalog-api", { search: "?mock=1" });
+  const page = await box.catalogApi.guideCopy();
+  const row = page.items[0];
+  const at = (key) => row.sections.find((s) => s.section_key === key);
+
+  /* 안 고쳤을 때 — 넷 다 원본이 나간다 */
+  for (const key of ["medication", "caution", "emergency", "life"]) {
+    assert.equal(at(key).preview, at(key).origin, `${key} 가 원본과 다르다`);
+  }
+
+  await box.catalogApi.saveCopy(row.prescription_set_id, "caution", "원장님이 고친 주의사항");
+  const after = (await box.catalogApi.guideCopy()).items[0];
+  const pick = (key) => after.sections.find((s) => s.section_key === key);
+
+  assert.equal(pick("caution").preview, "원장님이 고친 주의사항", "고친 글이 미리보기에 안 왔다");
+  assert.equal(pick("life").preview, pick("life").origin, "안 고친 갈래가 바뀌었다");
+
+  /* 🚨 **응급에 문구를 억지로 심어도 안 바뀐다.** 화면이 그 갈래를 잠그지만
+     (`editable: false`), 잠금이 풀리는 날 조용히 바뀌면 안 된다 — 서버의
+     `FIXED_SECTIONS` 가 하는 일을 목업도 해야 `?mock=1` 이 같은 답을 낸다. */
+  await box.catalogApi.saveCopy(row.prescription_set_id, "emergency", "원장님이 고친 응급 문장");
+  const last = (await box.catalogApi.guideCopy()).items[0].sections.find((s) => s.section_key === "emergency");
+
+  assert.equal(last.preview, last.origin, "안전 문장에 문구가 얹혔다");
+});
+
+test("화면이 미리보기의 **범위**를 말한다 — 진료가 없다는 사실을 감추지 않는다", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const { codeOnly } = require("./source.js");
+  const src = codeOnly(fs.readFileSync(path.join(__dirname, "..", "js", "settings.js"), "utf8"));
+
+  /* 이 화면에는 진료가 없어 둘을 모른다 — 약 목록과 「누구 문구가 이기나」.
+     「환자가 받는 그대로」라고만 적으면 그 라벨이 거짓이 된다. */
+  assert.ok(src.includes("의원 공통 문구 기준입니다"), "누구 기준인지 안 말한다");
+  assert.ok(src.includes("이 자리에 그 환자의 약이 들어갑니다"), "약 목록이 진료마다 붙는다는 말이 없다");
+  assert.ok(src.includes("이미 승인된 안내문은 다시 만들지 않습니다"), "소급 안 된다는 말이 없다 (인수조건 3)");
+
+  /* 화면이 셈하지 않는다 — `copyPreview` 를 부를 뿐이다. */
+  assert.ok(src.includes("copyPreview(section)"), "미리보기를 규칙 파일에서 안 가져온다");
+});
+
+test("**미리보기가 저장된 글 기준임을 화면이 말한다** — 한금준 님 `#252` 리뷰 ①", () => {
+  /* 미리보기는 서버가 준 `section.preview` 라 **저장해야 움직인다** — 치고 있는
+     글자는 안 비친다(`data-copy` 칸에 미리보기를 다시 그리는 손이 없다).
+     그런데 화면이 그 말을 안 해서, 고치는 사람은 「왜 안 바뀌지」에서 멈춘다.
+
+     **열려 있을 때만** 말한다 — 안 고치는 중에는 「저장하면」이 무슨 소린지 알
+     수 없다. 그 조건까지 함께 잰다. */
+  const src = codeOnly(read("js/settings.js"));
+  const at = src.indexOf("function copyPreviewHtml");
+  assert.notEqual(at, -1, "미리보기를 그리는 자리가 없다");
+  const body = src.slice(at, src.indexOf("\n  }", at)).replace(/\s+/g, " ");
+
+  assert.match(body, /function copyPreviewHtml\(section, open\)/, "열렸는지를 안 받는다");
+  assert.match(body, /저장한 글 기준입니다/, "미리보기가 무엇 기준인지 안 말한다");
+  assert.match(body, /저장해야<\/b> 이 미리보기에 반영됩니다/, "저장해야 반영된다는 말이 없다");
+  assert.match(body, /open \?/, "안 고치는 중에도 「저장하면」이라고 말한다");
 });
