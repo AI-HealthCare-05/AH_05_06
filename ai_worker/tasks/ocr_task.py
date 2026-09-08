@@ -288,13 +288,19 @@ async def _save_clova_result(
     # Phase 1: 필드 추출 — 트랜잭션 밖에서 수행해 불필요한 롤백 방지
     fields_by_doc, emr_field_types, has_emr = _extract_fields_per_doc(job_documents, clova_results, lab_keywords)
 
-    # Phase 2: EMR이 포함된 경우 못 읽은 필수 필드를 센다 (KEY-163 §4)
+    # Phase 2: 필드 추출 완료 진행률 기록 (대기→파일 판독→필드 추출→저장→완료 중 세 번째 단계)
+    # CLOVA 완료 구간(0~70%)과 저장 완료(100%) 사이에 명시적 단계를 두어
+    # 장시간 문서에서 진행 단계가 2회 이상 갱신되는 것을 보장한다.
+    job.progress = 80
+    await job.save(update_fields=("progress",))
+
+    # Phase 3: EMR이 포함된 경우 못 읽은 필수 필드를 센다 (KEY-163 §4)
     #
     # EMR이 없는 작업(검사 결과지만 올린 경우)에는 처방 항목이 애초에 없다.
     # 그때 빈 줄을 만들면 안 한 것을 못 읽은 것처럼 보인다.
     missing = sorted(_REQUIRED_OCR_FIELDS - emr_field_types) if has_emr else []
 
-    # Phase 3: 트랜잭션 안에서 DB 저장
+    # Phase 4: 트랜잭션 안에서 DB 저장
     actual_type_map: dict[int, OcrDocumentType] = {jd.document_id: actual_type for jd, _, actual_type in fields_by_doc}
     async with in_transaction() as conn:
         ocr_result = await OcrResult.create(
