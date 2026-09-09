@@ -4,7 +4,6 @@ import asyncio
 from datetime import date, timedelta
 
 from httpx import ASGITransport, AsyncClient
-from tortoise import connections
 from tortoise.contrib.test import TruncationTestCase
 from tortoise.timezone import now
 
@@ -31,10 +30,25 @@ from app.services.sms_sender import SmsDeliveryStatus, SmsProvider, SmsSendResul
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 
-OLD_LINK_TOKEN = "synthetic-old-link-token"
+#: secrets.token_urlsafe(32)와 같은 길이(43자)로 맞춘다 — 마스킹 정규식이
+#: 정확한 길이만 보므로(경계 추측 대신), 실제보다 짧은 합성 문자열을 쓰면
+#: test_a_sent_message_never_stores_the_raw_link_token 같은 검사가 매칭
+#: 자체가 안 되는 채로 통과해 버린다.
+OLD_LINK_TOKEN = "synthetic-old-link-token-43-chars-long-xxxx"
+assert len(OLD_LINK_TOKEN) == 43, f"OLD_LINK_TOKEN이 43자가 아니다: {len(OLD_LINK_TOKEN)}"
 
 
 class MessageResendTestCase(TruncationTestCase):
+    async def _setUpDB(self) -> None:  # noqa: N802 — tortoise가 정한 이름 그대로 override한다.
+        await super()._setUpDB()
+        # 여기서 미리 잡아 둔다 — 이 시점엔 테스트가 쓸 연결이 확실히
+        # 서 있다(_setUpDB()의 존재 이유 자체가 그거다). _tearDownDB()
+        # 시점에 새로 조회하면 pytest-xdist(-n auto)에서 가끔 레지스트리가
+        # 비어 KeyError가 났다(로컬 단일 프로세스에서는 재현 안 됨) —
+        # 원인을 못 좁혀서, 대신 확실히 되는 시점의 참조를 그대로 들고
+        # 있다가 나중에 재사용한다.
+        self._db_connection = PatientGuideLink._meta.db
+
     async def _tearDownDB(self) -> None:  # noqa: N802 — tortoise가 정한 이름 그대로 override한다.
         # tortoise.contrib.test.truncate_all_models()는 모델 등록 순서로
         # 테이블을 지운다(자기 docstring이 "non-cascade foreign keys에서
@@ -44,7 +58,14 @@ class MessageResendTestCase(TruncationTestCase):
         # 검사에 실제 커밋이 필요해서) 지금까지 안 드러났던 문제다.
         # FK 검사를 잠깐 끄고 지운 뒤 되살린다 — 순서를 일일이 안
         # 맞춰도 된다.
-        connection = connections.get("default")
+        connection = getattr(self, "_db_connection", None)
+        if connection is None:
+            # _setUpDB()에서 못 잡았다면(있을 수 없지만) 이 우회 자체를
+            # 포기한다 — 최악의 경우 원래 있던 FK 문제로 돌아갈 뿐,
+            # 매번 실패하는 새 문제를 만들지는 않는다.
+            await super()._tearDownDB()
+            return
+
         await connection.execute_script("SET FOREIGN_KEY_CHECKS=0")
         try:
             await super()._tearDownDB()
