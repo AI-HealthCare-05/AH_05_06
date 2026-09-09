@@ -148,18 +148,57 @@ test("창을 그릴 자리가 화면에 있다", () => {
   });
 });
 
-test("닫기와 현황 보기가 실제로 붙어 있다", () => {
+test("닫기가 실제로 붙어 있다", () => {
   const code = codeOnly(read("js/visit-guide.js"));
   assert.match(code, /\[data-close\]/, "닫기를 받는 자리가 없다");
+});
 
-  const at = code.indexOf("[data-go-status]");
-  assert.notEqual(at, -1, "현황 보기를 받는 자리가 없다");
+test("**「현황 보기」를 그리는 파일이 누르는 일까지 맡는다** — 한 화면에만 두면 다른 화면에서 죽는다", () => {
+  /* 마크업은 `guide-view.js` 가 그리고 그 파일은 두 화면이 싣는데, 누르는 일은
+     `visit-guide.js` 에만 있었다. `doctor.html` 은 그 파일을 안 싣는다 — **의사
+     화면에서는 승인 직후 모달의 이 단추가 죽어 있었다** (KEY-302). 원장님이
+     실제로 승인하는 자리가 그쪽이다. KEY-310 과 같은 모양의 결함이다. */
+  const view = codeOnly(read("js/guide-view.js"));
+  assert.ok(view.includes("data-go-status"), "그리는 자리가 없다 — 검사가 헛돈다");
 
-  const around = code.slice(at, at + 500);
-  /* 탭을 바꾸는 규칙은 `detail.js` 것이다 — 여기서 흉내내면 표시(✓ · ● · ○)가
-     갈린다. 탭 단추를 대신 누른다. */
-  assert.match(around, /\.tab\[data-tab="status"\]/, "탭 단추를 안 누른다");
-  assert.ok(around.includes("closeModal("), "창을 안 닫는다");
+  const at = view.indexOf('closest("[data-go-status]")');
+  assert.notEqual(at, -1, "그리는 파일이 누르는 일을 안 맡는다");
+
+  /* 탭을 바꾸는 규칙은 화면마다 다르다(스탭은 제자리, 의사는 `data-href` 로
+     이동). 여기서 흉내내면 표시(✓ · ● · ○)가 갈린다 — 탭 단추를 대신 누른다. */
+  assert.match(view, /\.tab\[data-tab="status"\]/, "탭 단추를 안 누른다");
+  assert.match(view.slice(at, at + 400), /goToStatusTab\(/, "누르고도 어디로도 안 간다");
+});
+
+test("**그 단추를 그리는 파일을 싣는 화면은 모두 창을 닫을 줄 안다**", () => {
+  /* 이름을 하나씩 적지 않는다 — 화면이 늘면 또 놓친다. 규칙으로 잰다:
+     `guide-view.js` 를 싣는 화면은 `guide:modal-close` 를 받는 스크립트도
+     함께 싣는다. */
+  const pages = ["patients.html", "doctor.html"];
+  for (const page of pages) {
+    const scripts = [...markupOnly(read(page)).matchAll(/<script src="\/js\/([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(scripts.includes("guide-view.js"), `${page} 가 guide-view.js 를 안 싣는다 — 검사가 헛돈다`);
+
+    /* **보내는 쪽이 아니라 받는 쪽**을 찾는다. `guide-view.js` 자신이 그 이름을
+       들고 있어서, 그냥 문자열로 세면 보내는 파일이 받는 파일을 대신해 준다 —
+       그러면 이 검사는 아무것도 안 지킨다. */
+    const listens = scripts.some((name) =>
+      /addEventListener\(\s*"guide:modal-close"/.test(codeOnly(read("js/" + name))),
+    );
+    assert.ok(listens, `${page} 에 창을 닫는 자리가 없다 — 「현황 보기」를 눌러도 창이 남는다`);
+  }
+});
+
+test("**환자 링크 발급 창에도 다음 단계로 가는 길이 있다** — 발급이 마지막 일이 아니다", () => {
+  /* 링크 발급은 「최종 확인」의 마지막 손인데 다음으로 가는 길이 없어, 창을
+     닫고 탭을 다시 찾아야 했다 (KEY-302 ③). 승인 완료 창과 **같은 이름**을
+     쓴다 — 누르면 무슨 일이 나는지가 두 창에서 같아야 한다. */
+  const code = codeOnly(read("js/doctor.js"));
+  const at = code.indexOf("function patientLinkModal");
+  assert.notEqual(at, -1, "링크 발급 창이 없다 — 검사가 헛돈다");
+
+  const body = code.slice(at, code.indexOf("\n  }", at));
+  assert.ok(body.includes("data-go-status"), "링크를 발급하고 나면 갈 곳이 없다");
 });
 
 test("모달 어휘는 공용 CSS 에 있다 — 두 화면이 같은 창을 쓴다", () => {

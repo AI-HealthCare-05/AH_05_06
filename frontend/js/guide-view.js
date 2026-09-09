@@ -997,3 +997,33 @@ function approvedModalHtml(view) {
     "</div>"
   );
 }
+
+/* 「현황 보기」를 **그리는 파일이 누르는 일까지 맡는다** — KEY-302.
+ *
+ * 이 단추의 마크업은 위 `approvedModalHtml()` 이 그리고, 그 함수는 스탭 화면과
+ * 의사 화면이 함께 쓴다. 그런데 누르는 일은 `visit-guide.js` 에만 있었고
+ * `doctor.html` 은 그 파일을 안 싣는다 — **의사 화면에서는 눌러도 아무 일도
+ * 안 일어났다.** 승인 직후 모달의 단추라 원장님이 매번 만난다.
+ *
+ * KEY-310 과 같은 모양의 결함이다: 마크업은 공용 파일이 그리는데 그것을 살리는
+ * 것(모양이든 손이든)이 화면 하나에만 있었다. 그래서 여기, **마크업 옆에** 둔다.
+ *
+ * 모달을 닫는 방법은 화면마다 다르다(의사 화면은 발급한 링크도 함께 잊는다).
+ * 그래서 닫는 일은 각자에게 알리고, 여기서는 **어디로 가는지**만 정한다.
+ *
+ * 가는 방법은 탭 단추를 대신 누르는 것이다 — 탭을 바꾸는 규칙(스탭은 제자리,
+ * 의사는 `data-href` 로 이동)이 화면마다 다르고, 여기서 흉내내면 표시(✓ · ● · ○)
+ * 가 갈린다. */
+function goToStatusTab() {
+  var tab = document.querySelector('.tab[data-tab="status"]');
+  if (tab) tab.click();
+  return !!tab;
+}
+
+document.addEventListener("click", function (event) {
+  var target = event.target;
+  if (!target || !target.closest || !target.closest("[data-go-status]")) return;
+
+  document.dispatchEvent(new CustomEvent("guide:modal-close", { bubbles: true }));
+  goToStatusTab();
+});
