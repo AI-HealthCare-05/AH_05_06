@@ -39,8 +39,12 @@ USAGE
 }
 
 _read_env() {
-  local file="$1" key="$2"
-  grep "^${key}=" "$file" 2>/dev/null | head -1 | cut -d= -f2- || true
+  local file="$1" key="$2" value
+  value="$(grep "^${key}=" "$file" 2>/dev/null | head -1 | cut -d= -f2-)" || true
+  value="${value%$'\r'}"
+  if [[ "$value" == \"*\" ]]; then value="${value:1:${#value}-2}"; fi
+  if [[ "$value" == \'*\' ]]; then value="${value:1:${#value}-2}"; fi
+  printf '%s' "$value"
 }
 
 cmd="${1:-}"
@@ -54,7 +58,7 @@ case "$cmd" in
   stop)
     say "서비스를 중단합니다 (볼륨 유지)."
     cd "$ROOT"
-    docker compose down
+    docker compose --profile web --profile ocr down
     ;;
 
   logs)
@@ -89,10 +93,7 @@ case "$cmd" in
     db_password="$(_read_env "$ENV_FILE" DB_PASSWORD)"
     [[ -n "$db_password" ]] || \
       fail ".env 에 DB_PASSWORD 가 없습니다."
-    if ! docker compose ps --status running -q ai-worker 2>/dev/null | grep -q .; then
-      say "경고: ai-worker 가 실행 중이 아닙니다. OCR 경로까지 검증하려면 ./dev.sh start --with-ocr-worker 를 먼저 실행하세요."
-    fi
-    say "종단 검사를 실행합니다 (walking skeleton E2E)."
+    say "종단 검사를 실행합니다 (walking skeleton E2E — fixture 기반, ai-worker 불필요)."
     DB_PASSWORD="$db_password" uv run pytest -q app/tests/e2e/test_key152_walking_skeleton.py
     ;;
 
@@ -107,7 +108,7 @@ case "$cmd" in
       printf '[dev] --confirm-reset 없이는 아무것도 삭제하지 않습니다.\n\n'
       printf '삭제 예정 항목:\n'
       printf '  컨테이너·네트워크 : docker compose down\n'
-      printf '  볼륨               : mysql_data  static_volume\n'
+      printf '  볼륨               : mysql_data  static_volume  minio_data\n'
       printf '  로컬 파일          : .env  .bootstrap.local.env\n\n'
       printf '실제로 삭제하려면:\n'
       printf '  ./dev.sh reset --confirm-reset\n'

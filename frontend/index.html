@@ -9,29 +9,9 @@
   <script src="/js/api.js"></script>
   <script src="/js/session.js"></script>
   <script>
-    (function () {
-      function goToLogin() { location.replace('/login.html'); }
-
-      function goToLanding(token) {
-        api.me(token).then(
-          function (me) { location.replace(landingFor(me.roles)); },
-          goToLogin
-        );
-      }
-
-      var token = session.token();
-      if (token) {
-        goToLanding(token);
-      } else {
-        api.refresh().then(
-          function (res) {
-            session.save(res.access_token);
-            goToLanding(res.access_token);
-          },
-          goToLogin
-        );
-      }
-    })();
+    requireSession().then(function (me) {
+      location.replace(landingFor(me.roles));
+    }, function () {});
   </script>
 </body>
 </html>
