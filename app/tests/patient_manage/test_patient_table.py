@@ -250,6 +250,74 @@ class PatientTableTestCase(TestCase):
         assert len(last["items"]) == 2, "마지막 쪽에 남은 둘"
         assert last["roster"]["has_next"] is False, "여기서 「다음」이 열리면 빈 표가 뜬다"
 
+    async def test_asking_by_cursor_and_by_page_at_once_is_refused(self) -> None:
+        """**자리를 옮기는 말은 둘 중 하나만.**
+
+        `cursor` 는 등록 화면의 찾기가 쓰는 「이 뒤로 더」, `offset` 은 관리 표가
+        쓰는 「몇 쪽」이다. 함께 주면 `patient_id > cursor` 를 건 **뒤에** 다시
+        `offset` 만큼 건너뛴다 — 부른 사람이 뜻한 자리가 아니다. 조용히 한쪽을
+        이기게 두면 그 어긋남이 화면에서야 드러난다.
+        """
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "both-ways")
+        for index in range(4):
+            await self.a_patient(clinic, name=f"한서연{index}", chart=f"HS{index:03}")
+
+        access, _ = await StaffSessionService(self.redis).start(staff)  # type: ignore[arg-type]
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            head = await client.get(
+                "/api/v1/patients",
+                headers={"Authorization": f"Bearer {access}"},
+                params={"limit": 2},
+            )
+            assert head.status_code == 200, head.text
+            cursor = head.json()["page"]["next_cursor"]
+            assert cursor, "커서가 안 온다 — 검사가 헛돈다"
+
+            both = await client.get(
+                "/api/v1/patients",
+                headers={"Authorization": f"Bearer {access}"},
+                params={"limit": 2, "cursor": cursor, "offset": 2},
+            )
+
+        assert both.status_code == 400, f"둘을 함께 받고도 답을 준다 — {both.text}"
+        body = both.json()
+        assert body["code"] == "INVALID_REQUEST"
+        assert {item["field"] for item in body["field_errors"]} == {"cursor", "offset"}, (
+            "어느 인자가 문제인지 말하지 않는다"
+        )
+
+    async def test_each_way_on_its_own_still_works(self) -> None:
+        """막는 것이 지나쳐 한쪽까지 닫으면 등록 화면의 찾기가 죽는다."""
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "one-way")
+        for index in range(4):
+            await self.a_patient(clinic, name=f"조하늘{index}", chart=f"CH{index:03}")
+
+        access, _ = await StaffSessionService(self.redis).start(staff)  # type: ignore[arg-type]
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            head = await client.get(
+                "/api/v1/patients", headers={"Authorization": f"Bearer {access}"}, params={"limit": 2}
+            )
+            cursor = head.json()["page"]["next_cursor"]
+
+            by_cursor = await client.get(
+                "/api/v1/patients",
+                headers={"Authorization": f"Bearer {access}"},
+                params={"limit": 2, "cursor": cursor},
+            )
+            by_page = await client.get(
+                "/api/v1/patients",
+                headers={"Authorization": f"Bearer {access}"},
+                params={"limit": 2, "offset": 2},
+            )
+
+        assert by_cursor.status_code == 200, by_cursor.text
+        assert by_page.status_code == 200, by_page.text
+        assert [row["name"] for row in by_cursor.json()["items"]] == [row["name"] for row in by_page.json()["items"]], (
+            "같은 자리를 가리키는 두 말이 다른 사람을 준다"
+        )
+
     # ── 검색 · 격리 ──────────────────────────────────────
 
     async def test_search_covers_the_three_things_the_box_promises(self) -> None:

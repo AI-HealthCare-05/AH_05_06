@@ -67,14 +67,16 @@ var patientsApi = {
 
   /* 환자 관리 표(S2-1). 검색과 같은 자리를 부르되 **분류와 쪽 크기를 함께
      보낸다** — 등록 화면의 찾기는 「모든 환자」에서 이름으로 좁히는 일이고,
-     이쪽은 의원 전체를 훑으며 챙길 환자를 고르는 일이라 묻는 것이 다르다. */
-  roster: function (keyword, category, cursor, limit, offset) {
+     이쪽은 의원 전체를 훑으며 챙길 환자를 고르는 일이라 묻는 것이 다르다.
+
+     **`cursor` 를 안 받는다.** 이쪽은 쪽 번호로 옮긴다(`offset`). 서버가 둘을
+     함께 받으면 400 이므로, 부를 수 있는 모양을 아예 하나로 둔다 (KEY-303). */
+  roster: function (keyword, category, limit, offset) {
     return patientsRequest(
       "/patients?" +
         query({
           keyword: keyword,
           category: category,
-          cursor: cursor,
           limit: limit,
           offset: offset,
         }),

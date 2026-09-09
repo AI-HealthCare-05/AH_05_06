@@ -194,8 +194,8 @@ test("목업이 서버와 같은 규칙으로 거른다", async () => {
   const api = rules();
   api.MOCK = true;
 
-  const all = await api.patientsApi.roster("", "ALL", null, 50);
-  const attention = await api.patientsApi.roster("", "NEEDS_ATTENTION", null, 50);
+  const all = await api.patientsApi.roster("", "ALL", 50);
+  const attention = await api.patientsApi.roster("", "NEEDS_ATTENTION", 50);
 
   /* **수를 못 박는다.** 「거른 것과 센 것이 같다」로만 재면 둘을 함께 틀리게
      고쳐도 통과한다 — 실제로 그렇게 두었더니 돌연변이가 안 물었다.
@@ -215,7 +215,7 @@ test("목업이 서버와 같은 규칙으로 거른다", async () => {
   );
   assert.ok(finished.every((row) => row.flags.length > 0));
 
-  const treating = await api.patientsApi.roster("", "IN_TREATMENT", null, 50);
+  const treating = await api.patientsApi.roster("", "IN_TREATMENT", 50);
   assert.strictEqual(treating.items.length, 4);
   assert.ok(
     treating.items.every((row) => row.work_category !== "COMPLETED"),
@@ -227,7 +227,7 @@ test("셈은 거른 뒤에도 의원 전체를 말한다", async () => {
   const api = rules();
   api.MOCK = true;
 
-  const attention = await api.patientsApi.roster("", "NEEDS_ATTENTION", null, 50);
+  const attention = await api.patientsApi.roster("", "NEEDS_ATTENTION", 50);
 
   assert.strictEqual(attention.counts.ALL, 9, "보이는 쪽만 세면 스탭이 일이 없다고 믿는다");
 });
@@ -237,7 +237,7 @@ test("검색은 이름 · 차트번호 · 휴대폰 셋을 다 본다", async ()
   api.MOCK = true;
 
   for (const keyword of ["유지수", "10118", "01031414410"]) {
-    const found = await api.patientsApi.roster(keyword, "ALL", null, 50);
+    const found = await api.patientsApi.roster(keyword, "ALL", 50);
     assert.strictEqual(found.items.length, 1, `${keyword} 로 못 찾는다`);
     assert.strictEqual(found.items[0].name, "유지수");
   }
@@ -247,7 +247,7 @@ test("빈 검색어에도 표는 답한다", async () => {
   const api = rules();
   api.MOCK = true;
 
-  const found = await api.patientsApi.roster("", "ALL", null, 50);
+  const found = await api.patientsApi.roster("", "ALL", 50);
 
   assert.ok(found.items.length > 0, "등록 화면의 찾기와 달리 이쪽은 의원 전체를 훑는 자리다");
 });
@@ -308,7 +308,7 @@ test("현황에 있는 환자는 관리에도 있다", async () => {
   const api = rules();
   api.MOCK = true;
 
-  const roster = await api.patientsApi.roster("", "ALL", null, 50);
+  const roster = await api.patientsApi.roster("", "ALL", 50);
   const charts = roster.items.map((row) => row.hospital_patient_no);
 
   for (const visit of api.MOCK_TODAY) {
@@ -323,7 +323,7 @@ test("같은 환자가 두 줄로 뜨지 않는다", async () => {
   const api = rules();
   api.MOCK = true;
 
-  const charts = (await api.patientsApi.roster("", "ALL", null, 50)).items.map(
+  const charts = (await api.patientsApi.roster("", "ALL", 50)).items.map(
     (row) => row.hospital_patient_no,
   );
 
@@ -338,7 +338,7 @@ test("오늘이 아닌 환자도 관리에는 있다", async () => {
   const api = rules();
   api.MOCK = true;
 
-  const roster = await api.patientsApi.roster("", "ALL", null, 50);
+  const roster = await api.patientsApi.roster("", "ALL", 50);
   const today = api.MOCK_TODAY.map((visit) => visit.hospital_patient_no);
   const past = roster.items.filter((row) => today.indexOf(row.hospital_patient_no) === -1);
 
