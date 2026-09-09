@@ -25,7 +25,15 @@ from app.models.catalog import BaselineDirection, LabBaseline, PrescriptionSet, 
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.staffs import Hospital
-from app.models.visits import GuideDocument, GuideEvent, GuideEventType, GuideSectionKey, GuideStatus, PatientGuideLink
+from app.models.visits import (
+    GuideDocument,
+    GuideEvent,
+    GuideEventType,
+    GuideMessageKind,
+    GuideSectionKey,
+    GuideStatus,
+    PatientGuideLink,
+)
 
 LINK_TTL = timedelta(hours=168)
 #: 발송마다 워커가 새로 발급하는 링크의 유효기간 — KEY-297 원문의 「GUIDE 72시간」.
@@ -511,8 +519,13 @@ class PatientLinkService:
             )
             return link, raw_token
 
-    async def issue_for_dispatch(self, guide_document_id: int, message_id: int) -> str:
-        """워커가 발송 직전에 부르는 시스템 발급/회전 — actor 없음 (KEY-297).
+    async def issue_for_dispatch(
+        self,
+        guide_document_id: int,
+        message_id: int,
+        message_kind: GuideMessageKind,
+    ) -> tuple[str, datetime]:
+        """워커가 발송 직전에 부르는 시스템 발급/회전 (KEY-297).
 
         예약 승인 시점이 아니라 **보내는 그 순간**에 원문을 새로 만든다.
         이미 링크가 있으면 회전(기존 digest 폐기 + OTP 무효화), 없으면 새로
@@ -523,11 +536,23 @@ class PatientLinkService:
         바로 써넣고 버려야 한다 — 여기도, 어디도 원문을 저장하지 않는다.
 
         `_lock_link`(actor 기준 병원 범위 조회)를 못 쓴다 — 워커는 스탭
-        요청이 아니라 actor가 없다. 그래서 `guide_document_id`로 직접 잠근다.
+        요청이 아니므로 상위 안내문 행을 잠그고 시스템 actor로 감사 이력을 남긴다.
         """
-        raw_token = secrets.token_urlsafe(32)
-        timestamp = now()
         async with in_transaction() as connection:
+            # A missing link row cannot be locked. Lock its parent so two workers
+            # cannot both take the first-issuance path and race on the unique key.
+            guide = (
+                await GuideDocument.filter(guide_document_id=guide_document_id)
+                .select_for_update()
+                .using_db(connection)
+                .first()
+            )
+            if guide is None:
+                raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
+
+            raw_token = secrets.token_urlsafe(32)
+            timestamp = now()
+            expires_at = timestamp + DISPATCH_LINK_TTL
             link = (
                 await PatientGuideLink.filter(guide_document_id=guide_document_id)
                 .select_for_update()
@@ -538,25 +563,37 @@ class PatientLinkService:
                 await PatientGuideLink.create(
                     guide_document_id=guide_document_id,
                     token_digest=digest_link_token(raw_token),
-                    expires_at=timestamp + DISPATCH_LINK_TTL,
+                    expires_at=expires_at,
                     issued_by=SYSTEM_ISSUER_ID,
                     issued_at=timestamp,
                     last_message_id=message_id,
                     using_db=connection,
                 )
-                return raw_token
+                action = "ISSUED"
+            else:
+                await self._invalidate_otp(link, connection, timestamp)
+                link.token_digest = digest_link_token(raw_token)
+                link.expires_at = expires_at
+                link.issued_by = SYSTEM_ISSUER_ID
+                link.issued_at = timestamp
+                link.last_message_id = message_id
+                await link.save(
+                    using_db=connection,
+                    update_fields=["token_digest", "expires_at", "issued_by", "issued_at", "last_message_id"],
+                )
+                action = "ROTATED"
 
-            await self._invalidate_otp(link, connection, timestamp)
-            link.token_digest = digest_link_token(raw_token)
-            link.expires_at = timestamp + DISPATCH_LINK_TTL
-            link.issued_by = SYSTEM_ISSUER_ID
-            link.issued_at = timestamp
-            link.last_message_id = message_id
-            await link.save(
+            await GuideEvent.create(
+                guide_document_id=guide_document_id,
+                event_type=GuideEventType.LINK_REISSUED,
+                actor_id=SYSTEM_ISSUER_ID,
+                reason=(
+                    f"action={action};message_kind={message_kind.value};message_id={message_id};"
+                    f"issued_at={timestamp.isoformat()};expires_at={expires_at.isoformat()}"
+                ),
                 using_db=connection,
-                update_fields=["token_digest", "expires_at", "issued_by", "issued_at", "last_message_id"],
             )
-            return raw_token
+            return raw_token, expires_at
 
     async def revoke(self, actor, visit_id: int) -> None:
         """원문을 보관하지 않고 digest를 회전해 현재 링크를 즉시 폐기한다."""

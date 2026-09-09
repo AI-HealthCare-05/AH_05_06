@@ -36,7 +36,7 @@ from app.models.visits import (
 )
 from app.services.dispatch_gate import evaluate_dispatch_gate
 from app.services.message_templates import DEFAULT_BODY, MessageTemplateKind
-from app.services.patient_links import DISPATCH_LINK_TTL, PatientLinkService
+from app.services.patient_links import PatientLinkService
 from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError, SmsSendResult
 
 #: 최대 재시도 횟수. 이걸 넘기면 일시 실패도 영구 실패(FAILED)로 종료한다.
@@ -145,14 +145,15 @@ async def render_message_body(
         values["D"] = str(max(remaining, 0)) if remaining is not None else ""
 
     if "{링크}" in body or "{예약링크}" in body:
-        raw_token = await PatientLinkService().issue_for_dispatch(
+        raw_token, expires_at = await PatientLinkService().issue_for_dispatch(
             guide.guide_document_id,
             message.guide_message_id,
+            message.kind,
         )
         link = _absolute_link_url(raw_token)
         values["링크"] = link
         values["예약링크"] = link
-        values["만료일"] = _format_expiry(now() + DISPATCH_LINK_TTL)
+        values["만료일"] = _format_expiry(expires_at)
 
     for name, value in values.items():
         body = body.replace("{" + name + "}", value)

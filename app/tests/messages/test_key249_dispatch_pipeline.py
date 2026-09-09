@@ -15,6 +15,7 @@ CANCELED 만 실제로 쓰인다.」이 파일이 그 발송기다.
 
 import asyncio
 from datetime import timedelta
+from unittest.mock import patch
 
 from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
@@ -40,6 +41,7 @@ from app.services.message_dispatch import (
     _finish_failed,
     _finish_retryable,
     _finish_sent,
+    _format_expiry,
     backoff_seconds,
     dispatch_due_messages,
     dispatch_message,
@@ -132,6 +134,19 @@ class TestLinkVariableIsIssuedAtDispatchTime(TestCase):
         assert config.PATIENT_WEB_BASE_URL in body
         link = await PatientGuideLink.get(guide_document_id=message.guide_document_id)
         assert link.last_message_id == message.guide_message_id
+
+    async def test_render_uses_the_expiry_saved_with_the_issued_token(self) -> None:
+        message = await make_due_message(kind=GuideMessageKind.GUIDE)
+        issued_at = now().replace(hour=23, minute=30, second=0, microsecond=0)
+
+        with (
+            patch("app.services.patient_links.now", return_value=issued_at),
+            patch("app.services.message_dispatch.now", return_value=issued_at + timedelta(days=2)),
+        ):
+            body = await render_message_body(message)
+
+        link = await PatientGuideLink.get(guide_document_id=message.guide_document_id)
+        assert _format_expiry(link.expires_at) in body
 
     async def test_dispatch_succeeds_all_the_way_through(self) -> None:
         message = await make_due_message(kind=GuideMessageKind.GUIDE)
