@@ -37,6 +37,23 @@ def pilot_mock_otp_gate_open() -> bool:
     return has_env and has_flag
 
 
+# 실제 환자 OTP 발송 좁은문(prod) — KEY-284, 같은 이유로 같은 모양이다.
+# SMS_PROVIDER=solapi와 자격증명만으로 운영에서 실제 발송이 켜지면 KEY-6
+# 배포 승인 없이도 켜질 수 있다 — 그래서 실행할 때마다 넣어야 하는 CLI
+# 플래그를 하나 더 요구한다.
+OTP_SOLAPI_PROD_ENABLED_ENV = "OTP_SOLAPI_PROD_ENABLED"
+OTP_SOLAPI_PROD_ENABLED_FLAG = "--otp-confirm-solapi-prod"
+
+
+def otp_solapi_prod_gate_open() -> bool:
+    """OTP_SOLAPI_PROD_ENABLED 환경변수와 --otp-confirm-solapi-prod 플래그가
+    둘 다 있어야 True — KEY-6 배포 승인 뒤 이 둘을 함께 넣는다.
+    """
+    has_env = is_flag_env_value_true(os.environ.get(OTP_SOLAPI_PROD_ENABLED_ENV))
+    has_flag = OTP_SOLAPI_PROD_ENABLED_FLAG in sys.argv[1:]
+    return has_env and has_flag
+
+
 class SmsProvider(StrEnum):
     MOCK = "mock"
     SOLAPI = "solapi"
@@ -132,6 +149,13 @@ class Config(BaseSettings):
     # KEY-163 §8 기준값 10초. 실제 응답 시간은 8/27 멘토링 후 확인 예정.
     CLOVA_OCR_TIMEOUT_SECONDS: float = 10.0
 
+    # 승인 의료지식 원문/snapshot 전용 private MinIO — KEY-276.
+    # 자격증명은 SecretStr로 가리고, DB·응답·로그에는 object key만 남긴다.
+    KNOWLEDGE_MINIO_ENDPOINT: str = "http://minio:9000"
+    KNOWLEDGE_MINIO_BUCKET: str = "approved-knowledge"
+    MINIO_ROOT_USER: SecretStr = SecretStr("")
+    MINIO_ROOT_PASSWORD: SecretStr = SecretStr("")
+
     @property
     def clova_enabled(self) -> bool:
         return bool(self.CLOVA_OCR_INVOKE_URL and self.CLOVA_OCR_SECRET_KEY.get_secret_value())
@@ -162,6 +186,11 @@ class Config(BaseSettings):
     SOLAPI_SENDER_NUMBER: SecretStr = SecretStr("")
     SOLAPI_BASE_URL: str = "https://api.solapi.com"
     SOLAPI_TIMEOUT_SECONDS: float = 10.0
+    # 실제 솔라피로 OTP를 보낼 때, 이 목록에 있는 번호로만 보낸다 — KEY-284.
+    # 운영 활성화 승인(KEY-6)이 생기기 전까지는 항상 이 목록을 본다 —
+    # Pilot도 ENV=prod로 뜨므로 환경으로 가르지 않는다. 쉼표로 구분한
+    # 전화번호 원문. 비워 두면 전부 막힌다("빈 목록=전체 허용"이 아니다).
+    OTP_APPROVED_TEST_PHONES: SecretStr = SecretStr("")
 
     @model_validator(mode="after")
     def _mock_otp_code_is_non_prod_only(self) -> "Config":
@@ -179,6 +208,32 @@ class Config(BaseSettings):
                 f"MOCK_OTP_CODE는 prod 환경에서 사용할 수 없습니다 (ENV={self.ENV.value}). "
                 "운영에서 고정 OTP를 허용하면 누구나 인증을 우회한다 (KEY-219). "
                 f"Pilot이면 {PILOT_ALLOW_MOCK_OTP_ENV}=1과 {PILOT_ALLOW_MOCK_OTP_FLAG}가 둘 다 필요하다 (KEY-264)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _otp_solapi_prod_gate_needs_an_approved_list(self) -> "Config":
+        # KEY-284. ApprovedPhonesOnlyDelivery는 SMS_PROVIDER=solapi면 환경과
+        # 무관하게 항상 씌워진다(_otp_service()) — deny-all 위험의 진짜 조건은
+        # "prod + 좁은문"이 아니라 "solapi 경로에 닿음"이다. prod에서만 봤더니
+        # dev·local에도 같은 함정이 조용히 남았다(iljun-sys 리뷰로 재현:
+        # ENV=dev + 빈 목록이면 부팅은 되고 발송 시점에야 503만 남는다).
+        if self.SMS_PROVIDER is not SmsProvider.SOLAPI:
+            return self
+        if self.ENV is Env.PROD and otp_solapi_prod_gate_open():
+            default_logger.warning(
+                "OTP_SOLAPI_PROD_ENABLED 좁은문 열림 (ENV=prod, %s + %s) — 실제 환자에게 문자가 나갈 수 있다 (KEY-284)",
+                OTP_SOLAPI_PROD_ENABLED_ENV,
+                OTP_SOLAPI_PROD_ENABLED_FLAG,
+            )
+        if not self.OTP_APPROVED_TEST_PHONES.get_secret_value().strip():
+            # 빈 목록은 "전체 허용"이 아니라 deny-all이다 — 이 조합으로 부팅되면
+            # 모든 요청이 공급자 장애와 구분 안 되는 503만 받는다(iljun-sys
+            # 리뷰로 실제 재현). 조용히 막히는 대신 부팅에서 이름을 댄다.
+            raise ValueError(
+                "SMS_PROVIDER=solapi인데 OTP_APPROVED_TEST_PHONES가 비어 있습니다. "
+                "이 조합은 모든 번호를 막아 공급자 장애처럼 보이는 503만 냅니다 — "
+                "승인된 번호를 채우세요 (KEY-284)."
             )
         return self
 

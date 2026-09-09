@@ -56,6 +56,10 @@ BASE_ENV = {
     "SOLAPI_API_KEY": "synthetic-api-key",
     "SOLAPI_API_SECRET": "synthetic-api-secret",
     "SOLAPI_SENDER_NUMBER": "0200000000",
+    # KEY-284 검증기가 SMS_PROVIDER=solapi면 이 값을 요구한다 — 이 파일은
+    # seed 스크립트의 prod 가드를 재는 것이라 OTP와 무관하지만, Config 하나를
+    # 같이 쓰므로 채워야 임포트 시점에 죽지 않는다.
+    "OTP_APPROVED_TEST_PHONES": "01000000000",
 }
 
 
