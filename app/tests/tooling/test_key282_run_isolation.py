@@ -9,6 +9,7 @@
 서로를 막았다. **틀린 답이 나오는 것이 느린 것보다 나쁘다** — 없는 결함을 쫓게 된다.
 """
 
+import inspect
 import json
 import os
 import re
@@ -34,30 +35,66 @@ LOCK_MARK = "이미 다른 pytest 실행이 쓰고 있다"
 GRANT_MARK = "만들 권한이 없다"
 
 
-def _free_slots(lane: int = 0) -> tuple[int, int]:
-    """부모도 **형제도** 안 쓰는 자리 둘.
+#: 어느 검사가 자리를 **몇 개** 쓰는지. 적은 순서가 곧 자리 배치다 — 앞에서부터
+#: 붙여 나가므로 겹칠 수가 없다.
+#:
+#: 전에는 호출부가 `lane=4` 처럼 숫자를 손으로 적었다. 다섯 번째 검사를 기존 것을
+#: 복사해 만들면서 숫자를 안 바꾸거나 인자 없이 부르면, **이 파일이 고치려는 바로 그
+#: 레이스가 조용히 되살아난다** — 그리고 그 모습은 상관없는 PR 의 CI 가 빨개지는
+#: 것이다 (이희진, #267). 숫자를 사람이 안 적게 한다.
+#:
+#: 폭도 실제 쓰는 만큼만 준다. 둘씩 일률로 벌렸더니 마지막 검사가 여섯 자리 뒤로
+#: 밀려, 코어 아홉 개짜리 러너에서 **정작 격리를 재는 검사가 조용히 건너뛰어졌다.**
+#: 하나만 쓰는 검사에 하나만 주면 여섯 자리가 네 자리로 준다.
+SLOT_WIDTHS: dict[str, int] = {
+    "test_the_loser_can_say_who_is_holding_the_slot": 1,
+    "test_the_same_slot_stops_instead_of_overlapping": 1,
+    "test_different_slots_both_finish": 2,
+    "test_the_two_runs_use_different_databases_and_redis": 2,
+}
+
+
+def _lane_of(name: str) -> tuple[int, int]:
+    """이 검사가 몇 번째 자리부터 몇 개를 쓰는가."""
+    at = 0
+    for known, width in SLOT_WIDTHS.items():
+        if known == name:
+            return at, width
+        at += width
+    raise KeyError(name)
+
+
+@pytest.fixture
+def slots(request: pytest.FixtureRequest) -> tuple[int, ...]:
+    """부모도 **형제도** 안 쓰는 자리들.
 
     부모가 `-n auto` 로 돌면 워커들이 `base … base+N-1` 을 이미 잡고 있다. 그 위를
     골라야 자식이 부모를 물지 않는다 — 안 그러면 이 검사가 **자기 자신을 막는다.**
 
-    형제를 피하는 것이 `lane` 이다 (KEY-309). 전에는 호출자 모두에게 같은 쌍을
+    형제를 피하는 것이 자리 배치다 (KEY-309). 전에는 호출자 모두에게 같은 쌍을
     돌려줬다. `-n auto` 면 이 파일의 검사들이 서로 다른 워커로 흩어져 나란히 도는데,
     그중 하나(`test_the_same_slot_stops_instead_of_overlapping`)는 그 자리를
     **일부러 물고 있다.** 그 사이 다른 검사가 같은 자리를 잡으려다 잠금에 걸려,
     상관없는 PR 의 CI 가 빨개졌다 — 2,248 통과에 이것 하나만 실패하는 모양이라
     사람이 원인을 자기 변경에서 찾게 된다. 부모만 피하고 형제는 안 피했던 것이다.
-
-    한 검사가 최대 두 자리를 쓰므로 `lane` 은 둘씩 벌려 준다.
     """
+    name = request.node.originalname or request.node.name
+    if name not in SLOT_WIDTHS:
+        pytest.fail(f"{name} 이 SLOT_WIDTHS 에 없다 — 자리를 몇 개 쓰는지 적어 두지 않으면 남의 자리를 밟는다")
+
+    lane, width = _lane_of(name)
     base = int(os.environ.get(TEST_SLOT_ENV, "0") or "0")
     workers = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1") or "1")
-    first = base + workers + lane
-    if first + 1 >= REDIS_LOGICAL_DB_COUNT:
+    need = tuple(range(base + workers + lane, base + workers + lane + width))
+
+    #: **필요한 만큼만 말한다.** 전에는 하나만 쓰는 검사도 둘을 요구한다고 적어,
+    #: 자리를 늘려 보려는 사람에게 한 칸을 더 요구했다.
+    if need[-1] >= REDIS_LOGICAL_DB_COUNT:
         pytest.skip(
             f"자리가 모자라 자식을 띄울 수 없다 — 부모가 {base + workers - 1}번까지 쓰고, "
-            f"이 검사는 {first}·{first + 1}번이 필요하다"
+            f"이 검사는 {'·'.join(str(one) for one in need)}번이 필요하다"
         )
-    return first, first + 1
+    return need
 
 
 def _skip_if_ungranted(results: list[tuple[int, str]]) -> None:
@@ -176,13 +213,13 @@ class TestTheHarnessCleansUpAfterItself:
                     child.kill()
                     child.wait()
 
-    def test_the_loser_can_say_who_is_holding_the_slot(self) -> None:
+    def test_the_loser_can_say_who_is_holding_the_slot(self, slots: tuple[int, ...]) -> None:
         """**진 쪽이 보유자를 지우지 않는다** — `"w"` 로 열면 여는 것만으로 지운다.
 
         정작 충돌한 그 순간에 「누가 들고 있는지」를 알 수 없으면, 사람은 터미널을
         하나씩 뒤져야 한다.
         """
-        slot = _free_slots(lane=0)[0]
+        slot = slots[0]
         first, second = _run_both(slot, slot)
         _skip_if_ungranted([first, second])
 
@@ -210,13 +247,13 @@ class TestTheHarnessCleansUpAfterItself:
 
 
 class TestTwoRunsDoNotEatEachOther:
-    def test_the_same_slot_stops_instead_of_overlapping(self) -> None:
+    def test_the_same_slot_stops_instead_of_overlapping(self, slots: tuple[int, ...]) -> None:
         """같은 자리를 두 실행이 잡으면 **한쪽이 그 자리에서 멈춘다.**
 
         조용히 진행하면 늦게 시작한 쪽이 먼저 돌던 쪽의 스키마를 지운다. 겹치는
         것보다 우는 편이 낫다는 것은 이 파일 위쪽(워커 16개 초과)이 이미 정한 태도다.
         """
-        slot = _free_slots(lane=2)[0]
+        slot = slots[0]
         results = _run_both(slot, slot)
 
         stopped = [text for code, text in results if code != 0 and LOCK_MARK in text]
@@ -228,9 +265,9 @@ class TestTwoRunsDoNotEatEachOther:
         #: 멈추는 것만으로는 부족하다 — **무엇을 하면 되는지**까지 말해야 한다.
         assert TEST_SLOT_ENV in stopped[0], "멈추면서 자리를 달리 주는 방법을 안 알려 준다"
 
-    def test_different_slots_both_finish(self) -> None:
+    def test_different_slots_both_finish(self, slots: tuple[int, ...]) -> None:
         """자리를 달리 주면 둘 다 끝까지 간다 — 서로의 결과를 바꾸지 않는다."""
-        slot_a, slot_b = _free_slots(lane=4)
+        slot_a, slot_b = slots
         results = _run_both(slot_a, slot_b)
         _skip_if_ungranted(results)
 
@@ -238,14 +275,14 @@ class TestTwoRunsDoNotEatEachOther:
             assert code == 0, f"자리 {slot} 실행이 실패했다 — 서로를 밟고 있다\n{text[-2000:]}"
             assert LOCK_MARK not in text, f"자리 {slot} 이 남의 자리를 잡으려 했다"
 
-    def test_the_two_runs_use_different_databases_and_redis(self) -> None:
+    def test_the_two_runs_use_different_databases_and_redis(self, slots: tuple[int, ...]) -> None:
         """**둘이 실제로 무엇을 썼는지** 받아 보고 비교한다.
 
         한 프로세스 안에서 `config.REDIS_DB == run_slot()` 을 재면 자리 0 에서
         `0 == 0` 이라 늘 참이고, Redis 를 자리와 따로 두는 회귀가 그대로 통과한다.
         겹치는지는 프로세스가 둘일 때만 드러난다.
         """
-        slot_a, slot_b = _free_slots(lane=6)
+        slot_a, slot_b = slots
         for slot in (slot_a, slot_b):
             probe_path(slot).unlink(missing_ok=True)
 
@@ -267,3 +304,35 @@ class TestTwoRunsDoNotEatEachOther:
         assert first["redis_db"] != second["redis_db"], (
             f"두 실행이 같은 Redis 논리 DB({first['redis_db']})를 썼다 — 이름만 갈리고 세션·로그인시도 카운터는 겹친다"
         )
+
+
+class TestTheSlotTableAndTheTestsAgree:
+    """자리를 쓰는 검사가 표에 없으면 남의 자리를 밟는다 — KEY-309 가 되살아난다.
+
+    `slots` 픽스처가 곧바로 실패시키기는 한다. 다만 그때는 이미 그 검사가 도는
+    중이고, 자리를 쓰는 자식까지 띄운 뒤다. 표와 실제가 갈린 것 자체를 여기서
+    먼저, 몇 밀리초에 잡는다.
+    """
+
+    def test_the_table_names_exactly_the_tests_that_ask_for_a_slot(self) -> None:
+        asks = {
+            name
+            for holder in (TestTheHarnessCleansUpAfterItself, TestTwoRunsDoNotEatEachOther)
+            for name, fn in vars(holder).items()
+            if name.startswith("test_") and "slots" in inspect.signature(fn).parameters
+        }
+
+        assert asks == set(SLOT_WIDTHS), (
+            "자리 표와 실제로 자리를 쓰는 검사가 갈렸다 — "
+            f"표에만 있는 것 {sorted(set(SLOT_WIDTHS) - asks)}, "
+            f"표에 없는 것 {sorted(asks - set(SLOT_WIDTHS))}"
+        )
+
+    def test_no_two_tests_are_given_the_same_slot(self) -> None:
+        """`lane=4` 를 손으로 적던 시절의 결함 — 복사하면서 숫자를 안 바꾸는 것."""
+        taken: list[int] = []
+        for name in SLOT_WIDTHS:
+            lane, width = _lane_of(name)
+            taken.extend(range(lane, lane + width))
+
+        assert len(taken) == len(set(taken)), f"두 검사가 같은 자리를 받는다 — {taken}"
