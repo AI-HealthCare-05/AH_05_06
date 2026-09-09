@@ -10,6 +10,7 @@
 두지 않는다. 원문은 워커 메모리에서 문구를 만드는 동안에만 살아 있다.
 """
 
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -67,11 +68,18 @@ class DispatchResult:
 #: 환자 링크가 여는 화면 경로 — `frontend/js/link-token.js`의 조각(`#t=`) 규칙과
 #: 맞춘다. 조각은 서버 요청·access log에 남지 않는다.
 _LINK_PATH = "/patient_wireframe/html/otp.html#t={token}"
+_LINK_TOKEN_IN_BODY = re.compile(r"(?<=#t=)[A-Za-z0-9_-]+")
 
 
 def _absolute_link_url(raw_token: str) -> str:
     base = config.PATIENT_WEB_BASE_URL.rstrip("/")
     return base + _LINK_PATH.format(token=raw_token)
+
+
+def _body_for_storage(body: str) -> str:
+    """Keep the sent text for support without retaining a patient link token."""
+
+    return _LINK_TOKEN_IN_BODY.sub("[REDACTED]", body)
 
 
 def _format_expiry(expires_at: datetime) -> str:
@@ -242,7 +250,7 @@ async def _finish_sent(
     affected = await GuideMessage.filter(guide_message_id=message.guide_message_id, claim_token=token).update(
         status=GuideMessageStatus.SENT,
         sent_at=moment,
-        sent_body=body,
+        sent_body=_body_for_storage(body),
         provider_message_id=result.provider_message_id,
         provider_detail=None,
         failure_code=None,

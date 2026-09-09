@@ -2064,6 +2064,24 @@
         "title": "MessagePlanResponse",
         "type": "object"
       },
+      "MessageResendResponse": {
+        "description": "재발송 요청으로 생성된 발송 작업.",
+        "properties": {
+          "guide_message_id": {
+            "title": "Guide Message Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuideMessageStatus"
+          }
+        },
+        "required": [
+          "guide_message_id",
+          "status"
+        ],
+        "title": "MessageResendResponse",
+        "type": "object"
+      },
       "MessageRound": {
         "additionalProperties": false,
         "description": "문자 회차 하나 — 와이어프레임 S1-14.\n\n`body` 가 `null` 이면 **기본 문구**다. 빈 문자열도 같은 뜻으로 받는다 —\n스탭이 문구를 다 지운 것은 「빈 문자를 보내라」가 아니라 「기본으로\n되돌려라」이기 때문이다.",
@@ -7774,6 +7792,54 @@
           }
         ],
         "summary": "Download Sent Messages",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/messages/history/{message_id}/resend": {
+      "post": {
+        "description": "발송 이력 한 건을 새 링크로 다시 보낼 작업으로 등록한다.",
+        "operationId": "resend_message_api_v1_messages_history__message_id__resend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResendResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resend Message",
         "tags": [
           "messages"
         ]

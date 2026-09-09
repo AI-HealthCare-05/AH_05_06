@@ -732,7 +732,14 @@ class GuideService:
         **거뒀다가 다시 승인하면 껐던 줄을 되살린다.** 유니크 때문에 새로
         만들 수 없기도 하고, 껐던 것도 기록이라 지우지 않기 때문이다.
         """
-        live = await GuideMessage.filter(guide_document_id=guide.guide_document_id).using_db(connection).all()
+        live = (
+            await GuideMessage.filter(
+                guide_document_id=guide.guide_document_id,
+                resend_sequence=0,
+            )
+            .using_db(connection)
+            .all()
+        )
 
         # **껐던 줄은 「이미 있다」가 아니다.** 승인을 거두면 예약을 CANCELED 로
         # 꺼 두는데, 그 줄까지 있는 것으로 세면 다시 승인해도 꺼진 채 남는다 —

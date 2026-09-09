@@ -428,6 +428,37 @@ class PatientLinkService:
 
         await invalidate_otp_challenge(link.patient_guide_link_id, connection, timestamp)
 
+    async def revoke_active_for_resend(
+        self,
+        guide_document_id: int,
+        actor_id: int,
+        connection,
+        timestamp: datetime,
+    ) -> bool:
+        """재발송을 확정하며 현재 활성 링크와 OTP를 즉시 폐기한다."""
+
+        link = (
+            await PatientGuideLink.filter(guide_document_id=guide_document_id)
+            .select_for_update()
+            .using_db(connection)
+            .first()
+        )
+        if link is None or as_utc(link.expires_at) <= as_utc(timestamp):
+            return False
+
+        await self._invalidate_otp(link, connection, timestamp)
+        link.token_digest = digest_link_token(secrets.token_urlsafe(32))
+        link.expires_at = timestamp
+        await link.save(using_db=connection, update_fields=["token_digest", "expires_at"])
+        await GuideEvent.create(
+            guide_document_id=guide_document_id,
+            event_type=GuideEventType.LINK_REVOKED,
+            actor_id=actor_id,
+            reason="RESEND_REQUESTED",
+            using_db=connection,
+        )
+        return True
+
     async def read_state(self, actor, visit_id: int) -> tuple[bool, datetime | None]:
         """이 진료의 링크가 있는가 · 언제까지인가 — KEY-275.
 
