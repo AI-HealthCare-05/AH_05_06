@@ -761,11 +761,22 @@ shred -u /tmp/care-on.sql   # 덤프에는 환자 표가 통째로 들어 있다
 
 ```bash
 # ⓐ 서버 .env 의 DB_HOST 를 RDS 엔드포인트로
-# ⓑ 컨테이너 MySQL 을 끈다 — 오버레이를 얹는다
-docker compose \
-  -f infra/docker/docker-compose.prod.yml \
-  -f infra/docker/docker-compose.rds.yml \
-  up -d
+
+# ⓑ 컨테이너 MySQL 을 끈다 — 오버레이를 **이 이름으로** 서버에 둔다
+scp -i ~/.ssh/<키> infra/docker/docker-compose.rds.yml \
+    ubuntu@<ip>:~/project/docker-compose.override.yml
+```
+
+**`-f` 로 주는 것이 아니다.** 배포 스크립트가 `docker compose` 를 `-f` 없이
+부르고(`scripts/lib.sh:65·110`), `~/project/docker-compose.yml` 을 매번
+덮어쓴다(`scripts/deployment.sh:215`). 넘길 자리가 없으므로 **이름으로** 얹는다
+— compose 는 `docker-compose.override.yml` 을 자동으로 합친다. 배포는 그 이름을
+안 건드리므로 **다음 배포에도 그대로 이어진다.**
+
+얹혔는지는 서버에서 이렇게 본다.
+
+```bash
+cd ~/project && docker compose config --services   # mysql 이 없어야 한다
 ```
 
 **ⓑ 를 빼먹으면 아무도 안 쓰는 MySQL 이 계속 돌면서 옮기기 전의 진료 기록을
@@ -788,7 +799,7 @@ docker volume rm docker_mysql_data
 
 ### ⑤ 되돌리기
 
-`DB_HOST` 를 `mysql` 로 되돌리고 오버레이를 뺀다. **둘을 함께 되돌린다** —
+`DB_HOST` 를 `mysql` 로 되돌리고 `~/project/docker-compose.override.yml` 을 지운다. **둘을 함께 되돌린다** —
 한쪽만 되돌리면 앱이 없는 곳을 찾는다. 되돌린 뒤의 데이터는 볼륨을 지우기
 전까지의 것이라, ③ 의 볼륨 삭제는 되돌릴 일이 없다고 판단한 뒤에 한다.
 

@@ -137,6 +137,41 @@ class TestComposeActuallyRendersItThatWay:
         assert "mysql" in rendered["services"], "오버레이 없이도 mysql 이 사라졌다 — 지금 배포가 깨진다"
 
 
+class TestTheOverlayCanActuallyReachTheServer:
+    """**`-f` 를 넘길 자리가 없다.**
+
+    배포 스크립트는 `docker compose` 를 `-f` 없이 부르고(`lib.sh`),
+    `~/project/docker-compose.yml` 을 매번 덮어쓴다(`deployment.sh`). 그래서
+    오버레이는 **이름으로** 얹는다 — compose 가 자동으로 합치는
+    `docker-compose.override.yml` 이다.
+
+    이 검사가 없으면 오버레이는 저장소 안에서만 옳고 서버에서는 한 번도 안
+    얹힌다 — 그리고 그 사실은 아무 데서도 안 드러난다.
+    """
+
+    def test_the_deploy_never_calls_compose_with_a_file_flag(self) -> None:
+        lib = read("scripts/lib.sh")
+
+        calls = [ln.strip() for ln in lib.splitlines() if ln.strip().startswith("docker compose ")]
+        assert calls, "배포가 compose 를 안 부른다 — 검사가 헛돈다"
+        for call in calls:
+            assert " -f " not in call, f"배포가 `-f` 를 쓴다 — 그러면 이름으로 얹는 규칙이 더 이상 맞지 않는다: {call}"
+
+    def test_the_deploy_does_not_overwrite_the_override_name(self) -> None:
+        """덮어쓰면 옮긴 다음 배포에서 컨테이너 MySQL 이 되살아난다."""
+        deploy = read("scripts/deployment.sh")
+
+        assert "docker-compose.override.yml" not in deploy, (
+            "배포가 override 파일 이름을 건드린다 — 다음 배포에 RDS 설정이 지워진다"
+        )
+        assert "~/project/docker-compose.yml" in deploy, "배포가 compose 를 안 올린다 — 검사가 헛돈다"
+
+    def test_the_runbook_puts_it_there_by_that_name(self) -> None:
+        runbook = read("docs/deploy-runbook.md")
+
+        assert "docker-compose.override.yml" in runbook, "런북이 얹는 방법을 안 적었다"
+
+
 class TestTheProcedureIsWrittenDown:
     """옮기는 사람이 **두 곳을 함께** 바꿔야 한다는 것을 어디선가 읽어야 한다."""
 
