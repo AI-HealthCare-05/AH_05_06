@@ -58,6 +58,18 @@ def _overlay() -> dict[str, Any]:
     return loaded
 
 
+def _commands(markdown: str) -> str:
+    """```bash 울타리 **안**의 줄만. 설명글은 명령이 아니다."""
+    lines, inside, out = markdown.splitlines(), False, []
+    for line in lines:
+        if line.startswith("```"):
+            inside = line.startswith("```bash")
+            continue
+        if inside:
+            out.append(line)
+    return "\n".join(out)
+
+
 class TestTheOverlayTurnsOffTheContainerDatabase:
     def test_mysql_goes_behind_a_profile(self) -> None:
         """프로필이 붙은 서비스는 그 프로필을 켰을 때만 뜬다."""
@@ -170,6 +182,69 @@ class TestTheOverlayCanActuallyReachTheServer:
         runbook = read("docs/deploy-runbook.md")
 
         assert "docker-compose.override.yml" in runbook, "런북이 얹는 방법을 안 적었다"
+
+
+class TestTheCleanupCommandsNameThingsThatExist:
+    """지우라고 적은 것이 **그 이름으로 실재해야** 한다.
+
+    런북이 `docker volume rm docker_mysql_data` 라고 적고 있었다. compose 파일이
+    볼륨 이름을 못 박아 두어(`name: mysql_data`) 프로젝트 접두어가 안 붙는데,
+    다른 판의 습관대로 적은 것이다. 그 명령은 `no such volume` 으로 실패하고,
+    **절차를 따라간 사람은 옮기기 전 진료 기록을 지웠다고 믿고 넘어간다** —
+    이 절이 막으려던 바로 그 자리다.
+    """
+
+    def test_the_runbook_removes_the_volume_by_its_real_name(self) -> None:
+        volumes = compose(PROD).get("volumes") or {}
+        real = (volumes.get("mysql_data") or {}).get("name") or "mysql_data"
+
+        runbook = read("docs/deploy-runbook.md")
+        assert f"docker volume rm {real}" in runbook, f"런북이 볼륨을 {real} 로 안 부른다"
+
+        wrong = [
+            line.strip()
+            for line in runbook.splitlines()
+            if "docker volume rm" in line and f"docker volume rm {real}" not in line
+        ]
+        assert not wrong, f"없는 볼륨 이름을 지우라고 적었다 — {wrong}"
+
+    def test_the_container_database_is_removed_with_its_profile(self) -> None:
+        """**프로필 없이 이름을 대면 판이 통째로 내려간다.**
+
+        오버레이가 얹힌 뒤라 `mysql` 은 프로필 뒤에 있다. 그 상태에서
+        `docker compose down mysql` 을 부르면 compose 가 이름을 못 찾고 프로젝트
+        전체를 내린다 — `fastapi` · `nginx` 까지 멈춘다 (같은 모양으로 실측).
+        """
+        runbook = read("docs/deploy-runbook.md")
+        at = runbook.index("## 4-5.")
+        section = runbook[at : runbook.index("\n## ", at + 5)]
+
+        assert "--profile container-db rm -sf mysql" in section, "프로필 없이 컨테이너 DB 를 지우라고 적었다"
+
+        #: **시키는 줄만 본다.** 하지 말라고 적은 설명글에도 그 명령이 나온다 —
+        #: 글자로만 세면 경고문이 제 검사에 걸린다.
+        assert "down mysql" not in _commands(section), "판을 통째로 내리는 명령이 남아 있다"
+
+
+class TestTheServerHasNoRepository:
+    """서버에는 저장소가 없다 — 배포가 올리는 것은 `.env` · compose · nginx 셋뿐이다.
+
+    `-f infra/docker/...` 로 부르면 그런 파일이 없다. 런북 3절이 그 사실을 스스로
+    적어 두었는데도 이 절이 그 경로를 쓰고 있었다.
+    """
+
+    def test_the_migration_section_runs_from_the_deploy_directory(self) -> None:
+        runbook = read("docs/deploy-runbook.md")
+        at = runbook.index("## 4-5.")
+        section = runbook[at : runbook.index("\n## ", at + 5)]
+
+        repo_paths = [
+            line.strip()
+            for line in _commands(section).splitlines()
+            if "docker compose" in line and "infra/docker/" in line
+        ]
+        assert not repo_paths, f"서버에 없는 경로로 compose 를 부른다 — {repo_paths}"
+        assert "cd ~/project" in section, "어디서 부르는지 안 적었다"
 
 
 class TestTheProcedureIsWrittenDown:

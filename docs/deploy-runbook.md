@@ -740,11 +740,17 @@ MySQL 로 적어 두었다.
 
 앱을 세우고 옮긴다 — 도는 중에 뜨면 그 사이 쓰인 것이 사라진다.
 
+**서버에는 저장소가 없다.** 배포가 올리는 것은 `.env` · `docker-compose.yml` ·
+nginx 설정 셋뿐이다(3절 3번). `-f infra/docker/...` 로 부르면 그런 파일이 없다 —
+`~/project` 로 가서 이름 없이 부른다.
+
 ```bash
 # EC2 에서. 비밀번호는 이 줄에만 적고 셸 기록에 안 남긴다 (2절).
-docker compose -f infra/docker/docker-compose.prod.yml stop fastapi ai-worker
+cd ~/project
 
-docker compose -f infra/docker/docker-compose.prod.yml exec -T mysql \
+docker compose stop fastapi ai-worker
+
+docker compose exec -T mysql \
   sh -c 'exec mysqldump --single-transaction --routines --triggers \
     -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' > /tmp/care-on.sql
 
@@ -787,9 +793,31 @@ cd ~/project && docker compose config --services   # mysql 이 없어야 한다
 옮긴 것을 확인한 뒤 볼륨을 지운다 — **확인 전에 지우지 않는다.**
 
 ```bash
-docker compose -f infra/docker/docker-compose.prod.yml down mysql
-docker volume rm docker_mysql_data
+cd ~/project
+
+# 오버레이가 얹힌 뒤라 `mysql` 은 프로필 뒤에 있다 — 프로필을 켜야 이름이 잡힌다.
+docker compose --profile container-db rm -sf mysql
+
+docker volume rm mysql_data
 ```
+
+**두 줄 다 그대로 써야 한다.**
+
+`--profile container-db` 없이 `docker compose down mysql` 을 부르면 compose 가
+그 이름을 못 찾고 **판을 통째로 내린다** — `fastapi` · `nginx` 까지 멈춘다.
+옮기는 중에 서비스가 끊기는 것이고, 「mysql 만 지웠다」고 읽은 사람은 그것을
+모른다. 같은 모양을 만들어 확인했다(2026-09-09).
+
+```text
+--profile container-db rm -sf db   db 만 사라지고 app 은 산다
+down db (프로필 없이)               app 까지 사라진다
+```
+
+볼륨 이름에 접두어가 없는 것은 compose 파일이 **이름을 못 박아** 두어서다
+(`docker-compose.prod.yml` 의 `volumes.mysql_data.name: mysql_data`). 프로젝트
+이름이 앞에 안 붙으므로 `docker_mysql_data` 같은 이름은 없다 — 그렇게 부르면
+`no such volume` 으로 실패하고, 절차를 따라간 사람은 **옮기기 전 진료 기록을
+지웠다고 믿고 넘어간다.**
 
 ### ④ 마이그레이션은 그대로 돈다
 
