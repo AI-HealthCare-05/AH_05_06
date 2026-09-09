@@ -96,7 +96,7 @@ class TestPatientListContract(TestCase):
         for patient in many:
             await Visit.create(hospital_id=1, patient=patient, visited_at=datetime.now(UTC))
         with CountingQueries() as large:
-            rows, _, _, _ = await service.list(
+            rows, _, _, _, _ = await service.list(
                 ACTOR,
                 keyword=None,
                 category=PatientCategory.ALL,
@@ -113,7 +113,7 @@ class TestPatientListContract(TestCase):
             await create_patient(f"SYN-KEY51-P{index:03}")
 
         with patch.object(service.repo, "latest_visits", wraps=service.repo.latest_visits) as latest_visits:
-            rows, counts, _, has_next = await service.list(
+            rows, counts, _, has_next, _ = await service.list(
                 ACTOR,
                 keyword=None,
                 category=PatientCategory.ALL,
@@ -174,7 +174,7 @@ class TestPatientListContract(TestCase):
             "app.services.patients.now",
             return_value=datetime(2026, 8, 23, 15, 30, tzinfo=UTC),
         ):
-            rows, _, _, _ = await PatientService().list(
+            rows, _, _, _, _ = await PatientService().list(
                 ACTOR,
                 keyword=None,
                 category=PatientCategory.INACTIVE_6_MONTHS,

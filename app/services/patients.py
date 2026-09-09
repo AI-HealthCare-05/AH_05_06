@@ -17,6 +17,7 @@ from __future__ import annotations
 # 여기서는 어느 `list` 인지 **적어서** 말한다.
 import builtins
 import calendar
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
@@ -38,6 +39,63 @@ from app.repositories.patient_repository import PatientRepository
 from app.services.patient_flags import PatientFlag, flags_of, load_flag_inputs, stopped_dosing
 from app.services.patient_visit_scope import hospital_id_of
 from app.services.work_category import DetailStatus, WorkCategory, derive, load_signals
+
+_LAST_VISIT_DAY = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+_LAST_VISIT_MONTH = re.compile(r"^(\d{4})-(\d{1,2})$")
+
+
+def parse_last_visit_query(keyword: str | None) -> tuple[date, date] | None:
+    """검색어가 날짜꼴이면 **마지막 진료일** 범위로 읽는다 — KEY-303.
+
+    검색창 하나를 이름·차트번호·휴대폰과 나눠 쓴다. 화면에 날짜 칸을 따로 두지
+    않기로 했기 때문이다(2026-09-09).
+
+        2026-08-15 → 그날 하루
+        2026-08    → 그달 전체
+
+    **차트번호와 안 겹친다.** 차트번호는 숫자만이라(`12401`) 하이픈이 있는 이 두
+    꼴과 겹칠 수 없다. 휴대폰도 `010-…` 로 시작해 넉 자리 해를 못 만든다.
+
+    달·날이 범위를 벗어나면(`2026-13`) 날짜가 아닌 것으로 보고 그대로 이름
+    검색에 넘긴다 — 없는 달을 조용히 12월로 고치면 사람이 오해한다.
+    """
+    if not keyword:
+        return None
+    text = keyword.strip()
+
+    day = _LAST_VISIT_DAY.match(text)
+    if day:
+        year, month, dom = (int(g) for g in day.groups())
+        try:
+            one = date(year, month, dom)
+        except ValueError:
+            return None
+        return one, one
+
+    month_only = _LAST_VISIT_MONTH.match(text)
+    if month_only:
+        year, month = (int(g) for g in month_only.groups())
+        if not 1 <= month <= 12:
+            return None
+        last_dom = calendar.monthrange(year, month)[1]
+        return date(year, month, 1), date(year, month, last_dom)
+
+    return None
+
+
+def _narrow(chosen: builtins.list[int] | None, on_date: builtins.list[int] | None) -> builtins.list[int] | None:
+    """조각과 날짜를 **겹쳐서** 좁힌다 — 둘 다 걸면 둘 다 만족하는 사람만 남는다."""
+    if on_date is None:
+        return chosen
+    if chosen is None:
+        return sorted(on_date)
+    return sorted(set(chosen) & set(on_date))
+
+
+def _count_in(ids: set[int], on_date: set[int] | None) -> int:
+    """진료에서 나오는 조각의 셈도 날짜를 따라 좁아진다."""
+    return len(ids if on_date is None else ids & on_date)
+
 
 #: 최근 진료의 상태로 갈리는 분류 — 와이어프레임 S2-1 의 칩 둘.
 #:
@@ -100,7 +158,8 @@ class PatientService:
         category: PatientCategory,
         cursor: str | None,
         limit: int,
-    ) -> tuple[builtins.list[PatientRow], dict[PatientCategory, int], str | None, bool]:
+        offset: int = 0,
+    ) -> tuple[builtins.list[PatientRow], dict[PatientCategory, int], str | None, bool, int]:
         """환자 관리 표 — 와이어프레임 S2-1.
 
         **분류가 두 갈래다.**
@@ -115,14 +174,34 @@ class PatientService:
         after_id = self._patient_cursor(cursor)
         hospital_id = hospital_id_of(actor)
         keyword = keyword.strip() if keyword else None
+        #: 검색창에 날짜꼴을 치면 **마지막 진료일**로 찾는다 (KEY-303). 이름·차트·
+        #: 휴대폰과 한 칸을 나눠 쓴다 — 날짜 칸을 따로 두지 않기로 했다.
+        date_range = parse_last_visit_query(keyword)
+        if date_range is not None:
+            keyword = None
         cutoff_date = self._months_before(now().astimezone(DISPLAY_TIMEZONE).date(), 6)
         inactive_before = datetime.combine(cutoff_date, time.min, tzinfo=DISPLAY_TIMEZONE).astimezone(UTC)
         latest_times = await self.repo.latest_visit_times(hospital_id)
+        date_patient_ids: builtins.list[int] | None = None
+        if date_range is not None:
+            since, until = date_range
+            date_patient_ids = [
+                patient_id
+                for patient_id, visited_at in latest_times.items()
+                if since <= visited_at.astimezone(DISPLAY_TIMEZONE).date() <= until
+            ]
         inactive_patient_ids = [
             patient_id for patient_id, visited_at in latest_times.items() if visited_at < inactive_before
         ]
 
         by_event = await self._event_categories(hospital_id, list(latest_times))
+        #: **검색어를 셈에도 건다.** 진료에서 나오는 조각은 의원의 최근 진료를 훑어
+        #: 내므로 검색어를 모른다. 그대로 두면 표는 걸러졌는데 배지는 안 걸러져
+        #: 배지가 표보다 커지고, 그 값으로 쪽을 세면 「다음」에 빈 표가 뜬다
+        #: (KEY-303, 이희진 님 #270 리뷰 ②).
+        if keyword:
+            matched = set(await self.repo.ids_scoped(hospital_id, keyword=keyword))
+            by_event = {name: ids & matched for name, ids in by_event.items()}
         wanted = by_event.get(category) if category in EVENT_PATIENT_CATEGORIES else None
 
         rows = await self.repo.list_scoped(
@@ -131,31 +210,40 @@ class PatientService:
             after_id=after_id,
             limit=limit + 1,
             sms_opt_out_only=category is PatientCategory.SMS_OPT_OUT,
-            patient_ids=(
-                inactive_patient_ids
-                if category is PatientCategory.INACTIVE_6_MONTHS
-                else (sorted(wanted) if wanted is not None else None)
+            offset=offset,
+            patient_ids=_narrow(
+                (
+                    inactive_patient_ids
+                    if category is PatientCategory.INACTIVE_6_MONTHS
+                    else (sorted(wanted) if wanted is not None else None)
+                ),
+                date_patient_ids,
             ),
         )
         all_count, sms_opt_out_count, inactive_count = await self.repo.category_counts(
             hospital_id,
             keyword=keyword,
             inactive_patient_ids=inactive_patient_ids,
+            patient_ids=date_patient_ids,
         )
+        on_date = set(date_patient_ids) if date_patient_ids is not None else None
         counts = {
             PatientCategory.ALL: all_count,
-            PatientCategory.IN_TREATMENT: len(by_event[PatientCategory.IN_TREATMENT]),
-            PatientCategory.NEEDS_ATTENTION: len(by_event[PatientCategory.NEEDS_ATTENTION]),
+            PatientCategory.IN_TREATMENT: _count_in(by_event[PatientCategory.IN_TREATMENT], on_date),
+            PatientCategory.NEEDS_ATTENTION: _count_in(by_event[PatientCategory.NEEDS_ATTENTION], on_date),
             PatientCategory.SMS_OPT_OUT: sms_opt_out_count,
             PatientCategory.INACTIVE_6_MONTHS: inactive_count,
         }
+        #: 쪽 나눔이 알아야 하는 총수는 **지금 고른 조각의** 총수다 — 「전체」의
+        #: 총수를 주면 조각을 눌렀을 때 있지도 않은 쪽이 생긴다 (KEY-303).
+        total = counts[category]
         has_next = len(rows) > limit
         selected_rows = rows[:limit]
         items = await self._rows(selected_rows, hospital_id)
         next_cursor = (
             encode_cursor({"patient_id": selected_rows[-1].patient_id}) if has_next and selected_rows else None
         )
-        return items, counts, next_cursor, has_next
+        return items, counts, next_cursor, has_next, total
 
     async def _event_categories(
         self,

@@ -14,6 +14,7 @@ from app.dtos.patients import (
     PatientListResponse,
     PatientResponse,
     PatientUpdateRequest,
+    RosterPage,
 )
 from app.dtos.visits import DoctorResponse
 from app.services.patient_history import DEFAULT_VISITS, PatientHistoryService
@@ -39,13 +40,15 @@ async def list_patients(
     category: PatientCategory = PatientCategory.ALL,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PatientListResponse:
-    rows, counts, next_cursor, has_next = await service.list(
+    rows, counts, next_cursor, has_next, total = await service.list(
         actor,
         keyword=keyword,
         category=category,
         cursor=cursor,
         limit=limit,
+        offset=offset,
     )
     items = []
     for row in rows:
@@ -63,6 +66,7 @@ async def list_patients(
         selected_category=category,
         items=items,
         page=CursorPage(next_cursor=next_cursor, has_next=has_next),
+        roster=RosterPage(offset=offset, limit=limit, total=total, has_next=has_next),
     )
 
 

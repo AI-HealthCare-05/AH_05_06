@@ -127,8 +127,25 @@ class PatientListItem(PatientResponse):
     flags: list[str] = Field(default_factory=list)
 
 
+class RosterPage(BaseModel):
+    """쪽 번호로 넘기는 표 — KEY-303.
+
+    커서는 앞으로만 간다. 「이전」과 「3쪽으로」를 하려면 **몇 번째부터 몇 개**가
+    필요하다. 기존 `CursorPage` 는 다른 화면이 쓰고 있어 그대로 두고 나란히 둔다.
+
+    `total` 은 **지금 고른 조각의** 총수다. 「전체」의 총수를 주면 조각을 눌렀을
+    때 있지도 않은 쪽이 생긴다.
+    """
+
+    offset: int
+    limit: int
+    total: int
+    has_next: bool
+
+
 class PatientListResponse(BaseModel):
     counts: dict[PatientCategory, int]
     selected_category: PatientCategory
     items: list[PatientListItem]
     page: CursorPage
+    roster: RosterPage
