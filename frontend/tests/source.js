@@ -19,6 +19,7 @@
  */
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const ROOT = path.join(__dirname, "..");
 
@@ -170,4 +171,20 @@ function scriptsOf(page) {
   return [...html.matchAll(/<script\s+src="\/js\/([\w-]+\.js)"/g)].map((m) => m[1]);
 }
 
-module.exports = { read, codeOnly, bareCode, markupOnly, scriptsOf, rule };
+/** 화면 목록표(`js/frames.js`)를 실제로 돌려 그 전역을 준다.
+ *
+ * `key234-frame-manifest` 와 `key218-status-doc` 두 검사에 **글자까지 같은
+ * 사본**이 있었다 (2heej 님 `#276` 리뷰 ③). `scriptsOf` 를 여기로 모은 것과
+ * 같은 자리다 — 표를 싣는 방법이 바뀌는 날 한쪽만 고쳐진다.
+ *
+ * 원문 대조가 아니라 **돌려서** 본다. `FRAMES` 는 배열 리터럴이지만
+ * `needsGuideScreen` 같은 판단은 식이라, 글자로는 못 잰다.
+ */
+function loadFrames() {
+  const context = { console };
+  vm.createContext(context);
+  vm.runInContext(read("js/frames.js"), context);
+  return context;
+}
+
+module.exports = { read, codeOnly, bareCode, markupOnly, scriptsOf, rule, loadFrames };
