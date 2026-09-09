@@ -643,6 +643,55 @@ body.shell {
   border-top: 1px solid var(--line);
 }
 
+/* ── 목록이 0명일 때 ────────────────────────────────────────
+ *
+ * **여기 있어야 한다.** 이 마크업은 `js/shell.js` 가 그리고, 그 파일은 환자·판독·
+ * 의사 세 화면이 싣는다. 그런데 이 어휘가 `patients.css` 에만 있었다 — 그 파일은
+ * 환자 화면만 싣는다. 그래서 의사·판독 화면에서는 이 자리가 **모양 없이** 떴다:
+ * 여백도 가운데 정렬도 없이 글자가 왼쪽 벽에 붙었다.
+ *
+ * 같은 결함이 이 저장소에서 되풀이된다 — `blocks.css` 의 단계 줄도 같은 까닭으로
+ * 옮겨 왔다(「판독 확인 화면은 그 파일을 안 싣기 때문에」). **공용 코드가 그리는
+ * 어휘는 공용 파일에 둔다.** `frontend/tests/shell-template.test.js` 가 이제 그것을
+ * 지킨다.
+ */
+/* 0명 — 무엇이 없는지, 그래서 무엇을 하면 되는지까지 적는다 */
+.rows-blank {
+  padding: var(--s-32) var(--s-24);
+  text-align: center;
+}
+
+.rows-blank__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.rows-blank__lead {
+  margin-top: var(--s-8);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.rows-blank__act {
+  margin-top: var(--s-12);
+  height: var(--field-h);
+  padding: 0 var(--s-12);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.rows-blank__act:hover {
+  background: var(--accent-hover);
+}
+
 /* ── 오른쪽 내용 ────────────────────────────────────── */
 
 /* 와이어프레임 본문은 `padding:22px 28px` 이다. 좌우를 조금 넉넉히, 위아래를
