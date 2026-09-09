@@ -12,7 +12,6 @@
 얹었을 때 실제로 어떤 판이 서는가**다 — 파일에 뭐라고 적혀 있는가가 아니라.
 """
 
-import ast
 import re
 import shutil
 import subprocess
