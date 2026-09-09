@@ -63,12 +63,25 @@ function landingFor(roles) {
   return "/login.html";
 }
 
-/* 처방 설정(D2)은 진료하는 사람의 자리다. 어드민 권한만 가진 계정은 목록을
-   부르는 첫 걸음부터 403 을 받으므로, 보내 놓고 막느니 상단바에서 잠근다.
-   `landingFor` 와 같은 물음(역할이 어디까지 가는가)이라 나란히 둔다. */
-function opensSettings(roles) {
+/* 이 계정이 **진료 일을 하는가** — 스탭이거나 의사인가.
+ *
+ * 가르는 것은 어드민 **권한만** 가진 계정이다. 그 계정은 서버에서도
+ * `PATIENT_READ` 가 없어 목록을 부르는 첫 걸음부터 403 이라, 보내 놓고 막느니
+ * 제 화면으로 보낸다.
+ *
+ * 아래 둘이 이 몸을 나눠 쓴다. 묻는 자리는 다르지만(D2 설정 · S1 목록) **지금은
+ * 답이 같다.** 같은 몸을 두 벌 적어 두면 한쪽만 고치는 날이 온다 — KEY-311 이
+ * 딱 그 모양이었다. 언젠가 한 화면의 답이 갈리면 그 함수만 여기서 떨어져
+ * 나오면 된다. */
+function doesClinicWork(roles) {
   roles = roles || [];
   return roles.indexOf("staff") !== -1 || roles.indexOf("doctor") !== -1;
+}
+
+/* 처방 설정(D2)은 진료하는 사람의 자리다. 어드민 권한만 가진 계정은 상단바에서
+   잠근다. `landingFor` 와 같은 물음(역할이 어디까지 가는가)이라 나란히 둔다. */
+function opensSettings(roles) {
+  return doesClinicWork(roles);
 }
 
 /* 환자 목록·등록(S1)을 이 계정이 볼 수 있는가.
@@ -97,8 +110,7 @@ function opensSettings(roles) {
  *
  * 서버 차단이 아니다. 실제 권한 검증은 서버가 그대로 한다(KEY-9). */
 function showsPatientList(roles) {
-  roles = roles || [];
-  return roles.indexOf("staff") !== -1 || roles.indexOf("doctor") !== -1;
+  return doesClinicWork(roles);
 }
 
 /* 보호 화면 맨 위에서 부른다. 네 가지를 확인한다.

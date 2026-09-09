@@ -25,6 +25,47 @@ function box() {
   return load("api", "session");
 }
 
+/* ── ⓪ 두 술어가 한 몸을 본다 ──────────────────────────────────────── */
+
+test("**`showsPatientList` 와 `opensSettings` 가 같은 답을 낸다** — 몸이 두 벌이면 한쪽만 고친다", () => {
+  /* 둘 다 「어드민 권한만 가진 계정인가」를 가르는 물음이라 답이 같다. 전에는
+     같은 줄이 두 벌 적혀 있었고(2heej, #269), KEY-311 이 정확히 그 모양의
+     결함이었다 — 한 낱말을 고치면서 다른 자리를 못 봤다. 이제 `doesClinicWork`
+     하나를 나눠 쓴다.
+
+     언젠가 한 화면의 답이 갈리면 이 검사가 먼저 운다. 그때는 그 함수를 몸에서
+     떼어 내고 여기에 「이제 다르다」를 적으면 된다. */
+  const { showsPatientList, opensSettings } = box();
+
+  const CASES = [
+    [],
+    ["staff"],
+    ["doctor"],
+    ["admin"],
+    ["staff", "admin"],
+    ["doctor", "admin"],
+    ["staff", "doctor"],
+    ["staff", "doctor", "admin"],
+    ["nurse"],
+  ];
+
+  for (const roles of CASES) {
+    assert.equal(
+      showsPatientList(roles),
+      opensSettings(roles),
+      `역할 [${roles}] 에서 두 술어의 답이 갈렸다 — 몸이 두 벌로 돌아갔다`,
+    );
+  }
+
+  /* 그리고 **실제로 한 몸을 부른다** — 우연히 같은 답을 내는 두 벌이 아니다. */
+  const code = codeOnly(read("js/session.js"));
+  for (const name of ["showsPatientList", "opensSettings"]) {
+    const at = code.indexOf("function " + name);
+    assert.notEqual(at, -1, `${name} 이 없다 — 검사가 헛돈다`);
+    assert.match(code.slice(at, at + 160), /doesClinicWork\(roles\)/, `${name} 이 제 몸을 따로 가진다`);
+  }
+});
+
 /* ── ① 규칙: 누가 환자 목록 화면에 머무는가 ─────────────────────────── */
 
 test("스탭은 환자 목록 화면에 머문다", () => {
