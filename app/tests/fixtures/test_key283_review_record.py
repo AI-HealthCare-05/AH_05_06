@@ -1,3 +1,4 @@
+from dataclasses import replace
 from hashlib import sha256
 from types import SimpleNamespace
 
@@ -5,6 +6,15 @@ import pytest
 
 from app.models.catalog import SourceGrade
 from app.services.drug_caution import DrugCautionService
+from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
+
+
+@pytest.mark.parametrize("row", [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.C])
+def test_fixture_body_edit_does_not_inherit_approval(row):
+    changed = replace(row, body=row.body + " [미검토 변경]")
+    assert changed.physician_review == row.physician_review
+    assert DrugCautionService.has_evidence(row)
+    assert not DrugCautionService.has_evidence(changed)
 
 
 def content():

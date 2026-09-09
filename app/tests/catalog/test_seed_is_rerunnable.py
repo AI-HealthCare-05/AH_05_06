@@ -28,11 +28,33 @@ from app.models.catalog import (
     SetDisease,
     SourceGrade,
 )
+from app.services.drug_caution import DrugCautionService
 from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS, PRESCRIPTION_SETS
 from scripts.seed import seed_catalog
 
 
 class SeedIsRerunnableTestCase(TestCase):
+    async def test_mismatched_a_grade_advice_is_quarantined_without_overwriting_body(self) -> None:
+        await seed_catalog()
+        row = await DrugCautionContent.filter(source_grade=SourceGrade.C).first()
+        assert row is not None
+        row.body += " [미검토 변경]"
+        preserved_body = row.body
+        row.source_grade = SourceGrade.A
+        row.physician_review = None
+        await row.save()
+        await seed_catalog()
+        await row.refresh_from_db()
+        assert row.body == preserved_body
+        assert row.source_grade is SourceGrade.C
+        assert row.approval_status is ApprovalStatus.DRAFT
+        assert row.approved_key is None
+        assert not DrugCautionService.has_evidence(row)
+        assert not await DrugCautionService.generation_ready().filter(pk=row.pk).exists()
+        await seed_catalog()
+        await row.refresh_from_db()
+        assert row.approval_status is ApprovalStatus.DRAFT
+
     async def an_older_approved_row(self) -> tuple[PrescriptionSet, DrugCautionContent]:
         """**예전 판이 이미 승인 도장을 쥔 DB.** 파일럿이 그 상태다."""
         row = PRESCRIPTION_SETS[0]

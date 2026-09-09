@@ -27,7 +27,6 @@ D-1(정상 생성)만 이 seed 를 그대로 쓴다.
 
 from dataclasses import dataclass, field
 from datetime import date
-from hashlib import sha256
 
 from app.models.catalog import ApprovalStatus, CautionSectionKey, SetDisease, SourceGrade
 
@@ -50,6 +49,55 @@ _ADVICE_SOURCE_ORG = "박영 산부인과"
 _ADVICE_SOURCE_URL = "https://app.notion.com/p/3ba0c3b3380580068fa1f32666a8b68c"
 _APPROVED_AT = date(2026, 9, 4)
 _APPROVED_VERSION = "2026-09-04"
+
+# 승인 당시 KEY-265 정본의 고정 해시. 본문 수정만으로 갱신하지 않는다.
+# 변경된 문구는 재검토 후 버전·승인 기록과 함께 명시적으로 갱신해야 한다.
+_APPROVED_BODY_HASHES = {
+    (
+        "자궁내막증 · 비잔 (처음)",
+        "caution",
+        "2026-09-04",
+    ): "27c7cece535c9cbdf79edf469619dcfd411947cea38a26366d6c9ebf326e5262",
+    (
+        "자궁내막증 · 비잔 (계속)",
+        "caution",
+        "2026-09-04",
+    ): "27c7cece535c9cbdf79edf469619dcfd411947cea38a26366d6c9ebf326e5262",
+    ("PCOS · 야즈 (계속)", "caution", "2026-09-04"): "dd71789145edce33d24f95b8a9590c32e0df36af58f0b8f4a1f1aefe1fb9e5db",
+    ("PCOS · 야즈 (처음)", "caution", "2026-09-04"): "dd71789145edce33d24f95b8a9590c32e0df36af58f0b8f4a1f1aefe1fb9e5db",
+    (
+        "자궁내막증 · 비잔 (처음)",
+        "medication",
+        "2026-09-04",
+    ): "c5f3d0944356c1f4cdb842ee3b2b4e5ddb2f5497a3d78fd9e3b18d663929d38c",
+    (
+        "자궁내막증 · 비잔 (처음)",
+        "life",
+        "2026-09-04",
+    ): "ee109954cde9dcb819ef5a9fadb3d6d453dd121f037e7b85fc6b73ed453fffd6",
+    (
+        "자궁내막증 · 비잔 (계속)",
+        "medication",
+        "2026-09-04",
+    ): "ee426409255cba5df2c68ec813226c909d99038654e44f0508aa96a0e460d411",
+    (
+        "자궁내막증 · 비잔 (계속)",
+        "life",
+        "2026-09-04",
+    ): "34331d119c9aa07ab7f086a92b1b45baa52e22387aedf8b6db4b030682b4c890",
+    (
+        "PCOS · 야즈 (처음)",
+        "medication",
+        "2026-09-04",
+    ): "e2013a3fad67639c5853b2217a1ec4e94d7ab1dbd99a63290b67e64f2f8f7875",
+    ("PCOS · 야즈 (처음)", "life", "2026-09-04"): "41a196afe2f7eaa9cb526c20f25bf97c5f7ad9cdad92f68fe646bc0bca7017c9",
+    (
+        "PCOS · 야즈 (계속)",
+        "medication",
+        "2026-09-04",
+    ): "e4d4b3f05d919545bdda330ba903a2a86569c39a6b5d16aab6eee038e4da604e",
+    ("PCOS · 야즈 (계속)", "life", "2026-09-04"): "41a196afe2f7eaa9cb526c20f25bf97c5f7ad9cdad92f68fe646bc0bca7017c9",
+}
 
 # 응급 넷은 이번 범위 밖이라 예전 값을 그대로 둔다 (KEY-265 는 열두 칸만 다룬다).
 _SOURCE_NAME = "의약품안전나라 제품 허가사항"
@@ -96,7 +144,9 @@ class DrugCautionContentRow:
             "reviewer": "박영 산부인과 전문의",
             "hospital": _ADVICE_SOURCE_ORG,
             "reviewed_at": _APPROVED_AT.isoformat(),
-            "body_sha256": sha256(self.body.encode()).hexdigest(),
+            "body_sha256": _APPROVED_BODY_HASHES.get(
+                (self.prescription_set_name, self.section_key.value, self.content_version), ""
+            ),
         }
 
 

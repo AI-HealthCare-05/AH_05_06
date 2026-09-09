@@ -56,6 +56,7 @@ from app.models.catalog import (  # noqa: E402
     DrugCatalog,
     DrugCautionContent,
     PrescriptionSet,
+    SourceGrade,
 )
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
@@ -667,6 +668,19 @@ async def _sync_source_grade(content: DrugCautionContent, wanted: DrugCautionCon
         getattr(content, key) != getattr(wanted, key)
         for key in ("body", "source_name", "source_org", "source_url", "content_version")
     ):
+        if wanted.physician_review is not None and content.source_grade is SourceGrade.A:
+            # 본문·출처는 보존하되, 잘못된 A등급으로 검토를 우회하지 못하게 격리한다.
+            await DrugCautionContent.filter(pk=content.pk).update(
+                source_grade=SourceGrade.C,
+                physician_review=None,
+                approval_status=ApprovalStatus.DRAFT,
+                approved_key=None,
+            )
+            await content.refresh_from_db()
+            print(
+                f"[catalog] manual review required: drug_caution_content_id={content.drug_caution_content_id}",
+                file=sys.stderr,
+            )
         return
     if content.source_grade == wanted.source_grade and content.physician_review == wanted.physician_review:
         return
