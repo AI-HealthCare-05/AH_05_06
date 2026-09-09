@@ -7,6 +7,8 @@ wheels/
 .venv
 .*.env
 .env
+key276-ingestion-manifest.local.json
+key276-sources/
 .bootstrap.local.env
 .idea/
 .vscode
