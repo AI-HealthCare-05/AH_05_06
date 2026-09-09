@@ -296,9 +296,33 @@ class MessageResendTestCase(TruncationTestCase):
 
 
 def test_sent_body_storage_redacts_the_patient_link_token() -> None:
-    body = f"안내 보기: https://patient.example/otp.html#t={OLD_LINK_TOKEN}"
+    # secrets.token_urlsafe(32)는 항상 정확히 43자다 — 짧은 합성 문자열이
+    # 아니라 실제 길이와 같은 값으로 잰다(길이 기반 매칭이라 길이가 달라지면
+    # 이 검사 자체가 그 차이를 놓친다).
+    token = "a" * 43
+    body = f"안내 보기: https://patient.example/otp.html#t={token}"
 
     stored = _body_for_storage(body)
 
-    assert OLD_LINK_TOKEN not in stored
+    assert token not in stored
     assert stored == "안내 보기: https://patient.example/otp.html#t=[REDACTED]"
+
+
+def test_sent_body_storage_does_not_swallow_a_trailing_character_glued_to_the_token() -> None:
+    """[KEY-306, 2heej 리뷰] 토큰 뒤에 구분자 없이 글자가 바로 붙어도 그 글자는 안 삼킨다.
+
+    병원이 문구를 "...확인: {링크}1회용"처럼 저장하면 렌더링 후
+    `#t=<TOKEN>1회용`이 된다. 예전 정규식(`[A-Za-z0-9_-]+`, 열린 길이)은
+    토큰 뒤의 "1"까지 같이 삼켰다 — 토큰 자체는 가려지지만 저장된 문구가
+    실제 발송문과 달라졌다. `app/core/masking.py`의 URLSAFE_TOKEN으로
+    바꾸는 것도 시도해 봤지만, 그쪽은 한글이 Python 정규식에서 단어
+    문자로 잡혀 경계(\\b)를 아예 못 찾고 **매칭 자체가 실패**한다(재현
+    확인) — 지금 구현은 정확히 43자만 보므로 이 문제가 둘 다 없다.
+    """
+    token = "b" * 43
+    body = f"확인: #t={token}1회용"
+
+    stored = _body_for_storage(body)
+
+    assert token not in stored
+    assert stored == "확인: #t=[REDACTED]1회용", f"뒤 글자가 삼켜지거나 마스킹 자체가 실패했다: {stored!r}"

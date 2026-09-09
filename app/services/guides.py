@@ -19,6 +19,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
+from tortoise.expressions import Q
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
@@ -1004,15 +1005,21 @@ class GuideService:
             if guide.status is not GuideStatus.SCHEDULED_TO_SEND:
                 raise ApiError("GUIDE_NOT_SCHEDULED", 409, "승인된 안내문만 철회할 수 있습니다.")
 
-            sent = (
-                await GuideMessage.filter(
-                    guide_document_id=guide.guide_document_id,
-                    status=GuideMessageStatus.SENT,
+            sent_or_resending = (
+                await GuideMessage.filter(guide_document_id=guide.guide_document_id)
+                .filter(
+                    Q(status=GuideMessageStatus.SENT)
+                    # 재발송 행(resend_sequence>0)은 원본이 FAILED였으면 SENT
+                    # 조건에 안 걸린다 — 그런데도 이미 링크가 폐기됐고 새
+                    # 발송이 예약/시도된 상태라 승인을 거두면 안 된다(KEY-306
+                    # 리뷰로 발견 — 거두면 이 행이 취소 스윕에 같이 쓸려
+                    # 나가서 아무 기록도 없이 유실된다).
+                    | Q(resend_sequence__gt=0, status__not=GuideMessageStatus.CANCELED)
                 )
                 .using_db(connection)
                 .exists()
             )
-            if sent:
+            if sent_or_resending:
                 raise ApiError(
                     "GUIDE_ALREADY_SENT",
                     409,

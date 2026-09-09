@@ -435,7 +435,25 @@ class PatientLinkService:
         connection,
         timestamp: datetime,
     ) -> bool:
-        """재발송을 확정하며 현재 활성 링크와 OTP를 즉시 폐기한다."""
+        """재발송을 확정하며 현재 활성 링크와 OTP를 즉시 폐기한다.
+
+        `GuideDocument`를 먼저 잠근다 — `issue_for_dispatch()`(발송
+        워커)와 잠그는 순서를 맞추기 위해서다. 두 경로 다 결국
+        `GuideEvent`/`GuideMessage`를 `guide_document_id` FK로 쓰는데,
+        이 FK가 실제 제약으로 걸려 있어 InnoDB가 참조 무결성 확인
+        차원에서 부모 행(GuideDocument)에 암묵적 락을 건다. 이 함수가
+        PatientGuideLink를 먼저 잠근 채로 그 뒤에 GuideDocument를
+        건드리면, 반대 순서로 잠그는 워커와 고전적인 AB-BA
+        데드락이 난다(2heej 리뷰).
+        """
+        guide = (
+            await GuideDocument.filter(guide_document_id=guide_document_id)
+            .select_for_update()
+            .using_db(connection)
+            .first()
+        )
+        if guide is None:
+            raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
 
         link = (
             await PatientGuideLink.filter(guide_document_id=guide_document_id)
@@ -446,17 +464,7 @@ class PatientLinkService:
         if link is None or as_utc(link.expires_at) <= as_utc(timestamp):
             return False
 
-        await self._invalidate_otp(link, connection, timestamp)
-        link.token_digest = digest_link_token(secrets.token_urlsafe(32))
-        link.expires_at = timestamp
-        await link.save(using_db=connection, update_fields=["token_digest", "expires_at"])
-        await GuideEvent.create(
-            guide_document_id=guide_document_id,
-            event_type=GuideEventType.LINK_REVOKED,
-            actor_id=actor_id,
-            reason="RESEND_REQUESTED",
-            using_db=connection,
-        )
+        await self._rotate_link_to_revoked(link, connection, timestamp, actor_id, reason="RESEND_REQUESTED")
         return True
 
     async def read_state(self, actor, visit_id: int) -> tuple[bool, datetime | None]:
@@ -626,26 +634,41 @@ class PatientLinkService:
             )
             return raw_token, expires_at
 
+    async def _rotate_link_to_revoked(
+        self,
+        link: PatientGuideLink,
+        connection,
+        timestamp: datetime,
+        actor_id: int,
+        reason: str | None = None,
+    ) -> None:
+        """OTP 무효화 → digest 회전 → expires_at을 지금으로 → 폐기 감사 기록.
+
+        `revoke()`(스탭 API)와 `revoke_active_for_resend()`(재발송 확정)가
+        찾는 방법·못 찾았을 때 반응만 다르고 폐기 자체는 완전히 같은
+        절차였다 — 한쪽만 고치고 한쪽을 빠뜨리기 쉬워서 여기로 묶었다
+        (2heej 리뷰).
+        """
+        await self._invalidate_otp(link, connection, timestamp)
+        link.token_digest = digest_link_token(secrets.token_urlsafe(32))
+        link.expires_at = timestamp
+        await link.save(using_db=connection, update_fields=["token_digest", "expires_at"])
+        await GuideEvent.create(
+            guide_document_id=link.guide_document_id,
+            event_type=GuideEventType.LINK_REVOKED,
+            actor_id=actor_id,
+            reason=reason,
+            using_db=connection,
+        )
+
     async def revoke(self, actor, visit_id: int) -> None:
         """원문을 보관하지 않고 digest를 회전해 현재 링크를 즉시 폐기한다."""
 
         self._require_issuer(actor)
         async with in_transaction() as connection:
             link = await self._lock_link(actor, visit_id, connection, require_approved=False)
-
-            # 원문을 별도 보관하지 않으므로 이 digest에 대응하는 URL은 세상에 없다.
-            # 기존 토큰은 즉시 404가 되고, 재발급은 같은 행을 다시 회전한다.
             timestamp = now()
-            await self._invalidate_otp(link, connection, timestamp)
-            link.token_digest = digest_link_token(secrets.token_urlsafe(32))
-            link.expires_at = timestamp
-            await link.save(using_db=connection, update_fields=["token_digest", "expires_at"])
-            await GuideEvent.create(
-                guide_document_id=link.guide_document_id,
-                event_type=GuideEventType.LINK_REVOKED,
-                actor_id=actor.user_id,
-                using_db=connection,
-            )
+            await self._rotate_link_to_revoked(link, connection, timestamp, actor.user_id)
 
     async def get_context(self, raw_link_token: str) -> "PatientLinkContext":
         link = (
