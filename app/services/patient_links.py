@@ -25,9 +25,27 @@ from app.models.catalog import BaselineDirection, LabBaseline, PrescriptionSet, 
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem, ordered_prescription_items
 from app.models.staffs import Hospital
-from app.models.visits import GuideDocument, GuideEvent, GuideEventType, GuideSectionKey, GuideStatus, PatientGuideLink
+from app.models.visits import (
+    GuideDocument,
+    GuideEvent,
+    GuideEventType,
+    GuideMessageKind,
+    GuideSectionKey,
+    GuideStatus,
+    PatientGuideLink,
+)
 
 LINK_TTL = timedelta(hours=168)
+#: 발송마다 워커가 새로 발급하는 링크의 유효기간 — KEY-297 원문의 「GUIDE 72시간」.
+#: 스탭이 API로 직접 발급/재발급하는 LINK_TTL(168시간)과 다르다 — 발송분은
+#: 다음 회차가 오면 어차피 다시 회전되므로 짧게 잡아도 된다. 확인·소진
+#: 임박 문자도 같은 값을 쓴다 — 원문이 "응답 기대구간"이라고만 하고 정확한
+#: 숫자를 안 줘서, GUIDE와 같은 값으로 통일했다(팀 확인 필요하면 후속으로).
+DISPATCH_LINK_TTL = timedelta(hours=72)
+#: 워커가 발송 직전에 링크를 발급/회전할 때 쓰는 issued_by 값 — KEY-297.
+#: 실제 staff_id가 아니라 "사람이 아니라 시스템이 발급했다"는 표시다.
+#: 이 컬럼은 어디서도 조회·표시에 안 쓰인다(발급 시점에만 쓰는 컬럼).
+SYSTEM_ISSUER_ID = 0
 ISSUER_ROLES = frozenset({"staff", "doctor"})
 _DRUG_WITH_INGREDIENT = re.compile(r"^(?P<brand>[^()]+?)\((?P<ingredient>[^)]+)\)(?P<suffix>.*)$")
 _LAB_KEY = re.compile(r"[^0-9a-z가-힣]+")
@@ -464,12 +482,14 @@ class PatientLinkService:
                 raise ApiError("LINK_ALREADY_ISSUED", 409, "이미 환자 링크가 발급된 안내문입니다.")
 
             raw_token = secrets.token_urlsafe(32)
+            timestamp = now()
             try:
                 link = await PatientGuideLink.create(
                     guide_document=guide,
                     token_digest=digest_link_token(raw_token),
-                    expires_at=now() + LINK_TTL,
+                    expires_at=timestamp + LINK_TTL,
                     issued_by=actor.user_id,
+                    issued_at=timestamp,
                     using_db=connection,
                 )
             except IntegrityError as exc:
@@ -498,6 +518,82 @@ class PatientLinkService:
                 using_db=connection,
             )
             return link, raw_token
+
+    async def issue_for_dispatch(
+        self,
+        guide_document_id: int,
+        message_id: int,
+        message_kind: GuideMessageKind,
+    ) -> tuple[str, datetime]:
+        """워커가 발송 직전에 부르는 시스템 발급/회전 (KEY-297).
+
+        예약 승인 시점이 아니라 **보내는 그 순간**에 원문을 새로 만든다.
+        이미 링크가 있으면 회전(기존 digest 폐기 + OTP 무효화), 없으면 새로
+        만든다 — 한 안내에 링크가 하나뿐이라는 규칙(KEY-90)은 그대로 두고,
+        그 하나가 "발송마다 갈아 끼워지는" 것으로 본다.
+
+        원문은 반환값으로만 나간다. 부르는 쪽(`message_dispatch.py`)이 문구에
+        바로 써넣고 버려야 한다 — 여기도, 어디도 원문을 저장하지 않는다.
+
+        `_lock_link`(actor 기준 병원 범위 조회)를 못 쓴다 — 워커는 스탭
+        요청이 아니므로 상위 안내문 행을 잠그고 시스템 actor로 감사 이력을 남긴다.
+        """
+        async with in_transaction() as connection:
+            # A missing link row cannot be locked. Lock its parent so two workers
+            # cannot both take the first-issuance path and race on the unique key.
+            guide = (
+                await GuideDocument.filter(guide_document_id=guide_document_id)
+                .select_for_update()
+                .using_db(connection)
+                .first()
+            )
+            if guide is None:
+                raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
+
+            raw_token = secrets.token_urlsafe(32)
+            timestamp = now()
+            expires_at = timestamp + DISPATCH_LINK_TTL
+            link = (
+                await PatientGuideLink.filter(guide_document_id=guide_document_id)
+                .select_for_update()
+                .using_db(connection)
+                .first()
+            )
+            if link is None:
+                await PatientGuideLink.create(
+                    guide_document_id=guide_document_id,
+                    token_digest=digest_link_token(raw_token),
+                    expires_at=expires_at,
+                    issued_by=SYSTEM_ISSUER_ID,
+                    issued_at=timestamp,
+                    last_message_id=message_id,
+                    using_db=connection,
+                )
+                action = "ISSUED"
+            else:
+                await self._invalidate_otp(link, connection, timestamp)
+                link.token_digest = digest_link_token(raw_token)
+                link.expires_at = expires_at
+                link.issued_by = SYSTEM_ISSUER_ID
+                link.issued_at = timestamp
+                link.last_message_id = message_id
+                await link.save(
+                    using_db=connection,
+                    update_fields=["token_digest", "expires_at", "issued_by", "issued_at", "last_message_id"],
+                )
+                action = "ROTATED"
+
+            await GuideEvent.create(
+                guide_document_id=guide_document_id,
+                event_type=GuideEventType.LINK_REISSUED,
+                actor_id=SYSTEM_ISSUER_ID,
+                reason=(
+                    f"action={action};message_kind={message_kind.value};message_id={message_id};"
+                    f"issued_at={timestamp.isoformat()};expires_at={expires_at.isoformat()}"
+                ),
+                using_db=connection,
+            )
+            return raw_token, expires_at
 
     async def revoke(self, actor, visit_id: int) -> None:
         """원문을 보관하지 않고 digest를 회전해 현재 링크를 즉시 폐기한다."""

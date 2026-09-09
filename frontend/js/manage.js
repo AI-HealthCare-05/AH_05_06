@@ -12,6 +12,7 @@
  * 규칙은 `js/schedule-rules.js` 와 `js/history-rules.js` 에 있다. 여기 있는
  * 것은 그리는 일뿐이다.
  */
+
 (function () {
   /* **환자 관리가 첫 갈래다** — 원문의 세그먼트 탭 차례가 그렇고, 「오늘이
      아닌 환자도 여기서 찾는다」가 이 화면을 여는 까닭이다. */
@@ -33,7 +34,12 @@
   var adjustingMessage = null;
   var adjustingMessageSaving = false;
 
-  var ROSTER_PAGE = 50;
+  /* 한 쪽에 40명. 「이전·다음」으로 넘긴다 — 스크롤로 끝없이 흘리지 않는다.
+     전에는 50 을 한 번만 불러 놓고 `next_cursor` 를 아무도 안 봤다. 그래서
+     전체가 101명이어도 **50명에서 조용히 잘렸다** — 배지는 101 이라 잘린 줄도
+     몰랐다 (KEY-303). */
+  var ROSTER_PAGE = 40;
+  var rosterOffset = 0;
   var HISTORY_BLOCKS = 3;
   //: 글자를 멈춘 뒤 기다리는 시간(ms)
   var ROSTER_TYPING_WAIT = 250;
@@ -431,6 +437,18 @@
             : ""
           : historySummary(page);
 
+    var pager = el("roster-page");
+    var paging = pager && view === "roster" && page && page.roster
+      ? rosterPaging(page.roster.total, page.roster.offset, page.roster.limit, page.roster.has_next)
+      : null;
+    /* 한 쪽에 다 들어가면 줄 자체를 숨긴다 — 누를 데 없는 단추는 고장으로 읽힌다 */
+    if (pager) pager.hidden = !paging || paging.pages <= 1;
+    if (pager && paging) {
+      el("roster-page-say").textContent = rosterPagingSaying(paging);
+      pager.querySelector('[data-page="prev"]').disabled = !paging.hasPrev;
+      pager.querySelector('[data-page="next"]').disabled = !paging.hasNext;
+    }
+
     var cut = view === "schedule" ? truncationNote(page) : "";
     el("cut").textContent = cut;
     el("cut").hidden = !cut;
@@ -598,7 +616,7 @@
     render();
     var asked =
       view === "roster"
-        ? patientsApi.roster(keyword, chosen, null, ROSTER_PAGE)
+        ? patientsApi.roster(keyword, chosen, null, ROSTER_PAGE, rosterOffset)
         : view === "schedule"
           ? messagesApi.scheduled(days)
           : messagesApi.history(range());
@@ -620,12 +638,23 @@
 
   /* ── 손 ───────────────────────────────────────────── */
 
+  /* 문서에 걸어 위임받는다 — 이 줄은 `render()` 가 그릴 때 생기므로, 모듈이
+     실릴 때 요소를 붙잡으면 아직 없다. */
+  document.addEventListener("click", function (event) {
+    var step = event.target.closest && event.target.closest("#roster-page [data-page]");
+    if (!step || step.disabled || !page || !page.roster) return;
+    var paging = rosterPaging(page.roster.total, page.roster.offset, page.roster.limit, page.roster.has_next);
+    rosterOffset = step.getAttribute("data-page") === "prev" ? paging.prevOffset : paging.nextOffset;
+    load();
+  });
+
   el("tabs").addEventListener("click", function (event) {
     var tab = event.target.closest("[data-view]");
     if (!tab || tab.getAttribute("aria-disabled") === "true") return;
     var name = tab.getAttribute("data-view");
     if (name === view) return;
     view = name;
+    rosterOffset = 0; //: 갈래를 바꾸면 첫 쪽부터 (KEY-303)
     load();
   });
 
@@ -640,6 +669,7 @@
     if (view === "roster") {
       if (key === chosen) return;
       chosen = key;
+      rosterOffset = 0; //: 조각을 바꾸면 첫 쪽부터 — 3쪽에서 좁히면 빈 표가 뜬다
       opened = null;
       return load();
     }
@@ -686,6 +716,7 @@
     clearTimeout(typing);
     typing = setTimeout(function () {
       keyword = typed.trim();
+      rosterOffset = 0; //: 검색어가 바뀌면 첫 쪽부터
       opened = null;
       load();
     }, ROSTER_TYPING_WAIT);

@@ -480,10 +480,14 @@ test("눌러도 아무 일 없는 버튼을 두지 않는다", () => {
     const close = body.indexOf(">", open);
     const tag = body.slice(open, close + 1);
     at = close;
-    /* 손이 붙은 버튼은 `id` 로 찾아 붙인다. 나머지는 셋 중 하나여야 한다 —
+    /* 손이 붙은 버튼은 `id` 로 찾아 붙이거나, 위임 받는 `data-*` 를 단다
+       (`data-view` 는 갈래 탭, `data-page` 는 쪽 넘김 — KEY-303). 나머지는
        여기(`aria-current`)이거나, 아직(`tab--later`)이거나, 없거나. */
     const alive =
-      tag.includes("id=") || tag.includes("data-view") || tag.includes("tab--later");
+      tag.includes("id=") ||
+      tag.includes("data-view") ||
+      tag.includes("data-page") ||
+      tag.includes("tab--later");
     if (!alive) dead.push(tag);
   }
 

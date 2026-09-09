@@ -460,9 +460,12 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 - `category`: `ALL/IN_TREATMENT/NEEDS_ATTENTION/SMS_OPT_OUT/INACTIVE_6_MONTHS`, 기본 `ALL`.
 - 현재 계산 가능한 `ALL`, `SMS_OPT_OUT`, `INACTIVE_6_MONTHS`만 조회할 수 있다. 이벤트 기반 `IN_TREATMENT`, `NEEDS_ATTENTION`을 선택하면 후속 계약이 연결되기 전까지 `400 INVALID_REQUEST`로 명시적으로 거부하며, 빈 검색 결과처럼 응답하지 않는다.
 - `keyword`: 이름, 차트번호, 정규화된 휴대폰에서 검색한다. 이름은 한 글자부터 허용한다.
+  검색어가 `2026-08-15` · `2026-08` 꼴이면 **마지막 진료일**로 찾는다 (KEY-303). 차트번호는 숫자만이라 겹치지 않는다. `2026-13` 처럼 없는 달은 날짜로 보지 않고 그대로 이름 검색에 넘긴다 — 조용히 12월로 고치면 사람이 오해한다.
 - `cursor`: 서버가 발급한 불투명 다음 페이지 커서. 임의 조립하지 않는다.
+- `offset`: 몇 번째부터. 기본 0. **쪽 번호와 「이전」을 위해 쓴다** (KEY-303) — 커서는 앞으로만 가서 뒤로 못 간다. `cursor` 와 함께 쓰지 않는다.
 - `limit` 기본 20, 최대 100.
-- 응답은 `{counts, selected_category, items, page: {next_cursor, has_next}}`다.
+- 응답은 `{counts, selected_category, items, page: {next_cursor, has_next}, roster: {offset, limit, total, has_next}}`다.
+- `roster.total` 은 **지금 고른 조각의** 총수다. 「전체」의 총수를 주면 조각을 눌렀을 때 있지도 않은 쪽이 생긴다. `counts` 와 마찬가지로 `keyword` 를 반영한다.
 - 목록 항목은 환자 기본정보와 `latest_visit` 요약을 포함한다. 동명이인 구분을 위해 생년월일, 차트번호, 전화번호 뒤 4자리, 최근 진료일을 모두 제공한다.
 
 #### S1-1 날짜별 업무 목록
@@ -649,6 +652,7 @@ GET /api/v1/visits/{visit_id}/timeline
 | Notion `department_id`, ERD `department` | 화면·리소스 명령 모두 `department_id`를 받아 활성·의사 소속을 검증하고, VISIT에는 당시 명칭을 `department` 스냅샷으로 저장 | 매핑 확정 |
 | Notion 화면 API의 `RECORD_MISSING` 등 업무 상태 | `visit.status`에 저장하지 않고 OCR·안내·발송 이벤트에서 파생 | 매핑 확정 |
 | Notion offset/cursor 혼재, rc1 offset | 기존 명세의 cursor+limit로 통일 | 수정 |
+| ~~cursor+limit로 통일~~ → `GET /patients` 에 `offset` 재도입 (KEY-303) | 환자 관리 표(S2-1)가 쪽 번호와 「이전」을 요구한다 — 커서는 앞으로만 가서 표현할 수 없다. 기존 `cursor`·`CursorPage` 는 그대로 두고 `offset`·`RosterPage` 를 **나란히** 둔다. 다른 목록은 커서를 계속 쓴다 | 결정 변경 |
 | Notion 오류 코드 대문자·400, rc1 소문자·422 | 전체 기존 API 규칙에 맞춰 대문자 코드와 400 사용 | 수정 |
 | Notion care-history의 UUID 예시, 다른 환자 API와 ERD는 integer | 환자·진료·안내 식별자는 bigint로 통일 | 수정 |
 | `/medical-records` | `/visits`로 교체 | 수정 |

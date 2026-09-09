@@ -257,3 +257,45 @@
   background: var(--card);
   border-bottom: 1px solid var(--line);
 }
+
+/* ── 쪽 넘김 (S2-1) ──────────────────────────────────────
+ *
+ * 표 아래 가운데. 한 쪽에 다 들어가면 `hidden` 이라 아예 안 보인다 —
+ * 누를 데 없는 단추가 남으면 고장으로 읽힌다 (KEY-303).
+ */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-16);
+  padding: var(--s-16) 0;
+}
+
+.pager__step {
+  height: var(--field-h);
+  padding: 0 var(--s-12);
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.pager__step:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+/* 끝에 닿으면 눌리지 않는다는 것이 보여야 한다 */
+.pager__step:disabled {
+  color: var(--ink-3);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.pager__say {
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}

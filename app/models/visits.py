@@ -256,13 +256,19 @@ class GuideEvent(models.Model):
 
 
 class PatientGuideLink(models.Model):
-    """승인 안내 한 건을 여는 환자 링크 — KEY-90, KEY-223.
+    """승인 안내 한 건을 여는 환자 링크 — KEY-90, KEY-223, KEY-297.
 
     원문 토큰은 발급 응답에서 한 번만 전달하고 저장하지 않는다. DB에는
     SHA-256 digest만 남겨 DB 덤프만으로 환자 화면을 열 수 없게 한다.
 
     한 안내에 링크를 하나만 허용한다. 폐기·재발급은 이 행의 digest를
     회전하므로 이전 링크가 즉시 막히고 유효 링크가 여러 개 생기지 않는다.
+
+    **발송마다 회전한다(KEY-297).** GUIDE·확인·소진 임박 문자를 실제로
+    보낼 때마다 워커가 원문을 새로 만들어 이 행을 회전시킨다 — 예약
+    승인 시점에 미리 만들어 두고 계속 쓰지 않는다. `issued_at`은 그래서
+    `created_at`(행이 처음 생긴 시각)과 다르다 — 회전마다 갱신되는 건
+    `issued_at`뿐이다.
     """
 
     patient_guide_link_id = fields.BigIntField(primary_key=True)
@@ -276,6 +282,12 @@ class PatientGuideLink(models.Model):
     token_digest = fields.CharField(max_length=64, unique=True)
     expires_at = fields.DatetimeField()
     issued_by = fields.BigIntField()
+    #: 지금 이 토큰이 언제 만들어졌나 — 회전마다 갱신된다. 첫 발급 때는
+    #: created_at과 같지만, 그 뒤로는 이 값만 움직인다.
+    issued_at = fields.DatetimeField(null=True)
+    #: 지금 토큰이 어느 발송(GuideMessage) 때문에 만들어졌나 — KEY-297.
+    #: 스탭·의사가 API로 직접 발급/재발급했을 때는 비어 있다(발송이 아니므로).
+    last_message_id = fields.BigIntField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
