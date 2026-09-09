@@ -2700,7 +2700,12 @@ function stateTakesFocus(tone) {
 
     /* 수동 추가 약품명 입력 — 값만 저장하고 renderSummary만 호출한다.
        renderFields(패널 전체 재구성)는 행 추가/삭제 시점에만 실행해 성능을 줄인다.
-       rx-save 버튼은 renderFields가 담당하므로, 저장 가능 상태를 직접 동기화한다. */
+       rx-save 단추는 renderFields 가 담당하므로 여기서 곧바로 맞춰 준다.
+
+       **그 셈은 `hasSomethingToSave` 하나뿐이다.** 전에는 여기서만 옛
+       조건(`pickedSet` 만 보는)을 그대로 썼다 — 이미 담긴 처방이면 보낼
+       것이 없는데도 단추가 켜졌고, 누르면 「바뀐 것이 없습니다」가 떴다.
+       KEY-305 가 잡으려던 「두 벌의 계산」이 세 번째 자리에 남아 있었다. */
     var manualName = target.getAttribute("data-manual-drug-name");
     if (manualName !== null) {
       var ni = parseInt(manualName, 10);
@@ -2708,9 +2713,7 @@ function stateTakesFocus(tone) {
         manualDrugs[ni].name = target.value || "";
         renderSummary();
         var rxBtn = document.getElementById("rx-save");
-        if (rxBtn && canSaveFields()) {
-          rxBtn.disabled = !(localOf(true).length || pickedSet || manualDrugs.some(function (d) { return d.name; }));
-        }
+        if (rxBtn) rxBtn.disabled = !hasSomethingToSave(true);
       }
       return;
     }

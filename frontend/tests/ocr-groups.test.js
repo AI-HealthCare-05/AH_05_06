@@ -1219,6 +1219,40 @@ test("**켜는 쪽과 보내는 쪽이 한 계산을 본다** — 두 벌이면 
   );
 });
 
+test("**저장할 것이 있는가는 한 자리에서만 센다** — 단추 잠금을 밖에서 다시 세면 세 번째 어긋남이 난다", () => {
+  /* KEY-305 는 「켜는 쪽과 보내는 쪽이 한 계산을 본다」로 고쳤는데, **그리는
+     자리 둘만** 고쳤다. 손으로 약 이름을 적을 때 단추를 곧바로 맞춰 주는
+     자리(`onTyped`)는 옛 조건을 그대로 썼다 — `pickedSet` 이 있다는 것만으로
+     켰다. 이미 그 처방이 담겨 있으면 보낼 것이 없는데도 켜지고, 누르면
+     「바뀐 것이 없습니다」가 뜬다. 무음은 아니지만 같은 어긋남이다
+     (2heej, #265).
+
+     이름이 아니라 규칙으로 못 박는다 — **저장할 것을 세는 어휘는
+     `hasSomethingToSave` 안에서만 산다.** 단추 잠금을 정하는 자리가 그
+     어휘를 직접 쓰면 그것이 곧 두 벌째다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  const OWN = /localOf\(|pickedSet|manualDrugs/;
+  code.split("\n").forEach(function (line, i) {
+    const at = line.indexOf(".disabled =");
+    if (at === -1) return;
+    assert.doesNotMatch(
+      line.slice(at),
+      OWN,
+      `${i + 1}행이 단추 잠금을 제 손으로 다시 센다 — ${line.trim()}`,
+    );
+  });
+
+  /* 그 자리가 실제로 있고, 한 계산을 본다 */
+  const sync = code.indexOf('getElementById("rx-save")');
+  assert.notEqual(sync, -1, "적는 동안 단추를 맞춰 주는 자리가 없다 — 검사가 헛돈다");
+  assert.match(
+    code.slice(sync, sync + 200),
+    /\.disabled = !hasSomethingToSave\(true\)/,
+    "적는 동안 맞춰 주는 자리가 옛 조건을 쓴다",
+  );
+});
+
 test("**판독이 없으면 저장 단추가 잠긴다** — 눌러서 실패하면 적은 것이 날아간 줄 안다", () => {
   /* 적어 넣는 값은 판독 결과에 붙는다(`ocr_field` 는 `ocr_result` 의 것이다).
      아직 아무것도 안 올린 진료에는 붙일 자리가 없다 — 빈 판을 세우면서
