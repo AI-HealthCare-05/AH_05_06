@@ -4,8 +4,10 @@ import asyncio
 from datetime import date, timedelta
 
 from httpx import ASGITransport, AsyncClient
+from tortoise import Tortoise
 from tortoise.contrib.test import TruncationTestCase
 from tortoise.timezone import now
+from tortoise.transactions import in_transaction
 
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
@@ -39,16 +41,6 @@ assert len(OLD_LINK_TOKEN) == 43, f"OLD_LINK_TOKEN이 43자가 아니다: {len(O
 
 
 class MessageResendTestCase(TruncationTestCase):
-    async def _setUpDB(self) -> None:  # noqa: N802 — tortoise가 정한 이름 그대로 override한다.
-        await super()._setUpDB()
-        # 여기서 미리 잡아 둔다 — 이 시점엔 테스트가 쓸 연결이 확실히
-        # 서 있다(_setUpDB()의 존재 이유 자체가 그거다). _tearDownDB()
-        # 시점에 새로 조회하면 pytest-xdist(-n auto)에서 가끔 레지스트리가
-        # 비어 KeyError가 났다(로컬 단일 프로세스에서는 재현 안 됨) —
-        # 원인을 못 좁혀서, 대신 확실히 되는 시점의 참조를 그대로 들고
-        # 있다가 나중에 재사용한다.
-        self._db_connection = PatientGuideLink._meta.db
-
     async def _tearDownDB(self) -> None:  # noqa: N802 — tortoise가 정한 이름 그대로 override한다.
         # tortoise.contrib.test.truncate_all_models()는 모델 등록 순서로
         # 테이블을 지운다(자기 docstring이 "non-cascade foreign keys에서
@@ -56,20 +48,25 @@ class MessageResendTestCase(TruncationTestCase):
         # 지워지려 들면 ON DELETE RESTRICT에 막힌다. 이 저장소에서
         # TruncationTestCase를 쓰는 파일이 이 파일뿐이라(동시 요청
         # 검사에 실제 커밋이 필요해서) 지금까지 안 드러났던 문제다.
-        # FK 검사를 잠깐 끄고 지운 뒤 되살린다 — 순서를 일일이 안
-        # 맞춰도 된다.
-        connection = getattr(self, "_db_connection", None)
-        if connection is None:
-            # _setUpDB()에서 못 잡았다면(있을 수 없지만) 이 우회 자체를
-            # 포기한다 — 최악의 경우 원래 있던 FK 문제로 돌아갈 뿐,
-            # 매번 실패하는 새 문제를 만들지는 않는다.
-            await super()._tearDownDB()
-            return
-
-        await connection.execute_script("SET FOREIGN_KEY_CHECKS=0")
-        try:
-            await super()._tearDownDB()
-        finally:
+        #
+        # super()._tearDownDB()를 그대로 두고 앞뒤로 SET FOREIGN_KEY_
+        # CHECKS만 감싸는 시도는 실패했다 — truncate_all_models() 내부가
+        # 각 모델의 model._meta.db로 직접 DELETE를 실행하는데, 그게 SET을
+        # 실행한 연결과 물리적으로 다른 연결을 커넥션 풀에서 빌려 쓰는
+        # 것으로 보인다(같은 "default" 별칭이라도). SET은 세션 단위라
+        # 다른 연결에는 안 남아서, 끈 게 실제 DELETE에는 안 먹혔다.
+        #
+        # in_transaction()으로 이 시퀀스 전체를 하나의 연결에 고정한다
+        # — 트랜잭션의 존재 이유가 정확히 이것이다(풀에서 매번 다른
+        # 연결을 빌려도, 트랜잭션 안에서는 하나로 고정된다). FK 끄기·
+        # 모든 테이블 삭제·FK 켜기까지 전부 이 하나의 connection으로만
+        # 실행한다 — truncate_all_models()는 아예 안 부른다.
+        async with in_transaction() as connection:
+            await connection.execute_script("SET FOREIGN_KEY_CHECKS=0")
+            for app in Tortoise.apps.values():
+                for model in app.values():
+                    quote = model._meta.db.query_class.SQL_CONTEXT.quote_char
+                    await connection.execute_script(f"DELETE FROM {quote}{model._meta.db_table}{quote}")
             await connection.execute_script("SET FOREIGN_KEY_CHECKS=1")
 
     def setUp(self) -> None:
