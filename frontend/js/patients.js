@@ -637,9 +637,13 @@ function tiedBirthDates(items) {
   });
 
   document.addEventListener("session:ready", function (event) {
-    /* 스탭 화면에 스탭이 아닌 사람이 왔다 — 의사가 주소를 직접 치거나 옛
-       북마크·탭 복원으로 들어온 경우다. 목록을 그리기 전에 제 첫 화면으로
-       돌려보낸다: 의사는 승인 화면, 어드민만 있으면 어드민 화면. */
+    /* 이 화면에 머물 사람이 아니다 — 어드민 **권한만** 가진 계정이다. 목록을
+       그리기 전에 제 첫 화면으로 돌려보낸다.
+
+       **의사는 여기 안 걸린다** (KEY-311). 전에는 걸렸고, 이 자리에 「의사는
+       승인 화면으로 돌려보낸다」고 적혀 있었다. 2026-09-08 회의에서 의사가
+       스탭이 하는 모든 것을 하기로 정해, 의사는 이제 그대로 머문다 — 로그인
+       직후 내려놓는 자리(`login.js`)만 여전히 `/doctor.html` 이다. */
     var me = (event && event.detail) || {};
     if (!showsPatientList(me.roles)) {
       location.replace(landingFor(me.roles || []));
