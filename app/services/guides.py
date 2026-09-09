@@ -19,7 +19,6 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from tortoise.expressions import Q
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
@@ -1005,21 +1004,32 @@ class GuideService:
             if guide.status is not GuideStatus.SCHEDULED_TO_SEND:
                 raise ApiError("GUIDE_NOT_SCHEDULED", 409, "승인된 안내문만 철회할 수 있습니다.")
 
-            sent_or_resending = (
-                await GuideMessage.filter(guide_document_id=guide.guide_document_id)
-                .filter(
-                    Q(status=GuideMessageStatus.SENT)
-                    # 재발송 행(resend_sequence>0)은 원본이 FAILED였으면 SENT
-                    # 조건에 안 걸린다 — 그런데도 이미 링크가 폐기됐고 새
-                    # 발송이 예약/시도된 상태라 승인을 거두면 안 된다(KEY-306
-                    # 리뷰로 발견 — 거두면 이 행이 취소 스윕에 같이 쓸려
-                    # 나가서 아무 기록도 없이 유실된다).
-                    | Q(resend_sequence__gt=0, status__not=GuideMessageStatus.CANCELED)
+            sent = (
+                await GuideMessage.filter(
+                    guide_document_id=guide.guide_document_id,
+                    status=GuideMessageStatus.SENT,
                 )
                 .using_db(connection)
                 .exists()
             )
-            if sent_or_resending:
+            # 재발송 행(resend_sequence>0)은 원본이 FAILED였으면 SENT 조건에
+            # 안 걸린다 — 그런데도 이미 링크가 폐기됐고 새 발송이 예약/시도된
+            # 상태라 승인을 거두면 안 된다(KEY-306 리뷰로 발견 — 거두면 이
+            # 행이 취소 스윕에 같이 쓸려 나가서 아무 기록도 없이 유실된다).
+            # 위 sent 검사와 하나로 합치지 않는다 —
+            # frontend/tests/approve-modal.test.js의 카나리아가 정확히
+            # `status=GuideMessageStatus.SENT,\n)` 모양을 찾으므로, 합치면
+            # 그 검사가 "발송기가 새로 생겼다"고 잘못 읽는다.
+            resending = (
+                await GuideMessage.filter(
+                    guide_document_id=guide.guide_document_id,
+                    resend_sequence__gt=0,
+                )
+                .exclude(status=GuideMessageStatus.CANCELED)
+                .using_db(connection)
+                .exists()
+            )
+            if sent or resending:
                 raise ApiError(
                     "GUIDE_ALREADY_SENT",
                     409,
