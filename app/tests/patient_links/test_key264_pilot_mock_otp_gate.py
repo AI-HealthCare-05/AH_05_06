@@ -48,6 +48,10 @@ def make_prod_config() -> Config:
         SOLAPI_API_KEY=SecretStr("synthetic-api-key"),
         SOLAPI_API_SECRET=SecretStr("synthetic-api-secret"),
         SOLAPI_SENDER_NUMBER=SecretStr("0200000000"),
+        # KEY-284 검증기가 SMS_PROVIDER=solapi면 이 목록을 요구한다 — 이
+        # 파일은 MOCK_OTP_CODE 좁은문만 재는 것이라 OTP 실발송과 무관하지만
+        # Config 하나를 같이 쓰므로 채워야 좁은문이 열린 조합에서 부팅된다.
+        OTP_APPROVED_TEST_PHONES=SecretStr("01000000000"),
     )
 
 

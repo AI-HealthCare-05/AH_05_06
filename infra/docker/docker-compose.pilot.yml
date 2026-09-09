@@ -20,6 +20,13 @@
 # env var가 있을 때만 붙어야 한다 — 안 그러면 서버 .env에
 # OTP_SOLAPI_PROD_ENABLED=1이 실수로 영구히 들어갔을 때, 재확인 없이 모든
 # Pilot 배포가 곧장 실제 발송 경로로 빠진다(2heej 리뷰).
+#
+# **command 블록 안에서 셸이 읽어야 할 변수는 전부 $$로 쓴다.** 홑 $는
+# 셸이 아니라 Compose 자신이 먼저(호스트 환경 기준으로) 치환해 버려서,
+# 셸에는 빈 문자열만 남는다 — 이 셸 래퍼 자체가 그렇게 죽어 있던 걸
+# iljun-sys 리뷰가 실제 렌더링 결과로 잡아냈다. 이 파일은 CI가 문법
+# 오류로는 못 잡으므로(런타임에만 드러난다), 고칠 때마다 원문에서
+# command: 블록 안의 홑 $ 개수를 눈으로 세어 본다.
 
 services:
   fastapi:
@@ -32,10 +39,10 @@ services:
       - |
         set -eu
         args=""
-        if [ -n "${PILOT_ALLOW_MOCK_OTP:-}" ]; then
-          args="$args --pilot-confirm-mock-otp"
+        if [ -n "$${PILOT_ALLOW_MOCK_OTP:-}" ]; then
+          args="$$args --pilot-confirm-mock-otp"
         fi
-        if [ -n "${OTP_SOLAPI_PROD_ENABLED:-}" ]; then
-          args="$args --otp-confirm-solapi-prod"
+        if [ -n "$${OTP_SOLAPI_PROD_ENABLED:-}" ]; then
+          args="$$args --otp-confirm-solapi-prod"
         fi
-        exec uv run --no-sync python -m app.pilot_server $args
+        exec uv run --no-sync python -m app.pilot_server $$args

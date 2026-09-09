@@ -214,6 +214,7 @@ class TestTheServerRefusesToStartQuietly:
             SOLAPI_API_KEY=SecretStr("synthetic-api-key"),
             SOLAPI_API_SECRET=SecretStr("synthetic-api-secret"),
             SOLAPI_SENDER_NUMBER=SecretStr("0200000000"),
+            OTP_APPROVED_TEST_PHONES=SecretStr("01000000000"),
         )
 
 

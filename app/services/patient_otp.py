@@ -118,10 +118,11 @@ class ApprovedPhonesOnlyDelivery:
 
     목록에 없는 번호는 UnavailableOtpDelivery와 같은 방식으로 막는다
     (발송기가 있는데 왜 안 되는지 겉으로는 구분되지 않는다). **목록이
-    비어 있으면 전부 막힌다** — "빈 목록 = 전부 허용"이 아니다. 좁은문을
-    열면서 이 목록을 안 채우면 모든 번호가 공급자 장애와 구분 안 되는
-    503을 받는다(iljun-sys 리뷰로 실제 재현) — `_otp_service()`가 이
-    조합을 부팅 시점에 경고한다.
+    비어 있으면 전부 막힌다** — "빈 목록 = 전부 허용"이 아니다. 좁은문
+    여부와 무관하게(이 래퍼가 씌워지는 조건과 같다) SMS_PROVIDER=solapi인데
+    이 목록이 비어 있으면 모든 번호가 공급자 장애와 구분 안 되는 503을
+    받는다(iljun-sys 리뷰로 실제 재현) — `Config`의 검증기가 그 조합으로는
+    아예 부팅을 거부한다(경고가 아니라 실패).
     """
 
     def __init__(self, delivery: OtpDelivery, approved_phones: frozenset[str]) -> None:

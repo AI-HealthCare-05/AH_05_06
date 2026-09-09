@@ -206,26 +206,27 @@ class Config(BaseSettings):
 
     @model_validator(mode="after")
     def _otp_solapi_prod_gate_needs_an_approved_list(self) -> "Config":
-        # KEY-284. 이 좁은문은 SMS_PROVIDER 필드가 아니라 os.environ·sys.argv를
-        # 직접 보므로(otp_solapi_prod_gate_open), MOCK_OTP_CODE 검증기와 같은
-        # 모양으로 여기 따로 둔다 — 하나가 다른 걸 대신 못 본다.
-        if self.SMS_PROVIDER is not SmsProvider.SOLAPI or self.ENV is not Env.PROD:
+        # KEY-284. ApprovedPhonesOnlyDelivery는 SMS_PROVIDER=solapi면 환경과
+        # 무관하게 항상 씌워진다(_otp_service()) — deny-all 위험의 진짜 조건은
+        # "prod + 좁은문"이 아니라 "solapi 경로에 닿음"이다. prod에서만 봤더니
+        # dev·local에도 같은 함정이 조용히 남았다(iljun-sys 리뷰로 재현:
+        # ENV=dev + 빈 목록이면 부팅은 되고 발송 시점에야 503만 남는다).
+        if self.SMS_PROVIDER is not SmsProvider.SOLAPI:
             return self
-        if not otp_solapi_prod_gate_open():
-            return self
-        default_logger.warning(
-            "OTP_SOLAPI_PROD_ENABLED 좁은문 열림 (ENV=prod, %s + %s) — 실제 환자에게 문자가 나갈 수 있다 (KEY-284)",
-            OTP_SOLAPI_PROD_ENABLED_ENV,
-            OTP_SOLAPI_PROD_ENABLED_FLAG,
-        )
+        if self.ENV is Env.PROD and otp_solapi_prod_gate_open():
+            default_logger.warning(
+                "OTP_SOLAPI_PROD_ENABLED 좁은문 열림 (ENV=prod, %s + %s) — 실제 환자에게 문자가 나갈 수 있다 (KEY-284)",
+                OTP_SOLAPI_PROD_ENABLED_ENV,
+                OTP_SOLAPI_PROD_ENABLED_FLAG,
+            )
         if not self.OTP_APPROVED_TEST_PHONES.get_secret_value().strip():
             # 빈 목록은 "전체 허용"이 아니라 deny-all이다 — 이 조합으로 부팅되면
             # 모든 요청이 공급자 장애와 구분 안 되는 503만 받는다(iljun-sys
             # 리뷰로 실제 재현). 조용히 막히는 대신 부팅에서 이름을 댄다.
             raise ValueError(
-                "OTP_SOLAPI_PROD_ENABLED 좁은문이 열렸는데 OTP_APPROVED_TEST_PHONES가 "
-                "비어 있습니다. 이 조합은 모든 번호를 막아 공급자 장애처럼 보이는 "
-                "503만 냅니다 — 승인된 번호를 채우거나 좁은문을 닫으세요 (KEY-284)."
+                "SMS_PROVIDER=solapi인데 OTP_APPROVED_TEST_PHONES가 비어 있습니다. "
+                "이 조합은 모든 번호를 막아 공급자 장애처럼 보이는 503만 냅니다 — "
+                "승인된 번호를 채우세요 (KEY-284)."
             )
         return self
 
