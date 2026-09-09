@@ -56,10 +56,7 @@ def pre_generate_check(context_outcome: ContextAdmissionOutcome | None) -> Safet
     검증되지 않은 컨텍스트(None 또는 GENERATION_BLOCKED)는 BLOCK.
     실제 차단 게이트 연결은 KEY-277에서 수행한다.
     """
-    if (
-        context_outcome is None
-        or context_outcome is ContextAdmissionOutcome.GENERATION_BLOCKED
-    ):
+    if context_outcome is None or context_outcome is ContextAdmissionOutcome.GENERATION_BLOCKED:
         return SafetyVerdict(
             verdict=SafetyVerdictKind.BLOCK,
             reason_code=SafetyReasonCode.UNVERIFIED_CONTEXT,
