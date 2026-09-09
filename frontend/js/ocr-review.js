@@ -1401,7 +1401,7 @@ function stateTakesFocus(tone) {
      * 그 예외가 `renderFields` → `redraw` → `onTyped` 를 통째로 중단시켜,
      * **고른 값을 서버로 보내는 줄이 아예 안 돌았다** — 진단을 골라도 화면에만
      * 남고 탭을 옮기면 사라졌다. 고르는 칸이 늘면서 드러난 자리다. */
-    var canCaret = !!active && typeof active.selectionStart === "number";
+    var canCaret = !!active && active.type !== "number" && typeof active.selectionStart === "number";
     var caret = (typingIn === null && !isManualTyping) || !canCaret
       ? null
       : [active.selectionStart, active.selectionEnd];
@@ -1562,7 +1562,7 @@ function stateTakesFocus(tone) {
       rows.forEach(function (f) {
         if (f.field_type === "MEDICATION_NAME")
           baseExtraRows.push(Object.assign({}, f, { field_type: "MEDICATION_NAME_1" }));
-        if (f.field_type === "DURATION_DAYS")
+        if (f.field_type === "DURATION_DAYS" && !(f.value && !f.is_confirmed))
           baseExtraRows.push(Object.assign({}, f, { field_type: "DURATION_DAYS_1" }));
       });
     }
