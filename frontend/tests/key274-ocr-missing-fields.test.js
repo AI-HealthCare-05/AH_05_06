@@ -138,3 +138,68 @@ test("DURATION_DAYS 가 이미 확정됐으면 다시 보내지 않는다", () =
   const ids = fieldsToConfirm(fields).map((f) => f.ocr_field_id);
   assert.ok(!ids.includes(2), "이미 확정된 DURATION_DAYS 를 다시 보낸다 — 서버가 409 를 낸다");
 });
+
+/* ── 인수조건 4: 정상/미판독 케이스 자동 테스트 ────────────────────────────
+ *
+ * 위 테스트들은 규칙 함수를 직접 부르거나 소스에서 분기를 검사한다.
+ * 아래 두 테스트는 96c3c0c 에서 고친 두 버그를 회귀 방지 목적으로 덮는다.
+ *
+ *  (c) prescriptionHtml — 세트 약 미검출 + DURATION_DAYS 미확정 + 값 있음
+ *      → topRowHtml 과 baseExtraRows 양쪽에 같은 노드가 생기는 중복 렌더링 버그.
+ *      수정: `!(f.value && !f.is_confirmed)` 조건으로 baseExtraRows 추가를 막는다.
+ *
+ *  (d) renderFields — type="number" 수동 입력칸이 활성일 때 redraw 호출
+ *      → selectionStart 접근 시 InvalidStateError 예외, redraw 가 중단되는 버그.
+ *      수정: canCaret 계산에서 `active.type !== "number"` 로 short-circuit 한다.
+ */
+
+test("prescriptionHtml 이 세트 약 미검출 + 미확정 DURATION_DAYS 를 baseExtraRows 에서 제외한다 — topRowHtml 과 중복 표시를 막는다", () => {
+  const src = source();
+  const phStart = src.indexOf("function prescriptionHtml(");
+  assert.notEqual(phStart, -1, "prescriptionHtml 이 없다 — 검사가 헛돈다");
+  const phBody = src.slice(phStart, src.indexOf("\n  function ", phStart + 1));
+
+  /* 수정 전 패턴: baseExtraRows 에 DURATION_DAYS 를 조건 없이 넣는다
+     → anySetDrugInOcr=false + durationNeedsConfirm=true 케이스에서
+       topRowHtml 과 baseExtraRows 양쪽에 같은 data-input 노드가 생겼다.
+     수정: 값 있고 미확정이면 baseExtraRows 에 추가하지 않는다. */
+  assert.ok(
+    phBody.includes('!(f.value && !f.is_confirmed)'),
+    "DURATION_DAYS baseExtraRows 추가 전에 미확정 여부를 확인하지 않는다 — topRowHtml 과 노드가 중복된다",
+  );
+});
+
+test("renderFields 의 canCaret 가 number 타입 입력칸에서 selectionStart 접근을 short-circuit 한다", () => {
+  const src = source();
+  const rfStart = src.indexOf("function renderFields()");
+  assert.notEqual(rfStart, -1, "renderFields 가 없다 — 검사가 헛돈다");
+  const rfBody = src.slice(rfStart, src.indexOf("\n  function ", rfStart + 1));
+
+  /* canCaret 선언줄: `!!active && active.type !== "number" && typeof active.selectionStart === "number"` */
+  const caretDeclIdx = rfBody.indexOf("canCaret");
+  assert.notEqual(caretDeclIdx, -1, "canCaret 변수가 없다 — 검사가 헛돈다");
+  const caretDecl = rfBody.slice(caretDeclIdx, rfBody.indexOf(";", caretDeclIdx) + 1);
+
+  const typeCheckPos = caretDecl.indexOf('type !== "number"');
+  const selStartPos  = caretDecl.indexOf("selectionStart");
+
+  assert.ok(
+    typeCheckPos !== -1,
+    'canCaret 에 active.type !== "number" 체크가 없다 — number input 에서 selectionStart 가 예외를 던진다',
+  );
+  assert.ok(selStartPos !== -1, "canCaret 이 selectionStart 를 확인하지 않는다 — 검사가 헛돈다");
+  assert.ok(
+    typeCheckPos < selStartPos,
+    'type !== "number" 체크가 selectionStart 접근보다 뒤에 있다 — &&  short-circuit 이 되지 않는다',
+  );
+
+  /* caret 대입식: `!canCaret ? null : [active.selectionStart, ...]`
+     → canCaret 이 거짓이면 null 을 쓰고 selectionStart 에 접근하지 않는다. */
+  const caretVarIdx  = rfBody.indexOf("var caret =");
+  const caretVarExpr = rfBody.slice(caretVarIdx, rfBody.indexOf(";", caretVarIdx) + 200);
+
+  assert.ok(
+    caretVarExpr.includes("!canCaret"),
+    "caret 계산에서 !canCaret 를 사용하지 않는다 — canCaret 이 거짓이어도 selectionStart 에 접근한다",
+  );
+});
