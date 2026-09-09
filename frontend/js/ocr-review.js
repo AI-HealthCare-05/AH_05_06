@@ -196,6 +196,10 @@ var GENERATE_SAYINGS = [
      못했습니다」로만 말하면 스탭이 값을 다시 볼 생각을 못 한다. */
   { code: "VERSION_CONFLICT", say: "그 사이 값이 바뀌었습니다 — 화면을 새로 고쳐 확인해 주세요" },
   { code: "OCR_FIELD_CONFIRMED", say: "이미 확정된 항목이 있습니다 — 화면을 새로 고쳐 주세요" },
+  /* 재업로드 게이트 — 최신 비제외 job이 아직 처리 중이거나 실패한 경우.
+     OCR_FAILED 는 「잠시 뒤 다시」가 아니라 재업로드·제외 행동을 안내해야 한다. */
+  { code: "OCR_RESULT_NOT_READY", say: "판독이 아직 처리 중입니다 — 잠시 뒤 완료되면 다시 눌러 주세요" },
+  { code: "OCR_FAILED", say: "판독에 실패했습니다 — 해당 문서를 다시 업로드하거나 제외해 주세요" },
   { status: 401, say: "로그인이 풀렸습니다 — 다시 로그인해 주세요" },
   /* **서버가 거절한 것과 닿지도 못한 것은 다르다** — KEY-211. #162 에서 이 규칙을
      걷어낸 것은 그때 `request()` 가 `status: 0` 을 낼 줄 몰라 한 번도 안 걸렸기
@@ -796,7 +800,7 @@ function stateTakesFocus(tone) {
     var unit = fieldUnit(field.field_type, field.unit);
     /* 맨 위 줄(진단 · 처방)은 자리를 지킬 필요가 없다 — 세 칸이 각자 서 있어
        빈 칸을 두면 값과 단추 사이가 까닭 없이 벌어진다. */
-    if (!unit && PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1) return "";
+    if (!unit && isPrescriptionType(field.field_type)) return "";
     return '<span class="field__unit">' + escapeHtml(unit) + "</span>";
   }
 
@@ -1007,7 +1011,7 @@ function stateTakesFocus(tone) {
         /* **「이번 미시행」은 검사값의 말이다.** 진단과 처방은 「이번엔 안
            했다」가 성립하지 않는다 — 안 한 진료가 아니라 못 읽은 것이고,
            안내문이 그 값으로 만들어지므로 채워야 끝난다. */
-        (PRESCRIPTION_TYPES.indexOf(field.field_type) !== -1
+        (isPrescriptionType(field.field_type)
           ? ""
           : '<button class="field__act field__act--quiet" type="button" data-skip="' +
             id +
@@ -1742,7 +1746,10 @@ function stateTakesFocus(tone) {
     var out = [];
     for (var type in local) {
       if (!Object.prototype.hasOwnProperty.call(local, type)) continue;
-      var isRx = PRESCRIPTION_TYPES.indexOf(type) !== -1;
+      /* **그리는 쪽과 같은 규칙으로 잰다** (`ocr-groups.js`). 여기서 `indexOf`
+         로만 재면 `DURATION_DAYS_1` 이 검사값으로 세어져, 「진단 · 처방」에
+         그려 놓고 저장은 「이번 판독 값」 단추에 걸린다. */
+      var isRx = isPrescriptionType(type);
       if (isRx === !!wantPrescription) out.push(type);
     }
     return out;

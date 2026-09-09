@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 
 from app.apis.v1.patient_otp_routers import _otp_service
 from app.core.config import (
@@ -21,6 +22,7 @@ from app.core.config import (
     PILOT_ALLOW_MOCK_OTP_FLAG,
     Config,
     Env,
+    SmsProvider,
     pilot_mock_otp_gate_open,
 )
 from app.main import app
@@ -42,6 +44,10 @@ def make_prod_config() -> Config:
         MOCK_OTP_CODE=MOCK_CODE,
         SECRET_KEY=PROD_SECRET,
         DB_PASSWORD="syn-test-db-password",
+        SMS_PROVIDER=SmsProvider.SOLAPI,
+        SOLAPI_API_KEY=SecretStr("synthetic-api-key"),
+        SOLAPI_API_SECRET=SecretStr("synthetic-api-secret"),
+        SOLAPI_SENDER_NUMBER=SecretStr("0200000000"),
     )
 
 

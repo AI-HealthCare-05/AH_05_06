@@ -705,6 +705,54 @@ GET /api/v1/visits/{visit_id}/timeline
 반환합니다. 이미 확정된 필드는 다시 수정하지 않습니다. 타 병원 식별자는 존재
 여부를 숨기기 위해 `404 NOT_FOUND`로 통일합니다.
 
+### 재업로드 시 유효 OCR 결과 선택 규칙 — KEY-125
+
+> 결정 2026-09-08 · [KEY-125](https://leehee.atlassian.net/browse/KEY-125) · 담당 한금준 · 리뷰어 권일준·이희진
+
+같은 진료에 문서를 여러 번 올릴 수 있습니다. 이때 어느 판독 결과를 유효하게 볼 것인지, 어떤 조건에서 안내 생성이 차단되는지를 정합니다.
+
+#### 문서별 최신 job 선택 (`GET /visits/{visit_id}/ocr-jobs`)
+
+한 진료에 여러 `OcrJob`이 존재할 때, 화면에 표시할 유효 결과는 **`document_id`별 최신 job** 하나입니다.
+
+- 제외 여부와 관계없이 **모든 job**을 반환하며, 각 job의 응답에 `excluded_from_guide` 플래그가 포함됩니다.
+- 같은 `document_id`에 여러 job이 있으면 `created_at` 내림차순으로 첫 번째(가장 최신)를 선택합니다.
+- EMR·처방전·검사결과지 등 서로 다른 문서 종류의 유효 결과는 각각 독립적으로 선택합니다.  
+  예: EMR은 job-A, 검사결과지는 job-B에서 결과를 가져올 수 있습니다.
+
+#### 진료 전체의 현재 판독 상태 (`GET /visits/{visit_id}/ocr-job`)
+
+단일 job 조회는 두 규칙을 순서대로 적용합니다.
+
+1. `PROCESSING` 상태 job이 있으면 **타임스탬프와 무관하게** 그것을 반환합니다.
+2. `PROCESSING`이 없으면 `created_at` 내림차순 최신 job을 반환합니다.
+
+이 두 단계를 단일 `CASE WHEN ORDER BY` 쿼리로 합칠 수 있지만, 두 규칙을 독립적으로 테스트하기 위해 두 쿼리를 유지합니다 (성능 차이 없음 — 인덱스 레인지 스캔).
+
+#### 안내 생성 게이트 — 재업로드 후 상태별 차단
+
+`POST /visits/{visit_id}/guide/generate`는 **비제외(`excluded_from_guide=False`) job 중 가장 최신 것의 상태**로 안내 생성 가능 여부를 판정합니다.
+
+| 최신 비제외 job 상태 | 결과 | 오류 코드 |
+|---|---|---|
+| `PROCESSING` | 차단 — 완료 후 확정해야 한다 | `OCR_RESULT_NOT_READY` 422 |
+| `FAILED` | 차단 — 재시도하거나 해당 job을 제외해야 한다 | `OCR_FAILED` 422 |
+| `COMPLETED` (미확정 필드 있음) | 차단 — 모든 필드를 확정해야 한다 | `OCR_NOT_CONFIRMED` 422 |
+| `COMPLETED` (전체 확정) | 통과 | — |
+| 없음(job 자체가 없음) | 차단 | `OCR_NOT_CONFIRMED` 422 |
+
+`excluded_from_guide=True`인 job은 판정에서 건너뜁니다. 잘못 올린 문서를 제외 처리하면 그 이전 확정 job으로 안내를 생성할 수 있습니다.
+
+#### 재업로드 시나리오별 동작
+
+| 시나리오 | 안내 생성 |
+|---|---|
+| 1차 업로드 확정 → 2차 업로드 `PROCESSING` 중 | 차단(`OCR_RESULT_NOT_READY`) |
+| 1차 업로드 확정 → 2차 업로드 `FAILED` | 차단(`OCR_FAILED`) — 2차 제외 후 생성 가능 |
+| 1차 업로드 확정 → 2차 업로드 확정 | 통과(2차 기준으로 판정) |
+| 오래된 `PROCESSING` 방치 → 이후 `COMPLETED` 확정 | 통과(최신 `COMPLETED` 기준) |
+| 비제외 job 없음 | 차단(`OCR_NOT_CONFIRMED`) |
+
 OCR 도메인 오류는 동결 계약의 `code`, `message`, `field_errors` 응답 구조를
 사용합니다. 요청 검증 오류는 KEY-11로 `develop`에 병합된 공통 마스킹 처리기를
 그대로 사용하며 OCR 라우터가 별도로 가로채지 않습니다. 공통 검증 오류를 동결

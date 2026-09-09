@@ -42,6 +42,7 @@ from app.tests.fixtures.ocr import (
     SYN_FAIL_CLOVA_CODE,
     SYN_LAB_01_CLOVA_RESULT,
     SYN_LOW_CONF_CLOVA_RESULT,
+    SYN_LOW_CONF_EMR_CLOVA_RESULT,
     SYN_TIMEOUT_CLOVA_CODE,
 )
 
@@ -229,8 +230,73 @@ class TestProcessOcrJob(TestCase):
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.FAILED
         assert job.failure_code == "CLOVA_API_ERROR"
+        assert job.progress == 0
         assert mock_clova.call_count == 1
         assert await OcrResult.filter(ocr_job=job).count() == 0
+
+    async def test_failed_job_progress_resets_to_zero_after_partial_clova(self) -> None:
+        """다중 문서 중 첫 번째 CLOVA 성공(진행률 중간값)→ 두 번째 실패 시 progress가 0으로 재설정된다."""
+        patient = await Patient.create(
+            patient_id=910090,
+            hospital_id=HOSPITAL_ID,
+            hospital_patient_no="TEST-KEY125-PROGRESS",
+            name="테스트환자125",
+            birth_date=date(1990, 1, 1),
+            phone="01000000099",
+        )
+        visit = await Visit.create(
+            visit_id=910090,
+            hospital_id=HOSPITAL_ID,
+            patient=patient,
+            visited_at=datetime(2026, 8, 25, 9, 0, tzinfo=UTC),
+        )
+        doc1 = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.LAB_RESULT,
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        doc2 = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.LAB_RESULT,
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        job = await OcrJob.create(
+            ocr_job_id="ocr_key125_partial_progress",
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            requested_by=1,
+        )
+        await OcrJobDocument.create(ocr_job=job, document_id=doc1.document_id, document_type=OcrDocumentType.LAB_RESULT)
+        await OcrJobDocument.create(ocr_job=job, document_id=doc2.document_id, document_type=OcrDocumentType.LAB_RESULT)
+
+        # 첫 번째 문서는 성공(진행률 35%), 두 번째는 비재시도 오류로 실패
+        call_count = 0
+
+        async def clova_first_ok_then_fail(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _FAKE_CLOVA_RESULT
+            raise ClovaOcrError("CLOVA_INFER_FAILED", "second doc failed")
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", side_effect=clova_first_ok_then_fail),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.FAILED
+        assert job.progress == 0
 
     # ── CLOVA 비활성 → FAILED (KEY-199: 워커는 fixture seed 불가) ───────────
 
@@ -244,6 +310,7 @@ class TestProcessOcrJob(TestCase):
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.FAILED
         assert job.failure_code == "OCR_NOT_CONFIGURED"
+        assert job.progress == 0
 
         assert await OcrResult.filter(ocr_job=job).count() == 0
 
@@ -351,10 +418,10 @@ class TestProcessOcrJob(TestCase):
         count = await OcrResult.filter(ocr_job=job).count()
         assert count == 0
 
-    # ── 저신뢰 fixture (KEY-227) ──────────────────────────────────────────────
+    # ── 저신뢰 fixture (KEY-227 · KEY-125) ───────────────────────────────────
 
     async def test_low_confidence_result_completes_job(self) -> None:
-        """저신뢰 CLOVA 결과도 OcrJob을 COMPLETED로 끝낸다.
+        """저신뢰 CLOVA 결과(LAB_RESULT)도 OcrJob을 COMPLETED로 끝낸다.
 
         confidence < 0.75 항목은 화면이 저신뢰로 표시하지만, job 자체는 성공이다.
         사람이 판단해 확정하면 안내 생성에 쓸 수 있다.
@@ -373,14 +440,122 @@ class TestProcessOcrJob(TestCase):
 
         await job.refresh_from_db()
         assert job.status == OcrJobStatus.COMPLETED
+        assert job.progress == 100
 
         result = await OcrResult.filter(ocr_job=job).first()
         assert result is not None
 
         fields = await OcrField.filter(ocr_result=result).all()
         conf_map = {f.field_type: f.confidence for f in fields if f.confidence is not None}
-        # 저신뢰 블록에서 추출된 DIAGNOSIS는 0.75 미만이어야 한다
         assert any(c < 0.75 for c in conf_map.values()), "저신뢰 필드가 없다"
+
+    async def test_emr_low_confidence_fields_are_saved_and_flaggable(self) -> None:
+        """EMR 저신뢰 결과 — confidence·저신뢰 판정 근거 검증 (KEY-125 추가 인수조건).
+
+        기대 필드: DIAGNOSIS(자궁내막증, confidence=0.62) · MEDICATION_NAME(비잔정, confidence=0.58)
+        실제 추출값과 confidence가 fixture 정의와 일치해야 한다.
+        저신뢰(< 0.75) 필드는 is_confirmed=False 로 저장되며,
+        직원 확인 없이 안내 생성 근거로 사용할 수 없다.
+        """
+        patient = await Patient.create(
+            patient_id=910091,
+            hospital_id=HOSPITAL_ID,
+            hospital_patient_no="TEST-KEY125-EMR-LOW-CONF",
+            name="테스트환자125EMR",
+            birth_date=date(1990, 1, 1),
+            phone="01000000091",
+        )
+        visit = await Visit.create(
+            visit_id=910091,
+            hospital_id=HOSPITAL_ID,
+            patient=patient,
+            visited_at=datetime(2026, 8, 25, 9, 0, tzinfo=UTC),
+        )
+        med_doc = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.EMR,
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        job = await OcrJob.create(
+            ocr_job_id="ocr_key125_emr_low_conf",
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            requested_by=1,
+        )
+        await OcrJobDocument.create(
+            ocr_job=job,
+            document_id=med_doc.document_id,
+            document_type=OcrDocumentType.EMR,
+        )
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=SYN_LOW_CONF_EMR_CLOVA_RESULT),
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        await job.refresh_from_db()
+        assert job.status == OcrJobStatus.COMPLETED
+        assert job.progress == 100
+
+        result = await OcrResult.filter(ocr_job=job).first()
+        assert result is not None
+
+        fields = await OcrField.filter(ocr_result=result).all()
+        by_type = {f.field_type: f for f in fields}
+
+        # 기대 필드·실제 값·confidence — fixture 정의와 일치해야 한다
+        # SYN_LOW_CONF_EMR_CLOVA_BLOCKS: DIAGNOSIS confidence=0.62, MEDICATION_NAME confidence=0.58
+        diag = by_type.get("DIAGNOSIS")
+        assert diag is not None, "DIAGNOSIS 필드 없음"
+        assert diag.extracted_value == "자궁내막증"
+        assert diag.confidence == Decimal("0.62"), (
+            f"DIAGNOSIS confidence={diag.confidence} — fixture 정의(0.62)와 일치해야 한다"
+        )
+        assert not diag.is_confirmed, "저신뢰 필드는 직원 확인 전 is_confirmed=False 여야 한다"
+
+        med = by_type.get("MEDICATION_NAME")
+        assert med is not None, "MEDICATION_NAME 필드 없음"
+        assert med.extracted_value == "비잔정(디에노게스트)2mg", f"약품명 불일치: {med.extracted_value}"
+        assert med.confidence == Decimal("0.58"), (
+            f"MEDICATION_NAME confidence={med.confidence} — fixture 정의(0.58)와 일치해야 한다"
+        )
+        assert not med.is_confirmed, "저신뢰 필드는 직원 확인 전 is_confirmed=False 여야 한다"
+
+    async def test_progress_reaches_80_at_field_extraction_stage(self) -> None:
+        """필드 추출 완료 시 progress=80이 기록된다 — 대기→판독→추출→저장→완료 중 세 번째 단계."""
+        job = await self._seed("ocr_key125_progress_80")
+        progress_snapshots: list[int] = []
+
+        original_save = OcrJob.save
+
+        async def capturing_save(self_job, *args, **kwargs):
+            await original_save(self_job, *args, **kwargs)
+            if "progress" in kwargs.get("update_fields", ()):
+                progress_snapshots.append(self_job.progress)
+
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch("ai_worker.tasks.ocr_task.call_clova_ocr", AsyncMock(return_value=SYN_LOW_CONF_CLOVA_RESULT)),
+            patch.object(OcrJob, "save", capturing_save),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job.ocr_job_id)
+
+        # CLOVA 완료(70%) → 필드 추출 완료(80%) → 저장 완료(100%) 순으로 갱신되어야 한다
+        assert 80 in progress_snapshots, f"progress=80 단계가 없다: {progress_snapshots}"
+        assert progress_snapshots[-1] == 100, f"최종 progress가 100이 아니다: {progress_snapshots}"
+        assert progress_snapshots == sorted(progress_snapshots), (
+            f"progress가 단조 증가하지 않는다: {progress_snapshots}"
+        )
 
     # ── 재시도 로직 (KEY-227) ─────────────────────────────────────────────────
 

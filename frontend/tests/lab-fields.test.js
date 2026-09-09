@@ -239,8 +239,11 @@ test("**점선 칸 오른쪽에 단위가 선다** — `?` 만 있으면 무엇�
   const body = code.slice(at, code.indexOf("\n  }", at));
   assert.match(body, /fieldUnit\(/, "단위표를 안 읽는다");
   assert.match(body, /fieldChoices\(/, "고르는 항목에도 단위를 붙인다");
-  /* 처방 줄은 제 단위를 이미 그린다 — 또 붙이면 한 줄에 「일」이 두 번 선다 */
-  assert.match(body, /PRESCRIPTION_TYPES/, "처방 줄에도 단위를 또 붙인다");
+  /* 처방 줄은 제 단위를 이미 그린다 — 또 붙이면 한 줄에 「일」이 두 번 선다.
+     **재는 것은 공용 규칙이다** — `PRESCRIPTION_TYPES.indexOf` 로 되돌리면
+     `DOSAGE_2` 같은 인덱스형 처방 줄이 다시 검사값처럼 그려진다. */
+  assert.match(body, /isPrescriptionType\(field\.field_type\)/, "처방 줄에도 단위를 또 붙인다");
+  assert.ok(!/PRESCRIPTION_TYPES\.indexOf/.test(body), "접미사를 못 보는 옛 규칙으로 되돌아갔다");
 
   /* 못 읽은 두 갈래 모두에 붙어야 한다 — 한쪽만 붙이면 줄마다 달라 보인다 */
   const missing = code.split('field__value--missing">?</div>');
@@ -248,6 +251,27 @@ test("**점선 칸 오른쪽에 단위가 선다** — `?` 만 있으면 무엇�
   for (let i = 1; i < missing.length; i++) {
     assert.match(missing[i].slice(0, 120), /unitHtml\(field\)/, `못 읽은 줄 ${i} 에 단위가 없다`);
   }
+});
+
+test("**「이번 미시행」은 검사값의 말이다** — 처방 줄에는 안 붙는다", () => {
+  /* 「이번엔 안 했다」가 처방에는 성립하지 않는다 — 안 한 진료가 아니라 못
+     읽은 것이고, 안내문이 그 값으로 만들어지므로 채워야 끝난다.
+
+     여기서도 **그리는 쪽과 같은 규칙**으로 재야 한다. `indexOf` 로만 재면
+     `DOSAGE_2` 같은 인덱스형 처방 줄에 이 단추가 붙어, 스탭이 처방 항목을
+     「안 했다」고 표시할 수 있게 된다. */
+  const code = codeOnly(read("js/ocr-review.js"));
+
+  const at = code.indexOf("data-skip=");
+  assert.notEqual(at, -1, "「이번 미시행」 단추가 없다");
+
+  /* 단추 앞의 갈림길을 본다 */
+  const guard = code.slice(Math.max(0, at - 400), at);
+  assert.match(guard, /isPrescriptionType\(field\.field_type\)/, "처방 줄에도 「이번 미시행」이 붙는다");
+  assert.ok(
+    !/PRESCRIPTION_TYPES\.indexOf/.test(guard),
+    "접미사를 못 보는 옛 규칙이라 인덱스형 처방 줄에 붙는다",
+  );
 });
 
 test("**못 읽었다는 말을 한 줄에 두 번 적지 않는다**", () => {

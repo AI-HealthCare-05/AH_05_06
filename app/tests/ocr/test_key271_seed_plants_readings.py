@@ -194,6 +194,52 @@ class SeedPlantsReadingsTestCase(TestCase):
 
         assert await dispatch_course_days(visit.visit_id) == 84, "문자 쪽이 통수를 안 보고 원문 숫자를 쓴다"
 
+    async def test_excluded_job_is_skipped_for_message_course_days(self) -> None:
+        """**제외된 job 의 처방일수는 문자 본문에 쓰지 않는다.**
+
+        job1(84일)을 제외하고 job2(28일)를 최신으로 두면
+        `_course_days` 는 28을 반환해야 한다. 제외 필터 없이 first() 를 부르면
+        가장 오래된 84일을 집어 문자 본문이 틀려진다.
+        """
+        clinic, doctor, visit = await self.make_world("EXCL")
+        await _seed_ocr(visit, patient_row("SYN-PCOS-07"), clinic.hospital_id)
+
+        job1 = await OcrJob.filter(visit_id=visit.visit_id).first()
+        assert job1 is not None
+        job1.excluded_from_guide = True
+        await job1.save(update_fields=("excluded_from_guide",))
+
+        job2 = await OcrJob.create(
+            ocr_job_id=f"ocr_seed_{visit.visit_id}_v2",
+            hospital_id=clinic.hospital_id,
+            visit=visit,
+            status=OcrJobStatus.COMPLETED,
+            progress=100,
+            requested_by=doctor.staff_id,
+            completed_at=visit.visited_at,
+            excluded_from_guide=False,
+        )
+        result2 = await OcrResult.create(
+            ocr_job=job2,
+            model_name="seed-test",
+            confirmed_by=doctor.staff_id,
+            confirmed_at=visit.visited_at,
+        )
+        await OcrField.create(
+            ocr_result=result2,
+            field_type="DURATION_DAYS",
+            extracted_value="28",
+            unit=None,
+            confidence=None,
+            is_confirmed=True,
+            confirmed_by=doctor.staff_id,
+            confirmed_at=visit.visited_at,
+        )
+
+        assert await dispatch_course_days(visit.visit_id) == 28, (
+            "제외된 job(84일)이 아니라 최신 비제외 job(28일)을 봐야 한다"
+        )
+
     async def test_an_as_needed_drug_gets_no_course_days(self) -> None:
         """**「필요시」 약에는 소진일이 없다** — 심는 쪽도 그 규칙을 따른다.
 
