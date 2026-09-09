@@ -40,19 +40,22 @@ test("대신 **바뀐 것만** 알리는 자리가 있다", () => {
 });
 
 test("탭을 옮기면 **탭 이름만** 나간다 — 본문이 아니라", () => {
-  const js = read("js/guide.js");
-  const at = js.indexOf('button.addEventListener("click"');
-  assert.notStrictEqual(at, -1, "탭 처리기를 못 찾았다");
+  /* 재는 자리를 옮겼다 — 전에는 `js/guide.js` 를 봤는데 그 파일은 **아무 화면도
+     안 싣는 고아**였다. 초록불이 사용자에게 가지 않는 코드를 지키고 있었다
+     (KEY-281). 지금은 `guide.html` 이 실제로 싣는 파일을 본다. */
+  const js = read("patient_wireframe/js/guide.js");
+  const at = js.indexOf("b.addEventListener('click'");
+  assert.notStrictEqual(at, -1, "탭 처리기를 못 찾았다 — 검사가 헛돈다");
 
   const handler = js.slice(at, js.indexOf("});", at));
-  assert.match(handler, /sayGuide\(tab\.label\)/, "탭 이름을 안 알린다");
+  assert.match(handler, /sayGuide\(key\)/, "탭 이름을 안 알린다");
 });
 
 test("안내를 못 열면 그 사실을 알린다", () => {
   /* 화면에만 뜨면 못 보는 사람은 계속 기다린다. */
-  const js = read("js/guide.js");
-  const at = js.indexOf("function renderError(");
-  assert.notStrictEqual(at, -1);
+  const js = read("patient_wireframe/js/guide.js");
+  const at = js.indexOf("guide-load-error__title");
+  assert.notStrictEqual(at, -1, "오류 상자를 못 찾았다 — 검사가 헛돈다");
 
   assert.match(js.slice(at, at + 400), /sayGuide\(/, "오류를 소리로 안 알린다");
 });
@@ -60,11 +63,13 @@ test("안내를 못 열면 그 사실을 알린다", () => {
 test("화면 ID 주석이 실제 탭과 맞는다", () => {
   /* 「세 탭」이라고 적혀 있었는데 KEY-95 가 둘을 더해 다섯이었다. */
   const html = read("guide.html");
-  const js = read("js/guide.js");
+  const js = read("patient_wireframe/js/guide.js");
 
-  const tabs = (js.slice(js.indexOf("var TABS = ["), js.indexOf("]", js.indexOf("var TABS = ["))).match(/label:/g) || []).length;
-  assert.strictEqual(tabs, 5, `탭 수가 바뀌었다: ${tabs} — 주석도 함께 고친다`);
-  assert.match(html.slice(0, 2000), /다섯 탭/, "주석이 실제 탭 수와 다르다");
+  const at = js.indexOf("var TABS = [");
+  assert.notStrictEqual(at, -1, "탭 목록을 못 찾았다 — 검사가 헛돈다");
+  const tabs = (js.slice(at, js.indexOf("]", at)).match(/'/g) || []).length / 2;
+  assert.strictEqual(tabs, 4, `탭 수가 바뀌었다: ${tabs} — 주석도 함께 고친다`);
+  assert.match(html.slice(0, 2000), /네 탭/, "주석이 실제 탭 수와 다르다");
 });
 
 /* ── D+7 입력 화면 ─────────────────────────────────────────────────────── */
@@ -116,41 +121,20 @@ test("소프트 키보드가 올라와도 저장 버튼이 안 밀린다", () =>
   assert.deepStrictEqual(order, ["vh", "dvh"], `폴백이 먼저, dvh 가 뒤여야 덮인다: ${order}`);
 });
 
-test("안내 배너도 소리로 난다 — 라이브 리전을 걷은 자리의 회귀", () => {
-  /* `notice()` 는 `#guide-body` 의 첫 자식으로 배너를 넣는다. 본문이 라이브
-     리전이던 때는 그것만으로 소리가 났는데, 속성을 걷으면서 **조용해졌다.**
-     문의하기·PDF 저장·오류 신고 셋이 그 경로다 (이희진 님 `#131` 리뷰).
+test("**사람에게 뜬 것은 소리로도 난다** — 오류 신고 오버레이", () => {
+  /* 전에는 `js/guide.js` 의 `notice()` 배너를 재고 있었다. 그 파일은 **아무
+     화면도 안 싣는 고아**였고, 지금 실리는 화면에는 그 배너 자체가 없다 —
+     문의·PDF·오류 신고가 배너 대신 오버레이·시트로 바뀌었다.
+     그래서 지키려던 것(뜬 것은 소리로도 난다)을 **실제로 실리는 자리**에서
+     다시 잰다 (KEY-281 이 남긴 처분).
 
-     부르는 쪽 셋에 각각 붙이지 않고 `notice()` 안에서 알린다 — 새 호출부가
-     생겨도 따라온다. 이 검사가 그 자리를 지킨다. */
-  const js = read("js/guide.js");
-  const at = js.indexOf("function notice(");
-  assert.notStrictEqual(at, -1, "배너 함수를 못 찾았다 — 검사가 헛돈다");
+     탭 이동과 열기 실패는 위 두 검사가 `sayGuide` 로 지킨다. 남은 자리가
+     오류 신고 오버레이인데, 보내기 결과가 화면에만 뜨면 못 보는 사람은
+     보냈는지 아닌지 모른 채 기다린다. */
+  const js = read("patient_wireframe/js/guide.js");
+  const at = js.indexOf("var submitStatus");
+  assert.notStrictEqual(at, -1, "보내기 결과를 적는 자리를 못 찾았다 — 검사가 헛돈다");
 
-  const fn = js.slice(at, js.indexOf("\n}", at));
-  assert.match(fn, /sayGuide\(message\)/, "배너가 화면에만 뜨고 소리로는 안 난다");
-});
-
-test("배너를 부르는 자리가 늘어도 따라온다", () => {
-  /* 부르는 쪽마다 붙였다면 새 호출부에서 또 빠진다. 한 곳에서 알리는지 본다. */
-  const js = read("js/guide.js");
-  const callers = (js.match(/\n\s*notice\(/g) || []).length;
-
-  assert.ok(callers >= 3, `배너 호출부가 ${callers}곳 — 셋 이상이어야 이 검사가 뜻이 있다`);
-  /* 부르는 쪽 **바로 다음 줄**에 알림이 붙었는지 본다. 처음에는 `[^)]*` 로
-     인자를 잡으려 했는데 문구에 괄호가 들어 있어 안 맞았다 — 호출부 뒤
-     한 토막을 잘라서 본다. */
-  const nearby = [];
-  let at = 0;
-  for (;;) {
-    at = js.indexOf("notice(", at);
-    if (at === -1) break;
-    if (js.slice(at - 9, at) !== "function ") {
-      const after = js.slice(js.indexOf(";", at) + 1, js.indexOf(";", at) + 60);
-      if (after.includes("sayGuide")) nearby.push(js.slice(at, at + 40).split("\n")[0]);
-    }
-    at += 1;
-  }
-
-  assert.deepStrictEqual(nearby, [], "부르는 쪽에서 따로 알린다 — 새 호출부에서 또 빠진다");
+  const block = js.slice(at, at + 300);
+  assert.match(block, /setAttribute\('aria-live', 'polite'\)/, "보내기 결과가 화면에만 뜬다");
 });
