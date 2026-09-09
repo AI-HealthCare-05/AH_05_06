@@ -120,15 +120,39 @@ test("**파생이 `null` 이어도 무너지지 않는다** — 아직 아무것
 
 /* ── 목표 막대 ─────────────────────────────────────────────────────── */
 
-test("**막대의 셈이 환자 렌더러와 같은 식이다** — 삼각형이 다른 자리에 서면 안 된다", () => {
-  /* 환자: `Math.min(95, Math.max(5, 50 + (v - center) / half * 50))`,
-     `half = Math.max(|now-center|, |start-center|, 1) * 1.5`.
-     AMH 7.2, 목표 5.0 → center 5.0, half 3.3, 50 + 2.2/3.3*50 ≈ 83.33%. */
+test("**막대의 셈을 환자 원본에서 읽어 대조한다** — 삼각형이 다른 자리에 서면 안 된다", () => {
+  /* 🚩 **식을 여기 다시 적지 않는다.**
+   *
+   * 처음에는 환자의 식을 검사 안에 리터럴로 옮겨 적고 비교했다. 그러면 같은
+   * 셈이 **세 벌**이 된다 — 환자 렌더러 · 미리보기 렌더러 · 검사. 환자 쪽을
+   * 고쳐도 검사는 조용히 통과한다 (돌연변이로 확인: `pctNum` 을 바꿔도 10개
+   * 전부 통과했다).
+   *
+   * 미리보기 iframe 에는 스크립트가 없어(`sandbox` 에 `allow-scripts` 가 없다)
+   * 렌더러 자체를 나눠 쓸 수는 없다. 그러니 **식만이라도 원본에서 읽어** 온다.
+   * 옆의 문구 검사들이 이미 그 방식이다.
+   */
+  const source = patientSource();
+  const at = source.indexOf("var center");
+  assert.notEqual(at, -1, "환자 원본에서 막대 셈을 못 찾았다 — 검사가 헛돈다");
+  const rule = source.slice(at, source.indexOf("function pct(", at));
+  assert.match(rule, /function pctNum/, "잘라 온 자리에 셈이 없다 — 검사가 헛돈다");
+
+  /* 환자 원본의 셈을 그대로 돌린다. 이 검사가 아는 것은 **인자 이름뿐**이다. */
+  const patientPct = new Function(
+    "nowNum",
+    "startNum",
+    "targetNum",
+    "hasStart",
+    "hasTarget",
+    rule + "\nreturn pctNum(nowNum);",
+  );
+
   const { guidePreviewHtml } = box();
   const html = guidePreviewHtml(SECTIONS, "medication", "요약", preview(FULL));
 
-  const want = Math.min(95, Math.max(5, 50 + ((7.2 - 5.0) / (Math.max(Math.abs(7.2 - 5.0), 0, 1) * 1.5)) * 50));
-  assert.ok(html.includes("left:" + want + "%"), `삼각형 자리가 다르다 — ${want}% 를 못 찾았다`);
+  const want = patientPct(7.2, NaN, 5.0, false, true);
+  assert.ok(html.includes("left:" + want + "%"), `삼각형 자리가 환자 화면과 다르다 — ${want}% 를 못 찾았다`);
   assert.ok(html.includes("목표 5.0"), "눈금에 목표값이 없다");
   assert.ok(html.includes("지금 7.2"), "값 요약이 없다");
 });
