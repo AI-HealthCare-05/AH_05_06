@@ -326,8 +326,11 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         assert OTP not in failed.text
         # 행은 남아 있다 — 지우면 다음 issue()가 쿨다운을 건너뛴다.
         assert await PatientOtpChallenge.all().count() == 1
-        # 남은 digest는 환자가 받은 적 없는 값이라 어떤 코드로도 안 맞는다.
-        still_unusable = await self.verify(OTP)
+        # 틀린 코드는 여전히 거부된다(행이 남았다고 아무 코드나 통과하는
+        # 건 아니다). self.issue()가 내부적으로 secrets.randbelow를
+        # OTP로 고정하므로, 진짜로 틀린 값을 따로 쓴다.
+        wrong_code = "000000" if OTP != "000000" else "111111"
+        still_unusable = await self.verify(wrong_code)
         assert still_unusable.status_code == 401
 
         # 재발송 쿨다운이 실제로 걸린다 — 예전 버그라면 이 두 번째 시도도
