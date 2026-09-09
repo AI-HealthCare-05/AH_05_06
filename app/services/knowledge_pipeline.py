@@ -133,10 +133,38 @@ def private_source_object_key(request: KnowledgeIngestionRequest, source_key: st
     return f"knowledge/{scope}/{source_key}/{safe_version}/{digest}.source"
 
 
+_PERSISTABLE_INGESTION_ERROR_CODES = frozenset(
+    {
+        "API_SNAPSHOT_EMPTY",
+        "API_SNAPSHOT_INVALID_JSON",
+        "APPROVED_VERSION_IMMUTABLE",
+        "EMBEDDING_COUNT_MISMATCH",
+        "EMBEDDING_DIMENSION_MISMATCH",
+        "INVALID_PRIVATE_OBJECT_KEY",
+        "KNOWLEDGE_MINIO_NOT_CONFIGURED",
+        "KNOWLEDGE_VERSION_NOT_FOUND",
+        "LOCAL_EMBEDDING_NOT_INSTALLED",
+        "MINIO_CLIENT_NOT_INSTALLED",
+        "OCR_EXTRACTOR_NOT_CONFIGURED",
+        "OCR_MULTIPAGE_NOT_SUPPORTED",
+        "OCR_PDF_INVALID",
+        "OCR_TEXT_EMPTY",
+        "PDF_ENCRYPTED",
+        "PDF_EXTRACTION_FAILED",
+        "PDF_EXTRACTOR_NOT_INSTALLED",
+        "PDF_TEXT_EMPTY",
+        "PRIVATE_OBJECT_GET_FAILED",
+        "PRIVATE_OBJECT_NOT_FOUND",
+        "PRIVATE_OBJECT_PUT_FAILED",
+        "PUBLIC_OBJECT_URL_FORBIDDEN",
+    }
+)
+
+
 def _safe_error_code(exc: Exception) -> str:
-    message = str(exc)
-    if message and len(message) <= 100 and message.replace("_", "").isalnum():
-        return message.upper()
+    message = str(exc).upper()
+    if message in _PERSISTABLE_INGESTION_ERROR_CODES:
+        return message
     return exc.__class__.__name__.upper()[:100]
 
 
@@ -188,11 +216,7 @@ class KnowledgeIngestionService:
             retryable = _is_retryable_ingestion_error(exc)
             await self._repository.mark_attempt(
                 prepared.attempt_id,
-                (
-                    KnowledgeIngestionStatus.RETRYABLE_FAILURE
-                    if retryable
-                    else KnowledgeIngestionStatus.FAILED
-                ),
+                (KnowledgeIngestionStatus.RETRYABLE_FAILURE if retryable else KnowledgeIngestionStatus.FAILED),
                 error_code=_safe_error_code(exc),
                 retryable=retryable,
             )

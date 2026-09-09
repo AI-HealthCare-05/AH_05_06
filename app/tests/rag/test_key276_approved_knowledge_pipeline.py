@@ -222,6 +222,11 @@ class FailingStore(InMemoryPrivateObjectStore):
         raise RuntimeError(f"credentials-and-raw-{payload.decode()}")
 
 
+class SensitiveAlphanumericMessageStore(InMemoryPrivateObjectStore):
+    async def put(self, object_key: str, payload: bytes, content_type: str) -> None:
+        raise RuntimeError(payload.decode())
+
+
 @pytest.mark.asyncio
 async def test_storage_failure_is_retryable_without_raw_source_in_persisted_error() -> None:
     repository = FakeRepository()
@@ -239,6 +244,24 @@ async def test_storage_failure_is_retryable_without_raw_source_in_persisted_erro
     assert state.status is KnowledgeIngestionStatus.RETRYABLE_FAILURE
     assert state.retryable is True
     assert raw_secret.decode() not in (state.error_code or "")
+
+
+@pytest.mark.asyncio
+async def test_alphanumeric_exception_message_is_not_persisted_as_error_code() -> None:
+    repository = FakeRepository()
+    service = KnowledgeIngestionService(
+        repository=repository,
+        object_store=SensitiveAlphanumericMessageStore(),
+        embedding_provider=cast(EmbeddingProvider, FakeEmbeddingProvider()),
+    )
+    raw_secret = b"RAWPRIVATEGUIDANCE"
+
+    with pytest.raises(RuntimeError, match=raw_secret.decode()):
+        await service.ingest(_request(KnowledgeSourceKind.STRUCTURED_API, raw_secret, "application/json"))
+
+    state = next(iter(repository.attempts.values()))
+    assert state.error_code == "RUNTIMEERROR"
+    assert raw_secret.decode() not in state.error_code
 
 
 def test_chunker_obeys_key82_size_contract() -> None:
@@ -470,9 +493,9 @@ class TestDbApprovedKnowledgePipeline(TestCase):
         with pytest.raises(ValueError, match="APPROVED_VERSION_IMMUTABLE"):
             await self._ingest(request)
 
-        latest_attempt = await KnowledgeIngestionAttempt.filter(version_id=prepared.version_id).order_by(
-            "-created_at"
-        ).first()
+        latest_attempt = (
+            await KnowledgeIngestionAttempt.filter(version_id=prepared.version_id).order_by("-created_at").first()
+        )
         assert latest_attempt is not None
         assert latest_attempt.status is KnowledgeIngestionStatus.FAILED
         assert latest_attempt.error_code == "APPROVED_VERSION_IMMUTABLE"
