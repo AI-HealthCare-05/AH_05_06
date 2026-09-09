@@ -18,19 +18,10 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
-const vm = require("node:vm");
+const { loadFrames } = require("./source.js");
 
 const ROOT = path.join(__dirname, "..");
 const WIREFRAMES = path.join(ROOT, "..", "docs", "wireframes");
-
-/* frames.js 는 브라우저용 전역 스크립트라 `require` 로는 안 읽힌다.
-   브라우저와 같은 방식(전역 평가)으로 읽어야 실제 화면과 같은 것을 잰다. */
-function loadManifest() {
-  const context = { console };
-  vm.createContext(context);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, "js", "frames.js"), "utf8"), context);
-  return context;
-}
 
 /* **손으로 그린 판만 읽는다.**
  *
@@ -69,7 +60,7 @@ test("**지금 판은 그린 것이 아니라 뜬 것이다**", () => {
   );
 });
 
-const { FRAMES, FRAME_AREAS, FRAME_LEVELS, frameById, needsGuideScreen } = loadManifest();
+const { FRAMES, FRAME_AREAS, FRAME_LEVELS, frameById, needsGuideScreen } = loadFrames();
 
 /* 목록을 견줄 때 배열이 아니라 **문자열**로 견준다. vm 컨텍스트에서 만든 배열은
    프로토타입이 이쪽과 달라 `deepStrictEqual` 이 빈 배열끼리도 실패한다. */
