@@ -100,6 +100,11 @@ class Config(BaseSettings):
     # 하위 도메인끼리 나눠 써야 할 때만 채운다.
     COOKIE_DOMAIN: str = ""
 
+    # 환자 링크 절대 URL을 만들 때 붙이는 앞부분 — KEY-297. 예:
+    # https://patient.example.com. 끝에 슬래시(/)를 안 둔다 — 붙일 때
+    # 항상 이쪽에서 "/"로 시작하는 경로를 잇는다.
+    PATIENT_WEB_BASE_URL: str = "http://localhost"
+
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 14 * 24 * 60
