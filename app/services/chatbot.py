@@ -21,6 +21,7 @@ from app.models.visits import (
 )
 from app.services.patient_links import PatientLinkService
 from app.services.patient_usage import PatientUsageService
+from app.services.safety_check import UNSAFE_OUTPUT_PATTERN
 
 LOGGER = logging.getLogger("app.chatbot")
 SOURCE_LABEL = "담당 의료진이 승인한 진료 안내"
@@ -44,11 +45,7 @@ NO_CONTEXT_LIMITATION = "승인 안내를 확인할 수 없어 의료 내용을 
 
 _TOKEN = re.compile(r"[0-9A-Za-z가-힣]+")
 _SAFE_PROVIDER_ERROR = re.compile(r"[a-z0-9_.-]{1,64}")
-_UNSAFE_OUTPUT = re.compile(
-    r"(?:진단(?:입니다|으로|받)|(?:약|복용|처방).{0,16}(?:중단|끊으|증량|감량|변경|바꾸|추가)|"
-    r"(?:중단|끊으|증량|감량).{0,16}(?:하세요|하십시오|해도))",
-    re.IGNORECASE,
-)
+_UNSAFE_OUTPUT = UNSAFE_OUTPUT_PATTERN
 _EMERGENCY_QUESTION = re.compile(r"숨.{0,4}(?:차|쉬기)|가슴.{0,4}(?:아|통증)|한쪽.{0,8}(?:붓|종아리)|시야.{0,4}이상")
 
 

@@ -654,6 +654,43 @@ class GuideMessageEvent(models.Model):
         indexes = (("guide_message", "created_at"),)
 
 
+class SafetyCheckStage(StrEnum):
+    PRE_GENERATE = "PRE_GENERATE"
+    POST_GENERATE = "POST_GENERATE"
+
+
+class SafetyCheckVerdict(StrEnum):
+    PASS = "PASS"
+    BLOCK = "BLOCK"
+
+
+class GuideSafetyCheck(models.Model):
+    """안내문 생성 전·후 안전검증 기록 — KEY-83, append-only.
+
+    actor_id 없음 — 시스템 자동 실행이므로 사람 행위자가 없다.
+    KEY-277에서 생성 경로에 연결되기 전까지는 계약과 감사 기반으로만 쓴다.
+    환자정보·OCR 원문·전체 생성문은 담지 않는다.
+    """
+
+    guide_safety_check_id = fields.BigIntField(primary_key=True)
+    guide_document_id: int
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="safety_checks",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    stage = fields.CharEnumField(enum_type=SafetyCheckStage)
+    verdict = fields.CharEnumField(enum_type=SafetyCheckVerdict)
+    reason_code = fields.CharField(max_length=30, null=True)
+    checker_version = fields.CharField(max_length=32)
+    checked_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "guide_safety_check"
+        indexes = (("guide_document", "checked_at"),)
+
+
 class CheckInMedication(StrEnum):
     TAKING = "taking"
     UNCOMFORTABLE = "uncomfortable"
