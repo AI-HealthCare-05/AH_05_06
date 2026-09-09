@@ -616,7 +616,7 @@
     render();
     var asked =
       view === "roster"
-        ? patientsApi.roster(keyword, chosen, null, ROSTER_PAGE, rosterOffset)
+        ? patientsApi.roster(keyword, chosen, ROSTER_PAGE, rosterOffset)
         : view === "schedule"
           ? messagesApi.scheduled(days)
           : messagesApi.history(range());
