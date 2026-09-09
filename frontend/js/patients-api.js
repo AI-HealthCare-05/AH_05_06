@@ -68,7 +68,7 @@ var patientsApi = {
   /* 환자 관리 표(S2-1). 검색과 같은 자리를 부르되 **분류와 쪽 크기를 함께
      보낸다** — 등록 화면의 찾기는 「모든 환자」에서 이름으로 좁히는 일이고,
      이쪽은 의원 전체를 훑으며 챙길 환자를 고르는 일이라 묻는 것이 다르다. */
-  roster: function (keyword, category, cursor, limit) {
+  roster: function (keyword, category, cursor, limit, offset) {
     return patientsRequest(
       "/patients?" +
         query({
@@ -76,6 +76,7 @@ var patientsApi = {
           category: category,
           cursor: cursor,
           limit: limit,
+          offset: offset,
         }),
     );
   },
@@ -668,6 +669,7 @@ function rosterHits(row, category) {
 function rosterPage(keyword, params) {
   var category = params.get("category") || "ALL";
   var limit = Number(params.get("limit")) || 20;
+  var offset = Number(params.get("offset")) || 0;
   var digits = keyword.replace(/\D/g, "");
   var searched = mockRoster().filter(function (row) {
     if (!keyword) return true;
@@ -695,8 +697,10 @@ function rosterPage(keyword, params) {
       INACTIVE_6_MONTHS: counted("INACTIVE_6_MONTHS"),
     },
     selected_category: category,
-    items: shown.slice(0, limit),
-    page: { next_cursor: null, has_next: shown.length > limit },
+    items: shown.slice(offset, offset + limit),
+    page: { next_cursor: null, has_next: offset + limit < shown.length },
+    /* 목업도 서버와 같은 것을 돌려준다 — 안 그러면 쪽 넘김이 목업에서만 돈다 */
+    roster: { offset: offset, limit: limit, total: shown.length, has_next: offset + limit < shown.length },
   };
 }
 

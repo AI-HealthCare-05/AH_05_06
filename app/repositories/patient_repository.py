@@ -31,6 +31,7 @@ class PatientRepository:
         keyword: str | None,
         after_id: int | None,
         limit: int,
+        offset: int = 0,
         sms_opt_out_only: bool = False,
         patient_ids: list[int] | None = None,
     ) -> list[Patient]:
@@ -43,7 +44,11 @@ class PatientRepository:
             query = query.filter(patient_id__in=patient_ids)
         if after_id is not None:
             query = query.filter(patient_id__gt=after_id)
-        return await query.order_by("patient_id").limit(limit)
+        query = query.order_by("patient_id")
+        #: 쪽 번호로 건너뛴다 — 커서는 앞으로만 가서 「이전」이 안 된다 (KEY-303).
+        if offset:
+            query = query.offset(offset)
+        return await query.limit(limit)
 
     async def category_counts(
         self,
@@ -51,8 +56,15 @@ class PatientRepository:
         *,
         keyword: str | None,
         inactive_patient_ids: list[int],
+        patient_ids: list[int] | None = None,
     ) -> tuple[int, int, int]:
         query = self._scoped_query(hospital_id, keyword)
+        #: 날짜로 좁힌 검색이면 셈도 같이 좁아져야 한다 — 배지가 표와 어긋나면
+        #: 안 보이는 사람이 있다고 읽힌다 (KEY-303).
+        if patient_ids is not None:
+            if not patient_ids:
+                return 0, 0, 0
+            query = query.filter(patient_id__in=patient_ids)
         all_count = await query.count()
         sms_opt_out_count = await query.filter(sms_opted_out_at__isnull=False).count()
         inactive_count = await query.filter(patient_id__in=inactive_patient_ids).count() if inactive_patient_ids else 0
