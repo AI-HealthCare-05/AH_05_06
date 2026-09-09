@@ -34,7 +34,7 @@ OTP 재인증 뒤 같은 답을 다시 제출하는 흐름으로 검증한다.
 ```text
 frontend/tests/patient-auth-recovery.test.js
 frontend/tests/chatbot-streaming-ui.test.js
-frontend/tests/chatbot-abort-retry.test.js
+frontend/tests/key281-chat-abort-on-real-path.test.js
 ```
 
 ## 원격 Pilot smoke
