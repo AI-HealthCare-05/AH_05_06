@@ -58,6 +58,13 @@ def _overlay() -> dict[str, Any]:
     return loaded
 
 
+def _section(heading: str) -> str:
+    """런북에서 그 절만 떼어 온다."""
+    runbook = read("docs/deploy-runbook.md")
+    at = runbook.index(heading)
+    return runbook[at : runbook.index("\n## ", at + 5)]
+
+
 def _commands(markdown: str) -> str:
     """```bash 울타리 **안**의 줄만. 설명글은 명령이 아니다."""
     lines, inside, out = markdown.splitlines(), False, []
@@ -215,9 +222,7 @@ class TestTheCleanupCommandsNameThingsThatExist:
         `docker compose down mysql` 을 부르면 compose 가 이름을 못 찾고 프로젝트
         전체를 내린다 — `fastapi` · `nginx` 까지 멈춘다 (같은 모양으로 실측).
         """
-        runbook = read("docs/deploy-runbook.md")
-        at = runbook.index("## 4-5.")
-        section = runbook[at : runbook.index("\n## ", at + 5)]
+        section = _section("## 4-5.")
 
         assert "--profile container-db rm -sf mysql" in section, "프로필 없이 컨테이너 DB 를 지우라고 적었다"
 
@@ -234,9 +239,7 @@ class TestTheServerHasNoRepository:
     """
 
     def test_the_migration_section_runs_from_the_deploy_directory(self) -> None:
-        runbook = read("docs/deploy-runbook.md")
-        at = runbook.index("## 4-5.")
-        section = runbook[at : runbook.index("\n## ", at + 5)]
+        section = _section("## 4-5.")
 
         repo_paths = [
             line.strip()
@@ -245,6 +248,31 @@ class TestTheServerHasNoRepository:
         ]
         assert not repo_paths, f"서버에 없는 경로로 compose 를 부른다 — {repo_paths}"
         assert "cd ~/project" in section, "어디서 부르는지 안 적었다"
+
+
+class TestTheProcedureNamesItsOwnRequirements:
+    """절차가 **제가 기대는 것**을 먼저 말해야 한다 (이희진 님 `#275` ④⑤)."""
+
+    def test_the_dump_uses_the_root_account(self) -> None:
+        """앱 계정은 제 스키마에만 권한이 있다 — `--routines` · `--triggers` 가 막힐 수 있다."""
+        section = _section("## 4-5.")
+
+        assert "mysqldump" in section, "옮기는 명령이 없다 — 검사가 헛돈다"
+        assert "-uroot" in _commands(section), "앱 계정으로 뜬다 — routines·triggers 가 빠질 수 있다"
+
+    def test_the_compose_version_is_checked_first(self) -> None:
+        """`!override` 는 v2.24.4 부터다. 낮으면 그 줄을 모른 채 `mysql` 이 그대로 뜬다."""
+        section = _section("## 4-5.")
+
+        assert "docker compose version" in _commands(section), "compose 판을 안 보고 시작한다"
+        assert "2.24" in section, "어느 판부터인지 안 적었다"
+
+    def test_the_earlier_section_points_here(self) -> None:
+        """4-4 절의 「운영에는 profiles 가 없다」는 옮긴 서버에서 거짓이 된다."""
+        runbook = read("docs/deploy-runbook.md")
+        at = runbook.index("이 저장소의 운영 compose 에는 `profiles:` 가 없다")
+
+        assert "4-5" in runbook[at : at + 400], "옮긴 서버는 다르다는 것을 안 알린다"
 
 
 class TestTheProcedureIsWrittenDown:

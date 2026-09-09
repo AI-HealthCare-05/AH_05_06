@@ -696,6 +696,10 @@ docker compose ps      # 일곱이 다 떴는가
 
 이 저장소의 운영 compose 에는 `profiles:` 가 없다 — 줄 옵션을 찾지 않아도 된다.
 
+> **RDS 로 옮긴 서버는 다르다.** 그 서버에는 `~/project/docker-compose.override.yml` 이
+> 얹혀 있고, 거기서 `mysql` 이 프로필 뒤로 간다 — 맨 `up -d` 로는 안 뜬다(의도된 것이다).
+> 옮긴 뒤에 이 절을 읽는다면 4-5 절을 함께 본다.
+
 ### ③ 스키마를 올린다
 
 ```bash
@@ -797,6 +801,14 @@ MySQL 로 적어 두었다.
 
 앱을 세우고 옮긴다 — 도는 중에 뜨면 그 사이 쓰인 것이 사라진다.
 
+**먼저 compose 판을 본다.** 오버레이가 쓰는 `!override` 는 **v2.24.4 이상**의
+문법이다. 낮으면 그 줄을 모르는 값으로 읽어 `mysql` 이 그대로 뜬다 — 옮기고도
+컨테이너 DB 가 도는, 이 절이 막으려던 그 자리다.
+
+```bash
+docker compose version    # Docker Compose version v2.24.4 이상
+```
+
 **서버에는 저장소가 없다.** 배포가 올리는 것은 `.env` · `docker-compose.yml` ·
 nginx 설정 셋뿐이다(3절 3번). `-f infra/docker/...` 로 부르면 그런 파일이 없다 —
 `~/project` 로 가서 이름 없이 부른다.
@@ -807,9 +819,11 @@ cd ~/project
 
 docker compose stop fastapi ai-worker
 
+# **root 로 뜬다.** 앱 계정은 제 스키마에만 권한이 있어 `--routines`
+# `--triggers` 가 환경에 따라 막힌다. 옮기는 일은 한 번뿐이라 여기서만 쓴다.
 docker compose exec -T mysql \
   sh -c 'exec mysqldump --single-transaction --routines --triggers \
-    -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' > /tmp/care-on.sql
+    -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' > /tmp/care-on.sql
 
 # 받는 쪽. 호스트에 mysql 클라이언트가 없으면 컨테이너를 빌린다.
 docker run --rm -i mysql:8.0 \
