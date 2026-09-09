@@ -115,7 +115,7 @@ function guideMissingSaying(error) {
        (와이어프레임 S1-11 · D1-1). 전에는 세로 탭과 본문이 따로 떠 있었다. */
     vtabs.innerHTML = "";
     var draw = function () {
-      panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit, guideEditingNow(), guide.summary);
+      panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit, guideEditingNow(), guide.summary, guide.preview);
     };
     if (keepCaret) keepCaretAround(panel, draw);
     else draw();

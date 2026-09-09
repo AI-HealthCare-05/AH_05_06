@@ -280,12 +280,12 @@ function guideSegmentsHtml(sections, current) {
  * 내용이 비어 보이는 것**이 지금(모양이 다른 것)보다 나쁘다. 안 그리는 것은
  * 환자 렌더러 자신의 규칙이기도 하다(`if (g.drug)` …).
  */
-function guidePreviewHtml(sections, current, summary) {
+function guidePreviewHtml(sections, current, summary, preview) {
   var bodyOf = function (key) {
     var row = guideSectionsOf(sections, key)[0];
     return row && row.body ? row.body : "";
   };
-  var inner = patientPreviewBodyHtml(bodyOf, current, summary || "");
+  var inner = patientPreviewBodyHtml(bodyOf, current, summary || "", preview);
 
   /* **골격도 환자 것을 그대로 세운다** (유가은 님 `#253`).
    *
@@ -352,7 +352,7 @@ function guideHeadEditHtml(sections, current, canEdit, editingKey) {
   return '<button class="gs__edit" type="button" data-edit="' + esc(own.key) + '">수정</button>';
 }
 
-function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary) {
+function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary, preview) {
   var title = GUIDE_SCREEN_TITLE[mode] || GUIDE_SCREEN_TITLE.guide;
 
   return (
@@ -370,7 +370,7 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary) 
        회차·문구를 다루는 자리라, 그 탭에서는 통째로 갈아 끼운다. */
     (current === "messages"
       ? smsScreenHtml(smsPlanOf(sections, mode))
-      : guideBodyHtml(sections, current, canEdit, editingKey, summary)) +
+      : guideBodyHtml(sections, current, canEdit, editingKey, summary, preview)) +
     "</section>"
   );
 }
@@ -385,7 +385,7 @@ function smsPlanOf(sections, mode) {
   return smsStateNow(seed);
 }
 
-function guideBodyHtml(sections, current, canEdit, editingKey, summary) {
+function guideBodyHtml(sections, current, canEdit, editingKey, summary, preview) {
   return (
     '<div class="gs__body">' +
     /* 왼쪽 — 원문 */
@@ -406,7 +406,7 @@ function guideBodyHtml(sections, current, canEdit, editingKey, summary) {
     '<span class="gs__paneNote">환자가 받는 그대로</span>' +
     "</div>" +
     '<div class="gs__paneBody">' +
-    guidePreviewHtml(sections, current, summary) +
+    guidePreviewHtml(sections, current, summary, preview) +
     "</div>" +
     "</section>" +
     "</div>" +
