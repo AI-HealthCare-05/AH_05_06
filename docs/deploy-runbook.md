@@ -232,6 +232,38 @@ ssh -i ~/.ssh/<키>.pem ubuntu@<IP> 'cd ~/project && docker compose ps'
 
 `Up 2 hours` 처럼 **오래 떠 있으면 안 바뀐 것**이다.
 
+### 도는 것이 어느 커밋인가 (KEY-315)
+
+`docker compose ps` 는 **태그**를 보여 준다(`app-v1.0.5`). 그 태그는 사람이
+손으로 올리는 값이라 **어느 커밋인지 말해 주지 않는다.** 서버에는 저장소가
+없어서 되짚을 길도 없었다 — 배포 사고를 의심할 때 출처를 못 밝히면 조사가
+시작을 못 한다.
+
+이제 이미지가 스스로 답한다.
+
+```bash
+ssh -i ~/.ssh/<키>.pem ubuntu@<IP> "cd ~/project && \
+  for s in fastapi ai-worker nginx; do
+    printf '%-10s ' \$s
+    docker inspect --format '{{index .Config.Labels \"org.opencontainers.image.revision\"}} ({{index .Config.Labels \"org.opencontainers.image.ref.name\"}})' \$s
+  done"
+```
+
+```text
+fastapi    7c7ab7dc5cc27f4ec7185ab2265cc9b070bfcbdd (develop)
+ai-worker  7c7ab7dc5cc27f4ec7185ab2265cc9b070bfcbdd (develop)
+nginx      7c7ab7dc5cc27f4ec7185ab2265cc9b070bfcbdd (develop)
+```
+
+**`-dirty` 가 붙어 있으면 그 SHA 를 믿지 않는다.** 커밋 안 된 변경으로 구운
+이미지라 그 커밋을 받아 봐도 같은 판이 안 나온다 — 빌드할 때도 한 번 경고한다.
+
+셋의 커밋이 서로 다르면 **부분 배포**다(프런트만 다시 구운 경우 등). 그 자체는
+정상이지만, 무엇이 옛것인지 여기서 드러난다.
+
+라벨은 `scripts/deployment.sh` 의 `build_and_push` 가 붙인다. **9/4 이전에 구운
+이미지에는 없다** — 그때 것은 태그로만 되짚는다.
+
 ### 되돌릴 때
 
 앱은 `4. 롤백` 을 따른다. **DB 는 별개다.**

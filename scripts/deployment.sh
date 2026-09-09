@@ -14,6 +14,33 @@ COLOR_NC=$(tput sgr0)
 cd "$(dirname "$0")/.."
 source ./envs/.prod.env
 
+# ---------- 이 빌드가 어느 커밋에서 나왔나 (KEY-315) ----------
+#
+# **서버는 제 출처를 모른다.** `~/project` 에는 `.env` · `docker-compose.yml` ·
+# `nginx` 셋뿐이고 저장소가 없다. 이미지에도 아무 표시가 없어서, 되짚을 길이
+# Docker Hub 태그(`app-vX.Y.Z`) 뿐이었다 — 그 태그는 사람이 손으로 올리는
+# 값이라 어느 커밋인지 말해 주지 않는다.
+#
+# 실제로 막혔다: 9/4 배포가 develop 에서 나온 것으로 **정황상** 맞았지만
+# (푸시 5분 전 develop 끝이 그 언저리), 단정할 수단이 없었다. 배포 사고를
+# 의심할 때 출처를 못 밝히면 조사 자체가 시작을 못 한다.
+#
+# 그래서 이미지가 스스로 답하게 한다. 표준 이름(OCI)을 쓴다 — 도구들이 이미
+# 이 이름을 읽는다.
+SOURCE_REVISION=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+SOURCE_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# **커밋 안 된 변경으로 구우면 그 SHA 는 거짓말이 된다.** 라벨은 「이 커밋이다」
+# 라고 말하는데 실제로 담긴 것은 그 커밋 + 손댄 것이라, 나중에 그 SHA 를
+# 받아 봐도 같은 판이 안 나온다. 표시를 붙이고 한 번 알린다.
+if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+  SOURCE_REVISION="${SOURCE_REVISION}-dirty"
+  echo "${COLOR_RED}⚠ 커밋 안 된 변경이 있는 채로 빌드한다 — 이미지 라벨에 -dirty 로 남는다.${COLOR_NC}"
+  echo "${COLOR_RED}  이 이미지는 어느 커밋으로도 다시 만들 수 없다.${COLOR_NC}"
+  echo ""
+fi
+
 # ---------- 도커 이미지 빌드 및 푸시 함수 ----------
 build_and_push () {
   local docker_user=$1
@@ -30,7 +57,12 @@ build_and_push () {
   # 옮겨간 자리라 여기서 죽인다.
   : "${tag_base:?build_and_push: tag_base(7번째 인자)가 없다 — api|ai|web 중 하나를 넘겨라}"
   echo "${COLOR_BLUE}${name} Docker Image Build Start.${COLOR_NC}"
-  docker build --platform linux/amd64 -t ${docker_user}/${docker_repo}:${tag_base}-${tag} -f ${dockerfile} ${context}
+  # 라벨은 **세 이미지에 다 붙는다** — 이 함수 하나가 app·ai·web 을 다 굽는다.
+  docker build --platform linux/amd64 \
+    --label "org.opencontainers.image.revision=${SOURCE_REVISION}" \
+    --label "org.opencontainers.image.ref.name=${SOURCE_REF}" \
+    --label "org.opencontainers.image.created=${BUILT_AT}" \
+    -t ${docker_user}/${docker_repo}:${tag_base}-${tag} -f ${dockerfile} ${context}
 
   echo "${COLOR_BLUE}${name} Docker Image Push Start.${COLOR_NC}"
   docker push ${docker_user}/${docker_repo}:${tag_base}-${tag}
