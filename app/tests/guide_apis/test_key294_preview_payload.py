@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from app.dependencies.patient_auth import require_patient_session
 from app.main import app
 from app.models.catalog import BaselineDirection, LabBaseline, SetDisease
-from app.models.ocr import OcrField, OcrResult
+from app.models.ocr import OcrField
 from app.models.visits import GuideDocument, PatientGuideLink, Visit
 from app.services.patient_links import digest_link_token
 from app.tests.guide_apis.test_guide_generate import (
