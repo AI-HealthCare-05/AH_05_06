@@ -105,26 +105,10 @@ test("배포/Pilot 주소에서는 ?mock=1을 무시하고 로컬에서만 고�
   assert.match(guideCss, /\.guide-mock-badge\s*\{[\s\S]*pointer-events:\s*none/);
 });
 
-test("사용하지 않는 구 안내 API도 배포/Pilot 주소에서는 mock을 켜지 않는다", () => {
-  const source = fs.readFileSync(path.join(ROOT, "frontend/js/guide-api.js"), "utf8");
-  function enabledAt(hostname, protocol = "https:") {
-    const stored = new Map([["guide_mock", "1"]]);
-    const context = vm.createContext({
-      URLSearchParams,
-      window: { location: { search: "?mock=1", hostname, protocol } },
-      sessionStorage: {
-        getItem(key) { return stored.has(key) ? stored.get(key) : null; },
-        setItem(key, value) { stored.set(key, String(value)); },
-      },
-    });
-    vm.runInContext(source, context);
-    return context.GUIDE_MOCK;
-  }
+/* 「사용하지 않는 구 안내 API」 검사는 그 파일과 함께 없앴다 — 아무 화면도
+   안 싣던 `js/guide-api.js` 다 (KEY-281 이 남긴 처분). 실리는 쪽
+   (`patient_wireframe/js/guide-api.js`)의 같은 계약은 아래 검사가 잰다. */
 
-  assert.equal(enabledAt("localhost", "http:"), true);
-  assert.equal(enabledAt("127.0.0.1", "http:"), true);
-  assert.equal(enabledAt("pilot.example.com"), false);
-});
 
 test("로그인 mock 응답은 StaffLoginResponse·StaffMeResponse와 일치한다", async () => {
   const box = load("api");
