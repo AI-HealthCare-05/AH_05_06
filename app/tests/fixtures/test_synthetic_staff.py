@@ -433,6 +433,7 @@ class TestNeverRunsInProduction:
         monkeypatch.setenv("SOLAPI_API_KEY", "synthetic-api-key")
         monkeypatch.setenv("SOLAPI_API_SECRET", "synthetic-api-secret")
         monkeypatch.setenv("SOLAPI_SENDER_NUMBER", "0200000000")
+        monkeypatch.setenv("OTP_APPROVED_TEST_PHONES", "01000000000")
         monkeypatch.delenv("APP_ENV", raising=False)
         assert Config().ENV is Env.PROD, "`ENV` 를 안 읽는다 — 운영에서 기본값 local 로 통과한다"
 

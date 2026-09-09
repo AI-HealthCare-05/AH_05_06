@@ -462,7 +462,8 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 - `keyword`: 이름, 차트번호, 정규화된 휴대폰에서 검색한다. 이름은 한 글자부터 허용한다.
   검색어가 `2026-08-15` · `2026-08` 꼴이면 **마지막 진료일**로 찾는다 (KEY-303). 차트번호는 숫자만이라 겹치지 않는다. `2026-13` 처럼 없는 달은 날짜로 보지 않고 그대로 이름 검색에 넘긴다 — 조용히 12월로 고치면 사람이 오해한다.
 - `cursor`: 서버가 발급한 불투명 다음 페이지 커서. 임의 조립하지 않는다.
-- `offset`: 몇 번째부터. 기본 0. **쪽 번호와 「이전」을 위해 쓴다** (KEY-303) — 커서는 앞으로만 가서 뒤로 못 간다. `cursor` 와 함께 쓰지 않는다.
+- `offset`: 몇 번째부터. 기본 0. **쪽 번호와 「이전」을 위해 쓴다** (KEY-303) — 커서는 앞으로만 가서 뒤로 못 간다.
+- **`cursor` 와 `offset` 은 함께 못 준다.** 둘 다 오면 `400 INVALID_REQUEST` 로 거부하고 `field_errors` 에 두 이름을 적는다. 겹쳐 받으면 `patient_id > cursor` 를 건 **뒤에** 다시 `offset` 만큼 건너뛰어 조용히 빈 쪽이 나온다 — 부른 쪽은 「마지막 쪽」으로 읽는다.
 - `limit` 기본 20, 최대 100.
 - 응답은 `{counts, selected_category, items, page: {next_cursor, has_next}, roster: {offset, limit, total, has_next}}`다.
 - `roster.total` 은 **지금 고른 조각의** 총수다. 「전체」의 총수를 주면 조각을 눌렀을 때 있지도 않은 쪽이 생긴다. `counts` 와 마찬가지로 `keyword` 를 반영한다.

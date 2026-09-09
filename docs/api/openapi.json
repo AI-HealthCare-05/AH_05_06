@@ -8032,6 +8032,7 @@
     },
     "/api/v1/patients": {
       "get": {
+        "description": "환자 명단.\n\n**자리를 옮기는 말은 둘 중 하나만 쓴다.** `cursor` 는 등록 화면의 찾기가\n쓰는 「이 뒤로 더」이고, `offset` 은 환자 관리 표가 쓰는 「몇 쪽」이다\n(KEY-303). 둘을 함께 주면 `patient_id > cursor` 를 건 **뒤에** 다시\n`offset` 만큼 건너뛰어, 부른 사람이 뜻하지 않은 자리가 나온다. 조용히\n한쪽을 이기게 두면 그 어긋남이 화면에서야 드러난다 — 여기서 운다.",
         "operationId": "list_patients_api_v1_patients_get",
         "parameters": [
           {

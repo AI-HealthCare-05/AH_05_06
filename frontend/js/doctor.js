@@ -214,9 +214,17 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
     el("warn-line").textContent = line.text;
   }
 
-  /* 안내문이 없으면 **앞 환자의 이름을 지운다.** 안내문을 불러오는 동안 이름만
-     남아 있으면, 화면은 앞 사람을 말하는데 `visit` 은 뒷사람이라 원장님이 읽는
-     대상과 누를 대상이 어긋난다. 환자 식별이 걸린 자리라 비워 두는 편이 낫다. */
+  /* 머리말은 **진료에서** 채운다 — `js/step-nav.js` 의 `visitHeadLines` (KEY-300).
+   *
+   * 여기는 안내문(`guide.patient`)에서 뽑고, 없으면 통째로 비웠다. 그래서
+   * 아직 안내문이 없는 진료를 고르면 **누구의 기록인지가 지워졌다.**
+   *
+   * 비운 까닭은 「불러오는 동안 앞 환자 이름이 남으면 읽는 대상과 누를 대상이
+   * 어긋난다」였는데, 그 위험은 안내문에서 뽑을 때만 생긴다. `visit` 은
+   * `load(next)` 가 동기적으로 갈아 끼우므로 언제나 지금 고른 환자다.
+   *
+   * 성별만 안내문에서 온다 — 진료 목록 계약(§6)에 없는 값이다. 있으면 붙이고
+   * 없으면 뺀다. 그것 하나 때문에 이름과 차트번호를 비우지 않는다. */
   function renderHead() {
     /* 단계 줄은 **스탭 화면과 같은 것**을 쓴다 (`js/step-nav.js`).
        전에는 이 화면만 정적 `<ol>` 이라 눌리지도 않았고, 그래서 의사가
@@ -228,21 +236,14 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
       steps.innerHTML = stepsHtml("final", "/doctor.html", visit ? visit.visit_id : "");
     }
 
-    if (guide === null) {
-      el("p-name").textContent = "—";
-      el("p-id").textContent = "";
-      el("p-visit").textContent = "";
-      return;
-    }
-
-    var p = guide.patient;
-    el("p-name").textContent = p.name;
-    /* 서버는 `FEMALE` 을 주고 화면이 「여」로 옮긴다. `age` 는 서버가 조회
-       시점의 현지 날짜로 센 값이고, `birth_date` 는 동명이인을 가릴 근거로
-       함께 온다(계약 §4). 화면에는 나이만 쓰지만 받는 것은 둘 다다. */
-    el("p-id").textContent =
-      (GENDER_LABEL[p.gender] || "—") + " " + p.age + "세 · 차트 " + p.hospital_patient_no;
-    el("p-visit").textContent = guide.summary || "";
+    /* 서버는 `FEMALE` 을 주고 화면이 「여」로 옮긴다 — 안내문이 있을 때만 온다. */
+    var head = visitHeadLines(visit, {
+      gender: guide && guide.patient ? GENDER_LABEL[guide.patient.gender] : "",
+      summary: guide ? guide.summary : "",
+    });
+    el("p-name").textContent = head.name;
+    el("p-id").textContent = head.id;
+    el("p-visit").textContent = head.line;
   }
 
   /* 단계 줄을 누르면 그 단계로 간다.

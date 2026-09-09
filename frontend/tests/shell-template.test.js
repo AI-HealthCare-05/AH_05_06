@@ -429,13 +429,15 @@ test("**머리말과 탭이 한 줄이다** — 탭을 아래로 내리면 지�
   assert.match(css, /background:/, "머리말 바탕이 본문과 같다");
 
   /* 판 가장자리까지 펴야 한다 — 안 그러면 가운데만 뜬 띠가 된다.
-     `.pane` 이 18px 24px 을 물고 있으므로 그만큼 되민다. */
+     **숫자를 베끼지 않는다** (KEY-296): 여기 `-18px -24px` 를 적어 두었더니
+     좁은 창에서 판 여백만 12px 로 줄이고 이쪽을 안 고쳐, 머리말이 판 밖으로
+     12px 씩 삐져나갔다. 판이 내놓은 값을 그대로 되민다. */
   const pane = rule(read("css/shell.css"), ".pane");
-  const pad = /padding:\s*(\d+)px\s+(\d+)px/.exec(pane);
-  assert.ok(pad, ".pane 여백을 못 읽었다 — 검사가 헛돈다");
-  assert.ok(
-    css.includes("-" + pad[1] + "px -" + pad[2] + "px"),
-    `머리말이 판 가장자리까지 안 펴진다 — .pane 이 ${pad[1]}px ${pad[2]}px 을 물고 있다`,
+  assert.match(pane, /padding:\s*var\(--pane-pad-y\) var\(--pane-pad-x\)/, "판이 여백을 변수로 안 내놓는다");
+  assert.match(
+    css,
+    /margin:\s*calc\(-1 \* var\(--pane-pad-y[^)]*\)\) calc\(-1 \* var\(--pane-pad-x[^)]*\)\)/,
+    "머리말이 판 가장자리까지 안 펴진다 — 판이 내놓은 여백만큼 되밀어야 한다",
   );
 });
 
@@ -843,16 +845,63 @@ test("**환자 머리는 스크롤해도 붙어 있는다** — 누구인지를 
   assert.match(head, /z-index:/, "아래 내용이 머리 위로 지나간다");
 
   /* 붙는 자리는 판의 위 여백만큼 되민 값이라야 한다 — 0 이면 그만큼 늦게 붙어
-     머리 위로 내용이 한 줄 지나간다. */
+     머리 위로 내용이 한 줄 지나간다. 숫자가 아니라 판이 내놓은 값을 쓴다
+     (KEY-296) — 좁은 창에서 여백이 14px 로 줄어도 따라와야 한다. */
   const pane = rule(read("css/shell.css"), ".pane");
-  const padding = /padding:\s*(\d+)px/.exec(pane);
-  assert.ok(padding, "판의 여백을 못 읽었다 — 검사가 헛돈다");
+  assert.match(pane, /--pane-pad-y:\s*\d+px/, "판이 위 여백을 변수로 안 내놓는다");
   assert.match(
     head,
-    new RegExp(`top:\\s*-${padding[1]}px`),
-    `붙는 자리가 판 여백(${padding[1]}px)과 안 맞는다`,
+    /top:\s*calc\(-1 \* var\(--pane-pad-y[^)]*\)\)/,
+    "붙는 자리가 판 여백을 따라가지 않는다",
   );
 
   /* 스크롤하는 것이 판이어야 sticky 가 산다 */
   assert.match(pane, /overflow-y:\s*auto/, "판이 스크롤하지 않는다 — 붙을 곳이 없다");
+});
+
+/* ── 공용 코드가 그리는 어휘는 공용 파일에 있어야 한다 ──────────────────
+ *
+ * 되풀이되는 결함이다. `js/shell.js` 가 그리는 `.rows-blank*` 가 `patients.css`
+ * 에만 있었다 — 그 파일은 환자 화면만 싣는다. 그래서 의사·판독 화면에서 목록이
+ * 0명일 때 **모양 없이** 떴다: 여백도 가운데 정렬도 없이 글자가 왼쪽 벽에 붙었다.
+ * `blocks.css` 의 단계 줄도 같은 까닭으로 옮겨 온 적이 있다.
+ *
+ * 이름을 하나씩 못 박지 않고 **규칙을 잰다** — 공용 스크립트가 쓰는 class 는 그
+ * 스크립트를 싣는 **모든** 화면에서 모양이 붙어야 한다.
+ */
+test("**공용 스크립트가 그리는 class 는 그 스크립트를 싣는 모든 화면에서 모양이 붙는다**", () => {
+  const { read, scriptsOf } = require("./source.js");
+  const dir = path.join(__dirname, "..");
+  const pages = fs.readdirSync(dir).filter((f) => f.endsWith(".html") && !f.startsWith("_"));
+
+  const stylesOf = (page) =>
+    [...markupOnly(read(page)).matchAll(/<link[^>]+href="\/css\/([\w-]+\.css)"/g)].map((m) => m[1]);
+
+  /* `shell.js` 가 마크업 글자열 안에서 쓰는 class 이름 — 주석은 걷어 낸다. */
+  const shellCode = codeOnly(read("js/shell.js"));
+  const drawn = new Set();
+  for (const m of shellCode.matchAll(/class="([a-z0-9 _-]+)"/g)) {
+    for (const one of m[1].split(/\s+/)) if (one.includes("-") || one.includes("__")) drawn.add(one);
+  }
+  assert.ok(drawn.size > 5, `shell.js 에서 class 를 못 찾았다(${drawn.size}) — 검사가 헛돈다`);
+
+  const missing = [];
+  for (const page of pages) {
+    if (!scriptsOf(page).includes("shell.js")) continue;
+    const css = stylesOf(page)
+      .map((f) => codeOnly(read("css/" + f)))
+      .join("\n");
+    for (const cls of drawn) {
+      /* 그 이름으로 시작하는 규칙이 하나라도 있으면 된다 — 수식어까지 안 따진다 */
+      if (!new RegExp("\\." + cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(css)) {
+        missing.push(`${page}: .${cls}`);
+      }
+    }
+  }
+
+  assert.deepStrictEqual(
+    missing,
+    [],
+    "공용 코드가 그리는데 그 화면 스타일시트에 없다 — 모양 없이 뜬다:\n  " + missing.join("\n  "),
+  );
 });

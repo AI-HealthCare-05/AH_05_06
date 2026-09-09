@@ -6,8 +6,9 @@ from fastapi import APIRouter, Cookie, Depends, Response, status
 from redis.asyncio import Redis
 
 from app.core import config
-from app.core.config import Env, pilot_mock_otp_gate_open
+from app.core.config import Env, SmsProvider, otp_solapi_prod_gate_open, pilot_mock_otp_gate_open
 from app.core.redis_client import get_redis
+from app.core.utils.common import normalize_phone_number
 from app.dependencies.patient_auth import PATIENT_SESSION_COOKIE_NAME
 from app.dtos.patient_otp import (
     PatientAuthContextRequest,
@@ -24,14 +25,27 @@ from app.dtos.patient_otp import (
 from app.services.patient_links import PatientLinkService
 from app.services.patient_otp import (
     OTP_RESEND_COOLDOWN,
+    ApprovedPhonesOnlyDelivery,
     MockOtpDelivery,
+    OtpDelivery,
     PatientOtpService,
+    SolapiOtpDelivery,
     UnavailableOtpDelivery,
 )
 from app.services.patient_sessions import PATIENT_SESSION_SECONDS, PatientSessionStore
+from app.services.sms_sender import build_sms_sender
 
 patient_auth_router = APIRouter(prefix="/patient-auth", tags=["patient-auth"])
 patient_otp_router = APIRouter(prefix="/patient-auth/otp", tags=["patient-auth"])
+
+
+def _approved_test_phones() -> frozenset[str]:
+    # Patient.phone은 normalize_phone_number()로 숫자만 남겨 저장된다. 여기서
+    # 같은 정규화를 안 하면 운영자가 "010-1111-2222"처럼 사람이 쓰는 형식으로
+    # 넣었을 때 절대 안 맞고, 그 실패가 공급자 장애와 구분 안 되는 503으로만
+    # 보인다(iljun-sys 리뷰로 재현).
+    raw = config.OTP_APPROVED_TEST_PHONES.get_secret_value()
+    return frozenset(normalize_phone_number(phone.strip()) for phone in raw.split(",") if phone.strip())
 
 
 def _otp_service() -> PatientOtpService:
@@ -42,6 +56,26 @@ def _otp_service() -> PatientOtpService:
             MockOtpDelivery(),
             fixed_otp_code=config.MOCK_OTP_CODE,
         )
+
+    if config.SMS_PROVIDER is SmsProvider.SOLAPI:
+        # prod에서 실제 발송을 켜려면 KEY-6 승인 뒤 넣는 이 좁은문이 따로
+        # 필요하다 — SMS_PROVIDER=solapi와 자격증명만으로 켜지지 않는다.
+        if config.ENV is Env.PROD and not otp_solapi_prod_gate_open():
+            return PatientOtpService(UnavailableOtpDelivery())
+
+        # 승인된 테스트 번호로만 실제 발송을 좁힌다 — KEY-284 검증 단계
+        # 안전장치. **환경으로 갈라 두지 않는다** — Pilot도 ENV=prod로
+        # 뜬다(KEY-264). "ENV가 prod가 아닐 때만" 이라고 두면, Pilot에서
+        # 좁은문이 열리는 순간 이 래퍼가 통째로 빠져 임의 번호로 나간다
+        # (yugaeun821 리뷰). 실제 운영 활성화(KEY-6)는 이 티켓 범위 밖이라,
+        # 그 승인 절차가 생기기 전까지는 이 경로에 도달하는 모든 실행이
+        # "검증 단계"다 — 항상 승인 번호로 좁힌다.
+        delivery: OtpDelivery = ApprovedPhonesOnlyDelivery(
+            SolapiOtpDelivery(build_sms_sender(config)),
+            _approved_test_phones(),
+        )
+        return PatientOtpService(delivery)
+
     return PatientOtpService(UnavailableOtpDelivery())
 
 
