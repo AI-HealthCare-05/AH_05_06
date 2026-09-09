@@ -58,7 +58,7 @@ Notion 자격증명 표에 있다. 아래의 `<공용PW>` 는 그 값으로 읽�
 
 | 값 | 넣을 것 | 이유 |
 |---|---|---|
-| `MOCK_OTP_CODE` | `000000` | 없으면 환자 OTP 인증 자체가 "발송 수단 없음" 으로 막힌다. 로컬·개발 전용이고 prod 에서는 config 가 거부한다 |
+| `MOCK_OTP_CODE` | `000000` | 없으면 환자 OTP 인증이 503 으로 막힌다. 로컬·개발 전용이고 `ENV=prod` 에서는 서버가 안 뜬다 — 단 Pilot 은 `PILOT_ALLOW_MOCK_OTP=1` 과 `--pilot-confirm-mock-otp` 가 **둘 다** 있으면 연다 (KEY-264) |
 | `OCR_FIXTURE_FALLBACK` | fixture 모드면 `1`, 실판독이면 `0` | `bootstrap` 기본값은 `false`(=실판독). 워커 없이 fixture 로 볼 거면 `1` 로 바꾼다 |
 | `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY` | 실판독일 때만, 팀에서 받은 키 | 저장소에 없다 |
 
@@ -77,7 +77,9 @@ docker compose up -d --force-recreate --no-deps fastapi
 docker compose --profile web up -d
 
 # 직원 + 환자 + 진료 + 처방, 비밀번호를 <공용PW> 로 통일
-# 값은 셸 환경변수로만 넘기고 -e 에는 이름만 준다 (명령줄에 적으면 ps·셸 기록에 남는다)
+# -e 에는 이름만 준다 — 값을 -e 뒤에 적으면 컨테이너 프로세스 목록(ps)에 남는다.
+# 앞의 대입은 **셸 기록에는 그대로 남는다.** 지우려면 명령 앞에 공백을 하나 두거나
+# (HISTCONTROL=ignorespace) 미리 export 한 뒤 이름만 넘긴다 (KEY-308).
 SEED_STAFF_PASSWORD='<공용PW>' docker compose exec -T -e SEED_STAFF_PASSWORD fastapi \
   uv run --no-sync python scripts/seed.py --mode full
 
@@ -119,7 +121,8 @@ docker compose exec -T fastapi uv run --no-sync python scripts/check_schema_drif
 ## 5. 알아둘 것
 
 - 비밀번호·CLOVA 키·JWT·환자 링크 토큰은 저장소·커밋·로그에 남기지 않는다 (`AGENTS.md`).
-- `seed.py` 는 `SEED_STAFF_PASSWORD` 없이 실행되지 않고, `ENV=prod` 에서는 거부된다.
+- `seed.py` 는 `SEED_STAFF_PASSWORD` 없이 실행되지 않는다. `ENV=prod` 에서는 `SEED_ALLOW_PROD=1`(환경변수)과
+  `--allow-prod-seed`(명령줄)가 **둘 다** 있어야 열린다 (`scripts/seed.py`).
 - 같은 명령을 다시 실행해도 데이터가 쌓이지 않는다(로그인 아이디·차트번호 기준 upsert).
 - 직원 로그인에는 비밀번호 우회가 없다. `000000` 은 **환자 OTP 전용**이다.
 - 초기화: `docker compose down -v` 후 2-1 부터 다시.

@@ -225,9 +225,10 @@ class TestTheEnvExampleMatchesWhatTheCodeAsks:
 
         # **주석도 이름표다.** 어떤 설정은 값을 넣는 것보다 「줄을 두지 않는
         # 것」이 맞다 — `OPENAI_API_KEY` 는 빈 값이면 `SecretStr("")` 이 되어
-        # LLM 호출이 켜진 채 빈 키로 나가고, `OCR_FIXTURE_FALLBACK` 은 운영에
-        # 있으면 서버가 아예 안 뜬다. 그래도 **이름은 보여야** 베낀 사람이
-        # 그런 설정이 있다는 걸 안다. 그래서 주석까지 훑는다.
+        # 호출이 켜진 채로 남고(질문마다 예외 → 관측에 `model_failed`, 안 한
+        # 것과 구분되지 않는다), `OCR_FIXTURE_FALLBACK` 은 운영에 있으면
+        # 서버가 아예 안 뜬다. 그래도 **이름은 보여야** 베낀 사람이 그런
+        # 설정이 있다는 걸 안다. 그래서 주석까지 훑는다.
         #
         # 예외 목록을 두지 않는 이유가 이것이다 — 예외는 계속 늘어나고, 늘어난
         # 뒤에는 아무도 안 본다.
@@ -249,20 +250,88 @@ class TestTheEnvExampleMatchesWhatTheCodeAsks:
     @pytest.mark.parametrize("example", ["envs/example.prod.env", "envs/example.local.env"])
     def test_the_openai_key_is_only_ever_commented(self, example: str) -> None:
         """빈 `OPENAI_API_KEY=` 는 `SecretStr("")` 이 되어 `is not None` 이 참이다 —
-        LLM 호출이 켜진 채 빈 키로 나가고, 챗봇 질문마다 환자 질문 원문과 승인
-        안내문이 밖으로 간다. 끄는 방법은 값이 아니라 **줄을 주석으로 두는 것**뿐이라
-        두 예시 다 그렇게 되어 있어야 한다. `bootstrap-local.sh` 가 로컬 예시를
-        그대로 `.env` 로 복사하므로 로컬도 prod 와 같은 계약을 받는다."""
+        모델 객체가 만들어져 질문마다 호출을 시도하다 예외가 나고, 관측에
+        `model_failed` 로 남아 **설정을 안 한 것과 구분되지 않는다.** 끄는 방법은
+        값이 아니라 **줄을 주석으로 두는 것**뿐이라 두 예시 다 그렇게 되어 있어야
+        한다. `bootstrap-local.sh` 가 로컬 예시를 그대로 `.env` 로 복사하므로
+        로컬도 prod 와 같은 계약을 받는다.
+
+        전에 이 독스트링이 「환자 질문 원문이 밖으로 간다」고 적었는데 사실이
+        아니었다 — 빈 키면 헤더가 `Bearer ` 가 되어 h11 이 불법 헤더 값으로
+        거부하고, 바이트가 0 이다 (KEY-308). 계약은 그대로 지킨다: 값이 아니라
+        줄이 없어야 꺼진다."""
         text = read(example)
         live = [ln for ln in text.splitlines() if re.match(r"\s*OPENAI_API_KEY\s*=", ln)]
 
         assert not live, (
-            f"{example}: OPENAI_API_KEY 가 주석 없이 있다 — 빈 값이면 LLM 호출이 켜진 채 "
-            f"빈 키로 나간다. `# OPENAI_API_KEY=` 로 둔다. {live}"
+            f"{example}: OPENAI_API_KEY 가 주석 없이 있다 — 빈 값이면 호출이 켜진 채로 "
+            f"남아 `model_failed` 와 구분되지 않는다. `# OPENAI_API_KEY=` 로 둔다. {live}"
         )
         assert re.search(r"#[^\n]*OPENAI_API_KEY", text), (
             f"{example}: OPENAI_API_KEY 이름이 아예 없다 — 베낀 사람이 이 설정을 모른다"
         )
+
+
+class TestTheEmptyKeyClaimIsMeasuredNotRepeated:
+    """예시 파일이 「빈 키라도 밖으로 새지 않는다」고 말한다 — 그 말을 **바이트로 잰다.**
+
+    전에 이 저장소의 설명 넷이 입을 모아 「빈 값이면 환자 질문 원문이
+    `api.openai.com` 으로 나간다」고 적고 있었다. 코드 경로를 눈으로만 따라간
+    말이었고, **틀렸다** (KEY-308). 말을 말로 고치면 다음에 또 어긋나므로,
+    여기서는 선을 흐르는 바이트를 세어 못 박는다.
+
+    밖으로 나가는 곳은 없다 — 제 컴퓨터 안에 듣는 자리를 하나 세우고 거기로
+    보낸다.
+    """
+
+    async def _bytes_reaching_the_wire(self, api_key: str) -> tuple[int, str]:
+        import asyncio
+
+        from app.services.chatbot import OpenAIResponsesModel
+
+        seen = bytearray()
+
+        async def listen(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            try:
+                seen.extend(await reader.read(4096))
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                await writer.drain()
+            except OSError:  # 상대가 먼저 끊었다 — 그것도 「안 나갔다」의 한 모습이다
+                pass
+            finally:
+                writer.close()
+
+        server = await asyncio.start_server(listen, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            model = OpenAIResponsesModel(
+                api_key=api_key,
+                model_name="gpt-4o-mini",
+                base_url=f"http://127.0.0.1:{port}/v1",
+                timeout_seconds=5.0,
+            )
+            failed_as = []
+            try:
+                await model.generate(instructions="지시", prompt="환자가 물은 것")
+            except BaseException as exc:  # noqa: BLE001 — 무엇으로 죽었는지가 답의 절반이다
+                cause: BaseException | None = exc
+                while cause is not None:
+                    failed_as.append(type(cause).__name__)
+                    cause = cause.__cause__
+        return len(seen), " ← ".join(failed_as)
+
+    async def test_an_empty_key_sends_nothing_at_all(self) -> None:
+        """빈 키면 헤더가 `Bearer ` 다 — 뒤 공백 때문에 h11 이 직렬화 단계에서 거부한다."""
+        sent, failed_as = await self._bytes_reaching_the_wire("")
+
+        assert sent == 0, f"빈 키인데 {sent}바이트가 밖으로 나갔다"
+        assert "LocalProtocolError" in failed_as, f"막힌 자리가 h11 이 아니다 — {failed_as}"
+
+    async def test_a_filled_key_does_send(self) -> None:
+        """재는 자가 늘 0 을 내놓으면 위 검사는 아무것도 안 지킨다."""
+        sent, _ = await self._bytes_reaching_the_wire("sk-synthetic-not-a-real-key")
+
+        assert sent > 0, "채운 키로도 바이트가 안 나갔다 — 재는 자리가 헛돈다"
 
 
 class TestTheProcedureIsNotMacOnly:

@@ -179,6 +179,12 @@ async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
         missing_event_columns = sorted(required_event_columns - event_columns)
         assert not missing_event_columns, f"KEY-250 감사 이벤트 컬럼이 누락됐다: {missing_event_columns}"
 
+        # KEY-297: 발송 직전 링크 발급/회전에 필요한 컬럼이 실제로 생성됐는가.
+        link_columns = {row[0] for row in await _sql(SCRATCH, "SHOW COLUMNS FROM patient_guide_link")}
+        required_link_columns = {"issued_at", "last_message_id"}
+        missing_link_columns = sorted(required_link_columns - link_columns)
+        assert not missing_link_columns, f"KEY-297 링크 발급 컬럼이 누락됐다: {missing_link_columns}"
+
         # ② 배포는 이걸 매번 돈다. 두 번째가 뭔가 한다면 굴릴 수 없다.
         again = _aerich(SCRATCH, "upgrade")
         assert again.returncode == 0, f"두 번째 upgrade 가 죽었다 — {again.stderr[-600:]}"

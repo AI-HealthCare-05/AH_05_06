@@ -202,6 +202,54 @@ class PatientTableTestCase(TestCase):
 
         assert [item["name"] for item in body["items"]] == ["진료함"]
 
+    async def test_the_chips_follow_the_search_word(self) -> None:
+        """**검색어를 넣으면 배지도 같이 좁아진다** — KEY-303, 이희진 님 `#270` 리뷰 ②.
+
+        진료에서 나오는 조각(진행 중 · 챙겨주세요)의 셈은 의원의 최근 진료를 훑어
+        낸다. 그 셈이 검색어를 모르면 **표는 걸러졌는데 배지는 안 걸러진다** —
+        배지가 표보다 커지고, 그 값이 쪽 나눔의 총수라 「다음」에 빈 표가 뜬다.
+
+        위 `test_the_chips_count_the_whole_clinic_not_the_page` 와 짝이다. 검색어가
+        **없을** 때는 의원 전체를 세는 것이 맞다 — 둘은 다른 물음이다.
+        """
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "chip-search")
+        for index in range(6):
+            await self.a_patient(clinic, name=f"윤지아{index}", chart=f"Y{index:03}")
+        #: 검색어에는 걸리지만 진료가 없어 「진행 중」이 아닌 둘 — 조각마다 총수가
+        #: 갈려야 한다. 이것이 없으면 「전체」로 세는 잘못을 못 잡는다.
+        for index in range(2):
+            await self.a_patient(clinic, name=f"윤지아없{index}", chart=f"YN{index:03}", visited_days_ago=None)
+        for index in range(4):
+            await self.a_patient(clinic, name=f"박수빈{index}", chart=f"P{index:03}")
+
+        body = await self.fetch(staff, keyword="윤지아", category=PatientCategory.IN_TREATMENT.value)
+
+        assert len(body["items"]) == 6, "표는 검색어와 조각으로 걸러진다"
+        assert body["counts"][PatientCategory.ALL.value] == 8, "검색어에 걸리는 사람은 여덟"
+        assert body["counts"][PatientCategory.IN_TREATMENT.value] == 6, "배지가 의원 전체(12)를 세면 표(6)보다 커진다"
+        assert body["roster"]["total"] == 6, "고른 조각의 총수여야 한다 — 「전체」(8)로 세면 있지도 않은 쪽이 생긴다"
+        assert body["roster"]["has_next"] is False
+
+    async def test_a_padded_total_never_offers_an_empty_next_page(self) -> None:
+        """총수와 실제 줄이 맞아야 「다음」이 빈 표를 안 준다."""
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "chip-page")
+        for index in range(5):
+            await self.a_patient(clinic, name=f"윤지아{index}", chart=f"YY{index:03}")
+        for index in range(9):
+            await self.a_patient(clinic, name=f"딴사람{index}", chart=f"D{index:03}")
+
+        body = await self.fetch(staff, keyword="윤지아", category=PatientCategory.IN_TREATMENT.value, limit=3)
+
+        assert len(body["items"]) == 3
+        assert body["roster"]["total"] == 5, "5명인데 14로 세면 두 쪽이 아니라 다섯 쪽이 된다"
+        assert body["roster"]["has_next"] is True
+
+        last = await self.fetch(staff, keyword="윤지아", category=PatientCategory.IN_TREATMENT.value, limit=3, offset=3)
+        assert len(last["items"]) == 2, "마지막 쪽에 남은 둘"
+        assert last["roster"]["has_next"] is False, "여기서 「다음」이 열리면 빈 표가 뜬다"
+
     # ── 검색 · 격리 ──────────────────────────────────────
 
     async def test_search_covers_the_three_things_the_box_promises(self) -> None:
