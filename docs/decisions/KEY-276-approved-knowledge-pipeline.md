@@ -116,6 +116,26 @@ private MinIO에 저장됐다. MySQL에는 문서 5건·버전 5건·검색 청�
 5건이 생성됐다. 이는 의료 검수 전 `ready_for_review` 상태이며 승인 완료를 뜻하지 않는다.
 원문, 로컬 경로, API 응답 원본, 자격증명은 실행 출력·문서·커밋에 기록하지 않았다.
 
+### 의료 안전 승인
+
+2026-09-09 위 5건 모두 이희진이 승인했다. 승인 기준은 검토자 개인 자격이 아니라
+자료 선정 시 적용한 채택 기준 통과 여부로 남긴다 — 필수 채택 기준(공식성·추적성·
+최신성·관련성·근거성·이용가능성·범위적합성) 7개 전체 통과, 품질 평가 12점 중 9점
+이상을 확인한 뒤 `KnowledgeApprovalService.approve()`를 `approved_by=이희진`으로
+실행했다. 실행 자체는 담당자에게 위임했으나 채택 기준 검토와 승인 판단은 이희진이
+직접 수행했다.
+
+| 자료 | document_id | version_id |
+|---|---|---|
+| 2023 International Evidence-based Guideline for PCOS | `9f53ff7f-9aed-4bbf-956f-aeebe0e58a81` | `a1f17bdb-9dea-48ad-87d9-71b93165789b` |
+| ESHRE guideline: endometriosis | `ace928dc-14b8-4b8f-9405-172aa6836ec8` | `9dc6d216-992c-4cb9-afb8-c244fe6cde96` |
+| 식품의약품안전처 DUR 성분정보 | `4ee90a1f-0891-4bb6-9c41-3190ffa7f5b4` | `3083c791-cc56-46cb-ba3f-1cff024b283f` |
+| 식품의약품안전처 DUR 품목정보 | `ab51381e-1d29-4eb9-b5a6-f3e60195b3d9` | `f4270e74-57a6-489b-8866-e4782b2bf05b` |
+| 식품의약품안전처 의약품 제품 허가정보 | `86ee42d0-4f92-46ee-b864-6a7cb6ac2f6f` | `61112a40-1e4f-4295-b042-fd57ae673b5d` |
+
+승인 이후에도 이 5건은 KEY-82 합성 평가 통과와 별개로, 지정 리뷰어의 생성 연결
+승인 전까지는 검색 provider 대상일 뿐 생성·챗봇 컨텍스트에는 연결하지 않는다.
+
 KEY-82 합성 검색 평가는 결과 코드·Recall@3·Precision@3·경로 정확도 100%, 금지 근거
 진입 0건으로 통과했고 결과 checksum은
 `0a6c9161d77a65dbf860c3d4d7eaf9c0efe5ee768bced68db514f5716da87bb5`다. 다만 지정
