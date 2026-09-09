@@ -5,20 +5,20 @@ RUN_IN_TRANSACTION = True
 
 async def upgrade(db: BaseDBAsyncClient) -> str:
     return """
-        ALTER TABLE `guide_message` DROP INDEX `uid_guide_messa_guide_d_ae9b80`;
         ALTER TABLE `guide_message` ADD `resend_of_message_id` BIGINT UNIQUE COMMENT '재발송 요청의 원본 메시지. 원본 한 건당 재발송 작업을 하나만 만들어';
         ALTER TABLE `guide_message` ADD `resend_sequence` SMALLINT NOT NULL COMMENT '최초 발송은 0, 재발송은 원본보다 1 큰 값이다. 안내문·회차별 최초' DEFAULT 0;
-        ALTER TABLE `guide_message` ADD UNIQUE INDEX `uid_guide_messa_guide_d_691931` (`guide_document_id`, `kind`, `resend_sequence`);"""
+        ALTER TABLE `guide_message` ADD UNIQUE INDEX `uid_guide_messa_guide_d_691931` (`guide_document_id`, `kind`, `resend_sequence`);
+        ALTER TABLE `guide_message` DROP INDEX `uid_guide_messa_guide_d_ae9b80`;"""
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
     return """
         DELETE FROM `guide_message` WHERE `resend_of_message_id` IS NOT NULL;
+        ALTER TABLE `guide_message` ADD UNIQUE INDEX `uid_guide_messa_guide_d_ae9b80` (`guide_document_id`, `kind`);
         ALTER TABLE `guide_message` DROP INDEX `resend_of_message_id`;
         ALTER TABLE `guide_message` DROP INDEX `uid_guide_messa_guide_d_691931`;
         ALTER TABLE `guide_message` DROP COLUMN `resend_of_message_id`;
-        ALTER TABLE `guide_message` DROP COLUMN `resend_sequence`;
-        ALTER TABLE `guide_message` ADD UNIQUE INDEX `uid_guide_messa_guide_d_ae9b80` (`guide_document_id`, `kind`);"""
+        ALTER TABLE `guide_message` DROP COLUMN `resend_sequence`;"""
 
 
 MODELS_STATE = (

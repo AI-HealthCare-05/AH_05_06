@@ -4,7 +4,7 @@ import asyncio
 from datetime import date, timedelta
 
 from httpx import ASGITransport, AsyncClient
-from tortoise.contrib.test import TestCase
+from tortoise.contrib.test import TruncationTestCase
 from tortoise.timezone import now
 
 from app.core.redis_client import get_redis
@@ -33,7 +33,7 @@ from app.tests.fakes import FakeRedis
 OLD_LINK_TOKEN = "synthetic-old-link-token"
 
 
-class MessageResendTestCase(TestCase):
+class MessageResendTestCase(TruncationTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.redis = FakeRedis()
