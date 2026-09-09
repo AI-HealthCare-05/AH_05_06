@@ -95,15 +95,22 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 │   ├── core/           # 워커 설정 및 로거
 │   ├── schemas/        # 워커 입출력 스키마
 │   ├── tasks/          # OCR 판독·필드 추출 로직
+│   ├── tests/          # 워커 pytest
 │   └── main.py         # 워커 진입점 (blpop 루프)
 ├── app/                # FastAPI 서버 코드
 │   ├── apis/           # API 라우터 (v1 버전 관리)
-│   ├── core/           # 서버 설정(pydantic-settings), DB 설정, JWT, Validator
+│   ├── catalog/        # 약·주의사항 카탈로그
+│   ├── core/           # 서버 설정(pydantic-settings), DB 설정, JWT, Validator, 마이그레이션
+│   ├── dependencies/   # FastAPI 의존성 (인증·권한)
+│   ├── documents/      # 의료문서 업로드·저장
 │   ├── dtos/           # 데이터 전송 객체 (Pydantic)
 │   ├── models/         # DB 테이블 정의 (Tortoise)
+│   ├── ocr/            # OCR 결과·확정·처방 구조화
+│   ├── repositories/   # 질의 계층
 │   ├── services/       # 비즈니스 로직
 │   ├── tests/          # pytest (단위 + `tests/e2e/`)
-│   └── main.py         # FastAPI 진입점
+│   ├── main.py         # FastAPI 진입점
+│   └── pilot_server.py # Pilot 진입점 (좁은문 플래그를 받는다 — KEY-264)
 ├── envs/               # 환경변수 예시 (버전 관리됨) — 실제 값은 .gitignore
 │   ├── example.local.env
 │   └── example.prod.env
@@ -111,9 +118,10 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 │   ├── *.html          # 화면 하나에 파일 하나 (login · patients · ocr-review · manage · settings …)
 │   ├── css/            # 화면별 + 공용(tokens · style · shell · blocks)
 │   ├── js/             # 화면 코드와 순수 규칙 파일(`*-rules.js` — 검사가 부른다)
+│   ├── patient_wireframe/  # 환자 쪽 와이어프레임 (환자 링크가 떨어지는 자리)
 │   └── tests/          # `node --test` 계약 검사. 새 의존성 없이 돈다
 ├── infra/              # 운영 인프라 설정
-│   ├── docker/         # docker-compose.prod.yml (프로필 없음 — 항상 전부 뜬다)
+│   ├── docker/         # docker-compose.prod.yml · docker-compose.pilot.yml · initdb.d/
 │   └── nginx/          # 리버스 프록시 (http/https)
 ├── scripts/            # 부트스트랩 · seed · smoke · 배포 · CI
 ├── docs/               # 정본 문서 (문서 지도 참고)
@@ -269,16 +277,22 @@ docker compose --profile web --profile ocr up -d --build   # 여섯 개 전부
 
 ### 4. 테이블 생성 + 스키마 대조
 
-예시 파일은 `DB_HOST=mysql`·`REDIS_HOST=redis`(컨테이너 이름)로 되어 있다. 아래를
-**호스트에서** 돌리려면 `.env` 의 두 값을 `localhost` 로 바꾼다 — 안 바꾸면
-`aerich upgrade` 가 `mysql` 을 못 풀어 멈춘다. 컨테이너 안에서 돌리면 그대로 둔다:
+예시 파일은 `DB_HOST=mysql`(컨테이너 이름)로 되어 있다. **컨테이너 안에서 돌리는
+쪽을 기본으로 쓴다** — 고칠 것이 없다:
 
 ```bash
 docker compose exec fastapi uv run --no-sync aerich upgrade
+docker compose exec fastapi uv run --no-sync python scripts/check_schema_drift.py
 ```
 
+> **호스트에서 돌려야 한다면** `.env` 의 `DB_HOST` 를 `localhost` 로 바꾼다 — 안 바꾸면
+> `aerich upgrade` 가 `mysql` 을 못 풀고 `DBConnectionError` 로 죽는다.
+> **끝나면 반드시 `mysql` 로 되돌린다.** 그 `.env` 가 곧 compose 의 `env_file` 이라
+> (`docker-compose.yml` 의 `fastapi`·`ai-worker`), 바꾼 채 컨테이너를 다시 띄우면
+> `DB_HOST: localhost` 가 그대로 실려 나가 컨테이너가 자기 자신을 찾는다.
+
 ```bash
-uv run aerich upgrade                          # 호스트 실행 시 .env 의 DB_HOST=localhost
+uv run aerich upgrade                          # 호스트 실행 — 끝나면 DB_HOST 를 되돌린다
 uv run python scripts/check_schema_drift.py
 ```
 
@@ -331,7 +345,8 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `DB_USER` · `DB_PASSWORD` · `DB_ROOT_PASSWORD` | DB 계정 | 로컬 전용값 (bootstrap 생성) | |
 | `DB_NAME` | 스키마 이름 | `ai_health` | |
 | `REDIS_HOST` | Redis 호스트 | `redis` | `localhost` |
-| `REDIS_PORT` · `REDIS_EXPOSE_PORT` | Redis 포트 / 노출 포트 | `6379` | `6379` |
+| `REDIS_PORT` | Redis 포트 | `6379` | `6379` |
+| `REDIS_EXPOSE_PORT` | 노출 포트 — **로컬 `docker-compose.yml` 은 안 읽는다**(`6379:6379` 로 박혀 있다). 바꾸려면 그 파일을 고친다 | `6379` | `6379` |
 | `REDIS_DB` | 논리 DB 번호(0~15). 평소 비움. pytest-xdist 병렬 검사용 | `0` |
 
 ### 업로드 / OCR
@@ -348,7 +363,7 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 
 | 변수 | 목적 | 예시·기본값 |
 |---|---|---|
-| `OPENAI_API_KEY` | 환자 챗봇 응답 생성 키 (`app/apis/v1/chatbot_routers.py` 가 읽는 유일한 자리). 비우면 챗봇이 고정 폴백 문구만 답한다. 안내문 생성에는 안 쓰인다 | (비움) |
+| `OPENAI_API_KEY` | 환자 챗봇 응답 생성 키 (`app/apis/v1/chatbot_routers.py`. `scripts/key96_live_smoke.py` 도 읽는다). 안내문 생성에는 안 쓰인다. **끄려면 줄을 주석으로 둔다** — `OPENAI_API_KEY=` 처럼 빈 값이면 호출이 켜진 것으로 잡혀 `model_failed` 로 남는다 | (줄을 주석으로) |
 | `OPENAI_MODEL` | 모델 이름 | `gpt-4o-mini` |
 | `OPENAI_BASE_URL` | API 엔드포인트 | `https://api.openai.com/v1` |
 | `OPENAI_TIMEOUT_SECONDS` | 타임아웃 | `20` |
@@ -367,7 +382,7 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `SMS_PROVIDER` | `mock`(기본, 자격증명 불필요) 또는 `aligo` | `mock` |
 | `ALIGO_KEY` · `ALIGO_USER_ID` · `ALIGO_SENDER_NUMBER` | 알리고 자격증명 (`aligo` 일 때만) | (비움) |
 | `ALIGO_BASE_URL` · `ALIGO_TIMEOUT_SECONDS` | 알리고 엔드포인트·타임아웃 | `https://apis.aligo.in` · `10` |
-| `MOCK_OTP_CODE` | 로컬에서 OTP 를 고정하고 싶을 때 | (비움) |
+| `MOCK_OTP_CODE` | **시연을 끝까지 보려면 필요.** 비우면 환자 OTP 인증이 503 (`OTP_DELIVERY_UNAVAILABLE`) 으로 막혀 Walking Skeleton 이 거기서 멈춘다. `bootstrap` 은 이 값을 안 넣는다 | `000000` |
 
 ### 만들기 중
 
@@ -386,8 +401,9 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
   판독 작업은 워커가 `OCR_NOT_CONFIGURED` 로 **실패**시킨다 — fixture 로 자동 대체되지 않는다.
   워커·CLOVA 없이 흐름을 보려면 `OCR_FIXTURE_FALLBACK=true` 로 두어 업로드 경로에서 합성
   판독값을 넣는다 (KEY-56 · 계약: [`docs/decisions/KEY-163-ocr-real-contract.md`](docs/decisions/KEY-163-ocr-real-contract.md)).
-- **OpenAI** — 환자 챗봇 응답 생성에 쓴다. `app/apis/v1/chatbot_routers.py` 가 이 키를 읽는
-  유일한 자리다. `OPENAI_API_KEY` 를 넣고, 필요하면 `OPENAI_MODEL` · `OPENAI_BASE_URL` 로
+- **OpenAI** — 환자 챗봇 응답 생성에 쓴다. 서버에서 이 키를 읽는 자리는
+  `app/apis/v1/chatbot_routers.py` 하나다(그 밖에 `scripts/key96_live_smoke.py` 가 실연동
+  smoke 에서 환경변수로 읽는다). `OPENAI_API_KEY` 를 넣고, 필요하면 `OPENAI_MODEL` · `OPENAI_BASE_URL` 로
   바꾼다. 비우면 챗봇이 고정 폴백 문구만 답하고([`docs/local-demo-accounts.md`](docs/local-demo-accounts.md) §3-7),
   나머지 흐름은 그대로 돈다. **안내문 생성은 이 키를 쓰지 않는다** — 확정 OCR + 승인 문구
   조합이고 LLM 생성은 미착수(KEY-75).
@@ -552,7 +568,12 @@ TEST_SLOT=1 uv run pytest -q app/tests/ocr    # 자리 1 — test_1
 | 설정 (안내문 · 처방 · 검사 기준선 · 문자 문구) | `settings.html` | `D2-1~5` |
 | 의사 승인 | `doctor.html` | `D1-*` |
 | 어드민 | `admin.html` | `A1-1~7` |
+| 환자 피드백 관리 | `admin-feedback.html` | — |
 | 환자 모바일 | `guide.html` · `checkin.html` | `P2~P7` |
+| 환자 와이어프레임 (환자 링크가 떨어지는 자리) | `patient_wireframe/html/*.html` | `P1~P7` |
+
+곁들이 화면 — 표의 프레임에 안 들어간다: `index.html`(들머리) · `map.html`(화면 지도) ·
+`frame.html`(준비 중인 화면) · `_make-wireframe.html`(와이어프레임 만들기 도구).
 
 **화면 ID 는 팀 공용 이름이다** — 티켓·PR·버그 리포트에서 `S1-6` 처럼 부른다.
 

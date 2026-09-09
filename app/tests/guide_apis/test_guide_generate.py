@@ -207,6 +207,87 @@ class TestGenerateBlocksUnconfirmedOcr(GenerateGuideTestCase):
             f"못 읽은 칸 하나가 안내문을 막았다 — {response.status_code} {response.json()}"
         )
 
+    async def test_unconfirmed_duration_days_blocks_generate(self) -> None:
+        """KEY-274: DURATION_DAYS에 값이 있고 미확정이면 generate가 막힌다.
+
+        재현 경로: CLOVA가 처방 세트 약 키워드를 못 잡아 화면이 DURATION_DAYS
+        셀을 숨김 → 스탭이 확정할 UI 없음 → DB에 value='84', is_confirmed=False
+        로 남음 → generate 영구 422.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        job = await OcrJob.create(
+            ocr_job_id=f"syn-duration-unconf-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.COMPLETED,
+        )
+        result = await OcrResult.create(ocr_job=job, model_name="synthetic-fixture")
+        await OcrField.create(
+            ocr_result=result,
+            field_type="DIAGNOSIS",
+            extracted_value="자궁내막증",
+            is_confirmed=True,
+            confirmed_by=staff.staff_id,
+        )
+        # CLOVA가 읽었지만 화면 UI가 숨겨 확정이 안 된 처방일수
+        await OcrField.create(
+            ocr_result=result,
+            field_type="DURATION_DAYS",
+            extracted_value="84",
+            is_confirmed=False,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_NOT_CONFIRMED"
+
+    async def test_unread_duration_days_does_not_block_generate(self) -> None:
+        """KEY-274: DURATION_DAYS 값이 없으면(미판독) generate를 막지 않는다.
+
+        CLOVA가 처방일수를 아예 못 읽으면 extracted_value=None으로 저장된다.
+        read_but_unconfirmed는 value가 있는 것만 잡으므로 이 경우엔 통과한다.
+        스탭은 수동 약 추가(DURATION_DAYS_N)로 처방일수를 입력한다.
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        job = await OcrJob.create(
+            ocr_job_id=f"syn-duration-unread-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.COMPLETED,
+        )
+        result = await OcrResult.create(ocr_job=job, model_name="synthetic-fixture")
+        await OcrField.create(
+            ocr_result=result,
+            field_type="DIAGNOSIS",
+            extracted_value="자궁내막증",
+            is_confirmed=True,
+            confirmed_by=staff.staff_id,
+        )
+        # CLOVA가 처방일수를 아예 못 읽은 경우 — extracted_value=None
+        await OcrField.create(
+            ocr_result=result,
+            field_type="DURATION_DAYS",
+            extracted_value=None,
+            is_confirmed=False,
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 201, (
+            f"미판독 DURATION_DAYS 가 generate 를 막았다 — {response.status_code} {response.json()}"
+        )
+
     async def test_zero_fields_is_refused(self) -> None:
         """OcrResult는 있지만 필드가 0개이면 게이트를 통과하지 못한다.
 
