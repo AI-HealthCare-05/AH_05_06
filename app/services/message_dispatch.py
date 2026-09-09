@@ -20,7 +20,7 @@ from app.core import config
 from app.core.logger import default_logger
 from app.core.time import DISPLAY_TIMEZONE
 from app.models.catalog import MessageTemplate
-from app.models.ocr import OcrField, course_days
+from app.models.ocr import OcrField, OcrJob, OcrJobStatus, course_days
 from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import (
@@ -65,8 +65,7 @@ class DispatchResult:
 
 
 #: 환자 링크가 여는 화면 경로 — `frontend/js/link-token.js`의 조각(`#t=`) 규칙과
-#: 맞춘다. 질의문자열이 아니라 조각을 쓰는 이유는 그 파일 docstring을 본다 —
-#: 조각은 서버 요청·access log에 안 남는다.
+#: 맞춘다. 조각은 서버 요청·access log에 남지 않는다.
 _LINK_PATH = "/patient_wireframe/html/otp.html#t={token}"
 
 
@@ -87,21 +86,27 @@ async def _template_body(hospital_id: int, kind: MessageTemplateKind) -> str:
 
 
 async def _course_days(visit_id: int) -> int | None:
-    """처방일수 — 판독이 확정한 값에서 읽는다.
+    """처방일수 — **최신 비제외 COMPLETED job** 의 확정 값에서 읽는다.
 
-    **확정된 것만 본다.** 스탭이 아직 확인하지 않은 값을 문구에 쓰면 안 된다.
-
-    **셈은 `app/models/ocr.py` 의 `course_days` 것이다** — 이희진 님 `#236` ②.
-
-    여기 사본이 따로 있었고, 독스트링이 「`guides.py` 의 같은 이름과 동일 로직」
-    이라 적어 두었는데 그 짝이 KEY-271 에서 `unit` 을 보게 바뀌면서 **이 자리만
-    낡았다.** 그러면 통수 처방에서 예약은 84일 뒤로 맞게 잡히는데 `{일수}` 를 쓰는
-    RUN_OUT 문구에는 원문 숫자 「3」이 그대로 들어가, 문자가 「3일분」이라고 말한다.
-
-    같은 규칙을 세 곳에 적어 두면 한 곳만 고쳐진다 — 그것이 이미 한 번 났다.
+    제외·이전 job 이 섞이면 소진 문자 날짜와 {일수} 변수가 어긋난다.
+    예: job1(84일)→job2(28일) 재판독 후 job1 을 제외해도
+    필터 없이 first() 하면 84일 기준으로 문자 본문이 채워진다.
+    `guides.py` 의 같은 이름과 동일 로직 — 두 함수가 다르면 발송 날짜와
+    문자 본문이 달라진다.
     """
+    latest_job = (
+        await OcrJob.filter(
+            visit_id=visit_id,
+            excluded_from_guide=False,
+            status=OcrJobStatus.COMPLETED,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if latest_job is None:
+        return None
     row = await OcrField.filter(
-        ocr_result__ocr_job__visit_id=visit_id,
+        ocr_result__ocr_job=latest_job,
         field_type="DURATION_DAYS",
         is_confirmed=True,
     ).first()
@@ -119,10 +124,8 @@ async def render_message_body(
 ) -> str:
     """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
 
-    `{링크}`/`{예약링크}`가 문구에 있으면 그때 원문을 새로 발급한다(KEY-297)
-    — 예약 승인 시점에 미리 만들어 두지 않는다. 원문은 이 함수 안에서만
-    살아 있다가 완성된 문자열(`body`)에 섞여 나갈 뿐, 어디에도 따로
-    저장하지 않는다.
+    `{링크}`/`{예약링크}`가 문구에 있으면 그때 원문을 새로 발급한다(KEY-297).
+    원문은 이 함수 안에서 완성된 문자열에 섞일 뿐 별도로 저장하지 않는다.
     """
     guide = guide or await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
     if guide is None:
@@ -277,6 +280,12 @@ def _failure_code_for(provider_detail: str | None) -> GuideMessageFailure:
     잘못됐다」·「수신 거부됐다」·「발신번호가 미등록이다」라고 확신할
     근거가 없기 때문이다. 틀린 확신을 화면에 내보내는 것보다는 모호하게
     맞는 말을 하는 쪽을 골랐다(2heej 리뷰).
+
+    `link_not_available_pending_policy`(PR 코멘트 참고)도 여기로
+    떨어지는데, 이건 사실 통신사 문제가 전혀 아니다 — 정책이 아직
+    확정되지 않아 우리 쪽에서 링크를 못 만든 것이다. 넷 중 아무것도 안
+    맞아서 어쩔 수 없이 여기 둔다 — 실제 원인은 `provider_detail`(내부
+    전용, 화면에 안 보임)로 구분한다.
     """
     return GuideMessageFailure.CARRIER
 

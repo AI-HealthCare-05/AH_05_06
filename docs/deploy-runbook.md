@@ -554,7 +554,7 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
 
 일반 운영 배포에는 `docker-compose.pilot.yml`을 절대 함께 주지 않는다.
 
-Aligo 어댑터(KEY-248)를 `OtpDelivery`에 실배선하는 작업은 이 티켓 범위 밖이다
+솔라피 어댑터(KEY-248)를 `OtpDelivery`에 실배선하는 작업은 이 티켓 범위 밖이다
 — 후속 티켓으로 남긴다.
 
 ## 4-4. 시연 전 재프로비저닝 — 한 번에 따라가는 순서 (KEY-203)

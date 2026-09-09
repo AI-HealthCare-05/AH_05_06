@@ -4,13 +4,9 @@
 「아직 아무도 HELD·FAILED 를 만들지 않는다. 발송기 자체가 없어서 SCHEDULED 와
 CANCELED 만 실제로 쓰인다.」이 파일이 그 발송기다.
 
-`{링크}` 를 채우는 문제는 KEY-297이 풀었다 — 발송 직전에
-`PatientLinkService.issue_for_dispatch()`가 원문을 새로 발급한다. 그 경로
-자체는 `test_key297_dispatch_time_link_issuance.py`가 따로 검사하고, 여기
-파이프라인 검사(claim·발송·상태전이·재시도·멱등성)는 여전히 `{링크}` 가
-없는 커스텀 템플릿으로 그 관심사를 갈라 둔다 — 링크 발급이 매번 DB에
-쓰기(link 생성/회전)를 하나 더 만들어서, 파이프라인 자체의 재시도·멱등성
-검사와 섞이면 어느 쪽이 실패했는지 알기 어려워진다.
+`{링크}` 는 KEY-297이 발송 직전에 새로 발급한다. 그 발급 규칙은
+`test_key297_dispatch_time_link_issuance.py`가 검사하고, 이 파일의 일반
+파이프라인 검사는 링크 없는 커스텀 템플릿으로 관심사를 갈라 둔다.
 """
 
 import asyncio
@@ -116,14 +112,6 @@ async def make_due_message(
 
 
 class TestLinkVariableIsIssuedAtDispatchTime(TestCase):
-    """{링크}/{예약링크}/{만료일}는 발송 직전에 실제로 채워진다 — KEY-297.
-
-    구체적인 발급/회전 규칙(digest 교체, OTP 무효화, TTL)은
-    `test_key297_dispatch_time_link_issuance.py`가 `PatientLinkService`
-    수준에서 따로 검사한다. 여기서는 파이프라인이 그 경로를 실제로
-    부르고, 결과가 문구에 제대로 섞여 나가는지만 본다.
-    """
-
     async def test_render_fills_link_and_expiry_and_creates_a_real_link_row(self) -> None:
         message = await make_due_message(kind=GuideMessageKind.GUIDE)
 
@@ -173,7 +161,7 @@ class TestLinkVariableIsIssuedAtDispatchTime(TestCase):
 class TestDispatchSendsAndTransitions(TestCase):
     async def test_a_due_message_is_sent_and_marked_sent(self) -> None:
         message = await make_due_message(link_free_template=True)
-        sender = MockSmsSender(provider_message_id="aligo-999")
+        sender = MockSmsSender(provider_message_id="solapi-999")
 
         result = await dispatch_message(message.guide_message_id, sender)
 
@@ -182,7 +170,7 @@ class TestDispatchSendsAndTransitions(TestCase):
         updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
         assert updated.status is GuideMessageStatus.SENT
         assert updated.sent_at is not None
-        assert updated.provider_message_id == "aligo-999"
+        assert updated.provider_message_id == "solapi-999"
         assert updated.claim_token is None
         assert updated.attempt_count == 1
         assert updated.sent_body is not None
@@ -303,7 +291,7 @@ class TestRetryAndBackoff(TestCase):
         """공급자가 명시적으로 거절하면(예: 잘못된 번호) 재시도해도 같은 결과다."""
         message = await make_due_message(link_free_template=True)
         sender = _CountingSender(
-            result=SmsSendResult(status=SmsDeliveryStatus.FAILED, provider=SmsProvider.ALIGO, provider_code="-101")
+            result=SmsSendResult(status=SmsDeliveryStatus.FAILED, provider=SmsProvider.SOLAPI, provider_code="-101")
         )
 
         result = await dispatch_message(message.guide_message_id, sender)

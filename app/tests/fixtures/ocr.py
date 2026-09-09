@@ -57,6 +57,34 @@ SYN_LOW_CONF_CLOVA_RESULT = ClovaOcrResult(
     elapsed_ms=41,
 )
 
+# ── EMR 저신뢰 (COMPLETED + EMR 값 블록 confidence < 0.75) ──────────────────
+# _extract_from_clova_blocks 은 값 블록의 confidence를 그대로 OcrField.confidence에 저장한다.
+# 헤더 블록은 고신뢰로 유지해 파서가 구조를 인식하게 하고,
+# 진단명("자궁내막증")·약품명 블록만 0.75 미만으로 설정한다.
+SYN_LOW_CONF_EMR_CLOVA_BLOCKS = (
+    ClovaTextField(text="[진단]", confidence=0.99),
+    ClovaTextField(text="N809", confidence=0.99),
+    ClovaTextField(text="ICD코드", confidence=0.98),
+    ClovaTextField(text="상병명", confidence=0.99),
+    ClovaTextField(text="자궁내막증", confidence=0.62),  # 저신뢰 — DIAGNOSIS 값 블록
+    ClovaTextField(text="주/부상병", confidence=0.97),
+    ClovaTextField(text="주상병", confidence=0.95),
+    ClovaTextField(text="약품명", confidence=0.99),
+    ClovaTextField(text="1회량", confidence=0.98),
+    ClovaTextField(text="일일횟수", confidence=0.97),
+    ClovaTextField(text="처방일수", confidence=0.99),
+    ClovaTextField(text="비잔정(디에노게스트)2mg", confidence=0.58),  # 저신뢰 — MEDICATION_NAME 값 블록
+    ClovaTextField(text="1", confidence=0.98),
+    ClovaTextField(text="1", confidence=0.97),
+    ClovaTextField(text="84", confidence=0.99),
+)
+
+SYN_LOW_CONF_EMR_CLOVA_RESULT = ClovaOcrResult(
+    raw_text="\n".join(b.text for b in SYN_LOW_CONF_EMR_CLOVA_BLOCKS),
+    fields=list(SYN_LOW_CONF_EMR_CLOVA_BLOCKS),
+    elapsed_ms=43,
+)
+
 # ── 실패·타임아웃 오류 코드 상수 ────────────────────────────────────────────
 # ClovaOcrError(code=...) 의 code 값으로 사용한다.
 # 반복 실행해도 같은 오류 코드를 사용한다 (인수조건 1).

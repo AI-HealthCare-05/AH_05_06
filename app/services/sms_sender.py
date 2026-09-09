@@ -1,6 +1,14 @@
-"""문자 공급자 전환 어댑터 — KEY-248."""
+"""문자 공급자 전환 어댑터 — KEY-248.
 
+알리고에서 솔라피로 전환했다(팀 결정). 프로토콜(`SmsSender`)과 mock은 그대로
+두고, 실제 어댑터만 `AligoSmsSender` → `SolapiSmsSender`로 통째로 바꿨다.
+"""
+
+import hashlib
+import hmac
+import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -55,25 +63,47 @@ class MockSmsSender:
         return self._result
 
 
-class AligoSmsSender:
-    """알리고 문자 API의 단건 발송 어댑터.
+def _solapi_authorization_header(api_key: str, api_secret: str) -> str:
+    """HMAC-SHA256 서명 헤더값 — 솔라피 공식 구현의 표기를 고정한다.
 
-    공급자 응답의 사람용 메시지는 반환하거나 예외에 복사하지 않는다. 알리고가
-    접수한 메시지 ID와 기계 판독용 결과 코드만 결과에 남긴다.
+    date + salt를 이어붙인 문자열을 api_secret으로 HMAC-SHA256 서명한다.
+    salt는 요청마다 새로 만든다(재전송 방지) — 값 자체의 알고리즘은 서버가
+    검증하지 않으므로, MAC 주소가 섞이는 uuid1 대신 secrets.token_hex를 쓴다.
+
+    공식 SDK 사이에도 대소문자 차이가 있다. Python SDK는 `ApiKey`/`Date`,
+    Node·Go SDK는 `apiKey`/`date`를 쓴다. 공급자 전환 직후 인증 실패를
+    피하도록 여러 공식 구현이 공통으로 쓰는 후자를 문자 그대로 고정한다.
+    """
+    date = datetime.now().astimezone().isoformat()
+    salt = secrets.token_hex(16)
+    signature = hmac.new(api_secret.encode(), (date + salt).encode(), hashlib.sha256).hexdigest()
+    return f"HMAC-SHA256 apiKey={api_key}, date={date}, salt={salt}, signature={signature}"
+
+
+class SolapiSmsSender:
+    """솔라피(SOLAPI) 문자 API의 단건 발송 어댑터.
+
+    공급자 응답의 사람용 메시지는 반환하거나 예외에 복사하지 않는다. 솔라피가
+    접수한 메시지 ID와 기계 판독용 상태 코드만 결과에 남긴다.
+
+    단문(SMS)·장문(LMS) 분기는 솔라피의 자동판별(autoTypeDetect)에 맡기지
+    않고, 이 코드베이스가 이미 쓰는 EUC-KR 90byte 셈(#183, message_templates.
+    sms_bytes)을 그대로 따른다 — 인수조건 4번이 그 계산과 같은 결과를
+    요구한다.
     """
 
     def __init__(
         self,
         *,
         api_key: str,
-        user_id: str,
+        api_secret: str,
         sender_number: str,
-        base_url: str = "https://apis.aligo.in",
+        base_url: str = "https://api.solapi.com",
         timeout_seconds: float = 10.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._api_key = api_key
-        self._user_id = user_id
+        self._api_secret = api_secret
         self._sender_number = sender_number
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
@@ -82,20 +112,31 @@ class AligoSmsSender:
     async def send(self, to: str, body: str) -> SmsSendResult:
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=self._timeout_seconds)
+        headers = {
+            "Authorization": _solapi_authorization_header(self._api_key, self._api_secret),
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "messages": [
+                {
+                    "to": to,
+                    "from": self._sender_number,
+                    "text": body,
+                    "type": "SMS" if sms_bytes(body) <= SMS_LIMIT else "LMS",
+                    # 솔라피 SDK의 기본값은 True다. 필드를 생략했을 때 서버가
+                    # 명시한 type을 다시 판별하지 않도록 반드시 끈다.
+                    "autoTypeDetect": False,
+                }
+            ]
+        }
         try:
             response = await client.post(
-                f"{self._base_url}/send/",
-                data={
-                    "key": self._api_key,
-                    "user_id": self._user_id,
-                    "sender": self._sender_number,
-                    "receiver": to,
-                    "msg": body,
-                    "msg_type": "SMS" if sms_bytes(body) <= SMS_LIMIT else "LMS",
-                },
+                f"{self._base_url}/messages/v4/send-many/detail",
+                headers=headers,
+                json=payload,
             )
             response.raise_for_status()
-            payload = response.json()
+            result = response.json()
         except httpx.TimeoutException:
             raise SmsSendError("provider_timeout") from None
         except httpx.HTTPStatusError as exc:
@@ -108,49 +149,49 @@ class AligoSmsSender:
             if owns_client:
                 await client.aclose()
 
-        if not isinstance(payload, dict):
-            raise SmsSendError("provider_invalid_response")
-        result_code = _provider_code(payload.get("result_code"))
-        if result_code is None:
-            raise SmsSendError("provider_invalid_response")
-        if result_code < 0:
-            return SmsSendResult(
-                status=SmsDeliveryStatus.FAILED,
-                provider=SmsProvider.ALIGO,
-                provider_code=str(result_code),
-            )
-        message_id = payload.get("msg_id")
-        if not isinstance(message_id, (str, int)) or not str(message_id).strip():
-            raise SmsSendError("provider_invalid_response")
+        return _parse_send_result(result)
+
+
+def _parse_send_result(result: object) -> SmsSendResult:
+    if not isinstance(result, dict):
+        raise SmsSendError("provider_invalid_response")
+
+    failed = result.get("failedMessageList")
+    if isinstance(failed, list) and failed:
+        first_failed = failed[0]
+        status_code = first_failed.get("statusCode") if isinstance(first_failed, dict) else None
         return SmsSendResult(
-            status=SmsDeliveryStatus.SENT,
-            provider=SmsProvider.ALIGO,
-            provider_message_id=str(message_id),
-            provider_code=str(result_code),
+            status=SmsDeliveryStatus.FAILED,
+            provider=SmsProvider.SOLAPI,
+            provider_code=str(status_code) if status_code is not None else None,
         )
+
+    sent = result.get("messageList")
+    if not isinstance(sent, list) or not sent:
+        raise SmsSendError("provider_invalid_response")
+    first_sent = sent[0]
+    if not isinstance(first_sent, dict):
+        raise SmsSendError("provider_invalid_response")
+    message_id = first_sent.get("messageId")
+    if isinstance(message_id, bool) or not isinstance(message_id, (str, int)) or not str(message_id).strip():
+        raise SmsSendError("provider_invalid_response")
+    status_code = first_sent.get("statusCode")
+    return SmsSendResult(
+        status=SmsDeliveryStatus.SENT,
+        provider=SmsProvider.SOLAPI,
+        provider_message_id=str(message_id),
+        provider_code=str(status_code) if status_code is not None else None,
+    )
 
 
 def build_sms_sender(settings: Config, *, client: httpx.AsyncClient | None = None) -> SmsSender:
     if settings.SMS_PROVIDER is SmsProvider.MOCK:
         return MockSmsSender()
-    return AligoSmsSender(
-        api_key=settings.ALIGO_KEY.get_secret_value(),
-        user_id=settings.ALIGO_USER_ID.get_secret_value(),
-        sender_number=settings.ALIGO_SENDER_NUMBER.get_secret_value(),
-        base_url=settings.ALIGO_BASE_URL,
-        timeout_seconds=settings.ALIGO_TIMEOUT_SECONDS,
+    return SolapiSmsSender(
+        api_key=settings.SOLAPI_API_KEY.get_secret_value(),
+        api_secret=settings.SOLAPI_API_SECRET.get_secret_value(),
+        sender_number=settings.SOLAPI_SENDER_NUMBER.get_secret_value(),
+        base_url=settings.SOLAPI_BASE_URL,
+        timeout_seconds=settings.SOLAPI_TIMEOUT_SECONDS,
         client=client,
     )
-
-
-def _provider_code(value: object) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return None
-    return None

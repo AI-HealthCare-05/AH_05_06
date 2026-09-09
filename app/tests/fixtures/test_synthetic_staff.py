@@ -429,6 +429,10 @@ class TestNeverRunsInProduction:
         # 「어느 이름을 읽는가」이지 비밀값이 아니므로, 합성값을 함께 준다.
         monkeypatch.setenv("SECRET_KEY", "synthetic-for-this-test")
         monkeypatch.setenv("ENV", "prod")
+        monkeypatch.setenv("SMS_PROVIDER", "solapi")
+        monkeypatch.setenv("SOLAPI_API_KEY", "synthetic-api-key")
+        monkeypatch.setenv("SOLAPI_API_SECRET", "synthetic-api-secret")
+        monkeypatch.setenv("SOLAPI_SENDER_NUMBER", "0200000000")
         monkeypatch.delenv("APP_ENV", raising=False)
         assert Config().ENV is Env.PROD, "`ENV` 를 안 읽는다 — 운영에서 기본값 local 로 통과한다"
 

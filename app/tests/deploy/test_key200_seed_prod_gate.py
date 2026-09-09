@@ -52,6 +52,10 @@ SEED = ROOT / "scripts" / "seed.py"
 BASE_ENV = {
     "SECRET_KEY": "synthetic-key200-contract-0123456789abcdef",
     "DB_PASSWORD": "synthetic-key200-db",
+    "SMS_PROVIDER": "solapi",
+    "SOLAPI_API_KEY": "synthetic-api-key",
+    "SOLAPI_API_SECRET": "synthetic-api-secret",
+    "SOLAPI_SENDER_NUMBER": "0200000000",
 }
 
 
