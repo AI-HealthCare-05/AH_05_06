@@ -158,3 +158,24 @@ DB_HOST=127.0.0.1 uv run pytest -q \
 환경변수 `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `KNOWLEDGE_MINIO_ENDPOINT`,
 `KNOWLEDGE_MINIO_BUCKET`은 `.env`/배포 secret에서만 주입한다. 로그·오류 코드·커밋에는
 자격증명이나 원문을 남기지 않는다.
+
+## 마이그레이션과 롤백
+
+migration 44가 지식 테이블 4개를 만들고, migration 47은 스키마 변경 없이(`SELECT 1;`)
+develop에 나중에 합류한 migration 46(KEY-297)과 모델 상태 스냅샷만 정합화한다. 2026-09-09
+실제 MySQL 8.0에서 두 경로로 검증했다(권일준).
+
+- **경로 A — 깨끗한 DB**: `aerich upgrade`가 43·44·46·47까지 전부 성공하고, 재실행하면
+  `No upgrade items found`(멱등)다.
+- **경로 B — 43·46까지 이미 적용된 기존 개발 DB**: 이 브랜치를 얹으면 44·47만 추가 적용되고
+  성공한다. 44가 46보다 나중에 적용되지만 두 migration이 건드리는 테이블이 겹치지 않아
+  충돌이 없다.
+- 두 경로 모두 `mysqldump --no-data` 스키마 diff가 0이다(41개 테이블). `downgrade`도 사슬
+  전체가 오류 없이 끝까지 되돌아간다.
+
+**데이터 백필은 없다.** migration 47은 상태 스냅샷만 갱신하므로 백필 대상 데이터가 없다.
+**downgrade는 파괴적이다** — migration 44의 downgrade는 `knowledge_ingestion_attempt`·
+`knowledge_chunk`·`knowledge_version`·`knowledge_document`를 `DROP TABLE`한다. 원문은
+private MinIO에 남지만, 적재·승인 이력(승인자·검증일·근거 청크)은 DB 롤백 시 복구되지
+않는다. 실 승인 데이터가 있는 환경에서 44를 downgrade하기 전에는 해당 테이블을 먼저
+백업해야 한다.
