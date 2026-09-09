@@ -712,6 +712,106 @@ cd ~/project && docker compose down -v     # 🔴 mysql_data 가 사라진다
 | ③ 마이그레이션 | `aerich downgrade` (`docs/migrations/`). **먼저 어디까지 올랐는지 확인한다** |
 | ④ 시딩 | `down -v` 로 비우고 ②부터 다시 — seed 는 `get_or_create` 라 다시 돌려도 안 쌓인다 |
 
+## 4-5. 컨테이너 MySQL → RDS MySQL (KEY-201)
+
+`mysql_data` 볼륨은 컨테이너 재시작은 견디지만 **EC2 인스턴스가 사라지면 함께
+사라진다.** 담긴 것이 진료 기록·안내문이고 명세가 「삭제하지 않는다」이므로,
+지금 구조에는 되살릴 수단이 하나도 없다. `docs/infra-scale.md` 가 목표를 RDS
+MySQL 로 적어 두었다.
+
+> **아직 안 옮겼다.** 이 절은 옮길 때 따라갈 절차이고, AWS 자원을 실제로 만든
+> 기록이 아니다. 만든 뒤에는 엔드포인트·검증 결과를 여기 이어 적는다.
+
+### ① 무엇을 만드나
+
+| | 값 | 왜 |
+|---|---|---|
+| 엔진 | MySQL 8.0 | 컨테이너와 같은 판이라 스키마를 그대로 옮긴다 |
+| 퍼블릭 액세스 | **끈다** | 켜면 환자 표가 인터넷에 붙는다 — 보안그룹 하나에 기대지 않는다 |
+| 보안그룹 | EC2 의 그룹에서 3306 만 | 4-2 절이 웹 둘만 여는 것과 같은 태도다 |
+| 문자셋 | `utf8mb4` · `utf8mb4_unicode_ci` | 컨테이너 `command` 가 주던 값이다 — RDS 는 **파라미터 그룹**으로 준다 |
+| 시간대 | `Asia/Seoul` | 컨테이너는 `TZ` 로 줬다. RDS 는 파라미터 그룹의 `time_zone` 이다 |
+
+**문자셋·시간대를 기본값으로 두면 안 된다.** 컨테이너 쪽은 `command` 와 `TZ`
+로 주고 있어서, 그 두 줄을 안 옮기면 RDS 에서 한글이 `????` 로 들어가거나
+날짜 경계가 UTC 로 밀린다. 같은 스키마인데 값이 달라지는 자리다.
+
+### ② 옮긴다
+
+앱을 세우고 옮긴다 — 도는 중에 뜨면 그 사이 쓰인 것이 사라진다.
+
+```bash
+# EC2 에서. 비밀번호는 이 줄에만 적고 셸 기록에 안 남긴다 (2절).
+docker compose -f infra/docker/docker-compose.prod.yml stop fastapi ai-worker
+
+docker compose -f infra/docker/docker-compose.prod.yml exec -T mysql \
+  sh -c 'exec mysqldump --single-transaction --routines --triggers \
+    -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' > /tmp/care-on.sql
+
+# 받는 쪽. 호스트에 mysql 클라이언트가 없으면 컨테이너를 빌린다.
+docker run --rm -i mysql:8.0 \
+  mysql -h <RDS 엔드포인트> -u <사용자> -p<비밀번호> <DB 이름> < /tmp/care-on.sql
+
+shred -u /tmp/care-on.sql   # 덤프에는 환자 표가 통째로 들어 있다
+```
+
+`--single-transaction` 이 있어야 InnoDB 를 잠그지 않고 한 시점으로 뜬다.
+
+### ③ 바꿔 붙인다 — **두 곳이다**
+
+```bash
+# ⓐ 서버 .env 의 DB_HOST 를 RDS 엔드포인트로
+# ⓑ 컨테이너 MySQL 을 끈다 — 오버레이를 얹는다
+docker compose \
+  -f infra/docker/docker-compose.prod.yml \
+  -f infra/docker/docker-compose.rds.yml \
+  up -d
+```
+
+**ⓑ 를 빼먹으면 아무도 안 쓰는 MySQL 이 계속 돌면서 옮기기 전의 진료 기록을
+들고 있다.** 백업 대상도 아니고 지우는 절차도 없는 자리라, 환자 데이터 사본이
+소리 없이 남는다. 오버레이가 그 서비스를 `profiles` 뒤로 감추고 앱의 기다림도
+`redis` 만 남긴다.
+
+옮긴 것을 확인한 뒤 볼륨을 지운다 — **확인 전에 지우지 않는다.**
+
+```bash
+docker compose -f infra/docker/docker-compose.prod.yml down mysql
+docker volume rm docker_mysql_data
+```
+
+### ④ 마이그레이션은 그대로 돈다
+
+3-2 절의 `aerich upgrade` 는 `DB_HOST` 를 볼 뿐이라 대상만 바뀐다. 배포
+스크립트를 고칠 것이 없다. 다만 `--no-deps` 가 붙어 있어 mysql 컨테이너를
+안 띄운다는 점이 오히려 여기서 맞는다.
+
+### ⑤ 되돌리기
+
+`DB_HOST` 를 `mysql` 로 되돌리고 오버레이를 뺀다. **둘을 함께 되돌린다** —
+한쪽만 되돌리면 앱이 없는 곳을 찾는다. 되돌린 뒤의 데이터는 볼륨을 지우기
+전까지의 것이라, ③ 의 볼륨 삭제는 되돌릴 일이 없다고 판단한 뒤에 한다.
+
+### ⑥ 아직 팀이 안 정한 것 — 백업 방식
+
+`docs/infra-scale.md` §7 의 미결 4번이다. 정하는 자리는 팀이고, 여기서는
+고르는 데 필요한 것만 적는다.
+
+| | RDS 자동 백업 | EBS 스냅샷 |
+|---|---|---|
+| 되살리는 단위 | **특정 시점**(초 단위) | 스냅샷 찍은 시점 |
+| 되살리는 대상 | 새 DB 인스턴스 | 볼륨 → 인스턴스 |
+| 앱이 할 일 | `DB_HOST` 교체 | 인스턴스 교체 |
+| 켜는 법 | 인스턴스 설정 하나 | 별도 일정 |
+| 컨테이너 MySQL 에도 되나 | 아니오 | 예 |
+
+**RDS 로 옮기는 것 자체가 이 선택을 좁힌다** — 옮기고 나면 EBS 스냅샷은
+DB 를 안 담는다. 그래서 「RDS 로 간다」와 「EBS 스냅샷으로 백업한다」는 같이
+설 수 없다. 옮기기로 정한 이상 자동 백업이 딸려 오는 쪽이 자연스럽다.
+
+인수조건이 **복원 1회 실검증**을 요구한다 — 실제로 되살려 보고 그 결과를
+이 절에 이어 적는다. 「켜 두었다」는 검증이 아니다.
+
 ## 5. Smoke test
 
 배포한 뒤 **기계가 세 자리를 찔러 본다** (KEY-184).
@@ -828,6 +928,9 @@ curl -fsS https://<도메인>/api/v1/health | jq .
 - **CI 배포** — 지금은 사람이 로컬에서 스크립트를 돌린다
 - **EC2 인스턴스·도메인·Docker Hub 계정** — 실제로 확보돼 있는지 저장소만으로는
   알 수 없다
+- **RDS 로의 이전** — 절차와 오버레이는 4-5 절에 있고 compose 가 그대로 도는
+  것까지 확인했지만, **인스턴스를 만들고 옮기고 복원해 본 것은 아직 없다**
+  (KEY-201). 그 셋은 AWS 계정을 쥔 사람이 한다
 
 ## 7. 프런트는 이미지에 구워서 나간다
 
