@@ -1235,8 +1235,11 @@ function stateTakesFocus(tone) {
       }
       if (!field) return "";
 
-      /* 처방 세트 대표 약이 OCR에 없으면 처방일수 셀을 표시하지 않는다. */
-      if (spec.type === "DURATION_DAYS" && !anySetDrugInOcr) return "";
+      /* 처방 세트 대표 약이 OCR에 없으면 처방일수 셀을 숨긴다.
+         단, DURATION_DAYS에 미확정 값이 있으면 그대로 둔다 —
+         값이 있으면 generate 게이트를 막으므로 확정할 경로가 필요하다(KEY-274). */
+      var durationNeedsConfirm = field && field.value && !field.is_confirmed;
+      if (spec.type === "DURATION_DAYS" && !anySetDrugInOcr && !durationNeedsConfirm) return "";
 
       /* 약속처방은 값 줄이 아니라 **고르는 칸**이다.
          비잔 감지 여부와 무관하게 항상 드롭다운을 표시한다.
@@ -1374,6 +1377,21 @@ function stateTakesFocus(tone) {
       active && active.getAttribute && active.getAttribute("data-input") !== null
         ? Number(active.getAttribute("data-input"))
         : null;
+
+    /* 수동 입력칸(data-manual-drug-name / data-manual-drug-days)도 포커스 복원
+       대상이다 — [data-input] 만 보던 기존 로직에서 빠졌던 자리(KEY-274).
+       2.5 초 자동저장 타이머가 redraw()를 부를 때 이 칸이 활성이면 글자를
+       칠 때마다 커서가 빠지게 된다. re-render 후 같은 인덱스의 칸으로 돌아간다. */
+    var manualAttr = null;
+    var manualIdx = null;
+    if (typingIn === null && active && active.getAttribute) {
+      var mName = active.getAttribute("data-manual-drug-name");
+      var mDays = active.getAttribute("data-manual-drug-days");
+      if (mName !== null) { manualAttr = "data-manual-drug-name"; manualIdx = mName; }
+      else if (mDays !== null) { manualAttr = "data-manual-drug-days"; manualIdx = mDays; }
+    }
+
+    var isManualTyping = manualAttr !== null;
     /* 🚩 **커서는 글 치는 칸에만 있다.**
      *
      * `<select>` 에는 `selectionStart` 가 없어 `undefined` 가 나오는데, 배열로
@@ -1383,8 +1401,10 @@ function stateTakesFocus(tone) {
      * 그 예외가 `renderFields` → `redraw` → `onTyped` 를 통째로 중단시켜,
      * **고른 값을 서버로 보내는 줄이 아예 안 돌았다** — 진단을 골라도 화면에만
      * 남고 탭을 옮기면 사라졌다. 고르는 칸이 늘면서 드러난 자리다. */
-    var canCaret = !!active && typeof active.selectionStart === "number";
-    var caret = typingIn === null || !canCaret ? null : [active.selectionStart, active.selectionEnd];
+    var canCaret = !!active && active.type !== "number" && typeof active.selectionStart === "number";
+    var caret = (typingIn === null && !isManualTyping) || !canCaret
+      ? null
+      : [active.selectionStart, active.selectionEnd];
 
     fieldsBox.innerHTML = groupsHtml();
 
@@ -1393,6 +1413,20 @@ function stateTakesFocus(tone) {
        거기 쓰려던 숫자가 먼저 연 칸에 들어가기 때문이다. */
     var wanted = focusOn !== null ? focusOn : typingIn;
     focusOn = null;
+
+    /* 수동 입력칸이 활성이었으면 같은 칸으로 돌아간다.
+       focusOn(「고치기」로 연 칸)이 있으면 그쪽이 먼저다. */
+    if (wanted === null && isManualTyping) {
+      var manualBox = fieldsBox.querySelector("[" + manualAttr + '="' + manualIdx + '"]');
+      if (manualBox) {
+        manualBox.focus();
+        if (caret && typeof manualBox.setSelectionRange === "function") {
+          manualBox.setSelectionRange(caret[0], caret[1]);
+        }
+      }
+      return;
+    }
+
     if (wanted === null) return;
     var box = fieldsBox.querySelector('[data-input="' + wanted + '"]');
     if (!box) return;
@@ -1528,7 +1562,7 @@ function stateTakesFocus(tone) {
       rows.forEach(function (f) {
         if (f.field_type === "MEDICATION_NAME")
           baseExtraRows.push(Object.assign({}, f, { field_type: "MEDICATION_NAME_1" }));
-        if (f.field_type === "DURATION_DAYS")
+        if (f.field_type === "DURATION_DAYS" && !(f.value && !f.is_confirmed))
           baseExtraRows.push(Object.assign({}, f, { field_type: "DURATION_DAYS_1" }));
       });
     }
