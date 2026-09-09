@@ -249,6 +249,11 @@ ssh -i ~/.ssh/<키>.pem ubuntu@<IP> "cd ~/project && \
   done"
 ```
 
+**`\"` 와 `\$` 를 지운 채로 옮겨 적지 않는다.** 라벨 이름은 Go 템플릿에서
+글자열이라 따옴표가 있어야 하고(없으면 `function "org" not defined`), 그 따옴표는
+바깥 `"` 안에서 escape 돼야 원격까지 간다. `$s` 도 마찬가지로 **원격에서** 풀려야
+할 값이다. 아래 검사가 이 명령을 실제로 돌려 본다.
+
 ```text
 fastapi    7c7ab7dc5cc27f4ec7185ab2265cc9b070bfcbdd (develop)
 ai-worker  7c7ab7dc5cc27f4ec7185ab2265cc9b070bfcbdd (develop)

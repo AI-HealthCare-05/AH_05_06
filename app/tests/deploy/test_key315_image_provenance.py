@@ -14,6 +14,11 @@ KEY-201 리뷰에서 실제로 막혔다. 9/4 배포가 develop 에서 나온 �
 """
 
 import re
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
 
 from app.tests.deploy.conftest import read
 
@@ -22,6 +27,13 @@ DEPLOY = "scripts/deployment.sh"
 #: 붙어야 하는 표준 이름(OCI). 도구들이 이미 이 이름을 읽는다.
 REVISION = "org.opencontainers.image.revision"
 REF_NAME = "org.opencontainers.image.ref.name"
+
+
+def _section(heading: str) -> str:
+    """런북에서 그 절만 떼어 온다 — 다음 같은 깊이의 제목까지."""
+    runbook = read("docs/deploy-runbook.md")
+    at = runbook.index(heading)
+    return runbook[at : runbook.index("\n## ", at + 5)]
 
 
 def _build_commands(script: str) -> list[str]:
@@ -48,12 +60,51 @@ class TestEveryImageSaysWhereItCameFrom:
         """라벨 값이 **git 에서 온 것**이어야 한다.
 
         고정 문자열을 박아 두면 라벨은 있는데 늘 같은 값을 말한다 — 없는 것보다
-        나쁘다. 실제로 `git rev-parse` 로 채우는지 본다.
+        나쁘다.
+
+        🚩 처음엔 `git rev-parse HEAD` 라는 **글자가 파일 어딘가에 있는지**만
+        봤다. 그러면 SHA 를 로그용으로만 계산하고 라벨 값은 하드코딩하는 회귀가
+        그대로 통과한다 (2heej 님 리뷰 ④). 이제 **라벨이 그 변수를 참조하는지**
+        와 **그 변수가 git 에서 채워지는지**를 이어서 본다.
         """
         script = read(DEPLOY)
 
-        assert "git rev-parse HEAD" in script, "커밋을 git 에 안 묻는다 — 라벨이 고정값일 수 있다"
-        assert "git rev-parse --abbrev-ref HEAD" in script, "브랜치를 git 에 안 묻는다"
+        for label, what in ((REVISION, "커밋"), (REF_NAME, "브랜치")):
+            for command in _build_commands(script):
+                found = re.search(rf"{re.escape(label)}=\$\{{(\w+)\}}", command)
+                assert found, f"{what} 라벨이 변수를 안 쓴다 — 고정값일 수 있다: {command[:90]}"
+
+                name = found.group(1)
+                assigned = re.search(rf"^{name}=\$\((.+?)\)$", script, re.M)
+                assert assigned, f"{name} 이 어디서 채워지는지 없다"
+                assert "git " in assigned.group(1), f"{what} 를 git 에 안 묻는다 — {name}={assigned.group(1)[:60]}"
+
+    def test_the_branch_label_survives_a_detached_head(self) -> None:
+        """`rev-parse --abbrev-ref` 는 detached 에서 문자열 `HEAD` 를 **성공적으로**
+        돌려준다 — `|| echo` 가 안 타서 라벨이 조용히 무의미해진다
+        (2heej 님 리뷰 ③). `symbolic-ref` 는 그때 실패해서 갈 길을 준다.
+        """
+        script = read(DEPLOY)
+
+        assert "rev-parse --abbrev-ref HEAD" not in script, (
+            "detached 에서 브랜치 이름이 문자열 `HEAD` 가 된다 — symbolic-ref 를 쓴다"
+        )
+        assert "symbolic-ref" in script, "브랜치를 detached 에서도 옳게 읽지 않는다"
+
+    def test_dirty_looks_only_at_what_lands_in_the_image(self) -> None:
+        """저장소 전체를 보면 **빌드에 안 들어가는 잡파일** 하나에도 `-dirty` 가
+        붙어, 재현 가능한 빌드인데 겁을 준다 (2heej 님 리뷰 ②).
+
+        세 Dockerfile 의 `COPY` 가 가리키는 자리만 본다.
+        """
+        script = read(DEPLOY)
+
+        found = re.search(r"^BUILD_CONTEXT_PATHS=\((.+?)\)$", script, re.M)
+        assert found, "빌드에 담기는 자리를 안 적었다 — 저장소 전체를 dirty 로 본다"
+
+        paths = set(found.group(1).split())
+        assert {"app", "ai_worker", "frontend"} <= paths, f"이미지에 담기는 자리가 빠졌다 — {sorted(paths)}"
+        assert 'git status --porcelain -- "${BUILD_CONTEXT_PATHS[@]}"' in script, "dirty 판정이 그 자리를 안 쓴다"
 
     def test_a_dirty_tree_is_marked_and_announced(self) -> None:
         """커밋 안 된 변경으로 구우면 그 SHA 는 거짓말이 된다.
@@ -87,3 +138,74 @@ class TestTheRunbookSaysHowToReadIt:
         runbook = read("docs/deploy-runbook.md")
 
         assert "-dirty" in runbook, "런북이 `-dirty` 를 어떻게 읽을지 안 적었다"
+
+    def test_the_documented_command_actually_runs(self, tmp_path: Path) -> None:
+        """**적어 둔 명령을 돌려 본다** — 읽어서는 인용 부호를 못 잰다.
+
+        이 명령은 셸 두 겹을 지난다: 로컬이 `"` 를 풀고, 원격이 다시 푼다. 그
+        사이에서 Go 템플릿의 따옴표가 살아남아야 한다. 눈으로는 안 보인다 —
+        실제로 이 검사를 쓰기 전에 **고친다고 손댔다가 오히려 깨뜨렸다**
+        (역따옴표를 큰따옴표 안에 두어 로컬 셸이 명령으로 실행했다).
+
+        그래서 `ssh` 를 흉내내 **마지막 인자(원격이 받는 문자열)를 그대로 셸에
+        넘긴다.** 라벨은 진짜 이미지에서 읽는다.
+        """
+        docker = shutil.which("docker")
+        if docker is None:
+            pytest.skip("docker 가 없다 — 라벨을 읽을 이미지를 못 만든다")
+
+        section = _section("### 도는 것이 어느 커밋인가")
+        found = re.search(r"```bash\n(ssh -i.*?)\n```", section, re.S)
+        assert found, "런북에 그 명령이 없다 — 검사가 헛돈다"
+
+        command = found.group(1).replace("~/.ssh/<키>.pem", "/dev/null").replace("ubuntu@<IP>", "user@host")
+
+        (tmp_path / "Dockerfile").write_text("FROM alpine:3.20\n", encoding="utf-8")
+        built = subprocess.run(
+            [
+                docker,
+                "build",
+                "-q",
+                "--label",
+                f"{REVISION}=cafe1234",
+                "--label",
+                f"{REF_NAME}=develop",
+                "-t",
+                "key315-probe",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if built.returncode != 0:
+            pytest.skip(f"이 판에서 이미지를 못 굽는다:\n{built.stderr[-300:]}")
+
+        names = ["fastapi", "ai-worker", "nginx"]
+        try:
+            for name in names:
+                subprocess.run([docker, "rm", "-f", name], capture_output=True)
+                subprocess.run(
+                    [docker, "run", "-d", "--rm", "--name", name, "key315-probe", "sleep", "60"],
+                    capture_output=True,
+                    check=True,
+                )
+
+            #: `ssh` 대신 **마지막 인자를 그대로 실행**한다. `cd ~/project` 는
+            #: 서버에만 있는 자리라 여기서는 걷는다 — 재려는 것은 인용이다.
+            harness = 'ssh () { printf "%s" "${@: -1}" > cmd.sh; sh cmd.sh; }\n'
+            done = subprocess.run(
+                ["bash", "-c", harness + command.replace("cd ~/project && \\\n", "")],
+                capture_output=True,
+                text=True,
+                cwd=tmp_path,
+            )
+        finally:
+            for name in names:
+                subprocess.run([docker, "rm", "-f", name], capture_output=True)
+            subprocess.run([docker, "rmi", "-f", "key315-probe"], capture_output=True)
+
+        for name in names:
+            assert f"{name}" in done.stdout, f"{name} 줄이 없다 — 명령이 안 돌았다\n{done.stdout}{done.stderr}"
+        assert done.stdout.count("cafe1234 (develop)") == len(names), (
+            f"라벨을 못 읽는다 — 인용이 두 겹 셸을 못 지났다\nstdout:\n{done.stdout}\nstderr:\n{done.stderr}"
+        )

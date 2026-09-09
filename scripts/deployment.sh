@@ -28,16 +28,30 @@ source ./envs/.prod.env
 # 그래서 이미지가 스스로 답하게 한다. 표준 이름(OCI)을 쓴다 — 도구들이 이미
 # 이 이름을 읽는다.
 SOURCE_REVISION=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-SOURCE_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# **`rev-parse --abbrev-ref` 를 쓰면 안 된다.** detached HEAD(태그 체크아웃·CI)
+# 에서 그것은 문자열 `HEAD` 를 **성공적으로** 돌려주므로 `|| echo` 가 안 탄다 —
+# 라벨이 조용히 무의미해진다 (2heej 님 리뷰 ③). `symbolic-ref` 는 그때 실패해서
+# 갈 길을 준다.
+SOURCE_REF=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "detached")
+
+#: **이미지에 실제로 담기는 자리만** 본다 — 세 Dockerfile 의 `COPY` 가 가리키는
+#: 곳이다(`app/Dockerfile` · `ai_worker/Dockerfile` · `infra/nginx/Dockerfile`).
+#:
+#: 저장소 전체를 보면 `.dockerignore` 로 빌드에서 빠지는 잡파일 하나에도
+#: `-dirty` 가 붙어, 재현 가능한 빌드인데 「어느 커밋으로도 다시 만들 수 없다」고
+#: 겁을 준다 (2heej 님 리뷰 ②). 여기 없는 자리는 이미지를 안 바꾼다.
+BUILD_CONTEXT_PATHS=(pyproject.toml uv.lock app ai_worker frontend)
 
 # **커밋 안 된 변경으로 구우면 그 SHA 는 거짓말이 된다.** 라벨은 「이 커밋이다」
 # 라고 말하는데 실제로 담긴 것은 그 커밋 + 손댄 것이라, 나중에 그 SHA 를
 # 받아 봐도 같은 판이 안 나온다. 표시를 붙이고 한 번 알린다.
-if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+if [[ -n "$(git status --porcelain -- "${BUILD_CONTEXT_PATHS[@]}" 2>/dev/null)" ]]; then
   SOURCE_REVISION="${SOURCE_REVISION}-dirty"
-  echo "${COLOR_RED}⚠ 커밋 안 된 변경이 있는 채로 빌드한다 — 이미지 라벨에 -dirty 로 남는다.${COLOR_NC}"
+  echo "${COLOR_RED}⚠ 이미지에 담기는 자리에 커밋 안 된 변경이 있다 — 라벨에 -dirty 로 남는다.${COLOR_NC}"
   echo "${COLOR_RED}  이 이미지는 어느 커밋으로도 다시 만들 수 없다.${COLOR_NC}"
+  git status --short -- "${BUILD_CONTEXT_PATHS[@]}" | head -10
   echo ""
 fi
 
