@@ -908,7 +908,8 @@ async def main():
     print(rows, os.environ['DB_HOST'])
     print(await Tortoise.get_connection('default').execute_query_dict(
         'SELECT COUNT(*) AS visits FROM visit'))
-await asyncio.run(main())
+    await Tortoise.close_connections()
+asyncio.run(main())
 "
 ```
 
@@ -1029,23 +1030,33 @@ DB 를 안 담는다. 그래서 「RDS 로 간다」와 「EBS 스냅샷으로 �
 2. 정한 **롤백 기간**이 지났다 (기간은 팀이 정한다 — 적어도 한 번의 정상 진료일)
 3. 그 기간 동안 RDS 로 도는 앱에서 5 절 smoke test 가 통과했다
 
+**순서가 중요하다 — 뜨고, 뜬 것을 확인하고, 그 다음에 지운다.**
+
 ```bash
 cd ~/project
+
+# ⓐ 한 벌 뜬다
+docker run --rm -v mysql_data:/from -v "$PWD":/to alpine \
+  tar czf /to/mysql_data-$(date +%Y%m%d).tar.gz -C /from .
+
+# ⓑ 뜬 것을 **확인한다** — 크기와 안에 든 것을 본다
+ls -lh mysql_data-$(date +%Y%m%d).tar.gz
+tar tzf mysql_data-$(date +%Y%m%d).tar.gz | head        # 데이터 파일이 보여야 한다
+tar tzf mysql_data-$(date +%Y%m%d).tar.gz | grep -c ibdata1   # 1 이어야 한다
+
+# ⓒ 확인이 끝난 **뒤에만** 지운다
 docker volume rm mysql_data
 ```
+
+**ⓑ 가 실패하면 ⓒ 를 하지 않는다.** `tar` 가 조용히 빈 묶음을 만들 수 있다
+(볼륨 이름을 틀리면 빈 디렉터리를 묶는다). 그 상태로 지우면 백업이 있다고
+믿으면서 실제로는 아무것도 없다 — 이 절이 막으려는 바로 그 자리다.
 
 볼륨 이름에 접두어가 없는 것은 compose 파일이 **이름을 못 박아** 두어서다
 (`docker-compose.prod.yml` 의 `volumes.mysql_data.name: mysql_data`). 프로젝트
 이름이 앞에 안 붙으므로 `docker_mysql_data` 같은 이름은 없다 — 그렇게 부르면
 `no such volume` 으로 실패하고, 절차를 따라간 사람은 **옮기기 전 진료 기록을
 지웠다고 믿고 넘어간다.**
-
-지우기 전에 한 벌 떠 두면 더 낫다.
-
-```bash
-docker run --rm -v mysql_data:/from -v "$PWD":/to alpine \
-  tar czf /to/mysql_data-$(date +%Y%m%d).tar.gz -C /from .
-```
 
 ### ⑧ 전환·롤백을 실제로 밟아 본 결과 (2026-09-09)
 

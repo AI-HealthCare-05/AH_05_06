@@ -12,6 +12,8 @@
 얹었을 때 실제로 어떤 판이 서는가**다 — 파일에 뭐라고 적혀 있는가가 아니라.
 """
 
+import ast
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -338,3 +340,39 @@ class TestRollingBackIsActuallyPossible:
 
         rollback = section.index("### ⑤")
         assert "역이전" in section[rollback:cleanup], "되돌리기가 RDS 에 쌓인 것을 어떻게 가져올지 안 적었다"
+
+    def test_the_backup_comes_before_the_removal(self) -> None:
+        """**뜨고, 확인하고, 지운다** — 순서가 뒤면 지운 뒤 백업한다.
+
+        설명은 「삭제 전에 백업」인데 명령 배치가 거꾸로였다. 위에서부터 따라
+        실행하면 원본을 지운 뒤 빈 것을 묶는다 (한금준 님 리뷰 ②).
+        """
+        section = _section("## 4-5.")
+        commands = _commands(section[section.index("### ⑦") :])
+
+        assert "tar czf" in commands, "볼륨을 뜨는 명령이 없다"
+        assert "docker volume rm" in commands, "볼륨을 지우는 명령이 없다 — 검사가 헛돈다"
+        assert commands.index("tar czf") < commands.index("docker volume rm"), (
+            "지운 뒤에 백업한다 — 뜰 원본이 이미 없다"
+        )
+        assert "tar tzf" in commands, "뜬 것을 확인하지 않는다 — 빈 묶음을 백업이라 믿는다"
+        assert commands.index("tar tzf") < commands.index("docker volume rm"), (
+            "확인이 삭제 뒤에 있다 — 확인할 때는 이미 지운 뒤다"
+        )
+
+    def test_the_connection_check_is_valid_python(self) -> None:
+        """런북에 적은 파이썬이 **실제로 실행될 모양인가.**
+
+        `await asyncio.run(main())` 를 적어 두었다 — 함수 밖의 `await` 라
+        실행하면 문법 오류다 (한금준 님 리뷰 ①). 이 PR 의 핵심 산출물이 명령인데
+        그 명령을 돌려 보지 않았다. 이제 검사가 대신 본다.
+
+        **`ast.parse` 로는 안 잡힌다** — 최상위 `await` 는 파서를 통과하고
+        컴파일에서 거부된다. 처음에 `ast.parse` 로 썼더니 돌연변이(`await` 를
+        되돌리는 것)가 안 물어서 알았다. `compile` 로 재야 한다.
+        """
+        section = _section("## 4-5.")
+        found = re.search(r'python -c "\n(.*?)\n"', section, re.S)
+
+        assert found, "연결 확인 명령이 없다 — 검사가 헛돈다"
+        compile(found.group(1), "<deploy-runbook.md §4-5 ③>", "exec")
