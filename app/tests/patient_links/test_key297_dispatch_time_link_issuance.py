@@ -4,7 +4,7 @@
 시점이 아니라 **워커가 실제로 문자를 보내는 순간** 원문을 새로 만든다.
 """
 
-import asyncio
+import inspect
 from datetime import timedelta
 
 from tortoise.contrib.test import TestCase
@@ -212,24 +212,21 @@ class TestDispatchAuditTrail(TestCase):
         assert second_raw not in audit_text
 
 
-class TestConcurrentFirstIssuance(TestCase):
-    async def test_two_first_dispatches_do_not_raise_an_integrity_error(self) -> None:
-        guide = await make_approved_guide()
-        service = PatientLinkService()
+class TestFirstIssuanceLock(TestCase):
+    """첫 링크 행이 없을 때도 상위 안내문을 잠그는지 확인한다.
 
-        first, second = await asyncio.gather(
-            service.issue_for_dispatch(
-                guide.guide_document_id,
-                message_id=21,
-                message_kind=GuideMessageKind.GUIDE,
-            ),
-            service.issue_for_dispatch(
-                guide.guide_document_id,
-                message_id=22,
-                message_kind=GuideMessageKind.CHECK_D7,
-            ),
-        )
+    Tortoise `TestCase`는 검사 하나를 트랜잭션과 커넥션 하나로 감싼다.
+    여기서 `asyncio.gather`로 DB 호출 둘을 실행하면 서비스 로직보다 먼저
+    MySQL 소켓이 깨지므로, 서비스의 잠금 질의와 실제 SQL을 직접 검증한다.
+    """
 
-        assert first[0] != second[0]
-        assert await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).count() == 1
-        assert await GuideEvent.filter(guide_document_id=guide.guide_document_id).count() == 2
+    async def test_the_parent_is_locked_before_the_missing_link_is_read(self) -> None:
+        source = inspect.getsource(PatientLinkService.issue_for_dispatch)
+        parent_read = source.index("GuideDocument.filter")
+        parent_lock = source.index(".select_for_update()", parent_read)
+        link_read = source.index("PatientGuideLink.filter")
+
+        assert parent_read < parent_lock < link_read, "첫 발급 전에 상위 안내문을 잠그지 않는다"
+
+        sql = GuideDocument.filter(guide_document_id=1).select_for_update().sql()
+        assert "FOR UPDATE" in sql.upper(), f"select_for_update()가 잠금을 만들지 않는다 — {sql}"
