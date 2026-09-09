@@ -5,25 +5,24 @@ KEY-277(RAG 생성 연결) 전에 검증 인터페이스와 감사 계약을 선
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 from app.services.knowledge_search import ContextAdmissionOutcome
 
 CHECKER_VERSION = "1.0.0"
 
-# chatbot.py의 _UNSAFE_OUTPUT과 동일한 계약을 공통화. chatbot.py는 여기서 가져간다.
-UNSAFE_OUTPUT_PATTERN = re.compile(
-    r"(?:진단(?:입니다|으로|받)|(?:약|복용|처방).{0,16}(?:중단|끊으|증량|감량|변경|바꾸|추가)|"
-    r"(?:중단|끊으|증량|감량).{0,16}(?:하세요|하십시오|해도))",
-    re.IGNORECASE,
-)
-
 _EXTRA_DRUG = re.compile(r"처방.{0,10}(?:외|이외|에\s*없)", re.IGNORECASE)
 _UNSUPPORTED_DIAGNOSIS = re.compile(r"진단(?:입니다|으로|받)", re.IGNORECASE)
 _DRUG_CHANGE_ADVICE = re.compile(
     r"(?:약|복용|처방).{0,16}(?:중단|끊으|증량|감량|변경|바꾸|추가)|"
     r"(?:중단|끊으|증량|감량).{0,16}(?:하세요|하십시오|해도)",
+    re.IGNORECASE,
+)
+
+# chatbot.py의 _UNSAFE_OUTPUT과 동일한 계약을 공통화. chatbot.py는 여기서 가져간다.
+UNSAFE_OUTPUT_PATTERN = re.compile(
+    f"(?:{_UNSUPPORTED_DIAGNOSIS.pattern}|{_DRUG_CHANGE_ADVICE.pattern})",
     re.IGNORECASE,
 )
 
@@ -44,7 +43,7 @@ class SafetyVerdictKind(StrEnum):
 class SafetyVerdict:
     verdict: SafetyVerdictKind
     reason_code: SafetyReasonCode | None = None
-    checker_version: str = field(default=CHECKER_VERSION)
+    checker_version: str = CHECKER_VERSION
 
 
 _PASS = SafetyVerdict(verdict=SafetyVerdictKind.PASS)
