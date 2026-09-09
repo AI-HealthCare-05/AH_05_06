@@ -797,6 +797,21 @@ MySQL 로 적어 두었다.
 로 주고 있어서, 그 두 줄을 안 옮기면 RDS 에서 한글이 `????` 로 들어가거나
 날짜 경계가 UTC 로 밀린다. 같은 스키마인데 값이 달라지는 자리다.
 
+**지금 서버에서 잰 값이다** (2026-09-09, `ai-health-05-06`). 새로 만든 RDS 를
+이것과 대 본다.
+
+```text
+판          8.0.46
+문자셋       utf8mb4          정렬  utf8mb4_unicode_ci
+time_zone   SYSTEM           ← 컨테이너의 TZ=Asia/Seoul 을 따라간 값이다
+크기         6.1 MB           환자 103 · 진료 107 · 안내문 6
+```
+
+🚩 **`time_zone` 이 `SYSTEM` 인 것이 함정이다.** RDS 에는 그 컨테이너가 없어
+`SYSTEM` 이 **UTC** 를 가리킨다. 파라미터 그룹에 `Asia/Seoul` 을 **명시**하지
+않으면 옮긴 뒤 날짜 경계가 아홉 시간 밀린다 — 접수대 목록과 D+7 이 하루씩
+어긋나는 모양으로 드러난다(같은 축의 전례 KEY-181).
+
 ### ② 옮긴다
 
 앱을 세우고 옮긴다 — 도는 중에 뜨면 그 사이 쓰인 것이 사라진다.
@@ -821,13 +836,17 @@ docker compose stop fastapi ai-worker
 
 # **root 로 뜬다.** 앱 계정은 제 스키마에만 권한이 있어 `--routines`
 # `--triggers` 가 환경에 따라 막힌다. 옮기는 일은 한 번뿐이라 여기서만 쓴다.
+#
+# **자격을 명령줄에 안 싣는다.** `-p` 로 주면 컨테이너 안 `ps` 에 그대로
+# 뜬다 — 2절이 셸 기록을 두고 정한 것과 같은 까닭이다. 아래 형태는 그 자리에
+# 안 남는다.
 docker compose exec -T mysql \
-  sh -c 'exec mysqldump --single-transaction --routines --triggers \
-    -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' > /tmp/care-on.sql
+  sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump --single-transaction \
+    --routines --triggers -uroot "$MYSQL_DATABASE"' > /tmp/care-on.sql
 
 # 받는 쪽. 호스트에 mysql 클라이언트가 없으면 컨테이너를 빌린다.
-docker run --rm -i mysql:8.0 \
-  mysql -h <RDS 엔드포인트> -u <사용자> -p<비밀번호> <DB 이름> < /tmp/care-on.sql
+docker run --rm -i -e MYSQL_PWD="<채워 넣는다>" mysql:8.0 \
+  mysql -h <RDS 엔드포인트> -u <사용자> <DB 이름> < /tmp/care-on.sql
 
 shred -u /tmp/care-on.sql   # 덤프에는 환자 표가 통째로 들어 있다
 ```
