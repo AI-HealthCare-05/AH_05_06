@@ -140,6 +140,12 @@ def _safe_error_code(exc: Exception) -> str:
     return exc.__class__.__name__.upper()[:100]
 
 
+def _is_retryable_ingestion_error(exc: Exception) -> bool:
+    """입력·계약 위반은 재시도하지 않고, 외부/인프라 실패만 재시도한다."""
+
+    return not isinstance(exc, ValueError)
+
+
 class KnowledgeIngestionService:
     def __init__(
         self,
@@ -179,11 +185,16 @@ class KnowledgeIngestionService:
                 raise RuntimeError("EMBEDDING_COUNT_MISMATCH")
             await self._repository.store_chunks(prepared, chunks, vectors, self._embedding_provider)
         except Exception as exc:
+            retryable = _is_retryable_ingestion_error(exc)
             await self._repository.mark_attempt(
                 prepared.attempt_id,
-                KnowledgeIngestionStatus.RETRYABLE_FAILURE,
+                (
+                    KnowledgeIngestionStatus.RETRYABLE_FAILURE
+                    if retryable
+                    else KnowledgeIngestionStatus.FAILED
+                ),
                 error_code=_safe_error_code(exc),
-                retryable=True,
+                retryable=retryable,
             )
             raise
         await self._repository.mark_attempt(prepared.attempt_id, KnowledgeIngestionStatus.READY)

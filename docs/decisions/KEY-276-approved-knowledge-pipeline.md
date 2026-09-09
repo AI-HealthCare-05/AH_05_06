@@ -109,7 +109,12 @@ uv run python scripts/ingest_approved_knowledge.py \
 
 기본 실행 결과는 `ready_for_review`다. `approve: true`인 A등급 자료라도
 `--approved-by`를 명시한 경우에만 현재 승인본으로 전환된다. 즉 자료 적재와 의료
-검수 승인을 같은 행위로 취급하지 않는다.
+검수 승인을 같은 행위로 취급하지 않는다. 같은 manifest를 다시 실행할 때 이미 승인되거나
+새 승인본으로 대체된 동일 출처·버전은 `already_reviewed_skipped`로 출력하고 건너뛴 뒤,
+아직 완료되지 않은 다음 항목을 계속 처리한다. 승인 완료 버전의 원문·청크는 재실행으로
+바뀌지 않는다. 입력·계약 위반(예: 다중 페이지 스캔 PDF, 승인본 재적재)은 `FAILED` 및
+`retryable=false`로 끝내고, 외부 저장소 등 일시적 인프라 실패만 `RETRYABLE_FAILURE`로
+분류한다.
 
 2026-09-08 로컬 실제 적재 확인에서는 두 공개 PDF와 식약처 API 3종 snapshot이
 private MinIO에 저장됐다. MySQL에는 문서 5건·버전 5건·검색 청크 2,030건·READY 실행

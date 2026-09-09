@@ -33,6 +33,7 @@ from app.services.knowledge_pipeline import (
 )
 from app.services.knowledge_search import EMBEDDING_DIMENSION, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION
 from app.services.knowledge_storage import InMemoryPrivateObjectStore, validate_private_object_key
+from scripts.ingest_approved_knowledge import _completed_reviewed_version, _source_identity_request
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -177,8 +178,9 @@ async def test_three_source_kinds_share_one_private_ingestion_contract(kind, pay
 
 @pytest.mark.asyncio
 async def test_multi_page_scanned_pdf_fails_closed_before_partial_ocr() -> None:
+    repository = FakeRepository()
     service = KnowledgeIngestionService(
-        repository=FakeRepository(),
+        repository=repository,
         object_store=InMemoryPrivateObjectStore(),
         embedding_provider=cast(EmbeddingProvider, FakeEmbeddingProvider()),
         ocr_extractor=FakeOcrExtractor(),
@@ -186,6 +188,11 @@ async def test_multi_page_scanned_pdf_fails_closed_before_partial_ocr() -> None:
 
     with pytest.raises(ValueError, match="OCR_MULTIPAGE_NOT_SUPPORTED"):
         await service.ingest(_request(KnowledgeSourceKind.SCANNED_DOCUMENT, _blank_pdf(2), "application/pdf"))
+
+    state = next(iter(repository.attempts.values()))
+    assert state.status is KnowledgeIngestionStatus.FAILED
+    assert state.error_code == "OCR_MULTIPAGE_NOT_SUPPORTED"
+    assert state.retryable is False
 
 
 @pytest.mark.asyncio
@@ -462,6 +469,34 @@ class TestDbApprovedKnowledgePipeline(TestCase):
 
         with pytest.raises(ValueError, match="APPROVED_VERSION_IMMUTABLE"):
             await self._ingest(request)
+
+        latest_attempt = await KnowledgeIngestionAttempt.filter(version_id=prepared.version_id).order_by(
+            "-created_at"
+        ).first()
+        assert latest_attempt is not None
+        assert latest_attempt.status is KnowledgeIngestionStatus.FAILED
+        assert latest_attempt.error_code == "APPROVED_VERSION_IMMUTABLE"
+        assert latest_attempt.retryable is False
+
+    async def test_manifest_rerun_can_skip_completed_version_before_loading_source(self) -> None:
+        source = {
+            "input_type": "text_pdf",
+            "title": "검증된 공개 가이드",
+            "source_org": "공식 학회",
+            "source_url": "https://example.test/approved-guide.pdf",
+            "version_label": "2026-09",
+        }
+        identity = _source_identity_request(source)
+        prepared = await self._ingest(
+            replace(identity, payload=_text_pdf("approved guidance"), mime_type="application/pdf")
+        )
+        await self._make_approvable(prepared.version_id)
+        await self._approve(prepared.version_id)
+
+        completed = await _completed_reviewed_version(source)
+
+        assert completed is not None
+        assert str(completed.version_id) == prepared.version_id
 
     async def test_new_approval_deprecates_previous_current_version(self) -> None:
         first_request = _request(

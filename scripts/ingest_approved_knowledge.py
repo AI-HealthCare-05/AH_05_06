@@ -27,14 +27,15 @@ from tortoise.timezone import now as db_now  # noqa: E402
 from ai_worker.adapters.knowledge_ocr import ClovaKnowledgeOcrExtractor  # noqa: E402
 from app.core import config  # noqa: E402
 from app.core.db.databases import TORTOISE_ORM  # noqa: E402
-from app.models.catalog import SourceGrade  # noqa: E402
-from app.models.knowledge import KnowledgeSourceKind, KnowledgeVersion  # noqa: E402
+from app.models.catalog import ApprovalStatus, SourceGrade  # noqa: E402
+from app.models.knowledge import KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion  # noqa: E402
 from app.services.knowledge_pipeline import (  # noqa: E402
     KnowledgeApprovalService,
     KnowledgeIngestionRequest,
     KnowledgeIngestionService,
     LocalSentenceTransformerEmbeddingProvider,
     TortoiseKnowledgeRepository,
+    stable_source_key,
 )
 from app.services.knowledge_sources import (  # noqa: E402
     MFDS_ENDPOINTS,
@@ -81,6 +82,42 @@ def _mfds_client_for(source: dict[str, Any]) -> MfdsSnapshotClient:
     dataset_key = os.environ.get(MFDS_DATASET_SERVICE_KEY_ENVS[dataset], "")
     fallback_key = os.environ.get(MFDS_SERVICE_KEY_ENV, "")
     return MfdsSnapshotClient(service_key=dataset_key or fallback_key)
+
+
+def _source_identity_request(source: dict[str, Any]) -> KnowledgeIngestionRequest:
+    """원문/API 호출 없이 manifest의 고정 출처 식별자를 계산한다."""
+
+    input_type = _required_text(source, "input_type")
+    if input_type == "mfds_api":
+        dataset = MfdsDataset(_required_text(source, "dataset"))
+        source_kind = KnowledgeSourceKind.STRUCTURED_API
+        source_url = MFDS_ENDPOINTS[dataset].source_url
+    else:
+        source_kind = KnowledgeSourceKind(input_type)
+        source_url = _required_text(source, "source_url")
+    return KnowledgeIngestionRequest(
+        title=_required_text(source, "title"),
+        source_org=_required_text(source, "source_org"),
+        source_url=source_url,
+        version_label=_required_text(source, "version_label"),
+        source_kind=source_kind,
+        payload=b"identity-only",
+        mime_type="application/octet-stream",
+    )
+
+
+async def _completed_reviewed_version(source: dict[str, Any]) -> KnowledgeVersion | None:
+    """같은 출처·버전이 이미 승인/대체 완료됐으면 해당 버전을 반환한다."""
+
+    identity = _source_identity_request(source)
+    document = await KnowledgeDocument.filter(source_key=stable_source_key(identity)).first()
+    if document is None:
+        return None
+    return (
+        await KnowledgeVersion.filter(document=document, version_label=identity.version_label)
+        .exclude(approval_status=ApprovalStatus.DRAFT)
+        .first()
+    )
 
 
 async def _build_request(
@@ -160,6 +197,21 @@ async def run(
             ocr_extractor=ClovaKnowledgeOcrExtractor() if config.clova_enabled else None,
         )
         for source in sources:
+            completed = await _completed_reviewed_version(source)
+            if completed is not None:
+                # 승인/대체 완료본은 불변으로 유지하고 다음 manifest 항목을 계속 처리한다.
+                print(
+                    json.dumps(
+                        {
+                            "title": _required_text(source, "title"),
+                            "document_id": str(completed.document_id),
+                            "version_id": str(completed.version_id),
+                            "status": "already_reviewed_skipped",
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                continue
             mfds_client = _mfds_client_for(source) if source.get("input_type") == "mfds_api" else None
             request = await _build_request(source, manifest_dir=manifest_path.parent, mfds_client=mfds_client)
             prepared = await ingestion.ingest(request)
