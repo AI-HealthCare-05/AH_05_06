@@ -189,6 +189,40 @@ test("**그 단추를 그리는 파일을 싣는 화면은 모두 창을 닫을 
   }
 });
 
+test("**「현황 보기」도 「닫기」와 같은 문을 지난다** — 안 지키면 링크를 잃는다", () => {
+  /* 링크를 발급하고 **복사도 열지도 않은 채** 「현황 보기」를 누르면, 경고 없이
+     `patientLinkUrl` 이 지워진다. 토큰은 화면에 안 뜨고 메모리에만 있어 **되찾을
+     길이 없다** — 폐기하고 다시 발급해야 한다. 같은 창의 「닫기」는 그때 한 번
+     묻는데, 새 단추가 그 문을 우회하고 있었다 (2heej, #274).
+
+     닫는 방법은 화면마다 다르므로 물음도 각자가 한다. 공용 쪽은 **막히면 안
+     간다**는 것만 지킨다. */
+  const view = codeOnly(read("js/guide-view.js"));
+  const at = view.indexOf('closest("[data-go-status]")');
+  const handler = view.slice(at, at + 500);
+
+  assert.match(handler, /cancelable:\s*true/, "닫는 쪽이 막을 수 없는 알림이다");
+  assert.match(handler, /if \(!document\.dispatchEvent\([\s\S]{0,40}\)\) return;/, "막혀도 그냥 간다");
+
+  const doctor = codeOnly(read("js/doctor.js"));
+  const listener = doctor.slice(doctor.indexOf('addEventListener("guide:modal-close"'), doctor.indexOf('addEventListener("guide:modal-close"') + 500);
+  assert.match(listener, /canDiscardPatientLink\(/, "의사 화면이 링크를 묻지 않고 잊는다");
+  assert.match(listener, /preventDefault\(\)/, "아니라고 해도 그냥 간다");
+});
+
+test("**단계 줄의 현황 칸이 두 화면에 다 있다** — 없으면 눌러도 아무 일이 없다", () => {
+  /* `goToStatusTab` 은 그 칸을 대신 누르는 것이 전부다. 칸이 없으면 조용히
+     아무 일도 안 일어난다 — 그래서 있는지를 여기서 잰다. */
+  const nav = codeOnly(read("js/step-nav.js"));
+  assert.match(nav, /data-tab="/, "단계 줄이 `data-tab` 을 안 붙인다");
+  assert.match(nav, /"status"/, "단계 목록에 현황이 없다");
+
+  for (const page of ["patients.html", "doctor.html"]) {
+    const scripts = [...markupOnly(read(page)).matchAll(/<script src="\/js\/([^"?]+)/g)].map((m) => m[1]);
+    assert.ok(scripts.includes("step-nav.js"), `${page} 가 단계 줄을 안 싣는다 — 현황 칸이 없다`);
+  }
+});
+
 test("**환자 링크 발급 창에도 다음 단계로 가는 길이 있다** — 발급이 마지막 일이 아니다", () => {
   /* 링크 발급은 「최종 확인」의 마지막 손인데 다음으로 가는 길이 없어, 창을
      닫고 탭을 다시 찾아야 했다 (KEY-302 ③). 승인 완료 창과 **같은 이름**을

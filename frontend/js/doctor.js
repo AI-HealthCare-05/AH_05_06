@@ -319,8 +319,24 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
 
   /* 「현황 보기」가 어디로 가는지는 그것을 그리는 `guide-view.js` 가 정한다
      (KEY-302). 이 화면이 할 일은 제 모달을 닫는 것뿐이다 — **발급한 링크를
-     잊는 것까지가 닫는 일이다.** */
-  document.addEventListener("guide:modal-close", closeModal);
+     잊는 것까지가 닫는 일이다.**
+
+     그래서 **「닫기」와 같은 문을 지난다.** 아직 복사도 열지도 않은 링크를 들고
+     있으면 한 번 묻고, 사람이 아니라고 하면 `preventDefault()` 로 막는다 —
+     그러면 창도 그대로고 현황으로도 안 간다. 이 문이 없었을 때는 「현황 보기」가
+     경고 없이 링크를 잊었고, 토큰은 메모리에만 있어 **되찾을 길이 없었다**
+     (2heej, #274). */
+  document.addEventListener("guide:modal-close", function (event) {
+    if (
+      !canDiscardPatientLink(patientLinkUrl, patientLinkHandled, function (message) {
+        return window.confirm(message);
+      })
+    ) {
+      event.preventDefault();
+      return;
+    }
+    closeModal();
+  });
 
   /* 권한 문제와 그 밖을 가른다.
 

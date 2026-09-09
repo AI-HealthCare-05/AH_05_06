@@ -1011,19 +1011,30 @@ function approvedModalHtml(view) {
  * 모달을 닫는 방법은 화면마다 다르다(의사 화면은 발급한 링크도 함께 잊는다).
  * 그래서 닫는 일은 각자에게 알리고, 여기서는 **어디로 가는지**만 정한다.
  *
+ * **알림은 물음이기도 하다.** 닫는 쪽이 「지금은 안 된다」고 할 수 있어야 한다 —
+ * 의사 화면의 링크 발급 창은 아직 복사도 열지도 않은 링크를 들고 있을 수 있고,
+ * 그것을 잊으면 **토큰을 되찾을 길이 없다**(`canDiscardPatientLink`). 그래서
+ * 되돌릴 수 있는 사건으로 보내고, 막히면 **가지 않는다** (2heej, #274).
+ *
  * 가는 방법은 탭 단추를 대신 누르는 것이다 — 탭을 바꾸는 규칙(스탭은 제자리,
  * 의사는 `data-href` 로 이동)이 화면마다 다르고, 여기서 흉내내면 표시(✓ · ● · ○)
  * 가 갈린다. */
 function goToStatusTab() {
+  /* 단계 줄은 두 화면 다 늘 그린다 — `step-nav.js` 가 다섯 칸을 세운다.
+     그것이 없으면 화면이 이미 깨진 것이라, 여기서 대신할 길을 짓지 않는다.
+     자리가 있는지는 `approve-modal.test.js` 가 두 화면 원문에 대고 잰다. */
   var tab = document.querySelector('.tab[data-tab="status"]');
   if (tab) tab.click();
-  return !!tab;
 }
 
 document.addEventListener("click", function (event) {
   var target = event.target;
   if (!target || !target.closest || !target.closest("[data-go-status]")) return;
 
-  document.dispatchEvent(new CustomEvent("guide:modal-close", { bubbles: true }));
+  /* `cancelable` 이라 닫는 쪽이 막을 수 있다. 막히면 창도 그대로, 자리도 그대로다 —
+     사람이 「닫지 않겠다」고 답한 것을 여기서 뒤집지 않는다. */
+  var asked = new CustomEvent("guide:modal-close", { bubbles: true, cancelable: true });
+  if (!document.dispatchEvent(asked)) return;
+
   goToStatusTab();
 });
