@@ -11,11 +11,11 @@ RUN_IN_TRANSACTION = True
 
 
 async def upgrade(db: BaseDBAsyncClient) -> str:
-    return ""
+    return "SELECT 1;"
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
-    return ""
+    return "SELECT 1;"
 
 
 MODELS_STATE = (
