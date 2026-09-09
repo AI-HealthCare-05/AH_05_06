@@ -161,39 +161,69 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 | **UV** | 최신 | 의존성 설치·가상환경 ([설치 가이드](https://github.com/astral-sh/uv)) |
 | **Docker / Docker Compose** | Compose v2 | 전체 서비스 실행 |
 | **Node** | 22 이상 | 프런트엔드 계약 검사 (`node --test`) |
-| `curl` · `openssl` | — | `bootstrap-local.sh` 가 사용 |
+| `curl` · `openssl` | — | `dev.sh start` (내부의 `bootstrap-local.sh`) 가 사용 |
 
 ---
 
-## 🛠️ 빠른 시작 — 한 명령
+## 🛠️ 빠른 시작
 
-깨끗하게 clone 한 상태에서:
+### 기본 경로 — OCR 없음
 
-```bash
-./scripts/bootstrap-local.sh
-```
-
-이 스크립트가 하는 일 (KEY-228):
-
-1. 사전 도구 검사 (`docker` · `curl` · `openssl` · `python3`, Docker 실행 여부)
-2. `.env` 가 없으면 `envs/example.local.env` 를 복사하고 **비밀값을 무작위 생성**
-   (`SECRET_KEY` · `DB_PASSWORD` · `MINIO_*` 등). 기존 `.env` 와 볼륨은 절대 건드리지 않는다
-3. 포트(3306·6379·8000) 충돌 검사
-4. `mysql`·`redis`·`fastapi` 기동 후 health 대기
-5. 컨테이너 안에서 `aerich upgrade`
-6. 합성 직원 seed (`scripts/seed.py --mode staff`) — 비밀번호는 `.bootstrap.local.env` 에만 저장
-7. `check_schema_drift.py` + `smoke.py` 로 health·auth·core 통과 확인
-
-OCR 흐름까지 재현하려면:
+올라오는 컨테이너: `redis` · `mysql` · `fastapi`
 
 ```bash
-./scripts/bootstrap-local.sh --with-ocr-worker   # minio·ai-worker 추가, MinIO 버킷 초기화
-./scripts/bootstrap-local.sh --rebuild           # 이미지 다시 빌드
+./dev.sh start
 ```
+
+내부적으로 `scripts/bootstrap-local.sh` 를 실행한다. `.env` 가 없으면 `envs/example.local.env`
+를 복사하고 비밀값을 무작위 생성한다. 기존 `.env` 와 볼륨은 건드리지 않는다.
+
+완료 메시지가 나오면 smoke 검사로 확인한다:
+
+```bash
+./dev.sh check          # health · auth · core (자격증명 자동 읽음)
+```
+
+브라우저로 화면을 보려면 nginx 를 추가로 띄운다:
+
+```bash
+docker compose --profile web up -d nginx
+```
+
+<http://localhost/> 에 접속하면 로그인 화면으로 도달한다.
 
 > 생성된 비밀값은 stdout 에 찍히지 않는다. 합성 계정 로그인 값은 `.bootstrap.local.env`
 > (Git 무시)에서 확인한다. 팀 공용 시연 계정 비밀번호는 Notion 자격증명 표에 있다
 > ([`docs/local-demo-accounts.md`](docs/local-demo-accounts.md)).
+
+### OCR 포함 경로
+
+올라오는 컨테이너: `redis` · `mysql` · `fastapi` · `ai-worker` · `minio`
+(nginx 는 별도 — 위 기본 경로와 동일하게 `--profile web` 로 추가)
+
+```bash
+./dev.sh start --with-ocr-worker
+./dev.sh start --with-ocr-worker --rebuild   # 이미지 재빌드 시
+```
+
+CLOVA 자격증명(`.env` 의 `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY`)이 없으면
+업로드 큐에 들어간 판독이 `OCR_NOT_CONFIGURED` 로 실패한다. 자격증명 없이 합성 판독만
+보려면 `.env` 에 `OCR_FIXTURE_FALLBACK=true` 를 추가한다.
+
+종단 검사 (walking skeleton E2E):
+
+```bash
+./dev.sh check-e2e
+```
+
+### 공통 명령
+
+```bash
+./dev.sh logs [service]          # 로그 스트림 (service 생략 시 전체)
+./dev.sh stop                    # 서비스 중단 (볼륨 유지)
+./dev.sh reset                   # 삭제 예정 항목 안내만 (데이터 유지)
+./dev.sh reset --confirm-reset   # 컨테이너·볼륨·.env·.bootstrap.local.env 삭제
+```
 
 ---
 
@@ -414,15 +444,20 @@ SEED_STAFF_PASSWORD=<로컬전용PW> uv run python scripts/seed.py --mode full  
 ### 초기화 / 재실행
 
 - **seed 재실행**은 안전하다 (멱등). 스키마만 밀렸으면 `aerich upgrade` 를 다시 돌린다.
-- **DB 를 완전히 비우려면** — MySQL 은 볼륨이 비어 있을 때만 새 비밀번호·초기 DB 를 잡으므로:
+- **DB 를 완전히 비우려면** — `dev.sh reset` 은 볼륨을 절대 지우지 않는다. 삭제가 필요할 때만 직접 판단해서 돌린다:
 
   ```bash
-  docker compose down -v      # 로컬 볼륨(mysql_data 등) 삭제 — DB 데이터가 사라진다
+  ./dev.sh reset --confirm-reset   # 컨테이너·볼륨(.env 포함) 삭제 — DB 데이터가 사라진다
+  ./dev.sh start                   # 재기동 (.env 와 비밀값 새로 생성)
+  ```
+
+  또는 compose 명령을 직접 쓸 때:
+
+  ```bash
+  docker compose down -v      # 로컬 볼륨(mysql_data 등) 삭제
   docker compose up -d --build
   uv run aerich upgrade
   ```
-
-  `bootstrap-local.sh` 는 볼륨을 절대 지우지 않는다. 위 명령은 직접 판단해서 돌린다.
 
 ---
 
@@ -431,7 +466,7 @@ SEED_STAFF_PASSWORD=<로컬전용PW> uv run python scripts/seed.py --mode full  
 실제 환자 문서는 한 건도 쓰지 않는다. 규격은
 [`docs/synthetic-data-spec.md`](docs/synthetic-data-spec.md) · [`docs/ocr-fixtures.md`](docs/ocr-fixtures.md).
 
-1. **OCR 흐름을 켠다** — `./scripts/bootstrap-local.sh --with-ocr-worker` 또는
+1. **OCR 흐름을 켠다** — `./dev.sh start --with-ocr-worker` 또는
    `docker compose --profile web --profile ocr up -d --build`.
 2. **합성 EMR 이미지를 만든다** (누가 돌려도 같은 바이트, 컨테이너 안에서 렌더 — KEY-190):
 
@@ -476,11 +511,12 @@ TZ=Asia/Seoul node --test frontend/tests/*.test.js
 **E2E / smoke**:
 
 ```bash
-# Walking Skeleton 종단 (로컬 테스트 DB 개발용 값)
+./dev.sh check          # smoke: health · auth · core (.bootstrap.local.env 에서 자격증명 자동 읽음)
+./dev.sh check-e2e      # walking skeleton 종단 검사 (OCR 포함 경로 필요)
+
+# 직접 실행이 필요할 때
 DB_PASSWORD=<로컬전용PW> ./scripts/run_key152_e2e.sh
 uv run pytest -q app/tests/e2e/                       # 전체 E2E
-
-# 살아 있는 서버 찔러 보기 (health·auth·core)
 SMOKE_LOGIN_ID=staff01 SMOKE_PASSWORD=<PW> uv run python scripts/smoke.py http://localhost:8000
 ```
 
@@ -577,7 +613,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | pytest 가 `test` DB 없음 / 비밀번호 불일치로 실패 | 기존 mysql 볼륨이 옛 비밀번호를 잡고 있다 — `docker compose down -v` 후 재기동 (데이터 삭제됨) |
 | `node --test` 가 `MODULE_NOT_FOUND` | 폴더 말고 `frontend/tests/*.test.js` 파일 글롭을 넘긴다 |
 | 현지 날짜 검사가 항상 통과 | `TZ=Asia/Seoul` 을 안 붙였다 |
-| `bootstrap-local.sh` 가 `ENV=local 에서만` 이라며 멈춤 | `.env` 의 `ENV` 가 `local` 이 아니다 |
+| `dev.sh start` 가 `ENV=local 에서만` 이라며 멈춤 | `.env` 의 `ENV` 가 `local` 이 아니다 |
 | 포트 `3306`·`6379`·`8000` 사용 중 | 해당 프로그램을 종료한다. `3306` 만 `.env` 의 `DB_EXPOSE_PORT` 로 바꿀 수 있고, `6379`·`8000` 은 `docker-compose.yml` 에 박혀 있어 그 파일을 고쳐야 한다 |
 
 로컬 헬스체크 정본 절차: [`docs/local-health-check.md`](docs/local-health-check.md).
