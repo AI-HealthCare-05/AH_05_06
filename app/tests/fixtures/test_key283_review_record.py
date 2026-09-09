@@ -28,6 +28,14 @@ def test_complete_record_allows_template():
     assert DrugCautionService.has_evidence(content())
 
 
+@pytest.mark.parametrize("key", ["source_name", "source_org", "source_url", "content_version"])
+@pytest.mark.parametrize("value", [None, "", "  ", 123])
+def test_missing_or_invalid_evidence_falls_back(key, value):
+    row = content()
+    setattr(row, key, value)
+    assert not DrugCautionService.has_evidence(row)
+
+
 @pytest.mark.parametrize("key", ["reviewer", "hospital", "reviewed_at", "body_sha256"])
 def test_missing_review_field_blocks(key):
     row = content()

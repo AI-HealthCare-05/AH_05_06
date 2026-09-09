@@ -49,6 +49,15 @@ class HasEvidenceFields(Protocol):
     @property
     def content_version(self) -> str: ...
 
+    @property
+    def source_grade(self) -> SourceGrade: ...
+
+    @property
+    def physician_review(self) -> dict[str, str] | None: ...
+
+    @property
+    def body(self) -> str: ...
+
 
 class DrugCautionService:
     @staticmethod
@@ -82,6 +91,7 @@ class DrugCautionService:
         단독 근거가 될 수 있다. 전문의 검토 기록이 명시된 템플릿은
         등급과 별개인 승인 상태·검토 주체 축으로 통과한다(KEY-180 §2,
         KEY-283). 기록의 필수 항목과 본문 일치는 `has_evidence()`에서 확인한다.
+        반환된 후보는 반드시 `has_evidence()`를 통과한 뒤 사용해야 한다.
         그 밖의 B·C 외부 근거는 계속 차단한다.
 
         **설정 화면의 「원본」도 이 문을 지난다.** 두 잣대가 갈리면 화면은
@@ -109,7 +119,7 @@ class DrugCautionService:
         (이희진 님 `#214` ⑦).
         """
         if not all(
-            value.strip()
+            isinstance(value, str) and bool(value.strip())
             for value in (content.source_name, content.source_org, content.source_url, content.content_version)
         ):
             return False

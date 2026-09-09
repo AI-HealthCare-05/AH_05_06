@@ -668,6 +668,8 @@ async def _sync_source_grade(content: DrugCautionContent, wanted: DrugCautionCon
         for key in ("body", "source_name", "source_org", "source_url", "content_version")
     ):
         return
+    if content.source_grade == wanted.source_grade and content.physician_review == wanted.physician_review:
+        return
     content.source_grade = wanted.source_grade
     content.physician_review = wanted.physician_review
     await content.save(update_fields=["source_grade", "physician_review", "updated_at"])
