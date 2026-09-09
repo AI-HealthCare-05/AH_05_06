@@ -39,6 +39,10 @@ def test_disabled_fixture_fallback_is_allowed_outside_local() -> None:
         SOLAPI_API_SECRET=SecretStr("synthetic-api-secret"),
         SOLAPI_SENDER_NUMBER=SecretStr("0200000000"),
         OCR_FIXTURE_FALLBACK=False,
+        # KEY-284 검증기가 SMS_PROVIDER=solapi면 이 목록을 요구한다 — 이
+        # 테스트는 OCR_FIXTURE_FALLBACK을 재는 것이라 OTP와 무관하지만
+        # Config 하나를 같이 쓰므로 채워야 부팅이 된다.
+        OTP_APPROVED_TEST_PHONES=SecretStr("01000000000"),
     )
 
     assert config.OCR_FIXTURE_FALLBACK is False

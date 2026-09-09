@@ -325,6 +325,36 @@ class PatientOtpChallenge(models.Model):
         indexes = (("expires_at",), ("locked_until",))
 
 
+class PatientOtpEventType(StrEnum):
+    """OTP 한 건에 무슨 일이 있었나 — KEY-284."""
+
+    ISSUED = "ISSUED"
+    DELIVERY_FAILED = "DELIVERY_FAILED"
+    VERIFIED = "VERIFIED"
+    VERIFICATION_FAILED = "VERIFICATION_FAILED"
+    LOCKED = "LOCKED"
+
+
+class PatientOtpEvent(models.Model):
+    """환자 OTP 발급·발송·검증·잠금 이력 — KEY-284, append-only.
+
+    `GuideMessageEvent`(KEY-250)와 같은 원칙이다. **OTP 원문·전체
+    전화번호·공급자 응답 전문을 절대 담지 않는다** — event_type과 어느
+    링크였는지만 남긴다. update·delete를 쓰는 코드가 없어야 한다.
+    """
+
+    patient_otp_event_id = fields.BigIntField(primary_key=True)
+    #: PatientOtpChallenge가 아니라 링크를 가리킨다 — 재발급으로 challenge
+    #: 행이 바뀌어도(digest 교체) 한 링크의 OTP 이력이 이어져야 한다.
+    patient_guide_link_id = fields.BigIntField()
+    event_type = fields.CharEnumField(enum_type=PatientOtpEventType)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "patient_otp_event"
+        indexes = (("patient_guide_link_id", "created_at"),)
+
+
 class GuideMessageKind(StrEnum):
     """문자 한 통이 무엇인가 — 와이어프레임 D1-6 「발송 · 예정」.
 

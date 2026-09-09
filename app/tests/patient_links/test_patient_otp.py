@@ -29,12 +29,12 @@ class RecordingDelivery:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
 
-    async def send(self, phone: str, code: str) -> None:
+    async def send(self, phone: str, code: str, hospital_name: str = "") -> None:
         self.sent.append((phone, code))
 
 
 class FailingDelivery:
-    async def send(self, phone: str, code: str) -> None:
+    async def send(self, phone: str, code: str, hospital_name: str = "") -> None:
         raise RuntimeError("synthetic delivery failure without sensitive values")
 
 
@@ -42,7 +42,7 @@ class PersistedStateDelivery:
     def __init__(self) -> None:
         self.persisted_before_send = False
 
-    async def send(self, phone: str, code: str) -> None:
+    async def send(self, phone: str, code: str, hospital_name: str = "") -> None:
         challenge = await PatientOtpChallenge.get()
         self.persisted_before_send = challenge.otp_digest != code and challenge.issued_at is not None
 
@@ -53,7 +53,7 @@ class ConsumeThenFailDelivery:
     def __init__(self) -> None:
         self.service: PatientOtpService | None = None
 
-    async def send(self, phone: str, code: str) -> None:
+    async def send(self, phone: str, code: str, hospital_name: str = "") -> None:
         service = self.service
         assert service is not None
         await service.verify(LINK_TOKEN, code)
@@ -66,7 +66,7 @@ class ReplaceThenFailDelivery:
     def __init__(self) -> None:
         self.replacement_digest = hashlib.sha256(b"synthetic concurrent OTP replacement").hexdigest()
 
-    async def send(self, phone: str, code: str) -> None:
+    async def send(self, phone: str, code: str, hospital_name: str = "") -> None:
         challenge = await PatientOtpChallenge.get()
         challenge.otp_digest = self.replacement_digest
         await challenge.save(update_fields=["otp_digest", "updated_at"])
@@ -309,6 +309,13 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         assert expired.json()["code"] == "OTP_EXPIRED"
 
     async def test_delivery_failure_rolls_back_the_challenge(self) -> None:
+        """발송 실패 뒤에도 행을 남겨 재발송 쿨다운이 그대로 걸린다.
+
+        예전엔 이 행을 지워서, 실패한 채로 issue()를 계속 부르면 매번
+        "행이 없다"로 보고 쿨다운 검사를 건너뛰었다 — 25번 연속 호출해도
+        전부 통과했다(iljun-sys 리뷰로 재현). 지금은 행이 남아서 두 번째
+        시도가 쿨다운(429)에 막힌다.
+        """
         await make_link()
         app.dependency_overrides[_otp_service] = lambda: PatientOtpService(FailingDelivery(), secret_key=SECRET)
 
@@ -317,7 +324,20 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         assert failed.status_code == 503
         assert failed.json()["code"] == "OTP_DELIVERY_UNAVAILABLE"
         assert OTP not in failed.text
-        assert await PatientOtpChallenge.all().count() == 0
+        # 행은 남아 있다 — 지우면 다음 issue()가 쿨다운을 건너뛴다.
+        assert await PatientOtpChallenge.all().count() == 1
+        # 틀린 코드는 여전히 거부된다(행이 남았다고 아무 코드나 통과하는
+        # 건 아니다). self.issue()가 내부적으로 secrets.randbelow를
+        # OTP로 고정하므로, 진짜로 틀린 값을 따로 쓴다.
+        wrong_code = "000000" if OTP != "000000" else "111111"
+        still_unusable = await self.verify(wrong_code)
+        assert still_unusable.status_code == 401
+
+        # 재발송 쿨다운이 실제로 걸린다 — 예전 버그라면 이 두 번째 시도도
+        # 그냥 통과했다.
+        retried = await self.issue()
+        assert retried.status_code == 429
+        assert await PatientOtpChallenge.all().count() == 1
 
     async def test_consumed_otp_stays_consumed_when_delivery_reports_failure(self) -> None:
         """실패 보상이 발송 중 완료된 인증을 되돌려 OTP 재사용을 열면 안 된다."""
@@ -403,3 +423,20 @@ class TestPatientOtpFailurePolicy(PatientOtpTestCase):
         unapproved = await self.issue()
         assert unapproved.status_code == 404
         assert unapproved.json()["code"] == "LINK_NOT_FOUND"
+
+
+def test_the_module_binds_the_real_stdlib_secrets_module() -> None:
+    """OTP·salt 생성이 실제로 암호학적 난수원을 쓰는지 이름이 아니라
+    정체성으로 확인한다.
+
+    iljun-sys 리뷰의 뮤테이션 테스트: 모듈 안에서 `secrets`라는 이름은
+    그대로 두고 내부만 씨앗 고정 random으로 바꿔치기하면, 형식(자리
+    수·앞자리 0)만 보는 기존 검사 36개가 전부 통과해 버린다 — OTP가
+    완전히 예측 가능해지는데도. 이름이 아니라 실제 stdlib secrets
+    모듈 객체와 같은지(identity)를 봐야 이 치환을 잡는다.
+    """
+    import secrets as real_secrets
+
+    import app.services.patient_otp as patient_otp_module
+
+    assert patient_otp_module.secrets is real_secrets
