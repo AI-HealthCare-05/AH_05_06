@@ -4,6 +4,7 @@ import asyncio
 from datetime import date, timedelta
 
 from httpx import ASGITransport, AsyncClient
+from tortoise import connections
 from tortoise.contrib.test import TruncationTestCase
 from tortoise.timezone import now
 
@@ -34,6 +35,22 @@ OLD_LINK_TOKEN = "synthetic-old-link-token"
 
 
 class MessageResendTestCase(TruncationTestCase):
+    async def _tearDownDB(self) -> None:  # noqa: N802 — tortoise가 정한 이름 그대로 override한다.
+        # tortoise.contrib.test.truncate_all_models()는 모델 등록 순서로
+        # 테이블을 지운다(자기 docstring이 "non-cascade foreign keys에서
+        # 실패할 수 있다"고 적어 둔 그대로) — patient가 visit보다 먼저
+        # 지워지려 들면 ON DELETE RESTRICT에 막힌다. 이 저장소에서
+        # TruncationTestCase를 쓰는 파일이 이 파일뿐이라(동시 요청
+        # 검사에 실제 커밋이 필요해서) 지금까지 안 드러났던 문제다.
+        # FK 검사를 잠깐 끄고 지운 뒤 되살린다 — 순서를 일일이 안
+        # 맞춰도 된다.
+        connection = connections.get("default")
+        await connection.execute_script("SET FOREIGN_KEY_CHECKS=0")
+        try:
+            await super()._tearDownDB()
+        finally:
+            await connection.execute_script("SET FOREIGN_KEY_CHECKS=1")
+
     def setUp(self) -> None:
         super().setUp()
         self.redis = FakeRedis()
