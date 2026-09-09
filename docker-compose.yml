@@ -184,6 +184,7 @@ services:
     environment:
       MC_HOST_bootstrap: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
       MINIO_BUCKET: ocr-fixtures
+      KNOWLEDGE_MINIO_BUCKET: approved-knowledge
     volumes:
       - ./scripts/minio_init.sh:/usr/local/bin/minio_init.sh:ro
     entrypoint: [ "/bin/sh", "/usr/local/bin/minio_init.sh", "bootstrap" ]
