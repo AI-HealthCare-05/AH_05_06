@@ -289,3 +289,52 @@ class TestTheProcedureIsWrittenDown:
         assert "## 4-5." in runbook, "런북에 RDS 절이 없다"
         assert "docker-compose.rds.yml" in runbook, "런북이 오버레이를 안 가리킨다"
         assert "--single-transaction" in runbook, "옮기는 명령이 InnoDB 를 잠근 채 뜬다"
+
+
+class TestRollingBackIsActuallyPossible:
+    """**되돌아갈 자리를 절차가 지켜 주는가** — 한금준 님 리뷰.
+
+    오버레이가 옳게 얹히는 것과, 옮긴 뒤 되돌아갈 수 있는 것은 다른 문제다.
+    여기서 재는 셋은 전부 「절차가 이렇게 적혀 있지 않으면 데이터를 잃는다」다.
+    """
+
+    def test_the_deploy_overwrites_the_server_env(self) -> None:
+        """`DB_HOST` 를 두 곳에 적으라는 말이 **기대는 사실**을 못 박는다.
+
+        배포가 `envs/.prod.env` 를 서버 `.env` 로 덮어쓴다. 이것이 바뀌면 런북의
+        「두 곳이다」가 더 이상 맞지 않는다 — 그때 이 검사가 운다.
+        """
+        deploy = read("scripts/deployment.sh")
+
+        assert "envs/.prod.env" in deploy, "배포가 원본 env 를 안 올린다 — 검사가 헛돈다"
+        assert "~/project/.env" in deploy, "배포가 서버 .env 를 안 덮어쓴다 — 런북의 「두 곳」이 근거를 잃는다"
+
+    def test_the_runbook_changes_db_host_in_both_places(self) -> None:
+        """한 곳만 고치면 다음 배포에서 되돌아가고 앱만 죽는다.
+
+        **바꾸라고 시키는 자리에서** 잰다. 절 전체에서 낱말만 세면 아래 설명글이
+        대신 통과시켜 준다 — 실제로 그렇게 썼다가 돌연변이가 안 물어서 알았다.
+        """
+        section = _section("## 4-5.")
+        commands = _commands(section[section.index("### ③") : section.index("### ④")])
+
+        assert "envs/.prod.env" in commands, "런북이 배포 원본을 안 고치게 한다 — 다음 배포에서 되돌아간다"
+        assert "--force-recreate" in commands, "환경변수를 고치고 컨테이너를 안 다시 세운다 — 도는 판은 그대로다"
+        assert "@@hostname" in commands, "붙었는지를 설정으로만 본다 — 실제 연결을 안 묻는다"
+
+    def test_the_runbook_keeps_the_volume_until_the_end(self) -> None:
+        """볼륨을 전환 단계에서 지우면 되돌아갈 자리가 없어진다.
+
+        볼륨 삭제는 **한 번만**, 그것도 백업 검증과 롤백 기간 뒤인 마지막 절에
+        있어야 한다.
+        """
+        section = _section("## 4-5.")
+        removals = [line for line in _commands(section).splitlines() if "docker volume rm" in line]
+
+        assert len(removals) == 1, f"볼륨 삭제가 여러 자리에 있다 — 어느 것이 맞는지 모른다: {removals}"
+
+        cleanup = section.index("### ⑦")
+        assert section.index(removals[0]) > cleanup, "볼륨 삭제가 전환 단계에 있다 — 되돌아갈 자리를 먼저 지운다"
+
+        rollback = section.index("### ⑤")
+        assert "역이전" in section[rollback:cleanup], "되돌리기가 RDS 에 쌓인 것을 어떻게 가져올지 안 적었다"
