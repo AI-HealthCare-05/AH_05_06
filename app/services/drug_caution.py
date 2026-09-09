@@ -14,8 +14,11 @@
 """
 
 import logging
+from datetime import date
+from hashlib import sha256
 from typing import TYPE_CHECKING, Protocol
 
+from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
 from app.models.catalog import ApprovalStatus, CautionSectionKey, DrugCautionContent, PrescriptionSet, SourceGrade
@@ -75,8 +78,11 @@ class DrugCautionService:
     def generation_ready() -> "QuerySet[DrugCautionContent]":
         """**생성이 쓸 수 있는 문구만 지나는 문.**
 
-        승인 도장(`approval_status`)만으로는 모자란다. 등급이 B·C 인 근거는
-        주의·응급의 단독 근거가 못 된다(KEY-180 §2).
+        승인 도장(`approval_status`)만으로는 모자란다. 외부 근거는 A 등급만
+        단독 근거가 될 수 있다. 전문의 검토 기록이 명시된 템플릿은
+        등급과 별개인 승인 상태·검토 주체 축으로 통과한다(KEY-180 §2,
+        KEY-283). 기록의 필수 항목과 본문 일치는 `has_evidence()`에서 확인한다.
+        그 밖의 B·C 외부 근거는 계속 차단한다.
 
         **설정 화면의 「원본」도 이 문을 지난다.** 두 잣대가 갈리면 화면은
         자문 문구를 「원본」이라 보여 주는데 환자에게는 기본 한 줄이 나간다 —
@@ -84,7 +90,8 @@ class DrugCautionService:
         """
         return DrugCautionContent.filter(
             approval_status=ApprovalStatus.APPROVED,
-            source_grade=SourceGrade.A,
+        ).filter(
+            Q(source_grade=SourceGrade.A) | Q(physician_review__isnull=False),
         )
 
     @staticmethod
@@ -101,7 +108,30 @@ class DrugCautionService:
         바뀔 때 서비스만 바뀌고 검사는 옛 규칙으로 계속 초록이다
         (이희진 님 `#214` ⑦).
         """
-        return all([content.source_name, content.source_org, content.source_url, content.content_version])
+        if not all(
+            value.strip()
+            for value in (content.source_name, content.source_org, content.source_url, content.content_version)
+        ):
+            return False
+        if getattr(content, "source_grade", None) == SourceGrade.A:
+            return True
+        review = getattr(content, "physician_review", None)
+        if not isinstance(review, dict):
+            return False
+        if any(
+            not isinstance(review.get(key), str) or not review[key].strip()
+            for key in ("reviewer", "hospital", "reviewed_at", "body_sha256")
+        ):
+            return False
+        try:
+            reviewed_at = date.fromisoformat(review["reviewed_at"])
+        except ValueError:
+            return False
+        return (
+            reviewed_at <= date.today()
+            and review["hospital"] == content.source_org
+            and review["body_sha256"] == sha256(getattr(content, "body", "").encode()).hexdigest()
+        )
 
     @staticmethod
     async def approved_content_of(

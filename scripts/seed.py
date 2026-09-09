@@ -80,6 +80,7 @@ from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
 from app.tests.fixtures.catalog import (  # noqa: E402
     DRUG_CAUTION_CONTENTS,
     PRESCRIPTION_SETS,
+    DrugCautionContentRow,
 )
 from app.tests.fixtures.ocr_rows import ReadStage, read_from_row  # noqa: E402
 from app.tests.fixtures.prescriptions import PrescriptionRowError, items_from_row  # noqa: E402
@@ -660,6 +661,18 @@ async def _settle_unapproved(content: DrugCautionContent, wanted: ApprovalStatus
     await content.save(update_fields=["approval_status", "updated_at"])
 
 
+async def _sync_source_grade(content: DrugCautionContent, wanted: DrugCautionContentRow) -> None:
+    """정본 본문·출처가 일치하는 행만 등급과 전문의 검토 기록을 정정한다."""
+    if any(
+        getattr(content, key) != getattr(wanted, key)
+        for key in ("body", "source_name", "source_org", "source_url", "content_version")
+    ):
+        return
+    content.source_grade = wanted.source_grade
+    content.physician_review = wanted.physician_review
+    await content.save(update_fields=["source_grade", "physician_review", "updated_at"])
+
+
 async def seed_catalog() -> None:
     """처방 세트 8종과 주의·응급 문구 마스터를 적재한다 — KEY-165.
 
@@ -714,12 +727,16 @@ async def seed_catalog() -> None:
 
         # (세트, 섹션, 버전) 단위로 중복 방지 — content_version 이 같으면 건너뛴다.
         # 다르면 아래에서 **옛 승인본을 내리고 새 판으로 갈아 끼운다.**
-        exists = await DrugCautionContent.filter(
+        existing = await DrugCautionContent.filter(
             prescription_set=ps,
             section_key=content_row.section_key,
             content_version=content_row.content_version,
-        ).exists()
-        if exists:
+        ).first()
+        if existing is not None:
+            # KEY-283은 본문 버전 변경이 아니라 잘못 붙은 근거 등급의 정정이다.
+            # 같은 버전을 무조건 건너뛰면 이미 심긴 전문의 자문 12칸은 영원히
+            # A로 남는다. 정본 픽스처가 명시한 등급만 동기화해 재시드로 바로잡는다.
+            await _sync_source_grade(existing, content_row)
             skipped_contents += 1
             continue
 
@@ -737,6 +754,7 @@ async def seed_catalog() -> None:
             verified_at=content_row.verified_at,
             content_version=content_row.content_version,
             source_grade=content_row.source_grade,
+            physician_review=content_row.physician_review,
             approval_status=ApprovalStatus.DRAFT,
             approved_key=None,
         )

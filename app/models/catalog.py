@@ -27,11 +27,14 @@ from app.models.visits import VisitCheckKey
 
 
 class SourceGrade(StrEnum):
-    """근거 자료 등급 — Notion '의학지식 출처 관리' DB 기준(KEY-180 §2).
+    """RAG·외부 문헌의 근거 등급(KEY-180 §2, KEY-283).
 
-    A 등급 자료만 caution/emergency 단독 근거로 사용할 수 있다.
+    이 축에서는 A 등급 자료만
+    caution/emergency 단독 근거로 사용할 수 있다.
     B 등급은 표현 다듬기 보조 자료로만 허용하고 단독 근거로 쓰지 않는다.
-    C 등급은 이번 범위에서 사용하지 않는다.
+    C 등급은 병원 설명 템플릿·임상 자문을 포함한다. C 자체는 단독 근거가
+    아니지만, 전문의가 문장 단위로 직접 검토한 템플릿은 등급과 별개인 승인
+    상태와 검토 주체 기록을 확인해 최종 안전 폴백으로 사용할 수 있다.
     """
 
     A = "A"
@@ -340,6 +343,7 @@ class DrugCautionContent(models.Model):
     verified_at = fields.DateField()
     content_version = fields.CharField(max_length=50)
     source_grade = fields.CharEnumField(enum_type=SourceGrade)
+    physician_review = fields.JSONField(null=True, description="전문의 승인 기록: 검토자·병원·검토일·본문 SHA256")
 
     approval_status = fields.CharEnumField(enum_type=ApprovalStatus, default=ApprovalStatus.DRAFT)
     # KEY-180 §3: 승인 상태일 때만 "{prescription_set_id}:{section_key}"를 채운다.

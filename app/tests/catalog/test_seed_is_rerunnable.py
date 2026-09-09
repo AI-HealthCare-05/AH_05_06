@@ -127,3 +127,19 @@ class SeedIsRerunnableTestCase(TestCase):
         assert len(stamped) == len(DRUG_CAUTION_CONTENTS), (
             f"승인 도장이 {len(stamped)}개 — 픽스처의 {len(DRUG_CAUTION_CONTENTS)}개와 다르다"
         )
+
+    async def test_reseeding_removes_the_wrong_a_label_from_physician_templates(self) -> None:
+        """같은 버전이 이미 DB에 있어도 KEY-283의 등급 정정은 반영된다."""
+        await seed_catalog()
+
+        physician_rows = await DrugCautionContent.filter(source_name__contains="전문의").all()
+        assert len(physician_rows) == 12
+        for row in physician_rows:
+            row.source_grade = SourceGrade.A
+            await row.save(update_fields=["source_grade", "updated_at"])
+
+        await seed_catalog()
+
+        corrected = await DrugCautionContent.filter(source_name__contains="전문의").all()
+        assert len(corrected) == 12
+        assert all(row.source_grade is SourceGrade.C for row in corrected)

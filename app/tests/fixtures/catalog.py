@@ -27,6 +27,7 @@ D-1(정상 생성)만 이 seed 를 그대로 쓴다.
 
 from dataclasses import dataclass, field
 from datetime import date
+from hashlib import sha256
 
 from app.models.catalog import ApprovalStatus, CautionSectionKey, SetDisease, SourceGrade
 
@@ -42,9 +43,8 @@ from app.models.catalog import ApprovalStatus, CautionSectionKey, SetDisease, So
 # 「박영 산부인과 전문의 복약지도 자문 내용」으로 적고 있고 그 40개가 전부 자문
 # 근거다. 새로 정한 것이 아니라 따른 것이다.
 #
-# 🚩 **등급은 이희진 님 확인이 필요하다.** `SourceGrade` 주석은 A 를 「허가정보·
-# 진료지침」으로 적었는데, 전문의 직접 자문이 A 에 해당한다는 근거가 저장소
-# 안에는 없다. A 가 아니면 `drug_caution.py` 가 조용히 걸러 폴백한다.
+# KEY-283에서 두 축을 분리했다. 이 자문은 출처 성격대로 C로 남기되,
+# `drug_caution.py`가 승인 상태와 전문의 검토 기록을 별도 안전축으로 확인한다.
 _ADVICE_SOURCE_NAME = "박영 산부인과 전문의 복약지도 — 자문 내용"
 _ADVICE_SOURCE_ORG = "박영 산부인과"
 _ADVICE_SOURCE_URL = "https://app.notion.com/p/3ba0c3b3380580068fa1f32666a8b68c"
@@ -77,13 +77,27 @@ class DrugCautionContentRow:
     prescription_set_name: str
     section_key: CautionSectionKey
     body: str
+    # KEY-283: 기본값을 두지 않는다. 등록자가 외부 근거 등급인지 전문의 승인
+    # 템플릿인지 반드시 판단해 명시해야 한다.
+    source_grade: SourceGrade
     source_name: str = _SOURCE_NAME
     source_org: str = _SOURCE_ORG
     source_url: str = ""
     verified_at: date = field(default=_VERIFIED_AT)
     content_version: str = _CONTENT_VERSION
-    source_grade: SourceGrade = SourceGrade.A
     approval_status: ApprovalStatus = ApprovalStatus.APPROVED
+
+    @property
+    def physician_review(self) -> dict[str, str] | None:
+        """KEY-265에서 승인된 정본의 검토 기록. 본문 변경 시 재검토가 필요하다."""
+        if self.source_grade is not SourceGrade.C or self.content_version != _APPROVED_VERSION:
+            return None
+        return {
+            "reviewer": "박영 산부인과 전문의",
+            "hospital": _ADVICE_SOURCE_ORG,
+            "reviewed_at": _APPROVED_AT.isoformat(),
+            "body_sha256": sha256(self.body.encode()).hexdigest(),
+        }
 
 
 # ── 처방 세트 4종 ────────────────────────────────────────────────────────────
@@ -168,6 +182,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.CAUTION,
         # 정본 A-2 — 정리본 2.4 의 ✅+🔶, 원장님 승인 2026-09-04
         body=_BIJAN_CAUTION,
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -178,6 +193,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="자궁내막증 · 비잔 (처음)",
         section_key=CautionSectionKey.EMERGENCY,
         body=_BIJAN_EMERGENCY,
+        source_grade=SourceGrade.A,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/dienogest-emergency",
     ),
     # ── 자궁내막증 · 비잔 (계속) ─────────────────────────────────────────────
@@ -186,6 +202,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.CAUTION,
         # 정본 B-2 — 문서가 「A-2 와 같다」로 못박았다
         body=_BIJAN_CAUTION,
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -196,6 +213,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="자궁내막증 · 비잔 (계속)",
         section_key=CautionSectionKey.EMERGENCY,
         body=_BIJAN_EMERGENCY,
+        source_grade=SourceGrade.A,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/dienogest-long-emergency",
     ),
     # ── PCOS · 야즈 (계속) ──────────────────────────────────────────────────
@@ -204,6 +222,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.CAUTION,
         # 정본 D-2 — 문서가 「C-2 와 같다」로 못박았다
         body=_YAZ_CAUTION,
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -214,6 +233,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="PCOS · 야즈 (계속)",
         section_key=CautionSectionKey.EMERGENCY,
         body=_YAZ_EMERGENCY,
+        source_grade=SourceGrade.A,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
     ),
     # ── PCOS · 야즈 (처음) ──────────────────────────────────────────────────
@@ -224,6 +244,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.CAUTION,
         # 정본 C-2 — 정리본 1.4 의 ✅+🔶, 원장님 승인 2026-09-04
         body=_YAZ_CAUTION,
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -234,6 +255,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="PCOS · 야즈 (처음)",
         section_key=CautionSectionKey.EMERGENCY,
         body=_YAZ_EMERGENCY,
+        source_grade=SourceGrade.A,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
     ),
     # ── 복약지도·생활지도 — 원장님 승인 정본 (KEY-265) ─────────────────
@@ -254,6 +276,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
             "처음 한 달 드신 뒤 내원하시면 부작용을 확인하고, 특별한 부작용이 없으면 이후에는 석 "
             "달분씩 처방해 드립니다."
         ),
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -270,6 +293,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
             "약을 드시고 3~4시간 안에 구토나 설사를 하셨다면 약효가 줄 수 있으니 다음 진료 때 "
             "말씀해 주세요."
         ),
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -287,6 +311,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
             "석 달마다 오실 때 생리통 정도와 생리양을 확인합니다. 보통 1~2년 드신 뒤 쉬어갈 "
             "시기를 함께 봅니다. 해마다 혈액검사로 호르몬 상태도 확인해요."
         ),
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -305,6 +330,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
             "오래 드시는 동안에도 해마다 혈액검사로 호르몬 상태를 확인합니다. 생리가 없는 기간이 "
             "길어지므로, 검사로 몸의 상태를 대신 확인하는 것입니다."
         ),
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -327,6 +353,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
             "드세요. 12시간이 넘게 지났거나 이틀 이상 잊으셨다면, 남은 판은 계속 드시되 7일간은 "
             "다른 피임 방법을 함께 사용하시고 병원에 문의해 주세요."
         ),
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -338,6 +365,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="PCOS · 야즈 (처음)",
         section_key=CautionSectionKey.LIFE,
         body=_YAZ_LIFE,
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -357,6 +385,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
             "지나야 약을 줄여도 원래대로 돌아가지 않습니다.\n\n"
             "해마다 혈액검사로 간 수치와 난소 기능을 확인합니다."
         ),
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
@@ -368,6 +397,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="PCOS · 야즈 (계속)",
         section_key=CautionSectionKey.LIFE,
         body=_YAZ_LIFE,
+        source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
