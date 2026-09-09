@@ -159,6 +159,28 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
         )
         assert staff_side.json()["preview"]["visit"] == patient_side.json()["visit"], "진료일이 갈렸다"
 
+    async def test_only_reading_carries_the_preview(self) -> None:
+        """**상태를 바꾸는 응답에는 안 싣는다.**
+
+        화면은 그 응답 바디를 안 쓴다 — `submit` · `approve` 뒤에 곧바로
+        `GET /guide` 를 다시 불러 그린다. 그런데도 붙여 두면 다섯 질의짜리
+        파생이 상태 전환 한 번에 **두 벌** 돈다 (이희진 님 `#272`).
+        """
+        _, staff, doctor, visit = await self.make_world("k294once", with_derivations=True)
+
+        async with self.client() as client:
+            staff_headers = await self.sign_in(staff)
+            doctor_headers = await self.sign_in(doctor)
+            generated = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=staff_headers)
+            read = await client.get(f"{BASE}/{visit.visit_id}/guide", headers=staff_headers)
+            submitted = await client.post(f"{BASE}/{visit.visit_id}/guide/submit", headers=staff_headers)
+            approved = await client.post(f"{BASE}/{visit.visit_id}/guide/approve", headers=doctor_headers)
+
+        assert read.json()["preview"] is not None, "읽을 때조차 안 준다 — 미리보기가 못 그린다"
+        for name, response in (("generate", generated), ("submit", submitted), ("approve", approved)):
+            assert response.status_code in (200, 201), response.text
+            assert response.json()["preview"] is None, f"{name} 응답이 안 쓰는 파생을 싣는다"
+
     async def test_the_preview_adds_no_new_personal_data(self) -> None:
         """새로 나가는 것은 처방·검사 파생과 진료일뿐이다 — 인수조건 4."""
         _, staff, _, visit = await self.make_world("k294safe", with_derivations=True)

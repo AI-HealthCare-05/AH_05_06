@@ -59,7 +59,14 @@ async def _preview_of(guide: GuideDocument) -> GuidePreview:
     return GuidePreview(visit=data.visit_date.strftime("%Y.%m.%d"), guide=guide_detail_of(data))
 
 
-async def _to_response(guide: GuideDocument) -> GuideResponse:
+async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> GuideResponse:
+    """**미리보기는 부르는 쪽이 필요할 때만 짓는다.**
+
+    `_preview_of` 는 다섯 질의를 돈다. 상태를 바꾸는 종점
+    (`generate`·`submit`·`approve`·`unapprove`·`return`)의 응답은 화면이
+    **쓰지 않는다** — 전부 곧바로 `GET /guide` 를 다시 불러 그리므로, 붙여
+    두면 상태 전환 한 번에 그 다섯 질의가 두 벌 돈다 (이희진 님 `#272`).
+    """
     visit = guide.visit
     patient = visit.patient
     today = datetime.now(DISPLAY_TIMEZONE).date()
@@ -79,7 +86,7 @@ async def _to_response(guide: GuideDocument) -> GuideResponse:
         scheduled_at=guide.scheduled_at,
         returned_reason=guide.returned_reason,
         sections=[_section(s) for s in sorted(guide.sections, key=_section_order)],
-        preview=await _preview_of(guide),
+        preview=await _preview_of(guide) if with_preview else None,
     )
 
 
@@ -137,7 +144,7 @@ async def read_guide(
     actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
-    return await _to_response(await service.get(actor, visit_id))
+    return await _to_response(await service.get(actor, visit_id), with_preview=True)
 
 
 @guide_router.patch("/{visit_id}/guide/sections/{key}", response_model=SectionResponse)

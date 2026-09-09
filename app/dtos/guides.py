@@ -84,6 +84,9 @@ class GuideResponse(StrictModel):
     scheduled_at: datetime | None = None
     returned_reason: str | None = None
     #: 환자 화면 미리보기가 쓰는 파생. 처방·목표가 하나도 없으면 `preview.guide` 가 `null` 이다.
+    #:
+    #: **`GET /guide` 에만 실린다.** 상태를 바꾸는 종점의 응답은 화면이 안 쓰고
+    #: 곧바로 다시 읽으므로, 거기 붙이면 같은 다섯 질의가 두 벌 돈다 (KEY-294).
     preview: GuidePreview | None = None
 
 
