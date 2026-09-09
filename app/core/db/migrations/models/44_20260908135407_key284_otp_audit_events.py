@@ -11,15 +11,11 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
     `event_type` VARCHAR(19) NOT NULL COMMENT 'ISSUED: ISSUED\nDELIVERY_FAILED: DELIVERY_FAILED\nVERIFIED: VERIFIED\nVERIFICATION_FAILED: VERIFICATION_FAILED\nLOCKED: LOCKED',
     `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     KEY `idx_patient_otp_patient_e4d050` (`patient_guide_link_id`, `created_at`)
-) CHARACTER SET utf8mb4 COMMENT='환자 OTP 발급·발송·검증·잠금 이력 — KEY-284, append-only.';
-        ALTER TABLE `guide_message` MODIFY COLUMN `provider_message_id` VARCHAR(64) COMMENT '발송기(솔라피 등)가 접수하면서 돌려준 메시지 ID — KEY-249.';
-        ALTER TABLE `guide_message` MODIFY COLUMN `provider_message_id` VARCHAR(64) COMMENT '발송기(솔라피 등)가 접수하면서 돌려준 메시지 ID — KEY-249.';"""
+) CHARACTER SET utf8mb4 COMMENT='환자 OTP 발급·발송·검증·잠금 이력 — KEY-284, append-only.';"""
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
     return """
-        ALTER TABLE `guide_message` MODIFY COLUMN `provider_message_id` VARCHAR(64) COMMENT '발송기(Aligo 등)가 접수하면서 돌려준 메시지 ID — KEY-249.';
-        ALTER TABLE `guide_message` MODIFY COLUMN `provider_message_id` VARCHAR(64) COMMENT '발송기(Aligo 등)가 접수하면서 돌려준 메시지 ID — KEY-249.';
         DROP TABLE IF EXISTS `patient_otp_event`;"""
 
 

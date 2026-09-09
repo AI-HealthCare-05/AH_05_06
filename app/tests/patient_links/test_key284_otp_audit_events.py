@@ -159,3 +159,70 @@ class TestAuditStorageFailurePolicy(TestCase):
                 assert exc.code == "OTP_INVALID"
             else:
                 raise AssertionError("잘못된 OTP가 허용되었습니다")
+
+
+class TestEarlyExitPathsAreAlsoAudited(TestCase):
+    """verify()의 조기 종료 4곳(미발급·이미 잠김·이미 사용·만료)도 감사에
+    남는다 — iljun-sys 리뷰로 발견된 공백. 예전엔 이 네 경로가 함수 끝의
+    _record_otp_event() 호출까지 못 가고 그 전에 raise돼서 한 줄도
+    안 남았다.
+    """
+
+    async def test_verifying_a_never_issued_link_is_logged(self) -> None:
+        link = await make_link()
+        service = PatientOtpService(RecordingDelivery(), secret_key=SECRET)
+
+        try:
+            await service.verify(LINK_TOKEN, "000000")
+        except AuthError as exc:
+            assert exc.code == "OTP_NOT_ISSUED"
+        else:
+            raise AssertionError("발급된 적 없는데 검증이 통과했다")
+
+        assert await _events(link.patient_guide_link_id) == [PatientOtpEventType.VERIFICATION_FAILED]
+
+    async def test_verifying_an_already_used_otp_is_logged(self) -> None:
+        link = await make_link()
+        service = PatientOtpService(RecordingDelivery(), secret_key=SECRET)
+        with patch("app.services.patient_otp.secrets.randbelow", return_value=int(OTP)):
+            await service.issue(LINK_TOKEN)
+        await service.verify(LINK_TOKEN, OTP)  # 정상 소비
+
+        try:
+            await service.verify(LINK_TOKEN, OTP)  # 재사용 시도
+        except AuthError as exc:
+            assert exc.code == "OTP_ALREADY_USED"
+        else:
+            raise AssertionError("이미 쓴 OTP가 다시 통과했다")
+
+        events = await _events(link.patient_guide_link_id)
+        assert events == [
+            PatientOtpEventType.ISSUED,
+            PatientOtpEventType.VERIFIED,
+            PatientOtpEventType.VERIFICATION_FAILED,
+        ]
+
+    async def test_verifying_while_already_locked_is_logged_as_locked_again(self) -> None:
+        link = await make_link()
+        service = PatientOtpService(RecordingDelivery(), secret_key=SECRET)
+        with patch("app.services.patient_otp.secrets.randbelow", return_value=int(OTP)):
+            await service.issue(LINK_TOKEN)
+        wrong = "000000" if OTP != "000000" else "111111"
+        for _ in range(OTP_MAX_FAILURES):
+            try:
+                await service.verify(LINK_TOKEN, wrong)
+            except AuthError:
+                pass
+
+        # 이미 잠긴 상태에서 한 번 더 시도 — 이것도 LOCKED로 남아야 한다.
+        try:
+            await service.verify(LINK_TOKEN, wrong)
+        except AuthError as exc:
+            assert exc.code == "OTP_LOCKED"
+        else:
+            raise AssertionError("잠긴 상태인데 검증이 통과했다")
+
+        events = await _events(link.patient_guide_link_id)
+        assert events[-1] is PatientOtpEventType.LOCKED
+        # 처음 잠긴 순간 1건 + 잠긴 채로 또 시도한 것 1건, 최소 두 번은 LOCKED다.
+        assert events.count(PatientOtpEventType.LOCKED) >= 2

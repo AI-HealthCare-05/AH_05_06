@@ -574,12 +574,19 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
    SOLAPI_API_KEY / SOLAPI_API_SECRET / SOLAPI_SENDER_NUMBER  실제 값
    OTP_APPROVED_TEST_PHONES=010XXXXXXXX   (승인된 팀 내 번호만, 쉼표 구분)
    ```
+   **이 단계에서는 `MOCK_OTP_CODE`를 빼고 띄운다.** `_otp_service()`는
+   `MOCK_OTP_CODE`가 있으면(그리고 4-3-1 좁은문이 열려 있으면) 그걸
+   최우선으로 보고 고정 OTP로 응답해 버린다 — 4-3-1 좁은문이 여전히
+   켜진 채로 이 단계를 밟으면 솔라피 경로에 도달하지도 않는다
+   (iljun-sys 리뷰로 재현됨).
+
    Pilot(ENV=prod)에서는 `_otp_service()`가 `OTP_SOLAPI_PROD_ENABLED` 환경변수
    **와** `--otp-confirm-solapi-prod` 실행 플래그를 **둘 다** 요구한다(4-3-1의
    `PILOT_ALLOW_MOCK_OTP`와 같은 이중 게이트 원칙). 이 둘이 갖춰지면 실제
    솔라피로 나가되, `OTP_APPROVED_TEST_PHONES`에 없는 번호는 발송 자체가
    막힌다 — 이 단계에서 실수로 임의의 번호에 문자가 나가지 않게 하는
-   안전장치다.
+   안전장치다. **이 목록을 비워 두지 않는다** — 비면 승인 여부와 무관하게
+   전부 막혀서(deny-all), 공급자 장애와 구분 안 되는 503만 받는다.
 3. **수신한 OTP로 검증·환자 세션·보호 API 접근까지 E2E 확인.**
 4. **장애·재발송·만료·잠금 회귀를 다시 돌려서 실제 경로에서도 그대로
    지켜지는지 확인.**
@@ -591,16 +598,19 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
 
 ### Rollback — 실제 경로에서 문제가 생기면
 
-`SMS_PROVIDER=solapi`로 전환한 뒤 실발송에 문제가 생기면, 아래 어느 쪽이든
-즉시 되돌릴 수 있다 — 코드 롤백이 필요 없다.
+`SMS_PROVIDER=solapi`로 전환한 뒤 실발송에 문제가 생기면, 아래로 즉시
+되돌릴 수 있다 — 코드 롤백이 필요 없다.
 
-- **가장 빠른 롤백**: `SMS_PROVIDER=mock`으로 되돌리고 재기동한다.
-  `_otp_service()`는 `MOCK_OTP_CODE`가 있으면 그걸 최우선으로 보므로, 고정
-  OTP 좁은문(4-3-1)이 아직 켜져 있다면 그쪽으로 바로 돌아간다.
-- **좁은문까지 이미 껐다면**: `OTP_SOLAPI_PROD_ENABLED`를 지우거나
-  `--otp-confirm-solapi-prod` 플래그를 빼고 재기동한다 — `UnavailableOtpDelivery`로
-  떨어져 발급 자체가 503으로 안전하게 막힌다(발송이 성공한 것처럼 보이는
-  상태로 남지 않는다).
+- **표준 롤백**: `OTP_SOLAPI_PROD_ENABLED`를 지우거나
+  `--otp-confirm-solapi-prod` 플래그를 빼고 재기동한다.
+  `UnavailableOtpDelivery`로 떨어져 발급 자체가 503으로 안전하게
+  막힌다(발송이 성공한 것처럼 보이는 상태로 남지 않는다). `SMS_PROVIDER`는
+  건드릴 필요가 없다.
+- **`SMS_PROVIDER=mock`으로는 롤백하지 않는다.** KEY-248의 검증기가
+  `SMS_PROVIDER=mock`과 `ENV=prod`의 조합 자체를 거부한다 — 그 조합으로
+  재기동하면 `Config` 생성 시점에 `ValidationError`가 나서 **앱이 아예
+  뜨지 않는다**(iljun-sys 리뷰로 재현됨). 사고 중에 이 줄을 따르면
+  롤백이 아니라 서비스 전체가 내려간다.
 - 어느 쪽으로 되돌리든 `PatientOtpChallenge`의 기존 계약(3분 만료·5회
   잠금·일회 사용)은 그대로다 — 이 표를 건드리는 롤백이 아니다.
 

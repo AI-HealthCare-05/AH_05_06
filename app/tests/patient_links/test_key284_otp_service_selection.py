@@ -87,7 +87,11 @@ class TestProdRequiresItsOwnNarrowGate(unittest.TestCase):
             patch.object(core_module.config, "MOCK_OTP_CODE", ""),
             patch.object(core_module.config, "ENV", Env.PROD),
             patch.object(core_module.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
-            patch.dict(os.environ, {}, clear=False),
+            # {} + clear=False는 no-op이다 — 실제 셸에 OTP_SOLAPI_PROD_ENABLED가
+            # 이미 export돼 있으면(런북 4-3-2가 그렇게 시키는 값이다) 이 검사가
+            # 조용히 실패한다(iljun-sys 리뷰로 재현). 빈 문자열로 확실히 덮는다
+            # — is_flag_env_value_true("")는 False다.
+            patch.dict(os.environ, {"OTP_SOLAPI_PROD_ENABLED": ""}),
             patch.object(sys, "argv", argv()),
         ):
             service = _otp_service()
@@ -111,7 +115,7 @@ class TestProdRequiresItsOwnNarrowGate(unittest.TestCase):
             patch.object(core_module.config, "MOCK_OTP_CODE", ""),
             patch.object(core_module.config, "ENV", Env.PROD),
             patch.object(core_module.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
-            patch.dict(os.environ, {}, clear=False),
+            patch.dict(os.environ, {"OTP_SOLAPI_PROD_ENABLED": ""}),
             patch.object(sys, "argv", argv("--otp-confirm-solapi-prod")),
         ):
             service = _otp_service()

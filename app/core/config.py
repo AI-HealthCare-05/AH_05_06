@@ -179,9 +179,10 @@ class Config(BaseSettings):
     SOLAPI_SENDER_NUMBER: SecretStr = SecretStr("")
     SOLAPI_BASE_URL: str = "https://api.solapi.com"
     SOLAPI_TIMEOUT_SECONDS: float = 10.0
-    # Pilot/staging에서 실제 솔라피로 OTP를 보낼 때, 이 목록에 있는 번호로만
-    # 보낸다 — KEY-284. 운영(prod)에서는 안 본다(그때는 실제 환자에게 나가야
-    # 하니까). 쉼표로 구분한 전화번호 원문.
+    # 실제 솔라피로 OTP를 보낼 때, 이 목록에 있는 번호로만 보낸다 — KEY-284.
+    # 운영 활성화 승인(KEY-6)이 생기기 전까지는 항상 이 목록을 본다 —
+    # Pilot도 ENV=prod로 뜨므로 환경으로 가르지 않는다. 쉼표로 구분한
+    # 전화번호 원문. 비워 두면 전부 막힌다("빈 목록=전체 허용"이 아니다).
     OTP_APPROVED_TEST_PHONES: SecretStr = SecretStr("")
 
     @model_validator(mode="after")
@@ -200,6 +201,31 @@ class Config(BaseSettings):
                 f"MOCK_OTP_CODE는 prod 환경에서 사용할 수 없습니다 (ENV={self.ENV.value}). "
                 "운영에서 고정 OTP를 허용하면 누구나 인증을 우회한다 (KEY-219). "
                 f"Pilot이면 {PILOT_ALLOW_MOCK_OTP_ENV}=1과 {PILOT_ALLOW_MOCK_OTP_FLAG}가 둘 다 필요하다 (KEY-264)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _otp_solapi_prod_gate_needs_an_approved_list(self) -> "Config":
+        # KEY-284. 이 좁은문은 SMS_PROVIDER 필드가 아니라 os.environ·sys.argv를
+        # 직접 보므로(otp_solapi_prod_gate_open), MOCK_OTP_CODE 검증기와 같은
+        # 모양으로 여기 따로 둔다 — 하나가 다른 걸 대신 못 본다.
+        if self.SMS_PROVIDER is not SmsProvider.SOLAPI or self.ENV is not Env.PROD:
+            return self
+        if not otp_solapi_prod_gate_open():
+            return self
+        default_logger.warning(
+            "OTP_SOLAPI_PROD_ENABLED 좁은문 열림 (ENV=prod, %s + %s) — 실제 환자에게 문자가 나갈 수 있다 (KEY-284)",
+            OTP_SOLAPI_PROD_ENABLED_ENV,
+            OTP_SOLAPI_PROD_ENABLED_FLAG,
+        )
+        if not self.OTP_APPROVED_TEST_PHONES.get_secret_value().strip():
+            # 빈 목록은 "전체 허용"이 아니라 deny-all이다 — 이 조합으로 부팅되면
+            # 모든 요청이 공급자 장애와 구분 안 되는 503만 받는다(iljun-sys
+            # 리뷰로 실제 재현). 조용히 막히는 대신 부팅에서 이름을 댄다.
+            raise ValueError(
+                "OTP_SOLAPI_PROD_ENABLED 좁은문이 열렸는데 OTP_APPROVED_TEST_PHONES가 "
+                "비어 있습니다. 이 조합은 모든 번호를 막아 공급자 장애처럼 보이는 "
+                "503만 냅니다 — 승인된 번호를 채우거나 좁은문을 닫으세요 (KEY-284)."
             )
         return self
 
