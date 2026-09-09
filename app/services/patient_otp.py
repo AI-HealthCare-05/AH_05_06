@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -14,24 +15,47 @@ from tortoise.transactions import in_transaction
 from app.core import config
 from app.core.auth_errors import AuthError as ApiError
 from app.core.time import as_utc
-from app.models.visits import GuideStatus, PatientGuideLink, PatientOtpChallenge
+from app.models.staffs import Hospital
+from app.models.visits import GuideStatus, PatientGuideLink, PatientOtpChallenge, PatientOtpEvent, PatientOtpEventType
+from app.services.message_templates import SYSTEM_BODY
 from app.services.patient_links import digest_link_token
+from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError
 
 OTP_TTL = timedelta(minutes=3)
 OTP_LOCK_DURATION = timedelta(minutes=10)
 OTP_RESEND_COOLDOWN = timedelta(seconds=60)
 OTP_MAX_FAILURES = 5
 OTP_LENGTH = 6
+LOGGER = logging.getLogger("app.patient_otp")
+
+
+async def _record_otp_event(
+    patient_guide_link_id: int,
+    event_type: PatientOtpEventType,
+) -> None:
+    """Record audit data without changing the OTP operation's outcome."""
+    try:
+        await PatientOtpEvent.create(
+            patient_guide_link_id=patient_guide_link_id,
+            event_type=event_type,
+        )
+    except Exception:
+        # The OTP state or external delivery may already be committed. Do not
+        # report a false authentication result when only audit storage failed.
+        LOGGER.error(
+            "patient OTP audit event could not be stored: event_type=%s",
+            event_type.value,
+        )
 
 
 class OtpDelivery(Protocol):
-    async def send(self, phone: str, code: str) -> None: ...
+    async def send(self, phone: str, code: str, hospital_name: str) -> None: ...
 
 
 class UnavailableOtpDelivery:
     """실제 SMS 공급자를 성공으로 가장하지 않는 안전한 기본 구현."""
 
-    async def send(self, phone: str, code: str) -> None:
+    async def send(self, phone: str, code: str, hospital_name: str) -> None:
         raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.")
 
 
@@ -42,8 +66,73 @@ class MockOtpDelivery:
     코드 원문은 로그에 남기지 않는다.
     """
 
-    async def send(self, phone: str, code: str) -> None:
+    async def send(self, phone: str, code: str, hospital_name: str) -> None:
         pass
+
+
+class SolapiOtpDelivery:
+    """OTP 인증번호를 실제 SmsSender로 보낸다 — KEY-284.
+
+    KEY-91의 기존 발급·검증·잠금·보상 로직을 복제하지 않는다 — 이 클래스는
+    문구를 조립해서 보내기만 한다. 발송이 SENT로 확인되지 않으면 예외를
+    던지는데, 그 예외를 여기서 잡지 않는다: PatientOtpService.issue()가
+    이미 delivery.send()의 모든 예외를 잡아서 발급 상태를 보상하고
+    OTP_DELIVERY_UNAVAILABLE로 감싸는 로직을 갖고 있다(KEY-91) — 같은 일을
+    또 하지 않는다.
+
+    문구는 message_templates.SYSTEM_BODY 하나만 쓴다 — 예전엔 이 클래스가
+    독자적인 문자열을 따로 갖고 있어서, 스탭이 문구 관리 화면에서 보는
+    "이게 나갑니다"와 실제로 나가는 문구가 달랐다(iljun-sys 리뷰로 실제
+    전선을 수집해서 확인). 인증문구는 코드에 한 곳에만 있어야 한다.
+    """
+
+    def __init__(self, sender: SmsSender) -> None:
+        self._sender = sender
+
+    async def send(self, phone: str, code: str, hospital_name: str) -> None:
+        body = SYSTEM_BODY.format(의원명=hospital_name, 번호=code)
+        try:
+            result = await self._sender.send(phone, body)
+        except SmsSendError as exc:
+            # exc.reason은 "provider_timeout"·"provider_http_401" 같은 기계
+            # 판독용 코드다 — 전화번호·OTP·예외 원문이 아니라 masking.scrub()을
+            # 그대로 통과한다(iljun-sys 리뷰로 확인). 이걸 안 남기면 성공과
+            # 실패가 INFO 로그에서 구분이 안 된다(같은 리뷰로 재현됨).
+            LOGGER.warning("otp delivery failed: reason=%s", exc.reason)
+            raise
+        if result.status is not SmsDeliveryStatus.SENT:
+            # 원문·공급자 응답 문장을 예외 메시지에 담지 않는다 — 상위(issue())가
+            # 이 예외를 그대로 OTP_DELIVERY_UNAVAILABLE로 바꾼다. provider_code
+            # (예: "3035" 발신번호 미등록)는 기계 판독용 코드라 로그에만 남긴다.
+            LOGGER.warning("otp delivery not confirmed sent: provider_code=%s", result.provider_code)
+            raise RuntimeError("otp delivery not confirmed sent")
+
+
+class ApprovedPhonesOnlyDelivery:
+    """실제 발송을 승인된 테스트 번호로만 좁힌다 — KEY-284.
+
+    운영 활성화 승인(KEY-6)이 따로 생기기 전까지는 환경과 무관하게 항상
+    이 래퍼를 씌운다 — Pilot도 ENV=prod로 뜨기 때문에(KEY-264), "prod면
+    안 씌운다"고 두면 Pilot에서 좁은문을 여는 순간 임의 번호로 나간다
+    (yugaeun821 리뷰로 발견, `_otp_service()`에서 고쳤다).
+
+    목록에 없는 번호는 UnavailableOtpDelivery와 같은 방식으로 막는다
+    (발송기가 있는데 왜 안 되는지 겉으로는 구분되지 않는다). **목록이
+    비어 있으면 전부 막힌다** — "빈 목록 = 전부 허용"이 아니다. 좁은문
+    여부와 무관하게(이 래퍼가 씌워지는 조건과 같다) SMS_PROVIDER=solapi인데
+    이 목록이 비어 있으면 모든 번호가 공급자 장애와 구분 안 되는 503을
+    받는다(iljun-sys 리뷰로 실제 재현) — `Config`의 검증기가 그 조합으로는
+    아예 부팅을 거부한다(경고가 아니라 실패).
+    """
+
+    def __init__(self, delivery: OtpDelivery, approved_phones: frozenset[str]) -> None:
+        self._delivery = delivery
+        self._approved_phones = approved_phones
+
+    async def send(self, phone: str, code: str, hospital_name: str) -> None:
+        if phone not in self._approved_phones:
+            raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.")
+        await self._delivery.send(phone, code, hospital_name)
 
 
 def _otp_digest(code: str, salt: str, secret_key: str) -> str:
@@ -176,13 +265,21 @@ class PatientOtpService:
         issued_digest: str,
         previous: _PreviousOtp | None,
     ) -> None:
-        """발송 실패가 뒤따른 발급 상태만 되돌리고 동시 변경은 보존한다."""
+        """발송 실패가 뒤따른 발급 상태만 되돌리고 동시 변경은 보존한다.
+
+        `previous is None`(이 링크의 첫 발급)이어도 행을 지우지 않는다.
+        예전엔 지웠는데, 그러면 다음 issue()가 "행이 없다"로 보고 재발송
+        쿨다운 검사를 아예 건너뛴다 — 실제 HTTP 경로로 25번 연속 호출해
+        감사 행이 25줄 쌓이는 것으로 재현됐다(iljun-sys 리뷰, 쿨다운이
+        걸렸다면 1줄이어야 한다). 지금 이 행의 digest는 환자가 받은 적
+        없는 값이라(발송이 실패했으므로) 그대로 둬도 아무 코드와도
+        안 맞는다 — issued_at만 살아 있으면 쿨다운은 정상 작동한다.
+        """
         async with in_transaction() as connection:
             challenge = await self._locked_challenge(patient_guide_link_id, connection)
             if challenge is None or challenge.otp_digest != issued_digest or challenge.consumed_at is not None:
                 return
             if previous is None:
-                await challenge.delete(using_db=connection)
                 return
             challenge.otp_digest = previous.otp_digest
             challenge.otp_salt = previous.otp_salt
@@ -260,65 +357,86 @@ class PatientOtpService:
                     using_db=connection,
                 )
         # 외부 공급자 지연 중 DB 행 잠금과 커넥션을 점유하지 않는다.
+        hospital = await Hospital.filter(hospital_id=link.guide_document.hospital_id).first()
         try:
-            await self.delivery.send(patient.phone, code)
+            await self.delivery.send(patient.phone, code, hospital.name if hospital else "")
         except Exception as exc:
             await self._compensate_failed_delivery(
                 link.patient_guide_link_id,
                 challenge.otp_digest,
                 previous,
             )
+            await _record_otp_event(
+                link.patient_guide_link_id,
+                PatientOtpEventType.DELIVERY_FAILED,
+            )
             if isinstance(exc, ApiError):
                 raise
             raise ApiError("OTP_DELIVERY_UNAVAILABLE", 503, "인증번호 전송을 사용할 수 없습니다.") from exc
+        await _record_otp_event(link.patient_guide_link_id, PatientOtpEventType.ISSUED)
         return challenge
 
     async def verify(self, raw_link_token: str, code: str) -> PatientGuideLink:
         failure: ApiError | None = None
+        event_type = PatientOtpEventType.VERIFIED
         async with in_transaction() as connection:
             link = await self._active_link(raw_link_token, connection, include_patient=False)
             challenge = await self._locked_challenge(link.patient_guide_link_id, connection)
             timestamp = now()
             if challenge is None:
-                raise ApiError("OTP_NOT_ISSUED", 409, "인증번호를 먼저 요청해 주세요.")
-
-            await self._release_elapsed_lock(challenge, timestamp, connection)
-            if challenge.locked_until is not None:
-                raise _locked(challenge, timestamp)
-            if challenge.consumed_at is not None:
-                raise ApiError("OTP_ALREADY_USED", 409, "이미 사용한 인증번호입니다. 새 인증번호를 요청해 주세요.")
-            if as_utc(challenge.expires_at) <= as_utc(timestamp):
-                raise ApiError("OTP_EXPIRED", 410, "인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.")
-
-            valid_format = len(code) == OTP_LENGTH and code.isascii() and code.isdigit()
-            expected = _otp_digest(code, challenge.otp_salt, self.secret_key) if valid_format else ""
-            if not valid_format or not hmac.compare_digest(challenge.otp_digest, expected):
-                challenge.failed_attempts += 1
-                if challenge.failed_attempts >= OTP_MAX_FAILURES:
-                    challenge.locked_until = timestamp + OTP_LOCK_DURATION
-                    await challenge.save(
-                        using_db=connection,
-                        update_fields=["failed_attempts", "locked_until", "updated_at"],
-                    )
-                    failure = _locked(challenge, timestamp)
-                else:
-                    await challenge.save(using_db=connection, update_fields=["failed_attempts", "updated_at"])
-                    failure = ApiError(
-                        "OTP_INVALID",
-                        401,
-                        "인증번호가 올바르지 않습니다.",
-                        extra={"remaining_attempts": OTP_MAX_FAILURES - challenge.failed_attempts},
-                    )
+                failure = ApiError("OTP_NOT_ISSUED", 409, "인증번호를 먼저 요청해 주세요.")
+                event_type = PatientOtpEventType.VERIFICATION_FAILED
             else:
-                challenge.consumed_at = timestamp
-                challenge.failed_attempts = 0
-                await challenge.save(
-                    using_db=connection,
-                    update_fields=["consumed_at", "failed_attempts", "updated_at"],
-                )
+                await self._release_elapsed_lock(challenge, timestamp, connection)
+                if challenge.locked_until is not None:
+                    failure = _locked(challenge, timestamp)
+                    event_type = PatientOtpEventType.LOCKED
+                elif challenge.consumed_at is not None:
+                    failure = ApiError(
+                        "OTP_ALREADY_USED", 409, "이미 사용한 인증번호입니다. 새 인증번호를 요청해 주세요."
+                    )
+                    event_type = PatientOtpEventType.VERIFICATION_FAILED
+                elif as_utc(challenge.expires_at) <= as_utc(timestamp):
+                    failure = ApiError("OTP_EXPIRED", 410, "인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.")
+                    event_type = PatientOtpEventType.VERIFICATION_FAILED
+                else:
+                    valid_format = len(code) == OTP_LENGTH and code.isascii() and code.isdigit()
+                    expected = _otp_digest(code, challenge.otp_salt, self.secret_key) if valid_format else ""
+                    if not valid_format or not hmac.compare_digest(challenge.otp_digest, expected):
+                        challenge.failed_attempts += 1
+                        if challenge.failed_attempts >= OTP_MAX_FAILURES:
+                            challenge.locked_until = timestamp + OTP_LOCK_DURATION
+                            await challenge.save(
+                                using_db=connection,
+                                update_fields=["failed_attempts", "locked_until", "updated_at"],
+                            )
+                            failure = _locked(challenge, timestamp)
+                            event_type = PatientOtpEventType.LOCKED
+                        else:
+                            await challenge.save(using_db=connection, update_fields=["failed_attempts", "updated_at"])
+                            failure = ApiError(
+                                "OTP_INVALID",
+                                401,
+                                "인증번호가 올바르지 않습니다.",
+                                extra={"remaining_attempts": OTP_MAX_FAILURES - challenge.failed_attempts},
+                            )
+                            event_type = PatientOtpEventType.VERIFICATION_FAILED
+                    else:
+                        challenge.consumed_at = timestamp
+                        challenge.failed_attempts = 0
+                        await challenge.save(
+                            using_db=connection,
+                            update_fields=["consumed_at", "failed_attempts", "updated_at"],
+                        )
 
         # 실패 횟수와 잠금을 먼저 커밋한 뒤 응답 예외를 올린다. 트랜잭션 안에서
         # 예외를 던지면 보안 상태까지 롤백되어 무제한 재시도가 가능해진다.
+        # 위 네 이른 종료 경로(미발급·이미 잠김·이미 사용·만료)도 이 규칙을
+        # 그대로 따른다 — 예전엔 그 안에서 바로 raise해서, 직전에 남긴
+        # 감사 이벤트까지 트랜잭션과 함께 롤백됐다(같은 트랜잭션 안에서
+        # 예외가 나면 그 안의 모든 쓰기가 함께 취소된다). 지금은 raise를
+        # 전부 트랜잭션 밖, 이 한 줄로 모은다.
+        await _record_otp_event(link.patient_guide_link_id, event_type)
         if failure is not None:
             raise failure
         return link

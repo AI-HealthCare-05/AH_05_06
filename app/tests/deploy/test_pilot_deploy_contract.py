@@ -214,6 +214,7 @@ class TestTheServerRefusesToStartQuietly:
             SOLAPI_API_KEY=SecretStr("synthetic-api-key"),
             SOLAPI_API_SECRET=SecretStr("synthetic-api-secret"),
             SOLAPI_SENDER_NUMBER=SecretStr("0200000000"),
+            OTP_APPROVED_TEST_PHONES=SecretStr("01000000000"),
         )
 
 
@@ -534,6 +535,7 @@ class TestTheExampleEnvActuallyBoots:
         values["SOLAPI_API_KEY"] = "synthetic-api-key"
         values["SOLAPI_API_SECRET"] = "synthetic-api-secret"
         values["SOLAPI_SENDER_NUMBER"] = "0200000000"
+        values["OTP_APPROVED_TEST_PHONES"] = "01000000000"
 
         # `.env` 에서 온 값은 전부 문자열이다 — pydantic 이 변환하는 것이 요점이라
         # 여기서는 그대로 넘긴다.

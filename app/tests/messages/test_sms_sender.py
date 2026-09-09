@@ -84,6 +84,10 @@ async def test_solapi_signs_requests_with_hmac_sha256() -> None:
                 SOLAPI_API_SECRET=SecretStr(API_SECRET),
                 SOLAPI_SENDER_NUMBER=SecretStr(SENDER),
                 SOLAPI_BASE_URL="https://gateway.example",
+                # KEY-284 검증기가 SMS_PROVIDER=solapi면 이 목록을 요구한다
+                # — 이 테스트는 OTP와 무관하지만(순수 SmsSender 검사)
+                # Config 하나를 같이 쓰므로 값을 채워야 부팅이 된다.
+                OTP_APPROVED_TEST_PHONES=SecretStr(RECEIVER),
             ),
             client=client,
         )
@@ -238,6 +242,7 @@ def test_solapi_requires_every_credential_without_printing_values(missing_name: 
     with pytest.raises(ValidationError) as caught:
         settings(
             SMS_PROVIDER=SmsProvider.SOLAPI,
+            OTP_APPROVED_TEST_PHONES=SecretStr(RECEIVER),
             **credentials,
         )
 
@@ -302,6 +307,7 @@ def test_solapi_factory_keeps_credentials_out_of_repr() -> None:
             SOLAPI_API_KEY=SecretStr(API_KEY),
             SOLAPI_API_SECRET=SecretStr(API_SECRET),
             SOLAPI_SENDER_NUMBER=SecretStr(SENDER),
+            OTP_APPROVED_TEST_PHONES=SecretStr(RECEIVER),
         )
     )
 
