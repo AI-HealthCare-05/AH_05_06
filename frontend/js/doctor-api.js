@@ -377,6 +377,24 @@ function mockGuideBase(visitId) {
     approved_at: DOCTOR_CASE === "approved" ? mockScheduledAt() : null,
     scheduled_at: DOCTOR_CASE === "approved" ? mockScheduledAt() : null,
     returned_reason: DOCTOR_CASE === "returned" ? "검사 결과지를 다시 올려 주세요" : null,
+    /* 환자 화면 미리보기가 그리는 파생 — 서버의 `preview` 와 같은 모양이다
+       (KEY-294). **목업에도 둔다.** 없으면 목업으로 보는 사람에게만 미리보기가
+       세 카드 적은 옛 모습으로 보이고, 그 차이를 화면에서는 알 길이 없다.
+       값은 위 `medication` 본문이 말하는 것과 같은 진료다. */
+    preview: {
+      visit: "2026.08.22",
+      guide: {
+        summary: who.summary,
+        goals: [
+          { n: "혈색소 Hb", now: "10.4", t: "12", hasChart: true, rangeLabel: "기준 12 g/dL 이상" },
+          { n: "자궁내막종", now: "2.4", t: null, hasChart: false, rangeLabel: null },
+        ],
+        drug: { n: "비잔정", s: "디에노게스트 2mg", d: "1일 1회 · 84일분" },
+        why: [],
+        how: "1일 1회 · 84일분",
+        next: null,
+      },
+    },
     sections: [
       {
         key: "medication",

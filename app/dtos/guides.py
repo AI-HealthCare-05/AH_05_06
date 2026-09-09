@@ -10,6 +10,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.dtos.patient_links import PatientGuideDetailResponse
 from app.models.patients import PatientGender
 from app.models.visits import GuideMessageKind, GuideSectionKey, GuideStatus
 
@@ -50,6 +51,26 @@ class PatientHead(StrictModel):
     hospital_patient_no: str
 
 
+class GuidePreview(StrictModel):
+    """스탭·의사 화면의 「환자 화면 미리보기」가 그리는 카드 — KEY-294.
+
+    `sections` 만으로는 **나의 목표 · 처방받은 약 · 약별 복용 방법** 세 카드를
+    못 그린다. 그 셋은 절이 아니라 처방·검사 기준선에서 나오는 파생이고,
+    환자 종점이 이미 짓고 있다. 미리보기가 그것을 못 받아서 「환자가 받는
+    그대로」라고 적어 놓고 부분만 보여 주고 있었다 (KEY-286 후속).
+
+    **환자 종점과 같은 자리에서 짓는다** — `app/services/patient_guide_view.py`.
+    두 곳에서 따로 조립하면 갈라지고, 갈라진 것을 사람은 승인 뒤에야 안다.
+
+    새로 나가는 값은 처방·검사 파생과 진료일뿐이다. 링크 토큰·연락처처럼
+    미리보기에 없던 개인정보는 여기 담지 않는다.
+    """
+
+    #: 「나의 목표」 카드 머리에 붙는 진료일 (`2026.09.09`). 환자 화면과 같은 자리다.
+    visit: str | None = None
+    guide: PatientGuideDetailResponse | None = None
+
+
 class GuideResponse(StrictModel):
     visit_id: int
     #: 이 안내문이 누구 것인가. 화면 머리가 이 값으로 산다.
@@ -62,6 +83,8 @@ class GuideResponse(StrictModel):
     approved_at: datetime | None = None
     scheduled_at: datetime | None = None
     returned_reason: str | None = None
+    #: 환자 화면 미리보기가 쓰는 파생. 처방·목표가 하나도 없으면 `preview.guide` 가 `null` 이다.
+    preview: GuidePreview | None = None
 
 
 class SectionEditRequest(StrictModel):

@@ -706,6 +706,17 @@ class PatientLinkService:
         """
 
         link, guide = await self.get_approved_guide(raw_token)
+        return link, guide, await self.build_patient_guide_data(guide)
+
+    async def build_patient_guide_data(self, guide: GuideDocument) -> PatientGuideData:
+        """**게이트 없이** 화면 데이터만 짓는다 — 부르는 쪽이 자격을 먼저 본다.
+
+        환자는 링크·만료·승인을 통과해야 여기 온다(`get_patient_guide_data`).
+        스탭·의사의 미리보기는 **승인 전에도** 본다 — 검토하는 자리라서다
+        (KEY-294). 두 문이 다르므로 문은 부르는 쪽에 두고, 여기서는 값만 읽는다.
+
+        `guide` 는 `sections` 와 `visit__patient` 이 미리 붙어 있어야 한다.
+        """
         visit = guide.visit
         visit_date = _clinic_date(visit.visited_at)
 
@@ -782,16 +793,12 @@ class PatientLinkService:
             # 질환명처럼 내보내지 않고, 확정 DIAGNOSIS가 없으면 생략한다.
             disease_name = None
 
-        return (
-            link,
-            guide,
-            PatientGuideData(
-                visit_date=visit_date,
-                clinic_name=hospital.name if hospital is not None else None,
-                disease_name=disease_name,
-                patient_name=(visit.patient.name or None),
-                medication=medication,
-                goals=goals,
-                sections={section.section_key: section.body for section in guide.sections},
-            ),
+        return PatientGuideData(
+            visit_date=visit_date,
+            clinic_name=hospital.name if hospital is not None else None,
+            disease_name=disease_name,
+            patient_name=(visit.patient.name or None),
+            medication=medication,
+            goals=goals,
+            sections={section.section_key: section.body for section in guide.sections},
         )

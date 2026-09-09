@@ -136,15 +136,157 @@ function patientTabTitleHtml(main, sub) {
   );
 }
 
-/** 복약지도 (P2) — 채울 수 있는 카드 둘만. */
-function patientMedicationHtml(summary, why) {
+/* 「나의 목표」의 막대 — 환자 렌더러의 계산을 **그대로** 옮긴다.
+ *
+ * 목표값을 가운데(50%)에 고정하고 나머지를 상대 위치로 잡는다. 목표가 없으면
+ * (추이 관찰) 시작값을 가운데로 삼는다. 숫자를 여기서 다시 정하지 않는다 —
+ * `patient_wireframe/js/guide.js` 의 `pctNum` 과 같은 식이어야 두 화면의 삼각형이
+ * 같은 자리에 선다.
+ *
+ * 미리보기 iframe 에는 스크립트가 없다(`sandbox` 에 `allow-scripts` 가 없다).
+ * 그래서 환자가 그리듯 DOM 을 세우지 않고 같은 값을 인라인 style 로 적는다. */
+function goalChartPct(value, center, half) {
+  return Math.min(95, Math.max(5, 50 + ((value - center) / half) * 50)) + "%";
+}
+
+function patientGoalItemHtml(goal, first) {
+  var body = '<div class="goal-name">' + esc(goal.n) + "</div>";
+  if (goal.rangeLabel) body += '<div class="goal-range-label">' + esc(goal.rangeLabel) + "</div>";
+
+  var nowNum = parseFloat(goal.now);
+  var startNum = parseFloat(goal.a);
+  var targetNum = parseFloat(goal.t);
+  var hasStart = !isNaN(startNum);
+  var hasTarget = !isNaN(targetNum);
+
+  if (goal.hasChart && !isNaN(nowNum) && (hasStart || hasTarget)) {
+    var center = hasTarget ? targetNum : startNum;
+    var half =
+      Math.max(Math.abs(nowNum - center), hasStart ? Math.abs(startNum - center) : 0, 1) * 1.5;
+
+    var chart =
+      '<div class="goal-chart__pointer-row">' +
+      '<div class="goal-chart__pointer" style="left:' +
+      goalChartPct(nowNum, center, half) +
+      '">' +
+      '<span class="goal-chart__now-val">' +
+      esc(goal.now) +
+      "</span>" +
+      '<div class="goal-chart__arrow"></div>' +
+      "</div>" +
+      "</div>" +
+      '<div class="goal-chart__bar-wrap">' +
+      (hasTarget ? '<span class="goal-chart__target-line" style="left:50%"></span>' : "") +
+      (hasStart
+        ? '<span class="goal-chart__start-line" style="left:' +
+          (hasTarget ? goalChartPct(startNum, center, half) : "50%") +
+          '"></span>'
+        : "") +
+      "</div>" +
+      '<div class="goal-chart__scale-labels">' +
+      [
+        hasTarget ? "목표보다 낮음" : "시작보다 낮음",
+        hasTarget ? "목표 " + goal.t : "추이 관찰",
+        hasTarget ? "목표보다 높음" : "시작보다 높음",
+      ]
+        .map(function (label) {
+          return '<span class="goal-chart__scale-label">' + esc(label) + "</span>";
+        })
+        .join("") +
+      "</div>" +
+      '<div class="goal-chart__start-summary">' +
+      esc((hasStart ? "시작 " + goal.a + " · " : "") + "지금 " + goal.now) +
+      "</div>";
+    body += '<div class="goal-chart">' + chart + "</div>";
+  } else {
+    /* 값이 없어도 목표를 **숨기지 않는다** — 환자도 이 문장을 본다. */
+    body +=
+      '<div class="goal-no-chart">' +
+      esc(goal.now ? "현재 " + goal.now : "결과가 나오면 채워드릴게요 · 지금 ─") +
+      "</div>";
+  }
+
+  return '<div class="goal-item' + (first ? " goal-item--first" : "") + '">' + body + "</div>";
+}
+
+/** 「나의 목표」 — 목표가 없어도 **카드는 선다.** 환자 렌더러가 그렇게 한다. */
+function patientGoalCardHtml(detail, visitDate) {
+  var goals = (detail && detail.goals) || [];
+  var head =
+    '<div class="goal-head"><span class="card__section-title">나의 목표</span>' +
+    (visitDate ? '<span class="goal-date">' + esc(visitDate) + "</span>" : "") +
+    "</div>";
+
+  var body = goals.length
+    ? goals
+        .map(function (goal, i) {
+          return patientGoalItemHtml(goal, i === 0);
+        })
+        .join("")
+    : patientEmptyHtml("등록된 검사 목표가 없어 차트를 표시하지 않아요.");
+
+  if (detail && detail.goalSay) body += '<div class="goal-say">' + esc(detail.goalSay) + "</div>";
+  return '<div class="card">' + head + body + "</div>";
+}
+
+/* 「더 자세히 보기」 안에 드는 카드들 — 환자 v3 정본이 처방약부터 접는다.
+ *
+ * **미리보기에서는 펼친 채로 둔다.** 여기는 승인 전에 읽는 자리라, 접어 두면
+ * 스탭·의사가 자기가 승인하는 것을 못 본다. 단추는 환자 화면과 같은 자리에
+ * 같은 모양으로 두되 **끌 수 없다**(`disabled`) — 탭 바와 같은 규칙이다. */
+function patientDeeperHtml(inner) {
+  if (!inner) return "";
+  return (
+    '<button class="expand-btn expand-btn--open" type="button" aria-expanded="true" disabled>' +
+    "<span>접기</span>" +
+    '<span class="expand-btn__icon">⌄</span>' +
+    "</button>" +
+    '<div class="expand-body expand-body--open">' +
+    inner +
+    "</div>"
+  );
+}
+
+/** 복약지도 (P2) — 환자 화면의 카드 차례 그대로.
+ *
+ * `preview` 는 스탭 종점의 새 파생이다(KEY-294). 없으면 예전처럼 요약과
+ * 「왜 드시나요」만 그린다 — 목업이나 옛 응답을 받아도 무너지지 않는다. */
+function patientMedicationHtml(summary, why, preview) {
+  var detail = (preview && preview.guide) || null;
   var cards = patientCardHtml(
     "오늘 진료 요약",
     summary ? '<div class="care-body-text">' + esc(summary) + "</div>" : patientEmptyHtml(PATIENT_EMPTY.medication),
   );
-  /* 환자 렌더러의 `if (g.why && g.why.length)` 와 같다 — 없으면 카드가 안 선다. */
-  if (why) cards += patientCardHtml("이 약을 왜 드시나요", '<div class="care-body-text">' + esc(why) + "</div>");
-  return cards;
+
+  /* **파생을 안 받았으면 목표 카드도 안 세운다.** 환자 화면은 목표가 없어도
+     이 카드를 세우지만, 그건 「목표가 없다」를 **아는** 상태다. 값을 아예 못
+     받은 미리보기가 같은 문장을 띄우면 모르는 것을 안다고 말하는 셈이다 —
+     KEY-286 이 없앤 거짓의 다른 얼굴이다. */
+  if (preview) cards += patientGoalCardHtml(detail, preview.visit);
+
+  /* 환자 렌더러의 `if (g.drug)` · `if (g.why && g.why.length)` · `if (g.how)` ·
+     `if (g.next)` 와 같은 차례·같은 조건이다. */
+  var deeper = "";
+  if (detail && detail.drug) {
+    var drug = detail.drug;
+    deeper += patientCardHtml(
+      "처방받은 약",
+      '<div class="drug-row">' +
+        (drug.n ? '<div class="drug-row__name">' + esc(drug.n) + "</div>" : "") +
+        (drug.s ? '<div class="drug-row__sub">' + esc(drug.s) + "</div>" : "") +
+        (drug.d ? '<div class="drug-row__sub">' + esc(drug.d) + "</div>" : "") +
+        "</div>",
+    );
+  }
+  if (why) deeper += patientCardHtml("이 약을 왜 드시나요", '<div class="care-body-text">' + esc(why) + "</div>");
+  if (detail && detail.how) {
+    deeper += patientCardHtml("약별 복용 방법", '<div class="care-body-text">' + esc(detail.how) + "</div>");
+  }
+  if (detail && detail.next) {
+    deeper += patientCardHtml("다음 방문 계획", '<div class="care-body-text">' + esc(detail.next) + "</div>");
+  }
+
+  return cards + patientDeeperHtml(deeper);
 }
 
 /** 주의사항 (P3) — 일반 주의와 🚨 응급이 한 탭에 이어 붙는다. */
@@ -178,10 +320,10 @@ function patientLifeHtml(life) {
  * `<main class="body">` 안에 있다 — 둘을 한 자루에 담으면 `.body` 의
  * `gap: 12px` 가 탭 줄에도 걸려 카드 간격이 환자 화면과 달라진다.
  * 골격은 부르는 쪽(`guidePreviewHtml`)이 환자 것 그대로 세운다. */
-function patientPreviewBodyHtml(bodyOf, current, summary) {
+function patientPreviewBodyHtml(bodyOf, current, summary, preview) {
   if (current === "life") return patientLifeHtml(bodyOf("life"));
   if (current === "caution" || current === "emergency") {
     return patientCautionHtml(bodyOf("caution"), bodyOf("emergency"));
   }
-  return patientMedicationHtml(summary, bodyOf("medication"));
+  return patientMedicationHtml(summary, bodyOf("medication"), preview);
 }

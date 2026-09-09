@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, status
 from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.guides import (
+    GuidePreview,
     GuideResponse,
     MessagePlanRequest,
     MessagePlanResponse,
@@ -22,6 +23,8 @@ from app.dtos.guides import (
 )
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey
 from app.services.guides import GuideService
+from app.services.patient_guide_view import guide_detail_of
+from app.services.patient_links import PatientLinkService
 
 guide_router = APIRouter(prefix="/visits", tags=["guides"])
 
@@ -40,7 +43,23 @@ def _age_on(birth_date: date, today: date) -> int:
     return today.year - birth_date.year - (1 if before_birthday else 0)
 
 
-def _to_response(guide: GuideDocument) -> GuideResponse:
+async def _preview_of(guide: GuideDocument) -> GuidePreview:
+    """미리보기가 그리는 카드 — **환자 종점이 짓는 그 파생 그대로** (KEY-294).
+
+    승인 여부를 안 본다. 스탭·의사는 **승인 전에** 이 화면에서 검토하고,
+    검토가 이 화면의 일이다. 환자 쪽 게이트(링크·만료·승인)는 환자 종점이
+    제 자리에서 그대로 친다.
+
+    **`guide` 만 비고 봉투는 남는다.** 처방도 목표도 없으면 `guide` 가 `null`
+    인데, 그때도 진료일은 있다 — 환자 화면의 「나의 목표」 카드는 값이 없어도
+    서고 머리에 진료일을 단다(`if (d.visit)`). 봉투째 비우면 미리보기만 그
+    날짜를 잃는다.
+    """
+    data = await PatientLinkService().build_patient_guide_data(guide)
+    return GuidePreview(visit=data.visit_date.strftime("%Y.%m.%d"), guide=guide_detail_of(data))
+
+
+async def _to_response(guide: GuideDocument) -> GuideResponse:
     visit = guide.visit
     patient = visit.patient
     today = datetime.now(DISPLAY_TIMEZONE).date()
@@ -60,6 +79,7 @@ def _to_response(guide: GuideDocument) -> GuideResponse:
         scheduled_at=guide.scheduled_at,
         returned_reason=guide.returned_reason,
         sections=[_section(s) for s in sorted(guide.sections, key=_section_order)],
+        preview=await _preview_of(guide),
     )
 
 
@@ -108,7 +128,7 @@ async def generate_guide(
     """
     guide = await service.generate(actor, visit_id, discard_edits=discard_edits)
     await guide.fetch_related("sections", "visit__patient")
-    return _to_response(guide)
+    return await _to_response(guide)
 
 
 @guide_router.get("/{visit_id}/guide", response_model=GuideResponse)
@@ -117,7 +137,7 @@ async def read_guide(
     actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
 ) -> GuideResponse:
-    return _to_response(await service.get(actor, visit_id))
+    return await _to_response(await service.get(actor, visit_id))
 
 
 @guide_router.patch("/{visit_id}/guide/sections/{key}", response_model=SectionResponse)
@@ -144,7 +164,7 @@ async def submit_guide(
     """
     guide = await service.submit(actor, visit_id)
     await guide.fetch_related("sections", "visit__patient")
-    return _to_response(guide)
+    return await _to_response(guide)
 
 
 @guide_router.post("/{visit_id}/guide/approve", response_model=GuideResponse, status_code=status.HTTP_200_OK)
@@ -155,7 +175,7 @@ async def approve_guide(
 ) -> GuideResponse:
     guide = await service.approve(actor, visit_id)
     await guide.fetch_related("sections", "visit__patient")
-    return _to_response(guide)
+    return await _to_response(guide)
 
 
 @guide_router.get("/{visit_id}/guide/messages", response_model=MessagePlanResponse, status_code=status.HTTP_200_OK)
@@ -199,7 +219,7 @@ async def unapprove_guide(
     """
     guide = await service.unapprove(actor, visit_id)
     await guide.fetch_related("sections", "visit__patient")
-    return _to_response(guide)
+    return await _to_response(guide)
 
 
 @guide_router.post("/{visit_id}/guide/return", response_model=GuideResponse, status_code=status.HTTP_200_OK)
@@ -211,4 +231,4 @@ async def return_guide(
 ) -> GuideResponse:
     guide = await service.return_to_staff(actor, visit_id, body.reason)
     await guide.fetch_related("sections", "visit__patient")
-    return _to_response(guide)
+    return await _to_response(guide)
