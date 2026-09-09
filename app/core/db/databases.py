@@ -15,6 +15,7 @@ TORTOISE_APP_MODELS = [
     "app.models.documents",
     "app.models.catalog",
     "app.models.feedback",
+    "app.models.knowledge",
 ]
 
 TORTOISE_ORM = {
