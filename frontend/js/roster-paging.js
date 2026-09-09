@@ -12,7 +12,7 @@
  * `total` 은 **지금 고른 조각의** 총수다. 「전체」의 총수로 세면 조각을 눌렀을
  * 때 있지도 않은 쪽이 생긴다.
  */
-function rosterPaging(total, offset, limit) {
+function rosterPaging(total, offset, limit, serverHasNext) {
   limit = limit > 0 ? Math.floor(limit) : 1;
   total = total > 0 ? Math.floor(total) : 0;
   offset = offset > 0 ? Math.floor(offset) : 0;
@@ -26,7 +26,10 @@ function rosterPaging(total, offset, limit) {
     pages: pages,
     total: total,
     hasPrev: offset > 0,
-    hasNext: offset + limit < total,
+    /* **서버가 「더 없다」고 하면 그 말을 따른다.** 총수와 실제 줄이 어긋날 수
+       있는 자리가 있으면(조각의 셈이 검색어를 모르는 등) 총수로만 세다가 「다음」
+       에 빈 표를 준다. 둘 다 그렇다고 할 때만 앞으로 간다 (이희진 님 #270 리뷰). */
+    hasNext: offset + limit < total && serverHasNext !== false,
     prevOffset: Math.max(0, offset - limit),
     nextOffset: offset + limit,
     from: total ? Math.min(total, offset + 1) : 0,

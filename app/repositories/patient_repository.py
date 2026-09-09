@@ -50,6 +50,18 @@ class PatientRepository:
             query = query.offset(offset)
         return await query.limit(limit)
 
+    async def ids_scoped(self, hospital_id: int, *, keyword: str | None) -> list[int]:
+        """검색어에 걸리는 환자 번호 **전부** — 쪽 크기와 무관하게.
+
+        진료에서 나오는 조각(진행 중 · 챙겨주세요)은 표를 걸러 셀 수 없어 의원의
+        최근 진료를 훑어 낸다. 그 셈이 검색어를 모르면 **표는 걸러졌는데 배지는
+        안 걸러진다** — 배지가 표보다 커지고, 그 값으로 쪽을 세면 있지도 않은
+        쪽이 생겨 「다음」을 눌렀을 때 빈 표가 뜬다 (KEY-303).
+        """
+        if not keyword:
+            return []
+        return await self._scoped_query(hospital_id, keyword).values_list("patient_id", flat=True)
+
     async def category_counts(
         self,
         hospital_id: int,

@@ -439,7 +439,7 @@
 
     var pager = el("roster-page");
     var paging = pager && view === "roster" && page && page.roster
-      ? rosterPaging(page.roster.total, page.roster.offset, page.roster.limit)
+      ? rosterPaging(page.roster.total, page.roster.offset, page.roster.limit, page.roster.has_next)
       : null;
     /* 한 쪽에 다 들어가면 줄 자체를 숨긴다 — 누를 데 없는 단추는 고장으로 읽힌다 */
     if (pager) pager.hidden = !paging || paging.pages <= 1;
@@ -643,7 +643,7 @@
   document.addEventListener("click", function (event) {
     var step = event.target.closest && event.target.closest("#roster-page [data-page]");
     if (!step || step.disabled || !page || !page.roster) return;
-    var paging = rosterPaging(page.roster.total, page.roster.offset, page.roster.limit);
+    var paging = rosterPaging(page.roster.total, page.roster.offset, page.roster.limit, page.roster.has_next);
     rosterOffset = step.getAttribute("data-page") === "prev" ? paging.prevOffset : paging.nextOffset;
     load();
   });

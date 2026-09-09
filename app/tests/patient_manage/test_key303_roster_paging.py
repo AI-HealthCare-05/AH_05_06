@@ -10,7 +10,11 @@
 from datetime import date
 
 import pytest
+from tortoise.contrib.test import TestCase
 
+from app.models.patients import Patient, PatientGender
+from app.models.staffs import Hospital
+from app.repositories.patient_repository import PatientRepository
 from app.services.patients import parse_last_visit_query
 
 
@@ -60,3 +64,56 @@ class TestTheSearchBoxReadsDates:
         """차트번호가 날짜로 새면 이름으로 찾던 사람이 빈 표를 본다."""
         for chart_no in ("12401", "09948", "1", "00000", "202608", "20260815"):
             assert parse_last_visit_query(chart_no) is None
+
+
+class TestTheCountsFollowTheSearch(TestCase):
+    """검색어를 넣은 채 조각을 고르면 **배지도 같이 좁아진다** — 이희진 님 #270 리뷰 ②.
+
+    진료에서 나오는 조각(진행 중 · 챙겨주세요)의 셈은 의원의 최근 진료를 훑어
+    낸다. 그 셈이 검색어를 모르면 표는 걸러졌는데 배지는 안 걸러져 **배지가 표보다
+    커진다.** 그 값이 쪽 나눔의 총수라, 「다음」을 눌렀을 때 빈 표가 뜬다.
+
+    저장소의 `ids_scoped` 가 검색어에 걸리는 번호를 다 주고, 서비스가 그것으로
+    조각의 셈을 좁힌다.
+    """
+
+    async def test_the_repository_hands_back_every_matching_id(self) -> None:
+        """쪽 크기와 무관하게 **다** 준다 — 한 쪽만 주면 셈이 다시 어긋난다."""
+        hospital = await Hospital.create(name="도로시여성의원")
+        for i in range(7):
+            await Patient.create(
+                hospital_id=hospital.hospital_id,
+                name=f"윤지아{i}",
+                hospital_patient_no=f"9000{i}",
+                birth_date=date(1990, 1, 1),
+                gender=PatientGender.FEMALE,
+                phone=f"0102222{i:04d}",
+            )
+        await Patient.create(
+            hospital_id=hospital.hospital_id,
+            name="다른사람",
+            hospital_patient_no="88888",
+            birth_date=date(1990, 1, 1),
+            gender=PatientGender.FEMALE,
+            phone="01033330000",
+        )
+
+        repo = PatientRepository()
+        hit = await repo.ids_scoped(hospital.hospital_id, keyword="윤지아")
+        assert len(hit) == 7, "쪽 크기에 잘리면 셈이 표보다 작아진다"
+
+        everyone = await repo.ids_scoped(hospital.hospital_id, keyword=None)
+        assert everyone == [], "검색어가 없으면 좁힐 것도 없다 — 의원 전체를 다 읽지 않는다"
+
+    async def test_a_word_that_matches_nobody_narrows_to_nothing(self) -> None:
+        hospital = await Hospital.create(name="도로시여성의원")
+        await Patient.create(
+            hospital_id=hospital.hospital_id,
+            name="윤지아",
+            hospital_patient_no="12401",
+            birth_date=date(1990, 1, 1),
+            gender=PatientGender.FEMALE,
+            phone="01024317788",
+        )
+
+        assert await PatientRepository().ids_scoped(hospital.hospital_id, keyword="없는이름") == []

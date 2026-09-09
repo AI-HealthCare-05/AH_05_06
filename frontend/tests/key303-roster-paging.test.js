@@ -115,3 +115,38 @@ test("목업도 서버와 같은 것을 돌려준다 — 쪽 넘김이 목업에
   assert.match(api, /items: shown\.slice\(offset, offset \+ limit\)/, "목업이 자리를 무시하면 다음 쪽이 첫 쪽과 같다");
   assert.match(api, /roster: \{ offset: offset, limit: limit, total: shown\.length/);
 });
+
+/* ── 서버가 「더 없다」고 하면 따른다 (이희진 님 #270 리뷰 ②) ────────────
+ *
+ * 진료에서 나오는 조각(진행 중 · 챙겨주세요)의 셈은 의원의 최근 진료를 훑어
+ * 내므로 검색어를 몰랐다. 표는 걸러지는데 배지는 안 걸러져 **배지가 표보다
+ * 커졌고**, 그 값으로 쪽을 세면 「다음」에 빈 표가 떴다. 셈은 서버에서 고쳤고,
+ * 여기서는 그래도 어긋났을 때 앞으로 안 가게 막는다.
+ */
+test("**총수가 부풀어도 서버가 아니라면 다음으로 안 간다**", () => {
+  const { rosterPaging } = box();
+
+  /* 총수는 101 이라는데 서버는 「이게 끝」이라고 한다 */
+  const lying = rosterPaging(101, 0, 40, false);
+  assert.equal(lying.hasNext, false, "총수만 믿으면 빈 표를 준다");
+
+  /* 서버가 더 있다고 하면 총수와 함께 본다 */
+  assert.equal(rosterPaging(101, 0, 40, true).hasNext, true);
+  /* 서버가 더 있다 해도 총수가 다 찼으면 안 간다 — 둘 다 그럴 때만 */
+  assert.equal(rosterPaging(40, 0, 40, true).hasNext, false);
+});
+
+test("서버가 말을 안 해도 예전처럼 총수로 센다", () => {
+  const { rosterPaging } = box();
+
+  /* 넷째 인자를 안 주는 예전 호출도 그대로 돌아야 한다 */
+  assert.equal(rosterPaging(101, 0, 40).hasNext, true);
+  assert.equal(rosterPaging(101, 80, 40).hasNext, false);
+});
+
+test("화면이 서버의 `has_next` 를 실제로 넘긴다", () => {
+  const code = codeOnly(read("js/manage.js"));
+
+  const calls = code.match(/rosterPaging\(page\.roster\.total, page\.roster\.offset, page\.roster\.limit, page\.roster\.has_next\)/g) || [];
+  assert.strictEqual(calls.length, 2, "그리는 자리와 누르는 자리 둘 다 넘겨야 한다");
+});

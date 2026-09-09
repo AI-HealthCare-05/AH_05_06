@@ -195,6 +195,13 @@ class PatientService:
         ]
 
         by_event = await self._event_categories(hospital_id, list(latest_times))
+        #: **검색어를 셈에도 건다.** 진료에서 나오는 조각은 의원의 최근 진료를 훑어
+        #: 내므로 검색어를 모른다. 그대로 두면 표는 걸러졌는데 배지는 안 걸러져
+        #: 배지가 표보다 커지고, 그 값으로 쪽을 세면 「다음」에 빈 표가 뜬다
+        #: (KEY-303, 이희진 님 #270 리뷰 ②).
+        if keyword:
+            matched = set(await self.repo.ids_scoped(hospital_id, keyword=keyword))
+            by_event = {name: ids & matched for name, ids in by_event.items()}
         wanted = by_event.get(category) if category in EVENT_PATIENT_CATEGORIES else None
 
         rows = await self.repo.list_scoped(
