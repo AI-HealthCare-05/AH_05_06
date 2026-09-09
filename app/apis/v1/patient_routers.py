@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.core.api_errors import ContractRoute
+from app.core.api_errors import ApiError, ContractRoute
 from app.dependencies.patient_access import ClinicalActor, require_patient_read, require_patient_write
 from app.dtos.base import CursorPage
 from app.dtos.patient_history import PatientHistoryResponse
@@ -42,6 +42,25 @@ async def list_patients(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PatientListResponse:
+    """환자 명단.
+
+    **자리를 옮기는 말은 둘 중 하나만 쓴다.** `cursor` 는 등록 화면의 찾기가
+    쓰는 「이 뒤로 더」이고, `offset` 은 환자 관리 표가 쓰는 「몇 쪽」이다
+    (KEY-303). 둘을 함께 주면 `patient_id > cursor` 를 건 **뒤에** 다시
+    `offset` 만큼 건너뛰어, 부른 사람이 뜻하지 않은 자리가 나온다. 조용히
+    한쪽을 이기게 두면 그 어긋남이 화면에서야 드러난다 — 여기서 운다.
+    """
+    if cursor is not None and offset:
+        raise ApiError(
+            400,
+            "INVALID_REQUEST",
+            "cursor 와 offset 은 함께 쓸 수 없습니다. 하나만 보내 주세요.",
+            [
+                {"field": "cursor", "message": "이어 보기(cursor)와 쪽 이동(offset) 중 하나만 씁니다"},
+                {"field": "offset", "message": "이어 보기(cursor)와 쪽 이동(offset) 중 하나만 씁니다"},
+            ],
+        )
+
     rows, counts, next_cursor, has_next, total = await service.list(
         actor,
         keyword=keyword,
