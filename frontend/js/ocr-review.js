@@ -1235,8 +1235,11 @@ function stateTakesFocus(tone) {
       }
       if (!field) return "";
 
-      /* 처방 세트 대표 약이 OCR에 없으면 처방일수 셀을 표시하지 않는다. */
-      if (spec.type === "DURATION_DAYS" && !anySetDrugInOcr) return "";
+      /* 처방 세트 대표 약이 OCR에 없으면 처방일수 셀을 숨긴다.
+         단, DURATION_DAYS에 미확정 값이 있으면 그대로 둔다 —
+         값이 있으면 generate 게이트를 막으므로 확정할 경로가 필요하다(KEY-274). */
+      var durationNeedsConfirm = field && field.value && !field.is_confirmed;
+      if (spec.type === "DURATION_DAYS" && !anySetDrugInOcr && !durationNeedsConfirm) return "";
 
       /* 약속처방은 값 줄이 아니라 **고르는 칸**이다.
          비잔 감지 여부와 무관하게 항상 드롭다운을 표시한다.
@@ -1374,6 +1377,21 @@ function stateTakesFocus(tone) {
       active && active.getAttribute && active.getAttribute("data-input") !== null
         ? Number(active.getAttribute("data-input"))
         : null;
+
+    /* 수동 입력칸(data-manual-drug-name / data-manual-drug-days)도 포커스 복원
+       대상이다 — [data-input] 만 보던 기존 로직에서 빠졌던 자리(KEY-274).
+       2.5 초 자동저장 타이머가 redraw()를 부를 때 이 칸이 활성이면 글자를
+       칠 때마다 커서가 빠지게 된다. re-render 후 같은 인덱스의 칸으로 돌아간다. */
+    var manualAttr = null;
+    var manualIdx = null;
+    if (typingIn === null && active && active.getAttribute) {
+      var mName = active.getAttribute("data-manual-drug-name");
+      var mDays = active.getAttribute("data-manual-drug-days");
+      if (mName !== null) { manualAttr = "data-manual-drug-name"; manualIdx = mName; }
+      else if (mDays !== null) { manualAttr = "data-manual-drug-days"; manualIdx = mDays; }
+    }
+
+    var isManualTyping = manualAttr !== null;
     /* 🚩 **커서는 글 치는 칸에만 있다.**
      *
      * `<select>` 에는 `selectionStart` 가 없어 `undefined` 가 나오는데, 배열로
@@ -1383,8 +1401,10 @@ function stateTakesFocus(tone) {
      * 그 예외가 `renderFields` → `redraw` → `onTyped` 를 통째로 중단시켜,
      * **고른 값을 서버로 보내는 줄이 아예 안 돌았다** — 진단을 골라도 화면에만
      * 남고 탭을 옮기면 사라졌다. 고르는 칸이 늘면서 드러난 자리다. */
-    var canCaret = !!active && typeof active.selectionStart === "number";
-    var caret = typingIn === null || !canCaret ? null : [active.selectionStart, active.selectionEnd];
+    var canCaret = !!active && active.type !== "number" && typeof active.selectionStart === "number";
+    var caret = (typingIn === null && !isManualTyping) || !canCaret
+      ? null
+      : [active.selectionStart, active.selectionEnd];
 
     fieldsBox.innerHTML = groupsHtml();
 
@@ -1393,6 +1413,20 @@ function stateTakesFocus(tone) {
        거기 쓰려던 숫자가 먼저 연 칸에 들어가기 때문이다. */
     var wanted = focusOn !== null ? focusOn : typingIn;
     focusOn = null;
+
+    /* 수동 입력칸이 활성이었으면 같은 칸으로 돌아간다.
+       focusOn(「고치기」로 연 칸)이 있으면 그쪽이 먼저다. */
+    if (wanted === null && isManualTyping) {
+      var manualBox = fieldsBox.querySelector("[" + manualAttr + '="' + manualIdx + '"]');
+      if (manualBox) {
+        manualBox.focus();
+        if (caret && typeof manualBox.setSelectionRange === "function") {
+          manualBox.setSelectionRange(caret[0], caret[1]);
+        }
+      }
+      return;
+    }
+
     if (wanted === null) return;
     var box = fieldsBox.querySelector('[data-input="' + wanted + '"]');
     if (!box) return;
@@ -1528,7 +1562,7 @@ function stateTakesFocus(tone) {
       rows.forEach(function (f) {
         if (f.field_type === "MEDICATION_NAME")
           baseExtraRows.push(Object.assign({}, f, { field_type: "MEDICATION_NAME_1" }));
-        if (f.field_type === "DURATION_DAYS")
+        if (f.field_type === "DURATION_DAYS" && !(f.value && !f.is_confirmed))
           baseExtraRows.push(Object.assign({}, f, { field_type: "DURATION_DAYS_1" }));
       });
     }
@@ -1544,7 +1578,7 @@ function stateTakesFocus(tone) {
         ? '<span class="box__note">' + escapeHtml(rxSaying || SAVE_LOCKED) + "</span>"
         : "") +
       '<button class="button-primary button-primary--sm" type="button" id="rx-save"' +
-      (canSaveFields() && (localOf(true).length || pickedSet || manualDrugs.some(function (d) { return d.name; })) ? "" : " disabled") +
+      (hasSomethingToSave(true) ? "" : " disabled") +
       ">저장</button>" +
       "</div>" +
       topRowHtml(rows) +
@@ -1578,7 +1612,7 @@ function stateTakesFocus(tone) {
         ? '<span class="box__note">' + escapeHtml(labSaying || SAVE_LOCKED) + "</span>"
         : "") +
       '<button class="button-primary button-primary--sm" type="button" id="labs-save"' +
-      (canSaveFields() && localOf(false).length ? "" : " disabled") +
+      (hasSomethingToSave(false) ? "" : " disabled") +
       ">저장</button>" +
       "</div>" +
       /* **두 칸으로 세운다.** 왼쪽은 사람이 보고 적는 것(증상 · 초음파),
@@ -1741,6 +1775,66 @@ function stateTakesFocus(tone) {
   }
 
   var SAVE_LOCKED = "진료기록을 올리면 저장할 수 있습니다";
+
+  /* 처방 블록이 **적어 둔 값 말고** 더 담는 것 — 고른 처방과 손으로 더한 약.
+   *
+   * **켜는 쪽과 보내는 쪽이 한 계산을 본다.** 두 벌이었을 때 죽은 단추가
+   * 났다 (KEY-305): 단추는 `pickedSet` 만 보고 켜졌는데 보내는 쪽에는
+   * 「이미 같은 값이면 안 보낸다」가 있어, 한 번 저장하고 나면 눌러도
+   * 요청도 말도 없었다. 사용자는 「저장이 안 된다」로 읽는다.
+   *
+   * `manualTypes` 는 저장 뒤 수동 약을 비울지 가리는 데 쓴다.
+   */
+  function rxExtraFields() {
+    var extra = {};
+    var manualTypes = [];
+
+    /* **`PRESCRIPTION_SET` 이다.** 전에는 `MEDICATION_NAME` 에 세트 이름을
+       밀어 넣었다. 그 칸은 판독이 읽은 **약품명**이 사는 자리라 진짜 이름을
+       덮었고, 되살릴 때 보는 칸(`applyPrescriptionSetSuggestion` — 397행)에는
+       아무것도 안 남아 화면을 옮기면 선택이 판독의 추측으로 되감겼다.
+       서버도 이 칸으로 처방 행을 세운다 — 없으면 `finalize_ocr` 이 422
+       `MISSING_PRESCRIPTION_SET` 을 내는데 `finalizeMayPass` 가 그걸 삼켜,
+       처방 행이 **조용히 한 번도 안 세워지고** 있었다.
+
+       같은 값이면 안 보낸다. 이건 이제 그저 헛걸음을 줄이는 것이다 —
+       `PUT` 이 확정된 줄에 409 를 내던 시절의 방어였는데, 서버가 그걸
+       그만뒀다(`app/ocr/service.py` 「확정된 줄도 다시 적을 수 있다」,
+       KEY-273). 단추도 이 계산을 보므로 보낼 것이 없으면 아예 안 켜진다. */
+    if (pickedSet && fieldValueOf(result && result.fields, "PRESCRIPTION_SET") !== pickedSet.name) {
+      extra.PRESCRIPTION_SET = pickedSet.name;
+    }
+
+    /* 수동 추가 약은 기존 MEDICATION_NAME_N 인덱스 다음 번호로 저장한다. */
+    if (manualDrugs.length) {
+      var maxIdx = 1;
+      if (result && result.fields) {
+        result.fields.forEach(function (f) {
+          var m = f.field_type.match(/^MEDICATION_NAME_(\d+)$/);
+          if (m) maxIdx = Math.max(maxIdx, parseInt(m[1], 10));
+        });
+      }
+      manualDrugs.forEach(function (drug, i) {
+        if (!drug.name) return;
+        var idx = maxIdx + i + 1;
+        extra["MEDICATION_NAME_" + idx] = drug.name;
+        manualTypes.push("MEDICATION_NAME_" + idx);
+        if (drug.days) {
+          extra["DURATION_DAYS_" + idx] = String(drug.days);
+          manualTypes.push("DURATION_DAYS_" + idx);
+        }
+      });
+    }
+
+    return { extra: extra, manualTypes: manualTypes };
+  }
+
+  /* 지금 저장 단추를 눌러 **보낼 것이 있는가**. 처방 블록만 더 담는 것이 있다. */
+  function hasSomethingToSave(isRx) {
+    if (!canSaveFields()) return false;
+    if (localOf(isRx).length) return true;
+    return isRx && Object.keys(rxExtraFields().extra).length > 0;
+  }
 
   function localOf(wantPrescription) {
     var out = [];
@@ -2541,49 +2635,27 @@ function stateTakesFocus(tone) {
     var wanted = visit.visit_id;
     var typed = localOf(isRx);
 
-    /* 고른 처방은 약품명 칸에 담는다 — 안내문이 그 값으로 만들어진다.
-       전에는 화면이 기억만 하고 새로고침하면 사라졌다.
-
-       🚩 **이미 그 값이면 안 보낸다.** `PUT` 은 확정된 줄에 409
-       (`OCR_FIELD_CONFIRMED`)를 내는데, 무조건 다시 보내면 그 하나 때문에
-       `Promise.all` 이 통째로 깨져 **같이 보낸 진단이 영영 저장되지 않았다.**
-       처방을 한 번 저장하고 나면 그 뒤로 진단을 못 넣는 상태가 됐다. */
-    var extra = {};
-    if (isRx && pickedSet && fieldValueOf(result.fields, "MEDICATION_NAME") !== pickedSet.name) {
-      extra.MEDICATION_NAME = pickedSet.name;
-    }
-
-    /* 수동 추가 약이 쓰는 항목 이름. **담겼는지는 이것으로만 판단한다** —
-       옆에서 딴 항목이 막혔다고 수동 약을 안 비우면, 다시 저장할 때 그 약이
-       새 번호로 **한 번 더** 들어간다 (`#216` 리뷰). */
-    var manualTypes = [];
-
-    /* 수동 추가 약은 기존 MEDICATION_NAME_N 인덱스 다음 번호로 저장한다. */
-    if (isRx && manualDrugs.length) {
-      var maxIdx = 1;
-      if (result && result.fields) {
-        result.fields.forEach(function (f) {
-          var m = f.field_type.match(/^MEDICATION_NAME_(\d+)$/);
-          if (m) maxIdx = Math.max(maxIdx, parseInt(m[1], 10));
-        });
-      }
-      manualDrugs.forEach(function (drug, i) {
-        if (!drug.name) return;
-        var idx = maxIdx + i + 1;
-        extra["MEDICATION_NAME_" + idx] = drug.name;
-        manualTypes.push("MEDICATION_NAME_" + idx);
-        if (drug.days) {
-          extra["DURATION_DAYS_" + idx] = String(drug.days);
-          manualTypes.push("DURATION_DAYS_" + idx);
-        }
-      });
-    }
-
-    if (!typed.length && !Object.keys(extra).length) return;
-
     function say(text) {
       if (isRx) rxSaying = text;
       else labSaying = text;
+    }
+
+    /* 처방 블록만 적어 둔 값 말고 더 담는 것이 있다 — 켜는 쪽과 **같은
+       계산**을 본다(`rxExtraFields`). 검사 블록은 담을 것이 그것뿐이다. */
+    var built = isRx ? rxExtraFields() : { extra: {}, manualTypes: [] };
+    var extra = built.extra;
+    /* 수동 추가 약이 쓰는 항목 이름. **담겼는지는 이것으로만 판단한다** —
+       옆에서 딴 항목이 막혔다고 수동 약을 안 비우면, 다시 저장할 때 그 약이
+       새 번호로 **한 번 더** 들어간다 (`#216` 리뷰). */
+    var manualTypes = built.manualTypes;
+
+    /* 여기 오면 안 된다 — 단추가 같은 계산으로 잠긴다. 그래도 **말은 한다**:
+       전에는 이 자리에서 말없이 끝나 눌러도 아무 일이 없었고, 그게 사용자가
+       본 「저장이 안 된다」였다 (KEY-305). 무음보다 틀린 말이 낫다. */
+    if (!typed.length && !Object.keys(extra).length) {
+      say("바뀐 것이 없습니다");
+      redraw();
+      return;
     }
 
     say("저장하는 중…");
@@ -2662,7 +2734,12 @@ function stateTakesFocus(tone) {
 
     /* 수동 추가 약품명 입력 — 값만 저장하고 renderSummary만 호출한다.
        renderFields(패널 전체 재구성)는 행 추가/삭제 시점에만 실행해 성능을 줄인다.
-       rx-save 버튼은 renderFields가 담당하므로, 저장 가능 상태를 직접 동기화한다. */
+       rx-save 단추는 renderFields 가 담당하므로 여기서 곧바로 맞춰 준다.
+
+       **그 셈은 `hasSomethingToSave` 하나뿐이다.** 전에는 여기서만 옛
+       조건(`pickedSet` 만 보는)을 그대로 썼다 — 이미 담긴 처방이면 보낼
+       것이 없는데도 단추가 켜졌고, 누르면 「바뀐 것이 없습니다」가 떴다.
+       KEY-305 가 잡으려던 「두 벌의 계산」이 세 번째 자리에 남아 있었다. */
     var manualName = target.getAttribute("data-manual-drug-name");
     if (manualName !== null) {
       var ni = parseInt(manualName, 10);
@@ -2670,9 +2747,7 @@ function stateTakesFocus(tone) {
         manualDrugs[ni].name = target.value || "";
         renderSummary();
         var rxBtn = document.getElementById("rx-save");
-        if (rxBtn && canSaveFields()) {
-          rxBtn.disabled = !(localOf(true).length || pickedSet || manualDrugs.some(function (d) { return d.name; }));
-        }
+        if (rxBtn) rxBtn.disabled = !hasSomethingToSave(true);
       }
       return;
     }
@@ -2883,9 +2958,11 @@ function stateTakesFocus(tone) {
       if (result) redraw();
     });
 
-  /* 고른 것을 붙잡는다. **서버로 보내지 않는다** — 진료에 처방 세트를 붙이는
-     자리가 아직 없다(`Prescription` 표는 있으나 운영 코드가 안 쓴다). 화면이
-     기억만 하고, 그 사실을 아래 곁말이 말한다. */
+  /* 고른 것을 붙잡는다. 서버로는 [저장]을 눌러야 간다 — `PRESCRIPTION_SET`
+     으로(`rxExtraFields`). 여기서 바로 안 보내는 것은, 드롭다운을 굴려 보는
+     동안 매번 `PUT` 이 나가면 안 되기 때문이다.
+     (전에는 이 자리에 「서버로 보내지 않는다 — 붙일 자리가 아직 없다」가
+      적혀 있었다. 붙일 자리는 있었고, 안 보내는 것이 KEY-305 였다.) */
   document.addEventListener("change", function (event) {
     var pick = event.target;
     if (!pick || pick.id !== "set-pick") return;
@@ -2944,29 +3021,17 @@ function stateTakesFocus(tone) {
 
   /* 진료 객체는 평평하다 — 목록이 내주는 그 모양 그대로 쓴다
      (`patients-api.js`: name · hospital_patient_no · birth_date · doctor …). */
+  /* 세 줄을 만드는 규칙은 `js/step-nav.js` 의 `visitHeadLines` 것이다 —
+     의사 화면이 같은 머리말을 안내문에서 뽑다가 안내문 없는 진료에서
+     이름을 통째로 지웠다(KEY-300). 한 벌로 모았다. */
   function renderPatientHead(next) {
     var name = document.getElementById("p-name");
     var chart = document.getElementById("p-id");
     var line = document.getElementById("p-visit");
-    if (name) name.textContent = next.name || "—";
-    if (chart) {
-      chart.textContent = [
-        next.hospital_patient_no ? "차트 " + next.hospital_patient_no : "",
-        next.birth_date || "",
-        next.age ? next.age + "세" : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    }
-    if (line) {
-      line.textContent = [
-        next.diagnosis_name,
-        next.doctor && next.doctor.name,
-        next.visited_at ? shortDate(next.visited_at) + " 진료" : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    }
+    var head = visitHeadLines(next);
+    if (name) name.textContent = head.name;
+    if (chart) chart.textContent = head.id;
+    if (line) line.textContent = head.line;
 
     /* 상태 배지 — `patients.html` 의 머리말과 같은 자리다. 전에는 이 화면에만
        없어서, 화면을 옮기면 「작성 중 · 판독 결과 확인」이 사라졌다

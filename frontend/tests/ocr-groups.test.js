@@ -661,16 +661,16 @@ test("**적은 값은 이제 실제로 담긴다** — 「저장 안 됨」 배�
      규칙과 무관하게 깨진다(`codeOnly` 는 주석을 공백으로 바꿔 길이를 지킨다). */
   assert.match(code, /if \(!r\.ok\) return;/, "막힌 줄까지 지워 적은 값이 사라진다");
 
-  /* 🚩 **같은 값을 다시 보내지 않는다.** `PUT` 은 확정된 줄에 409 를 내는데,
-     고른 처방을 무조건 다시 보내면 그 한 줄의 409 가 `Promise.all` 을 통째로
-     깨뜨려 **같이 보낸 진단이 영영 안 담겼다** — 처방을 한 번 저장하면 그 뒤로
-     진단을 못 넣는 상태가 됐다. */
-  assert.match(code, /fieldValueOf\(result\.fields, "MEDICATION_NAME"\) !== pickedSet\.name/, "같은 값을 다시 보내 409 를 부른다");
+  /* **같은 값은 다시 안 보낸다.** 헛걸음을 줄이는 것이다 — 확정된 줄의 409
+     를 피하려던 방어였는데 서버가 그걸 그만뒀다(KEY-273). 보는 칸이
+     `PRESCRIPTION_SET` 으로 바뀌었다 (KEY-305). */
+  assert.match(code, /fieldValueOf\([\s\S]{0,40}"PRESCRIPTION_SET"\) !== pickedSet\.name/, "같은 값을 다시 보낸다");
   assert.ok(!body.includes("local = {}"), "옆 블록의 적어 둔 값까지 지운다");
 
-  /* 적은 것이 없으면 누를 것도 없다 */
-  assert.match(code, /localOf\(false\)\.length \?/, "판독 값 단추가 빈 채로 눌린다");
-  assert.match(code, /localOf\(true\)\.length \|\| pickedSet/, "처방 단추가 빈 채로 눌린다");
+  /* 적은 것이 없으면 누를 것도 없다. 두 단추가 **보내는 쪽과 같은 계산**을
+     본다 — 두 벌이면 켜 두고 안 보내는 죽은 단추가 난다 (KEY-305). */
+  assert.match(code, /hasSomethingToSave\(false\) \?/, "판독 값 단추가 빈 채로 눌린다");
+  assert.match(code, /hasSomethingToSave\(true\) \?/, "처방 단추가 빈 채로 눌린다");
 });
 
 /* ── 맨 위 진단 · 처방 줄 ────────────────────────────────────────────── */
@@ -1166,15 +1166,91 @@ test("**고른 처방도 담긴다** — 화면이 기억만 하면 새로고침
   /* 안내문이 이 값으로 만들어진다. 화면에만 두면 「골랐는데 안 골라진」 채로
      승인까지 간다.
 
-     **바뀌었을 때만 담는다.** 예전에는 `pickedSet` 이 있으면 무조건 담았는데,
-     그러면 확정된 줄에 다시 `PUT` 이 가 409 가 났다. 담는다는 것은 그대로이고
-     조건만 붙었다. */
+     **담는 칸은 `PRESCRIPTION_SET` 이다** (KEY-305). 전에는 `MEDICATION_NAME`
+     에 세트 이름을 밀어 넣었다 — 판독이 읽은 약품명을 덮었고, 되살릴 때 보는
+     칸(`applyPrescriptionSetSuggestion`)에는 아무것도 안 남아 화면을 옮기면
+     선택이 판독의 추측으로 되감겼다. 여기서 그 옛 계약을 못 박고 있었다.
+
+     **바뀌었을 때만 담는다.** 이제는 그저 헛걸음을 줄이는 것이다 — 409 를
+     피하려던 방어였는데 서버가 그걸 그만뒀다(KEY-273). 단추가 같은 계산을
+     보므로 보낼 것이 없으면 아예 안 켜진다. */
   const code = codeOnly(source("js/ocr-review.js"));
+  const at = code.indexOf("function rxExtraFields");
+  assert.notEqual(at, -1, "담을 것을 세는 자리가 없다 — 검사가 헛돈다");
+  const body = code.slice(at, code.indexOf("function hasSomethingToSave"));
+
+  assert.match(body, /extra\.PRESCRIPTION_SET = pickedSet\.name/, "고른 처방을 안 담는다");
+  assert.doesNotMatch(
+    body,
+    /extra\.MEDICATION_NAME = pickedSet\.name/,
+    "세트 이름으로 약품명을 덮으면 판독이 읽은 진짜 이름이 사라진다",
+  );
+  assert.match(body, /fieldValueOf\([\s\S]{0,40}"PRESCRIPTION_SET"\) !== pickedSet\.name/, "같은 값도 다시 보낸다");
+});
+
+test("**켜는 쪽과 보내는 쪽이 한 계산을 본다** — 두 벌이면 죽은 단추가 난다", () => {
+  /* 단추는 `pickedSet` 만 보고 켜졌는데 보내는 쪽에는 「같은 값이면 안
+     보낸다」가 있었다. 한 번 저장하고 나면 눌러도 요청도 말도 없었다 —
+     사용자는 「저장이 안 된다」로 읽었다 (KEY-305). */
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  const gate = code.indexOf("function hasSomethingToSave");
+  assert.notEqual(gate, -1, "켜는 조건을 세는 자리가 없다");
+  assert.match(
+    code.slice(gate, gate + 400),
+    /rxExtraFields\(\)\.extra/,
+    "켜는 쪽이 보내는 쪽과 다른 것을 센다",
+  );
+
+  /* 두 단추가 다 그 자리를 본다 */
+  const buttons = code.match(/id="(rx|labs)-save"'\s*\+\s*\n\s*\(([^)]*)\)/g) || [];
+  assert.strictEqual(buttons.length, 2, "저장 단추 둘을 못 찾았다 — 검사가 헛돈다");
+  buttons.forEach(function (b) {
+    assert.match(b, /hasSomethingToSave\(/, "단추가 제 조건을 따로 셈한다");
+  });
+
+  /* 그래도 무음으로 끝나지 않는다 */
   const at = code.indexOf('"#labs-save, #rx-save"');
   const body = code.slice(at, at + 3600);
+  assert.match(
+    body,
+    /if \(!typed\.length && !Object\.keys\(extra\)\.length\) \{\s*\n\s*say\(/,
+    "보낼 것이 없을 때 말없이 끝난다 — 눌러도 아무 일이 없다",
+  );
+});
 
-  assert.match(body, /extra\.MEDICATION_NAME = pickedSet\.name/, "고른 처방을 안 담는다");
-  assert.match(body, /isRx && pickedSet/, "처방 블록에서만 담아야 한다");
+test("**저장할 것이 있는가는 한 자리에서만 센다** — 단추 잠금을 밖에서 다시 세면 세 번째 어긋남이 난다", () => {
+  /* KEY-305 는 「켜는 쪽과 보내는 쪽이 한 계산을 본다」로 고쳤는데, **그리는
+     자리 둘만** 고쳤다. 손으로 약 이름을 적을 때 단추를 곧바로 맞춰 주는
+     자리(`onTyped`)는 옛 조건을 그대로 썼다 — `pickedSet` 이 있다는 것만으로
+     켰다. 이미 그 처방이 담겨 있으면 보낼 것이 없는데도 켜지고, 누르면
+     「바뀐 것이 없습니다」가 뜬다. 무음은 아니지만 같은 어긋남이다
+     (2heej, #265).
+
+     이름이 아니라 규칙으로 못 박는다 — **저장할 것을 세는 어휘는
+     `hasSomethingToSave` 안에서만 산다.** 단추 잠금을 정하는 자리가 그
+     어휘를 직접 쓰면 그것이 곧 두 벌째다. */
+  const code = codeOnly(source("js/ocr-review.js"));
+
+  const OWN = /localOf\(|pickedSet|manualDrugs/;
+  code.split("\n").forEach(function (line, i) {
+    const at = line.indexOf(".disabled =");
+    if (at === -1) return;
+    assert.doesNotMatch(
+      line.slice(at),
+      OWN,
+      `${i + 1}행이 단추 잠금을 제 손으로 다시 센다 — ${line.trim()}`,
+    );
+  });
+
+  /* 그 자리가 실제로 있고, 한 계산을 본다 */
+  const sync = code.indexOf('getElementById("rx-save")');
+  assert.notEqual(sync, -1, "적는 동안 단추를 맞춰 주는 자리가 없다 — 검사가 헛돈다");
+  assert.match(
+    code.slice(sync, sync + 200),
+    /\.disabled = !hasSomethingToSave\(true\)/,
+    "적는 동안 맞춰 주는 자리가 옛 조건을 쓴다",
+  );
 });
 
 test("**판독이 없으면 저장 단추가 잠긴다** — 눌러서 실패하면 적은 것이 날아간 줄 안다", () => {
@@ -1187,11 +1263,16 @@ test("**판독이 없으면 저장 단추가 잠긴다** — 눌러서 실패하
   assert.notEqual(at, -1, "담을 수 있는지 묻는 자리가 없다");
   assert.match(code.slice(at, at + 200), /result\.ocr_result_id/, "판독 결과가 있는지 안 본다");
 
-  /* 두 단추 모두 그것을 본다 — 한쪽만 보면 그쪽만 잠긴다 */
+  /* 두 단추 모두 그것을 본다 — 한쪽만 보면 그쪽만 잠긴다. 이제는
+     `hasSomethingToSave` 를 거쳐 본다 (KEY-305) — 그 안에서 첫 줄이
+     `canSaveFields()` 다. */
+  const gate = code.indexOf("function hasSomethingToSave");
+  assert.notEqual(gate, -1, "켜는 조건을 세는 자리가 없다");
+  assert.match(code.slice(gate, gate + 300), /canSaveFields\(\)/, "켜는 조건이 판독 결과를 안 본다");
   for (const id of ["rx-save", "labs-save"]) {
     const bat = code.indexOf('id="' + id + '"');
     assert.notEqual(bat, -1, `${id} 단추가 없다`);
-    assert.match(code.slice(bat, bat + 220), /canSaveFields\(\)/, `${id} 가 잠기지 않는다`);
+    assert.match(code.slice(bat, bat + 220), /hasSomethingToSave\(/, `${id} 가 잠기지 않는다`);
   }
 
   /* 왜 못 누르는지 말한다 — 잠긴 단추만 두면 고장으로 읽힌다 */
