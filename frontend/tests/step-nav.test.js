@@ -188,3 +188,78 @@ test("**누르면 그 단계로 간다** — 이 화면에는 그 탭들의 본�
   const body = code.slice(at, at + 200);
   assert.ok(body.includes("if (!step) return"), "지금 서 있는 단계를 눌러도 뭔가 한다");
 });
+
+/* ── 머리말도 한 벌이다 — KEY-300 ────────────────────────────────────────
+ *
+ * 의사 화면은 이름·차트를 **안내문에서** 뽑았다. 그래서 아직 안내문이 없는
+ * 진료를 고르면 「—」만 남아 누구의 기록인지 알 수 없었다. 판독 화면은 같은
+ * 자리를 진료에서 채우고 있었다 — 같은 머리말이 두 벌이었다.
+ */
+
+const VISIT = {
+  visit_id: 20,
+  name: "봉시연",
+  hospital_patient_no: "12503",
+  birth_date: "1987-03-04",
+  age: 39,
+  diagnosis_name: "자궁내막증",
+  doctor: { name: "김연우 원장" },
+  visited_at: "2026-08-15T10:32:00+09:00",
+};
+
+test("**안내문이 없어도 누구인지 말한다** — 의사 화면이 이름을 지우던 자리", () => {
+  const { visitHeadLines } = nav();
+  const head = visitHeadLines(VISIT);
+
+  assert.strictEqual(head.name, "봉시연", "이름이 사라졌다 — 목록에서 방금 고른 환자다");
+  assert.match(head.id, /차트 12503/, "차트번호가 없다");
+  assert.match(head.id, /39세/, "나이가 없다");
+  assert.match(head.line, /자궁내막증/, "안내문이 없으면 진료가 스스로 말하는 것을 쓴다");
+  assert.match(head.line, /08-15 진료/, "진료일이 없다");
+});
+
+test("안내문이 있으면 요약이 셋째 줄의 주인이다 — 승인 전에 읽는 글이다", () => {
+  const { visitHeadLines } = nav();
+  const head = visitHeadLines(VISIT, { gender: "여", summary: "비잔 84일분 · 다음 방문 9/12" });
+
+  assert.strictEqual(head.line, "비잔 84일분 · 다음 방문 9/12", "요약이 진료 한 줄에 밀렸다");
+  assert.match(head.id, /^여 · 차트 12503/, "성별이 앞에 안 붙는다");
+});
+
+test("**성별 하나 때문에 나머지를 비우지 않는다** — 진료 목록 계약에 없는 값이다", () => {
+  const { visitHeadLines } = nav();
+  const head = visitHeadLines(VISIT, { gender: "", summary: "" });
+
+  assert.ok(!head.id.startsWith(" · "), `성별이 빈 자리를 남겼다 — ${head.id}`);
+  assert.match(head.id, /^차트 12503/, "성별이 없으면 차트번호가 맨 앞이다");
+  assert.strictEqual(head.name, "봉시연");
+});
+
+test("진료가 아직 없으면 「—」 하나만 — 빈 글자를 이름처럼 보이지 않게", () => {
+  const { visitHeadLines } = nav();
+  const head = visitHeadLines(null);
+
+  assert.strictEqual(head.name, "—");
+  assert.strictEqual(head.id, "");
+  assert.strictEqual(head.line, "");
+});
+
+test("**두 화면이 같은 함수를 부른다** — 한쪽만 고쳐지는 자리를 없앤다", () => {
+  for (const file of ["js/doctor.js", "js/ocr-review.js"]) {
+    const src = stripSrc(readSrc(file));
+    assert.match(src, /visitHeadLines\(/, `${file} 이 공통 머리말을 안 쓴다`);
+  }
+
+  /* 의사 화면이 다시 안내문에서 이름을 뽑으면 안 된다. */
+  const doctor = stripSrc(readSrc("js/doctor.js"));
+  assert.doesNotMatch(
+    doctor,
+    /el\("p-name"\)\.textContent = (?:"—"|p\.name)/,
+    "안내문에서 이름을 뽑던 자리로 되돌아갔다 — 안내문 없는 진료에서 이름이 지워진다",
+  );
+
+  /* 두 화면이 그 함수를 실을 수 있어야 한다. */
+  for (const page of ["doctor.html", "ocr-review.html"]) {
+    assert.match(readSrc(page), /<script src="\/js\/step-nav\.js">/, `${page} 이 step-nav.js 를 안 싣는다`);
+  }
+});

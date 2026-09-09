@@ -133,7 +133,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 18px;
-  margin: -18px -24px 18px;
+  /* 판의 여백만큼 되밀어 판 끝까지 번진다 — 숫자가 아니라 판이 내놓은 값을
+     쓴다(`shell.css` 의 `.pane`). 판 밖에서 쓰이면 예비값이 선다. */
+  margin: calc(-1 * var(--pane-pad-y, 18px)) calc(-1 * var(--pane-pad-x, 24px)) 18px;
   padding: 11px 26px;
   background: var(--card);
   border-bottom: 1px solid var(--line);
@@ -147,7 +149,7 @@
      상단바 · 환자 목록과 같은 그림자 — 아주 얕게. 이 줄이 아래 내용 위에
      있다는 것만 말한다. 셋이 같은 값이라야 「띄운 것」이 한 가지로 읽힌다. */
   position: sticky;
-  top: -18px;
+  top: calc(-1 * var(--pane-pad-y, 18px));
   z-index: 4;
   box-shadow: 0 1px 3px rgb(28 31 35 / 6%);
 }
@@ -207,6 +209,23 @@
   flex: none;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* **좁은 창에서는 줄어들어야 접힌다** — KEY-296. `flex: none` 이면 탭 넷이
+   405px 로 서서 320px 판을 넘어 잘린다. `flex-wrap` 이 있어도 소용없다 —
+   접을 폭을 안 받았으니 접을 자리가 없다. 넓은 창에서는 그대로 둔다:
+   줄어들 수 있게 두면 머리말이 길 때 탭이 먼저 눌린다.
+   폭을 가르는 값은 `shell.css` 의 좁은 창 규칙과 같은 900px 다. */
+@media (max-width: 900px) {
+  .tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* 좁은 판에서는 좌우 여백도 판을 따라간다 */
+  .patient-head {
+    padding: 10px var(--pane-pad-x, 12px);
+  }
 }
 
 /* 단계이자 이동 수단이다 — ● ○ 가 어디까지 왔는지 말하고, 누르면 그리로 간다.
