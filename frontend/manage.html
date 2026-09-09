@@ -168,6 +168,14 @@
 
         <div id="table"></div>
 
+        <!-- 쪽 넘김 (S2-1) — 40명씩 끊어 이전·다음으로 간다. 스크롤로 끝없이
+             흘리면 어디까지 봤는지 잃고, 전에는 50 에서 조용히 잘렸다 (KEY-303). -->
+        <nav class="pager" id="roster-page" aria-label="환자 목록 쪽 넘김" hidden>
+          <button class="pager__step" type="button" data-page="prev">‹ 이전</button>
+          <span class="pager__say" id="roster-page-say" aria-live="polite"></span>
+          <button class="pager__step" type="button" data-page="next">다음 ›</button>
+        </nav>
+
         <div class="send-foot">
           <p class="send-foot__say" id="summary"></p>
           <span class="send-top__grow"></span>
@@ -222,6 +230,7 @@
     <script src="/js/checkin-words.js"></script>
     <script src="/js/roster-rules.js"></script>
     <script src="/js/history-modal.js"></script>
+    <script src="/js/roster-paging.js"></script>
     <script src="/js/schedule-rules.js"></script>
     <script src="/js/history-rules.js"></script>
     <script src="/js/messages-api.js"></script>
