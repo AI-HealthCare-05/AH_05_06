@@ -343,7 +343,9 @@ class DrugCautionContent(models.Model):
     verified_at = fields.DateField()
     content_version = fields.CharField(max_length=50)
     source_grade = fields.CharEnumField(enum_type=SourceGrade)
-    physician_review = fields.JSONField(null=True, description="전문의 승인 기록: 검토자·병원·검토일·본문 SHA256")
+    physician_review: fields.Field[dict[str, str] | None] = fields.JSONField(
+        null=True, description="전문의 승인 기록: 검토자·병원·검토일·본문 SHA256"
+    )
 
     approval_status = fields.CharEnumField(enum_type=ApprovalStatus, default=ApprovalStatus.DRAFT)
     # KEY-180 §3: 승인 상태일 때만 "{prescription_set_id}:{section_key}"를 채운다.
