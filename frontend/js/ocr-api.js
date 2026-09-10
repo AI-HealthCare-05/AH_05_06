@@ -119,7 +119,25 @@ var ocrApi = {
      (`app/services/guides.py`), 화면이 병원을 실어 보내면 그것이 더 약한 길이
      된다 — 보낸 값을 믿게 되는 순간 남의 병원 진료를 부를 여지가 생긴다. */
   generateGuide: function (visitId) {
-    return ocrRequest("/visits/" + encodeURIComponent(visitId) + "/guide/generate", { method: "POST" });
+    var base = "/visits/" + encodeURIComponent(visitId) + "/guide/";
+    var polls = 0;
+    function awaitGeneration(result) {
+      if (!result || !result.job_id) return result;
+      if (result.state === "failed") {
+        var error = new Error("안내문을 생성하지 못했습니다. 내용을 확인한 뒤 다시 시도해 주세요.");
+        error.code = result.failure_reason;
+        throw error;
+      }
+      if (++polls > 400) {
+        var pending = new Error("안내 생성이 아직 진행 중입니다. 잠시 뒤 다시 확인해 주세요.");
+        pending.code = "GUIDE_GENERATION_PENDING";
+        throw pending;
+      }
+      return new Promise(function (resolve) { setTimeout(resolve, 1500); }).then(function () {
+        return ocrRequest(base + "generation/" + encodeURIComponent(result.job_id));
+      }).then(awaitGeneration);
+    }
+    return ocrRequest(base + "generate", { method: "POST" }).then(awaitGeneration);
   },
 
   /* POST /visits/{visitId}/ocr-finalize — KEY-66, 화면 배선은 KEY-271.

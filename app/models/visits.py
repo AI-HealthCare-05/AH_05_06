@@ -296,6 +296,30 @@ class GuideEvent(models.Model):
         indexes = (("guide_document", "created_at"),)
 
 
+class GuideGenerationJob(models.Model):
+    """Durable generation/retry queue; the existing GuideStatus is unchanged."""
+
+    job_id = fields.UUIDField(primary_key=True)
+    visit_id = fields.BigIntField()
+    hospital_id = fields.BigIntField()
+    actor_id = fields.BigIntField()
+    active_key = fields.CharField(max_length=100, null=True, unique=True)
+    discard_edits = fields.BooleanField(default=False)
+    attempts = fields.IntField(default=0)
+    input_sha256 = fields.CharField(max_length=64)
+    guide_version = fields.IntField(default=0)
+    claim = fields.UUIDField(null=True)
+    available_at = fields.DatetimeField()
+    completed_at = fields.DatetimeField(null=True)
+    failed_at = fields.DatetimeField(null=True)
+    failure_reason = fields.CharField(max_length=60, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "guide_generation_job"
+        indexes = (("active_key", "available_at"),)
+
+
 class PatientGuideLink(models.Model):
     """승인 안내 한 건을 여는 환자 링크 — KEY-90, KEY-223, KEY-297.
 
@@ -709,18 +733,27 @@ class GuideSafetyCheck(models.Model):
     """안내문 생성 전·후 안전검증 기록 — KEY-83, append-only.
 
     actor_id 없음 — 시스템 자동 실행이므로 사람 행위자가 없다.
-    KEY-277에서 생성 경로에 연결되기 전까지는 계약과 감사 기반으로만 쓴다.
+    생성 전 차단은 문서가 없으므로 generation_job에 연결한다.
     환자정보·OCR 원문·전체 생성문은 담지 않는다.
     """
 
     guide_safety_check_id = fields.BigIntField(primary_key=True)
-    guide_document_id: int
-    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+    guide_document_id: int | None
+    guide_document: fields.ForeignKeyNullableRelation[GuideDocument] = fields.ForeignKeyField(
         "models.GuideDocument",
         related_name="safety_checks",
         on_delete=OnDelete.CASCADE,
         source_field="guide_document_id",
+        null=True,
     )
+    generation_job: fields.ForeignKeyNullableRelation[GuideGenerationJob] = fields.ForeignKeyField(
+        "models.GuideGenerationJob",
+        related_name="safety_checks",
+        null=True,
+        on_delete=OnDelete.RESTRICT,
+    )
+    section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
+    guide_version = fields.IntField(null=True)
     stage = fields.CharEnumField(enum_type=SafetyCheckStage)
     verdict = fields.CharEnumField(enum_type=SafetyCheckVerdict)
     reason_code = fields.CharField(max_length=30, null=True)

@@ -25,3 +25,29 @@ test("KEY-277 검색 장애 fallback 표시", () => {
   assert.ok(html.includes("synthetic-template"));
   assert.ok(html.includes("v2"));
 });
+
+test("KEY-277 생성 접수 후 같은 작업만 폴링하고 저장 결과 반환", async () => {
+  const box = load("api", "ocr-api");
+  const calls = [];
+  const ready = { visit_id: 7, sections: [] };
+  box.ocrRequest = async (path, options) => {
+    calls.push({ path, options });
+    return calls.length < 3 ? { job_id: "synthetic-job", state: "queued" } : ready;
+  };
+  assert.equal(await box.ocrApi.generateGuide(7), ready);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[1].path, "/visits/7/guide/generation/synthetic-job");
+  assert.equal(calls[2].path, calls[1].path);
+});
+
+test("KEY-277 실패는 성공처럼 반환하지 않고 재접수도 하지 않음", async () => {
+  const box = load("api", "ocr-api");
+  let calls = 0;
+  box.ocrRequest = async () => {
+    calls++;
+    return { job_id: "synthetic-job", state: "failed", failure_reason: "source_conflict" };
+  };
+  await assert.rejects(box.ocrApi.generateGuide(7), { code: "source_conflict" });
+  assert.equal(calls, 1);
+});

@@ -2,7 +2,9 @@
 
 from tortoise import BaseDBAsyncClient
 
+from app.models.prescriptions import Prescription, ordered_prescription_items
 from app.models.visits import GuideSection, GuideSectionSourceSnapshot
+from app.services.guide_body import medication_body
 from app.services.guide_knowledge_context import GuideSourceValidation
 from app.services.knowledge_search import ContextAdmissionOutcome, GenerationContextAdmission, fallback_body_checksum
 
@@ -64,13 +66,19 @@ async def persist_guide_fallback(
     template = admission.fallback_template
     if admission.outcome is not ContextAdmissionOutcome.APPROVED_TEMPLATE_FALLBACK or template is None:
         raise ValueError("approved_template_required")
-    if reason not in {"no_evidence", "search_infrastructure_exhausted"}:
+    if reason not in {"no_evidence", "search_infrastructure_exhausted", "fixed_approved_template"}:
         raise ValueError("fallback_reason_not_allowed")
-    if section.generated_body != template.body or template.body_sha256 != fallback_body_checksum(template.body):
-        raise ValueError("fallback_body_changed")
     guide = await section.guide_document
     if guide.hospital_id != hospital_id:
         raise ValueError("guide_scope_mismatch")
+    expected = template.body
+    if section.section_key.value == "medication":
+        prescription = (
+            await Prescription.filter(visit_id=guide.visit_id).using_db(connection).prefetch_related("items").first()
+        )
+        expected = medication_body(ordered_prescription_items(prescription), template.body)
+    if section.generated_body != expected or template.body_sha256 != fallback_body_checksum(template.body):
+        raise ValueError("fallback_body_changed")
     await GuideSectionSourceSnapshot.create(
         guide_document=guide,
         guide_version=guide.version,

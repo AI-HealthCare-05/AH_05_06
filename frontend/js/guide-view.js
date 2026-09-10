@@ -105,7 +105,8 @@ function guideSourcesHtml(sources) {
     sources.map(function (source) {
       if (source.generation_mode === "template") {
         var reason = source.fallback_reason === "search_infrastructure_exhausted"
-          ? "검색 장애 → 템플릿" : "근거 없음 → 템플릿";
+          ? "검색 장애 → 템플릿" : source.fallback_reason === "fixed_approved_template"
+            ? "승인 고정 문구" : "근거 없음 → 템플릿";
         return "<li>" + esc(reason) + " · 템플릿 " + esc(source.template_id || "") +
           " · 버전 " + esc(source.version) + "</li>";
       }

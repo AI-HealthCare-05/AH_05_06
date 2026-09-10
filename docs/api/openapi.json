@@ -1218,6 +1218,41 @@
         "title": "GuideCopySaveRequest",
         "type": "object"
       },
+      "GuideGenerationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "visit_id",
+          "state"
+        ],
+        "title": "GuideGenerationResponse",
+        "type": "object"
+      },
       "GuideMessageFailure": {
         "description": "**보내 봤는데 안 됐다** — 와이어프레임 D1-7 「실패 이유 넷」.\n\n원문: 「ⓘ 실패 이유 넷 — 잘못된 번호 · 수신 거부 · 통신사 오류 ·\n발신번호 미등록」. 넷으로 못박혀 있으므로 자유 문자열로 두지 않는다 —\n자유롭게 두면 발송기를 붙이는 사람마다 다른 낱말을 넣고, 화면은 그중\n아는 것만 사람 말로 옮긴다.",
         "enum": [
@@ -9664,7 +9699,89 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GuideResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GuideResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GuideGenerationResponse"
+                    }
+                  ],
+                  "title": "Response Generate Guide Api V1 Visits  Visit Id  Guide Generate Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideGenerationResponse"
+                }
+              }
+            },
+            "description": "생성 작업 접수"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Generate Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/generation/{job_id}": {
+      "get": {
+        "operationId": "generation_result_api_v1_visits__visit_id__guide_generation__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GuideGenerationResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GuideResponse"
+                    }
+                  ],
+                  "title": "Response Generation Result Api V1 Visits  Visit Id  Guide Generation  Job Id  Get"
                 }
               }
             },
@@ -9686,7 +9803,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Generate Guide",
+        "summary": "Generation Result",
         "tags": [
           "guides"
         ]

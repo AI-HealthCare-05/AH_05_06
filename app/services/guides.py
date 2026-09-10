@@ -46,13 +46,17 @@ from app.models.visits import (
     GuideDocument,
     GuideEvent,
     GuideEventType,
+    GuideGenerationJob,
     GuideMessage,
     GuideMessageKind,
     GuideMessageSetting,
     GuideMessageStatus,
+    GuideSafetyCheck,
     GuideSection,
     GuideSectionKey,
     GuideStatus,
+    SafetyCheckStage,
+    SafetyCheckVerdict,
     Visit,
 )
 from app.ocr.utils import assert_ocr_jobs_ready, merge_fields_by_type
@@ -233,10 +237,15 @@ def _no_regenerate_saying(status: GuideStatus) -> str:
 
 
 class GuideService:
-    async def generate(self, actor, visit_id: int, *, discard_edits: bool = False) -> GuideDocument:
-        """확정 OCR 필드가 있어야 고정 템플릿 안내를 만들 수 있다.
+    def __init__(self, *, rag_generator=None, generation_job: GuideGenerationJob | None = None) -> None:
+        self.rag_generator = rag_generator
+        self.generation_job = generation_job
 
-        LLM·RAG 없이 출처가 고정된 합성 템플릿을 사용한다 — KEY-150 W1 범위.
+    async def generate(self, actor, visit_id: int, *, discard_edits: bool = False) -> GuideDocument:
+        """확정 OCR 필드가 있어야 안내를 만들 수 있다.
+
+        GUIDE_RAG_ENABLED이면 동일 서비스의 큐 실행에서 검증 근거로 생성한다.
+        비활성 상태에서는 기존 KEY-150 고정 템플릿 경로를 유지한다.
         미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고,
         의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
         """
@@ -250,6 +259,11 @@ class GuideService:
         # finalize_ocr과 동일한 기준 — assert_ocr_jobs_ready(app/ocr/utils.py).
         # FAILED job은 안내 근거에서 제외하고 COMPLETED job만 사용한다 (KEY-288).
         merged_fields = await _load_confirmed_ocr_fields(visit_id, actor.hospital_id)
+
+        if config.GUIDE_RAG_ENABLED and self.rag_generator is None:
+            from app.services.guide_generation_jobs import GenerationPendingError, enqueue
+
+            raise GenerationPendingError(await enqueue(actor, visit_id, discard_edits=discard_edits))
 
         # KEY-165: 처방 세트의 승인된 caution/emergency 문구를 미리 조회한다.
         # 트랜잭션 밖에서 실행해 락 보유 시간을 줄인다.
@@ -326,6 +340,19 @@ class GuideService:
         # **담당 것이 의원 공통을 덮는다** — 뒤에 오는 쪽이 이긴다.
         copies = {**common_copies, **own_copies}
 
+        generated = await self._prepare_rag_sections(
+            actor,
+            visit_id,
+            prescription_items,
+            prescription_set,
+            (
+                (GuideSectionKey.MEDICATION, medication_content),
+                (GuideSectionKey.CAUTION, caution_content),
+                (GuideSectionKey.EMERGENCY, emergency_content),
+                (GuideSectionKey.LIFE, life_content),
+            ),
+        )
+
         async with in_transaction() as connection:
             # Visit 행을 잠근 채로 중복을 확인하고 생성한다.
             # 잠금 밖에서 exists()→create() 하면 동시 요청이 둘 다 통과해
@@ -349,6 +376,7 @@ class GuideService:
             # 발송 예약까지 걸린다. 그 뒤에 밑에서 갈아 끼우면 손댄 것이 날아가고,
             # 원장님이 승인한 글과 나가는 글이 달라진다.
             existing = await GuideDocument.filter(visit_id=visit_id).using_db(connection).select_for_update().first()
+            await self._validate_generation_claim(visit_id, existing, connection)
             if existing is not None:
                 if existing.status not in REGENERABLE:
                     raise ApiError("GUIDE_ALREADY_EXISTS", 409, _no_regenerate_saying(existing.status))
@@ -490,6 +518,7 @@ class GuideService:
                 generated_body="복약 안내가 발송될 예정입니다. 궁금한 점은 진료실로 문의해 주세요.",
                 using_db=connection,
             )
+            await self._persist_generated_sections(actor, guide, generated, connection, prescription_items, copies)
             # 안내문과 다섯 섹션이 생겼는데 이 행만 빠지면 「누가 생성했나」에
             # 답할 수 없다. 같은 트랜잭션에 둬서 감사 기록 저장이 실패하면
             # 안내문·섹션도 함께 되돌린다 — 생성 성공과 감사 성공은 한 사건이다.
@@ -500,10 +529,171 @@ class GuideService:
                 # 사라졌지」에 답하려면 언제 갈렸는지가 있어야 한다.
                 event_type=GuideEventType.REGENERATED if remade else GuideEventType.GENERATED,
                 actor_id=actor.user_id,
+                reason="rag_generation" if generated else None,
                 using_db=connection,
             )
 
         return guide
+
+    async def _prepare_rag_sections(self, actor, visit_id, prescription_items, prescription_set, contents):
+        generated = {}
+        if self.rag_generator is None:
+            return generated
+        from app.services.guide_generation import GuideGenerationError, approved_fallback
+        from app.services.guide_generation_jobs import MAX_ATTEMPTS, input_checksum
+
+        if self.generation_job and await input_checksum(visit_id) != self.generation_job.input_sha256:
+            raise GuideGenerationError("input_changed")
+        from app.models.catalog import DrugCatalog, PrescriptionSetDrug
+
+        # Do not send OCR/free-form names to a provider. Only exact catalog
+        # matches enter the query; an unknown name requires local correction.
+        catalog_names = set(await DrugCatalog.all().values_list("name", flat=True))
+        catalog_names.update(await PrescriptionSetDrug.all().values_list("name", flat=True))
+        drug_names = tuple(item.name for item in prescription_items)
+        if any(name not in catalog_names for name in drug_names):
+            raise GuideGenerationError("unrecognized_prescription")
+        disease = prescription_set.disease.value if prescription_set else ""
+        for key, content in contents:
+            try:
+                generated[key] = await self.rag_generator.section(
+                    hospital_id=actor.hospital_id,
+                    section_key=key.value,
+                    query=" ".join((disease, *drug_names, key.value)),
+                    prescribed_drugs=drug_names,
+                    known_drugs=tuple(catalog_names),
+                    fallback=approved_fallback(content),
+                    infrastructure_exhausted=bool(self.generation_job and self.generation_job.attempts >= MAX_ATTEMPTS),
+                    fixed_template=key is GuideSectionKey.EMERGENCY,
+                )
+            except GuideGenerationError as exc:
+                exc.section_key = key.value
+                raise
+        return generated
+
+    async def _validate_generation_claim(self, visit_id, existing, connection) -> None:
+        if self.generation_job:
+            from app.models.staffs import Staff, StaffStatus
+            from app.services.guide_generation import GuideGenerationError
+            from app.services.guide_generation_jobs import input_checksum
+
+            staff = (
+                await Staff.filter(
+                    staff_id=self.generation_job.actor_id,
+                    hospital_id=self.generation_job.hospital_id,
+                    status=StaffStatus.ACTIVE,
+                )
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if staff is None or not set(staff.roles).intersection({"staff", "doctor"}):
+                raise GuideGenerationError("actor_unavailable")
+
+            job = (
+                await GuideGenerationJob.filter(job_id=self.generation_job.pk)
+                .using_db(connection)
+                .select_for_update()
+                .first()
+            )
+            if (
+                job is None
+                or job.claim != self.generation_job.claim
+                or not job.active_key
+                or job.available_at <= now()
+                or job.guide_version != (existing.version if existing else 0)
+                or job.input_sha256 != await input_checksum(visit_id)
+            ):
+                raise GuideGenerationError("input_changed")
+
+    async def _persist_generated_sections(
+        self, actor, guide, generated, connection, prescription_items, copies
+    ) -> None:
+        if generated:
+            from app.services.guide_source_snapshots import persist_guide_fallback, persist_guide_sources
+            from app.services.knowledge_search import ContextAdmissionOutcome
+
+            for section in await GuideSection.filter(guide_document=guide).using_db(connection):
+                artifact = generated.get(section.section_key)
+                if artifact is None:
+                    continue
+                await self.rag_generator.revalidate_artifact(
+                    artifact,
+                    hospital_id=actor.hospital_id,
+                    section_key=section.section_key.value,
+                )
+                section.generated_body = (
+                    medication_body(prescription_items, artifact.body)
+                    if section.section_key is GuideSectionKey.MEDICATION
+                    else artifact.body
+                )
+                copy = copies.get(section.section_key)
+                if copy is not None and not section.locked:
+                    section.edited_body = (
+                        medication_body(prescription_items, copy)
+                        if section.section_key is GuideSectionKey.MEDICATION
+                        else copy
+                    )
+                    await GuideEvent.create(
+                        guide_document=guide,
+                        event_type=GuideEventType.EDITED,
+                        actor_id=actor.user_id,
+                        section_key=section.section_key,
+                        reason="configured_doctor_copy_applied",
+                        using_db=connection,
+                    )
+                if artifact.admission.outcome is ContextAdmissionOutcome.SEARCH_CONTEXT:
+                    section.drug_caution_content_id = None
+                await section.save(
+                    update_fields=("generated_body", "edited_body", "drug_caution_content_id"), using_db=connection
+                )
+                if artifact.admission.outcome is ContextAdmissionOutcome.SEARCH_CONTEXT:
+                    await persist_guide_sources(
+                        section, artifact.validation, hospital_id=actor.hospital_id, connection=connection
+                    )
+                else:
+                    await persist_guide_fallback(
+                        section,
+                        artifact.admission,
+                        hospital_id=actor.hospital_id,
+                        reason=artifact.fallback_reason,
+                        connection=connection,
+                    )
+                template = artifact.admission.fallback_template
+                await GuideEvent.create(
+                    guide_document=guide,
+                    event_type=GuideEventType.GENERATED,
+                    actor_id=actor.user_id,
+                    section_key=section.section_key,
+                    reason=(
+                        f"template:{template.template_id}:{template.version}:{artifact.fallback_reason}"
+                        if template
+                        else "rag_generation"
+                    )[:REASON_MAX],
+                    using_db=connection,
+                )
+                for stage, verdict in (
+                    (SafetyCheckStage.PRE_GENERATE, artifact.pre),
+                    (SafetyCheckStage.POST_GENERATE, artifact.post),
+                ):
+                    if verdict is not None:
+                        await GuideSafetyCheck.create(
+                            guide_document=guide,
+                            generation_job=self.generation_job,
+                            section_key=section.section_key,
+                            guide_version=guide.version,
+                            stage=stage,
+                            verdict=SafetyCheckVerdict(verdict.verdict.value),
+                            reason_code=verdict.reason_code,
+                            checker_version=verdict.checker_version,
+                            using_db=connection,
+                        )
+            if self.generation_job:
+                await (
+                    GuideGenerationJob.filter(job_id=self.generation_job.pk, claim=self.generation_job.claim)
+                    .using_db(connection)
+                    .update(completed_at=now(), active_key=None, failure_reason=None)
+                )
 
     async def get(self, actor, visit_id: int) -> GuideDocument:
         """병원은 **진료를 타고** 판단한다.

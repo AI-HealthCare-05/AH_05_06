@@ -86,6 +86,13 @@ class GuidePreview(StrictModel):
     guide: PatientGuideDetailResponse | None = None
 
 
+class GuideGenerationResponse(StrictModel):
+    job_id: str
+    visit_id: int
+    state: str
+    failure_reason: str | None = None
+
+
 class GuideResponse(StrictModel):
     visit_id: int
     #: 이 안내문이 누구 것인가. 화면 머리가 이 값으로 산다.

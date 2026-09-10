@@ -9,6 +9,14 @@
 근거 원문·프롬프트는 반환하지 않는다. template의 version은 사용한 템플릿 버전이다.
 이 정보는 생성 원문 기준이며 의료진 편집으로 변경되지 않는다.
 
+`GUIDE_RAG_ENABLED=true`에서는 `POST /api/v1/visits/{visit_id}/guide/generate`가
+`202 {job_id, visit_id, state:"queued", failure_reason:null}`로 작업을 접수한다.
+같은 병원·진료의 활성 작업은 중복 생성하지 않는다. 비활성화된 기존 경로는 201 안내 응답을 유지한다.
+`GET /api/v1/visits/{visit_id}/guide/generation/{job_id}`는 같은 병원의 staff/doctor만 조회한다.
+대기는 위 작업 응답, 종료 실패는 `state:"failed"`와 고정 `failure_reason`, 완료는 저장된 안내 응답이다.
+없는 작업·타 병원 작업은 404다. 실패 응답에 모델 출력·예외 원문·인증정보를 포함하지 않는다.
+의료진 화면은 접수한 작업 ID만 조회하며 실패 시 자동으로 새 생성 요청을 보내지 않는다.
+
 > 인증 주체: 병원 직원
 > 문서 상태: 직원 인증, 환자·진료, OCR의 기존 상세 계약과 구현 기록을 통합한 저장소 정본
 

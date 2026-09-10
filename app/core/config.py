@@ -166,6 +166,8 @@ class Config(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_TIMEOUT_SECONDS: float = 20.0
+    # Explicit rollout switch: the RAG worker must be deployed together with the API.
+    GUIDE_RAG_ENABLED: bool = False
 
     # 공급자 가격은 바뀔 수 있으므로 코드에 고정하지 않는다. 배포 환경에서
     # 단가를 넣은 경우에만 토큰 사용량으로 추정 비용을 기록한다.
