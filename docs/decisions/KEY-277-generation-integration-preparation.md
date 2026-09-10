@@ -16,7 +16,10 @@ Jira: https://leehee.atlassian.net/browse/KEY-277
 준비 모듈이며 운영 호출부는 없다. 현재 GuideService.generate()와 환자·챗봇
 동작은 변경하지 않는다. LLM 호출, 새 외부 데이터 전송은 하지 않는다.
 
-KEY-82 평가 합격 근거, KEY-276 완료와 KEY-75 생성/실패 상태기계 계약 확인 후:
+2026-09-10 [리뷰 결정](https://github.com/AI-HealthCare-05/AH_05_06/pull/286#issuecomment-5613664688)에서
+KEY-82 평가 통과, KEY-276·KEY-83 병합 및 KEY-75 재사용을 확인했다.
+외부 선행 블로커는 없으며, 아래 생성 연결은 KEY-277의 남은 구현 범위다.
+기존 GuideService 상태기계를 확장하고 실제 연결 시 승인된 PocEvaluationApproval을 적용한다.
 
 1. 확정 OCR·처방에서 식별정보 없는 검색 질의를 구성한다.
 2. KEY-276 provider 결과를 프롬프트 직전에 재검증한다.
@@ -27,3 +30,13 @@ KEY-82 평가 합격 근거, KEY-276 완료와 KEY-75 생성/실패 상태기계
 
 현재 frozen DTO는 메모리 복사이며 DB 영속 스냅샷 완료를 의미하지 않는다.
 KEY-277 전체 인수조건 완료 또는 배포 준비로 표시하지 않는다.
+
+## 재검증 반환 계약
+
+`GuideSourceValidation`은 검증된 `sources`와 `block_reason`을 반환한다.
+성공 시 사유는 None이며, 실패 시 근거는 항상 빈 tuple이다.
+검색의 no_verified_context, source_conflict, index_invalid는 그대로 구분한다.
+충돌·인덱스 오류 및 필드 불일치는 근거 없음 fallback으로 변환하면 안 된다.
+근거 없음도 이 모듈이 템플릿 사용을 승인하는 것은 아니며 기존 admission gate를 거친다.
+필드별 실패 사유에는 본문이나 환자 정보가 포함되지 않는다.
+호출자는 검색과 재검증에 같은 min_similarity를 전달한다(기본 0.72).
