@@ -696,6 +696,10 @@ docker compose ps      # 일곱이 다 떴는가
 
 이 저장소의 운영 compose 에는 `profiles:` 가 없다 — 줄 옵션을 찾지 않아도 된다.
 
+> **RDS 로 옮긴 서버는 다르다.** 그 서버에는 `~/project/docker-compose.override.yml` 이
+> 얹혀 있고, 거기서 `mysql` 이 프로필 뒤로 간다 — 맨 `up -d` 로는 안 뜬다(의도된 것이다).
+> 옮긴 뒤에 이 절을 읽는다면 4-5 절을 함께 본다.
+
 ### ③ 스키마를 올린다
 
 ```bash
@@ -768,6 +772,376 @@ cd ~/project && docker compose down -v     # 🔴 mysql_data 가 사라진다
 | ② 기동 | `docker compose ps` 로 무엇이 안 떴는지 보고 그것만 다시 |
 | ③ 마이그레이션 | `aerich downgrade` (`docs/migrations/`). **먼저 어디까지 올랐는지 확인한다** |
 | ④ 시딩 | `down -v` 로 비우고 ②부터 다시 — seed 는 `get_or_create` 라 다시 돌려도 안 쌓인다 |
+
+## 4-5. 컨테이너 MySQL → RDS MySQL (KEY-201)
+
+`mysql_data` 볼륨은 컨테이너 재시작은 견디지만 **EC2 인스턴스가 사라지면 함께
+사라진다.** 담긴 것이 진료 기록·안내문이고 명세가 「삭제하지 않는다」이므로,
+지금 구조에는 되살릴 수단이 하나도 없다. `docs/infra-scale.md` 가 목표를 RDS
+MySQL 로 적어 두었다.
+
+> **아직 안 옮겼다.** 이 절은 옮길 때 따라갈 절차이고, AWS 자원을 실제로 만든
+> 기록이 아니다. 만든 뒤에는 엔드포인트·검증 결과를 여기 이어 적는다.
+
+### ① 무엇을 만드나
+
+| | 값 | 왜 |
+|---|---|---|
+| 엔진 | MySQL 8.0 | 컨테이너와 같은 판이라 스키마를 그대로 옮긴다 |
+| 퍼블릭 액세스 | **끈다** | 켜면 환자 표가 인터넷에 붙는다 — 보안그룹 하나에 기대지 않는다 |
+| 보안그룹 | EC2 의 그룹에서 3306 만 | 4-2 절이 웹 둘만 여는 것과 같은 태도다 |
+| 문자셋 | `utf8mb4` · `utf8mb4_unicode_ci` | 컨테이너 `command` 가 주던 값이다 — RDS 는 **파라미터 그룹**으로 준다 |
+| 시간대 | `Asia/Seoul` | 컨테이너는 `TZ` 로 줬다. RDS 는 파라미터 그룹의 `time_zone` 이다 |
+
+**문자셋·시간대를 기본값으로 두면 안 된다.** 컨테이너 쪽은 `command` 와 `TZ`
+로 주고 있어서, 그 두 줄을 안 옮기면 RDS 에서 한글이 `????` 로 들어가거나
+날짜 경계가 UTC 로 밀린다. 같은 스키마인데 값이 달라지는 자리다.
+
+**지금 서버에서 잰 값이다** (2026-09-09, `ai-health-05-06`). 새로 만든 RDS 를
+이것과 대 본다.
+
+```text
+판          8.0.46
+문자셋       utf8mb4          정렬  utf8mb4_unicode_ci
+time_zone   SYSTEM           ← 컨테이너의 TZ=Asia/Seoul 을 따라간 값이다
+크기         6.1 MB           환자 103 · 진료 107 · 안내문 6
+```
+
+🚩 **`time_zone` 이 `SYSTEM` 인 것이 함정이다.** RDS 에는 그 컨테이너가 없어
+`SYSTEM` 이 **UTC** 를 가리킨다. 파라미터 그룹에 `Asia/Seoul` 을 **명시**하지
+않으면 옮긴 뒤 날짜 경계가 아홉 시간 밀린다 — 접수대 목록과 D+7 이 하루씩
+어긋나는 모양으로 드러난다(같은 축의 전례 KEY-181).
+
+### ② 옮긴다
+
+앱을 세우고 옮긴다 — 도는 중에 뜨면 그 사이 쓰인 것이 사라진다.
+
+**먼저 compose 판을 본다.** 오버레이가 쓰는 `!override` 는 **v2.24.4 이상**의
+문법이다. 낮으면 그 줄을 모르는 값으로 읽어 `mysql` 이 그대로 뜬다 — 옮기고도
+컨테이너 DB 가 도는, 이 절이 막으려던 그 자리다.
+
+```bash
+docker compose version    # Docker Compose version v2.24.4 이상
+```
+
+**서버에는 저장소가 없다.** 배포가 올리는 것은 `.env` · `docker-compose.yml` ·
+nginx 설정 셋뿐이다(3절 3번). `-f infra/docker/...` 로 부르면 그런 파일이 없다 —
+`~/project` 로 가서 이름 없이 부른다.
+
+```bash
+# EC2 에서. 비밀번호는 이 줄에만 적고 셸 기록에 안 남긴다 (2절).
+cd ~/project
+
+docker compose stop fastapi ai-worker
+
+# **root 로 뜬다.** 앱 계정은 제 스키마에만 권한이 있어 `--routines`
+# `--triggers` 가 환경에 따라 막힌다. 옮기는 일은 한 번뿐이라 여기서만 쓴다.
+#
+# **자격을 명령줄에 안 싣는다.** `-p` 로 주면 컨테이너 안 `ps` 에 그대로
+# 뜬다 — 2절이 셸 기록을 두고 정한 것과 같은 까닭이다. 아래 형태는 그 자리에
+# 안 남는다.
+docker compose exec -T mysql \
+  sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump --single-transaction \
+    --routines --triggers -uroot "$MYSQL_DATABASE"' > /tmp/care-on.sql
+
+# 받는 쪽. 호스트에 mysql 클라이언트가 없으면 컨테이너를 빌린다.
+docker run --rm -i -e MYSQL_PWD="<채워 넣는다>" mysql:8.0 \
+  mysql -h <RDS 엔드포인트> -u <사용자> <DB 이름> < /tmp/care-on.sql
+
+shred -u /tmp/care-on.sql   # 덤프에는 환자 표가 통째로 들어 있다
+```
+
+`--single-transaction` 이 있어야 InnoDB 를 잠그지 않고 한 시점으로 뜬다.
+
+### ③ 바꿔 붙인다 — **두 곳이다**
+
+```bash
+# ⓐ DB_HOST 를 RDS 엔드포인트로 — **두 곳이다**
+#    1) 서버의 ~/project/.env
+#    2) 배포 원본 envs/.prod.env      ← 이것을 빠뜨리면 다음 배포에서 되돌아간다
+
+# ⓑ 컨테이너 MySQL 을 끈다 — 오버레이를 **이 이름으로** 서버에 둔다
+scp -i ~/.ssh/<키> infra/docker/docker-compose.rds.yml \
+    ubuntu@<ip>:~/project/docker-compose.override.yml
+```
+
+**ⓐ 가 두 곳인 까닭.** 배포 스크립트는 `envs/.prod.env` 를 서버의 `~/project/.env`
+로 **매번 덮어쓴다**(`scripts/deployment.sh:210`). 서버 쪽만 고치면 다음 배포에서
+`DB_HOST` 가 `mysql` 로 돌아가는데, 오버레이는 파일 이름이 달라 그대로 남는다 —
+**앱이 프로필 뒤로 숨은 컨테이너를 찾다가 못 붙는다.** 한쪽만 되돌아가는 이
+어긋남이 가장 나쁘다: 배포는 성공하고 앱만 죽는다 (한금준 님 리뷰).
+
+`envs/.prod.env` 는 저장소에 없는 파일이라(`.gitignore`) 배포하는 사람의 손에만
+있다. 옮길 때 그 손이 두 곳을 함께 고쳐야 한다.
+
+**`-f` 로 주는 것이 아니다.** 배포 스크립트가 `docker compose` 를 `-f` 없이
+부르고(`scripts/lib.sh:65·110`), `~/project/docker-compose.yml` 을 매번
+덮어쓴다(`scripts/deployment.sh:215`). 넘길 자리가 없으므로 **이름으로** 얹는다
+— compose 는 `docker-compose.override.yml` 을 자동으로 합친다. 배포는 그 이름을
+안 건드리므로 **다음 배포에도 그대로 이어진다.**
+
+**ⓒ 앱을 다시 세운다.** `.env` 를 고친 것만으로는 도는 컨테이너가 안 바뀐다 —
+환경변수는 컨테이너를 만들 때 박힌다.
+
+```bash
+cd ~/project
+docker compose up -d --force-recreate --no-deps fastapi ai-worker
+```
+
+얹혔는지·붙었는지는 서버에서 이렇게 본다. **앞의 둘은 설정을 볼 뿐이고, 실제로
+붙었는지는 셋째가 답한다.**
+
+```bash
+cd ~/project
+docker compose config --services                  # mysql 이 없어야 한다
+docker compose exec fastapi env | grep DB_HOST    # RDS 엔드포인트여야 한다
+
+# 진짜 붙었는가 — 앱이 쓰는 그 자격으로 RDS 에 묻는다
+docker compose exec fastapi python -c "
+import asyncio, os
+from tortoise import Tortoise
+from app.core.db.databases import TORTOISE_ORM
+async def main():
+    await Tortoise.init(config=TORTOISE_ORM)
+    rows = await Tortoise.get_connection('default').execute_query_dict(
+        'SELECT DATABASE() AS db, @@hostname AS host, @@time_zone AS tz')
+    print(rows, os.environ['DB_HOST'])
+    print(await Tortoise.get_connection('default').execute_query_dict(
+        'SELECT COUNT(*) AS visits FROM visit'))
+    await Tortoise.close_connections()
+asyncio.run(main())
+"
+```
+
+`@@hostname` 이 컨테이너 이름이 아니라 RDS 것으로 나오고 진료 건수가 옮기기 전과
+같으면 붙은 것이다. 5 절 smoke test 도 한 번 돌린다.
+
+**ⓑ 를 빼먹으면 아무도 안 쓰는 MySQL 이 계속 돌면서 옮기기 전의 진료 기록을
+들고 있다.** 백업 대상도 아니고 지우는 절차도 없는 자리라, 환자 데이터 사본이
+소리 없이 남는다. 오버레이가 그 서비스를 `profiles` 뒤로 감추고 앱의 기다림도
+`redis` 만 남긴다.
+
+**ⓓ 컨테이너만 치운다 — 볼륨은 남긴다.**
+
+```bash
+cd ~/project
+
+# 오버레이가 얹힌 뒤라 `mysql` 은 프로필 뒤에 있다 — 프로필을 켜야 이름이 잡힌다.
+docker compose --profile container-db rm -sf mysql
+```
+
+**여기서 볼륨을 지우지 않는다.** 그 볼륨이 되돌아갈 자리다 — 치우는 것은 ⑦ 이고,
+백업·복원을 실제로 검증하고 롤백 기간이 끝난 뒤다 (한금준 님 리뷰). 아래
+`--profile` 주의는 그때도 그대로 쓴다.
+
+`--profile container-db` 없이 `docker compose down mysql` 을 부르면 compose 가
+그 이름을 못 찾고 **판을 통째로 내린다** — `fastapi` · `nginx` 까지 멈춘다.
+옮기는 중에 서비스가 끊기는 것이고, 「mysql 만 지웠다」고 읽은 사람은 그것을
+모른다. 같은 모양을 만들어 확인했다(2026-09-09).
+
+```text
+--profile container-db rm -sf db   db 만 사라지고 app 은 산다
+down db (프로필 없이)               app 까지 사라진다
+```
+
+볼륨 이름에 접두어가 없는 것은 compose 파일이 **이름을 못 박아** 두어서다
+(`docker-compose.prod.yml` 의 `volumes.mysql_data.name: mysql_data`). 프로젝트
+이름이 앞에 안 붙으므로 `docker_mysql_data` 같은 이름은 없다 — 그렇게 부르면
+`no such volume` 으로 실패하고, 절차를 따라간 사람은 **옮기기 전 진료 기록을
+지웠다고 믿고 넘어간다.**
+
+### ④ 마이그레이션은 그대로 돈다
+
+3-2 절의 `aerich upgrade` 는 `DB_HOST` 를 볼 뿐이라 대상만 바뀐다. 배포
+스크립트를 고칠 것이 없다. 다만 `--no-deps` 가 붙어 있어 mysql 컨테이너를
+안 띄운다는 점이 오히려 여기서 맞는다.
+
+### ⑤ 되돌리기 — **RDS 에 쓴 것이 있느냐로 갈린다**
+
+되돌릴 것은 늘 셋이다: 서버 `.env` 의 `DB_HOST`, **배포 원본 `envs/.prod.env`**,
+그리고 `~/project/docker-compose.override.yml`. **셋을 함께** 되돌리고 ③ⓒ 처럼
+`--force-recreate` 로 다시 세운다. 하나만 되돌리면 앱이 없는 곳을 찾는다.
+
+문제는 그 다음이다.
+
+#### ⓐ 아직 아무것도 안 썼다면 — 주소를 되돌리고 **MySQL 을 다시 띄운다**
+
+전환 직후 붙는 것만 확인하고 되돌리는 경우다. 컨테이너 볼륨이 그대로라 그
+시점 데이터가 그대로 산다.
+
+**그런데 주소만 되돌리면 안 붙는다.** ③ⓓ 에서 컨테이너를 지웠기 때문이다 —
+볼륨은 남아 있어도 컨테이너는 없다. 그리고 ③ⓒ 의 명령은 `--no-deps` 라
+`fastapi` · `ai-worker` 만 다시 만든다. **MySQL 은 저절로 안 돌아온다**
+(한금준 님 리뷰).
+
+순서가 있다. **앱보다 DB 가 먼저다.**
+
+```bash
+cd ~/project
+
+# 1) 주소를 두 곳 다 되돌린다 — 서버 `.env` 와 배포 원본 `envs/.prod.env`.
+#    ③ⓐ 와 같은 두 곳이다. 한쪽만 되돌리면 다음 배포가 다시 RDS 로 간다.
+
+# 2) 오버레이를 걷는다. 남아 있으면 mysql 이 프로필 뒤에 계속 숨는다
+rm ~/project/docker-compose.override.yml
+
+# 3) 컨테이너 MySQL 을 **먼저** 띄운다 — 남겨 둔 볼륨을 그대로 문다.
+#    `--wait` 가 healthy 까지 기다린다. 앱을 먼저 세우면 없는 곳을 찾는다.
+docker compose up -d --wait mysql
+
+# 4) 그 다음에 앱을 다시 세운다
+docker compose up -d --force-recreate --no-deps fastapi ai-worker
+
+# 5) 붙었는지 · 옛 기록이 보이는지 본다 — ③ⓒ 의 연결 확인을 그대로 쓴다.
+#    `@@hostname` 이 컨테이너 것이고 진료 건수가 옮기기 전과 같아야 한다.
+```
+
+**3) 을 빼면 배포는 성공하고 앱만 죽는다.** 같은 판을 세워 밟아 봤다.
+
+```text
+주소만 되돌리고 ③ⓒ 명령         fastapi 는 running · docker compose ps 도 정상
+앱이 DB 에 물으면                ERROR 2005 (HY000): Unknown MySQL server host 'mysql' (-2)
+3) 을 넣고 다시                  mysql healthy → 앱 재생성 → 옮기기 전 두 건 그대로 읽힘
+```
+
+`docker compose ps` 가 `running` 이라 **되돌리기가 성공한 것처럼 보인다.** ③ⓐ
+가 두 곳인 까닭과 같은 종류의 함정이다.
+
+#### ⓑ RDS 에 새 기록이 생겼다면 — **역이전 없이 되돌리면 그것이 사라진다**
+
+전환 뒤 만들어지거나 고쳐진 진료·안내문은 컨테이너 MySQL 에 없다. 주소만
+되돌리면 **앱은 옮기기 전 상태를 최신으로 보여 준다.** 지운 것이 아니라 안
+보이는 것이라 더 나쁘다 — 사람이 다시 입력하면 그때부터 두 판이 갈린다.
+
+```bash
+# 1) 쓰기를 멈춘다 — 뜨는 동안 들어온 것이 사라진다
+cd ~/project && docker compose stop fastapi ai-worker
+
+# 2) RDS 에서 뜬다
+docker run --rm mysql:8.0 mysqldump -h <RDS 엔드포인트> -u <사용자> -p<비밀번호> \
+  --single-transaction --routines --triggers <DB 이름> > /tmp/rollback.sql
+
+# 3) 컨테이너 MySQL 로 되돌린다 — 오버레이를 걷어 다시 띄운 뒤
+rm ~/project/docker-compose.override.yml
+docker compose up -d mysql
+docker compose exec -T mysql sh -c 'exec mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < /tmp/rollback.sql
+
+# 4) 정합성 — 양쪽 건수가 같아야 한다
+#    visit · guide_document · patient 셋은 반드시 센다
+
+# 5) 주소 셋을 되돌리고 앱을 다시 세운다 (③ⓒ 와 같다)
+
+shred -u /tmp/rollback.sql   # 덤프에는 환자 표가 통째로 들어 있다
+```
+
+**되돌린 뒤에도 시간대는 안 고쳐진다.** RDS 에서 `time_zone` 을 안 주고 쓴
+기간의 기록은 UTC 로 박혀 있고, 컨테이너로 되돌아와도 그 값 그대로다 —
+아래 리허설이 그것을 보인다.
+
+### ⑥ 아직 팀이 안 정한 것 — 백업 방식
+
+`docs/infra-scale.md` §7 의 미결 4번이다. 정하는 자리는 팀이고, 여기서는
+고르는 데 필요한 것만 적는다.
+
+| | RDS 자동 백업 | EBS 스냅샷 |
+|---|---|---|
+| 되살리는 단위 | **특정 시점**(초 단위) | 스냅샷 찍은 시점 |
+| 되살리는 대상 | 새 DB 인스턴스 | 볼륨 → 인스턴스 |
+| 앱이 할 일 | `DB_HOST` 교체 | 인스턴스 교체 |
+| 켜는 법 | 인스턴스 설정 하나 | 별도 일정 |
+| 컨테이너 MySQL 에도 되나 | 아니오 | 예 |
+
+**RDS 로 옮기는 것 자체가 이 선택을 좁힌다** — 옮기고 나면 EBS 스냅샷은
+DB 를 안 담는다. 그래서 「RDS 로 간다」와 「EBS 스냅샷으로 백업한다」는 같이
+설 수 없다. 옮기기로 정한 이상 자동 백업이 딸려 오는 쪽이 자연스럽다.
+
+인수조건이 **복원 1회 실검증**을 요구한다 — 실제로 되살려 보고 그 결과를
+이 절에 이어 적는다. 「켜 두었다」는 검증이 아니다.
+
+### ⑦ 옛 볼륨 치우기 — **맨 마지막이다**
+
+`mysql_data` 는 되돌아갈 자리다. 지우는 순간 ⑤ⓑ 가 불가능해진다. 그래서 아래
+셋이 **모두** 끝난 뒤에만 지운다.
+
+1. ⑥ 이 요구하는 **백업·복원 1회 실검증**을 마쳤다 — RDS 자동 백업으로 실제로
+   되살려 보고 그 결과를 ⑥ 에 적었다
+2. 정한 **롤백 기간**이 지났다 (기간은 팀이 정한다 — 적어도 한 번의 정상 진료일)
+3. 그 기간 동안 RDS 로 도는 앱에서 5 절 smoke test 가 통과했다
+
+**순서가 중요하다 — 뜨고, 뜬 것을 확인하고, 그 다음에 지운다.**
+
+```bash
+cd ~/project
+
+# ⓐ 한 벌 뜬다
+docker run --rm -v mysql_data:/from -v "$PWD":/to alpine \
+  tar czf /to/mysql_data-$(date +%Y%m%d).tar.gz -C /from .
+
+# ⓑ 뜬 것을 **확인한다** — 크기와 안에 든 것을 본다
+ls -lh mysql_data-$(date +%Y%m%d).tar.gz
+tar tzf mysql_data-$(date +%Y%m%d).tar.gz | head        # 데이터 파일이 보여야 한다
+tar tzf mysql_data-$(date +%Y%m%d).tar.gz | grep -c ibdata1   # 1 이어야 한다
+
+# ⓒ 확인이 끝난 **뒤에만** 지운다
+docker volume rm mysql_data
+```
+
+**ⓑ 가 실패하면 ⓒ 를 하지 않는다.** `tar` 가 조용히 빈 묶음을 만들 수 있다
+(볼륨 이름을 틀리면 빈 디렉터리를 묶는다). 그 상태로 지우면 백업이 있다고
+믿으면서 실제로는 아무것도 없다 — 이 절이 막으려는 바로 그 자리다.
+
+볼륨 이름에 접두어가 없는 것은 compose 파일이 **이름을 못 박아** 두어서다
+(`docker-compose.prod.yml` 의 `volumes.mysql_data.name: mysql_data`). 프로젝트
+이름이 앞에 안 붙으므로 `docker_mysql_data` 같은 이름은 없다 — 그렇게 부르면
+`no such volume` 으로 실패하고, 절차를 따라간 사람은 **옮기기 전 진료 기록을
+지웠다고 믿고 넘어간다.**
+
+### ⑧ 전환·롤백을 실제로 밟아 본 결과 (2026-09-09)
+
+한금준 님이 요청한 「전환 → 데이터 생성·수정 → 롤백 → 보존 확인」을 같은 판을
+세워 밟았다. **운영 서버가 아니라 리허설이다** — MySQL 8.0 컨테이너 둘을
+컨테이너 MySQL(`TZ=Asia/Seoul`, `utf8mb4_unicode_ci`)과 RDS 대역(기본값)으로 세웠다.
+
+**옮기기 전부터 두 판이 다르다.**
+
+```text
+컨테이너   utf8mb4 / utf8mb4_unicode_ci / tz=SYSTEM → NOW() 17:05:13
+RDS 대역   utf8mb4 / utf8mb4_0900_ai_ci / tz=SYSTEM → NOW() 08:05:13   ← 9시간 뒤
+```
+
+`tz=SYSTEM` 이 같은 값인데 결과가 다르다 — 컨테이너는 `TZ=Asia/Seoul` 을 받아
+그 시스템 시계를 따르고, RDS 에는 그 컨테이너가 없어 UTC 다. **파라미터 그룹에
+`time_zone` 을 명시하지 않으면 여기서 갈린다.**
+
+| 단계 | 결과 |
+|---|---|
+| 한글·덤프 | `--single-transaction` 덤프로 옮긴 뒤 한글 그대로. collation 은 덤프의 `CREATE TABLE` 이 들고 가 표별로는 지켜진다 |
+| 전환 뒤 새 기록 | `visited_at` 이 **08:05 (UTC)** 로 박힌다 — 옮겨 온 행은 17:05 (KST) |
+| 주소만 되돌림 | 컨테이너 판은 2행, RDS 는 3행 + 수정 1건 → **전환 뒤 기록이 통째로 안 보인다** |
+| 역이전 뒤 되돌림 | 양쪽 3행 일치, 새 진료와 수정 **보존됨** |
+| `time_zone` 을 준 뒤 | 그 뒤 쓴 행만 KST. **이미 UTC 로 박힌 행은 안 고쳐진다** |
+
+두 가지가 이 절차의 근거다 — **역이전 없는 롤백은 데이터를 잃고**, **시간대는
+옮기기 전에 정해야 한다.**
+
+**「아직 아무것도 안 썼다면」 갈래도 밟았다 (2026-09-10).** 한금준 님이
+「③ⓓ 로 컨테이너를 지운 뒤 볼륨만 남은 상태에서 되돌리면 정말 붙느냐」를
+물어 같은 판을 다시 세웠다 — 컨테이너 MySQL · RDS 대역 · 앱 셋과 오버레이까지
+서버와 같은 모양으로.
+
+| 단계 | 결과 |
+|---|---|
+| 전환 뒤 | `docker compose config --services` 가 `redis fastapi` — mysql 이 사라진다. 앱은 RDS 대역에서 2행을 읽는다 |
+| ③ⓓ 뒤 | mysql **컨테이너 0 개** · 볼륨 `mysql_data` 그대로 |
+| 주소만 되돌림 (옛 ⓐ) | `fastapi` 는 `running` 인데 **`ERROR 2005 (HY000): Unknown MySQL server host 'mysql' (-2)`** |
+| `up -d --wait mysql` 넣고 다시 | `healthy` → 앱 재생성 → **옮기기 전 두 건 그대로 읽힘** (`visited_at` 도 KST 그대로) |
+| 볼륨 확인 | 되살아난 컨테이너가 `mysql_data` 를 그대로 문다 |
+
+**셋째 줄이 이 갈래의 전부다** — 되돌리기가 성공한 것처럼 보이는데 앱만 죽어
+있다. `docker compose ps` 로는 안 보이므로 ⓐ 5) 의 연결 확인을 꼭 한다.
+
+운영 RDS 에서 다시 밟을 때는 이 표에 실제 값을 이어 적는다. 리허설은 절차가
+성립한다는 것까지만 말한다.
 
 ## 5. Smoke test
 
@@ -885,6 +1259,9 @@ curl -fsS https://<도메인>/api/v1/health | jq .
 - **CI 배포** — 지금은 사람이 로컬에서 스크립트를 돌린다
 - **EC2 인스턴스·도메인·Docker Hub 계정** — 실제로 확보돼 있는지 저장소만으로는
   알 수 없다
+- **RDS 로의 이전** — 절차와 오버레이는 4-5 절에 있고 compose 가 그대로 도는
+  것까지 확인했지만, **인스턴스를 만들고 옮기고 복원해 본 것은 아직 없다**
+  (KEY-201). 그 셋은 AWS 계정을 쥔 사람이 한다
 
 ## 7. 프런트는 이미지에 구워서 나간다
 
