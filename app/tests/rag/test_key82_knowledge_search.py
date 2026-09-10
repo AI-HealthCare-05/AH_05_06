@@ -80,6 +80,7 @@ def test_only_current_approved_a_grade_licensed_fresh_and_scoped_chunks_are_retu
         chunk("deprecated", approval_status=ApprovalStatus.DEPRECATED),
         chunk("old-version", is_current=False),
         chunk("b-grade", source_grade=SourceGrade.B),
+        chunk("c-grade", source_grade=SourceGrade.C),
         chunk("unlicensed", license_verified=False),
         chunk("stale", review_due_at=date(2026, 9, 6)),
         chunk("other-hospital", hospital_id=2),

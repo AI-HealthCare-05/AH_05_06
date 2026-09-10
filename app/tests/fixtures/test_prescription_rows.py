@@ -517,6 +517,30 @@ class TestTheApprovedWordingIsWhole:
         missing = sorted(f"{n} / {k.value}" for n, k in wanted - filled)
         assert not missing, f"승인 정본이 없는 칸: {missing}"
 
+    def test_physician_templates_and_external_evidence_use_separate_axes(self) -> None:
+        """전문의 승인 정본 12칸을 외부 근거 A등급으로 가장하지 않는다(KEY-283)."""
+        from app.models.catalog import CautionSectionKey, SourceGrade
+        from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
+
+        physician_rows = [row for row in DRUG_CAUTION_CONTENTS if row.section_key is not CautionSectionKey.EMERGENCY]
+        emergency_rows = [row for row in DRUG_CAUTION_CONTENTS if row.section_key is CautionSectionKey.EMERGENCY]
+
+        assert len(physician_rows) == 12
+        assert all(row.source_grade is SourceGrade.C and "전문의" in row.source_name for row in physician_rows)
+        assert len(emergency_rows) == 4
+        assert all(row.source_grade is SourceGrade.A for row in emergency_rows)
+
+    def test_source_grade_has_no_fixture_default(self) -> None:
+        """새 문구를 넣을 때 근거 축을 판단하지 않고 A로 흘려보낼 수 없다."""
+        from dataclasses import MISSING, fields
+
+        from app.tests.fixtures.catalog import DrugCautionContentRow
+
+        source_grade = next(field for field in fields(DrugCautionContentRow) if field.name == "source_grade")
+
+        assert source_grade.default is MISSING
+        assert source_grade.default_factory is MISSING
+
     def test_generate_reads_every_section_it_shows_as_origin(self) -> None:
         """**설정이 「원본」이라 보이는 갈래를 생성이 다 읽어야 한다.**
 
