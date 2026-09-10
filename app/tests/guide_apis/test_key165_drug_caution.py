@@ -8,6 +8,7 @@ D-5  approved_key 경합: DB 유니크 제약이 승인 중복을 차단함
 """
 
 from datetime import UTC, datetime
+from hashlib import sha256
 
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
@@ -17,7 +18,7 @@ from tortoise.exceptions import IntegrityError
 from app.core.redis_client import get_redis
 from app.core.utils.security import hash_password
 from app.main import app
-from app.models.catalog import ApprovalStatus, CautionSectionKey, DrugCautionContent, PrescriptionSet
+from app.models.catalog import ApprovalStatus, CautionSectionKey, DrugCautionContent, PrescriptionSet, SourceGrade
 from app.models.ocr import OcrField
 from app.models.patients import Patient
 from app.models.prescriptions import Prescription
@@ -421,6 +422,74 @@ class TestGenerateFallsBackWhenNoContent(DrugCautionTestCase):
         db = await self.sections_from_db(visit.visit_id)
         assert db[GuideSectionKey.EMERGENCY].generated_body == _EMERGENCY_FALLBACK
         assert db[GuideSectionKey.EMERGENCY].drug_caution_content_id is None
+
+    async def test_physician_approved_template_is_used_without_becoming_rag_grade_a(self) -> None:
+        """전문의가 직접 승인한 정본은 별도 축으로 생성 문을 통과한다(KEY-283)."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        ps, _ = await PrescriptionSet.get_or_create(name="테스트세트-전문의승인")
+        content = await DrugCautionContent.create(
+            prescription_set=ps,
+            section_key=CautionSectionKey.CAUTION,
+            body="[합성 전문의 승인 주의]",
+            physician_review={
+                "reviewer": "합성 전문의",
+                "hospital": "합성 산부인과",
+                "reviewed_at": "2026-09-04",
+                "body_sha256": sha256("[합성 전문의 승인 주의]".encode()).hexdigest(),
+            },
+            source_name="전문의 복약지도 자문",
+            source_org="합성 산부인과",
+            source_url="https://example.invalid/physician-advice",
+            verified_at="2026-09-04",
+            content_version="2026-09-04",
+            source_grade=SourceGrade.C,
+            approval_status=ApprovalStatus.APPROVED,
+            approved_key=f"{ps.prescription_set_id}:caution",
+        )
+        visit = await make_visit(clinic, set_name=ps.name)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        resp = await self.generate(visit, staff)
+
+        assert resp.status_code == 201
+        db = await self.sections_from_db(visit.visit_id)
+        assert db[GuideSectionKey.CAUTION].generated_body == content.body
+        assert db[GuideSectionKey.CAUTION].drug_caution_content_id == content.drug_caution_content_id
+
+    async def test_unapproved_physician_template_still_uses_fallback(self) -> None:
+        """전문의 표식만 붙이고 승인되지 않은 문구는 생성에 들어가지 않는다."""
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        ps, _ = await PrescriptionSet.get_or_create(name="테스트세트-전문의초안")
+        await DrugCautionContent.create(
+            prescription_set=ps,
+            section_key=CautionSectionKey.CAUTION,
+            body="[합성 미승인 전문의 초안]",
+            physician_review={
+                "reviewer": "합성 전문의",
+                "hospital": "합성 산부인과",
+                "reviewed_at": "2026-09-04",
+                "body_sha256": sha256("[합성 미승인 전문의 초안]".encode()).hexdigest(),
+            },
+            source_name="전문의 복약지도 자문",
+            source_org="합성 산부인과",
+            source_url="https://example.invalid/physician-draft",
+            verified_at="2026-09-04",
+            content_version="2026-09-04",
+            source_grade=SourceGrade.C,
+            approval_status=ApprovalStatus.DRAFT,
+            approved_key=None,
+        )
+        visit = await make_visit(clinic, set_name=ps.name)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+
+        resp = await self.generate(visit, staff)
+
+        assert resp.status_code == 201
+        db = await self.sections_from_db(visit.visit_id)
+        assert db[GuideSectionKey.CAUTION].generated_body == _CAUTION_FALLBACK
+        assert db[GuideSectionKey.CAUTION].drug_caution_content_id is None
 
     async def test_approved_with_null_key_uses_fallback(self) -> None:
         """APPROVED 상태여도 approved_key 가 NULL 이면 조회되지 않아 폴백을 사용한다.

@@ -10,6 +10,7 @@
 """
 
 from datetime import date
+from hashlib import sha256
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -156,6 +157,27 @@ class GuideCopyTestCase(TestCase):
         assert part["origin"] != ORIGIN, "생성이 안 쓸 글을 원본이라 보였다"
         assert part["origin"] == guide_defaults.CAUTION, "생성이 쓸 글과 달라졌다"
 
+    async def test_a_physician_approved_template_is_shown_as_the_origin(self) -> None:
+        """전문의 승인 템플릿은 RAG A등급이 아니어도 생성·화면의 원본으로 쓴다."""
+        row = await self.a_set()
+        content = await self.an_origin(row)
+        content.source_grade = SourceGrade.C
+        content.source_name = "합성 산부인과 전문의 복약지도 자문"
+        content.physician_review = {
+            "reviewer": "합성 전문의",
+            "hospital": content.source_org,
+            "reviewed_at": "2026-09-04",
+            "body_sha256": sha256(content.body.encode()).hexdigest(),
+        }
+        await content.save()
+        doctor = await self.a_staff(["doctor"], "physician-template")
+
+        part = self.section(await self.fetch(doctor), row.prescription_set_id)
+        picked = await DrugCautionService.approved_content_of(row, CautionSectionKey.CAUTION)
+
+        assert picked is not None and picked.body == ORIGIN
+        assert part["origin"] == ORIGIN
+
     async def test_an_origin_without_evidence_is_not_shown_as_the_origin(self) -> None:
         """**근거가 비면 생성이 안 쓴다** — 화면도 안 보여야 한다 (KEY-180 §4).
 
@@ -166,6 +188,14 @@ class GuideCopyTestCase(TestCase):
         """
         row = await self.a_set()
         content = await self.an_origin(row)
+        content.source_grade = SourceGrade.C
+        content.source_name = "합성 산부인과 전문의 복약지도 자문"
+        content.physician_review = {
+            "reviewer": "합성 전문의",
+            "hospital": content.source_org,
+            "reviewed_at": "2026-09-04",
+            "body_sha256": sha256(content.body.encode()).hexdigest(),
+        }
         content.source_url = ""
         await content.save()
         doctor = await self.a_staff(["doctor"], "noevi")
