@@ -40,6 +40,42 @@ body {
   opacity: 1;
 }
 
+/* ── 브랜드 마크 ───────────────────────────────────────────────────
+ *
+ * `assets/careon-mark.svg` — 병원용 **모노톤** 마크(KEY-316, 이희진 님 제공).
+ *
+ * 환자 화면(`guide.html`)이 쓰는 `patient_wireframe/assets/logo.png` 는 보라
+ * 그라디언트이고 배경까지 박혀 있어서, 처음에는 그것을 CSS 로 잘라 썼다.
+ * **마크 자체가 보라라** `tokens.css` 머리말의 「보라 계열을 안 쓴다」와
+ * 부딪혔고(이희진 님 `#283` 리뷰), 그 자산으로 병합하면 병원 화면 일곱의 톤이
+ * 나중에 다시 바뀔 자리였다.
+ *
+ * 그래서 **잘라 쓰던 셈이 통째로 없어졌다** — 타일도, `--brand-tile` 토큰도,
+ * `background-size`·`background-position` 계산식도. 배경이 없는 SVG 라 그냥
+ * 얹으면 된다.
+ *
+ * 색은 자산이 든 `#1E2A44` 하나다. `--ink`(#1c1f23) 곁의 값이라 흰 상단바에서
+ * 글자와 같은 무게로 읽힌다. `currentColor` 로 받으려면 마스크를 써야 하는데,
+ * 색을 화면마다 바꿀 일이 지금 없어서 자산이 든 값을 그대로 쓴다.
+ *
+ * 마크는 옆의 「케어온」 글자와 같은 말을 하므로 **낭독기에는 안 읽힌다**
+ * (빈 `<span>` + `aria-hidden`). 자세한 것은 `docs/brand-assets.md`.
+ */
+.brandmark {
+  --brandmark-size: 24px;
+
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+  width: var(--brandmark-size);
+  height: var(--brandmark-size);
+  background-image: url("/assets/careon-mark.svg");
+  background-repeat: no-repeat;
+  /* `contain` 이라 상자 크기만 바꾸면 따라온다 — 크기별 계산식이 필요 없다. */
+  background-size: contain;
+  background-position: center;
+}
+
 /* ── 진행 막대 ─────────────────────────────────────────────────────
  * `upload.css` 에만 있던 것을 올렸다. 판독 화면도 같은 것이 필요했는데
  * 따로 만들어 두 벌을 유지하게 될 뻔했다 (이희진 님 `#121` 리뷰).
