@@ -31,7 +31,16 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult, course_days, read_but_unconfirmed
+from app.models.ocr import (
+    OcrDocumentType,
+    OcrField,
+    OcrJob,
+    OcrJobDocument,
+    OcrJobStatus,
+    OcrResult,
+    course_days,
+    read_but_unconfirmed,
+)
 from app.models.prescriptions import Prescription, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
@@ -46,7 +55,7 @@ from app.models.visits import (
     GuideStatus,
     Visit,
 )
-from app.ocr.utils import assert_latest_ocr_job_ready
+from app.ocr.utils import assert_ocr_jobs_ready, merge_fields_by_type
 from app.services import guide_defaults
 from app.services.drug_caution import DrugCautionService
 from app.services.guide_body import medication_body, resolved_copy
@@ -119,7 +128,9 @@ LOGGER = logging.getLogger("app.guides")
 
 
 async def _pick_prescription_set(
-    latest_result: "OcrResult", prescription: "Prescription | None", visit_id: int
+    confirmed_field_values: "dict[str, str | None]",
+    prescription: "Prescription | None",
+    visit_id: int,
 ) -> "PrescriptionSet | None":
     """**어느 대표 처방의 안내문인가** — 후보를 세우고 표에 있는 첫 번째를 쓴다.
 
@@ -133,21 +144,14 @@ async def _pick_prescription_set(
     세트를 가진 진료가 말없이 기본 문구로 내려간다 (이희진 님 `#221` ③).
 
     차례는 **스탭이 고른 것 → 판독이 제안한 세트 → 처방 행 스냅샷**이다.
-    조회는 한 번이다(`#191` 리뷰) — 후보를 한꺼번에 묻고 차례로 고른다.
+
+    confirmed_field_values: merge_fields_by_type으로 병합된 확정 필드의 {field_type: value} 매핑.
     """
-    confirmed = {
-        row.field_type: row.value
-        for row in await OcrField.filter(
-            ocr_result=latest_result,
-            field_type__in=("MEDICATION_NAME", "PRESCRIPTION_SET"),
-            is_confirmed=True,
-        )
-    }
     wanted = [
         name
         for name in (
-            confirmed.get("MEDICATION_NAME"),
-            confirmed.get("PRESCRIPTION_SET"),
+            confirmed_field_values.get("MEDICATION_NAME"),
+            confirmed_field_values.get("PRESCRIPTION_SET"),
             prescription.prescription_set if prescription else None,
         )
         if name
@@ -171,6 +175,49 @@ async def _pick_prescription_set(
 #: 「고치라고 해서 고쳤는데 다시 만들 수는 없는」 화면을 만난다
 #: (이희진 님 `#221` ⑤).
 REGENERABLE: frozenset[GuideStatus] = frozenset({GuideStatus.STAFF_REVIEW, GuideStatus.APPROVAL_RETURNED})
+
+
+async def _load_confirmed_ocr_fields(visit_id: int, hospital_id: int) -> "dict[str, OcrField]":
+    """비제외 COMPLETED job 전체를 검증하고 병합된 field_type→OcrField 매핑을 반환한다.
+
+    PROCESSING job → OCR_RESULT_NOT_READY 예외
+    FAILED-only job → OCR_FAILED 예외
+    미확정 필드 존재 → OCR_NOT_CONFIRMED 예외
+    확정 필드 없음 → OCR_NOT_CONFIRMED 예외
+    """
+    jobs = await assert_ocr_jobs_ready(visit_id, hospital_id)
+
+    ocr_results: list[OcrResult] = []
+    doc_type_of: dict[int, OcrDocumentType] = {}
+    if jobs:
+        job_ids = [j.ocr_job_id for j in jobs]
+        all_results = await OcrResult.filter(ocr_job_id__in=job_ids).prefetch_related("fields").all()
+        result_by_job: dict[str, OcrResult] = {r.ocr_job_id: r for r in all_results}
+        job_docs = await OcrJobDocument.filter(ocr_job_id__in=job_ids).all()
+        doc_type_by_job: dict[str, OcrDocumentType] = {jd.ocr_job_id: jd.document_type for jd in job_docs}
+        for job in jobs:
+            r = result_by_job.get(job.ocr_job_id)
+            if r is not None:
+                ocr_results.append(r)
+                dt = doc_type_by_job.get(job.ocr_job_id)
+                if dt is not None:
+                    doc_type_of[r.ocr_result_id] = dt
+
+    if not ocr_results:
+        raise ApiError("OCR_NOT_CONFIRMED", 422, "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.")
+
+    for result in ocr_results:
+        unconfirmed = read_but_unconfirmed(result.fields)
+        if unconfirmed is not None:
+            raise ApiError(
+                "OCR_NOT_CONFIRMED", 422, "가장 최근 판독에 확정되지 않은 항목이 있습니다. 모든 항목을 확정해 주세요."
+            )
+
+    merged = merge_fields_by_type(ocr_results, doc_type_of=doc_type_of)
+    if not any(f.is_confirmed for f in merged.values()):
+        raise ApiError("OCR_NOT_CONFIRMED", 422, "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.")
+
+    return merged
 
 
 def _no_regenerate_saying(status: GuideStatus) -> str:
@@ -199,39 +246,10 @@ class GuideService:
         if visit is None:
             raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
 
-        latest_job = await assert_latest_ocr_job_ready(visit_id, actor.hospital_id)
-
-        latest_result = await OcrResult.filter(ocr_job=latest_job).first()
-        if latest_result is None:
-            raise ApiError(
-                "OCR_NOT_CONFIRMED",
-                422,
-                "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
-            )
-
-        # **여기와 `finalize_ocr` 이 같은 규칙을 봐야 한다.** 화면 사슬이
-        # `확정 → finalize → generate` 라서, 가운데만 통과하면 처방은 섰는데
-        # 안내문이 없는 진료가 남는다 (KEY-271).
-        unconfirmed = read_but_unconfirmed(await OcrField.filter(ocr_result=latest_result, is_confirmed=False))
-        if unconfirmed is not None:
-            raise ApiError(
-                "OCR_NOT_CONFIRMED",
-                422,
-                "가장 최근 판독에 확정되지 않은 항목이 있습니다. 모든 항목을 확정해 주세요.",
-            )
-
-        confirmed = await OcrField.filter(
-            ocr_result=latest_result,
-            is_confirmed=True,
-        ).first()
-
-        # 미확정 필드가 없더라도 확정된 필드가 하나도 없으면(필드 0개) 안내 생성을 막는다.
-        if confirmed is None:
-            raise ApiError(
-                "OCR_NOT_CONFIRMED",
-                422,
-                "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.",
-            )
+        # 비제외 COMPLETED job 전체를 검증하고 field_type별 병합 필드를 얻는다.
+        # finalize_ocr과 동일한 기준 — assert_ocr_jobs_ready(app/ocr/utils.py).
+        # FAILED job은 안내 근거에서 제외하고 COMPLETED job만 사용한다 (KEY-288).
+        merged_fields = await _load_confirmed_ocr_fields(visit_id, actor.hospital_id)
 
         # KEY-165: 처방 세트의 승인된 caution/emergency 문구를 미리 조회한다.
         # 트랜잭션 밖에서 실행해 락 보유 시간을 줄인다.
@@ -256,7 +274,12 @@ class GuideService:
         # 정하고, 그 진료에 실제로 나간 약은 처방 행이 갖는다.
         prescription = await Prescription.filter(visit_id=visit_id).prefetch_related("items").first()
         prescription_items = ordered_prescription_items(prescription)
-        prescription_set = await _pick_prescription_set(latest_result, prescription, visit_id)
+        confirmed_field_values = {
+            ft: f.value
+            for ft, f in merged_fields.items()
+            if f.is_confirmed and ft in ("MEDICATION_NAME", "PRESCRIPTION_SET")
+        }
+        prescription_set = await _pick_prescription_set(confirmed_field_values, prescription, visit_id)
 
         # KEY-243: **의사가 고친 문구가 있으면 그것이 이긴다.**
         #
@@ -787,13 +810,13 @@ class GuideService:
 
     @staticmethod
     async def _course_days(visit_id: int, connection) -> int | None:
-        """처방일수 — **최신 비제외 COMPLETED job**의 확정 값에서 읽는다.
+        """처방일수 — 비제외 COMPLETED job 전체에서 확정된 DURATION_DAYS를 읽는다.
 
         제외·이전 job의 값이 섞이면 소진 문자 날짜가 틀려진다.
-        예: job1(84일)→job2(28일) 재판독 후 job1을 제외해도
-        필터 없이 first()하면 84일 기준으로 소진 문자가 잡힌다.
+        파일별 job 구조(옵션 A)에서 DURATION_DAYS는 EMR job의 result에 있으므로
+        모든 비제외 COMPLETED job에서 탐색한다.
         """
-        latest_job = (
+        completed_jobs = (
             await OcrJob.filter(
                 visit_id=visit_id,
                 excluded_from_guide=False,
@@ -801,17 +824,19 @@ class GuideService:
             )
             .using_db(connection)
             .order_by("-created_at")
-            .first()
+            .all()
         )
-        if latest_job is None:
+        if not completed_jobs:
             return None
+        job_ids = [j.ocr_job_id for j in completed_jobs]
         row = (
             await OcrField.filter(
-                ocr_result__ocr_job=latest_job,
+                ocr_result__ocr_job_id__in=job_ids,
                 field_type="DURATION_DAYS",
                 is_confirmed=True,
             )
             .using_db(connection)
+            .order_by("-ocr_result__ocr_job__created_at")
             .first()
         )
         if row is None:

@@ -940,8 +940,14 @@ class TestGenerateGateLatestJob(GenerateGuideTestCase):
         assert response.status_code == 422
         assert response.json()["code"] == "OCR_RESULT_NOT_READY"
 
-    async def test_new_failed_job_blocks_generation(self) -> None:
-        """이전 job이 확정돼 있어도 더 최신 FAILED job이 있으면 422로 막힌다."""
+    async def test_failed_job_does_not_block_when_completed_job_exists(self) -> None:
+        """KEY-288: FAILED job이 있어도 COMPLETED·확정 job이 존재하면 안내 생성이 통과된다.
+
+        파일별 OcrJob 구조(옵션 A)에서 파일 하나의 실패는 다른 파일의
+        안내 생성을 차단하지 않는다. FAILED job은 안내 근거에서 제외된다.
+        재업로드 실패 후 제외 처리 없이 이전 확정 데이터로 안내를 생성하려면
+        excluded_from_guide=True로 FAILED job을 제외하면 된다.
+        """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
         visit = await make_visit(clinic)
@@ -949,7 +955,7 @@ class TestGenerateGateLatestJob(GenerateGuideTestCase):
         # 첫 번째 job — 완료·확정
         await attach_confirmed_ocr(visit, staff.staff_id)
 
-        # 두 번째 job — 재업로드 후 실패
+        # 두 번째 job — 실패 (예: 다른 파일의 CLOVA 실패)
         await OcrJob.create(
             ocr_job_id=f"syn-failed-{visit.visit_id}",
             hospital_id=clinic.hospital_id,
@@ -961,8 +967,8 @@ class TestGenerateGateLatestJob(GenerateGuideTestCase):
         async with self.client() as client:
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
-        assert response.status_code == 422
-        assert response.json()["code"] == "OCR_FAILED"
+        # FAILED job은 차단하지 않음 — 첫 번째 COMPLETED job의 데이터로 생성된다
+        assert response.status_code == 201
 
     async def test_excluded_job_is_skipped_and_previous_confirmed_passes(self) -> None:
         """최신 job을 제외 처리하면 이전 확정 job 기준으로 게이트가 통과된다."""
@@ -1041,10 +1047,11 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
 
         assert response.status_code == 201
 
-    async def test_new_failed_blocks_after_multiple_confirmed_jobs(self) -> None:
-        """oldest confirmed → middle confirmed → newest FAILED → OCR_FAILED 422.
+    async def test_failed_job_does_not_block_when_multiple_confirmed_exist(self) -> None:
+        """KEY-288: oldest confirmed → middle confirmed → newest FAILED → 통과.
 
-        여러 개의 확정 job이 있어도 가장 최신 job이 FAILED면 차단한다.
+        여러 COMPLETED·확정 job이 있을 때 FAILED job이 있어도 안내 생성이 통과된다.
+        FAILED job은 안내 근거에서 제외되고 COMPLETED job들의 데이터로 안내가 생성된다.
         created_at을 명시 고정해 순차 INSERT의 암묵적 시계 순서에 의존하지 않는다.
         """
         clinic = await make_clinic()
@@ -1076,7 +1083,7 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
             is_confirmed=True,
         )
 
-        # 3rd: 재업로드 후 FAILED (가장 최신) — 게이트를 차단해야 한다
+        # 3rd: FAILED (가장 최신) — KEY-288에서 더이상 차단하지 않음
         await OcrJob.create(
             ocr_job_id=f"syn-new-failed-{visit.visit_id}",
             hospital_id=clinic.hospital_id,
@@ -1091,15 +1098,15 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
         async with self.client() as client:
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
-        assert response.status_code == 422
-        assert response.json()["code"] == "OCR_FAILED"
+        # FAILED job은 차단하지 않음 — COMPLETED job들의 데이터로 안내가 생성된다
+        assert response.status_code == 201
 
     async def test_old_abandoned_processing_does_not_block_newer_confirmed(self) -> None:
         """oldest PROCESSING(방치) → newest COMPLETED confirmed → 통과.
 
         오래된 PROCESSING job이 남아 있어도 더 최신 COMPLETED confirmed job이
-        있으면 게이트가 통과된다. 최신 job 기준으로 판정하므로 과거의
-        방치된 PROCESSING은 영향을 주지 않는다.
+        있으면 게이트가 통과된다. 최신 COMPLETED job 기준으로 판정하므로
+        이보다 오래된 PROCESSING(방치·고착)은 무시된다.
         """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
@@ -1124,3 +1131,39 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
         assert response.status_code == 201
+
+    async def test_sibling_processing_newer_than_completed_blocks_generate(self) -> None:
+        """COMPLETED(먼저 완료) + 형제 PROCESSING(나중 생성, 아직 처리 중) → 422 OCR_RESULT_NOT_READY.
+
+        같은 업로드 배치에서 파일 A(먼저 생성)가 먼저 완료되고
+        파일 B(나중 생성)가 아직 PROCESSING이면, 최신 COMPLETED(A)보다
+        나중에 생성된 PROCESSING(B)가 존재하므로 게이트를 차단해야 한다.
+        (KEY-288 리뷰: jobs[0]만 보는 버그 회귀 테스트)
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 1st: 파일 A job — 먼저 생성, 먼저 완료(COMPLETED)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+        await OcrJob.filter(ocr_job_id=f"syn-gen-{visit.visit_id}").update(
+            created_at=datetime(2026, 9, 10, 10, 0, 0, tzinfo=UTC),
+        )
+
+        # 2nd: 파일 B job — 나중 생성, 아직 PROCESSING (created_at이 COMPLETED보다 나중)
+        sibling = await OcrJob.create(
+            ocr_job_id=f"syn-sibling-proc-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.PROCESSING,
+        )
+        await OcrJob.filter(ocr_job_id=sibling.ocr_job_id).update(
+            created_at=datetime(2026, 9, 10, 10, 0, 1, tzinfo=UTC),  # 1초 뒤 생성
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_RESULT_NOT_READY"

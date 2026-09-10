@@ -15,7 +15,7 @@ import pytest
 from app.documents.service import OCR_JOB_QUEUE, DocumentUploadService
 from app.models.ocr import OcrDocumentType
 
-_FAKE_JOB_ID = "ocr_key199_test"
+_FAKE_JOB_IDS = ["ocr_key199_test"]
 _FAKE_DOC_IDS = [42]
 
 
@@ -38,7 +38,7 @@ async def _run_upload(service: DocumentUploadService, fallback: bool) -> AsyncMo
             service, "_read_and_validate", AsyncMock(return_value=[(b"\xff\xd8" + b"\x00" * 8, "image/jpeg")])
         ),
         patch.object(service, "_verify_visit_access", AsyncMock()),
-        patch.object(service, "_persist", AsyncMock(return_value=(_FAKE_DOC_IDS, _FAKE_JOB_ID))),
+        patch.object(service, "_persist", AsyncMock(return_value=(_FAKE_DOC_IDS, _FAKE_JOB_IDS))),
         patch("app.documents.service.config") as mock_cfg,
         patch("app.documents.service.get_redis", return_value=mock_redis),
     ):
@@ -72,7 +72,7 @@ async def test_fixture_fallback_off_enqueues_job_to_redis() -> None:
     service = _make_service()
     mock_redis = await _run_upload(service, fallback=False)
 
-    mock_redis.rpush.assert_awaited_once_with(OCR_JOB_QUEUE, _FAKE_JOB_ID)
+    mock_redis.rpush.assert_awaited_once_with(OCR_JOB_QUEUE, *_FAKE_JOB_IDS)
 
 
 # ── 이중 처리 없음 ────────────────────────────────────────────────────────────

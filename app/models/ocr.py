@@ -92,6 +92,7 @@ class OcrJobDocument(models.Model):
     """An uploaded document queued in one OCR execution."""
 
     ocr_job_document_id = fields.BigIntField(primary_key=True)
+    ocr_job_id: str
     ocr_job: fields.ForeignKeyRelation[OcrJob] = fields.ForeignKeyField(
         "models.OcrJob",
         related_name="source_documents",
@@ -136,6 +137,7 @@ class OcrField(models.Model):
     """A structured value with OCR, correction, and confirmation provenance."""
 
     ocr_field_id = fields.BigIntField(primary_key=True)
+    ocr_result_id: int
     ocr_result: fields.ForeignKeyRelation[OcrResult] = fields.ForeignKeyField(
         "models.OcrResult",
         related_name="fields",

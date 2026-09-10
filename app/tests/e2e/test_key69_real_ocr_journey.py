@@ -145,7 +145,7 @@ class TestKey69RealOcrJourney(AuthTestCase):
                     )
                 assert uploaded.status_code == 201, uploaded.text
                 upload_body = uploaded.json()
-                job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_id"])
+                job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_ids"][0])
                 result = await OcrResult.get(ocr_job=job)
             else:
                 # OCR_FIXTURE_FALLBACK=False → 큐잉 → Worker → CLOVA
@@ -168,10 +168,10 @@ class TestKey69RealOcrJourney(AuthTestCase):
                     patch("ai_worker.tasks.ocr_task.default_logger", observed_logger),
                 ):
                     worker_config.clova_enabled = True
-                    await process_ocr_job(upload_body["ocr_job_id"])
+                    await process_ocr_job(upload_body["ocr_job_ids"][0])
 
                 clova_call.assert_awaited_once_with(EMR_UPLOAD_BYTES, "image/jpeg")
-                job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_id"])
+                job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_ids"][0])
                 result = await OcrResult.get(ocr_job=job)
 
                 # 외부 API 응답의 원문이나 합성 환자 값 대신 mode·시간·코드·job id만
