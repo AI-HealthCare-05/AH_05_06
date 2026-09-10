@@ -31,7 +31,16 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
-from app.models.ocr import OcrDocumentType, OcrField, OcrJob, OcrJobStatus, OcrResult, course_days, read_but_unconfirmed
+from app.models.ocr import (
+    OcrDocumentType,
+    OcrField,
+    OcrJob,
+    OcrJobDocument,
+    OcrJobStatus,
+    OcrResult,
+    course_days,
+    read_but_unconfirmed,
+)
 from app.models.prescriptions import Prescription, ordered_prescription_items
 from app.models.visits import (
     GuideDocument,
@@ -180,13 +189,19 @@ async def _load_confirmed_ocr_fields(visit_id: int, hospital_id: int) -> "dict[s
 
     ocr_results: list[OcrResult] = []
     doc_type_of: dict[int, OcrDocumentType] = {}
-    for job in jobs:
-        await job.fetch_related("source_documents")
-        r = await OcrResult.filter(ocr_job=job).prefetch_related("fields").first()
-        if r is not None:
-            ocr_results.append(r)
-            if job.source_documents:
-                doc_type_of[r.ocr_result_id] = job.source_documents[0].document_type
+    if jobs:
+        job_ids = [j.ocr_job_id for j in jobs]
+        all_results = await OcrResult.filter(ocr_job_id__in=job_ids).prefetch_related("fields").all()
+        result_by_job: dict[str, OcrResult] = {r.ocr_job_id: r for r in all_results}
+        job_docs = await OcrJobDocument.filter(ocr_job_id__in=job_ids).all()
+        doc_type_by_job: dict[str, OcrDocumentType] = {jd.ocr_job_id: jd.document_type for jd in job_docs}
+        for job in jobs:
+            r = result_by_job.get(job.ocr_job_id)
+            if r is not None:
+                ocr_results.append(r)
+                dt = doc_type_by_job.get(job.ocr_job_id)
+                if dt is not None:
+                    doc_type_of[r.ocr_result_id] = dt
 
     if not ocr_results:
         raise ApiError("OCR_NOT_CONFIRMED", 422, "확정된 OCR 항목이 없습니다. 먼저 OCR을 확정해 주세요.")

@@ -130,3 +130,10 @@ def _field_wins(
 def _doc_priority(result_id: int, doc_type_of: dict[int, OcrDocumentType]) -> int:
     dt = doc_type_of.get(result_id)
     return _DOC_TYPE_PRIORITY.get(dt, 99) if dt is not None else 99
+
+
+def ocr_doc_type_priority(doc_type: OcrDocumentType | None) -> int:
+    """문서 유형 우선순위를 반환한다 — 낮을수록 우선 (EMR=0, PRESCRIPTION=1, LAB_RESULT=2, 미지=99)."""
+    if doc_type is None:
+        return 99
+    return _DOC_TYPE_PRIORITY.get(doc_type, 99)

@@ -35,7 +35,7 @@ from app.ocr.schemas import (
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor
-from app.ocr.utils import assert_ocr_jobs_ready, merge_fields_by_type
+from app.ocr.utils import assert_ocr_jobs_ready, merge_fields_by_type, ocr_doc_type_priority
 
 
 def _resolved_value(row: dict) -> str | None:
@@ -177,29 +177,35 @@ def _collect_item_rows(
     return rows
 
 
-async def _result_of(job: OcrJob) -> "OcrResult | None":
-    """그 판독 작업의 결과를 필드까지 붙여 가져온다."""
-    return await OcrResult.filter(ocr_job_id=job.ocr_job_id).prefetch_related("fields").first()
-
-
 async def _gather_results_from_jobs(
     jobs: list[OcrJob],
 ) -> tuple[list[OcrResult], dict[int, OcrDocumentType]]:
-    """job 목록에서 OcrResult를 필드와 함께 수집하고 result_id→문서유형 매핑을 함께 반환한다."""
+    """job 목록에서 OcrResult를 필드와 함께 일괄 조회하고 result_id→문서유형 매핑을 반환한다."""
+    if not jobs:
+        return [], {}
+    job_ids = [j.ocr_job_id for j in jobs]
+    all_results = await OcrResult.filter(ocr_job_id__in=job_ids).prefetch_related("fields").all()
+    result_by_job: dict[str, OcrResult] = {r.ocr_job_id: r for r in all_results}
+    job_docs = await OcrJobDocument.filter(ocr_job_id__in=job_ids).all()
+    doc_type_by_job: dict[str, OcrDocumentType] = {jd.ocr_job_id: jd.document_type for jd in job_docs}
     results: list[OcrResult] = []
     doc_type_of: dict[int, OcrDocumentType] = {}
     for job in jobs:
-        await job.fetch_related("source_documents")
-        r = await _result_of(job)
+        r = result_by_job.get(job.ocr_job_id)
         if r is not None:
             results.append(r)
-            if job.source_documents:
-                doc_type_of[r.ocr_result_id] = job.source_documents[0].document_type
+            dt = doc_type_by_job.get(job.ocr_job_id)
+            if dt is not None:
+                doc_type_of[r.ocr_result_id] = dt
     return results, doc_type_of
 
 
 async def _find_result_for_field(visit_id: int, hospital_id: int, field_type: str) -> OcrResult:
-    """비제외 COMPLETED job 전체에서 field_type을 가진 result, 없으면 최신 result를 반환한다."""
+    """비제외 COMPLETED job 전체에서 field_type을 가진 result를 반환한다.
+
+    해당 field_type을 가진 result가 없으면 문서 유형 우선순위(EMR>PRESCRIPTION>LAB_RESULT)가
+    높은 result를 fallback으로 반환한다. 직접 입력 값이 LAB_RESULT result에 오귀속되는 것을 방지한다.
+    """
     completed_jobs = (
         await OcrJob.filter(
             visit_id=visit_id,
@@ -213,14 +219,29 @@ async def _find_result_for_field(visit_id: int, hospital_id: int, field_type: st
     if not completed_jobs:
         raise _not_found()
 
+    job_ids = [j.ocr_job_id for j in completed_jobs]
+    all_results = await OcrResult.filter(ocr_job_id__in=job_ids).all()
+    result_by_job: dict[str, OcrResult] = {r.ocr_job_id: r for r in all_results}
+    result_ids = [r.ocr_result_id for r in all_results]
+    field_result_ids: set[int] = set(
+        await OcrField.filter(
+            ocr_result_id__in=result_ids, field_type=field_type
+        ).values_list("ocr_result_id", flat=True)
+    )
+    job_docs = await OcrJobDocument.filter(ocr_job_id__in=job_ids).all()
+    doc_type_by_job: dict[str, OcrDocumentType] = {jd.ocr_job_id: jd.document_type for jd in job_docs}
+
     fallback: OcrResult | None = None
+    fallback_priority = 99
     for job in completed_jobs:
-        r = await OcrResult.filter(ocr_job_id=job.ocr_job_id).first()
+        r = result_by_job.get(job.ocr_job_id)
         if r is None:
             continue
-        if await OcrField.filter(ocr_result_id=r.ocr_result_id, field_type=field_type).exists():
+        if r.ocr_result_id in field_result_ids:
             return r
-        if fallback is None:
+        priority = ocr_doc_type_priority(doc_type_by_job.get(job.ocr_job_id))
+        if priority < fallback_priority:
+            fallback_priority = priority
             fallback = r
 
     if fallback is None:

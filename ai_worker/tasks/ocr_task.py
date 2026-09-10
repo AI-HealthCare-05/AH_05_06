@@ -202,6 +202,10 @@ async def _call_clova_for_documents(
     파일마다 CLOVA 완료 시 job.progress를 단계적으로 업데이트한다.
     CLOVA 완료 구간은 0~70%, DB 저장 완료는 100% (_save_clova_result 담당).
     """
+    if len(job_documents) != 1:
+        raise RuntimeError(
+            f"옵션 A 불변식 위반 — job당 문서는 정확히 1개여야 하지만 {len(job_documents)}개: job={job.ocr_job_id}"
+        )
     results: dict[int, ClovaOcrResult] = {}
     total = len(job_documents)
     for jd in job_documents:
