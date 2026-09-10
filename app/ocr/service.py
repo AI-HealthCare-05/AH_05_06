@@ -237,7 +237,7 @@ async def _find_result_for_field(visit_id: int, hospital_id: int, field_type: st
         if r.ocr_result_id in field_result_ids:
             return r
         priority = ocr_doc_type_priority(doc_type_by_job.get(job.ocr_job_id))
-        if priority < fallback_priority:
+        if fallback is None or priority < fallback_priority:
             fallback_priority = priority
             fallback = r
 
