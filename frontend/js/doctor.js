@@ -208,12 +208,6 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
       : "";
   }
 
-  function renderSummary() {
-    var line = guideWarnLine(guide.sections);
-    el("warn-line").className = line.className;
-    el("warn-line").textContent = line.text;
-  }
-
   /* 머리말은 **진료에서** 채운다 — `js/step-nav.js` 의 `visitHeadLines` (KEY-300).
    *
    * 여기는 안내문(`guide.patient`)에서 뽑고, 없으면 통째로 비웠다. 그래서
@@ -478,7 +472,6 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
     renderRole();
 
     el("panel").innerHTML = '<p class="block__hint">불러오는 중…</p>';
-    el("warn-line").textContent = "";
 
     loadPatientLink(visit.visit_id, mine);
 
@@ -491,7 +484,6 @@ function canDiscardPatientLink(url, handled, confirmDiscard) {
         renderHead();
         renderTabs();
         renderPanel();
-        renderSummary();
         renderRole();
         /* **환자가 바뀐 것만** 알린다. `renderPanel()` 은 탭을 누를 때도 불리므로
            패널 자체를 라이브 리전으로 두면 정상 탐색까지 읽힌다. */

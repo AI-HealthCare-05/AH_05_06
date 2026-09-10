@@ -97,13 +97,11 @@ function guideMissingSaying(error) {
   function renderOne(prefix, canEdit, keepCaret) {
     var vtabs = el(prefix + "-vtabs");
     var panel = el(prefix + "-panel");
-    var warn = el(prefix + "-warn");
     if (!vtabs || !panel) return;
 
     if (!guide) {
       vtabs.innerHTML = "";
       panel.innerHTML = "";
-      if (warn) warn.textContent = "";
       return;
     }
 
@@ -119,12 +117,6 @@ function guideMissingSaying(error) {
     };
     if (keepCaret) keepCaretAround(panel, draw);
     else draw();
-
-    if (warn) {
-      var line = guideWarnLine(guide.sections);
-      warn.className = line.className;
-      warn.textContent = line.text;
-    }
   }
 
   /* 문자 설정(S1-14)에 넘길 값. **화면이 아는 것만** 모은다 — 서버가 회차·문구를

@@ -399,33 +399,16 @@
 }
 
 
-/* ── 경고 줄 · 세로 탭 ────────────────────────────────────────────────
+/* ── 세로 탭 ──────────────────────────────────────────────────────────
  *
- * `doctor.css` 에만 있었다. 「안내문」 탭의 경고 줄(`#guide-warn`)과 섹션
- * 세로 탭은 의사 화면과 진료기록 화면이 **같은 것**을 쓴다 — 본문을
- * `js/guide-view.js` 가 한 곳에서 그리기 때문이다. 그런데 모양은 한 화면에만
- * 있었으니 반쪽만 공용이었다.
+ * `doctor.css` 에만 있었다. 섹션 세로 탭은 의사 화면과 진료기록 화면이
+ * **같은 것**을 쓴다 — 본문을 `js/guide-view.js` 가 한 곳에서 그리기
+ * 때문이다. 그런데 모양은 한 화면에만 있었으니 반쪽만 공용이었다.
+ *
+ * 여기 있던 `.warnline`(「확인 부탁드릴 곳이 없습니다」)은 걷었다 — 서버가
+ * `guide_section.warn` 을 한 번도 채우지 않아 늘 초록이었다. 세는 것이 없는데
+ * 「그대로 승인하셔도 됩니다」라고 말하는 줄이었다.
  */
-
-.warnline {
-  padding: var(--s-12) var(--s-16);
-  border-radius: var(--radius);
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0 0 var(--s-12);
-}
-
-.warnline--warn {
-  background: var(--warn-bg);
-  color: var(--warn);
-  border: 1px solid var(--warn-line);
-}
-
-.warnline--ok {
-  background: var(--done-bg);
-  color: var(--done);
-  border: 1px solid transparent;
-}
 
 .vtabs {
   display: flex;
