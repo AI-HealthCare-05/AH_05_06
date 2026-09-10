@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/shell.css" />
+    <!-- 공용 부품(`.button-primary` · `.button-ghost` …)이 여기 있다. 예전에는
+         어드민이 이것을 안 실었는데 본문이 골격뿐이라 드러나지 않았다 —
+         A1-2 가 「추가」 버튼을 세우면서 **브라우저 기본 회색 버튼**이 떴다. -->
+    <link rel="stylesheet" href="/css/blocks.css" />
     <link rel="stylesheet" href="/css/frames.css" />
     <link rel="stylesheet" href="/css/admin.css" />
   </head>
@@ -31,7 +35,7 @@
          되는지를 말한다. -->
 
     <header class="topbar">
-      <span class="topbar__brand">케어온 <span class="topbar__clinic">도로시여성의원</span></span>
+      <span class="topbar__brand"><span class="brandmark" aria-hidden="true"></span>케어온 <span class="topbar__clinic">도로시여성의원</span></span>
       <nav class="topbar__nav">
         <!-- **관리는 S2, 설정은 D2 다.** 관리가 지금 담은 것은 발송
              예정(S2-3) 하나이고, 환자 관리 · 발송 이력은 그 화면 안에서
@@ -71,6 +75,7 @@
     <script src="/js/api.js"></script>
     <script src="/js/frames.js"></script>
     <script src="/js/list-fold.js"></script>
+    <script src="/js/admin-staff.js"></script>
     <script src="/js/admin.js"></script>
   </body>
 </html>

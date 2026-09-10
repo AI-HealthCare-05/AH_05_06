@@ -33,12 +33,20 @@ KEY-277 전체 인수조건 완료 또는 배포 준비로 표시하지 않는�
 
 ## 후속 구현 진행 (2026-09-10)
 
-- GuideSectionSourceSnapshot 및 migration 51: 안내 버전·섹션별 1:N 근거 메타데이터 저장.
+- GuideSectionSourceSnapshot 및 migration 52: 안내 버전·섹션별 1:N 근거 메타데이터 저장. develop의 51번과 중복되어 최신 모델 기준으로 Aerich 재생성했다.
 - 원본 지식과 FK를 맺지 않으며, 섹션 재생성 시 SET NULL로 이전 버전 근거를 보존한다.
 - 검증 근거와 승인 gate 결과 기반 템플릿 저장 함수를 추가했다. 충돌·인덱스 오류는 템플릿 사유로 허용하지 않는다.
 - 병원 응답의 sections[].sources 및 의료진 원문 패널에 출처/템플릿 정보 표시를 추가했다.
 - 아직 GuideService.generate 호출부는 연결 전이다. 운영 생성 완료로 간주하지 않는다.
-- migration 파일은 생성했으며 실제 upgrade/downgrade 검증은 남아 있다.
+- 2026-09-10 develop `b6bf470` 반영 후 migration 52를 Aerich로 재생성했다.
+  `MODELS_STATE`에 `staff_account_event`, `guide_safety_check`,
+  `drug_caution_content.physician_review` 및 새 근거 스냅샷 모델이 포함되는 회귀 검사를 추가했다.
+- 기존 개발 DB와 분리한 MySQL 8.0에서 빈 DB 0→52, 기존 이력 0→51→52,
+  각 DB의 upgrade 재실행(추가 적용 없음), 이후 `aerich migrate`의
+  `No changes detected`를 확인했다. 기존 DB 시나리오는 합성 51번 스키마 기준이며
+  운영 데이터 복제 검증은 아니다. downgrade 검증은 이번 실행에 포함하지 않았다.
+- RAG 전체 테스트 110개 및 DB 연결 없는 마이그레이션 검사 64개 통과.
+  전체 애플리케이션 CI 및 KEY-277 전체 기능 검증 완료를 뜻하지 않는다.
 
 ## 재검증 반환 계약
 

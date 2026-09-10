@@ -108,17 +108,34 @@ test("없는 메뉴를 물으면 빈 목록이다 — 죽지 않는다", () => {
 
 /* ── 아직 아니라고 말하는가 ────────────────────────────────────────────── */
 
-test("**일곱 다 「화면 없음」이고 무엇이 있어야 되는지 말한다**", () => {
-  /* 어드민에 데이터를 줄 API 가 하나도 없다 — GET /staffs 도 GET /hospital 도.
-     그런데 화면이 그럴듯한 값을 그리면 지금 다른 화면들이 겪는 어긋남이
-     여기서 다시 생긴다. 값을 지어내지 않았는지를 잰다. */
+/* **처음에는 일곱이 다 「화면 없음」이었다.** 어드민에 데이터를 줄 API 가
+   하나도 없었기 때문이다 — `GET /staffs` 도 `GET /hospital` 도.
+
+   KEY-321 이 `A1-1`(직원 목록) · `A1-2`(직원 추가)에 API 를 붙였다. 그래서
+   재는 것을 바꾼다: 「전부 3이다」가 아니라 **「3인 것은 3이라고 말하고,
+   3이 아닌 것은 갈 곳이 있다」**. 값을 지어내지 않았는지는 그대로 잰다. */
+const LIVE_ADMIN_FRAMES = ["A1-1", "A1-2"];
+
+test("**아직인 칸은 무엇이 있어야 되는지 말한다**", () => {
   for (const frame of ADMIN_FRAMES) {
+    if (LIVE_ADMIN_FRAMES.includes(frame.id)) continue;
     assert.strictEqual(frame.level, 3, `${frame.id} 이 화면 없음이 아니다`);
     assert.ok(frame.role, `${frame.id} 이 무슨 화면인지 말하지 않는다`);
     assert.ok(
       frame.blocker,
       `${frame.id} 이 무엇이 있어야 되는지 말하지 않는다`,
     );
+  }
+});
+
+test("**사는 칸은 진짜로 산다** — 목록에만 적고 안 만든 것을 막는다", () => {
+  /* 위 검사가 `LIVE_ADMIN_FRAMES` 로 건너뛰므로, 그 목록에 이름만 올리면
+     아무 검사도 안 받는 자리가 생긴다. 여기서 그 자리를 막는다. */
+  for (const id of LIVE_ADMIN_FRAMES) {
+    const frame = ADMIN_FRAMES.find((one) => one.id === id);
+    assert.ok(frame, `${id} 이 어드민 프레임에 없다`);
+    assert.notStrictEqual(frame.level, 3, `${id} 을 산다고 적어 두고 화면이 없다`);
+    assert.ok(frame.url, `${id} 이 살아 있다면서 갈 곳이 없다`);
   }
 });
 

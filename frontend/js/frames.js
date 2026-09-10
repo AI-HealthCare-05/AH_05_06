@@ -67,8 +67,8 @@ var FRAMES = [
   {"id": "P8-1", "area": "patient", "name": "PDF 저장 · 범위 선택", "level": 3, "target": 3, "blocker": "PDF 생성 기능 없음", "role": "저장할 안내문 범위를 고른다"},
   {"id": "P8-2", "area": "patient", "name": "미리보기 · 저장", "level": 3, "target": 3, "blocker": "PDF 렌더링 · 내려받기 없음", "role": "PDF 를 미리 보고 저장한다"},
   {"id": "P9", "area": "patient", "name": "피드백 · 오류 신고", "level": 3, "target": 3, "blocker": "신고 화면이 목업에만 있다 — 저장은 POST /patient-feedback 으로 실제로 되고 관리 화면도 있는데, 실서버 안내문에는 신고 버튼이 안 그려진다", "role": "안내문의 잘못된 내용을 신고한다"},
-  {"id": "A1-1", "area": "admin", "name": "직원", "level": 3, "target": 2, "blocker": "Staff 모델은 있음. GET /staffs 조회 API 없음", "role": "직원 목록을 보고 검색한다"},
-  {"id": "A1-2", "area": "admin", "name": "직원 추가", "level": 3, "target": 3, "blocker": "직원 생성 API 없음", "role": "직원을 등록하고 초기 비밀번호를 발급한다"},
+  {"id": "A1-1", "area": "admin", "name": "직원", "level": 2, "target": 2, "url": "/admin.html", "blocker": "검색 칸이 없다 — 목록은 GET /admin/staffs 로 실제로 뜬다(KEY-321)", "role": "직원 목록을 보고 검색한다"},
+  {"id": "A1-2", "area": "admin", "name": "직원 추가", "level": 1, "target": 1, "url": "/admin.html", "role": "직원을 등록한다 — 초기 비밀번호는 관리자가 정해 주고 첫 로그인에서 본인이 바꾼다"},
   {"id": "A1-3", "area": "admin", "name": "직원 수정", "level": 3, "target": 3, "blocker": "직원 수정 · 비밀번호 재설정 API 없음", "role": "역할·재직 상태를 바꾸고 비밀번호를 재설정한다"},
   {"id": "A1-4", "area": "admin", "name": "의원 정보", "level": 3, "target": 2, "blocker": "Hospital 모델은 있음. GET /hospital 조회 API 없음", "role": "의원 정보를 수정한다"},
   {"id": "A1-5", "area": "admin", "name": "문자 이 프로그램이 멈추는 유일한 자리", "level": 3, "target": 3, "blocker": "SMS 잔량 조회 · 충전 API 없음", "role": "문자 잔량을 확인하고 충전한다"},
@@ -82,8 +82,12 @@ var FRAME_LEVELS = { 1: "완전 구현", 2: "일부 동작", 3: "화면 없음" 
 /* **안내 화면을 씌울 대상** — KEY-234 인수조건 ④ 「핵심 데모 화면에는 적용하지 않는다」.
 
    지금 화면이 없어도(level 3) 곧 올라갈 프레임(target < 3)은 제외한다 —
-   P1-1(링크 진입 인증)·A1-1(직원)·A1-4(의원 정보) 셋이다. 씌우면 같은 주에
-   두 번 만들게 되고, 시연 대본이 안내 화면을 지난다.
+   P1-1(링크 진입 인증)·A1-4(의원 정보) 둘이다. 씌우면 같은 주에 두 번 만들게
+   되고, 시연 대본이 안내 화면을 지난다.
+
+   **A1-1(직원)이 여기 있었다.** KEY-321 이 목록을 실제로 띄워 level 2 가 됐고,
+   이제 「화면이 없는」 축에 안 든다 — 예시가 표와 갈리면 다음 사람이 표 대신
+   주석을 믿는다 (한금준 님 `#285` 리뷰 ④).
 
    여기 S1-11~13(스탭 확인)이 예시로 적혀 있었는데 **지금은 아니다.** KEY-235
    로 다시 재면서 그 셋은 level 2 가 되어 `level === 3` 에 애초에 안 걸린다

@@ -100,7 +100,82 @@ function adminMenuCovers(frames) {
     menuBox.innerHTML = html;
   }
 
+  /* **「직원」 칸만 진짜 데이터를 그린다** — A1-1 · A1-2 는 이제 API 가 있다
+     (KEY-321). 나머지 셋은 여전히 줄 API 가 없어 프레임 카드 그대로다.
+
+     같은 화면 안에서 어떤 칸은 살아 있고 어떤 칸은 아직인 것이 이상해 보이지만,
+     반대(다 되는 척)가 이 저장소가 없애 온 모양이다. */
+  function renderStaffBody() {
+    bodyBox.innerHTML =
+      '<h1 class="pane__title">직원</h1>' +
+      '<p class="pane__lead" id="staff-list">불러오는 중…</p>' +
+      staffFormHtml() +
+      remainingFrameCards(["A1-3"]);
+    wireStaffForm();
+    loadStaffList();
+  }
+
+  function loadStaffList() {
+    var box = document.getElementById("staff-list");
+    if (!box) return;
+    listStaffs()
+      .then(function (data) {
+        box.outerHTML = '<div id="staff-list">' + staffListHtml(data.staffs) + "</div>";
+      })
+      .catch(function (error) {
+        /* **「비어 있다」로 그리지 않는다.** 못 불러온 것을 「직원이 없다」로
+           보이면 관리자가 다시 만들려 든다. */
+        box.textContent = errorMessage(
+          error,
+          [{ status: 403, say: "직원 목록을 볼 권한이 없습니다." }],
+          "직원 목록을 불러오지 못했습니다.",
+        );
+      });
+  }
+
+  function wireStaffForm() {
+    var form = document.getElementById("staff-add");
+    if (!form) return;
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var say = document.getElementById("staff-say");
+      var go = document.getElementById("staff-add-go");
+      /* 두 번 눌러 계정이 둘 생기는 자리를 막는다 — 아이디가 유일해서 둘째는
+         409 로 끝나지만, 그 사이 화면은 아무 말도 안 한다. */
+      go.disabled = true;
+      say.textContent = "추가하는 중…";
+      createStaff({
+        name: document.getElementById("staff-name").value,
+        login_id: document.getElementById("staff-login-id").value,
+        password: document.getElementById("staff-password").value,
+        roles: staffRolesFor(document.getElementById("staff-roles").value),
+      })
+        .then(function (made) {
+          say.textContent = made.name + " 님을 추가했습니다. 첫 로그인에서 비밀번호를 바꾸게 됩니다.";
+          form.reset();
+          loadStaffList();
+        })
+        .catch(function (error) {
+          say.textContent = staffCreateSaying(error);
+        })
+        .then(function () {
+          go.disabled = false;
+        });
+    });
+  }
+
+  /* 아직 API 가 없는 프레임만 카드로 남긴다. */
+  function remainingFrameCards(ids) {
+    var html = "";
+    for (var i = 0; i < ids.length; i++) {
+      var frame = frameById(ids[i]);
+      if (frame) html += frameCardHtml(frame);
+    }
+    return html;
+  }
+
   function renderBody() {
+    if (current === "staff") return renderStaffBody();
     var frames = adminFramesFor(current);
     if (!frames.length) {
       bodyBox.innerHTML =
@@ -110,9 +185,15 @@ function adminMenuCovers(frames) {
 
     var html = "";
     for (var i = 0; i < frames.length; i++) {
-      var frame = frames[i];
-      html +=
-        '<section class="admin-card">' +
+      html += frameCardHtml(frames[i]);
+    }
+    bodyBox.innerHTML =
+      '<h1 class="pane__title">' + escape(menuLabel()) + "</h1>" + html;
+  }
+
+  function frameCardHtml(frame) {
+    return (
+      '<section class="admin-card">' +
         '<span class="frame__id">' +
         escape(frame.id) +
         "</span>" +
@@ -131,13 +212,11 @@ function adminMenuCovers(frames) {
         "</span></dd>" +
         "<dt>이 화면이 되려면</dt>" +
         "<dd>" +
-        escape(frame.blocker || "미정") +
-        "</dd>" +
-        "</dl>" +
-        "</section>";
-    }
-    bodyBox.innerHTML =
-      '<h1 class="pane__title">' + escape(menuLabel()) + "</h1>" + html;
+      escape(frame.blocker || "미정") +
+      "</dd>" +
+      "</dl>" +
+      "</section>"
+    );
   }
 
   function menuLabel() {

@@ -250,6 +250,54 @@ function mockRequest(path, options) {
         return resolve({});
       }
 
+      /* A1-1 · A1-2 — KEY-321. 목업도 **서버와 같은 규칙**을 지킨다:
+         조합 다섯만, 아이디는 전체에서 유일, 만든 계정은 첫 로그인 전. */
+      if (path === "/admin/staffs" && (options.method || "GET") === "GET") {
+        var listed = [];
+        for (var loginId in MOCK_STAFF) {
+          if (!Object.prototype.hasOwnProperty.call(MOCK_STAFF, loginId)) continue;
+          var one = MOCK_STAFF[loginId];
+          listed.push({
+            staff_id: one.id,
+            login_id: loginId,
+            name: one.name,
+            roles: one.roles,
+            status: one.status || "active",
+            must_change_password: !!one.must_change_password,
+            last_login_at: null,
+            created_at: null,
+          });
+        }
+        return resolve({ staffs: listed });
+      }
+
+      if (path === "/admin/staffs" && options.method === "POST") {
+        if (!/^[a-z0-9]{4,}$/.test(body.login_id || "")) {
+          return reject(new ApiError("INVALID_REQUEST", 400, {}));
+        }
+        if (MOCK_STAFF[body.login_id]) {
+          return reject(new ApiError("LOGIN_ID_TAKEN", 409, {}));
+        }
+        var wanted = (body.roles || []).slice().sort().join("|");
+        if (["staff", "doctor", "admin", "admin|staff", "admin|doctor"].indexOf(wanted) === -1) {
+          return reject(new ApiError("INVALID_ROLE_COMBINATION", 400, {}));
+        }
+        MOCK_STAFF[body.login_id] = {
+          id: 900 + Object.keys(MOCK_STAFF).length,
+          name: body.name,
+          roles: body.roles,
+          must_change_password: true,
+        };
+        return resolve({
+          staff_id: MOCK_STAFF[body.login_id].id,
+          login_id: body.login_id,
+          name: body.name,
+          roles: body.roles,
+          status: "active",
+          must_change_password: true,
+        });
+      }
+
       return reject(new ApiError("unknown", 404, {}));
     }, 180);
   });
