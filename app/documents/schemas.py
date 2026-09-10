@@ -4,5 +4,5 @@ from app.models.ocr import OcrJobStatus
 
 class DocumentUploadResponse(StrictModel):
     document_ids: list[int]
-    ocr_job_id: str
+    ocr_job_ids: list[str]
     status: OcrJobStatus

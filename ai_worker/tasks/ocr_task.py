@@ -109,10 +109,9 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         )
         lab_kw = build_lab_keywords(baselines)
         retry_count = 0
-        partial_results: dict[int, ClovaOcrResult] = {}
         while True:
             try:
-                clova_results = await _call_clova_for_documents(job, job_documents, doc_map, partial_results)
+                clova_results = await _call_clova_for_documents(job, job_documents, doc_map)
                 clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
                 missing = await _save_clova_result(job, job_documents, clova_results, lab_kw)
                 if missing:
@@ -196,23 +195,20 @@ async def _call_clova_for_documents(
     job: OcrJob,
     job_documents: list[OcrJobDocument],
     doc_map: dict[int, MedicalDocument],
-    results: dict[int, ClovaOcrResult] | None = None,
 ) -> dict[int, ClovaOcrResult]:
     """문서마다 CLOVA OCR을 호출해 결과를 document_id → ClovaOcrResult로 반환한다.
 
-    results에 이미 성공한 문서가 있으면 해당 문서는 재호출하지 않는다.
-    재시도 시 같은 dict를 전달하면 성공한 문서를 중복 호출하지 않는다.
-
+    파일별 OcrJob 구조(옵션 A)에서 job_documents는 항상 1개다.
     파일마다 CLOVA 완료 시 job.progress를 단계적으로 업데이트한다.
     CLOVA 완료 구간은 0~70%, DB 저장 완료는 100% (_save_clova_result 담당).
     """
-    if results is None:
-        results = {}
-    accumulated_ms = sum(r.elapsed_ms for r in results.values())
+    if len(job_documents) != 1:
+        raise RuntimeError(
+            f"옵션 A 불변식 위반 — job당 문서는 정확히 1개여야 하지만 {len(job_documents)}개: job={job.ocr_job_id}"
+        )
+    results: dict[int, ClovaOcrResult] = {}
     total = len(job_documents)
     for jd in job_documents:
-        if jd.document_id in results:
-            continue
         med_doc = doc_map.get(jd.document_id)
         if med_doc is None:
             raise RuntimeError(f"MedicalDocument 없음 — document_id={jd.document_id}")
@@ -220,13 +216,9 @@ async def _call_clova_for_documents(
         try:
             result = await call_clova_ocr(content, med_doc.mime_type)
         except ClovaOcrError as exc:
-            has_timing = accumulated_ms > 0 or exc.elapsed_ms is not None
-            elapsed_ms = (accumulated_ms + (exc.elapsed_ms or 0)) if has_timing else None
-            raise ClovaOcrError(exc.code, str(exc), elapsed_ms=elapsed_ms) from exc
-        accumulated_ms += result.elapsed_ms
+            raise ClovaOcrError(exc.code, str(exc), elapsed_ms=exc.elapsed_ms) from exc
         results[jd.document_id] = result
-        done = len(results)
-        job.progress = round(done / total * 70)
+        job.progress = round(len(results) / total * 70)
         await job.save(update_fields=("progress",))
     return results
 

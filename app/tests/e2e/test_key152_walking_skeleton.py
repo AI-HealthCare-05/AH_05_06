@@ -100,7 +100,7 @@ class TestKey152WalkingSkeleton(AuthTestCase):
             assert upload_body["status"] == OcrJobStatus.PROCESSING
 
             # KEY-149의 W1 fixture 경계: 운영 코드와 같은 fixture 완료 경로를 실행한다.
-            job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_id"])
+            job = await OcrJob.get(ocr_job_id=upload_body["ocr_job_ids"][0])
             async with in_transaction() as connection:
                 await seed_fixture_result(
                     job,

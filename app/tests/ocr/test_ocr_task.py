@@ -738,3 +738,128 @@ class TestProcessOcrJob(TestCase):
         assert mock_clova.call_count == 1
         # OcrResult는 단 한 건
         assert await OcrResult.filter(ocr_job=job).count() == 1
+
+
+# ── KEY-288 파일별 부분 실패 격리 ──────────────────────────────────────────────
+
+VISIT_ID_KEY288 = 910010
+PATIENT_ID_KEY288 = 910010
+
+
+class TestPerFileJobIsolation(TestCase):
+    """파일별 OcrJob 구조에서 한 파일 실패가 다른 파일 결과를 덮지 않음을 검증한다.
+
+    인수조건 2, 5 (KEY-288):
+    - 파일 하나가 CLOVA 하드 실패해도 나머지 파일의 OcrResult/OcrField는 정상 저장된다.
+    - 실패한 파일은 FAILED 상태로만 표시된다.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+        self._tmp.write(JPEG_BYTES)
+        self._tmp.close()
+
+    def tearDown(self) -> None:
+        os.unlink(self._tmp.name)
+        super().tearDown()
+
+    async def _seed_two_jobs(self) -> tuple[OcrJob, OcrJob]:
+        """같은 진료에 파일 2개를 별도 job으로 생성한다 (옵션 A 구조)."""
+        patient = await Patient.create(
+            patient_id=PATIENT_ID_KEY288,
+            hospital_id=HOSPITAL_ID,
+            hospital_patient_no="TEST-KEY288",
+            name="테스트환자288",
+            birth_date=date(1990, 1, 1),
+            phone="01000000001",
+        )
+        visit = await Visit.create(
+            visit_id=VISIT_ID_KEY288,
+            hospital_id=HOSPITAL_ID,
+            patient=patient,
+            visited_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
+        )
+
+        doc1 = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.EMR,
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        job1 = await OcrJob.create(
+            ocr_job_id="ocr_key288_job1_success",
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            requested_by=1,
+        )
+        await OcrJobDocument.create(
+            ocr_job=job1,
+            document_id=doc1.document_id,
+            document_type=OcrDocumentType.EMR,
+        )
+
+        doc2 = await MedicalDocument.create(
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            document_type=OcrDocumentType.LAB_RESULT,
+            file_path=self._tmp.name,
+            file_size=len(JPEG_BYTES),
+            mime_type="image/jpeg",
+            uploaded_by=1,
+        )
+        job2 = await OcrJob.create(
+            ocr_job_id="ocr_key288_job2_fail",
+            hospital_id=HOSPITAL_ID,
+            visit=visit,
+            requested_by=1,
+        )
+        await OcrJobDocument.create(
+            ocr_job=job2,
+            document_id=doc2.document_id,
+            document_type=OcrDocumentType.LAB_RESULT,
+        )
+        return job1, job2
+
+    async def test_failed_file_does_not_destroy_successful_file_result(self) -> None:
+        """파일 2(CLOVA 하드 실패) → FAILED, 파일 1(성공) → COMPLETED + OcrResult/OcrField 보존."""
+        job1, job2 = await self._seed_two_jobs()
+
+        # job1: CLOVA 성공
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(return_value=_FAKE_CLOVA_RESULT),
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job1.ocr_job_id)
+
+        # job2: CLOVA 하드 실패
+        with (
+            patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
+            patch(
+                "ai_worker.tasks.ocr_task.call_clova_ocr",
+                AsyncMock(side_effect=ClovaOcrError(SYN_FAIL_CLOVA_CODE, "hard failure")),
+            ),
+        ):
+            mock_cfg.clova_enabled = True
+            await process_ocr_job(job2.ocr_job_id)
+
+        # job2는 FAILED
+        await job2.refresh_from_db()
+        assert job2.status == OcrJobStatus.FAILED
+        assert job2.failure_code == "CLOVA_API_ERROR"
+        assert await OcrResult.filter(ocr_job=job2).count() == 0, "실패한 job에 OcrResult가 생성되면 안 된다"
+
+        # job1은 COMPLETED이고 OcrResult/OcrField가 정상 보존된다
+        await job1.refresh_from_db()
+        assert job1.status == OcrJobStatus.COMPLETED, "성공한 파일의 job이 FAILED가 됐다"
+        result1 = await OcrResult.filter(ocr_job=job1).first()
+        assert result1 is not None, "성공한 파일의 OcrResult가 사라졌다"
+        fields1 = await OcrField.filter(ocr_result=result1).all()
+        assert len(fields1) > 0, "성공한 파일의 OcrField가 비어 있다"

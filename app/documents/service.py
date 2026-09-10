@@ -57,7 +57,7 @@ class DocumentUploadService:
             raise
 
         try:
-            document_ids, ocr_job_id = await self._persist(
+            document_ids, ocr_job_ids = await self._persist(
                 visit_id=visit_id,
                 validated=validated,
                 saved_paths=saved_paths,
@@ -74,24 +74,24 @@ class DocumentUploadService:
         # OCR_FIXTURE_FALLBACK=true이면 _persist에서 seed_fixture_result가 이미 COMPLETED로 처리했으므로 큐잉하지 않는다.
         if not config.OCR_FIXTURE_FALLBACK:
             try:
-                await get_redis().rpush(OCR_JOB_QUEUE, ocr_job_id)  # type: ignore[misc]
+                await get_redis().rpush(OCR_JOB_QUEUE, *ocr_job_ids)  # type: ignore[misc]
             except Exception:
                 # reconciliation·재시도 없이 즉시 FAILED — 숨긴 실패보다 명시적 실패가 안전하다 (KEY-188)
-                default_logger.exception("OCR 큐 enqueue 실패 — ocr_job_id=%s", ocr_job_id)
-                await OcrJob.filter(ocr_job_id=ocr_job_id).update(
+                default_logger.exception("OCR 큐 enqueue 실패 — ocr_job_ids=%s", ocr_job_ids)
+                await OcrJob.filter(ocr_job_id__in=ocr_job_ids).update(
                     status=OcrJobStatus.FAILED,
                     failure_code="QUEUE_ERROR",
                     completed_at=now(),
                 )
                 return DocumentUploadResponse(
                     document_ids=document_ids,
-                    ocr_job_id=ocr_job_id,
+                    ocr_job_ids=ocr_job_ids,
                     status=OcrJobStatus.FAILED,
                 )
 
         return DocumentUploadResponse(
             document_ids=document_ids,
-            ocr_job_id=ocr_job_id,
+            ocr_job_ids=ocr_job_ids,
             status=OcrJobStatus.PROCESSING,
         )
 
@@ -104,7 +104,7 @@ class DocumentUploadService:
         document_type: OcrDocumentType,
         hospital_id: int,
         staff_id: int,
-    ) -> tuple[list[int], str]:
+    ) -> tuple[list[int], list[str]]:
         async with in_transaction() as conn:
             visit = (
                 await Visit.filter(visit_id=visit_id, hospital_id=hospital_id)
@@ -115,7 +115,7 @@ class DocumentUploadService:
             if visit is None:
                 raise ApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "진료 건을 찾을 수 없습니다.")
 
-            documents: list[MedicalDocument] = []
+            pairs: list[tuple[MedicalDocument, OcrJob]] = []
             for (content, mime), path in zip(validated, saved_paths, strict=True):
                 doc = await MedicalDocument.create(
                     hospital_id=hospital_id,
@@ -127,31 +127,24 @@ class DocumentUploadService:
                     uploaded_by=staff_id,
                     using_db=conn,
                 )
-                documents.append(doc)
-
-            ocr_job = await OcrJob.create(
-                ocr_job_id=f"ocr_{uuid4().hex}",
-                hospital_id=hospital_id,
-                visit=visit,
-                requested_by=staff_id,
-                using_db=conn,
-            )
-            for doc in documents:
+                job = await OcrJob.create(
+                    ocr_job_id=f"ocr_{uuid4().hex}",
+                    hospital_id=hospital_id,
+                    visit=visit,
+                    requested_by=staff_id,
+                    using_db=conn,
+                )
                 await OcrJobDocument.create(
-                    ocr_job=ocr_job,
+                    ocr_job=job,
                     document_id=doc.document_id,
                     document_type=document_type,
                     using_db=conn,
                 )
+                if config.OCR_FIXTURE_FALLBACK:
+                    await seed_fixture_result(job, [(doc.document_id, document_type)], conn)
+                pairs.append((doc, job))
 
-            if config.OCR_FIXTURE_FALLBACK:
-                await seed_fixture_result(
-                    ocr_job,
-                    [(doc.document_id, document_type) for doc in documents],
-                    conn,
-                )
-
-        return [doc.document_id for doc in documents], ocr_job.ocr_job_id
+        return [doc.document_id for doc, _ in pairs], [job.ocr_job_id for _, job in pairs]
 
     async def _verify_visit_access(self, *, visit_id: int, hospital_id: int) -> None:
         exists = await Visit.filter(visit_id=visit_id, hospital_id=hospital_id).exists()
