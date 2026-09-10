@@ -2853,6 +2853,19 @@ function stateTakesFocus(tone) {
       box.hidden = !text;
     }
 
+    function addSayProgress(pct) {
+      var bar = document.getElementById("add-bar");
+      var fill = document.getElementById("add-bar-fill");
+      if (bar) bar.hidden = false;
+      if (fill) fill.style.width = pct + "%";
+      addSay(pct + "% 올리는 중입니다…");
+    }
+
+    function hideAddBar() {
+      var bar = document.getElementById("add-bar");
+      if (bar) bar.hidden = true;
+    }
+
     function openPanel(open, focus) {
       panel.hidden = !open;
       button.setAttribute("aria-expanded", open ? "true" : "false");
@@ -2912,15 +2925,24 @@ function stateTakesFocus(tone) {
       });
       if (bad) return addSay(bad);
 
-      addSay(list.length + "장 올리는 중입니다…");
+      var totalBytes = list.reduce(function (sum, f) { return sum + f.size; }, 0);
+      var loadedPerFile = list.map(function () { return 0; });
+
+      addSayProgress(0);
 
       Promise.all(
-        list.map(function (file) {
-          return postDocument(wantedId, file);
+        list.map(function (file, i) {
+          return postDocumentWithProgress(wantedId, file, function (loaded) {
+            loadedPerFile[i] = loaded;
+            var totalLoaded = loadedPerFile.reduce(function (a, b) { return a + b; }, 0);
+            var pct = totalBytes > 0 ? Math.min(99, Math.round(totalLoaded / totalBytes * 100)) : 0;
+            addSayProgress(pct);
+          });
         }),
       )
         .then(function () {
           if (!visit || visit.visit_id !== wantedId) return;
+          hideAddBar();
           addSay(list.length + "장 올렸습니다 — 판독을 다시 불러옵니다.");
           /* 새 사진이 붙으면 판독이 다시 돈다. 화면을 새로 여는 것과 같은
              경로로 다시 묻는다 — 반쪽만 갱신하면 원문과 값이 어긋난다. */
@@ -2928,6 +2950,7 @@ function stateTakesFocus(tone) {
         })
         .catch(function (err) {
           if (!visit || visit.visit_id !== wantedId) return;
+          hideAddBar();
           addSay(err.message || "올리지 못했습니다. 다시 시도해 주세요.");
         });
     }

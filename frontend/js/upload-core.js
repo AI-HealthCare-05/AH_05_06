@@ -63,6 +63,43 @@ function postDocument(visitId, file) {
   });
 }
 
+/* `fetch` 는 업로드 바이트 진행률을 알 수 없다 — XHR 의 `upload.onprogress` 를
+   써야 한다. URL·헤더 규칙은 `postDocument` 와 같다. */
+function postDocumentWithProgress(visitId, file, onProgress) {
+  return new Promise(function (resolve, reject) {
+    var xhr = new XMLHttpRequest();
+    var form = new FormData();
+    form.append("files", file);
+
+    if (onProgress) {
+      xhr.upload.addEventListener("progress", function (event) {
+        if (event.lengthComputable) onProgress(event.loaded, event.total);
+      });
+    }
+
+    xhr.addEventListener("load", function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); } catch (e) { resolve({}); }
+      } else {
+        var data;
+        try { data = JSON.parse(xhr.responseText); } catch (e) { data = {}; }
+        reject(new Error(data.message || "업로드 실패"));
+      }
+    });
+
+    xhr.addEventListener("error", function () {
+      reject(new Error("업로드 실패"));
+    });
+
+    xhr.open("POST", API_BASE + "/front-desk/visits/" + visitId + "/documents");
+    var token = session.token();
+    if (token) xhr.setRequestHeader("Authorization", "Bearer " + token);
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.withCredentials = true;
+    xhr.send(form);
+  });
+}
+
 /* 끌어다 놓기를 붙인다.
  *
  * 창 전체에서 기본 동작(파일 열기)을 막지 않으면, 빗나가게 놓았을 때 브라우저가
