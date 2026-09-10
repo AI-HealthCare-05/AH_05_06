@@ -180,6 +180,33 @@ var MOCK_STAFF = {
   newbie01: { id: 103, name: "임채운", roles: ["staff"], must_change_password: true },
   left01: { id: 104, name: "문가람", roles: ["staff"], status: "left" },
 };
+/* 합성 감사 기록. **원문이 하나도 없다** — 링크 토큰도 전화번호도 환자 이름도
+   담지 않는다. 서버 계약이 그렇고, 목업이 그것을 어기면 화면이 있지도 않은
+   값을 그리는 연습을 하게 된다. */
+var MOCK_AUDIT = [
+  { event_id: "staff_account:3", occurred_at: "2026-09-10T09:41:00+09:00", source: "staff_account",
+    event_type: "STAFF_CREATED", actor_staff_id: 102, actor_name: "서지원", visit_id: null,
+    summary: "직원 계정을 만들었습니다" },
+  { event_id: "patient_usage:7", occurred_at: "2026-09-10T09:12:00+09:00", source: "patient_usage",
+    event_type: "GUIDE_VIEWED", actor_staff_id: null, actor_name: null, visit_id: 1204,
+    summary: "환자가 안내를 열어 봤습니다" },
+  { event_id: "message:5", occurred_at: "2026-09-10T09:05:00+09:00", source: "message",
+    event_type: "SENT", actor_staff_id: null, actor_name: null, visit_id: 1204,
+    summary: "문자를 보냈습니다" },
+  { event_id: "otp:4", occurred_at: "2026-09-10T09:02:00+09:00", source: "otp",
+    event_type: "VERIFIED", actor_staff_id: null, actor_name: null, visit_id: 1204,
+    summary: "환자가 본인 확인을 마쳤습니다" },
+  { event_id: "guide:12", occurred_at: "2026-09-10T08:58:00+09:00", source: "guide",
+    event_type: "APPROVED", actor_staff_id: 900, actor_name: "박연", visit_id: 1204,
+    summary: "안내문을 승인했습니다" },
+  { event_id: "guide:11", occurred_at: "2026-09-10T08:40:00+09:00", source: "guide",
+    event_type: "SUBMITTED", actor_staff_id: 101, actor_name: "한소영", visit_id: 1204,
+    summary: "안내문을 의사에게 넘겼습니다" },
+  { event_id: "guide:10", occurred_at: "2026-09-09T17:20:00+09:00", source: "guide",
+    event_type: "GENERATED", actor_staff_id: 101, actor_name: "한소영", visit_id: 1198,
+    summary: "안내문을 생성했습니다" },
+];
+
 var MOCK_MAX_FAILURES = 5;
 var MOCK_LOCK_SECONDS = 600;
 
@@ -296,6 +323,32 @@ function mockRequest(path, options) {
           status: "active",
           must_change_password: true,
         });
+      }
+
+      /* A1-6 · A1-7 — KEY-322. 목업도 **서버와 같은 모양**으로 답한다:
+         유형 다섯이 섞이고, 최신순이고, 거르개가 듣고, 쪽이 나뉜다. */
+      if (path.indexOf("/admin/audit-logs") === 0) {
+        var asked = new URLSearchParams(path.split("?")[1] || "");
+        var rows = MOCK_AUDIT.slice();
+        if (asked.get("source")) rows = rows.filter(function (r) { return r.source === asked.get("source"); });
+        if (asked.get("actor_staff_id")) {
+          rows = rows.filter(function (r) { return String(r.actor_staff_id) === asked.get("actor_staff_id"); });
+        }
+        if (asked.get("visit_id")) {
+          rows = rows.filter(function (r) { return String(r.visit_id) === asked.get("visit_id"); });
+        }
+        if (asked.get("occurred_from")) {
+          rows = rows.filter(function (r) { return r.occurred_at >= asked.get("occurred_from"); });
+        }
+        if (asked.get("occurred_to")) {
+          rows = rows.filter(function (r) { return r.occurred_at <= asked.get("occurred_to"); });
+        }
+        rows.sort(function (a, b) { return a.occurred_at < b.occurred_at ? 1 : a.occurred_at > b.occurred_at ? -1 : 0; });
+        var start = Number(asked.get("cursor") || 0);
+        var size = Number(asked.get("limit") || 50);
+        var slice = rows.slice(start, start + size);
+        var left = rows.length > start + size;
+        return resolve({ entries: slice, next_cursor: left ? String(start + size) : null, has_more: left });
       }
 
       return reject(new ApiError("unknown", 404, {}));

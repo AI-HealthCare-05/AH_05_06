@@ -174,8 +174,110 @@ function adminMenuCovers(frames) {
     return html;
   }
 
+  /* ── 전체 로그 (A1-6 · A1-7) — KEY-322 ──────────────────────────────── */
+
+  var auditCursor = null;
+  var auditQuery = {};
+
+  function renderAuditBody() {
+    bodyBox.innerHTML =
+      '<h1 class="pane__title">전체 로그</h1>' +
+      '<p class="pane__lead" id="audit-filter-slot">거르개를 준비하는 중…</p>' +
+      '<div id="audit-list"><p class="pane__lead">불러오는 중…</p></div>' +
+      '<div class="audit-more" id="audit-more"></div>';
+
+    /* **행위자 목록은 A1-1 것을 그대로 쓴다.** 못 불러와도 나머지 거르개는
+       서야 하므로 빈 목록으로 세운다 — 하나가 늦다고 화면이 통째로 멈추면
+       안 된다. */
+    listStaffs()
+      .then(function (data) {
+        return data.staffs;
+      })
+      .catch(function () {
+        return [];
+      })
+      .then(function (staffs) {
+        var slot = document.getElementById("audit-filter-slot");
+        if (!slot) return;
+        slot.outerHTML = auditFilterHtml(staffs);
+        wireAuditFilter();
+      });
+
+    auditQuery = {};
+    auditCursor = null;
+    loadAudit(false);
+  }
+
+  function wireAuditFilter() {
+    var form = document.getElementById("audit-filter");
+    if (!form) return;
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      auditQuery = auditQueryFrom({
+        source: document.getElementById("audit-source").value,
+        actor: document.getElementById("audit-actor").value,
+        visit: document.getElementById("audit-visit").value.trim(),
+        from: document.getElementById("audit-from").value,
+        to: document.getElementById("audit-to").value,
+      });
+      auditCursor = null;
+      loadAudit(false);
+    });
+  }
+
+  function loadAudit(append) {
+    var box = document.getElementById("audit-list");
+    var more = document.getElementById("audit-more");
+    if (!box) return;
+    if (!append) box.innerHTML = '<p class="pane__lead">불러오는 중…</p>';
+    if (more) more.innerHTML = "";
+
+    var asked = {};
+    for (var key in auditQuery) {
+      if (Object.prototype.hasOwnProperty.call(auditQuery, key)) asked[key] = auditQuery[key];
+    }
+    if (append && auditCursor) asked.cursor = auditCursor;
+
+    listAuditLogs(asked)
+      .then(function (page) {
+        var html = auditListHtml(page.entries);
+        if (append) {
+          var body = box.querySelector("tbody");
+          /* 앞 쪽이 비어 표가 없으면 이어 붙일 자리가 없다 — 통째로 그린다. */
+          if (body && page.entries.length) {
+            for (var i = 0; i < page.entries.length; i++) {
+              body.insertAdjacentHTML("beforeend", auditRowHtml(page.entries[i]));
+            }
+          } else {
+            box.innerHTML = html;
+          }
+        } else {
+          box.innerHTML = html;
+        }
+        auditCursor = page.next_cursor;
+        if (more) {
+          more.innerHTML = page.has_more
+            ? '<button class="button-ghost" type="button" id="audit-more-go">더 보기</button>'
+            : "";
+          var go = document.getElementById("audit-more-go");
+          if (go) {
+            go.addEventListener("click", function () {
+              go.disabled = true;
+              loadAudit(true);
+            });
+          }
+        }
+      })
+      .catch(function (error) {
+        /* **「기록이 없다」로 그리지 않는다.** 못 불러온 것을 없는 것으로 보이면
+           관리자는 그 시각에 아무 일도 없었다고 읽는다. */
+        box.innerHTML = '<p class="pane__lead">' + esc(auditLoadSaying(error)) + "</p>";
+      });
+  }
+
   function renderBody() {
     if (current === "staff") return renderStaffBody();
+    if (current === "log") return renderAuditBody();
     var frames = adminFramesFor(current);
     if (!frames.length) {
       bodyBox.innerHTML =
