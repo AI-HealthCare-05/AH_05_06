@@ -19,7 +19,7 @@ from app.models.ocr import OcrJobStatus
 ACTOR = ClinicalActor(staff_id=1, hospital_id=100, roles=frozenset({"staff"}))
 FAKE_RESPONSE = DocumentUploadResponse(
     document_ids=[801, 802],
-    ocr_job_id="ocr_fake_abc123",
+    ocr_job_ids=["ocr_fake_abc123", "ocr_fake_abc456"],
     status=OcrJobStatus.PROCESSING,
 )
 
@@ -65,7 +65,7 @@ def test_upload_single_jpeg_returns_201(client: TestClient) -> None:
     assert resp.status_code == 201
     body = resp.json()
     assert body["document_ids"] == [801, 802]
-    assert body["ocr_job_id"] == "ocr_fake_abc123"
+    assert body["ocr_job_ids"] == ["ocr_fake_abc123", "ocr_fake_abc456"]
     assert body["status"] == "PROCESSING"
 
 

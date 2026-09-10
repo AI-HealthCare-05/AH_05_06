@@ -126,7 +126,7 @@ async def test_visit_access_query_always_includes_hospital_scope(monkeypatch: py
 
 class FakeDocumentService:
     async def upload(self, **_) -> DocumentUploadResponse:
-        return DocumentUploadResponse(document_ids=[1], ocr_job_id="ocr_synthetic", status=OcrJobStatus.PROCESSING)
+        return DocumentUploadResponse(document_ids=[1], ocr_job_ids=["ocr_synthetic"], status=OcrJobStatus.PROCESSING)
 
 
 def test_admin_only_actor_cannot_upload() -> None:
