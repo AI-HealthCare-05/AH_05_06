@@ -16,6 +16,7 @@ KEY-201 리뷰에서 실제로 막혔다. 9/4 배포가 develop 에서 나온 �
 import re
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -106,6 +107,90 @@ class TestEveryImageSaysWhereItCameFrom:
         assert {"app", "ai_worker", "frontend"} <= paths, f"이미지에 담기는 자리가 빠졌다 — {sorted(paths)}"
         assert 'git status --porcelain -- "${BUILD_CONTEXT_PATHS[@]}"' in script, "dirty 판정이 그 자리를 안 쓴다"
 
+    def test_dirty_also_watches_what_decides_the_build(self) -> None:
+        """**굽는 법을 정하는 파일도 봐야 한다** (한금준 님 리뷰 ②).
+
+        `COPY` 가 가리키는 자리만 보면, `infra/nginx/Dockerfile` 의 베이스
+        이미지를 커밋 없이 바꿔도 **깨끗한 SHA** 가 박힌다 — 실제 이미지는
+        달라졌는데 라벨은 그 커밋이라고 말한다. 출처를 말하라고 붙인 라벨이
+        거짓말을 하는 것이라, 없는 것보다 나쁘다.
+
+        `.dockerignore` 는 무엇이 컨텍스트에 들어가고 빠지는지를 정한다.
+
+        **굽는 명령이 실제로 쓰는 Dockerfile 을 세어** 확인한다 — 목록을 손으로
+        적으면 네 번째 이미지가 생겼을 때 이 검사가 모른다.
+        """
+        script = read(DEPLOY)
+        listed = re.search(r"^BUILD_CONTEXT_PATHS=\((.+?)\)$", script, re.M)
+        assert listed, "빌드에 담기는 자리를 안 적었다 — 검사가 헛돈다"
+        paths = set(listed.group(1).split())
+
+        used = set(re.findall(r'"([\w./-]+Dockerfile)"', script))
+        assert used, "굽는 명령이 어느 Dockerfile 을 쓰는지 못 읽었다 — 검사가 헛돈다"
+
+        for dockerfile in used:
+            covered = dockerfile in paths or any(dockerfile.startswith(one + "/") for one in paths)
+            assert covered, f"{dockerfile} 을 고쳐도 -dirty 가 안 붙는다 — {sorted(paths)}"
+
+        assert ".dockerignore" in paths, "컨텍스트에 무엇이 들어갈지 정하는 파일을 안 본다"
+
+    def test_touching_only_the_nginx_dockerfile_marks_it_dirty(self, tmp_path: Path) -> None:
+        """**돌려서 확인한다** — 목록에 적혀 있어도 실제로 걸리는지는 다른 문제다.
+
+        저장소와 같은 모양을 세우고 `infra/nginx/Dockerfile` **하나만** 고친 뒤,
+        배포 스크립트의 그 판정 덩이를 그대로 돌려 `-dirty` 가 붙는지 본다.
+        """
+        git = shutil.which("git")
+        if git is None:  # pragma: no cover
+            pytest.skip("git 이 없다")
+
+        def run_git(*args: str) -> None:
+            subprocess.run([git, *args], cwd=tmp_path, capture_output=True, check=True)
+
+        (tmp_path / "infra" / "nginx").mkdir(parents=True)
+        (tmp_path / "infra" / "nginx" / "Dockerfile").write_text("FROM nginx:1.27\n", encoding="utf-8")
+        (tmp_path / ".dockerignore").write_text(".git\n", encoding="utf-8")
+        (tmp_path / "elsewhere.txt").write_text("이미지에 안 담긴다\n", encoding="utf-8")
+        run_git("init", "-q", ".")
+        run_git("config", "user.email", "probe@example.invalid")
+        run_git("config", "user.name", "probe")
+        run_git("add", "-A")
+        run_git("commit", "-qm", "seed")
+
+        script = read(DEPLOY)
+        listed = re.search(r"^BUILD_CONTEXT_PATHS=\((.+?)\)$", script, re.M)
+        assert listed, "빌드에 담기는 자리를 안 적었다 — 검사가 헛돈다"
+        paths = listed.group(1)
+        block = _dirty_block(script)
+
+        def revision_after(touch: Path) -> str:
+            touch.write_text(touch.read_text(encoding="utf-8") + "# 손댔다\n", encoding="utf-8")
+            probe = (
+                "set -eo pipefail\n"
+                'COLOR_RED=""\n'
+                'COLOR_NC=""\n'
+                'SOURCE_REVISION="cafe1234"\n'
+                f"BUILD_CONTEXT_PATHS=({paths})\n"
+                f"{block}\n"
+                'echo "REVISION=$SOURCE_REVISION"\n'
+            )
+            done = subprocess.run(["bash", "-c", probe], cwd=tmp_path, capture_output=True, text=True)
+            assert done.returncode == 0, done.stderr[-400:]
+            run_git("checkout", "--", ".")
+            return done.stdout
+
+        assert "REVISION=cafe1234-dirty" in revision_after(tmp_path / "infra" / "nginx" / "Dockerfile"), (
+            "nginx Dockerfile 만 고쳤는데 깨끗한 SHA 가 박힌다"
+        )
+        assert "REVISION=cafe1234-dirty" in revision_after(tmp_path / ".dockerignore"), (
+            ".dockerignore 만 고쳤는데 깨끗한 SHA 가 박힌다"
+        )
+        #: **아무 파일이나 걸리면 안 된다** — 그러면 「저장소 전체를 본다」로
+        #: 되돌아간 것이고, 이 목록을 둔 뜻이 없어진다.
+        assert "REVISION=cafe1234\n" in revision_after(tmp_path / "elsewhere.txt"), (
+            "이미지에 안 담기는 파일에도 -dirty 가 붙는다"
+        )
+
     def test_a_dirty_tree_is_marked_and_announced(self) -> None:
         """커밋 안 된 변경으로 구우면 그 SHA 는 거짓말이 된다.
 
@@ -157,8 +242,25 @@ class TestTheRunbookSaysHowToReadIt:
         section = _section("### 도는 것이 어느 커밋인가")
         found = re.search(r"```bash\n(ssh -i.*?)\n```", section, re.S)
         assert found, "런북에 그 명령이 없다 — 검사가 헛돈다"
+        command = found.group(1)
 
-        command = found.group(1).replace("~/.ssh/<키>.pem", "/dev/null").replace("ubuntu@<IP>", "user@host")
+        #: **런북은 진짜 서비스 이름을 말해야 한다.** 아래에서 이름을 바꿔 돌리므로,
+        #: 그 이름이 맞는지는 여기서 따로 잰다 — 안 그러면 런북이 아무 이름이나
+        #: 적어도 검사가 통과한다.
+        real = ["fastapi", "ai-worker", "nginx"]
+        assert f"for s in {' '.join(real)}" in command, f"런북이 세 서비스를 안 부른다 — {command[:120]}"
+
+        #: **고정 이름으로 안 돌린다.** 처음에는 `fastapi` · `ai-worker` · `nginx`
+        #: 그대로 띄우면서 앞에 `docker rm -f` 를 했다 — 같은 판에서 개발용
+        #: 컨테이너가 돌고 있으면 **그것을 지운다.** 검사가 남의 것을 부수면
+        #: 그것은 검사가 아니다 (한금준 님 리뷰 ①).
+        #:
+        #: 이름만 바꿔 끼운다. 재려는 것은 인용이지 이름이 아니다.
+        mark = uuid.uuid4().hex[:8]
+        probes = [f"key315-{mark}-{name}" for name in real]
+        image = f"key315-probe:{mark}"
+        command = command.replace(f"for s in {' '.join(real)}", f"for s in {' '.join(probes)}")
+        command = command.replace("~/.ssh/<키>.pem", "/dev/null").replace("ubuntu@<IP>", "user@host")
 
         (tmp_path / "Dockerfile").write_text("FROM alpine:3.20\n", encoding="utf-8")
         built = subprocess.run(
@@ -171,7 +273,7 @@ class TestTheRunbookSaysHowToReadIt:
                 "--label",
                 f"{REF_NAME}=develop",
                 "-t",
-                "key315-probe",
+                image,
                 str(tmp_path),
             ],
             capture_output=True,
@@ -180,15 +282,18 @@ class TestTheRunbookSaysHowToReadIt:
         if built.returncode != 0:
             pytest.skip(f"이 판에서 이미지를 못 굽는다:\n{built.stderr[-300:]}")
 
-        names = ["fastapi", "ai-worker", "nginx"]
+        #: **치우는 것은 이름이 아니라 내가 만든 id 다.** 이름으로 지우면 그
+        #: 사이에 같은 이름이 다른 것을 가리키게 됐을 때 남의 것을 지운다.
+        made: list[str] = []
         try:
-            for name in names:
-                subprocess.run([docker, "rm", "-f", name], capture_output=True)
-                subprocess.run(
-                    [docker, "run", "-d", "--rm", "--name", name, "key315-probe", "sleep", "60"],
+            for name in probes:
+                started = subprocess.run(
+                    [docker, "run", "-d", "--rm", "--name", name, image, "sleep", "60"],
                     capture_output=True,
+                    text=True,
                     check=True,
                 )
+                made.append(started.stdout.strip())
 
             #: `ssh` 대신 **마지막 인자를 그대로 실행**한다. `cd ~/project` 는
             #: 서버에만 있는 자리라 여기서는 걷는다 — 재려는 것은 인용이다.
@@ -200,13 +305,13 @@ class TestTheRunbookSaysHowToReadIt:
                 cwd=tmp_path,
             )
         finally:
-            for name in names:
-                subprocess.run([docker, "rm", "-f", name], capture_output=True)
-            subprocess.run([docker, "rmi", "-f", "key315-probe"], capture_output=True)
+            for container in made:
+                subprocess.run([docker, "rm", "-f", container], capture_output=True)
+            subprocess.run([docker, "rmi", "-f", image], capture_output=True)
 
-        for name in names:
-            assert f"{name}" in done.stdout, f"{name} 줄이 없다 — 명령이 안 돌았다\n{done.stdout}{done.stderr}"
-        assert done.stdout.count("cafe1234 (develop)") == len(names), (
+        for name in probes:
+            assert name in done.stdout, f"{name} 줄이 없다 — 명령이 안 돌았다\n{done.stdout}{done.stderr}"
+        assert done.stdout.count("cafe1234 (develop)") == len(probes), (
             f"라벨을 못 읽는다 — 인용이 두 겹 셸을 못 지났다\nstdout:\n{done.stdout}\nstderr:\n{done.stderr}"
         )
 

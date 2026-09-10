@@ -42,7 +42,15 @@ SOURCE_REF=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "detached
 #: 저장소 전체를 보면 `.dockerignore` 로 빌드에서 빠지는 잡파일 하나에도
 #: `-dirty` 가 붙어, 재현 가능한 빌드인데 「어느 커밋으로도 다시 만들 수 없다」고
 #: 겁을 준다 (2heej 님 리뷰 ②). 여기 없는 자리는 이미지를 안 바꾼다.
-BUILD_CONTEXT_PATHS=(pyproject.toml uv.lock app ai_worker frontend)
+#: **굽는 법을 정하는 파일도 여기 든다.** 처음에는 `COPY` 가 가리키는 자리만
+#: 적었는데, `infra/nginx/Dockerfile` 의 베이스 이미지나 `COPY` 를 커밋 없이
+#: 고치면 **실제 이미지는 달라지는데 라벨에는 깨끗한 SHA 가 박힌다** — 출처를
+#: 말하라고 붙인 라벨이 거짓말을 한다. `.dockerignore` 도 마찬가지다: 무엇이
+#: 컨텍스트에 들어가고 빠지는지를 그 파일이 정한다 (한금준 님 리뷰 ②).
+#:
+#: `app/Dockerfile` 과 `ai_worker/Dockerfile` 은 각각 `app` · `ai_worker` 안에
+#: 있어 이미 걸린다.
+BUILD_CONTEXT_PATHS=(pyproject.toml uv.lock app ai_worker frontend infra/nginx/Dockerfile .dockerignore)
 
 # **커밋 안 된 변경으로 구우면 그 SHA 는 거짓말이 된다.** 라벨은 「이 커밋이다」
 # 라고 말하는데 실제로 담긴 것은 그 커밋 + 손댄 것이라, 나중에 그 SHA 를
