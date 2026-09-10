@@ -63,6 +63,7 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 | Pilot 배포·롤백 런북 | [`docs/deploy-runbook.md`](docs/deploy-runbook.md) |
 | 인프라 규모 판단 | [`docs/infra-scale.md`](docs/infra-scale.md) |
 | 화면 정의 (와이어프레임) | [`docs/wireframes/README.md`](docs/wireframes/README.md) |
+| 브랜드 마크 자산·쓰는 법 | [`docs/brand-assets.md`](docs/brand-assets.md) |
 | 구현 현황 스냅샷 | [`docs/구현현황.md`](docs/구현현황.md) · [`docs/sprint4-plan.md`](docs/sprint4-plan.md) · [`docs/work-packages.md`](docs/work-packages.md) |
 | 설계 결정 기록 | [`docs/decisions/`](docs/decisions/) |
 | QA 시나리오·회귀 | [`docs/qa/`](docs/qa/) |
