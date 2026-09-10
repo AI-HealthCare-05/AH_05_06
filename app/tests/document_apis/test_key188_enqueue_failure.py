@@ -62,8 +62,8 @@ async def test_redis_enqueue_failure_marks_job_failed_and_returns_failed_status(
     async def fake_verify(*, visit_id: int, hospital_id: int) -> None:
         pass
 
-    async def fake_persist(**_kwargs: object) -> tuple[list[int], str]:
-        return ([1], "ocr_test_abc123")
+    async def fake_persist(**_kwargs: object) -> tuple[list[int], list[str]]:
+        return ([1], ["ocr_test_abc123"])
 
     monkeypatch.setattr(service, "_read_and_validate", fake_validate)
     monkeypatch.setattr(service, "_verify_visit_access", fake_verify)
@@ -88,7 +88,7 @@ async def test_redis_enqueue_failure_marks_job_failed_and_returns_failed_status(
     assert captured.get("failure_code") == "QUEUE_ERROR"
     assert captured.get("completed_at") is not None
     assert result.status == OcrJobStatus.FAILED
-    assert result.ocr_job_id == "ocr_test_abc123"
+    assert result.ocr_job_ids == ["ocr_test_abc123"]
 
 
 async def test_redis_enqueue_success_returns_processing_status(
@@ -104,8 +104,8 @@ async def test_redis_enqueue_success_returns_processing_status(
     async def fake_verify(*, visit_id: int, hospital_id: int) -> None:
         pass
 
-    async def fake_persist(**_kwargs: object) -> tuple[list[int], str]:
-        return ([1], "ocr_test_ok123")
+    async def fake_persist(**_kwargs: object) -> tuple[list[int], list[str]]:
+        return ([1], ["ocr_test_ok123"])
 
     monkeypatch.setattr(service, "_read_and_validate", fake_validate)
     monkeypatch.setattr(service, "_verify_visit_access", fake_verify)
@@ -128,4 +128,4 @@ async def test_redis_enqueue_success_returns_processing_status(
     )
 
     assert result.status == OcrJobStatus.PROCESSING
-    assert result.ocr_job_id == "ocr_test_ok123"
+    assert result.ocr_job_ids == ["ocr_test_ok123"]

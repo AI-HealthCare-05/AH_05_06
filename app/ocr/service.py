@@ -35,7 +35,7 @@ from app.ocr.schemas import (
     UpdateOcrFieldRequest,
 )
 from app.ocr.security import OcrActor
-from app.ocr.utils import assert_latest_ocr_job_ready
+from app.ocr.utils import assert_ocr_jobs_ready, merge_fields_by_type
 
 
 def _resolved_value(row: dict) -> str | None:
@@ -180,6 +180,46 @@ def _collect_item_rows(
 async def _result_of(job: OcrJob) -> "OcrResult | None":
     """그 판독 작업의 결과를 필드까지 붙여 가져온다."""
     return await OcrResult.filter(ocr_job_id=job.ocr_job_id).prefetch_related("fields").first()
+
+
+async def _gather_results_from_jobs(jobs: list[OcrJob]) -> list[OcrResult]:
+    """job 목록에서 OcrResult를 필드와 함께 수집한다."""
+    results: list[OcrResult] = []
+    for job in jobs:
+        r = await _result_of(job)
+        if r is not None:
+            results.append(r)
+    return results
+
+
+async def _find_result_for_field(visit_id: int, hospital_id: int, field_type: str) -> OcrResult:
+    """비제외 COMPLETED job 전체에서 field_type을 가진 result, 없으면 최신 result를 반환한다."""
+    completed_jobs = (
+        await OcrJob.filter(
+            visit_id=visit_id,
+            hospital_id=hospital_id,
+            excluded_from_guide=False,
+            status=OcrJobStatus.COMPLETED,
+        )
+        .order_by("-created_at")
+        .all()
+    )
+    if not completed_jobs:
+        raise _not_found()
+
+    fallback: OcrResult | None = None
+    for job in completed_jobs:
+        r = await OcrResult.filter(ocr_job_id=job.ocr_job_id).first()
+        if r is None:
+            continue
+        if await OcrField.filter(ocr_result_id=r.ocr_result_id, field_type=field_type).exists():
+            return r
+        if fallback is None:
+            fallback = r
+
+    if fallback is None:
+        raise _not_found()
+    return fallback
 
 
 def _not_confirmed() -> OcrApiError:
@@ -386,14 +426,7 @@ class TortoiseOcrRepository:
         """
         _refuse_unit_on_other_fields(unit, field_type)
 
-        job = await self.get_latest_job_by_visit(visit_id, actor)
-        if job is None:
-            raise _not_found()
-
-        result = await OcrResult.filter(ocr_job_id=job.ocr_job_id).first()
-        if result is None:
-            raise _not_found()
-
+        result = await _find_result_for_field(visit_id, actor.hospital_id, field_type)
         text = value.strip() if value is not None else ""
 
         async with in_transaction() as connection:
@@ -530,16 +563,17 @@ class TortoiseOcrRepository:
                 "진료 건을 찾을 수 없습니다.",
             )
 
-        # generate()와 동일한 기준 — assert_latest_ocr_job_ready(app/ocr/utils.py).
-        # PROCESSING·FAILED job이 있으면 여기서 차단해 처방만 서고 안내문은
+        # generate()와 동일한 기준 — assert_ocr_jobs_ready(app/ocr/utils.py).
+        # PROCESSING job이 있으면 여기서 차단해 처방만 서고 안내문은
         # 영구 차단되는 진료가 생기는 것을 막는다 (KEY-271).
-        job = await assert_latest_ocr_job_ready(visit_id, actor.hospital_id)
+        # FAILED job은 안내 근거에서 제외하고 COMPLETED job만 사용한다.
+        jobs = await assert_ocr_jobs_ready(visit_id, actor.hospital_id)
 
-        result = await _result_of(job)
-        if result is None:
+        results = await _gather_results_from_jobs(jobs)
+        if not results:
             raise _not_confirmed()
 
-        fields_by_type: dict[str, OcrField] = {f.field_type: f for f in result.fields}
+        fields_by_type: dict[str, OcrField] = merge_fields_by_type(results)
 
         if not fields_by_type:
             raise OcrApiError(
@@ -561,7 +595,9 @@ class TortoiseOcrRepository:
         # 「이번 미시행」을 담을 칸이 서버에 없어 실서버에서는 버튼조차 안 그려진다.
         #
         # **값이 있는데 아무도 안 본 것**만 막는다. 그것이 확정의 뜻이다.
-        unconfirmed = read_but_unconfirmed(result.fields)
+        # 여러 result에 걸쳐 미확정 필드를 확인한다.
+        all_fields_flat = [f for r in results for f in r.fields]
+        unconfirmed = read_but_unconfirmed(all_fields_flat)
         if unconfirmed is not None:
             raise OcrApiError(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,

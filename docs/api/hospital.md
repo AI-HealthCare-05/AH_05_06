@@ -734,19 +734,29 @@ GET /api/v1/visits/{visit_id}/timeline
 
 이 두 단계를 단일 `CASE WHEN ORDER BY` 쿼리로 합칠 수 있지만, 두 규칙을 독립적으로 테스트하기 위해 두 쿼리를 유지합니다 (성능 차이 없음 — 인덱스 레인지 스캔).
 
-#### 안내 생성 게이트 — 재업로드 후 상태별 차단
+#### 업로드 응답 — 파일별 job (KEY-288)
 
-`POST /visits/{visit_id}/guide/generate`는 **비제외(`excluded_from_guide=False`) job 중 가장 최신 것의 상태**로 안내 생성 가능 여부를 판정합니다.
+`POST /visits/{visit_id}/documents/upload` 응답의 `ocr_job_ids`는 **배열**입니다. 파일을 N개 업로드하면 job이 N개 생성되고 `ocr_job_ids`에 N개의 ID가 반환됩니다. 각 job은 파일 하나씩 독립적으로 처리됩니다.
 
-| 최신 비제외 job 상태 | 결과 | 오류 코드 |
+```json
+{ "document_ids": [1, 2], "ocr_job_ids": ["ocr_abc", "ocr_xyz"], "status": "PROCESSING" }
+```
+
+#### 안내 생성 게이트 — 파일별 부분 실패 격리 (KEY-288)
+
+`POST /visits/{visit_id}/guide/generate`는 **비제외(`excluded_from_guide=False`) job 전체**를 기준으로 판정합니다.
+
+| 비제외 job 상태 | 결과 | 오류 코드 |
 |---|---|---|
-| `PROCESSING` | 차단 — 완료 후 확정해야 한다 | `OCR_RESULT_NOT_READY` 422 |
-| `FAILED` | 차단 — 재시도하거나 해당 job을 제외해야 한다 | `OCR_FAILED` 422 |
-| `COMPLETED` (미확정 필드 있음) | 차단 — 모든 필드를 확정해야 한다 | `OCR_NOT_CONFIRMED` 422 |
-| `COMPLETED` (전체 확정) | 통과 | — |
-| 없음(job 자체가 없음) | 차단 | `OCR_NOT_CONFIRMED` 422 |
+| PROCESSING job이 하나라도 있음 | 차단 — 완료 후 확정해야 한다 | `OCR_RESULT_NOT_READY` 422 |
+| COMPLETED job이 하나도 없음(전부 FAILED) | 차단 — 재시도하거나 해당 job을 제외해야 한다 | `OCR_FAILED` 422 |
+| COMPLETED job의 미확정 필드 있음 | 차단 — 모든 항목을 확정해야 한다 | `OCR_NOT_CONFIRMED` 422 |
+| COMPLETED job 전체 확정, 확정 필드 있음 | 통과 — FAILED job은 안내 근거에서 제외됨 | — |
+| 비제외 job 없음 | 차단 | `OCR_NOT_CONFIRMED` 422 |
 
-`excluded_from_guide=True`인 job은 판정에서 건너뜁니다. 잘못 올린 문서를 제외 처리하면 그 이전 확정 job으로 안내를 생성할 수 있습니다.
+`excluded_from_guide=True`인 job은 판정에서 건너뜁니다. FAILED job은 COMPLETED job이 존재하는 한 안내 생성을 차단하지 않습니다.
+
+안내 생성에 사용하는 OcrField는 COMPLETED job 전체 result에서 `field_type`별로 병합합니다. 같은 `field_type`이 여러 result에 있으면 확정 우선, 동급이면 confidence 높은 쪽을 선택합니다.
 
 #### 재업로드 시나리오별 동작
 
