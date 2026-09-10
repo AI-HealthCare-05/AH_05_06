@@ -15,6 +15,7 @@
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -375,3 +376,39 @@ class TestRollingBackIsActuallyPossible:
 
         assert found, "연결 확인 명령이 없다 — 검사가 헛돈다"
         compile(found.group(1), "<deploy-runbook.md §4-5 ③>", "exec")
+
+    def test_the_rollback_brings_mysql_back_before_the_app(self) -> None:
+        """**앱보다 DB 가 먼저다** — ⓐ 「아직 아무것도 안 썼다면」 갈래.
+
+        ③ⓓ 가 컨테이너 MySQL 을 지운다(볼륨만 남긴다). 그래서 되돌릴 때
+        ③ⓒ 의 `--no-deps ... fastapi ai-worker` 만 다시 부르면 **MySQL 이 안
+        돌아온다.** 앱은 뜨고 `docker compose ps` 도 `running` 인데 DB 를 못
+        찾는다 — 되돌리기가 성공한 것처럼 보인다 (한금준 님 `#275` 리뷰).
+
+        같은 판을 세워 밟아 확인했다:
+        `ERROR 2005 (HY000): Unknown MySQL server host 'mysql' (-2)`.
+
+        세 가지를 순서로 잰다 — 오버레이를 걷고, mysql 을 띄우고, 그 다음에 앱.
+        오버레이가 남아 있으면 mysql 이 프로필 뒤에 숨어 `up` 이 아무것도 안 한다.
+        """
+        section = _section("## 4-5.")
+        branch = section[section.index("#### ⓐ") : section.index("#### ⓑ")]
+        lines = _commands(branch).splitlines()
+
+        def at(match: Callable[[str], bool]) -> int | None:
+            found = [i for i, line in enumerate(lines) if match(line)]
+            return found[0] if found else None
+
+        drop_overlay = at(lambda line: line.strip().startswith("rm ") and "docker-compose.override.yml" in line)
+        start_db = at(lambda line: "docker compose up" in line and "mysql" in line)
+        start_app = at(lambda line: "--force-recreate" in line)
+
+        assert drop_overlay is not None, "되돌리기가 오버레이를 안 걷는다 — mysql 이 프로필 뒤에 계속 숨는다"
+        assert start_db is not None, (
+            "되돌리기에 MySQL 을 띄우는 줄이 없다 — ③ⓓ 가 컨테이너를 지웠으므로 "
+            "앱만 다시 세우면 `Unknown MySQL server host 'mysql'` 로 끝난다"
+        )
+        assert start_app is not None, "되돌리기가 앱을 다시 안 세운다 — 환경변수는 컨테이너를 만들 때 박힌다"
+
+        assert drop_overlay < start_db, "오버레이를 걷기 전에 mysql 을 띄운다 — 프로필 뒤라 아무것도 안 뜬다"
+        assert start_db < start_app, "앱을 DB 보다 먼저 세운다 — 그 순간 앱은 없는 곳을 찾는다"
