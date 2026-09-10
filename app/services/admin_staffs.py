@@ -20,7 +20,7 @@ from app.core.rbac import is_valid_role_combination
 from app.core.utils.security import hash_password
 from app.dependencies.admin_access import AdminActor
 from app.dtos.admin_staffs import StaffCreatedResponse, StaffCreateRequest, StaffListResponse, StaffSummary
-from app.models.staffs import Staff, StaffAccountEvent, StaffAccountEventType, StaffRole
+from app.models.staffs import Staff, StaffAccountEvent, StaffAccountEventType
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,11 +43,10 @@ class AdminStaffService:
                     staff_id=row.staff_id,
                     login_id=row.login_id,
                     name=row.name,
-                    #: DB 는 문자열 배열로 들고 있다(`Staff.roles` 는 JSON). 계약이
-                    #: 말하는 것은 `StaffRole` 이므로 **여기서 옮긴다** — pydantic 이
-                    #: 런타임에는 알아서 접지만, 그러면 모르는 값이 들어와도 여기서는
-                    #: 아무도 안 본다. 옮기다 터지면 그 자리에서 드러난다.
-                    roles=[StaffRole(role) for role in row.roles or []],
+                    #: **접지 않고 그대로 준다.** enum 으로 옮기면 아는 값 밖의
+                    #: 것 하나에 목록 전체가 500 이 된다 — 계약 주석 참고
+                    #: (한금준 님 `#285` 리뷰 ①).
+                    roles=[str(role) for role in row.roles or []],
                     status=row.status,
                     must_change_password=row.must_change_password,
                     last_login_at=row.last_login_at,
@@ -73,7 +72,11 @@ class AdminStaffService:
                 400,
                 "INVALID_ROLE_COMBINATION",
                 "만들 수 없는 역할 조합입니다. 의사·스탭·어드민 하나이거나, 의사+어드민 · 스탭+어드민만 됩니다.",
-                field_errors={"roles": sorted(roles)},
+                #: **봉투 모양을 맞춘다.** 저장소의 구조화된 `field_errors` 는
+                #: `ContractRoute` 가 만드는 `list[{field, message}]` 뿐인데 여기만
+                #: dict 였다 — 그것을 리스트로 순회하는 쪽이 이 400 에서 터진다
+                #: (한금준 님 `#285` 리뷰 ②).
+                field_errors=[{"field": "roles", "message": f"고를 수 없는 조합입니다: {sorted(roles)}"}],
             )
 
         try:

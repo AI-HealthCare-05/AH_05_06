@@ -119,6 +119,55 @@ class TestTheHospitalFenceHolds(AdminStaffTestCase):
         assert await Staff.filter(login_id="newstaff01").count() == 0
 
 
+class TestOneBadRowDoesNotBlindTheWholeList(AdminStaffTestCase):
+    """**한 줄이 이상해도 목록은 계속 쓸 수 있어야 한다** (한금준 님 `#285` 리뷰 ①).
+
+    처음에는 목록이 저장된 역할을 `StaffRole(...)` 로 옮겼다. `roles` JSON 에
+    아는 값 밖의 것이 하나라도 있으면 `ValueError` → **엔드포인트 전체가 500**
+    이고, 관리자는 그 의원의 **아무 직원도** 못 본다. 하필 그 값을 고쳐야 하는
+    사람이 못 보는 것이다.
+
+    `Staff.save()` 가 역할을 검사하지만 그것을 안 지나는 길이 있다 — 레거시
+    데이터 · 백필 마이그레이션 · raw insert · `bulk_create`.
+    """
+
+    async def _plant_a_bad_role(self) -> None:
+        """모델을 거치지 않고 표를 직접 고친다 — `save()` 검증을 지나지 않는
+        길을 흉내내는 것이 요점이다."""
+        await Staff.filter(login_id="doctor01").update(roles=["doctor", "예전에쓰던역할"])
+
+    async def test_the_list_still_answers(self) -> None:
+        await self._plant_a_bad_role()
+
+        async with self.client() as client:
+            headers = await login_headers(client, "admin01")
+            response = await client.get(STAFFS_URL, headers=headers)
+
+        assert response.status_code == 200, f"한 줄 때문에 목록 전체가 막힌다 — {response.text[:200]}"
+        assert len(response.json()["staffs"]) == 2, "줄이 사라졌다"
+
+    async def test_the_odd_value_is_shown_not_hidden(self) -> None:
+        """**건너뛰지 않고 보인다.** 감추면 그것을 고칠 사람이 그 사실을 모른다."""
+        await self._plant_a_bad_role()
+
+        async with self.client() as client:
+            headers = await login_headers(client, "admin01")
+            response = await client.get(STAFFS_URL, headers=headers)
+
+        found = next(row for row in response.json()["staffs"] if row["login_id"] == "doctor01")
+        assert found["roles"] == ["doctor", "예전에쓰던역할"], found["roles"]
+
+    async def test_making_an_account_is_still_strict(self) -> None:
+        """**들어오는 문은 그대로 좁다.** 읽을 때 너그러운 것이 쓸 때까지
+        너그러워지면 이 티켓이 세운 관문이 없어진다."""
+        async with self.client() as client:
+            headers = await login_headers(client, "admin01")
+            response = await client.post(STAFFS_URL, json=_body(roles=["예전에쓰던역할"]), headers=headers)
+
+        assert response.status_code == 400, response.text
+        assert await Staff.filter(login_id="newstaff01").count() == 0
+
+
 class TestTheRoleCombinationRuleIsEnforced(AdminStaffTestCase):
     async def test_staff_and_doctor_together_are_refused(self) -> None:
         """계약에 없는 조합이다 — `staff` ⊂ `doctor` 라 `doctor` 와 권한이 같다."""
@@ -129,6 +178,14 @@ class TestTheRoleCombinationRuleIsEnforced(AdminStaffTestCase):
         assert response.status_code == 400, response.text
         assert response.json()["code"] == "INVALID_ROLE_COMBINATION"
         assert await Staff.filter(login_id="newstaff01").count() == 0
+
+        #: **오류 봉투가 저장소 모양이어야 한다** — `list[{field, message}]`.
+        #: 여기만 dict 였고, 그것을 리스트로 순회하는 쪽이 이 400 에서 터졌다
+        #: (한금준 님 `#285` 리뷰 ②).
+        errors = response.json()["field_errors"]
+        assert isinstance(errors, list), f"field_errors 가 리스트가 아니다 — {errors}"
+        assert [one["field"] for one in errors] == ["roles"], errors
+        assert errors[0]["message"], "무엇이 잘못됐는지 안 말한다"
 
     async def test_the_admin_overlays_are_allowed(self) -> None:
         async with self.client() as client:
