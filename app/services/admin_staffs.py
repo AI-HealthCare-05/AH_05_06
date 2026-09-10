@@ -20,7 +20,7 @@ from app.core.rbac import is_valid_role_combination
 from app.core.utils.security import hash_password
 from app.dependencies.admin_access import AdminActor
 from app.dtos.admin_staffs import StaffCreatedResponse, StaffCreateRequest, StaffListResponse, StaffSummary
-from app.models.staffs import Staff, StaffAccountEvent, StaffAccountEventType
+from app.models.staffs import Staff, StaffAccountEvent, StaffAccountEventType, StaffRole
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +43,11 @@ class AdminStaffService:
                     staff_id=row.staff_id,
                     login_id=row.login_id,
                     name=row.name,
-                    roles=list(row.roles or []),
+                    #: DB 는 문자열 배열로 들고 있다(`Staff.roles` 는 JSON). 계약이
+                    #: 말하는 것은 `StaffRole` 이므로 **여기서 옮긴다** — pydantic 이
+                    #: 런타임에는 알아서 접지만, 그러면 모르는 값이 들어와도 여기서는
+                    #: 아무도 안 본다. 옮기다 터지면 그 자리에서 드러난다.
+                    roles=[StaffRole(role) for role in row.roles or []],
                     status=row.status,
                     must_change_password=row.must_change_password,
                     last_login_at=row.last_login_at,
@@ -113,7 +117,9 @@ class AdminStaffService:
             staff_id=staff.staff_id,
             login_id=staff.login_id,
             name=staff.name,
-            roles=roles,
+            #: 저장한 것과 같은 값이다. `roles` 는 저장하려고 문자열로 편 것이고
+            #: 계약이 말하는 것은 `StaffRole` 이라, 받은 것을 그대로 돌려준다.
+            roles=request.roles,
             status=staff.status,
             must_change_password=staff.must_change_password,
         )
