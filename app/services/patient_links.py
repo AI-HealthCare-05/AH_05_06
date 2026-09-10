@@ -706,6 +706,17 @@ class PatientLinkService:
         """
 
         link, guide = await self.get_approved_guide(raw_token)
+        return link, guide, await self.build_patient_guide_data(guide)
+
+    async def build_patient_guide_data(self, guide: GuideDocument) -> PatientGuideData:
+        """**게이트 없이** 화면 데이터만 짓는다 — 부르는 쪽이 자격을 먼저 본다.
+
+        환자는 링크·만료·승인을 통과해야 여기 온다(`get_patient_guide_data`).
+        스탭·의사의 미리보기는 **승인 전에도** 본다 — 검토하는 자리라서다
+        (KEY-294). 두 문이 다르므로 문은 부르는 쪽에 두고, 여기서는 값만 읽는다.
+
+        `guide` 는 `sections` 와 `visit__patient` 이 미리 붙어 있어야 한다.
+        """
         visit = guide.visit
         visit_date = _clinic_date(visit.visited_at)
 
@@ -717,17 +728,15 @@ class PatientLinkService:
             hospital_id=visit.hospital_id,
         ).prefetch_related("ocr_result__ocr_job")
         prescription_query = Prescription.filter(visit_id=guide.visit_id).prefetch_related("items").first()
-        prescription_sets_query = PrescriptionSet.all()
         baselines_query = LabBaseline.filter(
             Q(doctor_id=visit.doctor_id) | Q(doctor_id=None),
             hospital_id=visit.hospital_id,
             disease__in=(SetDisease.PCOS, SetDisease.ENDOMETRIOSIS),
         ).order_by("position", "lab_baseline_id")
-        hospital, confirmed_fields, prescription, prescription_sets, baselines = await asyncio.gather(
+        hospital, confirmed_fields, prescription, baselines = await asyncio.gather(
             hospital_query,
             confirmed_fields_query,
             prescription_query,
-            prescription_sets_query,
             baselines_query,
         )
         latest_confirmed_field = confirmed_fields[0] if confirmed_fields else None
@@ -757,10 +766,14 @@ class PatientLinkService:
         diagnosis_name = diagnosis.value.strip() if diagnosis is not None and diagnosis.value else None
         diseases = _confirmed_diseases(diagnosis_name)
         if diagnosis_name and prescription is not None:
-            prescription_set = next(
-                (row for row in prescription_sets if row.name == prescription.prescription_set),
-                None,
-            )
+            #: **이름으로 한 줄만 집는다.** 전에는 `PrescriptionSet.all()` 을 위
+            #: `gather` 에 넣고 파이썬에서 이름을 훑었다. 환자 화면이 한 번
+            #: 부를 때는 티가 안 났는데, 이 파생이 스탭 종점까지 타면서 카탈로그
+            #: 전체를 읽는 질의가 훨씬 잦아졌다 (이희진 님 `#272`).
+            #:
+            #: 세트 이름은 `prescription` 이 와야 알 수 있어 `gather` 에 못 넣는다.
+            #: 대신 **필요할 때만** 돈다 — 확정 진단과 처방이 둘 다 있을 때다.
+            prescription_set = await PrescriptionSet.filter(name=prescription.prescription_set).first()
             if prescription_set is not None:
                 diseases.add(prescription_set.disease)
         goals: list[PatientGuideGoalData] = []
@@ -782,16 +795,12 @@ class PatientLinkService:
             # 질환명처럼 내보내지 않고, 확정 DIAGNOSIS가 없으면 생략한다.
             disease_name = None
 
-        return (
-            link,
-            guide,
-            PatientGuideData(
-                visit_date=visit_date,
-                clinic_name=hospital.name if hospital is not None else None,
-                disease_name=disease_name,
-                patient_name=(visit.patient.name or None),
-                medication=medication,
-                goals=goals,
-                sections={section.section_key: section.body for section in guide.sections},
-            ),
+        return PatientGuideData(
+            visit_date=visit_date,
+            clinic_name=hospital.name if hospital is not None else None,
+            disease_name=disease_name,
+            patient_name=(visit.patient.name or None),
+            medication=medication,
+            goals=goals,
+            sections={section.section_key: section.body for section in guide.sections},
         )

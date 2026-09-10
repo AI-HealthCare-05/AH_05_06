@@ -93,12 +93,22 @@ function chatScreen() {
     createFeedbackSubmissionId: () => "synthetic",
     document: { body: new FakeElement(), createElement: () => new FakeElement(), getElementById: (id) => ids[id] || null },
     setTimeout,
+    /* **완성뿐 아니라 실패도 손에 쥔다.** 예전에는 `finish` 만 있어서 중단
+       경로만 잴 수 있었고, 「델타가 온 뒤 스트림이 **실패**하면 잘린 답변
+       대신 오류를 보인다」는 계약은 아무 검사도 안 지켰다 (2heej 리뷰). */
     streamChatbotAnswer: (request, observer) => {
       let settle;
-      const done = new Promise((resolve) => {
+      let reject;
+      const done = new Promise((resolve, fail) => {
         settle = resolve;
+        reject = fail;
       });
-      streams.push({ request, observer, finish: (value) => settle(value || {}) });
+      streams.push({
+        request,
+        observer,
+        finish: (value) => settle(value || {}),
+        fail: (error) => reject(error),
+      });
       return done;
     },
     submitPatientFeedback: () => Promise.resolve(),
@@ -111,6 +121,14 @@ function chatScreen() {
     },
     Fab: (_o, open) => ({ el: Object.assign(new FakeElement(), { open }) }),
   });
+  /* 오류 **문구**도 실리는 파일 것을 그대로 쓴다 — `guide.html:66` 이
+     `/js/chatbot-api.js` 를 싣고, `chat.js` 가 거기 `chatbotErrorMessage` 를
+     부른다. 그 파일이 `streamChatbotAnswer` 의 진짜 구현도 들고 있어서, 돌린
+     뒤에 스트림만 손에 쥔 것으로 되돌린다. */
+  const heldStream = context.streamChatbotAnswer;
+  vm.runInContext(read("js/chatbot-api.js"), context);
+  context.streamChatbotAnswer = heldStream;
+
   vm.runInContext(read(CHAT), context);
 
   const ask = (text) => {
@@ -132,10 +150,11 @@ test("① 실제 화면이 싣는 파일을 잰다 — 고아가 아니라", () 
   const html = read("guide.html");
   assert.match(html, /src="\/patient_wireframe\/js\/chat\.js/, "화면이 이 파일을 안 싣는다");
 
-  /* 고아 둘은 아직 지우지 않는다(처분은 이희진 님 확인 전까지 미룬다 — KEY-233).
-     다만 **어떤 화면도 안 싣는다**는 사실은 여기서 못 박는다. 다시 실리기
-     시작하면 이 검사가 울고, 그때 처분을 다시 이야기하면 된다. */
-  for (const orphan of ["js/guide.js", "css/guide.css"]) {
+  /* `js/guide.js` 는 KEY-313 이 지웠고, 그 규칙은 이제 `orphan-scripts.test.js`
+     가 스크립트 전체에 건다. 여기 남은 것은 **CSS** 라 그 규칙이 안 닿는다 —
+     `guide.html` 이 싣는 것은 `patient_wireframe/css/guide.css` 다. 다시 실리기
+     시작하면 이 검사가 울고, 그때 처분을 이야기하면 된다. */
+  for (const orphan of ["css/guide.css"]) {
     const loaded = fs
       .readdirSync(FRONTEND)
       .filter((f) => f.endsWith(".html"))
@@ -269,4 +288,34 @@ test("⑩ 다시 시도는 옛 질문과 답을 걷고 다시 묻는다", async 
 
   const rows = s.ids["chat-messages"].querySelectorAll(".chat-row");
   assert.equal(rows.length, 2, `옛 질문·답을 안 걷어서 줄이 ${rows.length}개다`);
+});
+
+/* ── 실패 ─────────────────────────────────────────────────────────── */
+
+test("⑪ **델타가 온 뒤 실패하면 잘린 답변 대신 오류를 보인다** — 중단과 다른 길이다", async () => {
+  /* 지운 `chatbot-streaming-ui.test.js` 가 고아 위에서 재던 계약이다 (KEY-313).
+     실리는 길로 옮겨 오면서 ②③⑦ 이 대신 지킨다고 적었는데, 그 셋은 전부
+     **중단** 경로다. 중단이 아닌 실패는 아무 검사도 안 지키고 있었다
+     (2heej 리뷰). `chat.js:352` 가 그때 `msg.error` 를 채우고, `:159` 가
+     잘린 `msg.text` 대신 그것을 보인다. */
+  const s = chatScreen();
+  const stream = s.ask("약을 언제 먹나요");
+  stream.observer.onDelta("정해진 시간에");
+
+  stream.fail(Object.assign(new Error("stream failed"), { code: "CHATBOT_API_NOT_READY" }));
+  await new Promise(setImmediate);
+
+  assert.match(s.shown(), /챗봇 연결을 준비하고 있어요/, `오류 문구가 없다 —\n${s.shown()}`);
+  assert.ok(!s.shown().includes("정해진 시간에"), `잘린 답변이 그대로 남았다 —\n${s.shown()}`);
+  assert.ok(!s.shown().includes("중단했어요"), "실패를 중단으로 말한다");
+});
+
+test("⑫ 코드가 없는 실패도 사람 말로 답한다 — 화면이 비지 않는다", async () => {
+  const s = chatScreen();
+  const stream = s.ask("약을 언제 먹나요");
+
+  stream.fail(new Error("boom"));
+  await new Promise(setImmediate);
+
+  assert.match(s.shown(), /답변을 불러오지 못했어요/, `기본 오류 문구가 없다 —\n${s.shown()}`);
 });

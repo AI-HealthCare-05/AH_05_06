@@ -20,19 +20,16 @@ from app.dtos.patient_links import (
     GuidePageViewRequest,
     PatientCareBlockResponse,
     PatientCareResponse,
-    PatientGuideDetailResponse,
-    PatientGuideDrugResponse,
-    PatientGuideGoalResponse,
     PatientGuideResponse,
     PatientGuideSectionResponse,
     PatientLifeAxisResponse,
     PatientLifeResponse,
     PatientLinkIssueResponse,
     PatientLinkStateResponse,
-    PatientMedicationStatResponse,
 )
 from app.models.visits import CheckIn, CheckInMedication, GuideDocument, GuideSectionKey, PatientGuideLink
 from app.services.checkins import CheckInService, approved_answer_bodies
+from app.services.patient_guide_view import guide_detail_of, medication_stat_of
 from app.services.patient_links import PatientGuideData, PatientLinkService
 from app.services.patient_usage import PatientUsageService
 
@@ -134,62 +131,16 @@ def _patient_response(
         # assert에 응답 안전을 맡기지 않는다.
         raise RuntimeError("approved guide has no approved_at")
 
-    medication_body = data.sections.get(GuideSectionKey.MEDICATION)
     caution_body = data.sections.get(GuideSectionKey.CAUTION)
     emergency_body = data.sections.get(GuideSectionKey.EMERGENCY)
     life_body = data.sections.get(GuideSectionKey.LIFE)
-    medication = data.medication
-    progress = medication.progress if medication is not None else None
 
-    stat = (
-        PatientMedicationStatResponse(
-            drug_name=medication.drug_name,
-            drug_sub=medication.stat_sub,
-            prescribed=medication.prescribed,
-            day_on=progress.day_on if progress is not None else None,
-            remaining=progress.remaining if progress is not None else None,
-            pct=progress.pct if progress is not None else None,
-            out=(
-                f"ⓘ {progress.depletion_date.month}월 {progress.depletion_date.day}일경 약이 소진돼요"
-                if progress is not None
-                else None
-            ),
-            why=medication_body,
-        )
-        if medication is not None
-        else None
-    )
-    guide_detail = (
-        PatientGuideDetailResponse(
-            summary=medication_body,
-            goals=[
-                PatientGuideGoalResponse(
-                    n=goal.name,
-                    now=goal.current,
-                    t=goal.target,
-                    has_chart=goal.has_chart,
-                    range_label=goal.range_label,
-                )
-                for goal in data.goals
-            ],
-            drug=(
-                PatientGuideDrugResponse(
-                    n=medication.drug_name,
-                    s=medication.ingredient_label,
-                    d=medication.directions,
-                )
-                if medication is not None
-                else None
-            ),
-            why=[medication_body] if medication_body else [],
-            how=medication.directions if medication is not None else None,
-            # `messages`는 병원 안내/발송 행정 문구다. 전용 재진 계획 소스가
-            # 생기기 전에는 P2의 `next`로 의미를 바꿔 내보내지 않는다.
-            next=None,
-        )
-        if medication_body or medication is not None or data.goals
-        else None
-    )
+    #: **스탭 미리보기와 같은 자리에서 짓는다** (KEY-294). 여기 두 줄을
+    #: 여기서 다시 조립하면 「환자가 받는 그대로」라고 적어 둔 미리보기가
+    #: 조용히 다른 것을 보이게 된다.
+    stat = medication_stat_of(data)
+    guide_detail = guide_detail_of(data)
+
     care = (
         PatientCareResponse(
             blocks=[PatientCareBlockResponse(t="주의사항", p=[caution_body])] if caution_body else [],

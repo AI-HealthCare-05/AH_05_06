@@ -54,13 +54,21 @@ test("환자 주소는 API path를 본인 확인 화면의 fragment로 바꾼다
 });
 
 test("환자 화면은 fragment 토큰을 메모리로 옮긴 직후 주소에서 지운다", () => {
+  /* **실리는 파일에서 잰다.** 전에는 `js/guide.js` 를 통째로 vm 에 올렸는데,
+     그 파일은 아무 화면도 안 싣는 고아였다 (KEY-281). `guide.html` 이 싣는
+     것은 `patient_wireframe/js/guide.js` 이고, 거기 `takeGuideToken` 은 IIFE
+     안에 있어 통째로는 못 올린다 — 그 함수와 그것이 쓰는 규칙(`link-token.js`)
+     만 떼어 돌린다. 원문 대조가 아니라 **돌려 보는 것**을 지킨다. */
+  const rule = read("js/link-token.js");
+  const shipped = read("patient_wireframe/js/guide.js");
+  const at = shipped.indexOf("function takeGuideToken()");
+  assert.notStrictEqual(at, -1, "토큰을 떼어 내는 자리를 못 찾았다 — 검사가 헛돈다");
+  const body = shipped.slice(at, shipped.indexOf("\n  }", at) + 4);
+
   const stored = new Map();
   const replaced = [];
   const context = vm.createContext({
     URLSearchParams,
-    Promise,
-    setTimeout,
-    clearTimeout,
     sessionStorage: {
       getItem: (key) => (stored.has(key) ? stored.get(key) : null),
       setItem: (key, value) => stored.set(key, String(value)),
@@ -73,10 +81,8 @@ test("환자 화면은 fragment 토큰을 메모리로 옮긴 직후 주소에�
       },
       history: { replaceState: (_state, _title, url) => replaced.push(url) },
     },
-    document: { addEventListener() {} },
   });
-  vm.runInContext(read("js/guide-api.js"), context);
-  vm.runInContext(read("js/guide.js"), context);
+  vm.runInContext(rule + "\n" + body + "\nthis.takeGuideToken = takeGuideToken;", context);
 
   const token = context.takeGuideToken();
 

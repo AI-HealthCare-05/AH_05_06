@@ -351,7 +351,13 @@ class TestDrugNamesCarryTheirIngredient:
                     continue
                 assert expected_name(brand) in value, f"{path} 에 옛 표기가 남았다: {value}"
 
-    @pytest.mark.parametrize("name", ["guide-api.js", "doctor-api.js", "checkin-api.js"])
+    #: **환자 안내 화면은 여기 없다.** 예전에는 `guide-api.js` 가 함께 있었는데
+    #: 그 파일은 아무 화면도 안 싣는 고아였다(KEY-313). 지금 실리는
+    #: `patient_wireframe/js/guide-api.js` 는 **표기 모양이 다르다** — 이름과
+    #: 성분을 한 줄에 묶지 않고 칸을 나눠 준다(`n: '비잔정 2mg'`,
+    #: `s: '성분 · 디에노게스트'`). 그래서 `브랜드(성분)` 규칙을 그대로 들이대면
+    #: 없는 것을 지키게 된다 — 대신 아래 검사가 **성분이 여전히 보이는가**를 잰다.
+    @pytest.mark.parametrize("name", ["doctor-api.js", "checkin-api.js"])
     def test_the_screen_shows_the_same_spelling(self, name: str) -> None:
         """**환자·원장님이 읽는 약품명 줄**이 규칙과 같아야 한다.
 
@@ -369,6 +375,24 @@ class TestDrugNamesCarryTheirIngredient:
                 checked += 1
                 assert expected_name(brand) in line, f"{name} 에 옛 표기가 남았다: {line.strip()}"
         assert checked, f"{name} 에서 약품명 줄을 하나도 못 찾았다 — 검사가 헛돈다"
+
+    def test_the_patient_screen_still_shows_the_ingredient(self) -> None:
+        """**환자가 성분을 본다** — 모양이 바뀌어도 그것만은 남는다.
+
+        v3.0.0 카드가 `브랜드(성분)` 한 줄을 이름 칸과 성분 칸으로 갈랐다. 규칙의
+        글자는 안 맞지만 **환자가 읽는 것은 같아야 한다** — 브랜드가 나오는
+        화면이면 그 성분도 함께 나온다.
+        """
+        shipped = Path(__file__).resolve().parents[3] / "frontend" / "patient_wireframe" / "js" / "guide-api.js"
+        text = shipped.read_text(encoding="utf-8")
+
+        seen = [brand for brand in INGREDIENTS if brand in text]
+        assert seen, "환자 화면 목업에서 약품명을 하나도 못 찾았다 — 검사가 헛돈다"
+        for brand in seen:
+            #: 이름표 안의 **가름표는 화면 것**이다 — CSV 는 `가/나`, 카드는
+            #: `가 · 나`. 재려는 것은 성분이 보이는가이지 가름표의 모양이 아니다.
+            for part in INGREDIENTS[brand].split("/"):
+                assert part in text, f"{brand} 은 보이는데 성분({part})이 안 보인다"
 
 
 class TestEveryVisitPointsAtASetThatExists:

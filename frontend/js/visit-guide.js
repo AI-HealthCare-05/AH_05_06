@@ -115,7 +115,7 @@ function guideMissingSaying(error) {
        (와이어프레임 S1-11 · D1-1). 전에는 세로 탭과 본문이 따로 떠 있었다. */
     vtabs.innerHTML = "";
     var draw = function () {
-      panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit, guideEditingNow(), guide.summary);
+      panel.innerHTML = guideScreenHtml(guide.sections, now.key, prefix, canEdit, guideEditingNow(), guide.summary, guide.preview);
     };
     if (keepCaret) keepCaretAround(panel, draw);
     else draw();
@@ -485,18 +485,14 @@ function guideMissingSaying(error) {
     if (box) box.hidden = true;
   }
 
+  /* 「현황 보기」가 어디로 가는지는 그것을 그리는 `guide-view.js` 가 정한다
+     (KEY-302). 이 화면이 할 일은 제 모달을 닫는 것뿐이다. */
+  document.addEventListener("guide:modal-close", closeModal);
+
   document.addEventListener("click", function (event) {
     var t = event.target;
     if (!t || !t.closest) return;
 
-    /* 「현황 보기」는 탭 단추를 대신 누른다 — 탭을 바꾸는 규칙은 `detail.js`
-       것이고, 여기서 흉내내면 표시(✓ · ● · ○)가 갈린다. */
-    if (t.closest("[data-go-status]")) {
-      closeModal();
-      var tab = document.querySelector('.tab[data-tab="status"]');
-      if (tab) tab.click();
-      return;
-    }
     if (t.closest("[data-close]")) closeModal();
 
     /* 바깥을 눌러도 닫힌다. 창 안(`.modal__card`)을 누른 것은 아니어야 한다 —

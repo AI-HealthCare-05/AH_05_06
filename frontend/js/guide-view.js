@@ -280,12 +280,12 @@ function guideSegmentsHtml(sections, current) {
  * 내용이 비어 보이는 것**이 지금(모양이 다른 것)보다 나쁘다. 안 그리는 것은
  * 환자 렌더러 자신의 규칙이기도 하다(`if (g.drug)` …).
  */
-function guidePreviewHtml(sections, current, summary) {
+function guidePreviewHtml(sections, current, summary, preview) {
   var bodyOf = function (key) {
     var row = guideSectionsOf(sections, key)[0];
     return row && row.body ? row.body : "";
   };
-  var inner = patientPreviewBodyHtml(bodyOf, current, summary || "");
+  var inner = patientPreviewBodyHtml(bodyOf, current, summary || "", preview);
 
   /* **골격도 환자 것을 그대로 세운다** (유가은 님 `#253`).
    *
@@ -352,7 +352,7 @@ function guideHeadEditHtml(sections, current, canEdit, editingKey) {
   return '<button class="gs__edit" type="button" data-edit="' + esc(own.key) + '">수정</button>';
 }
 
-function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary) {
+function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary, preview) {
   var title = GUIDE_SCREEN_TITLE[mode] || GUIDE_SCREEN_TITLE.guide;
 
   return (
@@ -370,7 +370,7 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary) 
        회차·문구를 다루는 자리라, 그 탭에서는 통째로 갈아 끼운다. */
     (current === "messages"
       ? smsScreenHtml(smsPlanOf(sections, mode))
-      : guideBodyHtml(sections, current, canEdit, editingKey, summary)) +
+      : guideBodyHtml(sections, current, canEdit, editingKey, summary, preview)) +
     "</section>"
   );
 }
@@ -385,7 +385,7 @@ function smsPlanOf(sections, mode) {
   return smsStateNow(seed);
 }
 
-function guideBodyHtml(sections, current, canEdit, editingKey, summary) {
+function guideBodyHtml(sections, current, canEdit, editingKey, summary, preview) {
   return (
     '<div class="gs__body">' +
     /* 왼쪽 — 원문 */
@@ -406,7 +406,7 @@ function guideBodyHtml(sections, current, canEdit, editingKey, summary) {
     '<span class="gs__paneNote">환자가 받는 그대로</span>' +
     "</div>" +
     '<div class="gs__paneBody">' +
-    guidePreviewHtml(sections, current, summary) +
+    guidePreviewHtml(sections, current, summary, preview) +
     "</div>" +
     "</section>" +
     "</div>" +
@@ -997,3 +997,44 @@ function approvedModalHtml(view) {
     "</div>"
   );
 }
+
+/* 「현황 보기」를 **그리는 파일이 누르는 일까지 맡는다** — KEY-302.
+ *
+ * 이 단추의 마크업은 위 `approvedModalHtml()` 이 그리고, 그 함수는 스탭 화면과
+ * 의사 화면이 함께 쓴다. 그런데 누르는 일은 `visit-guide.js` 에만 있었고
+ * `doctor.html` 은 그 파일을 안 싣는다 — **의사 화면에서는 눌러도 아무 일도
+ * 안 일어났다.** 승인 직후 모달의 단추라 원장님이 매번 만난다.
+ *
+ * KEY-310 과 같은 모양의 결함이다: 마크업은 공용 파일이 그리는데 그것을 살리는
+ * 것(모양이든 손이든)이 화면 하나에만 있었다. 그래서 여기, **마크업 옆에** 둔다.
+ *
+ * 모달을 닫는 방법은 화면마다 다르다(의사 화면은 발급한 링크도 함께 잊는다).
+ * 그래서 닫는 일은 각자에게 알리고, 여기서는 **어디로 가는지**만 정한다.
+ *
+ * **알림은 물음이기도 하다.** 닫는 쪽이 「지금은 안 된다」고 할 수 있어야 한다 —
+ * 의사 화면의 링크 발급 창은 아직 복사도 열지도 않은 링크를 들고 있을 수 있고,
+ * 그것을 잊으면 **토큰을 되찾을 길이 없다**(`canDiscardPatientLink`). 그래서
+ * 되돌릴 수 있는 사건으로 보내고, 막히면 **가지 않는다** (2heej, #274).
+ *
+ * 가는 방법은 탭 단추를 대신 누르는 것이다 — 탭을 바꾸는 규칙(스탭은 제자리,
+ * 의사는 `data-href` 로 이동)이 화면마다 다르고, 여기서 흉내내면 표시(✓ · ● · ○)
+ * 가 갈린다. */
+function goToStatusTab() {
+  /* 단계 줄은 두 화면 다 늘 그린다 — `step-nav.js` 가 다섯 칸을 세운다.
+     그것이 없으면 화면이 이미 깨진 것이라, 여기서 대신할 길을 짓지 않는다.
+     자리가 있는지는 `approve-modal.test.js` 가 두 화면 원문에 대고 잰다. */
+  var tab = document.querySelector('.tab[data-tab="status"]');
+  if (tab) tab.click();
+}
+
+document.addEventListener("click", function (event) {
+  var target = event.target;
+  if (!target || !target.closest || !target.closest("[data-go-status]")) return;
+
+  /* `cancelable` 이라 닫는 쪽이 막을 수 있다. 막히면 창도 그대로, 자리도 그대로다 —
+     사람이 「닫지 않겠다」고 답한 것을 여기서 뒤집지 않는다. */
+  var asked = new CustomEvent("guide:modal-close", { bubbles: true, cancelable: true });
+  if (!document.dispatchEvent(asked)) return;
+
+  goToStatusTab();
+});
