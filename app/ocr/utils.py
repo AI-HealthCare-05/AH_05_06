@@ -7,11 +7,18 @@ from typing import TYPE_CHECKING
 
 from fastapi import status
 
-from app.models.ocr import OcrJob, OcrJobStatus
+from app.models.ocr import OcrDocumentType, OcrJob, OcrJobStatus
 from app.ocr.errors import OcrApiError
 
 if TYPE_CHECKING:
     from app.models.ocr import OcrField, OcrResult
+
+# 같은 확정 상태에서 문서 유형 간 우선순위 — 낮을수록 우선
+_DOC_TYPE_PRIORITY: dict[OcrDocumentType, int] = {
+    OcrDocumentType.EMR: 0,
+    OcrDocumentType.PRESCRIPTION: 1,
+    OcrDocumentType.LAB_RESULT: 2,
+}
 
 
 async def assert_ocr_jobs_ready(visit_id: int, hospital_id: int) -> list[OcrJob]:
@@ -77,11 +84,16 @@ async def assert_ocr_jobs_ready(visit_id: int, hospital_id: int) -> list[OcrJob]
     return completed
 
 
-def merge_fields_by_type(results: Iterable[OcrResult]) -> dict[str, OcrField]:
+def merge_fields_by_type(
+    results: Iterable[OcrResult],
+    *,
+    doc_type_of: dict[int, OcrDocumentType] | None = None,
+) -> dict[str, OcrField]:
     """여러 OcrResult의 필드를 field_type별로 병합한다.
 
-    confirmed > unconfirmed, 동급이면 confidence 높은 쪽을 택한다.
-    파일별 job 구조(옵션 A)에서 여러 result의 필드를 안내 생성·확정에 사용할 때 호출한다.
+    confirmed > unconfirmed, 동급이면 문서 유형 우선순위(EMR>PRESCRIPTION>LAB_RESULT),
+    같으면 confidence 높은 쪽을 택한다.
+    doc_type_of가 없으면 문서 유형 우선순위를 적용하지 않고 confidence만 비교한다.
     """
     best: dict[str, OcrField] = {}
     for result in results:
@@ -91,9 +103,30 @@ def merge_fields_by_type(results: Iterable[OcrResult]) -> dict[str, OcrField]:
                 best[field.field_type] = field
             elif not existing.is_confirmed and field.is_confirmed:
                 best[field.field_type] = field
-            elif existing.is_confirmed == field.is_confirmed:
-                ec = float(existing.confidence) if existing.confidence is not None else 0.0
-                fc = float(field.confidence) if field.confidence is not None else 0.0
-                if fc > ec:
-                    best[field.field_type] = field
+            elif existing.is_confirmed == field.is_confirmed and _field_wins(field, existing, doc_type_of):
+                best[field.field_type] = field
     return best
+
+
+def _field_wins(
+    candidate: OcrField,
+    existing: OcrField,
+    doc_type_of: dict[int, OcrDocumentType] | None,
+) -> bool:
+    """같은 확정 상태에서 candidate가 existing보다 우선인지 판단한다.
+
+    doc_type_of가 있으면 문서 유형 우선순위를 먼저 비교하고, 동급이면 confidence로 tiebreak한다.
+    """
+    if doc_type_of is not None:
+        cp = _doc_priority(candidate.ocr_result_id, doc_type_of)
+        ep = _doc_priority(existing.ocr_result_id, doc_type_of)
+        if cp != ep:
+            return cp < ep
+    cc = float(candidate.confidence) if candidate.confidence is not None else 0.0
+    ec = float(existing.confidence) if existing.confidence is not None else 0.0
+    return cc > ec
+
+
+def _doc_priority(result_id: int, doc_type_of: dict[int, OcrDocumentType]) -> int:
+    dt = doc_type_of.get(result_id)
+    return _DOC_TYPE_PRIORITY.get(dt, 99) if dt is not None else 99

@@ -182,14 +182,20 @@ async def _result_of(job: OcrJob) -> "OcrResult | None":
     return await OcrResult.filter(ocr_job_id=job.ocr_job_id).prefetch_related("fields").first()
 
 
-async def _gather_results_from_jobs(jobs: list[OcrJob]) -> list[OcrResult]:
-    """job 목록에서 OcrResult를 필드와 함께 수집한다."""
+async def _gather_results_from_jobs(
+    jobs: list[OcrJob],
+) -> tuple[list[OcrResult], dict[int, OcrDocumentType]]:
+    """job 목록에서 OcrResult를 필드와 함께 수집하고 result_id→문서유형 매핑을 함께 반환한다."""
     results: list[OcrResult] = []
+    doc_type_of: dict[int, OcrDocumentType] = {}
     for job in jobs:
+        await job.fetch_related("source_documents")
         r = await _result_of(job)
         if r is not None:
             results.append(r)
-    return results
+            if job.source_documents:
+                doc_type_of[r.ocr_result_id] = job.source_documents[0].document_type
+    return results, doc_type_of
 
 
 async def _find_result_for_field(visit_id: int, hospital_id: int, field_type: str) -> OcrResult:
@@ -569,11 +575,11 @@ class TortoiseOcrRepository:
         # FAILED job은 안내 근거에서 제외하고 COMPLETED job만 사용한다.
         jobs = await assert_ocr_jobs_ready(visit_id, actor.hospital_id)
 
-        results = await _gather_results_from_jobs(jobs)
+        results, doc_type_of = await _gather_results_from_jobs(jobs)
         if not results:
             raise _not_confirmed()
 
-        fields_by_type: dict[str, OcrField] = merge_fields_by_type(results)
+        fields_by_type: dict[str, OcrField] = merge_fields_by_type(results, doc_type_of=doc_type_of)
 
         if not fields_by_type:
             raise OcrApiError(
