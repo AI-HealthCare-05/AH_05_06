@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import date, datetime
 from hashlib import sha256
+from math import isfinite
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -127,7 +128,7 @@ def candidate():
     return record, hit
 
 
-async def resolve(record, hits):
+async def resolve(record, hits, **kwargs):
     with patch("app.services.guide_knowledge_context.KnowledgeChunkRecord.filter") as query:
         query.return_value.prefetch_related = AsyncMock(return_value=[record])
         return await revalidate_guide_sources(
@@ -135,6 +136,7 @@ async def resolve(record, hits):
             hospital_id=1,
             section_key="medication",
             checked_at=date(2026, 9, 10),
+            **kwargs,
         )
 
 
@@ -146,7 +148,7 @@ async def test_snapshot_does_not_follow_source_edits():
     record.body = "수정된 근거"
     assert snapshots.sources[0].body == "합성 근거"
     assert "합성 근거" not in repr(snapshots.sources[0])
-    assert (await resolve(record, [hit])).block_reason is not None
+    assert (await resolve(record, [hit])).block_reason == "body_sha256"
 
 
 @pytest.mark.parametrize(
@@ -168,32 +170,35 @@ async def test_snapshot_does_not_follow_source_edits():
 async def test_changed_approval_blocks(key, value):
     record, hit = candidate()
     setattr(record.version, key, value)
-    assert (await resolve(record, [hit])).block_reason is not None
+    expected = "verified_at_future" if key == "verified_at" and value is not None else key
+    assert (await resolve(record, [hit])).block_reason == expected
 
 
 @pytest.mark.parametrize("key,value", [("hospital_id", 2), ("source_url", ""), ("source_org", "")])
 async def test_changed_document_blocks(key, value):
     record, hit = candidate()
     setattr(record.version.document, key, value)
-    assert (await resolve(record, [hit])).block_reason is not None
+    expected = "hospital_scope" if key == "hospital_id" else key
+    assert (await resolve(record, [hit])).block_reason == expected
 
 
 @pytest.mark.parametrize("score", [0.71, float("nan"), float("inf"), 1.1])
 async def test_invalid_score_blocks(score):
     record, hit = candidate()
-    assert (await resolve(record, [replace(hit, score=score)])).block_reason is not None
+    expected = "score_finite" if not isfinite(score) else "score_range"
+    assert (await resolve(record, [replace(hit, score=score)])).block_reason == expected
 
 
 async def test_missing_or_duplicate_hit_blocks_whole_set():
     record, hit = candidate()
-    assert (await resolve(record, [hit, replace(hit, chunk_id=str(uuid4()))])).block_reason is not None
-    assert (await resolve(record, [hit, hit])).block_reason is not None
+    assert (await resolve(record, [hit, replace(hit, chunk_id=str(uuid4()))])).block_reason == "missing_chunk"
+    assert (await resolve(record, [hit, hit])).block_reason == "duplicate_chunk_id"
 
 
 async def test_section_mismatch_blocks():
     record, hit = candidate()
     record.section_key = "life"
-    assert (await resolve(record, [hit])).block_reason is not None
+    assert (await resolve(record, [hit])).block_reason == "section_key"
 
 
 @pytest.mark.parametrize(
@@ -236,3 +241,81 @@ async def test_similarity_override_is_shared():
         )
     assert result.block_reason is None
     assert len(result.sources) == 1
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("document_id", "different-document"),
+        ("version", "different-version"),
+        ("source_org", "다른 기관"),
+        ("source_url", "https://example.invalid/changed"),
+        ("verified_at", date(2026, 9, 2)),
+        ("hospital_id", 2),
+        ("validation_status", "unverified"),
+    ],
+)
+async def test_hit_mismatch_has_exact_reason(key, value):
+    record, hit = candidate()
+    result = await resolve(record, [replace(hit, **{key: value})])
+    assert result.sources == ()
+    assert result.block_reason == "hit_" + key
+
+
+@pytest.mark.parametrize(
+    "hospital_id,expected",
+    [
+        (None, None),
+        (1, None),
+        (2, "hospital_scope"),
+    ],
+)
+async def test_hospital_scope_independently(hospital_id, expected):
+    record, hit = candidate()
+    record.version.document.hospital_id = hospital_id
+    # DB와 hit는 일치시켜 hit_hospital_id가 대신 차단하지 않게 한다.
+    result = await resolve(record, [replace(hit, hospital_id=hospital_id)])
+    assert result.block_reason == expected
+    assert bool(result.sources) == (expected is None)
+
+
+@pytest.mark.parametrize(
+    "target,key,value,expected",
+    [
+        ("version", "approved_at", datetime(2026, 10, 1), "approved_at_future"),
+        ("document", "source_url", None, "source_url"),
+        ("document", "source_url", "   ", "source_url_blank"),
+        ("document", "source_org", "   ", "source_org"),
+        ("record", "body", "   ", "body_empty"),
+    ],
+)
+async def test_missing_guards_have_exact_reason(target, key, value, expected):
+    record, hit = candidate()
+    owner = {"version": record.version, "document": record.version.document, "record": record}[target]
+    setattr(owner, key, value)
+    result = await resolve(record, [hit])
+    assert result.sources == ()
+    assert result.block_reason == expected
+
+
+@pytest.mark.parametrize("threshold", [-0.1, 1.1, float("nan"), float("inf")])
+async def test_invalid_threshold_has_exact_reason(threshold):
+    record, hit = candidate()
+    result = await resolve(record, [hit], min_similarity=threshold)
+    assert result.sources == ()
+    assert result.block_reason == "invalid_min_similarity"
+
+
+@pytest.mark.parametrize("chunk_id", ["not-a-uuid", "", None])
+async def test_invalid_chunk_id_has_exact_reason(chunk_id):
+    record, hit = candidate()
+    result = await resolve(record, [replace(hit, chunk_id=chunk_id)])
+    assert result.sources == ()
+    assert result.block_reason == "invalid_chunk_id"
+
+
+async def test_empty_found_is_not_no_evidence():
+    record, _ = candidate()
+    result = await resolve(record, [])
+    assert result.sources == ()
+    assert result.block_reason == "empty_found_hits"
