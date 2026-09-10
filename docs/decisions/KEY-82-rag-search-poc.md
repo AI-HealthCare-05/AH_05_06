@@ -160,7 +160,19 @@ positive case가 하나도 없어 Recall/Precision 분모가 0이면 해당 지�
 4. 검색 품질 기준과 허용 오탐·미탐 수치를 팀이 별도 합의하고 평가 기록을 남긴다.
 5. 동일 모델 리비전·청킹·`top-k`·임계값으로 재실행 가능하며 CI와 MySQL PoC가 통과한다.
 
-현재 판정은 **합성 검색 평가 통과 / 지정 리뷰어 승인 전 / 생성 연결 차단 유지**다.
+### 생성 연결 승인
+
+- 승인일: 2026-09-10
+- 승인자: 이희진 (전 영역 최종 리뷰어)
+- 대상 평가 checksum: 0a6c9161d77a65dbf860c3d4d7eaf9c0efe5ee768bced68db514f5716da87bb5
+- 고정 파라미터: 임베딩 모델·리비전, 현재 청킹, top-k=3, min_similarity=0.72
+- 문턱 조건: 2·3·5(재현)은 scripts/key82_rag_evaluate.py `passed=true`
+  (unsafe_context_entries=0, admission_accuracy=1.0)로 충족. 1·4는 평가셋
+  (docs/data/key82-rag-poc-evaluation.json)과 PASS_CRITERIA를 검토·합의함.
+- 판정: **생성 연결 허용.** GuideService에 KEY-276 검색 연결 가능(KEY-277 범위).
+  ChatbotService·환자 화면 직접 연결은 KEY-96 계약대로 승인 GuideSection만 사용(불변).
+- 재승인 조건: 평가셋·청킹·top-k·임계값 변경으로 checksum이 바뀌면 이 승인은
+  자동 무효. 재평가·재승인 전까지 admit_generation_context는 다시 GENERATION_BLOCKED.
 
 ## 7. 전용 벡터 저장소 전환 기준
 
