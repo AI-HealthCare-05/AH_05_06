@@ -179,7 +179,26 @@ function adminMenuCovers(frames) {
   var auditCursor = null;
   var auditQuery = {};
 
+  /* **몇 번째 검색의 응답인가.**
+   *
+   * 응답이 오는 순서는 요청한 순서가 아니다. 「안내문」으로 걸러 놓고 곧바로
+   * 「문자」로 다시 거르면, 늦게 도착한 안내문 응답이 목록을 덮어 **거르개는
+   * 문자인데 줄은 안내문**이 된다. 다음 쪽 커서도 그 응답 것으로 덮이므로,
+   * 이어서 「더 보기」를 누르면 문자 조건에 안내문 커서를 얹어 보낸다.
+   * 「더 보기」가 도는 중에 거르개를 바꾸면 옛 조건의 줄이 새 목록에
+   * **붙는다** (한금준 님 `#287` 리뷰).
+   *
+   * 검색을 새로 낼 때마다 번호를 올리고, 요청은 떠날 때의 번호를 쥔다.
+   * 돌아왔을 때 번호가 다르면 **화면에 손대지 않는다** — 목록도, 커서도,
+   * 오류 문구도. 「더 보기」는 저를 부른 검색의 번호를 그대로 쓴다: 그
+   * 검색이 밀려났으면 이어 붙일 목록도 이미 사라진 것이다.
+   *
+   * 요청을 취소하지는 않는다. 응답을 **안 쓸** 뿐이다 — 끊는 것은 `fetch` 를
+   * 손봐야 하는 일이고, 여기서 고치려는 것은 「누가 화면을 차지하는가」다. */
+  var auditRun = 0;
+
   function renderAuditBody() {
+    auditRun += 1;
     bodyBox.innerHTML =
       '<h1 class="pane__title">전체 로그</h1>' +
       '<p class="pane__lead" id="audit-filter-slot">거르개를 준비하는 중…</p>' +
@@ -221,11 +240,14 @@ function adminMenuCovers(frames) {
         to: document.getElementById("audit-to").value,
       });
       auditCursor = null;
+      auditRun += 1;
       loadAudit(false);
     });
   }
 
   function loadAudit(append) {
+    /* 떠날 때의 번호를 쥔다 — 돌아와서 견줄 것은 이것이다. */
+    var run = auditRun;
     var box = document.getElementById("audit-list");
     var more = document.getElementById("audit-more");
     if (!box) return;
@@ -240,6 +262,7 @@ function adminMenuCovers(frames) {
 
     listAuditLogs(asked)
       .then(function (page) {
+        if (run !== auditRun) return;
         var html = auditListHtml(page.entries);
         if (append) {
           var body = box.querySelector("tbody");
@@ -269,6 +292,10 @@ function adminMenuCovers(frames) {
         }
       })
       .catch(function (error) {
+        /* **실패도 똑같이 늦게 온다.** 지난 검색이 실패한 것을 지금 목록 위에
+           적으면, 멀쩡히 그려진 줄 위에 오류 문구가 앉거나 남의 「더 보기」가
+           「다시 시도」로 바뀐다. */
+        if (run !== auditRun) return;
         var saying = esc(auditLoadSaying(error));
         if (append) {
           /* **이미 그린 줄을 지우지 않는다.** 「더 보기」가 실패했다고 앞서 본
