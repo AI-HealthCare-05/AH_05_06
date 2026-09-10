@@ -14,6 +14,63 @@ COLOR_NC=$(tput sgr0)
 cd "$(dirname "$0")/.."
 source ./envs/.prod.env
 
+# ---------- 이 빌드가 어느 커밋에서 나왔나 (KEY-315) ----------
+#
+# **서버는 제 출처를 모른다.** `~/project` 에는 `.env` · `docker-compose.yml` ·
+# `nginx` 셋뿐이고 저장소가 없다. 이미지에도 아무 표시가 없어서, 되짚을 길이
+# Docker Hub 태그(`app-vX.Y.Z`) 뿐이었다 — 그 태그는 사람이 손으로 올리는
+# 값이라 어느 커밋인지 말해 주지 않는다.
+#
+# 실제로 막혔다: 9/4 배포가 develop 에서 나온 것으로 **정황상** 맞았지만
+# (푸시 5분 전 develop 끝이 그 언저리), 단정할 수단이 없었다. 배포 사고를
+# 의심할 때 출처를 못 밝히면 조사 자체가 시작을 못 한다.
+#
+# 그래서 이미지가 스스로 답하게 한다. 표준 이름(OCI)을 쓴다 — 도구들이 이미
+# 이 이름을 읽는다.
+SOURCE_REVISION=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# **`rev-parse --abbrev-ref` 를 쓰면 안 된다.** detached HEAD(태그 체크아웃·CI)
+# 에서 그것은 문자열 `HEAD` 를 **성공적으로** 돌려주므로 `|| echo` 가 안 탄다 —
+# 라벨이 조용히 무의미해진다 (2heej 님 리뷰 ③). `symbolic-ref` 는 그때 실패해서
+# 갈 길을 준다.
+SOURCE_REF=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "detached")
+
+#: **이미지에 실제로 담기는 자리만** 본다 — 세 Dockerfile 의 `COPY` 가 가리키는
+#: 곳이다(`app/Dockerfile` · `ai_worker/Dockerfile` · `infra/nginx/Dockerfile`).
+#:
+#: 저장소 전체를 보면 `.dockerignore` 로 빌드에서 빠지는 잡파일 하나에도
+#: `-dirty` 가 붙어, 재현 가능한 빌드인데 「어느 커밋으로도 다시 만들 수 없다」고
+#: 겁을 준다 (2heej 님 리뷰 ②). 여기 없는 자리는 이미지를 안 바꾼다.
+#: **굽는 법을 정하는 파일도 여기 든다.** 처음에는 `COPY` 가 가리키는 자리만
+#: 적었는데, `infra/nginx/Dockerfile` 의 베이스 이미지나 `COPY` 를 커밋 없이
+#: 고치면 **실제 이미지는 달라지는데 라벨에는 깨끗한 SHA 가 박힌다** — 출처를
+#: 말하라고 붙인 라벨이 거짓말을 한다. `.dockerignore` 도 마찬가지다: 무엇이
+#: 컨텍스트에 들어가고 빠지는지를 그 파일이 정한다 (한금준 님 리뷰 ②).
+#:
+#: `app/Dockerfile` 과 `ai_worker/Dockerfile` 은 각각 `app` · `ai_worker` 안에
+#: 있어 이미 걸린다.
+BUILD_CONTEXT_PATHS=(pyproject.toml uv.lock app ai_worker frontend infra/nginx/Dockerfile .dockerignore)
+
+# **커밋 안 된 변경으로 구우면 그 SHA 는 거짓말이 된다.** 라벨은 「이 커밋이다」
+# 라고 말하는데 실제로 담긴 것은 그 커밋 + 손댄 것이라, 나중에 그 SHA 를
+# 받아 봐도 같은 판이 안 나온다. 표시를 붙이고 한 번 알린다.
+if [[ -n "$(git status --porcelain -- "${BUILD_CONTEXT_PATHS[@]}" 2>/dev/null)" ]]; then
+  SOURCE_REVISION="${SOURCE_REVISION}-dirty"
+  echo "${COLOR_RED}⚠ 이미지에 담기는 자리에 커밋 안 된 변경이 있다 — 라벨에 -dirty 로 남는다.${COLOR_NC}"
+  echo "${COLOR_RED}  이 이미지는 어느 커밋으로도 다시 만들 수 없다.${COLOR_NC}"
+  # **`head` 를 안 쓴다.** 이 스크립트는 `set -eo pipefail` 이다. 더러운 자리가
+  # 많아 출력이 파이프 버퍼(64KB)를 넘기면 `head` 가 먼저 파이프를 닫고, git 이
+  # SIGPIPE 로 죽고, `pipefail` 이 141 을 전파해 **배포가 여기서 멈춘다** —
+  # 경고만 찍고 굽지도 올리지도 않은 채로. 일괄 포맷·대형 리팩터처럼 하필
+  # 조심해야 할 배포에서만 터진다 (2heej 님 리뷰).
+  #
+  # `sed` 는 stdin 을 끝까지 읽어 SIGPIPE 가 안 난다. 읽는 양은 상태 출력뿐이라
+  # 값이 없다.
+  git status --short -- "${BUILD_CONTEXT_PATHS[@]}" | sed -n '1,10p'
+  echo ""
+fi
+
 # ---------- 도커 이미지 빌드 및 푸시 함수 ----------
 build_and_push () {
   local docker_user=$1
@@ -30,7 +87,12 @@ build_and_push () {
   # 옮겨간 자리라 여기서 죽인다.
   : "${tag_base:?build_and_push: tag_base(7번째 인자)가 없다 — api|ai|web 중 하나를 넘겨라}"
   echo "${COLOR_BLUE}${name} Docker Image Build Start.${COLOR_NC}"
-  docker build --platform linux/amd64 -t ${docker_user}/${docker_repo}:${tag_base}-${tag} -f ${dockerfile} ${context}
+  # 라벨은 **세 이미지에 다 붙는다** — 이 함수 하나가 app·ai·web 을 다 굽는다.
+  docker build --platform linux/amd64 \
+    --label "org.opencontainers.image.revision=${SOURCE_REVISION}" \
+    --label "org.opencontainers.image.ref.name=${SOURCE_REF}" \
+    --label "org.opencontainers.image.created=${BUILT_AT}" \
+    -t ${docker_user}/${docker_repo}:${tag_base}-${tag} -f ${dockerfile} ${context}
 
   echo "${COLOR_BLUE}${name} Docker Image Push Start.${COLOR_NC}"
   docker push ${docker_user}/${docker_repo}:${tag_base}-${tag}
