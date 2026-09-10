@@ -40,6 +40,46 @@ body {
   opacity: 1;
 }
 
+/* ── 브랜드 마크 ───────────────────────────────────────────────────
+ *
+ * **자산 하나를 잘라 쓴다.** `patient_wireframe/assets/logo.png` 는 168×123 인데
+ * 투명이 아니고 모서리까지 `#f9effc` 로 채워져 있다. 그림 안에서 마크가 실제로
+ * 차지하는 자리는 `x 37~123 · y 23~108`(87×86)이고 **가운데도 아니다**
+ * (좌 37 · 우 44 · 상 23 · 하 14). 흰 상단바에 그대로 얹으면 연보라 네모가 뜬다.
+ *
+ * 그래서 자산은 안 건드리고 여기서 잘라 낸다 — 상자에 `--brand-tile` 을 깔고,
+ * `background-size`·`background-position` 으로 마크만 가운데에 세운다. 이음매는
+ * 타일 색이 자산의 박힌 색과 같아서 안 보인다.
+ *
+ * 셈이 어디서 왔는지 남긴다 (상자 크기를 `B`, 마크가 차지할 크기를 `0.75B` 로 둘 때):
+ *
+ *     배율        0.75B / 87            = 0.008621 B
+ *     그림 크기   168 · 123 × 배율       = 1.4483 B · 1.0603 B
+ *     그림 위치   0.125B − 37×배율       = −0.1940 B   (가로)
+ *                 (B − 86×배율)/2 − 23×배율 = −0.0690 B   (세로)
+ *
+ * 원본 SVG 가 들어오면 이 규칙은 통째로 없어진다 — `docs/brand-assets.md`.
+ * 마크는 옆의 「케어온」 글자와 같은 말을 하므로 **낭독기에는 안 읽힌다**
+ * (빈 `<span>` + `aria-hidden`). 글자가 이미 이름을 말한다.
+ */
+.brandmark {
+  --brandmark-size: 24px;
+
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+  width: var(--brandmark-size);
+  height: var(--brandmark-size);
+  /* 모서리는 상자에 비례해 둔다 — 24px 에 7px, 36px 에 10px.
+     고정값을 쓰면 큰 쪽이 네모로 보인다. */
+  border-radius: calc(var(--brandmark-size) * 0.29);
+  background-color: var(--brand-tile);
+  background-image: url("/patient_wireframe/assets/logo.png");
+  background-repeat: no-repeat;
+  background-size: calc(var(--brandmark-size) * 1.4483) calc(var(--brandmark-size) * 1.0603);
+  background-position: calc(var(--brandmark-size) * -0.194) calc(var(--brandmark-size) * -0.069);
+}
+
 /* ── 진행 막대 ─────────────────────────────────────────────────────
  * `upload.css` 에만 있던 것을 올렸다. 판독 화면도 같은 것이 필요했는데
  * 따로 만들어 두 벌을 유지하게 될 뻔했다 (이희진 님 `#121` 리뷰).
