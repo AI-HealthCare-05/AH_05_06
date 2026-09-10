@@ -42,25 +42,24 @@ body {
 
 /* ── 브랜드 마크 ───────────────────────────────────────────────────
  *
- * **자산 하나를 잘라 쓴다.** `patient_wireframe/assets/logo.png` 는 168×123 인데
- * 투명이 아니고 모서리까지 `#f9effc` 로 채워져 있다. 그림 안에서 마크가 실제로
- * 차지하는 자리는 `x 37~123 · y 23~108`(87×86)이고 **가운데도 아니다**
- * (좌 37 · 우 44 · 상 23 · 하 14). 흰 상단바에 그대로 얹으면 연보라 네모가 뜬다.
+ * `assets/careon-mark.svg` — 병원용 **모노톤** 마크(KEY-316, 이희진 님 제공).
  *
- * 그래서 자산은 안 건드리고 여기서 잘라 낸다 — 상자에 `--brand-tile` 을 깔고,
- * `background-size`·`background-position` 으로 마크만 가운데에 세운다. 이음매는
- * 타일 색이 자산의 박힌 색과 같아서 안 보인다.
+ * 환자 화면(`guide.html`)이 쓰는 `patient_wireframe/assets/logo.png` 는 보라
+ * 그라디언트이고 배경까지 박혀 있어서, 처음에는 그것을 CSS 로 잘라 썼다.
+ * **마크 자체가 보라라** `tokens.css` 머리말의 「보라 계열을 안 쓴다」와
+ * 부딪혔고(이희진 님 `#283` 리뷰), 그 자산으로 병합하면 병원 화면 일곱의 톤이
+ * 나중에 다시 바뀔 자리였다.
  *
- * 셈이 어디서 왔는지 남긴다 (상자 크기를 `B`, 마크가 차지할 크기를 `0.75B` 로 둘 때):
+ * 그래서 **잘라 쓰던 셈이 통째로 없어졌다** — 타일도, `--brand-tile` 토큰도,
+ * `background-size`·`background-position` 계산식도. 배경이 없는 SVG 라 그냥
+ * 얹으면 된다.
  *
- *     배율        0.75B / 87            = 0.008621 B
- *     그림 크기   168 · 123 × 배율       = 1.4483 B · 1.0603 B
- *     그림 위치   0.125B − 37×배율       = −0.1940 B   (가로)
- *                 (B − 86×배율)/2 − 23×배율 = −0.0690 B   (세로)
+ * 색은 자산이 든 `#1E2A44` 하나다. `--ink`(#1c1f23) 곁의 값이라 흰 상단바에서
+ * 글자와 같은 무게로 읽힌다. `currentColor` 로 받으려면 마스크를 써야 하는데,
+ * 색을 화면마다 바꿀 일이 지금 없어서 자산이 든 값을 그대로 쓴다.
  *
- * 원본 SVG 가 들어오면 이 규칙은 통째로 없어진다 — `docs/brand-assets.md`.
  * 마크는 옆의 「케어온」 글자와 같은 말을 하므로 **낭독기에는 안 읽힌다**
- * (빈 `<span>` + `aria-hidden`). 글자가 이미 이름을 말한다.
+ * (빈 `<span>` + `aria-hidden`). 자세한 것은 `docs/brand-assets.md`.
  */
 .brandmark {
   --brandmark-size: 24px;
@@ -70,14 +69,11 @@ body {
   flex: none;
   width: var(--brandmark-size);
   height: var(--brandmark-size);
-  /* 모서리는 상자에 비례해 둔다 — 24px 에 7px, 36px 에 10px.
-     고정값을 쓰면 큰 쪽이 네모로 보인다. */
-  border-radius: calc(var(--brandmark-size) * 0.29);
-  background-color: var(--brand-tile);
-  background-image: url("/patient_wireframe/assets/logo.png");
+  background-image: url("/assets/careon-mark.svg");
   background-repeat: no-repeat;
-  background-size: calc(var(--brandmark-size) * 1.4483) calc(var(--brandmark-size) * 1.0603);
-  background-position: calc(var(--brandmark-size) * -0.194) calc(var(--brandmark-size) * -0.069);
+  /* `contain` 이라 상자 크기만 바꾸면 따라온다 — 크기별 계산식이 필요 없다. */
+  background-size: contain;
+  background-position: center;
 }
 
 /* ── 진행 막대 ─────────────────────────────────────────────────────

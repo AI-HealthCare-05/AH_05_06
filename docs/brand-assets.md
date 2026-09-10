@@ -3,34 +3,43 @@
 KEY-316 에서 병원 웹(로그인 + 상단바 여섯 화면)에 마크를 붙이며 정리한 것이다.
 **지금 쓰는 자산이 무엇이고, 왜 그렇게 쓰는지**를 여기 적어 둔다.
 
-## 지금 있는 것
+## 지금 쓰는 것
 
 | | |
 |---|---|
-| 파일 | `frontend/patient_wireframe/assets/logo.png` |
-| 크기 | 168 × 123 · 8bit RGBA |
-| 투명 | **없다.** 모서리까지 `#f9effc` 로 채워진 그림이다 |
-| 실제 마크 | `x 37~123 · y 23~108` (87 × 86) |
-| 박힌 여백 | 좌 37 · 우 44 · 상 23 · 하 14 — **가운데가 아니다** |
-| SVG 원본 | **없다.** 저장소·디자인 폴더 어디에도 없다 |
+| 파일 | `frontend/assets/careon-mark.svg` |
+| 크기 | `viewBox="0 0 100 100"` — 어느 크기로도 선명하다 |
+| 색 | `#1E2A44` 하나. 그라디언트 없음 |
+| 배경 | **없다.** 투명이라 어디에 얹어도 네모가 안 생긴다 |
+| 출처 | 이희진 님이 KEY-316 티켓에 첨부(`careon-concept-e-mono.svg`) |
 
-## 그래서 어떻게 쓰는가
+**병원용은 모노톤이다.** 환자 화면(`guide.html`)이 쓰는
+`patient_wireframe/assets/logo.png` 는 보라 그라디언트이고 배경까지 박혀 있다 —
+그것을 병원 화면에 그대로 쓰면 `tokens.css` 머리말의 「보라 계열을 안 쓴다」와
+부딪힌다.
 
-**자산은 안 건드리고 CSS 로 잘라 쓴다** — `frontend/css/style.css` 의 `.brandmark`.
+## 어떻게 쓰는가
 
-상자에 `--brand-tile`(= 자산에 박힌 `#f9effc`)을 깔고 `background-size` ·
-`background-position` 으로 마크만 가운데 세운다. 타일 색이 자산의 박힌 색과
-같아서 이음매가 안 보인다. 셈이 어떻게 나왔는지는 그 규칙의 주석에 있다.
+`frontend/css/style.css` 의 `.brandmark` 한 곳이다.
 
 ```
 상단바   24px   .topbar__brand .brandmark   (shell.css)
 로그인   36px   .card__title .brandmark     (auth.css)
 ```
 
-**왜 잘라 쓰는가.** 흰 상단바에 원본을 그대로 얹으면 연보라 네모가 뜬다. 환자
-화면(`guide.html`)은 24 × 24 타일에 `object-fit: cover` 로 우겨넣고 있는데,
-그러면 마크 오른쪽 끝이 잘리는 자리까지 간다. 같은 잘못을 병원 웹에 옮기지
-않는다.
+`background-size: contain` 이라 **상자 크기만 바꾸면 따라온다.** 크기별 계산식이
+없다.
+
+### 처음에는 PNG 를 잘라 썼다 — 없어진 것들
+
+SVG 가 오기 전에는 환자용 PNG 를 CSS 로 잘라 쓰고 있었다. 그 자산이 168×123 에
+배경(`#f9effc`)이 박혀 있고 마크도 가운데가 아니라, 타일을 깔고 좌표를 계산해
+잘라 냈다. **이희진 님이 모노톤 SVG 를 주시면서 그 전부가 없어졌다** — 아래는
+이제 저장소에 없다.
+
+- `tokens.css` 의 `--brand-tile` 토큰
+- `.brandmark` 의 타일 배경과 `background-size`·`background-position` 계산식
+- 「보라 계열을 안 쓴다」에 대한 예외 설명
 
 ## 정해 둔 것
 
@@ -49,8 +58,9 @@ KEY-316 에서 병원 웹(로그인 + 상단바 여섯 화면)에 마크를 붙�
    달 값이 없다
 
 **다크 대응 — 안 한다.** 지금 이 저장소에 다크 테마가 없다(`tokens.css` 에
-`prefers-color-scheme` 블록이 없다). 생기면 그때 함께 정한다 — 지금 자산은
-밝은 배경이 박혀 있어 어두운 상단바에서는 연보라 네모가 된다.
+`prefers-color-scheme` 블록이 없다). 생기면 그때 함께 정한다 — 배경이 없는
+SVG 라 네모가 뜨지는 않지만, `#1E2A44` 는 어두운 바탕에서 안 읽힌다. 그때는
+아래 「색을 바꾸려면」이 답이다.
 
 **축소** — 마크는 `flex: none` 이라 좁아져도 안 줄어든다. 768px 아래에서
 `.topbar__brand` 가 말줄임(`overflow: hidden`)으로 바뀌는데, 마크가 광학
@@ -58,12 +68,12 @@ KEY-316 에서 병원 웹(로그인 + 상단바 여섯 화면)에 마크를 붙�
 위로 2px 넓히고 같은 값의 음수 여백으로 배치를 제자리에 두어 막았다
 (`shell.css` 의 `@media (max-width: 768px)`).
 
-## SVG 가 들어오면
+## 색을 바꾸려면
 
-한 자리만 고치면 된다 — `style.css` 의 `.brandmark`. 함께 없어지는 것들:
+지금은 자산이 든 `#1E2A44` 를 그대로 쓴다. `--ink`(#1c1f23) 곁의 값이라 흰
+상단바에서 글자와 같은 무게로 읽힌다.
 
-- `tokens.css` 의 `--brand-tile`
-- `.brandmark` 의 잘라 쓰는 셈(`background-size` · `background-position`)
-- 이 문서의 「지금 있는 것」 · 「그래서 어떻게 쓰는가」 두 절
-
-`aria-hidden` · 링크 없음 · 다크 대응 여부는 자산이 바뀌어도 그대로다.
+화면마다 색을 달리해야 하는 날이 오면 `background-image` 대신 `mask-image` 와
+`background-color: currentColor` 로 바꾼다 — 그러면 색이 CSS 에서 온다. 지금
+그렇게 하지 않는 것은 **바꿀 일이 없어서**이고, 마스크는 브라우저 지원을 한 겹
+더 따져야 한다.

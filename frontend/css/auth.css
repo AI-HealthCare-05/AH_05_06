@@ -219,15 +219,6 @@ body.auth {
   color: var(--ink-2);
 }
 
-/* ── 바닥 ───────────────────────────────────────────── */
-
-.clinic {
-  margin-top: var(--s-24);
-  font-size: 13px;
-  color: var(--ink-3);
-  text-align: center;
-}
-
 /* 낭독기에만 읽히는 안내 */
 .sr-only {
   position: absolute;
