@@ -343,12 +343,31 @@ function mockRequest(path, options) {
         if (asked.get("occurred_to")) {
           rows = rows.filter(function (r) { return r.occurred_at <= asked.get("occurred_to"); });
         }
-        rows.sort(function (a, b) { return a.occurred_at < b.occurred_at ? 1 : a.occurred_at > b.occurred_at ? -1 : 0; });
-        var start = Number(asked.get("cursor") || 0);
+        /* **서버와 같은 규칙으로 줄을 세운다** — `(시각, 표, 번호)` 내림차순.
+           처음에는 시각만 보고 커서도 정수 오프셋이었는데, 그러면 목업이
+           실서버가 겪은 정렬 결함(`"guide:9" > "guide:10"`)을 **재현하지
+           못한다.** 목업으로 확인한 것이 실물을 보증하려면 규칙이 같아야
+           한다 (이희진 님 `#287` 리뷰 ④). */
+        var keyOf = function (row) {
+          var cut = row.event_id.lastIndexOf(":");
+          return [row.occurred_at, row.event_id.slice(0, cut), Number(row.event_id.slice(cut + 1))];
+        };
+        var before = function (a, b) {
+          for (var i = 0; i < 3; i++) {
+            if (a[i] < b[i]) return -1;
+            if (a[i] > b[i]) return 1;
+          }
+          return 0;
+        };
+        rows.sort(function (a, b) { return before(keyOf(b), keyOf(a)); });
+        /* 커서도 **자리**를 담는다. 정수 오프셋은 그 사이에 줄이 늘면 어긋난다. */
+        var after = asked.get("cursor") ? JSON.parse(atob(asked.get("cursor"))) : null;
+        if (after) rows = rows.filter(function (row) { return before(keyOf(row), after) < 0; });
         var size = Number(asked.get("limit") || 50);
-        var slice = rows.slice(start, start + size);
-        var left = rows.length > start + size;
-        return resolve({ entries: slice, next_cursor: left ? String(start + size) : null, has_more: left });
+        var slice = rows.slice(0, size);
+        var left = rows.length > size;
+        var next = left && slice.length ? btoa(JSON.stringify(keyOf(slice[slice.length - 1]))) : null;
+        return resolve({ entries: slice, next_cursor: next, has_more: left });
       }
 
       return reject(new ApiError("unknown", 404, {}));

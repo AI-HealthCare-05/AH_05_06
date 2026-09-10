@@ -155,3 +155,123 @@ test("이 화면이 붙이는 클래스가 이 화면이 싣는 CSS 의 바탕 �
   const missing = [...used].filter((name) => !defined.has(name)).sort();
   assert.deepEqual(missing, [], `모양 없이 뜰 클래스: ${missing.join(", ")}`);
 });
+
+
+/** 목업을 실제로 돌린다 — `api.js` 의 `mockRequest` 를 그대로 부른다. */
+function loadMock() {
+  const store = {};
+  const context = {
+    console,
+    sessionStorage: {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => {
+        store[k] = String(v);
+      },
+      removeItem: (k) => {
+        delete store[k];
+      },
+    },
+    location: { search: "?mock=1" },
+    document: { body: null, getElementById: () => null },
+    fetch: () => Promise.reject(new Error("검사에서 네트워크를 쓰지 않는다")),
+    URLSearchParams,
+    setTimeout,
+    atob: (t) => Buffer.from(t, "base64").toString("binary"),
+    btoa: (t) => Buffer.from(t, "binary").toString("base64"),
+    JSON,
+    Number,
+    Object,
+    Promise,
+  };
+  context.window = context;
+  vm.createContext(context);
+  vm.runInContext(read("js/api.js"), context);
+  return context;
+}
+
+test("목업 쪽 나눔이 실서버와 같은 규칙이다 — 번호가 9 → 10 을 넘어도", async () => {
+  /* **여기가 중요하다.** 목업이 `occurred_at` 만으로 줄을 세우고 커서를 정수
+     오프셋으로 두면, 실서버가 겪은 정렬 결함(`"guide:9" > "guide:10"`)을
+     `?mock=1` 확인이 **재현하지 못한다** — 목업으로 본 것이 실물을 보증하지
+     않는다 (이희진 님 `#287` 리뷰 ④).
+
+     그래서 **검사가 데이터를 정한다.** 기본 목업은 시각이 다 달라 시각만 봐도
+     답이 같다 — 그 데이터로는 이 결함이 안 드러난다(실제로 안 드러났다).
+     시각을 모두 같게 두고 번호만 9 → 10 을 넘게 해서 돌린다. */
+  const ctx = loadMock();
+  const { mockRequest, MOCK_AUDIT } = ctx;
+
+  MOCK_AUDIT.length = 0;
+  const same = "2026-09-10T09:00:00+09:00";
+  const pks = [8, 9, 10, 11, 12];
+  for (const pk of pks) {
+    MOCK_AUDIT.push({
+      event_id: "guide:" + pk,
+      occurred_at: same,
+      source: "guide",
+      event_type: "EDITED",
+      actor_staff_id: 900,
+      actor_name: "박연",
+      visit_id: 1204,
+      summary: "안내문을 수정했습니다",
+    });
+  }
+
+  const seen = [];
+  let cursor = null;
+  for (let guard = 0; guard < 20; guard++) {
+    const path = "/admin/audit-logs?limit=2" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
+    const page = await mockRequest(path, {});
+    seen.push(...page.entries.map((row) => row.event_id));
+    cursor = page.next_cursor;
+    if (!cursor) break;
+  }
+
+  assert.strictEqual(seen.length, pks.length, `${seen.length} 줄을 봤다 — ${seen}`);
+  assert.strictEqual(new Set(seen).size, pks.length, `같은 줄을 두 번 봤다 — ${seen}`);
+  assert.deepEqual(
+    seen,
+    pks.slice().sort((a, b) => b - a).map((pk) => "guide:" + pk),
+    `번호 순서가 뒤집혔다 — ${seen}`,
+  );
+  assert.strictEqual(cursor, null, "끝났는데 다음 쪽 열쇠를 준다");
+});
+
+test("기본 목업 데이터도 끝까지 넘어간다", async () => {
+  const { mockRequest, MOCK_AUDIT } = loadMock();
+  const seen = [];
+  let cursor = null;
+  for (let guard = 0; guard < 20; guard++) {
+    const path = "/admin/audit-logs?limit=2" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
+    const page = await mockRequest(path, {});
+    seen.push(...page.entries.map((row) => row.event_id));
+    cursor = page.next_cursor;
+    if (!cursor) break;
+  }
+  assert.strictEqual(new Set(seen).size, MOCK_AUDIT.length, `${seen.length} 줄 — ${seen}`);
+});
+
+test("목업이 시각·표·번호 순으로 줄을 세운다", async () => {
+  const { mockRequest } = loadMock();
+  const page = await mockRequest("/admin/audit-logs?limit=50", {});
+  const times = page.entries.map((row) => row.occurred_at);
+
+  assert.deepEqual(times, times.slice().sort().reverse(), "최신순이 아니다");
+  const source = read("js/api.js");
+  assert.doesNotMatch(source, /next_cursor: left \? String\(start \+ size\)/, "커서가 정수 오프셋으로 되돌아갔다");
+});
+
+test("「더 보기」가 실패해도 이미 그린 줄을 지우지 않는다", () => {
+  /* 그리는 것은 브라우저가 하므로(껍데기가 막는다) 여기서는 **갈래가 있는지**만
+     본다. 실제 동작은 PR 에 실측을 적었다 — 3줄이 남고 「다시 시도」가 돌아온다.
+
+     앞 쪽 쉰 줄이 오류 문구 하나로 바뀌면 관리자는 보던 것을 잃고, 요청 전에
+     「더 보기」를 비웠으므로 다시 눌러 볼 단추도 없다 (이희진 님 `#287` 리뷰 ①). */
+  const screen = read("js/admin.js");
+  const failure = screen.slice(screen.indexOf(".catch(function (error) {", screen.indexOf("function loadAudit")));
+
+  assert.match(failure, /if \(append\)/, "이어 붙이기 실패와 첫 쪽 실패를 안 가른다");
+  assert.match(failure, /다시 시도/, "다시 눌러 볼 자리를 안 돌려준다");
+  const beforeReturn = failure.slice(0, failure.indexOf("return;"));
+  assert.doesNotMatch(beforeReturn, /box\.innerHTML/, "이어 붙이기 실패인데 목록을 덮어쓴다");
+});

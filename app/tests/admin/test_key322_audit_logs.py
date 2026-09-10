@@ -359,6 +359,42 @@ class TestEachFilterBites(AuditTestCase):
         assert "staff_account" not in sources, sources
 
 
+class TestTheActorNameStaysInsideTheFence(AuditTestCase):
+    """**이름도 울타리 안에서만 찾는다** (이희진 님 `#287` 리뷰 ⑤).
+
+    `GuideEvent.actor_id` 는 FK 가 아니라 그냥 `BigIntField` 다. 어떤 사정으로
+    남의 의원 직원 번호가 들어 있으면 그 사람 **이름이 이 목록에 뜬다.**
+    실제로 그럴 일은 없어야 하지만, 없어야 하는 것과 못 하는 것은 다르다.
+    """
+
+    async def test_a_foreign_actor_name_is_not_revealed(self) -> None:
+        guide = await self._guide(self.visit)
+        await GuideEvent.create(
+            guide_document=guide,
+            event_type=GuideEventType.APPROVED,
+            #: 옆집 의원 관리자의 번호. 우리 의원 사건에 붙어 있다.
+            actor_id=self.other_admin.staff_id,
+        )
+
+        response = await self._get()
+        entry = response.json()["entries"][0]
+
+        assert "옆집관리자" not in response.text, "남의 의원 직원 이름이 새어 나온다"
+        assert entry["actor_name"] is None, entry
+        #: **줄은 남는다.** 「누가 했는지 모르는 일이 있었다」가 「아무 일도
+        #: 없었다」보다 낫다.
+        assert entry["actor_staff_id"] == self.other_admin.staff_id
+        assert entry["summary"] == "안내문을 승인했습니다"
+
+    async def test_our_own_actor_is_still_named(self) -> None:
+        """울타리를 치면서 제 의원 이름까지 잃으면 안 된다."""
+        guide = await self._guide(self.visit)
+        await GuideEvent.create(guide_document=guide, event_type=GuideEventType.APPROVED, actor_id=self.doctor.staff_id)
+
+        response = await self._get()
+        assert response.json()["entries"][0]["actor_name"] == "박연"
+
+
 class TestPagingIsStable(AuditTestCase):
     async def _many(self, count: int) -> None:
         guide = await self._guide(self.visit)

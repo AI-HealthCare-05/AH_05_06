@@ -269,9 +269,35 @@ function adminMenuCovers(frames) {
         }
       })
       .catch(function (error) {
+        var saying = esc(auditLoadSaying(error));
+        if (append) {
+          /* **이미 그린 줄을 지우지 않는다.** 「더 보기」가 실패했다고 앞서 본
+             쉰 줄이 오류 문구 하나로 바뀌면, 관리자는 보고 있던 것을 잃는다 —
+             그리고 요청 전에 「더 보기」를 비웠으므로 **다시 눌러 볼 단추도
+             없다.** 필터를 다시 내는 것 말고는 돌아올 길이 없었다
+             (이희진 님 `#287` 리뷰 ①).
+
+             실패는 목록이 아니라 목록 **아래**에 적고, 그 자리에 다시 누를
+             단추를 돌려 놓는다. */
+          if (more) {
+            more.innerHTML =
+              '<p class="pane__lead">' +
+              saying +
+              "</p>" +
+              '<button class="button-ghost" type="button" id="audit-more-go">다시 시도</button>';
+            var retry = document.getElementById("audit-more-go");
+            if (retry) {
+              retry.addEventListener("click", function () {
+                retry.disabled = true;
+                loadAudit(true);
+              });
+            }
+          }
+          return;
+        }
         /* **「기록이 없다」로 그리지 않는다.** 못 불러온 것을 없는 것으로 보이면
            관리자는 그 시각에 아무 일도 없었다고 읽는다. */
-        box.innerHTML = '<p class="pane__lead">' + esc(auditLoadSaying(error)) + "</p>";
+        box.innerHTML = '<p class="pane__lead">' + saying + "</p>";
       });
   }
 

@@ -37,6 +37,7 @@
 까닭이다). **같은 커서로 다시 물으면 같은 답이 온다.**
 """
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -175,26 +176,42 @@ class AdminAuditService:
         }
         wanted = [query.source] if query.source else list(sources)
 
-        merged: list[_Row] = []
-        for source in wanted:
-            merged += await sources[source](scope)
+        #: **한 번에 묻는다.** 표 다섯이 서로를 안 기다리므로 순차로 `await` 하면
+        #: 한 쪽의 지연이 「가장 느린 것」이 아니라 **다섯의 합**이 된다. 표가
+        #: 늘수록 벌어지는 자리다 (이희진 님 `#287` 리뷰 ③).
+        #:
+        #: 섞는 것은 어차피 파이썬에서 다시 정렬하므로 순서가 안 중요하다 —
+        #: 병렬로 바꿔도 답이 같다.
+        found = await asyncio.gather(*(sources[source](scope) for source in wanted))
+        merged: list[_Row] = [row for rows in found for row in rows]
 
         merged.sort(key=lambda row: row.order_key, reverse=True)
         page = merged[: query.limit]
         has_more = len(merged) > len(page)
 
         return AuditLogPage(
-            entries=await self._named(page),
+            entries=await self._named(scope, page),
             next_cursor=_cursor_for(page[-1]) if page and has_more else None,
             has_more=has_more,
         )
 
-    async def _named(self, rows: Sequence[_Row]) -> list[AuditLogEntry]:
-        """직원 이름을 **한 번에** 가져온다 — 줄마다 물으면 쪽마다 50번이다."""
+    async def _named(self, scope: _Scope, rows: Sequence[_Row]) -> list[AuditLogEntry]:
+        """직원 이름을 **한 번에** 가져온다 — 줄마다 물으면 쪽마다 50번이다.
+
+        **이름도 울타리 안에서만 찾는다.** `GuideEvent.actor_id` 는 FK 가 아니라
+        그냥 `BigIntField` 라, 어떤 사정으로 남의 의원 직원 번호가 들어 있으면
+        그 사람 **이름이 이 목록에 뜬다.** 실제로 그럴 일은 없어야 하지만
+        (그 진료에 손댈 권한이 있어야 사건이 남는다), 없어야 하는 것과 못
+        하는 것은 다르다 — 못 하게 둔다 (이희진 님 `#287` 리뷰 ⑤).
+
+        못 찾으면 이름이 비고 번호는 남는다. **줄이 사라지지는 않는다** —
+        「누가 했는지 모르는 일이 있었다」가 「아무 일도 없었다」보다 낫다.
+        """
         wanted = {row.actor_staff_id for row in rows if row.actor_staff_id is not None}
         names: dict[int, str] = {}
         if wanted:
-            names = {staff.staff_id: staff.name for staff in await Staff.filter(staff_id__in=sorted(wanted))}
+            found = await Staff.filter(hospital_id=scope.hospital_id, staff_id__in=sorted(wanted))
+            names = {staff.staff_id: staff.name for staff in found}
         return [
             AuditLogEntry(
                 event_id=row.event_id,
