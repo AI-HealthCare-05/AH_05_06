@@ -14,6 +14,7 @@ from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.guides import (
     GuidePreview,
     GuideResponse,
+    GuideSourceResponse,
     MessagePlanRequest,
     MessagePlanResponse,
     PatientHead,
@@ -21,7 +22,7 @@ from app.dtos.guides import (
     SectionEditRequest,
     SectionResponse,
 )
-from app.models.visits import GuideDocument, GuideSection, GuideSectionKey
+from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideSectionSourceSnapshot
 from app.services.guides import GuideService
 from app.services.patient_guide_view import guide_detail_of
 from app.services.patient_links import PatientLinkService
@@ -70,6 +71,12 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
     visit = guide.visit
     patient = visit.patient
     today = datetime.now(DISPLAY_TIMEZONE).date()
+    sources: dict[GuideSectionKey, list[GuideSourceResponse]] = {}
+    # 권한 확인된 안내의 현재 버전만 한 번에 읽는다. 환자 종점에는 추가하지 않는다.
+    for row in await GuideSectionSourceSnapshot.filter(guide_document=guide, guide_version=guide.version).order_by(
+        "position"
+    ):
+        sources.setdefault(row.section_key, []).append(GuideSourceResponse.model_validate(row, from_attributes=True))
     return GuideResponse(
         visit_id=guide.visit_id,
         patient=PatientHead(
@@ -85,7 +92,7 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
         approved_at=guide.approved_at,
         scheduled_at=guide.scheduled_at,
         returned_reason=guide.returned_reason,
-        sections=[_section(s) for s in sorted(guide.sections, key=_section_order)],
+        sections=[_section(s, sources.get(s.section_key, [])) for s in sorted(guide.sections, key=_section_order)],
         preview=await _preview_of(guide) if with_preview else None,
     )
 
@@ -109,13 +116,14 @@ def _section_order(section: GuideSection) -> int:
     return _SECTION_ORDER[GuideSectionKey(section.section_key)]
 
 
-def _section(section: GuideSection) -> SectionResponse:
+def _section(section: GuideSection, sources: list[GuideSourceResponse] | None = None) -> SectionResponse:
     return SectionResponse(
         key=section.section_key,
         body=section.body,
         edited=section.edited_body is not None,
         locked=section.locked,
         warn=section.warn,
+        sources=sources or [],
     )
 
 

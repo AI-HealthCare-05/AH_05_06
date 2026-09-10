@@ -226,6 +226,47 @@ class GuideSection(models.Model):
         return self.edited_body if self.edited_body is not None else self.generated_body
 
 
+class GuideSectionSourceSnapshot(models.Model):
+    """생성 당시의 근거 값. 원본 지식/템플릿 FK를 두지 않아 개정·삭제에 독립적이다.
+
+    섹션 본문이 의료진에 의해 편집돼도 이 기록은 생성 원문의 근거를 보존한다.
+    환자정보·프롬프트·근거 본문은 저장하지 않는다.
+    """
+
+    snapshot_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="source_snapshots",
+        on_delete=OnDelete.CASCADE,
+    )
+    guide_version = fields.IntField()
+    section_key = fields.CharEnumField(enum_type=GuideSectionKey)
+    # 재생성은 기존 section 행을 삭제한다. 이전 생성 버전의 근거는 남긴다.
+    guide_section: fields.ForeignKeyRelation[GuideSection] | None = fields.ForeignKeyField(
+        "models.GuideSection",
+        related_name="source_snapshots",
+        on_delete=OnDelete.SET_NULL,
+        null=True,
+    )
+    position = fields.IntField()
+    generation_mode = fields.CharField(max_length=20)
+    document_id = fields.CharField(max_length=36, null=True)
+    chunk_id = fields.CharField(max_length=36, null=True)
+    source_org = fields.CharField(max_length=200, null=True)
+    source_url = fields.CharField(max_length=1000, null=True)
+    version = fields.CharField(max_length=100)
+    verified_at = fields.DateField(null=True)
+    score = fields.FloatField(null=True)
+    body_sha256 = fields.CharField(max_length=64)
+    template_id = fields.CharField(max_length=100, null=True)
+    fallback_reason = fields.CharField(max_length=100, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "guide_section_source_snapshot"
+        unique_together = (("guide_document", "guide_version", "section_key", "position"),)
+
+
 class GuideEvent(models.Model):
     """생성 · 수정 · 승인 · 반려 이력.
 

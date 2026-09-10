@@ -19,6 +19,20 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class GuideSourceResponse(StrictModel):
+    generation_mode: str
+    document_id: str | None = None
+    chunk_id: str | None = None
+    source_org: str | None = None
+    source_url: str | None = None
+    version: str
+    verified_at: date | None = None
+    score: float | None = None
+    body_sha256: str
+    template_id: str | None = None
+    fallback_reason: str | None = None
+
+
 class SectionResponse(StrictModel):
     key: GuideSectionKey
     body: str
@@ -28,6 +42,7 @@ class SectionResponse(StrictModel):
     locked: bool
     #: ⚠ 문구. **서버가 판정한다** — 「AI 가 자신 없는 곳」을 화면이 알 수 없다.
     warn: str | None = None
+    sources: list[GuideSourceResponse] = Field(default_factory=list)
 
 
 class PatientHead(StrictModel):

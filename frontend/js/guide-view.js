@@ -99,6 +99,23 @@ function guideTabsHtml(sections, current) {
    `canEdit` 는 역할이 정한다 — **화면을 감추지 않고 버튼만 잠근다.** 스탭도
    의사 화면을 다 볼 수 있어야 하고(와이어프레임은 한 화면이다), 고칠 수 있는
    범위만 다르다. 실제 차단은 서버가 한다(KEY-9). */
+function guideSourcesHtml(sources) {
+  if (!sources || !sources.length) return "";
+  return '<details class="block__sources"><summary>생성 당시 근거 · 의료진 검토용</summary><ul>' +
+    sources.map(function (source) {
+      if (source.generation_mode === "template") {
+        var reason = source.fallback_reason === "search_infrastructure_exhausted"
+          ? "검색 장애 → 템플릿" : "근거 없음 → 템플릿";
+        return "<li>" + esc(reason) + " · 템플릿 " + esc(source.template_id || "") +
+          " · 버전 " + esc(source.version) + "</li>";
+      }
+      return "<li>RAG · " + esc(source.source_org || "") +
+        " · 문서 " + esc(source.document_id || "") + " · 버전 " + esc(source.version) +
+        " · 확인일 " + esc(source.verified_at || "") +
+        " · 출처 " + esc(source.source_url || "") + "</li>";
+    }).join("") + "</ul></details>";
+}
+
 function guideSectionHtml(section, canEdit, editingKey) {
   var title = GUIDE_SECTION_LABEL[section.key] || section.key;
 
@@ -152,6 +169,7 @@ function guideSectionHtml(section, canEdit, editingKey) {
     esc(section.body) +
     "</p>" +
     (section.edited ? '<p class="block__hint">이 항목은 수정되었습니다</p>' : "") +
+    guideSourcesHtml(section.sources) +
     tail +
     "</section>"
   );
