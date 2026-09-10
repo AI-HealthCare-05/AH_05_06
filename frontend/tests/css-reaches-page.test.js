@@ -118,7 +118,7 @@ test("**공용 어휘가 한 곳에만 있다** — 두 벌이면 한쪽만 고�
   const shared = [
     ".box", ".box__head", ".box__title", ".facts", ".cols2",
     ".tabs", ".tab", ".button-ghost", ".button-primary",
-    ".blank", ".warnline", ".vtabs",
+    ".blank", ".vtabs",
   ];
 
   const clash = [];

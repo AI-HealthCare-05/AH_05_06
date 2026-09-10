@@ -165,22 +165,6 @@ function guidePanelHtml(sections, current, canEdit, editingKey) {
     .join("");
 }
 
-/* 위에 몇 개를 봐야 하는지 먼저 말한다. 없으면 「없다」고 분명히 말한다 —
-   그래야 읽지 않고 승인해도 된다는 것이 전해진다. */
-function guideWarnLine(sections) {
-  var n = 0;
-  for (var i = 0; i < (sections || []).length; i++) {
-    if (sections[i].warn) n++;
-  }
-  return {
-    count: n,
-    className: "warnline" + (n ? " warnline--warn" : " warnline--ok"),
-    text: n
-      ? "확인 부탁드리는 곳 " + n + "군데 — ⚠ 표시만 보시면 됩니다"
-      : "확인 부탁드릴 곳이 없습니다 — 그대로 승인하셔도 됩니다",
-  };
-}
-
 
 /* ── 안내문 화면 한 판 (와이어프레임 S1-11 · D1-1) ─────────────────────
  *
