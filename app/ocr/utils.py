@@ -71,10 +71,7 @@ async def assert_ocr_jobs_ready(visit_id: int, hospital_id: int) -> list[OcrJob]
     # 이보다 나중에 생성된 PROCESSING job이 있으면 같은 배치의 형제 파일이 처리 중이므로 차단한다.
     # 최신 COMPLETED보다 오래된 PROCESSING은 방치·고착 job으로 보고 무시한다.
     newest_completed = completed[0]
-    if any(
-        j.status == OcrJobStatus.PROCESSING and j.created_at > newest_completed.created_at
-        for j in jobs
-    ):
+    if any(j.status == OcrJobStatus.PROCESSING and j.created_at > newest_completed.created_at for j in jobs):
         raise OcrApiError(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "OCR_RESULT_NOT_READY",
