@@ -31,7 +31,19 @@ class StaffSummary(StrictModel):
     staff_id: int
     login_id: str
     name: str
-    roles: list[StaffRole]
+    #: **읽을 때는 저장된 것을 그대로 준다** — `list[StaffRole]` 이 아니다.
+    #:
+    #: enum 으로 두면 `roles` JSON 에 아는 값 밖의 것이 한 줄이라도 있을 때
+    #: `ValueError` 로 **목록 전체가 500** 이 된다 — 관리자가 그 의원의 아무
+    #: 직원도 못 본다. 레거시 데이터 · 백필 · raw insert · `bulk_create` 처럼
+    #: `Staff.save()` 검증을 지나지 않는 길이 있다 (한금준 님 `#285` 리뷰 ①).
+    #:
+    #: 건너뛰지 않고 **보인다.** 이상한 값을 감추면 그것을 고칠 사람이 그 사실을
+    #: 모른다 — 화면은 모르는 값을 그대로 적는다(`staffRolesLabel`).
+    #:
+    #: **만드는 쪽은 그대로 엄하다** — `StaffCreateRequest.roles` 는 `StaffRole`
+    #: 이고 조합 규칙까지 본다. 들어오는 문은 좁게, 나가는 창은 정직하게.
+    roles: list[str]
     status: StaffStatus
     #: 첫 로그인 전인지 화면이 알아야 한다 — A1-1 의 「초기 비밀번호 상태」.
     must_change_password: bool
@@ -79,6 +91,8 @@ class StaffCreatedResponse(StrictModel):
     staff_id: int
     login_id: str
     name: str
+    #: 방금 만든 계정이라 **값이 확실하다** — 조합 규칙을 지난 것만 여기 온다.
+    #: 목록(`StaffSummary`)이 `list[str]` 인 것과 다른 까닭이 이것이다.
     roles: list[StaffRole]
     status: StaffStatus
     must_change_password: bool

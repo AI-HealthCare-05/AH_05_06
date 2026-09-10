@@ -5446,7 +5446,7 @@
           },
           "roles": {
             "items": {
-              "$ref": "#/components/schemas/StaffRole"
+              "type": "string"
             },
             "title": "Roles",
             "type": "array"
