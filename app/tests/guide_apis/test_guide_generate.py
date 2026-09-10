@@ -1105,8 +1105,8 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
         """oldest PROCESSING(방치) → newest COMPLETED confirmed → 통과.
 
         오래된 PROCESSING job이 남아 있어도 더 최신 COMPLETED confirmed job이
-        있으면 게이트가 통과된다. 최신 job 기준으로 판정하므로 과거의
-        방치된 PROCESSING은 영향을 주지 않는다.
+        있으면 게이트가 통과된다. 최신 COMPLETED job 기준으로 판정하므로
+        이보다 오래된 PROCESSING(방치·고착)은 무시된다.
         """
         clinic = await make_clinic()
         staff = await make_staff(clinic, "staff01", ["staff"])
@@ -1131,3 +1131,39 @@ class TestGenerateGateJobTimingRegression(GenerateGuideTestCase):
             response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
 
         assert response.status_code == 201
+
+    async def test_sibling_processing_newer_than_completed_blocks_generate(self) -> None:
+        """COMPLETED(먼저 완료) + 형제 PROCESSING(나중 생성, 아직 처리 중) → 422 OCR_RESULT_NOT_READY.
+
+        같은 업로드 배치에서 파일 A(먼저 생성)가 먼저 완료되고
+        파일 B(나중 생성)가 아직 PROCESSING이면, 최신 COMPLETED(A)보다
+        나중에 생성된 PROCESSING(B)가 존재하므로 게이트를 차단해야 한다.
+        (KEY-288 리뷰: jobs[0]만 보는 버그 회귀 테스트)
+        """
+        clinic = await make_clinic()
+        staff = await make_staff(clinic, "staff01", ["staff"])
+        visit = await make_visit(clinic)
+
+        # 1st: 파일 A job — 먼저 생성, 먼저 완료(COMPLETED)
+        await attach_confirmed_ocr(visit, staff.staff_id)
+        await OcrJob.filter(ocr_job_id=f"syn-gen-{visit.visit_id}").update(
+            created_at=datetime(2026, 9, 10, 10, 0, 0, tzinfo=UTC),
+        )
+
+        # 2nd: 파일 B job — 나중 생성, 아직 PROCESSING (created_at이 COMPLETED보다 나중)
+        sibling = await OcrJob.create(
+            ocr_job_id=f"syn-sibling-proc-{visit.visit_id}",
+            hospital_id=clinic.hospital_id,
+            visit_id=visit.visit_id,
+            requested_by=staff.staff_id,
+            status=OcrJobStatus.PROCESSING,
+        )
+        await OcrJob.filter(ocr_job_id=sibling.ocr_job_id).update(
+            created_at=datetime(2026, 9, 10, 10, 0, 1, tzinfo=UTC),  # 1초 뒤 생성
+        )
+
+        async with self.client() as client:
+            response = await client.post(f"{BASE}/{visit.visit_id}/guide/generate", headers=await self.sign_in(staff))
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "OCR_RESULT_NOT_READY"
