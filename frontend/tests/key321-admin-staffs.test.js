@@ -172,7 +172,21 @@ test("이 화면이 붙이는 클래스가 이 화면이 싣는 CSS 에 있다",
   }
   assert.ok(used.has("staffs"), "검사가 클래스를 못 긁고 있다");
 
-  const missing = [...used].filter((name) => !css.includes("." + name)).sort();
+  /* **부분 문자열로 보면 안 된다.** 처음에 `css.includes(".button-primary")` 로
+     쟀는데, `admin.css` 에 있던 `.staff-add__foot .button-primary` 라는 **자손
+     규칙**이 그것을 만족시켰다 — 바탕 규칙(배경·글자색·모서리)은 어디에도
+     없어서 브라우저 기본 회색 버튼이 떴는데 검사는 초록이었다.
+
+     `css-reaches-page.test.js` 와 같은 잣대로 **바탕 규칙**만 센다: 줄 처음에
+     오고 뒤에 ` {` 만 오는 것. */
+  const defined = new Set();
+  for (const line of css.split("\n")) {
+    const match = line.match(/^(\.[a-zA-Z][\w-]*) \{$/);
+    if (match) defined.add(match[1].slice(1));
+  }
+  assert.ok(defined.has("staffs"), "바탕 규칙을 못 긁고 있다");
+
+  const missing = [...used].filter((name) => !defined.has(name)).sort();
   assert.deepEqual(missing, [], `모양 없이 뜰 클래스: ${missing.join(", ")}`);
 });
 
