@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.apis.v1.admin_staff_routers import admin_staff_router
 from app.apis.v1.chatbot_routers import chatbot_router
 from app.apis.v1.front_desk_routers import front_desk_router
 from app.apis.v1.guide_copy_routers import guide_copy_router
@@ -53,3 +54,4 @@ v1_routers.include_router(patient_auth_router)
 v1_routers.include_router(patient_otp_router)
 v1_routers.include_router(chatbot_router)
 v1_routers.include_router(patient_feedback_router)
+v1_routers.include_router(admin_staff_router)

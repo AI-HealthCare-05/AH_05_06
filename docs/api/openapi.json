@@ -5093,6 +5093,106 @@
         "title": "SetPhase",
         "type": "string"
       },
+      "StaffCreateRequest": {
+        "additionalProperties": false,
+        "description": "A1-2 가 보내는 것 넷.\n\n**병원은 안 받는다.** 로그인한 관리자의 병원으로 정한다 — 요청이 정하게\n하면 다른 의원에 계정을 만들 수 있다.\n\n**`status` 도 안 받는다.** 만들어지는 계정은 언제나 `active` 다. 퇴사\n처리는 A1-3 몫이고, 만들면서 퇴사시키는 일은 없다.",
+        "properties": {
+          "login_id": {
+            "maxLength": 50,
+            "pattern": "^[a-z0-9]{4,}$",
+            "title": "Login Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "title": "Password",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/StaffRole"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "login_id",
+          "name",
+          "password",
+          "roles"
+        ],
+        "title": "StaffCreateRequest",
+        "type": "object"
+      },
+      "StaffCreatedResponse": {
+        "additionalProperties": false,
+        "description": "만든 결과.\n\n**비밀번호를 되돌려주지 않는다.** 관리자가 방금 적어 넣은 값이라 화면이\n이미 알고 있고, 응답에 실으면 그 값이 접속 기록·프록시 로그·브라우저\n개발자 도구에 한 겹 더 남는다.",
+        "properties": {
+          "login_id": {
+            "title": "Login Id",
+            "type": "string"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/StaffRole"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "staff_id": {
+            "title": "Staff Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StaffStatus"
+          }
+        },
+        "required": [
+          "staff_id",
+          "login_id",
+          "name",
+          "roles",
+          "status",
+          "must_change_password"
+        ],
+        "title": "StaffCreatedResponse",
+        "type": "object"
+      },
+      "StaffListResponse": {
+        "additionalProperties": false,
+        "description": "**쪽 나눔을 두지 않는다.** 한 의원의 직원은 수십 명 규모다 —\n커서를 두면 화면이 「더 보기」를 그려야 하는데 그 자리가 A1-1 에 없다.\n수백을 넘기기 시작하면 그때 계약을 바꾼다.",
+        "properties": {
+          "staffs": {
+            "items": {
+              "$ref": "#/components/schemas/StaffSummary"
+            },
+            "title": "Staffs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "staffs"
+        ],
+        "title": "StaffListResponse",
+        "type": "object"
+      },
       "StaffLoginRequest": {
         "description": "계약 4절 — `{ \"login_id\": \"staff01\", \"password\": \"…\" }`\n\n`login_id` 규칙은 `^[a-z0-9]{4,}$` 이지만 **로그인에서는 검사하지 않는다.**\n형식으로 걸러 422 를 주면, 규칙에 안 맞는 문자열이 「없는 아이디」와 다른\n답을 받아 계정 존재 여부를 흘린다. 형식 검사는 계정을 만들 때 한다.",
         "properties": {
@@ -5175,6 +5275,84 @@
           "clinic_name"
         ],
         "title": "StaffMeResponse",
+        "type": "object"
+      },
+      "StaffRole": {
+        "enum": [
+          "admin",
+          "doctor",
+          "staff"
+        ],
+        "title": "StaffRole",
+        "type": "string"
+      },
+      "StaffStatus": {
+        "enum": [
+          "active",
+          "left"
+        ],
+        "title": "StaffStatus",
+        "type": "string"
+      },
+      "StaffSummary": {
+        "additionalProperties": false,
+        "description": "목록 한 줄 — A1-1 이 그리는 것.\n\n**비밀번호와 관련된 어떤 값도 없다.** 해시도 내보내지 않는다. 화면이\n쓰지 않는 값을 계약에 담으면 그 값이 로그·캐시·브라우저 기록으로 퍼진다.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "login_id": {
+            "title": "Login Id",
+            "type": "string"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/StaffRole"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "staff_id": {
+            "title": "Staff Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StaffStatus"
+          }
+        },
+        "required": [
+          "staff_id",
+          "login_id",
+          "name",
+          "roles",
+          "status",
+          "must_change_password",
+          "last_login_at",
+          "created_at"
+        ],
+        "title": "StaffSummary",
         "type": "object"
       },
       "TimelineCategory": {
@@ -5916,6 +6094,78 @@
         "summary": "Get Patient Feedback",
         "tags": [
           "patient-feedback"
+        ]
+      }
+    },
+    "/api/v1/admin/staffs": {
+      "get": {
+        "description": "A1-1 — 내 의원 직원 목록. 이름 · 아이디 · 역할 · 상태.",
+        "operationId": "list_staffs_api_v1_admin_staffs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Staffs",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "A1-2 — 직원 추가. 만든 계정은 첫 로그인에서 비밀번호를 바꿔야 한다(L-3).",
+        "operationId": "create_staff_api_v1_admin_staffs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Staff",
+        "tags": [
+          "admin"
         ]
       }
     },
