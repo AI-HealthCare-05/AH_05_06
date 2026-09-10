@@ -744,28 +744,31 @@ GET /api/v1/visits/{visit_id}/timeline
 
 #### 안내 생성 게이트 — 파일별 부분 실패 격리 (KEY-288)
 
-`POST /visits/{visit_id}/guide/generate`는 **비제외(`excluded_from_guide=False`) job 전체**를 기준으로 판정합니다.
+`POST /visits/{visit_id}/guide/generate`는 **비제외(`excluded_from_guide=False`) job 전체**를 기준으로 판정합니다. 판정 기준은 `assert_ocr_jobs_ready`(`app/ocr/utils.py`) 하나이며 `finalize_ocr`도 같은 함수를 씁니다.
 
 | 비제외 job 상태 | 결과 | 오류 코드 |
 |---|---|---|
-| PROCESSING job이 하나라도 있음 | 차단 — 완료 후 확정해야 한다 | `OCR_RESULT_NOT_READY` 422 |
-| COMPLETED job이 하나도 없음(전부 FAILED) | 차단 — 재시도하거나 해당 job을 제외해야 한다 | `OCR_FAILED` 422 |
+| COMPLETED job이 없고 PROCESSING job이 있음 | 차단 — 완료 후 확정해야 한다 | `OCR_RESULT_NOT_READY` 422 |
+| COMPLETED job이 없고 전부 FAILED | 차단 — 재시도하거나 해당 job을 제외해야 한다 | `OCR_FAILED` 422 |
+| 최신 COMPLETED job보다 **나중에 생성된** PROCESSING job이 있음 | 차단 — 같은 업로드 배치의 파일이 아직 처리 중 | `OCR_RESULT_NOT_READY` 422 |
+| 최신 COMPLETED job보다 **오래된** PROCESSING job만 있음(방치·고착) | 무시하고 아래 규칙 계속 | — |
 | COMPLETED job의 미확정 필드 있음 | 차단 — 모든 항목을 확정해야 한다 | `OCR_NOT_CONFIRMED` 422 |
 | COMPLETED job 전체 확정, 확정 필드 있음 | 통과 — FAILED job은 안내 근거에서 제외됨 | — |
 | 비제외 job 없음 | 차단 | `OCR_NOT_CONFIRMED` 422 |
 
-`excluded_from_guide=True`인 job은 판정에서 건너뜁니다. FAILED job은 COMPLETED job이 존재하는 한 안내 생성을 차단하지 않습니다.
+`excluded_from_guide=True`인 job은 판정에서 건너뜁니다. FAILED job은 COMPLETED job이 존재하는 한 안내 생성을 차단하지 않습니다. PROCESSING job은 **`created_at` 기준으로 최신 COMPLETED job보다 나중일 때만** 차단하며, 그보다 오래된 PROCESSING은 방치된 job으로 보고 무시합니다.
 
-안내 생성에 사용하는 OcrField는 COMPLETED job 전체 result에서 `field_type`별로 병합합니다. 같은 `field_type`이 여러 result에 있으면 확정 우선, 동급이면 confidence 높은 쪽을 선택합니다.
+안내 생성에 사용하는 OcrField는 COMPLETED job 전체 result에서 `field_type`별로 병합합니다. 같은 `field_type`이 여러 result에 있으면 **확정 우선 → 문서 유형 우선순위(EMR > PRESCRIPTION > LAB_RESULT) → confidence 높은 쪽** 순으로 선택합니다.
 
 #### 재업로드 시나리오별 동작
 
 | 시나리오 | 안내 생성 |
 |---|---|
-| 1차 업로드 확정 → 2차 업로드 `PROCESSING` 중 | 차단(`OCR_RESULT_NOT_READY`) |
-| 1차 업로드 확정 → 2차 업로드 `FAILED` | 차단(`OCR_FAILED`) — 2차 제외 후 생성 가능 |
-| 1차 업로드 확정 → 2차 업로드 확정 | 통과(2차 기준으로 판정) |
-| 오래된 `PROCESSING` 방치 → 이후 `COMPLETED` 확정 | 통과(최신 `COMPLETED` 기준) |
+| 1차 업로드 확정 → 2차 업로드 `PROCESSING` 중 | 차단(`OCR_RESULT_NOT_READY`) — 2차가 최신 `COMPLETED`보다 나중 |
+| 1차 업로드 확정 → 2차 업로드 `FAILED` | 통과(1차 `COMPLETED` 기준) — `FAILED`는 안내 근거에서 제외 |
+| 1차 업로드 확정 → 2차 업로드 확정 | 통과(`COMPLETED` job 전체 result 병합) |
+| 한 번에 파일 2개 업로드 → 1개 `COMPLETED`, 형제 1개 `PROCESSING` | 차단(`OCR_RESULT_NOT_READY`) — 형제가 최신 `COMPLETED`보다 나중 |
+| 오래된 `PROCESSING` 방치 → 이후 `COMPLETED` 확정 | 통과(최신 `COMPLETED` 기준, 오래된 `PROCESSING` 무시) |
 | 비제외 job 없음 | 차단(`OCR_NOT_CONFIRMED`) |
 
 OCR 도메인 오류는 동결 계약의 `code`, `message`, `field_errors` 응답 구조를
