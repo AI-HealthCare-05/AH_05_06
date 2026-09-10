@@ -3,10 +3,9 @@
   "baseline": "frontend/js/frames.js@c1fcded",
   "legacy_claimed_count": 63,
   "legacy_source_available": false,
-  "current_incomplete_count": 53,
+  "current_incomplete_count": 52,
   "delete_candidates": [],
   "wp_f_handoff": [
-    "A1-2",
     "A1-3",
     "A1-5",
     "A1-6",

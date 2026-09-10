@@ -17,6 +17,8 @@ FastAPI 의존성은 이 함수를 감싸기만 한다.
 엔드포인트에서 실제로 403이 나오는지는 엔드포인트가 생긴 뒤에 붙인다.
 """
 
+from itertools import combinations
+
 import pytest
 
 from app.tests.rbac.matrix import VALID_COMBINATIONS, Permission, Role, expected, label
@@ -42,6 +44,49 @@ class TestContract:
         contracted = {p.value for p in Permission}
         assert implemented >= contracted, f"구현에 없는 권한: {sorted(contracted - implemented)}"
         assert not (implemented - contracted), f"계약에 없는 권한이 구현에만 있다: {sorted(implemented - contracted)}"
+
+    def test_the_valid_combinations_match(self) -> None:
+        """**조합표가 두 벌이다** — 계약(여기)과 운영(`app/core/rbac.py`).
+
+        A1-2 가 계정을 만들 때 막을 근거가 운영 코드에 있어야 해서 한 벌을
+        그쪽에 뒀다(KEY-321). 이 파일에서 읽어다 쓰면 구현이 제 답안을 채점하는
+        것이라 각자 적고, 어긋나면 여기서 걸린다.
+        """
+        implemented = {frozenset(str(r) for r in combo) for combo in rbac.VALID_ROLE_COMBINATIONS}
+        contracted = {frozenset(str(r) for r in combo) for combo in VALID_COMBINATIONS}
+        assert implemented == contracted, (
+            "운영 조합표가 계약과 다르다 — "
+            f"운영에만: {sorted(sorted(c) for c in implemented - contracted)} · "
+            f"계약에만: {sorted(sorted(c) for c in contracted - implemented)}"
+        )
+
+    def test_making_an_account_refuses_what_the_table_refuses(self) -> None:
+        """**계약에 없는 조합은 만들 수 없어야 한다** — 전수로 본다.
+
+        역할 셋의 멱집합 여덟(빈 것 포함)을 다 넣어 본다. 계약에 있는 다섯만
+        참이고 나머지 셋(`staff|doctor` · `staff|doctor|admin` · 빈 것)은 거짓이다.
+        """
+        every = [
+            frozenset(combo)
+            for size in range(len(Role) + 1)
+            for combo in combinations(sorted(r.value for r in Role), size)
+        ]
+        allowed = {frozenset(str(r) for r in combo) for combo in VALID_COMBINATIONS}
+        for combo in every:
+            want = combo in allowed
+            got = rbac.is_valid_role_combination(sorted(combo))
+            assert got is want, f"{sorted(combo) or '빈 조합'} 을 {'막았다' if want else '통과시켰다'} — 계약과 다르다"
+
+    @pytest.mark.parametrize("roles", [["admin", "typo"], ["admin", "admin"], ["ADMIN"], [], [None]])
+    def test_a_malformed_role_never_becomes_an_account(self, roles: list[object]) -> None:
+        """**모르는 값을 버리고 통과시키면 안 된다.**
+
+        `has_permission` 은 모르는 역할을 버리고 남은 것으로 판정한다 — 이미
+        있는 계정을 읽는 자리라 그것이 맞다. 만드는 자리에서 같은 관용을 쓰면
+        `["admin","typo"]` 가 `["admin"]` 으로 저장돼 고른 것과 저장된 것이
+        갈린다. 대소문자도 값이 다른 것이지 같은 것이 아니다.
+        """
+        assert rbac.is_valid_role_combination(roles) is False  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("permission", sorted(Permission), ids=lambda p: p.value)

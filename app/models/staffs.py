@@ -112,3 +112,74 @@ class Staff(models.Model):
         if unknown:
             raise ValidationError(f"모르는 역할입니다: {unknown}")
         await super().save(*args, **kwargs)  # type: ignore[arg-type]
+
+
+class StaffAccountEventType(StrEnum):
+    """계정에 무슨 일이 있었나. **A1-2 가 지금 만드는 것은 하나뿐이다.**
+
+    A1-3(수정 · 비밀번호 재설정)이 들어올 때 그 자리에서 늘린다 — 쓰지도 않을
+    이름을 미리 적어 두면 「이 값은 어디서 남나」에 아무도 답하지 못한다.
+    """
+
+    STAFF_CREATED = "STAFF_CREATED"
+
+
+class StaffAccountEvent(models.Model):
+    """직원 계정에 생긴 일 — **덧붙이기만 한다** (KEY-321, 와이어프레임 A1-6).
+
+    「누가 언제 누구의 계정을 만들었나」가 남아야 나중에 되짚을 수 있다. 계정은
+    권한을 주는 일이라, 진료 기록을 고치는 것과 같은 무게로 남긴다.
+
+    **고치거나 지우지 않는다.** 이 모델을 쓰는 코드는 `create` 만 부른다. 감사
+    기록을 나중에 손댈 수 있으면 그것은 감사 기록이 아니다.
+
+    **비밀번호는 어느 칸에도 안 담는다.** 원문도 해시도 없다 — 담을 자리를
+    만들지 않는 것이 담지 않겠다는 약속을 지키는 가장 확실한 방법이다
+    (`PatientUsageEvent` 가 원문을 안 담는 것과 같은 규율).
+
+    `actor` 는 그 일을 한 사람, `subject` 는 그 일을 당한 계정이다. 둘 다
+    `RESTRICT` 다 — 계정을 지우는 경로가 지금 없고(`status` 를 `left` 로만
+    바꾼다), 생겨도 감사 기록이 먼저 사라지면 안 된다.
+
+    KEY-322 가 이벤트 넷을 한 목록으로 합칠 때 이 표가 다섯째가 된다. 그때 쓸
+    공통 모양(시각 · 행위자 · 유형 · 대상)을 미리 갖춰 둔다.
+    """
+
+    staff_account_event_id = fields.BigIntField(primary_key=True)
+    hospital: fields.ForeignKeyRelation[Hospital] = fields.ForeignKeyField(
+        "models.Hospital",
+        related_name="staff_account_events",
+        on_delete=OnDelete.RESTRICT,
+        source_field="hospital_id",
+    )
+    hospital_id: int
+    #: 한 일을 한 사람. 관리자다.
+    #:
+    #: **이름이 `actor` 가 아니라 `actor_staff` 인 까닭.** Tortoise 가 만들어 주는
+    #: `<필드이름>_id` 접근자는 `source_field` 가 아니라 **필드 이름**에서 나온다.
+    #: `actor` 로 두면 접근자가 `actor_id` 인데 칸은 `actor_staff_id` 라, `create()`
+    #: 에 `actor_staff_id=` 를 넘겨도 **조용히 무시되고 NULL 이 들어간다**
+    #: (실측: `Column 'actor_staff_id' cannot be null`). 이름을 맞춰 둔다.
+    actor_staff: fields.ForeignKeyRelation["Staff"] = fields.ForeignKeyField(
+        "models.Staff",
+        related_name="staff_account_events_made",
+        on_delete=OnDelete.RESTRICT,
+        source_field="actor_staff_id",
+    )
+    actor_staff_id: int
+    #: 그 일이 일어난 계정.
+    subject_staff: fields.ForeignKeyRelation["Staff"] = fields.ForeignKeyField(
+        "models.Staff",
+        related_name="staff_account_events_received",
+        on_delete=OnDelete.RESTRICT,
+        source_field="subject_staff_id",
+    )
+    subject_staff_id: int
+    event_type = fields.CharEnumField(enum_type=StaffAccountEventType)
+    #: 그때 준 역할. 나중에 A1-3 이 역할을 바꿔도 **준 시점의 값**이 남는다.
+    roles: fields.Field[list[str]] = fields.JSONField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "staff_account_event"
+        indexes = (("hospital_id", "created_at"),)
