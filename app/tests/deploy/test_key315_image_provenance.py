@@ -209,3 +209,88 @@ class TestTheRunbookSaysHowToReadIt:
         assert done.stdout.count("cafe1234 (develop)") == len(names), (
             f"라벨을 못 읽는다 — 인용이 두 겹 셸을 못 지났다\nstdout:\n{done.stdout}\nstderr:\n{done.stderr}"
         )
+
+
+def _dirty_block(script: str) -> str:
+    """`-dirty` 를 붙이는 `if` 덩이만 떼어 온다 — 여는 줄부터 짝 `fi` 까지."""
+    lines = script.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("if [[ -n ") and "git status --porcelain" in line)
+    end = next(i for i in range(start + 1, len(lines)) if lines[i] == "fi")
+    return "\n".join(lines[start : end + 1])
+
+
+class TestTheDirtyWarningCannotKillTheDeploy:
+    """**경고 한 줄이 배포를 죽이면 안 된다.**
+
+    이 스크립트는 `set -eo pipefail` 로 연다. 그 아래에서 `... | head -10` 을
+    쓰면, 앞이 파이프 버퍼(64KB)보다 많이 쓸 때 `head` 가 먼저 파이프를 닫아
+    앞이 SIGPIPE 로 죽고 `pipefail` 이 141 을 전파한다 — **경고만 찍히고 굽지도
+    올리지도 않은 채 배포가 끝난다.**
+
+    한 번 실제로 넣었다. `-dirty` 판정 범위를 좁히면서(리뷰 ②) 미리보기 줄에
+    `head` 를 썼고, 2heej 님이 잡아 주셨다. 눈으로는 안 보인다 — **더러운 자리가
+    많을 때만** 터지기 때문이다. 그래서 여기서는 읽지 않고 **돌린다.**
+    """
+
+    def test_the_guard_finds_the_block(self) -> None:
+        """덩이를 못 떼면 아래가 빈 스크립트를 돌리고 조용히 지나간다."""
+        block = _dirty_block(read(DEPLOY))
+        assert "git status --short" in block, "미리보기 줄이 덩이 안에 없다 — 검사가 헛돈다"
+        assert block.endswith("fi"), f"덩이가 `fi` 로 안 끝난다 — 잘못 떼었다\n{block[-120:]}"
+
+    def test_a_big_dirty_tree_does_not_stop_the_deploy(self, tmp_path: Path) -> None:
+        """**출력이 파이프 버퍼를 넘겨도 뒤가 이어져야 한다.**
+
+        진짜 저장소를 만들어 추적 파일 수천 개를 고친다 — 상태 출력이 64KB 를
+        넘어야 이 자리가 재현된다. 그 위에서 배포 스크립트의 그 덩이를 **그대로**
+        `set -eo pipefail` 아래 돌리고, 뒤 줄까지 가는지 본다.
+
+        `head -10` 으로 되돌리면 이 검사가 종료코드 141 로 빨개진다.
+        """
+        git = shutil.which("git")
+        if git is None:  # pragma: no cover - 개발 판에는 늘 있다
+            pytest.skip("git 이 없다")
+
+        def run_git(*args: str) -> None:
+            subprocess.run([git, *args], cwd=tmp_path, capture_output=True, check=True)
+
+        many = tmp_path / "app" / "many"
+        many.mkdir(parents=True)
+        # 이름을 길게 둬야 줄 하나가 길어져 적은 파일로도 버퍼를 넘긴다.
+        names = [many / f"file_{i:05d}_{'n' * 40}.txt" for i in range(4000)]
+        for path in names:
+            path.write_text("a", encoding="utf-8")
+        run_git("init", "-q", ".")
+        run_git("config", "user.email", "probe@example.invalid")
+        run_git("config", "user.name", "probe")
+        run_git("add", "-A")
+        run_git("commit", "-qm", "seed")
+        for path in names:
+            path.write_text("b", encoding="utf-8")
+
+        status = subprocess.run(
+            [git, "status", "--short", "--", "app"], cwd=tmp_path, capture_output=True, text=True, check=True
+        )
+        assert len(status.stdout) > 65536, (
+            f"상태 출력이 {len(status.stdout)}B 뿐이다 — 파이프 버퍼를 안 넘겨 이 검사가 헛돈다"
+        )
+
+        block = _dirty_block(read(DEPLOY))
+        script = (
+            "set -eo pipefail\n"
+            'COLOR_RED=""\n'
+            'COLOR_NC=""\n'
+            'SOURCE_REVISION="cafe1234"\n'
+            "BUILD_CONTEXT_PATHS=(app)\n"
+            f"{block}\n"
+            'echo "REACHED_THE_BUILD"\n'
+        )
+        done = subprocess.run(["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True)
+
+        assert done.returncode == 0, (
+            f"더러운 자리가 많을 때 배포가 종료코드 {done.returncode} 로 멈춘다 — "
+            f"굽기 전에 끝난다\nstdout:\n{done.stdout[-400:]}\nstderr:\n{done.stderr[-400:]}"
+        )
+        assert "REACHED_THE_BUILD" in done.stdout, (
+            f"경고 뒤로 못 간다 — 굽는 자리에 도달 못 했다\nstdout:\n{done.stdout[-400:]}"
+        )

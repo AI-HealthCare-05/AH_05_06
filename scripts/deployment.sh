@@ -51,7 +51,15 @@ if [[ -n "$(git status --porcelain -- "${BUILD_CONTEXT_PATHS[@]}" 2>/dev/null)" 
   SOURCE_REVISION="${SOURCE_REVISION}-dirty"
   echo "${COLOR_RED}⚠ 이미지에 담기는 자리에 커밋 안 된 변경이 있다 — 라벨에 -dirty 로 남는다.${COLOR_NC}"
   echo "${COLOR_RED}  이 이미지는 어느 커밋으로도 다시 만들 수 없다.${COLOR_NC}"
-  git status --short -- "${BUILD_CONTEXT_PATHS[@]}" | head -10
+  # **`head` 를 안 쓴다.** 이 스크립트는 `set -eo pipefail` 이다. 더러운 자리가
+  # 많아 출력이 파이프 버퍼(64KB)를 넘기면 `head` 가 먼저 파이프를 닫고, git 이
+  # SIGPIPE 로 죽고, `pipefail` 이 141 을 전파해 **배포가 여기서 멈춘다** —
+  # 경고만 찍고 굽지도 올리지도 않은 채로. 일괄 포맷·대형 리팩터처럼 하필
+  # 조심해야 할 배포에서만 터진다 (2heej 님 리뷰).
+  #
+  # `sed` 는 stdin 을 끝까지 읽어 SIGPIPE 가 안 난다. 읽는 양은 상태 출력뿐이라
+  # 값이 없다.
+  git status --short -- "${BUILD_CONTEXT_PATHS[@]}" | sed -n '1,10p'
   echo ""
 fi
 
