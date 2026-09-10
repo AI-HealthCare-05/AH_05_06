@@ -223,11 +223,8 @@ async def _find_result_for_field(visit_id: int, hospital_id: int, field_type: st
     all_results = await OcrResult.filter(ocr_job_id__in=job_ids).all()
     result_by_job: dict[str, OcrResult] = {r.ocr_job_id: r for r in all_results}
     result_ids = [r.ocr_result_id for r in all_results]
-    field_result_ids: set[int] = set(
-        await OcrField.filter(ocr_result_id__in=result_ids, field_type=field_type).values_list(
-            "ocr_result_id", flat=True
-        )
-    )
+    matched = await OcrField.filter(ocr_result_id__in=result_ids, field_type=field_type).values("ocr_result_id")
+    field_result_ids: set[int] = {row["ocr_result_id"] for row in matched}
     job_docs = await OcrJobDocument.filter(ocr_job_id__in=job_ids).all()
     doc_type_by_job: dict[str, OcrDocumentType] = {jd.ocr_job_id: jd.document_type for jd in job_docs}
 
