@@ -34,7 +34,7 @@ from app.models.visits import (
     PatientUsageEventType,
     Visit,
 )
-from app.tests.auth_base import AuthTestCase, login_headers, make_staff_account
+from app.tests.auth_base import AuthTestCase, login_headers, make_clinic, make_staff_account
 
 AUDIT_URL = "/api/v1/admin/audit-logs"
 
@@ -55,8 +55,10 @@ class AuditTestCase(AuthTestCase):
         await super().asyncSetUp()
         self.base = datetime(2026, 9, 1, 3, 0, tzinfo=UTC)
 
-        self.hospital = await Hospital.create(name="도로시여성의원")
-        self.other = await Hospital.create(name="옆집여성의원")
+        #: **코드와 함께 만든다** (KEY-324). 코드가 없는 의원의 직원은 어떤
+        #: 코드로도 못 들어온다 — 이 파일의 검사는 전부 로그인부터 시작한다.
+        self.hospital = await make_clinic("도로시여성의원", "clinic0001")
+        self.other = await make_clinic("옆집여성의원", "clinic0002")
         self.admin = await make_staff_account(self.hospital, "admin01", ["admin"], name="관리자")
         self.doctor = await make_staff_account(self.hospital, "doctor01", ["doctor"], name="박연")
         self.other_admin = await make_staff_account(self.other, "admin21", ["admin"], name="옆집관리자")
@@ -82,8 +84,12 @@ class AuditTestCase(AuthTestCase):
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     async def _get(self, params: dict[str, Any] | None = None, who: str = "admin01") -> Any:
+        #: 의원 코드를 **그 사람의 의원에서** 읽는다 (KEY-324). 하나로 박으면
+        #: 옆집 관리자(`admin21`)가 그 코드로는 아예 못 들어와, 울타리를 재는
+        #: 검사가 `401` 로 죽는다.
+        staff = await Staff.get(login_id=who).select_related("hospital")
         async with self.client() as client:
-            headers = await login_headers(client, who)
+            headers = await login_headers(client, who, clinic_code=staff.hospital.code or "")
             return await client.get(AUDIT_URL, params=params or {}, headers=headers)
 
 
