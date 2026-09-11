@@ -421,6 +421,13 @@ class GuideMessageHold(StrEnum):
     #: 나가기 전에, 그 근거가 된 원본 파일이 우리 서버에서 지워졌는지
     #: 확인한다(`app/ocr/api.py`가 이미 같은 방식으로 삭제 여부를 잰다).
     SOURCE_NOT_DELETED = "SOURCE_NOT_DELETED"
+    #: 문구에 `{예약링크}` 가 있는데 의원 예약 주소가 비어 있다 — KEY-331.
+    #:
+    #: 빈칸으로 채워 보내면 「재진 예약을 잡아주세요: 」가 나간다. 환자는 누를
+    #: 것이 없고, 의원은 그 환자가 예약을 안 잡았다고 읽는다. 안 보내고
+    #: 붙들어 두면 보류 목록(S2-3)이 **관리자가 A1-4 에서 채워야 할 일**을
+    #: 가리킨다 — 채우고 다시 보내면 그 문자는 제 일을 한다.
+    BOOKING_URL_MISSING = "BOOKING_URL_MISSING"
 
 
 class GuideMessageFailure(StrEnum):
