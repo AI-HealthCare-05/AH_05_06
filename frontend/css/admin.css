@@ -329,4 +329,111 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+
+/* ── 의원 정보 (A1-4) — KEY-331 ────────────────────────────────────────
+ *
+ * 직원 추가 폼(`.staff-add__*`)과 모양이 거의 같지만 **이름을 나눈다.**
+ * 감사 목록(`.audit*`)을 직원 표와 나눈 것과 같은 까닭이다 — 한 이름을
+ * 같이 쓰면 한쪽 사정으로 폭이나 칸 수를 바꿀 때 다른 쪽이 함께 움직인다.
+ * 이 폼은 칸이 셋이고 그중 하나가 아주 긴 값(예약 링크)이라, 앞으로 벌어질
+ * 일이 직원 추가 폼과 같지 않다.
+ */
+
+.clinic {
+  padding: var(--s-24);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin: 0 0 var(--s-24);
+}
+
+.clinic__title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.clinic__note {
+  margin: 0 0 var(--s-16);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* **안 적으면 문자가 안 나간다**는 말은 힌트가 아니라 경고다. 힌트와 같은
+   회색으로 두면 그 줄만 안 읽힌다. */
+.clinic__warn {
+  margin: 0 0 var(--s-16);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--warn-bg, #fff6e5);
+  border: 1px solid var(--warn-line, #f0d5a0);
+  border-radius: var(--radius);
+}
+
+/* 예약 링크는 값이 길다 — 한 줄에 셋을 세우면 그 칸이 읽을 수 없게 좁아진다.
+   넓을 때 둘, 좁아지면 하나로 접힌다. */
+.clinic__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s-16);
+}
+
+.clinic__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clinic__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.clinic__input {
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.clinic__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 규칙을 눌러 보고 알게 하지 않는다 — 서버가 400 을 주기 전에 여기서 말한다. */
+.clinic__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.clinic__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-16);
+  margin-top: var(--s-24);
+}
+
+.clinic__say {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.clinic__foot .button-primary {
+  flex: 0 0 auto;
+  min-width: 96px;
+  height: var(--button-h);
+  padding: 0 var(--s-24);
 }

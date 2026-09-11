@@ -5,9 +5,12 @@
 전이시킨다. 시도·성공·실패·보류 네 갈래를 전부 append-only 감사 이벤트로
 남긴다(`GuideMessageEvent`) — KEY-250.
 
-`{링크}`/`{예약링크}`가 든 문구는 보내는 그 순간 원문을 새로 발급한다
+`{링크}`가 든 문구는 보내는 그 순간 원문을 새로 발급한다
 (`PatientLinkService.issue_for_dispatch`) — 예약 승인 시점에 미리 만들어
 두지 않는다. 원문은 워커 메모리에서 문구를 만드는 동안에만 살아 있다.
+
+`{예약링크}`는 **그것과 다른 값**이다 — 의원이 A1-4 에서 적는 예약 페이지
+주소(`hospital.booking_url`)다. KEY-331 전까지 둘에 같은 값을 넣고 있었다.
 """
 
 import secrets
@@ -19,7 +22,6 @@ from tortoise.timezone import now
 from app.core import config
 from app.core.logger import default_logger
 from app.core.time import DISPLAY_TIMEZONE
-from app.models.catalog import MessageTemplate
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, course_days
 from app.models.patients import Patient
 from app.models.staffs import Hospital
@@ -35,7 +37,7 @@ from app.models.visits import (
     Visit,
 )
 from app.services.dispatch_gate import evaluate_dispatch_gate
-from app.services.message_templates import DEFAULT_BODY, MessageTemplateKind
+from app.services.message_templates import MessageTemplateKind, effective_body
 from app.services.patient_links import PatientLinkService
 from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError, SmsSendResult
 
@@ -80,11 +82,6 @@ def _format_expiry(expires_at: datetime) -> str:
     return f"{local.month}월 {local.day}일 {local.hour}시"
 
 
-async def _template_body(hospital_id: int, kind: MessageTemplateKind) -> str:
-    row = await MessageTemplate.filter(hospital_id=hospital_id, kind=kind).first()
-    return row.body if row is not None and row.body else DEFAULT_BODY[kind]
-
-
 async def _course_days(visit_id: int) -> int | None:
     """처방일수 — **최신 비제외 COMPLETED job** 의 확정 값에서 읽는다.
 
@@ -124,8 +121,10 @@ async def render_message_body(
 ) -> str:
     """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
 
-    `{링크}`/`{예약링크}`가 문구에 있으면 그때 원문을 새로 발급한다(KEY-297).
-    원문은 이 함수 안에서 완성된 문자열에 섞일 뿐 별도로 저장하지 않는다.
+    `{링크}`가 문구에 있으면 그때 원문을 새로 발급한다(KEY-297). 원문은 이
+    함수 안에서 완성된 문자열에 섞일 뿐 별도로 저장하지 않는다. **`{예약링크}`
+    만 있는 문구는 토큰을 발급하지 않는다** — 아무도 받지 않을 링크를 살려
+    두는 일이었다(KEY-331).
     """
     guide = guide or await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
     if guide is None:
@@ -134,7 +133,7 @@ async def render_message_body(
     patient = await Patient.filter(patient_id=visit.patient_id).first() if visit else None
     hospital = await Hospital.filter(hospital_id=guide.hospital_id).first()
 
-    body = await _template_body(guide.hospital_id, MessageTemplateKind(message.kind.value))
+    body = await effective_body(guide.hospital_id, MessageTemplateKind(message.kind.value))
     values = {
         "의원명": hospital.name if hospital else "",
         "환자명": patient.name if patient else "",
@@ -147,16 +146,32 @@ async def render_message_body(
         remaining = (message.scheduled_at.date() - now().date()).days if visit else None
         values["D"] = str(max(remaining, 0)) if remaining is not None else ""
 
-    if "{링크}" in body or "{예약링크}" in body:
+    #: **`{예약링크}` 는 안내문 링크가 아니다** — KEY-331.
+    #:
+    #: 예전에는 두 변수에 같은 값을 넣었다. 그래서 「재진 예약을 잡아주세요:
+    #: <링크>」를 누른 환자가 예약 화면이 아니라 **제 안내문을 다시 열었다.**
+    #: 눌러 보기 전에는 아무도 모르고, 눌러 본 환자는 예약을 못 잡는다.
+    #:
+    #: 예약 주소는 의원이 A1-4 에서 적는 값(`hospital.booking_url`)이다.
+    #: 비어 있으면 여기 오기 전에 게이트가 막는다(`BOOKING_URL_MISSING`) —
+    #: 빈 문자열로 채워 「재진 예약을 잡아주세요: 」를 보내지 않는다.
+    if "{예약링크}" in body:
+        values["예약링크"] = hospital.booking_url if hospital and hospital.booking_url else ""
+
+    if "{링크}" in body:
         raw_token, expires_at = await PatientLinkService().issue_for_dispatch(
             guide.guide_document_id,
             message.guide_message_id,
             message.kind,
         )
-        link = _absolute_link_url(raw_token)
-        values["링크"] = link
-        values["예약링크"] = link
+        values["링크"] = _absolute_link_url(raw_token)
         values["만료일"] = _format_expiry(expires_at)
+
+    #: `{만료일}` 은 `{링크}` 가 있어야 값이 생긴다 — 문구 검사가 그 짝을
+    #: 강제하지만(`message_templates._check`), 그 규칙보다 먼저 저장된 줄이
+    #: 있을 수 있다. 채울 값이 없을 때 `{만료일}` 글자가 그대로 환자에게
+    #: 가는 것보다 빈칸이 낫다.
+    values.setdefault("만료일", "")
 
     for name, value in values.items():
         body = body.replace("{" + name + "}", value)

@@ -38,6 +38,24 @@ class Hospital(models.Model):
     hospital_id = fields.BigIntField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)
 
+    #: 의원 정보 — A1-4 (KEY-331). **쓸 데가 있는 것만 둔다.**
+    #:
+    #: 사업자번호·대표자 같은 값은 지금 아무도 안 기다린다. 담을 자리를
+    #: 미리 만들면 「이 값은 어디서 쓰나」에 아무도 답하지 못한다.
+    #:
+    #: 셋 다 비어 있을 수 있다 — 의원을 만드는 자리(시드·검사 픽스처)가
+    #: 이름만 주고, 관리자가 A1-4 에서 채운다.
+
+    #: 환자 화면의 「문의하기」가 걸 번호 (P5-1 · P6-1).
+    phone = fields.CharField(max_length=20, null=True)
+    address = fields.CharField(max_length=200, null=True)
+    #: `{예약링크}` 가 가리킬 곳. **안내문 링크가 아니다** — 재진 예약을 잡는
+    #: 의원의 예약 페이지다(네이버 예약·카카오 등).
+    booking_url = fields.CharField(max_length=500, null=True)
+    #: 누가 마지막으로 고쳤나 — `MessageTemplate.updated_by` 와 같은 자리다.
+    #: 이 값이 바뀌면 **환자에게 나가는 문자 내용이 바뀐다**(`{예약링크}`).
+    updated_by = fields.BigIntField(null=True)
+
     staffs: fields.ReverseRelation["Staff"]
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
