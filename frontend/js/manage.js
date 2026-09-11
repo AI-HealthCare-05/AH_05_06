@@ -40,12 +40,13 @@
      몰랐다 (KEY-303). */
   var ROSTER_PAGE = 25;
   var rosterOffset = 0;
-  /* 표의 차례 — KEY-327. **서버가 세운다.** 화면이 받은 쪽만 다시 세우면 그 쪽
-     안에서만 맞고, 쪽을 넘기면 겹치거나 빠진다. */
-  var rosterSort = "registered_desc";
   var HISTORY_BLOCKS = 3;
   //: 글자를 멈춘 뒤 기다리는 시간(ms)
   var ROSTER_TYPING_WAIT = 250;
+
+  /* 표의 차례 — KEY-327. **서버가 세운다.** 화면이 받은 쪽만 다시 세우면 그 쪽
+     안에서만 맞고, 쪽을 넘기면 겹치거나 빠진다. */
+  var rosterSort = "registered_desc";
 
   function el(id) {
     return document.getElementById(id);
