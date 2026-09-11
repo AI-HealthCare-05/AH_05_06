@@ -35,6 +35,20 @@ async def get_admin_actor(staff: Annotated[Staff, Depends(get_current_staff)]) -
     )
 
 
+async def require_audit_read(
+    actor: Annotated[AdminActor, Depends(get_admin_actor)],
+) -> AdminActor:
+    """감사 기록을 읽을 수 있는가 — `admin` 만이다 (KEY-322).
+
+    `STAFF_MANAGE` 와 여는 역할이 같지만 뜻이 다르다. 나중에 「감사만 보는
+    역할」이 생기면 여기만 바뀌고 직원 관리는 그대로다 — 한 권한으로 둘을
+    겸하면 그날 둘을 갈라내야 한다. 권한표가 이미 `AUDIT_READ` 를 갖고 있다.
+    """
+    if not has_permission(actor.roles, Permission.AUDIT_READ):
+        raise ApiError(403, "FORBIDDEN", "감사 기록을 볼 권한이 없습니다.")
+    return actor
+
+
 async def require_staff_manage(
     actor: Annotated[AdminActor, Depends(get_admin_actor)],
 ) -> AdminActor:

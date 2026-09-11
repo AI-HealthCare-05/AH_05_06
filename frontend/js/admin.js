@@ -174,8 +174,163 @@ function adminMenuCovers(frames) {
     return html;
   }
 
+  /* ── 전체 로그 (A1-6 · A1-7) — KEY-322 ──────────────────────────────── */
+
+  var auditCursor = null;
+  var auditQuery = {};
+
+  /* **몇 번째 검색의 응답인가.**
+   *
+   * 응답이 오는 순서는 요청한 순서가 아니다. 「안내문」으로 걸러 놓고 곧바로
+   * 「문자」로 다시 거르면, 늦게 도착한 안내문 응답이 목록을 덮어 **거르개는
+   * 문자인데 줄은 안내문**이 된다. 다음 쪽 커서도 그 응답 것으로 덮이므로,
+   * 이어서 「더 보기」를 누르면 문자 조건에 안내문 커서를 얹어 보낸다.
+   * 「더 보기」가 도는 중에 거르개를 바꾸면 옛 조건의 줄이 새 목록에
+   * **붙는다** (한금준 님 `#287` 리뷰).
+   *
+   * 검색을 새로 낼 때마다 번호를 올리고, 요청은 떠날 때의 번호를 쥔다.
+   * 돌아왔을 때 번호가 다르면 **화면에 손대지 않는다** — 목록도, 커서도,
+   * 오류 문구도. 「더 보기」는 저를 부른 검색의 번호를 그대로 쓴다: 그
+   * 검색이 밀려났으면 이어 붙일 목록도 이미 사라진 것이다.
+   *
+   * 요청을 취소하지는 않는다. 응답을 **안 쓸** 뿐이다 — 끊는 것은 `fetch` 를
+   * 손봐야 하는 일이고, 여기서 고치려는 것은 「누가 화면을 차지하는가」다. */
+  var auditRun = 0;
+
+  function renderAuditBody() {
+    auditRun += 1;
+    bodyBox.innerHTML =
+      '<h1 class="pane__title">전체 로그</h1>' +
+      '<p class="pane__lead" id="audit-filter-slot">거르개를 준비하는 중…</p>' +
+      '<div id="audit-list"><p class="pane__lead">불러오는 중…</p></div>' +
+      '<div class="audit-more" id="audit-more"></div>';
+
+    /* **행위자 목록은 A1-1 것을 그대로 쓴다.** 못 불러와도 나머지 거르개는
+       서야 하므로 빈 목록으로 세운다 — 하나가 늦다고 화면이 통째로 멈추면
+       안 된다. */
+    listStaffs()
+      .then(function (data) {
+        return data.staffs;
+      })
+      .catch(function () {
+        return [];
+      })
+      .then(function (staffs) {
+        var slot = document.getElementById("audit-filter-slot");
+        if (!slot) return;
+        slot.outerHTML = auditFilterHtml(staffs);
+        wireAuditFilter();
+      });
+
+    auditQuery = {};
+    auditCursor = null;
+    loadAudit(false);
+  }
+
+  function wireAuditFilter() {
+    var form = document.getElementById("audit-filter");
+    if (!form) return;
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      auditQuery = auditQueryFrom({
+        source: document.getElementById("audit-source").value,
+        actor: document.getElementById("audit-actor").value,
+        visit: document.getElementById("audit-visit").value.trim(),
+        from: document.getElementById("audit-from").value,
+        to: document.getElementById("audit-to").value,
+      });
+      auditCursor = null;
+      auditRun += 1;
+      loadAudit(false);
+    });
+  }
+
+  function loadAudit(append) {
+    /* 떠날 때의 번호를 쥔다 — 돌아와서 견줄 것은 이것이다. */
+    var run = auditRun;
+    var box = document.getElementById("audit-list");
+    var more = document.getElementById("audit-more");
+    if (!box) return;
+    if (!append) box.innerHTML = '<p class="pane__lead">불러오는 중…</p>';
+    if (more) more.innerHTML = "";
+
+    var asked = {};
+    for (var key in auditQuery) {
+      if (Object.prototype.hasOwnProperty.call(auditQuery, key)) asked[key] = auditQuery[key];
+    }
+    if (append && auditCursor) asked.cursor = auditCursor;
+
+    listAuditLogs(asked)
+      .then(function (page) {
+        if (run !== auditRun) return;
+        var html = auditListHtml(page.entries);
+        if (append) {
+          var body = box.querySelector("tbody");
+          /* 앞 쪽이 비어 표가 없으면 이어 붙일 자리가 없다 — 통째로 그린다. */
+          if (body && page.entries.length) {
+            for (var i = 0; i < page.entries.length; i++) {
+              body.insertAdjacentHTML("beforeend", auditRowHtml(page.entries[i]));
+            }
+          } else {
+            box.innerHTML = html;
+          }
+        } else {
+          box.innerHTML = html;
+        }
+        auditCursor = page.next_cursor;
+        if (more) {
+          more.innerHTML = page.has_more
+            ? '<button class="button-ghost" type="button" id="audit-more-go">더 보기</button>'
+            : "";
+          var go = document.getElementById("audit-more-go");
+          if (go) {
+            go.addEventListener("click", function () {
+              go.disabled = true;
+              loadAudit(true);
+            });
+          }
+        }
+      })
+      .catch(function (error) {
+        /* **실패도 똑같이 늦게 온다.** 지난 검색이 실패한 것을 지금 목록 위에
+           적으면, 멀쩡히 그려진 줄 위에 오류 문구가 앉거나 남의 「더 보기」가
+           「다시 시도」로 바뀐다. */
+        if (run !== auditRun) return;
+        var saying = esc(auditLoadSaying(error));
+        if (append) {
+          /* **이미 그린 줄을 지우지 않는다.** 「더 보기」가 실패했다고 앞서 본
+             쉰 줄이 오류 문구 하나로 바뀌면, 관리자는 보고 있던 것을 잃는다 —
+             그리고 요청 전에 「더 보기」를 비웠으므로 **다시 눌러 볼 단추도
+             없다.** 필터를 다시 내는 것 말고는 돌아올 길이 없었다
+             (이희진 님 `#287` 리뷰 ①).
+
+             실패는 목록이 아니라 목록 **아래**에 적고, 그 자리에 다시 누를
+             단추를 돌려 놓는다. */
+          if (more) {
+            more.innerHTML =
+              '<p class="pane__lead">' +
+              saying +
+              "</p>" +
+              '<button class="button-ghost" type="button" id="audit-more-go">다시 시도</button>';
+            var retry = document.getElementById("audit-more-go");
+            if (retry) {
+              retry.addEventListener("click", function () {
+                retry.disabled = true;
+                loadAudit(true);
+              });
+            }
+          }
+          return;
+        }
+        /* **「기록이 없다」로 그리지 않는다.** 못 불러온 것을 없는 것으로 보이면
+           관리자는 그 시각에 아무 일도 없었다고 읽는다. */
+        box.innerHTML = '<p class="pane__lead">' + saying + "</p>";
+      });
+  }
+
   function renderBody() {
     if (current === "staff") return renderStaffBody();
+    if (current === "log") return renderAuditBody();
     var frames = adminFramesFor(current);
     if (!frames.length) {
       bodyBox.innerHTML =
