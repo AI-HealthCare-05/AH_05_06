@@ -35,7 +35,7 @@ const EMPTY = { hospital_id: 1, name: "도로시여성의원", phone: null, addr
 test("**화면이 고치는 칸이 서버가 고치는 칸과 같다**", () => {
   const { CLINIC_FIELDS } = box();
   const keys = CLINIC_FIELDS.map((one) => one.key).sort();
-  assert.deepEqual(keys, ["address", "booking_url", "phone"]);
+  assert.deepEqual(keys, ["address", "booking_url", "name", "phone"]);
 
   /* 서버가 못박은 목록(`EDITABLE`)과 견준다 — 한쪽만 늘면 화면이 보낸 칸을
      서버가 조용히 버리거나, 화면에 없는 칸이 서버에만 생긴다. */
@@ -44,13 +44,39 @@ test("**화면이 고치는 칸이 서버가 고치는 칸과 같다**", () => {
   for (const key of keys) assert.ok(listed.includes(`"${key}"`), `서버 EDITABLE 에 ${key} 가 없다`);
 });
 
-test("**의원 이름을 고치는 칸이 없다** — 없는 칸은 못 보낸다", () => {
+test("**의원 이름도 여기서 고친다** — KEY-319 인수조건", () => {
+  /* 처음에는 「배포 한 판의 정체」라 칸을 안 두었는데, 이미 나간 문자는
+     `sent_body` 에 보낸 그대로 남아 앞뒤가 갈리지 않는다 (이희진 님 #295 리뷰). */
   const { CLINIC_FIELDS, clinicFormHtml } = box();
-  assert.ok(!CLINIC_FIELDS.some((one) => one.key === "name"), "이름 칸이 생겼다");
+  assert.ok(CLINIC_FIELDS.some((one) => one.key === "name"), "이름 칸이 없다");
 
   const html = clinicFormHtml(FILLED);
   assert.ok(html.includes("도로시여성의원"), "의원 이름이 어디에도 안 보인다");
-  assert.ok(!/name="name"/.test(html), "이름을 보내는 입력칸이 있다");
+  assert.match(html, /name="name"[^>]*value="도로시여성의원"/, "저장된 이름이 칸에 안 들어 있다");
+});
+
+test("**칸마다 제 길이로 막는다** — 서버 검사와 같은 수다", () => {
+  const { CLINIC_FIELDS, clinicFormHtml } = box();
+  const byKey = {};
+  for (const one of CLINIC_FIELDS) byKey[one.key] = one.max;
+
+  assert.deepEqual(byKey, { name: 100, phone: 20, address: 200, booking_url: 500 });
+
+  const html = clinicFormHtml(FILLED);
+  assert.match(html, /name="name"[^>]*maxlength="100"/, "이름 칸이 100자에서 안 막힌다");
+});
+
+test("**이름은 비울 수 없다** — 다른 셋과 다른 자리다", () => {
+  /* 빈칸을 `null` 로 접어 보내면 서버가 400 으로 막는다. 막히는 것은 맞지만
+     무엇을 해야 하는지는 화면이 먼저 말해야 한다. */
+  const { clinicNameProblem, clinicPayload } = box();
+
+  assert.ok(clinicNameProblem({ name: "   " }), "비었는데 아무 말도 안 한다");
+  assert.ok(clinicNameProblem({ name: "가".repeat(101) }), "100자를 넘겼는데 통과한다");
+  assert.equal(clinicNameProblem({ name: "도로시여성의원" }), "");
+
+  /* 접지 않는다 — `null` 은 「지운다」인데 이름에는 그런 뜻이 없다. */
+  assert.strictEqual(clinicPayload({ name: "" }).name, "");
 });
 
 /* ── 보내는 몸 ──────────────────────────────────────────────────────── */
@@ -64,11 +90,11 @@ test("**빈칸은 `null` 로 나간다** — 「지웠다」와 「안 보냈다
   assert.strictEqual(body.booking_url, null, "공백만 적은 것이 값으로 나갔다");
 });
 
-test("**셋을 늘 함께 보낸다** — 한 폼에 있는 것이 곧 보내려는 전부다", () => {
+test("**넷을 늘 함께 보낸다** — 한 폼에 있는 것이 곧 보내려는 전부다", () => {
   const { clinicPayload } = box();
   const body = clinicPayload({ phone: "02-123-4567" });
 
-  assert.deepEqual(Object.keys(body).sort(), ["address", "booking_url", "phone"]);
+  assert.deepEqual(Object.keys(body).sort(), ["address", "booking_url", "name", "phone"]);
 });
 
 test("앞뒤 공백을 걷어서 보낸다 — 서버가 접기 전에 화면이 먼저 접는다", () => {

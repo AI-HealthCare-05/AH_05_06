@@ -34,6 +34,10 @@ class AuditSource(StrEnum):
     STAFF_ACCOUNT = "staff_account"
     """직원 계정 — 추가(KEY-321). 티켓이 적은 넷에는 없던 다섯째다: 계정을
     만드는 것은 **권한을 주는 일**이라, 그것이 빠진 감사 로그는 구멍이다."""
+    HOSPITAL = "hospital"
+    """의원 정보 — 수정(KEY-331). 여섯째다: 여기 적힌 예약 링크가 **그대로
+    문자에 실려 환자에게 나간다.** 언제 어떤 주소가 나갔는지를 되짚으려면
+    바뀐 값 자체가 남아야 한다."""
 
 
 class AuditLogEntry(StrictModel):

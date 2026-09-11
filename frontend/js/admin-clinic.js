@@ -10,16 +10,26 @@
  * 함수라 검사가 그대로 부를 수 있다. DOM 을 만지는 것은 `admin.js` 가 한다.
  */
 
-/* **고칠 수 있는 칸 셋.** 서버 `EDITABLE` 과 같은 목록이다 (`admin_hospital.py`).
-   의원 이름은 없다 — 배포 한 판의 정체라 시드가 정하고, 바꾸면 이미 나간
-   문자의 `{의원명}` 과 앞으로 나갈 것이 갈린다. */
+/* **고칠 수 있는 칸 넷.** 서버 `EDITABLE` 과 같은 목록이다 (`admin_hospital.py`).
+
+   `max` 는 서버 검사와 같은 수다 — 화면에서 먼저 막으면 관리자가 다 적고 나서
+   400 을 보는 일이 없다. */
 var CLINIC_FIELDS = [
+  {
+    key: "name",
+    id: "clinic-name",
+    label: "의원 이름",
+    hint: "문자의 {의원명} 과 환자 화면 상단에 이 이름이 나갑니다 · 비울 수 없습니다",
+    placeholder: "○○여성의원",
+    max: 100,
+  },
   {
     key: "phone",
     id: "clinic-phone",
     label: "대표번호",
     hint: "환자 화면의 「문의하기」가 이 번호로 겁니다 · 예: 02-123-4567",
     placeholder: "02-123-4567",
+    max: 20,
   },
   {
     key: "address",
@@ -27,6 +37,7 @@ var CLINIC_FIELDS = [
     label: "주소",
     hint: "관리자가 제 의원을 알아보는 표시입니다 · 문자에는 안 들어갑니다",
     placeholder: "서울시 ○○구 ○○로 12, 3층",
+    max: 200,
   },
   {
     key: "booking_url",
@@ -34,6 +45,7 @@ var CLINIC_FIELDS = [
     label: "예약 링크",
     hint: "소진·재진 문자의 {예약링크} 가 여는 곳 · http:// 또는 https:// 로 시작합니다",
     placeholder: "https://booking.example.com/…",
+    max: 500,
   },
 ];
 
@@ -48,15 +60,33 @@ function clinicBookingWarning(info) {
   return "예약 링크가 비어 있습니다. 채우기 전까지 소진·재진 문자는 보내지 않고 보류됩니다.";
 }
 
-/* 화면이 보내는 몸 — **셋을 늘 함께 보낸다.**
+/* **이름은 비울 수 없다** — 다른 셋과 다른 자리다 (KEY-319 인수조건).
+
+   빈칸을 `null` 로 접어 보내면 서버가 400 으로 막는데, 무엇을 해야 하는지는
+   화면이 먼저 말하는 것이 맞다. 빈 글자를 「지운다」로 읽지 않는다 —
+   `{의원명}` 자리가 빈 채로 문자가 나가면 안 된다. */
+function clinicNameProblem(values) {
+  var raw = values && values.name != null ? String(values.name).trim() : "";
+  if (!raw) return "의원 이름은 비울 수 없습니다.";
+  if (raw.length > 100) return "의원 이름은 100자를 넘을 수 없습니다.";
+  return "";
+}
+
+/* 화면이 보내는 몸 — **넷을 늘 함께 보낸다.**
    빈칸은 `null` 이다: 「지웠다」와 「안 보냈다」를 화면이 헷갈리지 않게
    한쪽으로 못박는다. 서버는 안 보낸 칸을 손대지 않으므로, 지우려면 이렇게
-   `null` 을 실어야 한다. */
+   `null` 을 실어야 한다.
+
+   **이름만 그 규칙 밖이다** — 접지 않고 적은 그대로 보낸다. */
 function clinicPayload(values) {
   var body = {};
   for (var i = 0; i < CLINIC_FIELDS.length; i++) {
     var key = CLINIC_FIELDS[i].key;
     var raw = values[key] == null ? "" : String(values[key]).trim();
+    if (key === "name") {
+      body.name = raw;
+      continue;
+    }
     body[key] = raw === "" ? null : raw;
   }
   return body;
@@ -76,7 +106,9 @@ function clinicFieldHtml(field, info) {
     esc(value) +
     '" placeholder="' +
     esc(field.placeholder) +
-    '" maxlength="500" />' +
+    '" maxlength="' +
+    esc(field.max) +
+    '" />' +
     '<span class="clinic__hint">' +
     esc(field.hint) +
     "</span></label>"
@@ -93,9 +125,9 @@ function clinicFormHtml(info) {
     '<h2 class="clinic__title">' +
     esc((info && info.name) || "의원") +
     "</h2>" +
-    /* **이름은 제목으로만 보인다.** 고칠 칸을 두지 않는 것이 「여기서는 못
-       바꾼다」를 지키는 가장 확실한 방법이다 — 서버도 그 칸을 안 받는다. */
-    '<p class="clinic__note">의원 이름은 여기서 바꾸지 않습니다.</p>' +
+    /* 제목은 **저장된 이름**이다. 아래 칸을 고치는 중에도 제목은 안 바뀐다 —
+       무엇을 고치고 있는지와 무엇이 저장돼 있는지가 한 화면에서 구분된다. */
+    '<p class="clinic__note">여기 적은 이름이 문자의 {의원명} 과 환자 화면에 나갑니다.</p>' +
     (warning ? '<p class="clinic__warn">' + esc(warning) + "</p>" : "") +
     '<div class="clinic__fields">' +
     fields +

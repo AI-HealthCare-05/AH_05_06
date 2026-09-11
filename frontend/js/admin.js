@@ -364,18 +364,26 @@ function adminMenuCovers(frames) {
     var go = document.getElementById("clinic-save");
     if (!say || !go) return;
 
-    /* 두 번 눌러 두 번 저장되는 자리를 막는다. 서버가 같은 값을 두 번 받는
-       것은 해롭지 않지만(같은 값을 다시 쓴다), 화면이 아무 말도 안 하는
-       사이에 두 번 누르게 두면 관리자가 저장됐는지 모른다. */
-    go.disabled = true;
-    say.textContent = "저장하는 중…";
-
     var values = {};
     for (var i = 0; i < CLINIC_FIELDS.length; i++) {
       var field = CLINIC_FIELDS[i];
       var input = document.getElementById(field.id);
       values[field.key] = input ? input.value : "";
     }
+
+    /* **이름부터 본다.** 비우면 서버가 400 으로 막는데, 무엇을 해야 하는지는
+       화면이 먼저 말하는 것이 맞다 — 잠그기 전에 돌아간다. */
+    var problem = clinicNameProblem(values);
+    if (problem) {
+      say.textContent = problem;
+      return;
+    }
+
+    /* 두 번 눌러 두 번 저장되는 자리를 막는다. 서버가 같은 값을 두 번 받는
+       것은 해롭지 않지만(같은 값을 다시 쓴다), 화면이 아무 말도 안 하는
+       사이에 두 번 누르게 두면 관리자가 저장됐는지 모른다. */
+    go.disabled = true;
+    say.textContent = "저장하는 중…";
 
     updateHospital(clinicPayload(values))
       .then(function (info) {

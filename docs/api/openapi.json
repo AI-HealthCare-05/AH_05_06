@@ -277,7 +277,8 @@
           "otp",
           "message",
           "patient_usage",
-          "staff_account"
+          "staff_account",
+          "hospital"
         ],
         "title": "AuditSource",
         "type": "string"
@@ -1756,7 +1757,7 @@
       },
       "HospitalResponse": {
         "additionalProperties": false,
-        "description": "A1-4 가 그리는 것.\n\n**이름도 함께 준다.** 화면이 「도로시여성의원의 정보를 고치는 중」임을\n보여야 하는데, 그 이름을 상단 골격에서 따로 가져오면 두 값이 어긋날 수\n있다. 다만 이름은 **여기서 못 고친다** — `HospitalUpdateRequest` 에 칸이\n없다: 의원 이름은 배포 한 판의 정체라 시드가 정하고, 바꾸면 이미 나간\n문자의 `{의원명}` 과 앞으로 나갈 것이 갈린다.",
+        "description": "A1-4 가 그리는 것.\n\n**이름도 함께 준다.** 화면이 「도로시여성의원의 정보를 고치는 중」임을\n보여야 하는데, 그 이름을 상단 골격에서 따로 가져오면 두 값이 어긋날 수\n있다.\n\n이름은 **여기서 고칠 수 있다** (KEY-319 인수조건). 처음에는 「배포 한 판의\n정체」라 막아 두었는데, 이미 나간 문자는 `sent_body` 에 보낸 그대로 남으므로\n앞뒤가 갈리는 문제는 생기지 않는다 — 바꾼 사실은 감사 기록이 든다\n(이희진 님 #295 리뷰).",
         "properties": {
           "address": {
             "anyOf": [
@@ -1835,6 +1836,17 @@
               }
             ],
             "title": "Booking Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "phone": {
             "anyOf": [

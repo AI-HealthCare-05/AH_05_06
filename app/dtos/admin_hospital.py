@@ -44,6 +44,9 @@ BOOKING_URL_MAX = 500
 #: DB 가 `Data too long` 으로 500 을 낸다.
 ADDRESS_MAX = 200
 
+#: 의원 이름 최대 길이 — `Hospital.name` 칸 길이와 같다.
+NAME_MAX = 100
+
 
 def _clean(value: str | None) -> str | None:
     """앞뒤 공백을 걷고, 빈 문자열은 `None` 으로 접는다.
@@ -75,6 +78,24 @@ def _booking_url(value: str | None) -> str | None:
     return value
 
 
+def _name(value: str | None) -> str | None:
+    """의원 이름. **비울 수 없다** — 다른 셋과 다른 자리다.
+
+    `phone`·`address`·`booking_url` 은 빈 글자를 「없음」(`None`)으로 접지만,
+    이름은 `NOT NULL` 이고 화면·문자의 `{의원명}` 이 그 값을 그대로 쓴다.
+    비우면 「 님, 안내입니다」처럼 이름 자리가 빈 문자가 나간다. 지우는 뜻으로
+    읽지 않고 거절한다 (KEY-319 인수조건 · 이희진 님 #295 리뷰).
+    """
+    if value is None:
+        raise ValueError("의원 이름은 비울 수 없습니다.")
+    value = value.strip()
+    if not value:
+        raise ValueError("의원 이름은 비울 수 없습니다.")
+    if len(value) > NAME_MAX:
+        raise ValueError(f"의원 이름은 {NAME_MAX}자를 넘을 수 없습니다.")
+    return value
+
+
 def _address(value: str | None) -> str | None:
     value = _clean(value)
     if value is not None and len(value) > ADDRESS_MAX:
@@ -87,9 +108,12 @@ class HospitalResponse(StrictModel):
 
     **이름도 함께 준다.** 화면이 「도로시여성의원의 정보를 고치는 중」임을
     보여야 하는데, 그 이름을 상단 골격에서 따로 가져오면 두 값이 어긋날 수
-    있다. 다만 이름은 **여기서 못 고친다** — `HospitalUpdateRequest` 에 칸이
-    없다: 의원 이름은 배포 한 판의 정체라 시드가 정하고, 바꾸면 이미 나간
-    문자의 `{의원명}` 과 앞으로 나갈 것이 갈린다.
+    있다.
+
+    이름은 **여기서 고칠 수 있다** (KEY-319 인수조건). 처음에는 「배포 한 판의
+    정체」라 막아 두었는데, 이미 나간 문자는 `sent_body` 에 보낸 그대로 남으므로
+    앞뒤가 갈리는 문제는 생기지 않는다 — 바꾼 사실은 감사 기록이 든다
+    (이희진 님 #295 리뷰).
     """
 
     hospital_id: int
@@ -111,6 +135,8 @@ class HospitalUpdateRequest(StrictModel):
     나머지 둘이 조용히 사라지면 안 된다. 지우는 것은 **`null` 을 보낸 것**만이다.
     """
 
+    #: **`None` 을 「지운다」로 안 읽는 유일한 칸.** `_name` 이 거절한다.
+    name: Annotated[str | None, AfterValidator(_name)] = None
     phone: Annotated[str | None, AfterValidator(_phone)] = None
     address: Annotated[str | None, AfterValidator(_address)] = None
     booking_url: Annotated[str | None, AfterValidator(_booking_url)] = None

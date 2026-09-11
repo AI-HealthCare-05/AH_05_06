@@ -9,7 +9,8 @@
     울타리      남의 의원 정보를 못 보고 못 고친다. 병원은 토큰에서만 온다
     검사        예약 링크는 `http(s)` 만. `javascript:` 를 환자에게 배달하지 않는다
     지움        `null` 은 지운 것, 안 보낸 칸은 그대로
-    이름        의원 이름은 여기서 못 바꾼다
+    이름        의원 이름도 여기서 바꾼다. 비울 수 없고, 겹치면 409 다
+    기록        바뀐 칸은 `hospital_update_event` 에 덧붙는다 (인수조건 5)
 """
 
 from typing import Any
@@ -17,7 +18,7 @@ from typing import Any
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from app.models.staffs import Hospital
+from app.models.staffs import Hospital, HospitalUpdateEvent, HospitalUpdateEventType
 from app.tests.auth_base import AuthTestCase, login_headers, make_staff_account
 
 HOSPITAL_URL = "/api/v1/admin/hospital"
@@ -195,22 +196,106 @@ class TestWhatGoesInComesBack(HospitalInfoTestCase):
         await self.hospital.refresh_from_db()
         assert self.hospital.booking_url == "https://booking.example.com/dorothy", "빈 요청이 값을 지웠다"
 
-    async def test_the_clinic_name_cannot_be_changed_here(self) -> None:
-        """**의원 이름은 배포 한 판의 정체다.**
+    async def test_the_clinic_name_can_be_changed_here(self) -> None:
+        """**의원 이름도 이 화면에서 고친다** (KEY-319 인수조건).
 
-        바꾸면 이미 나간 문자의 `{의원명}` 과 앞으로 나갈 것이 갈린다. 칸을
-        안 만드는 것이 「못 바꾼다」를 지키는 가장 확실한 방법이다.
+        처음에는 「배포 한 판의 정체」라 막아 두었는데, 이미 나간 문자는
+        `sent_body` 에 보낸 그대로 남으므로 앞뒤가 갈리지 않는다. 바꾼 사실은
+        감사 기록이 든다 (이희진 님 #295 리뷰).
         """
         async with self.client() as client:
             answer = await client.patch(
                 HOSPITAL_URL,
-                json={"name": "다른이름의원"},
+                json={"name": "도로시여성의원 강남점"},
                 headers=await login_headers(client, "admin01"),
             )
 
-        assert answer.status_code == 400, answer.text
+        assert answer.status_code == 200, answer.text
+        assert answer.json()["name"] == "도로시여성의원 강남점"
+        await self.hospital.refresh_from_db()
+        assert self.hospital.name == "도로시여성의원 강남점"
+
+    async def test_an_empty_name_is_refused(self) -> None:
+        """**이름은 비울 수 없다** — 다른 셋과 다른 자리다.
+
+        빈 글자를 「없음」으로 접으면 `{의원명}` 자리가 빈 채로 문자에 나간다.
+        `NOT NULL` 이기도 하다.
+        """
+        async with self.client() as client:
+            headers = await login_headers(client, "admin01")
+            blank = await client.patch(HOSPITAL_URL, json={"name": "   "}, headers=headers)
+            nulled = await client.patch(HOSPITAL_URL, json={"name": None}, headers=headers)
+
+        assert blank.status_code == 400, blank.text
+        assert nulled.status_code == 400, nulled.text
         await self.hospital.refresh_from_db()
         assert self.hospital.name == "도로시여성의원"
+
+    async def test_a_name_another_clinic_already_uses_is_refused_with_409(self) -> None:
+        """**`Hospital.name` 은 unique 다.** 그대로 두면 DB 가 500 을 낸다 —
+        관리자는 무엇이 문제인지 모르고 고칠 수도 없다.
+        """
+        async with self.client() as client:
+            answer = await client.patch(
+                HOSPITAL_URL,
+                json={"name": "옆집여성의원"},
+                headers=await login_headers(client, "admin01"),
+            )
+
+        assert answer.status_code == 409, answer.text
+        assert answer.json()["code"] == "HOSPITAL_NAME_TAKEN"
+        assert {item["field"] for item in answer.json()["field_errors"]} == {"name"}
+        await self.hospital.refresh_from_db()
+        assert self.hospital.name == "도로시여성의원"
+
+
+class TestWhatChangedIsWrittenDown(HospitalInfoTestCase):
+    """**인수조건 5 — 덧붙이기만 하는 기록.**
+
+    `updated_by` 한 칸은 「마지막에 누가 만졌나」뿐이다. 이 화면이 적는 예약
+    링크는 그대로 문자에 실려 환자에게 나가므로, **언제 어떤 주소가 나갔는지**를
+    되짚으려면 바뀐 값 자체가 남아야 한다.
+    """
+
+    async def test_the_changed_fields_are_kept_with_before_and_after(self) -> None:
+        async with self.client() as client:
+            await client.patch(
+                HOSPITAL_URL,
+                json={"booking_url": "https://booking.example.com/dorothy"},
+                headers=await login_headers(client, "admin01"),
+            )
+
+        event = await HospitalUpdateEvent.get(hospital_id=self.hospital.hospital_id)
+        assert event.event_type is HospitalUpdateEventType.HOSPITAL_UPDATED
+        assert event.actor_staff_id == self.admin.staff_id
+        assert event.changes == [
+            {"field": "booking_url", "before": None, "after": "https://booking.example.com/dorothy"}
+        ]
+
+    async def test_saving_the_same_value_again_writes_no_line(self) -> None:
+        """**안 바뀐 저장은 줄을 안 만든다.** 같은 값을 다시 보낸 것까지 남기면
+        「무엇이 바뀌었나」를 보는 표가 안 바뀐 줄로 덮인다.
+        """
+        async with self.client() as client:
+            headers = await login_headers(client, "admin01")
+            await client.patch(HOSPITAL_URL, json=_body(), headers=headers)
+            await client.patch(HOSPITAL_URL, json=_body(), headers=headers)
+
+        assert await HospitalUpdateEvent.filter(hospital_id=self.hospital.hospital_id).count() == 1
+
+    async def test_a_refused_save_leaves_no_line(self) -> None:
+        """**저장과 기록이 한 트랜잭션이다.** 이름이 겹쳐 409 로 막힌 요청이
+        기록만 남기면, 그 표는 일어나지 않은 일을 적은 것이 된다.
+        """
+        async with self.client() as client:
+            answer = await client.patch(
+                HOSPITAL_URL,
+                json={"name": "옆집여성의원"},
+                headers=await login_headers(client, "admin01"),
+            )
+
+        assert answer.status_code == 409, answer.text
+        assert await HospitalUpdateEvent.filter(hospital_id=self.hospital.hospital_id).count() == 0
 
     async def test_who_edited_is_recorded(self) -> None:
         """누가 고쳤나 — `MessageTemplate.updated_by` 와 같은 자리다.
