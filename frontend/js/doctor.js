@@ -41,14 +41,6 @@
    **수신번호(`to`)는 받지 않는다.** 이 화면은 「누구 것인가」만 알면 되고
    발송 번호는 서버가 안다. 응답에 실으면 승인할 때마다 환자 전화번호가
    화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
-function whenText(iso) {
-  if (!iso) return "곧";
-  /* 읽는 규칙은 `clinic-clock.js` 가 갖는다 — 여기 있던 같은 정규식을 옮겼다.
-     이 파일 안에만 있어서 다른 화면이 못 썼고, `patient-link-view.js` 가 제
-     손으로 `Date` 를 만들다 시간대 버그를 다시 넣었다 (`#250` 리뷰 ①). */
-  return clinicWhenText(iso) || String(iso);
-}
-
 /* 이미 승인한 진료는 다시 승인하지 않는다.
 
    예전에는 승인 직후에만 버튼을 잠갔는데(`target.disabled = true`), 다른 줄에
@@ -327,9 +319,6 @@ function guideLoadSaying(error) {
        이유다 — 화면이 말하는 사람과 눌렀을 때 가는 사람이 달라진다. */
     guide = null;    /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
     smsForget();
-    /* **앞 사람의 링크 주소도 놓는다** — 남으면 다음 사람 화면에서 앞 사람의
-       주소를 복사한다 (KEY-275). */
-
     closeModal();
     renderHead();
     renderRole();
