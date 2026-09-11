@@ -262,6 +262,18 @@ async def _guard_last_admin(
     if not was_admin:
         return
 
+    #: 🚩 **세는 줄도 함께 잠근다** (KEY-330, 이희진 님 #294 리뷰).
+    #:
+    #: 위에서 잠근 것은 「지금 고치는 그 사람」 한 줄뿐이다. 그것만으로는 문이
+    #: 열린다 — 관리자가 A·B 둘뿐인 의원에서 두 사람이 거의 동시에 A 와 B 를
+    #: 각각 내리면, 한쪽은 A 를 잠그고 「B 가 있다」를 보고 다른 쪽은 B 를 잠그고
+    #: 「A 가 있다」를 본다. 서로 아직 커밋 전이라 **둘 다 통과하고, 둘 다
+    #: 커밋되면 관리자 0명인 의원**이 된다. 이 함수가 막겠다고 적어 둔 바로 그
+    #: 자리다.
+    #:
+    #: MySQL 은 `FOR UPDATE` 와 집계를 같이 못 쓴다. 그래서 세지 않고 **줄을
+    #: 가져오면서** 잠근다. 겹치면 뒤엣것이 기다리고, 서로 엇갈려 맞물리면
+    #: 교착으로 한쪽이 되돌아간다 — **둘 다 성공하는 것보다 그편이 낫다.**
     others = (
         await Staff.filter(
             hospital_id=actor.hospital_id,
@@ -269,8 +281,9 @@ async def _guard_last_admin(
             roles__contains=[StaffRole.ADMIN.value],
         )
         .exclude(staff_id=staff.staff_id)
+        .order_by("staff_id")
+        .select_for_update()
         .using_db(connection)
-        .count()
     )
     if others:
         return

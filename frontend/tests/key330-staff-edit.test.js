@@ -63,6 +63,40 @@ test("모르는 조합이면 **아무것도 안 골라 둔다** — 지어내서
   assert.equal(admin.staffRoleKeyOf(["admin", "staff"]), "staff+admin", "차례가 달라도 같은 조합이다");
 });
 
+test("모르는 조합이면 **빈 자리가 서 있다** — 첫 옵션이 골라진 것처럼 보이면 안 된다", () => {
+  /* `selected` 를 아무 데도 안 붙이면 브라우저는 **첫 옵션을 고른 것처럼**
+     그린다. 관리자가 손도 안 대고 저장을 누르면 목록 맨 위 조합(`doctor`)으로
+     조용히 덮인다 — 「지어내서 덮지 않는다」가 화면에서 뒤집히는 자리다
+     (이희진 님 #294 리뷰). */
+  const admin = box();
+
+  const html = admin.staffEditHtml({ ...A_STAFF, roles: ["doctor", "staff"] });
+
+  assert.match(html, /<option value="" disabled selected>역할을 고르세요<\/option>/, "빈 자리가 없다");
+  assert.doesNotMatch(
+    html,
+    /<option value="(doctor|staff|admin)[^"]*" selected>/,
+    "모르는 조합인데 역할 하나가 골라져 있다",
+  );
+});
+
+test("역할을 안 고르면 **저장을 안 보낸다**", () => {
+  /* 빈 역할을 그대로 보내면 서버가 422 로 막는다. 막히는 것은 맞지만, 무엇을
+     해야 하는지는 화면이 먼저 말해야 한다. */
+  const code = codeOnly(read("js/admin.js"));
+  const at = code.indexOf("function saveStaffEdit");
+  assert.notEqual(at, -1, "저장 함수가 없다 — 검사가 헛돈다");
+
+  const body = code.slice(at);
+  assert.match(body, /if \(!chosen\)/, "빈 역할을 그대로 보낸다");
+  assert.match(body, /역할을 먼저 골라 주세요/, "왜 막혔는지를 안 말한다");
+
+  const gate = body.indexOf("if (!chosen)");
+  const sent = body.indexOf("updateStaff(");
+  assert.notEqual(sent, -1, "저장을 보내는 자리를 못 찾았다 — 검사가 헛돈다");
+  assert.ok(gate < sent, "보낸 뒤에 막는다 — 그때는 이미 갔다");
+});
+
 test("퇴사자는 판이 퇴사로 서 있다", () => {
   const admin = box();
 

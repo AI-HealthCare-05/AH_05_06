@@ -99,6 +99,14 @@ function staffRoleKeyOf(roles) {
 function staffEditHtml(row) {
   var options = "";
   var now = staffRoleKeyOf(row.roles);
+  /* **모르는 조합이면 빈 자리를 먼저 세운다** (이희진 님 #294 리뷰).
+     `selected` 를 아무 데도 안 붙이면 브라우저가 **첫 옵션을 고른 것처럼**
+     보여 준다. 관리자가 손도 안 댄 채 저장을 누르면 목록 맨 위 조합으로
+     조용히 덮인다 — 「지어내서 덮지 않는다」는 규칙이 화면에서 뒤집힌다.
+     `disabled` 라 다시 고를 수 없고, 값이 비어 있어 저장도 막힌다. */
+  if (!now) {
+    options += '<option value="" disabled selected>역할을 고르세요</option>';
+  }
   for (var i = 0; i < STAFF_ROLE_CHOICES.length; i++) {
     var choice = STAFF_ROLE_CHOICES[i];
     options +=

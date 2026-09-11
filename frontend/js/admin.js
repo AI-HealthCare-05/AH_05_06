@@ -153,9 +153,17 @@ function adminMenuCovers(frames) {
     var go = document.getElementById("staff-edit-go");
     if (!id || !say || !go) return;
 
+    /* 모르는 조합으로 열린 판이다 — 고르기 전에는 안 보낸다. 빈 역할을 그대로
+       보내면 서버가 422 로 막는데, 화면이 먼저 말하는 것이 맞다. */
+    var chosen = document.getElementById("staff-edit-roles").value;
+    if (!chosen) {
+      say.textContent = "역할을 먼저 골라 주세요.";
+      return;
+    }
+
     var password = document.getElementById("staff-edit-password").value;
     var body = {
-      roles: staffRolesFor(document.getElementById("staff-edit-roles").value),
+      roles: staffRolesFor(chosen),
       status: document.getElementById("staff-edit-status").value,
     };
     /* **비워 두면 안 보낸다.** 빈 글자를 보내면 서버가 형식 검사에서 막는데,
