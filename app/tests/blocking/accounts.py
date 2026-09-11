@@ -35,6 +35,7 @@ from app.tests.ocr_fixture import complete_ocr
 PASSWORD = "Blocking-Test-1!"
 
 LOGIN_URL = "/api/v1/auth/login"
+
 BASE_URL = "http://test"
 
 
@@ -61,8 +62,10 @@ class Fence:
     visit_id: int
 
 
-async def _hospital(name: str) -> Hospital:
-    hospital, _ = await Hospital.get_or_create(name=name)
+async def _hospital(name: str, code: str) -> Hospital:
+    """**코드와 함께 만든다.** 코드가 없으면 그 의원 직원은 로그인 자체를 못 한다
+    (KEY-324) — 이 파일의 검사는 전부 로그인부터 시작한다."""
+    hospital, _ = await Hospital.get_or_create(name=name, defaults={"code": code})
     return hospital
 
 
@@ -225,17 +228,26 @@ def client() -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL)
 
 
-async def login(login_id: str) -> str:
-    """**라우트를 통해** 액세스 토큰을 얻는다. 손으로 만들지 않는다."""
+async def login(login_id: str, hospital_id: int) -> str:
+    """**라우트를 통해** 액세스 토큰을 얻는다. 손으로 만들지 않는다.
+
+    의원 코드를 그 의원에서 읽어 온다 (KEY-324). 여기 검사는 의원 둘을 나란히
+    두고 격리를 재므로, 코드를 고정으로 박으면 **한쪽 의원으로만** 들어가게 된다.
+    """
+    hospital = await Hospital.get(hospital_id=hospital_id)
     async with client() as http:
-        response = await http.post(LOGIN_URL, json={"login_id": login_id, "password": PASSWORD})
+        response = await http.post(
+            LOGIN_URL, json={"clinic_code": hospital.code, "login_id": login_id, "password": PASSWORD}
+        )
     assert response.status_code == 200, f"{login_id} 로그인이 {response.status_code} 다 — 이 검사가 서 있을 바닥이 없다"
     token: str = response.json()["access_token"]
     return token
 
 
 async def actor(login_id: str, hospital_id: int, staff_id: int) -> Actor:
-    return Actor(login_id=login_id, token=await login(login_id), hospital_id=hospital_id, staff_id=staff_id)
+    return Actor(
+        login_id=login_id, token=await login(login_id, hospital_id), hospital_id=hospital_id, staff_id=staff_id
+    )
 
 
 async def build_two_hospitals() -> dict[str, Any]:
@@ -244,8 +256,8 @@ async def build_two_hospitals() -> dict[str, Any]:
     반환하는 것은 검사가 바로 쓸 수 있는 모양이다 — 누가 무엇에 손댈 수
     있어야 하고 없어야 하는지가 이 자료 하나로 갈린다.
     """
-    h1 = await _hospital("합성 기준의원")
-    h2 = await _hospital("합성 이웃의원")
+    h1 = await _hospital("합성 기준의원", "clinic0001")
+    h2 = await _hospital("합성 이웃의원", "clinic0002")
 
     staff1 = await make_staff(h1, "blk_staff1", ["staff"])
     doctor1 = await make_staff(h1, "blk_doctor1", ["doctor"])

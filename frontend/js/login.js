@@ -5,6 +5,7 @@
   var submit = document.getElementById("submit");
   var idInput = document.getElementById("login-id");
   var pwInput = document.getElementById("password");
+  var clinicInput = document.getElementById("clinic-code");
   var box = document.getElementById("error");
   var line = document.getElementById("error-line");
   var count = document.getElementById("error-count");
@@ -14,7 +15,8 @@
   /* 화면이 열리면 아이디 칸에 커서를 둔다. Tab → 비밀번호 → Enter로 끝난다.
      HTML의 autofocus 는 다른 화면에서 넘어온 경우 브라우저가 무시하기도 한다.
      접수대에서 하루에 수십 번 여는 화면이라 매번 마우스를 잡게 두면 안 된다. */
-  if (!idInput.value) idInput.focus();
+  if (!clinicInput.value) clinicInput.focus();
+  else if (!idInput.value) idInput.focus();
 
   /* 만료돼서 튕겨 온 경우. 「틀렸다」와 다른 말을 해야 한다 —
      사용자는 아무것도 틀리지 않았고, 그냥 시간이 지났을 뿐이다. */
@@ -85,12 +87,15 @@
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
+    /* 의원 코드는 소문자뿐이다 — 사람이 대문자로 쳐도 받아 준다. 서버도
+       내려 보고 찾지만, 여기서 접어야 화면에 보이는 것과 보내는 것이 같다. */
+    var clinicCode = clinicInput.value.trim().toLowerCase();
     var loginId = idInput.value.trim();
     var password = pwInput.value;
 
     /* 빈 칸은 서버까지 가지 않는다. 그래도 어느 칸이 비었는지는 말해 준다 —
        여기서는 아이디 존재 여부가 드러날 일이 없다. */
-    if (!loginId || !password) {
+    if (!clinicCode || !loginId || !password) {
       show(!loginId ? "아이디를 입력해 주세요" : "비밀번호를 입력해 주세요");
       (!loginId ? idInput : pwInput).focus();
       return;
@@ -100,7 +105,7 @@
     submit.disabled = true;
     submit.textContent = "확인 중…";
 
-    api.login(loginId, password).then(
+    api.login(clinicCode, loginId, password).then(
       function (res) {
         session.save(res.access_token);
         /* 첫 로그인은 L-3을 지나야 한다. 건너뛸 수 없다. */

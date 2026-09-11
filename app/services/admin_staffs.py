@@ -108,10 +108,11 @@ class AdminStaffService:
             # 아이디를 바꿔 가며 몇 번을 눌러도 같은 말이 나온다. 잘못을 남의
             # 이름으로 부르면 고칠 수 없다.
             #
-            # `login_id` 는 **전체에서** 유일하다 — 로그인이 병원을 알기 전에
-            # 일어나기 때문이다(`Staff` 모델). 그래서 다른 의원이 쓰고 있어도
-            # 여기서 걸린다. 어느 의원이 쓰는지는 **말하지 않는다.**
-            if await Staff.filter(login_id=request.login_id).exists():
+            # **제 의원 안에서만 본다** (KEY-324). 전에는 `login_id` 가 전체에서
+            # 유일해서 다른 의원이 쓰는 아이디로도 409 가 났다 — 관리자가 아이디를
+            # 하나씩 넣어 보며 남의 의원 계정 존재를 알아낼 수 있었다. 이제
+            # 유일성이 의원 안이라 남의 의원은 여기에 안 걸린다.
+            if await Staff.filter(hospital_id=actor.hospital_id, login_id=request.login_id).exists():
                 LOGGER.info("직원 계정 생성 실패 — 아이디 중복 (의원 %s)", actor.hospital_id)
                 raise ApiError(409, "LOGIN_ID_TAKEN", "이미 쓰고 있는 아이디입니다.") from error
             raise

@@ -170,7 +170,8 @@ class TestOpenApiShowsTheContract(TestCase):
 
         # `remember` 는 KEY-179 로 계약에서 빠졌다 — 공용 접수 PC 라 「로그인 유지」
         # 선택지 자체를 없앴다.
-        assert set(fields) == {"login_id", "password"}
+        #: 의원 코드가 함께 온다 — 아이디가 의원 안에서만 유일해졌다 (KEY-324).
+        assert set(fields) == {"clinic_code", "login_id", "password"}
         assert "email" not in fields
 
     async def test_me_shows_what_the_screen_branches_on(self) -> None:

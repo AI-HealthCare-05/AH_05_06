@@ -61,7 +61,7 @@ from app.models.catalog import (  # noqa: E402
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: E402
 from app.models.patients import Patient  # noqa: E402
 from app.models.prescriptions import Prescription, PrescriptionItem  # noqa: E402
-from app.models.staffs import Hospital, Staff, StaffStatus  # noqa: E402
+from app.models.staffs import Hospital, Staff, StaffStatus, default_clinic_code  # noqa: E402
 from app.models.visits import (  # noqa: E402
     CheckIn,
     GuideDocument,
@@ -320,10 +320,17 @@ async def _seed_hospitals() -> dict[str, Hospital]:
     created = 0
     for label, name in _HOSPITAL_NAMES.items():
         hospital, was_created = await Hospital.get_or_create(name=name)
+        #: **코드가 없으면 그 의원은 로그인 대상이 아니다** (KEY-324). 이관
+        #: 마이그레이션과 **같은 규칙**으로 짓는다 — 둘이 다르면 옮긴 뒤의
+        #: 코드와 다시 시드한 뒤의 코드가 갈려, 어제 되던 로그인이 오늘 안 된다.
+        if not hospital.code:
+            hospital.code = default_clinic_code(hospital.hospital_id)
+            await hospital.save(update_fields=["code", "updated_at"])
         result[label] = hospital
         if was_created:
             created += 1
-    print(f"[hospitals] created={created} existing={len(result) - created} total={len(result)}")
+    codes = " · ".join(f"{label}={hospital.code}" for label, hospital in result.items())
+    print(f"[hospitals] created={created} existing={len(result) - created} total={len(result)}  {codes}")
     return result
 
 

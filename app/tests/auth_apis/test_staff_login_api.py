@@ -27,7 +27,7 @@ async def make_staff(
     status: StaffStatus = StaffStatus.ACTIVE,
     must_change_password: bool = False,
 ) -> Staff:
-    hospital, _ = await Hospital.get_or_create(name="여성의원")
+    hospital, _ = await Hospital.get_or_create(name="여성의원", defaults={"code": "clinic0001"})
     return await Staff.create(
         hospital=hospital,
         login_id=login_id,
@@ -50,7 +50,7 @@ class StaffLoginTestCase(TestCase):
         super().tearDown()
 
     async def post(self, **body: Any) -> Any:
-        payload = {"login_id": "staff01", "password": PASSWORD, **body}
+        payload = {"clinic_code": "clinic0001", "login_id": "staff01", "password": PASSWORD, **body}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             return await client.post(LOGIN_URL, json=payload)
 
@@ -122,11 +122,11 @@ class TestLoginSucceeds(StaffLoginTestCase):
         await self.post(password="wrong")
         await self.post(password="wrong")
 
-        assert await self.redis.get("login_fail:staff01") == "2"
+        assert await self.redis.get("login_fail:clinic0001:staff01") == "2"
 
         await self.post()
 
-        assert await self.redis.get("login_fail:staff01") is None
+        assert await self.redis.get("login_fail:clinic0001:staff01") is None
 
 
 class TestLoginHidesWhoExists(StaffLoginTestCase):
@@ -156,7 +156,7 @@ class TestLoginHidesWhoExists(StaffLoginTestCase):
         response = await self.post(login_id="nobody01", password="whatever")
 
         assert response.json()["fail_count"] == 1
-        assert await self.redis.get("login_fail:nobody01") == "1"
+        assert await self.redis.get("login_fail:clinic0001:nobody01") == "1"
 
     async def test_left_staff_failure_also_counts(self) -> None:
         """퇴사자만 카운터가 안 움직이면 그 차이로 퇴사 여부가 드러난다."""
@@ -223,9 +223,9 @@ class TestLockout(StaffLoginTestCase):
         await self.post(password="wrong")
         await self.post(password="wrong")
 
-        assert self.redis.values["login_fail:staff01"] == 3
-        assert self.redis.expire_calls["login_fail:staff01"] == 1
-        assert self.redis.ttls["login_fail:staff01"] == LOCK_SECONDS
+        assert self.redis.values["login_fail:clinic0001:staff01"] == 3
+        assert self.redis.expire_calls["login_fail:clinic0001:staff01"] == 1
+        assert self.redis.ttls["login_fail:clinic0001:staff01"] == LOCK_SECONDS
 
 
 class TestRequestShape(StaffLoginTestCase):
@@ -299,7 +299,7 @@ class TestLockoutCountsBeforeChecking(StaffLoginTestCase):
         from app.services.login_attempts import LoginAttempts
 
         attempts = LoginAttempts(cast("Redis", InterleavingRedis()))
-        numbers = await asyncio.gather(*(attempts.begin("staff01") for _ in range(12)))
+        numbers = await asyncio.gather(*(attempts.begin("clinic0001", "staff01") for _ in range(12)))
 
         assert sorted(numbers) == list(range(1, 13)), f"번호가 겹친다: {sorted(numbers)}"
 
@@ -310,7 +310,7 @@ class TestLockoutCountsBeforeChecking(StaffLoginTestCase):
         await self.post(password="wrong")
         await self.post()
 
-        assert await self.redis.get("login_fail:staff01") is None
+        assert await self.redis.get("login_fail:clinic0001:staff01") is None
 
     async def test_the_limit_still_holds_under_a_burst(self) -> None:
         """한꺼번에 밀어 넣어도 비밀번호를 본 횟수가 제한을 넘지 않는다."""

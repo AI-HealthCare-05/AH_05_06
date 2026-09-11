@@ -112,7 +112,7 @@ test("배포/Pilot 주소에서는 ?mock=1을 무시하고 로컬에서만 고�
 
 test("로그인 mock 응답은 StaffLoginResponse·StaffMeResponse와 일치한다", async () => {
   const box = load("api");
-  const login = plain(await box.api.login("staff01", "local-only-password"));
+  const login = plain(await box.api.login("clinic0001", "staff01", "local-only-password"));
   const me = plain(await box.api.me(login.access_token));
   validate(login, schema("StaffLoginResponse"), "login");
   validate(me, schema("StaffMeResponse"), "me");
@@ -165,7 +165,7 @@ test("환자 가이드 mock fixture는 PatientGuideResponse와 일치하고 비�
 
 test("mock 오류 상태는 실제 서버 분기와 같은 HTTP status를 보존한다", async () => {
   const login = load("api");
-  await assert.rejects(login.api.login("missing", "wrong-password"), (error) => error.status === 401);
+  await assert.rejects(login.api.login("clinic0001", "missing", "wrong-password"), (error) => error.status === 401);
 
   const guide = load("api", "doctor-api", { search: "?mock=1&case=returned" });
   await assert.rejects(guide.doctorApi.approve(8801), (error) => error.status === 409 && error.code === "GUIDE_NOT_PENDING");

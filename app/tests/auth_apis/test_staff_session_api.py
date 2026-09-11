@@ -21,7 +21,7 @@ REFRESH_PATH = "/api/v1/auth"
 
 
 async def make_staff(login_id: str = "staff01", **kwargs: Any) -> Staff:
-    hospital = await Hospital.create(name="여성의원")
+    hospital = await Hospital.create(name="여성의원", code="clinic0001")
     return await Staff.create(
         hospital=hospital,
         login_id=login_id,
@@ -36,7 +36,7 @@ class SessionTestCase(AuthTestCase):
     async def sign_in(self, client: AsyncClient, login_id: str = "staff01") -> str:
         response = await client.post(
             f"{BASE}/login",
-            json={"login_id": login_id, "password": PASSWORD},
+            json={"clinic_code": "clinic0001", "login_id": login_id, "password": PASSWORD},
         )
         assert response.status_code == 200
         return str(response.json()["access_token"])

@@ -89,7 +89,7 @@ async def login(
     auth: Annotated[StaffAuthService, Depends(_auth)],
     session: Annotated[StaffSessionService, Depends(_session)],
 ) -> StaffLoginResponse:
-    staff = await auth.login(body.login_id, body.password)
+    staff = await auth.login(body.clinic_code, body.login_id, body.password)
     access, refresh = await session.start(staff)
     _set_refresh_cookie(response, refresh)
 

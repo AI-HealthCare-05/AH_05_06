@@ -23,7 +23,7 @@ from app.core.utils.security import hash_password
 from app.main import app
 from app.models.ocr import OcrJob, OcrJobStatus
 from app.models.patients import Patient
-from app.models.staffs import Hospital, Staff
+from app.models.staffs import Hospital, Staff, default_clinic_code
 from app.models.visits import Visit
 from app.tests.auth_base import AuthTestCase
 
@@ -41,6 +41,11 @@ class OcrAuthWiringTestCase(AuthTestCase):
         must_change_password: bool = False,
     ) -> Staff:
         hospital = await Hospital.create(name=hospital_name)
+        #: **코드가 없는 의원 직원은 로그인을 못 한다** (KEY-324). 이 파일은 의원을
+        #: 여럿 만들고 코드는 전체에서 유일해야 해서, 이관·시드와 같은 규칙으로
+        #: 번호에서 짓는다 — 고정 문자열을 박으면 둘째 의원에서 겹친다.
+        hospital.code = default_clinic_code(hospital.hospital_id)
+        await hospital.save(update_fields=["code", "updated_at"])
         return await Staff.create(
             hospital=hospital,
             login_id=login_id,
@@ -53,8 +58,14 @@ class OcrAuthWiringTestCase(AuthTestCase):
         )
 
     async def login(self, login_id: str) -> str:
+        #: 의원 코드를 **그 직원의 의원에서** 읽는다 (KEY-324). 고정으로 박으면
+        #: 병원 울타리 검사가 둘 다 한쪽 의원으로 들어가 울타리를 안 재게 된다.
+        staff = await Staff.get(login_id=login_id).select_related("hospital")
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(LOGIN_URL, json={"login_id": login_id, "password": PASSWORD})
+            response = await client.post(
+                LOGIN_URL,
+                json={"clinic_code": staff.hospital.code, "login_id": login_id, "password": PASSWORD},
+            )
         assert response.status_code == 200, response.text
         return str(response.json()["access_token"])
 

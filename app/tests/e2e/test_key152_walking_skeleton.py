@@ -19,7 +19,7 @@ from app.models.staffs import Hospital, Staff
 from app.models.visits import CheckIn, GuideDocument, GuideStatus, PatientGuideLink, Visit
 from app.ocr.service import seed_fixture_result
 from app.services.patient_otp import PatientOtpService
-from app.tests.auth_base import AuthTestCase, login_headers, make_staff_account
+from app.tests.auth_base import AuthTestCase, login_headers, make_clinic, make_staff_account
 from app.tests.patient_links.test_patient_otp import RecordingDelivery
 
 PATIENT_OTP = "152027"
@@ -67,7 +67,7 @@ class TestKey152WalkingSkeleton(AuthTestCase):
         return await login_headers(client, login_id)
 
     async def test_syn_ems_01_completes_the_demo_journey_with_one_visit_id(self) -> None:
-        hospital = await Hospital.create(name="기준의원")
+        hospital = await make_clinic("기준의원")
         staff = await self._account(hospital, "staff01", "한소영", ["staff"])
         doctor = await self._account(hospital, "doctor01", "박연", ["doctor"])
         patient = await Patient.create(

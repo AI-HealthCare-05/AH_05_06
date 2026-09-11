@@ -37,6 +37,20 @@ PASSWORD = "Synthetic-password-1!"
 
 LOGIN_URL = "/api/v1/auth/login"
 
+#: 검사용 의원 코드. 로그인이 의원 코드를 함께 받으므로(KEY-324) 검사가 만드는
+#: 의원에도 코드가 있어야 한다. 이관 마이그레이션이 짓는 것과 **같은 꼴**을 쓴다.
+TEST_CLINIC_CODE = "clinic0001"
+
+
+async def make_clinic(name: str = "합성의원", code: str = TEST_CLINIC_CODE) -> Hospital:
+    """로그인할 수 있는 의원 하나.
+
+    `Hospital.create(name=…)` 만 하면 코드가 없어 **로그인 대상이 아니다** —
+    그 의원 직원은 어떤 코드로도 못 들어온다. 로그인을 타는 검사는 이 자리를
+    쓴다.
+    """
+    return await Hospital.create(name=name, code=code)
+
 
 async def make_staff_account(
     hospital: Hospital,
@@ -59,14 +73,21 @@ async def make_staff_account(
     return await Staff.create(**fields)
 
 
-async def login_headers(client: AsyncClient, login_id: str, password: str = PASSWORD) -> dict[str, str]:
+async def login_headers(
+    client: AsyncClient,
+    login_id: str,
+    password: str = PASSWORD,
+    clinic_code: str = TEST_CLINIC_CODE,
+) -> dict[str, str]:
     """**라우트를 통해** 액세스 토큰을 얻는다. 손으로 만들지 않는다.
 
     리프레시 토큰이 본문에 실리지 않는 것도 함께 본다 — 계약이다
     (`docs/api/hospital.md` 2절). 로그인을 타는 모든 검사가 이 한 줄을
     공짜로 얻는다.
     """
-    response = await client.post(LOGIN_URL, json={"login_id": login_id, "password": password})
+    response = await client.post(
+        LOGIN_URL, json={"clinic_code": clinic_code, "login_id": login_id, "password": password}
+    )
     assert response.status_code == 200, f"{login_id} 로그인이 {response.status_code} 다 — 검사가 설 바닥이 없다"
     assert "refresh_token" not in response.text, "리프레시 토큰이 본문에 실렸다"
     return {"Authorization": f"Bearer {response.json()['access_token']}"}

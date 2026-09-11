@@ -18,6 +18,7 @@
 """
 
 import ast
+import importlib.util
 import os
 import subprocess
 import sys
@@ -29,6 +30,7 @@ from tortoise import Tortoise
 
 from app.core import config
 from app.core.db.databases import TORTOISE_APP_MODELS, TORTOISE_ORM
+from app.models.staffs import default_clinic_code
 
 ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS = ROOT / "app" / "core" / "db" / "migrations"
@@ -36,6 +38,10 @@ MIGRATIONS = ROOT / "app" / "core" / "db" / "migrations"
 #: 이 검사만 쓰고 지우는 DB. 이름에 일감 번호를 박아 둔다 — 남의 DB 를 지우는
 #: 사고가 나면 이름부터 눈에 띄어야 한다.
 SCRATCH = "key206_upgrade_probe"
+
+#: KEY-324 이관 검사가 쓰는 자리. **이름을 따로 둔다** — 위엣것과 나눠 쓰면
+#: 두 검사가 다른 워커에서 동시에 돌 때 서로의 DB 를 지운다.
+SCRATCH_324 = "key324_backfill_probe"
 
 
 def _aerich(database: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -104,7 +110,7 @@ async def _sql(database: str | None, statement: str) -> list[Any]:
         conn.close()
 
 
-async def _make_scratch_database() -> None:
+async def _make_scratch_database(database: str = SCRATCH) -> None:
     """검사용 DB 를 만든다. 그 전에 **지워도 되는 이름인지부터** 확인한다.
 
     이 함수는 `DROP DATABASE` 로 시작한다. 그 이름이 설정된 DB 와 같아지는
@@ -124,19 +130,19 @@ async def _make_scratch_database() -> None:
     """
     from asyncmy.errors import OperationalError  # type: ignore[import-untyped]
 
-    assert SCRATCH != config.DB_NAME, (
-        f"검사용 DB 이름이 실제 DB 와 같다 ({SCRATCH}) — 이대로 지우면 개발 데이터가 날아간다"
+    assert database != config.DB_NAME, (
+        f"검사용 DB 이름이 실제 DB 와 같다 ({database}) — 이대로 지우면 개발 데이터가 날아간다"
     )
 
     try:
-        await _sql(None, f"DROP DATABASE IF EXISTS {SCRATCH}")
-        await _sql(None, f"CREATE DATABASE {SCRATCH} CHARACTER SET utf8mb4")
+        await _sql(None, f"DROP DATABASE IF EXISTS {database}")
+        await _sql(None, f"CREATE DATABASE {database} CHARACTER SET utf8mb4")
     except OperationalError as denied:
         if os.environ.get("GITHUB_ACTIONS"):
             raise AssertionError(
                 f"CI 인데 검사용 DB 를 못 만들었다 — 빈 DB 마이그레이션 검사가 통째로 죽는다: {denied}"
             ) from denied
-        pytest.skip(f"이 계정으로 `{SCRATCH}` 를 못 만든다 ({denied}). 빈 DB 마이그레이션 검사는 CI(root) 에서 돈다")
+        pytest.skip(f"이 계정으로 `{database}` 를 못 만든다 ({denied}). 빈 DB 마이그레이션 검사는 CI(root) 에서 돈다")
 
 
 async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
@@ -280,6 +286,70 @@ async def test_the_clinic_wide_wording_cannot_be_written_twice() -> None:
         )
     finally:
         await _sql(None, f"DROP DATABASE IF EXISTS {SCRATCH}")
+
+
+def _statements(sql: str) -> list[str]:
+    """마이그레이션이 돌려주는 여러 문장을 하나씩 나눈다."""
+    return [line.strip() for line in sql.split(";") if line.strip()]
+
+
+async def test_an_existing_database_gets_its_clinic_codes() -> None:
+    """🚨 **이미 의원이 들어 있는 DB** 에 이관을 걸면 코드가 채워진다 — KEY-324.
+
+    빈 DB 로는 이 자리를 못 잰다. 코드를 채우는 것은 `UPDATE` 한 줄인데, 빈
+    DB 에는 채울 줄이 없어 **그 줄이 통째로 빠져도 초록불**이다.
+
+    Pilot 에는 의원이 있다. 거기서 코드가 안 채워지면 `hospital.code` 가 전부
+    `NULL` 로 남고, 로그인은 코드로 의원을 찾으므로 **아무도 못 들어온다.**
+    배포를 되돌리기 전까지 진료가 멈춘다.
+    """
+    await _make_scratch_database(SCRATCH_324)
+
+    try:
+        done = _aerich(SCRATCH_324, "upgrade")
+        assert done.returncode == 0, f"upgrade 가 실패했다 — {done.stderr[-400:]}"
+
+        #: **이관 전 모습으로 되돌린다.** 52 번의 `downgrade` 가 그 일을 한다 —
+        #: 손으로 적으면 진짜 이전 모습과 갈릴 수 있다.
+        path = next(MIGRATIONS.glob("models/*key324_clinic_scoped_login.py"))
+        spec = importlib.util.spec_from_file_location("key324_migration", path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        await _one_session(
+            SCRATCH_324,
+            [*_statements(await module.downgrade(None)), f"DELETE FROM aerich WHERE version LIKE '{path.stem[:3]}%'"],
+        )
+        columns = {row[0] for row in await _sql(SCRATCH_324, "SHOW COLUMNS FROM hospital")}
+        assert "code" not in columns, "되돌리기가 안 먹었다 — 이관 전 상태가 아니다"
+
+        #: 옛 규칙(전역 유일) 아래서 만들어진 의원 둘과 그 직원들
+        await _one_session(
+            SCRATCH_324,
+            [
+                "INSERT INTO hospital (name, created_at, updated_at) VALUES ('기준의원', NOW(), NOW())",
+                "INSERT INTO hospital (name, created_at, updated_at) VALUES ('옆동네의원', NOW(), NOW())",
+                "INSERT INTO staff (hospital_id, login_id, password_hash, name, roles, status, "
+                "must_change_password, created_at, updated_at) "
+                "SELECT hospital_id, CONCAT('staff', hospital_id), REPEAT('x', 60), '합성직원', "
+                "JSON_ARRAY('staff'), 'active', 0, NOW(), NOW() FROM hospital",
+            ],
+        )
+
+        moved = _aerich(SCRATCH_324, "upgrade")
+        assert moved.returncode == 0, f"기존 데이터가 있는 DB 에서 이관이 실패했다 — {moved.stderr[-600:]}"
+
+        rows = await _sql(SCRATCH_324, "SELECT hospital_id, code FROM hospital ORDER BY hospital_id")
+        assert rows, "의원이 사라졌다 — 검사가 헛돈다"
+        for hospital_id, code in rows:
+            assert code == default_clinic_code(hospital_id), (
+                f"의원 {hospital_id} 의 코드가 {code!r} 다 — 시드와 같은 규칙이 아니면 로그인이 갈린다"
+            )
+
+        staff_rows = await _sql(SCRATCH_324, "SELECT COUNT(*) FROM staff")
+        assert staff_rows[0][0] == len(rows), "이관이 직원을 잃었다"
+    finally:
+        await _sql(None, f"DROP DATABASE IF EXISTS {SCRATCH_324}")
 
 
 def test_the_migration_runs_in_its_own_process() -> None:

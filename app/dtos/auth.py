@@ -37,13 +37,18 @@ class TokenRefreshResponse(LoginResponse): ...
 
 
 class StaffLoginRequest(BaseModel):
-    """계약 4절 — `{ "login_id": "staff01", "password": "…" }`
+    """계약 4절 — `{ "clinic_code": "clinic0001", "login_id": "staff01", "password": "…" }`
 
-    `login_id` 규칙은 `^[a-z0-9]{4,}$` 이지만 **로그인에서는 검사하지 않는다.**
+    **의원 코드를 함께 받는다** (KEY-324). 아이디가 의원 안에서만 유일해져서,
+    어느 의원의 아이디인지를 로그인이 알아야 한다. 두 칸을 따로 받으므로 기존
+    아이디 규칙(`^[a-z0-9]{4,}$`)은 그대로다.
+
+    `login_id` 도 `clinic_code` 도 **로그인에서는 형식을 검사하지 않는다.**
     형식으로 걸러 422 를 주면, 규칙에 안 맞는 문자열이 「없는 아이디」와 다른
-    답을 받아 계정 존재 여부를 흘린다. 형식 검사는 계정을 만들 때 한다.
+    답을 받아 계정·의원 존재 여부를 흘린다. 형식 검사는 만들 때 한다.
     """
 
+    clinic_code: Annotated[str, Field(min_length=1, max_length=20)]
     login_id: Annotated[str, Field(min_length=1, max_length=50)]
     password: Annotated[str, Field(min_length=1, max_length=128)]
 

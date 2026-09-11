@@ -39,8 +39,8 @@ def _body(**over: Any) -> dict[str, Any]:
 class AdminStaffTestCase(AuthTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.hospital = await Hospital.create(name="도로시여성의원")
-        self.other = await Hospital.create(name="옆집여성의원")
+        self.hospital = await Hospital.create(name="도로시여성의원", code="clinic0001")
+        self.other = await Hospital.create(name="옆집여성의원", code="clinic0002")
         self.admin = await make_staff_account(self.hospital, "admin01", ["admin"], name="관리자")
         self.doctor = await make_staff_account(self.hospital, "doctor01", ["doctor"], name="박연")
         self.other_admin = await make_staff_account(self.other, "admin21", ["admin"], name="옆집관리자")
@@ -304,7 +304,10 @@ class TestTheNewAccountCanActuallyBeUsed(AdminStaffTestCase):
             created = await client.post(STAFFS_URL, json=_body(), headers=headers)
             assert created.json()["must_change_password"] is True
 
-            login = await client.post("/api/v1/auth/login", json={"login_id": "newstaff01", "password": NEW_PASSWORD})
+            login = await client.post(
+                "/api/v1/auth/login",
+                json={"clinic_code": "clinic0001", "login_id": "newstaff01", "password": NEW_PASSWORD},
+            )
 
         assert login.status_code == 200, login.text
         assert login.json()["must_change_password"] is True, "첫 로그인인데 안 바꿔도 된다고 한다"
@@ -361,5 +364,7 @@ class TestTheLoginIdRuleIsCheckedHere(AdminStaffTestCase):
     async def test_the_seeded_password_still_logs_in(self) -> None:
         """이 파일이 쓰는 합성 비밀번호가 규칙을 지키는지 — 검사가 헛돌지 않게."""
         async with self.client() as client:
-            response = await client.post("/api/v1/auth/login", json={"login_id": "admin01", "password": PASSWORD})
+            response = await client.post(
+                "/api/v1/auth/login", json={"clinic_code": "clinic0001", "login_id": "admin01", "password": PASSWORD}
+            )
         assert response.status_code == 200, response.text

@@ -143,10 +143,10 @@ function request(path, options) {
 }
 
 var api = {
-  login: function (loginId, password) {
+  login: function (clinicCode, loginId, password) {
     return request("/auth/login", {
       method: "POST",
-      body: { login_id: loginId, password: password },
+      body: { clinic_code: clinicCode, login_id: loginId, password: password },
     });
   },
   me: function (token) {
@@ -173,6 +173,9 @@ var api = {
  * "wrong" 으로 시작하면 실패한다 — L-2 와 잠금을 눈으로 보려는 것이다.
  * 실패 횟수는 서버와 같은 규칙으로 센다: 계정이 아니라 입력된 아이디 문자열에 붙인다.
  * (없는 아이디에서 횟수가 안 오르면 그 사실이 「없는 아이디」라는 답이 된다) */
+//: 목업 의원. 이관 마이그레이션이 짓는 것과 같은 꼴이다 (KEY-324).
+var MOCK_CLINIC_CODES = { clinic0001: "도로시여성의원" };
+
 var MOCK_STAFF = {
   staff01: { id: 101, name: "한소영", roles: ["staff"], must_change_password: false },
   doctor01: { id: 900, name: "박연", roles: ["doctor"], must_change_password: false },
@@ -202,6 +205,11 @@ function mockRequest(path, options) {
     setTimeout(function () {
       if (path === "/auth/login") {
         var id = body.login_id;
+        /* **목업도 의원 코드를 본다** (KEY-324). 안 보면 「목업에서는 아무 코드나
+           되는데 실서버에서는 안 되는」 거리가 생긴다 — 갈래를 두지 않는다. */
+        if (!MOCK_CLINIC_CODES[String(body.clinic_code || "").toLowerCase()]) {
+          return reject(new ApiError(ERROR.INVALID_CREDENTIALS, 401, { fail_count: 1, max_failures: MOCK_MAX_FAILURES }));
+        }
         if (mockFailures(id) >= MOCK_MAX_FAILURES) {
           return reject(new ApiError(ERROR.ACCOUNT_LOCKED, 429, { retry_after_seconds: MOCK_LOCK_SECONDS }));
         }

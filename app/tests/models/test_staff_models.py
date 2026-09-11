@@ -85,18 +85,28 @@ class TestStaffContract(TestCase):
         assert not staff.has_role(StaffRole.DOCTOR)
         assert not staff.has_role(StaffRole.STAFF)
 
-    async def test_login_id_is_unique_across_hospitals(self) -> None:
-        """아이디는 병원 안이 아니라 전체에서 유일하다.
+    async def test_login_id_is_unique_inside_the_hospital(self) -> None:
+        """아이디는 **그 병원 안에서** 유일하다 — KEY-324.
 
-        로그인은 병원을 알기 전에 일어난다. 두 병원에 같은 `staff01` 이 있으면
-        비밀번호를 맞춘 사람이 누구인지 서버가 고를 수가 없다.
+        전에는 전체에서 유일했다. 로그인이 병원을 알기 전에 일어나, 두 병원에
+        같은 `staff01` 이 있으면 비밀번호를 맞춘 사람이 누구인지 고를 수가
+        없었기 때문이다. 이제 로그인이 **의원 코드를 함께 받아** 병원을 먼저
+        고르므로, 유일성을 병원 안으로 좁혔다.
+
+        한 병원 안에서는 여전히 막혀야 한다. 안 막히면 같은 아이디가 둘이 되어
+        그 의원 로그인이 누구를 고를지 다시 모르게 된다.
         """
         first = await make_hospital("여성의원")
         second = await make_hospital("옆동네의원")
         await make_staff(first, "staff01", ["staff"])
 
+        #: 옆 의원은 같은 아이디를 쓸 수 있다
+        neighbour = await make_staff(second, "staff01", ["staff"])
+        assert neighbour.hospital_id == second.hospital_id
+
+        #: 제 의원 안에서 또 쓰면 **DB 가** 막는다 — 코드가 아니라
         with pytest.raises(IntegrityError):
-            await make_staff(second, "staff01", ["staff"])
+            await make_staff(first, "staff01", ["staff"])
 
     async def test_hospital_is_a_real_relation(self) -> None:
         """환자·진료의 hospital_id 는 가리킬 테이블이 없었다(PR #25 리뷰).
@@ -137,7 +147,13 @@ class TestMigration(TestCase):
         assert down.index("DROP TABLE IF EXISTS `staff`") < down.index("DROP TABLE IF EXISTS `hospital`")
 
     async def test_login_id_is_unique_in_schema(self) -> None:
-        """유일성은 코드가 아니라 DB 가 지킨다 — 동시에 두 요청이 와도 막힌다."""
+        """유일성은 코드가 아니라 DB 가 지킨다 — 동시에 두 요청이 와도 막힌다.
+
+        여기서 읽는 것은 **처음 만든 마이그레이션**이라 그때의 전역 유일이
+        그대로 있다. 지금 규칙은 `(hospital_id, login_id)` 이고(KEY-324),
+        그 자리로 옮기는 마이그레이션은
+        `app/tests/auth_apis/test_key324_clinic_scoped_login.py` 가 잰다.
+        """
         migration = load_migration()
         up = await migration.upgrade(None)
 

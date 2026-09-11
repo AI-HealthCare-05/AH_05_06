@@ -27,6 +27,20 @@ class StaffRole(StrEnum):
     STAFF = "staff"
 
 
+#: 의원 코드 규칙. 직원 아이디와 같은 글자 집합이라 사람이 두 칸을 같은
+#: 방식으로 친다 (KEY-324).
+CLINIC_CODE_PATTERN = r"^[a-z0-9]{4,20}$"
+
+
+def default_clinic_code(hospital_id: int) -> str:
+    """번호에서 만드는 기본 코드 — `clinic0001`.
+
+    **이관 마이그레이션과 시드가 같은 규칙을 쓴다.** 둘이 다르게 지으면 옮긴
+    뒤의 코드와 다시 시드한 뒤의 코드가 갈려, 어제 되던 로그인이 오늘 안 된다.
+    """
+    return f"clinic{hospital_id:04d}"
+
+
 class Hospital(models.Model):
     """병원 하나. 모든 진료 데이터가 이 울타리 안에 있다.
 
@@ -37,6 +51,19 @@ class Hospital(models.Model):
 
     hospital_id = fields.BigIntField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)
+
+    #: **로그인 때 사람이 치는 의원 이름표** — KEY-324.
+    #:
+    #: 규칙은 직원 아이디와 같은 집합이다(`^[a-z0-9]{4,20}$`). 두 칸을 따로
+    #: 받으므로 직원 아이디 규칙은 그대로 두고, 사람이 외워 칠 수 있는 짧은
+    #: 글자만 쓴다.
+    #:
+    #: **비워 둘 수 있다.** 검사 픽스처처럼 로그인할 일이 없는 의원이 많아
+    #: (92 자리가 `Hospital.create(name=…)` 로 만든다) 스키마로 강제하지
+    #: 않는다. 대신 **코드가 없는 의원은 로그인 대상이 아니다** — 로그인은
+    #: 코드로 의원을 찾으므로 조용히 다른 의원에 붙는 일은 없다.
+    #: 실제 데이터는 이관 마이그레이션이 전부 채운다(`default_clinic_code`).
+    code = fields.CharField(max_length=20, null=True, unique=True)
 
     staffs: fields.ReverseRelation["Staff"]
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -63,9 +90,17 @@ class Staff(models.Model):
     # 검사기 눈에는 안 보인다. 병원 울타리를 이 값으로 치므로 적어 둔다.
     hospital_id: int
 
-    # 로그인은 병원을 알기 전에 일어난다. 그래서 아이디는 병원 안이 아니라
-    # 전체에서 유일해야 한다 — 두 병원에 같은 `staff01`이 있으면 누구인지 모른다.
-    login_id = fields.CharField(max_length=50, unique=True)
+    # **아이디는 의원 안에서만 유일하다** — KEY-324.
+    #
+    # 전에는 전체에서 유일했다. 로그인이 `{아이디, 비밀번호}` 둘만 받아 병원을
+    # 알 수 없었기 때문이다(KEY-26 §4). 그 전역 유일이 두 가지를 낳았다:
+    # 관리자가 아이디를 하나씩 넣어 보며 **남의 의원 아이디 존재를 알아낼 수**
+    # 있었고(`409 LOGIN_ID_TAKEN`), 두 의원이 `reception` 같은 짧은 아이디를
+    # 나눠 쓸 수 없었다.
+    #
+    # 이제 로그인이 **의원 코드를 함께 받는다**(`Hospital.code`). 병원을 먼저
+    # 알고 나서 아이디를 찾으므로 유일성을 의원 안으로 좁힐 수 있다.
+    login_id = fields.CharField(max_length=50)
     password_hash = fields.CharField(max_length=128)
     name = fields.CharField(max_length=50)
 
@@ -94,6 +129,8 @@ class Staff(models.Model):
     class Meta:
         table = "staff"
         indexes = (("hospital_id", "status"),)
+        #: 같은 의원 안에서만 아이디가 겹치면 안 된다 (KEY-324).
+        unique_together = (("hospital_id", "login_id"),)
 
     def has_role(self, role: StaffRole | str) -> bool:
         """퇴사자는 역할이 남아 있어도 아무것도 못 한다."""

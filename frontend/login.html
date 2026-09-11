@@ -21,9 +21,30 @@
       </div>
 
       <form class="card__body" id="login-form" novalidate>
+        <!-- **의원 코드가 먼저다** — KEY-324.
+             아이디가 의원 안에서만 유일해서, 어느 의원인지를 먼저 말해야 한다.
+             두 칸을 따로 받는다 — `의원코드/아이디` 로 붙여 치게 하면 기존
+             아이디 규칙까지 바뀌고, 매번 둘을 이어 적어야 한다.
+
+             autofocus 는 여기다. 화면이 열리면 커서가 첫 칸에 있고
+             Tab → 아이디 → Tab → 비밀번호 → Enter 로 끝난다. -->
+        <div class="field">
+          <label class="field__label" for="clinic-code">의원 코드</label>
+          <input
+            class="field__input"
+            id="clinic-code"
+            name="clinic_code"
+            type="text"
+            inputmode="latin"
+            autocomplete="organization"
+            placeholder="clinic0001"
+            autofocus
+            required
+          />
+        </div>
+
         <div class="field">
           <label class="field__label" for="login-id">아이디</label>
-          <!-- autofocus — 화면이 열리면 여기에 커서가 있고, Tab → 비밀번호 → Enter로 끝난다 -->
           <input
             class="field__input"
             id="login-id"
@@ -32,7 +53,6 @@
             inputmode="latin"
             autocomplete="username"
             placeholder="staff01"
-            autofocus
             required
           />
         </div>

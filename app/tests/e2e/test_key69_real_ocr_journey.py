@@ -23,11 +23,11 @@ from app.main import app
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
 from app.models.prescriptions import Prescription, PrescriptionItem
-from app.models.staffs import Hospital, Staff
+from app.models.staffs import Staff
 from app.models.visits import CheckIn, GuideDocument, GuideStatus, PatientGuideLink, Visit
 from app.ocr.service import FIXTURE_MODEL_NAME
 from app.services.patient_otp import PatientOtpService
-from app.tests.auth_base import AuthTestCase, login_headers, make_staff_account
+from app.tests.auth_base import AuthTestCase, login_headers, make_clinic, make_staff_account
 from app.tests.fixtures.ocr import SYN_EMS_01_CLOVA_RESULT, SYN_EMS_01_REQUIRED_FIELDS
 from app.tests.patient_links.test_patient_otp import RecordingDelivery
 
@@ -94,7 +94,8 @@ class TestKey69RealOcrJourney(AuthTestCase):
         super().tearDown()
 
     async def _seed_visit(self, suffix: str) -> tuple[Staff, Staff, Visit]:
-        hospital = await Hospital.create(name=f"KEY-69 합성여성의원 {suffix}")
+        #: `make_clinic` 은 의원 코드를 함께 붙인다 — 코드가 없으면 로그인이 401 이다 (KEY-324).
+        hospital = await make_clinic(f"KEY-69 합성여성의원 {suffix}")
         staff = await make_staff_account(hospital, f"key69-staff-{suffix}", ["staff"], name="합성스탭")
         doctor = await make_staff_account(hospital, f"key69-doctor-{suffix}", ["doctor"], name="합성의사")
         patient = await Patient.create(

@@ -24,15 +24,22 @@ from redis.asyncio import Redis
 MAX_FAILURES = 5
 LOCK_SECONDS = 600
 
-_KEY = "login_fail:{login_id}"
+_KEY = "login_fail:{clinic_code}:{login_id}"
 
 
 class LoginAttempts:
     def __init__(self, redis: Redis) -> None:
         self.redis = redis
 
-    def _key(self, login_id: str) -> str:
-        """대소문자를 접어서 센다.
+    def _key(self, clinic_code: str, login_id: str) -> str:
+        """**의원과 아이디를 함께 센다** (KEY-324).
+
+        전에는 아이디 문자열 하나로 셌다. 아이디가 의원 안에서만 유일해지면서
+        그 칸은 **서로 다른 사람들이 함께 쓰는 칸**이 된다 — 한 의원의
+        `reception` 이 다섯 번 틀리면 다른 의원의 `reception` 까지 잠긴다.
+        남의 의원 계정을 임의로 잠글 수 있다는 뜻이다.
+
+        대소문자를 접어서 센다.
 
         DB 는 `utf8mb4_unicode_ci` 라 `Staff01` 과 `staff01` 이 **같은 계정**을
         찾는데, 예전에는 이 키가 입력 문자열 그대로라 **다른 카운터**가 생겼다.
@@ -43,23 +50,25 @@ class LoginAttempts:
         접어도 서로 다른 계정이 한 칸에 섞이지 않는다. 없는 아이디도 그대로
         자기 칸을 가지므로 「횟수가 안 오른다」로 존재가 새는 일도 없다.
         """
-        return _KEY.format(login_id=login_id.strip().lower())
+        #: **들어온 글자로 센다.** 그 의원이 실제로 있는지 보지 않는다 — 없는
+        #: 코드도 제 칸을 가지므로 「횟수가 안 오른다」로 의원 존재가 새지 않는다.
+        return _KEY.format(clinic_code=clinic_code.strip().lower(), login_id=login_id.strip().lower())
 
-    async def failures(self, login_id: str) -> int:
-        raw = await self.redis.get(self._key(login_id))
+    async def failures(self, clinic_code: str, login_id: str) -> int:
+        raw = await self.redis.get(self._key(clinic_code, login_id))
         return int(raw) if raw else 0
 
-    async def is_locked(self, login_id: str) -> bool:
-        return await self.failures(login_id) >= MAX_FAILURES
+    async def is_locked(self, clinic_code: str, login_id: str) -> bool:
+        return await self.failures(clinic_code, login_id) >= MAX_FAILURES
 
-    async def retry_after(self, login_id: str) -> int:
+    async def retry_after(self, clinic_code: str, login_id: str) -> int:
         """남은 잠금 시간(초). 화면이 「10분 뒤에 다시」를 계산하는 근거다."""
-        ttl = await self.redis.ttl(self._key(login_id))
+        ttl = await self.redis.ttl(self._key(clinic_code, login_id))
         # -1 은 만료가 없는 키, -2 는 없는 키다. 둘 다 여기 오면 안 되지만
         # 왔을 때 0 을 주면 화면이 「지금 다시 해 보세요」라고 거짓말한다.
         return ttl if ttl > 0 else LOCK_SECONDS
 
-    async def begin(self, login_id: str) -> int:
+    async def begin(self, clinic_code: str, login_id: str) -> int:
         """시도를 하나 세고 지금까지의 횟수를 준다. **비밀번호를 보기 전에** 부른다.
 
         예전에는 `is_locked()` 로 보고 나서 실패했을 때만 셌다. 보는 것과 세는
@@ -69,24 +78,24 @@ class LoginAttempts:
         `INCR` 은 원자적이라 동시에 와도 번호가 겹치지 않는다. 들어오는 데
         성공하면 `clear()` 가 지우므로 평소 사용에는 남지 않는다.
         """
-        key = self._key(login_id)
+        key = self._key(clinic_code, login_id)
         count = await self.redis.incr(key)
         if count == 1:
             await self.redis.expire(key, LOCK_SECONDS)
         return int(count)
 
-    async def record_failure(self, login_id: str) -> int:
+    async def record_failure(self, clinic_code: str, login_id: str) -> int:
         """실패를 하나 세고 지금까지의 횟수를 준다.
 
         만료는 **첫 실패에서만** 건다. 실패할 때마다 다시 걸면 계속 두드리는
         동안 잠금이 영원히 안 풀린다.
         """
-        key = self._key(login_id)
+        key = self._key(clinic_code, login_id)
         count = await self.redis.incr(key)
         if count == 1:
             await self.redis.expire(key, LOCK_SECONDS)
         return int(count)
 
-    async def clear(self, login_id: str) -> None:
+    async def clear(self, clinic_code: str, login_id: str) -> None:
         """들어왔으면 지운다. 어제 오타 두 번이 오늘까지 따라오지 않게."""
-        await self.redis.delete(self._key(login_id))
+        await self.redis.delete(self._key(clinic_code, login_id))

@@ -24,7 +24,7 @@ from app.core.auth_errors import (
 from app.core.jwt.exceptions import TokenError
 from app.core.jwt.tokens import AccessToken, RefreshToken
 from app.core.utils.security import hash_password, verify_password
-from app.models.staffs import Staff, StaffStatus
+from app.models.staffs import Hospital, Staff, StaffStatus
 from app.services.login_attempts import MAX_FAILURES, LoginAttempts
 from app.services.session_store import SessionStore
 
@@ -33,7 +33,7 @@ class StaffAuthService:
     def __init__(self, redis: Redis) -> None:
         self.attempts = LoginAttempts(redis)
 
-    async def login(self, login_id: str, password: str) -> Staff:
+    async def login(self, clinic_code: str, login_id: str, password: str) -> Staff:
         """누구인지만 가려낸다. 토큰 발급과 세션 등록은 StaffSessionService 가 한다 —
         로그인과 refresh 가 같은 자리에서 세션을 열어야 규칙이 갈라지지 않는다."""
         # 잠긴 아이디는 비밀번호를 맞춰도 들어오지 못한다. 맞았을 때만 통과시키면
@@ -41,11 +41,21 @@ class StaffAuthService:
         #
         # 세는 것을 **비밀번호를 보기 전에** 한다. 보고 나서 세면 동시에 들어온
         # 요청들이 전부 같은 숫자를 보고 통과해 5회를 넘긴다(`begin()` 참고).
-        attempt = await self.attempts.begin(login_id)
+        attempt = await self.attempts.begin(clinic_code, login_id)
         if attempt > MAX_FAILURES:
-            raise await self._locked(login_id)
+            raise await self._locked(clinic_code, login_id)
 
-        staff = await Staff.get_or_none(login_id=login_id)
+        #: **의원을 먼저 찾고 그 안에서 아이디를 찾는다** (KEY-324).
+        #:
+        #: 없는 의원 코드도 없는 아이디와 **같은 길**을 간다 — 아래에서
+        #: `_DUMMY_HASH` 로 검증 시간을 쓰고 같은 401 을 준다. 의원 코드만
+        #: 바꿔 가며 두드려 「그 의원이 있는가」를 알아낼 수 없다.
+        hospital = await Hospital.get_or_none(code=clinic_code.strip().lower()) if clinic_code.strip() else None
+        staff = (
+            await Staff.get_or_none(hospital_id=hospital.hospital_id, login_id=login_id)
+            if hospital is not None
+            else None
+        )
 
         # 없는 계정에서도 비밀번호를 검증한 것과 비슷한 시간을 쓴다.
         # 바로 돌려보내면 응답 시간만으로 계정 존재 여부가 드러난다.
@@ -53,18 +63,18 @@ class StaffAuthService:
         ok = verify_password(password, stored)
 
         if staff is None or not ok or staff.status is not StaffStatus.ACTIVE:
-            raise await self._failed(login_id, attempt)
+            raise await self._failed(clinic_code, login_id, attempt)
 
-        await self.attempts.clear(login_id)
+        await self.attempts.clear(clinic_code, login_id)
         staff.last_login_at = now()
         await staff.save(update_fields=["last_login_at", "updated_at"])
         return staff
 
-    async def _failed(self, login_id: str, count: int) -> AuthError:
+    async def _failed(self, clinic_code: str, login_id: str, count: int) -> AuthError:
         # 세는 것은 `begin()` 이 이미 했다. 여기서 또 세면 한 번 틀릴 때마다
         # 둘씩 올라간다.
         if count >= MAX_FAILURES:
-            return await self._locked(login_id)
+            return await self._locked(clinic_code, login_id)
         return AuthError(
             INVALID_CREDENTIALS,
             401,
@@ -74,8 +84,8 @@ class StaffAuthService:
             extra={"fail_count": count, "max_failures": MAX_FAILURES},
         )
 
-    async def _locked(self, login_id: str) -> AuthError:
-        seconds = await self.attempts.retry_after(login_id)
+    async def _locked(self, clinic_code: str, login_id: str) -> AuthError:
+        seconds = await self.attempts.retry_after(clinic_code, login_id)
         return AuthError(
             ACCOUNT_LOCKED,
             429,

@@ -20,7 +20,7 @@ BASE = "/api/v1/auth"
 
 
 async def make_staff(login_id: str = "staff01", **kwargs: Any) -> Staff:
-    hospital = await Hospital.create(name="여성의원")
+    hospital = await Hospital.create(name="여성의원", code="clinic0001")
     return await Staff.create(
         hospital=hospital,
         login_id=login_id,
@@ -35,7 +35,9 @@ class PasswordTestCase(AuthTestCase):
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     async def sign_in(self, client: AsyncClient, login_id: str = "staff01") -> dict[str, str]:
-        response = await client.post(f"{BASE}/login", json={"login_id": login_id, "password": PASSWORD})
+        response = await client.post(
+            f"{BASE}/login", json={"clinic_code": "clinic0001", "login_id": login_id, "password": PASSWORD}
+        )
         assert response.status_code == 200
         return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
@@ -258,7 +260,9 @@ class TestSessionsAfterChange(PasswordTestCase):
                 headers=headers,
             )
 
-            again = await client.post(f"{BASE}/login", json={"login_id": "staff01", "password": NEW_PASSWORD})
+            again = await client.post(
+                f"{BASE}/login", json={"clinic_code": "clinic0001", "login_id": "staff01", "password": NEW_PASSWORD}
+            )
 
         assert again.status_code == 200
         assert again.json()["must_change_password"] is False
@@ -309,7 +313,9 @@ class TestPasswordGateBlocksEverythingElse(PasswordTestCase):
             headers = await self.sign_in(client)
             await client.patch(f"{BASE}/password", json={"new_password": NEW_PASSWORD}, headers=headers)
 
-            again = await client.post(f"{BASE}/login", json={"login_id": "staff01", "password": NEW_PASSWORD})
+            again = await client.post(
+                f"{BASE}/login", json={"clinic_code": "clinic0001", "login_id": "staff01", "password": NEW_PASSWORD}
+            )
             fresh = {"Authorization": f"Bearer {again.json()['access_token']}"}
             response = await client.get(f"{BASE}/me", headers=fresh)
 
