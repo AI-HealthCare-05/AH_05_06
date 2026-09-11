@@ -11,11 +11,20 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
+from redis.asyncio import Redis
 
 from app.core.api_errors import ContractRoute
+from app.core.redis_client import get_redis
 from app.dependencies.admin_access import AdminActor, require_staff_manage
-from app.dtos.admin_staffs import StaffCreatedResponse, StaffCreateRequest, StaffListResponse
+from app.dtos.admin_staffs import (
+    StaffCreatedResponse,
+    StaffCreateRequest,
+    StaffListResponse,
+    StaffUpdatedResponse,
+    StaffUpdateRequest,
+)
 from app.services.admin_staffs import AdminStaffService
+from app.services.session_store import SessionStore
 
 admin_staff_router = APIRouter(prefix="/admin/staffs", tags=["admin"], route_class=ContractRoute)
 
@@ -35,3 +44,20 @@ async def create_staff(
 ) -> StaffCreatedResponse:
     """A1-2 — 직원 추가. 만든 계정은 첫 로그인에서 비밀번호를 바꿔야 한다(L-3)."""
     return await AdminStaffService.create_staff(actor, request)
+
+
+@admin_staff_router.patch("/{staff_id}", response_model=StaffUpdatedResponse)
+async def update_staff(
+    staff_id: int,
+    request: StaffUpdateRequest,
+    actor: Annotated[AdminActor, Depends(require_staff_manage)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> StaffUpdatedResponse:
+    """A1-3 — 역할·재직 상태를 바꾸고 비밀번호를 재설정한다 (KEY-330).
+
+    **준 것만 바꾼다.** 셋 다 선택이고, 아무것도 안 주면 `422` 다.
+
+    퇴사와 비밀번호 재설정은 **그 사람을 로그아웃시킨다** — 이미 발급된
+    액세스 토큰이 만료까지 사는 것을 두면, 그만둔 사람이 그동안 계속 쓴다.
+    """
+    return await AdminStaffService.update_staff(actor, staff_id, request, SessionStore(redis))
