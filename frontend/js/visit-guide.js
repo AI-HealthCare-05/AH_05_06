@@ -263,6 +263,45 @@ function guideMissingSaying(error) {
     wireUnapprove();
   }
 
+  /* 실패·보류 줄의 [다시 보내기] — KEY-306, D1-7.
+     매번 다시 그려지는 여러 버튼이라(`sendRowsHtml`) 위임으로 듣는다 —
+     `wireUnapprove`처럼 단추 하나씩 걸면 새로 그릴 때마다 리스너가
+     쌓인다. */
+  function wireResend() {
+    var body = el("status-body");
+    if (!body) return;
+
+    body.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-resend]");
+      if (!button) return;
+
+      var messageId = Number(button.dataset.resend);
+      var wantedId = visitId;
+      var wantedSeq = timelineSeq;
+      button.disabled = true;
+      button.textContent = "다시 보내는 중…";
+
+      doctorApi
+        .resendMessage(messageId)
+        .then(function () {
+          /* 사이에 다른 환자로 옮겼으면 그 화면을 건드리지 않는다 */
+          if (visitId !== wantedId || timelineSeq !== wantedSeq) return;
+          say("새 링크로 다시 보낼 작업을 등록했습니다");
+          loadTimeline(wantedId);
+        })
+        .catch(function (err) {
+          if (visitId !== wantedId || timelineSeq !== wantedSeq) return;
+          button.disabled = false;
+          button.textContent = "다시 보내기";
+          say(
+            err && err.code === "MESSAGE_NOT_RESENDABLE"
+              ? "이미 처리된 문자라 다시 보낼 수 없습니다 — 화면을 새로고침해 주세요"
+              : "다시 보내지 못했습니다. 잠시 뒤 다시 시도해 주세요",
+          );
+        });
+    });
+  }
+
   /* 승인 철회 — 승인했는데 잘못된 것을 발견했을 때. */
   function wireUnapprove() {
     var back = el("status-unapprove");
@@ -598,6 +637,7 @@ function guideMissingSaying(error) {
   };
 
   wirePatientLink(patientLinkOpts);
+  wireResend();
 
   document.addEventListener("visit:selected", function (event) {
     /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */

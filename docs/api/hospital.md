@@ -580,8 +580,9 @@ GET /api/v1/visits/{visit_id}/timeline
 - 응답은 `{visit_id, entries: [...], messages: [...]}`다. 각 항목: `at`, `category`(`VISIT` · `DOCUMENT` · `OCR` · `GUIDE` · `CHECK_IN` · `PATIENT`), `event`, `actor_id`(없으면 `null`), `actor`(직원 이름. 환자·시스템 사건이면 `null`, 지워진 계정도 `null`), `section_key`(안내문 수정·열람일 때만), `document_type`(문서 업로드일 때만), `note`(반려 사유·OCR 실패 코드 등 스탭용 짧은 부연).
 - `event` 값: `VISIT_CREATED` · `DOCUMENT_UPLOADED` · `OCR_STARTED` · `OCR_COMPLETED` · `OCR_FAILED` · `OCR_CONFIRMED` · `GUIDE_GENERATED` · `GUIDE_EDITED` · `GUIDE_SUBMITTED` · `GUIDE_APPROVED` · `GUIDE_UNAPPROVED` · `GUIDE_RETURNED` · `CHECK_IN_SUBMITTED` · `GUIDE_VIEWED` · `CHATBOT_ANSWERED`.
 - **이름은 서버가 붙여 내려 준다.** 번호만 주면 화면이 다시 물어야 하고, D1-6 은 「누가 언제」를 한 줄로 보여 준다. 「환자」·「시스템」은 서버가 적지 않는다 — 이름이 「환자」인 직원과 구별할 수 없어서다. 화면이 `category` 로 가른다.
-- `messages`는 **나갈 문자의 예약**이다(`kind` · `status` · `at` · `sent_at` · `failure_code` · `hold_reason`). 예정 시각 오름차순이고, 안내문 승인 전에는 빈 배열이다 — 예약은 승인이 만든다. 이력(`entries`)과 한 줄로 섞지 않는다: 이미 일어난 일과 앞으로 일어날 일이 같아 보이면 안 된다.
-- 문자가 **실제로 나간 이력**은 아직 없다. 발송 시각·상태를 남기는 모델(`SendLog` 계열)이 없다(D1-7, Sprint 5). 그 모델이 생기면 `category`에 `SEND`를 더한다.
+- `messages`는 **나갈 문자의 예약**이다(`guide_message_id` · `kind` · `status` · `at` · `sent_at` · `failure_code` · `hold_reason`). 예정 시각 오름차순이고, 안내문 승인 전에는 빈 배열이다 — 예약은 승인이 만든다. 이력(`entries`)과 한 줄로 섞지 않는다: 이미 일어난 일과 앞으로 일어날 일이 같아 보이면 안 된다.
+- `guide_message_id`는 `POST /messages/history/{id}/resend`(D1-7)가 받는 값이다 — 실패·보류 줄의 「다시 보내기」가 이 번호로 재발송을 건다.
+- 문자가 **실제로 나갔는지**는 `status`(`SENT`)와 `sent_at`으로 안다 — 별도 이력 모델(`SendLog` 계열)을 새로 만들지 않는다. 발송기(KEY-249)가 `guide_message` 행 자체를 갱신하므로, 「예약」과 「실제로 간 이력」이 한 표에 있다. `category`에 `SEND`를 별도로 두지 않는 것도 같은 이유다 — `entries`는 다른 표가 남긴 사건을 모으는 자리이고, 발송은 이미 `messages`가 갖고 있다.
 - **모르는 `event`는 건너뛴다.** `GuideEventType`이 늘 때 이력 전체가 500이 되면 안 된다. 실제로 `SUBMITTED`·`UNAPPROVED`가 늘면서 그럴 뻔했다.
 - `note`에 환자 대화 원문이나 검사값 원문을 담지 않는다. 반려 사유(`GuideEvent.reason`, 최대 200자)와 OCR 실패 코드만 노출한다.
 - 환자정보·검사값·처방이 담긴 화면이므로 `patient:read`가 필요하다 — `admin`만 가진 계정은 접근할 수 없다(KEY-168 회귀).
@@ -1253,7 +1254,7 @@ API에서 만들지 않고 워커가 문자 발송 직전에 만든다. 기존 �
 
 **판독 값을 적어 넣는 길은 고치는 길과 다르다.** `PATCH /ocr/fields/{id}` 는 있는 줄의 값을 바꾸고, `PUT /visits/{id}/ocr-fields/{field_type}` 는 **줄 자체가 없는** 것을 만든다 — 판독이 못 찾은 항목은 레코드로 남지 않아 가리킬 번호가 없기 때문이다. 빈 값을 보내면 그 줄을 지운다. 확정된 값은 이 길로도 못 고친다(`409 OCR_FIELD_CONFIRMED`).
 
-**보류(`HELD`)는 실패(`FAILED`)와 다른 축이다.** 실패는 「보내려 했고 안 됐다」(지난 일), 보류는 「아직 안 보냈고 지금 보내면 안 될 것을 안다」(앞일)다. 사유 목록도 갈린다 — 보류는 둘(`INVALID_PHONE` · `NO_CREDIT`, 와이어프레임 S2-3), 실패는 넷(`INVALID_PHONE` · `OPT_OUT` · `CARRIER` · `SENDER_UNREGISTERED`, D1-7). 겹치는 낱말이 있어도 한 목록으로 합치지 않는다. **아직 아무것도 이 두 상태를 만들지 않는다** — 문자를 보내는 것이 없다.
+**보류(`HELD`)는 실패(`FAILED`)와 다른 축이다.** 실패는 「보내려 했고 안 됐다」(지난 일), 보류는 「아직 안 보냈고 지금 보내면 안 될 것을 안다」(앞일)다. 사유 목록도 갈린다 — 보류는 다섯(`INVALID_PHONE` · `NO_CREDIT` · `NOT_APPROVED` · `SAFETY_CHECK_FAILED` · `SOURCE_NOT_DELETED`, 원문 둘에 발송 직전 게이트 셋을 KEY-250이 더했다), 실패는 넷(`INVALID_PHONE` · `OPT_OUT` · `CARRIER` · `SENDER_UNREGISTERED`, D1-7). 겹치는 낱말이 있어도 한 목록으로 합치지 않는다. 발송기(KEY-249)와 발송 직전 게이트(KEY-250)가 실제로 이 두 상태를 만든다 — `GET /visits/{id}/timeline`의 `messages[].status`로 드러난다.
 
 **문자 설정은 한 판을 통째로 주고받는다.** 회차 하나씩 PATCH 로 받으면 중간에 끊겼을 때 「보름 뒤는 껐는데 한 달 뒤는 안 켜진」 반쪽 상태가 남는다. 설정 행이 없는 회차는 기본값이고(일주일 뒤·보름 뒤·소진 임박은 켜짐, 한 달 뒤는 꺼짐), **일주일 뒤는 끌 수 없다** — 요청이 꺼짐으로 와도 켜짐으로 저장한다. 승인 뒤에는 `409 GUIDE_NOT_PENDING` 으로 막는다: 그때 고치면 이미 잡힌 예약과 어긋난다.
 

@@ -162,6 +162,15 @@ var doctorApi = {
       body: { reason: reason },
     });
   },
+  /* 실패·보류 건을 새 링크로 다시 보낼 작업으로 등록한다 — KEY-306, D1-7.
+     경로가 `/visits/{id}/guide/...`가 아니라 `/messages/history/{id}/...`
+     인 이유는, 이 작업이 안내문이 아니라 **문자 한 통**을 대상으로 하기
+     때문이다(kind·회차가 아니라 guide_message_id로 찾는다). */
+  resendMessage: function (messageId) {
+    return doctorRequest("/messages/history/" + encodeURIComponent(messageId) + "/resend", {
+      method: "POST",
+    });
+  },
 };
 
 /* 되돌리는 이유는 대개 넷 중 하나다. 진료 중에 문장을 짓게 하면
@@ -239,6 +248,11 @@ var MOCK_GUIDE_PATIENTS = {
    돌려줬다 — 승인해도 다음 조회는 다시 「승인 요청」이라 목업으로는
    `GUIDE_NOT_PENDING` 같은 상태 규칙을 아예 잴 수 없었다. */
 var MOCK_GUIDE_STATE = {};
+
+/* 재발송한 문자 번호 — KEY-306·D1-7. 재발송은 `visitId`가 아니라
+   `guide_message_id`를 대상으로 하므로(경로에 진료 번호가 없다) 위
+   `MOCK_GUIDE_STATE`와 같은 칸에 못 둔다. */
+var MOCK_RESENT_MESSAGE_IDS = {};
 
 /* 이 진료의 저장 칸을 돌려준다. 없으면 만들어서 돌려준다 — 승인·반려·PATCH가
    같은 객체를 부분 갱신하므로, 한쪽이 통째로 덮어써 다른 쪽 값을 지우는 일이
@@ -320,11 +334,21 @@ function mockTimeline(visitId) {
   var messages =
     guide.status === "SCHEDULED_TO_SEND"
       ? [
-          sending("GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
-          sending("CHECK_D7", "SCHEDULED", "2026-09-09T18:00:00+09:00", null),
-          sending("CHECK_D15", "SCHEDULED", "2026-09-17T18:00:00+09:00", null),
-          sending("RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
-        ]
+          sending(9001, "GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
+          /* 실패·보류 예시 — D1-7의 「사유를 보고 재시도」·「HELD 사유 표시」를
+             목업에서도 검증할 수 있게 둔다. 발신번호 미등록은 처리 경로가
+             다르다는 것도(어드민 A1-5) 사람 말로 확인할 수 있어야 한다. */
+          sending(9002, "CHECK_D7", "FAILED", "2026-09-09T18:00:00+09:00", null, "SENDER_UNREGISTERED"),
+          sending(9003, "CHECK_D15", "HELD", "2026-09-17T18:00:00+09:00", null, null, "SAFETY_CHECK_FAILED"),
+          sending(9004, "RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
+        ].map(function (row) {
+          /* 재발송을 누르면 그 줄이 다시 예정으로 돌아간다 — 실제 서버는
+             원본은 그대로 두고 새 행을 만들지만(resend_sequence), 목업은
+             한 줄로 단순화한다. 화면이 「눌렀더니 바뀌었다」를 보게 하는
+             것이 목적이지 서버의 이력 보존 방식을 재현하는 것이 아니다. */
+          if (!MOCK_RESENT_MESSAGE_IDS[row.guide_message_id]) return row;
+          return Object.assign({}, row, { status: "SCHEDULED", failure_code: null, hold_reason: null });
+        })
       : [];
 
   return { visit_id: visitId, entries: made, messages: messages };
@@ -347,8 +371,16 @@ function entry(at, category, event, over) {
   return row;
 }
 
-function sending(kind, status, at, sentAt) {
-  return { kind: kind, status: status, at: at, sent_at: sentAt, failure_code: null, hold_reason: null };
+function sending(id, kind, status, at, sentAt, failureCode, holdReason) {
+  return {
+    guide_message_id: id,
+    kind: kind,
+    status: status,
+    at: at,
+    sent_at: sentAt,
+    failure_code: failureCode || null,
+    hold_reason: holdReason || null,
+  };
 }
 
 /* 모르는 진료는 **없다고 답한다.** 서버(`app/services/guides.py`)가 그 자리에서
@@ -598,6 +630,15 @@ function mockDoctorRequest(path, options) {
          늘 「불러오지 못했습니다」였다 — 서버에는 있는데 목업만 없었다.
          목업이 서버보다 **좁으면** 화면을 목업으로 검수할 수 없다. */
       var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
+      /* 재발송 — KEY-306·D1-7. visitId가 경로에 없다(문자 한 통을 대상으로
+         하는 작업이라 안내문·진료 자체를 안 거친다) — 아래에서 m[1]로
+         묶이지 않게 따로 잰다. */
+      var resend = path.match(/^\/messages\/history\/(\d+)\/resend$/);
+      if (resend && options.method === "POST") {
+        var resendId = Number(resend[1]);
+        MOCK_RESENT_MESSAGE_IDS[resendId] = true;
+        return resolve({ guide_message_id: resendId, status: "SCHEDULED" });
+      }
       var m = get || sec || act || issueLink || reIssueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);

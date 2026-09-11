@@ -178,6 +178,11 @@ class ScheduledMessage(BaseModel):
     일어날 일이라, 한 줄로 섞으면 「보냈다」와 「보낼 것이다」가 같아 보인다.
     """
 
+    #: `POST /messages/history/{id}/resend`(KEY-306)가 받는 값 — 실패·보류
+    #: 행의 「다시 보내기」가 이 번호로 재발송을 건다(D1-7). 서버가 이미
+    #: `guide_message_id`로 행을 구분하므로(unique_together), 화면이 따로
+    #: kind·scheduled_at으로 짝을 맞출 필요가 없다.
+    guide_message_id: int
     #: GUIDE · CHECK_D7 · CHECK_D15 · CHECK_D30 · RUN_OUT.
     kind: str
     #: SCHEDULED · SENT · FAILED · HELD · CANCELED

@@ -163,6 +163,7 @@ class VisitTimelineService:
             return []
         return [
             ScheduledMessage(
+                guide_message_id=row.guide_message_id,
                 kind=str(row.kind),
                 status=str(row.status),
                 at=row.scheduled_at,

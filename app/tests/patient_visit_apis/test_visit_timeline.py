@@ -18,7 +18,17 @@ from app.main import app
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType, OcrJob, OcrJobStatus, OcrResult
 from app.models.patients import Patient
-from app.models.visits import GuideDocument, GuideEvent, GuideEventType, GuideSectionKey, Visit
+from app.models.visits import (
+    GuideDocument,
+    GuideEvent,
+    GuideEventType,
+    GuideMessage,
+    GuideMessageKind,
+    GuideMessageStatus,
+    GuideSectionKey,
+    GuideStatus,
+    Visit,
+)
 from app.services.patient_history import GUIDE_PAGES
 
 BASE_URL = "http://test"
@@ -279,3 +289,38 @@ class TestTimelineAccess(TestCase):
         response = await get_timeline(STAFF, 9_999_999)
 
         assert response.status_code == 404
+
+
+class TestScheduledMessageIdentity(TestCase):
+    async def test_messages_carry_their_own_guide_message_id(self) -> None:
+        """[KEY-251, D1-7] 발송·예정 표의 각 줄이 자기 번호를 심고 있다.
+
+        재발송(`POST /messages/history/{id}/resend`, KEY-306)이 이 번호로
+        어느 문자를 다시 보낼지 찾는다 — 번호가 안 실리면 화면이 재발송
+        단추를 어디에도 못 단다.
+        """
+        patient = await make_patient(1, "SYN-KEY251-ID")
+        visit = await make_visit(1, patient)
+        guide = await GuideDocument.create(hospital_id=1, visit=visit, status=GuideStatus.SCHEDULED_TO_SEND)
+        first = await GuideMessage.create(
+            guide_document=guide,
+            kind=GuideMessageKind.GUIDE,
+            status=GuideMessageStatus.FAILED,
+            scheduled_at=BASE,
+            failure_code="INVALID_PHONE",
+        )
+        second = await GuideMessage.create(
+            guide_document=guide,
+            kind=GuideMessageKind.CHECK_D7,
+            status=GuideMessageStatus.HELD,
+            scheduled_at=BASE + timedelta(days=7),
+            hold_reason="SAFETY_CHECK_FAILED",
+        )
+
+        response = await get_timeline(STAFF, visit.visit_id)
+
+        assert response.status_code == 200
+        by_id = {row["guide_message_id"]: row for row in response.json()["messages"]}
+        assert by_id.keys() == {first.guide_message_id, second.guide_message_id}
+        assert by_id[first.guide_message_id]["failure_code"] == "INVALID_PHONE"
+        assert by_id[second.guide_message_id]["hold_reason"] == "SAFETY_CHECK_FAILED"
