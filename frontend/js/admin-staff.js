@@ -70,8 +70,82 @@ function staffRowHtml(row) {
     "<td>" +
     (state ? '<span class="staffs__state">' + esc(state) + "</span>" : "") +
     "</td>" +
-    "</tr>"
+    '<td class="staffs__act"><button class="button-ghost button-ghost--sm" type="button" data-edit-staff="' +
+    esc(row.staff_id) +
+    '">수정</button></td>' +
+    "</tr>" +
+    (open === row.staff_id ? staffEditHtml(row) : "")
   );
+}
+
+/* **고른 조합의 이름**을 돌려준다 — 저장된 역할로 고름칸의 기본값을 잡는다.
+   모르는 조합(옛 자료·직접 넣은 값)이면 빈 값이라, 고름칸이 아무것도 안 고른
+   채로 서고 관리자가 새로 고르게 된다 — 지어내서 엉뚱한 역할로 덮지 않는다. */
+function staffRoleKeyOf(roles) {
+  var want = (roles || []).slice().sort().join(",");
+  for (var i = 0; i < STAFF_ROLE_CHOICES.length; i++) {
+    if (STAFF_ROLE_CHOICES[i].roles.slice().sort().join(",") === want) return STAFF_ROLE_CHOICES[i].key;
+  }
+  return "";
+}
+
+/* 줄 아래로 펼쳐지는 수정 판 — A1-3 (KEY-330).
+ *
+ * **모달이 아니라 그 줄 아래다.** 누구를 고치는지가 위에 그대로 보여야 한다 —
+ * 관리자 화면에서 엉뚱한 사람의 역할을 바꾸는 것이 제일 나쁜 사고다.
+ *
+ * 비밀번호 칸은 **비워 두면 안 바뀐다.** 셋을 한 판에 두고 「준 것만 바꾼다」는
+ * 서버 규칙을 그대로 보인다. */
+function staffEditHtml(row) {
+  var options = "";
+  var now = staffRoleKeyOf(row.roles);
+  for (var i = 0; i < STAFF_ROLE_CHOICES.length; i++) {
+    var choice = STAFF_ROLE_CHOICES[i];
+    options +=
+      '<option value="' + esc(choice.key) + '"' + (choice.key === now ? " selected" : "") + ">" +
+      esc(choice.label) +
+      "</option>";
+  }
+  var left = row.status === "left";
+  return (
+    '<tr class="staffs__editrow"><td colspan="5"><form class="staffedit" id="staff-edit">' +
+    '<p class="staffedit__who">' +
+    esc(row.name) +
+    " · " +
+    esc(row.login_id) +
+    "</p>" +
+    '<div class="staff-add__fields">' +
+    '<label class="staff-add__field"><span class="staff-add__label">역할</span>' +
+    '<select class="staff-add__input" id="staff-edit-roles">' +
+    options +
+    "</select></label>" +
+    '<label class="staff-add__field"><span class="staff-add__label">재직</span>' +
+    '<select class="staff-add__input" id="staff-edit-status">' +
+    '<option value="active"' + (left ? "" : " selected") + ">재직</option>" +
+    '<option value="left"' + (left ? " selected" : "") + ">퇴사</option>" +
+    "</select></label>" +
+    '<label class="staff-add__field"><span class="staff-add__label">새 비밀번호</span>' +
+    '<input class="staff-add__input" id="staff-edit-password" type="text" autocomplete="off" />' +
+    '<span class="staff-add__hint">비워 두면 안 바뀝니다 · 주면 첫 로그인에서 본인이 바꿉니다</span></label>' +
+    "</div>" +
+    '<p class="staffedit__say" id="staff-edit-say"></p>' +
+    '<div class="staffedit__acts">' +
+    '<button class="button-ghost button-ghost--sm" type="button" data-edit-staff-close>닫기</button>' +
+    '<button class="button-primary" type="submit" id="staff-edit-go">저장</button>' +
+    "</div></form></td></tr>"
+  );
+}
+
+/* 지금 펼쳐 놓은 줄. **한 번에 하나만** 연다 — 여럿을 열어 두면 어느 판의
+   「저장」인지가 흐려진다. */
+var open = null;
+
+function staffListOpen(staffId) {
+  open = staffId;
+}
+
+function staffOpenNow() {
+  return open;
 }
 
 function staffListHtml(staffs) {
@@ -85,7 +159,7 @@ function staffListHtml(staffs) {
   for (var i = 0; i < staffs.length; i++) rows += staffRowHtml(staffs[i]);
   return (
     '<table class="staffs">' +
-    "<thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>상태</th></tr></thead>" +
+    "<thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>상태</th><th></th></tr></thead>" +
     "<tbody>" +
     rows +
     "</tbody>" +
@@ -150,6 +224,26 @@ function staffCreateSaying(error) {
 
 function listStaffs() {
   return request("/admin/staffs");
+}
+
+function updateStaff(staffId, body) {
+  return request("/admin/staffs/" + encodeURIComponent(staffId), { method: "PATCH", body: body });
+}
+
+function staffEditSaying(error) {
+  return errorMessage(
+    error,
+    [
+      /* **이 의원에 관리자가 없어지는 것**을 서버가 막는다. 되돌릴 길이 화면에
+         없어서, 왜 막혔는지와 무엇을 먼저 해야 하는지를 같이 말한다. */
+      { code: "LAST_ADMIN", say: "이 의원의 마지막 관리자입니다 — 다른 분에게 어드민을 먼저 주세요." },
+      { code: "INVALID_ROLE_COMBINATION", say: "고를 수 없는 역할 조합입니다." },
+      { code: "INVALID_REQUEST", say: "바꿀 것을 하나는 골라 주세요 — 역할 · 재직 · 비밀번호." },
+      { status: 404, say: "그 직원을 찾을 수 없습니다. 목록을 다시 불러와 주세요." },
+      { status: 403, say: "직원 계정을 관리할 권한이 없습니다." },
+    ],
+    "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+  );
 }
 
 function createStaff(body) {
