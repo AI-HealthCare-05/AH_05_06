@@ -269,6 +269,15 @@ function statusScreenHtml(view) {
     /* 아래 전폭 */
     '<section class="box tl">' +
     '<div class="box__head tl__head"><span class="box__title tl__title">진료 처리 이력</span>' +
+    /* **이 진료 하나**의 흐름 옆에 그 환자의 지난 진료 전부 — KEY-329.
+       없을 때는 관리 화면으로 나갔다가 그 환자를 다시 찾아야 했다.
+       환자 번호를 모르면 단추를 안 세운다 — 눌러도 아무 일 없는 자리를
+       만들지 않는다. */
+    (view.patientId
+      ? '<button class="button-ghost button-ghost--sm" type="button" data-history="' +
+        esc(view.patientId) +
+        '">전체 이력 보기</button>'
+      : "") +
     '<span class="tl__tail">시스템 처리 내역 포함</span></div>' +
     (rows || '<p class="st__note">아직 기록이 없습니다</p>') +
     '<p class="st__note">ⓘ 열람 기록은 어드민 「전체 로그」에서 확인합니다 · 이 화면은 진료 흐름만 표시합니다</p>' +

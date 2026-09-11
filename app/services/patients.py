@@ -30,7 +30,7 @@ from app.core.api_errors import ApiError
 from app.core.pagination import decode_cursor, encode_cursor
 from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.patient_access import ClinicalActor
-from app.dtos.patients import PatientCategory, PatientCreateRequest, PatientUpdateRequest
+from app.dtos.patients import PatientCategory, PatientCreateRequest, PatientSort, PatientUpdateRequest
 from app.models.ocr import OcrField
 from app.models.patients import Patient, PatientNumberCorrection
 from app.models.staffs import Staff
@@ -159,6 +159,7 @@ class PatientService:
         cursor: str | None,
         limit: int,
         offset: int = 0,
+        sort: PatientSort = PatientSort.REGISTERED_DESC,
     ) -> tuple[builtins.list[PatientRow], dict[PatientCategory, int], str | None, bool, int]:
         """환자 관리 표 — 와이어프레임 S2-1.
 
@@ -211,6 +212,7 @@ class PatientService:
             limit=limit + 1,
             sms_opt_out_only=category is PatientCategory.SMS_OPT_OUT,
             offset=offset,
+            sort=sort,
             patient_ids=_narrow(
                 (
                     inactive_patient_ids
@@ -240,8 +242,16 @@ class PatientService:
         has_next = len(rows) > limit
         selected_rows = rows[:limit]
         items = await self._rows(selected_rows, hospital_id)
+        #: **커서는 `id_asc` 걸음에서만 뜻이 있다** (KEY-327, 이희진 님 #291 리뷰).
+        #: 값이 `patient_id` 하나라 다음 쪽은 `patient_id > cursor` 로 걸린다 —
+        #: 다른 차례로 받은 응답에 이 값을 실어 주면, 그것을 들고 다시 부른
+        #: 쪽은 **200 으로 조용히 빠진 목록**을 받는다. 지금 화면은 표(`offset`)와
+        #: 찾기(`cursor`)를 섞어 쓰지 않아 안 터지지만, 이 값은 공개 응답에
+        #: 모든 정렬에서 똑같은 모양으로 실려 나간다.
         next_cursor = (
-            encode_cursor({"patient_id": selected_rows[-1].patient_id}) if has_next and selected_rows else None
+            encode_cursor({"patient_id": selected_rows[-1].patient_id})
+            if has_next and selected_rows and sort is PatientSort.ID_ASC
+            else None
         )
         return items, counts, next_cursor, has_next, total
 

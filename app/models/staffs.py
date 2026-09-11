@@ -133,13 +133,23 @@ class Staff(models.Model):
 
 
 class StaffAccountEventType(StrEnum):
-    """계정에 무슨 일이 있었나. **A1-2 가 지금 만드는 것은 하나뿐이다.**
+    """계정에 무슨 일이 있었나.
 
-    A1-3(수정 · 비밀번호 재설정)이 들어올 때 그 자리에서 늘린다 — 쓰지도 않을
-    이름을 미리 적어 두면 「이 값은 어디서 남나」에 아무도 답하지 못한다.
+    **쓰는 것만 적는다.** A1-2 가 하나로 시작했고, A1-3(수정 · 비밀번호
+    재설정)이 들어오며 넷이 늘었다 — 쓰지도 않을 이름을 미리 적어 두면
+    「이 값은 어디서 남나」에 아무도 답하지 못한다.
     """
 
     STAFF_CREATED = "STAFF_CREATED"
+    #: 역할을 바꿨다 — KEY-330. 바뀐 **뒤의** 역할을 `roles` 에 남긴다.
+    STAFF_ROLES_CHANGED = "STAFF_ROLES_CHANGED"
+    #: 퇴사 처리했다. 계정을 지우지 않는다 — 지난 기록이 이 이름을 가리킨다.
+    STAFF_LEFT = "STAFF_LEFT"
+    #: 퇴사를 되돌려 다시 재직으로 뒀다.
+    STAFF_REINSTATED = "STAFF_REINSTATED"
+    #: 관리자가 임시 비밀번호를 새로 줬다. **비밀번호는 어느 칸에도 안 담는다** —
+    #: 「누가 누구에게 언제」까지만 남는다.
+    STAFF_PASSWORD_RESET = "STAFF_PASSWORD_RESET"
 
 
 class StaffAccountEvent(models.Model):
@@ -193,7 +203,18 @@ class StaffAccountEvent(models.Model):
         source_field="subject_staff_id",
     )
     subject_staff_id: int
-    event_type = fields.CharEnumField(enum_type=StaffAccountEventType)
+    #: **폭을 이름 길이에 맡기지 않는다** (KEY-330, 이희진 님 #294 리뷰).
+    #:
+    #: `CharEnumField` 는 max_length 를 안 주면 **그때 가장 긴 이름**에 맞춘다.
+    #: KEY-321 이 만든 마이그레이션 51 이 그래서 `VARCHAR(13)`(`STAFF_CREATED`)
+    #: 이었고, 여기에 이름 넷이 늘면서 20자(`STAFF_PASSWORD_RESET`)가 들어가야
+    #: 했다. **검사는 이것을 못 잡는다** — `tortoise.contrib.test.initializer()`
+    #: 가 마이그레이션을 거치지 않고 지금 모델로 표를 새로 만들어, 폭이 늘 최신
+    #: 이기 때문이다. 실서버는 `aerich upgrade` 로 51 위에 얹으므로 13자가 그대로
+    #: 남고, 역할 변경 한 건에 `1406 Data too long` 으로 500 이 난다.
+    #:
+    #: 32 는 이름 하나가 더 늘어도 다시 안 부딪히게 둔 여유다.
+    event_type = fields.CharEnumField(enum_type=StaffAccountEventType, max_length=32)
     #: 그때 준 역할. 나중에 A1-3 이 역할을 바꿔도 **준 시점의 값**이 남는다.
     roles: fields.Field[list[str]] = fields.JSONField()
     created_at = fields.DatetimeField(auto_now_add=True)

@@ -9,7 +9,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, model_validator
 
 from app.core.validators import validate_staff_password
 from app.dtos.base import StrictModel
@@ -96,3 +96,47 @@ class StaffCreatedResponse(StrictModel):
     roles: list[StaffRole]
     status: StaffStatus
     must_change_password: bool
+
+
+class StaffUpdateRequest(StrictModel):
+    """A1-3 이 보내는 것 — **준 것만 바꾼다** (KEY-330).
+
+    셋 다 선택이다. 역할만 바꾸거나, 퇴사만 시키거나, 비밀번호만 새로 줄 수
+    있다. 아무것도 안 주면 `422` 다 — 「바꿀 것이 없는 저장」은 화면이 뭔가를
+    빠뜨렸다는 뜻이지, 조용히 성공으로 답할 일이 아니다.
+
+    **`login_id` 와 `name` 은 안 받는다.** 아이디는 만든 뒤에 못 바꾸고(계약
+    §8.3), 이름은 A1-3 원문의 편집 대상이 아니다 — 필요해지면 그때 계약을 연다.
+    """
+
+    #: 바꿀 역할. 조합 규칙은 만들 때와 **같은 것**(`is_valid_role_combination`)을 탄다.
+    roles: list[StaffRole] | None = None
+    #: 재직 상태. `left` 면 그 사람은 더 이상 못 들어온다.
+    status: StaffStatus | None = None
+    #: 새 임시 비밀번호. 주면 받은 사람이 **첫 로그인에서 바꾼다**(L-3).
+    #: 원문은 이 요청 밖으로 안 나간다 — 응답에도 감사 기록에도 안 담는다.
+    password: Annotated[str, Field(max_length=128), AfterValidator(validate_staff_password)] | None = None
+
+    @model_validator(mode="after")
+    def something_to_change(self) -> "StaffUpdateRequest":
+        if self.roles is None and self.status is None and self.password is None:
+            raise ValueError("바꿀 것을 하나는 주세요 — roles · status · password 중에서.")
+        return self
+
+
+class StaffUpdatedResponse(StrictModel):
+    """바꾼 뒤의 그 줄. 화면이 목록을 다시 안 불러도 되게 **저장된 값 그대로** 준다.
+
+    **비밀번호는 담지 않는다.** 관리자가 방금 정해 준 값이라 화면이 이미 알고
+    있고, 응답에 실으면 그 값이 로그·캐시·브라우저 기록으로 퍼진다.
+    """
+
+    staff_id: int
+    login_id: str
+    name: str
+    roles: list[str]
+    status: StaffStatus
+    must_change_password: bool
+    #: 이 저장으로 끊긴 세션 수. 퇴사·비밀번호 재설정은 **그 사람을 로그아웃시킨다** —
+    #: 몇이 끊겼는지 보여야 관리자가 「지금 쓰고 있었구나」를 안다.
+    revoked_sessions: int
