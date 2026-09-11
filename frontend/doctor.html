@@ -128,7 +128,6 @@
           <button class="button-ghost" type="button" id="return" disabled>스탭에 되돌리기</button>
           <span class="grow"></span>
           <span class="role-note" id="role-note" hidden>의사 역할이 있어야 눌려요</span>
-          <button class="button-ghost" type="button" id="patient-open" hidden>환자 링크 발급</button>
           <button class="button-primary" type="button" id="approve" disabled>승인</button>
         </div>
         </section>
@@ -151,8 +150,7 @@
     <script src="/js/sms-plan.js"></script>
     <script src="/js/patient-guide-cards.js"></script>
     <script src="/js/guide-view.js"></script>
-    <!-- 의원 시계 — `patient-link-view.js` 가 만료 시각을 KST 로 읽는다 (KEY-275).
-         **반드시 그 앞에 온다** — 뒤에 두면 `clinicWhenText` 가 없어서 죽는다. -->
+    <!-- 안내 화면 공용 렌더러가 링크 상태 어휘를 사용하므로 규칙 파일은 유지한다. -->
     <script src="/js/clinic-clock.js"></script>
     <script src="/js/patient-link-view.js"></script>
     <script src="/js/message-words.js"></script>

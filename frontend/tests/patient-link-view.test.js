@@ -248,7 +248,7 @@ test("**두 화면이 같은 블록을 그린다** — 규칙도 모양도 한 �
   });
 });
 
-test("**두 화면이 그 파일을 싣는다** — 안 실으면 그 화면에서만 죽는다", () => {
+test("공용 링크 상태를 그리는 화면이 규칙 파일을 싣는다", () => {
   const fs = require("node:fs");
   const path = require("node:path");
   ["patients.html", "doctor.html"].forEach((f) => {
