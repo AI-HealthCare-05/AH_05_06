@@ -4,6 +4,7 @@ import asyncio
 from datetime import date, timedelta
 from unittest.mock import patch
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise
 from tortoise.contrib.test import TruncationTestCase
@@ -338,10 +339,15 @@ class MessageResendTestCase(TruncationTestCase):
                 raise RuntimeError("synthetic failure right after link revocation")
             return await real_create(*args, **kwargs)  # type: ignore[arg-type]
 
-        with patch.object(GuideMessage, "create", side_effect=failing_create):
-            response = await self.resend(staff, source.guide_message_id)
-
-        assert response.status_code == 500, response.text
+        # ASGITransport의 기본값(raise_app_exceptions=True)은 앱이 처리하지
+        # 못한 예외를 500으로 바꿔 응답하는 게 아니라 호출자에게 그대로
+        # 다시 던진다 — 그래서 response.status_code를 보는 게 아니라
+        # 예외 자체를 잡는다. 실제 배포에서는 이 예외가 ContractRoute를
+        # 통과해 500이 된다(2heej 리뷰가 데드락 항목에서 지적한 것과 같은
+        # 경로) — 여기서 재는 것은 그 전에 트랜잭션이 올바르게 롤백되는지다.
+        with pytest.raises(RuntimeError, match="synthetic failure right after link revocation"):
+            with patch.object(GuideMessage, "create", side_effect=failing_create):
+                await self.resend(staff, source.guide_message_id)
 
         await link.refresh_from_db()
         await challenge.refresh_from_db()
