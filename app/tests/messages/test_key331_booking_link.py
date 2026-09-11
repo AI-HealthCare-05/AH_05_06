@@ -24,6 +24,8 @@ from app.models.catalog import MessageTemplate, MessageTemplateKind
 from app.models.staffs import Hospital
 from app.models.visits import (
     GuideMessage,
+    GuideMessageEvent,
+    GuideMessageEventType,
     GuideMessageHold,
     GuideMessageKind,
     GuideMessageStatus,
@@ -133,8 +135,29 @@ class TestAnEmptyBookingUrlHoldsTheMessage(TestCase):
         assert updated.sent_at is None and updated.sent_body is None
         assert updated.claim_token is None
 
-    async def test_the_same_message_goes_out_after_the_admin_fills_it_in(self) -> None:
-        """보류는 **끝이 아니다** — 채우고 나면 그 문자가 제 일을 한다."""
+        #: **감사 기록에도 남아야 한다** (인수조건 4 · 이희진 님 #295 리뷰).
+        #: 표의 `hold_reason` 은 지금 상태일 뿐이라 다음 저장에 덮인다 —
+        #: 「그때 왜 안 나갔나」는 사건 줄에서만 되짚을 수 있다.
+        held = (
+            await GuideMessageEvent.filter(
+                guide_message_id=message.guide_message_id,
+                event_type=GuideMessageEventType.HELD,
+            )
+            .order_by("-guide_message_event_id")
+            .first()
+        )
+        assert held is not None, "보류했는데 사건 줄이 없다"
+        assert held.reason == GuideMessageHold.BOOKING_URL_MISSING.value
+
+    async def test_messages_scheduled_after_the_admin_fills_it_in_go_out(self) -> None:
+        """채운 **뒤로 예정된** 문자는 제 일을 한다.
+
+        🚩 이 검사는 「보류됐던 그 문자가 다시 나간다」를 재지 **않는다** —
+        처음부터 링크가 있는 문자를 보낸다. 보류는 끝 상태라 그런 일은 일어나지
+        않는다(`_claim` 이 `SCHEDULED` 만 집는다). 이름이 「the same message」
+        였을 때는 이 검사가 있지도 않은 일을 증명하는 것처럼 읽혔다
+        (이희진 님 #295 리뷰).
+        """
         message = await make_due_message(kind=GuideMessageKind.RUN_OUT)
         await _set_booking_url(message, BOOKING_URL)
 
