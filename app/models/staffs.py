@@ -115,13 +115,23 @@ class Staff(models.Model):
 
 
 class StaffAccountEventType(StrEnum):
-    """계정에 무슨 일이 있었나. **A1-2 가 지금 만드는 것은 하나뿐이다.**
+    """계정에 무슨 일이 있었나.
 
-    A1-3(수정 · 비밀번호 재설정)이 들어올 때 그 자리에서 늘린다 — 쓰지도 않을
-    이름을 미리 적어 두면 「이 값은 어디서 남나」에 아무도 답하지 못한다.
+    **쓰는 것만 적는다.** A1-2 가 하나로 시작했고, A1-3(수정 · 비밀번호
+    재설정)이 들어오며 넷이 늘었다 — 쓰지도 않을 이름을 미리 적어 두면
+    「이 값은 어디서 남나」에 아무도 답하지 못한다.
     """
 
     STAFF_CREATED = "STAFF_CREATED"
+    #: 역할을 바꿨다 — KEY-330. 바뀐 **뒤의** 역할을 `roles` 에 남긴다.
+    STAFF_ROLES_CHANGED = "STAFF_ROLES_CHANGED"
+    #: 퇴사 처리했다. 계정을 지우지 않는다 — 지난 기록이 이 이름을 가리킨다.
+    STAFF_LEFT = "STAFF_LEFT"
+    #: 퇴사를 되돌려 다시 재직으로 뒀다.
+    STAFF_REINSTATED = "STAFF_REINSTATED"
+    #: 관리자가 임시 비밀번호를 새로 줬다. **비밀번호는 어느 칸에도 안 담는다** —
+    #: 「누가 누구에게 언제」까지만 남는다.
+    STAFF_PASSWORD_RESET = "STAFF_PASSWORD_RESET"
 
 
 class StaffAccountEvent(models.Model):
