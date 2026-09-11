@@ -151,6 +151,7 @@ def test_a_sub_resource_owns_its_own_routes() -> None:
         "/api/v1/visits/{visit_id}/guide/messages": "app.apis.v1.guide_routers",
         # 승인을 거둔다 — 승인했는데 잘못된 것을 발견했을 때 (KEY-234)
         "/api/v1/visits/{visit_id}/guide/unapprove": "app.apis.v1.guide_routers",
+        "/api/v1/visits/{visit_id}/guide/sections/order": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/sections/{key}": "app.apis.v1.guide_routers",
         "/api/v1/visits/{visit_id}/guide/link": "app.apis.v1.patient_link_routers",
         "/api/v1/visits/{visit_id}/guide/link/re-issue": "app.apis.v1.patient_link_routers",

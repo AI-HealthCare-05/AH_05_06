@@ -83,6 +83,14 @@ var doctorApi = {
       body: body,
     });
   },
+  /* 절의 **차례**를 바꾼다 — KEY-317. 차례 전체를 통째로 놓으므로 `PUT` 이다. */
+  reorderSections: function (visitId, body) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/sections/order", {
+      method: "PUT",
+      body: body,
+    });
+  },
+
   /* 스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11.
      이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다. */
   submit: function (visitId) {
@@ -238,6 +246,20 @@ var MOCK_GUIDE_PATIENTS = {
    예전에는 `mockGuide()` 가 매번 새로 만들고 승인 핸들러가 그 사본을 고쳐
    돌려줬다 — 승인해도 다음 조회는 다시 「승인 요청」이라 목업으로는
    `GUIDE_NOT_PENDING` 같은 상태 규칙을 아예 잴 수 없었다. */
+/* **목업이 서버 정책을 흉내 내는 한 곳** — KEY-317.
+
+   화면은 이 목록을 안 본다. 서버가 절마다 `movable` 을 실어 주고 화면은 그것만
+   읽는다 — 안전 절 목록을 화면에도 적어 두면 정책이 바뀌는 날 한쪽만 고쳐진다.
+   여기 적는 까닭은 목업이 **서버 역**을 하기 때문이다. */
+var MOCK_SAFETY_SECTIONS = { caution: true, emergency: true };
+
+function withMovable(sections) {
+  return sections.map(function (section) {
+    section.movable = !MOCK_SAFETY_SECTIONS[section.key];
+    return section;
+  });
+}
+
 var MOCK_GUIDE_STATE = {};
 
 /* 이 진료의 저장 칸을 돌려준다. 없으면 만들어서 돌려준다 — 승인·반려·PATCH가
@@ -260,6 +282,8 @@ function mockGuideState(visitId) {
       patient_link_issued: false,
       patient_link_expires_at: null,
       sections: {},
+      //: 절의 차례 — KEY-317. `null` 이면 계약 차례다.
+      order: null,
     })
   );
 }
@@ -395,7 +419,7 @@ function mockGuideBase(visitId) {
         next: null,
       },
     },
-    sections: [
+    sections: withMovable([
       {
         key: "medication",
         body:
@@ -448,7 +472,7 @@ function mockGuideBase(visitId) {
         locked: false,
         warn: null,
       },
-    ],
+    ]),
   };
 }
 
@@ -477,6 +501,13 @@ function mockGuide(visitId) {
       s.edited = true;
     }
   });
+  /* 저장된 **차례**도 이긴다 — KEY-317. 없으면 계약 차례 그대로다.
+     서버가 `display_order` 로 정렬해 주는 것과 같은 자리다. */
+  if (saved.order) {
+    guide.sections.sort(function (a, b) {
+      return saved.order.indexOf(a.key) - saved.order.indexOf(b.key);
+    });
+  }
   return guide;
 }
 
@@ -589,7 +620,10 @@ function mockDoctorRequest(path, options) {
          라우터 단에서 뭉뚱그린 `NOT_FOUND` 로 떨어졌다 — 서버와 코드가 갈리고,
          **「없는 섹션」 검사가 섹션 조회에 닿지도 못했다.**
          `/sections/` 를 요구하므로 approve·return 경로를 삼키지는 않는다. */
-      var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
+      /* **차례 종점을 먼저 가른다.** 아래 `sec` 정규식이 `.../sections/order`
+         까지 삼켜 「`order` 라는 섹션」으로 읽는다 — 서버에는 없는 섹션이다. */
+      var reorder = path.match(/^\/visits\/(\d+)\/guide\/sections\/order$/);
+      var sec = reorder ? null : path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
       var act = path.match(/^\/visits\/(\d+)\/guide\/(submit|approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
       var reIssueLink = path.match(/^\/visits\/(\d+)\/guide\/link\/re-issue$/);
@@ -598,7 +632,7 @@ function mockDoctorRequest(path, options) {
          늘 「불러오지 못했습니다」였다 — 서버에는 있는데 목업만 없었다.
          목업이 서버보다 **좁으면** 화면을 목업으로 검수할 수 없다. */
       var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
-      var m = get || sec || act || issueLink || reIssueLink || msgs || tl;
+      var m = get || reorder || sec || act || issueLink || reIssueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
 
@@ -750,6 +784,41 @@ function mockDoctorRequest(path, options) {
         returnedState.scheduled_at = null;
         returnedState.returned_reason = returned.returned_reason;
         return resolve(returned);
+      }
+
+      if (reorder && options.method === "PUT") {
+        var arranged = mockGuide(visitId);
+        if (!arranged) return reject(mockNoGuide());
+
+        /* 서버와 **같은 차례로** 막는다 — 상태 · 역할 · 온전한 한 벌 · 안전 절.
+           목업이 헐거우면 `?mock=1` 에서는 되는데 실서버에서만 422 가 난다. */
+        if (
+          arranged.status !== "STAFF_REVIEW" &&
+          arranged.status !== "APPROVAL_PENDING" &&
+          arranged.status !== "APPROVAL_RETURNED"
+        ) {
+          return reject(new ApiError("GUIDE_NOT_PENDING", 409, {}));
+        }
+        if (arranged.status === "APPROVAL_PENDING" && !mockIsDoctor()) {
+          return reject(new ApiError("FORBIDDEN", 403, {}));
+        }
+
+        var wanted = body.order || [];
+        var here = arranged.sections.map(function (s) {
+          return s.key;
+        });
+        var whole =
+          wanted.length === here.length &&
+          here.every(function (key) {
+            return wanted.indexOf(key) >= 0 && wanted.indexOf(key) === wanted.lastIndexOf(key);
+          });
+        var safeStayed = here.every(function (key, at) {
+          return !MOCK_SAFETY_SECTIONS[key] || wanted.indexOf(key) === at;
+        });
+        if (!whole || !safeStayed) return reject(new ApiError("SECTION_ORDER_INVALID", 422, {}));
+
+        mockGuideState(visitId).order = wanted.slice();
+        return resolve(mockGuide(visitId));
       }
 
       if (options.method === "PATCH") {

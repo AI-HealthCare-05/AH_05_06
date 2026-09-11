@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from tortoise import fields, models
 from tortoise.fields import OnDelete
@@ -72,6 +72,11 @@ class GuideStatus(StrEnum):
     APPROVAL_RETURNED = "APPROVAL_RETURNED"
 
 
+#: 「차례를 아직 안 정했다」 — `GuideSection.save()` 가 계약 차례로 채운다.
+#: 0 을 못 쓴다. 0 은 **맨 앞**이라는 뜻이 있는 값이다.
+UNSET_ORDER = -1
+
+
 class GuideSectionKey(StrEnum):
     """환자 화면의 차례와 같다 — P2 · P3 · P4, 그리고 문자 설정.
 
@@ -111,6 +116,10 @@ class GuideEventType(StrEnum):
     LINK_REISSUED = "LINK_REISSUED"
     #: 직원이 환자용 링크를 즉시 폐기했다 — KEY-223.
     LINK_REVOKED = "LINK_REVOKED"
+    #: 절의 **차례**를 바꿨다 — KEY-317. 글은 그대로고 보이는 순서만 달라진다.
+    #: `EDITED` 와 나눈다 — 「무엇을 고쳤나」를 물을 때 차례 변경이 섞이면
+    #: 문구가 바뀐 줄 알고 옛 글을 찾게 된다.
+    SECTION_REORDERED = "SECTION_REORDERED"
 
 
 class GuideDocument(models.Model):
@@ -197,6 +206,13 @@ class GuideSection(models.Model):
         on_delete=OnDelete.CASCADE,
     )
     section_key = fields.CharEnumField(enum_type=GuideSectionKey)
+    #: **보이는 차례** — KEY-317. 병원 화면의 탭 차례이자 환자 응답의 배열 차례다.
+    #:
+    #: 예전에는 차례가 세 곳에서 따로 정해졌다 — 병원 종점은 계약 표에서,
+    #: 환자 종점은 `guide_section_id`(넣은 차례)에서, 환자 화면은 제 안에 박힌
+    #: 상수에서. 사람이 차례를 바꿀 수 있게 되는 순간 그 셋이 갈린다. 이제
+    #: **여기 한 곳**에서 읽는다.
+    display_order = fields.IntField(default=UNSET_ORDER)
     generated_body = fields.TextField()
     edited_body = fields.TextField(null=True)
     locked = fields.BooleanField(default=False)
@@ -219,6 +235,17 @@ class GuideSection(models.Model):
     class Meta:
         table = "guide_section"
         unique_together = (("guide_document", "section_key"),)
+
+    async def save(self, *args: Any, **kwargs: Any) -> None:
+        """차례를 안 주면 **계약 차례**를 쓴다 — KEY-317.
+
+        절을 만드는 다섯 자리에 숫자를 손으로 적지 않는다. 여섯째 갈래가
+        생기는 날 그중 한 자리를 빠뜨리면, 그 절만 조용히 맨 앞으로 튀어나온다
+        — 응급 문장이 복약지도 앞에 설 수 있다는 뜻이다.
+        """
+        if self.display_order == UNSET_ORDER:
+            self.display_order = list(GuideSectionKey).index(GuideSectionKey(self.section_key))
+        await super().save(*args, **kwargs)
 
     @property
     def body(self) -> str:
@@ -247,6 +274,13 @@ class GuideEvent(models.Model):
     section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
     #: 반려 사유. 반려가 아니면 비어 있다.
     reason = fields.CharField(max_length=200, null=True)
+    #: 차례를 바꿨을 때의 **이전 · 이후 차례** — KEY-317. 절 이름을 쉼표로 잇는다.
+    #: `SECTION_REORDERED` 가 아니면 둘 다 비어 있다.
+    #:
+    #: 글을 담지 않는다 — 절 이름뿐이다. 감사 기록에 환자 정보나 본문이
+    #: 새로 실리면 안 된다(계약 §9).
+    order_before = fields.CharField(max_length=200, null=True)
+    order_after = fields.CharField(max_length=200, null=True)
     actor_id = fields.BigIntField()
     created_at = fields.DatetimeField(auto_now_add=True)
 

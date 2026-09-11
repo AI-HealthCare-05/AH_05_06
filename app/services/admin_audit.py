@@ -76,6 +76,7 @@ _SUMMARY: dict[tuple[AuditSource, str], str] = {
     (AuditSource.GUIDE, GuideEventType.UNAPPROVED): "안내문 승인을 취소했습니다",
     (AuditSource.GUIDE, GuideEventType.RETURNED): "안내문을 스탭에게 되돌렸습니다",
     (AuditSource.GUIDE, GuideEventType.REGENERATED): "안내문을 다시 생성했습니다",
+    (AuditSource.GUIDE, GuideEventType.SECTION_REORDERED): "안내문 항목 차례를 바꿨습니다",
     (AuditSource.GUIDE, GuideEventType.LINK_REISSUED): "환자 링크를 다시 발급했습니다",
     (AuditSource.GUIDE, GuideEventType.LINK_REVOKED): "환자 링크를 폐기했습니다",
     (AuditSource.OTP, PatientOtpEventType.ISSUED): "환자에게 인증번호를 보냈습니다",
