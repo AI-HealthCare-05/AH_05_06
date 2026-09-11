@@ -1431,7 +1431,6 @@ KEY-73의 Staff 기준 테이블이 병합되어 `doctor_id`는 같은 병원의
 - 의료문서 업로드·임시 저장
 - 환자 링크 발급 관리
 - D+7 응답 병원 조회
-- 감사로그 조회 (A1-6 · A1-7 — KEY-322)
 
 확정되지 않은 경로와 필드를 문서에서 먼저 만들어 구현 범위를 넓히지 않는다.
 
@@ -1541,3 +1540,95 @@ KEY-321. `admin` 역할만 지난다 — `Permission.STAFF_MANAGE`.
 담지 않겠다는 약속을 지키는 가장 확실한 방법이다.
 
 읽는 API 는 A1-6 · A1-7(KEY-322)이 만든다.
+
+
+## 9. 어드민 — 감사 로그 (A1-6 · A1-7)
+
+KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전용이다.**
+
+### 9.1 엔드포인트
+
+| 메서드 | 경로 | 무엇 |
+|---|---|---|
+| `GET` | `/api/v1/admin/audit-logs` | 의원 전체 (A1-6) |
+| `GET` | `/api/v1/admin/audit-logs?visit_id=…` | 한 진료 건의 시간 흐름 (A1-7) |
+
+**A1-7 은 별도 경로가 아니다.** 합치는 규칙이 하나라야 두 화면이 같은 답을 본다
+— 경로를 나누면 한쪽에만 표가 늘어나는 날이 온다.
+
+### 9.2 무엇을 합치나 — 표 다섯
+
+이벤트는 이미 append-only 로 쌓이고 있었고 **읽을 길이 없었다.** 통합
+`audit_log` 표는 없다(물리 통합은 별도 논의) — 여기서는 **조회 시** 합친다.
+
+| `source` | 표 | 병원까지 가는 길 |
+|---|---|---|
+| `guide` | `guide_event` | → `guide_document` |
+| `patient_usage` | `patient_usage_event` | → `guide_document` |
+| `message` | `guide_message_event` | → `guide_message` → `guide_document` |
+| `otp` | `patient_otp_event` | → `patient_guide_link` → `guide_document` |
+| `staff_account` | `staff_account_event` | 제가 `hospital_id` 를 들고 있다 |
+
+앞 넷은 전부 `GuideDocument` 를 지나고, 거기에 `hospital_id` 와 `visit_id` 가
+둘 다 있다 — **울타리를 그 한 자리에 친다.**
+
+`staff_account` 는 티켓이 적은 넷에 없던 다섯째다(KEY-321). 계정을 만드는 것은
+**권한을 주는 일**이라 그것이 빠진 감사 로그는 구멍이다. 진료에 매달리지
+않으므로 `visit_id` 로 거르면 이 표는 결과에서 빠진다.
+
+### 9.3 거르개
+
+| 이름 | 뜻 |
+|---|---|
+| `occurred_from` · `occurred_to` | 기간. 양끝을 **포함**한다 |
+| `actor_staff_id` | 그 직원이 한 일만. 환자·발송기 이벤트는 행위자가 없어 걸리지 않는다 |
+| `source` | 위 다섯 중 하나 |
+| `visit_id` | 그 진료 건 (= A1-7) |
+| `limit` | 1~200, 기본 50 |
+| `cursor` | 다음 쪽 열쇠 |
+
+### 9.4 응답
+
+```json
+{ "entries": [
+    { "event_id": "guide:12", "occurred_at": "2026-09-10T08:58:00+09:00",
+      "source": "guide", "event_type": "APPROVED",
+      "actor_staff_id": 900, "actor_name": "박연",
+      "visit_id": 1204, "summary": "안내문을 승인했습니다" }
+  ],
+  "next_cursor": "…", "has_more": true }
+```
+
+**원문을 담는 칸이 없다.** 링크 토큰 · OTP 코드 · 환자 이름 · 전화번호 · 챗봇
+질문 어느 것도 실을 자리가 없다. `summary` 는 **서버가 짓는 고정 문구**이고,
+사람이 적은 값(`reason` 같은)은 담지 않는다 — 담을 칸을 만들지 않는 것이 담지
+않겠다는 약속을 지키는 가장 확실한 방법이다.
+
+`event_type` 은 그 표가 쓰는 값을 그대로 준다(`APPROVED` · `VERIFIED` · `SENT`
+…). 표마다 어휘가 달라 한 enum 으로 접지 않는다 — 접으면 뜻이 뭉개진다.
+
+### 9.5 쪽 나눔
+
+표 다섯을 SQL 로 합칠 수 없으므로 각 표에서 한 쪽씩 떠 와 섞는다. 순서는
+`(occurred_at, source, pk)` 내림차순 **하나**이고 커서가 그 셋을 그대로 담는다.
+
+**문자열 `event_id` 로 줄 세우지 않는다** — `"guide:9" > "guide:10"` 이라 열
+번째 줄부터 순서가 뒤집힌다. 커서는 서명돼 있고, 읽을 수 없는 값은 `400`
+`INVALID_CURSOR` 다. 조용히 첫 쪽을 주면 부르는 쪽이 그것을 다음 쪽이라 믿는다.
+
+같은 커서로 다시 물으면 **같은 답**이 온다.
+
+### 9.6 오류
+
+| 상태 | `code` | 언제 |
+|---|---|---|
+| `400` | `INVALID_REQUEST` | 거르개 값이 규칙에 안 맞는다 |
+| `400` | `INVALID_CURSOR` | 서명이 안 맞거나 읽을 수 없는 커서 |
+| `403` | `FORBIDDEN` | `admin` 이 아니다 |
+
+### 9.7 아직 아닌 것
+
+CSV·PDF 내보내기, 실시간 스트리밍·알림, 리텐션·아카이빙 정책, 통합 `audit_log`
+표로의 물리 통합. 그리고 `patient_otp_event` 는 `patient_guide_link_id` 가 FK 가
+아니라 링크 id 를 모아 거는 길이라, 의원이 여럿이 되면 여기가 먼저 아프다 —
+그때는 FK 를 세우는 것이 답이지 조회에서 우회할 일이 아니다.
