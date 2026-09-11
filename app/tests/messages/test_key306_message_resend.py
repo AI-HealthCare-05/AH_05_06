@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise
@@ -311,6 +312,54 @@ class MessageResendTestCase(TruncationTestCase):
         link = await PatientGuideLink.get(guide_document_id=replacement.guide_document_id)
         assert link.token_digest == digest_link_token(new_raw_token)
         assert link.token_digest != digest_link_token(OLD_LINK_TOKEN)
+
+    async def test_a_failure_after_revoking_the_link_rolls_back_the_whole_request(self) -> None:
+        """[KEY-306, Funital 리뷰] 링크 폐기 뒤 재발송 행 생성이 실패하면 폐기도 되돌아간다.
+
+        request()는 revoke_active_for_resend()와 재발송 GuideMessage.create()를
+        같은 in_transaction() 블록 안에서 실행한다 — 폐기가 이미 커밋된 뒤에
+        행 생성만 실패해서 "링크는 폐기됐는데 재발송 작업은 없다"는 상태가
+        남으면 안 된다. 기존 "접수 완료 후 문자 발송 실패"(위 테스트)와는
+        다른 지점이다 — 그건 요청 자체는 성공하고 그 이후 발송이 실패하는
+        경우고, 이건 요청 처리 도중에 실패하는 경우다.
+        """
+        hospital = await self.a_hospital("합성 병원")
+        staff = await self.a_staff(hospital, "staff", "key306-rollback")
+        source = await self.a_sent_message(hospital)
+        link, challenge = await self.an_active_link(source)
+        original_digest = link.token_digest
+        original_expires_at = link.expires_at
+        original_otp_expires_at = challenge.expires_at
+
+        real_create = GuideMessage.create
+
+        async def failing_create(*args: object, **kwargs: object) -> GuideMessage:
+            if kwargs.get("resend_of_message_id") is not None:
+                raise RuntimeError("synthetic failure right after link revocation")
+            return await real_create(*args, **kwargs)  # type: ignore[arg-type]
+
+        with patch.object(GuideMessage, "create", side_effect=failing_create):
+            response = await self.resend(staff, source.guide_message_id)
+
+        assert response.status_code == 500, response.text
+
+        await link.refresh_from_db()
+        await challenge.refresh_from_db()
+        assert link.token_digest == original_digest, "폐기가 롤백 안 되고 그대로 남았다"
+        assert link.expires_at == original_expires_at, "만료 시각이 롤백 안 됐다"
+        assert challenge.expires_at == original_otp_expires_at, "OTP 만료가 롤백 안 됐다"
+        assert challenge.consumed_at is None, "OTP 소비 처리가 롤백 안 됐다"
+
+        assert (
+            await GuideEvent.filter(
+                guide_document_id=source.guide_document_id,
+                event_type=GuideEventType.LINK_REVOKED,
+            ).count()
+            == 0
+        ), "폐기 이벤트가 롤백 안 되고 남았다"
+        assert await GuideMessage.filter(resend_of_message_id=source.guide_message_id).count() == 0, (
+            "재발송 행이 실패했는데도 남았다"
+        )
 
 
 def test_sent_body_storage_redacts_the_patient_link_token() -> None:

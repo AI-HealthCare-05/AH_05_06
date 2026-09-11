@@ -13,6 +13,18 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
 
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
+    # ⚠ 이 downgrade는 재발송 이력이 하나라도 남아 있으면 실패한다
+    # (Funital 리뷰). 아래에서 되살리는 (guide_document_id, kind) 유니크
+    # 제약은 "안내문·kind당 행 하나"가 전제인데, 재발송이 한 번이라도
+    # 실제로 일어났다면 같은 (guide_document_id, kind)로 원본
+    # (resend_sequence=0)과 재발송(resend_sequence≥1) 행이 함께 존재한다
+    # — 그 상태에서 이 인덱스를 다시 만들면 중복 키 위반으로 멈춘다.
+    #
+    # 이력을 지워서 downgrade를 억지로 통과시키지 않는다 — 발송 감사
+    # 이력은 보존 대상이다. 재발송 기능을 실제로 쓴 뒤에는 이 마이그레이션
+    # 을 되돌리지 않는 것이 정책이다. 되돌려야 한다면: 재발송 행
+    # (resend_sequence>0)을 다른 곳으로 옮기거나 별도 감사 테이블로
+    # 내보낸 뒤 수동으로 정리한다 — 자동화된 절차는 없다.
     return """
         ALTER TABLE `guide_message` ADD UNIQUE INDEX `uid_guide_messa_guide_d_ae9b80` (`guide_document_id`, `kind`);
         ALTER TABLE `guide_message` DROP INDEX `uid_guide_messa_resend__b3f8a2`;
