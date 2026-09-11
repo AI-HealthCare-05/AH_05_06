@@ -3501,9 +3501,14 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
           }
         },
         "required": [
+          "patient_id",
           "name",
           "birth_date",
           "age",
