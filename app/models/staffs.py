@@ -185,7 +185,18 @@ class StaffAccountEvent(models.Model):
         source_field="subject_staff_id",
     )
     subject_staff_id: int
-    event_type = fields.CharEnumField(enum_type=StaffAccountEventType)
+    #: **폭을 이름 길이에 맡기지 않는다** (KEY-330, 이희진 님 #294 리뷰).
+    #:
+    #: `CharEnumField` 는 max_length 를 안 주면 **그때 가장 긴 이름**에 맞춘다.
+    #: KEY-321 이 만든 마이그레이션 51 이 그래서 `VARCHAR(13)`(`STAFF_CREATED`)
+    #: 이었고, 여기에 이름 넷이 늘면서 20자(`STAFF_PASSWORD_RESET`)가 들어가야
+    #: 했다. **검사는 이것을 못 잡는다** — `tortoise.contrib.test.initializer()`
+    #: 가 마이그레이션을 거치지 않고 지금 모델로 표를 새로 만들어, 폭이 늘 최신
+    #: 이기 때문이다. 실서버는 `aerich upgrade` 로 51 위에 얹으므로 13자가 그대로
+    #: 남고, 역할 변경 한 건에 `1406 Data too long` 으로 500 이 난다.
+    #:
+    #: 32 는 이름 하나가 더 늘어도 다시 안 부딪히게 둔 여유다.
+    event_type = fields.CharEnumField(enum_type=StaffAccountEventType, max_length=32)
     #: 그때 준 역할. 나중에 A1-3 이 역할을 바꿔도 **준 시점의 값**이 남는다.
     roles: fields.Field[list[str]] = fields.JSONField()
     created_at = fields.DatetimeField(auto_now_add=True)
