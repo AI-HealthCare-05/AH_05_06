@@ -370,6 +370,11 @@
     <script src="/js/guide-view.js"></script>
     <script src="/js/patient-link-view.js"></script>
     <script src="/js/message-words.js"></script>
+    <!-- 이력 모달(S2-2) — 관리 화면과 **같은 한 벌**이다 (KEY-329).
+         `status-view.js` 보다 먼저 싣는다: 현황 탭이 이 안의 함수를 부른다.
+         `checkin-words.js` 는 그것이 기대는 것이라 **더 먼저** 실어야 한다. -->
+    <script src="/js/checkin-words.js"></script>
+    <script src="/js/history-modal.js"></script>
     <script src="/js/status-view.js"></script>
     <script src="/js/doctor-api.js"></script>
     <script src="/js/step-nav.js"></script>
@@ -381,7 +386,9 @@
     <!-- 승인 확인 모달(와이어프레임 D1-5). 화면을 갈아끼우지 않는다 —
          뒤에 최종 확인 탭이 흐려진 채 남아, 무엇을 승인했는지 보인다. -->
     <div class="modal" id="modal" hidden>
-      <div class="modal__card" role="dialog" aria-modal="true" id="modal-body"></div>
+      <!-- `--wide` 는 이력 모달(S2-2)이 쓴다 — 관리 화면과 같은 넓이·스크롤이라야
+           진료 블록의 각 줄이 한 줄로 읽힌다 (KEY-329). -->
+      <div class="modal__card modal__card--wide" role="dialog" aria-modal="true" id="modal-body"></div>
     </div>
 
     <script src="/js/frames.js"></script>

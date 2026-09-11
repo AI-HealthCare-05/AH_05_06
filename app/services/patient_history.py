@@ -128,7 +128,21 @@ class PatientHistoryService:
         )
         found: dict[int, dict[str, GuideMessage]] = {}
         for row in rows:
-            found.setdefault(row.guide_document_id, {})[str(row.kind)] = row
+            bucket = found.setdefault(row.guide_document_id, {})
+            kind = str(row.kind)
+            current = bucket.get(kind)
+            if (
+                current is not None
+                and current.status is GuideMessageStatus.SENT
+                and row.status is not GuideMessageStatus.SENT
+            ):
+                # scheduled_at 오름차순이라 재발송 행(더 늦음, 보통
+                # SCHEDULED)이 원래 SENT였던 행을 덮어쓸 수 있다 — 그러면
+                # 워커가 재발송을 실제로 처리하기 전까지 이 화면이 "이미
+                # 받은 안내문"을 안 받은 것처럼 보인다(KEY-306 리뷰로
+                # 발견). SENT는 그보다 늦은 비-SENT 행에 안 밀린다.
+                continue
+            bucket[kind] = row
         return found
 
     @staticmethod

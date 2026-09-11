@@ -258,6 +258,8 @@ function guideMissingSaying(error) {
          한 벌이라 두 화면이 저절로 같다 — 여기서 다시 판단하지 않는다. */
       guideStatus: (guide && guide.status) || "",
       link: patientLinkOf(visitId),
+      //: 「전체 이력 보기」가 누구를 부를지 — KEY-329
+      patientId: ((guide && guide.patient) || {}).patient_id || null,
     });
 
     wireUnapprove();
@@ -486,6 +488,11 @@ function guideMissingSaying(error) {
     if (!t || !t.closest) return;
 
     if (t.closest("[data-close]")) closeModal();
+
+    /* 현황 탭의 「전체 이력 보기」 — KEY-329. 그리는 것은 `history-modal.js`
+       한 벌이라 관리 화면과 같은 것이 뜬다. */
+    var asked = t.closest("[data-history]");
+    if (asked) openPatientHistory(Number(asked.getAttribute("data-history")), HISTORY_BLOCKS);
 
     /* 바깥을 눌러도 닫힌다. 창 안(`.modal__card`)을 누른 것은 아니어야 한다 —
        글을 끌어 고르다 손을 떼면 닫히면 안 된다. */
