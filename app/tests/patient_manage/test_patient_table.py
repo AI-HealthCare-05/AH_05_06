@@ -29,7 +29,14 @@ from app.tests.fakes import FakeRedis
 TODAY = datetime.now(DISPLAY_TIMEZONE).date()
 
 
-class PatientTableTestCase(TestCase):
+class PatientTableBase(TestCase):
+    """**재료만 담는 바닥.** 검사는 안 담는다 — KEY-327.
+
+    처음에는 아래 `PatientTableTestCase` 를 그대로 물려받아 새 검사를 썼다.
+    그랬더니 **여기 있는 검사 열넷이 자식마다 한 번씩 더 돌았다** — 자식 다섯이면
+    일흔이다. 오래 걸리는 것도 문제지만, 무엇이 어디서 깨졌는지가 흐려진다.
+    """
+
     def setUp(self) -> None:
         super().setUp()
         self.redis = FakeRedis()
@@ -115,6 +122,10 @@ class PatientTableTestCase(TestCase):
             )
         assert response.status_code == 200, response.text
         return response.json()
+
+
+class PatientTableTestCase(PatientTableBase):
+    """표 한 줄이 담는 것과 칩·검색·배지."""
 
     # ── 한 줄이 담는 것 ──────────────────────────────────
 
@@ -295,27 +306,32 @@ class PatientTableTestCase(TestCase):
             await self.a_patient(clinic, name=f"조하늘{index}", chart=f"CH{index:03}")
 
         access, _ = await StaffSessionService(self.redis).start(staff)  # type: ignore[arg-type]
+        headers = {"Authorization": f"Bearer {access}"}
+        walking: dict[str, str | int] = {"limit": 2, "sort": "registered_asc"}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            head = await client.get(
-                "/api/v1/patients", headers={"Authorization": f"Bearer {access}"}, params={"limit": 2}
+            #: 이어 보기 — 등록 오름차순으로 두 쪽 (KEY-327)
+            head = await client.get("/api/v1/patients", headers=headers, params=walking)
+            tail = await client.get(
+                "/api/v1/patients", headers=headers, params={**walking, "cursor": head.json()["page"]["next_cursor"]}
             )
-            cursor = head.json()["page"]["next_cursor"]
+            #: 쪽 번호 — 관리 표의 기본인 최근 등록순으로 두 쪽
+            first = await client.get("/api/v1/patients", headers=headers, params={"limit": 2})
+            second = await client.get("/api/v1/patients", headers=headers, params={"limit": 2, "offset": 2})
 
-            by_cursor = await client.get(
-                "/api/v1/patients",
-                headers={"Authorization": f"Bearer {access}"},
-                params={"limit": 2, "cursor": cursor},
-            )
-            by_page = await client.get(
-                "/api/v1/patients",
-                headers={"Authorization": f"Bearer {access}"},
-                params={"limit": 2, "offset": 2},
-            )
+        for answer in (head, tail, first, second):
+            assert answer.status_code == 200, answer.text
 
-        assert by_cursor.status_code == 200, by_cursor.text
-        assert by_page.status_code == 200, by_page.text
-        assert [row["name"] for row in by_cursor.json()["items"]] == [row["name"] for row in by_page.json()["items"]], (
-            "같은 자리를 가리키는 두 말이 다른 사람을 준다"
+        names = lambda answer: [row["name"] for row in answer.json()["items"]]  # noqa: E731
+
+        #: **두 길이 각자 온전하다.** 예전에는 둘이 같은 사람을 준다고 쟀는데,
+        #: 그건 둘 다 `patient_id` 오름차순이던 때의 우연이다 — 관리 표가 최근
+        #: 등록순으로 서면서(KEY-327) 갈렸다. 각 길이 **제 차례로 한 번씩**
+        #: 모두를 보여 주는지가 재야 할 것이다.
+        assert names(head) + names(tail) == ["조하늘0", "조하늘1", "조하늘2", "조하늘3"], (
+            "이어 보기가 등록 차례로 안 간다 — 건너뛰거나 겹친다"
+        )
+        assert names(first) + names(second) == ["조하늘3", "조하늘2", "조하늘1", "조하늘0"], (
+            "쪽 번호가 최근 등록순으로 안 간다"
         )
 
     # ── 검색 · 격리 ──────────────────────────────────────

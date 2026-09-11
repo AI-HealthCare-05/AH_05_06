@@ -47,7 +47,10 @@ var patientsApi = {
      `category` 는 기본 ALL 이라 보내지 않는다 — 등록은 「모든 환자」에서 찾는다. */
   search: function (keyword, cursor) {
     return patientsRequest(
-      "/patients?" + query({ keyword: keyword, cursor: cursor }),
+      /* **차례를 함께 말한다** — KEY-327. 이어 보기(`cursor`)는 `patient_id >` 로
+         앞으로만 가는 방식이라 등록 오름차순 하나만 탄다. 안 주면 첫 쪽이
+         관리 표의 기본(최근순)으로 와서, 둘째 쪽부터 이미 본 사람이 다시 나온다. */
+      "/patients?" + query({ keyword: keyword, cursor: cursor, sort: "registered_asc" }),
     );
   },
 
@@ -71,7 +74,7 @@ var patientsApi = {
 
      **`cursor` 를 안 받는다.** 이쪽은 쪽 번호로 옮긴다(`offset`). 서버가 둘을
      함께 받으면 400 이므로, 부를 수 있는 모양을 아예 하나로 둔다 (KEY-303). */
-  roster: function (keyword, category, limit, offset) {
+  roster: function (keyword, category, limit, offset, sort) {
     return patientsRequest(
       "/patients?" +
         query({
@@ -79,6 +82,9 @@ var patientsApi = {
           category: category,
           limit: limit,
           offset: offset,
+          /* **차례도 서버가 정한다** — KEY-327. 받은 쪽만 화면에서 다시 세우면
+             그 쪽 안에서만 맞고, 쪽을 넘기면 앞 쪽과 겹치거나 빠진다. */
+          sort: sort,
         }),
     );
   },
@@ -587,6 +593,13 @@ var MOCK_ROSTER_PAST = [
   },
 ];
 
+/* 번호에서 곧게 자라는 등록 시각 — 목업 전용(KEY-327). 번호가 크면 날짜도
+   뒤다. 한 시간에 하나씩 등록한 셈으로 친다. */
+function mockRegisteredAt(patientId) {
+  var at = new Date(Date.UTC(2026, 0, 1) + Number(patientId || 0) * 3600 * 1000);
+  return at.toISOString().slice(0, 19) + "+09:00";
+}
+
 function rosterRow(row, extra, flags) {
   var stamp = function (day) {
     return day ? day + "T10:00:00+09:00" : null;
@@ -602,6 +615,14 @@ function rosterRow(row, extra, flags) {
     sms_consent: !extra.optedOut,
     sms_consented_at: stamp(extra.consented),
     sms_opted_out_at: stamp(extra.optedOut),
+    /* 등록 시점 — KEY-327. 서버는 `PatientResponse` 로 늘 싣는다. 목업만 없으면
+       `?mock=1` 의 표에서 「등록」 열이 통째로 「—」가 되고, 최근 등록순이라는
+       기본 차례도 무엇을 세우는지 눈으로 확인할 수 없다.
+
+       **번호에서 곧게 만든다.** 처음에는 번호를 나머지로 접어 날짜를 지었는데,
+       그러면 「등록 ▼」로 세워 놓고 날짜가 오르락내리락해 화면이 고장난 것처럼
+       보였다 — 실제 자료는 번호와 날짜가 같이 커진다. */
+    created_at: mockRegisteredAt(row.patient_id),
     diagnosis_name: row.diagnosis_name,
     doctor: row.doctor,
     latest_visit: {
@@ -668,6 +689,34 @@ function rosterHits(row, category) {
   return true;
 }
 
+/* 목업도 **서버와 같은 규칙으로** 세운다 — KEY-327. 헐거우면 `?mock=1` 에서만
+   맞는 차례가 나오고, 그 거리는 늘 배포 뒤에 발견된다.
+
+   차트번호는 **길이를 먼저 본다** — 글자로만 세우면 `10` 이 `7` 보다 앞에 선다. */
+function mockChartKey(row) {
+  var no = String(row.hospital_patient_no || "");
+  return [no.length, no];
+}
+
+function mockSorted(rows, sort) {
+  var by = {
+    /* **번호가 등록 차례다** — 서버와 같은 규칙(KEY-327). `created_at` 으로
+       세우면 옮겨 온 자료가 옛 날짜를 달고 표 한가운데에 선다. 「등록」 열은
+       그 날짜를 보여 주지만, 줄을 세우는 것은 번호다. */
+    registered_asc: function (a, b) {
+      return a.patient_id - b.patient_id;
+    },
+    chart_asc: function (a, b) {
+      var x = mockChartKey(a);
+      var y = mockChartKey(b);
+      return x[0] - y[0] || x[1].localeCompare(y[1]) || a.patient_id - b.patient_id;
+    },
+  };
+  var rising = by[String(sort || "").replace("_desc", "_asc")] || by.registered_asc;
+  var sorted = rows.slice().sort(rising);
+  return String(sort || "registered_desc").indexOf("_desc") > 0 ? sorted.reverse() : sorted;
+}
+
 function rosterPage(keyword, params) {
   var category = params.get("category") || "ALL";
   var limit = Number(params.get("limit")) || 20;
@@ -682,9 +731,12 @@ function rosterPage(keyword, params) {
       row.phone.indexOf(digits) !== -1
     );
   });
-  var shown = searched.filter(function (row) {
-    return rosterHits(row, category);
-  });
+  var shown = mockSorted(
+    searched.filter(function (row) {
+      return rosterHits(row, category);
+    }),
+    params.get("sort"),
+  );
   var counted = function (name) {
     return searched.filter(function (row) {
       return rosterHits(row, name);

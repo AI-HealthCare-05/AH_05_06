@@ -463,6 +463,16 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
   검색어가 `2026-08-15` · `2026-08` 꼴이면 **마지막 진료일**로 찾는다 (KEY-303). 차트번호는 숫자만이라 겹치지 않는다. `2026-13` 처럼 없는 달은 날짜로 보지 않고 그대로 이름 검색에 넘긴다 — 조용히 12월로 고치면 사람이 오해한다.
 - `cursor`: 서버가 발급한 불투명 다음 페이지 커서. 임의 조립하지 않는다.
 - `offset`: 몇 번째부터. 기본 0. **쪽 번호와 「이전」을 위해 쓴다** (KEY-303) — 커서는 앞으로만 가서 뒤로 못 간다.
+#### 표의 차례 — `sort` (KEY-327)
+
+`registered_desc`(기본) · `registered_asc` · `chart_asc` · `chart_desc`.
+
+- **정렬은 서버가 한다.** 화면이 받은 쪽만 다시 세우면 그 쪽 안에서만 맞고, 쪽을 넘기면 앞 쪽과 겹치거나 빠진다.
+- 🚩 **등록 차례는 `created_at` 이 아니라 `patient_id` 다.** 번호는 등록할 때 하나씩 커지므로 「마지막에 등록한 사람」이 곧 가장 큰 번호다. `created_at` 은 옮겨 온 자료가 **옛 날짜를 그대로 달고** 들어올 수 있어 차례의 근거가 못 된다. 표의 「등록」 열은 그 날짜를 보여 주지만 줄을 세우는 것은 번호다 — **보여 주는 값과 세우는 열쇠가 다르고, 일부러 그렇다.**
+- 차트번호는 **길이를 먼저 보고 그다음 글자**로 센다. `hospital_patient_no` 는 형식 규칙이 없는 글자열이라, 글자로만 세우면 `10` 이 `7` 보다 앞에 선다.
+- 첫째 열쇠가 같으면 **언제나 `patient_id`** 로 가른다. 안 그러면 같은 물음에 다른 차례가 나오고, 쪽을 넘길 때 같은 환자가 두 번 나온다.
+- **`cursor` 와 `sort` 는 `registered_asc` 일 때만 함께 쓴다.** 커서는 `patient_id > cursor` 로 거르므로 세우는 열쇠도 같아야 한다 — 다른 차례를 얹으면 `400 INVALID_REQUEST` 다. 등록 화면의 찾기가 `sort=registered_asc` 를 함께 보내는 이유다(첫 쪽에는 `cursor` 가 없어 기본값인 최근순으로 와 버린다).
+
 - **`cursor` 와 `offset` 은 함께 못 준다.** 둘 다 오면 `400 INVALID_REQUEST` 로 거부하고 `field_errors` 에 두 이름을 적는다. 겹쳐 받으면 `patient_id > cursor` 를 건 **뒤에** 다시 `offset` 만큼 건너뛰어 조용히 빈 쪽이 나온다 — 부른 쪽은 「마지막 쪽」으로 읽는다.
 - `limit` 기본 20, 최대 100.
 - 응답은 `{counts, selected_category, items, page: {next_cursor, has_next}, roster: {offset, limit, total, has_next}}`다.
