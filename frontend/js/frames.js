@@ -42,7 +42,7 @@ var FRAMES = [
   {"id": "D2-2", "area": "medic", "name": "안내문 고치기 — 원본 ↔ 원장님 문구", "level": 2, "target": 2, "url": "/settings.html", "blocker": "고친 글이 안내문에서 어떻게 보이는지 이 화면에서 못 본다 (KEY-258 · #252 리뷰 중). 안내문 생성이 고친 문구를 읽는 것은 KEY-243 이 붙였다"},
   {"id": "D2-3", "area": "medic", "name": "처방", "level": 2, "target": 1, "url": "/settings.html", "blocker": "안내문 미리보기는 D2-1·D2-2 몫이라 아직 없다"},
   {"id": "D2-4", "area": "medic", "name": "검사 기준선", "level": 2, "target": 2, "url": "/settings.html", "blocker": "의원 「판독 키워드」를 판독이 쓰기 시작했다(KEY-245) — 다만 기준선 이름이 내장 정규식에 걸리는 항목만 등록돼(build_lab_keywords) 정규식이 모르는 이름은 그대로 안 잡힌다"},
-  {"id": "D2-5", "area": "medic", "name": "문자 문구", "level": 2, "target": 2, "url": "/settings.html", "blocker": "{링크}·{예약링크}를 채우는 자리가 없다 — 발송기는 여기서 정한 문구로 보내지만(KEY-249) 그 변수가 남으면 발송 직전 FAILED 로 끝난다. {예약링크}는 의원 정보(A1-4)도 있어야 채워진다"},
+  {"id": "D2-5", "area": "medic", "name": "문자 문구", "level": 2, "target": 2, "url": "/settings.html", "blocker": "{링크}·{예약링크}를 채우는 자리가 없다 — 발송기는 여기서 정한 문구로 보내지만(KEY-249) 그 변수가 남으면 발송 직전 FAILED 로 끝난다. {예약링크}는 이제 의원 정보(A1-4)에 적은 주소로 채워지고, 비어 있으면 그 문자를 보류한다(KEY-331)"},
   {"id": "P1-1", "area": "patient", "name": "링크로 들어옴 — 인증번호 보내기", "level": 3, "target": 1, "blocker": "B3 실제 OTP 발송기가 없다(고정 OTP 좁은문이 닫히면 `UnavailableOtpDelivery` 503) · **그리고 토큰이 화면에 안 들어간다** — 여는 쪽은 모두 `#t=` 로 주는데(`doctor.js`·`checkin.js`) `otp.html` 은 비목업에서 `?token=` 만 읽어, 실서버에서 「본인 확인 열기」를 누르면 「일시적인 오류가 생겼어요」로 떨어진다", "role": "환자가 안내문 링크로 들어와 인증번호를 받는다"},
   {"id": "P1-2", "area": "patient", "name": "인증번호 입력", "level": 2, "target": 2, "url": "/checkin.html", "blocker": "B3 인증번호를 못 받는다 — OTP 발송이 UnavailableOtpDelivery 라 실제 문자로는 안 나가고, 고정 OTP 좁은문이 열렸을 때만 들어간다. 문자 발송기(KEY-249)는 OTP 쪽에 안 붙었다"},
   {"id": "P1-3", "area": "patient", "name": "폴백 (링크 만료 · 폐기)", "level": 3, "target": 3, "blocker": "생년월일·전화번호 재확인 폼이 없다 · 「새 링크 요청하기」가 **거짓 성공**이다 — `patient_links` 가 새 토큰을 만들어 해시만 쓰고 원문을 아무 데도 안 넘겨(발송 호출 없음) 환자는 새 링크를 못 받는데 화면은 202 를 받는다 · 하루 3회 제한 없음", "role": "만료·폐기된 링크에서 본인 확인 후 다시 받는다"},
@@ -70,7 +70,7 @@ var FRAMES = [
   {"id": "A1-1", "area": "admin", "name": "직원", "level": 2, "target": 2, "url": "/admin.html", "blocker": "검색 칸이 없다 — 목록은 GET /admin/staffs 로 실제로 뜬다(KEY-321)", "role": "직원 목록을 보고 검색한다"},
   {"id": "A1-2", "area": "admin", "name": "직원 추가", "level": 1, "target": 1, "url": "/admin.html", "role": "직원을 등록한다 — 초기 비밀번호는 관리자가 정해 주고 첫 로그인에서 본인이 바꾼다"},
   {"id": "A1-3", "area": "admin", "name": "직원 수정", "level": 3, "target": 3, "blocker": "직원 수정 · 비밀번호 재설정 API 없음", "role": "역할·재직 상태를 바꾸고 비밀번호를 재설정한다"},
-  {"id": "A1-4", "area": "admin", "name": "의원 정보", "level": 3, "target": 2, "blocker": "Hospital 모델은 있음. GET /hospital 조회 API 없음", "role": "의원 정보를 수정한다"},
+  {"id": "A1-4", "area": "admin", "name": "의원 정보", "level": 2, "target": 2, "url": "/admin.html", "blocker": "대표번호·주소·예약 링크 셋뿐이다 — 사업자번호·로고 같은 칸은 쓸 데가 생길 때 넣는다 (KEY-331)", "role": "의원 정보를 수정한다"},
   {"id": "A1-5", "area": "admin", "name": "문자 이 프로그램이 멈추는 유일한 자리", "level": 3, "target": 3, "blocker": "SMS 잔량 조회 · 충전 API 없음", "role": "문자 잔량을 확인하고 충전한다"},
   {"id": "A1-6", "area": "admin", "name": "전체 로그", "level": 2, "target": 2, "url": "/admin.html", "blocker": "CSV 내보내기와 실시간 알림이 없다 — 목록·거르개·쪽 나눔은 GET /admin/audit-logs 로 실제로 돈다(KEY-322)", "role": "시스템 감사 로그를 조회한다"},
   {"id": "A1-7", "area": "admin", "name": "한 건 시간 흐름", "level": 1, "target": 1, "url": "/admin.html", "role": "진료 한 건의 처리 흐름을 시간순으로 본다"}
@@ -82,8 +82,11 @@ var FRAME_LEVELS = { 1: "완전 구현", 2: "일부 동작", 3: "화면 없음" 
 /* **안내 화면을 씌울 대상** — KEY-234 인수조건 ④ 「핵심 데모 화면에는 적용하지 않는다」.
 
    지금 화면이 없어도(level 3) 곧 올라갈 프레임(target < 3)은 제외한다 —
-   P1-1(링크 진입 인증)·A1-4(의원 정보) 둘이다. 씌우면 같은 주에 두 번 만들게
-   되고, 시연 대본이 안내 화면을 지난다.
+   지금은 P1-1(링크 진입 인증) 하나다. 씌우면 같은 주에 두 번 만들게 되고,
+   시연 대본이 안내 화면을 지난다.
+
+   **A1-4(의원 정보)도 여기 있었다.** KEY-331 이 조회·수정을 실제로 붙여
+   level 2 가 됐다 — A1-1 과 같은 자리다.
 
    **A1-1(직원)이 여기 있었다.** KEY-321 이 목록을 실제로 띄워 level 2 가 됐고,
    이제 「화면이 없는」 축에 안 든다 — 예시가 표와 갈리면 다음 사람이 표 대신

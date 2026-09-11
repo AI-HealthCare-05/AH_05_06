@@ -50,7 +50,13 @@ from app.core.api_errors import ApiError
 from app.core.pagination import decode_cursor, encode_cursor
 from app.dependencies.admin_access import AdminActor
 from app.dtos.admin_audit import AuditLogEntry, AuditLogPage, AuditLogQuery, AuditSource
-from app.models.staffs import Staff, StaffAccountEvent, StaffAccountEventType
+from app.models.staffs import (
+    HospitalUpdateEvent,
+    HospitalUpdateEventType,
+    Staff,
+    StaffAccountEvent,
+    StaffAccountEventType,
+)
 from app.models.visits import (
     GuideEvent,
     GuideEventType,
@@ -90,6 +96,7 @@ _SUMMARY: dict[tuple[AuditSource, str], str] = {
     (AuditSource.PATIENT_USAGE, PatientUsageEventType.GUIDE_VIEWED): "환자가 안내를 열어 봤습니다",
     (AuditSource.PATIENT_USAGE, PatientUsageEventType.CHATBOT_ANSWERED): "챗봇이 환자 물음에 답했습니다",
     (AuditSource.STAFF_ACCOUNT, StaffAccountEventType.STAFF_CREATED): "직원 계정을 만들었습니다",
+    (AuditSource.HOSPITAL, HospitalUpdateEventType.HOSPITAL_UPDATED): "의원 정보를 고쳤습니다",
 }
 
 
@@ -173,6 +180,7 @@ class AdminAuditService:
             AuditSource.MESSAGE: self._message_rows,
             AuditSource.PATIENT_USAGE: self._usage_rows,
             AuditSource.STAFF_ACCOUNT: self._staff_account_rows,
+            AuditSource.HOSPITAL: self._hospital_rows,
         }
         wanted = [query.source] if query.source else list(sources)
 
@@ -378,6 +386,40 @@ class AdminAuditService:
                 pk=row["staff_account_event_id"],
                 occurred_at=row["created_at"],
                 source=AuditSource.STAFF_ACCOUNT,
+                event_type=str(row["event_type"]),
+                actor_staff_id=row["actor_staff_id"],
+                visit_id=None,
+            )
+            for row in found
+        ]
+
+    async def _hospital_rows(self, scope: _Scope) -> list[_Row]:
+        """의원 정보 수정 — A1-4 (KEY-331).
+
+        **계정 표와 같은 자리다.** 진료 건에 안 매달리므로 `visit_id` 로 거르면
+        통째로 빠진다 — A1-7(「이 진료에 무슨 일이 있었나」)은 의원 정보 수정을
+        묻는 자리가 아니다.
+
+        **바뀐 값은 여기서 안 싣는다.** 목록 한 줄은 「언제 · 누가 · 무엇을」이고,
+        이전·이후 값은 표에 남아 있다. 줄마다 실으면 목록이 값으로 길어지고,
+        `AuditLogEntry` 에는 그것을 담을 칸도 없다.
+        """
+        if scope.query.visit_id is not None:
+            return []
+        rows = HospitalUpdateEvent.filter(hospital_id=scope.hospital_id)
+        if scope.query.actor_staff_id is not None:
+            rows = rows.filter(actor_staff_id=scope.query.actor_staff_id)
+        rows = _before_cursor(_in_window(rows, scope), scope, AuditSource.HOSPITAL, "hospital_update_event_id")
+        found = (
+            await rows.order_by("-created_at", "-hospital_update_event_id")
+            .limit(scope.take)
+            .values("hospital_update_event_id", "event_type", "created_at", "actor_staff_id")
+        )
+        return [
+            _Row(
+                pk=row["hospital_update_event_id"],
+                occurred_at=row["created_at"],
+                source=AuditSource.HOSPITAL,
                 event_type=str(row["event_type"]),
                 actor_staff_id=row["actor_staff_id"],
                 visit_id=None,

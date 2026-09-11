@@ -18,7 +18,14 @@ from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from app.models.patients import Patient
-from app.models.staffs import Hospital, Staff, StaffAccountEvent, StaffAccountEventType
+from app.models.staffs import (
+    Hospital,
+    HospitalUpdateEvent,
+    HospitalUpdateEventType,
+    Staff,
+    StaffAccountEvent,
+    StaffAccountEventType,
+)
 from app.models.visits import (
     GuideDocument,
     GuideEvent,
@@ -238,13 +245,28 @@ class TestAllFiveTablesLandInOneList(AuditTestCase):
             StaffAccountEvent, "staff_account_event_id", made.staff_account_event_id, self.base + timedelta(minutes=5)
         )
 
-    async def test_five_sources_are_mixed_newest_first(self) -> None:
+        fixed = await HospitalUpdateEvent.create(
+            hospital_id=self.hospital.hospital_id,
+            actor_staff_id=self.admin.staff_id,
+            event_type=HospitalUpdateEventType.HOSPITAL_UPDATED,
+            changes=[{"field": "booking_url", "before": None, "after": "https://booking.example.com/x"}],
+        )
+        await _at(
+            HospitalUpdateEvent,
+            "hospital_update_event_id",
+            fixed.hospital_update_event_id,
+            self.base + timedelta(minutes=6),
+        )
+
+    async def test_six_sources_are_mixed_newest_first(self) -> None:
+        """여섯째는 의원 정보다 — KEY-331 (이희진 님 #295 리뷰)."""
         await self._one_of_each()
 
         response = await self._get()
         entries = response.json()["entries"]
 
         assert [row["source"] for row in entries] == [
+            "hospital",
             "staff_account",
             "patient_usage",
             "message",
@@ -353,10 +375,19 @@ class TestEachFilterBites(AuditTestCase):
             roles=["doctor"],
         )
 
+        await HospitalUpdateEvent.create(
+            hospital_id=self.hospital.hospital_id,
+            actor_staff_id=self.admin.staff_id,
+            event_type=HospitalUpdateEventType.HOSPITAL_UPDATED,
+            changes=[{"field": "phone", "before": None, "after": "02-123-4567"}],
+        )
+
         response = await self._get({"visit_id": self.visit.visit_id})
         sources = {row["source"] for row in response.json()["entries"]}
 
         assert "staff_account" not in sources, sources
+        #: 의원 정보도 같다 — 어느 진료의 일도 아니다 (KEY-331).
+        assert "hospital" not in sources, sources
 
 
 class TestTheActorNameStaysInsideTheFence(AuditTestCase):

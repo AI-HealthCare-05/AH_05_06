@@ -25,10 +25,11 @@
          **로그인하면 404 가 떴다.** 시드에 admin 단독 계정이 셋 있다
          (`admin01` · `lastadmin01` · `admin21`).
 
-         **골격은 진짜로 만들고 본문은 아직이라고 말한다.** 직원 목록·의원 정보·
-         문자 잔량·감사 로그를 줄 API 가 하나도 없다 — `GET /staffs` 도
-         `GET /hospital` 도 서버에 없다. 없는 데이터를 화면이 지어내면
-         지금 다른 화면들이 겪는 어긋남이 여기서 다시 생긴다.
+         **골격은 진짜로 만들고 본문은 아직이라고 말한다.** 처음에는 줄 API 가
+         하나도 없었다. 지금은 직원(KEY-321) · 전체 로그(KEY-322) · 의원
+         정보(KEY-331)가 실제 API 를 부르고, 남은 칸은 프레임 카드 그대로다 —
+         없는 데이터를 화면이 지어내면 지금 다른 화면들이 겪는 어긋남이
+         여기서 다시 생긴다.
 
          그래서 **동작하지 않는 버튼을 두지 않는다.** 좌측 목록은 실제로
          본문을 바꾸고, 본문은 그 자리가 무엇을 할 곳이고 무엇이 있어야
@@ -76,6 +77,7 @@
     <script src="/js/frames.js"></script>
     <script src="/js/list-fold.js"></script>
     <script src="/js/admin-staff.js"></script>
+    <script src="/js/admin-clinic.js"></script>
     <script src="/js/admin-audit.js"></script>
     <script src="/js/admin.js"></script>
   </body>

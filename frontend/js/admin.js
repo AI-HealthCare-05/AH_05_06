@@ -7,9 +7,9 @@
  *     문자        A1-5
  *     전체 로그    A1-6 목록 · A1-7 한 건 시간 흐름
  *
- * **본문은 아직 데이터가 없다.** `GET /staffs` 도 `GET /hospital` 도 서버에
- * 없다. 그래서 각 줄은 그 자리가 무엇을 할 곳이고 무엇이 있어야 되는지를
- * 말한다 — 없는 값을 화면이 지어내지 않는다.
+ * **살아 있는 칸이 늘고 있다.** 직원(KEY-321) · 전체 로그(KEY-322) · 의원
+ * 정보(KEY-331)는 이제 실제 API 를 부른다. 아직 줄 API 가 없는 칸은 프레임
+ * 카드 그대로 둔다 — 없는 값을 화면이 지어내지 않는다.
  *
  * 화면에 쓰는 설명은 `js/frames.js` 하나에서 온다. 프레임이 구현되면 그 줄의
  * `level` 만 고치면 되고, 설명이 두 군데로 갈라지지 않는다.
@@ -408,8 +408,82 @@ function adminMenuCovers(frames) {
       });
   }
 
+  /* ── 의원 정보 (A1-4) — KEY-331 ─────────────────────────────────────── */
+
+  function renderClinicBody() {
+    bodyBox.innerHTML =
+      '<h1 class="pane__title">의원 정보</h1>' + '<p class="pane__lead" id="clinic-slot">불러오는 중…</p>';
+
+    getHospital()
+      .then(function (info) {
+        var slot = document.getElementById("clinic-slot");
+        if (!slot) return;
+        slot.outerHTML = clinicFormHtml(info);
+        wireClinicForm();
+      })
+      .catch(function (error) {
+        /* **빈 폼으로 그리지 않는다.** 못 불러온 것을 「아직 안 적었다」로
+           보이면, 관리자는 이미 적어 둔 값 위에 빈칸을 저장한다 — 그 순간
+           소진·재진 문자가 전부 보류된다. */
+        var slot = document.getElementById("clinic-slot");
+        if (slot) slot.textContent = clinicLoadSaying(error);
+      });
+  }
+
+  function wireClinicForm() {
+    var form = document.getElementById("clinic-form");
+    if (!form) return;
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      saveClinic();
+    });
+  }
+
+  function saveClinic() {
+    var say = document.getElementById("clinic-say");
+    var go = document.getElementById("clinic-save");
+    if (!say || !go) return;
+
+    var values = {};
+    for (var i = 0; i < CLINIC_FIELDS.length; i++) {
+      var field = CLINIC_FIELDS[i];
+      var input = document.getElementById(field.id);
+      values[field.key] = input ? input.value : "";
+    }
+
+    /* **이름부터 본다.** 비우면 서버가 400 으로 막는데, 무엇을 해야 하는지는
+       화면이 먼저 말하는 것이 맞다 — 잠그기 전에 돌아간다. */
+    var problem = clinicNameProblem(values);
+    if (problem) {
+      say.textContent = problem;
+      return;
+    }
+
+    /* 두 번 눌러 두 번 저장되는 자리를 막는다. 서버가 같은 값을 두 번 받는
+       것은 해롭지 않지만(같은 값을 다시 쓴다), 화면이 아무 말도 안 하는
+       사이에 두 번 누르게 두면 관리자가 저장됐는지 모른다. */
+    go.disabled = true;
+    say.textContent = "저장하는 중…";
+
+    updateHospital(clinicPayload(values))
+      .then(function (info) {
+        /* **저장한 것을 그대로 다시 그린다.** 서버가 접은 값(공백 → 빈칸)이
+           화면에 남아 있으면, 다음에 누른 사람이 그 공백을 다시 보낸다.
+           경고 문구도 같이 새로 선다. */
+        bodyBox.innerHTML = '<h1 class="pane__title">의원 정보</h1>' + clinicFormHtml(info);
+        wireClinicForm();
+        var said = document.getElementById("clinic-say");
+        if (said) said.textContent = "저장했습니다. 다음 문자부터 이 값으로 나갑니다.";
+      })
+      .catch(function (error) {
+        say.textContent = clinicSaveSaying(error);
+        go.disabled = false;
+      });
+  }
+
   function renderBody() {
     if (current === "staff") return renderStaffBody();
+    if (current === "clinic") return renderClinicBody();
     if (current === "log") return renderAuditBody();
     var frames = adminFramesFor(current);
     if (!frames.length) {
