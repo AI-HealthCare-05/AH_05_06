@@ -247,14 +247,12 @@ function guideLoadSaying(error) {
   }
 
   /* 「현황 보기」가 어디로 가는지는 그것을 그리는 `guide-view.js` 가 정한다
-     (KEY-302). 이 화면이 할 일은 제 모달을 닫는 것뿐이다 — **발급한 링크를
-     잊는 것까지가 닫는 일이다.**
+     (KEY-302). 이 화면이 할 일은 제 모달을 닫는 것뿐이다.
 
-     그래서 **「닫기」와 같은 문을 지난다.** 아직 복사도 열지도 않은 링크를 들고
-     있으면 한 번 묻고, 사람이 아니라고 하면 `preventDefault()` 로 막는다 —
-     그러면 창도 그대로고 현황으로도 안 간다. 이 문이 없었을 때는 「현황 보기」가
-     경고 없이 링크를 잊었고, 토큰은 메모리에만 있어 **되찾을 길이 없었다**
-     (2heej, #274). */
+     이벤트 자체는 여전히 `cancelable: true` 로 뜬다(`guide-view.js`) — 이
+     화면은 이제 막지 않지만, 스탭 화면(`visit-guide.js`)도 같은 이벤트를
+     듣는다. 한쪽이 안 쓴다고 지우면 다른 쪽이 나중에 필요해질 때 다시
+     발명해야 한다(KEY-307, 2heej·iljun-sys 리뷰). */
   document.addEventListener("guide:modal-close", function () {
     closeModal();
   });
@@ -317,15 +315,14 @@ function guideLoadSaying(error) {
        창도 함께 닫는다. 반려 사유 창이 열린 채로 환자를 바꾸면, 앞 환자에게
        쓰던 사유가 뒷 환자의 이름 아래 남는다. 이름·버튼을 거두는 것과 같은
        이유다 — 화면이 말하는 사람과 눌렀을 때 가는 사람이 달라진다. */
-    guide = null;    /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
+    /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
+    guide = null;
     smsForget();
     closeModal();
     renderHead();
     renderRole();
 
     el("panel").innerHTML = '<p class="block__hint">불러오는 중…</p>';
-
-
 
     doctorApi
       .guide(visit.visit_id)
