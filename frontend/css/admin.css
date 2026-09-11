@@ -90,6 +90,23 @@
   color: var(--ink-2);
 }
 
+/* 목록과 추가가 **같은 카드**에 담긴다. 하나만 담기면 한 화면 안에서 담긴 것과
+   안 담긴 것이 섞여 눈이 자리를 새로 찾는다 — 표가 바탕 위에 그냥 떠 있었다. */
+.staff-card {
+  padding: var(--s-24);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin: 0 0 var(--s-24);
+  overflow: hidden;
+}
+
+.staff-card__title {
+  margin: 0 0 var(--s-16);
+  font-size: 15px;
+  font-weight: 600;
+}
+
 .staff-add {
   padding: var(--s-24);
   background: var(--card);

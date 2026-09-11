@@ -153,17 +153,21 @@ function staffListHtml(staffs) {
     /* 이 자리는 실제로 안 온다 — 목록을 보려면 로그인한 관리자가 있어야 하고
        그 계정이 이미 한 줄이다. 그래도 「비어 있다」와 「못 불러왔다」는 다른
        말이라 갈라 둔다. */
-    return '<p class="pane__lead">등록된 직원이 없습니다.</p>';
+    return '<section class="staff-card"><h2 class="staff-card__title">직원 목록</h2>' +
+      '<p class="pane__lead">등록된 직원이 없습니다.</p></section>';
   }
   var rows = "";
   for (var i = 0; i < staffs.length; i++) rows += staffRowHtml(staffs[i]);
+  /* **아래 「직원 추가」와 같은 카드에 담는다.** 표만 바탕에 그대로 두면 한
+     화면 안에서 담긴 것과 안 담긴 것이 섞여 눈이 자리를 새로 찾는다. */
   return (
+    '<section class="staff-card"><h2 class="staff-card__title">직원 목록</h2>' +
     '<table class="staffs">' +
     "<thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>상태</th><th></th></tr></thead>" +
     "<tbody>" +
     rows +
     "</tbody>" +
-    "</table>"
+    "</table></section>"
   );
 }
 
