@@ -99,32 +99,29 @@ class TestTheChartNumberSortsLikeANumber(RosterSortTestCase):
         assert falling == list(reversed(rising)), f"오름·내림이 서로의 거울이 아니다 — {rising} · {falling}"
 
 
-class TestTheNumberDecidesNotTheStamp(RosterSortTestCase):
-    """🚩 **등록 차례는 `created_at` 이 아니라 `patient_id` 다.**
+class TestTheStampOnTheScreenIsTheKey(RosterSortTestCase):
+    """**표가 보여 주는 그 날짜로 센다.**
 
-    번호는 등록할 때 하나씩 커지므로 「마지막에 등록한 사람」이 곧 가장 큰
-    번호다. `created_at` 은 옮겨 온 자료가 **옛 날짜를 그대로 달고** 들어올 수
-    있다 — 그것으로 세우면 오늘 등록한 환자가 표 한가운데에 선다.
-
-    표의 「등록」 열은 그 날짜를 그대로 보여 준다. **보여 주는 값과 세우는
-    열쇠가 다르다** — 일부러 그렇다.
+    「등록 ▼」라고 써 놓고 다른 열쇠로 세우면 날짜가 오르락내리락해서 화면이
+    고장난 것처럼 보인다. 보여 주는 값과 세우는 열쇠는 같아야 한다.
     """
 
-    async def test_an_old_stamp_does_not_move_the_row(self) -> None:
+    async def test_an_old_stamp_sinks_even_if_it_was_added_last(self) -> None:
+        """옛 날짜를 달고 들어온 자료는 그 날짜 자리에 선다 — **날짜가 기준이다.**"""
         clinic, headers = await self.signed_in()
         for index in range(3):
             await self.a_patient(clinic, name=f"조하늘{index}", chart=f"3000{index}")
-        #: 마지막에 등록한 사람이 **옛 날짜**를 달고 있다 — 옮겨 온 자료가 그렇다.
+        #: 마지막에 만든 줄에 옛 날짜를 단다 — 옮겨 온 자료가 그렇다.
         newest = await Patient.filter(hospital_id=clinic.hospital_id).order_by("-patient_id").first()
         assert newest is not None
         await Patient.filter(patient_id=newest.patient_id).update(created_at="2020-01-01 01:00:00")
 
-        assert await self.ask(headers) == ["30002", "30001", "30000"], (
-            "옛 날짜를 단 환자가 마지막 등록인데 표 뒤로 밀렸다"
+        assert await self.ask(headers) == ["30001", "30000", "30002"], (
+            "등록일이 아니라 다른 열쇠로 세운다 — 「등록 ▼」인데 날짜가 뒤섞인다"
         )
 
     async def test_the_same_instant_still_has_one_answer(self) -> None:
-        """같은 초에 등록한 둘이 있어도 차례가 하나다 — 번호로 세우기 때문이다."""
+        """같은 초에 등록한 둘이 있어도 차례가 하나다 — 번호로 갈라 주기 때문이다."""
         clinic, headers = await self.signed_in()
         for index in range(4):
             await self.a_patient(clinic, name=f"조하늘{index}", chart=f"3100{index}")
@@ -138,7 +135,7 @@ class TestTheNumberDecidesNotTheStamp(RosterSortTestCase):
 
 class TestTheCursorOnlyWalksForward(RosterSortTestCase):
     async def test_asking_another_order_with_a_cursor_is_refused(self) -> None:
-        """인수조건 — `cursor` 와 다른 `sort` 를 함께 보내면 400 이다."""
+        """인수조건 — `cursor` 와 `id_asc` 아닌 `sort` 를 함께 보내면 400 이다."""
         _, headers = await self.signed_in()
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -155,12 +152,12 @@ class TestTheCursorOnlyWalksForward(RosterSortTestCase):
             await self.a_patient(clinic, name=f"조하늘{index}", chart=f"4000{index}")
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            head = await client.get(URL, headers=headers, params={"limit": 2, "sort": "registered_asc"})
+            head = await client.get(URL, headers=headers, params={"limit": 2, "sort": "id_asc"})
             assert head.status_code == 200, head.text
             tail = await client.get(
                 URL,
                 headers=headers,
-                params={"limit": 2, "sort": "registered_asc", "cursor": head.json()["page"]["next_cursor"]},
+                params={"limit": 2, "sort": "id_asc", "cursor": head.json()["page"]["next_cursor"]},
             )
 
         assert tail.status_code == 200, tail.text
@@ -187,7 +184,7 @@ class TestTheCursorAndTheOrderShareOneKey(RosterSortTestCase):
         ):
             await Patient.filter(patient_id=patient.patient_id).update(created_at=when)
 
-        walking: dict[str, str | int] = {"limit": 2, "sort": "registered_asc"}
+        walking: dict[str, str | int] = {"limit": 2, "sort": "id_asc"}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             head = await client.get(URL, headers=headers, params=walking)
             assert head.status_code == 200, head.text
@@ -210,6 +207,6 @@ class TestTheHospitalFenceStillHolds(RosterSortTestCase):
         neighbour = await self.a_clinic("옆동네의원")
         await self.a_patient(neighbour, name="옆집환자", chart="99999")
 
-        for order in ("registered_desc", "registered_asc", "chart_asc", "chart_desc"):
+        for order in ("registered_desc", "registered_asc", "chart_asc", "chart_desc", "id_asc"):
             assert await self.ask(headers, sort=order) == ["50001"], f"{order} 에서 옆 의원이 샌다"
         assert await Patient.filter(Q(hospital_id=neighbour.hospital_id)).count() == 1, "검사가 헛돈다"

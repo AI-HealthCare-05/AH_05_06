@@ -24,18 +24,16 @@ def _ordered(query: QuerySet[Patient], sort: PatientSort) -> QuerySet[Patient]:
     첫째 열쇠가 같은 줄이 있으면(같은 자리수·같은 차트번호) 차례가 매번
     달라지고, 그러면 쪽을 넘길 때 같은 환자가 두 번 나오거나 한 번도 안 나온다.
 
-    🚩 **등록 차례는 `created_at` 이 아니라 `patient_id` 다.**
+    `registered_*` 는 **표에 보이는 그 날짜**(`created_at`)로 센다 — 보여 주는
+    값과 세우는 열쇠가 같아야 「등록 ▼」이 말이 된다.
 
-    번호는 등록할 때 하나씩 커지므로 「마지막에 등록한 사람」이 곧 가장 큰
-    번호다. `created_at` 은 옮겨 온 자료가 **옛 날짜를 그대로 달고** 들어올 수
-    있어 차례의 근거로 못 쓴다 — 표의 「등록」 열은 그 날짜를 보여 주지만,
-    줄을 세우는 것은 번호다.
-
-    이어 보기(`cursor`)가 `patient_id > cursor` 로 거르는 것과도 같은 열쇠라,
-    거르는 기준과 세우는 기준이 갈릴 일이 없다.
+    `ID_ASC` 만 번호로 센다. **이어 보기 전용**이다 — 커서가 `patient_id >` 로
+    거르므로 세우는 열쇠도 번호여야 거름과 갈리지 않는다.
     """
-    if sort is PatientSort.REGISTERED_ASC:
+    if sort is PatientSort.ID_ASC:
         return query.order_by("patient_id")
+    if sort is PatientSort.REGISTERED_ASC:
+        return query.order_by("created_at", "patient_id")
     if sort is PatientSort.CHART_ASC:
         return query.annotate(**{_CHART_LENGTH: Length("hospital_patient_no")}).order_by(
             _CHART_LENGTH, "hospital_patient_no", "patient_id"
@@ -44,7 +42,7 @@ def _ordered(query: QuerySet[Patient], sort: PatientSort) -> QuerySet[Patient]:
         return query.annotate(**{_CHART_LENGTH: Length("hospital_patient_no")}).order_by(
             f"-{_CHART_LENGTH}", "-hospital_patient_no", "-patient_id"
         )
-    return query.order_by("-patient_id")
+    return query.order_by("-created_at", "-patient_id")
 
 
 class PatientRepository:
@@ -80,7 +78,7 @@ class PatientRepository:
                 return []
             query = query.filter(patient_id__in=patient_ids)
         if after_id is not None:
-            #: **커서는 등록 오름차순 하나만 탄다** — 라우터가 다른 차례를 400 으로
+            #: **커서는 `id_asc` 하나만 탄다** — 라우터가 다른 차례를 400 으로
             #: 막는다 (KEY-327). 거르는 열쇠와 세우는 열쇠가 둘 다 `patient_id` 라
             #: 「이 뒤로 더」가 건너뛰거나 겹치지 않는다.
             query = query.filter(patient_id__gt=after_id)

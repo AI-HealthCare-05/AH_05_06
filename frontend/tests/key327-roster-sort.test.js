@@ -64,21 +64,40 @@ test("차례를 바꾸면 첫 쪽부터 다시 본다", () => {
   assert.match(handler.slice(0, 300), /rosterOffset = 0/, "차례만 바꾸고 쪽은 그대로 둔다");
 });
 
-test("목업도 최근 등록순 — **번호**로 센다", async () => {
+test("목업도 **등록일** 최근순으로 준다 — 표가 보여 주는 그 날짜로", async () => {
   const api = load("api", "patients-api");
 
   const page = await api.patientsApi.roster("", "ALL", 40, 0, "registered_desc");
-  const ids = page.items.map((row) => row.patient_id);
+  const stamps = page.items.map((row) => row.created_at);
 
-  assert.ok(ids.length > 1, "목업 표가 비었다 — 검사가 헛돈다");
+  assert.ok(stamps.length > 1, "목업 표가 비었다 — 검사가 헛돈다");
   assert.ok(
-    page.items.every((row) => typeof row.created_at === "string" && row.created_at),
+    stamps.every((at) => typeof at === "string" && at),
     "목업 줄에 등록 시점이 없다 — 「등록」 열이 통째로 비어 보인다",
   );
-  ids.forEach(function (id, i) {
+  stamps.forEach(function (at, i) {
     if (i === 0) return;
-    assert.ok(ids[i - 1] > id, `${ids[i - 1]} 다음에 ${id} 가 왔다 — 번호 내림차순이 아니다`);
+    assert.ok(stamps[i - 1] >= at, `${stamps[i - 1]} 다음에 ${at} 가 왔다 — 등록일 최근순이 아니다`);
   });
+});
+
+test("목업 등록순은 **날짜**를 본다 — 번호가 아니라", () => {
+  /* 목업 자료는 번호가 크면 날짜도 뒤라 둘을 못 가른다 — **어긋난 줄**을
+     직접 물어야 잰다. 옮겨 온 자료가 옛 날짜를 달고 나중 번호를 받는다. */
+  const api = load("api", "patients-api");
+  const rows = [
+    { patient_id: 1, created_at: "2026-03-01T09:00:00+09:00" },
+    { patient_id: 2, created_at: "2026-01-01T09:00:00+09:00" },
+    { patient_id: 3, created_at: "2026-02-01T09:00:00+09:00" },
+  ];
+
+  assert.equal(
+    api
+      .mockSorted(rows, "registered_desc")
+      .map((row) => row.patient_id)
+      .join(","),
+    "1,3,2",
+  );
 });
 
 test("목업 차트번호도 **길이를 먼저** 본다 — 10 이 7 보다 앞에 서지 않게", () => {
@@ -117,10 +136,11 @@ test("목업의 오름·내림은 서로의 거울이다", async () => {
   );
 });
 
-test("등록 화면의 찾기는 **등록 오름차순**을 함께 말한다", () => {
-  /* 이어 보기(`cursor`)는 `patient_id >` 로 앞으로만 간다. 안 말하면 첫 쪽이
-     관리 표의 기본(최근순)으로 와서, 둘째 쪽부터 이미 본 사람이 다시 나온다. */
+test("등록 화면의 찾기는 **번호 차례**를 함께 말한다", () => {
+  /* 이어 보기(`cursor`)는 `patient_id >` 로 거른다 — 세우는 열쇠도 번호여야
+     한다. 안 말하면 첫 쪽이 표의 기본(등록일 최근순)으로 와서, 둘째 쪽부터
+     이미 본 사람이 다시 나온다. */
   const api = read("js/patients-api.js");
 
-  assert.match(api, /cursor: cursor, sort: "registered_asc"/);
+  assert.match(api, /cursor: cursor, sort: "id_asc"/);
 });

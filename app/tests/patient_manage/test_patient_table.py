@@ -307,9 +307,9 @@ class PatientTableTestCase(PatientTableBase):
 
         access, _ = await StaffSessionService(self.redis).start(staff)  # type: ignore[arg-type]
         headers = {"Authorization": f"Bearer {access}"}
-        walking: dict[str, str | int] = {"limit": 2, "sort": "registered_asc"}
+        walking: dict[str, str | int] = {"limit": 2, "sort": "id_asc"}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            #: 이어 보기 — 등록 오름차순으로 두 쪽 (KEY-327)
+            #: 이어 보기 — 환자 번호 차례로 두 쪽 (KEY-327)
             head = await client.get("/api/v1/patients", headers=headers, params=walking)
             tail = await client.get(
                 "/api/v1/patients", headers=headers, params={**walking, "cursor": head.json()["page"]["next_cursor"]}
@@ -328,10 +328,10 @@ class PatientTableTestCase(PatientTableBase):
         #: 등록순으로 서면서(KEY-327) 갈렸다. 각 길이 **제 차례로 한 번씩**
         #: 모두를 보여 주는지가 재야 할 것이다.
         assert names(head) + names(tail) == ["조하늘0", "조하늘1", "조하늘2", "조하늘3"], (
-            "이어 보기가 등록 차례로 안 간다 — 건너뛰거나 겹친다"
+            "이어 보기가 번호 차례로 안 간다 — 건너뛰거나 겹친다"
         )
         assert names(first) + names(second) == ["조하늘3", "조하늘2", "조하늘1", "조하늘0"], (
-            "쪽 번호가 최근 등록순으로 안 간다"
+            "쪽 번호가 등록일 최근순으로 안 간다"
         )
 
     # ── 검색 · 격리 ──────────────────────────────────────

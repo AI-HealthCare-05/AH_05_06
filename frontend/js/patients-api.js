@@ -49,8 +49,8 @@ var patientsApi = {
     return patientsRequest(
       /* **차례를 함께 말한다** — KEY-327. 이어 보기(`cursor`)는 `patient_id >` 로
          앞으로만 가는 방식이라 등록 오름차순 하나만 탄다. 안 주면 첫 쪽이
-         관리 표의 기본(최근순)으로 와서, 둘째 쪽부터 이미 본 사람이 다시 나온다. */
-      "/patients?" + query({ keyword: keyword, cursor: cursor, sort: "registered_asc" }),
+         관리 표의 기본(등록일 최근순)으로 와서, 둘째 쪽부터 이미 본 사람이 다시 나온다. */
+      "/patients?" + query({ keyword: keyword, cursor: cursor, sort: "id_asc" }),
     );
   },
 
@@ -700,10 +700,13 @@ function mockChartKey(row) {
 
 function mockSorted(rows, sort) {
   var by = {
-    /* **번호가 등록 차례다** — 서버와 같은 규칙(KEY-327). `created_at` 으로
-       세우면 옮겨 온 자료가 옛 날짜를 달고 표 한가운데에 선다. 「등록」 열은
-       그 날짜를 보여 주지만, 줄을 세우는 것은 번호다. */
+    /* **표에 보이는 그 날짜로 센다** — 서버와 같은 규칙(KEY-327). 보여 주는
+       값과 세우는 열쇠가 다르면 「등록 ▼」인데 날짜가 오르락내리락한다. */
     registered_asc: function (a, b) {
+      return String(a.created_at).localeCompare(String(b.created_at)) || a.patient_id - b.patient_id;
+    },
+    /* 이어 보기 전용 — 커서가 `patient_id >` 로 거르므로 세우는 열쇠도 번호다. */
+    id_asc: function (a, b) {
       return a.patient_id - b.patient_id;
     },
     chart_asc: function (a, b) {
