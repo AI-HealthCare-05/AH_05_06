@@ -1102,6 +1102,13 @@ textarea.sms__text:focus-visible {
   color: var(--ink-3);
 }
 
+/* 「진료 처리 이력」 머리의 [전체 이력 보기] — KEY-329. 제목과 오른쪽 꼬리말
+   사이에 선다. 밀어 두지 않으면 제목에 딱 붙어 한 덩어리로 읽힌다. */
+.tl__act {
+  margin-left: auto;
+  margin-right: var(--s-12);
+}
+
 /* 원문 `grid-template-columns:66px 1fr 104px · gap:12px · padding:7px 0` —
    줄 **위에만** 선이 있다. */
 .tl__row {
@@ -1202,6 +1209,35 @@ textarea.sms__text:focus-visible {
   background: var(--card);
   border-radius: var(--radius);
   padding: var(--s-24);
+}
+
+/* ── 이력 모달의 모양 (S2-2) ──────────────────────────────────────────
+ *
+ * **두 화면이 같은 모달을 연다** — 관리 표(S2-1)와 현황 탭(D1-6) (KEY-329).
+ * 그래서 모양도 여기 공용 자리에 둔다. `manage.css` 에만 있던 동안 현황 탭의
+ * 모달은 머리가 flex 가 아니라 ✕ 가 제목 아래로 떨어졌고, 넓이·스크롤도
+ * 안 먹었다.
+ */
+
+/* 승인 확인 모달(440px)보다 넓다 — 진료 블록 셋이 서고 각 줄이 한 줄로
+   읽혀야 한다. 좁히면 「확인 문자 — 일주일 뒤 … · 보름 뒤 …」가 세 줄로
+   접혀 회차 차례가 안 보인다. */
+.modal__card--wide {
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal__top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-12);
+  margin-bottom: var(--s-16);
+}
+
+.modal__top > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .modal__mark {

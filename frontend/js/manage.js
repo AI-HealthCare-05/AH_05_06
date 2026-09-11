@@ -40,7 +40,6 @@
      몰랐다 (KEY-303). */
   var ROSTER_PAGE = 25;
   var rosterOffset = 0;
-  var HISTORY_BLOCKS = 3;
   //: 글자를 멈춘 뒤 기다리는 시간(ms)
   var ROSTER_TYPING_WAIT = 250;
 
@@ -488,72 +487,11 @@
 
   /* ── 환자 이력 모달 (S2-2) ───────────────────────── */
 
-  function blockHtml(block) {
-    var lines = [
-      guideSaying(block),
-      checksSaying(block),
-      courseEndSaying(block),
-    ].filter(Boolean);
-    return (
-      '<section class="hist"><h3 class="hist__head">' +
-      esc(courseSaying(block)) +
-      "</h3>" +
-      lines
-        .map(function (line) {
-          return '<p class="hist__line">' + esc(line) + "</p>";
-        })
-        .join("") +
-      "</section>"
-    );
-  }
-
-  function modalHtml(body) {
-    var who = [
-      body.hospital_patient_no ? "차트 " + body.hospital_patient_no : "",
-      body.diagnosis_name,
-      body.doctor ? body.doctor.name + " 원장" : "",
-      formatPhone(body.phone),
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    var blocks = (body.visits || []).map(blockHtml).join("");
-    return (
-      '<div class="modal__top"><div><h2 class="modal__title" id="modal-title">' +
-      esc(body.name) +
-      ' 님 이력</h2><p class="modal__note">' +
-      esc(who) +
-      "</p></div>" +
-      '<button class="icon-button" type="button" data-close aria-label="닫기">✕</button></div>' +
-      (blocks || '<p class="send__blank">지난 진료가 없습니다</p>') +
-      '<p class="modal__note">' +
-      esc(historyCountSaying(body)) +
-      "</p>" +
-      '<p class="note">ⓘ 발송 · 열람 · 응답 기록입니다 — 직원 열람 기록과 토큰 이력은 담지 않습니다</p>' +
-      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'
-    );
-  }
-
+  /* 그리는 것도 부르는 것도 `js/history-modal.js` 한 곳이다 — 현황 탭도
+     같은 것을 쓴다 (KEY-329). 두 벌이면 한쪽만 고쳐지고, 어느 화면에서
+     봤느냐로 같은 환자의 이력이 갈린다. */
   function openHistory(patientId) {
-    var box = el("modal");
-    el("modal-body").innerHTML = '<p class="send__blank">불러오는 중…</p>';
-    box.hidden = false;
-    patientsApi
-      .history(patientId, HISTORY_BLOCKS)
-      .then(function (body) {
-        el("modal-body").innerHTML = modalHtml(body);
-      })
-      .catch(function (error) {
-        el("modal-body").innerHTML =
-          '<p class="modal__title">이력을 불러오지 못했습니다</p><p class="modal__note">' +
-          esc(
-            errorMessage(
-              error,
-              [{ status: 404, say: "환자를 찾을 수 없습니다." }],
-              "잠시 후 다시 시도해 주세요.",
-            ),
-          ) +
-          '</p><div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>';
-      });
+    openPatientHistory(patientId, HISTORY_BLOCKS);
   }
 
   function closeHistory() {

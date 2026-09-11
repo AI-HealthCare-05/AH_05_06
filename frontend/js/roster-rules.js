@@ -120,14 +120,12 @@ function rosterActions(row) {
   if (!row) return [];
   var found = [];
   if (row.latest_visit && row.latest_visit.visit_id) {
-    found.push({
-      key: "edit",
-      say: "정보 수정",
-      href:
-        "/patients.html?visit=" +
-        encodeURIComponent(row.latest_visit.visit_id) +
-        "&tab=basic",
-    });
+    var at = "/patients.html?visit=" + encodeURIComponent(row.latest_visit.visit_id) + "&tab=";
+    /* **같은 결로 간다** — 정보 수정이 기본정보 탭으로 가듯, 현황 보기는 현황
+       탭으로 간다 (KEY-329). 탭 이름은 `step-nav.js` 의 `VISIT_STEPS` 가 정한
+       그대로다 — 여기서 새로 짓지 않는다. */
+    found.push({ key: "edit", say: "정보 수정", href: at + "basic" });
+    found.push({ key: "status", say: "현황 보기", href: at + "status" });
   }
   return found;
 }
