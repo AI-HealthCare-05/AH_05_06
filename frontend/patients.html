@@ -386,7 +386,9 @@
     <!-- 승인 확인 모달(와이어프레임 D1-5). 화면을 갈아끼우지 않는다 —
          뒤에 최종 확인 탭이 흐려진 채 남아, 무엇을 승인했는지 보인다. -->
     <div class="modal" id="modal" hidden>
-      <div class="modal__card" role="dialog" aria-modal="true" id="modal-body"></div>
+      <!-- `--wide` 는 이력 모달(S2-2)이 쓴다 — 관리 화면과 같은 넓이·스크롤이라야
+           진료 블록의 각 줄이 한 줄로 읽힌다 (KEY-329). -->
+      <div class="modal__card modal__card--wide" role="dialog" aria-modal="true" id="modal-body"></div>
     </div>
 
     <script src="/js/frames.js"></script>

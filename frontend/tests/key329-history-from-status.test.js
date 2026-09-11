@@ -11,7 +11,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { load } = require("./browser-shim");
-const { read, bareCode, codeOnly, scriptsOf } = require("./source");
+const { read, bareCode, codeOnly, markupOnly, scriptsOf } = require("./source");
 
 function box() {
   return load("api", "checkin-words", "message-words", "history-modal");
@@ -85,6 +85,29 @@ test("스탭 화면이 **번호를 넘기고 그 단추를 받는다**", () => {
   assert.match(bare, /patientId:\s*\(\(guide && guide\.patient\) \|\| \{\}\)\.patient_id/, "현황에 환자 번호를 안 넘긴다");
   assert.match(withStrings, /closest\("\[data-history\]"\)/, "단추를 안 받는다");
   assert.match(bare, /openPatientHistory\(/, "공용 모달을 안 연다");
+});
+
+test("모달의 **모양도 한 벌**이다 — 두 화면이 같은 규칙을 받는다", () => {
+  /* `.modal__top` · `.modal__card--wide` 가 `manage.css` 에만 있던 동안,
+     현황 탭의 모달은 머리가 flex 가 아니라 ✕ 가 제목 아래로 떨어졌고
+     넓이·스크롤도 안 먹었다. 공용 화면이 다 싣는 `blocks.css` 에 둔다. */
+  const shared = read("css/blocks.css");
+  assert.match(shared, /\n\.modal__card--wide \{/, "넓은 카드가 공용 자리에 없다");
+  assert.match(shared, /\n\.modal__top \{/, "모달 머리가 공용 자리에 없다");
+
+  /* 그리고 **두 화면이 그 껍데기를 실제로 쓴다.** 규칙만 있고 클래스를 안
+     붙이면 아무 일도 안 일어난다. */
+  ["patients.html", "manage.html"].forEach(function (page) {
+    assert.match(
+      markupOnly(read(page)),
+      /id="modal-body"[^>]*>|class="modal__card modal__card--wide"/,
+      page + " 에 모달 껍데기가 없다",
+    );
+    assert.ok(
+      /modal__card--wide/.test(markupOnly(read(page))),
+      page + " 의 모달이 좁은 카드다 — 진료 줄이 접힌다",
+    );
+  });
 });
 
 test("서버가 안내문 머리에 환자 번호를 싣는다", () => {
