@@ -1108,6 +1108,28 @@ Content-Type: application/json
 |---|---|---|---|
 | GET | `/api/v1/messages/history?from=&to=&limit=200` | 기간 안에 나간 것 · 못 나간 것 | `staff`·`doctor` |
 | GET | `/api/v1/messages/history.csv?from=&to=` | 같은 것을 파일로 — **자르지 않는다** | `staff`·`doctor` |
+| POST | `/api/v1/messages/history/{message_id}/resend` | 새 링크로 다시 보낼 작업 생성 | `staff`·`doctor` |
+
+#### 새 링크로 다시 보내기
+
+발송 이력의 `SENT` 또는 `FAILED` 행만 다시 보낼 수 있다. 성공 시 워커가 처리할
+새 메시지 ID와 상태만 반환한다.
+
+```json
+{
+  "guide_message_id": 321,
+  "status": "SCHEDULED"
+}
+```
+
+요청을 확정하면 활성 환자 링크와 연결된 OTP를 즉시 폐기한다. 새 링크는 이
+API에서 만들지 않고 워커가 문자 발송 직전에 만든다. 기존 링크가 이미 만료되거나
+폐기된 경우에는 종료 상태를 바꾸지 않는다.
+
+같은 `message_id` 요청을 반복하거나 동시에 보내도 새 발송 작업은 한 건만 생기며
+같은 응답을 반환한다. 다른 병원 메시지와 존재하지 않는 메시지는 모두
+`404 MESSAGE_NOT_FOUND`, 발송 이력 상태가 아니면 `409 MESSAGE_NOT_RESENDABLE`이다.
+응답·DB·일반 로그·감사 이벤트에는 링크 원문을 저장하지 않는다.
 
 **발송 예정(S2-3)과 묻는 것이 다르다.** 저쪽은 「앞으로 무엇이 나가나」라 시각 오름차순이고, 이쪽은 「무엇이 나갔나」라 **실패가 맨 위, 그 다음 최신순**이다. 원문 설계 주석: 「실패 건은 목록에 섞이면 묻히므로 맨 위에 따로 고정한다.」
 

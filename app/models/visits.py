@@ -605,13 +605,19 @@ class GuideMessage(models.Model):
     #: 화면에 뭔가를 보여주지 않는다.
     claim_token = fields.CharField(max_length=32, null=True)
 
+    #: 재발송 요청의 원본 메시지. 원본 한 건당 재발송 작업을 하나만 만들어
+    #: 같은 요청의 재시도와 동시 클릭이 중복 발송으로 이어지지 않게 한다.
+    resend_of_message_id = fields.BigIntField(null=True, unique=True)
+    #: 최초 발송은 0, 재발송은 원본보다 1 큰 값이다. 안내문·회차별 최초
+    #: 발송의 기존 유일성은 유지하면서 재발송 이력을 별도 행으로 남긴다.
+    resend_sequence = fields.SmallIntField(default=0)
+
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
         table = "guide_message"
-        #: 한 안내문에 같은 회차가 둘이면 환자가 같은 문자를 두 번 받는다.
-        unique_together = (("guide_document", "kind"),)
+        unique_together = (("guide_document", "kind", "resend_sequence"),)
         indexes = (("status", "scheduled_at"),)
 
 

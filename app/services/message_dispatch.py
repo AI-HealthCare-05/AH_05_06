@@ -13,6 +13,7 @@
 주소(`hospital.booking_url`)다. KEY-331 전까지 둘에 같은 값을 넣고 있었다.
 """
 
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -69,11 +70,30 @@ class DispatchResult:
 #: 환자 링크가 여는 화면 경로 — `frontend/js/link-token.js`의 조각(`#t=`) 규칙과
 #: 맞춘다. 조각은 서버 요청·access log에 남지 않는다.
 _LINK_PATH = "/patient_wireframe/html/otp.html#t={token}"
+#: secrets.token_urlsafe(32)는 항상 정확히 43자다(32바이트를 패딩 없는
+#: base64url로 인코딩한 길이) — `+`나 `{43,}` 같은 열린 길이 대신 정확한
+#: 길이를 쓴다. `#t=` 바로 뒤가 시작점이라 앞쪽 경계는 이미 확실하고,
+#: 뒤쪽은 정확히 43자에서 멈추므로 병원이 "{링크}1회용"처럼 구분자 없이
+#: 붙여 써도 그 뒤 글자를 삼키지 않는다.
+#:
+#: app/core/masking.py의 URLSAFE_TOKEN({43,} + \b 경계)을 그대로 쓰지
+#: 않는다 — 재현해 보니 그쪽은 이 경우에 오히려 더 나쁘게 실패한다.
+#: 토큰 바로 뒤에 한글이 오면(예: "1회용") Python 정규식에서 한글이
+#: \w로 잡혀서 경계(\b) 자체를 못 찾고 **아예 매칭이 안 된다** — 일부만
+#: 삼키는 게 아니라 토큰이 통째로 안 가려진다(2heej 리뷰 이후 직접
+#: 재현). 여기서는 위치를 이미 알아서(`#t=` 뒤) 경계 추측이 필요 없다.
+_LINK_TOKEN_IN_BODY = re.compile(r"(?<=#t=)[A-Za-z0-9_-]{43}")
 
 
 def _absolute_link_url(raw_token: str) -> str:
     base = config.PATIENT_WEB_BASE_URL.rstrip("/")
     return base + _LINK_PATH.format(token=raw_token)
+
+
+def _body_for_storage(body: str) -> str:
+    """Keep the sent text for support without retaining a patient link token."""
+
+    return _LINK_TOKEN_IN_BODY.sub("[REDACTED]", body)
 
 
 def _format_expiry(expires_at: datetime) -> str:
@@ -257,7 +277,7 @@ async def _finish_sent(
     affected = await GuideMessage.filter(guide_message_id=message.guide_message_id, claim_token=token).update(
         status=GuideMessageStatus.SENT,
         sent_at=moment,
-        sent_body=body,
+        sent_body=_body_for_storage(body),
         provider_message_id=result.provider_message_id,
         provider_detail=None,
         failure_code=None,
