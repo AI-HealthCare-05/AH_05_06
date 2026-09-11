@@ -7,13 +7,16 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
+from app.core.auth_errors import AuthError as ApiError
 from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.guides import (
+    GuideGenerationResponse,
     GuidePreview,
     GuideResponse,
+    GuideSourceResponse,
     MessagePlanRequest,
     MessagePlanResponse,
     PatientHead,
@@ -21,7 +24,14 @@ from app.dtos.guides import (
     SectionEditRequest,
     SectionResponse,
 )
-from app.models.visits import GuideDocument, GuideSection, GuideSectionKey
+from app.models.visits import (
+    GuideDocument,
+    GuideGenerationJob,
+    GuideSection,
+    GuideSectionKey,
+    GuideSectionSourceSnapshot,
+)
+from app.services.guide_generation_jobs import GenerationPendingError
 from app.services.guides import GuideService
 from app.services.patient_guide_view import guide_detail_of
 from app.services.patient_links import PatientLinkService
@@ -70,6 +80,12 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
     visit = guide.visit
     patient = visit.patient
     today = datetime.now(DISPLAY_TIMEZONE).date()
+    sources: dict[GuideSectionKey, list[GuideSourceResponse]] = {}
+    # 권한 확인된 안내의 현재 버전만 한 번에 읽는다. 환자 종점에는 추가하지 않는다.
+    for row in await GuideSectionSourceSnapshot.filter(guide_document=guide, guide_version=guide.version).order_by(
+        "position"
+    ):
+        sources.setdefault(row.section_key, []).append(GuideSourceResponse.model_validate(row, from_attributes=True))
     return GuideResponse(
         visit_id=guide.visit_id,
         patient=PatientHead(
@@ -85,7 +101,7 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
         approved_at=guide.approved_at,
         scheduled_at=guide.scheduled_at,
         returned_reason=guide.returned_reason,
-        sections=[_section(s) for s in sorted(guide.sections, key=_section_order)],
+        sections=[_section(s, sources.get(s.section_key, [])) for s in sorted(guide.sections, key=_section_order)],
         preview=await _preview_of(guide) if with_preview else None,
     )
 
@@ -109,23 +125,30 @@ def _section_order(section: GuideSection) -> int:
     return _SECTION_ORDER[GuideSectionKey(section.section_key)]
 
 
-def _section(section: GuideSection) -> SectionResponse:
+def _section(section: GuideSection, sources: list[GuideSourceResponse] | None = None) -> SectionResponse:
     return SectionResponse(
         key=section.section_key,
         body=section.body,
         edited=section.edited_body is not None,
         locked=section.locked,
         warn=section.warn,
+        sources=sources or [],
     )
 
 
-@guide_router.post("/{visit_id}/guide/generate", response_model=GuideResponse, status_code=status.HTTP_201_CREATED)
+@guide_router.post(
+    "/{visit_id}/guide/generate",
+    response_model=GuideResponse | GuideGenerationResponse,
+    responses={202: {"model": GuideGenerationResponse, "description": "생성 작업 접수"}},
+    status_code=status.HTTP_201_CREATED,
+)
 async def generate_guide(
     visit_id: int,
+    response: Response,
     actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
     discard_edits: bool = False,
-) -> GuideResponse:
+) -> GuideResponse | GuideGenerationResponse:
     """**고친 문구가 있으면 묻고 멈춘다** — `discard_edits=true` 로 다시 부른다.
 
     다시 만들면 절이 통째로 새로 써진다. 스탭이 이미 바로잡은 문장이 붙어
@@ -133,9 +156,39 @@ async def generate_guide(
     `GUIDE_HAS_EDITS`). 화면이 「고친 것을 버리고 다시 만들까요」를 묻고, 사람이
     그렇다고 하면 이 값을 켜서 다시 부른다 (이희진 님 `#221` ①).
     """
-    guide = await service.generate(actor, visit_id, discard_edits=discard_edits)
+    try:
+        guide = await service.generate(actor, visit_id, discard_edits=discard_edits)
+    except GenerationPendingError as pending:
+        response.status_code = 202
+        return GuideGenerationResponse(job_id=str(pending.job.pk), visit_id=visit_id, state="queued")
     await guide.fetch_related("sections", "visit__patient")
     return await _to_response(guide)
+
+
+@guide_router.get("/{visit_id}/guide/generation/{job_id}", response_model=GuideGenerationResponse | GuideResponse)
+async def generation_result(
+    visit_id: int, job_id: str, actor: Annotated[StaffActor, Depends(get_staff_actor)]
+) -> GuideGenerationResponse | GuideResponse:
+    from uuid import UUID
+
+    GuideService._require_staff_or_doctor(actor)
+    try:
+        parsed = UUID(job_id)
+    except ValueError:
+        raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.") from None
+    job = await GuideGenerationJob.filter(job_id=parsed, visit_id=visit_id, hospital_id=actor.hospital_id).first()
+    if job is None:
+        raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
+    if job.completed_at:
+        guide = await GuideService().get(actor, visit_id)
+        await guide.fetch_related("sections", "visit__patient")
+        return await _to_response(guide)
+    return GuideGenerationResponse(
+        job_id=str(job.pk),
+        visit_id=visit_id,
+        state="failed" if job.failed_at else "queued",
+        failure_reason=job.failure_reason if job.failed_at else None,
+    )
 
 
 @guide_router.get("/{visit_id}/guide", response_model=GuideResponse)

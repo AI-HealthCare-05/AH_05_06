@@ -104,11 +104,31 @@ MySQL `TEMPORARY TABLE`을 사용한다.
 
 위 표의 `NO_EVIDENCE` fallback은 모델이 새 문장을 생성하는 것이 아니라,
 `approval_status=APPROVED`, 현재 버전, 빈 본문 아님을 모두 검증한 고정 템플릿을 그대로 반환하는
-것만 뜻한다. 검색 충돌, 임베딩 불일치, 저장소 오류에는 fallback 템플릿을 사용하지 않는다.
-이 구분은 `admit_generation_context()`가 강제한다.
+것만 뜻한다. 검색 충돌(`SOURCE_CONFLICT`)과 임베딩 불일치(`INDEX_INVALID`)에는 fallback 템플릿을
+사용하지 않는다. 이 구분은 `admit_generation_context()`가 강제한다. 다만 일시적 인프라 장애의
+최종 실패 처리는 아래 「검색 실패 처리 정책(2026-09-10 결정)」으로 갱신한다.
 
 로그에는 청크·문서 식별자, 모델 리비전, 점수, 결과 코드, 지연시간만 남긴다. 환자정보, 질문·답변
 원문, 링크 토큰, OCR 원문은 남기지 않는다.
+
+### 검색 실패 처리 정책 (2026-09-10 결정 · 이희진)
+
+KEY-277 인수조건 "검색·임베딩 장애 시 미검증 값을 사용하지 않고 동일한 안전 fallback 계약에
+따라 복구"와 정합하도록, 위 실패 폐쇄 표의 **인프라 장애 행을 아래로 갱신한다.** 나머지 행은
+그대로다.
+
+| 상황 | 처리 |
+|---|---|
+| 일시적 검색·임베딩 인프라 장애 (임베딩·DB·MinIO 타임아웃·연결 실패) | 재시도 큐로 처리한다. 재시도 한도 소진 시 승인·버전 고정 템플릿으로 fallback한다. 화면과 감사에 "검색 장애 → 템플릿"과 사유를 남기고 운영 알림을 발생시킨다. 미검증 검색값은 본문·LLM 입력에 넣지 않는다. |
+| `INDEX_INVALID` (임베딩 차원 불일치·0 벡터) | 템플릿 없이 차단하고 재색인을 요청한다. |
+| `SOURCE_CONFLICT` (같은 claim의 상충 승인 근거) | 템플릿 없이 차단하고 충돌 해소를 후속 처리한다. 조용히 넘기지 않는다. |
+| `NO_EVIDENCE` (임계값 이상 근거 없음) | 기존대로 승인·버전 고정 템플릿을 사용한다. |
+| 검증된 근거가 있는 LLM 호출 자체의 실패 | 재시도한다. 한도 소진 시 실패 상태로 두거나 동일한 안전 템플릿으로 fallback하며, KEY-277에서 택1해 정책을 고정한다. |
+
+재시도·템플릿 판정은 `admit_generation_context()`가 아니라 `GuideService.generate()` 상위 작업 큐
+계층에서 수행한다. 안전 게이트(`admit_generation_context`)는 이 결정으로 변경하지 않는다.
+`admit_generation_context()`를 바꾸는 경우 의료 안전 게이트 변경이므로 기술 리드(한금준)와
+함께 확인한다.
 
 ## 6. PoC 재현
 
@@ -160,7 +180,19 @@ positive case가 하나도 없어 Recall/Precision 분모가 0이면 해당 지�
 4. 검색 품질 기준과 허용 오탐·미탐 수치를 팀이 별도 합의하고 평가 기록을 남긴다.
 5. 동일 모델 리비전·청킹·`top-k`·임계값으로 재실행 가능하며 CI와 MySQL PoC가 통과한다.
 
-현재 판정은 **합성 검색 평가 통과 / 지정 리뷰어 승인 전 / 생성 연결 차단 유지**다.
+### 생성 연결 승인
+
+- 승인일: 2026-09-10
+- 승인자: 이희진 (전 영역 최종 리뷰어)
+- 대상 평가 checksum: 0a6c9161d77a65dbf860c3d4d7eaf9c0efe5ee768bced68db514f5716da87bb5
+- 고정 파라미터: 임베딩 모델·리비전, 현재 청킹, top-k=3, min_similarity=0.72
+- 문턱 조건: 2·3·5(재현)은 scripts/key82_rag_evaluate.py `passed=true`
+  (unsafe_context_entries=0, admission_accuracy=1.0)로 충족. 1·4는 평가셋
+  (docs/data/key82-rag-poc-evaluation.json)과 PASS_CRITERIA를 검토·합의함.
+- 판정: **생성 연결 허용.** GuideService에 KEY-276 검색 연결 가능(KEY-277 범위).
+  ChatbotService·환자 화면 직접 연결은 KEY-96 계약대로 승인 GuideSection만 사용(불변).
+- 재승인 조건: 평가셋·청킹·top-k·임계값 변경으로 checksum이 바뀌면 이 승인은
+  자동 무효. 재평가·재승인 전까지 admit_generation_context는 다시 GENERATION_BLOCKED.
 
 ## 7. 전용 벡터 저장소 전환 기준
 

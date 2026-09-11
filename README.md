@@ -360,14 +360,21 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY` | CLOVA OCR 자격증명. **비우고 큐에 들어간 작업은 워커가 `OCR_NOT_CONFIGURED` 로 실패시킨다** (fixture 로 대체되지 않음). 합성 판독은 위 `OCR_FIXTURE_FALLBACK` 이 담당 (KEY-56) | (비움) |
 | `CLOVA_OCR_TIMEOUT_SECONDS` | CLOVA 타임아웃 | `10` |
 
-### OpenAI (환자 챗봇)
+### OpenAI (환자 챗봇·선택적 RAG 안내 생성)
 
 | 변수 | 목적 | 예시·기본값 |
 |---|---|---|
-| `OPENAI_API_KEY` | 환자 챗봇 응답 생성 키 (`app/apis/v1/chatbot_routers.py`. `scripts/key96_live_smoke.py` 도 읽는다). 안내문 생성에는 안 쓰인다. **끄려면 줄을 주석으로 둔다** — `OPENAI_API_KEY=` 처럼 빈 값이면 호출이 켜진 것으로 잡혀 `model_failed` 로 남는다 | (줄을 주석으로) |
+| `OPENAI_API_KEY` | 챗봇 및 KEY-277 워커의 RAG 안내 생성 키. 챗봇을 끄려면 줄을 주석으로 둔다(빈 값은 `model_failed`). RAG 워커는 빈 값도 미설정으로 처리하며, 근거가 있어 LLM이 필요한 작업은 실패시킨다 | (줄을 주석으로) |
 | `OPENAI_MODEL` | 모델 이름 | `gpt-4o-mini` |
 | `OPENAI_BASE_URL` | API 엔드포인트 | `https://api.openai.com/v1` |
 | `OPENAI_TIMEOUT_SECONDS` | 타임아웃 | `20` |
+| `GUIDE_RAG_ENABLED` | KEY-277 검색·생성 큐 사용. API와 워커에 같은 값 적용. migration 52와 승인 지식/템플릿 준비 후 격리 Pilot에서 먼저 검증 | `false` |
+
+RAG를 켜면 기존 생성 API는 202와 작업 ID를 반환하고 화면은 같은 작업을 조회한다.
+별도 워커가 필요하며 기존 `--profile ocr`의 `ai-worker`가 큐를 처리한다.
+마이그레이션은 기존 `aerich upgrade` 절차로 52까지 적용한다. 데이터가 있는 52의
+다운그레이드는 감사·근거 유실을 막기 위해 거부한다.
+실측 절차와 미완료 게이트는 [KEY-277 Pilot 인수 확인](docs/qa/KEY-277-generation-pilot.md)을 따른다.
 
 ### MinIO (합성 EMR 보관)
 
@@ -402,12 +409,11 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
   판독 작업은 워커가 `OCR_NOT_CONFIGURED` 로 **실패**시킨다 — fixture 로 자동 대체되지 않는다.
   워커·CLOVA 없이 흐름을 보려면 `OCR_FIXTURE_FALLBACK=true` 로 두어 업로드 경로에서 합성
   판독값을 넣는다 (KEY-56 · 계약: [`docs/decisions/KEY-163-ocr-real-contract.md`](docs/decisions/KEY-163-ocr-real-contract.md)).
-- **OpenAI** — 환자 챗봇 응답 생성에 쓴다. 서버에서 이 키를 읽는 자리는
-  `app/apis/v1/chatbot_routers.py` 하나다(그 밖에 `scripts/key96_live_smoke.py` 가 실연동
-  smoke 에서 환경변수로 읽는다). `OPENAI_API_KEY` 를 넣고, 필요하면 `OPENAI_MODEL` · `OPENAI_BASE_URL` 로
-  바꾼다. 비우면 챗봇이 고정 폴백 문구만 답하고([`docs/local-demo-accounts.md`](docs/local-demo-accounts.md) §3-7),
-  나머지 흐름은 그대로 돈다. **안내문 생성은 이 키를 쓰지 않는다** — 확정 OCR + 승인 문구
-  조합이고 LLM 생성은 미착수(KEY-75).
+- **OpenAI** — 환자 챗봇과 `GUIDE_RAG_ENABLED=true`인 안내 생성 워커가 사용한다.
+  `OPENAI_API_KEY`와 기존 모델·엔드포인트 설정을 공유한다. 챗봇의 승인 안내문 사용 계약은 그대로다.
+  RAG를 끄면 기존 확정 OCR + 승인 문구 조합을 유지한다. RAG를 켰으나 키가 없으면
+  검증 근거를 LLM으로 작성하는 경로는 실패한다. 근거가 없는 경우에는 키와 무관하게
+  검증된 승인 템플릿만 사용할 수 있으며, 승인 템플릿도 없으면 차단한다.
 - **MinIO** — 합성 EMR 이미지를 담는다. `--profile ocr` 로 뜨며, 최초 1회
   `minio-init` 이 버킷을 만들고 **익명 접근을 차단**한다. 수동으로 돌릴 때는:
 

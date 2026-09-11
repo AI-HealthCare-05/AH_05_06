@@ -226,6 +226,47 @@ class GuideSection(models.Model):
         return self.edited_body if self.edited_body is not None else self.generated_body
 
 
+class GuideSectionSourceSnapshot(models.Model):
+    """생성 당시의 근거 값. 원본 지식/템플릿 FK를 두지 않아 개정·삭제에 독립적이다.
+
+    섹션 본문이 의료진에 의해 편집돼도 이 기록은 생성 원문의 근거를 보존한다.
+    환자정보·프롬프트·근거 본문은 저장하지 않는다.
+    """
+
+    snapshot_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="source_snapshots",
+        on_delete=OnDelete.CASCADE,
+    )
+    guide_version = fields.IntField()
+    section_key = fields.CharEnumField(enum_type=GuideSectionKey)
+    # 재생성은 기존 section 행을 삭제한다. 이전 생성 버전의 근거는 남긴다.
+    guide_section: fields.ForeignKeyRelation[GuideSection] | None = fields.ForeignKeyField(
+        "models.GuideSection",
+        related_name="source_snapshots",
+        on_delete=OnDelete.SET_NULL,
+        null=True,
+    )
+    position = fields.IntField()
+    generation_mode = fields.CharField(max_length=20)
+    document_id = fields.CharField(max_length=36, null=True)
+    chunk_id = fields.CharField(max_length=36, null=True)
+    source_org = fields.CharField(max_length=200, null=True)
+    source_url = fields.CharField(max_length=1000, null=True)
+    version = fields.CharField(max_length=100)
+    verified_at = fields.DateField(null=True)
+    score = fields.FloatField(null=True)
+    body_sha256 = fields.CharField(max_length=64)
+    template_id = fields.CharField(max_length=100, null=True)
+    fallback_reason = fields.CharField(max_length=100, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "guide_section_source_snapshot"
+        unique_together = (("guide_document", "guide_version", "section_key", "position"),)
+
+
 class GuideEvent(models.Model):
     """생성 · 수정 · 승인 · 반려 이력.
 
@@ -253,6 +294,30 @@ class GuideEvent(models.Model):
     class Meta:
         table = "guide_event"
         indexes = (("guide_document", "created_at"),)
+
+
+class GuideGenerationJob(models.Model):
+    """Durable generation/retry queue; the existing GuideStatus is unchanged."""
+
+    job_id = fields.UUIDField(primary_key=True)
+    visit_id = fields.BigIntField()
+    hospital_id = fields.BigIntField()
+    actor_id = fields.BigIntField()
+    active_key = fields.CharField(max_length=100, null=True, unique=True)
+    discard_edits = fields.BooleanField(default=False)
+    attempts = fields.IntField(default=0)
+    input_sha256 = fields.CharField(max_length=64)
+    guide_version = fields.IntField(default=0)
+    claim = fields.UUIDField(null=True)
+    available_at = fields.DatetimeField()
+    completed_at = fields.DatetimeField(null=True)
+    failed_at = fields.DatetimeField(null=True)
+    failure_reason = fields.CharField(max_length=60, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "guide_generation_job"
+        indexes = (("active_key", "available_at"),)
 
 
 class PatientGuideLink(models.Model):
@@ -674,18 +739,27 @@ class GuideSafetyCheck(models.Model):
     """안내문 생성 전·후 안전검증 기록 — KEY-83, append-only.
 
     actor_id 없음 — 시스템 자동 실행이므로 사람 행위자가 없다.
-    KEY-277에서 생성 경로에 연결되기 전까지는 계약과 감사 기반으로만 쓴다.
+    생성 전 차단은 문서가 없으므로 generation_job에 연결한다.
     환자정보·OCR 원문·전체 생성문은 담지 않는다.
     """
 
     guide_safety_check_id = fields.BigIntField(primary_key=True)
-    guide_document_id: int
-    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+    guide_document_id: int | None
+    guide_document: fields.ForeignKeyNullableRelation[GuideDocument] = fields.ForeignKeyField(
         "models.GuideDocument",
         related_name="safety_checks",
         on_delete=OnDelete.CASCADE,
         source_field="guide_document_id",
+        null=True,
     )
+    generation_job: fields.ForeignKeyNullableRelation[GuideGenerationJob] = fields.ForeignKeyField(
+        "models.GuideGenerationJob",
+        related_name="safety_checks",
+        null=True,
+        on_delete=OnDelete.RESTRICT,
+    )
+    section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
+    guide_version = fields.IntField(null=True)
     stage = fields.CharEnumField(enum_type=SafetyCheckStage)
     verdict = fields.CharEnumField(enum_type=SafetyCheckVerdict)
     reason_code = fields.CharField(max_length=30, null=True)
