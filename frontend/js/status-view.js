@@ -274,7 +274,7 @@ function statusScreenHtml(view) {
        환자 번호를 모르면 단추를 안 세운다 — 눌러도 아무 일 없는 자리를
        만들지 않는다. */
     (view.patientId
-      ? '<button class="button-ghost button-ghost--sm tl__act" type="button" data-history="' +
+      ? '<button class="button-ghost button-ghost--sm" type="button" data-history="' +
         esc(view.patientId) +
         '">전체 이력 보기</button>'
       : "") +
