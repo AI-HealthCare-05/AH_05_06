@@ -209,19 +209,26 @@ var DOCTOR_CASE = (function () {
    나중에 실린 이쪽이 앞의 것을 통째로 덮어서, 목록 목업이 `.find is not a
    function` 으로 죽었다 — 화면은 「환자가 없습니다」만 띄웠다. 파일은 모듈이
    아니라 전역에 얹히는 스크립트라, 이름이 곧 자리다. */
+/* `patient_id` 는 **환자 목록 목업(`patients-api.js`)의 같은 차트번호 줄과
+   같은 값**이어야 한다. 현황 탭의 「전체 이력 보기」가 이 번호로 이력을 부르는데,
+   갈리면 `?mock=1` 에서만 404 가 난다 (KEY-329).
+
+   저쪽에서 찾아오지 않고 여기 적는다 — 그러면 `doctor-api.js` 가
+   `patients-api.js` 의 실린 차례에 기대게 되고, 그 차례가 화면마다 다르다.
+   대신 `key329-history-from-status` 검사가 **둘이 갈리면 운다.** */
 var MOCK_GUIDE_PATIENTS = {
   8798: {
-    patient: { name: "박수빈", birth_date: "1992-09-18", age: 34, gender: "FEMALE", hospital_patient_no: "09871" },
+    patient: { name: "박수빈", birth_date: "1992-09-18", age: 34, gender: "FEMALE", hospital_patient_no: "09871", patient_id: 1007 },
     summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 08-11",
     /* 목록이 `INVALID_PHONE` 로 보완에 올린 줄이다. 안내문 자체는 승인을
        기다리는 중이고, 막힌 것은 **보낼 곳**이라 상태는 그대로 둔다. */
   },
   8801: {
-    patient: { name: "김서연", birth_date: "1990-03-14", age: 36, gender: "FEMALE", hospital_patient_no: "12345" },
+    patient: { name: "김서연", birth_date: "1990-03-14", age: 36, gender: "FEMALE", hospital_patient_no: "12345", patient_id: 1003 },
     summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 05-20",
   },
   8802: {
-    patient: { name: "최다인", birth_date: "1997-06-02", age: 29, gender: "FEMALE", hospital_patient_no: "10982" },
+    patient: { name: "최다인", birth_date: "1997-06-02", age: 29, gender: "FEMALE", hospital_patient_no: "10982", patient_id: 1008 },
     summary: "다낭성 · 야즈 (계속) · 84일 · 지난 방문 06-02",
   },
 };

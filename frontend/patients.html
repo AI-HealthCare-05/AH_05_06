@@ -370,6 +370,11 @@
     <script src="/js/guide-view.js"></script>
     <script src="/js/patient-link-view.js"></script>
     <script src="/js/message-words.js"></script>
+    <!-- 이력 모달(S2-2) — 관리 화면과 **같은 한 벌**이다 (KEY-329).
+         `status-view.js` 보다 먼저 싣는다: 현황 탭이 이 안의 함수를 부른다.
+         `checkin-words.js` 는 그것이 기대는 것이라 **더 먼저** 실어야 한다. -->
+    <script src="/js/checkin-words.js"></script>
+    <script src="/js/history-modal.js"></script>
     <script src="/js/status-view.js"></script>
     <script src="/js/doctor-api.js"></script>
     <script src="/js/step-nav.js"></script>
