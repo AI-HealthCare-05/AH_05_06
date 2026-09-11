@@ -248,10 +248,10 @@ test("**두 화면이 같은 블록을 그린다** — 규칙도 모양도 한 �
   });
 });
 
-test("링크 관리 화면이 공용 규칙 파일을 싣는다", () => {
+test("공용 링크 상태를 그리는 화면이 규칙 파일을 싣는다", () => {
   const fs = require("node:fs");
   const path = require("node:path");
-  ["patients.html"].forEach((f) => {
+  ["patients.html", "doctor.html"].forEach((f) => {
     const html = fs.readFileSync(path.join(__dirname, "..", f), "utf8");
     assert.match(html, /js\/patient-link-view\.js/, `${f} 가 규칙 파일을 안 싣는다`);
   });
