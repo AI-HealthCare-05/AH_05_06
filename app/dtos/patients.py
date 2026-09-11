@@ -12,6 +12,35 @@ from app.models.patients import PatientGender
 from app.services.work_category import DetailStatus, WorkCategory
 
 
+class PatientSort(StrEnum):
+    """환자 관리 표(S2-1)를 세우는 기준 — KEY-327.
+
+    **정렬은 서버가 한다.** 화면이 받은 쪽만 다시 세우면 그 쪽 안에서만 맞고,
+    쪽을 넘기면 앞 쪽과 겹치거나 빠진다.
+
+    기본은 **등록일 최근순**이다. 전에는 `patient_id` 오름차순이라 방금 등록한
+    환자가 맨 뒤 쪽에 있었다 — 등록하고 바로 확인하려면 마지막 쪽까지 넘겨야
+    했다.
+
+    `registered_*` 는 **표에 보이는 그 날짜**(`created_at`)로 센다. 보여 주는
+    값과 세우는 열쇠가 같아야 한다 — 다르면 「등록 ▼」인데 날짜가 오르락내리락
+    해서 화면이 고장난 것처럼 보인다.
+    """
+
+    REGISTERED_DESC = "registered_desc"
+    REGISTERED_ASC = "registered_asc"
+    CHART_ASC = "chart_asc"
+    CHART_DESC = "chart_desc"
+    VISITED_DESC = "visited_desc"
+    VISITED_ASC = "visited_asc"
+    #: **이어 보기 전용** — 환자 번호 차례. 등록 화면의 찾기가 쓴다.
+    #:
+    #: 커서는 `patient_id > cursor` 로 거르므로 세우는 열쇠도 번호여야 한다.
+    #: 날짜로 세우면 거르는 열쇠와 갈려, 옛 날짜를 단 나중 번호가 영영 안
+    #: 나오거나 이미 본 사람이 다시 나온다. 표에서는 안 쓴다.
+    ID_ASC = "id_asc"
+
+
 class PatientCategory(StrEnum):
     ALL = "ALL"
     IN_TREATMENT = "IN_TREATMENT"

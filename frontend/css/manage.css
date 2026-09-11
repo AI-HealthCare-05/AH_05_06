@@ -299,3 +299,27 @@
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
+
+
+/* 표 머리는 **이 화면의 것**이다. `blocks.css` 의 탭 자리에 두었더니
+   다른 가지들과 같은 줄에서 충돌했다 — 식구 옆으로 옮긴다. */
+/* 표 머리로 차례를 바꾸는 단추 — KEY-327. 머리글자와 **같은 모양**으로 보이되
+   누를 수 있다는 것이 손끝에 걸려야 한다. 화살표가 지금 기준과 방향을 말한다. */
+.sorthead {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sorthead:hover {
+  text-decoration: underline;
+}
+
+.sorthead:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

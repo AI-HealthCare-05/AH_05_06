@@ -30,7 +30,7 @@ from app.core.api_errors import ApiError
 from app.core.pagination import decode_cursor, encode_cursor
 from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.patient_access import ClinicalActor
-from app.dtos.patients import PatientCategory, PatientCreateRequest, PatientUpdateRequest
+from app.dtos.patients import PatientCategory, PatientCreateRequest, PatientSort, PatientUpdateRequest
 from app.models.ocr import OcrField
 from app.models.patients import Patient, PatientNumberCorrection
 from app.models.staffs import Staff
@@ -159,6 +159,7 @@ class PatientService:
         cursor: str | None,
         limit: int,
         offset: int = 0,
+        sort: PatientSort = PatientSort.REGISTERED_DESC,
     ) -> tuple[builtins.list[PatientRow], dict[PatientCategory, int], str | None, bool, int]:
         """환자 관리 표 — 와이어프레임 S2-1.
 
@@ -211,6 +212,7 @@ class PatientService:
             limit=limit + 1,
             sms_opt_out_only=category is PatientCategory.SMS_OPT_OUT,
             offset=offset,
+            sort=sort,
             patient_ids=_narrow(
                 (
                     inactive_patient_ids

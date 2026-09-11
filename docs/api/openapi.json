@@ -4189,6 +4189,20 @@
         "title": "PatientSessionResponse",
         "type": "object"
       },
+      "PatientSort": {
+        "description": "환자 관리 표(S2-1)를 세우는 기준 — KEY-327.\n\n**정렬은 서버가 한다.** 화면이 받은 쪽만 다시 세우면 그 쪽 안에서만 맞고,\n쪽을 넘기면 앞 쪽과 겹치거나 빠진다.\n\n기본은 **등록일 최근순**이다. 전에는 `patient_id` 오름차순이라 방금 등록한\n환자가 맨 뒤 쪽에 있었다 — 등록하고 바로 확인하려면 마지막 쪽까지 넘겨야\n했다.\n\n`registered_*` 는 **표에 보이는 그 날짜**(`created_at`)로 센다. 보여 주는\n값과 세우는 열쇠가 같아야 한다 — 다르면 「등록 ▼」인데 날짜가 오르락내리락\n해서 화면이 고장난 것처럼 보인다.",
+        "enum": [
+          "registered_desc",
+          "registered_asc",
+          "chart_asc",
+          "chart_desc",
+          "visited_desc",
+          "visited_asc",
+          "id_asc"
+        ],
+        "title": "PatientSort",
+        "type": "string"
+      },
       "PatientUpdateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8642,6 +8656,22 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PatientSort"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
             }
           }
         ],
