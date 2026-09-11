@@ -108,7 +108,9 @@ function adminMenuCovers(frames) {
   function renderStaffBody() {
     bodyBox.innerHTML =
       '<h1 class="pane__title">직원</h1>' +
-      '<p class="pane__lead" id="staff-list">불러오는 중…</p>' +
+      '<div id="staff-list"><section class="staff-card">' +
+      '<h2 class="staff-card__title">직원 목록</h2>' +
+      '<p class="pane__lead">불러오는 중…</p></section></div>' +
       staffFormHtml();
     wireStaffForm();
     wireStaffEdit();

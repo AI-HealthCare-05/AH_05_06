@@ -114,3 +114,23 @@ test("A1-3 이 이제 「화면 없음」 카드가 아니다", () => {
 
   assert.ok(!/remainingFrameCards\(\["A1-3"\]\)/.test(code), "직원 칸이 아직 A1-3 을 못 한다고 말한다");
 });
+
+test("목록도 **추가와 같은 카드**에 담긴다", () => {
+  /* 하나만 담기면 한 화면 안에서 담긴 것과 안 담긴 것이 섞여 눈이 자리를
+     새로 찾는다 — 표가 바탕 위에 그냥 떠 있었다. */
+  const admin = box();
+
+  const filled = admin.staffListHtml([A_STAFF]);
+  const empty = admin.staffListHtml([]);
+
+  assert.match(filled, /class="staff-card"/, "목록이 카드 밖에 있다");
+  assert.match(empty, /class="staff-card"/, "비었을 때만 카드 밖으로 나간다");
+});
+
+test("불러오는 중에도 카드가 서 있다", () => {
+  /* 담겼다 안 담겼다 하면 목록이 도착하는 순간 화면이 한 번 튄다. */
+  const code = codeOnly(read("js/admin.js"));
+  const first = code.slice(code.indexOf("function renderStaffBody"), code.indexOf("wireStaffForm()"));
+
+  assert.match(first, /staff-card/, "불러오는 동안에는 카드가 없다");
+});
