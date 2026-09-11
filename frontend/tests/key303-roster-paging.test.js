@@ -1,4 +1,4 @@
-/* 환자 관리 표를 40명씩 끊어 넘긴다 — KEY-303.
+/* 환자 관리 표를 25명씩 끊어 넘긴다 — KEY-303.
  *
  * **전에는 조용히 잘렸다.** `manage.js` 가 `roster(keyword, chosen, null, 50)` (그때의 모양) 을
  * 한 번 부르고 `next_cursor` 를 아무도 안 봤다. 전체가 101명이어도 50명에서
@@ -72,20 +72,24 @@ test("자리가 총수를 넘어도 마지막 쪽으로 본다 — 3쪽에서 �
   assert.equal(over.page, 1, "있지도 않은 3쪽을 가리키면 안 된다");
 });
 
-test("**화면이 자리를 실제로 보낸다** — 안 보내면 언제나 첫 40명만 온다", () => {
+test("**화면이 자리를 실제로 보낸다** — 안 보내면 언제나 첫 25명만 온다", () => {
   const code = codeOnly(read("js/manage.js"));
 
-  assert.match(code, /var ROSTER_PAGE = 40;/, "한 쪽에 40명이다");
+  assert.match(code, /var ROSTER_PAGE = 25;/, "한 쪽에 25명이다");
   assert.match(
     code,
-    /patientsApi\.roster\(keyword, chosen, ROSTER_PAGE, rosterOffset\)/,
+    /* **인자 수를 못 박지 않는다.** 여기에 차례(`sort`)가 하나 더 붙었는데
+       (KEY-327) 이 줄이 먼저 빨개졌다 — 「자리를 안 보낸다」가 아니라
+       「인자가 하나 늘었다」인데, 고칠 곳을 잘못 가리킨다. 재려던 것은
+       **`rosterOffset` 이 실제로 실리는가** 하나다. */
+    /patientsApi\.roster\([^)]*rosterOffset[^)]*\)/,
     "자리를 안 보내면 다음 쪽이 첫 쪽과 같다",
   );
 
   /* **`cursor` 를 받지 않는다.** 서버가 `cursor` 와 `offset` 을 함께 받으면
      400 이다 — 부를 수 있는 모양을 아예 하나로 둔다. */
   const api = codeOnly(read("js/patients-api.js"));
-  assert.match(api, /roster: function \(keyword, category, limit, offset\)/);
+  assert.match(api, /roster: function \([^)]*offset[^)]*\)/);
   assert.match(api, /offset: offset,/, "질의에 자리가 안 실린다");
   const at = api.indexOf("roster: function");
   assert.doesNotMatch(api.slice(at, at + 320), /cursor/, "쪽 넘김 자리가 커서까지 보낼 수 있다 — 서버가 400 을 낸다");

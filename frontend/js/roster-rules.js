@@ -64,6 +64,38 @@ function monthDay(iso) {
   return m ? m[2] + "-" + m[3] : "";
 }
 
+/* 등록 시점 — KEY-327. **날짜까지만 보인다.** 표는 한눈에 훑는 자리라 시·분을
+   넣으면 열이 넓어지고, 「언제 등록했나」에 답하는 데 시각까지는 필요 없다.
+   서버는 `created_at` 을 늘 실어 준다(`PatientResponse`). */
+function registeredDay(row) {
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String((row && row.created_at) || ""));
+  return m ? m[1] : "";
+}
+
+/* 표를 세울 수 있는 기준과, 누를 때마다 갈 다음 기준 — KEY-327.
+   **뒤집기가 아니라 돌기다.** 「차트 ▲ → 차트 ▼ → 차트 ▲」로 돌면 한 번 고른
+   기준에서 빠져나올 길이 없다. 다른 머리를 누르면 그쪽으로 간다. */
+var ROSTER_SORTS = {
+  registered: { asc: "registered_asc", desc: "registered_desc" },
+  chart: { asc: "chart_asc", desc: "chart_desc" },
+  visited: { asc: "visited_asc", desc: "visited_desc" },
+};
+
+function rosterSortArrow(field, sort) {
+  var pair = ROSTER_SORTS[field];
+  if (!pair) return "";
+  if (sort === pair.desc) return " ▼";
+  if (sort === pair.asc) return " ▲";
+  return "";
+}
+
+/** 그 머리를 눌렀을 때 갈 기준. 이미 그 기준이면 방향만 뒤집는다. */
+function rosterSortNext(field, sort) {
+  var pair = ROSTER_SORTS[field];
+  if (!pair) return sort;
+  return sort === pair.desc ? pair.asc : pair.desc;
+}
+
 function visitedDay(row) {
   var at = row && row.latest_visit && row.latest_visit.visited_at;
   var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(at || ""));
