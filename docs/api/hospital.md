@@ -474,6 +474,7 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
 - 첫째 열쇠가 같으면 **언제나 `patient_id`** 로 가른다. 안 그러면 같은 물음에 다른 차례가 나오고, 쪽을 넘길 때 같은 환자가 두 번 나온다.
 - **`cursor` 는 `id_asc` 하고만 쓴다.** 커서가 `patient_id > cursor` 로 거르므로 세우는 열쇠도 번호여야 한다 — 날짜로 세우면 옛 날짜를 단 나중 번호가 거름에서 잘려 영영 안 나오거나 이미 본 사람이 다시 나온다. 다른 차례를 얹으면 `400 INVALID_REQUEST` 다. 등록 화면의 찾기가 `sort=id_asc` 를 함께 보내는 이유다 — 첫 쪽에는 `cursor` 가 없어, 안 보내면 기본값인 등록일 최근순으로 와 버린다. `id_asc` 는 표에서는 쓰지 않는다.
 
+- **`page.next_cursor` 는 `id_asc` 응답에만 실린다.** 다른 차례에서는 `null` 이다 — 값이 `patient_id` 하나뿐이라 그것을 들고 다시 부르면 `patient_id > cursor` 로 걸려, `400` 도 없이 **조용히 빠진 목록**이 온다. 등록 최근순으로 첫 쪽을 받아 그 커서로 이어 보면 이미 본 사람이 다시 오고 나머지는 영영 안 나온다. 표는 `cursor` 가 아니라 `offset`·`roster` 로 쪽을 넘긴다.
 - **`cursor` 와 `offset` 은 함께 못 준다.** 둘 다 오면 `400 INVALID_REQUEST` 로 거부하고 `field_errors` 에 두 이름을 적는다. 겹쳐 받으면 `patient_id > cursor` 를 건 **뒤에** 다시 `offset` 만큼 건너뛰어 조용히 빈 쪽이 나온다 — 부른 쪽은 「마지막 쪽」으로 읽는다.
 - `limit` 기본 20, 최대 100.
 - 응답은 `{counts, selected_category, items, page: {next_cursor, has_next}, roster: {offset, limit, total, has_next}}`다.

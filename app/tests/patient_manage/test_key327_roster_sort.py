@@ -226,6 +226,25 @@ class TestTheCursorOnlyWalksForward(RosterSortTestCase):
         walked += [row["hospital_patient_no"] for row in tail.json()["items"]]
         assert walked == ["40000", "40001", "40002"], "이어 보기가 겹치거나 건너뛴다"
 
+    async def test_the_other_orders_are_not_handed_a_cursor(self) -> None:
+        """다른 차례의 응답에는 **커서를 주지 않는다** — 주면 조용히 빠진다.
+
+        커서 값은 `patient_id` 하나뿐이라, 등록 최근순으로 받은 커서를 들고
+        다시 부르면 `patient_id > cursor` 로 걸려 이미 본 사람이 다시 오고
+        나머지는 영영 안 나온다. `400` 도 안 난다 — 200 으로 조용히 빠진다.
+        """
+        clinic, headers = await self.signed_in()
+        for index in range(3):
+            await self.a_patient(clinic, name=f"백서리{index}", chart=f"5000{index}")
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            answer = await client.get(URL, headers=headers, params={"limit": 2})
+
+        assert answer.status_code == 200, answer.text
+        page = answer.json()["page"]
+        assert page["has_next"] is True, "다음 쪽이 없으면 이 검사가 헛돈다"
+        assert page["next_cursor"] is None, "`id_asc` 가 아닌 차례에 커서가 실렸다"
+
 
 class TestTheCursorAndTheOrderShareOneKey(RosterSortTestCase):
     """이어 보기는 `patient_id >` 로 거른다. **세우는 열쇠도 같아야 한다.**

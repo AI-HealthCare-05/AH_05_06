@@ -279,7 +279,10 @@ class PatientTableTestCase(PatientTableBase):
             head = await client.get(
                 "/api/v1/patients",
                 headers={"Authorization": f"Bearer {access}"},
-                params={"limit": 2},
+                #: **커서를 받으려면 `id_asc` 로 물어야 한다** (KEY-327). 다른
+                #: 차례의 응답에는 `next_cursor` 가 실리지 않는다 — 값이
+                #: `patient_id` 하나뿐이라 그 차례에서는 뜻이 안 맞는다.
+                params={"limit": 2, "sort": "id_asc"},
             )
             assert head.status_code == 200, head.text
             cursor = head.json()["page"]["next_cursor"]
