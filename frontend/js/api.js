@@ -168,6 +168,15 @@ var api = {
   },
 };
 
+/* A1-4 — KEY-331. **일부러 비어 있게 시작한다.** 서버 시드도 그렇다.
+   그래야 목업을 여는 사람이 「예약 링크를 안 적으면 소진·재진 문자가
+   보류된다」는 경고를 먼저 보고, 채워 보고서 그 경고가 사라지는 것을 본다 —
+   채워진 채로 시작하면 이 화면이 왜 있는지가 안 보인다.
+
+   `MOCK_STAFF` 처럼 **한 판 안에서 살아 있는 값**이다: 저장하면 바뀌고,
+   새로 고치면 다시 빈다. */
+var MOCK_HOSPITAL = { hospital_id: 1, name: "도로시여성의원", phone: null, address: null, booking_url: null };
+
 /* ── 목업 ──────────────────────────────────────────────────────
  * 계정은 docs/data/synthetic-staff.csv 를 따른다. 비밀번호는 아무거나 통하되
  * "wrong" 으로 시작하면 실패한다 — L-2 와 잠금을 눈으로 보려는 것이다.
@@ -323,6 +332,37 @@ function mockRequest(path, options) {
           status: "active",
           must_change_password: true,
         });
+      }
+
+      /* A1-4 — KEY-331. 목업도 **서버와 같은 규칙**을 지킨다: 안 보낸 칸은
+         그대로, `null` 은 지운 것, 예약 링크는 `http(s)` 만, 빈 몸은 거절.
+         목업이 무엇이든 받아 주면 화면이 그 무엇이든 보내게 되고, 그 차이는
+         실서버에서만 400 으로 드러난다. */
+      if (path === "/admin/hospital" && (options.method || "GET") === "GET") {
+        return resolve(JSON.parse(JSON.stringify(MOCK_HOSPITAL)));
+      }
+
+      if (path === "/admin/hospital" && options.method === "PATCH") {
+        var sent = Object.keys(body || {});
+        if (!sent.length) return reject(new ApiError("INVALID_REQUEST", 400, {}));
+        for (var f = 0; f < sent.length; f++) {
+          if (["phone", "address", "booking_url"].indexOf(sent[f]) === -1) {
+            return reject(new ApiError("INVALID_REQUEST", 400, {}));
+          }
+        }
+        var url = (body.booking_url || "").trim();
+        if (url && !/^https?:\/\/\S+$/i.test(url)) {
+          return reject(new ApiError("INVALID_REQUEST", 400, {}));
+        }
+        var tel = (body.phone || "").trim();
+        if (tel && !/^\d{2,4}-?\d{3,4}-?\d{4}$/.test(tel)) {
+          return reject(new ApiError("INVALID_REQUEST", 400, {}));
+        }
+        for (var k = 0; k < sent.length; k++) {
+          var raw = body[sent[k]] == null ? null : String(body[sent[k]]).trim();
+          MOCK_HOSPITAL[sent[k]] = raw || null;
+        }
+        return resolve(JSON.parse(JSON.stringify(MOCK_HOSPITAL)));
       }
 
       /* A1-6 · A1-7 — KEY-322. 목업도 **서버와 같은 모양**으로 답한다:
