@@ -17,11 +17,14 @@
 넘기면 겹치거나 빠진다 — 그래서 이 파일은 전부 종점을 통해 잰다.
 """
 
+from datetime import UTC, datetime, timedelta
+
 from httpx import ASGITransport, AsyncClient
 from tortoise.expressions import Q
 
 from app.main import app
 from app.models.patients import Patient
+from app.models.visits import Visit
 from app.services.staff_auth import StaffSessionService
 from app.tests.patient_manage.test_patient_table import PatientTableBase
 
@@ -133,6 +136,64 @@ class TestTheStampOnTheScreenIsTheKey(RosterSortTestCase):
         assert answers.pop() == ("31003", "31002", "31001", "31000")
 
 
+class TestTheLastVisitCanSortToo(RosterSortTestCase):
+    """마지막 진료는 **다른 표에 있다** — 그 환자의 가장 늦은 진료를 끌어와 센다.
+
+    한 번도 안 온 환자는 값이 없다. `NULL` 을 가장 작게 보므로 **최근순에서는
+    맨 뒤, 오래된순에서는 맨 앞**에 선다 — 둘 다 「가장 오래 안 온 쪽」이라
+    뜻이 맞는다.
+    """
+
+    async def a_clinic_with_visits(self):
+        clinic, headers = await self.signed_in()
+        #: 사흘 전 · 어제 · 열흘 전에 온 셋, 그리고 **한 번도 안 온** 하나
+        await self.a_patient(clinic, name="조하늘0", chart="70000", visited_days_ago=3)
+        await self.a_patient(clinic, name="조하늘1", chart="70001", visited_days_ago=1)
+        await self.a_patient(clinic, name="조하늘2", chart="70002", visited_days_ago=10)
+        await self.a_patient(clinic, name="조하늘3", chart="70003", visited_days_ago=None)
+        return headers
+
+    async def test_the_most_recent_visit_comes_first(self) -> None:
+        headers = await self.a_clinic_with_visits()
+
+        assert await self.ask(headers, sort="visited_desc") == ["70001", "70000", "70002", "70003"], (
+            "마지막 진료 최근순이 아니다 — 한 번도 안 온 환자는 맨 뒤다"
+        )
+
+    async def test_the_other_way_puts_the_never_seen_first(self) -> None:
+        headers = await self.a_clinic_with_visits()
+
+        assert await self.ask(headers, sort="visited_asc") == ["70003", "70002", "70000", "70001"]
+
+    async def test_only_that_patients_own_visits_count(self) -> None:
+        """**다른 환자의 진료를 끌어오면 안 된다** — 표와 차례가 어긋난다."""
+        headers = await self.a_clinic_with_visits()
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            answer = await client.get(URL, headers=headers, params={"sort": "visited_desc"})
+        rows = answer.json()["items"]
+
+        for row in rows:
+            latest = row["latest_visit"]
+            if row["hospital_patient_no"] == "70003":
+                assert latest is None, "한 번도 안 온 환자에게 진료가 붙었다"
+            else:
+                assert latest is not None, f"{row['hospital_patient_no']} 의 진료가 사라졌다"
+
+    async def test_nobody_is_lost_or_doubled(self) -> None:
+        """진료 표를 이어 붙이면 **환자가 늘어날 수 있다** — 한 사람이 여러 번 온다."""
+        clinic, headers = await self.signed_in()
+        patient = await self.a_patient(clinic, name="여러번", chart="71000", visited_days_ago=5)
+        for days in (1, 3):
+            await Visit.create(
+                hospital_id=clinic.hospital_id,
+                patient=patient,
+                visited_at=datetime.now(UTC) - timedelta(days=days),
+            )
+
+        assert await self.ask(headers, sort="visited_desc") == ["71000"], "한 사람이 여러 줄로 나온다"
+
+
 class TestTheCursorOnlyWalksForward(RosterSortTestCase):
     async def test_asking_another_order_with_a_cursor_is_refused(self) -> None:
         """인수조건 — `cursor` 와 `id_asc` 아닌 `sort` 를 함께 보내면 400 이다."""
@@ -207,6 +268,14 @@ class TestTheHospitalFenceStillHolds(RosterSortTestCase):
         neighbour = await self.a_clinic("옆동네의원")
         await self.a_patient(neighbour, name="옆집환자", chart="99999")
 
-        for order in ("registered_desc", "registered_asc", "chart_asc", "chart_desc", "id_asc"):
+        for order in (
+            "registered_desc",
+            "registered_asc",
+            "chart_asc",
+            "chart_desc",
+            "visited_desc",
+            "visited_asc",
+            "id_asc",
+        ):
             assert await self.ask(headers, sort=order) == ["50001"], f"{order} 에서 옆 의원이 샌다"
         assert await Patient.filter(Q(hospital_id=neighbour.hospital_id)).count() == 1, "검사가 헛돈다"

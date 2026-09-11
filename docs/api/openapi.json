@@ -4196,6 +4196,8 @@
           "registered_asc",
           "chart_asc",
           "chart_desc",
+          "visited_desc",
+          "visited_asc",
           "id_asc"
         ],
         "title": "PatientSort",

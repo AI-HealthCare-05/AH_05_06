@@ -144,3 +144,36 @@ test("등록 화면의 찾기는 **번호 차례**를 함께 말한다", () => {
 
   assert.match(api, /cursor: cursor, sort: "id_asc"/);
 });
+
+test("마지막 진료로도 세울 수 있다", () => {
+  const box = rules();
+
+  assert.equal(box.rosterSortNext("visited", "registered_desc"), "visited_desc");
+  assert.equal(box.rosterSortNext("visited", "visited_desc"), "visited_asc");
+  assert.equal(box.rosterSortArrow("visited", "visited_asc"), " ▲");
+});
+
+test("한 번도 안 온 환자는 최근순에서 맨 뒤다", () => {
+  /* 목업도 서버(MySQL)와 같이 **없는 값을 가장 작게** 친다. 갈리면 `?mock=1`
+     에서만 맞는 차례가 나온다. */
+  const api = load("api", "patients-api");
+  const rows = [
+    { patient_id: 1, latest_visit: { visited_at: "2026-09-01T10:00:00+09:00" } },
+    { patient_id: 2, latest_visit: null },
+    { patient_id: 3, latest_visit: { visited_at: "2026-09-09T10:00:00+09:00" } },
+  ];
+
+  assert.equal(
+    api
+      .mockSorted(rows, "visited_desc")
+      .map((row) => row.patient_id)
+      .join(","),
+    "3,1,2",
+  );
+});
+
+test("한 쪽에 25명이다", () => {
+  const code = codeOnly(read("js/manage.js"));
+
+  assert.match(code, /var ROSTER_PAGE = 25;/);
+});

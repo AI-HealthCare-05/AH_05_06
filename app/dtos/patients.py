@@ -31,6 +31,8 @@ class PatientSort(StrEnum):
     REGISTERED_ASC = "registered_asc"
     CHART_ASC = "chart_asc"
     CHART_DESC = "chart_desc"
+    VISITED_DESC = "visited_desc"
+    VISITED_ASC = "visited_asc"
     #: **이어 보기 전용** — 환자 번호 차례. 등록 화면의 찾기가 쓴다.
     #:
     #: 커서는 `patient_id > cursor` 로 거르므로 세우는 열쇠도 번호여야 한다.

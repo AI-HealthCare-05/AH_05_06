@@ -705,6 +705,13 @@ function mockSorted(rows, sort) {
     registered_asc: function (a, b) {
       return String(a.created_at).localeCompare(String(b.created_at)) || a.patient_id - b.patient_id;
     },
+    /* 마지막 진료 — 서버가 다른 표에서 끌어오는 그 값이다. 한 번도 안 온
+       환자는 값이 없고, 서버(MySQL)와 같이 **가장 작은 것**으로 친다. */
+    visited_asc: function (a, b) {
+      var x = (a.latest_visit && a.latest_visit.visited_at) || "";
+      var y = (b.latest_visit && b.latest_visit.visited_at) || "";
+      return x.localeCompare(y) || a.patient_id - b.patient_id;
+    },
     /* 이어 보기 전용 — 커서가 `patient_id >` 로 거르므로 세우는 열쇠도 번호다. */
     id_asc: function (a, b) {
       return a.patient_id - b.patient_id;

@@ -17,6 +17,9 @@ from app.models.visits import Visit
 #: 글자를 보면 숫자처럼 늘어선다. 숫자가 아닌 코드가 섞여도 답이 하나로 정해진다.
 _CHART_LENGTH = "chart_length"
 
+#: 그 환자의 **가장 늦은 진료** — 표의 「마지막 진료」 열과 같은 값이다.
+_LATEST_VISIT = "latest_visited_at"
+
 
 def _ordered(query: QuerySet[Patient], sort: PatientSort) -> QuerySet[Patient]:
     """그 기준으로 세운 질의. **둘째 열쇠는 언제나 `patient_id`** 다.
@@ -38,6 +41,17 @@ def _ordered(query: QuerySet[Patient], sort: PatientSort) -> QuerySet[Patient]:
         return query.annotate(**{_CHART_LENGTH: Length("hospital_patient_no")}).order_by(
             _CHART_LENGTH, "hospital_patient_no", "patient_id"
         )
+    if sort in (PatientSort.VISITED_DESC, PatientSort.VISITED_ASC):
+        #: 마지막 진료는 **다른 표에 있다.** 그 환자의 진료 중 가장 늦은 것을
+        #: 끌어와 센다 — 표의 「마지막 진료」 열이 보여 주는 그 값이다.
+        #:
+        #: 한 번도 안 온 환자는 값이 없다(`NULL`). MySQL 은 `NULL` 을 가장 작게
+        #: 보므로 **최근순에서는 맨 뒤, 오래된순에서는 맨 앞**에 선다 — 둘 다
+        #: 「가장 오래 안 온 쪽」이라 뜻이 맞는다.
+        latest = query.annotate(**{_LATEST_VISIT: Max("visits__visited_at")})
+        if sort is PatientSort.VISITED_ASC:
+            return latest.order_by(_LATEST_VISIT, "patient_id")
+        return latest.order_by(f"-{_LATEST_VISIT}", "-patient_id")
     if sort is PatientSort.CHART_DESC:
         return query.annotate(**{_CHART_LENGTH: Length("hospital_patient_no")}).order_by(
             f"-{_CHART_LENGTH}", "-hospital_patient_no", "-patient_id"

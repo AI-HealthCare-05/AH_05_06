@@ -78,6 +78,7 @@ function registeredDay(row) {
 var ROSTER_SORTS = {
   registered: { asc: "registered_asc", desc: "registered_desc" },
   chart: { asc: "chart_asc", desc: "chart_desc" },
+  visited: { asc: "visited_asc", desc: "visited_desc" },
 };
 
 function rosterSortArrow(field, sort) {

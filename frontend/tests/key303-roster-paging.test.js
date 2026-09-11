@@ -1,4 +1,4 @@
-/* 환자 관리 표를 40명씩 끊어 넘긴다 — KEY-303.
+/* 환자 관리 표를 25명씩 끊어 넘긴다 — KEY-303.
  *
  * **전에는 조용히 잘렸다.** `manage.js` 가 `roster(keyword, chosen, null, 50)` (그때의 모양) 을
  * 한 번 부르고 `next_cursor` 를 아무도 안 봤다. 전체가 101명이어도 50명에서
@@ -72,10 +72,10 @@ test("자리가 총수를 넘어도 마지막 쪽으로 본다 — 3쪽에서 �
   assert.equal(over.page, 1, "있지도 않은 3쪽을 가리키면 안 된다");
 });
 
-test("**화면이 자리를 실제로 보낸다** — 안 보내면 언제나 첫 40명만 온다", () => {
+test("**화면이 자리를 실제로 보낸다** — 안 보내면 언제나 첫 25명만 온다", () => {
   const code = codeOnly(read("js/manage.js"));
 
-  assert.match(code, /var ROSTER_PAGE = 40;/, "한 쪽에 40명이다");
+  assert.match(code, /var ROSTER_PAGE = 25;/, "한 쪽에 25명이다");
   assert.match(
     code,
     /* **인자 수를 못 박지 않는다.** 여기에 차례(`sort`)가 하나 더 붙었는데
