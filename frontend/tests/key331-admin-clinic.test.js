@@ -175,3 +175,51 @@ test("**못 불러왔을 때 빈 폼을 그리지 않는다**", () => {
   assert.ok(failed.includes("clinicLoadSaying"), "실패를 사람 말로 안 적는다");
   assert.ok(!failed.includes("clinicFormHtml"), "못 불러왔는데 폼을 그린다");
 });
+
+/* ── 목업도 같은 규칙을 지키는가 ────────────────────────────────────── */
+
+/* 목업이 무엇이든 받아 주면 화면이 그 무엇이든 보내게 되고, 그 차이는
+   실서버에서만 400 으로 드러난다 — 시연에서는 되는데 배포하면 안 되는 모양이다. */
+function mockBox() {
+  return load("api", "session", "admin-clinic", { search: "?mock=1" });
+}
+
+test("**목업도 빈 예약 링크로 시작한다** — 경고를 보고 채우는 것이 이 화면이다", async () => {
+  const { getHospital } = mockBox();
+  const info = await getHospital();
+
+  assert.strictEqual(info.booking_url, null);
+  assert.ok(info.name, "의원 이름이 없다");
+});
+
+test("목업이 저장한 값을 다시 준다", async () => {
+  const { getHospital, updateHospital } = mockBox();
+  await updateHospital({ phone: "02-123-4567", address: null, booking_url: "https://a.example/b" });
+  const info = await getHospital();
+
+  assert.equal(info.phone, "02-123-4567");
+  assert.equal(info.booking_url, "https://a.example/b");
+});
+
+test("**목업도 `javascript:` 를 거절한다** — 실서버에서만 막히면 시연에서 안 드러난다", async () => {
+  const { updateHospital } = mockBox();
+  await assert.rejects(() => updateHospital({ booking_url: "javascript:alert(1)" }), (error) => {
+    assert.equal(error.status, 400);
+    return true;
+  });
+});
+
+test("목업도 빈 몸과 모르는 칸을 거절한다", async () => {
+  const { updateHospital } = mockBox();
+  await assert.rejects(() => updateHospital({}), (e) => e.status === 400);
+  await assert.rejects(() => updateHospital({ name: "다른의원" }), (e) => e.status === 400);
+});
+
+test("목업도 안 보낸 칸을 안 지운다", async () => {
+  const { getHospital, updateHospital } = mockBox();
+  await updateHospital({ phone: "02-123-4567", address: null, booking_url: "https://a.example/b" });
+  await updateHospital({ phone: "02-999-8888" });
+  const info = await getHospital();
+
+  assert.equal(info.booking_url, "https://a.example/b", "안 보낸 칸이 지워졌다");
+});
