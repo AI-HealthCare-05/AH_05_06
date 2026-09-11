@@ -4931,6 +4931,26 @@
         "title": "SectionEditRequest",
         "type": "object"
       },
+      "SectionOrderRequest": {
+        "additionalProperties": false,
+        "description": "절의 새 차례 — KEY-317.\n\n**그 안내문의 절을 하나도 빠짐없이, 한 번씩** 보낸다. 「옮길 것만」 보내는\n모양도 생각했지만, 그러면 나머지가 어디로 가는지를 서버와 화면이 각자\n셈하게 된다 — 둘이 어긋나면 화면에서 본 차례와 저장된 차례가 달라진다.\n\n무엇이 자리를 옮길 수 있는지는 서버가 검증한다\n(`app/services/guide_section_order.py`). 🚨 응급·주의사항은 못 옮긴다.",
+        "properties": {
+          "order": {
+            "items": {
+              "$ref": "#/components/schemas/GuideSectionKey"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "title": "SectionOrderRequest",
+        "type": "object"
+      },
       "SectionResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4949,6 +4969,10 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "movable": {
+            "title": "Movable",
+            "type": "boolean"
+          },
           "warn": {
             "anyOf": [
               {
@@ -4965,7 +4989,8 @@
           "key",
           "body",
           "edited",
-          "locked"
+          "locked",
+          "movable"
         ],
         "title": "SectionResponse",
         "type": "object"
@@ -5504,6 +5529,7 @@
           "GUIDE_UNAPPROVED",
           "GUIDE_REGENERATED",
           "GUIDE_RETURNED",
+          "GUIDE_SECTION_REORDERED",
           "PATIENT_LINK_REISSUED",
           "PATIENT_LINK_REVOKED",
           "CHECK_IN_SUBMITTED",
@@ -10174,6 +10200,64 @@
           }
         ],
         "summary": "Return Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/sections/order": {
+      "put": {
+        "description": "절의 **차례**를 바꾼다 — KEY-317.\n\n`PATCH` 가 아니라 `PUT` 이다. 한 절을 고치는 것이 아니라 **차례 전체를**\n통째로 놓는 것이라, 같은 목록을 두 번 보내면 두 번째는 아무 일도 안 한다.\n\n답으로 안내문 전체를 준다. 차례가 바뀌면 화면이 다시 그려야 하는데,\n바뀐 차례만 주면 화면이 제 손으로 다시 늘어놓아야 한다 — 그러면 서버가\n아는 차례와 화면이 그린 차례가 갈릴 자리가 생긴다.",
+        "operationId": "reorder_sections_api_v1_visits__visit_id__guide_sections_order_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reorder Sections",
         "tags": [
           "guides"
         ]

@@ -56,7 +56,7 @@ from app.models.visits import (
     Visit,
 )
 from app.ocr.utils import assert_ocr_jobs_ready, merge_fields_by_type
-from app.services import guide_defaults
+from app.services import guide_defaults, guide_section_order
 from app.services.drug_caution import DrugCautionService
 from app.services.guide_body import medication_body, resolved_copy
 
@@ -635,6 +635,74 @@ class GuideService:
                 using_db=connection,
             )
         return section
+
+    async def reorder_sections(self, actor, visit_id: int, wanted: list[str]) -> GuideDocument:
+        """절의 **차례**를 바꾼다 — KEY-317. 글은 건드리지 않는다.
+
+        누가·언제 고칠 수 있는가는 `edit_section` 과 **같은 규칙**이다. 차례도
+        환자가 읽는 것이라, 문구를 고칠 수 없는 때에 차례만 바꿀 수 있으면
+        승인한 화면과 나가는 화면이 갈린다.
+
+        무엇을 어디로 옮길 수 있는가는 `guide_section_order` 한 곳이 정한다.
+        """
+        self._require_staff_or_doctor(actor, "안내문 차례 변경은")
+
+        keys = guide_section_order.parse(wanted)
+
+        async with in_transaction() as connection:
+            guide = await self._lock(actor, visit_id, connection)
+
+            # 승인된 것은 못 바꾼다. **차례도 환자가 보는 것**이라, 승인 뒤에
+            # 조용히 옮기면 원장님이 승인한 화면과 환자가 받는 화면이 달라진다
+            # (인수조건 — 「승인 후 직접 순서 변경이 차단되고 새 버전·재승인
+            # 흐름을 거친다」). 되돌리려면 승인 취소를 거친다.
+            if guide.status not in (
+                GuideStatus.STAFF_REVIEW,
+                GuideStatus.APPROVAL_PENDING,
+                GuideStatus.APPROVAL_RETURNED,
+            ):
+                raise ApiError("GUIDE_NOT_PENDING", 409, "확인·승인 요청 상태에서만 차례를 바꿀 수 있습니다.")
+
+            # 승인 요청 중에는 의사만 — `edit_section` 과 같은 판단이다.
+            if guide.status is GuideStatus.APPROVAL_PENDING and not self._is_doctor(actor):
+                raise ApiError(
+                    "FORBIDDEN",
+                    403,
+                    "의사에게 넘긴 뒤에는 의사 계정에서만 바꿀 수 있습니다.",
+                )
+
+            sections = await GuideSection.filter(guide_document=guide).using_db(connection)
+            current = guide_section_order.current_order(sections)
+            guide_section_order.validate(current, keys)
+
+            by_key = {GuideSectionKey(section.section_key): section for section in sections}
+            for position, key in enumerate(keys):
+                section = by_key[key]
+                if section.display_order == position:
+                    continue
+                section.display_order = position
+                await section.save(update_fields=["display_order", "updated_at"], using_db=connection)
+
+            # **같은 차례를 다시 보내면 아무 일도 안 일어난다.** 새로고침 뒤
+            # 다시 누른 것이고, 원하던 것은 이미 그 상태다. 판을 올리고 사건을
+            # 쌓으면 「누가 무엇을 옮겼나」가 안 옮긴 줄로 흐려진다.
+            if keys == current:
+                await guide.fetch_related("sections", "visit__patient")
+                return guide
+
+            guide.version += 1
+            await guide.save(update_fields=["version", "updated_at"], using_db=connection)
+            await GuideEvent.create(
+                guide_document=guide,
+                event_type=GuideEventType.SECTION_REORDERED,
+                order_before=guide_section_order.as_written(current),
+                order_after=guide_section_order.as_written(keys),
+                actor_id=actor.user_id,
+                using_db=connection,
+            )
+
+        await guide.fetch_related("sections", "visit__patient")
+        return guide
 
     async def submit(self, actor, visit_id: int) -> GuideDocument:
         """스탭이 확인을 마치고 **의사에게 넘긴다** (와이어프레임 S1-11).

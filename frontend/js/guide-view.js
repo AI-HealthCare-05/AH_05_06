@@ -52,6 +52,47 @@ var GUIDE_NOT_IMPLEMENTED = {
   messages: "회차·문구를 저장할 자리가 아직 없습니다 — S1-14 후속 계약입니다",
 };
 
+/* ── 차례 바꾸기 (KEY-317) ─────────────────────────────────────────────
+ *
+ * **무엇이 움직일 수 있는지는 서버가 정한다.** 절마다 `movable` 이 실려 온다.
+ * 안전 절 목록을 여기에도 적어 두면 정책이 바뀌는 날 한쪽만 고쳐지고, 화면은
+ * 옮길 수 있다고 그리는데 서버가 422 를 내는 자리가 생긴다.
+ *
+ * **맞바꾸기로만 옮긴다.** 옮길 수 있는 절끼리 자리를 맞바꾸므로, 안전 절이
+ * 앉은 자리는 건드려지지 않는다 — 화면에서 만들 수 있는 차례는 전부 서버가
+ * 받아 주는 차례다. (그래도 서버가 다시 검증한다. 화면만 막으면 요청을 직접
+ * 보내는 것으로 넘어간다.)
+ */
+function guideMovableKeys(sections) {
+  return (sections || [])
+    .filter(function (s) {
+      return s.movable;
+    })
+    .map(function (s) {
+      return s.key;
+    });
+}
+
+/** 이 절을 한 칸 옮긴 **차례 전체**. 못 옮기면 `null`.
+ *
+ * `step` 은 -1(앞으로) 또는 1(뒤로)이다. 옮길 수 있는 절들 사이에서만 세므로
+ * 「앞으로」가 안전 절을 건너뛴다 — 복약지도가 주의사항을 뛰어넘어 생활지도와
+ * 자리를 바꾼다. 건너뛰지 않으면 어느 방향으로도 못 움직인다. */
+function guideOrderMoved(sections, key, step) {
+  var all = (sections || []).map(function (s) {
+    return s.key;
+  });
+  var movable = guideMovableKeys(sections);
+  var from = movable.indexOf(key);
+  var to = from + step;
+  if (from < 0 || to < 0 || to >= movable.length) return null;
+
+  var next = all.slice();
+  next[all.indexOf(movable[from])] = movable[to];
+  next[all.indexOf(movable[to])] = movable[from];
+  return next;
+}
+
 /* 탭으로 세울 섹션 — 접어 넣는 것(응급)은 뺀다. 차례는 서버가 준 그대로다. */
 function guideTabSections(sections) {
   return (sections || []).filter(function (s) {
@@ -185,6 +226,48 @@ var GUIDE_SCREEN_TITLE = {
   guide: "환자가 받게 될 안내문 · 스탭 확인",
   final: "환자가 받게 될 안내문 · 미리보기",
 };
+
+/** 지금 고른 탭을 앞뒤로 옮기는 단추 — KEY-317.
+ *
+ * **고른 탭 하나만 옮긴다.** 탭마다 [↑][↓] 를 달면 가로 칸막이 안이 빽빽해져
+ * 손가락으로 짚기 어렵고, 어느 단추가 어느 탭 것인지도 흐려진다.
+ *
+ * 옮길 수 없는 자리에서는 **단추를 감추지 않고 잠근다.** 감추면 눌리던 자리가
+ * 사라져 옆 단추를 잘못 누른다 — 이 저장소가 「조용히 죽은 단추」로 한 번
+ * 겪은 자리다(KEY-236).
+ */
+function guideMoveHtml(sections, current, canEdit) {
+  if (!canEdit) return "";
+  var here = (sections || []).filter(function (s) {
+    return s.key === current;
+  })[0];
+  if (!here || !here.movable) return "";
+
+  return (
+    '<span class="gs__move">' +
+    [-1, 1]
+      .map(function (step) {
+        /* **단추가 저장할 차례를 그대로 들고 있다.** 누른 뒤에 다시 셈하면
+           그 사이 다시 그려진 화면과 어긋날 수 있고, 스탭 화면은 한 판에 두
+           패널을 띄워 「지금 어느 탭인가」가 하나로 답해지지도 않는다. */
+        var order = guideOrderMoved(sections, current, step);
+        return (
+          '<button class="gs__movebtn" type="button" data-move="' +
+          esc((order || []).join(",")) +
+          '"' +
+          (order ? "" : " disabled") +
+          ' aria-label="' +
+          esc(GUIDE_SECTION_LABEL[current] || current) +
+          (step === -1 ? " 앞으로" : " 뒤로") +
+          '">' +
+          (step === -1 ? "◀" : "▶") +
+          "</button>"
+        );
+      })
+      .join("") +
+    "</span>"
+  );
+}
 
 /* 가로 탭 — 와이어프레임은 칸막이로 이어 붙인 한 덩어리다(`height:26px`,
    고른 것만 검정 채움). 세로 목록이 아니라 가로라, 네 항목이 한눈에 든다. */
@@ -349,6 +432,7 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary, 
     esc(title) +
     "</span>" +
     guideSegmentsHtml(sections, current) +
+    guideMoveHtml(sections, current, canEdit) +
     "</div>" +
     /* **「문자 설정」은 다른 화면이다** (S1-14). 원문·미리보기 두 칸이 아니라
        회차·문구를 다루는 자리라, 그 탭에서는 통째로 갈아 끼운다. */
@@ -458,6 +542,34 @@ function guideEditingNow() {
   return guideEditingKey;
 }
 
+/** 고른 탭을 한 칸 옮겨 **차례 전체**를 저장한다 — KEY-317.
+ *
+ * 바뀐 것만 보내지 않는다. 나머지가 어디로 가는지를 서버와 화면이 각자 셈하면
+ * 둘이 어긋나는 날 화면에서 본 차례와 저장된 차례가 달라진다. */
+function guideMoveSection(button, opts) {
+  var say = opts.say || function () {};
+  var visitId = opts.visitId();
+  if (!visitId) return;
+
+  var order = String(button.getAttribute("data-move") || "").split(",");
+  if (!order[0]) return;
+
+  /* 두 번 눌리지 않게 잠근다 — 저장이 두 번 가면 판이 두 번 오른다. */
+  button.disabled = true;
+  doctorApi
+    .reorderSections(visitId, { order: order })
+    .then(function () {
+      if (opts.visitId() !== visitId) return;
+      say("차례를 바꿨습니다");
+      opts.reRender(true);
+    })
+    .catch(function (error) {
+      if (opts.visitId() !== visitId) return;
+      button.disabled = false;
+      say((error && error.message) || "차례를 바꾸지 못했습니다. 다시 시도해 주세요.");
+    });
+}
+
 function wireGuideEditing(opts) {
   var getVisitId = opts.visitId;
   var reRender = opts.reRender;
@@ -466,6 +578,12 @@ function wireGuideEditing(opts) {
   document.addEventListener("click", function (event) {
     var t = event.target;
     if (!t || !t.closest) return;
+
+    var move = t.closest("[data-move]");
+    if (move) {
+      guideMoveSection(move, opts);
+      return;
+    }
 
     var open = t.closest("[data-edit]");
     if (open) {
