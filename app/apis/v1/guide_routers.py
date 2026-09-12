@@ -75,6 +75,7 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
     return GuideResponse(
         visit_id=guide.visit_id,
         patient=PatientHead(
+            patient_id=patient.patient_id,
             name=patient.name,
             birth_date=patient.birth_date,
             age=_age_on(patient.birth_date, today),

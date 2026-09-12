@@ -48,6 +48,11 @@ class PatientHead(StrictModel):
     서버가 안다. 응답에 실으면 승인할 때마다 전화번호가 화면과 로그를 지난다.
     """
 
+    #: 이 환자의 번호 — KEY-329. 현황 탭이 **그 환자의 지난 진료 전부**를
+    #: (`GET /patients/{patient_id}/history`) 부를 때 쓴다. 차트번호로 되찾는
+    #: 길은 안 쓴다 — 왕복이 하나 더 늘고, 검색 종점은 낱말 검색이라 정확히
+    #: 한 명을 준다는 보장이 없다.
+    patient_id: int
     name: str
     birth_date: date
     age: int

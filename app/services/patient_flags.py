@@ -137,11 +137,21 @@ async def load_flag_inputs(
         return {}
 
     # `flat=True` 면 값이 그대로 오는데 스텁은 늘 튜플 목록이라 한다.
-    checks: list[int] = await GuideMessage.filter(
-        guide_document__visit_id__in=visit_ids,
-        kind__in=CHECK_KINDS,
-        status=GuideMessageStatus.SENT,
-    ).values_list("guide_document__visit_id", flat=True)  # type: ignore[assignment]
+    # kind별로 하나씩만 센다 — 재발송이 성공하면 같은 kind로 SENT 행이
+    # 두 줄(원본+재발송) 생기는데, 원래 세던 방식은 행 개수를 그대로 셌다.
+    # CHECK_D7이 재발송으로 SENT 2건 + CHECK_D15가 SENT 1건이면 합계 3이
+    # 되어, CHECK_D30이 한 번도 안 나갔는데도 UNREAD_STREAK(임계값 3, "세
+    # 종류 다 나갔다"는 뜻)이 잘못 켜졌다(KEY-306 리뷰로 발견). distinct로
+    # (진료, 종류) 쌍만 센다.
+    checks: list[tuple[int, str]] = (
+        await GuideMessage.filter(
+            guide_document__visit_id__in=visit_ids,
+            kind__in=CHECK_KINDS,
+            status=GuideMessageStatus.SENT,
+        )
+        .distinct()
+        .values_list("guide_document__visit_id", "kind")
+    )  # type: ignore[assignment]
 
     viewed = set(
         await PatientUsageEvent.filter(
@@ -162,7 +172,7 @@ async def load_flag_inputs(
             longest[visit_id] = duration
 
     sent: dict[int, int] = {}
-    for checked in checks:
+    for checked, _kind in checks:
         sent[checked] = sent.get(checked, 0) + 1
 
     found = {}
