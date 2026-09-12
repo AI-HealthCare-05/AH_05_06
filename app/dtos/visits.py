@@ -133,6 +133,10 @@ class TimelineEvent(StrEnum):
     #: 초안을 다시 만들었다 (KEY-273). 옛 생성 줄을 지우지 않고 이 줄을 더한다.
     GUIDE_REGENERATED = "GUIDE_REGENERATED"
     GUIDE_RETURNED = "GUIDE_RETURNED"
+    #: 절의 **차례**를 바꿨다 (KEY-317). 글은 그대로고 보이는 순서만 달라진다.
+    #: `GUIDE_EDITED` 와 나눈다 — 「무엇을 고쳤나」를 물을 때 차례 변경이 섞이면
+    #: 문구가 바뀐 줄 알고 옛 글을 찾게 된다.
+    GUIDE_SECTION_REORDERED = "GUIDE_SECTION_REORDERED"
     PATIENT_LINK_REISSUED = "PATIENT_LINK_REISSUED"
     PATIENT_LINK_REVOKED = "PATIENT_LINK_REVOKED"
     CHECK_IN_SUBMITTED = "CHECK_IN_SUBMITTED"

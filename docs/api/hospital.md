@@ -928,6 +928,7 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | POST | `/api/v1/visits/{visit_id}/guide/generate` | 확정 OCR로 고정 안내 생성 — 201 | `staff`·`doctor` |
 | GET | `/api/v1/visits/{visit_id}/guide` | 안내문 조회 — 다섯 갈래 + ⚠ 표시 | `staff`·`doctor` |
 | PATCH | `/api/v1/visits/{visit_id}/guide/sections/{key}` | 한 갈래만 수정 | 상태에 따라 `staff`·`doctor` |
+| PUT | `/api/v1/visits/{visit_id}/guide/sections/order` | 절의 **차례**를 통째로 놓음 (KEY-317) | 상태에 따라 `staff`·`doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/submit` | 스탭 확인을 마치고 의사에게 넘김 | `staff`·`doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/approve` | 승인 — 발송 예약 | `doctor` |
 | POST | `/api/v1/visits/{visit_id}/guide/unapprove` | 승인 철회 — 예약 끄기 | `doctor` |
@@ -958,6 +959,23 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 - 새로 나가는 값은 처방·검사 파생과 진료일뿐이다. 링크 토큰·연락처는 담지 않는다.
 
 수정은 상태가 가른다. `STAFF_REVIEW` 는 스탭이 고치고, 의사에게 넘긴 뒤(`APPROVAL_PENDING`)로는 의사만 고친다 — 스탭이 그때 고치려 하면 `403` 이다.
+
+#### 절의 차례 — `PUT /guide/sections/order` (KEY-317)
+
+```json
+{"order": ["life", "caution", "emergency", "medication", "messages"]}
+```
+
+**그 안내문의 절을 하나도 빠짐없이, 한 번씩** 보낸다. 「옮길 것만」 보내면 나머지가 어디로 가는지를 서버와 화면이 각자 셈하게 되고, 둘이 어긋나는 날 화면에서 본 차례와 저장된 차례가 달라진다. 답으로 안내문 전체를 준다.
+
+**안전 절은 앉은 자리를 지킨다.** `caution` 과 `emergency` 는 못 옮기고, 나머지가 남은 자리들끼리 섞인다. 그래서 「`emergency` 는 `caution` 바로 뒤」가 저절로 유지된다. 어기면 `422 SECTION_ORDER_INVALID` 다.
+
+- 화면이 절마다 `movable` 을 받는다 — 안전 절 목록을 화면에 적어 두지 않기 위해서다. 정책이 바뀌면 서버 한 곳(`app/services/guide_section_order.py`)만 고친다.
+- **화면만 막지 않는다.** 같은 규칙을 서버가 다시 검증한다 — 요청을 직접 보내면 응급 안내가 생활관리 뒤로 갈 수 있고, 환자는 그것을 못 보고 창을 닫는다.
+- 누가·언제 바꿀 수 있는지는 **문구 수정과 같은 규칙**이다. 승인된 안내문은 `409 GUIDE_NOT_PENDING` — 차례도 환자가 보는 것이라, 승인 뒤에 조용히 옮기면 승인한 화면과 나가는 화면이 달라진다. 바꾸려면 승인을 거두고 다시 승인한다.
+- 같은 차례를 다시 보내면 **아무 일도 안 일어난다** — 판(`version`)이 안 오르고 감사 줄도 안 쌓인다.
+- 감사에는 `SECTION_REORDERED` 한 줄이 남고 `order_before`·`order_after` 에 절 이름만 담는다. 본문·환자 정보는 담지 않는다.
+
 
 ### 환자 이력 (S2-2)
 
@@ -1326,7 +1344,8 @@ POST /api/v1/visits/{visit_id}/guide/generate
 - `staff`·`doctor` 역할 모두 호출할 수 있다.
 - 진료에 연결된 OCR 필드 중 `is_confirmed=True`인 것이 하나 이상 있어야 한다 — 미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고, 의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
 - 안내는 `APPROVAL_PENDING` 상태로 생성된다 — W1 고정 안내 경로는 스탭 검토(`STAFF_REVIEW`) 단계를 거치지 않는다. LLM 생성 안내가 붙는 시점에 이 흐름을 다시 정한다.
-- 섹션은 `medication`·`caution`·`emergency`·`life`·`messages` 5개 고정이며, **응답 차례가 곧 화면 차례**다(`emergency`는 `caution` 바로 뒤).
+- 섹션은 `medication`·`caution`·`emergency`·`life`·`messages` 5개 고정이며, **응답 차례가 곧 화면 차례**다.
+  - 생성 직후의 차례는 위 표 그대로다. 그 뒤로는 **사람이 정한다** — `PUT …/guide/sections/order` (KEY-317). 병원 종점도 환자 종점도 저장된 `display_order` 에서 읽으므로, 원장님이 늘어놓은 차례가 그대로 환자에게 간다.
 - `medication` 본문의 처방 사실은 `PrescriptionItem`의 약명(용량 포함)·복용 빈도·기간을 저장 순서대로 사용한다. 복수 약제는 각각 한 줄로 구분하고, 기간이 없는 `필요시` 약에는 다른 약의 기간을 붙이지 않는다. 구조화 처방이 없으면 약 정보를 임의로 만들지 않고 승인된 기본 지도 문장만 사용한다.
 - 환자에게 보이는 기본 안내에는 개발용 `[합성]` 표지를 넣지 않는다. 다만 사용자가 승인 문구나 처방 원문에 직접 저장한 문자열은 의료 원문이므로 생성 단계에서 임의로 변형하지 않는다.
 - **`emergency`만 `locked=true`다.** 식약처 의약품정보 기준 응급 문장이라 사람이 고칠 수 없다(D1-2). `caution`은 일반 주의 문구이고 `locked=false`이므로 의사가 환자에 맞춰 고칠 수 있다.

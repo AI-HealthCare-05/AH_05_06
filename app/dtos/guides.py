@@ -28,6 +28,10 @@ class SectionResponse(StrictModel):
     locked: bool
     #: ⚠ 문구. **서버가 판정한다** — 「AI 가 자신 없는 곳」을 화면이 알 수 없다.
     warn: str | None = None
+    #: 이 절의 자리를 사람이 옮길 수 있는가 — KEY-317. 화면이 [↑][↓] 를
+    #: 어디에 달지 정하는 근거다. **화면이 판정하지 않는다** — 안전 절 목록을
+    #: 화면에도 적어 두면 정책이 바뀌는 날 한쪽만 고쳐진다.
+    movable: bool
 
 
 class PatientHead(StrictModel):
@@ -97,6 +101,20 @@ class GuideResponse(StrictModel):
 
 class SectionEditRequest(StrictModel):
     body: str = Field(min_length=1, max_length=20000)
+
+
+class SectionOrderRequest(StrictModel):
+    """절의 새 차례 — KEY-317.
+
+    **그 안내문의 절을 하나도 빠짐없이, 한 번씩** 보낸다. 「옮길 것만」 보내는
+    모양도 생각했지만, 그러면 나머지가 어디로 가는지를 서버와 화면이 각자
+    셈하게 된다 — 둘이 어긋나면 화면에서 본 차례와 저장된 차례가 달라진다.
+
+    무엇이 자리를 옮길 수 있는지는 서버가 검증한다
+    (`app/services/guide_section_order.py`). 🚨 응급·주의사항은 못 옮긴다.
+    """
+
+    order: list[GuideSectionKey] = Field(min_length=1, max_length=len(GuideSectionKey))
 
 
 class ReturnRequest(StrictModel):

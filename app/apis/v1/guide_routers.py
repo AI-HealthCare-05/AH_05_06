@@ -19,9 +19,11 @@ from app.dtos.guides import (
     PatientHead,
     ReturnRequest,
     SectionEditRequest,
+    SectionOrderRequest,
     SectionResponse,
 )
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey
+from app.services import guide_section_order
 from app.services.guides import GuideService
 from app.services.patient_guide_view import guide_detail_of
 from app.services.patient_links import PatientLinkService
@@ -91,28 +93,26 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
     )
 
 
-#: 계약이 정한 차례 — `GuideSectionKey` 에 적힌 순서 그대로다(P2 · P3 · P4, 그리고
-#: 문자 설정). `emergency` 는 `caution` 바로 뒤다.
-_SECTION_ORDER: dict[GuideSectionKey, int] = {key: i for i, key in enumerate(GuideSectionKey)}
-
-
-def _section_order(section: GuideSection) -> int:
+def _section_order(section: GuideSection) -> tuple[int, int]:
     """**차례를 삽입 순서에 맡기지 않는다.**
 
     예전에는 `guide_section_id` 로 정렬했다. 지금 생성 경로가 계약 순서대로
     넣으니 결과는 같지만, 그건 **우연히 같은 것**이다. 행 하나를 나중에
     끼워 넣으면(예: 기존 안내문에 `emergency` 를 채워 넣는 backfill) 그 행이
-    맨 뒤로 가고, 응급 문장이 문자 설정 뒤에 붙는다.
+    맨 뒤로 가고, 응급 문장이 문자 설정 뒤에 붙는다 (KEY-161).
 
-    계약(`docs/api/hospital.md` §5)은 **차례까지** 정한다. 그러면 차례는
-    계약에서 읽어야지 DB 가 준 순서에서 읽을 것이 아니다 (KEY-161).
+    그 뒤로 차례는 **사람이 정할 수 있는 것**이 됐다(KEY-317). 계약 표는
+    이제 기본값일 뿐이라 표에서 읽으면 사람이 바꾼 차례가 안 보인다 —
+    저장된 `display_order` 에서 읽는다. 같은 값이 둘이면(있을 수 없지만)
+    행 번호로 갈라 **답이 매번 같게** 한다.
     """
-    return _SECTION_ORDER[GuideSectionKey(section.section_key)]
+    return (section.display_order, section.guide_section_id)
 
 
 def _section(section: GuideSection) -> SectionResponse:
     return SectionResponse(
         key=section.section_key,
+        movable=GuideSectionKey(section.section_key) not in guide_section_order.SAFETY_SECTIONS,
         body=section.body,
         edited=section.edited_body is not None,
         locked=section.locked,
@@ -157,6 +157,25 @@ async def edit_section(
     service: Annotated[GuideService, Depends(_service)],
 ) -> SectionResponse:
     return _section(await service.edit_section(actor, visit_id, key, body.body))
+
+
+@guide_router.put("/{visit_id}/guide/sections/order", response_model=GuideResponse, status_code=status.HTTP_200_OK)
+async def reorder_sections(
+    visit_id: int,
+    body: SectionOrderRequest,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> GuideResponse:
+    """절의 **차례**를 바꾼다 — KEY-317.
+
+    `PATCH` 가 아니라 `PUT` 이다. 한 절을 고치는 것이 아니라 **차례 전체를**
+    통째로 놓는 것이라, 같은 목록을 두 번 보내면 두 번째는 아무 일도 안 한다.
+
+    답으로 안내문 전체를 준다. 차례가 바뀌면 화면이 다시 그려야 하는데,
+    바뀐 차례만 주면 화면이 제 손으로 다시 늘어놓아야 한다 — 그러면 서버가
+    아는 차례와 화면이 그린 차례가 갈릴 자리가 생긴다.
+    """
+    return await _to_response(await service.reorder_sections(actor, visit_id, [key.value for key in body.order]))
 
 
 @guide_router.post("/{visit_id}/guide/submit", response_model=GuideResponse, status_code=status.HTTP_200_OK)
