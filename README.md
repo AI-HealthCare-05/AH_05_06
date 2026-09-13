@@ -368,11 +368,11 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `OPENAI_MODEL` | 모델 이름 | `gpt-4o-mini` |
 | `OPENAI_BASE_URL` | API 엔드포인트 | `https://api.openai.com/v1` |
 | `OPENAI_TIMEOUT_SECONDS` | 타임아웃 | `20` |
-| `GUIDE_RAG_ENABLED` | KEY-277 검색·생성 큐 사용. API와 워커에 같은 값 적용. migration 52와 승인 지식/템플릿 준비 후 격리 Pilot에서 먼저 검증 | `false` |
+| `GUIDE_RAG_ENABLED` | KEY-277 검색·생성 큐 사용. API와 워커에 같은 값 적용. migration 57과 승인 지식/템플릿 준비 후 격리 Pilot에서 먼저 검증 | `false` |
 
 RAG를 켜면 기존 생성 API는 202와 작업 ID를 반환하고 화면은 같은 작업을 조회한다.
 별도 워커가 필요하며 기존 `--profile ocr`의 `ai-worker`가 큐를 처리한다.
-마이그레이션은 기존 `aerich upgrade` 절차로 52까지 적용한다. 데이터가 있는 52의
+마이그레이션은 기존 `aerich upgrade` 절차로 57까지 적용한다. 데이터가 있는 57의
 다운그레이드는 감사·근거 유실을 막기 위해 거부한다.
 실측 절차와 미완료 게이트는 [KEY-277 Pilot 인수 확인](docs/qa/KEY-277-generation-pilot.md)을 따른다.
 

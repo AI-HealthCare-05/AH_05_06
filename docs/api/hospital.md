@@ -13,7 +13,11 @@
 `202 {job_id, visit_id, state:"queued", failure_reason:null}`로 작업을 접수한다.
 같은 병원·진료의 활성 작업은 중복 생성하지 않는다. 비활성화된 기존 경로는 201 안내 응답을 유지한다.
 `GET /api/v1/visits/{visit_id}/guide/generation/{job_id}`는 같은 병원의 staff/doctor만 조회한다.
-대기는 위 작업 응답, 종료 실패는 `state:"failed"`와 고정 `failure_reason`, 완료는 저장된 안내 응답이다.
+대기는 위 작업 응답, 종료 실패는 `state:"failed"`와 고정 `failure_reason`이다.
+재검증 실패의 내부 상세 사유는 별도 `block_reason`으로 보존한다(예: `hospital_scope`, `approval_status`).
+완료 작업은 저장된 결과 문서 ID·버전과 현재 안내가 일치할 때만 안내 응답을 반환한다.
+재생성으로 교체됐거나 과거 작업에 결과 식별자가 없으면 `state:"superseded"`와 `result_version`을
+반환하며 본문은 포함하지 않는다. 화면은 폴링을 종료하고 다시 안내문을 확인하도록 알린다.
 없는 작업·타 병원 작업은 404다. 실패 응답에 모델 출력·예외 원문·인증정보를 포함하지 않는다.
 의료진 화면은 접수한 작업 ID만 조회하며 실패 시 자동으로 새 생성 요청을 보내지 않는다.
 
@@ -480,6 +484,18 @@ GET /api/v1/patients?category=NEEDS_ATTENTION&keyword=김&cursor=patient_102&lim
   검색어가 `2026-08-15` · `2026-08` 꼴이면 **마지막 진료일**로 찾는다 (KEY-303). 차트번호는 숫자만이라 겹치지 않는다. `2026-13` 처럼 없는 달은 날짜로 보지 않고 그대로 이름 검색에 넘긴다 — 조용히 12월로 고치면 사람이 오해한다.
 - `cursor`: 서버가 발급한 불투명 다음 페이지 커서. 임의 조립하지 않는다.
 - `offset`: 몇 번째부터. 기본 0. **쪽 번호와 「이전」을 위해 쓴다** (KEY-303) — 커서는 앞으로만 가서 뒤로 못 간다.
+#### 표의 차례 — `sort` (KEY-327)
+
+`registered_desc`(기본) · `registered_asc` · `chart_asc` · `chart_desc` · `visited_desc` · `visited_asc`, 그리고 이어 보기 전용 `id_asc`.
+
+- **정렬은 서버가 한다.** 화면이 받은 쪽만 다시 세우면 그 쪽 안에서만 맞고, 쪽을 넘기면 앞 쪽과 겹치거나 빠진다.
+- `registered_*` 는 **표에 보이는 그 날짜**(`created_at`)로 센다. 보여 주는 값과 세우는 열쇠가 같아야 한다 — 다르면 「등록 ▼」인데 날짜가 오르락내리락해서 화면이 고장난 것처럼 보인다.
+- 차트번호는 **길이를 먼저 보고 그다음 글자**로 센다. `hospital_patient_no` 는 형식 규칙이 없는 글자열이라, 글자로만 세우면 `10` 이 `7` 보다 앞에 선다.
+- `visited_*` 는 그 환자의 **가장 늦은 진료**로 센다 — 표의 「마지막 진료」 열과 같은 값이다. 한 번도 안 온 환자는 값이 없고, `NULL` 을 가장 작게 보므로 최근순에서는 맨 뒤·오래된순에서는 맨 앞에 선다(둘 다 「가장 오래 안 온 쪽」이라 뜻이 맞는다).
+- 첫째 열쇠가 같으면 **언제나 `patient_id`** 로 가른다. 안 그러면 같은 물음에 다른 차례가 나오고, 쪽을 넘길 때 같은 환자가 두 번 나온다.
+- **`cursor` 는 `id_asc` 하고만 쓴다.** 커서가 `patient_id > cursor` 로 거르므로 세우는 열쇠도 번호여야 한다 — 날짜로 세우면 옛 날짜를 단 나중 번호가 거름에서 잘려 영영 안 나오거나 이미 본 사람이 다시 나온다. 다른 차례를 얹으면 `400 INVALID_REQUEST` 다. 등록 화면의 찾기가 `sort=id_asc` 를 함께 보내는 이유다 — 첫 쪽에는 `cursor` 가 없어, 안 보내면 기본값인 등록일 최근순으로 와 버린다. `id_asc` 는 표에서는 쓰지 않는다.
+
+- **`page.next_cursor` 는 `id_asc` 응답에만 실린다.** 다른 차례에서는 `null` 이다 — 값이 `patient_id` 하나뿐이라 그것을 들고 다시 부르면 `patient_id > cursor` 로 걸려, `400` 도 없이 **조용히 빠진 목록**이 온다. 등록 최근순으로 첫 쪽을 받아 그 커서로 이어 보면 이미 본 사람이 다시 오고 나머지는 영영 안 나온다. 표는 `cursor` 가 아니라 `offset`·`roster` 로 쪽을 넘긴다.
 - **`cursor` 와 `offset` 은 함께 못 준다.** 둘 다 오면 `400 INVALID_REQUEST` 로 거부하고 `field_errors` 에 두 이름을 적는다. 겹쳐 받으면 `patient_id > cursor` 를 건 **뒤에** 다시 `offset` 만큼 건너뛰어 조용히 빈 쪽이 나온다 — 부른 쪽은 「마지막 쪽」으로 읽는다.
 - `limit` 기본 20, 최대 100.
 - 응답은 `{counts, selected_category, items, page: {next_cursor, has_next}, roster: {offset, limit, total, has_next}}`다.
@@ -1125,6 +1141,28 @@ Content-Type: application/json
 |---|---|---|---|
 | GET | `/api/v1/messages/history?from=&to=&limit=200` | 기간 안에 나간 것 · 못 나간 것 | `staff`·`doctor` |
 | GET | `/api/v1/messages/history.csv?from=&to=` | 같은 것을 파일로 — **자르지 않는다** | `staff`·`doctor` |
+| POST | `/api/v1/messages/history/{message_id}/resend` | 새 링크로 다시 보낼 작업 생성 | `staff`·`doctor` |
+
+#### 새 링크로 다시 보내기
+
+발송 이력의 `SENT` 또는 `FAILED` 행만 다시 보낼 수 있다. 성공 시 워커가 처리할
+새 메시지 ID와 상태만 반환한다.
+
+```json
+{
+  "guide_message_id": 321,
+  "status": "SCHEDULED"
+}
+```
+
+요청을 확정하면 활성 환자 링크와 연결된 OTP를 즉시 폐기한다. 새 링크는 이
+API에서 만들지 않고 워커가 문자 발송 직전에 만든다. 기존 링크가 이미 만료되거나
+폐기된 경우에는 종료 상태를 바꾸지 않는다.
+
+같은 `message_id` 요청을 반복하거나 동시에 보내도 새 발송 작업은 한 건만 생기며
+같은 응답을 반환한다. 다른 병원 메시지와 존재하지 않는 메시지는 모두
+`404 MESSAGE_NOT_FOUND`, 발송 이력 상태가 아니면 `409 MESSAGE_NOT_RESENDABLE`이다.
+응답·DB·일반 로그·감사 이벤트에는 링크 원문을 저장하지 않는다.
 
 **발송 예정(S2-3)과 묻는 것이 다르다.** 저쪽은 「앞으로 무엇이 나가나」라 시각 오름차순이고, 이쪽은 「무엇이 나갔나」라 **실패가 맨 위, 그 다음 최신순**이다. 원문 설계 주석: 「실패 건은 목록에 섞이면 묻히므로 맨 위에 따로 고정한다.」
 
@@ -1436,12 +1474,11 @@ KEY-73의 Staff 기준 테이블이 병합되어 `doctor_id`는 같은 병원의
 - 의료문서 업로드·임시 저장
 - 환자 링크 발급 관리
 - D+7 응답 병원 조회
-- 감사로그 조회 (A1-6 · A1-7 — KEY-322)
 
 확정되지 않은 경로와 필드를 문서에서 먼저 만들어 구현 범위를 넓히지 않는다.
 
 「관리자」가 이 목록에 있었다. 직원 계정 둘(A1-1 · A1-2)이 확정돼 8절로 옮겼다
-(KEY-321). 나머지 관리자 화면(A1-3 수정 · A1-4 의원 정보 · A1-5 문자 잔량)은
+(KEY-321·KEY-330). 나머지 관리자 화면(A1-4 의원 정보 · A1-5 문자 잔량)은
 각자의 일감에서 확정한다.
 
 ## 8. 어드민 — 직원 계정 (A1-1 · A1-2)
@@ -1454,6 +1491,7 @@ KEY-321. `admin` 역할만 지난다 — `Permission.STAFF_MANAGE`.
 |---|---|---|
 | `GET` | `/api/v1/admin/staffs` | 로그인한 의원의 직원 목록 (A1-1) |
 | `POST` | `/api/v1/admin/staffs` | 직원 추가 (A1-2) |
+| `PATCH` | `/api/v1/admin/staffs/{staff_id}` | 직원 수정 — 역할·재직·비밀번호 (A1-3) |
 
 **병원을 요청에서 받지 않는다.** 목록도 생성도 토큰이 가리키는 계정의
 `hospital_id` 로만 정한다. 요청이 정하게 하면 값 하나 바꿔 남의 의원 직원을
@@ -1516,6 +1554,31 @@ KEY-321. `admin` 역할만 지난다 — `Permission.STAFF_MANAGE`.
 `must_change_password` 는 언제나 `true` 다 — 관리자가 정해 준 비밀번호를 그대로
 쓰면 정해 준 사람이 그것을 계속 안다(2절 `L-3`).
 
+### 8.4 수정 — `PATCH /admin/staffs/{staff_id}` (KEY-330)
+
+```json
+{"roles": ["doctor", "admin"], "status": "left", "password": "…"}
+```
+
+**준 것만 바꾼다.** 셋 다 선택이고 함께 줄 수도 있다. 아무것도 안 주면 `400 INVALID_REQUEST` 다 — 「바꿀 것이 없는 저장」은 화면이 뭔가를 빠뜨렸다는 뜻이지 조용히 성공으로 답할 일이 아니다.
+
+`login_id` 와 `name` 은 **안 받는다.** 아이디는 만든 뒤에 못 바꾸고(§8.3), 이름은 A1-3 원문의 편집 대상이 아니다.
+
+역할 조합 규칙은 **만들 때와 같은 것**을 탄다 — 만들 수 없는 조합이 수정으로는 들어갈 수 있으면 그것은 규칙이 아니다.
+
+🚩 **관리자 없는 의원을 만들지 않는다.**
+
+그 의원에 재직 중인 `admin` 이 그 사람뿐인데 `admin` 을 빼거나 퇴사시키면 `409 LAST_ADMIN` 이다. 하면 아무도 직원을 관리할 수 없게 되고 **화면에는 되돌릴 길이 없다** — 서버에 직접 넣거나 시드를 다시 돌려야 한다. 의원 단위 규칙이다: 옆 의원에 관리자가 있다고 이 의원이 관리자 없이 남아도 되는 것이 아니다. 그만둔 관리자는 세지 않는다.
+
+**퇴사와 비밀번호 재설정은 그 사람을 로그아웃시킨다.** `has_role` 이 상태를 보므로 퇴사자의 새 요청은 막히지만, 이미 발급된 액세스 토큰은 만료까지 살아 있다 — 그만둔 사람이 그동안 계속 쓴다. 끊은 수를 `revoked_sessions` 로 준다. **역할만 바꾼 것은 안 끊는다** — 다음 요청부터 새 역할로 판정되고, 굳이 끊으면 일하던 사람이 까닭 없이 튕긴다.
+
+비밀번호를 주면 `must_change_password` 가 켜진다(L-3). **원문은 응답에도 감사 기록에도 안 담긴다** — 담을 칸 자체가 없다.
+
+바뀐 것마다 감사 기록이 한 줄씩 남는다 — `STAFF_ROLES_CHANGED` · `STAFF_LEFT` · `STAFF_REINSTATED` · `STAFF_PASSWORD_RESET`. **안 바뀐 것은 안 남긴다**(같은 값을 다시 보낸 경우).
+
+다른 의원 직원은 `404` 다 — 있다는 사실도 알리지 않는다.
+
+
 ### 8.4 오류
 
 | 상태 | `code` | 언제 |
@@ -1546,3 +1609,95 @@ KEY-321. `admin` 역할만 지난다 — `Permission.STAFF_MANAGE`.
 담지 않겠다는 약속을 지키는 가장 확실한 방법이다.
 
 읽는 API 는 A1-6 · A1-7(KEY-322)이 만든다.
+
+
+## 9. 어드민 — 감사 로그 (A1-6 · A1-7)
+
+KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전용이다.**
+
+### 9.1 엔드포인트
+
+| 메서드 | 경로 | 무엇 |
+|---|---|---|
+| `GET` | `/api/v1/admin/audit-logs` | 의원 전체 (A1-6) |
+| `GET` | `/api/v1/admin/audit-logs?visit_id=…` | 한 진료 건의 시간 흐름 (A1-7) |
+
+**A1-7 은 별도 경로가 아니다.** 합치는 규칙이 하나라야 두 화면이 같은 답을 본다
+— 경로를 나누면 한쪽에만 표가 늘어나는 날이 온다.
+
+### 9.2 무엇을 합치나 — 표 다섯
+
+이벤트는 이미 append-only 로 쌓이고 있었고 **읽을 길이 없었다.** 통합
+`audit_log` 표는 없다(물리 통합은 별도 논의) — 여기서는 **조회 시** 합친다.
+
+| `source` | 표 | 병원까지 가는 길 |
+|---|---|---|
+| `guide` | `guide_event` | → `guide_document` |
+| `patient_usage` | `patient_usage_event` | → `guide_document` |
+| `message` | `guide_message_event` | → `guide_message` → `guide_document` |
+| `otp` | `patient_otp_event` | → `patient_guide_link` → `guide_document` |
+| `staff_account` | `staff_account_event` | 제가 `hospital_id` 를 들고 있다 |
+
+앞 넷은 전부 `GuideDocument` 를 지나고, 거기에 `hospital_id` 와 `visit_id` 가
+둘 다 있다 — **울타리를 그 한 자리에 친다.**
+
+`staff_account` 는 티켓이 적은 넷에 없던 다섯째다(KEY-321). 계정을 만드는 것은
+**권한을 주는 일**이라 그것이 빠진 감사 로그는 구멍이다. 진료에 매달리지
+않으므로 `visit_id` 로 거르면 이 표는 결과에서 빠진다.
+
+### 9.3 거르개
+
+| 이름 | 뜻 |
+|---|---|
+| `occurred_from` · `occurred_to` | 기간. 양끝을 **포함**한다 |
+| `actor_staff_id` | 그 직원이 한 일만. 환자·발송기 이벤트는 행위자가 없어 걸리지 않는다 |
+| `source` | 위 다섯 중 하나 |
+| `visit_id` | 그 진료 건 (= A1-7) |
+| `limit` | 1~200, 기본 50 |
+| `cursor` | 다음 쪽 열쇠 |
+
+### 9.4 응답
+
+```json
+{ "entries": [
+    { "event_id": "guide:12", "occurred_at": "2026-09-10T08:58:00+09:00",
+      "source": "guide", "event_type": "APPROVED",
+      "actor_staff_id": 900, "actor_name": "박연",
+      "visit_id": 1204, "summary": "안내문을 승인했습니다" }
+  ],
+  "next_cursor": "…", "has_more": true }
+```
+
+**원문을 담는 칸이 없다.** 링크 토큰 · OTP 코드 · 환자 이름 · 전화번호 · 챗봇
+질문 어느 것도 실을 자리가 없다. `summary` 는 **서버가 짓는 고정 문구**이고,
+사람이 적은 값(`reason` 같은)은 담지 않는다 — 담을 칸을 만들지 않는 것이 담지
+않겠다는 약속을 지키는 가장 확실한 방법이다.
+
+`event_type` 은 그 표가 쓰는 값을 그대로 준다(`APPROVED` · `VERIFIED` · `SENT`
+…). 표마다 어휘가 달라 한 enum 으로 접지 않는다 — 접으면 뜻이 뭉개진다.
+
+### 9.5 쪽 나눔
+
+표 다섯을 SQL 로 합칠 수 없으므로 각 표에서 한 쪽씩 떠 와 섞는다. 순서는
+`(occurred_at, source, pk)` 내림차순 **하나**이고 커서가 그 셋을 그대로 담는다.
+
+**문자열 `event_id` 로 줄 세우지 않는다** — `"guide:9" > "guide:10"` 이라 열
+번째 줄부터 순서가 뒤집힌다. 커서는 서명돼 있고, 읽을 수 없는 값은 `400`
+`INVALID_CURSOR` 다. 조용히 첫 쪽을 주면 부르는 쪽이 그것을 다음 쪽이라 믿는다.
+
+같은 커서로 다시 물으면 **같은 답**이 온다.
+
+### 9.6 오류
+
+| 상태 | `code` | 언제 |
+|---|---|---|
+| `400` | `INVALID_REQUEST` | 거르개 값이 규칙에 안 맞는다 |
+| `400` | `INVALID_CURSOR` | 서명이 안 맞거나 읽을 수 없는 커서 |
+| `403` | `FORBIDDEN` | `admin` 이 아니다 |
+
+### 9.7 아직 아닌 것
+
+CSV·PDF 내보내기, 실시간 스트리밍·알림, 리텐션·아카이빙 정책, 통합 `audit_log`
+표로의 물리 통합. 그리고 `patient_otp_event` 는 `patient_guide_link_id` 가 FK 가
+아니라 링크 id 를 모아 거는 길이라, 의원이 여럿이 되면 여기가 먼저 아프다 —
+그때는 FK 를 세우는 것이 답이지 조회에서 우회할 일이 아니다.

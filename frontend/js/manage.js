@@ -38,11 +38,14 @@
      전에는 50 을 한 번만 불러 놓고 `next_cursor` 를 아무도 안 봤다. 그래서
      전체가 101명이어도 **50명에서 조용히 잘렸다** — 배지는 101 이라 잘린 줄도
      몰랐다 (KEY-303). */
-  var ROSTER_PAGE = 40;
+  var ROSTER_PAGE = 25;
   var rosterOffset = 0;
-  var HISTORY_BLOCKS = 3;
   //: 글자를 멈춘 뒤 기다리는 시간(ms)
   var ROSTER_TYPING_WAIT = 250;
+
+  /* 표의 차례 — KEY-327. **서버가 세운다.** 화면이 받은 쪽만 다시 세우면 그 쪽
+     안에서만 맞고, 쪽을 넘기면 겹치거나 빠진다. */
+  var rosterSort = "registered_desc";
 
   function el(id) {
     return document.getElementById(id);
@@ -281,6 +284,8 @@
       "</td><td>" +
       esc(consentSaying(row)) +
       "</td><td>" +
+      esc(registeredDay(row) || "—") +
+      "</td><td>" +
       esc(visitedDay(row) || "—") +
       "</td><td>" +
       esc(categoryLabel(row.work_category)) +
@@ -328,7 +333,7 @@
       })
       .join("");
     return (
-      '<tr class="send__card"><td colspan="10"><div class="rostercard"><div class="rostercard__lines">' +
+      '<tr class="send__card"><td colspan="11"><div class="rostercard"><div class="rostercard__lines">' +
       lines
         .map(function (line) {
           return "<p>" + line + "</p>";
@@ -341,15 +346,18 @@
   }
 
   var HEADS = {
+    /* `sort` 가 붙은 머리는 **누를 수 있다** — KEY-327. 나머지는 글자뿐이다.
+       누를 수 있는 것만 단추로 그린다 — 눌러도 아무 일 없는 자리를 만들지 않는다. */
     roster: [
-      "차트",
+      { text: "차트", sort: "chart" },
       "이름",
       "식별정보",
       "질환",
       "담당",
       "전화번호",
       "문자 동의",
-      "마지막 진료",
+      { text: "등록", sort: "registered" },
+      { text: "마지막 진료", sort: "visited" },
       "기본 상태",
       "세부 상태",
     ],
@@ -403,7 +411,16 @@
       '<div class="table-wrap"><table class="past send"><thead><tr>' +
       HEADS[view]
         .map(function (head) {
-          return "<th>" + esc(head) + "</th>";
+          if (!head.sort) return "<th>" + esc(head) + "</th>";
+          return (
+            '<th><button class="sorthead" type="button" data-sort="' +
+            esc(rosterSortNext(head.sort, rosterSort)) +
+            '" aria-label="' +
+            esc(head.text) +
+            ' 기준으로 정렬">' +
+            esc(head.text + rosterSortArrow(head.sort, rosterSort)) +
+            "</button></th>"
+          );
         })
         .join("") +
       "</tr></thead><tbody>" +
@@ -470,72 +487,11 @@
 
   /* ── 환자 이력 모달 (S2-2) ───────────────────────── */
 
-  function blockHtml(block) {
-    var lines = [
-      guideSaying(block),
-      checksSaying(block),
-      courseEndSaying(block),
-    ].filter(Boolean);
-    return (
-      '<section class="hist"><h3 class="hist__head">' +
-      esc(courseSaying(block)) +
-      "</h3>" +
-      lines
-        .map(function (line) {
-          return '<p class="hist__line">' + esc(line) + "</p>";
-        })
-        .join("") +
-      "</section>"
-    );
-  }
-
-  function modalHtml(body) {
-    var who = [
-      body.hospital_patient_no ? "차트 " + body.hospital_patient_no : "",
-      body.diagnosis_name,
-      body.doctor ? body.doctor.name + " 원장" : "",
-      formatPhone(body.phone),
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    var blocks = (body.visits || []).map(blockHtml).join("");
-    return (
-      '<div class="modal__top"><div><h2 class="modal__title" id="modal-title">' +
-      esc(body.name) +
-      ' 님 이력</h2><p class="modal__note">' +
-      esc(who) +
-      "</p></div>" +
-      '<button class="icon-button" type="button" data-close aria-label="닫기">✕</button></div>' +
-      (blocks || '<p class="send__blank">지난 진료가 없습니다</p>') +
-      '<p class="modal__note">' +
-      esc(historyCountSaying(body)) +
-      "</p>" +
-      '<p class="note">ⓘ 발송 · 열람 · 응답 기록입니다 — 직원 열람 기록과 토큰 이력은 담지 않습니다</p>' +
-      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'
-    );
-  }
-
+  /* 그리는 것도 부르는 것도 `js/history-modal.js` 한 곳이다 — 현황 탭도
+     같은 것을 쓴다 (KEY-329). 두 벌이면 한쪽만 고쳐지고, 어느 화면에서
+     봤느냐로 같은 환자의 이력이 갈린다. */
   function openHistory(patientId) {
-    var box = el("modal");
-    el("modal-body").innerHTML = '<p class="send__blank">불러오는 중…</p>';
-    box.hidden = false;
-    patientsApi
-      .history(patientId, HISTORY_BLOCKS)
-      .then(function (body) {
-        el("modal-body").innerHTML = modalHtml(body);
-      })
-      .catch(function (error) {
-        el("modal-body").innerHTML =
-          '<p class="modal__title">이력을 불러오지 못했습니다</p><p class="modal__note">' +
-          esc(
-            errorMessage(
-              error,
-              [{ status: 404, say: "환자를 찾을 수 없습니다." }],
-              "잠시 후 다시 시도해 주세요.",
-            ),
-          ) +
-          '</p><div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>';
-      });
+    openPatientHistory(patientId, HISTORY_BLOCKS);
   }
 
   function closeHistory() {
@@ -616,7 +572,7 @@
     render();
     var asked =
       view === "roster"
-        ? patientsApi.roster(keyword, chosen, ROSTER_PAGE, rosterOffset)
+        ? patientsApi.roster(keyword, chosen, ROSTER_PAGE, rosterOffset, rosterSort)
         : view === "schedule"
           ? messagesApi.scheduled(days)
           : messagesApi.history(range());
@@ -698,6 +654,17 @@
     }
 
     if (view !== "roster") return;
+
+    /* 표 머리로 차례 바꾸기 — KEY-327. **첫 쪽부터 다시 본다** — 3쪽에서
+       차례를 바꾸면 그 자리의 3쪽이 무엇인지 아무도 모른다. */
+    var head = event.target.closest("[data-sort]");
+    if (head) {
+      rosterSort = head.getAttribute("data-sort");
+      rosterOffset = 0;
+      opened = null;
+      return load();
+    }
+
     var asked = event.target.closest("[data-history]");
     if (asked) return openHistory(Number(asked.getAttribute("data-history")));
     if (event.target.closest("a")) return; // 카드 안의 링크는 그대로 간다

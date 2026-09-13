@@ -13,6 +13,7 @@ from app.dtos.patients import (
     PatientListItem,
     PatientListResponse,
     PatientResponse,
+    PatientSort,
     PatientUpdateRequest,
     RosterPage,
 )
@@ -41,6 +42,7 @@ async def list_patients(
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    sort: PatientSort | None = None,
 ) -> PatientListResponse:
     """환자 명단.
 
@@ -50,6 +52,19 @@ async def list_patients(
     `offset` 만큼 건너뛰어, 부른 사람이 뜻하지 않은 자리가 나온다. 조용히
     한쪽을 이기게 두면 그 어긋남이 화면에서야 드러난다 — 여기서 운다.
     """
+    if cursor is not None and sort not in (None, PatientSort.ID_ASC):
+        #: **커서는 `id_asc` 하나만 탄다** (KEY-327). `patient_id > cursor` 로
+        #: 거르므로 세우는 열쇠도 번호여야 한다 — 날짜로 세우면 옛 날짜를 단
+        #: 나중 번호가 거름에서 잘려 영영 안 나오거나 이미 본 사람이 다시 나온다.
+        raise ApiError(
+            400,
+            "INVALID_REQUEST",
+            f"cursor 는 {PatientSort.ID_ASC.value} 차례로만 이어 볼 수 있습니다.",
+            [
+                {"field": "sort", "message": "이어 보기(cursor)는 환자 번호 차례로만 갑니다"},
+            ],
+        )
+
     if cursor is not None and offset:
         raise ApiError(
             400,
@@ -68,6 +83,10 @@ async def list_patients(
         cursor=cursor,
         limit=limit,
         offset=offset,
+        #: **이어 보기의 첫 쪽도 번호 차례여야 한다.** 첫 부름에는 `cursor` 가
+        #: 없어서, 부르는 쪽(등록 화면 찾기)이 `sort=id_asc` 를 함께 준다 —
+        #: 안 주면 첫 쪽만 등록일 최근순으로 오고 둘째 쪽부터 어긋난다.
+        sort=sort or (PatientSort.ID_ASC if cursor is not None else PatientSort.REGISTERED_DESC),
     )
     items = []
     for row in rows:

@@ -72,8 +72,8 @@ var FRAMES = [
   {"id": "A1-3", "area": "admin", "name": "직원 수정", "level": 3, "target": 3, "blocker": "직원 수정 · 비밀번호 재설정 API 없음", "role": "역할·재직 상태를 바꾸고 비밀번호를 재설정한다"},
   {"id": "A1-4", "area": "admin", "name": "의원 정보", "level": 3, "target": 2, "blocker": "Hospital 모델은 있음. GET /hospital 조회 API 없음", "role": "의원 정보를 수정한다"},
   {"id": "A1-5", "area": "admin", "name": "문자 이 프로그램이 멈추는 유일한 자리", "level": 3, "target": 3, "blocker": "SMS 잔량 조회 · 충전 API 없음", "role": "문자 잔량을 확인하고 충전한다"},
-  {"id": "A1-6", "area": "admin", "name": "전체 로그", "level": 3, "target": 3, "blocker": "감사 로그 모델 · 조회 API 없음", "role": "시스템 감사 로그를 조회한다"},
-  {"id": "A1-7", "area": "admin", "name": "한 건 시간 흐름", "level": 3, "target": 3, "blocker": "감사 로그 모델 · 조회 API 없음", "role": "진료 한 건의 처리 흐름을 시간순으로 본다"}
+  {"id": "A1-6", "area": "admin", "name": "전체 로그", "level": 2, "target": 2, "url": "/admin.html", "blocker": "CSV 내보내기와 실시간 알림이 없다 — 목록·거르개·쪽 나눔은 GET /admin/audit-logs 로 실제로 돈다(KEY-322)", "role": "시스템 감사 로그를 조회한다"},
+  {"id": "A1-7", "area": "admin", "name": "한 건 시간 흐름", "level": 1, "target": 1, "url": "/admin.html", "role": "진료 한 건의 처리 흐름을 시간순으로 본다"}
 ];
 
 var FRAME_AREAS  = { medic: "의료진", patient: "환자", admin: "어드민" };

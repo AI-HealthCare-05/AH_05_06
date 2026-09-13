@@ -25,6 +25,18 @@ def test_snapshot_migration_keeps_preceding_tables():
     } <= tables
     caution = next(model for model in state.values() if model["table"] == "drug_caution_content")
     assert "physician_review" in {field["name"] for field in caution["data_fields"]}
+    by_table = {model["table"]: model for model in state.values()}
+    message = by_table["guide_message"]
+    assert "resend_sequence" in {field["name"] for field in message["data_fields"]}
+    assert "resend_of_message_id" in {field["name"] for field in message["data_fields"]}
+    event = by_table["staff_account_event"]
+    event_type = next(field for field in event["data_fields"] if field["name"] == "event_type")
+    assert event_type["constraints"]["max_length"] == 32
+    job = by_table["guide_generation_job"]
+    assert {"block_reason", "result_guide_document_id", "result_version"} <= {
+        field["name"] for field in job["data_fields"]
+    }
+    assert int(migration.name.split("_", 1)[0]) >= 57
 
 
 def test_downgrade_refuses_to_discard_generation_audits():

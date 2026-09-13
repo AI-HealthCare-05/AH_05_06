@@ -165,6 +165,123 @@
         "title": "AdminPatientFeedbackListResponse",
         "type": "object"
       },
+      "AuditLogEntry": {
+        "additionalProperties": false,
+        "description": "한 줄. **네 표가 다 이 모양으로 옮겨진다.**\n\n**원문을 담는 칸이 없다.** 링크 토큰 · OTP 코드 · 환자 이름 · 전화번호 ·\n챗봇 질문 어느 것도 실을 자리가 없다 — 담을 칸을 만들지 않는 것이 담지\n않겠다는 약속을 지키는 가장 확실한 방법이다(`PatientUsageEvent` 가 원문을\n안 담는 것과 같은 규율).\n\n`summary` 는 **서버가 만든 고정 문구**다. 사용자 입력이 그대로 흘러드는\n자리가 아니다 — `reason` 처럼 사람이 적은 값은 담지 않는다.",
+        "properties": {
+          "actor_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Name"
+          },
+          "actor_staff_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Staff Id"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AuditSource"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "visit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Id"
+          }
+        },
+        "required": [
+          "event_id",
+          "occurred_at",
+          "source",
+          "event_type",
+          "actor_staff_id",
+          "actor_name",
+          "visit_id",
+          "summary"
+        ],
+        "title": "AuditLogEntry",
+        "type": "object"
+      },
+      "AuditLogPage": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AuditLogEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "entries",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "AuditLogPage",
+        "type": "object"
+      },
+      "AuditSource": {
+        "description": "어느 표에서 왔나. **화면의 「유형」 거르개가 이것을 쓴다.**\n\n표 이름을 그대로 쓰지 않고 뜻으로 짓는다 — `guide_event` 는 표 이름이지\n사람이 고를 말이 아니다. 표가 합쳐지거나 갈라져도 이 어휘는 산다.",
+        "enum": [
+          "guide",
+          "otp",
+          "message",
+          "patient_usage",
+          "staff_account"
+        ],
+        "title": "AuditSource",
+        "type": "string"
+      },
       "BaselineDirection": {
         "description": "이 값을 **어느 쪽으로** 끌고 가나 — 와이어프레임 D2-4 「방향」.\n\nD1 「나의 목표」가 남은 거리를 셈할 때 이 값이 부호를 정한다. 「참고」는\n목표가 없다는 뜻이다 — LH/FSH 비율처럼 보기는 하되 올리고 내릴 값이\n아닌 것들이 있다.",
         "enum": [
@@ -1221,6 +1338,17 @@
       "GuideGenerationResponse": {
         "additionalProperties": false,
         "properties": {
+          "block_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Reason"
+          },
           "failure_reason": {
             "anyOf": [
               {
@@ -1235,6 +1363,17 @@
           "job_id": {
             "title": "Job Id",
             "type": "string"
+          },
+          "result_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Version"
           },
           "state": {
             "title": "State",
@@ -2093,6 +2232,24 @@
           "rounds"
         ],
         "title": "MessagePlanResponse",
+        "type": "object"
+      },
+      "MessageResendResponse": {
+        "description": "재발송 요청으로 생성된 발송 작업.",
+        "properties": {
+          "guide_message_id": {
+            "title": "Guide Message Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuideMessageStatus"
+          }
+        },
+        "required": [
+          "guide_message_id",
+          "status"
+        ],
+        "title": "MessageResendResponse",
         "type": "object"
       },
       "MessageRound": {
@@ -3514,9 +3671,14 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
           }
         },
         "required": [
+          "patient_id",
           "name",
           "birth_date",
           "age",
@@ -4219,6 +4381,20 @@
         ],
         "title": "PatientSessionResponse",
         "type": "object"
+      },
+      "PatientSort": {
+        "description": "환자 관리 표(S2-1)를 세우는 기준 — KEY-327.\n\n**정렬은 서버가 한다.** 화면이 받은 쪽만 다시 세우면 그 쪽 안에서만 맞고,\n쪽을 넘기면 앞 쪽과 겹치거나 빠진다.\n\n기본은 **등록일 최근순**이다. 전에는 `patient_id` 오름차순이라 방금 등록한\n환자가 맨 뒤 쪽에 있었다 — 등록하고 바로 확인하려면 마지막 쪽까지 넘겨야\n했다.\n\n`registered_*` 는 **표에 보이는 그 날짜**(`created_at`)로 센다. 보여 주는\n값과 세우는 열쇠가 같아야 한다 — 다르면 「등록 ▼」인데 날짜가 오르락내리락\n해서 화면이 고장난 것처럼 보인다.",
+        "enum": [
+          "registered_desc",
+          "registered_asc",
+          "chart_asc",
+          "chart_desc",
+          "visited_desc",
+          "visited_asc",
+          "id_asc"
+        ],
+        "title": "PatientSort",
+        "type": "string"
       },
       "PatientUpdateRequest": {
         "additionalProperties": false,
@@ -5513,6 +5689,97 @@
         "title": "StaffSummary",
         "type": "object"
       },
+      "StaffUpdateRequest": {
+        "additionalProperties": false,
+        "description": "A1-3 이 보내는 것 — **준 것만 바꾼다** (KEY-330).\n\n셋 다 선택이다. 역할만 바꾸거나, 퇴사만 시키거나, 비밀번호만 새로 줄 수\n있다. 아무것도 안 주면 `422` 다 — 「바꿀 것이 없는 저장」은 화면이 뭔가를\n빠뜨렸다는 뜻이지, 조용히 성공으로 답할 일이 아니다.\n\n**`login_id` 와 `name` 은 안 받는다.** 아이디는 만든 뒤에 못 바꾸고(계약\n§8.3), 이름은 A1-3 원문의 편집 대상이 아니다 — 필요해지면 그때 계약을 연다.",
+        "properties": {
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "roles": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StaffRole"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roles"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StaffStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "StaffUpdateRequest",
+        "type": "object"
+      },
+      "StaffUpdatedResponse": {
+        "additionalProperties": false,
+        "description": "바꾼 뒤의 그 줄. 화면이 목록을 다시 안 불러도 되게 **저장된 값 그대로** 준다.\n\n**비밀번호는 담지 않는다.** 관리자가 방금 정해 준 값이라 화면이 이미 알고\n있고, 응답에 실으면 그 값이 로그·캐시·브라우저 기록으로 퍼진다.",
+        "properties": {
+          "login_id": {
+            "title": "Login Id",
+            "type": "string"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_sessions": {
+            "title": "Revoked Sessions",
+            "type": "integer"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "staff_id": {
+            "title": "Staff Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StaffStatus"
+          }
+        },
+        "required": [
+          "staff_id",
+          "login_id",
+          "name",
+          "roles",
+          "status",
+          "must_change_password",
+          "revoked_sessions"
+        ],
+        "title": "StaffUpdatedResponse",
+        "type": "object"
+      },
       "TimelineCategory": {
         "description": "진료 한 건의 이력을 큰 갈래로 나눈다 — 화면이 갈래별로 묶어 보여 준다.\n\n`SEND`(문자 발송)는 아직 없다. `SendLog` 계열 모델이 Sprint 5 범위라\n발송 시각·상태를 남기는 자리가 없다(`docs/구현현황.md` D1-5·D1-6). 값을 미리\n넣어 두면 화면이 「곧 온다」로 오해하므로, 발송 이력이 생기는 일감에서 함께\n추가한다.",
         "enum": [
@@ -6115,6 +6382,155 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "description": "A1-6 — 의원 전체. `visit_id` 를 주면 A1-7(한 진료 건의 시간 흐름)이다.",
+        "operationId": "list_audit_logs_api_v1_admin_audit_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "occurred_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Occurred From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "occurred_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Occurred To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_staff_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Staff Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AuditSource"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "visit_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Visit Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Audit Logs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/patient-feedback": {
       "get": {
         "operationId": "list_patient_feedback_api_v1_admin_patient_feedback_get",
@@ -6322,6 +6738,64 @@
           }
         ],
         "summary": "Create Staff",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/staffs/{staff_id}": {
+      "patch": {
+        "description": "A1-3 — 역할·재직 상태를 바꾸고 비밀번호를 재설정한다 (KEY-330).\n\n**준 것만 바꾼다.** 셋 다 선택이고, 아무것도 안 주면 `422` 다.\n\n퇴사와 비밀번호 재설정은 **그 사람을 로그아웃시킨다** — 이미 발급된\n액세스 토큰이 만료까지 사는 것을 두면, 그만둔 사람이 그동안 계속 쓴다.",
+        "operationId": "update_staff_api_v1_admin_staffs__staff_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "staff_id",
+            "required": true,
+            "schema": {
+              "title": "Staff Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffUpdatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Staff",
         "tags": [
           "admin"
         ]
@@ -7668,6 +8142,54 @@
         ]
       }
     },
+    "/api/v1/messages/history/{message_id}/resend": {
+      "post": {
+        "description": "발송 이력 한 건을 새 링크로 다시 보낼 작업으로 등록한다.",
+        "operationId": "resend_message_api_v1_messages_history__message_id__resend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResendResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resend Message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
     "/api/v1/messages/scheduled": {
       "get": {
         "description": "발송 예정 — 와이어프레임 S2-3.\n\n**스탭도 본다.** 이 화면이 잡으라는 것(잘못된 번호 · 문자 잔량)이 스탭이\n손댈 일이라, 의사만 여는 자리로 두면 화면의 뜻이 없어진다.",
@@ -8505,6 +9027,22 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PatientSort"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
             }
           }
         ],

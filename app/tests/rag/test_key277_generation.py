@@ -286,6 +286,7 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         await self.run_job()
         await job.refresh_from_db()
         assert job.failure_reason == "unverified_context"
+        assert job.block_reason == "is_current"
         assert await GuideDocument.all().count() == 0
 
     async def test_out_of_scope_cached_hit_cannot_reach_model(self):
@@ -302,7 +303,71 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         await self.run_job()
         await job.refresh_from_db()
         assert job.failure_reason == "unverified_context"
+        assert job.block_reason == "hospital_scope"
+        await self.assert_block_reason_response(job, "hospital_scope")
         self.model.generate.assert_not_awaited()
+
+    async def assert_block_reason_response(self, job, reason):
+        async with self.client() as client:
+            result = await client.get(
+                f"/api/v1/visits/{self.visit.pk}/guide/generation/{job.pk}",
+                headers=await self.sign_in(self.staff),
+            )
+        assert result.status_code == 200
+        assert result.json()["failure_reason"] == "unverified_context"
+        assert result.json()["block_reason"] == reason
+        assert "sections" not in result.json()
+
+    async def test_approval_revoked_after_search_preserves_final_reason(self):
+        version = await self.add_sources()
+        cached = await self.generator.search.search(
+            "합성",
+            hospital_id=self.clinic.pk,
+            allowed_sections=frozenset({"medication"}),
+            searched_at=date.today(),
+        )
+        await KnowledgeVersion.filter(pk=version.pk).update(approval_status=ApprovalStatus.DRAFT)
+        self.generator.search.search = AsyncMock(return_value=cached)
+        job = await self.request_job()
+        await self.run_job()
+        await job.refresh_from_db()
+        assert job.failed_at is not None
+        assert job.block_reason == "approval_status"
+        await self.assert_block_reason_response(job, "approval_status")
+        self.model.generate.assert_not_awaited()
+
+    async def test_completed_job_does_not_return_later_regeneration(self):
+        first = await self.request_job()
+        await self.run_job()
+        await first.refresh_from_db()
+        first_version = first.result_version
+        assert first_version is not None
+        second = await self.request_job()
+        await self.run_job()
+        await second.refresh_from_db()
+        assert second.result_version == first_version + 1
+        async with self.client() as client:
+            headers = await self.sign_in(self.staff)
+            old = await client.get(f"/api/v1/visits/{self.visit.pk}/guide/generation/{first.pk}", headers=headers)
+            latest = await client.get(f"/api/v1/visits/{self.visit.pk}/guide/generation/{second.pk}", headers=headers)
+        assert old.status_code == 200
+        assert old.json()["state"] == "superseded"
+        assert old.json()["result_version"] == first_version
+        assert "sections" not in old.json()
+        assert latest.status_code == 200
+        assert latest.json()["version"] == second.result_version
+
+    async def test_completed_job_with_unknown_result_identity_is_not_current(self):
+        job = await self.request_job()
+        await self.run_job()
+        await GuideGenerationJob.filter(pk=job.pk).update(result_guide_document_id=None, result_version=None)
+        async with self.client() as client:
+            result = await client.get(
+                f"/api/v1/visits/{self.visit.pk}/guide/generation/{job.pk}",
+                headers=await self.sign_in(self.staff),
+            )
+        assert result.json()["state"] == "superseded"
+        assert "sections" not in result.json()
 
     async def test_missing_template_approval_blocks_instead_of_default_text(self):
         await DrugCautionContent.all().update(physician_review=None)
@@ -376,6 +441,8 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         await job.refresh_from_db()
         assert job.failed_at is not None
         assert job.completed_at is None
+        assert job.result_version is None
+        assert job.result_guide_document_id is None
         assert await GuideDocument.all().count() == 0
 
     async def test_approval_constant_matches_signed_decision(self):

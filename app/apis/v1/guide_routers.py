@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
+from tortoise.transactions import in_transaction
 
 from app.core.auth_errors import AuthError as ApiError
 from app.core.time import DISPLAY_TIMEZONE
@@ -30,6 +31,7 @@ from app.models.visits import (
     GuideSection,
     GuideSectionKey,
     GuideSectionSourceSnapshot,
+    Visit,
 )
 from app.services.guide_generation_jobs import GenerationPendingError
 from app.services.guides import GuideService
@@ -89,6 +91,7 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
     return GuideResponse(
         visit_id=guide.visit_id,
         patient=PatientHead(
+            patient_id=patient.patient_id,
             name=patient.name,
             birth_date=patient.birth_date,
             age=_age_on(patient.birth_date, today),
@@ -180,14 +183,33 @@ async def generation_result(
     if job is None:
         raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
     if job.completed_at:
-        guide = await GuideService().get(actor, visit_id)
-        await guide.fetch_related("sections", "visit__patient")
-        return await _to_response(guide)
+        # Generation also locks Visit: version checking and response assembly
+        # must observe one result, not race a subsequent regeneration.
+        async with in_transaction() as conn:
+            visit = (
+                await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
+                .using_db(conn)
+                .select_for_update()
+                .first()
+            )
+            if visit is None:
+                raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
+            guide = await GuideService().get(actor, visit_id)
+            if (job.result_guide_document_id, job.result_version) != (guide.pk, guide.version):
+                return GuideGenerationResponse(
+                    job_id=str(job.pk),
+                    visit_id=visit_id,
+                    state="superseded",
+                    result_version=job.result_version,
+                )
+            await guide.fetch_related("sections", "visit__patient")
+            return await _to_response(guide)
     return GuideGenerationResponse(
         job_id=str(job.pk),
         visit_id=visit_id,
         state="failed" if job.failed_at else "queued",
         failure_reason=job.failure_reason if job.failed_at else None,
+        block_reason=job.block_reason if job.failed_at else None,
     )
 
 

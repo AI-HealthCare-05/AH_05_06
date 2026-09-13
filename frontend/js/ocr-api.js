@@ -123,6 +123,11 @@ var ocrApi = {
     var polls = 0;
     function awaitGeneration(result) {
       if (!result || !result.job_id) return result;
+      if (result.state === "superseded") {
+        var replaced = new Error("이 작업의 결과가 새 안내 버전으로 교체되었습니다. 안내문을 다시 열어 확인해 주세요.");
+        replaced.code = "GUIDE_GENERATION_SUPERSEDED";
+        throw replaced;
+      }
       if (result.state === "failed") {
         var error = new Error("안내문을 생성하지 못했습니다. 내용을 확인한 뒤 다시 시도해 주세요.");
         error.code = result.failure_reason;

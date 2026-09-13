@@ -16,14 +16,31 @@ from app.dependencies.patient_access import (
 from app.dtos.messages import (
     MessagePatchRequest,
     MessagePatchResponse,
+    MessageResendResponse,
     ScheduledMessageListResponse,
     SentMessageListResponse,
 )
 from app.services.message_export import csv_filename, csv_rows
 from app.services.message_history import MessageHistoryService
+from app.services.message_resend import MessageResendService
 from app.services.message_schedule import MessageScheduleService
 
 message_router = APIRouter(prefix="/messages", tags=["messages"], route_class=ContractRoute)
+
+
+@message_router.post(
+    "/history/{message_id}/resend",
+    response_model=MessageResendResponse,
+    status_code=202,
+)
+async def resend_message(
+    message_id: int,
+    actor: Annotated[ClinicalActor, Depends(require_sms_send)],
+    service: Annotated[MessageResendService, Depends(MessageResendService)],
+) -> MessageResendResponse:
+    """발송 이력 한 건을 새 링크로 다시 보낼 작업으로 등록한다."""
+
+    return await service.request(actor, message_id)
 
 
 @message_router.get("/scheduled", response_model=ScheduledMessageListResponse)

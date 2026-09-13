@@ -105,6 +105,13 @@ class MessagePatchResponse(BaseModel):
     status: GuideMessageStatus
 
 
+class MessageResendResponse(BaseModel):
+    """재발송 요청으로 생성된 발송 작업."""
+
+    guide_message_id: int
+    status: GuideMessageStatus
+
+
 class SentMessageItem(BaseModel):
     """발송 이력 한 줄 — 와이어프레임 S2-4.
 

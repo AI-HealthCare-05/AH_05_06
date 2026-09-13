@@ -51,3 +51,14 @@ test("KEY-277 실패는 성공처럼 반환하지 않고 재접수도 하지 않
   await assert.rejects(box.ocrApi.generateGuide(7), { code: "source_conflict" });
   assert.equal(calls, 1);
 });
+
+test("KEY-277 교체된 작업은 폴링을 종료하고 새 결과로 위장하지 않음", async () => {
+  const box = load("api", "ocr-api");
+  let calls = 0;
+  box.ocrRequest = async () => {
+    calls++;
+    return { job_id: "old-job", state: calls === 1 ? "queued" : "superseded", result_version: 1 };
+  };
+  await assert.rejects(box.ocrApi.generateGuide(7), { code: "GUIDE_GENERATION_SUPERSEDED" });
+  assert.equal(calls, 2);
+});

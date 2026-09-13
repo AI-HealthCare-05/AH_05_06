@@ -151,13 +151,32 @@ test("한 쪽에 다 안 들어가면 그렇다고 말한다", () => {
 
 /* ── 갈 곳 ──────────────────────────────────────────────────────────── */
 
-test("정보 수정은 그 환자의 기본정보로 간다", () => {
+test("카드의 두 길은 **같은 진료의 다른 탭**으로 간다", () => {
+  /* 정보 수정은 기본정보로, 현황 보기는 현황으로 — 둘 다 그 환자의 마지막
+     진료다 (KEY-329). 탭 이름은 `step-nav.js` 의 `VISIT_STEPS` 가 정한 것이다. */
   const { rosterActions } = rules();
 
   const found = rosterActions(a_row());
 
-  assert.strictEqual(found.length, 1);
-  assert.strictEqual(found[0].href, "/patients.html?visit=9101&tab=basic");
+  /* 글자로 견준다 — 목업은 제 realm 의 `Array` 를 돌려줘서 `deepStrictEqual`
+     이 「모양은 같은데 같은 것이 아니다」로 떨어진다. */
+  assert.strictEqual(
+    found.map((action) => action.key + " → " + action.href).join(" | "),
+    "edit → /patients.html?visit=9101&tab=basic | status → /patients.html?visit=9101&tab=status",
+  );
+});
+
+test("가는 탭 이름을 여기서 새로 짓지 않는다", () => {
+  /* `step-nav.js` 가 아는 이름이어야 한다 — 아니면 화면이 첫 탭으로 떨어지고
+     누른 사람은 왜 다른 데로 갔는지 모른다. */
+  const { rosterActions } = rules();
+  const { VISIT_STEPS } = load("step-nav");
+  const known = VISIT_STEPS.map((step) => step.key);
+
+  rosterActions(a_row()).forEach((action) => {
+    const tab = /tab=([a-z]+)/.exec(action.href)[1];
+    assert.ok(known.indexOf(tab) >= 0, `${action.say} 가 모르는 탭 ${tab} 으로 간다`);
+  });
 });
 
 test("진료가 없으면 갈 곳도 없다", () => {

@@ -119,3 +119,93 @@ function stamp(iso) {
   var m = /^\d{4}-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(iso || ""));
   return m ? m[1] + "-" + m[2] + " " + m[3] + ":" + m[4] : "";
 }
+
+
+/* 모달이 한 번에 보여 주는 지난 진료 수. **두 화면이 같은 값을 쓴다** —
+   갈리면 같은 환자인데 관리 화면과 현황 탭이 다른 개수를 보여 준다. */
+var HISTORY_BLOCKS = 3;
+
+/* ── 이력 모달 (S2-2) ──────────────────────────────────────────────────
+ *
+ * **그리는 것도 부르는 것도 여기 한 곳이다.** 환자 관리 표(S2-1)와 진료
+ * 카드의 현황 탭(D1-6)이 같은 것을 연다 (KEY-329). 두 벌이면 한쪽만 고쳐지고,
+ * 어느 화면에서 봤느냐로 같은 환자의 이력이 갈린다.
+ *
+ * 두 화면이 다른 것은 **누구의 이력인가**뿐이라 그것만 인자로 받는다. 모달
+ * 자리(`#modal` · `#modal-body`)는 두 화면이 같은 이름으로 갖고 있다.
+ */
+function historyBlockHtml(block) {
+  var lines = [
+    guideSaying(block),
+    checksSaying(block),
+    courseEndSaying(block),
+  ].filter(Boolean);
+  return (
+    '<section class="hist"><h3 class="hist__head">' +
+    esc(courseSaying(block)) +
+    "</h3>" +
+    lines
+      .map(function (line) {
+        return '<p class="hist__line">' + esc(line) + "</p>";
+      })
+      .join("") +
+    "</section>"
+  );
+}
+
+function historyModalHtml(body) {
+  var who = [
+    body.hospital_patient_no ? "차트 " + body.hospital_patient_no : "",
+    body.diagnosis_name,
+    body.doctor ? body.doctor.name + " 원장" : "",
+    formatPhone(body.phone),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  var blocks = (body.visits || []).map(historyBlockHtml).join("");
+  return (
+    '<div class="modal__top"><div><h2 class="modal__title" id="modal-title">' +
+    esc(body.name) +
+    ' 님 이력</h2><p class="modal__note">' +
+    esc(who) +
+    "</p></div>" +
+    '<button class="icon-button" type="button" data-close aria-label="닫기">✕</button></div>' +
+    (blocks || '<p class="send__blank">지난 진료가 없습니다</p>') +
+    '<p class="modal__note">' +
+    esc(historyCountSaying(body)) +
+    "</p>" +
+    '<p class="note">ⓘ 발송 · 열람 · 응답 기록입니다 — 직원 열람 기록과 토큰 이력은 담지 않습니다</p>' +
+    '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>'
+  );
+}
+
+
+/** 그 환자의 지난 진료를 모달로 연다.
+ *
+ * 못 불러와도 **현황 화면은 안 깨진다** — 모달 안에서만 말한다.
+ */
+function openPatientHistory(patientId, blocks) {
+  var box = document.getElementById("modal");
+  var body = document.getElementById("modal-body");
+  if (!box || !body) return;
+
+  body.innerHTML = '<p class="send__blank">불러오는 중…</p>';
+  box.hidden = false;
+  return patientsApi
+    .history(patientId, blocks)
+    .then(function (answer) {
+      body.innerHTML = historyModalHtml(answer);
+    })
+    .catch(function (error) {
+      body.innerHTML =
+        '<p class="modal__title">이력을 불러오지 못했습니다</p><p class="modal__note">' +
+        esc(
+          errorMessage(
+            error,
+            [{ status: 404, say: "환자를 찾을 수 없습니다." }],
+            "잠시 후 다시 시도해 주세요.",
+          ),
+        ) +
+        '</p><div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>';
+    });
+}

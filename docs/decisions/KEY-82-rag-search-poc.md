@@ -123,7 +123,9 @@ KEY-277 인수조건 "검색·임베딩 장애 시 미검증 값을 사용하지
 | `INDEX_INVALID` (임베딩 차원 불일치·0 벡터) | 템플릿 없이 차단하고 재색인을 요청한다. |
 | `SOURCE_CONFLICT` (같은 claim의 상충 승인 근거) | 템플릿 없이 차단하고 충돌 해소를 후속 처리한다. 조용히 넘기지 않는다. |
 | `NO_EVIDENCE` (임계값 이상 근거 없음) | 기존대로 승인·버전 고정 템플릿을 사용한다. |
-| 검증된 근거가 있는 LLM 호출 자체의 실패 | 재시도한다. 한도 소진 시 실패 상태로 두거나 동일한 안전 템플릿으로 fallback하며, KEY-277에서 택1해 정책을 고정한다. |
+| 검증된 근거가 있는 LLM 호출 자체의 실패 | KEY-277은 A안으로 고정한다: 재시도 한도 소진 후 생성 실패로 두고 기존 재생성 동선으로 다시 시도한다. 확보한 근거를 범용 템플릿으로 조용히 대체하지 않는다. 검색·임베딩 인프라 장애의 템플릿 fallback과 구분한다. |
+
+LLM 실패 A안의 결정 근거: [이희진 2026-09-11 중간 기록](https://github.com/AI-HealthCare-05/AH_05_06/pull/286#issuecomment-5631867107) 및 [현황 갱신](https://github.com/AI-HealthCare-05/AH_05_06/pull/286#issuecomment-5632313670).
 
 재시도·템플릿 판정은 `admit_generation_context()`가 아니라 `GuideService.generate()` 상위 작업 큐
 계층에서 수행한다. 안전 게이트(`admit_generation_context`)는 이 결정으로 변경하지 않는다.

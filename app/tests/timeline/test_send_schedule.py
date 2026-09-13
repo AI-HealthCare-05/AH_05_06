@@ -249,6 +249,46 @@ class UnapproveTestCase(SendScheduleTestCase):
         await guide.refresh_from_db()
         assert guide.status == GuideStatus.SCHEDULED_TO_SEND, "막았는데 상태가 바뀌었다"
 
+    async def test_a_pending_resend_blocks_unapproval_even_if_the_original_failed(self) -> None:
+        """[KEY-306, 2heej 리뷰] 원본이 FAILED여도 재발송이 떠 있으면 거두지 못한다.
+
+        예전엔 SENT 행만 봤다 — 원본이 FAILED인 채로 재발송이
+        SCHEDULED로 떠 있으면 이 가드를 안 걸렸다. 그 상태로 거두면
+        재발송 행이 취소 스윕에 같이 쓸려 나가서, 이미 폐기된 링크와
+        함께 살아있는 GuideMessage가 하나도 없이 조용히 사라졌다 —
+        에러도 감사 이벤트도 없이.
+        """
+        actor, visit, guide = await self.make_world("UN-06")
+        await GuideService().approve(actor, visit.visit_id)
+
+        original = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.GUIDE)
+        original.status = GuideMessageStatus.FAILED
+        await original.save(update_fields=["status"])
+
+        # MessageResendService.request()가 만드는 것과 같은 모양의 재발송
+        # 행을 직접 만든다 — 이 테스트는 unapprove() 쪽 가드만 잰다.
+        await GuideMessage.create(
+            guide_document=guide,
+            kind=GuideMessageKind.GUIDE,
+            status=GuideMessageStatus.SCHEDULED,
+            scheduled_at=original.scheduled_at,
+            resend_of_message_id=original.guide_message_id,
+            resend_sequence=1,
+        )
+
+        try:
+            await GuideService().unapprove(actor, visit.visit_id)
+        except ApiError as exc:
+            assert exc.status_code == 409, f"막긴 했는데 {exc} 다"
+            assert exc.code == "GUIDE_ALREADY_SENT", f"코드가 {exc.code} 다"
+        else:
+            raise AssertionError("재발송이 떠 있는데 철회됐다 — 조용히 유실된다")
+
+        await guide.refresh_from_db()
+        assert guide.status == GuideStatus.SCHEDULED_TO_SEND, "막았는데 상태가 바뀌었다"
+        resend_row = await GuideMessage.get(guide_document=guide, resend_sequence=1)
+        assert resend_row.status == GuideMessageStatus.SCHEDULED, "재발송 행이 취소 스윕에 쓸려 나갔다"
+
     async def test_only_approved_can_be_unapproved(self) -> None:
         """승인된 것만 거둔다 — 아직 승인 안 한 것을 거두면 뜻이 없다."""
         actor, visit, _ = await self.make_world("UN-03")

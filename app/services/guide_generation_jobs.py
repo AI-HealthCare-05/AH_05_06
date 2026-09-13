@@ -71,6 +71,7 @@ async def record_failure(job: GuideGenerationJob, exc: GuideGenerationError | Ap
             .using_db(conn)
             .update(
                 failure_reason=reason[:60],
+                block_reason=exc.block_reason if isinstance(exc, GuideGenerationError) else None,
                 available_at=now() + timedelta(seconds=2**job.attempts),
                 failed_at=None if retry else now(),
                 active_key=job.active_key if retry else None,
@@ -195,6 +196,7 @@ async def process_next_generation() -> bool:
     except Exception:
         await GuideGenerationJob.filter(job_id=job.pk, claim=job.claim, active_key__not_isnull=True).update(
             failure_reason="generation_internal_error",
+            block_reason=None,
             failed_at=now(),
             active_key=None,
         )

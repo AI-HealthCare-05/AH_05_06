@@ -46,11 +46,15 @@ KEY82_GENERATION_APPROVAL = PocEvaluationApproval(
 class GuideGenerationError(Exception):
     """Only a fixed reason code leaves this boundary; no provider text."""
 
-    def __init__(self, reason: str, *, retryable: bool = False, stage: str = "pre") -> None:
+    def __init__(
+        self, reason: str, *, retryable: bool = False, stage: str = "pre", block_reason: str | None = None
+    ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.retryable = retryable
         self.stage = stage
+        # Internal validation code only; never provider text or evidence bodies.
+        self.block_reason = block_reason
         self.section_key: str | None = None
 
 
@@ -135,7 +139,9 @@ class RagGuideGenerator:
             min_similarity=DEFAULT_MIN_SIMILARITY,
         )
         if current_sources != artifact.validation:
-            raise GuideGenerationError("unverified_context")
+            raise GuideGenerationError(
+                "unverified_context", block_reason=current_sources.block_reason or "source_snapshot_changed"
+            )
 
     async def _search_context(self, *, hospital_id, section_key, query, infrastructure_exhausted):
         try:
@@ -170,7 +176,7 @@ class RagGuideGenerator:
                 min_similarity=DEFAULT_MIN_SIMILARITY,
             )
             if validation.block_reason:
-                raise GuideGenerationError("unverified_context")
+                raise GuideGenerationError("unverified_context", block_reason=validation.block_reason)
             search_result = KnowledgeSearchResult(
                 KnowledgeSearchOutcome.FOUND,
                 tuple(

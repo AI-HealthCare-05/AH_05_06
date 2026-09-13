@@ -692,7 +692,14 @@ class GuideService:
                 await (
                     GuideGenerationJob.filter(job_id=self.generation_job.pk, claim=self.generation_job.claim)
                     .using_db(connection)
-                    .update(completed_at=now(), active_key=None, failure_reason=None)
+                    .update(
+                        completed_at=now(),
+                        active_key=None,
+                        failure_reason=None,
+                        block_reason=None,
+                        result_guide_document_id=guide.pk,
+                        result_version=guide.version,
+                    )
                 )
 
     async def get(self, actor, visit_id: int) -> GuideDocument:
@@ -922,7 +929,14 @@ class GuideService:
         **거뒀다가 다시 승인하면 껐던 줄을 되살린다.** 유니크 때문에 새로
         만들 수 없기도 하고, 껐던 것도 기록이라 지우지 않기 때문이다.
         """
-        live = await GuideMessage.filter(guide_document_id=guide.guide_document_id).using_db(connection).all()
+        live = (
+            await GuideMessage.filter(
+                guide_document_id=guide.guide_document_id,
+                resend_sequence=0,
+            )
+            .using_db(connection)
+            .all()
+        )
 
         # **껐던 줄은 「이미 있다」가 아니다.** 승인을 거두면 예약을 CANCELED 로
         # 꺼 두는데, 그 줄까지 있는 것으로 세면 다시 승인해도 꺼진 채 남는다 —
@@ -1195,7 +1209,24 @@ class GuideService:
                 .using_db(connection)
                 .exists()
             )
-            if sent:
+            # 재발송 행(resend_sequence>0)은 원본이 FAILED였으면 SENT 조건에
+            # 안 걸린다 — 그런데도 이미 링크가 폐기됐고 새 발송이 예약/시도된
+            # 상태라 승인을 거두면 안 된다(KEY-306 리뷰로 발견 — 거두면 이
+            # 행이 취소 스윕에 같이 쓸려 나가서 아무 기록도 없이 유실된다).
+            # 위 sent 검사와 하나로 합치지 않는다 —
+            # frontend/tests/approve-modal.test.js의 카나리아가 정확히
+            # `status=GuideMessageStatus.SENT,\n)` 모양을 찾으므로, 합치면
+            # 그 검사가 "발송기가 새로 생겼다"고 잘못 읽는다.
+            resending = (
+                await GuideMessage.filter(
+                    guide_document_id=guide.guide_document_id,
+                    resend_sequence__gt=0,
+                )
+                .exclude(status=GuideMessageStatus.CANCELED)
+                .using_db(connection)
+                .exists()
+            )
+            if sent or resending:
                 raise ApiError(
                     "GUIDE_ALREADY_SENT",
                     409,
