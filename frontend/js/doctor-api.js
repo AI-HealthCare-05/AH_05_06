@@ -436,6 +436,8 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: false,
         warn: warn ? "AMH 결과가 아직 안 나왔습니다 — 값이 빠진 자리입니다" : null,
+        //: 근거 스냅샷 — KEY-277. 목업은 RAG 생성을 흉내 내지 않아 늘 비워 둔다.
+        sources: [],
       },
       {
         key: "caution",
@@ -446,6 +448,7 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: false,
         warn: null,
+        sources: [],
       },
       {
         key: "emergency",
@@ -456,6 +459,7 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: true,
         warn: null,
+        sources: [],
       },
       {
         key: "life",
@@ -466,6 +470,7 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: false,
         warn: null,
+        sources: [],
       },
       {
         key: "messages",
@@ -478,6 +483,7 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: false,
         warn: null,
+        sources: [],
       },
     ]),
   };
