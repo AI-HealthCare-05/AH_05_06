@@ -47,6 +47,34 @@ class HospitalInfoTestCase(AuthTestCase):
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
+def test_the_clinic_screen_is_locked_by_its_own_permission() -> None:
+    """**A1-4 는 `CLINIC_MANAGE` 로 잠근다** — 직원 관리 권한을 빌려 쓰지 않는다.
+
+    권한표(`app/tests/rbac/matrix.py`)가 이 화면 몫으로 `CLINIC_MANAGE` 를 따로
+    갖고 있는데 구현만 `STAFF_MANAGE` 를 쓰고 있었다(이희진 님 #295 리뷰).
+    여는 역할이 지금은 같아서 **행동으로는 구분되지 않는다** — 그래서 경로에
+    걸린 의존성 자체를 잰다. 「직원은 못 만들지만 의원 정보는 고치는 사람」이
+    생기는 날, 이 검사가 없으면 두 곳이 갈린 채로 지나간다.
+    """
+    from fastapi.routing import APIRoute
+
+    from app.dependencies.admin_access import require_clinic_manage
+    from app.main import app
+
+    def calls(dependant: Any) -> set[Any]:
+        found = {dependant.call}
+        for child in dependant.dependencies:
+            found |= calls(child)
+        return found
+
+    routes = [route for route in app.routes if isinstance(route, APIRoute) and route.path == HOSPITAL_URL]
+    assert routes, f"{HOSPITAL_URL} 경로를 못 찾았다 — 검사가 헛돈다"
+    for route in routes:
+        assert require_clinic_manage in calls(route.dependant), (
+            f"{sorted(route.methods)} {route.path} 가 제 권한으로 안 잠겼다"
+        )
+
+
 class TestOnlyAdminsGetThroughTheDoor(HospitalInfoTestCase):
     async def test_an_admin_reads_and_writes(self) -> None:
         async with self.client() as client:

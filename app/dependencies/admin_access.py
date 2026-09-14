@@ -49,6 +49,23 @@ async def require_audit_read(
     return actor
 
 
+async def require_clinic_manage(
+    actor: Annotated[AdminActor, Depends(get_admin_actor)],
+) -> AdminActor:
+    """의원 정보를 고칠 수 있는가 — `admin` 만이다 (A1-4 · KEY-331).
+
+    **`STAFF_MANAGE` 로 겸하지 않는다.** 여는 역할이 지금은 같지만 뜻이 다르다 —
+    권한표(`app/tests/rbac/matrix.py`)가 이 화면 몫으로 `CLINIC_MANAGE` 를 따로
+    갖고 있는데 구현만 직원 관리 권한을 빌려 쓰고 있었다(이희진 님 #295 리뷰).
+    계약과 구현이 갈린 채로 두면, 「직원은 못 만들지만 의원 정보는 고치는 사람」이
+    생기는 날 두 곳을 동시에 고쳐야 한다. `require_audit_read` 의 주석이 경고한
+    바로 그 자리다.
+    """
+    if not has_permission(actor.roles, Permission.CLINIC_MANAGE):
+        raise ApiError(403, "FORBIDDEN", "의원 정보를 고칠 권한이 없습니다.")
+    return actor
+
+
 async def require_staff_manage(
     actor: Annotated[AdminActor, Depends(get_admin_actor)],
 ) -> AdminActor:

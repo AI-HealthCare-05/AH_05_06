@@ -45,7 +45,7 @@ class AdminHospitalService:
         #: 없는」 또는 그 반대인 자리가 생긴다 — append-only 기록은 그 순간
         #: 기록이 아니게 된다 (인수조건 5).
         async with in_transaction() as connection:
-            hospital = await _mine(actor, connection=connection)
+            hospital = await _mine(actor, connection=connection, for_update=True)
 
             #: **보낸 칸만 옮긴다.** 안 보낸 칸은 DB 에서 읽어 온 값 그대로 남아
             #: 같은 값이 다시 저장된다 — 「지웠다」는 `null` 을 보낸 것뿐이다.
@@ -93,7 +93,7 @@ class AdminHospitalService:
         return _response(hospital)
 
 
-async def _mine(actor: AdminActor, *, connection: Any = None) -> Hospital:
+async def _mine(actor: AdminActor, *, connection: Any = None, for_update: bool = False) -> Hospital:
     """**토큰이 가리키는 의원만.** 요청에서 병원을 받지 않는다.
 
     404 를 내는 자리는 정상적으로는 안 온다 — 로그인한 계정이 있다는 것은 그
@@ -101,7 +101,23 @@ async def _mine(actor: AdminActor, *, connection: Any = None) -> Hospital:
     관리자에게 「서버가 고장났다」와 「의원 줄이 없다」는 다른 말이고, 뒤쪽은
     시드가 덜 돈 배포에서 실제로 볼 수 있는 모양이다.
     """
-    hospital = await Hospital.filter(hospital_id=actor.hospital_id).using_db(connection).first()
+    #: 🚩 **고치러 왔으면 잠그고 읽는다** (KEY-331, 이희진 님 #295 리뷰).
+    #:
+    #: 안 잠그면 관리자 둘이 서로 **다른 칸**을 거의 동시에 고칠 때 뒤엣것이
+    #: 이긴다. 저장이 `update_fields` 로 네 칸을 늘 함께 쓰기 때문이다 — 둘 다
+    #: 같은 옛 값을 읽고, 나중에 커밋되는 쪽이 상대가 방금 바꾼 칸을 제가 읽은
+    #: 옛 값으로 덮는다.
+    #:
+    #: **덮인 칸은 감사 기록에도 안 남는다.** `changes` 는 `model_fields_set`
+    #: 기준이라 「내가 보낸 칸」만 담는데, 덮인 것은 상대가 보낸 칸이다. 값도
+    #: 기록도 없이 사라진다.
+    #:
+    #: `guides.py::_lock` 이 `#50` 이중승인 사고 뒤로 같은 수법을 쓴다.
+    #: 읽기만 하는 `get_hospital` 은 안 잠근다 — 트랜잭션 밖이라 걸 자리가 없다.
+    rows = Hospital.filter(hospital_id=actor.hospital_id)
+    if for_update:
+        rows = rows.select_for_update()
+    hospital = await rows.using_db(connection).first()
     if hospital is None:
         raise ApiError(404, "HOSPITAL_NOT_FOUND", "의원 정보를 찾을 수 없습니다.")
     return hospital

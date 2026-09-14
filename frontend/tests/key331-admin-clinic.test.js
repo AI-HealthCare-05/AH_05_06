@@ -102,6 +102,18 @@ test("앞뒤 공백을 걷어서 보낸다 — 서버가 접기 전에 화면이
   assert.equal(clinicPayload({ booking_url: "  https://a.example/b  " }).booking_url, "https://a.example/b");
 });
 
+test("**이름이 겹치면 그 까닭을 말한다** — 「잠시 뒤 다시」가 아니라", () => {
+  /* 서버는 500 대신 원인을 알려 주려고 `HOSPITAL_NAME_TAKEN` 을 일부러 만들었다.
+     화면이 그 코드를 안 받으면 관리자는 같은 이름으로 계속 누른다
+     (이희진 님 #295 리뷰). `admin-staff.js` 의 `LOGIN_ID_TAKEN` 과 같은 자리다. */
+  const { clinicSaveSaying } = box();
+
+  const said = clinicSaveSaying({ code: "HOSPITAL_NAME_TAKEN", status: 409 });
+
+  assert.match(said, /이미 있습니다|이미 쓰고/, "겹친 이름이라는 말을 안 한다");
+  assert.doesNotMatch(said, /잠시 뒤 다시/, "원인 대신 기본 문구가 떴다");
+});
+
 /* ── 적는 자리에서 미리 말한다 ──────────────────────────────────────── */
 
 test("**예약 링크가 비면 문자가 보류된다고 적는 자리에서 말한다**", () => {

@@ -145,6 +145,9 @@ function clinicSaveSaying(error) {
   return errorMessage(
     error,
     [
+      /* 서버가 500 대신 원인을 알려 주려고 일부러 만든 코드다. 여기서 안 받으면
+         관리자는 「잠시 뒤 다시」만 보고 같은 이름으로 계속 누른다. */
+      { code: "HOSPITAL_NAME_TAKEN", say: "같은 이름의 의원이 이미 있습니다. 다른 이름으로 해 주세요." },
       { code: "INVALID_REQUEST", say: "적어 주신 값 중에 규칙에 안 맞는 것이 있습니다. 번호와 예약 링크를 확인해 주세요." },
       { code: "HOSPITAL_NOT_FOUND", say: "의원 정보를 찾을 수 없습니다. 관리자에게 알려 주세요." },
       { status: 403, say: "의원 정보를 고칠 권한이 없습니다." },
