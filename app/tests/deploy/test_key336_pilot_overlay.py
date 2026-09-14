@@ -147,3 +147,42 @@ def test_the_runbook_tells_how_to_turn_it_on_from_the_server() -> None:
 
     assert "-f docker-compose.pilot.yml" in runbook, "런북에 서버에서 오버레이를 주는 명령이 없다"
     assert (ROOT / PILOT_OVERLAY).exists(), f"{PILOT_OVERLAY} 가 없다 — 검사가 헛돈다"
+
+
+#: 런북은 **명령을 담은 문서**다. `test_key185_rollback_rehearsal.py` 가
+#: ```` ```bash ```` 블록을 정규식으로 떠다 쓰는 것처럼, 이 문서의 코드펜스는
+#: 사람뿐 아니라 검사도 읽는다.
+RUNBOOK = "docs/deploy-runbook.md"
+
+#: 펜스 줄로 인정하는 꼴 — 여는 ```` ```bash ````, 닫는 ```` ``` ````. 그 외에
+#: **뒤에 산문이 붙은 펜스**는 결함이다.
+FENCE_LINE = re.compile(r"```[A-Za-z0-9_+-]*$")
+
+
+def _fence_lines() -> list[tuple[int, str]]:
+    return [(i, line) for i, line in enumerate(read(RUNBOOK).splitlines(), 1) if line.lstrip().startswith("```")]
+
+
+def test_no_fence_line_carries_prose() -> None:
+    """닫는 펜스 뒤에 문장이 붙으면 **그 문장이 사라진다.**
+
+    실제로 두 번 그랬다. 4-3-2 절에 오버레이 명령을 끼워 넣으면서 원래 있던
+    「이 둘이 갖춰지면 실제 솔라피로 나가되…」가 닫는 펜스 줄에 붙어 버렸다
+    (`2heej` `#309` 리뷰 3번이 같은 절의 앞선 사례를 짚었고, 고치면서 새로
+    하나를 더 만들었다).
+
+    눈으로는 안 보인다 — 렌더러가 펜스로 읽고 뒤를 버리거나, 코드 블록 안으로
+    끌어들인다. **읽는 쪽이 사람만이 아니라서** 더 나쁘다.
+    """
+    carriers = [(n, line.strip()) for n, line in _fence_lines() if not FENCE_LINE.search(line.strip())]
+    assert not carriers, (
+        f"{RUNBOOK} 의 코드펜스 줄에 산문이 붙었다:\n"
+        + "\n".join(f"  {n}행: {text}" for n, text in carriers)
+        + "\n펜스는 제 줄에 혼자 둔다 — 붙은 문장은 렌더에서 사라진다."
+    )
+
+
+def test_every_fence_is_closed() -> None:
+    """열고 안 닫으면 **그 뒤 문서 전체가 코드 블록이 된다.**"""
+    count = len(_fence_lines())
+    assert count % 2 == 0, f"{RUNBOOK} 의 코드펜스가 {count} 개 — 홀수다. 어딘가 안 닫혔다."
