@@ -139,9 +139,11 @@ class TestSafetyCheckGate(TestCase):
 
         await dispatch_message(message.guide_message_id, MockSmsSender())
 
-        events = await GuideMessageEvent.filter(
-            guide_message_id=message.guide_message_id
-        ).order_by("guide_message_event_id").all()
+        events = (
+            await GuideMessageEvent.filter(guide_message_id=message.guide_message_id)
+            .order_by("guide_message_event_id")
+            .all()
+        )
         assert [e.event_type for e in events] == [
             GuideMessageEventType.ATTEMPTED,
             GuideMessageEventType.HELD,
@@ -160,9 +162,7 @@ class TestSafetyCheckGate(TestCase):
 
         await dispatch_message(message.guide_message_id, MockSmsSender())
 
-        events = await GuideMessageEvent.filter(
-            guide_message_id=message.guide_message_id
-        ).all()
+        events = await GuideMessageEvent.filter(guide_message_id=message.guide_message_id).all()
         for event in events:
             if event.reason:
                 assert "http" not in event.reason
