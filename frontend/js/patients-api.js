@@ -308,11 +308,17 @@ var MOCK_PATIENTS = [
 ];
 
 /* 성별과 동의는 합성 CSV 에 칸이 없다 — KEY-30 매핑표의 `CSV_CANNOT_SUPPLY` 와 같은 자리다.
-   부인과라 성별은 상수로 채우고, 동의 시각은 마지막 방문일로 둔다. */
+   부인과라 성별은 상수로 채우고, 동의 시각은 마지막 방문일로 둔다.
+
+   🚩 **시각까지 붙인다** — KEY-344. 서버의 `sms_consented_at` 은 `DatetimeField`
+   라 `2026-09-07T14:04:36.032629+09:00` 처럼 시각이 온다. 여기서 날짜만 주면
+   `?mock=1` 화면에 시각이 영영 안 보이고, **표시 규칙이 깨져도 이 화면에서는
+   안 드러난다** — 실제로 이 칸이 원시 ISO 로 새는 것을 아무도 목업에서 못 봤다.
+   목록 쪽 목업(`rosterRow` 의 `stamp`)은 이미 같은 모양으로 주고 있었다. */
 MOCK_PATIENTS.forEach(function (p) {
   p.gender = "FEMALE";
   p.sms_consent = true;
-  p.sms_consented_at = p.last_visited_on;
+  p.sms_consented_at = p.last_visited_on ? p.last_visited_on + "T10:24:00+09:00" : null;
 });
 
 var MOCK_NEXT_ID = { patient: 2000, visit: 9000 };
@@ -595,6 +601,11 @@ var MOCK_ROSTER_PAST = [
 
 /* 번호에서 곧게 자라는 등록 시각 — 목업 전용(KEY-327). 번호가 크면 날짜도
    뒤다. 한 시간에 하나씩 등록한 셈으로 친다. */
+/* 지금 이 순간을 **서버가 주는 모양으로** — 목업 전용(KEY-344). */
+function nowStamp() {
+  return new Date().toISOString().slice(0, 19) + "+09:00";
+}
+
 function mockRegisteredAt(patientId) {
   var at = new Date(Date.UTC(2026, 0, 1) + Number(patientId || 0) * 3600 * 1000);
   return at.toISOString().slice(0, 19) + "+09:00";
@@ -1071,7 +1082,8 @@ function mockPatientsRequest(path, options) {
           phone: (body.phone || "").replace(/\D/g, ""),
           gender: body.gender || "FEMALE",
           sms_consent: !!body.sms_consent,
-          sms_consented_at: body.sms_consent ? toIsoDate(new Date()) : null,
+          /* 서버와 같은 모양 — 시각까지 준다 (KEY-344). */
+          sms_consented_at: body.sms_consent ? nowStamp() : null,
           last_visited_on: null,
         };
         MOCK_PATIENTS.push(created);
