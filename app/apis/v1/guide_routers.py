@@ -7,21 +7,35 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
+from tortoise.transactions import in_transaction
 
+from app.core.auth_errors import AuthError as ApiError
 from app.core.time import DISPLAY_TIMEZONE
 from app.dependencies.staff_auth import StaffActor, get_staff_actor
 from app.dtos.guides import (
+    GuideGenerationResponse,
     GuidePreview,
     GuideResponse,
+    GuideSourceResponse,
     MessagePlanRequest,
     MessagePlanResponse,
     PatientHead,
     ReturnRequest,
     SectionEditRequest,
+    SectionOrderRequest,
     SectionResponse,
 )
-from app.models.visits import GuideDocument, GuideSection, GuideSectionKey
+from app.models.visits import (
+    GuideDocument,
+    GuideGenerationJob,
+    GuideSection,
+    GuideSectionKey,
+    GuideSectionSourceSnapshot,
+    Visit,
+)
+from app.services import guide_section_order
+from app.services.guide_generation_jobs import GenerationPendingError
 from app.services.guides import GuideService
 from app.services.patient_guide_view import guide_detail_of
 from app.services.patient_links import PatientLinkService
@@ -70,6 +84,12 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
     visit = guide.visit
     patient = visit.patient
     today = datetime.now(DISPLAY_TIMEZONE).date()
+    sources: dict[GuideSectionKey, list[GuideSourceResponse]] = {}
+    # 권한 확인된 안내의 현재 버전만 한 번에 읽는다. 환자 종점에는 추가하지 않는다.
+    for row in await GuideSectionSourceSnapshot.filter(guide_document=guide, guide_version=guide.version).order_by(
+        "position"
+    ):
+        sources.setdefault(row.section_key, []).append(GuideSourceResponse.model_validate(row, from_attributes=True))
     return GuideResponse(
         visit_id=guide.visit_id,
         patient=PatientHead(
@@ -86,47 +106,52 @@ async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> G
         approved_at=guide.approved_at,
         scheduled_at=guide.scheduled_at,
         returned_reason=guide.returned_reason,
-        sections=[_section(s) for s in sorted(guide.sections, key=_section_order)],
+        sections=[_section(s, sources.get(s.section_key, [])) for s in sorted(guide.sections, key=_section_order)],
         preview=await _preview_of(guide) if with_preview else None,
     )
 
 
-#: 계약이 정한 차례 — `GuideSectionKey` 에 적힌 순서 그대로다(P2 · P3 · P4, 그리고
-#: 문자 설정). `emergency` 는 `caution` 바로 뒤다.
-_SECTION_ORDER: dict[GuideSectionKey, int] = {key: i for i, key in enumerate(GuideSectionKey)}
-
-
-def _section_order(section: GuideSection) -> int:
+def _section_order(section: GuideSection) -> tuple[int, int]:
     """**차례를 삽입 순서에 맡기지 않는다.**
 
     예전에는 `guide_section_id` 로 정렬했다. 지금 생성 경로가 계약 순서대로
     넣으니 결과는 같지만, 그건 **우연히 같은 것**이다. 행 하나를 나중에
     끼워 넣으면(예: 기존 안내문에 `emergency` 를 채워 넣는 backfill) 그 행이
-    맨 뒤로 가고, 응급 문장이 문자 설정 뒤에 붙는다.
+    맨 뒤로 가고, 응급 문장이 문자 설정 뒤에 붙는다 (KEY-161).
 
-    계약(`docs/api/hospital.md` §5)은 **차례까지** 정한다. 그러면 차례는
-    계약에서 읽어야지 DB 가 준 순서에서 읽을 것이 아니다 (KEY-161).
+    그 뒤로 차례는 **사람이 정할 수 있는 것**이 됐다(KEY-317). 계약 표는
+    이제 기본값일 뿐이라 표에서 읽으면 사람이 바꾼 차례가 안 보인다 —
+    저장된 `display_order` 에서 읽는다. 같은 값이 둘이면(있을 수 없지만)
+    행 번호로 갈라 **답이 매번 같게** 한다.
     """
-    return _SECTION_ORDER[GuideSectionKey(section.section_key)]
+    return (section.display_order, section.guide_section_id)
 
 
-def _section(section: GuideSection) -> SectionResponse:
+def _section(section: GuideSection, sources: list[GuideSourceResponse] | None = None) -> SectionResponse:
     return SectionResponse(
         key=section.section_key,
+        movable=GuideSectionKey(section.section_key) not in guide_section_order.SAFETY_SECTIONS,
         body=section.body,
         edited=section.edited_body is not None,
         locked=section.locked,
         warn=section.warn,
+        sources=sources or [],
     )
 
 
-@guide_router.post("/{visit_id}/guide/generate", response_model=GuideResponse, status_code=status.HTTP_201_CREATED)
+@guide_router.post(
+    "/{visit_id}/guide/generate",
+    response_model=GuideResponse | GuideGenerationResponse,
+    responses={202: {"model": GuideGenerationResponse, "description": "생성 작업 접수"}},
+    status_code=status.HTTP_201_CREATED,
+)
 async def generate_guide(
     visit_id: int,
+    response: Response,
     actor: Annotated[StaffActor, Depends(get_staff_actor)],
     service: Annotated[GuideService, Depends(_service)],
     discard_edits: bool = False,
-) -> GuideResponse:
+) -> GuideResponse | GuideGenerationResponse:
     """**고친 문구가 있으면 묻고 멈춘다** — `discard_edits=true` 로 다시 부른다.
 
     다시 만들면 절이 통째로 새로 써진다. 스탭이 이미 바로잡은 문장이 붙어
@@ -134,9 +159,58 @@ async def generate_guide(
     `GUIDE_HAS_EDITS`). 화면이 「고친 것을 버리고 다시 만들까요」를 묻고, 사람이
     그렇다고 하면 이 값을 켜서 다시 부른다 (이희진 님 `#221` ①).
     """
-    guide = await service.generate(actor, visit_id, discard_edits=discard_edits)
+    try:
+        guide = await service.generate(actor, visit_id, discard_edits=discard_edits)
+    except GenerationPendingError as pending:
+        response.status_code = 202
+        return GuideGenerationResponse(job_id=str(pending.job.pk), visit_id=visit_id, state="queued")
     await guide.fetch_related("sections", "visit__patient")
     return await _to_response(guide)
+
+
+@guide_router.get("/{visit_id}/guide/generation/{job_id}", response_model=GuideGenerationResponse | GuideResponse)
+async def generation_result(
+    visit_id: int, job_id: str, actor: Annotated[StaffActor, Depends(get_staff_actor)]
+) -> GuideGenerationResponse | GuideResponse:
+    from uuid import UUID
+
+    GuideService._require_staff_or_doctor(actor)
+    try:
+        parsed = UUID(job_id)
+    except ValueError:
+        raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.") from None
+    job = await GuideGenerationJob.filter(job_id=parsed, visit_id=visit_id, hospital_id=actor.hospital_id).first()
+    if job is None:
+        raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
+    if job.completed_at:
+        # Generation also locks Visit: version checking and response assembly
+        # must observe one result, not race a subsequent regeneration.
+        async with in_transaction() as conn:
+            visit = (
+                await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id)
+                .using_db(conn)
+                .select_for_update()
+                .first()
+            )
+            if visit is None:
+                raise ApiError("GUIDE_NOT_FOUND", 404, "안내문을 찾을 수 없습니다.")
+            guide = await GuideService().get(actor, visit_id)
+            if (job.result_guide_document_id, job.result_version) != (guide.pk, guide.version):
+                return GuideGenerationResponse(
+                    job_id=str(job.pk),
+                    visit_id=visit_id,
+                    state="superseded",
+                    result_version=job.result_version,
+                )
+            await guide.fetch_related("sections", "visit__patient")
+            return await _to_response(guide)
+    return GuideGenerationResponse(
+        job_id=str(job.pk),
+        visit_id=visit_id,
+        state="failed" if job.failed_at else "queued",
+        failure_reason=job.failure_reason if job.failed_at else None,
+        block_reason=job.block_reason if job.failed_at else None,
+    )
 
 
 @guide_router.get("/{visit_id}/guide", response_model=GuideResponse)
@@ -157,6 +231,25 @@ async def edit_section(
     service: Annotated[GuideService, Depends(_service)],
 ) -> SectionResponse:
     return _section(await service.edit_section(actor, visit_id, key, body.body))
+
+
+@guide_router.put("/{visit_id}/guide/sections/order", response_model=GuideResponse, status_code=status.HTTP_200_OK)
+async def reorder_sections(
+    visit_id: int,
+    body: SectionOrderRequest,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+    service: Annotated[GuideService, Depends(_service)],
+) -> GuideResponse:
+    """절의 **차례**를 바꾼다 — KEY-317.
+
+    `PATCH` 가 아니라 `PUT` 이다. 한 절을 고치는 것이 아니라 **차례 전체를**
+    통째로 놓는 것이라, 같은 목록을 두 번 보내면 두 번째는 아무 일도 안 한다.
+
+    답으로 안내문 전체를 준다. 차례가 바뀌면 화면이 다시 그려야 하는데,
+    바뀐 차례만 주면 화면이 제 손으로 다시 늘어놓아야 한다 — 그러면 서버가
+    아는 차례와 화면이 그린 차례가 갈릴 자리가 생긴다.
+    """
+    return await _to_response(await service.reorder_sections(actor, visit_id, [key.value for key in body.order]))
 
 
 @guide_router.post("/{visit_id}/guide/submit", response_model=GuideResponse, status_code=status.HTTP_200_OK)

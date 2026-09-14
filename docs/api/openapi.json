@@ -1335,6 +1335,63 @@
         "title": "GuideCopySaveRequest",
         "type": "object"
       },
+      "GuideGenerationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "block_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Reason"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "result_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Version"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "visit_id",
+          "state"
+        ],
+        "title": "GuideGenerationResponse",
+        "type": "object"
+      },
       "GuideMessageFailure": {
         "description": "**보내 봤는데 안 됐다** — 와이어프레임 D1-7 「실패 이유 넷」.\n\n원문: 「ⓘ 실패 이유 넷 — 잘못된 번호 · 수신 거부 · 통신사 오류 ·\n발신번호 미등록」. 넷으로 못박혀 있으므로 자유 문자열로 두지 않는다 —\n자유롭게 두면 발송기를 붙이는 사람마다 다른 낱말을 넣고, 화면은 그중\n아는 것만 사람 말로 옮긴다.",
         "enum": [
@@ -1527,6 +1584,119 @@
         ],
         "title": "GuideSectionKey",
         "type": "string"
+      },
+      "GuideSourceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "body_sha256": {
+            "title": "Body Sha256",
+            "type": "string"
+          },
+          "chunk_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "generation_mode": {
+            "title": "Generation Mode",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "source_org": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Org"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generation_mode",
+          "version",
+          "body_sha256"
+        ],
+        "title": "GuideSourceResponse",
+        "type": "object"
       },
       "GuideStatus": {
         "description": "안내문이 지금 어디에 있는가.\n\n**새 이름을 만들지 않는다.** `docs/contracts/patient-visit-api-v1.md` §6 이\n화면 탭과 `detail_status` 를 이미 얼려 두었고, 이 값들이 그대로 그 탭으로\n파생된다. 같은 것을 두 어휘로 부르기 시작하면 어느 쪽이 정본인지 흐려진다.\n\n    STAFF_REVIEW        스탭 확인 중        → 작성 중\n    APPROVAL_PENDING    승인 요청           → 승인 요청\n    SCHEDULED_TO_SEND   발송 예약됨         → 발송 대기\n    APPROVAL_RETURNED   승인 반려           → 보완\n\n승인의 결과가 `APPROVED` 가 아니라 `SCHEDULED_TO_SEND` 인 것이 중요하다 —\n**승인이 곧 발송 예약이다**(와이어프레임 D1-5 「스탭이 발송 버튼을 누르지\n않는다」). 승인과 발송 사이에 사람이 한 번 더 손대는 자리를 만들지 않는다.",
@@ -4968,6 +5138,26 @@
         "title": "SectionEditRequest",
         "type": "object"
       },
+      "SectionOrderRequest": {
+        "additionalProperties": false,
+        "description": "절의 새 차례 — KEY-317.\n\n**그 안내문의 절을 하나도 빠짐없이, 한 번씩** 보낸다. 「옮길 것만」 보내는\n모양도 생각했지만, 그러면 나머지가 어디로 가는지를 서버와 화면이 각자\n셈하게 된다 — 둘이 어긋나면 화면에서 본 차례와 저장된 차례가 달라진다.\n\n무엇이 자리를 옮길 수 있는지는 서버가 검증한다\n(`app/services/guide_section_order.py`). 🚨 응급·주의사항은 못 옮긴다.",
+        "properties": {
+          "order": {
+            "items": {
+              "$ref": "#/components/schemas/GuideSectionKey"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "title": "SectionOrderRequest",
+        "type": "object"
+      },
       "SectionResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4986,6 +5176,17 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "movable": {
+            "title": "Movable",
+            "type": "boolean"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/GuideSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
           "warn": {
             "anyOf": [
               {
@@ -5002,7 +5203,8 @@
           "key",
           "body",
           "edited",
-          "locked"
+          "locked",
+          "movable"
         ],
         "title": "SectionResponse",
         "type": "object"
@@ -5632,6 +5834,7 @@
           "GUIDE_UNAPPROVED",
           "GUIDE_REGENERATED",
           "GUIDE_RETURNED",
+          "GUIDE_SECTION_REORDERED",
           "PATIENT_LINK_REISSUED",
           "PATIENT_LINK_REVOKED",
           "CHECK_IN_SUBMITTED",
@@ -10060,7 +10263,89 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GuideResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GuideResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GuideGenerationResponse"
+                    }
+                  ],
+                  "title": "Response Generate Guide Api V1 Visits  Visit Id  Guide Generate Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideGenerationResponse"
+                }
+              }
+            },
+            "description": "생성 작업 접수"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Generate Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/generation/{job_id}": {
+      "get": {
+        "operationId": "generation_result_api_v1_visits__visit_id__guide_generation__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GuideGenerationResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GuideResponse"
+                    }
+                  ],
+                  "title": "Response Generation Result Api V1 Visits  Visit Id  Guide Generation  Job Id  Get"
                 }
               }
             },
@@ -10082,7 +10367,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Generate Guide",
+        "summary": "Generation Result",
         "tags": [
           "guides"
         ]
@@ -10424,6 +10709,64 @@
           }
         ],
         "summary": "Return Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/sections/order": {
+      "put": {
+        "description": "절의 **차례**를 바꾼다 — KEY-317.\n\n`PATCH` 가 아니라 `PUT` 이다. 한 절을 고치는 것이 아니라 **차례 전체를**\n통째로 놓는 것이라, 같은 목록을 두 번 보내면 두 번째는 아무 일도 안 한다.\n\n답으로 안내문 전체를 준다. 차례가 바뀌면 화면이 다시 그려야 하는데,\n바뀐 차례만 주면 화면이 제 손으로 다시 늘어놓아야 한다 — 그러면 서버가\n아는 차례와 화면이 그린 차례가 갈릴 자리가 생긴다.",
+        "operationId": "reorder_sections_api_v1_visits__visit_id__guide_sections_order_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reorder Sections",
         "tags": [
           "guides"
         ]
