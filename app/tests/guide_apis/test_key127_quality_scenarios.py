@@ -340,11 +340,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         await job_block.refresh_from_db()
 
         # ── 생성 실패 케이스 ──
-        # _add_sources() 를 명시적으로 호출한다.
-        # 소스가 없으면 모든 섹션이 템플릿 폴백으로 처리되어 모델이 호출되지 않고
-        # ChatModelError 가 트리거되지 않아 failure_reason 이 llm_failure 가 되지 않는다.
         visit_fail = await self._setup_ems_visit("SYN-EMS-FAIL2")
-        await self._add_sources()
         self.model.generate.side_effect = ChatModelError("synthetic timeout")
         job_fail = await self._request_job(visit_fail)
         for _ in range(3):
