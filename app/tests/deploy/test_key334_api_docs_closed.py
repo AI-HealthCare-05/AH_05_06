@@ -59,9 +59,26 @@ def test_the_app_still_closes_them_too() -> None:
 
 
 def test_health_and_login_are_not_caught_by_the_rule() -> None:
-    """막는 것은 문서 셋뿐이다. 확인 경로와 화면까지 막으면 배포를 못 잰다."""
-    pattern = re.compile(r"\^/api/\(docs\|redoc\|openapi\\\.json\)")
+    """막는 것은 문서 셋뿐이다. 확인 경로와 화면까지 막으면 배포를 못 잰다.
+
+    🚩 **이 검사는 한 번 헛돌았다** (`#304` 리뷰, 2heej). 설정 파일에서 규칙
+    **글자**를 찾는 정규식을 만들어 놓고 그것을 URL 에 들이댔다. `^` 로 시작하는
+    URL 은 없으니 무엇을 넣어도 거짓이었다 — `/api/docs` 를 넣어도 통과했다.
+    「막지 않는다」를 재는 검사가 **아무것도 재지 않고** 늘 초록이었다.
+
+    그래서 지금은 설정에서 **경로 목록을 뽑아 nginx 가 쓰는 규칙을 다시 세운다.**
+    막아야 하는 쪽도 같이 잰다 — 한쪽만 재면 「전부 막는 규칙」도 통과한다.
+    설정이 바뀌면 이 검사도 따라 바뀐다.
+    """
     for name, config in _configs().items():
-        assert pattern.search(config), f"{name}: 차단 규칙 모양이 바뀌었다 — 검사가 헛돈다"
-        for safe in ("/api/v1/health", "/login.html"):
-            assert not pattern.match(safe), f"{name}: {safe} 까지 막는다"
+        blocks = BLOCK.findall(config)
+        assert blocks, f"{name}: 차단 규칙을 못 찾았다 — 검사가 헛돈다"
+
+        for routes, _ in blocks:
+            rule = re.compile(rf"^/api/({routes})")
+
+            for closed in ("/api/docs", "/api/redoc", "/api/openapi.json", "/api/docs/oauth2-redirect"):
+                assert rule.search(closed), f"{name}: {closed} 가 안 막힌다"
+
+            for safe in ("/api/v1/health", "/api/v1/guides/abc", "/login.html", "/"):
+                assert not rule.search(safe), f"{name}: {safe} 까지 막는다"

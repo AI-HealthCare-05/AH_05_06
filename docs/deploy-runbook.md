@@ -438,8 +438,10 @@ REDIS_EXPOSE_PORT 같은 뜻 · 안 적으면 6379
 ### 확인은 `/api/v1/health` 로 한다
 
 팀 노션의 배포 가이드 7단계는 `http://<IP>/api/docs` 로 확인하라고 하는데,
-**운영에서는 Swagger 가 꺼져 있다**(`app/main.py:24-26` — `docs_url=None`).
-그대로 따라가면 404 를 보고 배포가 실패한 줄 안다.
+**그 문은 우리가 닫아 두었다** — nginx 가 404 로 돌려준다(위 「🚩 `/api/docs` 는
+밖으로 안 연다」, KEY-334). 앱 쪽 `docs_url=None` 분기는 `ENV=prod` 일 때만 도는데
+지금 Pilot 은 `ENV=dev` 라 그쪽은 열려 있다 — 그래서 **밖으로 나가는 문을 nginx 가
+막는다.** 가이드를 그대로 따라가면 404 를 보고 배포가 실패한 줄 안다.
 
 ```bash
 curl -fsS http://<IP>/api/v1/health | jq .     # api·db·redis 가 다 ok 인가
