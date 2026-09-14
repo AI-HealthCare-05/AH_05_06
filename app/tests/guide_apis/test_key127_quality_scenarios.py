@@ -163,6 +163,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         visit = await self._setup_ems_visit(chart)
         # 같은 OcrResult에 AMH 검사 결과 누락 필드 추가 (추후보고예정)
         base_field = await OcrField.filter(ocr_result__ocr_job__visit_id=visit.pk).first()
+        assert base_field is not None
         await OcrField.create(
             ocr_result_id=base_field.ocr_result_id,
             document_text_id=base_field.document_text_id,
