@@ -4,8 +4,13 @@ guide_safety_check(POST_GENERATE, BLOCK) 레코드가 있으면 SAFETY_CHECK_FAI
 기존 미승인·원본 미삭제 게이트와 독립적으로 동작함을 검증한다.
 """
 
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+
 from tortoise.contrib.test import TestCase
 
+from app.models.documents import MedicalDocument
+from app.models.ocr import OcrDocumentType
 from app.models.visits import (
     GuideMessage,
     GuideMessageEvent,
@@ -21,6 +26,26 @@ from app.services.message_dispatch import dispatch_message
 from app.services.safety_check import CHECKER_VERSION
 from app.services.sms_sender import MockSmsSender
 from app.tests.messages.test_key249_dispatch_pipeline import make_due_message
+
+
+async def _attach_document(message: GuideMessage, *, file_exists: bool) -> Path:
+    guide = await message.guide_document
+    tmp = NamedTemporaryFile(delete=False, suffix=".jpg")
+    tmp.write(b"synthetic")
+    tmp.close()
+    path = Path(tmp.name)
+    if not file_exists:
+        path.unlink()
+    await MedicalDocument.create(
+        hospital_id=guide.hospital_id,
+        visit_id=guide.visit_id,
+        document_type=OcrDocumentType.EMR,
+        file_path=str(path),
+        file_size=9,
+        mime_type="image/jpeg",
+        uploaded_by=1,
+    )
+    return path
 
 
 async def _attach_safety_check(
@@ -99,6 +124,7 @@ class TestSafetyCheckGate(TestCase):
         updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
         assert updated.status is GuideMessageStatus.HELD
         assert updated.hold_reason is GuideMessageHold.SAFETY_CHECK_FAILED
+        assert updated.claim_token is None
         assert updated.sent_at is None
         assert updated.sent_body is None
 
@@ -154,6 +180,21 @@ class TestSafetyCheckGate(TestCase):
         )
 
         assert await gate_hold_reason(message) is GuideMessageHold.NOT_APPROVED
+
+    async def test_safety_gate_is_independent_of_source_not_deleted_gate(self) -> None:
+        """원본 미삭제 게이트는 안전검증 BLOCK 레코드가 있어도 SOURCE_NOT_DELETED를 반환한다."""
+        message = await make_due_message(approved=True)
+        path = await _attach_document(message, file_exists=True)
+        await _attach_safety_check(
+            message,
+            stage=SafetyCheckStage.POST_GENERATE,
+            verdict=SafetyCheckVerdict.BLOCK,
+            reason_code="EXTRA_DRUG",
+        )
+        try:
+            assert await gate_hold_reason(message) is GuideMessageHold.SOURCE_NOT_DELETED
+        finally:
+            path.unlink(missing_ok=True)
 
     async def test_safety_check_does_not_block_after_pass(self) -> None:
         """PASS 레코드가 있고 다른 게이트도 통과하면 발송까지 도달한다."""
