@@ -377,6 +377,34 @@ class PatientTableTestCase(PatientTableBase):
 
     # ── 배지가 표에 닿는가 ──────────────────────────────
 
+    async def test_unread_streak_reaches_patient_list_and_clears_after_view(self) -> None:
+        from tortoise.timezone import now
+
+        from app.models.visits import (
+            GuideMessage,
+            GuideMessageKind,
+            GuideMessageStatus,
+            PatientUsageEvent,
+            PatientUsageEventType,
+        )
+
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "unreadrow")
+        patient = await self.a_patient(clinic, name="합성환자", chart="UNREAD253")
+        document = await GuideDocument.get(visit__patient_id=patient.patient_id)
+        for kind in (GuideMessageKind.CHECK_D7, GuideMessageKind.CHECK_D15, GuideMessageKind.CHECK_D30):
+            await GuideMessage.create(
+                guide_document=document,
+                kind=kind,
+                scheduled_at=now(),
+                status=GuideMessageStatus.SENT,
+            )
+        body = await self.fetch(staff)
+        assert PatientFlag.UNREAD_STREAK in body["items"][0]["flags"]
+        await PatientUsageEvent.create(guide_document=document, event_type=PatientUsageEventType.GUIDE_VIEWED)
+        body = await self.fetch(staff)
+        assert PatientFlag.UNREAD_STREAK not in body["items"][0]["flags"]
+
     async def test_a_stopped_answer_reaches_the_row_and_the_chip(self) -> None:
         from app.models.visits import CheckIn, CheckInMedication
 
