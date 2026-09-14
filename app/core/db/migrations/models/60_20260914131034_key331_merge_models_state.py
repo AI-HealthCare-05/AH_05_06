@@ -14,7 +14,7 @@
 `#295`·`#297` 확인). `aerich upgrade` 는 번호 순서가 아니라 **장부에 없는 이름**을
 적용하므로 54 가 57 앞에 남아도 된다.
 
-`48_key276_merge_models_state` · `59_key333_merge_models_state` 와 같은 자리다.
+`48_key276_merge_models_state` 와 같은 자리다.
 
 🚩 **스냅샷은 3.13 에서 만들었다.** 3.14 는 JSONField 의 `python_type` 을
 `dict | list` 로 적는데 CI·배포(3.13)는 `Union[dict, list]` 로 적는다. 판이

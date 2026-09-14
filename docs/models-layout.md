@@ -179,8 +179,13 @@ aerich 는 칸 하나라도 갈리면 손을 대는데, `python_type` 은 따로
 ```sql
 ALTER TABLE `check_in` MODIFY COLUMN `pain_types` JSON NOT NULL;
 ALTER TABLE `staff` MODIFY COLUMN `roles` JSON NOT NULL;
-...  -- JSON 칸 여섯 개
+...  -- 일곱 줄
 ```
+
+**세어 보면 여덟인데 일곱이 나온다.** 스냅샷에서 갈리는 칸은 `aerich.content` 까지
+여덟인데, aerich 는 **제 추적 표를 diff 에서 뺀다**(`aerich/migrate.py:573,579` 의
+`old_models.pop(_aerich)` · `new_models.pop(_aerich)`). 그래서 SQL 은 일곱이다.
+숫자가 안 맞아 보이면 이 자리를 의심한다.
 
 **아무것도 안 바꾸는 문장인데 값은 치른다.** MySQL 8 에서 JSON 칸 `MODIFY` 는 표를
 다시 쓴다. 게다가 `upgrade` 와 `downgrade` 가 **같은 문장**이라 되돌리지도 못한다.
