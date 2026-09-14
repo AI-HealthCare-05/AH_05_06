@@ -8,25 +8,18 @@ test_key277_generation.py 가 파이프라인 계약(소스 취소·처방 변�
 """
 
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
-from hashlib import sha256
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
 
 from tortoise.timezone import now
 
 from app.core import config
 from app.models.catalog import (
-    ApprovalStatus,
-    CautionSectionKey,
     DrugCatalog,
-    DrugCautionContent,
     PrescriptionSet,
     SetDisease,
-    SourceGrade,
 )
-from app.models.knowledge import KnowledgeChunkRecord, KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion
 from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.visits import (
@@ -40,43 +33,19 @@ from app.services.approved_knowledge_search import ApprovedKnowledgeSearchServic
 from app.services.chatbot import ChatModelError, ModelAnswer
 from app.services.guide_generation import RagGuideGenerator
 from app.services.guide_generation_jobs import process_next_generation
-from app.services.knowledge_search import EMBEDDING_DIMENSION, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION
 from app.tests.guide_apis.test_guide_generate import (
     GenerateGuideTestCase,
     attach_confirmed_ocr,
     attach_prescription,
+    make_caution_contents,
     make_clinic,
+    make_rag_sources,
     make_staff,
     make_visit,
 )
 from app.tests.rag.test_key276_approved_knowledge_pipeline import FakeEmbeddingProvider
 
 _SAFE_ANSWER = json.dumps({"body": "검증된 합성 교육 안내입니다.", "drug_names": []})
-
-
-async def _make_caution_contents(prescription_set: PrescriptionSet) -> None:
-    """처방 세트의 섹션별 승인된 안내 문구를 등록한다."""
-    for section in CautionSectionKey:
-        body = f"합성 승인 안내 {section.value}"
-        await DrugCautionContent.create(
-            prescription_set=prescription_set,
-            section_key=section,
-            body=body,
-            source_name="합성 문서",
-            source_org="합성 기관",
-            source_url="https://example.invalid/approved",
-            verified_at=date(2026, 9, 1),
-            content_version="synthetic-v1",
-            source_grade=SourceGrade.A,
-            approval_status=ApprovalStatus.APPROVED,
-            approved_key=f"{prescription_set.pk}:{section.value}",
-            physician_review={
-                "reviewer": "합성 검토자",
-                "hospital": "합성 기관",
-                "reviewed_at": "2026-09-01",
-                "body_sha256": sha256(body.encode()).hexdigest(),
-            },
-        )
 
 
 class TestKey127QualityScenarios(GenerateGuideTestCase):
@@ -108,51 +77,8 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         with patch("app.services.guide_generation_jobs.build_generator", return_value=self._generator()):
             await process_next_generation()
 
-    async def _add_sources(self) -> KnowledgeVersion:
-        """승인된 RAG 소스를 등록해 모델 호출 경로를 활성화한다.
-
-        소스가 없으면 모든 섹션이 템플릿 폴백으로 처리되어 모델이 호출되지 않는다.
-        안전 차단·LLM 실패 케이스는 모델이 실제로 호출되어야 트리거되므로
-        이 헬퍼로 소스를 먼저 등록한다.
-        """
-        document = await KnowledgeDocument.create(
-            source_key=str(uuid4()),
-            title="합성 자료",
-            source_org="합성 기관",
-            source_url="https://example.invalid/source",
-            source_kind=KnowledgeSourceKind.TEXT_PDF,
-            hospital_id=self.clinic.pk,
-        )
-        version = await KnowledgeVersion.create(
-            document=document,
-            version_label="synthetic-v1",
-            source_sha256="a" * 64,
-            source_object_key="synthetic/source.pdf",
-            source_mime_type="application/pdf",
-            extractor_version="synthetic",
-            approval_status=ApprovalStatus.APPROVED,
-            is_current=True,
-            current_approved_key=str(document.pk),
-            source_grade=SourceGrade.A,
-            license_verified=True,
-            approved_by="합성 검토자",
-            approved_at=datetime(2026, 9, 1, tzinfo=UTC),
-            verified_at=datetime(2026, 9, 1, tzinfo=UTC),
-        )
-        for section in CautionSectionKey:
-            body = f"검증된 합성 근거 {section.value}"
-            await KnowledgeChunkRecord.create(
-                version=version,
-                section_key=section.value,
-                position=list(CautionSectionKey).index(section),
-                body=body,
-                body_sha256=sha256(body.encode()).hexdigest(),
-                embedding=[1.0] + [0.0] * (EMBEDDING_DIMENSION - 1),
-                embedding_model=EMBEDDING_MODEL,
-                embedding_revision=EMBEDDING_MODEL_REVISION,
-                embedding_dimension=EMBEDDING_DIMENSION,
-            )
-        return version
+    async def _add_sources(self):
+        return await make_rag_sources(self.clinic.pk)
 
     async def _setup_ems_visit_with_pending_report(self, chart: str = "SYN-EMS-02"):
         """자궁내막증 · AMH 판독 누락 방문 — SYN-EMS-02 기준 케이스.
@@ -186,7 +112,36 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         prescription_set = await PrescriptionSet.create(
             name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
         )
-        await _make_caution_contents(prescription_set)
+        await make_caution_contents(prescription_set)
+        return visit
+
+    async def _setup_both_disease_visit(self, chart: str = "SYN-BOTH-01"):
+        """자궁내막증(주 질환) + PCOS 동시 처방 방문 — SYN-BOTH-01 기준 케이스.
+
+        처방 세트는 자궁내막증으로 확정하고 야즈정(PCOS)까지 항목에 포함한다.
+        두 약이 모두 DrugCatalog에 등록돼 있어 unrecognized_prescription으로
+        차단되지 않고, _pick_prescription_set이 EMS 세트를 선택하는 경로를 실행한다.
+        """
+        visit = await make_visit(self.clinic, chart)
+        await attach_confirmed_ocr(visit, self.staff.pk)
+        await DrugCatalog.get_or_create(name="비잔정 2mg")
+        await DrugCatalog.get_or_create(name="야즈정")
+        prescription = await Prescription.create(
+            visit=visit,
+            prescription_set="자궁내막증 · 비잔 (계속)",
+        )
+        await PrescriptionItem.create(
+            prescription=prescription, name="비잔정 2mg", frequency="1일 1회", duration_days=84
+        )
+        await PrescriptionItem.create(
+            prescription=prescription, name="야즈정", frequency="1일 1회", duration_days=84
+        )
+        ems_set = await PrescriptionSet.create(
+            name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
+        )
+        await make_caution_contents(ems_set)
+        pcos_set = await PrescriptionSet.create(name="PCOS · 야즈 (계속)", disease=SetDisease.PCOS)
+        await make_caution_contents(pcos_set)
         return visit
 
     async def _setup_pcos_visit(self, chart: str = "SYN-PCOS-01"):
@@ -205,7 +160,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
             duration_days=84,
         )
         prescription_set = await PrescriptionSet.create(name="PCOS · 야즈 (계속)", disease=SetDisease.PCOS)
-        await _make_caution_contents(prescription_set)
+        await make_caution_contents(prescription_set)
         return visit
 
     # ── 정상 케이스 ──────────────────────────────────────────────────────────
@@ -291,7 +246,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         prescription_set = await PrescriptionSet.create(
             name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
         )
-        await _make_caution_contents(prescription_set)
+        await make_caution_contents(prescription_set)
 
         job = await self._request_job(visit)
         await self._run()
@@ -420,10 +375,12 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
     async def test_both_disease_visit_generates_guide_with_primary_set(self) -> None:
         """두 질환 동시 처방(SYN-BOTH-01): 주 질환 세트로 RAG 경로 안내 정상 생성.
 
-        자궁내막증 + PCOS 방문이라도 처방 세트가 자궁내막증으로 확정되면
-        RAG 경로로 안내가 정상 생성되고 섹션별 PASS 안전검증이 기록된다.
+        비잔정(EMS) + 야즈정(PCOS)이 같은 처방 항목에 있고 처방 세트는 EMS로 확정된다.
+        양쪽 약이 DrugCatalog에 있어 차단되지 않고, 카탈로그에 PCOS 세트도 있는
+        상태에서 _pick_prescription_set이 EMS 세트를 선택해 RAG 경로로 안내가
+        정상 생성되고 섹션별 PASS 안전검증이 기록된다.
         """
-        visit = await self._setup_ems_visit("SYN-BOTH-01")
+        visit = await self._setup_both_disease_visit("SYN-BOTH-01")
         await self._add_sources()
 
         job = await self._request_job(visit)
@@ -431,6 +388,8 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         await job.refresh_from_db()
 
         assert job.completed_at is not None, f"생성 실패: {job.failure_reason}"
+        # RAG 소스가 있으면 모델이 실제로 호출된다 — 템플릿 폴백이 아닌 경로 확인
+        self.model.generate.assert_awaited()
         guide = await GuideDocument.get(visit_id=visit.pk)
         checks = await GuideSafetyCheck.filter(guide_document=guide).all()
         blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
