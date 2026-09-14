@@ -72,5 +72,7 @@ test("닫히거나 다른 용도로 바뀐 모달은 늦은 재발송 응답이 
 test("공용 환자 미리보기는 주의 아래 접힌 응급 문구도 찾는다", () => {
   const cards = codeOnly(read("js/patient-guide-cards.js"));
 
-  assert.match(cards, /GUIDE_TUCKED_UNDER\[section\.key\] === key/);
+  assert.match(cards, /var tuckedUnder = \{ emergency: "caution" \}/);
+  assert.match(cards, /tuckedUnder\[section\.key\] === key/);
+  assert.doesNotMatch(cards, /GUIDE_TUCKED_UNDER/);
 });
