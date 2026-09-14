@@ -162,6 +162,31 @@ UPDATE aerich SET version = '<새 이름>' WHERE app = 'models' AND version = '<
 물렸다. 배포는 성공했다고 끝나는데 도는 것은 그대로다. 끝난 뒤 **EC2 의
 `~/project` 에서** `docker compose ps` 로 태그를 눈으로 확인한다.
 
+### 🚩 배포 가이드와 **다른 자리** 셋 (KEY-334)
+
+팀 배포 가이드(노션 「Docker·EC2」)와 이 저장소는 아래 셋이 다르다. **틀린 것이
+아니라 의도된 차이**이므로, 가이드를 보고 온 사람이 「왜 다르지」에서 멈추지
+않게 적어 둔다. 1~7단계의 나머지는 가이드 그대로다 — 이미지도 가이드가 요구하는
+`linux/amd64` 로 빌드한다(`scripts/deployment.sh` 의 `docker build --platform`).
+
+| 자리 | 가이드 | 우리 |
+|---|---|---|
+| nginx 가 여는 것 | `/api/` 만, 나머지는 404 | **프런트도 서빙한다** — `location /` 이 `/vol/web/frontend` 를 준다. KEY-189 로 프런트를 이미지에 넣은 뒤의 차이다 |
+| 원격 경로 | `~/ai_project` | `~/project` |
+| 접속 확인 | `http://<IP>/api/docs` (Swagger) | **`/api/v1/health`** — 우리는 그 문서 문을 닫는다(바로 아래) |
+
+### 🚩 `/api/docs` 는 밖으로 안 연다 (KEY-334)
+
+문이 **둘**이다. 앱은 `ENV=prod` 일 때 `docs_url`·`redoc_url`·`openapi_url` 을
+꺼 두고(`app/main.py`), nginx 는 `ENV` 와 상관없이 그 셋을 404 로 돌려준다
+(`prod_http.conf`·`prod_https.conf`).
+
+**둘 다 필요하다.** 2026-09-14 에 `ENV=dev` 로 내리자(KEY-248 검증기 때문에 솔라피
+값이 없는 동안 택한 조치) 앱 쪽 문이 풀려 **API 명세 전체가 인터넷에 열렸다.**
+nginx 쪽 문은 그런 날에도 닫혀 있다.
+
+안에서 볼 일이 있으면 터널로 `fastapi:8000` 에 직접 붙는다.
+
 ## 3. 배포 절차
 
 ```bash
