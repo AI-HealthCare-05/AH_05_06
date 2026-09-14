@@ -88,6 +88,17 @@ test("**28 이상은 이미 일수 — 곱하지 않는다** (KEY-325: 784일 �
   assert.equal(courseDaysOf(pack28, 84), 84, "84이 2352가 되면 안 된다");
 });
 
+test("**28일 단위가 아닌 세트는 이 규칙을 적용하지 않는다** (KEY-325 회귀)", () => {
+  /* days_per_pack 은 의원·세트마다 다른 자유값이다 — 7일 단위 세트에서
+     「8통」을 8일로 잘못 읽으면 안 된다. 28 이상 판정은 days_per_pack=28
+     세트에만 걸어야 한다. */
+  const { courseDaysOf } = box();
+  const pack7 = { days_mode: "PACK", days_per_pack: 7 };
+
+  assert.equal(courseDaysOf(pack7, 2), 14, "2통 → 14일");
+  assert.equal(courseDaysOf(pack7, 8), 56, "8통(≥per) 도 곱해야 한다 — 8일이 되면 안 된다");
+});
+
 test("**모르면 셈하지 않는다** — 지어낸 날짜로 예약하면 엉뚱한 날 문자가 간다", () => {
   const { courseDaysOf } = box();
 
