@@ -794,6 +794,11 @@ class GuideSafetyCheck(models.Model):
     actor_id 없음 — 시스템 자동 실행이므로 사람 행위자가 없다.
     생성 전 차단은 문서가 없으므로 generation_job에 연결한다.
     환자정보·OCR 원문·전체 생성문은 담지 않는다.
+
+    POST_GENERATE + BLOCK + guide_document 조합은 현재 존재하지 않는다.
+    BLOCK이 나면 안내문 생성이 중단되므로(record_failure 참조) guide_document가
+    만들어지지 않고, BLOCK 레코드는 항상 guide_document=None으로 기록된다.
+    사후 비동기 안전검증 흐름이 추가되면 이 조합이 생길 수 있다.
     """
 
     guide_safety_check_id = fields.BigIntField(primary_key=True)

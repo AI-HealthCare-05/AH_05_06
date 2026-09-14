@@ -1,7 +1,7 @@
 """발송 직전 게이트 — KEY-250, KEY-289.
 
-안내 미승인 / 생성 후 안전검증 미통과 / 원본 의료문서 미삭제 / 예약 주소
-없음 중 하나라도 걸리면 막는다(`HELD`). 막힌 이유는 `GuideMessageHold` 값으로만 돌려준다 —
+안내 미승인 / 원본 의료문서 미삭제 / 예약 주소 없음 / 생성 후 안전검증 미통과
+중 하나라도 걸리면 막는다(`HELD`). 막힌 이유는 `GuideMessageHold` 값으로만 돌려준다 —
 예외 메시지나 원문을 실어 나르지 않는다.
 """
 
@@ -67,9 +67,11 @@ async def evaluate_dispatch_gate(
             hospital=hospital,
         )
 
-    # 생성 후 안전검증 — KEY-289. "생성 전" 쪽은 GuideService.generate()가
-    # 확정 OCR 없이는 생성 자체를 막아(KEY-150) 여기 도달한 GuideDocument는
-    # 이미 통과한 상태다. "생성 후"는 guide_safety_check(POST_GENERATE, BLOCK)로 판정한다.
+    # 생성 후 안전검증 — KEY-289.
+    # 현재 운영 경로에서는 이 게이트 조건에 도달하지 않는다.
+    # POST_GENERATE BLOCK은 안내문 생성 자체를 막으므로(record_failure 참조),
+    # guide_document가 존재한다는 것 자체가 POST_GENERATE를 통과했다는 증거다.
+    # 사후 비동기 안전검증 흐름이 추가될 때를 대비한 방어 코드로 유지한다.
     if not await _post_generate_safety_check_passed(guide.guide_document_id):
         return DispatchGateDecision(
             guide=guide,
@@ -112,6 +114,17 @@ async def _post_generate_safety_check_passed(guide_document_id: int) -> bool:
 
     결과 레코드 자체가 없으면 통과로 처리한다. 고정 템플릿 경로는
     POST_GENERATE 결과를 기록하지 않으며, KEY-83 계약상 차단 대상이 아니다.
+
+    현재 운영 경로에서는 이 함수가 False를 반환할 수 없다.
+    BLOCK이 나면 안내문이 생성되지 않으므로(record_failure → guide_document=None),
+    guide_document_id에 연결된 POST_GENERATE BLOCK 레코드가 존재하지 않는다.
+    사후 비동기 안전검증 흐름이 추가되면 비로소 의미를 갖는다.
+
+    형제 함수 _source_documents_are_deleted와 방향이 반대다 — 원본 삭제는
+    기록이 없으면(조회 실패 포함) 막고, 이 함수는 기록이 없으면 통과한다.
+    원본 삭제는 실시간 파일 존재 여부를 확인할 수 있어 불확실성이 다르고,
+    고정 템플릿 경로는 POST_GENERATE 검증 자체를 실행하지 않아 기록 없음이
+    곧 「검증 대상 아님」을 뜻한다. 의도된 비대칭이다.
     """
     return not await GuideSafetyCheck.filter(
         guide_document_id=guide_document_id,
