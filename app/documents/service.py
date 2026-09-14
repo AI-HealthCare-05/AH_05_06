@@ -3,7 +3,6 @@ from pathlib import PurePath
 from uuid import uuid4
 
 from fastapi import UploadFile, status
-from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
 from app.core import config, default_logger
@@ -76,13 +75,18 @@ class DocumentUploadService:
             try:
                 await get_redis().rpush(OCR_JOB_QUEUE, *ocr_job_ids)  # type: ignore[misc]
             except Exception:
-                # reconciliation·재시도 없이 즉시 FAILED — 숨긴 실패보다 명시적 실패가 안전하다 (KEY-188)
+                # enqueue 실패 시 이미 커밋된 파일·row를 정리한다 (KEY-266).
+                # 정리 자체가 실패해도 응답 계약은 유지된다.
                 default_logger.exception("OCR 큐 enqueue 실패 — ocr_job_ids=%s", ocr_job_ids)
-                await OcrJob.filter(ocr_job_id__in=ocr_job_ids).update(
-                    status=OcrJobStatus.FAILED,
-                    failure_code="QUEUE_ERROR",
-                    completed_at=now(),
-                )
+                for path in saved_paths:
+                    with contextlib.suppress(Exception):
+                        await self._storage.delete(path)
+                with contextlib.suppress(Exception):
+                    await OcrJobDocument.filter(ocr_job_id__in=ocr_job_ids).delete()
+                with contextlib.suppress(Exception):
+                    await OcrJob.filter(ocr_job_id__in=ocr_job_ids).delete()
+                with contextlib.suppress(Exception):
+                    await MedicalDocument.filter(document_id__in=document_ids).delete()
                 return DocumentUploadResponse(
                     document_ids=document_ids,
                     ocr_job_ids=ocr_job_ids,
