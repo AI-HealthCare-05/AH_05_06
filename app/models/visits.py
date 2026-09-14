@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from tortoise import fields, models
 from tortoise.fields import OnDelete
@@ -72,6 +72,11 @@ class GuideStatus(StrEnum):
     APPROVAL_RETURNED = "APPROVAL_RETURNED"
 
 
+#: 「차례를 아직 안 정했다」 — `GuideSection.save()` 가 계약 차례로 채운다.
+#: 0 을 못 쓴다. 0 은 **맨 앞**이라는 뜻이 있는 값이다.
+UNSET_ORDER = -1
+
+
 class GuideSectionKey(StrEnum):
     """환자 화면의 차례와 같다 — P2 · P3 · P4, 그리고 문자 설정.
 
@@ -111,6 +116,10 @@ class GuideEventType(StrEnum):
     LINK_REISSUED = "LINK_REISSUED"
     #: 직원이 환자용 링크를 즉시 폐기했다 — KEY-223.
     LINK_REVOKED = "LINK_REVOKED"
+    #: 절의 **차례**를 바꿨다 — KEY-317. 글은 그대로고 보이는 순서만 달라진다.
+    #: `EDITED` 와 나눈다 — 「무엇을 고쳤나」를 물을 때 차례 변경이 섞이면
+    #: 문구가 바뀐 줄 알고 옛 글을 찾게 된다.
+    SECTION_REORDERED = "SECTION_REORDERED"
 
 
 class GuideDocument(models.Model):
@@ -197,6 +206,13 @@ class GuideSection(models.Model):
         on_delete=OnDelete.CASCADE,
     )
     section_key = fields.CharEnumField(enum_type=GuideSectionKey)
+    #: **보이는 차례** — KEY-317. 병원 화면의 탭 차례이자 환자 응답의 배열 차례다.
+    #:
+    #: 예전에는 차례가 세 곳에서 따로 정해졌다 — 병원 종점은 계약 표에서,
+    #: 환자 종점은 `guide_section_id`(넣은 차례)에서, 환자 화면은 제 안에 박힌
+    #: 상수에서. 사람이 차례를 바꿀 수 있게 되는 순간 그 셋이 갈린다. 이제
+    #: **여기 한 곳**에서 읽는다.
+    display_order = fields.IntField(default=UNSET_ORDER)
     generated_body = fields.TextField()
     edited_body = fields.TextField(null=True)
     locked = fields.BooleanField(default=False)
@@ -220,10 +236,62 @@ class GuideSection(models.Model):
         table = "guide_section"
         unique_together = (("guide_document", "section_key"),)
 
+    async def save(self, *args: Any, **kwargs: Any) -> None:
+        """차례를 안 주면 **계약 차례**를 쓴다 — KEY-317.
+
+        절을 만드는 다섯 자리에 숫자를 손으로 적지 않는다. 여섯째 갈래가
+        생기는 날 그중 한 자리를 빠뜨리면, 그 절만 조용히 맨 앞으로 튀어나온다
+        — 응급 문장이 복약지도 앞에 설 수 있다는 뜻이다.
+        """
+        if self.display_order == UNSET_ORDER:
+            self.display_order = list(GuideSectionKey).index(GuideSectionKey(self.section_key))
+        await super().save(*args, **kwargs)
+
     @property
     def body(self) -> str:
         """지금 환자에게 나갈 글. 고친 것이 있으면 그것이다."""
         return self.edited_body if self.edited_body is not None else self.generated_body
+
+
+class GuideSectionSourceSnapshot(models.Model):
+    """생성 당시의 근거 값. 원본 지식/템플릿 FK를 두지 않아 개정·삭제에 독립적이다.
+
+    섹션 본문이 의료진에 의해 편집돼도 이 기록은 생성 원문의 근거를 보존한다.
+    환자정보·프롬프트·근거 본문은 저장하지 않는다.
+    """
+
+    snapshot_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="source_snapshots",
+        on_delete=OnDelete.CASCADE,
+    )
+    guide_version = fields.IntField()
+    section_key = fields.CharEnumField(enum_type=GuideSectionKey)
+    # 재생성은 기존 section 행을 삭제한다. 이전 생성 버전의 근거는 남긴다.
+    guide_section: fields.ForeignKeyRelation[GuideSection] | None = fields.ForeignKeyField(
+        "models.GuideSection",
+        related_name="source_snapshots",
+        on_delete=OnDelete.SET_NULL,
+        null=True,
+    )
+    position = fields.IntField()
+    generation_mode = fields.CharField(max_length=20)
+    document_id = fields.CharField(max_length=36, null=True)
+    chunk_id = fields.CharField(max_length=36, null=True)
+    source_org = fields.CharField(max_length=200, null=True)
+    source_url = fields.CharField(max_length=1000, null=True)
+    version = fields.CharField(max_length=100)
+    verified_at = fields.DateField(null=True)
+    score = fields.FloatField(null=True)
+    body_sha256 = fields.CharField(max_length=64)
+    template_id = fields.CharField(max_length=100, null=True)
+    fallback_reason = fields.CharField(max_length=100, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "guide_section_source_snapshot"
+        unique_together = (("guide_document", "guide_version", "section_key", "position"),)
 
 
 class GuideEvent(models.Model):
@@ -247,12 +315,47 @@ class GuideEvent(models.Model):
     section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
     #: 반려 사유. 반려가 아니면 비어 있다.
     reason = fields.CharField(max_length=200, null=True)
+    #: 차례를 바꿨을 때의 **이전 · 이후 차례** — KEY-317. 절 이름을 쉼표로 잇는다.
+    #: `SECTION_REORDERED` 가 아니면 둘 다 비어 있다.
+    #:
+    #: 글을 담지 않는다 — 절 이름뿐이다. 감사 기록에 환자 정보나 본문이
+    #: 새로 실리면 안 된다(계약 §9).
+    order_before = fields.CharField(max_length=200, null=True)
+    order_after = fields.CharField(max_length=200, null=True)
     actor_id = fields.BigIntField()
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
         table = "guide_event"
         indexes = (("guide_document", "created_at"),)
+
+
+class GuideGenerationJob(models.Model):
+    """Durable generation/retry queue; the existing GuideStatus is unchanged."""
+
+    job_id = fields.UUIDField(primary_key=True)
+    visit_id = fields.BigIntField()
+    hospital_id = fields.BigIntField()
+    actor_id = fields.BigIntField()
+    active_key = fields.CharField(max_length=100, null=True, unique=True)
+    discard_edits = fields.BooleanField(default=False)
+    attempts = fields.IntField(default=0)
+    input_sha256 = fields.CharField(max_length=64)
+    guide_version = fields.IntField(default=0)
+    claim = fields.UUIDField(null=True)
+    available_at = fields.DatetimeField()
+    completed_at = fields.DatetimeField(null=True)
+    failed_at = fields.DatetimeField(null=True)
+    failure_reason = fields.CharField(max_length=60, null=True)
+    block_reason = fields.CharField(max_length=60, null=True)
+    # Result identity is separate from the version read when enqueuing.
+    result_guide_document_id = fields.BigIntField(null=True)
+    result_version = fields.IntField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "guide_generation_job"
+        indexes = (("active_key", "available_at"),)
 
 
 class PatientGuideLink(models.Model):
@@ -686,18 +789,27 @@ class GuideSafetyCheck(models.Model):
     """안내문 생성 전·후 안전검증 기록 — KEY-83, append-only.
 
     actor_id 없음 — 시스템 자동 실행이므로 사람 행위자가 없다.
-    KEY-277에서 생성 경로에 연결되기 전까지는 계약과 감사 기반으로만 쓴다.
+    생성 전 차단은 문서가 없으므로 generation_job에 연결한다.
     환자정보·OCR 원문·전체 생성문은 담지 않는다.
     """
 
     guide_safety_check_id = fields.BigIntField(primary_key=True)
-    guide_document_id: int
-    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+    guide_document_id: int | None
+    guide_document: fields.ForeignKeyNullableRelation[GuideDocument] = fields.ForeignKeyField(
         "models.GuideDocument",
         related_name="safety_checks",
         on_delete=OnDelete.CASCADE,
         source_field="guide_document_id",
+        null=True,
     )
+    generation_job: fields.ForeignKeyNullableRelation[GuideGenerationJob] = fields.ForeignKeyField(
+        "models.GuideGenerationJob",
+        related_name="safety_checks",
+        null=True,
+        on_delete=OnDelete.RESTRICT,
+    )
+    section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
+    guide_version = fields.IntField(null=True)
     stage = fields.CharEnumField(enum_type=SafetyCheckStage)
     verdict = fields.CharEnumField(enum_type=SafetyCheckVerdict)
     reason_code = fields.CharField(max_length=30, null=True)

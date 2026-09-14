@@ -248,7 +248,7 @@ test("**두 화면이 같은 블록을 그린다** — 규칙도 모양도 한 �
   });
 });
 
-test("**두 화면이 그 파일을 싣는다** — 안 실으면 그 화면에서만 죽는다", () => {
+test("공용 링크 상태를 그리는 화면이 규칙 파일을 싣는다", () => {
   const fs = require("node:fs");
   const path = require("node:path");
   ["patients.html", "doctor.html"].forEach((f) => {
@@ -405,9 +405,8 @@ test("서버를 부르고 돌아오는 자리마다 그 관문이 있다 — 리
      실제로 빠져 있던 것이 「함수가 틀렸다」가 아니라 「자리에 없다」였다.
 
      이벤트를 흘려 재는 것이 낫지만 `browser-shim` 은 일부러 안 흘린다
-     (「그리는 것은 브라우저가 할 일」). 그래서 저장소가 같은 걱정에 쓰는 방식을
-     따른다 — `key205-patient-link-launch.test.js` 가 `isCurrentPatientLinkRequest`
-     를 이렇게 잰다. **이음매를 세어** 하나도 빠지지 않게 한다. */
+     (「그리는 것은 브라우저가 할 일」). **이음매를 세어** 하나도 빠지지
+     않게 한다. */
   const src = codeOnly(fs.readFileSync(path.join(__dirname, "..", "js", "patient-link-view.js"), "utf8"));
 
   const joints = [...src.matchAll(/\.(then|catch)\(function \([^)]*\) \{/g)];

@@ -10,7 +10,22 @@
  */
 const { test } = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
 const { load } = require("./browser-shim.js");
+
+/** 서버 `SectionResponse` 가 **실제로** 가진 칸 이름 — 정본에서 읽는다.
+ *
+ * 예전에는 여기 다섯을 손으로 적어 두었다. 서버에 칸이 하나 늘 때
+ * (`movable` · KEY-317) 이 줄이 먼저 빨개지는데, **목업이 틀렸다는 뜻이
+ * 아니라 이 목록이 뒤쳐졌다는 뜻**이라 고쳐야 할 곳을 잘못 가리킨다.
+ * 정본에서 읽으면 그런 일이 없다. */
+function serverSectionFields() {
+  const openapi = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "..", "docs/api/openapi.json"), "utf8")
+  );
+  return Object.keys(openapi.components.schemas.SectionResponse.properties).sort();
+}
 
 /** 서버 `GuideResponse` 를 그대로 옮긴 응답. */
 const REAL_RESPONSE = {
@@ -83,12 +98,10 @@ test("목업 안내문이 서버와 같은 다섯 칸을 준다", async () => {
 
   assert.ok("patient" in guide, "목업에 patient 가 없다 — 화면 머리가 빈다");
   assert.ok("scheduled_at" in guide);
+  const wanted = serverSectionFields();
+  assert.ok(wanted.length >= 5, "정본에서 섹션 칸을 못 읽었다 — 검사가 헛돈다");
   guide.sections.forEach((s) => {
-    assert.deepStrictEqual(
-      Object.keys(s).sort(),
-      ["body", "edited", "key", "locked", "warn"],
-      `목업 섹션이 서버와 다르다: ${s.key}`
-    );
+    assert.deepStrictEqual(Object.keys(s).sort(), wanted, `목업 섹션이 서버와 다르다: ${s.key}`);
   });
 });
 
