@@ -97,9 +97,9 @@ function messageSaying(row) {
 
 /** 이 줄에 「다시 보내기」를 붙일 수 있는가 — D1-7.
  *
- * FAILED · HELD만 대상이다. SCHEDULED는 아직 나갈 차례를 기다리는 중이라
- * 다시 보낼 것이 없고, SENT는 이미 갔고, CANCELED는 사람이 끈 것이라
- * 재발송이 아니라 승인부터 다시 해야 한다(회차 자체가 꺼졌다).
+ * FAILED만 대상이다. HELD는 발송 게이트가 막은 상태라 사유만 보여 주고,
+ * SCHEDULED는 아직 나갈 차례를 기다리는 중이라 다시 보낼 것이 없다.
+ * SENT는 이미 갔고, CANCELED는 사람이 끈 것이라 이 화면의 재시도 대상이 아니다.
  *
  * KEY-306의 재발송은 **원본 메시지 하나당 한 번**만 새 작업을 만든다 —
  * 이미 재발송 요청이 걸려 있으면(원본이 아니라 재발송으로 생긴 행이면)
@@ -107,5 +107,5 @@ function messageSaying(row) {
  * (KEY-251 범위 밖 — 이 화면은 상태만 본다) 여기서는 상태만으로 가른다.
  */
 function canResend(status) {
-  return status === "FAILED" || status === "HELD";
+  return status === "FAILED";
 }

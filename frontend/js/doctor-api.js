@@ -162,7 +162,7 @@ var doctorApi = {
       body: { reason: reason },
     });
   },
-  /* 실패·보류 건을 새 링크로 다시 보낼 작업으로 등록한다 — KEY-306, D1-7.
+  /* 실패 건을 새 링크로 다시 보낼 작업으로 등록한다 — KEY-306, D1-7.
      경로가 `/visits/{id}/guide/...`가 아니라 `/messages/history/{id}/...`
      인 이유는, 이 작업이 안내문이 아니라 **문자 한 통**을 대상으로 하기
      때문이다(kind·회차가 아니라 guide_message_id로 찾는다). */
@@ -249,9 +249,8 @@ var MOCK_GUIDE_PATIENTS = {
    `GUIDE_NOT_PENDING` 같은 상태 규칙을 아예 잴 수 없었다. */
 var MOCK_GUIDE_STATE = {};
 
-/* 재발송한 문자 번호 — KEY-306·D1-7. 재발송은 `visitId`가 아니라
-   `guide_message_id`를 대상으로 하므로(경로에 진료 번호가 없다) 위
-   `MOCK_GUIDE_STATE`와 같은 칸에 못 둔다. */
+/* 재발송한 문자 번호 — KEY-306·D1-7. 목업 메시지 번호도 실제 DB처럼
+   진료마다 달라야 다른 환자의 같은 회차 상태를 함께 바꾸지 않는다. */
 var MOCK_RESENT_MESSAGE_IDS = {};
 
 /* 이 진료의 저장 칸을 돌려준다. 없으면 만들어서 돌려준다 — 승인·반려·PATCH가
@@ -331,16 +330,17 @@ function mockTimeline(visitId) {
 
      칸 이름은 `at` 이다(`scheduled_at` 이 아니다) — 이력 항목과 같은 이름을
      쓴다. 화면이 두 목록을 같은 함수로 찍는다. */
+  var messageIdBase = Number(visitId) * 10;
   var messages =
     guide.status === "SCHEDULED_TO_SEND"
       ? [
-          sending(9001, "GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
+          sending(messageIdBase + 1, "GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
           /* 실패·보류 예시 — D1-7의 「사유를 보고 재시도」·「HELD 사유 표시」를
              목업에서도 검증할 수 있게 둔다. 발신번호 미등록은 처리 경로가
              다르다는 것도(어드민 A1-5) 사람 말로 확인할 수 있어야 한다. */
-          sending(9002, "CHECK_D7", "FAILED", "2026-09-09T18:00:00+09:00", null, "SENDER_UNREGISTERED"),
-          sending(9003, "CHECK_D15", "HELD", "2026-09-17T18:00:00+09:00", null, null, "SAFETY_CHECK_FAILED"),
-          sending(9004, "RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
+          sending(messageIdBase + 2, "CHECK_D7", "FAILED", "2026-09-09T18:00:00+09:00", null, "SENDER_UNREGISTERED"),
+          sending(messageIdBase + 3, "CHECK_D15", "HELD", "2026-09-17T18:00:00+09:00", null, null, "SAFETY_CHECK_FAILED"),
+          sending(messageIdBase + 4, "RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
         ].map(function (row) {
           /* 재발송을 누르면 그 줄이 다시 예정으로 돌아간다 — 실제 서버는
              원본은 그대로 두고 새 행을 만들지만(resend_sequence), 목업은
