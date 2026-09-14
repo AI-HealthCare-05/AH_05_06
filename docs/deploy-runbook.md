@@ -138,6 +138,28 @@ ssh … "chmod 600 ~/project/.env"      # 이 순서다. 나중에 잠그면 그
 서버 장부(`aerich` 표)에 남아 있으면, 다음 배포가 그것을 안 올린 것으로 보고 다시
 돌리다 `Duplicate column name` 으로 멈춘다.
 
+### 🚩 배포 전에 확인할 것 — **nginx 설정을 어느 쪽으로 올리나**
+
+`scripts/deployment.sh` 는 매번 묻는다(`:265`).
+
+```text
+1) http 사용중
+2) https 사용중
+```
+
+🚩 **지금은 2 다.** `care-on.site` 가 HTTPS 로 돌고 있는데(4-2-1), **1 을 고르면
+`prod_http.conf` 가 `default.conf` 를 덮어써 HTTPS 가 조용히 꺼진다.** 80 으로만
+받게 되고 환자 링크가 평문으로 돌아간다 — 오류도 안 나고 배포는 성공으로 끝난다.
+
+```text
+선택(ex. 1): 2
+Domain: care-on.site
+```
+
+도메인을 물으면 **`care-on.site` 를 그대로** 적는다. 그 값이 `server_name` 과
+`ssl_certificate` 경로 **양쪽**에 들어가므로, 오타가 나면 nginx 가 인증서를 못
+찾아 아예 뜨지 않는다.
+
 ### 🚩 그래서 먼저 — **서버에 올라간 마이그레이션은 병합 전까지 안 옮긴다**
 
 정상 경로는 이것 하나다. 열린 PR 의 마이그레이션이 이미 개발 서버에 적용됐다면,
@@ -471,9 +493,14 @@ IP 로도 아직 닿지만(`http://<IP>`), **확인은 도메인으로 한다** 
 |---|---|
 | 도메인 | `care-on.site` (등록기관 **가비아**, A 레코드 하나 · TTL 600) |
 | `www` | **안 쓴다** — 환자에게 문자로 나가는 링크라 짧은 쪽으로 정했다 |
-| 인증서 | Let's Encrypt · **2026-12-13 만료** · 알림 `leehee962@gmail.com` |
+| 인증서 | Let's Encrypt · **2026-12-13 만료** · 만료 알림 주소는 KEY-337 에 적어 두었다 |
 | 갱신 | `auto-certbot` 컨테이너가 48시간마다 `certbot renew` 를 돈다 |
 | 설정 | `infra/nginx/prod_https.conf` 의 `도메인` 을 치환해 `~/project/nginx/default.conf` 로 |
+
+🚩 **이후 배포마다 고를 것이 하나 생겼다.** `deployment.sh` 가 묻는 「http / https」에서
+**https 쪽(2)** 을 고르고 도메인에 `care-on.site` 를 적어야 한다 — 1 을 고르면 이
+설정이 덮여 **HTTPS 가 조용히 꺼진다.** 위 「배포 전에 확인할 것 — nginx 설정을
+어느 쪽으로 올리나」에 적어 두었다.
 
 ### 처음 붙일 때의 순서 — 이 순서여야 한다
 
@@ -536,6 +563,9 @@ docker compose run --rm --entrypoint sh certbot -c \
    cp /opt/certbot/src/certbot/src/certbot/_internal/plugins/nginx/tls_configs/options-ssl-nginx.conf /etc/letsencrypt/"
 ```
 
+위 경로는 **certbot 이미지 안의 자리**라 이미지 판이 바뀌면 달라질 수 있다.
+못 찾으면 `find / -name options-ssl-nginx.conf` 로 다시 찾는다.
+
 이것을 **올리기 전 `nginx -t` 가 잡았다.** 백업하고, 올리고, 검사하고, 그 다음에
 reload 하는 순서를 지키면 죽는 설정이 반영되지 않는다.
 
@@ -564,8 +594,11 @@ webroot` 와 경로가 저장돼 있어 인자 없이도 같은 방식으로 간
 ```bash
 curl http://care-on.site/.well-known/acme-challenge/probe   # 리다이렉트가 아니라 200
 docker compose run --rm -T --entrypoint sh certbot -c \
-  "timeout 120 certbot renew --dry-run --non-interactive; echo EXIT=$?"
+  'timeout 120 certbot renew --dry-run --non-interactive; echo EXIT=$?'
 ```
+
+🚩 **작은따옴표다.** 큰따옴표로 쓰면 `$?` 를 **서버 셸이 먼저** 치환해서,
+컨테이너 안 certbot 의 종료 코드가 아니라 직전 명령의 값이 찍힌다.
 
 ### 되돌릴 때
 
