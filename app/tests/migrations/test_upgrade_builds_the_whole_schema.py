@@ -185,6 +185,10 @@ async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
         missing_event_columns = sorted(required_event_columns - event_columns)
         assert not missing_event_columns, f"KEY-250 감사 이벤트 컬럼이 누락됐다: {missing_event_columns}"
 
+        # KEY-252: 링크 교체 판정은 감사 문구 파싱이 아니라 구조화된 원인 ID를 쓴다.
+        guide_event_columns = {row[0] for row in await _sql(SCRATCH, "SHOW COLUMNS FROM guide_event")}
+        assert "caused_by_message_id" in guide_event_columns, "KEY-252 링크 원인 메시지 컬럼이 누락됐다"
+
         # KEY-297: 발송 직전 링크 발급/회전에 필요한 컬럼이 실제로 생성됐는가.
         link_columns = {row[0] for row in await _sql(SCRATCH, "SHOW COLUMNS FROM patient_guide_link")}
         required_link_columns = {"issued_at", "last_message_id"}

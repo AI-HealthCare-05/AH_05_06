@@ -248,8 +248,11 @@ function statusScreenHtml(view) {
        최종 확인 탭의 승인 버튼 옆에 두면, 이미 승인된 뒤에 그 탭을 다시
        열 일이 없어서 찾지 못한다. */
     '<div class="box__head st__head"><span class="box__title">발송 · 예정</span>' +
+    (view.canPreview
+      ? '<button class="button-ghost button-ghost--sm st__act" type="button" data-status-preview>안내문 미리보기</button>'
+      : "") +
     (view.canUnapprove
-      ? '<button class="button-ghost button-ghost--sm st__act" type="button" id="status-unapprove">승인 철회</button>'
+      ? '<button class="button-ghost button-ghost--sm" type="button" id="status-unapprove">승인 철회</button>'
       : "") +
     "</div>" +
     sendRowsHtml(view.messages) +
@@ -275,12 +278,8 @@ function statusScreenHtml(view) {
     esc(view.checkInSaying || "아직 없음") +
     "</p></div></section>" +
     "</div>" +
-    /* **환자 액션 현황 아래에 링크 블록** — 원문 배치가 맨 아래에
-       「[링크 무효화] [재발송]」 자리를 잡아 둔 그 자리다(KEY-275). 「재발송」은
-       원문이 상상했던 것과 다른 자리에 섰다 — 문자 한 통 단위 작업이라
-       KEY-306이 위 발송·예정 표의 실패·보류 줄에 [다시 보내기]로 붙였다
-       (KEY-251). 여기 남는 것은 링크 무효화·재발급뿐이라, 안내문의
-       문자 설정과 **같은 블록**을 그린다. */
+    /* 환자 링크는 발송 이력처럼 사용 가능 여부만 보여 준다. 링크 발급·복사·
+       열기·폐기는 D1-6과 S1-14의 범위가 아니다(2026-09-11 범위 조정). */
     patientLinkBlockHtml(view.link || null, view.guideStatus, new Date()) +
     /* 아래 전폭 */
     '<section class="box tl">' +

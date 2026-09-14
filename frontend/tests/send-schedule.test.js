@@ -494,12 +494,12 @@ test("눌러도 아무 일 없는 버튼을 두지 않는다", () => {
   assert.strictEqual(dead.join("\n"), "", "시각 변경 · 즉시 발송 · 문자 충전은 아직 API 가 없다");
 });
 
-test("아직 없는 것을 화면이 말한다", () => {
+test("발송 예정 화면이 지원하는 동작을 말한다", () => {
   const markup = markupOnly(read("manage.html"));
 
   assert.ok(
-    markup.indexOf("준비 중입니다") !== -1,
-    "왜 버튼이 없는지 적지 않으면 고장으로 읽힌다",
+    markup.indexOf("승인된 안내문을 미리볼 수 있습니다") !== -1,
+    "미리보기 동작을 안내하지 않는다",
   );
   assert.ok(
     markup.indexOf("환자 관리") !== -1 && markup.indexOf("발송 이력") !== -1,

@@ -1,12 +1,12 @@
 /* 환자 링크 블록의 규칙 — KEY-275.
  *
- * 문자 문구에 `{링크}` 자리표시자가 있는데 **그 링크가 어느 화면에도 안
- * 보였다.** 스탭이 환자와 통화하며 「링크 다시 보내드릴게요」를 하려면 살아
- * 있는지 · 언제까지인지 · 새로 만들 수 있는지를 봐야 한다.
+ * 문자 문구에 `{링크}` 자리표시자가 있으므로 링크가 살아 있는지와 언제까지인지
+ * 확인할 수 있어야 한다. 2026-09-11 범위 조정 뒤 이 블록은 발송 이력과 같은
+ * **읽기 전용 상태 표시**다.
  *
  * 블록은 두 화면에 선다 — 안내문의 「문자 설정」(S1-14) 문구 블록 아래,
  * 그리고 현황(D1-6)의 환자 액션 현황 아래. 와이어프레임이 현황 맨 아래에
- * 「[링크 무효화] [재발송]」 자리를 이미 잡아 두었다.
+ * 두 화면 모두 `사용 중 / 사용 불가`만 표시하고 관리 단추는 두지 않는다.
  *
  * **여기 있는 것은 전부 순수 함수다.** 데이터를 받아 문자열·상태를 돌려준다.
  * 화면 두 곳이 같은 답을 보려면 규칙이 한 군데 있어야 한다 — 두 벌이 되면
@@ -93,30 +93,25 @@ function patientLinkDaysLeft(link, now) {
   return left <= 0 ? 0 : Math.floor(left / 86400000);
 }
 
-/* 상태마다 사람이 읽을 말. **각 상태가 다음에 무엇을 할지 말해야 한다** —
-   「링크 없음」만 있으면 스탭은 자기가 뭘 잘못했는지 묻는다. */
+/* 상태마다 사람이 읽을 말. D1-6·S1-14는 발송 이력처럼 상태만 보여 주는
+   읽기 전용 자리다 — 링크 발급·복사·열기·폐기는 이 화면에서 하지 않는다. */
 function patientLinkStateNote(state, link, now) {
-  if (state === LINK_STATE.NOT_YET) return "의사가 승인하면 발급할 수 있습니다";
+  if (state === LINK_STATE.NOT_YET) return "승인 전이라 아직 사용할 수 없습니다";
   if (state === LINK_STATE.ORPHAN) {
-    return "승인이 철회됐는데 이 링크는 아직 열립니다 — 폐기하거나, 다시 승인한 뒤 새 링크를 만들어 주세요";
+    return "승인이 철회됐지만 기존 링크는 아직 사용 중입니다";
   }
-  if (state === LINK_STATE.NOT_ISSUED) return "승인됐습니다 — [새 링크] 를 누르면 환자에게 보낼 주소가 생깁니다";
+  if (state === LINK_STATE.NOT_ISSUED) return "아직 발송된 링크가 없습니다";
   if (state === LINK_STATE.EXPIRED) {
-    return "기한이 지났습니다 — 환자가 지금 열면 안내문이 안 보입니다";
+    return "기간이 만료되어 사용할 수 없습니다";
   }
   var days = patientLinkDaysLeft(link, now);
   if (days === null) return "";
   return days > 0 ? days + "일 남음" : "오늘 안에 만료됩니다";
 }
 
-/* 이 상태에서 눌러도 되는 것. 화면이 단추를 세지 않게 여기서 답한다. */
+/* D1-6·S1-14 링크 블록은 읽기 전용이다. */
 function patientLinkActions(state) {
-  if (state === LINK_STATE.NOT_YET) return [];
-  /* 폐기만 낸다. 「새 링크」는 서버가 승인을 요구해 409 (`GUIDE_NOT_APPROVED`)
-     로 막는다 — 눌러도 안 되는 단추를 두지 않는다. */
-  if (state === LINK_STATE.ORPHAN) return ["revoke"];
-  if (state === LINK_STATE.EXPIRED) return ["new"];
-  return state === LINK_STATE.FRESH ? ["copy", "open", "new"] : ["new"];
+  return [];
 }
 
 /* **블록 자체도 한 벌이다.** 두 화면이 같은 HTML 을 그린다 — 모양이 갈리면
@@ -126,8 +121,6 @@ function patientLinkActions(state) {
    그 클래스가 `doctor.css` 에만 있어서 스탭 화면에서는 안 밀린다. */
 function patientLinkBlockHtml(link, guideStatus, now) {
   var state = patientLinkState(link, guideStatus, now);
-  var acts = patientLinkActions(state);
-  var fresh = state === LINK_STATE.FRESH;
 
   return (
     '<section class="box pl pl--' +
@@ -135,7 +128,9 @@ function patientLinkBlockHtml(link, guideStatus, now) {
     '">' +
     '<div class="box__head pl__head">' +
     '<span class="box__title">환자 링크</span>' +
-    (state === LINK_STATE.NOT_YET ? "" : '<span class="pl__tag">' + esc(patientLinkTag(state)) + "</span>") +
+    '<span class="pl__tag">' +
+    esc(patientLinkTag(state)) +
+    "</span>" +
     "</div>" +
     '<div class="pl__body">' +
     '<p class="pl__when">' +
@@ -144,18 +139,15 @@ function patientLinkBlockHtml(link, guideStatus, now) {
     '<p class="pl__sub">' +
     esc(patientLinkStateNote(state, link, now)) +
     "</p>" +
-    (fresh ? '<p class="pl__once">주소는 이 자리에서만 한 번 보입니다 — 새로고침하면 사라집니다</p>' : "") +
-    (acts.length ? '<div class="pl__acts">' + acts.map(patientLinkActionHtml).join("") + "</div>" : "") +
     "</div></section>"
   );
 }
 
-/* 배지 — 상태를 한 낱말로. 「없음」은 배지를 안 단다(없는 것을 굳이 표시 안 한다). */
+/* 발송 이력과 같은 두 상태만 쓴다. 세부 종료 사유는 아래 설명에서 말한다. */
 function patientLinkTag(state) {
-  if (state === LINK_STATE.ORPHAN) return "승인 철회됨";
-  if (state === LINK_STATE.NOT_ISSUED) return "발급 전";
-  if (state === LINK_STATE.EXPIRED) return "기한 지남";
-  return state === LINK_STATE.FRESH ? "방금 만듦" : "사용 중";
+  return state === LINK_STATE.LIVE || state === LINK_STATE.FRESH || state === LINK_STATE.ORPHAN
+    ? "사용 중"
+    : "사용 불가";
 }
 
 /* 언제까지인가. **시각까지 적는다** — 168 시간짜리라 날짜만 적으면
@@ -182,20 +174,6 @@ function patientLinkWhen(link, state) {
   var when = clinicWhenText(link.expiresAt);
   if (!when) return "";
   return state === LINK_STATE.EXPIRED ? when + " 에 닫혔습니다" : when + " 까지";
-}
-
-/* 단추. **주소를 DOM 에 안 싣는다** — `data-*` 에도 안 담는다. 누른 뒤에
-   화면이 제 손에 쥔 값으로 복사·열기를 한다(#224 가 의사 화면에서 쓴 방식). */
-function patientLinkActionHtml(action) {
-  var saying = { copy: "복사", open: "열기", new: "새 링크 만들기", revoke: "링크 폐기" };
-  var kind = action === "new" || action === "revoke" ? "button-primary" : "button-ghost";
-  return (
-    '<button class="' + kind + ' ' + kind + '--sm" type="button" data-patient-link="' +
-    action +
-    '">' +
-    saying[action] +
-    "</button>"
-  );
 }
 
 /* ── 화면이 쥔 링크 — 한 벌이다 ─────────────────────────────────────────

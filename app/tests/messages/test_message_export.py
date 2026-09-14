@@ -68,6 +68,9 @@ def an_item(**over: Any) -> SentMessageItem:
         "prescription_set": "자궁내막증 · 비잔",
         "viewed": True,
         "viewed_at": datetime(2026, 8, 11, 19, 30, tzinfo=DISPLAY_TIMEZONE),
+        "link_status": "ACTIVE",
+        "link_expires_at": datetime(2026, 8, 14, 18, 0, tzinfo=DISPLAY_TIMEZONE),
+        "link_end_reason": None,
     }
     values.update(over)
     return SentMessageItem(**values)

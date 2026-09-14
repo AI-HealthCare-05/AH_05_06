@@ -199,10 +199,12 @@ class TestDispatchAuditTrail(TestCase):
         ).order_by("guide_event_id")
         assert len(events) == 2
         assert events[0].actor_id == SYSTEM_ISSUER_ID
+        assert events[0].caused_by_message_id == 11
         assert "action=ISSUED" in (events[0].reason or "")
         assert "message_kind=GUIDE" in (events[0].reason or "")
         assert "message_id=11" in (events[0].reason or "")
         assert "action=ROTATED" in (events[1].reason or "")
+        assert events[1].caused_by_message_id == 12
         assert "message_kind=CHECK_D7" in (events[1].reason or "")
         assert "message_id=12" in (events[1].reason or "")
         audit_text = " ".join(event.reason or "" for event in events)
