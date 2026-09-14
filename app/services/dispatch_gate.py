@@ -1,6 +1,6 @@
-"""발송 직전 게이트 — KEY-250.
+"""발송 직전 게이트 — KEY-250, KEY-289.
 
-안내 미승인 / 생성 전·후 안전검증 미통과 / 원본 의료문서 미삭제 / 예약 주소
+안내 미승인 / 생성 후 안전검증 미통과 / 원본 의료문서 미삭제 / 예약 주소
 없음 중 하나라도 걸리면 막는다(`HELD`). 막힌 이유는 `GuideMessageHold` 값으로만 돌려준다 —
 예외 메시지나 원문을 실어 나르지 않는다.
 """
@@ -12,7 +12,14 @@ from app.core.storage import LocalFileStorage, StorageProbe
 from app.models.catalog import MessageTemplateKind
 from app.models.documents import MedicalDocument
 from app.models.staffs import Hospital
-from app.models.visits import GuideDocument, GuideMessage, GuideMessageHold
+from app.models.visits import (
+    GuideDocument,
+    GuideMessage,
+    GuideMessageHold,
+    GuideSafetyCheck,
+    SafetyCheckStage,
+    SafetyCheckVerdict,
+)
 from app.services.message_templates import effective_body
 
 
@@ -60,11 +67,17 @@ async def evaluate_dispatch_gate(
             hospital=hospital,
         )
 
-    # 생성 전·후 안전검증 — KEY-250 범위. "생성 전" 쪽은 GuideService.generate()가
-    # 확정 OCR 필드 없이는 생성 자체를 막아서(KEY-150), 여기 도달한 GuideDocument는
-    # 이미 그 검증을 통과한 상태다. "생성 후" 쪽을 나타내는 필드·이벤트는 코드에서
-    # 확인하지 못했다 — 잘못 짐작해서 안전 게이트를 엉성하게 만드는 것보다는
-    # 이희진 님 확인 전까지 비워 두는 쪽을 택했다. PR 코멘트에도 남긴다.
+    # 생성 후 안전검증 — KEY-289. "생성 전" 쪽은 GuideService.generate()가
+    # 확정 OCR 없이는 생성 자체를 막아(KEY-150) 여기 도달한 GuideDocument는
+    # 이미 통과한 상태다. "생성 후"는 guide_safety_check(POST_GENERATE, BLOCK)로 판정한다.
+    if not await _post_generate_safety_check_passed(guide.guide_document_id):
+        return DispatchGateDecision(
+            guide=guide,
+            hold_reason=GuideMessageHold.SAFETY_CHECK_FAILED,
+            body=body,
+            hospital=hospital,
+        )
+
     return DispatchGateDecision(guide=guide, hold_reason=None, body=body, hospital=hospital)
 
 
@@ -92,6 +105,19 @@ def _booking_url_is_ready(body: str, hospital: Hospital | None) -> bool:
     if "{예약링크}" not in body:
         return True
     return bool(hospital and hospital.booking_url)
+
+
+async def _post_generate_safety_check_passed(guide_document_id: int) -> bool:
+    """POST_GENERATE 안전검증 결과가 BLOCK이면 False를 반환한다 — KEY-289.
+
+    결과 레코드 자체가 없으면 통과로 처리한다. 고정 템플릿 경로는
+    POST_GENERATE 결과를 기록하지 않으며, KEY-83 계약상 차단 대상이 아니다.
+    """
+    return not await GuideSafetyCheck.filter(
+        guide_document_id=guide_document_id,
+        stage=SafetyCheckStage.POST_GENERATE,
+        verdict=SafetyCheckVerdict.BLOCK,
+    ).exists()
 
 
 async def _source_documents_are_deleted(visit_id: int, storage: StorageProbe) -> bool:
