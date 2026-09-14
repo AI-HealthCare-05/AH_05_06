@@ -196,7 +196,7 @@ class TestSafetyCheckGate(TestCase):
         finally:
             path.unlink(missing_ok=True)
 
-    async def test_safety_check_does_not_block_after_pass(self) -> None:
+    async def test_dispatch_sends_message_with_safety_check_passed(self) -> None:
         """PASS 레코드가 있고 다른 게이트도 통과하면 발송까지 도달한다."""
         message = await make_due_message(approved=True, link_free_template=True)
         await _attach_safety_check(
