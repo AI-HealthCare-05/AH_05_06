@@ -62,7 +62,7 @@ function patientTabOf(sectionKey) {
 /* 미리보기 iframe 이 실을 스타일시트 — **`frontend/guide.html` 과 같은 벌.**
  *
  * 여기는 `tokens.css` + `guide.css`(버전 없음) 둘뿐이었다. 환자 화면은
- * `guide.css?v=11` 과 `chat.css?v=5` 까지 신는다. 버전 쿼리가 없으면 미리보기만
+ * `guide.css?v=12` 과 `chat.css?v=5` 까지 신는다. 버전 쿼리가 없으면 미리보기만
  * **옛 캐시본**을 볼 수 있다 — 이 티켓이 없애려던 drift 의 축소판이다
  * (이희진 님 `#253` ②).
  *
@@ -76,7 +76,7 @@ function patientTabOf(sectionKey) {
  */
 var PATIENT_STYLESHEETS = [
   "/patient_wireframe/css/tokens.css",
-  "/patient_wireframe/css/guide.css?v=11",
+  "/patient_wireframe/css/guide.css?v=12",
   "/patient_wireframe/css/chat.css?v=5",
 ];
 
@@ -326,4 +326,29 @@ function patientPreviewBodyHtml(bodyOf, current, summary, preview) {
     return patientCautionHtml(bodyOf("caution"), bodyOf("emergency"));
   }
   return patientMedicationHtml(summary, bodyOf("medication"), preview);
+}
+
+function patientGuidePreviewHtml(sections, current, summary, preview) {
+  var tuckedUnder = { emergency: "caution" };
+  var bodyOf = function (key) {
+    var row = (sections || []).find(function (section) {
+      return section.key === key || tuckedUnder[section.key] === key;
+    });
+    return row && row.body ? row.body : "";
+  };
+  var doc =
+    '<!doctype html><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+    patientStylesheetLinks() +
+    '<div class="app"><header class="header">' +
+    patientTabBarHtml(current) +
+    '</header><main class="body">' +
+    patientPreviewBodyHtml(bodyOf, current, summary || "", preview) +
+    "</main></div>";
+  return (
+    '<iframe class="pv" title="환자 화면 미리보기" aria-label="환자 화면 미리보기"' +
+    ' sandbox="allow-same-origin" loading="lazy" srcdoc="' +
+    doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;") +
+    '"></iframe>'
+  );
 }

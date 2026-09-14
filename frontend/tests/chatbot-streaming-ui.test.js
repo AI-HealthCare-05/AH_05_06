@@ -82,16 +82,13 @@ test("승인 컨텍스트를 사용할 수 없는 링크 오류는 내부 정보
   );
 });
 
-test("KEY-95 UI는 근거·출처·한계를 **실제 렌더 경로**에 둔다", () => {
-  /* 전에는 `js/guide.js` 를 봤다 — 아무 화면도 안 싣는 고아였다 (KEY-281).
-     `guide.html` 이 싣는 챗봇은 `patient_wireframe/js/chat.js` 이고, 라벨
-     모양이 다르다(`📎`·`한계 · ` 대신 `근거 · `·`한계 · ` 한 벌). 지키려던
-     것은 라벨의 글자가 아니라 **셋을 환자에게 보인다**는 계약이다. */
+test("KEY-326 UI는 출처와 fallback을 유지하고 상세 메타는 숨긴다", () => {
+  /* KEY-326은 실제 렌더 경로의 보조 문구만 축소한다. API 메타는 유지한다. */
   const chat = fs.readFileSync(path.join(__dirname, "..", "patient_wireframe", "js", "chat.js"), "utf8");
 
   assert.match(chat, /'출처 · ' \+ msg\.source/, "출처를 안 보인다");
-  assert.match(chat, /\['근거', msg\.evidence\]/, "근거를 안 보인다");
-  assert.match(chat, /\['한계', msg\.limitation\]/, "한계를 안 보인다");
+  assert.doesNotMatch(chat, /\['근거', msg\.evidence\]/);
+  assert.doesNotMatch(chat, /\['한계', msg\.limitation\]/);
   /* 승인 범위 밖이면 그렇다고 말한다 — 지어낸 답을 안 준다 */
   assert.match(chat, /승인된 안내 범위 밖이라 답할 수 없어요/, "범위 밖을 안 말한다");
 });

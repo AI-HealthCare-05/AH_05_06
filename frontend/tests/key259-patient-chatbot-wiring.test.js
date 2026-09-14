@@ -174,9 +174,10 @@ test('만료·없는 링크·API 미준비·응답 실패는 환자용 문구로
   }
 });
 
-test('?mock=1도 공통 응답 경로로 근거·한계·승인 섹션과 fallback을 그린다', async () => {
+test('KEY-326 공통 응답 경로는 상세 메타를 숨기고 출처와 fallback을 그린다', async () => {
   const result = {
     answer: '승인 안내 범위의 합성 답변',
+    source: '합성 출처',
     evidence: '승인된 복약 안내',
     limitation: '승인된 안내 범위에서만 답변합니다.',
     grounded_section: 'medication',
@@ -189,9 +190,10 @@ test('?mock=1도 공통 응답 경로로 근거·한계·승인 섹션과 fallba
   await new Promise((resolve) => setImmediate(resolve));
 
   const rendered = allText(ui.ids['chat-messages']);
-  assert.match(rendered, /근거 · 승인된 복약 안내/);
-  assert.match(rendered, /한계 · 승인된 안내 범위에서만 답변합니다\./);
-  assert.match(rendered, /승인 안내 · 복약 안내/);
+  assert.match(rendered, /출처 · 합성 출처/);
+  assert.doesNotMatch(rendered, /근거 ·/);
+  assert.doesNotMatch(rendered, /한계 ·/);
+  assert.doesNotMatch(rendered, /승인 안내 ·/);
   assert.match(rendered, /승인된 안내 범위 밖이라 답할 수 없어요\./);
   assert.doesNotMatch(rendered, /승인 안내 · medication/);
 });

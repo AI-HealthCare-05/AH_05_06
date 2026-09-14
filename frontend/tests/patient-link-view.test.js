@@ -45,8 +45,8 @@ test("**승인이 철회돼도 살아 있는 링크는 감추지 않는다** —
   /* **보이기만 하면 소용이 없다 — 끊을 길이 함께 있어야 한다.** */
   /* `join` 으로 견준다 — 상자 안에서 만든 배열이라 프로토타입이 달라
      `deepStrictEqual` 이 값이 같아도 걸린다. */
-  assert.equal(patientLinkActions(LINK_STATE.ORPHAN).join(","), "revoke", "폐기할 단추가 없다");
-  assert.equal(patientLinkTag(LINK_STATE.ORPHAN), "승인 철회됨");
+  assert.deepEqual(patientLinkActions(LINK_STATE.ORPHAN), [], "읽기 전용 블록에 관리 단추가 있다");
+  assert.equal(patientLinkTag(LINK_STATE.ORPHAN), "사용 중");
 });
 
 test("기한이 지나면 살아 있는 것으로 안 보인다", () => {
@@ -84,11 +84,11 @@ test("남은 날은 내림이다 — 6일 하고 반나절은 6일이다", () =>
   assert.equal(patientLinkDaysLeft(link, AT("2026-09-12T06:00:00+09:00")), 0);
 });
 
-test("**상태마다 다음에 할 일을 말한다** — 「링크 없음」만 있으면 제 잘못인 줄 안다", () => {
+test("**상태마다 사용 가능 여부를 말한다** — 관리 행동을 안내하지 않는다", () => {
   const { patientLinkStateNote, LINK_STATE } = rules();
   const now = AT("2026-09-05T10:00:00+09:00");
-  assert.match(patientLinkStateNote(LINK_STATE.NOT_YET, null, now), /의사가 승인하면/);
-  assert.match(patientLinkStateNote(LINK_STATE.EXPIRED, null, now), /안내문이 안 보입니다/);
+  assert.match(patientLinkStateNote(LINK_STATE.NOT_YET, null, now), /사용할 수 없습니다/);
+  assert.match(patientLinkStateNote(LINK_STATE.EXPIRED, null, now), /사용할 수 없습니다/);
   assert.match(
     patientLinkStateNote(LINK_STATE.LIVE, { expiresAt: "2026-09-12T18:00:00+09:00" }, now),
     /7일 남음/,
@@ -100,12 +100,12 @@ test("**상태마다 다음에 할 일을 말한다** — 「링크 없음」만
   );
 });
 
-test("**주소가 없으면 복사·열기를 내주지 않는다** — 눌러도 아무 일 없는 단추가 가장 나쁘다", () => {
+test("**링크 블록은 모든 상태에서 읽기 전용이다**", () => {
   const { patientLinkActions, LINK_STATE } = rules();
   assert.deepEqual(patientLinkActions(LINK_STATE.NOT_YET), []);
-  assert.deepEqual(patientLinkActions(LINK_STATE.FRESH), ["copy", "open", "new"]);
-  assert.deepEqual(patientLinkActions(LINK_STATE.LIVE), ["new"], "주소를 안 쥐고 복사를 내줬다");
-  assert.deepEqual(patientLinkActions(LINK_STATE.EXPIRED), ["new"]);
+  assert.deepEqual(patientLinkActions(LINK_STATE.FRESH), []);
+  assert.deepEqual(patientLinkActions(LINK_STATE.LIVE), []);
+  assert.deepEqual(patientLinkActions(LINK_STATE.EXPIRED), []);
 });
 
 test("주소가 저장소·로그로 안 샌다 — 이 창의 기억으로만 산다", () => {
@@ -278,17 +278,18 @@ test("**주소를 DOM 에 안 싣는다** — data-* 에도 안 담는다", () =
   );
   assert.doesNotMatch(html, /SECRET/, "링크 원문이 HTML 에 실렸다");
   assert.doesNotMatch(html, /https?:\/\//, "주소가 HTML 에 실렸다");
-  assert.match(html, /data-patient-link="copy"/, "복사 단추가 없다");
+  assert.doesNotMatch(html, /data-patient-link=/, "읽기 전용 블록에 관리 단추가 있다");
+  assert.match(html, /사용 중/);
 });
 
 test("아직 없을 때는 단추를 안 낸다 — 눌러도 안 되는 단추가 가장 나쁘다", () => {
   const { patientLinkBlockHtml } = rules();
   const html = patientLinkBlockHtml(null, "STAFF_REVIEW", AT("2026-09-05T10:00:00+09:00"));
   assert.doesNotMatch(html, /data-patient-link=/);
-  assert.match(html, /의사가 승인하면/);
+  assert.match(html, /사용 불가/);
 });
 
-test("기한이 지나면 그렇게 말하고 새로 만들 길만 준다", () => {
+test("기한이 지나면 사용 불가만 표시하고 관리 단추를 두지 않는다", () => {
   const { patientLinkBlockHtml } = rules();
   const html = patientLinkBlockHtml(
     { expiresAt: "2026-09-04T18:00:00+09:00" },
@@ -296,8 +297,8 @@ test("기한이 지나면 그렇게 말하고 새로 만들 길만 준다", () =
     AT("2026-09-05T10:00:00+09:00"),
   );
   assert.match(html, /닫혔습니다/);
-  assert.match(html, /data-patient-link="new"/);
-  assert.doesNotMatch(html, /data-patient-link="copy"/, "주소도 없는데 복사를 내줬다");
+  assert.match(html, /사용 불가/);
+  assert.doesNotMatch(html, /data-patient-link=/);
 });
 
 /* ── 승인은 됐는데 아직 안 만든 상태 ─────────────────────────────────────
@@ -320,14 +321,14 @@ test("승인됐는데 아직 안 만든 것은 **승인 전과 다른 상태**�
   assert.equal(patientLinkState(null, "SCHEDULED_TO_SEND", now), LINK_STATE.NOT_ISSUED, "승인 전과 같은 상태로 뭉갰다");
 });
 
-test("승인 뒤에는 만들 단추가 있다 — 없으면 스탭이 첫 링크를 못 만든다", () => {
+test("승인 뒤에도 링크 블록은 관리 단추를 만들지 않는다", () => {
   const { patientLinkActions, LINK_STATE } = rules();
 
   assert.deepEqual(patientLinkActions(LINK_STATE.NOT_YET), [], "승인 전에 만들 단추를 내면 눌러도 409 다");
-  assert.deepEqual(patientLinkActions(LINK_STATE.NOT_ISSUED), ["new"]);
+  assert.deepEqual(patientLinkActions(LINK_STATE.NOT_ISSUED), []);
 });
 
-test("두 상태가 서로 다른 말을 한다 — 승인된 건에 「승인하면」이라고 하지 않는다", () => {
+test("두 상태가 서로 다른 읽기 전용 안내를 한다", () => {
   const { patientLinkStateNote, LINK_STATE } = rules();
   const now = AT("2026-09-07T10:00:00+09:00");
 
@@ -336,7 +337,7 @@ test("두 상태가 서로 다른 말을 한다 — 승인된 건에 「승인�
 
   assert.notEqual(before, after, "승인 전과 승인 뒤가 같은 말을 한다");
   assert.ok(!/승인하면/.test(after), `이미 승인된 건에 「승인하면」이라고 말한다 — ${after}`);
-  assert.ok(/새 링크/.test(after), "무엇을 눌러야 하는지 안 알려 준다");
+  assert.ok(/발송된 링크/.test(after), "발급 전 상태를 설명하지 않는다");
 });
 
 test("첫 발급은 issue, 교체는 re-issue — 없는 링크에 교체를 부르면 404 다", () => {

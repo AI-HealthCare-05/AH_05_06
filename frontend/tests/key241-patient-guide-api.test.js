@@ -473,17 +473,26 @@ test('fillHeader: 인증 뷰어에게는 이름이 붙고, 아니면 진료일·
     const fakeDocument = {
       getElementById(id) {
         assert.strictEqual(id, 'header-patient');
-        return { set textContent(value) { captured = value; } };
+        return {
+          set textContent(value) { captured = value; },
+          appendChild(node) { captured += node.textContent; },
+        };
       },
+      createElement(tag) { assert.strictEqual(tag, 'strong'); return { textContent: '' }; },
+      createTextNode(value) { return { textContent: value }; },
     };
-    const fillHeader = new Function('document', 'd', fnSource + '\nfillHeader(d);');
+    const helperAt = GUIDE_SOURCE.indexOf('function richEl(tag, cls, value) {');
+    const helper = GUIDE_SOURCE.slice(helperAt, GUIDE_SOURCE.indexOf('\n  }', helperAt) + 4);
+    const fillHeader = new Function('document', 'd',
+      'function el(tag, cls) { const n = document.createElement(tag); n.className = cls; return n; }\n' +
+      helper + '\n' + fnSource + '\nfillHeader(d);');
     fillHeader(fakeDocument, d);
     return captured;
   }
 
   assert.strictEqual(
     headerTextFor({ patient: '신짱구', visit: '2026.09.03', clinic: '기준의원' }),
-    '신짱구 · 2026.09.03 진료 · 기준의원',
+    '신짱구 님 · 2026.09.03 진료 · 기준의원',
     '인증 뷰어에게는 이름이 맨 앞에 붙어야 한다',
   );
   assert.strictEqual(
