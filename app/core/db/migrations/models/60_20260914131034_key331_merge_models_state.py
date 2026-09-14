@@ -18,8 +18,17 @@
 
 🚩 **스냅샷은 3.13 에서 만들었다.** 3.14 는 JSONField 의 `python_type` 을
 `dict | list` 로 적는데 CI·배포(3.13)는 `Union[dict, list]` 로 적는다. 판이
-갈리면 다음 `migrate` 가 JSON 칸 여섯에 **아무것도 안 바꾸는 `MODIFY COLUMN`**
-을 붙인다(`#298` 실측). `docs/models-layout.md` 2-4.
+갈리면 다음 `migrate` 가 **아무것도 안 바꾸는 `MODIFY COLUMN`** 을 붙인다.
+
+**세는 자리가 둘이라 숫자가 다르다** (이희진 님 `#305` 리뷰).
+
+    스냅샷에서 갈리는 칸    여덟 — `aerich.content` 까지
+    실제로 나오는 SQL       일곱 — aerich 는 **제 추적 표를 diff 에서 뺀다**
+                                  (`aerich/migrate.py:573,579` 의 `pop`)
+
+`aerich` 표도 같은 드리프트를 겪지만 DDL 로는 안 나온다. **SQL 줄 수만 보고
+「다 고쳤다」고 하면 그 한 칸이 남는다** — 다음 `migrate` 가 계속 드리프트를
+본다. `docs/models-layout.md` 2-4.
 
 **번호가 60 인 까닭.** `--offline` 은 저장소 파일에서 번호를 잇는데, 59 는 열려
 있는 `#298`(KEY-333)이 같은 목적으로 쓰고 있다. 둘 다 병합되면 번호가 겹치므로
