@@ -167,18 +167,6 @@
         answer.appendChild(meta);
       }
 
-      [
-        ['근거', msg.evidence],
-        ['한계', msg.limitation],
-        ['승인 안내', chatbotSectionLabel(msg.groundedSection)],
-      ].forEach(function (item) {
-        if (!item[1]) return;
-        var detail = document.createElement('p');
-        detail.className = 'chat-answer__meta';
-        detail.textContent = item[0] + ' · ' + item[1];
-        answer.appendChild(detail);
-      });
-
       if (msg.fallback) {
         var fallback = document.createElement('p');
         fallback.className = 'chat-answer__meta';

@@ -98,6 +98,23 @@ function timelineWhen(iso) {
   return day && time ? day + " " + time : String(iso || "");
 }
 
+/* 문자 동의·거부에 붙는 시각 — KEY-344.
+ *
+ * 예전에는 API 가 준 ISO 를 그대로 붙여 `동의 · 2026-09-07T14:04:36.032629+09:00`
+ * 이 떴다. 초·마이크로초·`+09:00` 까지 나와 한 줄이 길어지고, 스탭이 읽기
+ * 어려웠다.
+ *
+ * **시각은 글자에서 읽는다.** `new Date()` 로 감싸면 보는 사람의 시간대로
+ * 옮겨진다 — 이 저장소가 정확히 그 부류로 크게 데었다(`clinic-clock.js`).
+ *
+ * 못 읽으면 **아무것도 안 붙인다.** 「동의 · 」처럼 꼬리만 남기거나 날짜를
+ * 지어내는 것보다, 시각 없이 「동의」라고만 말하는 편이 맞다.
+ */
+function consentWhen(iso) {
+  var stamp = clinicStamp(iso);
+  return stamp ? " · " + stamp : "";
+}
+
 /* 사건마다 붙는 한 조각 부연 — 어떤 문서였나, 어느 갈래를 고쳤나, 왜 반려됐나.
    반려 사유·실패 코드는 스탭이 다음에 할 일을 정하는 문장이라 그대로 보인다. */
 function timelineDetail(entry) {
@@ -236,8 +253,8 @@ function renderVisitSteps(tabs, current, visitId) {
 
   function renderPatient() {
     var consent = patient.sms_consent
-      ? "동의" + (patient.sms_consented_at ? " · " + patient.sms_consented_at : "")
-      : "거부" + (patient.sms_opted_out_at ? " · " + patient.sms_opted_out_at : "");
+      ? "동의" + consentWhen(patient.sms_consented_at)
+      : "거부" + consentWhen(patient.sms_opted_out_at);
 
     el("patient-facts").innerHTML = facts([
       ["이름", patient.name],
