@@ -710,7 +710,22 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
 
    Pilot(ENV=prod)에서는 `_otp_service()`가 `OTP_SOLAPI_PROD_ENABLED` 환경변수
    **와** `--otp-confirm-solapi-prod` 실행 플래그를 **둘 다** 요구한다(4-3-1의
-   `PILOT_ALLOW_MOCK_OTP`와 같은 이중 게이트 원칙). 이 둘이 갖춰지면 실제
+   `PILOT_ALLOW_MOCK_OTP`와 같은 이중 게이트 원칙).
+
+   🚩 **플래그는 `.env` 의 `PILOT_SERVER_FLAGS` 로 넣는다** (KEY-336). 이미지
+   기본 CMD 는 uvicorn CLI 인데 **uvicorn 은 모르는 인자를 받으면 죽는다** —
+   그래서 운영 compose 의 fastapi 는 `app.pilot_server` 로 띄우고 이 변수를
+   인자로 넘긴다. 비워 두면 아무 플래그도 안 붙는다.
+
+   ```text
+   OTP_SOLAPI_PROD_ENABLED=1
+   PILOT_SERVER_FLAGS=--otp-confirm-solapi-prod
+   ```
+
+   **둘 다 `.env` 에 있다는 것은 인정하고 간다.** 원래 「환경변수와 실행
+   플래그」로 가른 뜻은 서로 다른 경로를 요구해 실수를 늦추는 것이었는데,
+   컨테이너 배포에서는 결국 같은 파일 두 줄이 된다. **실제 방어선은
+   `OTP_APPROVED_TEST_PHONES`** 다 — 목록 밖 번호는 발송 자체가 막힌다. 이 둘이 갖춰지면 실제
    솔라피로 나가되, `OTP_APPROVED_TEST_PHONES`에 없는 번호는 발송 자체가
    막힌다 — 이 단계에서 실수로 임의의 번호에 문자가 나가지 않게 하는
    안전장치다. **이 목록을 비워 두지 않는다** — 비면 승인 여부와 무관하게
