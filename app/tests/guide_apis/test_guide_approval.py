@@ -23,9 +23,14 @@ from app.models.visits import (
     GuideDocument,
     GuideEvent,
     GuideEventType,
+    GuideMessage,
+    GuideMessageKind,
+    GuideMessageStatus,
     GuideSection,
     GuideSectionKey,
     GuideStatus,
+    PatientGuideLink,
+    PatientOtpChallenge,
     Visit,
 )
 from app.services.guides import GuideService
@@ -184,6 +189,14 @@ class TestApprovalSchedulesTheSend(GuideTestCase):
 
         saved = await GuideDocument.get(guide_document_id=guide.guide_document_id)
         assert saved.approved_by == doctor.staff_id
+
+        scheduled = await GuideMessage.get(
+            guide_document_id=guide.guide_document_id,
+            kind=GuideMessageKind.GUIDE,
+        )
+        assert scheduled.status is GuideMessageStatus.SCHEDULED
+        assert await PatientGuideLink.filter(guide_document_id=guide.guide_document_id).count() == 0
+        assert await PatientOtpChallenge.all().count() == 0
 
         # 있는지가 아니라 **몇 시인지**를 잰다. 이걸 안 재서 예약이 UTC 18시로
         # 잡히던 것을 놓쳤다 — 한국에서는 다음 날 새벽 3시였다(`#50` 리뷰).

@@ -876,7 +876,7 @@ function smsScreenHtml(plan) {
     /* **문구 블록 아래에 링크 블록** — 문구의 `{링크}` 가 이것이다(KEY-275).
        규칙도 모양도 `patient-link-view.js` 가 갖는다. 현황 화면도 같은 것을
        그린다 — 두 벌이면 같은 링크가 화면마다 다르게 보인다. */
-    patientLinkBlockHtml(plan.link || null, plan.guideStatus, new Date()) +
+    (plan.showPatientLink === false ? "" : patientLinkBlockHtml(plan.link || null, plan.guideStatus, new Date())) +
     "</div></div>"
   );
 }
@@ -1129,13 +1129,16 @@ function approvedModalHtml(view) {
  * KEY-310 과 같은 모양의 결함이다: 마크업은 공용 파일이 그리는데 그것을 살리는
  * 것(모양이든 손이든)이 화면 하나에만 있었다. 그래서 여기, **마크업 옆에** 둔다.
  *
- * 모달을 닫는 방법은 화면마다 다르다(의사 화면은 발급한 링크도 함께 잊는다).
- * 그래서 닫는 일은 각자에게 알리고, 여기서는 **어디로 가는지**만 정한다.
+ * 모달을 닫는 방법은 화면마다 다를 수 있다. 그래서 닫는 일은 각자에게
+ * 알리고, 여기서는 **어디로 가는지**만 정한다.
  *
- * **알림은 물음이기도 하다.** 닫는 쪽이 「지금은 안 된다」고 할 수 있어야 한다 —
- * 의사 화면의 링크 발급 창은 아직 복사도 열지도 않은 링크를 들고 있을 수 있고,
- * 그것을 잊으면 **토큰을 되찾을 길이 없다**(`canDiscardPatientLink`). 그래서
- * 되돌릴 수 있는 사건으로 보내고, 막히면 **가지 않는다** (2heej, #274).
+ * **알림은 물음이기도 하다.** 닫는 쪽이 「지금은 안 된다」고 할 수 있도록
+ * `cancelable: true`로 쏜다 — 의사 화면이 자체 링크 발급 모달을 갖고
+ * 있던 시절엔 실제로 이걸 써서 막았다(복사·열람 전의 링크를 잊지 않게,
+ * 2heej #274). KEY-307이 그 모달을 걷어내면서 지금은 아무도 안 막지만,
+ * 이 이벤트를 듣는 화면은 계속 있다(doctor.js·visit-guide.js) — 지우면
+ * 다음에 막을 이유가 생긴 쪽이 처음부터 다시 만들어야 한다(iljun-sys
+ * 리뷰, KEY-307).
  *
  * 가는 방법은 탭 단추를 대신 누르는 것이다 — 탭을 바꾸는 규칙(스탭은 제자리,
  * 의사는 `data-href` 로 이동)이 화면마다 다르고, 여기서 흉내내면 표시(✓ · ● · ○)
@@ -1152,8 +1155,9 @@ document.addEventListener("click", function (event) {
   var target = event.target;
   if (!target || !target.closest || !target.closest("[data-go-status]")) return;
 
-  /* `cancelable` 이라 닫는 쪽이 막을 수 있다. 막히면 창도 그대로, 자리도 그대로다 —
-     사람이 「닫지 않겠다」고 답한 것을 여기서 뒤집지 않는다. */
+  /* `cancelable` 이라 닫는 쪽이 막을 수 있다 — 지금은 아무도 안 막지만,
+     듣는 화면이 늘 있어(doctor.js·visit-guide.js) 지우지 않는다(iljun-sys
+     리뷰, KEY-307 — 왜 안 지우는지는 `goToStatusTab` 독스트링에 적었다). */
   var asked = new CustomEvent("guide:modal-close", { bubbles: true, cancelable: true });
   if (!document.dispatchEvent(asked)) return;
 
