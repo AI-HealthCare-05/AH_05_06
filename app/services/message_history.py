@@ -209,7 +209,7 @@ class MessageHistoryService:
     @staticmethod
     async def _link_events(
         document_ids: set[int],
-    ) -> dict[int, list[tuple[GuideEventType, str | None, datetime]]]:
+    ) -> dict[int, list[tuple[GuideEventType, str | None, int | None, datetime]]]:
         if not document_ids:
             return {}
         events = (
@@ -218,24 +218,30 @@ class MessageHistoryService:
                 event_type__in=(GuideEventType.LINK_REISSUED, GuideEventType.LINK_REVOKED),
             )
             .order_by("created_at", "guide_event_id")
-            .values_list("guide_document_id", "event_type", "reason", "created_at")
+            .values_list(
+                "guide_document_id",
+                "event_type",
+                "reason",
+                "caused_by_message_id",
+                "created_at",
+            )
         )
-        by_document: dict[int, list[tuple[GuideEventType, str | None, datetime]]] = {}
-        for document_id, event_type, reason, created_at in events:
-            by_document.setdefault(document_id, []).append((event_type, reason, created_at))
+        by_document: dict[int, list[tuple[GuideEventType, str | None, int | None, datetime]]] = {}
+        for document_id, event_type, reason, caused_by_message_id, created_at in events:
+            by_document.setdefault(document_id, []).append((event_type, reason, caused_by_message_id, created_at))
         return by_document
 
     @staticmethod
     def _link_state(
         message: GuideMessage,
         link: PatientGuideLink | None,
-        link_events: list[tuple[GuideEventType, str | None, datetime]],
+        link_events: list[tuple[GuideEventType, str | None, int | None, datetime]],
         timestamp: datetime,
     ) -> tuple[MessageLinkStatus, MessageLinkEndReason | None]:
         if message.status is not GuideMessageStatus.SENT or link is None:
             return MessageLinkStatus.UNAVAILABLE, None
         if message.sent_at is not None:
-            for event_type, reason, created_at in link_events:
+            for event_type, reason, caused_by_message_id, created_at in link_events:
                 if created_at < message.sent_at:
                     continue
                 if event_type == GuideEventType.LINK_REVOKED:
@@ -243,7 +249,7 @@ class MessageHistoryService:
                         MessageLinkEndReason.REPLACED if reason == "RESEND_REQUESTED" else MessageLinkEndReason.REVOKED
                     )
                     return MessageLinkStatus.UNAVAILABLE, ended
-                if f"message_id={message.guide_message_id};" not in (reason or ""):
+                if caused_by_message_id != message.guide_message_id:
                     return MessageLinkStatus.UNAVAILABLE, MessageLinkEndReason.REPLACED
         if link.last_message_id != message.guide_message_id:
             return MessageLinkStatus.UNAVAILABLE, MessageLinkEndReason.REPLACED

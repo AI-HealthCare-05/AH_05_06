@@ -76,3 +76,32 @@ test("공용 환자 미리보기는 주의 아래 접힌 응급 문구도 찾는
   assert.match(cards, /tuckedUnder\[section\.key\] === key/);
   assert.doesNotMatch(cards, /GUIDE_TUCKED_UNDER/);
 });
+
+test("D1-6은 공용 안내문 미리보기를 열고 링크 상태만 읽기 전용으로 보여 준다", () => {
+  const status = codeOnly(read("js/status-view.js"));
+  const visit = codeOnly(read("js/visit-guide.js"));
+  const links = codeOnly(read("js/patient-link-view.js"));
+
+  assert.match(status, /data-status-preview/);
+  assert.match(visit, /patientGuidePreviewHtml/);
+  assert.match(visit, /data-status-preview/);
+  assert.doesNotMatch(visit, /wirePatientLink/);
+  assert.match(links, /사용 중/);
+  assert.match(links, /사용 불가/);
+
+  const box = load("api", "clinic-clock", "patient-link-view");
+  const html = box.patientLinkBlockHtml(
+    { expiresAt: "2026-09-20T18:00:00+09:00" },
+    "SCHEDULED_TO_SEND",
+    new Date("2026-09-14T10:00:00+09:00"),
+  );
+  assert.doesNotMatch(html, /data-patient-link|새 링크 만들기|>복사<|>열기<|링크 폐기/);
+
+  const statusBox = load("api", "clinic-clock", "message-words", "patient-link-view", "status-view");
+  const statusHtml = statusBox.statusScreenHtml({
+    canPreview: true,
+    entries: [],
+    messages: [],
+  });
+  assert.match(statusHtml, /data-status-preview/);
+});

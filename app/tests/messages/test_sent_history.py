@@ -251,6 +251,40 @@ class SentHistoryTestCase(TestCase):
         assert status.value == "ACTIVE"
         assert reason is None
 
+    def test_link_replacement_uses_the_structured_message_reference(self) -> None:
+        """감사 문구가 바뀌어도 원인 메시지 ID로 같은 발급인지 판정한다."""
+        sent_at = at(TODAY, 10)
+        message = GuideMessage(
+            guide_message_id=41,
+            status=GuideMessageStatus.SENT,
+            scheduled_at=sent_at,
+            sent_at=sent_at,
+        )
+        link = PatientGuideLink(
+            last_message_id=41,
+            expires_at=at(TODAY + timedelta(days=3), 10),
+        )
+        created_at = at(TODAY, 10, 1)
+
+        active, active_reason = MessageHistoryService._link_state(
+            message,
+            link,
+            [(GuideEventType.LINK_REISSUED, "문구 형식과 무관", 41, created_at)],
+            at(TODAY, 11),
+        )
+        replaced, replaced_reason = MessageHistoryService._link_state(
+            message,
+            link,
+            [(GuideEventType.LINK_REISSUED, "message_id=41;", 42, created_at)],
+            at(TODAY, 11),
+        )
+
+        assert active.value == "ACTIVE"
+        assert active_reason is None
+        assert replaced.value == "UNAVAILABLE"
+        assert replaced_reason is not None
+        assert replaced_reason.value == "REPLACED"
+
     async def test_an_older_message_link_is_marked_as_replaced(self) -> None:
         clinic = await self.a_clinic()
         staff = await self.a_staff(clinic, ["staff"], "replaced-link")

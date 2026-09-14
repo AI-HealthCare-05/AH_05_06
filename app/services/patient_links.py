@@ -626,6 +626,7 @@ class PatientLinkService:
                 guide_document_id=guide_document_id,
                 event_type=GuideEventType.LINK_REISSUED,
                 actor_id=SYSTEM_ISSUER_ID,
+                caused_by_message_id=message_id,
                 reason=(
                     f"action={action};message_kind={message_kind.value};message_id={message_id};"
                     f"issued_at={timestamp.isoformat()};expires_at={expires_at.isoformat()}"

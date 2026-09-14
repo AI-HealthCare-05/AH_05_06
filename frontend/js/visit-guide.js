@@ -247,6 +247,7 @@ function guideMissingSaying(error) {
 
     body.innerHTML = statusScreenHtml({
       canUnapprove: canUnapprove,
+      canPreview: !!guide,
       entries: timeline.entries,
       checkInSaying: answer
         ? timelineClock(answer.at) + " 응답 · " + (answer.note || "")
@@ -528,6 +529,17 @@ function guideMissingSaying(error) {
 
     if (t.closest("[data-close]")) closeModal();
 
+    /* D1-6도 S2-3·S2-4와 같은 공용 환자 안내 렌더러와 모달을 쓴다.
+       별도 미리보기 HTML을 만들면 관리 화면과 환자 카드가 다시 갈린다. */
+    var preview = t.closest("[data-status-preview]");
+    if (preview && guide) {
+      openModal(
+        '<div class="modal__top"><h2 class="modal__title" id="modal-title">안내문 미리보기</h2>' +
+          '<button class="button-ghost button-ghost--sm" type="button" data-close>닫기</button></div>' +
+          patientGuidePreviewHtml(guide.sections || [], "medication", guide.summary, guide.preview),
+      );
+    }
+
     /* 현황 탭의 「전체 이력 보기」 — KEY-329. 그리는 것은 `history-modal.js`
        한 벌이라 관리 화면과 같은 것이 뜬다. */
     var asked = t.closest("[data-history]");
@@ -633,8 +645,8 @@ function guideMissingSaying(error) {
     say: say,
   });
 
-  /* 로드와 배선이 **같은 옵션**을 쓴다 — 「지금 어느 진료인가」와 「어떻게 다시
-     그리는가」가 두 곳에서 갈리면 늦게 온 답의 판정이 서로 달라진다. */
+  /* 링크 상태는 읽기 전용 블록에만 넘긴다. 발급·복사·열기·폐기 동작은
+     D1-6·S1-14 범위에서 제거했으므로 `wirePatientLink`는 연결하지 않는다. */
   var patientLinkOpts = {
     visitId: function () {
       return visitId;
@@ -643,7 +655,6 @@ function guideMissingSaying(error) {
     say: say,
   };
 
-  wirePatientLink(patientLinkOpts);
   wireResend();
 
   document.addEventListener("visit:selected", function (event) {

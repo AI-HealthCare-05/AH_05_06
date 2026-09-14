@@ -315,6 +315,9 @@ class GuideEvent(models.Model):
     section_key = fields.CharEnumField(enum_type=GuideSectionKey, null=True)
     #: 반려 사유. 반려가 아니면 비어 있다.
     reason = fields.CharField(max_length=200, null=True)
+    #: 문자 발송이 링크 발급·교체를 일으킨 경우 그 `GuideMessage` 식별자.
+    #: `reason` 문구를 파싱하지 않고 발송 이력의 링크 상태를 판정한다(KEY-252).
+    caused_by_message_id = fields.BigIntField(null=True)
     #: 차례를 바꿨을 때의 **이전 · 이후 차례** — KEY-317. 절 이름을 쉼표로 잇는다.
     #: `SECTION_REORDERED` 가 아니면 둘 다 비어 있다.
     #:
