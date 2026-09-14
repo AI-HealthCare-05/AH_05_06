@@ -9,9 +9,10 @@ test_key277_generation.py 가 파이프라인 계약(소스 취소·처방 변�
 """
 
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 from tortoise.timezone import now
 
@@ -25,6 +26,7 @@ from app.models.catalog import (
     SetDisease,
     SourceGrade,
 )
+from app.models.knowledge import KnowledgeChunkRecord, KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.visits import (
     GuideDocument,
@@ -37,6 +39,7 @@ from app.services.approved_knowledge_search import ApprovedKnowledgeSearchServic
 from app.services.chatbot import ChatModelError, ModelAnswer
 from app.services.guide_generation import RagGuideGenerator
 from app.services.guide_generation_jobs import process_next_generation
+from app.services.knowledge_search import EMBEDDING_DIMENSION, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION
 from app.tests.guide_apis.test_guide_generate import (
     GenerateGuideTestCase,
     attach_confirmed_ocr,
@@ -104,6 +107,52 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         with patch("app.services.guide_generation_jobs.build_generator", return_value=self._generator()):
             await process_next_generation()
 
+    async def _add_sources(self) -> KnowledgeVersion:
+        """승인된 RAG 소스를 등록해 모델 호출 경로를 활성화한다.
+
+        소스가 없으면 모든 섹션이 템플릿 폴백으로 처리되어 모델이 호출되지 않는다.
+        안전 차단·LLM 실패 케이스는 모델이 실제로 호출되어야 트리거되므로
+        이 헬퍼로 소스를 먼저 등록한다.
+        """
+        document = await KnowledgeDocument.create(
+            source_key=str(uuid4()),
+            title="합성 자료",
+            source_org="합성 기관",
+            source_url="https://example.invalid/source",
+            source_kind=KnowledgeSourceKind.TEXT_PDF,
+            hospital_id=self.clinic.pk,
+        )
+        version = await KnowledgeVersion.create(
+            document=document,
+            version_label="synthetic-v1",
+            source_sha256="a" * 64,
+            source_object_key="synthetic/source.pdf",
+            source_mime_type="application/pdf",
+            extractor_version="synthetic",
+            approval_status=ApprovalStatus.APPROVED,
+            is_current=True,
+            current_approved_key=str(document.pk),
+            source_grade=SourceGrade.A,
+            license_verified=True,
+            approved_by="합성 검토자",
+            approved_at=datetime(2026, 9, 1, tzinfo=UTC),
+            verified_at=datetime(2026, 9, 1, tzinfo=UTC),
+        )
+        for section in CautionSectionKey:
+            body = f"검증된 합성 근거 {section.value}"
+            await KnowledgeChunkRecord.create(
+                version=version,
+                section_key=section.value,
+                position=list(CautionSectionKey).index(section),
+                body=body,
+                body_sha256=sha256(body.encode()).hexdigest(),
+                embedding=[1.0] + [0.0] * (EMBEDDING_DIMENSION - 1),
+                embedding_model=EMBEDDING_MODEL,
+                embedding_revision=EMBEDDING_MODEL_REVISION,
+                embedding_dimension=EMBEDDING_DIMENSION,
+            )
+        return version
+
     async def _setup_ems_visit(self, chart: str = "SYN-EMS-01"):
         """자궁내막증 비잔 처방 방문 — SYN-EMS-01 기준 케이스."""
         visit = await make_visit(self.clinic, chart)
@@ -141,10 +190,12 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
     async def test_ems_normal_generation_records_pass_safety_checks(self) -> None:
         """자궁내막증 정상 케이스(SYN-EMS-01): 안내 생성 성공 + PASS 안전검증 기록.
 
-        정상 생성 후 GuideSafetyCheck 에 섹션별 PASS 레코드가 남는다.
+        RAG 소스가 있을 때 정상 생성 후 GuideSafetyCheck 에 섹션별 PASS 레코드가 남는다.
         4개 섹션 × pre + RAG 3섹션 × post = 7개 (emergency 는 고정 템플릿이라 post 없음).
         """
         visit = await self._setup_ems_visit()
+        await self._add_sources()
+
         job = await self._request_job(visit)
         await self._run()
         await job.refresh_from_db()
@@ -159,6 +210,8 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
     async def test_pcos_normal_generation_records_pass_safety_checks(self) -> None:
         """PCOS 정상 케이스(SYN-PCOS-01): 안내 생성 성공 + PASS 안전검증 기록."""
         visit = await self._setup_pcos_visit()
+        await self._add_sources()
+
         job = await self._request_job(visit)
         await self._run()
         await job.refresh_from_db()
@@ -209,6 +262,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
     async def test_extra_drug_block_records_reason_code(self) -> None:
         """모델이 처방 외 약물을 언급하면 EXTRA_DRUG 차단 + GuideSafetyCheck 기록."""
         visit = await self._setup_ems_visit("SYN-EMS-EXTRA")
+        await self._add_sources()
         # 카탈로그에는 있지만 처방에는 없는 약 — 모델이 언급하면 EXTRA_DRUG
         await DrugCatalog.get_or_create(name="타이레놀")
         self.model.generate.return_value = ModelAnswer(
@@ -230,6 +284,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
     async def test_unsupported_diagnosis_block_records_reason_code(self) -> None:
         """모델이 진단 내용을 포함하면 UNSUPPORTED_DIAGNOSIS 차단 + GuideSafetyCheck 기록."""
         visit = await self._setup_ems_visit("SYN-EMS-DIAG")
+        await self._add_sources()
         self.model.generate.return_value = ModelAnswer(
             json.dumps({"body": "자궁내막증으로 진단받으셨습니다.", "drug_names": []})
         )
@@ -255,7 +310,9 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         레코드가 생긴다. LLM 실패는 해당하지 않으므로 레코드가 없다.
         """
         visit = await self._setup_ems_visit("SYN-EMS-FAIL")
+        await self._add_sources()
         self.model.generate.side_effect = ChatModelError("synthetic timeout")
+
         job = await self._request_job(visit)
         for _ in range(3):
             await GuideGenerationJob.filter(job_id=job.pk).update(available_at=now() - timedelta(seconds=1))
@@ -274,6 +331,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         """
         # ── 안전 차단 케이스 ──
         visit_block = await self._setup_pcos_visit("SYN-PCOS-BLOCK")
+        await self._add_sources()
         self.model.generate.return_value = ModelAnswer(json.dumps({"body": "약 복용을 중단하세요.", "drug_names": []}))
         job_block = await self._request_job(visit_block)
         await self._run()
@@ -325,7 +383,6 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
             name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
         )
         await _make_caution_contents(prescription_set)
-        self.model.generate.return_value = ModelAnswer(_SAFE_ANSWER)
 
         job = await self._request_job(visit)
         await self._run()
