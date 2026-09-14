@@ -16,6 +16,7 @@ from app.core.config import Config
 from app.core.db.databases import WORKER_TORTOISE_ORM
 from app.core.redis_client import close_redis, get_redis
 from app.documents.service import OCR_JOB_QUEUE
+from app.services.guide_generation_jobs import process_next_generation
 from app.services.message_dispatch import dispatch_due_messages
 from app.services.sms_sender import build_sms_sender
 
@@ -81,6 +82,17 @@ async def _run_message_dispatch_loop() -> None:
             await asyncio.sleep(1)
 
 
+async def _run_guide_generation_loop() -> None:
+    enabled = Config().GUIDE_RAG_ENABLED
+    while not _shutdown:
+        if enabled:
+            try:
+                await process_next_generation()
+            except Exception:
+                default_logger.error("안내 생성 작업 큐 조회 실패")
+        await asyncio.sleep(1)
+
+
 async def _run() -> None:
     default_logger.info(
         "AI Worker 시작 — CLOVA: %s",
@@ -94,7 +106,9 @@ async def _run() -> None:
         # return_exceptions=True — 한쪽이 예상치 못하게 죽어도 다른 쪽까지
         # asyncio.gather가 취소시키지 않는다. OCR과 문자 발송은 서로 남의
         # 사정으로 멈추면 안 되는 별개 파이프라인이다(2heej 리뷰).
-        results = await asyncio.gather(_run_ocr_loop(), _run_message_dispatch_loop(), return_exceptions=True)
+        results = await asyncio.gather(
+            _run_ocr_loop(), _run_message_dispatch_loop(), _run_guide_generation_loop(), return_exceptions=True
+        )
         for result in results:
             if isinstance(result, BaseException):
                 default_logger.exception("Worker 루프가 예상치 못하게 종료됨", exc_info=result)

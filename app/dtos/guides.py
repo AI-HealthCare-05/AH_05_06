@@ -19,6 +19,20 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class GuideSourceResponse(StrictModel):
+    generation_mode: str
+    document_id: str | None = None
+    chunk_id: str | None = None
+    source_org: str | None = None
+    source_url: str | None = None
+    version: str
+    verified_at: date | None = None
+    score: float | None = None
+    body_sha256: str
+    template_id: str | None = None
+    fallback_reason: str | None = None
+
+
 class SectionResponse(StrictModel):
     key: GuideSectionKey
     body: str
@@ -32,6 +46,7 @@ class SectionResponse(StrictModel):
     #: 어디에 달지 정하는 근거다. **화면이 판정하지 않는다** — 안전 절 목록을
     #: 화면에도 적어 두면 정책이 바뀌는 날 한쪽만 고쳐진다.
     movable: bool
+    sources: list[GuideSourceResponse] = Field(default_factory=list)
 
 
 class PatientHead(StrictModel):
@@ -78,6 +93,15 @@ class GuidePreview(StrictModel):
     #: 「나의 목표」 카드 머리에 붙는 진료일 (`2026.09.09`). 환자 화면과 같은 자리다.
     visit: str | None = None
     guide: PatientGuideDetailResponse | None = None
+
+
+class GuideGenerationResponse(StrictModel):
+    job_id: str
+    visit_id: int
+    state: str
+    failure_reason: str | None = None
+    block_reason: str | None = None
+    result_version: int | None = None
 
 
 class GuideResponse(StrictModel):
