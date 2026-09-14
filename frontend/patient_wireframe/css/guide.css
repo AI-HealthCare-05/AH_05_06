@@ -83,7 +83,6 @@ body {
   color: var(--tx-muted);
 }
 
-/* ── 탭 바 ─── */
 .header__patient-name {
   font-size: 24px;
   line-height: 1.35;
@@ -91,6 +90,7 @@ body {
   color: var(--p-deep);
 }
 
+/* ── 탭 바 ─── */
 /* 탭이 네 개로 고정이라(현황·복약지도·주의사항·생활관리) 왼쪽에 몰지 않고
    한 줄을 4등분해 각 칸을 채운다. 칸 안에서 글자는 가운데 정렬. */
 .tab-bar {

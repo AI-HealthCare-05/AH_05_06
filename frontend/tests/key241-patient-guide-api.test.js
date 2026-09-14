@@ -481,7 +481,11 @@ test('fillHeader: 인증 뷰어에게는 이름이 붙고, 아니면 진료일·
       createElement(tag) { assert.strictEqual(tag, 'strong'); return { textContent: '' }; },
       createTextNode(value) { return { textContent: value }; },
     };
-    const fillHeader = new Function('document', 'd', fnSource + '\nfillHeader(d);');
+    const helperAt = GUIDE_SOURCE.indexOf('function richEl(tag, cls, value) {');
+    const helper = GUIDE_SOURCE.slice(helperAt, GUIDE_SOURCE.indexOf('\n  }', helperAt) + 4);
+    const fillHeader = new Function('document', 'd',
+      'function el(tag, cls) { const n = document.createElement(tag); n.className = cls; return n; }\n' +
+      helper + '\n' + fnSource + '\nfillHeader(d);');
     fillHeader(fakeDocument, d);
     return captured;
   }

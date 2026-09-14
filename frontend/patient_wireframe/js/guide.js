@@ -142,9 +142,7 @@
     var header = document.getElementById('header-patient');
     header.textContent = '';
     if (d.patient) {
-      var name = document.createElement('strong');
-      name.className = 'header__patient-name';
-      name.textContent = d.patient;
+      var name = richEl('strong', 'header__patient-name', d.patient);
       header.appendChild(name);
       header.appendChild(document.createTextNode(' 님 · ' + meta.slice(1).join(' · ')));
     } else {
