@@ -19,6 +19,13 @@
  * 있다. 날짜를 세는 규칙은 눈으로 확인하기 어렵다.
  */
 
+/* KEY-325: 28일 단위로 처방되는 특정 약만 「총투가 이미 일수로 올 수도 있다」는
+   혼재 규칙을 적용한다. `days_per_pack` 은 의원·세트마다 다른 자유값이라(예:
+   7·14일 단기 처방 세트), 이 상수와 다르면 무조건 통수로 곱해야 한다 — 그렇지
+   않으면 7일짜리 세트에 「8통」을 8일로 잘못 읽는 반대 방향 버그가 생긴다.
+   서버 `app/models/ocr.py` 의 `DAYS_PER_PACK` 과 같은 값이어야 한다. */
+var DAYS_PER_PACK_WITH_DAY_COUNT_INPUT = 28;
+
 /** 처방일수를 실제 일수로 — **소진 예정일이 이 셈으로 정해진다.**
  *
  * EMR 「총투」 칸의 「3」이 3통일 수도 3일일 수도 있어서 의원마다 다르다.
@@ -34,6 +41,9 @@ function courseDaysOf(setting, written) {
 
   var per = parseInt(String(setting && setting.days_per_pack), 10);
   if (isNaN(per) || per <= 0) return null;
+  // KEY-325: 28일 단위 세트에서만, 입력값이 28 이상이면 이미 일수(EMR이 실제
+  // 일수로 보낸 경우)로 본다. 다른 pack 크기(7·14일 등)는 항상 곱한다.
+  if (per === DAYS_PER_PACK_WITH_DAY_COUNT_INPUT && n >= per) return n;
   return n * per;
 }
 
