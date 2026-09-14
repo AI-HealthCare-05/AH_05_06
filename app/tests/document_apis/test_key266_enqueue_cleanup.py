@@ -1,9 +1,9 @@
-"""KEY-266: OCR enqueue 실패 시 저장 파일·문서/작업 row를 정리한다.
+"""KEY-266: OCR enqueue 실패 시 OcrJob을 FAILED로 남겨 타임라인 가시성을 보장한다.
 
 인수조건:
-- Redis rpush 실패 시 saved_paths 파일이 모두 삭제된다.
-- OcrJobDocument / OcrJob / MedicalDocument row가 모두 삭제된다.
-- 정리 중 예외가 발생해도 응답 계약(status=FAILED, document_ids, ocr_job_ids)은 유지된다.
+- Redis rpush 실패 시 파일·MedicalDocument·OcrJob row를 삭제하지 않는다.
+- OcrJob 상태를 FAILED로 업데이트한다.
+- 업데이트 자체가 실패해도 응답 계약(status=FAILED, document_ids, ocr_job_ids)은 유지된다.
 """
 
 import types
@@ -15,8 +15,7 @@ from starlette.datastructures import Headers
 
 import app.documents.service as doc_service
 from app.documents.service import DocumentUploadService
-from app.models.documents import MedicalDocument
-from app.models.ocr import OcrJob, OcrJobDocument, OcrJobStatus
+from app.models.ocr import OcrJob, OcrJobStatus
 
 # ---------------------------------------------------------------------------
 # 공통 헬퍼
@@ -42,27 +41,26 @@ class _BrokenRedis:
         raise ConnectionError("Redis 연결 끊김")
 
 
-class _DeleteCapture:
-    """filter(**kwargs).delete() 호출을 추적하는 가짜 QuerySet."""
+class _UpdateCapture:
+    """filter(**kwargs).update(**kwargs) 호출을 추적하는 가짜 QuerySet."""
 
     def __init__(self) -> None:
-        self.deleted = False
+        self.updated = False
         self.filter_kwargs: dict = {}
+        self.update_kwargs: dict = {}
 
-    def __call__(self, **kwargs: object) -> "_DeleteCapture":
+    def __call__(self, **kwargs: object) -> "_UpdateCapture":
         self.filter_kwargs = dict(kwargs)
         return self
 
-    async def delete(self) -> None:
-        self.deleted = True
+    async def update(self, **kwargs: object) -> None:
+        self.updated = True
+        self.update_kwargs = dict(kwargs)
 
+
+class _BrokenUpdateCapture(_UpdateCapture):
     async def update(self, **_kwargs: object) -> None:
-        pass
-
-
-class _ErrorStorage(_TrackingStorage):
-    async def delete(self, path: str) -> None:
-        raise OSError("스토리지 삭제 실패")
+        raise RuntimeError("DB 업데이트 실패")
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +93,7 @@ def _patch_common(
     *,
     document_ids: list[int],
     ocr_job_ids: list[str],
-) -> tuple[_DeleteCapture, _DeleteCapture, _DeleteCapture]:
+) -> _UpdateCapture:
     async def fake_validate(_files):  # type: ignore[no-untyped-def]
         return [(b"\xff\xd8\xff\xe0" + b"\x00" * 32, "image/jpeg")] * len(document_ids)
 
@@ -111,14 +109,10 @@ def _patch_common(
     monkeypatch.setattr(doc_service, "config", types.SimpleNamespace(OCR_FIXTURE_FALLBACK=False))
     monkeypatch.setattr(doc_service, "get_redis", lambda: _BrokenRedis())
 
-    job_doc_cap = _DeleteCapture()
-    job_cap = _DeleteCapture()
-    doc_cap = _DeleteCapture()
-    monkeypatch.setattr(OcrJobDocument, "filter", job_doc_cap)
+    job_cap = _UpdateCapture()
     monkeypatch.setattr(OcrJob, "filter", job_cap)
-    monkeypatch.setattr(MedicalDocument, "filter", doc_cap)
 
-    return job_doc_cap, job_cap, doc_cap
+    return job_cap
 
 
 # ---------------------------------------------------------------------------
@@ -126,25 +120,35 @@ def _patch_common(
 # ---------------------------------------------------------------------------
 
 
-async def test_enqueue_failure_deletes_saved_files(
+async def test_enqueue_failure_keeps_files(
     service: DocumentUploadService,
     storage: _TrackingStorage,
     jpeg_file: UploadFile,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """enqueue 실패 시 저장된 모든 파일이 storage에서 삭제된다."""
+    """enqueue 실패 시 저장된 파일을 삭제하지 않아 경로 추적이 가능하다."""
     _patch_common(service, monkeypatch, document_ids=[1], ocr_job_ids=["ocr_abc"])
 
-    # storage.save를 intercept해 upload()가 저장한 경로를 추적한다.
-    original_save = storage.save
-    captured_paths: list[str] = []
+    await service.upload(
+        visit_id=501,
+        files=[jpeg_file],
+        document_type=None,
+        hospital_id=100,
+        staff_id=1,
+    )
 
-    async def tracking_save(content: bytes, mime_type: str) -> str:
-        path = await original_save(content, mime_type)
-        captured_paths.append(path)
-        return path
+    assert len(storage.saved) == 1
+    assert len(storage.deleted) == 0, f"파일이 삭제되면 안 되는데 삭제됐습니다: {storage.deleted!r}"
 
-    monkeypatch.setattr(storage, "save", tracking_save)
+
+async def test_enqueue_failure_marks_ocr_job_failed(
+    service: DocumentUploadService,
+    storage: _TrackingStorage,
+    jpeg_file: UploadFile,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """enqueue 실패 시 OcrJob 상태가 FAILED로 업데이트된다."""
+    job_cap = _patch_common(service, monkeypatch, document_ids=[10], ocr_job_ids=["ocr_xyz"])
 
     result = await service.upload(
         visit_id=501,
@@ -155,47 +159,34 @@ async def test_enqueue_failure_deletes_saved_files(
     )
 
     assert result.status == OcrJobStatus.FAILED
-    # upload()가 save한 경로가 모두 delete 됐는지 확인
-    assert set(captured_paths) == set(storage.deleted), (
-        f"저장된 경로 {captured_paths!r} 중 삭제되지 않은 파일이 있습니다: {storage.deleted!r}"
-    )
+    assert job_cap.updated, "OcrJob.filter(...).update(status=FAILED)가 호출되지 않았습니다."
+    assert job_cap.filter_kwargs == {"ocr_job_id__in": ["ocr_xyz"]}
+    assert job_cap.update_kwargs == {"status": OcrJobStatus.FAILED}
 
 
-async def test_enqueue_failure_deletes_db_rows(
-    service: DocumentUploadService,
+async def test_enqueue_failure_update_error_preserves_response(
     storage: _TrackingStorage,
     jpeg_file: UploadFile,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """enqueue 실패 시 OcrJobDocument / OcrJob / MedicalDocument row가 모두 삭제된다."""
-    job_doc_cap, job_cap, doc_cap = _patch_common(service, monkeypatch, document_ids=[10], ocr_job_ids=["ocr_xyz"])
+    """OcrJob 업데이트 자체가 실패해도 응답 계약(status, ids)은 유지된다."""
+    service = DocumentUploadService(storage=storage, max_upload_bytes=1024 * 1024)
 
-    await service.upload(
-        visit_id=501,
-        files=[jpeg_file],
-        document_type=None,
-        hospital_id=100,
-        staff_id=1,
-    )
+    async def fake_validate(_files):  # type: ignore[no-untyped-def]
+        return [(b"\xff\xd8\xff\xe0" + b"\x00" * 32, "image/jpeg")]
 
-    assert job_doc_cap.deleted, "OcrJobDocument.filter(...).delete()가 호출되지 않았습니다."
-    assert job_cap.deleted, "OcrJob.filter(...).delete()가 호출되지 않았습니다."
-    assert doc_cap.deleted, "MedicalDocument.filter(...).delete()가 호출되지 않았습니다."
+    async def fake_verify(*, visit_id: int, hospital_id: int) -> None:
+        pass
 
-    assert job_doc_cap.filter_kwargs == {"ocr_job_id__in": ["ocr_xyz"]}
-    assert job_cap.filter_kwargs == {"ocr_job_id__in": ["ocr_xyz"]}
-    assert doc_cap.filter_kwargs == {"document_id__in": [10]}
+    async def fake_persist(**_kwargs: object) -> tuple[list[int], list[str]]:
+        return ([20], ["ocr_err"])
 
-
-async def test_enqueue_failure_cleanup_error_preserves_response(
-    jpeg_file: UploadFile,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """정리 중 예외가 발생해도 응답 계약(status, ids)은 유지된다."""
-    error_storage = _ErrorStorage()
-    service = DocumentUploadService(storage=error_storage, max_upload_bytes=1024 * 1024)
-
-    job_doc_cap, job_cap, doc_cap = _patch_common(service, monkeypatch, document_ids=[20], ocr_job_ids=["ocr_err"])
+    monkeypatch.setattr(service, "_read_and_validate", fake_validate)
+    monkeypatch.setattr(service, "_verify_visit_access", fake_verify)
+    monkeypatch.setattr(service, "_persist", fake_persist)
+    monkeypatch.setattr(doc_service, "config", types.SimpleNamespace(OCR_FIXTURE_FALLBACK=False))
+    monkeypatch.setattr(doc_service, "get_redis", lambda: _BrokenRedis())
+    monkeypatch.setattr(OcrJob, "filter", _BrokenUpdateCapture())
 
     result = await service.upload(
         visit_id=501,
@@ -210,58 +201,52 @@ async def test_enqueue_failure_cleanup_error_preserves_response(
     assert result.ocr_job_ids == ["ocr_err"]
 
 
-async def test_repeated_enqueue_failures_leave_no_orphans(
+async def test_repeated_enqueue_failures_accumulate_failed_rows(
     storage: _TrackingStorage,
     jpeg_file: UploadFile,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """순단 → 재업로드 N회 반복 후 고아 파일·row가 누적되지 않는다.
-
-    매 업로드마다 다른 document_id / ocr_job_id 세트를 사용하고,
-    각 실패 직후 정리가 완료됐는지 누적 삭제 수로 확인한다.
-    """
+    """순단 → 재업로드 N회 반복 후 매 실패마다 OcrJob이 FAILED로 남는다."""
     service = DocumentUploadService(storage=storage, max_upload_bytes=1024 * 1024)
-
-    call_count = 0
-    all_job_doc_deletes: list[bool] = []
-    all_job_deletes: list[bool] = []
-    all_doc_deletes: list[bool] = []
 
     for i in range(3):
         doc_id = 100 + i
         job_id = f"ocr_repeat_{i}"
 
-        job_doc_cap, job_cap, doc_cap = _patch_common(service, monkeypatch, document_ids=[doc_id], ocr_job_ids=[job_id])
+        job_cap = _UpdateCapture()
 
-        original_save = storage.save
+        async def fake_validate(_files):  # type: ignore[no-untyped-def]
+            return [(b"\xff\xd8\xff\xe0" + b"\x00" * 32, "image/jpeg")]
 
-        async def tracking_save(content: bytes, mime_type: str, _orig=original_save) -> str:
-            return await _orig(content, mime_type)
+        async def fake_verify(*, visit_id: int, hospital_id: int) -> None:
+            pass
 
-        monkeypatch.setattr(storage, "save", tracking_save)
+        def _make_fake_persist(d: int, j: str):  # type: ignore[no-untyped-def]
+            async def _persist(**_kwargs: object) -> tuple[list[int], list[str]]:
+                return ([d], [j])
+            return _persist
 
-        await service.upload(
+        fake_persist = _make_fake_persist(doc_id, job_id)
+
+        monkeypatch.setattr(service, "_read_and_validate", fake_validate)
+        monkeypatch.setattr(service, "_verify_visit_access", fake_verify)
+        monkeypatch.setattr(service, "_persist", fake_persist)
+        monkeypatch.setattr(doc_service, "config", types.SimpleNamespace(OCR_FIXTURE_FALLBACK=False))
+        monkeypatch.setattr(doc_service, "get_redis", lambda: _BrokenRedis())
+        monkeypatch.setattr(OcrJob, "filter", job_cap)
+
+        result = await service.upload(
             visit_id=501,
             files=[jpeg_file],
             document_type=None,
             hospital_id=100,
             staff_id=1,
         )
-        call_count += 1
 
-        # 이번 업로드에서 저장한 파일이 즉시 삭제됐는지 확인
-        assert len(storage.deleted) == len(storage.saved), (
-            f"반복 {i}: 저장 {len(storage.saved)}개 중 {len(storage.deleted)}개만 삭제됨"
-        )
-        all_job_doc_deletes.append(job_doc_cap.deleted)
-        all_job_deletes.append(job_cap.deleted)
-        all_doc_deletes.append(doc_cap.deleted)
+        assert result.status == OcrJobStatus.FAILED
+        assert job_cap.updated, f"반복 {i}: OcrJob FAILED 업데이트가 누락됐습니다."
+        assert job_cap.filter_kwargs == {"ocr_job_id__in": [job_id]}
 
-    assert call_count == 3
-    assert all(all_job_doc_deletes), "일부 반복에서 OcrJobDocument 삭제가 누락됐습니다."
-    assert all(all_job_deletes), "일부 반복에서 OcrJob 삭제가 누락됐습니다."
-    assert all(all_doc_deletes), "일부 반복에서 MedicalDocument 삭제가 누락됐습니다."
-    # 저장과 삭제 수가 같아야 고아가 0
-    assert len(storage.saved) == len(storage.deleted), (
-        f"전체 저장 {len(storage.saved)}개, 삭제 {len(storage.deleted)}개 — 고아 파일이 남아 있습니다."
-    )
+    # 파일은 삭제되지 않고 누적된다
+    assert len(storage.saved) == 3
+    assert len(storage.deleted) == 0

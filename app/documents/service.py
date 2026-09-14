@@ -75,18 +75,11 @@ class DocumentUploadService:
             try:
                 await get_redis().rpush(OCR_JOB_QUEUE, *ocr_job_ids)  # type: ignore[misc]
             except Exception:
-                # enqueue 실패 시 이미 커밋된 파일·row를 정리한다 (KEY-266).
-                # 정리 자체가 실패해도 응답 계약은 유지된다.
+                # enqueue 실패 시 파일·row를 삭제하지 않고 OcrJob을 FAILED로 남긴다.
+                # 타임라인에서 OCR_FAILED 이벤트로 확인 가능하고, 파일 경로도 유지된다 (KEY-266).
                 default_logger.exception("OCR 큐 enqueue 실패 — ocr_job_ids=%s", ocr_job_ids)
-                for path in saved_paths:
-                    with contextlib.suppress(Exception):
-                        await self._storage.delete(path)
                 with contextlib.suppress(Exception):
-                    await OcrJobDocument.filter(ocr_job_id__in=ocr_job_ids).delete()
-                with contextlib.suppress(Exception):
-                    await OcrJob.filter(ocr_job_id__in=ocr_job_ids).delete()
-                with contextlib.suppress(Exception):
-                    await MedicalDocument.filter(document_id__in=document_ids).delete()
+                    await OcrJob.filter(ocr_job_id__in=ocr_job_ids).update(status=OcrJobStatus.FAILED)
                 return DocumentUploadResponse(
                     document_ids=document_ids,
                     ocr_job_ids=ocr_job_ids,
