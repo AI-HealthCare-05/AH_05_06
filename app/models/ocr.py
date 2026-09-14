@@ -251,7 +251,11 @@ def course_days(value: str | None, unit: str | None) -> int | None:
 
     if read <= 0:
         return None
-    return read * DAYS_PER_PACK if unit == DurationUnit.PACK else read
+    if unit != DurationUnit.PACK:
+        return read
+    # KEY-325: EMR에 따라 총투가 통수(1,2)로 올 수도, 이미 일수(28,56)로 올 수도 있다.
+    # DAYS_PER_PACK 이상이면 이미 일수로 본다.
+    return read if read >= DAYS_PER_PACK else read * DAYS_PER_PACK
 
 
 def read_but_unconfirmed(fields: "Iterable[OcrField]") -> "OcrField | None":

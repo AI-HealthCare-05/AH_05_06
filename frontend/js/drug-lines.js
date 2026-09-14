@@ -34,7 +34,8 @@ function courseDaysOf(setting, written) {
 
   var per = parseInt(String(setting && setting.days_per_pack), 10);
   if (isNaN(per) || per <= 0) return null;
-  return n * per;
+  // KEY-325: 입력값이 per 이상이면 이미 일수(EMR이 실제 일수로 보낸 경우).
+  return n >= per ? n : n * per;
 }
 
 /* 기간이 붙지 않는 용법. 서버의 `app/models/prescriptions.py:AS_NEEDED` 와

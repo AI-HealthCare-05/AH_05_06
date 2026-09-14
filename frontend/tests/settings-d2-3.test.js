@@ -74,6 +74,20 @@ test("**「총투」의 뜻이 소진 예정일을 정한다**", () => {
   assert.equal(courseDaysOf({ days_mode: "PACK", days_per_pack: 28 }, 3), 84);
 });
 
+test("**28 이상은 이미 일수 — 곱하지 않는다** (KEY-325: 784일 버그)", () => {
+  /* 일부 EMR은 총투를 통수(1,2)로, 다른 EMR은 이미 일수(28,56,84)로 보낸다.
+     28 이상은 이미 일수로 보고 그대로 쓴다. */
+  const { courseDaysOf } = box();
+  const pack28 = { days_mode: "PACK", days_per_pack: 28 };
+
+  assert.equal(courseDaysOf(pack28, 1), 28, "1통 → 28일");
+  assert.equal(courseDaysOf(pack28, 2), 56, "2통 → 56일");
+  assert.equal(courseDaysOf(pack28, 27), 27 * 28, "27 미만은 통수로 곱한다");
+  assert.equal(courseDaysOf(pack28, 28), 28, "28이 784가 되면 안 된다");
+  assert.equal(courseDaysOf(pack28, 56), 56, "56이 1568이 되면 안 된다");
+  assert.equal(courseDaysOf(pack28, 84), 84, "84이 2352가 되면 안 된다");
+});
+
 test("**모르면 셈하지 않는다** — 지어낸 날짜로 예약하면 엉뚱한 날 문자가 간다", () => {
   const { courseDaysOf } = box();
 
