@@ -284,53 +284,7 @@ function guideSegmentsHtml(sections, current) {
  * 환자 렌더러 자신의 규칙이기도 하다(`if (g.drug)` …).
  */
 function guidePreviewHtml(sections, current, summary, preview) {
-  var bodyOf = function (key) {
-    var row = guideSectionsOf(sections, key)[0];
-    return row && row.body ? row.body : "";
-  };
-  var inner = patientPreviewBodyHtml(bodyOf, current, summary || "", preview);
-
-  /* **골격도 환자 것을 그대로 세운다** (유가은 님 `#253`).
-   *
-   * 여기는 `<div class="guide-body">` 하나로 감싸고 있었다. 환자 CSS 에는 그런
-   * 이름이 없다 — 카드 사이 간격(`gap: 12px`)·좌우 여백·스크롤을 만드는 규칙은
-   * `<main class="body">` 에 붙어 있고, 그 이름을 안 쓰면 **CSS 는 실었는데
-   * 본문 배치만 환자와 다른** 상태가 된다. 카드가 서로 붙고, 주의사항 탭처럼
-   * 카드가 여럿 이어지는 자리에서 바로 드러난다.
-   *
-   * 그래서 `frontend/guide.html` 의 골격을 그대로 쓴다 — `.app` 안에 탭 줄을
-   * 이고 있는 `.header`, 그 아래 `<main class="body">`.
-   *
-   * 머리의 로고·환자 이름·[PDF 저장] 은 안 넣는다. 스탭 종점이 안 주는 값이라
-   * 넣으려면 지어내야 하고, 이 티켓이 없애려는 것이 바로 그 종류의 거짓이다.
-   *
-   * 탭 바는 **끌 수 없다**(`disabled`). 미리보기는 읽는 자리이고, 여기서 탭이
-   * 움직이면 스탭 화면의 항목 탭과 어느 쪽이 진짜인지 흐려진다.
-   *
-   * `<style>` 로 `body` 를 다시 손대지 않는다. `guide.css` 가 이미 여백을
-   * 0 으로 두고 배경을 정한다 — 여기서 덧칠하면 그것이 곧 새 drift 다.
-   *
-   * `srcdoc` 안에서 큰따옴표가 속성을 닫는다. 본문은 이미 `esc` 를 지났고,
-   * 여기서는 그 결과 문자열을 속성에 담기 위해 한 번 더 감싼다. */
-  var doc =
-    '<!doctype html><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
-    patientStylesheetLinks() +
-    '<div class="app">' +
-    '<header class="header">' +
-    patientTabBarHtml(current) +
-    "</header>" +
-    '<main class="body">' +
-    inner +
-    "</main>" +
-    "</div>";
-
-  return (
-    '<iframe class="pv" title="환자 화면 미리보기" aria-label="환자 화면 미리보기"' +
-    ' sandbox="allow-same-origin" loading="lazy" srcdoc="' +
-    doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;") +
-    '"></iframe>'
-  );
+  return patientGuidePreviewHtml(sections, current, summary, preview);
 }
 
 /* 판 머리 오른쪽 끝의 「수정」 — 와이어프레임 S1-11 · D1-1.

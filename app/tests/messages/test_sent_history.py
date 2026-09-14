@@ -25,10 +25,13 @@ from app.models.prescriptions import Prescription
 from app.models.staffs import Hospital, Staff
 from app.models.visits import (
     GuideDocument,
+    GuideEvent,
+    GuideEventType,
     GuideMessage,
     GuideMessageFailure,
     GuideMessageKind,
     GuideMessageStatus,
+    PatientGuideLink,
     PatientUsageEvent,
     PatientUsageEventType,
     Visit,
@@ -208,6 +211,70 @@ class SentHistoryTestCase(TestCase):
 
         assert item["happened_at"].startswith(planned.isoformat()[:16])
         assert item["failure_code"] == "INVALID_PHONE"
+
+    async def test_link_status_is_returned_without_the_raw_token(self) -> None:
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "link-status")
+        message = await self.a_message(clinic, name="링크환자", status=GuideMessageStatus.SENT, sent_at=at(TODAY, 10))
+        await PatientGuideLink.create(
+            guide_document_id=message.guide_document_id,
+            token_digest="a" * 64,
+            expires_at=at(TODAY + timedelta(days=3), 10),
+            issued_by=0,
+            issued_at=at(TODAY, 10),
+            last_message_id=message.guide_message_id,
+        )
+
+        item = (await self.fetch(staff))["items"][0]
+
+        assert item["link_status"] == "ACTIVE"
+        assert item["link_end_reason"] is None
+        assert item["link_expires_at"].startswith((TODAY + timedelta(days=3)).isoformat())
+        assert "token" not in item
+
+    async def test_an_older_message_link_is_marked_as_replaced(self) -> None:
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "replaced-link")
+        message = await self.a_message(clinic, name="교체환자", status=GuideMessageStatus.SENT, sent_at=at(TODAY, 10))
+        await PatientGuideLink.create(
+            guide_document_id=message.guide_document_id,
+            token_digest="b" * 64,
+            expires_at=at(TODAY + timedelta(days=3), 10),
+            issued_by=0,
+            issued_at=at(TODAY, 11),
+            last_message_id=message.guide_message_id + 1,
+        )
+
+        item = (await self.fetch(staff))["items"][0]
+
+        assert item["link_status"] == "UNAVAILABLE"
+        assert item["link_end_reason"] == "REPLACED"
+
+    async def test_a_direct_revocation_reason_survives_a_later_reissue(self) -> None:
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "revoked-link")
+        sent_day = TODAY - timedelta(days=1)
+        message = await self.a_message(
+            clinic, name="폐기환자", status=GuideMessageStatus.SENT, sent_at=at(sent_day, 10)
+        )
+        await GuideEvent.create(
+            guide_document_id=message.guide_document_id,
+            event_type=GuideEventType.LINK_REVOKED,
+            actor_id=1,
+        )
+        await PatientGuideLink.create(
+            guide_document_id=message.guide_document_id,
+            token_digest="c" * 64,
+            expires_at=at(TODAY + timedelta(days=3), 11),
+            issued_by=0,
+            issued_at=at(TODAY, 11),
+            last_message_id=message.guide_message_id + 1,
+        )
+
+        item = (await self.fetch(staff))["items"][0]
+
+        assert item["link_status"] == "UNAVAILABLE"
+        assert item["link_end_reason"] == "REVOKED"
 
     def test_happened_at_prefers_the_time_it_actually_went(self) -> None:
         planned, went = at(TODAY, 10), at(TODAY, 11)

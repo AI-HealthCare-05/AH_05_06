@@ -327,3 +327,27 @@ function patientPreviewBodyHtml(bodyOf, current, summary, preview) {
   }
   return patientMedicationHtml(summary, bodyOf("medication"), preview);
 }
+
+function patientGuidePreviewHtml(sections, current, summary, preview) {
+  var bodyOf = function (key) {
+    var row = (sections || []).find(function (section) {
+      return section.key === key;
+    });
+    return row && row.body ? row.body : "";
+  };
+  var doc =
+    '<!doctype html><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+    patientStylesheetLinks() +
+    '<div class="app"><header class="header">' +
+    patientTabBarHtml(current) +
+    '</header><main class="body">' +
+    patientPreviewBodyHtml(bodyOf, current, summary || "", preview) +
+    "</main></div>";
+  return (
+    '<iframe class="pv" title="환자 화면 미리보기" aria-label="환자 화면 미리보기"' +
+    ' sandbox="allow-same-origin" loading="lazy" srcdoc="' +
+    doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;") +
+    '"></iframe>'
+  );
+}

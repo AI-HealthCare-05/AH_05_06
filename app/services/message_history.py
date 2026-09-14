@@ -12,19 +12,27 @@
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from tortoise.expressions import Q
 
 from app.core.api_errors import ApiError
 from app.core.time import clinic_day_window
 from app.dependencies.patient_access import ClinicalActor
-from app.dtos.messages import SentMessageCounts, SentMessageItem
+from app.dtos.messages import (
+    MessageLinkEndReason,
+    MessageLinkStatus,
+    SentMessageCounts,
+    SentMessageItem,
+)
 from app.dtos.patients import calculate_age
 from app.models.prescriptions import Prescription
 from app.models.visits import (
+    GuideEvent,
+    GuideEventType,
     GuideMessage,
     GuideMessageStatus,
+    PatientGuideLink,
     PatientUsageEvent,
     PatientUsageEventType,
 )
@@ -155,11 +163,23 @@ class MessageHistoryService:
         viewed: dict[int, datetime],
         as_of: date,
     ) -> list[SentMessageItem]:
+        document_ids = {row.guide_document_id for row in rows}
         sets = await MessageHistoryService._sets([row.guide_document.visit_id for row in rows])
+        links = {
+            link.guide_document_id: link for link in await PatientGuideLink.filter(guide_document_id__in=document_ids)
+        }
+        link_events = await MessageHistoryService._link_events(document_ids)
+        timestamp = datetime.now(UTC)
         items = []
         for row in rows:
             visit = row.guide_document.visit
             patient = visit.patient
+            link_status, link_end_reason = MessageHistoryService._link_state(
+                row,
+                links.get(row.guide_document_id),
+                link_events.get(row.guide_document_id, []),
+                timestamp,
+            )
             items.append(
                 SentMessageItem(
                     guide_message_id=row.guide_message_id,
@@ -177,9 +197,57 @@ class MessageHistoryService:
                     prescription_set=sets.get(visit.visit_id),
                     viewed=row.guide_document_id in viewed,
                     viewed_at=viewed.get(row.guide_document_id),
+                    link_status=link_status,
+                    link_expires_at=row.sent_at + timedelta(hours=72) if row.sent_at else None,
+                    link_end_reason=link_end_reason,
                 )
             )
         return items
+
+    @staticmethod
+    async def _link_events(
+        document_ids: set[int],
+    ) -> dict[int, list[tuple[GuideEventType, str | None, datetime]]]:
+        if not document_ids:
+            return {}
+        events = (
+            await GuideEvent.filter(
+                guide_document_id__in=document_ids,
+                event_type__in=(GuideEventType.LINK_REISSUED, GuideEventType.LINK_REVOKED),
+            )
+            .order_by("created_at", "guide_event_id")
+            .values_list("guide_document_id", "event_type", "reason", "created_at")
+        )
+        by_document: dict[int, list[tuple[GuideEventType, str | None, datetime]]] = {}
+        for document_id, event_type, reason, created_at in events:
+            by_document.setdefault(document_id, []).append((event_type, reason, created_at))
+        return by_document
+
+    @staticmethod
+    def _link_state(
+        message: GuideMessage,
+        link: PatientGuideLink | None,
+        link_events: list[tuple[GuideEventType, str | None, datetime]],
+        timestamp: datetime,
+    ) -> tuple[MessageLinkStatus, MessageLinkEndReason | None]:
+        if message.status is not GuideMessageStatus.SENT or link is None:
+            return MessageLinkStatus.UNAVAILABLE, None
+        if message.sent_at is not None:
+            for event_type, reason, created_at in link_events:
+                if created_at < message.sent_at:
+                    continue
+                if event_type == GuideEventType.LINK_REVOKED:
+                    ended = (
+                        MessageLinkEndReason.REPLACED if reason == "RESEND_REQUESTED" else MessageLinkEndReason.REVOKED
+                    )
+                    return MessageLinkStatus.UNAVAILABLE, ended
+                if f"message_id={message.guide_message_id};" not in (reason or ""):
+                    return MessageLinkStatus.UNAVAILABLE, MessageLinkEndReason.REPLACED
+        if link.last_message_id != message.guide_message_id:
+            return MessageLinkStatus.UNAVAILABLE, MessageLinkEndReason.REPLACED
+        if link.expires_at > timestamp:
+            return MessageLinkStatus.ACTIVE, None
+        return MessageLinkStatus.UNAVAILABLE, MessageLinkEndReason.EXPIRED
 
     @staticmethod
     async def _sets(visit_ids: list[int]) -> dict[int, str]:

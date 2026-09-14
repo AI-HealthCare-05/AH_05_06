@@ -33,6 +33,11 @@
   var opened = null; // 펼친 줄의 환자 번호
   var adjustingMessage = null;
   var adjustingMessageSaving = false;
+  var resendingMessage = null;
+  var resendingMessageSaving = false;
+  var previewVersion = 0;
+  var modalReturnFocus = null;
+  var modalReturnSelector = null;
 
   /* 한 쪽에 40명. 「이전·다음」으로 넘긴다 — 스크롤로 끝없이 흘리지 않는다.
      전에는 50 을 한 번만 불러 놓고 `next_cursor` 를 아무도 안 봤다. 그래서
@@ -148,17 +153,45 @@
   }
 
   function scheduleActionHtml(row) {
-    if (!canAdjustScheduledMessage(row)) {
-      return actionHtml(row);
-    }
-
+    var preview =
+      '<button class="button-ghost button-ghost--sm" type="button" data-preview-visit="' +
+      esc(row.visit_id) +
+      '">안내문 미리보기</button>';
+    if (!canAdjustScheduledMessage(row)) return preview + actionHtml(row);
     return (
+      preview +
       '<button class="button-ghost button-ghost--sm" type="button" ' +
       'data-adjust-message="' +
       esc(row.guide_message_id) +
       '">' +
       "시각 변경" +
       "</button>"
+    );
+  }
+
+  function historyActionHtml(row) {
+    return (
+      '<button class="button-ghost button-ghost--sm" type="button" data-resend-message="' +
+      esc(row.guide_message_id) +
+      '">새 링크로 다시 보내기</button>'
+    );
+  }
+
+  function linkStateHtml(row) {
+    var reasons = {
+      EXPIRED: "기간 만료",
+      REPLACED: "새 링크로 교체",
+      REVOKED: "직접 폐기",
+    };
+    var detail = reasons[row.link_end_reason];
+    var expires = row.link_expires_at ? whenSaying(row.link_expires_at) : "";
+    return (
+      "<td><strong>" +
+      (row.link_status === "ACTIVE" ? "사용 중" : "사용 불가") +
+      "</strong>" +
+      (detail ? " · " + esc(detail) : "") +
+      (expires ? '<br><span class="send__none">만료 ' + esc(expires) + "</span>" : "") +
+      "</td>"
     );
   }
 
@@ -206,13 +239,69 @@
     );
   }
 
-  function openScheduleAdjustment(row) {
+  function openScheduleAdjustment(row, trigger) {
     adjustingMessage = row;
     adjustingMessageSaving = false;
+    modalReturnFocus = trigger || null;
 
     el("modal-body").innerHTML = scheduleAdjustmentHtml(row);
     el("modal").hidden = false;
     el("schedule-adjust-at").focus();
+  }
+
+  function openPreview(row, trigger) {
+    var requestVersion = ++previewVersion;
+    modalReturnFocus = trigger || null;
+    el("modal-body").innerHTML =
+      '<h2 class="modal__title" id="modal-title">안내문 미리보기</h2>' +
+      '<p class="send__blank">불러오는 중…</p>';
+    el("modal").hidden = false;
+    messagesApi
+      .preview(row.visit_id)
+      .then(function (body) {
+        if (requestVersion !== previewVersion || el("modal").hidden) return;
+        if (body.status !== "SCHEDULED_TO_SEND" || !body.approved_at) {
+          el("modal-body").innerHTML =
+            '<h2 class="modal__title" id="modal-title">미리볼 수 없는 안내문입니다</h2>' +
+            '<p class="modal__note">승인 완료된 안내문만 미리볼 수 있습니다.</p>' +
+            '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>';
+          return;
+        }
+        el("modal-body").innerHTML =
+          '<div class="modal__top"><h2 class="modal__title" id="modal-title">안내문 미리보기</h2>' +
+          '<button class="icon-button" type="button" data-close aria-label="닫기">×</button></div>' +
+          patientGuidePreviewHtml(body.sections || [], "medication", body.summary, body.preview) +
+          '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>';
+      })
+      .catch(function (error) {
+        if (requestVersion !== previewVersion || el("modal").hidden) return;
+        el("modal-body").innerHTML =
+          '<h2 class="modal__title" id="modal-title">안내문을 불러오지 못했습니다</h2>' +
+          '<p class="modal__note">' +
+          esc(errorMessage(error, [{ status: 404, say: "안내문이 없습니다." }], "잠시 후 다시 시도해 주세요.")) +
+          '</p><div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>';
+      });
+  }
+
+  function openResend(row, trigger) {
+    resendingMessage = row;
+    resendingMessageSaving = false;
+    modalReturnFocus = trigger || null;
+    modalReturnSelector = '[data-resend-message="' + row.guide_message_id + '"]';
+    el("modal-body").innerHTML =
+      '<form id="message-resend-form"><h2 class="modal__title" id="modal-title">새 링크로 다시 보내기</h2>' +
+      '<p class="modal__note">' +
+      esc(row.name) +
+      " 환자 · " +
+      esc(MESSAGE_SAYING[row.kind] || row.kind) +
+      " · " +
+      esc(whenSaying(row.happened_at)) +
+      " 발송 건입니다. 기존 링크와 OTP는 즉시 사용할 수 없게 됩니다.</p>" +
+      '<p class="modal__note" id="message-resend-error" role="alert" hidden></p>' +
+      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>취소</button>' +
+      '<button class="button-primary" id="message-resend-save" type="submit">확인</button></div></form>';
+    el("modal").hidden = false;
+    el("message-resend-save").focus();
   }
 
   function stateHtml(row) {
@@ -255,8 +344,10 @@
       stateHtml(row) +
       '<td class="send__read">' +
       esc(viewedSaying(row)) +
-      "</td><td>" +
-      actionHtml(row) +
+      "</td>" +
+      linkStateHtml(row) +
+      "<td>" +
+      historyActionHtml(row) +
       "</td></tr>"
     );
   }
@@ -377,6 +468,7 @@
       "세트명",
       "발송상태",
       "열람여부",
+      "링크 상태",
       "할 일",
     ],
   };
@@ -495,10 +587,20 @@
   }
 
   function closeHistory() {
+    previewVersion += 1;
+    var returnFocus = modalReturnFocus;
+    if ((!returnFocus || !document.contains(returnFocus)) && modalReturnSelector) {
+      returnFocus = document.querySelector(modalReturnSelector);
+    }
     el("modal").hidden = true;
     el("modal-body").innerHTML = "";
     adjustingMessage = null;
     adjustingMessageSaving = false;
+    resendingMessage = null;
+    resendingMessageSaving = false;
+    modalReturnFocus = null;
+    modalReturnSelector = null;
+    if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
   }
 
   /* 배경을 눌러도 닫힌다 — 원문 「배경 클릭도 닫기」. */
@@ -508,6 +610,41 @@
   });
 
   el("modal").addEventListener("submit", function (event) {
+    var resendForm = event.target.closest("#message-resend-form");
+    if (resendForm) {
+      event.preventDefault();
+      if (!resendingMessage || resendingMessageSaving) return;
+      resendingMessageSaving = true;
+      el("message-resend-save").disabled = true;
+      messagesApi
+        .resend(resendingMessage.guide_message_id)
+        .then(function (body) {
+          return load().then(function () {
+            resendingMessage = null;
+            resendingMessageSaving = false;
+            el("modal-body").innerHTML =
+              '<h2 class="modal__title" id="modal-title">재발송이 예약되었습니다</h2>' +
+              '<p class="modal__note">새 메시지 ' +
+              esc(body.guide_message_id) +
+              " · 발송 대기</p>" +
+              '<div class="modal__acts"><button class="button-primary" type="button" data-close>확인</button></div>';
+            el("modal").hidden = false;
+            el("modal").querySelector("[data-close]").focus();
+          });
+        })
+        .catch(function (error) {
+          resendingMessageSaving = false;
+          el("message-resend-save").disabled = false;
+          var errorBox = el("message-resend-error");
+          errorBox.hidden = false;
+          errorBox.textContent = errorMessage(
+            error,
+            [{ status: 409, say: "이미 같은 재발송 요청이 처리되었습니다." }],
+            "재발송을 요청하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          );
+        });
+      return;
+    }
     var form = event.target.closest("#schedule-adjust-form");
     if (!form) return;
 
@@ -636,6 +773,24 @@
 
   /* 줄을 누르면 아래에 그 환자가 선다. 다시 누르면 접힌다. */
   el("table").addEventListener("click", function (event) {
+    var previewButton = event.target.closest("[data-preview-visit]");
+    if (previewButton) {
+      var previewRow = ((page && page.items) || []).find(function (row) {
+        return row.visit_id === Number(previewButton.getAttribute("data-preview-visit"));
+      });
+      if (previewRow) openPreview(previewRow, previewButton);
+      return;
+    }
+
+    var resendButton = event.target.closest("[data-resend-message]");
+    if (resendButton) {
+      var resendRow = ((page && page.items) || []).find(function (row) {
+        return row.guide_message_id === Number(resendButton.getAttribute("data-resend-message"));
+      });
+      if (resendRow) openResend(resendRow, resendButton);
+      return;
+    }
+
     var adjustButton = event.target.closest("[data-adjust-message]");
 
     if (adjustButton) {
@@ -648,7 +803,7 @@
       });
 
       if (message && canAdjustScheduledMessage(message)) {
-        openScheduleAdjustment(message);
+        openScheduleAdjustment(message, adjustButton);
       }
       return;
     }

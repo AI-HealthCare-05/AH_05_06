@@ -7,6 +7,7 @@
 """
 
 from datetime import date, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, model_validator
 from tortoise.timezone import now
@@ -112,6 +113,17 @@ class MessageResendResponse(BaseModel):
     status: GuideMessageStatus
 
 
+class MessageLinkStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class MessageLinkEndReason(StrEnum):
+    EXPIRED = "EXPIRED"
+    REPLACED = "REPLACED"
+    REVOKED = "REVOKED"
+
+
 class SentMessageItem(BaseModel):
     """발송 이력 한 줄 — 와이어프레임 S2-4.
 
@@ -140,6 +152,9 @@ class SentMessageItem(BaseModel):
     #: 문자가 여럿 달린다 — 어느 문자를 보고 열었는지는 물을 수 없다.
     viewed: bool
     viewed_at: datetime | None
+    link_status: MessageLinkStatus
+    link_expires_at: datetime | None
+    link_end_reason: MessageLinkEndReason | None
 
 
 class SentMessageCounts(BaseModel):

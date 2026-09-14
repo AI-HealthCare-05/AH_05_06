@@ -188,7 +188,8 @@ test("목업이 서버 응답과 같은 칸을 갖는다", async () => {
     Object.keys(page.items[0]).sort().join(","),
     [
       "age", "birth_date", "failure_code", "gender", "guide_message_id", "happened_at",
-      "hospital_patient_no", "kind", "name", "patient_id", "prescription_set",
+      "hospital_patient_no", "kind", "link_end_reason", "link_expires_at", "link_status",
+      "name", "patient_id", "prescription_set",
       "status", "viewed", "viewed_at", "visit_id",
     ]
       .sort()
@@ -270,10 +271,12 @@ test("이력 표의 열이 원문과 같다", () => {
   assert.ok(heads.indexOf("예정 시각") !== -1, "예정 쪽 열이 사라졌다");
 });
 
-test("아직 없는 것을 화면이 말한다", () => {
+test("재발송 동작과 링크 폐기 영향을 화면이 말한다", () => {
   const markup = markupOnly(read("manage.html"));
+  const code = codeOnly(read("js/manage.js"));
 
-  assert.ok(markup.indexOf("재승인") !== -1, "왜 재승인 버튼이 없는지 적지 않으면 고장으로 읽힌다");
+  assert.ok(code.indexOf("새 링크로 다시 보내기") !== -1, "재발송 요청 버튼이 없다");
+  assert.ok(markup.indexOf("기존 링크와 OTP는 즉시 폐기") !== -1, "재발송 영향을 안내해야 한다");
   assert.ok(markup.indexOf("열람 여부는 안내문 단위") !== -1, "한 번 열면 다섯 줄이 다 열람인 까닭을 적는다");
 });
 
