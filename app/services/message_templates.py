@@ -52,11 +52,27 @@ SYSTEM_BODY = "[{의원명}] 인증번호 {번호} — 3분 안에 입력해 주
 #: 채울 데가 없는 이름을 적어 두면, 그 글자가 그대로 환자에게 간다.
 KNOWN_VARIABLES = frozenset({"의원명", "환자명", "만료일", "링크", "일차", "D", "일수", "예약링크", "번호"})
 
+#: **짝이 있어야 값이 생기는 변수.** `{만료일}` 은 링크를 발급할 때 함께
+#: 나오는 값이라, `{링크}` 없는 문구에 적으면 채울 것이 없다 — 그 글자가
+#: 그대로 환자에게 간다(KEY-331에서 발견).
+VARIABLE_NEEDS: dict[str, str] = {"만료일": "링크"}
+
 _VARIABLE = re.compile(r"\{([^{}]*)\}")
 
 
 def variables_in(body: str | None) -> list[str]:
     return _VARIABLE.findall(body or "")
+
+
+async def effective_body(hospital_id: int, kind: MessageTemplateKind) -> str:
+    """이 의원이 **지금 이 회차로 보낼 문구** — 고친 것이 있으면 그것, 없으면 기본값.
+
+    발송(`message_dispatch`)과 발송 직전 게이트(`dispatch_gate`)가 둘 다 이것을
+    부른다. 두 곳이 각자 표를 읽으면 「게이트가 본 문구」와 「실제로 나간 문구」가
+    갈릴 수 있는데, 그러면 게이트의 판정이 다른 글을 재고 있는 꼴이 된다.
+    """
+    row = await MessageTemplate.filter(hospital_id=hospital_id, kind=kind).first()
+    return row.body if row is not None and row.body else DEFAULT_BODY[kind]
 
 
 def sms_bytes(body: str) -> int:
@@ -116,6 +132,14 @@ class MessageTemplateService:
                 "REQUIRED_VARIABLE_MISSING",
                 "{" + missing[0] + "} 는 지울 수 없습니다 — 환자가 안내를 열 곳이 없어집니다.",
             )
+
+        for name, needs in VARIABLE_NEEDS.items():
+            if name in found and needs not in found:
+                raise ApiError(
+                    422,
+                    "VARIABLE_NEEDS_PAIR",
+                    "{" + name + "} 는 {" + needs + "} 와 함께 있어야 채울 수 있습니다.",
+                )
 
         unknown = sorted(found - KNOWN_VARIABLES)
         if unknown:

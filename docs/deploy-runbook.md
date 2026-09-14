@@ -108,6 +108,16 @@ ssh … "chmod 600 ~/project/.env"      # 이 순서다. 나중에 잠그면 그
 
 끈 뒤에는 잘못 등록한 것을 **감춘다** — 지우는 대신.
 
+**토큰 수명은 늘리기 전에 볼 것이 있다.** 화면을 고치면서 매번 다시 로그인하는
+것이 번거로워 `ACCESS_TOKEN_EXPIRE_MINUTES` 를 1440(하루)으로 늘려 쓰는 일이
+있다. 인증을 끄는 것이 아니라 수명만 늘리는 것이라 무인증 경로가 생기지는
+않지만, 되돌리는 것을 잊으면 **운영에서도 하루짜리 토큰**이 된다.
+
+그런데 **원래도 한 번 로그인하면 오래 간다** — 리프레시 토큰이 14일이고
+(`REFRESH_TOKEN_EXPIRE_MINUTES=20160`), `POST /auth/refresh` 가 이미 배선돼
+있다(`frontend/js/api.js:157`). 늘리기 전에 **그 경로가 도는지부터 보면** 늘릴
+까닭이 없을 때가 많다.
+
 ### 🚩 배포 전에 확인할 것 — **어느 가지에 서 있나**
 
 `scripts/deployment.sh` 는 원격의 `develop` 이 아니라 **지금 체크아웃된 작업
@@ -127,6 +137,28 @@ ssh … "chmod 600 ~/project/.env"      # 이 순서다. 나중에 잠그면 그
 **이미 올라간 마이그레이션은 이름으로 기억된다.** 그래서 파일을 옮긴 뒤 옛 이름이
 서버 장부(`aerich` 표)에 남아 있으면, 다음 배포가 그것을 안 올린 것으로 보고 다시
 돌리다 `Duplicate column name` 으로 멈춘다.
+
+### 🚩 배포 전에 확인할 것 — **nginx 설정을 어느 쪽으로 올리나**
+
+`scripts/deployment.sh` 는 매번 묻는다(`:265`).
+
+```text
+1) http 사용중
+2) https 사용중
+```
+
+🚩 **지금은 2 다.** `care-on.site` 가 HTTPS 로 돌고 있는데(4-2-1), **1 을 고르면
+`prod_http.conf` 가 `default.conf` 를 덮어써 HTTPS 가 조용히 꺼진다.** 80 으로만
+받게 되고 환자 링크가 평문으로 돌아간다 — 오류도 안 나고 배포는 성공으로 끝난다.
+
+```text
+선택(ex. 1): 2
+Domain: care-on.site
+```
+
+도메인을 물으면 **`care-on.site` 를 그대로** 적는다. 그 값이 `server_name` 과
+`ssl_certificate` 경로 **양쪽**에 들어가므로, 오타가 나면 nginx 가 인증서를 못
+찾아 아예 뜨지 않는다.
 
 ### 🚩 그래서 먼저 — **서버에 올라간 마이그레이션은 병합 전까지 안 옮긴다**
 
@@ -161,6 +193,31 @@ UPDATE aerich SET version = '<새 이름>' WHERE app = 'models' AND version = '<
 안 고치면 새 이미지를 만들어 놓고 옛 이미지를 다시 받는다 — 같은 날 이것도
 물렸다. 배포는 성공했다고 끝나는데 도는 것은 그대로다. 끝난 뒤 **EC2 의
 `~/project` 에서** `docker compose ps` 로 태그를 눈으로 확인한다.
+
+### 🚩 배포 가이드와 **다른 자리** 셋 (KEY-334)
+
+팀 배포 가이드(노션 「Docker·EC2」)와 이 저장소는 아래 셋이 다르다. **틀린 것이
+아니라 의도된 차이**이므로, 가이드를 보고 온 사람이 「왜 다르지」에서 멈추지
+않게 적어 둔다. 1~7단계의 나머지는 가이드 그대로다 — 이미지도 가이드가 요구하는
+`linux/amd64` 로 빌드한다(`scripts/deployment.sh` 의 `docker build --platform`).
+
+| 자리 | 가이드 | 우리 |
+|---|---|---|
+| nginx 가 여는 것 | `/api/` 만, 나머지는 404 | **프런트도 서빙한다** — `location /` 이 `/vol/web/frontend` 를 준다. KEY-189 로 프런트를 이미지에 넣은 뒤의 차이다 |
+| 원격 경로 | `~/ai_project` | `~/project` |
+| 접속 확인 | `http://<IP>/api/docs` (Swagger) | **`https://care-on.site/api/v1/health`** — 도메인·HTTPS 는 4-2-1, 문서 문을 닫는 까닭은 바로 아래 |
+
+### 🚩 `/api/docs` 는 밖으로 안 연다 (KEY-334)
+
+문이 **둘**이다. 앱은 `ENV=prod` 일 때 `docs_url`·`redoc_url`·`openapi_url` 을
+꺼 두고(`app/main.py`), nginx 는 `ENV` 와 상관없이 그 셋을 404 로 돌려준다
+(`prod_http.conf`·`prod_https.conf`).
+
+**둘 다 필요하다.** 2026-09-14 에 `ENV=dev` 로 내리자(KEY-248 검증기 때문에 솔라피
+값이 없는 동안 택한 조치) 앱 쪽 문이 풀려 **API 명세 전체가 인터넷에 열렸다.**
+nginx 쪽 문은 그런 날에도 닫혀 있다.
+
+안에서 볼 일이 있으면 터널로 `fastapi:8000` 에 직접 붙는다.
 
 ## 3. 배포 절차
 
@@ -384,8 +441,8 @@ FastAPI · MinIO 는 `127.0.0.1` 에 묶여 있다.
 | 열 것 | 왜 |
 |---|---|
 | `22` | SSH — 배포와 터널에 쓴다. 가능하면 팀 IP 만 |
-| `80` | 지금은 http 로 먼저 띄운다 |
-| `443` | 인증서를 붙인 뒤 |
+| `80` | **닫지 않는다.** https 로 넘기는 자리이기도 하고, **인증서 갱신 검증이 여기로 온다**(4-2-1) |
+| `443` | 인증서를 붙인 뒤 — **2026-09-14 에 열었다**(KEY-337) |
 
 **`3306` · `6379` · `8000` · `9000` · `9001` 은 열지 않는다.** 열어도 컨테이너가
 `127.0.0.1` 에만 붙어 있어 안 닿지만, 두 겹으로 막는다 — 한쪽을 고치는 사람이
@@ -413,13 +470,154 @@ REDIS_EXPOSE_PORT 같은 뜻 · 안 적으면 6379
 ### 확인은 `/api/v1/health` 로 한다
 
 팀 노션의 배포 가이드 7단계는 `http://<IP>/api/docs` 로 확인하라고 하는데,
-**운영에서는 Swagger 가 꺼져 있다**(`app/main.py:24-26` — `docs_url=None`).
-그대로 따라가면 404 를 보고 배포가 실패한 줄 안다.
+**그 문은 우리가 닫아 두었다** — nginx 가 404 로 돌려준다(위 「🚩 `/api/docs` 는
+밖으로 안 연다」, KEY-334). 앱 쪽 `docs_url=None` 분기는 `ENV=prod` 일 때만 도는데
+지금 Pilot 은 `ENV=dev` 라 그쪽은 열려 있다 — 그래서 **밖으로 나가는 문을 nginx 가
+막는다.** 가이드를 그대로 따라가면 404 를 보고 배포가 실패한 줄 안다.
 
 ```bash
-curl -fsS http://<IP>/api/v1/health | jq .     # api·db·redis 가 다 ok 인가
-curl -sI  http://<IP>/                         # 프런트 화면 (KEY-189)
+curl -fsS https://care-on.site/api/v1/health | jq .   # api·db·redis 가 다 ok 인가
+curl -sI  https://care-on.site/                       # 프런트 화면 (KEY-189)
+curl -sI  http://care-on.site/                        # 301 로 https 에 넘기는가
 ```
+
+IP 로도 아직 닿지만(`http://<IP>`), **확인은 도메인으로 한다** — 환자에게 나가는
+주소가 그것이고, 인증서도 그 이름으로만 유효하다.
+
+## 4-2-1. 도메인과 HTTPS (KEY-337)
+
+2026-09-14 에 `care-on.site` 를 붙이고 HTTPS 로 돌렸다. 전환은 **nginx reload 라
+중단이 없었다.**
+
+| 자리 | 값 |
+|---|---|
+| 도메인 | `care-on.site` (등록기관 **가비아**, A 레코드 하나 · TTL 600) |
+| `www` | **안 쓴다** — 환자에게 문자로 나가는 링크라 짧은 쪽으로 정했다 |
+| 인증서 | Let's Encrypt · **2026-12-13 만료** · 만료 알림 주소는 KEY-337 에 적어 두었다 |
+| 갱신 | `auto-certbot` 컨테이너가 48시간마다 `certbot renew` 를 돈다 |
+| 설정 | `infra/nginx/prod_https.conf` 의 `도메인` 을 치환해 `~/project/nginx/default.conf` 로 |
+
+🚩 **이후 배포마다 고를 것이 하나 생겼다.** `deployment.sh` 가 묻는 「http / https」에서
+**https 쪽(2)** 을 고르고 도메인에 `care-on.site` 를 적어야 한다 — 1 을 고르면 이
+설정이 덮여 **HTTPS 가 조용히 꺼진다.** 위 「배포 전에 확인할 것 — nginx 설정을
+어느 쪽으로 올리나」에 적어 두었다.
+
+### 처음 붙일 때의 순서 — 이 순서여야 한다
+
+**443 은 인증서 발급의 선행 조건이 아니다.** Let's Encrypt 의 HTTP-01(webroot)
+챌린지는 **80 으로 온다.** 443 은 발급된 인증서를 **쓸 때** 필요하다. 그래서
+위 4-2 표가 「443 은 인증서를 붙인 뒤」로 적혀 있다.
+
+```text
+① DNS A 레코드          도메인 → 서버 IP · TTL 은 짧게(300~600)
+② 전파 확인             dig +short care-on.site
+③ 챌린지 경로 시험       ← 발급 전에 이것부터. 아래 「미리 재 본다」
+④ 인증서 발급           80 으로 검증한다
+⑤ 보안그룹 443 열기      AWS 콘솔
+⑥ nginx 를 https 로     백업 → 업로드 → nginx -t → reload
+⑦ 갱신 확인             certbot renew --dry-run
+```
+
+**③ 을 건너뛰지 않는다.** Let's Encrypt 는 실패 횟수에 제한이 있어, 경로가
+막힌 채로 발급을 시도하면 그 횟수를 태운다. 파일 하나를 두고 밖에서 불러 본다.
+
+```bash
+docker compose exec -T nginx sh -c \
+  'mkdir -p /var/www/certbot/.well-known/acme-challenge && \
+   echo ok > /var/www/certbot/.well-known/acme-challenge/probe'
+curl http://care-on.site/.well-known/acme-challenge/probe   # ok 가 나와야 한다
+```
+
+발급은 `--dry-run`(스테이징) 을 먼저 돌리고, 성공하면 같은 명령을 `--dry-run`
+없이 한 번 더 돌린다.
+
+```bash
+docker compose run --rm --entrypoint certbot certbot \
+  certonly --webroot -w /var/www/certbot \
+  -d care-on.site --email <알림주소> --agree-tos --no-eff-email --non-interactive
+```
+
+### 🚩 걸린 것 셋 — 다음에 또 만난다
+
+**① 「보안그룹 443 을 열었는데 안 닿는다」면 컨테이너가 그 포트를 듣는지부터 본다.**
+
+규칙을 저장했는데도 밖에서 안 닿았다. 원인은 보안그룹이 아니라 **nginx 가 아직
+`listen 80` 뿐**이었던 것이다. 호스트는 docker 가 `0.0.0.0:443` 을 듣고 있지만,
+컨테이너 안에서 받는 사람이 없으면 연결이 거부된다.
+
+```bash
+ssh … 'ss -ltn | grep :443'                                   # 호스트는 듣는가
+docker compose exec -T nginx grep listen /etc/nginx/conf.d/default.conf   # 컨테이너는
+```
+
+**② `certonly --webroot` 는 SSL 보조 파일을 만들지 않는다.**
+
+`prod_https.conf` 가 `options-ssl-nginx.conf` 와 `ssl-dhparams.pem` 을
+참조하는데, 그 둘은 **certbot 의 nginx 플러그인**이 놓는 파일이다. webroot 로
+받으면 안 생기고, 그대로 reload 하면 nginx 가 죽는다. certbot 이미지 안에
+원본이 있으니 같은 자리로 복사한다.
+
+```bash
+docker compose run --rm --entrypoint sh certbot -c \
+  "cp /opt/certbot/src/certbot/src/certbot/ssl-dhparams.pem /etc/letsencrypt/ && \
+   cp /opt/certbot/src/certbot/src/certbot/_internal/plugins/nginx/tls_configs/options-ssl-nginx.conf /etc/letsencrypt/"
+```
+
+위 경로는 **certbot 이미지 안의 자리**라 이미지 판이 바뀌면 달라질 수 있다.
+못 찾으면 `find / -name options-ssl-nginx.conf` 로 다시 찾는다.
+
+이것을 **올리기 전 `nginx -t` 가 잡았다.** 백업하고, 올리고, 검사하고, 그 다음에
+reload 하는 순서를 지키면 죽는 설정이 반영되지 않는다.
+
+**③ `docker compose run` 은 ssh 가 끊겨도 컨테이너가 계속 돈다.**
+
+`timeout 100 ssh … docker compose run …` 으로 끊으면 **로컬 클라이언트만** 죽고
+원격 컨테이너는 남는다. 그렇게 남은 certbot 들이 서로 락을 다퉈
+`Another instance of Certbot is already running` 이 반복됐다. 남은 것을 치우면
+한 번에 지나간다.
+
+```bash
+docker ps -a --filter "name=project-certbot-run" --format "{{.Names}}\t{{.Status}}"
+for c in $(docker ps -aq --filter "name=project-certbot-run"); do docker rm -f $c; done
+```
+
+### 갱신은 저절로 돈다 — 다만 80 을 닫으면 죽는다
+
+`auto-certbot` 이 48시간마다 `certbot renew --webroot -w /var/www/certbot` 를
+돈다. 갱신 설정(`/etc/letsencrypt/renewal/care-on.site.conf`)에 `authenticator =
+webroot` 와 경로가 저장돼 있어 인자 없이도 같은 방식으로 간다.
+
+**갱신 검증도 80 으로 온다.** `prod_https.conf` 의 80 블록은 `/.well-known/`
+`acme-challenge/` 를 리다이렉트보다 **먼저** 처리한다 — 그 자리를 지우거나 80 을
+닫으면 3개월 뒤 인증서가 만료되고 사이트가 죽는다.
+
+```bash
+curl http://care-on.site/.well-known/acme-challenge/probe   # 리다이렉트가 아니라 200
+docker compose run --rm -T --entrypoint sh certbot -c \
+  'timeout 120 certbot renew --dry-run --non-interactive; echo EXIT=$?'
+```
+
+🚩 **작은따옴표다.** 큰따옴표로 쓰면 `$?` 를 **서버 셸이 먼저** 치환해서,
+컨테이너 안 certbot 의 종료 코드가 아니라 직전 명령의 값이 찍힌다.
+
+### 되돌릴 때
+
+전환 전 설정을 백업해 두면 한 줄로 돌아온다. 인증서는 그대로 두어도 된다 —
+쓰지 않을 뿐이다.
+
+```bash
+cp ~/project/nginx/default.conf.bak-before-https-<날짜> ~/project/nginx/default.conf
+docker compose exec -T nginx nginx -t && docker compose exec -T nginx nginx -s reload
+```
+
+### 아직 안 한 것
+
+* **쿠키 `Secure` 는 아직 안 붙는다.** `secure=config.ENV == Env.PROD` 인데 Pilot 이
+  `ENV=dev` 다. `SMS_PROVIDER=solapi` 가 서야 `ENV=prod` 로 갈 수 있다(4-3-2 · KEY-336).
+  **HTTPS 를 켠 것과 쿠키를 잠근 것은 다른 일이다.**
+* `COOKIE_DOMAIN` 은 비워 둔다 — host-only 쿠키가 되어 `care-on.site` 에서만 유효하다.
+  `www` 를 안 쓰기로 해서 이대로가 맞다.
+* HSTS 는 안 켰다. 켜면 브라우저가 기억해 되돌리기 어렵다.
 
 ## 4-3. 합성 데이터를 붓는다 (KEY-200)
 

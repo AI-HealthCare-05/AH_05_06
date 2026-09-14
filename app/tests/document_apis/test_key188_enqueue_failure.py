@@ -1,7 +1,8 @@
-"""KEY-188: OCR 큐 enqueue 실패 시 job을 즉시 FAILED로 전환한다.
+"""KEY-188: OCR 큐 enqueue 실패 시 업로드 API가 FAILED 상태를 즉시 반환한다.
 
 Redis rpush가 일시 실패할 때 OcrJob이 PROCESSING으로 무기한 방치되지 않고
-FAILED(failure_code=QUEUE_ERROR)로 즉시 전환되며, 응답 status도 FAILED로 반환된다.
+응답 status가 FAILED로 반환된다.
+파일·row 정리 동작은 test_key266_enqueue_cleanup.py 에서 검증한다.
 """
 
 import types
@@ -13,7 +14,8 @@ from starlette.datastructures import Headers
 
 import app.documents.service as doc_service
 from app.documents.service import DocumentUploadService
-from app.models.ocr import OcrJob, OcrJobStatus
+from app.models.documents import MedicalDocument
+from app.models.ocr import OcrJob, OcrJobDocument, OcrJobStatus
 
 
 class _FakeStorage:
@@ -29,12 +31,12 @@ class _BrokenRedis:
         raise ConnectionError("Redis 연결 끊김")
 
 
-class _FakeQuerySet:
-    def __init__(self, captured: dict) -> None:
-        self._captured = captured
+class _NoopQS:
+    async def update(self, **_kwargs: object) -> None:
+        pass
 
-    async def update(self, **kwargs: object) -> None:
-        self._captured.update(kwargs)
+    async def delete(self) -> None:
+        pass
 
 
 @pytest.fixture()
@@ -51,7 +53,7 @@ def jpeg_file() -> UploadFile:
     )
 
 
-async def test_redis_enqueue_failure_marks_job_failed_and_returns_failed_status(
+async def test_redis_enqueue_failure_returns_failed_status(
     service: DocumentUploadService,
     jpeg_file: UploadFile,
     monkeypatch: pytest.MonkeyPatch,
@@ -69,12 +71,11 @@ async def test_redis_enqueue_failure_marks_job_failed_and_returns_failed_status(
     monkeypatch.setattr(service, "_verify_visit_access", fake_verify)
     monkeypatch.setattr(service, "_persist", fake_persist)
 
-    # OCR_FIXTURE_FALLBACK=False → enqueue 분기 진입 보장
     monkeypatch.setattr(doc_service, "config", types.SimpleNamespace(OCR_FIXTURE_FALLBACK=False))
     monkeypatch.setattr(doc_service, "get_redis", lambda: _BrokenRedis())
-
-    captured: dict = {}
-    monkeypatch.setattr(OcrJob, "filter", staticmethod(lambda **_: _FakeQuerySet(captured)))
+    monkeypatch.setattr(OcrJob, "filter", staticmethod(lambda **_: _NoopQS()))
+    monkeypatch.setattr(OcrJobDocument, "filter", staticmethod(lambda **_: _NoopQS()))
+    monkeypatch.setattr(MedicalDocument, "filter", staticmethod(lambda **_: _NoopQS()))
 
     result = await service.upload(
         visit_id=501,
@@ -84,9 +85,6 @@ async def test_redis_enqueue_failure_marks_job_failed_and_returns_failed_status(
         staff_id=1,
     )
 
-    assert captured.get("status") == OcrJobStatus.FAILED
-    assert captured.get("failure_code") == "QUEUE_ERROR"
-    assert captured.get("completed_at") is not None
     assert result.status == OcrJobStatus.FAILED
     assert result.ocr_job_ids == ["ocr_test_abc123"]
 

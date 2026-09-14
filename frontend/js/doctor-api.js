@@ -170,6 +170,12 @@ var doctorApi = {
       body: { reason: reason },
     });
   },
+  /* 실패 건을 새 링크로 다시 보낼 작업으로 등록한다 — KEY-306, D1-7. */
+  resendMessage: function (messageId) {
+    return doctorRequest("/messages/history/" + encodeURIComponent(messageId) + "/resend", {
+      method: "POST",
+    });
+  },
 };
 
 /* 되돌리는 이유는 대개 넷 중 하나다. 진료 중에 문장을 짓게 하면
@@ -269,6 +275,10 @@ function withMovable(sections) {
 
 var MOCK_GUIDE_STATE = {};
 
+/* 목업 메시지 번호도 실제 DB처럼 진료마다 달라야 다른 환자의 같은 회차
+   재발송 상태를 함께 바꾸지 않는다. */
+var MOCK_RESENT_MESSAGE_IDS = {};
+
 /* 이 진료의 저장 칸을 돌려준다. 없으면 만들어서 돌려준다 — 승인·반려·PATCH가
    같은 객체를 부분 갱신하므로, 한쪽이 통째로 덮어써 다른 쪽 값을 지우는 일이
    없다(예: 섹션을 고친 뒤 승인해도 그 수정은 남는다). */
@@ -348,14 +358,18 @@ function mockTimeline(visitId) {
 
      칸 이름은 `at` 이다(`scheduled_at` 이 아니다) — 이력 항목과 같은 이름을
      쓴다. 화면이 두 목록을 같은 함수로 찍는다. */
+  var messageIdBase = Number(visitId) * 10;
   var messages =
     guide.status === "SCHEDULED_TO_SEND"
       ? [
-          sending("GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
-          sending("CHECK_D7", "SCHEDULED", "2026-09-09T18:00:00+09:00", null),
-          sending("CHECK_D15", "SCHEDULED", "2026-09-17T18:00:00+09:00", null),
-          sending("RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
-        ]
+          sending(messageIdBase + 1, "GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
+          sending(messageIdBase + 2, "CHECK_D7", "FAILED", "2026-09-09T18:00:00+09:00", null, "SENDER_UNREGISTERED"),
+          sending(messageIdBase + 3, "CHECK_D15", "HELD", "2026-09-17T18:00:00+09:00", null, null, "SAFETY_CHECK_FAILED"),
+          sending(messageIdBase + 4, "RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
+        ].map(function (row) {
+          if (!MOCK_RESENT_MESSAGE_IDS[row.guide_message_id]) return row;
+          return Object.assign({}, row, { status: "SCHEDULED", failure_code: null, hold_reason: null });
+        })
       : [];
 
   return { visit_id: visitId, entries: made, messages: messages };
@@ -378,8 +392,16 @@ function entry(at, category, event, over) {
   return row;
 }
 
-function sending(kind, status, at, sentAt) {
-  return { kind: kind, status: status, at: at, sent_at: sentAt, failure_code: null, hold_reason: null };
+function sending(id, kind, status, at, sentAt, failureCode, holdReason) {
+  return {
+    guide_message_id: id,
+    kind: kind,
+    status: status,
+    at: at,
+    sent_at: sentAt,
+    failure_code: failureCode || null,
+    hold_reason: holdReason || null,
+  };
 }
 
 /* 모르는 진료는 **없다고 답한다.** 서버(`app/services/guides.py`)가 그 자리에서
@@ -645,6 +667,12 @@ function mockDoctorRequest(path, options) {
          늘 「불러오지 못했습니다」였다 — 서버에는 있는데 목업만 없었다.
          목업이 서버보다 **좁으면** 화면을 목업으로 검수할 수 없다. */
       var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
+      var resend = path.match(/^\/messages\/history\/(\d+)\/resend$/);
+      if (resend && options.method === "POST") {
+        var resendId = Number(resend[1]);
+        MOCK_RESENT_MESSAGE_IDS[resendId] = true;
+        return resolve({ guide_message_id: resendId, status: "SCHEDULED" });
+      }
       var m = get || reorder || sec || act || issueLink || reIssueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
