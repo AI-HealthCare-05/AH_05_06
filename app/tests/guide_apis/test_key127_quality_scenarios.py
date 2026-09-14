@@ -8,6 +8,7 @@ test_key277_generation.py 가 파이프라인 계약(소스 취소·처방 변�
 """
 
 import json
+from collections import Counter
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
@@ -79,6 +80,17 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
 
     async def _add_sources(self):
         return await make_rag_sources(self.clinic.pk)
+
+    @staticmethod
+    def _assert_all_sections_passed(checks) -> None:
+        """모든 섹션이 PASS이고 단계별 개수가 기대값(pre 4 · post 3)과 같은지 확인한다."""
+        blocked = [c for c in checks if c.verdict is not SafetyCheckVerdict.PASS]
+        assert not blocked, f"차단된 검증 — {[(c.section_key, c.reason_code) for c in blocked]}"
+        by_stage = Counter(c.stage for c in checks)
+        assert dict(by_stage) == {
+            SafetyCheckStage.PRE_GENERATE: 4,
+            SafetyCheckStage.POST_GENERATE: 3,
+        }, f"단계별 개수가 달라졌다 — {dict(by_stage)}"
 
     async def _setup_ems_visit_with_pending_report(self, chart: str = "SYN-EMS-02"):
         """자궁내막증 · AMH 판독 누락 방문 — SYN-EMS-02 기준 케이스.
@@ -177,9 +189,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         assert job.completed_at is not None, f"생성 실패: {job.failure_reason}"
         guide = await GuideDocument.get(visit_id=visit.pk)
         checks = await GuideSafetyCheck.filter(guide_document=guide).all()
-        blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
-        assert not blocked, f"차단된 검증이 있다 — {[c.reason_code for c in blocked]}"
-        assert len(checks) == 7
+        self._assert_all_sections_passed(checks)
 
     async def test_pcos_normal_generation_records_pass_safety_checks(self) -> None:
         """PCOS 정상 케이스(SYN-PCOS-01): 안내 생성 성공 + PASS 안전검증 기록."""
@@ -193,9 +203,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         assert job.completed_at is not None, f"생성 실패: {job.failure_reason}"
         guide = await GuideDocument.get(visit_id=visit.pk)
         checks = await GuideSafetyCheck.filter(guide_document=guide).all()
-        blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
-        assert not blocked, f"차단된 검증이 있다 — {[c.reason_code for c in blocked]}"
-        assert len(checks) == 7
+        self._assert_all_sections_passed(checks)
 
     # ── 판독 누락 (SYN-EMS-02) ───────────────────────────────────────────────
 
@@ -215,9 +223,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         assert job.completed_at is not None, f"생성 실패: {job.failure_reason}"
         guide = await GuideDocument.get(visit_id=visit.pk)
         checks = await GuideSafetyCheck.filter(guide_document=guide).all()
-        blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
-        assert not blocked, f"차단된 검증이 있다 — {[c.reason_code for c in blocked]}"
-        assert len(checks) == 7
+        self._assert_all_sections_passed(checks)
 
     # ── 미등록 약물 차단 (SYN-EMS-08) ─────────────────────────────────────
 
@@ -388,6 +394,4 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         self.model.generate.assert_awaited()
         guide = await GuideDocument.get(visit_id=visit.pk)
         checks = await GuideSafetyCheck.filter(guide_document=guide).all()
-        blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
-        assert not blocked, f"차단된 검증이 있다 — {[c.reason_code for c in blocked]}"
-        assert len(checks) == 7
+        self._assert_all_sections_passed(checks)
