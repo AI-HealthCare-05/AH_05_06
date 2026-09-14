@@ -198,3 +198,61 @@ test("실패 사유 코드는 계속 담아 둔다 — 화면이 안 보일 뿐�
   assert.strictEqual(Object.keys(FAILURE_SAYING).length, 4, "D1-7 의 넷은 그대로다");
   assert.strictEqual(FAILURE_SAYING.SENDER_UNREGISTERED, "발신번호 미등록", "CSV 와 어드민이 쓴다");
 });
+
+/* ── 다시 보내기 — KEY-306·D1-7 ──────────────────────────────────────── */
+
+test("**실패만 다시 보낼 수 있다** — canResend", () => {
+  const { canResend } = load("api", "session", "sms-plan", "guide-view", "message-words", "status-view");
+
+  assert.equal(canResend("FAILED"), true);
+  assert.equal(canResend("HELD"), false);
+  /* 보류는 게이트에서 막힌 상태이고, 예정은 아직 나갈 차례를 기다리는 중이다.
+     완료·꺼짐까지 단추가 뜨면 무엇을 다시 보내는지
+     흐려진다. */
+  assert.equal(canResend("SCHEDULED"), false);
+  assert.equal(canResend("SENT"), false);
+  assert.equal(canResend("CANCELED"), false);
+});
+
+test("발송 실패 줄에만 [다시 보내기]를 단다", () => {
+  const { sendRowsHtml } = load("api", "session", "sms-plan", "guide-view", "message-words", "status-view");
+  const html = sendRowsHtml([
+    { guide_message_id: 501, kind: "GUIDE", status: "SENT", at: "2026-08-11T18:00:00+09:00" },
+    { guide_message_id: 502, kind: "CHECK_D7", status: "FAILED", failure_code: "INVALID_PHONE", at: "2026-08-14T10:00:00+09:00" },
+    { guide_message_id: 503, kind: "CHECK_D15", status: "HELD", hold_reason: "NOT_APPROVED", at: "2026-08-21T10:00:00+09:00" },
+    { guide_message_id: 504, kind: "RUN_OUT", status: "SCHEDULED", at: "2026-09-01T10:00:00+09:00" },
+  ]);
+
+  /* 실패 줄에만 단추가 있고 자기 번호를 심는다 — 다른 줄의 번호를 잘못
+     심으면 엉뚱한 문자를 다시 보낸다. */
+  assert.ok(html.includes('data-resend="502"'), "실패 줄에 다시 보내기가 없다");
+  assert.ok(!html.includes('data-resend="503"'), "보류 줄에 다시 보내기가 붙었다");
+  assert.ok(!html.includes('data-resend="501"'), "이미 보낸 줄에 다시 보내기가 붙었다");
+  assert.ok(!html.includes('data-resend="504"'), "예정 줄에 다시 보내기가 붙었다");
+});
+
+test("서버는 이제 guide_message_id도 준다 — 다시 보내기가 대상을 안다", () => {
+  const schemas = read("../app/dtos/visits.py");
+  assert.match(schemas, /guide_message_id: int/, "발송·예정 표가 어느 문자인지 모른다");
+
+  const service = read("../app/services/visit_timeline.py");
+  assert.match(service, /guide_message_id=row\.guide_message_id/, "읽어 놓고 안 싣는다");
+});
+
+test("목업 재발송 상태는 다른 환자에게 섞이지 않는다", async () => {
+  const { doctorApi } = load("api", "doctor-api", { search: "?mock=1&case=approved" });
+  const firstVisitId = 8801;
+  const otherVisitId = 8802;
+  const first = await doctorApi.timeline(firstVisitId);
+  const other = await doctorApi.timeline(otherVisitId);
+  const firstFailed = first.messages.find((row) => row.status === "FAILED");
+  const otherFailed = other.messages.find((row) => row.status === "FAILED");
+
+  assert.notEqual(firstFailed.guide_message_id, otherFailed.guide_message_id);
+  await doctorApi.resendMessage(firstFailed.guide_message_id);
+
+  const firstAfter = await doctorApi.timeline(firstVisitId);
+  const otherAfter = await doctorApi.timeline(otherVisitId);
+  assert.equal(firstAfter.messages.find((row) => row.guide_message_id === firstFailed.guide_message_id).status, "SCHEDULED");
+  assert.equal(otherAfter.messages.find((row) => row.guide_message_id === otherFailed.guide_message_id).status, "FAILED");
+});

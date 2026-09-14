@@ -5026,6 +5026,10 @@
             ],
             "title": "Failure Code"
           },
+          "guide_message_id": {
+            "title": "Guide Message Id",
+            "type": "integer"
+          },
           "hold_reason": {
             "anyOf": [
               {
@@ -5059,6 +5063,7 @@
           }
         },
         "required": [
+          "guide_message_id",
           "kind",
           "status",
           "at"
