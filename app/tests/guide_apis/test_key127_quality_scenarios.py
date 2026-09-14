@@ -160,9 +160,9 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         확정된 판독에 is_pending_report=True 필드(AMH)가 함께 있다.
         spec: 「그 줄만 점선 + ?. 추측해서 채우지 않는다. 나머지는 정상 진행」
         """
-        visit = await make_visit(self.clinic, chart)
-        base_field = await attach_confirmed_ocr(visit, self.staff.pk)
+        visit = await self._setup_ems_visit(chart)
         # 같은 OcrResult에 AMH 검사 결과 누락 필드 추가 (추후보고예정)
+        base_field = await OcrField.filter(ocr_result__ocr_job__visit_id=visit.pk).first()
         await OcrField.create(
             ocr_result_id=base_field.ocr_result_id,
             document_text_id=base_field.document_text_id,
@@ -173,12 +173,6 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
             is_confirmed=True,
             confirmed_by=self.staff.pk,
         )
-        await DrugCatalog.get_or_create(name="비잔정 2mg")
-        await attach_prescription(visit, [("비잔정 2mg", "1일 1회", 84)])
-        prescription_set = await PrescriptionSet.create(
-            name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
-        )
-        await _make_caution_contents(prescription_set)
         return visit
 
     async def _setup_ems_visit(self, chart: str = "SYN-EMS-01"):
@@ -271,6 +265,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         checks = await GuideSafetyCheck.filter(guide_document=guide).all()
         blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
         assert not blocked, f"차단된 검증이 있다 — {[c.reason_code for c in blocked]}"
+        assert len(checks) == 7
 
     # ── 미등록 약물 차단 (SYN-EMS-08) ─────────────────────────────────────
 
@@ -422,24 +417,21 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
     # ── 두 질환 동시 처방 (SYN-BOTH-01) ─────────────────────────────────────
 
     async def test_both_disease_visit_generates_guide_with_primary_set(self) -> None:
-        """두 질환 동시 처방(SYN-BOTH-01): 주 질환 세트로 안내 정상 생성.
+        """두 질환 동시 처방(SYN-BOTH-01): 주 질환 세트로 RAG 경로 안내 정상 생성.
 
         자궁내막증 + PCOS 방문이라도 처방 세트가 자궁내막증으로 확정되면
-        안내가 정상 생성된다.
+        RAG 경로로 안내가 정상 생성되고 섹션별 PASS 안전검증이 기록된다.
         """
-        visit = await make_visit(self.clinic, "SYN-BOTH-01")
-        await attach_confirmed_ocr(visit, self.staff.pk)
-        await DrugCatalog.get_or_create(name="비잔정 2mg")
-        # 두 질환 방문 — 처방 세트는 자궁내막증(주 질환)
-        await attach_prescription(visit, [("비잔정 2mg", "1일 1회", 84)])
-        prescription_set = await PrescriptionSet.create(
-            name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
-        )
-        await _make_caution_contents(prescription_set)
+        visit = await self._setup_ems_visit("SYN-BOTH-01")
+        await self._add_sources()
 
         job = await self._request_job(visit)
         await self._run()
         await job.refresh_from_db()
 
         assert job.completed_at is not None, f"생성 실패: {job.failure_reason}"
-        assert await GuideDocument.filter(visit_id=visit.pk).exists()
+        guide = await GuideDocument.get(visit_id=visit.pk)
+        checks = await GuideSafetyCheck.filter(guide_document=guide).all()
+        blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
+        assert not blocked, f"차단된 검증이 있다 — {[c.reason_code for c in blocked]}"
+        assert len(checks) == 7
