@@ -54,7 +54,7 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 | API 계약 (공통·병원·환자) | [`docs/api/README.md`](docs/api/README.md) → `common.md` · `hospital.md` · `patient.md` |
 | 라우터가 어느 경로를 갖나 | [`docs/router-ownership.md`](docs/router-ownership.md) |
 | DB 모델 배치 | [`docs/models-layout.md`](docs/models-layout.md) |
-| AI 워커 연동 설계 메모 | [`docs/ai-worker.md`](docs/ai-worker.md) (Stream 서술은 현행 리스트 큐와 차이 있음) |
+| AI 워커 연동 설계 | [`docs/ai-worker.md`](docs/ai-worker.md) |
 | 합성 데이터 규격 (환자·진료·처방·검사) | [`docs/synthetic-data-spec.md`](docs/synthetic-data-spec.md) |
 | OCR 샘플·기대값 규격 | [`docs/ocr-fixtures.md`](docs/ocr-fixtures.md) |
 | 안내 문구 정본 | [`docs/guide-copy-worksheet.md`](docs/guide-copy-worksheet.md) |
@@ -76,8 +76,7 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 - **AI Worker** — OCR 판독을 API 서버와 분리해 처리하는 **장기 실행 프로세스**.
   Redis 리스트 큐(`ocr:jobs`)를 `blpop` 으로 계속 소비한다 (FastAPI 가 `rpush` 로 넣음).
   예약 안내·확인 문자 발송도 같은 프로세스가 맡는다 (KEY-249). 설계 메모는
-  [`docs/ai-worker.md`](docs/ai-worker.md) — 단 그 문서의 Stream·Consumer Group 서술은
-  아직 현행 구현(리스트 큐)과 다르다
+  [`docs/ai-worker.md`](docs/ai-worker.md)
 - **프런트엔드 — 빌드가 없다.** HTML·CSS·ES5 JavaScript 를 `<script src>` 로 그대로
   싣는다. 번들러도 `node_modules` 도 잠금파일도 없다. 파일을 고치고 새로고침하면
   끝이고, 대신 전역 이름이 곧 주소라 **이름이 겹치면 서로를 덮는다**(검사가 막는다)
