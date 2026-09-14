@@ -3,7 +3,12 @@ name = "ai-health-example"
 version = "0.1.0"
 description = "AI 헬스케어 파이널 프로젝트 예시용"
 readme = "README.md"
-requires-python = ">=3.13"
+# 🚩 **상한이 있다** — KEY-333. 3.14 는 JSONField 의 `python_type` 을
+# `dict | list` 로 적고 3.13 은 `Union[dict, list]` 로 적는다. 판이 갈린 채로
+# `aerich migrate` 를 돌리면, 아무도 모델을 안 고쳤는데 JSON 칸마다 아무것도
+# 안 바꾸는 `MODIFY COLUMN` 이 붙는다(MySQL 8 에서 JSON 칸 MODIFY 는 표를 다시
+# 쓴다). 자세한 것은 `docs/models-layout.md` 2-4.
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "cryptography>=46.0.3",
     "pydantic>=2.12.5",
