@@ -133,12 +133,8 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         await PrescriptionItem.create(
             prescription=prescription, name="비잔정 2mg", frequency="1일 1회", duration_days=84
         )
-        await PrescriptionItem.create(
-            prescription=prescription, name="야즈정", frequency="1일 1회", duration_days=84
-        )
-        ems_set = await PrescriptionSet.create(
-            name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
-        )
+        await PrescriptionItem.create(prescription=prescription, name="야즈정", frequency="1일 1회", duration_days=84)
+        ems_set = await PrescriptionSet.create(name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS)
         await make_caution_contents(ems_set)
         pcos_set = await PrescriptionSet.create(name="PCOS · 야즈 (계속)", disease=SetDisease.PCOS)
         await make_caution_contents(pcos_set)
