@@ -208,3 +208,60 @@ async def test_enqueue_failure_cleanup_error_preserves_response(
     assert result.status == OcrJobStatus.FAILED
     assert result.document_ids == [20]
     assert result.ocr_job_ids == ["ocr_err"]
+
+
+async def test_repeated_enqueue_failures_leave_no_orphans(
+    storage: _TrackingStorage,
+    jpeg_file: UploadFile,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """순단 → 재업로드 N회 반복 후 고아 파일·row가 누적되지 않는다.
+
+    매 업로드마다 다른 document_id / ocr_job_id 세트를 사용하고,
+    각 실패 직후 정리가 완료됐는지 누적 삭제 수로 확인한다.
+    """
+    service = DocumentUploadService(storage=storage, max_upload_bytes=1024 * 1024)
+
+    call_count = 0
+    all_job_doc_deletes: list[bool] = []
+    all_job_deletes: list[bool] = []
+    all_doc_deletes: list[bool] = []
+
+    for i in range(3):
+        doc_id = 100 + i
+        job_id = f"ocr_repeat_{i}"
+
+        job_doc_cap, job_cap, doc_cap = _patch_common(service, monkeypatch, document_ids=[doc_id], ocr_job_ids=[job_id])
+
+        original_save = storage.save
+
+        async def tracking_save(content: bytes, mime_type: str, _orig=original_save) -> str:
+            return await _orig(content, mime_type)
+
+        monkeypatch.setattr(storage, "save", tracking_save)
+
+        await service.upload(
+            visit_id=501,
+            files=[jpeg_file],
+            document_type=None,
+            hospital_id=100,
+            staff_id=1,
+        )
+        call_count += 1
+
+        # 이번 업로드에서 저장한 파일이 즉시 삭제됐는지 확인
+        assert len(storage.deleted) == len(storage.saved), (
+            f"반복 {i}: 저장 {len(storage.saved)}개 중 {len(storage.deleted)}개만 삭제됨"
+        )
+        all_job_doc_deletes.append(job_doc_cap.deleted)
+        all_job_deletes.append(job_cap.deleted)
+        all_doc_deletes.append(doc_cap.deleted)
+
+    assert call_count == 3
+    assert all(all_job_doc_deletes), "일부 반복에서 OcrJobDocument 삭제가 누락됐습니다."
+    assert all(all_job_deletes), "일부 반복에서 OcrJob 삭제가 누락됐습니다."
+    assert all(all_doc_deletes), "일부 반복에서 MedicalDocument 삭제가 누락됐습니다."
+    # 저장과 삭제 수가 같아야 고아가 0
+    assert len(storage.saved) == len(storage.deleted), (
+        f"전체 저장 {len(storage.saved)}개, 삭제 {len(storage.deleted)}개 — 고아 파일이 남아 있습니다."
+    )
