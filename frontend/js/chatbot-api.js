@@ -95,7 +95,13 @@ function apiChatbotStreamTransport(request, observer) {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ question: request.question }),
+    /* 열쇠는 **있을 때만** 싣는다 — 서버가 `null` 도 받지만, 안 보내는 것과
+       「없다고 보낸 것」을 굳이 갈라 둘 까닭이 없다 (KEY-328). */
+    body: JSON.stringify(
+      request.submissionId
+        ? { question: request.question, submission_id: request.submissionId }
+        : { question: request.question },
+    ),
     signal: request.signal,
   }).catch(function (error) {
     if (error && error.name === "AbortError") throw error;

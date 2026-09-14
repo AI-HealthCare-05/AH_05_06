@@ -291,11 +291,24 @@
    * 지우는 일은 **입력칸에서 꺼내 보낸 자리**(`sendFromInput`)가 한다.
    *
    * 보냈으면 `true` 를 준다 — 안 보낸 것까지 지우면 같은 사고가 된다. */
-  function sendQuestion(q) {
+  function sendQuestion(q, submissionId) {
     if (state.busy || !q.trim()) return false;
     var gen = ++state.generation;
 
-    state.messages.push({ role: 'user', text: q });
+    /* **물음 하나에 열쇠 하나** — KEY-328.
+     *
+     * 화면은 `state.busy` 로 두 번 누름을 막지만, **서버가 답을 만든 뒤 응답이
+     * 유실되면** 화면에는 오류가 뜨고 잠금은 이미 풀려 있다. 환자가 「다시
+     * 시도」를 누르면 같은 물음이 한 번 더 가고, 모델도 한 번 더 불린다.
+     *
+     * 그래서 열쇠는 **물음에 붙고 다시 시도해도 그대로**다. 이 파일의
+     * `sendFeedback` 이 `msg.feedbackSubmissionId` 로 하는 것과 같다.
+     *
+     * `createFeedbackSubmissionId` 는 이름만 피드백이고 하는 일은 UUID 하나다
+     * (`guide-api.js`). 같은 것을 또 만들지 않는다. */
+    var key = submissionId || createFeedbackSubmissionId();
+
+    state.messages.push({ role: 'user', text: q, submissionId: key });
     var answerMsg = { role: 'assistant', text: '', streaming: true };
     state.messages.push(answerMsg);
     state.busy = true;
@@ -307,7 +320,7 @@
     state.requestController = controller;
 
     streamChatbotAnswer(
-      { question: q, signal: controller.signal },
+      { question: q, submissionId: key, signal: controller.signal },
       {
         onDelta: function (chunk) {
           if (gen !== state.generation) return;
@@ -370,8 +383,11 @@
     if (at < 0) return;
     var from = at > 0 && state.messages[at - 1].role === 'user' ? at - 1 : at;
     var q = state.messages[from].text;
+    /* **열쇠를 먼저 꺼낸다** — 아래 `splice` 가 그 줄을 지운다 (KEY-328).
+       꺼내 두지 않으면 다시 시도가 새 열쇠로 가고, 그 순간 멱등이 깨진다. */
+    var key = state.messages[from].submissionId;
     state.messages.splice(from, at - from + 1);
-    sendQuestion(q);
+    sendQuestion(q, key);
   }
 
   /* ── 입력 이벤트 ─────────────────────────── */

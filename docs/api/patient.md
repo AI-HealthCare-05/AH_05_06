@@ -344,7 +344,14 @@ Cookie: patient_session=…
 ```
 
 - 챗봇의 안내 범위는 `patient_session` HttpOnly 쿠키에서 찾은 링크 digest로
-  결정한다. 요청 본문은 질문만 받으며 링크 토큰 원문을 다시 받거나 저장하지 않는다.
+  결정한다. 요청 본문은 질문과 `submission_id`만 받으며 링크 토큰 원문을 다시
+  받거나 저장하지 않는다.
+- `submission_id`(UUID, 선택)는 **같은 물음을 두 번 보내지 않기 위한 열쇠**다
+  (KEY-328). 화면이 물음마다 하나를 만들고 「다시 시도」에도 같은 값을 다시 쓴다 —
+  환자 피드백(`POST /patient-feedback`)과 같은 모양이다.
+  🚩 **아직은 받기만 한다.** 같은 열쇠가 두 번 와도 서버는 지금 모델을 두 번
+  부른다 — 답을 어디에 둘지(표에 남길지 짧게 캐시할지)가 정해진 뒤에 붙인다.
+  그때까지 **열쇠 없는 요청도, 열쇠 있는 요청도 멱등 보장이 없다.**
 - 환자 세션이 만료되면 `401 PATIENT_SESSION_EXPIRED`로 재인증을 안내한다.
 - 환자 안내 화면 정본은 `frontend/guide.html`과 그 화면이 불러오는
   `frontend/patient_wireframe/` 자산이다. `frontend/js/chatbot-api.js`는 이 화면의
