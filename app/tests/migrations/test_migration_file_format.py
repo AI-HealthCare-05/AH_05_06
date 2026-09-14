@@ -119,6 +119,29 @@ def _same_shape(value: Any) -> Any:
     return value
 
 
+def _drifted_fields(snapshot: Any, live: Any) -> list[str]:
+    """어긋난 **칸 이름과 갈린 키**만 뽑는다 — KEY-333.
+
+    `describe` 를 통째로 찍으면 한 모델이 백 줄이라 아무도 안 읽는다. 그러면
+    검사가 「다르다」까지만 말하고 **어디가 다른지는 사람이 다시 파야** 한다.
+    """
+    before = {field["name"]: field for field in (snapshot or {}).get("data_fields", [])}
+    after = {field["name"]: field for field in (live or {}).get("data_fields", [])}
+
+    lines: list[str] = []
+    for name in sorted(set(before) | set(after)):
+        old, new = _same_shape(before.get(name)), _same_shape(after.get(name))
+        if old == new:
+            continue
+        if old is None or new is None:
+            lines.append(f"    {name}: {'모델에만' if old is None else '스냅샷에만'} 있다")
+            continue
+        keys = sorted(key for key in set(old) | set(new) if old.get(key) != new.get(key))
+        lines.append(f"    {name}: " + ", ".join(f"{key} {old.get(key)!r} → {new.get(key)!r}" for key in keys))
+
+    return lines or ["    (칸이 아니라 모델 단위 키가 갈렸다 — indexes·unique_together·pk_field 를 봐라)"]
+
+
 def test_the_last_state_matches_the_models_field_by_field() -> None:
     """**이름만 같아서는 모자란다** — 칸이 갈린 것도 잡는다 (KEY-333).
 
@@ -140,10 +163,16 @@ def test_the_last_state_matches_the_models_field_by_field() -> None:
     snapshot = decompress_dict(models_state(version_files()[-1]) or "")
 
     drifted = sorted(name for name in live if _same_shape(snapshot.get(name)) != _same_shape(live.get(name)))
+    detail = "\n".join(
+        line for name in drifted for line in (f"  {name}", *_drifted_fields(snapshot.get(name), live.get(name)))
+    )
     assert not drifted, (
-        f"{version_files()[-1].name} 의 MODELS_STATE 가 지금 모델과 다르다: {drifted}\n"
-        "손으로 다듬은 마이그레이션이 스냅샷을 흘렸을 때 이렇게 된다. "
-        "`uv run aerich migrate --name <설명> --offline` 으로 다시 만들어라 (KEY-333)."
+        f"{version_files()[-1].name} 의 MODELS_STATE 가 지금 모델과 다르다:\n{detail}\n"
+        "손으로 다듬은 마이그레이션이 스냅샷을 흘렸을 때 이렇게 된다.\n"
+        "**`python_type` 만 갈렸으면 파이썬 판이 다른 것이다** — 3.13 은 `Union[dict, list]`, "
+        "3.14 는 `dict | list` 로 적는다. aerich 는 이 한 칸 때문에 JSON 칸마다 "
+        "아무것도 안 바꾸는 `MODIFY COLUMN` 을 뱉는다(KEY-333 실측).\n"
+        "CI 와 같은 자리에서 다시 만들어라: `uv run --python 3.13 aerich migrate --name <설명> --offline`"
     )
 
 

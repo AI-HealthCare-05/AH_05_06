@@ -644,7 +644,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 - **API 추가**: `app/apis/v1/` 에 라우터 파일을 만들고 `app/apis/v1/__init__.py` 에 등록.
   경로 소유권은 [`docs/router-ownership.md`](docs/router-ownership.md).
 - **DB 모델 추가**: `app/models/` 에 Tortoise 모델을 정의하고 모델 목록에 등록한 뒤
-  `uv run aerich migrate --name <설명> --offline`. **`--offline` 을 빼면** 내 DB
+  `uv run --python 3.13 aerich migrate --name <설명> --offline`. **`--offline` 을 빼면** 내 DB
   사정에 따라 전체 스키마가 통째로 나온다(KEY-333). 배치 규칙·등록 위치와 그
   까닭은 [`docs/models-layout.md`](docs/models-layout.md).
 - **AI 로직 추가**: `ai_worker/tasks/` 에 처리 로직을 쓰고 `ai_worker/main.py` 에서 호출.
