@@ -13,7 +13,15 @@
 환자 피드백(`patient_feedback.py::_same_or_conflict`)이 같은 모양이다.
 """
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+from unittest.mock import patch
+
+from tortoise.exceptions import IntegrityError
+
+from app.dtos.checkins import CheckInCreateRequest
 from app.models.visits import CheckIn
+from app.services.checkins import CheckInService
 from app.tests.patient_links.test_key151_checkins import (
     TOKEN,
     CheckInTestCase,
@@ -131,3 +139,78 @@ class TestTheHospitalSeesTheFirstAnswer(CheckInTestCase):
         assert seen.json()["medication"] == "taking"
         assert seen.json()["pain"]["score"] == 4
         assert sorted(seen.json()["pain"]["types"]) == ["chronic_pelvic", "menstrual"]
+
+
+class TestTwoPressesThatLandTogether(CheckInTestCase):
+    """`except IntegrityError` 가지 — **읽은 뒤 `create` 사이**에 남이 먼저 넣은 자리.
+
+    위의 검사들은 전부 순차라 `save()` 의 **첫 읽기**에서 이미 걸린다. 그래서
+    정작 이 PR 이 고치려는 「거의 동시에 두 번 누름」을 처리하는 가지가 CI 에서
+    한 번도 안 돌았다 (`2heej` `#310` 리뷰). 나중에 재읽기 필터나
+    `if existing is None: raise` 를 건드려도 초록이 유지될 수 있었다.
+
+    **진짜 동시 요청은 이 하네스에서 못 만든다.** `tortoise.contrib.test.TestCase`
+    가 검사를 트랜잭션으로 감싸고 커넥션 하나를 공유해서, `asyncio.gather` 로 두
+    요청을 보내면 MySQL 소켓이 먼저 깨진다(`#50` 때 확인된 자리, KEY-328 에서도
+    같은 이유로 나눠 쟀다).
+
+    그래서 **겹치는 순간만** 만든다. `create` 직전에 다른 요청이 먼저 넣은 것처럼
+    진짜 줄을 하나 만들고, 그 뒤 원래 `create` 가 그대로 돌게 둔다. `IntegrityError`
+    를 흉내내지 않는다 — **DB 의 유일 제약이** 막는 것까지 함께 잰다.
+    """
+
+    @staticmethod
+    def _another_request_wins(**overrides: Any) -> Callable[..., Awaitable[CheckIn]]:
+        """`create` 를 가로채 **먼저 한 줄 넣고** 원래 호출을 그대로 흘려보낸다."""
+        original = CheckIn.create
+
+        async def create(**kwargs: Any) -> CheckIn:
+            await original(**{**kwargs, **overrides})  # 남이 먼저 넣는다
+            return await original(**kwargs)  # 원래 요청이 유일 제약에 부딪힌다
+
+        return create
+
+    async def test_the_same_answer_arriving_twice_at_once_still_succeeds(self) -> None:
+        await make_linked_guide(await make_hospital("KEY-335 경합 같은 답"))
+
+        with patch.object(CheckIn, "create", self._another_request_wins()):
+            async with self.client() as client:
+                res = await client.post(f"/api/v1/checkins/{TOKEN}", json=SAME)
+
+        assert res.status_code == 201, res.text
+        assert await CheckIn.all().count() == 1, "경합에서 줄이 둘 생겼다"
+        stored = await CheckIn.all().first()
+        assert stored is not None
+        assert res.json()["check_in_id"] == stored.check_in_id, "먼저 들어간 줄을 안 돌려줬다"
+
+    async def test_a_different_answer_arriving_at_once_is_still_blocked(self) -> None:
+        """먼저 들어간 값이 **다르면** 조용히 덮지 않는다."""
+        await make_linked_guide(await make_hospital("KEY-335 경합 다른 답"))
+
+        with patch.object(CheckIn, "create", self._another_request_wins(medication="missing")):
+            async with self.client() as client:
+                res = await client.post(f"/api/v1/checkins/{TOKEN}", json=SAME)
+
+        assert res.status_code == 409, res.text
+        assert res.json()["code"] == "CHECKIN_ALREADY_ANSWERED"
+        stored = await CheckIn.all().first()
+        assert stored is not None
+        assert stored.medication == "missing", "먼저 저장된 값이 덮였다"
+
+    async def test_an_integrity_error_with_nothing_to_re_read_is_not_swallowed(self) -> None:
+        """🚩 `if existing is None: raise` 자리.
+
+        유일 제약이 아닌 다른 까닭(예: FK 위반)으로 `IntegrityError` 가 나면
+        **다시 읽어도 아무것도 없다.** 그때 이 가지가 조용히 삼키면, 저장이 안
+        된 것이 성공으로 보인다. 터져야 한다.
+        """
+        await make_linked_guide(await make_hospital("KEY-335 경합 빈손"))
+
+        async def create(**_: Any) -> CheckIn:
+            raise IntegrityError("다른 까닭으로 막혔다")
+
+        with patch.object(CheckIn, "create", create):
+            with self.assertRaises(IntegrityError):
+                await CheckInService().save(TOKEN, CheckInCreateRequest.model_validate(SAME))
+
+        assert await CheckIn.all().count() == 0, "실패했는데 줄이 남았다"
