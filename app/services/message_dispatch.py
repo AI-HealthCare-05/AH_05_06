@@ -138,6 +138,8 @@ async def render_message_body(
     *,
     guide: GuideDocument | None = None,
     visit: Visit | None = None,
+    body: str | None = None,
+    hospital: Hospital | None = None,
 ) -> str:
     """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
 
@@ -151,9 +153,13 @@ async def render_message_body(
         raise ValueError(f"guide_document not found for message {message.guide_message_id}")
     visit = visit or await Visit.filter(visit_id=guide.visit_id).first()
     patient = await Patient.filter(patient_id=visit.patient_id).first() if visit else None
-    hospital = await Hospital.filter(hospital_id=guide.hospital_id).first()
+    #: **게이트가 읽은 것을 그대로 쓴다** — KEY-331 (이희진 님 #295 리뷰).
+    #: 여기서 다시 읽으면 게이트가 잰 글·주소와 실제로 나간 것이 갈린다.
+    #: 인자 없이 부르는 자리(검사·미리보기)는 지금처럼 표에서 읽는다.
+    hospital = hospital or await Hospital.filter(hospital_id=guide.hospital_id).first()
 
-    body = await effective_body(guide.hospital_id, MessageTemplateKind(message.kind.value))
+    if body is None:
+        body = await effective_body(guide.hospital_id, MessageTemplateKind(message.kind.value))
     values = {
         "의원명": hospital.name if hospital else "",
         "환자명": patient.name if patient else "",
@@ -253,7 +259,7 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         if patient is None:
             raise ValueError(f"patient not found for message {message_id}")
 
-        body = await render_message_body(message, guide=guide, visit=visit)
+        body = await render_message_body(message, guide=guide, visit=visit, body=gate.body, hospital=gate.hospital)
         result = await sender.send(patient.phone, body)
     except SmsSendError as exc:
         return await _finish_retryable(message, token, moment, provider_detail=exc.reason)

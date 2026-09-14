@@ -31,7 +31,7 @@ from app.models.visits import (
     GuideMessageStatus,
     PatientGuideLink,
 )
-from app.services.dispatch_gate import gate_hold_reason
+from app.services.dispatch_gate import evaluate_dispatch_gate, gate_hold_reason
 from app.services.message_dispatch import dispatch_message, render_message_body
 from app.services.sms_sender import MockSmsSender
 from app.tests.messages.test_key249_dispatch_pipeline import make_due_message
@@ -168,6 +168,49 @@ class TestAnEmptyBookingUrlHoldsTheMessage(TestCase):
         updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
         assert updated.sent_body is not None
         assert BOOKING_URL in updated.sent_body
+
+
+class TestTheGateHandsOverWhatItRead(TestCase):
+    """**게이트가 본 것으로 보낸다** — KEY-331 (이희진 님 #295 리뷰).
+
+    게이트와 렌더가 표를 따로 읽으면 그 사이에 값이 바뀔 수 있다. 게이트가
+    「채울 주소가 있다」로 통과시킨 뒤 관리자가 A1-4 에서 그 주소를 지우면,
+    렌더는 빈 문자열로 채워 **「재진 예약을 잡아주세요: 」**를 보낸다 —
+    `BOOKING_URL_MISSING` 이 막으려던 바로 그 문자다.
+
+    성능이 아니라 **판정이 어긋나는 문제**다.
+    """
+
+    async def test_the_url_the_gate_saw_is_the_url_that_goes_out(self) -> None:
+        message = await make_due_message(kind=GuideMessageKind.RUN_OUT)
+        await _set_booking_url(message, BOOKING_URL)
+
+        #: 게이트를 먼저 지나고 — 여기서 주소를 읽는다.
+        decision = await evaluate_dispatch_gate(message)
+        assert decision.hold_reason is None
+        assert decision.hospital is not None and decision.hospital.booking_url == BOOKING_URL
+
+        #: 그 사이에 관리자가 지운다.
+        await _set_booking_url(message, None)
+
+        body = await render_message_body(
+            message,
+            guide=decision.guide,
+            body=decision.body,
+            hospital=decision.hospital,
+        )
+
+        assert BOOKING_URL in body, "게이트가 본 주소가 아니라 지워진 뒤의 표를 읽었다"
+        assert "잡아주세요: \n" not in body and not body.rstrip().endswith("잡아주세요:"), "빈칸으로 채워 보냈다"
+
+    async def test_reading_from_the_table_still_works_when_nothing_is_handed_over(self) -> None:
+        """인자 없이 부르는 자리(검사·미리보기)는 지금처럼 표에서 읽는다."""
+        message = await make_due_message(kind=GuideMessageKind.RUN_OUT)
+        await _set_booking_url(message, BOOKING_URL)
+
+        body = await render_message_body(message)
+
+        assert BOOKING_URL in body
 
 
 class TestTheGateReadsTheBodyNotTheKind(TestCase):
