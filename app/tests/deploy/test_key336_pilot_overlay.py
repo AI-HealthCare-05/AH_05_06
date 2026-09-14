@@ -48,7 +48,14 @@ def test_the_flags_are_attached_only_when_the_gate_env_is_present() -> None:
 
     for env, flag in zip(GATE_ENVS, GATE_FLAGS, strict=True):
         assert flag in command, f"오버레이가 `{flag}` 를 안 붙인다"
-        guarded = re.search(rf"if \[ -n \"?\$+\{{{env}[^\]]*\].*?{re.escape(flag)}", command, re.S)
+        # `.*?` 로 두면 **`fi` 를 넘어간다** — 플래그를 `if` 블록 뒤 `exec` 줄로
+        # 옮겨도(= 게이트 없이 늘 붙음) 통과한다 (`2heej` `#309` 리뷰).
+        # 그래서 `fi` 를 못 지나가게 막는다.
+        guarded = re.search(
+            rf"if \[ -n \"?\$+\{{{env}[^\]]*\](?:(?!\bfi\b).)*?{re.escape(flag)}",
+            command,
+            re.S,
+        )
         assert guarded, f"`{flag}` 가 `{env}` 검사 안에 있지 않다 — 상수로 박히면 게이트가 한 겹이 된다"
 
 
@@ -103,7 +110,17 @@ def test_the_deploy_script_ships_the_overlay() -> None:
     """
     script = read("scripts/deployment.sh")
 
-    assert "docker-compose.pilot.yml" in script, "배포가 Pilot 오버레이를 서버에 안 올린다"
+    # **주석에 이름이 있는 것으로는 안 된다.** 「…(`docker-compose.pilot.yml` 참고)」
+    # 같은 줄이 하나 있으면 `scp` 를 통째로 지워도 통과한다 (`2heej` `#309` 리뷰 —
+    # `#304`·`#309` 에 이어 같은 종류의 헛도는 검사가 세 번째다). **실어 나르는
+    # 줄 자체**를 본다.
+    shipped = [
+        line
+        for line in script.splitlines()
+        if not line.lstrip().startswith("#") and "scp" in line and "docker-compose.pilot.yml" in line
+    ]
+
+    assert shipped, "배포가 Pilot 오버레이를 서버에 안 올린다 — `scp` 줄이 없다"
 
 
 def test_the_pilot_entrypoint_keeps_the_image_defaults() -> None:
