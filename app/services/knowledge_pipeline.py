@@ -83,6 +83,13 @@ class KnowledgeIngestionRequest:
     mime_type: str
     hospital_id: int | None = None
     license_basis: str | None = None
+    # PDF 페이지 범위 (1-indexed, 양 끝 포함). None이면 전체.
+    page_from: int | None = None
+    page_to: int | None = None
+    strip_headers: tuple[str, ...] = ()
+    strip_page_numbers: bool = False
+    # True이면 MinIO 저장·추출·임베딩·청크 저장을 건너뛴다 (고정 템플릿 레코드용).
+    chunk_optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -203,6 +210,13 @@ class KnowledgeIngestionService:
             source_sha256=digest,
             object_key=object_key,
         )
+
+        if request.chunk_optional:
+            # 고정 템플릿 레코드: MinIO 저장·추출·임베딩 없이 바로 READY
+            await self._repository.mark_attempt(prepared.attempt_id, KnowledgeIngestionStatus.PROCESSING)
+            await self._repository.mark_attempt(prepared.attempt_id, KnowledgeIngestionStatus.READY)
+            return prepared
+
         await self._repository.mark_attempt(prepared.attempt_id, KnowledgeIngestionStatus.PROCESSING)
         try:
             await self._object_store.put(object_key, request.payload, request.mime_type)
@@ -230,7 +244,13 @@ class KnowledgeIngestionService:
         payload: bytes,
     ) -> tuple[ExtractedChunk, ...]:
         if request.source_kind is KnowledgeSourceKind.TEXT_PDF:
-            return extract_text_pdf(payload)
+            return extract_text_pdf(
+                payload,
+                page_from=request.page_from,
+                page_to=request.page_to,
+                strip_headers=request.strip_headers,
+                strip_page_numbers=request.strip_page_numbers,
+            )
         if request.source_kind is KnowledgeSourceKind.STRUCTURED_API:
             return extract_structured_api_snapshot(payload)
         if self._ocr_extractor is None:
@@ -270,6 +290,7 @@ class TortoiseKnowledgeRepository:
                     "source_mime_type": request.mime_type,
                     "license_basis": request.license_basis,
                     "extractor_version": EXTRACTOR_VERSION,
+                    "chunk_optional": request.chunk_optional,
                 },
                 using_db=connection,
             )
@@ -389,7 +410,10 @@ class KnowledgeApprovalService:
                 raise ValueError("SOURCE_GRADE_NOT_APPROVABLE")
             if not version.license_verified or not document.source_url or not document.source_org:
                 raise ValueError("SOURCE_VERIFICATION_INCOMPLETE")
-            if not await KnowledgeChunkRecord.filter(version_id=version_id).using_db(connection).exists():
+            if (
+                not version.chunk_optional
+                and not await KnowledgeChunkRecord.filter(version_id=version_id).using_db(connection).exists()
+            ):
                 raise ValueError("KNOWLEDGE_CHUNKS_NOT_READY")
             if (
                 not await KnowledgeIngestionAttempt.filter(
@@ -421,4 +445,17 @@ class KnowledgeApprovalService:
             version.approved_at = now
             version.verified_at = verified_at
             version.review_due_at = review_due_at
+            await version.save(using_db=connection)
+
+    async def deprecate(self, version_id: str, *, deprecated_by: str) -> None:
+        """DRAFT 버전을 DEPRECATED로 전환한다. raw SQL 없이 감사 가능한 경로를 제공한다."""
+        async with in_transaction() as connection:
+            version = (
+                await KnowledgeVersion.filter(version_id=version_id).using_db(connection).select_for_update().first()
+            )
+            if version is None:
+                raise ValueError("KNOWLEDGE_VERSION_NOT_FOUND")
+            if version.approval_status is not ApprovalStatus.DRAFT:
+                raise ValueError("KNOWLEDGE_VERSION_NOT_DEPRECATABLE")
+            version.approval_status = ApprovalStatus.DEPRECATED
             await version.save(using_db=connection)

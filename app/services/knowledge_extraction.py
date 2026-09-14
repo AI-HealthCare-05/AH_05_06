@@ -112,25 +112,61 @@ def chunk_text(
     )
 
 
-def extract_text_pdf(payload: bytes) -> tuple[ExtractedChunk, ...]:
-    """텍스트 PDF를 페이지별로 추출한다. 암호화/빈 PDF는 안전하게 실패한다."""
+def _filter_lines(
+    text: str,
+    normalized_strip: frozenset[str],
+    strip_page_numbers: bool,
+) -> str:
+    lines = text.replace("\r", "\n").split("\n")
+    filtered = [
+        line
+        for line in lines
+        if (norm := " ".join(line.split())) not in normalized_strip and not (strip_page_numbers and norm.isdigit())
+    ]
+    return "\n".join(filtered)
+
+
+def extract_text_pdf(
+    payload: bytes,
+    *,
+    page_from: int | None = None,
+    page_to: int | None = None,
+    strip_headers: tuple[str, ...] = (),
+    strip_page_numbers: bool = False,
+) -> tuple[ExtractedChunk, ...]:
+    """텍스트 PDF를 페이지별로 추출한다. 암호화/빈 PDF는 안전하게 실패한다.
+
+    page_from/page_to: 1-indexed 페이지 범위 (양 끝 포함). None이면 전체.
+    strip_headers: 정규화 후 완전 일치하는 줄을 제거할 반복 머리글 목록.
+    strip_page_numbers: True이면 숫자만으로 이뤄진 줄(쪽번호)을 제거한다.
+    """
 
     try:
         from pypdf import PdfReader
     except ImportError as exc:  # pragma: no cover - 이미지 빌드 계약 테스트가 검증
         raise RuntimeError("PDF_EXTRACTOR_NOT_INSTALLED") from exc
 
+    normalized_strip = frozenset(" ".join(h.split()) for h in strip_headers if h.strip())
+    apply_filter = bool(normalized_strip or strip_page_numbers)
+
     try:
         reader = PdfReader(BytesIO(payload))
         if reader.is_encrypted and reader.decrypt("") == 0:
             raise ValueError("PDF_ENCRYPTED")
+        total = len(reader.pages)
+        start = max(0, (page_from - 1) if page_from is not None else 0)
+        end = min(total, page_to if page_to is not None else total)
         chunks: list[ExtractedChunk] = []
-        for page_index, page in enumerate(reader.pages, start=1):
+        for page_index in range(start, end):
+            page_number = page_index + 1
+            raw = reader.pages[page_index].extract_text() or ""
+            if apply_filter:
+                raw = _filter_lines(raw, normalized_strip, strip_page_numbers)
             chunks.extend(
                 chunk_text(
-                    page.extract_text() or "",
-                    section_key=f"page-{page_index}",
-                    page_number=page_index,
+                    raw,
+                    section_key=f"page-{page_number}",
+                    page_number=page_number,
                     start_position=len(chunks),
                 )
             )

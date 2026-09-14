@@ -132,6 +132,20 @@ async def _build_request(
     version_label = _required_text(source, "version_label")
     license_basis = _required_text(source, "license_basis")
 
+    if input_type == "template_only":
+        # 청크 없는 고정 템플릿 레코드: 파일·추출·임베딩 없이 메타데이터만 등록
+        return KnowledgeIngestionRequest(
+            title=title,
+            source_org=source_org,
+            source_url=_required_text(source, "source_url"),
+            version_label=version_label,
+            source_kind=KnowledgeSourceKind.TEXT_PDF,
+            payload=b"template-only",
+            mime_type="text/plain",
+            license_basis=license_basis,
+            chunk_optional=True,
+        )
+
     if input_type == "mfds_api":
         if mfds_client is None:
             raise ValueError("MFDS_SERVICE_KEY_REQUIRED")
@@ -164,6 +178,10 @@ async def _build_request(
     except OSError as exc:
         raise ValueError("KNOWLEDGE_SOURCE_FILE_UNREADABLE") from exc
     mime_type = "application/pdf" if file_path.suffix.lower() == ".pdf" else "image/png"
+
+    page_from_raw = source.get("page_from")
+    page_to_raw = source.get("page_to")
+    strip_headers_raw = source.get("strip_headers") or []
     return KnowledgeIngestionRequest(
         title=title,
         source_org=source_org,
@@ -173,7 +191,44 @@ async def _build_request(
         payload=payload,
         mime_type=mime_type,
         license_basis=license_basis,
+        page_from=int(page_from_raw) if isinstance(page_from_raw, (int, float)) else None,
+        page_to=int(page_to_raw) if isinstance(page_to_raw, (int, float)) else None,
+        strip_headers=tuple(h for h in strip_headers_raw if isinstance(h, str)),
+        strip_page_numbers=source.get("strip_page_numbers") is True,
     )
+
+
+async def deprecate_version(version_id: str, *, deprecated_by: str) -> None:
+    """적재된 DRAFT 버전을 감사 가능하게 DEPRECATED로 전환한다."""
+    await Tortoise.init(config=TORTOISE_ORM)
+    try:
+        await KnowledgeApprovalService().deprecate(version_id, deprecated_by=deprecated_by)
+        print(
+            json.dumps(
+                {"version_id": version_id, "deprecated_by": deprecated_by, "status": "deprecated"},
+                ensure_ascii=False,
+            )
+        )
+    finally:
+        await Tortoise.close_connections()
+
+
+async def approve_existing_version(version_id: str, *, approved_by: str, review_days: int) -> None:
+    """적재 시점과 분리해 draft 버전을 version_id로 승인한다."""
+    await Tortoise.init(config=TORTOISE_ORM)
+    try:
+        reviewed_at = db_now()
+        await KnowledgeApprovalService().approve(
+            version_id,
+            approved_by=approved_by,
+            verified_at=reviewed_at,
+            review_due_at=reviewed_at + timedelta(days=review_days),
+        )
+        print(
+            json.dumps({"version_id": version_id, "approved_by": approved_by, "status": "approved"}, ensure_ascii=False)
+        )
+    finally:
+        await Tortoise.close_connections()
 
 
 async def run(
@@ -249,18 +304,41 @@ async def run(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="KEY-276 실제 승인 의료지식 적재")
-    parser.add_argument("manifest", type=Path, help="로컬 manifest JSON 경로")
+    parser.add_argument("manifest", type=Path, nargs="?", help="로컬 manifest JSON 경로 (적재 모드에서 필수)")
     parser.add_argument("--approved-by", help="A등급 자료 승인자 식별자; 생략하면 승인하지 않음")
     parser.add_argument("--review-days", type=int, default=365)
     parser.add_argument(
         "--only",
-        choices=("text_pdf", "scanned_document", "mfds_api"),
+        choices=("text_pdf", "scanned_document", "mfds_api", "template_only"),
         help="선택한 입력 유형만 적재",
     )
+    parser.add_argument("--deprecate", metavar="VERSION_ID", help="지정 DRAFT 버전을 DEPRECATED로 전환")
+    parser.add_argument("--deprecated-by", help="--deprecate 사용 시 폐기 담당자 식별자 (필수)")
+    parser.add_argument("--approve-version", metavar="VERSION_ID", help="적재된 DRAFT 버전을 version_id로 승인")
     args = parser.parse_args()
+
     if not 1 <= args.review_days <= 3650:
         parser.error("--review-days는 1~3650이어야 합니다")
+
     try:
+        if args.deprecate:
+            if not args.deprecated_by:
+                parser.error("--deprecate 사용 시 --deprecated-by가 필요합니다")
+            asyncio.run(deprecate_version(args.deprecate, deprecated_by=args.deprecated_by))
+            return 0
+
+        if args.approve_version:
+            if not args.approved_by:
+                parser.error("--approve-version 사용 시 --approved-by가 필요합니다")
+            asyncio.run(
+                approve_existing_version(
+                    args.approve_version, approved_by=args.approved_by, review_days=args.review_days
+                )
+            )
+            return 0
+
+        if args.manifest is None:
+            parser.error("적재 모드에서는 manifest 경로가 필요합니다")
         asyncio.run(
             run(
                 args.manifest.resolve(),
