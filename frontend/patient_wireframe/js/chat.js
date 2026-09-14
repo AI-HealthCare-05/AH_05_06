@@ -308,7 +308,8 @@
      * (`guide-api.js`). 같은 것을 또 만들지 않는다. */
     var key = submissionId || createFeedbackSubmissionId();
 
-    state.messages.push({ role: 'user', text: q, submissionId: key });
+    var askedMsg = { role: 'user', text: q, submissionId: key };
+    state.messages.push(askedMsg);
     var answerMsg = { role: 'assistant', text: '', streaming: true };
     state.messages.push(answerMsg);
     state.busy = true;
@@ -350,7 +351,21 @@
           return;
         }
 
-        answerMsg.error = chatbotErrorMessage(error && error.code);
+        var code = error && error.code;
+        answerMsg.error = chatbotErrorMessage(code);
+
+        /* **다 쓴 열쇠는 버린다** — KEY-328.
+         *
+         * 서버가 「이미 답했다」(`CHATBOT_ANSWER_EXPIRED`)거나 「그 열쇠는 다른
+         * 물음 것이다」(`CHATBOT_SUBMISSION_CONFLICT`)라고 하면, 그 열쇠로는
+         * 무엇을 해도 다시 409 다. 열쇠를 그대로 두면 「다시 시도」가 **영원히
+         * 같은 오류**를 받는다.
+         *
+         * `CHATBOT_ANSWER_IN_PROGRESS` 는 다르다 — 앞의 요청이 아직 답하는
+         * 중이라, 같은 열쇠로 다시 시도해야 그 답을 받는다. 그래서 안 버린다. */
+        if (code === 'CHATBOT_ANSWER_EXPIRED' || code === 'CHATBOT_SUBMISSION_CONFLICT') {
+          askedMsg.submissionId = null;
+        }
       })
       .finally(function () {
         if (state.requestController === controller) {

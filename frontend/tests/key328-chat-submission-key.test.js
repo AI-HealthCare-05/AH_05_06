@@ -5,9 +5,11 @@
  * 「다시 시도」를 누르면 같은 물음이 한 번 더 가고 모델도 한 번 더 불린다 —
  * 돈이 두 번 나가고 이용 기록이 두 줄이 된다.
  *
- * 그래서 열쇠는 **물음에 붙고 재시도에 살아남아야** 한다. 여기서 재는 것이
- * 그 한 가지다. 서버가 그 열쇠로 무엇을 하는지는 아직 정하는 중이라(티켓의
- * 「정할 것」), 이 검사는 **화면이 같은 열쇠를 보내는지**만 본다.
+ * 그래서 열쇠는 **물음에 붙고 재시도에 살아남아야** 한다.
+ *
+ * 서버 쪽이 붙은 뒤로 하나가 더 늘었다 — **다 쓴 열쇠를 버리는 것**이다.
+ * 서버가 「이미 답했다」거나 「그 열쇠는 다른 물음 것이다」라고 하면 그 열쇠로는
+ * 무엇을 해도 409 다. 안 버리면 「다시 시도」가 영원히 같은 오류를 받는다.
  *
  * 원문 대조가 아니라 돌려 보는 까닭은 `key281` 과 같다 — 「코드에 있는가」를
  * 재면 엉뚱한 값을 실어도 통과한다. `retryAnswer` 는 열쇠가 붙은 줄을
@@ -184,4 +186,55 @@ test("보내는 몸에 `submission_id` 로 실린다 — 서버가 읽는 이름
 
   await context.apiChatbotStreamTransport({ question: "약은 언제 먹나요?" }, {});
   assert.deepEqual(sent, { question: "약은 언제 먹나요?" }, "열쇠가 없으면 그 칸도 없다");
+});
+
+test("**처리 중**이라는 409 에는 같은 열쇠로 다시 간다", async () => {
+  /* 앞의 요청이 아직 답하는 중이다. 같은 열쇠로 다시 물어야 **그 답**을 받는다 —
+     새 열쇠로 가면 모델이 한 번 더 불리고 이용 기록도 두 줄이 된다. */
+  const screen = chatScreen();
+
+  const first = screen.ask("약은 언제 먹나요?");
+  const firstKey = first.request.submissionId;
+  first.fail({ code: "CHATBOT_ANSWER_IN_PROGRESS" });
+  await new Promise((r) => setTimeout(r, 0));
+
+  screen.retryButtons()[0].fire("click");
+
+  const second = screen.streams[screen.streams.length - 1];
+  assert.equal(second.request.submissionId, firstKey, "처리 중인데 새 열쇠로 갔다");
+  assert.equal(screen.made(), 1, "열쇠를 새로 만들었다");
+});
+
+test("**다 쓴 열쇠는 버린다** — 이미 답한 물음·어긋난 물음", async () => {
+  for (const code of ["CHATBOT_ANSWER_EXPIRED", "CHATBOT_SUBMISSION_CONFLICT"]) {
+    const screen = chatScreen();
+
+    const first = screen.ask("약은 언제 먹나요?");
+    const firstKey = first.request.submissionId;
+    first.fail({ code });
+    await new Promise((r) => setTimeout(r, 0));
+
+    screen.retryButtons()[0].fire("click");
+
+    const second = screen.streams[screen.streams.length - 1];
+    assert.notEqual(second.request.submissionId, firstKey, `${code} 인데 다 쓴 열쇠로 다시 갔다`);
+    assert.equal(screen.made(), 2, `${code} 뒤에 새 열쇠를 안 만들었다`);
+  }
+});
+
+test("겹친 요청 셋에 서로 다른 문구를 준다", () => {
+  /* 환자가 해야 할 일이 다르다 — 기다린다 · 다시 묻는다 · 다시 묻는다.
+     한 문구로 뭉치면 「잠시 뒤 다시」만 보고 계속 눌러 409 를 반복한다. */
+  const context = vm.createContext({ Promise, window: { location: { search: "" } }, URLSearchParams, setTimeout });
+  vm.runInContext(read("js/chatbot-api.js"), context);
+  const say = (code) => vm.runInContext(`chatbotErrorMessage(${JSON.stringify(code)})`, context);
+
+  const fallback = say("SOMETHING_ELSE");
+  const messages = ["CHATBOT_ANSWER_IN_PROGRESS", "CHATBOT_ANSWER_EXPIRED", "CHATBOT_SUBMISSION_CONFLICT"].map(say);
+
+  for (const message of messages) {
+    assert.notEqual(message, fallback, "겹친 요청인데 기본 문구를 준다");
+  }
+  assert.equal(new Set(messages).size, 3, "셋이 같은 말을 한다");
+  assert.match(messages[0], /기다|잠시/, "처리 중인데 다시 물으라고 한다");
 });

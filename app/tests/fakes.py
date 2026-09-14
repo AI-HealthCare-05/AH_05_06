@@ -2,7 +2,14 @@
 
 FakeRedis 를 파일마다 복사해 두었더니, 세션 저장소가 `setex` 를 쓰기 시작한
 순간 한쪽만 조용히 깨졌다. 가짜도 한 군데 있어야 같이 자란다.
+
+🚩 `from __future__ import annotations` 가 필요하다. `FakeRedis.set()` 이
+redis-py 의 이름을 그대로 쓰는데, 그 이름이 클래스 본문 안에서 내장 `set` 을
+가린다 — 그래서 뒤에 오는 `-> set[str]` 이 「함수는 첨자를 못 받는다」로 죽는다.
+어노테이션을 문자열로 미루면 그 자리에서 평가되지 않는다.
 """
+
+from __future__ import annotations
 
 from typing import Any, Self
 
@@ -15,7 +22,7 @@ class FakePipeline:
     실제 서버에서는 코루틴이 안 돌아 아무 일도 일어나지 않는다.
     """
 
-    def __init__(self, redis: "FakeRedis") -> None:
+    def __init__(self, redis: FakeRedis) -> None:
         self.redis = redis
         self.queued: list[tuple[str, tuple[Any, ...]]] = []
 
@@ -70,6 +77,20 @@ class FakeRedis:
     async def setex(self, key: str, seconds: int, value: Any) -> None:
         self.values[key] = value
         self.ttls[key] = seconds
+
+    async def set(self, key: str, value: Any, *, nx: bool = False, ex: int | None = None) -> bool | None:
+        """`SET NX` 까지 흉내낸다 — KEY-328 의 처리 중 잠금이 이것으로 선다.
+
+        진짜 redis-py 와 같은 값을 준다: 넣었으면 `True`, `nx` 가 이미 있는
+        키를 만나 안 넣었으면 `None`. 잠금이 「내가 잡았나」를 이 값으로만
+        가리므로 여기서 `False` 를 주면 검사가 진짜와 어긋난다.
+        """
+        if nx and key in self.values:
+            return None
+        self.values[key] = value
+        if ex is not None:
+            self.ttls[key] = ex
+        return True
 
     async def exists(self, key: str) -> int:
         return 1 if key in self.values or key in self.sets else 0
