@@ -59,3 +59,18 @@ test("미리보기의 늦은 응답과 모달 기본 접근성을 지킨다", ()
   assert.match(screen, /document\.querySelector\(modalReturnSelector\)/);
   assert.match(screen, /returnFocus\.focus\(\)/);
 });
+
+test("닫히거나 다른 용도로 바뀐 모달은 늦은 재발송 응답이 덮어쓰지 않는다", () => {
+  const screen = codeOnly(read("js/manage.js"));
+
+  assert.match(screen, /var resendVersion = 0/);
+  assert.ok((screen.match(/requestVersion !== resendVersion/g) || []).length >= 3);
+  assert.match(screen, /if \(!el\("modal"\)\.hidden\) closeHistory\(\)/);
+  assert.match(screen, /if \(!saveButton \|\| !errorBox\) return/);
+});
+
+test("공용 환자 미리보기는 주의 아래 접힌 응급 문구도 찾는다", () => {
+  const cards = codeOnly(read("js/patient-guide-cards.js"));
+
+  assert.match(cards, /GUIDE_TUCKED_UNDER\[section\.key\] === key/);
+});

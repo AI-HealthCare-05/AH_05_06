@@ -36,6 +36,7 @@
   var resendingMessage = null;
   var resendingMessageSaving = false;
   var previewVersion = 0;
+  var resendVersion = 0;
   var modalReturnFocus = null;
   var modalReturnSelector = null;
 
@@ -240,6 +241,8 @@
   }
 
   function openScheduleAdjustment(row, trigger) {
+    previewVersion += 1;
+    resendVersion += 1;
     adjustingMessage = row;
     adjustingMessageSaving = false;
     modalReturnFocus = trigger || null;
@@ -250,6 +253,7 @@
   }
 
   function openPreview(row, trigger) {
+    resendVersion += 1;
     var requestVersion = ++previewVersion;
     modalReturnFocus = trigger || null;
     el("modal-body").innerHTML =
@@ -284,6 +288,8 @@
   }
 
   function openResend(row, trigger) {
+    previewVersion += 1;
+    resendVersion += 1;
     resendingMessage = row;
     resendingMessageSaving = false;
     modalReturnFocus = trigger || null;
@@ -583,11 +589,14 @@
      같은 것을 쓴다 (KEY-329). 두 벌이면 한쪽만 고쳐지고, 어느 화면에서
      봤느냐로 같은 환자의 이력이 갈린다. */
   function openHistory(patientId) {
+    previewVersion += 1;
+    resendVersion += 1;
     openPatientHistory(patientId, HISTORY_BLOCKS);
   }
 
   function closeHistory() {
     previewVersion += 1;
+    resendVersion += 1;
     var returnFocus = modalReturnFocus;
     if ((!returnFocus || !document.contains(returnFocus)) && modalReturnSelector) {
       returnFocus = document.querySelector(modalReturnSelector);
@@ -614,12 +623,15 @@
     if (resendForm) {
       event.preventDefault();
       if (!resendingMessage || resendingMessageSaving) return;
+      var requestVersion = resendVersion;
       resendingMessageSaving = true;
       el("message-resend-save").disabled = true;
       messagesApi
         .resend(resendingMessage.guide_message_id)
         .then(function (body) {
+          if (requestVersion !== resendVersion || el("modal").hidden) return;
           return load().then(function () {
+            if (requestVersion !== resendVersion || el("modal").hidden) return;
             resendingMessage = null;
             resendingMessageSaving = false;
             el("modal-body").innerHTML =
@@ -633,9 +645,12 @@
           });
         })
         .catch(function (error) {
+          if (requestVersion !== resendVersion || el("modal").hidden) return;
           resendingMessageSaving = false;
-          el("message-resend-save").disabled = false;
+          var saveButton = el("message-resend-save");
           var errorBox = el("message-resend-error");
+          if (!saveButton || !errorBox) return;
+          saveButton.disabled = false;
           errorBox.hidden = false;
           errorBox.textContent = errorMessage(
             error,
@@ -746,6 +761,7 @@
     if (!tab || tab.getAttribute("aria-disabled") === "true") return;
     var name = tab.getAttribute("data-view");
     if (name === view) return;
+    if (!el("modal").hidden) closeHistory();
     view = name;
     rosterOffset = 0; //: 갈래를 바꾸면 첫 쪽부터 (KEY-303)
     load();

@@ -1,4 +1,4 @@
-/* **현황** — 와이어프레임 D1-6.
+/* **현황** — 와이어프레임 D1-6·D1-7.
  *
  * 승인 뒤에 무슨 일이 있었는지 볼 자리가 없었다 — 보냈는지 · 열었는지 ·
  * 답했는지 · 다음 문자가 언제 나가는지가 어디에도 안 보였다.
@@ -6,10 +6,13 @@
  * 화면은 세 덩어리다 (원문 배치):
  *   위 2 : 1  ① 발송·예정  |  ② 환자 액션 현황 (안내문 읽음 + 확인 문자 응답)
  *   아래 전폭 ④ 진료 처리 이력
- *   맨 아래  [링크 무효화] [재발송]
  *
- * ①과 하단 버튼은 **아직 프레임이다** — 발송 예정을 담는 표가 서버에 없다.
- * ②③④는 진짜 기록으로 찬다(`GET /visits/{id}/timeline`).
+ * **넷 다 진짜 기록으로 찬다** — 발송기가 붙으면서(KEY-249·250) ①의
+ * 발송·실패·보류가, 재발송 API가 붙으면서(KEY-306) 실패·보류 줄의
+ * 「다시 보내기」가 채워졌다(KEY-251). 링크 무효화·재발급은 이 화면
+ * 대신 아래 링크 블록(`patient-link-view.js`)이 맡는다 — 원문이 이 자리에
+ * 그렸던 것과 다른 배치이지만, 안내문의 문자 설정 탭과 같은 블록을 써서
+ * 두 화면이 갈리지 않게 한 KEY-275의 결정을 그대로 잇는다.
  */
 
 /* 서버는 코드를 준다. 사람 말로 옮기는 것은 화면 몫이다 —
@@ -164,7 +167,18 @@ function sendRowsHtml(messages) {
         '<span class="sd__state">' +
         esc(messageSaying(row)) +
         (row.sent_at ? " \u00b7 " + esc(messageWhen(row.sent_at)) : "") +
-        "</span></div>"
+        "</span>" +
+        /* **실패·보류만 다시 보낼 수 있다.** SCHEDULED는 아직 차례를
+           기다리는 중이고, SENT·CANCELED는 다시 보낼 대상이 아니다
+           (D1-7 — `canResend`). 문자 한 통 단위로 걸므로 `kind`·회차가
+           아니라 `guide_message_id`를 심는다(KEY-306). */
+        (canResend(row.status)
+          ? '<button class="button-ghost button-ghost--sm sd__resend" type="button" ' +
+            'data-resend="' +
+            esc(row.guide_message_id) +
+            '">다시 보내기</button>'
+          : "") +
+        "</div>"
       );
     })
     .join("");
@@ -239,7 +253,7 @@ function statusScreenHtml(view) {
       : "") +
     "</div>" +
     sendRowsHtml(view.messages) +
-    '<p class="st__note">ⓘ ⚠ 발송 실패는 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 발송기가 붙으면 그 자리에서 고칩니다</p>' +
+    '<p class="st__note">ⓘ ⚠ 발송 실패는 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 실패·보류 줄의 [다시 보내기]로 새 링크를 만들어 다시 보냅니다</p>' +
     "</section>" +
     '<section class="box st__side">' +
     '<div class="box__head st__head"><span class="box__title">환자 액션 현황</span></div>' +
@@ -262,9 +276,11 @@ function statusScreenHtml(view) {
     "</p></div></section>" +
     "</div>" +
     /* **환자 액션 현황 아래에 링크 블록** — 원문 배치가 맨 아래에
-       「[링크 무효화] [재발송]」 자리를 잡아 둔 그 자리다(KEY-275).
-       재발송은 발송기가 붙을 때 온다(KEY-247) — 지금은 링크만.
-       안내문의 문자 설정과 **같은 블록**을 그린다. */
+       「[링크 무효화] [재발송]」 자리를 잡아 둔 그 자리다(KEY-275). 「재발송」은
+       원문이 상상했던 것과 다른 자리에 섰다 — 문자 한 통 단위 작업이라
+       KEY-306이 위 발송·예정 표의 실패·보류 줄에 [다시 보내기]로 붙였다
+       (KEY-251). 여기 남는 것은 링크 무효화·재발급뿐이라, 안내문의
+       문자 설정과 **같은 블록**을 그린다. */
     patientLinkBlockHtml(view.link || null, view.guideStatus, new Date()) +
     /* 아래 전폭 */
     '<section class="box tl">' +

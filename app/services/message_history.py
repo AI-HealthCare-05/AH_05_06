@@ -17,7 +17,7 @@ from datetime import UTC, date, datetime, timedelta
 from tortoise.expressions import Q
 
 from app.core.api_errors import ApiError
-from app.core.time import clinic_day_window
+from app.core.time import as_utc, clinic_day_window
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.messages import (
     MessageLinkEndReason,
@@ -198,6 +198,8 @@ class MessageHistoryService:
                     viewed=row.guide_document_id in viewed,
                     viewed_at=viewed.get(row.guide_document_id),
                     link_status=link_status,
+                    # 발송 이력의 만료 표시는 KEY-252 계약대로 해당 문자 발송 시각의
+                    # 72시간 창이다. 현재 링크 행은 이후 교체되어 다른 만료시각을 가질 수 있다.
                     link_expires_at=row.sent_at + timedelta(hours=72) if row.sent_at else None,
                     link_end_reason=link_end_reason,
                 )
@@ -245,7 +247,7 @@ class MessageHistoryService:
                     return MessageLinkStatus.UNAVAILABLE, MessageLinkEndReason.REPLACED
         if link.last_message_id != message.guide_message_id:
             return MessageLinkStatus.UNAVAILABLE, MessageLinkEndReason.REPLACED
-        if link.expires_at > timestamp:
+        if as_utc(link.expires_at) > as_utc(timestamp):
             return MessageLinkStatus.ACTIVE, None
         return MessageLinkStatus.UNAVAILABLE, MessageLinkEndReason.EXPIRED
 

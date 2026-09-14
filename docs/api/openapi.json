@@ -277,7 +277,8 @@
           "otp",
           "message",
           "patient_usage",
-          "staff_account"
+          "staff_account",
+          "hospital"
         ],
         "title": "AuditSource",
         "type": "string"
@@ -1410,7 +1411,8 @@
           "NO_CREDIT",
           "NOT_APPROVED",
           "SAFETY_CHECK_FAILED",
-          "SOURCE_NOT_DELETED"
+          "SOURCE_NOT_DELETED",
+          "BOOKING_URL_MISSING"
         ],
         "title": "GuideMessageHold",
         "type": "string"
@@ -1921,6 +1923,114 @@
           "submitted_at"
         ],
         "title": "HospitalCheckInResponse",
+        "type": "object"
+      },
+      "HospitalResponse": {
+        "additionalProperties": false,
+        "description": "A1-4 가 그리는 것.\n\n**이름도 함께 준다.** 화면이 「도로시여성의원의 정보를 고치는 중」임을\n보여야 하는데, 그 이름을 상단 골격에서 따로 가져오면 두 값이 어긋날 수\n있다.\n\n이름은 **여기서 고칠 수 있다** (KEY-319 인수조건). 처음에는 「배포 한 판의\n정체」라 막아 두었는데, 이미 나간 문자는 `sent_body` 에 보낸 그대로 남으므로\n앞뒤가 갈리는 문제는 생기지 않는다 — 바꾼 사실은 감사 기록이 든다\n(이희진 님 #295 리뷰).",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "booking_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Url"
+          },
+          "hospital_id": {
+            "title": "Hospital Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "required": [
+          "hospital_id",
+          "name",
+          "phone",
+          "address",
+          "booking_url"
+        ],
+        "title": "HospitalResponse",
+        "type": "object"
+      },
+      "HospitalUpdateRequest": {
+        "additionalProperties": false,
+        "description": "세 칸 전부를 **매번 함께 보낸다** — PATCH 지만 화면은 부분 갱신을 안 쓴다.\n\n직원 수정(A1-3)은 「안 보낸 칸은 그대로」인데 여기는 화면이 다르다: 저쪽은\n역할만 · 상태만 고치는 자리가 따로 있고, 이쪽은 세 칸이 한 폼에 함께 있어\n**관리자가 보고 있는 것이 곧 보내려는 전부**다.\n\n**그래도 서버는 그 약속을 믿지 않는다** — 안 보낸 칸은 손대지 않는다.\n화면 말고 다른 손님(검사 · 스크립트 · 다음 화면)이 칸 하나만 보내는 순간\n나머지 둘이 조용히 사라지면 안 된다. 지우는 것은 **`null` 을 보낸 것**만이다.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "booking_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "title": "HospitalUpdateRequest",
         "type": "object"
       },
       "LabBaselineItem-Input": {
@@ -4933,6 +5043,10 @@
             ],
             "title": "Failure Code"
           },
+          "guide_message_id": {
+            "title": "Guide Message Id",
+            "type": "integer"
+          },
           "hold_reason": {
             "anyOf": [
               {
@@ -4966,6 +5080,7 @@
           }
         },
         "required": [
+          "guide_message_id",
           "kind",
           "status",
           "at"
@@ -5155,6 +5270,26 @@
         "title": "SectionEditRequest",
         "type": "object"
       },
+      "SectionOrderRequest": {
+        "additionalProperties": false,
+        "description": "절의 새 차례 — KEY-317.\n\n**그 안내문의 절을 하나도 빠짐없이, 한 번씩** 보낸다. 「옮길 것만」 보내는\n모양도 생각했지만, 그러면 나머지가 어디로 가는지를 서버와 화면이 각자\n셈하게 된다 — 둘이 어긋나면 화면에서 본 차례와 저장된 차례가 달라진다.\n\n무엇이 자리를 옮길 수 있는지는 서버가 검증한다\n(`app/services/guide_section_order.py`). 🚨 응급·주의사항은 못 옮긴다.",
+        "properties": {
+          "order": {
+            "items": {
+              "$ref": "#/components/schemas/GuideSectionKey"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "title": "SectionOrderRequest",
+        "type": "object"
+      },
       "SectionResponse": {
         "additionalProperties": false,
         "properties": {
@@ -5171,6 +5306,10 @@
           },
           "locked": {
             "title": "Locked",
+            "type": "boolean"
+          },
+          "movable": {
+            "title": "Movable",
             "type": "boolean"
           },
           "sources": {
@@ -5196,7 +5335,8 @@
           "key",
           "body",
           "edited",
-          "locked"
+          "locked",
+          "movable"
         ],
         "title": "SectionResponse",
         "type": "object"
@@ -5854,6 +5994,7 @@
           "GUIDE_UNAPPROVED",
           "GUIDE_REGENERATED",
           "GUIDE_RETURNED",
+          "GUIDE_SECTION_REORDERED",
           "PATIENT_LINK_REISSUED",
           "PATIENT_LINK_REVOKED",
           "CHECK_IN_SUBMITTED",
@@ -6571,6 +6712,78 @@
           }
         ],
         "summary": "List Audit Logs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/hospital": {
+      "get": {
+        "description": "A1-4 — 내 의원 정보.",
+        "operationId": "get_hospital_api_v1_admin_hospital_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HospitalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Hospital",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "A1-4 — 의원 정보 수정.\n\n`booking_url` 이 바뀌면 **다음 소진·재진 문자부터** 그 주소가 나간다. 이미\n보낸 문자는 바뀌지 않는다(`sent_body` 는 보낸 그대로 남는다).",
+        "operationId": "update_hospital_api_v1_admin_hospital_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HospitalUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HospitalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Hospital",
         "tags": [
           "admin"
         ]
@@ -10728,6 +10941,64 @@
           }
         ],
         "summary": "Return Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/sections/order": {
+      "put": {
+        "description": "절의 **차례**를 바꾼다 — KEY-317.\n\n`PATCH` 가 아니라 `PUT` 이다. 한 절을 고치는 것이 아니라 **차례 전체를**\n통째로 놓는 것이라, 같은 목록을 두 번 보내면 두 번째는 아무 일도 안 한다.\n\n답으로 안내문 전체를 준다. 차례가 바뀌면 화면이 다시 그려야 하는데,\n바뀐 차례만 주면 화면이 제 손으로 다시 늘어놓아야 한다 — 그러면 서버가\n아는 차례와 화면이 그린 차례가 갈릴 자리가 생긴다.",
+        "operationId": "reorder_sections_api_v1_visits__visit_id__guide_sections_order_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reorder Sections",
         "tags": [
           "guides"
         ]

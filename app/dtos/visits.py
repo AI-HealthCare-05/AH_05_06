@@ -133,6 +133,10 @@ class TimelineEvent(StrEnum):
     #: 초안을 다시 만들었다 (KEY-273). 옛 생성 줄을 지우지 않고 이 줄을 더한다.
     GUIDE_REGENERATED = "GUIDE_REGENERATED"
     GUIDE_RETURNED = "GUIDE_RETURNED"
+    #: 절의 **차례**를 바꿨다 (KEY-317). 글은 그대로고 보이는 순서만 달라진다.
+    #: `GUIDE_EDITED` 와 나눈다 — 「무엇을 고쳤나」를 물을 때 차례 변경이 섞이면
+    #: 문구가 바뀐 줄 알고 옛 글을 찾게 된다.
+    GUIDE_SECTION_REORDERED = "GUIDE_SECTION_REORDERED"
     PATIENT_LINK_REISSUED = "PATIENT_LINK_REISSUED"
     PATIENT_LINK_REVOKED = "PATIENT_LINK_REVOKED"
     CHECK_IN_SUBMITTED = "CHECK_IN_SUBMITTED"
@@ -178,6 +182,11 @@ class ScheduledMessage(BaseModel):
     일어날 일이라, 한 줄로 섞으면 「보냈다」와 「보낼 것이다」가 같아 보인다.
     """
 
+    #: `POST /messages/history/{id}/resend`(KEY-306)가 받는 값 — 실패·보류
+    #: 행의 「다시 보내기」가 이 번호로 재발송을 건다(D1-7). 서버가 이미
+    #: `guide_message_id`로 행을 구분하므로(unique_together), 화면이 따로
+    #: kind·scheduled_at으로 짝을 맞출 필요가 없다.
+    guide_message_id: int
     #: GUIDE · CHECK_D7 · CHECK_D15 · CHECK_D30 · RUN_OUT.
     kind: str
     #: SCHEDULED · SENT · FAILED · HELD · CANCELED

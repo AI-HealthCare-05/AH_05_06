@@ -331,7 +331,8 @@ function patientPreviewBodyHtml(bodyOf, current, summary, preview) {
 function patientGuidePreviewHtml(sections, current, summary, preview) {
   var bodyOf = function (key) {
     var row = (sections || []).find(function (section) {
-      return section.key === key;
+      return section.key === key ||
+        (typeof GUIDE_TUCKED_UNDER !== "undefined" && GUIDE_TUCKED_UNDER[section.key] === key);
     });
     return row && row.body ? row.body : "";
   };

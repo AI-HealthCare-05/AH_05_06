@@ -172,7 +172,11 @@ def _patient_response(
         expires_at=link.expires_at,
         sections=[
             PatientGuideSectionResponse(key=section.section_key, body=section.body)
-            for section in sorted(guide.sections, key=lambda item: item.guide_section_id)
+            #: **저장된 차례로 준다** — KEY-317. 여기는 `guide_section_id`,
+            #: 곧 넣은 차례로 늘어놓고 있었다. KEY-161 이 병원 종점에서 「우연히
+            #: 같은 것」이라며 걷어 낸 그 정렬이 환자 쪽에 그대로 남아 있었다.
+            #: 사람이 차례를 정할 수 있게 된 지금은 우연히도 안 같다.
+            for section in sorted(guide.sections, key=lambda item: (item.display_order, item.guide_section_id))
         ],
         visit=data.visit_date.strftime("%Y.%m.%d"),
         clinic=data.clinic_name,

@@ -106,8 +106,8 @@ test("문자 설정 재료가 링크 둘을 통과시킨다 — 안 흘리면 �
   assert.equal(plan.link.expiresAt, "2026-09-14T18:00:00+09:00");
 });
 
-test("**두 화면이 다 상태를 읽고 배선한다** — 한쪽만 하면 그 화면 블록이 죽는다", () => {
-  for (const screen of ["visit-guide.js", "doctor.js"]) {
+test("링크 관리 화면만 상태를 읽고 배선한다", () => {
+  for (const screen of ["visit-guide.js"]) {
     const source = read("js/" + screen);
     assert.ok(source.includes("patientLinkLoad"), `${screen} 이 링크 상태를 안 읽는다`);
     assert.ok(source.includes("wirePatientLink"), `${screen} 이 블록 단추를 안 건다 — 눌러도 아무 일 없다`);

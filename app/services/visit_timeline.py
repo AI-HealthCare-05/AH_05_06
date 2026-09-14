@@ -59,6 +59,7 @@ _GUIDE_EVENT_NAME: dict[GuideEventType, TimelineEvent] = {
     GuideEventType.UNAPPROVED: TimelineEvent.GUIDE_UNAPPROVED,
     GuideEventType.RETURNED: TimelineEvent.GUIDE_RETURNED,
     GuideEventType.REGENERATED: TimelineEvent.GUIDE_REGENERATED,
+    GuideEventType.SECTION_REORDERED: TimelineEvent.GUIDE_SECTION_REORDERED,
     GuideEventType.LINK_REISSUED: TimelineEvent.PATIENT_LINK_REISSUED,
     GuideEventType.LINK_REVOKED: TimelineEvent.PATIENT_LINK_REVOKED,
 }
@@ -163,6 +164,7 @@ class VisitTimelineService:
             return []
         return [
             ScheduledMessage(
+                guide_message_id=row.guide_message_id,
                 kind=str(row.kind),
                 status=str(row.status),
                 at=row.scheduled_at,

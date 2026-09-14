@@ -11,7 +11,7 @@
 그래서다 — 발송기가 붙는 날 화면이 이미 준비돼 있어야 한다.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -36,7 +36,7 @@ from app.models.visits import (
     PatientUsageEventType,
     Visit,
 )
-from app.services.message_history import MAX_DAYS, happened_at, sort_key
+from app.services.message_history import MAX_DAYS, MessageHistoryService, happened_at, sort_key
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 
@@ -231,6 +231,25 @@ class SentHistoryTestCase(TestCase):
         assert item["link_end_reason"] is None
         assert item["link_expires_at"].startswith((TODAY + timedelta(days=3)).isoformat())
         assert "token" not in item
+
+    def test_link_expiry_normalizes_the_asyncmy_timezone_tag(self) -> None:
+        sent_at = at(TODAY, 1)
+        message = GuideMessage(
+            guide_message_id=41,
+            status=GuideMessageStatus.SENT,
+            scheduled_at=sent_at,
+            sent_at=sent_at,
+        )
+        link = PatientGuideLink(
+            last_message_id=41,
+            expires_at=at(TODAY, 12),
+        )
+        timestamp = datetime(TODAY.year, TODAY.month, TODAY.day, 4, tzinfo=UTC)
+
+        status, reason = MessageHistoryService._link_state(message, link, [], timestamp)
+
+        assert status.value == "ACTIVE"
+        assert reason is None
 
     async def test_an_older_message_link_is_marked_as_replaced(self) -> None:
         clinic = await self.a_clinic()
