@@ -108,9 +108,50 @@ TORTOISE_APP_MODELS = [
 ## 2-2. 마이그레이션은 손으로 쓰지 않는다
 
 ```bash
-uv run aerich migrate --name add_visits    # 모델 → 마이그레이션 파일 생성
-uv run aerich upgrade                       # 실제 반영
+uv run aerich migrate --name add_visits --offline   # 모델 → 마이그레이션 파일 생성
+uv run aerich upgrade                                # 실제 반영
 ```
+
+🚩 **`--offline` 을 빼지 마라.** 이것 하나가 「직전과의 차이」와 「전체 생성본」을
+가른다 — 까닭은 2-3 에 적는다.
+
+## 2-3. `--offline` 이 붙는 까닭 (KEY-333)
+
+`aerich migrate` 는 **무엇과 견줄지**를 두 곳 중 하나에서 고른다
+(aerich 0.9.2 `Migrate.init`).
+
+| 모드 | 기준 | 다음 번호 |
+|---|---|---|
+| 기본(온라인) | **연결된 DB** `aerich` 표의 최신 줄 `content` | DB 장부 기준 |
+| `--offline` | **저장소의 마지막 마이그레이션 파일** `MODELS_STATE` | 파일 기준 |
+
+온라인 기준은 **내 DB 사정**을 탄다. 남의 가지 것이 섞여 있거나, 그 줄이 비어
+있으면 기준이 없어 **전체 스키마가 통째로** 나온다. 그것을 손으로 다듬어 올리면
+`MODELS_STATE` 가 가지마다 갈리고, 다음 사람의 `migrate` 가 이미 있는 칸을 다시
+`ADD` 하려 든다 — 배포가 `Duplicate column` 으로 멈춘다(`#279` 전례).
+
+**2026-09-11 에 실제로 그랬다.** 마이그레이션 하나가 `MODELS_STATE` **없이**
+손으로 쓰여 올라갔고(`58be4e55`), `aerich upgrade` 가 그 줄의 `content` 를 빈
+값으로 적었다. 그 뒤로 그 DB 에서 만든 마이그레이션은 전부 전체 생성본이었다
+(55·56 둘 다).
+
+재현·확인은 장부를 보면 된다 — `content` 가 두 자면 빈 `{}` 다.
+
+```sql
+SELECT id, version, LENGTH(IFNULL(content, '')) AS clen FROM aerich ORDER BY id DESC LIMIT 5;
+```
+
+```text
+id=54  content=     2자  54_20260911170046_key331_hospital_info.py   ← 기준이 비었다
+id=55  content=241104자  52_20260911144731_key306_message_resend.py
+```
+
+`--offline` 은 DB 를 안 본다. **누가 어떤 DB 로 돌려도 같은 결과**가 나오고,
+번호도 저장소 파일에서 이어 붙는다(KEY-162 가 막으려는 번호 중복과 같은 자리).
+
+그래도 스냅샷이 흘렀는지는 사람이 못 본다. `app/tests/migrations/`
+`test_migration_file_format.py::test_the_last_state_matches_the_models_field_by_field`
+가 **마지막 파일의 `MODELS_STATE` 와 지금 모델을 칸 단위로** 견준다. DB 없이 돈다.
 
 `app/core/db/migrations/`는 aerich가 만드는 자리다. **손으로 SQL을 쓰지 않는다** — 로즈앤 때와 다른 점이다.
 
