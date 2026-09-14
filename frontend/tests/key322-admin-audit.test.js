@@ -48,7 +48,7 @@ test("화면이 아는 유형이 서버가 주는 유형과 같다", () => {
   const block = dto.slice(dto.indexOf("class AuditSource"), dto.indexOf("class AuditLogEntry"));
   const server = [...block.matchAll(/^\s+[A-Z_]+ = "([a-z_]+)"$/gm)].map((m) => m[1]).sort();
 
-  assert.strictEqual(server.length, 5, `서버 유형을 ${server.length}개 읽었다 — 검사가 헛돈다`);
+  assert.strictEqual(server.length, 6, `서버 유형을 ${server.length}개 읽었다 — 검사가 헛돈다`);
   assert.deepEqual(Object.keys(AUDIT_SOURCE_LABEL).sort(), server);
 });
 

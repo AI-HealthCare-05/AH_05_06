@@ -64,6 +64,38 @@ function monthDay(iso) {
   return m ? m[2] + "-" + m[3] : "";
 }
 
+/* 등록 시점 — KEY-327. **날짜까지만 보인다.** 표는 한눈에 훑는 자리라 시·분을
+   넣으면 열이 넓어지고, 「언제 등록했나」에 답하는 데 시각까지는 필요 없다.
+   서버는 `created_at` 을 늘 실어 준다(`PatientResponse`). */
+function registeredDay(row) {
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String((row && row.created_at) || ""));
+  return m ? m[1] : "";
+}
+
+/* 표를 세울 수 있는 기준과, 누를 때마다 갈 다음 기준 — KEY-327.
+   **뒤집기가 아니라 돌기다.** 「차트 ▲ → 차트 ▼ → 차트 ▲」로 돌면 한 번 고른
+   기준에서 빠져나올 길이 없다. 다른 머리를 누르면 그쪽으로 간다. */
+var ROSTER_SORTS = {
+  registered: { asc: "registered_asc", desc: "registered_desc" },
+  chart: { asc: "chart_asc", desc: "chart_desc" },
+  visited: { asc: "visited_asc", desc: "visited_desc" },
+};
+
+function rosterSortArrow(field, sort) {
+  var pair = ROSTER_SORTS[field];
+  if (!pair) return "";
+  if (sort === pair.desc) return " ▼";
+  if (sort === pair.asc) return " ▲";
+  return "";
+}
+
+/** 그 머리를 눌렀을 때 갈 기준. 이미 그 기준이면 방향만 뒤집는다. */
+function rosterSortNext(field, sort) {
+  var pair = ROSTER_SORTS[field];
+  if (!pair) return sort;
+  return sort === pair.desc ? pair.asc : pair.desc;
+}
+
 function visitedDay(row) {
   var at = row && row.latest_visit && row.latest_visit.visited_at;
   var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(at || ""));
@@ -73,29 +105,30 @@ function visitedDay(row) {
 /* 펼친 카드의 버튼 넷 — 원문 「전체 이력 보기 · 지난 안내문 보기 ·
  * 정보 수정 · 재진 안내 발송」.
  *
- * **갈 데가 있는 것만 세운다.** 지금 서는 것은 「정보 수정」 하나다.
+ * **갈 데가 있는 것만 세운다.** 지금 서는 것은 둘이다 — 「정보 수정」과
+ * 「현황 보기」. 뒤엣것은 원문에 없다. 관리 카드에서 현황 탭으로 가는 길이
+ * 없어 그 환자를 현황에서 다시 찾아야 했다 (KEY-329).
  *
  *   전체 이력 보기   버튼이 아니라 **줄을 누르면** 이력 모달(S2-2)이 뜬다.
  *                    같은 자리에 버튼을 또 두면 누르는 길이 둘이 된다
  *   지난 안내문 보기  발송 이력을 그 환자로 거르는 것인데, 그 거르개가 없다
  *   재진 안내 발송   문자를 보내는 발송기가 없다
  *
- * 이 주석이 한동안 「지난 안내문 보기와 정보 수정 둘 다 갈 수 있다」고
- * 적혀 있었는데 코드는 하나만 냈고, 「전체 이력 보기는 자리가 없다」고
- * 적혀 있었는데 실제로는 됐다. **양쪽으로 틀려 있었다.**
+ * **이 문단은 세 번 틀렸다.** 「지난 안내문 보기와 정보 수정 둘 다 간다」고
+ * 적혀 있었는데 코드는 하나만 냈고, 「전체 이력 보기는 자리가 없다」고 적혀
+ * 있었는데 실제로는 됐고, `status` 를 더한 뒤에도 「하나다」로 남아 있었다
+ * (이희진 님 #292 리뷰). **버튼을 더하거나 뺄 때 이 목록을 같이 고친다.**
  */
 function rosterActions(row) {
   if (!row) return [];
   var found = [];
   if (row.latest_visit && row.latest_visit.visit_id) {
-    found.push({
-      key: "edit",
-      say: "정보 수정",
-      href:
-        "/patients.html?visit=" +
-        encodeURIComponent(row.latest_visit.visit_id) +
-        "&tab=basic",
-    });
+    var at = "/patients.html?visit=" + encodeURIComponent(row.latest_visit.visit_id) + "&tab=";
+    /* **같은 결로 간다** — 정보 수정이 기본정보 탭으로 가듯, 현황 보기는 현황
+       탭으로 간다 (KEY-329). 탭 이름은 `step-nav.js` 의 `VISIT_STEPS` 가 정한
+       그대로다 — 여기서 새로 짓지 않는다. */
+    found.push({ key: "edit", say: "정보 수정", href: at + "basic" });
+    found.push({ key: "status", say: "현황 보기", href: at + "status" });
   }
   return found;
 }

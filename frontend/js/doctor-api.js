@@ -83,6 +83,14 @@ var doctorApi = {
       body: body,
     });
   },
+  /* 절의 **차례**를 바꾼다 — KEY-317. 차례 전체를 통째로 놓으므로 `PUT` 이다. */
+  reorderSections: function (visitId, body) {
+    return doctorRequest("/visits/" + encodeURIComponent(visitId) + "/guide/sections/order", {
+      method: "PUT",
+      body: body,
+    });
+  },
+
   /* 스탭이 확인을 마치고 의사에게 넘긴다 — 와이어프레임 S1-11.
      이 자리가 없어서 안내문이 만들어지자마자 원장님 목록에 떴다. */
   submit: function (visitId) {
@@ -162,10 +170,7 @@ var doctorApi = {
       body: { reason: reason },
     });
   },
-  /* 실패 건을 새 링크로 다시 보낼 작업으로 등록한다 — KEY-306, D1-7.
-     경로가 `/visits/{id}/guide/...`가 아니라 `/messages/history/{id}/...`
-     인 이유는, 이 작업이 안내문이 아니라 **문자 한 통**을 대상으로 하기
-     때문이다(kind·회차가 아니라 guide_message_id로 찾는다). */
+  /* 실패 건을 새 링크로 다시 보낼 작업으로 등록한다 — KEY-306, D1-7. */
   resendMessage: function (messageId) {
     return doctorRequest("/messages/history/" + encodeURIComponent(messageId) + "/resend", {
       method: "POST",
@@ -218,19 +223,26 @@ var DOCTOR_CASE = (function () {
    나중에 실린 이쪽이 앞의 것을 통째로 덮어서, 목록 목업이 `.find is not a
    function` 으로 죽었다 — 화면은 「환자가 없습니다」만 띄웠다. 파일은 모듈이
    아니라 전역에 얹히는 스크립트라, 이름이 곧 자리다. */
+/* `patient_id` 는 **환자 목록 목업(`patients-api.js`)의 같은 차트번호 줄과
+   같은 값**이어야 한다. 현황 탭의 「전체 이력 보기」가 이 번호로 이력을 부르는데,
+   갈리면 `?mock=1` 에서만 404 가 난다 (KEY-329).
+
+   저쪽에서 찾아오지 않고 여기 적는다 — 그러면 `doctor-api.js` 가
+   `patients-api.js` 의 실린 차례에 기대게 되고, 그 차례가 화면마다 다르다.
+   대신 `key329-history-from-status` 검사가 **둘이 갈리면 운다.** */
 var MOCK_GUIDE_PATIENTS = {
   8798: {
-    patient: { name: "박수빈", birth_date: "1992-09-18", age: 34, gender: "FEMALE", hospital_patient_no: "09871" },
+    patient: { name: "박수빈", birth_date: "1992-09-18", age: 34, gender: "FEMALE", hospital_patient_no: "09871", patient_id: 1007 },
     summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 08-11",
     /* 목록이 `INVALID_PHONE` 로 보완에 올린 줄이다. 안내문 자체는 승인을
        기다리는 중이고, 막힌 것은 **보낼 곳**이라 상태는 그대로 둔다. */
   },
   8801: {
-    patient: { name: "김서연", birth_date: "1990-03-14", age: 36, gender: "FEMALE", hospital_patient_no: "12345" },
+    patient: { name: "김서연", birth_date: "1990-03-14", age: 36, gender: "FEMALE", hospital_patient_no: "12345", patient_id: 1003 },
     summary: "자궁내막증 · 비잔 (계속) · 84일 · 지난 방문 05-20",
   },
   8802: {
-    patient: { name: "최다인", birth_date: "1997-06-02", age: 29, gender: "FEMALE", hospital_patient_no: "10982" },
+    patient: { name: "최다인", birth_date: "1997-06-02", age: 29, gender: "FEMALE", hospital_patient_no: "10982", patient_id: 1008 },
     summary: "다낭성 · 야즈 (계속) · 84일 · 지난 방문 06-02",
   },
 };
@@ -247,10 +259,24 @@ var MOCK_GUIDE_PATIENTS = {
    예전에는 `mockGuide()` 가 매번 새로 만들고 승인 핸들러가 그 사본을 고쳐
    돌려줬다 — 승인해도 다음 조회는 다시 「승인 요청」이라 목업으로는
    `GUIDE_NOT_PENDING` 같은 상태 규칙을 아예 잴 수 없었다. */
+/* **목업이 서버 정책을 흉내 내는 한 곳** — KEY-317.
+
+   화면은 이 목록을 안 본다. 서버가 절마다 `movable` 을 실어 주고 화면은 그것만
+   읽는다 — 안전 절 목록을 화면에도 적어 두면 정책이 바뀌는 날 한쪽만 고쳐진다.
+   여기 적는 까닭은 목업이 **서버 역**을 하기 때문이다. */
+var MOCK_SAFETY_SECTIONS = { caution: true, emergency: true };
+
+function withMovable(sections) {
+  return sections.map(function (section) {
+    section.movable = !MOCK_SAFETY_SECTIONS[section.key];
+    return section;
+  });
+}
+
 var MOCK_GUIDE_STATE = {};
 
-/* 재발송한 문자 번호 — KEY-306·D1-7. 목업 메시지 번호도 실제 DB처럼
-   진료마다 달라야 다른 환자의 같은 회차 상태를 함께 바꾸지 않는다. */
+/* 목업 메시지 번호도 실제 DB처럼 진료마다 달라야 다른 환자의 같은 회차
+   재발송 상태를 함께 바꾸지 않는다. */
 var MOCK_RESENT_MESSAGE_IDS = {};
 
 /* 이 진료의 저장 칸을 돌려준다. 없으면 만들어서 돌려준다 — 승인·반려·PATCH가
@@ -273,6 +299,8 @@ function mockGuideState(visitId) {
       patient_link_issued: false,
       patient_link_expires_at: null,
       sections: {},
+      //: 절의 차례 — KEY-317. `null` 이면 계약 차례다.
+      order: null,
     })
   );
 }
@@ -335,17 +363,10 @@ function mockTimeline(visitId) {
     guide.status === "SCHEDULED_TO_SEND"
       ? [
           sending(messageIdBase + 1, "GUIDE", "SENT", "2026-09-02T18:00:00+09:00", "2026-09-02T18:00:12+09:00"),
-          /* 실패·보류 예시 — D1-7의 「사유를 보고 재시도」·「HELD 사유 표시」를
-             목업에서도 검증할 수 있게 둔다. 발신번호 미등록은 처리 경로가
-             다르다는 것도(어드민 A1-5) 사람 말로 확인할 수 있어야 한다. */
           sending(messageIdBase + 2, "CHECK_D7", "FAILED", "2026-09-09T18:00:00+09:00", null, "SENDER_UNREGISTERED"),
           sending(messageIdBase + 3, "CHECK_D15", "HELD", "2026-09-17T18:00:00+09:00", null, null, "SAFETY_CHECK_FAILED"),
           sending(messageIdBase + 4, "RUN_OUT", "SCHEDULED", "2026-11-22T18:00:00+09:00", null),
         ].map(function (row) {
-          /* 재발송을 누르면 그 줄이 다시 예정으로 돌아간다 — 실제 서버는
-             원본은 그대로 두고 새 행을 만들지만(resend_sequence), 목업은
-             한 줄로 단순화한다. 화면이 「눌렀더니 바뀌었다」를 보게 하는
-             것이 목적이지 서버의 이력 보존 방식을 재현하는 것이 아니다. */
           if (!MOCK_RESENT_MESSAGE_IDS[row.guide_message_id]) return row;
           return Object.assign({}, row, { status: "SCHEDULED", failure_code: null, hold_reason: null });
         })
@@ -427,7 +448,7 @@ function mockGuideBase(visitId) {
         next: null,
       },
     },
-    sections: [
+    sections: withMovable([
       {
         key: "medication",
         body:
@@ -437,6 +458,8 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: false,
         warn: warn ? "AMH 결과가 아직 안 나왔습니다 — 값이 빠진 자리입니다" : null,
+        //: 근거 스냅샷 — KEY-277. 목업은 RAG 생성을 흉내 내지 않아 늘 비워 둔다.
+        sources: [],
       },
       {
         key: "caution",
@@ -447,6 +470,7 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: false,
         warn: null,
+        sources: [],
       },
       {
         key: "emergency",
@@ -457,6 +481,7 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: true,
         warn: null,
+        sources: [],
       },
       {
         key: "life",
@@ -467,6 +492,7 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: false,
         warn: null,
+        sources: [],
       },
       {
         key: "messages",
@@ -479,8 +505,9 @@ function mockGuideBase(visitId) {
         edited: false,
         locked: false,
         warn: null,
+        sources: [],
       },
-    ],
+    ]),
   };
 }
 
@@ -509,6 +536,13 @@ function mockGuide(visitId) {
       s.edited = true;
     }
   });
+  /* 저장된 **차례**도 이긴다 — KEY-317. 없으면 계약 차례 그대로다.
+     서버가 `display_order` 로 정렬해 주는 것과 같은 자리다. */
+  if (saved.order) {
+    guide.sections.sort(function (a, b) {
+      return saved.order.indexOf(a.key) - saved.order.indexOf(b.key);
+    });
+  }
   return guide;
 }
 
@@ -621,7 +655,10 @@ function mockDoctorRequest(path, options) {
          라우터 단에서 뭉뚱그린 `NOT_FOUND` 로 떨어졌다 — 서버와 코드가 갈리고,
          **「없는 섹션」 검사가 섹션 조회에 닿지도 못했다.**
          `/sections/` 를 요구하므로 approve·return 경로를 삼키지는 않는다. */
-      var sec = path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
+      /* **차례 종점을 먼저 가른다.** 아래 `sec` 정규식이 `.../sections/order`
+         까지 삼켜 「`order` 라는 섹션」으로 읽는다 — 서버에는 없는 섹션이다. */
+      var reorder = path.match(/^\/visits\/(\d+)\/guide\/sections\/order$/);
+      var sec = reorder ? null : path.match(/^\/visits\/(\d+)\/guide\/sections\/([^/]+)$/);
       var act = path.match(/^\/visits\/(\d+)\/guide\/(submit|approve|return|unapprove)$/);
       var issueLink = path.match(/^\/visits\/(\d+)\/guide\/link$/);
       var reIssueLink = path.match(/^\/visits\/(\d+)\/guide\/link\/re-issue$/);
@@ -630,16 +667,13 @@ function mockDoctorRequest(path, options) {
          늘 「불러오지 못했습니다」였다 — 서버에는 있는데 목업만 없었다.
          목업이 서버보다 **좁으면** 화면을 목업으로 검수할 수 없다. */
       var tl = path.match(/^\/visits\/(\d+)\/timeline$/);
-      /* 재발송 — KEY-306·D1-7. visitId가 경로에 없다(문자 한 통을 대상으로
-         하는 작업이라 안내문·진료 자체를 안 거친다) — 아래에서 m[1]로
-         묶이지 않게 따로 잰다. */
       var resend = path.match(/^\/messages\/history\/(\d+)\/resend$/);
       if (resend && options.method === "POST") {
         var resendId = Number(resend[1]);
         MOCK_RESENT_MESSAGE_IDS[resendId] = true;
         return resolve({ guide_message_id: resendId, status: "SCHEDULED" });
       }
-      var m = get || sec || act || issueLink || reIssueLink || msgs || tl;
+      var m = get || reorder || sec || act || issueLink || reIssueLink || msgs || tl;
       if (!m) return reject(new ApiError("NOT_FOUND", 404, {}));
       var visitId = Number(m[1]);
 
@@ -791,6 +825,41 @@ function mockDoctorRequest(path, options) {
         returnedState.scheduled_at = null;
         returnedState.returned_reason = returned.returned_reason;
         return resolve(returned);
+      }
+
+      if (reorder && options.method === "PUT") {
+        var arranged = mockGuide(visitId);
+        if (!arranged) return reject(mockNoGuide());
+
+        /* 서버와 **같은 차례로** 막는다 — 상태 · 역할 · 온전한 한 벌 · 안전 절.
+           목업이 헐거우면 `?mock=1` 에서는 되는데 실서버에서만 422 가 난다. */
+        if (
+          arranged.status !== "STAFF_REVIEW" &&
+          arranged.status !== "APPROVAL_PENDING" &&
+          arranged.status !== "APPROVAL_RETURNED"
+        ) {
+          return reject(new ApiError("GUIDE_NOT_PENDING", 409, {}));
+        }
+        if (arranged.status === "APPROVAL_PENDING" && !mockIsDoctor()) {
+          return reject(new ApiError("FORBIDDEN", 403, {}));
+        }
+
+        var wanted = body.order || [];
+        var here = arranged.sections.map(function (s) {
+          return s.key;
+        });
+        var whole =
+          wanted.length === here.length &&
+          here.every(function (key) {
+            return wanted.indexOf(key) >= 0 && wanted.indexOf(key) === wanted.lastIndexOf(key);
+          });
+        var safeStayed = here.every(function (key, at) {
+          return !MOCK_SAFETY_SECTIONS[key] || wanted.indexOf(key) === at;
+        });
+        if (!whole || !safeStayed) return reject(new ApiError("SECTION_ORDER_INVALID", 422, {}));
+
+        mockGuideState(visitId).order = wanted.slice();
+        return resolve(mockGuide(visitId));
       }
 
       if (options.method === "PATCH") {

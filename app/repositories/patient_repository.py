@@ -4,11 +4,59 @@ from typing import Any
 
 from tortoise import BaseDBAsyncClient
 from tortoise.expressions import Q
-from tortoise.functions import Max
+from tortoise.functions import Length, Max
+from tortoise.queryset import QuerySet
 
 from app.core.utils.common import normalize_phone_number
+from app.dtos.patients import PatientSort
 from app.models.patients import Patient
 from app.models.visits import Visit
+
+#: 차트 번호는 **글자열**이다 — `CharField(50)` 이고 형식 규칙이 없다.
+#: 글자로만 세우면 `10` 이 `7` 보다 앞에 선다. **길이를 먼저 보고** 그다음
+#: 글자를 보면 숫자처럼 늘어선다. 숫자가 아닌 코드가 섞여도 답이 하나로 정해진다.
+_CHART_LENGTH = "chart_length"
+
+#: 그 환자의 **가장 늦은 진료** — 표의 「마지막 진료」 열과 같은 값이다.
+_LATEST_VISIT = "latest_visited_at"
+
+
+def _ordered(query: QuerySet[Patient], sort: PatientSort) -> QuerySet[Patient]:
+    """그 기준으로 세운 질의. **둘째 열쇠는 언제나 `patient_id`** 다.
+
+    첫째 열쇠가 같은 줄이 있으면(같은 자리수·같은 차트번호) 차례가 매번
+    달라지고, 그러면 쪽을 넘길 때 같은 환자가 두 번 나오거나 한 번도 안 나온다.
+
+    `registered_*` 는 **표에 보이는 그 날짜**(`created_at`)로 센다 — 보여 주는
+    값과 세우는 열쇠가 같아야 「등록 ▼」이 말이 된다.
+
+    `ID_ASC` 만 번호로 센다. **이어 보기 전용**이다 — 커서가 `patient_id >` 로
+    거르므로 세우는 열쇠도 번호여야 거름과 갈리지 않는다.
+    """
+    if sort is PatientSort.ID_ASC:
+        return query.order_by("patient_id")
+    if sort is PatientSort.REGISTERED_ASC:
+        return query.order_by("created_at", "patient_id")
+    if sort is PatientSort.CHART_ASC:
+        return query.annotate(**{_CHART_LENGTH: Length("hospital_patient_no")}).order_by(
+            _CHART_LENGTH, "hospital_patient_no", "patient_id"
+        )
+    if sort in (PatientSort.VISITED_DESC, PatientSort.VISITED_ASC):
+        #: 마지막 진료는 **다른 표에 있다.** 그 환자의 진료 중 가장 늦은 것을
+        #: 끌어와 센다 — 표의 「마지막 진료」 열이 보여 주는 그 값이다.
+        #:
+        #: 한 번도 안 온 환자는 값이 없다(`NULL`). MySQL 은 `NULL` 을 가장 작게
+        #: 보므로 **최근순에서는 맨 뒤, 오래된순에서는 맨 앞**에 선다 — 둘 다
+        #: 「가장 오래 안 온 쪽」이라 뜻이 맞는다.
+        latest = query.annotate(**{_LATEST_VISIT: Max("visits__visited_at")})
+        if sort is PatientSort.VISITED_ASC:
+            return latest.order_by(_LATEST_VISIT, "patient_id")
+        return latest.order_by(f"-{_LATEST_VISIT}", "-patient_id")
+    if sort is PatientSort.CHART_DESC:
+        return query.annotate(**{_CHART_LENGTH: Length("hospital_patient_no")}).order_by(
+            f"-{_CHART_LENGTH}", "-hospital_patient_no", "-patient_id"
+        )
+    return query.order_by("-created_at", "-patient_id")
 
 
 class PatientRepository:
@@ -34,6 +82,7 @@ class PatientRepository:
         offset: int = 0,
         sms_opt_out_only: bool = False,
         patient_ids: list[int] | None = None,
+        sort: PatientSort = PatientSort.REGISTERED_DESC,
     ) -> list[Patient]:
         query = self._scoped_query(hospital_id, keyword)
         if sms_opt_out_only:
@@ -43,8 +92,11 @@ class PatientRepository:
                 return []
             query = query.filter(patient_id__in=patient_ids)
         if after_id is not None:
+            #: **커서는 `id_asc` 하나만 탄다** — 라우터가 다른 차례를 400 으로
+            #: 막는다 (KEY-327). 거르는 열쇠와 세우는 열쇠가 둘 다 `patient_id` 라
+            #: 「이 뒤로 더」가 건너뛰거나 겹치지 않는다.
             query = query.filter(patient_id__gt=after_id)
-        query = query.order_by("patient_id")
+        query = _ordered(query, sort)
         #: 쪽 번호로 건너뛴다 — 커서는 앞으로만 가서 「이전」이 안 된다 (KEY-303).
         if offset:
             query = query.offset(offset)

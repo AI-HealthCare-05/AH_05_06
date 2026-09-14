@@ -309,7 +309,8 @@ function patientLinkFromIssue(answer) {
  *
  * 이름을 붙여 밖에 낸다 — 안에 인라인으로 두면 검사가 못 닿고, 지워져도
  * 아무것도 안 운다(실제로 그렇게 빠져 있었다 — `#250` 리뷰 ③).
- * `doctor.js` 의 `isCurrentPatientLinkRequest` 와 같은 판정이다.
+ * `doctor.js`도 한때 같은 판정(`isCurrentPatientLinkRequest`)을 갖고
+ * 있었다 — KEY-307이 그 화면의 링크 관리 자체를 걷어내며 지웠다.
  */
 function patientLinkStillCurrent(opts, visitId) {
   return String(opts && opts.visitId && opts.visitId()) === String(visitId);
@@ -378,8 +379,9 @@ function wirePatientLink(opts) {
            * 「주소는 만든 그 자리에서만 보입니다」만 말한다. 문구와 다시그리기도
            * B 화면에 A 의 것으로 뜬다.
            *
-           * `doctor.js` 의 `isCurrentPatientLinkRequest` 와 같은 판정이다.
-           * 여기서는 세대 번호 대신 **지금 고른 진료**를 다시 물어 본다 —
+           * `doctor.js`도 한때 같은 판정을 갖고 있었다(KEY-307이 그 화면의
+           * 링크 관리 자체를 걷어내며 지웠다). 여기서는 세대 번호 대신
+           * **지금 고른 진료**를 다시 물어 본다 —
            * `opts.visitId()` 가 그 답을 준다.
            *
            * 늦은 답은 **아무것도 안 한다.** 그 주소는 이 자리에서만 보이는

@@ -439,6 +439,40 @@
   flex-wrap: wrap;
 }
 
+/* 고른 탭을 앞뒤로 옮기는 단추 — KEY-317.
+   탭 칸막이와 같은 높이·테두리로 **한 줄에 이어 붙는다.** 옮길 수 없는 자리에서는
+   감추지 않고 잠근다 — 감추면 눌리던 자리가 사라져 옆 단추를 잘못 누른다. */
+.gs__move {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.gs__movebtn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.gs__movebtn:disabled {
+  color: var(--line);
+  cursor: default;
+}
+
+.gs__movebtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 /* 칸막이로 이어 붙인 한 덩어리 — 네 항목이 한눈에 든다 */
 .seg {
   display: flex;
@@ -1168,6 +1202,35 @@ textarea.sms__text:focus-visible {
   background: var(--card);
   border-radius: var(--radius);
   padding: var(--s-24);
+}
+
+/* ── 이력 모달의 모양 (S2-2) ──────────────────────────────────────────
+ *
+ * **두 화면이 같은 모달을 연다** — 관리 표(S2-1)와 현황 탭(D1-6) (KEY-329).
+ * 그래서 모양도 여기 공용 자리에 둔다. `manage.css` 에만 있던 동안 현황 탭의
+ * 모달은 머리가 flex 가 아니라 ✕ 가 제목 아래로 떨어졌고, 넓이·스크롤도
+ * 안 먹었다.
+ */
+
+/* 승인 확인 모달(440px)보다 넓다 — 진료 블록 셋이 서고 각 줄이 한 줄로
+   읽혀야 한다. 좁히면 「확인 문자 — 일주일 뒤 … · 보름 뒤 …」가 세 줄로
+   접혀 회차 차례가 안 보인다. */
+.modal__card--wide {
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal__top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-12);
+  margin-bottom: var(--s-16);
+}
+
+.modal__top > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .modal__mark {

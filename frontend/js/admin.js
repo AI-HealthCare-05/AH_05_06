@@ -7,9 +7,9 @@
  *     문자        A1-5
  *     전체 로그    A1-6 목록 · A1-7 한 건 시간 흐름
  *
- * **본문은 아직 데이터가 없다.** `GET /staffs` 도 `GET /hospital` 도 서버에
- * 없다. 그래서 각 줄은 그 자리가 무엇을 할 곳이고 무엇이 있어야 되는지를
- * 말한다 — 없는 값을 화면이 지어내지 않는다.
+ * **살아 있는 칸이 늘고 있다.** 직원(KEY-321) · 전체 로그(KEY-322) · 의원
+ * 정보(KEY-331)는 이제 실제 API 를 부른다. 아직 줄 API 가 없는 칸은 프레임
+ * 카드 그대로 둔다 — 없는 값을 화면이 지어내지 않는다.
  *
  * 화면에 쓰는 설명은 `js/frames.js` 하나에서 온다. 프레임이 구현되면 그 줄의
  * `level` 만 고치면 되고, 설명이 두 군데로 갈라지지 않는다.
@@ -100,19 +100,99 @@ function adminMenuCovers(frames) {
     menuBox.innerHTML = html;
   }
 
-  /* **「직원」 칸만 진짜 데이터를 그린다** — A1-1 · A1-2 는 이제 API 가 있다
-     (KEY-321). 나머지 셋은 여전히 줄 API 가 없어 프레임 카드 그대로다.
+  /* **「직원」 칸은 이제 셋 다 진짜다** — A1-1 목록 · A1-2 추가 (KEY-321) ·
+     A1-3 수정 (KEY-330). 나머지 칸들은 여전히 줄 API 가 없어 프레임 카드다.
 
      같은 화면 안에서 어떤 칸은 살아 있고 어떤 칸은 아직인 것이 이상해 보이지만,
      반대(다 되는 척)가 이 저장소가 없애 온 모양이다. */
   function renderStaffBody() {
     bodyBox.innerHTML =
       '<h1 class="pane__title">직원</h1>' +
-      '<p class="pane__lead" id="staff-list">불러오는 중…</p>' +
-      staffFormHtml() +
-      remainingFrameCards(["A1-3"]);
+      '<div id="staff-list"><section class="staff-card">' +
+      '<h2 class="staff-card__title">직원 목록</h2>' +
+      '<p class="pane__lead">불러오는 중…</p></section></div>' +
+      staffFormHtml();
     wireStaffForm();
+    wireStaffEdit();
     loadStaffList();
+  }
+
+  /* 줄의 [수정] — A1-3 (KEY-330).
+   *
+   * **목록을 다시 그리는 것으로 연다.** 판을 따로 들고 있으면 목록이 새로
+   * 올 때 그 판이 옛 사람을 가리킨 채 남는다.
+   */
+  function wireStaffEdit() {
+    bodyBox.addEventListener("click", function (event) {
+      var t = event.target;
+      if (!t || !t.closest) return;
+
+      var asked = t.closest("[data-edit-staff]");
+      if (asked) {
+        var id = Number(asked.getAttribute("data-edit-staff"));
+        staffListOpen(staffOpenNow() === id ? null : id);
+        return loadStaffList();
+      }
+      if (t.closest("[data-edit-staff-close]")) {
+        staffListOpen(null);
+        return loadStaffList();
+      }
+    });
+
+    bodyBox.addEventListener("submit", function (event) {
+      var form = event.target;
+      if (!form || form.id !== "staff-edit") return;
+      event.preventDefault();
+      saveStaffEdit();
+    });
+  }
+
+  function saveStaffEdit() {
+    var id = staffOpenNow();
+    var say = document.getElementById("staff-edit-say");
+    var go = document.getElementById("staff-edit-go");
+    if (!id || !say || !go) return;
+
+    /* 모르는 조합으로 열린 판이다 — 고르기 전에는 안 보낸다. 빈 역할을 그대로
+       보내면 서버가 422 로 막는데, 화면이 먼저 말하는 것이 맞다. */
+    var chosen = document.getElementById("staff-edit-roles").value;
+    if (!chosen) {
+      say.textContent = "역할을 먼저 골라 주세요.";
+      return;
+    }
+
+    var password = document.getElementById("staff-edit-password").value;
+    var body = {
+      roles: staffRolesFor(chosen),
+      status: document.getElementById("staff-edit-status").value,
+    };
+    /* **비워 두면 안 보낸다.** 빈 글자를 보내면 서버가 형식 검사에서 막는데,
+       관리자가 의도한 것은 「비밀번호는 그대로」다. */
+    if (password) body.password = password;
+
+    /* 두 번 눌리지 않게 잠근다 — 비밀번호 재설정이 두 번 가면 관리자가 방금
+       적어 준 값이 아닌 것으로 또 덮인다. */
+    go.disabled = true;
+    say.textContent = "저장하는 중…";
+    updateStaff(id, body)
+      .then(function (saved) {
+        staffListOpen(null);
+        loadStaffList();
+        var cut = saved.revoked_sessions
+          ? " 쓰고 있던 로그인 " + saved.revoked_sessions + "건을 끊었습니다."
+          : "";
+        staffSay(saved.name + " 님을 저장했습니다." + cut);
+      })
+      .catch(function (error) {
+        go.disabled = false;
+        say.textContent = staffEditSaying(error);
+      });
+  }
+
+  /* 저장 뒤의 말은 **목록 위 한 곳**에 둔다 — 판은 닫혀서 사라진다. */
+  function staffSay(text) {
+    var box = document.getElementById("staff-say");
+    if (box) box.textContent = text;
   }
 
   function loadStaffList() {
@@ -328,8 +408,82 @@ function adminMenuCovers(frames) {
       });
   }
 
+  /* ── 의원 정보 (A1-4) — KEY-331 ─────────────────────────────────────── */
+
+  function renderClinicBody() {
+    bodyBox.innerHTML =
+      '<h1 class="pane__title">의원 정보</h1>' + '<p class="pane__lead" id="clinic-slot">불러오는 중…</p>';
+
+    getHospital()
+      .then(function (info) {
+        var slot = document.getElementById("clinic-slot");
+        if (!slot) return;
+        slot.outerHTML = clinicFormHtml(info);
+        wireClinicForm();
+      })
+      .catch(function (error) {
+        /* **빈 폼으로 그리지 않는다.** 못 불러온 것을 「아직 안 적었다」로
+           보이면, 관리자는 이미 적어 둔 값 위에 빈칸을 저장한다 — 그 순간
+           소진·재진 문자가 전부 보류된다. */
+        var slot = document.getElementById("clinic-slot");
+        if (slot) slot.textContent = clinicLoadSaying(error);
+      });
+  }
+
+  function wireClinicForm() {
+    var form = document.getElementById("clinic-form");
+    if (!form) return;
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      saveClinic();
+    });
+  }
+
+  function saveClinic() {
+    var say = document.getElementById("clinic-say");
+    var go = document.getElementById("clinic-save");
+    if (!say || !go) return;
+
+    var values = {};
+    for (var i = 0; i < CLINIC_FIELDS.length; i++) {
+      var field = CLINIC_FIELDS[i];
+      var input = document.getElementById(field.id);
+      values[field.key] = input ? input.value : "";
+    }
+
+    /* **이름부터 본다.** 비우면 서버가 400 으로 막는데, 무엇을 해야 하는지는
+       화면이 먼저 말하는 것이 맞다 — 잠그기 전에 돌아간다. */
+    var problem = clinicNameProblem(values);
+    if (problem) {
+      say.textContent = problem;
+      return;
+    }
+
+    /* 두 번 눌러 두 번 저장되는 자리를 막는다. 서버가 같은 값을 두 번 받는
+       것은 해롭지 않지만(같은 값을 다시 쓴다), 화면이 아무 말도 안 하는
+       사이에 두 번 누르게 두면 관리자가 저장됐는지 모른다. */
+    go.disabled = true;
+    say.textContent = "저장하는 중…";
+
+    updateHospital(clinicPayload(values))
+      .then(function (info) {
+        /* **저장한 것을 그대로 다시 그린다.** 서버가 접은 값(공백 → 빈칸)이
+           화면에 남아 있으면, 다음에 누른 사람이 그 공백을 다시 보낸다.
+           경고 문구도 같이 새로 선다. */
+        bodyBox.innerHTML = '<h1 class="pane__title">의원 정보</h1>' + clinicFormHtml(info);
+        wireClinicForm();
+        var said = document.getElementById("clinic-say");
+        if (said) said.textContent = "저장했습니다. 다음 문자부터 이 값으로 나갑니다.";
+      })
+      .catch(function (error) {
+        say.textContent = clinicSaveSaying(error);
+        go.disabled = false;
+      });
+  }
+
   function renderBody() {
     if (current === "staff") return renderStaffBody();
+    if (current === "clinic") return renderClinicBody();
     if (current === "log") return renderAuditBody();
     var frames = adminFramesFor(current);
     if (!frames.length) {

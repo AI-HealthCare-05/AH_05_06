@@ -34,17 +34,23 @@ var FAILURE_SAYING = {
   SENDER_UNREGISTERED: "발신번호 미등록",
 };
 
-/* **붙들고 있는 이유는 다섯이다** — 와이어프레임 S2-3의 원문 둘(번호·문자
-   잔량)에 KEY-250이 발송 직전 게이트 셋을 더했다: 미승인·안전검증 실패·원본
-   미삭제. 화면이 이 셋을 몰라도 서버는 이미 넷째 값을 준다 — 모르는 값을
-   그대로 보이면 스탭이 「HELD · SAFETY_CHECK_FAILED」라는 코드를 그대로
-   본다. */
+/* **여기 적는 것은 「사람이 손댈 수 있는」 보류 사유다** — 와이어프레임 S2-3
+   「스탭이 손댈 일은 보류 두 가지뿐이다 — 번호가 잘못됐을 때와 문자가
+   떨어졌을 때」. 원문 표기가 「보류 · 번호」라 짧게 적는다.
+
+   서버의 `GuideMessageHold` 에는 이보다 많다(`NOT_APPROVED` ·
+   `SOURCE_NOT_DELETED` · `SAFETY_CHECK_FAILED`). 그것들은 **일부러 여기
+   없다** — 스탭이 손댈 자리가 없고, 사유를 적어 봐야 그 줄에서 할 수 있는
+   일이 생기지 않는다. 모르는 코드는 그냥 「보류」로 적힌다(`messageSaying`).
+
+   **`BOOKING_URL_MISSING` 이 셋째다** — KEY-331. 이것은 손댈 수 있다:
+   관리자가 어드민 A1-4 에서 예약 링크를 적으면 그 문자가 다시 나간다.
+   사유를 안 적으면 스탭은 「보류」만 보고 누구에게 무엇을 말해야 할지
+   모른다. */
 var HOLD_SAYING = {
   INVALID_PHONE: "번호",
   NO_CREDIT: "문자 잔량",
-  NOT_APPROVED: "안내 미승인",
-  SAFETY_CHECK_FAILED: "안전검증 미통과",
-  SOURCE_NOT_DELETED: "원본 문서 미삭제",
+  BOOKING_URL_MISSING: "예약 링크 없음",
 };
 
 /* 한 통이 지금 어디에 있는가. **「예정」과 「못 나감」과 「보류」를 또렷이

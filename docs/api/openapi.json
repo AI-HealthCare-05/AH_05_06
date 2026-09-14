@@ -277,7 +277,8 @@
           "otp",
           "message",
           "patient_usage",
-          "staff_account"
+          "staff_account",
+          "hospital"
         ],
         "title": "AuditSource",
         "type": "string"
@@ -1335,6 +1336,63 @@
         "title": "GuideCopySaveRequest",
         "type": "object"
       },
+      "GuideGenerationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "block_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Reason"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "result_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Version"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "visit_id": {
+            "title": "Visit Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "visit_id",
+          "state"
+        ],
+        "title": "GuideGenerationResponse",
+        "type": "object"
+      },
       "GuideMessageFailure": {
         "description": "**보내 봤는데 안 됐다** — 와이어프레임 D1-7 「실패 이유 넷」.\n\n원문: 「ⓘ 실패 이유 넷 — 잘못된 번호 · 수신 거부 · 통신사 오류 ·\n발신번호 미등록」. 넷으로 못박혀 있으므로 자유 문자열로 두지 않는다 —\n자유롭게 두면 발송기를 붙이는 사람마다 다른 낱말을 넣고, 화면은 그중\n아는 것만 사람 말로 옮긴다.",
         "enum": [
@@ -1353,7 +1411,8 @@
           "NO_CREDIT",
           "NOT_APPROVED",
           "SAFETY_CHECK_FAILED",
-          "SOURCE_NOT_DELETED"
+          "SOURCE_NOT_DELETED",
+          "BOOKING_URL_MISSING"
         ],
         "title": "GuideMessageHold",
         "type": "string"
@@ -1527,6 +1586,119 @@
         ],
         "title": "GuideSectionKey",
         "type": "string"
+      },
+      "GuideSourceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "body_sha256": {
+            "title": "Body Sha256",
+            "type": "string"
+          },
+          "chunk_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "generation_mode": {
+            "title": "Generation Mode",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "source_org": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Org"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generation_mode",
+          "version",
+          "body_sha256"
+        ],
+        "title": "GuideSourceResponse",
+        "type": "object"
       },
       "GuideStatus": {
         "description": "안내문이 지금 어디에 있는가.\n\n**새 이름을 만들지 않는다.** `docs/contracts/patient-visit-api-v1.md` §6 이\n화면 탭과 `detail_status` 를 이미 얼려 두었고, 이 값들이 그대로 그 탭으로\n파생된다. 같은 것을 두 어휘로 부르기 시작하면 어느 쪽이 정본인지 흐려진다.\n\n    STAFF_REVIEW        스탭 확인 중        → 작성 중\n    APPROVAL_PENDING    승인 요청           → 승인 요청\n    SCHEDULED_TO_SEND   발송 예약됨         → 발송 대기\n    APPROVAL_RETURNED   승인 반려           → 보완\n\n승인의 결과가 `APPROVED` 가 아니라 `SCHEDULED_TO_SEND` 인 것이 중요하다 —\n**승인이 곧 발송 예약이다**(와이어프레임 D1-5 「스탭이 발송 버튼을 누르지\n않는다」). 승인과 발송 사이에 사람이 한 번 더 손대는 자리를 만들지 않는다.",
@@ -1751,6 +1923,114 @@
           "submitted_at"
         ],
         "title": "HospitalCheckInResponse",
+        "type": "object"
+      },
+      "HospitalResponse": {
+        "additionalProperties": false,
+        "description": "A1-4 가 그리는 것.\n\n**이름도 함께 준다.** 화면이 「도로시여성의원의 정보를 고치는 중」임을\n보여야 하는데, 그 이름을 상단 골격에서 따로 가져오면 두 값이 어긋날 수\n있다.\n\n이름은 **여기서 고칠 수 있다** (KEY-319 인수조건). 처음에는 「배포 한 판의\n정체」라 막아 두었는데, 이미 나간 문자는 `sent_body` 에 보낸 그대로 남으므로\n앞뒤가 갈리는 문제는 생기지 않는다 — 바꾼 사실은 감사 기록이 든다\n(이희진 님 #295 리뷰).",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "booking_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Url"
+          },
+          "hospital_id": {
+            "title": "Hospital Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "required": [
+          "hospital_id",
+          "name",
+          "phone",
+          "address",
+          "booking_url"
+        ],
+        "title": "HospitalResponse",
+        "type": "object"
+      },
+      "HospitalUpdateRequest": {
+        "additionalProperties": false,
+        "description": "세 칸 전부를 **매번 함께 보낸다** — PATCH 지만 화면은 부분 갱신을 안 쓴다.\n\n직원 수정(A1-3)은 「안 보낸 칸은 그대로」인데 여기는 화면이 다르다: 저쪽은\n역할만 · 상태만 고치는 자리가 따로 있고, 이쪽은 세 칸이 한 폼에 함께 있어\n**관리자가 보고 있는 것이 곧 보내려는 전부**다.\n\n**그래도 서버는 그 약속을 믿지 않는다** — 안 보낸 칸은 손대지 않는다.\n화면 말고 다른 손님(검사 · 스크립트 · 다음 화면)이 칸 하나만 보내는 순간\n나머지 둘이 조용히 사라지면 안 된다. 지우는 것은 **`null` 을 보낸 것**만이다.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "booking_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "title": "HospitalUpdateRequest",
         "type": "object"
       },
       "LabBaselineItem-Input": {
@@ -3501,9 +3781,14 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "integer"
           }
         },
         "required": [
+          "patient_id",
           "name",
           "birth_date",
           "age",
@@ -4206,6 +4491,20 @@
         ],
         "title": "PatientSessionResponse",
         "type": "object"
+      },
+      "PatientSort": {
+        "description": "환자 관리 표(S2-1)를 세우는 기준 — KEY-327.\n\n**정렬은 서버가 한다.** 화면이 받은 쪽만 다시 세우면 그 쪽 안에서만 맞고,\n쪽을 넘기면 앞 쪽과 겹치거나 빠진다.\n\n기본은 **등록일 최근순**이다. 전에는 `patient_id` 오름차순이라 방금 등록한\n환자가 맨 뒤 쪽에 있었다 — 등록하고 바로 확인하려면 마지막 쪽까지 넘겨야\n했다.\n\n`registered_*` 는 **표에 보이는 그 날짜**(`created_at`)로 센다. 보여 주는\n값과 세우는 열쇠가 같아야 한다 — 다르면 「등록 ▼」인데 날짜가 오르락내리락\n해서 화면이 고장난 것처럼 보인다.",
+        "enum": [
+          "registered_desc",
+          "registered_asc",
+          "chart_asc",
+          "chart_desc",
+          "visited_desc",
+          "visited_asc",
+          "id_asc"
+        ],
+        "title": "PatientSort",
+        "type": "string"
       },
       "PatientUpdateRequest": {
         "additionalProperties": false,
@@ -4954,6 +5253,26 @@
         "title": "SectionEditRequest",
         "type": "object"
       },
+      "SectionOrderRequest": {
+        "additionalProperties": false,
+        "description": "절의 새 차례 — KEY-317.\n\n**그 안내문의 절을 하나도 빠짐없이, 한 번씩** 보낸다. 「옮길 것만」 보내는\n모양도 생각했지만, 그러면 나머지가 어디로 가는지를 서버와 화면이 각자\n셈하게 된다 — 둘이 어긋나면 화면에서 본 차례와 저장된 차례가 달라진다.\n\n무엇이 자리를 옮길 수 있는지는 서버가 검증한다\n(`app/services/guide_section_order.py`). 🚨 응급·주의사항은 못 옮긴다.",
+        "properties": {
+          "order": {
+            "items": {
+              "$ref": "#/components/schemas/GuideSectionKey"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "title": "SectionOrderRequest",
+        "type": "object"
+      },
       "SectionResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4972,6 +5291,17 @@
             "title": "Locked",
             "type": "boolean"
           },
+          "movable": {
+            "title": "Movable",
+            "type": "boolean"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/GuideSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
           "warn": {
             "anyOf": [
               {
@@ -4988,7 +5318,8 @@
           "key",
           "body",
           "edited",
-          "locked"
+          "locked",
+          "movable"
         ],
         "title": "SectionResponse",
         "type": "object"
@@ -5498,6 +5829,97 @@
         "title": "StaffSummary",
         "type": "object"
       },
+      "StaffUpdateRequest": {
+        "additionalProperties": false,
+        "description": "A1-3 이 보내는 것 — **준 것만 바꾼다** (KEY-330).\n\n셋 다 선택이다. 역할만 바꾸거나, 퇴사만 시키거나, 비밀번호만 새로 줄 수\n있다. 아무것도 안 주면 `422` 다 — 「바꿀 것이 없는 저장」은 화면이 뭔가를\n빠뜨렸다는 뜻이지, 조용히 성공으로 답할 일이 아니다.\n\n**`login_id` 와 `name` 은 안 받는다.** 아이디는 만든 뒤에 못 바꾸고(계약\n§8.3), 이름은 A1-3 원문의 편집 대상이 아니다 — 필요해지면 그때 계약을 연다.",
+        "properties": {
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "roles": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StaffRole"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roles"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StaffStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "StaffUpdateRequest",
+        "type": "object"
+      },
+      "StaffUpdatedResponse": {
+        "additionalProperties": false,
+        "description": "바꾼 뒤의 그 줄. 화면이 목록을 다시 안 불러도 되게 **저장된 값 그대로** 준다.\n\n**비밀번호는 담지 않는다.** 관리자가 방금 정해 준 값이라 화면이 이미 알고\n있고, 응답에 실으면 그 값이 로그·캐시·브라우저 기록으로 퍼진다.",
+        "properties": {
+          "login_id": {
+            "title": "Login Id",
+            "type": "string"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_sessions": {
+            "title": "Revoked Sessions",
+            "type": "integer"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "staff_id": {
+            "title": "Staff Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StaffStatus"
+          }
+        },
+        "required": [
+          "staff_id",
+          "login_id",
+          "name",
+          "roles",
+          "status",
+          "must_change_password",
+          "revoked_sessions"
+        ],
+        "title": "StaffUpdatedResponse",
+        "type": "object"
+      },
       "TimelineCategory": {
         "description": "진료 한 건의 이력을 큰 갈래로 나눈다 — 화면이 갈래별로 묶어 보여 준다.\n\n`SEND`(문자 발송)는 아직 없다. `SendLog` 계열 모델이 Sprint 5 범위라\n발송 시각·상태를 남기는 자리가 없다(`docs/구현현황.md` D1-5·D1-6). 값을 미리\n넣어 두면 화면이 「곧 온다」로 오해하므로, 발송 이력이 생기는 일감에서 함께\n추가한다.",
         "enum": [
@@ -5527,6 +5949,7 @@
           "GUIDE_UNAPPROVED",
           "GUIDE_REGENERATED",
           "GUIDE_RETURNED",
+          "GUIDE_SECTION_REORDERED",
           "PATIENT_LINK_REISSUED",
           "PATIENT_LINK_REVOKED",
           "CHECK_IN_SUBMITTED",
@@ -6249,6 +6672,78 @@
         ]
       }
     },
+    "/api/v1/admin/hospital": {
+      "get": {
+        "description": "A1-4 — 내 의원 정보.",
+        "operationId": "get_hospital_api_v1_admin_hospital_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HospitalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Hospital",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "A1-4 — 의원 정보 수정.\n\n`booking_url` 이 바뀌면 **다음 소진·재진 문자부터** 그 주소가 나간다. 이미\n보낸 문자는 바뀌지 않는다(`sent_body` 는 보낸 그대로 남는다).",
+        "operationId": "update_hospital_api_v1_admin_hospital_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HospitalUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HospitalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Hospital",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/patient-feedback": {
       "get": {
         "operationId": "list_patient_feedback_api_v1_admin_patient_feedback_get",
@@ -6456,6 +6951,64 @@
           }
         ],
         "summary": "Create Staff",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/staffs/{staff_id}": {
+      "patch": {
+        "description": "A1-3 — 역할·재직 상태를 바꾸고 비밀번호를 재설정한다 (KEY-330).\n\n**준 것만 바꾼다.** 셋 다 선택이고, 아무것도 안 주면 `422` 다.\n\n퇴사와 비밀번호 재설정은 **그 사람을 로그아웃시킨다** — 이미 발급된\n액세스 토큰이 만료까지 사는 것을 두면, 그만둔 사람이 그동안 계속 쓴다.",
+        "operationId": "update_staff_api_v1_admin_staffs__staff_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "staff_id",
+            "required": true,
+            "schema": {
+              "title": "Staff Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffUpdatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Staff",
         "tags": [
           "admin"
         ]
@@ -8688,6 +9241,22 @@
               "title": "Offset",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PatientSort"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
           }
         ],
         "responses": {
@@ -9881,7 +10450,89 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GuideResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GuideResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GuideGenerationResponse"
+                    }
+                  ],
+                  "title": "Response Generate Guide Api V1 Visits  Visit Id  Guide Generate Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideGenerationResponse"
+                }
+              }
+            },
+            "description": "생성 작업 접수"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Generate Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/generation/{job_id}": {
+      "get": {
+        "operationId": "generation_result_api_v1_visits__visit_id__guide_generation__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GuideGenerationResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GuideResponse"
+                    }
+                  ],
+                  "title": "Response Generation Result Api V1 Visits  Visit Id  Guide Generation  Job Id  Get"
                 }
               }
             },
@@ -9903,7 +10554,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Generate Guide",
+        "summary": "Generation Result",
         "tags": [
           "guides"
         ]
@@ -10245,6 +10896,64 @@
           }
         ],
         "summary": "Return Guide",
+        "tags": [
+          "guides"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/guide/sections/order": {
+      "put": {
+        "description": "절의 **차례**를 바꾼다 — KEY-317.\n\n`PATCH` 가 아니라 `PUT` 이다. 한 절을 고치는 것이 아니라 **차례 전체를**\n통째로 놓는 것이라, 같은 목록을 두 번 보내면 두 번째는 아무 일도 안 한다.\n\n답으로 안내문 전체를 준다. 차례가 바뀌면 화면이 다시 그려야 하는데,\n바뀐 차례만 주면 화면이 제 손으로 다시 늘어놓아야 한다 — 그러면 서버가\n아는 차례와 화면이 그린 차례가 갈릴 자리가 생긴다.",
+        "operationId": "reorder_sections_api_v1_visits__visit_id__guide_sections_order_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reorder Sections",
         "tags": [
           "guides"
         ]

@@ -38,6 +38,24 @@ class Hospital(models.Model):
     hospital_id = fields.BigIntField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)
 
+    #: 의원 정보 — A1-4 (KEY-331). **쓸 데가 있는 것만 둔다.**
+    #:
+    #: 사업자번호·대표자 같은 값은 지금 아무도 안 기다린다. 담을 자리를
+    #: 미리 만들면 「이 값은 어디서 쓰나」에 아무도 답하지 못한다.
+    #:
+    #: 셋 다 비어 있을 수 있다 — 의원을 만드는 자리(시드·검사 픽스처)가
+    #: 이름만 주고, 관리자가 A1-4 에서 채운다.
+
+    #: 환자 화면의 「문의하기」가 걸 번호 (P5-1 · P6-1).
+    phone = fields.CharField(max_length=20, null=True)
+    address = fields.CharField(max_length=200, null=True)
+    #: `{예약링크}` 가 가리킬 곳. **안내문 링크가 아니다** — 재진 예약을 잡는
+    #: 의원의 예약 페이지다(네이버 예약·카카오 등).
+    booking_url = fields.CharField(max_length=500, null=True)
+    #: 누가 마지막으로 고쳤나 — `MessageTemplate.updated_by` 와 같은 자리다.
+    #: 이 값이 바뀌면 **환자에게 나가는 문자 내용이 바뀐다**(`{예약링크}`).
+    updated_by = fields.BigIntField(null=True)
+
     staffs: fields.ReverseRelation["Staff"]
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
@@ -115,13 +133,23 @@ class Staff(models.Model):
 
 
 class StaffAccountEventType(StrEnum):
-    """계정에 무슨 일이 있었나. **A1-2 가 지금 만드는 것은 하나뿐이다.**
+    """계정에 무슨 일이 있었나.
 
-    A1-3(수정 · 비밀번호 재설정)이 들어올 때 그 자리에서 늘린다 — 쓰지도 않을
-    이름을 미리 적어 두면 「이 값은 어디서 남나」에 아무도 답하지 못한다.
+    **쓰는 것만 적는다.** A1-2 가 하나로 시작했고, A1-3(수정 · 비밀번호
+    재설정)이 들어오며 넷이 늘었다 — 쓰지도 않을 이름을 미리 적어 두면
+    「이 값은 어디서 남나」에 아무도 답하지 못한다.
     """
 
     STAFF_CREATED = "STAFF_CREATED"
+    #: 역할을 바꿨다 — KEY-330. 바뀐 **뒤의** 역할을 `roles` 에 남긴다.
+    STAFF_ROLES_CHANGED = "STAFF_ROLES_CHANGED"
+    #: 퇴사 처리했다. 계정을 지우지 않는다 — 지난 기록이 이 이름을 가리킨다.
+    STAFF_LEFT = "STAFF_LEFT"
+    #: 퇴사를 되돌려 다시 재직으로 뒀다.
+    STAFF_REINSTATED = "STAFF_REINSTATED"
+    #: 관리자가 임시 비밀번호를 새로 줬다. **비밀번호는 어느 칸에도 안 담는다** —
+    #: 「누가 누구에게 언제」까지만 남는다.
+    STAFF_PASSWORD_RESET = "STAFF_PASSWORD_RESET"
 
 
 class StaffAccountEvent(models.Model):
@@ -175,11 +203,79 @@ class StaffAccountEvent(models.Model):
         source_field="subject_staff_id",
     )
     subject_staff_id: int
-    event_type = fields.CharEnumField(enum_type=StaffAccountEventType)
+    #: **폭을 이름 길이에 맡기지 않는다** (KEY-330, 이희진 님 #294 리뷰).
+    #:
+    #: `CharEnumField` 는 max_length 를 안 주면 **그때 가장 긴 이름**에 맞춘다.
+    #: KEY-321 이 만든 마이그레이션 51 이 그래서 `VARCHAR(13)`(`STAFF_CREATED`)
+    #: 이었고, 여기에 이름 넷이 늘면서 20자(`STAFF_PASSWORD_RESET`)가 들어가야
+    #: 했다. **검사는 이것을 못 잡는다** — `tortoise.contrib.test.initializer()`
+    #: 가 마이그레이션을 거치지 않고 지금 모델로 표를 새로 만들어, 폭이 늘 최신
+    #: 이기 때문이다. 실서버는 `aerich upgrade` 로 51 위에 얹으므로 13자가 그대로
+    #: 남고, 역할 변경 한 건에 `1406 Data too long` 으로 500 이 난다.
+    #:
+    #: 32 는 이름 하나가 더 늘어도 다시 안 부딪히게 둔 여유다.
+    event_type = fields.CharEnumField(enum_type=StaffAccountEventType, max_length=32)
     #: 그때 준 역할. 나중에 A1-3 이 역할을 바꿔도 **준 시점의 값**이 남는다.
     roles: fields.Field[list[str]] = fields.JSONField()
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
         table = "staff_account_event"
+        indexes = (("hospital_id", "created_at"),)
+
+
+class HospitalUpdateEventType(StrEnum):
+    """의원 정보에 무슨 일이 있었나.
+
+    **지금은 하나다.** 고치는 길이 A1-4 하나뿐이라 「무엇을 했나」로 갈릴 것이
+    없다 — 무엇이 어떻게 바뀌었는지는 `changes` 가 든다. 이름을 미리 늘리면
+    「이 값은 어디서 남나」에 아무도 답하지 못한다(`StaffAccountEventType` 과
+    같은 규율).
+    """
+
+    HOSPITAL_UPDATED = "HOSPITAL_UPDATED"
+
+
+class HospitalUpdateEvent(models.Model):
+    """의원 정보가 바뀐 일 — **덧붙이기만 한다** (KEY-331, A1-4 인수조건 5).
+
+    `hospital.updated_by` 한 칸으로는 「마지막에 누가 만졌나」밖에 모른다.
+    **언제 어떤 예약 링크가 환자에게 나갔는지**를 되짚으려면 바뀐 값 자체가
+    남아야 한다 — 소진·재진 문자가 그 값을 그대로 싣기 때문이다.
+
+    **고치거나 지우지 않는다.** 이 모델을 쓰는 코드는 `create` 만 부른다.
+    `StaffAccountEvent`(KEY-321)와 같은 모양이고, A1-6 감사 로그 뷰어의
+    여섯째 갈래다.
+
+    **이전·이후 값을 그대로 남긴다.** 의원 정보는 환자정보가 아니다 — 대표번호와
+    주소는 의원이 스스로 공개하는 값이고, 가려 두면 이 표가 있을 까닭이 없어진다.
+    """
+
+    hospital_update_event_id = fields.BigIntField(primary_key=True)
+    hospital: fields.ForeignKeyRelation[Hospital] = fields.ForeignKeyField(
+        "models.Hospital",
+        related_name="update_events",
+        on_delete=OnDelete.RESTRICT,
+        source_field="hospital_id",
+    )
+    hospital_id: int
+    #: 고친 사람. 관리자다. 이름이 `actor_staff` 인 까닭은 `StaffAccountEvent`
+    #: 의 같은 칸에 적어 두었다 — 접근자와 칸 이름을 맞춘다.
+    actor_staff: fields.ForeignKeyRelation["Staff"] = fields.ForeignKeyField(
+        "models.Staff",
+        related_name="hospital_updates_made",
+        on_delete=OnDelete.RESTRICT,
+        source_field="actor_staff_id",
+    )
+    actor_staff_id: int
+    event_type = fields.CharEnumField(enum_type=HospitalUpdateEventType, max_length=32)
+    #: 바뀐 칸만 담는다 — `[{"field": "booking_url", "before": …, "after": …}]`.
+    #:
+    #: 안 바뀐 칸까지 담으면 「무엇을 고쳤나」를 사람이 다시 비교해야 하고,
+    #: 줄마다 같은 값이 쌓여 표가 커진다.
+    changes: fields.Field[list[dict[str, str | None]]] = fields.JSONField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "hospital_update_event"
         indexes = (("hospital_id", "created_at"),)
