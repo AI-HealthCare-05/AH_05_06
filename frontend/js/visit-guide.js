@@ -40,6 +40,16 @@ function guideMissingSaying(error) {
   return "안내문을 불러오지 못했습니다 — 잠시 뒤 다시 열어 주세요";
 }
 
+/* 환자가 받을 모양의 미리보기는 승인 완료본에만 연다. 안내문 존재 여부만
+   보면 스탭 검토·승인 대기·반려 초안도 확정본처럼 보인다(KEY-252 AC3·AC11). */
+function canPreviewApprovedGuide(currentGuide) {
+  return (
+    !!currentGuide &&
+    currentGuide.status === "SCHEDULED_TO_SEND" &&
+    !!currentGuide.approved_at
+  );
+}
+
 (function () {
   "use strict";
 
@@ -247,7 +257,7 @@ function guideMissingSaying(error) {
 
     body.innerHTML = statusScreenHtml({
       canUnapprove: canUnapprove,
-      canPreview: !!guide,
+      canPreview: canPreviewApprovedGuide(guide),
       entries: timeline.entries,
       checkInSaying: answer
         ? timelineClock(answer.at) + " 응답 · " + (answer.note || "")
@@ -532,12 +542,20 @@ function guideMissingSaying(error) {
     /* D1-6도 S2-3·S2-4와 같은 공용 환자 안내 렌더러와 모달을 쓴다.
        별도 미리보기 HTML을 만들면 관리 화면과 환자 카드가 다시 갈린다. */
     var preview = t.closest("[data-status-preview]");
-    if (preview && guide) {
-      openModal(
-        '<div class="modal__top"><h2 class="modal__title" id="modal-title">안내문 미리보기</h2>' +
-          '<button class="button-ghost button-ghost--sm" type="button" data-close>닫기</button></div>' +
-          patientGuidePreviewHtml(guide.sections || [], "medication", guide.summary, guide.preview),
-      );
+    if (preview) {
+      if (!canPreviewApprovedGuide(guide)) {
+        openModal(
+          '<h2 class="modal__title" id="modal-title">미리볼 수 없는 안내문입니다</h2>' +
+            '<p class="modal__note">승인 완료된 안내문만 미리볼 수 있습니다.</p>' +
+            '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>',
+        );
+      } else {
+        openModal(
+          '<div class="modal__top"><h2 class="modal__title" id="modal-title">안내문 미리보기</h2>' +
+            '<button class="button-ghost button-ghost--sm" type="button" data-close>닫기</button></div>' +
+            patientGuidePreviewHtml(guide.sections || [], "medication", guide.summary, guide.preview),
+        );
+      }
     }
 
     /* 현황 탭의 「전체 이력 보기」 — KEY-329. 그리는 것은 `history-modal.js`

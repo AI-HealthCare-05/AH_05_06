@@ -105,3 +105,23 @@ test("D1-6은 공용 안내문 미리보기를 열고 링크 상태만 읽기 �
   });
   assert.match(statusHtml, /data-status-preview/);
 });
+
+test("D1-6 미리보기는 승인 완료된 안내문만 연다", () => {
+  const visit = codeOnly(read("js/visit-guide.js"));
+  const statusBox = load("api", "clinic-clock", "message-words", "patient-link-view", "status-view");
+
+  assert.match(visit, /function canPreviewApprovedGuide/);
+  assert.match(visit, /currentGuide\.status === "SCHEDULED_TO_SEND"/);
+  assert.match(visit, /!!currentGuide\.approved_at/);
+  assert.match(visit, /canPreview: canPreviewApprovedGuide\(guide\)/);
+  assert.match(visit, /if \(!canPreviewApprovedGuide\(guide\)\)/);
+  assert.match(visit, /미리볼 수 없는 안내문입니다/);
+  assert.match(visit, /승인 완료된 안내문만 미리볼 수 있습니다/);
+
+  const blockedHtml = statusBox.statusScreenHtml({
+    canPreview: false,
+    entries: [],
+    messages: [],
+  });
+  assert.doesNotMatch(blockedHtml, /data-status-preview/);
+});
