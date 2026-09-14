@@ -139,7 +139,15 @@
   function fillHeader(d) {
     /* 이름은 서버가 OTP 인증한 뷰어에게만 넣어 준다(KEY-268). 없으면 진료일·의원명만. */
     var meta = [d.patient || null, d.visit ? d.visit + ' 진료' : '승인된 진료 안내', d.clinic].filter(Boolean);
-    document.getElementById('header-patient').textContent = meta.join(' · ');
+    var header = document.getElementById('header-patient');
+    header.textContent = '';
+    if (d.patient) {
+      var name = richEl('strong', 'header__patient-name', d.patient);
+      header.appendChild(name);
+      header.appendChild(document.createTextNode(' 님 · ' + meta.slice(1).join(' · ')));
+    } else {
+      header.textContent = meta.join(' · ');
+    }
   }
 
   function showMockBadge() {

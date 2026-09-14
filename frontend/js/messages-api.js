@@ -41,6 +41,19 @@ var messagesApi = {
     return request("/messages/history" + query);
   },
 
+  preview: function (visitId) {
+    if (MOCK) return mockMessagePreview(visitId);
+    return request("/visits/" + encodeURIComponent(visitId) + "/guide");
+  },
+
+  resend: function (messageId) {
+    if (MOCK) return mockMessageResend(messageId);
+    return request(
+      "/messages/history/" + encodeURIComponent(messageId) + "/resend",
+      { method: "POST" },
+    );
+  },
+
   /* **글자를 받아 온다.** `request` 는 JSON 만 읽으므로 여기만 따로 간다.
      주소에 토큰을 붙이지 않으려고 헤더로 보낸다 — 주소는 브라우저 기록과
      서버 접근 로그에 남고, 그 토큰은 환자 자료로 가는 열쇠다. */
@@ -338,6 +351,9 @@ function mockHistoryRows() {
       prescription_set: "자궁내막증 · 비잔",
       viewed: false,
       viewed_at: null,
+      link_status: "ACTIVE",
+      link_expires_at: mockDay(3, 18),
+      link_end_reason: null,
     },
     {
       guide_message_id: 7002,
@@ -355,6 +371,9 @@ function mockHistoryRows() {
       prescription_set: "자궁내막증 · 비잔 (계속)",
       viewed: true,
       viewed_at: mockDay(-1, 21),
+      link_status: "UNAVAILABLE",
+      link_expires_at: mockDay(2, 16),
+      link_end_reason: "REPLACED",
     },
     {
       guide_message_id: 7003,
@@ -372,6 +391,9 @@ function mockHistoryRows() {
       prescription_set: "자궁내막증 · 초진",
       viewed: false,
       viewed_at: null,
+      link_status: "UNAVAILABLE",
+      link_expires_at: null,
+      link_end_reason: null,
     },
     /* **기간 밖.** 최근 7일에서는 안 보이고 30일로 넓히면 나타난다 —
        목업이 규칙을 눈으로 보여 주지 못하면 눌러 봐도 모른다. */
@@ -391,8 +413,38 @@ function mockHistoryRows() {
       prescription_set: "PCOS · 야즈 (처음)",
       viewed: true,
       viewed_at: mockDay(-19, 12),
+      link_status: "UNAVAILABLE",
+      link_expires_at: mockDay(-16, 11),
+      link_end_reason: "EXPIRED",
     },
   ];
+}
+
+function mockMessagePreview(visitId) {
+  var row = mockScheduledRows().find(function (item) {
+    return item.visit_id === Number(visitId);
+  });
+  if (!row) return Promise.reject(new ApiError("GUIDE_NOT_FOUND", 404, {}));
+  return Promise.resolve({
+    visit_id: row.visit_id,
+    status: "SCHEDULED_TO_SEND",
+    approved_at: new Date().toISOString(),
+    summary: "승인된 안내문 미리보기입니다.",
+    sections: [
+      { key: "medication", body: "승인된 복약 안내" },
+      { key: "caution", body: "승인된 주의사항" },
+      { key: "life", body: "승인된 생활관리 안내" },
+    ],
+    preview: null,
+  });
+}
+
+function mockMessageResend(messageId) {
+  var row = mockHistoryRows().find(function (item) {
+    return item.guide_message_id === Number(messageId);
+  });
+  if (!row) return Promise.reject(new ApiError("MESSAGE_NOT_FOUND", 404, {}));
+  return Promise.resolve({ guide_message_id: 9901, status: "SCHEDULED" });
 }
 
 function mockHistory(range, limit) {

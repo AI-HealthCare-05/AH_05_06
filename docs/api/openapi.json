@@ -2245,6 +2245,23 @@
         "title": "LatestVisitResponse",
         "type": "object"
       },
+      "MessageLinkEndReason": {
+        "enum": [
+          "EXPIRED",
+          "REPLACED",
+          "REVOKED"
+        ],
+        "title": "MessageLinkEndReason",
+        "type": "string"
+      },
+      "MessageLinkStatus": {
+        "enum": [
+          "ACTIVE",
+          "UNAVAILABLE"
+        ],
+        "title": "MessageLinkStatus",
+        "type": "string"
+      },
       "MessagePatchRequest": {
         "additionalProperties": false,
         "description": "예약 문자 시각 변경 또는 예약 취소 요청.",
@@ -5394,6 +5411,31 @@
           "kind": {
             "$ref": "#/components/schemas/GuideMessageKind"
           },
+          "link_end_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageLinkEndReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "link_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link Expires At"
+          },
+          "link_status": {
+            "$ref": "#/components/schemas/MessageLinkStatus"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -5452,7 +5494,10 @@
           "age",
           "prescription_set",
           "viewed",
-          "viewed_at"
+          "viewed_at",
+          "link_status",
+          "link_expires_at",
+          "link_end_reason"
         ],
         "title": "SentMessageItem",
         "type": "object"

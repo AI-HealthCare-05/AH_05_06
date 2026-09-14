@@ -106,11 +106,11 @@ test("문자 설정 재료가 링크 둘을 통과시킨다 — 안 흘리면 �
   assert.equal(plan.link.expiresAt, "2026-09-14T18:00:00+09:00");
 });
 
-test("링크 관리 화면만 상태를 읽고 배선한다", () => {
+test("링크 상태 화면은 읽기만 하고 관리 동작을 배선하지 않는다", () => {
   for (const screen of ["visit-guide.js"]) {
     const source = read("js/" + screen);
     assert.ok(source.includes("patientLinkLoad"), `${screen} 이 링크 상태를 안 읽는다`);
-    assert.ok(source.includes("wirePatientLink"), `${screen} 이 블록 단추를 안 건다 — 눌러도 아무 일 없다`);
+    assert.ok(!source.includes("wirePatientLink"), `${screen} 이 읽기 전용 블록에 관리 동작을 건다`);
     assert.ok(source.includes("patientLinkForget"), `${screen} 이 환자를 옮길 때 앞 사람 주소를 안 놓는다`);
     assert.ok(source.includes("patientLinkOf"), `${screen} 이 쥔 링크를 블록에 안 넘긴다`);
   }
