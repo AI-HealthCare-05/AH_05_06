@@ -8,7 +8,8 @@
  * 다르다.** 한 무더기로 뭉치면 「이미 벌어진 것」과 「고치면 아직 막을 수
  * 있는 것」이 섞여, 스탭이 무엇을 손대야 하는지 안 보인다.
  *
- * 사유 목록도 갈린다. 보류는 둘, 실패는 넷이다.
+ * 사유 목록도 갈린다. 실패는 넷이고, 보류는 **스탭·관리자가 손댈 수 있는
+ * 것만** 적는다 — 처음엔 둘이었고 KEY-331 이 셋째(예약 링크 없음)를 더했다.
  *
  * **아직 아무것도 이 상태를 만들지 않는다** — 문자를 보내는 것이 없다.
  * 여기서 정하는 것은 낱말이고, 발송기가 붙을 때 다시 정하지 않기 위한 것이다.
@@ -39,12 +40,26 @@ test("**실패 이유는 넷이다** — D1-7 이 못박는다", () => {
   assert.equal(FAILURE_SAYING.SENDER_UNREGISTERED, "발신번호 미등록");
 });
 
-test("**보류 이유는 둘이다** — S2-3 이 못박는다", () => {
+test("**적는 보류 이유는 손댈 수 있는 것뿐이다** — S2-3", () => {
   const { HOLD_SAYING } = box();
-  assert.deepEqual(Object.keys(HOLD_SAYING).sort(), ["INVALID_PHONE", "NO_CREDIT"]);
+  assert.deepEqual(Object.keys(HOLD_SAYING).sort(), [
+    "BOOKING_URL_MISSING",
+    "INVALID_PHONE",
+    "NO_CREDIT",
+  ]);
   /* 원문 표기는 「⏸ 보류 · 번호」 · 「⏸ 보류 · 문자 잔량」이다 */
   assert.equal(HOLD_SAYING.INVALID_PHONE, "번호");
   assert.equal(HOLD_SAYING.NO_CREDIT, "문자 잔량");
+  /* KEY-331 — 관리자가 어드민 A1-4 에서 채우면 그 문자가 다시 나간다 */
+  assert.equal(HOLD_SAYING.BOOKING_URL_MISSING, "예약 링크 없음");
+});
+
+test("**손댈 수 없는 보류 사유는 적지 않는다** — 적어 봐야 할 일이 안 생긴다", () => {
+  const { HOLD_SAYING, messageSaying } = box();
+  for (const code of ["NOT_APPROVED", "SOURCE_NOT_DELETED", "SAFETY_CHECK_FAILED"]) {
+    assert.ok(!(code in HOLD_SAYING), `${code} 를 스탭 화면에 적었다`);
+    assert.equal(messageSaying({ status: "HELD", hold_reason: code }), "보류");
+  }
 });
 
 test("**두 목록을 하나로 합치지 않았다**", () => {

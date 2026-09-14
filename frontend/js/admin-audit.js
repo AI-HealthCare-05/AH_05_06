@@ -14,6 +14,8 @@ var AUDIT_SOURCE_LABEL = {
   message: "문자",
   patient_usage: "환자 이용",
   staff_account: "직원 계정",
+  //: 여섯째 — 의원 정보 수정 (KEY-331). 여기 적힌 예약 링크가 문자에 실린다.
+  hospital: "의원 정보",
 };
 
 function auditSourceLabel(source) {
