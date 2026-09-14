@@ -1,8 +1,7 @@
 """안내 생성 품질·의료안전 합성 시나리오 검증 — KEY-127.
 
 docs/synthetic-data-spec.md §3~§5 시나리오 매트릭스와 연결하여
-두 질환(자궁내막증·PCOS) 정상 케이스, 미등록 약물 차단,
-안전 차단 사유 구분을 검증한다.
+두 질환(자궁내막증·PCOS) 정상·누락·안전 차단 합성 시나리오를 검증한다.
 
 test_key277_generation.py 가 파이프라인 계약(소스 취소·처방 변경·중복 요청 등)
 을 담당하므로, 이 파일은 질환 컨텍스트와 차단 사유 구분에 집중한다.
@@ -10,6 +9,7 @@ test_key277_generation.py 가 파이프라인 계약(소스 취소·처방 변�
 
 import json
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from hashlib import sha256
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -27,6 +27,7 @@ from app.models.catalog import (
     SourceGrade,
 )
 from app.models.knowledge import KnowledgeChunkRecord, KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion
+from app.models.ocr import OcrField
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.visits import (
     GuideDocument,
@@ -153,6 +154,33 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
             )
         return version
 
+    async def _setup_ems_visit_with_pending_report(self, chart: str = "SYN-EMS-02"):
+        """자궁내막증 · AMH 판독 누락 방문 — SYN-EMS-02 기준 케이스.
+
+        확정된 판독에 is_pending_report=True 필드(AMH)가 함께 있다.
+        spec: 「그 줄만 점선 + ?. 추측해서 채우지 않는다. 나머지는 정상 진행」
+        """
+        visit = await make_visit(self.clinic, chart)
+        base_field = await attach_confirmed_ocr(visit, self.staff.pk)
+        # 같은 OcrResult에 AMH 검사 결과 누락 필드 추가 (추후보고예정)
+        await OcrField.create(
+            ocr_result_id=base_field.ocr_result_id,
+            document_text_id=base_field.document_text_id,
+            field_type="AMH",
+            extracted_value="추후보고예정",
+            confidence=Decimal("0.96"),
+            is_pending_report=True,
+            is_confirmed=True,
+            confirmed_by=self.staff.pk,
+        )
+        await DrugCatalog.get_or_create(name="비잔정 2mg")
+        await attach_prescription(visit, [("비잔정 2mg", "1일 1회", 84)])
+        prescription_set = await PrescriptionSet.create(
+            name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
+        )
+        await _make_caution_contents(prescription_set)
+        return visit
+
     async def _setup_ems_visit(self, chart: str = "SYN-EMS-01"):
         """자궁내막증 비잔 처방 방문 — SYN-EMS-01 기준 케이스."""
         visit = await make_visit(self.clinic, chart)
@@ -222,6 +250,27 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
         assert not blocked, f"차단된 검증이 있다 — {[c.reason_code for c in blocked]}"
         assert len(checks) == 7
+
+    # ── 판독 누락 (SYN-EMS-02) ───────────────────────────────────────────────
+
+    async def test_pending_report_field_does_not_block_generation(self) -> None:
+        """판독 누락(SYN-EMS-02): is_pending_report 필드가 있어도 안내 정상 생성.
+
+        AMH 검사 결과가 아직 없는(추후보고예정) 상태에서도 안내는 정상 생성된다.
+        누락 값을 추측해서 채우거나 생성 자체를 차단해선 안 된다.
+        """
+        visit = await self._setup_ems_visit_with_pending_report()
+        await self._add_sources()
+
+        job = await self._request_job(visit)
+        await self._run()
+        await job.refresh_from_db()
+
+        assert job.completed_at is not None, f"생성 실패: {job.failure_reason}"
+        guide = await GuideDocument.get(visit_id=visit.pk)
+        checks = await GuideSafetyCheck.filter(guide_document=guide).all()
+        blocked = [c for c in checks if c.verdict != SafetyCheckVerdict.PASS]
+        assert not blocked, f"차단된 검증이 있다 — {[c.reason_code for c in blocked]}"
 
     # ── 미등록 약물 차단 (SYN-EMS-08) ─────────────────────────────────────
 
