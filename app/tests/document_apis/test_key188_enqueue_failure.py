@@ -14,7 +14,8 @@ from starlette.datastructures import Headers
 
 import app.documents.service as doc_service
 from app.documents.service import DocumentUploadService
-from app.models.ocr import OcrJob, OcrJobStatus
+from app.models.documents import MedicalDocument
+from app.models.ocr import OcrJob, OcrJobDocument, OcrJobStatus
 
 
 class _FakeStorage:
@@ -30,8 +31,11 @@ class _BrokenRedis:
         raise ConnectionError("Redis 연결 끊김")
 
 
-class _UpdateQS:
+class _NoopQS:
     async def update(self, **_kwargs: object) -> None:
+        pass
+
+    async def delete(self) -> None:
         pass
 
 
@@ -69,7 +73,9 @@ async def test_redis_enqueue_failure_returns_failed_status(
 
     monkeypatch.setattr(doc_service, "config", types.SimpleNamespace(OCR_FIXTURE_FALLBACK=False))
     monkeypatch.setattr(doc_service, "get_redis", lambda: _BrokenRedis())
-    monkeypatch.setattr(OcrJob, "filter", staticmethod(lambda **_: _UpdateQS()))
+    monkeypatch.setattr(OcrJob, "filter", staticmethod(lambda **_: _NoopQS()))
+    monkeypatch.setattr(OcrJobDocument, "filter", staticmethod(lambda **_: _NoopQS()))
+    monkeypatch.setattr(MedicalDocument, "filter", staticmethod(lambda **_: _NoopQS()))
 
     result = await service.upload(
         visit_id=501,
