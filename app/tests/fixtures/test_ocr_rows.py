@@ -132,6 +132,18 @@ class TestCourseDays:
         assert course_days("56일", DurationUnit.DAYS) == 56
         assert course_days("3", DurationUnit.PACK) == 3 * DAYS_PER_PACK
 
+    def test_pack_below_threshold_multiplies(self) -> None:
+        """KEY-325: DAYS_PER_PACK 미만은 통수 — 곱해서 일수로 환산한다."""
+        assert course_days("1", DurationUnit.PACK) == 28
+        assert course_days("2", DurationUnit.PACK) == 56
+        assert course_days("27", DurationUnit.PACK) == 27 * DAYS_PER_PACK
+
+    def test_pack_at_or_above_threshold_is_already_days(self) -> None:
+        """KEY-325: DAYS_PER_PACK 이상은 이미 일수 — 곱하지 않는다(784일 버그 방지)."""
+        assert course_days("28", DurationUnit.PACK) == 28
+        assert course_days("56", DurationUnit.PACK) == 56
+        assert course_days("84", DurationUnit.PACK) == 84
+
 
 class TestFields:
     def test_the_required_trio_is_there(self) -> None:
