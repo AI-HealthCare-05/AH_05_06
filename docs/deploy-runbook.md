@@ -712,20 +712,27 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
    **와** `--otp-confirm-solapi-prod` 실행 플래그를 **둘 다** 요구한다(4-3-1의
    `PILOT_ALLOW_MOCK_OTP`와 같은 이중 게이트 원칙).
 
-   🚩 **플래그는 `.env` 의 `PILOT_SERVER_FLAGS` 로 넣는다** (KEY-336). 이미지
-   기본 CMD 는 uvicorn CLI 인데 **uvicorn 은 모르는 인자를 받으면 죽는다** —
-   그래서 운영 compose 의 fastapi 는 `app.pilot_server` 로 띄우고 이 변수를
-   인자로 넘긴다. 비워 두면 아무 플래그도 안 붙는다.
+   🚩 **플래그는 서버에서 오버레이로 붙인다** (KEY-336). 4-3-1 의 명령은 로컬에서
+   `--build` 하던 시절의 것이고, 지금 Pilot 은 Hub 이미지를 받아 서버에서 돈다.
+   `deployment.sh` 가 `docker-compose.pilot.yml` 을 **올려는 두므로**, 켤 때는
+   서버에서 그것을 함께 주기만 하면 된다.
 
-   ```text
-   OTP_SOLAPI_PROD_ENABLED=1
-   PILOT_SERVER_FLAGS=--otp-confirm-solapi-prod
+   ```bash
+   # 서버 ~/project 에서
+   OTP_SOLAPI_PROD_ENABLED=1 docker compose \
+     -f docker-compose.yml -f docker-compose.pilot.yml \
+     up -d --no-deps fastapi
    ```
 
-   **둘 다 `.env` 에 있다는 것은 인정하고 간다.** 원래 「환경변수와 실행
-   플래그」로 가른 뜻은 서로 다른 경로를 요구해 실수를 늦추는 것이었는데,
-   컨테이너 배포에서는 결국 같은 파일 두 줄이 된다. **실제 방어선은
-   `OTP_APPROVED_TEST_PHONES`** 다 — 목록 밖 번호는 발송 자체가 막힌다. 이 둘이 갖춰지면 실제
+   **환경변수를 `.env` 에 적지 않는다.** 명령 앞에 그때그때 붙인다 — `.env` 에
+   적으면 **다음 배포부터 영구히 켜진다.** 오버레이의 `command` 는 그 변수가
+   있을 때만 플래그를 붙이므로, 다음 배포에서 안 붙이면 저절로 닫힌다.
+
+   되돌릴 때는 오버레이 없이 다시 띄운다.
+
+   ```bash
+   docker compose up -d --no-deps fastapi
+   ``` 이 둘이 갖춰지면 실제
    솔라피로 나가되, `OTP_APPROVED_TEST_PHONES`에 없는 번호는 발송 자체가
    막힌다 — 이 단계에서 실수로 임의의 번호에 문자가 나가지 않게 하는
    안전장치다. **이 목록을 비워 두지 않는다** — 비면 승인 여부와 무관하게
