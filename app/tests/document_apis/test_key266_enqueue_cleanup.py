@@ -224,6 +224,7 @@ async def test_repeated_enqueue_failures_accumulate_failed_rows(
         def _make_fake_persist(d: int, j: str):  # type: ignore[no-untyped-def]
             async def _persist(**_kwargs: object) -> tuple[list[int], list[str]]:
                 return ([d], [j])
+
             return _persist
 
         fake_persist = _make_fake_persist(doc_id, job_id)
