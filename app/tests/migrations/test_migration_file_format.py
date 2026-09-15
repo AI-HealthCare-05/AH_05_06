@@ -256,6 +256,19 @@ def test_a_field_comment_edit_does_not_count_as_drift() -> None:
     `_get_comments` 가 필드 옆 인라인 주석을 읽어 `Field.docstring` 에
     넣기 때문이다(`tortoise/models.py` · `tortoise/fields/base.py`).
 
+    🚩 **다만 모델 쪽과 한 가지가 다르다.** 칸에서는 `#:` 주석이 `docstring` 과
+    `description` **둘 다**에 같은 값으로 들어간다. 그래서 실제로 `#:` 한 줄을
+    고치면 `description` 이 함께 갈려 **여전히 잡히고, 그게 맞다** — 칸 주석은
+    `COMMENT` 로 DDL 에 실리기 때문이다. 실측했다(2026-09-15).
+
+        # `#:` 주석 한 줄을 고치고 `aerich migrate --offline`
+        ALTER TABLE `patient_number_correction`
+          MODIFY COLUMN `before_no` VARCHAR(50) NOT NULL COMMENT '…';
+
+    즉 이 검사가 고정하는 것은 「칸 주석을 고쳐도 된다」가 아니라 **걷어내기가
+    리스트 안쪽까지 닿는다**는 것 하나다. 모델 docstring 뒷문단과 달리 칸 주석은
+    마이그레이션이 정말로 필요하다.
+
     위 두 테스트는 모델 최상위 `dict` 만 평평하게 들고 확인했다 — 실제 비교가
     도는 `data_fields` 처럼 **리스트 안에 중첩된 모양**은 아무도 확인하지
     않았다. `_same_shape` 가 재귀적으로 걷어내길 그만두면(예: 최상위 키만
