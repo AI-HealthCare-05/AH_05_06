@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -608,10 +610,17 @@ def test_pcos_life_guard_excluded_for_pcos_non_life_section() -> None:
 
 # ---------------------------------------------------------------------------
 # §7 — PCOS Monash v1 실제 콘텐츠 계약 (KEY-323 인수조건)
-# 파일이 없으면 건너뜀 — CI에서는 실행하지 않고 로컬 적재 전 검증용으로 사용한다.
+#
+# CI 실행: 커밋된 픽스처(fixtures/pcos_monash_2023_raw_pages.json)로 실행한다.
+# 픽스처가 없으면 scripts/extract_pcos_fixture.py 를 실행해 생성하고 커밋한다.
+#
+# 원본 PDF MD5 검사(_pcos_md5_required)는 로컬에서만 실행된다.
+# 제한사항: 원본 PDF 무결성과 pypdf 추출 동작은 CI에서 확인되지 않는다.
 # ---------------------------------------------------------------------------
 
+_IN_CI = os.environ.get("CI") == "true"
 _PCOS_PDF_PATH = Path(__file__).resolve().parents[3] / "key276-sources" / "pcos-monash-2023-v1.pdf"
+_PCOS_FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "pcos_monash_2023_raw_pages.json"
 _PCOS_MD5 = "75bb875708c151846416e225adfc54e0"
 _PCOS_STRIP_HEADERS = (
     # 쪽 제목 머리글 (홀수 쪽에 반복)
@@ -670,16 +679,45 @@ _EXCLUDED_TERMS = (
     "ovulation induction",
 )
 
+# 콘텐츠 계약 테스트: 픽스처 또는 원본 PDF 중 하나가 있으면 실행한다.
+# CI에서는 픽스처를 사용하고, 로컬에서는 원본 PDF를 우선한다.
 _pcos_pdf_required = pytest.mark.skipif(
-    not _PCOS_PDF_PATH.exists(),
-    reason="PCOS Monash PDF 없음 — key276-sources/pcos-monash-2023-v1.pdf 를 배치해야 실행된다",
+    not _PCOS_FIXTURE_PATH.exists() and not _PCOS_PDF_PATH.exists(),
+    reason=(
+        "PCOS 픽스처와 원본 PDF 모두 없음 — "
+        "scripts/extract_pcos_fixture.py 를 실행해 픽스처를 생성하거나 PDF를 배치하세요"
+    ),
 )
+
+# MD5 검사: 원본 PDF가 있어야 하며 CI에서는 건너뛴다.
+# 제한사항: 원본 PDF 무결성은 로컬에서만 확인된다 — CI에 PDF를 공급하지 않으므로.
+_pcos_md5_required = pytest.mark.skipif(
+    not _PCOS_PDF_PATH.exists(),
+    reason="원본 PDF 없음 — MD5 검사는 원본 PDF가 있을 때만 실행된다 (CI에서는 건너뜀)",
+)
+
+
+def _pcos_fixture_pdf() -> bytes:
+    """픽스처 JSON에서 합성 PDF를 만든다.
+
+    페이지 번호는 원본 PDF와 동일하게 유지한다 (빈 페이지 1~32 + 실제 내용 33~40).
+    ASCII 범위 밖 문자( 쪽번호 불릿 등)는 제거한다 — 핵심 내용(권고 번호·
+    제외 용어·머리글)은 모두 ASCII이므로 검사 결과에 영향이 없다.
+     제거 후 쪽번호 줄이 순수 숫자("35")로 남아 _is_page_number_line()이
+    정상 감지·제거한다.
+    """
+    data = json.loads(_PCOS_FIXTURE_PATH.read_text(encoding="utf-8"))
+    pages_dict: dict[str, str] = data["pages"]
+    page_texts = [""] * 32 + [
+        pages_dict.get(str(i), "").encode("ascii", errors="ignore").decode("ascii") for i in range(33, 41)
+    ]
+    return _text_pdf_pages(page_texts)
 
 
 def _load_pcos_chunks():
     from app.services.knowledge_extraction import extract_text_pdf
 
-    pdf_bytes = _PCOS_PDF_PATH.read_bytes()
+    pdf_bytes = _PCOS_PDF_PATH.read_bytes() if _PCOS_PDF_PATH.exists() else _pcos_fixture_pdf()
     return extract_text_pdf(
         pdf_bytes,
         page_from=35,
@@ -689,7 +727,7 @@ def _load_pcos_chunks():
     )
 
 
-@_pcos_pdf_required
+@_pcos_md5_required
 def test_pcos_monash_v1_md5_matches() -> None:
     """적재 대상 파일이 Jira 확정 MD5(75bb8757…)와 일치한다."""
     digest = hashlib.md5(_PCOS_PDF_PATH.read_bytes()).hexdigest()
@@ -764,20 +802,23 @@ def test_pcos_monash_v1_strips_page_numbers() -> None:
 # ---------------------------------------------------------------------------
 # §8 — PCOS 생활관리 검색 계약 (KEY-323 인수조건)
 # 적재 → 승인 → life 검색 → 제외 용어 미반환 확인
-# PDF 파일이 없으면 건너뜀
+# CI에서는 픽스처 PDF를, 로컬에서는 원본 PDF(있을 경우)를 사용한다
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.skipif(
-    not _PCOS_PDF_PATH.exists(),
-    reason="PCOS Monash PDF 없음 — key276-sources/pcos-monash-2023-v1.pdf 를 배치해야 실행된다",
+    not _PCOS_FIXTURE_PATH.exists() and not _PCOS_PDF_PATH.exists(),
+    reason=(
+        "PCOS 픽스처와 원본 PDF 모두 없음 — "
+        "scripts/extract_pcos_fixture.py 를 실행해 픽스처를 생성하거나 PDF를 배치하세요"
+    ),
 )
 class TestPcosMonashLifeSearchContract(TestCase):
     """Monash v1 적재 → 승인 → life 검색의 종단간 계약 테스트."""
 
     async def _ingest_and_approve(self) -> PreparedVersion:
         provider = cast(EmbeddingProvider, FakeEmbeddingProvider())
-        pdf_bytes = _PCOS_PDF_PATH.read_bytes()
+        pdf_bytes = _PCOS_PDF_PATH.read_bytes() if _PCOS_PDF_PATH.exists() else _pcos_fixture_pdf()
         request = KnowledgeIngestionRequest(
             title="International Evidence-based Guideline for the Assessment and Management of Polycystic Ovary Syndrome 2023",
             source_org="Monash University·International PCOS Network",
