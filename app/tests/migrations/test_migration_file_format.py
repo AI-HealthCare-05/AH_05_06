@@ -99,6 +99,13 @@ def test_the_last_state_matches_the_models_we_have() -> None:
     assert not missing, f"모델은 있는데 스냅샷에 없다 — 마지막 마이그레이션 뒤에 모델이 늘었다: {missing}"
 
 
+#: 스키마와 무관해 **비교에서 걷어내는** 키 — KEY-333 · KEY-347.
+#:
+#: `managed` 는 스냅샷을 저장한 뒤에 생긴 칸이고, `docstring` 은 aerich 가
+#: diff 에 안 쓰는 문서다. 둘 다 있어도 `aerich migrate` 는 DDL 을 안 뱉는다.
+_IGNORED_KEYS = frozenset({"managed", "docstring"})
+
+
 def _same_shape(value: Any) -> Any:
     """스냅샷과 `describe_models()` 를 **뜻으로** 견주기 위한 정규화 — KEY-333.
 
@@ -111,9 +118,21 @@ def _same_shape(value: Any) -> Any:
 
     이것을 안 걷으면 검사가 늘 빨개져서 아무도 안 본다. 걷고 나면 **진짜
     어긋남만** 남는다(실측: develop 에서 44개 전부 일치).
+
+    🚩 **`docstring` 도 걷는다** — KEY-347. `describe_models()` 는 클래스
+    docstring 을 통째로 담는데, **aerich 는 그것을 안 본다.** 실측으로 확인했다 —
+    `GuideSafetyCheck` 의 docstring 에 문단을 더한 `#317` 뒤에 이 검사는 울었지만
+    `aerich migrate --offline` 은 `No changes detected` 였다.
+
+    걷지 않으면 **모델에 주석 한 줄 다는 일이 마이그레이션 작업이 된다.** 그러면
+    아무도 주석을 안 달게 되고, 이 저장소가 맥락을 남기는 방식이 무너진다.
+
+    **`description` 은 안 걷는다.** 그쪽은 표·칸 주석이라 DDL 에 실린다. Tortoise 는
+    docstring 의 **첫 줄**을 모델 `description` 으로 쓰므로, 첫 줄을 고치면
+    `description` 이 갈려 여전히 걸린다 — 잡아야 할 것은 그쪽이다.
     """
     if isinstance(value, dict):
-        return {key: _same_shape(item) for key, item in sorted(value.items()) if key != "managed"}
+        return {key: _same_shape(item) for key, item in sorted(value.items()) if key not in _IGNORED_KEYS}
     if isinstance(value, (list, tuple)):
         return [_same_shape(item) for item in value]
     return value
@@ -199,3 +218,86 @@ def test_the_snapshot_carries_nothing_we_deleted() -> None:
 
     extra = sorted(snapshot - live)
     assert not extra, f"스냅샷에는 있는데 코드에 없는 모델 — 지웠으면 `DROP TABLE` 마이그레이션도 만들어라: {extra}"
+
+
+def test_a_docstring_paragraph_does_not_count_as_drift() -> None:
+    """모델에 **주석 한 줄 다는 일**이 마이그레이션 작업이 되면 안 된다 — KEY-347.
+
+    `describe_models()` 는 클래스 docstring 을 통째로 담는다. 그래서 `#317` 이
+    `GuideSafetyCheck` docstring 에 문단을 더하자 **develop 이 빨개졌다** —
+    스키마는 한 글자도 안 바뀌었는데.
+
+    aerich 는 그 칸을 안 본다(실측: 그 상태에서 `migrate --offline` 이
+    `No changes detected`). 막으려던 것은 「낡은 스냅샷이 다음 diff 를 망친다」인데
+    이건 그것이 아니다.
+    """
+    snapshot = {"docstring": "한 줄.\n\n옛 문단.", "description": "한 줄."}
+    live = {"docstring": "한 줄.\n\n옛 문단.\n\n새로 더한 문단.", "description": "한 줄."}
+
+    assert _same_shape(snapshot) == _same_shape(live), "docstring 뒷문단이 어긋남으로 잡힌다"
+
+
+def test_the_first_docstring_line_still_counts() -> None:
+    """🚩 **첫 줄은 걷어내지 않는다.**
+
+    Tortoise 는 docstring 첫 줄을 모델 `description` 으로 쓰고, 그것은 표 주석이라
+    DDL 에 실린다. `docstring` 을 걷는다고 이쪽까지 놓치면, 걷어낸 것이 너무 많다.
+    """
+    snapshot = {"docstring": "옛 한 줄.", "description": "옛 한 줄."}
+    live = {"docstring": "새 한 줄.", "description": "새 한 줄."}
+
+    assert _same_shape(snapshot) != _same_shape(live), "첫 줄이 갈렸는데 같다고 본다"
+
+
+def test_a_field_comment_edit_does_not_count_as_drift() -> None:
+    """🚩 **칸 옆 주석도 같은 문제다** — KEY-347 후속 (리뷰 지적).
+
+    `docstring` 은 클래스뿐 아니라 **칸(필드) 하나하나**에도 붙는다.
+    `_get_comments` 가 필드 옆 인라인 주석을 읽어 `Field.docstring` 에
+    넣기 때문이다(`tortoise/models.py` · `tortoise/fields/base.py`).
+
+    🚩 **다만 "칸 주석은 항상 같이 갈린다"는 아니다** — 정정(2026-09-15).
+    `#:` 주석이 **한 줄**이면 `description`(첫 줄)과 `docstring`(전체)이 같은
+    값이라 함께 걸리는 게 맞다. 실측: `before_no` 처럼 한 줄 주석을 고치면
+    `aerich migrate --offline` 이 실제로
+
+        ALTER TABLE `patient_number_correction`
+          MODIFY COLUMN `before_no` VARCHAR(50) NOT NULL COMMENT '…';
+
+    를 뱉는다. 하지만 이 저장소에는 **여러 줄짜리** `#:` 주석을 쓰는 칸도 이미
+    있다 — `PrescriptionSet.name`(`app/models/catalog.py`)이 그 예다. 거기서는
+    모델 docstring 과 똑같은 모양으로 `description` 이 첫 줄만, `docstring` 이
+    전체 문단을 담는다(실측: 뒷문단만 고치면 `description` 은 그대로다). 이
+    테스트가 지키는 것이 바로 그 여러 줄짜리 칸이다 — 한 줄 주석 예시만 보고
+    「칸 주석은 다 걸린다」로 일반화하면, 저 여러 줄짜리 칸의 뒷문단을 고쳤을 때
+    이 검사가 다시 오탐으로 우는 걸 막을 수 없다.
+
+    위 두 테스트는 모델 최상위 `dict` 만 평평하게 들고 확인했다 — 실제 비교가
+    도는 `data_fields` 처럼 **리스트 안에 중첩된 모양**은 아무도 확인하지
+    않았다. `_same_shape` 가 재귀적으로 걷어내길 그만두면(예: 최상위 키만
+    보게 "단순화") 이 자리에서 다시 develop 이 빨개지는데, 위 두 테스트는
+    그것을 못 잡는다.
+    """
+    snapshot = {"data_fields": [{"name": "guide_version", "description": "버전.", "docstring": "버전.\n\n옛 설명."}]}
+    live = {
+        "data_fields": [
+            {"name": "guide_version", "description": "버전.", "docstring": "버전.\n\n옛 설명.\n\n덧붙인 설명."}
+        ]
+    }
+
+    assert _same_shape(snapshot) == _same_shape(live), "필드 옆 주석 추가가 어긋남으로 잡힌다"
+
+
+def test_a_field_description_change_still_counts() -> None:
+    """🚩 **칸의 `description` 이 갈리면 여전히 잡는다.**
+
+    위 테스트가 `docstring` 을 건 것과 짝을 맞춘다 — 모델 수준에서
+    `test_the_first_docstring_line_still_counts` 가 `description` 경계를
+    고정하듯, 필드 수준에서도 같은 경계를 고정한다. 한쪽만 재면 나중에
+    `description` 까지 걷어내는 「정리」가 필드 쪽에서 조용히 들어와도
+    아무도 못 잡는다.
+    """
+    snapshot = {"data_fields": [{"name": "guide_version", "description": "옛 설명.", "docstring": "옛 설명."}]}
+    live = {"data_fields": [{"name": "guide_version", "description": "새 설명.", "docstring": "새 설명."}]}
+
+    assert _same_shape(snapshot) != _same_shape(live), "필드 description 변경이 드리프트로 안 잡힌다"

@@ -47,20 +47,20 @@ async def run():
         raise RuntimeError("Dedicated KEY-238 local database required")
     await Tortoise.init(config=cfg)
     connection = Tortoise.get_connection("default")
-    for name in ("key238_v63_clean", "key238_v63_existing"):
+    for name in ("key238_v64_clean", "key238_v64_existing"):
         # No IF NOT EXISTS: a rerun must not quietly consume somebody else's DB.
         await connection.execute_script(f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4")
     await Tortoise.close_connections()
     migrations = ROOT / "app/core/db/migrations"
-    for name in ("key238_v63_clean", "key238_v63_existing"):
+    for name in ("key238_v64_clean", "key238_v64_existing"):
         credentials["database"] = name
         legacy_id = None
-        if name == "key238_v63_existing":
+        if name == "key238_v64_existing":
             with tempfile.TemporaryDirectory(prefix="key238-migrations-") as scratch:
                 dest = Path(scratch) / "models"
                 dest.mkdir()
                 for source in (migrations / "models").glob("*.py"):
-                    if source.name.split("_")[0].isdigit() and int(source.name.split("_")[0]) < 63:
+                    if source.name.split("_")[0].isdigit() and int(source.name.split("_")[0]) < 64:
                         shutil.copy2(source, dest / source.name)
                 command = Command(cfg, location=scratch)
                 await command.init()
@@ -77,7 +77,7 @@ async def run():
         command = Command(cfg, location=str(migrations))
         await command.init()
         applied = await command.upgrade()
-        assert any(filename.startswith("63_") for filename in applied)
+        assert any(filename.startswith("64_") for filename in applied)
         assert await command.upgrade() == []
         if legacy_id is not None:
             saved = await CheckIn.get(guide_document_id=legacy_id)
@@ -94,6 +94,11 @@ async def run():
             client_sequence=1,
         )
         db = Tortoise.get_connection("default")
+        column = await db.execute_query_dict(
+            "SELECT CHARACTER_MAXIMUM_LENGTH AS length FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='guide_message' AND COLUMN_NAME='hold_reason'"
+        )
+        assert column[0]["length"] == 22
         await assert_append_only(db, event)
         print(f"PASS {name}: upgrade, rerun, legacy preservation, append-only")
         await Tortoise.close_connections()

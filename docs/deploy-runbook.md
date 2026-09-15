@@ -881,21 +881,19 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
 
    워커(`ai-worker`)는 서버와 **같은** `.env` 를 읽는다. `SMS_PROVIDER=solapi`
    로 바꾸는 순간 OTP 뿐 아니라 **예약 문자(D+7/D+15/D+30 확인 · 소진 · 재진)도
-   같은 길로 나가기 시작한다.** 지금은 원본 삭제가 구현되지 않아 KEY-250 게이트가
-   `SOURCE_NOT_DELETED` 로 붙들지만, **그 게이트가 재는 것은 DB 행이 아니라
-   파일이다.**
+   같은 길로 나가기 시작한다.** KEY-338 예약 발송 좁은문이 닫혀 있으면
+   워커의 발송 루프가 돌지 않고, 문자는 `SCHEDULED`로 남는다.
 
    ```python
    # app/services/dispatch_gate.py — _source_documents_are_deleted()
-   if not docs:      return True   # 올린 적 없다 → 안 막는다
-   if exists(path):  return False  # 파일이 있다  → 막는다
-   return True                     # 행은 있는데 파일이 없다 → 「지워졌다」 → 안 막는다
+   if not docs: return True   # 원본 행 없음 → 원본 게이트 통과
+   return False               # 원본 행 있음 → 파일 유무와 무관하게 막는다
    ```
 
-   즉 **원본 행은 남았는데 파일이 사라진 진료**가 있으면 그 문자는 게이트를
-   지나간다. 업로드가 볼륨 밖에 떨어지던 시기가 실제로 있었으므로(KEY-197
-   후속, `docker-compose.prod.yml` 의 `media_volume` 주석) 옛 진료에서 생길 수
-   있는 일이다. **그러므로 세어 보고 켠다.**
+   파일이 없다는 사실만으로 원본 삭제를 확인할 수 없다. 원본 행이 하나라도
+   남아 있으면 파일이 전부 있거나 일부·전부 없어도 `SOURCE_NOT_DELETED`로
+   보류된다. 원본 행이 없는 진료만 이 게이트를 통과하므로, 예약 문자를
+   **세어 보고** 켠다.
 
    ```bash
    ssh -i ~/.ssh/<키>.pem ubuntu@<Pilot IP> bash -s <<'REMOTE'
@@ -915,17 +913,16 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
        n=split(path, p, "/"); base=p[n]; total[mid]++
        if (base in have) exists[mid]++ }
      END { for (m in total) {
-             if (norow[m])          printf "%s\t[나간다] 문자 %s (%s · %s) : 원본행 없음\n", m, m, label[m], at[m]
-             else if (exists[m]>0)  printf "%s\t         문자 %s (%s · %s) : 파일 %d/%d 있음 → 막힌다\n", m, m, label[m], at[m], exists[m], total[m]
-             else                   printf "%s\t[나간다] 문자 %s (%s · %s) : 원본행 %d 개인데 파일 0 개\n", m, m, label[m], at[m], total[m] } }
+             if (norow[m])          printf "%s\t[원본 게이트 통과] 문자 %s (%s · %s) : 원본행 없음\n", m, m, label[m], at[m]
+             else                   printf "%s\t[원본 게이트 차단] 문자 %s (%s · %s) : 파일 %d/%d 있음, 원본행 남음\n", m, m, label[m], at[m], exists[m], total[m] } }
    ' /tmp/sched.tsv | sort -n | cut -f2-
    rm -f /tmp/sched.tsv /tmp/have.txt
    REMOTE
    ```
 
-   🚩 **`[나간다]` 가 한 줄이라도 있으면 켜지 않는다.** 그 문자는 시드 환자의
-   가짜 번호로 나간다 — 모르는 사람이 받을 수 있다. KEY-338(예약 문자 좁은문)이
-   들어온 뒤에 켠다.
+   🚩 **`[원본 게이트 통과]`가 한 줄이라도 있으면 수신 번호·승인 상태를
+   확인하기 전에는 켜지 않는다.** 수신 번호는 별도로 승인 목록과 대조되며,
+   목록 밖 번호는 `RECIPIENT_NOT_APPROVED`로 보류된다.
 
    `docker compose exec -T` 에 `</dev/null` 이 붙어 있는 것은 실수가 아니다.
    빼면 그것이 **남은 스크립트를 stdin 으로 먹어** 판정 줄이 조용히 안 나온다.
@@ -955,6 +952,29 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
    ```bash
    docker compose up -d --no-deps fastapi
    ```
+
+   **예약 문자 좁은문은 별개다 — KEY-338.** 일반 배포(`deployment.sh`)는
+   Pilot 오버레이 없이 워커를 띄워 플래그가 없으므로 닫힌다. 열기 전에 위
+   `SCHEDULED` 문자 수·원본 상태와 승인 번호 목록을 다시 확인한다.
+
+   ```bash
+   # 서버 ~/project 에서, 승인된 Pilot 검증 때만
+   SMS_DISPATCH_ENABLED=1 docker compose \
+     -f docker-compose.yml -f docker-compose.pilot.yml \
+     up -d --no-deps ai-worker
+   # 닫기: 오버레이 없이 재기동
+   docker compose up -d --no-deps ai-worker
+   ```
+
+   **Pilot 실검증 상태(2026-09-15): 미실행.** 배포 권한이 있는 담당자가
+   아래를 확인하고 PR에 결과를 기록한다.
+
+   1. 좁은문을 닫은 채 `ai-worker`를 기동해 예약 문자가 `SCHEDULED`로
+      유지되고 발송기가 만들어지지 않는지 확인한다.
+   2. 같은 상태에서 OCR·안내 생성 작업이 계속 처리되는지 확인한다.
+   3. `docker compose stop ai-worker` 후 프로세스가 제한 시간 안에 정상
+      종료되고 재기동할 수 있는지 확인한다.
+   4. 확인 뒤 위 명령으로 좁은문을 다시 닫고 워커 로그를 보존한다.
 3. **수신한 OTP로 검증·환자 세션·보호 API 접근까지 E2E 확인.**
 4. **장애·재발송·만료·잠금 회귀를 다시 돌려서 실제 경로에서도 그대로
    지켜지는지 확인.**
@@ -974,6 +994,12 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
   `UnavailableOtpDelivery`로 떨어져 발급 자체가 503으로 안전하게
   막힌다(발송이 성공한 것처럼 보이는 상태로 남지 않는다). `SMS_PROVIDER`는
   건드릴 필요가 없다.
+- **예약 문자(안내·확인·소진·재진)는 별도 스위치다 — KEY-338.**
+  위 4-3-2절의 `docker compose up -d --no-deps ai-worker`로 Pilot 오버레이
+  없이 재기동해 닫는다. OTP 좁은문을 끄는 것과 **별개**다. OTP만 끄고
+  이 스위치를 안 끄면 예약 문자는 계속 실제로 나간다.
+  건너뛰는 동안 문자는 `SCHEDULED`로 그대로 남는다(`HELD`로 안 바뀐다)
+  — OCR·안내 생성 루프는 이 스위치와 무관하게 계속 돈다.
 - **`SMS_PROVIDER=mock`으로는 롤백하지 않는다.** KEY-248의 검증기가
   `SMS_PROVIDER=mock`과 `ENV=prod`의 조합 자체를 거부한다 — 그 조합으로
   재기동하면 `Config` 생성 시점에 `ValidationError`가 나서 **앱이 아예
@@ -981,6 +1007,29 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
   롤백이 아니라 서비스 전체가 내려간다.
 - 어느 쪽으로 되돌리든 `PatientOtpChallenge`의 기존 계약(3분 만료·5회
   잠금·일회 사용)은 그대로다 — 이 표를 건드리는 롤백이 아니다.
+
+### 예약 문자 좁은문을 다시 켜기 전에 — 밀린 SCHEDULED 문자 점검 (KEY-338)
+
+다시 켜기 전에 4-3-2절의 「켜기 전에 — 예약 문자를 센다」 절차를 먼저
+실행한다. 좁은문이 닫혀 있던 동안 쌓인 `SCHEDULED` 문자는 재기동 후
+발송 직전 게이트를 다시 통과할 수 있다.
+
+1. **쌓인 건수·수신 번호를 먼저 센다.** 얼마나 밀렸는지, 그중 승인
+   목록(`OTP_APPROVED_TEST_PHONES`) 밖의 번호가 몇 건인지 본다 —
+   후자는 다시 열어도 `RECIPIENT_NOT_APPROVED`로 계속 막히니 걱정할
+   대상이 아니다.
+2. **승인 목록 안의 번호 중, 그사이 내용이 달라졌을 수 있는 것을
+   확인한다.** 좁은문이 닫혀 있던 동안 안내문이 수정·반려됐거나 원본
+   문서가 새로 올라왔다면, 그 문자는 다시 열었을 때 다른 게이트
+   (`NOT_APPROVED`·`SOURCE_NOT_DELETED`)에 걸릴 수 있다 — 게이트
+   자체가 그 시점의 최신 상태를 다시 읽으므로 별도 조치는 필요 없지만,
+   "왜 안 나갔지"로 헷갈리지 않게 미리 안다.
+3. **문제 원인이 해소됐는지 먼저 확인한 뒤에만 켠다.** 좁은문을 닫았던
+   이유(오발송·설정 오류 등)가 그대로면, 다시 열자마자 같은 사고가
+   밀린 건수만큼 반복된다.
+4. **켠 직후 몇 분간 `ai-worker` 로그와 발송 이력(S2-4)을 지켜본다.**
+   밀린 문자가 한꺼번에 나가는 동안 실패·보류 비율이 평소와 다르면
+   바로 다시 끈다.
 
 ## 4-4. 시연 전 재프로비저닝 — 한 번에 따라가는 순서 (KEY-203)
 

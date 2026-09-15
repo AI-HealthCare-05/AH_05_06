@@ -18,7 +18,7 @@
 - [x] 신호 실패를 성공으로 표시하지 않되 폼·최종 저장은 유지
 - [x] OTP 세션·만료·회전·타 병원·admin 단독 접근 차단 회귀
 - [x] 신호에 메모/토큰/OTP 미저장, 토큰 비반환, 기존 로그·오류 마스킹 보안 회귀 유지
-- [x] Aerich migration 63: clean/기존 DB upgrade·재실행·기존 응답 보존·append-only 검증
+- [x] Aerich migration 64: clean/기존 DB upgrade·재실행·기존 응답 보존·append-only 검증 (아래 최초 63번 결과는 당시 기록)
 - [x] OpenAPI·API 문서 갱신
 - [x] Ruff/mypy/백엔드·프론트 전체 관련 회귀 및 실제 브라우저 검증
 
@@ -59,3 +59,15 @@
 - 최종 저장은 새 선택 이벤트가 아니라 현재 답 보정이다. 같은 답은 기존 확인을 유지하고 다른 답은 해제하는 기존 정책을 보존했다.
 - DTO·schema·migration·화면 렌더러 변경 없음. API 문서에 재오픈/보존 기준을 명시했다. 이번 보완은 병원 목록·이력 API 응답까지 검증하며 위 최초 구현의 브라우저/실제 migration 실행을 다시 수행한 것으로 표시하지 않는다.
 - 최종 재검증: `pytest -q app/tests/patient_links app/tests/patient_manage app/tests/migrations app/tests/security --tb=short` **482 passed** (63.83초), 전체 프런트 **1,304 passed**, mypy **474 files**, Ruff check/format·OpenAPI `--check`·`git diff --check` 통과. 실제 SMS·운영 데이터 사용 없음.
+
+## PR #323 후속 전체 리뷰 반영 — 2026-09-15
+
+- 일반 댓글 4개와 인라인 댓글 없음 확인. 기존 같은 답 재발생 재오픈 수정은 리뷰어 확인 완료이며 기존 회귀를 유지했다.
+- `NOTIFIES.uncomfortable=False` 및 새 신호 조회·확인 라우트 2개의 소유 모듈 등록 누락을 수정했다. 계약·라우팅·환자 링크 회귀 621개 통과.
+- 공용 서버 적용 여부는 SSH 권한 거부로 직접 확인하지 못했다. 사용자의 공용 서버 미적용 추정 및 재생성 진행 승인을 전제로 진행했다. 운영 DB/장부는 변경하지 않았다.
+- develop `06807b9`를 통합하고 PR의 기존 63번을 제거한 뒤 Python 3.13/Aerich offline으로 `64_20260915181415_key238_checkin_signals.py`를 새로 생성했다. 파일명만 변경하지 않았다. 기존 append-only 트리거와 FK 역순 downgrade는 유지했다. KEY-338의 hold_reason 22자 확장을 새 MODELS_STATE에 포함하며 해당 변경 SQL을 중복하지 않는다.
+- 실제 격리 MySQL `key238_v64_clean` 0→64 / `key238_v64_existing` 0→63·기존 CheckIn 삽입→64 모두 통과. 재실행 추가 적용 없음, 기존 응답·note null 보존, append-only UPDATE/DELETE 차단, hold_reason 실제 길이 22 확인. 기존 v63 QA DB는 삭제하지 않았다.
+- 후속 `aerich migrate --offline`: **No changes detected**. 최초 실행은 app 의존성 누락, 다음 실행은 엔진 버전 조회용 DB 인증 부족으로 실패했으며 app 그룹·전용 QA DB 설정 후 재실행 성공. offline은 비교 기준을 파일로 삼지만 MySQL 버전 조회는 연결이 필요했다.
+- 전체 프런트 **1,309 passed**, Ruff check/format 및 OpenAPI 일치 통과. 새 최소 venv mypy는 AI 선택 의존성이 없어 실패했으나, 해당 의존성이 설치된 공유 Python 3.13 환경에서 **478 files 통과**. 애플리케이션 코드/의존성 잠금 파일을 완화하지 않았다.
+- 이번 수정은 테스트 레지스트리·migration 재생성이며 화면 변경/실제 SMS/운영 배포는 하지 않았다. GitHub CI 재실행은 푸시 후 별도 확인 필요.
+- 최종 백엔드 전체 `pytest -n 4 -q app ai_worker`: **2,888 passed / 1 xfailed / 14 subtests passed (173.93초)**, skip·fail 0. 기존 HTTP 422 deprecation 경고 9건은 유지했다. 충돌 파일 없음 및 diff 공백 검사 통과. develop 통합과 보완 변경은 커밋 전 로컬 상태로 보존한다.
