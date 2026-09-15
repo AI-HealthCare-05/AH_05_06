@@ -24,6 +24,44 @@ on:
       - 'refactor/**'
 
 jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      COMPOSE_PROJECT_NAME: key230-bootstrap-ci
+      DOCKER_USER: key230
+      DOCKER_REPOSITORY: bootstrap
+      APP_VERSION: ci
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      # 기본 Compose의 멀티 아키텍처 배포 빌드 대신 이 러너의 이미지 한 개를
+      # 만든다. bootstrap은 아래의 실제 Compose 서비스/DB를 그대로 사용한다.
+      - name: Build local API image
+        run: docker build -f app/Dockerfile -t key230/bootstrap:app-ci .
+      - name: Bootstrap fresh database and repeat
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/bootstrap-local.sh
+          before=$(sha256sum .env .bootstrap.local.env)
+          ./scripts/bootstrap-local.sh
+          test "$before" = "$(sha256sum .env .bootstrap.local.env)"
+      - name: Stop isolated CI services
+        if: always()
+        # 별도 job의 일회용 프로젝트만 정리한다. env 생성 전 실패하면
+        # compose에 필요한 설정이 없으므로 실행할 리소스도 없다.
+        run: |
+          if [ -f .env ]; then
+            docker compose down --volumes
+          fi
+
   lint:
     runs-on: ubuntu-latest
     steps:
