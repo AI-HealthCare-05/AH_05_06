@@ -74,17 +74,22 @@ class TestGuardIgnoresEnv(unittest.TestCase):
             assert sms_dispatch_gate_open() is True
 
 
-class TestClosedWorkerGate(unittest.IsolatedAsyncioTestCase):
-    async def test_closed_gate_does_not_build_a_sender(self) -> None:
-        from ai_worker.main import _run_message_dispatch_loop
+async def test_closed_gate_does_not_build_a_sender() -> None:
+    from ai_worker.main import _run_message_dispatch_loop
 
-        with (
-            patch("ai_worker.main.Config", return_value=SimpleNamespace(SMS_PROVIDER=SmsProvider.SOLAPI)),
-            patch("ai_worker.main.sms_dispatch_gate_open", return_value=False),
-            patch("ai_worker.main.build_sms_sender") as build_sender,
-            patch("ai_worker.main.dispatch_due_messages") as dispatch,
-        ):
-            await _run_message_dispatch_loop()
+    with (
+        patch(
+            "ai_worker.main.Config",
+            return_value=SimpleNamespace(SMS_PROVIDER=SmsProvider.SOLAPI),
+        ),
+        patch(
+            "ai_worker.main.sms_dispatch_gate_open",
+            return_value=False,
+        ),
+        patch("ai_worker.main.build_sms_sender") as build_sender,
+        patch("ai_worker.main.dispatch_due_messages") as dispatch,
+    ):
+        await _run_message_dispatch_loop()
 
-        build_sender.assert_not_called()
-        dispatch.assert_not_called()
+    build_sender.assert_not_called()
+    dispatch.assert_not_called()
