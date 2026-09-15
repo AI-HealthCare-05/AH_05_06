@@ -11,6 +11,7 @@ import signal
 from tortoise import Tortoise
 
 from ai_worker.core import config, default_logger
+from ai_worker.tasks.ocr_recovery import RECOVERY_INTERVAL_SECONDS, expire_stale_ocr_jobs
 from ai_worker.tasks.ocr_task import process_ocr_job
 from app.core.config import (
     SMS_DISPATCH_ENABLED_ENV,
@@ -58,6 +59,20 @@ async def _run_ocr_loop() -> None:
             # 태스크 내부에서 OcrJob.status를 FAILED로 처리하는 것이 원칙이다.
             # 여기까지 올라온 예외는 태스크 외부의 예상치 못한 오류이므로 기록만 한다.
             default_logger.exception("OCR 작업 처리 중 예상치 못한 예외 — ocr_job_id=%s", ocr_job_id)
+
+
+async def _run_ocr_recovery_loop() -> None:
+    """시작 직후와 매분 정리한다. OCR 대기/외부 호출과 독립적으로 실행한다."""
+    while not _shutdown:
+        try:
+            await expire_stale_ocr_jobs()
+        except Exception:
+            # 오류 원문에는 접속 정보 등이 있을 수 있다. 다음 주기에 다시 확인한다.
+            default_logger.error("code=OCR_RECOVERY_FAILED")
+        for _ in range(RECOVERY_INTERVAL_SECONDS):
+            if _shutdown:
+                break
+            await asyncio.sleep(1)
 
 
 async def _run_message_dispatch_loop() -> None:
@@ -130,7 +145,11 @@ async def _run() -> None:
         # asyncio.gather가 취소시키지 않는다. OCR과 문자 발송은 서로 남의
         # 사정으로 멈추면 안 되는 별개 파이프라인이다(2heej 리뷰).
         results = await asyncio.gather(
-            _run_ocr_loop(), _run_message_dispatch_loop(), _run_guide_generation_loop(), return_exceptions=True
+            _run_ocr_recovery_loop(),
+            _run_ocr_loop(),
+            _run_message_dispatch_loop(),
+            _run_guide_generation_loop(),
+            return_exceptions=True,
         )
         for result in results:
             if isinstance(result, BaseException):
