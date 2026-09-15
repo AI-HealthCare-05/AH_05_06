@@ -4,6 +4,7 @@
 2. DRAFT 버전 폐기(deprecate)
 3. 청크 없는 레코드 승인 (chunk_optional)
 4. 일반 문서는 여전히 청크 없이 승인 불가
+5. 자궁내막증 고정 템플릿 연결 (knowledge_doc_fallback, revalidate_artifact)
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from app.models.knowledge import (
     KnowledgeSourceKind,
     KnowledgeVersion,
 )
+from app.services.approved_knowledge_search import ApprovedKnowledgeSearchService
+from app.services.guide_generation import GeneratedGuideSection
 from app.services.knowledge_extraction import extract_text_pdf
 from app.services.knowledge_pipeline import (
     EmbeddingProvider,
@@ -294,3 +297,182 @@ class TestChunkRequiredForNormalVersion(TestCase):
                 verified_at=reviewed_at,
                 review_due_at=reviewed_at + timedelta(days=365),
             )
+
+
+# ---------------------------------------------------------------------------
+# §5 — 자궁내막증 고정 템플릿 연결 (KEY-323 §4)
+# ---------------------------------------------------------------------------
+
+
+class TestEndometriosisLifeTemplate(TestCase):
+    """knowledge_doc_fallback()이 APPROVED chunk_optional 레코드에서
+    올바른 ApprovedFallbackTemplate을 조립하고, revalidate_artifact()가
+    kv: 접두사 경로로 재검증하는지 확인한다."""
+
+    async def _ingest_and_approve_eshre(self) -> PreparedVersion:
+        from app.services.guide_generation import ESHRE_ENDOMETRIOSIS_SOURCE_URL
+
+        prepared = await KnowledgeIngestionService(
+            repository=TortoiseKnowledgeRepository(),
+            object_store=InMemoryPrivateObjectStore(),
+            embedding_provider=cast(EmbeddingProvider, FakeEmbeddingProvider()),
+        ).ingest(
+            KnowledgeIngestionRequest(
+                title="ESHRE Guideline: Endometriosis (2022)",
+                source_org="European Society of Human Reproduction and Embryology",
+                source_url=ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+                version_label="2022",
+                source_kind=KnowledgeSourceKind.TEXT_PDF,
+                payload=b"template-only",
+                mime_type="text/plain",
+                license_basis="CC BY-NC 4.0",
+                chunk_optional=True,
+            )
+        )
+        await KnowledgeVersion.filter(version_id=prepared.version_id).update(
+            source_grade=SourceGrade.A, license_verified=True, chunk_optional=True
+        )
+        reviewed_at = datetime.now(UTC)
+        await KnowledgeApprovalService().approve(
+            prepared.version_id,
+            approved_by="이희진",
+            verified_at=reviewed_at,
+            review_due_at=reviewed_at + timedelta(days=365),
+        )
+        return prepared
+
+    async def test_knowledge_doc_fallback_returns_template_for_approved_record(self) -> None:
+        from app.services.guide_generation import (
+            ENDOMETRIOSIS_LIFE_TEMPLATE_BODY,
+            ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            knowledge_doc_fallback,
+        )
+
+        await self._ingest_and_approve_eshre()
+
+        result = await knowledge_doc_fallback(ESHRE_ENDOMETRIOSIS_SOURCE_URL, ENDOMETRIOSIS_LIFE_TEMPLATE_BODY)
+
+        assert result is not None
+        assert result.template_id.startswith("kv:")
+        assert result.body == ENDOMETRIOSIS_LIFE_TEMPLATE_BODY
+        assert result.approved_by == "이희진"
+        assert result.approval_status is ApprovalStatus.APPROVED
+        assert result.is_current is True
+
+    async def test_knowledge_doc_fallback_returns_none_when_no_approved_record(self) -> None:
+        from app.services.guide_generation import (
+            ENDOMETRIOSIS_LIFE_TEMPLATE_BODY,
+            ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            knowledge_doc_fallback,
+        )
+
+        result = await knowledge_doc_fallback(ESHRE_ENDOMETRIOSIS_SOURCE_URL, ENDOMETRIOSIS_LIFE_TEMPLATE_BODY)
+
+        assert result is None
+
+    async def test_revalidate_artifact_passes_for_valid_kv_template(self) -> None:
+        from app.services.guide_generation import (
+            ENDOMETRIOSIS_LIFE_TEMPLATE_BODY,
+            ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            RagGuideGenerator,
+            knowledge_doc_fallback,
+        )
+        from app.services.guide_knowledge_context import GuideSourceValidation
+        from app.services.knowledge_search import ContextAdmissionOutcome, GenerationContextAdmission
+
+        await self._ingest_and_approve_eshre()
+        fallback = await knowledge_doc_fallback(ESHRE_ENDOMETRIOSIS_SOURCE_URL, ENDOMETRIOSIS_LIFE_TEMPLATE_BODY)
+        assert fallback is not None
+
+        admission = GenerationContextAdmission(
+            outcome=ContextAdmissionOutcome.APPROVED_TEMPLATE_FALLBACK,
+            fallback_template=fallback,
+        )
+        from app.services.safety_check import SafetyVerdict, SafetyVerdictKind
+
+        artifact = GeneratedGuideSection(
+            body=fallback.body,
+            validation=GuideSourceValidation(),
+            admission=admission,
+            pre=SafetyVerdict(SafetyVerdictKind.PASS),
+            post=None,
+        )
+        generator = RagGuideGenerator(
+            search=cast(ApprovedKnowledgeSearchService, None),
+            model=None,
+        )
+
+        # 예외 없이 통과해야 한다
+        await generator.revalidate_artifact(artifact, hospital_id=1, section_key="life")
+
+    async def test_revalidate_artifact_raises_when_kv_record_deprecated(self) -> None:
+        from app.services.guide_generation import (
+            ENDOMETRIOSIS_LIFE_TEMPLATE_BODY,
+            ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            GuideGenerationError,
+            RagGuideGenerator,
+            knowledge_doc_fallback,
+        )
+        from app.services.guide_knowledge_context import GuideSourceValidation
+        from app.services.knowledge_search import ContextAdmissionOutcome, GenerationContextAdmission
+
+        prepared = await self._ingest_and_approve_eshre()
+        fallback = await knowledge_doc_fallback(ESHRE_ENDOMETRIOSIS_SOURCE_URL, ENDOMETRIOSIS_LIFE_TEMPLATE_BODY)
+        assert fallback is not None
+
+        # 승인 후 레코드를 강제로 비활성화
+        await KnowledgeVersion.filter(version_id=prepared.version_id).update(is_current=False)
+
+        admission = GenerationContextAdmission(
+            outcome=ContextAdmissionOutcome.APPROVED_TEMPLATE_FALLBACK,
+            fallback_template=fallback,
+        )
+        from app.services.safety_check import SafetyVerdict, SafetyVerdictKind
+
+        artifact = GeneratedGuideSection(
+            body=fallback.body,
+            validation=GuideSourceValidation(),
+            admission=admission,
+            pre=SafetyVerdict(SafetyVerdictKind.PASS),
+            post=None,
+        )
+        generator = RagGuideGenerator(
+            search=cast(ApprovedKnowledgeSearchService, None),
+            model=None,
+        )
+
+        with pytest.raises(GuideGenerationError, match="template_changed"):
+            await generator.revalidate_artifact(artifact, hospital_id=1, section_key="life")
+
+
+# ---------------------------------------------------------------------------
+# §5-static — 템플릿 본문 내용 검증 (DB 불필요, 순수 Python)
+# ---------------------------------------------------------------------------
+
+
+def test_endo_template_contains_no_primary_prevention_claim() -> None:
+    """①근거(1차 예방)에서 유래한 문장이 없음을 확인한다 (KEY-323 §4 인수조건)."""
+    from app.services.guide_generation import ENDOMETRIOSIS_LIFE_TEMPLATE_BODY
+
+    forbidden = ["예방", "preventing endometriosis", "자궁내막증이 생기지", "발병을 막"]
+    for phrase in forbidden:
+        assert phrase not in ENDOMETRIOSIS_LIFE_TEMPLATE_BODY, f"1차 예방 문구 포함: {phrase!r}"
+
+
+def test_endo_template_contains_no_disease_treatment_claim() -> None:
+    """템플릿에 증상 완화 범위를 벗어난 치료 주장이 없음을 확인한다."""
+    from app.services.guide_generation import ENDOMETRIOSIS_LIFE_TEMPLATE_BODY
+
+    forbidden = ["호전된다", "치료된다", "완치", "없어진다"]
+    for phrase in forbidden:
+        assert phrase not in ENDOMETRIOSIS_LIFE_TEMPLATE_BODY, f"치료 주장 문구 포함: {phrase!r}"
+
+
+def test_endo_template_contains_no_emergency_phrase() -> None:
+    """응급·주의 문구가 포함되지 않는다 (섹션 경계 유지, KEY-323 §4)."""
+    from app.services.guide_generation import ENDOMETRIOSIS_LIFE_TEMPLATE_BODY
+
+    forbidden = ["응급", "즉시 병원", "119", "위급"]
+    for phrase in forbidden:
+        assert phrase not in ENDOMETRIOSIS_LIFE_TEMPLATE_BODY, f"응급 문구 포함: {phrase!r}"
+

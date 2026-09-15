@@ -539,22 +539,38 @@ class GuideService:
         generated = {}
         if self.rag_generator is None:
             return generated
-        from app.services.guide_generation import GuideGenerationError, approved_fallback
+        from app.services.guide_generation import (
+            ENDOMETRIOSIS_LIFE_TEMPLATE_BODY,
+            ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            GuideGenerationError,
+            approved_fallback,
+            knowledge_doc_fallback,
+        )
         from app.services.guide_generation_jobs import MAX_ATTEMPTS, input_checksum
 
         if self.generation_job and await input_checksum(visit_id) != self.generation_job.input_sha256:
             raise GuideGenerationError("input_changed")
-        from app.models.catalog import DrugCatalog, PrescriptionSetDrug
+        from app.models.catalog import DrugCatalog, PrescriptionSetDrug, SetDisease
 
         # Do not send OCR/free-form names to a provider. Only exact catalog
-        # matches enter the query; an unknown name requires local correction.
+        # matches enter the query; an unknown name requires local recognition.
         catalog_names = set(await DrugCatalog.all().values_list("name", flat=True))
         catalog_names.update(await PrescriptionSetDrug.all().values_list("name", flat=True))
         drug_names = tuple(item.name for item in prescription_items)
         if any(name not in catalog_names for name in drug_names):
             raise GuideGenerationError("unrecognized_prescription")
         disease = prescription_set.disease.value if prescription_set else ""
+        disease_enum = prescription_set.disease if prescription_set else None
+
+        # 자궁내막증 생활관리는 RAG 검색 없이 ESHRE 고정 템플릿으로만 생성한다 (KEY-323 §4).
+        endo_life_fallback = None
+        if disease_enum is SetDisease.ENDOMETRIOSIS:
+            endo_life_fallback = await knowledge_doc_fallback(
+                ESHRE_ENDOMETRIOSIS_SOURCE_URL, ENDOMETRIOSIS_LIFE_TEMPLATE_BODY
+            )
+
         for key, content in contents:
+            is_endo_life = key is GuideSectionKey.LIFE and disease_enum is SetDisease.ENDOMETRIOSIS
             try:
                 generated[key] = await self.rag_generator.section(
                     hospital_id=actor.hospital_id,
@@ -562,9 +578,9 @@ class GuideService:
                     query=" ".join((disease, *drug_names, key.value)),
                     prescribed_drugs=drug_names,
                     known_drugs=tuple(catalog_names),
-                    fallback=approved_fallback(content),
+                    fallback=endo_life_fallback if is_endo_life else approved_fallback(content),
                     infrastructure_exhausted=bool(self.generation_job and self.generation_job.attempts >= MAX_ATTEMPTS),
-                    fixed_template=key is GuideSectionKey.EMERGENCY,
+                    fixed_template=key is GuideSectionKey.EMERGENCY or is_endo_life,
                 )
             except GuideGenerationError as exc:
                 exc.section_key = key.value

@@ -3,7 +3,7 @@
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 import httpx
 from tortoise.exceptions import DBConnectionError
@@ -32,6 +32,48 @@ from app.services.knowledge_search import (
     fallback_body_checksum,
 )
 from app.services.safety_check import SafetyVerdict, SafetyVerdictKind, post_generate_check, pre_generate_check
+
+# KEY-323 §4 확정 템플릿 — ESHRE Guideline: Endometriosis (2022), CC BY-NC 4.0
+# 근거 ②③(women with endometriosis 대상)만 사용. ①(1차 예방)·암 맥락·자외선 차단 제외.
+# 문구 변경 시 ENDOMETRIOSIS_LIFE_TEMPLATE_SHA256을 반드시 함께 갱신한다.
+ESHRE_ENDOMETRIOSIS_SOURCE_URL = "https://academic.oup.com/hropen/article/2022/2/hoac009/6537540"
+
+ENDOMETRIOSIS_LIFE_TEMPLATE_BODY = """\
+[생활관리]
+
+자궁내막증은 오랜 기간 관리해 나가는 질환입니다.
+지금은 증상을 잘 조절하면서 편안한 일상을 유지하는 것이 가장 중요합니다.
+
+■ 생활 속에서 권장되는 것
+
+  전반적인 건강을 지키는 습관이 도움이 됩니다.
+
+   · 담배는 피우지 않기
+   · 적정 체중 유지하기
+   · 규칙적으로 몸을 움직이기
+   · 과일과 채소를 충분히 드시기
+   · 술은 되도록 적게 드시기
+
+■ 아직 확실하지 않은 것
+
+  특정 식이요법이나 영양제, 침, 물리치료, 운동요법이
+  자궁내막증 통증을 줄여 준다는 근거는 아직 충분하지 않습니다.
+  효과가 없다는 뜻은 아니며, 확실히 도움이 된다고 말씀드리기
+  어렵다는 의미입니다.
+
+  시도해 보고 싶은 방법이 있으시면
+  먼저 진료받으신 의료진과 상의해 주세요.
+
+■ 마음 건강도 함께 살펴 주세요
+
+  통증이 오래 이어지면 마음도 지치기 쉽습니다.
+  힘드실 때는 혼자 견디지 마시고 의료진에게 편하게 말씀해 주세요.
+  일상의 질과 마음 건강을 돌보는 방법을 함께 찾아볼 수 있습니다.
+
+─────────────────────────────────────────
+근거: ESHRE Guideline: Endometriosis (2022)
+      Human Reproduction Open · CC BY-NC 4.0
+※ 위 내용은 일반적인 안내이며 진료와 처방을 대신하지 않습니다."""
 
 # docs/decisions/KEY-82-rag-search-poc.md §6 생성 연결 승인 (0474caa).
 KEY82_GENERATION_APPROVAL = PocEvaluationApproval(
@@ -102,6 +144,39 @@ def approved_fallback(content: DrugCautionContent | None) -> ApprovedFallbackTem
     )
 
 
+async def knowledge_doc_fallback(source_url: str, template_body: str) -> ApprovedFallbackTemplate | None:
+    """chunk_optional APPROVED KnowledgeVersion에서 ApprovedFallbackTemplate을 조립한다.
+
+    template_id는 'kv:<version_id>' 형식으로 DrugCautionContent 기반과 구별하며,
+    revalidate_artifact()가 이 접두사로 재검증 경로를 분기한다.
+    """
+    from app.models.knowledge import KnowledgeVersion
+
+    version = (
+        await KnowledgeVersion.filter(
+            document__source_url=source_url,
+            approval_status=ApprovalStatus.APPROVED,
+            is_current=True,
+            chunk_optional=True,
+        )
+        .select_related("document")
+        .first()
+    )
+    if version is None or version.approved_by is None or version.approved_at is None:
+        return None
+    approved_at_date = version.approved_at.date() if isinstance(version.approved_at, datetime) else version.approved_at
+    return ApprovedFallbackTemplate(
+        template_id=f"kv:{version.version_id}",
+        version=version.version_label,
+        body=template_body,
+        body_sha256=fallback_body_checksum(template_body),
+        approval_status=version.approval_status,
+        is_current=version.is_current,
+        approved_by=version.approved_by,
+        approved_at=approved_at_date,
+    )
+
+
 class RagGuideGenerator:
     def __init__(self, search: ApprovedKnowledgeSearchService, model: ChatModel | None) -> None:
         self.search = search
@@ -111,9 +186,23 @@ class RagGuideGenerator:
         """Reject revocation or template changes during the provider call."""
         template = artifact.admission.fallback_template
         if template is not None:
-            current = await DrugCautionContent.get_or_none(pk=template.template_id)
-            if approved_fallback(current) != template:
-                raise GuideGenerationError("template_changed")
+            if template.template_id.startswith("kv:"):
+                # KnowledgeVersion 기반 고정 템플릿 재검증 (chunk_optional 레코드)
+                from app.models.knowledge import KnowledgeVersion
+
+                version = await KnowledgeVersion.get_or_none(version_id=template.template_id[3:])
+                if (
+                    version is None
+                    or not version.is_current
+                    or version.approval_status is not ApprovalStatus.APPROVED
+                    or not version.chunk_optional
+                    or template.body_sha256 != fallback_body_checksum(template.body)
+                ):
+                    raise GuideGenerationError("template_changed")
+            else:
+                current = await DrugCautionContent.get_or_none(pk=template.template_id)
+                if approved_fallback(current) != template:
+                    raise GuideGenerationError("template_changed")
             return
         captured = ApprovedKnowledgeResult(
             ApprovedKnowledgeOutcome.FOUND,
