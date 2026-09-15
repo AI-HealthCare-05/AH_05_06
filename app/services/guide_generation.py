@@ -141,6 +141,7 @@ def approved_fallback(content: DrugCautionContent | None) -> ApprovedFallbackTem
         is_current=True,
         approved_by=reviewer,
         approved_at=approved_at,
+        source_name=content.source_name,
     )
 
 
@@ -181,6 +182,7 @@ async def knowledge_doc_fallback(source_url: str, template_body: str) -> Approve
         approved_at=approved_at_date,
         source_org=version.document.source_org,
         source_url=version.document.source_url,
+        source_name=version.document.title,
         verified_at=verified_at_date,
     )
 

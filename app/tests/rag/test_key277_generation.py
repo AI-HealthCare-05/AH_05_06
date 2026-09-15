@@ -1,7 +1,7 @@
 """Synthetic API → durable queue → search/revalidation → model → DB evidence."""
 
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from hashlib import sha256
 from unittest.mock import AsyncMock, patch
 
@@ -18,7 +18,6 @@ from app.models.catalog import (
     SourceGrade,
 )
 from app.models.knowledge import KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion
-from app.services.guide_generation import ESHRE_ENDOMETRIOSIS_SOURCE_URL
 from app.models.prescriptions import PrescriptionItem
 from app.models.visits import (
     GuideDocument,
@@ -33,7 +32,7 @@ from app.services.approved_knowledge_search import (
     ApprovedKnowledgeSearchService,
 )
 from app.services.chatbot import ChatModelError, ModelAnswer
-from app.services.guide_generation import KEY82_GENERATION_APPROVAL, RagGuideGenerator
+from app.services.guide_generation import ESHRE_ENDOMETRIOSIS_SOURCE_URL, KEY82_GENERATION_APPROVAL, RagGuideGenerator
 from app.services.guide_generation_jobs import process_next_generation
 from app.tests.guide_apis.test_guide_generate import (
     GenerateGuideTestCase,
@@ -73,7 +72,7 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
 
     async def _make_eshre_fixture(self) -> None:
         """자궁내막증 생활관리 고정 템플릿에 필요한 ESHRE chunk_optional 레코드를 생성한다."""
-        _approved_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+        _approved_at = datetime(2026, 9, 1, tzinfo=datetime.UTC)
         doc = await KnowledgeDocument.create(
             source_key="eshre-endometriosis-2022-fixture",
             title="ESHRE Guideline: Endometriosis (2022)",

@@ -25,6 +25,7 @@ class GuideSourceResponse(StrictModel):
     chunk_id: str | None = None
     source_org: str | None = None
     source_url: str | None = None
+    source_name: str | None = None
     version: str
     verified_at: date | None = None
     score: float | None = None

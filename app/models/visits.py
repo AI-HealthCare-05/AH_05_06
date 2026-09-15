@@ -281,6 +281,7 @@ class GuideSectionSourceSnapshot(models.Model):
     chunk_id = fields.CharField(max_length=36, null=True)
     source_org = fields.CharField(max_length=200, null=True)
     source_url = fields.CharField(max_length=1000, null=True)
+    source_name = fields.CharField(max_length=500, null=True)
     version = fields.CharField(max_length=100)
     verified_at = fields.DateField(null=True)
     score = fields.FloatField(null=True)
