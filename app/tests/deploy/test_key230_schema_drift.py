@@ -1,6 +1,6 @@
 """양방향 표·컬럼 drift와 실패 종료 계약. 실제 DB는 QA 기록에서 별도 검증한다."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -26,12 +26,35 @@ async def test_comparison_and_exit(expected, live, gaps, monkeypatch, capsys):
     assert bool(output.err) == any(gaps)
 
 
-async def test_connection_closed_on_query_failure(monkeypatch):
+async def test_connection_closed_on_init_failure(monkeypatch):
     monkeypatch.setattr(checker.Tortoise, "init", AsyncMock(side_effect=RuntimeError("unavailable")))
     close = AsyncMock()
     monkeypatch.setattr(checker.Tortoise, "close_connections", close)
     with pytest.raises(RuntimeError, match="unavailable"):
         await checker._gaps()
+    close.assert_awaited_once()
+
+
+@pytest.mark.parametrize("first_query_succeeds", [False, True])
+async def test_connection_closed_on_query_failure(monkeypatch, first_query_succeeds):
+    init = AsyncMock()
+    failure = RuntimeError("query unavailable")
+    results = [[{"name": "synthetic_db"}], failure] if first_query_succeeds else [failure]
+    query = AsyncMock(side_effect=results)
+    connection = Mock(execute_query_dict=query)
+    get_connection = Mock(return_value=connection)
+    close = AsyncMock()
+    monkeypatch.setattr(checker.Tortoise, "init", init)
+    monkeypatch.setattr(checker.Tortoise, "get_connection", get_connection)
+    monkeypatch.setattr(checker.Tortoise, "close_connections", close)
+
+    with pytest.raises(RuntimeError, match="query unavailable") as raised:
+        await checker._gaps()
+
+    assert raised.value is failure
+    init.assert_awaited_once_with(config=checker.TORTOISE_ORM)
+    get_connection.assert_called_once_with("default")
+    assert query.await_count == (2 if first_query_succeeds else 1)
     close.assert_awaited_once()
 
 
