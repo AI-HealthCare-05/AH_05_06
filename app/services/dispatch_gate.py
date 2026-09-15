@@ -153,7 +153,11 @@ async def _source_documents_are_deleted(visit_id: int, storage: StorageProbe) ->
     """원본 행이 남아 있으면 삭제를 확인할 수 없으므로 발송을 막는다.
 
     파일 존재는 미삭제이고, 파일 부재는 삭제 이력 없이 삭제를 증명하지
-    못한다. 행이 없는 진료만 원본 비연결로 통과한다.
+    못한다. 행이 없는 진료만 원본 비연결로 통과한다. 이는 KEY-349가
+    명시적인 원본 삭제 완료 기록을 도입하기 전까지 적용하는 fail-closed
+    판정이다. 발송 허용을 위해 MedicalDocument 행 자체를 삭제하면 안 된다.
+    KEY-349가 삭제 완료 기록을 확정하면 이 함수가 그 기록을 기준으로
+    판정하도록 교체한다.
     """
     docs = await MedicalDocument.filter(visit_id=visit_id).all()
     if not docs:

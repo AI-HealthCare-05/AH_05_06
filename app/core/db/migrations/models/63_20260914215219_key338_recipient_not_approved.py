@@ -10,6 +10,9 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
 
 async def downgrade(db: BaseDBAsyncClient) -> str:
     return """
+        UPDATE `guide_message`
+        SET `hold_reason` = 'NOT_APPROVED'
+        WHERE `hold_reason` = 'RECIPIENT_NOT_APPROVED';
         ALTER TABLE `guide_message` MODIFY COLUMN `hold_reason` VARCHAR(19) COMMENT 'INVALID_PHONE: INVALID_PHONE\\nNO_CREDIT: NO_CREDIT\\nNOT_APPROVED: NOT_APPROVED\\nSAFETY_CHECK_FAILED: SAFETY_CHECK_FAILED\\nSOURCE_NOT_DELETED: SOURCE_NOT_DELETED\\nBOOKING_URL_MISSING: BOOKING_URL_MISSING';"""
 
 
