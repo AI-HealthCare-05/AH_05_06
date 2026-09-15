@@ -171,11 +171,11 @@ class TestDeprecateVersion(TestCase):
     async def test_deprecate_draft_changes_status(self) -> None:
         prepared = await self._ingest_draft()
 
-        await KnowledgeApprovalService().deprecate(prepared.version_id, deprecated_by="권일준")
+        await KnowledgeApprovalService().deprecate(prepared.version_id, deprecated_by="test-operator")
 
         version = await KnowledgeVersion.get(version_id=prepared.version_id)
         assert version.approval_status is ApprovalStatus.DEPRECATED
-        assert version.deprecated_by == "권일준"
+        assert version.deprecated_by == "test-operator"
         assert version.deprecated_at is not None
 
     async def test_deprecate_approved_version_is_rejected(self) -> None:
@@ -192,11 +192,11 @@ class TestDeprecateVersion(TestCase):
         )
 
         with pytest.raises(ValueError, match="KNOWLEDGE_VERSION_NOT_DEPRECATABLE"):
-            await KnowledgeApprovalService().deprecate(prepared.version_id, deprecated_by="권일준")
+            await KnowledgeApprovalService().deprecate(prepared.version_id, deprecated_by="test-operator")
 
     async def test_deprecate_nonexistent_version_raises(self) -> None:
         with pytest.raises(ValueError, match="KNOWLEDGE_VERSION_NOT_FOUND"):
-            await KnowledgeApprovalService().deprecate("00000000-0000-0000-0000-000000000000", deprecated_by="권일준")
+            await KnowledgeApprovalService().deprecate("00000000-0000-0000-0000-000000000000", deprecated_by="test-operator")
 
 
 # ---------------------------------------------------------------------------
