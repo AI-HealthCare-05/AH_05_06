@@ -521,9 +521,11 @@ class GuideMessageHold(StrEnum):
     #: (`GuideService.approve`) 정상적으로는 안 나와야 하지만, 승인을 거둔
     #: 뒤(`UNAPPROVED`)에도 예약 줄이 CANCELED로 안 꺼지는 경합을 방어한다.
     NOT_APPROVED = "NOT_APPROVED"
-    #: 생성 전·후 안전검증을 통과하지 못했다 — KEY-250.
-    #: 현재 생성 후 안전검증을 나타내는 확정 필드·이벤트가 없어 게이트가 이
-    #: 값을 만들지는 않는다. 안전검증 계약이 확정되기 전까지 도달 불가다.
+    #: 생성 전·후 안전검증을 통과하지 못했다 — KEY-289.
+    #: dispatch_gate.py 에 게이트가 있지만 현재 운영 경로에서는 도달하지 않는다.
+    #: POST_GENERATE BLOCK 레코드는 guide_document=None 으로만 기록되므로
+    #: guide_document_id 기반 질의로 찾을 수 있는 줄이 존재하지 않는다.
+    #: 사후 비동기 안전검증 흐름이 추가되면 비로소 이 값이 생성된다.
     SAFETY_CHECK_FAILED = "SAFETY_CHECK_FAILED"
     #: 원본 의료문서가 아직 삭제되지 않았다 — KEY-250. 환자에게 안내가
     #: 나가기 전에, 그 근거가 된 원본 파일이 우리 서버에서 지워졌는지
@@ -803,6 +805,11 @@ class GuideSafetyCheck(models.Model):
     actor_id 없음 — 시스템 자동 실행이므로 사람 행위자가 없다.
     생성 전 차단은 문서가 없으므로 generation_job에 연결한다.
     환자정보·OCR 원문·전체 생성문은 담지 않는다.
+
+    POST_GENERATE + BLOCK + guide_document 조합은 현재 존재하지 않는다.
+    BLOCK이 나면 안내문 생성이 중단되므로(record_failure 참조) guide_document가
+    만들어지지 않고, BLOCK 레코드는 항상 guide_document=None으로 기록된다.
+    사후 비동기 안전검증 흐름이 추가되면 이 조합이 생길 수 있다.
     """
 
     guide_safety_check_id = fields.BigIntField(primary_key=True)
@@ -944,3 +951,42 @@ class PatientUsageEvent(models.Model):
             ("guide_document", "created_at"),
             ("event_type", "created_at"),
         )
+
+
+class ChatbotSubmission(models.Model):
+    """물음 하나에 열쇠 하나 — 같은 열쇠가 두 번 와도 모델은 한 번만 부른다 (KEY-328).
+
+    **원문을 담지 않는다.** 물음도 답도 여기 안 들어온다. `PatientUsageEvent` 와
+    같은 약속이고, 원본 삭제·토큰 비노출과 같은 방향이다 — 환자 질문·답변을
+    영구 보관하지 않는다(이희진 님 결정, 2026-09-14).
+
+    **그러면 답은 어디 있나.** Redis 에 5분만 둔다. 막으려는 것이 두 번 누름과
+    재시도인데 그것은 거의 다 몇 초 안에 일어난다.
+
+    **그러면 이 줄은 왜 영속인가.** Redis 만으로는 「이용 기록도 한 줄」
+    (인수조건 2)이 5분까지만 지켜진다. 5분 뒤 같은 열쇠가 오면 캐시가 비어
+    모델을 다시 부르고 기록이 두 줄이 된다. 이 줄이 있으면 그때 **답을 못
+    돌려주더라도 두 번 세는 것은 막는다** — `CHATBOT_ANSWER_EXPIRED` 로 막는다.
+
+    `unique_together` 는 `PatientFeedback` 과 같은 모양이다. 열쇠는 **그 안내문
+    안에서만** 유일하므로 다른 안내문의 같은 열쇠와 안 부딪힌다.
+    """
+
+    chatbot_submission_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="chatbot_submissions",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    guide_document_id: int
+    #: 화면이 만든 `submission_id` 의 sha256.
+    idempotency_digest = fields.CharField(max_length=64)
+    #: 물음의 sha256. **같은 열쇠에 다른 물음**을 가르는 데만 쓴다 — 되돌려
+    #: 주기 위한 것이 아니라 「이 열쇠는 저 물음의 것이다」를 확인하는 용도다.
+    question_digest = fields.CharField(max_length=64)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "chatbot_submission"
+        unique_together = (("guide_document", "idempotency_digest"),)

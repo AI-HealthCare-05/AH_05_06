@@ -13,6 +13,16 @@
 
 /* 기간 — 원문은 「2026-08-05 ~ 2026-08-11」처럼 시작과 끝을 보인다.
    고르는 것은 흔한 폭 몇 가지로 두고, 값은 날짜 둘로 보낸다. */
+/* 재요청은 기존 결과를 반환할 수 있으므로 새 예약이라고 단정하지 않는다. */
+function messageResendResultHtml(body) {
+  var state = MESSAGE_STATE[body.status];
+  return '<h2 class="modal__title" id="modal-title">재발송 요청 결과</h2>' +
+    '<p class="modal__note">메시지 ' + esc(body.guide_message_id) + ' · ' +
+    esc(state ? state.say : '상태 확인 필요') + '</p>' +
+    '<p class="modal__note">이미 요청한 건은 기존 재발송 결과를 표시합니다.</p>' +
+    '<div class="modal__acts"><button class="button-primary" type="button" data-close>확인</button></div>';
+}
+
 var HISTORY_SPANS = [
   { days: 7, say: "최근 7일" },
   { days: 1, say: "오늘" },

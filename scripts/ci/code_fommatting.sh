@@ -1,15 +1,12 @@
 set -eo pipefail
 
-# 색은 붙으면 좋고 없어도 그만이다. **`tput` 을 그냥 부르면 안 된다** — `TERM` 이
-# 없는 셸(CI 단계·`sh -c`·비대화형)에서 「No value for $TERM」으로 죽고, `set -e`
-# 아래라 그 자리에서 스크립트가 끝난다. 종료코드 2 로 죽으면서 정작 검사는 한 번도
-# 안 돈다 — 통과한 줄 알고 넘어가게 된다 (KEY-308).
-color() { command -v tput >/dev/null 2>&1 && tput "$@" 2>/dev/null || true; }
-
-COLOR_GREEN=$(color setaf 2)
-COLOR_BLUE=$(color setaf 4)
-COLOR_RED=$(color setaf 1)
-COLOR_NC=$(color sgr0)
+# 색은 `scripts/lib.sh` 한 곳에서 온다 — KEY-345.
+#
+# 예전에는 이 파일이 제 `color()` 를 갖고 있었다(KEY-308). 그것은 `tput` 이
+# **죽는 것**만 막고 **터미널인지**(`[ -t 1 ]`)는 안 봤다. 그래서 CI 로그를 파일로
+# 흘리면 `ESC[32m` 이 그대로 박혔다.
+# shellcheck source=scripts/lib.sh
+source "$(dirname "$0")/../lib.sh"
 
 cd "$(dirname "$0")/../.."
 
