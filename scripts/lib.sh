@@ -23,7 +23,14 @@ _supports_color() {
   [ -t 1 ] || return 1                        # 터미널이 아니다
   [ -z "${NO_COLOR:-}" ] || return 1          # 관례 — no-color.org
   command -v tput >/dev/null 2>&1 || return 1 # tput 이 없는 최소 이미지가 있다
-  tput setaf 1 >/dev/null 2>&1                # TERM 이 있어도 못 하는 단말이 있다
+
+  # **아래에서 실제로 부르는 넷을 그대로 재 본다** (`2heej` `#318` 리뷰).
+  # 하나만 재면, 그것은 되는데 다른 것이 안 되는 단말에서 `if` 본문이 죽는다 —
+  # 본문은 조건 자리가 아니라 `set -e` 가 그대로 잡는다. 고치려던 것과 같은 모양이다.
+  tput setaf 2 >/dev/null 2>&1 &&
+    tput setaf 4 >/dev/null 2>&1 &&
+    tput setaf 1 >/dev/null 2>&1 &&
+    tput sgr0 >/dev/null 2>&1
 }
 
 # **`if` 안에서 부른다.** `set -e` 는 조건 자리의 실패를 죽음으로 치지 않는다 —

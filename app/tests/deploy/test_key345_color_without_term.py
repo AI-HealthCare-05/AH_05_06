@@ -26,13 +26,26 @@
 """
 
 import os
+import pty
 import re
 import subprocess
+import tempfile
+from pathlib import Path
 
 from app.tests.deploy.conftest import ROOT, read
 
 LIB = "scripts/lib.sh"
-SOURCING_SCRIPTS = ("scripts/deployment.sh", "scripts/certbot.sh")
+
+#: 색을 쓰는 셸 전부. `scripts/ci/` 도 센다 — 거기 셋은 KEY-308 때 제 `color()` 를
+#: 따로 갖고 있었고, 그것은 `tput` 이 **죽는 것**만 막고 **터미널인지**는 안 봤다.
+#: 그래서 CI 로그를 파일로 흘리면 `ESC[32m` 이 그대로 박혔다 (`2heej` `#318` 리뷰).
+SOURCING_SCRIPTS = (
+    "scripts/deployment.sh",
+    "scripts/certbot.sh",
+    "scripts/ci/run_test.sh",
+    "scripts/ci/check_mypy.sh",
+    "scripts/ci/code_fommatting.sh",
+)
 
 #: 색 이름 넷. 스크립트들이 실제로 쓰는 것과 같아야 한다.
 COLORS = ("COLOR_GREEN", "COLOR_BLUE", "COLOR_RED", "COLOR_NC")
@@ -70,7 +83,7 @@ def test_tput_is_called_from_one_guarded_place_only() -> None:
     `deployment.sh` · `certbot.sh` 가 정확히 그랬다.
     """
     offenders = {}
-    for path in sorted((ROOT / "scripts").glob("*.sh")):
+    for path in sorted((ROOT / "scripts").rglob("*.sh")):
         rel = path.relative_to(ROOT).as_posix()
         if rel == LIB:
             continue
@@ -133,3 +146,61 @@ def test_every_script_that_uses_colors_sources_the_library() -> None:
         if not any(f"${{{name}}}" in text for name in COLORS):
             continue
         assert "lib.sh" in text, f"{rel} 이 색을 쓰면서 {LIB} 를 안 읽는다"
+
+
+def _run_on_a_pty(body: str, env_overrides: dict[str, str], *, drop: tuple[str, ...] = ()) -> tuple[int, str]:
+    """**진짜 터미널을 붙여** 돌리고, 결과는 파일로 받는다 — `2heej` `#318` 리뷰 3번.
+
+    다른 검사들은 `capture_output=True` 라 stdout 이 파이프다. 그러면 `[ -t 1 ]`
+    이 늘 거짓이라 **「터미널 아님」 가지만** 탄다 — `TERM` 을 지우든 말든 같다.
+    정작 이 티켓이 시작된 사고(**터미널인데 `TERM` 이 없어 `tput` 이 죽는 것**)의
+    가지가 자동 검사로는 한 번도 안 돌고 있었다.
+
+    🚩 **pty 는 `[ -t 1 ]` 을 참으로 만드는 데만 쓰고, 답은 파일로 받는다.**
+    처음에는 master 쪽에서 읽어 오려 했는데 빈 문자열만 왔다 — 자식이 끝난 뒤
+    slave 가 다 닫히면 macOS 의 master 읽기는 남은 것을 안 주고 `EIO` 로 끝난다.
+    터미널을 흉내내는 것과 출력을 받아 오는 것을 섞지 않는다.
+    """
+    env = {key: value for key, value in os.environ.items() if key not in drop}
+    env.update(env_overrides)
+
+    with tempfile.TemporaryDirectory() as folder:
+        answer = Path(folder) / "answer"
+        parent, child = pty.openpty()
+        try:
+            done = subprocess.run(
+                ["bash", "-c", f'set -eo pipefail; source {LIB}; {body} > "{answer}"'],
+                cwd=ROOT,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=child,
+                stderr=child,
+            )
+        finally:
+            os.close(child)
+            os.close(parent)
+        return done.returncode, answer.read_text(encoding="utf-8") if answer.exists() else ""
+
+
+def test_a_real_terminal_without_term_does_not_kill_the_script() -> None:
+    """🚩 **이 티켓이 시작된 그 상황이다.**
+
+    터미널에 붙어 있는데 `TERM` 이 없다. 고치기 전에는 여기서 `tput` 이
+    「No value for $TERM」으로 죽고 `set -eo pipefail` 이 스크립트를 끝냈다.
+    """
+    code, answer = _run_on_a_pty('printf "%s" "${#COLOR_GREEN}"', {}, drop=("TERM",))
+
+    assert code == 0, f"터미널인데 TERM 이 없자 코드 {code} 로 죽었다"
+    assert answer == "0", f"TERM 이 없는데 색이 잡혔다(길이 {answer!r})"
+
+
+def test_a_real_terminal_with_term_still_gets_colour() -> None:
+    """반대쪽도 재 둔다 — 걷어낸 것이 너무 많으면 여기서 걸린다.
+
+    이 검사가 없으면 `_supports_color` 를 `return 1` 하나로 바꿔도 위의 검사들이
+    전부 통과한다. **색이 영영 안 나오는 것**도 고장이다.
+    """
+    code, answer = _run_on_a_pty('printf "%s" "${#COLOR_GREEN}"', {"TERM": "xterm-256color"})
+
+    assert code == 0, "진짜 터미널에서 죽었다"
+    assert answer not in ("", "0"), f"진짜 터미널인데 색이 비었다(길이 {answer!r})"
