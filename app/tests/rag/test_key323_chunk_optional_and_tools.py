@@ -5,12 +5,16 @@
 3. 청크 없는 레코드 승인 (chunk_optional)
 4. 일반 문서는 여전히 청크 없이 승인 불가
 5. 자궁내막증 고정 템플릿 연결 (knowledge_doc_fallback, revalidate_artifact)
+6. PCOS Monash v1 실제 콘텐츠 계약 (파일이 있을 때만 실행)
 """
 
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -532,3 +536,115 @@ def test_pcos_life_guard_excluded_for_pcos_non_life_section() -> None:
     """PCOS라도 life 외 섹션(medication 등)에는 가드가 포함되지 않는다."""
     instructions = _collect_instructions(disease="PCOS", section_key="medication")
     assert _PCOS_GUARD_MARKER not in instructions
+
+
+# ---------------------------------------------------------------------------
+# §7 — PCOS Monash v1 실제 콘텐츠 계약 (KEY-323 인수조건)
+# 파일이 없으면 건너뜀 — CI에서는 실행하지 않고 로컬 적재 전 검증용으로 사용한다.
+# ---------------------------------------------------------------------------
+
+_PCOS_PDF_PATH = Path(__file__).resolve().parents[3] / "key276-sources" / "pcos-monash-2023-v1.pdf"
+_PCOS_MD5 = "75bb875708c151846416e225adfc54e0"
+_PCOS_STRIP_HEADERS = (
+    "International Evidence-based Guideline for the assessment and management of polycystic ovary syndrome 2023",
+    "No. / Living# Type Recommendation / Grade/Quality",
+)
+_EXPECTED_RECOMMENDATIONS = {
+    "3.1.1",
+    "3.1.2",
+    "3.1.3",
+    "3.1.4",
+    "3.1.5",
+    "3.1.6",
+    "3.1.7",
+    "3.1.8",
+    "3.1.9",
+    "3.1.10",
+    "3.2.1",
+    "3.2.2",
+    "3.2.3",
+    "3.3.1",
+    "3.3.2",
+    "3.3.3",
+    "3.3.4",
+    "3.4.1",
+    "3.4.2",
+    "3.4.3",
+    "3.4.4",
+    "3.4.5",
+    "3.4.6",
+    "3.4.7",
+    "3.5.1",
+    "3.5.2",
+    "3.6.1",
+    "3.6.2",
+    "3.6.3",
+    "3.6.4",
+    "3.6.5",
+}
+# 약물·불임·진단·IVF 관련 — 35~38쪽(섹션 3)에 없어야 한다
+_EXCLUDED_TERMS = (
+    "drug",
+    "medication",
+    "pharmacolog",
+    "infertil",
+    "IVF",
+    "fertility",
+    "diagnos",
+    "metformin",
+    "clomiphene",
+    "letrozole",
+    "ovulation induction",
+)
+
+_pcos_pdf_required = pytest.mark.skipif(
+    not _PCOS_PDF_PATH.exists(),
+    reason="PCOS Monash PDF 없음 — key276-sources/pcos-monash-2023-v1.pdf 를 배치해야 실행된다",
+)
+
+
+def _load_pcos_chunks():
+    from app.services.knowledge_extraction import extract_text_pdf
+
+    pdf_bytes = _PCOS_PDF_PATH.read_bytes()
+    return extract_text_pdf(
+        pdf_bytes,
+        page_from=35,
+        page_to=38,
+        strip_headers=_PCOS_STRIP_HEADERS,
+        strip_page_numbers=True,
+    )
+
+
+@_pcos_pdf_required
+def test_pcos_monash_v1_md5_matches() -> None:
+    """적재 대상 파일이 Jira 확정 MD5(75bb8757…)와 일치한다."""
+    digest = hashlib.md5(_PCOS_PDF_PATH.read_bytes()).hexdigest()
+    assert digest == _PCOS_MD5, f"MD5 불일치: {digest}"
+
+
+@_pcos_pdf_required
+def test_pcos_monash_v1_contains_all_31_recommendations() -> None:
+    """35~38쪽에 권고 3.1.1~3.6.5 31개가 모두 포함된다."""
+    full = " ".join(c.body for c in _load_pcos_chunks())
+    found = set(re.findall(r"3\.\d+\.\d+", full))
+    missing = _EXPECTED_RECOMMENDATIONS - found
+    assert not missing, f"누락된 권고: {sorted(missing)}"
+    assert len(_EXPECTED_RECOMMENDATIONS) == 31
+
+
+@_pcos_pdf_required
+def test_pcos_monash_v1_excludes_drug_infertility_diagnosis_ivf() -> None:
+    """35~38쪽 청크에 약물·불임·진단·IVF 관련 용어가 없다."""
+    full = " ".join(c.body for c in _load_pcos_chunks()).lower()
+    found = [term for term in _EXCLUDED_TERMS if term.lower() in full]
+    assert not found, f"제외되어야 할 용어가 포함됨: {found}"
+
+
+@_pcos_pdf_required
+def test_pcos_monash_v1_page_range_excludes_other_chapters() -> None:
+    """페이지 범위 적용 후 2장·4장 문장이 포함되지 않는다."""
+    full = " ".join(c.body for c in _load_pcos_chunks()).lower()
+    # 35쪽 이전(2장)과 39쪽 이후(4장) 섹션 번호가 없어야 한다
+    assert not re.search(r"\b2\.\d+\.\d+\b", full), "2장 권고 번호가 포함됨"
+    assert not re.search(r"\b4\.\d+\.\d+\b", full), "4장 권고 번호가 포함됨"
