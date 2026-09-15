@@ -11,6 +11,7 @@
       "license_verified": true,
       "approve": false,
       "path": "/private/path/pcos-monash-2023-v1.pdf",
+      "section_key": "life",
       "page_from": 35,
       "page_to": 38,
       "strip_headers": [

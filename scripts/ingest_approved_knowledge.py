@@ -92,6 +92,9 @@ def _source_identity_request(source: dict[str, Any]) -> KnowledgeIngestionReques
         dataset = MfdsDataset(_required_text(source, "dataset"))
         source_kind = KnowledgeSourceKind.STRUCTURED_API
         source_url = MFDS_ENDPOINTS[dataset].source_url
+    elif input_type == "template_only":
+        source_kind = KnowledgeSourceKind.TEXT_PDF
+        source_url = _required_text(source, "source_url")
     else:
         source_kind = KnowledgeSourceKind(input_type)
         source_url = _required_text(source, "source_url")
@@ -195,6 +198,7 @@ async def _build_request(
         page_to=int(page_to_raw) if isinstance(page_to_raw, (int, float)) else None,
         strip_headers=tuple(h for h in strip_headers_raw if isinstance(h, str)),
         strip_page_numbers=source.get("strip_page_numbers") is True,
+        section_key=source.get("section_key") or None,
     )
 
 

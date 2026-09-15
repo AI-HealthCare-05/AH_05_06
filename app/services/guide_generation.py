@@ -376,16 +376,17 @@ class RagGuideGenerator:
         fixed_template: bool = False,
         disease: str = "",
     ) -> GeneratedGuideSection:
-        search_result, validation, reason = await self._search_context(
-            hospital_id=hospital_id,
-            section_key=section_key,
-            query=query,
-            infrastructure_exhausted=infrastructure_exhausted,
-        )
         if fixed_template:
             search_result = KnowledgeSearchResult(KnowledgeSearchOutcome.NO_EVIDENCE)
-            if reason != "search_infrastructure_exhausted":
-                reason = "fixed_approved_template"
+            validation = GuideSourceValidation()
+            reason = "fixed_approved_template"
+        else:
+            search_result, validation, reason = await self._search_context(
+                hospital_id=hospital_id,
+                section_key=section_key,
+                query=query,
+                infrastructure_exhausted=infrastructure_exhausted,
+            )
         admission = admit_generation_context(
             search_result,
             evaluation_approval=KEY82_GENERATION_APPROVAL,
