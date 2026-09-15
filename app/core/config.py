@@ -54,6 +54,29 @@ def otp_solapi_prod_gate_open() -> bool:
     return has_env and has_flag
 
 
+# 예약 문자(안내·확인·소진·재진) 실발송 좁은문 — KEY-338, OTP 좁은문과 같은
+# 이유로 같은 모양이다. SMS_PROVIDER=solapi로 바뀌는 순간 워커가 곧바로
+# 시드 환자의 가짜 번호로 실제 문자를 쏘기 시작할 수 있다(KEY-336이 Pilot을
+# solapi로 바꾸는 그 순간이 정확히 이 위험이다) — 그래서 배포 때마다 다시
+# 넣어야 하는 CLI 플래그를 하나 더 요구한다.
+#
+# ENV로 안 가른다 — Pilot이 과도기에 ENV=dev로 솔라피를 켤 수 있어서,
+# ENV=prod일 때만 막으면 구멍이 생긴다(ApprovedPhonesOnlyDelivery와 같은
+# 이유, KEY-284).
+SMS_DISPATCH_ENABLED_ENV = "SMS_DISPATCH_ENABLED"
+SMS_DISPATCH_ENABLED_FLAG = "--sms-dispatch-confirm"
+
+
+def sms_dispatch_gate_open() -> bool:
+    """SMS_DISPATCH_ENABLED 환경변수와 --sms-dispatch-confirm 플래그가
+    둘 다 있어야 True. SMS_PROVIDER=solapi일 때만 이 게이트를 본다 —
+    mock은 이 좁은문과 무관하다(호출하는 쪽의 책임).
+    """
+    has_env = is_flag_env_value_true(os.environ.get(SMS_DISPATCH_ENABLED_ENV))
+    has_flag = SMS_DISPATCH_ENABLED_FLAG in sys.argv[1:]
+    return has_env and has_flag
+
+
 class SmsProvider(StrEnum):
     MOCK = "mock"
     SOLAPI = "solapi"

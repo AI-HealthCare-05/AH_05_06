@@ -12,7 +12,13 @@ from tortoise import Tortoise
 
 from ai_worker.core import config, default_logger
 from ai_worker.tasks.ocr_task import process_ocr_job
-from app.core.config import Config
+from app.core.config import (
+    SMS_DISPATCH_ENABLED_ENV,
+    SMS_DISPATCH_ENABLED_FLAG,
+    Config,
+    SmsProvider,
+    sms_dispatch_gate_open,
+)
 from app.core.db.databases import WORKER_TORTOISE_ORM
 from app.core.redis_client import close_redis, get_redis
 from app.documents.service import OCR_JOB_QUEUE
@@ -60,9 +66,26 @@ async def _run_message_dispatch_loop() -> None:
     SMS 설정 오류(SMS_PROVIDER=solapi인데 시크릿이 비어 있는 등)로 발송기
     생성 자체가 실패해도, 그건 이 루프만 못 뛰는 것이지 OCR 처리까지 죽을
     이유는 없다 — 두 파이프라인은 서로 독립적이어야 한다(2heej 리뷰).
+
+    SMS_PROVIDER=solapi로 바뀌는 순간 워커가 곧바로 실제 발송을 시작할 수
+    있다 — KEY-336이 Pilot을 solapi로 바꾸는 그 순간이 정확히 이 위험이다.
+    SMS_DISPATCH_ENABLED 좁은문(KEY-338)이 안 열려 있으면 이 루프 자체를
+    안 돈다. SCHEDULED로 그대로 두고 HELD로 바꾸지 않는다 — 사고 중이던
+    문자가 좁은문을 열어도 영구히 안 나가면 안 된다. OCR·안내 생성 루프는
+    이 루프와 무관하게 계속 돈다.
     """
+    cfg = Config()
+    if cfg.SMS_PROVIDER is SmsProvider.SOLAPI and not sms_dispatch_gate_open():
+        default_logger.warning(
+            "예약 문자 발송 좁은문 안 열림 (%s + %s 필요) — 이 프로세스는 예약 문자를 안 보낸다. "
+            "SCHEDULED로 그대로 남고, OCR·안내 생성은 계속 돈다 (KEY-338)",
+            SMS_DISPATCH_ENABLED_ENV,
+            SMS_DISPATCH_ENABLED_FLAG,
+        )
+        return
+
     try:
-        sender = build_sms_sender(Config())
+        sender = build_sms_sender(cfg)
     except Exception:
         default_logger.exception("문자 발송기 생성 실패 — 이 프로세스에서는 예약 문자 발송을 하지 않는다")
         return

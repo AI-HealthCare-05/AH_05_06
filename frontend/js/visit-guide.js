@@ -62,6 +62,7 @@ function canPreviewApprovedGuide(currentGuide) {
   /* **현황은 자기 번호표를 쓴다.** 안내문과 나눠 쓰면 서로를 취소시킨다 —
      둘을 같이 부르므로 뒤에 부른 쪽이 앞의 것을 늘 죽인다. */
   var timelineSeq = 0;
+  var previewReturnFocus = null;
   var section = { guide: "medication", final: "medication" };
 
   function el(id) {
@@ -527,7 +528,16 @@ function canPreviewApprovedGuide(currentGuide) {
   function closeModal() {
     var box = el("modal");
     if (box) box.hidden = true;
+    if (previewReturnFocus && previewReturnFocus.isConnected) previewReturnFocus.focus();
+    previewReturnFocus = null;
   }
+
+  document.addEventListener("keydown", function (event) {
+    var box = el("modal");
+    if (event.key === "Escape" && box && !box.hidden && box.querySelector("iframe[data-patient-preview]")) {
+      closeModal();
+    }
+  });
 
   /* 「현황 보기」가 어디로 가는지는 그것을 그리는 `guide-view.js` 가 정한다
      (KEY-302). 이 화면이 할 일은 제 모달을 닫는 것뿐이다. */
@@ -543,6 +553,7 @@ function canPreviewApprovedGuide(currentGuide) {
        별도 미리보기 HTML을 만들면 관리 화면과 환자 카드가 다시 갈린다. */
     var preview = t.closest("[data-status-preview]");
     if (preview) {
+      previewReturnFocus = preview;
       if (!canPreviewApprovedGuide(guide)) {
         openModal(
           '<h2 class="modal__title" id="modal-title">미리볼 수 없는 안내문입니다</h2>' +
@@ -552,8 +563,9 @@ function canPreviewApprovedGuide(currentGuide) {
       } else {
         openModal(
           '<div class="modal__top"><h2 class="modal__title" id="modal-title">안내문 미리보기</h2>' +
-            '<button class="button-ghost button-ghost--sm" type="button" data-close>닫기</button></div>' +
-            patientGuidePreviewHtml(guide.sections || [], "medication", guide.summary, guide.preview),
+            '</div>' +
+            patientGuidePreviewHtml(guide.sections || [], "medication", guide.summary, guide.preview) +
+            '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>',
         );
       }
     }
