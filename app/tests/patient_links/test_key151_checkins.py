@@ -91,7 +91,7 @@ class TestPatientCheckIn(CheckInTestCase):
         assert guide.visit_id == (await check_in.guide_document).visit_id
         assert TOKEN not in repr(check_in.__dict__)
 
-    async def test_a_second_submission_is_rejected_and_get_marks_the_round_answered(self) -> None:
+    async def test_the_same_answer_twice_is_accepted_and_get_marks_the_round_answered(self) -> None:
         hospital = await make_hospital("KEY-151 중복 합성의원")
         await make_linked_guide(hospital)
         payload = {"medication": "missing", "pain": {"had": False, "score": None, "types": []}}
@@ -101,9 +101,11 @@ class TestPatientCheckIn(CheckInTestCase):
             second = await client.post(f"/api/v1/checkins/{TOKEN}", json=payload)
             form = await client.get(f"/api/v1/checkins/{TOKEN}")
 
+        # **같은 답을 다시 보내면 성공이다** — KEY-335. 예전에는 여기가 409 였는데,
+        # 저장은 이미 된 뒤라 두 번 누른 환자가 된 일을 실패로 봤다.
         assert first.status_code == 201
-        assert second.status_code == 409
-        assert second.json()["code"] == "CHECKIN_ALREADY_ANSWERED"
+        assert second.status_code == 201, second.text
+        assert second.json() == first.json(), "그때 그 답이 아니라 새 답을 줬다"
         assert form.json()["answered"] is True
         assert await CheckIn.all().count() == 1
 

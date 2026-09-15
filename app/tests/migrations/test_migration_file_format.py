@@ -16,6 +16,7 @@ KEY-165(`20_…`)가 손으로 쓰인 파일이라 그 값이 비어 있었고, 
 """
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from aerich.utils import decompress_dict
@@ -96,6 +97,83 @@ def test_the_last_state_matches_the_models_we_have() -> None:
 
     missing = sorted(live - snapshot)
     assert not missing, f"모델은 있는데 스냅샷에 없다 — 마지막 마이그레이션 뒤에 모델이 늘었다: {missing}"
+
+
+def _same_shape(value: Any) -> Any:
+    """스냅샷과 `describe_models()` 를 **뜻으로** 견주기 위한 정규화 — KEY-333.
+
+    둘은 같은 내용을 담고도 그냥 비교하면 **44개 모델이 전부 다르다고 나온다.**
+    까닭은 둘뿐이고, 어느 쪽도 스키마와 상관이 없다.
+
+      * `indexes`·`unique_together` 가 한쪽은 **tuple**, 한쪽은 list 다.
+        `json` 으로 찍으면 글자가 같은데 `==` 는 거짓이다.
+      * 스냅샷에는 `managed` 키가 없다 — 저장한 뒤에 생긴 칸이다.
+
+    이것을 안 걷으면 검사가 늘 빨개져서 아무도 안 본다. 걷고 나면 **진짜
+    어긋남만** 남는다(실측: develop 에서 44개 전부 일치).
+    """
+    if isinstance(value, dict):
+        return {key: _same_shape(item) for key, item in sorted(value.items()) if key != "managed"}
+    if isinstance(value, (list, tuple)):
+        return [_same_shape(item) for item in value]
+    return value
+
+
+def _drifted_fields(snapshot: Any, live: Any) -> list[str]:
+    """어긋난 **칸 이름과 갈린 키**만 뽑는다 — KEY-333.
+
+    `describe` 를 통째로 찍으면 한 모델이 백 줄이라 아무도 안 읽는다. 그러면
+    검사가 「다르다」까지만 말하고 **어디가 다른지는 사람이 다시 파야** 한다.
+    """
+    before = {field["name"]: field for field in (snapshot or {}).get("data_fields", [])}
+    after = {field["name"]: field for field in (live or {}).get("data_fields", [])}
+
+    lines: list[str] = []
+    for name in sorted(set(before) | set(after)):
+        old, new = _same_shape(before.get(name)), _same_shape(after.get(name))
+        if old == new:
+            continue
+        if old is None or new is None:
+            lines.append(f"    {name}: {'모델에만' if old is None else '스냅샷에만'} 있다")
+            continue
+        keys = sorted(key for key in set(old) | set(new) if old.get(key) != new.get(key))
+        lines.append(f"    {name}: " + ", ".join(f"{key} {old.get(key)!r} → {new.get(key)!r}" for key in keys))
+
+    return lines or ["    (칸이 아니라 모델 단위 키가 갈렸다 — indexes·unique_together·pk_field 를 봐라)"]
+
+
+def test_the_last_state_matches_the_models_field_by_field() -> None:
+    """**이름만 같아서는 모자란다** — 칸이 갈린 것도 잡는다 (KEY-333).
+
+    위 검사 둘은 **모델 이름 집합**만 본다. 그래서 「표는 그대로인데 칸 하나가
+    넓어졌다」 같은 어긋남은 통과한다. 그런데 `aerich migrate` 가 다음 diff 를
+    만들 때 쓰는 것은 이 스냅샷의 **내용**이다 — 여기가 낡으면 이미 있는 칸을
+    다시 `ADD` 하려 들고, 배포가 `Duplicate column` 으로 멈춘다(`#279` 전례).
+
+    **KEY-230 과 겹치지 않는다.** 저쪽은 「DB ↔ 모델」을 본다. 여기는 「저장소의
+    마지막 스냅샷 ↔ 모델」이라 DB 없이 돈다 — 손으로 다듬은 마이그레이션이
+    스냅샷을 흘렸는지가 이 자리에서 걸린다.
+    """
+    from tortoise import Tortoise
+
+    from app.core.db.databases import TORTOISE_APP_MODELS
+
+    Tortoise.init_models(TORTOISE_APP_MODELS, "models")
+    live = Tortoise.describe_models(serializable=True)
+    snapshot = decompress_dict(models_state(version_files()[-1]) or "")
+
+    drifted = sorted(name for name in live if _same_shape(snapshot.get(name)) != _same_shape(live.get(name)))
+    detail = "\n".join(
+        line for name in drifted for line in (f"  {name}", *_drifted_fields(snapshot.get(name), live.get(name)))
+    )
+    assert not drifted, (
+        f"{version_files()[-1].name} 의 MODELS_STATE 가 지금 모델과 다르다:\n{detail}\n"
+        "손으로 다듬은 마이그레이션이 스냅샷을 흘렸을 때 이렇게 된다.\n"
+        "**`python_type` 만 갈렸으면 파이썬 판이 다른 것이다** — 3.13 은 `Union[dict, list]`, "
+        "3.14 는 `dict | list` 로 적는다. aerich 는 이 한 칸 때문에 JSON 칸마다 "
+        "아무것도 안 바꾸는 `MODIFY COLUMN` 을 뱉는다(KEY-333 실측).\n"
+        "CI 와 같은 자리에서 다시 만들어라: `uv run --python 3.13 aerich migrate --name <설명> --offline`"
+    )
 
 
 def test_the_snapshot_carries_nothing_we_deleted() -> None:
