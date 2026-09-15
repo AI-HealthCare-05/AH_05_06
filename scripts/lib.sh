@@ -5,6 +5,48 @@
 # 있었다. 한쪽만 고치고 다른 쪽을 놓치기 쉬운 모양이었고, 실제로 **양쪽에
 # 같은 버그가 같이 들어 있었다** (이희진 님 `#133` 리뷰).
 
+# 색은 **장식이다.** 장식 때문에 배포가 멈추면 안 된다.
+#
+# 예전에는 `deployment.sh` 와 `certbot.sh` 가 각각 이렇게 잡았다.
+#
+#     COLOR_GREEN=$(tput setaf 2)
+#
+# `TERM` 이 없으면 `tput` 이 실패하고, 두 파일 맨 위의 `set -eo pipefail` 이
+# 그것을 잡아 **첫 줄에서 배포가 끝난다.** 2026-09-14 배포가 실제로 그랬다 —
+# 파이프로 답을 흘려 넣는 실행에는 `TERM` 이 없다. CI·`cron`·원격 셸도 같다.
+#
+# 그래서 **되면 쓰고 안 되면 비운다.** 색이 빠져도 글은 그대로 읽힌다.
+#
+# 네 가지를 본다. `[ -t 1 ]` 이 먼저인 것이 중요하다 — 파일로 흘릴 때 색을
+# 넣으면 로그에 `ESC[32m` 이 그대로 박혀 나중에 읽는 사람이 걷어내야 한다.
+_supports_color() {
+  [ -t 1 ] || return 1                        # 터미널이 아니다
+  [ -z "${NO_COLOR:-}" ] || return 1          # 관례 — no-color.org
+  command -v tput >/dev/null 2>&1 || return 1 # tput 이 없는 최소 이미지가 있다
+
+  # **아래에서 실제로 부르는 넷을 그대로 재 본다** (`2heej` `#318` 리뷰).
+  # 하나만 재면, 그것은 되는데 다른 것이 안 되는 단말에서 `if` 본문이 죽는다 —
+  # 본문은 조건 자리가 아니라 `set -e` 가 그대로 잡는다. 고치려던 것과 같은 모양이다.
+  tput setaf 2 >/dev/null 2>&1 &&
+    tput setaf 4 >/dev/null 2>&1 &&
+    tput setaf 1 >/dev/null 2>&1 &&
+    tput sgr0 >/dev/null 2>&1
+}
+
+# **`if` 안에서 부른다.** `set -e` 는 조건 자리의 실패를 죽음으로 치지 않는다 —
+# 맨몸으로 부르면 색을 못 쓰는 자리에서 이 파일이 스크립트를 죽인다.
+if _supports_color; then
+  COLOR_GREEN=$(tput setaf 2)
+  COLOR_BLUE=$(tput setaf 4)
+  COLOR_RED=$(tput setaf 1)
+  COLOR_NC=$(tput sgr0)
+else
+  COLOR_GREEN=""
+  COLOR_BLUE=""
+  COLOR_RED=""
+  COLOR_NC=""
+fi
+
 # `sed -i` 는 GNU 와 BSD(macOS)가 인자를 다르게 받는다. GNU 는 `-i` 뒤에 바로
 # 스크립트가 오고, BSD 는 **백업 확장자를 반드시 요구**해서 빈 문자열을 끼워
 # 넣어야 한다.

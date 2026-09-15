@@ -140,7 +140,10 @@ test('P6 정본은 실환경에서도 시작하고 응답 계약 전체를 화�
   assert.match(source, /answerMsg\.groundedSection = result\.grounded_section/);
   assert.match(source, /answerMsg\.urgent = !!result\.urgent/);
   assert.match(source, /answerMsg\.fallback = !!result\.fallback/);
-  assert.match(source, /chatbotErrorMessage\(error && error\.code\)/);
+  /* 오류 코드가 **환자 문구로** 가는 길. KEY-328 에서 그 코드를 한 번 더
+     쓰게 되어(다 쓴 열쇠 버리기) 변수로 꺼냈다 — 두 조각을 다 본다. */
+  assert.match(source, /var code = error && error\.code;/);
+  assert.match(source, /chatbotErrorMessage\(code\)/);
 });
 
 test('정상·응급·승인 근거 없음 목업 결과가 서로 구분된다', async () => {

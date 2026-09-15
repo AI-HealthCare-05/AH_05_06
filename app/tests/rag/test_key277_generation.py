@@ -1,10 +1,9 @@
 """Synthetic API → durable queue → search/revalidation → model → DB evidence."""
 
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from hashlib import sha256
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
 
 from tortoise.timezone import now
 
@@ -16,9 +15,8 @@ from app.models.catalog import (
     DrugCautionContent,
     PrescriptionSet,
     SetDisease,
-    SourceGrade,
 )
-from app.models.knowledge import KnowledgeChunkRecord, KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion
+from app.models.knowledge import KnowledgeDocument, KnowledgeVersion
 from app.models.prescriptions import PrescriptionItem
 from app.models.visits import (
     GuideDocument,
@@ -35,12 +33,13 @@ from app.services.approved_knowledge_search import (
 from app.services.chatbot import ChatModelError, ModelAnswer
 from app.services.guide_generation import KEY82_GENERATION_APPROVAL, RagGuideGenerator
 from app.services.guide_generation_jobs import process_next_generation
-from app.services.knowledge_search import EMBEDDING_DIMENSION, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION
 from app.tests.guide_apis.test_guide_generate import (
     GenerateGuideTestCase,
     attach_confirmed_ocr,
     attach_prescription,
+    make_caution_contents,
     make_clinic,
+    make_rag_sources,
     make_staff,
     make_visit,
 )
@@ -59,27 +58,7 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         self.prescription_set = await PrescriptionSet.create(
             name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
         )
-        for section in CautionSectionKey:
-            body = f"합성 승인 안내 {section.value}"
-            await DrugCautionContent.create(
-                prescription_set=self.prescription_set,
-                section_key=section,
-                body=body,
-                source_name="합성 문서",
-                source_org="합성 기관",
-                source_url="https://example.invalid/approved",
-                verified_at=date(2026, 9, 1),
-                content_version="synthetic-v1",
-                source_grade=SourceGrade.A,
-                approval_status=ApprovalStatus.APPROVED,
-                approved_key=f"{self.prescription_set.pk}:{section.value}",
-                physician_review={
-                    "reviewer": "합성 검토자",
-                    "hospital": "합성 기관",
-                    "reviewed_at": "2026-09-01",
-                    "body_sha256": sha256(body.encode()).hexdigest(),
-                },
-            )
+        await make_caution_contents(self.prescription_set)
         self.model = AsyncMock()
         self.model.generate.return_value = ModelAnswer(
             json.dumps({"body": "검증된 합성 교육 안내입니다.", "drug_names": []})
@@ -90,44 +69,7 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         self.addCleanup(self.flag.stop)
 
     async def add_sources(self, *, approved=True):
-        document = await KnowledgeDocument.create(
-            source_key=str(uuid4()),
-            title="합성 자료",
-            source_org="합성 기관",
-            source_url="https://example.invalid/source",
-            source_kind=KnowledgeSourceKind.TEXT_PDF,
-            hospital_id=self.clinic.pk,
-        )
-        version = await KnowledgeVersion.create(
-            document=document,
-            version_label="synthetic-v1",
-            source_sha256="a" * 64,
-            source_object_key="synthetic/source.pdf",
-            source_mime_type="application/pdf",
-            extractor_version="synthetic",
-            approval_status=ApprovalStatus.APPROVED if approved else ApprovalStatus.DRAFT,
-            is_current=approved,
-            current_approved_key=str(document.pk) if approved else None,
-            source_grade=SourceGrade.A,
-            license_verified=True,
-            approved_by="합성 검토자",
-            approved_at=datetime(2026, 9, 1, tzinfo=UTC),
-            verified_at=datetime(2026, 9, 1, tzinfo=UTC),
-        )
-        for section in CautionSectionKey:
-            body = f"검증된 합성 근거 {section.value}"
-            await KnowledgeChunkRecord.create(
-                version=version,
-                section_key=section.value,
-                position=list(CautionSectionKey).index(section),
-                body=body,
-                body_sha256=sha256(body.encode()).hexdigest(),
-                embedding=[1.0] + [0.0] * (EMBEDDING_DIMENSION - 1),
-                embedding_model=EMBEDDING_MODEL,
-                embedding_revision=EMBEDDING_MODEL_REVISION,
-                embedding_dimension=EMBEDDING_DIMENSION,
-            )
-        return version
+        return await make_rag_sources(self.clinic.pk, approved=approved)
 
     async def request_job(self):
         async with self.client() as client:

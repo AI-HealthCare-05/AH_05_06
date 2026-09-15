@@ -12,7 +12,7 @@ test("발송 예정 미리보기와 발송 이력 재발송 경로가 연결된�
   assert.match(screen, /data-preview-visit/);
   assert.match(screen, /data-resend-message/);
   assert.match(screen, /patientGuidePreviewHtml/);
-  assert.match(screen, /재발송이 예약되었습니다/);
+  assert.match(screen, /messageResendResultHtml\(body\)/);
 });
 
 test("관리 화면은 공용 환자 카드 렌더러만 불러온다", () => {

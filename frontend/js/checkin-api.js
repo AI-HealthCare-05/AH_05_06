@@ -185,8 +185,11 @@ function patientAuthGuidance(error) {
 
 function patientCheckinSaveFailureMessage(error) {
   var code = error && error.code;
+  /* **같은 답을 다시 보낸 것은 이제 성공이다** — KEY-335. 이 코드는 저장된 답과
+     **내용이 다를 때만** 온다. 그래서 문구도 「이미 있다」가 아니라 「다르다」로
+     말해야 환자가 무엇을 할지 안다. */
   if (code === "CHECKIN_ALREADY_ANSWERED") {
-    return "이미 저장된 기록이에요. 화면을 다시 열어 저장된 내용을 확인해 주세요.";
+    return "이미 저장한 답과 내용이 달라요. 화면을 다시 열어 저장된 내용을 확인해 주세요.";
   }
   if (code === "INVALID_REQUEST" || code === "MEDICATION_REQUIRED" || code === "UNKNOWN_ANSWER") {
     return "입력한 내용을 확인한 뒤 다시 저장해 주세요.";

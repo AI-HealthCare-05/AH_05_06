@@ -70,7 +70,12 @@ test('도움 평가 UI는 서버가 준 response_ref가 있는 답변에만 표�
 test('챗봇 응답 참조값은 URL이 아닌 응답 본문에서 받는다', () => {
   const api = read('js/chatbot-api.js');
   assert.match(api, /\/api\/v1\/chatbot\/responses/);
-  assert.match(api, /body: JSON\.stringify\(\{ question: request\.question \}\)/);
+  /* 본문에 **질문이 실린다**까지만 잰다. 예전에는 `JSON.stringify({ question:
+     request.question })` 를 통째로 박아 두어서, 몸에 칸이 하나 늘 때마다
+     (KEY-328 의 `submission_id`) 뜻과 상관없이 깨졌다. 이 검사가 지키는 것은
+     「참조값을 URL 이 아니라 본문으로 주고받는다」와 「링크 토큰을 안 싣는다」다. */
+  assert.match(api, /body: JSON\.stringify\(/);
+  assert.match(api, /question: request\.question/);
   assert.doesNotMatch(api, /link_token/);
   assert.doesNotMatch(api, /chatbot\/responses\?[^']*link_token/);
 });

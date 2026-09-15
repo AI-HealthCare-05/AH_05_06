@@ -634,12 +634,7 @@
             if (requestVersion !== resendVersion || el("modal").hidden) return;
             resendingMessage = null;
             resendingMessageSaving = false;
-            el("modal-body").innerHTML =
-              '<h2 class="modal__title" id="modal-title">재발송이 예약되었습니다</h2>' +
-              '<p class="modal__note">새 메시지 ' +
-              esc(body.guide_message_id) +
-              " · 발송 대기</p>" +
-              '<div class="modal__acts"><button class="button-primary" type="button" data-close>확인</button></div>';
+            el("modal-body").innerHTML = messageResendResultHtml(body);
             el("modal").hidden = false;
             el("modal").querySelector("[data-close]").focus();
           });

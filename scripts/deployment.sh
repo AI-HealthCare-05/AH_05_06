@@ -6,11 +6,6 @@ set -eo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-COLOR_GREEN=$(tput setaf 2)
-COLOR_BLUE=$(tput setaf 4)
-COLOR_RED=$(tput setaf 1)
-COLOR_NC=$(tput sgr0)
-
 cd "$(dirname "$0")/.."
 source ./envs/.prod.env
 
@@ -273,8 +268,15 @@ scp -i ~/.ssh/${ssh_key_file} envs/.prod.env ubuntu@${ec2_ip}:~/project/.env
 # **올린 직후에 잠근다** — `scp` 는 로컬 파일의 권한을 그대로 안 옮긴다.
 # 기본 umask 로 떨어지면 그 서버의 다른 계정이 읽을 수 있고, 이 파일에는
 # `DB_PASSWORD` 와 `SECRET_KEY` 가 들어 있다 (한금준 님 `#133` 보안 확인).
-ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} "chmod 600 ~/project/.env"
+ssh -n -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} "chmod 600 ~/project/.env"
 scp -i ~/.ssh/${ssh_key_file} infra/docker/docker-compose.prod.yml ubuntu@${ec2_ip}:~/project/docker-compose.yml
+# **Pilot 오버레이도 함께 올린다** — KEY-336. 올려 두기만 하고 **주지는 않는다.**
+# `-f` 로 함께 주지 않으면 아무 일도 안 일어나고, 줘도 게이트 환경변수가 없으면
+# 플래그가 안 붙는다(`docker-compose.pilot.yml` 참고).
+#
+# 없으면 좁은문을 열려는 순간 파일이 없어서 막힌다 — 그때 손으로 scp 하느라
+# **사고 한복판에서 시간을 쓴다.** 미리 놓아 둔다.
+scp -i ~/.ssh/${ssh_key_file} infra/docker/docker-compose.pilot.yml ubuntu@${ec2_ip}:~/project/docker-compose.pilot.yml
 if [[ "$is_https" == "1" ]] ; then
   # ---------- prod_http.conf 파일의 server_name 자동 수정 ----------
   sed_inplace "s/server_name .*/server_name ${ec2_ip};/g" infra/nginx/prod_http.conf

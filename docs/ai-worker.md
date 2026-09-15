@@ -1,8 +1,7 @@
-# AI 워커 연동 설계 — Redis Stream으로 무엇을 주고받나
+# AI 워커 연동 설계 — 현행 구현 (Redis 리스트 큐)
 
-> 대상 저장소 — `AI-HealthCare-05/AH_05_06` · `ai_worker/tasks/`를 채우기 전에 정할 것.
-> 짝 문서 — [`spec-medical.md`](spec-medical.md) 「안내문 조립」·「`generate_failed`는 막다른 길이 아니다」 · [`spec-models-layout.md`](spec-models-layout.md)
-> **아키텍처 그림이 정본이다** — Nginx → FastAPI → Redis Stream → Consumer Group(AI-Worker ×N) → SSE.
+> **현행:** Redis 리스트 큐(`ocr:jobs`) · 단일 장기 실행 워커 프로세스  
+> **향후:** Redis Stream + Consumer Group 전환은 미결 확장 목표 — 팀 결정 전까지 이 문서는 현행 구현 기준으로 유지한다.
 
 ---
 
@@ -25,22 +24,37 @@ S1-5 업로드 → ocr.read → S1-6 판독 확인 (스탭이 값 확인 · 수�
 
 ---
 
-# 2. 스트림과 그룹
+# 2. 큐와 워커
 
-| | 이름 | |
+현행 구현은 Redis Stream이 아닌 **리스트 큐**를 사용한다.
+
+| | 이름 | 역할 |
 |---|---|---|
-| 스트림 | `ai:tasks` | 작업 하나에 한 항목 |
-| 소비자 그룹 | `ai:workers` | 워커 여럿이 **나눠 갖는다** — 중복 처리 없음 |
-| 소비자 이름 | 컨테이너 호스트명 | `XCLAIM`이 죽은 소비자를 식별하는 근거 |
-| 결과 채널 | `ai:result:{visit_id}` | pub/sub · **진료 건마다 따로** |
+| 큐 | `ocr:jobs` | OCR 작업 ID를 담는다 |
+| 쓰기 | `rpush` | FastAPI(`app/documents/service.py`)가 업로드 시 넣는다 |
+| 읽기 | `blpop` (timeout=5s) | 단일 워커 프로세스가 폴링한다 |
 
-**결과 채널을 진료 건마다 나누는 이유** — FastAPI가 SSE 연결 하나에 그 환자 것만 흘려보내야 한다. 한 채널에 다 보내면 모든 연결이 남의 결과를 받아 걸러야 한다.
+워커(`ai_worker/main.py`)는 세 루프를 `asyncio.gather`로 동시에 돌린다.
+
+| 루프 | 주기 | 역할 |
+|---|---|---|
+| `_run_ocr_loop` | 상시(blpop) | `ocr:jobs` 큐 소비 — OCR 판독 처리 |
+| `_run_message_dispatch_loop` | 30초 | 예약 안내·확인 문자 발송 (KEY-249) |
+| `_run_guide_generation_loop` | 1초 | 안내 생성 작업 처리 (DB 큐 — `GuideGenerationJob`) |
+
+> Consumer Group·XCLAIM·복수 워커는 현재 미구현이다. 처리량이 필요해지면 Stream 전환을 함께 검토한다.
 
 ---
 
-# 3. 작업 페이로드 — `XADD`로 넣는 것
+# 3. 작업 데이터
 
-## 3-1. `ocr.read`
+**OCR 큐(`ocr:jobs`)에는 `ocr_job_id`(`ocr_` 접두어 + uuid4 hex, 하이픈 없음 · 예: `ocr_a1b2c3…`)만 들어간다.** 워커가 DB에서 `OcrJob`을 읽어 판독에 필요한 정보를 구성한다.
+
+**안내 생성(`guide.compose`)은 Redis 큐가 아니라 DB 테이블(`GuideGenerationJob`)을 큐로 사용한다.** 워커가 1초마다 폴링(`process_next_generation`)하며 처리한다.
+
+## 3-1. 채택하지 않은 페이로드 설계안 — `ocr.read`
+
+> 아래는 Redis Stream(XADD) 기반으로 검토했다가 채택하지 않은 페이로드 설계다. 현행 큐에는 `ocr_job_id`만 들어간다.
 
 ```javascript
 {
@@ -59,7 +73,9 @@ S1-5 업로드 → ocr.read → S1-6 판독 확인 (스탭이 값 확인 · 수�
 
 **`baseline_terms`를 함께 넣는다.** `baseline` 표의 「기록에서 찾을 말」이 판독 사전이므로(`DHEA-S` / `DHEAS` / `황체호르몬`), 워커가 DB를 다시 읽지 않게 요청에 실어 보낸다.
 
-## 3-2. `guide.compose`
+## 3-2. 채택하지 않은 페이로드 설계안 — `guide.compose`
+
+> 아래는 채택하지 않은 설계안이다. 현행은 DB 테이블(`GuideGenerationJob`)을 큐로 사용하며 Redis에는 아무것도 넣지 않는다.
 
 ```javascript
 {
@@ -85,7 +101,7 @@ S1-5 업로드 → ocr.read → S1-6 판독 확인 (스탭이 값 확인 · 수�
 
 ---
 
-# 4. 결과 — `Publish`로 나오는 것
+# 4. 결과 — 워커가 내는 것
 
 ```javascript
 { "task_id": "…", "visit_id": "…", "status": "done",   "result": { … } }
@@ -159,17 +175,15 @@ S1-5 업로드 → ocr.read → S1-6 판독 확인 (스탭이 값 확인 · 수�
 
 # 6. 실패와 재시도 — 두 가지를 섞지 않는다
 
-| | 무엇 | 누가 되살리나 |
+큐마다 동작이 다르다 — 섞어 쓰지 않는다.
+
+| 큐 | 워커 crash 시 | 처리 실패 시 |
 |---|---|---|
-| **워커가 터짐** | 컨테이너 재시작 · OOM · 네트워크 | **`XCLAIM`으로 자동 회수** — 다른 워커가 이어받는다 |
-| **판독/조립이 안 됨** | 사진이 흐림 · 약을 못 찾음 | **자동 재시도하지 않는다** — 사람이 `S1-10`에서 고른다 |
+| **OCR** (`blpop`) | blpop으로 꺼낸 순간 큐에서 사라짐 → **자동 회수 없음, 수동 재시도** | 자동 재시도 없음 — 사람이 `S1-10`에서 다시 요청 |
+| **안내 생성** (DB 임대) | 임대 300초 만료 후 자동 회수 → **다음 폴링 때 재처리** | retryable 오류: 최대 3회, 지수 후퇴(`2^attempts`초) / non-retryable: 즉시 종료 |
+| **문자 발송** | `claim_token`을 문 채 멈춘 줄을 되돌리는 로직 없음 → **수동 확인 필요** | - |
 
-**자동 재시도는 앞엣것에만 건다.** 뒤엣것은 몇 번을 돌려도 결과가 같다 — `S1-10`도 화면에 그렇게 적어 둔다(「대개 결과가 같습니다」).
-
-```
-XCLAIM 기준   min-idle-time 120초 · 최대 2회 회수
-2회를 넘으면  status='failed' · reason='worker_lost' → S1-10
-```
+**판독 실패는 재시도해도 결과가 같다.** `S1-10`에 「대개 결과가 같습니다」라고 적어 두는 이유다.
 
 ## 멱등성 — `[ 다시 만들기 ]`가 행을 더 만들지 않는다
 
@@ -177,25 +191,11 @@ XCLAIM 기준   min-idle-time 120초 · 최대 2회 회수
 
 ---
 
-# 7. SSE — 어디에 붙나
+# 7. SSE — 현재 미구현
 
-```
-FastAPI  GET /api/v1/visits/{visit_id}/events   (SSE)
-   ↓ subscribe  ai:result:{visit_id}
-   ↓ 결과 도착
-   → event: ocr.done      data: {...}
-   → event: guide.done    data: {...}
-   → event: failed        data: {reason}
-```
+SSE 엔드포인트(`GET /api/v1/visits/{visit_id}/events`)는 현재 구현되어 있지 않다.
 
-| 화면 | 기다리는 구간 |
-|---|---|
-| `S1-5` → `S1-6` | 판독 |
-| `S1-6` `[ 맞아요 · 안내문 만들기 ]` → `S1-11` | **조립 10초** |
-
-**명세의 「조립 10초」가 이 구간이다.** 지금은 그 10초 동안 무엇을 보여줄지가 안 정해져 있다 — 세부 상태 `생성 중`이 `안내문 (⏳)` 탭을 여는 것까지만 정해져 있다.
-
-**연결이 끊기면** — SSE는 브라우저가 자동 재연결한다. 재연결 시 **현재 상태를 먼저 한 번 내려준다**(작업이 이미 끝났을 수 있다). 상태는 이벤트에서 파생되므로 다시 계산하면 된다.
+> Stream 전환 시 `ai:result:{visit_id}` pub/sub 기반 SSE를 함께 도입하는 방향으로 검토한다.
 
 ---
 
@@ -235,8 +235,8 @@ FastAPI  GET /api/v1/visits/{visit_id}/events   (SSE)
 |---|---|---|
 | 1 | **판독 엔진** — 외부 API(Vision/Upstage 등)냐 로컬 모델이냐 | `ai` 그룹에 `torch`·`sentence-transformers`가 있지만 **OCR 라이브러리는 없다** |
 | 2 | **조립을 LLM으로 할지** | 명세는 「승인된 문구를 고르고 순서를 잡는다」 — **규칙 기반으로도 된다.** LLM이면 🚨를 못 건드리게 막는 장치가 따로 필요하다 |
-| 3 | **워커 수** | 지금 compose에 `ai-worker` 하나 · `replicas` 없음. 그림은 셋 |
+| 3 | **워커 수** | 지금 compose에 `ai-worker` 하나 · `replicas` 없음. 처리량 증가 시 Stream 전환과 함께 검토 |
 | 4 | **S3 붙이기** | `boto3`·`aioboto3` 둘 다 의존성에 없다 |
-| 5 | **재시도 한도** | 위 6장의 `120초 · 2회`는 제안값이다 |
+| 5 | **재시도 한도** | OCR 큐(`blpop`)는 자동 회수 없음 — crash 시 수동. 안내 생성(DB 임대)은 300초 만료 후 자동 회수, 최대 3회 지수 후퇴 재시도 구현됨. 문자 발송은 중단 시 수동 확인 필요 |
 
 **1번이 나머지를 정한다.** 외부 API면 워커가 가벼워 `replicas`를 늘리기 쉽고, 로컬 모델이면 EC2 사양과 S3 모델 파일 로딩이 따라온다.

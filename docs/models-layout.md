@@ -108,9 +108,97 @@ TORTOISE_APP_MODELS = [
 ## 2-2. 마이그레이션은 손으로 쓰지 않는다
 
 ```bash
-uv run aerich migrate --name add_visits    # 모델 → 마이그레이션 파일 생성
-uv run aerich upgrade                       # 실제 반영
+uv run --python 3.13 aerich migrate --name add_visits --offline   # 모델 → 마이그레이션 파일
+uv run aerich upgrade                                             # 실제 반영
 ```
+
+🚩 **`--offline` 을 빼지 마라.** 이것 하나가 「직전과의 차이」와 「전체 생성본」을
+가른다 — 까닭은 2-3 에 적는다.
+
+🚩 **`--python 3.13` 도 빼지 마라.** 만드는 자리의 파이썬 판이 CI 와 다르면
+JSON 칸마다 헛된 `MODIFY COLUMN` 이 붙는다 — 까닭은 2-4 에 적는다.
+
+## 2-3. `--offline` 이 붙는 까닭 (KEY-333)
+
+`aerich migrate` 는 **무엇과 견줄지**를 두 곳 중 하나에서 고른다
+(aerich 0.9.2 `Migrate.init`).
+
+| 모드 | 기준 | 다음 번호 |
+|---|---|---|
+| 기본(온라인) | **연결된 DB** `aerich` 표의 최신 줄 `content` | DB 장부 기준 |
+| `--offline` | **저장소의 마지막 마이그레이션 파일** `MODELS_STATE` | 파일 기준 |
+
+온라인 기준은 **내 DB 사정**을 탄다. 남의 가지 것이 섞여 있거나, 그 줄이 비어
+있으면 기준이 없어 **전체 스키마가 통째로** 나온다. 그것을 손으로 다듬어 올리면
+`MODELS_STATE` 가 가지마다 갈리고, 다음 사람의 `migrate` 가 이미 있는 칸을 다시
+`ADD` 하려 든다 — 배포가 `Duplicate column` 으로 멈춘다(`#279` 전례).
+
+**2026-09-11 에 실제로 물렸다** — 55·56 을 만들 때 둘 다 전체 생성본이 나왔다.
+손으로 다듬어 올렸고, 그렇게 갈린 스냅샷이 뒤에 문제를 만들었다.
+
+🚩 **그 DB 의 기준 줄이 왜 틀어져 있었는지는 확정하지 못했다.** 장부에서
+`content` 가 두 자(빈 `{}`)인 줄을 하나 봤지만, 그것이 **최신 줄이 아니었고**
+(`Aerich` 는 `ordering=["-id"]` 다) 그렇게 된 경위도 코드로는 설명되지 않는다 —
+`MODELS_STATE` 가 없는 파일을 올려도 aerich 는 빈 값이 아니라 **현재 모델 전부**를
+적는다(`aerich/__init__.py:118`). 수기로 장부를 고친 흔적이 의심되지만 거기까지다
+(이희진 님 `#298` 리뷰에서 확인).
+
+**코드로 확인되는 것은 여기까지다** — 온라인 기준은 장부 최신 줄의 `content` 이고,
+그 값이 **비었거나 낡았으면** 기준이 틀어진다. 그래서 DB 를 안 보는 쪽을 고른다.
+
+장부를 들여다볼 일이 있으면 이렇게 본다. 맨 위 줄이 기준이다.
+
+```sql
+SELECT id, version, LENGTH(IFNULL(content, '')) AS clen FROM aerich ORDER BY id DESC LIMIT 5;
+```
+
+`--offline` 은 DB 를 안 본다. **누가 어떤 DB 로 돌려도 같은 결과**가 나오고,
+번호도 저장소 파일에서 이어 붙는다(KEY-162 가 막으려는 번호 중복과 같은 자리).
+
+그래도 스냅샷이 흘렀는지는 사람이 못 본다. `app/tests/migrations/`
+`test_migration_file_format.py::test_the_last_state_matches_the_models_field_by_field`
+가 **마지막 파일의 `MODELS_STATE` 와 지금 모델을 칸 단위로** 견준다. DB 없이 돈다.
+
+## 2-4. 만드는 자리의 **파이썬 판**도 기준이다 (KEY-333)
+
+`--offline` 으로 DB 를 떼어 내도 하나가 남는다. **스냅샷은 파이썬 판을 탄다.**
+
+```
+JSONField 의 python_type
+  3.13 → "Union[dict, list]"
+  3.14 → "dict | list"
+```
+
+aerich 는 칸 하나라도 갈리면 손을 대는데, `python_type` 은 따로 다루는 가지가
+없어 **마지막 `else` 로 떨어진다** — `MODIFY COLUMN` 이다
+(`aerich/migrate.py::_handle_field_changes`).
+
+**실측**(2026-09-14, `#298`). 3.14 에서 만든 스냅샷을 마지막 파일에 두고 3.13 에서
+`aerich migrate --offline` 하면, 아무도 모델을 안 고쳤는데 이렇게 나온다.
+
+```sql
+ALTER TABLE `check_in` MODIFY COLUMN `pain_types` JSON NOT NULL;
+ALTER TABLE `staff` MODIFY COLUMN `roles` JSON NOT NULL;
+...  -- 일곱 줄
+```
+
+**세어 보면 여덟인데 일곱이 나온다.** 스냅샷에서 갈리는 칸은 `aerich.content` 까지
+여덟인데, aerich 는 **제 추적 표를 diff 에서 뺀다**(`aerich/migrate.py:573,579` 의
+`old_models.pop(_aerich)` · `new_models.pop(_aerich)`). 그래서 SQL 은 일곱이다.
+숫자가 안 맞아 보이면 이 자리를 의심한다.
+
+**아무것도 안 바꾸는 문장인데 값은 치른다.** MySQL 8 에서 JSON 칸 `MODIFY` 는 표를
+다시 쓴다. 게다가 `upgrade` 와 `downgrade` 가 **같은 문장**이라 되돌리지도 못한다.
+
+🚩 **CI 와 같은 3.13 에서 만든다.**
+
+```bash
+uv run --python 3.13 aerich migrate --name <설명> --offline
+```
+
+저장소 이력에는 두 표기가 섞여 있다(9·12·13 … 은 `dict | list`). 기준이 되는 것은
+**마지막 파일 하나**뿐이라 지금 아픈 자리도 거기 하나다. 지난 파일은 건드리지
+않는다 — 이미 적용된 마이그레이션은 고치지 않는다(`#295` 리뷰).
 
 `app/core/db/migrations/`는 aerich가 만드는 자리다. **손으로 SQL을 쓰지 않는다** — 로즈앤 때와 다른 점이다.
 

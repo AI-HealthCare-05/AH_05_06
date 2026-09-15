@@ -14,7 +14,7 @@
 `#295`·`#297` 확인). `aerich upgrade` 는 번호 순서가 아니라 **장부에 없는 이름**을
 적용하므로 54 가 57 앞에 남아도 된다.
 
-`48_key276_merge_models_state` · `59_key333_merge_models_state` 와 같은 자리다.
+`48_key276_merge_models_state` 와 같은 자리다.
 
 🚩 **스냅샷은 3.13 에서 만들었다.** 3.14 는 JSONField 의 `python_type` 을
 `dict | list` 로 적는데 CI·배포(3.13)는 `Union[dict, list]` 로 적는다. 판이
@@ -29,6 +29,11 @@
 `aerich` 표도 같은 드리프트를 겪지만 DDL 로는 안 나온다. **SQL 줄 수만 보고
 「다 고쳤다」고 하면 그 한 칸이 남는다** — 다음 `migrate` 가 계속 드리프트를
 본다. `docs/models-layout.md` 2-4.
+
+🚩 **스냅샷은 3.13 에서 만들었다.** 3.14 는 JSONField 의 `python_type` 을
+`dict | list` 로 적는데 CI·배포(3.13)는 `Union[dict, list]` 로 적는다. 판이
+갈리면 다음 `migrate` 가 JSON 칸 여섯에 **아무것도 안 바꾸는 `MODIFY COLUMN`**
+을 붙인다(`#298` 실측). `docs/models-layout.md` 2-4.
 
 **번호가 60 인 까닭.** `--offline` 은 저장소 파일에서 번호를 잇는데, 59 는 열려
 있는 `#298`(KEY-333)이 같은 목적으로 쓰고 있다. 둘 다 병합되면 번호가 겹치므로

@@ -876,6 +876,85 @@ MOCK_OTP_CODE 좁은문 열림 (ENV=prod, PILOT_ALLOW_MOCK_OTP + --pilot-confirm
    막힌다 — 이 단계에서 실수로 임의의 번호에 문자가 나가지 않게 하는
    안전장치다. **이 목록을 비워 두지 않는다** — 비면 승인 여부와 무관하게
    전부 막혀서(deny-all), 공급자 장애와 구분 안 되는 503만 받는다.
+
+   🚩 **켜기 전에 — 예약 문자가 나갈 것이 있는지 먼저 센다** (KEY-336).
+
+   워커(`ai-worker`)는 서버와 **같은** `.env` 를 읽는다. `SMS_PROVIDER=solapi`
+   로 바꾸는 순간 OTP 뿐 아니라 **예약 문자(D+7/D+15/D+30 확인 · 소진 · 재진)도
+   같은 길로 나가기 시작한다.** 지금은 원본 삭제가 구현되지 않아 KEY-250 게이트가
+   `SOURCE_NOT_DELETED` 로 붙들지만, **그 게이트가 재는 것은 DB 행이 아니라
+   파일이다.**
+
+   ```python
+   # app/services/dispatch_gate.py — _source_documents_are_deleted()
+   if not docs:      return True   # 올린 적 없다 → 안 막는다
+   if exists(path):  return False  # 파일이 있다  → 막는다
+   return True                     # 행은 있는데 파일이 없다 → 「지워졌다」 → 안 막는다
+   ```
+
+   즉 **원본 행은 남았는데 파일이 사라진 진료**가 있으면 그 문자는 게이트를
+   지나간다. 업로드가 볼륨 밖에 떨어지던 시기가 실제로 있었으므로(KEY-197
+   후속, `docker-compose.prod.yml` 의 `media_volume` 주석) 옛 진료에서 생길 수
+   있는 일이다. **그러므로 세어 보고 켠다.**
+
+   ```bash
+   ssh -i ~/.ssh/<키>.pem ubuntu@<Pilot IP> bash -s <<'REMOTE'
+   cd ~/project
+   docker compose exec -T mysql sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -N' <<'SQL' > /tmp/sched.tsv
+   SELECT m.guide_message_id, m.kind, m.scheduled_at, IFNULL(d.file_path, '(NO_ROW)')
+     FROM guide_message m
+     JOIN guide_document g ON g.guide_document_id = m.guide_document_id
+     LEFT JOIN medical_document d ON d.visit_id = g.visit_id
+    WHERE m.status = 'SCHEDULED' ORDER BY m.guide_message_id;
+   SQL
+   docker compose exec -T ai-worker ls -1 /vol/web/media </dev/null 2>/dev/null | sort > /tmp/have.txt
+   awk -F'\t' -v havefile=/tmp/have.txt '
+     BEGIN { while ((getline l < havefile) > 0) have[l]=1 }
+     { mid=$1; label[mid]=$2; at[mid]=$3; path=$4
+       if (path=="(NO_ROW)") { norow[mid]=1; total[mid]=0; next }
+       n=split(path, p, "/"); base=p[n]; total[mid]++
+       if (base in have) exists[mid]++ }
+     END { for (m in total) {
+             if (norow[m])          printf "%s\t[나간다] 문자 %s (%s · %s) : 원본행 없음\n", m, m, label[m], at[m]
+             else if (exists[m]>0)  printf "%s\t         문자 %s (%s · %s) : 파일 %d/%d 있음 → 막힌다\n", m, m, label[m], at[m], exists[m], total[m]
+             else                   printf "%s\t[나간다] 문자 %s (%s · %s) : 원본행 %d 개인데 파일 0 개\n", m, m, label[m], at[m], total[m] } }
+   ' /tmp/sched.tsv | sort -n | cut -f2-
+   rm -f /tmp/sched.tsv /tmp/have.txt
+   REMOTE
+   ```
+
+   🚩 **`[나간다]` 가 한 줄이라도 있으면 켜지 않는다.** 그 문자는 시드 환자의
+   가짜 번호로 나간다 — 모르는 사람이 받을 수 있다. KEY-338(예약 문자 좁은문)이
+   들어온 뒤에 켠다.
+
+   `docker compose exec -T` 에 `</dev/null` 이 붙어 있는 것은 실수가 아니다.
+   빼면 그것이 **남은 스크립트를 stdin 으로 먹어** 판정 줄이 조용히 안 나온다.
+
+   > **2026-09-14 측정** — SCHEDULED 10통(진료 5건), 참조 원본 46개가 전부
+   > 워커에 있어 **열 통 모두 막힘.** `(NO_ROW)` 0건. 이 값은 그날의 것이고,
+   > 켤 때마다 다시 센다.
+
+   🚩 **플래그는 서버에서 오버레이로 붙인다** (KEY-336). 4-3-1 의 명령은 로컬에서
+   `--build` 하던 시절의 것이고, 지금 Pilot 은 Hub 이미지를 받아 서버에서 돈다.
+   `deployment.sh` 가 `docker-compose.pilot.yml` 을 **올려는 두므로**, 켤 때는
+   서버에서 그것을 함께 주기만 하면 된다.
+
+   ```bash
+   # 서버 ~/project 에서
+   OTP_SOLAPI_PROD_ENABLED=1 docker compose \
+     -f docker-compose.yml -f docker-compose.pilot.yml \
+     up -d --no-deps fastapi
+   ```
+
+   **환경변수를 `.env` 에 적지 않는다.** 명령 앞에 그때그때 붙인다 — `.env` 에
+   적으면 **다음 배포부터 영구히 켜진다.** 오버레이의 `command` 는 그 변수가
+   있을 때만 플래그를 붙이므로, 다음 배포에서 안 붙이면 저절로 닫힌다.
+
+   되돌릴 때는 오버레이 없이 다시 띄운다.
+
+   ```bash
+   docker compose up -d --no-deps fastapi
+   ```
 3. **수신한 OTP로 검증·환자 세션·보호 API 접근까지 E2E 확인.**
 4. **장애·재발송·만료·잠금 회귀를 다시 돌려서 실제 경로에서도 그대로
    지켜지는지 확인.**
