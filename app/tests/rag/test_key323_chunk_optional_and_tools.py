@@ -29,7 +29,7 @@ from app.models.knowledge import (
     KnowledgeSourceKind,
     KnowledgeVersion,
 )
-from app.services.approved_knowledge_search import ApprovedKnowledgeSearchService
+from app.services.approved_knowledge_search import ApprovedKnowledgeOutcome, ApprovedKnowledgeSearchService
 from app.services.guide_generation import GeneratedGuideSection
 from app.services.knowledge_extraction import extract_text_pdf
 from app.services.knowledge_pipeline import (
@@ -691,3 +691,99 @@ def test_pcos_monash_v1_strips_page_numbers() -> None:
         if " ".join(ln.split()).replace("", "").strip().isdigit() and " ".join(ln.split()).replace("", "").strip()
     ]
     assert not pnum_lines, f"쪽번호 줄이 남아 있다: {pnum_lines[:5]}"
+
+
+# ---------------------------------------------------------------------------
+# §8 — PCOS 생활관리 검색 계약 (KEY-323 인수조건)
+# 적재 → 승인 → life 검색 → 제외 용어 미반환 확인
+# PDF 파일이 없으면 건너뜀
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not _PCOS_PDF_PATH.exists(),
+    reason="PCOS Monash PDF 없음 — key276-sources/pcos-monash-2023-v1.pdf 를 배치해야 실행된다",
+)
+class TestPcosMonashLifeSearchContract(TestCase):
+    """Monash v1 적재 → 승인 → life 검색의 종단간 계약 테스트."""
+
+    async def _ingest_and_approve(self) -> PreparedVersion:
+        provider = cast(EmbeddingProvider, FakeEmbeddingProvider())
+        pdf_bytes = _PCOS_PDF_PATH.read_bytes()
+        request = KnowledgeIngestionRequest(
+            title="International Evidence-based Guideline for the Assessment and Management of Polycystic Ovary Syndrome 2023",
+            source_org="Monash University·International PCOS Network",
+            source_url="https://doi.org/10.26180/24003834.v1",
+            version_label="2023 (Monash Bridges v1)",
+            source_kind=KnowledgeSourceKind.TEXT_PDF,
+            payload=pdf_bytes,
+            mime_type="application/pdf",
+            license_basis="CC BY 4.0",
+            page_from=35,
+            page_to=38,
+            strip_headers=_PCOS_STRIP_HEADERS,
+            strip_page_numbers=True,
+            section_key="life",
+        )
+        prepared = await KnowledgeIngestionService(
+            repository=TortoiseKnowledgeRepository(),
+            object_store=InMemoryPrivateObjectStore(),
+            embedding_provider=provider,
+        ).ingest(request)
+        await KnowledgeVersion.filter(version_id=prepared.version_id).update(
+            source_grade=SourceGrade.A,
+            license_verified=True,
+        )
+        reviewed_at = datetime.now(UTC)
+        await KnowledgeApprovalService().approve(
+            prepared.version_id,
+            approved_by="이희진",
+            verified_at=reviewed_at,
+            review_due_at=reviewed_at + timedelta(days=365),
+        )
+        return prepared
+
+    async def test_life_search_returns_pcos_chunks(self) -> None:
+        """적재·승인 후 life 검색 결과가 FOUND이고 권고 번호가 포함된다."""
+        from datetime import date
+
+        prepared = await self._ingest_and_approve()
+        provider = cast(EmbeddingProvider, FakeEmbeddingProvider())
+        search = ApprovedKnowledgeSearchService(provider)
+
+        result = await search.search(
+            "생활관리",
+            hospital_id=1,
+            allowed_sections=frozenset({"life"}),
+            searched_at=date.today(),
+        )
+
+        assert result.outcome is ApprovedKnowledgeOutcome.FOUND, f"검색 결과 없음: {result.outcome}"
+        chunk_ids = [hit.chunk_id for hit in result.hits]
+        bodies = [c.body for c in await KnowledgeChunkRecord.filter(chunk_id__in=chunk_ids)]
+        full = " ".join(bodies)
+        assert re.search(r"3\.\d+\.\d+", full), "PCOS 권고 번호(3.x.x)가 검색 결과에 없다"
+        version_ids = {str(c.version_id) for c in await KnowledgeChunkRecord.filter(chunk_id__in=chunk_ids)}
+        assert version_ids == {str(prepared.version_id)}
+
+    async def test_life_search_excludes_drug_infertility_diagnosis_ivf(self) -> None:
+        """life 검색 결과 청크에 약물·불임·진단·IVF 관련 용어가 없다 (KEY-323 인수조건)."""
+        from datetime import date
+
+        await self._ingest_and_approve()
+        provider = cast(EmbeddingProvider, FakeEmbeddingProvider())
+        search = ApprovedKnowledgeSearchService(provider)
+
+        result = await search.search(
+            "생활관리",
+            hospital_id=1,
+            allowed_sections=frozenset({"life"}),
+            searched_at=date.today(),
+        )
+
+        assert result.outcome is ApprovedKnowledgeOutcome.FOUND
+        chunk_ids = [hit.chunk_id for hit in result.hits]
+        bodies = [c.body for c in await KnowledgeChunkRecord.filter(chunk_id__in=chunk_ids)]
+        full = " ".join(bodies).lower()
+        found = [term for term in _EXCLUDED_TERMS if term.lower() in full]
+        assert not found, f"제외 용어가 검색 결과에 포함됨: {found}"
