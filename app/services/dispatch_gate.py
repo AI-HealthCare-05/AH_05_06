@@ -1,14 +1,17 @@
 """발송 직전 게이트 — KEY-250, KEY-289.
 
 안내 미승인 / 원본 의료문서 미삭제 / 예약 주소 없음 / 생성 후 안전검증 미통과
-중 하나라도 걸리면 막는다(`HELD`). 막힌 이유는 `GuideMessageHold` 값으로만 돌려준다 —
+또는 승인 목록 밖 수신 번호에 걸리면 막는다(`HELD`). 막힌 이유는 `GuideMessageHold` 값으로만 돌려준다 —
 예외 메시지나 원문을 실어 나르지 않는다.
 """
 
 from dataclasses import dataclass
 
 from app.core import config
+from app.core.approved_phones import approved_test_phones
+from app.core.config import SmsProvider
 from app.core.storage import LocalFileStorage, StorageProbe
+from app.core.utils.common import normalize_phone_number
 from app.models.catalog import MessageTemplateKind
 from app.models.documents import MedicalDocument
 from app.models.staffs import Hospital
@@ -19,6 +22,7 @@ from app.models.visits import (
     GuideSafetyCheck,
     SafetyCheckStage,
     SafetyCheckVerdict,
+    Visit,
 )
 from app.services.message_templates import effective_body
 
@@ -80,6 +84,18 @@ async def evaluate_dispatch_gate(
             hospital=hospital,
         )
 
+    # 승인 번호로만 발송 — KEY-338. mock 경로는 기존 동작을 유지한다.
+    if config.SMS_PROVIDER is SmsProvider.SOLAPI:
+        visit = await Visit.filter(visit_id=guide.visit_id).select_related("patient").first()
+        recipient = normalize_phone_number(visit.patient.phone) if visit else ""
+        if recipient not in approved_test_phones():
+            return DispatchGateDecision(
+                guide=guide,
+                hold_reason=GuideMessageHold.RECIPIENT_NOT_APPROVED,
+                body=body,
+                hospital=hospital,
+            )
+
     return DispatchGateDecision(guide=guide, hold_reason=None, body=body, hospital=hospital)
 
 
@@ -134,19 +150,16 @@ async def _post_generate_safety_check_passed(guide_document_id: int) -> bool:
 
 
 async def _source_documents_are_deleted(visit_id: int, storage: StorageProbe) -> bool:
-    """이 진료에 딸린 원본 의료문서 파일이 전부 지워졌는가.
+    """원본 행이 남아 있으면 삭제를 확인할 수 없으므로 발송을 막는다.
 
-    저장소 조회가 실패하면 삭제됐다고 추측하지 않고 발송을 막는다. 상대
-    경로·권한 오류·지원하지 않는 저장소를 파일 부재로 오인하면 안 된다.
+    파일 존재는 미삭제이고, 파일 부재는 삭제 이력 없이 삭제를 증명하지
+    못한다. 행이 없는 진료만 원본 비연결로 통과한다. 이는 KEY-349가
+    명시적인 원본 삭제 완료 기록을 도입하기 전까지 적용하는 fail-closed
+    판정이다. 발송 허용을 위해 MedicalDocument 행 자체를 삭제하면 안 된다.
+    KEY-349가 삭제 완료 기록을 확정하면 이 함수가 그 기록을 기준으로
+    판정하도록 교체한다.
     """
     docs = await MedicalDocument.filter(visit_id=visit_id).all()
     if not docs:
-        # 애초에 원본을 올린 적이 없다 — 지울 것도 없으니 막지 않는다.
         return True
-    try:
-        for doc in docs:
-            if await storage.exists(doc.file_path):
-                return False
-        return True
-    except (OSError, RuntimeError, ValueError):
-        return False
+    return False

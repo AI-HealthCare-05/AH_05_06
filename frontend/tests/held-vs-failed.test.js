@@ -40,21 +40,27 @@ test("**실패 이유는 넷이다** — D1-7 이 못박는다", () => {
   assert.equal(FAILURE_SAYING.SENDER_UNREGISTERED, "발신번호 미등록");
 });
 
-test("**적는 보류 이유는 손댈 수 있는 것뿐이다** — S2-3", () => {
+test("**적는 보류 이유는 손댈 수 있는 것, 또는 검증 단계임을 알려야 하는 것이다** — S2-3·KEY-338", () => {
   const { HOLD_SAYING } = box();
   assert.deepEqual(Object.keys(HOLD_SAYING).sort(), [
     "BOOKING_URL_MISSING",
     "INVALID_PHONE",
     "NO_CREDIT",
+    "RECIPIENT_NOT_APPROVED",
   ]);
   /* 원문 표기는 「⏸ 보류 · 번호」 · 「⏸ 보류 · 문자 잔량」이다 */
   assert.equal(HOLD_SAYING.INVALID_PHONE, "번호");
   assert.equal(HOLD_SAYING.NO_CREDIT, "문자 잔량");
   /* KEY-331 — 관리자가 어드민 A1-4 에서 채우면 그 문자가 다시 나간다 */
   assert.equal(HOLD_SAYING.BOOKING_URL_MISSING, "예약 링크 없음");
+  /* KEY-338 — 손댈 수는 없지만(끝 상태·배포 설정), 「검증 단계라 일부러
+     막았다」를 안 적으면 스탭이 발송 실패로 의심한다 */
+  assert.equal(HOLD_SAYING.RECIPIENT_NOT_APPROVED, "승인되지 않은 번호");
 });
 
 test("**손댈 수 없는 보류 사유는 적지 않는다** — 적어 봐야 할 일이 안 생긴다", () => {
+  /* RECIPIENT_NOT_APPROVED(KEY-338)는 이 규칙의 예외다 — 위 테스트가 그
+     이유를 잰다. 손댈 수 없는데도 화면에 남기는 유일한 보류 사유다. */
   const { HOLD_SAYING, messageSaying } = box();
   for (const code of ["NOT_APPROVED", "SOURCE_NOT_DELETED", "SAFETY_CHECK_FAILED"]) {
     assert.ok(!(code in HOLD_SAYING), `${code} 를 스탭 화면에 적었다`);

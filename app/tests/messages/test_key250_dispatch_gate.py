@@ -10,9 +10,12 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from unittest.mock import AsyncMock, patch
 
+from pydantic import SecretStr
 from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
 
+import app.core as core_config
+from app.core.config import SmsProvider
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType
 from app.models.visits import (
@@ -20,19 +23,20 @@ from app.models.visits import (
     GuideMessageEvent,
     GuideMessageEventType,
     GuideMessageHold,
+    GuideMessageKind,
     GuideMessageStatus,
+    PatientGuideLink,
 )
 from app.services.dispatch_gate import gate_hold_reason
 from app.services.message_dispatch import dispatch_message
 from app.services.sms_sender import MockSmsSender, SmsDeliveryStatus, SmsSendError, SmsSendResult
-from app.tests.messages.test_key249_dispatch_pipeline import make_due_message
+from app.tests.messages.test_key249_dispatch_pipeline import _CountingSender, make_due_message
 
 
 async def _attach_document(message: GuideMessage, *, file_exists: bool) -> Path:
     """`message`가 딸린 진료에 원본 의료문서 한 건을 붙인다.
 
-    `file_exists=False`면 파일을 실제로 지워서 "이미 삭제됨" 상태를 흉내낸다
-    — `app/ocr/api.py`가 삭제 여부를 재는 것과 같은 신호(파일 존재 유무)다.
+    `file_exists=False`면 DB 행만 남은 원본 파일 부재 상태를 흉내낸다.
     """
     guide = await message.guide_document
     tmp = NamedTemporaryFile(delete=False, suffix=".jpg")
@@ -97,11 +101,31 @@ class TestGateBlocksUndeletedSourceDocuments(TestCase):
         finally:
             path.unlink(missing_ok=True)
 
-    async def test_gate_passes_once_the_file_is_deleted(self) -> None:
+    async def test_gate_blocks_when_the_document_row_has_no_file(self) -> None:
         message = await make_due_message(approved=True)
         await _attach_document(message, file_exists=False)
 
-        assert await gate_hold_reason(message) is None
+        assert await gate_hold_reason(message) is GuideMessageHold.SOURCE_NOT_DELETED
+
+    async def test_gate_blocks_when_only_one_of_two_files_is_missing(self) -> None:
+        message = await make_due_message(approved=True)
+        present = await _attach_document(message, file_exists=True)
+        await _attach_document(message, file_exists=False)
+        try:
+            assert await gate_hold_reason(message) is GuideMessageHold.SOURCE_NOT_DELETED
+        finally:
+            present.unlink(missing_ok=True)
+
+    async def test_missing_file_never_sends_or_issues_a_link(self) -> None:
+        message = await make_due_message(approved=True)
+        await _attach_document(message, file_exists=False)
+        sender = _CountingSender()
+
+        result = await dispatch_message(message.guide_message_id, sender)
+
+        assert result is not None and result.status is GuideMessageStatus.HELD
+        assert sender.calls == []
+        assert not await PatientGuideLink.filter(guide_document_id=message.guide_document_id).exists()
 
     async def test_gate_passes_when_no_document_was_ever_uploaded(self) -> None:
         """지울 원본이 애초에 없으면(EMR 문구만으로 만든 안내 등) 막지 않는다."""
@@ -273,3 +297,109 @@ class TestClaimIsReleasedAfterPreSendFailure(TestCase):
         assert result is not None
         assert result.status is GuideMessageStatus.SCHEDULED
         await self._assert_retryable(message)
+
+
+class TestGateBlocksUnapprovedRecipients(TestCase):
+    """승인 번호로만 발송 — KEY-338.
+
+    SMS_PROVIDER=solapi일 때만 보는 게이트다. mock(기본값, 로컬·개발·CI)
+    에서는 이 게이트 자체를 안 본다 — 기존 게이트 순서와 mock 동작은
+    안 바뀐다는 인수조건을 값으로 잰다.
+    """
+
+    async def test_unapproved_phone_is_held_when_provider_is_solapi(self) -> None:
+        message = await make_due_message(link_free_template=True, phone="01099998888")
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is GuideMessageHold.RECIPIENT_NOT_APPROVED
+
+    async def test_unapproved_phone_never_sends_or_issues_a_link(self) -> None:
+        message = await make_due_message(phone="01099998888")
+        sender = _CountingSender()
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            result = await dispatch_message(message.guide_message_id, sender)
+
+        assert result is not None and result.status is GuideMessageStatus.HELD
+        assert sender.calls == []
+        assert not await PatientGuideLink.filter(guide_document_id=message.guide_document_id).exists()
+
+    async def test_approved_phone_passes_when_provider_is_solapi(self) -> None:
+        message = await make_due_message(link_free_template=True, phone="01011112222")
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is None
+
+    async def test_hyphenated_entries_in_the_allowlist_still_match(self) -> None:
+        """목록의 하이픈 표기(010-1111-2222)도 정규화해서 맞춘다 — 인수조건."""
+        message = await make_due_message(link_free_template=True, phone="01011112222")
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("010-1111-2222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is None
+
+    async def test_mock_provider_ignores_the_allowlist(self) -> None:
+        """SMS_PROVIDER=mock(기본값)에서는 이 게이트가 없다 — 기존 동작 그대로."""
+        message = await make_due_message(link_free_template=True, phone="01099998888")
+
+        with patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")):
+            reason = await gate_hold_reason(message)
+
+        assert reason is None
+
+    async def test_the_existing_gate_order_still_runs_first(self) -> None:
+        """미승인 → 원본 미삭제 → 예약링크 없음, 그 다음에야 이 게이트를 본다 — 인수조건.
+
+        미승인 안내는 목록에 없는 번호라도 NOT_APPROVED로 먼저 막혀야 한다.
+        """
+        message = await make_due_message(approved=False, phone="01099998888")
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is GuideMessageHold.NOT_APPROVED
+
+    async def test_a_resent_message_goes_through_the_same_gate(self) -> None:
+        """재발송 작업 행도 수신번호 게이트를 우회하지 않는다."""
+        source = await make_due_message(
+            link_free_template=True,
+            phone="01099998888",
+            kind=GuideMessageKind.GUIDE,
+            status=GuideMessageStatus.SENT,
+        )
+        message = await GuideMessage.create(
+            guide_document_id=source.guide_document_id,
+            kind=source.kind,
+            status=GuideMessageStatus.SCHEDULED,
+            scheduled_at=source.scheduled_at,
+            resend_of_message_id=source.guide_message_id,
+            resend_sequence=1,
+        )
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is GuideMessageHold.RECIPIENT_NOT_APPROVED

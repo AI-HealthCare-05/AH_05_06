@@ -24,11 +24,19 @@ PILOT_ENTRYPOINT = "app.pilot_server"
 #: 좁은문을 여는 환경변수. 오버레이는 **이것이 있을 때만** 플래그를 붙인다.
 GATE_ENVS = ("PILOT_ALLOW_MOCK_OTP", "OTP_SOLAPI_PROD_ENABLED")
 GATE_FLAGS = ("--pilot-confirm-mock-otp", "--otp-confirm-solapi-prod")
+WORKER_GATE_ENV = "SMS_DISPATCH_ENABLED"
+WORKER_GATE_FLAG = "--sms-dispatch-confirm"
 
 
 def _pilot_command() -> str:
     command = service(PILOT_OVERLAY, "fastapi").get("command")
     assert command, f"{PILOT_OVERLAY} 의 fastapi 에 `command` 가 없다"
+    return "\n".join(command) if isinstance(command, list) else str(command)
+
+
+def _pilot_worker_command() -> str:
+    command = service(PILOT_OVERLAY, "ai-worker").get("command")
+    assert command, f"{PILOT_OVERLAY} 의 ai-worker 에 `command` 가 없다"
     return "\n".join(command) if isinstance(command, list) else str(command)
 
 
@@ -100,6 +108,24 @@ def test_the_production_compose_stays_plain() -> None:
     assert "command" not in service(PROD_COMPOSE, "fastapi"), (
         f"{PROD_COMPOSE} 의 fastapi 에 `command` 가 생겼다 — Pilot 설정은 오버레이로만 준다"
     )
+    assert "command" not in service(PROD_COMPOSE, "ai-worker"), (
+        f"{PROD_COMPOSE} 의 ai-worker 에 `command` 가 생겼다 — 문자 발송 플래그는 Pilot 오버레이로만 준다"
+    )
+
+
+def test_the_worker_flag_is_guarded_in_the_pilot_overlay() -> None:
+    command = _pilot_worker_command()
+    assert "python -m ai_worker.main" in command
+    guarded = re.search(
+        rf"if \[ -n \"?\$+\{{{WORKER_GATE_ENV}[^\]]*\](?:(?!\bfi\b).)*?{re.escape(WORKER_GATE_FLAG)}",
+        command,
+        re.S,
+    )
+    assert guarded, f"`{WORKER_GATE_FLAG}` 가 `{WORKER_GATE_ENV}` 검사 안에 있지 않다"
+    assert not list(re.finditer(r"(?<!\$)\$(?!\$)", command)), "ai-worker command 의 셸 변수는 $$로 써야 한다"
+    declared = service(PILOT_OVERLAY, "ai-worker").get("environment") or []
+    assert WORKER_GATE_ENV in declared
+    assert f"{WORKER_GATE_ENV}=" not in " ".join(str(item) for item in declared)
 
 
 def test_the_deploy_script_ships_the_overlay() -> None:
