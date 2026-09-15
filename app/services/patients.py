@@ -36,7 +36,7 @@ from app.models.patients import Patient, PatientNumberCorrection
 from app.models.staffs import Staff
 from app.models.visits import Visit
 from app.repositories.patient_repository import PatientRepository
-from app.services.patient_flags import PatientFlag, flags_of, load_flag_inputs, stopped_dosing
+from app.services.patient_flags import PatientFlag, flags_of, load_flag_inputs, open_checkin_signals, stopped_dosing
 from app.services.patient_visit_scope import hospital_id_of
 from app.services.work_category import DetailStatus, WorkCategory, derive, load_signals
 
@@ -279,6 +279,7 @@ class PatientService:
         signals = await load_signals([visit.visit_id for visit in latest.values()], hospital_id)
         flag_inputs = await load_flag_inputs(latest, hospital_id)
         stopped = await stopped_dosing(latest)
+        signal_patients = await open_checkin_signals(latest)
         today = now().astimezone(DISPLAY_TIMEZONE).date()
 
         in_treatment: set[int] = set()
@@ -291,6 +292,8 @@ class PatientService:
             marks = flags_of(flag_inputs[patient_id], today) if patient_id in flag_inputs else []
             if patient_id in stopped:
                 marks = marks + [PatientFlag.STOPPED_DOSING]
+            if patient_id in signal_patients:
+                marks = marks + [PatientFlag.CHECKIN_SIGNAL]
             # **이탈도 챙길 일이다.** 원문에서 「완료 · 열람」인 줄에 ⚠ 배지가
             # 붙어 있다 — 진료는 끝났는데 환자가 이탈하는 자리라, 보완만
             # 세면 그 줄은 어느 칩에도 안 걸린다.
@@ -311,6 +314,7 @@ class PatientService:
         signals = await load_signals(visit_ids, hospital_id) if visit_ids else {}
         flag_inputs = await load_flag_inputs(latest, hospital_id)
         stopped = await stopped_dosing(latest)
+        signal_patients = await open_checkin_signals(latest)
         diagnoses = await self._diagnoses(visit_ids, hospital_id)
         doctors = await self._doctors(latest, hospital_id)
         today = now().astimezone(DISPLAY_TIMEZONE).date()
@@ -322,6 +326,8 @@ class PatientService:
             marks = flags_of(flag_inputs[patient.patient_id], today) if patient.patient_id in flag_inputs else []
             if patient.patient_id in stopped:
                 marks = marks + [PatientFlag.STOPPED_DOSING]
+            if patient.patient_id in signal_patients:
+                marks = marks + [PatientFlag.CHECKIN_SIGNAL]
             found.append(
                 PatientRow(
                     patient=patient,

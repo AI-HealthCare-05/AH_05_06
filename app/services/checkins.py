@@ -1,6 +1,7 @@
 """승인 안내 링크에 연결된 D+7 응답 저장·조회 — KEY-151."""
 
 from tortoise.exceptions import IntegrityError
+from tortoise.transactions import in_transaction
 
 from app.core.auth_errors import AuthError as ApiError
 from app.dtos.checkins import CheckInCreateRequest
@@ -37,6 +38,7 @@ def _same_answer(existing: CheckIn, payload: CheckInCreateRequest) -> bool:
     pain = payload.pain
     return (
         existing.medication == payload.medication
+        and existing.note == payload.note
         and existing.pain_had == (pain.had if pain is not None else None)
         and existing.pain_score == (pain.score if pain is not None else None)
         and set(existing.pain_types or []) == set(pain.types if pain is not None else [])
@@ -53,6 +55,18 @@ class CheckInService:
         return guide, answered
 
     async def save(self, raw_token: str, payload: CheckInCreateRequest) -> CheckIn:
+        from app.services.checkin_signals import CheckInSignalService
+
+        async with in_transaction():
+            signals = CheckInSignalService(self.links)
+            guide = await signals.lock_guide(raw_token)
+            existed = await CheckIn.filter(guide_document_id=guide.pk).select_for_update().first() is not None
+            saved = await self._save_answer(raw_token, payload)
+            if not existed:
+                await signals.correct_from_save(guide, payload)
+            return saved
+
+    async def _save_answer(self, raw_token: str, payload: CheckInCreateRequest) -> CheckIn:
         """D+7 답을 저장한다. **같은 답을 다시 보내면 그때 그 줄을 돌려준다** (KEY-335).
 
         예전에는 두 번째가 무조건 `409` 였다. 그런데 **저장은 이미 성공한 뒤**라,
@@ -64,7 +78,7 @@ class CheckInService:
         """
         _, guide = await self.links.get_approved_guide(raw_token)
 
-        existing = await CheckIn.filter(guide_document_id=guide.guide_document_id).first()
+        existing = await CheckIn.filter(guide_document_id=guide.guide_document_id).select_for_update().first()
         if existing is not None:
             return self._same_or_conflict(existing, payload)
 
@@ -73,6 +87,7 @@ class CheckInService:
             return await CheckIn.create(
                 guide_document=guide,
                 medication=payload.medication,
+                note=payload.note,
                 pain_had=pain.had if pain is not None else None,
                 pain_score=pain.score if pain is not None else None,
                 pain_types=list(pain.types) if pain is not None else [],
@@ -81,7 +96,7 @@ class CheckInService:
             # 위에서 읽은 뒤 `create` 사이에 다른 요청이 먼저 넣었다 — 두 번
             # 누름이 거의 동시에 온 자리다. DB 가 막아 준 것을 그대로 두고
             # 다시 읽어, 같은 답이면 성공으로 돌려준다.
-            existing = await CheckIn.filter(guide_document_id=guide.guide_document_id).first()
+            existing = await CheckIn.filter(guide_document_id=guide.guide_document_id).select_for_update().first()
             if existing is None:
                 raise
             return self._same_or_conflict(existing, payload)

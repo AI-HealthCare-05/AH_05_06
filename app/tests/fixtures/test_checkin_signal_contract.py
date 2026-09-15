@@ -25,7 +25,7 @@ CHECKIN_JS = ROOT / "frontend" / "js" / "checkin.js"
 #: 계약 §4 의 판단. 이 값을 바꾸려면 세 곳을 함께 바꿔야 한다.
 NOTIFIES = {
     "taking": False,
-    "uncomfortable": True,
+    "uncomfortable": False,
     "missing": False,
     "stopped_side_effect": True,
     "stopped_improved": True,

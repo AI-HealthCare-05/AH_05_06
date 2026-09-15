@@ -13,8 +13,12 @@ from app.dtos.checkins import (
     CheckInPainTypeResponse,
     CheckInReadResponse,
     CheckInSaveResponse,
+    CheckInSignalRequest,
+    CheckInSignalResponse,
     HospitalCheckInResponse,
+    HospitalSignalResponse,
     PainType,
+    SignalAcknowledgeRequest,
 )
 from app.dtos.patient_links import (
     GuidePageViewRequest,
@@ -28,6 +32,7 @@ from app.dtos.patient_links import (
     PatientLinkStateResponse,
 )
 from app.models.visits import CheckIn, CheckInMedication, GuideDocument, GuideSectionKey, PatientGuideLink
+from app.services.checkin_signals import REVIEW_ANSWERS, CheckInSignalService
 from app.services.checkins import CheckInService, approved_answer_bodies
 from app.services.patient_guide_view import guide_detail_of, medication_stat_of
 from app.services.patient_links import PatientGuideData, PatientLinkService
@@ -280,10 +285,10 @@ async def read_patient_checkin(
     return CheckInReadResponse(
         answers={
             CheckInMedication.TAKING: None,
-            CheckInMedication.UNCOMFORTABLE: CheckInAnswerContent(lead=caution),
+            CheckInMedication.UNCOMFORTABLE: CheckInAnswerContent(lead=caution, ask=True),
             CheckInMedication.MISSING: CheckInAnswerContent(lead=medication),
-            CheckInMedication.STOPPED_SIDE_EFFECT: CheckInAnswerContent(lead=caution),
-            CheckInMedication.STOPPED_IMPROVED: CheckInAnswerContent(lead=medication),
+            CheckInMedication.STOPPED_SIDE_EFFECT: CheckInAnswerContent(lead=caution, ask=True, notify=True),
+            CheckInMedication.STOPPED_IMPROVED: CheckInAnswerContent(lead=medication, ask=True, notify=True),
         },
         pain_types=[
             CheckInPainTypeResponse(key="menstrual", label="월경통"),
@@ -307,6 +312,8 @@ async def save_patient_checkin(
         check_in_id=check_in.check_in_id,
         medication=check_in.medication,
         pain=_pain_response(check_in),
+        note=check_in.note,
+        signal_answer_key=check_in.medication,
     )
 
 
@@ -323,4 +330,49 @@ async def read_hospital_checkin(
         medication=check_in.medication,
         pain=_pain_response(check_in),
         submitted_at=check_in.created_at,
+        note=check_in.note,
+    )
+
+
+@patient_checkin_router.post("/{token}/signals", response_model=CheckInSignalResponse, status_code=201)
+async def create_checkin_signal(
+    token: str,
+    payload: CheckInSignalRequest,
+    response: Response,
+    _: Annotated[None, Depends(require_patient_session)],
+) -> CheckInSignalResponse:
+    response.headers["Cache-Control"] = "no-store"
+    event, current, accepted = await CheckInSignalService().signal(token, payload)
+    return CheckInSignalResponse(
+        signal_id=event.signal_id,
+        answer_key=event.answer_key,
+        notify=event.answer_key in REVIEW_ANSWERS,
+        current=accepted,
+        current_answer_key=current.answer_key,
+    )
+
+
+@patient_link_management_router.get("/{visit_id}/checkin/signals", response_model=list[HospitalSignalResponse])
+async def read_checkin_signals(
+    visit_id: int,
+    response: Response,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+) -> list[HospitalSignalResponse]:
+    response.headers["Cache-Control"] = "no-store"
+    return [HospitalSignalResponse.from_state(state) for state in await CheckInSignalService().read(actor, visit_id)]
+
+
+@patient_link_management_router.post(
+    "/{visit_id}/checkin/signals/{state_id}/acknowledge", response_model=HospitalSignalResponse
+)
+async def acknowledge_checkin_signal(
+    visit_id: int,
+    state_id: int,
+    payload: SignalAcknowledgeRequest,
+    response: Response,
+    actor: Annotated[StaffActor, Depends(get_staff_actor)],
+) -> HospitalSignalResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return HospitalSignalResponse.from_state(
+        await CheckInSignalService().acknowledge(actor, visit_id, state_id, payload)
     )
