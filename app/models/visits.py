@@ -942,3 +942,42 @@ class PatientUsageEvent(models.Model):
             ("guide_document", "created_at"),
             ("event_type", "created_at"),
         )
+
+
+class ChatbotSubmission(models.Model):
+    """물음 하나에 열쇠 하나 — 같은 열쇠가 두 번 와도 모델은 한 번만 부른다 (KEY-328).
+
+    **원문을 담지 않는다.** 물음도 답도 여기 안 들어온다. `PatientUsageEvent` 와
+    같은 약속이고, 원본 삭제·토큰 비노출과 같은 방향이다 — 환자 질문·답변을
+    영구 보관하지 않는다(이희진 님 결정, 2026-09-14).
+
+    **그러면 답은 어디 있나.** Redis 에 5분만 둔다. 막으려는 것이 두 번 누름과
+    재시도인데 그것은 거의 다 몇 초 안에 일어난다.
+
+    **그러면 이 줄은 왜 영속인가.** Redis 만으로는 「이용 기록도 한 줄」
+    (인수조건 2)이 5분까지만 지켜진다. 5분 뒤 같은 열쇠가 오면 캐시가 비어
+    모델을 다시 부르고 기록이 두 줄이 된다. 이 줄이 있으면 그때 **답을 못
+    돌려주더라도 두 번 세는 것은 막는다** — `CHATBOT_ANSWER_EXPIRED` 로 막는다.
+
+    `unique_together` 는 `PatientFeedback` 과 같은 모양이다. 열쇠는 **그 안내문
+    안에서만** 유일하므로 다른 안내문의 같은 열쇠와 안 부딪힌다.
+    """
+
+    chatbot_submission_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument",
+        related_name="chatbot_submissions",
+        on_delete=OnDelete.CASCADE,
+        source_field="guide_document_id",
+    )
+    guide_document_id: int
+    #: 화면이 만든 `submission_id` 의 sha256.
+    idempotency_digest = fields.CharField(max_length=64)
+    #: 물음의 sha256. **같은 열쇠에 다른 물음**을 가르는 데만 쓴다 — 되돌려
+    #: 주기 위한 것이 아니라 「이 열쇠는 저 물음의 것이다」를 확인하는 용도다.
+    question_digest = fields.CharField(max_length=64)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "chatbot_submission"
+        unique_together = (("guide_document", "idempotency_digest"),)

@@ -14,6 +14,8 @@ KEY-96(승인 컨텍스트 기반 LLM)의 `ChatbotService._record()`가 이
 결과만 저장한다.
 """
 
+from tortoise import BaseDBAsyncClient
+
 from app.core.auth_errors import AuthError as ApiError
 from app.models.visits import (
     GuideDocument,
@@ -44,8 +46,8 @@ class PatientUsageService:
     """
 
     @staticmethod
-    async def _approved(guide_document_id: int) -> GuideDocument:
-        guide = await GuideDocument.filter(guide_document_id=guide_document_id).first()
+    async def _approved(guide_document_id: int, connection: BaseDBAsyncClient | None = None) -> GuideDocument:
+        guide = await GuideDocument.filter(guide_document_id=guide_document_id).using_db(connection).first()
         if guide is None:
             raise _not_recordable()
         if guide.status is not GuideStatus.SCHEDULED_TO_SEND or guide.approved_at is None:
@@ -90,6 +92,7 @@ class PatientUsageService:
         outcome: PatientAnswerOutcome,
         grounded_section: GuideSectionKey | None = None,
         response_ref_digest: str | None = None,
+        connection: BaseDBAsyncClient | None = None,
     ) -> PatientUsageEvent:
         """챗봇이 답했다 · 막았다 · 못 했다.
 
@@ -98,8 +101,11 @@ class PatientUsageService:
 
         키워드 인자로만 받는 것은 순서를 헷갈려 갈래와 결과가 바뀌는 것을
         막으려는 것이다 — 둘 다 문자열이라 바뀌어도 조용히 저장된다.
+
+        `connection` 은 KEY-328 이 쓴다. 멱등 열쇠 줄과 **이 한 줄이 같은
+        트랜잭션에** 들어가야 한쪽만 남는 순간이 없다.
         """
-        guide = await self._approved(guide_document_id)
+        guide = await self._approved(guide_document_id, connection)
         return await PatientUsageEvent.create(
             guide_document=guide,
             event_type=PatientUsageEventType.CHATBOT_ANSWERED,
@@ -107,4 +113,5 @@ class PatientUsageService:
             answer_outcome=outcome,
             grounded_section=grounded_section,
             response_ref_digest=response_ref_digest,
+            using_db=connection,
         )
