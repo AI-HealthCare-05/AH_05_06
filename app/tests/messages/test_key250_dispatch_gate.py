@@ -132,12 +132,14 @@ class TestGateBlocksUndeletedSourceDocuments(TestCase):
     async def test_gate_passes_and_reports_a_document_with_no_deletion_record_yet(self) -> None:
         """삭제 기록이 아직 없으면 막지 않는다 — 그게 곧 "지울 차례"라는 뜻이다."""
         message = await make_due_message(approved=True)
-        _, doc = await _attach_document(message, file_exists=True)
+        path, doc = await _attach_document(message, file_exists=True)
+        try:
+            decision = await evaluate_dispatch_gate(message)
 
-        decision = await evaluate_dispatch_gate(message)
-
-        assert decision.hold_reason is None
-        assert decision.pending_source_document_ids == (doc.document_id,)
+            assert decision.hold_reason is None
+            assert decision.pending_source_document_ids == (doc.document_id,)
+        finally:
+            path.unlink(missing_ok=True)
 
     async def test_gate_passes_when_the_deletion_record_matches_a_missing_file(self) -> None:
         message = await make_due_message(approved=True)
@@ -212,18 +214,23 @@ class TestGateBlocksUndeletedSourceDocuments(TestCase):
     async def test_deletion_confirmation_failure_retries_then_holds_not_fails(self) -> None:
         """삭제 확인이 실패하면 재시도하고, 소진되면 FAILED가 아니라 HELD로 끝낸다."""
         message = await make_due_message(approved=True, link_free_template=True, attempt_count=MAX_ATTEMPTS - 1)
-        await _attach_document(message, file_exists=True)
+        path, _ = await _attach_document(message, file_exists=True)
         sender = _CountingSender()
 
-        with patch("app.services.message_dispatch.LocalFileStorage", return_value=_NeverDeletesStorage()):
-            result = await dispatch_message(message.guide_message_id, sender)
+        try:
+            with patch("app.services.message_dispatch.LocalFileStorage", return_value=_NeverDeletesStorage()):
+                result = await dispatch_message(message.guide_message_id, sender)
 
-        assert result is not None
-        assert result.status is GuideMessageStatus.HELD
-        assert sender.calls == [], "삭제가 안 끝났으면 발송기를 부르면 안 된다"
-        updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
-        assert updated.hold_reason is GuideMessageHold.SOURCE_NOT_DELETED
-        assert updated.failure_code is None, "GuideMessageFailure는 이 경우에 안 맞는다 — HELD여야 한다"
+            assert result is not None
+            assert result.status is GuideMessageStatus.HELD
+            assert sender.calls == [], "삭제가 안 끝났으면 발송기를 부르면 안 된다"
+            updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
+            assert updated.hold_reason is GuideMessageHold.SOURCE_NOT_DELETED
+            assert updated.failure_code is None, "GuideMessageFailure는 이 경우에 안 맞는다 — HELD여야 한다"
+        finally:
+            # _NeverDeletesStorage를 목으로 갈아끼워 실제 삭제 경로를 안 탔으니
+            # 여기서 직접 정리한다 — 2heej 리뷰(임시 파일 미정리).
+            path.unlink(missing_ok=True)
 
 
 class TestAuditEventsAreAppendOnly(TestCase):
@@ -558,3 +565,36 @@ class TestSourcePurgeIsIdempotentAndAuditSafe(TestCase):
         assert len(purge_events) == 1
         assert purge_events[0].reason == f"document_id={doc.document_id}"
         assert str(path) not in (purge_events[0].reason or "")
+
+    async def test_a_message_blocked_by_a_later_gate_does_not_purge_the_source(self) -> None:
+        """인수조건 2 — 예약링크 없음·안전검증·승인 번호로 막히는 문자는
+        원본을 지우지 않는다. 삭제는 되돌릴 수 없다(2heej 리뷰).
+
+        RECIPIENT_NOT_APPROVED는 dispatch_gate.py에서
+        _source_deletion_state 판정 이후에 체크되는 게이트다 —
+        pending_source_document_ids가 이미 채워진 상태에서 그 게이트가
+        막으므로, dispatch_message()가 실제로 그 순서를 지켜 삭제
+        블록에 도달하지 않는지를 코드 순서가 아니라 값으로 잰다.
+        """
+        message = await make_due_message(link_free_template=True, phone="01099998888")
+        path, doc = await _attach_document(message, file_exists=True)
+        sender = _CountingSender()
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            result = await dispatch_message(message.guide_message_id, sender)
+
+        try:
+            assert result is not None and result.status is GuideMessageStatus.HELD
+            assert sender.calls == [], "다른 게이트에 막혔는데 발송기를 불렀다"
+            await doc.refresh_from_db()
+            assert doc.source_deleted_at is None, "다른 게이트에 막힌 문자의 원본을 지웠다 — 되돌릴 수 없는 일이다"
+            assert path.exists(), "실제 파일이 지워졌다"
+            events = await GuideMessageEvent.filter(guide_message_id=message.guide_message_id).values_list(
+                "event_type", flat=True
+            )
+            assert GuideMessageEventType.SOURCE_PURGED not in events
+        finally:
+            path.unlink(missing_ok=True)

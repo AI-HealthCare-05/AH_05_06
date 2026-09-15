@@ -152,11 +152,13 @@ async def _post_generate_safety_check_passed(guide_document_id: int) -> bool:
     guide_document_id에 연결된 POST_GENERATE BLOCK 레코드가 존재하지 않는다.
     사후 비동기 안전검증 흐름이 추가되면 비로소 의미를 갖는다.
 
-    형제 함수 _source_documents_are_deleted와 방향이 반대다 — 원본 삭제는
-    기록이 없으면(조회 실패 포함) 막고, 이 함수는 기록이 없으면 통과한다.
-    원본 삭제는 실시간 파일 존재 여부를 확인할 수 있어 불확실성이 다르고,
-    고정 템플릿 경로는 POST_GENERATE 검증 자체를 실행하지 않아 기록 없음이
-    곧 「검증 대상 아님」을 뜻한다. 의도된 비대칭이다.
+    형제 함수 _source_deletion_state와 방향이 반대다 — 원본 삭제는
+    기록이 없으면 오히려 통과시키고(그 자리에서 지울 차례로 보고한다,
+    KEY-349) 기록과 실제가 어긋날 때만 막는다. 이 함수는 반대로 기록이
+    없으면 통과, 기록이 BLOCK이면 막는다. 원본 삭제는 실시간 파일 존재
+    여부를 확인할 수 있어 불확실성이 다르고, 고정 템플릿 경로는
+    POST_GENERATE 검증 자체를 실행하지 않아 기록 없음이 곧 「검증 대상
+    아님」을 뜻한다. 의도된 비대칭이다.
     """
     return not await GuideSafetyCheck.filter(
         guide_document_id=guide_document_id,
