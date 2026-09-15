@@ -139,6 +139,7 @@ function historyBlockHtml(block) {
     guideSaying(block),
     checksSaying(block),
     courseEndSaying(block),
+    block.checkin_note ? "환자 메모: " + block.checkin_note : "",
   ].filter(Boolean);
   return (
     '<section class="hist"><h3 class="hist__head">' +
@@ -149,8 +150,21 @@ function historyBlockHtml(block) {
         return '<p class="hist__line">' + esc(line) + "</p>";
       })
       .join("") +
-    "</section>"
+    checkinSignalsHtml(block) + "</section>"
   );
+}
+
+function checkinSignalsHtml(block) {
+  return (block.checkin_signals || []).map(function (signal) {
+    var open = signal.status === "OPEN";
+    return '<div class="hist__line"><p>복약 선택 신호: ' + esc(answerSaying(signal.answer_key)) +
+      ' · ' + (open ? '확인 필요' : signal.status === "ACKNOWLEDGED" ? '확인 완료' : '확인 대상 아님') +
+      '</p><p class="note">환자가 선택한 사실이며, 확인 완료는 진료 완료나 안전 해소가 아닙니다.</p>' +
+      (signal.acknowledged_at ? '<p>확인 직원 #' + esc(String(signal.acknowledged_by)) + ' · ' + esc(stamp(signal.acknowledged_at)) + '</p>' : '') +
+      (open ? '<button type="button" class="button-ghost" data-checkin-ack="' + signal.state_id +
+        '" data-visit="' + block.visit_id + '" data-signal="' + (signal.signal_id || '') +
+        '" data-updated="' + esc(signal.updated_at) + '">확인 완료</button>' : '') + '</div>';
+  }).join('');
 }
 
 function historyModalHtml(body) {
@@ -195,6 +209,19 @@ function openPatientHistory(patientId, blocks) {
     .history(patientId, blocks)
     .then(function (answer) {
       body.innerHTML = historyModalHtml(answer);
+      body.querySelectorAll('[data-checkin-ack]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          button.disabled = true;
+          request('/visits/' + button.dataset.visit + '/checkin/signals/' + button.dataset.checkinAck + '/acknowledge', {
+            method: 'POST', body: { signal_id: button.dataset.signal ? Number(button.dataset.signal) : null, updated_at: button.dataset.updated },
+          }).then(function () {
+            return openPatientHistory(patientId, blocks);
+          }).catch(function () {
+            button.disabled = false;
+            button.textContent = '확인 실패 — 이력을 다시 열어 주세요';
+          });
+        });
+      });
     })
     .catch(function (error) {
       body.innerHTML =

@@ -34,6 +34,7 @@ function rosterChips(counts, chosen) {
 var FLAG_SAYING = {
   UNREAD_STREAK: "3회 연속 미열람",
   STOPPED_DOSING: "복약 중단 응답",
+  CHECKIN_SIGNAL: "복약 선택 확인 필요",
   RUN_OUT_OVERDUE: "소진 후 7일 경과",
 };
 

@@ -12,8 +12,9 @@ A1-7로 관리자에게만.」
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from app.dtos.checkins import HospitalSignalResponse
 from app.dtos.visits import DoctorResponse
 from app.models.visits import GuideMessageKind
 
@@ -54,6 +55,8 @@ class HistoryVisit(BaseModel):
     guide_pages_total: int = 0
 
     checks: list[HistoryCheck]
+    checkin_note: str | None = None
+    checkin_signals: list[HospitalSignalResponse] = Field(default_factory=list)
 
     #: 약이 떨어지는 날. 처방일수를 모르면 없다 — **셈하지 않는다.**
     runs_out_on: date | None

@@ -31,6 +31,15 @@ function notifyFor(answers, key) {
   return info ? !!info.notify : false;
 }
 
+/* KEY-238: 서버가 환자 토큰을 돌려주지 않아도 현재 브라우저의 토큰으로
+   안내로 돌아간다. 토큰은 서버로 전송되지 않는 fragment에만 싣는다. */
+function checkinGuideReturnUrl(token) {
+  if (!token) return "";
+  var fragment = new URLSearchParams();
+  fragment.set("t", token);
+  return "/guide.html#" + fragment.toString();
+}
+
 (function () {
   /* **자기 칸이 없는 페이지에서는 아무것도 하지 않는다.**
      이 파일은 `checkin.html` 에만 실린다. 뿌리가 없으면 조용히 돌아간다 —
@@ -221,10 +230,7 @@ function notifyFor(answers, key) {
       next +
       (result.next_visit ? "<dt>다음 진료</dt><dd>" + esc(result.next_visit) + "</dd>" : "") +
       "</dl>" +
-      /* 예전에는 `/guide.html` 로만 보내서 식별자가 비었다 — 그 화면은
-         `?visit=` 으로 `/api/v1/guides/{visit_id}` 를 부른다. 링크는 서버가
-         내려준 것을 쓴다. 안 주면 **깨진 링크를 그리지 않는다** (`#55` 리뷰). */
-      (result.guide_url ? '<a class="done__link" href="' + esc(result.guide_url) + '">복약지도 다시 보기</a>' : "") +
+      (token ? '<a class="done__link" href="' + esc(checkinGuideReturnUrl(token)) + '">복약지도 다시 보기</a>' : "") +
       '<p class="done__note">이 화면은 저절로 넘어가지 않아요 · 다 보시고 닫으셔도 됩니다</p>' +
       "</div>"
     );
@@ -441,7 +447,7 @@ function notifyFor(answers, key) {
       var box = el("ask-note");
       if (box) {
         box.hidden = false;
-        box.textContent = "문의 창구는 준비 중이에요. 급하시면 진료받으신 의원으로 전화해 주세요 — 여기 적으신 답은 그대로 전달돼요.";
+        box.textContent = "문의가 필요하면 진료받으신 의원으로 전화해 주세요. 이 화면은 실시간 상담이나 즉시 확인을 보장하지 않아요. 메모는 마지막에 저장을 눌러야 전달돼요.";
         box.focus();
       }
       return;

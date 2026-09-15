@@ -187,9 +187,13 @@ class TestTwoPressesThatLandTogether(CheckInTestCase):
         """먼저 들어간 값이 **다르면** 조용히 덮지 않는다."""
         await make_linked_guide(await make_hospital("KEY-335 경합 다른 답"))
 
-        with patch.object(CheckIn, "create", self._another_request_wins(medication="missing")):
-            async with self.client() as client:
-                res = await client.post(f"/api/v1/checkins/{TOKEN}", json=SAME)
+        # KEY-238은 안내 행을 잠근다. 같은 트랜잭션 안에서 '다른 요청'을
+        # 삽입하면 오류 때 함께 rollback되므로 실제 경합이 아니다.
+        # 실제 독립 connection 경합은 test_key238_signals에서 검증한다.
+        async with self.client() as client:
+            first = await client.post(f"/api/v1/checkins/{TOKEN}", json={**SAME, "medication": "missing"})
+            assert first.status_code == 201
+            res = await client.post(f"/api/v1/checkins/{TOKEN}", json=SAME)
 
         assert res.status_code == 409, res.text
         assert res.json()["code"] == "CHECKIN_ALREADY_ANSWERED"

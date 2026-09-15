@@ -396,8 +396,8 @@ function mockResult() {
     fields: (function () {
       if (MOCK_CASE === "clean") return mockCleanFields();
       var fields = mockFields();
-      /* 확정된 항목은 고칠 수 없다(#32). 그 상태를 눌러 볼 수 있어야
-         화면이 409 를 제대로 말하는지 확인할 수 있다. */
+      /* KEY-273: 확정된 항목도 수정할 수 있다. 확정 표시가 있는 상태에서
+         값을 고치면 재확정이 필요해지는 흐름을 확인하는 합성 시나리오다. */
       if (MOCK_CASE === "confirmed") {
         /* 확정을 **정상 상태 하나에만** 걸면 「확정인데 못 읽은 항목」과
            「확정인데 후보가 여럿인 항목」을 못 본다. `#40` 리뷰에서 걸린 것이
@@ -557,6 +557,11 @@ function mockPatch(fieldId, body) {
   if (changed || unitChanged) {
     field.modified_by = 101;
     field.modified_at = "2026-08-13T10:42:00+09:00";
+  }
+  if (changed || unitChanged) {
+    field.is_confirmed = false;
+    field.confirmed_by = null;
+    field.confirmed_at = null;
   }
   field.version += 1;
   if (body.confirm) {

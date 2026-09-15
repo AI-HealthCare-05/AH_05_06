@@ -27,7 +27,7 @@ function storage() {
    돌리고 있었다 (KEY-281 이 남긴 처분). */
 
 
-test("D+7 실제 저장은 확정 범위인 복약·통증만 서버에 보낸다", async () => {
+test("D+7 실제 저장은 KEY-238 메모·순번을 포함하고 notify 판정은 보내지 않는다", async () => {
   let call = null;
   const context = vm.createContext({
     MOCK: false,
@@ -47,14 +47,21 @@ test("D+7 실제 저장은 확정 범위인 복약·통증만 서버에 보낸�
   await context.checkinApi.save("synthetic token", {
     medication: "taking",
     pain: { had: false, score: null, types: [] },
-    note: "KEY-151 범위 밖",
-    client_id: "ignored",
+    note: "합성 선택 메모",
+    client_id: "synthetic-device",
+    client_session_id: "synthetic-tab",
+    client_sequence: 2,
+    notify: true,
   });
 
   assert.equal(call.url, "/checkins/synthetic%20token");
   assert.deepEqual(JSON.parse(JSON.stringify(call.options.body)), {
     medication: "taking",
     pain: { had: false, score: null, types: [] },
+    note: "합성 선택 메모",
+    client_id: "synthetic-device",
+    client_session_id: "synthetic-tab",
+    client_sequence: 2,
   });
 });
 
