@@ -271,7 +271,7 @@ class TestChunkOptionalApproval(TestCase):
         search = ApprovedKnowledgeSearchService(cast(EmbeddingProvider, FakeEmbeddingProvider()))
         result = await search.search(
             "자궁내막증 생활관리",
-            hospital_id=None,
+            hospital_id=1,
             allowed_sections=frozenset({"page-1"}),
             searched_at=date.today(),
         )
@@ -510,7 +510,7 @@ def _collect_instructions(disease: str, section_key: str) -> str:
         return _R()
 
     generator = RagGuideGenerator(search=None, model=AsyncMock())  # type: ignore[arg-type]
-    generator.model.generate = fake_generate  # type: ignore[method-assign]
+    generator.model.generate = fake_generate  # type: ignore[method-assign, union-attr]
 
     import asyncio
 
