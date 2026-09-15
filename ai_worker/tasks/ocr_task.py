@@ -72,6 +72,13 @@ class _JobAlreadyFinishedError(Exception):
     """정리 작업 등이 먼저 종료했다. 늦게 온 결과로 종료 상태를 덮지 않는다."""
 
 
+async def _check_retry_allowed(ocr_job_id: str, retry_count: int) -> None:
+    # Backoff 중 정리 루프가 종료할 수 있어 대기 후, 재호출 직전에 확인한다.
+    # HTTP 동안 DB 잠금을 유지하지 않으며 완료 저장의 잠금 검사는 그대로 둔다.
+    if retry_count and not await OcrJob.filter(ocr_job_id=ocr_job_id, status=OcrJobStatus.PROCESSING).exists():
+        raise _JobAlreadyFinishedError
+
+
 async def _start_job(ocr_job_id: str, t0: float) -> OcrJob | None:
     """정리 작업과 경쟁하더라도 이미 종료된 작업은 시작하지 않는다."""
     started_at = now()
@@ -126,6 +133,7 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         retry_count = 0
         while True:
             try:
+                await _check_retry_allowed(ocr_job_id, retry_count)
                 clova_results = await _call_clova_for_documents(job, job_documents, doc_map)
                 clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
                 missing = await _save_clova_result(job, job_documents, clova_results, lab_kw)

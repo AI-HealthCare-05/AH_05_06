@@ -58,3 +58,13 @@ Jira의 “확정 필드 수정 차단”은 현재 KEY-273과 충돌한다. 202
 로컬 시각 증거: `/private/tmp/key154-timeout.png`, `/private/tmp/key154-current-patient.png`, `/private/tmp/key154-confirmed-edit.png`. 실행 스크립트는 `/private/tmp/key154-browser-check.cjs`에 있으며 로컬 Playwright/Chrome 설치 경로를 사용한다. 이 임시 경로들은 커밋 산출물이 아니다.
 
 커밋·푸시·PR 및 병합 후 통합 환경 QA는 별도 단계다. `qa-required`와 이희진·한금준 리뷰를 유지한다.
+
+## PR #328 후속 리뷰 반영 — 2026-09-15
+
+- 일반 댓글 3개 및 인라인 댓글 없음 확인. 한금준님의 재시도 개선 의견을 이희진님 요청대로 같은 PR에서 반영했다.
+- CLOVA 재시도 backoff 이후, 재호출 직전에 DB의 PROCESSING 여부를 조회한다. 이미 종료됐거나 삭제된 작업이면 기존 ALREADY_PROCESSED 종료 경로를 사용하며 종료 상태·실패 코드를 덮지 않는다.
+- HTTP 동안 DB 잠금을 유지하지 않는다. 조회 직후 상태가 바뀌는 짧은 경쟁 구간까지 없앤다고 주장하지 않으며, 늦은 결과 저장의 기존 행 잠금·상태 재확인을 유지한다.
+- 세 가지 재시도 가능 오류(timeout/network/server) × 오류 반환 중 정리/대기 중 정리 6개 시나리오를 DB와 합성 CLOVA로 검사한다. CLOVA 호출은 최초 1회뿐이고 PROCESSING_TIMEOUT·완료 시각·진행률이 유지되며 결과가 생기지 않는다. 정상 재시도 성공/소진/재시도 불가 오류의 기존 테스트도 유지한다.
+- 최종 helper 코드에서 백엔드 전체 `pytest -n 4 -q app ai_worker` 재실행: 2,823 passed / 기존 xfailed 1 / subtests 14 passed, 168.26초. 기존 HTTP 422 상수 폐기 예정 경고 10건이며 실패 없음.
+- 전체 프런트 1,317 passed, Ruff check/format 및 mypy 472개 파일 통과. 테스트 기대값 완화·migration·외부 서비스 호출·화면 변경 없음. 최초 보완의 Ruff 복잡도/루프 변수 경고는 helper 분리와 명시적 변수 바인딩으로 해결했다.
+- 실제 CLOVA/운영 DB/배포 및 새 브라우저 시연은 실행하지 않았다. 잘못된 추가 테스트 경로로 1회 수집 없이 종료한 뒤 경로를 바로잡았으며, 최종 검증은 위 전체 백엔드 재실행 결과를 기준으로 한다.

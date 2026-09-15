@@ -28,6 +28,42 @@ AT = datetime(2026, 9, 15, 15, tzinfo=ZoneInfo("Asia/Seoul"))
 
 
 class TestProcessingTimeout(TestCase):
+    async def test_retry_stops_if_recovery_finishes_during_error_or_backoff(self) -> None:
+        for phase in ("error", "backoff"):
+            for code in ("CLOVA_TIMEOUT", "CLOVA_NETWORK_ERROR", "CLOVA_SERVER_ERROR"):
+                job = await self.job(f"retry-{phase}-{code}")
+                with tempfile.TemporaryDirectory() as folder:
+                    filename = Path(folder) / "synthetic.jpg"
+                    filename.write_bytes(JPEG_BYTES)
+                    await self.attach(job, str(filename))
+
+                    async def expire(job_id=job.pk):
+                        await OcrJob.filter(pk=job_id).update(started_at=AT - PROCESSING_TIMEOUT)
+                        assert await expire_stale_ocr_jobs(at=AT) == 1
+
+                    async def fail_call(*args, when=phase, error_code=code, **kwargs):
+                        if when == "error":
+                            await expire()
+                        raise ClovaOcrError(error_code, "synthetic")
+
+                    async def backoff(_delay, when=phase):
+                        if when == "backoff":
+                            await expire()
+
+                    with (
+                        patch("ai_worker.tasks.ocr_task.config") as config,
+                        patch("ai_worker.tasks.ocr_task.call_clova_ocr", side_effect=fail_call) as clova,
+                        patch("ai_worker.tasks.ocr_task.asyncio.sleep", side_effect=backoff),
+                    ):
+                        config.clova_enabled = True
+                        await process_ocr_job(job.pk)
+                        assert clova.await_count == 1
+                await job.refresh_from_db()
+                assert job.status == OcrJobStatus.FAILED
+                assert job.failure_code == PROCESSING_TIMEOUT_CODE
+                assert job.completed_at == AT and job.progress == 0
+                assert not await OcrResult.filter(ocr_job=job).exists()
+
     async def test_confirmed_field_remains_editable_but_requires_reconfirmation(self) -> None:
         job = await self.job("syn154-confirmed", status=OcrJobStatus.COMPLETED)
         result = await OcrResult.create(ocr_job=job, model_name="synthetic")
