@@ -21,6 +21,7 @@ from app.models.prescriptions import Prescription
 from app.models.visits import (
     CheckIn,
     CheckInMedication,
+    CheckInSignalState,
     GuideMessage,
     GuideMessageKind,
     GuideMessageStatus,
@@ -57,6 +58,7 @@ class PatientFlag:
 
     UNREAD_STREAK = "UNREAD_STREAK"
     STOPPED_DOSING = "STOPPED_DOSING"
+    CHECKIN_SIGNAL = "CHECKIN_SIGNAL"
     RUN_OUT_OVERDUE = "RUN_OUT_OVERDUE"
 
 
@@ -117,6 +119,20 @@ async def stopped_dosing(latest_visits: dict[int, Visit]) -> set[int]:
         ).values_list("guide_document__visit_id", flat=True)
     )
     return {patient_id for patient_id, visit in latest_visits.items() if visit.visit_id in stopped_visits}
+
+
+async def open_checkin_signals(latest_visits: dict[int, Visit]) -> set[int]:
+    visit_ids = [visit.visit_id for visit in latest_visits.values()]
+    if not visit_ids:
+        return set()
+    open_visits = set(
+        await CheckInSignalState.filter(
+            guide_document__visit_id__in=visit_ids,
+            needs_review=True,
+            acknowledged_at__isnull=True,
+        ).values_list("guide_document__visit_id", flat=True)
+    )
+    return {patient_id for patient_id, visit in latest_visits.items() if visit.visit_id in open_visits}
 
 
 async def load_flag_inputs(

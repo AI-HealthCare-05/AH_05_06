@@ -519,8 +519,61 @@
       "CheckInCreateRequest": {
         "additionalProperties": false,
         "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_sequence": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Sequence"
+          },
+          "client_session_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Session Id"
+          },
           "medication": {
             "$ref": "#/components/schemas/CheckInMedication"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           },
           "pain": {
             "anyOf": [
@@ -747,6 +800,17 @@
             "title": "Next Visit",
             "type": "null"
           },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
           "pain": {
             "anyOf": [
               {
@@ -762,6 +826,16 @@
             "default": true,
             "title": "Saved",
             "type": "boolean"
+          },
+          "signal_answer_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckInMedication"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -770,6 +844,74 @@
           "pain"
         ],
         "title": "CheckInSaveResponse",
+        "type": "object"
+      },
+      "CheckInSignalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "answer_key": {
+            "$ref": "#/components/schemas/CheckInMedication"
+          },
+          "client_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_sequence": {
+            "maximum": 9007199254740991.0,
+            "minimum": 1.0,
+            "title": "Client Sequence",
+            "type": "integer"
+          },
+          "client_session_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Client Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer_key",
+          "client_id",
+          "client_session_id",
+          "client_sequence"
+        ],
+        "title": "CheckInSignalRequest",
+        "type": "object"
+      },
+      "CheckInSignalResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "answer_key": {
+            "$ref": "#/components/schemas/CheckInMedication"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "current_answer_key": {
+            "$ref": "#/components/schemas/CheckInMedication"
+          },
+          "notify": {
+            "title": "Notify",
+            "type": "boolean"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "signal_id",
+          "answer_key",
+          "notify",
+          "current",
+          "current_answer_key"
+        ],
+        "title": "CheckInSignalResponse",
         "type": "object"
       },
       "CopyDefaultItem": {
@@ -1788,6 +1930,24 @@
       "HistoryVisit": {
         "description": "진료 한 건 — 원문의 블록 하나.",
         "properties": {
+          "checkin_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkin Note"
+          },
+          "checkin_signals": {
+            "items": {
+              "$ref": "#/components/schemas/HospitalSignalResponse"
+            },
+            "title": "Checkin Signals",
+            "type": "array"
+          },
           "checks": {
             "items": {
               "$ref": "#/components/schemas/HistoryCheck"
@@ -1907,6 +2067,17 @@
           "medication": {
             "$ref": "#/components/schemas/CheckInMedication"
           },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
           "pain": {
             "anyOf": [
               {
@@ -1991,6 +2162,82 @@
           "booking_url"
         ],
         "title": "HospitalResponse",
+        "type": "object"
+      },
+      "HospitalSignalResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "acknowledged_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged By"
+          },
+          "answer_key": {
+            "$ref": "#/components/schemas/CheckInMedication"
+          },
+          "needs_review": {
+            "title": "Needs Review",
+            "type": "boolean"
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Id"
+          },
+          "state_id": {
+            "title": "State Id",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "OPEN",
+              "ACKNOWLEDGED",
+              "NOT_REQUIRED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state_id",
+          "signal_id",
+          "answer_key",
+          "needs_review",
+          "status",
+          "acknowledged_by",
+          "acknowledged_at",
+          "updated_at"
+        ],
+        "title": "HospitalSignalResponse",
         "type": "object"
       },
       "HospitalUpdateRequest": {
@@ -5624,6 +5871,33 @@
         "title": "SetPhase",
         "type": "string"
       },
+      "SignalAcknowledgeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "signal_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "updated_at"
+        ],
+        "title": "SignalAcknowledgeRequest",
+        "type": "object"
+      },
       "StaffCreateRequest": {
         "additionalProperties": false,
         "description": "A1-2 가 보내는 것 넷.\n\n**병원은 안 받는다.** 로그인한 관리자의 병원으로 정한다 — 요청이 정하게\n하면 다른 의원에 계정을 만들 수 있다.\n\n**`status` 도 안 받는다.** 만들어지는 계정은 언제나 `active` 다. 퇴사\n처리는 A1-3 몫이고, 만들면서 퇴사시키는 일은 없다.",
@@ -7536,6 +7810,74 @@
           }
         },
         "summary": "Save Patient Checkin",
+        "tags": [
+          "patient-checkins"
+        ]
+      }
+    },
+    "/api/v1/checkins/{token}/signals": {
+      "post": {
+        "operationId": "create_checkin_signal_api_v1_checkins__token__signals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "patient_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Patient Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInSignalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInSignalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Checkin Signal",
         "tags": [
           "patient-checkins"
         ]
@@ -10378,6 +10720,123 @@
           }
         ],
         "summary": "Read Hospital Checkin",
+        "tags": [
+          "patient-links"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/checkin/signals": {
+      "get": {
+        "operationId": "read_checkin_signals_api_v1_visits__visit_id__checkin_signals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HospitalSignalResponse"
+                  },
+                  "title": "Response Read Checkin Signals Api V1 Visits  Visit Id  Checkin Signals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Checkin Signals",
+        "tags": [
+          "patient-links"
+        ]
+      }
+    },
+    "/api/v1/visits/{visit_id}/checkin/signals/{state_id}/acknowledge": {
+      "post": {
+        "operationId": "acknowledge_checkin_signal_api_v1_visits__visit_id__checkin_signals__state_id__acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "title": "Visit Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "state_id",
+            "required": true,
+            "schema": {
+              "title": "State Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignalAcknowledgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HospitalSignalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Acknowledge Checkin Signal",
         "tags": [
           "patient-links"
         ]

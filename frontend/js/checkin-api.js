@@ -4,8 +4,8 @@
  *   POST /api/v1/checkins/{token}   답을 저장한다
  *
  * 주소가 `visit_id` 가 아니라 **링크 토큰**인 것이 중요하다. 환자는 로그인하지
- * 않고 개발용 환자 링크로 들어온다. KEY-151은 KEY-90의 승인 안내 링크 검증을
- * 그대로 재사용하며, 실제 SMS와 운영용 OTP는 구현하지 않는다.
+ * 않고 승인 안내 링크와 OTP 인증 후 30분 환자 세션으로 들어온다.
+ * KEY-238은 기존 인증을 재사용하며 SMS 발송 기능을 변경하지 않는다.
  *
  * ── 화면이 문구를 만들지 않는다 ─────────────────────────────
  *
@@ -32,9 +32,12 @@ var checkinApi = {
     return checkinRequest("/checkins/" + encodeURIComponent(token));
   },
   save: function (token, answer) {
-    /* KEY-151 최소 저장 계약은 복약·통증뿐이다. 목업은 KEY-138 신호 순번을
-       계속 검증해야 하므로 전체 값을 쓰고, 실제 API에는 확정된 두 필드만 보낸다. */
-    var body = MOCK ? answer : { medication: answer.medication, pain: answer.pain };
+    /* 선택 메모와 순번은 최종 저장에 포함한다. notify 판정은 서버가 맡는다. */
+    var body = MOCK ? answer : {
+      medication: answer.medication, pain: answer.pain, note: answer.note || null,
+      client_id: answer.client_id, client_session_id: answer.client_session_id,
+      client_sequence: answer.client_sequence,
+    };
     return checkinRequest("/checkins/" + encodeURIComponent(token), { method: "POST", body: body });
   },
 
@@ -394,7 +397,7 @@ function mockCheckin() {
           list: ["한쪽 다리가 붓고 아플 때", "갑자기 숨이 찰 때", "가슴이 아플 때"],
         },
         ask: true,
-        notify: true,
+        notify: false,
       },
       missing: {
         lead: "괜찮아요. 가끔 놓치는 분이 많아요.",

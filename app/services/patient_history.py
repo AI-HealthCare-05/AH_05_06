@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 
 from app.core.api_errors import ApiError
 from app.dependencies.patient_access import ClinicalActor
+from app.dtos.checkins import HospitalSignalResponse
 from app.dtos.patient_history import HistoryCheck, HistoryVisit
 from app.models.ocr import OcrField
 from app.models.patients import Patient
@@ -20,6 +21,7 @@ from app.models.prescriptions import Prescription
 from app.models.staffs import Staff
 from app.models.visits import (
     CheckIn,
+    CheckInSignalState,
     GuideDocument,
     GuideMessage,
     GuideMessageKind,
@@ -73,6 +75,15 @@ class PatientHistoryService:
         messages = await self._messages(list(documents.values()))
         views, pages = await self._views(list(documents.values()))
         answers = await self._answers(list(documents.values()))
+        notes = dict(
+            await CheckIn.filter(guide_document__visit_id__in=visit_ids).values_list("guide_document__visit_id", "note")
+        )
+        signal_rows = await CheckInSignalState.filter(guide_document__visit_id__in=visit_ids).prefetch_related(
+            "guide_document"
+        )
+        signals: dict[int, list[HospitalSignalResponse]] = {}
+        for row in signal_rows:
+            signals.setdefault(row.guide_document.visit_id, []).append(HospitalSignalResponse.from_state(row))
         courses = await self._courses(visit_ids)
 
         newest = every[0].visited_at if every else None
@@ -101,6 +112,8 @@ class PatientHistoryService:
                     guide_pages_read=len(read & set(GUIDE_PAGES)),
                     guide_pages_total=len(GUIDE_PAGES),
                     checks=self._checks(sent, seen, answers.get(document_id) if document_id else None),
+                    checkin_note=notes.get(visit.visit_id),
+                    checkin_signals=signals.get(visit.visit_id, []),
                     runs_out_on=self._runs_out(visit.visited_at.date(), course),
                     revisited=newest is not None and visit.visited_at < newest,
                 )

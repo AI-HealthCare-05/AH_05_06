@@ -41,6 +41,7 @@ class TestD7StorageAndHospitalQuery(CheckInTestCase):
             "visit_id",
             "medication",
             "pain",
+            "note",
             "submitted_at",
             "demo_only",
         }

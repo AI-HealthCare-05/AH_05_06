@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.dtos.base import StrictModel
 from app.models.visits import CheckInMedication
@@ -30,6 +30,66 @@ class CheckInPainRequest(StrictModel):
 class CheckInCreateRequest(StrictModel):
     medication: CheckInMedication
     pain: CheckInPainRequest | None = None
+    note: str | None = Field(default=None, max_length=1000)
+    client_id: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    client_session_id: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    client_sequence: int | None = Field(default=None, ge=1, le=9007199254740991, strict=True)
+
+    @field_validator("note")
+    @classmethod
+    def normalize_note(cls, value: str | None) -> str | None:
+        return (value.strip() or None) if value is not None else None
+
+    @model_validator(mode="after")
+    def complete_stamp(self) -> "CheckInCreateRequest":
+        supplied = (self.client_id, self.client_session_id, self.client_sequence)
+        if any(value is not None for value in supplied) and not all(value is not None for value in supplied):
+            raise ValueError("신호 식별자는 세 필드를 함께 보내야 합니다.")
+        return self
+
+
+class CheckInSignalRequest(StrictModel):
+    answer_key: CheckInMedication
+    client_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    client_session_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    client_sequence: int = Field(ge=1, le=9007199254740991, strict=True)
+
+
+class CheckInSignalResponse(StrictModel):
+    signal_id: int
+    answer_key: CheckInMedication
+    notify: bool
+    current: bool
+    current_answer_key: CheckInMedication
+
+
+class HospitalSignalResponse(StrictModel):
+    state_id: int
+    signal_id: int | None
+    answer_key: CheckInMedication
+    needs_review: bool
+    status: Literal["OPEN", "ACKNOWLEDGED", "NOT_REQUIRED"]
+    acknowledged_by: int | None
+    acknowledged_at: datetime | None
+    updated_at: datetime
+
+    @classmethod
+    def from_state(cls, state) -> "HospitalSignalResponse":
+        return cls(
+            state_id=state.state_id,
+            signal_id=state.signal_id,
+            answer_key=state.answer_key,
+            needs_review=state.needs_review,
+            status="NOT_REQUIRED" if not state.needs_review else ("ACKNOWLEDGED" if state.acknowledged_at else "OPEN"),
+            acknowledged_by=state.acknowledged_by,
+            acknowledged_at=state.acknowledged_at,
+            updated_at=state.updated_at,
+        )
+
+
+class SignalAcknowledgeRequest(StrictModel):
+    signal_id: int | None
+    updated_at: datetime
 
 
 class CheckInAnswerContent(StrictModel):
@@ -66,6 +126,8 @@ class CheckInSaveResponse(StrictModel):
     saved: Literal[True] = True
     medication: CheckInMedication
     pain: CheckInPainResponse | None
+    note: str | None = None
+    signal_answer_key: CheckInMedication | None = None
     guide_url: None = None
     next_checkin: None = None
     next_visit: None = None
@@ -77,5 +139,6 @@ class HospitalCheckInResponse(StrictModel):
     visit_id: int
     medication: CheckInMedication
     pain: CheckInPainResponse | None
+    note: str | None = None
     submitted_at: datetime
     demo_only: Literal[True] = True

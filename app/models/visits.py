@@ -859,11 +859,69 @@ class CheckIn(models.Model):
     pain_had = fields.BooleanField(null=True)
     pain_score = fields.SmallIntField(null=True)
     pain_types: fields.Field[list[str]] = fields.JSONField(default=list)
+    note = fields.CharField(max_length=1000, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
         table = "check_in"
         indexes = (("created_at",),)
+
+
+class CheckInSignal(models.Model):
+    """선택 사실만 추가한다. 현재 값/확인 처리는 별도 상태에 보관한다."""
+
+    signal_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.ForeignKeyRelation[GuideDocument] = fields.ForeignKeyField(
+        "models.GuideDocument", related_name="checkin_signals", on_delete=OnDelete.RESTRICT
+    )
+    guide_document_id: int
+    answer_key = fields.CharEnumField(CheckInMedication)
+    client_id = fields.CharField(max_length=64)
+    client_session_id = fields.CharField(max_length=64)
+    client_sequence = fields.BigIntField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "check_in_signal"
+        unique_together = (("guide_document", "client_id", "client_sequence"),)
+
+
+class CheckInSignalState(models.Model):
+    """현재 신호와 확인 이력. 확인은 진료 완료나 안전 해소가 아니다."""
+
+    state_id = fields.BigIntField(primary_key=True)
+    guide_document: fields.OneToOneRelation[GuideDocument] = fields.OneToOneField(
+        "models.GuideDocument", related_name="checkin_signal_state", on_delete=OnDelete.RESTRICT
+    )
+    guide_document_id: int
+    signal: fields.ForeignKeyNullableRelation[CheckInSignal] = fields.ForeignKeyField(
+        "models.CheckInSignal", null=True, related_name="current_states", on_delete=OnDelete.RESTRICT
+    )
+    signal_id: int | None
+    answer_key = fields.CharEnumField(CheckInMedication)
+    client_id = fields.CharField(max_length=64, null=True)
+    client_sequence = fields.BigIntField(null=True)
+    needs_review = fields.BooleanField(default=False)
+    acknowledged_by = fields.BigIntField(null=True)
+    acknowledged_at = fields.DatetimeField(null=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "check_in_signal_state"
+
+
+class CheckInSignalAcknowledgement(models.Model):
+    """확인 시점과 행위자만 남긴다. 환자 답/메모/토큰은 복제하지 않는다."""
+
+    acknowledgement_id = fields.BigIntField(primary_key=True)
+    state: fields.ForeignKeyRelation[CheckInSignalState] = fields.ForeignKeyField(
+        "models.CheckInSignalState", related_name="acknowledgements", on_delete=OnDelete.RESTRICT
+    )
+    actor_id = fields.BigIntField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "check_in_signal_acknowledgement"
 
 
 class PatientUsageEventType(StrEnum):
