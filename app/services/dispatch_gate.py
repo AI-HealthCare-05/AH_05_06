@@ -8,12 +8,30 @@
 from dataclasses import dataclass
 
 from app.core import config
+from app.core.config import SmsProvider
 from app.core.storage import LocalFileStorage, StorageProbe
+from app.core.utils.common import normalize_phone_number
 from app.models.catalog import MessageTemplateKind
 from app.models.documents import MedicalDocument
 from app.models.staffs import Hospital
-from app.models.visits import GuideDocument, GuideMessage, GuideMessageHold
+from app.models.visits import GuideDocument, GuideMessage, GuideMessageHold, Visit
 from app.services.message_templates import effective_body
+
+
+def approved_test_phones() -> frozenset[str]:
+    """KEY-284·KEY-338이 같이 쓰는 승인 번호 목록 — OTP와 예약 문자 둘 다다.
+
+    시연 번호를 두 곳(OTP 확인·예약 문자 발송)에 따로 넣다가 한 곳을
+    빠뜨리는 일을 막으려고, 원래 OTP 전용이던 이 함수를 공통 위치로
+    옮겼다(patient_otp_routers.py에서 KEY-338이 이동).
+
+    Patient.phone은 normalize_phone_number()로 숫자만 남겨 저장된다.
+    여기서 같은 정규화를 안 하면 운영자가 "010-1111-2222"처럼 사람이
+    쓰는 형식으로 넣었을 때 절대 안 맞고, 그 실패가 공급자 장애와
+    구분 안 되는 503으로만 보인다(iljun-sys 리뷰로 재현).
+    """
+    raw = config.OTP_APPROVED_TEST_PHONES.get_secret_value()
+    return frozenset(normalize_phone_number(phone.strip()) for phone in raw.split(",") if phone.strip())
 
 
 @dataclass(frozen=True)
@@ -59,6 +77,21 @@ async def evaluate_dispatch_gate(
             body=body,
             hospital=hospital,
         )
+
+    # 승인 번호로만 발송 — KEY-338. SMS_PROVIDER=mock(로컬·개발·CI)에서는
+    # 이 게이트를 안 본다 — 기존 게이트 순서와 mock 동작은 그대로다. solapi
+    # 경로에서만, 워커가 시드 환자의 가짜 번호로 실제 문자를 쏘는 사고를
+    # 막는다(KEY-336이 이 위험을 만드는 그 지점이다).
+    if config.SMS_PROVIDER is SmsProvider.SOLAPI:
+        visit = await Visit.filter(visit_id=guide.visit_id).select_related("patient").first()
+        recipient = normalize_phone_number(visit.patient.phone) if visit else ""
+        if recipient not in approved_test_phones():
+            return DispatchGateDecision(
+                guide=guide,
+                hold_reason=GuideMessageHold.RECIPIENT_NOT_APPROVED,
+                body=body,
+                hospital=hospital,
+            )
 
     # 생성 전·후 안전검증 — KEY-250 범위. "생성 전" 쪽은 GuideService.generate()가
     # 확정 OCR 필드 없이는 생성 자체를 막아서(KEY-150), 여기 도달한 GuideDocument는

@@ -8,7 +8,6 @@ from redis.asyncio import Redis
 from app.core import config
 from app.core.config import Env, SmsProvider, otp_solapi_prod_gate_open, pilot_mock_otp_gate_open
 from app.core.redis_client import get_redis
-from app.core.utils.common import normalize_phone_number
 from app.dependencies.patient_auth import PATIENT_SESSION_COOKIE_NAME
 from app.dtos.patient_otp import (
     PatientAuthContextRequest,
@@ -22,6 +21,7 @@ from app.dtos.patient_otp import (
     PatientSessionCheckRequest,
     PatientSessionResponse,
 )
+from app.services.dispatch_gate import approved_test_phones
 from app.services.patient_links import PatientLinkService
 from app.services.patient_otp import (
     OTP_RESEND_COOLDOWN,
@@ -37,15 +37,6 @@ from app.services.sms_sender import build_sms_sender
 
 patient_auth_router = APIRouter(prefix="/patient-auth", tags=["patient-auth"])
 patient_otp_router = APIRouter(prefix="/patient-auth/otp", tags=["patient-auth"])
-
-
-def _approved_test_phones() -> frozenset[str]:
-    # Patient.phone은 normalize_phone_number()로 숫자만 남겨 저장된다. 여기서
-    # 같은 정규화를 안 하면 운영자가 "010-1111-2222"처럼 사람이 쓰는 형식으로
-    # 넣었을 때 절대 안 맞고, 그 실패가 공급자 장애와 구분 안 되는 503으로만
-    # 보인다(iljun-sys 리뷰로 재현).
-    raw = config.OTP_APPROVED_TEST_PHONES.get_secret_value()
-    return frozenset(normalize_phone_number(phone.strip()) for phone in raw.split(",") if phone.strip())
 
 
 def _otp_service() -> PatientOtpService:
@@ -72,7 +63,7 @@ def _otp_service() -> PatientOtpService:
         # "검증 단계"다 — 항상 승인 번호로 좁힌다.
         delivery: OtpDelivery = ApprovedPhonesOnlyDelivery(
             SolapiOtpDelivery(build_sms_sender(config)),
-            _approved_test_phones(),
+            approved_test_phones(),
         )
         return PatientOtpService(delivery)
 

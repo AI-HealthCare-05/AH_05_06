@@ -10,9 +10,12 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from unittest.mock import AsyncMock, patch
 
+from pydantic import SecretStr
 from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
 
+import app.core as core_config
+from app.core.config import SmsProvider
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType
 from app.models.visits import (
@@ -20,6 +23,7 @@ from app.models.visits import (
     GuideMessageEvent,
     GuideMessageEventType,
     GuideMessageHold,
+    GuideMessageKind,
     GuideMessageStatus,
 )
 from app.services.dispatch_gate import gate_hold_reason
@@ -273,3 +277,92 @@ class TestClaimIsReleasedAfterPreSendFailure(TestCase):
         assert result is not None
         assert result.status is GuideMessageStatus.SCHEDULED
         await self._assert_retryable(message)
+
+
+class TestGateBlocksUnapprovedRecipients(TestCase):
+    """승인 번호로만 발송 — KEY-338.
+
+    SMS_PROVIDER=solapi일 때만 보는 게이트다. mock(기본값, 로컬·개발·CI)
+    에서는 이 게이트 자체를 안 본다 — 기존 게이트 순서와 mock 동작은
+    안 바뀐다는 인수조건을 값으로 잰다.
+    """
+
+    async def test_unapproved_phone_is_held_when_provider_is_solapi(self) -> None:
+        message = await make_due_message(link_free_template=True, phone="01099998888")
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is GuideMessageHold.RECIPIENT_NOT_APPROVED
+
+    async def test_approved_phone_passes_when_provider_is_solapi(self) -> None:
+        message = await make_due_message(link_free_template=True, phone="01011112222")
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is None
+
+    async def test_hyphenated_entries_in_the_allowlist_still_match(self) -> None:
+        """목록의 하이픈 표기(010-1111-2222)도 정규화해서 맞춘다 — 인수조건."""
+        message = await make_due_message(link_free_template=True, phone="01011112222")
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("010-1111-2222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is None
+
+    async def test_mock_provider_ignores_the_allowlist(self) -> None:
+        """SMS_PROVIDER=mock(기본값)에서는 이 게이트가 없다 — 기존 동작 그대로."""
+        message = await make_due_message(link_free_template=True, phone="01099998888")
+
+        with patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")):
+            reason = await gate_hold_reason(message)
+
+        assert reason is None
+
+    async def test_the_existing_gate_order_still_runs_first(self) -> None:
+        """미승인 → 원본 미삭제 → 예약링크 없음, 그 다음에야 이 게이트를 본다 — 인수조건.
+
+        미승인 안내는 목록에 없는 번호라도 NOT_APPROVED로 먼저 막혀야 한다.
+        """
+        message = await make_due_message(approved=False, phone="01099998888")
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is GuideMessageHold.NOT_APPROVED
+
+    async def test_a_resent_message_goes_through_the_same_gate(self) -> None:
+        """수동 재발송(KEY-306)으로 만든 문자도 같은 게이트를 거친다 — 인수조건.
+
+        재발송은 새 GuideMessage 행을 만들 뿐 dispatch_gate가 보는 값
+        (승인·원본 삭제·예약 주소·수신 번호)은 원본과 똑같이 재는다 —
+        별도 우회 경로가 없다는 것을 재발송이 흔히 쓰는 조건(원본이 SENT
+        였던 안내에 새 SCHEDULED 행)으로 확인한다.
+        """
+        message = await make_due_message(
+            link_free_template=True,
+            phone="01099998888",
+            kind=GuideMessageKind.CHECK_D7,
+        )
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            reason = await gate_hold_reason(message)
+
+        assert reason is GuideMessageHold.RECIPIENT_NOT_APPROVED

@@ -77,6 +77,7 @@ async def make_due_message(
     hospital_name: str = "KEY-249 합성의원",
     link_free_template: bool = False,
     approved: bool = True,
+    phone: str = "01000009249",
 ) -> GuideMessage:
     hospital = await Hospital.create(name=hospital_name)
     if link_free_template:
@@ -91,7 +92,7 @@ async def make_due_message(
         name="합성환자",
         birth_date="1990-01-01",
         gender=PatientGender.FEMALE,
-        phone="01000009249",
+        phone=phone,
     )
     visit = await Visit.create(hospital_id=hospital.hospital_id, patient=patient, visited_at=now() - timedelta(days=1))
     guide = await GuideDocument.create(
