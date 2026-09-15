@@ -505,7 +505,9 @@ class GuideMessageHold(StrEnum):
     원래는 「스탭이 손댈 일은 보류 두 가지뿐이다 — 번호가 잘못됐을 때와
     문자가 떨어졌을 때」였다. KEY-250이 발송 직전 게이트를 셋 더한다 —
     안내가 미승인이거나, 안전검증을 통과 못 했거나, 원본 의료문서가 아직
-    안 지워졌으면 환자에게 아무것도 나가면 안 된다.
+    안 지워졌으면 환자에게 아무것도 나가면 안 된다. KEY-338이 여섯째를
+    더한다 — SMS_PROVIDER=solapi에서 수신 번호가 승인 목록에 없으면
+    실제 환자에게 나갈 수 있는 문자를 막는다.
 
     실패 사유(`GuideMessageFailure`)와 **다른 목록**이다. 겹치는 낱말이 있어
     한 목록으로 합치고 싶어지지만, 재는 것이 다르다 — 이쪽은 「보내기 전에
@@ -542,6 +544,13 @@ class GuideMessageHold(StrEnum):
     #: 링크를 채우면 **그 뒤로 예정된** 문자부터 제 일을 한다. 이미 보류된
     #: 것을 다시 보내는 길은 아직 없다 (이희진 님 #295 리뷰에서 확인).
     BOOKING_URL_MISSING = "BOOKING_URL_MISSING"
+    #: 수신 번호가 승인 목록(OTP_APPROVED_TEST_PHONES)에 없다 — KEY-338.
+    #:
+    #: SMS_PROVIDER=solapi에서만 본다. KEY-336이 Pilot을 solapi로 바꾸는
+    #: 순간, 시연 환자가 아닌 시드 환자들의 가짜 번호로 예약 문자가 실제로
+    #: 나갈 수 있었다 — OTP와 같은 좁은문을 예약 문자에도 씌운다. 목록은
+    #: OTP와 공유한다(`app.core.approved_phones.approved_test_phones`).
+    RECIPIENT_NOT_APPROVED = "RECIPIENT_NOT_APPROVED"
 
 
 class GuideMessageFailure(StrEnum):

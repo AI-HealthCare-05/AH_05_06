@@ -273,7 +273,7 @@
         }
         el("modal-body").innerHTML =
           '<div class="modal__top"><h2 class="modal__title" id="modal-title">안내문 미리보기</h2>' +
-          '<button class="icon-button" type="button" data-close aria-label="닫기">×</button></div>' +
+          '</div>' +
           patientGuidePreviewHtml(body.sections || [], "medication", body.summary, body.preview) +
           '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>';
       })
