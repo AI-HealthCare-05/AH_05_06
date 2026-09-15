@@ -256,18 +256,21 @@ def test_a_field_comment_edit_does_not_count_as_drift() -> None:
     `_get_comments` 가 필드 옆 인라인 주석을 읽어 `Field.docstring` 에
     넣기 때문이다(`tortoise/models.py` · `tortoise/fields/base.py`).
 
-    🚩 **다만 모델 쪽과 한 가지가 다르다.** 칸에서는 `#:` 주석이 `docstring` 과
-    `description` **둘 다**에 같은 값으로 들어간다. 그래서 실제로 `#:` 한 줄을
-    고치면 `description` 이 함께 갈려 **여전히 잡히고, 그게 맞다** — 칸 주석은
-    `COMMENT` 로 DDL 에 실리기 때문이다. 실측했다(2026-09-15).
+    🚩 **다만 "칸 주석은 항상 같이 갈린다"는 아니다** — 정정(2026-09-15).
+    `#:` 주석이 **한 줄**이면 `description`(첫 줄)과 `docstring`(전체)이 같은
+    값이라 함께 걸리는 게 맞다. 실측: `before_no` 처럼 한 줄 주석을 고치면
+    `aerich migrate --offline` 이 실제로
 
-        # `#:` 주석 한 줄을 고치고 `aerich migrate --offline`
         ALTER TABLE `patient_number_correction`
           MODIFY COLUMN `before_no` VARCHAR(50) NOT NULL COMMENT '…';
 
-    즉 이 검사가 고정하는 것은 「칸 주석을 고쳐도 된다」가 아니라 **걷어내기가
-    리스트 안쪽까지 닿는다**는 것 하나다. 모델 docstring 뒷문단과 달리 칸 주석은
-    마이그레이션이 정말로 필요하다.
+    를 뱉는다. 하지만 이 저장소에는 **여러 줄짜리** `#:` 주석을 쓰는 칸도 이미
+    있다 — `PrescriptionSet.name`(`app/models/catalog.py`)이 그 예다. 거기서는
+    모델 docstring 과 똑같은 모양으로 `description` 이 첫 줄만, `docstring` 이
+    전체 문단을 담는다(실측: 뒷문단만 고치면 `description` 은 그대로다). 이
+    테스트가 지키는 것이 바로 그 여러 줄짜리 칸이다 — 한 줄 주석 예시만 보고
+    「칸 주석은 다 걸린다」로 일반화하면, 저 여러 줄짜리 칸의 뒷문단을 고쳤을 때
+    이 검사가 다시 오탐으로 우는 걸 막을 수 없다.
 
     위 두 테스트는 모델 최상위 `dict` 만 평평하게 들고 확인했다 — 실제 비교가
     도는 `data_fields` 처럼 **리스트 안에 중첩된 모양**은 아무도 확인하지
