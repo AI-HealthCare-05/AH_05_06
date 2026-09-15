@@ -12,6 +12,7 @@
 ## 환경
 
 - 원본 FastAPI 라우터/서비스, MySQL 및 Redis 연결. 프런트는 동일 프로세스의 검수 전용 StaticFiles 마운트로 제공.
+- AC1 서빙 방식의 알려진 차이: 운영은 Nginx의 정적 파일 서빙과 API reverse proxy를 사용하지만 이번 QA는 FastAPI 프로세스의 StaticFiles로 프런트를 제공했다. 따라서 운영과 동일한 서빙 방식이 아니며 Nginx 경유 라우팅·HTTPS·프록시 헤더·로그 동작까지 검증한 것으로 보지 않는다.
 - `127.0.0.1:18432`, Chrome headless, 모바일 390×844 / touch.
 - 새 DB `key132_qa0915`, MySQL 포트 18377, Redis 포트 16379 / DB 12. 정식 Aerich upgrade로 생성. 기존 DB가 있으면 덮어쓰기 거부.
 - 합성 환자/의원, 승인·미승인·만료·회전된 이전 링크 시나리오. 원문 링크는 로컬 권한 0600 상태 파일에만 보관하고 문서/출력에 남기지 않음.
@@ -44,6 +45,8 @@
 - `node --test frontend/tests/*.test.js`: **1,306 passed, skip 0**, 약 3.48초.
 - API 회귀는 별도 `TEST_SLOT=4` 테스트 DB/Redis를 사용. 일부 서비스 경계와 외부 모델은 테스트 대역이므로 운영/실제 외부 모델 E2E 성공 증거가 아니다.
 - 잠금·세션 만료·링크 회전·승인 컨텍스트·정상 답변 멱등성에 대한 자동 회귀는 위 묶음에 포함된다. 각각을 이번 실제 브라우저에서 모두 재현했다고 주장하지 않는다.
+- AC4 폐기 경로: `app/tests/patient_links/test_key219_patient_auth.py::test_revoked_link_returns_410_link_revoked`는 승인된 안내의 상태를 `SCHEDULED_TO_SEND`에서 `APPROVAL_PENDING`으로 변경한 뒤 context 응답이 410 / `LINK_REVOKED`인지 검증한다. 위 **234 passed** 스위트에 포함되며, 실행 결과 표의 회전 전 링크 404와 별개의 폐기 검증 근거다.
+- AC2 P2(현황) 콘텐츠 일치: `app/tests/patient_links/test_key241_patient_guide_contract.py::test_v3_contract_uses_available_models_and_keeps_approved_sections`는 저장한 합성 Prescription/OCR 데이터를 기준으로 `stat` 카드의 `drugName`, `prescribed`, `dayOn`, `remaining`, `pct` 등을 기대값과 비교하고 승인 섹션 보존도 검증한다. 이 역시 위 **234 passed** 스위트에 포함되며, 브라우저의 복약·주의·생활 승인 문구 대조와 구분되는 P2 콘텐츠 검증 근거다.
 
 ## QA 보조 스크립트의 수정 이력
 
