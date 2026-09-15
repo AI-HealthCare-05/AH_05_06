@@ -1,7 +1,7 @@
 """Synthetic API → durable queue → search/revalidation → model → DB evidence."""
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from unittest.mock import AsyncMock, patch
 
@@ -72,7 +72,7 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
 
     async def _make_eshre_fixture(self) -> None:
         """자궁내막증 생활관리 고정 템플릿에 필요한 ESHRE chunk_optional 레코드를 생성한다."""
-        _approved_at = datetime(2026, 9, 1, tzinfo=datetime.UTC)
+        _approved_at = datetime(2026, 9, 1, tzinfo=UTC)
         doc = await KnowledgeDocument.create(
             source_key="eshre-endometriosis-2022-fixture",
             title="ESHRE Guideline: Endometriosis (2022)",
