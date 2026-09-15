@@ -115,7 +115,7 @@ docker compose exec -T fastapi uv run --no-sync python scripts/check_schema_drif
 | 환자 OTP | 고정 `000000` (`MOCK_OTP_CODE`). 실제 SMS 발송 없음 |
 | 문자 발송 | `SMS_PROVIDER=mock`. 링크는 담당자가 화면에서 복사해 수동 전달 |
 | 안내문 생성 | 확정 OCR 값 한 줄 + 처방세트별 승인 문구/의사 수정 문구/기본 문구 조합. LLM 생성은 미착수(KEY-75) |
-| 환자 챗봇 | `OPENAI_API_KEY` 가 비면 3-7 의 챗봇 응답이 고정 폴백 문구로만 나온다. 실제 응답을 보려면 키가 필요하다 (`app/apis/v1/chatbot_routers.py`) |
+| 환자 챗봇 | `OPENAI_API_KEY` 가 비면 3-7 의 챗봇 응답이 고정 폴백 문구로만 나온다 (`app/apis/v1/chatbot_routers.py`). 키가 있으면 승인 안내에 근거가 있는 질문(복약·주의·생활·응급)은 실제 모델 답이 나온다 — 예전엔(KEY-279 발견) 원문 일치 판정이 답 전체를 본문의 연속된 부분 문자열로 요구하고 질문 분류가 "주의"를 못 알아들어서, 근거가 있어도 대부분 거절/근거 부족 문구로만 나왔다(KEY-351이 고쳤다: 문장 단위 원문 일치로 바꾸고 "주의" 분류를 추가했다). 승인 안내 밖의 내용·약 변경/진단 요구는 그대로 막힌다. |
 | OCR (fixture 모드) | 업로드 이미지를 실제로 판독하지 않고 합성 판독값 주입. 실판독은 2-2 에서 `OCR_FIXTURE_FALLBACK=0` + CLOVA 키 + `--with-ocr-worker` |
 
 ## 5. 알아둘 것
