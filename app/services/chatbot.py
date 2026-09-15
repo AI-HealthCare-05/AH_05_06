@@ -233,7 +233,17 @@ def select_approved_context(question: str, sections: list[GuideSection]) -> Appr
         PatientQuestionKind.SYMPTOM: (GuideSectionKey.EMERGENCY, GuideSectionKey.CAUTION),
         PatientQuestionKind.ADMINISTRATIVE: (GuideSectionKey.MESSAGES,),
     }.get(kind, ())
-    if _CAUTION_QUESTION.search(question):
+    # SYMPTOM·OTHER로 분류된 질문에서만 적용한다 — 2heej 리뷰: 처음엔
+    # 무조건 덮어써서 「이 약 먹을 때 주의할 점이 있나요?」(MEDICATION)
+    # 까지 CAUTION으로 강제 전환되는 회귀가 있었다. 이어서 "preferences가
+    # 비어있을 때만"으로 좁혀 봤지만, SYMPTOM 분류 자체가 이미 채운
+    # (EMERGENCY, CAUTION)이 "비어있지 않다"고 잡혀서 정작 이 오버라이드가
+    # 잡으려던 「주의사항이 뭐죠?」(SYMPTOM으로 분류됨) 자체를 못 걸렀다.
+    # kind로 직접 가른다 — MEDICATION·LIFESTYLE·ADMINISTRATIVE처럼 이미
+    # 더 구체적인 분류가 있으면 그대로 두고, SYMPTOM·OTHER일 때만 CAUTION
+    # 을 우선한다. EMERGENCY는 안전 escalation이라 분류와 무관하게 그대로
+    # 전역 적용한다(2heej도 이건 타당하다고 확인).
+    if _CAUTION_QUESTION.search(question) and kind in (PatientQuestionKind.SYMPTOM, PatientQuestionKind.OTHER):
         preferences = (GuideSectionKey.CAUTION, GuideSectionKey.EMERGENCY)
     if _EMERGENCY_QUESTION.search(question):
         preferences = (GuideSectionKey.EMERGENCY, GuideSectionKey.CAUTION)

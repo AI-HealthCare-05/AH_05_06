@@ -44,6 +44,30 @@ SECTIONS = [
 ]
 
 
+class TestCautionOverrideDoesNotStealMoreSpecificClassifications:
+    """2heej 리뷰 — CAUTION 오버라이드가 처음엔 kind와 무관하게 전역
+    적용돼서, 이미 MEDICATION·LIFESTYLE로 정확히 분류된 질문도 "주의"라는
+    글자만 있으면 CAUTION으로 강제 전환되는 회귀가 있었다."""
+
+    def test_a_medication_question_mentioning_caution_stays_medication(self) -> None:
+        context = select_approved_context("이 약 먹을 때 주의할 점이 있나요?", SECTIONS)  # type: ignore[arg-type]
+        assert context is not None
+        assert context.key is GuideSectionKey.MEDICATION
+
+    def test_a_lifestyle_question_mentioning_caution_stays_lifestyle(self) -> None:
+        context = select_approved_context("운동할 때 주의사항이 뭐예요?", SECTIONS)  # type: ignore[arg-type]
+        assert context is not None
+        assert context.key is GuideSectionKey.LIFE
+
+    def test_a_standalone_caution_question_still_finds_the_caution_section(self) -> None:
+        """회귀를 고치면서 원래 목표(원인 ②)까지 같이 깨지지 않았는지 —
+        OTHER/SYMPTOM으로만 분류되는 순수 "주의사항" 질문은 여전히
+        CAUTION을 찾아야 한다."""
+        context = select_approved_context("주의사항이 뭐죠?", SECTIONS)  # type: ignore[arg-type]
+        assert context is not None
+        assert context.key is GuideSectionKey.CAUTION
+
+
 class TestRepresentativeQuestionsFindTheirSection:
     """인수조건 — 복약·주의·생활·응급 각 1건 이상이 승인 섹션을 찾는다.
 
