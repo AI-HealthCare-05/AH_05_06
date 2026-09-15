@@ -34,6 +34,20 @@ HAS_DASH_N = re.compile(r"(?<![A-Za-z0-9_-])-n(?=\s|$)")
 STDIN_IS_THE_SCRIPT = "bash -s"
 
 
+def _ssh_options(line: str) -> str:
+    """`ssh` 호출에서 **따옴표로 감싼 원격 명령을 뺀** 앞부분만.
+
+    `HAS_DASH_N` 을 줄 전체에 돌리면 원격 명령 안의 `-n` 도 잡힌다 —
+    `ssh -i x host "some-tool -n"` 처럼 `ssh` 자체엔 `-n` 이 없는데도 검사가
+    속아 넘어간다. 원격 명령은 항상 따옴표로 시작하므로 거기서 자른다.
+    """
+    match = SSH_CALL.search(line)
+    assert match, line
+    rest = line[match.start() :]
+    quote = rest.find('"')
+    return rest if quote == -1 else rest[:quote]
+
+
 def _logical_lines(text: str) -> list[tuple[int, str]]:
     """줄 이어쓰기(`\\`)를 이어 붙여 **한 명령을 한 줄로** 만든다.
 
@@ -79,7 +93,7 @@ def test_every_ssh_that_runs_a_remote_command_passes_dash_n() -> None:
     offenders = [
         f"{rel}:{number}  {line}"
         for rel, number, line in _ssh_lines()
-        if STDIN_IS_THE_SCRIPT not in line and not HAS_DASH_N.search(line)
+        if STDIN_IS_THE_SCRIPT not in line and not HAS_DASH_N.search(_ssh_options(line))
     ]
 
     assert not offenders, (
@@ -98,6 +112,6 @@ def test_the_piped_payload_call_is_left_alone() -> None:
 
     assert piped, "`bash -s` 로 스크립트를 흘려 넣는 `ssh` 가 사라졌다 — 배포 경로가 바뀌었는지 본다"
     for line in piped:
-        assert not HAS_DASH_N.search(line), (
+        assert not HAS_DASH_N.search(_ssh_options(line)), (
             f"stdin 으로 스크립트를 받는 `ssh` 에 `-n` 이 붙었다 — 원격이 빈 스크립트를 받는다:\n  {line}"
         )
