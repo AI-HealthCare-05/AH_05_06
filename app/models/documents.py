@@ -21,6 +21,13 @@ class MedicalDocument(models.Model):
     file_size = fields.BigIntField()
     mime_type = fields.CharField(max_length=100)
     uploaded_by = fields.BigIntField()
+    #: 원본 삭제 완료 시각 — KEY-349. 첫 문자 발송 직전에 채운다.
+    #:
+    #: `file_path`는 지우지 않는다 — 기존 404 FILE_PURGED 응답(판독 화면
+    #: 미리보기)과 감사 추적이 그 값에 기대고 있다. 실제 파일은
+    #: `app/core/storage.py`의 delete()로 지운다. 이 칸은 "지웠다"는
+    #: 사실만 남긴다 — 지운 시각이 곧 그 증거다.
+    source_deleted_at = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:

@@ -22,8 +22,10 @@ from tortoise.timezone import now
 
 from app.core import config
 from app.core.logger import default_logger
+from app.core.storage import LocalFileStorage, SourcePurger
 from app.core.time import DISPLAY_TIMEZONE
-from app.models.ocr import OcrField, OcrJob, OcrJobStatus, course_days
+from app.models.documents import MedicalDocument
+from app.models.ocr import OcrDocumentText, OcrField, OcrJob, OcrJobStatus, course_days
 from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import (
@@ -213,6 +215,52 @@ async def _log_event(message_id: int, event_type: GuideMessageEventType, *, reas
     await GuideMessageEvent.create(guide_message_id=message_id, event_type=event_type, reason=reason)
 
 
+async def _purge_source_documents(
+    message_id: int,
+    document_ids: tuple[int, ...],
+    storage: SourcePurger,
+) -> None:
+    """첫 문자 발송 직전 원본 삭제 — KEY-349.
+
+    순서: 삭제 → 삭제 확인(파일 부재) → 기록(MedicalDocument·
+    OcrDocumentText) → (호출부가 이어서) 본문 생성·링크 발급·발송.
+
+    **멱등이다.** `storage.delete()`는 이미 없는 파일도 조용히 넘어간다
+    (`LocalFileStorage.delete`가 `unlink(missing_ok=True)`) — 파일 삭제
+    후 기록 전에 워커가 죽어도, 다음 시도가 다시 delete()를 불러도 안전
+    하다. 삭제 단계 진입 전에 이미 파일이 없었던 경우를
+    `SOURCE_ALREADY_PURGED`로 구분해 남긴다 — "이번에 지웠다"와 "누가
+    먼저 지웠다"는 다른 사실이다.
+
+    확인(`exists()`)이 여전히 True를 돌려주면(디스크 오류 등) 예외를
+    던져 호출부(`dispatch_message`)의 재시도 경로로 넘긴다 — 기록이
+    실제와 어긋난 채로 남으면 안 된다.
+    """
+    for document_id in document_ids:
+        doc = await MedicalDocument.get(document_id=document_id)
+        already_gone = not await storage.exists(doc.file_path)
+        if not already_gone:
+            await storage.delete(doc.file_path)
+            if await storage.exists(doc.file_path):
+                raise RuntimeError(f"원본 삭제 확인 실패: document_id={document_id}")
+
+        purged_at = now()
+        doc.source_deleted_at = purged_at
+        await doc.save(update_fields=["source_deleted_at"])
+
+        for text_row in await OcrDocumentText.filter(document_id=document_id).all():
+            if text_row.raw_text is None:
+                continue
+            text_row.purge_raw_text(purged_at=purged_at)
+            await text_row.save(update_fields=["raw_text", "raw_text_purged_at", "updated_at"])
+
+        await _log_event(
+            message_id,
+            GuideMessageEventType.SOURCE_ALREADY_PURGED if already_gone else GuideMessageEventType.SOURCE_PURGED,
+            reason=f"document_id={document_id}",
+        )
+
+
 async def _claim(message_id: int, *, at: datetime) -> str | None:
     """SCHEDULED·시각 도래·미점유 행을 원자적으로 붙잡는다 — 멱등키.
 
@@ -242,15 +290,30 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         return None
 
     message = await GuideMessage.get(guide_message_id=message_id)
+    storage = LocalFileStorage(config.UPLOAD_DIR)
     try:
         await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
-        gate = await evaluate_dispatch_gate(message)
+        gate = await evaluate_dispatch_gate(message, storage=storage)
     except Exception:
         default_logger.exception("문자 발송 게이트 처리 중 예상치 못한 예외 — guide_message_id=%s", message_id)
         return await _finish_retryable(message, token, moment, provider_detail="worker_exception")
 
     if gate.hold_reason is not None:
         return await _finish_held(message, token, gate.hold_reason)
+
+    if gate.pending_source_document_ids:
+        try:
+            await _purge_source_documents(message_id, gate.pending_source_document_ids, storage)
+        except Exception:
+            default_logger.exception("원본 삭제 처리 중 예상치 못한 예외 — guide_message_id=%s", message_id)
+            await _log_event(message_id, GuideMessageEventType.SOURCE_PURGE_FAILED, reason="worker_exception")
+            return await _finish_retryable(
+                message,
+                token,
+                moment,
+                provider_detail="source_purge_failed",
+                exhausted_hold_reason=GuideMessageHold.SOURCE_NOT_DELETED,
+            )
 
     try:
         guide = gate.guide
@@ -365,11 +428,21 @@ async def _finish_retryable(
     moment: datetime,
     *,
     provider_detail: str,
+    exhausted_hold_reason: GuideMessageHold | None = None,
 ) -> DispatchResult:
-    """일시 실패 — 재시도 여지가 남았으면 다시 예약한다."""
+    """일시 실패 — 재시도 여지가 남았으면 다시 예약한다.
+
+    `exhausted_hold_reason`이 있으면(원본 삭제 단계 실패 — KEY-349),
+    MAX_ATTEMPTS를 넘겨도 `FAILED`로 끝내지 않고 그 값으로 `HELD`
+    처리한다. `GuideMessageFailure`는 "보내 봤는데 안 됐다"는 뜻으로
+    고정된 넷뿐이다(D1-7) — 원본을 못 지운 것은 그중 어디에도 안
+    맞는다.
+    """
     attempt = message.attempt_count + 1
 
     if attempt >= MAX_ATTEMPTS:
+        if exhausted_hold_reason is not None:
+            return await _finish_held(message, token, exhausted_hold_reason)
         return await _finish_failed(
             message,
             token,

@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from tortoise.contrib.test import TestCase
+from tortoise.timezone import now
 
 from app.models.documents import MedicalDocument
 from app.models.ocr import OcrDocumentType
@@ -28,7 +29,7 @@ from app.services.sms_sender import MockSmsSender
 from app.tests.messages.test_key249_dispatch_pipeline import make_due_message
 
 
-async def _attach_document(message: GuideMessage, *, file_exists: bool) -> Path:
+async def _attach_document(message: GuideMessage, *, file_exists: bool, source_deleted_at: object = None) -> Path:
     guide = await message.guide_document
     tmp = NamedTemporaryFile(delete=False, suffix=".jpg")
     tmp.write(b"synthetic")
@@ -44,6 +45,7 @@ async def _attach_document(message: GuideMessage, *, file_exists: bool) -> Path:
         file_size=9,
         mime_type="image/jpeg",
         uploaded_by=1,
+        source_deleted_at=source_deleted_at,
     )
     return path
 
@@ -184,7 +186,7 @@ class TestSafetyCheckGate(TestCase):
     async def test_safety_gate_is_independent_of_source_not_deleted_gate(self) -> None:
         """원본 미삭제 게이트는 안전검증 BLOCK 레코드가 있어도 SOURCE_NOT_DELETED를 반환한다."""
         message = await make_due_message(approved=True)
-        path = await _attach_document(message, file_exists=True)
+        path = await _attach_document(message, file_exists=True, source_deleted_at=now())
         await _attach_safety_check(
             message,
             stage=SafetyCheckStage.POST_GENERATE,
