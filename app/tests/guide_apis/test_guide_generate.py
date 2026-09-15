@@ -8,6 +8,8 @@
 """
 
 from datetime import UTC, date, datetime
+from hashlib import sha256
+from uuid import uuid4
 
 from httpx import ASGITransport, AsyncClient
 from tortoise.contrib.test import TestCase
@@ -23,12 +25,14 @@ from app.models.catalog import (
     SetDisease,
     SourceGrade,
 )
+from app.models.knowledge import KnowledgeChunkRecord, KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: F401 (OcrResult used in test setup)
 from app.models.patients import Patient
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, GuideStatus, Visit
 from app.services import guide_defaults
+from app.services.knowledge_search import EMBEDDING_DIMENSION, EMBEDDING_MODEL, EMBEDDING_MODEL_REVISION
 from app.services.staff_auth import StaffSessionService
 from app.tests.fakes import FakeRedis
 from app.tests.ocr_fixture import complete_ocr
@@ -100,6 +104,78 @@ async def attach_prescription(
             duration_days=duration_days,
         )
     return prescription
+
+
+async def make_caution_contents(prescription_set: PrescriptionSet) -> None:
+    """처방 세트의 섹션별 승인된 안내 문구를 등록한다."""
+    for section in CautionSectionKey:
+        body = f"합성 승인 안내 {section.value}"
+        await DrugCautionContent.create(
+            prescription_set=prescription_set,
+            section_key=section,
+            body=body,
+            source_name="합성 문서",
+            source_org="합성 기관",
+            source_url="https://example.invalid/approved",
+            verified_at=date(2026, 9, 1),
+            content_version="synthetic-v1",
+            source_grade=SourceGrade.A,
+            approval_status=ApprovalStatus.APPROVED,
+            approved_key=f"{prescription_set.pk}:{section.value}",
+            physician_review={
+                "reviewer": "합성 검토자",
+                "hospital": "합성 기관",
+                "reviewed_at": "2026-09-01",
+                "body_sha256": sha256(body.encode()).hexdigest(),
+            },
+        )
+
+
+async def make_rag_sources(hospital_id: int, *, approved: bool = True) -> KnowledgeVersion:
+    """승인된 RAG 소스를 등록해 모델 호출 경로를 활성화한다.
+
+    소스가 없으면 모든 섹션이 템플릿 폴백으로 처리되어 모델이 호출되지 않는다.
+    안전 차단·LLM 실패 케이스는 모델이 실제로 호출되어야 트리거되므로
+    이 헬퍼로 소스를 먼저 등록한다.
+    """
+    document = await KnowledgeDocument.create(
+        source_key=str(uuid4()),
+        title="합성 자료",
+        source_org="합성 기관",
+        source_url="https://example.invalid/source",
+        source_kind=KnowledgeSourceKind.TEXT_PDF,
+        hospital_id=hospital_id,
+    )
+    version = await KnowledgeVersion.create(
+        document=document,
+        version_label="synthetic-v1",
+        source_sha256="a" * 64,
+        source_object_key="synthetic/source.pdf",
+        source_mime_type="application/pdf",
+        extractor_version="synthetic",
+        approval_status=ApprovalStatus.APPROVED if approved else ApprovalStatus.DRAFT,
+        is_current=approved,
+        current_approved_key=str(document.pk) if approved else None,
+        source_grade=SourceGrade.A,
+        license_verified=True,
+        approved_by="합성 검토자",
+        approved_at=datetime(2026, 9, 1, tzinfo=UTC),
+        verified_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    for section in CautionSectionKey:
+        body = f"검증된 합성 근거 {section.value}"
+        await KnowledgeChunkRecord.create(
+            version=version,
+            section_key=section.value,
+            position=list(CautionSectionKey).index(section),
+            body=body,
+            body_sha256=sha256(body.encode()).hexdigest(),
+            embedding=[1.0] + [0.0] * (EMBEDDING_DIMENSION - 1),
+            embedding_model=EMBEDDING_MODEL,
+            embedding_revision=EMBEDDING_MODEL_REVISION,
+            embedding_dimension=EMBEDDING_DIMENSION,
+        )
+    return version
 
 
 class GenerateGuideTestCase(TestCase):
