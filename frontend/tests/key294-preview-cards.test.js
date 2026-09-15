@@ -74,8 +74,9 @@ test("**접힌 자리를 펼쳐 둔다** — 승인 전에 읽는 자리라 감�
 
   assert.ok(html.includes("expand-body--open"), "접힌 채로 두면 처방약·복용 방법을 못 본다");
   assert.ok(html.includes("expand-btn--open"), "단추가 펼친 모양이 아니다");
-  /* 탭 바와 같은 규칙 — 읽는 자리라 움직이지 않는다 */
-  assert.match(html, /class=&quot;expand-btn expand-btn--open&quot;[^>]*disabled/, "단추가 눌린다");
+  /* KEY-348: 처음에는 펼치되 환자처럼 여닫을 수 있다. */
+  assert.match(html, /class=&quot;expand-btn expand-btn--open&quot;[^>]*data-preview-expand/);
+  assert.doesNotMatch(html, /class=&quot;expand-btn expand-btn--open&quot;[^>]*disabled/);
 });
 
 /* ── 없는 것은 그리지 않는다 ────────────────────────────────────────── */
