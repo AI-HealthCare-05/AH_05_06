@@ -95,7 +95,13 @@ function apiChatbotStreamTransport(request, observer) {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ question: request.question }),
+    /* 열쇠는 **있을 때만** 싣는다 — 서버가 `null` 도 받지만, 안 보내는 것과
+       「없다고 보낸 것」을 굳이 갈라 둘 까닭이 없다 (KEY-328). */
+    body: JSON.stringify(
+      request.submissionId
+        ? { question: request.question, submission_id: request.submissionId }
+        : { question: request.question },
+    ),
     signal: request.signal,
   }).catch(function (error) {
     if (error && error.name === "AbortError") throw error;
@@ -131,6 +137,17 @@ function chatbotErrorMessage(code) {
   }
   if (code === "LINK_NOT_FOUND") {
     return "승인된 안내를 확인할 수 없어 답변을 만들 수 없어요. 담당 병원에 문의해 주세요.";
+  }
+  /* 아래 셋은 **같은 물음이 두 번 간 자리**다 — KEY-328. 셋을 가르는 까닭은
+     환자가 해야 할 일이 각각 다르기 때문이다: 기다린다 · 다시 묻는다 · 다시 묻는다. */
+  if (code === "CHATBOT_ANSWER_IN_PROGRESS") {
+    return "앞서 보낸 질문에 답하고 있어요. 잠시 뒤 다시 시도해 주세요.";
+  }
+  if (code === "CHATBOT_ANSWER_EXPIRED") {
+    return "이미 답변해 드린 질문이에요. 답변이 화면에 없으면 같은 내용을 다시 질문해 주세요.";
+  }
+  if (code === "CHATBOT_SUBMISSION_CONFLICT") {
+    return "질문이 중간에 바뀌어 답변을 만들지 못했어요. 다시 질문해 주세요.";
   }
   return "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }

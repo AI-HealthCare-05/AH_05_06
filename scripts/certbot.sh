@@ -6,11 +6,6 @@ set -eo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-COLOR_GREEN=$(tput setaf 2)
-COLOR_BLUE=$(tput setaf 4)
-COLOR_RED=$(tput setaf 1)
-COLOR_NC=$(tput sgr0)
-
 cd "$(dirname "$0")/.."
 source ./envs/.prod.env
 

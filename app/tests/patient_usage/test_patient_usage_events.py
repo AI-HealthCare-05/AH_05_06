@@ -157,7 +157,17 @@ class TestNothingVerbatimIsStored(PatientUsageTestCase):
             "outcome",
             "grounded_section",
             "response_ref_digest",
+            # 트랜잭션 손잡이다 — 값을 담는 자리가 아니다. KEY-328 이 멱등 열쇠
+            # 줄과 이 한 줄을 **같은 트랜잭션**에 넣으려고 더했다.
+            "connection",
         }, f"인자가 바뀌었다: {sorted(params)}"
+
+        # 목록을 늘릴 때 「이건 원문이 아니다」로 넘어가지 않게, 이름도 함께 본다.
+        # 위 표 검사와 같은 잣대다.
+        shaped = {"question_kind", "response_ref_digest"}
+        for forbidden in ("question", "answer", "prompt", "token", "text", "body", "content", "message"):
+            leaked = [name for name in params - shaped if forbidden in name.lower()]
+            assert not leaked, f"원문이 들어올 자리가 생겼다: {leaked}"
 
     async def test_a_recorded_answer_keeps_only_the_shape(self) -> None:
         clinic = await make_hospital("챗봇 합성의원")

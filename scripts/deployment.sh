@@ -6,11 +6,6 @@ set -eo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-COLOR_GREEN=$(tput setaf 2)
-COLOR_BLUE=$(tput setaf 4)
-COLOR_RED=$(tput setaf 1)
-COLOR_NC=$(tput sgr0)
-
 cd "$(dirname "$0")/.."
 source ./envs/.prod.env
 
@@ -273,7 +268,7 @@ scp -i ~/.ssh/${ssh_key_file} envs/.prod.env ubuntu@${ec2_ip}:~/project/.env
 # **올린 직후에 잠근다** — `scp` 는 로컬 파일의 권한을 그대로 안 옮긴다.
 # 기본 umask 로 떨어지면 그 서버의 다른 계정이 읽을 수 있고, 이 파일에는
 # `DB_PASSWORD` 와 `SECRET_KEY` 가 들어 있다 (한금준 님 `#133` 보안 확인).
-ssh -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} "chmod 600 ~/project/.env"
+ssh -n -i ~/.ssh/${ssh_key_file} ubuntu@${ec2_ip} "chmod 600 ~/project/.env"
 scp -i ~/.ssh/${ssh_key_file} infra/docker/docker-compose.prod.yml ubuntu@${ec2_ip}:~/project/docker-compose.yml
 # **Pilot 오버레이도 함께 올린다** — KEY-336. 올려 두기만 하고 **주지는 않는다.**
 # `-f` 로 함께 주지 않으면 아무 일도 안 일어나고, 줘도 게이트 환경변수가 없으면

@@ -151,6 +151,45 @@ class TestApprovedContextOnly(ChatbotTestCase):
         assert response.status_code == 400
         assert response.json()["code"] == "INVALID_REQUEST"
 
+    async def test_the_api_takes_a_submission_key(self) -> None:
+        """**열쇠를 받는다** — KEY-328.
+
+        `extra="forbid"` 라 계약이 먼저 열리지 않으면 화면이 열쇠를 보내는 순간
+        `400` 이다. 서버가 그 열쇠로 무엇을 하는지(같은 열쇠면 모델을 안 부르고
+        그때 답을 돌려준다)는 보관 방식이 정해진 뒤의 일이고, 여기서는 **받는
+        것까지**를 잰다.
+        """
+        await self.approved("KEY-328 열쇠 받기")
+        app.dependency_overrides[get_chatbot_service] = lambda: ChatbotService(model=FakeModel())
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                raw_session = await PatientSessionStore(self.redis).start(TOKEN)  # type: ignore[arg-type]
+                client.cookies.set("patient_session", raw_session)
+                took = await client.post(
+                    "/api/v1/chatbot/responses",
+                    json={
+                        "question": "약은 언제 먹나요?",
+                        "submission_id": "3f1a7c64-5b2e-4a19-9c33-8d0b6f2a1e57",
+                    },
+                )
+                without = await client.post(
+                    "/api/v1/chatbot/responses",
+                    json={"question": "약은 언제 먹나요?"},
+                )
+                garbage = await client.post(
+                    "/api/v1/chatbot/responses",
+                    json={"question": "약은 언제 먹나요?", "submission_id": "열쇠아님"},
+                )
+        finally:
+            app.dependency_overrides.pop(get_chatbot_service, None)
+
+        assert took.status_code == 200, took.text
+        #: 아직 없어도 받는다 — 옛 화면·검사·스크립트가 안 보낸다.
+        assert without.status_code == 200, without.text
+        #: 모양이 아니면 막는다. 아무 글자나 받아 두면 「같은 열쇠」가 뜻을 잃는다.
+        assert garbage.status_code == 400, garbage.text
+        assert garbage.json()["code"] == "INVALID_REQUEST"
+
     async def test_one_model_call_uses_only_the_linked_approved_guide(self) -> None:
         ours = await self.approved("KEY-96 승인 합성의원")
         theirs = await self.approved("KEY-96 다른 합성의원", OTHER_TOKEN)

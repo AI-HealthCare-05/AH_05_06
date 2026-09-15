@@ -33,7 +33,13 @@ class TestTheScriptsSurviveAShellWithoutTerm:
     def test_every_script_prelude_runs_with_no_term(self) -> None:
         for name in SCRIPTS:
             done = subprocess.run(
-                ["bash", "-c", _prelude(name) + '\necho "여기까지 왔다"'],
+                # 🚩 **`$0` 를 실제 경로로 준다** — KEY-345.
+                #
+                # `bash -c <글자>` 만 주면 `$0` 가 `bash` 라 `dirname "$0"` 가 `.` 다.
+                # 머리말이 `source "$(dirname "$0")/../lib.sh"` 로 옆 파일을 읽게 된
+                # 뒤로는, 그 흉내가 실제와 달라서 **스크립트는 멀쩡한데 검사만** 운다.
+                # 세 번째 인자가 `$0` 가 된다.
+                ["bash", "-c", _prelude(name) + '\necho "여기까지 왔다"', f"scripts/ci/{name}"],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
@@ -46,16 +52,19 @@ class TestTheScriptsSurviveAShellWithoutTerm:
             )
             assert "여기까지 왔다" in done.stdout, f"scripts/ci/{name}: 머리말을 못 지나갔다"
 
-    def test_no_script_calls_tput_bare(self) -> None:
-        """감싼 자리(`color()`) 하나만 `tput` 을 안다."""
-        for name in SCRIPTS:
-            calls = [
-                line
-                for line in read(f"scripts/ci/{name}").splitlines()
-                if "tput" in line and not line.lstrip().startswith("#") and not line.startswith("color()")
-            ]
+    def test_no_script_calls_tput_at_all(self) -> None:
+        """이제 `tput` 은 **`scripts/lib.sh` 만** 안다 — KEY-345.
 
-            assert not calls, f"scripts/ci/{name}: `tput` 을 그냥 부르는 줄이 있다 — {calls}"
+        예전에는 셋이 각자 `color()` 를 갖고 있었다(KEY-308). 그것은 `tput` 이
+        **죽는 것**만 막고 **터미널인지**(`[ -t 1 ]`)는 안 봐서, CI 로그를 파일로
+        흘리면 `ESC[32m` 이 그대로 박혔다. 세 벌을 한 벌로 모았다.
+        """
+        for name in SCRIPTS:
+            text = read(f"scripts/ci/{name}")
+            calls = [line for line in text.splitlines() if "tput" in line and not line.lstrip().startswith("#")]
+
+            assert not calls, f"scripts/ci/{name}: `tput` 을 부른다 — `scripts/lib.sh` 의 COLOR_* 를 쓴다: {calls}"
+            assert "lib.sh" in text, f"scripts/ci/{name}: 색을 쓰면서 `scripts/lib.sh` 를 안 읽는다"
 
 
 class TestTheLocalScriptAsksWhatCiAsks:

@@ -7,9 +7,10 @@ import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from time import perf_counter
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import httpx
+from tortoise.transactions import in_transaction
 
 from app.core.auth_errors import AuthError
 from app.models.visits import (
@@ -22,6 +23,9 @@ from app.models.visits import (
 from app.services.patient_links import PatientLinkService
 from app.services.patient_usage import PatientUsageService
 from app.services.safety_check import UNSAFE_OUTPUT_PATTERN
+
+if TYPE_CHECKING:  # pragma: no cover - 순환 import 를 피한다
+    from app.services.chatbot_submissions import ChatbotSubmissionGuard
 
 LOGGER = logging.getLogger("app.chatbot")
 SOURCE_LABEL = "담당 의료진이 승인한 진료 안내"
@@ -299,18 +303,31 @@ class ChatbotService:
             lambda: self._links.get_approved_guide(link_token),
         )
 
-    async def answer_for_link_digest(self, *, link_digest: str, question: str) -> ChatbotResult:
-        """Answer inside the guide selected by the authenticated patient session."""
+    async def answer_for_link_digest(
+        self,
+        *,
+        link_digest: str,
+        question: str,
+        guard: "ChatbotSubmissionGuard | None" = None,
+    ) -> ChatbotResult:
+        """Answer inside the guide selected by the authenticated patient session.
+
+        `guard` 가 오면 **같은 열쇠의 두 번째 요청에는 모델을 안 부른다**
+        (KEY-328). 안 오면 예전 그대로 — 열쇠 없는 요청은 멱등 보장이 없다.
+        """
 
         return await self._answer_from(
             question,
             lambda: self._links.get_approved_guide_by_digest(link_digest),
+            guard=guard,
         )
 
     async def _answer_from(
         self,
         question: str,
         load_guide: Callable[[], Awaitable[tuple[object, GuideDocument]]],
+        *,
+        guard: "ChatbotSubmissionGuard | None" = None,
     ) -> ChatbotResult:
         try:
             _, guide = await load_guide()
@@ -336,18 +353,25 @@ class ChatbotService:
                 urgent=urgent,
                 fallback=True,
             )
+        if guard is not None:
+            # **안내문을 찾은 뒤에** 연다 — 열쇠는 그 안내문 안에서만 유일하다.
+            # 이미 답한 열쇠면 여기서 그 답이 그대로 돌아오고 모델은 안 불린다.
+            replayed = await guard.open(guide)
+            if replayed is not None:
+                return replayed
+
         section = select_approved_context(question, list(guide.sections))
         question_kind = classify_question(question)
 
         if section is None:
             result = ChatbotResult(answer=NO_CONTEXT_ANSWER, evidence=_evidence(None), fallback=True)
-            result = await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
+            result = await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result, guard=guard)
             self._observe(model_name=self._model_name(), success=False, latency_ms=0, reason="context_missing")
             return result
 
         if self._model is None:
             result = self._fallback(MODEL_FAILURE_ANSWER, section)
-            result = await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
+            result = await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result, guard=guard)
             self._observe(model_name="unconfigured", success=False, latency_ms=0, reason="model_unconfigured")
             return result
 
@@ -358,8 +382,12 @@ class ChatbotService:
             # 외부 모델 구현이 어떤 예외를 내더라도 환자 여정에는 고정 응답을
             # 돌려준다. 예외 원문은 민감정보를 포함할 수 있어 기록하지 않는다.
             latency = round((perf_counter() - started) * 1000)
+            # **줄을 남기지 않는다**(`keep=False`) — 모델이 실패한 것이라
+            # 「다시 시도」가 같은 열쇠로 정상 진행돼야 한다. 잠금만 푼다.
             result = self._fallback(MODEL_FAILURE_ANSWER, section)
-            result = await self._record(guide, question_kind, PatientAnswerOutcome.FALLBACK, result)
+            result = await self._record(
+                guide, question_kind, PatientAnswerOutcome.FALLBACK, result, guard=guard, keep=False
+            )
             self._observe(model_name=self._model.model_name, success=False, latency_ms=latency, reason="model_failed")
             return result
 
@@ -383,7 +411,7 @@ class ChatbotService:
             outcome = PatientAnswerOutcome.ANSWERED
             reason = None
 
-        result = await self._record(guide, question_kind, outcome, result)
+        result = await self._record(guide, question_kind, outcome, result, guard=guard)
         self._observe(
             model_name=self._model.model_name,
             success=outcome is PatientAnswerOutcome.ANSWERED,
@@ -409,16 +437,49 @@ class ChatbotService:
         question_kind: PatientQuestionKind,
         outcome: PatientAnswerOutcome,
         result: ChatbotResult,
+        *,
+        guard: "ChatbotSubmissionGuard | None" = None,
+        keep: bool = True,
     ) -> ChatbotResult:
+        """이용 기록을 남기고, 열쇠가 있으면 그 줄도 **같은 트랜잭션에서** 남긴다.
+
+        둘이 갈리면 한쪽만 남는 순간이 생긴다 — 열쇠 줄만 남으면 세지 못한
+        답이 되고, 이용 기록만 남으면 다음 재시도가 다시 모델을 부른다.
+
+        `keep=False` 는 모델이 실패한 자리다. 이용 기록은 남기되(무엇이 얼마나
+        막히는지는 KEY-170 이 세야 한다) **열쇠 줄은 안 남긴다.**
+        """
         response_ref = secrets.token_urlsafe(24)
-        await self._usage.record_chatbot_answer(
-            guide.guide_document_id,
-            question_kind=question_kind,
-            outcome=outcome,
-            grounded_section=result.grounded_section,
-            response_ref_digest=hashlib.sha256(response_ref.encode("utf-8")).hexdigest(),
-        )
-        return replace(result, response_ref=response_ref)
+        response_ref_digest = hashlib.sha256(response_ref.encode("utf-8")).hexdigest()
+
+        if guard is None or not keep:
+            await self._usage.record_chatbot_answer(
+                guide.guide_document_id,
+                question_kind=question_kind,
+                outcome=outcome,
+                grounded_section=result.grounded_section,
+                response_ref_digest=response_ref_digest,
+            )
+            if guard is not None:
+                await guard.release()
+            return replace(result, response_ref=response_ref)
+
+        async with in_transaction() as connection:
+            await self._usage.record_chatbot_answer(
+                guide.guide_document_id,
+                question_kind=question_kind,
+                outcome=outcome,
+                grounded_section=result.grounded_section,
+                response_ref_digest=response_ref_digest,
+                connection=connection,
+            )
+            await guard.commit(connection=connection)
+
+        recorded = replace(result, response_ref=response_ref)
+        # 캐시는 트랜잭션 **밖**이다. 줄이 남은 것이 확인된 뒤에 넣어야
+        # 「캐시에는 있는데 표에는 없는」 답이 안 생긴다.
+        await guard.publish(recorded)
+        return recorded
 
     def _model_name(self) -> str:
         return self._model.model_name if self._model is not None else "unconfigured"
