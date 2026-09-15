@@ -85,6 +85,7 @@ class KnowledgeVersion(models.Model):
     chunk_optional = fields.BooleanField(default=False)
     deprecated_by: str | None = fields.CharField(max_length=100, null=True)  # type: ignore[assignment]
     deprecated_at: datetime | None = fields.DatetimeField(null=True)
+    approval_note: str | None = fields.CharField(max_length=500, null=True)  # type: ignore[assignment]
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

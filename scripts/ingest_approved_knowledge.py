@@ -217,7 +217,9 @@ async def deprecate_version(version_id: str, *, deprecated_by: str) -> None:
         await Tortoise.close_connections()
 
 
-async def approve_existing_version(version_id: str, *, approved_by: str, review_days: int) -> None:
+async def approve_existing_version(
+    version_id: str, *, approved_by: str, review_days: int, approval_note: str | None = None
+) -> None:
     """적재 시점과 분리해 draft 버전을 version_id로 승인한다."""
     await Tortoise.init(config=TORTOISE_ORM)
     try:
@@ -227,6 +229,7 @@ async def approve_existing_version(version_id: str, *, approved_by: str, review_
             approved_by=approved_by,
             verified_at=reviewed_at,
             review_due_at=reviewed_at + timedelta(days=review_days),
+            approval_note=approval_note,
         )
         print(
             json.dumps({"version_id": version_id, "approved_by": approved_by, "status": "approved"}, ensure_ascii=False)
@@ -319,6 +322,7 @@ def main() -> int:
     parser.add_argument("--deprecate", metavar="VERSION_ID", help="지정 DRAFT 버전을 DEPRECATED로 전환")
     parser.add_argument("--deprecated-by", help="--deprecate 사용 시 폐기 담당자 식별자 (필수)")
     parser.add_argument("--approve-version", metavar="VERSION_ID", help="적재된 DRAFT 버전을 version_id로 승인")
+    parser.add_argument("--note", help="승인 비고 (라이선스 충돌 사실, 자문 반영 여부 등)")
     args = parser.parse_args()
 
     if not 1 <= args.review_days <= 3650:
@@ -336,7 +340,10 @@ def main() -> int:
                 parser.error("--approve-version 사용 시 --approved-by가 필요합니다")
             asyncio.run(
                 approve_existing_version(
-                    args.approve_version, approved_by=args.approved_by, review_days=args.review_days
+                    args.approve_version,
+                    approved_by=args.approved_by,
+                    review_days=args.review_days,
+                    approval_note=args.note or None,
                 )
             )
             return 0

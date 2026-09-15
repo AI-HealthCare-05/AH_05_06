@@ -3,7 +3,7 @@
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 from tortoise.exceptions import DBConnectionError
@@ -74,6 +74,9 @@ ENDOMETRIOSIS_LIFE_TEMPLATE_BODY = """\
 근거: ESHRE Guideline: Endometriosis (2022)
       Human Reproduction Open · CC BY-NC 4.0
 ※ 위 내용은 일반적인 안내이며 진료와 처방을 대신하지 않습니다."""
+
+# 문구 변경 시(전문의 자문 등) 이 상수를 함께 갱신하고 테스트로 고정한다 (KEY-323 §4).
+ENDOMETRIOSIS_LIFE_TEMPLATE_SHA256 = "93ee06ecfa90acc9e5893c0191d3e237e5517b4bd86f44e65ee1bd44955fa445"
 
 # docs/decisions/KEY-82-rag-search-poc.md §6 생성 연결 승인 (0474caa).
 KEY82_GENERATION_APPROVAL = PocEvaluationApproval(
@@ -165,17 +168,24 @@ async def knowledge_doc_fallback(source_url: str, template_body: str) -> Approve
     )
     if version is None or version.approved_by is None or version.approved_at is None:
         return None
+    # 검토 기한이 지난 레코드는 청크 경로와 동일하게 거절한다 (guide_knowledge_context.py 선례).
+    today = datetime.now(UTC).date()
+    if version.review_due_at is not None:
+        due = version.review_due_at.date() if isinstance(version.review_due_at, datetime) else version.review_due_at
+        if due < today:
+            return None
     approved_at_date = version.approved_at.date() if isinstance(version.approved_at, datetime) else version.approved_at
     verified_at_date = None
     if version.verified_at is not None:
         verified_at_date = (
             version.verified_at.date() if isinstance(version.verified_at, datetime) else version.verified_at
         )
+    expected_sha256 = fallback_body_checksum(template_body)
     return ApprovedFallbackTemplate(
         template_id=f"kv:{version.version_id}",
         version=version.version_label,
         body=template_body,
-        body_sha256=fallback_body_checksum(template_body),
+        body_sha256=expected_sha256,
         approval_status=version.approval_status,
         is_current=version.is_current,
         approved_by=version.approved_by,
@@ -201,12 +211,21 @@ class RagGuideGenerator:
                 from app.models.knowledge import KnowledgeVersion
 
                 version = await KnowledgeVersion.get_or_none(version_id=template.template_id[3:])
+                _today = datetime.now(UTC).date()
+                _due = None
+                if version is not None and version.review_due_at is not None:
+                    _due = (
+                        version.review_due_at.date()
+                        if isinstance(version.review_due_at, datetime)
+                        else version.review_due_at
+                    )
                 if (
                     version is None
                     or not version.is_current
                     or version.approval_status is not ApprovalStatus.APPROVED
                     or not version.chunk_optional
-                    or template.body_sha256 != fallback_body_checksum(template.body)
+                    or (_due is not None and _due < _today)
+                    or template.body_sha256 != ENDOMETRIOSIS_LIFE_TEMPLATE_SHA256
                 ):
                     raise GuideGenerationError("template_changed")
             else:

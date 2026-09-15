@@ -452,6 +452,62 @@ class TestEndometriosisLifeTemplate(TestCase):
         with pytest.raises(GuideGenerationError, match="template_changed"):
             await generator.revalidate_artifact(artifact, hospital_id=1, section_key="life")
 
+    async def test_knowledge_doc_fallback_returns_none_when_review_due_at_expired(self) -> None:
+        """review_due_at이 지난 레코드는 knowledge_doc_fallback()이 None을 반환한다."""
+        from datetime import timedelta
+
+        from app.services.guide_generation import (
+            ENDOMETRIOSIS_LIFE_TEMPLATE_BODY,
+            ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            knowledge_doc_fallback,
+        )
+
+        prepared = await self._ingest_and_approve_eshre()
+        past = datetime.now(UTC) - timedelta(days=1)
+        await KnowledgeVersion.filter(version_id=prepared.version_id).update(review_due_at=past)
+
+        result = await knowledge_doc_fallback(ESHRE_ENDOMETRIOSIS_SOURCE_URL, ENDOMETRIOSIS_LIFE_TEMPLATE_BODY)
+
+        assert result is None
+
+    async def test_revalidate_artifact_raises_when_review_due_at_expired(self) -> None:
+        """review_due_at이 지난 kv: 템플릿은 revalidate_artifact()가 template_changed를 발생시킨다."""
+        from datetime import timedelta
+
+        from app.services.guide_generation import (
+            ENDOMETRIOSIS_LIFE_TEMPLATE_BODY,
+            ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            GuideGenerationError,
+            RagGuideGenerator,
+            knowledge_doc_fallback,
+        )
+        from app.services.guide_knowledge_context import GuideSourceValidation
+        from app.services.knowledge_search import ContextAdmissionOutcome, GenerationContextAdmission
+        from app.services.safety_check import SafetyVerdict, SafetyVerdictKind
+
+        prepared = await self._ingest_and_approve_eshre()
+        fallback = await knowledge_doc_fallback(ESHRE_ENDOMETRIOSIS_SOURCE_URL, ENDOMETRIOSIS_LIFE_TEMPLATE_BODY)
+        assert fallback is not None
+
+        past = datetime.now(UTC) - timedelta(days=1)
+        await KnowledgeVersion.filter(version_id=prepared.version_id).update(review_due_at=past)
+
+        admission = GenerationContextAdmission(
+            outcome=ContextAdmissionOutcome.APPROVED_TEMPLATE_FALLBACK,
+            fallback_template=fallback,
+        )
+        artifact = GeneratedGuideSection(
+            body=fallback.body,
+            validation=GuideSourceValidation(),
+            admission=admission,
+            pre=SafetyVerdict(SafetyVerdictKind.PASS),
+            post=None,
+        )
+        generator = RagGuideGenerator(search=cast(ApprovedKnowledgeSearchService, None), model=None)
+
+        with pytest.raises(GuideGenerationError, match="template_changed"):
+            await generator.revalidate_artifact(artifact, hospital_id=1, section_key="life")
+
 
 # ---------------------------------------------------------------------------
 # §5-static — 템플릿 본문 내용 검증 (DB 불필요, 순수 Python)
@@ -483,6 +539,18 @@ def test_endo_template_contains_no_emergency_phrase() -> None:
     forbidden = ["응급", "즉시 병원", "119", "위급"]
     for phrase in forbidden:
         assert phrase not in ENDOMETRIOSIS_LIFE_TEMPLATE_BODY, f"응급 문구 포함: {phrase!r}"
+
+
+def test_endo_template_sha256_matches_constant() -> None:
+    """ENDOMETRIOSIS_LIFE_TEMPLATE_SHA256 상수가 실제 본문과 일치한다.
+
+    전문의 자문 등으로 문구가 바뀌면 이 테스트가 실패하므로,
+    상수를 함께 갱신해 변경 이력을 추적한다 (KEY-323 §4, 10524).
+    """
+    from app.services.guide_generation import ENDOMETRIOSIS_LIFE_TEMPLATE_BODY, ENDOMETRIOSIS_LIFE_TEMPLATE_SHA256
+    from app.services.knowledge_search import fallback_body_checksum
+
+    assert fallback_body_checksum(ENDOMETRIOSIS_LIFE_TEMPLATE_BODY) == ENDOMETRIOSIS_LIFE_TEMPLATE_SHA256
 
 
 # ---------------------------------------------------------------------------

@@ -396,6 +396,7 @@ class KnowledgeApprovalService:
         approved_by: str,
         verified_at: datetime,
         review_due_at: datetime | None,
+        approval_note: str | None = None,
     ) -> None:
         now = db_now()
         if review_due_at is not None and review_due_at <= now:
@@ -448,6 +449,7 @@ class KnowledgeApprovalService:
             version.approved_at = now
             version.verified_at = verified_at
             version.review_due_at = review_due_at
+            version.approval_note = approval_note
             await version.save(using_db=connection)
 
     async def deprecate(self, version_id: str, *, deprecated_by: str) -> None:
