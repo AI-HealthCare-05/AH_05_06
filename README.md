@@ -544,9 +544,27 @@ bash scripts/ci/code_fommatting.sh     # Ruff — check --fix + format, 즉 작�
 bash scripts/ci/check_mypy.sh          # Mypy 타입 검사
 ```
 
-> **호스트에서 도는 pytest 는 `.env` 의 `DB_HOST`·`REDIS_HOST` 를 그대로 읽는다.**
-> 컨테이너용 `.env`(`mysql`·`redis`)면 앞에 `DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1` 을
-> 붙인다 — `.env` 를 고치면 compose 가 그 값을 컨테이너에 싣는다(위 수동 설치 4 참고).
+> **호스트에서 도는 pytest 는 `DB_HOST`·`REDIS_HOST` 가 호스트에서 풀려야 한다.**
+> `bootstrap`·수동 설치가 만든 컨테이너용 `.env` 는 `mysql`·`redis` 라 그대로는 안 풀린다.
+> 실행 경로에 따라 방법이 다르다.
+>
+> - **`uv run pytest` 를 직접 부를 때 · `./dev.sh check-e2e`** — 명령 앞에 붙이면 된다.
+>   설정은 환경변수가 `.env` 보다 먼저다.
+>
+>   ```bash
+>   DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1 uv run coverage run -m pytest app
+>   uv run coverage report -m
+>   ```
+>
+> - **`bash scripts/ci/run_test.sh`** — **앞에 붙여도 소용없다.** 스크립트가 13행에서
+>   `source .env` 를 해 붙인 값을 `mysql`·`redis` 로 되돌린다. 이 스크립트는 `.env` 의 두 값이
+>   이미 호스트용(`localhost`)일 때만 그대로 쓴다. 컨테이너용 `.env` 라면 위 직접 실행을 쓴다.
+>   `.env` 를 호스트용으로 바꿨다면 컨테이너를 다시 띄우기 전에 되돌린다 — compose 가 그
+>   값을 컨테이너에 싣는다(위 수동 설치 4 참고).
+>   직접 실행은 스크립트가 먼저 하는 DB 권한 부여(`GRANT`)를 건너뛴다. `test`·`test_*` DB 권한은
+>   `initdb.d` 가 MySQL 볼륨을 처음 만들 때 넣으므로 보통 필요 없다. 그보다 오래된 볼륨에서
+>   `TEST_SLOT`·`-n auto` 를 쓸 때만 아래 절의 `GRANT` 를 한 번 넣는다.
+>
 > CI 는 `.env` 가 없고 `DB_HOST: 127.0.0.1` 만 준다(`.github/workflows/checks.yml`).
 
 **프런트엔드 검사** — 별도 도구 없이 Node 만으로:
@@ -666,7 +684,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | 현지 날짜 검사가 항상 통과 | `TZ=Asia/Seoul` 을 안 붙였다 |
 | `dev.sh start` 가 `ENV=local 에서만` 이라며 멈춤 | `.env` 의 `ENV` 가 `local` 이 아니다 |
 | 서버가 `SMS_PROVIDER=…` 를 말하며 안 뜸 | `ENV=prod` + `mock` 이거나, `solapi` 인데 `SOLAPI_*` 또는 `OTP_APPROVED_TEST_PHONES` 가 비었다 ([문자 발송](#문자-발송-key-248) 표) |
-| 호스트 pytest·`check-e2e` 가 `mysql`/`redis` 를 못 찾음 | `.env` 가 컨테이너용이다 — `DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1` 을 앞에 붙인다 |
+| 호스트 pytest·`check-e2e` 가 `mysql`/`redis` 를 못 찾음 | `.env` 가 컨테이너용이다 — `DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1` 을 앞에 붙인다. **`run_test.sh` 는 `source .env` 가 되돌리므로 안 통한다** — `uv run pytest` 직접 실행으로 ([테스트](#-테스트-및-품질-관리) 절) |
 | 발송 시각이 지났는데 문자가 `SCHEDULED` 에서 안 움직임 | `ai-worker` 가 안 떴다 (`--profile ocr`). `solapi` 라면 KEY-338 좁은문이 닫혀 있다 — 워커 로그의 「예약 문자 발송 좁은문 안 열림」 |
 | 예약 문자가 `HELD` — `SOURCE_NOT_DELETED` · `BOOKING_URL_MISSING` · `RECIPIENT_NOT_APPROVED` | 발송 게이트다. 원본 문서 행이 남아 있음(삭제 기록은 KEY-349 전까지 없음) · 어드민 의원 정보(A1-4)의 예약 주소 비어 있음 · `solapi` 에서 수신 번호가 `OTP_APPROVED_TEST_PHONES` 밖. **보류는 끝 상태라 다시 안 나간다** ([`docs/project_workflow.md`](docs/project_workflow.md) §2) |
 | 포트 `3306`·`6379`·`8000` 사용 중 | 해당 프로그램을 종료한다. `3306` 만 `.env` 의 `DB_EXPOSE_PORT` 로 바꿀 수 있고, `6379`·`8000` 은 `docker-compose.yml` 에 박혀 있어 그 파일을 고쳐야 한다 |
