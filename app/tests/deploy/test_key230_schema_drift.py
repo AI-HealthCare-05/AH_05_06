@@ -47,3 +47,8 @@ def test_real_bootstrap_ci_job():
     assert "set -euo pipefail" in run
     assert run.count("./scripts/bootstrap-local.sh") == 2
     assert "sha256sum .env .bootstrap.local.env" in run
+
+
+def test_local_mysql_allows_migration_triggers_without_super():
+    mysql = compose("docker-compose.yml")["services"]["mysql"]
+    assert "--log-bin-trust-function-creators=1" in mysql["command"]

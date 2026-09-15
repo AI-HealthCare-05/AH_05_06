@@ -57,6 +57,8 @@ services:
     command: # 한글 저장을 위한 문자셋 설정 (필수!)
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      # 로컬/CI migration의 트리거 생성 허용. 앱 계정에 SUPER를 부여하지 않는다.
+      - --log-bin-trust-function-creators=1
       - --port=${DB_PORT}
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]

@@ -1,6 +1,17 @@
 # KEY-230 clean clone·bootstrap 검증 — 2026-09-15
 
-상태: **요청된 두 결함 수정과 로컬 검증 완료. 커밋 `1b68860`의 실제 GitHub CI bootstrap·lint·test 모두 PASS. 최종 인수는 이희진 검토 대기.**
+상태: **기존 `1b68860` CI는 통과했으나 후속 `53d13cf` CI에서 MySQL 1419로 bootstrap이 실패했다. 시작 옵션 보완 후 로컬 새 DB bootstrap·반복 실행은 통과했으며 수정 후 원격 CI는 아직 미실행이다. 최종 인수는 대기한다.**
+
+## 후속 MySQL 1419 보완
+
+- [후속 CI 34954192543](https://github.com/AI-HealthCare-05/AH_05_06/actions/runs/34954192543): lint/test는 통과했지만 첫 migration이 1419(SUPER privilege / binary logging)로 종료해 반복 실행에 도달하지 못했다. 아래 기존 CI 성공 기록과 구분한다.
+- 로컬 `docker-compose.yml`의 MySQL 시작 옵션에 `--log-bin-trust-function-creators=1`을 추가했다. CI bootstrap도 이 Compose를 사용하므로 동일하게 적용된다. 앱 계정 SUPER 권한 부여, migration 우회, 운영 Compose/RDS 설정 변경은 하지 않았다.
+- 바이너리 로그가 켜진 서버에서 함수·트리거 작성자에 대한 추가 신뢰 설정이므로 로컬/CI에 한정한다. 일반 생성 권한은 여전히 필요하다.
+- 새 격리 Compose 프로젝트에서 기존 검증 이미지(제품 기준 `06807b9`)와 수정된 MySQL 시작 설정으로 실제 실행했다. 일반 앱 계정 조회에서 `@@log_bin=1`, `@@log_bin_trust_function_creators=1` 확인. 정식 migration 0~63, seed, drift, health/auth/core 모두 통과했다.
+- 두 번째 bootstrap은 upgrade 없음, seed 신규 생성 0, smoke 통과, 환경파일 체크섬 동일. 기존 볼륨은 삭제하지 않았고 격리 QA 볼륨은 보존했다. 종료 코드 0과 기존 실행 서비스 복구를 확인했다.
+- 시작 옵션 회귀 및 관련 실패 전파 테스트 13개, 전체 배포 회귀 **351 passed (37.17초)**, 전체 Ruff check/format 476개 파일 통과. 원격 CI 성공은 푸시 후 별도로 확인해야 한다.
+
+## 기존 검증 기준 및 기록
 
 - 계약: [KEY-230](https://leehee.atlassian.net/browse/KEY-230)의 AC1~7 및 2026-09-15 16:58 댓글.
 - 실행·QA 및 요청된 결함 보완: 유가은. 최종 인수: 이희진.
@@ -9,6 +20,8 @@
 - 공유 증적: [GitHub Actions 실행 34949707907](https://github.com/AI-HealthCare-05/AH_05_06/actions/runs/34949707907). 원본 로컬 로그·스크린샷·보조 스크립트는 **작성자 로컬 보관**이며 다른 사람이 접근 가능한 공유 산출물로 간주하지 않는다.
 
 ## 인수조건별 결과
+
+아래 표는 기존 `1b68860` 검증 기록이다. 후속 실패로 **현재 AC6의 수정 후 원격 CI는 재검증 대기**이며, 최신 로컬 검증은 위 MySQL 1419 보완 절을 따른다.
 
 | 조건 | 현재 결과 | 검증 근거와 범위 |
 |---|---|---|
