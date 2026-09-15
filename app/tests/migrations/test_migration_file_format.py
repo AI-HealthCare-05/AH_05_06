@@ -247,3 +247,41 @@ def test_the_first_docstring_line_still_counts() -> None:
     live = {"docstring": "새 한 줄.", "description": "새 한 줄."}
 
     assert _same_shape(snapshot) != _same_shape(live), "첫 줄이 갈렸는데 같다고 본다"
+
+
+def test_a_field_comment_edit_does_not_count_as_drift() -> None:
+    """🚩 **칸 옆 주석도 같은 문제다** — KEY-347 후속 (리뷰 지적).
+
+    `docstring` 은 클래스뿐 아니라 **칸(필드) 하나하나**에도 붙는다.
+    `_get_comments` 가 필드 옆 인라인 주석을 읽어 `Field.docstring` 에
+    넣기 때문이다(`tortoise/models.py` · `tortoise/fields/base.py`).
+
+    위 두 테스트는 모델 최상위 `dict` 만 평평하게 들고 확인했다 — 실제 비교가
+    도는 `data_fields` 처럼 **리스트 안에 중첩된 모양**은 아무도 확인하지
+    않았다. `_same_shape` 가 재귀적으로 걷어내길 그만두면(예: 최상위 키만
+    보게 "단순화") 이 자리에서 다시 develop 이 빨개지는데, 위 두 테스트는
+    그것을 못 잡는다.
+    """
+    snapshot = {"data_fields": [{"name": "guide_version", "description": "버전.", "docstring": "버전.\n\n옛 설명."}]}
+    live = {
+        "data_fields": [
+            {"name": "guide_version", "description": "버전.", "docstring": "버전.\n\n옛 설명.\n\n덧붙인 설명."}
+        ]
+    }
+
+    assert _same_shape(snapshot) == _same_shape(live), "필드 옆 주석 추가가 어긋남으로 잡힌다"
+
+
+def test_a_field_description_change_still_counts() -> None:
+    """🚩 **칸의 `description` 이 갈리면 여전히 잡는다.**
+
+    위 테스트가 `docstring` 을 건 것과 짝을 맞춘다 — 모델 수준에서
+    `test_the_first_docstring_line_still_counts` 가 `description` 경계를
+    고정하듯, 필드 수준에서도 같은 경계를 고정한다. 한쪽만 재면 나중에
+    `description` 까지 걷어내는 「정리」가 필드 쪽에서 조용히 들어와도
+    아무도 못 잡는다.
+    """
+    snapshot = {"data_fields": [{"name": "guide_version", "description": "옛 설명.", "docstring": "옛 설명."}]}
+    live = {"data_fields": [{"name": "guide_version", "description": "새 설명.", "docstring": "새 설명."}]}
+
+    assert _same_shape(snapshot) != _same_shape(live), "필드 description 변경이 드리프트로 안 잡힌다"
