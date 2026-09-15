@@ -112,6 +112,16 @@ def chunk_text(
     )
 
 
+def _is_page_number_line(norm: str) -> bool:
+    """쪽번호 줄인지 확인한다.
+
+    PDF에서 추출된 쪽번호는 숫자 뒤에 Private Use Area 불릿(U+F0CA 등)이
+    붙는 경우가 있다. 해당 문자를 제거하고 나머지가 순수 숫자인지 판단한다.
+    """
+    stripped = norm.replace("", "").strip()
+    return bool(stripped) and stripped.isdigit()
+
+
 def _filter_lines(
     text: str,
     normalized_strip: frozenset[str],
@@ -121,7 +131,8 @@ def _filter_lines(
     filtered = [
         line
         for line in lines
-        if (norm := " ".join(line.split())) not in normalized_strip and not (strip_page_numbers and norm.isdigit())
+        if (norm := " ".join(line.split())) not in normalized_strip
+        and not (strip_page_numbers and _is_page_number_line(norm))
     ]
     return "\n".join(filtered)
 

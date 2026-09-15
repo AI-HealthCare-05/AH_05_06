@@ -16,7 +16,10 @@
       "page_to": 38,
       "strip_headers": [
         "International Evidence-based Guideline for the assessment and management of polycystic ovary syndrome 2023",
-        "No. / Living# Type Recommendation / Grade/Quality"
+        "No.",
+        "Living# Type Recommendation",
+        "Grade/",
+        "Quality"
       ],
       "strip_page_numbers": true
     },

@@ -546,8 +546,13 @@ def test_pcos_life_guard_excluded_for_pcos_non_life_section() -> None:
 _PCOS_PDF_PATH = Path(__file__).resolve().parents[3] / "key276-sources" / "pcos-monash-2023-v1.pdf"
 _PCOS_MD5 = "75bb875708c151846416e225adfc54e0"
 _PCOS_STRIP_HEADERS = (
+    # 쪽 제목 머리글 (홀수 쪽에 반복)
     "International Evidence-based Guideline for the assessment and management of polycystic ovary syndrome 2023",
-    "No. / Living# Type Recommendation / Grade/Quality",
+    # 표 헤더 — PDF 추출 시 각 줄로 분리되므로 개별 줄로 지정한다
+    "No.",
+    "Living# Type Recommendation",
+    "Grade/",
+    "Quality",
 )
 _EXPECTED_RECOMMENDATIONS = {
     "3.1.1",
@@ -648,3 +653,41 @@ def test_pcos_monash_v1_page_range_excludes_other_chapters() -> None:
     # 35쪽 이전(2장)과 39쪽 이후(4장) 섹션 번호가 없어야 한다
     assert not re.search(r"\b2\.\d+\.\d+\b", full), "2장 권고 번호가 포함됨"
     assert not re.search(r"\b4\.\d+\.\d+\b", full), "4장 권고 번호가 포함됨"
+
+
+@_pcos_pdf_required
+def test_pcos_monash_v1_strips_page_title_header() -> None:
+    """쪽 제목 머리글이 제거된다 (홀수 쪽에 반복되는 가이드라인 제목)."""
+    chunks = _load_pcos_chunks()
+    full = " ".join(c.body for c in chunks)
+    assert "International Evidence-based Guideline for the assessment and management" not in full, (
+        "쪽 제목 머리글이 남아 있다"
+    )
+
+
+@_pcos_pdf_required
+def test_pcos_monash_v1_strips_table_header_lines() -> None:
+    """표 헤더 줄(No. / Living# Type Recommendation / Grade/ / Quality)이 제거된다."""
+    chunks = _load_pcos_chunks()
+    lines = set()
+    for c in chunks:
+        for line in c.body.splitlines():
+            lines.add(" ".join(line.split()))
+    assert "Living# Type Recommendation" not in lines, "표 헤더 'Living# Type Recommendation'이 남아 있다"
+    assert "Grade/" not in lines, "표 헤더 'Grade/'가 남아 있다"
+
+
+@_pcos_pdf_required
+def test_pcos_monash_v1_strips_page_numbers() -> None:
+    """쪽번호(U+F0CA 불릿 포함)가 제거된다."""
+    chunks = _load_pcos_chunks()
+    lines = []
+    for c in chunks:
+        lines.extend(c.body.splitlines())
+    # 숫자만(또는 숫자+U+F0CA)으로 이뤄진 줄이 없어야 한다
+    pnum_lines = [
+        ln
+        for ln in lines
+        if " ".join(ln.split()).replace("", "").strip().isdigit() and " ".join(ln.split()).replace("", "").strip()
+    ]
+    assert not pnum_lines, f"쪽번호 줄이 남아 있다: {pnum_lines[:5]}"
