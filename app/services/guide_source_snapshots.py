@@ -90,5 +90,8 @@ async def persist_guide_fallback(
         version=template.version,
         body_sha256=template.body_sha256,
         fallback_reason=reason,
+        source_org=template.source_org,
+        source_url=template.source_url,
+        verified_at=template.verified_at,
         using_db=connection,
     )

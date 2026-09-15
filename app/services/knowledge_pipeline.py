@@ -90,6 +90,8 @@ class KnowledgeIngestionRequest:
     strip_page_numbers: bool = False
     # True이면 MinIO 저장·추출·임베딩·청크 저장을 건너뛴다 (고정 템플릿 레코드용).
     chunk_optional: bool = False
+    # TEXT_PDF 전용: 모든 추출 청크에 고정 섹션 키를 부여한다. None이면 page-N 자동 부여.
+    section_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -250,6 +252,7 @@ class KnowledgeIngestionService:
                 page_to=request.page_to,
                 strip_headers=request.strip_headers,
                 strip_page_numbers=request.strip_page_numbers,
+                section_key=request.section_key,
             )
         if request.source_kind is KnowledgeSourceKind.STRUCTURED_API:
             return extract_structured_api_snapshot(payload)

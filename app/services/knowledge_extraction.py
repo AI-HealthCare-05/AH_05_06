@@ -133,6 +133,7 @@ def extract_text_pdf(
     page_to: int | None = None,
     strip_headers: tuple[str, ...] = (),
     strip_page_numbers: bool = False,
+    section_key: str | None = None,
 ) -> tuple[ExtractedChunk, ...]:
     """텍스트 PDF를 페이지별로 추출한다. 암호화/빈 PDF는 안전하게 실패한다.
 
@@ -165,7 +166,7 @@ def extract_text_pdf(
             chunks.extend(
                 chunk_text(
                     raw,
-                    section_key=f"page-{page_number}",
+                    section_key=section_key if section_key is not None else f"page-{page_number}",
                     page_number=page_number,
                     start_position=len(chunks),
                 )

@@ -165,6 +165,11 @@ async def knowledge_doc_fallback(source_url: str, template_body: str) -> Approve
     if version is None or version.approved_by is None or version.approved_at is None:
         return None
     approved_at_date = version.approved_at.date() if isinstance(version.approved_at, datetime) else version.approved_at
+    verified_at_date = None
+    if version.verified_at is not None:
+        verified_at_date = (
+            version.verified_at.date() if isinstance(version.verified_at, datetime) else version.verified_at
+        )
     return ApprovedFallbackTemplate(
         template_id=f"kv:{version.version_id}",
         version=version.version_label,
@@ -174,6 +179,9 @@ async def knowledge_doc_fallback(source_url: str, template_body: str) -> Approve
         is_current=version.is_current,
         approved_by=version.approved_by,
         approved_at=approved_at_date,
+        source_org=version.document.source_org,
+        source_url=version.document.source_url,
+        verified_at=verified_at_date,
     )
 
 
