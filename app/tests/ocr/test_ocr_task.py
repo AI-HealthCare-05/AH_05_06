@@ -536,6 +536,15 @@ class TestProcessOcrJob(TestCase):
         progress_snapshots: list[int] = []
 
         original_save = OcrJob.save
+        from tortoise.queryset import QuerySet
+
+        original_update = QuerySet.update
+
+        async def capturing_update(query, **kwargs):
+            count = await original_update(query, **kwargs)
+            if query.model is OcrJob and "progress" in kwargs and count:
+                progress_snapshots.append(kwargs["progress"])
+            return count
 
         async def capturing_save(self_job, *args, **kwargs):
             await original_save(self_job, *args, **kwargs)
@@ -546,6 +555,7 @@ class TestProcessOcrJob(TestCase):
             patch("ai_worker.tasks.ocr_task.config") as mock_cfg,
             patch("ai_worker.tasks.ocr_task.call_clova_ocr", AsyncMock(return_value=SYN_LOW_CONF_CLOVA_RESULT)),
             patch.object(OcrJob, "save", capturing_save),
+            patch.object(QuerySet, "update", capturing_update),
         ):
             mock_cfg.clova_enabled = True
             await process_ocr_job(job.ocr_job_id)

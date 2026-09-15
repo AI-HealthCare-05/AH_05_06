@@ -68,23 +68,38 @@ _RETRYABLE_CLOVA_CODES: frozenset[str] = frozenset(
 _MAX_CLOVA_RETRIES = 2
 
 
-async def process_ocr_job(ocr_job_id: str) -> None:
-    """Redis 큐에서 수신한 OCR 작업을 처리한다."""
-    t0 = perf_counter()
+class _JobAlreadyFinishedError(Exception):
+    """정리 작업 등이 먼저 종료했다. 늦게 온 결과로 종료 상태를 덮지 않는다."""
+
+
+async def _start_job(ocr_job_id: str, t0: float) -> OcrJob | None:
+    """정리 작업과 경쟁하더라도 이미 종료된 작업은 시작하지 않는다."""
     started_at = now()
 
     job = await OcrJob.filter(ocr_job_id=ocr_job_id).first()
     if job is None:
         default_logger.warning("OcrJob 없음 — ocr_job_id=%s", ocr_job_id)
         _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="JOB_NOT_FOUND")
-        return
+        return None
     if job.status != OcrJobStatus.PROCESSING:
         default_logger.warning("이미 처리된 작업 — ocr_job_id=%s, status=%s", ocr_job_id, job.status)
         _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="ALREADY_PROCESSED")
-        return
+        return None
 
     job.started_at = started_at
-    await job.save(update_fields=("started_at",))
+    claimed = await OcrJob.filter(ocr_job_id=ocr_job_id, status=OcrJobStatus.PROCESSING).update(started_at=started_at)
+    if not claimed:
+        _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="ALREADY_PROCESSED")
+        return None
+    return job
+
+
+async def process_ocr_job(ocr_job_id: str) -> None:
+    """Redis 큐에서 수신한 OCR 작업을 처리한다."""
+    t0 = perf_counter()
+    job = await _start_job(ocr_job_id, t0)
+    if job is None:
+        return
 
     job_documents = await OcrJobDocument.filter(ocr_job=job).all()
     if not job_documents:
@@ -134,6 +149,9 @@ async def process_ocr_job(ocr_job_id: str) -> None:
                     clova_elapsed_ms=clova_elapsed_ms,
                     retry_count=retry_count,
                 )
+                break
+            except _JobAlreadyFinishedError:
+                _observe(ocr_job_id=ocr_job_id, mode="failed", t0=t0, error_code="ALREADY_PROCESSED")
                 break
             except ClovaOcrError as exc:
                 if exc.code in _RETRYABLE_CLOVA_CODES and retry_count < _MAX_CLOVA_RETRIES:
@@ -219,7 +237,7 @@ async def _call_clova_for_documents(
             raise ClovaOcrError(exc.code, str(exc), elapsed_ms=exc.elapsed_ms) from exc
         results[jd.document_id] = result
         job.progress = round(len(results) / total * 70)
-        await job.save(update_fields=("progress",))
+        await OcrJob.filter(ocr_job_id=job.ocr_job_id, status=OcrJobStatus.PROCESSING).update(progress=job.progress)
     return results
 
 
@@ -286,7 +304,7 @@ async def _save_clova_result(
     # 의도적으로 트랜잭션 밖에서 저장 — 롤백 시 PROCESSING+80으로 남지만
     # except 경로의 _mark_failed가 progress=0으로 self-heal한다.
     job.progress = 80
-    await job.save(update_fields=("progress",))
+    await OcrJob.filter(ocr_job_id=job.ocr_job_id, status=OcrJobStatus.PROCESSING).update(progress=job.progress)
 
     # Phase 3: EMR이 포함된 경우 못 읽은 필수 필드를 센다 (KEY-163 §4)
     #
@@ -297,6 +315,10 @@ async def _save_clova_result(
     # Phase 4: 트랜잭션 안에서 DB 저장
     actual_type_map: dict[int, OcrDocumentType] = {jd.document_id: actual_type for jd, _, actual_type in fields_by_doc}
     async with in_transaction() as conn:
+        # 정리와 완료가 같은 행 잠금을 공유한다. 정리가 먼저 끝났으면 결과도 저장하지 않는다.
+        current = await OcrJob.filter(ocr_job_id=job.ocr_job_id).using_db(conn).select_for_update().first()
+        if current is None or current.status != OcrJobStatus.PROCESSING:
+            raise _JobAlreadyFinishedError
         ocr_result = await OcrResult.create(
             ocr_job=job,
             model_name=_CLOVA_MODEL_NAME,
@@ -374,11 +396,9 @@ async def _save_clova_result(
 
 
 async def _mark_failed(job: OcrJob, failure_code: str) -> None:
-    job.status = OcrJobStatus.FAILED
-    job.failure_code = failure_code
-    job.progress = 0
-    job.completed_at = now()
-    await job.save(update_fields=("status", "failure_code", "progress", "completed_at"))
+    await OcrJob.filter(ocr_job_id=job.ocr_job_id, status=OcrJobStatus.PROCESSING).update(
+        status=OcrJobStatus.FAILED, failure_code=failure_code, progress=0, completed_at=now()
+    )
 
 
 def _observe(

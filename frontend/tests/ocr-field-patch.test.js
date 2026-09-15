@@ -74,3 +74,19 @@ test("정상 수정은 그대로 저장된다 — 가드가 길을 막지 않는
   assert.strictEqual(updated.value, "10.4");
   assert.strictEqual(updated.version, field.version + 1);
 });
+
+test("KEY-154: KEY-273 정책대로 확정 후 수정은 허용하고 재확정을 요구한다", async () => {
+  const { api, field } = await anEditableField();
+  const confirmed = await api.ocrApi.updateField(field.ocr_field_id, {
+    confirm: true,
+    base_version: field.version,
+  });
+  const changed = await api.ocrApi.updateField(field.ocr_field_id, {
+    corrected_value: "154.25",
+    base_version: confirmed.version,
+  });
+  assert.strictEqual(changed.value, "154.25");
+  assert.strictEqual(changed.is_confirmed, false);
+  assert.ok(!changed.confirmed_at);
+  assert.ok(!changed.confirmed_by);
+});
