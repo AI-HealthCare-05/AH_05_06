@@ -175,6 +175,8 @@ class TestDeprecateVersion(TestCase):
 
         version = await KnowledgeVersion.get(version_id=prepared.version_id)
         assert version.approval_status is ApprovalStatus.DEPRECATED
+        assert version.deprecated_by == "권일준"
+        assert version.deprecated_at is not None
 
     async def test_deprecate_approved_version_is_rejected(self) -> None:
         prepared = await self._ingest_draft()

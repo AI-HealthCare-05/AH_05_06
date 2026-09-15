@@ -458,4 +458,6 @@ class KnowledgeApprovalService:
             if version.approval_status is not ApprovalStatus.DRAFT:
                 raise ValueError("KNOWLEDGE_VERSION_NOT_DEPRECATABLE")
             version.approval_status = ApprovalStatus.DEPRECATED
+            version.deprecated_by = deprecated_by
+            version.deprecated_at = db_now()
             await version.save(using_db=connection)
