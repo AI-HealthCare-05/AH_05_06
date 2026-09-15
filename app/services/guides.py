@@ -581,6 +581,7 @@ class GuideService:
                     fallback=endo_life_fallback if is_endo_life else approved_fallback(content),
                     infrastructure_exhausted=bool(self.generation_job and self.generation_job.attempts >= MAX_ATTEMPTS),
                     fixed_template=key is GuideSectionKey.EMERGENCY or is_endo_life,
+                    disease=disease,
                 )
             except GuideGenerationError as exc:
                 exc.section_key = key.value

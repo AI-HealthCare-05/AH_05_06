@@ -196,7 +196,9 @@ class TestDeprecateVersion(TestCase):
 
     async def test_deprecate_nonexistent_version_raises(self) -> None:
         with pytest.raises(ValueError, match="KNOWLEDGE_VERSION_NOT_FOUND"):
-            await KnowledgeApprovalService().deprecate("00000000-0000-0000-0000-000000000000", deprecated_by="test-operator")
+            await KnowledgeApprovalService().deprecate(
+                "00000000-0000-0000-0000-000000000000", deprecated_by="test-operator"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -478,3 +480,55 @@ def test_endo_template_contains_no_emergency_phrase() -> None:
     for phrase in forbidden:
         assert phrase not in ENDOMETRIOSIS_LIFE_TEMPLATE_BODY, f"응급 문구 포함: {phrase!r}"
 
+
+# ---------------------------------------------------------------------------
+# §6-static — PCOS 생활관리 프롬프트 가드 (KEY-323 §3, DB 불필요)
+# ---------------------------------------------------------------------------
+
+_PCOS_GUARD_MARKER = "특정 식이요법이나 운동 방식이 다른 방법보다 우월하다는 근거는 없습니다"
+
+
+def _collect_instructions(disease: str, section_key: str) -> str:
+    """_model_answer()가 조립하는 instructions 문자열을 반환한다."""
+    from unittest.mock import AsyncMock
+
+    from app.services.guide_generation import RagGuideGenerator
+    from app.services.guide_knowledge_context import GuideSourceValidation
+
+    captured: list[str] = []
+
+    async def fake_generate(*, instructions: str, prompt: str) -> object:
+        captured.append(instructions)
+
+        class _R:
+            text = '{"body": "ok", "drug_names": []}'
+
+        return _R()
+
+    generator = RagGuideGenerator(search=None, model=AsyncMock())  # type: ignore[arg-type]
+    generator.model.generate = fake_generate  # type: ignore[method-assign]
+
+    import asyncio
+
+    asyncio.get_event_loop().run_until_complete(
+        generator._model_answer(section_key, (), GuideSourceValidation(), disease=disease)  # type: ignore[arg-type]
+    )
+    return captured[0]
+
+
+def test_pcos_life_guard_included_for_pcos_life() -> None:
+    """PCOS + life 섹션일 때 우월성 제한 가드가 지시문에 포함된다 (KEY-323 §3)."""
+    instructions = _collect_instructions(disease="PCOS", section_key="life")
+    assert _PCOS_GUARD_MARKER in instructions
+
+
+def test_pcos_life_guard_excluded_for_endometriosis_life() -> None:
+    """자궁내막증 + life 섹션에는 PCOS 가드가 포함되지 않는다."""
+    instructions = _collect_instructions(disease="ENDOMETRIOSIS", section_key="life")
+    assert _PCOS_GUARD_MARKER not in instructions
+
+
+def test_pcos_life_guard_excluded_for_pcos_non_life_section() -> None:
+    """PCOS라도 life 외 섹션(medication 등)에는 가드가 포함되지 않는다."""
+    instructions = _collect_instructions(disease="PCOS", section_key="medication")
+    assert _PCOS_GUARD_MARKER not in instructions
