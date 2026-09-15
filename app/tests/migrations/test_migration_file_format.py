@@ -99,6 +99,13 @@ def test_the_last_state_matches_the_models_we_have() -> None:
     assert not missing, f"모델은 있는데 스냅샷에 없다 — 마지막 마이그레이션 뒤에 모델이 늘었다: {missing}"
 
 
+#: 스키마와 무관해 **비교에서 걷어내는** 키 — KEY-333 · KEY-347.
+#:
+#: `managed` 는 스냅샷을 저장한 뒤에 생긴 칸이고, `docstring` 은 aerich 가
+#: diff 에 안 쓰는 문서다. 둘 다 있어도 `aerich migrate` 는 DDL 을 안 뱉는다.
+_IGNORED_KEYS = frozenset({"managed", "docstring"})
+
+
 def _same_shape(value: Any) -> Any:
     """스냅샷과 `describe_models()` 를 **뜻으로** 견주기 위한 정규화 — KEY-333.
 
@@ -111,9 +118,21 @@ def _same_shape(value: Any) -> Any:
 
     이것을 안 걷으면 검사가 늘 빨개져서 아무도 안 본다. 걷고 나면 **진짜
     어긋남만** 남는다(실측: develop 에서 44개 전부 일치).
+
+    🚩 **`docstring` 도 걷는다** — KEY-347. `describe_models()` 는 클래스
+    docstring 을 통째로 담는데, **aerich 는 그것을 안 본다.** 실측으로 확인했다 —
+    `GuideSafetyCheck` 의 docstring 에 문단을 더한 `#317` 뒤에 이 검사는 울었지만
+    `aerich migrate --offline` 은 `No changes detected` 였다.
+
+    걷지 않으면 **모델에 주석 한 줄 다는 일이 마이그레이션 작업이 된다.** 그러면
+    아무도 주석을 안 달게 되고, 이 저장소가 맥락을 남기는 방식이 무너진다.
+
+    **`description` 은 안 걷는다.** 그쪽은 표·칸 주석이라 DDL 에 실린다. Tortoise 는
+    docstring 의 **첫 줄**을 모델 `description` 으로 쓰므로, 첫 줄을 고치면
+    `description` 이 갈려 여전히 걸린다 — 잡아야 할 것은 그쪽이다.
     """
     if isinstance(value, dict):
-        return {key: _same_shape(item) for key, item in sorted(value.items()) if key != "managed"}
+        return {key: _same_shape(item) for key, item in sorted(value.items()) if key not in _IGNORED_KEYS}
     if isinstance(value, (list, tuple)):
         return [_same_shape(item) for item in value]
     return value
@@ -199,3 +218,32 @@ def test_the_snapshot_carries_nothing_we_deleted() -> None:
 
     extra = sorted(snapshot - live)
     assert not extra, f"스냅샷에는 있는데 코드에 없는 모델 — 지웠으면 `DROP TABLE` 마이그레이션도 만들어라: {extra}"
+
+
+def test_a_docstring_paragraph_does_not_count_as_drift() -> None:
+    """모델에 **주석 한 줄 다는 일**이 마이그레이션 작업이 되면 안 된다 — KEY-347.
+
+    `describe_models()` 는 클래스 docstring 을 통째로 담는다. 그래서 `#317` 이
+    `GuideSafetyCheck` docstring 에 문단을 더하자 **develop 이 빨개졌다** —
+    스키마는 한 글자도 안 바뀌었는데.
+
+    aerich 는 그 칸을 안 본다(실측: 그 상태에서 `migrate --offline` 이
+    `No changes detected`). 막으려던 것은 「낡은 스냅샷이 다음 diff 를 망친다」인데
+    이건 그것이 아니다.
+    """
+    snapshot = {"docstring": "한 줄.\n\n옛 문단.", "description": "한 줄."}
+    live = {"docstring": "한 줄.\n\n옛 문단.\n\n새로 더한 문단.", "description": "한 줄."}
+
+    assert _same_shape(snapshot) == _same_shape(live), "docstring 뒷문단이 어긋남으로 잡힌다"
+
+
+def test_the_first_docstring_line_still_counts() -> None:
+    """🚩 **첫 줄은 걷어내지 않는다.**
+
+    Tortoise 는 docstring 첫 줄을 모델 `description` 으로 쓰고, 그것은 표 주석이라
+    DDL 에 실린다. `docstring` 을 걷는다고 이쪽까지 놓치면, 걷어낸 것이 너무 많다.
+    """
+    snapshot = {"docstring": "옛 한 줄.", "description": "옛 한 줄."}
+    live = {"docstring": "새 한 줄.", "description": "새 한 줄."}
+
+    assert _same_shape(snapshot) != _same_shape(live), "첫 줄이 갈렸는데 같다고 본다"
