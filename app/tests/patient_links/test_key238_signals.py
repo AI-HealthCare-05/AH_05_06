@@ -20,6 +20,97 @@ def stamp(answer="stopped_side_effect", sequence=1, client="device-a"):
 
 
 class TestKey238Signals(CheckInTestCase):
+    async def acknowledged_signal(self, client, guide, staff, body):
+        response = await client.post(f"/api/v1/checkins/{TOKEN}/signals", json=body)
+        assert response.status_code == 201
+        headers = await self.headers(staff)
+        path = f"/api/v1/visits/{guide.visit_id}/checkin/signals"
+        state = (await client.get(path, headers=headers)).json()[0]
+        response = await client.post(
+            path + f"/{state['state_id']}/acknowledge",
+            headers=headers,
+            json={"signal_id": state["signal_id"], "updated_at": state["updated_at"]},
+        )
+        assert response.status_code == 200
+        return headers, path, response.json()
+
+    async def test_same_answer_new_event_reopens_list_and_history(self):
+        _, guide, staff = await self.seed()
+        patient_id = (await guide.visit).patient_id
+        async with self.client() as client:
+            for answer, device in (("stopped_side_effect", "device-a"), ("stopped_improved", "device-b")):
+                headers, path, old = await self.acknowledged_signal(client, guide, staff, stamp(answer, 10, device))
+                ack_count = await CheckInSignalAcknowledgement.all().count()
+                listing = (await client.get("/api/v1/patients", headers=headers)).json()
+                row = next(row for row in listing["items"] if row["patient_id"] == patient_id)
+                assert "CHECKIN_SIGNAL" not in row["flags"]
+                fresh = await client.post(f"/api/v1/checkins/{TOKEN}/signals", json=stamp(answer, 11, device))
+                assert fresh.status_code == 201 and fresh.json()["current"] is True
+                state = (await client.get(path, headers=headers)).json()[0]
+                assert state["signal_id"] != old["signal_id"]
+                assert state["status"] == "OPEN"
+                assert state["acknowledged_by"] is None and state["acknowledged_at"] is None
+                assert await CheckInSignalAcknowledgement.all().count() == ack_count
+                listing = (await client.get("/api/v1/patients", headers=headers)).json()
+                row = next(row for row in listing["items"] if row["patient_id"] == patient_id)
+                assert "CHECKIN_SIGNAL" in row["flags"]
+                history = (await client.get(f"/api/v1/patients/{patient_id}/history", headers=headers)).json()
+                assert history["visits"][0]["checkin_signals"][0]["status"] == "OPEN"
+                stale_ack = await client.post(
+                    path + f"/{state['state_id']}/acknowledge",
+                    headers=headers,
+                    json={"signal_id": old["signal_id"], "updated_at": old["updated_at"]},
+                )
+                assert stale_ack.status_code == 409
+                new_ack = await client.post(
+                    path + f"/{state['state_id']}/acknowledge",
+                    headers=headers,
+                    json={"signal_id": state["signal_id"], "updated_at": state["updated_at"]},
+                )
+                assert new_ack.status_code == 200 and new_ack.json()["status"] == "ACKNOWLEDGED"
+                assert await CheckInSignalAcknowledgement.all().count() == ack_count + 1
+
+    async def test_different_final_answer_clears_previous_acknowledgement(self):
+        _, guide, staff = await self.seed()
+        async with self.client() as client:
+            headers, path, _ = await self.acknowledged_signal(client, guide, staff, stamp())
+            response = await client.post(f"/api/v1/checkins/{TOKEN}", json={"medication": "stopped_improved"})
+            assert response.status_code == 201
+            state = (await client.get(path, headers=headers)).json()[0]
+            assert state["status"] == "OPEN"
+            assert state["acknowledged_by"] is None and state["acknowledged_at"] is None
+            assert await CheckInSignalAcknowledgement.all().count() == 1
+
+    async def test_duplicate_and_old_sequence_preserve_ack_but_new_device_reopens(self):
+        _, guide, staff = await self.seed()
+        async with self.client() as client:
+            headers, path, old = await self.acknowledged_signal(client, guide, staff, stamp(sequence=5))
+            for payload in (stamp(sequence=5), stamp(sequence=4)):
+                response = await client.post(f"/api/v1/checkins/{TOKEN}/signals", json=payload)
+                assert response.status_code == 201
+                state = (await client.get(path, headers=headers)).json()[0]
+                assert state["status"] == "ACKNOWLEDGED"
+                assert state["signal_id"] == old["signal_id"]
+                assert state["acknowledged_at"] == old["acknowledged_at"]
+            assert await CheckInSignal.all().count() == 2
+            response = await client.post(f"/api/v1/checkins/{TOKEN}/signals", json=stamp(client="device-b"))
+            assert response.json()["current"] is True
+            state = (await client.get(path, headers=headers)).json()[0]
+            assert state["status"] == "OPEN" and state["acknowledged_at"] is None
+
+    async def test_same_final_answer_and_late_signal_preserve_acknowledgement(self):
+        _, guide, staff = await self.seed()
+        async with self.client() as client:
+            headers, path, old = await self.acknowledged_signal(client, guide, staff, stamp())
+            saved = await client.post(f"/api/v1/checkins/{TOKEN}", json={"medication": "stopped_side_effect"})
+            assert saved.status_code == 201
+            late = await client.post(f"/api/v1/checkins/{TOKEN}/signals", json=stamp(sequence=2))
+            assert late.json()["current"] is False
+            state = (await client.get(path, headers=headers)).json()[0]
+            assert state["status"] == "ACKNOWLEDGED" and state["signal_id"] is None
+            assert state["acknowledged_at"] == old["acknowledged_at"]
+            assert await CheckInSignalAcknowledgement.all().count() == 1
+
     async def seed(self):
         hospital = await make_hospital("KEY-238 합성의원")
         guide = await make_linked_guide(hospital)

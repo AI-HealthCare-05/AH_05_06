@@ -47,3 +47,15 @@
 이 증거는 로컬 구현 검증이며 운영 배포·팀 최종 승인·GitHub CI 통과를 의미하지 않는다.
 운영 서버·기존 서비스 DB를 변경하거나 실제 문자를 발송하지 않았다. 최종 저장된 배지는 KEY-320 범위를
 보존하며 선택 신호 확인 완료를 진료 완료·안전 해소로 표현하지 않는다.
+
+## PR #323 리뷰 보완 — 2026-09-15
+
+검토: 이희진의 [같은 답 재발생 시 확인 상태 미해제 지적](https://github.com/AI-HealthCare-05/AH_05_06/pull/323#issuecomment-5675136012). 조회 시 일반 댓글 1건, 인라인 리뷰·제출 리뷰 없음.
+
+- 새 signal_id가 현재 상태가 되면 answer_key가 같아도 확인자·확인 시각을 해제한다. 기존 append-only 확인 이력은 보존한다.
+- 중단 답 두 종류 모두 새 발생 → 병원 목록 CHECKIN_SIGNAL 재표시 → 환자 이력 OPEN → 새 발생 건 확인 및 확인 이력 추가를 실제 DB/API에서 검증한다.
+- 동일 요청 재시도와 이전 순번은 확인 상태를 유지하며, 다른 기기에서 온 같은 답의 새 현재 신호는 재오픈한다.
+- 이전 signal_id로 새 발생을 확인하려 하면 409. 최종 저장 이후의 늦은 신호는 이력만 남긴다.
+- 최종 저장은 새 선택 이벤트가 아니라 현재 답 보정이다. 같은 답은 기존 확인을 유지하고 다른 답은 해제하는 기존 정책을 보존했다.
+- DTO·schema·migration·화면 렌더러 변경 없음. API 문서에 재오픈/보존 기준을 명시했다. 이번 보완은 병원 목록·이력 API 응답까지 검증하며 위 최초 구현의 브라우저/실제 migration 실행을 다시 수행한 것으로 표시하지 않는다.
+- 최종 재검증: `pytest -q app/tests/patient_links app/tests/patient_manage app/tests/migrations app/tests/security --tb=short` **482 passed** (63.83초), 전체 프런트 **1,304 passed**, mypy **474 files**, Ruff check/format·OpenAPI `--check`·`git diff --check` 통과. 실제 SMS·운영 데이터 사용 없음.

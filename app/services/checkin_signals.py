@@ -30,7 +30,11 @@ class CheckInSignalService:
 
     @staticmethod
     async def set_current(guide, state, answer, client_id, sequence, signal_id) -> CheckInSignalState:
-        changed = state is None or state.answer_key != answer
+        # 확인은 답 문자열이 아니라 발생 건에 대한 사실이다. 같은 답의 새 신호도
+        # 다시 확인해야 한다. 최종 저장(None)은 같은 답이면 기존 확인을 보존한다.
+        changed = (
+            state is None or state.answer_key != answer or (signal_id is not None and state.signal_id != signal_id)
+        )
         if state is None:
             state = CheckInSignalState(guide_document=guide, answer_key=answer)
         state.answer_key = answer

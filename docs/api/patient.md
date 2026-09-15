@@ -512,7 +512,7 @@ POST /checkins/{token}
 - `GET /visits/{visit_id}/checkin/signals`: 현재 상태 목록. 같은 병원 staff/doctor만 가능하며 타 병원은 404, admin 단독은 403.
 - `POST /visits/{visit_id}/checkin/signals/{state_id}/acknowledge`: `{signal_id, updated_at}`를 조회값 그대로 보내 OPEN → ACKNOWLEDGED. 변경된 상태의 확인은 `CHECKIN_SIGNAL_CHANGED` 409. actor ID·확인 시각은 서버 저장. 진료 완료·안전 해소를 뜻하지 않는다.
 - 미확인 중단 신호는 환자 관리의 `CHECKIN_SIGNAL` 플래그와 ‘챙겨주세요’에 포함한다. 이력 모달에서 선택·확인 상태를 읽고 확인 처리한다. 기존 최종 저장 중단 배지는 별개로 유지한다.
-- 선택 이벤트와 확인 이력은 append-only(MySQL UPDATE/DELETE 차단 트리거). 현재 상태는 별도 행에 저장한다. 답이 바뀌면 이전 확인이 새 답에 적용되지 않는다.
+- 선택 이벤트와 확인 이력은 append-only(MySQL UPDATE/DELETE 차단 트리거). 현재 상태는 별도 행에 저장한다. 새 signal_id가 현재값이 되면 같은 답이라도 기존 확인을 해제하고 다시 OPEN으로 표시한다(확인 대상 중단 답에 한함). 동일 요청 재시도·이전 순번·최종 저장 뒤 늦은 신호는 현재 상태와 확인을 바꾸지 않는다. 최종 저장으로 같은 답을 보정할 때는 기존 확인을 보존하며, 답이 달라지면 해제한다.
 - 최종 저장 `note`는 선택 사항, 최대 1,000자, trim 후 빈 값은 null. 신호 요청에는 메모를 받지 않으며 알림 판정·로그에 사용하지 않는다. 최종 답의 병원 조회와 환자 이력에만 제공한다.
 - 환자 신호도 기존 OTP 30분 세션·승인 링크 만료/회전을 검사한다. 완료 복귀 링크는 브라우저의 토큰을 `/guide.html#t=…`로만 전달하며 서버 저장 응답은 원문 토큰을 반환하지 않는다.
 - migration 63: `check_in.note`, 선택 이벤트·현재 상태·확인 이력 3개 표. OpenAPI는 `docs/api/openapi.json` 참조.
