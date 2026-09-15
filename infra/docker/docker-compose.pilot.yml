@@ -1,4 +1,4 @@
-# Pilot 전용 오버레이 (KEY-264, KEY-284). docker-compose.prod.yml은 그대로 두고,
+# Pilot 전용 오버레이 (KEY-264, KEY-284, KEY-338). docker-compose.prod.yml은 그대로 두고,
 # 배포할 때만 이 파일을 같이 준다.
 #
 #   PILOT_ALLOW_MOCK_OTP=1 docker compose \
@@ -46,3 +46,16 @@ services:
           args="$$args --otp-confirm-solapi-prod"
         fi
         exec uv run --no-sync python -m app.pilot_server $$args
+  ai-worker:
+    environment:
+      - SMS_DISPATCH_ENABLED
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        args=""
+        if [ -n "$${SMS_DISPATCH_ENABLED:-}" ]; then
+          args="$$args --sms-dispatch-confirm"
+        fi
+        exec uv run --no-sync python -m ai_worker.main $$args

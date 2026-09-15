@@ -103,29 +103,6 @@ services:
     container_name: ai-worker
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:ai-${AI_WORKER_VERSION}  # AI_WORKER_VERSION은 빌드된 이미지의 버전관리를 위함입니다. V1.0.0 형식으로 사용합니다.
     env_file: .env
-    environment:
-      - SMS_DISPATCH_ENABLED
-    # 예약 문자 실발송 좁은문 — KEY-338. `--sms-dispatch-confirm`을 command에
-    # 상수로 박아 두지 않는다 — 그러면 이중 게이트(env var + 실행 플래그가
-    # 둘 다 있어야 열림)의 의미가 없어진다. .env에 SMS_DISPATCH_ENABLED=1이
-    # 실수로 영구히 남아도, 플래그가 늘 붙어 있으면 재확인 없이 곧장 실제
-    # 발송 경로가 열린다 — docker-compose.pilot.yml의 fastapi가 이미 같은
-    # 이유로 OTP_SOLAPI_PROD_ENABLED를 이렇게 다룬다. SMS_DISPATCH_ENABLED가
-    # 실제로 설정된 배포에서만 셸이 플래그를 붙인다.
-    #
-    # command 블록 안에서 셸이 읽어야 할 변수는 $$로 쓴다 — 홑 $는 셸이
-    # 아니라 Compose 자신이 먼저 치환해 셸에는 빈 문자열만 남는다
-    # (docker-compose.pilot.yml의 같은 경고).
-    command:
-      - sh
-      - -c
-      - |
-        set -eu
-        args=""
-        if [ -n "$${SMS_DISPATCH_ENABLED:-}" ]; then
-          args="$$args --sms-dispatch-confirm"
-        fi
-        exec uv run --no-sync python -m ai_worker.main $$args
     volumes:
       # **업로드 파일을 fastapi 와 나눠 쓴다.** 워커는 `document.file_path` 를
       # 그대로 열어 CLOVA 에 보낸다 — 이 볼륨이 없으면 `FileNotFoundError` 로

@@ -8,6 +8,7 @@
 from dataclasses import dataclass
 
 from app.core import config
+from app.core.approved_phones import approved_test_phones
 from app.core.config import SmsProvider
 from app.core.storage import LocalFileStorage, StorageProbe
 from app.core.utils.common import normalize_phone_number
@@ -24,22 +25,6 @@ from app.models.visits import (
     Visit,
 )
 from app.services.message_templates import effective_body
-
-
-def approved_test_phones() -> frozenset[str]:
-    """KEY-284·KEY-338이 같이 쓰는 승인 번호 목록 — OTP와 예약 문자 둘 다다.
-
-    시연 번호를 두 곳(OTP 확인·예약 문자 발송)에 따로 넣다가 한 곳을
-    빠뜨리는 일을 막으려고, 원래 OTP 전용이던 이 함수를 공통 위치로
-    옮겼다(patient_otp_routers.py에서 KEY-338이 이동).
-
-    Patient.phone은 normalize_phone_number()로 숫자만 남겨 저장된다.
-    여기서 같은 정규화를 안 하면 운영자가 "010-1111-2222"처럼 사람이
-    쓰는 형식으로 넣었을 때 절대 안 맞고, 그 실패가 공급자 장애와
-    구분 안 되는 503으로만 보인다(iljun-sys 리뷰로 재현).
-    """
-    raw = config.OTP_APPROVED_TEST_PHONES.get_secret_value()
-    return frozenset(normalize_phone_number(phone.strip()) for phone in raw.split(",") if phone.strip())
 
 
 @dataclass(frozen=True)
@@ -165,19 +150,12 @@ async def _post_generate_safety_check_passed(guide_document_id: int) -> bool:
 
 
 async def _source_documents_are_deleted(visit_id: int, storage: StorageProbe) -> bool:
-    """이 진료에 딸린 원본 의료문서 파일이 전부 지워졌는가.
+    """원본 행이 남아 있으면 삭제를 확인할 수 없으므로 발송을 막는다.
 
-    저장소 조회가 실패하면 삭제됐다고 추측하지 않고 발송을 막는다. 상대
-    경로·권한 오류·지원하지 않는 저장소를 파일 부재로 오인하면 안 된다.
+    파일 존재는 미삭제이고, 파일 부재는 삭제 이력 없이 삭제를 증명하지
+    못한다. 행이 없는 진료만 원본 비연결로 통과한다.
     """
     docs = await MedicalDocument.filter(visit_id=visit_id).all()
     if not docs:
-        # 애초에 원본을 올린 적이 없다 — 지울 것도 없으니 막지 않는다.
         return True
-    try:
-        for doc in docs:
-            if await storage.exists(doc.file_path):
-                return False
-        return True
-    except (OSError, RuntimeError, ValueError):
-        return False
+    return False

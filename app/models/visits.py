@@ -548,7 +548,7 @@ class GuideMessageHold(StrEnum):
     #: SMS_PROVIDER=solapi에서만 본다. KEY-336이 Pilot을 solapi로 바꾸는
     #: 순간, 시연 환자가 아닌 시드 환자들의 가짜 번호로 예약 문자가 실제로
     #: 나갈 수 있었다 — OTP와 같은 좁은문을 예약 문자에도 씌운다. 목록은
-    #: OTP와 공유한다(`app.services.dispatch_gate.approved_test_phones`).
+    #: OTP와 공유한다(`app.core.approved_phones.approved_test_phones`).
     RECIPIENT_NOT_APPROVED = "RECIPIENT_NOT_APPROVED"
 
 

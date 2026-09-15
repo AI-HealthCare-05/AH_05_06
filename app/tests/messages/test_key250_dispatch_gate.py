@@ -25,18 +25,18 @@ from app.models.visits import (
     GuideMessageHold,
     GuideMessageKind,
     GuideMessageStatus,
+    PatientGuideLink,
 )
 from app.services.dispatch_gate import gate_hold_reason
 from app.services.message_dispatch import dispatch_message
 from app.services.sms_sender import MockSmsSender, SmsDeliveryStatus, SmsSendError, SmsSendResult
-from app.tests.messages.test_key249_dispatch_pipeline import make_due_message
+from app.tests.messages.test_key249_dispatch_pipeline import _CountingSender, make_due_message
 
 
 async def _attach_document(message: GuideMessage, *, file_exists: bool) -> Path:
     """`message`가 딸린 진료에 원본 의료문서 한 건을 붙인다.
 
-    `file_exists=False`면 파일을 실제로 지워서 "이미 삭제됨" 상태를 흉내낸다
-    — `app/ocr/api.py`가 삭제 여부를 재는 것과 같은 신호(파일 존재 유무)다.
+    `file_exists=False`면 DB 행만 남은 원본 파일 부재 상태를 흉내낸다.
     """
     guide = await message.guide_document
     tmp = NamedTemporaryFile(delete=False, suffix=".jpg")
@@ -101,11 +101,31 @@ class TestGateBlocksUndeletedSourceDocuments(TestCase):
         finally:
             path.unlink(missing_ok=True)
 
-    async def test_gate_passes_once_the_file_is_deleted(self) -> None:
+    async def test_gate_blocks_when_the_document_row_has_no_file(self) -> None:
         message = await make_due_message(approved=True)
         await _attach_document(message, file_exists=False)
 
-        assert await gate_hold_reason(message) is None
+        assert await gate_hold_reason(message) is GuideMessageHold.SOURCE_NOT_DELETED
+
+    async def test_gate_blocks_when_only_one_of_two_files_is_missing(self) -> None:
+        message = await make_due_message(approved=True)
+        present = await _attach_document(message, file_exists=True)
+        await _attach_document(message, file_exists=False)
+        try:
+            assert await gate_hold_reason(message) is GuideMessageHold.SOURCE_NOT_DELETED
+        finally:
+            present.unlink(missing_ok=True)
+
+    async def test_missing_file_never_sends_or_issues_a_link(self) -> None:
+        message = await make_due_message(approved=True)
+        await _attach_document(message, file_exists=False)
+        sender = _CountingSender()
+
+        result = await dispatch_message(message.guide_message_id, sender)
+
+        assert result is not None and result.status is GuideMessageStatus.HELD
+        assert sender.calls == []
+        assert not await PatientGuideLink.filter(guide_document_id=message.guide_document_id).exists()
 
     async def test_gate_passes_when_no_document_was_ever_uploaded(self) -> None:
         """지울 원본이 애초에 없으면(EMR 문구만으로 만든 안내 등) 막지 않는다."""
@@ -298,6 +318,20 @@ class TestGateBlocksUnapprovedRecipients(TestCase):
 
         assert reason is GuideMessageHold.RECIPIENT_NOT_APPROVED
 
+    async def test_unapproved_phone_never_sends_or_issues_a_link(self) -> None:
+        message = await make_due_message(phone="01099998888")
+        sender = _CountingSender()
+
+        with (
+            patch.object(core_config.config, "SMS_PROVIDER", SmsProvider.SOLAPI),
+            patch.object(core_config.config, "OTP_APPROVED_TEST_PHONES", SecretStr("01011112222")),
+        ):
+            result = await dispatch_message(message.guide_message_id, sender)
+
+        assert result is not None and result.status is GuideMessageStatus.HELD
+        assert sender.calls == []
+        assert not await PatientGuideLink.filter(guide_document_id=message.guide_document_id).exists()
+
     async def test_approved_phone_passes_when_provider_is_solapi(self) -> None:
         message = await make_due_message(link_free_template=True, phone="01011112222")
 
@@ -346,17 +380,20 @@ class TestGateBlocksUnapprovedRecipients(TestCase):
         assert reason is GuideMessageHold.NOT_APPROVED
 
     async def test_a_resent_message_goes_through_the_same_gate(self) -> None:
-        """수동 재발송(KEY-306)으로 만든 문자도 같은 게이트를 거친다 — 인수조건.
-
-        재발송은 새 GuideMessage 행을 만들 뿐 dispatch_gate가 보는 값
-        (승인·원본 삭제·예약 주소·수신 번호)은 원본과 똑같이 재는다 —
-        별도 우회 경로가 없다는 것을 재발송이 흔히 쓰는 조건(원본이 SENT
-        였던 안내에 새 SCHEDULED 행)으로 확인한다.
-        """
-        message = await make_due_message(
+        """재발송 작업 행도 수신번호 게이트를 우회하지 않는다."""
+        source = await make_due_message(
             link_free_template=True,
             phone="01099998888",
-            kind=GuideMessageKind.CHECK_D7,
+            kind=GuideMessageKind.GUIDE,
+            status=GuideMessageStatus.SENT,
+        )
+        message = await GuideMessage.create(
+            guide_document_id=source.guide_document_id,
+            kind=source.kind,
+            status=GuideMessageStatus.SCHEDULED,
+            scheduled_at=source.scheduled_at,
+            resend_of_message_id=source.guide_message_id,
+            resend_sequence=1,
         )
 
         with (

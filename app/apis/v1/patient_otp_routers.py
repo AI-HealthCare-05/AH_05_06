@@ -6,6 +6,7 @@ from fastapi import APIRouter, Cookie, Depends, Response, status
 from redis.asyncio import Redis
 
 from app.core import config
+from app.core.approved_phones import approved_test_phones
 from app.core.config import Env, SmsProvider, otp_solapi_prod_gate_open, pilot_mock_otp_gate_open
 from app.core.redis_client import get_redis
 from app.dependencies.patient_auth import PATIENT_SESSION_COOKIE_NAME
@@ -21,7 +22,6 @@ from app.dtos.patient_otp import (
     PatientSessionCheckRequest,
     PatientSessionResponse,
 )
-from app.services.dispatch_gate import approved_test_phones
 from app.services.patient_links import PatientLinkService
 from app.services.patient_otp import (
     OTP_RESEND_COOLDOWN,
