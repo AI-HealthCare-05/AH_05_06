@@ -1,6 +1,5 @@
 """양방향 표·컬럼 drift와 실패 종료 계약. 실제 DB는 QA 기록에서 별도 검증한다."""
 
-import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,20 +18,20 @@ from scripts import check_schema_drift as checker
         ({"staff": {"id"}}, {"staff": {"id", "legacy"}}, ([], [], [], [("staff", ["legacy"])])),
     ],
 )
-def test_comparison_and_exit(expected, live, gaps, monkeypatch, capsys):
+async def test_comparison_and_exit(expected, live, gaps, monkeypatch, capsys):
     assert checker.compare_schemas(expected, live) == gaps
     monkeypatch.setattr(checker, "_gaps", AsyncMock(return_value=gaps))
-    assert asyncio.run(checker.main()) == int(any(gaps))
+    assert await checker.main() == int(any(gaps))
     output = capsys.readouterr()
     assert bool(output.err) == any(gaps)
 
 
-def test_connection_closed_on_query_failure(monkeypatch):
+async def test_connection_closed_on_query_failure(monkeypatch):
     monkeypatch.setattr(checker.Tortoise, "init", AsyncMock(side_effect=RuntimeError("unavailable")))
     close = AsyncMock()
     monkeypatch.setattr(checker.Tortoise, "close_connections", close)
     with pytest.raises(RuntimeError, match="unavailable"):
-        asyncio.run(checker._gaps())
+        await checker._gaps()
     close.assert_awaited_once()
 
 

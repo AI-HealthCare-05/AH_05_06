@@ -6,6 +6,12 @@
 
 ### 대조 실패 원인 재현 및 해소
 
+### PR #330 최초 CI 및 테스트 격리 보완
+
+실제 bootstrap job 1분 50초 및 lint는 통과했으나 전체 pytest는 704 failed/2157 passed/1 xfailed였다. 새 동기 테스트의 `asyncio.run()`이 현재 이벤트 루프를 제거하여 뒤따르는 Tortoise 테스트에서 `There is no current event loop` 오류가 발생했다. 새 테스트를 pytest-asyncio의 `async def`/`await`로 바꿔 루프 수명 관리를 프레임워크에 맡겼다. 배포와 영향받은 timeline DB 테스트를 함께 xdist 4개로 실행해 **401 passed (22.10초)**, 전체 Ruff/format/mypy 통과. 테스트 실패를 제외하거나 조건을 완화하지 않았다. 원격 전체 CI는 수정 커밋으로 재실행한다.
+
+### 스키마 대조 재현
+
 새 QA DB `key230_upgrade_0915d`로 62→63을 재현했다. migration 전부터 유지한 asyncmy 연결은 기본 autocommit=False 상태였다. 이 연결에서 `guide_message.hold_reason`을 조회하면 clean DB는 `varchar(22)`, upgrade DB는 이전 `varchar(19)`로 반환됐다. 같은 연결에서 `rollback()`으로 읽기 트랜잭션을 끝낸 뒤 재조회하자 `varchar(22)`로 일치했다. 이어 새 독립 연결에서도 컬럼 483개·인덱스 구성 행 200개가 완전히 일치했다. 이번 실패 원인은 검증 연결의 오래된 트랜잭션 조회였다. migration을 추가하거나 DB 구조를 수동 보정하지 않았다. 이전 61→62 실패의 행은 확보하지 못했으므로 그것까지 동일 원인으로 단정하지 않는다.
 
 실행 종료 0, 실제 DB 양방향 drift 종료 1 세 경우 통과, 기존 서비스 복구 확인. 최종 배포 회귀 **350 passed (40.59초)**, 전체 Ruff/format 및 mypy 476개 파일 통과.
