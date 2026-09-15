@@ -40,10 +40,11 @@ Notion 자격증명 표에 있다. 아래의 `<공용PW>` 는 그 값으로 읽�
 스모크까지 한다.
 
 ```bash
-# fixture OCR (빠름, 업로드 즉시 판독값)
+# 워커 없음 — fixture 판독으로 보려면 2-2 에서 OCR_FIXTURE_FALLBACK=1 로 바꾼다
+# (bootstrap 기본값은 false 라 그대로 두면 업로드한 판독이 워커를 기다리며 멈춘다)
 ./scripts/bootstrap-local.sh
 
-# 실판독 OCR (CLOVA) — ai-worker·minio 까지 함께
+# 실판독 OCR (CLOVA) · 예약 문자 발송 — ai-worker·minio 까지 함께
 ./scripts/bootstrap-local.sh --with-ocr-worker
 ```
 
@@ -102,7 +103,15 @@ docker compose exec -T fastapi uv run --no-sync python scripts/check_schema_drif
 2. 진료 카드에서 진료기록 이미지 업로드 → OCR 작업 생성
 3. `ocr-review.html` 에서 판독값 확인·수정 → 모든 항목 **확정** → 안내문 생성
 4. `doctor01` 로 로그인 → 승인 대기 목록 → 안내문 미리보기 → **승인** (또는 반려 사유 입력 후 재제출)
-5. 승인되면 의사 화면에서 **환자 링크 발급** → 새 탭으로 환자 안내 화면 열림
+5. 환자 링크를 만든다. **화면의 링크 발급 단추는 없다** — 2026-09-11 범위 조정으로 링크 블록이
+   읽기 전용이 됐고(KEY-275·KEY-307), 운영에서는 발송기가 문자 직전에 발급한다(KEY-297).
+   로컬 시연에서는 아직 남아 있는 API 로 한 번 발급한다.
+   - `POST /api/v1/visits/{visit_id}/guide/link` — `staff`·`doctor` 역할, 직원 로그인 토큰(Bearer).
+     안내문이 승인(`SCHEDULED_TO_SEND`)된 뒤에만 된다. 두 번째 호출은 `LINK_ALREADY_ISSUED` 409 —
+     교체는 `…/guide/link/re-issue`.
+   - 응답 `path` 는 `/api/v1/guides/<토큰>` 이다. 브라우저로는
+     `http://localhost/patient_wireframe/html/otp.html#t=<토큰>` 을 연다(발송기·`doctor-api.js` 와 같은 모양).
+   - 토큰은 합성 진료 것이라도 **티켓·PR·메신저에 붙이지 않는다** (`AGENTS.md`).
 6. 환자 화면: 고정 OTP `000000` 입력 → 인증 → 복약지도·주의·생활·챗봇 열람
 7. 챗봇에 질문 입력 → 승인된 지식 범위 안에서 응답
 8. D+7 체크인 링크(`checkin.html`)에서 복약·통증 6단계 응답 제출
@@ -113,9 +122,9 @@ docker compose exec -T fastapi uv run --no-sync python scripts/check_schema_drif
 | 구간 | 현재 |
 |---|---|
 | 환자 OTP | 고정 `000000` (`MOCK_OTP_CODE`). 실제 SMS 발송 없음 |
-| 문자 발송 | `SMS_PROVIDER=mock`. 링크는 담당자가 화면에서 복사해 수동 전달 |
-| 안내문 생성 | 확정 OCR 값 한 줄 + 처방세트별 승인 문구/의사 수정 문구/기본 문구 조합. LLM 생성은 미착수(KEY-75) |
-| 환자 챗봇 | `OPENAI_API_KEY` 가 비면 3-7 의 챗봇 응답이 고정 폴백 문구로만 나온다. 실제 응답을 보려면 키가 필요하다 (`app/apis/v1/chatbot_routers.py`) |
+| 문자 발송 | `SMS_PROVIDER=mock` — 실제로 안 나간다. 발송은 `ai-worker`(`--with-ocr-worker`)가 맡고, 원본 문서를 올린 진료는 `SOURCE_NOT_DELETED`, 의원 예약 주소가 빈 소진·재진 문자는 `BOOKING_URL_MISSING` 으로 보류된다 (`app/services/dispatch_gate.py`) |
+| 안내문 생성 | 기본(`GUIDE_RAG_ENABLED=false`)은 확정 OCR 값 + 처방세트별 승인 문구/의사 수정 문구/기본 문구 조합. 승인 지식 기반 LLM 생성(KEY-277)은 스위치 뒤에 있고 승인 지식 적재(KEY-276)가 먼저다 — README 「OpenAI」 절 |
+| 환자 챗봇 | `OPENAI_API_KEY` 줄이 없으면 고정 폴백 문구만 나온다 (`app/apis/v1/chatbot_routers.py`). **키가 있어도 대부분 거절 문구가 나올 수 있다** — 설계상 안전장치다 (`app/services/chatbot.py`). ① 질문을 낱말 규칙으로 갈래 짓고 섹션을 하나 고르는데, 못 고르면 「답변 근거를 충분히 찾지 못했어요」(예: 「주의사항이 뭐죠?」는 `OTHER` 로 분류된다). ② 모델 답이 고른 섹션 본문의 **연속된 원문 그대로가 아니면** 막고 「안전하게 답변할 수 없는 내용이에요」를 낸다 — 어미 하나만 바꿔도 막힌다. 결과는 `patient_usage_event.answer_outcome`(`BLOCKED`·`FALLBACK`)에서 본다. 개선은 KEY-351 |
 | OCR (fixture 모드) | 업로드 이미지를 실제로 판독하지 않고 합성 판독값 주입. 실판독은 2-2 에서 `OCR_FIXTURE_FALLBACK=0` + CLOVA 키 + `--with-ocr-worker` |
 
 ## 5. 알아둘 것
