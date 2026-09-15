@@ -54,6 +54,7 @@ var PATIENT_TAB_KEYS = ["현황", "복약지도", "주의사항", "생활관리"
 
 /** 스탭 화면의 항목 키 → 환자 탭 이름. 응급은 주의사항 탭 안이다(KEY-161). */
 function patientTabOf(sectionKey) {
+  if (sectionKey === "status") return "현황";
   if (sectionKey === "life") return "생활관리";
   if (sectionKey === "caution" || sectionKey === "emergency") return "주의사항";
   return "복약지도";
@@ -96,7 +97,9 @@ function patientTabBarHtml(current) {
         (key === on ? " tab-bar__btn--active" : "") +
         '" type="button" role="tab" aria-selected="' +
         (key === on ? "true" : "false") +
-        '" disabled>' +
+        '" data-preview-tab="' +
+        ["status", "medication", "caution", "life"][PATIENT_TAB_KEYS.indexOf(key)] +
+        '">' +
         esc(key) +
         "</button>"
       );
@@ -232,12 +235,12 @@ function patientGoalCardHtml(detail, visitDate) {
 /* 「더 자세히 보기」 안에 드는 카드들 — 환자 v3 정본이 처방약부터 접는다.
  *
  * **미리보기에서는 펼친 채로 둔다.** 여기는 승인 전에 읽는 자리라, 접어 두면
- * 스탭·의사가 자기가 승인하는 것을 못 본다. 단추는 환자 화면과 같은 자리에
- * 같은 모양으로 두되 **끌 수 없다**(`disabled`) — 탭 바와 같은 규칙이다. */
+ * 스탭·의사가 자기가 승인하는 것을 못 본다. 단추는 환자 화면과 같은 자리에 둔다.
+ * 여닫기는 iframe 밖의 공용 이벤트 처리기가 담당한다(KEY-348). */
 function patientDeeperHtml(inner) {
   if (!inner) return "";
   return (
-    '<button class="expand-btn expand-btn--open" type="button" aria-expanded="true" disabled>' +
+    '<button class="expand-btn expand-btn--open" type="button" aria-expanded="true" data-preview-expand>' +
     "<span>접기</span>" +
     '<span class="expand-btn__icon">⌄</span>' +
     "</button>" +
@@ -321,6 +324,7 @@ function patientLifeHtml(life) {
  * `gap: 12px` 가 탭 줄에도 걸려 카드 간격이 환자 화면과 달라진다.
  * 골격은 부르는 쪽(`guidePreviewHtml`)이 환자 것 그대로 세운다. */
 function patientPreviewBodyHtml(bodyOf, current, summary, preview) {
+  if (current === "status") return patientStatusHtml(preview, bodyOf("medication"));
   if (current === "life") return patientLifeHtml(bodyOf("life"));
   if (current === "caution" || current === "emergency") {
     return patientCautionHtml(bodyOf("caution"), bodyOf("emergency"));
@@ -328,14 +332,56 @@ function patientPreviewBodyHtml(bodyOf, current, summary, preview) {
   return patientMedicationHtml(summary, bodyOf("medication"), preview);
 }
 
-function patientGuidePreviewHtml(sections, current, summary, preview) {
+function patientPreviewBodyOf(sections) {
   var tuckedUnder = { emergency: "caution" };
-  var bodyOf = function (key) {
+  return function (key) {
     var row = (sections || []).find(function (section) {
       return section.key === key || tuckedUnder[section.key] === key;
     });
     return row && row.body ? row.body : "";
   };
+}
+
+/** 현황도 환자 renderStatus + mapStat의 값/빈 상태 규칙을 따른다. 진행률은 서버 값이다. */
+function patientStatusHtml(preview, medication) {
+  var data = preview || {};
+  var s = data.stat || {};
+  var drugName = data.stat ? s.drugName : medication ? "복약 현황" : "";
+  var hint = [data.visit ? data.visit + " 처방" : "", data.clinic].filter(Boolean).join(" · ");
+  var html = hint ? '<div class="page-hint">' + esc(hint) + "</div>" : "";
+  var card = "";
+  if (drugName) card += '<div class="stat-drug-name">' + esc(drugName) + "</div>";
+  if (s.drugSub) card += '<div class="stat-drug-sub">' + esc(s.drugSub) + "</div>";
+  var parts = [];
+  if (s.prescribed > 0) parts.push(s.prescribed + "일분");
+  if (s.dayOn != null) parts.push(s.dayOn + "일째");
+  if (s.remaining != null) parts.push(s.remaining + "일 남음");
+  if (parts.length) card += '<div class="stat-progress-copy">' + esc(parts.join(" · ")) + "</div>";
+  if (typeof s.pct === "number" && Number.isFinite(s.pct) && s.pct >= 0 && s.pct <= 100) {
+    card +=
+      '<div class="stat-bar-wrap" role="progressbar" aria-label="복약 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
+      s.pct + '"><span class="stat-bar-fill" style="width:' + s.pct + '%"></span></div>' +
+      '<div class="stat-bar-pct">' + s.pct + "% 복용했어요</div>";
+  } else if (s.prescribed === 0) {
+    card += '<div class="stat-progress-empty">처방 일수가 없어 복약 기간을 표시하지 않아요.</div>';
+  } else if (s.prescribed > 0) {
+    card += '<div class="stat-progress-empty">복약 시작일이 없어 진행률과 남은 일수를 표시하지 않아요.</div>';
+  }
+  if (medication && !s.why) card += '<div class="care-body-text">' + esc(medication) + "</div>";
+  if (!drugName && !medication) card += patientEmptyHtml(PATIENT_EMPTY.medication);
+  html += patientCardHtml("", card);
+  if (s.out || s.why) {
+    var pink = s.out ? '<div class="stat-out">' + esc(s.out) + "</div>" : "";
+    if (s.why) pink += '<div class="stat-why">' + esc(s.why) + "</div>";
+    pink += '<div class="stat-cta-note">재진 예약을 잡거나 병원에 문의해 주세요.</div>';
+    html += patientCardHtml("", pink, "card--pink");
+  }
+  return html +
+    '<button class="btn btn--full btn--accent" type="button" data-preview-tab="medication">복약지도 보기</button>';
+}
+
+function patientGuidePreviewHtml(sections, current, summary, preview) {
+  var bodyOf = patientPreviewBodyOf(sections);
   var doc =
     '<!doctype html><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
@@ -347,8 +393,49 @@ function patientGuidePreviewHtml(sections, current, summary, preview) {
     "</main></div>";
   return (
     '<iframe class="pv" title="환자 화면 미리보기" aria-label="환자 화면 미리보기"' +
-    ' sandbox="allow-same-origin" loading="lazy" srcdoc="' +
+    ' data-patient-preview="' +
+    esc(JSON.stringify({ sections: sections || [], summary: summary || "", preview: preview || null })) +
+    '" sandbox="allow-same-origin" loading="lazy" srcdoc="' +
     doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;") +
     '"></iframe>'
   );
 }
+
+/** 부모만 실행한다. 모든 진입점의 새 iframe load를 한 곳에서 받는다.
+ * iframe 안에는 스크립트·환자 링크·읽음 기록 요청을 추가하지 않는다. */
+document.addEventListener("load", function (event) {
+  var frame = event.target;
+  if (!frame || !frame.matches || !frame.matches("iframe[data-patient-preview]")) return;
+  var doc = frame.contentDocument;
+  if (!doc || doc.patientPreviewBound) return;
+  doc.patientPreviewBound = true;
+  var data = JSON.parse(frame.getAttribute("data-patient-preview"));
+  doc.addEventListener("click", function (click) {
+    var target = click.target.closest("[data-preview-tab], [data-preview-expand]");
+    if (!target) return;
+    var tab = target.getAttribute("data-preview-tab");
+    if (tab) {
+      doc.querySelectorAll('[role="tab"]').forEach(function (button) {
+        var active = button.getAttribute("data-preview-tab") === tab;
+        button.classList.toggle("tab-bar__btn--active", active);
+        button.setAttribute("aria-selected", String(active));
+      });
+      var body = doc.querySelector("main.body");
+      body.innerHTML = patientPreviewBodyHtml(patientPreviewBodyOf(data.sections), tab, data.summary, data.preview);
+      body.scrollTop = 0;
+      doc.querySelector('[role="tab"][aria-selected="true"]').focus();
+    } else {
+      var open = target.getAttribute("aria-expanded") !== "true";
+      target.setAttribute("aria-expanded", String(open));
+      target.classList.toggle("expand-btn--open", open);
+      target.querySelector("span").textContent = open ? "접기" : "더 자세히 보기";
+      target.nextElementSibling.classList.toggle("expand-body--open", open);
+    }
+  });
+  // iframe에 포커스가 있어도 기존 부모 모달의 ESC 닫기 처리를 재사용한다.
+  doc.addEventListener("keydown", function (key) {
+    if (key.key === "Escape") {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    }
+  });
+}, true);

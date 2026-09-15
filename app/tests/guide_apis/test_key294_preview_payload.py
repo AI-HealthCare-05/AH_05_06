@@ -108,6 +108,9 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
         assert detail["drug"]["n"] == "비잔", "처방받은 약 카드를 채울 값이 없다"
         assert [goal["n"] for goal in detail["goals"]] == ["CA-125"], "나의 목표 카드를 채울 값이 없다"
         assert detail["how"], "약별 복용 방법 카드를 채울 값이 없다"
+        assert preview["stat"]["drugName"] == "비잔"
+        assert preview["stat"]["prescribed"] == 28
+        assert preview["clinic"]
 
     async def test_an_empty_visit_still_gets_an_envelope_with_the_date(self) -> None:
         """처방도 기준선도 없는 진료 — 카드는 못 채워도 **날짜는 있다.**
@@ -124,6 +127,8 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
         assert preview["guide"]["goals"] == [], "없는 목표를 지어냈다"
         assert preview["guide"]["drug"] is None, "없는 처방을 지어냈다"
         assert preview["guide"]["how"] is None, "없는 복용 방법을 지어냈다"
+        assert preview["stat"] is None, "없는 처방 현황을 지어냈다"
+        assert preview["clinic"], "처방이 없어도 병원은 표시한다"
 
     async def test_the_staff_preview_and_the_patient_screen_get_the_same_derivation(self) -> None:
         """**두 종점의 응답이 같다.** 이것이 이 티켓의 인수조건 2다."""
@@ -158,6 +163,8 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
             "스탭 미리보기와 환자 화면이 다른 파생을 받는다 — 「환자가 받는 그대로」가 거짓이 된다"
         )
         assert staff_side.json()["preview"]["visit"] == patient_side.json()["visit"], "진료일이 갈렸다"
+        assert without_nones(staff_side.json()["preview"]["stat"]) == without_nones(patient_side.json()["stat"])
+        assert staff_side.json()["preview"]["clinic"] == patient_side.json()["clinic"]
 
     async def test_only_reading_carries_the_preview(self) -> None:
         """**상태를 바꾸는 응답에는 안 싣는다.**
@@ -187,7 +194,7 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
 
         preview = (await self.read_guide(visit.visit_id, staff))["preview"]
 
-        assert set(preview) == {"visit", "guide"}, f"봉투에 모르는 값이 늘었다 — {sorted(preview)}"
+        assert set(preview) == {"visit", "guide", "stat", "clinic"}, f"봉투에 모르는 값이 늘었다 — {sorted(preview)}"
         assert set(preview["guide"]) <= {"summary", "goals", "goalSay", "drug", "why", "how", "next"}, (
             f"파생에 모르는 값이 늘었다 — {sorted(preview['guide'])}"
         )
@@ -195,4 +202,5 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
         blob = str(preview)
         visit_row = await Visit.get(visit_id=visit.visit_id).prefetch_related("patient")
         assert visit_row.patient.phone not in blob, "연락처가 미리보기에 실렸다"
+        assert visit_row.patient.name not in blob, "환자 이름이 미리보기에 실렸다"
         assert SYNTHETIC_TOKEN not in blob and "token" not in blob, "링크 토큰 자리가 미리보기에 생겼다"

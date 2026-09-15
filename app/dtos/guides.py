@@ -10,7 +10,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.dtos.patient_links import PatientGuideDetailResponse
+from app.dtos.patient_links import PatientGuideDetailResponse, PatientMedicationStatResponse
 from app.models.patients import PatientGender
 from app.models.visits import GuideMessageKind, GuideSectionKey, GuideStatus
 
@@ -86,13 +86,15 @@ class GuidePreview(StrictModel):
     **환자 종점과 같은 자리에서 짓는다** — `app/services/patient_guide_view.py`.
     두 곳에서 따로 조립하면 갈라지고, 갈라진 것을 사람은 승인 뒤에야 안다.
 
-    새로 나가는 값은 처방·검사 파생과 진료일뿐이다. 링크 토큰·연락처처럼
+    새로 나가는 값은 처방·검사 파생, 진료일과 병원명뿐이다. 링크 토큰·연락처처럼
     미리보기에 없던 개인정보는 여기 담지 않는다.
     """
 
     #: 「나의 목표」 카드 머리에 붙는 진료일 (`2026.09.09`). 환자 화면과 같은 자리다.
     visit: str | None = None
     guide: PatientGuideDetailResponse | None = None
+    clinic: str | None = None
+    stat: PatientMedicationStatResponse | None = None
 
 
 class GuideGenerationResponse(StrictModel):

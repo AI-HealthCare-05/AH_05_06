@@ -37,7 +37,7 @@ from app.models.visits import (
 from app.services import guide_section_order
 from app.services.guide_generation_jobs import GenerationPendingError
 from app.services.guides import GuideService
-from app.services.patient_guide_view import guide_detail_of
+from app.services.patient_guide_view import guide_detail_of, medication_stat_of
 from app.services.patient_links import PatientLinkService
 
 guide_router = APIRouter(prefix="/visits", tags=["guides"])
@@ -70,7 +70,12 @@ async def _preview_of(guide: GuideDocument) -> GuidePreview:
     날짜를 잃는다.
     """
     data = await PatientLinkService().build_patient_guide_data(guide)
-    return GuidePreview(visit=data.visit_date.strftime("%Y.%m.%d"), guide=guide_detail_of(data))
+    return GuidePreview(
+        visit=data.visit_date.strftime("%Y.%m.%d"),
+        guide=guide_detail_of(data),
+        clinic=data.clinic_name,
+        stat=medication_stat_of(data),
+    )
 
 
 async def _to_response(guide: GuideDocument, *, with_preview: bool = False) -> GuideResponse:
