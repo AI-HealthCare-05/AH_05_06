@@ -312,11 +312,14 @@
 
   function stateHtml(row) {
     var state = messageState(row.status);
+    var checkDay = row.kind === "CHECK_D7" && row.check_day_number
+      ? " · 복약 " + row.check_day_number + "일째 확인"
+      : "";
     return (
       '<td class="' +
       (state.bad ? "send__state send__state--bad" : "send__state") +
       '">' +
-      esc(state.mark + " " + messageSaying(row)) +
+      esc(state.mark + " " + messageSaying(row) + checkDay) +
       "</td>"
     );
   }

@@ -31,11 +31,13 @@ from app.models.visits import (
     GuideEvent,
     GuideEventType,
     GuideMessage,
+    GuideMessageKind,
     GuideMessageStatus,
     PatientGuideLink,
     PatientUsageEvent,
     PatientUsageEventType,
 )
+from app.services.message_dispatch import check_day_number
 from app.services.patient_visit_scope import hospital_id_of
 
 #: 지난 일 — 이 화면이 담는 것.
@@ -189,6 +191,11 @@ class MessageHistoryService:
                     kind=row.kind,
                     status=row.status,
                     failure_code=row.failure_code,
+                    check_day_number=(
+                        check_day_number(visit.visited_at, row.sent_at)
+                        if row.kind is GuideMessageKind.CHECK_D7 and row.sent_at is not None
+                        else None
+                    ),
                     name=patient.name,
                     hospital_patient_no=patient.hospital_patient_no,
                     gender=patient.gender,

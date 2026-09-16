@@ -29,6 +29,7 @@ from app.models.ocr import OcrDocumentText, OcrField, OcrJob, OcrJobStatus, cour
 from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import (
+    CheckIn,
     GuideDocument,
     GuideMessage,
     GuideMessageEvent,
@@ -61,6 +62,11 @@ _CHECK_DAY_NUMBER: dict[GuideMessageKind, int] = {
 def backoff_seconds(attempt: int) -> int:
     """`attempt`번째 실패 뒤 다음 시도까지 기다릴 시간(초)."""
     return min(BACKOFF_BASE_SECONDS * (2 ** max(attempt - 1, 0)), BACKOFF_MAX_SECONDS)
+
+
+def check_day_number(visited_at: datetime, sent_at: datetime) -> int:
+    days = (sent_at.astimezone(DISPLAY_TIMEZONE).date() - visited_at.astimezone(DISPLAY_TIMEZONE).date()).days
+    return max(days, 1)
 
 
 @dataclass(frozen=True)
@@ -142,6 +148,7 @@ async def render_message_body(
     visit: Visit | None = None,
     body: str | None = None,
     hospital: Hospital | None = None,
+    sent_at: datetime | None = None,
 ) -> str:
     """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
 
@@ -167,7 +174,11 @@ async def render_message_body(
         "환자명": patient.name if patient else "",
     }
     if message.kind in _CHECK_DAY_NUMBER:
-        values["일차"] = str(_CHECK_DAY_NUMBER[message.kind])
+        values["일차"] = str(
+            check_day_number(visit.visited_at, sent_at or now())
+            if message.kind is GuideMessageKind.CHECK_D7 and visit is not None
+            else _CHECK_DAY_NUMBER[message.kind]
+        )
     if message.kind is GuideMessageKind.RUN_OUT:
         days = await _course_days(guide.visit_id)
         values["일수"] = str(days) if days is not None else ""
@@ -290,6 +301,11 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         return None
 
     message = await GuideMessage.get(guide_message_id=message_id)
+    if (
+        message.kind is GuideMessageKind.CHECK_D7
+        and await CheckIn.filter(guide_document_id=message.guide_document_id).exists()
+    ):
+        return await _finish_canceled(message, token)
     storage = LocalFileStorage(config.UPLOAD_DIR)
     try:
         await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
@@ -322,7 +338,10 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         if patient is None:
             raise ValueError(f"patient not found for message {message_id}")
 
-        body = await render_message_body(message, guide=guide, visit=visit, body=gate.body, hospital=gate.hospital)
+        sent_at = now()
+        body = await render_message_body(
+            message, guide=guide, visit=visit, body=gate.body, hospital=gate.hospital, sent_at=sent_at
+        )
         result = await sender.send(patient.phone, body)
     except SmsSendError as exc:
         return await _finish_retryable(message, token, moment, provider_detail=exc.reason)
@@ -331,9 +350,18 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         return await _finish_retryable(message, token, moment, provider_detail="worker_exception")
 
     if result.status is SmsDeliveryStatus.SENT:
-        return await _finish_sent(message, token, moment, body, result)
+        return await _finish_sent(message, token, sent_at, body, result)
     # 공급자가 명시적으로 거절했다 — 재시도해도 같은 결과다. 바로 종료한다.
     return await _finish_failed(message, token, provider_detail=result.provider_code)
+
+
+async def _finish_canceled(message: GuideMessage, token: str) -> DispatchResult:
+    affected = await GuideMessage.filter(guide_message_id=message.guide_message_id, claim_token=token).update(
+        status=GuideMessageStatus.CANCELED, claim_token=None
+    )
+    if affected != 1:
+        raise RuntimeError(f"message state changed: guide_message_id={message.guide_message_id}")
+    return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.CANCELED)
 
 
 async def _finish_sent(

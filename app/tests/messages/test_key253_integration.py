@@ -72,6 +72,7 @@ class TestDispatchBadgeIntegration(TestCase):
     async def test_dispatch_uses_latest_saved_hospital_template(self) -> None:
         message = await make_due_message(kind=GuideMessageKind.CHECK_D7)
         guide = await message.guide_document
+        visit = await Visit.get(visit_id=guide.visit_id)
         template = await MessageTemplate.create(
             hospital_id=guide.hospital_id,
             kind=MessageTemplateKind.CHECK_D7,
@@ -84,13 +85,17 @@ class TestDispatchBadgeIntegration(TestCase):
         assert result is not None and result.status == GuideMessageStatus.SENT
         assert len(sender.calls) == 1
         body = sender.calls[0][1]
+        await message.refresh_from_db()
+        from app.services.message_dispatch import check_day_number
+
+        assert message.sent_at is not None
+        day_number = check_day_number(visit.visited_at, message.sent_at)
         expected_head = (
-            "[KEY-249 합성의원] 합성환자님 7일 확인: "
+            f"[KEY-249 합성의원] 합성환자님 {day_number}일 확인: "
             f"{config.PATIENT_WEB_BASE_URL.rstrip('/')}/patient_wireframe/html/otp.html#t="
         )
         assert body.startswith(expected_head)
         raw_token = body.removeprefix(expected_head)
         assert re.fullmatch(r"[A-Za-z0-9_-]{43}", raw_token)
-        await message.refresh_from_db()
         assert message.sent_body == expected_head + "[REDACTED]"
         assert raw_token not in message.sent_body

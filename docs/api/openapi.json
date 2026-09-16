@@ -743,12 +743,26 @@
             "type": "null"
           },
           "next_checkin": {
-            "title": "Next Checkin",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Checkin"
           },
           "next_visit": {
-            "title": "Next Visit",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Visit"
           },
           "pain_types": {
             "items": {
@@ -793,12 +807,26 @@
             "$ref": "#/components/schemas/CheckInMedication"
           },
           "next_checkin": {
-            "title": "Next Checkin",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Checkin"
           },
           "next_visit": {
-            "title": "Next Visit",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Visit"
           },
           "note": {
             "anyOf": [
@@ -5673,6 +5701,17 @@
             "format": "date",
             "title": "Birth Date",
             "type": "string"
+          },
+          "check_day_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Day Number"
           },
           "failure_code": {
             "anyOf": [

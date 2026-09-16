@@ -140,6 +140,7 @@ class SentMessageItem(BaseModel):
     kind: GuideMessageKind
     status: GuideMessageStatus
     failure_code: GuideMessageFailure | None
+    check_day_number: int | None = None
 
     name: str
     hospital_patient_no: str
