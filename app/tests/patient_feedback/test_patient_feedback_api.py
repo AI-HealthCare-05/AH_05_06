@@ -1,10 +1,14 @@
 """KEY-239 patient-session feedback submission contract."""
 
 import hashlib
+from collections.abc import Awaitable, Callable
+from typing import Any
+from unittest.mock import patch
 from uuid import uuid4
 
 from httpx import ASGITransport, AsyncClient, Response
 from tortoise.contrib.test import TestCase
+from tortoise.exceptions import IntegrityError
 from tortoise.timezone import now
 
 from app.core.redis_client import get_redis
@@ -295,3 +299,86 @@ class TestAdminFeedbackList(PatientFeedbackApiTestCase):
 
         assert response.status_code == 404
         assert response.json()["code"] == "PATIENT_FEEDBACK_NOT_FOUND"
+
+
+class TestTwoSubmissionsThatLandTogether(PatientFeedbackApiTestCase):
+    """`except IntegrityError` 가지 — **읽은 뒤 `create` 사이**에 남이 먼저 넣은 자리.
+
+    KEY-346 에서 재 보니 이 가지가 **한 번도 안 돌고 있었다.** 복구를 통째로
+    걷어내고 `raise` 로 바꿔도 `patient_feedback`·`models`·`patient_usage` 의
+    59 개가 전부 통과했다. 위의 `test_network_retry_returns_the_same_row` 는
+    순차라 `create()` 의 **첫 읽기**에서 이미 걸린다.
+
+    `#310`(KEY-335) 리뷰에서 이희진 님이 체크인 쪽에 같은 것을 짚으셨고, 거기만
+    메워졌다. 원형인 이쪽이 비어 있었다.
+
+    **진짜 동시 요청은 이 하네스에서 못 만든다** — 검사를 트랜잭션으로 감싸고
+    커넥션 하나를 공유해서, `asyncio.gather` 로 둘을 보내면 MySQL 소켓이 먼저
+    깨진다(`#50`·KEY-328 에서 확인된 자리).
+
+    그래서 **겹치는 순간만** 만든다. `create` 직전에 다른 요청이 먼저 넣은 것처럼
+    진짜 줄을 하나 만들고, 원래 `create` 가 그대로 돌게 둔다. `IntegrityError`
+    를 흉내내지 않는다 — **DB 의 유일 제약이** 막는 것까지 함께 잰다.
+    """
+
+    @staticmethod
+    def _another_request_wins(**overrides: Any) -> Callable[..., Awaitable[PatientFeedback]]:
+        original = PatientFeedback.create
+
+        async def create(**kwargs: Any) -> PatientFeedback:
+            await original(**{**kwargs, **overrides})  # 남이 먼저 넣는다
+            return await original(**kwargs)  # 원래 요청이 유일 제약에 부딪힌다
+
+        return create
+
+    async def test_the_same_submission_arriving_twice_at_once_still_succeeds(self) -> None:
+        await self.approved()
+        payload = self.guide_payload(str(uuid4()))
+
+        with patch.object(PatientFeedback, "create", self._another_request_wins()):
+            async with await self.client() as client:
+                response = await client.post("/api/v1/patient-feedback", json=payload)
+
+        assert response.status_code == 201, response.text
+        assert await PatientFeedback.all().count() == 1, "경합에서 줄이 둘 생겼다"
+        stored = await PatientFeedback.all().first()
+        assert stored is not None
+        assert response.json()["feedback_id"] == stored.patient_feedback_id, "먼저 들어간 줄을 안 돌려줬다"
+
+    async def test_a_different_submission_arriving_at_once_is_still_blocked(self) -> None:
+        """같은 열쇠에 **다른 내용**이면 조용히 덮지 않는다."""
+        await self.approved()
+        payload = self.guide_payload(str(uuid4()))
+
+        with patch.object(PatientFeedback, "create", self._another_request_wins(category="UNSAFE")):
+            async with await self.client() as client:
+                response = await client.post("/api/v1/patient-feedback", json=payload)
+
+        assert response.status_code == 409, response.text
+        assert response.json()["code"] == "FEEDBACK_SUBMISSION_CONFLICT"
+        stored = await PatientFeedback.all().first()
+        assert stored is not None
+        assert stored.category == "UNSAFE", "먼저 저장된 값이 덮였다"
+
+    async def test_an_integrity_error_with_nothing_to_re_read_is_not_swallowed(self) -> None:
+        """🚩 `if existing is None: raise` 자리.
+
+        유일 제약이 아닌 다른 까닭(예: FK 위반)으로 `IntegrityError` 가 나면
+        **다시 읽어도 아무것도 없다.** 그때 이 가지가 조용히 삼키면, 저장이 안
+        된 것이 성공으로 보인다.
+        """
+        await self.approved()
+        payload = self.guide_payload(str(uuid4()))
+
+        async def create(**_: Any) -> PatientFeedback:
+            raise IntegrityError("다른 까닭으로 막혔다")
+
+        # `ASGITransport` 는 앱에서 올라온 예외를 **그대로 다시 던진다.** 그래서
+        # 여기서 `IntegrityError` 가 잡히는 것 자체가 「안 삼켰다」의 증거다.
+        # 삼키면 `201` 이 돌아오고 — 저장이 안 됐는데 성공으로 보인다.
+        with patch.object(PatientFeedback, "create", create):
+            with self.assertRaises(IntegrityError):
+                async with await self.client() as client:
+                    await client.post("/api/v1/patient-feedback", json=payload)
+
+        assert await PatientFeedback.all().count() == 0, "실패했는데 줄이 남았다"
