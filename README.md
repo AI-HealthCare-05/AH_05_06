@@ -628,6 +628,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | `ModuleNotFoundError: No module named 'tortoise'` (워커) | `uv sync --group worker --group ai` (둘 다). `--group ai` 만으로는 안 된다 |
 | OCR·픽스처 검사가 「연결 거부」로 죽음 | `--profile ocr` (또는 `web`+`ocr`) 를 안 줬다 |
 | `ai-worker` 가 `docker compose ps` 에서 계속 `Restarting` | 스텁 아님 — DB·Redis 연결이나 `.env` 설정 오류다. `docker compose logs ai-worker` |
+| `GUIDE_RAG_ENABLED=true` 인데 안내 생성이 `generation_internal_error` 로 실패 (워커 쪽 `LOCAL_EMBEDDING_NOT_INSTALLED`) | 워커 이미지가 낡았다 — `docker compose build ai-worker` 후 `docker compose up -d --force-recreate ai-worker`. **워커는 `./app` 마운트 없이 구운 이미지로 돈다** — 로컬에서 코드를 고쳐도 안 바뀐다. 생성 루프는 기동 직후 죽어도 로그를 안 남기니 `docker compose exec ai-worker uv run --no-sync python -c "import sentence_transformers"` 로 직접 확인한다 |
 | 판독이 `OCR_NOT_CONFIGURED` 로 실패 | CLOVA 키가 비었다. 합성 판독만 볼 거면 `OCR_FIXTURE_FALLBACK=true` (워커 큐 안 씀) |
 | MinIO 컨테이너가 안 뜸 | `MINIO_ROOT_USER`·`MINIO_ROOT_PASSWORD` 가 비었다. 비밀번호 8자 이상 |
 | pytest 가 `test` DB 없음 / 비밀번호 불일치로 실패 | 기존 mysql 볼륨이 옛 비밀번호를 잡고 있다 — `docker compose down -v` 후 재기동 (데이터 삭제됨) |
