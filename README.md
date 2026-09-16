@@ -149,6 +149,8 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 
 - **DB 스키마가 밀려 있어도** `/api/v1/health` 는 `SELECT 1` 만 보므로 `ok` 를 준다.
   그래서 `aerich upgrade` 뒤에는 항상 `scripts/check_schema_drift.py` 로 칸 단위 대조한다.
+  모델에만 있거나 DB에만 있는 표·컬럼 이름을 양방향으로 검사하며 차이가 있으면 종료 1이다.
+  타입·인덱스는 이 검사 범위 밖이다. CI의 `bootstrap` 잡은 실제 Compose로 새 DB 기동·migration·seed·drift·smoke와 반복 실행을 검사한다.
 - 운영(`infra/docker/docker-compose.prod.yml`)에는 프로필이 없다 — 거기서는 항상 전부 뜬다.
 
 ---
