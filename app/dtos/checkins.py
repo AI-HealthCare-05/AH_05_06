@@ -105,7 +105,7 @@ class CheckInPainTypeResponse(StrictModel):
 
 
 class CheckInReadResponse(StrictModel):
-    round_label: Literal["복약 7일째 · 첫 확인"] = "복약 7일째 · 첫 확인"
+    round_label: str = "복약 7일째 · 첫 확인"
     drug_name: None = None
     answers: dict[CheckInMedication, CheckInAnswerContent | None]
     pain_types: list[CheckInPainTypeResponse]

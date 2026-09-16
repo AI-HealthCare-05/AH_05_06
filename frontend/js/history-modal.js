@@ -64,7 +64,7 @@ function checksSaying(block) {
     "확인 문자 — " +
     rows
       .map(function (row) {
-        var head = roundSaying(row.kind) + " " + dayShort(row.at);
+        var head = roundSaying(row) + " " + dayShort(row.at);
         if (!row.sent) return head + " 발송 예정";
         if (row.answer)
           return head + " 응답 「" + answerSaying(row.answer) + "」";
@@ -99,9 +99,18 @@ function historyCountSaying(body) {
 /* 회차 이름에서 「확인」을 덜어낸다 — 앞머리가 이미 「확인 문자 —」라
    「확인 문자 — 일주일 뒤 확인 05-27」이 된다. **낱말을 새로 짓지 않고**
    `message-words.js` 것에서 덜어내는 이유는, 회차 이름이 바뀌면 여기도
-   따라가야 하기 때문이다. */
-function roundSaying(kind) {
-  var said = MESSAGE_SAYING[kind] || kind || "";
+   따라가야 하기 때문이다.
+
+   CHECK_D7이 실제로 나갔고(`sent`) `check_day_number`가 있으면 그 값을
+   그대로 쓴다 — `manage.js`의 발송 이력 표가 이미 같은 값으로 "복약
+   N일째 확인"을 보여준다. 늦게 나간 같은 문자가 여기서만 "일주일 뒤"로
+   고정 표시되면, 화면마다 다른 일차를 말하는 셈이다(KEY-320, 2heej
+   리뷰). */
+function roundSaying(row) {
+  if (row.kind === "CHECK_D7" && row.sent && row.check_day_number) {
+    return "복약 " + row.check_day_number + "일째";
+  }
+  var said = MESSAGE_SAYING[row.kind] || row.kind || "";
   return said.replace(/\s*확인$/, "");
 }
 

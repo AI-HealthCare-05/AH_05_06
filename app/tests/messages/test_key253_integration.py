@@ -1,6 +1,7 @@
 """KEY-253: real dispatch state feeds badge calculation; no external SMS."""
 
 import re
+from datetime import timedelta
 
 from tortoise.contrib.test import TestCase
 from tortoise.timezone import now
@@ -73,6 +74,10 @@ class TestDispatchBadgeIntegration(TestCase):
         message = await make_due_message(kind=GuideMessageKind.CHECK_D7)
         guide = await message.guide_document
         visit = await Visit.get(visit_id=guide.visit_id)
+        # check_day_number() 자체로 기대값을 계산하지 않는다(2heej 리뷰) —
+        # visited_at을 정확히 7일 전으로 고정하고 리터럴 7로 잰다.
+        visit.visited_at = now() - timedelta(days=7)
+        await visit.save(update_fields=["visited_at"])
         template = await MessageTemplate.create(
             hospital_id=guide.hospital_id,
             kind=MessageTemplateKind.CHECK_D7,
@@ -86,12 +91,10 @@ class TestDispatchBadgeIntegration(TestCase):
         assert len(sender.calls) == 1
         body = sender.calls[0][1]
         await message.refresh_from_db()
-        from app.services.message_dispatch import check_day_number
 
         assert message.sent_at is not None
-        day_number = check_day_number(visit.visited_at, message.sent_at)
         expected_head = (
-            f"[KEY-249 합성의원] 합성환자님 {day_number}일 확인: "
+            f"[KEY-249 합성의원] 합성환자님 7일 확인: "
             f"{config.PATIENT_WEB_BASE_URL.rstrip('/')}/patient_wireframe/html/otp.html#t="
         )
         assert body.startswith(expected_head)

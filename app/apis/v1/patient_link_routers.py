@@ -31,9 +31,20 @@ from app.dtos.patient_links import (
     PatientLinkIssueResponse,
     PatientLinkStateResponse,
 )
-from app.models.visits import CheckIn, CheckInMedication, GuideDocument, GuideSectionKey, PatientGuideLink
+from app.models.visits import (
+    CheckIn,
+    CheckInMedication,
+    GuideDocument,
+    GuideMessage,
+    GuideMessageKind,
+    GuideMessageStatus,
+    GuideSectionKey,
+    PatientGuideLink,
+    Visit,
+)
 from app.services.checkin_signals import REVIEW_ANSWERS, CheckInSignalService
 from app.services.checkins import CheckInService, approved_answer_bodies
+from app.services.message_dispatch import check_day_number
 from app.services.patient_guide_view import guide_detail_of, medication_stat_of
 from app.services.patient_links import PatientGuideData, PatientLinkService
 from app.services.patient_usage import PatientUsageService
@@ -257,6 +268,35 @@ async def record_guide_page_view(
     await usage.record_guide_view(guide.guide_document_id, section=payload.section)
 
 
+async def _round_label(guide: GuideDocument) -> str:
+    """복약 며칠째인지 — 실제 발송일 기준(KEY-320, 2heej 리뷰).
+
+    예전엔 `Literal["복약 7일째 · 첫 확인"]`로 못박혀 있어서, 재시도·지연
+    으로 실제로는 10일째 나간 문자도 환자가 여는 폼은 계속 "7일째"라고
+    말했다 — 문자 본문(`check_day_number`가 채우는 숫자)과 폼이 서로
+    다른 날을 말하는 셈이었다.
+
+    아직 발송 안 됐으면(예: 링크를 미리 열람) 기본값을 유지한다 —
+    "며칠째"인지는 실제로 보낸 시각이 있어야 확정할 수 있다.
+    """
+    message = (
+        await GuideMessage.filter(
+            guide_document_id=guide.guide_document_id,
+            kind=GuideMessageKind.CHECK_D7,
+            status=GuideMessageStatus.SENT,
+        )
+        .order_by("-sent_at")
+        .first()
+    )
+    if message is None or message.sent_at is None:
+        return "복약 7일째 · 첫 확인"
+    visit = await Visit.filter(visit_id=guide.visit_id).first()
+    if visit is None:
+        return "복약 7일째 · 첫 확인"
+    day = check_day_number(visit.visited_at, message.sent_at)
+    return f"복약 {day}일째 · 첫 확인"
+
+
 def _pain_response(check_in: CheckIn) -> CheckInPainResponse | None:
     if check_in.pain_had is None:
         return None
@@ -284,6 +324,7 @@ async def read_patient_checkin(
     medication, caution = approved_answer_bodies(guide)
     next_checkin, next_visit = await CheckInService.next_steps(guide)
     return CheckInReadResponse(
+        round_label=await _round_label(guide),
         answers={
             CheckInMedication.TAKING: None,
             CheckInMedication.UNCOMFORTABLE: CheckInAnswerContent(lead=caution, ask=True),

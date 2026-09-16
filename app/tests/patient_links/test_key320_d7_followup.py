@@ -12,7 +12,7 @@ from app.models.visits import (
     Visit,
     VisitStatus,
 )
-from app.services.message_dispatch import check_day_number, dispatch_message
+from app.services.message_dispatch import dispatch_message
 from app.services.patient_flags import PatientFlag, flags_of, load_flag_inputs, stopped_dosing
 from app.tests.messages.test_key249_dispatch_pipeline import _CountingSender, make_due_message
 from app.tests.patient_links.test_key151_checkins import TOKEN, CheckInTestCase, make_linked_guide
@@ -126,6 +126,11 @@ class TestD7FinalAnswer(CheckInTestCase):
         message = await make_due_message(kind=GuideMessageKind.CHECK_D7)
         guide = await message.guide_document
         visit = await Visit.get(visit_id=guide.visit_id)
+        # check_day_number() 자체로 기대값을 계산하면 그 함수의 off-by-one·
+        # 타임존 버그를 이 테스트가 못 잡는다(2heej 리뷰) — visited_at을
+        # 정확히 7일 전으로 고정하고, 기대 일차를 리터럴 7로 박아 둔다.
+        visit.visited_at = now() - timedelta(days=7)
+        await visit.save(update_fields=["visited_at"])
         sender = _CountingSender()
 
         first = await dispatch_message(message.guide_message_id, sender)
@@ -136,7 +141,6 @@ class TestD7FinalAnswer(CheckInTestCase):
         assert len(sender.calls) == 1
         await message.refresh_from_db()
         assert message.sent_at is not None and message.sent_body is not None
-        day_number = check_day_number(visit.visited_at, message.sent_at)
-        assert f"복약 {day_number}일째" in sender.calls[0][1]
-        assert f"복약 {day_number}일째" in message.sent_body
+        assert "복약 7일째" in sender.calls[0][1]
+        assert "복약 7일째" in message.sent_body
         assert "#t=[REDACTED]" in message.sent_body

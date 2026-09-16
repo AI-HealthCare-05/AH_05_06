@@ -772,7 +772,6 @@
             "type": "array"
           },
           "round_label": {
-            "const": "복약 7일째 · 첫 확인",
             "default": "복약 7일째 · 첫 확인",
             "title": "Round Label",
             "type": "string"
@@ -1957,6 +1956,17 @@
             "format": "date-time",
             "title": "At",
             "type": "string"
+          },
+          "check_day_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Day Number"
           },
           "kind": {
             "$ref": "#/components/schemas/GuideMessageKind"

@@ -158,8 +158,28 @@ test("회차와 날짜와 결과를 나란히 적는다", () => {
 test("회차 이름에서 「확인」이 겹치지 않는다", () => {
   const { roundSaying, checksSaying } = rules();
 
-  assert.strictEqual(roundSaying("CHECK_D7"), "일주일 뒤", "앞머리가 이미 「확인 문자 —」다");
+  assert.strictEqual(roundSaying({ kind: "CHECK_D7" }), "일주일 뒤", "앞머리가 이미 「확인 문자 —」다");
   assert.ok(checksSaying(a_block({ checks: [a_check()] })).indexOf("뒤 확인 ") === -1);
+});
+
+test("실제로 나간 D+7은 경과일수를 그대로 보여준다 — KEY-320, 2heej 리뷰", () => {
+  const { roundSaying } = rules();
+
+  assert.strictEqual(
+    roundSaying({ kind: "CHECK_D7", sent: true, check_day_number: 10 }),
+    "복약 10일째",
+    "manage.js와 같은 값으로, 늦게 나간 문자도 실제 일차를 말해야 한다",
+  );
+  assert.strictEqual(
+    roundSaying({ kind: "CHECK_D7", sent: false, check_day_number: 10 }),
+    "일주일 뒤",
+    "아직 안 나갔으면(예: 예정) 회차 이름 그대로다",
+  );
+  assert.strictEqual(
+    roundSaying({ kind: "CHECK_D7", sent: true, check_day_number: null }),
+    "일주일 뒤",
+    "일차 값이 없으면 회차 이름으로 되돌아간다",
+  );
 });
 
 test("응답이 있으면 그 말을 그대로 적는다", () => {

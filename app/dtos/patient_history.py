@@ -32,6 +32,12 @@ class HistoryCheck(BaseModel):
     #: 복약 응답. **`CHECK_D7` 에만 붙는다** — `check_in` 이 「승인 안내 한 건에
     #: 연결된 D+7 응답」이고 안내문당 한 건뿐이다(KEY-151).
     answer: str | None
+    #: 실제 발송일 기준 진료 후 경과일수 — `CHECK_D7`에만, 실제로 나간
+    #: (`sent`) 문자에만 붙는다(KEY-320, 2heej 리뷰). `manage.js`의
+    #: 발송 이력 표가 이미 같은 값으로 "복약 N일째 확인"을 보여준다 —
+    #: 이력 모달만 "일주일 뒤 확인" 고정 문구로 남으면, 늦게 나간 같은
+    #: 문자가 화면마다 다른 일차로 보인다.
+    check_day_number: int | None = None
 
 
 class HistoryVisit(BaseModel):

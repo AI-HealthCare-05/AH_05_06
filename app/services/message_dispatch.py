@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from tortoise.timezone import now
+from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.core.logger import default_logger
@@ -272,21 +273,91 @@ async def _purge_source_documents(
         )
 
 
-async def _claim(message_id: int, *, at: datetime) -> str | None:
+async def _claim(message_id: int, *, at: datetime) -> tuple[str | None, bool]:
     """SCHEDULED·시각 도래·미점유 행을 원자적으로 붙잡는다 — 멱등키.
 
     같은 메시지를 두 워커가 동시에 집어도 `claim_token__isnull=True` 조건에
     걸려 한쪽만 영향을 받는다(affected row 1). 진 쪽은 0을 보고 넘어간다 —
     별도 잠금 없이 UPDATE 문 자체의 원자성만으로 막는다.
+
+    D+7 확인 문자(`CHECK_D7`)는 여기서 그치지 않는다 — `checkins.py`의
+    `save()`도 `GuideDocument.select_for_update()`로 같은 진료 행을 잠근
+    채 이 메시지를 CANCELED로 미리 취소한다. 이 claim이 별도의 autocommit
+    UPDATE로 남아 있으면, save()가 커밋되기 직전에 이 claim이 끼어들
+    경우 둘 다 서로의 커밋 전 상태만 보고 "문제없다"고 판단할 좁은 창이
+    생긴다 — 환자가 막 답변을 저장했는데 확인 문자가 그래도 나가는 사고
+    (KEY-320, 2heej 리뷰). 그래서 CHECK_D7일 때는 claim 자체를 같은
+    GuideDocument 잠금 안에 넣는다 — save()와 완전히 직렬화되어, 어느
+    쪽이 이기든 진 쪽은 상대가 이미 반영한 최신 상태를 보고 나서
+    판단한다.
+
+    CheckIn을 여기서 발견하면 **그 자리에서 CANCELED로 전이시킨다** —
+    단순히 claim을 포기하고 넘어가지 않는다. `save()`가 이 메시지를 아직
+    못 봐서(예: 재시도로 늦게 생성된 행) 취소를 못 했을 수 있어서다.
+    조건에 `status=SCHEDULED`를 두어 멱등이다 — 이미 `save()`가 취소해
+    둔 행이면 0건 매치로 조용히 넘어간다.
+
+    `(claim_token, already_answered)`를 돌려준다. `already_answered`가
+    참이면 호출부는 더 할 일이 없다 — 상태 전이가 이미 끝났다.
     """
     token = secrets.token_hex(8)
-    affected = await GuideMessage.filter(
-        guide_message_id=message_id,
-        status=GuideMessageStatus.SCHEDULED,
-        claim_token__isnull=True,
-        scheduled_at__lte=at,
-    ).update(claim_token=token)
-    return token if affected == 1 else None
+    async with in_transaction() as connection:
+        message = await GuideMessage.filter(guide_message_id=message_id).using_db(connection).first()
+        if message is None:
+            return None, False
+        if message.kind is GuideMessageKind.CHECK_D7:
+            await (
+                GuideDocument.filter(guide_document_id=message.guide_document_id)
+                .select_for_update()
+                .using_db(connection)
+                .get()
+            )
+            if await CheckIn.filter(guide_document_id=message.guide_document_id).using_db(connection).exists():
+                affected = await (
+                    GuideMessage.filter(
+                        guide_message_id=message_id,
+                        status=GuideMessageStatus.SCHEDULED,
+                        claim_token__isnull=True,
+                    )
+                    .using_db(connection)
+                    .update(status=GuideMessageStatus.CANCELED)
+                )
+                if affected == 1:
+                    await GuideMessageEvent.create(
+                        guide_message_id=message_id,
+                        event_type=GuideMessageEventType.CANCELED,
+                        reason="ANSWERED",
+                        using_db=connection,
+                    )
+                return None, True
+        affected = (
+            await GuideMessage.filter(
+                guide_message_id=message_id,
+                status=GuideMessageStatus.SCHEDULED,
+                claim_token__isnull=True,
+                scheduled_at__lte=at,
+            )
+            .using_db(connection)
+            .update(claim_token=token)
+        )
+        return (token if affected == 1 else None), False
+
+
+async def _claim_and_prepare(
+    message_id: int, moment: datetime
+) -> tuple[str, GuideMessage, LocalFileStorage] | DispatchResult | None:
+    """claim을 시도하고, 진행할 수 있으면 다음 단계에 필요한 것을 묶어 돌려준다.
+
+    세 갈래다 — `dispatch_message`의 조기 반환 두 개를 여기로 옮겨서
+    그 함수의 순환 복잡도를 낮춘다.
+    """
+    token, already_answered = await _claim(message_id, at=moment)
+    if already_answered:
+        return DispatchResult(guide_message_id=message_id, status=GuideMessageStatus.CANCELED)
+    if token is None:
+        return None
+    message = await GuideMessage.get(guide_message_id=message_id)
+    return token, message, LocalFileStorage(config.UPLOAD_DIR)
 
 
 async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult | None:
@@ -296,17 +367,10 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
     실패가 아니라 「이번엔 내 차례가 아니다」라는 뜻이다.
     """
     moment = now()
-    token = await _claim(message_id, at=moment)
-    if token is None:
-        return None
-
-    message = await GuideMessage.get(guide_message_id=message_id)
-    if (
-        message.kind is GuideMessageKind.CHECK_D7
-        and await CheckIn.filter(guide_document_id=message.guide_document_id).exists()
-    ):
-        return await _finish_canceled(message, token)
-    storage = LocalFileStorage(config.UPLOAD_DIR)
+    prepared = await _claim_and_prepare(message_id, moment)
+    if prepared is None or isinstance(prepared, DispatchResult):
+        return prepared
+    token, message, storage = prepared
     try:
         await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
         gate = await evaluate_dispatch_gate(message, storage=storage)
@@ -353,15 +417,6 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         return await _finish_sent(message, token, sent_at, body, result)
     # 공급자가 명시적으로 거절했다 — 재시도해도 같은 결과다. 바로 종료한다.
     return await _finish_failed(message, token, provider_detail=result.provider_code)
-
-
-async def _finish_canceled(message: GuideMessage, token: str) -> DispatchResult:
-    affected = await GuideMessage.filter(guide_message_id=message.guide_message_id, claim_token=token).update(
-        status=GuideMessageStatus.CANCELED, claim_token=None
-    )
-    if affected != 1:
-        raise RuntimeError(f"message state changed: guide_message_id={message.guide_message_id}")
-    return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.CANCELED)
 
 
 async def _finish_sent(
