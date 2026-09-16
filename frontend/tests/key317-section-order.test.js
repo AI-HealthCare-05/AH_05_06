@@ -37,10 +37,14 @@ test("탭 줄에 차례를 옮기는 단추가 서지 않는다", () => {
   const view = box();
 
   const html = view.guideScreenHtml(sections(), "medication", "guide", true, null, "", null);
+  /* 탭 줄만 떼어 본다 — `guideSegmentsHtml` 이 탭 줄을 그리는 그 함수라,
+     전체 화면 문자열에서 자리를 잘라 내는 것보다 무엇을 재는지가 분명하고,
+     탭이 아닌 다른 자리(가령 문자 설정 미리보기)의 글자에 흔들리지 않는다. */
+  const tabRow = view.guideSegmentsHtml(sections(), "medication");
 
   assert.ok(!html.includes("data-move"), "옮기는 단추가 다시 섰다");
   assert.ok(!html.includes("gs__move"), "옮기는 단추 자리가 다시 섰다");
-  assert.ok(!/[◀▶]/.test(html.slice(0, html.indexOf("gs__body"))), "탭 줄에 화살표가 섰다");
+  assert.ok(!/[◀▶]/.test(tabRow), "탭 줄에 화살표가 섰다");
 });
 
 test("옮기는 단추를 그리던 코드가 통째로 없다", () => {
@@ -50,7 +54,11 @@ test("옮기는 단추를 그리던 코드가 통째로 없다", () => {
   for (const name of ["guideMoveHtml", "guideOrderMoved", "guideMovableKeys", "guideMoveSection"]) {
     assert.ok(!code.includes(name), `죽은 코드가 남았다: ${name}`);
   }
-  assert.ok(!bareCode(read("css/blocks.css")).includes("gs__movebtn"), "죽은 CSS 가 남았다");
+  const css = bareCode(read("css/blocks.css"));
+  assert.ok(!css.includes("gs__movebtn"), "죽은 CSS(단추)가 남았다");
+  /* `gs__move` 는 `gs__movebtn` 의 앞 글자라, 뒤엣것만 재면 감싸개
+     `.gs__move` 홀로 되살아나도 못 잡는다 — 뒤에 `btn` 이 안 붙는 자리를 따로 잰다. */
+  assert.ok(!/\.gs__move(?!btn)/.test(css), "죽은 CSS(감싸개)가 남았다");
 });
 
 test("목업도 차례를 저장하고 다시 준다", async () => {
