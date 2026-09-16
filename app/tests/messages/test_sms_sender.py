@@ -73,7 +73,11 @@ async def test_solapi_signs_requests_with_hmac_sha256() -> None:
         captured["body"] = json.loads(request.content)
         return httpx.Response(
             200,
-            json={"messageList": [{"messageId": "msg-1", "statusCode": "2000"}]},
+            json={
+                "groupInfo": {"groupId": "group-1"},
+                "failedMessageList": [],
+                "messageList": [{"messageId": "msg-1", "statusCode": "2000"}],
+            },
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -91,7 +95,7 @@ async def test_solapi_signs_requests_with_hmac_sha256() -> None:
             ),
             client=client,
         )
-        await sender.send(RECEIVER, sent_text)
+        result = await sender.send(RECEIVER, sent_text)
 
     after = datetime.now().astimezone()
     assert captured["url"] == "https://gateway.example/messages/v4/send-many/detail"
@@ -107,6 +111,7 @@ async def test_solapi_signs_requests_with_hmac_sha256() -> None:
     assert parts["signature"] == expected_signature
 
     assert captured["body"] == {
+        "showMessageList": True,
         "messages": [
             {
                 "to": RECEIVER,
@@ -115,8 +120,10 @@ async def test_solapi_signs_requests_with_hmac_sha256() -> None:
                 "type": "SMS",
                 "autoTypeDetect": False,
             }
-        ]
+        ],
     }
+    assert result.status is SmsDeliveryStatus.SENT
+    assert result.provider_message_id == "msg-1"
 
 
 async def test_solapi_uses_a_fresh_salt_for_each_request() -> None:
@@ -283,6 +290,7 @@ async def test_solapi_accepts_string_and_integer_message_ids(message_id: int | s
     [
         [],
         {},
+        {"groupInfo": {"groupId": "group-1"}, "failedMessageList": []},
         {"messageList": []},
         {"messageList": [{}]},
         {"messageList": [{"messageId": True}]},

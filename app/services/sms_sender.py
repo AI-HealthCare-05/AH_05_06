@@ -117,6 +117,7 @@ class SolapiSmsSender:
             "Content-Type": "application/json",
         }
         payload = {
+            "showMessageList": True,
             "messages": [
                 {
                     "to": to,
@@ -127,7 +128,7 @@ class SolapiSmsSender:
                     # 명시한 type을 다시 판별하지 않도록 반드시 끈다.
                     "autoTypeDetect": False,
                 }
-            ]
+            ],
         }
         try:
             response = await client.post(
