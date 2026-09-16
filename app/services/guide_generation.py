@@ -117,6 +117,27 @@ def approved_fallback(content: DrugCautionContent | None) -> ApprovedFallbackTem
     """Use recorded approval and checksum, never manufacture an approval stamp."""
     if content is None or not DrugCautionService.has_evidence(content):
         return None
+    expected_key = f"{content.prescription_set_id}:{content.section_key.value}"
+    # KEY-352: A등급 외부 근거(식약처 허가사항 등)는 physician_review 없이 approval_status + approved_key로 통과.
+    # KEY-283이 분리한 2축 중 A축을 폴백 게이트에 동일 적용한다.
+    if content.source_grade is SourceGrade.A:
+        if content.approval_status is not ApprovalStatus.APPROVED or content.approved_key != expected_key:
+            return None
+        checksum = fallback_body_checksum(content.body)
+        return ApprovedFallbackTemplate(
+            template_id=str(content.pk),
+            version=content.content_version,
+            body=content.body,
+            body_sha256=checksum,
+            approval_status=content.approval_status,
+            is_current=True,
+            approved_by=content.source_org,
+            approved_at=content.verified_at,
+            source_name=content.source_name,
+            source_org=content.source_org,
+            source_url=content.source_url or None,
+        )
+    # C등급 전문의 자문 근거 — physician_review 스탬프 필요.
     review = content.physician_review
     if not isinstance(review, dict):
         return None
@@ -131,8 +152,8 @@ def approved_fallback(content: DrugCautionContent | None) -> ApprovedFallbackTem
         or not reviewer.strip()
         or approved_at > date.today()
         or checksum != fallback_body_checksum(content.body)
-        or content.approval_status != ApprovalStatus.APPROVED
-        or content.approved_key != f"{content.prescription_set_id}:{content.section_key.value}"
+        or content.approval_status is not ApprovalStatus.APPROVED
+        or content.approved_key != expected_key
     ):
         return None
     return ApprovedFallbackTemplate(
