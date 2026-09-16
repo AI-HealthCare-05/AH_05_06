@@ -107,6 +107,7 @@ async def test_solapi_signs_requests_with_hmac_sha256() -> None:
     assert parts["signature"] == expected_signature
 
     assert captured["body"] == {
+        "showMessageList": True,
         "messages": [
             {
                 "to": RECEIVER,
@@ -115,7 +116,7 @@ async def test_solapi_signs_requests_with_hmac_sha256() -> None:
                 "type": "SMS",
                 "autoTypeDetect": False,
             }
-        ]
+        ],
     }
 
 
@@ -283,6 +284,7 @@ async def test_solapi_accepts_string_and_integer_message_ids(message_id: int | s
     [
         [],
         {},
+        {"groupInfo": {"groupId": "group-1"}, "failedMessageList": []},
         {"messageList": []},
         {"messageList": [{}]},
         {"messageList": [{"messageId": True}]},
