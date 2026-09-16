@@ -1,0 +1,10 @@
+[
+  {"id":"A01","text":"야즈정 PCOS 복약 안내","section":"medication","relevant":["pcos-med"]},
+  {"id":"A02","text":"비잔정 자궁내막증 주의사항","section":"caution","relevant":["endo-care"]},
+  {"id":"A03","text":"충분히 자고 쉬는 생활","section":"life","relevant":["sleep"]},
+  {"id":"A04","text":"식생활을 관리하는 내용","section":"life","relevant":["food"]},
+  {"id":"A05","text":"PCOS 수술 비용 보험 청구","section":"life","relevant":[]},
+  {"id":"A06","text":"야즈정 가격 재고 구매처","section":"medication","relevant":[]},
+  {"id":"A07","text":"자궁내막증 유전자 검사 결과 해석","section":"caution","relevant":[]},
+  {"id":"A08","text":"날씨 기온 강수 확률","section":"life","relevant":[]}
+]

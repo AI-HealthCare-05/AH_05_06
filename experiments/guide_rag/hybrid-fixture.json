@@ -1,0 +1,245 @@
+{
+  "description": "합성 주제 문서 + 실제 Dense 모델. Q01~06은 현재 검색어 형태, 나머지는 용어/표현/무관 질의 탐색. 의료진 승인 평가셋 아님.",
+  "documents": [
+    {
+      "id": "pcos-med",
+      "section": "medication",
+      "body": "[합성 검색 실험] PCOS 다낭성난소증후군 야즈정 복약 설명 처방 확인. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "endo-med",
+      "section": "medication",
+      "body": "[합성 검색 실험] 자궁내막증 비잔정 복약 설명 처방 확인. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "pcos-care",
+      "section": "caution",
+      "body": "[합성 검색 실험] PCOS 야즈정 주의사항 이상 증상 문의. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "endo-care",
+      "section": "caution",
+      "body": "[합성 검색 실험] 자궁내막증 비잔정 주의사항 이상 증상 문의. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "pcos-life",
+      "section": "life",
+      "body": "[합성 검색 실험] PCOS 다낭성난소증후군 생활관리 운동 식사 수면. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "endo-life",
+      "section": "life",
+      "body": "[합성 검색 실험] 자궁내막증 생활관리 통증 일상 활동 수면. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "lab",
+      "section": "life",
+      "body": "[합성 검색 실험] 검사 지표 TESTX17 검사 결과 목표 기준선. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "sleep",
+      "section": "life",
+      "body": "[합성 검색 실험] 수면 잠 휴식 생활관리. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "exercise",
+      "section": "life",
+      "body": "[합성 검색 실험] 운동 걷기 신체 활동 생활관리. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "food",
+      "section": "life",
+      "body": "[합성 검색 실험] 식사 식이 식생활 생활관리. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "med-general",
+      "section": "medication",
+      "body": "[합성 검색 실험] 일반 복약 설명 약 이름 확인 안내문. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "care-general",
+      "section": "caution",
+      "body": "[합성 검색 실험] 일반 주의사항 진료실 문의 안내문. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "draft",
+      "section": "medication",
+      "body": "[합성 검색 실험] PCOS 다낭성난소증후군 야즈정 복약 설명 처방 확인. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": false,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "other-hospital",
+      "section": "medication",
+      "body": "[합성 검색 실험] PCOS 다낭성난소증후군 야즈정 복약 설명 처방 확인. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": 99,
+      "approved": true,
+      "current": true,
+      "license_verified": true
+    },
+    {
+      "id": "old",
+      "section": "medication",
+      "body": "[합성 검색 실험] PCOS 다낭성난소증후군 야즈정 복약 설명 처방 확인. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": false,
+      "license_verified": true
+    },
+    {
+      "id": "license",
+      "section": "medication",
+      "body": "[합성 검색 실험] PCOS 다낭성난소증후군 야즈정 복약 설명 처방 확인. 이 문서는 검색 주제만 표시하며 의료 지시를 포함하지 않습니다.",
+      "hospital_id": null,
+      "approved": true,
+      "current": true,
+      "license_verified": false
+    }
+  ],
+  "queries": [
+    {
+      "id": "Q01",
+      "text": "PCOS 야즈정 medication",
+      "section": "medication",
+      "relevant": [
+        "pcos-med"
+      ]
+    },
+    {
+      "id": "Q02",
+      "text": "자궁내막증 비잔정 medication",
+      "section": "medication",
+      "relevant": [
+        "endo-med"
+      ]
+    },
+    {
+      "id": "Q03",
+      "text": "PCOS 야즈정 caution",
+      "section": "caution",
+      "relevant": [
+        "pcos-care"
+      ]
+    },
+    {
+      "id": "Q04",
+      "text": "자궁내막증 비잔정 caution",
+      "section": "caution",
+      "relevant": [
+        "endo-care"
+      ]
+    },
+    {
+      "id": "Q05",
+      "text": "PCOS life",
+      "section": "life",
+      "relevant": [
+        "pcos-life"
+      ]
+    },
+    {
+      "id": "Q06",
+      "text": "자궁내막증 life",
+      "section": "life",
+      "relevant": [
+        "endo-life"
+      ]
+    },
+    {
+      "id": "Q07",
+      "text": "TESTX17 검사 목표",
+      "section": "life",
+      "relevant": [
+        "lab"
+      ]
+    },
+    {
+      "id": "Q08",
+      "text": "잠과 휴식에 관한 설명",
+      "section": "life",
+      "relevant": [
+        "sleep"
+      ]
+    },
+    {
+      "id": "Q09",
+      "text": "걷기 신체 활동",
+      "section": "life",
+      "relevant": [
+        "exercise"
+      ]
+    },
+    {
+      "id": "Q10",
+      "text": "식생활에 관한 안내",
+      "section": "life",
+      "relevant": [
+        "food"
+      ]
+    },
+    {
+      "id": "Q11",
+      "text": "우주선 궤도 추진체",
+      "section": "life",
+      "relevant": []
+    },
+    {
+      "id": "Q12",
+      "text": "PCOS 야즈정 생활관리",
+      "section": "life",
+      "relevant": [
+        "pcos-life"
+      ]
+    }
+  ]
+}

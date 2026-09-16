@@ -1,0 +1,146 @@
+[
+  {
+    "id": "PCOS-medication",
+    "status": "pending_medical_review",
+    "disease": "PCOS",
+    "section": "medication",
+    "confirmed_prescription": [],
+    "approved_source_versions": [],
+    "expected_chunk_ids": [],
+    "forbidden_chunk_ids": [],
+    "expected_behavior": "evidence_or_approved_fallback",
+    "reviewer": null,
+    "checks": [
+      "질환·처방 범위 일치",
+      "확정 처방 보존",
+      "문장별 근거 확인",
+      "의사 승인 전 노출 금지"
+    ]
+  },
+  {
+    "id": "PCOS-caution",
+    "status": "pending_medical_review",
+    "disease": "PCOS",
+    "section": "caution",
+    "confirmed_prescription": [],
+    "approved_source_versions": [],
+    "expected_chunk_ids": [],
+    "forbidden_chunk_ids": [],
+    "expected_behavior": "evidence_or_approved_fallback",
+    "reviewer": null,
+    "checks": [
+      "질환·처방 범위 일치",
+      "확정 처방 보존",
+      "문장별 근거 확인",
+      "의사 승인 전 노출 금지"
+    ]
+  },
+  {
+    "id": "PCOS-life",
+    "status": "pending_medical_review",
+    "disease": "PCOS",
+    "section": "life",
+    "confirmed_prescription": [],
+    "approved_source_versions": [],
+    "expected_chunk_ids": [],
+    "forbidden_chunk_ids": [],
+    "expected_behavior": "evidence_or_approved_fallback",
+    "reviewer": null,
+    "checks": [
+      "질환·처방 범위 일치",
+      "확정 처방 보존",
+      "문장별 근거 확인",
+      "의사 승인 전 노출 금지"
+    ]
+  },
+  {
+    "id": "PCOS-emergency",
+    "status": "pending_medical_review",
+    "disease": "PCOS",
+    "section": "emergency",
+    "confirmed_prescription": [],
+    "approved_source_versions": [],
+    "expected_chunk_ids": [],
+    "forbidden_chunk_ids": [],
+    "expected_behavior": "fixed_approved_template",
+    "reviewer": null,
+    "checks": [
+      "질환·처방 범위 일치",
+      "확정 처방 보존",
+      "문장별 근거 확인",
+      "의사 승인 전 노출 금지"
+    ]
+  },
+  {
+    "id": "ENDOMETRIOSIS-medication",
+    "status": "pending_medical_review",
+    "disease": "ENDOMETRIOSIS",
+    "section": "medication",
+    "confirmed_prescription": [],
+    "approved_source_versions": [],
+    "expected_chunk_ids": [],
+    "forbidden_chunk_ids": [],
+    "expected_behavior": "evidence_or_approved_fallback",
+    "reviewer": null,
+    "checks": [
+      "질환·처방 범위 일치",
+      "확정 처방 보존",
+      "문장별 근거 확인",
+      "의사 승인 전 노출 금지"
+    ]
+  },
+  {
+    "id": "ENDOMETRIOSIS-caution",
+    "status": "pending_medical_review",
+    "disease": "ENDOMETRIOSIS",
+    "section": "caution",
+    "confirmed_prescription": [],
+    "approved_source_versions": [],
+    "expected_chunk_ids": [],
+    "forbidden_chunk_ids": [],
+    "expected_behavior": "evidence_or_approved_fallback",
+    "reviewer": null,
+    "checks": [
+      "질환·처방 범위 일치",
+      "확정 처방 보존",
+      "문장별 근거 확인",
+      "의사 승인 전 노출 금지"
+    ]
+  },
+  {
+    "id": "ENDOMETRIOSIS-life",
+    "status": "pending_medical_review",
+    "disease": "ENDOMETRIOSIS",
+    "section": "life",
+    "confirmed_prescription": [],
+    "approved_source_versions": [],
+    "expected_chunk_ids": [],
+    "forbidden_chunk_ids": [],
+    "expected_behavior": "evidence_or_approved_fallback",
+    "reviewer": null,
+    "checks": [
+      "질환·처방 범위 일치",
+      "확정 처방 보존",
+      "문장별 근거 확인",
+      "의사 승인 전 노출 금지"
+    ]
+  },
+  {
+    "id": "ENDOMETRIOSIS-emergency",
+    "status": "pending_medical_review",
+    "disease": "ENDOMETRIOSIS",
+    "section": "emergency",
+    "confirmed_prescription": [],
+    "approved_source_versions": [],
+    "expected_chunk_ids": [],
+    "forbidden_chunk_ids": [],
+    "expected_behavior": "fixed_approved_template",
+    "reviewer": null,
+    "checks": [
+      "질환·처방 범위 일치",
+      "확정 처방 보존",
+      "문장별 근거 확인",
+      "의사 승인 전 노출 금지"
+    ]
+  }
+]

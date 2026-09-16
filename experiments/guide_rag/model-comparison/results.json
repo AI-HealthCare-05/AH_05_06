@@ -1,0 +1,1571 @@
+{
+  "dense": {
+    "repo": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
+  },
+  "reranker": {
+    "repo": "BAAI/bge-reranker-v2-m3",
+    "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"
+  },
+  "source_revision": "b69997a80722515da926e0906f5fee2f8c8f82b4",
+  "versions": {
+    "kiwipiepy": "0.23.2",
+    "kiwipiepy_model": "0.23.0",
+    "torch": "2.11.0",
+    "transformers": "5.0.0",
+    "sentence-transformers": "5.2.0"
+  },
+  "hashes": {
+    "hybrid-fixture.json": "3a82fe9db88ef787dd0aefcce9e1c41dfd78290667256879028dc860bcb429f1",
+    "alternative-fixture-queries.json": "eb2994ec02861c7da354ec0aee125907b5d31839fd3cb4f88c61fad777e3b06f",
+    "hybrid_search.py": "b200bd55b59cf1e961621b67b4859e46ab01246aa8007a9c8a79f0a16a9695ae",
+    "run.py": "7a2946ebc8cf7a39f75a2dbe366a74a3cb2b06713b14f0a65b40ed5884f09463",
+    "knowledge_search.py": "0c1a228f1d4034ec5bd590fd2537231fd2be9edc35eb1176ea3dddcf3649cd15"
+  },
+  "config": {
+    "dense_threshold": 0,
+    "candidate_k": 10,
+    "top_k": 3,
+    "rrf_constant": 60,
+    "rerank_max_length": 512,
+    "rerank_rejection_threshold": null,
+    "device": "cpu",
+    "threads": 2
+  },
+  "forbidden_candidates": 0,
+  "groups": {
+    "original": {
+      "bm25_simple": {
+        "positive_count": 11,
+        "hit_at_3": 9,
+        "top1": 9,
+        "mrr": 0.8181818181818182,
+        "negative_count": 1,
+        "negative_with_candidates": 0
+      },
+      "hybrid_simple": {
+        "positive_count": 11,
+        "hit_at_3": 11,
+        "top1": 11,
+        "mrr": 1.0,
+        "negative_count": 1,
+        "negative_with_candidates": 1
+      },
+      "bm25_kiwi": {
+        "positive_count": 11,
+        "hit_at_3": 11,
+        "top1": 11,
+        "mrr": 1.0,
+        "negative_count": 1,
+        "negative_with_candidates": 0
+      },
+      "hybrid_kiwi": {
+        "positive_count": 11,
+        "hit_at_3": 11,
+        "top1": 11,
+        "mrr": 1.0,
+        "negative_count": 1,
+        "negative_with_candidates": 1
+      },
+      "hybrid_simple_rerank": {
+        "positive_count": 11,
+        "hit_at_3": 11,
+        "top1": 11,
+        "mrr": 1.0,
+        "negative_count": 1,
+        "negative_with_candidates": 1
+      },
+      "hybrid_kiwi_rerank": {
+        "positive_count": 11,
+        "hit_at_3": 11,
+        "top1": 11,
+        "mrr": 1.0,
+        "negative_count": 1,
+        "negative_with_candidates": 1
+      }
+    },
+    "challenge": {
+      "bm25_simple": {
+        "positive_count": 4,
+        "hit_at_3": 2,
+        "top1": 2,
+        "mrr": 0.5,
+        "negative_count": 4,
+        "negative_with_candidates": 3
+      },
+      "hybrid_simple": {
+        "positive_count": 4,
+        "hit_at_3": 4,
+        "top1": 4,
+        "mrr": 1.0,
+        "negative_count": 4,
+        "negative_with_candidates": 4
+      },
+      "bm25_kiwi": {
+        "positive_count": 4,
+        "hit_at_3": 4,
+        "top1": 3,
+        "mrr": 0.875,
+        "negative_count": 4,
+        "negative_with_candidates": 3
+      },
+      "hybrid_kiwi": {
+        "positive_count": 4,
+        "hit_at_3": 4,
+        "top1": 4,
+        "mrr": 1.0,
+        "negative_count": 4,
+        "negative_with_candidates": 4
+      },
+      "hybrid_simple_rerank": {
+        "positive_count": 4,
+        "hit_at_3": 4,
+        "top1": 4,
+        "mrr": 1.0,
+        "negative_count": 4,
+        "negative_with_candidates": 4
+      },
+      "hybrid_kiwi_rerank": {
+        "positive_count": 4,
+        "hit_at_3": 4,
+        "top1": 4,
+        "mrr": 1.0,
+        "negative_count": 4,
+        "negative_with_candidates": 4
+      }
+    },
+    "all": {
+      "bm25_simple": {
+        "positive_count": 15,
+        "hit_at_3": 11,
+        "top1": 11,
+        "mrr": 0.7333333333333333,
+        "negative_count": 5,
+        "negative_with_candidates": 3
+      },
+      "hybrid_simple": {
+        "positive_count": 15,
+        "hit_at_3": 15,
+        "top1": 15,
+        "mrr": 1.0,
+        "negative_count": 5,
+        "negative_with_candidates": 5
+      },
+      "bm25_kiwi": {
+        "positive_count": 15,
+        "hit_at_3": 15,
+        "top1": 14,
+        "mrr": 0.9666666666666667,
+        "negative_count": 5,
+        "negative_with_candidates": 3
+      },
+      "hybrid_kiwi": {
+        "positive_count": 15,
+        "hit_at_3": 15,
+        "top1": 15,
+        "mrr": 1.0,
+        "negative_count": 5,
+        "negative_with_candidates": 5
+      },
+      "hybrid_simple_rerank": {
+        "positive_count": 15,
+        "hit_at_3": 15,
+        "top1": 15,
+        "mrr": 1.0,
+        "negative_count": 5,
+        "negative_with_candidates": 5
+      },
+      "hybrid_kiwi_rerank": {
+        "positive_count": 15,
+        "hit_at_3": 15,
+        "top1": 15,
+        "mrr": 1.0,
+        "negative_count": 5,
+        "negative_with_candidates": 5
+      }
+    }
+  },
+  "rows": [
+    {
+      "id": "Q01",
+      "text": "PCOS 야즈정 medication",
+      "section": "medication",
+      "relevant": [
+        "pcos-med"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "pcos-med"
+        ],
+        "hybrid_simple": [
+          "pcos-med",
+          "med-general",
+          "endo-med"
+        ],
+        "bm25_kiwi": [
+          "pcos-med"
+        ],
+        "hybrid_kiwi": [
+          "pcos-med",
+          "med-general",
+          "endo-med"
+        ],
+        "hybrid_simple_rerank": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ],
+        "hybrid_kiwi_rerank": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "pcos-med",
+          "med-general",
+          "endo-med"
+        ],
+        "kiwi": [
+          "pcos-med",
+          "med-general",
+          "endo-med"
+        ]
+      },
+      "reranker_logits": {
+        "endo-med": -4.275850296020508,
+        "med-general": -8.342233657836914,
+        "pcos-med": 0.02600175514817238
+      },
+      "seconds": {
+        "hybrid_simple": 0.00020320795010775328,
+        "hybrid_kiwi": 0.00016541598597541451,
+        "rerank_unique_pool": 1.6527147919987328
+      },
+      "kiwi_query_tokens": [
+        "pcos",
+        "야즈정",
+        "medication"
+      ]
+    },
+    {
+      "id": "Q02",
+      "text": "자궁내막증 비잔정 medication",
+      "section": "medication",
+      "relevant": [
+        "endo-med"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "endo-med"
+        ],
+        "hybrid_simple": [
+          "endo-med",
+          "pcos-med",
+          "med-general"
+        ],
+        "bm25_kiwi": [
+          "endo-med"
+        ],
+        "hybrid_kiwi": [
+          "endo-med",
+          "pcos-med",
+          "med-general"
+        ],
+        "hybrid_simple_rerank": [
+          "endo-med",
+          "pcos-med",
+          "med-general"
+        ],
+        "hybrid_kiwi_rerank": [
+          "endo-med",
+          "pcos-med",
+          "med-general"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "endo-med",
+          "pcos-med",
+          "med-general"
+        ],
+        "kiwi": [
+          "endo-med",
+          "pcos-med",
+          "med-general"
+        ]
+      },
+      "reranker_logits": {
+        "endo-med": -0.10178612917661667,
+        "med-general": -7.869729518890381,
+        "pcos-med": -5.128413677215576
+      },
+      "seconds": {
+        "hybrid_simple": 0.00028962502256035805,
+        "hybrid_kiwi": 0.0001675000530667603,
+        "rerank_unique_pool": 0.1677916250191629
+      },
+      "kiwi_query_tokens": [
+        "자궁",
+        "내막증",
+        "비잔정",
+        "medication"
+      ]
+    },
+    {
+      "id": "Q03",
+      "text": "PCOS 야즈정 caution",
+      "section": "caution",
+      "relevant": [
+        "pcos-care"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "pcos-care"
+        ],
+        "hybrid_simple": [
+          "pcos-care",
+          "care-general",
+          "endo-care"
+        ],
+        "bm25_kiwi": [
+          "pcos-care"
+        ],
+        "hybrid_kiwi": [
+          "pcos-care",
+          "care-general",
+          "endo-care"
+        ],
+        "hybrid_simple_rerank": [
+          "pcos-care",
+          "endo-care",
+          "care-general"
+        ],
+        "hybrid_kiwi_rerank": [
+          "pcos-care",
+          "endo-care",
+          "care-general"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "pcos-care",
+          "care-general",
+          "endo-care"
+        ],
+        "kiwi": [
+          "pcos-care",
+          "care-general",
+          "endo-care"
+        ]
+      },
+      "reranker_logits": {
+        "care-general": -6.919589519500732,
+        "endo-care": -2.197092056274414,
+        "pcos-care": 0.6825588345527649
+      },
+      "seconds": {
+        "hybrid_simple": 0.00019691698253154755,
+        "hybrid_kiwi": 0.00023875001352280378,
+        "rerank_unique_pool": 0.17321166599867865
+      },
+      "kiwi_query_tokens": [
+        "pcos",
+        "야즈정",
+        "caution"
+      ]
+    },
+    {
+      "id": "Q04",
+      "text": "자궁내막증 비잔정 caution",
+      "section": "caution",
+      "relevant": [
+        "endo-care"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "endo-care"
+        ],
+        "hybrid_simple": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ],
+        "bm25_kiwi": [
+          "endo-care"
+        ],
+        "hybrid_kiwi": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ],
+        "hybrid_simple_rerank": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ],
+        "hybrid_kiwi_rerank": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ],
+        "kiwi": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ]
+      },
+      "reranker_logits": {
+        "care-general": -6.304477691650391,
+        "endo-care": 1.0967364311218262,
+        "pcos-care": -2.5807390213012695
+      },
+      "seconds": {
+        "hybrid_simple": 0.00017920800019055605,
+        "hybrid_kiwi": 0.00014779198681935668,
+        "rerank_unique_pool": 0.15938433300470933
+      },
+      "kiwi_query_tokens": [
+        "자궁",
+        "내막증",
+        "비잔정",
+        "caution"
+      ]
+    },
+    {
+      "id": "Q05",
+      "text": "PCOS life",
+      "section": "life",
+      "relevant": [
+        "pcos-life"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "pcos-life"
+        ],
+        "hybrid_simple": [
+          "pcos-life",
+          "food",
+          "sleep"
+        ],
+        "bm25_kiwi": [
+          "pcos-life"
+        ],
+        "hybrid_kiwi": [
+          "pcos-life",
+          "food",
+          "sleep"
+        ],
+        "hybrid_simple_rerank": [
+          "pcos-life",
+          "endo-life",
+          "food"
+        ],
+        "hybrid_kiwi_rerank": [
+          "pcos-life",
+          "endo-life",
+          "food"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "pcos-life",
+          "food",
+          "sleep",
+          "endo-life",
+          "exercise",
+          "lab"
+        ],
+        "kiwi": [
+          "pcos-life",
+          "food",
+          "sleep",
+          "endo-life",
+          "exercise",
+          "lab"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -1.8180296421051025,
+        "exercise": -10.613794326782227,
+        "food": -8.528575897216797,
+        "lab": -8.798145294189453,
+        "pcos-life": 0.8386039733886719,
+        "sleep": -10.17115592956543
+      },
+      "seconds": {
+        "hybrid_simple": 0.0003178330371156335,
+        "hybrid_kiwi": 0.00029429199639707804,
+        "rerank_unique_pool": 0.2968337079510093
+      },
+      "kiwi_query_tokens": [
+        "pcos",
+        "life"
+      ]
+    },
+    {
+      "id": "Q06",
+      "text": "자궁내막증 life",
+      "section": "life",
+      "relevant": [
+        "endo-life"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "endo-life"
+        ],
+        "hybrid_simple": [
+          "endo-life",
+          "pcos-life",
+          "sleep"
+        ],
+        "bm25_kiwi": [
+          "endo-life"
+        ],
+        "hybrid_kiwi": [
+          "endo-life",
+          "pcos-life",
+          "sleep"
+        ],
+        "hybrid_simple_rerank": [
+          "endo-life",
+          "pcos-life",
+          "food"
+        ],
+        "hybrid_kiwi_rerank": [
+          "endo-life",
+          "pcos-life",
+          "food"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "endo-life",
+          "pcos-life",
+          "sleep",
+          "food",
+          "exercise",
+          "lab"
+        ],
+        "kiwi": [
+          "endo-life",
+          "pcos-life",
+          "sleep",
+          "food",
+          "exercise",
+          "lab"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": 1.2092804908752441,
+        "exercise": -10.413476943969727,
+        "food": -7.548611640930176,
+        "lab": -8.519132614135742,
+        "pcos-life": -4.945276260375977,
+        "sleep": -8.240434646606445
+      },
+      "seconds": {
+        "hybrid_simple": 0.00031587504781782627,
+        "hybrid_kiwi": 0.0002717909519560635,
+        "rerank_unique_pool": 0.30200229201000184
+      },
+      "kiwi_query_tokens": [
+        "자궁",
+        "내막증",
+        "life"
+      ]
+    },
+    {
+      "id": "Q07",
+      "text": "TESTX17 검사 목표",
+      "section": "life",
+      "relevant": [
+        "lab"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "lab"
+        ],
+        "hybrid_simple": [
+          "lab",
+          "endo-life",
+          "sleep"
+        ],
+        "bm25_kiwi": [
+          "lab"
+        ],
+        "hybrid_kiwi": [
+          "lab",
+          "endo-life",
+          "sleep"
+        ],
+        "hybrid_simple_rerank": [
+          "lab",
+          "exercise",
+          "endo-life"
+        ],
+        "hybrid_kiwi_rerank": [
+          "lab",
+          "exercise",
+          "endo-life"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "lab",
+          "endo-life",
+          "sleep",
+          "pcos-life",
+          "food",
+          "exercise"
+        ],
+        "kiwi": [
+          "lab",
+          "endo-life",
+          "sleep",
+          "pcos-life",
+          "food",
+          "exercise"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -8.506355285644531,
+        "exercise": -8.283456802368164,
+        "food": -8.520818710327148,
+        "lab": 0.9828509092330933,
+        "pcos-life": -9.510887145996094,
+        "sleep": -9.26602554321289
+      },
+      "seconds": {
+        "hybrid_simple": 0.0003185000387020409,
+        "hybrid_kiwi": 0.0002851670142263174,
+        "rerank_unique_pool": 0.3008140829624608
+      },
+      "kiwi_query_tokens": [
+        "testx",
+        "17",
+        "검사",
+        "목표"
+      ]
+    },
+    {
+      "id": "Q08",
+      "text": "잠과 휴식에 관한 설명",
+      "section": "life",
+      "relevant": [
+        "sleep"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [],
+        "hybrid_simple": [
+          "sleep",
+          "pcos-life",
+          "endo-life"
+        ],
+        "bm25_kiwi": [
+          "sleep"
+        ],
+        "hybrid_kiwi": [
+          "sleep",
+          "pcos-life",
+          "endo-life"
+        ],
+        "hybrid_simple_rerank": [
+          "sleep",
+          "food",
+          "endo-life"
+        ],
+        "hybrid_kiwi_rerank": [
+          "sleep",
+          "food",
+          "endo-life"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "sleep",
+          "pcos-life",
+          "endo-life",
+          "exercise",
+          "food"
+        ],
+        "kiwi": [
+          "sleep",
+          "pcos-life",
+          "endo-life",
+          "exercise",
+          "food"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -9.643156051635742,
+        "exercise": -10.345329284667969,
+        "food": -9.471688270568848,
+        "pcos-life": -9.71985912322998,
+        "sleep": -2.55832576751709
+      },
+      "seconds": {
+        "hybrid_simple": 0.00030154100386425853,
+        "hybrid_kiwi": 0.00026758399326354265,
+        "rerank_unique_pool": 0.27787554200040177
+      },
+      "kiwi_query_tokens": [
+        "잠",
+        "휴식",
+        "관하",
+        "설명"
+      ]
+    },
+    {
+      "id": "Q09",
+      "text": "걷기 신체 활동",
+      "section": "life",
+      "relevant": [
+        "exercise"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "exercise",
+          "endo-life"
+        ],
+        "hybrid_simple": [
+          "exercise",
+          "endo-life",
+          "pcos-life"
+        ],
+        "bm25_kiwi": [
+          "exercise",
+          "endo-life"
+        ],
+        "hybrid_kiwi": [
+          "exercise",
+          "endo-life",
+          "pcos-life"
+        ],
+        "hybrid_simple_rerank": [
+          "exercise",
+          "pcos-life",
+          "endo-life"
+        ],
+        "hybrid_kiwi_rerank": [
+          "exercise",
+          "pcos-life",
+          "endo-life"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "exercise",
+          "endo-life",
+          "pcos-life",
+          "sleep",
+          "food",
+          "lab"
+        ],
+        "kiwi": [
+          "exercise",
+          "endo-life",
+          "pcos-life",
+          "sleep",
+          "food",
+          "lab"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -10.3745756149292,
+        "exercise": 2.4495887756347656,
+        "food": -11.039595603942871,
+        "lab": -10.952235221862793,
+        "pcos-life": -10.311019897460938,
+        "sleep": -11.036888122558594
+      },
+      "seconds": {
+        "hybrid_simple": 0.0003161670174449682,
+        "hybrid_kiwi": 0.00025937496684491634,
+        "rerank_unique_pool": 0.43278941698372364
+      },
+      "kiwi_query_tokens": [
+        "걷기",
+        "신체",
+        "활동"
+      ]
+    },
+    {
+      "id": "Q10",
+      "text": "식생활에 관한 안내",
+      "section": "life",
+      "relevant": [
+        "food"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [],
+        "hybrid_simple": [
+          "food",
+          "pcos-life",
+          "exercise"
+        ],
+        "bm25_kiwi": [
+          "food"
+        ],
+        "hybrid_kiwi": [
+          "food",
+          "pcos-life",
+          "exercise"
+        ],
+        "hybrid_simple_rerank": [
+          "food",
+          "pcos-life",
+          "sleep"
+        ],
+        "hybrid_kiwi_rerank": [
+          "food",
+          "pcos-life",
+          "sleep"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "food",
+          "pcos-life",
+          "exercise",
+          "endo-life",
+          "sleep",
+          "lab"
+        ],
+        "kiwi": [
+          "food",
+          "pcos-life",
+          "exercise",
+          "endo-life",
+          "sleep",
+          "lab"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -9.058676719665527,
+        "exercise": -9.01921272277832,
+        "food": -2.8826379776000977,
+        "lab": -10.719648361206055,
+        "pcos-life": -7.5073957443237305,
+        "sleep": -8.002056121826172
+      },
+      "seconds": {
+        "hybrid_simple": 0.00031758303521201015,
+        "hybrid_kiwi": 0.000259166001342237,
+        "rerank_unique_pool": 0.29745091596851125
+      },
+      "kiwi_query_tokens": [
+        "식생활",
+        "관하",
+        "안내"
+      ]
+    },
+    {
+      "id": "Q11",
+      "text": "우주선 궤도 추진체",
+      "section": "life",
+      "relevant": [],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [],
+        "hybrid_simple": [
+          "exercise",
+          "endo-life",
+          "sleep"
+        ],
+        "bm25_kiwi": [],
+        "hybrid_kiwi": [
+          "exercise",
+          "endo-life",
+          "sleep"
+        ],
+        "hybrid_simple_rerank": [
+          "sleep",
+          "exercise",
+          "endo-life"
+        ],
+        "hybrid_kiwi_rerank": [
+          "sleep",
+          "exercise",
+          "endo-life"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "exercise",
+          "endo-life",
+          "sleep"
+        ],
+        "kiwi": [
+          "exercise",
+          "endo-life",
+          "sleep"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -11.043354988098145,
+        "exercise": -11.034991264343262,
+        "sleep": -11.033093452453613
+      },
+      "seconds": {
+        "hybrid_simple": 0.00035624997690320015,
+        "hybrid_kiwi": 0.00026649999199435115,
+        "rerank_unique_pool": 0.15400316595332697
+      },
+      "kiwi_query_tokens": [
+        "우주선",
+        "궤도",
+        "추진체"
+      ]
+    },
+    {
+      "id": "Q12",
+      "text": "PCOS 야즈정 생활관리",
+      "section": "life",
+      "relevant": [
+        "pcos-life"
+      ],
+      "group": "original",
+      "rankings": {
+        "bm25_simple": [
+          "pcos-life",
+          "food",
+          "sleep"
+        ],
+        "hybrid_simple": [
+          "pcos-life",
+          "food",
+          "sleep"
+        ],
+        "bm25_kiwi": [
+          "pcos-life",
+          "food",
+          "sleep"
+        ],
+        "hybrid_kiwi": [
+          "pcos-life",
+          "food",
+          "sleep"
+        ],
+        "hybrid_simple_rerank": [
+          "pcos-life",
+          "endo-life",
+          "sleep"
+        ],
+        "hybrid_kiwi_rerank": [
+          "pcos-life",
+          "endo-life",
+          "sleep"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "pcos-life",
+          "food",
+          "sleep",
+          "endo-life",
+          "exercise",
+          "lab"
+        ],
+        "kiwi": [
+          "pcos-life",
+          "food",
+          "sleep",
+          "endo-life",
+          "exercise",
+          "lab"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -1.818095326423645,
+        "exercise": -7.456663608551025,
+        "food": -5.07386589050293,
+        "lab": -9.162558555603027,
+        "pcos-life": 0.5573934316635132,
+        "sleep": -4.585659980773926
+      },
+      "seconds": {
+        "hybrid_simple": 0.0003048329963348806,
+        "hybrid_kiwi": 0.0002701670164242387,
+        "rerank_unique_pool": 0.305501708004158
+      },
+      "kiwi_query_tokens": [
+        "pcos",
+        "야즈정",
+        "생활",
+        "관리"
+      ]
+    },
+    {
+      "id": "A01",
+      "text": "야즈정 PCOS 복약 안내",
+      "section": "medication",
+      "relevant": [
+        "pcos-med"
+      ],
+      "group": "challenge",
+      "rankings": {
+        "bm25_simple": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ],
+        "hybrid_simple": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ],
+        "bm25_kiwi": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ],
+        "hybrid_kiwi": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ],
+        "hybrid_simple_rerank": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ],
+        "hybrid_kiwi_rerank": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ],
+        "kiwi": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ]
+      },
+      "reranker_logits": {
+        "endo-med": -4.400203227996826,
+        "med-general": -6.068869113922119,
+        "pcos-med": 0.3812222480773926
+      },
+      "seconds": {
+        "hybrid_simple": 0.0001878749462775886,
+        "hybrid_kiwi": 0.00014875002671033144,
+        "rerank_unique_pool": 0.15897770802257583
+      },
+      "kiwi_query_tokens": [
+        "야즈정",
+        "pcos",
+        "복약",
+        "안내"
+      ]
+    },
+    {
+      "id": "A02",
+      "text": "비잔정 자궁내막증 주의사항",
+      "section": "caution",
+      "relevant": [
+        "endo-care"
+      ],
+      "group": "challenge",
+      "rankings": {
+        "bm25_simple": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ],
+        "hybrid_simple": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ],
+        "bm25_kiwi": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ],
+        "hybrid_kiwi": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ],
+        "hybrid_simple_rerank": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ],
+        "hybrid_kiwi_rerank": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ],
+        "kiwi": [
+          "endo-care",
+          "care-general",
+          "pcos-care"
+        ]
+      },
+      "reranker_logits": {
+        "care-general": -6.254605770111084,
+        "endo-care": 1.2489187717437744,
+        "pcos-care": -3.532822608947754
+      },
+      "seconds": {
+        "hybrid_simple": 0.0001789579982869327,
+        "hybrid_kiwi": 0.00014858401846140623,
+        "rerank_unique_pool": 0.15779083297820762
+      },
+      "kiwi_query_tokens": [
+        "비잔정",
+        "자궁",
+        "내막증",
+        "주의",
+        "사항"
+      ]
+    },
+    {
+      "id": "A03",
+      "text": "충분히 자고 쉬는 생활",
+      "section": "life",
+      "relevant": [
+        "sleep"
+      ],
+      "group": "challenge",
+      "rankings": {
+        "bm25_simple": [],
+        "hybrid_simple": [
+          "sleep",
+          "pcos-life",
+          "exercise"
+        ],
+        "bm25_kiwi": [
+          "food",
+          "sleep",
+          "exercise"
+        ],
+        "hybrid_kiwi": [
+          "sleep",
+          "food",
+          "pcos-life"
+        ],
+        "hybrid_simple_rerank": [
+          "sleep",
+          "food",
+          "pcos-life"
+        ],
+        "hybrid_kiwi_rerank": [
+          "sleep",
+          "food",
+          "pcos-life"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "sleep",
+          "pcos-life",
+          "exercise",
+          "endo-life",
+          "food"
+        ],
+        "kiwi": [
+          "sleep",
+          "food",
+          "pcos-life",
+          "exercise",
+          "endo-life"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -8.90107536315918,
+        "exercise": -10.11080551147461,
+        "food": -8.087030410766602,
+        "pcos-life": -8.596651077270508,
+        "sleep": -2.5932469367980957
+      },
+      "seconds": {
+        "hybrid_simple": 0.0003012089873664081,
+        "hybrid_kiwi": 0.0002703749923966825,
+        "rerank_unique_pool": 0.29551033303141594
+      },
+      "kiwi_query_tokens": [
+        "충분히",
+        "자",
+        "쉬",
+        "생활"
+      ]
+    },
+    {
+      "id": "A04",
+      "text": "식생활을 관리하는 내용",
+      "section": "life",
+      "relevant": [
+        "food"
+      ],
+      "group": "challenge",
+      "rankings": {
+        "bm25_simple": [],
+        "hybrid_simple": [
+          "food",
+          "pcos-life",
+          "exercise"
+        ],
+        "bm25_kiwi": [
+          "food",
+          "sleep",
+          "exercise"
+        ],
+        "hybrid_kiwi": [
+          "food",
+          "pcos-life",
+          "exercise"
+        ],
+        "hybrid_simple_rerank": [
+          "food",
+          "pcos-life",
+          "sleep"
+        ],
+        "hybrid_kiwi_rerank": [
+          "food",
+          "pcos-life",
+          "sleep"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "food",
+          "pcos-life",
+          "exercise",
+          "endo-life",
+          "sleep",
+          "lab"
+        ],
+        "kiwi": [
+          "food",
+          "pcos-life",
+          "exercise",
+          "sleep",
+          "endo-life",
+          "lab"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -6.821551322937012,
+        "exercise": -7.373088836669922,
+        "food": 0.3232618570327759,
+        "lab": -10.763609886169434,
+        "pcos-life": -4.175711631774902,
+        "sleep": -6.349605560302734
+      },
+      "seconds": {
+        "hybrid_simple": 0.00030637503368780017,
+        "hybrid_kiwi": 0.00026354100555181503,
+        "rerank_unique_pool": 0.3003944160300307
+      },
+      "kiwi_query_tokens": [
+        "식생활",
+        "관리",
+        "내용"
+      ]
+    },
+    {
+      "id": "A05",
+      "text": "PCOS 수술 비용 보험 청구",
+      "section": "life",
+      "relevant": [],
+      "group": "challenge",
+      "rankings": {
+        "bm25_simple": [
+          "pcos-life"
+        ],
+        "hybrid_simple": [
+          "pcos-life",
+          "endo-life",
+          "lab"
+        ],
+        "bm25_kiwi": [
+          "pcos-life"
+        ],
+        "hybrid_kiwi": [
+          "pcos-life",
+          "endo-life",
+          "lab"
+        ],
+        "hybrid_simple_rerank": [
+          "pcos-life",
+          "endo-life",
+          "lab"
+        ],
+        "hybrid_kiwi_rerank": [
+          "pcos-life",
+          "endo-life",
+          "lab"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "pcos-life",
+          "endo-life",
+          "lab",
+          "exercise",
+          "sleep",
+          "food"
+        ],
+        "kiwi": [
+          "pcos-life",
+          "endo-life",
+          "lab",
+          "exercise",
+          "sleep",
+          "food"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -9.397014617919922,
+        "exercise": -11.035479545593262,
+        "food": -11.031254768371582,
+        "lab": -11.003654479980469,
+        "pcos-life": -8.019242286682129,
+        "sleep": -11.029319763183594
+      },
+      "seconds": {
+        "hybrid_simple": 0.00034208298893645406,
+        "hybrid_kiwi": 0.0002717910101637244,
+        "rerank_unique_pool": 0.31118733301991597
+      },
+      "kiwi_query_tokens": [
+        "pcos",
+        "수술",
+        "비용",
+        "보험",
+        "청구"
+      ]
+    },
+    {
+      "id": "A06",
+      "text": "야즈정 가격 재고 구매처",
+      "section": "medication",
+      "relevant": [],
+      "group": "challenge",
+      "rankings": {
+        "bm25_simple": [
+          "pcos-med"
+        ],
+        "hybrid_simple": [
+          "pcos-med",
+          "med-general",
+          "endo-med"
+        ],
+        "bm25_kiwi": [
+          "pcos-med"
+        ],
+        "hybrid_kiwi": [
+          "pcos-med",
+          "med-general",
+          "endo-med"
+        ],
+        "hybrid_simple_rerank": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ],
+        "hybrid_kiwi_rerank": [
+          "pcos-med",
+          "endo-med",
+          "med-general"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "pcos-med",
+          "med-general",
+          "endo-med"
+        ],
+        "kiwi": [
+          "pcos-med",
+          "med-general",
+          "endo-med"
+        ]
+      },
+      "reranker_logits": {
+        "endo-med": -10.306560516357422,
+        "med-general": -10.442011833190918,
+        "pcos-med": -7.025729656219482
+      },
+      "seconds": {
+        "hybrid_simple": 0.00017750001279637218,
+        "hybrid_kiwi": 0.00018820801051333547,
+        "rerank_unique_pool": 0.16072475002147257
+      },
+      "kiwi_query_tokens": [
+        "야즈정",
+        "가격",
+        "재고",
+        "구매",
+        "처"
+      ]
+    },
+    {
+      "id": "A07",
+      "text": "자궁내막증 유전자 검사 결과 해석",
+      "section": "caution",
+      "relevant": [],
+      "group": "challenge",
+      "rankings": {
+        "bm25_simple": [
+          "endo-care"
+        ],
+        "hybrid_simple": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ],
+        "bm25_kiwi": [
+          "endo-care"
+        ],
+        "hybrid_kiwi": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ],
+        "hybrid_simple_rerank": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ],
+        "hybrid_kiwi_rerank": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ],
+        "kiwi": [
+          "endo-care",
+          "pcos-care",
+          "care-general"
+        ]
+      },
+      "reranker_logits": {
+        "care-general": -7.606049537658691,
+        "endo-care": -3.9621360301971436,
+        "pcos-care": -7.450867652893066
+      },
+      "seconds": {
+        "hybrid_simple": 0.00017812498845160007,
+        "hybrid_kiwi": 0.00014879100490361452,
+        "rerank_unique_pool": 0.158768416964449
+      },
+      "kiwi_query_tokens": [
+        "자궁",
+        "내막증",
+        "유전자",
+        "검사",
+        "결과",
+        "해석"
+      ]
+    },
+    {
+      "id": "A08",
+      "text": "날씨 기온 강수 확률",
+      "section": "life",
+      "relevant": [],
+      "group": "challenge",
+      "rankings": {
+        "bm25_simple": [],
+        "hybrid_simple": [
+          "lab",
+          "sleep",
+          "food"
+        ],
+        "bm25_kiwi": [],
+        "hybrid_kiwi": [
+          "lab",
+          "sleep",
+          "food"
+        ],
+        "hybrid_simple_rerank": [
+          "lab",
+          "sleep",
+          "food"
+        ],
+        "hybrid_kiwi_rerank": [
+          "lab",
+          "sleep",
+          "food"
+        ]
+      },
+      "pools": {
+        "simple": [
+          "lab",
+          "sleep",
+          "food",
+          "pcos-life",
+          "endo-life",
+          "exercise"
+        ],
+        "kiwi": [
+          "lab",
+          "sleep",
+          "food",
+          "pcos-life",
+          "endo-life",
+          "exercise"
+        ]
+      },
+      "reranker_logits": {
+        "endo-life": -11.044092178344727,
+        "exercise": -11.044212341308594,
+        "food": -11.043289184570312,
+        "lab": -10.8458890914917,
+        "pcos-life": -11.043987274169922,
+        "sleep": -11.037521362304688
+      },
+      "seconds": {
+        "hybrid_simple": 0.0003694999613799155,
+        "hybrid_kiwi": 0.0002675409778021276,
+        "rerank_unique_pool": 0.31157295795856044
+      },
+      "kiwi_query_tokens": [
+        "날씨",
+        "기온",
+        "강수",
+        "확률"
+      ]
+    }
+  ]
+}

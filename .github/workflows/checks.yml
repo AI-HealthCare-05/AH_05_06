@@ -94,6 +94,9 @@ jobs:
         # 정식 서비스인데 타입 검사를 한 번도 안 받게 된다. ruff 는 이미 `.` 이다.
         run: uv run mypy . --explicit-package-bases
 
+      - name: Check Guide RAG Experiment Boundaries
+        run: PYTHONPATH=. uv run --no-sync python experiments/guide_rag/test_hybrid.py
+
       - name: Check OpenAPI contract artifact
         # OpenAPI 생성 자체는 DB에 연결하지 않지만, 앱과 같은 Config 검증을 거쳐
         # DTO·라우터를 불러온다. CI 전용 일회용 값만 준다.
