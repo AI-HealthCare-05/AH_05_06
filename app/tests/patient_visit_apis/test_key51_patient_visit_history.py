@@ -20,13 +20,13 @@ BASE_URL = "http://test"
 ACTOR = ClinicalActor(staff_id=7001, hospital_id=1, roles=frozenset({"staff"}))
 
 
-async def create_patient(number: str, *, sms_consent: bool = True) -> Patient:
+async def create_patient(number: str, *, sms_consent: bool = True, phone: str = "01039457702") -> Patient:
     return await Patient.create(
         hospital_id=1,
         hospital_patient_no=number,
         name=f"합성환자-{number}",
         birth_date=date(1994, 8, 24),
-        phone="01039457702",
+        phone=phone,
         sms_consent=sms_consent,
         sms_opted_out_at=None if sms_consent else datetime.now(UTC),
     )
@@ -237,7 +237,11 @@ class TestFrontDeskContract(TestCase):
 
     async def test_candidate_query_does_not_load_irrelevant_old_history(self) -> None:
         old_normal = await create_patient("SYN-KEY51-OLD")
-        old_attention = await create_patient("SYN-KEY51-ATTN", sms_consent=False)
+        # sms_consent=False(수신 거부)는 이제 목록에서 완전히 빠진다(KEY-355) —
+        # 이 테스트가 원래 보이려던 것("보완은 날짜와 무관하게 포함된다")과는
+        # 다른 결과가 나오므로, 여전히 NEEDS_ATTENTION을 유발하지만 목록
+        # 제외 대상은 아닌 조건(전화번호 문제)으로 바꿨다.
+        old_attention = await create_patient("SYN-KEY51-ATTN", phone="0212345678")
         today_patient = await create_patient("SYN-KEY51-TODAY")
         irrelevant = await Visit.create(
             hospital_id=1,

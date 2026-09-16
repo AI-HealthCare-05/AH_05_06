@@ -4,8 +4,8 @@
 둘이 어긋나면 화면은 코드를 따르고 사람은 문서를 읽는다 — 그 사이가 벌어지는 것을
 여기서 막는다. 그래서 이 파일은 **문서를 파싱해서 코드와 맞댄다.**
 
-파생은 DB 를 타지 않는 순수 함수라, 조합을 표처럼 채워서 잰다. 열둘 중 여덟만
-지금 파생 가능하고 넷은 그 기능 자체가 없다 — 그것도 **양쪽으로** 잡는다.
+파생은 DB 를 타지 않는 순수 함수라, 조합을 표처럼 채워서 잰다. 열하나 중
+일곱만 지금 파생 가능하고 넷은 그 기능 자체가 없다 — 그것도 **양쪽으로** 잡는다.
 
 여기 값은 전부 합성이다.
 """
@@ -174,10 +174,10 @@ CASES: list[tuple[str, VisitSignals, WorkCategory, DetailStatus]] = [
         DetailStatus.APPROVAL_RETURNED,
     ),
     (
-        "문자 수신 거부",
+        "문자 수신 거부 — 여기서는 더 이상 보완으로 안 잡힌다(KEY-355, front_desk.py가 목록에서 통째로 뺀다)",
         signals(sms_opted_out_at=OPTED_OUT_AT),
-        WorkCategory.NEEDS_ATTENTION,
-        DetailStatus.SMS_OPT_OUT,
+        WorkCategory.IN_PROGRESS,
+        DetailStatus.NO_DOCUMENT,
     ),
     (
         "유선번호라 문자가 못 간다",
@@ -212,23 +212,26 @@ def test_unreachable_patient_wins_over_approval_request() -> None:
     assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.INVALID_PHONE)
 
 
-def test_opt_out_wins_even_after_approval() -> None:
-    """이미 승인해 발송을 기다려도, 받지 않겠다고 한 환자는 보완이다."""
+def test_opt_out_no_longer_overrides_the_derived_state_here() -> None:
+    """수신 거부는 이제 이 함수에서 후보로 안 선다 — KEY-355.
+
+    업무 목록에서 이 진료를 통째로 빼는 일은 `front_desk.py`가 한다.
+    `derive()` 자체는 수신 거부와 무관하게 원래 파생을 그대로 돌려준다 —
+    안 그러면 front_desk.py가 제외하기 전의 값을 섣불리 덮어써서, 나중에
+    "왜 제외됐는지"를 되짚을 근거(문서·안내 상태)가 사라진다.
+    """
     both = signals(
         has_document=True,
         guide_status=GuideStatus.SCHEDULED_TO_SEND,
         sms_opted_out_at=OPTED_OUT_AT,
     )
-    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.SMS_OPT_OUT)
+    assert derive(both) == (WorkCategory.SEND_PENDING, DetailStatus.SCHEDULED_TO_SEND)
 
 
-def test_opt_out_is_reported_before_a_bad_number() -> None:
-    """둘 다 참이면 **사람이 정한 것**을 먼저 말한다.
-
-    번호가 틀린 것은 고치면 되지만, 받지 않겠다고 한 것은 고칠 일이 아니다.
-    """
+def test_opt_out_does_not_hide_a_bad_number_either() -> None:
+    """번호가 틀렸으면 그 사실이 그대로 보인다 — 수신 거부 여부와 무관하다."""
     both = signals(phone="0212345678", sms_opted_out_at=OPTED_OUT_AT)
-    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.SMS_OPT_OUT)
+    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.INVALID_PHONE)
 
 
 def test_guide_state_hides_the_ocr_step() -> None:
@@ -306,7 +309,7 @@ def test_counts_match_the_derived_categories() -> None:
     derived = {
         1: (WorkCategory.IN_PROGRESS, DetailStatus.NO_DOCUMENT),
         2: (WorkCategory.IN_PROGRESS, DetailStatus.OCR_REVIEW),
-        3: (WorkCategory.NEEDS_ATTENTION, DetailStatus.SMS_OPT_OUT),
+        3: (WorkCategory.NEEDS_ATTENTION, DetailStatus.INVALID_PHONE),
     }
     counts = count_by_category(derived)
     assert counts["IN_PROGRESS"] == 2
@@ -340,30 +343,20 @@ TWO_WEEKS_AGO = datetime(2026, 8, 10, 9, 0, tzinfo=UTC)
 YESTERDAY = datetime(2026, 8, 23, 9, 0, tzinfo=UTC)
 
 
-def test_recent_opt_out_wins_over_an_old_return() -> None:
-    """2주 전 반려 · 어제 수신거부 → **어제 것**을 말한다."""
-    both = signals(
-        has_document=True,
-        guide_status=GuideStatus.APPROVAL_RETURNED,
-        guide_changed_at=TWO_WEEKS_AGO,
-        sms_opted_out_at=YESTERDAY,
-    )
-    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.SMS_OPT_OUT)
+def test_recent_return_wins_over_an_old_generation_failure() -> None:
+    """2주 전 생성 실패 · 어제 반려 → **어제 것**을 말한다.
 
-
-def test_recent_return_wins_over_an_old_opt_out() -> None:
-    """차례를 뒤집어도 규칙이 같다 — **시각**이 고르지 담긴 순서가 아니다.
-
-    이 검사가 짝으로 있어야 한다. 하나만 두면 「늘 수신거부가 이긴다」로
-    고쳐도 통과한다.
+    이제 `signals()`로는 같은 탭(NEEDS_ATTENTION)에서 시각을 아는 후보가
+    `APPROVAL_RETURNED` 뿐이다(KEY-355로 `SMS_OPT_OUT`이 빠졌다) — 두
+    후보를 동시에 만들 자연스러운 조합이 `derive()` 경로에는 더 이상
+    없다. 그래도 "같은 탭 안에서는 최근 것"이라는 원칙 자체는
+    `_latest()`가 지키므로, 여기서 직접 잰다.
     """
-    both = signals(
-        has_document=True,
-        guide_status=GuideStatus.APPROVAL_RETURNED,
-        guide_changed_at=YESTERDAY,
-        sms_opted_out_at=TWO_WEEKS_AGO,
-    )
-    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.APPROVAL_RETURNED)
+    old = Candidate(DetailStatus.GENERATION_FAILED, TWO_WEEKS_AGO)
+    recent = Candidate(DetailStatus.APPROVAL_RETURNED, YESTERDAY)
+
+    assert _latest([old, recent]) is recent
+    assert _latest([recent, old]) is recent
 
 
 def test_a_bad_number_never_claims_to_be_the_recent_one() -> None:
@@ -426,9 +419,9 @@ def test_category_priority_still_beats_recency() -> None:
         has_document=True,
         guide_status=GuideStatus.APPROVAL_PENDING,
         guide_changed_at=YESTERDAY,
-        sms_opted_out_at=TWO_WEEKS_AGO,
+        phone="0212345678",
     )
-    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.SMS_OPT_OUT)
+    assert derive(both) == (WorkCategory.NEEDS_ATTENTION, DetailStatus.INVALID_PHONE)
 
 
 def test_a_known_time_beats_an_unknown_one() -> None:
@@ -437,8 +430,8 @@ def test_a_known_time_beats_an_unknown_one() -> None:
     지금은 시각 없는 후보가 자기 탭에 혼자 있어 겨루지 않지만, 겹치는 날
     조용히 뒤집히면 안 된다. `_latest()` 를 직접 재는 유일한 자리다.
     """
-    known = Candidate(DetailStatus.SMS_OPT_OUT, TWO_WEEKS_AGO)
-    unknown = Candidate(DetailStatus.APPROVAL_RETURNED, None)
+    known = Candidate(DetailStatus.APPROVAL_RETURNED, TWO_WEEKS_AGO)
+    unknown = Candidate(DetailStatus.INVALID_PHONE, None)
 
     assert _latest([unknown, known]) is known
     assert _latest([known, unknown]) is known
@@ -446,8 +439,8 @@ def test_a_known_time_beats_an_unknown_one() -> None:
 
 def test_a_tie_keeps_the_documented_order() -> None:
     """같은 시각이면 흔들리지 않는다 — 같은 데이터에 화면이 달라지면 안 된다."""
-    first = Candidate(DetailStatus.APPROVAL_RETURNED, YESTERDAY)
-    second = Candidate(DetailStatus.SMS_OPT_OUT, YESTERDAY)
+    first = Candidate(DetailStatus.GENERATION_FAILED, YESTERDAY)
+    second = Candidate(DetailStatus.APPROVAL_RETURNED, YESTERDAY)
 
     assert _latest([first, second]) is first
     assert _latest([second, first]) is second

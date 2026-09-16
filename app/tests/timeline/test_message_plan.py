@@ -329,6 +329,11 @@ class HeldTestCase(World, TestCase):
         `BOOKING_URL_MISSING` 이 여섯째다(KEY-331) — 문구에 `{예약링크}` 가
         있는데 의원 예약 주소가 비어 있다. **보내 보고 아는 것이 아니라**
         보내기 전에 이미 아는 것이라 이쪽 목록이다.
+
+        `SMS_OPT_OUT` 이 여덧째다(KEY-355) — 환자가 문자 수신을 거부했다.
+        업무 목록에서 이미 진료 자체를 뺐지만, 게이트도 같은 판단을 한 번 더
+        본다 — 화면에 안 보이는 진료의 예약 문자가 뒤에서 몰래 나가면 안
+        된다.
         """
         from app.models.visits import GuideMessageFailure, GuideMessageHold
 
@@ -340,6 +345,7 @@ class HeldTestCase(World, TestCase):
             "SOURCE_NOT_DELETED",
             "BOOKING_URL_MISSING",
             "RECIPIENT_NOT_APPROVED",
+            "SMS_OPT_OUT",
         }
         assert {m.value for m in GuideMessageFailure} == {
             "INVALID_PHONE",

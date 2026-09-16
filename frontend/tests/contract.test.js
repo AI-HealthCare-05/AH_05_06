@@ -47,6 +47,7 @@ test("오늘 목록 응답이 계약의 봉투를 갖춘다", async () => {
     "items",
     "page",
     "selected_categories",
+    "sms_opt_out_excluded",
     "timezone",
   ]);
   assert.equal(page.timezone, "Asia/Seoul", "날짜 규칙의 기준은 병원 표시 시간대다");

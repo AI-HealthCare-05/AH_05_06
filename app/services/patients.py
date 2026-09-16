@@ -264,6 +264,15 @@ class PatientService:
 
         **접수대 목록과 같은 규칙으로 낸다**(`work_category.derive`). 여기서
         따로 셈하면 같은 환자가 두 화면에서 다르게 뜬다.
+
+        **의도된 부작용** — KEY-355(이희진 9/16, 2heej 리뷰). 문자 수신을
+        거부한 환자는 `_candidates()`가 더 이상 NEEDS_ATTENTION 후보로
+        세우지 않으므로, 수신 거부가 유일한 사유였던 환자는 여기서도
+        빠진다(다른 카테고리로 파생될 수 있다). 이건 바로 위 원칙("같은
+        규칙")을 지키는 결과다 — 접수대에서 이미 뺀 것과 다르게 굴면 그게
+        더 큰 문제다. 그 환자는 여전히 `SMS_OPT_OUT` 카테고리 필터(아래
+        `sms_opt_out_only`)로 찾을 수 있다 — 사라지는 것이 아니라 배지가
+        옮겨지는 것이다.
         """
         empty: dict[PatientCategory, set[int]] = {
             PatientCategory.IN_TREATMENT: set(),

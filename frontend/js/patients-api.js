@@ -920,6 +920,10 @@ function deskPage(isoDate, categories) {
       : rows
     ).map(deskItem),
     page: { next_cursor: null, has_next: false },
+    /* 목업도 이 줄을 확인할 수 있게 고정값을 준다 — KEY-355. 제외된
+       진료는 정의상 MOCK_TODAY에 없으니, 그 필터링 자체를 목업에서
+       재현하지 않고 건수만 보여 준다. */
+    sms_opt_out_excluded: 2,
   };
 }
 

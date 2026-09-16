@@ -63,7 +63,6 @@ class DetailStatus(StrEnum):
 
     GENERATION_FAILED = "GENERATION_FAILED"
     INVALID_PHONE = "INVALID_PHONE"
-    SMS_OPT_OUT = "SMS_OPT_OUT"
     APPROVAL_RETURNED = "APPROVAL_RETURNED"
 
     APPROVAL_PENDING = "APPROVAL_PENDING"
@@ -92,7 +91,6 @@ CATEGORY_OF: dict[DetailStatus, WorkCategory] = {
     DetailStatus.STAFF_REVIEW: WorkCategory.IN_PROGRESS,
     DetailStatus.GENERATION_FAILED: WorkCategory.NEEDS_ATTENTION,
     DetailStatus.INVALID_PHONE: WorkCategory.NEEDS_ATTENTION,
-    DetailStatus.SMS_OPT_OUT: WorkCategory.NEEDS_ATTENTION,
     DetailStatus.APPROVAL_RETURNED: WorkCategory.NEEDS_ATTENTION,
     DetailStatus.APPROVAL_PENDING: WorkCategory.APPROVAL_REQUESTED,
     DetailStatus.SCHEDULED_TO_SEND: WorkCategory.SEND_PENDING,
@@ -241,9 +239,13 @@ def _candidates(signals: VisitSignals) -> list[Candidate]:
     #
     # 안내문 상태와 **무관하게** 참이다. 승인까지 끝났어도 보낼 곳이 없으면
     # 스탭이 먼저 볼 것은 그쪽이다.
-    if signals.sms_opted_out_at is not None:
-        found.append(Candidate(DetailStatus.SMS_OPT_OUT, signals.sms_opted_out_at))
-    elif not sms_reachable(signals.phone):
+    #
+    # 수신 거부(`sms_opted_out_at`)는 여기서 후보로 세우지 않는다 —
+    # KEY-355(이희진 9/16). 후보로 세워 NEEDS_ATTENTION에 넣어 봐도
+    # 해제 경로가 없어 매일 목록 맨 앞에 영구히 쌓였다. `front_desk.py`
+    # 가 이 진료를 목록·counts 양쪽에서 완전히 뺀다 — 그러니 이 진료가
+    # 여기서 어떤 DetailStatus로 파생되는지는 더 이상 화면에 안 보인다.
+    if not sms_reachable(signals.phone):
         # 시각이 `None` 인 것이 이 줄의 요점이다 — 위 `VisitSignals` 주석 참고.
         found.append(Candidate(DetailStatus.INVALID_PHONE, None))
 

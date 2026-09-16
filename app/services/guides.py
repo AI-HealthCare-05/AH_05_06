@@ -30,6 +30,7 @@ from app.core import config
 # 병합되면 이 import 만 갈아 끼우면 된다. 지금 같은 파일을 새로 만들면
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
+from app.core.sms_opt_out import is_opted_out
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
 from app.models.ocr import (
     OcrDocumentType,
@@ -253,9 +254,15 @@ class GuideService:
         """
         self._require_staff_or_doctor(actor)
         # 진료 소유권·OCR 확정 여부는 경합 대상이 아니라 트랜잭션 밖에서 먼저 확인한다.
-        visit = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).first()
+        visit = await Visit.filter(visit_id=visit_id, hospital_id=actor.hospital_id).select_related("patient").first()
         if visit is None:
             raise ApiError("VISIT_NOT_FOUND", 404, "진료 건을 찾을 수 없습니다.")
+        # 문자 수신을 거부한 환자에게는 애초에 안내문을 만들 이유가 없다 —
+        # KEY-355(이희진 9/16). 업로드 단계(documents/service.py)와 같은
+        # 판단을 여기도 씌운다 — 업로드를 건너뛰고 재생성만 요청하는
+        # 경로도 있어서, 한쪽만 막으면 뚫린다.
+        if is_opted_out(visit):
+            raise ApiError("SMS_OPT_OUT", 409, "이 환자는 문자 수신을 거부했습니다 — 안내문을 만들 수 없습니다.")
 
         # 비제외 COMPLETED job 전체를 검증하고 field_type별 병합 필드를 얻는다.
         # finalize_ocr과 동일한 기준 — assert_ocr_jobs_ready(app/ocr/utils.py).

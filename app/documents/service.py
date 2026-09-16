@@ -9,6 +9,7 @@ from tortoise.transactions import in_transaction
 from app.core import config, default_logger
 from app.core.api_errors import ApiError
 from app.core.redis_client import get_redis
+from app.core.sms_opt_out import is_opted_out
 from app.core.storage import (
     ALLOWED_EXTENSIONS_BY_MIME,
     ALLOWED_MIME_TYPES,
@@ -119,10 +120,21 @@ class DocumentUploadService:
                 await Visit.filter(visit_id=visit_id, hospital_id=hospital_id)
                 .using_db(conn)
                 .select_for_update()
+                .select_related("patient")
                 .first()
             )
             if visit is None:
                 raise ApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "진료 건을 찾을 수 없습니다.")
+            # _verify_visit_access()가 이미 한 번 확인했지만, 그 확인과 이 자리
+            # 사이(스토리지 I/O 시간)에 환자가 수신을 거부로 바꿀 수 있는 좁은
+            # 창이 있었다 — 2heej 리뷰. select_for_update()로 이 행을 잠근
+            # 자리에서 다시 재는 것이 그 창을 완전히 닫는 유일한 방법이다.
+            if is_opted_out(visit):
+                raise ApiError(
+                    status.HTTP_409_CONFLICT,
+                    "SMS_OPT_OUT",
+                    "이 환자는 문자 수신을 거부했습니다 — 안내문을 만들 수 없습니다.",
+                )
 
             pairs: list[tuple[MedicalDocument, OcrJob]] = []
             for (content, mime), path in zip(validated, saved_paths, strict=True):
@@ -156,9 +168,22 @@ class DocumentUploadService:
         return [doc.document_id for doc, _ in pairs], [job.ocr_job_id for _, job in pairs]
 
     async def _verify_visit_access(self, *, visit_id: int, hospital_id: int) -> None:
-        exists = await Visit.filter(visit_id=visit_id, hospital_id=hospital_id).exists()
-        if not exists:
+        visit = await Visit.filter(visit_id=visit_id, hospital_id=hospital_id).select_related("patient").first()
+        if visit is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "진료 건을 찾을 수 없습니다.")
+        # 문자 수신을 거부한 환자에게는 애초에 안내문을 만들 이유가 없다 —
+        # KEY-355(이희진 9/16). 업로드 단계에서 명시적으로 막아, 판독·안내
+        # 생성까지 가고 나서야 발송 게이트에서 걸리는 헛수고를 없앤다.
+        #
+        # 이건 빠른 실패용 첫 확인일 뿐이다 — 여기와 실제 저장(_persist,
+        # 파일 I/O 뒤) 사이에 환자가 거부로 바뀔 좁은 창이 있다. _persist()
+        # 가 행을 잠근 자리에서 다시 재는 것이 진짜 방어선이다(2heej 리뷰).
+        if is_opted_out(visit):
+            raise ApiError(
+                status.HTTP_409_CONFLICT,
+                "SMS_OPT_OUT",
+                "이 환자는 문자 수신을 거부했습니다 — 안내문을 만들 수 없습니다.",
+            )
 
     async def _read_and_validate(self, files: list[UploadFile]) -> list[tuple[bytes, str]]:
         if not files:
