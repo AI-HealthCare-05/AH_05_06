@@ -112,6 +112,23 @@ function guideLoadSaying(error) {
      저장 중·저장함·실패를 말한다. 눌렀는데 아무 말이 없으면 「됐나」가 된다. */
   var smsSaying = "";
 
+  /* 서버가 준 문자 설정을 실제로 받았는지 — KEY-353 2차 리뷰(유가은 님).
+   *
+   * `guide` 가 오면 `canSave` 부터 켜졌는데, `doctorApi.messagePlan()` 은 별도
+   * 요청이라 그보다 늦게(또는 실패로) 올 수 있다. 그 사이 「이 환자만 적용」을
+   * 누르면 **아직 못 받은 서버 값**이 아니라 화면 기본값(월요일 10시)을 그
+   * 환자의 설정으로 알고 통째로 덮어쓴다. 실제로 받아 온 뒤에만 저장을 연다. */
+  var smsPlanState = "loading"; // loading | ready | failed
+
+  /* 저장 요청이 도는 동안에도 잠근다 — 같은 리뷰에서 잡힌 두 번째 것.
+   *
+   * `wireSmsSettings` 가 누른 버튼을 `disabled` 로 바꿔도, `save` 콜백이 곧바로
+   * `renderPanel()` 을 불러 패널을 통째로 새로 그리면 그 버튼 DOM 은 버려지고
+   * `guideSmsPlan().canSave` 로만 다시 판정된 새 버튼이 선다. 이 값 없이는
+   * `guide.status` 만 보고 다시 활성화돼 「저장하는 중…」과 눌리는 버튼이
+   * 동시에 뜬다 — 두 번째 클릭이 첫 요청 위에 겹쳐 나간다. */
+  var smsSaving = false;
+
   /* **다시 세운다.** `e6c214c`(KEY-234)가 안내문 그리는 규칙을 `guide-view.js`
      로 옮기면서 이 줄까지 함께 지웠는데, **쓰는 자리(`renderHead`)는 남았다.**
 
@@ -155,17 +172,28 @@ function guideLoadSaying(error) {
    * 서버 계약(`GuideService.save_message_plan`)과 같은 판정이다.
    */
   window.guideSmsPlan = function () {
-    var editable =
+    var roleEditable =
       isDoctor() &&
       !!guide &&
       ["STAFF_REVIEW", "APPROVAL_RETURNED", "APPROVAL_PENDING"].indexOf(guide.status) !== -1;
+    /* 역할·상태가 열려 있어도 서버 값을 실제로 받아 오기 전이나 저장이 도는
+       동안은 잠근다 — 위 `smsPlanState`·`smsSaving` 선언과 같은 이유다. */
+    var editable = roleEditable && smsPlanState === "ready" && !smsSaving;
+    var locked = "";
+    if (!roleEditable) {
+      locked = isDoctor()
+        ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
+        : "의사 권한이 있어야 문자 설정을 고칠 수 있습니다";
+    } else if (smsPlanState === "loading") {
+      locked = "문자 설정을 불러오는 중입니다";
+    } else if (smsPlanState === "failed") {
+      locked = "문자 설정을 불러오지 못했습니다 — 새로고침 후 다시 시도해 주세요";
+    }
     return {
       guideStatus: (guide && guide.status) || "",
       showPatientLink: false,
       canSave: editable,
-      lockedSaying: isDoctor()
-        ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
-        : "의사 권한이 있어야 문자 설정을 고칠 수 있습니다",
+      lockedSaying: locked,
       saying: smsSaying,
     };
   };
@@ -335,6 +363,12 @@ function guideLoadSaying(error) {
     /* 앞 환자에게 고친 문구가 남으면 남의 문자로 보낸 것이 된다 */
     guide = null;
     smsForget();
+    /* 저장 안내·불러오기 상태도 환자마다 새로 잰다 — KEY-353 2차 리뷰(유가은
+       님). 안 지우면 A 환자에서 「저장했습니다」를 본 뒤 B 로 넘어가도 B 가
+       저장한 적 없는데 같은 문구가 남는다. */
+    smsSaying = "";
+    smsPlanState = "loading";
+    smsSaving = false;
     closeModal();
     renderHead();
     renderRole();
@@ -365,17 +399,29 @@ function guideLoadSaying(error) {
 
     /* 문자 설정은 **따로 불러온다** — `visit-guide.js` 와 같은 이유다. 안내문
        요청에 묶으면 한쪽이 실패할 때 둘 다 못 보고, 설정이 없어도 안내문은
-       보여야 한다. KEY-353 리뷰(유가은 님) 전에는 이 호출 자체가 없어서
-       의사 화면은 늘 화면 기본값(월요일 10시)만 보여 주고 있었다. */
+       보여야 한다. KEY-353 1차 리뷰(유가은 님) 전에는 이 호출 자체가 없어서
+       의사 화면은 늘 화면 기본값(월요일 10시)만 보여 주고 있었다.
+
+       `guide` 가 아직 안 왔으면 `renderPanel()` 을 부르지 않는다 —
+       `currentSection()` 이 `guide.sections` 를 읽어서, 안내문보다 이 응답이
+       먼저 오면 그 자리에서 죽는다. 값은 `smsAdopt` 로 미리 받아 두고, 안내문
+       쪽 `.then()` 이 곧 다시 그린다. */
     doctorApi
       .messagePlan(visit.visit_id)
       .then(function (data) {
         if (mine !== loadSeq) return;
+        smsPlanState = "ready";
         smsAdopt(data);
-        renderPanel();
+        if (guide) renderPanel();
       })
       .catch(function () {
-        /* 못 읽으면 화면 기본값으로 둔다 — 저장은 눌러 보면 알 수 있다 */
+        /* 2차 리뷰(유가은 님) 전에는 여기서 조용히 화면 기본값으로 두고
+           `canSave` 를 그대로 열어 뒀다 — 못 받아 온 서버 값을 기본값으로
+           알고 「이 환자만 적용」이 그 기본값으로 덮어쓸 수 있었다. 이제는
+           잠그고 이유를 말한다. */
+        if (mine !== loadSeq) return;
+        smsPlanState = "failed";
+        if (guide) renderPanel();
       });
   }
 
@@ -497,6 +543,12 @@ function guideLoadSaying(error) {
     save: function (plan) {
       var wantedId = visit && visit.visit_id;
       if (!wantedId) return;
+      /* `smsSaving` 이 `guideSmsPlan().canSave` 를 끄므로, 아래 `renderPanel()`
+         이 새로 그리는 버튼도 눌린 채로 선다 — KEY-353 2차 리뷰(유가은 님).
+         이게 없으면 `wireSmsSettings` 가 disabled 로 바꾼 버튼 DOM 이 이
+         `renderPanel()` 로 버려지고, 새 버튼은 `guide.status` 만 보고 다시
+         눌리게 열려 두 번째 클릭이 첫 요청 위에 겹쳐 나간다. */
+      smsSaving = true;
       smsSaying = "저장하는 중…";
       renderPanel();
 
@@ -504,6 +556,7 @@ function guideLoadSaying(error) {
         .saveMessagePlan(wantedId, plan)
         .then(function (data) {
           if (!visit || visit.visit_id !== wantedId) return;
+          smsSaving = false;
           /* **서버가 돌려준 것을 화면 상태로 삼는다** — `visit-guide.js` 와
              같은 이유다. 보낸 것을 그대로 두면 서버가 고쳐 준 값이 안 보인다. */
           smsAdopt(data);
@@ -512,6 +565,7 @@ function guideLoadSaying(error) {
         })
         .catch(function (err) {
           if (!visit || visit.visit_id !== wantedId) return;
+          smsSaving = false;
           smsSaying =
             err && err.code === "GUIDE_NOT_PENDING"
               ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"

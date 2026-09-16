@@ -81,3 +81,50 @@ test("반려가 성공하면 전역 안내문 상태도 같이 바뀌어 승인�
     "return-go 성공 콜백이 guide 를 서버 응답으로 갱신해야 renderRole() 이 최신 상태를 본다",
   );
 });
+
+/* 2차 리뷰(유가은 님, 51fe39f 기준)에서 잡힌 세 가지 — 문자 설정을 실제로
+ * 받기 전에도 저장이 열려 있던 것, 저장이 도는 중에도 재렌더링으로 버튼이
+ * 다시 눌리던 것, 환자를 바꿔도 앞 환자의 저장 안내가 남던 것. */
+test("문자 설정을 실제로 받아 오기 전(로딩·실패)에는 저장을 잠근다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(code, /var smsPlanState = "loading"/, "환자마다 불러오기 상태를 loading 으로 시작해야 한다");
+  assert.match(
+    code,
+    /var editable = roleEditable && smsPlanState === "ready" && !smsSaving/,
+    "guideSmsPlan 의 canSave 가 smsPlanState==='ready' 를 요구해야 아직 못 받은 서버 값을 기본값으로 덮어쓰지 않는다",
+  );
+  const messagePlanBlock = code.slice(code.indexOf(".messagePlan("));
+  assert.match(
+    messagePlanBlock,
+    /\.messagePlan\([\s\S]{0,20}\)\s*\.then\(function \(data\) \{[\s\S]{0,80}?smsPlanState = "ready"/,
+    "messagePlan 응답이 와야 ready 로 열린다",
+  );
+  assert.match(
+    messagePlanBlock,
+    /\.catch\(function \(\) \{[\s\S]{0,600}?smsPlanState = "failed"/,
+    "messagePlan 이 실패하면 failed 로 남아 저장이 잠긴 채여야 한다",
+  );
+});
+
+test("저장이 도는 동안에는 재렌더링돼도 버튼이 다시 활성화되지 않는다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(
+    code,
+    /save:\s*function\s*\(plan\)\s*\{[\s\S]{0,500}?smsSaving = true;[\s\S]{0,120}?renderPanel\(\);/,
+    "save 콜백이 smsSaving 을 켠 뒤에 renderPanel() 을 불러야 새로 그려진 버튼도 잠긴다",
+  );
+  assert.match(code, /smsSaving = false;[\s\S]{0,300}?smsAdopt\(data\)/, "성공하면 smsSaving 을 풀어야 다음 저장이 된다");
+  assert.match(code, /smsSaving = false;[\s\S]{0,300}?저장하지 못했습니다/, "실패해도 smsSaving 을 풀어야 다시 시도할 수 있다");
+});
+
+test("환자를 바꾸면 저장 안내·불러오기 상태를 새로 잰다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(
+    code,
+    /smsForget\(\);[\s\S]{0,300}?smsSaying = "";[\s\S]{0,60}?smsPlanState = "loading";[\s\S]{0,60}?smsSaving = false;/,
+    "load() 가 smsForget 뒤에 smsSaying·smsPlanState·smsSaving 을 모두 초기화해야 앞 환자의 안내가 안 남는다",
+  );
+});
