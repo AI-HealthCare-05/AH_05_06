@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from app.core import config
 from app.core.approved_phones import approved_test_phones
 from app.core.config import SmsProvider
+from app.core.sms_opt_out import is_opted_out
 from app.core.storage import LocalFileStorage, StorageProbe
 from app.core.utils.common import normalize_phone_number
 from app.models.catalog import MessageTemplateKind
@@ -102,7 +103,7 @@ async def evaluate_dispatch_gate(
     # 이 진료를 뺐으니(front_desk.py), 화면에 안 보이는 진료의 예약
     # 문자가 뒤에서 몰래 나가면 안 된다.
     visit = await Visit.filter(visit_id=guide.visit_id).select_related("patient").first()
-    if visit is not None and visit.patient.sms_opted_out_at is not None:
+    if visit is not None and is_opted_out(visit):
         return DispatchGateDecision(
             guide=guide,
             hold_reason=GuideMessageHold.SMS_OPT_OUT,

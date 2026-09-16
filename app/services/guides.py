@@ -30,6 +30,7 @@ from app.core import config
 # 병합되면 이 import 만 갈아 끼우면 된다. 지금 같은 파일을 새로 만들면
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
+from app.core.sms_opt_out import is_opted_out
 from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
 from app.models.ocr import (
     OcrDocumentType,
@@ -260,7 +261,7 @@ class GuideService:
         # KEY-355(이희진 9/16). 업로드 단계(documents/service.py)와 같은
         # 판단을 여기도 씌운다 — 업로드를 건너뛰고 재생성만 요청하는
         # 경로도 있어서, 한쪽만 막으면 뚫린다.
-        if visit.patient.sms_opted_out_at is not None:
+        if is_opted_out(visit):
             raise ApiError("SMS_OPT_OUT", 409, "이 환자는 문자 수신을 거부했습니다 — 안내문을 만들 수 없습니다.")
 
         # 비제외 COMPLETED job 전체를 검증하고 field_type별 병합 필드를 얻는다.
