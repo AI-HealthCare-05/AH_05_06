@@ -43,6 +43,16 @@ class DispatchGateDecision:
     #: 그래서 **본 것을 실어 보낸다.** `guide` 를 이미 그렇게 넘기고 있다.
     body: str | None = None
     hospital: Hospital | None = None
+    #: 아직 삭제 기록이 없는 원본 문서 id — KEY-349.
+    #:
+    #: 게이트 자신은 이 목록이 비어 있지 않아도 막지 않는다(그게 곧
+    #: "삭제할 차례"라는 뜻이다) — 실제 삭제·확인·기록은
+    #: `message_dispatch.dispatch_message()`가 이 목록을 받아서 실행한다.
+    #: 게이트가 직접 지우지 않는 이유는 하나다 — 여기서 막힐 다른
+    #: 이유(미승인 등)가 남아 있으면 원본을 먼저 지우면 안 된다. 이
+    #: 목록이 채워지는 시점엔 이미 그 다른 게이트를 전부 통과했다는
+    #: 뜻이라 안전하다.
+    pending_source_document_ids: tuple[int, ...] = ()
 
 
 async def evaluate_dispatch_gate(
@@ -56,7 +66,8 @@ async def evaluate_dispatch_gate(
         return DispatchGateDecision(guide=guide, hold_reason=GuideMessageHold.NOT_APPROVED)
 
     backend = storage or LocalFileStorage(config.UPLOAD_DIR)
-    if not await _source_documents_are_deleted(guide.visit_id, backend):
+    mismatch, pending_ids = await _source_deletion_state(guide.visit_id, backend)
+    if mismatch:
         return DispatchGateDecision(guide=guide, hold_reason=GuideMessageHold.SOURCE_NOT_DELETED)
 
     #: **여기서 한 번만 읽는다.** 아래 판정도, 발송의 렌더도 이 값을 쓴다.
@@ -69,6 +80,7 @@ async def evaluate_dispatch_gate(
             hold_reason=GuideMessageHold.BOOKING_URL_MISSING,
             body=body,
             hospital=hospital,
+            pending_source_document_ids=pending_ids,
         )
 
     # 생성 후 안전검증 — KEY-289.
@@ -82,6 +94,7 @@ async def evaluate_dispatch_gate(
             hold_reason=GuideMessageHold.SAFETY_CHECK_FAILED,
             body=body,
             hospital=hospital,
+            pending_source_document_ids=pending_ids,
         )
 
     # 승인 번호로만 발송 — KEY-338. mock 경로는 기존 동작을 유지한다.
@@ -94,9 +107,12 @@ async def evaluate_dispatch_gate(
                 hold_reason=GuideMessageHold.RECIPIENT_NOT_APPROVED,
                 body=body,
                 hospital=hospital,
+                pending_source_document_ids=pending_ids,
             )
 
-    return DispatchGateDecision(guide=guide, hold_reason=None, body=body, hospital=hospital)
+    return DispatchGateDecision(
+        guide=guide, hold_reason=None, body=body, hospital=hospital, pending_source_document_ids=pending_ids
+    )
 
 
 async def gate_hold_reason(
@@ -136,11 +152,13 @@ async def _post_generate_safety_check_passed(guide_document_id: int) -> bool:
     guide_document_id에 연결된 POST_GENERATE BLOCK 레코드가 존재하지 않는다.
     사후 비동기 안전검증 흐름이 추가되면 비로소 의미를 갖는다.
 
-    형제 함수 _source_documents_are_deleted와 방향이 반대다 — 원본 삭제는
-    기록이 없으면(조회 실패 포함) 막고, 이 함수는 기록이 없으면 통과한다.
-    원본 삭제는 실시간 파일 존재 여부를 확인할 수 있어 불확실성이 다르고,
-    고정 템플릿 경로는 POST_GENERATE 검증 자체를 실행하지 않아 기록 없음이
-    곧 「검증 대상 아님」을 뜻한다. 의도된 비대칭이다.
+    형제 함수 _source_deletion_state와 방향이 반대다 — 원본 삭제는
+    기록이 없으면 오히려 통과시키고(그 자리에서 지울 차례로 보고한다,
+    KEY-349) 기록과 실제가 어긋날 때만 막는다. 이 함수는 반대로 기록이
+    없으면 통과, 기록이 BLOCK이면 막는다. 원본 삭제는 실시간 파일 존재
+    여부를 확인할 수 있어 불확실성이 다르고, 고정 템플릿 경로는
+    POST_GENERATE 검증 자체를 실행하지 않아 기록 없음이 곧 「검증 대상
+    아님」을 뜻한다. 의도된 비대칭이다.
     """
     return not await GuideSafetyCheck.filter(
         guide_document_id=guide_document_id,
@@ -149,17 +167,27 @@ async def _post_generate_safety_check_passed(guide_document_id: int) -> bool:
     ).exists()
 
 
-async def _source_documents_are_deleted(visit_id: int, storage: StorageProbe) -> bool:
-    """원본 행이 남아 있으면 삭제를 확인할 수 없으므로 발송을 막는다.
+async def _source_deletion_state(visit_id: int, storage: StorageProbe) -> tuple[bool, tuple[int, ...]]:
+    """원본 삭제 판정을 기록 기준으로 낸다 — KEY-349.
 
-    파일 존재는 미삭제이고, 파일 부재는 삭제 이력 없이 삭제를 증명하지
-    못한다. 행이 없는 진료만 원본 비연결로 통과한다. 이는 KEY-349가
-    명시적인 원본 삭제 완료 기록을 도입하기 전까지 적용하는 fail-closed
-    판정이다. 발송 허용을 위해 MedicalDocument 행 자체를 삭제하면 안 된다.
-    KEY-349가 삭제 완료 기록을 확정하면 이 함수가 그 기록을 기준으로
-    판정하도록 교체한다.
+    (막혔는가, 아직 지워야 할 문서 id들)을 돌려준다.
+
+    행               삭제 기록   파일       판정
+    없음             —          —          통과, 지울 것 없음
+    있음             없음       있음/없음  통과, 이 문서를 지울 차례로 보고한다
+    있음             있음       없음       통과, 지울 것 없음
+    있음             있음       있음       막는다 — 기록과 실제가 어긋난다
+
+    저장소 조회 자체가 실패하면(권한 오류 등) 그대로 올려 보낸다 —
+    `evaluate_dispatch_gate`를 부르는 `dispatch_message`가 그 예외를
+    이미 재시도 경로로 잡는다(fail-closed, 여기서 새로 감싸지 않는다).
     """
     docs = await MedicalDocument.filter(visit_id=visit_id).all()
-    if not docs:
-        return True
-    return False
+    pending: list[int] = []
+    for doc in docs:
+        if doc.source_deleted_at is None:
+            pending.append(doc.document_id)
+            continue
+        if await storage.exists(doc.file_path):
+            return True, ()
+    return False, tuple(pending)

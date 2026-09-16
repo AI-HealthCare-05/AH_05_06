@@ -41,6 +41,18 @@ class StorageProbe(Protocol):
     async def exists(self, path: str) -> bool: ...
 
 
+class SourcePurger(Protocol):
+    """원본 삭제 단계(KEY-349)가 필요로 하는 만큼만 — delete + exists.
+
+    `StorageBackend`(save까지 포함)를 그대로 안 쓴다 — 삭제 단계는 새
+    파일을 저장할 일이 없다. `LocalFileStorage`는 이미 둘 다 구현하므로
+    새 클래스가 필요 없다.
+    """
+
+    async def delete(self, path: str) -> None: ...
+    async def exists(self, path: str) -> bool: ...
+
+
 class LocalFileStorage:
     def __init__(self, upload_dir: str) -> None:
         self._configured_dir = Path(upload_dir)

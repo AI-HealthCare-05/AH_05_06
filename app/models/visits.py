@@ -751,12 +751,26 @@ class GuideMessageEventType(StrEnum):
     갈래와 그대로 대응한다 — `ATTEMPTED`(집어서 보내려 했다)만 그 넷에
     없던 새 갈래고, 나머지 셋은 `GuideMessage.status` 전이와 같은 순간에
     남는다.
+
+    `SOURCE_*` 셋은 KEY-349가 더한다 — 원본 삭제 단계 자체의 결과다.
+    발송 성공·실패·보류와는 다른 축이라(삭제는 통과했는데 그 뒤 발송이
+    실패할 수도 있다) 문서 단위 이벤트를 새로 만들지 않고 이 표에 얹었다
+    — 어차피 "그 문자를 처리하다 일어난 일"이고, 조회·감사가 한 표로
+    끝난다.
     """
 
     ATTEMPTED = "ATTEMPTED"
     SENT = "SENT"
     FAILED = "FAILED"
     HELD = "HELD"
+    #: 원본 파일을 실제로 지웠다 — KEY-349.
+    SOURCE_PURGED = "SOURCE_PURGED"
+    #: 삭제 단계 전부터 파일이 이미 없었다 — KEY-349. 실패가 아니다(멱등
+    #: 재시도거나, 다른 경로로 이미 지워졌을 수 있다) — 구분해서 남긴다.
+    SOURCE_ALREADY_PURGED = "SOURCE_ALREADY_PURGED"
+    #: 삭제·확인·기록 중 하나가 실패해서 이번 시도를 재시도로 돌렸다 —
+    #: KEY-349. `reason`에 문서 id만 남긴다(경로·파일명·환자정보 금지).
+    SOURCE_PURGE_FAILED = "SOURCE_PURGE_FAILED"
 
 
 class GuideMessageEvent(models.Model):
