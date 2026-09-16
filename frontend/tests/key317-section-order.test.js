@@ -1,12 +1,13 @@
-/* 절의 **차례를 바꾸는 화면** — KEY-317.
+/* 절의 **차례** — KEY-317, 그리고 그 단추를 걷어낸 자리.
  *
- * 화면이 지키는 것은 하나다: **만들 수 있는 차례는 전부 서버가 받아 주는
- * 차례다.** 옮길 수 있는 절끼리 자리를 맞바꾸므로 안전 절이 앉은 자리는
- * 건드려지지 않는다.
+ * 차례를 바꾸는 단추([◀][▶])는 탭 줄 오른쪽에 있었다. 그 자리에 그 모양이면
+ * **「이전·다음 탭」으로 읽힌다** — 넘기려고 눌렀는데 복약지도가 주의사항을
+ * 뛰어넘어 생활지도 자리로 갔다. 안전 절(주의사항)에서는 단추가 통째로 사라져
+ * 줄 폭까지 흔들렸다. 그래서 **누르는 자리를 화면에서 뺐다.**
  *
- * 무엇이 옮겨질 수 있는지는 **서버가 절마다 `movable` 로 말해 준다.** 화면이
- * 스스로 판정하면 정책이 바뀌는 날 한쪽만 고쳐지고, 화면은 옮길 수 있다고
- * 그리는데 서버가 422 를 내는 자리가 생긴다.
+ * 저장하는 자리(`PUT /guide/sections/order`)는 서버 계약이라 그대로 둔다.
+ * 여기서 재는 것은 두 가지다 — ① 탭 줄에 옮기는 단추가 다시 안 선다
+ * ② 목업이 서버와 같은 코드로 차례를 검증한다(계약이 살아 있다).
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -25,95 +26,39 @@ function sections() {
 }
 
 function box() {
-  /* `esc` 는 `api.js` 에 있다 — 화면이 싣는 차례 그대로 함께 싣는다. */
-  return load("api", "guide-view");
+  /* 화면이 싣는 차례 그대로 함께 싣는다 — `esc` 는 `api.js`, 미리보기 칸은
+     `patient-guide-cards.js` 에 있다. */
+  return load("api", "session", "patient-guide-cards", "guide-view");
 }
 
-test("옮길 수 있는 절끼리 자리를 맞바꾼다 — 안전 절은 제자리다", () => {
+test("탭 줄에 차례를 옮기는 단추가 서지 않는다", () => {
+  /* 탭 옆의 [◀][▶] 는 「이전·다음 탭」으로 읽혀 안 된다. 다시 달 일이 생기면
+     탭 줄이 아닌 다른 자리여야 한다. */
   const view = box();
 
-  const back = view.guideOrderMoved(sections(), "medication", 1);
+  const html = view.guideScreenHtml(sections(), "medication", "guide", true, null, "", null);
+  /* 탭 줄만 떼어 본다 — `guideSegmentsHtml` 이 탭 줄을 그리는 그 함수라,
+     전체 화면 문자열에서 자리를 잘라 내는 것보다 무엇을 재는지가 분명하고,
+     탭이 아닌 다른 자리(가령 문자 설정 미리보기)의 글자에 흔들리지 않는다. */
+  const tabRow = view.guideSegmentsHtml(sections(), "medication");
 
-  assert.deepEqual(back, ["life", "caution", "emergency", "medication", "messages"]);
-  assert.equal(back[1], "caution", "주의사항이 자리를 떴다");
-  assert.equal(back[2], "emergency", "응급이 주의사항에서 떨어졌다");
+  assert.ok(!html.includes("data-move"), "옮기는 단추가 다시 섰다");
+  assert.ok(!html.includes("gs__move"), "옮기는 단추 자리가 다시 섰다");
+  assert.ok(!/[◀▶]/.test(tabRow), "탭 줄에 화살표가 섰다");
 });
 
-test("앞으로 옮길 때도 안전 절을 건너뛴다", () => {
-  const view = box();
-
-  assert.deepEqual(view.guideOrderMoved(sections(), "life", -1), [
-    "life",
-    "caution",
-    "emergency",
-    "medication",
-    "messages",
-  ]);
-});
-
-test("안전 절은 아예 못 옮긴다 — 단추가 만들어 낼 차례가 없다", () => {
-  const view = box();
-
-  assert.equal(view.guideOrderMoved(sections(), "caution", 1), null);
-  assert.equal(view.guideOrderMoved(sections(), "emergency", -1), null);
-});
-
-test("끝에서 더 밀면 아무 차례도 안 나온다", () => {
-  const view = box();
-
-  assert.equal(view.guideOrderMoved(sections(), "medication", -1), null);
-  assert.equal(view.guideOrderMoved(sections(), "messages", 1), null);
-});
-
-test("화면이 만들어 내는 차례는 언제나 **온전한 한 벌**이다", () => {
-  /* 하나라도 빠지거나 겹치면 서버가 422 를 낸다 — 눌렀는데 안 되는 단추가 된다. */
-  const view = box();
-  const all = sections().map((s) => s.key);
-
-  for (const key of all) {
-    for (const step of [-1, 1]) {
-      const moved = view.guideOrderMoved(sections(), key, step);
-      if (!moved) continue;
-      assert.deepEqual([...moved].sort(), [...all].sort(), `${key} ${step} 에서 절이 빠지거나 겹쳤다`);
-    }
-  }
-});
-
-test("단추가 **저장할 차례를 그대로** 들고 있다", () => {
-  /* 누른 뒤에 다시 셈하면 그 사이 다시 그려진 화면과 어긋난다. 스탭 화면은
-     한 판에 패널을 둘 띄워 「지금 어느 탭인가」가 하나로 답해지지도 않는다. */
-  const view = box();
-
-  const html = view.guideMoveHtml(sections(), "medication", true);
-
-  assert.match(html, /data-move="life,caution,emergency,medication,messages"/);
-  assert.match(html, /disabled/, "맨 앞인데 [◀] 가 안 잠겼다");
-});
-
-test("옮길 수 없는 절을 고르면 단추가 아예 안 선다", () => {
-  const view = box();
-
-  assert.equal(view.guideMoveHtml(sections(), "caution", true), "");
-});
-
-test("고칠 수 없는 사람에게는 단추를 안 준다", () => {
-  /* 승인 뒤·남의 차례에는 서버가 막는다. 화면이 먼저 안 그린다. */
-  const view = box();
-
-  assert.equal(view.guideMoveHtml(sections(), "medication", false), "");
-});
-
-test("화면은 안전 절 목록을 제 안에 안 적는다", () => {
-  /* 서버가 절마다 `movable` 을 준다. 화면에도 적어 두면 정책이 바뀌는 날
-     한쪽만 고쳐진다 — 이 저장소가 「목업이 자기 자신을 정본으로 삼는다」로
-     여러 번 겪은 자리다. */
+test("옮기는 단추를 그리던 코드가 통째로 없다", () => {
+  /* 안 불리는 채 남아 있으면 다음 사람이 「왜 안 뜨지」로 되살린다. */
   const code = bareCode(read("js/guide-view.js"));
 
-  assert.ok(/\.movable/.test(code), "서버가 준 movable 을 안 읽는다");
-  assert.ok(
-    !/SAFETY|안전 절 목록은[\s\S]{0,40}=/.test(code) && !/"caution".*"emergency"/.test(code),
-    "화면이 안전 절 이름을 제 안에 들고 있다"
-  );
+  for (const name of ["guideMoveHtml", "guideOrderMoved", "guideMovableKeys", "guideMoveSection"]) {
+    assert.ok(!code.includes(name), `죽은 코드가 남았다: ${name}`);
+  }
+  const css = bareCode(read("css/blocks.css"));
+  assert.ok(!css.includes("gs__movebtn"), "죽은 CSS(단추)가 남았다");
+  /* `gs__move` 는 `gs__movebtn` 의 앞 글자라, 뒤엣것만 재면 감싸개
+     `.gs__move` 홀로 되살아나도 못 잡는다 — 뒤에 `btn` 이 안 붙는 자리를 따로 잰다. */
+  assert.ok(!/\.gs__move(?!btn)/.test(css), "죽은 CSS(감싸개)가 남았다");
 });
 
 test("목업도 차례를 저장하고 다시 준다", async () => {
