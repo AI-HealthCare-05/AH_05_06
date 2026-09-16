@@ -299,37 +299,57 @@ async def _claim(message_id: int, *, at: datetime) -> tuple[str | None, bool]:
 
     `(claim_token, already_answered)`를 돌려준다. `already_answered`가
     참이면 호출부는 더 할 일이 없다 — 상태 전이가 이미 끝났다.
+
+    **CHECK_D7이 아니면 트랜잭션(SAVEPOINT)을 아예 안 연다.** `save()`와
+    겹칠 GuideDocument 잠금이 필요 없는 종류까지 감싸면 순전히 부담만
+    는다 — 실제로 그 부담이 이 함수를 테스트하는
+    `test_two_concurrent_dispatches_only_send_once`를 깨뜨렸다.
+    Tortoise의 `TestCase`가 테스트 하나를 통째로 커넥션 하나에 묶어
+    두는데, `asyncio.gather()`의 두 코루틴이 그 커넥션 위에 동시에
+    SAVEPOINT를 열려고 하면서 MySQL 프로토콜 자체가 깨졌다
+    ("Packet sequence number wrong").
     """
     token = secrets.token_hex(8)
+    message = await GuideMessage.filter(guide_message_id=message_id).first()
+    if message is None:
+        return None, False
+    if message.kind is not GuideMessageKind.CHECK_D7:
+        affected = await GuideMessage.filter(
+            guide_message_id=message_id,
+            status=GuideMessageStatus.SCHEDULED,
+            claim_token__isnull=True,
+            scheduled_at__lte=at,
+        ).update(claim_token=token)
+        return (token if affected == 1 else None), False
+
     async with in_transaction() as connection:
         message = await GuideMessage.filter(guide_message_id=message_id).using_db(connection).first()
         if message is None:
             return None, False
-        if message.kind is GuideMessageKind.CHECK_D7:
-            await (
-                GuideDocument.filter(guide_document_id=message.guide_document_id)
-                .select_for_update()
-                .using_db(connection)
-                .get()
-            )
-            if await CheckIn.filter(guide_document_id=message.guide_document_id).using_db(connection).exists():
-                affected = await (
-                    GuideMessage.filter(
-                        guide_message_id=message_id,
-                        status=GuideMessageStatus.SCHEDULED,
-                        claim_token__isnull=True,
-                    )
-                    .using_db(connection)
-                    .update(status=GuideMessageStatus.CANCELED)
+        await (
+            GuideDocument.filter(guide_document_id=message.guide_document_id)
+            .select_for_update()
+            .using_db(connection)
+            .get()
+        )
+        if await CheckIn.filter(guide_document_id=message.guide_document_id).using_db(connection).exists():
+            affected = await (
+                GuideMessage.filter(
+                    guide_message_id=message_id,
+                    status=GuideMessageStatus.SCHEDULED,
+                    claim_token__isnull=True,
                 )
-                if affected == 1:
-                    await GuideMessageEvent.create(
-                        guide_message_id=message_id,
-                        event_type=GuideMessageEventType.CANCELED,
-                        reason="ANSWERED",
-                        using_db=connection,
-                    )
-                return None, True
+                .using_db(connection)
+                .update(status=GuideMessageStatus.CANCELED)
+            )
+            if affected == 1:
+                await GuideMessageEvent.create(
+                    guide_message_id=message_id,
+                    event_type=GuideMessageEventType.CANCELED,
+                    reason="ANSWERED",
+                    using_db=connection,
+                )
+            return None, True
         affected = (
             await GuideMessage.filter(
                 guide_message_id=message_id,
