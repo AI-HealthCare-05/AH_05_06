@@ -137,22 +137,35 @@ function canPreviewApprovedGuide(currentGuide) {
     var p = (guide && guide.patient) || {};
     /* **고칠 수 있는 때는 안내문 본문과 같은 규칙이다.** 두 규칙이 갈리면
        「문구는 고쳐지는데 본문은 403」 같은 화면이 나온다. */
-    var canSave = !!guide && canEditNow(mode === "final" ? "final" : "guide");
+    var roleEditable = !!guide && canEditNow(mode === "final" ? "final" : "guide");
+    /* 역할·상태가 열려 있어도 서버 값을 실제로 받아 오기 전이나 저장이 도는
+       동안은 잠근다 — doctor.js 와 같은 이유(KEY-353 2차 리뷰, 유가은 님).
+       `smsPlanState`·`smsSaving` 은 아래 `loadGuide`·`wireSmsSettings` 자리에서
+       선언한다. */
+    var editable = roleEditable && smsPlanState === "ready" && !smsSaving;
+    var locked = "";
+    if (!roleEditable) {
+      locked =
+        guide && guide.status === "SCHEDULED_TO_SEND"
+          ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
+          : "지금은 고칠 수 없습니다";
+    } else if (smsPlanState === "loading") {
+      locked = "문자 설정을 불러오는 중입니다";
+    } else if (smsPlanState === "failed") {
+      locked = "문자 설정을 불러오지 못했습니다 — 새로고침 후 다시 시도해 주세요";
+    }
     return {
       startIso: guide && guide.visited_at ? String(guide.visited_at).slice(0, 10) : "",
       runOutIso: "",
       phone: p.phone || "",
       values: { 환자명: p.name || "", 일차: 7, 의원명: "" },
-      canSave: canSave,
+      canSave: editable,
       /* 링크 블록이 읽는 둘 — KEY-275. 승인 전에는 링크 자체가 없으므로
          상태를 함께 넘겨야 블록이 「의사가 승인하면 자동으로 발급됩니다」를
          그린다. */
       guideStatus: (guide && guide.status) || "",
       link: patientLinkOf(visitId),
-      lockedSaying:
-        guide && guide.status === "SCHEDULED_TO_SEND"
-          ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
-          : "지금은 고칠 수 없습니다",
+      lockedSaying: locked,
       saying: smsSaying,
     };
   };
@@ -392,15 +405,25 @@ function canPreviewApprovedGuide(currentGuide) {
 
     /* 문자 설정은 **따로 불러온다.** 안내문과 한 요청으로 묶으면 한쪽이
        실패할 때 둘 다 못 보고, 설정이 없어도 안내문은 보여야 한다. */
+    smsPlanState = "loading";
+    smsSaving = false;
+    smsSaying = "";
     doctorApi
       .messagePlan(id)
       .then(function (data) {
         if (mySeq !== loadSeq) return;
+        smsPlanState = "ready";
         smsAdopt(data);
         renderAll();
       })
       .catch(function () {
-        /* 못 읽으면 화면 기본값으로 둔다 — 저장은 눌러 보면 알 수 있다 */
+        /* 2차 리뷰(유가은 님, KEY-353) 전에는 여기서 조용히 화면 기본값으로
+           두고 `canSave` 를 그대로 열어 뒀다 — 못 받아 온 서버 값을 기본값
+           으로 알고 「이 환자만 적용」이 그 기본값으로 덮어쓸 수 있었다.
+           이제는 잠그고 이유를 말한다. */
+        if (mySeq !== loadSeq) return;
+        smsPlanState = "failed";
+        renderAll();
       });
 
     /* 링크 상태도 따로 읽는다 — KEY-275. 안내문 요청에 묶지 않는 것은
@@ -628,6 +651,12 @@ function canPreviewApprovedGuide(currentGuide) {
      「저장이 됐나」가 된다. */
   var smsSaying = "";
 
+  /* 서버가 준 문자 설정을 실제로 받았는지, 저장 요청이 도는 중인지 —
+     doctor.js 와 같은 값(KEY-353 2차 리뷰, 유가은 님). `loadGuide` 가 환자마다
+     새로 잰다 — 위 `guideSmsPlan` 이 이 값들로 `canSave` 를 정한다. */
+  var smsPlanState = "loading"; // loading | ready | failed
+  var smsSaving = false;
+
   wireSmsSettings({
     reRender: function (keepCaret) {
       renderOne("guide", canEditNow("guide"), keepCaret);
@@ -640,6 +669,12 @@ function canPreviewApprovedGuide(currentGuide) {
     save: function (plan) {
       var wantedId = visitId;
       if (!wantedId) return;
+      /* `smsSaving` 이 `guideSmsPlan().canSave` 를 끄므로, 아래 `renderAll()`
+         이 새로 그리는 버튼도 잠긴 채로 선다 — doctor.js 와 같은 이유
+         (KEY-353 2차 리뷰, 유가은 님). 없으면 `wireSmsSettings` 가 disabled 로
+         바꾼 버튼 DOM 이 이 재렌더링으로 버려지고, 새 버튼은 `guide.status` 만
+         보고 다시 눌리게 열려 두 번째 클릭이 첫 요청 위에 겹쳐 나간다. */
+      smsSaving = true;
       smsSaying = "저장하는 중…";
       renderAll();
 
@@ -647,6 +682,7 @@ function canPreviewApprovedGuide(currentGuide) {
         .saveMessagePlan(wantedId, plan)
         .then(function (data) {
           if (visitId !== wantedId) return;
+          smsSaving = false;
           /* **서버가 돌려준 것을 화면 상태로 삼는다.** 보낸 것을 그대로 두면,
              서버가 고쳐 준 값(일주일 뒤는 켜짐으로 되돌림)이 화면에 안 보인다. */
           smsAdopt(data);
@@ -655,6 +691,7 @@ function canPreviewApprovedGuide(currentGuide) {
         })
         .catch(function (err) {
           if (visitId !== wantedId) return;
+          smsSaving = false;
           smsSaying =
             err && err.code === "GUIDE_NOT_PENDING"
               ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
