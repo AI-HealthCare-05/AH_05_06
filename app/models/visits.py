@@ -771,6 +771,14 @@ class GuideMessageEventType(StrEnum):
     #: 삭제·확인·기록 중 하나가 실패해서 이번 시도를 재시도로 돌렸다 —
     #: KEY-349. `reason`에 문서 id만 남긴다(경로·파일명·환자정보 금지).
     SOURCE_PURGE_FAILED = "SOURCE_PURGE_FAILED"
+    #: 환자가 D+7 답변을 저장해서 이 예약이 취소됐다 — KEY-320, 2heej 리뷰.
+    #:
+    #: `GuideMessage.status`가 CANCELED로 바뀌는 경로는 이것 말고도
+    #: 있다(스탭의 unapprove·수동 재예약 — `guides.py`·`message_schedule.py`)
+    #: — 그쪽은 사람이 끈 것이라 재승인하면 되살려도 된다. 이 이벤트가
+    #: 있는 CANCELED만 「환자가 이미 답했다」는 뜻이라 되살리면 안 된다
+    #: (`guides.py`의 `_schedule_messages`가 이 이벤트로 가른다).
+    CANCELED = "CANCELED"
 
 
 class GuideMessageEvent(models.Model):

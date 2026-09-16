@@ -743,12 +743,26 @@
             "type": "null"
           },
           "next_checkin": {
-            "title": "Next Checkin",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Checkin"
           },
           "next_visit": {
-            "title": "Next Visit",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Visit"
           },
           "pain_types": {
             "items": {
@@ -758,7 +772,6 @@
             "type": "array"
           },
           "round_label": {
-            "const": "복약 7일째 · 첫 확인",
             "default": "복약 7일째 · 첫 확인",
             "title": "Round Label",
             "type": "string"
@@ -793,12 +806,26 @@
             "$ref": "#/components/schemas/CheckInMedication"
           },
           "next_checkin": {
-            "title": "Next Checkin",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Checkin"
           },
           "next_visit": {
-            "title": "Next Visit",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Visit"
           },
           "note": {
             "anyOf": [
@@ -1929,6 +1956,17 @@
             "format": "date-time",
             "title": "At",
             "type": "string"
+          },
+          "check_day_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Day Number"
           },
           "kind": {
             "$ref": "#/components/schemas/GuideMessageKind"
@@ -5673,6 +5711,17 @@
             "format": "date",
             "title": "Birth Date",
             "type": "string"
+          },
+          "check_day_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Day Number"
           },
           "failure_code": {
             "anyOf": [

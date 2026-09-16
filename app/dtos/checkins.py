@@ -105,12 +105,12 @@ class CheckInPainTypeResponse(StrictModel):
 
 
 class CheckInReadResponse(StrictModel):
-    round_label: Literal["복약 7일째 · 첫 확인"] = "복약 7일째 · 첫 확인"
+    round_label: str = "복약 7일째 · 첫 확인"
     drug_name: None = None
     answers: dict[CheckInMedication, CheckInAnswerContent | None]
     pain_types: list[CheckInPainTypeResponse]
-    next_checkin: None = None
-    next_visit: None = None
+    next_checkin: str | None = None
+    next_visit: str | None = None
     answered: bool
     demo_only: Literal[True] = True
 
@@ -129,8 +129,8 @@ class CheckInSaveResponse(StrictModel):
     note: str | None = None
     signal_answer_key: CheckInMedication | None = None
     guide_url: None = None
-    next_checkin: None = None
-    next_visit: None = None
+    next_checkin: str | None = None
+    next_visit: str | None = None
     demo_only: Literal[True] = True
 
 

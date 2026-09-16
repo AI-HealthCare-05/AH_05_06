@@ -87,6 +87,19 @@ def viewed_saying(item: SentMessageItem) -> str:
     return "열람" if item.viewed else "미열람"
 
 
+def kind_saying(item: SentMessageItem) -> str:
+    """종류 칸 문구 — CHECK_D7은 실제 경과일수를 반영한다.
+
+    `frontend/js/manage.js`가 화면에서 이미 하는 것과 같은 패턴이다
+    (`복약 N일째 확인`) — 늦게 나간 같은 문자가 CSV·이력 모달에서만
+    "일주일 뒤 확인"으로 고정돼 보이면, 화면마다 다른 일차를 말하는
+    셈이라 원문(AC1) 취지에 어긋난다(KEY-320, 2heej 리뷰).
+    """
+    if item.kind is GuideMessageKind.CHECK_D7 and item.check_day_number is not None:
+        return f"복약 {item.check_day_number}일째 확인"
+    return KIND_SAYING.get(item.kind, str(item.kind))
+
+
 def csv_rows(items: list[SentMessageItem]) -> list[list[str]]:
     rows = [list(HEADER)]
     for item in items:
@@ -97,7 +110,7 @@ def csv_rows(items: list[SentMessageItem]) -> list[list[str]]:
                 defuse(item.hospital_patient_no),
                 identity(item),
                 defuse(item.prescription_set or ""),
-                KIND_SAYING.get(item.kind, str(item.kind)),
+                kind_saying(item),
                 STATUS_SAYING.get(item.status, str(item.status)),
                 FAILURE_SAYING.get(item.failure_code, "") if item.failure_code else "",
                 viewed_saying(item),

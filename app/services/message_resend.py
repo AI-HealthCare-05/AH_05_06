@@ -6,7 +6,7 @@ from tortoise.transactions import in_transaction
 from app.core.api_errors import ApiError
 from app.dependencies.patient_access import ClinicalActor
 from app.dtos.messages import MessageResendResponse
-from app.models.visits import GuideMessage, GuideMessageStatus
+from app.models.visits import CheckIn, GuideMessage, GuideMessageKind, GuideMessageStatus
 from app.services.patient_links import PatientLinkService
 from app.services.patient_visit_scope import hospital_id_of
 
@@ -31,6 +31,11 @@ class MessageResendService:
                 raise ApiError(404, "MESSAGE_NOT_FOUND", "발송 이력을 찾을 수 없습니다.")
             if source.status not in RESENDABLE_STATUSES:
                 raise ApiError(409, "MESSAGE_NOT_RESENDABLE", "완료되거나 실패한 발송만 다시 보낼 수 있습니다.")
+            if (
+                source.kind is GuideMessageKind.CHECK_D7
+                and await CheckIn.filter(guide_document_id=source.guide_document_id).using_db(connection).exists()
+            ):
+                raise ApiError(409, "MESSAGE_NOT_RESENDABLE", "D+7 응답이 저장되어 확인 문자를 다시 보낼 수 없습니다.")
 
             existing = (
                 await GuideMessage.filter(resend_of_message_id=source.guide_message_id).using_db(connection).first()

@@ -1,11 +1,24 @@
 """승인 안내 링크에 연결된 D+7 응답 저장·조회 — KEY-151."""
 
 from tortoise.exceptions import IntegrityError
+from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
 from app.core.auth_errors import AuthError as ApiError
+from app.core.time import DISPLAY_TIMEZONE
 from app.dtos.checkins import CheckInCreateRequest
-from app.models.visits import CheckIn, GuideDocument, GuideSectionKey
+from app.models.visits import (
+    CheckIn,
+    GuideDocument,
+    GuideMessage,
+    GuideMessageEvent,
+    GuideMessageEventType,
+    GuideMessageKind,
+    GuideMessageStatus,
+    GuideSectionKey,
+    Visit,
+    VisitStatus,
+)
 from app.services.patient_links import PatientLinkService
 
 HOSPITAL_ROLES = frozenset({"staff", "doctor"})
@@ -57,14 +70,69 @@ class CheckInService:
     async def save(self, raw_token: str, payload: CheckInCreateRequest) -> CheckIn:
         from app.services.checkin_signals import CheckInSignalService
 
-        async with in_transaction():
+        async with in_transaction() as connection:
             signals = CheckInSignalService(self.links)
             guide = await signals.lock_guide(raw_token)
             existed = await CheckIn.filter(guide_document_id=guide.pk).select_for_update().first() is not None
             saved = await self._save_answer(raw_token, payload)
+            canceled_ids = await (
+                GuideMessage.filter(
+                    guide_document_id=guide.pk,
+                    kind=GuideMessageKind.CHECK_D7,
+                    status=GuideMessageStatus.SCHEDULED,
+                    claim_token__isnull=True,
+                )
+                .using_db(connection)
+                .values_list("guide_message_id", flat=True)
+            )
+            await (
+                GuideMessage.filter(guide_message_id__in=canceled_ids)
+                .using_db(connection)
+                .update(status=GuideMessageStatus.CANCELED)
+            )
+            for message_id in canceled_ids:
+                await GuideMessageEvent.create(
+                    guide_message_id=message_id,
+                    event_type=GuideMessageEventType.CANCELED,
+                    reason="ANSWERED",
+                    using_db=connection,
+                )
             if not existed:
                 await signals.correct_from_save(guide, payload)
             return saved
+
+    @staticmethod
+    async def next_steps(guide: GuideDocument) -> tuple[str | None, str | None]:
+        current = now()
+        next_message = (
+            await GuideMessage.filter(
+                guide_document_id=guide.guide_document_id,
+                kind__in=(GuideMessageKind.CHECK_D15, GuideMessageKind.CHECK_D30),
+                # HELD도 본다 — 재시도 대기 중인 회차를 SCHEDULED만 보고
+                # 건너뛰면, 실제로 남아 있는 회차 대신 더 늦은 날짜나
+                # null을 보여준다(2heej 리뷰).
+                status__in=(GuideMessageStatus.SCHEDULED, GuideMessageStatus.HELD),
+                scheduled_at__gt=current,
+            )
+            .order_by("scheduled_at")
+            .first()
+        )
+        visit = await guide.visit
+        next_visit = (
+            await Visit.filter(
+                hospital_id=visit.hospital_id,
+                patient_id=visit.patient_id,
+                status=VisitStatus.SCHEDULED,
+                visited_at__gt=current,
+            )
+            .exclude(visit_id=visit.visit_id)
+            .order_by("visited_at")
+            .first()
+        )
+        return (
+            next_message.scheduled_at.astimezone(DISPLAY_TIMEZONE).date().isoformat() if next_message else None,
+            next_visit.visited_at.astimezone(DISPLAY_TIMEZONE).date().isoformat() if next_visit else None,
+        )
 
     async def _save_answer(self, raw_token: str, payload: CheckInCreateRequest) -> CheckIn:
         """D+7 답을 저장한다. **같은 답을 다시 보내면 그때 그 줄을 돌려준다** (KEY-335).

@@ -48,6 +48,8 @@ from app.models.visits import (
     GuideEventType,
     GuideGenerationJob,
     GuideMessage,
+    GuideMessageEvent,
+    GuideMessageEventType,
     GuideMessageKind,
     GuideMessageSetting,
     GuideMessageStatus,
@@ -1028,7 +1030,25 @@ class GuideService:
         # 화면은 「발송 예정」이라 적고 실제로는 아무것도 안 나간다. 유니크가
         # (안내문, 종류) 라 새로 만들 수도 없어서, 여기서 되살린다.
         already = {m.kind for m in live if m.status != GuideMessageStatus.CANCELED}
-        revive = {m.kind: m for m in live if m.status == GuideMessageStatus.CANCELED}
+        canceled = [m for m in live if m.status == GuideMessageStatus.CANCELED]
+
+        # **껐던 줄이라고 다 되살리지 않는다.** CANCELED에는 두 갈래가
+        # 섞여 있다 — 스탭이 unapprove·재예약으로 끈 것(되살려도 된다)과,
+        # 환자가 이미 답변해서 이 서비스가 자동으로 끈 것(되살리면 답변
+        # 완료된 D+7을 다시 예약하는 사고다 — KEY-320, 2heej 리뷰). 후자는
+        # 취소 시점에 `GuideMessageEvent(CANCELED, reason="ANSWERED")`를
+        # 남기므로, 그 이벤트가 있는 kind는 되살릴 후보에서 뺀다.
+        answered_ids = set(
+            await GuideMessageEvent.filter(
+                guide_message_id__in=[m.guide_message_id for m in canceled],
+                event_type=GuideMessageEventType.CANCELED,
+                reason="ANSWERED",
+            )
+            .using_db(connection)
+            .values_list("guide_message_id", flat=True)
+        )
+        revive = {m.kind: m for m in canceled if m.guide_message_id not in answered_ids}
+        already |= {m.kind for m in canceled if m.guide_message_id in answered_ids}
 
         # **시각이 비어 있을 수 있다.** 아래 고리가 `at is None` 이면 건너뛴다 —
         # 진료일을 모르면 확인 회차를 셈할 수 없고, 그때 없는 날짜를 지어내

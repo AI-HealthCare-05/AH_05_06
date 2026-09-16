@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from tortoise.timezone import now
+from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.core.logger import default_logger
@@ -29,6 +30,7 @@ from app.models.ocr import OcrDocumentText, OcrField, OcrJob, OcrJobStatus, cour
 from app.models.patients import Patient
 from app.models.staffs import Hospital
 from app.models.visits import (
+    CheckIn,
     GuideDocument,
     GuideMessage,
     GuideMessageEvent,
@@ -61,6 +63,11 @@ _CHECK_DAY_NUMBER: dict[GuideMessageKind, int] = {
 def backoff_seconds(attempt: int) -> int:
     """`attempt`번째 실패 뒤 다음 시도까지 기다릴 시간(초)."""
     return min(BACKOFF_BASE_SECONDS * (2 ** max(attempt - 1, 0)), BACKOFF_MAX_SECONDS)
+
+
+def check_day_number(visited_at: datetime, sent_at: datetime) -> int:
+    days = (sent_at.astimezone(DISPLAY_TIMEZONE).date() - visited_at.astimezone(DISPLAY_TIMEZONE).date()).days
+    return max(days, 1)
 
 
 @dataclass(frozen=True)
@@ -142,6 +149,7 @@ async def render_message_body(
     visit: Visit | None = None,
     body: str | None = None,
     hospital: Hospital | None = None,
+    sent_at: datetime | None = None,
 ) -> str:
     """이 문자 한 통의 실제 발송 문구를 만든다 — 보낼 때 그 시점 템플릿으로.
 
@@ -167,7 +175,11 @@ async def render_message_body(
         "환자명": patient.name if patient else "",
     }
     if message.kind in _CHECK_DAY_NUMBER:
-        values["일차"] = str(_CHECK_DAY_NUMBER[message.kind])
+        values["일차"] = str(
+            check_day_number(visit.visited_at, sent_at or now())
+            if message.kind is GuideMessageKind.CHECK_D7 and visit is not None
+            else _CHECK_DAY_NUMBER[message.kind]
+        )
     if message.kind is GuideMessageKind.RUN_OUT:
         days = await _course_days(guide.visit_id)
         values["일수"] = str(days) if days is not None else ""
@@ -261,21 +273,111 @@ async def _purge_source_documents(
         )
 
 
-async def _claim(message_id: int, *, at: datetime) -> str | None:
+async def _claim(message_id: int, *, at: datetime) -> tuple[str | None, bool]:
     """SCHEDULED·시각 도래·미점유 행을 원자적으로 붙잡는다 — 멱등키.
 
     같은 메시지를 두 워커가 동시에 집어도 `claim_token__isnull=True` 조건에
     걸려 한쪽만 영향을 받는다(affected row 1). 진 쪽은 0을 보고 넘어간다 —
     별도 잠금 없이 UPDATE 문 자체의 원자성만으로 막는다.
+
+    D+7 확인 문자(`CHECK_D7`)는 여기서 그치지 않는다 — `checkins.py`의
+    `save()`도 `GuideDocument.select_for_update()`로 같은 진료 행을 잠근
+    채 이 메시지를 CANCELED로 미리 취소한다. 이 claim이 별도의 autocommit
+    UPDATE로 남아 있으면, save()가 커밋되기 직전에 이 claim이 끼어들
+    경우 둘 다 서로의 커밋 전 상태만 보고 "문제없다"고 판단할 좁은 창이
+    생긴다 — 환자가 막 답변을 저장했는데 확인 문자가 그래도 나가는 사고
+    (KEY-320, 2heej 리뷰). 그래서 CHECK_D7일 때는 claim 자체를 같은
+    GuideDocument 잠금 안에 넣는다 — save()와 완전히 직렬화되어, 어느
+    쪽이 이기든 진 쪽은 상대가 이미 반영한 최신 상태를 보고 나서
+    판단한다.
+
+    CheckIn을 여기서 발견하면 **그 자리에서 CANCELED로 전이시킨다** —
+    단순히 claim을 포기하고 넘어가지 않는다. `save()`가 이 메시지를 아직
+    못 봐서(예: 재시도로 늦게 생성된 행) 취소를 못 했을 수 있어서다.
+    조건에 `status=SCHEDULED`를 두어 멱등이다 — 이미 `save()`가 취소해
+    둔 행이면 0건 매치로 조용히 넘어간다.
+
+    `(claim_token, already_answered)`를 돌려준다. `already_answered`가
+    참이면 호출부는 더 할 일이 없다 — 상태 전이가 이미 끝났다.
+
+    **CHECK_D7이 아니면 트랜잭션(SAVEPOINT)을 아예 안 연다.** `save()`와
+    겹칠 GuideDocument 잠금이 필요 없는 종류까지 감싸면 순전히 부담만
+    는다 — 실제로 그 부담이 이 함수를 테스트하는
+    `test_two_concurrent_dispatches_only_send_once`를 깨뜨렸다.
+    Tortoise의 `TestCase`가 테스트 하나를 통째로 커넥션 하나에 묶어
+    두는데, `asyncio.gather()`의 두 코루틴이 그 커넥션 위에 동시에
+    SAVEPOINT를 열려고 하면서 MySQL 프로토콜 자체가 깨졌다
+    ("Packet sequence number wrong").
     """
     token = secrets.token_hex(8)
-    affected = await GuideMessage.filter(
-        guide_message_id=message_id,
-        status=GuideMessageStatus.SCHEDULED,
-        claim_token__isnull=True,
-        scheduled_at__lte=at,
-    ).update(claim_token=token)
-    return token if affected == 1 else None
+    message = await GuideMessage.filter(guide_message_id=message_id).first()
+    if message is None:
+        return None, False
+    if message.kind is not GuideMessageKind.CHECK_D7:
+        affected = await GuideMessage.filter(
+            guide_message_id=message_id,
+            status=GuideMessageStatus.SCHEDULED,
+            claim_token__isnull=True,
+            scheduled_at__lte=at,
+        ).update(claim_token=token)
+        return (token if affected == 1 else None), False
+
+    async with in_transaction() as connection:
+        message = await GuideMessage.filter(guide_message_id=message_id).using_db(connection).first()
+        if message is None:
+            return None, False
+        await (
+            GuideDocument.filter(guide_document_id=message.guide_document_id)
+            .select_for_update()
+            .using_db(connection)
+            .get()
+        )
+        if await CheckIn.filter(guide_document_id=message.guide_document_id).using_db(connection).exists():
+            affected = await (
+                GuideMessage.filter(
+                    guide_message_id=message_id,
+                    status=GuideMessageStatus.SCHEDULED,
+                    claim_token__isnull=True,
+                )
+                .using_db(connection)
+                .update(status=GuideMessageStatus.CANCELED)
+            )
+            if affected == 1:
+                await GuideMessageEvent.create(
+                    guide_message_id=message_id,
+                    event_type=GuideMessageEventType.CANCELED,
+                    reason="ANSWERED",
+                    using_db=connection,
+                )
+            return None, True
+        affected = (
+            await GuideMessage.filter(
+                guide_message_id=message_id,
+                status=GuideMessageStatus.SCHEDULED,
+                claim_token__isnull=True,
+                scheduled_at__lte=at,
+            )
+            .using_db(connection)
+            .update(claim_token=token)
+        )
+        return (token if affected == 1 else None), False
+
+
+async def _claim_and_prepare(
+    message_id: int, moment: datetime
+) -> tuple[str, GuideMessage, LocalFileStorage] | DispatchResult | None:
+    """claim을 시도하고, 진행할 수 있으면 다음 단계에 필요한 것을 묶어 돌려준다.
+
+    세 갈래다 — `dispatch_message`의 조기 반환 두 개를 여기로 옮겨서
+    그 함수의 순환 복잡도를 낮춘다.
+    """
+    token, already_answered = await _claim(message_id, at=moment)
+    if already_answered:
+        return DispatchResult(guide_message_id=message_id, status=GuideMessageStatus.CANCELED)
+    if token is None:
+        return None
+    message = await GuideMessage.get(guide_message_id=message_id)
+    return token, message, LocalFileStorage(config.UPLOAD_DIR)
 
 
 async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult | None:
@@ -285,12 +387,10 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
     실패가 아니라 「이번엔 내 차례가 아니다」라는 뜻이다.
     """
     moment = now()
-    token = await _claim(message_id, at=moment)
-    if token is None:
-        return None
-
-    message = await GuideMessage.get(guide_message_id=message_id)
-    storage = LocalFileStorage(config.UPLOAD_DIR)
+    prepared = await _claim_and_prepare(message_id, moment)
+    if prepared is None or isinstance(prepared, DispatchResult):
+        return prepared
+    token, message, storage = prepared
     try:
         await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
         gate = await evaluate_dispatch_gate(message, storage=storage)
@@ -322,7 +422,10 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         if patient is None:
             raise ValueError(f"patient not found for message {message_id}")
 
-        body = await render_message_body(message, guide=guide, visit=visit, body=gate.body, hospital=gate.hospital)
+        sent_at = now()
+        body = await render_message_body(
+            message, guide=guide, visit=visit, body=gate.body, hospital=gate.hospital, sent_at=sent_at
+        )
         result = await sender.send(patient.phone, body)
     except SmsSendError as exc:
         return await _finish_retryable(message, token, moment, provider_detail=exc.reason)
@@ -331,7 +434,7 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
         return await _finish_retryable(message, token, moment, provider_detail="worker_exception")
 
     if result.status is SmsDeliveryStatus.SENT:
-        return await _finish_sent(message, token, moment, body, result)
+        return await _finish_sent(message, token, sent_at, body, result)
     # 공급자가 명시적으로 거절했다 — 재시도해도 같은 결과다. 바로 종료한다.
     return await _finish_failed(message, token, provider_detail=result.provider_code)
 

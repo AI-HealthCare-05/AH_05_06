@@ -201,6 +201,7 @@ class SendScheduleTestCase(World, TestCase):
 
         after = await GuideMessage.filter(guide_document=guide).count()
         assert after == before, f"다시 승인하니 {before} → {after} 로 늘었다"
+        assert await GuideMessage.filter(guide_document=guide, kind=GuideMessageKind.CHECK_D7).count() == 1
 
 
 class UnapproveTestCase(SendScheduleTestCase):
