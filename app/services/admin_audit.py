@@ -1,18 +1,20 @@
 """감사 로그를 **읽을 때 합친다** — A1-6 · A1-7 (KEY-322).
 
-이벤트는 이미 네 표에 append-only 로 쌓이고 있는데 읽을 길이 없었다. 통합
+이벤트는 이미 여섯 소스에 append-only 로 쌓이고 있는데 읽을 길이 없었다. 통합
 `AuditLog` 표로 물리 통합하는 것은 별도 논의라, 여기서는 조회 시 합친다.
 
-## 모든 길이 `GuideDocument` 를 지난다
+## 병원 울타리에 닿는 길
 
-울타리를 어디에 치나가 이 파일의 뼈대다. 네 표가 병원을 각자 들고 있지 않지만
+울타리를 어디에 치나가 이 파일의 뼈대다. 진료에 매달린 네 소스는
 **전부 `GuideDocument` 에 닿고**, 거기에 `hospital_id` 와 `visit_id` 가 둘 다
-있다.
+있다. 직원 계정·의원 정보 이벤트는 `hospital_id` 를 직접 들고 있다.
 
     guide_event          → guide_document
     patient_usage_event  → guide_document
     guide_message_event  → guide_message      → guide_document
     patient_otp_event    → patient_guide_link → guide_document
+    staff_account_event  → hospital_id
+    hospital_update_event → hospital_id
 
 앞 셋은 FK 라 조인으로 한 번에 거른다. **`patient_otp_event` 만 다르다** —
 `patient_guide_link_id` 가 FK 가 아니라 그냥 `BigIntField` 라 조인할 자리가
@@ -22,7 +24,7 @@
 
 ## 쪽 나눔
 
-표 넷을 SQL 로 합칠 수 없으므로 **각 표에서 한 쪽씩 떠 와 파이썬에서 섞는다.**
+여섯 소스를 SQL 로 합칠 수 없으므로 **각 소스에서 한 쪽씩 떠 와 파이썬에서 섞는다.**
 각자 `limit + 1` 을 최신순으로 뜨면, 섞어서 앞의 `limit` 개를 고른 결과는
 전체를 정렬한 것과 같다 — 어느 표에서 안 떠 온 줄은 그 표의 `limit + 1` 번째
 보다 오래된 것이라 앞자리에 못 온다.
@@ -103,7 +105,7 @@ _SUMMARY: dict[tuple[AuditSource, str], str] = {
 
 @dataclass(frozen=True, slots=True)
 class _Row:
-    """표 넷이 공통으로 옮겨지는 자리. DTO 로 나가기 전의 중간 모양이다."""
+    """여섯 소스가 공통으로 옮겨지는 자리. DTO 로 나가기 전의 중간 모양이다."""
 
     pk: int
     occurred_at: datetime
@@ -185,8 +187,8 @@ class AdminAuditService:
         }
         wanted = [query.source] if query.source else list(sources)
 
-        #: **한 번에 묻는다.** 표 다섯이 서로를 안 기다리므로 순차로 `await` 하면
-        #: 한 쪽의 지연이 「가장 느린 것」이 아니라 **다섯의 합**이 된다. 표가
+        #: **한 번에 묻는다.** 여섯 소스가 서로를 안 기다리므로 순차로 `await` 하면
+        #: 한 쪽의 지연이 「가장 느린 것」이 아니라 **여섯의 합**이 된다. 소스가
         #: 늘수록 벌어지는 자리다 (이희진 님 `#287` 리뷰 ③).
         #:
         #: 섞는 것은 어차피 파이썬에서 다시 정렬하므로 순서가 안 중요하다 —
@@ -235,9 +237,9 @@ class AdminAuditService:
             for row in rows
         ]
 
-    # ── 표 넷 ────────────────────────────────────────────────────────────
+    # ── 여섯 소스 ────────────────────────────────────────────────────────
     #
-    # 넷이 같은 모양이다: 울타리로 좁히고, 거르개를 걸고, 최신순으로 `take` 만큼
+    # 여섯 소스가 같은 모양이다: 울타리로 좁히고, 거르개를 걸고, 최신순으로 `take` 만큼
     # 떠서 `_Row` 로 옮긴다. 다른 것은 **병원까지 가는 길**뿐이다.
 
     async def _guide_rows(self, scope: _Scope) -> list[_Row]:
