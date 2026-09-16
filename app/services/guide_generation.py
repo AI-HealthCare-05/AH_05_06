@@ -136,6 +136,7 @@ def approved_fallback(content: DrugCautionContent | None) -> ApprovedFallbackTem
             source_name=content.source_name,
             source_org=content.source_org,
             source_url=content.source_url or None,
+            verified_at=content.verified_at,
         )
     # C등급 전문의 자문 근거 — physician_review 스탬프 필요.
     review = content.physician_review
