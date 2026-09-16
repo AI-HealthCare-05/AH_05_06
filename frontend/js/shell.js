@@ -29,6 +29,7 @@ var STATUS_TABS = WORK_CATEGORIES;
    셋을 하나로 뭉쳐 두면 나중에 갈라내기 어렵다. 차트번호로 업로드를 걸어 두면
    같은 환자의 지난 진료에 이번 기록이 붙는 사고가 난다. */
 var rows = [];
+var smsOptOutExcluded = 0;
 var listDay = new Date();
 var listQuery = "";
 
@@ -297,20 +298,42 @@ function loadDay() {
     .onDay(toIsoDate(listDay))
     .then(function (page) {
       rows = page.items;
+      smsOptOutExcluded = page.sms_opt_out_excluded || 0;
       /* **날짜를 옮겨도 고른 것을 놓지 않는다.** 어제 목록을 보러 갔다고 보던
          환자를 빼앗으면, 돌아왔을 때 다시 찾아 눌러야 한다. 날짜는 목록의
          보기이지 무엇을 열어 뒀는지가 아니다 — 상태 탭과 같은 규칙이다.
          (그 진료의 날짜는 상세 머리에 「8월 31일 진료」로 적혀 있다.) */
       renderChipCounts();
+      renderSmsOptOutNotice();
       renderRows();
       syncPane();
     })
     .catch(function () {
       rows = [];
+      smsOptOutExcluded = 0;
       renderChipCounts(); // 목록은 비었는데 배지만 옛 숫자로 남지 않게
+      renderSmsOptOutNotice();
       renderRows();
       syncPane();
     });
+}
+
+/* 문자 수신을 거부한 환자의 진료는 오늘 목록 어디에도 뜨지 않는다 —
+   KEY-355(이희진 9/16). 조용히 없어지면 스탭이 「어제 그 환자」를 못
+   찾는다 — 뺀 건수를 알리고, 그 환자들을 볼 수 있는 자리(환자 목록의
+   「수신 거부」 묶음)로 바로 갈 수 있게 한다. */
+function renderSmsOptOutNotice() {
+  var el = document.getElementById("sms-opt-out-notice");
+  if (!el) return;
+  if (!smsOptOutExcluded) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML =
+    "수신 거부 " +
+    smsOptOutExcluded +
+    '건은 안내 대상이 아닙니다 — <a href="/manage.html?category=SMS_OPT_OUT">환자 목록 › 수신 거부</a>';
 }
 
 /* 목록의 축은 하루다. 「오늘」인지 아닌지가 붙어야 지난 날짜를 보고 있다는 것을 안다.

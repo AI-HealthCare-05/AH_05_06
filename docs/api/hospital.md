@@ -512,6 +512,7 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 - `categories`는 쉼표로 구분한 업무 카테고리다. 미입력 시 전체 카테고리를 조회한다.
 - `cursor`는 서버가 발급한 불투명 커서다. `limit`은 기본 50, 최대 100인 cursor pagination을 사용한다.
 - `NEEDS_ATTENTION`은 해결될 때까지 날짜와 무관하게 포함한다. 나머지 카테고리는 `visited_at`을 `Asia/Seoul`로 변환한 날짜가 요청한 `date`와 같은 진료만 포함한다.
+- 문자 수신을 거부한 환자(`sms_opted_out_at`)의 진료는 다른 사유(반려·승인 요청 등)가 함께 있어도 목록·`counts` 양쪽에서 완전히 뺀다 — 보낼 곳이 없으면 승인해도 소용없다(KEY-355). 이런 진료는 이 화면 어디에도 뜨지 않는다. 대신 뺀 건수를 `sms_opt_out_excluded`로 응답에 싣는다 — 조용히 없어지면 스탭이 「어제 그 환자」를 못 찾는다. 이 환자들은 환자 목록(S2-1)의 `SMS_OPT_OUT` 묶음에서 계속 볼 수 있다. 수신 동의를 다시 받아 `sms_opted_out_at`이 비면 다음 조회부터 정상 파생으로 돌아온다.
 - `age`는 저장값이 아니라 요청한 현지 날짜와 `birth_date`로 계산한다. 동명이인 확인과 계산 근거를 위해 응답에 두 값을 함께 제공한다.
 - `diagnosis_name`은 확정된 구조화 진단명이 있을 때만 제공하며 미확정이면 `null`이다. 원문 의료문서는 포함하지 않는다.
 
@@ -520,7 +521,7 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 | 화면 탭 | `work_category` | 포함하는 `detail_status` |
 |---|---|---|
 | 작성 중 | `IN_PROGRESS` | `NO_DOCUMENT`, `OCR_REVIEW`, `GUIDE_GENERATING`, `STAFF_REVIEW` |
-| 보완 | `NEEDS_ATTENTION` | `GENERATION_FAILED`, `INVALID_PHONE`, `SMS_OPT_OUT`, `APPROVAL_RETURNED` |
+| 보완 | `NEEDS_ATTENTION` | `GENERATION_FAILED`, `INVALID_PHONE`, `APPROVAL_RETURNED` |
 | 승인 요청 | `APPROVAL_REQUESTED` | `APPROVAL_PENDING` |
 | 발송 대기 | `SEND_PENDING` | `SCHEDULED_TO_SEND` |
 | 완료 | `COMPLETED` | `SENT`, `VIEWED` |
@@ -530,7 +531,6 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 - **카테고리 사이 우선순위가 먼저다.** 더 최근에 생긴 일이라도 위 순서를 뒤집지 않는다. 방금 승인 요청이 걸린 진료라도 보낼 곳이 없으면 `NEEDS_ATTENTION`이다.
 - 「발생 시각」은 상태마다 이렇게 읽는다.
   - `APPROVAL_RETURNED` 등 안내문 상태 — 안내문이 마지막으로 움직인 시각
-  - `SMS_OPT_OUT` — 환자가 수신을 거부한 시각
   - `INVALID_PHONE` — **시각이 없다.** 사건이 아니라 상태라 언제 그렇게 됐는지를 남기지 않는다. 시각을 아는 상태가 같은 카테고리에 있으면 그쪽을 보여 준다
 - 같은 시각이면 위 표의 차례를 따른다. 같은 데이터에 화면이 흔들리지 않게 하기 위한 것이다.
 
@@ -561,7 +561,8 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
       "detail_status": "OCR_REVIEW"
     }
   ],
-  "page": {"next_cursor": null, "has_next": false}
+  "page": {"next_cursor": null, "has_next": false},
+  "sms_opt_out_excluded": 2
 }
 ```
 

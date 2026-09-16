@@ -97,9 +97,22 @@ async def evaluate_dispatch_gate(
             pending_source_document_ids=pending_ids,
         )
 
+    # 문자 수신 거부 — KEY-355. provider와 무관하게 늘 본다(mock도 포함) —
+    # 이건 시연 안전장치가 아니라 실제 환자 사실이다. 업무 목록에서 이미
+    # 이 진료를 뺐으니(front_desk.py), 화면에 안 보이는 진료의 예약
+    # 문자가 뒤에서 몰래 나가면 안 된다.
+    visit = await Visit.filter(visit_id=guide.visit_id).select_related("patient").first()
+    if visit is not None and visit.patient.sms_opted_out_at is not None:
+        return DispatchGateDecision(
+            guide=guide,
+            hold_reason=GuideMessageHold.SMS_OPT_OUT,
+            body=body,
+            hospital=hospital,
+            pending_source_document_ids=pending_ids,
+        )
+
     # 승인 번호로만 발송 — KEY-338. mock 경로는 기존 동작을 유지한다.
     if config.SMS_PROVIDER is SmsProvider.SOLAPI:
-        visit = await Visit.filter(visit_id=guide.visit_id).select_related("patient").first()
         recipient = normalize_phone_number(visit.patient.phone) if visit else ""
         if recipient not in approved_test_phones():
             return DispatchGateDecision(

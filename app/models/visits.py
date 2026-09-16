@@ -551,6 +551,14 @@ class GuideMessageHold(StrEnum):
     #: 나갈 수 있었다 — OTP와 같은 좁은문을 예약 문자에도 씌운다. 목록은
     #: OTP와 공유한다(`app.core.approved_phones.approved_test_phones`).
     RECIPIENT_NOT_APPROVED = "RECIPIENT_NOT_APPROVED"
+    #: 환자가 문자 수신을 거부했다(`Patient.sms_opted_out_at`) — KEY-355.
+    #:
+    #: 발송 전에 이미 아는 사실이라 `GuideMessageFailure.OPT_OUT`(보내
+    #: 봤는데 통신사가 거부로 되돌린 경우)과 다르다. 업무 목록에서도
+    #: 이 환자의 진료 자체를 뺀다(`front_desk.py`) — 여기서도 같은
+    #: 판단을 게이트에 씌워, 화면에 안 보이는 진료의 예약 문자가 뒤에서
+    #: 몰래 나가는 일을 막는다.
+    SMS_OPT_OUT = "SMS_OPT_OUT"
 
 
 class GuideMessageFailure(StrEnum):

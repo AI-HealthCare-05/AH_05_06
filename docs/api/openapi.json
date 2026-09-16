@@ -1080,7 +1080,6 @@
           "STAFF_REVIEW",
           "GENERATION_FAILED",
           "INVALID_PHONE",
-          "SMS_OPT_OUT",
           "APPROVAL_RETURNED",
           "APPROVAL_PENDING",
           "SCHEDULED_TO_SEND",
@@ -1453,6 +1452,11 @@
             "title": "Selected Categories",
             "type": "array"
           },
+          "sms_opt_out_excluded": {
+            "default": 0,
+            "title": "Sms Opt Out Excluded",
+            "type": "integer"
+          },
           "timezone": {
             "default": "Asia/Seoul",
             "title": "Timezone",
@@ -1594,7 +1598,8 @@
           "SAFETY_CHECK_FAILED",
           "SOURCE_NOT_DELETED",
           "BOOKING_URL_MISSING",
-          "RECIPIENT_NOT_APPROVED"
+          "RECIPIENT_NOT_APPROVED",
+          "SMS_OPT_OUT"
         ],
         "title": "GuideMessageHold",
         "type": "string"

@@ -22,6 +22,8 @@ class FrontDeskVisitPage:
     selected: list[WorkCategory]
     next_cursor: str | None
     has_next: bool
+    #: 문자 수신을 거부해서 목록·counts 양쪽에서 뺀 건수 — KEY-355.
+    sms_opt_out_excluded: int = 0
 
 
 class FrontDeskService:
@@ -49,15 +51,34 @@ class FrontDeskService:
         visits = await self.repo.front_desk_candidates(hospital_id, day_start=day_start, day_end=day_end)
         signals = await load_signals([visit.visit_id for visit in visits], hospital_id)
         derived = {visit_id: derive(value) for visit_id, value in signals.items()}
+        # 문자 수신을 거부한 환자는 다른 사유(반려·승인 요청 등)가 함께 있어도
+        # 목록·counts 양쪽에서 뺀다 — KEY-355(이희진 9/16). 보낼 곳이 없으면
+        # 승인해도 소용없다. derive() 결과와 무관하게 여기서 무조건 걷어낸다.
+        opted_out_ids = {
+            visit.visit_id
+            for visit in visits
+            if visit.visit_id in signals and signals[visit.visit_id].sms_opted_out_at is not None
+        }
         eligible = [
             visit
             for visit in visits
             if visit.visit_id in derived
+            and visit.visit_id not in opted_out_ids
             and (
                 visit.visited_at.astimezone(DISPLAY_TIMEZONE).date() == target_date
                 or derived[visit.visit_id][0] is WorkCategory.NEEDS_ATTENTION
             )
         ]
+        sms_opt_out_excluded = sum(
+            1
+            for visit in visits
+            if visit.visit_id in opted_out_ids
+            and visit.visit_id in derived
+            and (
+                visit.visited_at.astimezone(DISPLAY_TIMEZONE).date() == target_date
+                or derived[visit.visit_id][0] is WorkCategory.NEEDS_ATTENTION
+            )
+        )
         raw_counts = count_by_category({visit.visit_id: derived[visit.visit_id] for visit in eligible})
         counts = {category: raw_counts[category.value] for category in WorkCategory}
         filtered = [visit for visit in eligible if derived[visit.visit_id][0] in selected]
@@ -99,7 +120,7 @@ class FrontDeskService:
             next_cursor = encode_cursor(
                 {"visited_at": page_rows[-1].visited_at.isoformat(), "visit_id": page_rows[-1].visit_id}
             )
-        return FrontDeskVisitPage(items, counts, selected, next_cursor, has_next)
+        return FrontDeskVisitPage(items, counts, selected, next_cursor, has_next, sms_opt_out_excluded)
 
     @staticmethod
     async def _diagnoses(visit_ids: list[int], hospital_id: int) -> dict[int, str]:

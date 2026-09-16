@@ -156,9 +156,18 @@ class DocumentUploadService:
         return [doc.document_id for doc, _ in pairs], [job.ocr_job_id for _, job in pairs]
 
     async def _verify_visit_access(self, *, visit_id: int, hospital_id: int) -> None:
-        exists = await Visit.filter(visit_id=visit_id, hospital_id=hospital_id).exists()
-        if not exists:
+        visit = await Visit.filter(visit_id=visit_id, hospital_id=hospital_id).select_related("patient").first()
+        if visit is None:
             raise ApiError(status.HTTP_404_NOT_FOUND, "NOT_FOUND", "진료 건을 찾을 수 없습니다.")
+        # 문자 수신을 거부한 환자에게는 애초에 안내문을 만들 이유가 없다 —
+        # KEY-355(이희진 9/16). 업로드 단계에서 명시적으로 막아, 판독·안내
+        # 생성까지 가고 나서야 발송 게이트에서 걸리는 헛수고를 없앤다.
+        if visit.patient.sms_opted_out_at is not None:
+            raise ApiError(
+                status.HTTP_409_CONFLICT,
+                "SMS_OPT_OUT",
+                "이 환자는 문자 수신을 거부했습니다 — 안내문을 만들 수 없습니다.",
+            )
 
     async def _read_and_validate(self, files: list[UploadFile]) -> list[tuple[bytes, str]]:
         if not files:

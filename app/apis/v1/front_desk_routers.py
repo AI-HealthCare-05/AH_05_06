@@ -34,4 +34,5 @@ async def list_front_desk_visits(
         selected_categories=result.selected,
         items=result.items,
         page=CursorPage(next_cursor=result.next_cursor, has_next=result.has_next),
+        sms_opt_out_excluded=result.sms_opt_out_excluded,
     )
