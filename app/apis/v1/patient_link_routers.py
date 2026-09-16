@@ -282,6 +282,7 @@ async def read_patient_checkin(
 ) -> CheckInReadResponse:
     guide, answered = form_data
     medication, caution = approved_answer_bodies(guide)
+    next_checkin, next_visit = await CheckInService.next_steps(guide)
     return CheckInReadResponse(
         answers={
             CheckInMedication.TAKING: None,
@@ -296,6 +297,8 @@ async def read_patient_checkin(
             CheckInPainTypeResponse(key="defecation", label="배변통"),
             CheckInPainTypeResponse(key="chronic_pelvic", label="만성골반통"),
         ],
+        next_checkin=next_checkin,
+        next_visit=next_visit,
         answered=answered,
     )
 
@@ -308,12 +311,16 @@ async def save_patient_checkin(
     service: Annotated[CheckInService, Depends(_checkin_service)],
 ) -> CheckInSaveResponse:
     check_in = await service.save(token, payload)
+    guide = await check_in.guide_document
+    next_checkin, next_visit = await service.next_steps(guide)
     return CheckInSaveResponse(
         check_in_id=check_in.check_in_id,
         medication=check_in.medication,
         pain=_pain_response(check_in),
         note=check_in.note,
         signal_answer_key=check_in.medication,
+        next_checkin=next_checkin,
+        next_visit=next_visit,
     )
 
 
