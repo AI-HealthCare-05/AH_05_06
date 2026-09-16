@@ -1665,7 +1665,7 @@ KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전�
 **A1-7 은 별도 경로가 아니다.** 합치는 규칙이 하나라야 두 화면이 같은 답을 본다
 — 경로를 나누면 한쪽에만 표가 늘어나는 날이 온다.
 
-### 9.2 무엇을 합치나 — 표 다섯
+### 9.2 무엇을 합치나 — 소스 여섯
 
 이벤트는 이미 append-only 로 쌓이고 있었고 **읽을 길이 없었다.** 통합
 `audit_log` 표는 없다(물리 통합은 별도 논의) — 여기서는 **조회 시** 합친다.
@@ -1677,13 +1677,16 @@ KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전�
 | `message` | `guide_message_event` | → `guide_message` → `guide_document` |
 | `otp` | `patient_otp_event` | → `patient_guide_link` → `guide_document` |
 | `staff_account` | `staff_account_event` | 제가 `hospital_id` 를 들고 있다 |
+| `hospital` | `hospital_update_event` | 제가 `hospital_id` 를 들고 있다 |
 
 앞 넷은 전부 `GuideDocument` 를 지나고, 거기에 `hospital_id` 와 `visit_id` 가
 둘 다 있다 — **울타리를 그 한 자리에 친다.**
 
 `staff_account` 는 티켓이 적은 넷에 없던 다섯째다(KEY-321). 계정을 만드는 것은
 **권한을 주는 일**이라 그것이 빠진 감사 로그는 구멍이다. 진료에 매달리지
-않으므로 `visit_id` 로 거르면 이 표는 결과에서 빠진다.
+않으므로 `visit_id` 로 거르면 이 표는 결과에서 빠진다. `hospital` 은 의원 정보
+수정 기록인 여섯째다(KEY-331). 이 역시 진료에 매달리지 않으며 병원 울타리를
+`hospital_id` 로 직접 친다.
 
 ### 9.3 거르개
 
@@ -1691,7 +1694,7 @@ KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전�
 |---|---|
 | `occurred_from` · `occurred_to` | 기간. 양끝을 **포함**한다 |
 | `actor_staff_id` | 그 직원이 한 일만. 환자·발송기 이벤트는 행위자가 없어 걸리지 않는다 |
-| `source` | 위 다섯 중 하나 |
+| `source` | 위 여섯 중 하나 |
 | `visit_id` | 그 진료 건 (= A1-7) |
 | `limit` | 1~200, 기본 50 |
 | `cursor` | 다음 쪽 열쇠 |
@@ -1718,7 +1721,7 @@ KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전�
 
 ### 9.5 쪽 나눔
 
-표 다섯을 SQL 로 합칠 수 없으므로 각 표에서 한 쪽씩 떠 와 섞는다. 순서는
+여섯 소스를 SQL 로 합칠 수 없으므로 각 소스에서 한 쪽씩 떠 와 섞는다. 순서는
 `(occurred_at, source, pk)` 내림차순 **하나**이고 커서가 그 셋을 그대로 담는다.
 
 **문자열 `event_id` 로 줄 세우지 않는다** — `"guide:9" > "guide:10"` 이라 열
