@@ -16,10 +16,13 @@ from tortoise.timezone import now
 
 from app.core import config
 from app.models.catalog import (
+    ApprovalStatus,
     DrugCatalog,
     PrescriptionSet,
     SetDisease,
+    SourceGrade,
 )
+from app.models.knowledge import KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.visits import (
     GuideDocument,
@@ -30,7 +33,7 @@ from app.models.visits import (
 )
 from app.services.approved_knowledge_search import ApprovedKnowledgeSearchService
 from app.services.chatbot import ChatModelError, ModelAnswer
-from app.services.guide_generation import RagGuideGenerator
+from app.services.guide_generation import ESHRE_ENDOMETRIOSIS_SOURCE_URL, RagGuideGenerator
 from app.services.guide_generation_jobs import process_next_generation
 from app.tests.guide_apis.test_guide_generate import (
     GenerateGuideTestCase,
@@ -51,6 +54,8 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
     """KEY-127: 두 질환 × 정상·누락·안전 차단 합성 시나리오 검증."""
 
     async def asyncSetUp(self) -> None:
+        from datetime import UTC, datetime
+
         await super().asyncSetUp()
         self.clinic = await make_clinic()
         self.staff = await make_staff(self.clinic, "key127-staff", ["staff"])
@@ -58,6 +63,32 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         self.model.generate.return_value = ModelAnswer(_SAFE_ANSWER)
         self.flag = patch.object(config, "GUIDE_RAG_ENABLED", True)
         self.flag.start()
+        # KEY-323 §4: 자궁내막증 생활관리 고정 템플릿이 ESHRE KnowledgeVersion을 필요로 한다.
+        _approved_at = datetime(2026, 9, 1, tzinfo=UTC)
+        doc = await KnowledgeDocument.create(
+            source_key="eshre-endometriosis-2022-key127",
+            title="ESHRE Guideline: Endometriosis (2022)",
+            source_org="European Society of Human Reproduction and Embryology",
+            source_url=ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            source_kind=KnowledgeSourceKind.TEXT_PDF,
+        )
+        await KnowledgeVersion.create(
+            document=doc,
+            version_label="2022",
+            source_sha256="b" * 64,
+            source_object_key="synthetic/eshre-endometriosis-2022.pdf",
+            source_mime_type="text/plain",
+            extractor_version="synthetic",
+            approval_status=ApprovalStatus.APPROVED,
+            is_current=True,
+            current_approved_key=str(doc.pk),
+            chunk_optional=True,
+            source_grade=SourceGrade.A,
+            license_verified=True,
+            approved_by="합성 검토자",
+            approved_at=_approved_at,
+            verified_at=_approved_at,
+        )
         self.addCleanup(self.flag.stop)
 
     def _generator(self) -> RagGuideGenerator:
@@ -80,14 +111,20 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         return await make_rag_sources(self.clinic.pk)
 
     @staticmethod
-    def _assert_all_sections_passed(checks) -> None:
-        """모든 섹션이 PASS이고 단계별 개수가 기대값(pre 4 · post 3)과 같은지 확인한다."""
+    def _assert_all_sections_passed(checks, *, expected_post: int = 3) -> None:
+        """모든 섹션이 PASS이고 단계별 개수가 기대값과 같은지 확인한다.
+
+        pre 4 (전 섹션) · post는 질환별로 다름:
+          - PCOS: post 3 (medication + caution + life, 모두 RAG)
+          - EMS:  post 2 (medication + caution만 RAG, endo life 는 고정 템플릿 — KEY-323 §4)
+        emergency 는 고정 템플릿이므로 두 질환 모두 post 검사 없음.
+        """
         blocked = [c for c in checks if c.verdict is not SafetyCheckVerdict.PASS]
         assert not blocked, f"차단된 검증 — {[(c.section_key, c.reason_code) for c in blocked]}"
         by_stage = Counter(c.stage for c in checks)
         assert dict(by_stage) == {
             SafetyCheckStage.PRE_GENERATE: 4,
-            SafetyCheckStage.POST_GENERATE: 3,
+            SafetyCheckStage.POST_GENERATE: expected_post,
         }, f"단계별 개수가 달라졌다 — {dict(by_stage)}"
 
     async def _setup_ems_visit(self, chart: str = "SYN-EMS-01"):
@@ -153,7 +190,8 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         """자궁내막증 정상 케이스(SYN-EMS-01): 안내 생성 성공 + PASS 안전검증 기록.
 
         RAG 소스가 있을 때 정상 생성 후 GuideSafetyCheck 에 섹션별 PASS 레코드가 남는다.
-        4개 섹션 × pre + RAG 3섹션 × post = 7개 (emergency 는 고정 템플릿이라 post 없음).
+        4개 섹션 × pre + RAG 2섹션 × post = 6개.
+        emergency 와 endo life 는 고정 템플릿이라 post 없음 (KEY-323 §4).
         """
         visit = await self._setup_ems_visit()
         await self._add_sources()
@@ -165,7 +203,7 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         assert job.completed_at is not None, f"생성 실패: {job.failure_reason}"
         guide = await GuideDocument.get(visit_id=visit.pk)
         checks = await GuideSafetyCheck.filter(guide_document=guide).all()
-        self._assert_all_sections_passed(checks)
+        self._assert_all_sections_passed(checks, expected_post=2)
 
     async def test_pcos_normal_generation_records_pass_safety_checks(self) -> None:
         """PCOS 정상 케이스(SYN-PCOS-01): 안내 생성 성공 + PASS 안전검증 기록."""
@@ -346,4 +384,5 @@ class TestKey127QualityScenarios(GenerateGuideTestCase):
         self.model.generate.assert_awaited()
         guide = await GuideDocument.get(visit_id=visit.pk)
         checks = await GuideSafetyCheck.filter(guide_document=guide).all()
-        self._assert_all_sections_passed(checks)
+        # 주 질환이 EMS이므로 endo life 는 고정 템플릿 → post 2 (KEY-323 §4)
+        self._assert_all_sections_passed(checks, expected_post=2)

@@ -149,9 +149,15 @@ function guideSourcesHtml(sources) {
           ? "검색 장애 → 템플릿" : source.fallback_reason === "fixed_approved_template"
             ? "승인 고정 문구" : "근거 없음 → 템플릿";
         return "<li>" + esc(reason) + " · 템플릿 " + esc(source.template_id || "") +
-          " · 버전 " + esc(source.version) + "</li>";
+          " · 버전 " + esc(source.version) +
+          (source.source_name ? " · 문서명 " + esc(source.source_name) : "") +
+          (source.source_org ? " · " + esc(source.source_org) : "") +
+          (source.verified_at ? " · 확인일 " + esc(source.verified_at) : "") +
+          (source.source_url ? " · 출처 " + esc(source.source_url) : "") +
+          "</li>";
       }
       return "<li>RAG · " + esc(source.source_org || "") +
+        (source.source_name ? " · 문서명 " + esc(source.source_name) : "") +
         " · 문서 " + esc(source.document_id || "") + " · 버전 " + esc(source.version) +
         " · 확인일 " + esc(source.verified_at || "") +
         " · 출처 " + esc(source.source_url || "") + "</li>";

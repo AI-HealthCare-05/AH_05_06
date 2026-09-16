@@ -80,6 +80,10 @@ class ApprovedFallbackTemplate:
     is_current: bool
     approved_by: str
     approved_at: date
+    source_org: str | None = None
+    source_url: str | None = None
+    source_name: str | None = None
+    verified_at: date | None = None
 
 
 @dataclass(frozen=True)

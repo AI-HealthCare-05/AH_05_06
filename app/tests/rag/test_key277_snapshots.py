@@ -36,6 +36,7 @@ class TestGuideSourceSnapshots(TestCase):
             section_key="medication",
             source_org="합성 기관",
             source_url="https://example.invalid",
+            source_name="합성 문서명",
             version="v1",
             verified_at=date(2026, 9, 1),
             hospital_id=self.hospital.pk,

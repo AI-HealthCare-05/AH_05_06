@@ -81,6 +81,11 @@ class KnowledgeVersion(models.Model):
     approved_by: str | None = fields.CharField(max_length=100, null=True)  # type: ignore[assignment]
     approved_at: datetime | None = fields.DatetimeField(null=True)
     extractor_version = fields.CharField(max_length=100)
+    # 청크 없이 승인되는 고정 템플릿 레코드 (자궁내막증 ESHRE 등)
+    chunk_optional = fields.BooleanField(default=False)
+    deprecated_by: str | None = fields.CharField(max_length=100, null=True)  # type: ignore[assignment]
+    deprecated_at: datetime | None = fields.DatetimeField(null=True)
+    approval_note: str | None = fields.CharField(max_length=500, null=True)  # type: ignore[assignment]
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

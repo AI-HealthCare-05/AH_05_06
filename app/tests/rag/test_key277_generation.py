@@ -1,7 +1,7 @@
 """Synthetic API → durable queue → search/revalidation → model → DB evidence."""
 
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from unittest.mock import AsyncMock, patch
 
@@ -15,8 +15,9 @@ from app.models.catalog import (
     DrugCautionContent,
     PrescriptionSet,
     SetDisease,
+    SourceGrade,
 )
-from app.models.knowledge import KnowledgeDocument, KnowledgeVersion
+from app.models.knowledge import KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion
 from app.models.prescriptions import PrescriptionItem
 from app.models.visits import (
     GuideDocument,
@@ -31,7 +32,7 @@ from app.services.approved_knowledge_search import (
     ApprovedKnowledgeSearchService,
 )
 from app.services.chatbot import ChatModelError, ModelAnswer
-from app.services.guide_generation import KEY82_GENERATION_APPROVAL, RagGuideGenerator
+from app.services.guide_generation import ESHRE_ENDOMETRIOSIS_SOURCE_URL, KEY82_GENERATION_APPROVAL, RagGuideGenerator
 from app.services.guide_generation_jobs import process_next_generation
 from app.tests.guide_apis.test_guide_generate import (
     GenerateGuideTestCase,
@@ -59,6 +60,7 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
             name="자궁내막증 · 비잔 (계속)", disease=SetDisease.ENDOMETRIOSIS
         )
         await make_caution_contents(self.prescription_set)
+        await self._make_eshre_fixture()
         self.model = AsyncMock()
         self.model.generate.return_value = ModelAnswer(
             json.dumps({"body": "검증된 합성 교육 안내입니다.", "drug_names": []})
@@ -67,6 +69,34 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         self.flag = patch.object(config, "GUIDE_RAG_ENABLED", True)
         self.flag.start()
         self.addCleanup(self.flag.stop)
+
+    async def _make_eshre_fixture(self) -> None:
+        """자궁내막증 생활관리 고정 템플릿에 필요한 ESHRE chunk_optional 레코드를 생성한다."""
+        _approved_at = datetime(2026, 9, 1, tzinfo=UTC)
+        doc = await KnowledgeDocument.create(
+            source_key="eshre-endometriosis-2022-fixture",
+            title="ESHRE Guideline: Endometriosis (2022)",
+            source_org="European Society of Human Reproduction and Embryology",
+            source_url=ESHRE_ENDOMETRIOSIS_SOURCE_URL,
+            source_kind=KnowledgeSourceKind.TEXT_PDF,
+        )
+        await KnowledgeVersion.create(
+            document=doc,
+            version_label="2022",
+            source_sha256="b" * 64,
+            source_object_key="synthetic/eshre-endometriosis-2022.pdf",
+            source_mime_type="text/plain",
+            extractor_version="synthetic",
+            approval_status=ApprovalStatus.APPROVED,
+            is_current=True,
+            current_approved_key=str(doc.pk),
+            chunk_optional=True,
+            source_grade=SourceGrade.A,
+            license_verified=True,
+            approved_by="합성 검토자",
+            approved_at=_approved_at,
+            verified_at=_approved_at,
+        )
 
     async def add_sources(self, *, approved=True):
         return await make_rag_sources(self.clinic.pk, approved=approved)
@@ -95,10 +125,10 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         await self.run_job()
         await job.refresh_from_db()
         assert job.completed_at is not None, job.failure_reason
-        assert self.model.generate.await_count == 3  # emergency stays approved fixed text
+        assert self.model.generate.await_count == 2  # emergency + endo life = fixed templates
         assert await GuideSectionSourceSnapshot.all().count() == 4
-        assert await GuideSafetyCheck.all().count() == 7
-        assert await GuideSection.filter(drug_caution_content_id__not_isnull=True).count() == 1
+        assert await GuideSafetyCheck.all().count() == 6  # model 2회(medication·caution) × pre+post + fixed 2회 × pre
+        assert await GuideSection.filter(drug_caution_content_id__not_isnull=True).count() == 2  # emergency + endo life
         for call in self.model.generate.await_args_list:
             assert "합성환자" not in call.kwargs["prompt"]
             assert "01012345678" not in call.kwargs["prompt"]
@@ -113,7 +143,11 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         self.model.generate.assert_not_awaited()
         rows = await GuideSectionSourceSnapshot.all()
         assert len(rows) == 4
-        assert all(row.template_id and row.version == "synthetic-v1" for row in rows)
+        assert all(row.template_id for row in rows)
+        # LIFE 섹션(자궁내막증)은 ESHRE KnowledgeVersion 템플릿("2022"), 나머지는 synthetic-v1
+        life_row = next(r for r in rows if r.section_key.value == "life")
+        assert life_row.version == "2022"
+        assert sum(1 for r in rows if r.version == "synthetic-v1") == 3
 
     async def test_unapproved_sources_never_reach_model(self):
         await self.add_sources(approved=False)
@@ -146,7 +180,9 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         await self.finish_retries(job)
         assert job.completed_at is not None, job.failure_reason
         assert job.attempts == 3
-        assert await GuideSectionSourceSnapshot.filter(fallback_reason="search_infrastructure_exhausted").count() == 4
+        # fixed_template 섹션(emergency, endo life)은 검색을 건너뛰어 항상 fixed_approved_template
+        assert await GuideSectionSourceSnapshot.filter(fallback_reason="search_infrastructure_exhausted").count() == 2
+        assert await GuideSectionSourceSnapshot.filter(fallback_reason="fixed_approved_template").count() == 2
         self.model.generate.assert_not_awaited()
 
     async def test_llm_failure_exhausts_then_fails_without_partial_guide(self):

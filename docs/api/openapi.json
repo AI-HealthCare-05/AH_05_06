@@ -1818,6 +1818,17 @@
             ],
             "title": "Score"
           },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
           "source_org": {
             "anyOf": [
               {

@@ -22,6 +22,7 @@ class VerifiedGuideSource:
     section_key: str
     source_org: str
     source_url: str
+    source_name: str
     version: str
     verified_at: date
     hospital_id: int | None
@@ -107,6 +108,7 @@ async def revalidate_guide_sources(
                 section_key=section_key,
                 source_org=document.source_org,
                 source_url=document.source_url,
+                source_name=document.title,
                 version=version.version_label,
                 verified_at=verified,
                 hospital_id=document.hospital_id,

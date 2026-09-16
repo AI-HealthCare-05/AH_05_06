@@ -93,7 +93,11 @@ class TestDatabaseRevalidation(TestCase):
 
 def candidate():
     document = SimpleNamespace(
-        document_id=uuid4(), hospital_id=1, source_org="합성 기관", source_url="https://example.invalid"
+        document_id=uuid4(),
+        hospital_id=1,
+        source_org="합성 기관",
+        source_url="https://example.invalid",
+        title="합성 문서명",
     )
     version = SimpleNamespace(
         document=document,

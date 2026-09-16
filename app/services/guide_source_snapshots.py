@@ -43,6 +43,7 @@ async def persist_guide_sources(
             chunk_id=source.chunk_id,
             source_org=source.source_org,
             source_url=source.source_url,
+            source_name=source.source_name,
             version=source.version,
             verified_at=source.verified_at,
             score=source.score,
@@ -90,5 +91,9 @@ async def persist_guide_fallback(
         version=template.version,
         body_sha256=template.body_sha256,
         fallback_reason=reason,
+        source_org=template.source_org,
+        source_url=template.source_url,
+        source_name=template.source_name,
+        verified_at=template.verified_at,
         using_db=connection,
     )
