@@ -20,9 +20,6 @@
  * IIFE **밖**에 두는 것은 검사가 부를 수 있게 하려는 것이다 (KEY-158).
  * 그리는 함수는 옮기지 않는다 — 그건 브라우저가 할 일이다.
  *
- * `alreadyDone` 은 닫힌 값(`visit`)을 읽고 있어서 **인자를 받도록 바꿨다.**
- * 그래야 검사가 조합을 표처럼 채울 수 있다.
- *
  * 안내문을 그리는 규칙은 `js/guide-view.js` 로 옮겼다 — 환자 카드의 「안내문」·
  * 「최종 확인」 탭이 같은 것을 쓴다. 거기 있는 것도 전부 순수 함수다.
  */
@@ -41,15 +38,33 @@
    **수신번호(`to`)는 받지 않는다.** 이 화면은 「누구 것인가」만 알면 되고
    발송 번호는 서버가 안다. 응답에 실으면 승인할 때마다 환자 전화번호가
    화면과 로그를 지난다(KEY-111 에서 서버 쪽도 그렇게 정했다). */
-/* 이미 승인한 진료는 다시 승인하지 않는다.
-
-   예전에는 승인 직후에만 버튼을 잠갔는데(`target.disabled = true`), 다른 줄에
-   갔다 돌아오면 `renderRole()` 이 되살려서 **같은 진료를 두 번 승인할 수
-   있었다.** 환자에게 문자가 나가는 자리라 두 번 승인은 두 번 발송이 된다.
-
-   화면 상태가 아니라 **그 진료의 상태**를 본다 — 목록 줄이 곧 사실이다. */
-function alreadyDone(visit) {
-  return !!(visit && visit.work_category && visit.work_category !== "APPROVAL_REQUESTED");
+/* 최종 확인 단추의 상태와 이유를 한 번에 정한다 — KEY-353.
+ *
+ * 승인 가능 여부의 정본은 목록의 파생 카테고리가 아니라 안내문 자체의 상태다.
+ * 한 진료에 보완 신호가 함께 있으면 목록 카테고리는 다른 우선순위를 택할 수
+ * 있지만, 서버 승인 계약은 `APPROVAL_PENDING` 하나를 본다. 화면도 같은 사실을
+ * 봐야 눌러야 할 단추를 잘못 잠그지 않는다.
+ *
+ * 이유도 권한·로딩·이미 처리됨을 가른다. 의사인데 안내문이 없거나 이미 승인된
+ * 경우를 「의사 권한 없음」이라고 하면 사용자가 계정을 의심하게 된다. */
+function doctorApprovalState(who, currentGuide) {
+  var roles = (who && who.roles) || [];
+  if (roles.indexOf("doctor") === -1) {
+    return { canAct: false, why: "의사 권한이 있어야 승인합니다" };
+  }
+  if (!currentGuide) {
+    return { canAct: false, why: "안내문을 불러온 뒤 승인할 수 있습니다" };
+  }
+  if (currentGuide.status !== "APPROVAL_PENDING") {
+    return {
+      canAct: false,
+      why:
+        currentGuide.status === "SCHEDULED_TO_SEND"
+          ? "이미 승인되어 발송을 기다립니다"
+          : "지금은 승인할 수 없는 안내문입니다",
+    };
+  }
+  return { canAct: true, why: "" };
 }
 
 /* 안내문을 못 불러왔을 때 **무엇 때문인지**를 원장님 말로 옮긴다 — KEY-126.
@@ -132,14 +147,22 @@ function guideLoadSaying(error) {
    * `visit-guide.js`(스탭 화면)에만 있었다. 그래서 의사 화면의 문자 설정 탭은
    * 재료를 못 받았고, 링크 블록도 늘 「아직 없음」으로 섰다.
    *
-   * 여기서는 **링크에 필요한 둘만** 준다. 회차·문구는 스탭이 정하는 것이라
-   * (S1-14) 의사 화면이 같은 값을 또 셈할 이유가 없다 — `smsStateNow` 의
-   * 기본값이 그대로 선다.
+   * 링크 상태와 함께 **지금 이 역할·안내 상태에서 저장할 수 있는지**도 준다.
+   * 의사도 최종 확인에서 문자 설정을 고칠 수 있고, 승인 뒤에는 다시 잠긴다는
+   * 서버 계약(`GuideService.save_message_plan`)과 같은 판정이다.
    */
   window.guideSmsPlan = function () {
+    var editable =
+      isDoctor() &&
+      !!guide &&
+      ["STAFF_REVIEW", "APPROVAL_RETURNED", "APPROVAL_PENDING"].indexOf(guide.status) !== -1;
     return {
       guideStatus: (guide && guide.status) || "",
       showPatientLink: false,
+      canSave: editable,
+      lockedSaying: isDoctor()
+        ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
+        : "의사 권한이 있어야 문자 설정을 고칠 수 있습니다",
     };
   };
 
@@ -197,26 +220,16 @@ function guideLoadSaying(error) {
     location.href = step.getAttribute("data-href");
   });
 
-  /* ── 권한 ───────────────────────────────────────────── */
-
-
-  /* `guide` 가 조건에 들어간 이유.
-
-     `load()` 는 `visit` 을 **즉시** 새 환자로 바꾸는데 안내문은 응답이 와야
-     온다. 그 사이 버튼이 살아 있으면 이렇게 된다.
-
-         화면에 보이는 것   앞 환자의 안내문
-         approve() 가 보내는 것   뒷 환자의 visit_id
-
-     원장님은 **읽지 않은 안내문을 승인**하게 되고, 승인은 곧 환자에게 발송이다.
-     그래서 「안내문이 화면에 있는가」를 최상위 조건으로 둔다 — 없으면 승인할
-     대상도 없다. 실패했을 때도 `guide` 가 `null` 이라 그대로 잠긴다. */
+  /* ── 권한 ─────────────────────────────────────────────
+   * `guide` 가 없는 로딩·실패 구간도 잠근다. 그 사이 `visit` 은 이미 새 환자인데
+   * 화면에는 앞 환자의 안내문이 남을 수 있어, 살아 있으면 읽지 않은 안내문을
+   * 다른 진료 번호로 승인하게 된다. */
   function renderRole() {
-    var can = isDoctor() && !alreadyDone(visit) && guide !== null;
-    el("approve").disabled = !can;
-    el("return").disabled = !can;
-    el("role-note").textContent = "의사 권한이 있어야 승인합니다";
-    el("role-note").hidden = isDoctor();
+    var state = doctorApprovalState(me, guide);
+    el("approve").disabled = !state.canAct;
+    el("return").disabled = !state.canAct;
+    el("role-note").textContent = state.why;
+    el("role-note").hidden = !state.why;
   }
 
   /* 승인·되돌리기가 끝나면 왼쪽 줄도 그 사실을 말해야 한다. 목록이 「승인
@@ -477,15 +490,23 @@ function guideLoadSaying(error) {
     },
   });
 
-  document.addEventListener("session:ready", function (event) {
-    me = event.detail;
+  function acceptSession(who) {
+    me = who;
     if (guide) return renderRole();
     /* 목록이 그려지면 맨 위 줄이 이미 골라져 있다(shell.js). 그런데 「고름」은
        클릭으로만 알려지므로, 처음 들어왔을 때는 오른쪽이 빈 채로 남는다 —
        원장님이 한 번 더 눌러야 한다. 골라져 있는 것을 그대로 연다. */
     var first = selectedVisit();
     if (first) load(first);
+  }
+
+  document.addEventListener("session:ready", function (event) {
+    acceptSession(event.detail);
   });
+
+  /* `shell.js` 가 아주 빠른 `/auth/me` 응답을 이미 받았다면 이벤트는 지나갔다.
+     저장된 현재 사용자를 즉시 받아 상단과 본문의 역할 판단이 갈리지 않게 한다. */
+  if (session.current) acceptSession(session.current);
 
   document.addEventListener("visit:selected", function (event) {
     load(event.detail);
