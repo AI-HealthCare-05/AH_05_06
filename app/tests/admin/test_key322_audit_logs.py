@@ -5,7 +5,7 @@
 
     울타리      남의 의원 이벤트가 결과에 없다
     새지 않음   링크 토큰 · OTP 코드 · 환자 이름·전화가 응답에 없다
-    섞임        표 다섯이 한 목록에 시간순으로 섞인다
+    섞임        여섯 소스가 한 목록에 시간순으로 섞인다
     거르개      기간 · 행위자 · 유형 · 진료 넷이 각각 듣는다
     쪽 나눔     같은 커서로 다시 물으면 같은 답이다
     읽기 전용   조회가 아무것도 안 쓴다
@@ -157,6 +157,77 @@ class TestTheHospitalFenceHolds(AuditTestCase):
 
         assert visits == {self.visit.visit_id}, f"옆집 OTP 이벤트가 섞였다: {visits}"
 
+    async def test_the_patient_usage_table_is_fenced_too(self) -> None:
+        mine, theirs = await self._guide(self.visit), await self._guide(self.foreign_visit)
+        await PatientUsageEvent.create(
+            guide_document=mine,
+            event_type=PatientUsageEventType.GUIDE_VIEWED,
+        )
+        await PatientUsageEvent.create(
+            guide_document=theirs,
+            event_type=PatientUsageEventType.GUIDE_VIEWED,
+        )
+
+        response = await self._get({"source": "patient_usage"})
+        visits = {row["visit_id"] for row in response.json()["entries"]}
+
+        assert visits == {self.visit.visit_id}, f"옆집 환자 이용 이벤트가 섞였다: {visits}"
+
+    async def test_the_message_table_is_fenced_too(self) -> None:
+        mine, theirs = await self._guide(self.visit), await self._guide(self.foreign_visit)
+        for guide in (mine, theirs):
+            message = await GuideMessage.create(
+                guide_document=guide,
+                kind=GuideMessageKind.GUIDE,
+                scheduled_at=self.base,
+            )
+            await GuideMessageEvent.create(
+                guide_message=message,
+                event_type=GuideMessageEventType.SENT,
+            )
+
+        response = await self._get({"source": "message"})
+        visits = {row["visit_id"] for row in response.json()["entries"]}
+
+        assert visits == {self.visit.visit_id}, f"옆집 문자 이벤트가 섞였다: {visits}"
+
+    async def test_the_staff_account_table_is_fenced_too(self) -> None:
+        await StaffAccountEvent.create(
+            hospital_id=self.hospital.hospital_id,
+            actor_staff_id=self.admin.staff_id,
+            subject_staff_id=self.doctor.staff_id,
+            event_type=StaffAccountEventType.STAFF_CREATED,
+            roles=["doctor"],
+        )
+        await StaffAccountEvent.create(
+            hospital_id=self.other.hospital_id,
+            actor_staff_id=self.other_admin.staff_id,
+            subject_staff_id=self.other_admin.staff_id,
+            event_type=StaffAccountEventType.STAFF_CREATED,
+            roles=["admin"],
+        )
+
+        response = await self._get({"source": "staff_account"})
+        entries = response.json()["entries"]
+
+        assert len(entries) == 1, f"옆집 직원 계정 이벤트가 섞였다: {entries}"
+        assert entries[0]["actor_staff_id"] == self.admin.staff_id
+
+    async def test_the_hospital_update_table_is_fenced_too(self) -> None:
+        for hospital, actor in ((self.hospital, self.admin), (self.other, self.other_admin)):
+            await HospitalUpdateEvent.create(
+                hospital_id=hospital.hospital_id,
+                actor_staff_id=actor.staff_id,
+                event_type=HospitalUpdateEventType.HOSPITAL_UPDATED,
+                changes=[{"field": "booking_url", "before": None, "after": "https://booking.example.com/x"}],
+            )
+
+        response = await self._get({"source": "hospital"})
+        entries = response.json()["entries"]
+
+        assert len(entries) == 1, f"옆집 의원 정보 이벤트가 섞였다: {entries}"
+        assert entries[0]["actor_staff_id"] == self.admin.staff_id
+
 
 class TestNothingSecretLeaks(AuditTestCase):
     async def test_no_token_phone_or_patient_name_in_the_response(self) -> None:
@@ -204,7 +275,7 @@ class TestNothingSecretLeaks(AuditTestCase):
         assert entry["summary"] == "안내문을 스탭에게 되돌렸습니다"
 
 
-class TestAllFiveTablesLandInOneList(AuditTestCase):
+class TestAllSixSourcesLandInOneList(AuditTestCase):
     async def _one_of_each(self) -> None:
         guide = await self._guide(self.visit)
         event = await GuideEvent.create(
@@ -535,6 +606,7 @@ class TestReadingWritesNothing(AuditTestCase):
                 "otp": await PatientOtpEvent.all().count(),
                 "message": await GuideMessageEvent.all().count(),
                 "account": await StaffAccountEvent.all().count(),
+                "hospital": await HospitalUpdateEvent.all().count(),
                 "staff": await Staff.all().count(),
             }
 
