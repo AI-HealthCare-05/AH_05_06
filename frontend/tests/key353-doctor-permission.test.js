@@ -55,3 +55,29 @@ test("의사 화면은 늦게 등록돼도 저장된 세션을 복구하고 문�
   assert.match(code, /canSave:\s*editable/);
   assert.match(code, /APPROVAL_PENDING/);
 });
+
+/* 리뷰(유가은 님, c1781ae 기준)에서 잡힌 두 가지 — `canSave` 만 켜고 실제
+ * 저장 배선이 빠진 것과, 반려 뒤에도 승인·반려 버튼이 풀린 채로 남는 것.
+ * `browser-shim` 은 그리는 코드를 못 돌리므로(`innerHTML` 이 터진다) 여기서는
+ * 원문 패턴으로 다시 풀리지 않게 고정한다. */
+test("이 환자만 적용은 실제로 saveMessagePlan 을 부르고 서버 응답을 다시 반영한다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(
+    code,
+    /save:\s*function\s*\(plan\)[\s\S]*?doctorApi\s*\n?\s*\.saveMessagePlan\(/,
+    "wireSmsSettings 에 save 콜백이 있어야 「이 환자만 적용」이 저장 요청을 보낸다",
+  );
+  assert.match(code, /doctorApi\s*\n?\s*\.messagePlan\(/, "문자 설정을 불러오는 자리가 있어야 한다");
+  assert.match(code, /smsAdopt\(data\)/, "서버가 돌려준 값을 화면 상태로 다시 삼아야 한다");
+});
+
+test("반려가 성공하면 전역 안내문 상태도 같이 바뀌어 승인·반려 버튼이 다시 잠긴다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(
+    code,
+    /returnToStaff\(returningId, text\)\s*\.then\(function \(result\) \{[\s\S]{0,300}?guide = result/,
+    "return-go 성공 콜백이 guide 를 서버 응답으로 갱신해야 renderRole() 이 최신 상태를 본다",
+  );
+});

@@ -108,6 +108,9 @@ function guideLoadSaying(error) {
   var guide = null;
   var visit = null;
   var me = null;
+  /* 문자 설정 카드 아래 한 줄 — `visit-guide.js` 와 같은 이름·같은 이유다.
+     저장 중·저장함·실패를 말한다. 눌렀는데 아무 말이 없으면 「됐나」가 된다. */
+  var smsSaying = "";
 
   /* **다시 세운다.** `e6c214c`(KEY-234)가 안내문 그리는 규칙을 `guide-view.js`
      로 옮기면서 이 줄까지 함께 지웠는데, **쓰는 자리(`renderHead`)는 남았다.**
@@ -163,6 +166,7 @@ function guideLoadSaying(error) {
       lockedSaying: isDoctor()
         ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
         : "의사 권한이 있어야 문자 설정을 고칠 수 있습니다",
+      saying: smsSaying,
     };
   };
 
@@ -358,6 +362,21 @@ function guideLoadSaying(error) {
         sayPanel(saying);
         renderRole(); // guide 가 null 이라 잠긴 채로 남는다
       });
+
+    /* 문자 설정은 **따로 불러온다** — `visit-guide.js` 와 같은 이유다. 안내문
+       요청에 묶으면 한쪽이 실패할 때 둘 다 못 보고, 설정이 없어도 안내문은
+       보여야 한다. KEY-353 리뷰(유가은 님) 전에는 이 호출 자체가 없어서
+       의사 화면은 늘 화면 기본값(월요일 10시)만 보여 주고 있었다. */
+    doctorApi
+      .messagePlan(visit.visit_id)
+      .then(function (data) {
+        if (mine !== loadSeq) return;
+        smsAdopt(data);
+        renderPanel();
+      })
+      .catch(function () {
+        /* 못 읽으면 화면 기본값으로 둔다 — 저장은 눌러 보면 알 수 있다 */
+      });
   }
 
   /* ── 이벤트 ─────────────────────────────────────────── */
@@ -424,7 +443,12 @@ function guideLoadSaying(error) {
       var returningId = visit.visit_id; // 승인과 같은 이유로 지금 잡아 둔다
       doctorApi
         .returnToStaff(returningId, text)
-        .then(function () {
+        .then(function (result) {
+          /* 승인 쪽(`guide = result`)과 같은 이유다 — KEY-353 리뷰(유가은 님).
+             `markDone` 은 목록 줄만 고치고 `renderRole()` 을 부르는데,
+             전역 `guide.status` 를 그대로 두면 여전히 `APPROVAL_PENDING` 으로
+             읽혀 되돌린 뒤에도 승인·반려 버튼이 풀린 채로 남는다. */
+          if (visit && visit.visit_id === returningId) guide = result;
           markDone(returningId, { work_category: "NEEDS_ATTENTION", detail_status: "APPROVAL_RETURNED" });
           openModal(
             '<h2 class="modal__title">스탭에 되돌렸습니다</h2>' +
@@ -456,7 +480,12 @@ function guideLoadSaying(error) {
   /* 고치기는 `js/guide-view.js` 가 배선한다 — 스탭 화면과 같은 것을 쓴다.
      전에는 이 자리가 「항목 편집은 승인 API 가 붙은 뒤입니다」 안내창이었다.
      그 API 는 그 뒤에 붙었는데 안내창만 남아 있었다. */
-  /* 문자 설정도 스탭 화면과 같은 배선을 쓴다. */
+  /* 문자 설정도 스탭 화면과 같은 배선을 쓴다.
+   *
+   * `save` 가 빠져 있으면 카드는 저장 가능한 것처럼(`canSave`) 그려지는데
+   * 「이 환자만 적용」을 눌러도 `wireSmsSettings` 가 `opts.save` 가 함수인지
+   * 먼저 확인하고 아니면 조용히 돌아간다(`js/guide-view.js`) — 원장님은
+   * 저장됐다고 믿고 넘어간다. KEY-353 리뷰(유가은 님)가 짚었다. */
   wireSmsSettings({
     reRender: function () {
       renderPanel();
@@ -464,6 +493,31 @@ function guideLoadSaying(error) {
     say: function (text) {
       var box = el("say");
       if (box) box.textContent = text;
+    },
+    save: function (plan) {
+      var wantedId = visit && visit.visit_id;
+      if (!wantedId) return;
+      smsSaying = "저장하는 중…";
+      renderPanel();
+
+      doctorApi
+        .saveMessagePlan(wantedId, plan)
+        .then(function (data) {
+          if (!visit || visit.visit_id !== wantedId) return;
+          /* **서버가 돌려준 것을 화면 상태로 삼는다** — `visit-guide.js` 와
+             같은 이유다. 보낸 것을 그대로 두면 서버가 고쳐 준 값이 안 보인다. */
+          smsAdopt(data);
+          smsSaying = "저장했습니다";
+          renderPanel();
+        })
+        .catch(function (err) {
+          if (!visit || visit.visit_id !== wantedId) return;
+          smsSaying =
+            err && err.code === "GUIDE_NOT_PENDING"
+              ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
+              : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
+          renderPanel();
+        });
     },
   });
 
