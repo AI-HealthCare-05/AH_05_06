@@ -416,7 +416,7 @@ RAG를 켜면 기존 생성 API는 202와 작업 ID를 반환하고 화면은 �
 | `SOLAPI_BASE_URL` · `SOLAPI_TIMEOUT_SECONDS` | 솔라피 엔드포인트·타임아웃 | `https://api.solapi.com` · `10` |
 | `OTP_APPROVED_TEST_PHONES` | 실제 문자를 보내도 되는 번호 목록(쉼표 구분). OTP(KEY-284)와 예약 문자(KEY-338)가 **같이 쓴다.** **`solapi` 인데 비우면 서버가 안 뜬다** — 빈 목록은 「전체 허용」이 아니라 전부 차단이다. 예약 문자는 목록 밖 번호면 `RECIPIENT_NOT_APPROVED` 로 보류된다 | (비움) |
 | `OTP_SOLAPI_PROD_ENABLED` | prod 실제 OTP 발송 좁은문. 이 값 **과** 실행 인자 `--otp-confirm-solapi-prod` 가 둘 다 있어야 열린다. KEY-6 배포 승인 뒤에만 | (비움) |
-| `SMS_DISPATCH_ENABLED` | 예약 문자(안내·확인·소진·재진) 실발송 좁은문 (KEY-338). `solapi` 일 때 이 값 **과** 워커 실행 인자 `--sms-dispatch-confirm` 이 둘 다 없으면 **워커가 발송 루프를 아예 안 돈다** — 문자는 `SCHEDULED` 로 남고 OCR·안내 생성은 계속 돈다. `ENV` 와 무관하고 `mock` 에는 안 걸린다. `.env` 에 적지 않고 승인된 Pilot 검증 때만 명령 앞에 붙인다 ([`docs/deploy-runbook.md`](docs/deploy-runbook.md) 「전환 순서」 · `docker-compose.pilot.yml`) | (적지 않음) |
+| `SMS_DISPATCH_ENABLED` | 예약 문자(안내·확인·소진·재진) 실발송 좁은문 (KEY-338). `solapi` 일 때 이 값 **과** 워커 실행 인자 `--sms-dispatch-confirm` 이 **둘 다 있어야** 열린다 — 하나라도 없으면 **워커가 발송 루프를 아예 안 돈다.** 문자는 `SCHEDULED` 로 남고 OCR·안내 생성은 계속 돈다. `ENV` 와 무관하고 `mock` 에는 안 걸린다. `.env` 에 적지 않고 승인된 Pilot 검증 때만 명령 앞에 붙인다 ([`docs/deploy-runbook.md`](docs/deploy-runbook.md) 「전환 순서」 · `docker-compose.pilot.yml`) | (적지 않음) |
 | `MOCK_OTP_CODE` | **시연을 끝까지 보려면 필요.** 비우면 환자 OTP 인증이 503 (`OTP_DELIVERY_UNAVAILABLE`) 으로 막혀 Walking Skeleton 이 거기서 멈춘다. `bootstrap` 은 이 값을 안 넣는다. prod 에서는 `PILOT_ALLOW_MOCK_OTP=1` 과 `--pilot-confirm-mock-otp` 가 둘 다 있을 때만 (KEY-264) | `000000` |
 
 ### 만들기 중
