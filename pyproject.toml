@@ -23,9 +23,12 @@ dependencies = [
 ai = [
     "requests>=2.32.0",
     "scikit-learn>=1.8.0",
-    "torch",
-    "torchvision",
-    "torchaudio",
+    # 셋의 버전을 함께 고정한다 — 짝이 맞는 조합이어야 한다(아래 `tool.uv.sources`).
+    # KEY-82 가 승인 checksum 과 함께 고정한 임베딩 스택이라, 인덱스를 고치는 김에
+    # 판올림까지 딸려 오면 그 평가를 다시 돌려야 한다. 지금은 인덱스만 바로잡는다.
+    "torch==2.11.0",
+    "torchvision==0.26.0",
+    "torchaudio==2.11.0",
     "sentence-transformers>=5.2.0"
 ]
 app = [
@@ -104,7 +107,27 @@ dev = [
 ]
 
 [tool.uv.sources]
+# **셋을 같은 인덱스에서 받는다** — 하나만 CPU 인덱스로 보내면 안 된다.
+#
+# `torch` 만 여기 있었다. 그러면 linux 에서 `torch` 는 `2.11.0+cpu`(CPU 인덱스)
+# 인데 `torchvision` 은 PyPI 기본 빌드라 서로 ABI 가 안 맞는다. `_C.so` 가 조용히
+# 안 올라오고, 그 다음에야 `operator torchvision::nms does not exist` 로 터진다.
+# 거기서 끝이 아니라 `transformers` 의 지연 임포트가 그 예외를 삼켜
+# `Could not import module 'PreTrainedModel'` 로 바꾸고, 우리 코드는 그것을
+# `LOCAL_EMBEDDING_NOT_INSTALLED` 로 다시 바꾼다 — 「안 깔렸다」는 말이 나오지만
+# 실제로는 깔려 있다.
+#
+# macOS 호스트에서는 안 드러난다. arm64 macOS 용 빌드가 하나뿐이라 무엇을 받아도
+# 짝이 맞기 때문이다. **ai-worker 이미지(linux)에서만 터진다** — 그 이미지는
+# `./app` 마운트 없이 돌아서 로컬에서 코드를 고쳐도 안 바뀌고, 안내 생성 루프가
+# `asyncio.gather(return_exceptions=True)` 안에 있어 죽어도 로그가 안 남는다.
 torch = [
+    { index = "pytorch-cpu" },
+]
+torchvision = [
+    { index = "pytorch-cpu" },
+]
+torchaudio = [
     { index = "pytorch-cpu" },
 ]
 
