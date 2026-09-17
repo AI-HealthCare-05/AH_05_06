@@ -50,19 +50,40 @@ _ADVICE_SOURCE_URL = "https://app.notion.com/p/3ba0c3b3380580068fa1f32666a8b68c"
 _APPROVED_AT = date(2026, 9, 4)
 _APPROVED_VERSION = "2026-09-04"
 
+# **비잔 주의사항만 한 판 올라갔다** — KEY-363. 2026-09-17 자문에서
+# 「약을 조절하거나 바꿀 수 있어요」가 **무엇을** 조절하고 **무엇을** 바꾸는지
+# 모호하다는 지적을 받아 용량·종류로 나눠 적었다.
+#
+# 🚩 **나머지 열한 칸은 그날 다시 보지 않았다.** 그래서 전역 판번호를 올리지
+# 않는다 — 올리면 열두 칸 전부의 `reviewed_at` 이 2026-09-17 이 되어 **승인
+# 기록이 사실과 달라진다.** 판번호는 칸마다 따로 간다.
+_BIJAN_CAUTION_AT = date(2026, 9, 17)
+_BIJAN_CAUTION_VERSION = "2026-09-17"
+
+#: 판번호 → 그 판을 검토한 날. `physician_review` 가 여기서 읽는다.
+#: 새 판을 올릴 때 이 표에 줄을 더하지 않으면 `physician_review` 가 None 을
+#: 돌려 그 문구가 **승인된 것으로 안 쳐진다** — RAG 켠 경로가 통째로 막힌다.
+_REVIEWED_AT_BY_VERSION = {
+    _APPROVED_VERSION: _APPROVED_AT,
+    _BIJAN_CAUTION_VERSION: _BIJAN_CAUTION_AT,
+}
+
 # 승인 당시 KEY-265 정본의 고정 해시. 본문 수정만으로 갱신하지 않는다.
 # 변경된 문구는 재검토 후 버전·승인 기록과 함께 명시적으로 갱신해야 한다.
 _APPROVED_BODY_HASHES = {
+    # KEY-363 으로 2026-09-17 판에 올라갔다. 옛 판(2026-09-04 · 27c7cece…)은
+    # 여기서 지운다 — 이 표는 **지금 깔 문구**를 적는 자리이고, 옛 승인본은
+    # 씨앗이 폐기로 내려 DB 에 남긴다.
     (
         "자궁내막증 · 비잔 (처음)",
         "caution",
-        "2026-09-04",
-    ): "27c7cece535c9cbdf79edf469619dcfd411947cea38a26366d6c9ebf326e5262",
+        "2026-09-17",
+    ): "5eba2dc2e5299011ac524f4f3413985cbdb8f1f569e5a96f5c70736a7431593f",
     (
         "자궁내막증 · 비잔 (계속)",
         "caution",
-        "2026-09-04",
-    ): "27c7cece535c9cbdf79edf469619dcfd411947cea38a26366d6c9ebf326e5262",
+        "2026-09-17",
+    ): "5eba2dc2e5299011ac524f4f3413985cbdb8f1f569e5a96f5c70736a7431593f",
     ("PCOS · 야즈 (계속)", "caution", "2026-09-04"): "dd71789145edce33d24f95b8a9590c32e0df36af58f0b8f4a1f1aefe1fb9e5db",
     ("PCOS · 야즈 (처음)", "caution", "2026-09-04"): "dd71789145edce33d24f95b8a9590c32e0df36af58f0b8f4a1f1aefe1fb9e5db",
     (
@@ -138,15 +159,29 @@ class DrugCautionContentRow:
     @property
     def physician_review(self) -> dict[str, str] | None:
         """KEY-265에서 승인된 정본의 검토 기록. 본문 변경 시 재검토가 필요하다."""
-        if self.source_grade is not SourceGrade.C or self.content_version != _APPROVED_VERSION:
+        if self.source_grade is not SourceGrade.C:
             return None
+
+        # 🚩 **판번호를 전역 하나로 견주지 않는다** — KEY-363.
+        #
+        # 예전에는 `self.content_version != _APPROVED_VERSION` 이었다. 그러면
+        # 한 칸만 문구를 고쳐도 **열두 칸 전부의 판번호를 같이 올려야** 했고,
+        # 그 순간 나머지 열한 칸의 `reviewed_at` 도 새 날짜가 되어 **보지도
+        # 않은 문구를 그날 검토한 것처럼** 기록이 남았다.
+        #
+        # 이제 「이 칸의 이 판이 해시 표에 있는가」만 본다. 표에 없으면 승인
+        # 기록이 없는 것이고, 그건 승인 안 된 것이 맞다.
+        key = (self.prescription_set_name, self.section_key.value, self.content_version)
+        checksum = _APPROVED_BODY_HASHES.get(key)
+        reviewed_at = _REVIEWED_AT_BY_VERSION.get(self.content_version)
+        if not checksum or reviewed_at is None:
+            return None
+
         return {
             "reviewer": "박영 산부인과 전문의",
             "hospital": _ADVICE_SOURCE_ORG,
-            "reviewed_at": _APPROVED_AT.isoformat(),
-            "body_sha256": _APPROVED_BODY_HASHES.get(
-                (self.prescription_set_name, self.section_key.value, self.content_version), ""
-            ),
+            "reviewed_at": reviewed_at.isoformat(),
+            "body_sha256": checksum,
         }
 
 
@@ -188,7 +223,7 @@ _BIJAN_CAUTION = (
     "질출혈이 가장 흔해요. 팬티라이너에 묻을 정도로 나왔다 안 나왔다 합니다. 가슴이 단단해지는 "
     "느낌, 몸이 붓는 느낌도 시간이 지나면 좋아져요.\n\n"
     "드물게 기분이 가라앉는 분들이 있어요. 우울감이나 감정 기복이 평소와 다르게 느껴지면 참지 "
-    "마시고 알려주세요. 약을 조절하거나 바꿀 수 있어요.\n\n"
+    "마시고 알려주세요. 약의 용량을 조절하거나 종류를 바꿀 수 있어요.\n\n"
     "비잔을 드시면 생리가 없어지는데, 이건 폐경이 아니에요. 호르몬을 일정하게 유지시켜서 생리가 "
     "안 나오게 하는 것뿐이고, 약을 끊으면 다시 돌아옵니다."
 )
@@ -231,13 +266,15 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="자궁내막증 · 비잔 (처음)",
         section_key=CautionSectionKey.CAUTION,
         # 정본 A-2 — 정리본 2.4 의 ✅+🔶, 원장님 승인 2026-09-04
+        # KEY-363 으로 2026-09-17 판. **이 칸만** 판번호가 다르다 —
+        # 그날 자문에서 본 것이 이 문구 하나라서다.
         body=_BIJAN_CAUTION,
         source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
-        verified_at=_APPROVED_AT,
-        content_version=_APPROVED_VERSION,
+        verified_at=_BIJAN_CAUTION_AT,
+        content_version=_BIJAN_CAUTION_VERSION,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 (처음)",
@@ -251,13 +288,15 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         prescription_set_name="자궁내막증 · 비잔 (계속)",
         section_key=CautionSectionKey.CAUTION,
         # 정본 B-2 — 문서가 「A-2 와 같다」로 못박았다
+        # KEY-363 으로 2026-09-17 판. **이 칸만** 판번호가 다르다 —
+        # 그날 자문에서 본 것이 이 문구 하나라서다.
         body=_BIJAN_CAUTION,
         source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
-        verified_at=_APPROVED_AT,
-        content_version=_APPROVED_VERSION,
+        verified_at=_BIJAN_CAUTION_AT,
+        content_version=_BIJAN_CAUTION_VERSION,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 (계속)",
