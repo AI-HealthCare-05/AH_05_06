@@ -56,6 +56,7 @@ from app.models.catalog import (  # noqa: E402
     DrugCatalog,
     DrugCautionContent,
     PrescriptionSet,
+    SetStatus,
     SourceGrade,
 )
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: E402
@@ -690,14 +691,20 @@ async def _sync_source_grade(content: DrugCautionContent, wanted: DrugCautionCon
 
 
 async def seed_catalog() -> None:
-    """처방 세트 8종과 주의·응급 문구 마스터를 적재한다 — KEY-165.
+    """처방 세트 4종과 주의·응급 문구 마스터를 적재한다 — KEY-165, KEY-357.
 
     같은 명령을 반복 실행해도 데이터가 쌓이지 않는다(name 기준 get_or_create).
     APPROVED 문구는 `approved_key` 를 채워 "세트·섹션당 하나" 제약을 DB 가 지키게 한다.
+
+    KEY-357: PRESCRIPTION_SETS 에 없는 세트는 HIDDEN 으로 감춘다.
+    삭제하지 않는 이유 — drug_caution_content.prescription_set_id 가 RESTRICT 라
+    문구가 붙은 세트는 DB 가 삭제를 거부하고, 지우면 guide_section 의 근거 추적이
+    SET_NULL 로 조용히 끊긴다. 감추면 판독 드롭다운에서 걸러지고 지난 안내문은 안 깨진다.
     """
-    # 처방 세트
+    # 처방 세트 — 새 이름 생성
     created_sets = 0
     fixed_sets = 0
+    active_names = {row.name for row in PRESCRIPTION_SETS}
     for row in PRESCRIPTION_SETS:
         # **`disease` 를 함께 넣는다.** 모델 기본값이 ENDOMETRIOSIS 라 안 넣으면
         # PCOS 세트가 자궁내막증 묶음에 들어가고, 설정 레일에서 다낭성난소증후군
@@ -721,9 +728,25 @@ async def seed_catalog() -> None:
             found.disease = row.disease
             await found.save(update_fields=["disease", "updated_at"])
             fixed_sets += 1
+
+        # 혹시 이전 시드 실행에서 HIDDEN 됐다가 다시 ACTIVE 명단에 들어온 경우 복원
+        if found.status != SetStatus.ACTIVE:
+            found.status = SetStatus.ACTIVE
+            await found.save(update_fields=["status", "updated_at"])
+
+    # PRESCRIPTION_SETS 에 없는 세트를 HIDDEN 으로 감춘다 — KEY-357.
+    # 삭제 대신 감추기: RESTRICT 제약·근거 추적 보존을 위해.
+    hidden_sets = 0
+    async for ps in PrescriptionSet.filter(status=SetStatus.ACTIVE).exclude(name__in=active_names):
+        ps.status = SetStatus.HIDDEN
+        await ps.save(update_fields=["status", "updated_at"])
+        hidden_sets += 1
+        print(f"[catalog] prescription_set hidden: {ps.name!r} (id={ps.prescription_set_id})")
+
     print(
         f"[catalog] prescription_set created={created_sets} "
-        f"fixed={fixed_sets} skipped={len(PRESCRIPTION_SETS) - created_sets - fixed_sets}"
+        f"fixed={fixed_sets} hidden={hidden_sets} "
+        f"skipped={len(PRESCRIPTION_SETS) - created_sets - fixed_sets}"
     )
 
     # 세트 이름 → id 역색인 (콘텐츠 삽입에 사용)
