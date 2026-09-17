@@ -225,7 +225,11 @@ _YAZ_LIFE = (
 )
 
 # X 세트 medication: 처방 약 종류에 무관한 짧은 약사 복약지도 안내 (SourceGrade.B)
+# 전문의 자문이 아니라 일반 안내라 출처를 별도로 둔다 — _ADVICE_SOURCE_NAME 을 쓰면
+# test_reseeding_removes_the_wrong_a_label 이 「전문의」 필터로 B 등급 행을 잡아 실패한다.
 _X_MEDICATION = "처방된 약의 복용법은 약사 복약지도를 참고하세요."
+_X_MED_SOURCE_NAME = "약사 복약지도 일반 안내"
+_X_MED_SOURCE_ORG = "박영 산부인과"
 
 
 DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
@@ -293,9 +297,9 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.MEDICATION,
         body=_X_MEDICATION,
         source_grade=SourceGrade.B,
-        source_name=_ADVICE_SOURCE_NAME,
-        source_org=_ADVICE_SOURCE_ORG,
-        source_url=_ADVICE_SOURCE_URL,
+        source_name=_X_MED_SOURCE_NAME,
+        source_org=_X_MED_SOURCE_ORG,
+        source_url="",
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
@@ -376,9 +380,9 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.MEDICATION,
         body=_X_MEDICATION,
         source_grade=SourceGrade.B,
-        source_name=_ADVICE_SOURCE_NAME,
-        source_org=_ADVICE_SOURCE_ORG,
-        source_url=_ADVICE_SOURCE_URL,
+        source_name=_X_MED_SOURCE_NAME,
+        source_org=_X_MED_SOURCE_ORG,
+        source_url="",
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
