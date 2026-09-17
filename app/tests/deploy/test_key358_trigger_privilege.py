@@ -12,6 +12,16 @@ KEY-238 의 append-only 트리거 넷이 저장소 첫 사례였는데, 운영 �
 CI 는 `DB_USER: root` 로 돌아서 이것을 구조적으로 못 잡았다. 권한이 모자라
 생기는 결함은 **운영보다 센 계정으로 검사하는 한 영영 안 보인다.**
 
+**로컬 쪽은 여기서 안 잰다.** `test_key230_schema_drift.py` 의
+`test_local_mysql_allows_migration_triggers_without_super` 가 루트
+`docker-compose.yml` 을 이미 잰다. 그 검사가 KEY-230 때 로컬에만 플래그를
+넣었고 **운영에는 빠뜨린 것**이 이 사고의 뿌리다 — 그래서 여기는 운영 쪽만
+본다. 둘이 모이면 「로컬과 운영이 같다」가 선다.
+
+(이 파일에 로컬을 재는 검사가 하나 더 있었는데, **없는 경로**
+`infra/docker/docker-compose.yml` 을 읽고 조기 반환해 늘 통과만 했다.
+`2heej` `#344` 리뷰로 걷었다.)
+
 실측으로 확인했다(mysql:8.0, 앱 등급 계정).
 
     --log-bin-trust-function-creators=0  →  ERROR 1419
@@ -21,7 +31,7 @@ CI 는 `DB_USER: root` 로 돌아서 이것을 구조적으로 못 잡았다. �
 
 import re
 
-from app.tests.deploy.conftest import ROOT, read, service
+from app.tests.deploy.conftest import ROOT, service
 
 PROD_COMPOSE = "infra/docker/docker-compose.prod.yml"
 TRUST_FLAG = "--log-bin-trust-function-creators=1"
@@ -69,19 +79,4 @@ def test_the_flag_is_needed_because_a_migration_actually_creates_one() -> None:
 
     assert creators, (
         f"트리거·함수를 만드는 마이그레이션이 하나도 없다 — 그렇다면 `{TRUST_FLAG}` 도 걷을 때다 ({PROD_COMPOSE})."
-    )
-
-
-def test_the_local_compose_matches_when_it_defines_mysql() -> None:
-    """로컬이 운영과 다르면 **여기서 되는 것이 거기서 안 된다.**"""
-    local = ROOT / "infra" / "docker" / "docker-compose.yml"
-    if not local.exists() or "mysql" not in read("infra/docker/docker-compose.yml"):
-        return
-
-    command = service("infra/docker/docker-compose.yml", "mysql").get("command") or []
-    if not command:
-        return
-
-    assert TRUST_FLAG in [str(item) for item in command], (
-        f"로컬 compose 의 mysql 에 `{TRUST_FLAG}` 가 없다 — 운영과 갈린다"
     )
