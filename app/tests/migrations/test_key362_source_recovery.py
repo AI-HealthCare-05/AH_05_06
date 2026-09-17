@@ -14,7 +14,7 @@ from app.tests.migrations.test_upgrade_builds_the_whole_schema import (
 
 SCRATCH = "test_key362_source_recovery_probe"
 MIGRATION = (
-    Path(__file__).resolve().parents[2] / "core/db/migrations/models/69_20260917120000_key362_source_recovery.py"
+    Path(__file__).resolve().parents[2] / "core/db/migrations/models/70_20260917120000_key362_source_recovery.py"
 )
 
 
@@ -39,6 +39,7 @@ async def test_existing_schema_upgrade_keeps_messages_and_backfills_only_recorde
             [
                 "SET FOREIGN_KEY_CHECKS=0",
                 "INSERT INTO guide_message (guide_message_id,guide_document_id,kind,status,scheduled_at,hold_reason,attempt_count,resend_sequence,created_at,updated_at) VALUES (1,999,'GUIDE','HELD','2026-09-17 10:00:00','SOURCE_NOT_DELETED',4,0,NOW(),NOW())",
+                "INSERT INTO guide_message_event (guide_message_id,event_type,reason,created_at) VALUES (1,'HELD','NOT_APPROVED','2026-09-17 10:06:00')",
                 "INSERT INTO guide_message_event (guide_message_id,event_type,reason,created_at) VALUES (1,'HELD','SOURCE_NOT_DELETED','2026-09-17 10:05:00')",
                 "SET FOREIGN_KEY_CHECKS=1",
             ],

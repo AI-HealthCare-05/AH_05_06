@@ -349,7 +349,14 @@ async def _claim(message_id: int, *, at: datetime) -> tuple[str | None, bool]:
                     claim_token__isnull=True,
                 )
                 .using_db(connection)
-                .update(status=GuideMessageStatus.CANCELED)
+                .update(
+                    status=GuideMessageStatus.CANCELED,
+                    hold_reason=None,
+                    source_failure_type=None,
+                    source_failure_at=None,
+                    source_retry_requested=False,
+                    claim_token=None,
+                )
             )
             if affected == 1:
                 await GuideMessageEvent.create(
@@ -415,8 +422,14 @@ async def _prepare_sources(
     try:
         await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
         gate = await evaluate_dispatch_gate(message, storage=storage, recover_sources=message.source_retry_requested)
-    except Exception:
-        default_logger.error("문자 발송 게이트 실패 — guide_message_id=%s", message_id)
+    except Exception as exc:
+        # 예외 원문에는 파일 경로·공급자 응답이 들어갈 수 있어 남기지 않는다.
+        # 종류만 기록하면 민감정보 없이 운영 진단 갈래는 보존된다.
+        default_logger.error(
+            "문자 발송 게이트 실패 — guide_message_id=%s, error_type=%s",
+            message_id,
+            type(exc).__name__,
+        )
         if message.source_retry_requested:
             return await _finish_held(message, token, GuideMessageHold.SOURCE_NOT_DELETED, "RECOVERY_FAILED")
         return await _finish_retryable(message, token, moment, provider_detail="worker_exception")
@@ -427,8 +440,12 @@ async def _prepare_sources(
     if gate.pending_source_document_ids:
         try:
             await _purge_source_documents(message_id, gate.pending_source_document_ids, storage)
-        except Exception:
-            default_logger.error("원본 삭제 실패 — guide_message_id=%s", message_id)
+        except Exception as exc:
+            default_logger.error(
+                "원본 삭제 실패 — guide_message_id=%s, error_type=%s",
+                message_id,
+                type(exc).__name__,
+            )
             await _log_event(message_id, GuideMessageEventType.SOURCE_PURGE_FAILED, reason="worker_exception")
             if message.source_retry_requested:
                 return await _finish_held(message, token, GuideMessageHold.SOURCE_NOT_DELETED, "PURGE_RETRY_FAILED")

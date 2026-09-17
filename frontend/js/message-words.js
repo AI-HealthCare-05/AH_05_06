@@ -116,7 +116,13 @@ function messageSaying(row) {
     };
     saying += " · " + (failures[row.source_failure_type] || "이전 보류 — 실패 유형 기록 없음");
     if (failures[row.source_failure_type]) saying += " (" + row.source_failure_type + ")";
-    if (row.source_failure_at) saying += " · " + new Date(row.source_failure_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+    if (row.source_failure_at) {
+      var stamp =
+        typeof window.clinicStamp === "function"
+          ? window.clinicStamp(row.source_failure_at)
+          : String(row.source_failure_at).slice(0, 16).replace("T", " ");
+      saying += " · " + stamp;
+    }
     if (row.source_retry_requested) saying += " · 삭제 재시도 대기/처리 중";
   }
   return saying;
@@ -141,7 +147,15 @@ function requestSourceRetry(button, onDone) {
   }).then(function () {
     button.textContent = "삭제 재시도 대기/처리 중";
     onDone();
-  }).catch(function () {
+  }).catch(function (error) {
+    /* 409는 요청 결과를 모르는 네트워크 실패가 아니라, 워커가 이미 집었거나
+       상태·세대가 바뀌었다는 확정 응답이다. 같은 세대로 버튼만 되살리면
+       누를 때마다 같은 409가 반복되므로 최신 행을 다시 읽는다. */
+    if (error && error.status === 409) {
+      button.textContent = "상태 다시 확인 중…";
+      onDone();
+      return;
+    }
     button.disabled = false;
     button.textContent = "원본 삭제 재시도";
     window.alert("요청 결과를 확인하지 못했습니다. 새로고침 후 상태를 확인해 주세요.");

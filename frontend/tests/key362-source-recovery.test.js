@@ -49,3 +49,24 @@ test("KEY-362 요청은 세대만 전송하고 이중 클릭은 한 번만 실�
   assert.equal(refreshed, 1);
   assert.equal(button.disabled, true);
 });
+
+test("KEY-362 409는 같은 세대 버튼을 되살리지 않고 최신 상태를 다시 읽는다", async () => {
+  const box = load("api", "message-words");
+  box.window.confirm = () => true;
+  box.request = () => Promise.reject({status: 409, code: "SOURCE_RETRY_NOT_ALLOWED"});
+  const button = {disabled:false, textContent:"", dataset:{sourceRetry:"1",generation:"2"}};
+  let refreshed = 0;
+  box.requestSourceRetry(button, () => refreshed++);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(refreshed, 1);
+  assert.equal(button.disabled, true);
+  assert.equal(button.textContent, "상태 다시 확인 중…");
+});
+
+test("KEY-362 의사 화면도 역할과 삭제 재시도 클릭을 직접 배선한다", () => {
+  const { codeOnly, read } = require("./source.js");
+  const code = codeOnly(read("js/doctor.js"));
+  assert.match(code, /sourceRetryRoles = me\.roles \|\| \[\]/);
+  assert.match(code, /closest\("\[data-source-retry\]"\)/);
+  assert.match(code, /requestSourceRetry\(sourceButton/);
+});

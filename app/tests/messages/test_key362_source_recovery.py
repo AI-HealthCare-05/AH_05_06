@@ -44,6 +44,11 @@ class TestSourceRecovery(TestCase):
         await dispatch_due_messages(sender)
         await message.refresh_from_db()
         assert message.status == GuideMessageStatus.CANCELED
+        assert message.hold_reason is None
+        assert message.source_failure_type is None
+        assert message.source_failure_at is None
+        assert not message.source_retry_requested
+        assert message.claim_token is None
         assert path.exists() and not sender.calls
 
     async def held(self):
