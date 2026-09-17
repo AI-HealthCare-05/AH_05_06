@@ -195,6 +195,35 @@ jobs:
             echo "has_tests=false" >> $GITHUB_OUTPUT
           fi
 
+      # **운영과 같은 등급의 계정을 만든다** — KEY-358.
+      #
+      # 여태 CI 는 `DB_USER: root` 로 돌았다. 운영 앱 계정(`ozcoding`)에는 없는
+      # 권한이 CI 에는 있어서, **권한이 모자라 생기는 결함은 구조적으로 안 보였다.**
+      # 2026-09-16 배포가 그것으로 멈췄다 — KEY-238 의 `CREATE TRIGGER` 가 운영에서
+      # `1419` 로 죽었는데 CI 는 초록이었다.
+      #
+      # 로컬은 이미 제한 계정으로 돈다(`infra/docker/initdb.d/01-test-db.sql`).
+      # 그 파일 주석이 같은 말을 적어 두었다 — 「CI(root)에서만 돌아 아무도 몰랐다」.
+      # **CI 만 혼자 셌다.** 여기서 맞춘다.
+      #
+      # 권한 모양은 그 파일을 그대로 본뜬다. `test\_%` 의 `\_` 는 밑줄 그 글자다 —
+      # 안 쓰면 `_` 가 「아무 글자 하나」가 되어 엉뚱한 이름까지 걸린다.
+      #
+      # `log_bin_trust_function_creators` 는 운영 compose 의 플래그와 같은 자리다
+      # (KEY-358). 서비스 컨테이너에는 `command` 를 못 주므로 root 로 켠다.
+      - name: Create a production-shaped database account
+        env:
+          MYSQL_PWD: ci-throwaway-not-a-secret
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -uroot <<'SQL'
+          SET GLOBAL log_bin_trust_function_creators = 1;
+          CREATE USER 'ci_app'@'%' IDENTIFIED BY 'ci-throwaway-not-a-secret';
+          GRANT ALL ON `ai_health`.* TO 'ci_app'@'%';
+          CREATE DATABASE IF NOT EXISTS test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+          GRANT ALL ON `test`.* TO 'ci_app'@'%';
+          GRANT ALL ON `test\_%`.* TO 'ci_app'@'%';
+          SQL
+
       - name: Run Tests with Coverage
         if: steps.check_tests.outputs.has_tests == 'true'
         # `DB_PASSWORD` 는 코드 기본값이 없다(KEY-110). 위 서비스 컨테이너와
@@ -206,7 +235,8 @@ jobs:
         # 별도 프로세스라 `coverage run` 하나로는 워커 안 실행분을 못 잡는다.
         env:
           DB_HOST: 127.0.0.1
-          DB_USER: root
+          # 🚩 **`root` 가 아니다** — KEY-358. 운영과 같은 등급으로 돈다.
+          DB_USER: ci_app
           DB_PASSWORD: ci-throwaway-not-a-secret
           DB_NAME: ai_health
         run: |
