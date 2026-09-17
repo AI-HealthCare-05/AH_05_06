@@ -106,8 +106,11 @@ async def test_visit_access_query_always_includes_hospital_scope(monkeypatch: py
     captured: dict[str, int] = {}
 
     class Query:
-        async def exists(self) -> bool:
-            return False
+        def select_related(self, *args: str) -> "Query":
+            return self
+
+        async def first(self) -> None:
+            return None
 
     def fake_filter(**kwargs: int) -> Query:
         captured.update(kwargs)

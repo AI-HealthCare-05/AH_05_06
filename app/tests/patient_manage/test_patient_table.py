@@ -420,3 +420,25 @@ class PatientTableTestCase(PatientTableBase):
         assert body["counts"][PatientCategory.NEEDS_ATTENTION.value] == 1, (
             "원문에서 「완료 · 열람」인 줄에 ⚠ 배지가 붙어 있다 — 이탈도 챙길 일이다"
         )
+
+    async def test_opted_out_patient_drops_from_needs_attention_but_stays_findable(self) -> None:
+        """수신 거부만이 유일한 사유였던 환자는 「챙겨주세요」에서 빠진다 — KEY-355.
+
+        접수대 목록(front_desk.py)이 이미 이 환자의 진료를 통째로 뺐다 —
+        여기서 다르게 굴면 「같은 규칙으로 낸다」는 이 파일의 원칙이
+        깨진다(2heej 리뷰). 사라지는 게 아니라 SMS_OPT_OUT 카테고리
+        필터로는 여전히 찾을 수 있다는 것도 함께 잰다.
+        """
+        clinic = await self.a_clinic()
+        staff = await self.a_staff(clinic, ["staff"], "optout-row")
+        patient = await self.a_patient(clinic, name="한소영", chart="55501")
+        patient.sms_opted_out_at = datetime.now(DISPLAY_TIMEZONE)
+        await patient.save(update_fields=["sms_opted_out_at"])
+
+        attention = await self.fetch(staff, category=PatientCategory.NEEDS_ATTENTION.value)
+        assert patient.patient_id not in {item["patient_id"] for item in attention["items"]}
+
+        opted_out = await self.fetch(staff, category=PatientCategory.SMS_OPT_OUT.value)
+        assert patient.patient_id in {item["patient_id"] for item in opted_out["items"]}, (
+            "사라진 게 아니라 배지가 옮겨진 것이어야 한다 — 수신 거부 묶음에서는 계속 보여야 한다"
+        )

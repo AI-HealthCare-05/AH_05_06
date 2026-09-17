@@ -30,6 +30,7 @@ from app.models.visits import (
     PatientUsageEventType,
     Visit,
 )
+from app.services.message_dispatch import check_day_number
 from app.services.patient_flags import CHECK_KINDS
 from app.services.patient_visit_scope import hospital_id_of
 
@@ -111,7 +112,9 @@ class PatientHistoryService:
                     # 세면 「4장 중 5장」이 나온다 (`#189` 리뷰, 2heej).
                     guide_pages_read=len(read & set(GUIDE_PAGES)),
                     guide_pages_total=len(GUIDE_PAGES),
-                    checks=self._checks(sent, seen, answers.get(document_id) if document_id else None),
+                    checks=self._checks(
+                        sent, seen, answers.get(document_id) if document_id else None, visit.visited_at
+                    ),
                     checkin_note=notes.get(visit.visit_id),
                     checkin_signals=signals.get(visit.visit_id, []),
                     runs_out_on=self._runs_out(visit.visited_at.date(), course),
@@ -269,6 +272,7 @@ class PatientHistoryService:
         sent: dict[str, GuideMessage],
         views: list[datetime],
         answer: str | None,
+        visited_at: datetime,
     ) -> list[HistoryCheck]:
         """확인 문자 줄들 — 원문 「일주일 뒤 05-27 미열람 · 보름 뒤 06-04 미열람」.
 
@@ -285,14 +289,20 @@ class PatientHistoryService:
             at = row.sent_at or row.scheduled_at
             after = rows[index + 1].sent_at or rows[index + 1].scheduled_at if index + 1 < len(rows) else None
             seen = [when for when in views if when >= at and (after is None or when < after)]
+            row_sent = row.status is GuideMessageStatus.SENT
             found.append(
                 HistoryCheck(
                     kind=row.kind,
                     at=at,
-                    sent=row.status is GuideMessageStatus.SENT,
+                    sent=row_sent,
                     viewed_at=seen[0] if seen else None,
                     #: 응답은 D+7 것만이다 — 안내문당 한 건뿐이라 회차를 가를 수 없다.
                     answer=answer if row.kind is GuideMessageKind.CHECK_D7 else None,
+                    check_day_number=(
+                        check_day_number(visited_at, row.sent_at)
+                        if row.kind is GuideMessageKind.CHECK_D7 and row_sent and row.sent_at
+                        else None
+                    ),
                 )
             )
         return found

@@ -39,9 +39,10 @@ var FAILURE_SAYING = {
    떨어졌을 때」. 원문 표기가 「보류 · 번호」라 짧게 적는다.
 
    서버의 `GuideMessageHold` 에는 이보다 많다(`NOT_APPROVED` ·
-   `SOURCE_NOT_DELETED` · `SAFETY_CHECK_FAILED`). 그것들은 **일부러 여기
+   `SAFETY_CHECK_FAILED`). 그것들은 **일부러 여기
    없다** — 스탭이 손댈 자리가 없고, 사유를 적어 봐야 그 줄에서 할 수 있는
-   일이 생기지 않는다. 모르는 코드는 그냥 「보류」로 적힌다(`messageSaying`).
+   일이 생기지 않는다. KEY-362의 SOURCE_NOT_DELETED는 안전한 삭제 복구
+   동작이 생겼으므로 상세 사유와 함께 표시한다.
 
    **`BOOKING_URL_MISSING` 이 셋째다** — KEY-331. 이것은 손댈 수 있다:
    관리자가 어드민 A1-4 에서 예약 링크를 적으면 그 문자가 다시 나간다.
@@ -58,6 +59,7 @@ var HOLD_SAYING = {
   NO_CREDIT: "문자 잔량",
   BOOKING_URL_MISSING: "예약 링크 없음",
   RECIPIENT_NOT_APPROVED: "승인되지 않은 번호",
+  SOURCE_NOT_DELETED: "원본 삭제 확인 필요 (SOURCE_NOT_DELETED)",
 };
 
 /* 한 통이 지금 어디에 있는가. **「예정」과 「못 나감」과 「보류」를 또렷이
@@ -103,7 +105,61 @@ function messageState(status) {
 function messageSaying(row) {
   var state = messageState(row && row.status);
   var why = row && row.status === "HELD" ? HOLD_SAYING[row.hold_reason] : null;
-  return why ? state.say + " · " + why : state.say;
+  var saying = why ? state.say + " · " + why : state.say;
+  if (row && row.status === "HELD" && row.hold_reason === "SOURCE_NOT_DELETED") {
+    var failures = {
+      PURGE_RETRY_EXHAUSTED: "자동 삭제 재시도 소진",
+      DELETION_RECORD_MISMATCH: "삭제 기록과 실제 파일 불일치",
+      STORAGE_UNAVAILABLE: "저장소 확인 불가",
+      PURGE_RETRY_FAILED: "삭제 또는 부재 확인 실패",
+      RECOVERY_FAILED: "복구 처리 실패",
+    };
+    saying += " · " + (failures[row.source_failure_type] || "이전 보류 — 실패 유형 기록 없음");
+    if (failures[row.source_failure_type]) saying += " (" + row.source_failure_type + ")";
+    if (row.source_failure_at) {
+      var stamp =
+        typeof window.clinicStamp === "function"
+          ? window.clinicStamp(row.source_failure_at)
+          : String(row.source_failure_at).slice(0, 16).replace("T", " ");
+      saying += " · " + stamp;
+    }
+    if (row.source_retry_requested) saying += " · 삭제 재시도 대기/처리 중";
+  }
+  return saying;
+}
+
+var sourceRetryRoles = [];
+function sourceRetryButton(row) {
+  if (!row || row.status !== "HELD" || row.hold_reason !== "SOURCE_NOT_DELETED" ||
+      !sourceRetryRoles.some(function (role) { return role === "doctor" || role === "staff"; })) return "";
+  return '<button type="button" class="button-ghost button-ghost--sm" data-source-retry="' +
+    esc(row.guide_message_id) + '" data-generation="' + esc(row.source_retry_generation || 0) + '"' +
+    (row.source_retry_requested ? " disabled" : "") + '>원본 삭제 재시도</button>';
+}
+
+function requestSourceRetry(button, onDone) {
+  if (button.disabled) return;
+  if (!window.confirm("원본 삭제와 파일 부재 확인을 다시 요청합니다. 성공하면 기존 문자가 발송됩니다. 진행할까요?")) return;
+  button.disabled = true;
+  button.textContent = "삭제 재시도 요청 중…";
+  request("/messages/" + encodeURIComponent(button.dataset.sourceRetry) + "/source-retry", {
+    method: "POST", body: { generation: Number(button.dataset.generation) },
+  }).then(function () {
+    button.textContent = "삭제 재시도 대기/처리 중";
+    onDone();
+  }).catch(function (error) {
+    /* 409는 요청 결과를 모르는 네트워크 실패가 아니라, 워커가 이미 집었거나
+       상태·세대가 바뀌었다는 확정 응답이다. 같은 세대로 버튼만 되살리면
+       누를 때마다 같은 409가 반복되므로 최신 행을 다시 읽는다. */
+    if (error && error.status === 409) {
+      button.textContent = "상태 다시 확인 중…";
+      onDone();
+      return;
+    }
+    button.disabled = false;
+    button.textContent = "원본 삭제 재시도";
+    window.alert("요청 결과를 확인하지 못했습니다. 새로고침 후 상태를 확인해 주세요.");
+  });
 }
 
 /** 「08-20 10:00」 — 날짜와 시각을 함께 적는다. 회차는 며칠 뒤라 날짜가 있어야 한다. */

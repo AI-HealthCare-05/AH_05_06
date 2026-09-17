@@ -136,6 +136,36 @@ class GuideTestCase(TestCase):
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
+class TestMessagePlanContractErrors(GuideTestCase):
+    async def test_missing_link_returns_the_422_contract_error(self) -> None:
+        """문구 검증 실패가 처리되지 않은 500으로 새지 않는다."""
+        clinic = await make_clinic()
+        guide = await make_guide(clinic)
+        doctor = await make_staff(clinic, "message-plan-doctor", ["doctor"])
+
+        async with self.client() as client:
+            response = await client.put(
+                f"{BASE}/{guide.visit_id}/guide/messages",
+                headers=await self.sign_in(doctor),
+                json={
+                    "send_hour": 18,
+                    "check_hour": 10,
+                    "rounds": [
+                        {
+                            "kind": "GUIDE",
+                            "enabled": True,
+                            "body": "{환자명}님, 오늘 진료 안내입니다.",
+                            "days_before": None,
+                        }
+                    ],
+                },
+            )
+
+        assert response.status_code == 422, response.text
+        assert response.json()["code"] == "REQUIRED_VARIABLE_MISSING"
+        assert "{링크}" in response.json()["message"]
+
+
 class TestOnlyDoctorsApprove(GuideTestCase):
     """`admin` 은 역할이 아니라 권한이다 — 켠다고 의료 판단이 열리지 않는다."""
 

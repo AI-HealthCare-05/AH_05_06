@@ -611,8 +611,21 @@ function guideLoadSaying(error) {
     },
   });
 
+  /* 의사 화면도 공용 현황 렌더러의 원본 삭제 복구 버튼을 직접 배선한다.
+     `visit-guide.js`는 이 페이지에 실리지 않으므로 그쪽 위임에 기대면 버튼이
+     보이지 않거나, 나중에 렌더링돼도 눌리지 않는다. 완료 뒤에는 서버 상태를
+     처음부터 다시 읽어 stale generation을 남기지 않는다. */
+  document.addEventListener("click", function (event) {
+    var sourceButton = event.target.closest && event.target.closest("[data-source-retry]");
+    if (!sourceButton) return;
+    requestSourceRetry(sourceButton, function () {
+      location.reload();
+    });
+  });
+
   function acceptSession(who) {
     me = who;
+    sourceRetryRoles = me.roles || [];
     if (guide) return renderRole();
     /* 목록이 그려지면 맨 위 줄이 이미 골라져 있다(shell.js). 그런데 「고름」은
        클릭으로만 알려지므로, 처음 들어왔을 때는 오른쪽이 빈 채로 남는다 —

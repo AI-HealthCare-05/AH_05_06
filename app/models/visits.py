@@ -165,11 +165,12 @@ class GuideDocument(models.Model):
     #: 이력은 GuideEvent 에 그대로 있다.
     returned_reason = fields.CharField(max_length=200, null=True)
 
-    #: 확인 문자를 몇 시에 보낼지 (와이어프레임 S1-14 「확인 문자 시각」).
+    #: 진료 당일 안내문을 몇 시에 보낼지. 환자별로 저장하며 승인 전에만 바꾼다.
     #: 회차마다 따로 두지 않는 이유는 **화면에 고르는 자리가 하나**이기
     #: 때문이다 — 원문 주석: 「확인 · 재진 문자에 적용」. 회차별로 담아 두면
     #: 화면이 못 만드는 상태(회차마다 다른 시각)를 표가 허용하게 된다.
-    #: 안내문 자신은 이 값을 따르지 않는다 — 승인 시각 규칙(기본 18:00)이다.
+    send_hour = fields.SmallIntField(default=18)
+    #: 확인 문자를 몇 시에 보낼지 (와이어프레임 S1-14 「확인 문자 시각」).
     check_hour = fields.SmallIntField(default=10)
 
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -551,6 +552,14 @@ class GuideMessageHold(StrEnum):
     #: 나갈 수 있었다 — OTP와 같은 좁은문을 예약 문자에도 씌운다. 목록은
     #: OTP와 공유한다(`app.core.approved_phones.approved_test_phones`).
     RECIPIENT_NOT_APPROVED = "RECIPIENT_NOT_APPROVED"
+    #: 환자가 문자 수신을 거부했다(`Patient.sms_opted_out_at`) — KEY-355.
+    #:
+    #: 발송 전에 이미 아는 사실이라 `GuideMessageFailure.OPT_OUT`(보내
+    #: 봤는데 통신사가 거부로 되돌린 경우)과 다르다. 업무 목록에서도
+    #: 이 환자의 진료 자체를 뺀다(`front_desk.py`) — 여기서도 같은
+    #: 판단을 게이트에 씌워, 화면에 안 보이는 진료의 예약 문자가 뒤에서
+    #: 몰래 나가는 일을 막는다.
+    SMS_OPT_OUT = "SMS_OPT_OUT"
 
 
 class GuideMessageFailure(StrEnum):
@@ -728,6 +737,12 @@ class GuideMessage(models.Model):
     #: 화면에 뭔가를 보여주지 않는다.
     claim_token = fields.CharField(max_length=32, null=True)
 
+    # KEY-362: recovery stays HELD until the worker verifies source absence.
+    source_failure_type = fields.CharField(max_length=32, null=True)
+    source_failure_at = fields.DatetimeField(null=True)
+    source_retry_requested = fields.BooleanField(default=False)
+    source_retry_generation = fields.IntField(default=0)
+
     #: 재발송 요청의 원본 메시지. 원본 한 건당 재발송 작업을 하나만 만들어
     #: 같은 요청의 재시도와 동시 클릭이 중복 발송으로 이어지지 않게 한다.
     resend_of_message_id = fields.BigIntField(null=True, unique=True)
@@ -771,6 +786,17 @@ class GuideMessageEventType(StrEnum):
     #: 삭제·확인·기록 중 하나가 실패해서 이번 시도를 재시도로 돌렸다 —
     #: KEY-349. `reason`에 문서 id만 남긴다(경로·파일명·환자정보 금지).
     SOURCE_PURGE_FAILED = "SOURCE_PURGE_FAILED"
+    SOURCE_RETRY = "SOURCE_RETRY"
+    SOURCE_VERIFIED = "SOURCE_VERIFIED"
+    SOURCE_REQUEUED = "SOURCE_REQUEUED"
+    #: 환자가 D+7 답변을 저장해서 이 예약이 취소됐다 — KEY-320, 2heej 리뷰.
+    #:
+    #: `GuideMessage.status`가 CANCELED로 바뀌는 경로는 이것 말고도
+    #: 있다(스탭의 unapprove·수동 재예약 — `guides.py`·`message_schedule.py`)
+    #: — 그쪽은 사람이 끈 것이라 재승인하면 되살려도 된다. 이 이벤트가
+    #: 있는 CANCELED만 「환자가 이미 답했다」는 뜻이라 되살리면 안 된다
+    #: (`guides.py`의 `_schedule_messages`가 이 이벤트로 가른다).
+    CANCELED = "CANCELED"
 
 
 class GuideMessageEvent(models.Model):

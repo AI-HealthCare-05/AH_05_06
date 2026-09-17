@@ -73,9 +73,11 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 ## 🚀 무엇으로 만들었나
 
 - **FastAPI + Tortoise ORM** — 비동기 API 서버와 DB 모델. 마이그레이션은 `aerich`
-- **AI Worker** — OCR 판독을 API 서버와 분리해 처리하는 **장기 실행 프로세스**.
-  Redis 리스트 큐(`ocr:jobs`)를 `blpop` 으로 계속 소비한다 (FastAPI 가 `rpush` 로 넣음).
-  예약 안내·확인 문자 발송도 같은 프로세스가 맡는다 (KEY-249). 설계 메모는
+- **AI Worker** — API 서버와 분리된 **장기 실행 프로세스** 하나가 세 갈래를 나란히 돈다
+  (`ai_worker/main.py`). ① OCR 판독 — Redis 리스트 큐(`ocr:jobs`)를 `blpop` 으로 소비
+  (FastAPI 가 `rpush` 로 넣음). ② 예약 안내·확인 문자 발송 (KEY-249) — 발송 직전에 환자
+  링크를 새로 발급한다 (KEY-297). ③ `GUIDE_RAG_ENABLED=true` 일 때만 안내문 생성 작업
+  (KEY-277, DB 에 쌓인 작업을 조회). **워커를 안 띄우면 셋 다 멈춘다.** 설계 메모는
   [`docs/ai-worker.md`](docs/ai-worker.md)
 - **프런트엔드 — 빌드가 없다.** HTML·CSS·ES5 JavaScript 를 `<script src>` 로 그대로
   싣는다. 번들러도 `node_modules` 도 잠금파일도 없다. 파일을 고치고 새로고침하면
@@ -121,7 +123,7 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 │   ├── patient_wireframe/  # 환자 쪽 와이어프레임 (환자 링크가 떨어지는 자리)
 │   └── tests/          # `node --test` 계약 검사. 새 의존성 없이 돈다
 ├── infra/              # 운영 인프라 설정
-│   ├── docker/         # docker-compose.prod.yml · docker-compose.pilot.yml · initdb.d/
+│   ├── docker/         # docker-compose.prod.yml · .pilot.yml · .rds.yml(RDS 전환 — KEY-201) · initdb.d/
 │   └── nginx/          # 리버스 프록시 (http/https)
 ├── scripts/            # 부트스트랩 · seed · smoke · 배포 · CI
 ├── docs/               # 정본 문서 (문서 지도 참고)
@@ -136,12 +138,12 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 | 서비스 | 역할 | 포트(로컬) | 프로필 |
 |---|---|---|---|
 | `mysql` | 데이터 저장 (MySQL 8.0, utf8mb4) | `3306` | 기본 |
-| `redis` | 세션 · OCR 작업 큐 (리스트 `ocr:jobs`, `rpush`/`blpop`) | `6379` | 기본 |
+| `redis` | 세션 · 로그인 시도 · OCR 작업 큐 (리스트 `ocr:jobs`, `rpush`/`blpop`) · 챗봇 중복 제출 방지 (5분 — KEY-328) | `6379` | 기본 |
 | `fastapi` | API 서버 (`app.main:app`) | `8000` | 기본 |
 | `nginx` | 정적 화면 서빙 + API 프록시 | `80` | `web` |
-| `ai-worker` | OCR 판독 워커 | — | `ocr` |
-| `minio` | 합성 EMR 이미지 보관 (S3 호환) | `9000` API · `9001` 콘솔 | `ocr` |
-| `minio-init` | 버킷 생성 + 익명 접근 차단 (1회 실행) | — | `ocr` |
+| `ai-worker` | OCR 판독 · 예약 문자 발송 · (선택) RAG 안내 생성 | — | `ocr` |
+| `minio` | 합성 EMR 이미지 · 승인 의료지식 원문 보관 (S3 호환) | `9000` API · `9001` 콘솔 | `ocr` |
+| `minio-init` | 버킷 두 개(`ocr-fixtures` · `approved-knowledge`) 생성 + 익명 접근 차단 (1회 실행) | — | `ocr` |
 
 **기동 순서**: `mysql`·`redis` 가 healthy → `fastapi` → `aerich upgrade`(테이블 생성) →
 `seed`(합성 계정) → 필요 시 `minio` + `minio-init` + `ai-worker`. `scripts/bootstrap-local.sh`
@@ -159,10 +161,10 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 
 | 도구 | 버전 | 용도 |
 |---|---|---|
-| **Python** | 3.13 이상 | 로컬 개발·스크립트 실행 |
+| **Python** | 3.13.x (**3.14 는 안 된다**) | 로컬 개발·스크립트 실행. `pyproject.toml` 이 `>=3.13,<3.14` — 3.14 로 `aerich migrate` 를 돌리면 JSON 칸마다 쓸데없는 `MODIFY COLUMN` 이 붙는다 (KEY-333) |
 | **UV** | 최신 | 의존성 설치·가상환경 ([설치 가이드](https://github.com/astral-sh/uv)) |
 | **Docker / Docker Compose** | Compose v2 | 전체 서비스 실행 |
-| **Node** | 22 이상 | 프런트엔드 계약 검사 (`node --test`) |
+| **Node** | 20 이상 (CI 는 20) | 프런트엔드 계약 검사 (`node --test`) |
 | `curl` · `openssl` | — | `dev.sh start` (내부의 `bootstrap-local.sh`) 가 사용 |
 
 ---
@@ -212,10 +214,25 @@ CLOVA 자격증명(`.env` 의 `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY`)�
 업로드 큐에 들어간 판독이 `OCR_NOT_CONFIGURED` 로 실패한다. 자격증명 없이 합성 판독만
 보려면 `.env` 에 `OCR_FIXTURE_FALLBACK=true` 를 추가한다.
 
-종단 검사 (walking skeleton E2E):
+> 예약 문자 발송도 `ai-worker` 가 맡는다. 기본 경로(워커 없음)에서는 발송 시각이 지나도 문자가
+> `SCHEDULED` 로 머문다. 워커를 띄워도 원본 문서를 올린 진료는 `SOURCE_NOT_DELETED`,
+> 의원 예약 주소가 빈 소진·재진 문자는 `BOOKING_URL_MISSING` 으로 **보류(`HELD`)** 된다
+> (`solapi` 면 승인 번호 목록 밖 수신자도 `RECIPIENT_NOT_APPROVED`) —
+> 결함이 아니라 발송 게이트다 (`app/services/dispatch_gate.py` · [`docs/project_workflow.md`](docs/project_workflow.md) §2).
+
+### 종단 검사
 
 ```bash
 ./dev.sh check-e2e
+```
+
+**워커·OCR 이 필요 없다** — fixture 판독값으로 `app/tests/e2e/test_key152_walking_skeleton.py`
+하나를 돈다. 대신 **호스트에서 `uv run pytest` 를 부르므로** `uv sync --group app` 이 먼저
+깔려 있어야 하고, `.env` 를 그대로 읽는다. `bootstrap` 이 만든 `.env` 는 `DB_HOST=mysql` ·
+`REDIS_HOST=redis`(컨테이너 이름)라 호스트에서 안 풀린다 — 이번 실행에만 덮어쓴다:
+
+```bash
+DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1 ./dev.sh check-e2e
 ```
 
 ### 공통 명령
@@ -333,9 +350,11 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `APP_VERSION` · `AI_WORKER_VERSION` · `WEB_VERSION` | 빌드 이미지 태그 | `v1.0.0` |
 | `SECRET_KEY` | JWT 서명 키 | 로컬 전용 무작위값 (bootstrap 이 생성) |
 | `COOKIE_DOMAIN` | 하위 도메인 공유 쿠키. 비우면 host-only | (비움) |
+| `PATIENT_WEB_BASE_URL` | 발송기가 문자에 넣는 환자 링크 절대 URL 의 앞부분 (KEY-297). **끝에 `/` 를 두지 않는다.** 운영은 실제 도메인 | `http://localhost` |
 | `JWT_ALGORITHM` | JWT 알고리즘 | `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 액세스 토큰 수명 | `60` |
 | `REFRESH_TOKEN_EXPIRE_MINUTES` | 리프레시 토큰 수명 | `20160` (14일) |
+| `JWT_LEEWAY` | 토큰 만료 판정 여유(초) | `5` |
 | `TIMEZONE` | 서버 벽시계 시간대 (검사·서버 시계가 어긋나면 날짜 오류) | `Asia/Seoul` |
 
 ### DB / Redis
@@ -346,6 +365,7 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `DB_PORT` · `DB_EXPOSE_PORT` | DB 포트 / 호스트 노출 포트 | `3306` | `3306` |
 | `DB_USER` · `DB_PASSWORD` · `DB_ROOT_PASSWORD` | DB 계정 | 로컬 전용값 (bootstrap 생성) | |
 | `DB_NAME` | 스키마 이름 | `ai_health` | |
+| `DB_CONNECT_TIMEOUT` · `DB_CONNECTION_POOL_MAXSIZE` | 연결 타임아웃(초) · 풀 크기. 평소 안 적는다 | `5` · `10` | |
 | `REDIS_HOST` | Redis 호스트 | `redis` | `localhost` |
 | `REDIS_PORT` | Redis 포트 | `6379` | `6379` |
 | `REDIS_EXPOSE_PORT` | 노출 포트 — **로컬 `docker-compose.yml` 은 안 읽는다**(`6379:6379` 로 박혀 있다). 바꾸려면 그 파일을 고친다 | `6379` | `6379` |
@@ -370,11 +390,15 @@ docker compose --profile ocr up -d --build ai-worker       # 워커를 컨테이
 | `OPENAI_BASE_URL` | API 엔드포인트 | `https://api.openai.com/v1` |
 | `OPENAI_TIMEOUT_SECONDS` | 타임아웃 | `20` |
 | `GUIDE_RAG_ENABLED` | KEY-277 검색·생성 큐 사용. API와 워커에 같은 값 적용. migration 57과 승인 지식/템플릿 준비 후 격리 Pilot에서 먼저 검증 | `false` |
+| `LLM_INPUT_USD_PER_1M_TOKENS` · `LLM_OUTPUT_USD_PER_1M_TOKENS` | 추정 비용 기록용 단가. **`float` 이라 빈 값이면 서버가 안 뜬다** — 안 쓰면 줄을 두지 않는다 | (줄 없음) |
 
 RAG를 켜면 기존 생성 API는 202와 작업 ID를 반환하고 화면은 같은 작업을 조회한다.
-별도 워커가 필요하며 기존 `--profile ocr`의 `ai-worker`가 큐를 처리한다.
-마이그레이션은 기존 `aerich upgrade` 절차로 57까지 적용한다. 데이터가 있는 57의
+별도 워커가 필요하며 기존 `--profile ocr`의 `ai-worker`가 DB 에 쌓인 생성 작업을 처리한다.
+마이그레이션은 기존 `aerich upgrade` 절차로 최신까지 적용한다(57 이상 필요). 데이터가 있는 57의
 다운그레이드는 감사·근거 유실을 막기 위해 거부한다.
+검색할 승인 지식은 seed 가 넣지 않는다 — `scripts/ingest_approved_knowledge.py`(KEY-276)로
+적재·승인하며 절차는 [`docs/decisions/KEY-276-approved-knowledge-pipeline.md`](docs/decisions/KEY-276-approved-knowledge-pipeline.md)
+「실행과 검증」이다.
 실측 절차와 미완료 게이트는 [KEY-277 Pilot 인수 확인](docs/qa/KEY-277-generation-pilot.md)을 따른다.
 
 ### MinIO (합성 EMR 보관)
@@ -383,15 +407,19 @@ RAG를 켜면 기존 생성 API는 202와 작업 ID를 반환하고 화면은 �
 |---|---|---|
 | `MINIO_ROOT_USER` · `MINIO_ROOT_PASSWORD` | MinIO 계정. **비우면 컨테이너가 안 뜬다.** 비밀번호 8자 이상 (KEY-191) | 로컬 전용값 (bootstrap 생성) |
 | `MINIO_API_PORT` · `MINIO_CONSOLE_PORT` | 포트 | `9000` · `9001` |
+| `KNOWLEDGE_MINIO_ENDPOINT` · `KNOWLEDGE_MINIO_BUCKET` | 승인 의료지식 원문·snapshot 전용 private 버킷 (KEY-276). 자격증명은 위 `MINIO_ROOT_*` 를 같이 쓴다 | `http://minio:9000` · `approved-knowledge` |
 
 ### 문자 발송 (KEY-248)
 
 | 변수 | 목적 | 예시·기본값 |
 |---|---|---|
-| `SMS_PROVIDER` | `mock`(기본, 자격증명 불필요) 또는 `aligo` | `mock` |
-| `ALIGO_KEY` · `ALIGO_USER_ID` · `ALIGO_SENDER_NUMBER` | 알리고 자격증명 (`aligo` 일 때만) | (비움) |
-| `ALIGO_BASE_URL` · `ALIGO_TIMEOUT_SECONDS` | 알리고 엔드포인트·타임아웃 | `https://apis.aligo.in` · `10` |
-| `MOCK_OTP_CODE` | **시연을 끝까지 보려면 필요.** 비우면 환자 OTP 인증이 503 (`OTP_DELIVERY_UNAVAILABLE`) 으로 막혀 Walking Skeleton 이 거기서 멈춘다. `bootstrap` 은 이 값을 안 넣는다 | `000000` |
+| `SMS_PROVIDER` | `mock`(로컬 기본, 자격증명 불필요) 또는 `solapi`. **`ENV=prod` 에서 `mock` 이면 서버가 안 뜬다** — 실제로 안 보내고 `SENT` 로 적어 누락을 숨기기 때문이다 | 로컬 `mock` · 운영 예시 `solapi` |
+| `SOLAPI_API_KEY` · `SOLAPI_API_SECRET` · `SOLAPI_SENDER_NUMBER` | 솔라피 자격증명. `solapi` 인데 하나라도 비면 서버가 안 뜬다 | (비움) |
+| `SOLAPI_BASE_URL` · `SOLAPI_TIMEOUT_SECONDS` | 솔라피 엔드포인트·타임아웃 | `https://api.solapi.com` · `10` |
+| `OTP_APPROVED_TEST_PHONES` | 실제 문자를 보내도 되는 번호 목록(쉼표 구분). OTP(KEY-284)와 예약 문자(KEY-338)가 **같이 쓴다.** **`solapi` 인데 비우면 서버가 안 뜬다** — 빈 목록은 「전체 허용」이 아니라 전부 차단이다. 예약 문자는 목록 밖 번호면 `RECIPIENT_NOT_APPROVED` 로 보류된다 | (비움) |
+| `OTP_SOLAPI_PROD_ENABLED` | prod 실제 OTP 발송 좁은문. 이 값 **과** 실행 인자 `--otp-confirm-solapi-prod` 가 둘 다 있어야 열린다. KEY-6 배포 승인 뒤에만 | (비움) |
+| `SMS_DISPATCH_ENABLED` | 예약 문자(안내·확인·소진·재진) 실발송 좁은문 (KEY-338). `solapi` 일 때 이 값 **과** 워커 실행 인자 `--sms-dispatch-confirm` 이 **둘 다 있어야** 열린다 — 하나라도 없으면 **워커가 발송 루프를 아예 안 돈다.** 문자는 `SCHEDULED` 로 남고 OCR·안내 생성은 계속 돈다. `ENV` 와 무관하고 `mock` 에는 안 걸린다. `.env` 에 적지 않고 승인된 Pilot 검증 때만 명령 앞에 붙인다 ([`docs/deploy-runbook.md`](docs/deploy-runbook.md) 「전환 순서」 · `docker-compose.pilot.yml`) | (적지 않음) |
+| `MOCK_OTP_CODE` | **시연을 끝까지 보려면 필요.** 비우면 환자 OTP 인증이 503 (`OTP_DELIVERY_UNAVAILABLE`) 으로 막혀 Walking Skeleton 이 거기서 멈춘다. `bootstrap` 은 이 값을 안 넣는다. prod 에서는 `PILOT_ALLOW_MOCK_OTP=1` 과 `--pilot-confirm-mock-otp` 가 둘 다 있을 때만 (KEY-264) | `000000` |
 
 ### 만들기 중
 
@@ -436,7 +464,7 @@ uv run python scripts/check_schema_drift.py    # 모델 ↔ 실제 스키마 칸
 ```
 
 KEY-283은 `drug_caution_content.physician_review`에 검토자·병원·검토일·승인 본문의
-SHA256을 저장한다. 마이그레이션 49를 먼저 적용한 후 기존 seed 절차를 실행하면,
+SHA256을 저장한다. 마이그레이션 50(`50_…_key283_physician_review`)을 먼저 적용한 후 기존 seed 절차를 실행하면,
 본문과 출처가 정본과 일치하는 전문의 자문 12건에 C등급과 검토 기록이 반영된다.
 본문이 다르면 자동으로 승인 기록을 붙이지 않는다. 승인 후 본문이 변경되거나
 검토 기록이 누락되면 해당 템플릿은 생성에 사용되지 않는다.
@@ -513,10 +541,33 @@ SEED_STAFF_PASSWORD=<로컬전용PW> uv run python scripts/seed.py --mode full  
 스크립트에 실행 권한이 없으므로 `bash` 로 부른다. `--group app` 이 먼저 깔려 있어야 한다.
 
 ```bash
-bash scripts/ci/run_test.sh            # pytest + coverage (MySQL 컨테이너 필요)
+bash scripts/ci/run_test.sh            # pytest + coverage (MySQL 컨테이너 필요, 호스트 실행 — 아래 주의)
 bash scripts/ci/code_fommatting.sh     # Ruff — check --fix + format, 즉 작업 트리를 고친다 (CI 는 --check)
 bash scripts/ci/check_mypy.sh          # Mypy 타입 검사
 ```
+
+> **호스트에서 도는 pytest 는 `DB_HOST`·`REDIS_HOST` 가 호스트에서 풀려야 한다.**
+> `bootstrap`·수동 설치가 만든 컨테이너용 `.env` 는 `mysql`·`redis` 라 그대로는 안 풀린다.
+> 실행 경로에 따라 방법이 다르다.
+>
+> - **`uv run pytest` 를 직접 부를 때 · `./dev.sh check-e2e`** — 명령 앞에 붙이면 된다.
+>   설정은 환경변수가 `.env` 보다 먼저다.
+>
+>   ```bash
+>   DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1 uv run coverage run -m pytest app
+>   uv run coverage report -m
+>   ```
+>
+> - **`bash scripts/ci/run_test.sh`** — **앞에 붙여도 소용없다.** 스크립트가 13행에서
+>   `source .env` 를 해 붙인 값을 `mysql`·`redis` 로 되돌린다. 이 스크립트는 `.env` 의 두 값이
+>   이미 호스트용(`localhost`)일 때만 그대로 쓴다. 컨테이너용 `.env` 라면 위 직접 실행을 쓴다.
+>   `.env` 를 호스트용으로 바꿨다면 컨테이너를 다시 띄우기 전에 되돌린다 — compose 가 그
+>   값을 컨테이너에 싣는다(위 수동 설치 4 참고).
+>   직접 실행은 스크립트가 먼저 하는 DB 권한 부여(`GRANT`)를 건너뛴다. `test`·`test_*` DB 권한은
+>   `initdb.d` 가 MySQL 볼륨을 처음 만들 때 넣으므로 보통 필요 없다. 그보다 오래된 볼륨에서
+>   `TEST_SLOT`·`-n auto` 를 쓸 때만 아래 절의 `GRANT` 를 한 번 넣는다.
+>
+> CI 는 `.env` 가 없고 `DB_HOST: 127.0.0.1` 만 준다(`.github/workflows/checks.yml`).
 
 **프런트엔드 검사** — 별도 도구 없이 Node 만으로:
 
@@ -532,7 +583,7 @@ TZ=Asia/Seoul node --test frontend/tests/*.test.js
 
 ```bash
 ./dev.sh check          # smoke: health · auth · core (.bootstrap.local.env 에서 자격증명 자동 읽음)
-./dev.sh check-e2e      # walking skeleton 종단 검사 (OCR 포함 경로 필요)
+./dev.sh check-e2e      # walking skeleton 종단 검사 — fixture 기반, 호스트 pytest (위 「종단 검사」의 DB_HOST 주의)
 
 # 직접 실행이 필요할 때
 DB_PASSWORD=<로컬전용PW> ./scripts/run_key152_e2e.sh
@@ -623,17 +674,22 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 
 | 증상 | 먼저 확인할 것 |
 |---|---|
-| `OperationalError: Table 'ai_health.users' doesn't exist` | `uv run aerich upgrade` 를 안 돌렸다 |
+| `OperationalError: Table 'ai_health.<무엇>' doesn't exist` | `aerich upgrade` 를 안 돌렸다. 처음 설치(`users`)뿐 아니라 **develop 을 받거나 브랜치를 바꾼 뒤**에도 난다 — 새 마이그레이션이 들어왔는데 DB 가 그 전 번호에 있다(예: `chatbot_submission` → 62, KEY-328). `docker compose exec fastapi uv run --no-sync aerich upgrade` |
 | `Unknown column '...'` 이 한참 뒤 엉뚱한 자리에서 | 스키마 드리프트 — `uv run python scripts/check_schema_drift.py` |
 | `ModuleNotFoundError: No module named 'tortoise'` (워커) | `uv sync --group worker --group ai` (둘 다). `--group ai` 만으로는 안 된다 |
 | OCR·픽스처 검사가 「연결 거부」로 죽음 | `--profile ocr` (또는 `web`+`ocr`) 를 안 줬다 |
 | `ai-worker` 가 `docker compose ps` 에서 계속 `Restarting` | 스텁 아님 — DB·Redis 연결이나 `.env` 설정 오류다. `docker compose logs ai-worker` |
+| `GUIDE_RAG_ENABLED=true` 인데 안내 생성이 `generation_internal_error` 로 실패 (워커 쪽 `LOCAL_EMBEDDING_NOT_INSTALLED`) | 워커 이미지 내 패키지 누락 또는 의존성 호환 문제일 수 있다. **워커는 `./app` 마운트 없이 구운 이미지로 돈다** — 로컬에서 코드를 고쳐도 안 바뀐다. 생성 루프는 기동 직후 죽어도 로그를 안 남기니 아래 순서로 확인한다.<br>1. 현재 워커에서 임포트 오류 확인: `docker compose exec ai-worker uv run --no-sync python -c "import sentence_transformers"`<br>2. 오류가 확인되면 수정 사항이 반영된 코드로 이미지 재빌드 및 컨테이너 재생성: `docker compose build ai-worker` 후 `docker compose up -d --force-recreate ai-worker`<br>3. 1번 명령을 다시 실행해 임포트 성공 여부 확인 |
 | 판독이 `OCR_NOT_CONFIGURED` 로 실패 | CLOVA 키가 비었다. 합성 판독만 볼 거면 `OCR_FIXTURE_FALLBACK=true` (워커 큐 안 씀) |
 | MinIO 컨테이너가 안 뜸 | `MINIO_ROOT_USER`·`MINIO_ROOT_PASSWORD` 가 비었다. 비밀번호 8자 이상 |
 | pytest 가 `test` DB 없음 / 비밀번호 불일치로 실패 | 기존 mysql 볼륨이 옛 비밀번호를 잡고 있다 — `docker compose down -v` 후 재기동 (데이터 삭제됨) |
 | `node --test` 가 `MODULE_NOT_FOUND` | 폴더 말고 `frontend/tests/*.test.js` 파일 글롭을 넘긴다 |
 | 현지 날짜 검사가 항상 통과 | `TZ=Asia/Seoul` 을 안 붙였다 |
 | `dev.sh start` 가 `ENV=local 에서만` 이라며 멈춤 | `.env` 의 `ENV` 가 `local` 이 아니다 |
+| 서버가 `SMS_PROVIDER=…` 를 말하며 안 뜸 | `ENV=prod` + `mock` 이거나, `solapi` 인데 `SOLAPI_*` 또는 `OTP_APPROVED_TEST_PHONES` 가 비었다 ([문자 발송](#문자-발송-key-248) 표) |
+| 호스트 pytest·`check-e2e` 가 `mysql`/`redis` 를 못 찾음 | `.env` 가 컨테이너용이다 — `DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1` 을 앞에 붙인다. **`run_test.sh` 는 `source .env` 가 되돌리므로 안 통한다** — `uv run pytest` 직접 실행으로 ([테스트](#-테스트-및-품질-관리) 절) |
+| 발송 시각이 지났는데 문자가 `SCHEDULED` 에서 안 움직임 | `ai-worker` 가 안 떴다 (`--profile ocr`). `solapi` 라면 KEY-338 좁은문이 닫혀 있다 — 워커 로그의 「예약 문자 발송 좁은문 안 열림」 |
+| 예약 문자가 `HELD` — `SOURCE_NOT_DELETED` · `BOOKING_URL_MISSING` · `RECIPIENT_NOT_APPROVED` | 발송 게이트다. 원본 문서 행이 남아 있음(삭제 기록은 KEY-349 전까지 없음) · 어드민 의원 정보(A1-4)의 예약 주소 비어 있음 · `solapi` 에서 수신 번호가 `OTP_APPROVED_TEST_PHONES` 밖. **보류는 끝 상태라 다시 안 나간다** ([`docs/project_workflow.md`](docs/project_workflow.md) §2) |
 | 포트 `3306`·`6379`·`8000` 사용 중 | 해당 프로그램을 종료한다. `3306` 만 `.env` 의 `DB_EXPOSE_PORT` 로 바꿀 수 있고, `6379`·`8000` 은 `docker-compose.yml` 에 박혀 있어 그 파일을 고쳐야 한다 |
 
 로컬 헬스체크 정본 절차: [`docs/local-health-check.md`](docs/local-health-check.md).

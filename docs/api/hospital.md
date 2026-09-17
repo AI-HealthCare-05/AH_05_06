@@ -512,6 +512,7 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 - `categories`는 쉼표로 구분한 업무 카테고리다. 미입력 시 전체 카테고리를 조회한다.
 - `cursor`는 서버가 발급한 불투명 커서다. `limit`은 기본 50, 최대 100인 cursor pagination을 사용한다.
 - `NEEDS_ATTENTION`은 해결될 때까지 날짜와 무관하게 포함한다. 나머지 카테고리는 `visited_at`을 `Asia/Seoul`로 변환한 날짜가 요청한 `date`와 같은 진료만 포함한다.
+- 문자 수신을 거부한 환자(`sms_opted_out_at`)의 진료는 다른 사유(반려·승인 요청 등)가 함께 있어도 목록·`counts` 양쪽에서 완전히 뺀다 — 보낼 곳이 없으면 승인해도 소용없다(KEY-355). 이런 진료는 이 화면 어디에도 뜨지 않는다. 대신 뺀 건수를 `sms_opt_out_excluded`로 응답에 싣는다 — 조용히 없어지면 스탭이 「어제 그 환자」를 못 찾는다. 이 환자들은 환자 목록(S2-1)의 `SMS_OPT_OUT` 묶음에서 계속 볼 수 있다. 수신 동의를 다시 받아 `sms_opted_out_at`이 비면 다음 조회부터 정상 파생으로 돌아온다.
 - `age`는 저장값이 아니라 요청한 현지 날짜와 `birth_date`로 계산한다. 동명이인 확인과 계산 근거를 위해 응답에 두 값을 함께 제공한다.
 - `diagnosis_name`은 확정된 구조화 진단명이 있을 때만 제공하며 미확정이면 `null`이다. 원문 의료문서는 포함하지 않는다.
 
@@ -520,7 +521,7 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 | 화면 탭 | `work_category` | 포함하는 `detail_status` |
 |---|---|---|
 | 작성 중 | `IN_PROGRESS` | `NO_DOCUMENT`, `OCR_REVIEW`, `GUIDE_GENERATING`, `STAFF_REVIEW` |
-| 보완 | `NEEDS_ATTENTION` | `GENERATION_FAILED`, `INVALID_PHONE`, `SMS_OPT_OUT`, `APPROVAL_RETURNED` |
+| 보완 | `NEEDS_ATTENTION` | `GENERATION_FAILED`, `INVALID_PHONE`, `APPROVAL_RETURNED` |
 | 승인 요청 | `APPROVAL_REQUESTED` | `APPROVAL_PENDING` |
 | 발송 대기 | `SEND_PENDING` | `SCHEDULED_TO_SEND` |
 | 완료 | `COMPLETED` | `SENT`, `VIEWED` |
@@ -530,7 +531,6 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
 - **카테고리 사이 우선순위가 먼저다.** 더 최근에 생긴 일이라도 위 순서를 뒤집지 않는다. 방금 승인 요청이 걸린 진료라도 보낼 곳이 없으면 `NEEDS_ATTENTION`이다.
 - 「발생 시각」은 상태마다 이렇게 읽는다.
   - `APPROVAL_RETURNED` 등 안내문 상태 — 안내문이 마지막으로 움직인 시각
-  - `SMS_OPT_OUT` — 환자가 수신을 거부한 시각
   - `INVALID_PHONE` — **시각이 없다.** 사건이 아니라 상태라 언제 그렇게 됐는지를 남기지 않는다. 시각을 아는 상태가 같은 카테고리에 있으면 그쪽을 보여 준다
 - 같은 시각이면 위 표의 차례를 따른다. 같은 데이터에 화면이 흔들리지 않게 하기 위한 것이다.
 
@@ -561,7 +561,8 @@ GET /api/v1/front-desk/visits?date=2026-08-13&categories=IN_PROGRESS,NEEDS_ATTEN
       "detail_status": "OCR_REVIEW"
     }
   ],
-  "page": {"next_cursor": null, "has_next": false}
+  "page": {"next_cursor": null, "has_next": false},
+  "sms_opt_out_excluded": 2
 }
 ```
 
@@ -999,6 +1000,8 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 - 누가·언제 바꿀 수 있는지는 **문구 수정과 같은 규칙**이다. 승인된 안내문은 `409 GUIDE_NOT_PENDING` — 차례도 환자가 보는 것이라, 승인 뒤에 조용히 옮기면 승인한 화면과 나가는 화면이 달라진다. 바꾸려면 승인을 거두고 다시 승인한다.
 - 같은 차례를 다시 보내면 **아무 일도 안 일어난다** — 판(`version`)이 안 오르고 감사 줄도 안 쌓인다.
 - 감사에는 `SECTION_REORDERED` 한 줄이 남고 `order_before`·`order_after` 에 절 이름만 담는다. 본문·환자 정보는 담지 않는다.
+- **지금 이 종점을 부르는 화면이 없다.** 탭 줄 오른쪽에 있던 [◀][▶] 는 그 자리·그 모양이라 「이전·다음 탭」으로 읽혔고(눌렀더니 복약지도가 주의사항을 뛰어넘어 갔다), 안전 절에서는 통째로 사라져 줄 폭까지 흔들려 **화면에서 걷어냈다**. 종점과 검증은 그대로 살아 있다 — 다시 달 일이 생기면 탭 줄이 아닌 다른 자리여야 한다.
+- 위 `movable` 도 지금은 **화면이 안 읽는다** — 옮기는 단추를 걷어내며 그것을 읽던 코드도 함께 지웠다. 서버·목업은 여전히 절마다 내려 준다(다시 달 자리가 이것을 그대로 쓴다).
 
 
 ### 환자 이력 (S2-2)
@@ -1049,6 +1052,18 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | Method | Path | 용도 | 권한 |
 |---|---|---|---|
 | GET | `/api/v1/messages/scheduled?days=7&limit=200` | 앞으로 나갈 것 + 안 나간 것 | `staff`·`doctor` |
+| POST | `/api/v1/messages/{message_id}/source-retry` | 원본 삭제 보류 복구 요청(KEY-362) | `staff`·`doctor` |
+
+**KEY-362 원본 삭제 복구:** 목록 및 진료 현황의 메시지 응답에
+`source_failure_type`, `source_failure_at`, `source_retry_requested`,
+`source_retry_generation`을 포함한다. 내부 경로·문서 본문·연락처는 담지 않는다.
+복구 요청 본문은 `{ "generation": 0 }`처럼 조회한 세대를 전달한다.
+응답은 202와 메시지 ID·현재 상태·복구 대기 여부·세대다.
+요청 즉시 `HELD`를 해제하지 않는다. 기존 워커가 모든 발송 게이트를 통과하고
+원본 삭제·파일 부재 검증·OCR 원문 제거에 성공해야 다시 예약한다.
+같은 세대의 지연/중복 요청은 재실행하지 않는다. 권한 없음 403, 타 병원/없음 404,
+복구 대상 상태 아님/잘못된 세대 409, 잘못된 본문 400이다.
+일반 재발송 API나 수동 상태 변경 API로 이 복구 절차를 우회할 수 없다.
 
 **두 규칙이 이 화면의 전부다.**
 
@@ -1372,7 +1387,7 @@ POST /api/v1/visits/{visit_id}/guide/generate
 - 진료에 연결된 OCR 필드 중 `is_confirmed=True`인 것이 하나 이상 있어야 한다 — 미확정 값으로 안내를 만들면 스탭이 수정한 사실이 사라지고, 의사는 OCR 원본인지 사람이 고친 것인지 알 수 없는 글을 승인하게 된다.
 - 안내는 `APPROVAL_PENDING` 상태로 생성된다 — W1 고정 안내 경로는 스탭 검토(`STAFF_REVIEW`) 단계를 거치지 않는다. LLM 생성 안내가 붙는 시점에 이 흐름을 다시 정한다.
 - 섹션은 `medication`·`caution`·`emergency`·`life`·`messages` 5개 고정이며, **응답 차례가 곧 화면 차례**다.
-  - 생성 직후의 차례는 위 표 그대로다. 그 뒤로는 **사람이 정한다** — `PUT …/guide/sections/order` (KEY-317). 병원 종점도 환자 종점도 저장된 `display_order` 에서 읽으므로, 원장님이 늘어놓은 차례가 그대로 환자에게 간다.
+  - 생성 직후의 차례는 위 표 그대로다. 그 뒤로 바꾸는 종점은 `PUT …/guide/sections/order` (KEY-317)이지만 **지금 그것을 부르는 화면은 없다**(위 §절의 차례). 병원 종점도 환자 종점도 저장된 `display_order` 에서 읽으므로, 종점으로 차례를 바꾸면 그 차례가 그대로 환자에게 간다.
 - `medication` 본문의 처방 사실은 `PrescriptionItem`의 약명(용량 포함)·복용 빈도·기간을 저장 순서대로 사용한다. 복수 약제는 각각 한 줄로 구분하고, 기간이 없는 `필요시` 약에는 다른 약의 기간을 붙이지 않는다. 구조화 처방이 없으면 약 정보를 임의로 만들지 않고 승인된 기본 지도 문장만 사용한다.
 - 환자에게 보이는 기본 안내에는 개발용 `[합성]` 표지를 넣지 않는다. 다만 사용자가 승인 문구나 처방 원문에 직접 저장한 문자열은 의료 원문이므로 생성 단계에서 임의로 변형하지 않는다.
 - **`emergency`만 `locked=true`다.** 식약처 의약품정보 기준 응급 문장이라 사람이 고칠 수 없다(D1-2). `caution`은 일반 주의 문구이고 `locked=false`이므로 의사가 환자에 맞춰 고칠 수 있다.
@@ -1665,7 +1680,7 @@ KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전�
 **A1-7 은 별도 경로가 아니다.** 합치는 규칙이 하나라야 두 화면이 같은 답을 본다
 — 경로를 나누면 한쪽에만 표가 늘어나는 날이 온다.
 
-### 9.2 무엇을 합치나 — 표 다섯
+### 9.2 무엇을 합치나 — 소스 여섯
 
 이벤트는 이미 append-only 로 쌓이고 있었고 **읽을 길이 없었다.** 통합
 `audit_log` 표는 없다(물리 통합은 별도 논의) — 여기서는 **조회 시** 합친다.
@@ -1677,13 +1692,16 @@ KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전�
 | `message` | `guide_message_event` | → `guide_message` → `guide_document` |
 | `otp` | `patient_otp_event` | → `patient_guide_link` → `guide_document` |
 | `staff_account` | `staff_account_event` | 제가 `hospital_id` 를 들고 있다 |
+| `hospital` | `hospital_update_event` | 제가 `hospital_id` 를 들고 있다 |
 
 앞 넷은 전부 `GuideDocument` 를 지나고, 거기에 `hospital_id` 와 `visit_id` 가
 둘 다 있다 — **울타리를 그 한 자리에 친다.**
 
 `staff_account` 는 티켓이 적은 넷에 없던 다섯째다(KEY-321). 계정을 만드는 것은
 **권한을 주는 일**이라 그것이 빠진 감사 로그는 구멍이다. 진료에 매달리지
-않으므로 `visit_id` 로 거르면 이 표는 결과에서 빠진다.
+않으므로 `visit_id` 로 거르면 이 표는 결과에서 빠진다. `hospital` 은 의원 정보
+수정 기록인 여섯째다(KEY-331). 이 역시 진료에 매달리지 않으며 병원 울타리를
+`hospital_id` 로 직접 친다.
 
 ### 9.3 거르개
 
@@ -1691,7 +1709,7 @@ KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전�
 |---|---|
 | `occurred_from` · `occurred_to` | 기간. 양끝을 **포함**한다 |
 | `actor_staff_id` | 그 직원이 한 일만. 환자·발송기 이벤트는 행위자가 없어 걸리지 않는다 |
-| `source` | 위 다섯 중 하나 |
+| `source` | 위 여섯 중 하나 |
 | `visit_id` | 그 진료 건 (= A1-7) |
 | `limit` | 1~200, 기본 50 |
 | `cursor` | 다음 쪽 열쇠 |
@@ -1718,7 +1736,7 @@ KEY-322. `admin` 역할만 지난다 — `Permission.AUDIT_READ`. **읽기 전�
 
 ### 9.5 쪽 나눔
 
-표 다섯을 SQL 로 합칠 수 없으므로 각 표에서 한 쪽씩 떠 와 섞는다. 순서는
+여섯 소스를 SQL 로 합칠 수 없으므로 각 소스에서 한 쪽씩 떠 와 섞는다. 순서는
 `(occurred_at, source, pk)` 내림차순 **하나**이고 커서가 그 셋을 그대로 담는다.
 
 **문자열 `event_id` 로 줄 세우지 않는다** — `"guide:9" > "guide:10"` 이라 열

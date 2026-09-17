@@ -150,6 +150,7 @@ function sendRowsHtml(messages) {
       return (
         '<div class="sd__row' +
         (state.bad ? " is-bad" : "") +
+        (row.hold_reason === "SOURCE_NOT_DELETED" ? " sd__row--source" : "") +
         '">' +
         /* **● 와 ○ 는 크기·색이 같다** — 원문이 그렇다. ⚠ 와 ⏸ 만 다르다:
            그 둘은 사람이 손대야 하는 줄이라 눈에 걸려야 한다. */
@@ -172,6 +173,7 @@ function sendRowsHtml(messages) {
            기다리는 중이고, SENT·CANCELED는 다시 보낼 대상이 아니다
            (D1-7 — `canResend`). 문자 한 통 단위로 걸므로 `kind`·회차가
            아니라 `guide_message_id`를 심는다(KEY-306). */
+        sourceRetryButton(row) +
         (canResend(row.status)
           ? '<button class="button-ghost button-ghost--sm sd__resend" type="button" ' +
             'data-resend="' +

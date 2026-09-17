@@ -10,12 +10,14 @@
 
 from tortoise.contrib.test import TestCase
 
+from app.models.catalog import MessageTemplate, MessageTemplateKind
 from app.models.visits import (
     GuideMessage,
     GuideMessageKind,
     GuideMessageSetting,
 )
-from app.services.guides import CHECK_HOUR, RUN_OUT_BEFORE_DAYS, GuideService
+from app.services.guides import CHECK_HOUR, RUN_OUT_BEFORE_DAYS, SEND_HOUR, GuideService
+from app.services.message_templates import effective_body
 
 from .test_send_schedule import World
 
@@ -23,7 +25,8 @@ from .test_send_schedule import World
 class Plan:
     """라우터의 요청 몸을 흉내낸다 — 서비스가 보는 모양만."""
 
-    def __init__(self, check_hour: int, rounds: list) -> None:
+    def __init__(self, check_hour: int, rounds: list, send_hour: int = SEND_HOUR) -> None:
+        self.send_hour = send_hour
         self.check_hour = check_hour
         self.rounds = rounds
 
@@ -47,8 +50,10 @@ class MessagePlanTestCase(World, TestCase):
 
         plan = await GuideService().message_plan(actor, visit.visit_id)
 
+        assert plan["send_hour"] == SEND_HOUR
         assert plan["check_hour"] == CHECK_HOUR
         by = {r["kind"]: r for r in plan["rounds"]}
+        assert by["GUIDE"]["enabled"] is True
         assert by["CHECK_D7"]["enabled"] is True
         assert by["CHECK_D15"]["enabled"] is True
         assert by["CHECK_D30"]["enabled"] is False, "한 달 뒤는 기본이 꺼짐이다 (S1-14)"
@@ -66,7 +71,8 @@ class MessagePlanTestCase(World, TestCase):
         """
         actor, visit, _ = await self.make_world("PL-02")
         by = {r["kind"]: r for r in (await GuideService().message_plan(actor, visit.visit_id))["rounds"]}
-        assert by["CHECK_D7"]["fixed"] is True, "일주일 뒤가 고정이 아니다"
+        assert by["GUIDE"]["fixed"] is True, "진료 당일 안내문이 고정이 아니다"
+        assert by["CHECK_D7"]["fixed"] is False, "일주일 뒤를 끌 수 없다"
         assert by["CHECK_D15"]["fixed"] is False
         assert by["RUN_OUT"]["fixed"] is False
 
@@ -97,13 +103,8 @@ class MessagePlanTestCase(World, TestCase):
         again = await GuideService().message_plan(actor, visit.visit_id)
         assert again == saved, "다시 읽으니 다른 것이 나온다"
 
-    async def test_the_first_week_cannot_be_turned_off(self) -> None:
-        """**일주일 뒤는 끌 수 없다.**
-
-        원문이 「(고정)」이라 적고 주석도 「여기서도 끌 수 없다」고 못박는다 —
-        복약 첫 주가 가장 잘 끊기는 구간이다. 화면이 체크박스를 잠그지만,
-        요청은 그냥 온다.
-        """
+    async def test_the_first_week_can_be_turned_off(self) -> None:
+        """일주일 뒤 확인 문자는 환자별로 끌 수 있다."""
         actor, visit, _ = await self.make_world("PL-04")
 
         saved = await GuideService().save_message_plan(
@@ -111,14 +112,24 @@ class MessagePlanTestCase(World, TestCase):
         )
 
         by = {r["kind"]: r for r in saved["rounds"]}
-        assert by["CHECK_D7"]["enabled"] is True, "일주일 뒤가 꺼졌다"
+        assert by["CHECK_D7"]["enabled"] is False, "일주일 뒤가 꺼지지 않았다"
+
+    async def test_the_guide_round_cannot_be_turned_off(self) -> None:
+        actor, visit, _ = await self.make_world("PL-04-GUIDE")
+
+        saved = await GuideService().save_message_plan(
+            actor, visit.visit_id, Plan(CHECK_HOUR, [Round(GuideMessageKind.GUIDE, enabled=False)])
+        )
+
+        by = {r["kind"]: r for r in saved["rounds"]}
+        assert by["GUIDE"]["enabled"] is True
 
     async def test_emptying_the_body_means_back_to_default(self) -> None:
         """문구를 다 지운 것은 「빈 문자를 보내라」가 아니라 「기본으로」다."""
         actor, visit, _ = await self.make_world("PL-05")
 
         await GuideService().save_message_plan(
-            actor, visit.visit_id, Plan(CHECK_HOUR, [Round(GuideMessageKind.CHECK_D15, body="고친 문구")])
+            actor, visit.visit_id, Plan(CHECK_HOUR, [Round(GuideMessageKind.CHECK_D15, body="고친 문구 {링크}")])
         )
         saved = await GuideService().save_message_plan(
             actor, visit.visit_id, Plan(CHECK_HOUR, [Round(GuideMessageKind.CHECK_D15, body="   ")])
@@ -126,6 +137,28 @@ class MessagePlanTestCase(World, TestCase):
 
         by = {r["kind"]: r for r in saved["rounds"]}
         assert by["CHECK_D15"]["body"] is None, "빈 문구가 저장됐다 — 빈 문자가 나간다"
+
+    async def test_patient_body_wins_over_the_hospital_template(self) -> None:
+        actor, visit, guide = await self.make_world("PL-BODY")
+        await MessageTemplate.create(
+            hospital_id=guide.hospital_id,
+            kind=MessageTemplateKind.GUIDE,
+            body="의원 문구 {링크}",
+            updated_by=actor.user_id,
+        )
+        await GuideService().save_message_plan(
+            actor,
+            visit.visit_id,
+            Plan(CHECK_HOUR, [Round(GuideMessageKind.GUIDE, body="환자별 문구 {링크}")]),
+        )
+
+        body = await effective_body(
+            guide.hospital_id,
+            MessageTemplateKind.GUIDE,
+            guide_document_id=guide.guide_document_id,
+        )
+
+        assert body == "환자별 문구 {링크}"
 
     async def test_a_time_nobody_can_pick_is_refused(self) -> None:
         """**새벽 3시에 문자가 가지 않는다.** 화면이 못 고르는 값은 서버도 안 받는다."""
@@ -216,8 +249,19 @@ class PlanDrivesScheduleTestCase(World, TestCase):
             f"오후 2시로 골랐는데 {row.scheduled_at.astimezone(config.TIMEZONE).hour}시에 잡혔다"
         )
 
-    async def test_the_first_week_goes_out_even_if_a_row_says_off(self) -> None:
-        """표에 꺼짐이 적혀 있어도 일주일 뒤는 나간다 — 마지막 그물이다."""
+    async def test_the_guide_uses_the_patient_send_hour(self) -> None:
+        actor, visit, guide = await self.make_world("PD-03-GUIDE")
+
+        await GuideService().save_message_plan(actor, visit.visit_id, Plan(CHECK_HOUR, [], send_hour=14))
+        await GuideService().approve(actor, visit.visit_id)
+
+        row = await GuideMessage.get(guide_document=guide, kind=GuideMessageKind.GUIDE)
+        from app.core import config
+
+        assert row.scheduled_at.astimezone(config.TIMEZONE).hour == 14
+
+    async def test_the_first_week_is_skipped_when_a_row_says_off(self) -> None:
+        """표에서 끈 일주일 뒤 확인 문자는 예약하지 않는다."""
         actor, visit, guide = await self.make_world("PD-04")
 
         doc = await guide.__class__.get(visit_id=visit.visit_id)
@@ -227,7 +271,7 @@ class PlanDrivesScheduleTestCase(World, TestCase):
         await GuideService().approve(actor, visit.visit_id)
 
         kinds = {m.kind for m in await GuideMessage.filter(guide_document=guide)}
-        assert GuideMessageKind.CHECK_D7 in kinds, "일주일 뒤가 안 나간다"
+        assert GuideMessageKind.CHECK_D7 not in kinds, "끈 일주일 뒤가 나간다"
 
     async def test_run_out_uses_the_chosen_days_before(self) -> None:
         """소진 며칠 전도 고른 값을 쓴다."""
@@ -329,6 +373,11 @@ class HeldTestCase(World, TestCase):
         `BOOKING_URL_MISSING` 이 여섯째다(KEY-331) — 문구에 `{예약링크}` 가
         있는데 의원 예약 주소가 비어 있다. **보내 보고 아는 것이 아니라**
         보내기 전에 이미 아는 것이라 이쪽 목록이다.
+
+        `SMS_OPT_OUT` 이 여덧째다(KEY-355) — 환자가 문자 수신을 거부했다.
+        업무 목록에서 이미 진료 자체를 뺐지만, 게이트도 같은 판단을 한 번 더
+        본다 — 화면에 안 보이는 진료의 예약 문자가 뒤에서 몰래 나가면 안
+        된다.
         """
         from app.models.visits import GuideMessageFailure, GuideMessageHold
 
@@ -340,6 +389,7 @@ class HeldTestCase(World, TestCase):
             "SOURCE_NOT_DELETED",
             "BOOKING_URL_MISSING",
             "RECIPIENT_NOT_APPROVED",
+            "SMS_OPT_OUT",
         }
         assert {m.value for m in GuideMessageFailure} == {
             "INVALID_PHONE",

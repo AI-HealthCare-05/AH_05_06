@@ -24,8 +24,17 @@
   var downloading = false;
   /* **여기 이름을 지역 변수와 겹치지 않게 둔다.** 기간 핸들러 안에서
      `var chosen` 을 다시 선언했더니 고른 칩이 그 안에 갇혔다 — 이 저장소에서
-     `picked` 로 한 번 겪은 함정이다. */
-  var chosen = "ALL";
+     `picked` 로 한 번 겪은 함정이다.
+
+     초기값은 URL 쿼리(`?category=SMS_OPT_OUT`)로도 줄 수 있다 — KEY-355.
+     오늘 목록(front-desk, shell.js)의 「수신 거부 N건」 안내가 이 화면으로
+     오는 링크에 이 쿼리를 실어 보낸다. 모르는 값이면 조용히 ALL로 둔다 —
+     깨진 링크로 빈 화면을 보여주는 것보다 안전하다. */
+  var chosen = (function () {
+    var requested = new URLSearchParams(window.location.search).get("category");
+    var known = ["ALL", "SMS_OPT_OUT", "INACTIVE_6_MONTHS"];
+    return known.indexOf(requested) !== -1 ? requested : "ALL";
+  })();
   /* 갈래마다 고른 칩이 다르다 — 발송 예정에서 「실패」를 보다 이력으로
      넘어갔을 때 거기서도 「실패」가 골라져 있으면 놀란다. */
   var chip = { schedule: "total", history: "total" };
@@ -142,6 +151,8 @@
   }
 
   function actionHtml(row) {
+    var recovery = sourceRetryButton(row);
+    if (recovery) return recovery;
     var action = rowAction(row);
     if (!action) return '<span class="send__none">—</span>';
     return (
@@ -312,11 +323,15 @@
 
   function stateHtml(row) {
     var state = messageState(row.status);
+    var checkDay = row.kind === "CHECK_D7" && row.check_day_number
+      ? " · 복약 " + row.check_day_number + "일째 확인"
+      : "";
     return (
       '<td class="' +
       (state.bad ? "send__state send__state--bad" : "send__state") +
+      (row.hold_reason === "SOURCE_NOT_DELETED" ? " send__state--source" : "") +
       '">' +
-      esc(state.mark + " " + messageSaying(row)) +
+      esc(state.mark + " " + messageSaying(row) + checkDay) +
       "</td>"
     );
   }
@@ -784,6 +799,11 @@
 
   /* 줄을 누르면 아래에 그 환자가 선다. 다시 누르면 접힌다. */
   el("table").addEventListener("click", function (event) {
+    var sourceButton = event.target.closest("[data-source-retry]");
+    if (sourceButton) {
+      requestSourceRetry(sourceButton, load);
+      return;
+    }
     var previewButton = event.target.closest("[data-preview-visit]");
     if (previewButton) {
       var previewRow = ((page && page.items) || []).find(function (row) {
@@ -905,6 +925,7 @@
   render();
 
   requireSession().then(function (who) {
+    sourceRetryRoles = who.roles || [];
     el("who-name").textContent = who.name;
     el("who-roles").textContent = roleLabel(who.roles);
     return load();

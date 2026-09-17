@@ -598,3 +598,43 @@ class TestSourcePurgeIsIdempotentAndAuditSafe(TestCase):
             assert GuideMessageEventType.SOURCE_PURGED not in events
         finally:
             path.unlink(missing_ok=True)
+
+
+class TestGateBlocksOptedOutRecipients(TestCase):
+    """문자 수신 거부 환자는 게이트가 SMS_OPT_OUT으로 붙든다 — KEY-355.
+
+    RECIPIENT_NOT_APPROVED와 달리 SMS_PROVIDER와 무관하게 늘 본다 — mock
+    경로(기본값, 테스트 환경)에서도 걸려야 실제 사고를 막는다.
+    """
+
+    async def test_opted_out_patient_is_held_regardless_of_provider(self) -> None:
+        message = await make_due_message(link_free_template=True)
+        guide = await message.guide_document
+        visit = await Visit.filter(visit_id=guide.visit_id).select_related("patient").first()
+        assert visit is not None
+        visit.patient.sms_opted_out_at = now()
+        await visit.patient.save(update_fields=["sms_opted_out_at"])
+        sender = _CountingSender()
+
+        result = await dispatch_message(message.guide_message_id, sender)
+
+        assert result is not None and result.status is GuideMessageStatus.HELD
+        assert sender.calls == [], "수신 거부 환자에게 발송기를 부르면 안 된다"
+        updated = await GuideMessage.get(guide_message_id=message.guide_message_id)
+        assert updated.hold_reason is GuideMessageHold.SMS_OPT_OUT
+
+    async def test_gate_check_alone_reports_sms_opt_out(self) -> None:
+        message = await make_due_message(approved=True)
+        guide = await message.guide_document
+        visit = await Visit.filter(visit_id=guide.visit_id).select_related("patient").first()
+        assert visit is not None
+        visit.patient.sms_opted_out_at = now()
+        await visit.patient.save(update_fields=["sms_opted_out_at"])
+
+        assert await gate_hold_reason(message) is GuideMessageHold.SMS_OPT_OUT
+
+    async def test_a_reachable_patient_passes_the_opt_out_check(self) -> None:
+        """되살림 회귀 방지 — 수신 거부가 없으면 이 게이트가 안 막는다."""
+        message = await make_due_message(approved=True, link_free_template=True)
+
+        assert await gate_hold_reason(message) is None

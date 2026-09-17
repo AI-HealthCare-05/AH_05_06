@@ -52,46 +52,18 @@ var GUIDE_NOT_IMPLEMENTED = {
   messages: "회차·문구를 저장할 자리가 아직 없습니다 — S1-14 후속 계약입니다",
 };
 
-/* ── 차례 바꾸기 (KEY-317) ─────────────────────────────────────────────
+/* ── 절의 차례 — **화면에서 바꾸지 않는다** ────────────────────────────
  *
- * **무엇이 움직일 수 있는지는 서버가 정한다.** 절마다 `movable` 이 실려 온다.
- * 안전 절 목록을 여기에도 적어 두면 정책이 바뀌는 날 한쪽만 고쳐지고, 화면은
- * 옮길 수 있다고 그리는데 서버가 422 를 내는 자리가 생긴다.
+ * KEY-317 은 고른 탭을 앞뒤로 옮기는 [◀][▶] 를 탭 줄 오른쪽에 달았다. 그
+ * 자리에서 그 모양이면 **「이전·다음 탭」으로 읽힌다** — 넘기려고 눌렀는데
+ * 복약지도가 주의사항을 뛰어넘어 생활지도 자리로 가 버린다. 안전 절에서는
+ * 단추가 통째로 사라져 줄 폭까지 흔들렸다.
  *
- * **맞바꾸기로만 옮긴다.** 옮길 수 있는 절끼리 자리를 맞바꾸므로, 안전 절이
- * 앉은 자리는 건드려지지 않는다 — 화면에서 만들 수 있는 차례는 전부 서버가
- * 받아 주는 차례다. (그래도 서버가 다시 검증한다. 화면만 막으면 요청을 직접
- * 보내는 것으로 넘어간다.)
+ * 그래서 화면에서 뺐다. 차례는 서버가 준 그대로 그린다(안전 절이 제자리를
+ * 지키는 계약 기본 차례다). 저장하는 자리(`PUT /guide/sections/order` ·
+ * `doctorApi.reorderSections`)는 서버 계약이라 그대로 두고, 누르는 자리만
+ * 없앤 것이다 — 다시 달 일이 생기면 탭 줄이 아닌 다른 자리여야 한다.
  */
-function guideMovableKeys(sections) {
-  return (sections || [])
-    .filter(function (s) {
-      return s.movable;
-    })
-    .map(function (s) {
-      return s.key;
-    });
-}
-
-/** 이 절을 한 칸 옮긴 **차례 전체**. 못 옮기면 `null`.
- *
- * `step` 은 -1(앞으로) 또는 1(뒤로)이다. 옮길 수 있는 절들 사이에서만 세므로
- * 「앞으로」가 안전 절을 건너뛴다 — 복약지도가 주의사항을 뛰어넘어 생활지도와
- * 자리를 바꾼다. 건너뛰지 않으면 어느 방향으로도 못 움직인다. */
-function guideOrderMoved(sections, key, step) {
-  var all = (sections || []).map(function (s) {
-    return s.key;
-  });
-  var movable = guideMovableKeys(sections);
-  var from = movable.indexOf(key);
-  var to = from + step;
-  if (from < 0 || to < 0 || to >= movable.length) return null;
-
-  var next = all.slice();
-  next[all.indexOf(movable[from])] = movable[to];
-  next[all.indexOf(movable[to])] = movable[from];
-  return next;
-}
 
 /* 탭으로 세울 섹션 — 접어 넣는 것(응급)은 뺀다. 차례는 서버가 준 그대로다. */
 function guideTabSections(sections) {
@@ -252,48 +224,6 @@ var GUIDE_SCREEN_TITLE = {
   final: "환자가 받게 될 안내문 · 미리보기",
 };
 
-/** 지금 고른 탭을 앞뒤로 옮기는 단추 — KEY-317.
- *
- * **고른 탭 하나만 옮긴다.** 탭마다 [↑][↓] 를 달면 가로 칸막이 안이 빽빽해져
- * 손가락으로 짚기 어렵고, 어느 단추가 어느 탭 것인지도 흐려진다.
- *
- * 옮길 수 없는 자리에서는 **단추를 감추지 않고 잠근다.** 감추면 눌리던 자리가
- * 사라져 옆 단추를 잘못 누른다 — 이 저장소가 「조용히 죽은 단추」로 한 번
- * 겪은 자리다(KEY-236).
- */
-function guideMoveHtml(sections, current, canEdit) {
-  if (!canEdit) return "";
-  var here = (sections || []).filter(function (s) {
-    return s.key === current;
-  })[0];
-  if (!here || !here.movable) return "";
-
-  return (
-    '<span class="gs__move">' +
-    [-1, 1]
-      .map(function (step) {
-        /* **단추가 저장할 차례를 그대로 들고 있다.** 누른 뒤에 다시 셈하면
-           그 사이 다시 그려진 화면과 어긋날 수 있고, 스탭 화면은 한 판에 두
-           패널을 띄워 「지금 어느 탭인가」가 하나로 답해지지도 않는다. */
-        var order = guideOrderMoved(sections, current, step);
-        return (
-          '<button class="gs__movebtn" type="button" data-move="' +
-          esc((order || []).join(",")) +
-          '"' +
-          (order ? "" : " disabled") +
-          ' aria-label="' +
-          esc(GUIDE_SECTION_LABEL[current] || current) +
-          (step === -1 ? " 앞으로" : " 뒤로") +
-          '">' +
-          (step === -1 ? "◀" : "▶") +
-          "</button>"
-        );
-      })
-      .join("") +
-    "</span>"
-  );
-}
-
 /* 가로 탭 — 와이어프레임은 칸막이로 이어 붙인 한 덩어리다(`height:26px`,
    고른 것만 검정 채움). 세로 목록이 아니라 가로라, 네 항목이 한눈에 든다. */
 function guideSegmentsHtml(sections, current) {
@@ -411,7 +341,6 @@ function guideScreenHtml(sections, current, mode, canEdit, editingKey, summary, 
     esc(title) +
     "</span>" +
     guideSegmentsHtml(sections, current) +
-    guideMoveHtml(sections, current, canEdit) +
     "</div>" +
     /* **「문자 설정」은 다른 화면이다** (S1-14). 원문·미리보기 두 칸이 아니라
        회차·문구를 다루는 자리라, 그 탭에서는 통째로 갈아 끼운다. */
@@ -521,34 +450,6 @@ function guideEditingNow() {
   return guideEditingKey;
 }
 
-/** 고른 탭을 한 칸 옮겨 **차례 전체**를 저장한다 — KEY-317.
- *
- * 바뀐 것만 보내지 않는다. 나머지가 어디로 가는지를 서버와 화면이 각자 셈하면
- * 둘이 어긋나는 날 화면에서 본 차례와 저장된 차례가 달라진다. */
-function guideMoveSection(button, opts) {
-  var say = opts.say || function () {};
-  var visitId = opts.visitId();
-  if (!visitId) return;
-
-  var order = String(button.getAttribute("data-move") || "").split(",");
-  if (!order[0]) return;
-
-  /* 두 번 눌리지 않게 잠근다 — 저장이 두 번 가면 판이 두 번 오른다. */
-  button.disabled = true;
-  doctorApi
-    .reorderSections(visitId, { order: order })
-    .then(function () {
-      if (opts.visitId() !== visitId) return;
-      say("차례를 바꿨습니다");
-      opts.reRender(true);
-    })
-    .catch(function (error) {
-      if (opts.visitId() !== visitId) return;
-      button.disabled = false;
-      say((error && error.message) || "차례를 바꾸지 못했습니다. 다시 시도해 주세요.");
-    });
-}
-
 function wireGuideEditing(opts) {
   var getVisitId = opts.visitId;
   var reRender = opts.reRender;
@@ -557,12 +458,6 @@ function wireGuideEditing(opts) {
   document.addEventListener("click", function (event) {
     var t = event.target;
     if (!t || !t.closest) return;
-
-    var move = t.closest("[data-move]");
-    if (move) {
-      guideMoveSection(move, opts);
-      return;
-    }
 
     var open = t.closest("[data-edit]");
     if (open) {
@@ -689,15 +584,29 @@ function smsLeftHtml(plan) {
   var noticeIso = smsRunOutNotice(runOutIso, before);
 
   var rounds = SMS_ROUNDS.map(function (r) {
-    /* 일주일 뒤는 끌 수 없다 — 켜짐이 아니라 **고정**이다 */
+    /* 진료 당일 안내문은 링크를 전달하므로 고정이다. */
     var on = r.fixed || (plan.on || {})[r.key] === true;
     return smsRoundRow(r, startIso, on, plan.picked === r.key);
   }).join("");
 
   return (
     '<section class="sms__card">' +
-    '<h3 class="sms__title">확인 문자 <span class="sms__sub">· 처방 세트 기본값 · 이 환자만 바꾼다</span></h3>' +
+    '<h3 class="sms__title">문자 설정 <span class="sms__sub">· 처방 세트 기본값 · 이 환자만 바꾼다</span></h3>' +
     rounds +
+    '<p class="sms__note">진료 당일 안내문 시각 ' +
+    '<select class="sms__time" data-sms-send-at aria-label="진료 당일 안내문 시각">' +
+    SMS_TIMES.map(function (t) {
+      return (
+        '<option value="' +
+        esc(t.key) +
+        '"' +
+        (t.key === (plan.sendAt || "18:00") ? " selected" : "") +
+        ">" +
+        esc(t.label) +
+        "</option>"
+      );
+    }).join("") +
+    "</select> — 승인 전에만 바꿀 수 있습니다</p>" +
     '<p class="sms__note">확인 문자 시각 ' +
     '<select class="sms__time" data-sms-at aria-label="확인 문자 시각">' +
     SMS_TIMES.map(function (t) {
@@ -712,7 +621,8 @@ function smsLeftHtml(plan) {
       );
     }).join("") +
     "</select>" +
-    " — 확인 · 재진 문자에 적용 · 안내문은 승인 시각(기본 18:00) 규칙을 따릅니다</p>" +
+    " — 확인 · 재진 문자에 적용</p>" +
+    '<p class="sms__note">일주일 뒤 문자를 끄면 D+7 복약·통증 확인 링크가 발송되지 않습니다.</p>' +
     "</section>" +
     '<section class="sms__card">' +
     '<h3 class="sms__title">소진 임박 안내</h3>' +
@@ -765,7 +675,7 @@ function smsRightHtml(plan) {
     '<h3 class="sms__title">문구</h3>' +
     '<span class="sms__tpl">' +
     esc(round.label) +
-    " 확인 · 기본 템플릿</span>" +
+    (round.key === "guide" ? " · 기본 템플릿</span>" : " 확인 · 기본 템플릿</span>") +
     '<span class="sms__bytes' +
     (kind.long ? " is-long" : "") +
     '">' +
@@ -808,7 +718,10 @@ function smsRightHtml(plan) {
     '<h3 class="sms__title">미리보기 <span class="sms__sub">· 환자 화면에 이렇게 갑니다</span></h3>' +
     '<div class="sms__phone">' +
     '<p class="sms__meta">' +
-    esc((plan.phone || "") + (whenIso ? " · " + smsWhen(whenIso) + " " + smsTimeLabel(plan.at) : "")) +
+    esc(
+      (plan.phone || "") +
+        (whenIso ? " · " + smsWhen(whenIso) + " " + smsTimeLabel(round.key === "guide" ? plan.sendAt : plan.at) : "")
+    ) +
     "</p>" +
     '<p class="sms__bubble">' +
     esc(filled) +
@@ -856,10 +769,11 @@ var guideSmsState = null;
     저장한 뒤 다시 읽을 때 보던 문구가 첫 회차로 튀면 안 된다. */
 function smsAdopt(plan) {
   var next = smsPlanFromServer(plan);
-  var picked = (guideSmsState && guideSmsState.picked) || "d7";
+  var picked = (guideSmsState && guideSmsState.picked) || "guide";
   guideSmsState = {
     picked: picked,
     on: next.on,
+    sendAt: next.sendAt,
     at: next.at,
     runOutOn: next.runOutOn !== false,
     runOutBefore: next.runOutBefore,
@@ -871,8 +785,9 @@ function smsAdopt(plan) {
 function smsStateNow(seed) {
   if (!guideSmsState) {
     guideSmsState = {
-      picked: "d7",
-      on: { d15: true },
+      picked: "guide",
+      on: { d7: true, d15: true },
+      sendAt: "18:00",
       at: "10:00",
       runOutOn: true,
       runOutBefore: 3,
@@ -889,6 +804,7 @@ function smsStateNow(seed) {
     values: base.values || {},
     picked: st.picked,
     on: st.on,
+    sendAt: st.sendAt,
     at: st.at,
     runOutOn: st.runOutOn !== false,
     runOutBefore: st.runOutBefore,
@@ -905,6 +821,9 @@ function smsStateNow(seed) {
 
 /** 회차별 기본 문구. 「이 환자만 적용」 > 의원 템플릿 > 기본 — 지금은 기본뿐이다. */
 function smsDefaultText(key) {
+  if (key === "guide") {
+    return "[{의원명}] {환자명}님, 오늘 진료 안내입니다. {만료일}까지 보실 수 있어요: {링크}";
+  }
   var r = smsRoundOf(key);
   var days = r ? r.days : 7;
   return "{환자명}님, 복약 " + days + "일째 확인입니다. 잘 드시고 계신가요? {링크}";
@@ -1026,8 +945,10 @@ function wireSmsSettings(opts) {
 
   document.addEventListener("change", function (event) {
     var t = event.target;
-    if (!t || !t.hasAttribute || !t.hasAttribute("data-sms-at")) return;
-    state().at = t.value;
+    if (!t || !t.hasAttribute) return;
+    if (t.hasAttribute("data-sms-send-at")) state().sendAt = t.value;
+    else if (t.hasAttribute("data-sms-at")) state().at = t.value;
+    else return;
     reRender();
   });
 }
@@ -1070,12 +991,6 @@ function sendWhenText(iso, now) {
  *   view.scheduledAt  승인이 잡아 둔 발송 시각 (서버가 준 `scheduled_at`)
  *   view.name         환자 이름
  *   view.now          지금 (검사용. 안 주면 진짜 지금)
- *
- * **없는 발송을 약속하지 않는다.** 원문은 「자동 발송됩니다」라고 적지만, 이
- * 저장소에는 아직 문자를 보내는 것이 없다 — `GuideMessage` 를 `SENT` 로 바꾸는
- * 코드가 검사 밖에 없다. 원장님이 그 문장만 읽고 「환자에게 갔다」고 믿으면,
- * 안 간 것을 갔다고 아는 상태가 된다. 원문 문구는 그대로 두고 **아직 없는
- * 것만** 아래에 덧붙인다 (`KEY-148` §6 · `KEY-160` 이 정한 방식이다).
  */
 function approvedModalHtml(view) {
   var name = (view && view.name) || "";
@@ -1094,7 +1009,6 @@ function approvedModalHtml(view) {
     "<span>발송 실패 시 알림 창에서 확인할 수 있습니다</span>" +
     "<span>문자 잔량 · 발신번호 문제는 실패 처리하지 않고 발송 대기합니다</span>" +
     "</div>" +
-    '<p class="modal__note">[demo] 문자 발송기는 아직 붙지 않았습니다 — 지금 승인은 <b>발송 예약까지</b>입니다.</p>' +
     '<div class="modal__acts">' +
     '<button class="button-ghost" type="button" data-go-status>현황 보기</button>' +
     '<button class="button-primary" type="button" data-close>닫기</button>' +

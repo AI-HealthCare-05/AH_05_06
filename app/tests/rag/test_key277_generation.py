@@ -348,13 +348,33 @@ class TestRagGenerationPipeline(GenerateGuideTestCase):
         assert "sections" not in result.json()
 
     async def test_missing_template_approval_blocks_instead_of_default_text(self):
-        await DrugCautionContent.all().update(physician_review=None)
+        # 승인 기록이 없는 템플릿(DRAFT·approved_key 없음)은 등급 무관하게 차단된다.
+        await DrugCautionContent.all().update(approval_status=ApprovalStatus.DRAFT, approved_key=None)
         job = await self.request_job()
         await self.run_job()
         await job.refresh_from_db()
         assert job.failure_reason == "unverified_context"
         assert await GuideDocument.all().count() == 0
         self.model.generate.assert_not_awaited()
+
+    async def test_a_grade_emergency_without_physician_review_generates_successfully(self):
+        """KEY-352: A등급 emergency는 physician_review 없이도 생성을 통과한다."""
+        await DrugCautionContent.filter(section_key=CautionSectionKey.EMERGENCY).update(physician_review=None)
+        job = await self.request_job()
+        await self.run_job()
+        await job.refresh_from_db()
+        assert job.completed_at is not None, job.failure_reason
+
+    async def test_a_grade_emergency_unapproved_is_still_blocked(self):
+        """KEY-352: physician_review가 없어도 승인 기록 없는 emergency는 차단된다."""
+        await DrugCautionContent.filter(section_key=CautionSectionKey.EMERGENCY).update(
+            approval_status=ApprovalStatus.DRAFT, approved_key=None
+        )
+        job = await self.request_job()
+        await self.run_job()
+        await job.refresh_from_db()
+        assert job.failure_reason == "unverified_context"
+        assert await GuideDocument.all().count() == 0
 
     async def test_unknown_free_text_drug_does_not_enter_prompt(self):
         await PrescriptionItem.all().update(name="합성환자 01012345678")

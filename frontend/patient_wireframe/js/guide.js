@@ -249,97 +249,6 @@
       : emptyState('표시할 승인 복약 안내가 아직 없어요.'));
     frag.appendChild(sumCard);
 
-    /* 나의 목표 — 값이 없는 목표도 숨기지 않고 차트 없는 상태로 설명한다. */
-    var goalCard = el('div', 'card');
-    var goalHead = el('div', 'goal-head');
-    goalHead.appendChild(text('span', 'card__section-title', '나의 목표'));
-    if (d.visit) goalHead.appendChild(text('span', 'goal-date', d.visit));
-    goalCard.appendChild(goalHead);
-
-    if (!g.goals || !g.goals.length) {
-      goalCard.appendChild(emptyState('등록된 검사 목표가 없어 차트를 표시하지 않아요.'));
-    } else {
-      g.goals.forEach(function (goal, i) {
-        var item = el('div', 'goal-item' + (i === 0 ? ' goal-item--first' : ''));
-        item.appendChild(text('div', 'goal-name', goal.n));
-        if (goal.rangeLabel) item.appendChild(text('div', 'goal-range-label', goal.rangeLabel));
-
-        var nowNum    = parseFloat(goal.now);
-        var startNum  = parseFloat(goal.a);
-        var targetNum = parseFloat(goal.t);
-        var hasStart  = !isNaN(startNum);
-        var hasTarget = !isNaN(targetNum);
-        var chartReady = goal.hasChart && !isNaN(nowNum) && (hasStart || hasTarget);
-
-        if (chartReady) {
-        var chart = el('div', 'goal-chart');
-
-        /* 목표값을 중앙(50%)에 고정하고 나머지 값을 상대 위치로 계산.
-           목표가 없는 경우(추이 관찰)는 시작값을 중앙 기준으로 사용. */
-        var center    = hasTarget ? targetNum : startNum;
-        var maxDiff   = Math.max(
-          Math.abs(nowNum - center),
-          hasStart ? Math.abs(startNum - center) : 0,
-          1
-        );
-        var half      = maxDiff * 1.5;
-        function pctNum(v) {
-          return Math.min(95, Math.max(5, 50 + (v - center) / half * 50));
-        }
-        function pct(v) { return pctNum(v) + '%'; }
-
-        /* 삼각형 포인터 */
-        var pointerRow = el('div', 'goal-chart__pointer-row');
-        var pointer    = el('div', 'goal-chart__pointer');
-        pointer.style.left = pct(nowNum);
-        pointer.appendChild(text('span', 'goal-chart__now-val', goal.now));
-        pointer.appendChild(el('div', 'goal-chart__arrow'));
-        pointerRow.appendChild(pointer);
-        chart.appendChild(pointerRow);
-
-        /* 그라디언트 바 */
-        var barWrap = el('div', 'goal-chart__bar-wrap');
-        if (hasTarget) {
-          var tLine = el('span', 'goal-chart__target-line');
-          tLine.style.left = '50%';
-          barWrap.appendChild(tLine);
-        }
-        if (hasStart) {
-          var sLine = el('span', 'goal-chart__start-line');
-          sLine.style.left = hasTarget ? pct(startNum) : '50%';
-          barWrap.appendChild(sLine);
-        }
-        chart.appendChild(barWrap);
-
-        /* v3 정본은 목표(또는 시작)를 가운데 둔 세 구간과 실제 시작·현재 값을
-           따로 보여 준다. 저장된 값 밖의 임상 기준치는 만들지 않는다. */
-        var scaleLabels = el('div', 'goal-chart__scale-labels');
-        [
-          hasTarget ? '목표보다 낮음' : '시작보다 낮음',
-          hasTarget ? '목표 ' + goal.t : '추이 관찰',
-          hasTarget ? '목표보다 높음' : '시작보다 높음',
-        ].forEach(function (label) {
-          scaleLabels.appendChild(text('span', 'goal-chart__scale-label', label));
-        });
-        chart.appendChild(scaleLabels);
-        var valueSummary = [];
-        if (hasStart) valueSummary.push('시작 ' + goal.a);
-        valueSummary.push('지금 ' + goal.now);
-        chart.appendChild(text('div', 'goal-chart__start-summary', valueSummary.join(' · ')));
-        item.appendChild(chart);
-        } else {
-          var noChart = el('div', 'goal-no-chart');
-          noChart.textContent = goal.now
-            ? '현재 ' + goal.now
-            : '결과가 나오면 채워드릴게요 · 지금 ─';
-          item.appendChild(noChart);
-        }
-        goalCard.appendChild(item);
-      });
-    }
-    if (g.goalSay) goalCard.appendChild(text('div', 'goal-say', g.goalSay));
-    frag.appendChild(goalCard);
-
     /* 더 자세히 보기 토글 */
     var expandBtn = el('button', 'expand-btn' + (state.guideExpanded ? ' expand-btn--open' : ''));
     expandBtn.type = 'button';
@@ -627,7 +536,6 @@
   /* ── 오류 신고 오버레이 ─── */
   var REPORT_SCREENS = [
     { label: '복약지도 · 오늘 진료 요약', sectionKey: 'medication', contentKey: 'medication.summary' },
-    { label: '복약지도 · 나의 목표', sectionKey: 'medication', contentKey: 'medication.goals' },
     { label: '복약지도 · 처방받은 약', sectionKey: 'medication', contentKey: 'medication.list' },
     { label: '복약지도 · 이 약을 왜 드시나요', sectionKey: 'medication', contentKey: 'medication.why' },
     { label: '복약지도 · 복용 방법', sectionKey: 'medication', contentKey: 'medication.how' },
@@ -826,7 +734,7 @@
 
   /* ── PDF 시트 ─── */
   var PDF_OPTIONS = [
-    { key:'guide', label:'복약지도', desc:'오늘 진료 요약 · 나의 목표 · 처방받은 약 · 복용 방법' },
+    { key:'guide', label:'복약지도', desc:'오늘 진료 요약 · 처방받은 약 · 복용 방법' },
     { key:'care',  label:'주의사항', desc:'흔한 반응 · 함께 드시면 안 되는 것 · 바로 병원에 연락할 경우' },
     { key:'life',  label:'생활관리', desc:'수면 · 뼈 건강 · 운동 · 통증' },
     { key:'stat',  label:'복약 현황', desc:'처방일 기준 소진 예정일' },

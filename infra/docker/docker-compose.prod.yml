@@ -66,6 +66,16 @@ services:
       # 기본값을 붙인다 — 비면 `--port=` 가 되어 mysqld 가 거부한다.
       # redis 와 같은 자리다 (이희진 님 `#155` ②).
       - --port=${DB_PORT:-3306}
+      # **앱 계정이 트리거를 만들 수 있게 한다** — KEY-358.
+      #
+      # `log_bin` 이 켜져 있으면 MySQL 은 SUPER 없는 계정의 `CREATE TRIGGER` 를
+      # `1419` 로 거부한다. 2026-09-16 배포가 그 자리에서 멈췄다 — KEY-238 의
+      # append-only 트리거 넷이 저장소 첫 사례였고, **표는 만들어지고 트리거만
+      # 빠진 채** 반쪽으로 남았다(DDL 은 자동 커밋이라 되돌지도 않는다).
+      #
+      # 앱 계정에 `SUPER` 를 주는 쪽은 안 쓴다 — 그 권한이면 서버 설정까지
+      # 바꿀 수 있다. 여기서 **이 한 가지만** 푼다.
+      - --log-bin-trust-function-creators=1
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
       interval: 10s
