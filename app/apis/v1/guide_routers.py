@@ -37,7 +37,7 @@ from app.models.visits import (
 from app.services import guide_section_order
 from app.services.guide_generation_jobs import GenerationPendingError
 from app.services.guides import GuideService
-from app.services.patient_guide_view import guide_detail_of, medication_stat_of
+from app.services.patient_guide_view import care_of, guide_detail_of, life_of, medication_stat_of
 from app.services.patient_links import PatientLinkService
 
 guide_router = APIRouter(prefix="/visits", tags=["guides"])
@@ -75,6 +75,8 @@ async def _preview_of(guide: GuideDocument) -> GuidePreview:
         guide=guide_detail_of(data),
         clinic=data.clinic_name,
         stat=medication_stat_of(data),
+        care=care_of(data),
+        life=life_of(data),
     )
 
 

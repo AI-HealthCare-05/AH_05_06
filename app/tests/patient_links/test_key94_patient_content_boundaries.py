@@ -45,7 +45,8 @@ GUIDE_FIELDS = {
 GUIDE_REQUIRED_FIELDS = {"version", "approved_at", "expires_at", "sections", "demo_only"}
 GUIDE_SECTION_FIELDS = {"key", "body"}
 STAT_FIELDS = {"drugName", "drugSub", "prescribed", "dayOn", "remaining", "pct", "out", "why"}
-GUIDE_DETAIL_FIELDS = {"summary", "goals", "goalSay", "drug", "why", "how", "next"}
+#: `blocks` — 본문의 「■ 소제목」 카드(KEY-365). 제목과 승인 문구 문단만 담는다.
+GUIDE_DETAIL_FIELDS = {"summary", "goals", "goalSay", "drug", "why", "how", "blocks", "next"}
 GUIDE_GOAL_FIELDS = {"n", "a", "now", "t", "hasChart", "rangeLabel"}
 GUIDE_DRUG_FIELDS = {"n", "s", "d"}
 CARE_FIELDS = {"title", "blocks", "danger", "ask"}

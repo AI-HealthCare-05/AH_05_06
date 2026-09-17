@@ -10,7 +10,12 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.dtos.patient_links import PatientGuideDetailResponse, PatientMedicationStatResponse
+from app.dtos.patient_links import (
+    PatientCareResponse,
+    PatientGuideDetailResponse,
+    PatientLifeResponse,
+    PatientMedicationStatResponse,
+)
 from app.models.patients import PatientGender
 from app.models.visits import GuideMessageKind, GuideSectionKey, GuideStatus
 
@@ -96,6 +101,10 @@ class GuidePreview(StrictModel):
     guide: PatientGuideDetailResponse | None = None
     clinic: str | None = None
     stat: PatientMedicationStatResponse | None = None
+    #: 주의사항·생활관리 카드 — KEY-365. 본문의 「■ 소제목」을 카드로 나누는 일이
+    #: 서버로 오면서, 미리보기가 `sections` 로 따로 그리면 환자와 갈린다.
+    care: PatientCareResponse | None = None
+    life: PatientLifeResponse | None = None
 
 
 class GuideGenerationResponse(StrictModel):

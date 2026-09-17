@@ -10,15 +10,21 @@
  * 종점은 거기에 **`medication`·`goals` 파생**을 더해 준다 —
  * `_patient_response()`(`app/apis/v1/patient_link_routers.py`)가 짓는다.
  *
- *     오늘 진료 요약      summary            ✅ 스탭 종점에도 있다
- *     이 약을 왜 드시나요   sections.medication ✅
- *     주의사항 · 응급      sections.caution/emergency ✅
- *     생활관리            sections.life       ✅
- *     검사 목표           goals               API 계약 유지, UI 미표시(KEY-360)
- *     처방받은 약         medication          ❌ 없다
- *     약별 복용 방법       medication.directions ❌ 없다
+ * KEY-294 부터 스탭 종점도 `preview` 로 그 파생을 준다. KEY-365 부터는
+ * 본문의 「■ 소제목」을 서버가 카드로 나누므로 **`preview` 가 있으면 그것만
+ * 그린다** — `sections` 로 따로 그리면 환자와 카드가 갈린다.
  *
- * 그래서 **못 채우는 카드는 아예 안 그린다.** 빈 카드를 세우면 스탭·의사가
+ *     오늘 진료 요약      preview.guide.summary   (없으면 카드 없음)
+ *     이 약을 왜 드시나요   preview.guide.why
+ *     약별 복용 방법       preview.guide.how
+ *     소제목 카드         preview.guide.blocks
+ *     주의사항 · 응급      preview.care
+ *     생활관리            preview.life
+ *     현황               preview.stat
+ *
+ * `preview` 가 없는 응답(목업·옛 응답)만 예전처럼 `sections` 로 그린다.
+ *
+ * **못 채우는 카드는 아예 안 그린다.** 빈 카드를 세우면 스탭·의사가
  * 승인 전에 「목표가 안 잡혔네」로 읽는다 — 모양은 같은데 내용이 비어 보이는
  * 것이 지금(모양이 다른 것)보다 나쁘다.
  *
@@ -157,19 +163,26 @@ function patientDeeperHtml(inner) {
   );
 }
 
+/** 문단들 — 환자 렌더러처럼 첫 문단은 제목에 바로 붙인다. */
+function patientParagraphsHtml(paragraphs, className) {
+  return (paragraphs || [])
+    .map(function (text, i) {
+      return '<div class="' + className + '"' + (i === 0 ? ' style="margin-top:0"' : "") + ">" + esc(text) + "</div>";
+    })
+    .join("");
+}
+
 /** 복약지도 (P2) — 환자 화면의 카드 차례 그대로.
  *
- * `preview` 는 스탭 종점의 새 파생이다(KEY-294). 없으면 예전처럼 요약과
- * 「왜 드시나요」만 그린다 — 목업이나 옛 응답을 받아도 무너지지 않는다. */
+ * `preview` 는 스탭 종점의 파생이다(KEY-294). 있으면 **그것만** 그린다 —
+ * 요약은 서버가 확정 데이터로 지은 문장이고, 없으면 카드가 안 선다(KEY-365).
+ * 없으면(목업·옛 응답) 예전처럼 `summary` 와 `sections.medication` 으로 그린다. */
 function patientMedicationHtml(summary, why, preview) {
+  var derived = !!preview;
   var detail = (preview && preview.guide) || null;
-  var cards = patientCardHtml(
-    "오늘 진료 요약",
-    summary ? '<div class="care-body-text">' + esc(summary) + "</div>" : patientEmptyHtml(PATIENT_EMPTY.medication),
-  );
 
   /* 환자 렌더러의 `if (g.drug)` · `if (g.why && g.why.length)` · `if (g.how)` ·
-     `if (g.next)` 와 같은 차례·같은 조건이다. */
+     `g.blocks` · `if (g.next)` 와 같은 차례·같은 조건이다. */
   var deeper = "";
   if (detail && detail.drug) {
     var drug = detail.drug;
@@ -182,53 +195,110 @@ function patientMedicationHtml(summary, why, preview) {
         "</div>",
     );
   }
-  if (why) deeper += patientCardHtml("이 약을 왜 드시나요", '<div class="care-body-text">' + esc(why) + "</div>");
+  var whys = derived ? (detail && detail.why) || [] : why ? [why] : [];
+  if (whys.length) deeper += patientCardHtml("이 약을 왜 드시나요", patientParagraphsHtml(whys, "care-body-text"));
   if (detail && detail.how) {
     deeper += patientCardHtml("약별 복용 방법", '<div class="care-body-text">' + esc(detail.how) + "</div>");
   }
+  ((detail && detail.blocks) || []).forEach(function (block) {
+    deeper += patientCardHtml(block.t, patientParagraphsHtml(block.p, "care-body-text"));
+  });
   if (detail && detail.next) {
     deeper += patientCardHtml("다음 방문 계획", '<div class="care-body-text">' + esc(detail.next) + "</div>");
   }
 
-  return cards + patientDeeperHtml(deeper);
+  if (!derived) {
+    return (
+      patientCardHtml(
+        "오늘 진료 요약",
+        summary ? '<div class="care-body-text">' + esc(summary) + "</div>" : patientEmptyHtml(PATIENT_EMPTY.medication),
+      ) + patientDeeperHtml(deeper)
+    );
+  }
+  var head = (detail && detail.summary) || "";
+  if (!head && !deeper) return patientCardHtml("", patientEmptyHtml(PATIENT_EMPTY.medication));
+  /* 접어 둘 위 카드가 없으면 환자 화면도 단추 없이 펼친 채로 둔다. */
+  if (!head) return '<div class="expand-body expand-body--open">' + deeper + "</div>";
+  return (
+    patientCardHtml("오늘 진료 요약", '<div class="care-body-text">' + esc(head) + "</div>") +
+    patientDeeperHtml(deeper)
+  );
 }
 
-/** 주의사항 (P3) — 일반 주의와 🚨 응급이 한 탭에 이어 붙는다. */
-function patientCautionHtml(caution, emergency) {
-  var body = patientTabTitleHtml("주의사항", "미리 알아두시면 걱정을 덜 수 있어요");
-  if (!caution && !emergency) return body + patientEmptyHtml(PATIENT_EMPTY.caution);
-  if (caution) body += patientCardHtml("주의사항", '<div class="care-body-text">' + esc(caution) + "</div>");
-  if (emergency) {
+/** 주의사항 (P3) — 소제목 카드들과 🚨 응급이 한 탭에 이어 붙는다.
+ *
+ * 제목은 환자 화면과 같은 「복약 중 주의사항」이다(`mapCare`). */
+function patientCautionHtml(caution, emergency, preview) {
+  var derived = !!preview;
+  var care = derived ? preview.care : null;
+  var body = patientTabTitleHtml((care && care.title) || "복약 중 주의사항", "미리 알아두시면 걱정을 덜 수 있어요");
+  var blocks = derived ? (care && care.blocks) || [] : caution ? [{ t: "주의사항", p: [caution] }] : [];
+  var danger = derived ? (care && care.danger) || [] : emergency ? [emergency] : [];
+  if (!blocks.length && !danger.length) return body + patientEmptyHtml(PATIENT_EMPTY.caution);
+  blocks.forEach(function (block) {
+    body += patientCardHtml(block.t, patientParagraphsHtml(block.p, "care-body-text"));
+  });
+  if (danger.length) {
     body += patientCardHtml(
       "",
-      '<div class="danger-title">🚨 바로 병원에 연락하세요</div><div class="danger-item">' +
-        esc(emergency) +
-        "</div>",
+      '<div class="danger-title">🚨 바로 병원에 연락하세요</div>' +
+        danger
+          .map(function (item) {
+            return '<div class="danger-item">' + esc(item) + "</div>";
+          })
+          .join(""),
       "card--danger",
     );
   }
   return body;
 }
 
-/** 생활관리 (P4). **부제를 안 붙인다** — 환자 화면의 부제는 질환명인데
-    스탭 종점이 그것을 안 준다. 없는 것을 지어내지 않는다. */
-function patientLifeHtml(life) {
-  var body = patientTabTitleHtml("생활관리", "");
-  if (!life) return body + patientEmptyHtml(PATIENT_EMPTY.life);
-  return body + patientCardHtml("생활관리", '<div class="axis-body-text">' + esc(life) + "</div>");
+/** 생활관리 (P4) — 칩으로 카드 하나를 고른다(환자 `renderLife`).
+ *
+ * 부제는 환자 화면과 같은 값이다. `preview` 가 없으면 부제를 안 붙인다 —
+ * 스탭 종점이 질환명을 안 주던 때다. 없는 것을 지어내지 않는다. */
+function patientLifeHtml(life, preview, axis) {
+  var derived = !!preview;
+  var data = derived ? preview.life : null;
+  var sub = derived ? (data ? data.sub || "" : "담당 의료진이 확인한 생활관리 안내") : "";
+  var body = patientTabTitleHtml("생활관리", sub);
+  var axes = derived ? (data && data.axes) || {} : life ? { 생활관리: { title: "생활관리", p: [life] } } : {};
+  var keys = Object.keys(axes);
+  if (!keys.length) return body + patientEmptyHtml(PATIENT_EMPTY.life);
+  var active = keys.indexOf(axis) >= 0 ? axis : keys[0];
+  body +=
+    '<div class="axis-tabs" role="tablist">' +
+    keys
+      .map(function (key) {
+        var on = key === active;
+        return (
+          '<button class="axis-tab ' +
+          (on ? "axis-tab--active" : "axis-tab--inactive") +
+          '" type="button" role="tab" aria-selected="' +
+          (on ? "true" : "false") +
+          '" data-preview-axis="' +
+          esc(key) +
+          '">' +
+          esc(key) +
+          "</button>"
+        );
+      })
+      .join("") +
+    "</div>";
+  return body + patientCardHtml(axes[active].title || active, patientParagraphsHtml(axes[active].p, "axis-body-text"));
 }
 
-/** 지금 탭의 환자 화면 **본문**. `sections` 에서 나오는 것만 그린다.
+/** 지금 탭의 환자 화면 **본문**.
  *
  * **탭 바는 여기 안 붙인다.** 환자 화면에서 탭 줄은 `.header` 안에 있고 카드는
  * `<main class="body">` 안에 있다 — 둘을 한 자루에 담으면 `.body` 의
  * `gap: 12px` 가 탭 줄에도 걸려 카드 간격이 환자 화면과 달라진다.
  * 골격은 부르는 쪽(`guidePreviewHtml`)이 환자 것 그대로 세운다. */
-function patientPreviewBodyHtml(bodyOf, current, summary, preview) {
+function patientPreviewBodyHtml(bodyOf, current, summary, preview, axis) {
   if (current === "status") return patientStatusHtml(preview, bodyOf("medication"));
-  if (current === "life") return patientLifeHtml(bodyOf("life"));
+  if (current === "life") return patientLifeHtml(bodyOf("life"), preview, axis);
   if (current === "caution" || current === "emergency") {
-    return patientCautionHtml(bodyOf("caution"), bodyOf("emergency"));
+    return patientCautionHtml(bodyOf("caution"), bodyOf("emergency"), preview);
   }
   return patientMedicationHtml(summary, bodyOf("medication"), preview);
 }
@@ -247,7 +317,9 @@ function patientPreviewBodyOf(sections) {
 function patientStatusHtml(preview, medication) {
   var data = preview || {};
   var s = data.stat || {};
-  var drugName = data.stat ? s.drugName : medication ? "복약 현황" : "";
+  /* 서버 파생이 있으면 복약지도 본문을 현황에 또 싣지 않는다 — 환자 `mapStat` 과 같다(KEY-365). */
+  var body = data.stat || data.guide ? "" : medication;
+  var drugName = data.stat ? s.drugName : body ? "복약 현황" : "";
   var hint = [data.visit ? data.visit + " 처방" : "", data.clinic].filter(Boolean).join(" · ");
   var html = hint ? '<div class="page-hint">' + esc(hint) + "</div>" : "";
   var card = "";
@@ -268,8 +340,8 @@ function patientStatusHtml(preview, medication) {
   } else if (s.prescribed > 0) {
     card += '<div class="stat-progress-empty">복약 시작일이 없어 진행률과 남은 일수를 표시하지 않아요.</div>';
   }
-  if (medication && !s.why) card += '<div class="care-body-text">' + esc(medication) + "</div>";
-  if (!drugName && !medication) card += patientEmptyHtml(PATIENT_EMPTY.medication);
+  if (body && !s.why) card += '<div class="care-body-text">' + esc(body) + "</div>";
+  if (!drugName && !body) card += patientEmptyHtml(PATIENT_EMPTY.medication);
   html += patientCardHtml("", card);
   if (s.out || s.why) {
     var pink = s.out ? '<div class="stat-out">' + esc(s.out) + "</div>" : "";
@@ -312,10 +384,23 @@ document.addEventListener("load", function (event) {
   doc.patientPreviewBound = true;
   var data = JSON.parse(frame.getAttribute("data-patient-preview"));
   doc.addEventListener("click", function (click) {
-    var target = click.target.closest("[data-preview-tab], [data-preview-expand]");
+    var target = click.target.closest("[data-preview-tab], [data-preview-expand], [data-preview-axis]");
     if (!target) return;
     var tab = target.getAttribute("data-preview-tab");
-    if (tab) {
+    var axis = target.getAttribute("data-preview-axis");
+    if (axis !== null) {
+      doc.querySelector("main.body").innerHTML = patientPreviewBodyHtml(
+        patientPreviewBodyOf(data.sections),
+        "life",
+        data.summary,
+        data.preview,
+        axis,
+      );
+      var chip = Array.prototype.find.call(doc.querySelectorAll("[data-preview-axis]"), function (button) {
+        return button.getAttribute("data-preview-axis") === axis;
+      });
+      if (chip) chip.focus();
+    } else if (tab) {
       doc.querySelectorAll('[role="tab"]').forEach(function (button) {
         var active = button.getAttribute("data-preview-tab") === tab;
         button.classList.toggle("tab-bar__btn--active", active);

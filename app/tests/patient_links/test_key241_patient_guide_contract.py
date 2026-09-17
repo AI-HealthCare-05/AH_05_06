@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from app.models.catalog import PrescriptionSet, SetDisease
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult
 from app.models.prescriptions import Prescription, PrescriptionItem
 from app.models.visits import (
@@ -138,6 +139,11 @@ async def _add_public_sources(
         visit=visit,
         prescription_set="자궁내막증 · 비잔 (계속)",
     )
+    #: 「오늘 진료 요약」은 이 세트의 질환으로 짓는다 — KEY-365.
+    await PrescriptionSet.get_or_create(
+        name="자궁내막증 · 비잔 (계속)",
+        defaults={"disease": SetDisease.ENDOMETRIOSIS},
+    )
     await PrescriptionItem.create(
         prescription=prescription,
         name="비잔정(디에노게스트) 2mg",
@@ -189,10 +195,10 @@ class TestKey241PatientGuideContract(PatientLinkTestCase):
             "remaining": 72,
             "pct": 14,
             "out": "ⓘ 11월 5일경 약이 소진돼요",
-            "why": "합성 승인 복약 안내",
-        }
+        }, "복약지도 본문을 현황에 또 싣지 않는다(KEY-365)"
         assert body["guide"] == {
-            "summary": "합성 승인 복약 안내",
+            # 본문이 아니라 세트 질환 + 확정 처방 약 이름으로 지은 문장이다 (KEY-365).
+            "summary": "자궁내막증으로 진료받으셨고, 비잔정 외 1개를 처방받으셨어요.",
             "goals": [],
             "drug": {
                 "n": "비잔정 2mg",
@@ -248,7 +254,8 @@ class TestKey241PatientGuideContract(PatientLinkTestCase):
         assert "life" not in body
         assert "chat" not in body
         assert body["guide"]["goals"] == []
-        assert body["guide"]["summary"] == "합성 승인 복약 안내"
+        assert "summary" not in body["guide"], "처방 세트가 없는 진료는 요약 카드를 세우지 않는다(KEY-365)"
+        assert body["guide"]["why"] == ["합성 승인 복약 안내"]
         assert body["sections"] == [{"key": "medication", "body": "합성 승인 복약 안내"}]
 
     async def test_null_ocr_started_at_keeps_stat_but_omits_progress_fields(self) -> None:
@@ -268,7 +275,6 @@ class TestKey241PatientGuideContract(PatientLinkTestCase):
             "drugName": "비잔정 2mg",
             "drugSub": "성분 · 디에노게스트 · 1일 1회 · 84일분",
             "prescribed": 84,
-            "why": "합성 승인 복약 안내",
         }
         assert {"dayOn", "remaining", "pct", "out"}.isdisjoint(stat)
 
@@ -289,7 +295,6 @@ class TestKey241PatientGuideContract(PatientLinkTestCase):
             "drugName": "비잔정 2mg",
             "drugSub": "성분 · 디에노게스트 · 1일 1회",
             "prescribed": 0,
-            "why": "합성 승인 복약 안내",
         }
         assert {"dayOn", "remaining", "pct", "out"}.isdisjoint(stat)
 
@@ -309,6 +314,9 @@ class TestKey241PatientGuideContract(PatientLinkTestCase):
         assert "disease" not in body
         assert "자궁내막증 · 비잔 (계속)" not in response.text
         assert body["stat"]["drugName"] == "비잔정 2mg"
+        # 요약의 질환명은 확정 진단이 아니라 **처방 세트의 질환**이다(KEY-365).
+        # 진단이 없어도 세트가 있으면 요약이 선다 — `disease` 칸은 여전히 비운다.
+        assert body["guide"]["summary"] == "자궁내막증으로 진료받으셨고, 비잔정 외 1개를 처방받으셨어요."
 
 
 class TestKey256PageViews(PatientLinkTestCase):

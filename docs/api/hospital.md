@@ -968,17 +968,19 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 
 `admin` 단독 사용자는 승인·반려·수정을 할 수 없다 — `admin`은 역할이 아니라 권한이며, 의료 판단을 한다는 뜻이 아니다.
 
-#### 환자 화면 미리보기 파생 — `preview` (KEY-294 · KEY-348)
+#### 환자 화면 미리보기 파생 — `preview` (KEY-294 · KEY-348 · KEY-365)
 
 `GuideResponse` 를 돌려주는 **조회(`GET /visits/{visit_id}/guide`)만** `preview` 를 함께 준다. 상태를 바꾸는 나머지 자리(생성·제출·승인·철회·반려)는 화면이 그 응답 바디를 안 쓰고 곧바로 조회를 다시 부르므로 `preview` 가 `null` 이다. 스탭·의사 화면의 「환자 화면 미리보기」가 **나의 목표 · 처방받은 약 · 약별 복용 방법** 카드를 그리는 데 쓴다 — 이 셋은 `sections` 가 아니라 처방·검사 기준선에서 나오는 파생이다.
 
 ```json
-{"preview": {"visit": "2026.09.09", "clinic": "예시의원", "stat": null, "guide": {"summary": "…", "goals": [], "drug": null, "why": [], "how": null, "next": null}}}
+{"preview": {"visit": "2026.09.09", "clinic": "예시의원", "stat": null, "guide": {"summary": "…", "goals": [], "drug": null, "why": [], "how": null, "blocks": null, "next": null}, "care": {"title": null, "blocks": [{"t": "진료 시 알려주세요", "p": ["…"]}], "danger": ["…"], "ask": null}, "life": {"sub": "…", "challenges": [], "axes": {"생활관리": {"chal": null, "goal": null, "title": "생활관리", "p": ["…"]}}}}}
 ```
+
+- `preview.care`·`preview.life` 는 환자 종점의 `care`·`life` 와 **같은 값**이다(KEY-365). 안내 본문의 「■ 소제목」을 서버가 카드로 나누므로, 미리보기가 `sections` 로 따로 그리면 환자와 카드가 갈린다. 나누는 규칙은 [`patient.md`](patient.md) 의 「■ 소제목」 표를 따른다. 미리보기 화면은 `preview` 가 있으면 그것만 그리고, 없는 옛 응답에서만 `sections` 로 그린다.
 
 - `preview.guide` 는 환자 종점 `GET /api/v1/guides/{token}` 의 `guide` 와 **같은 값**이다. 두 곳이 같은 자리에서 짓는다 — `app/services/patient_guide_view.py`. (환자 종점은 `response_model_exclude_none` 이라 `null` 칸을 아예 안 싣는다. 값의 차이가 아니다.)
 - **승인 여부를 안 본다.** 스탭·의사는 승인 **전에** 이 화면에서 검토한다. 환자 쪽 게이트(링크·만료·승인)는 환자 종점이 제 자리에서 그대로 친다.
-- `preview.stat` 은 환자 종점의 `stat` 과 같은 `medication_stat_of(data)` 결과다. 필드는 `drugName`, `drugSub`, `prescribed`, `dayOn`, `remaining`, `pct`, `out`, `why`이며, 처방이 없으면 `null`이다. 진행률은 서버 계산을 그대로 사용한다. `preview.clinic`은 같은 데이터의 `clinic_name`이다.
+- `preview.stat` 은 환자 종점의 `stat` 과 같은 `medication_stat_of(data)` 결과다. 필드는 `drugName`, `drugSub`, `prescribed`, `dayOn`, `remaining`, `pct`, `out`, `why`이며, 처방이 없으면 `null`이다. `why`는 KEY-365부터 채우지 않는다(복약지도 본문은 「이 약을 왜 드시나요」에만 나온다). 진행률은 서버 계산을 그대로 사용한다. `preview.clinic`은 같은 데이터의 `clinic_name`이다.
 - 처방·목표·복약 문구가 없으면 `preview.guide`와 `preview.stat`은 `null`이지만 진료일·병원명은 남는다. **봉투는 비우지 않는다** — 목표 카드의 날짜와 현황의 처방일·병원 힌트를 유지한다.
 - 새로 나가는 값은 처방·검사 파생, 진료일과 병원명뿐이다. 환자 이름·링크 토큰·연락처는 담지 않는다. DB 모델·migration 변경은 없다.
 - 내부 미리보기는 현황/복약지도/주의사항/생활관리 네 탭을 제공한다. 최초 탭은 기존 복약지도이며, 부모 화면이 전환·접기를 처리한다. iframe은 `sandbox="allow-same-origin"`만 유지하고 스크립트 실행·환자 읽음 기록·링크 발급은 하지 않는다. 두 미리보기 모달의 닫기는 하단 한 개이며 바깥 클릭·ESC도 지원한다.
