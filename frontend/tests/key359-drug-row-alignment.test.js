@@ -27,6 +27,17 @@ const JS = () => read("js/ocr-review.js");
 
 /** IIFE 안에 갇힌 함수를 **꺼내 와 실제로 부른다.**
  *
+ * 🚩 **틀리면 조용히 넘어가지 않는다** — `2heej` `#347` 리뷰 4번을 재 봤다.
+ * 자르는 자리가 어긋나는 경우는 셋이고, 셋 다 크게 운다.
+ *
+ * - 이름이 바뀌어 못 찾음 → 아래 `assert.notEqual(start, -1)`
+ * - 끝을 못 찾음(들여쓰기가 통째로 바뀜) → `assert.notEqual(end, -1)`
+ * - 몸통 안에 2칸 들여쓴 `function ` 줄이 끼어 **덜 잘림** → `new Function` 이
+ *   문법 오류를 던진다. 몸통이 닫히지 않은 채 잘리기 때문이다.
+ *
+ * 사이에 새 최상위 함수가 끼어드는 것은 문제가 아니다 — 끝이 그 앞에서 멈출
+ * 뿐 우리 함수는 온전히 잘린다.
+ *
  * `ocr-review.js` 는 통째로 즉시실행 함수 안이라 shim 으로 못 집는다. 선언
  * 자리부터 다음 선언 직전까지를 잘라 필요한 것만 주입해 돌린다. 잘라 낸 자리에
  * 남는 꼬리 주석은 문장 목록으로 그대로 성립하므로 건드리지 않는다.
@@ -158,6 +169,28 @@ test("라벨 문구를 지어내지 않는다 — `field-labels.js` 것을 쓴�
       [fieldLabel("MEDICATION_NAME"), fieldLabel("DURATION_DAYS")],
       `${where} 의 라벨이 field-labels.js 것과 다르다 — 같은 항목이 화면마다 다른 이름으로 불린다`,
     );
+  }
+});
+
+/* 🚩 **위 검사는 자기 자신과 견준다** — `2heej` `#347` 리뷰 3번.
+   `fieldLabel()` 끼리 맞는지만 보므로, `field-labels.js` 의 낱말 자체가 오타로
+   바뀌어도 그대로 통과한다. `MEDICATION_NAME` 은 `field-labels.test.js` 가
+   「약품명」으로 고정해 두었지만 **`DURATION_DAYS` 는 어디서도 고정되지 않았다.**
+   그래서 화면에 실제로 찍히는 글자를 여기서 못 박는다. */
+test("화면에 찍히는 낱말을 글자 그대로 못 박는다 — 원천이 바뀌어도 여기서 걸린다", () => {
+  const fieldLabel = realFieldLabel();
+  const made = {
+    "추가 약품 행": extraRows()([field("MEDICATION_NAME_2", "가"), field("DURATION_DAYS_2", "7")]),
+    "수동 추가 행": lift("manualDrugRowsHtml", {
+      escapeHtml,
+      fieldLabel,
+      manualDrugs: [{ name: "나", days: 7 }],
+    })(),
+  };
+
+  for (const [where, html] of Object.entries(made)) {
+    const said = [...html.matchAll(/<span class="top__label">([^<]*)<\/span>/g)].map((m) => m[1]);
+    assert.deepEqual(said, ["약품명", "처방일수"], `${where} 의 라벨 글자가 바뀌었다: ${JSON.stringify(said)}`);
   }
 });
 
