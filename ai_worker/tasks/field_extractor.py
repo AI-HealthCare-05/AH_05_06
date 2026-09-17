@@ -464,10 +464,10 @@ def _find_lab_columns(rows: list) -> tuple[int, tuple[float, float], tuple[float
         if tn_pos is None or res_pos is None:
             continue
 
-        def _cell_range(idx: int) -> tuple[float, float]:
-            blk = row[idx]
-            left_bound = (row[idx - 1].right + blk.left) / 2 if idx > 0 else blk.left
-            right_bound = (blk.right + row[idx + 1].left) / 2 if idx < len(row) - 1 else blk.right + 300.0
+        def _cell_range(idx: int, _row: list = row) -> tuple[float, float]:
+            blk = _row[idx]
+            left_bound = (_row[idx - 1].right + blk.left) / 2 if idx > 0 else blk.left
+            right_bound = (blk.right + _row[idx + 1].left) / 2 if idx < len(_row) - 1 else blk.right + 300.0
             return left_bound, right_bound
 
         return i, _cell_range(tn_pos), _cell_range(res_pos)
