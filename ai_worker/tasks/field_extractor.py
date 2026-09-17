@@ -82,7 +82,7 @@ _DIAG_NAME_COL_LABEL: str = "명칭"
 # 진단 키워드 패턴
 _ENDO_RE = re.compile(r"자궁\s*내막\s*증", re.IGNORECASE)
 # 다낭성(정확한 표기)과 다난성(오타 형태) 모두 인식
-_PCOS_RE = re.compile(r"다[낭난]성\s*난소|PCOS", re.IGNORECASE)
+_PCOS_RE = re.compile(r"다[낭난]성(?:\s*난소)?|난소\s*증후군|PCOS", re.IGNORECASE)
 
 # 상병명 표 열 허용 오차 (px) — 헤더 텍스트보다 넓은 데이터 셀 양쪽에 추가
 _DIAG_COL_MARGIN = 5.0
@@ -540,23 +540,25 @@ def _extract_lab(
 def _find_diag_name_col(rows: list) -> tuple[int, tuple[float, float]] | None:
     """상병명 표 헤더 행에서 '명칭' 열 범위 (행 인덱스, (left, right))를 반환한다.
 
-    '명칭' 텍스트 블록의 너비는 실제 데이터 셀보다 훨씬 좁다.
-    열 우측 경계는 헤더 행에서 '명칭' 바로 오른쪽에 있는 다음 헤더 블록의
-    left 값으로 결정한다 — 이렇게 해야 '난소의 자궁내막증' 같은 긴 데이터
-    텍스트가 열 범위 안에 들어온다.
+    열 좌측 경계는 이전 헤더 블록과 '명칭' 블록 사이의 중간점으로 결정한다.
+    헤더 텍스트가 셀 중앙 정렬이고 데이터는 셀 좌측 정렬인 병원 표 형식에서
+    '다낭성'처럼 헤더보다 왼쪽에 시작하는 데이터를 포함하기 위해서다.
+    열 우측 경계는 다음 헤더 블록의 left로 결정한다.
     """
     for i, row in enumerate(rows):
         texts_in_row = {b.text.strip() for b in row}
         if not _DIAG_TABLE_HEADER_SET.issubset(texts_in_row):
             continue
         sorted_row = sorted(row, key=lambda b: b.left)
-        name_block = next((b for b in sorted_row if b.text.strip() == _DIAG_NAME_COL_LABEL), None)
-        if name_block is None:
+        name_idx = next((j for j, b in enumerate(sorted_row) if b.text.strip() == _DIAG_NAME_COL_LABEL), None)
+        if name_idx is None:
             continue
-        # 다음 헤더 블록의 left를 열 우측 경계로 사용한다
-        next_block = next((b for b in sorted_row if b.left > name_block.right), None)
+        name_block = sorted_row[name_idx]
+        prev_block = sorted_row[name_idx - 1] if name_idx > 0 else None
+        next_block = sorted_row[name_idx + 1] if name_idx < len(sorted_row) - 1 else None
+        col_left = (prev_block.right + name_block.left) / 2 if prev_block else name_block.left
         col_right = next_block.left if next_block else name_block.right + 200.0
-        return i, (name_block.left, col_right)
+        return i, (col_left, col_right)
     return None
 
 
