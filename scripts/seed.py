@@ -690,59 +690,46 @@ async def _sync_source_grade(content: DrugCautionContent, wanted: DrugCautionCon
     await content.save(update_fields=["source_grade", "physician_review", "updated_at"])
 
 
+async def _sync_prescription_sets() -> tuple[int, int, int]:
+    """PRESCRIPTION_SETS 와 DB 를 동기화한다 — KEY-357.
+
+    - 명단에 있는 세트: get_or_create, disease·status 보정
+    - 명단에 없는 ACTIVE 세트: HIDDEN 으로 감춘다 (삭제 금지 — RESTRICT 제약)
+    반환값: (created, fixed, hidden)
+    """
+    active_names = {row.name for row in PRESCRIPTION_SETS}
+    created = fixed = 0
+
+    for row in PRESCRIPTION_SETS:
+        found, was_created = await PrescriptionSet.get_or_create(name=row.name, defaults={"disease": row.disease})
+        if was_created:
+            created += 1
+            continue
+        if found.disease != row.disease:
+            found.disease = row.disease
+            await found.save(update_fields=["disease", "updated_at"])
+            fixed += 1
+        if found.status != SetStatus.ACTIVE:
+            found.status = SetStatus.ACTIVE
+            await found.save(update_fields=["status", "updated_at"])
+
+    hidden = 0
+    async for ps in PrescriptionSet.filter(status=SetStatus.ACTIVE).exclude(name__in=active_names):
+        ps.status = SetStatus.HIDDEN
+        await ps.save(update_fields=["status", "updated_at"])
+        hidden += 1
+        print(f"[catalog] prescription_set hidden: {ps.name!r} (id={ps.prescription_set_id})")
+
+    return created, fixed, hidden
+
+
 async def seed_catalog() -> None:
     """처방 세트 4종과 주의·응급 문구 마스터를 적재한다 — KEY-165, KEY-357.
 
     같은 명령을 반복 실행해도 데이터가 쌓이지 않는다(name 기준 get_or_create).
     APPROVED 문구는 `approved_key` 를 채워 "세트·섹션당 하나" 제약을 DB 가 지키게 한다.
-
-    KEY-357: PRESCRIPTION_SETS 에 없는 세트는 HIDDEN 으로 감춘다.
-    삭제하지 않는 이유 — drug_caution_content.prescription_set_id 가 RESTRICT 라
-    문구가 붙은 세트는 DB 가 삭제를 거부하고, 지우면 guide_section 의 근거 추적이
-    SET_NULL 로 조용히 끊긴다. 감추면 판독 드롭다운에서 걸러지고 지난 안내문은 안 깨진다.
     """
-    # 처방 세트 — 새 이름 생성
-    created_sets = 0
-    fixed_sets = 0
-    active_names = {row.name for row in PRESCRIPTION_SETS}
-    for row in PRESCRIPTION_SETS:
-        # **`disease` 를 함께 넣는다.** 모델 기본값이 ENDOMETRIOSIS 라 안 넣으면
-        # PCOS 세트가 자궁내막증 묶음에 들어가고, 설정 레일에서 다낭성난소증후군
-        # 묶음이 통째로 사라진다(`settings-rail.js` 의 `setsByDisease` 가 빈
-        # 묶음을 안 낸다) — 새로 부어 보기 전에는 안 보이는 어긋남이다.
-        found, was_created = await PrescriptionSet.get_or_create(name=row.name, defaults={"disease": row.disease})
-        if was_created:
-            created_sets += 1
-            continue
-
-        # **`defaults` 는 INSERT 때만 쓴다 — 그래서 한 번 더 본다** (이희진 님
-        # `#214` ⑦). 29 번 마이그레이션이 이름으로 백필을 하지만 그건 **그때
-        # 이미 있던 줄**만 고친다. 그 뒤에 기본값으로 심긴 줄은 재시드해도 안
-        # 고쳐져, 다시 부어 봐도 PCOS 가 자궁내막증 밑에 남는다.
-        #
-        # 백필 마이그레이션을 또 넣지 않는 까닭: 29 번이 쓴 이름 패턴
-        # (`name LIKE 'PCOS%' … ELSE 'ENDOMETRIOSIS'`)을 지금 다시 돌리면
-        # **의사가 직접 만든 세트**(KEY-255)까지 자궁내막증으로 덮는다. 씨앗은
-        # 제가 아는 줄만 손대므로 그 위험이 없다.
-        if found.disease != row.disease:
-            found.disease = row.disease
-            await found.save(update_fields=["disease", "updated_at"])
-            fixed_sets += 1
-
-        # 혹시 이전 시드 실행에서 HIDDEN 됐다가 다시 ACTIVE 명단에 들어온 경우 복원
-        if found.status != SetStatus.ACTIVE:
-            found.status = SetStatus.ACTIVE
-            await found.save(update_fields=["status", "updated_at"])
-
-    # PRESCRIPTION_SETS 에 없는 세트를 HIDDEN 으로 감춘다 — KEY-357.
-    # 삭제 대신 감추기: RESTRICT 제약·근거 추적 보존을 위해.
-    hidden_sets = 0
-    async for ps in PrescriptionSet.filter(status=SetStatus.ACTIVE).exclude(name__in=active_names):
-        ps.status = SetStatus.HIDDEN
-        await ps.save(update_fields=["status", "updated_at"])
-        hidden_sets += 1
-        print(f"[catalog] prescription_set hidden: {ps.name!r} (id={ps.prescription_set_id})")
-
+    created_sets, fixed_sets, hidden_sets = await _sync_prescription_sets()
     print(
         f"[catalog] prescription_set created={created_sets} "
         f"fixed={fixed_sets} hidden={hidden_sets} "

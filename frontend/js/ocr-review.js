@@ -392,6 +392,7 @@ function stateTakesFocus(tone) {
   var sets = [];
   var setsFailed = false;
   var pickedSet = null;
+  var suggestedXSet = null; // 자동 확정 없이 힌트만 표시할 X 세트
 
   /* OCR 결과로 드롭다운 세트를 자동 선택한다. sets 와 result 중 나중에 도착하는
      쪽에서 호출한다. 사람이 이미 고른 뒤에는 건드리지 않는다.
@@ -428,11 +429,27 @@ function stateTakesFocus(tone) {
     });
 
     var targetKeyword = hasBizan ? "비잔 O" : hasYaz ? "야즈 O" : null;
-    if (!targetKeyword) return;
+    if (targetKeyword) {
+      for (var j = 0; j < sets.length; j++) {
+        if (!sets[j].hidden && sets[j].name.indexOf(targetKeyword) !== -1) {
+          pickedSet = sets[j];
+          return;
+        }
+      }
+      return;
+    }
 
-    for (var j = 0; j < sets.length; j++) {
-      if (!sets[j].hidden && sets[j].name.indexOf(targetKeyword) !== -1) {
-        pickedSet = sets[j];
+    // 3차: 비잔·야즈 미검출 → 진단명으로 X 세트를 힌트만 표시, 자동 확정 안 함.
+    // 틀리면 다른 약의 주의 문구가 붙으므로 스탭이 직접 고른다.
+    var diagnosis = fieldValueOf(result.fields, "DIAGNOSIS") || "";
+    var xKeyword = null;
+    if (diagnosis.indexOf("자궁내막증") !== -1) xKeyword = "비잔 X";
+    else if (diagnosis.indexOf("PCOS") !== -1 || diagnosis.indexOf("다낭성") !== -1) xKeyword = "야즈 X";
+    if (!xKeyword) return;
+
+    for (var k = 0; k < sets.length; k++) {
+      if (!sets[k].hidden && sets[k].name.indexOf(xKeyword) !== -1) {
+        suggestedXSet = sets[k];
         return;
       }
     }
@@ -1247,6 +1264,9 @@ function stateTakesFocus(tone) {
       options +
       "</select>" +
       '<div class="top__set-hint">처방된 약 기준으로 템플릿을 선택합니다</div>' +
+      (!pickedSet && suggestedXSet
+        ? '<div class="top__set-hint top__set-hint--warn">비잔·야즈 미검출 — 진단 기준 [' + escapeHtml(suggestedXSet.name) + '] 확인하세요</div>'
+        : "") +
       (readName ? '<div class="top__read">판독: ' + escapeHtml(readName) + "</div>" : "")
     );
   }
