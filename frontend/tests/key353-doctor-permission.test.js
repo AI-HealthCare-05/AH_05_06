@@ -52,7 +52,7 @@ test("의사 화면은 늦게 등록돼도 저장된 세션을 복구하고 문�
   const code = codeOnly(read("js/doctor.js"));
 
   assert.match(code, /if \(session\.current\) acceptSession\(session\.current\)/);
-  assert.match(code, /canSave:\s*editable/);
+  assert.match(code, /canSave:\s*lock\.canSave/);
   assert.match(code, /APPROVAL_PENDING/);
 });
 
@@ -84,15 +84,20 @@ test("반려가 성공하면 전역 안내문 상태도 같이 바뀌어 승인�
 
 /* 2차 리뷰(유가은 님, 51fe39f 기준)에서 잡힌 세 가지 — 문자 설정을 실제로
  * 받기 전에도 저장이 열려 있던 것, 저장이 도는 중에도 재렌더링으로 버튼이
- * 다시 눌리던 것, 환자를 바꿔도 앞 환자의 저장 안내가 남던 것. */
+ * 다시 눌리던 것, 환자를 바꿔도 앞 환자의 저장 안내가 남던 것.
+ *
+ * 「smsPlanState·smsSaving → canSave」 판정 자체는 `guide-view.js` 의
+ * `smsSaveLock` 으로 뺐다(iljun-sys 님 리뷰) — 그 함수의 동작은
+ * `sms-plan-saved.test.js` 가 실제로 불러서 잰다. 여기서는 doctor.js 가 그
+ * 함수에 **무엇을 넘기는지**만 원문으로 고정한다. */
 test("문자 설정을 실제로 받아 오기 전(로딩·실패)에는 저장을 잠근다", () => {
   const code = codeOnly(read("js/doctor.js"));
 
   assert.match(code, /var smsPlanState = "loading"/, "환자마다 불러오기 상태를 loading 으로 시작해야 한다");
   assert.match(
     code,
-    /var editable = roleEditable && smsPlanState === "ready" && !smsSaving/,
-    "guideSmsPlan 의 canSave 가 smsPlanState==='ready' 를 요구해야 아직 못 받은 서버 값을 기본값으로 덮어쓰지 않는다",
+    /var lock = smsSaveLock\(\s*roleEditable,\s*smsPlanState,\s*smsSaving,/,
+    "guideSmsPlan 이 smsSaveLock 에 roleEditable·smsPlanState·smsSaving 을 그대로 넘겨야 한다",
   );
   const messagePlanBlock = code.slice(code.indexOf(".messagePlan("));
   assert.match(
@@ -112,11 +117,34 @@ test("저장이 도는 동안에는 재렌더링돼도 버튼이 다시 활성�
 
   assert.match(
     code,
-    /save:\s*function\s*\(plan\)\s*\{[\s\S]{0,500}?smsSaving = true;[\s\S]{0,120}?renderPanel\(\);/,
+    /save:\s*function\s*\(plan\)\s*\{[\s\S]{0,1200}?smsSaving = true;[\s\S]{0,120}?renderPanel\(\);/,
     "save 콜백이 smsSaving 을 켠 뒤에 renderPanel() 을 불러야 새로 그려진 버튼도 잠긴다",
   );
   assert.match(code, /smsSaving = false;[\s\S]{0,300}?smsAdopt\(data\)/, "성공하면 smsSaving 을 풀어야 다음 저장이 된다");
   assert.match(code, /smsSaving = false;[\s\S]{0,300}?저장하지 못했습니다/, "실패해도 smsSaving 을 풀어야 다시 시도할 수 있다");
+});
+
+/* 3차 리뷰(유가은 님, 34c2b683 기준)에서 잡힌 것 — 같은 환자를 다시 열어도
+ * `wantedId` 는 똑같아서, A 저장 → B 로 이동 → A 로 복귀 → 재저장 순서에서
+ * 응답이 뒤집히면 오래된 응답이 새 값을 덮을 수 있었다. */
+test("환자를 다시 열면 그 전 저장 요청의 응답은 지금 화면을 건드리지 못한다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(
+    code,
+    /save:\s*function\s*\(plan\)[\s\S]{0,40}?var wantedId[\s\S]{0,600}?var wantedSeq = loadSeq;/,
+    "save 가 저장 시점의 loadSeq 를 잡아 둬야 그 사이 같은 환자를 다시 열었는지 가릴 수 있다",
+  );
+  assert.match(
+    code,
+    /\.then\(function \(data\) \{\s*if \(!visit \|\| visit\.visit_id !== wantedId \|\| loadSeq !== wantedSeq\) return;/,
+    "성공 콜백이 loadSeq 도 같이 봐야 오래된 응답이 smsAdopt 로 최신 값을 덮지 않는다",
+  );
+  assert.match(
+    code,
+    /\.catch\(function \(err\) \{\s*if \(!visit \|\| visit\.visit_id !== wantedId \|\| loadSeq !== wantedSeq\) return;/,
+    "실패 콜백도 loadSeq 를 봐야 오래된 실패가 새 저장의 smsSaving 을 잘못 풀지 않는다",
+  );
 });
 
 test("환자를 바꾸면 저장 안내·불러오기 상태를 새로 잰다", () => {

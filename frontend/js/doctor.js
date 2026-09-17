@@ -177,23 +177,23 @@ function guideLoadSaying(error) {
       !!guide &&
       ["STAFF_REVIEW", "APPROVAL_RETURNED", "APPROVAL_PENDING"].indexOf(guide.status) !== -1;
     /* 역할·상태가 열려 있어도 서버 값을 실제로 받아 오기 전이나 저장이 도는
-       동안은 잠근다 — 위 `smsPlanState`·`smsSaving` 선언과 같은 이유다. */
-    var editable = roleEditable && smsPlanState === "ready" && !smsSaving;
-    var locked = "";
-    if (!roleEditable) {
-      locked = isDoctor()
+       동안은 잠근다 — 위 `smsPlanState`·`smsSaving` 선언과 같은 이유다.
+       판정 자체는 `guide-view.js` 의 `smsSaveLock` 이 갖는다 — visit-guide.js
+       (스탭 화면)와 거의 같은 코드가 두 벌 있던 것을 iljun-sys 님 리뷰로
+       한 벌로 뺐다. */
+    var lock = smsSaveLock(
+      roleEditable,
+      smsPlanState,
+      smsSaving,
+      isDoctor()
         ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
-        : "의사 권한이 있어야 문자 설정을 고칠 수 있습니다";
-    } else if (smsPlanState === "loading") {
-      locked = "문자 설정을 불러오는 중입니다";
-    } else if (smsPlanState === "failed") {
-      locked = "문자 설정을 불러오지 못했습니다 — 새로고침 후 다시 시도해 주세요";
-    }
+        : "의사 권한이 있어야 문자 설정을 고칠 수 있습니다",
+    );
     return {
       guideStatus: (guide && guide.status) || "",
       showPatientLink: false,
-      canSave: editable,
-      lockedSaying: locked,
+      canSave: lock.canSave,
+      lockedSaying: lock.lockedSaying,
       saying: smsSaying,
     };
   };
@@ -543,6 +543,19 @@ function guideLoadSaying(error) {
     save: function (plan) {
       var wantedId = visit && visit.visit_id;
       if (!wantedId) return;
+      /* **환자 번호만으로는 못 가른다** — KEY-353 3차 리뷰(유가은 님).
+       *
+       * A 에서 저장 → B 로 옮김 → A 로 돌아와 다시 저장, 이 순서에서 두
+       * 요청은 `wantedId` 가 똑같이 A 다. 응답이 뒤집혀 오면(먼저 보낸 것이
+       * 나중에 옴) `visit.visit_id === wantedId` 만 보는 판정은 **오래된
+       * 응답도 지금 화면과 같은 환자라 통과시켜**, 방금 저장한 값을 그 전
+       * 값으로 덮는다.
+       *
+       * `load()` 는 환자를 새로 열 때마다(같은 환자를 다시 열어도) `loadSeq`
+       * 를 올린다 — 그래서 이 값을 저장 시점에 잡아 두면 「그 사이 이 환자를
+       * 다시 열었는가」까지 가른다. `mine !== loadSeq`(불러오기)와 같은
+       * 손잡이를 저장에도 그대로 쓴다. */
+      var wantedSeq = loadSeq;
       /* `smsSaving` 이 `guideSmsPlan().canSave` 를 끄므로, 아래 `renderPanel()`
          이 새로 그리는 버튼도 눌린 채로 선다 — KEY-353 2차 리뷰(유가은 님).
          이게 없으면 `wireSmsSettings` 가 disabled 로 바꾼 버튼 DOM 이 이
@@ -555,7 +568,7 @@ function guideLoadSaying(error) {
       doctorApi
         .saveMessagePlan(wantedId, plan)
         .then(function (data) {
-          if (!visit || visit.visit_id !== wantedId) return;
+          if (!visit || visit.visit_id !== wantedId || loadSeq !== wantedSeq) return;
           smsSaving = false;
           /* **서버가 돌려준 것을 화면 상태로 삼는다** — `visit-guide.js` 와
              같은 이유다. 보낸 것을 그대로 두면 서버가 고쳐 준 값이 안 보인다. */
@@ -564,7 +577,7 @@ function guideLoadSaying(error) {
           renderPanel();
         })
         .catch(function (err) {
-          if (!visit || visit.visit_id !== wantedId) return;
+          if (!visit || visit.visit_id !== wantedId || loadSeq !== wantedSeq) return;
           smsSaving = false;
           smsSaying =
             err && err.code === "GUIDE_NOT_PENDING"

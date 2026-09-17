@@ -228,15 +228,20 @@ test("목업과 서버의 기본값이 같다", () => {
 /* ── 스탭 화면의 같은 세 결함 — KEY-353 2차 리뷰(유가은 님)가 doctor.js 에서
  * 잡은 것과 같은 배선(`wireSmsSettings`)을 visit-guide.js 도 쓴다. 못 받은
  * 서버 값을 기본값으로 덮어쓰거나, 저장이 도는 중에도 버튼이 다시 열리거나,
- * 환자를 바꿔도 앞 환자의 저장 안내가 남는 것 — 세 가지를 여기서도 고쳤다. */
+ * 환자를 바꿔도 앞 환자의 저장 안내가 남는 것 — 세 가지를 여기서도 고쳤다.
+ *
+ * 「smsPlanState·smsSaving → canSave」 판정 자체는 두 화면이 함께 쓰는
+ * `smsSaveLock`(guide-view.js) 으로 뺐다(iljun-sys 님 리뷰) — 그 동작은
+ * 바로 아래 "smsSaveLock —" 시험들이 실제로 불러서 잰다. 여기서는
+ * visit-guide.js 가 그 함수에 무엇을 넘기는지만 원문으로 고정한다. */
 test("스탭 화면도 문자 설정을 실제로 받기 전(로딩·실패)에는 저장을 잠근다", () => {
   const code = codeOnly(read("js/visit-guide.js"));
 
   assert.match(code, /var smsPlanState = "loading"/, "환자마다 불러오기 상태를 loading 으로 시작해야 한다");
   assert.match(
     code,
-    /var editable = roleEditable && smsPlanState === "ready" && !smsSaving/,
-    "guideSmsPlan 의 canSave 가 smsPlanState==='ready' 를 요구해야 아직 못 받은 서버 값을 기본값으로 덮어쓰지 않는다",
+    /var lock = smsSaveLock\(\s*roleEditable,\s*smsPlanState,\s*smsSaving,/,
+    "guideSmsPlan 이 smsSaveLock 에 roleEditable·smsPlanState·smsSaving 을 그대로 넘겨야 한다",
   );
 
   const messagePlanBlock = code.slice(code.indexOf(".messagePlan("));
@@ -257,11 +262,74 @@ test("스탭 화면도 저장이 도는 동안에는 재렌더링돼도 버튼�
 
   assert.match(
     code,
-    /save:\s*function\s*\(plan\)\s*\{[\s\S]{0,500}?smsSaving = true;[\s\S]{0,120}?renderAll\(\);/,
+    /save:\s*function\s*\(plan\)\s*\{[\s\S]{0,1200}?smsSaving = true;[\s\S]{0,120}?renderAll\(\);/,
     "save 콜백이 smsSaving 을 켠 뒤에 renderAll() 을 불러야 새로 그려진 버튼도 잠긴다",
   );
   assert.match(code, /smsSaving = false;[\s\S]{0,300}?smsAdopt\(data\)/, "성공하면 smsSaving 을 풀어야 다음 저장이 된다");
   assert.match(code, /smsSaving = false;[\s\S]{0,300}?저장하지 못했습니다/, "실패해도 smsSaving 을 풀어야 다시 시도할 수 있다");
+});
+
+/* 3차 리뷰(유가은 님, 34c2b683 기준)에서 잡힌 것 — 스탭 화면도 doctor.js 와
+ * 같은 경합이 있었다. 같은 환자를 다시 열어도 `wantedId` 는 똑같아서, A
+ * 저장 → B 로 이동 → A 로 복귀 → 재저장 순서에서 응답이 뒤집히면 오래된
+ * 응답이 새 값을 덮을 수 있었다. */
+test("스탭 화면도 환자를 다시 열면 그 전 저장 요청의 응답은 지금 화면을 건드리지 못한다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+
+  assert.match(
+    code,
+    /save:\s*function\s*\(plan\)[\s\S]{0,40}?var wantedId[\s\S]{0,600}?var wantedSeq = loadSeq;/,
+    "save 가 저장 시점의 loadSeq 를 잡아 둬야 그 사이 같은 환자를 다시 열었는지 가릴 수 있다",
+  );
+  assert.match(
+    code,
+    /\.then\(function \(data\) \{\s*if \(visitId !== wantedId \|\| loadSeq !== wantedSeq\) return;/,
+    "성공 콜백이 loadSeq 도 같이 봐야 오래된 응답이 smsAdopt 로 최신 값을 덮지 않는다",
+  );
+  assert.match(
+    code,
+    /\.catch\(function \(err\) \{\s*if \(visitId !== wantedId \|\| loadSeq !== wantedSeq\) return;/,
+    "실패 콜백도 loadSeq 를 봐야 오래된 실패가 새 저장의 smsSaving 을 잘못 풀지 않는다",
+  );
+});
+
+/* ── smsSaveLock — 실제로 불러서 잰다 ─────────────────────────────────
+ *
+ * iljun-sys 님 리뷰: 위 같은 원문 패턴 시험은 「글자가 남아 있으면」 통과하지,
+ * `smsSaving = true` 바로 뒤에 `smsSaving = false` 를 적어도 잡지 못한다.
+ * 판정 자체(`smsSaveLock`)는 IIFE 밖의 순수 함수라 `doctorApprovalState` 처럼
+ * 실제로 호출해서 결과를 볼 수 있다 — 이 네 시험은 동작을 잰다. */
+test("smsSaveLock — 역할이 닫혀 있으면 그 이유만 돌려주고 저장을 잠근다", () => {
+  const { smsSaveLock } = box();
+
+  assert.deepEqual(smsSaveLock(false, "ready", false, "의사 권한이 필요합니다"), {
+    canSave: false,
+    lockedSaying: "의사 권한이 필요합니다",
+  });
+  /* 역할이 닫혀 있으면 조회 상태·저장 중 여부는 안 본다 — 이유는 하나뿐이다 */
+  assert.equal(smsSaveLock(false, "ready", true, "x").canSave, false);
+});
+
+test("smsSaveLock — 역할이 열려도 서버 값을 못 받았으면 잠근다", () => {
+  const { smsSaveLock } = box();
+
+  const loading = smsSaveLock(true, "loading", false, "x");
+  assert.equal(loading.canSave, false);
+  assert.match(loading.lockedSaying, /불러오는 중/);
+
+  const failed = smsSaveLock(true, "failed", false, "x");
+  assert.equal(failed.canSave, false);
+  assert.match(failed.lockedSaying, /불러오지 못했습니다/);
+});
+
+test("smsSaveLock — 서버 값은 받았어도 저장이 도는 중이면 잠근다", () => {
+  const { smsSaveLock } = box();
+  assert.equal(smsSaveLock(true, "ready", true, "x").canSave, false);
+});
+
+test("smsSaveLock — 역할·조회·저장이 모두 열려야 저장할 수 있다", () => {
+  const { smsSaveLock } = box();
+  assert.deepEqual(smsSaveLock(true, "ready", false, "x"), { canSave: true, lockedSaying: "" });
 });
 
 test("스탭 화면도 환자를 바꾸면(loadGuide) 저장 안내·불러오기 상태를 새로 잰다", () => {

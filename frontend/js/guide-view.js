@@ -915,6 +915,30 @@ function smsForget() {
   guideSmsState = null;
 }
 
+/* 「이 환자만 적용」을 지금 누를 수 있는가 — KEY-353 2·3차 리뷰(유가은 님).
+ *
+ * doctor.js·visit-guide.js 가 **같은 네 가지**를 판정했다 — 역할·안내 상태가
+ * 열려 있어도, 서버 설정을 실제로 받기 전(`planState !== "ready"`)이나 저장이
+ * 도는 중(`saving`)이면 잠근다. 안 잠그면 아직 못 받은 서버 값을 화면
+ * 기본값으로 알고 덮어쓰거나, 「저장하는 중…」과 눌리는 버튼이 동시에 뜬다.
+ *
+ * 두 화면에 **거의 같은 코드가 두 벌** 있었다(iljun-sys 님 리뷰) — 그 중
+ * 「역할·상태가 열려 있는가」는 화면마다 다른 규칙(`doctorApprovalState`·
+ * `canEditNow`)이라 그대로 두고, **여기서부터 뒤**를 한 벌로 뺀다.
+ * `roleLockedSaying` 은 역할이 닫혀 있을 때 화면마다 다르게 말할 문구다.
+ *
+ * IIFE 밖에 둔다 — `doctorApprovalState` 와 같은 이유로, 검사가 `document`
+ * 없이도 이 판정만 따로 부를 수 있어야 한다. */
+function smsSaveLock(roleEditable, planState, saving, roleLockedSaying) {
+  if (!roleEditable) return { canSave: false, lockedSaying: roleLockedSaying || "" };
+  if (saving) return { canSave: false, lockedSaying: "" };
+  if (planState === "loading") return { canSave: false, lockedSaying: "문자 설정을 불러오는 중입니다" };
+  if (planState === "failed") {
+    return { canSave: false, lockedSaying: "문자 설정을 불러오지 못했습니다 — 새로고침 후 다시 시도해 주세요" };
+  }
+  return { canSave: true, lockedSaying: "" };
+}
+
 function wireSmsSettings(opts) {
   var reRender = opts.reRender;
   var say = opts.say || function () {};
