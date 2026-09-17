@@ -108,7 +108,10 @@ _RX_NON_MED_NAMES: frozenset[str] = frozenset({"처방보류", "처방중단", "
 _BIZAN_RE = re.compile(r"비잔", re.IGNORECASE)
 _YAZZ_RE = re.compile(r"야즈", re.IGNORECASE)
 _METFORMIN_RE = re.compile(r"메트포르민|메트포민|Metformin", re.IGNORECASE)
-_YAZZ_CONTRAINDICATED_RE = re.compile(r"야즈\s*불가|야즈\s*금기", re.IGNORECASE)
+_YAZZ_CONTRAINDICATED_RE = re.compile(
+    r"야즈\s*(?:불가|금기)|야즈.{0,20}(?:복용\s*)?(?:못함|안됨|불가)",
+    re.IGNORECASE,
+)
 
 # 두 근거(약 + 복용 여부) 모두 확인된 경우 / 약만 확인된 경우
 _SET_SUGGESTION_HIGH_CONF = Decimal("0.90")
