@@ -80,6 +80,11 @@ class PatientGuideDrugResponse(StrictModel):
     d: str | None = None
 
 
+class PatientCareBlockResponse(StrictModel):
+    t: str | None = None
+    p: list[str] = Field(default_factory=list)
+
+
 class PatientGuideDetailResponse(StrictModel):
     summary: str | None = None
     goals: list[PatientGuideGoalResponse] = Field(default_factory=list)
@@ -87,12 +92,12 @@ class PatientGuideDetailResponse(StrictModel):
     drug: PatientGuideDrugResponse | None = None
     why: list[str] = Field(default_factory=list)
     how: str | None = None
+    #: 복약지도 본문의 「■ 소제목」 중 고정 카드와 짝이 없는 것 — KEY-365.
+    #: 「약별 복용 방법」 다음, 「다음 방문 계획」 앞에 선다. **없으면 `None`** 이라
+    #: 환자 종점(`response_model_exclude_none`)에서 키째 빠진다 — `■` 없는
+    #: 본문의 응답은 이 칸이 생기기 전과 같다.
+    blocks: list[PatientCareBlockResponse] | None = None
     next: str | None = None
-
-
-class PatientCareBlockResponse(StrictModel):
-    t: str | None = None
-    p: list[str] = Field(default_factory=list)
 
 
 class PatientCareResponse(StrictModel):
