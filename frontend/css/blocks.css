@@ -1001,6 +1001,11 @@ textarea.sms__text:focus-visible {
   color: var(--ink-2);
 }
 
+.sd__row--source .sd__state {
+  flex: 1 1 220px;
+  overflow-wrap: anywhere;
+}
+
 /* 오른쪽 — 「환자 액션 현황」 한 카드 안에 안내문 읽음과 확인 문자 응답이
    구분선으로 나뉜다. 세 블록 다 흰 바탕이라야 회색 바닥 위에서 블록으로
    읽힌다 — 테두리만으로는 카드가 바닥에 잠긴다. */

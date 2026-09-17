@@ -47,6 +47,7 @@ test("**적는 보류 이유는 손댈 수 있는 것, 또는 검증 단계임�
     "INVALID_PHONE",
     "NO_CREDIT",
     "RECIPIENT_NOT_APPROVED",
+    "SOURCE_NOT_DELETED",
   ]);
   /* 원문 표기는 「⏸ 보류 · 번호」 · 「⏸ 보류 · 문자 잔량」이다 */
   assert.equal(HOLD_SAYING.INVALID_PHONE, "번호");
@@ -62,7 +63,7 @@ test("**손댈 수 없는 보류 사유는 적지 않는다** — 적어 봐야 
   /* RECIPIENT_NOT_APPROVED(KEY-338)는 이 규칙의 예외다 — 위 테스트가 그
      이유를 잰다. 손댈 수 없는데도 화면에 남기는 유일한 보류 사유다. */
   const { HOLD_SAYING, messageSaying } = box();
-  for (const code of ["NOT_APPROVED", "SOURCE_NOT_DELETED", "SAFETY_CHECK_FAILED"]) {
+  for (const code of ["NOT_APPROVED", "SAFETY_CHECK_FAILED"]) {
     assert.ok(!(code in HOLD_SAYING), `${code} 를 스탭 화면에 적었다`);
     assert.equal(messageSaying({ status: "HELD", hold_reason: code }), "보류");
   }

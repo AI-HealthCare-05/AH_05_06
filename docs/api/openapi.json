@@ -5419,6 +5419,39 @@
             ],
             "title": "Sent At"
           },
+          "source_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Failure At"
+          },
+          "source_failure_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Failure Type"
+          },
+          "source_retry_generation": {
+            "default": 0,
+            "title": "Source Retry Generation",
+            "type": "integer"
+          },
+          "source_retry_requested": {
+            "default": false,
+            "title": "Source Retry Requested",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -5536,6 +5569,39 @@
             "format": "date-time",
             "title": "Scheduled At",
             "type": "string"
+          },
+          "source_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Failure At"
+          },
+          "source_failure_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Failure Type"
+          },
+          "source_retry_generation": {
+            "default": 0,
+            "title": "Source Retry Generation",
+            "type": "integer"
+          },
+          "source_retry_requested": {
+            "default": false,
+            "title": "Source Retry Requested",
+            "type": "boolean"
           },
           "status": {
             "$ref": "#/components/schemas/GuideMessageStatus"
@@ -5993,6 +6059,48 @@
           "updated_at"
         ],
         "title": "SignalAcknowledgeRequest",
+        "type": "object"
+      },
+      "SourceRetryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "minimum": 0.0,
+            "title": "Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generation"
+        ],
+        "title": "SourceRetryRequest",
+        "type": "object"
+      },
+      "SourceRetryResponse": {
+        "properties": {
+          "guide_message_id": {
+            "title": "Guide Message Id",
+            "type": "integer"
+          },
+          "source_retry_generation": {
+            "title": "Source Retry Generation",
+            "type": "integer"
+          },
+          "source_retry_requested": {
+            "title": "Source Retry Requested",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuideMessageStatus"
+          }
+        },
+        "required": [
+          "guide_message_id",
+          "status",
+          "source_retry_requested",
+          "source_retry_generation"
+        ],
+        "title": "SourceRetryResponse",
         "type": "object"
       },
       "StaffCreateRequest": {
@@ -9015,6 +9123,63 @@
           }
         ],
         "summary": "Update Scheduled Message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/messages/{message_id}/source-retry": {
+      "post": {
+        "operationId": "retry_source_deletion_api_v1_messages__message_id__source_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceRetryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Source Deletion",
         "tags": [
           "messages"
         ]
