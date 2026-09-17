@@ -230,16 +230,14 @@ var catalogApi = {
 var mockSetDetails = null;
 
 function mockSetSeed() {
-  /* 씨앗은 서버 마이그레이션과 같은 규칙이다 — 이름에서 질환·시점을 읽는다 */
+  /* 씨앗은 서버 마이그레이션과 같은 규칙이다 — 이름에서 질환·약 처방 여부를 읽는다.
+     KEY-357: 처음/계속 축 → O/X 축으로 변경. O = 약 처방됨(FIRST), X = 미처방(CONTINUE). */
   return MOCK_PRESCRIPTION_SETS.map(function (row) {
     return {
       prescription_set_id: row.prescription_set_id,
       name: row.name,
       disease: row.name.indexOf("PCOS") === 0 ? "PCOS" : "ENDOMETRIOSIS",
-      phase:
-        row.name.indexOf("(처음)") !== -1 || row.name.indexOf("초진") !== -1
-          ? "FIRST"
-          : "CONTINUE",
+      phase: /\bO$/.test(row.name.trim()) ? "FIRST" : "CONTINUE",
       /* **기본 목록이 정한 것을 덮지 않는다.** 여기서 `"DAYS"` 로 못박아
          두었더니 목록에 적어 둔 「통으로 센다」가 사라져, 화면에서 통 환산을
          한 번도 못 봤다. */
