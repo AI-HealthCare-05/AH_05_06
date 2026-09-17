@@ -172,5 +172,5 @@ class SeedIsRerunnableTestCase(TestCase):
         await seed_catalog()
 
         corrected = await DrugCautionContent.filter(source_name__contains="전문의").all()
-        assert len(corrected) == 8
+        assert len(corrected) == 12
         assert all(row.source_grade is SourceGrade.C for row in corrected)
