@@ -450,26 +450,25 @@ def build_lab_keywords(baselines: Sequence[Any]) -> dict[str, list[str]]:
 def _find_lab_columns(rows: list) -> tuple[int, tuple[float, float], tuple[float, float]] | None:
     """헤더 행에서 '검사항목'과 '검사결과' 열의 (header_row_idx, tn_col, res_col)을 반환한다.
 
+    열 범위는 헤더 텍스트 블록의 x좌표가 아닌 인접 열 사이의 중간점으로 결정한다.
+    헤더 텍스트가 셀 중앙 정렬이고 데이터는 셀 좌측 정렬인 병원 표 형식을 처리하기 위해서다.
     두 열을 모두 찾지 못하면 None을 반환한다.
     """
-    tn_col: tuple[float, float] | None = None
-    res_col: tuple[float, float] | None = None
-    header_row_idx: int | None = None
     for i, row in enumerate(rows):
-        for block in row:
-            text = block.text.strip()
-            if text in _TEST_NAME_COLUMN_KEYWORDS and tn_col is None:
-                tn_col = (block.left, block.right)
-                header_row_idx = i
-            elif text in _RESULT_COLUMN_KEYWORDS and res_col is None:
-                res_col = (block.left, block.right)
-                if header_row_idx is None:
-                    header_row_idx = i
-        if tn_col and res_col:
-            break
-    if header_row_idx is None or tn_col is None or res_col is None:
-        return None
-    return header_row_idx, tn_col, res_col
+        # row는 _group_fields_by_row에서 left 기준 정렬이 보장됨
+        tn_pos = next((j for j, b in enumerate(row) if b.text.strip() in _TEST_NAME_COLUMN_KEYWORDS), None)
+        res_pos = next((j for j, b in enumerate(row) if b.text.strip() in _RESULT_COLUMN_KEYWORDS), None)
+        if tn_pos is None or res_pos is None:
+            continue
+
+        def _cell_range(idx: int) -> tuple[float, float]:
+            blk = row[idx]
+            left_bound = (row[idx - 1].right + blk.left) / 2 if idx > 0 else blk.left
+            right_bound = (blk.right + row[idx + 1].left) / 2 if idx < len(row) - 1 else blk.right + 300.0
+            return left_bound, right_bound
+
+        return i, _cell_range(tn_pos), _cell_range(res_pos)
+    return None
 
 
 def _extract_lab_table(
