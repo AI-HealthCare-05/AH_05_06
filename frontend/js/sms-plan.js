@@ -1,18 +1,13 @@
 /* **문자 설정** — 와이어프레임 S1-14.
  *
- * 확인 문자 회차 · 소진 임박 · 재진 안내를 한 자리에 모은다. 스탭이 S2-1 에서
- * 이탈 환자를 발견하면 곧바로 조치할 수 있게 하려는 것이다.
- *
- * **여기 있는 것은 규칙뿐이다.** 저장할 자리가 서버에 아직 없다 —
- * `GuideResponse` 에 문자 설정이 없고, 회차·문구를 담는 표도 없다
- * (`check_in` 은 환자의 D+7 응답이지 회차가 아니다). 화면은 그 사실을
- * 감추지 않는다.
+ * 진료 당일 안내문 · 확인 문자 회차 · 소진 임박 · 재진 안내를 한 자리에
+ * 모으고, 환자별 발송 시각과 문구를 서버 계약 모양으로 주고받는다.
  */
 
-/* 회차 — 와이어프레임의 세 가지. **일주일 뒤는 끌 수 없다.**
+/* 회차 — **진료 당일 안내문만 끌 수 없다.**
  *
- * 「필요하면 켜세요」로 두면 아무도 안 켠다. 복약 첫 주가 가장 잘 끊기는
- * 구간이라, 그 한 번은 어느 처방에서도 고정이다 (D2-3 도 「(고정)」이라 적는다). */
+ * 환자가 안내 링크를 처음 받는 회차라 고정하고, D+7 이후 확인 문자는
+ * 환자별 상태에 맞춰 끌 수 있다. */
 var SMS_ROUNDS = [
   { key: "guide", label: "진료 당일 안내문", days: 0, fixed: true },
   { key: "d7", label: "일주일 뒤", days: 7, fixed: false },
@@ -253,7 +248,7 @@ function smsPlanFromServer(plan) {
       out.runOutOn = row.enabled !== false;
       if (row.days_before !== null && row.days_before !== undefined) out.runOutBefore = row.days_before;
     } else if (key !== "guide") {
-      /* d7 은 늘 켜져 있다 — `on` 에 담지 않는 것이 화면의 규칙이다(`smsRoundOn`) */
+      /* 고정인 guide만 `on`에서 빼고, D+7 이후 회차는 서버 설정을 그대로 담는다. */
       out.on[key] = row.enabled !== false;
     }
 

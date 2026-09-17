@@ -23,6 +23,7 @@ from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
 from app.core import config
+from app.core.api_errors import ApiError as ContractApiError
 
 # `AuthError` 는 이름이 인증처럼 보이지만 **계약이 정한 오류 봉투**다 —
 # `{code, message}` 를 평평하게 내보내는 하나뿐인 길이라 여기서도 그대로 쓴다.
@@ -101,9 +102,8 @@ _DEFAULT_ON: dict[GuideMessageKind, bool] = {
     GuideMessageKind.RUN_OUT: True,
 }
 
-#: **일주일 뒤는 끌 수 없다.** 원문이 「(고정)」이라 적고 주석도 「일주일 뒤는
-#: 여기서도 끌 수 없다」고 못박는다 — 복약 첫 주가 가장 잘 끊기는 구간이다.
-#: 화면이 체크박스를 잠그지만, 서버도 막는다. 화면만 막으면 요청 하나로 꺼진다.
+#: **진료 당일 안내문은 끌 수 없다.** 환자 안내 링크를 전달하는 회차이므로
+#: 화면이 체크박스를 잠그고 서버도 같은 규칙을 강제한다.
 FIXED_ON: frozenset[GuideMessageKind] = frozenset({GuideMessageKind.GUIDE})
 
 #: 확인 문자를 몇 시에 보낼지 — 화면이 고르게 하는 값들(S1-14 의 시각 목록).
@@ -1087,7 +1087,7 @@ class GuideService:
 
         def wanted(kind: GuideMessageKind) -> bool:
             if kind in FIXED_ON:
-                return True  # 일주일 뒤는 끌 수 없다
+                return True  # 진료 당일 안내문은 끌 수 없다
             row = plan.get(kind)
             return _DEFAULT_ON[kind] if row is None else row.enabled
 
@@ -1274,7 +1274,7 @@ class GuideService:
         """회차 한 줄이 담길 모양. **한 줄을 재는 규칙을 여기 모은다** —
         저장 함수 안에 두었더니 트랜잭션·권한·검사가 한 덩이가 됐다.
         """
-        # **일주일 뒤는 끌 수 없다** — 화면이 잠그지만 요청은 그냥 온다.
+        # **진료 당일 안내문은 끌 수 없다** — 화면이 잠그지만 요청은 그냥 온다.
         enabled = True if kind in FIXED_ON else bool(item.enabled)
 
         body = item.body
@@ -1286,7 +1286,11 @@ class GuideService:
             elif len(body) > MESSAGE_BODY_MAX:
                 raise ApiError("BODY_TOO_LONG", 422, "문구가 너무 깁니다.")
             else:
-                MessageTemplateService._check(MessageTemplateKind(kind.value), body)
+                try:
+                    MessageTemplateService._check(MessageTemplateKind(kind.value), body)
+                except ContractApiError as error:
+                    # guide_router가 쓰는 기존 평평한 오류 봉투로 HTTP 경계까지 보낸다.
+                    raise ApiError(error.code, error.status_code, error.message) from error
 
         days_before = None
         if kind is GuideMessageKind.RUN_OUT:

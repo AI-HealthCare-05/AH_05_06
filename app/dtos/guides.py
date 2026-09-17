@@ -165,7 +165,7 @@ class MessageRound(StrictModel):
 
 
 class MessageRoundOut(MessageRound):
-    #: 화면에서 끌 수 없는 회차인가. 「일주일 뒤 (고정)」이 그렇다.
+    #: 화면에서 끌 수 없는 회차인가. 「진료 당일 안내문 (고정)」이 그렇다.
     #: 서버가 정해 내려 준다 — 화면마다 다르게 알면 한쪽에서만 꺼진다.
     fixed: bool = False
 
@@ -173,7 +173,7 @@ class MessageRoundOut(MessageRound):
 class MessagePlanRequest(StrictModel):
     """문자 설정 저장 — 「이 환자만 적용」."""
 
-    #: 확인 · 재진 문자를 몇 시에 보낼지. 안내문은 승인 시각 규칙(18:00)을 따른다.
+    #: 진료 당일 안내문과 확인 · 재진 문자의 발송 시각을 각각 저장한다.
     send_hour: int = 18
     check_hour: int
     rounds: list[MessageRound]
