@@ -67,3 +67,35 @@ test('역할·병원 범위 검증은 서버 계약(AdminPatientFeedbackService)
   assert.match(detailScreen, /\['staff', 'doctor', 'admin'\]/);
   assert.match(detailScreen, /location\.replace\(landingFor\(me\.roles\)\)/);
 });
+
+test('어드민 단독 계정은 걸림 없이 피드백 탭에서 시작한다 — 2heej 재리뷰', () => {
+  const script = read('js/manage.js');
+  assert.match(script, /if \(!doesClinicWork\(who\.roles\)\) view = "feedback";/);
+});
+
+test('403 문구가 피드백 탭에서는 어드민을 배제하는 것처럼 읽히지 않는다', () => {
+  const script = read('js/manage.js');
+  const loadFn = script.slice(script.indexOf('function load()'), script.indexOf('function load()') + 1400);
+  assert.match(loadFn, /view === "feedback"/);
+  assert.match(loadFn, /이 계정으로는 조회할 수 없습니다/);
+});
+
+test('대상·유형 드롭다운이 발송예정·발송이력과 같은 send-days 스타일을 쓴다', () => {
+  const html = read('manage.html');
+  assert.match(html, /<select class="send-days" id="feedback-target-filter">/);
+  assert.match(html, /<select class="send-days" id="feedback-category-filter">/);
+});
+
+test('피드백 상세는 환자 이력 모달과 같은 modal__top·아이콘 닫기를 쓴다', () => {
+  const script = read('js/manage.js');
+  const detailFn = script.slice(
+    script.indexOf('function openFeedbackDetail'),
+    script.indexOf('function openHistory'),
+  );
+  assert.match(detailFn, /class="modal__top"/);
+  assert.match(detailFn, /class="modal__title"/);
+  assert.match(detailFn, /class="icon-button"/);
+  assert.match(detailFn, /class="feedback-fields"/);
+  // 예전엔 텍스트 "닫기" 버튼 + 클래스 없는 <dl>이었다 — 나열처럼 보였다.
+  assert.doesNotMatch(detailFn, /button-ghost.*닫기</);
+});

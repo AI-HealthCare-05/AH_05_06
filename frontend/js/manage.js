@@ -17,6 +17,11 @@
   /* **환자 관리가 첫 갈래다** — 원문의 세그먼트 탭 차례가 그렇고, 「오늘이
      아닌 환자도 여기서 찾는다」가 이 화면을 여는 까닭이다. */
   var view = "roster";
+  //: 어드민 단독 계정은 PATIENT_READ가 없어 roster(기본값)로 시작하면
+  //: 첫 화면부터 403이다 — KEY-361 인수조건("스탭·의사·어드민 모두
+  //: 조회 가능")이 어드민에게는 실질적으로 안 지켜졌다(2heej 재리뷰).
+  //: requireSession()이 역할을 알려주면 그때 어드민 단독이면 feedback
+  //: 으로 옮긴다.
   var days = 7;
   var span = 7;
   var page = null;
@@ -663,8 +668,9 @@
     previewVersion += 1;
     resendVersion += 1;
     el("modal-body").innerHTML =
-      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>' +
-      '<h2>피드백 상세</h2><p id="feedback-detail-state">불러오는 중…</p><dl id="feedback-detail-fields"></dl>';
+      '<div class="modal__top"><div><h2 class="modal__title" id="modal-title">피드백 상세</h2></div>' +
+      '<button class="icon-button" type="button" data-close aria-label="닫기">✕</button></div>' +
+      '<p id="feedback-detail-state">불러오는 중…</p><dl class="feedback-fields" id="feedback-detail-fields"></dl>';
     el("modal").hidden = false;
     getPatientFeedback(feedbackId)
       .then(function (item) {
@@ -837,7 +843,14 @@
       .catch(function (error) {
         saying = errorMessage(
           error,
-          [{ status: 403, say: "스탭 또는 의사 계정만 조회할 수 있습니다." }],
+          [
+            {
+              status: 403,
+              say: view === "feedback"
+                ? "이 계정으로는 조회할 수 없습니다."
+                : "스탭 또는 의사 계정만 조회할 수 있습니다.",
+            },
+          ],
           "목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
         );
         render();
@@ -1048,6 +1061,9 @@
     sourceRetryRoles = who.roles || [];
     el("who-name").textContent = who.name;
     el("who-roles").textContent = roleLabel(who.roles);
+    //: 어드민 단독 계정은 환자 관리·발송 예정·발송 이력에 닿을 권한이
+    //: 없다 — 걸림 없이 도달 가능해야 하는 피드백 탭에서 시작한다.
+    if (!doesClinicWork(who.roles)) view = "feedback";
     return load();
   });
 })();
