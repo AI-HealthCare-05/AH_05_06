@@ -107,7 +107,11 @@
   document.getElementById('logout').addEventListener('click', function () { session.logout(); });
 
   requireSession().then(function (me) {
-    if ((me.roles || []).indexOf('admin') === -1) {
+    var roles = me.roles || [];
+    var canRead = ['staff', 'doctor', 'admin'].some(function (role) {
+      return roles.indexOf(role) !== -1;
+    });
+    if (!canRead) {
       location.replace(landingFor(me.roles));
       return;
     }

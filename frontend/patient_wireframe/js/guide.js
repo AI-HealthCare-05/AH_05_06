@@ -750,14 +750,20 @@
   /* 👍 — 오버레이 없이 즉시 HELPFUL로 제출한다. 대부분의 환자는 문제가
      없으니, 한 번의 탭으로 끝나야 한다(KEY-361). */
   var helpfulSubmitting = false;
+  var helpfulSubmissionId = null;
   function submitHelpful(event) {
     if (helpfulSubmitting) return;
     helpfulSubmitting = true;
     var btn = event && event.currentTarget;
+    var status = btn && btn.closest('.guide-footer__helpful')
+      ? btn.closest('.guide-footer__helpful').querySelector('[data-feedback-status]')
+      : null;
     if (btn) { btn.disabled = true; }
+    if (status) { status.textContent = ''; }
+    helpfulSubmissionId = helpfulSubmissionId || createFeedbackSubmissionId();
     var screen = currentReportScreen();
     submitPatientFeedback({
-      submission_id: createFeedbackSubmissionId(),
+      submission_id: helpfulSubmissionId,
       target: 'GUIDE_SECTION',
       source_screen: 'P9',
       category: 'HELPFUL',
@@ -770,6 +776,7 @@
     }).catch(function () {
       helpfulSubmitting = false;
       if (btn) { btn.disabled = false; }
+      if (status) { status.textContent = '전송하지 못했어요. 다시 눌러 주세요.'; }
     });
   }
 

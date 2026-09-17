@@ -60,6 +60,13 @@ function GuideFooter(opts) {
     thumbs.appendChild(downBtn);
 
     helpfulRow.appendChild(thumbs);
+
+    var helpfulStatus = document.createElement('span');
+    helpfulStatus.className = 'guide-footer__helpful-status';
+    helpfulStatus.setAttribute('role', 'status');
+    helpfulStatus.setAttribute('aria-live', 'polite');
+    helpfulStatus.setAttribute('data-feedback-status', '');
+    helpfulRow.appendChild(helpfulStatus);
     wrap.appendChild(helpfulRow);
   }
 

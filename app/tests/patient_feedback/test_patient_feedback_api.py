@@ -283,59 +283,55 @@ class TestAdminFeedbackList(PatientFeedbackApiTestCase):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             return await client.get("/api/v1/admin/patient-feedback")
 
-    async def test_admin_only_sees_feedback_from_their_hospital(self) -> None:
+    async def test_all_clinic_roles_only_see_feedback_from_their_hospital(self) -> None:
         own = await self.feedback("KEY-239 목록 기준병원", details="합성 상세")
         await self.feedback("KEY-239 목록 타병원", details="타 병원 상세")
-        actor = StaffActor(user_id=239, hospital_id=own.hospital_id, roles=frozenset({"admin"}))
 
-        response = await self.request_as(actor)
+        for user_id, role in enumerate(("staff", "doctor", "admin"), start=239):
+            actor = StaffActor(user_id=user_id, hospital_id=own.hospital_id, roles=frozenset({role}))
+            response = await self.request_as(actor)
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["total"] == 1
-        assert body["items"][0]["feedback_id"] == own.patient_feedback_id
-        assert body["items"][0]["has_details"] is True
-        assert "details" not in body["items"][0]
+            assert response.status_code == 200
+            body = response.json()
+            assert body["total"] == 1
+            assert body["items"][0]["feedback_id"] == own.patient_feedback_id
+            assert body["items"][0]["has_details"] is True
+            assert "details" not in body["items"][0]
 
-    async def test_non_admin_is_forbidden(self) -> None:
-        own = await self.feedback("KEY-239 목록 권한병원")
-        actor = StaffActor(user_id=240, hospital_id=own.hospital_id, roles=frozenset({"staff"}))
-
-        response = await self.request_as(actor)
-
-        assert response.status_code == 403
-        assert response.json()["code"] == "FORBIDDEN"
-
-    async def test_admin_can_read_detail_inside_their_hospital(self) -> None:
+    async def test_all_clinic_roles_can_read_detail_inside_their_hospital(self) -> None:
         own = await self.feedback("KEY-239 상세 기준병원", details="합성 상세 내용")
-        actor = StaffActor(user_id=241, hospital_id=own.hospital_id, roles=frozenset({"admin"}))
-        app.dependency_overrides[get_staff_actor] = lambda: actor
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.get(f"/api/v1/admin/patient-feedback/{own.patient_feedback_id}")
+        for user_id, role in enumerate(("staff", "doctor", "admin"), start=242):
+            actor = StaffActor(user_id=user_id, hospital_id=own.hospital_id, roles=frozenset({role}))
+            app.dependency_overrides[get_staff_actor] = lambda actor=actor: actor
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["details"] == "합성 상세 내용"
-        assert body["content_key"] == "medication.why"
-        assert not {
-            "idempotency_digest",
-            "response_ref_digest",
-            "patient_session",
-            "link_token",
-            "otp",
-        } & set(body)
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.get(f"/api/v1/admin/patient-feedback/{own.patient_feedback_id}")
+
+            assert response.status_code == 200
+            body = response.json()
+            assert body["details"] == "합성 상세 내용"
+            assert body["content_key"] == "medication.why"
+            assert not {
+                "idempotency_digest",
+                "response_ref_digest",
+                "patient_session",
+                "link_token",
+                "otp",
+            } & set(body)
 
     async def test_feedback_from_another_hospital_is_hidden(self) -> None:
         other = await self.feedback("KEY-239 상세 타병원", details="타 병원 상세")
-        actor = StaffActor(user_id=242, hospital_id=other.hospital_id + 1, roles=frozenset({"admin"}))
-        app.dependency_overrides[get_staff_actor] = lambda: actor
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.get(f"/api/v1/admin/patient-feedback/{other.patient_feedback_id}")
+        for user_id, role in enumerate(("staff", "doctor", "admin"), start=245):
+            actor = StaffActor(user_id=user_id, hospital_id=other.hospital_id + 1, roles=frozenset({role}))
+            app.dependency_overrides[get_staff_actor] = lambda actor=actor: actor
 
-        assert response.status_code == 404
-        assert response.json()["code"] == "PATIENT_FEEDBACK_NOT_FOUND"
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.get(f"/api/v1/admin/patient-feedback/{other.patient_feedback_id}")
+
+            assert response.status_code == 404
+            assert response.json()["code"] == "PATIENT_FEEDBACK_NOT_FOUND"
 
 
 class TestTwoSubmissionsThatLandTogether(PatientFeedbackApiTestCase):

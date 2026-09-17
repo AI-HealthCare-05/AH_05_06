@@ -69,7 +69,7 @@ P6 챗봇 답변 평가와 P9 안내 오류 신고를 한 저장 계약으로 �
 ## GET `/api/v1/admin/patient-feedback`
 
 - 인증: 스탭 Access Token
-- 권한: `admin` 역할이 여는 기존 `AUDIT_READ` 권한
+- 권한: `staff`·`doctor`·`admin` 역할이 여는 `PATIENT_FEEDBACK_READ` 권한
 - 병원 범위: 토큰의 직원 병원 ID로 서버가 강제
 - 쿼리: `page`(기본 1), `page_size`(기본 20, 최대 100), `target`, `category`
 - 목록에는 자유 입력 원문 대신 `has_details`만 제공한다.
@@ -95,7 +95,7 @@ P6 챗봇 답변 평가와 P9 안내 오류 신고를 한 저장 계약으로 �
 
 ## GET `/api/v1/admin/patient-feedback/{feedback_id}`
 
-관리자 목록과 같은 인증·권한·병원 범위를 적용한다. 다른 병원의 ID와 없는 ID는
+목록과 같은 인증·권한·병원 범위를 적용한다. 다른 병원의 ID와 없는 ID는
 모두 `404 PATIENT_FEEDBACK_NOT_FOUND`로 응답한다.
 
 상세 응답은 목록 필드에 `section_key`, `content_key`, `detected_tab`, `details`를

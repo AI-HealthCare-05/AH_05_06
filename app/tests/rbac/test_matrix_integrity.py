@@ -13,6 +13,7 @@ from app.tests.rbac.matrix import (
     MATRIX,
     MEDICAL_JUDGEMENT,
     OWNERSHIP_REQUIRED,
+    SHARED_OPERATION,
     VALID_COMBINATIONS,
     Permission,
     Role,
@@ -66,6 +67,8 @@ class TestMatrixShape:
 
     def test_permission_groups_do_not_overlap(self) -> None:
         assert not (MEDICAL_JUDGEMENT & CLINIC_OPERATION)
+        assert not (MEDICAL_JUDGEMENT & SHARED_OPERATION)
+        assert not (CLINIC_OPERATION & SHARED_OPERATION)
 
 
 class TestAdminIsNotAMedicalRole:
@@ -80,9 +83,16 @@ class TestAdminIsNotAMedicalRole:
             f"{permission.value}가 admin 단독으로 열린다 — 관리자는 의료 역할이 아니다"
         )
 
-    def test_admin_alone_opens_nothing_outside_clinic_operation(self) -> None:
-        opened = [p.value for p in Permission if expected({Role.ADMIN}, p) and p not in CLINIC_OPERATION]
+    def test_admin_alone_opens_nothing_outside_admin_or_shared_operation(self) -> None:
+        allowed = CLINIC_OPERATION | SHARED_OPERATION
+        opened = [p.value for p in Permission if expected({Role.ADMIN}, p) and p not in allowed]
         assert not opened, f"admin 단독인데 의원 운영 밖의 권한이 열린다: {opened}"
+
+    @pytest.mark.parametrize("permission", sorted(SHARED_OPERATION), ids=lambda p: p.value)
+    def test_shared_operation_is_open_to_all_clinic_roles(self, permission: Permission) -> None:
+        assert expected({Role.STAFF}, permission)
+        assert expected({Role.DOCTOR}, permission)
+        assert expected({Role.ADMIN}, permission)
 
     @pytest.mark.parametrize("permission", sorted(CLINIC_OPERATION), ids=lambda p: p.value)
     def test_clinic_operation_needs_admin(self, permission: Permission) -> None:
