@@ -16,6 +16,7 @@ import re
 from app.core.api_errors import ApiError
 from app.dependencies.patient_access import ClinicalActor
 from app.models.catalog import MessageTemplate, MessageTemplateKind
+from app.models.visits import GuideMessageKind, GuideMessageSetting
 from app.services.patient_visit_scope import hospital_id_of
 
 #: 90바이트를 넘으면 장문(LMS)이 되어 문자 단가가 달라진다(어드민 A1-5).
@@ -64,13 +65,26 @@ def variables_in(body: str | None) -> list[str]:
     return _VARIABLE.findall(body or "")
 
 
-async def effective_body(hospital_id: int, kind: MessageTemplateKind) -> str:
+async def effective_body(
+    hospital_id: int,
+    kind: MessageTemplateKind,
+    *,
+    guide_document_id: int | None = None,
+) -> str:
     """이 의원이 **지금 이 회차로 보낼 문구** — 고친 것이 있으면 그것, 없으면 기본값.
 
     발송(`message_dispatch`)과 발송 직전 게이트(`dispatch_gate`)가 둘 다 이것을
     부른다. 두 곳이 각자 표를 읽으면 「게이트가 본 문구」와 「실제로 나간 문구」가
     갈릴 수 있는데, 그러면 게이트의 판정이 다른 글을 재고 있는 꼴이 된다.
     """
+    if guide_document_id is not None:
+        patient_setting = await GuideMessageSetting.filter(
+            guide_document_id=guide_document_id,
+            kind=GuideMessageKind(kind.value),
+        ).first()
+        if patient_setting is not None and patient_setting.body:
+            return patient_setting.body
+
     row = await MessageTemplate.filter(hospital_id=hospital_id, kind=kind).first()
     return row.body if row is not None and row.body else DEFAULT_BODY[kind]
 

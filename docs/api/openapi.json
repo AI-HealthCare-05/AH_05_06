@@ -2665,6 +2665,11 @@
             },
             "title": "Rounds",
             "type": "array"
+          },
+          "send_hour": {
+            "default": 18,
+            "title": "Send Hour",
+            "type": "integer"
           }
         },
         "required": [
@@ -2687,9 +2692,14 @@
             },
             "title": "Rounds",
             "type": "array"
+          },
+          "send_hour": {
+            "title": "Send Hour",
+            "type": "integer"
           }
         },
         "required": [
+          "send_hour",
           "check_hour",
           "rounds"
         ],

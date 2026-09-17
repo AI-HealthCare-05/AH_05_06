@@ -169,7 +169,11 @@ async def render_message_body(
     hospital = hospital or await Hospital.filter(hospital_id=guide.hospital_id).first()
 
     if body is None:
-        body = await effective_body(guide.hospital_id, MessageTemplateKind(message.kind.value))
+        body = await effective_body(
+            guide.hospital_id,
+            MessageTemplateKind(message.kind.value),
+            guide_document_id=guide.guide_document_id,
+        )
     values = {
         "의원명": hospital.name if hospital else "",
         "환자명": patient.name if patient else "",

@@ -37,11 +37,16 @@ MIGRATIONS = ROOT / "app" / "core" / "db" / "migrations"
 
 #: 이 검사만 쓰고 지우는 DB. 이름에 일감 번호를 박아 둔다 — 남의 DB 를 지우는
 #: 사고가 나면 이름부터 눈에 띄어야 한다.
-SCRATCH = "key206_upgrade_probe"
+#:
+#: 🚩 **`test_` 로 시작한다** — KEY-358. 앱 등급 계정은 아무 이름이나 못 만들고
+#: `test\_%` 패턴에만 권한이 있다(`infra/docker/initdb.d/01-test-db.sql`).
+#: 예전 이름(`key206_…`)은 그 밖이라 **로컬에서는 늘 건너뛰었고 CI(root)에서만**
+#: 돌았다. CI 를 운영과 같은 등급으로 낮추자 그 자리가 드러났다.
+SCRATCH = "test_key206_upgrade_probe"
 
 #: KEY-317 이관 검사가 쓰는 자리. **이름을 따로 둔다** — 위엣것과 나눠 쓰면
 #: 두 검사가 다른 워커에서 동시에 돌 때 서로의 DB 를 지운다.
-SCRATCH_317 = "key317_backfill_probe"
+SCRATCH_317 = "test_key317_backfill_probe"
 
 
 def _aerich(database: str, *args: str) -> subprocess.CompletedProcess[str]:
