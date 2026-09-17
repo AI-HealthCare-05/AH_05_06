@@ -3154,10 +3154,17 @@ function stateTakesFocus(tone) {
           var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
           var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
           if (anyFailed && !hasSuccess) { renderJobState(anyFailed); return; }
-          return loadAllResults(mine).then(function () {
-            if (mine !== loadSeq) return;
-            if (anyFailed) renderJobState(anyFailed);
+          var completedJobs = jobs.map(function (j) {
+            return j.status === "FAILED" ? j : Object.assign({}, j, { progress: 100 });
           });
+          renderMultiJobProgress(completedJobs);
+          setTimeout(function () {
+            if (mine !== loadSeq) return;
+            loadAllResults(mine).then(function () {
+              if (mine !== loadSeq) return;
+              if (anyFailed) renderJobState(anyFailed);
+            });
+          }, 700);
         })
         .catch(function () {
           if (mine !== loadSeq) return;
