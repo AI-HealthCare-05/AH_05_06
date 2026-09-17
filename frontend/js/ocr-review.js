@@ -377,6 +377,15 @@ function stateTakesFocus(tone) {
     return _SET_DRUG_KWS.some(function (kw) { return lower.indexOf(kw.toLowerCase()) !== -1; });
   }
 
+  /* 고른 처방 세트가 O 세트(처방 있음)인지 X 세트(처방 없음)인지 판별한다.
+     세트 이름이 공백 + "O" 로 끝나면 O, 공백 + "X" 로 끝나면 X. */
+  function isPickedSetO() {
+    return !!(pickedSet && /\sO$/.test(pickedSet.name));
+  }
+  function isPickedSetX() {
+    return !!(pickedSet && /\sX$/.test(pickedSet.name));
+  }
+
   /* 적는 **중**인 값. `local` 과 갈라 두는 이유는, 고르는 항목이 「있다」를
      고른 순간 크기 칸을 내보내려면 다시 그려야 하는데 그때 `local` 에 써
      버리면 「취소」로 되돌릴 것이 없다.
@@ -1265,11 +1274,15 @@ function stateTakesFocus(tone) {
       }
       if (!field) return "";
 
-      /* 처방 세트 대표 약이 OCR에 없으면 처방일수 셀을 숨긴다.
-         단, DURATION_DAYS에 미확정 값이 있으면 그대로 둔다 —
-         값이 있으면 generate 게이트를 막으므로 확정할 경로가 필요하다(KEY-274). */
+      /* 처방일수 셀 표시 조건:
+         - O 세트가 선택된 경우 → 표시
+         - X 세트가 선택된 경우 → 숨김 (처방 없음)
+         - 세트 미선택인 경우 → OCR에서 세트 약이 검출됐을 때만 표시
+         - DURATION_DAYS에 미확정 값이 있으면 항상 표시 (KEY-274: 게이트 차단 방지) */
       var durationNeedsConfirm = field && field.value && !field.is_confirmed;
-      if (spec.type === "DURATION_DAYS" && !anySetDrugInOcr && !durationNeedsConfirm) return "";
+      var showDuration = durationNeedsConfirm ||
+        (pickedSet ? isPickedSetO() : anySetDrugInOcr);
+      if (spec.type === "DURATION_DAYS" && !showDuration) return "";
 
       /* 약속처방은 값 줄이 아니라 **고르는 칸**이다.
          비잔 감지 여부와 무관하게 항상 드롭다운을 표시한다.
@@ -1622,9 +1635,11 @@ function stateTakesFocus(tone) {
       (rxSaying || !canSaveFields()
         ? '<span class="box__note">' + escapeHtml(rxSaying || SAVE_LOCKED) + "</span>"
         : "") +
-      '<button class="button-primary button-primary--sm" type="button" id="rx-save"' +
-      (hasSomethingToSave(true) ? "" : " disabled") +
-      ">저장</button>" +
+      (!isPickedSetX()
+        ? '<button class="button-primary button-primary--sm" type="button" id="rx-save"' +
+          (hasSomethingToSave(true) ? "" : " disabled") +
+          ">저장</button>"
+        : "") +
       "</div>" +
       topRowHtml(rows) +
       extraDrugRowsHtml(baseExtraRows.concat(extraRows)) +
