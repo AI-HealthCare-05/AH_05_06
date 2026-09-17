@@ -525,32 +525,35 @@ class TestTheApprovedWordingIsWhole:
         """등급 축이 뒤섞이지 않는다 — KEY-283.
 
         KEY-357 이후 구조:
-          Grade C (전문의 자문): caution 4 + medication O 2 + life PCOS 2 + emergency 4 = 12
-          Grade B (약사 일반):   medication X 2
-          Grade A (외부 근거):   life 자궁내막증 2 (ESHRE Guideline 2022)
+          Grade C (전문의 자문, 12칸): caution 4 + medication O 2 + life PCOS 2 + emergency 4
+          Grade C (서비스팀장 검토, 2칸): X 세트 medication — 전문의 아님
+          Grade A (외부 근거, 2칸): 자궁내막증 life ESHRE Guideline 2022
 
-        규칙:
-          - Grade C 는 반드시 전문의 이름을 달아야 한다 (외부 근거로 가장 금지)
-          - Grade A 는 전문의 이름을 달지 않아야 한다 (전문의 자문을 A로 올리기 금지)
+        규칙 (KEY-283):
+          - Grade A 는 전문의 이름을 달지 않는다 (전문의 자문을 A로 올리기 금지)
+          - Grade C 중 전문의 검토 칸과 서비스팀장 검토 칸을 혼동하지 않는다
         """
         from app.models.catalog import SourceGrade
         from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
 
         grade_c = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.C]
-        grade_b = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.B]
         grade_a = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.A]
 
-        # Grade C 는 전문의 자문 이름을 달아야 한다
-        assert all("전문의" in r.source_name for r in grade_c), "Grade C 칸에 전문의 이름이 없는 것이 있다"
         # Grade A 는 외부 기관 출처여야 한다 — 전문의 자문을 A로 올리면 안 된다
         assert all("전문의" not in r.source_name for r in grade_a), (
             "Grade A 칸에 전문의 이름이 있다 — 전문의 자문은 C 여야 한다"
         )
 
-        # KEY-357 기준 수량 고정
-        assert len(grade_c) == 12, f"Grade C: {len(grade_c)}행 (기대 12)"
-        assert len(grade_b) == 2, f"Grade B: {len(grade_b)}행 (기대 2 — X 세트 medication)"
+        # Grade C 중 전문의 검토 12칸, 서비스팀장 검토 2칸
+        grade_c_physician = [r for r in grade_c if "전문의" in r.source_name]
+        grade_c_other = [r for r in grade_c if "전문의" not in r.source_name]
+        assert len(grade_c_physician) == 12, f"전문의 Grade C: {len(grade_c_physician)}행 (기대 12)"
+        assert len(grade_c_other) == 2, f"비전문의 Grade C: {len(grade_c_other)}행 (기대 2 — X 세트 medication)"
         assert len(grade_a) == 2, f"Grade A: {len(grade_a)}행 (기대 2 — 자궁내막증 life ESHRE)"
+
+        # Grade B 없음
+        grade_b = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.B]
+        assert len(grade_b) == 0, f"Grade B: {len(grade_b)}행 (기대 0)"
 
     def test_source_grade_has_no_fixture_default(self) -> None:
         """새 문구를 넣을 때 근거 축을 판단하지 않고 A로 흘려보낼 수 없다."""

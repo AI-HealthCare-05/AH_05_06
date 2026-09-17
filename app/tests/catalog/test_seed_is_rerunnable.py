@@ -16,7 +16,6 @@
 `GuideSection.drug_caution_content_id` 가 가리키던 근거가 사라진다.
 """
 
-from collections import defaultdict
 from datetime import UTC, datetime
 
 from tortoise.contrib.test import TestCase
@@ -128,20 +127,18 @@ class SeedIsRerunnableTestCase(TestCase):
         await seed_catalog()
 
         # 세트별 기대 섹션: 픽스처에 정의된 것만 확인한다.
-        # 16 칸 모두 APPROVED — KEY-357 이희진 검토 확정(2026-09-17)으로 완성.
-        expected: dict[str, set[str]] = defaultdict(set)
-        for content_row in DRUG_CAUTION_CONTENTS:
-            expected[content_row.prescription_set_name].add(content_row.section_key.value)
-
+        # 세트마다 네 갈래(caution·emergency·medication·life) 가 모두 있어야 한다.
+        # 픽스처에서 동적으로 읽으면 칸이 빠져도 통과하므로 고정값으로 단언한다.
+        expected_sections = frozenset({"caution", "emergency", "medication", "life"})
         for row in PRESCRIPTION_SETS:
             ps = await PrescriptionSet.get(name=row.name)
-            keys = set(
+            keys = frozenset(
                 await DrugCautionContent.filter(
                     prescription_set=ps, approval_status=ApprovalStatus.APPROVED
                 ).values_list("section_key", flat=True)
             )
-            assert keys == expected[row.name], (
-                f"{row.name}: 승인 문구 {sorted(keys)} — 기대 {sorted(expected[row.name])} 와 다르다"
+            assert keys == expected_sections, (
+                f"{row.name}: 승인 문구 {sorted(keys)} — 기대 {sorted(expected_sections)} 와 다르다"
             )
 
     async def test_one_stamp_per_set_and_section(self) -> None:
@@ -161,8 +158,8 @@ class SeedIsRerunnableTestCase(TestCase):
         """같은 버전이 이미 DB에 있어도 KEY-283의 등급 정정은 반영된다."""
         await seed_catalog()
 
-        # 전문의 자문(Grade C) 행: 비잔 O 3 + 비잔 X 2 + 야즈 O 4 + 야즈 X 3 = 12.
-        # 자궁내막증 life(ESHRE, Grade A)·X 세트 medication(약사, Grade B)은 잡히지 않는다.
+        # 전문의 자문(Grade C, source_name에 「전문의」 포함) 행 = 12.
+        # ESHRE life(Grade A)·X 세트 medication(서비스 팀장 검토, 전문의 아님)은 잡히지 않는다.
         physician_rows = await DrugCautionContent.filter(source_name__contains="전문의").all()
         assert len(physician_rows) == 12
         for row in physician_rows:

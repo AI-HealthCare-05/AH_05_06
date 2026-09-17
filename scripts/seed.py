@@ -690,14 +690,31 @@ async def _sync_source_grade(content: DrugCautionContent, wanted: DrugCautionCon
     await content.save(update_fields=["source_grade", "physician_review", "updated_at"])
 
 
+# KEY-262·KEY-357 에서 교체된 구 세트 이름. 이것만 감춘다.
+# 명단 밖 ACTIVE 세트를 전부 감추면 화면에서 만든 커스텀 세트까지 사라진다.
+_LEGACY_SET_NAMES: frozenset[str] = frozenset(
+    {
+        "자궁내막증 · 비잔 (처음)",
+        "자궁내막증 · 비잔 (계속)",
+        "자궁내막증 · 통증관리",
+        "PCOS · 초진",
+        "PCOS · 초진 (야즈 불가)",
+        "PCOS · 야즈 (처음)",
+        "PCOS · 야즈 (계속)",
+        "PCOS · 야즈 + 메트포르민",
+        "PCOS · 대사관리",
+    }
+)
+
+
 async def _sync_prescription_sets() -> tuple[int, int, int]:
     """PRESCRIPTION_SETS 와 DB 를 동기화한다 — KEY-357.
 
-    - 명단에 있는 세트: get_or_create, disease·status 보정
-    - 명단에 없는 ACTIVE 세트: HIDDEN 으로 감춘다 (삭제 금지 — RESTRICT 제약)
+    - 명단에 있는 세트: get_or_create, disease 보정
+    - _LEGACY_SET_NAMES 에 속한 ACTIVE 세트: HIDDEN + hidden_at 기록
+      (화면에서 만든 커스텀 세트는 건드리지 않는다)
     반환값: (created, fixed, hidden)
     """
-    active_names = {row.name for row in PRESCRIPTION_SETS}
     created = fixed = 0
 
     for row in PRESCRIPTION_SETS:
@@ -709,14 +726,12 @@ async def _sync_prescription_sets() -> tuple[int, int, int]:
             found.disease = row.disease
             await found.save(update_fields=["disease", "updated_at"])
             fixed += 1
-        if found.status != SetStatus.ACTIVE:
-            found.status = SetStatus.ACTIVE
-            await found.save(update_fields=["status", "updated_at"])
 
     hidden = 0
-    async for ps in PrescriptionSet.filter(status=SetStatus.ACTIVE).exclude(name__in=active_names):
+    async for ps in PrescriptionSet.filter(name__in=_LEGACY_SET_NAMES, status=SetStatus.ACTIVE):
         ps.status = SetStatus.HIDDEN
-        await ps.save(update_fields=["status", "updated_at"])
+        ps.hidden_at = now()
+        await ps.save(update_fields=["status", "hidden_at", "updated_at"])
         hidden += 1
         print(f"[catalog] prescription_set hidden: {ps.name!r} (id={ps.prescription_set_id})")
 

@@ -63,10 +63,9 @@ function copyIsMine(section) {
    구역이 아니라 장을 센다: 원문이 「조각을 하나씩 승인하게 하면 확인할 것이
    54개가 되지만 약 단위로 묶으면 5장이면 끝난다」고 적는다. */
 function copyProgress(items) {
-  var rows = items || [];
-  var done = rows.filter(function (row) {
-    return row.reviewed;
-  }).length;
+  /* **감춘 세트는 세지 않는다.** 감춘 세트까지 세면 서버에서는 「0/12」처럼 보인다. */
+  var rows = (items || []).filter(function (row) { return !row.hidden; });
+  var done = rows.filter(function (row) { return row.reviewed; }).length;
   return { done: done, total: rows.length, say: done + "/" + rows.length };
 }
 
