@@ -422,7 +422,11 @@ class TestEveryVisitPointsAtASetThatExists:
         known = {row.name for row in PRESCRIPTION_SETS}
         used = {r["처방세트"].strip() for r in ROWS if r["처방세트"].strip()}
 
-        unused = sorted(known - used)
+        # KEY-357: X 세트(비잔 X·야즈 X)는 「약 미처방」 신규 축이라 합성 데이터에
+        # 역사적 진료가 없다 — 화면 드롭다운에는 표시되어야 하므로 카탈로그에는 남긴다.
+        # docs/synthetic-data-spec.md §6-2 「(구: 없음 — 新 축)」 참고.
+        new_axis_sets = {row.name for row in PRESCRIPTION_SETS if row.name.endswith(" X")}
+        unused = sorted((known - used) - new_axis_sets)
         assert not unused, f"어느 진료도 안 쓰는 세트: {unused}"
 
     def test_every_set_carries_its_wording(self) -> None:
@@ -518,17 +522,37 @@ class TestTheApprovedWordingIsWhole:
         assert not missing, f"승인 정본이 없는 칸: {missing}"
 
     def test_physician_templates_and_external_evidence_use_separate_axes(self) -> None:
-        """전문의 승인 정본 12칸을 외부 근거 A등급으로 가장하지 않는다(KEY-283)."""
-        from app.models.catalog import CautionSectionKey, SourceGrade
+        """등급 축이 뒤섞이지 않는다 — KEY-283.
+
+        KEY-357 이후 구조:
+          Grade C (전문의 자문): caution 4 + medication O 2 + life PCOS 2 + emergency 4 = 12
+          Grade B (약사 일반):   medication X 2
+          Grade A (외부 근거):   life 자궁내막증 2 (ESHRE Guideline 2022)
+
+        규칙:
+          - Grade C 는 반드시 전문의 이름을 달아야 한다 (외부 근거로 가장 금지)
+          - Grade A 는 전문의 이름을 달지 않아야 한다 (전문의 자문을 A로 올리기 금지)
+        """
+        from app.models.catalog import SourceGrade
         from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
 
-        physician_rows = [row for row in DRUG_CAUTION_CONTENTS if row.section_key is not CautionSectionKey.EMERGENCY]
-        emergency_rows = [row for row in DRUG_CAUTION_CONTENTS if row.section_key is CautionSectionKey.EMERGENCY]
+        grade_c = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.C]
+        grade_b = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.B]
+        grade_a = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.A]
 
-        assert len(physician_rows) == 12
-        assert all(row.source_grade is SourceGrade.C and "전문의" in row.source_name for row in physician_rows)
-        assert len(emergency_rows) == 4
-        assert all(row.source_grade is SourceGrade.A for row in emergency_rows)
+        # Grade C 는 전문의 자문 이름을 달아야 한다
+        assert all("전문의" in r.source_name for r in grade_c), (
+            "Grade C 칸에 전문의 이름이 없는 것이 있다"
+        )
+        # Grade A 는 외부 기관 출처여야 한다 — 전문의 자문을 A로 올리면 안 된다
+        assert all("전문의" not in r.source_name for r in grade_a), (
+            "Grade A 칸에 전문의 이름이 있다 — 전문의 자문은 C 여야 한다"
+        )
+
+        # KEY-357 기준 수량 고정
+        assert len(grade_c) == 12, f"Grade C: {len(grade_c)}행 (기대 12)"
+        assert len(grade_b) == 2,  f"Grade B: {len(grade_b)}행 (기대 2 — X 세트 medication)"
+        assert len(grade_a) == 2,  f"Grade A: {len(grade_a)}행 (기대 2 — 자궁내막증 life ESHRE)"
 
     def test_source_grade_has_no_fixture_default(self) -> None:
         """새 문구를 넣을 때 근거 축을 판단하지 않고 A로 흘려보낼 수 없다."""
