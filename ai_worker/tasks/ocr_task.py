@@ -134,6 +134,8 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         while True:
             try:
                 await _check_retry_allowed(ocr_job_id, retry_count)
+                job.progress = 30
+                await OcrJob.filter(ocr_job_id=ocr_job_id, status=OcrJobStatus.PROCESSING).update(progress=30)
                 clova_results = await _call_clova_for_documents(job, job_documents, doc_map)
                 clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
                 missing = await _save_clova_result(job, job_documents, clova_results, lab_kw)
@@ -226,7 +228,7 @@ async def _call_clova_for_documents(
 
     파일별 OcrJob 구조(옵션 A)에서 job_documents는 항상 1개다.
     파일마다 CLOVA 완료 시 job.progress를 단계적으로 업데이트한다.
-    CLOVA 완료 구간은 0~70%, DB 저장 완료는 100% (_save_clova_result 담당).
+    CLOVA 완료 구간은 30~50%, DB 저장 완료는 100% (_save_clova_result 담당).
     """
     if len(job_documents) != 1:
         raise RuntimeError(
@@ -244,7 +246,7 @@ async def _call_clova_for_documents(
         except ClovaOcrError as exc:
             raise ClovaOcrError(exc.code, str(exc), elapsed_ms=exc.elapsed_ms) from exc
         results[jd.document_id] = result
-        job.progress = round(len(results) / total * 70)
+        job.progress = 30 + round(len(results) / total * 20)
         await OcrJob.filter(ocr_job_id=job.ocr_job_id, status=OcrJobStatus.PROCESSING).update(progress=job.progress)
     return results
 
@@ -306,12 +308,12 @@ async def _save_clova_result(
     # Phase 1: 필드 추출 — 트랜잭션 밖에서 수행해 불필요한 롤백 방지
     fields_by_doc, emr_field_types, has_emr = _extract_fields_per_doc(job_documents, clova_results, lab_keywords)
 
-    # Phase 2: 필드 추출 완료 진행률 기록 (대기→파일 판독→필드 추출→저장→완료 중 세 번째 단계)
-    # CLOVA 완료 구간(0~70%)과 저장 완료(100%) 사이에 명시적 단계를 두어
-    # 장시간 문서에서 진행 단계가 2회 이상 갱신되는 것을 보장한다.
-    # 의도적으로 트랜잭션 밖에서 저장 — 롤백 시 PROCESSING+80으로 남지만
+    # Phase 2: 필드 추출 완료 진행률 기록 (30%→50%→70%→100% 흐름 중 세 번째 단계)
+    # CLOVA 완료(50%)와 저장 완료(100%) 사이에 명시적 단계를 두어
+    # 진행 단계가 2회 이상 갱신되는 것을 보장한다.
+    # 의도적으로 트랜잭션 밖에서 저장 — 롤백 시 PROCESSING+70으로 남지만
     # except 경로의 _mark_failed가 progress=0으로 self-heal한다.
-    job.progress = 80
+    job.progress = 70
     await OcrJob.filter(ocr_job_id=job.ocr_job_id, status=OcrJobStatus.PROCESSING).update(progress=job.progress)
 
     # Phase 3: EMR이 포함된 경우 못 읽은 필수 필드를 센다 (KEY-163 §4)
