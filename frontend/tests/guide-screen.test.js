@@ -445,19 +445,23 @@ test("**「문자 설정」은 다른 화면이다** — 원문·미리보기 �
   assert.ok(!med.includes("확인 문자"), "복약지도 탭에 회차가 샜다");
 });
 
-test("**일주일 뒤는 켜진 채로 그려진다** — 끌 수 없는 회차다", () => {
+test("**진료 당일 안내문은 켜진 채로 그려지고 일주일 뒤는 끌 수 있다**", () => {
   const { smsLeftHtml } = load("api", "session", "sms-plan", "patient-guide-cards", "patient-link-view", "guide-view");
   const html = smsLeftHtml({ startIso: "2026-08-13", picked: "d7", on: {} });
 
   /* `on` 이 비어 있어도 일주일 뒤는 켜져야 한다.
      **켜짐을 `aria-pressed` 로 본다** — 글자 ☑ 를 앞뒤 몇 자로 찾으면
      마크업이 조금만 바뀌어도 헛돈다(그렇게 한 번 깨졌다). */
-  const at = html.indexOf('data-sms-toggle="d7"');
-  assert.notEqual(at, -1, "일주일 뒤 켜고 끄기가 없다");
+  const at = html.indexOf('data-sms-toggle="guide"');
+  assert.notEqual(at, -1, "진료 당일 안내문 켜고 끄기가 없다");
   const tag = html.slice(at, html.indexOf(">", at));
-  assert.ok(tag.includes('aria-pressed="true"'), "일주일 뒤가 꺼진 채로 그려졌다");
-  assert.ok(tag.includes('aria-disabled="true"'), "일주일 뒤를 끌 수 있게 두었다");
+  assert.ok(tag.includes('aria-pressed="true"'), "진료 당일 안내문이 꺼진 채로 그려졌다");
+  assert.ok(tag.includes('aria-disabled="true"'), "진료 당일 안내문을 끌 수 있게 두었다");
   assert.ok(html.includes("(고정)"), "고정이라는 것을 안 밝힌다");
+
+  const d7At = html.indexOf('data-sms-toggle="d7"');
+  const d7Tag = html.slice(d7At, html.indexOf(">", d7At));
+  assert.ok(!d7Tag.includes('aria-disabled="true"'), "일주일 뒤를 끌 수 없다");
 });
 
 test("**미리보기는 치환된 실제 발송본이다**", () => {

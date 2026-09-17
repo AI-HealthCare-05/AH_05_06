@@ -611,7 +611,8 @@ function mockScheduledAt() {
    보이는 화면이 생긴다 (`app/services/guides.py` 의 `_DEFAULT_ON`). */
 var MOCK_PLANS = {};
 var MOCK_PLAN_DEFAULT = [
-  { kind: "CHECK_D7", enabled: true, body: null, days_before: null, fixed: true },
+  { kind: "GUIDE", enabled: true, body: null, days_before: null, fixed: true },
+  { kind: "CHECK_D7", enabled: true, body: null, days_before: null, fixed: false },
   { kind: "CHECK_D15", enabled: true, body: null, days_before: null, fixed: false },
   { kind: "CHECK_D30", enabled: false, body: null, days_before: null, fixed: false },
   { kind: "RUN_OUT", enabled: true, body: null, days_before: 3, fixed: false },
@@ -619,13 +620,14 @@ var MOCK_PLAN_DEFAULT = [
 
 function mockPlan(visitId) {
   var saved = MOCK_PLANS[visitId];
-  if (!saved) return { check_hour: 10, rounds: MOCK_PLAN_DEFAULT.slice() };
+  if (!saved) return { send_hour: 18, check_hour: 10, rounds: MOCK_PLAN_DEFAULT.slice() };
 
   var fixedOf = {};
   MOCK_PLAN_DEFAULT.forEach(function (r) {
     fixedOf[r.kind] = r.fixed;
   });
   return {
+    send_hour: saved.send_hour,
     check_hour: saved.check_hour,
     rounds: (saved.rounds || []).map(function (r) {
       return {
