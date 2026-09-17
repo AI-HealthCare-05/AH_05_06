@@ -584,15 +584,29 @@ function smsLeftHtml(plan) {
   var noticeIso = smsRunOutNotice(runOutIso, before);
 
   var rounds = SMS_ROUNDS.map(function (r) {
-    /* 일주일 뒤는 끌 수 없다 — 켜짐이 아니라 **고정**이다 */
+    /* 진료 당일 안내문은 링크를 전달하므로 고정이다. */
     var on = r.fixed || (plan.on || {})[r.key] === true;
     return smsRoundRow(r, startIso, on, plan.picked === r.key);
   }).join("");
 
   return (
     '<section class="sms__card">' +
-    '<h3 class="sms__title">확인 문자 <span class="sms__sub">· 처방 세트 기본값 · 이 환자만 바꾼다</span></h3>' +
+    '<h3 class="sms__title">문자 설정 <span class="sms__sub">· 처방 세트 기본값 · 이 환자만 바꾼다</span></h3>' +
     rounds +
+    '<p class="sms__note">진료 당일 안내문 시각 ' +
+    '<select class="sms__time" data-sms-send-at aria-label="진료 당일 안내문 시각">' +
+    SMS_TIMES.map(function (t) {
+      return (
+        '<option value="' +
+        esc(t.key) +
+        '"' +
+        (t.key === (plan.sendAt || "18:00") ? " selected" : "") +
+        ">" +
+        esc(t.label) +
+        "</option>"
+      );
+    }).join("") +
+    "</select> — 승인 전에만 바꿀 수 있습니다</p>" +
     '<p class="sms__note">확인 문자 시각 ' +
     '<select class="sms__time" data-sms-at aria-label="확인 문자 시각">' +
     SMS_TIMES.map(function (t) {
@@ -607,7 +621,8 @@ function smsLeftHtml(plan) {
       );
     }).join("") +
     "</select>" +
-    " — 확인 · 재진 문자에 적용 · 안내문은 승인 시각(기본 18:00) 규칙을 따릅니다</p>" +
+    " — 확인 · 재진 문자에 적용</p>" +
+    '<p class="sms__note">일주일 뒤 문자를 끄면 D+7 복약·통증 확인 링크가 발송되지 않습니다.</p>' +
     "</section>" +
     '<section class="sms__card">' +
     '<h3 class="sms__title">소진 임박 안내</h3>' +
@@ -660,7 +675,7 @@ function smsRightHtml(plan) {
     '<h3 class="sms__title">문구</h3>' +
     '<span class="sms__tpl">' +
     esc(round.label) +
-    " 확인 · 기본 템플릿</span>" +
+    (round.key === "guide" ? " · 기본 템플릿</span>" : " 확인 · 기본 템플릿</span>") +
     '<span class="sms__bytes' +
     (kind.long ? " is-long" : "") +
     '">' +
@@ -703,7 +718,10 @@ function smsRightHtml(plan) {
     '<h3 class="sms__title">미리보기 <span class="sms__sub">· 환자 화면에 이렇게 갑니다</span></h3>' +
     '<div class="sms__phone">' +
     '<p class="sms__meta">' +
-    esc((plan.phone || "") + (whenIso ? " · " + smsWhen(whenIso) + " " + smsTimeLabel(plan.at) : "")) +
+    esc(
+      (plan.phone || "") +
+        (whenIso ? " · " + smsWhen(whenIso) + " " + smsTimeLabel(round.key === "guide" ? plan.sendAt : plan.at) : "")
+    ) +
     "</p>" +
     '<p class="sms__bubble">' +
     esc(filled) +
@@ -751,10 +769,11 @@ var guideSmsState = null;
     저장한 뒤 다시 읽을 때 보던 문구가 첫 회차로 튀면 안 된다. */
 function smsAdopt(plan) {
   var next = smsPlanFromServer(plan);
-  var picked = (guideSmsState && guideSmsState.picked) || "d7";
+  var picked = (guideSmsState && guideSmsState.picked) || "guide";
   guideSmsState = {
     picked: picked,
     on: next.on,
+    sendAt: next.sendAt,
     at: next.at,
     runOutOn: next.runOutOn !== false,
     runOutBefore: next.runOutBefore,
@@ -766,8 +785,9 @@ function smsAdopt(plan) {
 function smsStateNow(seed) {
   if (!guideSmsState) {
     guideSmsState = {
-      picked: "d7",
-      on: { d15: true },
+      picked: "guide",
+      on: { d7: true, d15: true },
+      sendAt: "18:00",
       at: "10:00",
       runOutOn: true,
       runOutBefore: 3,
@@ -784,6 +804,7 @@ function smsStateNow(seed) {
     values: base.values || {},
     picked: st.picked,
     on: st.on,
+    sendAt: st.sendAt,
     at: st.at,
     runOutOn: st.runOutOn !== false,
     runOutBefore: st.runOutBefore,
@@ -800,6 +821,9 @@ function smsStateNow(seed) {
 
 /** 회차별 기본 문구. 「이 환자만 적용」 > 의원 템플릿 > 기본 — 지금은 기본뿐이다. */
 function smsDefaultText(key) {
+  if (key === "guide") {
+    return "[{의원명}] {환자명}님, 오늘 진료 안내입니다. {만료일}까지 보실 수 있어요: {링크}";
+  }
   var r = smsRoundOf(key);
   var days = r ? r.days : 7;
   return "{환자명}님, 복약 " + days + "일째 확인입니다. 잘 드시고 계신가요? {링크}";
@@ -897,8 +921,10 @@ function wireSmsSettings(opts) {
 
   document.addEventListener("change", function (event) {
     var t = event.target;
-    if (!t || !t.hasAttribute || !t.hasAttribute("data-sms-at")) return;
-    state().at = t.value;
+    if (!t || !t.hasAttribute) return;
+    if (t.hasAttribute("data-sms-send-at")) state().sendAt = t.value;
+    else if (t.hasAttribute("data-sms-at")) state().at = t.value;
+    else return;
     reRender();
   });
 }
@@ -941,12 +967,6 @@ function sendWhenText(iso, now) {
  *   view.scheduledAt  승인이 잡아 둔 발송 시각 (서버가 준 `scheduled_at`)
  *   view.name         환자 이름
  *   view.now          지금 (검사용. 안 주면 진짜 지금)
- *
- * **없는 발송을 약속하지 않는다.** 원문은 「자동 발송됩니다」라고 적지만, 이
- * 저장소에는 아직 문자를 보내는 것이 없다 — `GuideMessage` 를 `SENT` 로 바꾸는
- * 코드가 검사 밖에 없다. 원장님이 그 문장만 읽고 「환자에게 갔다」고 믿으면,
- * 안 간 것을 갔다고 아는 상태가 된다. 원문 문구는 그대로 두고 **아직 없는
- * 것만** 아래에 덧붙인다 (`KEY-148` §6 · `KEY-160` 이 정한 방식이다).
  */
 function approvedModalHtml(view) {
   var name = (view && view.name) || "";
@@ -965,7 +985,6 @@ function approvedModalHtml(view) {
     "<span>발송 실패 시 알림 창에서 확인할 수 있습니다</span>" +
     "<span>문자 잔량 · 발신번호 문제는 실패 처리하지 않고 발송 대기합니다</span>" +
     "</div>" +
-    '<p class="modal__note">[demo] 문자 발송기는 아직 붙지 않았습니다 — 지금 승인은 <b>발송 예약까지</b>입니다.</p>' +
     '<div class="modal__acts">' +
     '<button class="button-ghost" type="button" data-go-status>현황 보기</button>' +
     '<button class="button-primary" type="button" data-close>닫기</button>' +

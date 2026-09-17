@@ -89,7 +89,11 @@ async def evaluate_dispatch_gate(
         )
 
     #: **여기서 한 번만 읽는다.** 아래 판정도, 발송의 렌더도 이 값을 쓴다.
-    body = await effective_body(guide.hospital_id, MessageTemplateKind(message.kind.value))
+    body = await effective_body(
+        guide.hospital_id,
+        MessageTemplateKind(message.kind.value),
+        guide_document_id=guide.guide_document_id,
+    )
     hospital = await Hospital.filter(hospital_id=guide.hospital_id).first()
 
     if not _booking_url_is_ready(body, hospital):

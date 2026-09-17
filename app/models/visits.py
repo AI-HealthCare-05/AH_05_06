@@ -165,11 +165,12 @@ class GuideDocument(models.Model):
     #: 이력은 GuideEvent 에 그대로 있다.
     returned_reason = fields.CharField(max_length=200, null=True)
 
-    #: 확인 문자를 몇 시에 보낼지 (와이어프레임 S1-14 「확인 문자 시각」).
+    #: 진료 당일 안내문을 몇 시에 보낼지. 환자별로 저장하며 승인 전에만 바꾼다.
     #: 회차마다 따로 두지 않는 이유는 **화면에 고르는 자리가 하나**이기
     #: 때문이다 — 원문 주석: 「확인 · 재진 문자에 적용」. 회차별로 담아 두면
     #: 화면이 못 만드는 상태(회차마다 다른 시각)를 표가 허용하게 된다.
-    #: 안내문 자신은 이 값을 따르지 않는다 — 승인 시각 규칙(기본 18:00)이다.
+    send_hour = fields.SmallIntField(default=18)
+    #: 확인 문자를 몇 시에 보낼지 (와이어프레임 S1-14 「확인 문자 시각」).
     check_hour = fields.SmallIntField(default=10)
 
     created_at = fields.DatetimeField(auto_now_add=True)

@@ -63,11 +63,12 @@ test("**일주일 뒤는 고정이다** — 「필요하면 켜세요」로 두�
   const { SMS_ROUNDS } = box();
 
   const byKey = Object.fromEntries(SMS_ROUNDS.map((r) => [r.key, r]));
-  assert.equal(byKey.d7.fixed, true, "일주일 뒤를 끌 수 있다 — 가장 잘 끊기는 구간이다");
+  assert.equal(byKey.guide.fixed, true, "진료 당일 안내문은 링크 발송 회차라 고정이다");
+  assert.equal(byKey.d7.fixed, false, "일주일 뒤는 환자별로 끌 수 있어야 한다");
   assert.equal(byKey.d15.fixed, false);
   assert.equal(byKey.d30.fixed, false);
 
-  assert.deepEqual(SMS_ROUNDS.map((r) => r.days), [7, 15, 30], "회차가 와이어프레임과 다르다");
+  assert.deepEqual(SMS_ROUNDS.map((r) => r.days), [0, 7, 15, 30], "회차가 와이어프레임과 다르다");
 });
 
 /* ── 몇 바이트인가 ──────────────────────────────────────────────────── */
@@ -142,11 +143,11 @@ test("**바이트 규칙을 와이어프레임 숫자에 맞추려 비틀지 않
 
 /* ── 켜고 끄기 ──────────────────────────────────────────────────────── */
 
-test("**일주일 뒤는 눌러도 안 꺼진다** — 끄는 시늉을 하면 껐다고 믿는다", () => {
+test("**진료 당일 안내문은 눌러도 안 꺼진다** — 링크 발송 회차다", () => {
   const { smsToggled, smsRoundOn } = box();
 
-  const after = smsToggled({ on: {} }, "d7");
-  assert.equal(smsRoundOn({ on: after }, "d7"), true, "고정 회차가 꺼졌다");
+  const after = smsToggled({ on: {} }, "guide");
+  assert.equal(smsRoundOn({ on: after }, "guide"), true, "고정 회차가 꺼졌다");
 
   /* **상태에도 손대지 않아야 한다.** `smsRoundOn` 이 `fixed` 로 덮어써서
      겉으로는 같아 보이지만, 지도에 `d7: false` 가 남으면 그것을 읽는 다음
@@ -154,7 +155,7 @@ test("**일주일 뒤는 눌러도 안 꺼진다** — 끄는 시늉을 하면 �
   assert.deepEqual(after, {}, `고정 회차를 눌렀는데 상태가 바뀌었다: ${JSON.stringify(after)}`);
 
   /* 이미 켜져 있던 것을 눌러도 마찬가지다 */
-  assert.deepEqual(smsToggled({ on: { d7: true } }, "d7"), { d7: true });
+  assert.deepEqual(smsToggled({ on: { guide: true } }, "guide"), { guide: true });
 });
 
 test("나머지는 켜고 꺼진다", () => {
@@ -178,8 +179,9 @@ test("**원래 것을 고치지 않는다** — 무엇이 바뀌었는지 알 �
 test("**못 끄는 회차를 누르면 왜인지 말한다** — 아무 반응 없으면 고장으로 읽힌다", () => {
   const { smsFixedSaying } = box();
 
-  assert.match(smsFixedSaying("d7"), /끌 수 없습니다/);
-  assert.match(smsFixedSaying("d7"), /첫 주/, "왜 고정인지 안 말한다");
+  assert.match(smsFixedSaying("guide"), /끌 수 없습니다/);
+  assert.match(smsFixedSaying("guide"), /안내 링크/, "왜 고정인지 안 말한다");
+  assert.equal(smsFixedSaying("d7"), "", "일주일 뒤는 끌 수 있어야 한다");
   assert.equal(smsFixedSaying("d15"), "", "끌 수 있는 회차에도 말한다");
 });
 
