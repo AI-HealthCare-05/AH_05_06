@@ -67,11 +67,16 @@ test('GuideFooter가 도움말 영역(👍·👎)과 오류 신고를 모두 옵
   assert.match(footerSource, /guide-footer__thumb/);
 });
 
-test('관리 보조 탭은 발송 이력 바로 뒤에서 기존 환자 피드백 화면으로 이동한다', () => {
+test('관리 보조 탭은 발송 이력 바로 뒤에 있고, 이제 별도 페이지가 아니라 같은 쉘의 탭이다', () => {
   const historyAt = manageMarkup.indexOf('발송 이력');
   const feedbackAt = manageMarkup.indexOf('환자 피드백', historyAt);
   assert.ok(historyAt !== -1 && feedbackAt > historyAt);
-  assert.match(manageMarkup.slice(historyAt, feedbackAt + 20), /href="\/admin-feedback\.html"/);
+  // 2heej 리뷰(2차) — 별도 페이지 링크였을 때는 공용 쉘(로고·상단
+  // 네비게이션)을 벗어나고 돌아올 방법이 없었다. 이제 다른 탭들과 같은
+  // data-view 버튼이라 같은 pane 안에서 전환된다.
+  const between = manageMarkup.slice(historyAt, feedbackAt + 20);
+  assert.doesNotMatch(between, /href="\/admin-feedback\.html"/);
+  assert.match(between, /data-view="feedback"/);
 });
 
 test('기존 피드백 화면은 staff·doctor·admin 모두 진입할 수 있다', () => {

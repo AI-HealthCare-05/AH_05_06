@@ -140,16 +140,38 @@
             >
               발송 이력
             </button>
-            <a
+            <button
               class="tab"
+              type="button"
               role="tab"
+              data-view="feedback"
               aria-selected="false"
-              href="/admin-feedback.html"
             >
               환자 피드백
-            </a>
+            </button>
           </div>
           <span class="send-top__grow"></span>
+          <div class="pane-top__tools" id="feedback-top" hidden>
+            <label class="sr-only" for="feedback-target-filter">대상</label>
+            <select id="feedback-target-filter">
+              <option value="">대상 전체</option>
+              <option value="CHATBOT_RESPONSE">챗봇 답변</option>
+              <option value="GUIDE_SECTION">안내 내용</option>
+            </select>
+            <label class="sr-only" for="feedback-category-filter">유형</label>
+            <select id="feedback-category-filter">
+              <option value="">유형 전체</option>
+              <option value="HELPFUL">도움됨</option>
+              <option value="UNHELPFUL">도움 안 됨</option>
+              <option value="WRONG">안내와 다름</option>
+              <option value="HARD_TO_UNDERSTAND">이해하기 어려움</option>
+              <option value="UNSAFE">부적절한 의료 안내</option>
+              <option value="OTHER">기타</option>
+            </select>
+            <button type="button" id="feedback-page-prev">이전</button>
+            <span id="feedback-page-label"></span>
+            <button type="button" id="feedback-page-next">다음</button>
+          </div>
           <div class="pane-top__tools" id="roster-top" hidden>
             <label class="sr-only" for="roster-search">환자 검색</label>
             <input
@@ -241,6 +263,7 @@
     <script src="/js/history-rules.js"></script>
     <script src="/js/patient-guide-cards.js"></script>
     <script src="/js/messages-api.js"></script>
+    <script src="/js/admin-feedback-api.js"></script>
     <script src="/js/manage.js"></script>
   </body>
 </html>

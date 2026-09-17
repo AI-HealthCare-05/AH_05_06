@@ -22,6 +22,14 @@
   var page = null;
   var saying = "불러오는 중…";
   var downloading = false;
+  /* 환자 피드백 — KEY-361(2heej 리뷰). 별도 페이지(admin-feedback.html)
+     대신 이 쉘 안의 네 번째 탭으로 둔다 — 기존 목록·상세 API를 그대로
+     재사용하고, 렌더링만 이 파일의 view 전환 패턴에 맞춘다. */
+  var feedbackPage = 1;
+  var feedbackPageSize = 20;
+  var feedbackTotal = 0;
+  var feedbackTarget = "";
+  var feedbackCategory = "";
   /* **여기 이름을 지역 변수와 겹치지 않게 둔다.** 기간 핸들러 안에서
      `var chosen` 을 다시 선언했더니 고른 칩이 그 안에 갇혔다 — 이 저장소에서
      `picked` 로 한 번 겪은 함정이다.
@@ -499,7 +507,41 @@
     schedule: "발송 예정인 문자가 없습니다",
   };
 
+  function feedbackCategoryLabel(category) {
+    var labels = {
+      HELPFUL: "도움됨", UNHELPFUL: "도움 안 됨", WRONG: "안내와 다름",
+      HARD_TO_UNDERSTAND: "이해하기 어려움", UNSAFE: "부적절한 의료 안내", OTHER: "기타",
+    };
+    return labels[category] || category;
+  }
+
+  function feedbackTableHtml() {
+    var items = (page && page.items) || [];
+    if (!items.length) {
+      return '<p class="send__blank">' + esc(saying || "접수된 피드백이 없습니다") + "</p>";
+    }
+    return (
+      '<div class="table-wrap"><table class="past send"><thead><tr>' +
+      "<th>접수 시각</th><th>진료</th><th>화면</th><th>유형</th><th>상세</th>" +
+      "</tr></thead><tbody>" +
+      items
+        .map(function (item) {
+          return (
+            '<tr tabindex="0" data-feedback-id="' + item.feedback_id + '">' +
+            "<td>" + esc(new Date(item.created_at).toLocaleString("ko-KR")) + "</td>" +
+            "<td>#" + item.visit_id + "</td>" +
+            "<td>" + (item.target === "CHATBOT_RESPONSE" ? "챗봇 답변" : "안내 내용") + "</td>" +
+            "<td>" + esc(feedbackCategoryLabel(item.category)) + "</td>" +
+            "<td>" + (item.has_details ? "내용 있음" : "—") + "</td></tr>"
+          );
+        })
+        .join("") +
+      "</tbody></table></div>"
+    );
+  }
+
   function tableHtml() {
+    if (view === "feedback") return feedbackTableHtml();
     var given = (page && page.items) || [];
     /* **환자 관리는 서버가 준 차례 그대로 그린다.** 여기서 다시 세우면
        다음 쪽이 앞 쪽과 겹치거나 빠진다 — 커서가 서버 차례를 따라간다. */
@@ -552,7 +594,8 @@
     /* 갈래마다 그 줄의 도구가 다르다 — 환자 관리는 검색과 등록, 나머지 둘은
        기간. 한 자리에서 갈아 끼우면 줄이 흔들리지 않는다. */
     el("roster-top").hidden = view !== "roster";
-    el("period-top").hidden = view === "roster";
+    el("feedback-top").hidden = view !== "feedback";
+    el("period-top").hidden = view === "roster" || view === "feedback";
 
     var period = el("period");
     period.textContent = view === "history" ? rangeSaying(range()) : "";
@@ -565,7 +608,9 @@
           ? page
             ? scheduleSummary(page.counts, days)
             : ""
-          : historySummary(page);
+          : view === "feedback"
+            ? (feedbackTotal ? "총 " + feedbackTotal + "건" : "")
+            : historySummary(page);
 
     var pager = el("roster-page");
     var paging = pager && view === "roster" && page && page.roster
@@ -591,6 +636,13 @@
     el("note-schedule").hidden = view !== "schedule";
     el("note-history").hidden = view !== "history";
 
+    if (view === "feedback") {
+      var feedbackLastPage = Math.max(1, Math.ceil(feedbackTotal / feedbackPageSize));
+      el("feedback-page-label").textContent = feedbackPage + " / " + feedbackLastPage;
+      el("feedback-page-prev").disabled = feedbackPage <= 1;
+      el("feedback-page-next").disabled = feedbackPage >= feedbackLastPage;
+    }
+
     var tabs = document.querySelectorAll("#tabs .tab");
     for (var i = 0; i < tabs.length; i++) {
       var name = tabs[i].getAttribute("data-view");
@@ -603,6 +655,36 @@
   /* 그리는 것도 부르는 것도 `js/history-modal.js` 한 곳이다 — 현황 탭도
      같은 것을 쓴다 (KEY-329). 두 벌이면 한쪽만 고쳐지고, 어느 화면에서
      봤느냐로 같은 환자의 이력이 갈린다. */
+  function feedbackDetailRow(label, value) {
+    return "<dt>" + esc(label) + "</dt><dd>" + esc(value == null || value === "" ? "—" : value) + "</dd>";
+  }
+
+  function openFeedbackDetail(feedbackId) {
+    previewVersion += 1;
+    resendVersion += 1;
+    el("modal-body").innerHTML =
+      '<div class="modal__acts"><button class="button-ghost" type="button" data-close>닫기</button></div>' +
+      '<h2>피드백 상세</h2><p id="feedback-detail-state">불러오는 중…</p><dl id="feedback-detail-fields"></dl>';
+    el("modal").hidden = false;
+    getPatientFeedback(feedbackId)
+      .then(function (item) {
+        el("feedback-detail-state").textContent = "";
+        el("feedback-detail-fields").innerHTML =
+          feedbackDetailRow("접수 시각", new Date(item.created_at).toLocaleString("ko-KR")) +
+          feedbackDetailRow("진료 ID", "#" + item.visit_id) +
+          feedbackDetailRow("대상", item.target === "CHATBOT_RESPONSE" ? "챗봇 답변" : "안내 내용") +
+          feedbackDetailRow("화면", item.source_screen) +
+          feedbackDetailRow("유형", feedbackCategoryLabel(item.category)) +
+          feedbackDetailRow("안내 위치", item.content_key) +
+          feedbackDetailRow("작성 당시 탭", item.detected_tab) +
+          feedbackDetailRow("상세 내용", item.details);
+      })
+      .catch(function () {
+        el("feedback-detail-state").setAttribute("role", "alert");
+        el("feedback-detail-state").textContent = "상세 내용을 불러오지 못했습니다.";
+      });
+  }
+
   function openHistory(patientId) {
     previewVersion += 1;
     resendVersion += 1;
@@ -737,11 +819,19 @@
         ? patientsApi.roster(keyword, chosen, ROSTER_PAGE, rosterOffset, rosterSort)
         : view === "schedule"
           ? messagesApi.scheduled(days)
-          : messagesApi.history(range());
+          : view === "feedback"
+            ? listPatientFeedback({
+                page: feedbackPage,
+                pageSize: feedbackPageSize,
+                target: feedbackTarget,
+                category: feedbackCategory,
+              })
+            : messagesApi.history(range());
     return asked
       .then(function (data) {
         page = data;
         saying = "";
+        if (view === "feedback") feedbackTotal = data.total;
         render();
       })
       .catch(function (error) {
@@ -774,6 +864,30 @@
     if (!el("modal").hidden) closeHistory();
     view = name;
     rosterOffset = 0; //: 갈래를 바꾸면 첫 쪽부터 (KEY-303)
+    if (name === "feedback") feedbackPage = 1;
+    load();
+  });
+
+  /* 환자 피드백 — 대상·유형을 바꾸면 첫 쪽부터 다시 묻는다. */
+  el("feedback-target-filter").addEventListener("change", function (event) {
+    feedbackTarget = event.target.value;
+    feedbackPage = 1;
+    load();
+  });
+  el("feedback-category-filter").addEventListener("change", function (event) {
+    feedbackCategory = event.target.value;
+    feedbackPage = 1;
+    load();
+  });
+  el("feedback-page-prev").addEventListener("click", function () {
+    if (feedbackPage <= 1) return;
+    feedbackPage -= 1;
+    load();
+  });
+  el("feedback-page-next").addEventListener("click", function () {
+    var lastPage = Math.max(1, Math.ceil(feedbackTotal / feedbackPageSize));
+    if (feedbackPage >= lastPage) return;
+    feedbackPage += 1;
     load();
   });
 
@@ -804,6 +918,12 @@
       requestSourceRetry(sourceButton, load);
       return;
     }
+    var feedbackRow = event.target.closest("[data-feedback-id]");
+    if (feedbackRow) {
+      openFeedbackDetail(feedbackRow.getAttribute("data-feedback-id"));
+      return;
+    }
+
     var previewButton = event.target.closest("[data-preview-visit]");
     if (previewButton) {
       var previewRow = ((page && page.items) || []).find(function (row) {
