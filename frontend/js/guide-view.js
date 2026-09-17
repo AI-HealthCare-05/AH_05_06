@@ -941,12 +941,6 @@ function sendWhenText(iso, now) {
  *   view.scheduledAt  승인이 잡아 둔 발송 시각 (서버가 준 `scheduled_at`)
  *   view.name         환자 이름
  *   view.now          지금 (검사용. 안 주면 진짜 지금)
- *
- * **없는 발송을 약속하지 않는다.** 원문은 「자동 발송됩니다」라고 적지만, 이
- * 저장소에는 아직 문자를 보내는 것이 없다 — `GuideMessage` 를 `SENT` 로 바꾸는
- * 코드가 검사 밖에 없다. 원장님이 그 문장만 읽고 「환자에게 갔다」고 믿으면,
- * 안 간 것을 갔다고 아는 상태가 된다. 원문 문구는 그대로 두고 **아직 없는
- * 것만** 아래에 덧붙인다 (`KEY-148` §6 · `KEY-160` 이 정한 방식이다).
  */
 function approvedModalHtml(view) {
   var name = (view && view.name) || "";
@@ -965,7 +959,6 @@ function approvedModalHtml(view) {
     "<span>발송 실패 시 알림 창에서 확인할 수 있습니다</span>" +
     "<span>문자 잔량 · 발신번호 문제는 실패 처리하지 않고 발송 대기합니다</span>" +
     "</div>" +
-    '<p class="modal__note">[demo] 문자 발송기는 아직 붙지 않았습니다 — 지금 승인은 <b>발송 예약까지</b>입니다.</p>' +
     '<div class="modal__acts">' +
     '<button class="button-ghost" type="button" data-go-status>현황 보기</button>' +
     '<button class="button-primary" type="button" data-close>닫기</button>' +

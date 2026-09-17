@@ -75,29 +75,12 @@ test("이름을 모르면 지어내지 않는다", () => {
   assert.ok(!html.includes("님께"), "이름이 없는데 「 님께」가 남았다");
 });
 
-test("**없는 발송을 약속하지 않는다**", () => {
+test("승인 완료 창에 더 이상 오래된 demo 안내를 표시하지 않는다", () => {
   const { approvedModalHtml } = box();
   const html = approvedModalHtml({ scheduledAt: "2026-09-01T18:00:00+09:00", name: "김서연" });
 
-  /* 원문은 「자동 발송됩니다」라고 적지만 이 저장소에는 아직 문자를 보내는
-     것이 없다. 그 문장만 읽고 「환자에게 갔다」고 믿으면, 안 간 것을 갔다고
-     아는 상태가 된다 (KEY-148 §6 · KEY-160). */
-  assert.match(html, /\[demo\]/, "아직 발송기가 없다는 것을 안 적는다");
-  assert.ok(html.includes("발송 예약까지"), "승인이 어디까지인지 안 적는다");
-});
-
-test("**서버에 발송기가 생기면 이 검사가 먼저 깨진다**", () => {
-  /* `[demo]` 문구는 발송기가 붙는 날 지워야 한다. 그때 지우는 것을 잊으면
-     원장님은 계속 「아직 안 나간다」고 읽는다 — 이번엔 반대로 틀린다.
-     발송기가 생겼는지는 `GuideMessage` 를 `SENT` 로 바꾸는 코드가 있는가로 본다. */
-  const service = read("../app/services/guides.py");
-  const sends = /GuideMessageStatus\.SENT/.test(service) && !/status=GuideMessageStatus\.SENT,\n\s*\)/.test(service);
-  const html = codeOnly(read("js/guide-view.js"));
-  if (sends) {
-    assert.ok(!html.includes("[demo]"), "발송기가 붙었는데 아직 없다고 말한다");
-  } else {
-    assert.ok(html.includes("[demo]"), "발송기가 없는데 나간다고 말한다");
-  }
+  assert.ok(!html.includes("[demo]"), "승인 완료 창에 demo 문구가 남았다");
+  assert.ok(!html.includes("문자 발송기는 아직 붙지 않았습니다"), "현재 동작과 다른 안내가 남았다");
 });
 
 /* ── 단추 ───────────────────────────────────────────────────────────── */
