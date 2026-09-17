@@ -201,7 +201,7 @@ class DrugCautionContentRow:
     source_org: str = _ADVICE_SOURCE_ORG
     source_url: str = _ADVICE_SOURCE_URL
     # physician_review 의 reviewer 명. 전문의가 아닌 검토자는 명시적으로 지정한다.
-    reviewer_name: str = "박영 산부인과 전문의"
+    reviewer_name: str = "산부인과 전문의"
     verified_at: date = field(default=_APPROVED_AT_2)
     approval_status: ApprovalStatus = ApprovalStatus.APPROVED
 
