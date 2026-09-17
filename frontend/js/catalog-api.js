@@ -231,7 +231,8 @@ var mockSetDetails = null;
 
 function mockSetSeed() {
   /* 씨앗은 서버 마이그레이션과 같은 규칙이다 — 이름에서 질환·약 처방 여부를 읽는다.
-     KEY-357: 처음/계속 축 → O/X 축으로 변경. O = 약 처방됨(FIRST), X = 미처방(CONTINUE). */
+     KEY-357: 처음/계속 축 → O/X 축으로 변경. phase 값 FIRST·CONTINUE는
+     O 세트(약 처방됨)·X 세트(미처방)를 구분하는 마커로 재사용한다 — 처음/계속 의미 아님. */
   return MOCK_PRESCRIPTION_SETS.map(function (row) {
     return {
       prescription_set_id: row.prescription_set_id,

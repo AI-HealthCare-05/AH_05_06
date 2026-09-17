@@ -126,7 +126,6 @@ class SeedIsRerunnableTestCase(TestCase):
 
         await seed_catalog()
 
-        # 세트별 기대 섹션: 픽스처에 정의된 것만 확인한다.
         # 세트마다 네 갈래(caution·emergency·medication·life) 가 모두 있어야 한다.
         # 픽스처에서 동적으로 읽으면 칸이 빠져도 통과하므로 고정값으로 단언한다.
         expected_sections = frozenset({"caution", "emergency", "medication", "life"})
