@@ -415,19 +415,19 @@ test('실제 /guide.html은 최종 와이어프레임 자산을 사용한다', (
   assert.doesNotMatch(fab, /src="\.\.\/assets\//);
 });
 
-test('P2~P5 렌더러가 v3 진행률·빈 목표·부분 펼침·승인 시각 계약을 유지한다', () => {
+test('P2~P5 렌더러가 진행률·목표 비표시·부분 펼침·승인 시각 계약을 유지한다', () => {
   assert.match(GUIDE_SOURCE, /stat-bar-wrap/);
   assert.match(GUIDE_SOURCE, /s\.dayOn !== null/);
   assert.match(GUIDE_SOURCE, /s\.prescribed !== null && s\.prescribed > 0/);
   assert.match(GUIDE_SOURCE, /처방 일수가 없어 복약 기간을 표시하지 않아요/);
   assert.doesNotMatch(GUIDE_SOURCE, /if \(s\.prescribed !== null\) progressParts/);
-  assert.match(GUIDE_SOURCE, /등록된 검사 목표가 없어 차트를 표시하지 않아요/);
-  assert.match(GUIDE_SOURCE, /g\.goalSay/);
+  assert.doesNotMatch(GUIDE_SOURCE, /등록된 검사 목표가 없어 차트를 표시하지 않아요/);
+  assert.doesNotMatch(GUIDE_SOURCE, /g\.goalSay/);
   assert.match(GUIDE_SOURCE, /다음 방문 계획/);
   assert.match(GUIDE_SOURCE, /lifeExpanded/);
   assert.match(GUIDE_SOURCE, /tab:\s*'현황'/);
   assert.doesNotMatch(GUIDE_SOURCE, /pw_guide_tab/);
-  assert.match(GUIDE_SOURCE, /!isNaN\(nowNum\)\s*&&\s*\(hasStart \|\| hasTarget\)/);
+  assert.doesNotMatch(GUIDE_SOURCE, /goal-chart/);
   assert.ok(
     GUIDE_SOURCE.indexOf('expandBody.appendChild(drugCard)') >
       GUIDE_SOURCE.indexOf("var expandBody = el('div', 'expand-body'"),

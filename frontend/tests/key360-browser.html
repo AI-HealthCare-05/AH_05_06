@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>KEY-360 로컬 브라우저 회귀</title>
+<h1>KEY-360 합성 데이터 화면 검증</h1>
+<p>실제 API·OTP·문자 발송 없이 정본 화면과 렌더러를 검사합니다.</p>
+<pre id="result">검증 중</pre>
+<div id="frames"></div>
+<script src="/js/api.js"></script>
+<script src="/js/patient-guide-cards.js"></script>
+<script>
+(async function () {
+  if (!['127.0.0.1', 'localhost'].includes(location.hostname)) return;
+  const result = document.getElementById('result');
+  const checks = [];
+  function check(ok, label) { if (!ok) throw new Error(label); checks.push('PASS: ' + label); }
+  const source = await (await fetch('/guide.html')).text();
+  for (const populated of [true, false]) {
+    const frame = document.createElement('iframe');
+    frame.title = populated ? '목표 데이터 있는 환자 화면' : '빈 목표 환자 화면';
+    frame.width = '390'; frame.height = '760';
+    const ready = new Promise(resolve => frame.onload = resolve);
+    // 실제 HTML/렌더러를 사용하되 네트워크 경계만 합성 응답으로 교체한다.
+    // srcdoc는 실제 URL이 없으므로 주소에서 토큰을 제거하는 history 경계만 대체한다.
+    const fixture = '<script>history.replaceState=function(){};GUIDE_MOCK=false; fetchGuide=function(){var d=JSON.parse(JSON.stringify(MOCK_GUIDES.ems));' +
+      (populated ? '' : 'd.guide.goals=[];d.guide.goalSay="";') +
+      'return Promise.resolve(adaptGuideResponse(d));};markGuidePageRead=function(){return Promise.resolve();};<\/script>';
+    frame.srcdoc = source.replace('<script src="/patient_wireframe/js/guide.js', fixture + '<script src="/patient_wireframe/js/guide.js');
+    document.getElementById('frames').appendChild(frame);
+    await ready;
+    const doc = frame.contentDocument;
+    const tab = name => Array.from(doc.querySelectorAll('[role="tab"]')).find(e => e.textContent === name).click();
+    tab('복약지도');
+    check(!doc.querySelector('[class^="goal-"]'), '환자 목표 DOM 없음 (' + populated + ')');
+    check(!/나의 목표|등록된 검사 목표/.test(doc.body.textContent), '환자 목표 제목·빈 문구 없음');
+    for (const label of ['오늘 진료 요약', '처방받은 약', '약별 복용 방법']) check(doc.body.textContent.includes(label), label + ' 유지');
+    doc.querySelector('.expand-btn').click();
+    check(doc.querySelector('.expand-btn').getAttribute('aria-expanded') === 'true', '복약 펼침 정상');
+    tab('주의사항'); check(doc.body.textContent.includes('흔하고 괜찮은 반응'), '주의사항 유지');
+    tab('생활관리'); check(doc.body.textContent.includes('주 5일'), '생활관리 goal 유지');
+    tab('복약지도');
+    const data = frame.contentWindow.MOCK_GUIDES.ems;
+    const holder = document.createElement('div');
+    holder.innerHTML = patientGuidePreviewHtml([{key:'medication',body:'합성 복약 설명'}], 'medication', '합성 요약', {visit:data.visit,guide:populated ? data.guide : {goals:[]}});
+    const preview = holder.querySelector('iframe');
+    preview.loading = 'eager'; preview.width = '390'; preview.height = '760';
+    const previewReady = new Promise(resolve => preview.onload = resolve);
+    document.getElementById('frames').appendChild(holder);
+    await previewReady;
+    check(!preview.contentDocument.querySelector('[class^="goal-"]'), '스탭·의사 공용 미리보기 목표 DOM 없음');
+    check(!/나의 목표|등록된 검사 목표/.test(preview.contentDocument.body.textContent), '미리보기 목표 문구 없음');
+  }
+  result.textContent = checks.join('\n') + '\n전체 통과';
+})().catch(error => { document.getElementById('result').textContent = 'FAIL: ' + error.message; });
+</script>
