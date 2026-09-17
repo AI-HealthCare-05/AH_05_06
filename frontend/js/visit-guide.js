@@ -717,6 +717,25 @@ function canPreviewApprovedGuide(currentGuide) {
               ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
               : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
           renderAll();
+
+          /* `GUIDE_NOT_PENDING` 은 **다른 곳에서 이미 승인·반려됐다**는 뜻이다.
+             그런데 여기서는 `guide` 를 그대로 둔다 — 화면이 읽은 `guide.status`
+             가 옛 값으로 남아 `roleEditable` 이 계속 열린 채로 있고, 스탭은
+             같은 충돌을 몇 번이고 다시 만난다. 그 사이 안내문을 다시 읽어
+             실제 상태로 되돌린다 — doctor.js 와 같은 이유(KEY-353 4차 점검). */
+          if (err && err.code === "GUIDE_NOT_PENDING") {
+            doctorApi
+              .guide(wantedId)
+              .then(function (fresh) {
+                if (visitId !== wantedId || loadSeq !== wantedSeq) return;
+                guide = fresh;
+                renderAll();
+              })
+              .catch(function () {
+                /* 못 읽어도 이미 위에서 잠금 사유는 보였다 — 다음 재시도나
+                   화면 새로고침이 실제 상태를 다시 가져온다. */
+              });
+          }
         });
     },
   });

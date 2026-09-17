@@ -584,6 +584,27 @@ function guideLoadSaying(error) {
               ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
               : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
           renderPanel();
+
+          /* `GUIDE_NOT_PENDING` 은 **다른 곳에서 이미 승인·반려됐다**는 뜻이다.
+             그런데 여기서는 `guide` 를 그대로 둔다 — 화면이 읽은 `guide.status`
+             가 여전히 옛 값이라 `roleEditable` 이 계속 열려 있는 채로 남고,
+             원장님은 같은 충돌을 몇 번이고 다시 만난다(현황 탭을 직접 열어야
+             풀린다). 그 사이 안내문을 다시 읽어 실제 상태로 되돌린다 —
+             승인/반려 성공 콜백이 `guide = result` 로 하는 것과 같은 목적이다. */
+          if (err && err.code === "GUIDE_NOT_PENDING") {
+            doctorApi
+              .guide(wantedId)
+              .then(function (fresh) {
+                if (!visit || visit.visit_id !== wantedId || loadSeq !== wantedSeq) return;
+                guide = fresh;
+                renderRole();
+                renderPanel();
+              })
+              .catch(function () {
+                /* 못 읽어도 이미 위에서 잠금 사유는 보였다 — 다음 재시도나
+                   화면 새로고침이 실제 상태를 다시 가져온다. */
+              });
+          }
         });
     },
   });

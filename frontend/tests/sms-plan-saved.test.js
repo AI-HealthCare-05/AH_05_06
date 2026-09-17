@@ -349,3 +349,17 @@ test("스탭 화면도 환자를 바꾸면(loadGuide) 저장 안내·불러오�
     "loadGuide() 가 messagePlan 을 다시 부르기 전에 smsPlanState·smsSaving·smsSaying 을 모두 초기화해야 앞 환자의 안내가 안 남는다",
   );
 });
+
+/* 4차 점검(2heej 님 요청, 원 리뷰어 부재 시 자체 재검토) — doctor.js 와 같은
+ * 이유. 저장이 GUIDE_NOT_PENDING 으로 막혀도 `guide` 를 갱신하지 않으면
+ * `roleEditable` 이 옛 상태를 본 채 열려 있어, 스탭이 같은 충돌에 몇 번이고
+ * 다시 걸린다. */
+test("스탭 화면도 저장이 GUIDE_NOT_PENDING 으로 막히면 안내문을 다시 읽어 실제 상태로 되돌린다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+
+  assert.match(
+    code,
+    /err && err\.code === "GUIDE_NOT_PENDING"[\s\S]{0,400}?doctorApi\s*\n?\s*\.guide\(wantedId\)\s*\.then\(function \(fresh\) \{[\s\S]{0,200}?guide = fresh;/,
+    "GUIDE_NOT_PENDING 실패 뒤에 doctorApi.guide 를 다시 불러 전역 guide 를 서버 응답으로 갱신해야 한다",
+  );
+});
