@@ -266,11 +266,19 @@ function mapStat(value, medication) {
   };
 }
 
+function mapBlocks(value) {
+  if (!Array.isArray(value)) throw new GuideError(GUIDE_ERROR.CONTRACT);
+  return value.map(function (block) {
+    if (!validKeys(block, ['t', 'p'], [])) throw new GuideError(GUIDE_ERROR.CONTRACT);
+    return { t: safeText(block.t), p: mapTextArray(block.p || []) };
+  });
+}
+
 function mapGuide(value, medication) {
   if (value === null || typeof value === 'undefined') {
-    return { summary: safeText(medication), goals: [], goalSay: '', drug: null, why: [], how: '', next: '' };
+    return { summary: safeText(medication), goals: [], goalSay: '', drug: null, why: [], how: '', blocks: [], next: '' };
   }
-  if (!validKeys(value, ['summary', 'goals', 'goalSay', 'drug', 'why', 'how', 'next'], [])) {
+  if (!validKeys(value, ['summary', 'goals', 'goalSay', 'drug', 'why', 'how', 'blocks', 'next'], [])) {
     throw new GuideError(GUIDE_ERROR.CONTRACT);
   }
   var goals = value.goals || [];
@@ -293,12 +301,15 @@ function mapGuide(value, medication) {
     drug = { n: safeText(value.drug.n), s: safeText(value.drug.s), d: safeText(value.drug.d) };
   }
   return {
-    summary: safeText(typeof value.summary === 'undefined' ? medication : value.summary),
+    /* 요약은 서버가 확정 데이터로 짓는 문장이다(KEY-365). 없으면 본문으로
+       채우지 않는다 — 처방 세트가 없는 진료는 요약 카드가 서지 않는다. */
+    summary: safeText(value.summary),
     goals: goals,
     goalSay: safeText(value.goalSay),
     drug: drug,
     why: mapTextArray(value.why || []),
     how: safeText(value.how),
+    blocks: mapBlocks(value.blocks || []),
     next: safeText(value.next),
   };
 }
@@ -312,12 +323,7 @@ function mapCare(value, caution, emergency) {
     };
   }
   if (!validKeys(value, ['title', 'blocks', 'danger', 'ask'], [])) throw new GuideError(GUIDE_ERROR.CONTRACT);
-  var blocks = value.blocks || [];
-  if (!Array.isArray(blocks)) throw new GuideError(GUIDE_ERROR.CONTRACT);
-  blocks = blocks.map(function (block) {
-    if (!validKeys(block, ['t', 'p'], [])) throw new GuideError(GUIDE_ERROR.CONTRACT);
-    return { t: safeText(block.t), p: mapTextArray(block.p || []) };
-  });
+  var blocks = mapBlocks(value.blocks || []);
   return { title: safeText(value.title) || '복약 중 주의사항', blocks: blocks, danger: mapTextArray(value.danger || []), ask: safeText(value.ask) };
 }
 
@@ -365,7 +371,9 @@ function adaptGuideResponse(payload) {
     // 서버가 OTP 인증한 뷰어에게만 patient_name 을 실어 준다(KEY-268). 없으면 ''.
     visit: displayVisit(payload.visit), clinic: safeText(payload.clinic), patient: safeText(payload.patient_name), disease: disease,
     approvedAt: approvedDate, expiresAt: payload.expires_at,
-    stat: mapStat(payload.stat, medication),
+    /* 서버가 복약지도 파생(`guide`)을 줬으면 현황이 본문을 대신 싣지 않는다 —
+       같은 문단이 두 탭에 나온다(KEY-365). 옛 sections-only 응답만 본문을 쓴다. */
+    stat: mapStat(payload.stat, payload.guide ? '' : medication),
     guide: mapGuide(payload.guide, medication),
     care: mapCare(payload.care, sections.caution || '', sections.emergency || ''),
     life: mapLife(payload.life, sections.life || '', disease),

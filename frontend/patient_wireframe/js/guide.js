@@ -241,13 +241,14 @@
     var g    = d.guide;
     var frag = document.createDocumentFragment();
 
-    /* 오늘 진료 요약 */
-    var sumCard = el('div', 'card');
-    sumCard.appendChild(text('div', 'card__section-title', '오늘 진료 요약'));
-    sumCard.appendChild(g.summary
-      ? richEl('div', 'care-body-text', g.summary)
-      : emptyState('표시할 승인 복약 안내가 아직 없어요.'));
-    frag.appendChild(sumCard);
+    /* 오늘 진료 요약 — 서버가 확정 데이터로 지은 문장이다. 처방 세트가 없는
+       진료는 문장이 없고, 그때는 카드를 세우지 않는다(KEY-365). */
+    if (g.summary) {
+      var sumCard = el('div', 'card');
+      sumCard.appendChild(text('div', 'card__section-title', '오늘 진료 요약'));
+      sumCard.appendChild(richEl('div', 'care-body-text', g.summary));
+      frag.appendChild(sumCard);
+    }
 
     /* 더 자세히 보기 토글 */
     var expandBtn = el('button', 'expand-btn' + (state.guideExpanded ? ' expand-btn--open' : ''));
@@ -292,6 +293,18 @@
       expandBody.appendChild(howCard);
     }
 
+    /* 본문의 「■ 소제목」 중 고정 카드와 짝이 없는 것 (KEY-365) */
+    (g.blocks || []).forEach(function (block) {
+      var blockCard = el('div', 'card');
+      blockCard.appendChild(text('div', 'card__section-title', block.t));
+      block.p.forEach(function (p, i) {
+        var pEl = richEl('div', 'care-body-text', p);
+        if (i === 0) pEl.style.marginTop = '0';
+        blockCard.appendChild(pEl);
+      });
+      expandBody.appendChild(blockCard);
+    });
+
     /* 다음 방문 */
     if (g.next) {
       var nextCard = el('div', 'card');
@@ -308,7 +321,17 @@
       expandBody.className = 'expand-body' + (state.guideExpanded ? ' expand-body--open' : '');
     });
 
-    if (expandBody.children.length) {
+    if (!expandBody.children.length) {
+      if (!g.summary) {
+        var emptyCard = el('div', 'card');
+        emptyCard.appendChild(emptyState('표시할 승인 복약 안내가 아직 없어요.'));
+        frag.appendChild(emptyCard);
+      }
+    } else if (!g.summary) {
+      /* 접어 둘 위 카드가 없으면 단추 하나만 덩그러니 남는다 — 펼친 채로 둔다. */
+      expandBody.className = 'expand-body expand-body--open';
+      frag.appendChild(expandBody);
+    } else {
       frag.appendChild(expandBody);
       frag.appendChild(expandBtn);
     }

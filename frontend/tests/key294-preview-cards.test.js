@@ -83,17 +83,17 @@ test("KEY-360: 빈 목표 카드도 표시하지 않는다", () => {
 
 test("**처방이 없으면 처방약·복용 방법 카드가 안 선다** — 환자 렌더러의 `if (g.drug)`", () => {
   const { guidePreviewHtml } = box();
-  const bare = preview({ goals: [], why: [], drug: null, how: null });
+  const bare = preview({ summary: "요약", goals: [], why: ["이 약은 배란을 돕습니다"], drug: null, how: null });
   const html = guidePreviewHtml(SECTIONS, "medication", "요약", bare);
 
   for (const title of ["처방받은 약", "약별 복용 방법", "다음 방문 계획"]) {
     assert.ok(!html.includes(title), `빈 카드를 세웠다 — ${title}`);
   }
-  /* 절 본문이 있으니 「왜 드시나요」 하나는 접힘 자리에 남는다 */
-  assert.ok(html.includes("이 약을 왜 드시나요"), "절에서 오는 카드까지 지웠다");
+  /* 서버가 준 `why` 가 있으니 「왜 드시나요」 하나는 접힘 자리에 남는다 */
+  assert.ok(html.includes("이 약을 왜 드시나요"), "서버가 준 카드까지 지웠다");
 
   /* 접힘 자리에 들 것이 하나도 없으면 단추도 안 세운다 — 눌러도 빈 칸이다 */
-  const empty = guidePreviewHtml([], "medication", "요약", bare);
+  const empty = guidePreviewHtml([], "medication", "요약", preview({ summary: "요약", goals: [], why: [] }));
   assert.ok(!empty.includes("expand-body"), "속이 빈 접힘 자리를 세웠다");
   assert.ok(!empty.includes("expand-btn"), "열 것이 없는데 단추를 세웠다");
 });
@@ -103,7 +103,9 @@ test("**파생이 `null` 이어도 무너지지 않는다** — 아직 아무것
   const html = guidePreviewHtml(SECTIONS, "medication", "요약", preview(null));
 
   assert.ok(!html.includes("나의 목표"));
-  assert.ok(html.includes("오늘 진료 요약"));
+  /* 요약은 서버가 짓는다 — 파생이 없으면 요약 카드도 없다(KEY-365). */
+  assert.ok(!html.includes("오늘 진료 요약"), "서버가 안 준 요약을 세웠다");
+  assert.ok(html.includes("표시할 승인 복약 안내가 아직 없어요."), "빈 상태를 안 보였다");
   assert.ok(!html.includes("처방받은 약"), "없는 처방을 그렸다");
 });
 

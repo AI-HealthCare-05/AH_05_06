@@ -205,8 +205,8 @@ test('v3 중첩 DTO를 P2~P5 화면 모델로 손실 없이 매핑한다', () =>
     pct: 14,
     out: '11월 5일경 약이 소진돼요',
     why: '병변이 다시 자라지 않게 하는 약이에요.',
-    body: '승인 복약 안내',
-  });
+    body: '',
+  }, '서버가 현황을 지어 줬으면 복약지도 본문을 또 싣지 않는다(KEY-365)');
   assert.equal(result.guide.goals.length, 2);
   assert.equal(result.guide.goals[0].hasChart, true);
   assert.equal(result.guide.goals[1].hasChart, false);
