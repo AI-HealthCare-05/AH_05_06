@@ -41,13 +41,26 @@ class PatientFeedbackApiTestCase(TestCase):
         app.dependency_overrides.clear()
         super().tearDown()
 
-    async def approved(self, name: str = "KEY-239 합성의원") -> GuideDocument:
+    async def approved(
+        self, name: str = "KEY-239 합성의원", *, status: GuideStatus = GuideStatus.SCHEDULED_TO_SEND
+    ) -> GuideDocument:
+        hospital = await make_hospital(name)
+        guide = await make_guide(hospital, status)
+        await PatientGuideLink.create(
+            guide_document=guide,
+            token_digest=hashlib.sha256(TOKEN.encode()).hexdigest(),
+            expires_at=now().replace(year=now().year + 1),
+            issued_by=1,
+        )
+        return guide
+
+    async def with_expired_link(self, name: str = "KEY-239 합성의원") -> GuideDocument:
         hospital = await make_hospital(name)
         guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
         await PatientGuideLink.create(
             guide_document=guide,
             token_digest=hashlib.sha256(TOKEN.encode()).hexdigest(),
-            expires_at=now().replace(year=now().year + 1),
+            expires_at=now().replace(year=now().year - 1),
             issued_by=1,
         )
         return guide
@@ -178,6 +191,30 @@ class TestGuideFeedbackSubmission(PatientFeedbackApiTestCase):
 
         assert response.status_code == 400
         assert response.json()["code"] == "INVALID_REQUEST"
+        assert await PatientFeedback.all().count() == 0
+
+    async def test_expired_link_is_rejected(self) -> None:
+        """만료된 링크 — KEY-361 인수조건. 세션 자체는 유효해도, 그 세션이
+        가리키는 링크가 만료됐으면 피드백을 저장할 안내를 못 찾는다."""
+        await self.with_expired_link()
+
+        async with await self.client() as client:
+            response = await client.post("/api/v1/patient-feedback", json=self.guide_payload())
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "FEEDBACK_CONTEXT_NOT_FOUND"
+        assert await PatientFeedback.all().count() == 0
+
+    async def test_unapproved_guide_is_rejected(self) -> None:
+        """미승인 안내문 — KEY-361 인수조건. 링크는 살아있어도 안내가
+        아직 SCHEDULED_TO_SEND가 아니면(승인 전) 저장하지 않는다."""
+        await self.approved(status=GuideStatus.STAFF_REVIEW)
+
+        async with await self.client() as client:
+            response = await client.post("/api/v1/patient-feedback", json=self.guide_payload())
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "FEEDBACK_CONTEXT_NOT_FOUND"
         assert await PatientFeedback.all().count() == 0
 
 

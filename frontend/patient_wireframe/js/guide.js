@@ -506,7 +506,12 @@
 
     /* 모든 탭 공통 하단 푸터 */
     var footer = (typeof GuideFooter === 'function')
-      ? GuideFooter({ approvedAt: d.approvedAt, onReport: GUIDE_MOCK ? function () { openReport(); } : null })
+      ? GuideFooter({
+          approvedAt: d.approvedAt,
+          onHelpful: submitHelpful,
+          onUnhelpful: function () { openReport('UNHELPFUL'); },
+          onReport: function () { openReport(); },
+        })
       : (function () {
           var f = document.createElement('div');
           f.className = 'guide-footer';
@@ -520,14 +525,12 @@
             s.textContent = item.t;
             f.appendChild(s);
           });
-          if (GUIDE_MOCK) {
-            var report = document.createElement('button');
-            report.type = 'button';
-            report.className = 'guide-footer__report';
-            report.textContent = '오류 신고';
-            report.addEventListener('click', openReport);
-            f.appendChild(report);
-          }
+          var report = document.createElement('button');
+          report.type = 'button';
+          report.className = 'guide-footer__report';
+          report.textContent = '오류 신고';
+          report.addEventListener('click', function () { openReport(); });
+          f.appendChild(report);
           return f;
         })();
     body.appendChild(footer);
@@ -558,7 +561,15 @@
     { label: '기타', category: 'OTHER' },
   ];
 
-  function buildReportOverlay() {
+  function currentReportScreen() {
+    var currentScreen = state.tab === '복약지도' ? '복약지도 · 이 약을 왜 드시나요'
+                      : state.tab === '주의사항' ? '주의사항 · 흔한 반응'
+                      : state.tab === '생활관리' ? '생활관리 · 4주 챌린지'
+                      : '복약지도 · 오늘 진료 요약';
+    return REPORT_SCREENS.find(function (screen) { return screen.label === currentScreen; });
+  }
+
+  function buildReportOverlay(presetCategory) {
     var overlay = document.createElement('div');
     overlay.className = 'report-overlay';
 
@@ -601,11 +612,7 @@
       opt.textContent = screen.label;
       select.appendChild(opt);
     });
-    var currentScreen = state.tab === '복약지도' ? '복약지도 · 이 약을 왜 드시나요'
-                      : state.tab === '주의사항' ? '주의사항 · 흔한 반응'
-                      : state.tab === '생활관리' ? '생활관리 · 4주 챌린지'
-                      : '복약지도 · 오늘 진료 요약';
-    var currentScreenOption = REPORT_SCREENS.find(function (screen) { return screen.label === currentScreen; });
+    var currentScreenOption = currentReportScreen();
     select.value = currentScreenOption.contentKey;
     content.appendChild(select);
 
@@ -636,6 +643,14 @@
 
       row.appendChild(radio);
       row.appendChild(label);
+      /* 👎 에서 들어왔으면 UNHELPFUL 이유를 미리 골라 둔다 — KEY-361.
+         환자가 이미 부정적 의사를 한 번 밝혔으니, 같은 것을 또 고르게
+         하지 않는다. */
+      if (presetCategory && reason.category === presetCategory) {
+        selectedReason = reason;
+        row.classList.add('report-reason--selected');
+        radio.classList.add('report-reason__radio--selected');
+      }
       row.addEventListener('click', function () {
         selectedReason = reason;
         reasonBtns.forEach(function (b) { b.classList.remove('report-reason--selected'); });
@@ -672,7 +687,7 @@
     submitBtn.type = 'button';
     submitBtn.className = 'btn btn--primary report-submit';
     submitBtn.textContent = '보내기';
-    submitBtn.disabled = true;
+    submitBtn.disabled = !selectedReason;
     submitBtn.addEventListener('click', function () {
       if (!selectedReason || submitBtn.disabled) return;
       var selectedScreen = REPORT_SCREENS.find(function (screen) {
@@ -716,9 +731,9 @@
   }
 
   var reportOverlay = null;
-  function openReport() {
+  function openReport(presetCategory) {
     if (reportOverlay) reportOverlay.remove();
-    reportOverlay = buildReportOverlay();
+    reportOverlay = buildReportOverlay(presetCategory);
     document.body.appendChild(reportOverlay);
     requestAnimationFrame(function () { reportOverlay.classList.add('report-overlay--open'); });
     document.body.style.overflow = 'hidden';
@@ -730,6 +745,32 @@
     closing.classList.remove('report-overlay--open');
     document.body.style.overflow = '';
     setTimeout(function () { closing.remove(); }, 300);
+  }
+
+  /* 👍 — 오버레이 없이 즉시 HELPFUL로 제출한다. 대부분의 환자는 문제가
+     없으니, 한 번의 탭으로 끝나야 한다(KEY-361). */
+  var helpfulSubmitting = false;
+  function submitHelpful(event) {
+    if (helpfulSubmitting) return;
+    helpfulSubmitting = true;
+    var btn = event && event.currentTarget;
+    if (btn) { btn.disabled = true; }
+    var screen = currentReportScreen();
+    submitPatientFeedback({
+      submission_id: createFeedbackSubmissionId(),
+      target: 'GUIDE_SECTION',
+      source_screen: 'P9',
+      category: 'HELPFUL',
+      section_key: screen.sectionKey,
+      content_key: screen.contentKey,
+      detected_tab: state.tab,
+      details: null,
+    }).then(function () {
+      if (btn) { btn.textContent = '✓'; }
+    }).catch(function () {
+      helpfulSubmitting = false;
+      if (btn) { btn.disabled = false; }
+    });
   }
 
   /* ── PDF 시트 ─── */
