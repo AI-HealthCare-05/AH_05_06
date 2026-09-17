@@ -77,8 +77,38 @@ test("반려가 성공하면 전역 안내문 상태도 같이 바뀌어 승인�
 
   assert.match(
     code,
-    /returnToStaff\(returningId, text\)\s*\.then\(function \(result\) \{[\s\S]{0,300}?guide = result/,
+    /returnToStaff\(returningId, text\)\s*\.then\(function \(result\) \{[\s\S]{0,400}?guide = result/,
     "return-go 성공 콜백이 guide 를 서버 응답으로 갱신해야 renderRole() 이 최신 상태를 본다",
+  );
+});
+
+/* 자체 재검토 — 승인·반려 성공 콜백의 `guide = result` 가 진료 번호만 보고
+ * 있었다. `save()` 가 3차 리뷰에서 받은 것과 같은 경합이다: A 에서 승인·반려
+ * 요청 → 같은 A 를 다시 열면(`load()` 가 `loadSeq` 를 올린다) `visit.visit_id`
+ * 는 그대로라, 뒤집혀 온 응답이 방금 새로 불러온 `guide` 를 예전 값으로
+ * 덮을 수 있었다. */
+test("승인·반려 응답도 같은 환자를 다시 열면 지금 화면을 건드리지 못한다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(
+    code,
+    /var approvingId = visit\.visit_id;[\s\S]{0,400}?var approvingSeq = loadSeq;/,
+    "approve() 가 승인 시점의 loadSeq 를 잡아 둬야 그 사이 같은 환자를 다시 열었는지 가릴 수 있다",
+  );
+  assert.match(
+    code,
+    /\.approve\(approvingId\)\s*\.then\(function \(result\) \{[\s\S]{0,400}?visit\.visit_id === approvingId && loadSeq === approvingSeq\) guide = result/,
+    "approve() 성공 콜백이 loadSeq 도 같이 봐야 오래된 응답이 guide 를 덮지 않는다",
+  );
+  assert.match(
+    code,
+    /var returningId = visit\.visit_id;[\s\S]{0,400}?var returningSeq = loadSeq;/,
+    "return-go 가 반려 시점의 loadSeq 를 잡아 둬야 그 사이 같은 환자를 다시 열었는지 가릴 수 있다",
+  );
+  assert.match(
+    code,
+    /\.returnToStaff\(returningId, text\)\s*\.then\(function \(result\) \{[\s\S]{0,400}?visit\.visit_id === returningId && loadSeq === returningSeq\) guide = result/,
+    "return-go 성공 콜백이 loadSeq 도 같이 봐야 오래된 응답이 guide 를 덮지 않는다",
   );
 });
 
@@ -157,6 +187,19 @@ test("환자를 바꾸면 저장 안내·불러오기 상태를 새로 잰다", 
   );
 });
 
+/* 자체 재검토 — `#say` 는 `wireGuideEditing`(고치기)·`wireSmsSettings`(문자
+ * 설정) 가 함께 쓰는 결과 알림 줄이다. 위 시험이 잡는 `smsSaying` 과 같은
+ * 이유로, 환자 전환 시 이것도 비워야 한다. */
+test("환자를 바꾸면 고치기·문자 설정의 결과 알림 줄도 비운다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(
+    code,
+    /smsForget\(\);[\s\S]{0,600}?el\("say"\)\)\s*el\("say"\)\.textContent = "";/,
+    'load() 가 smsForget·smsSaying 등을 초기화한 뒤 "#say" 도 비워야 앞 환자의 "고쳤습니다"가 안 남는다',
+  );
+});
+
 /* 4차 점검(2heej 님 요청, 원 리뷰어 부재 시 자체 재검토) — 저장이
  * `GUIDE_NOT_PENDING`(다른 곳에서 이미 승인·반려됨)으로 막혀도 `guide` 를
  * 갱신하지 않아, `roleEditable` 이 옛 상태를 본 채 계속 열려 있었다. 승인·
@@ -167,7 +210,32 @@ test("저장이 GUIDE_NOT_PENDING 으로 막히면 안내문을 다시 읽어 �
 
   assert.match(
     code,
-    /err && err\.code === "GUIDE_NOT_PENDING"[\s\S]{0,400}?doctorApi\s*\n?\s*\.guide\(wantedId\)\s*\.then\(function \(fresh\) \{[\s\S]{0,200}?guide = fresh;/,
+    /var isConflict = err && err\.code === "GUIDE_NOT_PENDING";[\s\S]{0,1000}?doctorApi\s*\n?\s*\.guide\(wantedId\)\s*\.then\(function \(fresh\) \{[\s\S]{0,200}?guide = fresh;/,
     "GUIDE_NOT_PENDING 실패 뒤에 doctorApi.guide 를 다시 불러 전역 guide 를 서버 응답으로 갱신해야 한다",
+  );
+});
+
+/* 자체 재검토 — 위 재조회가 끝나기 전에 `smsSaving` 을 풀면, 화면은 옛
+ * `guide.status` 를 그대로 보고 있어 「승인된 뒤에는 고칠 수 없습니다」 문구
+ * 옆에서 저장 버튼이 다시 눌리는 채로 선다. 재조회가 끝난 뒤(성공·실패 모두)
+ * 에만 풀어야 한다. 목록 줄도 다른 곳에서 이미 승인·반려됐다는 뜻이니
+ * `visit:changed` 로 다시 물어야 한다(승인·반려 성공과 같은 이유). */
+test("GUIDE_NOT_PENDING 재조회가 끝나기 전에는 저장 잠금을 풀지 않고, 끝나면 목록도 다시 묻는다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
+  assert.match(
+    code,
+    /if \(!isConflict\) smsSaving = false;/,
+    "충돌이 아닌 일반 실패만 즉시 smsSaving 을 풀어야 한다",
+  );
+  assert.match(
+    code,
+    /\.guide\(wantedId\)\s*\.then\(function \(fresh\) \{[\s\S]{0,300}?guide = fresh;[\s\S]{0,120}?smsSaving = false;[\s\S]{0,500}?visit:changed/,
+    "재조회 성공 뒤에 smsSaving 을 풀고 목록에도 visit:changed 로 다시 물어야 한다",
+  );
+  assert.match(
+    code,
+    /\.guide\(wantedId\)[\s\S]{0,800}?\.catch\(function \(\) \{[\s\S]{0,400}?smsSaving = false;/,
+    "재조회 자체가 실패해도 smsSaving 을 풀어야 다음 시도가 막히지 않는다",
   );
 });

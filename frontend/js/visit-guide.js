@@ -406,6 +406,10 @@ function canPreviewApprovedGuide(currentGuide) {
     visitId = id;
     var mySeq = ++loadSeq;
     guide = null;
+    /* `say()` 는 안내문 편집·문자 설정 저장 결과를 함께 쓰는 알림 줄이다 —
+       아래 `smsSaying` 초기화와 같은 이유로 비운다. 안 비우면 앞 환자에서
+       본 「고쳤습니다」가 저장한 적 없는 다음 환자 화면에도 남는다. */
+    say("");
     renderAll();
     if (!id) return;
 
@@ -711,11 +715,16 @@ function canPreviewApprovedGuide(currentGuide) {
         })
         .catch(function (err) {
           if (visitId !== wantedId || loadSeq !== wantedSeq) return;
-          smsSaving = false;
-          smsSaying =
-            err && err.code === "GUIDE_NOT_PENDING"
-              ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
-              : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
+          var isConflict = err && err.code === "GUIDE_NOT_PENDING";
+          /* 충돌이면 `smsSaving` 을 아직 안 푼다 — doctor.js 와 같은 이유(자체
+             재검토). 재조회가 끝나기 전에 풀면, 화면은 옛 `guide.status` 를
+             그대로 보고 있어 `roleEditable` 이 열린 채로 남아 바로 아래
+             「승인된 뒤에는 고칠 수 없습니다」 문구 옆에서 버튼이 다시 눌리는
+             채로 선다. 재조회가 실패해도(아래 `.catch`) 이대로 굳는다. */
+          if (!isConflict) smsSaving = false;
+          smsSaying = isConflict
+            ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
+            : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
           renderAll();
 
           /* `GUIDE_NOT_PENDING` 은 **다른 곳에서 이미 승인·반려됐다**는 뜻이다.
@@ -723,17 +732,27 @@ function canPreviewApprovedGuide(currentGuide) {
              가 옛 값으로 남아 `roleEditable` 이 계속 열린 채로 있고, 스탭은
              같은 충돌을 몇 번이고 다시 만난다. 그 사이 안내문을 다시 읽어
              실제 상태로 되돌린다 — doctor.js 와 같은 이유(KEY-353 4차 점검). */
-          if (err && err.code === "GUIDE_NOT_PENDING") {
+          if (isConflict) {
             doctorApi
               .guide(wantedId)
               .then(function (fresh) {
                 if (visitId !== wantedId || loadSeq !== wantedSeq) return;
                 guide = fresh;
+                smsSaving = false;
                 renderAll();
+                /* 목록 줄도 같이 고친다 — 승인·반려 성공 때(위 `visit:changed`
+                   발송)와 같은 이유다. 파생은 서버가 하므로 값을 짐작해 적지
+                   않고 목록에 다시 물을 뿐이다. */
+                document.dispatchEvent(new CustomEvent("visit:changed"));
               })
               .catch(function () {
                 /* 못 읽어도 이미 위에서 잠금 사유는 보였다 — 다음 재시도나
-                   화면 새로고침이 실제 상태를 다시 가져온다. */
+                   화면 새로고침이 실제 상태를 다시 가져온다. `smsSaving` 은
+                   여기서 풀어 다음 시도(또는 새로고침 뒤 재진입)가 막히지
+                   않게 한다 — 서버가 다시 막아 줄 것이다. */
+                if (visitId !== wantedId || loadSeq !== wantedSeq) return;
+                smsSaving = false;
+                renderAll();
               });
           }
         });

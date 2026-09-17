@@ -369,6 +369,11 @@ function guideLoadSaying(error) {
     smsSaying = "";
     smsPlanState = "loading";
     smsSaving = false;
+    /* `#say` 는 `wireGuideEditing`(고치기)·`wireSmsSettings`(문자 설정) 가 함께
+       쓰는 결과 알림 줄이다 — 위 `smsSaying` 과 같은 이유로 비운다. 안 비우면
+       A 환자에서 「고쳤습니다」를 본 뒤 아직 아무것도 안 고친 B 환자 화면에도
+       같은 문구가 남는다. */
+    if (el("say")) el("say").textContent = "";
     closeModal();
     renderHead();
     renderRole();
@@ -453,12 +458,17 @@ function guideLoadSaying(error) {
     if (target.id === "approve" && guide) {
       target.disabled = true;
       var approvingId = visit.visit_id; // 지금 누른 그 환자. 전역은 곧 바뀔 수 있다
+      /* **환자 번호만으로는 못 가른다** — `save()`(KEY-353 3차 리뷰, 유가은 님)와
+         같은 이유. 승인 요청이 도는 사이 같은 환자를 다시 열면(`load()`가
+         `loadSeq`를 올린다) `visit.visit_id === approvingId`는 여전히 참이라,
+         뒤집혀 온 응답이 방금 새로 불러온 `guide`를 예전 값으로 덮는다. */
+      var approvingSeq = loadSeq;
       doctorApi
         .approve(approvingId)
         .then(function (result) {
           /* 승인했으면 그 진료는 발송 대기다. 줄을 먼저 고치고 모달을 연다 —
              모달을 닫았을 때 목록이 이미 사실을 말하고 있어야 한다. */
-          if (visit && visit.visit_id === approvingId) guide = result;
+          if (visit && visit.visit_id === approvingId && loadSeq === approvingSeq) guide = result;
           markDone(approvingId, { work_category: "SEND_PENDING", detail_status: "SCHEDULED_TO_SEND" });
           openModal(approvedModal(result));
         })
@@ -487,6 +497,10 @@ function guideLoadSaying(error) {
       }
       target.disabled = true;
       var returningId = visit.visit_id; // 승인과 같은 이유로 지금 잡아 둔다
+      /* 승인 쪽과 같은 손잡이 — `save()`가 3차 리뷰에서 받은 것과 같은 경합이다.
+         반려가 도는 사이 같은 환자를 다시 열면 `visit.visit_id` 는 그대로라
+         id 만으로는 못 가른다. */
+      var returningSeq = loadSeq;
       doctorApi
         .returnToStaff(returningId, text)
         .then(function (result) {
@@ -494,7 +508,7 @@ function guideLoadSaying(error) {
              `markDone` 은 목록 줄만 고치고 `renderRole()` 을 부르는데,
              전역 `guide.status` 를 그대로 두면 여전히 `APPROVAL_PENDING` 으로
              읽혀 되돌린 뒤에도 승인·반려 버튼이 풀린 채로 남는다. */
-          if (visit && visit.visit_id === returningId) guide = result;
+          if (visit && visit.visit_id === returningId && loadSeq === returningSeq) guide = result;
           markDone(returningId, { work_category: "NEEDS_ATTENTION", detail_status: "APPROVAL_RETURNED" });
           openModal(
             '<h2 class="modal__title">스탭에 되돌렸습니다</h2>' +
@@ -578,11 +592,17 @@ function guideLoadSaying(error) {
         })
         .catch(function (err) {
           if (!visit || visit.visit_id !== wantedId || loadSeq !== wantedSeq) return;
-          smsSaving = false;
-          smsSaying =
-            err && err.code === "GUIDE_NOT_PENDING"
-              ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
-              : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
+          var isConflict = err && err.code === "GUIDE_NOT_PENDING";
+          /* 충돌이면 `smsSaving` 을 아직 안 푼다 — 검토 결과(자체 재검토) 아래
+             재조회가 끝나기 전에 풀면, 화면은 옛 `guide.status` 를 그대로 보고
+             있어 `roleEditable` 이 계속 열린 채로 남는다. 그 순간 이 버튼은
+             바로 아래 「승인된 뒤에는 고칠 수 없습니다」 문구 옆에서 다시
+             눌리는 채로 선다 — 재조회가 실패해도(아래 `.catch`) 잠금이 그대로
+             풀린 채로 굳는다. 일반 실패는 재시도가 곧 열려야 하니 그대로 푼다. */
+          if (!isConflict) smsSaving = false;
+          smsSaying = isConflict
+            ? "승인된 뒤에는 고칠 수 없습니다 — 현황에서 승인을 거두고 고쳐 주세요"
+            : "저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요";
           renderPanel();
 
           /* `GUIDE_NOT_PENDING` 은 **다른 곳에서 이미 승인·반려됐다**는 뜻이다.
@@ -591,18 +611,30 @@ function guideLoadSaying(error) {
              원장님은 같은 충돌을 몇 번이고 다시 만난다(현황 탭을 직접 열어야
              풀린다). 그 사이 안내문을 다시 읽어 실제 상태로 되돌린다 —
              승인/반려 성공 콜백이 `guide = result` 로 하는 것과 같은 목적이다. */
-          if (err && err.code === "GUIDE_NOT_PENDING") {
+          if (isConflict) {
             doctorApi
               .guide(wantedId)
               .then(function (fresh) {
                 if (!visit || visit.visit_id !== wantedId || loadSeq !== wantedSeq) return;
                 guide = fresh;
+                smsSaving = false;
                 renderRole();
                 renderPanel();
+                /* 목록 줄도 같이 고친다 — 승인·반려 성공 때와 같은 이유다.
+                   다른 곳에서 이미 승인·반려됐다는 뜻이니 그 진료의 목록
+                   카테고리도 옛 「승인 대기」에 머물러 있을 수 있다. 파생은
+                   서버가 하므로(`work_category.py`) 여기서 값을 짐작해 적지
+                   않고 목록에 다시 물을 뿐이다(`shell.js` 의 `loadDay()`). */
+                document.dispatchEvent(new CustomEvent("visit:changed"));
               })
               .catch(function () {
                 /* 못 읽어도 이미 위에서 잠금 사유는 보였다 — 다음 재시도나
-                   화면 새로고침이 실제 상태를 다시 가져온다. */
+                   화면 새로고침이 실제 상태를 다시 가져온다. `smsSaving` 은
+                   여기서 풀어 다음 시도(또는 새로고침 뒤 재진입)가 막히지
+                   않게 한다 — 서버가 다시 막아 줄 것이다. */
+                if (!visit || visit.visit_id !== wantedId || loadSeq !== wantedSeq) return;
+                smsSaving = false;
+                renderPanel();
               });
           }
         });

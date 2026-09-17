@@ -332,7 +332,13 @@ test("smsSaveLock — 역할이 열려도 서버 값을 못 받았으면 잠근�
 
 test("smsSaveLock — 서버 값은 받았어도 저장이 도는 중이면 잠근다", () => {
   const { smsSaveLock } = box();
-  assert.equal(smsSaveLock(true, "ready", true, "x").canSave, false);
+  const saving = smsSaveLock(true, "ready", true, "x");
+  assert.equal(saving.canSave, false);
+  /* 자체 재검토 — 여기서 빈 문자열을 주면 각주(`ⓘ ...`)가
+     `lockedSaying || SMS_NO_TEMPLATE` 로 읽어 저장 가능할 때와 같은 문구로
+     떨어진다. 버튼은 잠겼는데 각주는 "저장할 수 있다"고 말하는 자리라, 빈
+     문자열이 아닌 이유를 준다. */
+  assert.notEqual(saving.lockedSaying, "", "저장 중에는 빈 문자열이 아닌 이유를 줘야 각주가 엉뚱한 기본 문구로 떨어지지 않는다");
 });
 
 test("smsSaveLock — 역할·조회·저장이 모두 열려야 저장할 수 있다", () => {
@@ -350,6 +356,19 @@ test("스탭 화면도 환자를 바꾸면(loadGuide) 저장 안내·불러오�
   );
 });
 
+/* 자체 재검토 — `say()` 는 안내문 편집·문자 설정 저장 결과를 함께 쓰는 알림
+ * 줄이다. 위 시험이 잡는 `smsSaying` 과 같은 이유로, 환자 전환 시 이것도
+ * 비워야 한다. */
+test("스탭 화면도 환자를 바꾸면(loadGuide) 편집·문자 설정의 결과 알림 줄도 비운다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+
+  assert.match(
+    code,
+    /guide = null;[\s\S]{0,300}?say\(""\);[\s\S]{0,60}?renderAll\(\);/,
+    'loadGuide() 가 guide 를 비운 뒤 say("") 로 알림 줄도 비워야 앞 환자의 "고쳤습니다"가 안 남는다',
+  );
+});
+
 /* 4차 점검(2heej 님 요청, 원 리뷰어 부재 시 자체 재검토) — doctor.js 와 같은
  * 이유. 저장이 GUIDE_NOT_PENDING 으로 막혀도 `guide` 를 갱신하지 않으면
  * `roleEditable` 이 옛 상태를 본 채 열려 있어, 스탭이 같은 충돌에 몇 번이고
@@ -359,7 +378,31 @@ test("스탭 화면도 저장이 GUIDE_NOT_PENDING 으로 막히면 안내문을
 
   assert.match(
     code,
-    /err && err\.code === "GUIDE_NOT_PENDING"[\s\S]{0,400}?doctorApi\s*\n?\s*\.guide\(wantedId\)\s*\.then\(function \(fresh\) \{[\s\S]{0,200}?guide = fresh;/,
+    /var isConflict = err && err\.code === "GUIDE_NOT_PENDING";[\s\S]{0,1000}?doctorApi\s*\n?\s*\.guide\(wantedId\)\s*\.then\(function \(fresh\) \{[\s\S]{0,200}?guide = fresh;/,
     "GUIDE_NOT_PENDING 실패 뒤에 doctorApi.guide 를 다시 불러 전역 guide 를 서버 응답으로 갱신해야 한다",
+  );
+});
+
+/* 자체 재검토 — doctor.js 와 같은 이유. 재조회가 끝나기 전에 `smsSaving` 을
+ * 풀면 「승인된 뒤에는 고칠 수 없습니다」 문구 옆에서 저장 버튼이 다시 눌리는
+ * 채로 선다. 목록 줄도 다른 곳에서 이미 승인·반려됐다는 뜻이니 `visit:changed`
+ * 로 다시 물어야 한다. */
+test("스탭 화면도 GUIDE_NOT_PENDING 재조회가 끝나기 전에는 저장 잠금을 풀지 않고, 끝나면 목록도 다시 묻는다", () => {
+  const code = codeOnly(read("js/visit-guide.js"));
+
+  assert.match(
+    code,
+    /if \(!isConflict\) smsSaving = false;/,
+    "충돌이 아닌 일반 실패만 즉시 smsSaving 을 풀어야 한다",
+  );
+  assert.match(
+    code,
+    /\.guide\(wantedId\)\s*\.then\(function \(fresh\) \{[\s\S]{0,300}?guide = fresh;[\s\S]{0,120}?smsSaving = false;[\s\S]{0,500}?visit:changed/,
+    "재조회 성공 뒤에 smsSaving 을 풀고 목록에도 visit:changed 로 다시 물어야 한다",
+  );
+  assert.match(
+    code,
+    /\.guide\(wantedId\)[\s\S]{0,800}?\.catch\(function \(\) \{[\s\S]{0,400}?smsSaving = false;/,
+    "재조회 자체가 실패해도 smsSaving 을 풀어야 다음 시도가 막히지 않는다",
   );
 });

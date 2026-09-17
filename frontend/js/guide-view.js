@@ -850,7 +850,12 @@ function smsForget() {
  * 없이도 이 판정만 따로 부를 수 있어야 한다. */
 function smsSaveLock(roleEditable, planState, saving, roleLockedSaying) {
   if (!roleEditable) return { canSave: false, lockedSaying: roleLockedSaying || "" };
-  if (saving) return { canSave: false, lockedSaying: "" };
+  /* 빈 문자열을 주지 않는다 — 각주(`ⓘ ...`) 자리는 `lockedSaying || SMS_NO_TEMPLATE`
+     로 읽어서, 여기서 ""를 주면 저장이 도는 중에도 저장 가능할 때와 같은
+     문구(`SMS_NO_TEMPLATE`)가 뜬다. 버튼은 disabled 인데 각주는 "저장할 수
+     있다"고 말하는 자리다. `saying`("저장하는 중…")이 위에 따로 뜨지만
+     각주 자체도 지금 상태를 말해야 한다. */
+  if (saving) return { canSave: false, lockedSaying: "저장하는 중입니다" };
   if (planState === "loading") return { canSave: false, lockedSaying: "문자 설정을 불러오는 중입니다" };
   if (planState === "failed") {
     return { canSave: false, lockedSaying: "문자 설정을 불러오지 못했습니다 — 새로고침 후 다시 시도해 주세요" };
