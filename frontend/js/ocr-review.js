@@ -1350,11 +1350,17 @@ function stateTakesFocus(tone) {
         '<div class="top">' +
         '<div class="top__cell" aria-hidden="true"></div>' +
         '<div class="top__cell top__cell--wide">' +
+        /* 🚩 **라벨 자리를 비워 두지 않는다.** `.top` 은 위로 맞추므로
+           (`align-items: flex-start`) 라벨이 없는 칸은 값칸이 라벨 높이(18px)와
+           간격(5px)만큼 **위로 올라붙어** 오른쪽 처방일수 칸과 층이 어긋난다.
+           CSS 가 이미 못 박아 둔 규칙이다 — 「라벨 높이를 고정한다 — 한 줄짜리와
+           두 줄짜리가 섞이면 아래 값칸이 어긋난다」. */
+        '<span class="top__label">' + escapeHtml(fieldLabel("MEDICATION_NAME")) + '</span>' +
         '<input class="top__pick drugs__manual-name" type="text" placeholder="약품명 입력" ' +
         'data-manual-drug-name="' + i + '" value="' + escapeHtml(drug.name) + '" />' +
         '</div>' +
         '<div class="top__cell">' +
-        '<span class="top__label">처방일수</span>' +
+        '<span class="top__label">' + escapeHtml(fieldLabel("DURATION_DAYS")) + '</span>' +
         '<div class="field field--confirmed">' +
         '<input class="field__val drugs__manual-days" type="number" min="1" placeholder="일수" ' +
         'data-manual-drug-days="' + i + '" value="' + escapeHtml(String(drug.days || "")) + '" />' +
@@ -1494,6 +1500,15 @@ function stateTakesFocus(tone) {
         var nameVal = nameField.value != null ? String(nameField.value) : "";
         nameCell = (
           '<div class="top__cell top__cell--wide">' +
+          /* 🚩 **이 칸에도 라벨을 세운다.** 없으면 값칸이 라벨 높이(18px + 간격
+             5px)만큼 위로 올라붙어, 오른쪽 처방일수 칸과 **층이 어긋난다.**
+             같은 파일 CSS 가 이미 못 박아 둔 규칙이다 — 「라벨 높이를 고정한다
+             — 한 줄짜리와 두 줄짜리가 섞이면 아래 값칸이 어긋난다」.
+             낱말은 `field-labels.js` 것을 쓴다. 여기서 지어내면 같은 항목이
+             화면마다 다른 이름으로 불린다. */
+          '<span class="top__label">' +
+          escapeHtml(fieldLabel("MEDICATION_NAME")) +
+          "</span>" +
           '<div class="top__pick top__pick--static">' + escapeHtml(nameVal) + "</div>" +
           "</div>"
         );
@@ -1505,14 +1520,14 @@ function stateTakesFocus(tone) {
         var madeDays = fieldBody(daysField);
         daysCell = (
           '<div class="top__cell' + (madeDays.clash ? " field--clash" : "") + '">' +
-          '<span class="top__label">처방일수</span>' +
+          '<span class="top__label">' + escapeHtml(fieldLabel("DURATION_DAYS")) + "</span>" +
           '<div class="field field--' + madeDays.state + '">' + madeDays.body + "</div>" +
           "</div>"
         );
       }
 
       /* 진단 셀(flex: 0 0 206px)과 너비를 맞추는 빈 자리 — 처방 텍스트의
-         왼쪽이 첫 번째 행과 정렬된다. */
+         왼쪽이 첫 번째 행과 정렬된다. 폭만 차지하고 아무것도 안 읽힌다. */
       var spacer = '<div class="top__cell" aria-hidden="true"></div>';
       return '<div class="top">' + spacer + nameCell + daysCell + "</div>";
     }).join("");
