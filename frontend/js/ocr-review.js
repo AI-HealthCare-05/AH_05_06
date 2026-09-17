@@ -393,17 +393,46 @@ function stateTakesFocus(tone) {
   var setsFailed = false;
   var pickedSet = null;
 
-  /* OCR 이 추론한 처방 세트 이름(`PRESCRIPTION_SET` 필드)으로 드롭다운을 자동
-     선택한다. sets 와 result 중 나중에 도착하는 쪽에서 호출한다.
-     사람이 이미 고른 뒤에는 건드리지 않는다. */
+  /* OCR 결과로 드롭다운 세트를 자동 선택한다. sets 와 result 중 나중에 도착하는
+     쪽에서 호출한다. 사람이 이미 고른 뒤에는 건드리지 않는다.
+     KEY-357: 처음/계속 → O/X 축 변경에 맞춰 약 키워드 기반 매핑으로 전환.
+     - MEDICATION_NAME 필드에 「비잔」 검출 → 해당 질환의 「비잔 O」 세트 자동 선택
+     - MEDICATION_NAME 필드에 「야즈」 검출 → 해당 질환의 「야즈 O」 세트 자동 선택
+     - 둘 다 없으면 자동 선택하지 않는다(X 세트는 틀리면 다른 약 주의 문구가
+       붙으므로 스탭이 직접 고른다 — 기존 주석의 판단 유지). */
   function applyPrescriptionSetSuggestion() {
     if (pickedSet) return;
     if (!result || !sets.length) return;
+
+    // 1차: PRESCRIPTION_SET 필드 이름과 정확히 일치하는 세트 (서버가 명시한 경우)
     var suggested = fieldValueOf(result.fields, "PRESCRIPTION_SET");
-    if (!suggested) return;
-    for (var i = 0; i < sets.length; i++) {
-      if (sets[i].name === suggested) {
-        pickedSet = sets[i];
+    if (suggested) {
+      for (var i = 0; i < sets.length; i++) {
+        if (!sets[i].hidden && sets[i].name === suggested) {
+          pickedSet = sets[i];
+          return;
+        }
+      }
+    }
+
+    // 2차: MEDICATION_NAME 필드의 약 키워드로 O 세트를 제안한다.
+    // 비잔·야즈 검출 → O 세트 자동 선택 / 미검출 → 자동 선택 안 함(X 세트는 수동)
+    var medFields = result.fields.filter(function (f) {
+      return /^MEDICATION_NAME(_\d+)?$/.test(f.field_type) && f.value;
+    });
+    var hasBizan = medFields.some(function (f) {
+      return String(f.value).toLowerCase().indexOf("비잔") !== -1;
+    });
+    var hasYaz = medFields.some(function (f) {
+      return String(f.value).toLowerCase().indexOf("야즈") !== -1;
+    });
+
+    var targetKeyword = hasBizan ? "비잔 O" : hasYaz ? "야즈 O" : null;
+    if (!targetKeyword) return;
+
+    for (var j = 0; j < sets.length; j++) {
+      if (!sets[j].hidden && sets[j].name.indexOf(targetKeyword) !== -1) {
+        pickedSet = sets[j];
         return;
       }
     }
@@ -1217,6 +1246,7 @@ function stateTakesFocus(tone) {
       '<option value="">처방을 고르세요</option>' +
       options +
       "</select>" +
+      '<div class="top__set-hint">처방된 약 기준으로 템플릿을 선택합니다</div>' +
       (readName ? '<div class="top__read">판독: ' + escapeHtml(readName) + "</div>" : "")
     );
   }

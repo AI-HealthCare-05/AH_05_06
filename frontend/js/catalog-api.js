@@ -18,28 +18,27 @@ var MOCK_CHECK_ITEMS = [
   "PREGNANCY_PLAN",
 ];
 
-/* **대표 처방 넷** (KEY-262, 팀 회의 결정). 질환 둘 × 처음·계속이다.
-   여덟이던 것을 줄이면서, 나머지 다섯이 가리키던 진료 25 건은 각자의
-   「처음」으로 옮겼다 — `docs/data/synthetic-patients.csv`.
+/* **대표 처방 넷** (KEY-357, 팀 회의 결정). 질환 둘 × 처방 약 O/X 이다.
+   처음/계속 축에서 「해당 약이 처방됐는가」 축으로 변경했다.
 
    서버 픽스처(`app/tests/fixtures/catalog.py`)와 **같은 넷**이어야 한다.
    갈라지면 목에서 고르던 처방이 서버에 없다. */
 var MOCK_PRESCRIPTION_SETS = [
   {
     prescription_set_id: 1,
-    name: "자궁내막증 · 비잔 (처음)",
+    name: "자궁내막증 · 비잔 O",
     check_items: MOCK_CHECK_ITEMS,
     drugs: [{ name: "비잔정(디에노게스트) 2mg", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
   {
     prescription_set_id: 2,
-    name: "자궁내막증 · 비잔 (계속)",
+    name: "자궁내막증 · 비잔 X",
     check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "비잔정(디에노게스트) 2mg", frequency: "1일 1회", note: "매일 같은 시간" }],
+    drugs: [],
   },
   {
     prescription_set_id: 3,
-    name: "PCOS · 야즈 (처음)",
+    name: "PCOS · 야즈 O",
     check_items: MOCK_CHECK_ITEMS,
     days_mode: "PACK",
     days_per_pack: 28,
@@ -47,11 +46,11 @@ var MOCK_PRESCRIPTION_SETS = [
   },
   {
     prescription_set_id: 4,
-    name: "PCOS · 야즈 (계속)",
+    name: "PCOS · 야즈 X",
     check_items: MOCK_CHECK_ITEMS,
     days_mode: "PACK",
     days_per_pack: 28,
-    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" }],
+    drugs: [],
   },
 ];
 

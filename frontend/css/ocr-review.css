@@ -1112,6 +1112,13 @@
   font-size: 11px;
 }
 
+/* KEY-357: 처방된 약 기준 선택 안내 곁말 */
+.top__set-hint {
+  margin-top: 4px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
 /* 목록이 없을 때. 빈 드롭다운을 두지 않는다 — 열어도 아무것도 없는 칸은
    「고장」으로 읽힌다. */
 .top__note {
