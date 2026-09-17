@@ -6,18 +6,21 @@
 **이 파일의 모든 값은 테스트·개발용 합성 데이터다.**
 실제 환자정보·운영 비밀값·인증된 처방 원문을 포함하지 않는다.
 
-드러그 콘텐츠 커버리지 — **네 세트 × 네 갈래, 16 행**이 모두 APPROVED 다:
-  - 자궁내막증 · 비잔 (처음) / (계속) — 각자의 문구
-  - PCOS · 야즈 (처음) / (계속)      — 약이 같아 문구도 같다
+드러그 콘텐츠 커버리지 — **네 세트 × 네 갈래, 16 행**이 목표다:
+  - 자궁내막증 · 비잔 O / 자궁내막증 · 비잔 X
+  - PCOS · 야즈 O / PCOS · 야즈 X
 
-  갈래는 복약지도·주의사항·응급·생활지도 넷이다. 예전에는 주의·응급 둘만
-  카탈로그에서 왔는데, 승인 정본이 복약지도·생활지도까지 덮으면서 넷이 됐다
-  (KEY-265). 그중 **열두 칸**(응급을 뺀 셋 × 네 세트)이 원장님이 2026-09-04 에
-  확인한 글이고, 응급 넷은 KEY-150 에서 잠근 그대로다.
+  갈래는 복약지도·주의사항·응급·생활지도 넷이다. O 세트는 16 칸 모두 APPROVED.
+  X 세트의 caution·emergency 는 이희진 검토 확정 후 추가한다 (KEY-357).
+  그때까지 X 세트는 medication·life 2 칸만 APPROVED 상태이며,
+  GUIDE_RAG_ENABLED=true 경로에서 X 세트 안내문 생성이 실패할 수 있다.
 
-**KEY-262 전에는 일부러 빈 자리를 두었다.** 「emergency만 승인」·「콘텐츠 없음」인
-세트를 seed 에 남겨 D-2(미등록·미승인 폴백)를 재현했었다. 세트를 넷으로 줄이면서
-그 두 세트가 사라졌고, 지금은 커버리지가 고르다.
+**KEY-357: 처음/계속 축 → 약 처방 여부 O/X 축으로 변경.**
+O 세트는 기존 (처음) 세트의 승인 문구를 세트 이름 기준으로 재등록했다.
+(처음)과 (계속)의 caution·emergency 는 같은 글이고,
+medication·life 는 초진 안내(처음)를 기준으로 통합했다.
+X 세트 medication 은 짧은 약사 복약지도 안내 문구(SourceGrade.B),
+X 세트 life 는 같은 질환 O 세트와 동일한 글이다.
 
 D-2 는 그 빈 자리에 기대지 않는다. `test_key165_drug_caution.py` 의 D-2 는
 없는 세트 이름(`"미등록세트XYZ"`)과 DRAFT 콘텐츠를 테스트 안에서 직접 만들어
@@ -52,51 +55,53 @@ _APPROVED_VERSION = "2026-09-04"
 
 # 승인 당시 KEY-265 정본의 고정 해시. 본문 수정만으로 갱신하지 않는다.
 # 변경된 문구는 재검토 후 버전·승인 기록과 함께 명시적으로 갱신해야 한다.
+#
+# KEY-357: (처음)/(계속) → O/X 축 변경에 맞춰 키를 새 세트 이름으로 갱신했다.
+# O 세트는 기존 (처음) 세트의 해시를 그대로 사용한다(본문이 동일하다).
+# X 세트 life 는 O 세트와 같은 글이므로 같은 해시 값을 참조한다.
 _APPROVED_BODY_HASHES = {
     (
-        "자궁내막증 · 비잔 (처음)",
+        "자궁내막증 · 비잔 O",
         "caution",
         "2026-09-04",
     ): "27c7cece535c9cbdf79edf469619dcfd411947cea38a26366d6c9ebf326e5262",
     (
-        "자궁내막증 · 비잔 (계속)",
+        "PCOS · 야즈 O",
         "caution",
         "2026-09-04",
-    ): "27c7cece535c9cbdf79edf469619dcfd411947cea38a26366d6c9ebf326e5262",
-    ("PCOS · 야즈 (계속)", "caution", "2026-09-04"): "dd71789145edce33d24f95b8a9590c32e0df36af58f0b8f4a1f1aefe1fb9e5db",
-    ("PCOS · 야즈 (처음)", "caution", "2026-09-04"): "dd71789145edce33d24f95b8a9590c32e0df36af58f0b8f4a1f1aefe1fb9e5db",
+    ): "dd71789145edce33d24f95b8a9590c32e0df36af58f0b8f4a1f1aefe1fb9e5db",
     (
-        "자궁내막증 · 비잔 (처음)",
+        "자궁내막증 · 비잔 O",
         "medication",
         "2026-09-04",
     ): "c5f3d0944356c1f4cdb842ee3b2b4e5ddb2f5497a3d78fd9e3b18d663929d38c",
     (
-        "자궁내막증 · 비잔 (처음)",
+        "자궁내막증 · 비잔 O",
+        "life",
+        "2026-09-04",
+    ): "ee109954cde9dcb819ef5a9fadb3d6d453dd121f037e7b85fc6b73ed453fffd6",
+    # X 세트 life: 질환 기준이므로 O 세트와 같은 글 → 같은 해시
+    (
+        "자궁내막증 · 비잔 X",
         "life",
         "2026-09-04",
     ): "ee109954cde9dcb819ef5a9fadb3d6d453dd121f037e7b85fc6b73ed453fffd6",
     (
-        "자궁내막증 · 비잔 (계속)",
-        "medication",
-        "2026-09-04",
-    ): "ee426409255cba5df2c68ec813226c909d99038654e44f0508aa96a0e460d411",
-    (
-        "자궁내막증 · 비잔 (계속)",
-        "life",
-        "2026-09-04",
-    ): "34331d119c9aa07ab7f086a92b1b45baa52e22387aedf8b6db4b030682b4c890",
-    (
-        "PCOS · 야즈 (처음)",
+        "PCOS · 야즈 O",
         "medication",
         "2026-09-04",
     ): "e2013a3fad67639c5853b2217a1ec4e94d7ab1dbd99a63290b67e64f2f8f7875",
-    ("PCOS · 야즈 (처음)", "life", "2026-09-04"): "41a196afe2f7eaa9cb526c20f25bf97c5f7ad9cdad92f68fe646bc0bca7017c9",
     (
-        "PCOS · 야즈 (계속)",
-        "medication",
+        "PCOS · 야즈 O",
+        "life",
         "2026-09-04",
-    ): "e4d4b3f05d919545bdda330ba903a2a86569c39a6b5d16aab6eee038e4da604e",
-    ("PCOS · 야즈 (계속)", "life", "2026-09-04"): "41a196afe2f7eaa9cb526c20f25bf97c5f7ad9cdad92f68fe646bc0bca7017c9",
+    ): "41a196afe2f7eaa9cb526c20f25bf97c5f7ad9cdad92f68fe646bc0bca7017c9",
+    # X 세트 life: 질환 기준이므로 O 세트와 같은 글 → 같은 해시
+    (
+        "PCOS · 야즈 X",
+        "life",
+        "2026-09-04",
+    ): "41a196afe2f7eaa9cb526c20f25bf97c5f7ad9cdad92f68fe646bc0bca7017c9",
 }
 
 # 응급 넷은 이번 범위 밖이라 예전 값을 그대로 둔다 (KEY-265 는 열두 칸만 다룬다).
@@ -153,36 +158,32 @@ class DrugCautionContentRow:
 # ── 처방 세트 4종 ────────────────────────────────────────────────────────────
 # 합성 CSV 에 실제로 등장하는 이름을 그대로 사용한다.
 #
-# **여덟에서 넷으로 줄였다** (KEY-262, 팀 회의 결정). 질환 둘 × 처음·계속이다.
-# 나머지 다섯이 가리키던 진료 25 건은 각자의 「처음」으로 옮겼다
-# (`docs/data/synthetic-patients.csv`).
+# **KEY-357: 처음/계속 축 → 약 처방 여부 O/X 축으로 변경** (팀 회의 결정, 이희진).
+# 판독지에 처음인지 계속인지 정보가 없어 스탭이 직접 판단해야 했고,
+# 문구 마스터도 두 축이 사실상 같은 글이라 의미 없는 구분이었다.
 #
-# 🚩 **`PCOS · 초진 (야즈 불가)` 도 「야즈 (처음)」으로 옮겼다.** 흡연으로 야즈가
-# 금기인 환자(`SYN-PCOS-06`)라 야즈 세트가 맞지 않는데, 팀에서 그렇게 정했다.
-# 그래서 **「금기로 처방 경로가 바뀐다」 시나리오는 이제 데이터로 재현되지
-# 않는다** — 명세에도 적어 두었다.
+# O: 해당 약(비잔·야즈)이 처방됨 / X: 해당 약 없이 다른 약(진통제 등)만 처방됨
 PRESCRIPTION_SETS: tuple[PrescriptionSetRow, ...] = (
-    PrescriptionSetRow("자궁내막증 · 비잔 (처음)", SetDisease.ENDOMETRIOSIS),
-    PrescriptionSetRow("자궁내막증 · 비잔 (계속)", SetDisease.ENDOMETRIOSIS),
-    PrescriptionSetRow("PCOS · 야즈 (처음)", SetDisease.PCOS),
-    PrescriptionSetRow("PCOS · 야즈 (계속)", SetDisease.PCOS),
+    PrescriptionSetRow("자궁내막증 · 비잔 O", SetDisease.ENDOMETRIOSIS),
+    PrescriptionSetRow("자궁내막증 · 비잔 X", SetDisease.ENDOMETRIOSIS),
+    PrescriptionSetRow("PCOS · 야즈 O", SetDisease.PCOS),
+    PrescriptionSetRow("PCOS · 야즈 X", SetDisease.PCOS),
 )
 
 # ── 네 갈래 문구 마스터 ──────────────────────────────────────────────────────
-# **여기 열두 칸은 더 이상 합성이 아니다.** 예전에는 모든 body 에 `[합성]` 을
+# **여기 O 세트 열두 칸은 더 이상 합성이 아니다.** 예전에는 모든 body 에 `[합성]` 을
 # 붙여 「지어낸 글」임을 표시했는데, 2026-09-04 에 원장님이 확인한 글로
 # 바뀌면서 그 접두어를 걷었다(KEY-265). 출처·승인일·판 번호가 아래 상수에
 # 붙어 있고, 그것이 채워져 있어야 생성이 이 글을 쓴다(KEY-180 §4).
 #
-# ── 두 판이 글자까지 같은 문구 ─────────────────────────────────────────────
+# KEY-357: (처음)/(계속) 두 세트가 사실상 같은 글이라 O 세트 하나로 통합했다.
+# medication·life 는 초진 안내(처음)를 기준으로 통합했다.
 #
-# 문서가 「(처음) 과 (계속) 이 같다」로 못박은 자리다. 예전에는 같은 글을 **두 번
-# 따로 적어** 두고 주석으로만 「같다」고 했다. 문구가 또 수정되면 한쪽만 고치고
-# 지나칠 수 있고, 그 어긋남은 **환자에게 나가는 글**에서 드러난다
-# (이희진 님 `#214` ⑨).
-#
-# 이름을 하나 두면 갈라질 수가 없다. 정말 갈라져야 할 날이 오면 그때 이름을
-# 풀면 된다 — 그때는 푸는 것이 결정이라 눈에 띈다.
+# ── X 세트 caution·emergency 는 미완성 ───────────────────────────────────────
+# 질환 공통 주의·응급 문구는 이희진 검토 확정 후 별도 커밋으로 추가한다.
+# 그때까지 X 세트는 medication·life 2 칸만 APPROVED 상태다.
+# GUIDE_RAG_ENABLED=true 경로에서 X 세트로 안내문 생성 시 unverified_context 로
+# 실패할 수 있으며, 이는 PR 제한사항으로 명시한다.
 
 _BIJAN_CAUTION = (
     "질출혈이 가장 흔해요. 팬티라이너에 묻을 정도로 나왔다 안 나왔다 합니다. 가슴이 단단해지는 "
@@ -223,14 +224,17 @@ _YAZ_LIFE = (
     "데 도움이 됩니다."
 )
 
+# X 세트 medication: 처방 약 종류에 무관한 짧은 약사 복약지도 안내 (SourceGrade.B)
+_X_MEDICATION = "처방된 약의 복용법은 약사 복약지도를 참고하세요."
 
-# 응급 네 행은 여전히 KEY-150 에서 잠근 글이다 — 세트별로 갈리지 않는다.
+
 DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
-    # ── 자궁내막증 · 비잔 (처음) ─────────────────────────────────────────────
+    # ── 자궁내막증 · 비잔 O ──────────────────────────────────────────────────
+    # KEY-357: 기존 (처음) 세트의 승인 문구를 새 세트 이름으로 재등록.
+    # caution·emergency 는 (처음)/(계속) 동일, medication·life 는 (처음) 기준 통합.
     DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 비잔 (처음)",
+        prescription_set_name="자궁내막증 · 비잔 O",
         section_key=CautionSectionKey.CAUTION,
-        # 정본 A-2 — 정리본 2.4 의 ✅+🔶, 원장님 승인 2026-09-04
         body=_BIJAN_CAUTION,
         source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
@@ -240,82 +244,14 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         content_version=_APPROVED_VERSION,
     ),
     DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 비잔 (처음)",
+        prescription_set_name="자궁내막증 · 비잔 O",
         section_key=CautionSectionKey.EMERGENCY,
         body=_BIJAN_EMERGENCY,
         source_grade=SourceGrade.A,
         source_url="https://nedrug.mfds.go.kr/TEST-ONLY/dienogest-emergency",
     ),
-    # ── 자궁내막증 · 비잔 (계속) ─────────────────────────────────────────────
     DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 비잔 (계속)",
-        section_key=CautionSectionKey.CAUTION,
-        # 정본 B-2 — 문서가 「A-2 와 같다」로 못박았다
-        body=_BIJAN_CAUTION,
-        source_grade=SourceGrade.C,
-        source_name=_ADVICE_SOURCE_NAME,
-        source_org=_ADVICE_SOURCE_ORG,
-        source_url=_ADVICE_SOURCE_URL,
-        verified_at=_APPROVED_AT,
-        content_version=_APPROVED_VERSION,
-    ),
-    DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 비잔 (계속)",
-        section_key=CautionSectionKey.EMERGENCY,
-        body=_BIJAN_EMERGENCY,
-        source_grade=SourceGrade.A,
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/dienogest-long-emergency",
-    ),
-    # ── PCOS · 야즈 (계속) ──────────────────────────────────────────────────
-    DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 (계속)",
-        section_key=CautionSectionKey.CAUTION,
-        # 정본 D-2 — 문서가 「C-2 와 같다」로 못박았다
-        body=_YAZ_CAUTION,
-        source_grade=SourceGrade.C,
-        source_name=_ADVICE_SOURCE_NAME,
-        source_org=_ADVICE_SOURCE_ORG,
-        source_url=_ADVICE_SOURCE_URL,
-        verified_at=_APPROVED_AT,
-        content_version=_APPROVED_VERSION,
-    ),
-    DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 (계속)",
-        section_key=CautionSectionKey.EMERGENCY,
-        body=_YAZ_EMERGENCY,
-        source_grade=SourceGrade.A,
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
-    ),
-    # ── PCOS · 야즈 (처음) ──────────────────────────────────────────────────
-    # **약이 같으니 글도 같다.** 「처음」과 「계속」을 가르는 것은 방문 주기이지
-    # 약이 아니다 — 문구가 갈릴 근거가 생기면 그때 나눈다 (KEY-265).
-    DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 (처음)",
-        section_key=CautionSectionKey.CAUTION,
-        # 정본 C-2 — 정리본 1.4 의 ✅+🔶, 원장님 승인 2026-09-04
-        body=_YAZ_CAUTION,
-        source_grade=SourceGrade.C,
-        source_name=_ADVICE_SOURCE_NAME,
-        source_org=_ADVICE_SOURCE_ORG,
-        source_url=_ADVICE_SOURCE_URL,
-        verified_at=_APPROVED_AT,
-        content_version=_APPROVED_VERSION,
-    ),
-    DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 (처음)",
-        section_key=CautionSectionKey.EMERGENCY,
-        body=_YAZ_EMERGENCY,
-        source_grade=SourceGrade.A,
-        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
-    ),
-    # ── 복약지도·생활지도 — 원장님 승인 정본 (KEY-265) ─────────────────
-    # **원본이다.** `guide_copy.py` 의 `_origins()` 가 승인된 카탈로그 행을
-    # 원본으로 삼고, 없으면 `guide_defaults` 로 내려간다 — 네 갈래 다 그렇다.
-    # 이 여덟을 `DoctorGuideCopy`(고친 문구)에 넣었더니 화면이 정본을 「고친
-    # 문구」로 보였고, 「원본으로 되돌리기」를 누르면 정본이 날아갔다.
-    # A-1 · 정리본 2.1 + 2.2
-    DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 비잔 (처음)",
+        prescription_set_name="자궁내막증 · 비잔 O",
         section_key=CautionSectionKey.MEDICATION,
         body=(
             "자궁내막증을 그냥 두면 염증 물질이 나와서 주변 장기와 들러붙게 만들고, 난소 기능에도 "
@@ -333,9 +269,8 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
-    # A-3 · 질병관리청(B) + 식약처(A). 뼈 건강 문단은 보류라 빠졌다
     DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 비잔 (처음)",
+        prescription_set_name="자궁내막증 · 비잔 O",
         section_key=CautionSectionKey.LIFE,
         body=(
             "비잔은 정해진 기간이 아니라 상태를 보며 이어 가는 약이라, 3~6개월마다 정기 진찰을 "
@@ -350,35 +285,28 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
-    # B-1 · 정리본 2.1 🎯 + 2.3 — 이 일감의 핵심 칸
+    # ── 자궁내막증 · 비잔 X ──────────────────────────────────────────────────
+    # KEY-357: caution·emergency 는 이희진 검토 확정 후 추가 예정.
+    # medication: 약사 복약지도 안내(SourceGrade.B), life: O 세트와 동일.
     DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 비잔 (계속)",
+        prescription_set_name="자궁내막증 · 비잔 X",
         section_key=CautionSectionKey.MEDICATION,
-        body=(
-            "통증이 사라졌다고 병변까지 없어진 것은 아니에요. 남아 있으면 계속 염증을 일으켜 유착과 "
-            "만성 골반통의 원인이 됩니다. 임의로 중단하지 마시고, 끊을 시기는 진료 때 함께 정해요.\n\n"
-            "하루 한 번, 매일 같은 시간에 쉬는 기간 없이 계속 드세요.\n\n"
-            "석 달마다 오실 때 생리통 정도와 생리양을 확인합니다. 보통 1~2년 드신 뒤 쉬어갈 "
-            "시기를 함께 봅니다. 해마다 혈액검사로 호르몬 상태도 확인해요."
-        ),
-        source_grade=SourceGrade.C,
+        body=_X_MEDICATION,
+        source_grade=SourceGrade.B,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
-    # B-3 · A-3 에 자문 Ⅱ-9 한 문단을 더한 것
     DrugCautionContentRow(
-        prescription_set_name="자궁내막증 · 비잔 (계속)",
+        prescription_set_name="자궁내막증 · 비잔 X",
         section_key=CautionSectionKey.LIFE,
         body=(
             "비잔은 정해진 기간이 아니라 상태를 보며 이어 가는 약이라, 3~6개월마다 정기 진찰을 "
             "받으시는 것이 중요합니다. 재발 여부를 일찍 알 수 있는 유일한 방법입니다.\n\n"
             "약을 드시고 3~4시간 안에 구토나 설사를 하셨다면 약효가 줄 수 있으니 다음 진료 때 "
-            "말씀해 주세요.\n\n"
-            "오래 드시는 동안에도 해마다 혈액검사로 호르몬 상태를 확인합니다. 생리가 없는 기간이 "
-            "길어지므로, 검사로 몸의 상태를 대신 확인하는 것입니다."
+            "말씀해 주세요."
         ),
         source_grade=SourceGrade.C,
         source_name=_ADVICE_SOURCE_NAME,
@@ -387,9 +315,28 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
-    # C-1 · 정리본 1.1 + 1.2 — 열두 칸 중 가장 길다
+    # ── PCOS · 야즈 O ────────────────────────────────────────────────────────
+    # KEY-357: 기존 (처음) 세트의 승인 문구를 새 세트 이름으로 재등록.
     DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 (처음)",
+        prescription_set_name="PCOS · 야즈 O",
+        section_key=CautionSectionKey.CAUTION,
+        body=_YAZ_CAUTION,
+        source_grade=SourceGrade.C,
+        source_name=_ADVICE_SOURCE_NAME,
+        source_org=_ADVICE_SOURCE_ORG,
+        source_url=_ADVICE_SOURCE_URL,
+        verified_at=_APPROVED_AT,
+        content_version=_APPROVED_VERSION,
+    ),
+    DrugCautionContentRow(
+        prescription_set_name="PCOS · 야즈 O",
+        section_key=CautionSectionKey.EMERGENCY,
+        body=_YAZ_EMERGENCY,
+        source_grade=SourceGrade.A,
+        source_url="https://nedrug.mfds.go.kr/TEST-ONLY/drsp-ee-emergency",
+    ),
+    DrugCautionContentRow(
+        prescription_set_name="PCOS · 야즈 O",
         section_key=CautionSectionKey.MEDICATION,
         body=(
             "검사에서 LH 수치가 FSH보다 높게 나왔고, DHEA-S 도 정상 범위보다 높았어요. "
@@ -410,9 +357,8 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
-    # C-3 · 자문 Ⅰ-14 — 자문 원문이 넉넉한 유일한 칸
     DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 (처음)",
+        prescription_set_name="PCOS · 야즈 O",
         section_key=CautionSectionKey.LIFE,
         body=_YAZ_LIFE,
         source_grade=SourceGrade.C,
@@ -422,29 +368,22 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
-    # D-1 · 정리본 1.1 🎯 + 1.3, 자문 Ⅰ-9
+    # ── PCOS · 야즈 X ────────────────────────────────────────────────────────
+    # KEY-357: caution·emergency 는 이희진 검토 확정 후 추가 예정.
+    # medication: 약사 복약지도 안내(SourceGrade.B), life: O 세트와 동일(_YAZ_LIFE).
     DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 (계속)",
+        prescription_set_name="PCOS · 야즈 X",
         section_key=CautionSectionKey.MEDICATION,
-        body=(
-            "다낭성난소증후군은 '완치'가 아니라 '관리'하는 상태예요. 혈압이나 체중처럼 꾸준히 살펴 "
-            "나갑니다. 증상이 심할 때는 약으로 조절하고, 안정되면 상황을 봐가며 조절해요. 평생 못 "
-            "끊는 약이라는 뜻이 아니니 부담 갖지 않으셔도 돼요.\n\n"
-            "시작하고 넉 달쯤에 혈액검사로 LH·DHEA-S 를 다시 봅니다. 수치가 잡혀도 바로 끊지 "
-            "않고 보통 1~2년 유지해요. 호르몬이 한 바퀴 도는 데 석 달쯤 걸려서, 두세 바퀴는 "
-            "지나야 약을 줄여도 원래대로 돌아가지 않습니다.\n\n"
-            "해마다 혈액검사로 간 수치와 난소 기능을 확인합니다."
-        ),
-        source_grade=SourceGrade.C,
+        body=_X_MEDICATION,
+        source_grade=SourceGrade.B,
         source_name=_ADVICE_SOURCE_NAME,
         source_org=_ADVICE_SOURCE_ORG,
         source_url=_ADVICE_SOURCE_URL,
         verified_at=_APPROVED_AT,
         content_version=_APPROVED_VERSION,
     ),
-    # D-3 · 문서가 「C-3 과 같다」로 못박았다
     DrugCautionContentRow(
-        prescription_set_name="PCOS · 야즈 (계속)",
+        prescription_set_name="PCOS · 야즈 X",
         section_key=CautionSectionKey.LIFE,
         body=_YAZ_LIFE,
         source_grade=SourceGrade.C,
