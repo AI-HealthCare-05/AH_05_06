@@ -541,9 +541,7 @@ class TestTheApprovedWordingIsWhole:
         grade_a = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.A]
 
         # Grade C 는 전문의 자문 이름을 달아야 한다
-        assert all("전문의" in r.source_name for r in grade_c), (
-            "Grade C 칸에 전문의 이름이 없는 것이 있다"
-        )
+        assert all("전문의" in r.source_name for r in grade_c), "Grade C 칸에 전문의 이름이 없는 것이 있다"
         # Grade A 는 외부 기관 출처여야 한다 — 전문의 자문을 A로 올리면 안 된다
         assert all("전문의" not in r.source_name for r in grade_a), (
             "Grade A 칸에 전문의 이름이 있다 — 전문의 자문은 C 여야 한다"
@@ -551,8 +549,8 @@ class TestTheApprovedWordingIsWhole:
 
         # KEY-357 기준 수량 고정
         assert len(grade_c) == 12, f"Grade C: {len(grade_c)}행 (기대 12)"
-        assert len(grade_b) == 2,  f"Grade B: {len(grade_b)}행 (기대 2 — X 세트 medication)"
-        assert len(grade_a) == 2,  f"Grade A: {len(grade_a)}행 (기대 2 — 자궁내막증 life ESHRE)"
+        assert len(grade_b) == 2, f"Grade B: {len(grade_b)}행 (기대 2 — X 세트 medication)"
+        assert len(grade_a) == 2, f"Grade A: {len(grade_a)}행 (기대 2 — 자궁내막증 life ESHRE)"
 
     def test_source_grade_has_no_fixture_default(self) -> None:
         """새 문구를 넣을 때 근거 축을 판단하지 않고 A로 흘려보낼 수 없다."""
