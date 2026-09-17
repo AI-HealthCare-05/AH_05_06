@@ -31,7 +31,7 @@ from app.core import config
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.core.sms_opt_out import is_opted_out
-from app.models.catalog import CautionSectionKey, DoctorGuideCopy, PrescriptionSet
+from app.models.catalog import CautionSectionKey, DoctorGuideCopy, MessageTemplateKind, PrescriptionSet
 from app.models.ocr import (
     OcrDocumentType,
     OcrField,
@@ -66,6 +66,7 @@ from app.ocr.utils import assert_ocr_jobs_ready, merge_fields_by_type
 from app.services import guide_defaults, guide_section_order
 from app.services.drug_caution import DrugCautionService
 from app.services.guide_body import medication_body, resolved_copy
+from app.services.message_templates import MessageTemplateService
 
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
 #: 진료가 끝난 저녁에 받아야 환자가 차분히 읽는다 — 진료 중에 오면 안 본다.
@@ -93,6 +94,7 @@ CHECK_DAYS: dict[GuideMessageKind, int] = {
 #: 아무도 안 만졌을 때 켜져 있는 회차. 와이어프레임 S1-14 의 체크 상태다 —
 #: 「☑ 일주일 뒤(고정) · ☑ 보름 뒤 · ☐ 한 달 뒤」, 소진 임박은 켜짐.
 _DEFAULT_ON: dict[GuideMessageKind, bool] = {
+    GuideMessageKind.GUIDE: True,
     GuideMessageKind.CHECK_D7: True,
     GuideMessageKind.CHECK_D15: True,
     GuideMessageKind.CHECK_D30: False,
@@ -102,7 +104,7 @@ _DEFAULT_ON: dict[GuideMessageKind, bool] = {
 #: **일주일 뒤는 끌 수 없다.** 원문이 「(고정)」이라 적고 주석도 「일주일 뒤는
 #: 여기서도 끌 수 없다」고 못박는다 — 복약 첫 주가 가장 잘 끊기는 구간이다.
 #: 화면이 체크박스를 잠그지만, 서버도 막는다. 화면만 막으면 요청 하나로 꺼진다.
-FIXED_ON: frozenset[GuideMessageKind] = frozenset({GuideMessageKind.CHECK_D7})
+FIXED_ON: frozenset[GuideMessageKind] = frozenset({GuideMessageKind.GUIDE})
 
 #: 확인 문자를 몇 시에 보낼지 — 화면이 고르게 하는 값들(S1-14 의 시각 목록).
 #: 아무 시각이나 받으면 새벽 3시에 문자가 갈 수 있다.
@@ -991,7 +993,7 @@ class GuideService:
             guide.status = GuideStatus.SCHEDULED_TO_SEND
             guide.approved_by = actor.user_id
             guide.approved_at = moment
-            guide.scheduled_at = self.send_at(moment)
+            guide.scheduled_at = self.send_at(moment, guide.send_hour)
             guide.returned_reason = None  # type: ignore[assignment]
             await guide.save(
                 update_fields=["status", "approved_by", "approved_at", "scheduled_at", "returned_reason", "updated_at"],
@@ -1192,6 +1194,7 @@ class GuideService:
 
         rounds = []
         for kind in (
+            GuideMessageKind.GUIDE,
             GuideMessageKind.CHECK_D7,
             GuideMessageKind.CHECK_D15,
             GuideMessageKind.CHECK_D30,
@@ -1211,7 +1214,7 @@ class GuideService:
                     "fixed": kind in FIXED_ON,
                 }
             )
-        return {"check_hour": guide.check_hour, "rounds": rounds}
+        return {"send_hour": guide.send_hour, "check_hour": guide.check_hour, "rounds": rounds}
 
     async def save_message_plan(self, actor, visit_id: int, plan) -> dict:
         """문자 설정을 저장한다 — 「이 환자만 적용」.
@@ -1247,11 +1250,13 @@ class GuideService:
                     "확인·승인 요청 상태에서만 문자 설정을 고칠 수 있습니다.",
                 )
 
-            hour = int(getattr(plan, "check_hour", CHECK_HOUR))
-            if hour not in CHECK_HOURS:
+            send_hour = int(getattr(plan, "send_hour", SEND_HOUR))
+            check_hour = int(getattr(plan, "check_hour", CHECK_HOUR))
+            if send_hour not in CHECK_HOURS or check_hour not in CHECK_HOURS:
                 raise ApiError("BAD_CHECK_HOUR", 422, "고를 수 없는 시각입니다.")
-            guide.check_hour = hour
-            await guide.save(update_fields=["check_hour", "updated_at"], using_db=connection)
+            guide.send_hour = send_hour
+            guide.check_hour = check_hour
+            await guide.save(update_fields=["send_hour", "check_hour", "updated_at"], using_db=connection)
 
             for item in getattr(plan, "rounds", []) or []:
                 kind = GuideMessageKind(item.kind)
@@ -1280,6 +1285,8 @@ class GuideService:
                 body = None
             elif len(body) > MESSAGE_BODY_MAX:
                 raise ApiError("BODY_TOO_LONG", 422, "문구가 너무 깁니다.")
+            else:
+                MessageTemplateService._check(MessageTemplateKind(kind.value), body)
 
         days_before = None
         if kind is GuideMessageKind.RUN_OUT:
@@ -1500,7 +1507,7 @@ class GuideService:
         raise ApiError("GUIDE_NOT_PENDING", 409, "아직 승인 요청된 안내문이 아닙니다.")
 
     @staticmethod
-    def send_at(moment: datetime) -> datetime:
+    def send_at(moment: datetime, hour: int = SEND_HOUR) -> datetime:
         """**병원 시간으로** 오늘 18:00. 이미 지났으면 내일 같은 시각이다.
 
         이름이 열려 있는 것은 `scripts/seed.py` 가 같은 규칙을 써야 하기 때문이다.
@@ -1525,5 +1532,5 @@ class GuideService:
         지난 것을 몰아서 한꺼번에 보낸다.
         """
         local = moment.astimezone(config.TIMEZONE)
-        today = local.replace(hour=SEND_HOUR, minute=0, second=0, microsecond=0)
+        today = local.replace(hour=hour, minute=0, second=0, microsecond=0)
         return today if today > local else today + timedelta(days=1)

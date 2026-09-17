@@ -14,7 +14,8 @@
  * 「필요하면 켜세요」로 두면 아무도 안 켠다. 복약 첫 주가 가장 잘 끊기는
  * 구간이라, 그 한 번은 어느 처방에서도 고정이다 (D2-3 도 「(고정)」이라 적는다). */
 var SMS_ROUNDS = [
-  { key: "d7", label: "일주일 뒤", days: 7, fixed: true },
+  { key: "guide", label: "진료 당일 안내문", days: 0, fixed: true },
+  { key: "d7", label: "일주일 뒤", days: 7, fixed: false },
   { key: "d15", label: "보름 뒤", days: 15, fixed: false },
   { key: "d30", label: "한 달 뒤", days: 30, fixed: false },
 ];
@@ -99,6 +100,7 @@ var SMS_VARS = [
   { token: "{환자명}", label: "환자명" },
   { token: "{일차}", label: "일차" },
   { token: "{의원명}", label: "의원명" },
+  { token: "{만료일}", label: "만료일" },
   { token: "{링크}", label: "링크" },
   { token: "{예약링크}", label: "예약링크" },
 ];
@@ -161,7 +163,7 @@ function smsToggled(plan, key) {
 function smsFixedSaying(key) {
   var r = smsRoundOf(key);
   return r && r.fixed
-    ? "일주일 뒤 확인은 끌 수 없습니다 — 복약 첫 주가 가장 잘 끊기는 구간입니다"
+    ? "진료 당일 안내문은 끌 수 없습니다 — 환자 안내 링크가 이 문자로 발송됩니다"
     : "";
 }
 
@@ -213,7 +215,7 @@ function smsClampBefore(value, courseDays) {
  * 목록(`SMS_ROUNDS`)의 키이고 서버 값은 표의 열거값이기 때문이다 — 한쪽이
  * 바뀔 때 다른 쪽이 끌려가면 안 된다. 여기 한 곳에서만 옮긴다.
  */
-var SMS_KIND = { d7: "CHECK_D7", d15: "CHECK_D15", d30: "CHECK_D30", runOut: "RUN_OUT" };
+var SMS_KIND = { guide: "GUIDE", d7: "CHECK_D7", d15: "CHECK_D15", d30: "CHECK_D30", runOut: "RUN_OUT" };
 
 function smsKeyOfKind(kind) {
   for (var key in SMS_KIND) {
@@ -231,7 +233,13 @@ function smsHourText(hour) {
 
 /** 서버가 준 설정을 화면 상태로. 모르는 회차는 버린다 — 화면에 그릴 자리가 없다. */
 function smsPlanFromServer(plan) {
-  var out = { at: smsHourText(plan && plan.check_hour), on: {}, texts: {}, runOutBefore: 3 };
+  var out = {
+    sendAt: smsHourText(plan && plan.send_hour),
+    at: smsHourText(plan && plan.check_hour),
+    on: {},
+    texts: {},
+    runOutBefore: 3,
+  };
   var rounds = (plan && plan.rounds) || [];
 
   for (var i = 0; i < rounds.length; i++) {
@@ -244,7 +252,7 @@ function smsPlanFromServer(plan) {
     if (key === "runOut") {
       out.runOutOn = row.enabled !== false;
       if (row.days_before !== null && row.days_before !== undefined) out.runOutBefore = row.days_before;
-    } else if (key !== "d7") {
+    } else if (key !== "guide") {
       /* d7 은 늘 켜져 있다 — `on` 에 담지 않는 것이 화면의 규칙이다(`smsRoundOn`) */
       out.on[key] = row.enabled !== false;
     }
@@ -280,5 +288,9 @@ function smsPlanToServer(state) {
     days_before: st.runOutBefore === undefined ? 3 : st.runOutBefore,
   });
 
-  return { check_hour: parseInt(String(st.at || "10:00").slice(0, 2), 10), rounds: rounds };
+  return {
+    send_hour: parseInt(String(st.sendAt || "18:00").slice(0, 2), 10),
+    check_hour: parseInt(String(st.at || "10:00").slice(0, 2), 10),
+    rounds: rounds,
+  };
 }

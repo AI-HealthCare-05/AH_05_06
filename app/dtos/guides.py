@@ -174,10 +174,12 @@ class MessagePlanRequest(StrictModel):
     """문자 설정 저장 — 「이 환자만 적용」."""
 
     #: 확인 · 재진 문자를 몇 시에 보낼지. 안내문은 승인 시각 규칙(18:00)을 따른다.
+    send_hour: int = 18
     check_hour: int
     rounds: list[MessageRound]
 
 
 class MessagePlanResponse(StrictModel):
+    send_hour: int
     check_hour: int
     rounds: list[MessageRoundOut]

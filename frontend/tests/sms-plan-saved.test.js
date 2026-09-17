@@ -17,9 +17,11 @@ function box() {
 }
 
 const FROM_SERVER = {
+  send_hour: 18,
   check_hour: 14,
   rounds: [
-    { kind: "CHECK_D7", enabled: true, body: null, days_before: null, fixed: true },
+    { kind: "GUIDE", enabled: true, body: null, days_before: null, fixed: true },
+    { kind: "CHECK_D7", enabled: true, body: null, days_before: null, fixed: false },
     { kind: "CHECK_D15", enabled: false, body: null, days_before: null, fixed: false },
     { kind: "CHECK_D30", enabled: true, body: "{환자명}님, 한 달째. {링크}", days_before: null, fixed: false },
     { kind: "RUN_OUT", enabled: true, body: null, days_before: 5, fixed: false },
@@ -32,6 +34,7 @@ test("**서버가 준 것을 화면이 그대로 읽는다**", () => {
   const { smsPlanFromServer } = box();
   const st = smsPlanFromServer(FROM_SERVER);
 
+  assert.equal(st.sendAt, "18:00", "당일 안내문 시각을 못 읽었다");
   assert.equal(st.at, "14:00", "시각이 안 왔다");
   assert.equal(st.on.d15, false, "보름 뒤가 꺼진 것이 안 왔다");
   assert.equal(st.on.d30, true, "한 달 뒤가 켜진 것이 안 왔다");
@@ -48,12 +51,13 @@ test("**소진 임박은 회차 목록에 섞지 않는다**", () => {
   assert.equal(st.on.runOut, undefined, "소진이 회차로 섞였다");
 });
 
-test("일주일 뒤는 `on` 에 담지 않는다 — 고정이지 켜 둔 것이 아니다", () => {
+test("진료 당일 안내문만 `on` 에 담지 않는다 — 고정 회차다", () => {
   const { smsPlanFromServer, smsRoundOn } = box();
   const st = smsPlanFromServer(FROM_SERVER);
 
-  assert.equal(st.on.d7, undefined, "고정 회차를 켜 둔 것으로 담았다");
-  assert.equal(smsRoundOn({ on: st.on }, "d7"), true, "그래도 켜져 있어야 한다");
+  assert.equal(st.on.guide, undefined, "고정 회차를 켜 둔 것으로 담았다");
+  assert.equal(smsRoundOn({ on: st.on }, "guide"), true, "그래도 켜져 있어야 한다");
+  assert.equal(st.on.d7, true, "일주일 뒤 설정을 읽지 못했다");
 });
 
 test("시각이 이상하면 기본으로 — 새벽에 문자가 가지 않는다", () => {
@@ -68,12 +72,14 @@ test("시각이 이상하면 기본으로 — 새벽에 문자가 가지 않는�
 
 test("**보낸 것을 서버가 알아듣는 이름으로 바꾼다**", () => {
   const { smsPlanToServer } = box();
-  const body = smsPlanToServer({ at: "14:00", on: { d30: true }, texts: {}, runOutOn: true, runOutBefore: 5 });
+  const body = smsPlanToServer({ sendAt: "18:00", at: "14:00", on: { d7: true, d30: true }, texts: {}, runOutOn: true, runOutBefore: 5 });
 
+  assert.equal(body.send_hour, 18, "당일 안내문 시각을 숫자로 못 보냈다");
   assert.equal(body.check_hour, 14, "시각이 숫자로 안 갔다");
 
   const by = {};
   body.rounds.forEach((r) => (by[r.kind] = r));
+  assert.equal(by.GUIDE.enabled, true, "당일 안내문이 꺼진 채 갔다");
   assert.equal(by.CHECK_D7.enabled, true, "일주일 뒤가 꺼진 채 갔다");
   assert.equal(by.CHECK_D15.enabled, false, "안 켠 회차가 켜진 채 갔다");
   assert.equal(by.CHECK_D30.enabled, true, "켠 회차가 꺼진 채 갔다");
@@ -108,10 +114,11 @@ test("소진 임박을 끄면 꺼진 채 간다", () => {
 test("**갔다가 돌아와도 같은 것이다**", () => {
   const { smsPlanToServer, smsPlanFromServer } = box();
   const first = smsPlanFromServer(FROM_SERVER);
-  const round = smsPlanFromServer({ check_hour: 14, rounds: smsPlanToServer(first).rounds });
+  const round = smsPlanFromServer({ send_hour: 18, check_hour: 14, rounds: smsPlanToServer(first).rounds });
 
   assert.deepEqual(round.on, first.on, "회차가 달라졌다");
   assert.equal(round.at, first.at, "시각이 달라졌다");
+  assert.equal(round.sendAt, first.sendAt, "당일 안내문 시각이 달라졌다");
   assert.equal(round.runOutBefore, first.runOutBefore, "소진 며칠 전이 달라졌다");
   assert.deepEqual(round.texts, first.texts, "문구가 달라졌다");
 });
@@ -212,6 +219,7 @@ test("목업과 서버의 기본값이 같다", () => {
   const py = service.slice(service.indexOf("_DEFAULT_ON"), service.indexOf("FIXED_ON"));
 
   [
+    ["GUIDE", "GuideMessageKind.GUIDE: True"],
     ["CHECK_D7", "GuideMessageKind.CHECK_D7: True"],
     ["CHECK_D15", "GuideMessageKind.CHECK_D15: True"],
     ["CHECK_D30", "GuideMessageKind.CHECK_D30: False"],
