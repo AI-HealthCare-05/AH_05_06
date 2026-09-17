@@ -19,6 +19,11 @@
 O 세트는 기존 (처음) 세트의 승인 문구를 세트 이름 기준으로 재등록했다.
 X 세트 caution·emergency 는 이희진 검토 확정(2026-09-17).
 
+**판번호(content_version)는 칸마다 따로 명시한다.**
+문구를 고친 칸만 새 판을 달고, 안 고친 칸은 이전 검토일·해시를 유지한다.
+전역 상수 하나로 올리면 그날 보지 않은 칸도 reviewed_at 이 바뀌어 기록이
+왜곡된다 — `_is_physician_reviewed(app/services/drug_caution.py)` 참고.
+
 D-2 는 그 빈 자리에 기대지 않는다. `test_key165_drug_caution.py` 의 D-2 는
 없는 세트 이름(`"미등록세트XYZ"`)과 DRAFT 콘텐츠를 테스트 안에서 직접 만들어
 쓴다. seed 분포와 무관하게 서므로 이 픽스처를 줄여도 그대로 동작한다.
@@ -31,19 +36,11 @@ from datetime import date
 from app.models.catalog import ApprovalStatus, CautionSectionKey, SetDisease, SourceGrade
 
 # ── 출처 메타데이터 ─────────────────────────────────────────────────────────
-#
-# **주의사항·복약지도는 자문이 근거다.** 응급도 마찬가지다.
-#
-# 이 글은 식약처 허가사항에서 온 것이 아니라 **박영 산부인과 전문의 자문**에서
-# 왔고, 2026-09-04 / 2026-09-17 에 원장님이 정본으로 승인하셨다.
-#
-# KEY-283에서 두 축을 분리했다. 이 자문은 출처 성격대로 C로 남기되,
-# `drug_caution.py`가 승인 상태와 전문의 검토 기록을 별도 안전축으로 확인한다.
 _ADVICE_SOURCE_NAME = "박영 산부인과 전문의 복약지도 — 자문 내용"
 _ADVICE_SOURCE_ORG = "박영 산부인과"
 _ADVICE_SOURCE_URL = "https://app.notion.com/p/3ba0c3b3380580068fa1f32666a8b68c"
 
-# 최초 승인 (KEY-265)
+# 최초 승인 (KEY-265, 2026-09-04)
 _APPROVED_AT = date(2026, 9, 4)
 _APPROVED_VERSION = "2026-09-04"
 
@@ -51,8 +48,7 @@ _APPROVED_VERSION = "2026-09-04"
 _APPROVED_AT_2 = date(2026, 9, 17)
 _APPROVED_VERSION_2 = "2026-09-17"
 
-# **승인된 버전 집합.** `physician_review` 가 이것으로 유효성을 확인한다.
-# 새 승인이 생길 때마다 여기에 추가한다.
+# **승인된 버전 집합.** physician_review 가 이것으로 유효성을 확인한다.
 _APPROVED_VERSION_SET = frozenset({_APPROVED_VERSION, _APPROVED_VERSION_2})
 
 _APPROVED_AT_MAP = {
@@ -65,20 +61,17 @@ _ESHRE_SOURCE_NAME = "ESHRE Guideline: Endometriosis 2022"
 _ESHRE_SOURCE_ORG = "European Society of Human Reproduction and Embryology"
 _ESHRE_SOURCE_URL = "https://doi.org/10.1093/hropen/hoac009"
 
-# X 세트 medication: 처방 약 종류에 무관한 짧은 약사 복약지도 안내 (SourceGrade.B)
-# 전문의 자문이 아니라 일반 안내라 출처를 별도로 둔다 — _ADVICE_SOURCE_NAME 을 쓰면
-# test_reseeding_removes_the_wrong_a_label 이 「전문의」 필터로 B 등급 행을 잡아 실패한다.
+# X 세트 medication (SourceGrade.B)
 _X_MEDICATION = "처방된 약의 복용법은 약사 복약지도를 참고하세요."
 _X_MED_SOURCE_NAME = "약사 복약지도 일반 안내"
 _X_MED_SOURCE_ORG = "박영 산부인과"
 
-# 승인 당시 정본의 고정 해시. 본문 수정만으로 갱신하지 않는다.
-# 변경된 문구는 재검토 후 버전·승인 기록과 함께 명시적으로 갱신해야 한다.
-#
-# KEY-357: 처음/계속 → O/X 축 + 전체 문구 갱신(2026-09-17).
-# 미사용 구버전 항목은 별도 삭제 없이 _APPROVED_VERSION_SET 에서 제거해 무효화한다.
+# 승인 당시 정본의 고정 해시.
+# 키: (세트명, 절, 판번호) — 칸마다 독립적으로 관리한다.
+# 판번호를 전역으로 올리면 안 고친 칸의 reviewed_at 도 바뀌므로,
+# 문구를 고친 칸만 새 (세트, 절, 판) 항목을 추가한다.
 _APPROVED_BODY_HASHES: dict[tuple[str, str, str], str] = {
-    # ── 2026-09-04 (최초 승인, KEY-265) — medication 은 변경 없어 그대로 유지 ──
+    # ── 2026-09-04 (최초 승인, KEY-265) ──────────────────────────────────────
     (
         "자궁내막증 · 비잔 O",
         "medication",
@@ -89,7 +82,7 @@ _APPROVED_BODY_HASHES: dict[tuple[str, str, str], str] = {
         "medication",
         "2026-09-04",
     ): "e2013a3fad67639c5853b2217a1ec4e94d7ab1dbd99a63290b67e64f2f8f7875",
-    # ── 2026-09-17 (KEY-357 전체 갱신 + X 세트 확정) ──────────────────────────
+    # ── 2026-09-17 (KEY-357 전체 갱신 + X 세트 확정) ─────────────────────────
     (
         "자궁내막증 · 비잔 O",
         "medication",
@@ -110,7 +103,6 @@ _APPROVED_BODY_HASHES: dict[tuple[str, str, str], str] = {
         "caution",
         "2026-09-17",
     ): "e459bca5b3d6e909dea5264ce63bd24859a4c3bf443c87350828185aa63dd838",
-    # 비잔 X emergency 는 비잔 O 와 동일 본문 → 같은 해시
     (
         "자궁내막증 · 비잔 X",
         "emergency",
@@ -146,7 +138,6 @@ _APPROVED_BODY_HASHES: dict[tuple[str, str, str], str] = {
         "emergency",
         "2026-09-17",
     ): "514be84fd069bcde415459faf9733a8bd555d29392f3fc1ed94016d25b15b32f",
-    # PCOS X life 는 PCOS O 와 동일 본문 → 같은 해시
     (
         "PCOS · 야즈 X",
         "life",
@@ -174,14 +165,15 @@ class DrugCautionContentRow:
     prescription_set_name: str
     section_key: CautionSectionKey
     body: str
-    # KEY-283: 기본값을 두지 않는다. 등록자가 외부 근거 등급인지 전문의 승인
-    # 템플릿인지 반드시 판단해 명시해야 한다.
     source_grade: SourceGrade
+    # 판번호는 기본값 없이 칸마다 명시한다.
+    # 문구를 고친 칸만 새 판을 달고, 안 고친 칸은 이전 판번호를 그대로 유지해야
+    # reviewed_at 기록이 왜곡되지 않는다 — 전역 상수로 일괄 올리지 않는다.
+    content_version: str
     source_name: str = _ADVICE_SOURCE_NAME
     source_org: str = _ADVICE_SOURCE_ORG
     source_url: str = _ADVICE_SOURCE_URL
     verified_at: date = field(default=_APPROVED_AT_2)
-    content_version: str = _APPROVED_VERSION_2
     approval_status: ApprovalStatus = ApprovalStatus.APPROVED
 
     @property
@@ -201,13 +193,6 @@ class DrugCautionContentRow:
 
 
 # ── 처방 세트 4종 ────────────────────────────────────────────────────────────
-# 합성 CSV 에 실제로 등장하는 이름을 그대로 사용한다.
-#
-# **KEY-357: 처음/계속 축 → 약 처방 여부 O/X 축으로 변경** (팀 회의 결정, 이희진).
-# 판독지에 처음인지 계속인지 정보가 없어 스탭이 직접 판단해야 했고,
-# 문구 마스터도 두 축이 사실상 같은 글이라 의미 없는 구분이었다.
-#
-# O: 해당 약(비잔·야즈)이 처방됨 / X: 해당 약 없이 다른 약(진통제 등)만 처방됨
 PRESCRIPTION_SETS: tuple[PrescriptionSetRow, ...] = (
     PrescriptionSetRow("자궁내막증 · 비잔 O", SetDisease.ENDOMETRIOSIS),
     PrescriptionSetRow("자궁내막증 · 비잔 X", SetDisease.ENDOMETRIOSIS),
@@ -216,12 +201,7 @@ PRESCRIPTION_SETS: tuple[PrescriptionSetRow, ...] = (
 )
 
 # ── 네 갈래 문구 마스터 ──────────────────────────────────────────────────────
-# **16 칸 모두 APPROVED.** 2026-09-17 이희진 검토 확정으로 X 세트 포함 전체 완성.
-#
-# 자궁내막증 life: ESHRE Guideline 2022 기반(SourceGrade.A).
-# PCOS life: 전문의 자문(SourceGrade.C).
-# X 세트 medication: 약사 복약지도 일반 안내(SourceGrade.B).
-# 나머지 12칸: 전문의 자문(SourceGrade.C).
+# 16 칸 모두 APPROVED. 판번호는 각 칸에 명시되어 있다.
 
 # ── 자궁내막증 · 비잔 O/X 공통 ───────────────────────────────────────────────
 
@@ -234,7 +214,6 @@ _BIJAN_EMERGENCY = (
     "의료기관에 연락해 진료받으세요."
 )
 
-# 자궁내막증 O/X 공통 생활지도 — ESHRE Guideline 2022 (SourceGrade.A)
 _ENDO_LIFE = (
     "자궁내막증은 오랜 기간 관리해 나가는 질환입니다.\n"
     "지금은 증상을 잘 조절하면서 편안한 일상을 유지하는 것이 가장 중요합니다.\n\n"
@@ -369,24 +348,28 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.CAUTION,
         body=_BIJAN_CAUTION,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 O",
         section_key=CautionSectionKey.EMERGENCY,
         body=_BIJAN_EMERGENCY,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 O",
         section_key=CautionSectionKey.MEDICATION,
         body=_BIJAN_MEDICATION,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 O",
         section_key=CautionSectionKey.LIFE,
         body=_ENDO_LIFE,
         source_grade=SourceGrade.A,
+        content_version=_APPROVED_VERSION_2,
         source_name=_ESHRE_SOURCE_NAME,
         source_org=_ESHRE_SOURCE_ORG,
         source_url=_ESHRE_SOURCE_URL,
@@ -397,6 +380,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.MEDICATION,
         body=_X_MEDICATION,
         source_grade=SourceGrade.B,
+        content_version=_APPROVED_VERSION_2,
         source_name=_X_MED_SOURCE_NAME,
         source_org=_X_MED_SOURCE_ORG,
         source_url="",
@@ -406,18 +390,21 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.CAUTION,
         body=_BIJAN_X_CAUTION,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 X",
         section_key=CautionSectionKey.EMERGENCY,
         body=_BIJAN_EMERGENCY,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 X",
         section_key=CautionSectionKey.LIFE,
         body=_ENDO_LIFE,
         source_grade=SourceGrade.A,
+        content_version=_APPROVED_VERSION_2,
         source_name=_ESHRE_SOURCE_NAME,
         source_org=_ESHRE_SOURCE_ORG,
         source_url=_ESHRE_SOURCE_URL,
@@ -428,24 +415,28 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.CAUTION,
         body=_YAZ_CAUTION,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 O",
         section_key=CautionSectionKey.EMERGENCY,
         body=_YAZ_EMERGENCY,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 O",
         section_key=CautionSectionKey.MEDICATION,
         body=_YAZ_MEDICATION,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 O",
         section_key=CautionSectionKey.LIFE,
         body=_YAZ_LIFE,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     # ── PCOS · 야즈 X ────────────────────────────────────────────────────────
     DrugCautionContentRow(
@@ -453,6 +444,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.MEDICATION,
         body=_X_MEDICATION,
         source_grade=SourceGrade.B,
+        content_version=_APPROVED_VERSION_2,
         source_name=_X_MED_SOURCE_NAME,
         source_org=_X_MED_SOURCE_ORG,
         source_url="",
@@ -462,17 +454,20 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.CAUTION,
         body=_PCOS_X_CAUTION,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 X",
         section_key=CautionSectionKey.EMERGENCY,
         body=_PCOS_X_EMERGENCY,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 X",
         section_key=CautionSectionKey.LIFE,
         body=_YAZ_LIFE,
         source_grade=SourceGrade.C,
+        content_version=_APPROVED_VERSION_2,
     ),
 )
