@@ -19,13 +19,26 @@ from app.dtos.messages import (
     MessageResendResponse,
     ScheduledMessageListResponse,
     SentMessageListResponse,
+    SourceRetryRequest,
+    SourceRetryResponse,
 )
 from app.services.message_export import csv_filename, csv_rows
 from app.services.message_history import MessageHistoryService
 from app.services.message_resend import MessageResendService
 from app.services.message_schedule import MessageScheduleService
+from app.services.source_retry import SourceRetryService
 
 message_router = APIRouter(prefix="/messages", tags=["messages"], route_class=ContractRoute)
+
+
+@message_router.post("/{message_id}/source-retry", response_model=SourceRetryResponse, status_code=202)
+async def retry_source_deletion(
+    message_id: int,
+    payload: SourceRetryRequest,
+    actor: Annotated[ClinicalActor, Depends(require_sms_send)],
+    service: Annotated[SourceRetryService, Depends(SourceRetryService)],
+) -> SourceRetryResponse:
+    return await service.request(actor, message_id, payload.generation)
 
 
 @message_router.post(

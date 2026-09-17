@@ -5,6 +5,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.dtos.base import BaseSerializerModel, CursorPage
+from app.dtos.messages import SourceRecoveryInfo
 from app.models.ocr import OcrDocumentType
 from app.models.visits import GuideSectionKey, VisitCheckKey, VisitStatus
 
@@ -172,7 +173,7 @@ class VisitTimelineEntry(BaseModel):
     note: str | None = None
 
 
-class ScheduledMessage(BaseModel):
+class ScheduledMessage(SourceRecoveryInfo):
     """환자에게 나갈 문자 한 통 — 와이어프레임 D1-6 「발송 · 예정」.
 
     **한 통이 한 줄이다.** 다섯 통 중 어느 것이든 실패할 수 있고, 실패한

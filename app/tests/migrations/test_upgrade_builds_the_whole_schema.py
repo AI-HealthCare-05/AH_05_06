@@ -180,6 +180,10 @@ async def test_upgrade_builds_the_whole_schema_and_settles() -> None:
             "provider_detail",
             "provider_message_id",
             "attempt_count",
+            "source_failure_type",
+            "source_failure_at",
+            "source_retry_requested",
+            "source_retry_generation",
         }
         missing_dispatch_columns = sorted(required_dispatch_columns - message_columns)
         assert not missing_dispatch_columns, f"KEY-249 발송 컬럼이 누락됐다: {missing_dispatch_columns}"

@@ -151,6 +151,8 @@
   }
 
   function actionHtml(row) {
+    var recovery = sourceRetryButton(row);
+    if (recovery) return recovery;
     var action = rowAction(row);
     if (!action) return '<span class="send__none">—</span>';
     return (
@@ -327,6 +329,7 @@
     return (
       '<td class="' +
       (state.bad ? "send__state send__state--bad" : "send__state") +
+      (row.hold_reason === "SOURCE_NOT_DELETED" ? " send__state--source" : "") +
       '">' +
       esc(state.mark + " " + messageSaying(row) + checkDay) +
       "</td>"
@@ -796,6 +799,11 @@
 
   /* 줄을 누르면 아래에 그 환자가 선다. 다시 누르면 접힌다. */
   el("table").addEventListener("click", function (event) {
+    var sourceButton = event.target.closest("[data-source-retry]");
+    if (sourceButton) {
+      requestSourceRetry(sourceButton, load);
+      return;
+    }
     var previewButton = event.target.closest("[data-preview-visit]");
     if (previewButton) {
       var previewRow = ((page && page.items) || []).find(function (row) {
@@ -917,6 +925,7 @@
   render();
 
   requireSession().then(function (who) {
+    sourceRetryRoles = who.roles || [];
     el("who-name").textContent = who.name;
     el("who-roles").textContent = roleLabel(who.roles);
     return load();

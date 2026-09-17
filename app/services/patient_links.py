@@ -92,6 +92,12 @@ class PatientGuideData:
     medication: PatientMedicationData | None
     goals: list[PatientGuideGoalData]
     sections: dict[GuideSectionKey, str]
+    #: 처방 세트가 쓰이는 질환 — 「오늘 진료 요약」의 질환명 자리다(KEY-365).
+    #: 확정 진단(`disease_name`)이 아니라 **세트 카탈로그의 값**이다. 진료의
+    #: 처방 세트 이름이 카탈로그에 없으면 `None` 이고, 요약 카드는 서지 않는다.
+    set_disease: SetDisease | None = None
+    #: 확정 처방 항목의 약 이름(성분 괄호를 뗀 상표명), 저장 순서대로 — KEY-365.
+    drug_names: tuple[str, ...] = ()
 
 
 def _clinic_date(value: datetime) -> date:
@@ -136,6 +142,13 @@ def calculate_medication_progress(
     )
 
 
+def _drug_short_name(name: str) -> str:
+    """「비잔정(디에노게스트) 2mg」 → 「비잔정」. 괄호가 없으면 이름 그대로다."""
+    raw_name = name.strip()
+    matched = _DRUG_WITH_INGREDIENT.match(raw_name)
+    return matched.group("brand").strip() if matched else raw_name
+
+
 def _medication_data(
     item: PrescriptionItem,
     *,
@@ -148,12 +161,11 @@ def _medication_data(
         brand = matched.group("brand").strip()
         suffix = matched.group("suffix").strip()
         drug_name = " ".join(part for part in (brand, suffix) if part)
-        short_name = brand
         ingredient_label = f"성분 · {matched.group('ingredient').strip()}"
     else:
         drug_name = raw_name
-        short_name = raw_name
         ingredient_label = None
+    short_name = _drug_short_name(raw_name)
 
     prescribed = max(item.duration_days or 0, 0)
     duration = f"{prescribed}일분" if prescribed > 0 else None
@@ -820,17 +832,18 @@ class PatientLinkService:
 
         diagnosis_name = diagnosis.value.strip() if diagnosis is not None and diagnosis.value else None
         diseases = _confirmed_diseases(diagnosis_name)
-        if diagnosis_name and prescription is not None:
+        prescription_set: PrescriptionSet | None = None
+        if prescription is not None:
             #: **이름으로 한 줄만 집는다.** 전에는 `PrescriptionSet.all()` 을 위
             #: `gather` 에 넣고 파이썬에서 이름을 훑었다. 환자 화면이 한 번
             #: 부를 때는 티가 안 났는데, 이 파생이 스탭 종점까지 타면서 카탈로그
             #: 전체를 읽는 질의가 훨씬 잦아졌다 (이희진 님 `#272`).
             #:
             #: 세트 이름은 `prescription` 이 와야 알 수 있어 `gather` 에 못 넣는다.
-            #: 대신 **필요할 때만** 돈다 — 확정 진단과 처방이 둘 다 있을 때다.
+            #: 처방이 있으면 돈다 — 「오늘 진료 요약」이 세트의 질환을 쓴다(KEY-365).
             prescription_set = await PrescriptionSet.filter(name=prescription.prescription_set).first()
-            if prescription_set is not None:
-                diseases.add(prescription_set.disease)
+        if diagnosis_name and prescription_set is not None:
+            diseases.add(prescription_set.disease)
         goals: list[PatientGuideGoalData] = []
         if diseases:
             selected_baselines = _select_baselines(
@@ -858,4 +871,6 @@ class PatientLinkService:
             medication=medication,
             goals=goals,
             sections={section.section_key: section.body for section in guide.sections},
+            set_disease=prescription_set.disease if prescription_set is not None else None,
+            drug_names=tuple(name for name in (_drug_short_name(item.name) for item in items) if name),
         )

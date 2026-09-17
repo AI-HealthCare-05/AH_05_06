@@ -22,12 +22,8 @@ from app.dtos.checkins import (
 )
 from app.dtos.patient_links import (
     GuidePageViewRequest,
-    PatientCareBlockResponse,
-    PatientCareResponse,
     PatientGuideResponse,
     PatientGuideSectionResponse,
-    PatientLifeAxisResponse,
-    PatientLifeResponse,
     PatientLinkIssueResponse,
     PatientLinkStateResponse,
 )
@@ -38,14 +34,13 @@ from app.models.visits import (
     GuideMessage,
     GuideMessageKind,
     GuideMessageStatus,
-    GuideSectionKey,
     PatientGuideLink,
     Visit,
 )
 from app.services.checkin_signals import REVIEW_ANSWERS, CheckInSignalService
 from app.services.checkins import CheckInService, approved_answer_bodies
 from app.services.message_dispatch import check_day_number
-from app.services.patient_guide_view import guide_detail_of, medication_stat_of
+from app.services.patient_guide_view import care_of, guide_detail_of, life_of, medication_stat_of
 from app.services.patient_links import PatientGuideData, PatientLinkService
 from app.services.patient_usage import PatientUsageService
 
@@ -147,41 +142,13 @@ def _patient_response(
         # assert에 응답 안전을 맡기지 않는다.
         raise RuntimeError("approved guide has no approved_at")
 
-    caution_body = data.sections.get(GuideSectionKey.CAUTION)
-    emergency_body = data.sections.get(GuideSectionKey.EMERGENCY)
-    life_body = data.sections.get(GuideSectionKey.LIFE)
-
-    #: **스탭 미리보기와 같은 자리에서 짓는다** (KEY-294). 여기 두 줄을
-    #: 여기서 다시 조립하면 「환자가 받는 그대로」라고 적어 둔 미리보기가
-    #: 조용히 다른 것을 보이게 된다.
+    #: **스탭 미리보기와 같은 자리에서 짓는다** (KEY-294). 카드를 여기서
+    #: 다시 조립하면 「환자가 받는 그대로」라고 적어 둔 미리보기가 조용히
+    #: 다른 것을 보이게 된다 — 주의사항·생활관리도 마찬가지다(KEY-365).
     stat = medication_stat_of(data)
     guide_detail = guide_detail_of(data)
-
-    care = (
-        PatientCareResponse(
-            blocks=[PatientCareBlockResponse(t="주의사항", p=[caution_body])] if caution_body else [],
-            danger=[emergency_body] if emergency_body else [],
-            # 일반 병원 안내를 증상별 문의 기준으로 오해시키지 않는다.
-            ask=None,
-        )
-        if caution_body or emergency_body
-        else None
-    )
-    life = (
-        PatientLifeResponse(
-            sub=data.disease_name,
-            axes={
-                "생활관리": PatientLifeAxisResponse(
-                    title="생활관리",
-                    p=[life_body],
-                )
-            }
-            if life_body
-            else {},
-        )
-        if life_body or data.disease_name
-        else None
-    )
+    care = care_of(data)
+    life = life_of(data)
     return PatientGuideResponse(
         version=guide.version,
         approved_at=guide.approved_at,

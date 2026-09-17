@@ -54,12 +54,14 @@ class DispatchGateDecision:
     #: 목록이 채워지는 시점엔 이미 그 다른 게이트를 전부 통과했다는
     #: 뜻이라 안전하다.
     pending_source_document_ids: tuple[int, ...] = ()
+    source_failure_type: str | None = None
 
 
 async def evaluate_dispatch_gate(
     message: GuideMessage,
     *,
     storage: StorageProbe | None = None,
+    recover_sources: bool = False,
 ) -> DispatchGateDecision:
     """게이트 판정과 그때 읽은 안내문을 함께 돌려준다."""
     guide = await GuideDocument.filter(guide_document_id=message.guide_document_id).first()
@@ -67,9 +69,24 @@ async def evaluate_dispatch_gate(
         return DispatchGateDecision(guide=guide, hold_reason=GuideMessageHold.NOT_APPROVED)
 
     backend = storage or LocalFileStorage(config.UPLOAD_DIR)
-    mismatch, pending_ids = await _source_deletion_state(guide.visit_id, backend)
+    try:
+        mismatch, pending_ids = await _source_deletion_state(guide.visit_id, backend)
+    except (OSError, ValueError):
+        return DispatchGateDecision(
+            guide=guide,
+            hold_reason=GuideMessageHold.SOURCE_NOT_DELETED,
+            source_failure_type="STORAGE_UNAVAILABLE",
+        )
+    if recover_sources:
+        # Re-verify every source, including a deletion record whose file reappeared.
+        pending_ids = tuple(doc.document_id for doc in await MedicalDocument.filter(visit_id=guide.visit_id).all())
+        mismatch = False
     if mismatch:
-        return DispatchGateDecision(guide=guide, hold_reason=GuideMessageHold.SOURCE_NOT_DELETED)
+        return DispatchGateDecision(
+            guide=guide,
+            hold_reason=GuideMessageHold.SOURCE_NOT_DELETED,
+            source_failure_type="DELETION_RECORD_MISMATCH",
+        )
 
     #: **여기서 한 번만 읽는다.** 아래 판정도, 발송의 렌더도 이 값을 쓴다.
     body = await effective_body(

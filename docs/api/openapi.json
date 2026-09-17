@@ -1646,6 +1646,16 @@
         "additionalProperties": false,
         "description": "스탭·의사 화면의 「환자 화면 미리보기」가 그리는 카드 — KEY-294.\n\n`sections` 만으로는 **나의 목표 · 처방받은 약 · 약별 복용 방법** 세 카드를\n못 그린다. 그 셋은 절이 아니라 처방·검사 기준선에서 나오는 파생이고,\n환자 종점이 이미 짓고 있다. 미리보기가 그것을 못 받아서 「환자가 받는\n그대로」라고 적어 놓고 부분만 보여 주고 있었다 (KEY-286 후속).\n\n**환자 종점과 같은 자리에서 짓는다** — `app/services/patient_guide_view.py`.\n두 곳에서 따로 조립하면 갈라지고, 갈라진 것을 사람은 승인 뒤에야 안다.\n\n새로 나가는 값은 처방·검사 파생, 진료일과 병원명뿐이다. 링크 토큰·연락처처럼\n미리보기에 없던 개인정보는 여기 담지 않는다.",
         "properties": {
+          "care": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PatientCareResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "clinic": {
             "anyOf": [
               {
@@ -1661,6 +1671,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PatientGuideDetailResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "life": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PatientLifeResponse"
               },
               {
                 "type": "null"
@@ -3797,6 +3817,20 @@
       "PatientGuideDetailResponse": {
         "additionalProperties": false,
         "properties": {
+          "blocks": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PatientCareBlockResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocks"
+          },
           "drug": {
             "anyOf": [
               {
@@ -5419,6 +5453,39 @@
             ],
             "title": "Sent At"
           },
+          "source_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Failure At"
+          },
+          "source_failure_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Failure Type"
+          },
+          "source_retry_generation": {
+            "default": 0,
+            "title": "Source Retry Generation",
+            "type": "integer"
+          },
+          "source_retry_requested": {
+            "default": false,
+            "title": "Source Retry Requested",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -5536,6 +5603,39 @@
             "format": "date-time",
             "title": "Scheduled At",
             "type": "string"
+          },
+          "source_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Failure At"
+          },
+          "source_failure_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Failure Type"
+          },
+          "source_retry_generation": {
+            "default": 0,
+            "title": "Source Retry Generation",
+            "type": "integer"
+          },
+          "source_retry_requested": {
+            "default": false,
+            "title": "Source Retry Requested",
+            "type": "boolean"
           },
           "status": {
             "$ref": "#/components/schemas/GuideMessageStatus"
@@ -5993,6 +6093,48 @@
           "updated_at"
         ],
         "title": "SignalAcknowledgeRequest",
+        "type": "object"
+      },
+      "SourceRetryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "minimum": 0.0,
+            "title": "Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generation"
+        ],
+        "title": "SourceRetryRequest",
+        "type": "object"
+      },
+      "SourceRetryResponse": {
+        "properties": {
+          "guide_message_id": {
+            "title": "Guide Message Id",
+            "type": "integer"
+          },
+          "source_retry_generation": {
+            "title": "Source Retry Generation",
+            "type": "integer"
+          },
+          "source_retry_requested": {
+            "title": "Source Retry Requested",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuideMessageStatus"
+          }
+        },
+        "required": [
+          "guide_message_id",
+          "status",
+          "source_retry_requested",
+          "source_retry_generation"
+        ],
+        "title": "SourceRetryResponse",
         "type": "object"
       },
       "StaffCreateRequest": {
@@ -9015,6 +9157,63 @@
           }
         ],
         "summary": "Update Scheduled Message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/messages/{message_id}/source-retry": {
+      "post": {
+        "operationId": "retry_source_deletion_api_v1_messages__message_id__source_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceRetryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Source Deletion",
         "tags": [
           "messages"
         ]

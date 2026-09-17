@@ -286,6 +286,14 @@ function canPreviewApprovedGuide(currentGuide) {
     if (!body) return;
 
     body.addEventListener("click", function (event) {
+      var sourceButton = event.target.closest("[data-source-retry]");
+      if (sourceButton) {
+        var sourceVisit = visitId;
+        requestSourceRetry(sourceButton, function () {
+          if (visitId === sourceVisit) loadTimeline(sourceVisit);
+        });
+        return;
+      }
       var button = event.target.closest("[data-resend]");
       if (!button) return;
 
@@ -701,6 +709,7 @@ function canPreviewApprovedGuide(currentGuide) {
   });
 
   requireSession().then(function (who) {
+    sourceRetryRoles = who.roles || [];
     me = who;
     renderFinalActions();
   });

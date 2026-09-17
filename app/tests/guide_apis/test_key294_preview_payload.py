@@ -16,7 +16,7 @@ from app.dependencies.patient_auth import require_patient_session
 from app.main import app
 from app.models.catalog import BaselineDirection, LabBaseline, SetDisease
 from app.models.ocr import OcrField
-from app.models.visits import GuideDocument, PatientGuideLink, Visit
+from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, PatientGuideLink, Visit
 from app.services.patient_links import digest_link_token
 from app.tests.guide_apis.test_guide_generate import (
     BASE,
@@ -30,6 +30,13 @@ from app.tests.guide_apis.test_guide_generate import (
 
 #: 이 검사 안에서만 사는 값. 진짜 토큰은 화면·로그·커밋에 안 남긴다(`AGENTS.md`).
 SYNTHETIC_TOKEN = "synthetic-key294-token"
+
+#: 「■ 소제목」이 든 합성 본문 — KEY-365.
+HEADED_BODIES = {
+    GuideSectionKey.MEDICATION: "■ 이 약을 복용하는 이유\n합성 이유 문단이에요.\n\n■ 복용 안내\n합성 안내 문단이에요.",
+    GuideSectionKey.CAUTION: "■ 진료 시 알려주세요\n합성 알려 줄 증상이에요.",
+    GuideSectionKey.LIFE: "■ 생활 속 습관\n합성 습관 문단이에요.",
+}
 
 
 def without_nones(value: object) -> object:
@@ -143,6 +150,9 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
             assert approved.status_code == 200, approved.text
 
             guide = await GuideDocument.get(visit_id=visit.visit_id)
+            #: 소제목이 있는 본문으로 잰다 — 카드를 나누는 일이 서버로 왔다(KEY-365).
+            for key, body in HEADED_BODIES.items():
+                await GuideSection.filter(guide_document=guide, section_key=key).update(edited_body=body)
             await PatientGuideLink.create(
                 guide_document=guide,
                 token_digest=digest_link_token(SYNTHETIC_TOKEN),
@@ -165,6 +175,13 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
         assert staff_side.json()["preview"]["visit"] == patient_side.json()["visit"], "진료일이 갈렸다"
         assert without_nones(staff_side.json()["preview"]["stat"]) == without_nones(patient_side.json()["stat"])
         assert staff_side.json()["preview"]["clinic"] == patient_side.json()["clinic"]
+        for card in ("care", "life"):
+            assert without_nones(staff_side.json()["preview"][card]) == without_nones(patient_side.json()[card]), (
+                f"{card} 카드가 미리보기와 환자 화면에서 갈렸다 (KEY-365)"
+            )
+        assert patient_side.json()["guide"]["blocks"] == [{"t": "복용 안내", "p": ["합성 안내 문단이에요."]}]
+        assert [block["t"] for block in patient_side.json()["care"]["blocks"]] == ["진료 시 알려주세요"]
+        assert list(patient_side.json()["life"]["axes"]) == ["생활 속 습관"]
 
     async def test_only_reading_carries_the_preview(self) -> None:
         """**상태를 바꾸는 응답에는 안 싣는다.**
@@ -194,8 +211,10 @@ class TestKey294PreviewPayload(GenerateGuideTestCase):
 
         preview = (await self.read_guide(visit.visit_id, staff))["preview"]
 
-        assert set(preview) == {"visit", "guide", "stat", "clinic"}, f"봉투에 모르는 값이 늘었다 — {sorted(preview)}"
-        assert set(preview["guide"]) <= {"summary", "goals", "goalSay", "drug", "why", "how", "next"}, (
+        assert set(preview) == {"visit", "guide", "stat", "clinic", "care", "life"}, (
+            f"봉투에 모르는 값이 늘었다 — {sorted(preview)}"
+        )
+        assert set(preview["guide"]) <= {"summary", "goals", "goalSay", "drug", "why", "how", "blocks", "next"}, (
             f"파생에 모르는 값이 늘었다 — {sorted(preview['guide'])}"
         )
 
