@@ -98,16 +98,16 @@ _APPROVED_BODY_HASHES: dict[tuple[str, str, str], str] = {
         "emergency",
         "2026-09-17",
     ): "6bf07e209f5926b6edec89d6213c7b61d1a6a0208042795b9f505436810094ef",
-    # X 세트 medication: 본문 변경 없이 Grade B→C 전환
+    # X 세트 medication: source_name·source_url 변경 + Grade B→C 전환 → r2 판 신규
     (
         "자궁내막증 · 비잔 X",
         "medication",
-        "2026-09-17",
+        "2026-09-17-r2",
     ): "864382e20161b1d75bdb0ef0d9031a435a633b1d304e6f726eba9076affdc406",
     (
         "PCOS · 야즈 X",
         "medication",
-        "2026-09-17",
+        "2026-09-17-r2",
     ): "864382e20161b1d75bdb0ef0d9031a435a633b1d304e6f726eba9076affdc406",
     # ── 2026-09-17-r2 (소제목 추가 · 응급 문구 교정) ─────────────────────────
     (
@@ -433,7 +433,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.MEDICATION,
         body=_X_MEDICATION,
         source_grade=SourceGrade.C,
-        content_version=_APPROVED_VERSION_2,
+        content_version=_APPROVED_VERSION_3,
         source_name=_SVC_MED_SOURCE_NAME,
         source_org=_SVC_MED_SOURCE_ORG,
         source_url=_SVC_MED_SOURCE_URL,
@@ -498,7 +498,7 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         section_key=CautionSectionKey.MEDICATION,
         body=_X_MEDICATION,
         source_grade=SourceGrade.C,
-        content_version=_APPROVED_VERSION_2,
+        content_version=_APPROVED_VERSION_3,
         source_name=_SVC_MED_SOURCE_NAME,
         source_org=_SVC_MED_SOURCE_ORG,
         source_url=_SVC_MED_SOURCE_URL,
