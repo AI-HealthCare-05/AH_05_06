@@ -18,6 +18,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from tortoise.expressions import Q
 from tortoise.timezone import now
 from tortoise.transactions import in_transaction
 
@@ -41,7 +42,7 @@ from app.models.visits import (
     GuideMessageStatus,
     Visit,
 )
-from app.services.dispatch_gate import evaluate_dispatch_gate
+from app.services.dispatch_gate import DispatchGateDecision, evaluate_dispatch_gate
 from app.services.message_templates import MessageTemplateKind, effective_body
 from app.services.patient_links import PatientLinkService
 from app.services.sms_sender import SmsDeliveryStatus, SmsSender, SmsSendError, SmsSendResult
@@ -248,29 +249,34 @@ async def _purge_source_documents(
     던져 호출부(`dispatch_message`)의 재시도 경로로 넘긴다 — 기록이
     실제와 어긋난 채로 남으면 안 된다.
     """
-    for document_id in document_ids:
-        doc = await MedicalDocument.get(document_id=document_id)
-        already_gone = not await storage.exists(doc.file_path)
-        if not already_gone:
-            await storage.delete(doc.file_path)
+    for document_id in sorted(document_ids):
+        # Different messages for one visit may race: serialize the physical delete
+        # and atomically commit BOTH deletion records and raw-text removal.
+        async with in_transaction() as connection:
+            doc = await MedicalDocument.filter(document_id=document_id).using_db(connection).select_for_update().get()
+            already_gone = not await storage.exists(doc.file_path)
+            if not already_gone:
+                await storage.delete(doc.file_path)
             if await storage.exists(doc.file_path):
-                raise RuntimeError(f"원본 삭제 확인 실패: document_id={document_id}")
-
-        purged_at = now()
-        doc.source_deleted_at = purged_at
-        await doc.save(update_fields=["source_deleted_at"])
-
-        for text_row in await OcrDocumentText.filter(document_id=document_id).all():
-            if text_row.raw_text is None:
-                continue
-            text_row.purge_raw_text(purged_at=purged_at)
-            await text_row.save(update_fields=["raw_text", "raw_text_purged_at", "updated_at"])
-
-        await _log_event(
-            message_id,
-            GuideMessageEventType.SOURCE_ALREADY_PURGED if already_gone else GuideMessageEventType.SOURCE_PURGED,
-            reason=f"document_id={document_id}",
-        )
+                raise RuntimeError("source absence verification failed")
+            purged_at = now()
+            if not already_gone or doc.source_deleted_at is None:
+                doc.source_deleted_at = purged_at
+            await doc.save(using_db=connection, update_fields=["source_deleted_at"])
+            for text_row in await OcrDocumentText.filter(document_id=document_id).using_db(connection).all():
+                if text_row.raw_text is not None:
+                    text_row.purge_raw_text(purged_at=purged_at)
+                    await text_row.save(
+                        using_db=connection, update_fields=["raw_text", "raw_text_purged_at", "updated_at"]
+                    )
+            await GuideMessageEvent.create(
+                guide_message_id=message_id,
+                event_type=GuideMessageEventType.SOURCE_ALREADY_PURGED
+                if already_gone
+                else GuideMessageEventType.SOURCE_PURGED,
+                reason=f"document_id={document_id}",
+                using_db=connection,
+            )
 
 
 async def _claim(message_id: int, *, at: datetime) -> tuple[str | None, bool]:
@@ -315,10 +321,9 @@ async def _claim(message_id: int, *, at: datetime) -> tuple[str | None, bool]:
         return None, False
     if message.kind is not GuideMessageKind.CHECK_D7:
         affected = await GuideMessage.filter(
+            _dispatchable(at),
             guide_message_id=message_id,
-            status=GuideMessageStatus.SCHEDULED,
             claim_token__isnull=True,
-            scheduled_at__lte=at,
         ).update(claim_token=token)
         return (token if affected == 1 else None), False
 
@@ -335,8 +340,8 @@ async def _claim(message_id: int, *, at: datetime) -> tuple[str | None, bool]:
         if await CheckIn.filter(guide_document_id=message.guide_document_id).using_db(connection).exists():
             affected = await (
                 GuideMessage.filter(
+                    _dispatchable(at),
                     guide_message_id=message_id,
-                    status=GuideMessageStatus.SCHEDULED,
                     claim_token__isnull=True,
                 )
                 .using_db(connection)
@@ -352,10 +357,9 @@ async def _claim(message_id: int, *, at: datetime) -> tuple[str | None, bool]:
             return None, True
         affected = (
             await GuideMessage.filter(
+                _dispatchable(at),
                 guide_message_id=message_id,
-                status=GuideMessageStatus.SCHEDULED,
                 claim_token__isnull=True,
-                scheduled_at__lte=at,
             )
             .using_db(connection)
             .update(claim_token=token)
@@ -391,22 +395,39 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
     if prepared is None or isinstance(prepared, DispatchResult):
         return prepared
     token, message, storage = prepared
+    gate = await _prepare_sources(message, token, moment, storage)
+    if isinstance(gate, DispatchResult):
+        return gate
+    return await _send_prepared(message, token, moment, gate, sender)
+
+
+async def _prepare_sources(
+    message: GuideMessage,
+    token: str,
+    moment: datetime,
+    storage: SourcePurger,
+) -> DispatchGateDecision | DispatchResult:
+    message_id = message.guide_message_id
     try:
         await _log_event(message_id, GuideMessageEventType.ATTEMPTED)
-        gate = await evaluate_dispatch_gate(message, storage=storage)
+        gate = await evaluate_dispatch_gate(message, storage=storage, recover_sources=message.source_retry_requested)
     except Exception:
-        default_logger.exception("문자 발송 게이트 처리 중 예상치 못한 예외 — guide_message_id=%s", message_id)
+        default_logger.error("문자 발송 게이트 실패 — guide_message_id=%s", message_id)
+        if message.source_retry_requested:
+            return await _finish_held(message, token, GuideMessageHold.SOURCE_NOT_DELETED, "RECOVERY_FAILED")
         return await _finish_retryable(message, token, moment, provider_detail="worker_exception")
 
     if gate.hold_reason is not None:
-        return await _finish_held(message, token, gate.hold_reason)
+        return await _finish_held(message, token, gate.hold_reason, gate.source_failure_type)
 
     if gate.pending_source_document_ids:
         try:
             await _purge_source_documents(message_id, gate.pending_source_document_ids, storage)
         except Exception:
-            default_logger.exception("원본 삭제 처리 중 예상치 못한 예외 — guide_message_id=%s", message_id)
+            default_logger.error("원본 삭제 실패 — guide_message_id=%s", message_id)
             await _log_event(message_id, GuideMessageEventType.SOURCE_PURGE_FAILED, reason="worker_exception")
+            if message.source_retry_requested:
+                return await _finish_held(message, token, GuideMessageHold.SOURCE_NOT_DELETED, "PURGE_RETRY_FAILED")
             return await _finish_retryable(
                 message,
                 token,
@@ -415,6 +436,44 @@ async def dispatch_message(message_id: int, sender: SmsSender) -> DispatchResult
                 exhausted_hold_reason=GuideMessageHold.SOURCE_NOT_DELETED,
             )
 
+    if message.source_retry_requested:
+        # Only the worker may resume scheduling, and only after verified purge.
+        async with in_transaction() as connection:
+            affected = (
+                await GuideMessage.filter(
+                    guide_message_id=message_id,
+                    claim_token=token,
+                    status=GuideMessageStatus.HELD,
+                )
+                .using_db(connection)
+                .update(
+                    status=GuideMessageStatus.SCHEDULED,
+                    scheduled_at=moment,
+                    hold_reason=None,
+                    source_retry_requested=False,
+                    source_failure_type=None,
+                    source_failure_at=None,
+                    attempt_count=0,
+                    claim_token=None,
+                )
+            )
+            if affected != 1:
+                raise RuntimeError("source recovery claim lost")
+            for event in (GuideMessageEventType.SOURCE_VERIFIED, GuideMessageEventType.SOURCE_REQUEUED):
+                await GuideMessageEvent.create(guide_message_id=message_id, event_type=event, using_db=connection)
+        return DispatchResult(message_id, GuideMessageStatus.SCHEDULED)
+
+    return gate
+
+
+async def _send_prepared(
+    message: GuideMessage,
+    token: str,
+    moment: datetime,
+    gate: DispatchGateDecision,
+    sender: SmsSender,
+) -> DispatchResult:
+    message_id = message.guide_message_id
     try:
         guide = gate.guide
         visit = await Visit.filter(visit_id=guide.visit_id).first() if guide else None
@@ -463,18 +522,36 @@ async def _finish_sent(
     return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.SENT)
 
 
-async def _finish_held(message: GuideMessage, token: str, hold_reason: GuideMessageHold) -> DispatchResult:
-    affected = await GuideMessage.filter(
-        guide_message_id=message.guide_message_id,
-        claim_token=token,
-    ).update(
-        status=GuideMessageStatus.HELD,
-        hold_reason=hold_reason,
-        claim_token=None,
-    )
-    if affected != 1:
-        raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
-    await _log_event(message.guide_message_id, GuideMessageEventType.HELD, reason=hold_reason.value)
+async def _finish_held(
+    message: GuideMessage,
+    token: str,
+    hold_reason: GuideMessageHold,
+    source_failure_type: str | None = None,
+) -> DispatchResult:
+    async with in_transaction() as connection:
+        affected = (
+            await GuideMessage.filter(
+                guide_message_id=message.guide_message_id,
+                claim_token=token,
+            )
+            .using_db(connection)
+            .update(
+                status=GuideMessageStatus.HELD,
+                hold_reason=hold_reason,
+                claim_token=None,
+                source_retry_requested=False,
+                source_failure_type=source_failure_type,
+                source_failure_at=now() if source_failure_type else None,
+            )
+        )
+        if affected != 1:
+            raise RuntimeError(f"발송 결과 저장 실패: guide_message_id={message.guide_message_id}")
+        await GuideMessageEvent.create(
+            guide_message_id=message.guide_message_id,
+            event_type=GuideMessageEventType.HELD,
+            reason=hold_reason.value + (":" + source_failure_type if source_failure_type else ""),
+            using_db=connection,
+        )
     return DispatchResult(guide_message_id=message.guide_message_id, status=GuideMessageStatus.HELD)
 
 
@@ -545,7 +622,7 @@ async def _finish_retryable(
 
     if attempt >= MAX_ATTEMPTS:
         if exhausted_hold_reason is not None:
-            return await _finish_held(message, token, exhausted_hold_reason)
+            return await _finish_held(message, token, exhausted_hold_reason, "PURGE_RETRY_EXHAUSTED")
         return await _finish_failed(
             message,
             token,
@@ -573,14 +650,21 @@ async def _finish_retryable(
     )
 
 
+def _dispatchable(moment: datetime) -> Q:
+    return Q(status=GuideMessageStatus.SCHEDULED, scheduled_at__lte=moment) | Q(
+        status=GuideMessageStatus.HELD,
+        hold_reason=GuideMessageHold.SOURCE_NOT_DELETED,
+        source_retry_requested=True,
+    )
+
+
 async def dispatch_due_messages(sender: SmsSender, *, limit: int = 100) -> list[DispatchResult]:
     """지금 시각 기준으로 나갈 때가 된 문자를 전부 찾아서 하나씩 처리한다."""
     moment = now()
     due_ids: list[int] = await (
         GuideMessage.filter(
-            status=GuideMessageStatus.SCHEDULED,
+            _dispatchable(moment),
             claim_token__isnull=True,
-            scheduled_at__lte=moment,
         )
         .order_by("scheduled_at", "guide_message_id")
         .limit(limit)

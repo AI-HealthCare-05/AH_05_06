@@ -736,6 +736,12 @@ class GuideMessage(models.Model):
     #: 화면에 뭔가를 보여주지 않는다.
     claim_token = fields.CharField(max_length=32, null=True)
 
+    # KEY-362: recovery stays HELD until the worker verifies source absence.
+    source_failure_type = fields.CharField(max_length=32, null=True)
+    source_failure_at = fields.DatetimeField(null=True)
+    source_retry_requested = fields.BooleanField(default=False)
+    source_retry_generation = fields.IntField(default=0)
+
     #: 재발송 요청의 원본 메시지. 원본 한 건당 재발송 작업을 하나만 만들어
     #: 같은 요청의 재시도와 동시 클릭이 중복 발송으로 이어지지 않게 한다.
     resend_of_message_id = fields.BigIntField(null=True, unique=True)
@@ -779,6 +785,9 @@ class GuideMessageEventType(StrEnum):
     #: 삭제·확인·기록 중 하나가 실패해서 이번 시도를 재시도로 돌렸다 —
     #: KEY-349. `reason`에 문서 id만 남긴다(경로·파일명·환자정보 금지).
     SOURCE_PURGE_FAILED = "SOURCE_PURGE_FAILED"
+    SOURCE_RETRY = "SOURCE_RETRY"
+    SOURCE_VERIFIED = "SOURCE_VERIFIED"
+    SOURCE_REQUEUED = "SOURCE_REQUEUED"
     #: 환자가 D+7 답변을 저장해서 이 예약이 취소됐다 — KEY-320, 2heej 리뷰.
     #:
     #: `GuideMessage.status`가 CANCELED로 바뀌는 경로는 이것 말고도

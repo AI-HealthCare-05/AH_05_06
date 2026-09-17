@@ -1052,6 +1052,18 @@ KEY-60에 명시된 필드 단위 조회·수정 계약만 유지했습니다.
 | Method | Path | 용도 | 권한 |
 |---|---|---|---|
 | GET | `/api/v1/messages/scheduled?days=7&limit=200` | 앞으로 나갈 것 + 안 나간 것 | `staff`·`doctor` |
+| POST | `/api/v1/messages/{message_id}/source-retry` | 원본 삭제 보류 복구 요청(KEY-362) | `staff`·`doctor` |
+
+**KEY-362 원본 삭제 복구:** 목록 및 진료 현황의 메시지 응답에
+`source_failure_type`, `source_failure_at`, `source_retry_requested`,
+`source_retry_generation`을 포함한다. 내부 경로·문서 본문·연락처는 담지 않는다.
+복구 요청 본문은 `{ "generation": 0 }`처럼 조회한 세대를 전달한다.
+응답은 202와 메시지 ID·현재 상태·복구 대기 여부·세대다.
+요청 즉시 `HELD`를 해제하지 않는다. 기존 워커가 모든 발송 게이트를 통과하고
+원본 삭제·파일 부재 검증·OCR 원문 제거에 성공해야 다시 예약한다.
+같은 세대의 지연/중복 요청은 재실행하지 않는다. 권한 없음 403, 타 병원/없음 404,
+복구 대상 상태 아님/잘못된 세대 409, 잘못된 본문 400이다.
+일반 재발송 API나 수동 상태 변경 API로 이 복구 절차를 우회할 수 없다.
 
 **두 규칙이 이 화면의 전부다.**
 

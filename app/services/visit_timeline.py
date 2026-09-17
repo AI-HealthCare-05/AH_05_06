@@ -171,6 +171,10 @@ class VisitTimelineService:
                 sent_at=row.sent_at,
                 failure_code=row.failure_code,
                 hold_reason=row.hold_reason,
+                source_failure_type=row.source_failure_type,
+                source_failure_at=row.source_failure_at,
+                source_retry_requested=row.source_retry_requested,
+                source_retry_generation=row.source_retry_generation,
             )
             for row in await GuideMessage.filter(guide_document_id=guide.guide_document_id).order_by("scheduled_at")
         ]

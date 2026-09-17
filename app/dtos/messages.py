@@ -9,7 +9,7 @@
 from datetime import date, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from tortoise.timezone import now
 
 from app.models.patients import PatientGender
@@ -21,7 +21,26 @@ from app.models.visits import (
 )
 
 
-class ScheduledMessageItem(BaseModel):
+class SourceRecoveryInfo(BaseModel):
+    source_failure_type: str | None = None
+    source_failure_at: datetime | None = None
+    source_retry_requested: bool = False
+    source_retry_generation: int = 0
+
+
+class SourceRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    generation: int = Field(ge=0)
+
+
+class SourceRetryResponse(BaseModel):
+    guide_message_id: int
+    status: GuideMessageStatus
+    source_retry_requested: bool
+    source_retry_generation: int
+
+
+class ScheduledMessageItem(SourceRecoveryInfo):
     """표 한 줄 — 예정 시각 · 환자 · 식별정보 · 세트명 · 종류 · 상태."""
 
     guide_message_id: int
