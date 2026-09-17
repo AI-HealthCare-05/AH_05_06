@@ -157,10 +157,11 @@ class SeedIsRerunnableTestCase(TestCase):
         """같은 버전이 이미 DB에 있어도 KEY-283의 등급 정정은 반영된다."""
         await seed_catalog()
 
-        # 전문의 자문(Grade C, source_name에 「전문의」 포함) 행 = 12.
-        # ESHRE life(Grade A)·X 세트 medication(서비스 팀장 검토, 전문의 아님)은 잡히지 않는다.
+        # 전문의 자문(Grade C, source_name에 「전문의」 포함) 행 = 8.
+        # ESHRE life(Grade A) 2칸 · 서비스팀 검토 6칸(X medication 2 + X caution 2 +
+        # 야즈 emergency 2)은 잡히지 않는다 — KEY-357 출처 정정.
         physician_rows = await DrugCautionContent.filter(source_name__contains="전문의").all()
-        assert len(physician_rows) == 12
+        assert len(physician_rows) == 8
         for row in physician_rows:
             row.source_grade = SourceGrade.A
             await row.save(update_fields=["source_grade", "updated_at"])
@@ -168,5 +169,5 @@ class SeedIsRerunnableTestCase(TestCase):
         await seed_catalog()
 
         corrected = await DrugCautionContent.filter(source_name__contains="전문의").all()
-        assert len(corrected) == 12
+        assert len(corrected) == 8
         assert all(row.source_grade is SourceGrade.C for row in corrected)
