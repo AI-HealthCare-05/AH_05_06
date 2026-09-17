@@ -12,7 +12,7 @@
 
   갈래는 복약지도·주의사항·응급·생활지도 넷이다. 16 칸 모두 APPROVED.
   자궁내막증 life 는 ESHRE Guideline 2022 기반(SourceGrade.A),
-  X 세트 medication 은 서비스 팀장 승인(SourceGrade.C, 전문의 아님),
+  서비스 팀 검토 6칸(X medication 2·X caution 2·야즈 emergency 2): SourceGrade.C, 전문의 아님,
   나머지는 전문의 자문(SourceGrade.C).
 
 **KEY-357: 처음/계속 축 → 약 처방 여부 O/X 축으로 변경.**
@@ -41,11 +41,12 @@ _ADVICE_SOURCE_NAME = "산부인과 전문의 복약지도 — 자문 내용"
 _ADVICE_SOURCE_ORG = "산부인과 전문의"
 _ADVICE_SOURCE_URL = "https://app.notion.com/p/3ba0c3b3380580068fa1f32666a8b68c"
 
-# X 세트 medication — 서비스 팀장 승인 (전문의 아님)
-_SVC_MED_SOURCE_NAME = "서비스 팀장 복약지도 검토"
-_SVC_MED_SOURCE_ORG = "박영 산부인과"
+# 서비스 팀 검토 6칸 — X medication·X caution·야즈 emergency (전문의 아님, 이희진 확정)
+_SVC_SOURCE_NAME = "서비스 팀 안내 문구 — 간호사 검토"
+_SVC_SOURCE_ORG = "서비스 팀"
 _SVC_MED_SOURCE_URL = "https://app.notion.com/p/3decaf5650aa809da074c68c6ce9cab0"
-_SVC_MED_REVIEWER = "서비스 팀장 승인"
+_SVC_OTHER_SOURCE_URL = "https://app.notion.com/p/3dea59d48d65809a9dc5f043814bc41f"
+_SVC_REVIEWER = "서비스 팀장(간호사) 승인"
 
 # 최초 승인 (KEY-265, 2026-09-04)
 _APPROVED_AT = date(2026, 9, 4)
@@ -434,10 +435,10 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         body=_X_MEDICATION,
         source_grade=SourceGrade.C,
         content_version=_APPROVED_VERSION_3,
-        source_name=_SVC_MED_SOURCE_NAME,
-        source_org=_SVC_MED_SOURCE_ORG,
+        source_name=_SVC_SOURCE_NAME,
+        source_org=_SVC_SOURCE_ORG,
         source_url=_SVC_MED_SOURCE_URL,
-        reviewer_name=_SVC_MED_REVIEWER,
+        reviewer_name=_SVC_REVIEWER,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 X",
@@ -445,6 +446,10 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         body=_BIJAN_X_CAUTION,
         source_grade=SourceGrade.C,
         content_version=_APPROVED_VERSION_3,
+        source_name=_SVC_SOURCE_NAME,
+        source_org=_SVC_SOURCE_ORG,
+        source_url=_SVC_OTHER_SOURCE_URL,
+        reviewer_name=_SVC_REVIEWER,
     ),
     DrugCautionContentRow(
         prescription_set_name="자궁내막증 · 비잔 X",
@@ -477,6 +482,10 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         body=_YAZ_EMERGENCY,
         source_grade=SourceGrade.C,
         content_version=_APPROVED_VERSION_3,
+        source_name=_SVC_SOURCE_NAME,
+        source_org=_SVC_SOURCE_ORG,
+        source_url=_SVC_OTHER_SOURCE_URL,
+        reviewer_name=_SVC_REVIEWER,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 O",
@@ -499,10 +508,10 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         body=_X_MEDICATION,
         source_grade=SourceGrade.C,
         content_version=_APPROVED_VERSION_3,
-        source_name=_SVC_MED_SOURCE_NAME,
-        source_org=_SVC_MED_SOURCE_ORG,
+        source_name=_SVC_SOURCE_NAME,
+        source_org=_SVC_SOURCE_ORG,
         source_url=_SVC_MED_SOURCE_URL,
-        reviewer_name=_SVC_MED_REVIEWER,
+        reviewer_name=_SVC_REVIEWER,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 X",
@@ -510,6 +519,10 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         body=_PCOS_X_CAUTION,
         source_grade=SourceGrade.C,
         content_version=_APPROVED_VERSION_3,
+        source_name=_SVC_SOURCE_NAME,
+        source_org=_SVC_SOURCE_ORG,
+        source_url=_SVC_OTHER_SOURCE_URL,
+        reviewer_name=_SVC_REVIEWER,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 X",
@@ -517,6 +530,10 @@ DRUG_CAUTION_CONTENTS: tuple[DrugCautionContentRow, ...] = (
         body=_PCOS_X_EMERGENCY,
         source_grade=SourceGrade.C,
         content_version=_APPROVED_VERSION_3,
+        source_name=_SVC_SOURCE_NAME,
+        source_org=_SVC_SOURCE_ORG,
+        source_url=_SVC_OTHER_SOURCE_URL,
+        reviewer_name=_SVC_REVIEWER,
     ),
     DrugCautionContentRow(
         prescription_set_name="PCOS · 야즈 X",

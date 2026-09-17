@@ -422,10 +422,10 @@ class TestEveryVisitPointsAtASetThatExists:
         known = {row.name for row in PRESCRIPTION_SETS}
         used = {r["처방세트"].strip() for r in ROWS if r["처방세트"].strip()}
 
-        # KEY-357: X 세트(비잔 X·야즈 X)는 「약 미처방」 신규 축이라 합성 데이터에
+        # 자궁내막증 · 비잔 X 는 「약 미처방」 신규 축이라 합성 데이터에
         # 역사적 진료가 없다 — 화면 드롭다운에는 표시되어야 하므로 카탈로그에는 남긴다.
-        # docs/synthetic-data-spec.md §6-2 「(구: 없음 — 新 축)」 참고.
-        new_axis_sets = {row.name for row in PRESCRIPTION_SETS if row.name.endswith(" X")}
+        # PCOS · 야즈 X 는 메트포르민 단독 5건(SYN-PCOS-03 등)이 사용하므로 예외 불필요.
+        new_axis_sets = {"자궁내막증 · 비잔 X"}
         unused = sorted((known - used) - new_axis_sets)
         assert not unused, f"어느 진료도 안 쓰는 세트: {unused}"
 
@@ -544,11 +544,15 @@ class TestTheApprovedWordingIsWhole:
             "Grade A 칸에 전문의 이름이 있다 — 전문의 자문은 C 여야 한다"
         )
 
-        # Grade C 중 전문의 검토 12칸, 서비스팀장 검토 2칸
+        # Grade C 중 전문의 검토 8칸, 서비스팀 검토 6칸
+        # 서비스팀 6칸: X medication 2 + X caution 2 + 야즈 emergency 2 (이희진 확정)
+        # 비잔 X emergency 는 비잔 O 와 본문이 같아 전문의 표기 유지
         grade_c_physician = [r for r in grade_c if "전문의" in r.source_name]
         grade_c_other = [r for r in grade_c if "전문의" not in r.source_name]
-        assert len(grade_c_physician) == 12, f"전문의 Grade C: {len(grade_c_physician)}행 (기대 12)"
-        assert len(grade_c_other) == 2, f"비전문의 Grade C: {len(grade_c_other)}행 (기대 2 — X 세트 medication)"
+        assert len(grade_c_physician) == 8, f"전문의 Grade C: {len(grade_c_physician)}행 (기대 8)"
+        assert len(grade_c_other) == 6, (
+            f"비전문의 Grade C: {len(grade_c_other)}행 (기대 6 — X medication·X caution·야즈 emergency)"
+        )
         assert len(grade_a) == 2, f"Grade A: {len(grade_a)}행 (기대 2 — 자궁내막증 life ESHRE)"
 
         # Grade B 없음
@@ -600,7 +604,12 @@ class TestTheApprovedWordingIsWhole:
         assert not marked, f"정본에 초안 표시가 남았다: {marked}"
 
     def test_the_caution_wording_points_at_the_advice_record(self) -> None:
-        """주의사항의 근거는 **자문**이다 — 허가사항 주소를 붙이면 출처가 틀린다."""
+        """주의사항의 근거는 출처가 명확해야 한다.
+
+        전문의 자문 칸(O 세트): source_name 에 「자문」이 있어야 한다.
+        서비스 팀 검토 칸(X 세트 caution): 전문의가 아님을 허용한다.
+        모든 caution 칸: URL 이 유효하고 근거 넷이 차 있어야 한다.
+        """
         from app.models.catalog import CautionSectionKey
         from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
 
@@ -608,7 +617,9 @@ class TestTheApprovedWordingIsWhole:
             if row.section_key != CautionSectionKey.CAUTION:
                 continue
             where = f"{row.prescription_set_name} / caution"
-            assert "자문" in row.source_name, f"{where} 의 출처가 자문이 아니다 — {row.source_name!r}"
+            # 전문의 자문 칸만 「자문」을 요구한다 — X 세트 caution 은 서비스 팀 검토
+            if "서비스" not in row.source_name:
+                assert "자문" in row.source_name, f"{where} 의 출처가 자문이 아니다 — {row.source_name!r}"
             assert "TEST-ONLY" not in row.source_url, f"{where} 에 시험용 주소가 남았다"
             assert row.source_url.startswith("https://"), f"{where} 의 주소가 비었다"
             # **서비스의 술어를 그대로 쓴다** — 이희진 님 `#214` ⑦.
