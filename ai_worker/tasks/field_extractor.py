@@ -108,8 +108,6 @@ _RX_NON_MED_NAMES: frozenset[str] = frozenset({"처방보류", "처방중단", "
 _BIZAN_RE = re.compile(r"비잔", re.IGNORECASE)
 _YAZZ_RE = re.compile(r"야즈", re.IGNORECASE)
 _METFORMIN_RE = re.compile(r"메트포르민|메트포민|Metformin", re.IGNORECASE)
-# 자유 텍스트 영역의 「복용 중」 문구로 계속 복용 여부를 판단한다
-_CONTINUING_RE = re.compile(r"복용\s*중|계속\s*복용|지속\s*복용", re.IGNORECASE)
 _YAZZ_CONTRAINDICATED_RE = re.compile(r"야즈\s*불가|야즈\s*금기", re.IGNORECASE)
 
 # 두 근거(약 + 복용 여부) 모두 확인된 경우 / 약만 확인된 경우

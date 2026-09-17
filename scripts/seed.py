@@ -722,6 +722,16 @@ async def _sync_prescription_sets() -> tuple[int, int, int]:
         if was_created:
             created += 1
             continue
+
+        # **`defaults` 는 INSERT 때만 쓴다 — 그래서 한 번 더 본다** (이희진 님
+        # `#214` ⑦). 29 번 마이그레이션이 이름으로 백필을 하지만 그건 **그때
+        # 이미 있던 줄**만 고친다. 그 뒤에 기본값으로 심긴 줄은 재시드해도 안
+        # 고쳐져, 다시 부어 봐도 PCOS 가 자궁내막증 밑에 남는다.
+        #
+        # 백필 마이그레이션을 또 넣지 않는 까닭: 29 번이 쓴 이름 패턴
+        # (`name LIKE 'PCOS%' … ELSE 'ENDOMETRIOSIS'`)을 지금 다시 돌리면
+        # **의사가 직접 만든 세트**(KEY-255)까지 자궁내막증으로 덮는다. 씨앗은
+        # 제가 아는 줄만 손대므로 그 위험이 없다.
         if found.disease != row.disease:
             found.disease = row.disease
             await found.save(update_fields=["disease", "updated_at"])

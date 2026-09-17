@@ -416,31 +416,10 @@ function stateTakesFocus(tone) {
       }
     }
 
-    // 2차: MEDICATION_NAME 필드의 약 키워드로 O 세트를 제안한다.
-    // 비잔·야즈 검출 → O 세트 자동 선택 / 미검출 → 자동 선택 안 함(X 세트는 수동)
-    var medFields = result.fields.filter(function (f) {
-      return /^MEDICATION_NAME(_\d+)?$/.test(f.field_type) && f.value;
-    });
-    var hasBizan = medFields.some(function (f) {
-      return String(f.value).toLowerCase().indexOf("비잔") !== -1;
-    });
-    var hasYaz = medFields.some(function (f) {
-      return String(f.value).toLowerCase().indexOf("야즈") !== -1;
-    });
-
-    var targetKeyword = hasBizan ? "비잔 O" : hasYaz ? "야즈 O" : null;
-    if (targetKeyword) {
-      for (var j = 0; j < sets.length; j++) {
-        if (!sets[j].hidden && sets[j].name.indexOf(targetKeyword) !== -1) {
-          pickedSet = sets[j];
-          return;
-        }
-      }
-      return;
-    }
-
-    // 3차: 비잔·야즈 미검출 → 진단명으로 X 세트를 힌트만 표시, 자동 확정 안 함.
-    // 틀리면 다른 약의 주의 문구가 붙으므로 스탭이 직접 고른다.
+    // 2차: 서버가 세트를 지정하지 않은 경우 — 진단명으로 X 세트를 힌트만 표시,
+    // 자동 확정 안 함. 틀리면 다른 약의 주의 문구가 붙으므로 스탭이 직접 고른다.
+    // O 세트 자동 선택은 서버(PRESCRIPTION_SET 필드)에만 맡긴다 — 야즈 금기처럼
+    // 서버가 의도적으로 제안하지 않은 경우를 화면이 덮지 않는다.
     var diagnosis = fieldValueOf(result.fields, "DIAGNOSIS") || "";
     var xKeyword = null;
     if (diagnosis.indexOf("자궁내막증") !== -1) xKeyword = "비잔 X";
