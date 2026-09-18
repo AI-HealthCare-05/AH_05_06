@@ -728,7 +728,7 @@ test("**고치는 길이 한 벌이다** — 두 벌이면 한쪽만 고쳐진�
   assert.ok(code.includes("function fieldBody"), "몸통을 꺼내는 자리가 없다");
 
   const at = code.indexOf("function topRowHtml");
-  const body = code.slice(at, at + 1200);
+  const body = code.slice(at, at + 1500);
   assert.ok(body.includes("fieldBody("), "맨 위 줄이 몸통을 따로 그린다");
   assert.ok(!body.includes("data-fill="), "맨 위 줄이 「직접 입력」을 따로 그린다");
   assert.ok(!body.includes("field__value"), "맨 위 줄이 값칸을 따로 그린다");

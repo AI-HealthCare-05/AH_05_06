@@ -140,3 +140,42 @@ test("**비었으면 어디서 채우는지 적는다**", () => {
 test("**판독 화면이 규칙 파일을 싣는다**", () => {
   assert.ok(markupOnly(read("ocr-review.html")).indexOf("drug-lines.js") !== -1);
 });
+
+/* ── isPickedSetO/X 판정 — KEY-346 회귀 방지 ─────────────────────────────────
+ *
+ * scripts/seed.py 가 PrescriptionSetDrug 를 시드하지 않아 재시드 직후에는
+ * O 세트도 drugs:[] 다. 판정을 drugs 배열로 하면 O 세트가 X 로 읽혀
+ * 처방일수 칸과 「+ 약 추가」가 사라진다. 이름 기반 판정을 유지한다.
+ */
+
+const vm = require("node:vm");
+
+function makePickerFns(pickedSet) {
+  const src = read("js/ocr-review.js");
+  const xAt = src.indexOf("  function isPickedSetX()");
+  const oAt = src.indexOf("  function isPickedSetO()");
+  const end = src.indexOf("\n  }", oAt) + 4;
+  const fnSrc = src.slice(xAt, end).replace(/^  /gm, "");
+  const ctx = { pickedSet };
+  vm.createContext(ctx);
+  vm.runInContext(fnSrc, ctx);
+  return { X: ctx.isPickedSetX, O: ctx.isPickedSetO };
+}
+
+test("O 세트는 drugs 가 비어 있어도 O 로 판정한다 — 재시드 직후 회귀 방지", () => {
+  const { X, O } = makePickerFns({ name: "PCOS · 야즈 O", drugs: [] });
+  assert.equal(X(), false, "야즈 O 를 X 로 읽었다");
+  assert.equal(O(), true,  "야즈 O 를 O 로 읽지 못했다");
+});
+
+test("X 세트는 이름 끝 「 X」로 판정한다", () => {
+  const { X, O } = makePickerFns({ name: "PCOS · 야즈 X", drugs: [] });
+  assert.equal(X(), true,  "야즈 X 를 X 로 읽지 못했다");
+  assert.equal(O(), false, "야즈 X 를 O 로 읽었다");
+});
+
+test("pickedSet 이 null 이면 둘 다 false", () => {
+  const { X, O } = makePickerFns(null);
+  assert.equal(X(), false);
+  assert.equal(O(), false);
+});

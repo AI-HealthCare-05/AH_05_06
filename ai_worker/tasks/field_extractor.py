@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from ai_worker.adapters.clova import ClovaOcrResult
+from ai_worker.adapters.clova import ClovaOcrResult, ClovaTextField
 from app.models.ocr import DAYS_PER_PACK, OcrDocumentType
 
 # 정규식 단독 매칭값의 신뢰도 (KEY-187: is_low_confidence 임계값 0.75보다 낮게 설정).
@@ -82,7 +82,7 @@ _DIAG_NAME_COL_LABEL: str = "명칭"
 # 진단 키워드 패턴
 _ENDO_RE = re.compile(r"자궁\s*내막\s*증", re.IGNORECASE)
 # 다낭성(정확한 표기)과 다난성(오타 형태) 모두 인식
-_PCOS_RE = re.compile(r"다[낭난]성\s*난소|PCOS", re.IGNORECASE)
+_PCOS_RE = re.compile(r"다[낭난]성\s*난소|난소\s*증후군|PCOS", re.IGNORECASE)
 
 # 상병명 표 열 허용 오차 (px) — 헤더 텍스트보다 넓은 데이터 셀 양쪽에 추가
 _DIAG_COL_MARGIN = 5.0
@@ -108,7 +108,10 @@ _RX_NON_MED_NAMES: frozenset[str] = frozenset({"처방보류", "처방중단", "
 _BIZAN_RE = re.compile(r"비잔", re.IGNORECASE)
 _YAZZ_RE = re.compile(r"야즈", re.IGNORECASE)
 _METFORMIN_RE = re.compile(r"메트포르민|메트포민|Metformin", re.IGNORECASE)
-_YAZZ_CONTRAINDICATED_RE = re.compile(r"야즈\s*불가|야즈\s*금기", re.IGNORECASE)
+_YAZZ_CONTRAINDICATED_RE = re.compile(
+    r"야즈\s*(?:불가|금기)|야즈[^,\.·\n]{0,20}(?:복용\s*)?(?:못함|안됨|불가)",
+    re.IGNORECASE,
+)
 
 # 두 근거(약 + 복용 여부) 모두 확인된 경우 / 약만 확인된 경우
 _SET_SUGGESTION_HIGH_CONF = Decimal("0.90")
@@ -251,6 +254,8 @@ _LAB_TEST_NAME_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
+_RIGHT_TAIL_LIMIT = 50.0  # px — 검사결과 마지막 열 오른쪽 확장 한도
+_DIAG_RIGHT_TAIL = 200.0  # px — 상병명 열 오른쪽 확장 한도
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +266,6 @@ _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
 def _has_lab_table_header(rows: list) -> bool:
     """분류 전용: 검사항목·검사결과 열 헤더가 같은 행 안에, x 범위 비겹침으로 존재하는지 확인한다.
 
-    _find_lab_columns는 행을 넘나드는 탐색을 허용하므로 분류기에 쓰기에 조건이 느슨하다.
     진료기록에도 '검사명'·'결과' 낱말이 흔하기 때문에 두 조건을 모두 만족할 때만 True를 반환한다.
     """
     for row in rows:
@@ -447,29 +451,86 @@ def build_lab_keywords(baselines: Sequence[Any]) -> dict[str, list[str]]:
     return result
 
 
+def _first_gap_mid(blocks: list, start_x: float) -> float | None:
+    """start_x 이후 첫 번째 갭의 중간점을 반환한다.
+
+    blocks는 left 기준으로 정렬되어 있어야 한다.
+    블록을 하나도 지나치지 않으면 None.
+    """
+    frontier = start_x
+    seen = False
+    for b in blocks:
+        if b.left <= frontier:
+            seen = True
+            frontier = max(frontier, b.right)
+        elif seen:
+            return (frontier + b.left) / 2
+    return None
+
+
+def _col_ranges_from_data(
+    tn_hdr: ClovaTextField,
+    res_hdr: ClovaTextField,
+    data_rows: list,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """데이터 행의 x 분포로 tn·res 열 범위를 결정한다.
+
+    헤더가 셀 중앙 정렬이면 텍스트 좌표만으로는 셀 경계를 알 수 없다.
+    실제 데이터 블록 사이의 갭에서 경계를 구하고, 데이터가 없으면 헤더 텍스트
+    좌표로 추정한다.
+    """
+    tn_res_mids: list[float] = []
+    res_right_mids: list[float] = []
+
+    for row in data_rows:
+        blocks = sorted(row, key=lambda b: b.left)
+
+        tn_res_mid = _first_gap_mid(blocks, tn_hdr.left)
+        if tn_res_mid is None:
+            continue
+        tn_res_mids.append(tn_res_mid)
+
+        # res-right: tn_res_mid 이후 블록 중 첫 번째 갭
+        res_blocks = [b for b in blocks if b.right > tn_res_mid]
+        if len(res_blocks) >= 2:
+            frontier_r = res_blocks[0].right
+            for b in res_blocks[1:]:
+                if b.left > frontier_r:
+                    res_right_mids.append((frontier_r + b.left) / 2)
+                    break
+                frontier_r = max(frontier_r, b.right)
+
+    def _median(xs: list[float]) -> float:
+        s = sorted(xs)
+        return s[len(s) // 2]
+
+    tn_res_boundary = _median(tn_res_mids) if tn_res_mids else (tn_hdr.right + res_hdr.left) / 2
+    res_right = _median(res_right_mids) if res_right_mids else res_hdr.right + _RIGHT_TAIL_LIMIT
+
+    # tn 열 왼쪽 경계를 0 으로 두어 헤더 텍스트 left 보다 왼쪽에서 끝나는
+    # 짧은 검사명 블록도 포함한다 — tn_hdr.left 를 쓰면 right == tn_hdr.left - margin
+    # 인 블록이 엄격 부등호에서 탈락한다.
+    return (0.0, tn_res_boundary), (tn_res_boundary, res_right)
+
+
 def _find_lab_columns(rows: list) -> tuple[int, tuple[float, float], tuple[float, float]] | None:
     """헤더 행에서 '검사항목'과 '검사결과' 열의 (header_row_idx, tn_col, res_col)을 반환한다.
 
+    열 범위는 헤더 텍스트 좌표가 아닌 데이터 행의 x 갭으로 결정한다.
+    헤더가 셀 중앙 정렬이어도 실제 데이터 경계를 올바르게 추출한다.
     두 열을 모두 찾지 못하면 None을 반환한다.
     """
-    tn_col: tuple[float, float] | None = None
-    res_col: tuple[float, float] | None = None
-    header_row_idx: int | None = None
     for i, row in enumerate(rows):
-        for block in row:
-            text = block.text.strip()
-            if text in _TEST_NAME_COLUMN_KEYWORDS and tn_col is None:
-                tn_col = (block.left, block.right)
-                header_row_idx = i
-            elif text in _RESULT_COLUMN_KEYWORDS and res_col is None:
-                res_col = (block.left, block.right)
-                if header_row_idx is None:
-                    header_row_idx = i
-        if tn_col and res_col:
-            break
-    if header_row_idx is None or tn_col is None or res_col is None:
-        return None
-    return header_row_idx, tn_col, res_col
+        tn_pos = next((j for j, b in enumerate(row) if b.text.strip() in _TEST_NAME_COLUMN_KEYWORDS), None)
+        res_pos = next((j for j, b in enumerate(row) if b.text.strip() in _RESULT_COLUMN_KEYWORDS), None)
+        if tn_pos is None or res_pos is None:
+            continue
+
+        tn_hdr = row[tn_pos]
+        res_hdr = row[res_pos]
+        tn_col, res_col = _col_ranges_from_data(tn_hdr, res_hdr, rows[i + 1 :])
+        return i, tn_col, res_col
+    return None
 
 
 def _extract_lab_table(
@@ -538,23 +599,25 @@ def _extract_lab(
 def _find_diag_name_col(rows: list) -> tuple[int, tuple[float, float]] | None:
     """상병명 표 헤더 행에서 '명칭' 열 범위 (행 인덱스, (left, right))를 반환한다.
 
-    '명칭' 텍스트 블록의 너비는 실제 데이터 셀보다 훨씬 좁다.
-    열 우측 경계는 헤더 행에서 '명칭' 바로 오른쪽에 있는 다음 헤더 블록의
-    left 값으로 결정한다 — 이렇게 해야 '난소의 자궁내막증' 같은 긴 데이터
-    텍스트가 열 범위 안에 들어온다.
+    열 좌측 경계는 이전 헤더 블록과 '명칭' 블록 사이의 중간점으로 결정한다.
+    헤더 텍스트가 셀 중앙 정렬이고 데이터는 셀 좌측 정렬인 병원 표 형식에서
+    '다낭성'처럼 헤더보다 왼쪽에 시작하는 데이터를 포함하기 위해서다.
+    열 우측 경계는 다음 헤더 블록의 left로 결정한다.
     """
     for i, row in enumerate(rows):
         texts_in_row = {b.text.strip() for b in row}
         if not _DIAG_TABLE_HEADER_SET.issubset(texts_in_row):
             continue
         sorted_row = sorted(row, key=lambda b: b.left)
-        name_block = next((b for b in sorted_row if b.text.strip() == _DIAG_NAME_COL_LABEL), None)
-        if name_block is None:
+        name_idx = next((j for j, b in enumerate(sorted_row) if b.text.strip() == _DIAG_NAME_COL_LABEL), None)
+        if name_idx is None:
             continue
-        # 다음 헤더 블록의 left를 열 우측 경계로 사용한다
-        next_block = next((b for b in sorted_row if b.left > name_block.right), None)
-        col_right = next_block.left if next_block else name_block.right + 200.0
-        return i, (name_block.left, col_right)
+        name_block = sorted_row[name_idx]
+        prev_block = sorted_row[name_idx - 1] if name_idx > 0 else None
+        next_block = sorted_row[name_idx + 1] if name_idx < len(sorted_row) - 1 else None
+        col_left = (prev_block.right + name_block.left) / 2 if prev_block else name_block.left
+        col_right = next_block.left if next_block else name_block.right + _DIAG_RIGHT_TAIL
+        return i, (col_left, col_right)
     return None
 
 

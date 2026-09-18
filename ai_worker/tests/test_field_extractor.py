@@ -393,6 +393,34 @@ def test_diag_table_both_keywords_returns_dul_da() -> None:
     assert field_map.get("DIAGNOSIS") == "둘 다"
 
 
+def test_diag_table_center_aligned_header_extracts_diagnosis() -> None:
+    """「명칭」 헤더가 셀 중앙 정렬이어도 데이터 블록이 올바르게 추출된다.
+
+    기존 픽스처는 헤더·데이터 모두 x:70-300 으로 동일했다.
+    실제 EMR 은 헤더 텍스트가 셀 중앙에 찍히고 데이터는 셀 좌측 정렬인 경우가 많다.
+    _find_diag_name_col 이 이전·이후 헤더 블록 사이의 중간점으로 열 경계를 계산하므로
+    데이터가 헤더 텍스트 left 보다 왼쪽에서 시작해도 추출되어야 한다.
+    """
+    # 셀: 코드(10-60) · 명칭(70-300) · 과목(310-390)
+    # 헤더: 코드 텍스트(10-60) · 명칭 텍스트(150-220, 셀 중앙) · 과목 텍스트(310-390)
+    # 데이터: E282(10-60) · 다낭성난소증후군(70-300, 셀 좌측 정렬)
+    blocks = [
+        _diag_block("코드", 0.99, 10, 10, 60, 30),
+        _diag_block("명칭", 0.99, 150, 10, 220, 30),  # 셀 중앙에 찍힌 헤더
+        _diag_block("과목", 0.99, 310, 10, 390, 30),
+        _diag_block("E282", 0.96, 10, 40, 60, 60),
+        _diag_block("다낭성난소증후군", 0.93, 70, 40, 300, 60),  # 헤더보다 왼쪽에서 시작
+        _diag_block("산부인과", 0.97, 310, 40, 390, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("DIAGNOSIS") == "다낭성난소증후군(PCOS)", (
+        f"중앙 정렬 헤더에서 DIAGNOSIS 추출 실패: {field_map.get('DIAGNOSIS')!r}"
+    )
+
+
 def test_diag_table_no_keyword_returns_no_diagnosis() -> None:
     """상병명 표에 진단 키워드가 없으면 DIAGNOSIS 필드를 만들지 않는다."""
     blocks = [
@@ -1171,3 +1199,183 @@ def test_the_indexed_field_keeps_whatever_unit_the_reader_found(monkeypatch) -> 
     assert durations, "처방일수를 아예 못 뽑았다"
     for field in durations:
         assert field.unit == "통", f"{field.field_type} 이 단위를 흘렸다 — {field.unit!r}"
+
+
+# ---------------------------------------------------------------------------
+# _find_lab_columns 열 경계 — 헤더 중앙 정렬·우측 꼬리 회귀 (블로킹 버그 ②)
+# ---------------------------------------------------------------------------
+
+
+def _cblk(text: str, left: float, top: float, right: float, bottom: float) -> ClovaTextField:
+    return ClovaTextField(text=text, confidence=0.99, left=left, top=top, right=right, bottom=bottom)
+
+
+def test_center_aligned_header_extracts_result_not_reference() -> None:
+    """헤더가 셀 중앙 정렬일 때 참고치가 아닌 실제 결과값을 추출한다.
+
+    셀: 검사항목 100-250(헤더 140-190) · 검사결과 250-500(헤더 400-450) · 참고치 500-700
+    이전 구현: 열 경계 295가 결과값(260-285)보다 오른쪽에 놓여 참고치가 추출됐다.
+    """
+    # 헤더: 검사항목(140-190), 검사결과(400-450), 참고치(560-640)
+    # 데이터: AST(105-215) | 21(260-285) | 0-40(505-560)
+    #         FSH(105-160) | 5.2(260-290) | 3.5-12.5(505-580)
+    blocks = [
+        _cblk("검사항목", 140, 10, 190, 30),
+        _cblk("검사결과", 400, 10, 450, 30),
+        _cblk("참고치", 560, 10, 640, 30),
+        _cblk("AST(GOT)", 105, 40, 215, 60),
+        _cblk("21", 260, 40, 285, 60),
+        _cblk("0-40", 505, 40, 560, 60),
+        _cblk("FSH", 105, 70, 160, 90),
+        _cblk("5.2", 260, 70, 290, 90),
+        _cblk("3.5-12.5", 505, 70, 580, 90),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert field_map.get("AST") == "21", f"결과값이 아닌 값이 추출됨: {field_map.get('AST')!r}"
+    assert field_map.get("FSH") == "5.2", f"결과값이 아닌 값이 추출됨: {field_map.get('FSH')!r}"
+    assert field_map.get("AST") != "0-40", "참고치가 결과값으로 추출됐다"
+    assert field_map.get("FSH") != "3.5-12.5", "참고치가 결과값으로 추출됐다"
+
+
+def test_last_column_right_tail_does_not_absorb_unit_and_reference() -> None:
+    """검사결과가 마지막 열일 때 오른쪽 확장이 단위·참고치를 삼키지 않는다.
+
+    이전 구현: blk.right + 300.0으로 확장해 '(0-40)', 'U/L'까지 결과값으로 합쳤다.
+    """
+    # 헤더: 검사항목(100-200), 검사결과(220-320)  — 참고치 열 헤더 없음
+    # 데이터: AST(100-140) | 21(220-240) | (0-40)(360-430) | U/L(460-500)
+    blocks = [
+        _cblk("검사항목", 100, 10, 200, 30),
+        _cblk("검사결과", 220, 10, 320, 30),
+        _cblk("AST(GOT)", 100, 40, 140, 60),
+        _cblk("21", 220, 40, 240, 60),
+        _cblk("(0-40)", 360, 40, 430, 60),
+        _cblk("U/L", 460, 40, 500, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert field_map.get("AST") == "21", f"결과값이 잘못 추출됨: {field_map.get('AST')!r}"
+    assert "0-40" not in (field_map.get("AST") or ""), "참고치가 결과값에 합쳐졌다"
+    assert "U/L" not in (field_map.get("AST") or ""), "단위가 결과값에 합쳐졌다"
+
+
+# ---------------------------------------------------------------------------
+# _PCOS_RE 축소 — 다낭성 단독 오매칭 방지 (③)
+# _YAZZ_CONTRAINDICATED_RE 구분자 제한 — 문장 경계 오매칭 방지 (⑤)
+# ---------------------------------------------------------------------------
+
+
+def test_diag_table_pcos_with_space_extracted() -> None:
+    """상병명 표 「다낭성 난소증후군」(공백 포함)이 DIAGNOSIS로 추출된다.
+
+    _PCOS_RE 가 `다[낭난]성 *난소` 를 요구하므로 공백이 있어도 매칭된다.
+    이전 패턴에서도 매칭됐으나, 좁혀진 뒤에도 유지됨을 확인한다.
+    """
+    blocks = [
+        _diag_block("코드", 0.99, 10, 10, 60, 30),
+        _diag_block("명칭", 0.99, 70, 10, 300, 30),
+        _diag_block("E282", 0.96, 10, 40, 60, 60),
+        _diag_block("다낭성 난소증후군", 0.93, 70, 40, 300, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("DIAGNOSIS") == "다낭성난소증후군(PCOS)", (
+        f"DIAGNOSIS가 추출되지 않았다: {field_map.get('DIAGNOSIS')!r}"
+    )
+
+
+def test_diag_table_pcos_unrelated_dangsong_not_extracted() -> None:
+    """「다낭성 신증」처럼 난소와 무관한 다낭성은 DIAGNOSIS로 추출하지 않는다.
+
+    _PCOS_RE 가 「다낭성 난소」 패턴을 요구하므로 「다낭성 신증」은 매칭되지 않는다.
+    이전 패턴은 「다낭성」 단독을 허용해 오매칭이 발생했다.
+    """
+    blocks = [
+        _diag_block("코드", 0.99, 10, 10, 60, 30),
+        _diag_block("명칭", 0.99, 70, 10, 300, 30),
+        _diag_block("Q611", 0.96, 10, 40, 60, 60),
+        _diag_block("다낭성 신증", 0.93, 70, 40, 300, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert "DIAGNOSIS" not in field_map, f"무관한 다낭성 상병이 DIAGNOSIS로 추출됐다: {field_map.get('DIAGNOSIS')!r}"
+
+
+def test_yazz_contraindicated_smoking_suppresses_o_set() -> None:
+    """「야즈는 흡연으로 복용 못함」이 금기로 감지되어 O 세트 제안이 없다.
+
+    _YAZZ_CONTRAINDICATED_RE 가 구분자 없는 문장을 올바르게 감지한다.
+    """
+    result = _make_emr_result(
+        _PCOS_DIAG_BLOCKS,
+        _YAZZ_MET_RX_BLOCKS,
+        raw_text="야즈는 흡연으로 복용 못함",
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("PRESCRIPTION_SET") != "PCOS · 야즈 O", "금기 문구가 있는데 O 세트가 제안됐다"
+
+
+def test_yazz_stop_prohibition_not_contraindicated() -> None:
+    """「야즈 3개월 처방, 중단 불가」는 금기가 아니라 복용 유지 지시다 — O 세트가 제안된다.
+
+    이전 구현: `.{0,20}` 이 쉼표를 넘어 「불가」를 잡아 금기로 오판했다.
+    수정 후: `[^,\\.·\\n]{0,20}` 이 쉼표 앞에서 멈춰 오매칭이 사라진다.
+    """
+    result = _make_emr_result(
+        _PCOS_DIAG_BLOCKS,
+        _YAZZ_MET_RX_BLOCKS,
+        raw_text="야즈 3개월 처방, 중단 불가",
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("PRESCRIPTION_SET") == "PCOS · 야즈 O", (
+        f"O 세트가 제안되어야 하는데 추출되지 않았다: {field_map.get('PRESCRIPTION_SET')!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# _first_gap_mid — 검사명이 헤더 left 보다 왼쪽에서 끝나는 짧은 행 (참고 버그)
+# ---------------------------------------------------------------------------
+
+
+def test_short_test_name_block_contributes_to_column_boundary() -> None:
+    """검사명 블록이 헤더 텍스트 left 보다 왼쪽에서 끝나도 열 경계 계산에 기여한다.
+
+    _first_gap_mid 의 이전 조건 `frontier > start_x` 는 짧은 검사명 블록
+    (right < tn_hdr.left)을 처리하지 못해 폴백으로 추출 0건이 됐다.
+    seen 플래그로 교체해 이 케이스도 결과값을 올바르게 추출한다.
+
+    헤더: 검사항목(140-190) · 검사결과(400-450) — 중앙 정렬
+    데이터: AST(105-135) · 21(260-285)   — 검사명 right(135) < 헤더 left(140)
+            LH(105-130)  · 5.2(260-290)
+    """
+    blocks = [
+        _cblk("검사항목", 140, 10, 190, 30),
+        _cblk("검사결과", 400, 10, 450, 30),
+        _cblk("AST", 105, 40, 135, 60),
+        _cblk("21", 260, 40, 285, 60),
+        _cblk("LH", 105, 70, 130, 90),
+        _cblk("5.2", 260, 70, 290, 90),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert field_map.get("AST") == "21", f"짧은 검사명 행에서 결과값 추출 실패: {field_map.get('AST')!r}"
+    assert field_map.get("LH") == "5.2", f"짧은 검사명 행에서 결과값 추출 실패: {field_map.get('LH')!r}"
