@@ -34,9 +34,46 @@ from app.models.knowledge import KnowledgeChunkRecord, KnowledgeDocument, Knowle
 PCOS_TITLE_KEYWORD = "Polycystic Ovary Syndrome"
 ESHRE_TITLE_KEYWORD = "ESHRE"
 PCOS_SECTION_KEY = "life"
-EXPECTED_PCOS_CHUNK_COUNT = 31
 DRAFT_DATE = date(2026, 9, 11)
 EXPECTED_DEPRECATED_DRAFT_COUNT = 2
+
+# Monash v1 35~38쪽 권고 번호 전체 목록 (3.1.1~3.6.5, 총 31개)
+_EXPECTED_RECOMMENDATION_NUMBERS = frozenset(
+    [
+        "3.1.1",
+        "3.1.2",
+        "3.1.3",
+        "3.1.4",
+        "3.1.5",
+        "3.1.6",
+        "3.1.7",
+        "3.1.8",
+        "3.1.9",
+        "3.1.10",
+        "3.2.1",
+        "3.2.2",
+        "3.2.3",
+        "3.3.1",
+        "3.3.2",
+        "3.3.3",
+        "3.3.4",
+        "3.4.1",
+        "3.4.2",
+        "3.4.3",
+        "3.4.4",
+        "3.4.5",
+        "3.4.6",
+        "3.4.7",
+        "3.5.1",
+        "3.5.2",
+        "3.6.1",
+        "3.6.2",
+        "3.6.3",
+        "3.6.4",
+        "3.6.5",
+    ]
+)
+_RECOMMENDATION_PATTERN = re.compile(r"3\.[1-6]\.\d+")
 
 # Monash 원문에서 걸러야 할 머리글·표 헤더 패턴
 _GARBAGE_PATTERNS = [
@@ -90,15 +127,18 @@ async def run_checks() -> dict:
                 section_key=PCOS_SECTION_KEY,
             ).order_by("position")
 
-            chunk_count = len(life_chunks)
+            full_text = " ".join(c.body for c in life_chunks)
+            found_numbers = frozenset(_RECOMMENDATION_PATTERN.findall(full_text))
+            missing = sorted(_EXPECTED_RECOMMENDATION_NUMBERS - found_numbers)
 
-            # 검사 1: PCOS 권고 31개
+            # 검사 1: PCOS 권고 31개 번호 전체 포함 여부
             results["check1_pcos_count"] = {
-                "passed": chunk_count == EXPECTED_PCOS_CHUNK_COUNT,
+                "passed": len(missing) == 0,
                 "version_id": str(pcos_version.version_id),
                 "version_label": pcos_version.version_label,
-                "chunk_count": chunk_count,
-                "expected": EXPECTED_PCOS_CHUNK_COUNT,
+                "found_count": len(found_numbers & _EXPECTED_RECOMMENDATION_NUMBERS),
+                "expected_count": len(_EXPECTED_RECOMMENDATION_NUMBERS),
+                "missing": missing,
             }
 
             # 검사 2: 머리글·표 헤더 쓰레기 줄
