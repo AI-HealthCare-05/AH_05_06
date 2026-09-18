@@ -979,7 +979,8 @@ function approvedModalHtml(view) {
     "</b> " +
     esc(name ? name + " 님께 발송 예정" : "발송 예정") +
     "</p>" +
-    '<p class="modal__sub">소진 임박 안내는 자동 발송됩니다</p>' +
+    '<p class="modal__sub">확인 문자(일주일 뒤 · 보름 뒤 · 한 달 뒤)는 예약되며, 이번 시연은 예약 상태까지 보여드립니다.</p>' +
+    '<p class="modal__sub"><span class="implementation-badge implementation-badge--in-progress">[구현중]</span> 소진 임박 안내는 처방일수를 확인해야 예약되며 실제 발송은 승인된 환경에서만 동작합니다.</p>' +
     "</div>" +
     '<div class="modal__box">' +
     "<span>발송 실패 시 알림 창에서 확인할 수 있습니다</span>" +

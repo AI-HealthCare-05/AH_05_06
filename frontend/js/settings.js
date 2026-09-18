@@ -972,7 +972,7 @@
       /* ④ 자동 발송 기본값 */
       '<section class="box"><div class="box__head"><h2 class="box__title">자동 발송 기본값</h2></div>' +
       '<div class="checks-grid">' +
-      '<label class="chk"><input type="checkbox" checked disabled />일주일 뒤 <span class="fld__hint">(고정)</span></label>' +
+      '<p class="chk">일주일 뒤 <span class="fld__hint">(기본 켜짐 · 환자별 문자 설정에서 변경)</span></p>' +
       checkHtml("f-d15", "보름 뒤", picked.check_d15_on) +
       checkHtml("f-d30", "한 달 뒤", picked.check_d30_on) +
       checkHtml("f-runout", "소진 임박 안내", picked.run_out_on) +

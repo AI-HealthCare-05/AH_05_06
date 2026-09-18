@@ -1039,7 +1039,7 @@ function stateTakesFocus(tone) {
            안내문이 그 값으로 만들어지므로 채워야 끝난다. */
         (isPrescriptionType(field.field_type)
           ? ""
-          : '<button class="field__act field__act--quiet" type="button" data-skip="' +
+          : '<button class="field__act field__act--quiet" type="button" disabled aria-disabled="true" title="현재 서버 계약에서 지원하지 않습니다" data-skip="' +
             id +
             '">이번 미시행</button>');
     } else if (state === "pending") {
@@ -1070,7 +1070,7 @@ function stateTakesFocus(tone) {
            「이전 값 유지」는 되살리지 않는다. 앞 진료 값을 이번 자리에 복사하면
            **옛 측정치가 이번 측정치로 읽힌다** — 안내문이 그 자리를 「지금」이라
            말한다. 안 하기로 정했다(계약 §3). */
-        '<button class="field__act field__act--quiet" type="button" data-skip="' +
+        '<button class="field__act field__act--quiet" type="button" disabled aria-disabled="true" title="현재 서버 계약에서 지원하지 않습니다" data-skip="' +
         id +
         '">이번 미시행</button>';
     } else if (state === "skipped") {
@@ -1078,7 +1078,7 @@ function stateTakesFocus(tone) {
         '<div class="field__value field__value--pending">이번엔 검사하지 않았습니다</div>' +
         '<span class="field__hint">안내문에서 빠집니다</span>' +
         /* 잘못 눌렀을 때 빠져나갈 길을 둔다. 없으면 스탭은 판독을 새로 올린다. */
-        '<button class="field__act field__act--quiet" type="button" data-unskip="' +
+        '<button class="field__act field__act--quiet" type="button" disabled aria-disabled="true" title="현재 서버 계약에서 지원하지 않습니다" data-unskip="' +
         id +
         '">되돌리기</button>';
     } else {
