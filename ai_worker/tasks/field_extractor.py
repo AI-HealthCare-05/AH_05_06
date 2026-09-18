@@ -254,7 +254,8 @@ _LAB_TEST_NAME_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
-_RIGHT_TAIL_LIMIT = 50.0  # px — 마지막 열 오른쪽 확장 한도
+_RIGHT_TAIL_LIMIT = 50.0  # px — 검사결과 마지막 열 오른쪽 확장 한도
+_DIAG_RIGHT_TAIL = 200.0  # px — 상병명 열 오른쪽 확장 한도
 
 
 # ---------------------------------------------------------------------------
@@ -610,7 +611,7 @@ def _find_diag_name_col(rows: list) -> tuple[int, tuple[float, float]] | None:
         prev_block = sorted_row[name_idx - 1] if name_idx > 0 else None
         next_block = sorted_row[name_idx + 1] if name_idx < len(sorted_row) - 1 else None
         col_left = (prev_block.right + name_block.left) / 2 if prev_block else name_block.left
-        col_right = next_block.left if next_block else name_block.right + 200.0
+        col_right = next_block.left if next_block else name_block.right + _DIAG_RIGHT_TAIL
         return i, (col_left, col_right)
     return None
 

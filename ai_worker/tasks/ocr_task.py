@@ -131,11 +131,11 @@ async def process_ocr_job(ocr_job_id: str) -> None:
         )
         lab_kw = build_lab_keywords(baselines)
         retry_count = 0
+        job.progress = 30
+        await OcrJob.filter(ocr_job_id=ocr_job_id, status=OcrJobStatus.PROCESSING).update(progress=30)
         while True:
             try:
                 await _check_retry_allowed(ocr_job_id, retry_count)
-                job.progress = 30
-                await OcrJob.filter(ocr_job_id=ocr_job_id, status=OcrJobStatus.PROCESSING).update(progress=30)
                 clova_results = await _call_clova_for_documents(job, job_documents, doc_map)
                 clova_elapsed_ms = sum(r.elapsed_ms for r in clova_results.values())
                 missing = await _save_clova_result(job, job_documents, clova_results, lab_kw)

@@ -380,10 +380,10 @@ function stateTakesFocus(tone) {
   /* 고른 처방 세트가 O 세트(처방 있음)인지 X 세트(처방 없음)인지 판별한다.
      세트 이름이 공백 + "O" 로 끝나면 O, 공백 + "X" 로 끝나면 X. */
   function isPickedSetO() {
-    return !!(pickedSet && /\sO$/.test(pickedSet.name));
+    return !!(pickedSet && pickedSet.drugs && pickedSet.drugs.length > 0);
   }
   function isPickedSetX() {
-    return !!(pickedSet && /\sX$/.test(pickedSet.name));
+    return !!(pickedSet && pickedSet.drugs && pickedSet.drugs.length === 0);
   }
 
   /* 적는 **중**인 값. `local` 과 갈라 두는 이유는, 고르는 항목이 「있다」를
@@ -3165,11 +3165,8 @@ function stateTakesFocus(tone) {
           var anyFailed = jobs.find(function (j) { return j.status === "FAILED"; });
           var hasSuccess = jobs.some(function (j) { return j.status !== "FAILED" && j.status !== "PROCESSING"; });
           if (anyFailed && !hasSuccess) { renderJobState(anyFailed); return; }
-          var completedJobs = jobs.map(function (j) {
-            return j.status === "FAILED" ? j : Object.assign({}, j, { progress: 100 });
-          });
-          renderMultiJobProgress(completedJobs);
-          setTimeout(function () {
+          renderMultiJobProgress(jobs);
+          pollTimer = setTimeout(function () {
             if (mine !== loadSeq) return;
             loadAllResults(mine).then(function () {
               if (mine !== loadSeq) return;
