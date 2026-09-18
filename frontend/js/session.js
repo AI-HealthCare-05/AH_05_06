@@ -15,6 +15,15 @@
 var TOKEN_KEY = "accessToken";
 
 var session = {
+  /* 마지막으로 서버가 확인한 로그인 사용자.
+   *
+   * `shell.js` 는 세션 확인을 시작한 뒤 다른 화면 스크립트보다 먼저 실행된다.
+   * `/auth/me` 가 빨리 돌아오면 `session:ready` 이벤트가 화면 리스너 등록보다
+   * 먼저 지나갈 수 있다. 이벤트는 다시 오지 않으므로 의사 화면은 상단에는
+   * 「의사」를 표시하면서도 본문에서는 역할을 모르는 상태로 남았다(KEY-353).
+   * 이벤트는 새 소식을 알리고, 이 값은 늦게 온 화면이 현재 사실을 읽게 한다. */
+  current: null,
+
   save: function (token) {
     sessionStorage.setItem(TOKEN_KEY, token);
   },
@@ -24,6 +33,7 @@ var session = {
   },
 
   clear: function () {
+    this.current = null;
     sessionStorage.removeItem(TOKEN_KEY);
     /* 예전 판이 localStorage 에 남겨 둔 것을 걷어낸다 */
     localStorage.removeItem(TOKEN_KEY);
@@ -136,6 +146,7 @@ function requireSession(options) {
       location.replace("/password.html");
       return Promise.reject();
     }
+    session.current = me;
     return me;
   }
 
