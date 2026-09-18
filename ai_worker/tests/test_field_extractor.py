@@ -1283,9 +1283,7 @@ def test_diag_table_pcos_unrelated_dangsong_not_extracted() -> None:
     result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
-    assert "DIAGNOSIS" not in field_map, (
-        f"무관한 다낭성 상병이 DIAGNOSIS로 추출됐다: {field_map.get('DIAGNOSIS')!r}"
-    )
+    assert "DIAGNOSIS" not in field_map, f"무관한 다낭성 상병이 DIAGNOSIS로 추출됐다: {field_map.get('DIAGNOSIS')!r}"
 
 
 def test_yazz_contraindicated_smoking_suppresses_o_set() -> None:
@@ -1300,9 +1298,7 @@ def test_yazz_contraindicated_smoking_suppresses_o_set() -> None:
     )
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
-    assert field_map.get("PRESCRIPTION_SET") != "PCOS · 야즈 O", (
-        "금기 문구가 있는데 O 세트가 제안됐다"
-    )
+    assert field_map.get("PRESCRIPTION_SET") != "PCOS · 야즈 O", "금기 문구가 있는데 O 세트가 제안됐다"
 
 
 def test_yazz_stop_prohibition_not_contraindicated() -> None:
