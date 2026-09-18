@@ -41,13 +41,26 @@ class PatientFeedbackApiTestCase(TestCase):
         app.dependency_overrides.clear()
         super().tearDown()
 
-    async def approved(self, name: str = "KEY-239 합성의원") -> GuideDocument:
+    async def approved(
+        self, name: str = "KEY-239 합성의원", *, status: GuideStatus = GuideStatus.SCHEDULED_TO_SEND
+    ) -> GuideDocument:
+        hospital = await make_hospital(name)
+        guide = await make_guide(hospital, status)
+        await PatientGuideLink.create(
+            guide_document=guide,
+            token_digest=hashlib.sha256(TOKEN.encode()).hexdigest(),
+            expires_at=now().replace(year=now().year + 1),
+            issued_by=1,
+        )
+        return guide
+
+    async def with_expired_link(self, name: str = "KEY-239 합성의원") -> GuideDocument:
         hospital = await make_hospital(name)
         guide = await make_guide(hospital, GuideStatus.SCHEDULED_TO_SEND)
         await PatientGuideLink.create(
             guide_document=guide,
             token_digest=hashlib.sha256(TOKEN.encode()).hexdigest(),
-            expires_at=now().replace(year=now().year + 1),
+            expires_at=now().replace(year=now().year - 1),
             issued_by=1,
         )
         return guide
@@ -180,6 +193,30 @@ class TestGuideFeedbackSubmission(PatientFeedbackApiTestCase):
         assert response.json()["code"] == "INVALID_REQUEST"
         assert await PatientFeedback.all().count() == 0
 
+    async def test_expired_link_is_rejected(self) -> None:
+        """만료된 링크 — KEY-361 인수조건. 세션 자체는 유효해도, 그 세션이
+        가리키는 링크가 만료됐으면 피드백을 저장할 안내를 못 찾는다."""
+        await self.with_expired_link()
+
+        async with await self.client() as client:
+            response = await client.post("/api/v1/patient-feedback", json=self.guide_payload())
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "FEEDBACK_CONTEXT_NOT_FOUND"
+        assert await PatientFeedback.all().count() == 0
+
+    async def test_unapproved_guide_is_rejected(self) -> None:
+        """미승인 안내문 — KEY-361 인수조건. 링크는 살아있어도 안내가
+        아직 SCHEDULED_TO_SEND가 아니면(승인 전) 저장하지 않는다."""
+        await self.approved(status=GuideStatus.STAFF_REVIEW)
+
+        async with await self.client() as client:
+            response = await client.post("/api/v1/patient-feedback", json=self.guide_payload())
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "FEEDBACK_CONTEXT_NOT_FOUND"
+        assert await PatientFeedback.all().count() == 0
+
 
 class TestChatbotFeedbackReference(PatientFeedbackApiTestCase):
     async def test_response_reference_can_only_select_an_event_from_the_session_guide(self) -> None:
@@ -246,59 +283,55 @@ class TestAdminFeedbackList(PatientFeedbackApiTestCase):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             return await client.get("/api/v1/admin/patient-feedback")
 
-    async def test_admin_only_sees_feedback_from_their_hospital(self) -> None:
+    async def test_all_clinic_roles_only_see_feedback_from_their_hospital(self) -> None:
         own = await self.feedback("KEY-239 목록 기준병원", details="합성 상세")
         await self.feedback("KEY-239 목록 타병원", details="타 병원 상세")
-        actor = StaffActor(user_id=239, hospital_id=own.hospital_id, roles=frozenset({"admin"}))
 
-        response = await self.request_as(actor)
+        for user_id, role in enumerate(("staff", "doctor", "admin"), start=239):
+            actor = StaffActor(user_id=user_id, hospital_id=own.hospital_id, roles=frozenset({role}))
+            response = await self.request_as(actor)
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["total"] == 1
-        assert body["items"][0]["feedback_id"] == own.patient_feedback_id
-        assert body["items"][0]["has_details"] is True
-        assert "details" not in body["items"][0]
+            assert response.status_code == 200
+            body = response.json()
+            assert body["total"] == 1
+            assert body["items"][0]["feedback_id"] == own.patient_feedback_id
+            assert body["items"][0]["has_details"] is True
+            assert "details" not in body["items"][0]
 
-    async def test_non_admin_is_forbidden(self) -> None:
-        own = await self.feedback("KEY-239 목록 권한병원")
-        actor = StaffActor(user_id=240, hospital_id=own.hospital_id, roles=frozenset({"staff"}))
-
-        response = await self.request_as(actor)
-
-        assert response.status_code == 403
-        assert response.json()["code"] == "FORBIDDEN"
-
-    async def test_admin_can_read_detail_inside_their_hospital(self) -> None:
+    async def test_all_clinic_roles_can_read_detail_inside_their_hospital(self) -> None:
         own = await self.feedback("KEY-239 상세 기준병원", details="합성 상세 내용")
-        actor = StaffActor(user_id=241, hospital_id=own.hospital_id, roles=frozenset({"admin"}))
-        app.dependency_overrides[get_staff_actor] = lambda: actor
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.get(f"/api/v1/admin/patient-feedback/{own.patient_feedback_id}")
+        for user_id, role in enumerate(("staff", "doctor", "admin"), start=242):
+            actor = StaffActor(user_id=user_id, hospital_id=own.hospital_id, roles=frozenset({role}))
+            app.dependency_overrides[get_staff_actor] = lambda actor=actor: actor
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["details"] == "합성 상세 내용"
-        assert body["content_key"] == "medication.why"
-        assert not {
-            "idempotency_digest",
-            "response_ref_digest",
-            "patient_session",
-            "link_token",
-            "otp",
-        } & set(body)
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.get(f"/api/v1/admin/patient-feedback/{own.patient_feedback_id}")
+
+            assert response.status_code == 200
+            body = response.json()
+            assert body["details"] == "합성 상세 내용"
+            assert body["content_key"] == "medication.why"
+            assert not {
+                "idempotency_digest",
+                "response_ref_digest",
+                "patient_session",
+                "link_token",
+                "otp",
+            } & set(body)
 
     async def test_feedback_from_another_hospital_is_hidden(self) -> None:
         other = await self.feedback("KEY-239 상세 타병원", details="타 병원 상세")
-        actor = StaffActor(user_id=242, hospital_id=other.hospital_id + 1, roles=frozenset({"admin"}))
-        app.dependency_overrides[get_staff_actor] = lambda: actor
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.get(f"/api/v1/admin/patient-feedback/{other.patient_feedback_id}")
+        for user_id, role in enumerate(("staff", "doctor", "admin"), start=245):
+            actor = StaffActor(user_id=user_id, hospital_id=other.hospital_id + 1, roles=frozenset({role}))
+            app.dependency_overrides[get_staff_actor] = lambda actor=actor: actor
 
-        assert response.status_code == 404
-        assert response.json()["code"] == "PATIENT_FEEDBACK_NOT_FOUND"
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.get(f"/api/v1/admin/patient-feedback/{other.patient_feedback_id}")
+
+            assert response.status_code == 404
+            assert response.json()["code"] == "PATIENT_FEEDBACK_NOT_FOUND"
 
 
 class TestTwoSubmissionsThatLandTogether(PatientFeedbackApiTestCase):

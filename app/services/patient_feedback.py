@@ -127,11 +127,11 @@ class PatientFeedbackService:
 
 
 class AdminPatientFeedbackService:
-    """Read feedback only for an authenticated administrator's hospital."""
+    """Read feedback only inside an authenticated actor's hospital."""
 
     @staticmethod
-    def _require_admin(actor: StaffActor) -> None:
-        if not has_permission(actor.roles, Permission.AUDIT_READ):
+    def _require_reader(actor: StaffActor) -> None:
+        if not has_permission(actor.roles, Permission.PATIENT_FEEDBACK_READ):
             raise ApiError(403, "FORBIDDEN", "환자 피드백을 조회할 권한이 없습니다.")
 
     async def list(
@@ -143,7 +143,7 @@ class AdminPatientFeedbackService:
         target: PatientFeedbackTarget | None,
         category: PatientFeedbackCategory | None,
     ) -> AdminPatientFeedbackListResponse:
-        self._require_admin(actor)
+        self._require_reader(actor)
         query = PatientFeedback.filter(hospital_id=actor.hospital_id)
         if target is not None:
             query = query.filter(target=target)
@@ -176,7 +176,7 @@ class AdminPatientFeedbackService:
         )
 
     async def get(self, actor: StaffActor, feedback_id: int) -> AdminPatientFeedbackDetailResponse:
-        self._require_admin(actor)
+        self._require_reader(actor)
         feedback = (
             await PatientFeedback.filter(
                 patient_feedback_id=feedback_id,

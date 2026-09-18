@@ -48,6 +48,9 @@ class Permission(StrEnum):
     SMS_TEMPLATE_MANAGE = "sms_template:manage"  # A1-5
     AUDIT_READ = "audit:read"  # A1-6 A1-7
 
+    # 환자 피드백 — 진료 역할과 관리자 모두 조회한다
+    PATIENT_FEEDBACK_READ = "patient_feedback:read"
+
 
 #: 권한 -> 그 권한을 여는 역할들. 하나라도 가지고 있으면 통과한다(OR).
 MATRIX: dict[Permission, frozenset[Role]] = {
@@ -64,6 +67,7 @@ MATRIX: dict[Permission, frozenset[Role]] = {
     Permission.CLINIC_MANAGE: frozenset({Role.ADMIN}),
     Permission.SMS_TEMPLATE_MANAGE: frozenset({Role.ADMIN}),
     Permission.AUDIT_READ: frozenset({Role.ADMIN}),
+    Permission.PATIENT_FEEDBACK_READ: frozenset({Role.STAFF, Role.DOCTOR, Role.ADMIN}),
 }
 
 #: 의료 판단에 속하는 권한. admin 을 아무리 얹어도 열리지 않아야 한다.
@@ -85,6 +89,9 @@ CLINIC_OPERATION = frozenset(
         Permission.AUDIT_READ,
     }
 )
+
+#: 진료 역할과 관리자 모두 수행하는 공용 운영 조회.
+SHARED_OPERATION = frozenset({Permission.PATIENT_FEEDBACK_READ})
 
 #: 역할만으로는 부족하고 **소유자 검사가 더 필요한** 권한.
 #: D2-3 — 의사는 자기가 만든 처방 세트만 고칠 수 있다.
