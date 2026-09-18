@@ -1,0 +1,666 @@
+%% KEY-343 — generated from current Tortoise model metadata
+erDiagram
+    aerich {
+        CHAR app
+        JSON content
+        INT id PK,UK
+        CHAR version
+    }
+    doctor_guide_copy {
+        TEXT body
+        DATETIME created_at
+        BIGINT doctor_guide_copy_id PK,UK
+        BIGINT doctor_id "nullable"
+        BIGINT hospital_id
+        FOREIGNKEY prescription_set_id FK
+        CHARENUM section_key
+        DATETIME updated_at
+        BIGINT updated_by "nullable"
+    }
+    doctor_guide_review {
+        BIGINT doctor_guide_review_id PK,UK
+        BIGINT doctor_id "nullable"
+        BIGINT hospital_id
+        FOREIGNKEY prescription_set_id FK
+        DATETIME reviewed_at
+    }
+    drug_catalog {
+        DATETIME created_at
+        BIGINT drug_catalog_id PK,UK
+        CHAR frequency "nullable"
+        DATETIME hidden_at "nullable"
+        CHAR name UK
+        CHAR note "nullable"
+        CHARENUM status
+        DATETIME updated_at
+    }
+    drug_caution_content {
+        CHARENUM approval_status
+        CHAR approved_key UK "nullable"
+        TEXT body
+        CHAR content_version
+        DATETIME created_at
+        BIGINT drug_caution_content_id PK,UK
+        JSON physician_review "nullable"
+        FOREIGNKEY prescription_set_id FK
+        CHARENUM section_key
+        CHARENUM source_grade
+        CHAR source_name
+        CHAR source_org
+        CHAR source_url
+        DATETIME updated_at
+        DATE verified_at
+    }
+    lab_baseline {
+        BOOLEAN always_shown
+        BOOLEAN by_age
+        DATETIME created_at
+        CHARENUM direction
+        CHARENUM disease
+        BIGINT doctor_id "nullable"
+        DECIMAL high "nullable"
+        BIGINT hospital_id
+        CHAR keywords
+        BIGINT lab_baseline_id PK,UK
+        DECIMAL low "nullable"
+        CHAR name
+        SMALLINT position
+        CHAR unit
+        DATETIME updated_at
+    }
+    message_template {
+        TEXT body
+        DATETIME created_at
+        BIGINT hospital_id
+        CHARENUM kind
+        BIGINT message_template_id PK,UK
+        DATETIME updated_at
+        BIGINT updated_by "nullable"
+    }
+    prescription_check_item {
+        DATETIME created_at
+        CHARENUM item_key
+        SMALLINT position
+        BIGINT prescription_check_item_id PK,UK
+        FOREIGNKEY prescription_set_id FK
+        DATETIME updated_at
+    }
+    prescription_set {
+        BOOLEAN check_d15_on
+        BOOLEAN check_d30_on
+        DATETIME created_at
+        CHARENUM days_mode
+        SMALLINT days_per_pack "nullable"
+        CHARENUM disease
+        CHAR emr_code "nullable"
+        DATETIME hidden_at "nullable"
+        CHAR name UK
+        CHARENUM phase
+        BIGINT prescription_set_id PK,UK
+        CHAR revisit_note "nullable"
+        SMALLINT run_out_before_days
+        BOOLEAN run_out_on
+        CHARENUM status
+        DATETIME updated_at
+    }
+    prescription_set_drug {
+        DATETIME created_at
+        CHAR frequency "nullable"
+        CHAR name
+        CHAR note "nullable"
+        SMALLINT position
+        BIGINT prescription_set_drug_id PK,UK
+        FOREIGNKEY prescription_set_id FK
+        DATETIME updated_at
+    }
+    medical_document {
+        DATETIME created_at
+        BIGINT document_id PK,UK
+        CHARENUM document_type "nullable"
+        CHAR file_path
+        BIGINT file_size
+        BIGINT hospital_id
+        CHAR mime_type
+        DATETIME source_deleted_at "nullable"
+        BIGINT uploaded_by
+        FOREIGNKEY visit_id FK
+    }
+    patient_feedback {
+        CHARENUM category
+        CHAR content_key "nullable"
+        DATETIME created_at
+        TEXT details "nullable"
+        CHAR detected_tab "nullable"
+        FOREIGNKEY guide_document_id FK
+        BIGINT hospital_id
+        CHAR idempotency_digest
+        BIGINT patient_feedback_id PK,UK
+        BIGINT patient_usage_event_id "nullable"
+        CHAR section_key "nullable"
+        CHARENUM source_screen
+        CHARENUM target
+    }
+    knowledge_chunk {
+        TEXT body
+        CHAR body_sha256
+        JSON bounding_boxes "nullable"
+        UUID chunk_id PK,UK
+        CHAR claim_key "nullable"
+        CHAR claim_value "nullable"
+        DATETIME created_at
+        JSON embedding
+        INT embedding_dimension
+        CHAR embedding_model
+        CHAR embedding_revision
+        FLOAT ocr_confidence "nullable"
+        INT page_number "nullable"
+        INT position
+        CHAR section_key
+        FOREIGNKEY version_id FK
+    }
+    knowledge_document {
+        DATETIME created_at
+        UUID document_id PK,UK
+        BIGINT hospital_id "nullable"
+        CHAR source_key UK
+        CHARENUM source_kind
+        CHAR source_org
+        CHAR source_url "nullable"
+        CHAR title
+        DATETIME updated_at
+    }
+    knowledge_ingestion_attempt {
+        INT attempt_count
+        UUID attempt_id PK,UK
+        DATETIME created_at
+        CHAR error_code "nullable"
+        DATETIME next_retry_at "nullable"
+        BOOLEAN retryable
+        CHARENUM status
+        DATETIME updated_at
+        FOREIGNKEY version_id FK
+    }
+    knowledge_version {
+        CHAR approval_note "nullable"
+        CHARENUM approval_status
+        DATETIME approved_at "nullable"
+        CHAR approved_by "nullable"
+        BOOLEAN chunk_optional
+        DATETIME created_at
+        CHAR current_approved_key UK "nullable"
+        DATETIME deprecated_at "nullable"
+        CHAR deprecated_by "nullable"
+        FOREIGNKEY document_id FK
+        CHAR extractor_version
+        BOOLEAN is_current
+        CHAR license_basis "nullable"
+        BOOLEAN license_verified
+        DATETIME review_due_at "nullable"
+        CHARENUM source_grade
+        CHAR source_mime_type
+        CHAR source_object_key
+        CHAR source_sha256
+        DATETIME updated_at
+        DATETIME verified_at "nullable"
+        UUID version_id PK,UK
+        CHAR version_label
+    }
+    ocr_document_text {
+        DATETIME created_at
+        BIGINT document_id
+        CHARENUM document_type
+        BIGINT ocr_document_text_id PK,UK
+        FOREIGNKEY ocr_result_id FK
+        TEXT raw_text "nullable"
+        DATETIME raw_text_purged_at "nullable"
+        DATETIME updated_at
+    }
+    ocr_field {
+        DECIMAL confidence "nullable"
+        DATETIME confirmed_at "nullable"
+        BIGINT confirmed_by "nullable"
+        TEXT corrected_value "nullable"
+        DATETIME created_at
+        TEXT extracted_value "nullable"
+        CHAR field_type
+        BOOLEAN is_confirmed
+        BOOLEAN is_pending_report
+        DATETIME modified_at "nullable"
+        BIGINT modified_by "nullable"
+        BIGINT ocr_document_text_id "nullable"
+        BIGINT ocr_field_id PK,UK
+        FOREIGNKEY ocr_result_id FK
+        INT source_line "nullable"
+        CHAR unit "nullable"
+        DATETIME updated_at
+        INT version
+    }
+    ocr_field_candidate {
+        TEXT candidate_value
+        DECIMAL confidence "nullable"
+        DATETIME created_at
+        BOOLEAN is_selected
+        BIGINT ocr_document_text_id "nullable"
+        BIGINT ocr_field_candidate_id PK,UK
+        FOREIGNKEY ocr_field_id FK
+        SMALLINT rank
+        DATE source_date "nullable"
+        INT source_line "nullable"
+    }
+    ocr_job {
+        DATETIME completed_at "nullable"
+        DATETIME created_at
+        BOOLEAN excluded_from_guide
+        CHAR failure_code "nullable"
+        BIGINT hospital_id
+        CHAR ocr_job_id PK,UK
+        SMALLINT progress
+        BIGINT requested_by
+        DATETIME started_at "nullable"
+        CHARENUM status
+        DATETIME updated_at
+        FOREIGNKEY visit_id FK
+    }
+    ocr_job_document {
+        DATETIME created_at
+        BIGINT document_id
+        CHARENUM document_type
+        BIGINT ocr_job_document_id PK,UK
+        FOREIGNKEY ocr_job_id FK
+    }
+    ocr_result {
+        DATETIME confirmed_at "nullable"
+        BIGINT confirmed_by "nullable"
+        DATETIME created_at
+        CHAR model_name
+        CHAR model_version "nullable"
+        DATETIME modified_at "nullable"
+        BIGINT modified_by "nullable"
+        ONETOONE ocr_job_id FK,UK
+        BIGINT ocr_result_id PK,UK
+        DATETIME updated_at
+        INT version
+    }
+    patient {
+        DATE birth_date
+        DATETIME created_at
+        CHARENUM gender
+        BIGINT hospital_id
+        CHAR hospital_patient_no
+        CHAR name
+        BIGINT patient_id PK,UK
+        CHAR phone
+        BOOLEAN sms_consent
+        BIGINT sms_consent_updated_by "nullable"
+        DATETIME sms_consented_at "nullable"
+        DATETIME sms_opted_out_at "nullable"
+        DATETIME updated_at
+    }
+    patient_number_correction {
+        CHAR after_no
+        CHAR before_no
+        BIGINT corrected_by
+        BIGINT correction_id PK,UK
+        DATETIME created_at
+        BIGINT hospital_id
+        BIGINT patient_id
+        CHAR reason
+    }
+    prescription {
+        DATETIME created_at
+        BIGINT prescription_id PK,UK
+        CHAR prescription_set
+        DATETIME updated_at
+        ONETOONE visit_id FK,UK
+    }
+    prescription_item {
+        DATETIME created_at
+        INT duration_days "nullable"
+        CHAR frequency
+        CHAR name
+        FOREIGNKEY prescription_id FK
+        BIGINT prescription_item_id PK,UK
+        DATETIME updated_at
+    }
+    hospital {
+        CHAR address "nullable"
+        CHAR booking_url "nullable"
+        DATETIME created_at
+        BIGINT hospital_id PK,UK
+        CHAR name UK
+        CHAR phone "nullable"
+        DATETIME updated_at
+        BIGINT updated_by "nullable"
+    }
+    hospital_update_event {
+        FOREIGNKEY actor_staff_id FK
+        JSON changes
+        DATETIME created_at
+        CHARENUM event_type
+        FOREIGNKEY hospital_id FK
+        BIGINT hospital_update_event_id PK,UK
+    }
+    staff {
+        DATETIME created_at
+        FOREIGNKEY hospital_id FK
+        BOOLEAN is_owner
+        DATETIME last_login_at "nullable"
+        DATETIME left_at "nullable"
+        CHAR login_id UK
+        BOOLEAN must_change_password
+        CHAR name
+        DATETIME password_changed_at "nullable"
+        CHAR password_hash
+        JSON roles
+        BIGINT staff_id PK,UK
+        CHARENUM status
+        DATETIME updated_at
+    }
+    staff_account_event {
+        FOREIGNKEY actor_staff_id FK
+        DATETIME created_at
+        CHARENUM event_type
+        FOREIGNKEY hospital_id FK
+        JSON roles
+        BIGINT staff_account_event_id PK,UK
+        FOREIGNKEY subject_staff_id FK
+    }
+    users {
+        DATE birthday
+        DATETIME created_at
+        CHAR email
+        CHARENUM gender
+        CHAR hashed_password
+        BIGINT id PK,UK
+        BOOLEAN is_active
+        BOOLEAN is_admin
+        DATETIME last_login "nullable"
+        CHAR name
+        CHAR phone_number
+        DATETIME updated_at
+    }
+    chatbot_submission {
+        BIGINT chatbot_submission_id PK,UK
+        DATETIME created_at
+        FOREIGNKEY guide_document_id FK
+        CHAR idempotency_digest
+        CHAR question_digest
+    }
+    check_in {
+        BIGINT check_in_id PK,UK
+        DATETIME created_at
+        ONETOONE guide_document_id FK,UK
+        CHARENUM medication
+        CHAR note "nullable"
+        BOOLEAN pain_had "nullable"
+        SMALLINT pain_score "nullable"
+        JSON pain_types
+    }
+    check_in_signal {
+        CHARENUM answer_key
+        CHAR client_id
+        BIGINT client_sequence
+        CHAR client_session_id
+        DATETIME created_at
+        FOREIGNKEY guide_document_id FK
+        BIGINT signal_id PK,UK
+    }
+    check_in_signal_acknowledgement {
+        BIGINT acknowledgement_id PK,UK
+        BIGINT actor_id
+        DATETIME created_at
+        FOREIGNKEY state_id FK
+    }
+    check_in_signal_state {
+        DATETIME acknowledged_at "nullable"
+        BIGINT acknowledged_by "nullable"
+        CHARENUM answer_key
+        CHAR client_id "nullable"
+        BIGINT client_sequence "nullable"
+        ONETOONE guide_document_id FK,UK
+        BOOLEAN needs_review
+        FOREIGNKEY signal_id FK "nullable"
+        BIGINT state_id PK,UK
+        DATETIME updated_at
+    }
+    guide_document {
+        DATETIME approved_at "nullable"
+        BIGINT approved_by "nullable"
+        SMALLINT check_hour
+        DATETIME created_at
+        BIGINT guide_document_id PK,UK
+        BIGINT hospital_id
+        CHAR returned_reason "nullable"
+        DATETIME scheduled_at "nullable"
+        SMALLINT send_hour
+        CHARENUM status
+        DATETIME updated_at
+        INT version
+        ONETOONE visit_id FK,UK
+    }
+    guide_event {
+        BIGINT actor_id
+        BIGINT caused_by_message_id "nullable"
+        DATETIME created_at
+        CHARENUM event_type
+        FOREIGNKEY guide_document_id FK
+        BIGINT guide_event_id PK,UK
+        CHAR order_after "nullable"
+        CHAR order_before "nullable"
+        CHAR reason "nullable"
+        CHARENUM section_key "nullable"
+    }
+    guide_generation_job {
+        CHAR active_key UK "nullable"
+        BIGINT actor_id
+        INT attempts
+        DATETIME available_at
+        CHAR block_reason "nullable"
+        UUID claim "nullable"
+        DATETIME completed_at "nullable"
+        DATETIME created_at
+        BOOLEAN discard_edits
+        DATETIME failed_at "nullable"
+        CHAR failure_reason "nullable"
+        INT guide_version
+        BIGINT hospital_id
+        CHAR input_sha256
+        UUID job_id PK,UK
+        BIGINT result_guide_document_id "nullable"
+        INT result_version "nullable"
+        BIGINT visit_id
+    }
+    guide_message {
+        SMALLINT attempt_count
+        CHAR claim_token "nullable"
+        DATETIME created_at
+        CHARENUM failure_code "nullable"
+        FOREIGNKEY guide_document_id FK
+        BIGINT guide_message_id PK,UK
+        CHARENUM hold_reason "nullable"
+        CHARENUM kind
+        CHAR provider_detail "nullable"
+        CHAR provider_message_id "nullable"
+        BIGINT resend_of_message_id UK "nullable"
+        SMALLINT resend_sequence
+        DATETIME scheduled_at
+        DATETIME sent_at "nullable"
+        TEXT sent_body "nullable"
+        DATETIME source_failure_at "nullable"
+        CHAR source_failure_type "nullable"
+        INT source_retry_generation
+        BOOLEAN source_retry_requested
+        CHARENUM status
+        DATETIME updated_at
+    }
+    guide_message_event {
+        DATETIME created_at
+        CHARENUM event_type
+        BIGINT guide_message_event_id PK,UK
+        FOREIGNKEY guide_message_id FK
+        CHAR reason "nullable"
+    }
+    guide_message_setting {
+        TEXT body "nullable"
+        DATETIME created_at
+        SMALLINT days_before "nullable"
+        BOOLEAN enabled
+        FOREIGNKEY guide_document_id FK
+        BIGINT guide_message_setting_id PK,UK
+        CHARENUM kind
+        DATETIME updated_at
+    }
+    guide_safety_check {
+        DATETIME checked_at
+        CHAR checker_version
+        FOREIGNKEY generation_job_id FK "nullable"
+        FOREIGNKEY guide_document_id FK "nullable"
+        BIGINT guide_safety_check_id PK,UK
+        INT guide_version "nullable"
+        CHAR reason_code "nullable"
+        CHARENUM section_key "nullable"
+        CHARENUM stage
+        CHARENUM verdict
+    }
+    guide_section {
+        DATETIME created_at
+        INT display_order
+        FOREIGNKEY drug_caution_content_id FK "nullable"
+        TEXT edited_body "nullable"
+        TEXT generated_body
+        FOREIGNKEY guide_document_id FK
+        BIGINT guide_section_id PK,UK
+        BOOLEAN locked
+        CHARENUM section_key
+        DATETIME updated_at
+        CHAR warn "nullable"
+    }
+    guide_section_source_snapshot {
+        CHAR body_sha256
+        CHAR chunk_id "nullable"
+        DATETIME created_at
+        CHAR document_id "nullable"
+        CHAR fallback_reason "nullable"
+        CHAR generation_mode
+        FOREIGNKEY guide_document_id FK
+        FOREIGNKEY guide_section_id FK "nullable"
+        INT guide_version
+        INT position
+        FLOAT score "nullable"
+        CHARENUM section_key
+        BIGINT snapshot_id PK,UK
+        CHAR source_name "nullable"
+        CHAR source_org "nullable"
+        CHAR source_url "nullable"
+        CHAR template_id "nullable"
+        DATE verified_at "nullable"
+        CHAR version
+    }
+    patient_guide_link {
+        DATETIME created_at
+        DATETIME expires_at
+        ONETOONE guide_document_id FK,UK
+        DATETIME issued_at "nullable"
+        BIGINT issued_by
+        BIGINT last_message_id "nullable"
+        BIGINT patient_guide_link_id PK,UK
+        CHAR token_digest UK
+    }
+    patient_otp_challenge {
+        DATETIME consumed_at "nullable"
+        DATETIME expires_at
+        SMALLINT failed_attempts
+        DATETIME issued_at
+        DATETIME locked_until "nullable"
+        CHAR otp_digest
+        CHAR otp_salt
+        ONETOONE patient_guide_link_id FK,UK
+        BIGINT patient_otp_challenge_id PK,UK
+        DATETIME updated_at
+    }
+    patient_otp_event {
+        DATETIME created_at
+        CHARENUM event_type
+        BIGINT patient_guide_link_id
+        BIGINT patient_otp_event_id PK,UK
+    }
+    patient_usage_event {
+        CHARENUM answer_outcome "nullable"
+        DATETIME created_at
+        CHARENUM event_type
+        CHARENUM grounded_section "nullable"
+        FOREIGNKEY guide_document_id FK
+        BIGINT patient_usage_event_id PK,UK
+        CHARENUM question_kind "nullable"
+        CHAR response_ref_digest UK "nullable"
+    }
+    visit {
+        DATETIME created_at
+        CHAR department "nullable"
+        BIGINT doctor_id "nullable"
+        TEXT doctor_note "nullable"
+        BIGINT hospital_id
+        FOREIGNKEY patient_id FK
+        BOOLEAN planned_stop
+        CHARENUM status
+        DATETIME updated_at
+        BIGINT visit_id PK,UK
+        TEXT visit_summary "nullable"
+        DATETIME visited_at
+    }
+    visit_check_answer {
+        DATETIME answered_at "nullable"
+        BIGINT answered_by "nullable"
+        BOOLEAN checked
+        DATETIME created_at
+        CHARENUM item_key
+        DATETIME updated_at
+        BIGINT visit_check_answer_id PK,UK
+        FOREIGNKEY visit_id FK
+    }
+    prescription_set ||--o{ doctor_guide_copy : prescription_set_id
+    prescription_set ||--o{ doctor_guide_review : prescription_set_id
+    prescription_set ||--o{ drug_caution_content : prescription_set_id
+    prescription_set ||--o{ prescription_check_item : prescription_set_id
+    prescription_set ||--o{ prescription_set_drug : prescription_set_id
+    visit ||--o{ medical_document : visit_id
+    guide_document ||--o{ patient_feedback : guide_document_id
+    knowledge_version ||--o{ knowledge_chunk : version_id
+    knowledge_version ||--o{ knowledge_ingestion_attempt : version_id
+    knowledge_document ||--o{ knowledge_version : document_id
+    ocr_result ||--o{ ocr_document_text : ocr_result_id
+    ocr_result ||--o{ ocr_field : ocr_result_id
+    ocr_field ||--o{ ocr_field_candidate : ocr_field_id
+    visit ||--o{ ocr_job : visit_id
+    ocr_job ||--o{ ocr_job_document : ocr_job_id
+    ocr_job ||--o| ocr_result : ocr_job_id
+    visit ||--o| prescription : visit_id
+    prescription ||--o{ prescription_item : prescription_id
+    staff ||--o{ hospital_update_event : actor_staff_id
+    hospital ||--o{ hospital_update_event : hospital_id
+    hospital ||--o{ staff : hospital_id
+    staff ||--o{ staff_account_event : actor_staff_id
+    hospital ||--o{ staff_account_event : hospital_id
+    staff ||--o{ staff_account_event : subject_staff_id
+    guide_document ||--o{ chatbot_submission : guide_document_id
+    guide_document ||--o| check_in : guide_document_id
+    guide_document ||--o{ check_in_signal : guide_document_id
+    check_in_signal_state ||--o{ check_in_signal_acknowledgement : state_id
+    guide_document ||--o| check_in_signal_state : guide_document_id
+    check_in_signal o|--o{ check_in_signal_state : signal_id
+    visit ||--o| guide_document : visit_id
+    guide_document ||--o{ guide_event : guide_document_id
+    guide_document ||--o{ guide_message : guide_document_id
+    guide_message ||--o{ guide_message_event : guide_message_id
+    guide_document ||--o{ guide_message_setting : guide_document_id
+    guide_generation_job o|--o{ guide_safety_check : generation_job_id
+    guide_document o|--o{ guide_safety_check : guide_document_id
+    drug_caution_content o|--o{ guide_section : drug_caution_content_id
+    guide_document ||--o{ guide_section : guide_document_id
+    guide_document ||--o{ guide_section_source_snapshot : guide_document_id
+    guide_section o|--o{ guide_section_source_snapshot : guide_section_id
+    guide_document ||--o| patient_guide_link : guide_document_id
+    patient_guide_link ||--o| patient_otp_challenge : patient_guide_link_id
+    guide_document ||--o{ patient_usage_event : guide_document_id
+    patient ||--o{ visit : patient_id
+    visit ||--o{ visit_check_answer : visit_id
