@@ -1238,3 +1238,86 @@ def test_last_column_right_tail_does_not_absorb_unit_and_reference() -> None:
     assert field_map.get("AST") == "21", f"결과값이 잘못 추출됨: {field_map.get('AST')!r}"
     assert "0-40" not in (field_map.get("AST") or ""), "참고치가 결과값에 합쳐졌다"
     assert "U/L" not in (field_map.get("AST") or ""), "단위가 결과값에 합쳐졌다"
+
+
+# ---------------------------------------------------------------------------
+# _PCOS_RE 축소 — 다낭성 단독 오매칭 방지 (③)
+# _YAZZ_CONTRAINDICATED_RE 구분자 제한 — 문장 경계 오매칭 방지 (⑤)
+# ---------------------------------------------------------------------------
+
+
+def test_diag_table_pcos_with_space_extracted() -> None:
+    """상병명 표 「다낭성 난소증후군」(공백 포함)이 DIAGNOSIS로 추출된다.
+
+    _PCOS_RE 가 `다[낭난]성 *난소` 를 요구하므로 공백이 있어도 매칭된다.
+    이전 패턴에서도 매칭됐으나, 좁혀진 뒤에도 유지됨을 확인한다.
+    """
+    blocks = [
+        _diag_block("코드", 0.99, 10, 10, 60, 30),
+        _diag_block("명칭", 0.99, 70, 10, 300, 30),
+        _diag_block("E282", 0.96, 10, 40, 60, 60),
+        _diag_block("다낭성 난소증후군", 0.93, 70, 40, 300, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("DIAGNOSIS") == "다낭성난소증후군(PCOS)", (
+        f"DIAGNOSIS가 추출되지 않았다: {field_map.get('DIAGNOSIS')!r}"
+    )
+
+
+def test_diag_table_pcos_unrelated_dangsong_not_extracted() -> None:
+    """「다낭성 신증」처럼 난소와 무관한 다낭성은 DIAGNOSIS로 추출하지 않는다.
+
+    _PCOS_RE 가 「다낭성 난소」 패턴을 요구하므로 「다낭성 신증」은 매칭되지 않는다.
+    이전 패턴은 「다낭성」 단독을 허용해 오매칭이 발생했다.
+    """
+    blocks = [
+        _diag_block("코드", 0.99, 10, 10, 60, 30),
+        _diag_block("명칭", 0.99, 70, 10, 300, 30),
+        _diag_block("Q611", 0.96, 10, 40, 60, 60),
+        _diag_block("다낭성 신증", 0.93, 70, 40, 300, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert "DIAGNOSIS" not in field_map, (
+        f"무관한 다낭성 상병이 DIAGNOSIS로 추출됐다: {field_map.get('DIAGNOSIS')!r}"
+    )
+
+
+def test_yazz_contraindicated_smoking_suppresses_o_set() -> None:
+    """「야즈는 흡연으로 복용 못함」이 금기로 감지되어 O 세트 제안이 없다.
+
+    _YAZZ_CONTRAINDICATED_RE 가 구분자 없는 문장을 올바르게 감지한다.
+    """
+    result = _make_emr_result(
+        _PCOS_DIAG_BLOCKS,
+        _YAZZ_MET_RX_BLOCKS,
+        raw_text="야즈는 흡연으로 복용 못함",
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("PRESCRIPTION_SET") != "PCOS · 야즈 O", (
+        "금기 문구가 있는데 O 세트가 제안됐다"
+    )
+
+
+def test_yazz_stop_prohibition_not_contraindicated() -> None:
+    """「야즈 3개월 처방, 중단 불가」는 금기가 아니라 복용 유지 지시다 — O 세트가 제안된다.
+
+    이전 구현: `.{0,20}` 이 쉼표를 넘어 「불가」를 잡아 금기로 오판했다.
+    수정 후: `[^,\\.·\\n]{0,20}` 이 쉼표 앞에서 멈춰 오매칭이 사라진다.
+    """
+    result = _make_emr_result(
+        _PCOS_DIAG_BLOCKS,
+        _YAZZ_MET_RX_BLOCKS,
+        raw_text="야즈 3개월 처방, 중단 불가",
+    )
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("PRESCRIPTION_SET") == "PCOS · 야즈 O", (
+        f"O 세트가 제안되어야 하는데 추출되지 않았다: {field_map.get('PRESCRIPTION_SET')!r}"
+    )

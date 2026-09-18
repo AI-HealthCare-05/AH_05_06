@@ -82,7 +82,7 @@ _DIAG_NAME_COL_LABEL: str = "명칭"
 # 진단 키워드 패턴
 _ENDO_RE = re.compile(r"자궁\s*내막\s*증", re.IGNORECASE)
 # 다낭성(정확한 표기)과 다난성(오타 형태) 모두 인식
-_PCOS_RE = re.compile(r"다[낭난]성(?:\s*난소)?|난소\s*증후군|PCOS", re.IGNORECASE)
+_PCOS_RE = re.compile(r"다[낭난]성\s*난소|난소\s*증후군|PCOS", re.IGNORECASE)
 
 # 상병명 표 열 허용 오차 (px) — 헤더 텍스트보다 넓은 데이터 셀 양쪽에 추가
 _DIAG_COL_MARGIN = 5.0
@@ -109,7 +109,7 @@ _BIZAN_RE = re.compile(r"비잔", re.IGNORECASE)
 _YAZZ_RE = re.compile(r"야즈", re.IGNORECASE)
 _METFORMIN_RE = re.compile(r"메트포르민|메트포민|Metformin", re.IGNORECASE)
 _YAZZ_CONTRAINDICATED_RE = re.compile(
-    r"야즈\s*(?:불가|금기)|야즈.{0,20}(?:복용\s*)?(?:못함|안됨|불가)",
+    r"야즈\s*(?:불가|금기)|야즈[^,\.·\n]{0,20}(?:복용\s*)?(?:못함|안됨|불가)",
     re.IGNORECASE,
 )
 
