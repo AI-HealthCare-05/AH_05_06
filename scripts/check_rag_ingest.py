@@ -241,19 +241,34 @@ async def _check_pcos(
     return results, exit_code, pcos_version
 
 
-async def _check_eshre() -> tuple[dict, int, KnowledgeVersion | None]:
+async def _check_eshre(eshre_version_id: str | None = None) -> tuple[dict, int, KnowledgeVersion | None]:
     """check4 실행. (결과 dict, exit_code, version 객체) 반환."""
-    eshre_version = (
-        await KnowledgeVersion.filter(
-            document__source_url=ESHRE_SOURCE_URL,
-            approval_status=ApprovalStatus.APPROVED,
-            is_current=True,
+    if eshre_version_id:
+        eshre_version = (
+            await KnowledgeVersion.filter(version_id=eshre_version_id).select_related("document").first()
         )
-        .select_related("document")
-        .first()
-    )
-    if eshre_version is None:
-        return {"check4_eshre": {"passed": False, "error": "승인된 현재 ESHRE 버전 없음"}}, EXIT_CANNOT_CHECK, None
+        if eshre_version is None:
+            return (
+                {"check4_eshre": {"passed": False, "error": f"version_id={eshre_version_id} 버전을 찾을 수 없음"}},
+                EXIT_CANNOT_CHECK,
+                None,
+            )
+    else:
+        eshre_version = (
+            await KnowledgeVersion.filter(
+                document__source_url=ESHRE_SOURCE_URL,
+                approval_status=ApprovalStatus.APPROVED,
+                is_current=True,
+            )
+            .select_related("document")
+            .first()
+        )
+        if eshre_version is None:
+            return (
+                {"check4_eshre": {"passed": False, "error": "승인된 현재 ESHRE 버전 없음 — DRAFT 검사는 --eshre-version-id <판ID> 사용"}},
+                EXIT_CANNOT_CHECK,
+                None,
+            )
 
     eshre_doc = eshre_version.document
     eshre_chunk_count = await KnowledgeChunkRecord.filter(version=eshre_version).count()
@@ -332,9 +347,11 @@ async def _check_deprecated_drafts() -> tuple[dict, int]:
     return result, EXIT_PASS if passed else EXIT_CONTENT_FAIL
 
 
-async def run_checks(version_id: str | None, dump_path: Path | None) -> tuple[dict, int]:
+async def run_checks(
+    version_id: str | None, eshre_version_id: str | None, dump_path: Path | None
+) -> tuple[dict, int]:
     pcos_results, pcos_exit, pcos_version = await _check_pcos(version_id, dump_path)
-    eshre_results, eshre_exit, eshre_version = await _check_eshre()
+    eshre_results, eshre_exit, eshre_version = await _check_eshre(eshre_version_id)
     draft_results, draft_exit = await _check_deprecated_drafts()
 
     results = {**pcos_results, **eshre_results, **draft_results}
@@ -383,6 +400,11 @@ async def main() -> None:
         help="검사할 PCOS KnowledgeVersion ID (DRAFT 포함 — 생략 시 APPROVED+is_current 버전 사용)",
     )
     parser.add_argument(
+        "--eshre-version-id",
+        metavar="UUID",
+        help="검사할 ESHRE KnowledgeVersion ID (DRAFT 포함 — 생략 시 APPROVED+is_current 버전 사용)",
+    )
+    parser.add_argument(
         "--dump",
         metavar="FILE",
         type=Path,
@@ -392,7 +414,7 @@ async def main() -> None:
 
     await Tortoise.init(config=TORTOISE_ORM)
     try:
-        report, exit_code = await run_checks(args.version_id, args.dump)
+        report, exit_code = await run_checks(args.version_id, args.eshre_version_id, args.dump)
         if args.dump:
             check1 = report.get("checks", {}).get("check1_pcos_count", {})
             found = check1.get("found_count", 0)
