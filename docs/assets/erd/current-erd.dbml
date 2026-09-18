@@ -1,0 +1,798 @@
+// KEY-343 - generated from current Tortoise model metadata
+// Import this file into dbdiagram.io to edit or export the ERD.
+
+Table aerich {
+  app varchar [not null]
+  content json [not null]
+  id int [pk, not null]
+  version varchar [not null]
+}
+
+Table doctor_guide_copy {
+  body text [not null]
+  created_at datetime [not null]
+  doctor_guide_copy_id bigint [pk, not null]
+  doctor_id bigint
+  hospital_id bigint [not null]
+  prescription_set_id bigint [not null]
+  section_key varchar [not null]
+  updated_at datetime [not null]
+  updated_by bigint
+
+  Indexes {
+    (hospital_id, doctor_id, prescription_set_id, section_key) [unique]
+  }
+}
+
+Table doctor_guide_review {
+  doctor_guide_review_id bigint [pk, not null]
+  doctor_id bigint
+  hospital_id bigint [not null]
+  prescription_set_id bigint [not null]
+  reviewed_at datetime [not null]
+
+  Indexes {
+    (hospital_id, doctor_id, prescription_set_id) [unique]
+  }
+}
+
+Table drug_catalog {
+  created_at datetime [not null]
+  drug_catalog_id bigint [pk, not null]
+  frequency varchar
+  hidden_at datetime
+  name varchar [not null, unique]
+  note varchar
+  status varchar [not null]
+  updated_at datetime [not null]
+}
+
+Table drug_caution_content {
+  approval_status varchar [not null]
+  approved_key varchar [unique]
+  body text [not null]
+  content_version varchar [not null]
+  created_at datetime [not null]
+  drug_caution_content_id bigint [pk, not null]
+  physician_review json
+  prescription_set_id bigint [not null]
+  section_key varchar [not null]
+  source_grade varchar [not null]
+  source_name varchar [not null]
+  source_org varchar [not null]
+  source_url varchar [not null]
+  updated_at datetime [not null]
+  verified_at date [not null]
+}
+
+Table lab_baseline {
+  always_shown boolean [not null]
+  by_age boolean [not null]
+  created_at datetime [not null]
+  direction varchar [not null]
+  disease varchar [not null]
+  doctor_id bigint
+  high decimal
+  hospital_id bigint [not null]
+  keywords varchar [not null]
+  lab_baseline_id bigint [pk, not null]
+  low decimal
+  name varchar [not null]
+  position smallint [not null]
+  unit varchar [not null]
+  updated_at datetime [not null]
+
+  Indexes {
+    (hospital_id, doctor_id, disease, name) [unique]
+  }
+}
+
+Table message_template {
+  body text [not null]
+  created_at datetime [not null]
+  hospital_id bigint [not null]
+  kind varchar [not null]
+  message_template_id bigint [pk, not null]
+  updated_at datetime [not null]
+  updated_by bigint
+
+  Indexes {
+    (hospital_id, kind) [unique]
+  }
+}
+
+Table prescription_check_item {
+  created_at datetime [not null]
+  item_key varchar [not null]
+  position smallint [not null]
+  prescription_check_item_id bigint [pk, not null]
+  prescription_set_id bigint [not null]
+  updated_at datetime [not null]
+
+  Indexes {
+    (prescription_set_id, item_key) [unique]
+  }
+}
+
+Table prescription_set {
+  check_d15_on boolean [not null]
+  check_d30_on boolean [not null]
+  created_at datetime [not null]
+  days_mode varchar [not null]
+  days_per_pack smallint
+  disease varchar [not null]
+  emr_code varchar
+  hidden_at datetime
+  name varchar [not null, unique]
+  phase varchar [not null]
+  prescription_set_id bigint [pk, not null]
+  revisit_note varchar
+  run_out_before_days smallint [not null]
+  run_out_on boolean [not null]
+  status varchar [not null]
+  updated_at datetime [not null]
+}
+
+Table prescription_set_drug {
+  created_at datetime [not null]
+  frequency varchar
+  name varchar [not null]
+  note varchar
+  position smallint [not null]
+  prescription_set_drug_id bigint [pk, not null]
+  prescription_set_id bigint [not null]
+  updated_at datetime [not null]
+}
+
+Table medical_document {
+  created_at datetime [not null]
+  document_id bigint [pk, not null]
+  document_type varchar
+  file_path varchar [not null]
+  file_size bigint [not null]
+  hospital_id bigint [not null]
+  mime_type varchar [not null]
+  source_deleted_at datetime
+  uploaded_by bigint [not null]
+  visit_id bigint [not null]
+}
+
+Table patient_feedback {
+  category varchar [not null]
+  content_key varchar
+  created_at datetime [not null]
+  details text
+  detected_tab varchar
+  guide_document_id bigint [not null]
+  hospital_id bigint [not null]
+  idempotency_digest varchar [not null]
+  patient_feedback_id bigint [pk, not null]
+  patient_usage_event_id bigint
+  section_key varchar
+  source_screen varchar [not null]
+  target varchar [not null]
+
+  Indexes {
+    (guide_document_id, idempotency_digest) [unique]
+  }
+}
+
+Table knowledge_chunk {
+  body text [not null]
+  body_sha256 varchar [not null]
+  bounding_boxes json
+  chunk_id uuid [pk, not null]
+  claim_key varchar
+  claim_value varchar
+  created_at datetime [not null]
+  embedding json [not null]
+  embedding_dimension int [not null]
+  embedding_model varchar [not null]
+  embedding_revision varchar [not null]
+  ocr_confidence float
+  page_number int
+  position int [not null]
+  section_key varchar [not null]
+  version_id uuid [not null]
+
+  Indexes {
+    (version_id, position) [unique]
+  }
+}
+
+Table knowledge_document {
+  created_at datetime [not null]
+  document_id uuid [pk, not null]
+  hospital_id bigint
+  source_key varchar [not null, unique]
+  source_kind varchar [not null]
+  source_org varchar [not null]
+  source_url varchar
+  title varchar [not null]
+  updated_at datetime [not null]
+}
+
+Table knowledge_ingestion_attempt {
+  attempt_count int [not null]
+  attempt_id uuid [pk, not null]
+  created_at datetime [not null]
+  error_code varchar
+  next_retry_at datetime
+  retryable boolean [not null]
+  status varchar [not null]
+  updated_at datetime [not null]
+  version_id uuid [not null]
+}
+
+Table knowledge_version {
+  approval_note varchar
+  approval_status varchar [not null]
+  approved_at datetime
+  approved_by varchar
+  chunk_optional boolean [not null]
+  created_at datetime [not null]
+  current_approved_key varchar [unique]
+  deprecated_at datetime
+  deprecated_by varchar
+  document_id uuid [not null]
+  extractor_version varchar [not null]
+  is_current boolean [not null]
+  license_basis varchar
+  license_verified boolean [not null]
+  review_due_at datetime
+  source_grade varchar [not null]
+  source_mime_type varchar [not null]
+  source_object_key varchar [not null]
+  source_sha256 varchar [not null]
+  updated_at datetime [not null]
+  verified_at datetime
+  version_id uuid [pk, not null]
+  version_label varchar [not null]
+
+  Indexes {
+    (document_id, version_label) [unique]
+  }
+}
+
+Table ocr_document_text {
+  created_at datetime [not null]
+  document_id bigint [not null]
+  document_type varchar [not null]
+  ocr_document_text_id bigint [pk, not null]
+  ocr_result_id bigint [not null]
+  raw_text text
+  raw_text_purged_at datetime
+  updated_at datetime [not null]
+
+  Indexes {
+    (ocr_result_id, document_id) [unique]
+  }
+}
+
+Table ocr_field {
+  confidence decimal
+  confirmed_at datetime
+  confirmed_by bigint
+  corrected_value text
+  created_at datetime [not null]
+  extracted_value text
+  field_type varchar [not null]
+  is_confirmed boolean [not null]
+  is_pending_report boolean [not null]
+  modified_at datetime
+  modified_by bigint
+  ocr_document_text_id bigint
+  ocr_field_id bigint [pk, not null]
+  ocr_result_id bigint [not null]
+  source_line int
+  unit varchar
+  updated_at datetime [not null]
+  version int [not null]
+
+  Indexes {
+    (ocr_result_id, field_type) [unique]
+  }
+}
+
+Table ocr_field_candidate {
+  candidate_value text [not null]
+  confidence decimal
+  created_at datetime [not null]
+  is_selected boolean [not null]
+  ocr_document_text_id bigint
+  ocr_field_candidate_id bigint [pk, not null]
+  ocr_field_id bigint [not null]
+  rank smallint [not null]
+  source_date date
+  source_line int
+
+  Indexes {
+    (ocr_field_id, rank) [unique]
+  }
+}
+
+Table ocr_job {
+  completed_at datetime
+  created_at datetime [not null]
+  excluded_from_guide boolean [not null]
+  failure_code varchar
+  hospital_id bigint [not null]
+  ocr_job_id varchar [pk, not null]
+  progress smallint [not null]
+  requested_by bigint [not null]
+  started_at datetime
+  status varchar [not null]
+  updated_at datetime [not null]
+  visit_id bigint [not null]
+}
+
+Table ocr_job_document {
+  created_at datetime [not null]
+  document_id bigint [not null]
+  document_type varchar [not null]
+  ocr_job_document_id bigint [pk, not null]
+  ocr_job_id varchar [not null]
+
+  Indexes {
+    (ocr_job_id, document_id) [unique]
+  }
+}
+
+Table ocr_result {
+  confirmed_at datetime
+  confirmed_by bigint
+  created_at datetime [not null]
+  model_name varchar [not null]
+  model_version varchar
+  modified_at datetime
+  modified_by bigint
+  ocr_job_id varchar [not null, unique]
+  ocr_result_id bigint [pk, not null]
+  updated_at datetime [not null]
+  version int [not null]
+}
+
+Table patient {
+  birth_date date [not null]
+  created_at datetime [not null]
+  gender varchar [not null]
+  hospital_id bigint [not null]
+  hospital_patient_no varchar [not null]
+  name varchar [not null]
+  patient_id bigint [pk, not null]
+  phone varchar [not null]
+  sms_consent boolean [not null]
+  sms_consent_updated_by bigint
+  sms_consented_at datetime
+  sms_opted_out_at datetime
+  updated_at datetime [not null]
+
+  Indexes {
+    (hospital_id, hospital_patient_no) [unique]
+  }
+}
+
+Table patient_number_correction {
+  after_no varchar [not null]
+  before_no varchar [not null]
+  corrected_by bigint [not null]
+  correction_id bigint [pk, not null]
+  created_at datetime [not null]
+  hospital_id bigint [not null]
+  patient_id bigint [not null]
+  reason varchar [not null]
+}
+
+Table prescription {
+  created_at datetime [not null]
+  prescription_id bigint [pk, not null]
+  prescription_set varchar [not null]
+  updated_at datetime [not null]
+  visit_id bigint [not null, unique]
+}
+
+Table prescription_item {
+  created_at datetime [not null]
+  duration_days int
+  frequency varchar [not null]
+  name varchar [not null]
+  prescription_id bigint [not null]
+  prescription_item_id bigint [pk, not null]
+  updated_at datetime [not null]
+}
+
+Table hospital {
+  address varchar
+  booking_url varchar
+  created_at datetime [not null]
+  hospital_id bigint [pk, not null]
+  name varchar [not null, unique]
+  phone varchar
+  updated_at datetime [not null]
+  updated_by bigint
+}
+
+Table hospital_update_event {
+  actor_staff_id bigint [not null]
+  changes json [not null]
+  created_at datetime [not null]
+  event_type varchar [not null]
+  hospital_id bigint [not null]
+  hospital_update_event_id bigint [pk, not null]
+}
+
+Table staff {
+  created_at datetime [not null]
+  hospital_id bigint [not null]
+  is_owner boolean [not null]
+  last_login_at datetime
+  left_at datetime
+  login_id varchar [not null, unique]
+  must_change_password boolean [not null]
+  name varchar [not null]
+  password_changed_at datetime
+  password_hash varchar [not null]
+  roles json [not null]
+  staff_id bigint [pk, not null]
+  status varchar [not null]
+  updated_at datetime [not null]
+}
+
+Table staff_account_event {
+  actor_staff_id bigint [not null]
+  created_at datetime [not null]
+  event_type varchar [not null]
+  hospital_id bigint [not null]
+  roles json [not null]
+  staff_account_event_id bigint [pk, not null]
+  subject_staff_id bigint [not null]
+}
+
+Table users {
+  birthday date [not null]
+  created_at datetime [not null]
+  email varchar [not null]
+  gender varchar [not null]
+  hashed_password varchar [not null]
+  id bigint [pk, not null]
+  is_active boolean [not null]
+  is_admin boolean [not null]
+  last_login datetime
+  name varchar [not null]
+  phone_number varchar [not null]
+  updated_at datetime [not null]
+}
+
+Table chatbot_submission {
+  chatbot_submission_id bigint [pk, not null]
+  created_at datetime [not null]
+  guide_document_id bigint [not null]
+  idempotency_digest varchar [not null]
+  question_digest varchar [not null]
+
+  Indexes {
+    (guide_document_id, idempotency_digest) [unique]
+  }
+}
+
+Table check_in {
+  check_in_id bigint [pk, not null]
+  created_at datetime [not null]
+  guide_document_id bigint [not null, unique]
+  medication varchar [not null]
+  note varchar
+  pain_had boolean
+  pain_score smallint
+  pain_types json [not null]
+}
+
+Table check_in_signal {
+  answer_key varchar [not null]
+  client_id varchar [not null]
+  client_sequence bigint [not null]
+  client_session_id varchar [not null]
+  created_at datetime [not null]
+  guide_document_id bigint [not null]
+  signal_id bigint [pk, not null]
+
+  Indexes {
+    (guide_document_id, client_id, client_sequence) [unique]
+  }
+}
+
+Table check_in_signal_acknowledgement {
+  acknowledgement_id bigint [pk, not null]
+  actor_id bigint [not null]
+  created_at datetime [not null]
+  state_id bigint [not null]
+}
+
+Table check_in_signal_state {
+  acknowledged_at datetime
+  acknowledged_by bigint
+  answer_key varchar [not null]
+  client_id varchar
+  client_sequence bigint
+  guide_document_id bigint [not null, unique]
+  needs_review boolean [not null]
+  signal_id bigint
+  state_id bigint [pk, not null]
+  updated_at datetime [not null]
+}
+
+Table guide_document {
+  approved_at datetime
+  approved_by bigint
+  check_hour smallint [not null]
+  created_at datetime [not null]
+  guide_document_id bigint [pk, not null]
+  hospital_id bigint [not null]
+  returned_reason varchar
+  scheduled_at datetime
+  send_hour smallint [not null]
+  status varchar [not null]
+  updated_at datetime [not null]
+  version int [not null]
+  visit_id bigint [not null, unique]
+}
+
+Table guide_event {
+  actor_id bigint [not null]
+  caused_by_message_id bigint
+  created_at datetime [not null]
+  event_type varchar [not null]
+  guide_document_id bigint [not null]
+  guide_event_id bigint [pk, not null]
+  order_after varchar
+  order_before varchar
+  reason varchar
+  section_key varchar
+}
+
+Table guide_generation_job {
+  active_key varchar [unique]
+  actor_id bigint [not null]
+  attempts int [not null]
+  available_at datetime [not null]
+  block_reason varchar
+  claim uuid
+  completed_at datetime
+  created_at datetime [not null]
+  discard_edits boolean [not null]
+  failed_at datetime
+  failure_reason varchar
+  guide_version int [not null]
+  hospital_id bigint [not null]
+  input_sha256 varchar [not null]
+  job_id uuid [pk, not null]
+  result_guide_document_id bigint
+  result_version int
+  visit_id bigint [not null]
+}
+
+Table guide_message {
+  attempt_count smallint [not null]
+  claim_token varchar
+  created_at datetime [not null]
+  failure_code varchar
+  guide_document_id bigint [not null]
+  guide_message_id bigint [pk, not null]
+  hold_reason varchar
+  kind varchar [not null]
+  provider_detail varchar
+  provider_message_id varchar
+  resend_of_message_id bigint [unique]
+  resend_sequence smallint [not null]
+  scheduled_at datetime [not null]
+  sent_at datetime
+  sent_body text
+  source_failure_at datetime
+  source_failure_type varchar
+  source_retry_generation int [not null]
+  source_retry_requested boolean [not null]
+  status varchar [not null]
+  updated_at datetime [not null]
+
+  Indexes {
+    (guide_document_id, kind, resend_sequence) [unique]
+  }
+}
+
+Table guide_message_event {
+  created_at datetime [not null]
+  event_type varchar [not null]
+  guide_message_event_id bigint [pk, not null]
+  guide_message_id bigint [not null]
+  reason varchar
+}
+
+Table guide_message_setting {
+  body text
+  created_at datetime [not null]
+  days_before smallint
+  enabled boolean [not null]
+  guide_document_id bigint [not null]
+  guide_message_setting_id bigint [pk, not null]
+  kind varchar [not null]
+  updated_at datetime [not null]
+
+  Indexes {
+    (guide_document_id, kind) [unique]
+  }
+}
+
+Table guide_safety_check {
+  checked_at datetime [not null]
+  checker_version varchar [not null]
+  generation_job_id uuid
+  guide_document_id bigint
+  guide_safety_check_id bigint [pk, not null]
+  guide_version int
+  reason_code varchar
+  section_key varchar
+  stage varchar [not null]
+  verdict varchar [not null]
+}
+
+Table guide_section {
+  created_at datetime [not null]
+  display_order int [not null]
+  drug_caution_content_id bigint
+  edited_body text
+  generated_body text [not null]
+  guide_document_id bigint [not null]
+  guide_section_id bigint [pk, not null]
+  locked boolean [not null]
+  section_key varchar [not null]
+  updated_at datetime [not null]
+  warn varchar
+
+  Indexes {
+    (guide_document_id, section_key) [unique]
+  }
+}
+
+Table guide_section_source_snapshot {
+  body_sha256 varchar [not null]
+  chunk_id varchar
+  created_at datetime [not null]
+  document_id varchar
+  fallback_reason varchar
+  generation_mode varchar [not null]
+  guide_document_id bigint [not null]
+  guide_section_id bigint
+  guide_version int [not null]
+  position int [not null]
+  score float
+  section_key varchar [not null]
+  snapshot_id bigint [pk, not null]
+  source_name varchar
+  source_org varchar
+  source_url varchar
+  template_id varchar
+  verified_at date
+  version varchar [not null]
+
+  Indexes {
+    (guide_document_id, guide_version, section_key, position) [unique]
+  }
+}
+
+Table patient_guide_link {
+  created_at datetime [not null]
+  expires_at datetime [not null]
+  guide_document_id bigint [not null, unique]
+  issued_at datetime
+  issued_by bigint [not null]
+  last_message_id bigint
+  patient_guide_link_id bigint [pk, not null]
+  token_digest varchar [not null, unique]
+}
+
+Table patient_otp_challenge {
+  consumed_at datetime
+  expires_at datetime [not null]
+  failed_attempts smallint [not null]
+  issued_at datetime [not null]
+  locked_until datetime
+  otp_digest varchar [not null]
+  otp_salt varchar [not null]
+  patient_guide_link_id bigint [not null, unique]
+  patient_otp_challenge_id bigint [pk, not null]
+  updated_at datetime [not null]
+}
+
+Table patient_otp_event {
+  created_at datetime [not null]
+  event_type varchar [not null]
+  patient_guide_link_id bigint [not null]
+  patient_otp_event_id bigint [pk, not null]
+}
+
+Table patient_usage_event {
+  answer_outcome varchar
+  created_at datetime [not null]
+  event_type varchar [not null]
+  grounded_section varchar
+  guide_document_id bigint [not null]
+  patient_usage_event_id bigint [pk, not null]
+  question_kind varchar
+  response_ref_digest varchar [unique]
+}
+
+Table visit {
+  created_at datetime [not null]
+  department varchar
+  doctor_id bigint
+  doctor_note text
+  hospital_id bigint [not null]
+  patient_id bigint [not null]
+  planned_stop boolean [not null]
+  status varchar [not null]
+  updated_at datetime [not null]
+  visit_id bigint [pk, not null]
+  visit_summary text
+  visited_at datetime [not null]
+}
+
+Table visit_check_answer {
+  answered_at datetime
+  answered_by bigint
+  checked boolean [not null]
+  created_at datetime [not null]
+  item_key varchar [not null]
+  updated_at datetime [not null]
+  visit_check_answer_id bigint [pk, not null]
+  visit_id bigint [not null]
+
+  Indexes {
+    (visit_id, item_key) [unique]
+  }
+}
+
+Ref: doctor_guide_copy.prescription_set_id > prescription_set.prescription_set_id
+Ref: doctor_guide_review.prescription_set_id > prescription_set.prescription_set_id
+Ref: drug_caution_content.prescription_set_id > prescription_set.prescription_set_id
+Ref: prescription_check_item.prescription_set_id > prescription_set.prescription_set_id
+Ref: prescription_set_drug.prescription_set_id > prescription_set.prescription_set_id
+Ref: medical_document.visit_id > visit.visit_id
+Ref: patient_feedback.guide_document_id > guide_document.guide_document_id
+Ref: knowledge_chunk.version_id > knowledge_version.version_id
+Ref: knowledge_ingestion_attempt.version_id > knowledge_version.version_id
+Ref: knowledge_version.document_id > knowledge_document.document_id
+Ref: ocr_document_text.ocr_result_id > ocr_result.ocr_result_id
+Ref: ocr_field.ocr_result_id > ocr_result.ocr_result_id
+Ref: ocr_field_candidate.ocr_field_id > ocr_field.ocr_field_id
+Ref: ocr_job.visit_id > visit.visit_id
+Ref: ocr_job_document.ocr_job_id > ocr_job.ocr_job_id
+Ref: ocr_result.ocr_job_id - ocr_job.ocr_job_id
+Ref: prescription.visit_id - visit.visit_id
+Ref: prescription_item.prescription_id > prescription.prescription_id
+Ref: hospital_update_event.actor_staff_id > staff.staff_id
+Ref: hospital_update_event.hospital_id > hospital.hospital_id
+Ref: staff.hospital_id > hospital.hospital_id
+Ref: staff_account_event.actor_staff_id > staff.staff_id
+Ref: staff_account_event.hospital_id > hospital.hospital_id
+Ref: staff_account_event.subject_staff_id > staff.staff_id
+Ref: chatbot_submission.guide_document_id > guide_document.guide_document_id
+Ref: check_in.guide_document_id - guide_document.guide_document_id
+Ref: check_in_signal.guide_document_id > guide_document.guide_document_id
+Ref: check_in_signal_acknowledgement.state_id > check_in_signal_state.state_id
+Ref: check_in_signal_state.guide_document_id - guide_document.guide_document_id
+Ref: check_in_signal_state.signal_id > check_in_signal.signal_id
+Ref: guide_document.visit_id - visit.visit_id
+Ref: guide_event.guide_document_id > guide_document.guide_document_id
+Ref: guide_message.guide_document_id > guide_document.guide_document_id
+Ref: guide_message_event.guide_message_id > guide_message.guide_message_id
+Ref: guide_message_setting.guide_document_id > guide_document.guide_document_id
+Ref: guide_safety_check.generation_job_id > guide_generation_job.job_id
+Ref: guide_safety_check.guide_document_id > guide_document.guide_document_id
+Ref: guide_section.drug_caution_content_id > drug_caution_content.drug_caution_content_id
+Ref: guide_section.guide_document_id > guide_document.guide_document_id
+Ref: guide_section_source_snapshot.guide_document_id > guide_document.guide_document_id
+Ref: guide_section_source_snapshot.guide_section_id > guide_section.guide_section_id
+Ref: patient_guide_link.guide_document_id - guide_document.guide_document_id
+Ref: patient_otp_challenge.patient_guide_link_id - patient_guide_link.patient_guide_link_id
+Ref: patient_usage_event.guide_document_id > guide_document.guide_document_id
+Ref: visit.patient_id > patient.patient_id
+Ref: visit_check_answer.visit_id > visit.visit_id

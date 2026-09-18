@@ -1,5 +1,11 @@
 # `app/models/` 배치 초안 — 22표를 일곱 파일로
 
+> **현재 ERD (KEY-343)** — develop `eb0ed9c2`의 Tortoise 모델과 전체 Aerich migration을 기준으로 갱신했다.
+> [SVG](assets/erd/current-erd.svg) · [dbdiagram.io 편집 원본(DBML)](assets/erd/current-erd.dbml) · [Mermaid 보조 원본](assets/erd/current-erd.mmd) · [PNG](assets/erd/current-erd.png)(수동 산출물 — `--check`가 안 보므로 모델이 바뀌면 SVG를 손으로 다시 내보내야 한다)
+>
+> `DB_PASSWORD=<로컬 값> uv run --group app python scripts/generate_erd.py --check`로
+> 모델·migration의 51개 테이블 목록과 산출물 동기화를 확인할 수 있다 — CI(`.github/workflows/checks.yml`)도 매 PR에서 같은 검사를 돈다.
+
 > 대상 저장소 — `AI-HealthCare-05/AH_05_06` · 템플릿 계층(`models → repositories → services → dtos → apis`)을 그대로 따른다.
 > 짝 문서 — [`spec-medical.md`](spec-medical.md) · [`spec-patient.md`](spec-patient.md) · [`spec-admin.md`](spec-admin.md)
 > **이 문서는 초안이다.** 3장의 「먼저 정할 것 셋」이 닫히기 전에는 코드를 시작하지 않는다.
