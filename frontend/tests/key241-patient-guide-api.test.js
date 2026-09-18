@@ -437,7 +437,7 @@ test('P2~P5 렌더러가 진행률·목표 비표시·부분 펼침·승인 시�
   assert.doesNotMatch(GUIDE_SOURCE, /axisCopyLength|activeAxis\.p\.length > 2/);
   assert.match(GUIDE_SOURCE, /function richEl[\s\S]*?n\.textContent = value/);
   assert.doesNotMatch(GUIDE_SOURCE, /n\.innerHTML = html/);
-  assert.match(GUIDE_SOURCE, /GuideFooter\(\{ approvedAt: d\.approvedAt/);
+  assert.match(GUIDE_SOURCE, /GuideFooter\(\{\s*\n?\s*approvedAt: d\.approvedAt/);
   assert.doesNotMatch(GUIDE_SOURCE, /goal\.dim/);
 
   // 헤더는 서버가 준 이름만 쓴다 — 지어내지 않고, 없으면 진료일·의원명만 (KEY-268).
