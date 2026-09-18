@@ -22,6 +22,18 @@ test("D+7은 숨기지 않고 시연 범위만 각주로 밝힌다", () => {
   assert.doesNotMatch(guide, /소진 임박 안내는 자동 발송됩니다/);
 });
 
+test("문자 설정의 구현 중 기능은 배지와 정확한 설명을 함께 표시한다", () => {
+  const guide = codeOnly(read("js/guide-view.js"));
+  const start = guide.indexOf("function smsLeftHtml");
+  const end = guide.indexOf("function smsRightHtml", start);
+  const screen = guide.slice(start, end);
+
+  assert.match(screen, /소진 임박 안내[^\n]+\[구현중\]/);
+  assert.match(screen, /재진 안내[^\n]+\[구현중\]/);
+  assert.doesNotMatch(screen, /처방일수를 확인하면 셈합니다/);
+  assert.match(screen, /소진 예정일을 아직 화면에서 계산할 수 없습니다/);
+});
+
 test("D+7 기본값은 고정이라고 표시하지 않는다", () => {
   const settings = codeOnly(read("js/settings.js"));
 

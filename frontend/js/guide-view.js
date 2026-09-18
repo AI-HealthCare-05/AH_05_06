@@ -625,7 +625,7 @@ function smsLeftHtml(plan) {
     '<p class="sms__note">일주일 뒤 문자를 끄면 D+7 복약·통증 확인 링크가 발송되지 않습니다.</p>' +
     "</section>" +
     '<section class="sms__card">' +
-    '<h3 class="sms__title">소진 임박 안내</h3>' +
+    '<h3 class="sms__title">소진 임박 안내 <span class="implementation-badge implementation-badge--in-progress">[구현중]</span></h3>' +
     '<div class="sms__row">' +
     /* **끌 수 있다.** 예전에는 늘 ☑ 로 그려 둔 글자였다 — 처방일수를 모르는
        진료에서도 켜진 것처럼 보였고, 끄고 싶어도 누를 데가 없었다. */
@@ -640,10 +640,10 @@ function smsLeftHtml(plan) {
     '<span class="sms__when">' +
     (noticeIso
       ? esc(smsWhen(noticeIso)) + " 예정 · 소진 " + esc(smsWhen(runOutIso))
-      : "처방일수를 확인하면 셈합니다") +
+      : "소진 예정일을 아직 화면에서 계산할 수 없습니다") +
     "</span></div></section>" +
     '<section class="sms__card">' +
-    '<h3 class="sms__title">재진 안내</h3>' +
+    '<h3 class="sms__title">재진 안내 <span class="implementation-badge implementation-badge--in-progress">[구현중]</span></h3>' +
     '<div class="sms__row">마지막 발송 — 없음<span class="sms__when">' +
     "발송하는 자리가 아직 없습니다</span></div>" +
     '<p class="sms__note">ⓘ 문자 동의 「거부」면 비활성 · 잔량 0이면 대기</p>' +
