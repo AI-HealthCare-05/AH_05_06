@@ -77,7 +77,7 @@ test("반려가 성공하면 전역 안내문 상태도 같이 바뀌어 승인�
 
   assert.match(
     code,
-    /returnToStaff\(returningId, text\)\s*\.then\(function \(result\) \{[\s\S]{0,400}?guide = result/,
+    /returnToStaff\(returningId, text\)\s*\.then\(function \(result\) \{[\s\S]{0,600}?guide = result/,
     "return-go 성공 콜백이 guide 를 서버 응답으로 갱신해야 renderRole() 이 최신 상태를 본다",
   );
 });
@@ -97,18 +97,39 @@ test("승인·반려 응답도 같은 환자를 다시 열면 지금 화면을 �
   );
   assert.match(
     code,
-    /\.approve\(approvingId\)\s*\.then\(function \(result\) \{[\s\S]{0,400}?visit\.visit_id === approvingId && loadSeq === approvingSeq\) guide = result/,
-    "approve() 성공 콜백이 loadSeq 도 같이 봐야 오래된 응답이 guide 를 덮지 않는다",
-  );
-  assert.match(
-    code,
     /var returningId = visit\.visit_id;[\s\S]{0,400}?var returningSeq = loadSeq;/,
     "return-go 가 반려 시점의 loadSeq 를 잡아 둬야 그 사이 같은 환자를 다시 열었는지 가릴 수 있다",
   );
+});
+
+/* 유가은 님 4차 리뷰(fe4cdd2c 기준) — 위 `loadSeq` 검사를 `guide = result`
+ * 대입에만 걸어 두면, 응답이 뒤집혀 온 사이 같은 환자를 다시 열었을 때
+ * `markDone`(목록 patch)·`openModal`(완료 모달)·실패 모달·`renderRole()` 은
+ * 그대로 실행됐다. `approvedModal` 은 **지금 화면의** `visit.name` 을 읽으므로,
+ * 다른 환자로 넘어간 사이 오래된 승인 모달이 뜨면 엉뚱한 환자 이름으로
+ * 뜬다. 상태 대입과 같은 손잡이로 모든 부수효과를 이르게 `return` 해 끊는다. */
+test("승인·반려 응답이 오래됐으면 목록 갱신·모달·오류 안내까지 전부 건너뛴다", () => {
+  const code = codeOnly(read("js/doctor.js"));
+
   assert.match(
     code,
-    /\.returnToStaff\(returningId, text\)\s*\.then\(function \(result\) \{[\s\S]{0,400}?visit\.visit_id === returningId && loadSeq === returningSeq\) guide = result/,
-    "return-go 성공 콜백이 loadSeq 도 같이 봐야 오래된 응답이 guide 를 덮지 않는다",
+    /\.approve\(approvingId\)\s*\.then\(function \(result\) \{[\s\S]{0,600}?if \(!visit \|\| visit\.visit_id !== approvingId \|\| loadSeq !== approvingSeq\) return;[\s\S]{0,300}?guide = result;[\s\S]{0,150}?markDone\(approvingId,[\s\S]{0,200}?openModal\(approvedModal\(result\)\)/,
+    "approve() 성공 콜백이 이르게 return 한 뒤에만 guide 대입·markDone·openModal 을 실행해야 한다",
+  );
+  assert.match(
+    code,
+    /\.approve\(approvingId\)[\s\S]{0,1000}?\.catch\(function \(error\) \{[\s\S]{0,300}?if \(!visit \|\| visit\.visit_id !== approvingId \|\| loadSeq !== approvingSeq\) return;[\s\S]{0,150}?renderRole\(\);[\s\S]{0,80}?openModal\(failedModal/,
+    "approve() 실패 콜백도 오래된 응답이면 renderRole·실패 모달을 실행하지 않아야 한다",
+  );
+  assert.match(
+    code,
+    /\.returnToStaff\(returningId, text\)\s*\.then\(function \(result\) \{[\s\S]{0,600}?if \(!visit \|\| visit\.visit_id !== returningId \|\| loadSeq !== returningSeq\) return;[\s\S]{0,400}?guide = result;[\s\S]{0,150}?markDone\(returningId,/,
+    "return-go 성공 콜백이 이르게 return 한 뒤에만 guide 대입·markDone 을 실행해야 한다",
+  );
+  assert.match(
+    code,
+    /\.returnToStaff\(returningId, text\)[\s\S]{0,1300}?\.catch\(function \(\) \{[\s\S]{0,500}?if \(!visit \|\| visit\.visit_id !== returningId \|\| loadSeq !== returningSeq\) return;[\s\S]{0,150}?target\.disabled = false;/,
+    "return-go 실패 콜백도 오래된 응답이면 버튼 재활성화·오류 안내를 실행하지 않아야 한다",
   );
 });
 

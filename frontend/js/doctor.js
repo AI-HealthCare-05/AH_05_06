@@ -466,17 +466,26 @@ function guideLoadSaying(error) {
       doctorApi
         .approve(approvingId)
         .then(function (result) {
+          /* 유가은 님 4차 리뷰 — `loadSeq` 검사를 `guide = result` 대입에만
+             걸어 두면, 응답이 뒤집혀 온 사이 같은 환자를 다시 열었을 때
+             `markDone`(목록 patch)과 `openModal`(승인 완료 모달)은 그대로
+             실행됐다. `approvedModal` 은 **지금 화면의** `visit.name` 을 읽으므로,
+             그 사이 다른 환자로 넘어갔으면 엉뚱한 환자 이름으로 「승인
+             완료」모달이 뜬다. 상태 대입과 같은 손잡이로 전부 묶어 끊는다 —
+             오래된 응답의 목록·모달 부수효과까지 전부 멈춘다. */
+          if (!visit || visit.visit_id !== approvingId || loadSeq !== approvingSeq) return;
           /* 승인했으면 그 진료는 발송 대기다. 줄을 먼저 고치고 모달을 연다 —
              모달을 닫았을 때 목록이 이미 사실을 말하고 있어야 한다. */
-          if (visit && visit.visit_id === approvingId && loadSeq === approvingSeq) guide = result;
+          guide = result;
           markDone(approvingId, { work_category: "SEND_PENDING", detail_status: "SCHEDULED_TO_SEND" });
           openModal(approvedModal(result));
         })
         .catch(function (error) {
-          /* target.disabled = false 로 그냥 되살리면 안 된다. 요청이 실패로
-             돌아오는 사이 다른(이미 처리된) 진료로 넘어가 있을 수 있는데, 그 경우
-             무조건 풀어 버리면 재승인 경합이 그대로 재현된다(위 markDone 과 같은
-             이유). 항상 지금 화면의 상태를 다시 물어야 한다. */
+          /* 같은 이유(유가은 님 4차 리뷰) — 실패 모달도 지금 화면과 무관한
+             오래된 요청이면 띄우지 않는다. `renderRole()` 은 여기서 안 불러도
+             안전하다 — 그 사이 다른 환자로 넘어갔다면 `load()` 가 이미 그
+             환자의 진짜 상태로 버튼을 다시 그렸다. */
+          if (!visit || visit.visit_id !== approvingId || loadSeq !== approvingSeq) return;
           renderRole();
           openModal(failedModal("승인하지 못했습니다", error));
         });
@@ -504,11 +513,15 @@ function guideLoadSaying(error) {
       doctorApi
         .returnToStaff(returningId, text)
         .then(function (result) {
-          /* 승인 쪽(`guide = result`)과 같은 이유다 — KEY-353 리뷰(유가은 님).
-             `markDone` 은 목록 줄만 고치고 `renderRole()` 을 부르는데,
+          /* 승인 쪽과 같은 이유(유가은 님 4차 리뷰) — `loadSeq` 검사를
+             `guide = result` 대입에만 걸면, 응답이 뒤집혀 온 사이 같은 환자를
+             다시 열었을 때 `markDone`·`openModal`(반려 완료 모달)이 그대로
+             실행됐다. 상태 대입과 같은 손잡이로 전부 묶어 끊는다. */
+          if (!visit || visit.visit_id !== returningId || loadSeq !== returningSeq) return;
+          /* `markDone` 은 목록 줄만 고치고 `renderRole()` 을 부르는데,
              전역 `guide.status` 를 그대로 두면 여전히 `APPROVAL_PENDING` 으로
              읽혀 되돌린 뒤에도 승인·반려 버튼이 풀린 채로 남는다. */
-          if (visit && visit.visit_id === returningId && loadSeq === returningSeq) guide = result;
+          guide = result;
           markDone(returningId, { work_category: "NEEDS_ATTENTION", detail_status: "APPROVAL_RETURNED" });
           openModal(
             '<h2 class="modal__title">스탭에 되돌렸습니다</h2>' +
@@ -520,15 +533,16 @@ function guideLoadSaying(error) {
           );
         })
         .catch(function () {
-          /* 승인 쪽과 같은 이유다(이희진 님 `f184e4f`) — 응답이 실패로 돌아오는
-             사이 다른 진료로 넘어가 있을 수 있다.
+          /* 승인 쪽과 같은 이유다(이희진 님 `f184e4f`, 유가은 님 4차 리뷰) —
+             응답이 실패로 돌아오는 사이 다른 진료로 넘어가 있거나 같은 진료를
+             다시 열었을 수 있다. 그 경우 오류 문구까지 포함해 전부 멈춘다 —
+             지금 화면과 무관한 실패를 알릴 이유가 없다.
 
              다만 여기 `target` 은 **사유 창 안의 버튼**이라 `renderRole()` 이
              닿지 않는다. 그래서 「되돌리려던 그 진료가 아직 화면에 있을 때만」
              되살린다. 넘어갔으면 잠긴 채로 두고, `load()` 가 창을 닫는다. */
-          if (visit && returningId === visit.visit_id) {
-            target.disabled = false;
-          }
+          if (!visit || visit.visit_id !== returningId || loadSeq !== returningSeq) return;
+          target.disabled = false;
           el("reason-error").textContent = "되돌리지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
           el("reason-error").hidden = false;
         });
