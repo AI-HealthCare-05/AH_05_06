@@ -157,9 +157,7 @@ async def run_checks() -> dict:
     ).count()
 
     results["check5_deprecated_drafts"] = {
-        "passed": (
-            len(deprecated_drafts) == EXPECTED_DEPRECATED_DRAFT_COUNT and searchable_drafts == 0
-        ),
+        "passed": (len(deprecated_drafts) == EXPECTED_DEPRECATED_DRAFT_COUNT and searchable_drafts == 0),
         "deprecated_count": len(deprecated_drafts),
         "expected_deprecated": EXPECTED_DEPRECATED_DRAFT_COUNT,
         "searchable_non_deprecated_count": searchable_drafts,
