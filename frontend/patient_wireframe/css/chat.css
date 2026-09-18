@@ -286,7 +286,7 @@
 .btn-sheet--cancel { background: var(--bg); color: var(--tx-sub); }
 .btn-sheet--save   { background: var(--p-dark); color: #fff; }
 .btn-sheet--save:disabled { opacity: .45; cursor: not-allowed; }
-button.pdf-option { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.pdf-option { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; background: none; appearance: none; }
 button.pdf-option:focus-visible { outline: 3px solid var(--p-dark); outline-offset: 2px; }
 .pdf-preview { position: fixed; inset: 0; z-index: 10000; overflow-y: auto; overscroll-behavior: contain; background: var(--bg); color: var(--tx); font-family: var(--font); }
 .pdf-preview__bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 18px; padding-top: max(14px, env(safe-area-inset-top)); background: var(--surface); box-shadow: var(--shadow-card); }
