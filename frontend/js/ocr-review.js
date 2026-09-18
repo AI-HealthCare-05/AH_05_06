@@ -1280,9 +1280,7 @@ function stateTakesFocus(tone) {
          - 세트 미선택인 경우 → OCR에서 세트 약이 검출됐을 때만 표시
          - DURATION_DAYS에 미확정 값이 있으면 항상 표시 (KEY-274: 게이트 차단 방지) */
       var durationNeedsConfirm = field && field.value && !field.is_confirmed;
-      var showDuration = durationNeedsConfirm ||
-        (pickedSet ? isPickedSetO() : anySetDrugInOcr);
-      if (spec.type === "DURATION_DAYS" && !showDuration) return "";
+      if (spec.type === "DURATION_DAYS" && !durationNeedsConfirm && !(pickedSet ? isPickedSetO() : anySetDrugInOcr)) return "";
 
       /* 약속처방은 값 줄이 아니라 **고르는 칸**이다.
          비잔 감지 여부와 무관하게 항상 드롭다운을 표시한다.

@@ -530,8 +530,8 @@ class TestProcessOcrJob(TestCase):
         )
         assert not med.is_confirmed, "저신뢰 필드는 직원 확인 전 is_confirmed=False 여야 한다"
 
-    async def test_progress_reaches_80_at_field_extraction_stage(self) -> None:
-        """필드 추출 완료 시 progress=80이 기록된다 — 대기→판독→추출→저장→완료 중 세 번째 단계."""
+    async def test_progress_reaches_70_at_field_extraction_stage(self) -> None:
+        """필드 추출 완료 시 progress=70이 기록된다 — 대기→판독→추출→저장→완료 중 세 번째 단계."""
         job = await self._seed("ocr_key125_progress_80")
         progress_snapshots: list[int] = []
 
@@ -560,8 +560,8 @@ class TestProcessOcrJob(TestCase):
             mock_cfg.clova_enabled = True
             await process_ocr_job(job.ocr_job_id)
 
-        # CLOVA 완료(70%) → 필드 추출 완료(80%) → 저장 완료(100%) 순으로 갱신되어야 한다
-        assert 80 in progress_snapshots, f"progress=80 단계가 없다: {progress_snapshots}"
+        # CLOVA 완료(50%) → 필드 추출 완료(70%) → 저장 완료(100%) 순으로 갱신되어야 한다
+        assert 70 in progress_snapshots, f"progress=70 단계가 없다: {progress_snapshots}"
         assert progress_snapshots[-1] == 100, f"최종 progress가 100이 아니다: {progress_snapshots}"
         assert progress_snapshots == sorted(progress_snapshots), (
             f"progress가 단조 증가하지 않는다: {progress_snapshots}"
