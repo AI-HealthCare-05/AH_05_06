@@ -56,6 +56,7 @@ from app.models.catalog import (  # noqa: E402
     DrugCatalog,
     DrugCautionContent,
     PrescriptionSet,
+    PrescriptionSetDrug,
     SetStatus,
     SourceGrade,
 )
@@ -80,6 +81,7 @@ from app.services.drug_caution import DrugCautionService  # noqa: E402
 from app.services.guides import GuideService  # noqa: E402
 from app.services.patient_links import LINK_TTL, digest_link_token  # noqa: E402
 from app.tests.fixtures.catalog import (  # noqa: E402
+    CLINIC_DRUGS,
     DRUG_CAUTION_CONTENTS,
     PRESCRIPTION_SETS,
     DrugCautionContentRow,
@@ -707,18 +709,63 @@ _LEGACY_SET_NAMES: frozenset[str] = frozenset(
 )
 
 
-async def _sync_prescription_sets() -> tuple[int, int, int]:
+async def _sync_set_drugs(prescription_set: PrescriptionSet, names: tuple[str, ...]) -> tuple[int, int]:
+    """세트의 **기본 약**을 맞춘다 — 용법·비고·차례까지 (KEY-357).
+
+    없으면 판독 화면이 「선택한 약속처방에 기본 약이 없습니다」를 띄우고 스탭이
+    약 이름을 **손으로** 적는다. 그렇게 적은 이름이 카탈로그와 한 글자라도
+    다르면 RAG 를 켠 생성이 `unrecognized_prescription` 으로 막힌다
+    (`app/services/guides.py`) — 2026-09-18 파일럿에서 공백 한 칸 때문에 실제로
+    막혔다.
+
+    **지우지는 않는다.** 화면에서 의원이 더 넣은 약까지 씨앗이 치우면, 씨앗이
+    모르는 줄을 없애는 셈이다 — 같은 함수가 커스텀 세트를 안 건드리는 것과 같은
+    이유다.
+    """
+    by_name = {row.name: row for row in CLINIC_DRUGS}
+    created = fixed = 0
+
+    for position, name in enumerate(names):
+        # 명단에 없는 이름은 여기서 KeyError 로 **크게** 터뜨린다. 조용히 넘기면
+        # 카탈로그에 없는 약이 세트에 박혀, 그 세트로 만든 안내가 전부 막힌다.
+        source = by_name[name]
+        drug, was_created = await PrescriptionSetDrug.get_or_create(
+            prescription_set=prescription_set,
+            name=name,
+            defaults={"frequency": source.frequency, "note": source.note, "position": position},
+        )
+        if was_created:
+            created += 1
+            continue
+        # `defaults` 는 INSERT 때만 먹는다 — `DrugCatalog` 와 같은 자리다.
+        if (drug.frequency, drug.note, drug.position) != (source.frequency, source.note, position):
+            drug.frequency = source.frequency
+            drug.note = source.note
+            drug.position = position
+            await drug.save(update_fields=["frequency", "note", "position", "updated_at"])
+            fixed += 1
+
+    return created, fixed
+
+
+async def _sync_prescription_sets() -> tuple[int, int, int, int, int]:
     """PRESCRIPTION_SETS 와 DB 를 동기화한다 — KEY-357.
 
-    - 명단에 있는 세트: get_or_create, disease 보정
+    - 명단에 있는 세트: get_or_create, disease 보정, **기본 약 보정**
     - _LEGACY_SET_NAMES 에 속한 ACTIVE 세트: HIDDEN + hidden_at 기록
       (화면에서 만든 커스텀 세트는 건드리지 않는다)
-    반환값: (created, fixed, hidden)
+    반환값: (created, fixed, hidden, drugs_created, drugs_fixed)
     """
     created = fixed = 0
+    drugs_created = drugs_fixed = 0
 
     for row in PRESCRIPTION_SETS:
         found, was_created = await PrescriptionSet.get_or_create(name=row.name, defaults={"disease": row.disease})
+        # 만든 세트든 이미 있던 세트든 기본 약은 똑같이 맞춘다 — 세트는 9/17 에
+        # 이미 심겼고 약만 빠져 있었다.
+        new_drugs, fixed_drugs = await _sync_set_drugs(found, row.drugs)
+        drugs_created += new_drugs
+        drugs_fixed += fixed_drugs
         if was_created:
             created += 1
             continue
@@ -745,7 +792,7 @@ async def _sync_prescription_sets() -> tuple[int, int, int]:
         hidden += 1
         print(f"[catalog] prescription_set hidden: {ps.name!r} (id={ps.prescription_set_id})")
 
-    return created, fixed, hidden
+    return created, fixed, hidden, drugs_created, drugs_fixed
 
 
 async def seed_catalog() -> None:
@@ -754,12 +801,13 @@ async def seed_catalog() -> None:
     같은 명령을 반복 실행해도 데이터가 쌓이지 않는다(name 기준 get_or_create).
     APPROVED 문구는 `approved_key` 를 채워 "세트·섹션당 하나" 제약을 DB 가 지키게 한다.
     """
-    created_sets, fixed_sets, hidden_sets = await _sync_prescription_sets()
+    created_sets, fixed_sets, hidden_sets, created_drugs, fixed_drugs = await _sync_prescription_sets()
     print(
         f"[catalog] prescription_set created={created_sets} "
         f"fixed={fixed_sets} hidden={hidden_sets} "
         f"skipped={len(PRESCRIPTION_SETS) - created_sets - fixed_sets}"
     )
+    print(f"[catalog] prescription_set_drug created={created_drugs} fixed={fixed_drugs}")
 
     # 세트 이름 → id 역색인 (콘텐츠 삽입에 사용)
     sets_by_name: dict[str, PrescriptionSet] = {ps.name: ps async for ps in PrescriptionSet.all()}
@@ -837,29 +885,10 @@ async def seed_catalog() -> None:
     )
 
     # ── 의원이 쓰는 약 ───────────────────────────────────────────────
-    # 대표 처방에 약을 적을 때 여기서 고른다. **표기를 판독·CSV 쪽에 맞춘다**
-    # — 실제로 들어오는 값이 그쪽이라, 나중에 이름으로 이어 붙일 여지를 남긴다.
-    # **의원 EMR 에 실제로 등록돼 있는 이름 그대로 적는다.** 판독이 읽어 오는
-    # 값이 이 표기라, 나중에 이름으로 이어 붙이려면 여기가 같아야 한다.
-    # 아래 여섯은 2026-09-04 에 의원 EMR 화면에서 받아 옮겼다.
-    for name, frequency, note in (
-        ("비잔정(디에노게스트) 2mg", "1일 1회", "매일 같은 시간"),
-        ("야즈정(드로스피레논/에티닐에스트라디올)", "1일 1회", "매일 같은 시간"),
-        ("메트포르민 500mg", "1일 2회", "식후"),
-        ("록소펜정(록소프로펜나트륨수화물)", "1일 3회", None),
-        ("세파클리어캡슐(세파클러수화물)", "1일 3회", None),
-        ("바이독시정(독시사이클린수화물)", "1일 2회", None),
-        ("씨제이후라시닐정(씨제이제일제당)", "1일 2회", None),
-        ("(위장) 광동 레바미피드정", "1일 2회", None),
-        ("겐트리손크림_(12.8mg, 0.2g, 20mg/20g)", "1일 1회", None),
-        ("에피나온정10밀리그램(에피나스틴염산염)", "1일 3회", None),
-        # 🚩 EMR 화면에서 **이름이 잘려 보인 것**을 옮겼다. 실제 등록명과 글자가
-        # 다를 수 있으니 의원 EMR 로 한 번 맞춰야 한다 — 판독이 이름으로 이어
-        # 붙일 때 한 글자만 달라도 못 찾는다.
-        ("아목틴정375밀리그램(아목시실린수화물)", "1일 3회", None),
-        # 「원내)카마졸질정」은 **원내 처방이라 뺐다** — 이 목록은 원외로 나가는
-        # 약이고, 원내 것은 안내문에 실릴 자리가 없다 (2026-09-04 권일준).
-    ):
+    # 목록은 `app/tests/fixtures/catalog.py` 의 `CLINIC_DRUGS` 하나뿐이다 —
+    # 대표 처방의 기본 약이 같은 목록을 이름으로 가리키므로, 여기 따로 두면
+    # 둘이 갈린다 (KEY-357).
+    for name, frequency, note in ((row.name, row.frequency, row.note) for row in CLINIC_DRUGS):
         # **`defaults` 는 INSERT 때만 먹는다** — 이희진 님 `#214` ⑤.
         #
         # `PrescriptionSet.disease` 에서 고친 것과 같은 버그다. 이미 있는 행에는
