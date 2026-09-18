@@ -183,6 +183,7 @@ var GuidePdf = (function () {
         ctx.textAlign = 'left';
         var imageData = canvas.toDataURL('image/jpeg', .95);
         var image = await pdf.embedJpg(imageData);
+        if (active !== current) { canvas.width = 0; return false; }
         pdf.addPage([595.28, 841.89]).drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 });
         var img = document.createElement('img');
         img.src = imageData;
