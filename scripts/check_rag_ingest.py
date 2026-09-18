@@ -244,9 +244,7 @@ async def _check_pcos(
 async def _check_eshre(eshre_version_id: str | None = None) -> tuple[dict, int, KnowledgeVersion | None]:
     """check4 실행. (결과 dict, exit_code, version 객체) 반환."""
     if eshre_version_id:
-        eshre_version = (
-            await KnowledgeVersion.filter(version_id=eshre_version_id).select_related("document").first()
-        )
+        eshre_version = await KnowledgeVersion.filter(version_id=eshre_version_id).select_related("document").first()
         if eshre_version is None:
             return (
                 {"check4_eshre": {"passed": False, "error": f"version_id={eshre_version_id} 버전을 찾을 수 없음"}},
@@ -265,7 +263,12 @@ async def _check_eshre(eshre_version_id: str | None = None) -> tuple[dict, int, 
         )
         if eshre_version is None:
             return (
-                {"check4_eshre": {"passed": False, "error": "승인된 현재 ESHRE 버전 없음 — DRAFT 검사는 --eshre-version-id <판ID> 사용"}},
+                {
+                    "check4_eshre": {
+                        "passed": False,
+                        "error": "승인된 현재 ESHRE 버전 없음 — DRAFT 검사는 --eshre-version-id <판ID> 사용",
+                    }
+                },
                 EXIT_CANNOT_CHECK,
                 None,
             )
@@ -347,9 +350,7 @@ async def _check_deprecated_drafts() -> tuple[dict, int]:
     return result, EXIT_PASS if passed else EXIT_CONTENT_FAIL
 
 
-async def run_checks(
-    version_id: str | None, eshre_version_id: str | None, dump_path: Path | None
-) -> tuple[dict, int]:
+async def run_checks(version_id: str | None, eshre_version_id: str | None, dump_path: Path | None) -> tuple[dict, int]:
     pcos_results, pcos_exit, pcos_version = await _check_pcos(version_id, dump_path)
     eshre_results, eshre_exit, eshre_version = await _check_eshre(eshre_version_id)
     draft_results, draft_exit = await _check_deprecated_drafts()
