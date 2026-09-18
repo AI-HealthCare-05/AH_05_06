@@ -17,7 +17,7 @@ import asyncio
 import json
 import re
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -140,13 +140,18 @@ async def run_checks() -> dict:
         }
 
     # ── 5. 9/11 draft 폐기 확인 ─────────────────────────────────────────────
+    draft_day_start = datetime.combine(DRAFT_DATE, datetime.min.time())
+    draft_day_end = draft_day_start + timedelta(days=1)
+
     deprecated_drafts = await KnowledgeVersion.filter(
         approval_status=ApprovalStatus.DEPRECATED,
-        created_at__date=DRAFT_DATE,
+        created_at__gte=draft_day_start,
+        created_at__lt=draft_day_end,
     ).all()
 
     searchable_drafts = await KnowledgeVersion.filter(
-        created_at__date=DRAFT_DATE,
+        created_at__gte=draft_day_start,
+        created_at__lt=draft_day_end,
         approval_status__not=ApprovalStatus.DEPRECATED,
         is_current=True,
     ).count()
