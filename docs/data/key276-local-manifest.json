@@ -1,0 +1,38 @@
+{
+  "sources": [
+    {
+      "input_type": "text_pdf",
+      "title": "International Evidence-based Guideline for the Assessment and Management of Polycystic Ovary Syndrome 2023",
+      "source_org": "Monash University · International PCOS Network",
+      "source_url": "https://doi.org/10.26180/24003834.v1",
+      "version_label": "2023 (Monash Bridges v1)",
+      "license_basis": "CC BY 4.0 (Monash Bridges doi:10.26180/24003834.v1); 출처·저자·라이선스 표시, AI 재서술·번역 등 변경 사실 명시.",
+      "source_grade": "A",
+      "license_verified": true,
+      "approve": true,
+      "path": "/tmp/pcos-monash-2023-v1.pdf",
+      "section_key": "life",
+      "page_from": 35,
+      "page_to": 38,
+      "strip_headers": [
+        "International Evidence-based Guideline for the assessment and management of polycystic ovary syndrome 2023",
+        "No.",
+        "Living# Type Recommendation",
+        "Grade/",
+        "Quality"
+      ],
+      "strip_page_numbers": true
+    },
+    {
+      "input_type": "template_only",
+      "title": "ESHRE Guideline: Endometriosis (2022)",
+      "source_org": "European Society of Human Reproduction and Embryology",
+      "source_url": "https://academic.oup.com/hropen/article/2022/2/hoac009/6537540",
+      "version_label": "2022",
+      "license_basis": "CC BY-NC 4.0; 비상업 교육 데모 범위",
+      "source_grade": "A",
+      "license_verified": true,
+      "approve": true
+    }
+  ]
+}
