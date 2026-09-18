@@ -455,13 +455,15 @@ def _first_gap_mid(blocks: list, start_x: float) -> float | None:
     """start_x 이후 첫 번째 갭의 중간점을 반환한다.
 
     blocks는 left 기준으로 정렬되어 있어야 한다.
-    start_x 이후 블록이 하나도 없거나 블록을 하나도 지나치지 않으면 None.
+    블록을 하나도 지나치지 않으면 None.
     """
     frontier = start_x
+    seen = False
     for b in blocks:
         if b.left <= frontier:
+            seen = True
             frontier = max(frontier, b.right)
-        elif frontier > start_x:
+        elif seen:
             return (frontier + b.left) / 2
     return None
 
@@ -505,7 +507,10 @@ def _col_ranges_from_data(
     tn_res_boundary = _median(tn_res_mids) if tn_res_mids else (tn_hdr.right + res_hdr.left) / 2
     res_right = _median(res_right_mids) if res_right_mids else res_hdr.right + _RIGHT_TAIL_LIMIT
 
-    return (tn_hdr.left, tn_res_boundary), (tn_res_boundary, res_right)
+    # tn 열 왼쪽 경계를 0 으로 두어 헤더 텍스트 left 보다 왼쪽에서 끝나는
+    # 짧은 검사명 블록도 포함한다 — tn_hdr.left 를 쓰면 right == tn_hdr.left - margin
+    # 인 블록이 엄격 부등호에서 탈락한다.
+    return (0.0, tn_res_boundary), (tn_res_boundary, res_right)
 
 
 def _find_lab_columns(rows: list) -> tuple[int, tuple[float, float], tuple[float, float]] | None:

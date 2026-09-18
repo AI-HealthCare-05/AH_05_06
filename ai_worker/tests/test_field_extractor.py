@@ -1345,3 +1345,37 @@ def test_yazz_stop_prohibition_not_contraindicated() -> None:
     assert field_map.get("PRESCRIPTION_SET") == "PCOS · 야즈 O", (
         f"O 세트가 제안되어야 하는데 추출되지 않았다: {field_map.get('PRESCRIPTION_SET')!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# _first_gap_mid — 검사명이 헤더 left 보다 왼쪽에서 끝나는 짧은 행 (참고 버그)
+# ---------------------------------------------------------------------------
+
+
+def test_short_test_name_block_contributes_to_column_boundary() -> None:
+    """검사명 블록이 헤더 텍스트 left 보다 왼쪽에서 끝나도 열 경계 계산에 기여한다.
+
+    _first_gap_mid 의 이전 조건 `frontier > start_x` 는 짧은 검사명 블록
+    (right < tn_hdr.left)을 처리하지 못해 폴백으로 추출 0건이 됐다.
+    seen 플래그로 교체해 이 케이스도 결과값을 올바르게 추출한다.
+
+    헤더: 검사항목(140-190) · 검사결과(400-450) — 중앙 정렬
+    데이터: AST(105-135) · 21(260-285)   — 검사명 right(135) < 헤더 left(140)
+            LH(105-130)  · 5.2(260-290)
+    """
+    blocks = [
+        _cblk("검사항목", 140, 10, 190, 30),
+        _cblk("검사결과", 400, 10, 450, 30),
+        _cblk("AST", 105, 40, 135, 60),
+        _cblk("21", 260, 40, 285, 60),
+        _cblk("LH", 105, 70, 130, 90),
+        _cblk("5.2", 260, 70, 290, 90),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert field_map.get("AST") == "21", f"짧은 검사명 행에서 결과값 추출 실패: {field_map.get('AST')!r}"
+    assert field_map.get("LH") == "5.2", f"짧은 검사명 행에서 결과값 추출 실패: {field_map.get('LH')!r}"
