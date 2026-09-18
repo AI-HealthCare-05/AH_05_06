@@ -42,7 +42,7 @@ function Sheet(opts) {
 
   var note = document.createElement('p');
   note.className = 'pdf-sheet__note';
-  note.textContent = 'ⓘ 챗봇 대화는 담기지 않아요. 파일에 이름과 진료일이 들어가니 공유에 주의해 주세요.';
+  note.textContent = opts.note || 'ⓘ 챗봇 대화는 담기지 않아요. 파일에 이름과 진료일이 들어가니 공유에 주의해 주세요.';
 
   var actions = document.createElement('div');
   actions.className = 'pdf-sheet__actions';
@@ -73,14 +73,16 @@ function Sheet(opts) {
 
   function updateSaveBtn() {
     var n = countSelected();
-    saveBtn.textContent = '미리보기 (' + n + '쪽)';
+    saveBtn.textContent = (opts.saveLabel || '미리보기') + ' (' + n + '개 항목)';
     saveBtn.disabled = n === 0;
   }
 
-  function renderOptions() {
+  function renderOptions(focusKey) {
     optionsWrap.innerHTML = '';
     (opts.options || []).forEach(function (o) {
-      var div = document.createElement('div');
+      var div = document.createElement('button');
+      div.type = 'button';
+      div.setAttribute('aria-pressed', selected[o.key] ? 'true' : 'false');
       div.className = 'pdf-option' + (selected[o.key] ? ' pdf-option--checked' : '');
 
       var check = document.createElement('span');
@@ -105,10 +107,11 @@ function Sheet(opts) {
 
       div.addEventListener('click', function () {
         selected[o.key] = !selected[o.key];
-        renderOptions();
+        renderOptions(o.key);
         updateSaveBtn();
       });
       optionsWrap.appendChild(div);
+      if (o.key === focusKey) div.focus();
     });
   }
 
@@ -117,8 +120,9 @@ function Sheet(opts) {
 
   saveBtn.addEventListener('click', function () {
     var chosen = Object.keys(selected).filter(function (k) { return selected[k]; });
-    if (opts.onSave) opts.onSave(chosen);
+    if (!chosen.length) return;
     close();
+    if (opts.onSave) opts.onSave(chosen);
   });
 
   function open() {
