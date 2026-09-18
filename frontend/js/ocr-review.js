@@ -1633,16 +1633,14 @@ function stateTakesFocus(tone) {
       (rxSaying || !canSaveFields()
         ? '<span class="box__note">' + escapeHtml(rxSaying || SAVE_LOCKED) + "</span>"
         : "") +
-      (!isPickedSetX()
-        ? '<button class="button-primary button-primary--sm" type="button" id="rx-save"' +
-          (hasSomethingToSave(true) ? "" : " disabled") +
-          ">저장</button>"
-        : "") +
+      '<button class="button-primary button-primary--sm" type="button" id="rx-save"' +
+      (hasSomethingToSave(true) ? "" : " disabled") +
+      ">저장</button>" +
       "</div>" +
       topRowHtml(rows) +
       extraDrugRowsHtml(baseExtraRows.concat(extraRows)) +
       manualDrugRowsHtml() +
-      (pickedSet && canSaveFields()
+      (pickedSet && !isPickedSetX() && canSaveFields()
         ? '<div class="top top--drug-add">' +
           '<div class="top__cell" aria-hidden="true"></div>' +
           '<button class="field__act drugs__add" type="button" id="drug-add">+ 약 추가</button>' +
