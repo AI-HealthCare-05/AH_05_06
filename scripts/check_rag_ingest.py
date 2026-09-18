@@ -396,6 +396,13 @@ async def main() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     try:
         report, exit_code = await run_checks(args.version_id, args.dump)
+        if args.dump:
+            check1 = report.get("checks", {}).get("check1_pcos_count", {})
+            found = check1.get("found_count", 0)
+            total = check1.get("expected_count", 31)
+            missing = check1.get("missing", [])
+            missing_str = f" 누락={missing}" if missing else ""
+            print(f"check1: {found}/{total}개{missing_str}, 본문은 {args.dump}")
         print(json.dumps(report, ensure_ascii=False, indent=2))
         raise SystemExit(exit_code)
     finally:
