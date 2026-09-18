@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from ai_worker.adapters.clova import ClovaOcrResult
+from ai_worker.adapters.clova import ClovaOcrResult, ClovaTextField
 from app.models.ocr import DAYS_PER_PACK, OcrDocumentType
 
 # 정규식 단독 매칭값의 신뢰도 (KEY-187: is_low_confidence 임계값 0.75보다 낮게 설정).
@@ -254,6 +254,7 @@ _LAB_TEST_NAME_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
+_RIGHT_TAIL_LIMIT = 50.0  # px — 마지막 열 오른쪽 확장 한도
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +265,6 @@ _COL_MARGIN = 5.0  # px — 열 경계 허용 오차
 def _has_lab_table_header(rows: list) -> bool:
     """분류 전용: 검사항목·검사결과 열 헤더가 같은 행 안에, x 범위 비겹침으로 존재하는지 확인한다.
 
-    _find_lab_columns는 행을 넘나드는 탐색을 허용하므로 분류기에 쓰기에 조건이 느슨하다.
     진료기록에도 '검사명'·'결과' 낱말이 흔하기 때문에 두 조건을 모두 만족할 때만 True를 반환한다.
     """
     for row in rows:
@@ -450,27 +450,80 @@ def build_lab_keywords(baselines: Sequence[Any]) -> dict[str, list[str]]:
     return result
 
 
+def _first_gap_mid(blocks: list, start_x: float) -> float | None:
+    """start_x 이후 첫 번째 갭의 중간점을 반환한다.
+
+    blocks는 left 기준으로 정렬되어 있어야 한다.
+    start_x 이후 블록이 하나도 없거나 블록을 하나도 지나치지 않으면 None.
+    """
+    frontier = start_x
+    for b in blocks:
+        if b.left <= frontier:
+            frontier = max(frontier, b.right)
+        elif frontier > start_x:
+            return (frontier + b.left) / 2
+    return None
+
+
+def _col_ranges_from_data(
+    tn_hdr: ClovaTextField,
+    res_hdr: ClovaTextField,
+    data_rows: list,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """데이터 행의 x 분포로 tn·res 열 범위를 결정한다.
+
+    헤더가 셀 중앙 정렬이면 텍스트 좌표만으로는 셀 경계를 알 수 없다.
+    실제 데이터 블록 사이의 갭에서 경계를 구하고, 데이터가 없으면 헤더 텍스트
+    좌표로 추정한다.
+    """
+    tn_res_mids: list[float] = []
+    res_right_mids: list[float] = []
+
+    for row in data_rows:
+        blocks = sorted(row, key=lambda b: b.left)
+
+        tn_res_mid = _first_gap_mid(blocks, tn_hdr.left)
+        if tn_res_mid is None:
+            continue
+        tn_res_mids.append(tn_res_mid)
+
+        # res-right: tn_res_mid 이후 블록 중 첫 번째 갭
+        res_blocks = [b for b in blocks if b.right > tn_res_mid]
+        if len(res_blocks) >= 2:
+            frontier_r = res_blocks[0].right
+            for b in res_blocks[1:]:
+                if b.left > frontier_r:
+                    res_right_mids.append((frontier_r + b.left) / 2)
+                    break
+                frontier_r = max(frontier_r, b.right)
+
+    def _median(xs: list[float]) -> float:
+        s = sorted(xs)
+        return s[len(s) // 2]
+
+    tn_res_boundary = _median(tn_res_mids) if tn_res_mids else (tn_hdr.right + res_hdr.left) / 2
+    res_right = _median(res_right_mids) if res_right_mids else res_hdr.right + _RIGHT_TAIL_LIMIT
+
+    return (tn_hdr.left, tn_res_boundary), (tn_res_boundary, res_right)
+
+
 def _find_lab_columns(rows: list) -> tuple[int, tuple[float, float], tuple[float, float]] | None:
     """헤더 행에서 '검사항목'과 '검사결과' 열의 (header_row_idx, tn_col, res_col)을 반환한다.
 
-    열 범위는 헤더 텍스트 블록의 x좌표가 아닌 인접 열 사이의 중간점으로 결정한다.
-    헤더 텍스트가 셀 중앙 정렬이고 데이터는 셀 좌측 정렬인 병원 표 형식을 처리하기 위해서다.
+    열 범위는 헤더 텍스트 좌표가 아닌 데이터 행의 x 갭으로 결정한다.
+    헤더가 셀 중앙 정렬이어도 실제 데이터 경계를 올바르게 추출한다.
     두 열을 모두 찾지 못하면 None을 반환한다.
     """
     for i, row in enumerate(rows):
-        # row는 _group_fields_by_row에서 left 기준 정렬이 보장됨
         tn_pos = next((j for j, b in enumerate(row) if b.text.strip() in _TEST_NAME_COLUMN_KEYWORDS), None)
         res_pos = next((j for j, b in enumerate(row) if b.text.strip() in _RESULT_COLUMN_KEYWORDS), None)
         if tn_pos is None or res_pos is None:
             continue
 
-        def _cell_range(idx: int, _row: list = row) -> tuple[float, float]:
-            blk = _row[idx]
-            left_bound = (_row[idx - 1].right + blk.left) / 2 if idx > 0 else blk.left
-            right_bound = (blk.right + _row[idx + 1].left) / 2 if idx < len(_row) - 1 else blk.right + 300.0
-            return left_bound, right_bound
-
-        return i, _cell_range(tn_pos), _cell_range(res_pos)
+        tn_hdr = row[tn_pos]
+        res_hdr = row[res_pos]
+        tn_col, res_col = _col_ranges_from_data(tn_hdr, res_hdr, rows[i + 1 :])
+        return i, tn_col, res_col
     return None
 
 

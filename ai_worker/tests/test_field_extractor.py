@@ -1171,3 +1171,70 @@ def test_the_indexed_field_keeps_whatever_unit_the_reader_found(monkeypatch) -> 
     assert durations, "처방일수를 아예 못 뽑았다"
     for field in durations:
         assert field.unit == "통", f"{field.field_type} 이 단위를 흘렸다 — {field.unit!r}"
+
+
+# ---------------------------------------------------------------------------
+# _find_lab_columns 열 경계 — 헤더 중앙 정렬·우측 꼬리 회귀 (블로킹 버그 ②)
+# ---------------------------------------------------------------------------
+
+
+def _cblk(text: str, left: float, top: float, right: float, bottom: float) -> ClovaTextField:
+    return ClovaTextField(text=text, confidence=0.99, left=left, top=top, right=right, bottom=bottom)
+
+
+def test_center_aligned_header_extracts_result_not_reference() -> None:
+    """헤더가 셀 중앙 정렬일 때 참고치가 아닌 실제 결과값을 추출한다.
+
+    셀: 검사항목 100-250(헤더 140-190) · 검사결과 250-500(헤더 400-450) · 참고치 500-700
+    이전 구현: 열 경계 295가 결과값(260-285)보다 오른쪽에 놓여 참고치가 추출됐다.
+    """
+    # 헤더: 검사항목(140-190), 검사결과(400-450), 참고치(560-640)
+    # 데이터: AST(105-215) | 21(260-285) | 0-40(505-560)
+    #         FSH(105-160) | 5.2(260-290) | 3.5-12.5(505-580)
+    blocks = [
+        _cblk("검사항목", 140, 10, 190, 30),
+        _cblk("검사결과", 400, 10, 450, 30),
+        _cblk("참고치", 560, 10, 640, 30),
+        _cblk("AST(GOT)", 105, 40, 215, 60),
+        _cblk("21", 260, 40, 285, 60),
+        _cblk("0-40", 505, 40, 560, 60),
+        _cblk("FSH", 105, 70, 160, 90),
+        _cblk("5.2", 260, 70, 290, 90),
+        _cblk("3.5-12.5", 505, 70, 580, 90),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert field_map.get("AST") == "21", f"결과값이 아닌 값이 추출됨: {field_map.get('AST')!r}"
+    assert field_map.get("FSH") == "5.2", f"결과값이 아닌 값이 추출됨: {field_map.get('FSH')!r}"
+    assert field_map.get("AST") != "0-40", "참고치가 결과값으로 추출됐다"
+    assert field_map.get("FSH") != "3.5-12.5", "참고치가 결과값으로 추출됐다"
+
+
+def test_last_column_right_tail_does_not_absorb_unit_and_reference() -> None:
+    """검사결과가 마지막 열일 때 오른쪽 확장이 단위·참고치를 삼키지 않는다.
+
+    이전 구현: blk.right + 300.0으로 확장해 '(0-40)', 'U/L'까지 결과값으로 합쳤다.
+    """
+    # 헤더: 검사항목(100-200), 검사결과(220-320)  — 참고치 열 헤더 없음
+    # 데이터: AST(100-140) | 21(220-240) | (0-40)(360-430) | U/L(460-500)
+    blocks = [
+        _cblk("검사항목", 100, 10, 200, 30),
+        _cblk("검사결과", 220, 10, 320, 30),
+        _cblk("AST(GOT)", 100, 40, 140, 60),
+        _cblk("21", 220, 40, 240, 60),
+        _cblk("(0-40)", 360, 40, 430, 60),
+        _cblk("U/L", 460, 40, 500, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+
+    fields = extract_fields(result, OcrDocumentType.LAB_RESULT)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+
+    assert field_map.get("AST") == "21", f"결과값이 잘못 추출됨: {field_map.get('AST')!r}"
+    assert "0-40" not in (field_map.get("AST") or ""), "참고치가 결과값에 합쳐졌다"
+    assert "U/L" not in (field_map.get("AST") or ""), "단위가 결과값에 합쳐졌다"
