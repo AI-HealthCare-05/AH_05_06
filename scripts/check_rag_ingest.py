@@ -243,13 +243,9 @@ async def _check_pcos(
 
 async def _check_eshre() -> tuple[dict, int, KnowledgeVersion | None]:
     """check4 실행. (결과 dict, exit_code, version 객체) 반환."""
-    eshre_doc = await KnowledgeDocument.filter(source_url=ESHRE_SOURCE_URL).first()
-    if eshre_doc is None:
-        return {"check4_eshre": {"passed": False, "error": "ESHRE 문서를 찾을 수 없음"}}, EXIT_CANNOT_CHECK, None
-
     eshre_version = (
         await KnowledgeVersion.filter(
-            document=eshre_doc,
+            document__source_url=ESHRE_SOURCE_URL,
             approval_status=ApprovalStatus.APPROVED,
             is_current=True,
         )
@@ -259,6 +255,7 @@ async def _check_eshre() -> tuple[dict, int, KnowledgeVersion | None]:
     if eshre_version is None:
         return {"check4_eshre": {"passed": False, "error": "승인된 현재 ESHRE 버전 없음"}}, EXIT_CANNOT_CHECK, None
 
+    eshre_doc = eshre_version.document
     eshre_chunk_count = await KnowledgeChunkRecord.filter(version=eshre_version).count()
     today = date.today()
     review_due = (
