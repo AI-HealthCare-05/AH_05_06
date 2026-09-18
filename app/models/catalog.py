@@ -267,9 +267,15 @@ class PrescriptionSetDrug(models.Model):
 
     #: 「비잔정 2mg」처럼 용량까지. 안내문에 그대로 나간다.
     name = fields.CharField(max_length=100)
-    #: 「1일 1회」. 칼럼이 nullable 이라 **타입도 그렇게 적는다** — `DrugCatalog`
-    #: 의 같은 두 칸과 같은 방식이다. 안 적으면 `None` 을 넣는 자리마다 mypy 가
-    #: 막는데, 정작 DB 는 받는다.
+    # 아래 두 칸은 **`str | None` 으로 적는다** — 칼럼이 nullable 이라 씨앗이
+    # `None` 을 넣는데, 타입이 `str` 이면 그 자리마다 mypy 가 막는다.
+    # `DrugCatalog` 의 같은 두 칸이 먼저 같은 방식으로 적혀 있다.
+    #
+    # 🚩 `#:` 줄은 **손대지 않는다.** 그 글이 곧 필드 `description` 이라
+    # 마이그레이션 70 의 `MODELS_STATE` 스냅샷에 그대로 들어 있다 — 한 글자만
+    # 바꿔도 `test_the_last_state_matches_the_models_field_by_field` 가 드리프트로
+    # 잡는다. 설명은 이렇게 일반 주석으로 남긴다.
+    #: 「1일 1회」
     frequency: str | None = fields.CharField(max_length=50, null=True)  # type: ignore[assignment]
     #: 「매일 같은 시간」처럼 먹는 방법 한 줄
     note: str | None = fields.CharField(max_length=200, null=True)  # type: ignore[assignment]
