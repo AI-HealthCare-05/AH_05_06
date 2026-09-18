@@ -625,7 +625,7 @@ function smsLeftHtml(plan) {
     '<p class="sms__note">일주일 뒤 문자를 끄면 D+7 복약·통증 확인 링크가 발송되지 않습니다.</p>' +
     "</section>" +
     '<section class="sms__card">' +
-    '<h3 class="sms__title">소진 임박 안내</h3>' +
+    '<h3 class="sms__title">소진 임박 안내 <span class="implementation-badge implementation-badge--in-progress">[구현중]</span></h3>' +
     '<div class="sms__row">' +
     /* **끌 수 있다.** 예전에는 늘 ☑ 로 그려 둔 글자였다 — 처방일수를 모르는
        진료에서도 켜진 것처럼 보였고, 끄고 싶어도 누를 데가 없었다. */
@@ -640,10 +640,10 @@ function smsLeftHtml(plan) {
     '<span class="sms__when">' +
     (noticeIso
       ? esc(smsWhen(noticeIso)) + " 예정 · 소진 " + esc(smsWhen(runOutIso))
-      : "처방일수를 확인하면 셈합니다") +
+      : "소진 예정일을 아직 화면에서 계산할 수 없습니다") +
     "</span></div></section>" +
     '<section class="sms__card">' +
-    '<h3 class="sms__title">재진 안내</h3>' +
+    '<h3 class="sms__title">재진 안내 <span class="implementation-badge implementation-badge--in-progress">[구현중]</span></h3>' +
     '<div class="sms__row">마지막 발송 — 없음<span class="sms__when">' +
     "발송하는 자리가 아직 없습니다</span></div>" +
     '<p class="sms__note">ⓘ 문자 동의 「거부」면 비활성 · 잔량 0이면 대기</p>' +
@@ -1008,7 +1008,8 @@ function approvedModalHtml(view) {
     "</b> " +
     esc(name ? name + " 님께 발송 예정" : "발송 예정") +
     "</p>" +
-    '<p class="modal__sub">소진 임박 안내는 자동 발송됩니다</p>' +
+    '<p class="modal__sub">설정에서 켠 확인 문자는 예약되며, 이번 시연은 예약 상태까지 보여드립니다.</p>' +
+    '<p class="modal__sub"><span class="implementation-badge implementation-badge--in-progress">[구현중]</span> 소진 임박 안내는 처방일수를 확인해야 예약되며 실제 발송은 승인된 환경에서만 동작합니다.</p>' +
     "</div>" +
     '<div class="modal__box">' +
     "<span>발송 실패 시 알림 창에서 확인할 수 있습니다</span>" +

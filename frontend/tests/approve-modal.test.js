@@ -64,11 +64,8 @@ test("**언제 · 누구에게**가 첫 줄이다", () => {
   assert.ok(html.includes("승인 완료"), "무엇이 끝났는지 안 말한다");
   assert.ok(html.includes("오늘 18:00"), "언제 나가는지 안 말한다");
   assert.ok(html.includes("김서연 님께 발송 예정"), "누구에게 가는지 안 말한다");
-  assert.ok(html.includes("소진 임박 안내는 자동 발송됩니다"), "소진 임박 안내를 안 말한다");
-  assert.ok(
-    !html.includes("확인 문자"),
-    "시연 범위에서는 D+7 등 확인 문자 발송을 약속하지 않는다(KEY-361)",
-  );
+  assert.ok(html.includes("설정에서 켠 확인 문자는 예약되며"), "설정한 확인 문자 예약을 안 말한다");
+  assert.ok(!html.includes("소진 임박 안내는 자동 발송됩니다"), "조건부 기능을 자동 발송이라고 말한다");
   assert.ok(html.includes("실패 처리하지 않고 발송 대기"), "보류를 실패로 오해하게 둔다");
 });
 

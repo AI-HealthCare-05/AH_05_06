@@ -278,7 +278,7 @@ function statusScreenHtml(view) {
     '<div class="st__label">확인 문자 응답</div>' +
     '<p class="st__sub">' +
     esc(view.checkInSaying || "아직 없음") +
-    "</p></div></section>" +
+    '</p><p class="st__note">ⓘ 이번 시연은 확인 문자 예약 상태까지 보여드립니다.</p></div></section>' +
     "</div>" +
     /* 환자 링크는 발송 이력처럼 사용 가능 여부만 보여 준다. 링크 발급·복사·
        열기·폐기는 D1-6과 S1-14의 범위가 아니다(2026-09-11 범위 조정). */

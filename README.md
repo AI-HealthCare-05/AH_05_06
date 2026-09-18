@@ -421,6 +421,15 @@ RAG를 켜면 기존 생성 API는 202와 작업 ID를 반환하고 화면은 �
 | `SMS_DISPATCH_ENABLED` | 예약 문자(안내·확인·소진·재진) 실발송 좁은문 (KEY-338). `solapi` 일 때 이 값 **과** 워커 실행 인자 `--sms-dispatch-confirm` 이 **둘 다 있어야** 열린다 — 하나라도 없으면 **워커가 발송 루프를 아예 안 돈다.** 문자는 `SCHEDULED` 로 남고 OCR·안내 생성은 계속 돈다. `ENV` 와 무관하고 `mock` 에는 안 걸린다. `.env` 에 적지 않고 승인된 Pilot 검증 때만 명령 앞에 붙인다 ([`docs/deploy-runbook.md`](docs/deploy-runbook.md) 「전환 순서」 · `docker-compose.pilot.yml`) | (적지 않음) |
 | `MOCK_OTP_CODE` | **시연을 끝까지 보려면 필요.** 비우면 환자 OTP 인증이 503 (`OTP_DELIVERY_UNAVAILABLE`) 으로 막혀 Walking Skeleton 이 거기서 멈춘다. `bootstrap` 은 이 값을 안 넣는다. prod 에서는 `PILOT_ALLOW_MOCK_OTP=1` 과 `--pilot-confirm-mock-otp` 가 둘 다 있을 때만 (KEY-264) | `000000` |
 
+### 시연 표기 원칙
+
+- `[구현중]` — 서버 자리는 있으나 일부만 동작하거나 운영 조건이 걸린 기능
+- `[임시]` — 화면만 있거나 고정값·목 데이터로 동작하는 기능
+- 표기 없음 — 실제 서버에서 동작하는 기능. 시연 범위만 제한되면 배지 대신
+  `이번 시연은 …까지 보여드립니다`라는 각주로 범위를 밝힌다.
+
+화면·README·시연 문서는 위 두 낱말만 사용하며 임시 구현을 운영 준비 완료 기능처럼 설명하지 않는다.
+
 ### 만들기 중
 
 | 변수 | 목적 | 기본값 |

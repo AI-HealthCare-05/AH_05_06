@@ -253,19 +253,19 @@ test("**점선 칸 오른쪽에 단위가 선다** — `?` 만 있으면 무엇�
   }
 });
 
-test("**「이번 미시행」은 검사값의 말이다** — 처방 줄에는 안 붙는다", () => {
-  /* 「이번엔 안 했다」가 처방에는 성립하지 않는다 — 안 한 진료가 아니라 못
-     읽은 것이고, 안내문이 그 값으로 만들어지므로 채워야 끝난다.
-
-     여기서도 **그리는 쪽과 같은 규칙**으로 재야 한다. `indexOf` 로만 재면
-     `DOSAGE_2` 같은 인덱스형 처방 줄에 이 단추가 붙어, 스탭이 처방 항목을
-     「안 했다」고 표시할 수 있게 된다. */
+test("서버가 받지 않는 「이번 미시행」은 비활성으로 표시한다", () => {
+  /* UpdateOcrFieldRequest에는 field_status가 없다. 동작하는 것처럼 보이는 단추로
+     422를 만들지 않고, 서버 계약이 생길 때까지 이유를 알 수 있게 잠근다. */
   const code = codeOnly(read("js/ocr-review.js"));
 
   const at = code.indexOf("data-skip=");
   assert.notEqual(at, -1, "「이번 미시행」 단추가 없다");
+  const button = code.slice(Math.max(0, at - 180), at + 80);
+  assert.match(button, /disabled/, "지원하지 않는 동작이 눌리는 상태다");
+  assert.match(button, /aria-disabled="true"/, "비활성 상태가 보조기기에 전달되지 않는다");
+  assert.match(button, /현재 서버 계약에서 지원하지 않습니다/, "비활성 이유가 없다");
 
-  /* 단추 앞의 갈림길을 본다 */
+  /* 처방 줄에는 단추 자체를 그리지 않는 기존 경계도 유지한다. */
   const guard = code.slice(Math.max(0, at - 400), at);
   assert.match(guard, /isPrescriptionType\(field\.field_type\)/, "처방 줄에도 「이번 미시행」이 붙는다");
   assert.ok(

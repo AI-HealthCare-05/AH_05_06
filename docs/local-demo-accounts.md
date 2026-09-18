@@ -119,13 +119,19 @@ docker compose exec -T fastapi uv run --no-sync python scripts/check_schema_drif
 
 ## 4. 시연에서 실물이 아닌 부분 (MVP 결정, 결함 아님)
 
+표기는 화면·README와 동일하게 사용한다.
+
+- `[구현중]` — 서버 자리는 있으나 일부만 동작하거나 운영 조건이 걸린 기능
+- `[임시]` — 화면만 있거나 고정값·목 데이터로 동작하는 기능
+- 표기 없음 — 실동작. 시연 범위만 제한되면 `이번 시연은 …까지 보여드립니다`라는 각주를 쓴다.
+
 | 구간 | 현재 |
 |---|---|
-| 환자 OTP | 고정 `000000` (`MOCK_OTP_CODE`). 실제 SMS 발송 없음 |
-| 문자 발송 | `SMS_PROVIDER=mock` — 실제로 안 나간다. 발송은 `ai-worker`(`--with-ocr-worker`)가 맡고, 원본 문서를 올린 진료는 `SOURCE_NOT_DELETED`, 의원 예약 주소가 빈 소진·재진 문자는 `BOOKING_URL_MISSING` 으로 보류된다 (`app/services/dispatch_gate.py`). `solapi` 로 바꾸면 KEY-338 좁은문·승인 번호 목록이 추가로 걸린다 — README 「문자 발송」 표 |
-| 안내문 생성 | 기본(`GUIDE_RAG_ENABLED=false`)은 확정 OCR 값 + 처방세트별 승인 문구/의사 수정 문구/기본 문구 조합. 승인 지식 기반 LLM 생성(KEY-277)은 스위치 뒤에 있고 승인 지식 적재(KEY-276)가 먼저다 — README 「OpenAI」 절 |
-| 환자 챗봇 | `OPENAI_API_KEY` 줄이 없으면 고정 폴백 문구만 나온다 (`app/apis/v1/chatbot_routers.py`). 키가 있으면 승인 안내에 근거가 있는 질문(복약·주의·생활·응급)은 실제 모델 답이 나온다. 답의 **문장 하나하나**가 고른 섹션 본문에 그대로 있어야 통과하므로, 본문에 없는 문장이 하나라도 섞이면 「안전하게 답변할 수 없는 내용이에요」로 막힌다 — 승인 안내 밖의 내용·약 변경/진단 요구도 그대로 막힌다 (KEY-351 — 그 전에는 답 전체의 연속 원문 일치와 「주의」 미분류로 근거가 있어도 대부분 거절됐다). 결과는 `patient_usage_event.answer_outcome` 에서 본다 |
-| OCR (fixture 모드) | 업로드 이미지를 실제로 판독하지 않고 합성 판독값 주입. 실판독은 2-2 에서 `OCR_FIXTURE_FALLBACK=0` + CLOVA 키 + `--with-ocr-worker` |
+| 환자 OTP | `[임시]` 고정 `000000` (`MOCK_OTP_CODE`). 실제 SMS 발송 없음 |
+| 문자 발송 | `[임시]` `SMS_PROVIDER=mock` — 실제로 안 나간다. 발송은 `ai-worker`(`--with-ocr-worker`)가 맡고, 원본 문서를 올린 진료는 `SOURCE_NOT_DELETED`, 의원 예약 주소가 빈 소진·재진 문자는 `BOOKING_URL_MISSING` 으로 보류된다 (`app/services/dispatch_gate.py`). `solapi` 로 바꾸면 KEY-338 좁은문·승인 번호 목록이 추가로 걸린다 — README 「문자 발송」 표 |
+| 안내문 생성 | `[구현중]` 기본(`GUIDE_RAG_ENABLED=false`)은 확정 OCR 값 + 처방세트별 승인 문구/의사 수정 문구/기본 문구 조합. 승인 지식 기반 LLM 생성(KEY-277)은 스위치 뒤에 있고 승인 지식 적재(KEY-276)가 먼저다 — README 「OpenAI」 절 |
+| 환자 챗봇 | `[구현중]` `OPENAI_API_KEY` 줄이 없으면 고정 폴백 문구만 나온다 (`app/apis/v1/chatbot_routers.py`). 키가 있으면 승인 안내에 근거가 있는 질문(복약·주의·생활·응급)은 실제 모델 답이 나온다. 답의 **문장 하나하나**가 고른 섹션 본문에 그대로 있어야 통과하므로, 본문에 없는 문장이 하나라도 섞이면 「안전하게 답변할 수 없는 내용이에요」로 막힌다 — 승인 안내 밖의 내용·약 변경/진단 요구도 그대로 막힌다 (KEY-351 — 그 전에는 답 전체의 연속 원문 일치와 「주의」 미분류로 근거가 있어도 대부분 거절됐다). 결과는 `patient_usage_event.answer_outcome` 에서 본다 |
+| OCR (fixture 모드) | `[임시]` 업로드 이미지를 실제로 판독하지 않고 합성 판독값 주입. 실판독은 2-2 에서 `OCR_FIXTURE_FALLBACK=0` + CLOVA 키 + `--with-ocr-worker` |
 
 ## 5. 알아둘 것
 

@@ -89,3 +89,31 @@
     --motion: 0ms;
   }
 }
+
+/* KEY-364 — 실동작과 임시 구현을 모든 병원 화면에서 같은 말과 모양으로 구분한다. */
+.implementation-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.implementation-badge--in-progress {
+  border-color: var(--warn-line);
+  color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.implementation-badge--temporary {
+  border-color: var(--line);
+  color: var(--ink-3);
+  background: var(--bg);
+}
