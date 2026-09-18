@@ -393,6 +393,34 @@ def test_diag_table_both_keywords_returns_dul_da() -> None:
     assert field_map.get("DIAGNOSIS") == "둘 다"
 
 
+def test_diag_table_center_aligned_header_extracts_diagnosis() -> None:
+    """「명칭」 헤더가 셀 중앙 정렬이어도 데이터 블록이 올바르게 추출된다.
+
+    기존 픽스처는 헤더·데이터 모두 x:70-300 으로 동일했다.
+    실제 EMR 은 헤더 텍스트가 셀 중앙에 찍히고 데이터는 셀 좌측 정렬인 경우가 많다.
+    _find_diag_name_col 이 이전·이후 헤더 블록 사이의 중간점으로 열 경계를 계산하므로
+    데이터가 헤더 텍스트 left 보다 왼쪽에서 시작해도 추출되어야 한다.
+    """
+    # 셀: 코드(10-60) · 명칭(70-300) · 과목(310-390)
+    # 헤더: 코드 텍스트(10-60) · 명칭 텍스트(150-220, 셀 중앙) · 과목 텍스트(310-390)
+    # 데이터: E282(10-60) · 다낭성난소증후군(70-300, 셀 좌측 정렬)
+    blocks = [
+        _diag_block("코드", 0.99, 10, 10, 60, 30),
+        _diag_block("명칭", 0.99, 150, 10, 220, 30),  # 셀 중앙에 찍힌 헤더
+        _diag_block("과목", 0.99, 310, 10, 390, 30),
+        _diag_block("E282", 0.96, 10, 40, 60, 60),
+        _diag_block("다낭성난소증후군", 0.93, 70, 40, 300, 60),  # 헤더보다 왼쪽에서 시작
+        _diag_block("산부인과", 0.97, 310, 40, 390, 60),
+    ]
+    rows = _group_fields_by_row(blocks)
+    result = ClovaOcrResult(raw_text="", fields=blocks, rows=rows)
+    fields = extract_fields(result, OcrDocumentType.EMR)
+    field_map = {f.field_type: f.extracted_value for f in fields}
+    assert field_map.get("DIAGNOSIS") == "다낭성난소증후군(PCOS)", (
+        f"중앙 정렬 헤더에서 DIAGNOSIS 추출 실패: {field_map.get('DIAGNOSIS')!r}"
+    )
+
+
 def test_diag_table_no_keyword_returns_no_diagnosis() -> None:
     """상병명 표에 진단 키워드가 없으면 DIAGNOSIS 필드를 만들지 않는다."""
     blocks = [
