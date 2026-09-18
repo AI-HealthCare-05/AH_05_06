@@ -2,14 +2,15 @@
 
 실행 예시:
     # 승인 전 DRAFT 검사 (승인 전 관문 — 이 방법이 맞는 순서)
-    docker cp scripts/check_rag_ingest.py <컨테이너명>:/tmp/
-    docker compose exec -T fastapi uv run --no-sync python /tmp/check_rag_ingest.py --version-id <판ID>
+    docker cp scripts/check_rag_ingest.py fastapi:/tmp/
+    docker compose exec -T fastapi sh -c "PYTHONPATH=/app uv run --no-sync python /tmp/check_rag_ingest.py --version-id <판ID>"
 
     # 권고 번호별 첫 문장을 로컬 파일에 저장 (stdout 에는 요약만)
-    python scripts/check_rag_ingest.py --version-id <판ID> --dump /tmp/recs.json
+    docker compose exec -T fastapi sh -c "PYTHONPATH=/app uv run --no-sync python /tmp/check_rag_ingest.py --version-id <판ID> --dump /tmp/recs.json"
+    docker cp fastapi:/tmp/recs.json ./recs.json
 
     # 승인된 현재 버전 검사 (--version-id 생략)
-    python scripts/check_rag_ingest.py
+    docker compose exec -T fastapi sh -c "PYTHONPATH=/app uv run --no-sync python /tmp/check_rag_ingest.py"
 
 종료 코드:
     0  모든 검사 통과
