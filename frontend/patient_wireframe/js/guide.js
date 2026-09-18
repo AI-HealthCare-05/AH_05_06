@@ -804,6 +804,7 @@
   }
 
   /* ── PDF 시트 ─── */
+  var pdfBtn = document.getElementById('pdf-btn');
   var PDF_OPTIONS = [
     { key:'guide', label:'복약지도', desc:'오늘 진료 요약 · 처방받은 약 · 복용 방법' },
     { key:'care',  label:'주의사항', desc:'흔한 반응 · 함께 드시면 안 되는 것 · 바로 병원에 연락할 경우' },
@@ -857,19 +858,19 @@
     });
     document.body.appendChild(pdfSheet.backdrop);
     document.body.appendChild(pdfSheet.el);
-    document.getElementById('pdf-btn').addEventListener('click', function () {
+    pdfBtn.addEventListener('click', function () {
       if (state.data) pdfSheet.open();
     });
   } else {
-    document.getElementById('pdf-btn').hidden = true;
-    document.getElementById('pdf-btn').style.display = 'none';
+    pdfBtn.hidden = true;
+    pdfBtn.style.display = 'none';
   }
 
   /* ── 시작 ─── */
   function renderLoadError(error) {
     state.data = null;
-    document.getElementById('pdf-btn').hidden = true;
-    document.getElementById('pdf-btn').style.display = 'none';
+    pdfBtn.hidden = true;
+    pdfBtn.style.display = 'none';
     var code = error && error.code;
     var message = code === GUIDE_ERROR.LINK_EXPIRED
       ? '링크 사용 기간이 끝났어요. 병원에 새 안내 링크를 요청해 주세요.'
@@ -893,18 +894,18 @@
 
   function loadGuide() {
     state.data = null;
-    document.getElementById('pdf-btn').disabled = true;
-    document.getElementById('pdf-btn').hidden = true;
-    document.getElementById('pdf-btn').style.display = 'none';
+    pdfBtn.disabled = true;
+    pdfBtn.hidden = true;
+    pdfBtn.style.display = 'none';
     bodyRoot.innerHTML = '';
     bodyRoot.appendChild(text('div', 'guide-loading', '안내를 불러오는 중이에요…'));
     return fetchGuide(TOKEN)
       .then(function (d) {
         state.data = d;
-        document.getElementById('pdf-btn').disabled = false;
+        pdfBtn.disabled = false;
         if (typeof Sheet === 'function' && typeof GuidePdf !== 'undefined') {
-          document.getElementById('pdf-btn').hidden = false;
-          document.getElementById('pdf-btn').style.display = '';
+          pdfBtn.hidden = false;
+          pdfBtn.style.display = '';
         }
         fillHeader(d);
         buildTabBar(d);

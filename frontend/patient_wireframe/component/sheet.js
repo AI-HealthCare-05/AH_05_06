@@ -77,17 +77,26 @@ function Sheet(opts) {
     saveBtn.disabled = n === 0;
   }
 
-  function renderOptions(focusKey) {
+  var optionRows = {};
+
+  function updateOption(key) {
+    var row = optionRows[key];
+    if (!row) return;
+    var isChecked = !!selected[key];
+    row.el.setAttribute('aria-pressed', isChecked ? 'true' : 'false');
+    row.el.className = 'pdf-option' + (isChecked ? ' pdf-option--checked' : '');
+    row.check.textContent = isChecked ? '✓' : '';
+  }
+
+  function renderOptions() {
     optionsWrap.innerHTML = '';
+    optionRows = {};
     (opts.options || []).forEach(function (o) {
       var div = document.createElement('button');
       div.type = 'button';
-      div.setAttribute('aria-pressed', selected[o.key] ? 'true' : 'false');
-      div.className = 'pdf-option' + (selected[o.key] ? ' pdf-option--checked' : '');
 
       var check = document.createElement('span');
       check.className = 'pdf-option__check';
-      check.textContent = selected[o.key] ? '✓' : '';
 
       var info = document.createElement('div');
       info.className = 'pdf-option__info';
@@ -105,13 +114,16 @@ function Sheet(opts) {
       div.appendChild(check);
       div.appendChild(info);
 
+      /* 클릭한 버튼만 갱신한다 — 전체를 다시 만들면 포커스가 매번
+         끊겨 focusKey로 되돌려야 했다. */
       div.addEventListener('click', function () {
         selected[o.key] = !selected[o.key];
-        renderOptions(o.key);
+        updateOption(o.key);
         updateSaveBtn();
       });
       optionsWrap.appendChild(div);
-      if (o.key === focusKey) div.focus();
+      optionRows[o.key] = { el: div, check: check };
+      updateOption(o.key);
     });
   }
 

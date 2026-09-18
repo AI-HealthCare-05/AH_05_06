@@ -50,8 +50,8 @@ test('선택 0건 및 조회 데이터 없음은 인쇄하지 않는다', () => 
 test('실환경도 선택창을 사용하고 조회 중에는 버튼을 비활성화한다', () => {
   const pdf = source.slice(source.indexOf('  /* ── PDF 시트'));
   assert.doesNotMatch(pdf, /if \(GUIDE_MOCK\)|alert\('PDF/);
-  assert.match(pdf, /state\.data = null;[\s\S]*pdf-btn'\)\.disabled = true/);
-  assert.match(pdf, /state\.data = d;[\s\S]*pdf-btn'\)\.disabled = false/);
+  assert.match(pdf, /state\.data = null;[\s\S]*pdfBtn\.disabled = true/);
+  assert.match(pdf, /state\.data = d;[\s\S]*pdfBtn\.disabled = false/);
   assert.doesNotMatch(pdf, /key:'stat'/);
 });
 
@@ -77,11 +77,11 @@ test('PDF 버튼은 초기·로딩·만료/오류에서 숨기고 정상 조회 
   const html = read('guide.html');
   assert.match(html, /id="pdf-btn" hidden disabled style="display:none"/);
   const loading = source.slice(source.indexOf('  function loadGuide()'));
-  assert.match(loading.slice(0, loading.indexOf('return fetchGuide')), /pdf-btn'\)\.hidden = true/);
-  assert.match(loading.slice(loading.indexOf('.then'), loading.indexOf('.catch')), /state\.data = d;[\s\S]*pdf-btn'\)\.hidden = false/);
+  assert.match(loading.slice(0, loading.indexOf('return fetchGuide')), /pdfBtn\.hidden = true/);
+  assert.match(loading.slice(loading.indexOf('.then'), loading.indexOf('.catch')), /state\.data = d;[\s\S]*pdfBtn\.hidden = false/);
   const error = source.slice(source.indexOf('  function renderLoadError'), source.indexOf('  function loadGuide'));
   assert.match(error, /state\.data = null/);
-  assert.match(error, /pdf-btn'\)\.hidden = true/);
+  assert.match(error, /pdfBtn\.hidden = true/);
 });
 
 test('선택 시트 제목과 실행 버튼에는 인쇄 문구를 쓰지 않는다', () => {
@@ -206,5 +206,5 @@ test('미리보기는 기존 환자 UI 토큰·44px 터치 영역·모바일 확
   assert.match(preview, /var\(--font\)/);
   assert.match(preview, /min-height: 44px/);
   assert.match(preview, /pdf-preview--zoom/);
-  assert.match(read('patient_wireframe/component/sheet.js'), /renderOptions\(o.key\)/);
+  assert.match(read('patient_wireframe/component/sheet.js'), /updateOption\(o.key\)/);
 });
