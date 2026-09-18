@@ -267,10 +267,12 @@ class PrescriptionSetDrug(models.Model):
 
     #: 「비잔정 2mg」처럼 용량까지. 안내문에 그대로 나간다.
     name = fields.CharField(max_length=100)
-    #: 「1일 1회」
-    frequency = fields.CharField(max_length=50, null=True)
+    #: 「1일 1회」. 칼럼이 nullable 이라 **타입도 그렇게 적는다** — `DrugCatalog`
+    #: 의 같은 두 칸과 같은 방식이다. 안 적으면 `None` 을 넣는 자리마다 mypy 가
+    #: 막는데, 정작 DB 는 받는다.
+    frequency: str | None = fields.CharField(max_length=50, null=True)  # type: ignore[assignment]
     #: 「매일 같은 시간」처럼 먹는 방법 한 줄
-    note = fields.CharField(max_length=200, null=True)
+    note: str | None = fields.CharField(max_length=200, null=True)  # type: ignore[assignment]
     position = fields.SmallIntField(default=0)
 
     created_at = fields.DatetimeField(auto_now_add=True)
