@@ -84,7 +84,7 @@ function patientTabOf(sectionKey) {
 var PATIENT_STYLESHEETS = [
   "/patient_wireframe/css/tokens.css",
   "/patient_wireframe/css/guide.css?v=13",
-  "/patient_wireframe/css/chat.css?v=6",
+  "/patient_wireframe/css/chat.css?v=9",
 ];
 
 function patientStylesheetLinks() {

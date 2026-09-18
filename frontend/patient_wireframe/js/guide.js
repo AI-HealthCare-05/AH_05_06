@@ -74,7 +74,7 @@
     careExpanded:  false,
     lifeAxis:      null,
     lifeExpanded:  false,
-    pdfSelected:   ['guide', 'care', 'life', 'stat'],
+    pdfSelected:   ['guide', 'care', 'life'],
   };
 
   /* ── 유틸 ─── */
@@ -804,32 +804,73 @@
   }
 
   /* ── PDF 시트 ─── */
+  var pdfBtn = document.getElementById('pdf-btn');
   var PDF_OPTIONS = [
     { key:'guide', label:'복약지도', desc:'오늘 진료 요약 · 처방받은 약 · 복용 방법' },
     { key:'care',  label:'주의사항', desc:'흔한 반응 · 함께 드시면 안 되는 것 · 바로 병원에 연락할 경우' },
     { key:'life',  label:'생활관리', desc:'수면 · 뼈 건강 · 운동 · 통증' },
-    { key:'stat',  label:'복약 현황', desc:'처방일 기준 소진 예정일' },
   ];
-  if (GUIDE_MOCK) {
+  // 기존 렌더러를 사용하되 생활관리의 모든 하위 축을 포함한다.
+  // 임시 렌더링은 화면 탭/펼침 상태나 열람 이벤트를 변경하지 않는다.
+  function printSections(chosen) {
+    var d = state.data;
+    if (!d || !chosen.length) return;
+    var sections = [];
+    PDF_OPTIONS.forEach(function (option) {
+      if (chosen.indexOf(option.key) < 0) return;
+      var content;
+      if (option.key === 'guide') content = renderGuide(d);
+      else if (option.key === 'care') content = renderCare(d);
+      else {
+        var previousAxis = state.lifeAxis;
+        var previousExpanded = state.lifeExpanded;
+        try {
+          state.lifeExpanded = true;
+          var axes = Object.keys(d.life.axes);
+          state.lifeAxis = axes[0] || null;
+          content = renderLife(d);
+          axes.slice(1).forEach(function (key) {
+            state.lifeAxis = key;
+            var detail = renderLife(d).querySelector('.life-fade-wrap');
+            if (detail) content.appendChild(detail);
+          });
+        } finally {
+          state.lifeAxis = previousAxis;
+          state.lifeExpanded = previousExpanded;
+        }
+      }
+      sections.push({ label: option.label, content: content });
+    });
+    GuidePdf.preview(d, sections);
+  }
+  if (typeof Sheet === 'function' && typeof GuidePdf !== 'undefined') {
     var pdfSheet = Sheet({
-      title: 'PDF로 저장',
+      title: 'PDF 저장',
+      subtitle: '저장할 항목을 고르세요. 미리보기에서 확인한 뒤 다운로드할 수 있어요.',
+      note: '챗봇 대화는 포함되지 않아요. 이름과 진료일이 들어가니 공유에 주의해 주세요.',
+      saveLabel: 'PDF 저장',
       options: PDF_OPTIONS,
       defaultSelected: state.pdfSelected,
       onSave: function (chosen) {
         state.pdfSelected = chosen;
-        alert('PDF 저장 미리보기: ' + chosen.join(', '));
+        printSections(chosen);
       },
     });
     document.body.appendChild(pdfSheet.backdrop);
     document.body.appendChild(pdfSheet.el);
-    document.getElementById('pdf-btn').addEventListener('click', function () { pdfSheet.open(); });
+    pdfBtn.addEventListener('click', function () {
+      if (state.data) pdfSheet.open();
+    });
   } else {
-    document.getElementById('pdf-btn').hidden = true;
-    document.getElementById('pdf-btn').style.display = 'none';
+    pdfBtn.hidden = true;
+    pdfBtn.style.display = 'none';
   }
 
   /* ── 시작 ─── */
   function renderLoadError(error) {
+    state.data = null;
+    pdfBtn.hidden = true;
+    pdfBtn.style.display = 'none';
     var code = error && error.code;
     var message = code === GUIDE_ERROR.LINK_EXPIRED
       ? '링크 사용 기간이 끝났어요. 병원에 새 안내 링크를 요청해 주세요.'
@@ -852,11 +893,20 @@
   }
 
   function loadGuide() {
+    state.data = null;
+    pdfBtn.disabled = true;
+    pdfBtn.hidden = true;
+    pdfBtn.style.display = 'none';
     bodyRoot.innerHTML = '';
     bodyRoot.appendChild(text('div', 'guide-loading', '안내를 불러오는 중이에요…'));
     return fetchGuide(TOKEN)
       .then(function (d) {
         state.data = d;
+        pdfBtn.disabled = false;
+        if (typeof Sheet === 'function' && typeof GuidePdf !== 'undefined') {
+          pdfBtn.hidden = false;
+          pdfBtn.style.display = '';
+        }
         fillHeader(d);
         buildTabBar(d);
         renderBody(d);
