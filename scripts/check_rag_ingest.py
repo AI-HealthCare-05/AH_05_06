@@ -114,12 +114,9 @@ async def _lookup_pcos_version(version_id: str | None) -> KnowledgeVersion | Non
     """version_id 지정 시 상태 무관하게 조회, 미지정 시 APPROVED+is_current 조회."""
     if version_id:
         return await KnowledgeVersion.filter(version_id=version_id).select_related("document").first()
-    pcos_doc = await KnowledgeDocument.filter(title__contains=PCOS_TITLE_KEYWORD).first()
-    if pcos_doc is None:
-        return None
     return (
         await KnowledgeVersion.filter(
-            document=pcos_doc,
+            document__title__contains=PCOS_TITLE_KEYWORD,
             approval_status=ApprovalStatus.APPROVED,
             is_current=True,
         )
@@ -286,7 +283,11 @@ async def _check_eshre(eshre_version_id: str | None = None) -> tuple[dict, int, 
     cond_current = eshre_version.is_current
     cond_optional = eshre_version.chunk_optional
     cond_review = review_due is None or review_due >= today
-    fallback_ready = all([cond_url, cond_approved, cond_current, cond_optional, cond_review])
+    cond_approved_by = eshre_version.approved_by is not None
+    cond_approved_at = eshre_version.approved_at is not None
+    fallback_ready = all(
+        [cond_url, cond_approved, cond_current, cond_optional, cond_review, cond_approved_by, cond_approved_at]
+    )
     chunks_ok = eshre_chunk_count == 0
 
     result = {
@@ -305,6 +306,8 @@ async def _check_eshre(eshre_version_id: str | None = None) -> tuple[dict, int, 
             "source_sha256": eshre_version.source_sha256,
             "approval_status": str(eshre_version.approval_status),
             "is_current": eshre_version.is_current,
+            "approved_by": eshre_version.approved_by,
+            "approved_at": str(eshre_version.approved_at) if eshre_version.approved_at else None,
             "fallback_conditions": {
                 "source_url_exact_match": cond_url,
                 "approval_status_approved": cond_approved,
@@ -312,6 +315,8 @@ async def _check_eshre(eshre_version_id: str | None = None) -> tuple[dict, int, 
                 "chunk_optional": cond_optional,
                 "review_due_at_ok": cond_review,
                 "review_due_at_value": str(review_due) if review_due else None,
+                "approved_by_set": cond_approved_by,
+                "approved_at_set": cond_approved_at,
             },
             "fallback_ready": fallback_ready,
         }
