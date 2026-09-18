@@ -377,13 +377,16 @@ function stateTakesFocus(tone) {
     return _SET_DRUG_KWS.some(function (kw) { return lower.indexOf(kw.toLowerCase()) !== -1; });
   }
 
-  /* 고른 처방 세트가 O 세트(처방 있음)인지 X 세트(처방 없음)인지 판별한다.
-     세트 이름이 공백 + "O" 로 끝나면 O, 공백 + "X" 로 끝나면 X. */
-  function isPickedSetO() {
-    return !!(pickedSet && pickedSet.drugs && pickedSet.drugs.length > 0);
-  }
+  /* 고른 처방 세트가 X 세트(약 미처방)인지 판별한다.
+     **X 만 명시적으로 본다** — 이름이 「… X」로 끝나는 세트가 그것이다.
+     약 목록(drugs)으로 재지 않는 까닭: scripts/seed.py 가 PrescriptionSetDrug 를
+     시드하지 않아, 재시드 직후에는 O 세트도 약이 0 개다. 그걸 X 로 읽으면
+     처방일수 칸과 「+ 약 추가」가 O 세트에서 사라진다. */
   function isPickedSetX() {
-    return !!(pickedSet && pickedSet.drugs && pickedSet.drugs.length === 0);
+    return !!(pickedSet && /\sX$/.test(pickedSet.name));
+  }
+  function isPickedSetO() {
+    return !!pickedSet && !isPickedSetX();
   }
 
   /* 적는 **중**인 값. `local` 과 갈라 두는 이유는, 고르는 항목이 「있다」를
