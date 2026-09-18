@@ -1343,9 +1343,10 @@ function stateTakesFocus(tone) {
     var lines = drugLines(pickedSet, written);
 
     if (!lines.length) {
-      /* **비었다고 지어내지 않는다.** 어디서 채우는지를 적는다 — 설정(D2-3)의
-         「처방 약」이 그 자리다. */
-      return '<p class="drugs__none">이 처방에 등록된 약이 없습니다 · 설정 › 처방에서 추가할 수 있습니다</p>';
+      /* 이 목록은 **약속처방의 기본 약**이다. 현재 진료에서 직접 입력한 약과
+         다른 자리인데 둘을 모두 「등록된 약」이라고 부르면, 아래에 약이 있어도
+         누락으로 읽힌다(KEY-364). */
+      return '<p class="drugs__none">선택한 약속처방에 기본 약이 없습니다 · 설정 › 처방에서 추가할 수 있습니다 · 현재 진료의 약은 아래 입력값을 확인해 주세요</p>';
     }
 
     return (
@@ -1568,8 +1569,14 @@ function stateTakesFocus(tone) {
 
     var days = fieldValueOf(result.fields, "DURATION_DAYS");
     var start = fieldValueOf(result.fields, "PRESCRIPTION_DATE");
-    var until = runOutDate(start, days);
-    var warn = courseWarn(days);
+    var durationField = result.fields.filter(function (field) {
+      return field.field_type === "DURATION_DAYS";
+    })[0];
+    var durationUnit = durationField
+      ? durationField.unit || pickedUnitFor("DURATION_DAYS")
+      : pickedUnitFor("DURATION_DAYS");
+    var until = runOutDate(start, days, durationUnit);
+    var warn = courseWarn(days, durationUnit);
 
     var meta = [];
     if (start) meta.push("처방일 " + escapeHtml(shortDate(start)));
