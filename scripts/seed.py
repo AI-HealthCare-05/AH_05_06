@@ -56,6 +56,7 @@ from app.models.catalog import (  # noqa: E402
     DrugCatalog,
     DrugCautionContent,
     PrescriptionSet,
+    SetStatus,
     SourceGrade,
 )
 from app.models.ocr import OcrField, OcrJob, OcrJobStatus, OcrResult  # noqa: E402
@@ -689,23 +690,37 @@ async def _sync_source_grade(content: DrugCautionContent, wanted: DrugCautionCon
     await content.save(update_fields=["source_grade", "physician_review", "updated_at"])
 
 
-async def seed_catalog() -> None:
-    """처방 세트 8종과 주의·응급 문구 마스터를 적재한다 — KEY-165.
+# KEY-262·KEY-357 에서 교체된 구 세트 이름. 이것만 감춘다.
+# 명단 밖 ACTIVE 세트를 전부 감추면 화면에서 만든 커스텀 세트까지 사라진다.
+_LEGACY_SET_NAMES: frozenset[str] = frozenset(
+    {
+        "자궁내막증 · 비잔 (처음)",
+        "자궁내막증 · 비잔 (계속)",
+        "자궁내막증 · 통증관리",
+        "PCOS · 초진",
+        "PCOS · 초진 (야즈 불가)",
+        "PCOS · 야즈 (처음)",
+        "PCOS · 야즈 (계속)",
+        "PCOS · 야즈 + 메트포르민",
+        "PCOS · 대사관리",
+    }
+)
 
-    같은 명령을 반복 실행해도 데이터가 쌓이지 않는다(name 기준 get_or_create).
-    APPROVED 문구는 `approved_key` 를 채워 "세트·섹션당 하나" 제약을 DB 가 지키게 한다.
+
+async def _sync_prescription_sets() -> tuple[int, int, int]:
+    """PRESCRIPTION_SETS 와 DB 를 동기화한다 — KEY-357.
+
+    - 명단에 있는 세트: get_or_create, disease 보정
+    - _LEGACY_SET_NAMES 에 속한 ACTIVE 세트: HIDDEN + hidden_at 기록
+      (화면에서 만든 커스텀 세트는 건드리지 않는다)
+    반환값: (created, fixed, hidden)
     """
-    # 처방 세트
-    created_sets = 0
-    fixed_sets = 0
+    created = fixed = 0
+
     for row in PRESCRIPTION_SETS:
-        # **`disease` 를 함께 넣는다.** 모델 기본값이 ENDOMETRIOSIS 라 안 넣으면
-        # PCOS 세트가 자궁내막증 묶음에 들어가고, 설정 레일에서 다낭성난소증후군
-        # 묶음이 통째로 사라진다(`settings-rail.js` 의 `setsByDisease` 가 빈
-        # 묶음을 안 낸다) — 새로 부어 보기 전에는 안 보이는 어긋남이다.
         found, was_created = await PrescriptionSet.get_or_create(name=row.name, defaults={"disease": row.disease})
         if was_created:
-            created_sets += 1
+            created += 1
             continue
 
         # **`defaults` 는 INSERT 때만 쓴다 — 그래서 한 번 더 본다** (이희진 님
@@ -720,10 +735,30 @@ async def seed_catalog() -> None:
         if found.disease != row.disease:
             found.disease = row.disease
             await found.save(update_fields=["disease", "updated_at"])
-            fixed_sets += 1
+            fixed += 1
+
+    hidden = 0
+    async for ps in PrescriptionSet.filter(name__in=_LEGACY_SET_NAMES, status=SetStatus.ACTIVE):
+        ps.status = SetStatus.HIDDEN
+        ps.hidden_at = now()
+        await ps.save(update_fields=["status", "hidden_at", "updated_at"])
+        hidden += 1
+        print(f"[catalog] prescription_set hidden: {ps.name!r} (id={ps.prescription_set_id})")
+
+    return created, fixed, hidden
+
+
+async def seed_catalog() -> None:
+    """처방 세트 4종과 주의·응급 문구 마스터를 적재한다 — KEY-165, KEY-357.
+
+    같은 명령을 반복 실행해도 데이터가 쌓이지 않는다(name 기준 get_or_create).
+    APPROVED 문구는 `approved_key` 를 채워 "세트·섹션당 하나" 제약을 DB 가 지키게 한다.
+    """
+    created_sets, fixed_sets, hidden_sets = await _sync_prescription_sets()
     print(
         f"[catalog] prescription_set created={created_sets} "
-        f"fixed={fixed_sets} skipped={len(PRESCRIPTION_SETS) - created_sets - fixed_sets}"
+        f"fixed={fixed_sets} hidden={hidden_sets} "
+        f"skipped={len(PRESCRIPTION_SETS) - created_sets - fixed_sets}"
     )
 
     # 세트 이름 → id 역색인 (콘텐츠 삽입에 사용)

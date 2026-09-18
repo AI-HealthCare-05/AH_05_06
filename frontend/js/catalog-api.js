@@ -18,28 +18,27 @@ var MOCK_CHECK_ITEMS = [
   "PREGNANCY_PLAN",
 ];
 
-/* **대표 처방 넷** (KEY-262, 팀 회의 결정). 질환 둘 × 처음·계속이다.
-   여덟이던 것을 줄이면서, 나머지 다섯이 가리키던 진료 25 건은 각자의
-   「처음」으로 옮겼다 — `docs/data/synthetic-patients.csv`.
+/* **대표 처방 넷** (KEY-357, 팀 회의 결정). 질환 둘 × 처방 약 O/X 이다.
+   처음/계속 축에서 「해당 약이 처방됐는가」 축으로 변경했다.
 
    서버 픽스처(`app/tests/fixtures/catalog.py`)와 **같은 넷**이어야 한다.
    갈라지면 목에서 고르던 처방이 서버에 없다. */
 var MOCK_PRESCRIPTION_SETS = [
   {
     prescription_set_id: 1,
-    name: "자궁내막증 · 비잔 (처음)",
+    name: "자궁내막증 · 비잔 O",
     check_items: MOCK_CHECK_ITEMS,
     drugs: [{ name: "비잔정(디에노게스트) 2mg", frequency: "1일 1회", note: "매일 같은 시간" }],
   },
   {
     prescription_set_id: 2,
-    name: "자궁내막증 · 비잔 (계속)",
+    name: "자궁내막증 · 비잔 X",
     check_items: MOCK_CHECK_ITEMS,
-    drugs: [{ name: "비잔정(디에노게스트) 2mg", frequency: "1일 1회", note: "매일 같은 시간" }],
+    drugs: [],
   },
   {
     prescription_set_id: 3,
-    name: "PCOS · 야즈 (처음)",
+    name: "PCOS · 야즈 O",
     check_items: MOCK_CHECK_ITEMS,
     days_mode: "PACK",
     days_per_pack: 28,
@@ -47,11 +46,11 @@ var MOCK_PRESCRIPTION_SETS = [
   },
   {
     prescription_set_id: 4,
-    name: "PCOS · 야즈 (계속)",
+    name: "PCOS · 야즈 X",
     check_items: MOCK_CHECK_ITEMS,
     days_mode: "PACK",
     days_per_pack: 28,
-    drugs: [{ name: "야즈정(드로스피레논/에티닐에스트라디올)", frequency: "1일 1회", note: "매일 같은 시간" }],
+    drugs: [],
   },
 ];
 
@@ -231,16 +230,15 @@ var catalogApi = {
 var mockSetDetails = null;
 
 function mockSetSeed() {
-  /* 씨앗은 서버 마이그레이션과 같은 규칙이다 — 이름에서 질환·시점을 읽는다 */
+  /* 씨앗은 서버 마이그레이션과 같은 규칙이다 — 이름에서 질환·약 처방 여부를 읽는다.
+     KEY-357: 처음/계속 축 → O/X 축으로 변경. phase 값 FIRST·CONTINUE는
+     O 세트(약 처방됨)·X 세트(미처방)를 구분하는 마커로 재사용한다 — 처음/계속 의미 아님. */
   return MOCK_PRESCRIPTION_SETS.map(function (row) {
     return {
       prescription_set_id: row.prescription_set_id,
       name: row.name,
       disease: row.name.indexOf("PCOS") === 0 ? "PCOS" : "ENDOMETRIOSIS",
-      phase:
-        row.name.indexOf("(처음)") !== -1 || row.name.indexOf("초진") !== -1
-          ? "FIRST"
-          : "CONTINUE",
+      phase: /\bO$/.test(row.name.trim()) ? "FIRST" : "CONTINUE",
       /* **기본 목록이 정한 것을 덮지 않는다.** 여기서 `"DAYS"` 로 못박아
          두었더니 목록에 적어 둔 「통으로 센다」가 사라져, 화면에서 통 환산을
          한 번도 못 봤다. */

@@ -23,7 +23,7 @@ from app.models.staffs import Hospital, Staff
 from app.models.visits import GuideDocument, GuideSection, GuideSectionKey, Visit
 from scripts.seed import SMOKE_CHART_NO, SMOKE_LINK_TOKEN_ENV, seed_smoke_fixture
 
-SET_NAME = "PCOS · 야즈 (처음)"
+SET_NAME = "PCOS · 야즈 O"
 
 #: smoke 가 멈추지 않으려면 이 둘은 승인본이 있어야 한다 — 나머지 둘은 폴백이 선다.
 FIRST_WORDS = (

@@ -121,7 +121,7 @@ class SeedPlantsReadingsTestCase(TestCase):
 
         items = await prescription.items.all()
         assert [item.name for item in items] == ["야즈정(드로스피레논/에티닐에스트라디올)"]
-        assert prescription.prescription_set == "PCOS · 야즈 (처음)"
+        assert prescription.prescription_set == "PCOS · 야즈 O"
 
     async def test_a_pack_count_becomes_days(self) -> None:
         """**「3통이면 84일. 일수로 읽으면 3일」** — `SYN-PCOS-02` 의 케이스의도 그대로다.

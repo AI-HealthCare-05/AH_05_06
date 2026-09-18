@@ -32,6 +32,8 @@ class CopySetItem(BaseModel):
     sections: list[CopySectionItem]
     #: 「확인 완료」를 눌렀는가. **고치면 풀린다.**
     reviewed: bool
+    #: 감춰진 세트인가 — `PrescriptionSet.status == HIDDEN`. copyProgress 분모에서 제외된다.
+    hidden: bool
 
 
 class CopyDefaultItem(BaseModel):
