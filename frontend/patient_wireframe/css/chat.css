@@ -285,3 +285,24 @@
 .btn-sheet:hover { opacity: .82; }
 .btn-sheet--cancel { background: var(--bg); color: var(--tx-sub); }
 .btn-sheet--save   { background: var(--p-dark); color: #fff; }
+.btn-sheet--save:disabled { opacity: .45; cursor: not-allowed; }
+button.pdf-option { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; background: none; appearance: none; }
+button.pdf-option:focus-visible { outline: 3px solid var(--p-dark); outline-offset: 2px; }
+.pdf-preview { position: fixed; inset: 0; z-index: 10000; overflow-y: auto; overscroll-behavior: contain; background: var(--bg); color: var(--tx); font-family: var(--font); }
+.pdf-preview__bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 18px; padding-top: max(14px, env(safe-area-inset-top)); background: var(--surface); box-shadow: var(--shadow-card); }
+.pdf-preview__bar strong { margin-right: auto; }
+.pdf-preview__bar button, .pdf-preview__download { min-height: 44px; padding: 10px 14px; border: 0; border-radius: var(--r-btn); font: inherit; cursor: pointer; text-decoration: none; }
+.pdf-preview__bar button { background: var(--p-soft); color: var(--tx-sub); }
+.pdf-preview__download { background: var(--p-dark); color: white; }
+.pdf-preview__bar button:focus-visible, .pdf-preview__download:focus-visible { outline: 3px solid var(--p-dark); outline-offset: 2px; }
+.pdf-preview__download[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+.pdf-preview__status { max-width: 794px; margin: 18px auto; padding: 0 16px; font-size: 14px; line-height: 1.6; }
+.pdf-preview__pages { padding: 0 12px max(24px, env(safe-area-inset-bottom)); }
+.pdf-preview__page { display: block; width: 100%; max-width: 794px; height: auto; margin: 0 auto 20px; box-shadow: 0 3px 15px #0002; }
+.pdf-preview--zoom .pdf-preview__pages { overflow-x: auto; }
+.pdf-preview--zoom .pdf-preview__page { width: 794px; min-width: 794px; }
+@media (max-width: 480px) {
+  .pdf-preview__bar { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .pdf-preview__bar strong { width: 100%; }
+  .pdf-preview__download { margin-left: auto; }
+}
