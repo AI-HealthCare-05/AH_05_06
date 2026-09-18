@@ -35,8 +35,23 @@ function phaseLabel(code) {
 
 /** 처방을 질환으로 묶는다. **빈 묶음은 내지 않는다** — 세트가 하나도 없는
     질환이 개수 0 으로 서 있으면 눌러 볼 것이 없다. */
+/** 설정 화면이 **보여 주는** 대표 처방만 — 숨긴 것은 뺀다 (KEY-369).
+ *
+ * KEY-255 는 「감춘 것도 레일에 남겨 되살릴 수 있게 한다」였다. 그런데 KEY-357
+ * 이 옛 이름 아홉을 한꺼번에 감추자 설정 화면이 「(숨김)」 아홉 줄로 덮였다 —
+ * 새로 고를 수 있는 넷이 그 사이에 묻힌다. 이희진 님 결정으로 **설정 동선에서는
+ * 아예 안 보인다.** 되살리는 화면은 이번 범위 밖이라 새로 만들지 않는다.
+ *
+ * **상태로 거른다** — 옛 이름을 코드에 적지 않는다. 오늘 아홉이 내일 열이 되면
+ * 이름 목록은 또 뒤처진다. */
+function visibleSets(sets) {
+  return (sets || []).filter(function (row) {
+    return !row.hidden;
+  });
+}
+
 function setsByDisease(sets) {
-  var all = sets || [];
+  var all = visibleSets(sets);
   var out = [];
 
   for (var i = 0; i < DISEASE_ORDER.length; i++) {

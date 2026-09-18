@@ -27,17 +27,28 @@ test("**지우는 길이 어디에도 없다**", () => {
   }
 });
 
-test("**감춘 처방도 목록에 남아야 되살릴 수 있다**", () => {
-  /* 레일에서 거르면 되살릴 화면 자체가 없어진다. 표시만 하고 남긴다. */
+test("**감춘 처방은 설정 동선에서 아예 안 보인다** — KEY-369", () => {
+  /* **KEY-255 의 반대다.** 그때는 「감춘 것도 레일에 남겨 되살릴 수 있게」였는데,
+     KEY-357 이 옛 이름 아홉을 한꺼번에 감추자 설정 화면이 「(숨김)」 아홉 줄로
+     덮였다 — 새로 고를 수 있는 넷이 그 사이에 묻힌다. 이희진 님 결정으로
+     설정에서는 안 보인다. 되살리는 화면은 이번 범위 밖이라 안 만든다.
+
+     **거르는 것은 상태 하나다** — 옛 이름을 코드에 적지 않는다. */
+  const rail = codeOnly(read("js/settings-rail.js"));
   const code = codeOnly(read("js/settings.js"));
 
+  assert.match(rail, /function visibleSets\(/, "보이는 목록을 가르는 자리가 없다");
+  assert.match(rail, /function setsByDisease\(sets\) \{\s*var all = visibleSets\(sets\);/,
+    "질환 묶음이 감춘 것을 그대로 담는다");
   assert.ok(
-    !/sets\s*\.filter\([^)]*hidden/.test(code),
-    "설정 레일이 감춘 것을 걸러 낸다 — 되살릴 길이 없어진다",
+    !/자궁내막증 · 비잔 \(처음\)|PCOS · 대사관리/.test(rail + code),
+    "옛 세트 이름을 코드에 박아 걸렀다 — 이름이 늘면 또 뒤처진다",
   );
-  assert.match(code, /row\.hidden \? " \(숨김\)" : ""/, "레일이 감춤을 표시하지 않는다");
+
+  assert.ok(!/" \(숨김\)"/.test(code), "안 보이는 줄에 아직 숨김 꼬리표를 붙인다");
+  assert.match(code, /visibleSets\(sets\)\.length/, "머리의 개수가 감춘 것까지 센다");
+  assert.match(code, /function settleSelection\(/, "고른 것이 감춰졌을 때 옮길 자리가 없다");
   assert.match(code, /id="set-hide"/, "숨기기 단추가 없다");
-  assert.match(code, /picked\.hidden \? "되살리기" : "숨기기"/, "되살리기로 안 바뀐다");
 });
 
 test("**거르는 곳은 새로 고르는 칸 하나뿐이다**", () => {
@@ -63,7 +74,7 @@ test("**새 처방은 이름과 진단을 한 판에서 받는다**", () => {
 
   /* **더하는 자리는 묶음 머리다.** 목록 아래 한 줄로 두었더니 여덟 줄과
      접힌 묶음을 지나야 보였고, 거기서는 목록의 마지막 항목처럼 읽혔다. */
-  assert.match(settings, /sectionHtml\("대표 처방",[^)]*"set-new"\)/, "대표 처방 머리에 더하기가 없다");
+  assert.match(settings, /sectionHtml\("대표 처방",[\s\S]{0,120}?"set-new"\)/, "대표 처방 머리에 더하기가 없다");
   assert.match(settings, /class="rail__plus"/, "더하기 단추 꼴이 없다");
   /* **본문이 상세와 같다.** 만들기 전용 판을 따로 두면 두 곳이 갈라지고,
      새로 더한 절이 한쪽에만 생긴다. `picked` 에 초안을 넣어 같은 본문을 쓴다. */
