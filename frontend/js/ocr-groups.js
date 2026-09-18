@@ -266,6 +266,16 @@ function fieldValueOf(fields, type) {
   return "";
 }
 
+/** 처방기간은 값과 단위를 함께 봐야 한다. `2통`을 `2일`로 읽으면 화면의
+ * 경고와 소진 예정일이 서버가 실제 예약에 쓰는 값(56일)과 어긋난다. */
+function ocrCourseDays(days, unit) {
+  var n = parseInt(String(days || ""), 10);
+  if (!n || n <= 0) return 0;
+  /* 백엔드 `course_days()`와 같은 호환 규칙이다. 통 단위라도 28 이상이면
+     이미 일수로 들어온 옛 자료로 보고 다시 곱하지 않는다. */
+  return unit === "통" && n < 28 ? n * 28 : n;
+}
+
 /* ── 소진 예정일 ────────────────────────────────────────────────────────
  *
  * 와이어프레임이 「처방일 08-13 · 소진 예정일 11-05」를 나란히 둔다. 이건
@@ -276,9 +286,9 @@ function fieldValueOf(fields, type) {
  * 날짜를 `new Date("2026-08-13")` 로 읽지 않는다 — 그건 UTC 자정으로 읽혀서
  * 한국 시간으로는 **전날**이 된다. 이 함정에 이미 한 번 걸렸다. 숫자로 뜯어
  * 숫자로 만든다. */
-function runOutDate(startIso, days) {
+function runOutDate(startIso, days, unit) {
   var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(startIso || ""));
-  var n = parseInt(String(days || ""), 10);
+  var n = ocrCourseDays(days, unit);
   if (!m || !n || n <= 0) return "";
 
   var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
@@ -294,8 +304,8 @@ function runOutDate(startIso, days) {
  * EMR 의 「총투」 칸에 일수 대신 **총 알 수**가 찍혀 오는 일이 있다. 하루 두 알
  * 84일이면 168 이 들어오고, 반대로 일수 자리에 28 미만이 오면 처방을 짧게 낸
  * 것인지 잘못 읽은 것인지 사람이 봐야 한다. 막지는 않는다 — 짧은 처방도 있다. */
-function courseWarn(days) {
-  var n = parseInt(String(days || ""), 10);
+function courseWarn(days, unit) {
+  var n = ocrCourseDays(days, unit);
   if (!n || n <= 0) return "";
   if (n < 28) return "처방일수가 28일 미만입니다 — 총투가 일수인지 확인해 주세요";
   return "";

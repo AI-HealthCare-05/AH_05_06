@@ -152,8 +152,6 @@ function sendRowsHtml(messages) {
         (state.bad ? " is-bad" : "") +
         (row.hold_reason === "SOURCE_NOT_DELETED" ? " sd__row--source" : "") +
         '">' +
-        /* **● 와 ○ 는 크기·색이 같다** — 원문이 그렇다. ⚠ 와 ⏸ 만 다르다:
-           그 둘은 사람이 손대야 하는 줄이라 눈에 걸려야 한다. */
         '<span class="sd__dot" aria-hidden="true">' +
         esc(state.mark) +
         "</span>" +
@@ -169,10 +167,6 @@ function sendRowsHtml(messages) {
         esc(messageSaying(row)) +
         (row.sent_at ? " \u00b7 " + esc(messageWhen(row.sent_at)) : "") +
         "</span>" +
-        /* **실패·보류만 다시 보낼 수 있다.** SCHEDULED는 아직 차례를
-           기다리는 중이고, SENT·CANCELED는 다시 보낼 대상이 아니다
-           (D1-7 — `canResend`). 문자 한 통 단위로 걸므로 `kind`·회차가
-           아니라 `guide_message_id`를 심는다(KEY-306). */
         sourceRetryButton(row) +
         (canResend(row.status)
           ? '<button class="button-ghost button-ghost--sm sd__resend" type="button" ' +
@@ -184,6 +178,13 @@ function sendRowsHtml(messages) {
       );
     })
     .join("");
+}
+
+/** 후속 회차의 데이터와 발송 코드는 유지하고 KEY-364 시연 화면에서만 숨긴다. */
+function demoMessages(messages) {
+  return (messages || []).filter(function (row) {
+    return row.kind === "GUIDE";
+  });
 }
 
 /* **열람은 장마다 한 줄로 접는다.**
@@ -257,7 +258,7 @@ function statusScreenHtml(view) {
       ? '<button class="button-ghost button-ghost--sm" type="button" id="status-unapprove">승인 철회</button>'
       : "") +
     "</div>" +
-    sendRowsHtml(view.messages) +
+    sendRowsHtml(demoMessages(view.messages)) +
     '<p class="st__note">ⓘ ⚠ 발송 실패는 보내 봤는데 안 된 것, ⏸ 보류는 아직 안 보낸 것입니다 — 실패·보류 줄의 [다시 보내기]로 새 링크를 만들어 다시 보냅니다</p>' +
     "</section>" +
     '<section class="box st__side">' +
@@ -274,11 +275,7 @@ function statusScreenHtml(view) {
       ? "<br />" + esc(timelineClock(progress.first) + " 열람 · " + timelineClock(progress.last) + " 마지막")
       : "") +
     "</p>" +
-    '<div class="st__rule"></div>' +
-    '<div class="st__label">확인 문자 응답</div>' +
-    '<p class="st__sub">' +
-    esc(view.checkInSaying || "아직 없음") +
-    "</p></div></section>" +
+    "</div></section>" +
     "</div>" +
     /* 환자 링크는 발송 이력처럼 사용 가능 여부만 보여 준다. 링크 발급·복사·
        열기·폐기는 D1-6과 S1-14의 범위가 아니다(2026-09-11 범위 조정). */
