@@ -235,7 +235,6 @@
     return (
       '<button class="rail__row' +
       (on ? " is-on" : "") +
-      (row.hidden ? " rail__row--hidden" : "") +
       '" type="button"' +
       (on ? ' aria-current="true"' : "") +
       ' data-set="' +
@@ -246,7 +245,6 @@
       RAIL_MARK +
       '<span class="rail__name">' +
       esc(railSetName(block, row.name)) +
-      (row.hidden ? " (숨김)" : "") +
       '</span><span class="rail__note' +
       (mark.done ? " rail__note--done" : mark.say ? " rail__note--todo" : "") +
       '">' +
@@ -281,7 +279,7 @@
       /* **지우는 단추는 없다.** 의료 데이터라 삭제가 금지되고, 지난
          진료기록이 이 이름으로 이 처방을 가리킨다. 잘못 지은 이름은
          상세에서 숨기고 여기 머리의 「+」로 새로 만든다. */
-      sectionHtml("대표 처방", progress ? progress.say : sets.length, "set-new") +
+      sectionHtml("대표 처방", progress ? progress.say : visibleSets(sets).length, "set-new") +
       (rx || '<p class="rail__none">대표 처방이 없습니다</p>') +
       /* **처방(약 목록)은 대표 처방 바로 아래다.** 대표 처방에 약을 적을 때
          여기서 고르므로, 둘이 붙어 있어야 눈이 오가지 않는다. */
@@ -1101,12 +1099,40 @@
       .then(function (rows) {
         sets = rows || [];
         render();
+        return settleSelection();
       })
       .catch(function () {
         sets = [];
         el("rail").innerHTML =
           '<p class="rail__none">대표 처방 목록을 불러오지 못했습니다</p>';
       });
+  }
+
+  /** 고른 것이 **보이는 목록에 없으면** 첫 활성 세트로 옮긴다 — KEY-369.
+   *
+   * 숨긴 세트가 상세에 남아 있으면 「목록에 없는데 화면에는 있는」 상태가 된다.
+   * 방금 내가 숨겼든, 다른 사람이 숨겼든, 옛 주소를 들고 왔든 같은 자리다.
+   * 보일 것이 하나도 없으면 상세를 비워 빈 상태 문구가 서게 한다. */
+  function settleSelection() {
+    if (making) return; // 만들기 판은 아직 저장 전이라 건드리지 않는다
+    var shown = visibleSets(sets);
+    var stays = shown.some(function (row) {
+      return row.prescription_set_id === pickedId;
+    });
+    if (!pickedId || stays) return;
+    if (!shown.length) {
+      pickedId = null;
+      picked = null;
+      render();
+      return;
+    }
+    /* 「숨겼습니다」를 들고 간다 — `loadSet` 이 비우므로 옮긴 뒤 다시 적는다.
+       옮긴 자리에 아무 말도 없으면 방금 누른 것이 먹혔는지 알 수 없다. */
+    var note = saying;
+    var moved = loadSet(shown[0].prescription_set_id);
+    saying = note;
+    render();
+    return moved;
   }
 
   function loadSet(id) {
@@ -1234,7 +1260,10 @@
         picked = data;
         saying = to ? "숨겼습니다" : "되살렸습니다";
         render();
-        return loadSets();
+        /* **문구 목록도 다시 받는다** — 레일 머리의 진도(`2/4`)는 그 목록에서
+           세고, 감춘 세트는 분모에서 빠진다(KEY-369). 세트만 새로 받으면
+           목록에서는 사라진 처방이 숫자에는 남아 있다. */
+        return Promise.all([loadSets(), loadCopy()]);
       })
       .catch(function () {
         saying = "바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.";

@@ -787,6 +787,9 @@ function mockCopyPage() {
         name: row.name,
         disease: row.disease,
         reviewed: !!mockCopyReviews[row.prescription_set_id],
+        /* 서버도 이 칸을 준다(KEY-357 `CopySetItem.hidden`). 목에서 빼면
+           감춘 세트가 진도(`2/4`)의 분모에 남아 화면이 서버와 달라진다. */
+        hidden: !!row.hidden,
         sections: MOCK_COPY_SECTIONS.map(function (key) {
           /* 승인 문구가 있으면 그것, 없으면 기본 문구 — 서버와 같다 */
           var origin = MOCK_COPY_ORIGIN[key] || MOCK_COPY_DEFAULT[key];
