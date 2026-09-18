@@ -33,6 +33,7 @@ from app.models.catalog import (
     DoctorGuideReview,
     PrescriptionSet,
     SetDisease,
+    SetStatus,
 )
 from app.services import guide_defaults
 from app.services.drug_caution import DrugCautionService
@@ -71,6 +72,7 @@ class CopySet:
     disease: SetDisease
     sections: list[CopySection]
     reviewed: bool
+    hidden: bool
 
 
 class GuideCopyService:
@@ -103,6 +105,7 @@ class GuideCopyService:
                         self._section(row.prescription_set_id, key, origins, edits, common) for key in CautionSectionKey
                     ],
                     reviewed=row.prescription_set_id in reviewed,
+                    hidden=row.status == SetStatus.HIDDEN,
                 )
             )
         return found

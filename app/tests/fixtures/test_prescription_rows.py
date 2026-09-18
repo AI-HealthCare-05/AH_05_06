@@ -326,7 +326,7 @@ class TestDrugNamesCarryTheirIngredient:
 
     #: 약을 **처방 항목으로 지목하는** 자리. 여기만 이 규칙의 대상이다.
     #:
-    #: 세트 요약(`자궁내막증 · 비잔 (계속)`)과 산문(`비잔 복용 중에는…`),
+    #: 세트 요약(`자궁내막증 · 비잔 O`)과 산문(`비잔 복용 중에는…`),
     #: 절 제목(`비잔정 드시는 동안`)은 짧은 이름을 쓴다. **그대로 두는 것이
     #: 맞다** — 「산문 제목은 브랜드만 쓴다」로 이희진 님이 `#142` 에서 승인했다.
     #: 성분명은 처방 항목에서 한 번 보이면 되고, 읽는 문장까지 괄호를 넣으면
@@ -422,7 +422,11 @@ class TestEveryVisitPointsAtASetThatExists:
         known = {row.name for row in PRESCRIPTION_SETS}
         used = {r["처방세트"].strip() for r in ROWS if r["처방세트"].strip()}
 
-        unused = sorted(known - used)
+        # 자궁내막증 · 비잔 X 는 「약 미처방」 신규 축이라 합성 데이터에
+        # 역사적 진료가 없다 — 화면 드롭다운에는 표시되어야 하므로 카탈로그에는 남긴다.
+        # PCOS · 야즈 X 는 메트포르민 단독 5건(SYN-PCOS-03 등)이 사용하므로 예외 불필요.
+        new_axis_sets = {"자궁내막증 · 비잔 X"}
+        unused = sorted((known - used) - new_axis_sets)
         assert not unused, f"어느 진료도 안 쓰는 세트: {unused}"
 
     def test_every_set_carries_its_wording(self) -> None:
@@ -518,17 +522,42 @@ class TestTheApprovedWordingIsWhole:
         assert not missing, f"승인 정본이 없는 칸: {missing}"
 
     def test_physician_templates_and_external_evidence_use_separate_axes(self) -> None:
-        """전문의 승인 정본 12칸을 외부 근거 A등급으로 가장하지 않는다(KEY-283)."""
-        from app.models.catalog import CautionSectionKey, SourceGrade
+        """등급 축이 뒤섞이지 않는다 — KEY-283.
+
+        KEY-357 이후 구조:
+          Grade C (전문의 자문, 12칸): caution 4 + medication O 2 + life PCOS 2 + emergency 4
+          Grade C (서비스팀장 검토, 2칸): X 세트 medication — 전문의 아님
+          Grade A (외부 근거, 2칸): 자궁내막증 life ESHRE Guideline 2022
+
+        규칙 (KEY-283):
+          - Grade A 는 전문의 이름을 달지 않는다 (전문의 자문을 A로 올리기 금지)
+          - Grade C 중 전문의 검토 칸과 서비스팀장 검토 칸을 혼동하지 않는다
+        """
+        from app.models.catalog import SourceGrade
         from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
 
-        physician_rows = [row for row in DRUG_CAUTION_CONTENTS if row.section_key is not CautionSectionKey.EMERGENCY]
-        emergency_rows = [row for row in DRUG_CAUTION_CONTENTS if row.section_key is CautionSectionKey.EMERGENCY]
+        grade_c = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.C]
+        grade_a = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.A]
 
-        assert len(physician_rows) == 12
-        assert all(row.source_grade is SourceGrade.C and "전문의" in row.source_name for row in physician_rows)
-        assert len(emergency_rows) == 4
-        assert all(row.source_grade is SourceGrade.A for row in emergency_rows)
+        # Grade A 는 외부 기관 출처여야 한다 — 전문의 자문을 A로 올리면 안 된다
+        assert all("전문의" not in r.source_name for r in grade_a), (
+            "Grade A 칸에 전문의 이름이 있다 — 전문의 자문은 C 여야 한다"
+        )
+
+        # Grade C 중 전문의 검토 8칸, 서비스팀 검토 6칸
+        # 서비스팀 6칸: X medication 2 + X caution 2 + 야즈 emergency 2 (이희진 확정)
+        # 비잔 X emergency 는 비잔 O 와 본문이 같아 전문의 표기 유지
+        grade_c_physician = [r for r in grade_c if "전문의" in r.source_name]
+        grade_c_other = [r for r in grade_c if "전문의" not in r.source_name]
+        assert len(grade_c_physician) == 8, f"전문의 Grade C: {len(grade_c_physician)}행 (기대 8)"
+        assert len(grade_c_other) == 6, (
+            f"비전문의 Grade C: {len(grade_c_other)}행 (기대 6 — X medication·X caution·야즈 emergency)"
+        )
+        assert len(grade_a) == 2, f"Grade A: {len(grade_a)}행 (기대 2 — 자궁내막증 life ESHRE)"
+
+        # Grade B 없음
+        grade_b = [r for r in DRUG_CAUTION_CONTENTS if r.source_grade is SourceGrade.B]
+        assert len(grade_b) == 0, f"Grade B: {len(grade_b)}행 (기대 0)"
 
     def test_source_grade_has_no_fixture_default(self) -> None:
         """새 문구를 넣을 때 근거 축을 판단하지 않고 A로 흘려보낼 수 없다."""
@@ -575,7 +604,12 @@ class TestTheApprovedWordingIsWhole:
         assert not marked, f"정본에 초안 표시가 남았다: {marked}"
 
     def test_the_caution_wording_points_at_the_advice_record(self) -> None:
-        """주의사항의 근거는 **자문**이다 — 허가사항 주소를 붙이면 출처가 틀린다."""
+        """주의사항의 근거는 출처가 명확해야 한다.
+
+        전문의 자문 칸(O 세트): source_name 에 「자문」이 있어야 한다.
+        서비스 팀 검토 칸(X 세트 caution): 전문의가 아님을 허용한다.
+        모든 caution 칸: URL 이 유효하고 근거 넷이 차 있어야 한다.
+        """
         from app.models.catalog import CautionSectionKey
         from app.tests.fixtures.catalog import DRUG_CAUTION_CONTENTS
 
@@ -583,7 +617,9 @@ class TestTheApprovedWordingIsWhole:
             if row.section_key != CautionSectionKey.CAUTION:
                 continue
             where = f"{row.prescription_set_name} / caution"
-            assert "자문" in row.source_name, f"{where} 의 출처가 자문이 아니다 — {row.source_name!r}"
+            # 전문의 자문 칸만 「자문」을 요구한다 — X 세트 caution 은 서비스 팀 검토
+            if "서비스" not in row.source_name:
+                assert "자문" in row.source_name, f"{where} 의 출처가 자문이 아니다 — {row.source_name!r}"
             assert "TEST-ONLY" not in row.source_url, f"{where} 에 시험용 주소가 남았다"
             assert row.source_url.startswith("https://"), f"{where} 의 주소가 비었다"
             # **서비스의 술어를 그대로 쓴다** — 이희진 님 `#214` ⑦.

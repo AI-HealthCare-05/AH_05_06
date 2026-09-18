@@ -108,8 +108,6 @@ _RX_NON_MED_NAMES: frozenset[str] = frozenset({"처방보류", "처방중단", "
 _BIZAN_RE = re.compile(r"비잔", re.IGNORECASE)
 _YAZZ_RE = re.compile(r"야즈", re.IGNORECASE)
 _METFORMIN_RE = re.compile(r"메트포르민|메트포민|Metformin", re.IGNORECASE)
-# 자유 텍스트 영역의 「복용 중」 문구로 계속 복용 여부를 판단한다
-_CONTINUING_RE = re.compile(r"복용\s*중|계속\s*복용|지속\s*복용", re.IGNORECASE)
 _YAZZ_CONTRAINDICATED_RE = re.compile(r"야즈\s*불가|야즈\s*금기", re.IGNORECASE)
 
 # 두 근거(약 + 복용 여부) 모두 확인된 경우 / 약만 확인된 경우
@@ -743,8 +741,12 @@ def _suggest_prescription_set_from(
       1. 진단(DIAGNOSIS) 필드가 있으면 그 값으로 질환을 결정한다.
       2. DIAGNOSIS 가 없으면 약품명(비잔→자궁내막증 / 야즈·메트포르민→PCOS)으로
          역추론한다 — 상병 표가 없는 메모형 EMR(「비잔 복용중」 등)을 처리한다.
-      3. raw_text의 「복용 중/복용중」 문구로 계속 복용 여부를 판단한다.
     근거가 부족하면 None — 스탭이 S1-6 드롭다운에서 직접 고른다.
+
+    KEY-357: 처음/계속 축 → O/X 축으로 변경.
+      - 비잔 감지 → 「자궁내막증 · 비잔 O」 제안
+      - 야즈 감지 → 「PCOS · 야즈 O」 제안
+      - 약 미감지(X 세트) → None, 프론트엔드가 진단명으로 힌트만 표시
     """
     med_texts = " ".join(f.extracted_value for f in extracted if f.field_type.startswith("MEDICATION_NAME"))
     all_text = raw_text + " " + med_texts
@@ -752,7 +754,6 @@ def _suggest_prescription_set_from(
     has_bizan = bool(_BIZAN_RE.search(all_text))
     has_yazz = bool(_YAZZ_RE.search(all_text))
     has_metformin = bool(_METFORMIN_RE.search(all_text))
-    has_continuing = bool(_CONTINUING_RE.search(raw_text))
     has_yazz_contraindicated = bool(_YAZZ_CONTRAINDICATED_RE.search(raw_text))
 
     diagnosis_field = next((f for f in extracted if f.field_type == "DIAGNOSIS"), None)
@@ -770,28 +771,21 @@ def _suggest_prescription_set_from(
 
     if is_endo:
         if has_bizan:
-            if has_continuing:
-                return ExtractedField("PRESCRIPTION_SET", "자궁내막증 · 비잔 (계속)", _SET_SUGGESTION_HIGH_CONF)
-            return ExtractedField("PRESCRIPTION_SET", "자궁내막증 · 비잔 (처음)", _SET_SUGGESTION_MED_CONF)
+            return ExtractedField("PRESCRIPTION_SET", "자궁내막증 · 비잔 O", _SET_SUGGESTION_HIGH_CONF)
+        # 비잔 미감지 → X 세트 후보지만 자동 제안하지 않는다
+        # 프론트엔드(ocr-review.js suggestedXSet)가 진단명으로 힌트만 표시한다
         return None
 
     # is_pcos
     #
-    # **대표 처방이 넷으로 줄었다** (KEY-262) — PCOS 쪽은 「야즈 (처음)」과
-    # 「야즈 (계속)」뿐이다. 예전에 갈라 주던 「초진 (야즈 불가)」·「야즈 +
-    # 메트포르민」·「대사관리」가 없다.
-    #
-    # 🚩 **맞는 세트가 없으면 제안하지 않는다.** 이 함수의 규칙이 원래
-    # 그렇다 — 「근거가 부족하면 None, 스탭이 S1-6 에서 직접 고른다」.
-    # 야즈가 금기인 사람에게 야즈 세트를 제안하는 것은 근거가 부족한 정도가
-    # 아니라 **틀린 제안**이다. 합성 데이터의 그 진료는 넷 중 하나로
-    # 옮겼지만(팀 결정), 화면에 뜨는 제안까지 그렇게 둘 수는 없다.
+    # 🚩 **야즈 금기·메트포르민 단독이면 제안하지 않는다.** PCOS·야즈 X 세트가
+    # 생겼지만, 판독에 야즈가 안 보이는 것과 실제로 안 먹는 것은 다르다
+    # (약봉투 한 장만 올라온 경우도 같은 모습). 세트를 잘못 고르면 다른 약의
+    # 주의 문구가 붙으므로 「근거 부족 → None, 스탭이 S1-6 에서 직접 고른다」를 유지한다.
     if has_yazz_contraindicated or (has_metformin and not has_yazz):
         return None
     if has_yazz:
-        if has_continuing:
-            return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (계속)", _SET_SUGGESTION_HIGH_CONF)
-        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 (처음)", _SET_SUGGESTION_MED_CONF)
+        return ExtractedField("PRESCRIPTION_SET", "PCOS · 야즈 O", _SET_SUGGESTION_HIGH_CONF)
     return None
 
 
@@ -839,7 +833,7 @@ def _extract_emr(
     if suggestion:
         results.append(suggestion)
         # 약품명으로 역추론한 질환명은 DIAGNOSIS 필드로 승격하지 않는다.
-        # PRESCRIPTION_SET 값("자궁내막증 · 비잔 (처음)" 등)이 맥락을 전달하므로
+        # PRESCRIPTION_SET 값("자궁내막증 · 비잔 O" 등)이 맥락을 전달하므로
         # 스탭이 실제 상병을 보고 직접 확정해야 한다(AGENTS.md: 확정된 OCR만 사용).
 
     return results

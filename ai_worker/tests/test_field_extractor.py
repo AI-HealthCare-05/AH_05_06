@@ -697,7 +697,10 @@ def _make_emr_result(diag_blocks: list, rx_blocks: list, raw_text: str) -> Clova
 
 
 def test_prescription_set_bizan_continuing() -> None:
-    """자궁내막증 + 비잔 + raw_text「복용 중」→ 자궁내막증 · 비잔 (계속), 신뢰도 0.90."""
+    """자궁내막증 + 비잔 + raw_text「복용 중」→ 비잔 O 제안, 신뢰도 0.90.
+
+    KEY-357: 처음/계속 축 제거 — 비잔 감지 시 항상 「비잔 O」, 신뢰도 HIGH.
+    """
     result = _make_emr_result(
         _ENDO_DIAG_BLOCKS,
         _BIZAN_RX_BLOCKS,
@@ -707,12 +710,15 @@ def test_prescription_set_bizan_continuing() -> None:
     field_map = {f.field_type: f for f in fields}
     assert "PRESCRIPTION_SET" in field_map
     ps = field_map["PRESCRIPTION_SET"]
-    assert ps.extracted_value == "자궁내막증 · 비잔 (계속)"
+    assert ps.extracted_value == "자궁내막증 · 비잔 O"
     assert ps.confidence == Decimal("0.90")
 
 
 def test_prescription_set_bizan_initial() -> None:
-    """자궁내막증 + 비잔 + raw_text「복용 중」없음 → 자궁내막증 · 비잔 (처음), 신뢰도 0.75."""
+    """자궁내막증 + 비잔 + raw_text「복용 중」없음 → 비잔 O 제안, 신뢰도 0.90.
+
+    KEY-357: 처음/계속 축 제거 — 「복용 중」여부와 무관하게 비잔 O, 신뢰도 HIGH.
+    """
     result = _make_emr_result(
         _ENDO_DIAG_BLOCKS,
         _BIZAN_RX_BLOCKS,
@@ -722,23 +728,21 @@ def test_prescription_set_bizan_initial() -> None:
     field_map = {f.field_type: f for f in fields}
     assert "PRESCRIPTION_SET" in field_map
     ps = field_map["PRESCRIPTION_SET"]
-    assert ps.extracted_value == "자궁내막증 · 비잔 (처음)"
-    assert ps.confidence == Decimal("0.75")
+    assert ps.extracted_value == "자궁내막증 · 비잔 O"
+    assert ps.confidence == Decimal("0.90")
 
 
-def test_prescription_set_syn_ems_01_suggests_bizan_initial() -> None:
-    """SYN-EMS-01 실측 블록(raw_text에 「복용 중」없음) → 자궁내막증 · 비잔 (처음)."""
+def test_prescription_set_syn_ems_01_suggests_bizan_o() -> None:
+    """SYN-EMS-01 실측 블록 → 자궁내막증 · 비잔 O 제안."""
     fields = extract_fields(_SYN_EMS_01, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
-    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 (처음)"
+    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 O"
 
 
 def test_prescription_set_pcos_yazz_metformin() -> None:
-    """PCOS + 야즈 + 메트포르민 → PCOS · 야즈 (처음).
+    """PCOS + 야즈 + 메트포르민 → PCOS · 야즈 O 제안, 신뢰도 0.90.
 
-    **대표 처방이 넷으로 줄면서 「야즈 + 메트포르민」 세트가 없어졌다**
-    (KEY-262). 야즈를 먹는 것은 맞으니 야즈 세트를 제안하되, 「복용 중」
-    문구가 없으므로 「처음」이다 — 비잔 갈래와 같은 규칙이다.
+    KEY-357: 처음/계속 축 제거 — 야즈 감지 시 항상 「야즈 O」, 신뢰도 HIGH.
     """
     result = _make_emr_result(
         _PCOS_DIAG_BLOCKS,
@@ -749,8 +753,8 @@ def test_prescription_set_pcos_yazz_metformin() -> None:
     field_map = {f.field_type: f for f in fields}
     assert "PRESCRIPTION_SET" in field_map
     ps = field_map["PRESCRIPTION_SET"]
-    assert ps.extracted_value == "PCOS · 야즈 (처음)"
-    assert ps.confidence == Decimal("0.75")
+    assert ps.extracted_value == "PCOS · 야즈 O"
+    assert ps.confidence == Decimal("0.90")
 
 
 def test_prescription_set_pcos_yazz_contraindicated() -> None:
@@ -790,15 +794,18 @@ def test_prescription_set_no_suggestion_without_drug() -> None:
 
 
 def test_prescription_set_inferred_from_bizan_without_diagnosis() -> None:
-    """DIAGNOSIS 없이 비잔만 있으면 PRESCRIPTION_SET을 제안하되 DIAGNOSIS는 역추론하지 않는다."""
+    """DIAGNOSIS 없이 비잔만 있으면 비잔 O를 제안하되 DIAGNOSIS는 역추론하지 않는다."""
     fields = extract_fields(_RX_TABLE_RESULT, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
-    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 (처음)"
+    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 O"
     assert "DIAGNOSIS" not in field_map
 
 
 def test_prescription_set_bizan_in_raw_text_no_disease_table() -> None:
-    """메모 영역「비잔 복용중」만으로 자궁내막증 · 비잔 (계속)을 제안하되 DIAGNOSIS는 역추론하지 않는다."""
+    """메모 영역「비잔 복용중」만으로 비잔 O를 제안하되 DIAGNOSIS는 역추론하지 않는다.
+
+    KEY-357: 「복용 중」여부와 무관하게 비잔 감지 시 비잔 O 제안.
+    """
     result = ClovaOcrResult(
         raw_text="25.7월 부터 비잔 복용중 (EMA)",
         fields=[],
@@ -806,7 +813,7 @@ def test_prescription_set_bizan_in_raw_text_no_disease_table() -> None:
     )
     fields = extract_fields(result, OcrDocumentType.EMR)
     field_map = {f.field_type: f.extracted_value for f in fields}
-    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 (계속)"
+    assert field_map.get("PRESCRIPTION_SET") == "자궁내막증 · 비잔 O"
     assert "DIAGNOSIS" not in field_map
 
 

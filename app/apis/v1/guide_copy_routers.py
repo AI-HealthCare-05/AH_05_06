@@ -73,6 +73,7 @@ async def _page(service: GuideCopyService, actor: ClinicalActor, doctor_id: int 
                     for part in row.sections
                 ],
                 reviewed=row.reviewed,
+                hidden=row.hidden,
             )
             for row in await service.list(actor, doctor_id=doctor_id)
         ],

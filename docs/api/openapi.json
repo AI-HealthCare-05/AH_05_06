@@ -1015,6 +1015,10 @@
           "disease": {
             "$ref": "#/components/schemas/SetDisease"
           },
+          "hidden": {
+            "title": "Hidden",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1040,7 +1044,8 @@
           "name",
           "disease",
           "sections",
-          "reviewed"
+          "reviewed",
+          "hidden"
         ],
         "title": "CopySetItem",
         "type": "object"

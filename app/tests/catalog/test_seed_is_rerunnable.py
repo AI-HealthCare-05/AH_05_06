@@ -126,15 +126,18 @@ class SeedIsRerunnableTestCase(TestCase):
 
         await seed_catalog()
 
+        # 세트마다 네 갈래(caution·emergency·medication·life) 가 모두 있어야 한다.
+        # 픽스처에서 동적으로 읽으면 칸이 빠져도 통과하므로 고정값으로 단언한다.
+        expected_sections = frozenset({"caution", "emergency", "medication", "life"})
         for row in PRESCRIPTION_SETS:
             ps = await PrescriptionSet.get(name=row.name)
-            keys = set(
+            keys = frozenset(
                 await DrugCautionContent.filter(
                     prescription_set=ps, approval_status=ApprovalStatus.APPROVED
                 ).values_list("section_key", flat=True)
             )
-            assert keys == {key.value for key in CautionSectionKey}, (
-                f"{row.name}: 승인 문구가 {sorted(keys)} 뿐이다 — 빠진 갈래는 범용 문구로 나간다"
+            assert keys == expected_sections, (
+                f"{row.name}: 승인 문구 {sorted(keys)} — 기대 {sorted(expected_sections)} 와 다르다"
             )
 
     async def test_one_stamp_per_set_and_section(self) -> None:
@@ -154,8 +157,11 @@ class SeedIsRerunnableTestCase(TestCase):
         """같은 버전이 이미 DB에 있어도 KEY-283의 등급 정정은 반영된다."""
         await seed_catalog()
 
+        # 전문의 자문(Grade C, source_name에 「전문의」 포함) 행 = 8.
+        # ESHRE life(Grade A) 2칸 · 서비스팀 검토 6칸(X medication 2 + X caution 2 +
+        # 야즈 emergency 2)은 잡히지 않는다 — KEY-357 출처 정정.
         physician_rows = await DrugCautionContent.filter(source_name__contains="전문의").all()
-        assert len(physician_rows) == 12
+        assert len(physician_rows) == 8
         for row in physician_rows:
             row.source_grade = SourceGrade.A
             await row.save(update_fields=["source_grade", "updated_at"])
@@ -163,5 +169,5 @@ class SeedIsRerunnableTestCase(TestCase):
         await seed_catalog()
 
         corrected = await DrugCautionContent.filter(source_name__contains="전문의").all()
-        assert len(corrected) == 12
+        assert len(corrected) == 8
         assert all(row.source_grade is SourceGrade.C for row in corrected)

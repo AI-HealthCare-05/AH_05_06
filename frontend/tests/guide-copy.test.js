@@ -81,6 +81,14 @@ test("확인 진도는 장을 센다 — 구역이 아니다", () => {
   );
 });
 
+test("감춘 세트는 진도에서 빠진다", () => {
+  const { copyProgress } = rules();
+  assert.strictEqual(
+    copyProgress([a_set({ reviewed: true }), a_set({ prescription_set_id: 2, hidden: true })]).say,
+    "1/1",
+  );
+});
+
 test("한 장도 안 봤으면 0이다", () => {
   const { copyProgress } = rules();
 
