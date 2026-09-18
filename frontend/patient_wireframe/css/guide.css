@@ -522,6 +522,47 @@ b { font-weight: 700; }
   align-items: center;
   cursor: pointer;
 }
+.guide-footer__helpful {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 12px 4px;
+  border-top: 1px solid var(--line, #eee);
+  border-bottom: 1px solid var(--line, #eee);
+}
+.guide-footer__helpful-label {
+  font-size: 13px;
+  color: var(--tx-sub);
+}
+.guide-footer__helpful-status {
+  flex-basis: 100%;
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--danger, #a12b2b);
+}
+.guide-footer__thumbs {
+  display: flex;
+  gap: 4px;
+}
+.guide-footer__thumb {
+  background: none;
+  border: 1px solid var(--p-dark);
+  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.guide-footer__thumb:active {
+  background: var(--p-light, #f3e8ff);
+}
 
 /* ════════════════════════════════════════
    오류 신고 오버레이

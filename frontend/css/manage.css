@@ -308,3 +308,22 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* 환자 피드백 상세 — history-modal.js의 .modal__top/.modal__title을 쓰고,
+   필드만 admin-feedback.css의 라벨·값 grid를 그대로 옮겨 쓴다(KEY-361,
+   2heej 재리뷰) — 라벨과 값이 시각적으로 구분돼야 나열이 아니라 표로
+   읽힌다. */
+.feedback-fields {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px 20px;
+  margin-top: 16px;
+}
+.feedback-fields dt {
+  color: var(--tx-sub, #52606d);
+}
+.feedback-fields dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

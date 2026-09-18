@@ -979,7 +979,7 @@ function approvedModalHtml(view) {
     "</b> " +
     esc(name ? name + " 님께 발송 예정" : "발송 예정") +
     "</p>" +
-    '<p class="modal__sub">확인 문자(일주일 뒤 · 보름 뒤)와 소진 임박 안내는 자동 발송됩니다</p>' +
+    '<p class="modal__sub">소진 임박 안내는 자동 발송됩니다</p>' +
     "</div>" +
     '<div class="modal__box">' +
     "<span>발송 실패 시 알림 창에서 확인할 수 있습니다</span>" +

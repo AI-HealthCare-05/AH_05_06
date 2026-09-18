@@ -43,6 +43,7 @@
 /* 제목 옆에 붙는 곁말. 제목보다 약하게 둔다 — 읽을 것은 제목이다. */
 .box__note {
   color: var(--ink-2);
+  text-decoration: none;
   font-size: 12px;
 }
 

@@ -28,6 +28,7 @@ class Permission(StrEnum):
     CLINIC_MANAGE = "clinic:manage"
     SMS_TEMPLATE_MANAGE = "sms_template:manage"
     AUDIT_READ = "audit:read"
+    PATIENT_FEEDBACK_READ = "patient_feedback:read"
 
 
 PERMISSION_ROLES: dict[Permission, frozenset[Role]] = {
@@ -44,6 +45,7 @@ PERMISSION_ROLES: dict[Permission, frozenset[Role]] = {
     Permission.CLINIC_MANAGE: frozenset({Role.ADMIN}),
     Permission.SMS_TEMPLATE_MANAGE: frozenset({Role.ADMIN}),
     Permission.AUDIT_READ: frozenset({Role.ADMIN}),
+    Permission.PATIENT_FEEDBACK_READ: frozenset({Role.STAFF, Role.DOCTOR, Role.ADMIN}),
 }
 
 
