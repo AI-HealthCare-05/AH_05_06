@@ -431,14 +431,13 @@ test("**축소는 `zoom` 이다** — `scale` 로 바꾸면 줄바꿈이 달라�
 
 /* ── 문자 설정 (S1-14) ───────────────────────────────────────────────── */
 
-test("KEY-364 시연의 문자 설정은 진료 당일 안내문만 보여 준다", () => {
+test("**「문자 설정」은 다른 화면이다** — 원문·미리보기 두 칸이 아니다", () => {
   const { guideScreenHtml } = load("api", "session", "sms-plan", "patient-guide-cards", "patient-link-view", "guide-view");
 
   const sms = guideScreenHtml(SECTIONS, "messages", "guide", true, null);
-  assert.ok(sms.includes("진료 당일 안내문"), "시연할 당일 문자가 없다");
-  assert.ok(!sms.includes("확인 문자"), "시연 제외 회차가 노출된다");
-  assert.ok(!sms.includes("소진 임박"), "시연 제외 안내가 노출된다");
-  assert.ok(!sms.includes("재진 안내"), "미완성 안내가 노출된다");
+  assert.ok(sms.includes("확인 문자"), "회차가 없다");
+  assert.ok(sms.includes("소진 임박"), "소진 임박이 없다");
+  assert.ok(sms.includes("재진 안내"), "재진 안내가 없다");
   assert.ok(!sms.includes("환자 화면과 같은 차례"), "원문 칸이 그대로 남았다");
 
   /* 다른 탭에는 회차가 새면 안 된다 */

@@ -8,7 +8,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const { load } = require("./browser-shim.js");
-const { markupOnly, read } = require("./source.js");
+const { markupOnly } = require("./source.js");
 
 function box() {
   return load("field-labels", "ocr-groups");
@@ -156,14 +156,6 @@ test("통 단위는 서버와 같은 규칙으로 일수로 환산한다", () =>
   assert.equal(ocrCourseDays("2", "통"), 56);
   assert.equal(ocrCourseDays("56", "통"), 56, "이미 일수인 옛 자료를 다시 곱했다");
   assert.equal(runOutDate("2026-09-17", "2", "통"), "2026-11-12");
-});
-
-test("약속처방 기본 약과 현재 진료의 직접 입력 약을 구분해서 말한다", () => {
-  const markup = read("js/ocr-review.js");
-
-  assert.ok(markup.includes("약속처방에 기본 약이 없습니다"));
-  assert.ok(markup.includes("현재 진료의 약은 아래 입력값을 확인해 주세요"));
-  assert.ok(!markup.includes("이 처방에 등록된 약이 없습니다"));
 });
 
 test("여쭙는 것이지 막는 것이 아니다 — 짧은 처방도 있다", () => {

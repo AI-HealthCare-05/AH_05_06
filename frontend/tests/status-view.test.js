@@ -196,31 +196,6 @@ test("**서버가 준 것을 그린다** — 화면이 따로 셈하지 않는�
   assert.ok(!body.includes("smsDateAfter"), "화면이 발송일을 따로 셈한다");
 });
 
-test("KEY-364 시연 현황에는 진료 당일 안내문만 남긴다", () => {
-  const { demoMessages, statusScreenHtml } = box();
-  const visible = demoMessages([
-    { kind: "GUIDE" },
-    { kind: "CHECK_D7" },
-    { kind: "CHECK_D15" },
-    { kind: "RUN_OUT" },
-  ]);
-
-  assert.deepEqual(visible.map((row) => row.kind), ["GUIDE"]);
-  const html = statusScreenHtml({
-    entries: [],
-    messages: [
-      { kind: "GUIDE", status: "SCHEDULED", at: "2026-09-18T18:00:00+09:00" },
-      { kind: "CHECK_D7", status: "SCHEDULED", at: "2026-09-25T10:00:00+09:00" },
-    ],
-    canPreview: false,
-    canUnapprove: false,
-    guideStatus: "APPROVED",
-  });
-  assert.ok(html.includes("진료 안내문"), "당일 안내문이 사라졌다");
-  assert.ok(!html.includes("일주일 뒤 확인"), "시연 제외 회차가 남았다");
-  assert.ok(!html.includes("확인 문자 응답"), "시연 제외 응답 영역이 남았다");
-});
-
 test("**못 나간 것과 예정을 또렷이 가른다** — 못 나간 것은 사람이 손대야 한다", () => {
   const { sendRowsHtml, messageState } = box();
 

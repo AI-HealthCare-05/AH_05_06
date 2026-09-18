@@ -358,11 +358,7 @@ function smsPlanOf(sections, mode) {
   /* 진료에서 오는 값(진료일 · 소진 예정일 · 환자 번호)은 화면이 준다.
      사람이 만진 값(회차 · 시각 · 문구)은 `guideSmsState` 가 들고 있다. */
   var seed = (typeof guideSmsPlan === "function" && guideSmsPlan(mode)) || {};
-  /* KEY-364 확정 시연은 진료 당일 안내문까지만 다룬다. 후속 회차의 저장값과
-     발송 코드는 그대로 두되, 이 화면에서는 당일 안내문을 고정 선택한다. */
-  smsStateNow(seed);
-  guideSmsState.picked = "guide";
-  return Object.assign({}, smsStateNow(seed), { demoOnlyGuide: true });
+  return smsStateNow(seed);
 }
 
 function guideBodyHtml(sections, current, canEdit, editingKey, summary, preview) {
@@ -586,12 +582,8 @@ function smsLeftHtml(plan) {
   var runOutIso = plan.runOutIso || "";
   var before = plan.runOutBefore || 3;
   var noticeIso = smsRunOutNotice(runOutIso, before);
-  var visibleRounds = plan.demoOnlyGuide
-    ? SMS_ROUNDS.filter(function (r) {
-        return r.key === "guide";
-      })
-    : SMS_ROUNDS;
-  var rounds = visibleRounds.map(function (r) {
+
+  var rounds = SMS_ROUNDS.map(function (r) {
     /* 진료 당일 안내문은 링크를 전달하므로 고정이다. */
     var on = r.fixed || (plan.on || {})[r.key] === true;
     return smsRoundRow(r, startIso, on, plan.picked === r.key);
@@ -615,48 +607,47 @@ function smsLeftHtml(plan) {
       );
     }).join("") +
     "</select> — 승인 전에만 바꿀 수 있습니다</p>" +
-    (plan.demoOnlyGuide
-      ? ""
-      : '<p class="sms__note">확인 문자 시각 ' +
-        '<select class="sms__time" data-sms-at aria-label="확인 문자 시각">' +
-        SMS_TIMES.map(function (t) {
-          return (
-            '<option value="' +
-            esc(t.key) +
-            '"' +
-            (t.key === (plan.at || "10:00") ? " selected" : "") +
-            ">" +
-            esc(t.label) +
-            "</option>"
-          );
-        }).join("") +
-        "</select> — 확인 · 재진 문자에 적용</p>" +
-        '<p class="sms__note">일주일 뒤 문자를 끄면 D+7 복약·통증 확인 링크가 발송되지 않습니다.</p>') +
+    '<p class="sms__note">확인 문자 시각 ' +
+    '<select class="sms__time" data-sms-at aria-label="확인 문자 시각">' +
+    SMS_TIMES.map(function (t) {
+      return (
+        '<option value="' +
+        esc(t.key) +
+        '"' +
+        (t.key === (plan.at || "10:00") ? " selected" : "") +
+        ">" +
+        esc(t.label) +
+        "</option>"
+      );
+    }).join("") +
+    "</select>" +
+    " — 확인 · 재진 문자에 적용</p>" +
+    '<p class="sms__note">일주일 뒤 문자를 끄면 D+7 복약·통증 확인 링크가 발송되지 않습니다.</p>' +
     "</section>" +
-    (plan.demoOnlyGuide
-      ? ""
-      : '<section class="sms__card">' +
-        '<h3 class="sms__title">소진 임박 안내</h3>' +
-        '<div class="sms__row">' +
-        '<button class="sms__check" type="button" data-sms-runout aria-pressed="' +
-        (plan.runOutOn !== false) +
-        '" aria-label="소진 임박 안내 켜고 끄기">' +
-        (plan.runOutOn !== false ? "☑" : "☐") +
-        "</button>소진 " +
-        '<input class="sms__days" type="number" min="1" max="30" value="' +
-        esc(String(before)) +
-        '" data-sms-before aria-label="소진 며칠 전에 보낼지" /> 일 전' +
-        '<span class="sms__when">' +
-        (noticeIso
-          ? esc(smsWhen(noticeIso)) + " 예정 · 소진 " + esc(smsWhen(runOutIso))
-          : "처방일수를 확인하면 셈합니다") +
-        "</span></div></section>" +
-        '<section class="sms__card">' +
-        '<h3 class="sms__title">재진 안내</h3>' +
-        '<div class="sms__row">마지막 발송 — 없음<span class="sms__when">' +
-        "발송하는 자리가 아직 없습니다</span></div>" +
-        '<p class="sms__note">ⓘ 문자 동의 「거부」면 비활성 · 잔량 0이면 대기</p>' +
-        "</section>")
+    '<section class="sms__card">' +
+    '<h3 class="sms__title">소진 임박 안내</h3>' +
+    '<div class="sms__row">' +
+    /* **끌 수 있다.** 예전에는 늘 ☑ 로 그려 둔 글자였다 — 처방일수를 모르는
+       진료에서도 켜진 것처럼 보였고, 끄고 싶어도 누를 데가 없었다. */
+    '<button class="sms__check" type="button" data-sms-runout aria-pressed="' +
+    (plan.runOutOn !== false) +
+    '" aria-label="소진 임박 안내 켜고 끄기">' +
+    (plan.runOutOn !== false ? "☑" : "☐") +
+    "</button>소진 " +
+    '<input class="sms__days" type="number" min="1" max="30" value="' +
+    esc(String(before)) +
+    '" data-sms-before aria-label="소진 며칠 전에 보낼지" /> 일 전' +
+    '<span class="sms__when">' +
+    (noticeIso
+      ? esc(smsWhen(noticeIso)) + " 예정 · 소진 " + esc(smsWhen(runOutIso))
+      : "처방일수를 확인하면 셈합니다") +
+    "</span></div></section>" +
+    '<section class="sms__card">' +
+    '<h3 class="sms__title">재진 안내</h3>' +
+    '<div class="sms__row">마지막 발송 — 없음<span class="sms__when">' +
+    "발송하는 자리가 아직 없습니다</span></div>" +
+    '<p class="sms__note">ⓘ 문자 동의 「거부」면 비활성 · 잔량 0이면 대기</p>' +
+    "</section>"
   );
 }
 
