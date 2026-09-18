@@ -37,6 +37,27 @@ COPY pyproject.toml uv.lock ./
 #    두면 한 번 뚫렸을 때 번지는 범위가 커진다.
 RUN uv sync --group worker --group ai --no-dev --frozen
 
+# 3-2. **임베딩 모델을 이미지에 미리 받아 둔다** (KEY-339).
+#
+#      안내 생성이 RAG 경로로 돌면 워커가 이 모델을 올린다
+#      (`app/services/knowledge_pipeline.py` 의 `LocalSentenceTransformerEmbeddingProvider`).
+#      런타임에 내려받게 두면 두 가지가 걸린다 — **첫 생성이 458MB 내려받기를
+#      기다리고**, 컨테이너를 다시 만들 때마다 캐시가 사라져 그 기다림이 배포마다
+#      돌아온다. 9/18 Pilot 에서 실제로 첫 생성이 여기서 멈췄다.
+#
+#      `HF_HOME` 을 **여기서** 정하는 것이 핵심이다. 빌드와 런타임이 같은 자리를
+#      봐야 받아 둔 것이 쓰인다 — `ENV` 라 이미지에 남는다. 안 정하면 빌드는
+#      `/root/.cache/huggingface` 에 받아 두고 런타임도 거기를 보긴 하지만,
+#      그 자리는 컨테이너를 다시 만들 때 사라지는 쓰기 층이다.
+#
+#      모델·revision 은 `app/services/knowledge_search.py` 가 고정한 값과 **같아야
+#      한다** (KEY-82). 어긋나면 런타임이 이미지에 없는 판을 찾아 다시 내려받아서
+#      미리 받아 둔 보람이 없어진다 — 그런데 **생성은 성공하므로 아무도 모른다.**
+#      `app/tests/deploy/test_key339_worker_embedding_preload.py` 가 두 자리가
+#      갈라지는 것을 막는다.
+ENV HF_HOME=/opt/hf
+RUN uv run --no-sync python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', revision='e8f8c211226b894fcb81acc59f3b34ba3efd5f42')"
+
 # 4. 로컬 소스 코드를 컨테이너 내부로 복사합니다.
 # ai_worker는 app.* 를 직접 임포트하므로 두 패키지를 모두 복사한다.
 COPY ./app ./app

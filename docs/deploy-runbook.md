@@ -619,6 +619,88 @@ docker compose exec -T nginx nginx -t && docker compose exec -T nginx nginx -s r
   `www` 를 안 쓰기로 해서 이대로가 맞다.
 * HSTS 는 안 켰다. 켜면 브라우저가 기억해 되돌리기 어렵다.
 
+## 4-2-2. 인스턴스를 키울 때 — 메모리와 IP (KEY-339)
+
+RAG 를 켜면(`GUIDE_RAG_ENABLED=true`) 안내 생성이 **fastapi 가 아니라 워커**에서 돈다
+(`app/services/guides.py` 가 큐에 넣고, `app/services/guide_generation_jobs.py` 가 집는다).
+워커는 거기서 임베딩 모델을 올리는데, **2GB(t3.small)에서는 `exit 137`(OOM) 로 죽었다.**
+잡은 재시도되고 워커는 `restart=always` 라 그때마다 다시 뜨므로, **그동안 OCR 처리까지
+같이 끊긴다.** 2026-09-18 에 실제로 겪었다.
+
+### 🚩 중지하기 전에 — **탄력적 IP 인지 본다**
+
+유형 변경은 인스턴스를 **중지**해야 되는데, 퍼블릭 IP 가 자동 할당이면 **시작할 때 주소가
+바뀐다.** 그러면 도메인이 옛 주소를 가리켜 사이트가 안 열리고, 인증서 자동 갱신도 같이
+막힌다(certbot 이 HTTP-01 로 그 주소에 붙는다). 2026-09-18 에 이걸 확인 안 하고 중지해서
+DNS 를 손으로 고쳐야 했다.
+
+* 콘솔 > 인스턴스 > 요약의 **「탄력적 IP 주소」** 칸을 본다. `–` 면 **자동 할당**이다
+* 자동 할당이면 **먼저** 탄력적 IP 를 할당·연결한다 (EC2 > 네트워크 및 보안 > 탄력적 IP).
+  붙이는 순간 주소가 한 번 바뀌므로 DNS 도 한 번은 고쳐야 한다 — 그 뒤로는 중지·시작해도
+  안 바뀐다
+* 2024 년부터 자동 할당 퍼블릭 IP 도 과금된다. **탄력적 IP 로 바꿔도 비용은 같다**
+* 이 저장소 DNS 는 **가비아**에 있고 계정이 이희진 님이다 — A 레코드 변경은 요청해야 한다.
+  TTL 600 이라 바꾸면 10 분 안에 퍼진다
+
+### 순서
+
+```bash
+# ① 백업 — 볼륨은 그대로 붙지만, 되돌릴 자리를 만든다
+docker compose exec -T mysql sh -c 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" \
+  --single-transaction --routines --triggers "$MYSQL_DATABASE"' | gzip > ~/backup/db-before-resize-$(date +%Y%m%d-%H%M).sql.gz
+
+# ② 컨테이너를 먼저 내린다 — 인스턴스 중지로 mysql 을 끊으면 다음 기동이 복구 절차를 탄다
+docker compose stop
+
+# ③ 콘솔 — 인스턴스 중지 → 작업 > 인스턴스 설정 > 인스턴스 유형 변경 → 시작
+#    고를 수 있는 유형은 계정마다 다르다. 9/18 에는 t3.medium 이 목록에 없어
+#    c7i-flex.large(2 vCPU · 4GB) 를 골랐다. 지금 쓰는 양이 1.6GB 라 4GB 면 임베딩 피크가 들어간다
+```
+
+### 시작한 뒤 — **세 가지를 반드시 확인한다**
+
+```bash
+free -m                                   # ① 메모리가 실제로 늘었나
+docker compose --profile ocr --profile web up -d   # ② 멈춰 둔 것까지 모두 올린다
+
+# ③ OTP 좁은문은 닫혀 있다 — 재기동이 오버레이를 안 붙이기 때문이다. 다시 켠다
+OTP_SOLAPI_PROD_ENABLED=1 docker compose -f docker-compose.yml -f docker-compose.pilot.yml up -d --no-deps fastapi
+
+curl -s -k -o /dev/null -w '%{http_code}\n' https://localhost/api/v1/health   # 200
+```
+
+임베딩이 실제로 올라가는지는 이 한 줄로 본다 — **시스템 `python` 이 아니라 venv** 다
+(워커도 `uv run --no-sync` 로 뜬다).
+
+```bash
+docker compose exec -T ai-worker /app/.venv/bin/python -c \
+ "from sentence_transformers import SentenceTransformer as S; \
+  m=S('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', revision='e8f8c211226b894fcb81acc59f3b34ba3efd5f42'); \
+  print('dim', len(m.encode(['확인'])[0]))"    # exit 0 · dim 384 여야 한다
+```
+
+### DNS 를 고치기 전에 새 주소를 미리 확인한다
+
+DNS 가 아직 옛 주소를 가리켜도, **도메인 이름 그대로** 새 주소에 붙여 볼 수 있다. 인증서까지
+같이 검증되므로 「서버 문제인지 DNS 문제인지」가 바로 갈린다.
+
+```bash
+curl -s --resolve care-on.site:443:<새 IP> -o /dev/null \
+  -w 'https %{http_code} · 인증서 %{ssl_verify_result}\n' https://care-on.site/api/v1/health
+```
+
+바꾼 뒤에는 **바깥 리졸버**로 본다 — 내 기계의 캐시는 TTL 이 남아 옛 주소를 계속 준다.
+
+```bash
+dig +short @8.8.8.8 care-on.site A
+```
+
+### 임베딩 모델 캐시는 컨테이너를 다시 만들면 사라진다
+
+이미지에 모델이 없으면 **첫 생성이 458MB 내려받기를 기다린다.** 그 캐시는 컨테이너의 쓰기
+층이라 배포·재생성마다 사라지고 기다림이 돌아온다. 이미지에 구워 두는 것이 정답이다
+(`ai_worker/Dockerfile` 의 `HF_HOME` + 선적재, KEY-339).
+
 ## 4-3. 합성 데이터를 붓는다 (KEY-200)
 
 **배포는 데이터를 넣지 않는다.** `deployment.sh` 는 `seed` 를 부르지 않고, 앞으로도
