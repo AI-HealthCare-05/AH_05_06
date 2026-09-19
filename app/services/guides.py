@@ -32,7 +32,7 @@ from app.core.api_errors import ApiError as ContractApiError
 # 병합에서 부딪힌다.
 from app.core.auth_errors import AuthError as ApiError
 from app.core.sms_opt_out import is_opted_out
-from app.models.catalog import CautionSectionKey, DoctorGuideCopy, MessageTemplateKind, PrescriptionSet
+from app.models.catalog import CautionSectionKey, DoctorGuideCopy, MessageTemplateKind, PrescriptionSet, SetDisease
 from app.models.ocr import (
     OcrDocumentType,
     OcrField,
@@ -68,6 +68,32 @@ from app.services import guide_defaults, guide_section_order
 from app.services.drug_caution import DrugCautionService
 from app.services.guide_body import medication_body, resolved_copy
 from app.services.message_templates import MessageTemplateService
+
+# KEY-371: PCOS 생활관리 섹션의 RAG 질의. 약 이름을 제외하고 영어 문장형으로 구성한다.
+# 원문 지식 청크(Monash PCOS 2023, §3 Lifestyle management, pp.35-38)의 어휘와 맞춘다.
+# 자궁내막증 생활관리는 fixed_template 경로이므로 이 함수로 오지 않는다 (guides.py 참조).
+_PCOS_LIFE_QUERY = (
+    "lifestyle management for women with PCOS: "
+    "healthy eating, physical activity, weight management, "
+    "dietary interventions, exercise interventions, behavioural strategies"
+)
+
+
+def _rag_query(
+    disease_enum: SetDisease | None,
+    key: GuideSectionKey,
+    disease: str,
+    drug_names: tuple[str, ...],
+) -> str:
+    """섹션·질환에 맞는 RAG 검색 질의를 반환한다.
+
+    PCOS 생활관리: 약 이름 없이 영어 문장형 질의 (KEY-371).
+    그 외: disease + 약 이름 + 섹션 키 나열 (기존 동작).
+    """
+    if disease_enum is SetDisease.PCOS and key is GuideSectionKey.LIFE:
+        return _PCOS_LIFE_QUERY
+    return " ".join((disease, *drug_names, key.value))
+
 
 #: 승인하면 그날 이 시각에 나간다. 와이어프레임 D1-5 의 「오늘 18:00」이다.
 #: 진료가 끝난 저녁에 받아야 환자가 차분히 읽는다 — 진료 중에 오면 안 본다.
@@ -561,7 +587,7 @@ class GuideService:
 
         if self.generation_job and await input_checksum(visit_id) != self.generation_job.input_sha256:
             raise GuideGenerationError("input_changed")
-        from app.models.catalog import DrugCatalog, PrescriptionSetDrug, SetDisease
+        from app.models.catalog import DrugCatalog, PrescriptionSetDrug
 
         # Do not send OCR/free-form names to a provider. Only exact catalog
         # matches enter the query; an unknown name requires local recognition.
@@ -586,7 +612,7 @@ class GuideService:
                 generated[key] = await self.rag_generator.section(
                     hospital_id=actor.hospital_id,
                     section_key=key.value,
-                    query=" ".join((disease, *drug_names, key.value)),
+                    query=_rag_query(disease_enum, key, disease, drug_names),
                     prescribed_drugs=drug_names,
                     known_drugs=tuple(catalog_names),
                     fallback=endo_life_fallback if is_endo_life else approved_fallback(content),
