@@ -44,9 +44,7 @@ def test_generated_body_enforces_length_item_and_duplicate_limits() -> None:
     body, _ = check(valid, (), section_key="life")
     assert body.startswith("[생활관리]")
 
-    too_long = json.dumps(
-        {"body": "가" * (GUIDE_OUTPUT_CONTRACTS["life"].max_chars + 1), "drug_names": []}
-    )
+    too_long = json.dumps({"body": "가" * (GUIDE_OUTPUT_CONTRACTS["life"].max_chars + 1), "drug_names": []})
     too_many = json.dumps({"body": "\n".join(f"- 서로 다른 안내 문장 {i}입니다." for i in range(7)), "drug_names": []})
     duplicate = json.dumps(
         {"body": "- 매일 가볍게 몸을 움직여 주세요.\n- 매일 가볍게 몸을 움직여 주세요.", "drug_names": []}
