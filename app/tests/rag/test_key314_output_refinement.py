@@ -38,7 +38,7 @@ def test_section_prompt_has_one_shared_patient_facing_contract(section_key: str,
     assert "본문에 넣지 마세요" in instructions
 
 
-def test_generated_body_enforces_length_item_and_duplicate_limits() -> None:
+def test_generated_body_retries_length_overflow_without_blocking_style_variations() -> None:
     check = RagGuideGenerator._check_answer
     valid = json.dumps({"body": "[생활관리]\n- 규칙적으로 몸을 움직여 주세요.", "drug_names": []})
     body, _ = check(valid, (), section_key="life")
@@ -49,9 +49,14 @@ def test_generated_body_enforces_length_item_and_duplicate_limits() -> None:
     duplicate = json.dumps(
         {"body": "- 매일 가볍게 몸을 움직여 주세요.\n- 매일 가볍게 몸을 움직여 주세요.", "drug_names": []}
     )
-    for answer in (too_long, too_many, duplicate):
-        with pytest.raises(GuideGenerationError, match="llm_invalid_response"):
-            check(answer, (), section_key="life")
+    with pytest.raises(GuideGenerationError, match="llm_invalid_response") as raised:
+        check(too_long, (), section_key="life")
+    assert raised.value.retryable is True
+
+    # Bullet count and repeated prose are formatting concerns. They remain in
+    # the prompt, but never prevent a medically safe guide from being produced.
+    assert check(too_many, (), section_key="life")[0]
+    assert check(duplicate, (), section_key="life")[0]
 
 
 async def test_approved_fallback_is_not_rewritten_or_reformatted() -> None:

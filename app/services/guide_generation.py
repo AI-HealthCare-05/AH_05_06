@@ -159,21 +159,6 @@ def _output_instructions(section_key: str) -> str:
     )
 
 
-def _has_duplicate_content(body: str) -> bool:
-    """Detect repeated patient-facing lines without rewriting medical text."""
-    seen: set[str] = set()
-    for raw_line in body.splitlines():
-        line = re.sub(r"^[\s\-·■]+", "", raw_line).strip()
-        normalized = re.sub(r"[\s.,!?。·]+", "", line).casefold()
-        # Short labels such as section headings may legitimately repeat words in prose.
-        if len(normalized) < 8:
-            continue
-        if normalized in seen:
-            return True
-        seen.add(normalized)
-    return False
-
-
 def approved_fallback(content: DrugCautionContent | None) -> ApprovedFallbackTemplate | None:
     """Use recorded approval and checksum, never manufacture an approval stamp."""
     if content is None or not DrugCautionService.has_evidence(content):
@@ -451,7 +436,6 @@ class RagGuideGenerator:
             if (
                 not isinstance(body, str)
                 or not body.strip()
-                or len(body) > contract.max_chars
                 or not isinstance(mentioned, list)
                 or not all(isinstance(x, str) for x in mentioned)
             ):
@@ -462,13 +446,15 @@ class RagGuideGenerator:
             raise GuideGenerationError("EXTRA_DRUG", stage="post")
         # Check the actual body independently of the model's self-report.
         # Normalize catalog dose suffixes, not patient/OCR free text.
+        # Output-shape guidance is retried, while medical-safety failures below
+        # remain hard failures.  Bullet count and duplicate prose are stylistic
+        # constraints and must not make the whole guide unavailable.
+        if len(body) > contract.max_chars:
+            raise GuideGenerationError("llm_invalid_response", retryable=True, stage="post")
         prescribed_names = {re.split(r"[\s(（]", name, maxsplit=1)[0] for name in prescribed_drugs}
         other_names = {re.split(r"[\s(（]", name, maxsplit=1)[0] for name in known_drugs} - prescribed_names
         if any(name and name in body for name in other_names):
             raise GuideGenerationError("EXTRA_DRUG", stage="post")
-        bullet_count = sum(1 for line in body.splitlines() if re.match(r"^\s*[-·]", line))
-        if bullet_count > contract.max_items or _has_duplicate_content(body):
-            raise GuideGenerationError("llm_invalid_response", stage="post")
         post = post_generate_check(body)
         if post.verdict is SafetyVerdictKind.BLOCK:
             raise GuideGenerationError(str(post.reason_code), stage="post")
