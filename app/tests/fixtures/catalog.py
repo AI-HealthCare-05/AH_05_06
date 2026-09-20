@@ -177,6 +177,49 @@ _APPROVED_BODY_HASHES: dict[tuple[str, str, str], str] = {
 
 
 @dataclass(frozen=True)
+class ClinicDrugRow:
+    """의원이 쓰는 약 한 줄 — 이름은 **의원 EMR 표기 그대로**."""
+
+    name: str
+    frequency: str
+    note: str | None = None
+
+
+# ── 의원이 쓰는 약 ──────────────────────────────────────────────────────────
+# 대표 처방에 약을 적을 때 여기서 고른다. **표기를 판독·CSV 쪽에 맞춘다**
+# — 실제로 들어오는 값이 그쪽이라, 나중에 이름으로 이어 붙일 여지를 남긴다.
+# **의원 EMR 에 실제로 등록돼 있는 이름 그대로 적는다.** 판독이 읽어 오는
+# 값이 이 표기라, 나중에 이름으로 이어 붙이려면 여기가 같아야 한다.
+# 아래 여섯은 2026-09-04 에 의원 EMR 화면에서 받아 옮겼다.
+#
+# **`scripts/seed.py` 에 있던 것을 여기로 옮겼다** (KEY-357). 대표 처방의 기본
+# 약(`PrescriptionSetRow.drugs`)이 이 목록을 **이름으로** 가리키고,
+# `app/services/guides.py` 의 RAG 관문도 같은 이름과 글자까지 맞춘다. 두 자리에
+# 따로 두면 조용히 갈리고, 갈린 순간 안내 생성이 `unrecognized_prescription`
+# 으로 막힌다 — 2026-09-18 파일럿에서 실제로 막혔다.
+CLINIC_DRUGS: tuple[ClinicDrugRow, ...] = (
+    ClinicDrugRow("비잔정(디에노게스트) 2mg", "1일 1회", "매일 같은 시간"),
+    ClinicDrugRow("야즈정(드로스피레논/에티닐에스트라디올)", "1일 1회", "매일 같은 시간"),
+    ClinicDrugRow("메트포르민 500mg", "1일 2회", "식후"),
+    ClinicDrugRow("록소펜정(록소프로펜나트륨수화물)", "1일 3회"),
+    ClinicDrugRow("세파클리어캡슐(세파클러수화물)", "1일 3회"),
+    ClinicDrugRow("바이독시정(독시사이클린수화물)", "1일 2회"),
+    ClinicDrugRow("씨제이후라시닐정(씨제이제일제당)", "1일 2회"),
+    ClinicDrugRow("(위장) 광동 레바미피드정", "1일 2회"),
+    ClinicDrugRow("겐트리손크림_(12.8mg, 0.2g, 20mg/20g)", "1일 1회"),
+    ClinicDrugRow("에피나온정10밀리그램(에피나스틴염산염)", "1일 3회"),
+    # 🚩 EMR 화면에서 **이름이 잘려 보인 것**을 옮겼다. 실제 등록명과 글자가
+    # 다를 수 있으니 의원 EMR 로 한 번 맞춰야 한다 — 판독이 이름으로 이어
+    # 붙일 때 한 글자만 달라도 못 찾는다.
+    ClinicDrugRow("아목틴정375밀리그램(아목시실린수화물)", "1일 3회"),
+    # 「원내)카마졸질정」은 **원내 처방이라 뺐다** — 이 목록은 원외로 나가는
+    # 약이고, 원내 것은 안내문에 실릴 자리가 없다 (2026-09-04 권일준).
+)
+
+CLINIC_DRUG_NAMES: frozenset[str] = frozenset(row.name for row in CLINIC_DRUGS)
+
+
+@dataclass(frozen=True)
 class PrescriptionSetRow:
     """대표 처방 한 줄.
 
@@ -184,10 +227,19 @@ class PrescriptionSetRow:
     (`app/models/catalog.py`) 안 적으면 PCOS 세트가 **조용히 자궁내막증 밑으로
     들어간다** — 설정 화면 레일이 질환으로 묶으므로 다낭성난소증후군 묶음이
     통째로 사라진다. 터지지 않아서 씨앗을 새로 부어 보기 전에는 안 보인다.
+
+    🚩 **`drugs` 도 반드시 적는다.** 비어 있으면 판독 화면이 「선택한 약속처방에
+    기본 약이 없습니다」를 띄우고 **스탭이 약 이름을 손으로 적게** 된다. 손으로
+    적은 이름이 `CLINIC_DRUGS` 와 한 글자라도 다르면 RAG 를 켠 생성이
+    `unrecognized_prescription` 으로 막힌다(`app/services/guides.py`). 2026-09-18
+    파일럿에서 판독이 읽은 `비잔정(디에노게스트)2mg` 가 카탈로그의
+    `비잔정(디에노게스트) 2mg` 와 **공백 한 칸** 달라 거기서 멈췄다.
     """
 
     name: str
     disease: SetDisease
+    #: 이 세트를 고르면 기본으로 들어가는 약 — `CLINIC_DRUGS` 의 이름을 그대로 쓴다.
+    drugs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -223,11 +275,15 @@ class DrugCautionContentRow:
 
 
 # ── 처방 세트 4종 ────────────────────────────────────────────────────────────
+#
+# 세트마다 **O 는 그 약을, X 는 그 약을 못 쓸 때 실제로 나가는 약**을 적는다.
+# 근거는 각 세트의 medication 문구다 — 비잔 X 는 진통제(록소펜정) 단독,
+# 야즈 X 는 메트포르민 단독으로 쓰여 있다.
 PRESCRIPTION_SETS: tuple[PrescriptionSetRow, ...] = (
-    PrescriptionSetRow("자궁내막증 · 비잔 O", SetDisease.ENDOMETRIOSIS),
-    PrescriptionSetRow("자궁내막증 · 비잔 X", SetDisease.ENDOMETRIOSIS),
-    PrescriptionSetRow("PCOS · 야즈 O", SetDisease.PCOS),
-    PrescriptionSetRow("PCOS · 야즈 X", SetDisease.PCOS),
+    PrescriptionSetRow("자궁내막증 · 비잔 O", SetDisease.ENDOMETRIOSIS, ("비잔정(디에노게스트) 2mg",)),
+    PrescriptionSetRow("자궁내막증 · 비잔 X", SetDisease.ENDOMETRIOSIS, ("록소펜정(록소프로펜나트륨수화물)",)),
+    PrescriptionSetRow("PCOS · 야즈 O", SetDisease.PCOS, ("야즈정(드로스피레논/에티닐에스트라디올)",)),
+    PrescriptionSetRow("PCOS · 야즈 X", SetDisease.PCOS, ("메트포르민 500mg",)),
 )
 
 # ── 네 갈래 문구 마스터 ──────────────────────────────────────────────────────
