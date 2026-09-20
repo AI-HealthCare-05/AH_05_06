@@ -10,6 +10,10 @@ test("KEY-277 근거 표시와 외부 문자열 escaping", () => {
     source_url: "https://example.invalid",
   }]);
   assert.ok(html.includes("RAG"));
+  assert.ok(html.includes("출처 기관"));
+  assert.ok(html.includes("문서"));
+  assert.ok(html.includes("버전"));
+  assert.ok(html.includes("확인일"));
   assert.ok(html.includes("2026-09-10"));
   assert.ok(!html.includes("<script>"));
   assert.equal(box.guideSourcesHtml([]), "");
@@ -22,6 +26,7 @@ test("KEY-277 검색 장애 fallback 표시", () => {
     fallback_reason: "search_infrastructure_exhausted",
   }]);
   assert.ok(html.includes("검색 장애 → 템플릿"));
+  assert.ok(html.includes("템플릿 ID"));
   assert.ok(html.includes("synthetic-template"));
   assert.ok(html.includes("v2"));
 });
