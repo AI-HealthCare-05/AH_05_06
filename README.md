@@ -221,7 +221,8 @@ CLOVA 자격증명(`.env` 의 `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY`)�
 > 지운다** (삭제 → 파일 부재 확인 → 기록 → OCR 원문 purge, KEY-349). `mock` 이어도 똑같이
 > 지우므로, 문자가 한 번 나간 진료는 원본 이미지와 OCR 원문을 다시 볼 수 없다.
 > 삭제가 재시도 끝에 실패하면 `SOURCE_NOT_DELETED`, 의원 예약 주소가 빈 소진·재진 문자는
-> `BOOKING_URL_MISSING`, 문자 수신 거부 환자는 `SMS_OPT_OUT`(KEY-355) 으로 **보류(`HELD`)** 된다
+> `BOOKING_URL_MISSING`, 문자가 예약된 뒤 환자가 수신 거부로 바뀌면 `SMS_OPT_OUT`(KEY-355) 으로 **보류(`HELD`)** 된다
+> (처음부터 거부인 환자는 문서 업로드·안내문 생성이 409 `SMS_OPT_OUT` 으로 먼저 막혀 문자까지 안 간다)
 > (`solapi` 면 승인 번호 목록 밖 수신자도 `RECIPIENT_NOT_APPROVED`) —
 > 결함이 아니라 발송 게이트다 (`app/services/dispatch_gate.py` · [`docs/project_workflow.md`](docs/project_workflow.md) §2).
 
@@ -693,7 +694,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | 증상 | 먼저 확인할 것 |
 |---|---|
 | `OperationalError: Table 'ai_health.<무엇>' doesn't exist` | `aerich upgrade` 를 안 돌렸다. 처음 설치(`users`)뿐 아니라 **develop 을 받거나 브랜치를 바꾼 뒤**에도 난다 — 새 마이그레이션이 들어왔는데 DB 가 그 전 번호에 있다(예: `chatbot_submission` → 62, KEY-328). `docker compose exec fastapi uv run --no-sync aerich upgrade` |
-| `aerich upgrade` 가 `(1419, 'You do not have the SUPER privilege and binary logging is enabled')` | MySQL 이 `--log-bin-trust-function-creators=1` 없이 떠 있다 — 앱 계정이 트리거(64, KEY-238)를 못 만든다. `docker-compose.yml` 에는 있으니 옛 컨테이너다. `docker compose up -d --force-recreate mysql` 후 `SELECT @@log_bin_trust_function_creators;` 가 `1` 인지 보고 `aerich upgrade` 를 다시 돌린다(64 는 표를 `IF NOT EXISTS` 로 만들어 다시 돌려도 된다). 앱 계정에 `SUPER` 를 주지 않는다 (KEY-358) |
+| `aerich upgrade` 가 `(1419, 'You do not have the SUPER privilege and binary logging is enabled')` | MySQL 이 `--log-bin-trust-function-creators=1` 없이 떠 있다 — 앱 계정이 트리거(64, KEY-238)를 못 만든다. `docker-compose.yml` 에는 있으니 옛 컨테이너다. **바로 다시 돌리지 않는다** — DDL 은 자동 커밋이라 64 가 표 셋과 `check_in.note` 까지 만들고 트리거에서 멈춘 반쪽으로 남는다(`ALTER TABLE … ADD note` 는 재실행하면 중복 컬럼으로 또 죽는다).<br>1. `docker compose up -d --force-recreate mysql` 후 `SELECT @@log_bin_trust_function_creators;` 가 `1` 인지 본다<br>2. 원장과 잔재를 본다: `SELECT version FROM aerich ORDER BY id DESC LIMIT 1;` · `SHOW TABLES LIKE 'check_in_signal%';` · `SHOW COLUMNS FROM check_in LIKE 'note';` · `SHOW TRIGGERS LIKE 'check_in_signal%';`<br>3. 원장이 63 인데 잔재가 있으면 64 의 `downgrade` 문(`ALTER TABLE check_in DROP COLUMN note` · `DROP TABLE IF EXISTS` 셋)으로 치운 뒤 `aerich upgrade`. 원장이 이미 64 이상인데 트리거가 넷이 아니면 손으로 고치지 말고 팀에 알린다<br>앱 계정에 `SUPER` 를 주지 않는다 (KEY-358, `app/tests/deploy/test_key358_trigger_privilege.py`) |
 | `Unknown column '...'` 이 한참 뒤 엉뚱한 자리에서 | 스키마 드리프트 — `uv run python scripts/check_schema_drift.py` |
 | `ModuleNotFoundError: No module named 'tortoise'` (워커) | `uv sync --group worker --group ai` (둘 다). `--group ai` 만으로는 안 된다 |
 | OCR·픽스처 검사가 「연결 거부」로 죽음 | `--profile ocr` (또는 `web`+`ocr`) 를 안 줬다 |
@@ -708,7 +709,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | 서버가 `SMS_PROVIDER=…` 를 말하며 안 뜸 | `ENV=prod` + `mock` 이거나, `solapi` 인데 `SOLAPI_*` 또는 `OTP_APPROVED_TEST_PHONES` 가 비었다 ([문자 발송](#문자-발송-key-248) 표) |
 | 호스트 pytest·`check-e2e` 가 `mysql`/`redis` 를 못 찾음 | `.env` 가 컨테이너용이다 — `DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1` 을 앞에 붙인다. **`run_test.sh` 는 `source .env` 가 되돌리므로 안 통한다** — `uv run pytest` 직접 실행으로 ([테스트](#-테스트-및-품질-관리) 절) |
 | 발송 시각이 지났는데 문자가 `SCHEDULED` 에서 안 움직임 | `ai-worker` 가 안 떴다 (`--profile ocr`). `solapi` 라면 KEY-338 좁은문이 닫혀 있다 — 워커 로그의 「예약 문자 발송 좁은문 안 열림」 |
-| 예약 문자가 `HELD` — `SOURCE_NOT_DELETED` · `BOOKING_URL_MISSING` · `SMS_OPT_OUT` · `RECIPIENT_NOT_APPROVED` | 발송 게이트다. 첫 발송 직전 원본 삭제가 재시도 끝에 실패했거나 삭제 기록과 실제 파일이 어긋남(KEY-349) · 어드민 의원 정보(A1-4)의 예약 주소 비어 있음 · 환자가 문자 수신 거부(KEY-355) · `solapi` 에서 수신 번호가 `OTP_APPROVED_TEST_PHONES` 밖. **보류는 끝 상태라 다시 안 나간다** — `SOURCE_NOT_DELETED` 만 예외로, 문자 상세의 「원본 삭제 재시도」(`staff`·`doctor`, `POST /api/v1/messages/{id}/source-retry`)를 누르면 워커가 삭제를 확인한 뒤 `SCHEDULED` 로 되돌린다(KEY-362, [`docs/qa/KEY-362-source-recovery.md`](docs/qa/KEY-362-source-recovery.md)) ([`docs/project_workflow.md`](docs/project_workflow.md) §2) |
+| 예약 문자가 `HELD` — `SOURCE_NOT_DELETED` · `BOOKING_URL_MISSING` · `SMS_OPT_OUT` · `RECIPIENT_NOT_APPROVED` | 발송 게이트다. 첫 발송 직전 원본 삭제가 재시도 끝에 실패했거나 삭제 기록과 실제 파일이 어긋남(KEY-349) · 어드민 의원 정보(A1-4)의 예약 주소 비어 있음 · 예약 뒤 환자가 문자 수신 거부로 바뀜(KEY-355 — 처음부터 거부면 업로드·생성이 409 로 먼저 막힌다) · `solapi` 에서 수신 번호가 `OTP_APPROVED_TEST_PHONES` 밖. **보류는 끝 상태라 다시 안 나간다** — `SOURCE_NOT_DELETED` 만 예외로, 문자 상세의 「원본 삭제 재시도」(`staff`·`doctor`, `POST /api/v1/messages/{id}/source-retry`)를 누르면 워커가 삭제를 확인한 뒤 `SCHEDULED` 로 되돌린다(KEY-362, [`docs/qa/KEY-362-source-recovery.md`](docs/qa/KEY-362-source-recovery.md)) ([`docs/project_workflow.md`](docs/project_workflow.md) §2) |
 | 포트 `3306`·`6379`·`8000` 사용 중 | 해당 프로그램을 종료한다. `3306` 만 `.env` 의 `DB_EXPOSE_PORT` 로 바꿀 수 있고, `6379`·`8000` 은 `docker-compose.yml` 에 박혀 있어 그 파일을 고쳐야 한다 |
 
 로컬 헬스체크 정본 절차: [`docs/local-health-check.md`](docs/local-health-check.md).
