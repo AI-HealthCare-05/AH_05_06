@@ -25,6 +25,15 @@ COPY frontend/*.html /vol/web/frontend/
 COPY frontend/css/   /vol/web/frontend/css/
 COPY frontend/js/    /vol/web/frontend/js/
 COPY frontend/patient_wireframe/ /vol/web/frontend/patient_wireframe/
+# 병원 화면 상단바 · 로그인의 케어온 마크(`style.css` 의 `.brandmark`). KEY-316 이
+# 이 폴더를 새로 만들면서 **위 주석이 말한 한 줄을 안 더해** 운영에서 404 였다 —
+# 마크 자리가 빈 칸으로 보였다. 이제 `test_every_file_a_screen_points_to_is_shipped`
+# 가 화면이 가리키는 파일을 전부 대조한다.
+COPY frontend/assets/ /vol/web/frontend/assets/
+# 환자 안내 PDF 미리보기 · 다운로드(`guide.html`, KEY-370)가 쓰는 pdf-lib. 이것도
+# KEY-370 이 새 폴더로 넣고 한 줄이 빠져 **운영에서 404** 였다 — PDF 단추가 동작하지
+# 않았다. 위 마크와 같은 검사에서 함께 드러났다. `LICENSE.md` 도 같이 실린다(MIT 고지).
+COPY frontend/vendor/ /vol/web/frontend/vendor/
 
 # 설정은 굽지 않는다. `deployment.sh` 가 http/https 중 고른 것을 올려 주고,
 # certbot 이 갱신하면서 바꾸기도 한다 — 이미지에 넣으면 그때마다 다시 구워야

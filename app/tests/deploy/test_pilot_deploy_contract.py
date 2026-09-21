@@ -22,6 +22,12 @@ from app.tests.deploy.conftest import ROOT, read, shipped_frontend_files
 
 RUNBOOK = ROOT / "docs" / "deploy-runbook.md"
 
+#: 화면이 **절대 경로로** 가리키는 정적 파일 — `url("/…")` · `src="/…"` · `href="/…"`.
+#: 캐시 번호(`?v=13`)와 조각(`#…`)은 떼고, 확장자가 있는 것만 본다 — `href="/"`
+#: 같은 이동 링크는 파일이 아니다. `//cdn…` 처럼 슬래시 두 개로 시작하는
+#: 프로토콜-상대 URL은 로컬 경로가 아니므로 제외한다.
+STATIC_REF = re.compile(r"""(?:url\(\s*|src=|href=)["']?(/(?!/)[^"')\s?#]+\.[A-Za-z0-9]+)""")
+
 #: 값이 새면 안 되는 것들. 나머지(호스트·포트·시간대 …)는 적어 두는 편이 낫다.
 SECRETS = frozenset(
     {
@@ -591,6 +597,31 @@ class TestTheRunbookTellsTheTruth:
         assert screens <= shipped, f"화면이 안 실린다 — {sorted(screens - shipped)}"
         for kind in ("css", "js"):
             assert any(f.startswith(f"frontend/{kind}/") for f in shipped), f"{kind} 가 안 실린다"
+
+    def test_every_file_a_screen_points_to_is_shipped(self) -> None:
+        """화면이 **절대 경로로 가리키는 파일**이 이미지에 다 실리는가 — KEY-316.
+
+        위 검사는 폴더(css · js)가 실리는지만 본다. KEY-316 이 `frontend/assets/`
+        를 새로 만들고 `style.css` 가 `url("/assets/careon-mark.svg")` 로 가리켰는데,
+        Dockerfile 에 그 폴더 한 줄이 빠져 **운영에서 404** 였다. 화면은 안 깨지고
+        상단바 마크 자리만 빈 칸이라, 한참 뒤에야 눈에 띄었다.
+
+        그래서 폴더가 아니라 **가리키는 파일 하나하나**를 대조한다. 새 폴더를
+        만들고 한 줄을 빠뜨리면 여기서 걸린다.
+        """
+        shipped = shipped_frontend_files()
+        sources = [*ROOT.glob("frontend/*.html"), *ROOT.glob("frontend/css/*.css")]
+        refs: set[tuple[str, str]] = set()
+        for source in sources:
+            rel = source.relative_to(ROOT).as_posix()
+            for path in STATIC_REF.findall(read(rel)):
+                if not path.startswith("/api/"):
+                    refs.add((rel, path))
+
+        # 하나도 못 뽑으면 「안 실린 것이 없다」가 공짜로 참이 된다.
+        assert ("frontend/css/style.css", "/assets/careon-mark.svg") in refs, "상단바 마크 참조를 못 찾았다"
+        missing = sorted(f"{src} → {path}" for src, path in refs if f"frontend{path}" not in shipped)
+        assert not missing, f"화면이 가리키는데 이미지에 안 실린다 — {missing}"
 
     def test_the_plain_http_port_does_not_serve_it(self) -> None:
         """https 판에서 **80 포트는 아무것도 안 준다** — 전부 넘긴다.
