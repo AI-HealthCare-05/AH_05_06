@@ -1384,3 +1384,61 @@ textarea.sms__text:focus-visible {
   flex-wrap: wrap;
   margin-top: var(--s-12);
 }
+
+/* KEY-314: 생성 경로와 근거 메타데이터를 문장 하나로 뭉치지 않는다. */
+.block__sources {
+  margin-top: var(--s-12);
+  padding-top: var(--s-8);
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.block__sources summary {
+  cursor: pointer;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.source-list {
+  display: grid;
+  gap: var(--s-8);
+  margin: var(--s-8) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.source-card {
+  padding: var(--s-8);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.source-card__mode {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+
+.source-card dl {
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  gap: 4px var(--s-8);
+  margin: 0;
+}
+
+.source-fact {
+  display: contents;
+}
+
+.source-fact dt {
+  color: var(--ink-3);
+}
+
+.source-fact dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}

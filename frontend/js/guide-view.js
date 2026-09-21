@@ -114,25 +114,33 @@ function guideTabsHtml(sections, current) {
    범위만 다르다. 실제 차단은 서버가 한다(KEY-9). */
 function guideSourcesHtml(sources) {
   if (!sources || !sources.length) return "";
-  return '<details class="block__sources"><summary>생성 당시 근거 · 의료진 검토용</summary><ul>' +
+  function fact(label, value, optional) {
+    if (optional && !value) return "";
+    return '<div class="source-fact"><dt>' + esc(label) + '</dt><dd>' + esc(value || "—") + "</dd></div>";
+  }
+  return '<details class="block__sources"><summary>생성 당시 근거 · 의료진 검토용</summary><ul class="source-list">' +
     sources.map(function (source) {
       if (source.generation_mode === "template") {
         var reason = source.fallback_reason === "search_infrastructure_exhausted"
           ? "검색 장애 → 템플릿" : source.fallback_reason === "fixed_approved_template"
             ? "승인 고정 문구" : "근거 없음 → 템플릿";
-        return "<li>" + esc(reason) + " · 템플릿 " + esc(source.template_id || "") +
-          " · 버전 " + esc(source.version) +
-          (source.source_name ? " · 문서명 " + esc(source.source_name) : "") +
-          (source.source_org ? " · " + esc(source.source_org) : "") +
-          (source.verified_at ? " · 확인일 " + esc(source.verified_at) : "") +
-          (source.source_url ? " · 출처 " + esc(source.source_url) : "") +
-          "</li>";
+        return '<li class="source-card source-card--template"><strong class="source-card__mode">' +
+          esc(reason) + '</strong><dl>' +
+          fact("템플릿 ID", source.template_id) +
+          fact("버전", source.version) +
+          fact("문서", source.source_name, true) +
+          fact("출처 기관", source.source_org, true) +
+          fact("확인일", source.verified_at, true) +
+          fact("URL", source.source_url, true) +
+          "</dl></li>";
       }
-      return "<li>RAG · " + esc(source.source_org || "") +
-        (source.source_name ? " · 문서명 " + esc(source.source_name) : "") +
-        " · 문서 " + esc(source.document_id || "") + " · 버전 " + esc(source.version) +
-        " · 확인일 " + esc(source.verified_at || "") +
-        " · 출처 " + esc(source.source_url || "") + "</li>";
+      return '<li class="source-card source-card--rag"><strong class="source-card__mode">RAG 생성</strong><dl>' +
+        fact("출처 기관", source.source_org) +
+        fact("문서", source.source_name || source.document_id) +
+        fact("버전", source.version) +
+        fact("확인일", source.verified_at) +
+        fact("URL", source.source_url, true) +
+        "</dl></li>";
     }).join("") + "</ul></details>";
 }
 
