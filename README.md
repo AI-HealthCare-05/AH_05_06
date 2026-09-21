@@ -53,7 +53,7 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 | 전체 서비스 데이터 흐름 | [`docs/journey-data-flow-v1.md`](docs/journey-data-flow-v1.md) |
 | API 계약 (공통·병원·환자) | [`docs/api/README.md`](docs/api/README.md) → `common.md` · `hospital.md` · `patient.md` |
 | 라우터가 어느 경로를 갖나 | [`docs/router-ownership.md`](docs/router-ownership.md) |
-| DB 모델 배치 | [`docs/models-layout.md`](docs/models-layout.md) |
+| DB 모델 배치 · ERD | [`docs/models-layout.md`](docs/models-layout.md) · [`docs/assets/erd/current-erd.svg`](docs/assets/erd/current-erd.svg) (모델이 바뀌면 `scripts/generate_erd.py --check`) |
 | AI 워커 연동 설계 | [`docs/ai-worker.md`](docs/ai-worker.md) |
 | 합성 데이터 규격 (환자·진료·처방·검사) | [`docs/synthetic-data-spec.md`](docs/synthetic-data-spec.md) |
 | OCR 샘플·기대값 규격 | [`docs/ocr-fixtures.md`](docs/ocr-fixtures.md) |
@@ -120,11 +120,13 @@ README 는 **처음 실행하는 데 필요한 최소 절차와 문서 지도**�
 │   ├── *.html          # 화면 하나에 파일 하나 (login · patients · ocr-review · manage · settings …)
 │   ├── css/            # 화면별 + 공용(tokens · style · shell · blocks)
 │   ├── js/             # 화면 코드와 순수 규칙 파일(`*-rules.js` — 검사가 부른다)
+│   ├── assets/         # 브랜드 마크 등 이미지 (KEY-316)
+│   ├── vendor/         # 들여온 라이브러리 원본 — 환자 안내 PDF 용 pdf-lib (KEY-370)
 │   ├── patient_wireframe/  # 환자 쪽 와이어프레임 (환자 링크가 떨어지는 자리)
 │   └── tests/          # `node --test` 계약 검사. 새 의존성 없이 돈다
 ├── infra/              # 운영 인프라 설정
 │   ├── docker/         # docker-compose.prod.yml · .pilot.yml · .rds.yml(RDS 전환 — KEY-201) · initdb.d/
-│   └── nginx/          # 리버스 프록시 (http/https)
+│   └── nginx/          # 리버스 프록시 (http/https). 운영 이미지는 frontend 폴더를 하나씩 굽는다 — 폴더를 새로 만들면 `Dockerfile` 에 `COPY` 도 더한다 (#369)
 ├── scripts/            # 부트스트랩 · seed · smoke · 배포 · CI
 ├── docs/               # 정본 문서 (문서 지도 참고)
 ├── docker-compose.yml  # 로컬 개발용
@@ -215,8 +217,11 @@ CLOVA 자격증명(`.env` 의 `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY`)�
 보려면 `.env` 에 `OCR_FIXTURE_FALLBACK=true` 를 추가한다.
 
 > 예약 문자 발송도 `ai-worker` 가 맡는다. 기본 경로(워커 없음)에서는 발송 시각이 지나도 문자가
-> `SCHEDULED` 로 머문다. 워커를 띄워도 원본 문서를 올린 진료는 `SOURCE_NOT_DELETED`,
-> 의원 예약 주소가 빈 소진·재진 문자는 `BOOKING_URL_MISSING` 으로 **보류(`HELD`)** 된다
+> `SCHEDULED` 로 머문다. 워커를 띄우면 그 진료의 **첫 문자를 보내기 직전에 올린 원본 의료문서를
+> 지운다** (삭제 → 파일 부재 확인 → 기록 → OCR 원문 purge, KEY-349). `mock` 이어도 똑같이
+> 지우므로, 문자가 한 번 나간 진료는 원본 이미지와 OCR 원문을 다시 볼 수 없다.
+> 삭제가 재시도 끝에 실패하면 `SOURCE_NOT_DELETED`, 의원 예약 주소가 빈 소진·재진 문자는
+> `BOOKING_URL_MISSING`, 문자 수신 거부 환자는 `SMS_OPT_OUT`(KEY-355) 으로 **보류(`HELD`)** 된다
 > (`solapi` 면 승인 번호 목록 밖 수신자도 `RECIPIENT_NOT_APPROVED`) —
 > 결함이 아니라 발송 게이트다 (`app/services/dispatch_gate.py` · [`docs/project_workflow.md`](docs/project_workflow.md) §2).
 
@@ -398,7 +403,11 @@ RAG를 켜면 기존 생성 API는 202와 작업 ID를 반환하고 화면은 �
 다운그레이드는 감사·근거 유실을 막기 위해 거부한다.
 검색할 승인 지식은 seed 가 넣지 않는다 — `scripts/ingest_approved_knowledge.py`(KEY-276)로
 적재·승인하며 절차는 [`docs/decisions/KEY-276-approved-knowledge-pipeline.md`](docs/decisions/KEY-276-approved-knowledge-pipeline.md)
-「실행과 검증」이다.
+「실행과 검증」이다. 적재한 판은 승인 전에 `scripts/check_rag_ingest.py --version-id <판ID>` 로
+품질 검사를 먼저 돌린다(실행 방법은 파일 머리말).
+워커 이미지는 임베딩 모델(약 458MB)을 빌드 때 미리 받아 둔다(KEY-339) — 그래서
+`--rebuild` 첫 빌드가 오래 걸리고, RAG 를 켠 워커는 메모리 2GB 에서 OOM 으로 죽은 적이 있다
+([`docs/deploy-runbook.md`](docs/deploy-runbook.md) 「4-2-2」).
 실측 절차와 미완료 게이트는 [KEY-277 Pilot 인수 확인](docs/qa/KEY-277-generation-pilot.md)을 따른다.
 
 ### MinIO (합성 EMR 보관)
@@ -684,6 +693,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | 증상 | 먼저 확인할 것 |
 |---|---|
 | `OperationalError: Table 'ai_health.<무엇>' doesn't exist` | `aerich upgrade` 를 안 돌렸다. 처음 설치(`users`)뿐 아니라 **develop 을 받거나 브랜치를 바꾼 뒤**에도 난다 — 새 마이그레이션이 들어왔는데 DB 가 그 전 번호에 있다(예: `chatbot_submission` → 62, KEY-328). `docker compose exec fastapi uv run --no-sync aerich upgrade` |
+| `aerich upgrade` 가 `(1419, 'You do not have the SUPER privilege and binary logging is enabled')` | MySQL 이 `--log-bin-trust-function-creators=1` 없이 떠 있다 — 앱 계정이 트리거(64, KEY-238)를 못 만든다. `docker-compose.yml` 에는 있으니 옛 컨테이너다. `docker compose up -d --force-recreate mysql` 후 `SELECT @@log_bin_trust_function_creators;` 가 `1` 인지 보고 `aerich upgrade` 를 다시 돌린다(64 는 표를 `IF NOT EXISTS` 로 만들어 다시 돌려도 된다). 앱 계정에 `SUPER` 를 주지 않는다 (KEY-358) |
 | `Unknown column '...'` 이 한참 뒤 엉뚱한 자리에서 | 스키마 드리프트 — `uv run python scripts/check_schema_drift.py` |
 | `ModuleNotFoundError: No module named 'tortoise'` (워커) | `uv sync --group worker --group ai` (둘 다). `--group ai` 만으로는 안 된다 |
 | OCR·픽스처 검사가 「연결 거부」로 죽음 | `--profile ocr` (또는 `web`+`ocr`) 를 안 줬다 |
@@ -698,7 +708,7 @@ README 에는 링크만 둔다. 운영 비밀값과 긴 대응 절차는 정본 
 | 서버가 `SMS_PROVIDER=…` 를 말하며 안 뜸 | `ENV=prod` + `mock` 이거나, `solapi` 인데 `SOLAPI_*` 또는 `OTP_APPROVED_TEST_PHONES` 가 비었다 ([문자 발송](#문자-발송-key-248) 표) |
 | 호스트 pytest·`check-e2e` 가 `mysql`/`redis` 를 못 찾음 | `.env` 가 컨테이너용이다 — `DB_HOST=127.0.0.1 REDIS_HOST=127.0.0.1` 을 앞에 붙인다. **`run_test.sh` 는 `source .env` 가 되돌리므로 안 통한다** — `uv run pytest` 직접 실행으로 ([테스트](#-테스트-및-품질-관리) 절) |
 | 발송 시각이 지났는데 문자가 `SCHEDULED` 에서 안 움직임 | `ai-worker` 가 안 떴다 (`--profile ocr`). `solapi` 라면 KEY-338 좁은문이 닫혀 있다 — 워커 로그의 「예약 문자 발송 좁은문 안 열림」 |
-| 예약 문자가 `HELD` — `SOURCE_NOT_DELETED` · `BOOKING_URL_MISSING` · `RECIPIENT_NOT_APPROVED` | 발송 게이트다. 원본 문서 행이 남아 있음(삭제 기록은 KEY-349 전까지 없음) · 어드민 의원 정보(A1-4)의 예약 주소 비어 있음 · `solapi` 에서 수신 번호가 `OTP_APPROVED_TEST_PHONES` 밖. **보류는 끝 상태라 다시 안 나간다** ([`docs/project_workflow.md`](docs/project_workflow.md) §2) |
+| 예약 문자가 `HELD` — `SOURCE_NOT_DELETED` · `BOOKING_URL_MISSING` · `SMS_OPT_OUT` · `RECIPIENT_NOT_APPROVED` | 발송 게이트다. 첫 발송 직전 원본 삭제가 재시도 끝에 실패했거나 삭제 기록과 실제 파일이 어긋남(KEY-349) · 어드민 의원 정보(A1-4)의 예약 주소 비어 있음 · 환자가 문자 수신 거부(KEY-355) · `solapi` 에서 수신 번호가 `OTP_APPROVED_TEST_PHONES` 밖. **보류는 끝 상태라 다시 안 나간다** — `SOURCE_NOT_DELETED` 만 예외로, 문자 상세의 「원본 삭제 재시도」(`staff`·`doctor`, `POST /api/v1/messages/{id}/source-retry`)를 누르면 워커가 삭제를 확인한 뒤 `SCHEDULED` 로 되돌린다(KEY-362, [`docs/qa/KEY-362-source-recovery.md`](docs/qa/KEY-362-source-recovery.md)) ([`docs/project_workflow.md`](docs/project_workflow.md) §2) |
 | 포트 `3306`·`6379`·`8000` 사용 중 | 해당 프로그램을 종료한다. `3306` 만 `.env` 의 `DB_EXPOSE_PORT` 로 바꿀 수 있고, `6379`·`8000` 은 `docker-compose.yml` 에 박혀 있어 그 파일을 고쳐야 한다 |
 
 로컬 헬스체크 정본 절차: [`docs/local-health-check.md`](docs/local-health-check.md).
