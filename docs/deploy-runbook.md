@@ -380,6 +380,47 @@ nginx      7c7ab7dc5cc27f4ec7185ab2265cc9b070bfcbdd (develop)
 라벨은 `scripts/deployment.sh` 의 `build_and_push` 가 붙인다. **9/4 이전에 구운
 이미지에는 없다** — 그때 것은 태그로만 되짚는다.
 
+### 🚩 nginx 를 빼고 배포했으면 — 끝에 nginx 를 다시 띄운다 (9/21)
+
+프런트가 안 바뀌어 **nginx 를 배포 대상에서 뺐더니** 배포가 끝나자 헬스가 **502**
+였다. fastapi 는 다시 만들어지면서 주소가 바뀌는데, nginx 는 뜰 때 받아 둔 **옛
+주소를 계속 문다.** 7 차 배포(9/21)에서 fastapi 가 연달아 두 번 다시 만들어지면서
+(배포 + OTP 좁은문 재개방) 그대로 드러났다.
+
+nginx 까지 같이 배포하면 nginx 도 새로 뜨므로 이 일이 없다. **빼고 배포했으면 끝에:**
+
+```bash
+docker compose restart nginx
+curl -s -k -o /dev/null -w '%{http_code}\n' https://localhost/api/v1/health   # 200 이어야 한다
+```
+
+**OTP 좁은문을 다시 켜는 명령도 fastapi 를 새로 만든다** — 배포 없이 그것만 했을
+때도 같다. RAG 를 켜고 끄는 것(`fastapi` · `ai-worker` 재기동)도 마찬가지다.
+
+### 🚩 프런트에 새 폴더를 만들면 — nginx Dockerfile 에 한 줄 (9/21)
+
+nginx 이미지는 `frontend/` 를 **통째로 굽지 않는다** — 폴더마다 `COPY` 한다
+(`infra/nginx/Dockerfile`). 통째로 구우면 `frontend/tests/` 가 운영 도메인에서 열렸기
+때문이다(`#145`). 그래서 **`frontend/` 밑에 새 폴더를 만들면 Dockerfile 에 한 줄이
+필요하다.**
+
+빠뜨리면 **404 로 실패한다** — 유출보다 안전한 방향이지만, 화면이 깨지지 않고 **빈
+칸으로만 보여** 늦게 드러난다. 9/19 ~ 9/21 에 실제로 그랬다.
+
+```text
+/assets/careon-mark.svg          404 → 상단바 로고가 빈 칸      (KEY-316 이 frontend/assets/ 를 만들며 빠뜨림)
+/vendor/pdf-lib/pdf-lib.min.js   404 → 환자 안내 PDF 동작 불가  (KEY-370 이 frontend/vendor/ 를 만들며 빠뜨림)
+```
+
+지금은 `app/tests/deploy/test_pilot_deploy_contract.py` 의
+`test_every_file_a_screen_points_to_is_shipped` 가 **화면이 절대 경로로 가리키는 파일을
+하나하나** 이미지 목록과 대조한다 — 빠뜨리면 CI 에서 걸린다(#369). 배포 뒤에는 새로
+실은 파일을 한 번 직접 받아 본다.
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://care-on.site/<새 폴더>/<파일>   # 200
+```
+
 ### 되돌릴 때
 
 앱은 `4. 롤백` 을 따른다. **DB 는 별개다.**
@@ -778,6 +819,34 @@ docker compose exec 는 호스트 환경변수를 자동으로 안 넘긴다
 ```
 
 이 배너가 stderr 에 뜨면 문이 열린 것이다. 안 뜨면 안 열린 것이니 아래를 본다.
+
+### 🔴 운영에서 `--mode staff` 는 직원 **비밀번호**와 **소속 병원**을 덮어쓴다 (9/21)
+
+카탈로그(처방 세트 · 승인 문구 · 세트 기본 약)만 넣으려 해도 지금은 `--mode staff` 를
+돌려야 하고, 그 모드는 **직원 표를 함께 건드린다.** 9/21 에 둘 다 실제로 겪었다.
+
+| 덮어쓰는 것 | 무슨 일이 생기나 |
+|---|---|
+| **비밀번호** | CSV 의 직원 15 명 전원의 `password_hash` 를 명령줄의 `SEED_STAFF_PASSWORD` 로 다시 쓴다(`scripts/seed.py` 의 `seed_staff`). **자리표시자를 그대로 두고 돌리면 그 자리표시자가 모두의 비밀번호가 된다** — 실제로 그렇게 돌았다 |
+| **소속 병원** | `hospital_id` 를 시드 병원(`기준의원` · `격리의원`)으로 바꾼다. Pilot 의 의원은 `도로시여성의원` 이라 **직원이 환자 111 명이 있는 병원에서 빠져나간다** — 로그인은 되는데 환자 목록 · 검색이 통째로 빈다 |
+
+출력의 `[staff] created=0 updated=15` 가 곧 「15 명의 비밀번호와 소속이 방금 바뀌었다」다.
+
+**카탈로그 전용 모드가 생기기 전까지는 이렇게 한다.**
+
+1. **실제로 쓰는 비밀번호**를 넣는다 — 자리표시자를 지웠는지 명령을 한 번 더 본다
+2. **먼저 백업한다** (DB 덤프)
+3. 돌린 뒤 **소속을 확인한다.** 운영 의원이 아닌 병원에 직원이 몰려 있으면 되돌린다
+
+```bash
+# 소속 분포 — 운영 의원(도로시여성의원) id 에 직원이 모여 있어야 한다
+echo "SELECT hospital_id, COUNT(*) n, GROUP_CONCAT(login_id ORDER BY login_id) ids FROM staff GROUP BY hospital_id;" \
+  | docker compose exec -T mysql sh -c 'exec mysql --default-character-set=utf8mb4 -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -t'
+```
+
+9/21 에는 `기준의원`(3) 으로 간 12 명을 운영 의원(1) 으로 되돌려 복구했다. `격리의원`(2)
+의 3 명(`admin21` · `doctor21` · `staff21`)은 병원 간 격리 · 동명이인 검사용이라 그대로
+둔다.
 
 ### 🔴 플래그를 `.env` 에 적지 않는다
 
