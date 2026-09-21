@@ -24,8 +24,9 @@ RUNBOOK = ROOT / "docs" / "deploy-runbook.md"
 
 #: 화면이 **절대 경로로** 가리키는 정적 파일 — `url("/…")` · `src="/…"` · `href="/…"`.
 #: 캐시 번호(`?v=13`)와 조각(`#…`)은 떼고, 확장자가 있는 것만 본다 — `href="/"`
-#: 같은 이동 링크는 파일이 아니다.
-STATIC_REF = re.compile(r"""(?:url\(\s*|src=|href=)["']?(/[^"')\s?#]+\.[A-Za-z0-9]+)""")
+#: 같은 이동 링크는 파일이 아니다. `//cdn…` 처럼 슬래시 두 개로 시작하는
+#: 프로토콜-상대 URL은 로컬 경로가 아니므로 제외한다.
+STATIC_REF = re.compile(r"""(?:url\(\s*|src=|href=)["']?(/(?!/)[^"')\s?#]+\.[A-Za-z0-9]+)""")
 
 #: 값이 새면 안 되는 것들. 나머지(호스트·포트·시간대 …)는 적어 두는 편이 낫다.
 SECRETS = frozenset(
@@ -612,9 +613,10 @@ class TestTheRunbookTellsTheTruth:
         sources = [*ROOT.glob("frontend/*.html"), *ROOT.glob("frontend/css/*.css")]
         refs: set[tuple[str, str]] = set()
         for source in sources:
-            for path in STATIC_REF.findall(source.read_text(encoding="utf-8")):
+            rel = source.relative_to(ROOT).as_posix()
+            for path in STATIC_REF.findall(read(rel)):
                 if not path.startswith("/api/"):
-                    refs.add((source.relative_to(ROOT).as_posix(), path))
+                    refs.add((rel, path))
 
         # 하나도 못 뽑으면 「안 실린 것이 없다」가 공짜로 참이 된다.
         assert ("frontend/css/style.css", "/assets/careon-mark.svg") in refs, "상단바 마크 참조를 못 찾았다"
