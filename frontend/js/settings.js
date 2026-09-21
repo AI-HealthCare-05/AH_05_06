@@ -1257,8 +1257,16 @@
     return catalogApi
       .hideSet(picked.prescription_set_id, to)
       .then(function (data) {
-        picked = data;
         saying = to ? "숨겼습니다" : "되살렸습니다";
+        /* **방금 숨긴 세트는 다시 그리지 않는다** (#360 리뷰 ②, 이희진 님).
+           예전에는 `picked = data; render()` 로 숨긴 세트의 상세를 먼저 그려서,
+           목록을 다시 받는 동안 「되살리기」 단추가 살아 있었다 — 그 틈에 누르면
+           곧바로 되살아난다. 상세를 먼저 비우면 그 단추 자체가 안 그려진다.
+
+           `pickedId` 는 **일부러 남긴다.** 목록이 오면 `settleSelection()` 이
+           「고른 것이 목록에 없다」를 보고 첫 활성 세트로 옮기는데, 그 판단이
+           `pickedId` 로 서기 때문이다. */
+        picked = to ? null : data;
         render();
         /* **문구 목록도 다시 받는다** — 레일 머리의 진도(`2/4`)는 그 목록에서
            세고, 감춘 세트는 분모에서 빠진다(KEY-369). 세트만 새로 받으면

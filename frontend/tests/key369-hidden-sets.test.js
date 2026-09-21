@@ -83,3 +83,47 @@ test("고른 것이 감춰지면 첫 활성 세트로 옮기고, 남은 것이 �
   const loadBody = code.slice(loadAt, code.indexOf("\n  }", loadAt));
   assert.match(loadBody, /settleSelection\(\)/, "목록을 새로 받아도 고른 것을 안 다시 본다");
 });
+
+/* ── #360 리뷰 반영 (이희진 님) ───────────────────────────────────────── */
+
+test("머리 진도는 감춘 세트를 분모에서 뺀다 — 배포 분포(활성 4 · 감춘 9) 그대로", () => {
+  /* 리뷰 ①. mock 은 처음부터 넷뿐이라 재현이 안 됐다 — 실제 시드처럼 섞는다.
+     `copyProgress` 가 `!row.hidden` 으로 거르는 줄은 KEY-357(`0f8519ac`)에서 이미
+     들어와 있었다. 없던 것은 **그것을 재는 검사**다. */
+  const { copyProgress } = load("guide-copy-rules");
+  const visible = [10, 11, 12, 13].map((id, i) => ({ prescription_set_id: id, hidden: false, reviewed: i < 2 }));
+  const hidden = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => ({ prescription_set_id: id, hidden: true, reviewed: true }));
+
+  const progress = copyProgress([...visible, ...hidden]);
+
+  assert.equal(progress.say, "2/4", "감춘 아홉이 분모나 분자에 섞였다");
+  assert.equal(progress.total, 4);
+});
+
+test("머리 진도는 그 거르는 함수로 센다 — 화면이 목록을 따로 세지 않는다", () => {
+  const code = codeOnly(read("js/settings.js"));
+
+  assert.match(code, /var progress = copy \? copyProgress\(copy\.items\) : null;/, "머리 진도가 다른 길로 센다");
+  assert.match(code, /sectionHtml\("대표 처방", progress \? progress\.say/, "머리가 진도를 안 쓴다");
+});
+
+test("숨긴 직후 그 세트의 상세를 다시 그리지 않는다 — 「되살리기」가 살아 있는 틈이 없다", () => {
+  /* 리뷰 ②. 예전에는 `picked = data; render()` 로 숨긴 세트를 먼저 그려서,
+     목록을 다시 받는 동안 「되살리기」를 누르면 곧바로 되살아났다. */
+  const code = codeOnly(read("js/settings.js"));
+  const at = code.indexOf("function hideSet(");
+  const body = code.slice(at, code.indexOf("\n  }", at));
+  const done = body.slice(body.indexOf(".then(function (data)"));
+
+  const clears = done.indexOf("picked = to ? null : data;");
+  assert.notEqual(clears, -1, "숨긴 뒤 상세를 안 비운다");
+  assert.ok(clears < done.indexOf("render()"), "비우기 전에 그린다 — 그 사이 「되살리기」가 보인다");
+  assert.doesNotMatch(done, /pickedId = null/, "pickedId 까지 비우면 첫 활성 세트로 못 옮긴다");
+  assert.match(done, /Promise\.all\(\[loadSets\(\), loadCopy\(\)\]\)/, "목록을 다시 안 받는다");
+});
+
+test("감춘 줄을 칠하던 규칙이 남아 있지 않다 — 그 클래스를 붙이는 곳이 없다", () => {
+  /* 리뷰 ③. KEY-369 가 「(숨김)」 줄 자체를 없애며 클래스를 붙이던 코드를 지웠다. */
+  assert.doesNotMatch(read("css/settings.css"), /rail__row--hidden/, "아무 데도 안 맞는 규칙이 남았다");
+  assert.doesNotMatch(codeOnly(read("js/settings.js")), /rail__row--hidden/);
+});
