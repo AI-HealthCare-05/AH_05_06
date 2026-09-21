@@ -1,0 +1,1921 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="5120" height="5706" viewBox="0 0 5120 5706">
+<style>
+text{font-family:'Malgun Gothic','Segoe UI',sans-serif;fill:#172033}
+.title{font-size:42px;font-weight:700}.sub{font-size:21px;fill:#516075}
+.box{fill:#fff;stroke:#9aa8ba;stroke-width:2}.head{fill:#172033}
+.table{font-size:24px;font-weight:700;fill:#fff}.module{font-size:17px;fill:#718096}
+.field{font-size:18px}.muted{fill:#6b778c}.tag{font-size:15px;font-weight:700}
+.rel{font-size:18px}.section{font-size:30px;font-weight:700}.rule{stroke:#d5dce5;stroke-width:1}
+</style>
+<rect width="100%" height="100%" fill="#f4f7fb"/>
+<text x="70" y="68" class="title">AH_05_06 — Current ERD</text>
+<text x="70" y="105" class="sub">develop model metadata · 51 tables · PK / FK / UK and composite unique constraints</text>
+<rect x="70" y="150" width="940" height="212" rx="12" class="box"/>
+<rect x="70" y="150" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="187" class="table">aerich</text>
+<text x="990" y="185" text-anchor="end" class="module">aerich.models</text>
+<text x="90" y="238" class="field">app</text>
+<text x="500" y="238" class="field muted">CHAR</text>
+<line x1="84" y1="242" x2="996" y2="242" class="rule"/>
+<text x="90" y="268" class="field">content</text>
+<text x="500" y="268" class="field muted">JSON</text>
+<line x1="84" y1="272" x2="996" y2="272" class="rule"/>
+<text x="90" y="298" class="field">id</text>
+<text x="500" y="298" class="field muted">INT</text>
+<text x="990" y="298" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="302" x2="996" y2="302" class="rule"/>
+<text x="90" y="328" class="field">version</text>
+<text x="500" y="328" class="field muted">CHAR</text>
+<text x="90" y="350" class="module">UNIQUE: —</text>
+<rect x="1080" y="150" width="940" height="362" rx="12" class="box"/>
+<rect x="1080" y="150" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="187" class="table">doctor_guide_copy</text>
+<text x="2000" y="185" text-anchor="end" class="module">catalog</text>
+<text x="1100" y="238" class="field">body</text>
+<text x="1510" y="238" class="field muted">TEXT</text>
+<line x1="1094" y1="242" x2="2006" y2="242" class="rule"/>
+<text x="1100" y="268" class="field">created_at</text>
+<text x="1510" y="268" class="field muted">DATETIME</text>
+<line x1="1094" y1="272" x2="2006" y2="272" class="rule"/>
+<text x="1100" y="298" class="field">doctor_guide_copy_id</text>
+<text x="1510" y="298" class="field muted">BIGINT</text>
+<text x="2000" y="298" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="302" x2="2006" y2="302" class="rule"/>
+<text x="1100" y="328" class="field">doctor_id</text>
+<text x="1510" y="328" class="field muted">BIGINT ?</text>
+<line x1="1094" y1="332" x2="2006" y2="332" class="rule"/>
+<text x="1100" y="358" class="field">hospital_id</text>
+<text x="1510" y="358" class="field muted">BIGINT</text>
+<line x1="1094" y1="362" x2="2006" y2="362" class="rule"/>
+<text x="1100" y="388" class="field">prescription_set_id</text>
+<text x="1510" y="388" class="field muted">FOREIGNKEY</text>
+<text x="2000" y="388" text-anchor="end" class="tag">FK</text>
+<line x1="1094" y1="392" x2="2006" y2="392" class="rule"/>
+<text x="1100" y="418" class="field">section_key</text>
+<text x="1510" y="418" class="field muted">CHARENUM</text>
+<line x1="1094" y1="422" x2="2006" y2="422" class="rule"/>
+<text x="1100" y="448" class="field">updated_at</text>
+<text x="1510" y="448" class="field muted">DATETIME</text>
+<line x1="1094" y1="452" x2="2006" y2="452" class="rule"/>
+<text x="1100" y="478" class="field">updated_by</text>
+<text x="1510" y="478" class="field muted">BIGINT ?</text>
+<text x="1100" y="500" class="module">UNIQUE: (hospital_id, doctor_id, prescription_set_id, section_key)</text>
+<rect x="2090" y="150" width="940" height="242" rx="12" class="box"/>
+<rect x="2090" y="150" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="187" class="table">doctor_guide_review</text>
+<text x="3010" y="185" text-anchor="end" class="module">catalog</text>
+<text x="2110" y="238" class="field">doctor_guide_review_id</text>
+<text x="2520" y="238" class="field muted">BIGINT</text>
+<text x="3010" y="238" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="242" x2="3016" y2="242" class="rule"/>
+<text x="2110" y="268" class="field">doctor_id</text>
+<text x="2520" y="268" class="field muted">BIGINT ?</text>
+<line x1="2104" y1="272" x2="3016" y2="272" class="rule"/>
+<text x="2110" y="298" class="field">hospital_id</text>
+<text x="2520" y="298" class="field muted">BIGINT</text>
+<line x1="2104" y1="302" x2="3016" y2="302" class="rule"/>
+<text x="2110" y="328" class="field">prescription_set_id</text>
+<text x="2520" y="328" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="328" text-anchor="end" class="tag">FK</text>
+<line x1="2104" y1="332" x2="3016" y2="332" class="rule"/>
+<text x="2110" y="358" class="field">reviewed_at</text>
+<text x="2520" y="358" class="field muted">DATETIME</text>
+<text x="2110" y="380" class="module">UNIQUE: (hospital_id, doctor_id, prescription_set_id)</text>
+<rect x="3100" y="150" width="940" height="332" rx="12" class="box"/>
+<rect x="3100" y="150" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="187" class="table">drug_catalog</text>
+<text x="4020" y="185" text-anchor="end" class="module">catalog</text>
+<text x="3120" y="238" class="field">created_at</text>
+<text x="3530" y="238" class="field muted">DATETIME</text>
+<line x1="3114" y1="242" x2="4026" y2="242" class="rule"/>
+<text x="3120" y="268" class="field">drug_catalog_id</text>
+<text x="3530" y="268" class="field muted">BIGINT</text>
+<text x="4020" y="268" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="272" x2="4026" y2="272" class="rule"/>
+<text x="3120" y="298" class="field">frequency</text>
+<text x="3530" y="298" class="field muted">CHAR ?</text>
+<line x1="3114" y1="302" x2="4026" y2="302" class="rule"/>
+<text x="3120" y="328" class="field">hidden_at</text>
+<text x="3530" y="328" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="332" x2="4026" y2="332" class="rule"/>
+<text x="3120" y="358" class="field">name</text>
+<text x="3530" y="358" class="field muted">CHAR</text>
+<text x="4020" y="358" text-anchor="end" class="tag">UK</text>
+<line x1="3114" y1="362" x2="4026" y2="362" class="rule"/>
+<text x="3120" y="388" class="field">note</text>
+<text x="3530" y="388" class="field muted">CHAR ?</text>
+<line x1="3114" y1="392" x2="4026" y2="392" class="rule"/>
+<text x="3120" y="418" class="field">status</text>
+<text x="3530" y="418" class="field muted">CHARENUM</text>
+<line x1="3114" y1="422" x2="4026" y2="422" class="rule"/>
+<text x="3120" y="448" class="field">updated_at</text>
+<text x="3530" y="448" class="field muted">DATETIME</text>
+<text x="3120" y="470" class="module">UNIQUE: —</text>
+<rect x="4110" y="150" width="940" height="542" rx="12" class="box"/>
+<rect x="4110" y="150" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="187" class="table">drug_caution_content</text>
+<text x="5030" y="185" text-anchor="end" class="module">catalog</text>
+<text x="4130" y="238" class="field">approval_status</text>
+<text x="4540" y="238" class="field muted">CHARENUM</text>
+<line x1="4124" y1="242" x2="5036" y2="242" class="rule"/>
+<text x="4130" y="268" class="field">approved_key</text>
+<text x="4540" y="268" class="field muted">CHAR ?</text>
+<text x="5030" y="268" text-anchor="end" class="tag">UK</text>
+<line x1="4124" y1="272" x2="5036" y2="272" class="rule"/>
+<text x="4130" y="298" class="field">body</text>
+<text x="4540" y="298" class="field muted">TEXT</text>
+<line x1="4124" y1="302" x2="5036" y2="302" class="rule"/>
+<text x="4130" y="328" class="field">content_version</text>
+<text x="4540" y="328" class="field muted">CHAR</text>
+<line x1="4124" y1="332" x2="5036" y2="332" class="rule"/>
+<text x="4130" y="358" class="field">created_at</text>
+<text x="4540" y="358" class="field muted">DATETIME</text>
+<line x1="4124" y1="362" x2="5036" y2="362" class="rule"/>
+<text x="4130" y="388" class="field">drug_caution_content_id</text>
+<text x="4540" y="388" class="field muted">BIGINT</text>
+<text x="5030" y="388" text-anchor="end" class="tag">PK UK</text>
+<line x1="4124" y1="392" x2="5036" y2="392" class="rule"/>
+<text x="4130" y="418" class="field">physician_review</text>
+<text x="4540" y="418" class="field muted">JSON ?</text>
+<line x1="4124" y1="422" x2="5036" y2="422" class="rule"/>
+<text x="4130" y="448" class="field">prescription_set_id</text>
+<text x="4540" y="448" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="448" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="452" x2="5036" y2="452" class="rule"/>
+<text x="4130" y="478" class="field">section_key</text>
+<text x="4540" y="478" class="field muted">CHARENUM</text>
+<line x1="4124" y1="482" x2="5036" y2="482" class="rule"/>
+<text x="4130" y="508" class="field">source_grade</text>
+<text x="4540" y="508" class="field muted">CHARENUM</text>
+<line x1="4124" y1="512" x2="5036" y2="512" class="rule"/>
+<text x="4130" y="538" class="field">source_name</text>
+<text x="4540" y="538" class="field muted">CHAR</text>
+<line x1="4124" y1="542" x2="5036" y2="542" class="rule"/>
+<text x="4130" y="568" class="field">source_org</text>
+<text x="4540" y="568" class="field muted">CHAR</text>
+<line x1="4124" y1="572" x2="5036" y2="572" class="rule"/>
+<text x="4130" y="598" class="field">source_url</text>
+<text x="4540" y="598" class="field muted">CHAR</text>
+<line x1="4124" y1="602" x2="5036" y2="602" class="rule"/>
+<text x="4130" y="628" class="field">updated_at</text>
+<text x="4540" y="628" class="field muted">DATETIME</text>
+<line x1="4124" y1="632" x2="5036" y2="632" class="rule"/>
+<text x="4130" y="658" class="field">verified_at</text>
+<text x="4540" y="658" class="field muted">DATE</text>
+<text x="4130" y="680" class="module">UNIQUE: —</text>
+<rect x="70" y="412" width="940" height="542" rx="12" class="box"/>
+<rect x="70" y="412" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="449" class="table">lab_baseline</text>
+<text x="990" y="447" text-anchor="end" class="module">catalog</text>
+<text x="90" y="500" class="field">always_shown</text>
+<text x="500" y="500" class="field muted">BOOLEAN</text>
+<line x1="84" y1="504" x2="996" y2="504" class="rule"/>
+<text x="90" y="530" class="field">by_age</text>
+<text x="500" y="530" class="field muted">BOOLEAN</text>
+<line x1="84" y1="534" x2="996" y2="534" class="rule"/>
+<text x="90" y="560" class="field">created_at</text>
+<text x="500" y="560" class="field muted">DATETIME</text>
+<line x1="84" y1="564" x2="996" y2="564" class="rule"/>
+<text x="90" y="590" class="field">direction</text>
+<text x="500" y="590" class="field muted">CHARENUM</text>
+<line x1="84" y1="594" x2="996" y2="594" class="rule"/>
+<text x="90" y="620" class="field">disease</text>
+<text x="500" y="620" class="field muted">CHARENUM</text>
+<line x1="84" y1="624" x2="996" y2="624" class="rule"/>
+<text x="90" y="650" class="field">doctor_id</text>
+<text x="500" y="650" class="field muted">BIGINT ?</text>
+<line x1="84" y1="654" x2="996" y2="654" class="rule"/>
+<text x="90" y="680" class="field">high</text>
+<text x="500" y="680" class="field muted">DECIMAL ?</text>
+<line x1="84" y1="684" x2="996" y2="684" class="rule"/>
+<text x="90" y="710" class="field">hospital_id</text>
+<text x="500" y="710" class="field muted">BIGINT</text>
+<line x1="84" y1="714" x2="996" y2="714" class="rule"/>
+<text x="90" y="740" class="field">keywords</text>
+<text x="500" y="740" class="field muted">CHAR</text>
+<line x1="84" y1="744" x2="996" y2="744" class="rule"/>
+<text x="90" y="770" class="field">lab_baseline_id</text>
+<text x="500" y="770" class="field muted">BIGINT</text>
+<text x="990" y="770" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="774" x2="996" y2="774" class="rule"/>
+<text x="90" y="800" class="field">low</text>
+<text x="500" y="800" class="field muted">DECIMAL ?</text>
+<line x1="84" y1="804" x2="996" y2="804" class="rule"/>
+<text x="90" y="830" class="field">name</text>
+<text x="500" y="830" class="field muted">CHAR</text>
+<line x1="84" y1="834" x2="996" y2="834" class="rule"/>
+<text x="90" y="860" class="field">position</text>
+<text x="500" y="860" class="field muted">SMALLINT</text>
+<line x1="84" y1="864" x2="996" y2="864" class="rule"/>
+<text x="90" y="890" class="field">unit</text>
+<text x="500" y="890" class="field muted">CHAR</text>
+<line x1="84" y1="894" x2="996" y2="894" class="rule"/>
+<text x="90" y="920" class="field">updated_at</text>
+<text x="500" y="920" class="field muted">DATETIME</text>
+<text x="90" y="942" class="module">UNIQUE: (hospital_id, doctor_id, disease, name)</text>
+<rect x="2090" y="442" width="940" height="302" rx="12" class="box"/>
+<rect x="2090" y="442" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="479" class="table">message_template</text>
+<text x="3010" y="477" text-anchor="end" class="module">catalog</text>
+<text x="2110" y="530" class="field">body</text>
+<text x="2520" y="530" class="field muted">TEXT</text>
+<line x1="2104" y1="534" x2="3016" y2="534" class="rule"/>
+<text x="2110" y="560" class="field">created_at</text>
+<text x="2520" y="560" class="field muted">DATETIME</text>
+<line x1="2104" y1="564" x2="3016" y2="564" class="rule"/>
+<text x="2110" y="590" class="field">hospital_id</text>
+<text x="2520" y="590" class="field muted">BIGINT</text>
+<line x1="2104" y1="594" x2="3016" y2="594" class="rule"/>
+<text x="2110" y="620" class="field">kind</text>
+<text x="2520" y="620" class="field muted">CHARENUM</text>
+<line x1="2104" y1="624" x2="3016" y2="624" class="rule"/>
+<text x="2110" y="650" class="field">message_template_id</text>
+<text x="2520" y="650" class="field muted">BIGINT</text>
+<text x="3010" y="650" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="654" x2="3016" y2="654" class="rule"/>
+<text x="2110" y="680" class="field">updated_at</text>
+<text x="2520" y="680" class="field muted">DATETIME</text>
+<line x1="2104" y1="684" x2="3016" y2="684" class="rule"/>
+<text x="2110" y="710" class="field">updated_by</text>
+<text x="2520" y="710" class="field muted">BIGINT ?</text>
+<text x="2110" y="732" class="module">UNIQUE: (hospital_id, kind)</text>
+<rect x="3100" y="532" width="940" height="272" rx="12" class="box"/>
+<rect x="3100" y="532" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="569" class="table">prescription_check_item</text>
+<text x="4020" y="567" text-anchor="end" class="module">catalog</text>
+<text x="3120" y="620" class="field">created_at</text>
+<text x="3530" y="620" class="field muted">DATETIME</text>
+<line x1="3114" y1="624" x2="4026" y2="624" class="rule"/>
+<text x="3120" y="650" class="field">item_key</text>
+<text x="3530" y="650" class="field muted">CHARENUM</text>
+<line x1="3114" y1="654" x2="4026" y2="654" class="rule"/>
+<text x="3120" y="680" class="field">position</text>
+<text x="3530" y="680" class="field muted">SMALLINT</text>
+<line x1="3114" y1="684" x2="4026" y2="684" class="rule"/>
+<text x="3120" y="710" class="field">prescription_check_item_id</text>
+<text x="3530" y="710" class="field muted">BIGINT</text>
+<text x="4020" y="710" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="714" x2="4026" y2="714" class="rule"/>
+<text x="3120" y="740" class="field">prescription_set_id</text>
+<text x="3530" y="740" class="field muted">FOREIGNKEY</text>
+<text x="4020" y="740" text-anchor="end" class="tag">FK</text>
+<line x1="3114" y1="744" x2="4026" y2="744" class="rule"/>
+<text x="3120" y="770" class="field">updated_at</text>
+<text x="3530" y="770" class="field muted">DATETIME</text>
+<text x="3120" y="792" class="module">UNIQUE: (prescription_set_id, item_key)</text>
+<rect x="1080" y="562" width="940" height="572" rx="12" class="box"/>
+<rect x="1080" y="562" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="599" class="table">prescription_set</text>
+<text x="2000" y="597" text-anchor="end" class="module">catalog</text>
+<text x="1100" y="650" class="field">check_d15_on</text>
+<text x="1510" y="650" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="654" x2="2006" y2="654" class="rule"/>
+<text x="1100" y="680" class="field">check_d30_on</text>
+<text x="1510" y="680" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="684" x2="2006" y2="684" class="rule"/>
+<text x="1100" y="710" class="field">created_at</text>
+<text x="1510" y="710" class="field muted">DATETIME</text>
+<line x1="1094" y1="714" x2="2006" y2="714" class="rule"/>
+<text x="1100" y="740" class="field">days_mode</text>
+<text x="1510" y="740" class="field muted">CHARENUM</text>
+<line x1="1094" y1="744" x2="2006" y2="744" class="rule"/>
+<text x="1100" y="770" class="field">days_per_pack</text>
+<text x="1510" y="770" class="field muted">SMALLINT ?</text>
+<line x1="1094" y1="774" x2="2006" y2="774" class="rule"/>
+<text x="1100" y="800" class="field">disease</text>
+<text x="1510" y="800" class="field muted">CHARENUM</text>
+<line x1="1094" y1="804" x2="2006" y2="804" class="rule"/>
+<text x="1100" y="830" class="field">emr_code</text>
+<text x="1510" y="830" class="field muted">CHAR ?</text>
+<line x1="1094" y1="834" x2="2006" y2="834" class="rule"/>
+<text x="1100" y="860" class="field">hidden_at</text>
+<text x="1510" y="860" class="field muted">DATETIME ?</text>
+<line x1="1094" y1="864" x2="2006" y2="864" class="rule"/>
+<text x="1100" y="890" class="field">name</text>
+<text x="1510" y="890" class="field muted">CHAR</text>
+<text x="2000" y="890" text-anchor="end" class="tag">UK</text>
+<line x1="1094" y1="894" x2="2006" y2="894" class="rule"/>
+<text x="1100" y="920" class="field">phase</text>
+<text x="1510" y="920" class="field muted">CHARENUM</text>
+<line x1="1094" y1="924" x2="2006" y2="924" class="rule"/>
+<text x="1100" y="950" class="field">prescription_set_id</text>
+<text x="1510" y="950" class="field muted">BIGINT</text>
+<text x="2000" y="950" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="954" x2="2006" y2="954" class="rule"/>
+<text x="1100" y="980" class="field">revisit_note</text>
+<text x="1510" y="980" class="field muted">CHAR ?</text>
+<line x1="1094" y1="984" x2="2006" y2="984" class="rule"/>
+<text x="1100" y="1010" class="field">run_out_before_days</text>
+<text x="1510" y="1010" class="field muted">SMALLINT</text>
+<line x1="1094" y1="1014" x2="2006" y2="1014" class="rule"/>
+<text x="1100" y="1040" class="field">run_out_on</text>
+<text x="1510" y="1040" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="1044" x2="2006" y2="1044" class="rule"/>
+<text x="1100" y="1070" class="field">status</text>
+<text x="1510" y="1070" class="field muted">CHARENUM</text>
+<line x1="1094" y1="1074" x2="2006" y2="1074" class="rule"/>
+<text x="1100" y="1100" class="field">updated_at</text>
+<text x="1510" y="1100" class="field muted">DATETIME</text>
+<text x="1100" y="1122" class="module">UNIQUE: —</text>
+<rect x="4110" y="742" width="940" height="332" rx="12" class="box"/>
+<rect x="4110" y="742" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="779" class="table">prescription_set_drug</text>
+<text x="5030" y="777" text-anchor="end" class="module">catalog</text>
+<text x="4130" y="830" class="field">created_at</text>
+<text x="4540" y="830" class="field muted">DATETIME</text>
+<line x1="4124" y1="834" x2="5036" y2="834" class="rule"/>
+<text x="4130" y="860" class="field">frequency</text>
+<text x="4540" y="860" class="field muted">CHAR ?</text>
+<line x1="4124" y1="864" x2="5036" y2="864" class="rule"/>
+<text x="4130" y="890" class="field">name</text>
+<text x="4540" y="890" class="field muted">CHAR</text>
+<line x1="4124" y1="894" x2="5036" y2="894" class="rule"/>
+<text x="4130" y="920" class="field">note</text>
+<text x="4540" y="920" class="field muted">CHAR ?</text>
+<line x1="4124" y1="924" x2="5036" y2="924" class="rule"/>
+<text x="4130" y="950" class="field">position</text>
+<text x="4540" y="950" class="field muted">SMALLINT</text>
+<line x1="4124" y1="954" x2="5036" y2="954" class="rule"/>
+<text x="4130" y="980" class="field">prescription_set_drug_id</text>
+<text x="4540" y="980" class="field muted">BIGINT</text>
+<text x="5030" y="980" text-anchor="end" class="tag">PK UK</text>
+<line x1="4124" y1="984" x2="5036" y2="984" class="rule"/>
+<text x="4130" y="1010" class="field">prescription_set_id</text>
+<text x="4540" y="1010" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="1010" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="1014" x2="5036" y2="1014" class="rule"/>
+<text x="4130" y="1040" class="field">updated_at</text>
+<text x="4540" y="1040" class="field muted">DATETIME</text>
+<text x="4130" y="1062" class="module">UNIQUE: —</text>
+<rect x="2090" y="794" width="940" height="392" rx="12" class="box"/>
+<rect x="2090" y="794" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="831" class="table">medical_document</text>
+<text x="3010" y="829" text-anchor="end" class="module">documents</text>
+<text x="2110" y="882" class="field">created_at</text>
+<text x="2520" y="882" class="field muted">DATETIME</text>
+<line x1="2104" y1="886" x2="3016" y2="886" class="rule"/>
+<text x="2110" y="912" class="field">document_id</text>
+<text x="2520" y="912" class="field muted">BIGINT</text>
+<text x="3010" y="912" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="916" x2="3016" y2="916" class="rule"/>
+<text x="2110" y="942" class="field">document_type</text>
+<text x="2520" y="942" class="field muted">CHARENUM ?</text>
+<line x1="2104" y1="946" x2="3016" y2="946" class="rule"/>
+<text x="2110" y="972" class="field">file_path</text>
+<text x="2520" y="972" class="field muted">CHAR</text>
+<line x1="2104" y1="976" x2="3016" y2="976" class="rule"/>
+<text x="2110" y="1002" class="field">file_size</text>
+<text x="2520" y="1002" class="field muted">BIGINT</text>
+<line x1="2104" y1="1006" x2="3016" y2="1006" class="rule"/>
+<text x="2110" y="1032" class="field">hospital_id</text>
+<text x="2520" y="1032" class="field muted">BIGINT</text>
+<line x1="2104" y1="1036" x2="3016" y2="1036" class="rule"/>
+<text x="2110" y="1062" class="field">mime_type</text>
+<text x="2520" y="1062" class="field muted">CHAR</text>
+<line x1="2104" y1="1066" x2="3016" y2="1066" class="rule"/>
+<text x="2110" y="1092" class="field">source_deleted_at</text>
+<text x="2520" y="1092" class="field muted">DATETIME ?</text>
+<line x1="2104" y1="1096" x2="3016" y2="1096" class="rule"/>
+<text x="2110" y="1122" class="field">uploaded_by</text>
+<text x="2520" y="1122" class="field muted">BIGINT</text>
+<line x1="2104" y1="1126" x2="3016" y2="1126" class="rule"/>
+<text x="2110" y="1152" class="field">visit_id</text>
+<text x="2520" y="1152" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="1152" text-anchor="end" class="tag">FK</text>
+<text x="2110" y="1174" class="module">UNIQUE: —</text>
+<rect x="3100" y="854" width="940" height="482" rx="12" class="box"/>
+<rect x="3100" y="854" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="891" class="table">patient_feedback</text>
+<text x="4020" y="889" text-anchor="end" class="module">feedback</text>
+<text x="3120" y="942" class="field">category</text>
+<text x="3530" y="942" class="field muted">CHARENUM</text>
+<line x1="3114" y1="946" x2="4026" y2="946" class="rule"/>
+<text x="3120" y="972" class="field">content_key</text>
+<text x="3530" y="972" class="field muted">CHAR ?</text>
+<line x1="3114" y1="976" x2="4026" y2="976" class="rule"/>
+<text x="3120" y="1002" class="field">created_at</text>
+<text x="3530" y="1002" class="field muted">DATETIME</text>
+<line x1="3114" y1="1006" x2="4026" y2="1006" class="rule"/>
+<text x="3120" y="1032" class="field">details</text>
+<text x="3530" y="1032" class="field muted">TEXT ?</text>
+<line x1="3114" y1="1036" x2="4026" y2="1036" class="rule"/>
+<text x="3120" y="1062" class="field">detected_tab</text>
+<text x="3530" y="1062" class="field muted">CHAR ?</text>
+<line x1="3114" y1="1066" x2="4026" y2="1066" class="rule"/>
+<text x="3120" y="1092" class="field">guide_document_id</text>
+<text x="3530" y="1092" class="field muted">FOREIGNKEY</text>
+<text x="4020" y="1092" text-anchor="end" class="tag">FK</text>
+<line x1="3114" y1="1096" x2="4026" y2="1096" class="rule"/>
+<text x="3120" y="1122" class="field">hospital_id</text>
+<text x="3530" y="1122" class="field muted">BIGINT</text>
+<line x1="3114" y1="1126" x2="4026" y2="1126" class="rule"/>
+<text x="3120" y="1152" class="field">idempotency_digest</text>
+<text x="3530" y="1152" class="field muted">CHAR</text>
+<line x1="3114" y1="1156" x2="4026" y2="1156" class="rule"/>
+<text x="3120" y="1182" class="field">patient_feedback_id</text>
+<text x="3530" y="1182" class="field muted">BIGINT</text>
+<text x="4020" y="1182" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="1186" x2="4026" y2="1186" class="rule"/>
+<text x="3120" y="1212" class="field">patient_usage_event_id</text>
+<text x="3530" y="1212" class="field muted">BIGINT ?</text>
+<line x1="3114" y1="1216" x2="4026" y2="1216" class="rule"/>
+<text x="3120" y="1242" class="field">section_key</text>
+<text x="3530" y="1242" class="field muted">CHAR ?</text>
+<line x1="3114" y1="1246" x2="4026" y2="1246" class="rule"/>
+<text x="3120" y="1272" class="field">source_screen</text>
+<text x="3530" y="1272" class="field muted">CHARENUM</text>
+<line x1="3114" y1="1276" x2="4026" y2="1276" class="rule"/>
+<text x="3120" y="1302" class="field">target</text>
+<text x="3530" y="1302" class="field muted">CHARENUM</text>
+<text x="3120" y="1324" class="module">UNIQUE: (guide_document_id, idempotency_digest)</text>
+<rect x="70" y="1004" width="940" height="572" rx="12" class="box"/>
+<rect x="70" y="1004" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="1041" class="table">knowledge_chunk</text>
+<text x="990" y="1039" text-anchor="end" class="module">knowledge</text>
+<text x="90" y="1092" class="field">body</text>
+<text x="500" y="1092" class="field muted">TEXT</text>
+<line x1="84" y1="1096" x2="996" y2="1096" class="rule"/>
+<text x="90" y="1122" class="field">body_sha256</text>
+<text x="500" y="1122" class="field muted">CHAR</text>
+<line x1="84" y1="1126" x2="996" y2="1126" class="rule"/>
+<text x="90" y="1152" class="field">bounding_boxes</text>
+<text x="500" y="1152" class="field muted">JSON ?</text>
+<line x1="84" y1="1156" x2="996" y2="1156" class="rule"/>
+<text x="90" y="1182" class="field">chunk_id</text>
+<text x="500" y="1182" class="field muted">UUID</text>
+<text x="990" y="1182" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="1186" x2="996" y2="1186" class="rule"/>
+<text x="90" y="1212" class="field">claim_key</text>
+<text x="500" y="1212" class="field muted">CHAR ?</text>
+<line x1="84" y1="1216" x2="996" y2="1216" class="rule"/>
+<text x="90" y="1242" class="field">claim_value</text>
+<text x="500" y="1242" class="field muted">CHAR ?</text>
+<line x1="84" y1="1246" x2="996" y2="1246" class="rule"/>
+<text x="90" y="1272" class="field">created_at</text>
+<text x="500" y="1272" class="field muted">DATETIME</text>
+<line x1="84" y1="1276" x2="996" y2="1276" class="rule"/>
+<text x="90" y="1302" class="field">embedding</text>
+<text x="500" y="1302" class="field muted">JSON</text>
+<line x1="84" y1="1306" x2="996" y2="1306" class="rule"/>
+<text x="90" y="1332" class="field">embedding_dimension</text>
+<text x="500" y="1332" class="field muted">INT</text>
+<line x1="84" y1="1336" x2="996" y2="1336" class="rule"/>
+<text x="90" y="1362" class="field">embedding_model</text>
+<text x="500" y="1362" class="field muted">CHAR</text>
+<line x1="84" y1="1366" x2="996" y2="1366" class="rule"/>
+<text x="90" y="1392" class="field">embedding_revision</text>
+<text x="500" y="1392" class="field muted">CHAR</text>
+<line x1="84" y1="1396" x2="996" y2="1396" class="rule"/>
+<text x="90" y="1422" class="field">ocr_confidence</text>
+<text x="500" y="1422" class="field muted">FLOAT ?</text>
+<line x1="84" y1="1426" x2="996" y2="1426" class="rule"/>
+<text x="90" y="1452" class="field">page_number</text>
+<text x="500" y="1452" class="field muted">INT ?</text>
+<line x1="84" y1="1456" x2="996" y2="1456" class="rule"/>
+<text x="90" y="1482" class="field">position</text>
+<text x="500" y="1482" class="field muted">INT</text>
+<line x1="84" y1="1486" x2="996" y2="1486" class="rule"/>
+<text x="90" y="1512" class="field">section_key</text>
+<text x="500" y="1512" class="field muted">CHAR</text>
+<line x1="84" y1="1516" x2="996" y2="1516" class="rule"/>
+<text x="90" y="1542" class="field">version_id</text>
+<text x="500" y="1542" class="field muted">FOREIGNKEY</text>
+<text x="990" y="1542" text-anchor="end" class="tag">FK</text>
+<text x="90" y="1564" class="module">UNIQUE: (version_id, position)</text>
+<rect x="4110" y="1124" width="940" height="362" rx="12" class="box"/>
+<rect x="4110" y="1124" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="1161" class="table">knowledge_document</text>
+<text x="5030" y="1159" text-anchor="end" class="module">knowledge</text>
+<text x="4130" y="1212" class="field">created_at</text>
+<text x="4540" y="1212" class="field muted">DATETIME</text>
+<line x1="4124" y1="1216" x2="5036" y2="1216" class="rule"/>
+<text x="4130" y="1242" class="field">document_id</text>
+<text x="4540" y="1242" class="field muted">UUID</text>
+<text x="5030" y="1242" text-anchor="end" class="tag">PK UK</text>
+<line x1="4124" y1="1246" x2="5036" y2="1246" class="rule"/>
+<text x="4130" y="1272" class="field">hospital_id</text>
+<text x="4540" y="1272" class="field muted">BIGINT ?</text>
+<line x1="4124" y1="1276" x2="5036" y2="1276" class="rule"/>
+<text x="4130" y="1302" class="field">source_key</text>
+<text x="4540" y="1302" class="field muted">CHAR</text>
+<text x="5030" y="1302" text-anchor="end" class="tag">UK</text>
+<line x1="4124" y1="1306" x2="5036" y2="1306" class="rule"/>
+<text x="4130" y="1332" class="field">source_kind</text>
+<text x="4540" y="1332" class="field muted">CHARENUM</text>
+<line x1="4124" y1="1336" x2="5036" y2="1336" class="rule"/>
+<text x="4130" y="1362" class="field">source_org</text>
+<text x="4540" y="1362" class="field muted">CHAR</text>
+<line x1="4124" y1="1366" x2="5036" y2="1366" class="rule"/>
+<text x="4130" y="1392" class="field">source_url</text>
+<text x="4540" y="1392" class="field muted">CHAR ?</text>
+<line x1="4124" y1="1396" x2="5036" y2="1396" class="rule"/>
+<text x="4130" y="1422" class="field">title</text>
+<text x="4540" y="1422" class="field muted">CHAR</text>
+<line x1="4124" y1="1426" x2="5036" y2="1426" class="rule"/>
+<text x="4130" y="1452" class="field">updated_at</text>
+<text x="4540" y="1452" class="field muted">DATETIME</text>
+<text x="4130" y="1474" class="module">UNIQUE: —</text>
+<rect x="1080" y="1184" width="940" height="362" rx="12" class="box"/>
+<rect x="1080" y="1184" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="1221" class="table">knowledge_ingestion_attempt</text>
+<text x="2000" y="1219" text-anchor="end" class="module">knowledge</text>
+<text x="1100" y="1272" class="field">attempt_count</text>
+<text x="1510" y="1272" class="field muted">INT</text>
+<line x1="1094" y1="1276" x2="2006" y2="1276" class="rule"/>
+<text x="1100" y="1302" class="field">attempt_id</text>
+<text x="1510" y="1302" class="field muted">UUID</text>
+<text x="2000" y="1302" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="1306" x2="2006" y2="1306" class="rule"/>
+<text x="1100" y="1332" class="field">created_at</text>
+<text x="1510" y="1332" class="field muted">DATETIME</text>
+<line x1="1094" y1="1336" x2="2006" y2="1336" class="rule"/>
+<text x="1100" y="1362" class="field">error_code</text>
+<text x="1510" y="1362" class="field muted">CHAR ?</text>
+<line x1="1094" y1="1366" x2="2006" y2="1366" class="rule"/>
+<text x="1100" y="1392" class="field">next_retry_at</text>
+<text x="1510" y="1392" class="field muted">DATETIME ?</text>
+<line x1="1094" y1="1396" x2="2006" y2="1396" class="rule"/>
+<text x="1100" y="1422" class="field">retryable</text>
+<text x="1510" y="1422" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="1426" x2="2006" y2="1426" class="rule"/>
+<text x="1100" y="1452" class="field">status</text>
+<text x="1510" y="1452" class="field muted">CHARENUM</text>
+<line x1="1094" y1="1456" x2="2006" y2="1456" class="rule"/>
+<text x="1100" y="1482" class="field">updated_at</text>
+<text x="1510" y="1482" class="field muted">DATETIME</text>
+<line x1="1094" y1="1486" x2="2006" y2="1486" class="rule"/>
+<text x="1100" y="1512" class="field">version_id</text>
+<text x="1510" y="1512" class="field muted">FOREIGNKEY</text>
+<text x="2000" y="1512" text-anchor="end" class="tag">FK</text>
+<text x="1100" y="1534" class="module">UNIQUE: —</text>
+<rect x="2090" y="1236" width="940" height="782" rx="12" class="box"/>
+<rect x="2090" y="1236" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="1273" class="table">knowledge_version</text>
+<text x="3010" y="1271" text-anchor="end" class="module">knowledge</text>
+<text x="2110" y="1324" class="field">approval_note</text>
+<text x="2520" y="1324" class="field muted">CHAR ?</text>
+<line x1="2104" y1="1328" x2="3016" y2="1328" class="rule"/>
+<text x="2110" y="1354" class="field">approval_status</text>
+<text x="2520" y="1354" class="field muted">CHARENUM</text>
+<line x1="2104" y1="1358" x2="3016" y2="1358" class="rule"/>
+<text x="2110" y="1384" class="field">approved_at</text>
+<text x="2520" y="1384" class="field muted">DATETIME ?</text>
+<line x1="2104" y1="1388" x2="3016" y2="1388" class="rule"/>
+<text x="2110" y="1414" class="field">approved_by</text>
+<text x="2520" y="1414" class="field muted">CHAR ?</text>
+<line x1="2104" y1="1418" x2="3016" y2="1418" class="rule"/>
+<text x="2110" y="1444" class="field">chunk_optional</text>
+<text x="2520" y="1444" class="field muted">BOOLEAN</text>
+<line x1="2104" y1="1448" x2="3016" y2="1448" class="rule"/>
+<text x="2110" y="1474" class="field">created_at</text>
+<text x="2520" y="1474" class="field muted">DATETIME</text>
+<line x1="2104" y1="1478" x2="3016" y2="1478" class="rule"/>
+<text x="2110" y="1504" class="field">current_approved_key</text>
+<text x="2520" y="1504" class="field muted">CHAR ?</text>
+<text x="3010" y="1504" text-anchor="end" class="tag">UK</text>
+<line x1="2104" y1="1508" x2="3016" y2="1508" class="rule"/>
+<text x="2110" y="1534" class="field">deprecated_at</text>
+<text x="2520" y="1534" class="field muted">DATETIME ?</text>
+<line x1="2104" y1="1538" x2="3016" y2="1538" class="rule"/>
+<text x="2110" y="1564" class="field">deprecated_by</text>
+<text x="2520" y="1564" class="field muted">CHAR ?</text>
+<line x1="2104" y1="1568" x2="3016" y2="1568" class="rule"/>
+<text x="2110" y="1594" class="field">document_id</text>
+<text x="2520" y="1594" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="1594" text-anchor="end" class="tag">FK</text>
+<line x1="2104" y1="1598" x2="3016" y2="1598" class="rule"/>
+<text x="2110" y="1624" class="field">extractor_version</text>
+<text x="2520" y="1624" class="field muted">CHAR</text>
+<line x1="2104" y1="1628" x2="3016" y2="1628" class="rule"/>
+<text x="2110" y="1654" class="field">is_current</text>
+<text x="2520" y="1654" class="field muted">BOOLEAN</text>
+<line x1="2104" y1="1658" x2="3016" y2="1658" class="rule"/>
+<text x="2110" y="1684" class="field">license_basis</text>
+<text x="2520" y="1684" class="field muted">CHAR ?</text>
+<line x1="2104" y1="1688" x2="3016" y2="1688" class="rule"/>
+<text x="2110" y="1714" class="field">license_verified</text>
+<text x="2520" y="1714" class="field muted">BOOLEAN</text>
+<line x1="2104" y1="1718" x2="3016" y2="1718" class="rule"/>
+<text x="2110" y="1744" class="field">review_due_at</text>
+<text x="2520" y="1744" class="field muted">DATETIME ?</text>
+<line x1="2104" y1="1748" x2="3016" y2="1748" class="rule"/>
+<text x="2110" y="1774" class="field">source_grade</text>
+<text x="2520" y="1774" class="field muted">CHARENUM</text>
+<line x1="2104" y1="1778" x2="3016" y2="1778" class="rule"/>
+<text x="2110" y="1804" class="field">source_mime_type</text>
+<text x="2520" y="1804" class="field muted">CHAR</text>
+<line x1="2104" y1="1808" x2="3016" y2="1808" class="rule"/>
+<text x="2110" y="1834" class="field">source_object_key</text>
+<text x="2520" y="1834" class="field muted">CHAR</text>
+<line x1="2104" y1="1838" x2="3016" y2="1838" class="rule"/>
+<text x="2110" y="1864" class="field">source_sha256</text>
+<text x="2520" y="1864" class="field muted">CHAR</text>
+<line x1="2104" y1="1868" x2="3016" y2="1868" class="rule"/>
+<text x="2110" y="1894" class="field">updated_at</text>
+<text x="2520" y="1894" class="field muted">DATETIME</text>
+<line x1="2104" y1="1898" x2="3016" y2="1898" class="rule"/>
+<text x="2110" y="1924" class="field">verified_at</text>
+<text x="2520" y="1924" class="field muted">DATETIME ?</text>
+<line x1="2104" y1="1928" x2="3016" y2="1928" class="rule"/>
+<text x="2110" y="1954" class="field">version_id</text>
+<text x="2520" y="1954" class="field muted">UUID</text>
+<text x="3010" y="1954" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="1958" x2="3016" y2="1958" class="rule"/>
+<text x="2110" y="1984" class="field">version_label</text>
+<text x="2520" y="1984" class="field muted">CHAR</text>
+<text x="2110" y="2006" class="module">UNIQUE: (document_id, version_label)</text>
+<rect x="3100" y="1386" width="940" height="332" rx="12" class="box"/>
+<rect x="3100" y="1386" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="1423" class="table">ocr_document_text</text>
+<text x="4020" y="1421" text-anchor="end" class="module">ocr</text>
+<text x="3120" y="1474" class="field">created_at</text>
+<text x="3530" y="1474" class="field muted">DATETIME</text>
+<line x1="3114" y1="1478" x2="4026" y2="1478" class="rule"/>
+<text x="3120" y="1504" class="field">document_id</text>
+<text x="3530" y="1504" class="field muted">BIGINT</text>
+<line x1="3114" y1="1508" x2="4026" y2="1508" class="rule"/>
+<text x="3120" y="1534" class="field">document_type</text>
+<text x="3530" y="1534" class="field muted">CHARENUM</text>
+<line x1="3114" y1="1538" x2="4026" y2="1538" class="rule"/>
+<text x="3120" y="1564" class="field">ocr_document_text_id</text>
+<text x="3530" y="1564" class="field muted">BIGINT</text>
+<text x="4020" y="1564" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="1568" x2="4026" y2="1568" class="rule"/>
+<text x="3120" y="1594" class="field">ocr_result_id</text>
+<text x="3530" y="1594" class="field muted">FOREIGNKEY</text>
+<text x="4020" y="1594" text-anchor="end" class="tag">FK</text>
+<line x1="3114" y1="1598" x2="4026" y2="1598" class="rule"/>
+<text x="3120" y="1624" class="field">raw_text</text>
+<text x="3530" y="1624" class="field muted">TEXT ?</text>
+<line x1="3114" y1="1628" x2="4026" y2="1628" class="rule"/>
+<text x="3120" y="1654" class="field">raw_text_purged_at</text>
+<text x="3530" y="1654" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="1658" x2="4026" y2="1658" class="rule"/>
+<text x="3120" y="1684" class="field">updated_at</text>
+<text x="3530" y="1684" class="field muted">DATETIME</text>
+<text x="3120" y="1706" class="module">UNIQUE: (ocr_result_id, document_id)</text>
+<rect x="4110" y="1536" width="940" height="632" rx="12" class="box"/>
+<rect x="4110" y="1536" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="1573" class="table">ocr_field</text>
+<text x="5030" y="1571" text-anchor="end" class="module">ocr</text>
+<text x="4130" y="1624" class="field">confidence</text>
+<text x="4540" y="1624" class="field muted">DECIMAL ?</text>
+<line x1="4124" y1="1628" x2="5036" y2="1628" class="rule"/>
+<text x="4130" y="1654" class="field">confirmed_at</text>
+<text x="4540" y="1654" class="field muted">DATETIME ?</text>
+<line x1="4124" y1="1658" x2="5036" y2="1658" class="rule"/>
+<text x="4130" y="1684" class="field">confirmed_by</text>
+<text x="4540" y="1684" class="field muted">BIGINT ?</text>
+<line x1="4124" y1="1688" x2="5036" y2="1688" class="rule"/>
+<text x="4130" y="1714" class="field">corrected_value</text>
+<text x="4540" y="1714" class="field muted">TEXT ?</text>
+<line x1="4124" y1="1718" x2="5036" y2="1718" class="rule"/>
+<text x="4130" y="1744" class="field">created_at</text>
+<text x="4540" y="1744" class="field muted">DATETIME</text>
+<line x1="4124" y1="1748" x2="5036" y2="1748" class="rule"/>
+<text x="4130" y="1774" class="field">extracted_value</text>
+<text x="4540" y="1774" class="field muted">TEXT ?</text>
+<line x1="4124" y1="1778" x2="5036" y2="1778" class="rule"/>
+<text x="4130" y="1804" class="field">field_type</text>
+<text x="4540" y="1804" class="field muted">CHAR</text>
+<line x1="4124" y1="1808" x2="5036" y2="1808" class="rule"/>
+<text x="4130" y="1834" class="field">is_confirmed</text>
+<text x="4540" y="1834" class="field muted">BOOLEAN</text>
+<line x1="4124" y1="1838" x2="5036" y2="1838" class="rule"/>
+<text x="4130" y="1864" class="field">is_pending_report</text>
+<text x="4540" y="1864" class="field muted">BOOLEAN</text>
+<line x1="4124" y1="1868" x2="5036" y2="1868" class="rule"/>
+<text x="4130" y="1894" class="field">modified_at</text>
+<text x="4540" y="1894" class="field muted">DATETIME ?</text>
+<line x1="4124" y1="1898" x2="5036" y2="1898" class="rule"/>
+<text x="4130" y="1924" class="field">modified_by</text>
+<text x="4540" y="1924" class="field muted">BIGINT ?</text>
+<line x1="4124" y1="1928" x2="5036" y2="1928" class="rule"/>
+<text x="4130" y="1954" class="field">ocr_document_text_id</text>
+<text x="4540" y="1954" class="field muted">BIGINT ?</text>
+<line x1="4124" y1="1958" x2="5036" y2="1958" class="rule"/>
+<text x="4130" y="1984" class="field">ocr_field_id</text>
+<text x="4540" y="1984" class="field muted">BIGINT</text>
+<text x="5030" y="1984" text-anchor="end" class="tag">PK UK</text>
+<line x1="4124" y1="1988" x2="5036" y2="1988" class="rule"/>
+<text x="4130" y="2014" class="field">ocr_result_id</text>
+<text x="4540" y="2014" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="2014" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="2018" x2="5036" y2="2018" class="rule"/>
+<text x="4130" y="2044" class="field">source_line</text>
+<text x="4540" y="2044" class="field muted">INT ?</text>
+<line x1="4124" y1="2048" x2="5036" y2="2048" class="rule"/>
+<text x="4130" y="2074" class="field">unit</text>
+<text x="4540" y="2074" class="field muted">CHAR ?</text>
+<line x1="4124" y1="2078" x2="5036" y2="2078" class="rule"/>
+<text x="4130" y="2104" class="field">updated_at</text>
+<text x="4540" y="2104" class="field muted">DATETIME</text>
+<line x1="4124" y1="2108" x2="5036" y2="2108" class="rule"/>
+<text x="4130" y="2134" class="field">version</text>
+<text x="4540" y="2134" class="field muted">INT</text>
+<text x="4130" y="2156" class="module">UNIQUE: (ocr_result_id, field_type)</text>
+<rect x="1080" y="1596" width="940" height="392" rx="12" class="box"/>
+<rect x="1080" y="1596" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="1633" class="table">ocr_field_candidate</text>
+<text x="2000" y="1631" text-anchor="end" class="module">ocr</text>
+<text x="1100" y="1684" class="field">candidate_value</text>
+<text x="1510" y="1684" class="field muted">TEXT</text>
+<line x1="1094" y1="1688" x2="2006" y2="1688" class="rule"/>
+<text x="1100" y="1714" class="field">confidence</text>
+<text x="1510" y="1714" class="field muted">DECIMAL ?</text>
+<line x1="1094" y1="1718" x2="2006" y2="1718" class="rule"/>
+<text x="1100" y="1744" class="field">created_at</text>
+<text x="1510" y="1744" class="field muted">DATETIME</text>
+<line x1="1094" y1="1748" x2="2006" y2="1748" class="rule"/>
+<text x="1100" y="1774" class="field">is_selected</text>
+<text x="1510" y="1774" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="1778" x2="2006" y2="1778" class="rule"/>
+<text x="1100" y="1804" class="field">ocr_document_text_id</text>
+<text x="1510" y="1804" class="field muted">BIGINT ?</text>
+<line x1="1094" y1="1808" x2="2006" y2="1808" class="rule"/>
+<text x="1100" y="1834" class="field">ocr_field_candidate_id</text>
+<text x="1510" y="1834" class="field muted">BIGINT</text>
+<text x="2000" y="1834" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="1838" x2="2006" y2="1838" class="rule"/>
+<text x="1100" y="1864" class="field">ocr_field_id</text>
+<text x="1510" y="1864" class="field muted">FOREIGNKEY</text>
+<text x="2000" y="1864" text-anchor="end" class="tag">FK</text>
+<line x1="1094" y1="1868" x2="2006" y2="1868" class="rule"/>
+<text x="1100" y="1894" class="field">rank</text>
+<text x="1510" y="1894" class="field muted">SMALLINT</text>
+<line x1="1094" y1="1898" x2="2006" y2="1898" class="rule"/>
+<text x="1100" y="1924" class="field">source_date</text>
+<text x="1510" y="1924" class="field muted">DATE ?</text>
+<line x1="1094" y1="1928" x2="2006" y2="1928" class="rule"/>
+<text x="1100" y="1954" class="field">source_line</text>
+<text x="1510" y="1954" class="field muted">INT ?</text>
+<text x="1100" y="1976" class="module">UNIQUE: (ocr_field_id, rank)</text>
+<rect x="70" y="1626" width="940" height="452" rx="12" class="box"/>
+<rect x="70" y="1626" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="1663" class="table">ocr_job</text>
+<text x="990" y="1661" text-anchor="end" class="module">ocr</text>
+<text x="90" y="1714" class="field">completed_at</text>
+<text x="500" y="1714" class="field muted">DATETIME ?</text>
+<line x1="84" y1="1718" x2="996" y2="1718" class="rule"/>
+<text x="90" y="1744" class="field">created_at</text>
+<text x="500" y="1744" class="field muted">DATETIME</text>
+<line x1="84" y1="1748" x2="996" y2="1748" class="rule"/>
+<text x="90" y="1774" class="field">excluded_from_guide</text>
+<text x="500" y="1774" class="field muted">BOOLEAN</text>
+<line x1="84" y1="1778" x2="996" y2="1778" class="rule"/>
+<text x="90" y="1804" class="field">failure_code</text>
+<text x="500" y="1804" class="field muted">CHAR ?</text>
+<line x1="84" y1="1808" x2="996" y2="1808" class="rule"/>
+<text x="90" y="1834" class="field">hospital_id</text>
+<text x="500" y="1834" class="field muted">BIGINT</text>
+<line x1="84" y1="1838" x2="996" y2="1838" class="rule"/>
+<text x="90" y="1864" class="field">ocr_job_id</text>
+<text x="500" y="1864" class="field muted">CHAR</text>
+<text x="990" y="1864" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="1868" x2="996" y2="1868" class="rule"/>
+<text x="90" y="1894" class="field">progress</text>
+<text x="500" y="1894" class="field muted">SMALLINT</text>
+<line x1="84" y1="1898" x2="996" y2="1898" class="rule"/>
+<text x="90" y="1924" class="field">requested_by</text>
+<text x="500" y="1924" class="field muted">BIGINT</text>
+<line x1="84" y1="1928" x2="996" y2="1928" class="rule"/>
+<text x="90" y="1954" class="field">started_at</text>
+<text x="500" y="1954" class="field muted">DATETIME ?</text>
+<line x1="84" y1="1958" x2="996" y2="1958" class="rule"/>
+<text x="90" y="1984" class="field">status</text>
+<text x="500" y="1984" class="field muted">CHARENUM</text>
+<line x1="84" y1="1988" x2="996" y2="1988" class="rule"/>
+<text x="90" y="2014" class="field">updated_at</text>
+<text x="500" y="2014" class="field muted">DATETIME</text>
+<line x1="84" y1="2018" x2="996" y2="2018" class="rule"/>
+<text x="90" y="2044" class="field">visit_id</text>
+<text x="500" y="2044" class="field muted">FOREIGNKEY</text>
+<text x="990" y="2044" text-anchor="end" class="tag">FK</text>
+<text x="90" y="2066" class="module">UNIQUE: —</text>
+<rect x="3100" y="1768" width="940" height="242" rx="12" class="box"/>
+<rect x="3100" y="1768" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="1805" class="table">ocr_job_document</text>
+<text x="4020" y="1803" text-anchor="end" class="module">ocr</text>
+<text x="3120" y="1856" class="field">created_at</text>
+<text x="3530" y="1856" class="field muted">DATETIME</text>
+<line x1="3114" y1="1860" x2="4026" y2="1860" class="rule"/>
+<text x="3120" y="1886" class="field">document_id</text>
+<text x="3530" y="1886" class="field muted">BIGINT</text>
+<line x1="3114" y1="1890" x2="4026" y2="1890" class="rule"/>
+<text x="3120" y="1916" class="field">document_type</text>
+<text x="3530" y="1916" class="field muted">CHARENUM</text>
+<line x1="3114" y1="1920" x2="4026" y2="1920" class="rule"/>
+<text x="3120" y="1946" class="field">ocr_job_document_id</text>
+<text x="3530" y="1946" class="field muted">BIGINT</text>
+<text x="4020" y="1946" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="1950" x2="4026" y2="1950" class="rule"/>
+<text x="3120" y="1976" class="field">ocr_job_id</text>
+<text x="3530" y="1976" class="field muted">FOREIGNKEY</text>
+<text x="4020" y="1976" text-anchor="end" class="tag">FK</text>
+<text x="3120" y="1998" class="module">UNIQUE: (ocr_job_id, document_id)</text>
+<rect x="1080" y="2038" width="940" height="422" rx="12" class="box"/>
+<rect x="1080" y="2038" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="2075" class="table">ocr_result</text>
+<text x="2000" y="2073" text-anchor="end" class="module">ocr</text>
+<text x="1100" y="2126" class="field">confirmed_at</text>
+<text x="1510" y="2126" class="field muted">DATETIME ?</text>
+<line x1="1094" y1="2130" x2="2006" y2="2130" class="rule"/>
+<text x="1100" y="2156" class="field">confirmed_by</text>
+<text x="1510" y="2156" class="field muted">BIGINT ?</text>
+<line x1="1094" y1="2160" x2="2006" y2="2160" class="rule"/>
+<text x="1100" y="2186" class="field">created_at</text>
+<text x="1510" y="2186" class="field muted">DATETIME</text>
+<line x1="1094" y1="2190" x2="2006" y2="2190" class="rule"/>
+<text x="1100" y="2216" class="field">model_name</text>
+<text x="1510" y="2216" class="field muted">CHAR</text>
+<line x1="1094" y1="2220" x2="2006" y2="2220" class="rule"/>
+<text x="1100" y="2246" class="field">model_version</text>
+<text x="1510" y="2246" class="field muted">CHAR ?</text>
+<line x1="1094" y1="2250" x2="2006" y2="2250" class="rule"/>
+<text x="1100" y="2276" class="field">modified_at</text>
+<text x="1510" y="2276" class="field muted">DATETIME ?</text>
+<line x1="1094" y1="2280" x2="2006" y2="2280" class="rule"/>
+<text x="1100" y="2306" class="field">modified_by</text>
+<text x="1510" y="2306" class="field muted">BIGINT ?</text>
+<line x1="1094" y1="2310" x2="2006" y2="2310" class="rule"/>
+<text x="1100" y="2336" class="field">ocr_job_id</text>
+<text x="1510" y="2336" class="field muted">ONETOONE</text>
+<text x="2000" y="2336" text-anchor="end" class="tag">FK UK</text>
+<line x1="1094" y1="2340" x2="2006" y2="2340" class="rule"/>
+<text x="1100" y="2366" class="field">ocr_result_id</text>
+<text x="1510" y="2366" class="field muted">BIGINT</text>
+<text x="2000" y="2366" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="2370" x2="2006" y2="2370" class="rule"/>
+<text x="1100" y="2396" class="field">updated_at</text>
+<text x="1510" y="2396" class="field muted">DATETIME</text>
+<line x1="1094" y1="2400" x2="2006" y2="2400" class="rule"/>
+<text x="1100" y="2426" class="field">version</text>
+<text x="1510" y="2426" class="field muted">INT</text>
+<text x="1100" y="2448" class="module">UNIQUE: —</text>
+<rect x="3100" y="2060" width="940" height="482" rx="12" class="box"/>
+<rect x="3100" y="2060" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="2097" class="table">patient</text>
+<text x="4020" y="2095" text-anchor="end" class="module">patients</text>
+<text x="3120" y="2148" class="field">birth_date</text>
+<text x="3530" y="2148" class="field muted">DATE</text>
+<line x1="3114" y1="2152" x2="4026" y2="2152" class="rule"/>
+<text x="3120" y="2178" class="field">created_at</text>
+<text x="3530" y="2178" class="field muted">DATETIME</text>
+<line x1="3114" y1="2182" x2="4026" y2="2182" class="rule"/>
+<text x="3120" y="2208" class="field">gender</text>
+<text x="3530" y="2208" class="field muted">CHARENUM</text>
+<line x1="3114" y1="2212" x2="4026" y2="2212" class="rule"/>
+<text x="3120" y="2238" class="field">hospital_id</text>
+<text x="3530" y="2238" class="field muted">BIGINT</text>
+<line x1="3114" y1="2242" x2="4026" y2="2242" class="rule"/>
+<text x="3120" y="2268" class="field">hospital_patient_no</text>
+<text x="3530" y="2268" class="field muted">CHAR</text>
+<line x1="3114" y1="2272" x2="4026" y2="2272" class="rule"/>
+<text x="3120" y="2298" class="field">name</text>
+<text x="3530" y="2298" class="field muted">CHAR</text>
+<line x1="3114" y1="2302" x2="4026" y2="2302" class="rule"/>
+<text x="3120" y="2328" class="field">patient_id</text>
+<text x="3530" y="2328" class="field muted">BIGINT</text>
+<text x="4020" y="2328" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="2332" x2="4026" y2="2332" class="rule"/>
+<text x="3120" y="2358" class="field">phone</text>
+<text x="3530" y="2358" class="field muted">CHAR</text>
+<line x1="3114" y1="2362" x2="4026" y2="2362" class="rule"/>
+<text x="3120" y="2388" class="field">sms_consent</text>
+<text x="3530" y="2388" class="field muted">BOOLEAN</text>
+<line x1="3114" y1="2392" x2="4026" y2="2392" class="rule"/>
+<text x="3120" y="2418" class="field">sms_consent_updated_by</text>
+<text x="3530" y="2418" class="field muted">BIGINT ?</text>
+<line x1="3114" y1="2422" x2="4026" y2="2422" class="rule"/>
+<text x="3120" y="2448" class="field">sms_consented_at</text>
+<text x="3530" y="2448" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="2452" x2="4026" y2="2452" class="rule"/>
+<text x="3120" y="2478" class="field">sms_opted_out_at</text>
+<text x="3530" y="2478" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="2482" x2="4026" y2="2482" class="rule"/>
+<text x="3120" y="2508" class="field">updated_at</text>
+<text x="3530" y="2508" class="field muted">DATETIME</text>
+<text x="3120" y="2530" class="module">UNIQUE: (hospital_id, hospital_patient_no)</text>
+<rect x="2090" y="2068" width="940" height="332" rx="12" class="box"/>
+<rect x="2090" y="2068" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="2105" class="table">patient_number_correction</text>
+<text x="3010" y="2103" text-anchor="end" class="module">patients</text>
+<text x="2110" y="2156" class="field">after_no</text>
+<text x="2520" y="2156" class="field muted">CHAR</text>
+<line x1="2104" y1="2160" x2="3016" y2="2160" class="rule"/>
+<text x="2110" y="2186" class="field">before_no</text>
+<text x="2520" y="2186" class="field muted">CHAR</text>
+<line x1="2104" y1="2190" x2="3016" y2="2190" class="rule"/>
+<text x="2110" y="2216" class="field">corrected_by</text>
+<text x="2520" y="2216" class="field muted">BIGINT</text>
+<line x1="2104" y1="2220" x2="3016" y2="2220" class="rule"/>
+<text x="2110" y="2246" class="field">correction_id</text>
+<text x="2520" y="2246" class="field muted">BIGINT</text>
+<text x="3010" y="2246" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="2250" x2="3016" y2="2250" class="rule"/>
+<text x="2110" y="2276" class="field">created_at</text>
+<text x="2520" y="2276" class="field muted">DATETIME</text>
+<line x1="2104" y1="2280" x2="3016" y2="2280" class="rule"/>
+<text x="2110" y="2306" class="field">hospital_id</text>
+<text x="2520" y="2306" class="field muted">BIGINT</text>
+<line x1="2104" y1="2310" x2="3016" y2="2310" class="rule"/>
+<text x="2110" y="2336" class="field">patient_id</text>
+<text x="2520" y="2336" class="field muted">BIGINT</text>
+<line x1="2104" y1="2340" x2="3016" y2="2340" class="rule"/>
+<text x="2110" y="2366" class="field">reason</text>
+<text x="2520" y="2366" class="field muted">CHAR</text>
+<text x="2110" y="2388" class="module">UNIQUE: —</text>
+<rect x="70" y="2128" width="940" height="242" rx="12" class="box"/>
+<rect x="70" y="2128" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="2165" class="table">prescription</text>
+<text x="990" y="2163" text-anchor="end" class="module">prescriptions</text>
+<text x="90" y="2216" class="field">created_at</text>
+<text x="500" y="2216" class="field muted">DATETIME</text>
+<line x1="84" y1="2220" x2="996" y2="2220" class="rule"/>
+<text x="90" y="2246" class="field">prescription_id</text>
+<text x="500" y="2246" class="field muted">BIGINT</text>
+<text x="990" y="2246" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="2250" x2="996" y2="2250" class="rule"/>
+<text x="90" y="2276" class="field">prescription_set</text>
+<text x="500" y="2276" class="field muted">CHAR</text>
+<line x1="84" y1="2280" x2="996" y2="2280" class="rule"/>
+<text x="90" y="2306" class="field">updated_at</text>
+<text x="500" y="2306" class="field muted">DATETIME</text>
+<line x1="84" y1="2310" x2="996" y2="2310" class="rule"/>
+<text x="90" y="2336" class="field">visit_id</text>
+<text x="500" y="2336" class="field muted">ONETOONE</text>
+<text x="990" y="2336" text-anchor="end" class="tag">FK UK</text>
+<text x="90" y="2358" class="module">UNIQUE: —</text>
+<rect x="4110" y="2218" width="940" height="302" rx="12" class="box"/>
+<rect x="4110" y="2218" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="2255" class="table">prescription_item</text>
+<text x="5030" y="2253" text-anchor="end" class="module">prescriptions</text>
+<text x="4130" y="2306" class="field">created_at</text>
+<text x="4540" y="2306" class="field muted">DATETIME</text>
+<line x1="4124" y1="2310" x2="5036" y2="2310" class="rule"/>
+<text x="4130" y="2336" class="field">duration_days</text>
+<text x="4540" y="2336" class="field muted">INT ?</text>
+<line x1="4124" y1="2340" x2="5036" y2="2340" class="rule"/>
+<text x="4130" y="2366" class="field">frequency</text>
+<text x="4540" y="2366" class="field muted">CHAR</text>
+<line x1="4124" y1="2370" x2="5036" y2="2370" class="rule"/>
+<text x="4130" y="2396" class="field">name</text>
+<text x="4540" y="2396" class="field muted">CHAR</text>
+<line x1="4124" y1="2400" x2="5036" y2="2400" class="rule"/>
+<text x="4130" y="2426" class="field">prescription_id</text>
+<text x="4540" y="2426" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="2426" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="2430" x2="5036" y2="2430" class="rule"/>
+<text x="4130" y="2456" class="field">prescription_item_id</text>
+<text x="4540" y="2456" class="field muted">BIGINT</text>
+<text x="5030" y="2456" text-anchor="end" class="tag">PK UK</text>
+<line x1="4124" y1="2460" x2="5036" y2="2460" class="rule"/>
+<text x="4130" y="2486" class="field">updated_at</text>
+<text x="4540" y="2486" class="field muted">DATETIME</text>
+<text x="4130" y="2508" class="module">UNIQUE: —</text>
+<rect x="70" y="2420" width="940" height="332" rx="12" class="box"/>
+<rect x="70" y="2420" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="2457" class="table">hospital</text>
+<text x="990" y="2455" text-anchor="end" class="module">staffs</text>
+<text x="90" y="2508" class="field">address</text>
+<text x="500" y="2508" class="field muted">CHAR ?</text>
+<line x1="84" y1="2512" x2="996" y2="2512" class="rule"/>
+<text x="90" y="2538" class="field">booking_url</text>
+<text x="500" y="2538" class="field muted">CHAR ?</text>
+<line x1="84" y1="2542" x2="996" y2="2542" class="rule"/>
+<text x="90" y="2568" class="field">created_at</text>
+<text x="500" y="2568" class="field muted">DATETIME</text>
+<line x1="84" y1="2572" x2="996" y2="2572" class="rule"/>
+<text x="90" y="2598" class="field">hospital_id</text>
+<text x="500" y="2598" class="field muted">BIGINT</text>
+<text x="990" y="2598" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="2602" x2="996" y2="2602" class="rule"/>
+<text x="90" y="2628" class="field">name</text>
+<text x="500" y="2628" class="field muted">CHAR</text>
+<text x="990" y="2628" text-anchor="end" class="tag">UK</text>
+<line x1="84" y1="2632" x2="996" y2="2632" class="rule"/>
+<text x="90" y="2658" class="field">phone</text>
+<text x="500" y="2658" class="field muted">CHAR ?</text>
+<line x1="84" y1="2662" x2="996" y2="2662" class="rule"/>
+<text x="90" y="2688" class="field">updated_at</text>
+<text x="500" y="2688" class="field muted">DATETIME</text>
+<line x1="84" y1="2692" x2="996" y2="2692" class="rule"/>
+<text x="90" y="2718" class="field">updated_by</text>
+<text x="500" y="2718" class="field muted">BIGINT ?</text>
+<text x="90" y="2740" class="module">UNIQUE: —</text>
+<rect x="2090" y="2450" width="940" height="272" rx="12" class="box"/>
+<rect x="2090" y="2450" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="2487" class="table">hospital_update_event</text>
+<text x="3010" y="2485" text-anchor="end" class="module">staffs</text>
+<text x="2110" y="2538" class="field">actor_staff_id</text>
+<text x="2520" y="2538" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="2538" text-anchor="end" class="tag">FK</text>
+<line x1="2104" y1="2542" x2="3016" y2="2542" class="rule"/>
+<text x="2110" y="2568" class="field">changes</text>
+<text x="2520" y="2568" class="field muted">JSON</text>
+<line x1="2104" y1="2572" x2="3016" y2="2572" class="rule"/>
+<text x="2110" y="2598" class="field">created_at</text>
+<text x="2520" y="2598" class="field muted">DATETIME</text>
+<line x1="2104" y1="2602" x2="3016" y2="2602" class="rule"/>
+<text x="2110" y="2628" class="field">event_type</text>
+<text x="2520" y="2628" class="field muted">CHARENUM</text>
+<line x1="2104" y1="2632" x2="3016" y2="2632" class="rule"/>
+<text x="2110" y="2658" class="field">hospital_id</text>
+<text x="2520" y="2658" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="2658" text-anchor="end" class="tag">FK</text>
+<line x1="2104" y1="2662" x2="3016" y2="2662" class="rule"/>
+<text x="2110" y="2688" class="field">hospital_update_event_id</text>
+<text x="2520" y="2688" class="field muted">BIGINT</text>
+<text x="3010" y="2688" text-anchor="end" class="tag">PK UK</text>
+<text x="2110" y="2710" class="module">UNIQUE: —</text>
+<rect x="1080" y="2510" width="940" height="512" rx="12" class="box"/>
+<rect x="1080" y="2510" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="2547" class="table">staff</text>
+<text x="2000" y="2545" text-anchor="end" class="module">staffs</text>
+<text x="1100" y="2598" class="field">created_at</text>
+<text x="1510" y="2598" class="field muted">DATETIME</text>
+<line x1="1094" y1="2602" x2="2006" y2="2602" class="rule"/>
+<text x="1100" y="2628" class="field">hospital_id</text>
+<text x="1510" y="2628" class="field muted">FOREIGNKEY</text>
+<text x="2000" y="2628" text-anchor="end" class="tag">FK</text>
+<line x1="1094" y1="2632" x2="2006" y2="2632" class="rule"/>
+<text x="1100" y="2658" class="field">is_owner</text>
+<text x="1510" y="2658" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="2662" x2="2006" y2="2662" class="rule"/>
+<text x="1100" y="2688" class="field">last_login_at</text>
+<text x="1510" y="2688" class="field muted">DATETIME ?</text>
+<line x1="1094" y1="2692" x2="2006" y2="2692" class="rule"/>
+<text x="1100" y="2718" class="field">left_at</text>
+<text x="1510" y="2718" class="field muted">DATETIME ?</text>
+<line x1="1094" y1="2722" x2="2006" y2="2722" class="rule"/>
+<text x="1100" y="2748" class="field">login_id</text>
+<text x="1510" y="2748" class="field muted">CHAR</text>
+<text x="2000" y="2748" text-anchor="end" class="tag">UK</text>
+<line x1="1094" y1="2752" x2="2006" y2="2752" class="rule"/>
+<text x="1100" y="2778" class="field">must_change_password</text>
+<text x="1510" y="2778" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="2782" x2="2006" y2="2782" class="rule"/>
+<text x="1100" y="2808" class="field">name</text>
+<text x="1510" y="2808" class="field muted">CHAR</text>
+<line x1="1094" y1="2812" x2="2006" y2="2812" class="rule"/>
+<text x="1100" y="2838" class="field">password_changed_at</text>
+<text x="1510" y="2838" class="field muted">DATETIME ?</text>
+<line x1="1094" y1="2842" x2="2006" y2="2842" class="rule"/>
+<text x="1100" y="2868" class="field">password_hash</text>
+<text x="1510" y="2868" class="field muted">CHAR</text>
+<line x1="1094" y1="2872" x2="2006" y2="2872" class="rule"/>
+<text x="1100" y="2898" class="field">roles</text>
+<text x="1510" y="2898" class="field muted">JSON</text>
+<line x1="1094" y1="2902" x2="2006" y2="2902" class="rule"/>
+<text x="1100" y="2928" class="field">staff_id</text>
+<text x="1510" y="2928" class="field muted">BIGINT</text>
+<text x="2000" y="2928" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="2932" x2="2006" y2="2932" class="rule"/>
+<text x="1100" y="2958" class="field">status</text>
+<text x="1510" y="2958" class="field muted">CHARENUM</text>
+<line x1="1094" y1="2962" x2="2006" y2="2962" class="rule"/>
+<text x="1100" y="2988" class="field">updated_at</text>
+<text x="1510" y="2988" class="field muted">DATETIME</text>
+<text x="1100" y="3010" class="module">UNIQUE: —</text>
+<rect x="4110" y="2570" width="940" height="302" rx="12" class="box"/>
+<rect x="4110" y="2570" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="2607" class="table">staff_account_event</text>
+<text x="5030" y="2605" text-anchor="end" class="module">staffs</text>
+<text x="4130" y="2658" class="field">actor_staff_id</text>
+<text x="4540" y="2658" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="2658" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="2662" x2="5036" y2="2662" class="rule"/>
+<text x="4130" y="2688" class="field">created_at</text>
+<text x="4540" y="2688" class="field muted">DATETIME</text>
+<line x1="4124" y1="2692" x2="5036" y2="2692" class="rule"/>
+<text x="4130" y="2718" class="field">event_type</text>
+<text x="4540" y="2718" class="field muted">CHARENUM</text>
+<line x1="4124" y1="2722" x2="5036" y2="2722" class="rule"/>
+<text x="4130" y="2748" class="field">hospital_id</text>
+<text x="4540" y="2748" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="2748" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="2752" x2="5036" y2="2752" class="rule"/>
+<text x="4130" y="2778" class="field">roles</text>
+<text x="4540" y="2778" class="field muted">JSON</text>
+<line x1="4124" y1="2782" x2="5036" y2="2782" class="rule"/>
+<text x="4130" y="2808" class="field">staff_account_event_id</text>
+<text x="4540" y="2808" class="field muted">BIGINT</text>
+<text x="5030" y="2808" text-anchor="end" class="tag">PK UK</text>
+<line x1="4124" y1="2812" x2="5036" y2="2812" class="rule"/>
+<text x="4130" y="2838" class="field">subject_staff_id</text>
+<text x="4540" y="2838" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="2838" text-anchor="end" class="tag">FK</text>
+<text x="4130" y="2860" class="module">UNIQUE: —</text>
+<rect x="3100" y="2592" width="940" height="452" rx="12" class="box"/>
+<rect x="3100" y="2592" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="2629" class="table">users</text>
+<text x="4020" y="2627" text-anchor="end" class="module">users</text>
+<text x="3120" y="2680" class="field">birthday</text>
+<text x="3530" y="2680" class="field muted">DATE</text>
+<line x1="3114" y1="2684" x2="4026" y2="2684" class="rule"/>
+<text x="3120" y="2710" class="field">created_at</text>
+<text x="3530" y="2710" class="field muted">DATETIME</text>
+<line x1="3114" y1="2714" x2="4026" y2="2714" class="rule"/>
+<text x="3120" y="2740" class="field">email</text>
+<text x="3530" y="2740" class="field muted">CHAR</text>
+<line x1="3114" y1="2744" x2="4026" y2="2744" class="rule"/>
+<text x="3120" y="2770" class="field">gender</text>
+<text x="3530" y="2770" class="field muted">CHARENUM</text>
+<line x1="3114" y1="2774" x2="4026" y2="2774" class="rule"/>
+<text x="3120" y="2800" class="field">hashed_password</text>
+<text x="3530" y="2800" class="field muted">CHAR</text>
+<line x1="3114" y1="2804" x2="4026" y2="2804" class="rule"/>
+<text x="3120" y="2830" class="field">id</text>
+<text x="3530" y="2830" class="field muted">BIGINT</text>
+<text x="4020" y="2830" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="2834" x2="4026" y2="2834" class="rule"/>
+<text x="3120" y="2860" class="field">is_active</text>
+<text x="3530" y="2860" class="field muted">BOOLEAN</text>
+<line x1="3114" y1="2864" x2="4026" y2="2864" class="rule"/>
+<text x="3120" y="2890" class="field">is_admin</text>
+<text x="3530" y="2890" class="field muted">BOOLEAN</text>
+<line x1="3114" y1="2894" x2="4026" y2="2894" class="rule"/>
+<text x="3120" y="2920" class="field">last_login</text>
+<text x="3530" y="2920" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="2924" x2="4026" y2="2924" class="rule"/>
+<text x="3120" y="2950" class="field">name</text>
+<text x="3530" y="2950" class="field muted">CHAR</text>
+<line x1="3114" y1="2954" x2="4026" y2="2954" class="rule"/>
+<text x="3120" y="2980" class="field">phone_number</text>
+<text x="3530" y="2980" class="field muted">CHAR</text>
+<line x1="3114" y1="2984" x2="4026" y2="2984" class="rule"/>
+<text x="3120" y="3010" class="field">updated_at</text>
+<text x="3530" y="3010" class="field muted">DATETIME</text>
+<text x="3120" y="3032" class="module">UNIQUE: —</text>
+<rect x="2090" y="2772" width="940" height="242" rx="12" class="box"/>
+<rect x="2090" y="2772" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="2809" class="table">chatbot_submission</text>
+<text x="3010" y="2807" text-anchor="end" class="module">visits</text>
+<text x="2110" y="2860" class="field">chatbot_submission_id</text>
+<text x="2520" y="2860" class="field muted">BIGINT</text>
+<text x="3010" y="2860" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="2864" x2="3016" y2="2864" class="rule"/>
+<text x="2110" y="2890" class="field">created_at</text>
+<text x="2520" y="2890" class="field muted">DATETIME</text>
+<line x1="2104" y1="2894" x2="3016" y2="2894" class="rule"/>
+<text x="2110" y="2920" class="field">guide_document_id</text>
+<text x="2520" y="2920" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="2920" text-anchor="end" class="tag">FK</text>
+<line x1="2104" y1="2924" x2="3016" y2="2924" class="rule"/>
+<text x="2110" y="2950" class="field">idempotency_digest</text>
+<text x="2520" y="2950" class="field muted">CHAR</text>
+<line x1="2104" y1="2954" x2="3016" y2="2954" class="rule"/>
+<text x="2110" y="2980" class="field">question_digest</text>
+<text x="2520" y="2980" class="field muted">CHAR</text>
+<text x="2110" y="3002" class="module">UNIQUE: (guide_document_id, idempotency_digest)</text>
+<rect x="70" y="2802" width="940" height="332" rx="12" class="box"/>
+<rect x="70" y="2802" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="2839" class="table">check_in</text>
+<text x="990" y="2837" text-anchor="end" class="module">visits</text>
+<text x="90" y="2890" class="field">check_in_id</text>
+<text x="500" y="2890" class="field muted">BIGINT</text>
+<text x="990" y="2890" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="2894" x2="996" y2="2894" class="rule"/>
+<text x="90" y="2920" class="field">created_at</text>
+<text x="500" y="2920" class="field muted">DATETIME</text>
+<line x1="84" y1="2924" x2="996" y2="2924" class="rule"/>
+<text x="90" y="2950" class="field">guide_document_id</text>
+<text x="500" y="2950" class="field muted">ONETOONE</text>
+<text x="990" y="2950" text-anchor="end" class="tag">FK UK</text>
+<line x1="84" y1="2954" x2="996" y2="2954" class="rule"/>
+<text x="90" y="2980" class="field">medication</text>
+<text x="500" y="2980" class="field muted">CHARENUM</text>
+<line x1="84" y1="2984" x2="996" y2="2984" class="rule"/>
+<text x="90" y="3010" class="field">note</text>
+<text x="500" y="3010" class="field muted">CHAR ?</text>
+<line x1="84" y1="3014" x2="996" y2="3014" class="rule"/>
+<text x="90" y="3040" class="field">pain_had</text>
+<text x="500" y="3040" class="field muted">BOOLEAN ?</text>
+<line x1="84" y1="3044" x2="996" y2="3044" class="rule"/>
+<text x="90" y="3070" class="field">pain_score</text>
+<text x="500" y="3070" class="field muted">SMALLINT ?</text>
+<line x1="84" y1="3074" x2="996" y2="3074" class="rule"/>
+<text x="90" y="3100" class="field">pain_types</text>
+<text x="500" y="3100" class="field muted">JSON</text>
+<text x="90" y="3122" class="module">UNIQUE: —</text>
+<rect x="4110" y="2922" width="940" height="302" rx="12" class="box"/>
+<rect x="4110" y="2922" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="2959" class="table">check_in_signal</text>
+<text x="5030" y="2957" text-anchor="end" class="module">visits</text>
+<text x="4130" y="3010" class="field">answer_key</text>
+<text x="4540" y="3010" class="field muted">CHARENUM</text>
+<line x1="4124" y1="3014" x2="5036" y2="3014" class="rule"/>
+<text x="4130" y="3040" class="field">client_id</text>
+<text x="4540" y="3040" class="field muted">CHAR</text>
+<line x1="4124" y1="3044" x2="5036" y2="3044" class="rule"/>
+<text x="4130" y="3070" class="field">client_sequence</text>
+<text x="4540" y="3070" class="field muted">BIGINT</text>
+<line x1="4124" y1="3074" x2="5036" y2="3074" class="rule"/>
+<text x="4130" y="3100" class="field">client_session_id</text>
+<text x="4540" y="3100" class="field muted">CHAR</text>
+<line x1="4124" y1="3104" x2="5036" y2="3104" class="rule"/>
+<text x="4130" y="3130" class="field">created_at</text>
+<text x="4540" y="3130" class="field muted">DATETIME</text>
+<line x1="4124" y1="3134" x2="5036" y2="3134" class="rule"/>
+<text x="4130" y="3160" class="field">guide_document_id</text>
+<text x="4540" y="3160" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="3160" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="3164" x2="5036" y2="3164" class="rule"/>
+<text x="4130" y="3190" class="field">signal_id</text>
+<text x="4540" y="3190" class="field muted">BIGINT</text>
+<text x="5030" y="3190" text-anchor="end" class="tag">PK UK</text>
+<text x="4130" y="3212" class="module">UNIQUE: (guide_document_id, client_id, client_sequence)</text>
+<rect x="2090" y="3064" width="940" height="212" rx="12" class="box"/>
+<rect x="2090" y="3064" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="3101" class="table">check_in_signal_acknowledgement</text>
+<text x="3010" y="3099" text-anchor="end" class="module">visits</text>
+<text x="2110" y="3152" class="field">acknowledgement_id</text>
+<text x="2520" y="3152" class="field muted">BIGINT</text>
+<text x="3010" y="3152" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="3156" x2="3016" y2="3156" class="rule"/>
+<text x="2110" y="3182" class="field">actor_id</text>
+<text x="2520" y="3182" class="field muted">BIGINT</text>
+<line x1="2104" y1="3186" x2="3016" y2="3186" class="rule"/>
+<text x="2110" y="3212" class="field">created_at</text>
+<text x="2520" y="3212" class="field muted">DATETIME</text>
+<line x1="2104" y1="3216" x2="3016" y2="3216" class="rule"/>
+<text x="2110" y="3242" class="field">state_id</text>
+<text x="2520" y="3242" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="3242" text-anchor="end" class="tag">FK</text>
+<text x="2110" y="3264" class="module">UNIQUE: —</text>
+<rect x="1080" y="3072" width="940" height="392" rx="12" class="box"/>
+<rect x="1080" y="3072" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="3109" class="table">check_in_signal_state</text>
+<text x="2000" y="3107" text-anchor="end" class="module">visits</text>
+<text x="1100" y="3160" class="field">acknowledged_at</text>
+<text x="1510" y="3160" class="field muted">DATETIME ?</text>
+<line x1="1094" y1="3164" x2="2006" y2="3164" class="rule"/>
+<text x="1100" y="3190" class="field">acknowledged_by</text>
+<text x="1510" y="3190" class="field muted">BIGINT ?</text>
+<line x1="1094" y1="3194" x2="2006" y2="3194" class="rule"/>
+<text x="1100" y="3220" class="field">answer_key</text>
+<text x="1510" y="3220" class="field muted">CHARENUM</text>
+<line x1="1094" y1="3224" x2="2006" y2="3224" class="rule"/>
+<text x="1100" y="3250" class="field">client_id</text>
+<text x="1510" y="3250" class="field muted">CHAR ?</text>
+<line x1="1094" y1="3254" x2="2006" y2="3254" class="rule"/>
+<text x="1100" y="3280" class="field">client_sequence</text>
+<text x="1510" y="3280" class="field muted">BIGINT ?</text>
+<line x1="1094" y1="3284" x2="2006" y2="3284" class="rule"/>
+<text x="1100" y="3310" class="field">guide_document_id</text>
+<text x="1510" y="3310" class="field muted">ONETOONE</text>
+<text x="2000" y="3310" text-anchor="end" class="tag">FK UK</text>
+<line x1="1094" y1="3314" x2="2006" y2="3314" class="rule"/>
+<text x="1100" y="3340" class="field">needs_review</text>
+<text x="1510" y="3340" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="3344" x2="2006" y2="3344" class="rule"/>
+<text x="1100" y="3370" class="field">signal_id</text>
+<text x="1510" y="3370" class="field muted">FOREIGNKEY ?</text>
+<text x="2000" y="3370" text-anchor="end" class="tag">FK</text>
+<line x1="1094" y1="3374" x2="2006" y2="3374" class="rule"/>
+<text x="1100" y="3400" class="field">state_id</text>
+<text x="1510" y="3400" class="field muted">BIGINT</text>
+<text x="2000" y="3400" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="3404" x2="2006" y2="3404" class="rule"/>
+<text x="1100" y="3430" class="field">updated_at</text>
+<text x="1510" y="3430" class="field muted">DATETIME</text>
+<text x="1100" y="3452" class="module">UNIQUE: —</text>
+<rect x="3100" y="3094" width="940" height="482" rx="12" class="box"/>
+<rect x="3100" y="3094" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="3131" class="table">guide_document</text>
+<text x="4020" y="3129" text-anchor="end" class="module">visits</text>
+<text x="3120" y="3182" class="field">approved_at</text>
+<text x="3530" y="3182" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="3186" x2="4026" y2="3186" class="rule"/>
+<text x="3120" y="3212" class="field">approved_by</text>
+<text x="3530" y="3212" class="field muted">BIGINT ?</text>
+<line x1="3114" y1="3216" x2="4026" y2="3216" class="rule"/>
+<text x="3120" y="3242" class="field">check_hour</text>
+<text x="3530" y="3242" class="field muted">SMALLINT</text>
+<line x1="3114" y1="3246" x2="4026" y2="3246" class="rule"/>
+<text x="3120" y="3272" class="field">created_at</text>
+<text x="3530" y="3272" class="field muted">DATETIME</text>
+<line x1="3114" y1="3276" x2="4026" y2="3276" class="rule"/>
+<text x="3120" y="3302" class="field">guide_document_id</text>
+<text x="3530" y="3302" class="field muted">BIGINT</text>
+<text x="4020" y="3302" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="3306" x2="4026" y2="3306" class="rule"/>
+<text x="3120" y="3332" class="field">hospital_id</text>
+<text x="3530" y="3332" class="field muted">BIGINT</text>
+<line x1="3114" y1="3336" x2="4026" y2="3336" class="rule"/>
+<text x="3120" y="3362" class="field">returned_reason</text>
+<text x="3530" y="3362" class="field muted">CHAR ?</text>
+<line x1="3114" y1="3366" x2="4026" y2="3366" class="rule"/>
+<text x="3120" y="3392" class="field">scheduled_at</text>
+<text x="3530" y="3392" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="3396" x2="4026" y2="3396" class="rule"/>
+<text x="3120" y="3422" class="field">send_hour</text>
+<text x="3530" y="3422" class="field muted">SMALLINT</text>
+<line x1="3114" y1="3426" x2="4026" y2="3426" class="rule"/>
+<text x="3120" y="3452" class="field">status</text>
+<text x="3530" y="3452" class="field muted">CHARENUM</text>
+<line x1="3114" y1="3456" x2="4026" y2="3456" class="rule"/>
+<text x="3120" y="3482" class="field">updated_at</text>
+<text x="3530" y="3482" class="field muted">DATETIME</text>
+<line x1="3114" y1="3486" x2="4026" y2="3486" class="rule"/>
+<text x="3120" y="3512" class="field">version</text>
+<text x="3530" y="3512" class="field muted">INT</text>
+<line x1="3114" y1="3516" x2="4026" y2="3516" class="rule"/>
+<text x="3120" y="3542" class="field">visit_id</text>
+<text x="3530" y="3542" class="field muted">ONETOONE</text>
+<text x="4020" y="3542" text-anchor="end" class="tag">FK UK</text>
+<text x="3120" y="3564" class="module">UNIQUE: —</text>
+<rect x="70" y="3184" width="940" height="392" rx="12" class="box"/>
+<rect x="70" y="3184" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="3221" class="table">guide_event</text>
+<text x="990" y="3219" text-anchor="end" class="module">visits</text>
+<text x="90" y="3272" class="field">actor_id</text>
+<text x="500" y="3272" class="field muted">BIGINT</text>
+<line x1="84" y1="3276" x2="996" y2="3276" class="rule"/>
+<text x="90" y="3302" class="field">caused_by_message_id</text>
+<text x="500" y="3302" class="field muted">BIGINT ?</text>
+<line x1="84" y1="3306" x2="996" y2="3306" class="rule"/>
+<text x="90" y="3332" class="field">created_at</text>
+<text x="500" y="3332" class="field muted">DATETIME</text>
+<line x1="84" y1="3336" x2="996" y2="3336" class="rule"/>
+<text x="90" y="3362" class="field">event_type</text>
+<text x="500" y="3362" class="field muted">CHARENUM</text>
+<line x1="84" y1="3366" x2="996" y2="3366" class="rule"/>
+<text x="90" y="3392" class="field">guide_document_id</text>
+<text x="500" y="3392" class="field muted">FOREIGNKEY</text>
+<text x="990" y="3392" text-anchor="end" class="tag">FK</text>
+<line x1="84" y1="3396" x2="996" y2="3396" class="rule"/>
+<text x="90" y="3422" class="field">guide_event_id</text>
+<text x="500" y="3422" class="field muted">BIGINT</text>
+<text x="990" y="3422" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="3426" x2="996" y2="3426" class="rule"/>
+<text x="90" y="3452" class="field">order_after</text>
+<text x="500" y="3452" class="field muted">CHAR ?</text>
+<line x1="84" y1="3456" x2="996" y2="3456" class="rule"/>
+<text x="90" y="3482" class="field">order_before</text>
+<text x="500" y="3482" class="field muted">CHAR ?</text>
+<line x1="84" y1="3486" x2="996" y2="3486" class="rule"/>
+<text x="90" y="3512" class="field">reason</text>
+<text x="500" y="3512" class="field muted">CHAR ?</text>
+<line x1="84" y1="3516" x2="996" y2="3516" class="rule"/>
+<text x="90" y="3542" class="field">section_key</text>
+<text x="500" y="3542" class="field muted">CHARENUM ?</text>
+<text x="90" y="3564" class="module">UNIQUE: —</text>
+<rect x="4110" y="3274" width="940" height="632" rx="12" class="box"/>
+<rect x="4110" y="3274" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="3311" class="table">guide_generation_job</text>
+<text x="5030" y="3309" text-anchor="end" class="module">visits</text>
+<text x="4130" y="3362" class="field">active_key</text>
+<text x="4540" y="3362" class="field muted">CHAR ?</text>
+<text x="5030" y="3362" text-anchor="end" class="tag">UK</text>
+<line x1="4124" y1="3366" x2="5036" y2="3366" class="rule"/>
+<text x="4130" y="3392" class="field">actor_id</text>
+<text x="4540" y="3392" class="field muted">BIGINT</text>
+<line x1="4124" y1="3396" x2="5036" y2="3396" class="rule"/>
+<text x="4130" y="3422" class="field">attempts</text>
+<text x="4540" y="3422" class="field muted">INT</text>
+<line x1="4124" y1="3426" x2="5036" y2="3426" class="rule"/>
+<text x="4130" y="3452" class="field">available_at</text>
+<text x="4540" y="3452" class="field muted">DATETIME</text>
+<line x1="4124" y1="3456" x2="5036" y2="3456" class="rule"/>
+<text x="4130" y="3482" class="field">block_reason</text>
+<text x="4540" y="3482" class="field muted">CHAR ?</text>
+<line x1="4124" y1="3486" x2="5036" y2="3486" class="rule"/>
+<text x="4130" y="3512" class="field">claim</text>
+<text x="4540" y="3512" class="field muted">UUID ?</text>
+<line x1="4124" y1="3516" x2="5036" y2="3516" class="rule"/>
+<text x="4130" y="3542" class="field">completed_at</text>
+<text x="4540" y="3542" class="field muted">DATETIME ?</text>
+<line x1="4124" y1="3546" x2="5036" y2="3546" class="rule"/>
+<text x="4130" y="3572" class="field">created_at</text>
+<text x="4540" y="3572" class="field muted">DATETIME</text>
+<line x1="4124" y1="3576" x2="5036" y2="3576" class="rule"/>
+<text x="4130" y="3602" class="field">discard_edits</text>
+<text x="4540" y="3602" class="field muted">BOOLEAN</text>
+<line x1="4124" y1="3606" x2="5036" y2="3606" class="rule"/>
+<text x="4130" y="3632" class="field">failed_at</text>
+<text x="4540" y="3632" class="field muted">DATETIME ?</text>
+<line x1="4124" y1="3636" x2="5036" y2="3636" class="rule"/>
+<text x="4130" y="3662" class="field">failure_reason</text>
+<text x="4540" y="3662" class="field muted">CHAR ?</text>
+<line x1="4124" y1="3666" x2="5036" y2="3666" class="rule"/>
+<text x="4130" y="3692" class="field">guide_version</text>
+<text x="4540" y="3692" class="field muted">INT</text>
+<line x1="4124" y1="3696" x2="5036" y2="3696" class="rule"/>
+<text x="4130" y="3722" class="field">hospital_id</text>
+<text x="4540" y="3722" class="field muted">BIGINT</text>
+<line x1="4124" y1="3726" x2="5036" y2="3726" class="rule"/>
+<text x="4130" y="3752" class="field">input_sha256</text>
+<text x="4540" y="3752" class="field muted">CHAR</text>
+<line x1="4124" y1="3756" x2="5036" y2="3756" class="rule"/>
+<text x="4130" y="3782" class="field">job_id</text>
+<text x="4540" y="3782" class="field muted">UUID</text>
+<text x="5030" y="3782" text-anchor="end" class="tag">PK UK</text>
+<line x1="4124" y1="3786" x2="5036" y2="3786" class="rule"/>
+<text x="4130" y="3812" class="field">result_guide_document_id</text>
+<text x="4540" y="3812" class="field muted">BIGINT ?</text>
+<line x1="4124" y1="3816" x2="5036" y2="3816" class="rule"/>
+<text x="4130" y="3842" class="field">result_version</text>
+<text x="4540" y="3842" class="field muted">INT ?</text>
+<line x1="4124" y1="3846" x2="5036" y2="3846" class="rule"/>
+<text x="4130" y="3872" class="field">visit_id</text>
+<text x="4540" y="3872" class="field muted">BIGINT</text>
+<text x="4130" y="3894" class="module">UNIQUE: —</text>
+<rect x="2090" y="3326" width="940" height="722" rx="12" class="box"/>
+<rect x="2090" y="3326" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="3363" class="table">guide_message</text>
+<text x="3010" y="3361" text-anchor="end" class="module">visits</text>
+<text x="2110" y="3414" class="field">attempt_count</text>
+<text x="2520" y="3414" class="field muted">SMALLINT</text>
+<line x1="2104" y1="3418" x2="3016" y2="3418" class="rule"/>
+<text x="2110" y="3444" class="field">claim_token</text>
+<text x="2520" y="3444" class="field muted">CHAR ?</text>
+<line x1="2104" y1="3448" x2="3016" y2="3448" class="rule"/>
+<text x="2110" y="3474" class="field">created_at</text>
+<text x="2520" y="3474" class="field muted">DATETIME</text>
+<line x1="2104" y1="3478" x2="3016" y2="3478" class="rule"/>
+<text x="2110" y="3504" class="field">failure_code</text>
+<text x="2520" y="3504" class="field muted">CHARENUM ?</text>
+<line x1="2104" y1="3508" x2="3016" y2="3508" class="rule"/>
+<text x="2110" y="3534" class="field">guide_document_id</text>
+<text x="2520" y="3534" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="3534" text-anchor="end" class="tag">FK</text>
+<line x1="2104" y1="3538" x2="3016" y2="3538" class="rule"/>
+<text x="2110" y="3564" class="field">guide_message_id</text>
+<text x="2520" y="3564" class="field muted">BIGINT</text>
+<text x="3010" y="3564" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="3568" x2="3016" y2="3568" class="rule"/>
+<text x="2110" y="3594" class="field">hold_reason</text>
+<text x="2520" y="3594" class="field muted">CHARENUM ?</text>
+<line x1="2104" y1="3598" x2="3016" y2="3598" class="rule"/>
+<text x="2110" y="3624" class="field">kind</text>
+<text x="2520" y="3624" class="field muted">CHARENUM</text>
+<line x1="2104" y1="3628" x2="3016" y2="3628" class="rule"/>
+<text x="2110" y="3654" class="field">provider_detail</text>
+<text x="2520" y="3654" class="field muted">CHAR ?</text>
+<line x1="2104" y1="3658" x2="3016" y2="3658" class="rule"/>
+<text x="2110" y="3684" class="field">provider_message_id</text>
+<text x="2520" y="3684" class="field muted">CHAR ?</text>
+<line x1="2104" y1="3688" x2="3016" y2="3688" class="rule"/>
+<text x="2110" y="3714" class="field">resend_of_message_id</text>
+<text x="2520" y="3714" class="field muted">BIGINT ?</text>
+<text x="3010" y="3714" text-anchor="end" class="tag">UK</text>
+<line x1="2104" y1="3718" x2="3016" y2="3718" class="rule"/>
+<text x="2110" y="3744" class="field">resend_sequence</text>
+<text x="2520" y="3744" class="field muted">SMALLINT</text>
+<line x1="2104" y1="3748" x2="3016" y2="3748" class="rule"/>
+<text x="2110" y="3774" class="field">scheduled_at</text>
+<text x="2520" y="3774" class="field muted">DATETIME</text>
+<line x1="2104" y1="3778" x2="3016" y2="3778" class="rule"/>
+<text x="2110" y="3804" class="field">sent_at</text>
+<text x="2520" y="3804" class="field muted">DATETIME ?</text>
+<line x1="2104" y1="3808" x2="3016" y2="3808" class="rule"/>
+<text x="2110" y="3834" class="field">sent_body</text>
+<text x="2520" y="3834" class="field muted">TEXT ?</text>
+<line x1="2104" y1="3838" x2="3016" y2="3838" class="rule"/>
+<text x="2110" y="3864" class="field">source_failure_at</text>
+<text x="2520" y="3864" class="field muted">DATETIME ?</text>
+<line x1="2104" y1="3868" x2="3016" y2="3868" class="rule"/>
+<text x="2110" y="3894" class="field">source_failure_type</text>
+<text x="2520" y="3894" class="field muted">CHAR ?</text>
+<line x1="2104" y1="3898" x2="3016" y2="3898" class="rule"/>
+<text x="2110" y="3924" class="field">source_retry_generation</text>
+<text x="2520" y="3924" class="field muted">INT</text>
+<line x1="2104" y1="3928" x2="3016" y2="3928" class="rule"/>
+<text x="2110" y="3954" class="field">source_retry_requested</text>
+<text x="2520" y="3954" class="field muted">BOOLEAN</text>
+<line x1="2104" y1="3958" x2="3016" y2="3958" class="rule"/>
+<text x="2110" y="3984" class="field">status</text>
+<text x="2520" y="3984" class="field muted">CHARENUM</text>
+<line x1="2104" y1="3988" x2="3016" y2="3988" class="rule"/>
+<text x="2110" y="4014" class="field">updated_at</text>
+<text x="2520" y="4014" class="field muted">DATETIME</text>
+<text x="2110" y="4036" class="module">UNIQUE: (guide_document_id, kind, resend_sequence)</text>
+<rect x="1080" y="3514" width="940" height="242" rx="12" class="box"/>
+<rect x="1080" y="3514" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="3551" class="table">guide_message_event</text>
+<text x="2000" y="3549" text-anchor="end" class="module">visits</text>
+<text x="1100" y="3602" class="field">created_at</text>
+<text x="1510" y="3602" class="field muted">DATETIME</text>
+<line x1="1094" y1="3606" x2="2006" y2="3606" class="rule"/>
+<text x="1100" y="3632" class="field">event_type</text>
+<text x="1510" y="3632" class="field muted">CHARENUM</text>
+<line x1="1094" y1="3636" x2="2006" y2="3636" class="rule"/>
+<text x="1100" y="3662" class="field">guide_message_event_id</text>
+<text x="1510" y="3662" class="field muted">BIGINT</text>
+<text x="2000" y="3662" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="3666" x2="2006" y2="3666" class="rule"/>
+<text x="1100" y="3692" class="field">guide_message_id</text>
+<text x="1510" y="3692" class="field muted">FOREIGNKEY</text>
+<text x="2000" y="3692" text-anchor="end" class="tag">FK</text>
+<line x1="1094" y1="3696" x2="2006" y2="3696" class="rule"/>
+<text x="1100" y="3722" class="field">reason</text>
+<text x="1510" y="3722" class="field muted">CHAR ?</text>
+<text x="1100" y="3744" class="module">UNIQUE: —</text>
+<rect x="70" y="3626" width="940" height="332" rx="12" class="box"/>
+<rect x="70" y="3626" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="3663" class="table">guide_message_setting</text>
+<text x="990" y="3661" text-anchor="end" class="module">visits</text>
+<text x="90" y="3714" class="field">body</text>
+<text x="500" y="3714" class="field muted">TEXT ?</text>
+<line x1="84" y1="3718" x2="996" y2="3718" class="rule"/>
+<text x="90" y="3744" class="field">created_at</text>
+<text x="500" y="3744" class="field muted">DATETIME</text>
+<line x1="84" y1="3748" x2="996" y2="3748" class="rule"/>
+<text x="90" y="3774" class="field">days_before</text>
+<text x="500" y="3774" class="field muted">SMALLINT ?</text>
+<line x1="84" y1="3778" x2="996" y2="3778" class="rule"/>
+<text x="90" y="3804" class="field">enabled</text>
+<text x="500" y="3804" class="field muted">BOOLEAN</text>
+<line x1="84" y1="3808" x2="996" y2="3808" class="rule"/>
+<text x="90" y="3834" class="field">guide_document_id</text>
+<text x="500" y="3834" class="field muted">FOREIGNKEY</text>
+<text x="990" y="3834" text-anchor="end" class="tag">FK</text>
+<line x1="84" y1="3838" x2="996" y2="3838" class="rule"/>
+<text x="90" y="3864" class="field">guide_message_setting_id</text>
+<text x="500" y="3864" class="field muted">BIGINT</text>
+<text x="990" y="3864" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="3868" x2="996" y2="3868" class="rule"/>
+<text x="90" y="3894" class="field">kind</text>
+<text x="500" y="3894" class="field muted">CHARENUM</text>
+<line x1="84" y1="3898" x2="996" y2="3898" class="rule"/>
+<text x="90" y="3924" class="field">updated_at</text>
+<text x="500" y="3924" class="field muted">DATETIME</text>
+<text x="90" y="3946" class="module">UNIQUE: (guide_document_id, kind)</text>
+<rect x="3100" y="3626" width="940" height="392" rx="12" class="box"/>
+<rect x="3100" y="3626" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="3663" class="table">guide_safety_check</text>
+<text x="4020" y="3661" text-anchor="end" class="module">visits</text>
+<text x="3120" y="3714" class="field">checked_at</text>
+<text x="3530" y="3714" class="field muted">DATETIME</text>
+<line x1="3114" y1="3718" x2="4026" y2="3718" class="rule"/>
+<text x="3120" y="3744" class="field">checker_version</text>
+<text x="3530" y="3744" class="field muted">CHAR</text>
+<line x1="3114" y1="3748" x2="4026" y2="3748" class="rule"/>
+<text x="3120" y="3774" class="field">generation_job_id</text>
+<text x="3530" y="3774" class="field muted">FOREIGNKEY ?</text>
+<text x="4020" y="3774" text-anchor="end" class="tag">FK</text>
+<line x1="3114" y1="3778" x2="4026" y2="3778" class="rule"/>
+<text x="3120" y="3804" class="field">guide_document_id</text>
+<text x="3530" y="3804" class="field muted">FOREIGNKEY ?</text>
+<text x="4020" y="3804" text-anchor="end" class="tag">FK</text>
+<line x1="3114" y1="3808" x2="4026" y2="3808" class="rule"/>
+<text x="3120" y="3834" class="field">guide_safety_check_id</text>
+<text x="3530" y="3834" class="field muted">BIGINT</text>
+<text x="4020" y="3834" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="3838" x2="4026" y2="3838" class="rule"/>
+<text x="3120" y="3864" class="field">guide_version</text>
+<text x="3530" y="3864" class="field muted">INT ?</text>
+<line x1="3114" y1="3868" x2="4026" y2="3868" class="rule"/>
+<text x="3120" y="3894" class="field">reason_code</text>
+<text x="3530" y="3894" class="field muted">CHAR ?</text>
+<line x1="3114" y1="3898" x2="4026" y2="3898" class="rule"/>
+<text x="3120" y="3924" class="field">section_key</text>
+<text x="3530" y="3924" class="field muted">CHARENUM ?</text>
+<line x1="3114" y1="3928" x2="4026" y2="3928" class="rule"/>
+<text x="3120" y="3954" class="field">stage</text>
+<text x="3530" y="3954" class="field muted">CHARENUM</text>
+<line x1="3114" y1="3958" x2="4026" y2="3958" class="rule"/>
+<text x="3120" y="3984" class="field">verdict</text>
+<text x="3530" y="3984" class="field muted">CHARENUM</text>
+<text x="3120" y="4006" class="module">UNIQUE: —</text>
+<rect x="1080" y="3806" width="940" height="422" rx="12" class="box"/>
+<rect x="1080" y="3806" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="3843" class="table">guide_section</text>
+<text x="2000" y="3841" text-anchor="end" class="module">visits</text>
+<text x="1100" y="3894" class="field">created_at</text>
+<text x="1510" y="3894" class="field muted">DATETIME</text>
+<line x1="1094" y1="3898" x2="2006" y2="3898" class="rule"/>
+<text x="1100" y="3924" class="field">display_order</text>
+<text x="1510" y="3924" class="field muted">INT</text>
+<line x1="1094" y1="3928" x2="2006" y2="3928" class="rule"/>
+<text x="1100" y="3954" class="field">drug_caution_content_id</text>
+<text x="1510" y="3954" class="field muted">FOREIGNKEY ?</text>
+<text x="2000" y="3954" text-anchor="end" class="tag">FK</text>
+<line x1="1094" y1="3958" x2="2006" y2="3958" class="rule"/>
+<text x="1100" y="3984" class="field">edited_body</text>
+<text x="1510" y="3984" class="field muted">TEXT ?</text>
+<line x1="1094" y1="3988" x2="2006" y2="3988" class="rule"/>
+<text x="1100" y="4014" class="field">generated_body</text>
+<text x="1510" y="4014" class="field muted">TEXT</text>
+<line x1="1094" y1="4018" x2="2006" y2="4018" class="rule"/>
+<text x="1100" y="4044" class="field">guide_document_id</text>
+<text x="1510" y="4044" class="field muted">FOREIGNKEY</text>
+<text x="2000" y="4044" text-anchor="end" class="tag">FK</text>
+<line x1="1094" y1="4048" x2="2006" y2="4048" class="rule"/>
+<text x="1100" y="4074" class="field">guide_section_id</text>
+<text x="1510" y="4074" class="field muted">BIGINT</text>
+<text x="2000" y="4074" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="4078" x2="2006" y2="4078" class="rule"/>
+<text x="1100" y="4104" class="field">locked</text>
+<text x="1510" y="4104" class="field muted">BOOLEAN</text>
+<line x1="1094" y1="4108" x2="2006" y2="4108" class="rule"/>
+<text x="1100" y="4134" class="field">section_key</text>
+<text x="1510" y="4134" class="field muted">CHARENUM</text>
+<line x1="1094" y1="4138" x2="2006" y2="4138" class="rule"/>
+<text x="1100" y="4164" class="field">updated_at</text>
+<text x="1510" y="4164" class="field muted">DATETIME</text>
+<line x1="1094" y1="4168" x2="2006" y2="4168" class="rule"/>
+<text x="1100" y="4194" class="field">warn</text>
+<text x="1510" y="4194" class="field muted">CHAR ?</text>
+<text x="1100" y="4216" class="module">UNIQUE: (guide_document_id, section_key)</text>
+<rect x="4110" y="3956" width="940" height="662" rx="12" class="box"/>
+<rect x="4110" y="3956" width="940" height="58" rx="12" class="head"/>
+<text x="4130" y="3993" class="table">guide_section_source_snapshot</text>
+<text x="5030" y="3991" text-anchor="end" class="module">visits</text>
+<text x="4130" y="4044" class="field">body_sha256</text>
+<text x="4540" y="4044" class="field muted">CHAR</text>
+<line x1="4124" y1="4048" x2="5036" y2="4048" class="rule"/>
+<text x="4130" y="4074" class="field">chunk_id</text>
+<text x="4540" y="4074" class="field muted">CHAR ?</text>
+<line x1="4124" y1="4078" x2="5036" y2="4078" class="rule"/>
+<text x="4130" y="4104" class="field">created_at</text>
+<text x="4540" y="4104" class="field muted">DATETIME</text>
+<line x1="4124" y1="4108" x2="5036" y2="4108" class="rule"/>
+<text x="4130" y="4134" class="field">document_id</text>
+<text x="4540" y="4134" class="field muted">CHAR ?</text>
+<line x1="4124" y1="4138" x2="5036" y2="4138" class="rule"/>
+<text x="4130" y="4164" class="field">fallback_reason</text>
+<text x="4540" y="4164" class="field muted">CHAR ?</text>
+<line x1="4124" y1="4168" x2="5036" y2="4168" class="rule"/>
+<text x="4130" y="4194" class="field">generation_mode</text>
+<text x="4540" y="4194" class="field muted">CHAR</text>
+<line x1="4124" y1="4198" x2="5036" y2="4198" class="rule"/>
+<text x="4130" y="4224" class="field">guide_document_id</text>
+<text x="4540" y="4224" class="field muted">FOREIGNKEY</text>
+<text x="5030" y="4224" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="4228" x2="5036" y2="4228" class="rule"/>
+<text x="4130" y="4254" class="field">guide_section_id</text>
+<text x="4540" y="4254" class="field muted">FOREIGNKEY ?</text>
+<text x="5030" y="4254" text-anchor="end" class="tag">FK</text>
+<line x1="4124" y1="4258" x2="5036" y2="4258" class="rule"/>
+<text x="4130" y="4284" class="field">guide_version</text>
+<text x="4540" y="4284" class="field muted">INT</text>
+<line x1="4124" y1="4288" x2="5036" y2="4288" class="rule"/>
+<text x="4130" y="4314" class="field">position</text>
+<text x="4540" y="4314" class="field muted">INT</text>
+<line x1="4124" y1="4318" x2="5036" y2="4318" class="rule"/>
+<text x="4130" y="4344" class="field">score</text>
+<text x="4540" y="4344" class="field muted">FLOAT ?</text>
+<line x1="4124" y1="4348" x2="5036" y2="4348" class="rule"/>
+<text x="4130" y="4374" class="field">section_key</text>
+<text x="4540" y="4374" class="field muted">CHARENUM</text>
+<line x1="4124" y1="4378" x2="5036" y2="4378" class="rule"/>
+<text x="4130" y="4404" class="field">snapshot_id</text>
+<text x="4540" y="4404" class="field muted">BIGINT</text>
+<text x="5030" y="4404" text-anchor="end" class="tag">PK UK</text>
+<line x1="4124" y1="4408" x2="5036" y2="4408" class="rule"/>
+<text x="4130" y="4434" class="field">source_name</text>
+<text x="4540" y="4434" class="field muted">CHAR ?</text>
+<line x1="4124" y1="4438" x2="5036" y2="4438" class="rule"/>
+<text x="4130" y="4464" class="field">source_org</text>
+<text x="4540" y="4464" class="field muted">CHAR ?</text>
+<line x1="4124" y1="4468" x2="5036" y2="4468" class="rule"/>
+<text x="4130" y="4494" class="field">source_url</text>
+<text x="4540" y="4494" class="field muted">CHAR ?</text>
+<line x1="4124" y1="4498" x2="5036" y2="4498" class="rule"/>
+<text x="4130" y="4524" class="field">template_id</text>
+<text x="4540" y="4524" class="field muted">CHAR ?</text>
+<line x1="4124" y1="4528" x2="5036" y2="4528" class="rule"/>
+<text x="4130" y="4554" class="field">verified_at</text>
+<text x="4540" y="4554" class="field muted">DATE ?</text>
+<line x1="4124" y1="4558" x2="5036" y2="4558" class="rule"/>
+<text x="4130" y="4584" class="field">version</text>
+<text x="4540" y="4584" class="field muted">CHAR</text>
+<text x="4130" y="4606" class="module">UNIQUE: (guide_document_id, guide_version, section_key, position)</text>
+<rect x="70" y="4008" width="940" height="332" rx="12" class="box"/>
+<rect x="70" y="4008" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="4045" class="table">patient_guide_link</text>
+<text x="990" y="4043" text-anchor="end" class="module">visits</text>
+<text x="90" y="4096" class="field">created_at</text>
+<text x="500" y="4096" class="field muted">DATETIME</text>
+<line x1="84" y1="4100" x2="996" y2="4100" class="rule"/>
+<text x="90" y="4126" class="field">expires_at</text>
+<text x="500" y="4126" class="field muted">DATETIME</text>
+<line x1="84" y1="4130" x2="996" y2="4130" class="rule"/>
+<text x="90" y="4156" class="field">guide_document_id</text>
+<text x="500" y="4156" class="field muted">ONETOONE</text>
+<text x="990" y="4156" text-anchor="end" class="tag">FK UK</text>
+<line x1="84" y1="4160" x2="996" y2="4160" class="rule"/>
+<text x="90" y="4186" class="field">issued_at</text>
+<text x="500" y="4186" class="field muted">DATETIME ?</text>
+<line x1="84" y1="4190" x2="996" y2="4190" class="rule"/>
+<text x="90" y="4216" class="field">issued_by</text>
+<text x="500" y="4216" class="field muted">BIGINT</text>
+<line x1="84" y1="4220" x2="996" y2="4220" class="rule"/>
+<text x="90" y="4246" class="field">last_message_id</text>
+<text x="500" y="4246" class="field muted">BIGINT ?</text>
+<line x1="84" y1="4250" x2="996" y2="4250" class="rule"/>
+<text x="90" y="4276" class="field">patient_guide_link_id</text>
+<text x="500" y="4276" class="field muted">BIGINT</text>
+<text x="990" y="4276" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="4280" x2="996" y2="4280" class="rule"/>
+<text x="90" y="4306" class="field">token_digest</text>
+<text x="500" y="4306" class="field muted">CHAR</text>
+<text x="990" y="4306" text-anchor="end" class="tag">UK</text>
+<text x="90" y="4328" class="module">UNIQUE: —</text>
+<rect x="3100" y="4068" width="940" height="392" rx="12" class="box"/>
+<rect x="3100" y="4068" width="940" height="58" rx="12" class="head"/>
+<text x="3120" y="4105" class="table">patient_otp_challenge</text>
+<text x="4020" y="4103" text-anchor="end" class="module">visits</text>
+<text x="3120" y="4156" class="field">consumed_at</text>
+<text x="3530" y="4156" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="4160" x2="4026" y2="4160" class="rule"/>
+<text x="3120" y="4186" class="field">expires_at</text>
+<text x="3530" y="4186" class="field muted">DATETIME</text>
+<line x1="3114" y1="4190" x2="4026" y2="4190" class="rule"/>
+<text x="3120" y="4216" class="field">failed_attempts</text>
+<text x="3530" y="4216" class="field muted">SMALLINT</text>
+<line x1="3114" y1="4220" x2="4026" y2="4220" class="rule"/>
+<text x="3120" y="4246" class="field">issued_at</text>
+<text x="3530" y="4246" class="field muted">DATETIME</text>
+<line x1="3114" y1="4250" x2="4026" y2="4250" class="rule"/>
+<text x="3120" y="4276" class="field">locked_until</text>
+<text x="3530" y="4276" class="field muted">DATETIME ?</text>
+<line x1="3114" y1="4280" x2="4026" y2="4280" class="rule"/>
+<text x="3120" y="4306" class="field">otp_digest</text>
+<text x="3530" y="4306" class="field muted">CHAR</text>
+<line x1="3114" y1="4310" x2="4026" y2="4310" class="rule"/>
+<text x="3120" y="4336" class="field">otp_salt</text>
+<text x="3530" y="4336" class="field muted">CHAR</text>
+<line x1="3114" y1="4340" x2="4026" y2="4340" class="rule"/>
+<text x="3120" y="4366" class="field">patient_guide_link_id</text>
+<text x="3530" y="4366" class="field muted">ONETOONE</text>
+<text x="4020" y="4366" text-anchor="end" class="tag">FK UK</text>
+<line x1="3114" y1="4370" x2="4026" y2="4370" class="rule"/>
+<text x="3120" y="4396" class="field">patient_otp_challenge_id</text>
+<text x="3530" y="4396" class="field muted">BIGINT</text>
+<text x="4020" y="4396" text-anchor="end" class="tag">PK UK</text>
+<line x1="3114" y1="4400" x2="4026" y2="4400" class="rule"/>
+<text x="3120" y="4426" class="field">updated_at</text>
+<text x="3530" y="4426" class="field muted">DATETIME</text>
+<text x="3120" y="4448" class="module">UNIQUE: —</text>
+<rect x="2090" y="4098" width="940" height="212" rx="12" class="box"/>
+<rect x="2090" y="4098" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="4135" class="table">patient_otp_event</text>
+<text x="3010" y="4133" text-anchor="end" class="module">visits</text>
+<text x="2110" y="4186" class="field">created_at</text>
+<text x="2520" y="4186" class="field muted">DATETIME</text>
+<line x1="2104" y1="4190" x2="3016" y2="4190" class="rule"/>
+<text x="2110" y="4216" class="field">event_type</text>
+<text x="2520" y="4216" class="field muted">CHARENUM</text>
+<line x1="2104" y1="4220" x2="3016" y2="4220" class="rule"/>
+<text x="2110" y="4246" class="field">patient_guide_link_id</text>
+<text x="2520" y="4246" class="field muted">BIGINT</text>
+<line x1="2104" y1="4250" x2="3016" y2="4250" class="rule"/>
+<text x="2110" y="4276" class="field">patient_otp_event_id</text>
+<text x="2520" y="4276" class="field muted">BIGINT</text>
+<text x="3010" y="4276" text-anchor="end" class="tag">PK UK</text>
+<text x="2110" y="4298" class="module">UNIQUE: —</text>
+<rect x="1080" y="4278" width="940" height="332" rx="12" class="box"/>
+<rect x="1080" y="4278" width="940" height="58" rx="12" class="head"/>
+<text x="1100" y="4315" class="table">patient_usage_event</text>
+<text x="2000" y="4313" text-anchor="end" class="module">visits</text>
+<text x="1100" y="4366" class="field">answer_outcome</text>
+<text x="1510" y="4366" class="field muted">CHARENUM ?</text>
+<line x1="1094" y1="4370" x2="2006" y2="4370" class="rule"/>
+<text x="1100" y="4396" class="field">created_at</text>
+<text x="1510" y="4396" class="field muted">DATETIME</text>
+<line x1="1094" y1="4400" x2="2006" y2="4400" class="rule"/>
+<text x="1100" y="4426" class="field">event_type</text>
+<text x="1510" y="4426" class="field muted">CHARENUM</text>
+<line x1="1094" y1="4430" x2="2006" y2="4430" class="rule"/>
+<text x="1100" y="4456" class="field">grounded_section</text>
+<text x="1510" y="4456" class="field muted">CHARENUM ?</text>
+<line x1="1094" y1="4460" x2="2006" y2="4460" class="rule"/>
+<text x="1100" y="4486" class="field">guide_document_id</text>
+<text x="1510" y="4486" class="field muted">FOREIGNKEY</text>
+<text x="2000" y="4486" text-anchor="end" class="tag">FK</text>
+<line x1="1094" y1="4490" x2="2006" y2="4490" class="rule"/>
+<text x="1100" y="4516" class="field">patient_usage_event_id</text>
+<text x="1510" y="4516" class="field muted">BIGINT</text>
+<text x="2000" y="4516" text-anchor="end" class="tag">PK UK</text>
+<line x1="1094" y1="4520" x2="2006" y2="4520" class="rule"/>
+<text x="1100" y="4546" class="field">question_kind</text>
+<text x="1510" y="4546" class="field muted">CHARENUM ?</text>
+<line x1="1094" y1="4550" x2="2006" y2="4550" class="rule"/>
+<text x="1100" y="4576" class="field">response_ref_digest</text>
+<text x="1510" y="4576" class="field muted">CHAR ?</text>
+<text x="2000" y="4576" text-anchor="end" class="tag">UK</text>
+<text x="1100" y="4598" class="module">UNIQUE: —</text>
+<rect x="2090" y="4360" width="940" height="452" rx="12" class="box"/>
+<rect x="2090" y="4360" width="940" height="58" rx="12" class="head"/>
+<text x="2110" y="4397" class="table">visit</text>
+<text x="3010" y="4395" text-anchor="end" class="module">visits</text>
+<text x="2110" y="4448" class="field">created_at</text>
+<text x="2520" y="4448" class="field muted">DATETIME</text>
+<line x1="2104" y1="4452" x2="3016" y2="4452" class="rule"/>
+<text x="2110" y="4478" class="field">department</text>
+<text x="2520" y="4478" class="field muted">CHAR ?</text>
+<line x1="2104" y1="4482" x2="3016" y2="4482" class="rule"/>
+<text x="2110" y="4508" class="field">doctor_id</text>
+<text x="2520" y="4508" class="field muted">BIGINT ?</text>
+<line x1="2104" y1="4512" x2="3016" y2="4512" class="rule"/>
+<text x="2110" y="4538" class="field">doctor_note</text>
+<text x="2520" y="4538" class="field muted">TEXT ?</text>
+<line x1="2104" y1="4542" x2="3016" y2="4542" class="rule"/>
+<text x="2110" y="4568" class="field">hospital_id</text>
+<text x="2520" y="4568" class="field muted">BIGINT</text>
+<line x1="2104" y1="4572" x2="3016" y2="4572" class="rule"/>
+<text x="2110" y="4598" class="field">patient_id</text>
+<text x="2520" y="4598" class="field muted">FOREIGNKEY</text>
+<text x="3010" y="4598" text-anchor="end" class="tag">FK</text>
+<line x1="2104" y1="4602" x2="3016" y2="4602" class="rule"/>
+<text x="2110" y="4628" class="field">planned_stop</text>
+<text x="2520" y="4628" class="field muted">BOOLEAN</text>
+<line x1="2104" y1="4632" x2="3016" y2="4632" class="rule"/>
+<text x="2110" y="4658" class="field">status</text>
+<text x="2520" y="4658" class="field muted">CHARENUM</text>
+<line x1="2104" y1="4662" x2="3016" y2="4662" class="rule"/>
+<text x="2110" y="4688" class="field">updated_at</text>
+<text x="2520" y="4688" class="field muted">DATETIME</text>
+<line x1="2104" y1="4692" x2="3016" y2="4692" class="rule"/>
+<text x="2110" y="4718" class="field">visit_id</text>
+<text x="2520" y="4718" class="field muted">BIGINT</text>
+<text x="3010" y="4718" text-anchor="end" class="tag">PK UK</text>
+<line x1="2104" y1="4722" x2="3016" y2="4722" class="rule"/>
+<text x="2110" y="4748" class="field">visit_summary</text>
+<text x="2520" y="4748" class="field muted">TEXT ?</text>
+<line x1="2104" y1="4752" x2="3016" y2="4752" class="rule"/>
+<text x="2110" y="4778" class="field">visited_at</text>
+<text x="2520" y="4778" class="field muted">DATETIME</text>
+<text x="2110" y="4800" class="module">UNIQUE: —</text>
+<rect x="70" y="4390" width="940" height="332" rx="12" class="box"/>
+<rect x="70" y="4390" width="940" height="58" rx="12" class="head"/>
+<text x="90" y="4427" class="table">visit_check_answer</text>
+<text x="990" y="4425" text-anchor="end" class="module">visits</text>
+<text x="90" y="4478" class="field">answered_at</text>
+<text x="500" y="4478" class="field muted">DATETIME ?</text>
+<line x1="84" y1="4482" x2="996" y2="4482" class="rule"/>
+<text x="90" y="4508" class="field">answered_by</text>
+<text x="500" y="4508" class="field muted">BIGINT ?</text>
+<line x1="84" y1="4512" x2="996" y2="4512" class="rule"/>
+<text x="90" y="4538" class="field">checked</text>
+<text x="500" y="4538" class="field muted">BOOLEAN</text>
+<line x1="84" y1="4542" x2="996" y2="4542" class="rule"/>
+<text x="90" y="4568" class="field">created_at</text>
+<text x="500" y="4568" class="field muted">DATETIME</text>
+<line x1="84" y1="4572" x2="996" y2="4572" class="rule"/>
+<text x="90" y="4598" class="field">item_key</text>
+<text x="500" y="4598" class="field muted">CHARENUM</text>
+<line x1="84" y1="4602" x2="996" y2="4602" class="rule"/>
+<text x="90" y="4628" class="field">updated_at</text>
+<text x="500" y="4628" class="field muted">DATETIME</text>
+<line x1="84" y1="4632" x2="996" y2="4632" class="rule"/>
+<text x="90" y="4658" class="field">visit_check_answer_id</text>
+<text x="500" y="4658" class="field muted">BIGINT</text>
+<text x="990" y="4658" text-anchor="end" class="tag">PK UK</text>
+<line x1="84" y1="4662" x2="996" y2="4662" class="rule"/>
+<text x="90" y="4688" class="field">visit_id</text>
+<text x="500" y="4688" class="field muted">FOREIGNKEY</text>
+<text x="990" y="4688" text-anchor="end" class="tag">FK</text>
+<text x="90" y="4710" class="module">UNIQUE: (visit_id, item_key)</text>
+<text x="70" y="4942" class="section">FK relationships and cardinality</text>
+<text x="70" y="4976" class="sub">parent ||—o{ child: many · parent ||—o| child: unique child · nullable FK uses o| on parent side</text>
+<text x="70" y="5030" class="rel">prescription_set ||—o{ doctor_guide_copy · prescription_set_id</text>
+<text x="70" y="5064" class="rel">prescription_set ||—o{ doctor_guide_review · prescription_set_id</text>
+<text x="70" y="5098" class="rel">prescription_set ||—o{ drug_caution_content · prescription_set_id</text>
+<text x="70" y="5132" class="rel">prescription_set ||—o{ prescription_check_item · prescription_set_id</text>
+<text x="70" y="5166" class="rel">prescription_set ||—o{ prescription_set_drug · prescription_set_id</text>
+<text x="70" y="5200" class="rel">visit ||—o{ medical_document · visit_id</text>
+<text x="70" y="5234" class="rel">guide_document ||—o{ patient_feedback · guide_document_id</text>
+<text x="70" y="5268" class="rel">knowledge_version ||—o{ knowledge_chunk · version_id</text>
+<text x="70" y="5302" class="rel">knowledge_version ||—o{ knowledge_ingestion_attempt · version_id</text>
+<text x="70" y="5336" class="rel">knowledge_document ||—o{ knowledge_version · document_id</text>
+<text x="70" y="5370" class="rel">ocr_result ||—o{ ocr_document_text · ocr_result_id</text>
+<text x="70" y="5404" class="rel">ocr_result ||—o{ ocr_field · ocr_result_id</text>
+<text x="70" y="5438" class="rel">ocr_field ||—o{ ocr_field_candidate · ocr_field_id</text>
+<text x="70" y="5472" class="rel">visit ||—o{ ocr_job · visit_id</text>
+<text x="70" y="5506" class="rel">ocr_job ||—o{ ocr_job_document · ocr_job_id</text>
+<text x="70" y="5540" class="rel">ocr_job ||—o| ocr_result · ocr_job_id</text>
+<text x="1730" y="5030" class="rel">visit ||—o| prescription · visit_id</text>
+<text x="1730" y="5064" class="rel">prescription ||—o{ prescription_item · prescription_id</text>
+<text x="1730" y="5098" class="rel">staff ||—o{ hospital_update_event · actor_staff_id</text>
+<text x="1730" y="5132" class="rel">hospital ||—o{ hospital_update_event · hospital_id</text>
+<text x="1730" y="5166" class="rel">hospital ||—o{ staff · hospital_id</text>
+<text x="1730" y="5200" class="rel">staff ||—o{ staff_account_event · actor_staff_id</text>
+<text x="1730" y="5234" class="rel">hospital ||—o{ staff_account_event · hospital_id</text>
+<text x="1730" y="5268" class="rel">staff ||—o{ staff_account_event · subject_staff_id</text>
+<text x="1730" y="5302" class="rel">guide_document ||—o{ chatbot_submission · guide_document_id</text>
+<text x="1730" y="5336" class="rel">guide_document ||—o| check_in · guide_document_id</text>
+<text x="1730" y="5370" class="rel">guide_document ||—o{ check_in_signal · guide_document_id</text>
+<text x="1730" y="5404" class="rel">check_in_signal_state ||—o{ check_in_signal_acknowledgement · state_id</text>
+<text x="1730" y="5438" class="rel">guide_document ||—o| check_in_signal_state · guide_document_id</text>
+<text x="1730" y="5472" class="rel">check_in_signal o|—o{ check_in_signal_state · signal_id</text>
+<text x="1730" y="5506" class="rel">visit ||—o| guide_document · visit_id</text>
+<text x="1730" y="5540" class="rel">guide_document ||—o{ guide_event · guide_document_id</text>
+<text x="3390" y="5030" class="rel">guide_document ||—o{ guide_message · guide_document_id</text>
+<text x="3390" y="5064" class="rel">guide_message ||—o{ guide_message_event · guide_message_id</text>
+<text x="3390" y="5098" class="rel">guide_document ||—o{ guide_message_setting · guide_document_id</text>
+<text x="3390" y="5132" class="rel">guide_generation_job o|—o{ guide_safety_check · generation_job_id</text>
+<text x="3390" y="5166" class="rel">guide_document o|—o{ guide_safety_check · guide_document_id</text>
+<text x="3390" y="5200" class="rel">drug_caution_content o|—o{ guide_section · drug_caution_content_id</text>
+<text x="3390" y="5234" class="rel">guide_document ||—o{ guide_section · guide_document_id</text>
+<text x="3390" y="5268" class="rel">guide_document ||—o{ guide_section_source_snapshot · guide_document_id</text>
+<text x="3390" y="5302" class="rel">guide_section o|—o{ guide_section_source_snapshot · guide_section_id</text>
+<text x="3390" y="5336" class="rel">guide_document ||—o| patient_guide_link · guide_document_id</text>
+<text x="3390" y="5370" class="rel">patient_guide_link ||—o| patient_otp_challenge · patient_guide_link_id</text>
+<text x="3390" y="5404" class="rel">guide_document ||—o{ patient_usage_event · guide_document_id</text>
+<text x="3390" y="5438" class="rel">patient ||—o{ visit · patient_id</text>
+<text x="3390" y="5472" class="rel">visit ||—o{ visit_check_answer · visit_id</text>
+</svg>

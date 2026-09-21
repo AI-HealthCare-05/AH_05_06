@@ -26,7 +26,7 @@ from tortoise.timezone import now as db_now  # noqa: E402
 
 from ai_worker.adapters.knowledge_ocr import ClovaKnowledgeOcrExtractor  # noqa: E402
 from app.core import config  # noqa: E402
-from app.core.db.databases import TORTOISE_ORM  # noqa: E402
+from app.core.db.databases import WORKER_TORTOISE_ORM as TORTOISE_ORM  # noqa: E402
 from app.models.catalog import ApprovalStatus, SourceGrade  # noqa: E402
 from app.models.knowledge import KnowledgeDocument, KnowledgeSourceKind, KnowledgeVersion  # noqa: E402
 from app.services.knowledge_pipeline import (  # noqa: E402

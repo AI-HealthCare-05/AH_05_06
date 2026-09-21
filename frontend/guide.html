@@ -6,7 +6,7 @@
   <title>진료 안내 · 케어온</title>
   <link rel="stylesheet" href="/patient_wireframe/css/tokens.css" />
   <link rel="stylesheet" href="/patient_wireframe/css/guide.css?v=13" />
-  <link rel="stylesheet" href="/patient_wireframe/css/chat.css?v=6" />
+  <link rel="stylesheet" href="/patient_wireframe/css/chat.css?v=9" />
 </head>
 <body>
 
@@ -19,7 +19,7 @@
         <span class="header__icon"><img src="/patient_wireframe/assets/logo.png" alt="" aria-hidden="true" style="width:100%;height:100%;object-fit:cover;"></span>
         <span class="header__name">케어온</span>
       </div>
-      <button type="button" class="header__pdf-btn" id="pdf-btn">PDF 저장</button>
+      <button type="button" class="header__pdf-btn" id="pdf-btn" hidden disabled style="display:none">PDF 저장</button>
     </div>
     <p class="header__patient" id="header-patient"></p>
     <div id="tab-bar" class="tab-bar" role="tablist" aria-label="안내 항목"></div>
@@ -60,11 +60,13 @@
 
 <script src="/js/link-token.js"></script>
 <script src="/patient_wireframe/component/fab.js?v=10"></script>
-<script src="/patient_wireframe/component/sheet.js?v=3"></script>
+<script src="/patient_wireframe/component/sheet.js?v=5"></script>
+<script src="/vendor/pdf-lib/pdf-lib.min.js?v=1.17.1"></script>
+<script src="/patient_wireframe/component/guide-pdf.js?v=3"></script>
 <script src="/patient_wireframe/component/guide-footer.js?v=10"></script>
 <script src="/patient_wireframe/js/guide-api.js?v=13"></script>
 <script src="/js/chatbot-api.js?v=8"></script>
-<script src="/patient_wireframe/js/guide.js?v=15"></script>
+<script src="/patient_wireframe/js/guide.js?v=18"></script>
 <script src="/patient_wireframe/js/chat.js?v=7"></script>
 </body>
 </html>

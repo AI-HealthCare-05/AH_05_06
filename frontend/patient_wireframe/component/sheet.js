@@ -42,7 +42,7 @@ function Sheet(opts) {
 
   var note = document.createElement('p');
   note.className = 'pdf-sheet__note';
-  note.textContent = 'ⓘ 챗봇 대화는 담기지 않아요. 파일에 이름과 진료일이 들어가니 공유에 주의해 주세요.';
+  note.textContent = opts.note || 'ⓘ 챗봇 대화는 담기지 않아요. 파일에 이름과 진료일이 들어가니 공유에 주의해 주세요.';
 
   var actions = document.createElement('div');
   actions.className = 'pdf-sheet__actions';
@@ -73,19 +73,30 @@ function Sheet(opts) {
 
   function updateSaveBtn() {
     var n = countSelected();
-    saveBtn.textContent = '미리보기 (' + n + '쪽)';
+    saveBtn.textContent = (opts.saveLabel || '미리보기') + ' (' + n + '개 항목)';
     saveBtn.disabled = n === 0;
+  }
+
+  var optionRows = {};
+
+  function updateOption(key) {
+    var row = optionRows[key];
+    if (!row) return;
+    var isChecked = !!selected[key];
+    row.el.setAttribute('aria-pressed', isChecked ? 'true' : 'false');
+    row.el.className = 'pdf-option' + (isChecked ? ' pdf-option--checked' : '');
+    row.check.textContent = isChecked ? '✓' : '';
   }
 
   function renderOptions() {
     optionsWrap.innerHTML = '';
+    optionRows = {};
     (opts.options || []).forEach(function (o) {
-      var div = document.createElement('div');
-      div.className = 'pdf-option' + (selected[o.key] ? ' pdf-option--checked' : '');
+      var div = document.createElement('button');
+      div.type = 'button';
 
       var check = document.createElement('span');
       check.className = 'pdf-option__check';
-      check.textContent = selected[o.key] ? '✓' : '';
 
       var info = document.createElement('div');
       info.className = 'pdf-option__info';
@@ -103,12 +114,16 @@ function Sheet(opts) {
       div.appendChild(check);
       div.appendChild(info);
 
+      /* 클릭한 버튼만 갱신한다 — 전체를 다시 만들면 포커스가 매번
+         끊겨 focusKey로 되돌려야 했다. */
       div.addEventListener('click', function () {
         selected[o.key] = !selected[o.key];
-        renderOptions();
+        updateOption(o.key);
         updateSaveBtn();
       });
       optionsWrap.appendChild(div);
+      optionRows[o.key] = { el: div, check: check };
+      updateOption(o.key);
     });
   }
 
@@ -117,8 +132,9 @@ function Sheet(opts) {
 
   saveBtn.addEventListener('click', function () {
     var chosen = Object.keys(selected).filter(function (k) { return selected[k]; });
-    if (opts.onSave) opts.onSave(chosen);
+    if (!chosen.length) return;
     close();
+    if (opts.onSave) opts.onSave(chosen);
   });
 
   function open() {
