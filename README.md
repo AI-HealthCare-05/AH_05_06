@@ -222,7 +222,7 @@ CLOVA 자격증명(`.env` 의 `CLOVA_OCR_INVOKE_URL` · `CLOVA_OCR_SECRET_KEY`)�
 > 지우므로, 문자가 한 번 나간 진료는 원본 이미지와 OCR 원문을 다시 볼 수 없다.
 > 삭제가 재시도 끝에 실패하면 `SOURCE_NOT_DELETED`, 의원 예약 주소가 빈 소진·재진 문자는
 > `BOOKING_URL_MISSING`, 문자가 예약된 뒤 환자가 수신 거부로 바뀌면 `SMS_OPT_OUT`(KEY-355) 으로 **보류(`HELD`)** 된다
-> (처음부터 거부인 환자는 문서 업로드·안내문 생성이 409 `SMS_OPT_OUT` 으로 먼저 막혀 문자까지 안 간다)
+> (처음부터 거부인 환자는 안내문 생성이 409 `SMS_OPT_OUT` 으로 먼저 막혀 문자까지 안 간다)
 > (`solapi` 면 승인 번호 목록 밖 수신자도 `RECIPIENT_NOT_APPROVED`) —
 > 결함이 아니라 발송 게이트다 (`app/services/dispatch_gate.py` · [`docs/project_workflow.md`](docs/project_workflow.md) §2).
 
